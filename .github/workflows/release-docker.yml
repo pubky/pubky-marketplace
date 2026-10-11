@@ -5,7 +5,7 @@ on:
     tags: ['v*']
 
 permissions:
-      contents: read
+  contents: read
 
 jobs:
   build-and-push:
@@ -42,5 +42,3 @@ jobs:
             NEXT_PUBLIC_DB_NAME=shop-franky
             NEXT_PUBLIC_DEBUG_MODE=false
             NEXT_PUBLIC_APP_VERSION=${{ github.sha }}
-
-
