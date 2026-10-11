@@ -1516,7 +1516,7 @@ export class CommerceApplication {
         operation: 'isPaykitAccountClaimed',
       });
     }
-    const status = await LocksGatewayService.getCreatorPaykitSetupStatus(session.token);
+    const status = await LocksGatewayService.getCreatorPaykitSetupStatus(session.token, 'BTC');
     if (status === 'unavailable') {
       throw Err.server(ServerErrorCode.SERVICE_UNAVAILABLE, 'The Lock Server could not read the Paykit setup state.', {
         service: ErrorService.Locks,
