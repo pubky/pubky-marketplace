@@ -1392,6 +1392,9 @@ describe('MarketplaceCheckout USDT option', () => {
 
     expect(await screen.findByTestId('marketplace-checkout-method-bitcoin')).toBeInTheDocument();
     expect(screen.queryByTestId('marketplace-checkout-method-usdt')).not.toBeInTheDocument();
+    expect(await screen.findByTestId('marketplace-checkout-usdt-missing-note')).toHaveTextContent(
+      "USDT isn't available for this cart: Rangefinder camera is priced in bitcoin.",
+    );
   });
 
   it('offers USDT on a multi-seller cart only when every seller offers it', async () => {
@@ -1420,6 +1423,76 @@ describe('MarketplaceCheckout USDT option', () => {
 
     expect(await screen.findByTestId('marketplace-checkout-method-bitcoin')).toBeInTheDocument();
     expect(screen.queryByTestId('marketplace-checkout-method-usdt')).not.toBeInTheDocument();
+    expect(await screen.findByTestId('marketplace-checkout-usdt-missing-note')).toHaveTextContent(
+      "USDT isn't available for this cart: Film Camera Supply doesn't accept USDT.",
+    );
+  });
+
+  it('gives both reasons when a bitcoin-priced line and a seller without USDT both apply', async () => {
+    view.items = [
+      { id: 'seller:boots:variant_42', listingId: listing.id, variantId: 'variant_42', quantity: 1, listing },
+      {
+        id: 'other:camera:variant_01',
+        listingId: secondSellerListing.id,
+        variantId: 'variant_01',
+        quantity: 1,
+        listing: secondSellerListing,
+      },
+    ];
+    vi.mocked(CommerceController.getSellerPaymentConfig).mockImplementation(async (sellerPubky: unknown) =>
+      sellerPubky === listing.record.ownerPubky ? RAILS_WITH_USDT : { ...RAILS_WITH_USDT, usdtAvailable: false },
+    );
+
+    render(<MarketplaceCheckout />);
+
+    expect(await screen.findByTestId('marketplace-checkout-usdt-missing-note')).toHaveTextContent(
+      "USDT isn't available for this cart: Rangefinder camera is priced in bitcoin; Film Camera Supply doesn't accept USDT.",
+    );
+  });
+
+  it('explains nothing when no seller takes USDT, when USDT is offered, or when the gate is off', async () => {
+    seededCart();
+    vi.mocked(CommerceController.getSellerPaymentConfig).mockImplementation(async () => ({
+      ...RAILS_WITH_USDT,
+      usdtAvailable: false,
+    }));
+    const noSeller = render(<MarketplaceCheckout />);
+    expect(await screen.findByTestId('marketplace-checkout-method-bitcoin')).toBeInTheDocument();
+    expect(screen.queryByTestId('marketplace-checkout-usdt-missing-note')).not.toBeInTheDocument();
+    noSeller.unmount();
+
+    vi.mocked(CommerceController.getSellerPaymentConfig).mockImplementation(async () => RAILS_WITH_USDT);
+    const offered = render(<MarketplaceCheckout />);
+    expect(await screen.findByTestId('marketplace-checkout-method-usdt')).toBeInTheDocument();
+    expect(screen.queryByTestId('marketplace-checkout-usdt-missing-note')).not.toBeInTheDocument();
+    offered.unmount();
+
+    vi.mocked(CommerceController.fetchUsdtPaymentsAvailable).mockResolvedValue(false);
+    render(<MarketplaceCheckout />);
+    expect(await screen.findByTestId('marketplace-checkout-method-bitcoin')).toBeInTheDocument();
+    expect(screen.queryByTestId('marketplace-checkout-usdt-missing-note')).not.toBeInTheDocument();
+    expect(screen.queryByText(/USDT/)).not.toBeInTheDocument();
+  });
+
+  it('adds no explanation after the service refused USDT, which has its own copy', async () => {
+    seededCart();
+    useCommerceStore.getState().setUsdtRefusal(listing.record.ownerPubky, 'usdt_unavailable');
+
+    render(<MarketplaceCheckout />);
+
+    expect(await screen.findByTestId('marketplace-checkout-method-bitcoin')).toBeInTheDocument();
+    expect(screen.queryByTestId('marketplace-checkout-usdt-missing-note')).not.toBeInTheDocument();
+  });
+
+  it('adds no explanation in the sandbox', async () => {
+    seededCart();
+    view.adapterMode = 'sandbox';
+    vi.mocked(CommerceController.getSellerPaymentConfig).mockImplementation(async () => RAILS_WITH_USDT);
+
+    render(<MarketplaceCheckout />);
+
+    expect(await screen.findByTestId('marketplace-checkout-method-bitcoin')).toBeInTheDocument();
+    expect(screen.queryByTestId('marketplace-checkout-usdt-missing-note')).not.toBeInTheDocument();
   });
 
   it('never offers USDT in the sandbox, which binds no real rail', async () => {

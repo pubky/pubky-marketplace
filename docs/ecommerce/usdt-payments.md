@@ -157,6 +157,10 @@ A Locks-verified (`locked`) receipt carries no payment method, so it is never la
 
 Until a USDT payment is `final`, Add tracking, the shipping label's "Mark shipped", Mark ready for pickup and the pickup handover are disabled, and the seller sees "Wait to ship: this USDT payment isn't final on Arbitrum yet. This usually takes a few minutes." A refusal from the service shows the same copy. Service-sealed digital orders release at inclusion and are never gated.
 
+### Why USDT can be missing from checkout
+
+When USDT is missing for a reason the buyer could not see, a muted line under the picker says why (UX audit P5, `usdtMissingOptionExplanation`): "USDT isn't available for this cart: Brass desk lamp is priced in bitcoin." and/or "Film Camera Supply doesn't accept USDT." (joined with a semicolon when both apply). It shows only when the gate is open and at least one seller in the cart takes USDT, so a cart whose sellers never offered USDT stays silent, and never in the sandbox, on a Locks checkout, or after the service refused USDT (that has its own copy). It explains only the two checks above; the picker is unchanged. The order page's method picker has no such line.
+
 ### Refusals
 
 | Reason                                                                                | Copy                                                                                                                  |
