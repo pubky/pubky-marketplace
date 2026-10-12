@@ -133,8 +133,9 @@ export function MarketplaceShopSettingsFormView({ settings, onSaved }: Marketpla
               />
             </div>
             <Typography as="p" className="text-sm text-muted-foreground">
-              Delivery is assumed this many days after you mark an order shipped. The order then completes this many
-              days after delivery unless the buyer opens a return.
+              Delivery is assumed this many days after you mark an order shipped, or after payment for items you email
+              or send in messages and never mark delivered. The order then completes this many days after delivery
+              unless the buyer opens a return.
             </Typography>
           </div>
 

@@ -37,10 +37,10 @@ describe('seller delivery terms', () => {
 
   it('states both periods in one sentence, with singular days', () => {
     expect(sellerDeliveryTermsCopy({ deliveryAssumeDays: 7, autoCompleteDays: 14 })).toBe(
-      'Delivery is assumed after 7 days; the order completes 14 days after delivery unless you open a return.',
+      'Delivery is assumed after 7 days (counted from payment for items the seller emails or sends in messages); the order completes 14 days after delivery unless you open a return.',
     );
     expect(sellerDeliveryTermsCopy({ deliveryAssumeDays: 1, autoCompleteDays: 1 })).toBe(
-      'Delivery is assumed after 1 day; the order completes 1 day after delivery unless you open a return.',
+      'Delivery is assumed after 1 day (counted from payment for items the seller emails or sends in messages); the order completes 1 day after delivery unless you open a return.',
     );
     expect(formatTermDays(60)).toBe('60 days');
   });
