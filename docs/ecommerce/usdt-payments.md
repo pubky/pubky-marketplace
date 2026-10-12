@@ -114,9 +114,16 @@ USDT is its own picker option, never a merged "Bitcoin or USDT" entry. It appear
 - every seller's public config says `usdtAvailable: true` (a multi-seller cart offers only options all sellers offer);
 - every total is `USD/2`. USDT is quoted at exact parity, so one cent is 10,000 millionths and nothing rounds. A Bitcoin-priced cart never offers it.
 
-The bind sends `{ method: 'usdt' }`. Once USDT is chosen the summary shows "25.000000 USDT · USDT0 on Arbitrum One · pay with Bitkit" and "Pay with a Bitkit version that supports USDT.", and the indicative bitcoin estimate is hidden. There is no accept-by line and no pre-check of the buyer's wallet: a missing Paykit wallet is the existing refusal, read in USDT copy.
+The bind sends `{ method: 'usdt' }`. Once USDT is chosen the summary shows "25.000000 USDT · USDT0 on Arbitrum One · pay with Bitkit" and "Pay with a Bitkit version that supports USDT.", and the indicative bitcoin estimate is hidden. There is no pre-check of the buyer's wallet: a missing Paykit wallet is the existing refusal, read in USDT copy.
+
+Two more lines can follow it (UX audit P3 and P13):
+
+- Any cart with a shipped or pickup line adds "The seller ships once Arbitrum finalizes your payment, usually within minutes." A cart whose lines are all digital omits it, because a service-sealed digital line releases at inclusion.
+- A cart with more than one seller adds "You'll approve one request per seller in Bitkit.", because the bind sends one Paykit request per seller.
 
 An unbound order's method picker (the status card) offers "Continue with USDT" under the same rules.
+
+Once the request is bound, the order page's pay panel (`BuyerUsdtPaymentProgress`) adds "Approve in Bitkit within 15 minutes." under the "Pay by" line (UX audit P4). Paykit gives the buyer half the payment window, counted from activation, to approve the request (plan §2.4, D4), which is 15 minutes for the default 1,800 s window; the order carries no accept-by of its own, so `USDT_ACCEPT_BY_MINUTES` pins the default and must change with `USDT_PAYMENT_WINDOW_SECONDS`. It needs a Paykit that has the half-window accept-by (paykit-server #67, on `master`, in no deployed Paykit as of 12 Oct 2026), and it is hidden once the wallet delivery failed. The same panel repeats the finality line above for non-digital orders. The checkout itself never shows an accept-by line, because the window starts at activation.
 
 ### Order status
 
