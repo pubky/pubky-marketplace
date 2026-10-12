@@ -11,8 +11,8 @@ peer-to-peer **marketplace** on top of the social app; its history includes
 the official app's history. Release line: branch `master` (the repository
 default), live at [shop.pubky.app](https://shop.pubky.app) as
 [`shop-v0.6.51`](https://github.com/pubky/pubky-marketplace/releases/tag/shop-v0.6.51)
-(check the running build at
-[`/version.json`](https://shop.pubky.app/version.json)). Payments there are
+(the deployment id behind the domain comes from `vercel inspect`, see
+[`docs/ecommerce/release.md`](docs/ecommerce/release.md#deploy)). Payments there are
 real and go straight to the seller.
 
 New to the Shop: [`docs/ecommerce/onboarding.md`](docs/ecommerce/onboarding.md).
