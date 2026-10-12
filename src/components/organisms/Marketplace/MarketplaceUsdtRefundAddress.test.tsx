@@ -186,6 +186,28 @@ describe('MarketplaceUsdtRefundAddress — seller', () => {
     expect(screen.getByRole('button', { name: 'Copy address' })).toBeInTheDocument();
   });
 
+  it('offers an Arbiscan lookup of the confirmed address to both parties, worded as a lookup', () => {
+    const { unmount } = renderPanel(createUsdtOrderFixture('return_received', { refundDestination: destination }), {
+      isBuyer: false,
+    });
+    const sellerLink = screen.getByRole('link', { name: 'Look up address on Arbiscan' });
+    expect(sellerLink).toHaveAttribute('href', `https://arbiscan.io/address/${REFUND_FIXTURE_ADDRESS.toLowerCase()}`);
+    expect(screen.getByTestId('usdt-refund-seller')).not.toHaveTextContent(/verified/i);
+    unmount();
+
+    renderPanel(createUsdtOrderFixture('return_approved', { refundDestination: destination }));
+    expect(screen.getByRole('link', { name: 'Look up address on Arbiscan' })).toHaveAttribute(
+      'href',
+      `https://arbiscan.io/address/${REFUND_FIXTURE_ADDRESS.toLowerCase()}`,
+    );
+  });
+
+  it('shows no lookup before an address is confirmed', () => {
+    renderPanel(createUsdtOrderFixture('paid'), { isBuyer: false });
+
+    expect(screen.queryByRole('link')).not.toBeInTheDocument();
+  });
+
   it('points a seller whose payment is in manual review at the resolve panel, not at Record refund', () => {
     renderPanel(createUsdtOrderFixture('pending_payment', { refundDestination: destination }), {
       isBuyer: false,

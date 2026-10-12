@@ -19,6 +19,7 @@ import {
   usdtRefundSurface,
 } from '@/libs/commerce/usdt-refund';
 import { ControlledInputField } from '@/molecules/ControlledInputField/ControlledInputField';
+import { ArbiscanLookupLink } from '@/molecules/Marketplace/ArbiscanLookupLink';
 import type { MarketplaceOrder } from '@/services/marketplace/marketplace';
 
 const PANEL_CLASSNAME = 'mt-3 grid gap-3 rounded-md border border-border/60 bg-card/50 p-4';
@@ -65,6 +66,7 @@ function AddressLine({ address, confirmedAt }: { address: string; confirmedAt?: 
       <Typography as="p" className="text-xs text-muted-foreground">
         USDT on Arbitrum One{confirmed ? ` · confirmed ${confirmed}` : ''}
       </Typography>
+      <ArbiscanLookupLink kind="address" value={address} />
     </div>
   );
 }
