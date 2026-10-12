@@ -59,6 +59,8 @@ import {
 } from '@/libs/commerce/refund-copy';
 import { buildMarketplaceConversationAggregateId } from '@/libs/commerce/transaction-commands';
 import { usdtPaidAsLine } from '@/libs/commerce/usdt-buyer-status';
+import { isUsdtRefundOrder } from '@/libs/commerce/usdt-refund';
+import { ArbiscanLookupLink } from '@/molecules/Marketplace/ArbiscanLookupLink';
 import { MarketplaceEmptyState } from '@/molecules/Marketplace/MarketplaceEmptyState';
 import { ContentLayout } from '@/organisms/ContentLayout/ContentLayout';
 import { DropEditionBadge, DropEditionReceiptLine } from '@/organisms/Marketplace/DropEditionBadge';
@@ -560,6 +562,12 @@ export function MarketplaceOrders() {
                               claims it moved funds itself. */}
                                 {refundRecord}
                               </Typography>
+                            )}
+                            {refundRecord && isUsdtRefundOrder(order) && (
+                              <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1" data-testid="order-refund-lookups">
+                                <ArbiscanLookupLink kind="transaction" value={order.externalRefund?.transactionId} />
+                                <ArbiscanLookupLink kind="address" value={order.refundDestination?.address} />
+                              </div>
                             )}
                             {refundOrderNotices(order).map((notice) => (
                               <Typography

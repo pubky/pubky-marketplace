@@ -99,9 +99,12 @@ const USDT_UNIT = 10 ** USDT_EXPONENT;
 
 /**
  * Renders USDT millionths ("25000000" minor units) as "25.000000 USDT": always
- * six decimals, no grouping, so an exact amount can be read back digit for digit.
+ * six decimals, and no grouping unless asked, so an exact amount can be read
+ * back digit for digit. `grouped` adds thousands separators ("1,250.000000
+ * USDT") for receipts and summaries; an amount the buyer must send or the
+ * seller must copy into a wallet stays ungrouped.
  */
-export function formatUsdt(millionths: number): string {
+export function formatUsdt(millionths: number, options: { grouped?: boolean } = {}): string {
   if (!Number.isSafeInteger(millionths) || millionths < 0) {
     throw Err.validation(
       ValidationErrorCode.INVALID_INPUT,
@@ -111,5 +114,9 @@ export function formatUsdt(millionths: number): string {
   }
   const whole = Math.floor(millionths / USDT_UNIT);
   const fraction = String(millionths % USDT_UNIT).padStart(USDT_EXPONENT, '0');
-  return `${whole}.${fraction} USDT`;
+  return `${options.grouped ? groupThousands(whole) : whole}.${fraction} USDT`;
+}
+
+function groupThousands(whole: number): string {
+  return String(whole).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
 }

@@ -239,6 +239,22 @@ describe('recorded refund copy', () => {
     );
   });
 
+  it('groups the digits of a large refund amount, as a receipt does', () => {
+    expect(
+      usdtRefundRecordLine({
+        ...recorded,
+        total: { amountMinor: 125_000, currency: 'USD', exponent: 2 },
+        externalRefund: { amountMinor: 125_000, transactionId: REFUND_FIXTURE_TX_HASH },
+      }),
+    ).toContain('a refund of 1,250.000000 USDT to ');
+  });
+
+  it('keeps the amount the seller must send ungrouped', () => {
+    const total = { amountMinor: 125_000, currency: 'USD', exponent: 2 };
+    expect(formatUsdtParity(total)).toBe('1250.000000 USDT');
+    expect(formatUsdtParity(total, { grouped: true })).toBe('1,250.000000 USDT');
+  });
+
   it('names a partial amount', () => {
     expect(
       usdtRefundRecordLine({

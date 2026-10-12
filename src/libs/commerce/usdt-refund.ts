@@ -201,9 +201,12 @@ export function usdtParityMillionths(money: {
   return Number.isSafeInteger(millionths) && millionths >= 0 ? millionths : null;
 }
 
-export function formatUsdtParity(money: { amountMinor: number; currency: string; exponent: number }): string | null {
+export function formatUsdtParity(
+  money: { amountMinor: number; currency: string; exponent: number },
+  options: { grouped?: boolean } = {},
+): string | null {
   const millionths = usdtParityMillionths(money);
-  return millionths === null ? null : formatUsdt(millionths);
+  return millionths === null ? null : formatUsdt(millionths, options);
 }
 
 /** The amount the seller is asked to send: the requested return amount, else the whole order. */
@@ -270,7 +273,7 @@ export function usdtRefundRefusalMessage(error: { reason?: unknown; message?: un
 export function usdtRefundRecordLine(order: UsdtRefundOrder): string | null {
   const refund = order.externalRefund;
   if (!refund || !isUsdtRefundOrder(order)) return null;
-  const amount = formatUsdtParity({ ...order.total, amountMinor: refund.amountMinor });
+  const amount = formatUsdtParity({ ...order.total, amountMinor: refund.amountMinor }, { grouped: true });
   const destination = order.refundDestination ? ` to ${order.refundDestination.address}` : '';
   const isPartial = order.state === 'refunded_partial' || refund.amountMinor < order.total.amountMinor;
   const scope = isPartial

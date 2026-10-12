@@ -114,6 +114,15 @@ describe('USDT amounts', () => {
     expect(usdtPaidAsLine(order)).toBe('$137.00, paid as 137.000000 USDT');
   });
 
+  it('groups the digits of a large receipt amount but not the amount to pay', () => {
+    const { order } = createUsdtOrderFixture('final', {
+      total: usd(125_000),
+      paymentAmountMinor: 1_250_000_000,
+    });
+    expect(usdtPaidAsLine(order)).toBe('$1,250.00, paid as 1,250.000000 USDT');
+    expect(usdtAmountLabel(order)).toBe('1250.000000 USDT');
+  });
+
   it('writes no line until the service sends the USDT amount', () => {
     const { order } = createUsdtOrderFixture('final', { paymentAmountMinor: undefined });
     expect(usdtPaidAsLine(order)).toBeNull();
