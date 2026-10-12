@@ -5,10 +5,14 @@ import { createUsdtOrderFixture } from '@/test/fixtures/commerce/usdt-orders';
 import {
   isUsdPricedTotals,
   isUsdtFulfilmentBlocked,
+  USDT_ACCEPT_BY_COPY,
   USDT_BUYER_PHASE_COPY,
+  USDT_FINALITY_EXPECTATION_COPY,
+  USDT_MULTI_SELLER_COPY,
   USDT_PHASE_BADGE_LABEL,
   USDT_SELLER_PHASE_COPY,
   usdtAmountLabel,
+  usdtFulfilmentWaitsForFinality,
   usdtPaidAsLine,
   usdtParityMillionths,
   usdtPhaseCopy,
@@ -133,5 +137,28 @@ describe('USDT amounts', () => {
     expect(isUsdPricedTotals([usd(100)])).toBe(true);
     expect(isUsdPricedTotals([])).toBe(false);
     expect(isUsdPricedTotals([usd(100), { amountMinor: 1, currency: 'BTC', exponent: 8 }])).toBe(false);
+  });
+});
+
+describe('USDT expectation copy', () => {
+  it('states the buyer expectations in the agreed words', () => {
+    expect(USDT_FINALITY_EXPECTATION_COPY).toBe(
+      'The seller ships once Arbitrum finalizes your payment, usually within minutes.',
+    );
+    expect(USDT_ACCEPT_BY_COPY).toBe('Approve in Bitkit within 15 minutes.');
+    expect(USDT_MULTI_SELLER_COPY).toBe("You'll approve one request per seller in Bitkit.");
+  });
+
+  it('never claims the payment is verified or confirmed on-chain', () => {
+    for (const copy of [USDT_FINALITY_EXPECTATION_COPY, USDT_ACCEPT_BY_COPY, USDT_MULTI_SELLER_COPY]) {
+      expect(copy).not.toMatch(/verified|confirmed|bitcoin|₿/i);
+    }
+  });
+
+  it('waits for finality on any shipped or pickup line, never on an all-digital cart', () => {
+    expect(usdtFulfilmentWaitsForFinality(['shipping'])).toBe(true);
+    expect(usdtFulfilmentWaitsForFinality(['pickup', 'digital'])).toBe(true);
+    expect(usdtFulfilmentWaitsForFinality(['digital', 'digital'])).toBe(false);
+    expect(usdtFulfilmentWaitsForFinality([])).toBe(false);
   });
 });

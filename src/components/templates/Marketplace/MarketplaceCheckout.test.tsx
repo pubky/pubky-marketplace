@@ -1449,14 +1449,90 @@ describe('MarketplaceCheckout USDT option', () => {
     expect(screen.queryByTestId('marketplace-checkout-bitcoin-amount-note')).not.toBeInTheDocument();
   });
 
-  it('shows no accept-by line for USDT', async () => {
+  it('shows no accept-by line before the request exists: the window starts at activation, on the order page', async () => {
     const user = userEvent.setup();
     seededCart();
 
     render(<MarketplaceCheckout />);
     await user.click(await screen.findByTestId('marketplace-checkout-method-usdt'));
 
-    expect(screen.queryByText(/accept-by|accept by/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/accept-by|accept by|Approve in Bitkit within/i)).not.toBeInTheDocument();
+  });
+
+  it('tells the buyer of a shipped USDT cart that the seller ships once Arbitrum finalizes the payment', async () => {
+    const user = userEvent.setup();
+    seededCart();
+
+    render(<MarketplaceCheckout />);
+    expect(screen.queryByTestId('marketplace-checkout-usdt-finality-note')).not.toBeInTheDocument();
+    await user.click(await screen.findByTestId('marketplace-checkout-method-usdt'));
+
+    expect(screen.getByTestId('marketplace-checkout-usdt-finality-note')).toHaveTextContent(
+      'The seller ships once Arbitrum finalizes your payment, usually within minutes.',
+    );
+    await user.click(screen.getByTestId('marketplace-checkout-method-bitcoin'));
+    expect(screen.queryByTestId('marketplace-checkout-usdt-finality-note')).not.toBeInTheDocument();
+  });
+
+  it('leaves the finality note off a USDT cart that is only digital', async () => {
+    const user = userEvent.setup();
+    seededCart();
+    view.fulfillmentByItem = { 'seller:boots:variant_42': 'digital' };
+
+    render(<MarketplaceCheckout />);
+    await user.click(await screen.findByTestId('marketplace-checkout-method-usdt'));
+
+    expect(screen.getByTestId('marketplace-checkout-usdt-amount')).toBeInTheDocument();
+    expect(screen.queryByTestId('marketplace-checkout-usdt-finality-note')).not.toBeInTheDocument();
+  });
+
+  it('keeps the finality note when a digital line rides with a shipped one', async () => {
+    const user = userEvent.setup();
+    view.items = [
+      { id: 'seller:boots:variant_42', listingId: listing.id, variantId: 'variant_42', quantity: 1, listing },
+      { id: 'seller:boots:variant_43', listingId: listing.id, variantId: 'variant_43', quantity: 1, listing },
+    ];
+    view.fulfillmentByItem = { 'seller:boots:variant_42': 'digital' };
+
+    render(<MarketplaceCheckout />);
+    await user.click(await screen.findByTestId('marketplace-checkout-method-usdt'));
+
+    expect(screen.getByTestId('marketplace-checkout-usdt-finality-note')).toBeInTheDocument();
+  });
+
+  it('says a multi-seller USDT cart needs one approval per seller, and a single-seller cart does not', async () => {
+    const user = userEvent.setup();
+    seededCart();
+
+    const single = render(<MarketplaceCheckout />);
+    await user.click(await screen.findByTestId('marketplace-checkout-method-usdt'));
+    expect(screen.queryByTestId('marketplace-checkout-usdt-multi-seller-note')).not.toBeInTheDocument();
+    single.unmount();
+
+    const secondSellerUsd = {
+      ...secondSellerListing,
+      record: {
+        ...secondSellerListing.record,
+        sale: { format: 'fixed_price', unitPrice: { amountMinor: 4500, currency: 'USD', exponent: 2 } },
+      },
+    };
+    view.items = [
+      { id: 'seller:boots:variant_42', listingId: listing.id, variantId: 'variant_42', quantity: 1, listing },
+      {
+        id: 'other:camera:variant_01',
+        listingId: secondSellerUsd.id,
+        variantId: 'variant_01',
+        quantity: 1,
+        listing: secondSellerUsd,
+      },
+    ];
+
+    render(<MarketplaceCheckout />);
+    await user.click(await screen.findByTestId('marketplace-checkout-method-usdt'));
+
+    expect(screen.getByTestId('marketplace-checkout-usdt-multi-seller-note')).toHaveTextContent(
+      "You'll approve one request per seller in Bitkit.",
+    );
   });
 
   it('hides the indicative bitcoin estimate once USDT is chosen and brings it back for Bitcoin', async () => {
