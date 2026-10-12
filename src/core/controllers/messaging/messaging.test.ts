@@ -4,11 +4,11 @@ import { FIRST_CONTACT_FOLLOW_PAGE_SIZE, FirstContactApplication } from '@/appli
 import { MessagingApplication } from '@/application/messaging/messaging';
 import { UserStreamApplication } from '@/application/stream/users/users';
 import { getCommerceAdapterMode } from '@/config/commerce';
+import { MESSAGING_STATUS_TIMEOUT_MS, MESSAGING_SYNC_PASS_TIMEOUT_MS } from '@/libs/chat/pass-deadline';
 import { MESSAGING_COPY } from '@/libs/commerce/messaging-copy';
 import { httpStatusCodeToError } from '@/libs/error/error.http';
 import { ErrorService } from '@/libs/error/error.types';
 import { Logger } from '@/libs/logger/logger';
-import { MESSAGING_STATUS_TIMEOUT_MS, MESSAGING_SYNC_PASS_TIMEOUT_MS } from '@/libs/messaging/pass-deadline';
 import type { Pubky } from '@/models/models.types';
 import { useAuthStore } from '@/stores/auth/auth.store';
 import { useMessagingStore } from '@/stores/messaging/messaging.store';

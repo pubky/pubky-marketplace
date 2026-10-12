@@ -8,8 +8,8 @@ import {
   type MessagingSyncCoordinatorConfig,
   type MessagingSyncCoordinatorState,
 } from '@/coordinators/messaging-sync/messaging-sync.types';
+import { MESSAGING_SYNC_PASS_TIMEOUT_MS, withPassDeadline } from '@/libs/chat/pass-deadline';
 import { Logger } from '@/libs/logger/logger';
-import { MESSAGING_SYNC_PASS_TIMEOUT_MS, withPassDeadline } from '@/libs/messaging/pass-deadline';
 import { useAuthStore } from '@/stores/auth/auth.store';
 
 /**

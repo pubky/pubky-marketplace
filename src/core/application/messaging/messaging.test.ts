@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { MESSAGING_RETRY_POLICY } from '@/libs/chat/retry-backoff';
 import type { MarketplaceChatMessage } from '@/libs/commerce/messaging-contracts';
 import { MARKETPLACE_CHAT_MESSAGE_KIND } from '@/libs/commerce/messaging-contracts';
 import { PUBKY_APP_DM_KIND, type PubkyAppDmMessage } from '@/libs/messaging/dm-contracts';
-import { MESSAGING_RETRY_POLICY } from '@/libs/messaging/retry-backoff';
 import { CommerceMessagingConversationModel, CommerceMessagingOutboxModel } from '@/models/messaging/messaging.models';
 import { LocalMessagingService } from '@/services/local/messaging/messaging';
 import { type MessagingLinkState, PaykitMessagingService } from '@/services/paykit/paykit-messaging';

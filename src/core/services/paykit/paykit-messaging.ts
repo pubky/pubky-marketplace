@@ -2,6 +2,7 @@
 // loaded through the dynamic import in loadPaykitWasm(), never at module scope, so this
 // file stays safe to pull into server-rendered module graphs (same rule as the Locks SDK).
 import type { EncryptedLinkHandle, LinkHandshakeHandle, PubkyClient, SessionHandle } from 'paykit-wasm';
+import { RetryBackoff } from '@/libs/chat/retry-backoff';
 import {
   buildChatMessage,
   decodeChatMessage,
@@ -40,7 +41,6 @@ import {
   readMarkerWithRetry,
   realMarkerReadSleep,
 } from '@/libs/messaging/marker-read';
-import { RetryBackoff } from '@/libs/messaging/retry-backoff';
 import { getTestnet } from '@/libs/runtime-config/runtime-config';
 import type { CommerceMessagingReceiverModelSchema } from '@/models/messaging/messaging.schema';
 import { retryHomeserverWrite } from '@/services/homeserver/write-retry';

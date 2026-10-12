@@ -1,3 +1,4 @@
+import { RetryBackoff } from '@/libs/chat/retry-backoff';
 import { buildChatMessage, type MarketplaceChatMessage } from '@/libs/commerce/messaging-contracts';
 import { ValidationErrorCode } from '@/libs/error/error.codes';
 import { Err } from '@/libs/error/error.factories';
@@ -11,7 +12,6 @@ import {
   type PubkyAppDmMessage,
 } from '@/libs/messaging/dm-contracts';
 import type { MessagingPolicy } from '@/libs/messaging/intake-gate';
-import { RetryBackoff } from '@/libs/messaging/retry-backoff';
 import type {
   CommerceMessagingConversationModelSchema,
   CommerceMessagingMessageModelSchema,

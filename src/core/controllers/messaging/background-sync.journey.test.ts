@@ -10,10 +10,10 @@ import { CommercePrivKeyringApplication } from '@/application/commerce/priv-keyr
 import { FirstContactApplication } from '@/application/messaging/first-contact';
 import { MessagingApplication } from '@/application/messaging/messaging';
 import { UserStreamApplication } from '@/application/stream/users/users';
+import { MESSAGING_SYNC_RESUME_TIMEOUT_MS } from '@/libs/chat/pass-deadline';
 import { buildMarketplaceConversationAggregateId } from '@/libs/commerce/transaction-commands';
 import { Logger } from '@/libs/logger/logger';
 import { CONVERSATION_REQUEST_KIND, conversationRequestUrl } from '@/libs/messaging/first-contact';
-import { MESSAGING_SYNC_RESUME_TIMEOUT_MS } from '@/libs/messaging/pass-deadline';
 import {
   CommerceMessagingConversationModel,
   CommerceMessagingLinkModel,
@@ -40,8 +40,8 @@ vi.mock('@/libs/runtime-config/runtime-config', async () => {
 });
 
 // A short resume bound, so a hung resume ends within the test on real timers.
-vi.mock('@/libs/messaging/pass-deadline', async () => ({
-  ...(await vi.importActual<typeof import('@/libs/messaging/pass-deadline')>('@/libs/messaging/pass-deadline')),
+vi.mock('@/libs/chat/pass-deadline', async () => ({
+  ...(await vi.importActual<typeof import('@/libs/chat/pass-deadline')>('@/libs/chat/pass-deadline')),
   MESSAGING_SYNC_RESUME_TIMEOUT_MS: 50,
 }));
 

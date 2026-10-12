@@ -3,7 +3,7 @@ import { AUTH_ROUTES } from '@/app/routes';
 import { MessagingController } from '@/controllers/messaging/messaging';
 import { MessagingSyncCoordinator } from '@/coordinators/messaging-sync/messaging-sync';
 import { MESSAGING_BACKGROUND_SYNC_INTERVAL_MS } from '@/coordinators/messaging-sync/messaging-sync.types';
-import { MESSAGING_SYNC_PASS_TIMEOUT_MS } from '@/libs/messaging/pass-deadline';
+import { MESSAGING_SYNC_PASS_TIMEOUT_MS } from '@/libs/chat/pass-deadline';
 import { useAuthStore } from '@/stores/auth/auth.store';
 import { mockSession } from '@/test-utils/pubky';
 import { installWebLocks, removeWebLocks } from '@/test-utils/web-locks';

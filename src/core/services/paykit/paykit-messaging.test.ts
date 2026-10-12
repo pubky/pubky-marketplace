@@ -18,6 +18,7 @@ import {
 } from '@/application/messaging/messaging';
 import { DB_NAME } from '@/config/database';
 import { resumePendingMessagingTeardown } from '@/database/franky/franky.helpers';
+import { MESSAGING_RETRY_POLICY } from '@/libs/chat/retry-backoff';
 import {
   buildMarketplaceConversationAggregateId,
   buildMarketplaceListingAggregateId,
@@ -25,7 +26,6 @@ import {
 import { dropCachedWrappingKeyForTests, resetMessagingKeyringForTests } from '@/libs/crypto/messaging-keyring';
 import { WRAP_IV_BYTES, WRAP_VERSION_AES_GCM_256 } from '@/libs/crypto/secret-wrapping';
 import { Logger } from '@/libs/logger/logger';
-import { MESSAGING_RETRY_POLICY } from '@/libs/messaging/retry-backoff';
 import { CommerceMessagingLinkModel, CommerceMessagingMessageModel } from '@/models/messaging/messaging.models';
 import {
   CommerceMessagingConversationModel,

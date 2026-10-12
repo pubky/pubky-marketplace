@@ -10,6 +10,12 @@ import { MessagingApplication, type MessagingThreadState } from '@/application/m
 import { UserStreamApplication } from '@/application/stream/users/users';
 import { UserApplication } from '@/application/user/user';
 import { getCommerceAdapterMode, isDurableCommerceMode } from '@/config/commerce';
+import {
+  MESSAGING_STATUS_TIMEOUT_MS,
+  MESSAGING_SYNC_PASS_TIMEOUT_MS,
+  MESSAGING_SYNC_RESUME_TIMEOUT_MS,
+  withPassDeadline,
+} from '@/libs/chat/pass-deadline';
 import { parseConversationAggregateId } from '@/libs/commerce/messaging-contracts';
 import { MESSAGING_COPY, messagingReportText } from '@/libs/commerce/messaging-copy';
 import {
@@ -25,12 +31,6 @@ import { HttpMethod, HttpStatusCode } from '@/libs/http/http.types';
 import { Logger } from '@/libs/logger/logger';
 import { buildDmConversationId, parseDmConversationId } from '@/libs/messaging/dm-contracts';
 import type { MessagingPolicy } from '@/libs/messaging/intake-gate';
-import {
-  MESSAGING_STATUS_TIMEOUT_MS,
-  MESSAGING_SYNC_PASS_TIMEOUT_MS,
-  MESSAGING_SYNC_RESUME_TIMEOUT_MS,
-  withPassDeadline,
-} from '@/libs/messaging/pass-deadline';
 import type { Pubky } from '@/models/models.types';
 import { buildUserCompositeId } from '@/models/stream/user/userStream.helper';
 import { CommerceRecordNormalizer } from '@/pipes/commerce/commerce.normalizer';
