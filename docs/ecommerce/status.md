@@ -13,7 +13,7 @@ Last updated: 2026-09-21. The summary below was refreshed on 2026-10-11; the tab
 - **Live:** Bitcoin over mainnet Paykit (the Paykit server fork, rc55), seller-direct PayPal, and digital delivery (file, link, text, email, message), including withholding while PayPal has reversed or partly refunded a payment.
 - **Built, off:** USDT (`PUBKY_RUNTIME_USDT_PAYMENTS_ENABLED=false`, [`usdt-payments.md`](usdt-payments.md)); upstream Paykit and Locks (`PUBKY_RUNTIME_PAYKIT_SERVER_API=upstream`, Bitkit 2.6 buyers pay with Bitcoin only after this switch); running under a base path or in a frame (`PUBKY_RUNTIME_FRAME_ANCESTORS`, `PUBKY_RUNTIME_EMBEDDED`, [`../launch/shop-embedding.md`](../launch/shop-embedding.md)).
 - **Storage:** the database is `shop-franky` and persisted keys carry a `shop-` prefix; existing data moves once on first load.
-- **Version:** `GET /version.json` reports the release, commit and build time.
+- **Version:** the Shop publishes no version endpoint. The deployed release is the Vercel deployment id (`vercel inspect shop.pubky.app --scope synonymdev`) matched to the release tag and notes.
 - **Messaging:** beta, frozen, Ring cookie sessions only. The shared chat library and its inbox service are owned by other teams; Shop messages are deferred.
 - **Release notes:** [`release-notes/shop-v0.6.51.md`](release-notes/shop-v0.6.51.md).
 

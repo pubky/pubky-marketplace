@@ -27,10 +27,6 @@ ARG NEXT_PUBLIC_DB_NAME
 ARG NEXT_PUBLIC_DEBUG_MODE
 ARG NEXT_PUBLIC_APP_VERSION
 ARG NEXT_PUBLIC_SOCIAL_HOST
-# Reported at /version.json. The builder image has no git, so pass both; without them the
-# build reports commit "unknown" and the package.json version.
-ARG GIT_SHA
-ARG SHOP_VERSION
 # Mount the Shop under a sub-path (for example /shop) behind a reverse proxy; see docs/launch/shop-embedding.md
 ARG NEXT_PUBLIC_BASE_PATH
 ARG NEXT_PUBLIC_ASSET_PREFIX

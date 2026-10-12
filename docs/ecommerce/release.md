@@ -147,12 +147,14 @@ vercel inspect shop.pubky.app --scope synonymdev    # note the dpl_… id
 Deploy with a fresh build cache. Corrupt caches have stalled builds at `Running TypeScript` for 40 minutes:
 
 ```bash
-vercel --prod --yes --force --scope synonymdev --build-env SHOP_VERSION=shop-vX.Y.Z 2>&1 | tee <evidence-folder>/deploy.log
+vercel --prod --yes --force --scope synonymdev 2>&1 | tee <evidence-folder>/deploy.log
 ```
 
-`SHOP_VERSION` is the tag you are about to create. It is what `https://shop.pubky.app/version.json` reports as `version`,
-next to the commit and build time (see [`environment.md`](../environment.md#build-version-versionjson)). Check it after
-the alias moves: `curl -s https://shop.pubky.app/version.json`.
+The Shop serves no version endpoint, so a deployment is identified from the records we already keep, never from the
+served site. `vercel inspect shop.pubky.app --scope synonymdev` prints the `dpl_…` id and the build for the alias; the
+id is what the proof's `EXPECTED_DPL` pins, and the release notes record it next to the tag and exact commit. For the
+marketplace service, the digest of the running image (Railway, or GCP once the service runs there) is the record; see
+[Backend releases](#backend-releases).
 
 A build takes about six minutes. Allow ten before treating it as stuck, and do not cancel earlier. On
 `Error: Deployment not found`, run `vercel ls pubky-marketplace-production --scope synonymdev` before redeploying.
