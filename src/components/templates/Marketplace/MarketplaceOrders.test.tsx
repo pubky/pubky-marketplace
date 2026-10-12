@@ -2,7 +2,7 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CommerceController } from '@/controllers/commerce/commerce';
-import { MESSAGING_COPY } from '@/libs/commerce/messaging-copy';
+import { CHAT_COPY } from '@/libs/chat/copy';
 import { REFUND_ORDER_NOTICES } from '@/libs/commerce/refund-copy';
 import { useMarketplaceDisplayStore } from '@/stores/marketplace-display/marketplace-display.store';
 import {
@@ -1001,34 +1001,25 @@ describe('MarketplaceOrders tabs', () => {
 
     const assumedCard = screen.getByText(/Bought assumed boots/).closest('[data-slot="card"]');
     const confirmedCard = screen.getByText(/Bought confirmed coat/).closest('[data-slot="card"]');
-    expect(within(assumedCard as HTMLElement).getByText(MESSAGING_COPY.assumedDelivery)).toBeInTheDocument();
-    expect(within(assumedCard as HTMLElement).getByRole('link', { name: MESSAGING_COPY.orderCta })).toHaveAttribute(
-      'href',
-      expect.stringMatching(/^\/marketplace\/messages\?conversation=/),
-    );
+    expect(within(assumedCard as HTMLElement).getByText(CHAT_COPY.assumedDelivery)).toBeInTheDocument();
+    expect(within(assumedCard as HTMLElement).getByRole('button', { name: CHAT_COPY.listingCta })).toBeInTheDocument();
     expect(
       within(assumedCard as HTMLElement).getByText(/Completes automatically after the return window/),
     ).toBeInTheDocument();
-    expect(within(confirmedCard as HTMLElement).queryByText(MESSAGING_COPY.assumedDelivery)).not.toBeInTheDocument();
-    expect(
-      within(confirmedCard as HTMLElement).getByRole('link', { name: MESSAGING_COPY.orderCta }),
-    ).toBeInTheDocument();
+    expect(within(confirmedCard as HTMLElement).queryByText(CHAT_COPY.assumedDelivery)).not.toBeInTheDocument();
+    expect(within(confirmedCard as HTMLElement).getByRole('button', { name: CHAT_COPY.orderCta })).toBeInTheDocument();
   });
 
-  it('opens the listing conversation dialog from a durable order card', async () => {
-    const user = userEvent.setup();
+  it('offers the conversation with the other party from a durable order card', async () => {
     ordersState.adapterMode = 'transaction-service';
     ordersState.orders = [orderView('paid', 'Bought paid boots', 'buyer', { nextActor: 'none' })];
 
     render(<MarketplaceOrders />);
-    await user.click(screen.getByRole('tab', { name: /All 1/i }));
+    await userEvent.setup().click(screen.getByRole('tab', { name: /All 1/i }));
 
     const card = screen.getByText(/Bought paid boots/).closest('[data-slot="card"]');
-    expect(within(card as HTMLElement).queryByRole('link', { name: MESSAGING_COPY.orderCta })).not.toBeInTheDocument();
     expect((card as HTMLElement).querySelector('[data-surface="marketplace-order-message-cta"]')).toBeTruthy();
-    await user.click(within(card as HTMLElement).getByRole('button', { name: MESSAGING_COPY.orderCta }));
-    expect(await screen.findByRole('dialog')).toBeInTheDocument();
-    expect(document.querySelector('[data-surface="marketplace-encrypted-conversation"]')).toBeTruthy();
+    expect(within(card as HTMLElement).getByRole('button', { name: CHAT_COPY.orderCta })).toBeInTheDocument();
   });
 
   it('keeps icon-only order card buttons accessible when they render', () => {

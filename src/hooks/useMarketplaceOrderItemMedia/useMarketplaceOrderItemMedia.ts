@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import { useMarketplaceFirstMediaUrl } from '@/hooks/useMarketplaceMediaUrl/useMarketplaceMediaUrl';
-import { parseListingAggregateId } from '@/libs/commerce/marketplace-conversation-query';
+import { parseListingAggregateId } from '@/libs/commerce/listing-aggregate';
 
 /** Listing media is optional; order details always come from the checkout snapshot. */
 export function useMarketplaceOrderItemMedia(listingAggregateId: string) {

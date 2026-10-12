@@ -55,12 +55,7 @@ const KEY_ID = /^[0-9a-f]{32}$/;
 const HKDF_SALT = new TextEncoder().encode(PRIV_ENVELOPE_ENC);
 
 /** The logical record families stored under the v2 prefix. */
-export type PrivFamily =
-  | 'watchlist'
-  | 'order_receipt'
-  | 'attention_seen/activity'
-  | 'attention_seen/orders'
-  | 'messaging_mutes';
+export type PrivFamily = 'watchlist' | 'order_receipt' | 'attention_seen/activity' | 'attention_seen/orders';
 
 export type PrivDataKey = {
   keyId: string;

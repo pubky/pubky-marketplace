@@ -11,30 +11,22 @@ vi.mock('@/hooks/useGrantSigner/useGrantSigner', async (importOriginal) => ({
 
 describe('grantSessionRefusalCopy', () => {
   it('names the signer that approved the sign-in', () => {
-    expect(grantSessionRefusalCopy('default', 'bitkit')).toBe(
+    expect(grantSessionRefusalCopy('bitkit')).toBe(
       'Bitkit sign-in does not cover this step yet. Sign in with Pubky Ring to continue.',
     );
-    expect(grantSessionRefusalCopy('default', 'passport')).toBe(
+    expect(grantSessionRefusalCopy('passport')).toBe(
       'Pubky Passport sign-in does not cover this step yet. Sign in with Pubky Ring to continue.',
     );
-  });
-
-  it('says messages are not available yet without sending the user to another signer', () => {
-    for (const signer of ['bitkit', 'passport'] as const) {
-      const copy = grantSessionRefusalCopy('messaging', signer);
-      expect(copy).toMatch(/^Messages are not available for (Bitkit|Pubky Passport) sign-ins yet\./);
-      expect(copy).not.toMatch(/Pubky Ring/);
-    }
   });
 });
 
 describe('GrantSessionRefusal', () => {
   it('renders the copy for the signed-in grant signer', () => {
     view.signer = 'passport';
-    render(<GrantSessionRefusal reason="messaging" />);
+    render(<GrantSessionRefusal />);
 
     expect(screen.getByTestId('grant-session-refusal')).toHaveTextContent(
-      'Messages are not available for Pubky Passport sign-ins yet. Everything else in Shop works with this sign-in.',
+      'Pubky Passport sign-in does not cover this step yet.',
     );
   });
 

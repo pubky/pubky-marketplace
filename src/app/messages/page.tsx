@@ -1,1 +1,1 @@
-export { Messages as default } from '@/templates/Messages/Messages';
+export { Chat as default } from '@/templates/Chat/Chat';

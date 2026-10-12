@@ -7,42 +7,47 @@
 
 ## Current step
 
-**Phase 0: baseline.** Next action: run baseline typecheck + unit tests, commit, then Phase 1 step 1 (payments extraction).
+**Phase 1: rip-out done (steps 1–3 deletions), chat core next.** Next action: Phase 1.3 "add" part — `src/libs/chat/*` (paths, schemas, crypto), models, `ChatHomeserverService`, `LocalChatService`, `ChatApplication`, `ChatController`, store; then Phase 1.4 inbox + coordinator; then Phase 1.5 UI.
 
 ## Progress
 
-| Step | Status | Commit |
-|---|---|---|
-| P0 Old UI screenshots sent to Matthew (21 VRT baselines) | done | — |
-| P0 `npm install`, baseline typecheck/test | in progress | |
-| P1.1 Extract `hasPaymentRequestReceiver` → `paykit-receiver.ts`; move retry-backoff/pass-deadline to `libs/chat` | todo | |
-| P1.2 UI detach (routes, templates, organisms, hooks, VRT, live tests, sandbox transport, entry points → links) | todo | |
-| P1.3 Core swap + Dexie 9 (delete messaging core, add libs/chat, models, services, application, controller, store; capabilities) | todo | |
-| P1.4 Inbox service + ChatSyncCoordinator | todo | |
-| P1.5 UI (hooks, organisms, templates, pages, VRT) | todo | |
-| P2 SDK 0.16 minimal bump + real `createInboxCredentials`; merge Vlada's grant PR when it lands | todo | |
-| P4 Docs (README, ADR 0030, status/FEATURES/RUNNING/environment/threat-model, changelog) | todo | |
-| V1 Unit suites green, typecheck, lint, format | todo | |
-| V2 Live two-account browser test (`npm run test:chat:live`) | todo | |
-| V3 Real-browser two-tab session with screenshots | todo | |
-| V4 Cypress + VRT updates | todo | |
-| V5 Regression (must-not-break list) | todo | |
-| Handoff to Matthew for manual QA | todo | |
+| Step                                                                                                                     | Status | Commit        |
+| ------------------------------------------------------------------------------------------------------------------------ | ------ | ------------- |
+| P0 Old UI screenshots sent to Matthew (21 VRT baselines)                                                                 | done   | —             |
+| P0 `npm install`, baseline typecheck/test (1119 files / 17756 tests green)                                               | done   | 0a5098b3a     |
+| P1.1 Extract `hasPaymentRequestReceiver` → `paykit-receiver.ts`; move retry-backoff/pass-deadline to `libs/chat`         | done   | 9854ab6d9     |
+| P1.2 UI detach (routes, templates, organisms, hooks, VRT, live tests, entry points → `ChatEntryButton`)                  | done   | (next commit) |
+| P1.3a Delete messaging core, Dexie 9 drops `commerce_messaging_*`, adds `chat_*` (schema only), auth/DB provider cleanup | done   | (next commit) |
+| P1.3b Add libs/chat, models, services, application, controller, store; capabilities `/pub/chat:rw,/priv/chat:rw`         | todo   |               |
+| P1.4 Inbox service + ChatSyncCoordinator                                                                                 | todo   |               |
+| P1.5 UI (hooks, organisms, templates, pages, VRT)                                                                        | todo   |               |
+| P2 SDK 0.16 minimal bump + real `createInboxCredentials`; merge Vlada's grant PR when it lands                           | todo   |               |
+| P4 Docs (README, ADR 0030, status/FEATURES/RUNNING/environment/threat-model, changelog)                                  | todo   |               |
+| V1 Unit suites green, typecheck, lint, format                                                                            | todo   |               |
+| V2 Live two-account browser test (`npm run test:chat:live`)                                                              | todo   |               |
+| V3 Real-browser two-tab session with screenshots                                                                         | todo   |               |
+| V4 Cypress + VRT updates                                                                                                 | todo   |               |
+| V5 Regression (must-not-break list)                                                                                      | todo   |               |
+| Handoff to Matthew for manual QA                                                                                         | todo   |               |
 
 ## Waiting on others
 
-| # | Item | Owner | Status |
-|---|---|---|---|
-| 1 | Inbox CORS for `http://localhost:3000`, staging Shop host, `https://pubky.app` / `https://staging.pubky.app` | Severin | asked |
-| 2 | Staging/prod inbox deployment + audience | Severin | asked |
-| 3 | Shop SDK 0.16 + grant-only sign-in PR | Vlada | due 2026-10-13; we merge it in |
-| 4 | pubky.app SDK 0.16 bump together with the Shop for `/shop` same-origin embedding | pubky-app maintainers | to raise |
-| 5 | Inbox multi-device semantics (pings = wake-ups only) | Severin | FYI |
-| 6 | Staging signup tokens for two test accounts | Matthew | optional (local testnet default) |
+| #   | Item                                                                                                         | Owner                 | Status                           |
+| --- | ------------------------------------------------------------------------------------------------------------ | --------------------- | -------------------------------- |
+| 1   | Inbox CORS for `http://localhost:3000`, staging Shop host, `https://pubky.app` / `https://staging.pubky.app` | Severin               | asked                            |
+| 2   | Staging/prod inbox deployment + audience                                                                     | Severin               | asked                            |
+| 3   | Shop SDK 0.16 + grant-only sign-in PR                                                                        | Vlada                 | due 2026-10-13; we merge it in   |
+| 4   | pubky.app SDK 0.16 bump together with the Shop for `/shop` same-origin embedding                             | pubky-app maintainers | to raise                         |
+| 5   | Inbox multi-device semantics (pings = wake-ups only)                                                         | Severin               | FYI                              |
+| 6   | Staging signup tokens for two test accounts                                                                  | Matthew               | optional (local testnet default) |
 
 ## Gotchas / decisions taken mid-way
 
-- (none yet)
+- Sandbox transaction-service messaging (`services/marketplace/*`, `message.send`, `buildMarketplaceConversationAggregateId`, `sendMarketplaceMessageCommandSchema`) was left in place: the sandbox server tests still use it and nothing in the client calls it. Remove later if wanted.
+- `MarketplaceReauthDialog`/`MarketplaceSessionConnectDialog` keep an `intent="messages"` variant; reuse it for the chat `needs_reauth` state.
+- `message_received` notifications now deep-link to `/messages` (no per-thread aggregate id in the new model).
+- Test-file lint bans `as unknown as T`; use `asOpaque<T>()` from `@/test-utils/type-assertions`.
+- Nav VRT scenarios moved to `src/test/vrt/navigation/NavBadges.vrt.test.tsx` (baselines renamed with the folder; expect a regen).
 
 ## How to resume
 

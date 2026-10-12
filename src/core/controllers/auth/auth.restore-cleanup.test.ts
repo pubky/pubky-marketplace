@@ -5,11 +5,6 @@ import { AuthController } from '@/controllers/auth/auth';
 import { resetAuthFinalizationLockForTests, withAuthFinalizationLock } from '@/controllers/auth/auth-finalization-lock';
 import { db } from '@/database/franky/franky';
 import { IDENTITY_SCOPED_DEVICE_TABLES, PUBLIC_CACHE_TABLES } from '@/database/franky/franky.helpers';
-import {
-  dropCachedWrappingKeyForTests,
-  getOrCreateWrappingKey,
-  resetMessagingKeyringForTests,
-} from '@/libs/crypto/messaging-keyring';
 import { Identity } from '@/libs/identity/identity';
 import * as vibeSessionAutoRestore from '@/libs/vibe-session/auto-restore';
 import * as vibeSessionConfig from '@/libs/vibe-session/config';
@@ -20,7 +15,6 @@ import { AUTH_FLOW_CANCELED_ERROR_NAME } from '@/services/homeserver/error.utils
 import { LOCKS_FRONTEND_SESSION_STORAGE_KEY } from '@/services/locks/locks-frontend-session';
 import { INVENTORY_SESSION_STORAGE_KEY } from '@/services/marketplace/marketplace-inventory-grant';
 import { MARKETPLACE_SESSION_STORAGE_KEY } from '@/services/marketplace/marketplace-session';
-import { MESSAGING_SESSION_STORAGE_KEY } from '@/services/paykit/paykit-messaging';
 import { readPersistedAuthIdentity, readPersistedAuthPubky } from '@/stores/auth/auth.persisted';
 import { createAuthStore, useAuthStore } from '@/stores/auth/auth.store';
 import { useOnboardingStore } from '@/stores/onboarding/onboarding.store';
@@ -77,12 +71,10 @@ const EXPECTED_PRIVATE_TABLES = [
   'commerce_saved_searches',
   'commerce_activity_checkpoints',
   'commerce_shipping_presets',
-  'commerce_messaging_receivers',
-  'commerce_messaging_links',
-  'commerce_messaging_conversations',
-  'commerce_messaging_messages',
-  'commerce_messaging_outbox',
-  'commerce_messaging_unprocessed',
+  'chat_identity',
+  'chat_conversations',
+  'chat_messages',
+  'chat_sync_state',
   'marketplace_tags',
   'hot_tags',
   'feeds',
@@ -133,34 +125,6 @@ async function expectTableCountsAtLeast(tableNames: readonly string[], minCount:
       expect(await db.table(tableName).count(), tableName).toBeGreaterThanOrEqual(minCount);
     }),
   );
-}
-
-const WRAPPING_PROBE_PLAINTEXT = 'restore-cleanup-wrapping-probe';
-
-async function seedWrappingKeyProbe(): Promise<{ iv: Uint8Array<ArrayBuffer>; ciphertext: ArrayBuffer }> {
-  const iv = globalThis.crypto.getRandomValues(new Uint8Array(12));
-  const wrappingKey = await getOrCreateWrappingKey();
-  const ciphertext = await globalThis.crypto.subtle.encrypt(
-    { name: 'AES-GCM', iv },
-    wrappingKey,
-    new TextEncoder().encode(WRAPPING_PROBE_PLAINTEXT),
-  );
-  return { iv, ciphertext };
-}
-
-async function expectWrappingKeyProbeSurvives({
-  iv,
-  ciphertext,
-}: {
-  iv: Uint8Array<ArrayBuffer>;
-  ciphertext: ArrayBuffer;
-}) {
-  // Reload from IndexedDB (drop the in-memory cache): if the keyring store was
-  // deleted, a FRESH key is generated here and the decrypt fails closed.
-  dropCachedWrappingKeyForTests();
-  const reloadedKey = await getOrCreateWrappingKey();
-  const roundTrip = await globalThis.crypto.subtle.decrypt({ name: 'AES-GCM', iv }, reloadedKey, ciphertext);
-  expect(new TextDecoder().decode(roundTrip)).toBe(WRAPPING_PROBE_PLAINTEXT);
 }
 
 function holdAuthFinalizationLock(): {
@@ -239,7 +203,7 @@ async function expectAccountBPrivateRowsSurvive(): Promise<void> {
 /**
  * A fake `navigator.locks` that actually queues exclusive requests — one
  * promise tail PER LOCK NAME, like the platform (nested requests on a
- * different name, e.g. the messaging keyring's own lock, must not deadlock).
+ * different name must not deadlock).
  */
 function installQueuingFakeLocks() {
   const tails = new Map<string, Promise<void>>();
@@ -296,7 +260,6 @@ describe('AuthController restore cleanup with the real bridge and database', () 
     vi.useRealTimers();
     useAuthStore.getState().reset();
     useOnboardingStore.getState().reset();
-    await resetMessagingKeyringForTests();
     window.localStorage.clear();
     window.sessionStorage.clear();
     Reflect.deleteProperty(navigator, 'locks');
@@ -316,10 +279,9 @@ describe('AuthController restore cleanup with the real bridge and database', () 
     await seedEveryTable();
     const createElementSpy = vi.spyOn(document, 'createElement');
     // Non-Dexie account residue the no-identity path must also clear: the live
-    // marketplace bearer, the messaging session metadata, onboarding secrets,
-    // a stored route-return path, and mute-sync stream cursors.
+    // marketplace bearer, onboarding secrets, a stored route-return path, and
+    // mute-sync stream cursors.
     window.localStorage.setItem(MARKETPLACE_SESSION_STORAGE_KEY, '{"token":"dead-bearer"}');
-    window.localStorage.setItem(MESSAGING_SESSION_STORAGE_KEY, '{"pubky":"dead-messaging"}');
     useOnboardingStore.getState().setSecrets({ secretKey: 'dead-secret-key', mnemonic: 'dead mnemonic' });
     window.sessionStorage.setItem(ROUTE_GUARD_RETURN_TO_STORAGE_KEY, '/settings');
     window.sessionStorage.setItem(`${MUTE_SYNC_CURSOR_STORAGE_PREFIX}homeserver`, '42');
@@ -332,7 +294,6 @@ describe('AuthController restore cleanup with the real bridge and database', () 
     await expectTableCounts(EXPECTED_PUBLIC_CACHE_TABLES, 1);
     await expectTableCounts(EXPECTED_IDENTITY_SCOPED_DEVICE_TABLES, 1);
     expect(window.localStorage.getItem(MARKETPLACE_SESSION_STORAGE_KEY)).toBeNull();
-    expect(window.localStorage.getItem(MESSAGING_SESSION_STORAGE_KEY)).toBeNull();
     expect(window.localStorage.getItem(ONBOARDING_PERSIST_KEY)).toBeNull();
     expect(window.sessionStorage.getItem(ROUTE_GUARD_RETURN_TO_STORAGE_KEY)).toBeNull();
     expect(window.sessionStorage.getItem(`${MUTE_SYNC_CURSOR_STORAGE_PREFIX}homeserver`)).toBeNull();
@@ -347,9 +308,8 @@ describe('AuthController restore cleanup with the real bridge and database', () 
     await expectTableCounts(EXPECTED_IDENTITY_SCOPED_DEVICE_TABLES, 1);
   });
 
-  it('keeps private rows and the wrapping key when this tab signs in during the bridge window', async () => {
+  it('keeps private rows when this tab signs in during the bridge window', async () => {
     await seedEveryTable();
-    const probe = await seedWrappingKeyProbe();
 
     useAuthStore.setState({
       session: null,
@@ -376,7 +336,6 @@ describe('AuthController restore cleanup with the real bridge and database', () 
 
     await expectTableCounts(EXPECTED_PRIVATE_TABLES, 1);
     await expectTableCounts(EXPECTED_PUBLIC_CACHE_TABLES, 1);
-    await expectWrappingKeyProbeSurvives(probe);
   });
 
   it('does not wipe a concurrent tab sign-in when the bridge times out (cross-tab serialization)', async () => {
@@ -398,17 +357,15 @@ describe('AuthController restore cleanup with the real bridge and database', () 
     // bridge restore starts waiting (15 s).
     const tabBRestore = AuthController.restorePersistedSession();
 
-    // Tab A: acquires the finalization lock and signs in — identity +
-    // a private row + the messaging wrapping key, the same writes the real
-    // sign-in path persists under the lock.
-    const probe = await withAuthFinalizationLock(async () => {
+    // Tab A: acquires the finalization lock and signs in — identity + a
+    // private row, the same writes the real sign-in path persists under the lock.
+    await withAuthFinalizationLock(async () => {
       useAuthStore.getState().init({
         session: mockSession({ export: () => 'tab-a-session-export' }),
         currentUserPubky: PERSISTED_PUBKY,
         hasProfile: true,
       });
       await db.table('bookmarks').put({ id: 'tab-a:bookmark' });
-      return await seedWrappingKeyProbe();
     });
 
     // Tab B's bridge times out; B enters the lock, re-reads identity, and
@@ -420,7 +377,6 @@ describe('AuthController restore cleanup with the real bridge and database', () 
     expect(await db.table('bookmarks').get('tab-a:bookmark')).toBeDefined();
     await expectTableCountsAtLeast(EXPECTED_PRIVATE_TABLES, 1);
     await expectTableCounts(EXPECTED_PUBLIC_CACHE_TABLES, 1);
-    await expectWrappingKeyProbeSurvives(probe);
   });
 
   it('does not wipe a concurrent different-account sign-in after identityAtCapture=true restore failure', async () => {
@@ -666,10 +622,6 @@ describe('AuthController restore cleanup with the real bridge and database', () 
       JSON.stringify({ token: 'A'.repeat(43), pubky: PERSISTED_PUBKY, ...extra });
     window.localStorage.setItem(INVENTORY_SESSION_STORAGE_KEY, departed({ expiresAt: '2099-01-01T00:00:00Z' }));
     window.localStorage.setItem(LOCKS_FRONTEND_SESSION_STORAGE_KEY, departed({ creator: `pubky${PERSISTED_PUBKY}` }));
-    window.localStorage.setItem(
-      MESSAGING_SESSION_STORAGE_KEY,
-      JSON.stringify({ pubky: PERSISTED_PUBKY, exported: 'account-a-messaging-export' }),
-    );
     const kept = JSON.stringify({ token: 'B'.repeat(43), pubky: ACCOUNT_B, expiresAt: '2099-01-01T00:00:00Z' });
     window.localStorage.setItem(MARKETPLACE_SESSION_STORAGE_KEY, kept);
 
@@ -685,7 +637,6 @@ describe('AuthController restore cleanup with the real bridge and database', () 
     expect(readPersistedAuthPubky()).toBe(ACCOUNT_B);
     expect(window.localStorage.getItem(INVENTORY_SESSION_STORAGE_KEY)).toBeNull();
     expect(window.localStorage.getItem(LOCKS_FRONTEND_SESSION_STORAGE_KEY)).toBeNull();
-    expect(window.localStorage.getItem(MESSAGING_SESSION_STORAGE_KEY)).toBeNull();
     expect(window.localStorage.getItem(MARKETPLACE_SESSION_STORAGE_KEY)).toBe(kept);
   });
 });

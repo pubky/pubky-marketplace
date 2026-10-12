@@ -7,8 +7,6 @@ import type {
 } from '@/application/auth/auth.types';
 import { BootstrapApplication, type BootstrapProgressCallback } from '@/application/bootstrap/bootstrap';
 import { CommerceApplication } from '@/application/commerce/commerce';
-import { FirstContactApplication } from '@/application/messaging/first-contact';
-import { MessagingApplication } from '@/application/messaging/messaging';
 import { SettingsApplication } from '@/application/settings/settings';
 import { postStreamQueue } from '@/application/stream/posts/muting/post-stream-queue';
 import { TagApplication } from '@/application/tag/tag';
@@ -69,7 +67,6 @@ import { useCommerceStore } from '@/stores/commerce/commerce.store';
 import { useHomeStore } from '@/stores/home/home.store';
 import { useHotStore } from '@/stores/hot/hot.store';
 import { useLocalFilesStore } from '@/stores/localFiles/localFiles.store';
-import { useMessagingStore } from '@/stores/messaging/messaging.store';
 import { useMigrationStore } from '@/stores/migration/migration.store';
 import { useNotificationStore } from '@/stores/notification/notification.store';
 import { useOnboardingStore } from '@/stores/onboarding/onboarding.store';
@@ -830,8 +827,6 @@ export class AuthController {
       // the account that left must not keep a bearer at rest here.
       if ([captured?.pubky ?? null, currentPubky, persistedPubky].some((pubky) => pubky && pubky !== newPubky)) {
         CommerceController.clearMarketplaceSessionsOfOtherAccounts(newPubky);
-        MessagingApplication.clearMessagingSessionsOfOtherAccounts(newPubky);
-        FirstContactApplication.clearOtherAccounts(newPubky);
       }
       this.markLocalStateDirty();
       this.pendingLocalStateCapture = null;
@@ -885,11 +880,6 @@ export class AuthController {
     PubkySpecsSingleton.reset();
     // No marketplace bearer may stay at rest for the user who is leaving.
     CommerceController.clearMarketplaceSessionForSignOut();
-    // Same rule for the encrypted-messaging homeserver session and its live link handles.
-    MessagingApplication.clearMessagingSession();
-    // The mute list, known contacts and message counters belong to the signed-out identity.
-    FirstContactApplication.clear();
-    useMessagingStore.getState().clearMessagingEnabled();
     TtlCoordinator.resetInstance();
     StreamCoordinator.resetInstance();
     NotificationCoordinator.resetInstance();

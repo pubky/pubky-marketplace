@@ -369,33 +369,6 @@ vi.mock('@/hooks/useMarketplaceProjection/useMarketplaceProjection', () => ({
   }),
 }));
 
-vi.mock('@/hooks/useMarketplaceMessages/useMarketplaceMessages', async () => {
-  const { useForm } = await import('react-hook-form');
-  const { marketplaceMessageDefaults } = await import('@/hooks/useMarketplaceMessages/useMarketplaceMessages.types');
-  return {
-    useMarketplaceMessages: () => ({
-      form: useForm({ defaultValues: marketplaceMessageDefaults }),
-      conversation: null,
-      isLoading: false,
-      error: null,
-      isSandbox: view.adapterMode === 'sandbox',
-      attachment: {
-        file: null,
-        previewUrl: null,
-        error: null,
-        inputRef: { current: null },
-        onInputChange: vi.fn(),
-        choose: vi.fn(),
-        remove: vi.fn(),
-        reset: vi.fn(),
-        upload: vi.fn(),
-      },
-      submit: vi.fn(async () => false),
-      refresh: vi.fn(async () => {}),
-    }),
-  };
-});
-
 vi.mock('@/hooks/useMarketplaceBid/useMarketplaceBid', async () => {
   const { useForm } = await import('react-hook-form');
   const { marketplaceBidDefaults } = await import('@/hooks/useMarketplaceBid/useMarketplaceBid.types');
