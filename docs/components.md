@@ -172,7 +172,7 @@ Component tests must use **real** `lucide-react` and `@/icons` implementations (
 
 ## Toasts
 
-Stack: atom [`Toast`](src/components/atoms/Toast/Toast.tsx) + [`Toast.variants.ts`](src/components/atoms/Toast/Toast.variants.ts) + [`Toast.icons.tsx`](src/components/atoms/Toast/Toast.icons.tsx), molecule [`Toaster`](src/components/molecules/Toaster/Toaster.tsx), API [`toast()`](src/components/molecules/Toaster/use-toast.ts) / `useToast()`. `<Toaster />` is mounted in the app layout.
+Stack: atom [`Toast`](../src/components/atoms/Toast/Toast.tsx) + [`Toast.variants.ts`](../src/components/atoms/Toast/Toast.variants.ts) + [`Toast.icons.tsx`](../src/components/atoms/Toast/Toast.icons.tsx), molecule [`Toaster`](../src/components/molecules/Toaster/Toaster.tsx), API [`toast()`](../src/components/molecules/Toaster/use-toast.ts) / `useToast()`. `<Toaster />` is mounted in the app layout.
 
 ### Variants (`ToastVariant`)
 

@@ -1,5 +1,7 @@
 # Pubky Marketplace Handoff
 
+> **Historical snapshot.** This handoff predates the move of the Shop to `pubky/pubky-marketplace` (`master`, current release `shop-v0.6.51`) and of the marketplace Nexus to `pubky/marketplace-nexus`; the repository table below still lists the earlier fork branches and local paths. For current repositories, setup and release steps use [`docs/launch/shop-team-brief.md`](docs/launch/shop-team-brief.md), [`docs/ecommerce/onboarding.md`](docs/ecommerce/onboarding.md) and [`docs/ecommerce/status.md`](docs/ecommerce/status.md).
+
 ## What This Is
 
 Pubky Marketplace is a P2P marketplace on Pubky: sellers publish catalog records on their own homeservers, the transaction service sequences the invariants browsers cannot, and payment rails stay outside operator custody. There is no operator authority over trades; disputes, reports, tax, and the moderator role were removed from the transaction service by migration 0018, see `.cursor/plans/vibes-first_marketplace_master_plan_d8646c7a.plan.md`.

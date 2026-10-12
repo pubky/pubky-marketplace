@@ -181,10 +181,18 @@ transaction service (PostgreSQL, exactly-one-winner concurrency proofs).
 
 Bitcoin and PayPal are the offered rails. The same lock and proof-bundle
 flow settles over either of them, and both are live-proven on the deployed
-stack (see the proof ledger). Card payments are paused in the shop.
+stack (see the proof ledger). Card payments are paused in the shop. USDT
+(USDT0 on Arbitrum One) is built behind
+`PUBKY_RUNTIME_USDT_PAYMENTS_ENABLED`, which is off, so it is not offered
+([`usdt-payments.md`](usdt-payments.md)).
 
 - **Bitcoin (Locks + Paykit)**
-  - Regtest rails deployed (bitcoind, Fulcrum, Lock Server, Paykit Server)
+  - Production binds Bitcoin through mainnet Paykit; staging runs regtest
+    rails (bitcoind, Fulcrum, Lock Server, Paykit Server)
+  - Paykit server choice is a runtime switch,
+    `PUBKY_RUNTIME_PAYKIT_SERVER_API` (`fork` is the default and what
+    production runs; `upstream` targets `pubky/paykit-server` and
+    `pubky/locks` and stays off until the cutover)
   - Proof bundle → invoice → on-chain payment → worker confirmation →
     receipt → access credential
   - Real-wallet proof: Bitkit iOS seller watch-only claim AND buyer
@@ -267,6 +275,11 @@ stack (see the proof ledger). Card payments are paused in the shop.
   - Dashboard Action-needed strip; KPI chip strip on mobile
 
 ## 7. Messaging
+
+Status: beta, frozen. It runs on Ring cookie sessions only, so Bitkit and
+Passport sign-ins have no messaging. Moving the Shop to the shared chat
+library, with its inbox service, is deferred, and that stack is owned by
+other teams ([`messaging/README.md`](messaging/README.md)).
 
 - **End-to-end encrypted messaging** (durable modes): Noise XX over Paykit
   Encrypted Links via the vendored WASM binding — marketplace listing
