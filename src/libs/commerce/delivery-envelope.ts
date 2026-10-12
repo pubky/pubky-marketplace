@@ -18,16 +18,22 @@ import { DhkemX25519HkdfSha256 } from '@hpke/dhkem-x25519';
 import { sha256 } from '@noble/hashes/sha2.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
 import { z } from 'zod';
+import {
+  DELIVERY_ENVELOPE_BYTES,
+  DELIVERY_KEY_ID_PATTERN,
+  DELIVERY_PLAINTEXT_BUCKET_BYTES,
+  HPKE_ENC_BYTES,
+} from '@/libs/commerce/delivery-envelope-format';
 import { type CommerceDeliveryAddressValue } from '@/libs/commerce/postal-address';
 import { base64UrlToBytes, bytesToBase64Url } from '@/libs/commerce/priv-envelope';
 import { commercePubkySchema } from '@/libs/commerce/transaction-contracts';
 
 export const DELIVERY_ENVELOPE_CONTEXT = 'pubky-marketplace/delivery-address/v1';
-export const DELIVERY_PLAINTEXT_BUCKET_BYTES = 2048;
-const HPKE_ENC_BYTES = 32;
-const AEAD_TAG_BYTES = 16;
-export const DELIVERY_ENVELOPE_BYTES = HPKE_ENC_BYTES + DELIVERY_PLAINTEXT_BUCKET_BYTES + AEAD_TAG_BYTES;
-export const DELIVERY_KEY_ID_PATTERN = /^[0-9a-f]{32}$/;
+export {
+  DELIVERY_ENVELOPE_BYTES,
+  DELIVERY_KEY_ID_PATTERN,
+  DELIVERY_PLAINTEXT_BUCKET_BYTES,
+} from '@/libs/commerce/delivery-envelope-format';
 const PAD_DELIMITER = 0x80;
 
 export const DELIVERY_KEYS_PATH = '/pub/pubky.app/marketplace/v1/delivery-keys/';
@@ -162,6 +168,39 @@ export async function sealDeliveryAddress(input: {
   return bytesToBase64Url(wire);
 }
 
+export type SellerDeliveryKey = { keyId: string; publicKey: Uint8Array };
+
+export type SellerDeliveryEnvelope = { sellerPubky: string; keyId: string; envelope: string };
+
+/**
+ * Seals one address once per seller, each envelope bound to the checkout
+ * command id, the buyer, that seller and the key id used. The plaintext
+ * address is not kept.
+ */
+export async function sealDeliveryAddressForSellers(input: {
+  address: CommerceDeliveryAddressValue;
+  checkoutCommandId: string;
+  buyerPubky: string;
+  keys: ReadonlyMap<string, SellerDeliveryKey>;
+}): Promise<SellerDeliveryEnvelope[]> {
+  return await Promise.all(
+    [...input.keys].map(async ([sellerPubky, key]) => ({
+      sellerPubky,
+      keyId: key.keyId,
+      envelope: await sealDeliveryAddress({
+        address: input.address,
+        recipientPublicKey: key.publicKey,
+        binding: {
+          checkoutCommandId: input.checkoutCommandId,
+          buyerPubky: input.buyerPubky,
+          sellerPubky,
+          keyId: key.keyId,
+        },
+      }),
+    })),
+  );
+}
+
 /** Decodes and length-checks an envelope without any key. */
 export function decodeDeliveryEnvelope(envelope: string): { enc: Uint8Array; ciphertext: Uint8Array } {
   let wire: Uint8Array;
@@ -228,7 +267,10 @@ export const deliveryKeyRecordSchema = z
 
 export type DeliveryKeyRecord = z.infer<typeof deliveryKeyRecordSchema>;
 
-export function buildDeliveryKeyRecord(pair: Pick<DeliveryKeyPair, 'keyId' | 'publicKey'>, createdAt: Date): DeliveryKeyRecord {
+export function buildDeliveryKeyRecord(
+  pair: Pick<DeliveryKeyPair, 'keyId' | 'publicKey'>,
+  createdAt: Date,
+): DeliveryKeyRecord {
   return {
     v: 1,
     keyId: pair.keyId,

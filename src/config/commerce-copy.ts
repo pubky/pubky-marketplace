@@ -1,2 +1,2 @@
 export const MARKETPLACE_DELIVERY_ADDRESS_DISCLOSURE =
-  'Your address is sent at checkout and shared with the seller after payment. The marketplace service and its database operator can also read it.';
+  'Your address is encrypted on this device to the seller who ships your order. The marketplace service stores only the encrypted copy, cannot read it, and deletes it when the order ends.';

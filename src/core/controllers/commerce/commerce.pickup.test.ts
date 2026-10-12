@@ -143,4 +143,36 @@ describe('CommerceController local pickup (Wave 7)', () => {
 
     expect(checkout).toHaveBeenCalledWith(SELLER, input);
   });
+
+  describe('getShippedSellers', () => {
+    const sellerB = 'b'.repeat(52);
+    const line = (sellerPubky: string, listing: string, methods: readonly ('shipping' | 'pickup' | 'digital')[]) =>
+      ({
+        listingAggregateId: `listing:${sellerPubky}_${listing}`,
+        sellerPubky,
+        publishedFulfillmentMethods: methods,
+        expectedRevision: 1,
+        quantity: 1,
+      }) as const;
+
+    it('lists each seller whose lines ship, once, and skips pickup sellers', () => {
+      const lines = [
+        line(SELLER, 'boots', ['shipping', 'pickup']),
+        line(SELLER, 'hat', ['shipping']),
+        line(sellerB, 'chair', ['shipping', 'pickup']),
+      ];
+
+      expect(
+        CommerceController.getShippedSellers({ lines, fulfillmentChoiceBySeller: { [sellerB]: 'pickup' } }),
+      ).toEqual([SELLER]);
+    });
+
+    it('returns no sellers for a choice the lines do not publish', () => {
+      const lines = [line(sellerB, 'chair', ['shipping'])];
+
+      expect(
+        CommerceController.getShippedSellers({ lines, fulfillmentChoiceBySeller: { [sellerB]: 'pickup' } }),
+      ).toEqual([]);
+    });
+  });
 });

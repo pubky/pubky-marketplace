@@ -83,6 +83,7 @@ import { MarketplaceAddressFields } from '@/molecules/MarketplaceAddressFields/M
 import { SettingsSectionContent } from '@/molecules/Settings/SettingsSectionContent/SettingsSectionContent';
 import { ContentLayout } from '@/organisms/ContentLayout/ContentLayout';
 import { MarketplaceCheckoutItem } from '@/organisms/Marketplace/MarketplaceCheckoutItem';
+import { MarketplaceDeliveryKeyChangeDialog } from '@/organisms/Marketplace/MarketplaceDeliveryKeyChangeDialog';
 import { MarketplaceDeliveryTerms } from '@/organisms/Marketplace/MarketplaceDeliveryTerms';
 import { MarketplaceIndicativePrice } from '@/organisms/Marketplace/MarketplaceIndicativePrice';
 import { MarketplaceOrderActions } from '@/organisms/Marketplace/MarketplaceOrderActions';
@@ -515,6 +516,10 @@ function MarketplaceCartCheckout() {
       showRightMobileButton={false}
       className="pb-28"
     >
+      <MarketplaceDeliveryKeyChangeDialog
+        change={checkout.pendingKeyChange ?? offerPay.pendingKeyChange}
+        onDecision={checkout.pendingKeyChange ? checkout.decideKeyChange : offerPay.decideKeyChange}
+      />
       <Container
         overrideDefaults
         className="flex w-full flex-col gap-6"

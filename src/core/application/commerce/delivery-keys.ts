@@ -4,7 +4,11 @@ import {
   deliveryKeyRecordUrl,
   generateDeliveryKeyPair,
   parseDeliveryKeyRecord,
+  sealDeliveryAddressForSellers,
+  type SellerDeliveryEnvelope,
+  type SellerDeliveryKey,
 } from '@/libs/commerce/delivery-envelope';
+import type { CommerceDeliveryAddressValue } from '@/libs/commerce/postal-address';
 import {
   getCurrentDeliveryKey,
   getDeliveryKeyPin,
@@ -36,6 +40,11 @@ export type CheckoutDeliveryKey =
   | { kind: 'no_key' }
   | { kind: 'invalid' }
   | { kind: 'changed'; pinnedKeyId: string; currentKeyId: string };
+
+/** Every shipped seller's key is ready, or the first seller that is not and why. */
+export type CheckoutDeliveryKeysResolution =
+  | { ok: true; keys: Map<string, SellerDeliveryKey> }
+  | { ok: false; sellerPubky: string; problem: Exclude<CheckoutDeliveryKey, { kind: 'ready' }> };
 
 /**
  * The seller delivery key lifecycle and the buyer's view of it. The private
@@ -119,6 +128,37 @@ export class CommerceDeliveryKeysApplication {
       return { kind: 'changed', pinnedKeyId: pin.keyId, currentKeyId: lookup.record.keyId };
     }
     return { kind: 'ready', keyId: lookup.record.keyId, publicKey: lookup.publicKey, newlyPinned: false };
+  }
+
+  /**
+   * Resolves the delivery key of every seller that ships, reading each from
+   * the seller's homeserver at call time so an envelope is sealed to the key
+   * published now. Sellers resolve in the given order; the first one that is
+   * not ready is returned so the caller can explain or ask the buyer.
+   */
+  static async resolveKeysForCheckout(
+    buyerPubky: string,
+    sellerPubkys: readonly string[],
+  ): Promise<CheckoutDeliveryKeysResolution> {
+    const unique = [...new Set(sellerPubkys)];
+    const results = await Promise.all(unique.map((seller) => this.resolveKeyForCheckout(buyerPubky, seller)));
+    const keys = new Map<string, SellerDeliveryKey>();
+    for (const [index, result] of results.entries()) {
+      const sellerPubky = unique[index];
+      if (result.kind !== 'ready') return { ok: false, sellerPubky, problem: result };
+      keys.set(sellerPubky, { keyId: result.keyId, publicKey: result.publicKey });
+    }
+    return { ok: true, keys };
+  }
+
+  /** Seals the address once per seller, bound to the checkout command that will carry it. */
+  static async sealForCheckout(input: {
+    buyerPubky: string;
+    checkoutCommandId: string;
+    address: CommerceDeliveryAddressValue;
+    keys: ReadonlyMap<string, SellerDeliveryKey>;
+  }): Promise<SellerDeliveryEnvelope[]> {
+    return await sealDeliveryAddressForSellers(input);
   }
 
   /** The buyer confirmed the seller's new key; pin it. */

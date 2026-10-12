@@ -1,5 +1,8 @@
 import { CommerceApplication, type CommerceCheckoutFulfillmentInput } from '@/application/commerce/commerce';
-import { CommerceDeliveryKeysApplication } from '@/application/commerce/delivery-keys';
+import {
+  type CheckoutDeliveryKeysResolution,
+  CommerceDeliveryKeysApplication,
+} from '@/application/commerce/delivery-keys';
 import { CommerceInventoryApplication, type InventoryBoardRow } from '@/application/commerce/inventory';
 import { CommerceInventoryAutomationsApplication } from '@/application/commerce/inventory-automations';
 import { CommerceInventoryImportApplication } from '@/application/commerce/inventory-import';
@@ -8,9 +11,11 @@ import { TagKind } from '@/application/tag/tag.types';
 import {
   COMMERCE_SAVED_SEARCH_NAME_MAX_CHARS,
   getCommerceAdapterMode,
+  isDurableCommerceMode,
   isTransactionalCommerceMode,
 } from '@/config/commerce';
 import { IMAGE_MAX_UPLOAD_SIZE } from '@/config/images';
+import type { SellerDeliveryKey } from '@/libs/commerce/delivery-envelope';
 import {
   type MarketplaceDigitalDeliveryCapability,
   marketplaceDigitalDeliveryChannelSchema,
@@ -18,6 +23,8 @@ import {
 } from '@/libs/commerce/digital';
 import type { CommerceDigitalLock } from '@/libs/commerce/marketplace-records';
 import type { PaymentMethodKind } from '@/libs/commerce/payment-methods';
+import { resolveCheckoutFulfillment } from '@/libs/commerce/pickup';
+import type { CommerceDeliveryAddressValue } from '@/libs/commerce/postal-address';
 import type { PrivRecoveryKeyExport } from '@/libs/commerce/priv-recovery-key';
 import type { ShipFromAddress, ShippingParcel } from '@/libs/commerce/shipping';
 import { buildMarketplaceListingAggregateId } from '@/libs/commerce/transaction-commands';
@@ -635,6 +642,49 @@ export class CommerceController {
 
   static async commitPublishMyDeliveryKey() {
     return await CommerceDeliveryKeysApplication.commitPublishCurrentKey(this.getCurrentUserPubky());
+  }
+
+  /**
+   * The delivery keys a buyer must seal to before checkout: one per seller
+   * that ships. Not durable means no service and nothing to seal to.
+   */
+  static async resolveDeliveryKeysForCheckout(
+    sellerPubkys: readonly string[],
+  ): Promise<CheckoutDeliveryKeysResolution> {
+    if (!isDurableCommerceMode(getCommerceAdapterMode()) || sellerPubkys.length === 0) {
+      return { ok: true, keys: new Map() };
+    }
+    return await CommerceDeliveryKeysApplication.resolveKeysForCheckout(this.getCurrentUserPubky(), sellerPubkys);
+  }
+
+  /** The sellers of a checkout whose lines ship, given the buyer's per-seller fulfillment choices. */
+  static getShippedSellers(
+    input: Pick<CommerceCheckoutFulfillmentInput, 'lines' | 'fulfillmentChoiceBySeller'>,
+  ): string[] {
+    const plan = resolveCheckoutFulfillment(input.lines, input.fulfillmentChoiceBySeller ?? {});
+    if (!plan.ok) return [];
+    return [
+      ...new Set(
+        input.lines.filter((_, index) => plan.lineFulfillments[index] === 'shipping').map((line) => line.sellerPubky),
+      ),
+    ];
+  }
+
+  /** The buyer confirmed a seller's changed delivery key; pin it. */
+  static async commitAcceptDeliveryKeyChange(sellerPubky: string, keyId: string) {
+    await CommerceDeliveryKeysApplication.commitAcceptKeyChange(this.getCurrentUserPubky(), sellerPubky, keyId);
+  }
+
+  /** Seals an address to resolved seller keys for a command whose id the caller already holds. */
+  static async sealDeliveryAddressForCheckout(input: {
+    checkoutCommandId: string;
+    address: CommerceDeliveryAddressValue;
+    keys: ReadonlyMap<string, SellerDeliveryKey>;
+  }) {
+    return await CommerceDeliveryKeysApplication.sealForCheckout({
+      buyerPubky: this.getCurrentUserPubky(),
+      ...input,
+    });
   }
 
   /** The seller's own Shippo shipping configuration (token is write-only). */

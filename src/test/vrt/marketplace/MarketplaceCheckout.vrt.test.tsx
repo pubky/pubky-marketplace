@@ -253,6 +253,8 @@ vi.mock('@/hooks/useMarketplaceCheckout/useMarketplaceCheckout', async () => {
       isPickupCapabilityLoadingForSeller: () => false,
       orderCount: view.orderCount,
       rememberAddress: vi.fn(async () => {}),
+      pendingKeyChange: null,
+      decideKeyChange: vi.fn(),
       fulfillmentForItem: (itemId: string) => {
         const line = (view.items as Array<{ id: string; listing: { record: { ownerPubky: string } } }>).find(
           ({ id }) => id === itemId,
@@ -294,7 +296,12 @@ vi.mock('@/hooks/useMarketplaceOffers/useMarketplaceOffers', () => ({
 }));
 
 vi.mock('@/hooks/useMarketplaceOfferCheckout/useMarketplaceOfferCheckout', () => ({
-  useMarketplaceOfferCheckout: () => ({ submit: vi.fn(), isSubmitting: false }),
+  useMarketplaceOfferCheckout: () => ({
+    submit: vi.fn(),
+    isSubmitting: false,
+    pendingKeyChange: null,
+    decideKeyChange: vi.fn(),
+  }),
 }));
 
 vi.mock('@/hooks/useMarketplaceCartCount/useMarketplaceCartCount', () => ({

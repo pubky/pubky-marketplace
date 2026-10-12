@@ -104,6 +104,8 @@ vi.mock('@/hooks/useMarketplaceCheckout/useMarketplaceCheckout', async () => {
       isPickupCapabilityLoadingForSeller: () => false,
       orderCount: 1,
       rememberAddress: vi.fn(async () => {}),
+      pendingKeyChange: null,
+      decideKeyChange: vi.fn(),
       fulfillmentForItem: () => 'shipping',
       setDigitalChoice: vi.fn(),
       canChooseDigitalForItem: () => false,

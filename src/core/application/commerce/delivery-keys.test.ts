@@ -136,4 +136,54 @@ describe('CommerceDeliveryKeysApplication', () => {
     expect(status.local).toBeNull();
     expect(status.publication).toBe('different');
   });
+
+  it('resolves every shipped seller once and keys them by pubky', async () => {
+    const sellerB = 't'.repeat(52);
+    const a = await CommerceDeliveryKeysApplication.commitCreateKey(SELLER);
+    const b = await CommerceDeliveryKeysApplication.commitCreateKey(sellerB);
+
+    const resolution = await CommerceDeliveryKeysApplication.resolveKeysForCheckout(BUYER, [SELLER, sellerB, SELLER]);
+
+    if (!resolution.ok) throw new Error(`expected keys, got ${resolution.problem.kind}`);
+    expect([...resolution.keys.keys()]).toEqual([SELLER, sellerB]);
+    expect(resolution.keys.get(SELLER)?.keyId).toBe(a.local?.keyId);
+    expect(resolution.keys.get(sellerB)?.keyId).toBe(b.local?.keyId);
+  });
+
+  it('names the first seller that has no usable key', async () => {
+    const sellerB = 't'.repeat(52);
+    await CommerceDeliveryKeysApplication.commitCreateKey(SELLER);
+
+    const resolution = await CommerceDeliveryKeysApplication.resolveKeysForCheckout(BUYER, [SELLER, sellerB]);
+
+    expect(resolution).toEqual({ ok: false, sellerPubky: sellerB, problem: { kind: 'no_key' } });
+  });
+
+  it('seals one envelope per seller that only that seller can open', async () => {
+    const sellerB = 't'.repeat(52);
+    await CommerceDeliveryKeysApplication.commitCreateKey(SELLER);
+    await CommerceDeliveryKeysApplication.commitCreateKey(sellerB);
+    const resolution = await CommerceDeliveryKeysApplication.resolveKeysForCheckout(BUYER, [SELLER, sellerB]);
+    if (!resolution.ok) throw new Error('expected keys');
+
+    const envelopes = await CommerceDeliveryKeysApplication.sealForCheckout({
+      buyerPubky: BUYER,
+      checkoutCommandId: COMMAND_ID,
+      address: ADDRESS,
+      keys: resolution.keys,
+    });
+
+    expect(envelopes.map((entry) => entry.sellerPubky)).toEqual([SELLER, sellerB]);
+    const own = envelopes[0];
+    const privateKey = (await getDeliveryPrivateKey(SELLER, own.keyId))!;
+    const binding = { checkoutCommandId: COMMAND_ID, buyerPubky: BUYER, sellerPubky: SELLER, keyId: own.keyId };
+    expect(await openDeliveryAddress({ envelope: own.envelope, privateKey, binding })).toEqual(ADDRESS);
+    await expect(
+      openDeliveryAddress({
+        envelope: envelopes[1].envelope,
+        privateKey,
+        binding: { ...binding, sellerPubky: sellerB },
+      }),
+    ).rejects.toThrow();
+  });
 });
