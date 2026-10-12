@@ -71,7 +71,7 @@ describe('MarketplaceOrderActions — USDT finality gate (shipping)', () => {
     expect(screen.queryByTestId('usdt-payment-not-final')).not.toBeInTheDocument();
   });
 
-  it.each(['bitcoin', 'paypal', 'stripe', null] as const)('leaves a paid %s order shippable with no hint', (method) => {
+  it.each(['bitcoin', 'paypal', null] as const)('leaves a paid %s order shippable with no hint', (method) => {
     renderActions(createOrderFixture('paid', { paymentMethod: method }), false);
 
     expect(screen.getByRole('button', { name: 'Add tracking' })).toBeEnabled();

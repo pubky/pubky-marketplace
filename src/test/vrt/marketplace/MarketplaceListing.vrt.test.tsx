@@ -234,6 +234,10 @@ vi.mock('next/navigation', () => ({
   usePathname: () => '/marketplace',
 }));
 
+vi.mock('@/hooks/useCurrentUserProfile/useCurrentUserProfile', () => ({
+  useCurrentUserProfile: () => ({ currentUserPubky: 'u'.repeat(52), userDetails: { name: 'VRT Reporter' } }),
+}));
+
 vi.mock('@/hooks/useRequireAuth/useRequireAuth', () => ({
   useRequireAuth: () => ({ requireAuth: (action: () => void) => action() }),
 }));
@@ -501,6 +505,20 @@ describe('Marketplace listing detail — visual regression', () => {
       viewport: VRT_VIEWPORT_DESKTOP,
     });
     await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('listing-shop-avatar-desktop');
+  });
+
+  it('renders the Report listing dialog with the pubky.app reasons at desktop viewport', async () => {
+    const { seller, fixedPriceListing, fixedPriceProjection } = await fixtures;
+    await setView({ listing: fixedPriceListing, projection: fixedPriceProjection });
+
+    const screen = await renderForVRT(<MarketplaceListing sellerPubky={seller} listingId="boots_01" />, {
+      viewport: VRT_VIEWPORT_DESKTOP,
+    });
+    await screen.getByRole('button', { name: 'Report listing' }).click();
+    await vi.waitFor(() => {
+      if (!document.querySelector('[role="dialog"]')) throw new Error('Report dialog has not opened yet.');
+    });
+    await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('listing-report-dialog-desktop');
   });
 
   it('renders a fixed-price listing at mobile viewport', async () => {

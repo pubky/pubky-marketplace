@@ -57,7 +57,6 @@ export const MARKETPLACE_FAILURE_MESSAGES = {
   shippingLabel: 'The shipping label could not be purchased.',
   paymentSettings: 'Payment settings are unavailable.',
   bitcoinOfferUnavailable: 'Bitcoin is temporarily unavailable. Other payment methods are unaffected.',
-  stripeKeyRemoval: 'The stored payment key could not be removed.',
   messagingStart: 'Could not start marketplace messaging.',
   messagingStorage: 'Messaging paused: storage protection unavailable',
   sandboxPayment: 'Could not advance the sandbox payment.',
@@ -243,7 +242,7 @@ const USDT_SELLER_NOT_READY_COPY =
  * Static copy for durable payment-method refusals. Keys are service
  * `error.reason` values and, for families that ship `code` with no `reason`
  * (`capability_required`, CAS `REVISION_CONFLICT`), the wire `error.code`.
- * Never copy the service `error.message` — it can echo a rejected Stripe key.
+ * Never copy the service `error.message` — it can echo a rejected private value.
  */
 export const MARKETPLACE_PAYMENT_METHOD_REASON_MESSAGES: ReadonlyMap<string, string> = new Map([
   ['bitcoin_unavailable', 'Bitcoin payments are not available for this seller.'],
@@ -262,10 +261,8 @@ export const MARKETPLACE_PAYMENT_METHOD_REASON_MESSAGES: ReadonlyMap<string, str
   ['hold_unavailable', 'The inventory hold for this checkout is no longer available.'],
   ['INTERNAL', MARKETPLACE_FAILURE_MESSAGES.unavailable],
   ['invalid_method', 'That payment method is not valid for this checkout.'],
-  ['invalid_payment_link', 'The payment link is not valid.'],
   ['invalid_paypal_email', 'The PayPal merchant email is not valid.'],
   ['invalid_pubky', 'The seller identity on this payment configuration is not valid.'],
-  ['invalid_restricted_key', 'The payment key is not valid.'],
   ['invalid_sats', 'The Bitcoin amount must be a positive satoshi amount.'],
   ['invalid_transaction_ref', 'The payment reference is not valid.'],
   ['INVALID_RESPONSE', MARKETPLACE_FAILURE_MESSAGES.unavailable],
@@ -300,9 +297,6 @@ export const MARKETPLACE_PAYMENT_METHOD_REASON_MESSAGES: ReadonlyMap<string, str
     'This seller can’t take Bitcoin right now. Choose another payment method, or contact the seller.',
   ],
   ['sold_out', 'This listing no longer has enough inventory.'],
-  ['stripe_key_invalid', 'The seller payment key was rejected. The seller must update their payment settings.'],
-  ['stripe_key_missing', 'This seller has not finished payment setup.'],
-  ['stripe_unavailable', 'Payment verification could not be reached. Try again shortly.'],
   ['unavailable', 'The payment method request was refused.'],
   ['UPSTREAM_UNAVAILABLE', MARKETPLACE_FAILURE_MESSAGES.unavailable],
   ['usdt_seller_not_ready', USDT_SELLER_NOT_READY_COPY],

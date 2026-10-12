@@ -583,8 +583,6 @@ export class MarketplaceGatewayService {
     actor: string,
     input: {
       bitcoinEnabled: boolean;
-      stripePaymentLink: string | null;
-      stripeRestrictedKey?: string;
       paypalMerchantEmail: string | null;
       usdtEnabled?: boolean;
     },
@@ -596,14 +594,6 @@ export class MarketplaceGatewayService {
   static async bindPaymentMethod(actor: string, orderId: string, method: PaymentMethodKind): Promise<MarketplaceOrder> {
     this.assertDurableServiceOnly('bindPaymentMethod');
     return await MarketplaceTransactionService.bindPaymentMethod(actor, orderId, method);
-  }
-
-  static async verifyStripePayment(
-    actor: string,
-    orderId: string,
-  ): Promise<{ verified: boolean; order: MarketplaceOrder | null }> {
-    this.assertDurableServiceOnly('verifyStripePayment');
-    return await MarketplaceTransactionService.verifyStripePayment(actor, orderId);
   }
 
   static async markFiatPaid(actor: string, orderId: string, transactionRef?: string): Promise<MarketplaceOrder> {

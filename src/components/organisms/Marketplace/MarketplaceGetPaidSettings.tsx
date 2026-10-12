@@ -78,9 +78,7 @@ const PAYKIT_SETUP_TIMEOUT_MS = 6 * 60 * 1_000;
  */
 const UNSAVED_SELLER_PAYMENT_CONFIG: SellerPaymentConfigOwnView = {
   bitcoinEnabled: false,
-  stripePaymentLink: null,
   paypalMerchantEmail: null,
-  stripeRestrictedKeySet: false,
   updatedAt: '',
 };
 const PAYKIT_SETUP_EXPLANATION = 'Scan the code with Bitkit, or open this page on your phone and tap Open in Bitkit.';
@@ -201,7 +199,7 @@ export function MarketplaceGetPaidSettings({ locksConnect, onSaved }: Marketplac
   const serverConfig =
     payments.config ?? (!payments.isLoading && !payments.loadError ? UNSAVED_SELLER_PAYMENT_CONFIG : null);
   const serverBaseline = serverConfig
-    ? `${serverConfig.updatedAt}\0${serverConfig.bitcoinEnabled}\0${serverConfig.paypalMerchantEmail ?? ''}\0${serverConfig.stripePaymentLink ?? ''}\0${serverConfig.usdtEnabled ?? ''}`
+    ? `${serverConfig.updatedAt}\0${serverConfig.bitcoinEnabled}\0${serverConfig.paypalMerchantEmail ?? ''}\0${serverConfig.usdtEnabled ?? ''}`
     : null;
   if (serverBaseline !== draftBaseline) {
     setDraftBaseline(serverBaseline);
@@ -296,8 +294,6 @@ export function MarketplaceGetPaidSettings({ locksConnect, onSaved }: Marketplac
     if (!serverConfig || payments.isLoading || serverBaseline !== draftBaseline) return;
     const saved = await payments.save({
       bitcoinEnabled: railDraft.bitcoin ?? serverConfig.bitcoinEnabled,
-      stripePaymentLink: serverConfig.stripePaymentLink ?? '',
-      stripeRestrictedKey: '',
       paypalMerchantEmail: railDraft.paypal ?? serverConfig.paypalMerchantEmail ?? '',
       // The service accepts the field only while its USDT flag is on, and it
       // reports `usdt_enabled` on the own config exactly then. Sending it on

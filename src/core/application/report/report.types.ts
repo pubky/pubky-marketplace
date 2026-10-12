@@ -1,5 +1,5 @@
 import type { Pubky } from '@/models/models.types';
-import type { ReportIssueType } from '@/pipes/report/report.types';
+import type { ReportIssueType, ReportListingReference } from '@/pipes/report/report.types';
 
 export interface TReportSubmitInput {
   pubky: Pubky;
@@ -7,4 +7,6 @@ export interface TReportSubmitInput {
   issueType: ReportIssueType;
   reason: string;
   name: string;
+  /** Set when the report is about a listing; `postUrl` then holds the listing URL. */
+  listing?: ReportListingReference;
 }

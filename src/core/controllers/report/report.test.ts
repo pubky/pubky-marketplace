@@ -54,6 +54,40 @@ describe('ReportController', () => {
       });
     });
 
+    it('should pass a validated listing reference to the application layer', async () => {
+      const submitSpy = vi.spyOn(ReportApplication, 'submit');
+
+      await ReportController.submit(
+        createReportParams({
+          listingId: ' boots_01 ',
+          sellerPubky: 'o1gg96ewuojmopcjbz8895478wdtxtzzuxnfjjz8o8e77csa1ngo',
+        }),
+      );
+
+      expect(submitSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          listing: { listingId: 'boots_01', sellerPubky: 'o1gg96ewuojmopcjbz8895478wdtxtzzuxnfjjz8o8e77csa1ngo' },
+        }),
+      );
+    });
+
+    it('should not add a listing to a post report', async () => {
+      const submitSpy = vi.spyOn(ReportApplication, 'submit');
+
+      await ReportController.submit(createReportParams());
+
+      expect(submitSpy.mock.calls[0]?.[0]).not.toHaveProperty('listing');
+    });
+
+    it('should refuse a listing report that names only the listing', async () => {
+      const submitSpy = vi.spyOn(ReportApplication, 'submit');
+
+      await expect(ReportController.submit(createReportParams({ listingId: 'boots_01' }))).rejects.toThrow(
+        'A listing report needs both the listing id and the seller pubky',
+      );
+      expect(submitSpy).not.toHaveBeenCalled();
+    });
+
     it('should accept all valid issue types', async () => {
       const submitSpy = vi.spyOn(ReportApplication, 'submit');
 

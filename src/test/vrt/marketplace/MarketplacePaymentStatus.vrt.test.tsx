@@ -98,7 +98,6 @@ vi.mock('@/controllers/commerce/commerce', async () => {
       getSellerPaymentConfig: vi.fn(async () => view.sellerConfig),
       fetchUsdtPaymentsAvailable: vi.fn(async () => view.usdtAvailable),
       bindPaymentMethod: vi.fn(async () => ({})),
-      verifyStripePayment: vi.fn(async () => ({ verified: false, order: null })),
       markFiatPaid: vi.fn(async () => ({})),
       confirmFiatReceived: vi.fn(async () => ({})),
       executeMarketplaceCommand: vi.fn(async () => ({ ok: true })),
@@ -135,7 +134,7 @@ async function renderCard(
   paymentState: 'awaiting_entitlement' | 'detected' | 'confirmed' | 'expired' | 'manual_review',
   adapterMode: 'sandbox' | 'transaction-service' | 'locks-paykit',
   options: {
-    adapter?: 'sandbox' | 'locks' | 'paykit' | 'stripe' | 'paypal';
+    adapter?: 'sandbox' | 'locks' | 'paykit' | 'paypal';
     orderState?: 'pending_payment' | 'paid' | 'cancelled';
     orderOverrides?: Record<string, unknown>;
     paymentOverrides?: Record<string, unknown>;
@@ -424,24 +423,6 @@ describe('Marketplace payment status card — visual regression', () => {
     view.locks.enabled = true;
   });
 
-  it('renders a bound card order without offering card checkout at desktop viewport', async () => {
-    view.locks = { ...view.locks, enabled: false, correlation: null, delivery: null, error: null };
-    const screen = await renderCard('awaiting_entitlement', 'transaction-service', {
-      deployEnv: 'staging',
-      orderOverrides: {
-        paymentMethod: 'stripe',
-        fiatCheckoutUrl: 'https://buy.stripe.com/test_fixture?client_reference_id=order-1',
-        fiatVerification: 'processor',
-        holdExpiresAt: HOLD_DEADLINE,
-        holdSource: 'bind',
-      },
-    });
-    await expect.element(screen.getByRole('button', { name: /Stripe/ })).not.toBeInTheDocument();
-    await expect.element(screen.getByText('Card (Stripe)')).not.toBeInTheDocument();
-    await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('payment-status-method-stripe-desktop');
-    view.locks.enabled = true;
-  });
-
   it('renders the buyer paypal report affordances at desktop viewport', async () => {
     view.locks = { ...view.locks, enabled: false, correlation: null, delivery: null, error: null };
     const screen = await renderCard('awaiting_entitlement', 'transaction-service', {
@@ -549,7 +530,7 @@ describe('Marketplace payment status card — visual regression', () => {
     const screen = await renderCard('manual_review', 'transaction-service', {
       isBuyer: false,
       currentUserPubky: 's'.repeat(52),
-      orderOverrides: { paymentMethod: 'stripe' },
+      orderOverrides: { paymentMethod: 'paypal' },
       deployEnv: 'staging',
     });
     await expect.element(screen.getByText('Resolve Bitcoin payment review')).not.toBeInTheDocument();

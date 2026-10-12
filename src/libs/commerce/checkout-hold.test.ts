@@ -74,7 +74,6 @@ describe('checkout-hold copy', () => {
 
   it('picks seller refund instructions per rail', () => {
     expect(refundRequiredSellerCopy('paypal')).toBe(CHECKOUT_HOLD_COPY.refundRequiredPaypalSeller);
-    expect(refundRequiredSellerCopy('stripe')).toBe(CHECKOUT_HOLD_COPY.refundRequiredStripeSeller);
     expect(refundRequiredSellerCopy('bitcoin')).toBe(CHECKOUT_HOLD_COPY.refundRequiredBitcoinSeller);
     expect(refundRequiredSellerCopy('usdt')).toBe(CHECKOUT_HOLD_COPY.refundRequiredUsdtSeller);
     expect(CHECKOUT_HOLD_COPY.refundRequiredUsdtSeller).not.toMatch(/bitcoin/i);
@@ -87,7 +86,6 @@ describe('checkout-hold copy', () => {
     expect(refundRequiredCopyForRole(true, 'paypal')).toBe(CHECKOUT_HOLD_COPY.refundRequiredBuyer);
     expect(refundRequiredCopyForRole(false, 'bitcoin')).toBe(CHECKOUT_HOLD_COPY.refundRequiredBitcoinSeller);
     expect(refundRequiredCopyForRole(false, 'paypal')).toBe(CHECKOUT_HOLD_COPY.refundRequiredPaypalSeller);
-    expect(refundRequiredCopyForRole(false, 'stripe')).toBe(CHECKOUT_HOLD_COPY.refundRequiredStripeSeller);
   });
 });
 

@@ -11,9 +11,7 @@
  */
 const BASE_PAYMENT_CONFIG = {
   bitcoin_enabled: true,
-  stripe_payment_link: null,
   paypal_merchant_email: 'seller@example.com',
-  stripe_restricted_key_set: false,
   updated_at: '2026-10-09T12:00:00.000Z',
 } as const;
 
