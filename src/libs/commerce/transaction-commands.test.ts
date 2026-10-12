@@ -13,6 +13,7 @@ import {
   createMarketplaceCheckoutCommandSchema,
   createReviewCommandSchema,
   deliverDigitalCommandSchema,
+  GUARANTEE_POLICY_VERSION,
   isListingDeletedResponse,
   isListingRecordNotFoundResponse,
   isMarketplaceRevisionConflict,
@@ -548,6 +549,26 @@ describe('checkout.create fulfillment and address rules (§A2)', () => {
   };
   const shippingLine = { listingAggregateId: `listing:${SELLER}_lamp_02`, expectedRevision: 2, quantity: 1 };
 
+  it('does not require guaranteePolicyVersion on checkout and still accepts the legacy value', () => {
+    const { guaranteePolicyVersion: _omitted, ...payload } = checkoutCommand([shippingLine], true).payload;
+    const withoutVersion = createMarketplaceCheckoutCommandSchema.safeParse({
+      ...checkoutCommand([shippingLine], true),
+      payload,
+    });
+    expect(withoutVersion.success).toBe(true);
+    expect(createMarketplaceCheckoutCommandSchema.safeParse(checkoutCommand([shippingLine], true)).success).toBe(true);
+    expect(
+      createMarketplaceCheckoutCommandSchema.safeParse({
+        ...checkoutCommand([shippingLine], true),
+        payload: { ...payload, guaranteePolicyVersion: 2 },
+      }).success,
+    ).toBe(false);
+  });
+
+  it('exports the constant the client keeps sending until the service stops requiring it', () => {
+    expect(GUARANTEE_POLICY_VERSION).toBe(1);
+  });
+
   it('accepts a pickup-only checkout with NO delivery address', () => {
     const parsed = createMarketplaceCheckoutCommandSchema.parse(checkoutCommand([pickupLine], false));
     expect(parsed.payload.deliveryAddress).toBeUndefined();
@@ -824,6 +845,13 @@ describe('offer.checkout fulfillment and address rules (mirrors the service vali
   it('keeps a shipped award as before: address required, no fulfillment field', () => {
     expect(offerCheckoutCommandSchema.safeParse(offerCheckout({ deliveryAddress: address })).success).toBe(true);
     expect(offerCheckoutCommandSchema.safeParse(offerCheckout({})).success).toBe(false);
+  });
+
+  it('does not require guaranteePolicyVersion on an offer checkout', () => {
+    const command = offerCheckout({ fulfillment: 'pickup' });
+    const { guaranteePolicyVersion: _omitted, ...payload } = command.payload;
+    expect(offerCheckoutCommandSchema.safeParse({ ...command, payload }).success).toBe(true);
+    expect(offerCheckoutCommandSchema.safeParse(command).success).toBe(true);
   });
 
   it('rejects a pickup award that presents an address', () => {

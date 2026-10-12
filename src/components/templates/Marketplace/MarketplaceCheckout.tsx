@@ -417,7 +417,7 @@ function MarketplaceCartCheckout() {
                     ? isMultiSeller
                       ? 'Choose sellers that share a payment method.'
                       : 'Pay unlocks once this seller sets up a payment method.'
-                    : 'Fill in delivery details, accept the guarantee, and choose a payment method to pay.';
+                    : 'Fill in delivery details and choose a payment method to pay.';
   const payDisabledReason = locksRoute === 'mixed' ? LOCKS_MIXED_CHECKOUT_COPY : checkoutPayDisabledReason;
 
   const removeAwardLine = async () => {
@@ -1168,7 +1168,7 @@ function MarketplaceCartCheckout() {
                           </div>
                         </div>
                       )}
-                      <div className="grid gap-3" data-testid="marketplace-checkout-guarantee">
+                      <div className="grid gap-3" data-testid="marketplace-checkout-payment-notice-group">
                         {allPickup && (
                           <div className="rounded-md bg-card/60 p-6">
                             <Typography as="p" className="text-sm font-medium">
@@ -1180,34 +1180,13 @@ function MarketplaceCartCheckout() {
                             </Typography>
                           </div>
                         )}
-                        <Controller
-                          name="acceptsGuarantee"
-                          control={checkout.form.control}
-                          render={({ field, fieldState }) => (
-                            <div className="grid gap-2">
-                              <Label className="items-start gap-3">
-                                <Checkbox
-                                  checked={field.value}
-                                  onCheckedChange={field.onChange}
-                                  onBlur={field.onBlur}
-                                  aria-invalid={fieldState.error ? true : undefined}
-                                />
-                                <span>
-                                  {isSandbox
-                                    ? 'I accept sandbox guarantee policy v1. This is not legal escrow and moves no real funds.'
-                                    : isLocksPaykitCommerceMode(adapterMode)
-                                      ? 'I accept guarantee policy v1. This is not legal escrow — payment goes from your wallet directly to the seller, and this marketplace never holds funds.'
-                                      : 'I accept guarantee policy v1. This is not legal escrow, and no payment rails are live in this deployment — no real funds move.'}
-                                </span>
-                              </Label>
-                              {fieldState.error && (
-                                <Typography as="p" role="alert" className="text-sm text-destructive">
-                                  {fieldState.error.message}
-                                </Typography>
-                              )}
-                            </div>
-                          )}
-                        />
+                        <Typography as="p" className="text-sm" data-testid="marketplace-checkout-payment-notice">
+                          {isSandbox
+                            ? 'Sandbox checkout: no real funds move. This marketplace never holds funds.'
+                            : isLocksPaykitCommerceMode(adapterMode)
+                              ? 'Payment goes directly to the seller. This marketplace never holds funds.'
+                              : 'No payment rails are live in this deployment, so no real funds move. This marketplace never holds funds.'}
+                        </Typography>
                       </div>
                       {checkout.hasInstantDigitalLine && (
                         <Typography

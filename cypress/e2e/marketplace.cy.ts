@@ -136,8 +136,7 @@ describe('marketplace journeys', () => {
     cy.get('#region').type('Lisbon');
     cy.get('#postalCode').type('1100-001');
     cy.get('#countryCode').clear().type('PT');
-    // the guarantee checkbox is pre-accepted by default; confirm rather than toggle
-    cy.get('[role="checkbox"]').should('have.attr', 'aria-checked', 'true');
+    cy.contains('This marketplace never holds funds.').should('be.visible');
     cy.contains('button', 'Place sandbox order').click();
 
     cy.location('pathname').should('eq', '/marketplace/orders');
@@ -413,8 +412,7 @@ describe('marketplace journeys', () => {
     cy.get('#region').type('Lisbon');
     cy.get('#postalCode').type('1100-001');
     cy.get('#countryCode').clear().type('PT');
-    // the guarantee checkbox is pre-accepted by default; confirm rather than toggle
-    cy.get('[role="checkbox"]').should('have.attr', 'aria-checked', 'true');
+    cy.contains('This marketplace never holds funds.').should('be.visible');
     cy.contains('button', 'Place sandbox order').click();
     cy.location('pathname').should('eq', '/marketplace/orders');
     cy.contains('[data-slot="card"]', runners.title).within(() => {

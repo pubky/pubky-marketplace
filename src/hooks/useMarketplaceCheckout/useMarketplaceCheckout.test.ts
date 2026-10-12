@@ -148,7 +148,6 @@ describe('useMarketplaceCheckout', () => {
       result.current.form.setValue('city', 'New York');
       result.current.form.setValue('region', 'NY');
       result.current.form.setValue('postalCode', '10001');
-      result.current.form.setValue('acceptsGuarantee', true);
     });
 
     let succeeded = false;
@@ -205,7 +204,6 @@ describe('useMarketplaceCheckout', () => {
       result.current.form.setValue('city', 'New York');
       result.current.form.setValue('region', 'NY');
       result.current.form.setValue('postalCode', '10001');
-      result.current.form.setValue('acceptsGuarantee', true);
     });
 
     let succeeded = false;
@@ -238,7 +236,6 @@ describe('useMarketplaceCheckout', () => {
       result.current.form.setValue('city', 'New York');
       result.current.form.setValue('region', 'NY');
       result.current.form.setValue('postalCode', '10001');
-      result.current.form.setValue('acceptsGuarantee', true);
     });
 
     let succeeded = true;
@@ -277,7 +274,6 @@ describe('useMarketplaceCheckout', () => {
       result.current.form.setValue('city', 'New York');
       result.current.form.setValue('region', 'NY');
       result.current.form.setValue('postalCode', '10001');
-      result.current.form.setValue('acceptsGuarantee', true);
     });
 
     let succeeded = true;
@@ -308,7 +304,6 @@ describe('useMarketplaceCheckout', () => {
       result.current.form.setValue('city', 'New York');
       result.current.form.setValue('region', 'NY');
       result.current.form.setValue('postalCode', '10001');
-      result.current.form.setValue('acceptsGuarantee', true);
     });
 
     let succeeded = true;
@@ -341,7 +336,6 @@ describe('useMarketplaceCheckout', () => {
       result.current.form.setValue('city', 'New York');
       result.current.form.setValue('region', 'NY');
       result.current.form.setValue('postalCode', '10001');
-      result.current.form.setValue('acceptsGuarantee', true);
     });
 
     let succeeded = true;
@@ -374,7 +368,6 @@ describe('useMarketplaceCheckout', () => {
       result.current.form.setValue('city', 'New York');
       result.current.form.setValue('region', 'NY');
       result.current.form.setValue('postalCode', '10001');
-      result.current.form.setValue('acceptsGuarantee', true);
     });
 
     await act(async () => {
@@ -406,7 +399,6 @@ describe('useMarketplaceCheckout', () => {
       result.current.form.setValue('city', 'New York');
       result.current.form.setValue('region', 'NY');
       result.current.form.setValue('postalCode', '10001');
-      result.current.form.setValue('acceptsGuarantee', true);
     });
 
     await act(async () => {
@@ -428,7 +420,6 @@ describe('useMarketplaceCheckout', () => {
       result.current.form.setValue('city', 'New York');
       result.current.form.setValue('region', 'NY');
       result.current.form.setValue('postalCode', '10001');
-      result.current.form.setValue('acceptsGuarantee', true);
     });
 
     await act(async () => {
@@ -457,7 +448,6 @@ describe('useMarketplaceCheckout', () => {
       result.current.form.setValue('postalCode', '10001');
       result.current.form.setValue('saveAddress', true);
       result.current.form.setValue('saveLabel', 'Home');
-      result.current.form.setValue('acceptsGuarantee', true);
     });
 
     await act(async () => {
@@ -508,11 +498,7 @@ describe('useMarketplaceCheckout', () => {
     });
     expect(result.current.addresses).toEqual([savedAddress]);
     expect(result.current.form.getValues('line1')).toBe('1 Market Street');
-    expect(result.current.form.getValues('acceptsGuarantee')).toBe(false);
-
-    act(() => {
-      result.current.form.setValue('acceptsGuarantee', true);
-    });
+    expect(result.current.form.getValues()).not.toHaveProperty('acceptsGuarantee');
 
     let succeeded = false;
     await act(async () => {
@@ -549,7 +535,6 @@ describe('useMarketplaceCheckout', () => {
       result.current.form.setValue('postalCode', '10001');
       result.current.form.setValue('saveAddress', true);
       result.current.form.setValue('saveLabel', 'Home');
-      result.current.form.setValue('acceptsGuarantee', true);
     });
 
     let succeeded = false;
@@ -598,27 +583,6 @@ describe('useMarketplaceCheckout', () => {
     });
     expect(result.current.form.getValues('line1')).toBe('1 Market Street');
     expect(result.current.selectedAddressId).toBe(savedAddress.id);
-  });
-
-  it('leaves the guarantee unchecked until the buyer opts in', async () => {
-    const { result } = renderHook(() =>
-      useMarketplaceCheckout(
-        [item],
-        vi.fn(async () => {}),
-      ),
-    );
-
-    expect(result.current.form.getValues('acceptsGuarantee')).toBe(false);
-    expect(result.current.form.formState.errors.acceptsGuarantee).toBeUndefined();
-
-    let succeeded = true;
-    await act(async () => {
-      succeeded = await result.current.submit();
-    });
-
-    expect(succeeded).toBe(false);
-    expect(CommerceController.commitCreateMarketplaceCheckout).not.toHaveBeenCalled();
-    expect(result.current.form.formState.errors.acceptsGuarantee?.message).toBe('Accept the guarantee terms.');
   });
 
   it('reports hasMarketplaceSession only when the store and getActiveSession agree', () => {
@@ -701,7 +665,6 @@ describe('useMarketplaceCheckout', () => {
       result.current.form.setValue('city', 'New York');
       result.current.form.setValue('region', 'NY');
       result.current.form.setValue('postalCode', '10001');
-      result.current.form.setValue('acceptsGuarantee', true);
     });
 
     let paid: Awaited<ReturnType<typeof result.current.pay>> | null = null;
@@ -793,7 +756,6 @@ describe('useMarketplaceCheckout', () => {
         result.current.form.setValue('city', 'New York');
         result.current.form.setValue('region', 'NY');
         result.current.form.setValue('postalCode', '10001');
-        result.current.form.setValue('acceptsGuarantee', true);
       });
       return await act(async () => result.current.pay(method));
     }
@@ -856,7 +818,6 @@ describe('useMarketplaceCheckout', () => {
       result.current.form.setValue('city', 'New York');
       result.current.form.setValue('region', 'NY');
       result.current.form.setValue('postalCode', '10001');
-      result.current.form.setValue('acceptsGuarantee', true);
     });
 
     let paid: Awaited<ReturnType<typeof result.current.pay>> | null = null;
@@ -922,7 +883,6 @@ describe('useMarketplaceCheckout Locks checkout on upstream Paykit', () => {
       current.form.setValue('city', 'New York');
       current.form.setValue('region', 'NY');
       current.form.setValue('postalCode', '10001');
-      current.form.setValue('acceptsGuarantee', true);
     });
   };
 
@@ -1086,9 +1046,6 @@ describe('useMarketplaceCheckout local pickup (§A2)', () => {
       expect(result.current.requiresDeliveryAddress).toBe(false);
     });
     expect(result.current.fulfillmentForSeller(listing.ownerPubky)).toBe('pickup');
-    act(() => {
-      result.current.form.setValue('acceptsGuarantee', true);
-    });
 
     let succeeded = false;
     await act(async () => {
@@ -1123,7 +1080,6 @@ describe('useMarketplaceCheckout local pickup (§A2)', () => {
       result.current.form.setValue('city', 'New York');
       result.current.form.setValue('region', 'NY');
       result.current.form.setValue('postalCode', '10001');
-      result.current.form.setValue('acceptsGuarantee', true);
     });
 
     let succeeded = false;
@@ -1231,7 +1187,6 @@ describe('useMarketplaceCheckout local pickup (§A2)', () => {
       result.current.form.setValue('city', 'New York');
       result.current.form.setValue('region', 'NY');
       result.current.form.setValue('postalCode', '10001');
-      result.current.form.setValue('acceptsGuarantee', true);
     });
 
     vi.mocked(CommerceController.commitCreateMarketplaceCheckout).mockResolvedValueOnce({
@@ -1348,7 +1303,6 @@ describe('useMarketplaceCheckout digital delivery (digital delivery design §3 "
     expect(result.current.hasInstantDigitalLine).toBe(true);
     expect(result.current.hasManualDigitalLine).toBe(false);
     expect(result.current.orderCount).toBe(1);
-    act(() => result.current.form.setValue('acceptsGuarantee', true));
 
     let succeeded = false;
     await act(async () => {
@@ -1375,7 +1329,6 @@ describe('useMarketplaceCheckout digital delivery (digital delivery design §3 "
 
     await waitFor(() => expect(result.current.requiresDeliveryEmail).toBe(true));
     expect(result.current.hasManualDigitalLine).toBe(true);
-    act(() => result.current.form.setValue('acceptsGuarantee', true));
     await act(async () => {
       await result.current.submit();
     });
@@ -1404,7 +1357,6 @@ describe('useMarketplaceCheckout digital delivery (digital delivery design §3 "
     );
     await waitFor(() => expect(result.current.requiresDeliveryEmail).toBe(true));
     act(() => {
-      result.current.form.setValue('acceptsGuarantee', true);
       result.current.form.setValue('deliveryEmail', 'buyer at example.com');
     });
 
@@ -1436,7 +1388,6 @@ describe('useMarketplaceCheckout digital delivery (digital delivery design §3 "
     expect(result.current.orderCount).toBe(2);
     act(() => {
       fillAddress(result.current.form);
-      result.current.form.setValue('acceptsGuarantee', true);
     });
 
     await act(async () => {
@@ -1544,7 +1495,6 @@ describe('useMarketplaceCheckout digital delivery (digital delivery design §3 "
       ),
     );
     await waitFor(() => expect(result.current.isDigitalReady).toBe(true));
-    act(() => result.current.form.setValue('acceptsGuarantee', true));
 
     kinds.pattern = 'email';
     await act(async () => {
@@ -1570,7 +1520,6 @@ describe('useMarketplaceCheckout digital delivery (digital delivery design §3 "
       ),
     );
     await waitFor(() => expect(result.current.isDigitalReady).toBe(true));
-    act(() => result.current.form.setValue('acceptsGuarantee', true));
     vi.mocked(CommerceController.commitCreateMarketplaceCheckout).mockResolvedValueOnce({
       ok: false,
       error: {

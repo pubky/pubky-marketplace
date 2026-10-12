@@ -22,6 +22,14 @@ import {
 } from './transaction-contracts';
 import { isValidArbitrumAddress } from './usdt-refund';
 
+/**
+ * The legacy guarantee-policy version the transaction service still requires
+ * on checkout and offer-checkout commands. The Shop no longer asks the buyer
+ * to accept a guarantee policy; the client sends this constant until the
+ * service stops requiring the field.
+ */
+export const GUARANTEE_POLICY_VERSION = 1 as const;
+
 const auctionTermsSchema = z
   .object({
     startsAt: z.iso.datetime({ offset: true }),
@@ -231,7 +239,7 @@ export const offerCheckoutCommandSchema = createCommerceCommandSchema(
       deliveryAddress: commerceDeliveryAddressValueSchema.optional(),
       // Absent means shipping; a pickup award sends `pickup` and no address.
       fulfillment: z.literal('pickup').optional(),
-      guaranteePolicyVersion: z.literal(1),
+      guaranteePolicyVersion: z.literal(GUARANTEE_POLICY_VERSION).optional(),
     })
     .strict()
     .superRefine((payload, context) => {
@@ -324,7 +332,7 @@ export const createMarketplaceCheckoutCommandSchema = createCommerceCommandSchem
       // a line is email-kind, which only the listing projection says, so the
       // checkout hook decides and this schema checks only its form.
       deliveryEmail: marketplaceDeliveryEmailSchema.optional(),
-      guaranteePolicyVersion: z.literal(1),
+      guaranteePolicyVersion: z.literal(GUARANTEE_POLICY_VERSION).optional(),
     })
     .strict()
     .superRefine((payload, context) => {

@@ -72,7 +72,6 @@ vi.mock('@/hooks/useMarketplaceCheckout/useMarketplaceCheckout', async () => {
           region: 'NY',
           postalCode: '10001',
           countryCode: 'US',
-          acceptsGuarantee: true,
         },
       }),
       submit: vi.fn(async () => false),

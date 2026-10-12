@@ -124,7 +124,6 @@ describe('form schemas', () => {
       requiresDeliveryAddress: true,
       deliveryEmail: '',
       requiresDeliveryEmail: false,
-      acceptsGuarantee: true,
       saveAddress: false,
       saveLabel: '',
     });
@@ -146,7 +145,6 @@ describe('form schemas', () => {
         requiresDeliveryAddress: true,
         deliveryEmail: '',
         requiresDeliveryEmail: false,
-        acceptsGuarantee: true,
         saveAddress: false,
         saveLabel: '',
       }).success,

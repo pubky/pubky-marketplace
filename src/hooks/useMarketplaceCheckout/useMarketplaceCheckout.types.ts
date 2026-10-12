@@ -29,9 +29,6 @@ export const marketplaceCheckoutSchema = z
     requiresDeliveryAddress: z.boolean(),
     deliveryEmail: z.string().trim(),
     requiresDeliveryEmail: z.boolean(),
-    acceptsGuarantee: z.boolean().refine((value) => value === true, {
-      error: 'Accept the guarantee terms.',
-    }),
     // Client-only address book controls; never part of the checkout command.
     saveAddress: z.boolean(),
     saveLabel: z.string().trim().max(40, 'Keep the label under 40 characters.'),
@@ -85,12 +82,11 @@ export const marketplaceCheckoutDefaults: MarketplaceCheckoutData = {
   requiresDeliveryAddress: true,
   deliveryEmail: '',
   requiresDeliveryEmail: false,
-  acceptsGuarantee: false,
   saveAddress: false,
   saveLabel: '',
 };
 
-/** The checkout fields a saved address fills (everything except the guarantee and save controls). */
+/** The checkout fields a saved address fills (everything except the save controls). */
 export const MARKETPLACE_CHECKOUT_ADDRESS_FIELDS = [
   'name',
   'line1',

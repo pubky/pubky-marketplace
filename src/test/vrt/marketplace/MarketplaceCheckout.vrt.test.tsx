@@ -503,7 +503,7 @@ describe('Marketplace checkout — visual regression', () => {
     expectDesktopSummaryGeometry(VRT_VIEWPORT_DESKTOP.height);
   });
 
-  it('keeps pickup guidance and guarantee before Pay at laptop width', async () => {
+  it('keeps pickup guidance and the payment notice before Pay at laptop width', async () => {
     const { singleSeller } = await fixtures;
     view.items = singleSeller;
     view.fulfillmentEffective = { [singleSeller[0].listing.record.ownerPubky]: 'pickup' };
@@ -514,12 +514,12 @@ describe('Marketplace checkout — visual regression', () => {
     await waitForPaymentMethods();
 
     const pay = screen.container.querySelector('[data-testid="marketplace-checkout-pay"]');
-    const guarantee = screen.container.querySelector('[data-testid="marketplace-checkout-guarantee"]');
-    if (!(pay instanceof HTMLElement) || !(guarantee instanceof HTMLElement)) {
-      throw new Error('VRT geometry rejected: Pay control or guarantee is missing');
+    const notice = screen.container.querySelector('[data-testid="marketplace-checkout-payment-notice-group"]');
+    if (!(pay instanceof HTMLElement) || !(notice instanceof HTMLElement)) {
+      throw new Error('VRT geometry rejected: Pay control or payment notice is missing');
     }
-    expect(guarantee.textContent).toContain('Local pickup');
-    expect(guarantee.getBoundingClientRect().bottom).toBeLessThanOrEqual(pay.getBoundingClientRect().top);
+    expect(notice.textContent).toContain('Local pickup');
+    expect(notice.getBoundingClientRect().bottom).toBeLessThanOrEqual(pay.getBoundingClientRect().top);
     await captureCheckout('checkout-pickup-laptop-1280');
   });
 
