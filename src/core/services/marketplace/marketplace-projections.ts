@@ -433,8 +433,9 @@ export const marketplacePaymentSchema = z
     // sandbox advancement and only the service's independent Locks
     // verification can confirm it. Binding a payment method rewrites the
     // adapter to the bound rail: `paykit` (physical bitcoin via the seller's
-    // claimed watch-only account), `stripe` (processor-verified), or
-    // `paypal` (seller-attested).
+    // claimed watch-only account) or `paypal` (seller-attested). `stripe` is
+    // kept only so a payment row written before Stripe was removed still
+    // parses; the Shop never binds it.
     adapter: z.enum(['sandbox', 'locks', 'paykit', 'stripe', 'paypal']),
     state: z.enum(['awaiting_entitlement', 'detected', 'confirmed', 'expired', 'manual_review']),
     confirmations: z.number().int().min(0).max(6),
@@ -637,13 +638,19 @@ export const marketplaceOrderProjectionSchema = z
     // absent on sandbox orders and on durable orders predating the feature).
     // `paymentMethod` stays null until the buyer binds one — one-shot per
     // order. `fiatCheckoutUrl` is the service-built checkout URL snapshot
-    // taken at binding (Stripe payment link with `client_reference_id`, or
-    // the PayPal web-accept URL with the order id in `custom`).
+    // taken at binding (the PayPal web-accept URL with the order id in
+    // `custom`).
     // `usdt` is accepted so a service with USDT on never breaks the order page;
     // nothing renders it until the flag-gated USDT surfaces exist.
-    paymentMethod: z.enum(PAYMENT_METHOD_KINDS).nullable().optional(),
+    // `stripe` is the one removed value still read, as unbound, so an order
+    // bound before Stripe was removed keeps loading; any other unknown value
+    // still fails the parse.
+    paymentMethod: z.preprocess(
+      (value) => (value === 'stripe' ? null : value),
+      z.enum(PAYMENT_METHOD_KINDS).nullable().optional(),
+    ),
     // Asset-bearing payment attempt (USDT orders only; null/absent for
-    // Bitcoin, PayPal and Stripe). Display-only and tolerant.
+    // Bitcoin and PayPal). Display-only and tolerant.
     ...paymentAssetFieldsShape,
     // Finality of a USDT payment (`pending | final | reverted`): gates physical
     // fulfilment only. One pinned contract in `usdt-settlement-contract.ts`.
@@ -652,13 +659,15 @@ export const marketplaceOrderProjectionSchema = z
     // address when the service knows it. Tolerant and display-only.
     ...refundDestinationFieldsShape,
     fiatCheckoutUrl: z.string().nullable().optional(),
-    // How the bound fiat rail is verified: Stripe is `processor` (the
-    // service checks with the seller's restricted key), PayPal is
-    // `gateway-notified` when a postback-verified IPN from PayPal's servers
-    // paid the order automatically, or `seller-attested` as the fallback
-    // (buyer reports, seller confirms). Deliberately visible to both
-    // parties.
-    fiatVerification: z.enum(['processor', 'gateway-notified', 'seller-attested']).nullable().optional(),
+    // How the bound fiat rail is verified: PayPal is `gateway-notified` when
+    // a postback-verified IPN from PayPal's servers paid the order
+    // automatically, or `seller-attested` as the fallback (buyer reports,
+    // seller confirms). Deliberately visible to both parties. `processor`
+    // (Stripe) is the one removed value still read, as absent.
+    fiatVerification: z.preprocess(
+      (value) => (value === 'processor' ? null : value),
+      z.enum(['gateway-notified', 'seller-attested']).nullable().optional(),
+    ),
     paymentReportedAt: z.string().nullable().optional(),
     fiatTransactionRef: z.string().nullable().optional(),
     // FX-quoted Bitcoin orders carry the service's exact settlement amount.

@@ -18,7 +18,6 @@ vi.mock('@/controllers/commerce/commerce', () => ({
     }),
     getSellerPaymentConfig: vi.fn(),
     bindPaymentMethod: vi.fn(),
-    verifyStripePayment: vi.fn(),
     markFiatPaid: vi.fn(),
     confirmFiatReceived: vi.fn(),
   },

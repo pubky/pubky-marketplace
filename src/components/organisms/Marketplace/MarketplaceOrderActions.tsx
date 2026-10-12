@@ -623,8 +623,6 @@ function externalRefundReferenceLabel(paymentMethod: MarketplaceOrder['paymentMe
       return 'PayPal refund transaction id';
     case 'usdt':
       return USDT_REFUND_COPY.referenceLabel;
-    case 'stripe':
-      return 'External payment reference';
     default:
       return 'External payment reference';
   }

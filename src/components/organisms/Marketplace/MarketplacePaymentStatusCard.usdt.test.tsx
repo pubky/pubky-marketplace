@@ -93,7 +93,6 @@ beforeEach(() => {
     configError: null,
     pendingAction: null,
     bind: methodPayment.bind,
-    verifyStripe: vi.fn(),
     markPaid: vi.fn(),
     confirmReceived: vi.fn(),
   }));
