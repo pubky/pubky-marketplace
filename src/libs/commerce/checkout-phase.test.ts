@@ -183,10 +183,10 @@ describe('checkout-phase', () => {
     expect(
       intersectPaymentMethods([
         ['bitcoin', 'paypal'],
-        ['paypal', 'stripe'],
+        ['paypal', 'usdt'],
       ]),
     ).toEqual(['paypal']);
-    expect(intersectPaymentMethods([['bitcoin'], ['stripe']])).toEqual([]);
+    expect(intersectPaymentMethods([['bitcoin'], ['usdt']])).toEqual([]);
     expect(
       intersectPaymentMethods([
         ['paypal', 'usdt', 'bitcoin'],
@@ -196,8 +196,8 @@ describe('checkout-phase', () => {
     expect(intersectPaymentMethods([['bitcoin', 'usdt'], ['bitcoin']])).toEqual(['bitcoin']);
     expect(
       intersectPaymentMethods([
-        ['bitcoin', 'stripe', 'paypal'],
-        ['bitcoin', 'stripe', 'paypal'],
+        ['bitcoin', 'paypal'],
+        ['bitcoin', 'paypal'],
       ]),
     ).toEqual(['bitcoin', 'paypal']);
     expect(readCheckoutHashOrderId('#018f47d2-6a27-7c23-a49d-000000000001')).toBe(

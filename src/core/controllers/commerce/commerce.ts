@@ -581,7 +581,7 @@ export class CommerceController {
 
   // --- Seller-configurable payment methods (durable service only) ----------
 
-  /** A seller's publicly visible payment rails (bitcoin/stripe/paypal). */
+  /** A seller's publicly visible payment rails (bitcoin/usdt/paypal). */
   static async getSellerPaymentConfig(sellerPubky: unknown) {
     return await CommerceApplication.getSellerPaymentConfig(CommerceRecordNormalizer.pubky(sellerPubky));
   }
@@ -599,8 +599,6 @@ export class CommerceController {
   /** Saves the current user's own payment configuration. */
   static async putMyPaymentConfig(input: {
     bitcoinEnabled: boolean;
-    stripePaymentLink: string | null;
-    stripeRestrictedKey?: string;
     paypalMerchantEmail: string | null;
     usdtEnabled?: boolean;
   }) {
@@ -610,11 +608,6 @@ export class CommerceController {
   /** Buyer's one-shot payment-method binding for an order. */
   static async bindPaymentMethod(orderId: string, method: PaymentMethodKind) {
     return await CommerceApplication.bindPaymentMethod(this.getCurrentUserPubky(), orderId, method);
-  }
-
-  /** Asks the service to verify a Stripe payment with the seller's restricted key. */
-  static async verifyStripePayment(orderId: string) {
-    return await CommerceApplication.verifyStripePayment(this.getCurrentUserPubky(), orderId);
   }
 
   /** Buyer's PayPal payment report (attestation, never advances payment). */

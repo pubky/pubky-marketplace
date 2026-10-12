@@ -7,17 +7,15 @@ import { usdtSetupActionSchema, usdtSetupStatusSchema } from '@/libs/commerce/us
  * "seller-direct" custody decision): the seller owns every processor
  * relationship. This marketplace never receives funds on any rail —
  * bitcoin settles to the seller's own claimed watch-only account via
- * Paykit, and fiat settles into the seller's own Stripe/PayPal account.
- * The service only verifies (Stripe, via a seller-supplied restricted
- * read-only key) or records attestations (PayPal, buyer-reported and
- * seller-confirmed).
+ * Paykit, and PayPal settles into the seller's own PayPal account. The
+ * service records attestations (PayPal, buyer-reported and seller-confirmed).
  */
 export type PaymentMethodKind = (typeof PAYMENT_METHOD_KINDS)[number];
 
 /**
  * Public view of one seller's payment rails, served unauthenticated so buyers
  * can see the available methods before committing. Booleans only: the
- * seller's PayPal email, Stripe link, and restricted key never enter this
+ * seller's PayPal email never enters this
  * view. PayPal checkout opens the `fiatCheckoutUrl` the service returns on the
  * buyer's own bound order.
  *
@@ -59,8 +57,7 @@ export type SellerPaymentConfig = z.infer<typeof sellerPaymentConfigSchema>;
 
 /**
  * Methods the buyer can actually choose, in the order the UI renders them.
- * Card payments are paused: a stored Stripe link is kept on the service and
- * is never offered. USDT is offered only when the caller's gate
+ * USDT is offered only when the caller's gate
  * (`usdtPaymentsAvailable`: Shop flag AND service capability) is on AND the
  * seller's public config says `usdtAvailable`; every existing caller omits the
  * gate, so their result is unchanged.
@@ -77,26 +74,8 @@ export function availablePaymentMethods(
 }
 
 /**
- * Stripe Payment Links are the seller-direct checkout surface: the seller
- * creates the link in their own Stripe dashboard, so only Stripe-hosted
- * link hosts are accepted — anything else could smuggle an arbitrary
- * redirect into the buyer flow.
- */
-const STRIPE_PAYMENT_LINK_HOSTS = new Set(['buy.stripe.com', 'book.stripe.com']);
-
-export function isStripePaymentLink(value: string): boolean {
-  try {
-    const url = new URL(value);
-    return url.protocol === 'https:' && STRIPE_PAYMENT_LINK_HOSTS.has(url.hostname);
-  } catch {
-    return false;
-  }
-}
-
-/**
  * The seller's own view when editing the configuration. Mirrors the
- * service's `payment_config` response: the Stripe restricted key is
- * write-only, so only its presence flag ever comes back.
+ * service's `payment_config` response.
  */
 export const sellerPaymentConfigOwnViewSchema = z.object({
   bitcoinEnabled: z.boolean(),
@@ -105,22 +84,11 @@ export const sellerPaymentConfigOwnViewSchema = z.object({
   // Readiness from the service's signed Paykit lookup (see usdt-seller-setup.ts).
   usdtSetup: usdtSetupStatusSchema,
   usdtSetupAction: usdtSetupActionSchema,
-  stripePaymentLink: z.url().nullable(),
   paypalMerchantEmail: z.email().nullable(),
-  stripeRestrictedKeySet: z.boolean(),
   updatedAt: z.string(),
 });
 
 export type SellerPaymentConfigOwnView = z.infer<typeof sellerPaymentConfigOwnViewSchema>;
-
-/**
- * Seller-supplied Stripe restricted keys start with `rk_`; secret `sk_`
- * keys are refused by the service, and this mirror check keeps a pasted
- * secret key from ever leaving the browser.
- */
-export function isStripeRestrictedKey(value: string): boolean {
-  return /^rk_(test|live)_[0-9A-Za-z]{8,}$/.test(value.trim());
-}
 
 /**
  * Client-side sanity check for a pasted BIP84 account key before it is sent

@@ -29,7 +29,6 @@ describe('payment option model', () => {
   it('keeps every existing method label on its existing option', () => {
     expect(paymentOptionForMethod('bitcoin').id).toBe('paykit.btc.bitcoin');
     expect(paymentOptionForMethod('paypal')).toMatchObject({ id: 'paypal.fiat', asset: null, network: null });
-    expect(paymentOptionForMethod('stripe')).toMatchObject({ id: 'stripe.fiat', asset: null, network: null });
     expect(paymentOptionForMethod('usdt').id).toBe('paykit.usdt.arbitrum-one');
   });
 
@@ -51,7 +50,7 @@ describe('payment option model', () => {
   });
 
   it('separates Lock Server entitlement from every service-verified mode', () => {
-    expect(SETTLEMENT_MODES).toEqual(['locked', 'paykit', 'gateway-notified', 'processor', 'seller-attested']);
+    expect(SETTLEMENT_MODES).toEqual(['locked', 'paykit', 'gateway-notified', 'seller-attested']);
   });
 
   it('parses a known option id and returns null for anything else', () => {

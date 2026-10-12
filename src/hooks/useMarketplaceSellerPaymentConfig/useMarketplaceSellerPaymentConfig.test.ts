@@ -29,8 +29,6 @@ const error = (operation: string) =>
 
 const config = {
   bitcoinEnabled: true,
-  stripePaymentLink: null,
-  stripeRestrictedKeySet: false,
   paypalMerchantEmail: null,
   updatedAt: '2026-09-09T00:00:00.000Z',
 };
@@ -48,8 +46,6 @@ describe('useMarketplaceSellerPaymentConfig', () => {
     await act(async () => {
       await result.current.save({
         bitcoinEnabled: true,
-        stripePaymentLink: '',
-        stripeRestrictedKey: '',
         paypalMerchantEmail: '',
       });
     });
@@ -96,17 +92,22 @@ describe('useMarketplaceSellerPaymentConfig', () => {
     useCommerceStore.getState().reset();
   });
 
-  it('uses static copy for Stripe removal failures', async () => {
+  it('sends only the Bitcoin and PayPal rails when saving', async () => {
     vi.mocked(CommerceController.getMyPaymentConfig).mockResolvedValue(config);
     vi.mocked(CommerceController.isOwnPaykitAccountClaimed).mockResolvedValue(false);
-    vi.mocked(CommerceController.putMyPaymentConfig).mockRejectedValueOnce(error('remove'));
+    vi.mocked(CommerceController.putMyPaymentConfig).mockReset().mockResolvedValue(config);
     const { result } = renderHook(() => useMarketplaceSellerPaymentConfig());
     await waitFor(() => expect(result.current.config).not.toBeNull());
 
     await act(async () => {
-      await result.current.clearStripeKey();
+      await result.current.save({ bitcoinEnabled: true, paypalMerchantEmail: ' seller@example.com ' });
     });
-    expect(vi.mocked(toast).mock.calls.at(-1)?.[0]?.description).not.toContain('SENTINEL_SELLER_PAYMENT_remove');
+
+    expect(vi.mocked(CommerceController.putMyPaymentConfig).mock.calls[0]?.[0]).toStrictEqual({
+      bitcoinEnabled: true,
+      paypalMerchantEmail: 'seller@example.com',
+    });
+    expect(result.current).not.toHaveProperty('clearStripeKey');
     expect(result.current).not.toHaveProperty('startClaim');
   });
 
@@ -124,7 +125,7 @@ describe('useMarketplaceSellerPaymentConfig', () => {
       vi.mocked(CommerceController.putMyPaymentConfig).mockReset().mockResolvedValue(config);
       const { result } = renderHook(() => useMarketplaceSellerPaymentConfig());
       await waitFor(() => expect(result.current.isLoading).toBe(false));
-      const base = { bitcoinEnabled: true, stripePaymentLink: '', stripeRestrictedKey: '', paypalMerchantEmail: '' };
+      const base = { bitcoinEnabled: true, paypalMerchantEmail: '' };
 
       await act(async () => {
         await result.current.save(base);
@@ -135,27 +136,6 @@ describe('useMarketplaceSellerPaymentConfig', () => {
         await result.current.save({ ...base, usdtEnabled: false });
       });
       expect(vi.mocked(CommerceController.putMyPaymentConfig).mock.calls[1]?.[0]).toMatchObject({ usdtEnabled: false });
-    });
-
-    it('keeps the stored consent when the Stripe key is removed, and omits it when the service sent none', async () => {
-      vi.mocked(CommerceController.isOwnPaykitAccountClaimed).mockResolvedValue(true);
-      vi.mocked(CommerceController.putMyPaymentConfig).mockReset().mockResolvedValue(usdtConfig);
-      vi.mocked(CommerceController.getMyPaymentConfig).mockResolvedValue(usdtConfig);
-      const withUsdt = renderHook(() => useMarketplaceSellerPaymentConfig());
-      await waitFor(() => expect(withUsdt.result.current.config).not.toBeNull());
-      await act(async () => {
-        await withUsdt.result.current.clearStripeKey();
-      });
-      expect(vi.mocked(CommerceController.putMyPaymentConfig).mock.calls[0]?.[0]).toMatchObject({ usdtEnabled: true });
-      withUsdt.unmount();
-
-      vi.mocked(CommerceController.getMyPaymentConfig).mockResolvedValue(config);
-      const without = renderHook(() => useMarketplaceSellerPaymentConfig());
-      await waitFor(() => expect(without.result.current.config).not.toBeNull());
-      await act(async () => {
-        await without.result.current.clearStripeKey();
-      });
-      expect(vi.mocked(CommerceController.putMyPaymentConfig).mock.calls[1]?.[0]).not.toHaveProperty('usdtEnabled');
     });
 
     it('refreshOwnConfig re-reads only the stored configuration, without a loading state or a claim lookup', async () => {

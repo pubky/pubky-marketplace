@@ -5,16 +5,13 @@ import {
   countReadyPaymentMethods,
   deriveBitcoinStatus,
   derivePaypalStatus,
-  deriveStripeStatus,
   isReadyPaymentMethodStatus,
   type PaymentMethodStatus,
 } from './MarketplaceGetPaidSettings.utils';
 
 const baseConfig: SellerPaymentConfigOwnView = {
   bitcoinEnabled: false,
-  stripePaymentLink: null,
   paypalMerchantEmail: null,
-  stripeRestrictedKeySet: false,
   updatedAt: '2026-08-22T12:00:00.000Z',
 };
 
@@ -30,34 +27,6 @@ describe('MarketplaceGetPaidSettings status derivation', () => {
       },
     ] as const)('$name → $expected', ({ config, expected }) => {
       expect(derivePaypalStatus(config)).toBe(expected);
-    });
-  });
-
-  describe('deriveStripeStatus', () => {
-    it.each([
-      { name: 'null config', config: null, expected: 'not_set_up' },
-      { name: 'neither credential', config: baseConfig, expected: 'not_set_up' },
-      {
-        name: 'link only',
-        config: { ...baseConfig, stripePaymentLink: 'https://buy.stripe.com/test_abc' },
-        expected: 'needs_attention',
-      },
-      {
-        name: 'key only',
-        config: { ...baseConfig, stripeRestrictedKeySet: true },
-        expected: 'needs_attention',
-      },
-      {
-        name: 'link and key',
-        config: {
-          ...baseConfig,
-          stripePaymentLink: 'https://buy.stripe.com/test_abc',
-          stripeRestrictedKeySet: true,
-        },
-        expected: 'connected',
-      },
-    ] as const)('$name → $expected', ({ config, expected }) => {
-      expect(deriveStripeStatus(config)).toBe(expected);
     });
   });
 

@@ -7,7 +7,7 @@ import { z } from 'zod';
  * file so the real fields can be swapped in here without touching a component:
  *
  * - `payment_finality` on the order projection: `pending | final | reverted`.
- *   Absent for every Bitcoin, PayPal and Stripe order, and for a USDT order
+ *   Absent for every Bitcoin and PayPal order, and for a USDT order
  *   that is not paid yet.
  * - Command refusal `error.reason === 'payment_not_final'` on
  *   `fulfillment.ship`, `fulfillment.mark_ready` and `fulfillment.confirm_pickup`

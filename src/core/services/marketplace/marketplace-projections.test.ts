@@ -690,8 +690,14 @@ describe('marketplace order projection — USDT payment method (default-off plum
     expect(marketplaceOrderSchema.safeParse(wire({ payment_method: 'dogecoin' })).success).toBe(false);
   });
 
+  it('reads an order bound to the removed Stripe rail as unbound instead of failing the parse', () => {
+    const parsed = marketplaceOrderSchema.parse(wire({ payment_method: 'stripe', fiat_verification: 'processor' }));
+    expect(parsed.paymentMethod).toBeNull();
+    expect(parsed.fiatVerification).toBeNull();
+  });
+
   it('parses every existing method with no asset fields, byte-for-byte as before', () => {
-    for (const method of ['bitcoin', 'paypal', 'stripe', null] as const) {
+    for (const method of ['bitcoin', 'paypal', null] as const) {
       const input = wire({ payment_method: method });
       const parsed = marketplaceOrderSchema.parse(input);
       expect(parsed.paymentMethod).toBe(method);
@@ -757,8 +763,8 @@ describe('marketplace order projection — USDT refund destination (S6 wire cont
     expect(marketplaceOrderSchema.parse(wire({ payment_address: 'bc1q' })).paymentAddress).toBeUndefined();
   });
 
-  it('leaves every Bitcoin, PayPal and Stripe order without refund fields', () => {
-    for (const method of ['bitcoin', 'paypal', 'stripe', null] as const) {
+  it('leaves every Bitcoin and PayPal order without refund fields', () => {
+    for (const method of ['bitcoin', 'paypal', null] as const) {
       const parsed = marketplaceOrderSchema.parse(createOrderFixture('paid', { paymentMethod: method }));
       expect(parsed.refundDestination).toBeUndefined();
       expect(parsed.paymentAddress).toBeUndefined();
