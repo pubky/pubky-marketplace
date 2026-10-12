@@ -1,4 +1,4 @@
-import { commerceListingRecordSchema, type CommerceListingRecord } from '@/libs/commerce/marketplace-records';
+import { type CommerceListingRecord, commerceListingRecordSchema } from '@/libs/commerce/marketplace-records';
 import { COMMERCE_FIXTURE_SELLER, createCommerceListingFixture } from './commerce';
 
 function media(id: string, overrides: Record<string, unknown> = {}) {

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { MARKETPLACE_ROUTES } from '@/app/routes';
 import { COMMERCE_LISTING_MAX_QUANTITY } from '@/config/commerce';
@@ -66,7 +66,7 @@ vi.mock('@/hooks/useMarketplaceSellerDashboard/useMarketplaceSellerDashboard', (
     unfinishedDrafts: dashboardState.unfinishedDrafts,
     discardListingDraft: dashboardFns.discardListingDraft,
     resumeListingDraft: dashboardFns.resumeListingDraft,
-    exportCsv: () => 'listing_id,title,state,format,price_minor,currency,inventory',
+    exportCsv: async () => new TextEncoder().encode('record_uri,seller_pubky\r\n'),
   }),
 }));
 
@@ -359,6 +359,26 @@ describe('MarketplaceDashboard', () => {
       expect(actions.getByRole('link', { name })).toHaveClass('bg-secondary');
     }
     expect(screen.queryByTestId('create-listing-payment-precondition')).not.toBeInTheDocument();
+  });
+
+  it('downloads the canonical import CSV from Export CSV', async () => {
+    viewport.isMobile = false;
+    paymentGate.isDurable = true;
+    paymentGate.ready = true;
+    dashboardState.listings = [listing({ listingId: 'boots', title: 'Boots' })];
+    const createObjectURL = vi.fn((_blob: Blob) => 'blob:csv');
+    const revokeObjectURL = vi.fn();
+    Object.assign(URL, { createObjectURL, revokeObjectURL });
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined);
+
+    render(<MarketplaceDashboard />);
+    fireEvent.click(screen.getByRole('button', { name: /Export CSV/ }));
+
+    await waitFor(() => expect(click).toHaveBeenCalledTimes(1));
+    const blob = createObjectURL.mock.calls[0]![0];
+    expect(await blob.text()).toBe('record_uri,seller_pubky\r\n');
+    expect(revokeObjectURL).toHaveBeenCalledWith('blob:csv');
+    click.mockRestore();
   });
 
   it('shows Unlimited for a listing with an unlimited variant and a number for the rest', () => {
