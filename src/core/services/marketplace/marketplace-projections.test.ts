@@ -630,6 +630,36 @@ describe('marketplace order projection — PayPal refund notification fields', (
   });
 });
 
+describe('marketplace order projection — seller periods and the optional guarantee version', () => {
+  const wire = (values: Record<string, unknown>) => ({
+    ...createOrderFixture('shipped'),
+    ...(toCamelCaseWire(values) as Record<string, unknown>),
+  });
+
+  it('reads the periods frozen on the order through wire casing', () => {
+    const parsed = marketplaceOrderSchema.parse(wire({ delivery_assume_days: 3, auto_complete_days: 5 }));
+    expect(parsed.deliveryAssumeDays).toBe(3);
+    expect(parsed.autoCompleteDays).toBe(5);
+  });
+
+  it('accepts orders where the seller left a period unset or the service predates the fields', () => {
+    const unset = marketplaceOrderSchema.parse(wire({ delivery_assume_days: null, auto_complete_days: null }));
+    expect(unset.deliveryAssumeDays).toBeNull();
+    expect(unset.autoCompleteDays).toBeNull();
+
+    const { deliveryAssumeDays: _omitted, autoCompleteDays: _alsoOmitted, ...legacy } = wire({});
+    const parsed = marketplaceOrderSchema.parse(legacy);
+    expect(parsed.deliveryAssumeDays).toBeUndefined();
+  });
+
+  it('no longer requires the guarantee policy version, and still accepts it when present', () => {
+    expect(marketplaceOrderSchema.parse(wire({ guarantee_policy_version: null })).guaranteePolicyVersion).toBeNull();
+    const { guaranteePolicyVersion: _omitted, ...withoutVersion } = wire({});
+    expect(marketplaceOrderSchema.parse(withoutVersion).guaranteePolicyVersion).toBeUndefined();
+    expect(marketplaceOrderSchema.parse(wire({ guarantee_policy_version: 1 })).guaranteePolicyVersion).toBe(1);
+  });
+});
+
 describe('marketplace order projection — USDT payment method (default-off plumbing)', () => {
   const usdtWire = {
     payment_method: 'usdt',

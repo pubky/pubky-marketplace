@@ -558,7 +558,9 @@ export const marketplaceOrderProjectionSchema = z
     total: marketplaceMoneySchema,
     pricedFrom: z.string().optional(),
     offerAwardId: z.uuid().nullable().optional(),
-    guaranteePolicyVersion: z.literal(1),
+    // Legacy: present only on orders whose checkout carried it. New orders
+    // project null, and the field is not shown anywhere.
+    guaranteePolicyVersion: z.literal(1).nullish(),
     paymentId: z.uuid(),
     receiptId: z.uuid().nullable(),
     holdExpiresAt: z.string().nullable().optional(),
@@ -576,6 +578,10 @@ export const marketplaceOrderProjectionSchema = z
     pickupTermsChanged: z.boolean().optional(),
     cancellationReason: z.string().nullable().optional(),
     deliveryAssumed: z.boolean().optional().default(false),
+    // The seller's periods frozen on the order when its payment started;
+    // null when the seller left one unset (the service default applies).
+    deliveryAssumeDays: z.number().int().positive().nullish(),
+    autoCompleteDays: z.number().int().positive().nullish(),
     nextActor: z
       .enum(['buyer', 'seller', 'none'])
       .nullable()
