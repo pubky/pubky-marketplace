@@ -4,12 +4,18 @@ import { useEffect } from 'react';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/atoms/Dialog/Dialog';
 import { useReportPost } from '@/hooks/useReportPost/useReportPost';
 import { REPORT_POST_STEPS } from '@/hooks/useReportPost/useReportPost.constants';
+import type { ReportTarget } from '@/hooks/useReportPost/useReportPost.types';
 import type { DialogReportPostProps } from './DialogReportPost.types';
 import { DialogReportPostIssueStep } from './DialogReportPostIssueStep/DialogReportPostIssueStep';
 import { DialogReportPostReasonStep } from './DialogReportPostReasonStep/DialogReportPostReasonStep';
 import { DialogReportPostSuccess } from './DialogReportPostSuccess/DialogReportPostSuccess';
 
-export function DialogReportPost({ open, onOpenChange, postId }: DialogReportPostProps) {
+export function DialogReportPost({ open, onOpenChange, postId, listing }: DialogReportPostProps) {
+  const target: ReportTarget = listing
+    ? { kind: 'listing', sellerPubky: listing.sellerPubky, listingId: listing.listingId }
+    : { kind: 'post', postId };
+  const subject = target.kind;
+  const subjectTitle = subject === 'listing' ? 'Report Listing' : 'Report Post';
   const {
     step,
     selectedIssueType,
@@ -21,7 +27,7 @@ export function DialogReportPost({ open, onOpenChange, postId }: DialogReportPos
     handleReasonChange,
     submit,
     reset,
-  } = useReportPost(postId);
+  } = useReportPost(target);
 
   // Reset state when the dialog closes
   useEffect(() => {
@@ -42,6 +48,7 @@ export function DialogReportPost({ open, onOpenChange, postId }: DialogReportPos
     if (step === REPORT_POST_STEPS.REASON_INPUT && selectedIssueType !== null) {
       return (
         <DialogReportPostReasonStep
+          subject={subject}
           reason={reason}
           hasContent={hasContent}
           isSubmitting={isSubmitting}
@@ -54,6 +61,7 @@ export function DialogReportPost({ open, onOpenChange, postId }: DialogReportPos
 
     return (
       <DialogReportPostIssueStep
+        subject={subject}
         onSelectIssueType={selectIssueType}
         onCancel={handleCancel}
         onOpenChange={onOpenChange}
@@ -63,10 +71,10 @@ export function DialogReportPost({ open, onOpenChange, postId }: DialogReportPos
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="w-xl" hiddenTitle="Report Post" onOpenAutoFocus={(e) => e.preventDefault()}>
+      <DialogContent className="w-xl" hiddenTitle={subjectTitle} onOpenAutoFocus={(e) => e.preventDefault()}>
         <DialogHeader>
-          <DialogTitle className="sr-only">Report Post</DialogTitle>
-          <DialogDescription className="sr-only">Report post dialog</DialogDescription>
+          <DialogTitle className="sr-only">{subjectTitle}</DialogTitle>
+          <DialogDescription className="sr-only">{`Report ${subject} dialog`}</DialogDescription>
         </DialogHeader>
         {renderContent()}
       </DialogContent>

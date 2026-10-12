@@ -7,39 +7,60 @@ import { DialogReportPost } from './DialogReportPost';
 // Mock hooks
 const mockUseCurrentUserProfile = vi.fn();
 const mockUseReportPost = vi.fn();
+const mockStepSubject = vi.fn();
 
 vi.mock('@/hooks/useCurrentUserProfile/useCurrentUserProfile', () => ({
   useCurrentUserProfile: () => mockUseCurrentUserProfile(),
 }));
 
 vi.mock('@/hooks/useReportPost/useReportPost', () => ({
-  useReportPost: () => mockUseReportPost(),
+  useReportPost: (target: unknown) => mockUseReportPost(target),
 }));
 
 // Mock sub-components
 vi.mock('./DialogReportPostIssueStep/DialogReportPostIssueStep', () => ({
-  DialogReportPostIssueStep: ({ onSelectIssueType }: { onSelectIssueType: (type: string) => void }) => (
-    <div
-      data-testid="dialog-report-post-issue-step"
-      onClick={() => onSelectIssueType(REPORT_ISSUE_TYPES.PERSONAL_INFO)}
-    >
-      DialogReportPostIssueStep
-    </div>
-  ),
+  DialogReportPostIssueStep: ({
+    onSelectIssueType,
+    subject,
+  }: {
+    onSelectIssueType: (type: string) => void;
+    subject?: string;
+  }) => {
+    mockStepSubject('issue', subject);
+    return (
+      <div
+        data-testid="dialog-report-post-issue-step"
+        onClick={() => onSelectIssueType(REPORT_ISSUE_TYPES.PERSONAL_INFO)}
+      >
+        DialogReportPostIssueStep
+      </div>
+    );
+  },
 }));
 
 vi.mock('./DialogReportPostReasonStep/DialogReportPostReasonStep', () => ({
-  DialogReportPostReasonStep: ({ onCancel, onSubmit }: { onCancel: () => void; onSubmit: () => void }) => (
-    <div data-testid="dialog-report-post-reason-step">
-      <button data-testid="back-button" onClick={onCancel}>
-        Back
-      </button>
-      <button data-testid="submit-button" onClick={onSubmit}>
-        Submit
-      </button>
-      DialogReportPostReasonStep
-    </div>
-  ),
+  DialogReportPostReasonStep: ({
+    onCancel,
+    onSubmit,
+    subject,
+  }: {
+    onCancel: () => void;
+    onSubmit: () => void;
+    subject?: string;
+  }) => {
+    mockStepSubject('reason', subject);
+    return (
+      <div data-testid="dialog-report-post-reason-step">
+        <button data-testid="back-button" onClick={onCancel}>
+          Back
+        </button>
+        <button data-testid="submit-button" onClick={onSubmit}>
+          Submit
+        </button>
+        DialogReportPostReasonStep
+      </div>
+    );
+  },
 }));
 
 vi.mock('./DialogReportPostSuccess/DialogReportPostSuccess', () => ({
@@ -51,6 +72,7 @@ vi.mock('./DialogReportPostSuccess/DialogReportPostSuccess', () => ({
 }));
 
 const TEST_POST_ID = 'author-pubky-456:post-id-789';
+const TEST_SELLER_PUBKY = 'o1gg96ewuojmopcjbz8895478wdtxtzzuxnfjjz8o8e77csa1ngo';
 
 describe('DialogReportPost', () => {
   const mockOnOpenChange = vi.fn();
@@ -148,6 +170,49 @@ describe('DialogReportPost', () => {
     fireEvent.click(successComponent);
 
     expect(mockOnOpenChange).toHaveBeenCalledWith(false);
+  });
+
+  it('reports a post by composite id', () => {
+    render(<DialogReportPost open={true} onOpenChange={mockOnOpenChange} postId={TEST_POST_ID} />);
+
+    expect(mockUseReportPost).toHaveBeenCalledWith({ kind: 'post', postId: TEST_POST_ID });
+    expect(mockStepSubject).toHaveBeenCalledWith('issue', 'post');
+  });
+
+  it('reports a listing by seller pubky and listing id', () => {
+    render(
+      <DialogReportPost
+        open={true}
+        onOpenChange={mockOnOpenChange}
+        listing={{ sellerPubky: TEST_SELLER_PUBKY, listingId: 'boots_01' }}
+      />,
+    );
+
+    expect(mockUseReportPost).toHaveBeenCalledWith({
+      kind: 'listing',
+      sellerPubky: TEST_SELLER_PUBKY,
+      listingId: 'boots_01',
+    });
+    expect(mockStepSubject).toHaveBeenCalledWith('issue', 'listing');
+    expect(screen.getByText('Report Listing', { selector: '[data-slot="dialog-title"]' })).toBeInTheDocument();
+  });
+
+  it('passes the listing subject to the reason step', () => {
+    mockUseReportPost.mockReturnValue({
+      ...defaultUseReportPostReturn,
+      step: REPORT_POST_STEPS.REASON_INPUT,
+      selectedIssueType: REPORT_ISSUE_TYPES.ILLEGAL_SALES,
+    });
+
+    render(
+      <DialogReportPost
+        open={true}
+        onOpenChange={mockOnOpenChange}
+        listing={{ sellerPubky: TEST_SELLER_PUBKY, listingId: 'boots_01' }}
+      />,
+    );
+
+    expect(mockStepSubject).toHaveBeenCalledWith('reason', 'listing');
   });
 
   it('applies correct className to DialogContent', () => {

@@ -1,4 +1,8 @@
+import type { DialogReportSubject } from '../DialogReportPost.types';
+
 export interface DialogReportPostReasonStepProps {
+  /** What is being reported; drives the copy. Defaults to a post. */
+  subject?: DialogReportSubject;
   /** Current reason text */
   reason: string;
   /** True if reason has content */

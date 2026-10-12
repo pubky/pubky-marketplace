@@ -14,6 +14,7 @@ import { ISSUE_TYPE_ICONS } from './DialogReportPostIssueStep.constants';
 import type { DialogReportPostIssueStepProps } from './DialogReportPostIssueStep.types';
 
 export function DialogReportPostIssueStep({
+  subject = 'post',
   onSelectIssueType,
   onCancel,
   onOpenChange,
@@ -39,7 +40,7 @@ export function DialogReportPostIssueStep({
   return (
     <>
       <DialogHeader>
-        <DialogTitle>{'Report Post'}</DialogTitle>
+        <DialogTitle>{subject === 'listing' ? 'Report Listing' : 'Report Post'}</DialogTitle>
         <DialogDescription>{'What sort of issue are you reporting?'}</DialogDescription>
       </DialogHeader>
 

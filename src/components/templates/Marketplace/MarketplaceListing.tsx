@@ -6,6 +6,7 @@ import {
   ArrowLeft,
   Bell,
   ChevronDown,
+  Flag,
   Hash,
   Heart,
   MapPin,
@@ -59,6 +60,7 @@ import { formatStockQuantity, UNLIMITED_STOCK_LABEL } from '@/libs/commerce/unli
 import { MarketplaceFulfillmentBadge } from '@/molecules/MarketplaceFulfillmentBadge/MarketplaceFulfillmentBadge';
 import { MarketplaceSellerIdentity } from '@/molecules/MarketplaceSellerIdentity/MarketplaceSellerIdentity';
 import { ContentLayout } from '@/organisms/ContentLayout/ContentLayout';
+import { DialogReportPost } from '@/organisms/DialogReportPost/DialogReportPost';
 import { MarketplaceAuctionPanel } from '@/organisms/Marketplace/MarketplaceAuctionPanel';
 import { MarketplaceBidDialog } from '@/organisms/Marketplace/MarketplaceBidDialog';
 import { MarketplaceCommunityTags } from '@/organisms/Marketplace/MarketplaceCommunityTags';
@@ -91,6 +93,7 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
   const [isFetchSettled, setIsFetchSettled] = useState(false);
   const [selectedVariantId, setSelectedVariantId] = useState('');
   const [showSessionRequired, setShowSessionRequired] = useState(false);
+  const [reportOpen, setReportOpen] = useState(false);
   const [nowMs, setNowMs] = useState(() => Date.now());
   const adapterMode = getCommerceAdapterMode();
   const currentUserPubky = useAuthStore((state) => state.currentUserPubky);
@@ -602,9 +605,24 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
                   <div>
                     <MarketplaceMessageDialog sellerPubky={sellerPubky} listingId={listingId} />
                   </div>
+                  {!isOwner && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="rounded-full text-muted-foreground"
+                      data-testid="marketplace-listing-report"
+                      onClick={() => requireAuth(() => setReportOpen(true))}
+                    >
+                      <Flag className="size-4" aria-hidden="true" />
+                      Report listing
+                    </Button>
+                  )}
                 </div>
               </CardContent>
             </Card>
+            {!isOwner && (
+              <DialogReportPost open={reportOpen} onOpenChange={setReportOpen} listing={{ sellerPubky, listingId }} />
+            )}
             <section aria-label="Fulfillment and listing information" className="flex min-w-0 flex-col gap-5">
               <div className="grid gap-3 sm:grid-cols-2">
                 <MarketplaceListingSpecifics record={record} />
