@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { cleanup, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CommerceSellerReputationOverview } from '@/application/commerce/commerce';
@@ -78,6 +78,8 @@ vi.mock('@/controllers/commerce/commerce', () => ({
         : Promise.resolve(view.confirmedRemoved);
     },
     hasFullHomeserverGrant: () => view.hasFullHomeserverGrant,
+    canRegisterListings: () => false,
+    ensureListingRegistered: vi.fn(async () => {}),
   },
 }));
 
@@ -584,6 +586,44 @@ describe('MarketplaceListing', () => {
 
     await user.click(screen.getByRole('button', { name: 'Make offer' }));
     expect(authState.setShowSignInDialog).toHaveBeenCalledTimes(2);
+  });
+
+  describe('Report listing', () => {
+    it('opens the report dialog with the pubky.app reasons for a signed-in viewer', async () => {
+      const user = userEvent.setup();
+      renderListing();
+
+      await user.click(screen.getByRole('button', { name: 'Report listing' }));
+
+      expect(await screen.findByRole('dialog')).toBeInTheDocument();
+      expect(screen.getByText('What sort of issue are you reporting?')).toBeInTheDocument();
+      for (const label of ['Illegal Sales or Criminal', 'Copyright Infringement', 'Personal Info Leak']) {
+        expect(screen.getByRole('option', { name: label })).toBeInTheDocument();
+      }
+      expect(authState.setShowSignInDialog).not.toHaveBeenCalled();
+    });
+
+    it('asks a signed-out viewer to sign in instead of opening the dialog', async () => {
+      authState.currentUserPubky = null;
+      const user = userEvent.setup();
+      renderListing();
+
+      await user.click(screen.getByRole('button', { name: 'Report listing' }));
+
+      expect(authState.setShowSignInDialog).toHaveBeenCalledWith(true);
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    });
+
+    it('does not offer the seller a report on their own listing', () => {
+      const listing = renderListing();
+      expect(screen.getByTestId('marketplace-listing-report')).toBeInTheDocument();
+      cleanup();
+      authState.currentUserPubky = listing.seller_id;
+
+      render(<MarketplaceListing sellerPubky={listing.seller_id} listingId={listing.listing_id} />);
+
+      expect(screen.queryByRole('button', { name: 'Report listing' })).not.toBeInTheDocument();
+    });
   });
 
   it('adds the selected variant to cart when the marketplace session is ready', async () => {

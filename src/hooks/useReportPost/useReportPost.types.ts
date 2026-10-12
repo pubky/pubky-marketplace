@@ -1,6 +1,14 @@
 import type { ReportIssueType } from '@/pipes/report/report.types';
 import { REPORT_POST_STEPS } from './useReportPost.constants';
 
+/**
+ * What a report is about: a post (composite id `author:postId`) or a
+ * marketplace listing (seller pubky and the seller-scoped listing id).
+ */
+export type ReportTarget =
+  | { kind: 'post'; postId: string }
+  | { kind: 'listing'; sellerPubky: string; listingId: string };
+
 export type ReportPostStep = (typeof REPORT_POST_STEPS)[keyof typeof REPORT_POST_STEPS];
 
 /**

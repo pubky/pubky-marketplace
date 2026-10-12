@@ -7,7 +7,11 @@ import { Logger } from '@/libs/logger/logger';
 import type { Pubky } from '@/models/models.types';
 import { REPORT_ISSUE_LABELS, REPORT_ISSUE_TYPES } from '@/pipes/report/report.constants';
 import { ChatwootService } from '@/services/chatwoot/chatwoot';
-import { CHATWOOT_INBOX_IDS, CHATWOOT_REPORT_MESSAGE_PREFIX } from '@/services/chatwoot/chatwoot.constants';
+import {
+  CHATWOOT_INBOX_IDS,
+  CHATWOOT_REPORT_LISTING_MESSAGE_PREFIX,
+  CHATWOOT_REPORT_MESSAGE_PREFIX,
+} from '@/services/chatwoot/chatwoot.constants';
 import type { TChatwootContact } from '@/services/chatwoot/chatwoot.types';
 import { asOpaque } from '@/test-utils/type-assertions';
 import type { TReportSubmitInput } from './report.types';
@@ -129,6 +133,33 @@ describe('ReportApplication', () => {
         expect.any(Number),
         expect.stringContaining(`Reason: ${input.reason}`),
       );
+    });
+
+    it('should label a listing report and carry the listing URL, id and seller', async () => {
+      const listingUrl =
+        'https://example.com/marketplace/listing/o1gg96ewuojmopcjbz8895478wdtxtzzuxnfjjz8o8e77csa1ngo/boots_01';
+      const input = createReportInput({
+        postUrl: listingUrl,
+        issueType: REPORT_ISSUE_TYPES.ILLEGAL_SALES,
+        listing: {
+          listingId: 'boots_01',
+          sellerPubky: 'o1gg96ewuojmopcjbz8895478wdtxtzzuxnfjjz8o8e77csa1ngo' as Pubky,
+        },
+      });
+      const createConversationSpy = vi.spyOn(ChatwootService, 'createConversation');
+
+      await ReportApplication.submit(input);
+
+      const content = createConversationSpy.mock.calls[0]?.[3] as string;
+      expect(content).toContain(
+        `${CHATWOOT_REPORT_LISTING_MESSAGE_PREFIX} - ${REPORT_ISSUE_LABELS[REPORT_ISSUE_TYPES.ILLEGAL_SALES]}`,
+      );
+      expect(content).toContain(`Listing URL: ${listingUrl}`);
+      expect(content).toContain('Listing ID: boots_01');
+      expect(content).toContain('Seller: o1gg96ewuojmopcjbz8895478wdtxtzzuxnfjjz8o8e77csa1ngo');
+      expect(content).toContain(`Reason: ${input.reason}`);
+      expect(content).not.toContain('Post URL');
+      expect(createConversationSpy.mock.calls[0]?.[2]).toBe(CHATWOOT_INBOX_IDS.REPORTS);
     });
 
     it('should format source label correctly for each issue type', async () => {

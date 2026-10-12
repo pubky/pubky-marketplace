@@ -12,6 +12,7 @@ import { PostHeader } from '../../PostHeader/PostHeader';
 import type { DialogReportPostReasonStepProps } from './DialogReportPostReasonStep.types';
 
 export function DialogReportPostReasonStep({
+  subject = 'post',
   reason,
   hasContent,
   isSubmitting,
@@ -20,11 +21,12 @@ export function DialogReportPostReasonStep({
   onSubmit,
 }: DialogReportPostReasonStepProps) {
   const { currentUserPubky } = useCurrentUserProfile();
+  const title = subject === 'listing' ? 'Report Listing' : 'Report Post';
   return (
     <>
       <DialogHeader>
-        <DialogTitle>Report Post</DialogTitle>
-        <DialogDescription>Please describe the reason why you&apos;re reporting this post.</DialogDescription>
+        <DialogTitle>{title}</DialogTitle>
+        <DialogDescription>Please describe the reason why you&apos;re reporting this {subject}.</DialogDescription>
       </DialogHeader>
 
       <Container className="gap-4 py-2">
@@ -76,7 +78,7 @@ export function DialogReportPostReasonStep({
           disabled={!hasContent || isSubmitting}
           aria-label={isSubmitting ? 'Submitting report' : 'Submit report'}
         >
-          {isSubmitting ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : 'Report Post'}
+          {isSubmitting ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : title}
         </Button>
       </DialogFooter>
     </>

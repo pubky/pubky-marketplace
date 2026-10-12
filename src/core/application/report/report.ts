@@ -4,9 +4,13 @@ import { Err } from '@/libs/error/error.factories';
 import { ErrorService } from '@/libs/error/error.types';
 import { Logger } from '@/libs/logger/logger';
 import { REPORT_ISSUE_LABELS } from '@/pipes/report/report.constants';
-import type { ReportIssueType } from '@/pipes/report/report.types';
+import type { ReportIssueType, ReportListingReference } from '@/pipes/report/report.types';
 import { ChatwootService } from '@/services/chatwoot/chatwoot';
-import { CHATWOOT_INBOX_IDS, CHATWOOT_REPORT_MESSAGE_PREFIX } from '@/services/chatwoot/chatwoot.constants';
+import {
+  CHATWOOT_INBOX_IDS,
+  CHATWOOT_REPORT_LISTING_MESSAGE_PREFIX,
+  CHATWOOT_REPORT_MESSAGE_PREFIX,
+} from '@/services/chatwoot/chatwoot.constants';
 import { buildChatwootEmail, extractSourceId } from '@/services/chatwoot/chatwoot.utils';
 import type { TReportSubmitInput } from './report.types';
 
@@ -31,11 +35,13 @@ export class ReportApplication {
    * Creates a formatted source string like "Report Post - Personal Info Leak"
    *
    * @param issueType - Type of issue being reported
+   * @param listing - Present when the report is about a listing
    * @returns Formatted source label
    */
-  private static buildSourceLabel(issueType: ReportIssueType): string {
+  private static buildSourceLabel(issueType: ReportIssueType, listing?: ReportListingReference): string {
     const issueLabel = REPORT_ISSUE_LABELS[issueType];
-    return `${CHATWOOT_REPORT_MESSAGE_PREFIX} - ${issueLabel}`;
+    const prefix = listing ? CHATWOOT_REPORT_LISTING_MESSAGE_PREFIX : CHATWOOT_REPORT_MESSAGE_PREFIX;
+    return `${prefix} - ${issueLabel}`;
   }
 
   /**
@@ -45,9 +51,13 @@ export class ReportApplication {
    *
    * @param postUrl - URL of the reported post
    * @param reason - User's description of the issue
+   * @param listing - Present when the report is about a listing
    * @returns Formatted comment body
    */
-  private static buildCommentBody(postUrl: string, reason: string): string {
+  private static buildCommentBody(postUrl: string, reason: string, listing?: ReportListingReference): string {
+    if (listing) {
+      return `Listing URL: ${postUrl}\nListing ID: ${listing.listingId}\nSeller: ${listing.sellerPubky}\n\nReason: ${reason}`;
+    }
     return `Post URL: ${postUrl}\n\nReason: ${reason}`;
   }
 
@@ -77,9 +87,10 @@ export class ReportApplication {
    * @param params.issueType - Type of issue being reported
    * @param params.reason - User's description of the issue
    * @param params.name - Reporter's display name
+   * @param params.listing - Listing id and seller, when the report is about a listing
    * @throws AppError if submission fails
    */
-  static async submit({ pubky, postUrl, issueType, reason, name }: TReportSubmitInput): Promise<void> {
+  static async submit({ pubky, postUrl, issueType, reason, name, listing }: TReportSubmitInput): Promise<void> {
     try {
       // Build email from pubky
       const email = buildChatwootEmail(pubky);
@@ -88,8 +99,8 @@ export class ReportApplication {
       const inboxId = CHATWOOT_INBOX_IDS.REPORTS;
 
       // Build source label and comment body
-      const sourceLabel = this.buildSourceLabel(issueType);
-      const commentBody = this.buildCommentBody(postUrl, reason);
+      const sourceLabel = this.buildSourceLabel(issueType, listing);
+      const commentBody = this.buildCommentBody(postUrl, reason, listing);
       const content = this.formatMessageContent(sourceLabel, commentBody);
 
       // Create or find contact in Chatwoot
