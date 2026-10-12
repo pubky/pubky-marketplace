@@ -23,7 +23,7 @@ describe('MarketplaceDeliveryTerms', () => {
     );
 
     expect(screen.getByTestId('marketplace-delivery-terms')).toHaveTextContent(
-      'Delivery is assumed after 7 days; the order completes 21 days after delivery unless you open a return.',
+      'Delivery is assumed after 7 days (counted from payment for items the seller emails or sends in messages); the order completes 21 days after delivery unless you open a return.',
     );
   });
 
@@ -36,10 +36,14 @@ describe('MarketplaceDeliveryTerms', () => {
 
     const terms = within(screen.getByTestId('marketplace-delivery-terms'));
     expect(
-      terms.getByText(/^Shop A: Delivery is assumed after 3 days; the order completes 5 days after delivery/),
+      terms.getByText(
+        /^Shop A: Delivery is assumed after 3 days \(counted from payment for items the seller emails or sends in messages\); the order completes 5 days after delivery/,
+      ),
     ).toBeInTheDocument();
     expect(
-      terms.getByText(/^bbbbbbbbbb…: Delivery is assumed after 14 days; the order completes 14 days after delivery/),
+      terms.getByText(
+        /^bbbbbbbbbb…: Delivery is assumed after 14 days \(counted from payment for items the seller emails or sends in messages\); the order completes 14 days after delivery/,
+      ),
     ).toBeInTheDocument();
   });
 });

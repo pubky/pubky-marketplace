@@ -24,9 +24,14 @@ export function formatTermDays(days: number): string {
   return days === 1 ? '1 day' : `${days} days`;
 }
 
-/** The buyer-facing statement of when delivery is assumed and the order completes. */
+/**
+ * The buyer-facing statement of when delivery is assumed and the order
+ * completes. The delivered assumption also ends a paid manual digital order
+ * (email or message delivery) the seller never marks delivered, counted from
+ * payment rather than shipment.
+ */
 export function sellerDeliveryTermsCopy(terms: SellerDeliveryTerms): string {
-  return `Delivery is assumed after ${formatTermDays(terms.deliveryAssumeDays)}; the order completes ${formatTermDays(terms.autoCompleteDays)} after delivery unless you open a return.`;
+  return `Delivery is assumed after ${formatTermDays(terms.deliveryAssumeDays)} (counted from payment for items the seller emails or sends in messages); the order completes ${formatTermDays(terms.autoCompleteDays)} after delivery unless you open a return.`;
 }
 
 export function sellerDeliveryTermsEqual(a: SellerDeliveryTerms, b: SellerDeliveryTerms): boolean {

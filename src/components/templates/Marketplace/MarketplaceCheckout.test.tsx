@@ -422,7 +422,7 @@ describe('MarketplaceCheckout', () => {
     render(<MarketplaceCheckout />);
 
     expect(await screen.findByTestId('marketplace-delivery-terms')).toHaveTextContent(
-      'Delivery is assumed after 3 days; the order completes 5 days after delivery unless you open a return.',
+      'Delivery is assumed after 3 days (counted from payment for items the seller emails or sends in messages); the order completes 5 days after delivery unless you open a return.',
     );
     expect(within(screen.getByTestId('marketplace-checkout-summary')).getByTestId('marketplace-delivery-terms')).toBe(
       screen.getByTestId('marketplace-delivery-terms'),
@@ -436,7 +436,7 @@ describe('MarketplaceCheckout', () => {
     render(<MarketplaceCheckout />);
 
     expect(await screen.findByTestId('marketplace-delivery-terms')).toHaveTextContent(
-      'Delivery is assumed after 14 days; the order completes 9 days after delivery unless you open a return.',
+      'Delivery is assumed after 14 days (counted from payment for items the seller emails or sends in messages); the order completes 9 days after delivery unless you open a return.',
     );
   });
 
