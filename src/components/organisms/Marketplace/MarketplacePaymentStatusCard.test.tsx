@@ -62,7 +62,6 @@ vi.mock('@/hooks/useMarketplaceOrderPayment/useMarketplaceOrderPayment', () => (
     configError: null,
     pendingAction: null,
     bind: vi.fn(),
-    verifyStripe: vi.fn(),
     markPaid: vi.fn(),
     confirmReceived: vi.fn(),
   })),
@@ -93,7 +92,6 @@ describe('MarketplacePaymentStatusCard', () => {
       configError: null,
       pendingAction: null,
       bind: vi.fn(),
-      verifyStripe: vi.fn(),
       markPaid: vi.fn(),
       confirmReceived: vi.fn(),
     });
@@ -347,12 +345,11 @@ describe('MarketplacePaymentStatusCard', () => {
 
   it('explains when Bitcoin is temporarily unavailable while other methods remain available', () => {
     vi.mocked(useMarketplaceOrderPayment).mockReturnValue({
-      availableMethods: ['stripe'],
+      availableMethods: ['paypal'],
       bitcoinOfferUnavailable: true,
       configError: null,
       pendingAction: null,
       bind: vi.fn(),
-      verifyStripe: vi.fn(),
       markPaid: vi.fn(),
       confirmReceived: vi.fn(),
     });
@@ -373,7 +370,6 @@ describe('MarketplacePaymentStatusCard', () => {
     ).toBeInTheDocument();
     expect(screen.getByText('The item is held for you once a payment starts.', { exact: false })).toBeInTheDocument();
     expect(screen.queryByText(/never holds funds/i)).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /Stripe/ })).not.toBeInTheDocument();
   });
 
   it.each(['cancelled', 'refunded_external', 'closed', 'completed'] as const)(
@@ -588,12 +584,11 @@ describe('MarketplacePaymentStatusCard', () => {
   it('renders unbound hold copy and cancels checkout from the method picker', async () => {
     const onPaymentChanged = vi.fn();
     vi.mocked(useMarketplaceOrderPayment).mockReturnValue({
-      availableMethods: ['bitcoin', 'stripe', 'paypal'],
+      availableMethods: ['bitcoin', 'paypal'],
       bitcoinOfferUnavailable: false,
       configError: null,
       pendingAction: null,
       bind: vi.fn(),
-      verifyStripe: vi.fn(),
       markPaid: vi.fn(),
       confirmReceived: vi.fn(),
     });
@@ -636,7 +631,6 @@ describe('MarketplacePaymentStatusCard', () => {
       configError: null,
       pendingAction: null,
       bind: vi.fn(),
-      verifyStripe: vi.fn(),
       markPaid: vi.fn(),
       confirmReceived: vi.fn(),
     });
@@ -668,7 +662,6 @@ describe('MarketplacePaymentStatusCard', () => {
       configError: null,
       pendingAction: null,
       bind: vi.fn(),
-      verifyStripe: vi.fn(),
       markPaid: vi.fn(),
       confirmReceived: vi.fn(),
     });
@@ -699,7 +692,6 @@ describe('MarketplacePaymentStatusCard', () => {
       configError: null,
       pendingAction: null,
       bind: vi.fn(),
-      verifyStripe: vi.fn(),
       markPaid: vi.fn(),
       confirmReceived: vi.fn(),
     });

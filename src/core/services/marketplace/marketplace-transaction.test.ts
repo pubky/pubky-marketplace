@@ -1225,7 +1225,6 @@ describe('MarketplaceTransactionService read projections', () => {
           bitcoin_available: true,
           bitcoin_offer_available: true,
           paypal_available: true,
-          stripe_available: true,
         }),
       );
 
@@ -1279,7 +1278,7 @@ describe('MarketplaceTransactionService read projections', () => {
       loggerError.mockRestore();
     });
 
-    it('saves the own config with the bearer, omitting the key unless provided, and never gets it back', async () => {
+    it('saves the own config with the bearer and sends only the Bitcoin and PayPal rails', async () => {
       await establishSession();
       vi.mocked(fetch).mockResolvedValueOnce(
         jsonResponse(200, {
@@ -1296,43 +1295,14 @@ describe('MarketplaceTransactionService read projections', () => {
 
       const saved = await MarketplaceTransactionService.putMyPaymentConfig(ACTOR, {
         bitcoinEnabled: true,
-        stripePaymentLink: 'https://buy.stripe.com/test_abc',
         paypalMerchantEmail: null,
       });
 
-      expect(saved.stripeRestrictedKeySet).toBe(true);
-      expect(Object.keys(saved)).not.toContain('stripeRestrictedKey');
+      expect(Object.keys(saved)).toEqual(expect.not.arrayContaining(['stripePaymentLink', 'stripeRestrictedKeySet']));
       const [, init] = vi.mocked(fetch).mock.calls[0] as [string, RequestInit];
       const body = JSON.parse(init.body as string) as Record<string, unknown>;
-      expect(body).not.toHaveProperty('stripe_restricted_key');
+      expect(body).toStrictEqual({ bitcoin_enabled: true, paypal_merchant_email: null });
       expect((init.headers as Record<string, string>).authorization).toBe(SESSION_BEARER);
-    });
-
-    it('sends the restricted key on the wire only when the seller supplies one', async () => {
-      await establishSession();
-      vi.mocked(fetch).mockResolvedValueOnce(
-        jsonResponse(200, {
-          ok: true,
-          payment_config: {
-            bitcoin_enabled: false,
-            stripe_payment_link: null,
-            paypal_merchant_email: null,
-            stripe_restricted_key_set: true,
-            updated_at: '2026-08-22T12:00:00.000Z',
-          },
-        }),
-      );
-
-      await MarketplaceTransactionService.putMyPaymentConfig(ACTOR, {
-        bitcoinEnabled: false,
-        stripePaymentLink: null,
-        stripeRestrictedKey: 'rk_test_12345678',
-        paypalMerchantEmail: null,
-      });
-
-      const [, init] = vi.mocked(fetch).mock.calls[0] as [string, RequestInit];
-      const body = JSON.parse(init.body as string) as Record<string, unknown>;
-      expect(body.stripe_restricted_key).toBe('rk_test_12345678');
     });
 
     it('surfaces the service error envelope message and reason on a refused binding', async () => {
@@ -1348,7 +1318,7 @@ describe('MarketplaceTransactionService read projections', () => {
         }),
       );
 
-      await expect(MarketplaceTransactionService.bindPaymentMethod(ACTOR, ORDER_ID, 'stripe')).rejects.toMatchObject({
+      await expect(MarketplaceTransactionService.bindPaymentMethod(ACTOR, ORDER_ID, 'paypal')).rejects.toMatchObject({
         message: 'A payment method is already bound to this checkout.',
       });
     });
@@ -1476,14 +1446,14 @@ describe('MarketplaceTransactionService read projections', () => {
 
     it('maps payment-method reasons to static copy and never logs the server message', async () => {
       await establishSession();
-      const echoed = 'rk_live_echoed_restricted_key_value';
+      const echoed = 'echoed.private.value@example.com';
       vi.mocked(fetch).mockResolvedValueOnce(
         jsonResponse(400, {
           ok: false,
           error: {
             code: 'INVALID_COMMAND',
-            message: `Stripe rejected ${echoed}`,
-            reason: 'stripe_key_invalid',
+            message: `PayPal rejected ${echoed}`,
+            reason: 'invalid_paypal_email',
           },
         }),
       );
@@ -1491,27 +1461,14 @@ describe('MarketplaceTransactionService read projections', () => {
 
       const error = (await MarketplaceTransactionService.putMyPaymentConfig(ACTOR, {
         bitcoinEnabled: false,
-        stripePaymentLink: null,
-        stripeRestrictedKey: 'rk_test_12345678',
-        paypalMerchantEmail: null,
+        paypalMerchantEmail: echoed,
       }).catch((caught: unknown) => caught)) as AppError;
 
-      expect(error).toMatchObject({
-        message: 'The seller payment key was rejected. The seller must update their payment settings.',
-      });
+      expect(error).toMatchObject({ message: 'The PayPal merchant email is not valid.' });
       expect(error.message).not.toContain(echoed);
       expect(JSON.stringify(error.context)).not.toContain(echoed);
       expect(JSON.stringify(loggerError.mock.calls)).not.toContain(echoed);
       loggerError.mockRestore();
-    });
-
-    it('reports an honest not-found verification without touching the order', async () => {
-      await establishSession();
-      vi.mocked(fetch).mockResolvedValueOnce(jsonResponse(200, { ok: true, verified: false, status: 'not_found' }));
-
-      const result = await MarketplaceTransactionService.verifyStripePayment(ACTOR, ORDER_ID);
-
-      expect(result).toEqual({ verified: false, order: null });
     });
   });
 

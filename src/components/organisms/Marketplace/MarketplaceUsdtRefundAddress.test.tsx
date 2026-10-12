@@ -36,8 +36,8 @@ function renderPanel(
 }
 
 describe('MarketplaceUsdtRefundAddress — buyer', () => {
-  it('renders nothing for Bitcoin, PayPal and Stripe orders, whatever their state', () => {
-    for (const paymentMethod of ['bitcoin', 'paypal', 'stripe'] as const) {
+  it('renders nothing for Bitcoin and PayPal orders, whatever their state', () => {
+    for (const paymentMethod of ['bitcoin', 'paypal'] as const) {
       for (const state of ['paid', 'return_approved', 'cancelled', 'refunded_external'] as const) {
         const { container, unmount } = renderPanel(createOrderFixture(state, { paymentMethod }));
         expect(container).toBeEmptyDOMElement();

@@ -35,16 +35,13 @@ describe('USDT payment review gate', () => {
     expect(paymentReviewRail({ paymentMethod: 'usdt', paymentAsset: 'USDT' })).toBe('usdt');
   });
 
-  it.each([
-    { paymentMethod: 'bitcoin' },
-    { paymentMethod: 'paypal' },
-    { paymentMethod: 'stripe' },
-    { paymentMethod: null },
-    {},
-  ])('leaves %j on the Bitcoin rail', (order) => {
-    expect(isUsdtPaymentReviewOrder(order)).toBe(false);
-    expect(paymentReviewRail(order)).toBe('bitcoin');
-  });
+  it.each([{ paymentMethod: 'bitcoin' }, { paymentMethod: 'paypal' }, { paymentMethod: null }, {}])(
+    'leaves %j on the Bitcoin rail',
+    (order) => {
+      expect(isUsdtPaymentReviewOrder(order)).toBe(false);
+      expect(paymentReviewRail(order)).toBe('bitcoin');
+    },
+  );
 });
 
 describe('USDT resolution input', () => {

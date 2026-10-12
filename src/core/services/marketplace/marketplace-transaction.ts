@@ -960,7 +960,7 @@ export class MarketplaceTransactionService {
    * order. `bitcoinAvailable` is service-verified against paykit-server
    * (enabled AND actually claimed); a paykit outage surfaces as an error,
    * never a silent `false`. The response carries availability booleans
-   * only, never the seller's PayPal email or Stripe link.
+   * only, never the seller's PayPal email.
    */
   static async getSellerPaymentConfig(sellerPubky: string): Promise<SellerPaymentConfig> {
     this.assertTransactionServiceMode('getSellerPaymentConfig');
@@ -1000,17 +1000,12 @@ export class MarketplaceTransactionService {
   }
 
   /**
-   * `PUT /v0/sellers/me/payment-config` — the seller's own rails. The Stripe
-   * restricted key is write-only: send it to set it, send `''` to clear it,
-   * omit it to keep the stored one; only `stripeRestrictedKeySet` ever comes
-   * back.
+   * `PUT /v0/sellers/me/payment-config` — the seller's own rails.
    */
   static async putMyPaymentConfig(
     actor: string,
     input: {
       bitcoinEnabled: boolean;
-      stripePaymentLink: string | null;
-      stripeRestrictedKey?: string;
       paypalMerchantEmail: string | null;
       usdtEnabled?: boolean;
     },
@@ -1041,31 +1036,6 @@ export class MarketplaceTransactionService {
       { method: 'POST', body: { method }, boundPaymentMethod: method },
     );
     return this.parseOrderEnvelope('bindPaymentMethod', raw);
-  }
-
-  /**
-   * `POST /v0/orders/{id}/fiat/verify` — Stripe only. The service checks the
-   * seller's own Stripe account with their stored restricted key and pays the
-   * order on an exact match; `verified: false` is an honest "not found yet",
-   * not a failure.
-   */
-  static async verifyStripePayment(
-    actor: string,
-    orderId: string,
-  ): Promise<{ verified: boolean; order: MarketplaceOrder | null }> {
-    const raw = await this.paymentMethodRequest(
-      'verifyStripePayment',
-      actor,
-      `/v0/orders/${encodeURIComponent(orderId)}/fiat/verify`,
-      { method: 'POST', body: {} },
-    );
-    const parsed = this.parseProjection(
-      'verifyStripePayment',
-      z.object({ verified: z.boolean(), order: marketplaceOrderSchema.optional() }),
-      raw,
-      'Marketplace returned an invalid fiat verification response.',
-    );
-    return { verified: parsed.verified, order: parsed.order ?? null };
   }
 
   /** `POST /v0/orders/{id}/fiat/mark-paid` — buyer's PayPal payment report; never advances the payment itself. */
@@ -1332,7 +1302,7 @@ export class MarketplaceTransactionService {
    * `{ok:false, error:{code, message, reason}}`. Map `reason`, or `code` when
    * the family ships no reason (`capability_required`, CAS `REVISION_CONFLICT`),
    * to a static client string — never copy `error.message`, which can echo a
-   * rejected Stripe restricted key or other private value into logs and the reporter.
+   * rejected private value into logs and the reporter.
    */
   private static async throwPaymentMethodError(
     response: Response,

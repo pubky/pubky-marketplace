@@ -1446,8 +1446,6 @@ export class CommerceApplication {
     actorPubky: string,
     input: {
       bitcoinEnabled: boolean;
-      stripePaymentLink: string | null;
-      stripeRestrictedKey?: string;
       paypalMerchantEmail: string | null;
       usdtEnabled?: boolean;
     },
@@ -1457,10 +1455,6 @@ export class CommerceApplication {
 
   static async bindPaymentMethod(actorPubky: string, orderId: string, method: PaymentMethodKind) {
     return await MarketplaceGatewayService.bindPaymentMethod(actorPubky, orderId, method);
-  }
-
-  static async verifyStripePayment(actorPubky: string, orderId: string) {
-    return await MarketplaceGatewayService.verifyStripePayment(actorPubky, orderId);
   }
 
   static async markFiatPaid(actorPubky: string, orderId: string, transactionRef?: string) {

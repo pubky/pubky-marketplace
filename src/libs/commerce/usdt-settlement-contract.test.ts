@@ -38,7 +38,7 @@ describe('USDT settlement contract', () => {
   });
 
   it('leaves every non-USDT order without a finality, byte-for-byte as before', () => {
-    for (const method of ['bitcoin', 'paypal', 'stripe', null] as const) {
+    for (const method of ['bitcoin', 'paypal', null] as const) {
       const input = { ...createOrderFixture('paid'), paymentMethod: method };
       const parsed = marketplaceOrderSchema.parse(input);
       expect(parsed.paymentFinality).toBeUndefined();

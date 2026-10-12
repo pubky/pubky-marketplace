@@ -177,15 +177,7 @@ describe('marketplacePaymentMethodFailureMessage', () => {
     );
   });
 
-  it('maps seller-not-configured and service-unavailable families', () => {
-    const seller = new AppError({
-      category: ErrorCategory.Client,
-      code: ClientErrorCode.BAD_REQUEST,
-      message: 'SENTINEL',
-      service: ErrorService.Marketplace,
-      operation: 'bindPaymentMethod',
-      context: { statusCode: 409, reason: 'stripe_key_missing' },
-    });
+  it('maps the service-unavailable family', () => {
     const unavailable = new AppError({
       category: ErrorCategory.Client,
       code: ClientErrorCode.BAD_REQUEST,
@@ -194,9 +186,6 @@ describe('marketplacePaymentMethodFailureMessage', () => {
       operation: 'bindPaymentMethod',
       context: { statusCode: 503, reason: 'paykit_unavailable' },
     });
-    expect(marketplacePaymentMethodFailureMessage(seller, 'fallback')).toBe(
-      'This seller has not finished payment setup.',
-    );
     expect(marketplacePaymentMethodFailureMessage(unavailable, 'fallback')).toBe(
       'Bitcoin payment requests are unavailable right now. If you haven’t set up Bitkit for this Pubky account yet, do that first. Then try again shortly.',
     );
@@ -207,7 +196,7 @@ describe('marketplacePaymentMethodFailureMessage', () => {
       new AppError({
         category: ErrorCategory.Client,
         code: ClientErrorCode.CONFLICT,
-        message: 'SENTINEL_SERVER_TEXT Paykit server rejected stripe key sk_live_x',
+        message: 'SENTINEL_SERVER_TEXT Paykit server rejected key sk_live_x',
         service: ErrorService.Marketplace,
         operation: 'bindPaymentMethod',
         context: { statusCode, reason },

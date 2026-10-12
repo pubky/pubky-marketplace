@@ -276,7 +276,6 @@ describe('MarketplaceOrderActions refund reference labels', () => {
   it.each([
     ['bitcoin', 'External Bitcoin transaction reference'],
     ['paypal', 'PayPal refund transaction id'],
-    ['stripe', 'External payment reference'],
     [undefined, 'External payment reference'],
   ] as const)('uses the %s rail label', async (paymentMethod, label) => {
     const order = createOrderFixture('return_received', { paymentMethod });

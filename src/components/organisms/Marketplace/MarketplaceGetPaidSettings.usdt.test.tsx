@@ -91,9 +91,7 @@ beforeEach(() => {
   mocked.isOwnPaykitAccountClaimed.mockReset().mockResolvedValue(true);
   mocked.putMyPaymentConfig.mockReset().mockImplementation(async (input) => ({
     bitcoinEnabled: input.bitcoinEnabled,
-    stripePaymentLink: input.stripePaymentLink,
     paypalMerchantEmail: input.paypalMerchantEmail,
-    stripeRestrictedKeySet: false,
     updatedAt: '2026-10-09T12:30:00.000Z',
     ...(input.usdtEnabled === undefined
       ? {}
@@ -131,7 +129,6 @@ describe('MarketplaceGetPaidSettings USDT', () => {
       await waitFor(() => expect(mocked.putMyPaymentConfig).toHaveBeenCalledTimes(1));
       expect(mocked.putMyPaymentConfig.mock.calls[0]?.[0]).toStrictEqual({
         bitcoinEnabled: true,
-        stripePaymentLink: null,
         paypalMerchantEmail: 'seller@example.com',
       });
     });
@@ -310,7 +307,6 @@ describe('MarketplaceGetPaidSettings USDT', () => {
       await waitFor(() => expect(mocked.putMyPaymentConfig).toHaveBeenCalledTimes(1));
       expect(mocked.putMyPaymentConfig.mock.calls[0]?.[0]).toStrictEqual({
         bitcoinEnabled: true,
-        stripePaymentLink: null,
         paypalMerchantEmail: 'seller@example.com',
         usdtEnabled: true,
       });
@@ -319,7 +315,6 @@ describe('MarketplaceGetPaidSettings USDT', () => {
     describe('the service has not reported the USDT keys', () => {
       const bitcoinAndPaypalOnly = {
         bitcoinEnabled: true,
-        stripePaymentLink: null,
         paypalMerchantEmail: 'seller@example.com',
       };
 
@@ -367,7 +362,6 @@ describe('MarketplaceGetPaidSettings USDT', () => {
       await waitFor(() => expect(mocked.putMyPaymentConfig).toHaveBeenCalledTimes(1));
       expect(mocked.putMyPaymentConfig.mock.calls[0]?.[0]).toStrictEqual({
         bitcoinEnabled: true,
-        stripePaymentLink: null,
         paypalMerchantEmail: 'seller@example.com',
         usdtEnabled: true,
       });

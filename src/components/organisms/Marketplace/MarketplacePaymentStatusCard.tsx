@@ -265,9 +265,6 @@ export function MarketplacePaymentStatusCard({
         {/* How a fiat rail is verified stays on the order: a gateway-notified
             PayPal payment was confirmed by PayPal's own notification;
             seller-attested is the seller saying so. */}
-        {order.fiatVerification === 'processor' && (!isBuyer || visibleStatus === 'confirmed') && (
-          <Badge variant="secondary">{isBuyer ? 'Confirmed by payment provider' : 'Processor-verified'}</Badge>
-        )}
         {order.fiatVerification === 'gateway-notified' && (!isBuyer || visibleStatus === 'confirmed') && (
           <Badge variant="secondary">{isBuyer ? 'Confirmed by PayPal' : 'PayPal-verified'}</Badge>
         )}
@@ -313,7 +310,7 @@ export function MarketplacePaymentStatusCard({
       {visibleStatus === 'confirmed' && order.fiatVerification === 'seller-attested' && (
         <Typography as="p" className="min-w-0 text-sm break-words whitespace-normal text-muted-foreground">
           This payment was confirmed by the seller reporting receipt in their own PayPal account — not by automatic
-          processor verification. The confirmation is the seller&rsquo;s attestation.
+          verification. The confirmation is the seller&rsquo;s attestation.
         </Typography>
       )}
 

@@ -115,7 +115,7 @@ export type UsdtRefundOrder = {
  * The refund-address surfaces belong to orders the service projects as paid
  * in USDT. They are never gated by the new-offer flag: a USDT order that
  * exists must be refundable after the flag flips (plan §3, "Off never strands
- * money"). Bitcoin, PayPal and Stripe orders never carry `paymentAsset`.
+ * money"). Bitcoin and PayPal orders never carry `paymentAsset`.
  */
 export function isUsdtRefundOrder(order: { paymentAsset?: string | null }): boolean {
   return order.paymentAsset === REFUND_DESTINATION_ASSET;

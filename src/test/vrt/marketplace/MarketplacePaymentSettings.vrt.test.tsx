@@ -64,9 +64,7 @@ vi.mock('@/controllers/commerce/commerce', () => ({
     },
     getMyPaymentConfig: vi.fn(async () => ({
       bitcoinEnabled: true,
-      stripePaymentLink: 'https://buy.stripe.com/test_fixture',
       paypalMerchantEmail: 'seller@example.com',
-      stripeRestrictedKeySet: true,
       updatedAt: '2026-08-22T12:00:00.000Z',
       ...view.usdt.ownView,
     })),
