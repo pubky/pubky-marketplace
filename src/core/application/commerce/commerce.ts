@@ -98,7 +98,6 @@ import {
 } from '@/libs/commerce/priv-envelope';
 import type { MarketplacePrivKeysResult } from '@/libs/commerce/priv-keys';
 import { createCommerceSandboxCatalog } from '@/libs/commerce/sandbox-catalog';
-import type { ShipFromAddress, ShippingParcel } from '@/libs/commerce/shipping';
 import {
   buildMarketplaceCheckoutAggregateId,
   buildMarketplaceDropAggregateId,
@@ -1526,29 +1525,6 @@ export class CommerceApplication {
 
   static async markFiatPaid(actorPubky: string, orderId: string, transactionRef?: string) {
     return await MarketplaceGatewayService.markFiatPaid(actorPubky, orderId, transactionRef);
-  }
-
-  static async getMyShippingConfig(actorPubky: string) {
-    return await MarketplaceGatewayService.getMyShippingConfig(actorPubky);
-  }
-
-  static async putMyShippingConfig(
-    actorPubky: string,
-    input: { shippoApiKey?: string; shipFrom: ShipFromAddress | null },
-  ) {
-    return await MarketplaceGatewayService.putMyShippingConfig(actorPubky, input);
-  }
-
-  static async quoteShippingRates(actorPubky: string, orderId: string, parcel: ShippingParcel) {
-    return await MarketplaceGatewayService.quoteShippingRates(actorPubky, orderId, parcel);
-  }
-
-  static async purchaseShippingLabel(actorPubky: string, orderId: string, rateId: string) {
-    return await MarketplaceGatewayService.purchaseShippingLabel(actorPubky, orderId, rateId);
-  }
-
-  static async getShippingLabel(actorPubky: string, orderId: string) {
-    return await MarketplaceGatewayService.getShippingLabel(actorPubky, orderId);
   }
 
   static async confirmFiatReceived(actorPubky: string, orderId: string) {

@@ -49,16 +49,6 @@ import {
   privKeyringFromResponse,
 } from '@/libs/commerce/priv-keys';
 import {
-  type SellerShippingConfig,
-  sellerShippingConfigSchema,
-  type ShipFromAddress,
-  type ShippingLabel,
-  shippingLabelSchema,
-  type ShippingParcel,
-  type ShippoRate,
-  shippoRateSchema,
-} from '@/libs/commerce/shipping';
-import {
   type MarketplaceCommand,
   type MarketplaceCommandResponse,
   marketplaceCommandResponseSchema,
@@ -1077,98 +1067,6 @@ export class MarketplaceTransactionService {
       { method: 'POST', body: transactionRef ? { transactionRef } : {} },
     );
     return this.parseOrderEnvelope('markFiatPaid', raw);
-  }
-
-  /**
-   * `GET /v0/sellers/me/shipping-config` — the seller's own Shippo
-   * configuration. `null` when nothing was ever saved.
-   */
-  static async getMyShippingConfig(actor: string): Promise<SellerShippingConfig | null> {
-    const raw = await this.readProjection('getMyShippingConfig', actor, '/v0/sellers/me/shipping-config');
-    return this.parseProjection(
-      'getMyShippingConfig',
-      z.object({ shippingConfig: sellerShippingConfigSchema.nullable() }),
-      raw,
-      'Marketplace returned an invalid shipping configuration.',
-    ).shippingConfig;
-  }
-
-  /**
-   * `PUT /v0/sellers/me/shipping-config` — the Shippo token is write-only:
-   * send it to set it, send `''` to clear it, omit it to keep the stored
-   * one; only `shippoApiKeySet` ever comes back.
-   */
-  static async putMyShippingConfig(
-    actor: string,
-    input: { shippoApiKey?: string; shipFrom: ShipFromAddress | null },
-  ): Promise<SellerShippingConfig> {
-    const raw = await this.paymentMethodRequest('putMyShippingConfig', actor, '/v0/sellers/me/shipping-config', {
-      method: 'PUT',
-      body: input,
-    });
-    return this.parseProjection(
-      'putMyShippingConfig',
-      z.object({ shippingConfig: sellerShippingConfigSchema }),
-      raw,
-      'Marketplace returned an invalid shipping configuration response.',
-    ).shippingConfig;
-  }
-
-  /**
-   * `POST /v0/orders/{id}/shipping/rates` — real Shippo rates for this
-   * order's delivery address with the seller's own token. Nothing is
-   * purchased.
-   */
-  static async quoteShippingRates(actor: string, orderId: string, parcel: ShippingParcel): Promise<ShippoRate[]> {
-    const raw = await this.paymentMethodRequest(
-      'quoteShippingRates',
-      actor,
-      `/v0/orders/${encodeURIComponent(orderId)}/shipping/rates`,
-      { method: 'POST', body: parcel },
-    );
-    return this.parseProjection(
-      'quoteShippingRates',
-      z.object({ rates: z.array(shippoRateSchema) }),
-      raw,
-      'Marketplace returned invalid shipping rates.',
-    ).rates;
-  }
-
-  /**
-   * `POST /v0/orders/{id}/shipping/label` — purchases the selected rate on
-   * the seller's own Shippo account (REAL money). One label per order: a
-   * repeat call returns the stored label unchanged.
-   */
-  static async purchaseShippingLabel(actor: string, orderId: string, rateId: string): Promise<ShippingLabel> {
-    const raw = await this.paymentMethodRequest(
-      'purchaseShippingLabel',
-      actor,
-      `/v0/orders/${encodeURIComponent(orderId)}/shipping/label`,
-      { method: 'POST', body: { rateId } },
-    );
-    return this.parseProjection(
-      'purchaseShippingLabel',
-      z.object({ label: shippingLabelSchema }),
-      raw,
-      'Marketplace returned an invalid shipping label.',
-    ).label;
-  }
-
-  /** `GET /v0/orders/{id}/shipping/label` — the stored label, null when none was purchased. */
-  static async getShippingLabel(actor: string, orderId: string): Promise<ShippingLabel | null> {
-    const raw = await this.readProjection(
-      'getShippingLabel',
-      actor,
-      `/v0/orders/${encodeURIComponent(orderId)}/shipping/label`,
-      { nullOnNotFound: true },
-    );
-    if (raw === null) return null;
-    return this.parseProjection(
-      'getShippingLabel',
-      z.object({ label: shippingLabelSchema }),
-      raw,
-      'Marketplace returned an invalid shipping label.',
-    ).label;
   }
 
   /** `POST /v0/orders/{id}/fiat/confirm-received` — the seller's confirmation pays a PayPal order. */

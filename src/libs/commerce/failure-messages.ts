@@ -1,4 +1,5 @@
 import { CHECKOUT_HOLD_COPY } from '@/libs/commerce/checkout-hold';
+import { SHIPPO_FAILURE_REASONS } from '@/libs/commerce/shipping';
 import { isAppError } from '@/libs/error/error';
 import { ValidationErrorCode } from '@/libs/error/error.codes';
 import { ErrorCategory } from '@/libs/error/error.types';
@@ -427,4 +428,27 @@ export function marketplaceErrorCode(error: unknown): string | null {
   if (!error || typeof error !== 'object' || !('code' in error)) return null;
   const code = (error as { code?: unknown }).code;
   return typeof code === 'string' ? code : null;
+}
+
+const SHIPPO_REASON_MESSAGES: ReadonlyMap<string, string> = new Map([
+  [SHIPPO_FAILURE_REASONS.keyInvalid, 'Shippo rejected your API token. Update it in Shipping settings and try again.'],
+  [
+    SHIPPO_FAILURE_REASONS.rejected,
+    'Shippo refused this request. Check the parcel and the ship-from address in Shipping settings, or add tracking by hand.',
+  ],
+  [SHIPPO_FAILURE_REASONS.unavailable, 'Shippo could not be reached. Try again in a moment.'],
+]);
+
+/**
+ * Seller toast for a Shippo call made from this browser: static copy keyed by
+ * the failure reason, never Shippo's own text (it can quote the address) and
+ * never the error message.
+ */
+export function shippingFailureMessage(error: unknown, fallback: string): string {
+  if (isAppError(error)) {
+    const reason = error.context?.reason;
+    const mapped = typeof reason === 'string' ? SHIPPO_REASON_MESSAGES.get(reason) : undefined;
+    if (mapped) return mapped;
+  }
+  return marketplaceFailureMessage(marketplaceErrorCode(error), fallback, error);
 }

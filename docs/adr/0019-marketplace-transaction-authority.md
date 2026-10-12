@@ -261,4 +261,4 @@ Feature flags and runtime config must default the transaction adapter to `unavai
 
 ## Superseded In Part (2026-09-05)
 
-The marketplace client no longer exposes operator dispute, report, moderation, or tax authority. Participant-scoped orders, returns/refunds, receipts, reviews, messaging, Paykit/Locks, Stripe, PayPal, and Shippo flows remain in scope; ADR 0019 §8 messaging privacy remains valid.
+The marketplace client no longer exposes operator dispute, report, moderation, or tax authority. Participant-scoped orders, returns/refunds, receipts, reviews, messaging, Paykit/Locks, Stripe, PayPal, and Shippo flows remain in scope (Shippo now runs from the seller's browser with the seller's own token; the service no longer calls it); ADR 0019 §8 messaging privacy remains valid.

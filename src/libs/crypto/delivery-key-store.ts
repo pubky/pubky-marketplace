@@ -22,12 +22,14 @@ import { DatabaseErrorCode } from '@/libs/error/error.codes';
 import { Err } from '@/libs/error/error.factories';
 import { ErrorService } from '@/libs/error/error.types';
 
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const WRAPPING_STORE = 'wrapping-key';
 const KEYS_STORE = 'keys';
 const PINS_STORE = 'pins';
+const RECORDS_STORE = 'records';
 const WRAPPING_KEY_ID = 'wrapping-key';
 const WRAP_TABLE = 'marketplace_delivery_keys';
+const RECORDS_WRAP_TABLE = 'marketplace_device_records';
 
 export const deliveryKeyStoreDbName = (databaseName: string) => `${databaseName}-delivery-keys`;
 const STORE_DB_NAME = deliveryKeyStoreDbName(DB_NAME);
@@ -75,6 +77,7 @@ function openDb(): Promise<IDBDatabase> {
       if (!db.objectStoreNames.contains(WRAPPING_STORE)) db.createObjectStore(WRAPPING_STORE);
       if (!db.objectStoreNames.contains(KEYS_STORE)) db.createObjectStore(KEYS_STORE);
       if (!db.objectStoreNames.contains(PINS_STORE)) db.createObjectStore(PINS_STORE);
+      if (!db.objectStoreNames.contains(RECORDS_STORE)) db.createObjectStore(RECORDS_STORE);
     };
     request.onsuccess = () => {
       const connection = request.result;
@@ -288,6 +291,55 @@ export async function putDeliveryKeyPin(
     return { sellerPubky, keyId, firstSeenAt: row.firstSeenAt };
   } catch (error) {
     return fail('putDeliveryKeyPin', 'Failed to store the delivery key pin.', error);
+  }
+}
+
+/**
+ * Device-bound sealed records for one account (the seller's Shippo token,
+ * ship-from address and purchased label references). The bytes are wrapped
+ * under the same non-extractable device key as the delivery private keys and
+ * bound to `owner` and `recordId` by AAD, so a row copied to another id or
+ * account fails to open. These never leave the device.
+ */
+const recordWrapAad = (owner: string, recordId: string) => buildWrapAad(RECORDS_WRAP_TABLE, rowId(owner, recordId));
+
+export async function putDeviceRecord(owner: string, recordId: string, plaintext: Uint8Array): Promise<void> {
+  const key = await wrappingKey('putDeviceRecord');
+  try {
+    const wrapped = await wrapPayload(key, recordWrapAad(owner, recordId), plaintext);
+    const db = await openDb();
+    const transaction = db.transaction(RECORDS_STORE, 'readwrite');
+    transaction.objectStore(RECORDS_STORE).put(wrapped, rowId(owner, recordId));
+    await transactionDone(transaction);
+  } catch (error) {
+    return fail('putDeviceRecord', 'Failed to store the device record.', error);
+  }
+}
+
+/** The record's plaintext, or `null` when this device holds none. Throws when a stored record cannot be unwrapped. */
+export async function getDeviceRecord(owner: string, recordId: string): Promise<Uint8Array | null> {
+  const key = await wrappingKey('getDeviceRecord');
+  try {
+    const db = await openDb();
+    const wrapped = (await requestResult(
+      db.transaction(RECORDS_STORE, 'readonly').objectStore(RECORDS_STORE).get(rowId(owner, recordId)),
+    )) as Uint8Array | undefined;
+    if (!wrapped) return null;
+    return await unwrapPayload(key, recordWrapAad(owner, recordId), wrapped);
+  } catch (error) {
+    return fail('getDeviceRecord', 'Failed to open the device record.', error);
+  }
+}
+
+export async function deleteDeviceRecord(owner: string, recordId: string): Promise<void> {
+  assertAvailable('deleteDeviceRecord');
+  try {
+    const db = await openDb();
+    const transaction = db.transaction(RECORDS_STORE, 'readwrite');
+    transaction.objectStore(RECORDS_STORE).delete(rowId(owner, recordId));
+    await transactionDone(transaction);
+  } catch (error) {
+    return fail('deleteDeviceRecord', 'Failed to delete the device record.', error);
   }
 }
 

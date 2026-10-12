@@ -2,13 +2,16 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { DB_NAME } from '@/config/database';
 import { deliveryKeyId } from '@/libs/commerce/delivery-envelope';
 import {
+  deleteDeviceRecord,
   deliveryKeyStoreDbName,
   dropDeliveryKeyStoreCacheForTests,
   getCurrentDeliveryKey,
   getDeliveryKeyPin,
   getDeliveryPrivateKey,
+  getDeviceRecord,
   listDeliveryKeys,
   putDeliveryKeyPin,
+  putDeviceRecord,
   resetDeliveryKeyStoreForTests,
   storeDeliveryKey,
 } from './delivery-key-store';
@@ -116,5 +119,59 @@ describe('delivery key store', () => {
     expect(repinned).toEqual({ sellerPubky: SELLER, keyId: 'b'.repeat(32), firstSeenAt: '2026-10-12T10:00:00.000Z' });
     expect(await getDeliveryKeyPin(OWNER, SELLER)).toEqual(repinned);
     expect(await getDeliveryKeyPin(OTHER_OWNER, SELLER)).toBeNull();
+  });
+});
+
+describe('device records', () => {
+  beforeEach(async () => {
+    await resetDeliveryKeyStoreForTests();
+  });
+
+  const bytes = (text: string) => new TextEncoder().encode(text);
+
+  it('round-trips a record per account, survives a reload, and deletes it', async () => {
+    await putDeviceRecord(OWNER, 'shipping-config', bytes('shippo_secret_token'));
+    dropDeliveryKeyStoreCacheForTests();
+    expect(new TextDecoder().decode((await getDeviceRecord(OWNER, 'shipping-config'))!)).toBe('shippo_secret_token');
+    expect(await getDeviceRecord(OTHER_OWNER, 'shipping-config')).toBeNull();
+    await deleteDeviceRecord(OWNER, 'shipping-config');
+    expect(await getDeviceRecord(OWNER, 'shipping-config')).toBeNull();
+  });
+
+  it('does not hold the record in plaintext at rest', async () => {
+    await putDeviceRecord(OWNER, 'shipping-config', bytes('shippo_secret_token'));
+    const db = await new Promise<IDBDatabase>((resolve, reject) => {
+      const request = indexedDB.open(deliveryKeyStoreDbName(DB_NAME));
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+    const rows = await new Promise<Uint8Array[]>((resolve, reject) => {
+      const request = db.transaction('records', 'readonly').objectStore('records').getAll();
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+    db.close();
+    expect(rows).toHaveLength(1);
+    expect(Buffer.from(rows[0]!).includes(Buffer.from('shippo_secret_token'))).toBe(false);
+  });
+
+  it('refuses a record that was moved to another record id', async () => {
+    await putDeviceRecord(OWNER, 'a', bytes('one'));
+    await putDeviceRecord(OWNER, 'b', bytes('two'));
+    const db = await new Promise<IDBDatabase>((resolve, reject) => {
+      const request = indexedDB.open(deliveryKeyStoreDbName(DB_NAME));
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+    await new Promise<void>((resolve, reject) => {
+      const transaction = db.transaction('records', 'readwrite');
+      const store = transaction.objectStore('records');
+      const read = store.get(`${OWNER}|a`);
+      read.onsuccess = () => store.put(read.result, `${OWNER}|b`);
+      transaction.oncomplete = () => resolve();
+      transaction.onerror = () => reject(transaction.error);
+    });
+    db.close();
+    await expect(getDeviceRecord(OWNER, 'b')).rejects.toThrow();
   });
 });

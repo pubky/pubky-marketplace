@@ -8,6 +8,7 @@ import { CommerceInventoryApplication, type InventoryBoardRow } from '@/applicat
 import { CommerceInventoryAutomationsApplication } from '@/application/commerce/inventory-automations';
 import { CommerceInventoryImportApplication } from '@/application/commerce/inventory-import';
 import { CommercePrivKeyringApplication } from '@/application/commerce/priv-keyring';
+import { CommerceShippingApplication } from '@/application/commerce/shipping';
 import { TagKind } from '@/application/tag/tag.types';
 import {
   COMMERCE_SAVED_SEARCH_NAME_MAX_CHARS,
@@ -27,7 +28,7 @@ import type { PaymentMethodKind } from '@/libs/commerce/payment-methods';
 import { resolveCheckoutFulfillment } from '@/libs/commerce/pickup';
 import type { CommerceDeliveryAddressValue } from '@/libs/commerce/postal-address';
 import type { PrivRecoveryKeyExport } from '@/libs/commerce/priv-recovery-key';
-import type { ShipFromAddress, ShippingParcel } from '@/libs/commerce/shipping';
+import type { ShipFromAddress, ShippingParcel, ShippoRate } from '@/libs/commerce/shipping';
 import { buildMarketplaceListingAggregateId } from '@/libs/commerce/transaction-commands';
 import { commercePositiveMoneySchema, commercePubkySchema } from '@/libs/commerce/transaction-contracts';
 import { ValidationErrorCode } from '@/libs/error/error.codes';
@@ -48,6 +49,11 @@ import type {
   CommerceUsdtRefusalReason,
 } from '@/stores/commerce/commerce.types';
 import { useNotificationStore } from '@/stores/notification/notification.store';
+
+/** Rates for an order, or why this device could not open the address to quote against. */
+export type ShippingRatesResult =
+  | { kind: 'rates'; rates: ShippoRate[] }
+  | Exclude<OrderDeliveryAddressResult, { kind: 'address' }>;
 
 export class CommerceController {
   private constructor() {}
@@ -688,27 +694,41 @@ export class CommerceController {
     });
   }
 
-  /** The seller's own Shippo shipping configuration (token is write-only). */
+  // --- Seller shipping (Shippo, on this device) ----------------------------
+  //
+  // The token, the ship-from address and purchased labels live in this
+  // browser. The delivery address is opened with the device delivery key for
+  // one quote and handed to Shippo; the marketplace service is not involved.
+
+  /** The seller's own shipping configuration on this device (the token never comes back). */
   static async getMyShippingConfig() {
-    return await CommerceApplication.getMyShippingConfig(this.getCurrentUserPubky());
+    return await CommerceShippingApplication.getMyConfig(this.getCurrentUserPubky());
   }
 
   static async putMyShippingConfig(input: { shippoApiKey?: string; shipFrom: ShipFromAddress | null }) {
-    return await CommerceApplication.putMyShippingConfig(this.getCurrentUserPubky(), input);
+    return await CommerceShippingApplication.putMyConfig(this.getCurrentUserPubky(), input);
   }
 
-  /** Real Shippo rates for a paid order's delivery address (seller only). */
-  static async quoteShippingRates(orderId: string, parcel: ShippingParcel) {
-    return await CommerceApplication.quoteShippingRates(this.getCurrentUserPubky(), orderId, parcel);
+  /**
+   * Real Shippo rates for a paid order, using the delivery address opened on
+   * this device. When this device cannot open the address no Shippo call is
+   * made and the reason is returned instead.
+   */
+  static async quoteShippingRates(order: MarketplaceOrder, parcel: ShippingParcel): Promise<ShippingRatesResult> {
+    const owner = this.getCurrentUserPubky();
+    const opened = await this.getOrderDeliveryAddress(order);
+    if (opened.kind !== 'address') return opened;
+    const rates = await CommerceShippingApplication.quoteRates({ owner, destination: opened.address, parcel });
+    return { kind: 'rates', rates };
   }
 
   /** Purchases the selected rate on the seller's own Shippo account (real money). */
   static async purchaseShippingLabel(orderId: string, rateId: string) {
-    return await CommerceApplication.purchaseShippingLabel(this.getCurrentUserPubky(), orderId, rateId);
+    return await CommerceShippingApplication.purchaseLabel({ owner: this.getCurrentUserPubky(), orderId, rateId });
   }
 
   static async getShippingLabel(orderId: string) {
-    return await CommerceApplication.getShippingLabel(this.getCurrentUserPubky(), orderId);
+    return await CommerceShippingApplication.getLabel(this.getCurrentUserPubky(), orderId);
   }
 
   /** Seller's PayPal receipt confirmation — this is what pays the order. */
