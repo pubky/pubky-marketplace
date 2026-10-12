@@ -44,6 +44,7 @@ import {
   makeFixtureFile,
   newDeliverablePaths,
   newRunId,
+  parseBtcUsdRate,
   parseKinds,
   parsePayTimeoutMinutes,
   parsePriceUsd,
@@ -327,7 +328,11 @@ async function revokeRunSessions(seat, runStart) {
 async function listDeliverables() {
   const session = await new Pubky().signer(seller).signinBlocking(CLIENT_ID);
   try {
-    const urls = await session.storage.list(DELIVERABLES_PREFIX, null, false, 1000, false);
+    // A seat that has never saved a file has no deliverables folder yet: the homeserver answers 404 for the listing.
+    const urls = await session.storage.list(DELIVERABLES_PREFIX, null, false, 1000, false).catch((error) => {
+      if (/\b404\b/.test(String(error?.message ?? error))) return [];
+      throw error;
+    });
     return urls.map(pathFromPubkyUrl).filter(Boolean);
   } finally {
     await session.signout().catch(() => {});
@@ -363,9 +368,7 @@ async function serviceCapability() {
 async function btcUsd() {
   try {
     const response = await fetch(FX_FEED);
-    const body = await response.json();
-    const rate = Number(body?.USD ?? body?.usd ?? body?.rates?.USD ?? body?.rate);
-    return Number.isFinite(rate) && rate > 0 ? rate : null;
+    return parseBtcUsdRate(await response.json());
   } catch {
     return null;
   }
@@ -384,7 +387,10 @@ async function fillDigitalListing(page, title) {
   await approveMarketplaceSession(page, seller);
   await page.locator('[data-surface="seller-studio"] input[type="file"]').first().setInputFiles(PHOTO);
   await page.getByRole('button', { name: /Add photos \(1\/8\)/ }).waitFor({ state: 'visible', timeout: 120_000 });
-  await page.getByLabel(/^Photo 1 description$/i).fill('Digital delivery proof fixture cover photo');
+  await page
+    .getByLabel(/^Photo description$/i)
+    .first()
+    .fill('Digital delivery proof fixture cover photo');
   await page.getByLabel(/^Title$/i).fill(title);
   await page.getByLabel(/^Description$/i).fill('Paid delivery proof fixture. Do not purchase.');
   await pickCategoryLeaf(page);
@@ -404,8 +410,8 @@ async function fillDigitalListing(page, title) {
   await unlimited.waitFor({ state: 'visible', timeout: 30_000 });
   if (!(await unlimited.isChecked())) await unlimited.click();
   await page
-    .getByRole('link', { name: /Review & publish/i })
-    .first()
+    .getByTestId('listing-section-rail')
+    .getByRole('button', { name: /Review & publish/i })
     .click();
   await page.waitForTimeout(800);
   await page.waitForFunction(

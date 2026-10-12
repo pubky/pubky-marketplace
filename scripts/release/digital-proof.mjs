@@ -94,6 +94,15 @@ export function priceClearsMinimum(cents, usdPerBtc, margin = 2) {
   return cents >= minPriceCents(usdPerBtc, margin);
 }
 
+// The Blocktank FX feed answers `{ tickers: [{ symbol: 'BTCUSD', lastPrice: '83921', ... }, ...] }`. Returns the USD
+// per BTC rate, or null when the feed has no usable BTCUSD row.
+export function parseBtcUsdRate(body) {
+  const tickers = Array.isArray(body?.tickers) ? body.tickers : [];
+  const row = tickers.find((ticker) => ticker?.symbol === 'BTCUSD');
+  const rate = Number(row?.lastPrice);
+  return Number.isFinite(rate) && rate > 0 ? rate : null;
+}
+
 // A fixture file that cannot be mistaken for real content: a text header plus random bytes, so a hash match
 // proves the bytes survived encrypt, store, pin, fetch and decrypt.
 export function makeFixtureFile(runId, bytes = 64 * 1024) {
