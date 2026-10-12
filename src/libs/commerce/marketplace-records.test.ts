@@ -529,6 +529,41 @@ describe('other public marketplace records', () => {
     ).toBe(true);
   });
 
+  it('accepts a shop with seller-set delivery periods and rejects periods outside 1 to 60 days', () => {
+    const shop = {
+      schemaVersion: COMMERCE_CONTRACT_VERSION,
+      recordType: 'shop',
+      ownerPubky: SELLER_PUBKY,
+      revision: 1,
+      createdAt: CREATED_AT,
+      updatedAt: UPDATED_AT,
+      name: 'Satoshi Vintage',
+      bio: 'Circular fashion and Bitcoin.',
+      location: { countryCode: 'US', region: 'NY' },
+      shippingPolicy: 'Ships within three business days.',
+      returnPolicy: 'Returns accepted within 30 days.',
+      vacationMode: false,
+    };
+    expect(commerceShopRecordSchema.safeParse({ ...shop, deliveryAssumeDays: 7, autoCompleteDays: 21 }).success).toBe(
+      true,
+    );
+    expect(commerceShopRecordSchema.safeParse({ ...shop, deliveryAssumeDays: 1, autoCompleteDays: 60 }).success).toBe(
+      true,
+    );
+    // Either period may be left unset on its own.
+    expect(commerceShopRecordSchema.safeParse({ ...shop, autoCompleteDays: 9 }).success).toBe(true);
+    for (const invalid of [0, 61, -1, 7.5, '14', null]) {
+      // A serialized null reads as absent (the preprocessor strips it), so it stays valid.
+      const expected = invalid === null;
+      expect(commerceShopRecordSchema.safeParse({ ...shop, deliveryAssumeDays: invalid }).success, `${invalid}`).toBe(
+        expected,
+      );
+      expect(commerceShopRecordSchema.safeParse({ ...shop, autoCompleteDays: invalid }).success, `${invalid}`).toBe(
+        expected,
+      );
+    }
+  });
+
   it('accepts a valid drop record and rejects every cross-field violation', () => {
     const drop = {
       schemaVersion: COMMERCE_CONTRACT_VERSION,

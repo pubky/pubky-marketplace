@@ -20,6 +20,7 @@ import {
   type MarketplaceCatalogItem,
 } from '@/hooks/useMarketplaceCatalog/useMarketplaceCatalog.utils';
 import { useMarketplaceMediaUrl } from '@/hooks/useMarketplaceMediaUrl/useMarketplaceMediaUrl';
+import { resolveSellerDeliveryTerms, sellerDeliveryTermsCopy } from '@/libs/commerce/seller-delivery-terms';
 import { ContentLayout } from '@/organisms/ContentLayout/ContentLayout';
 import { MarketplaceCommunityTags } from '@/organisms/Marketplace/MarketplaceCommunityTags';
 import { MarketplaceListingCard } from '@/organisms/Marketplace/MarketplaceListingCard';
@@ -168,6 +169,10 @@ export function MarketplaceShop({ sellerPubky }: { sellerPubky: string }) {
                 </div>
               }
             />
+
+            <Typography as="p" className="text-sm text-muted-foreground" data-testid="marketplace-shop-delivery-terms">
+              {sellerDeliveryTermsCopy(resolveSellerDeliveryTerms(shop.record))}
+            </Typography>
 
             <ShopListingsGrid listings={listings} shopName={shop.record.name} isOwner={isOwner} />
 

@@ -39,6 +39,7 @@ import { useMarketplaceFirstMediaUrls } from '@/hooks/useMarketplaceMediaUrl/use
 import { useMarketplaceOfferCheckout } from '@/hooks/useMarketplaceOfferCheckout/useMarketplaceOfferCheckout';
 import { useMarketplaceOffers } from '@/hooks/useMarketplaceOffers/useMarketplaceOffers';
 import { useMarketplaceOrders } from '@/hooks/useMarketplaceOrders/useMarketplaceOrders';
+import { useMarketplaceSellerDeliveryTerms } from '@/hooks/useMarketplaceSellerDeliveryTerms/useMarketplaceSellerDeliveryTerms';
 import { useUsdtPaymentsAvailable } from '@/hooks/useUsdtPaymentsAvailable/useUsdtPaymentsAvailable';
 import { Tether } from '@/icons';
 import { buyerCheckoutProgressCopy } from '@/libs/commerce/bitcoin-buyer-status';
@@ -82,6 +83,7 @@ import { MarketplaceAddressFields } from '@/molecules/MarketplaceAddressFields/M
 import { SettingsSectionContent } from '@/molecules/Settings/SettingsSectionContent/SettingsSectionContent';
 import { ContentLayout } from '@/organisms/ContentLayout/ContentLayout';
 import { MarketplaceCheckoutItem } from '@/organisms/Marketplace/MarketplaceCheckoutItem';
+import { MarketplaceDeliveryTerms } from '@/organisms/Marketplace/MarketplaceDeliveryTerms';
 import { MarketplaceIndicativePrice } from '@/organisms/Marketplace/MarketplaceIndicativePrice';
 import { MarketplaceOrderActions } from '@/organisms/Marketplace/MarketplaceOrderActions';
 import { MarketplaceOrderReference } from '@/organisms/Marketplace/MarketplaceOrderReference';
@@ -218,6 +220,7 @@ function MarketplaceCartCheckout() {
   );
   // The award renders as its own fulfillment section (no cart line cards).
   const fulfillmentGroups = awardSeller ? [{ sellerPubky: awardSeller, items: [], subtotals: [] }] : displayGroups;
+  const sellerDeliveryTerms = useMarketplaceSellerDeliveryTerms(fulfillmentGroups.map((group) => group.sellerPubky));
   const shipping = marketplaceCartShippingTotals(displayGroups, (item) => checkout.fulfillmentForItem(item.id));
   // A pickup award pays the accepted merchandise only; its shipping is zero.
   const isPickupAward = Boolean(awardSeller && checkout.fulfillmentForSeller(awardSeller) === 'pickup');
@@ -1009,6 +1012,7 @@ function MarketplaceCartCheckout() {
                             ))}
                           </div>
                         </div>
+                        <MarketplaceDeliveryTerms entries={sellerDeliveryTerms.entries} />
                       </div>
                     </SettingsSectionContent>
                   </section>

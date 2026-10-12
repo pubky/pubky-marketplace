@@ -74,6 +74,20 @@ export const COMMERCE_TAXONOMY_VERSION_MAX = 1_000_000;
 export const COMMERCE_SHOP_NAME_MAX_CHARS = 60;
 export const COMMERCE_SHOP_BIO_MAX_CHARS = 1_000;
 export const COMMERCE_SHOP_POLICY_MAX_CHARS = 4_000;
+/**
+ * Bounds for the seller-set post-purchase periods on the shop record
+ * (`deliveryAssumeDays`, `autoCompleteDays`). The transaction service reads
+ * the same fields and honors only values inside this range.
+ */
+export const COMMERCE_SHOP_TERM_DAYS_MIN = 1;
+export const COMMERCE_SHOP_TERM_DAYS_MAX = 60;
+/**
+ * What a shop that leaves a period unset is shown with. These mirror the
+ * transaction service's `DELIVERY_ASSUME_DAYS` / `AUTO_COMPLETE_DAYS`
+ * defaults, which apply to exactly those orders.
+ */
+export const COMMERCE_DEFAULT_DELIVERY_ASSUME_DAYS = 14;
+export const COMMERCE_DEFAULT_AUTO_COMPLETE_DAYS = 14;
 
 export const COMMERCE_LISTING_TITLE_MIN_CHARS = 3;
 export const COMMERCE_LISTING_TITLE_MAX_CHARS = 80;

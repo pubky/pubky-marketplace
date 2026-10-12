@@ -81,6 +81,10 @@ calculated at checkout`. Seller-stated tenure is not shown.
   - Optional `transactionService` authority declaration in the record
     (specs `0.6.2-marketplace.7`); the editor deliberately does not offer
     the field yet (see the multi-operator guard under Buying)
+  - Seller-set delivery and completion periods (`deliveryAssumeDays`,
+    `autoCompleteDays`, 1–60 days, optional): set in the shop editor, shown on
+    the shop page and in the checkout summary, frozen on each order by the
+    transaction service (see `seller-delivery-terms.md`)
 - **Digital delivery**
   - Locks-guarded content entitlements delivered on completed payment
   - Digital delivery on a Buy now listing (service-backed modes), alone or

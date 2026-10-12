@@ -9,6 +9,12 @@ import { Skeleton } from '@/atoms/Skeleton/Skeleton';
 import { Switch } from '@/atoms/Switch/Switch';
 import { Typography } from '@/atoms/Typography/Typography';
 import {
+  COMMERCE_DEFAULT_AUTO_COMPLETE_DAYS,
+  COMMERCE_DEFAULT_DELIVERY_ASSUME_DAYS,
+  COMMERCE_SHOP_TERM_DAYS_MAX,
+  COMMERCE_SHOP_TERM_DAYS_MIN,
+} from '@/config/commerce';
+import {
   type ShopImageSlot,
   useMarketplaceShopSettings,
 } from '@/hooks/useMarketplaceShopSettings/useMarketplaceShopSettings';
@@ -95,6 +101,42 @@ export function MarketplaceShopSettingsFormView({ settings, onSaved }: Marketpla
 
           <ControlledTextareaField name="shippingPolicy" control={settings.form.control} label="Shipping policy" />
           <ControlledTextareaField name="returnPolicy" control={settings.form.control} label="Return policy" />
+
+          <div className="grid gap-4">
+            <div>
+              <Typography as="p" className="text-sm font-medium">
+                After purchase
+              </Typography>
+              <Typography as="p" className="mt-1 text-sm text-muted-foreground">
+                You decide how long an order waits before it moves on by itself. Buyers see both periods on your shop
+                page and at checkout, and each order keeps the periods in force when its payment started. Use a whole
+                number from {COMMERCE_SHOP_TERM_DAYS_MIN} to {COMMERCE_SHOP_TERM_DAYS_MAX} days, or leave a field empty
+                for the default.
+              </Typography>
+            </div>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <ControlledInputField
+                name="deliveryAssumeDays"
+                control={settings.form.control}
+                label="Delivery assumed after (days)"
+                placeholder={`Default: ${COMMERCE_DEFAULT_DELIVERY_ASSUME_DAYS}`}
+                maxLength={2}
+                disabled={settings.isSaving}
+              />
+              <ControlledInputField
+                name="autoCompleteDays"
+                control={settings.form.control}
+                label="Order completes after delivery (days)"
+                placeholder={`Default: ${COMMERCE_DEFAULT_AUTO_COMPLETE_DAYS}`}
+                maxLength={2}
+                disabled={settings.isSaving}
+              />
+            </div>
+            <Typography as="p" className="text-sm text-muted-foreground">
+              Delivery is assumed this many days after you mark an order shipped. The order then completes this many
+              days after delivery unless the buyer opens a return.
+            </Typography>
+          </div>
 
           <Controller
             name="vacationMode"
