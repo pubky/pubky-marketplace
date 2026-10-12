@@ -2,6 +2,7 @@ import { CommerceApplication, type CommerceCheckoutFulfillmentInput } from '@/ap
 import {
   type CheckoutDeliveryKeysResolution,
   CommerceDeliveryKeysApplication,
+  type OrderDeliveryAddressResult,
 } from '@/application/commerce/delivery-keys';
 import { CommerceInventoryApplication, type InventoryBoardRow } from '@/application/commerce/inventory';
 import { CommerceInventoryAutomationsApplication } from '@/application/commerce/inventory-automations';
@@ -960,6 +961,24 @@ export class CommerceController {
       this.getCurrentUserPubky(),
       CommerceRecordNormalizer.entityId(orderId),
     );
+  }
+
+  /**
+   * What this device can read of a seller order's delivery address: a legacy
+   * plaintext address, or a sealed one opened with the private key kept on
+   * this device. Never reads or stores anything beyond the passed order.
+   */
+  static async getOrderDeliveryAddress(order: MarketplaceOrder): Promise<OrderDeliveryAddressResult> {
+    const sellerPubky = this.getCurrentUserPubky();
+    const projection = order.deliveryAddress;
+    if (order.sellerPubky !== sellerPubky || !projection) return { kind: 'none' };
+    if (projection.format === 'plaintext_v1') return { kind: 'address', address: projection.address };
+    if (projection.format !== 'hpke_v1') return { kind: 'none' };
+    return await CommerceDeliveryKeysApplication.getOrderDeliveryAddress({
+      sellerPubky,
+      buyerPubky: order.buyerPubky,
+      sealed: { keyId: projection.keyId, commandId: projection.commandId, envelope: projection.envelope },
+    });
   }
 
   // --- Local pickup (Wave 7 safe subset, local pickup design PART A) ------

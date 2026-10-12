@@ -7,5 +7,9 @@ export const DELIVERY_KEY_COPY = {
   changedTitle: 'The seller changed their delivery key',
   changedBody:
     'Only continue if the seller told you they set up a new device or rotated their key. If you did not expect this, cancel and ask the seller through a message first.',
+  undecryptable:
+    'This delivery address cannot be opened on this device. Do not ship yet. Restore the key that received this order or contact the buyer through the order conversation.',
+  addressUnavailable: 'The delivery address is not available for this order.',
+  addressLoading: 'Opening the delivery address on this device…',
   sealedNote: "Encrypted to this seller's delivery key. The marketplace service cannot read it.",
 } as const;

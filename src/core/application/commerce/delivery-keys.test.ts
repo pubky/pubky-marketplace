@@ -186,4 +186,67 @@ describe('CommerceDeliveryKeysApplication', () => {
       }),
     ).rejects.toThrow();
   });
+
+  describe('getOrderDeliveryAddress', () => {
+    const SELLER_SESSION = { sellerPubky: SELLER, buyerPubky: BUYER };
+
+    async function sealedOrder(keyId?: string) {
+      await CommerceDeliveryKeysApplication.commitCreateKey(SELLER);
+      const resolved = await CommerceDeliveryKeysApplication.resolveKeyForCheckout(BUYER, SELLER);
+      if (resolved.kind !== 'ready') throw new Error('expected a ready key');
+      const [sealed] = await CommerceDeliveryKeysApplication.sealForCheckout({
+        buyerPubky: BUYER,
+        checkoutCommandId: COMMAND_ID,
+        address: ADDRESS,
+        keys: new Map([[SELLER, { keyId: resolved.keyId, publicKey: resolved.publicKey }]]),
+      });
+      return { keyId: keyId ?? sealed.keyId, commandId: COMMAND_ID, envelope: sealed.envelope };
+    }
+
+    it('opens the address the buyer sealed to this seller on this device', async () => {
+      const sealed = await sealedOrder();
+
+      expect(await CommerceDeliveryKeysApplication.getOrderDeliveryAddress({ ...SELLER_SESSION, sealed })).toEqual({
+        kind: 'address',
+        address: ADDRESS,
+      });
+    });
+
+    it('reports a missing key when this device never held the envelope key', async () => {
+      const sealed = await sealedOrder();
+      await resetDeliveryKeyStoreForTests();
+
+      expect(await CommerceDeliveryKeysApplication.getOrderDeliveryAddress({ ...SELLER_SESSION, sealed })).toEqual({
+        kind: 'undecryptable',
+        reason: 'key_missing',
+      });
+    });
+
+    it.each([
+      ['another buyer', { buyerPubky: 'x'.repeat(52) }, {}],
+      ['another checkout command', {}, { commandId: '6c1d9a52-0b8e-4f7a-8d3c-2e5f4a9b7c01' }],
+    ])('rejects an envelope bound to %s', async (_name, session, sealedOverride) => {
+      const sealed = await sealedOrder();
+
+      expect(
+        await CommerceDeliveryKeysApplication.getOrderDeliveryAddress({
+          ...SELLER_SESSION,
+          ...session,
+          sealed: { ...sealed, ...sealedOverride },
+        }),
+      ).toEqual({ kind: 'undecryptable', reason: 'rejected' });
+    });
+
+    it('rejects a damaged envelope instead of returning an address', async () => {
+      const sealed = await sealedOrder();
+      const damaged = `${sealed.envelope.slice(0, 100)}${sealed.envelope[100] === 'A' ? 'B' : 'A'}${sealed.envelope.slice(101)}`;
+
+      expect(
+        await CommerceDeliveryKeysApplication.getOrderDeliveryAddress({
+          ...SELLER_SESSION,
+          sealed: { ...sealed, envelope: damaged },
+        }),
+      ).toEqual({ kind: 'undecryptable', reason: 'rejected' });
+    });
+  });
 });

@@ -1,8 +1,10 @@
 import {
   buildDeliveryKeyRecord,
+  DeliveryEnvelopeError,
   type DeliveryKeyRecord,
   deliveryKeyRecordUrl,
   generateDeliveryKeyPair,
+  openDeliveryAddress,
   parseDeliveryKeyRecord,
   sealDeliveryAddressForSellers,
   type SellerDeliveryEnvelope,
@@ -12,6 +14,7 @@ import type { CommerceDeliveryAddressValue } from '@/libs/commerce/postal-addres
 import {
   getCurrentDeliveryKey,
   getDeliveryKeyPin,
+  getDeliveryPrivateKey,
   putDeliveryKeyPin,
   type StoredDeliveryKey,
   storeDeliveryKey,
@@ -40,6 +43,15 @@ export type CheckoutDeliveryKey =
   | { kind: 'no_key' }
   | { kind: 'invalid' }
   | { kind: 'changed'; pinnedKeyId: string; currentKeyId: string };
+
+/** What a seller's device can read of one order's delivery address. */
+export type OrderDeliveryAddressResult =
+  | { kind: 'address'; address: CommerceDeliveryAddressValue }
+  | { kind: 'undecryptable'; reason: 'key_missing' | 'rejected' }
+  | { kind: 'none' };
+
+/** The sealed fields of a seller order projection, as the service returns them. */
+export type SealedOrderDeliveryAddress = { keyId: string; commandId: string; envelope: string };
 
 /** Every shipped seller's key is ready, or the first seller that is not and why. */
 export type CheckoutDeliveryKeysResolution =
@@ -159,6 +171,39 @@ export class CommerceDeliveryKeysApplication {
     keys: ReadonlyMap<string, SellerDeliveryKey>;
   }): Promise<SellerDeliveryEnvelope[]> {
     return await sealDeliveryAddressForSellers(input);
+  }
+
+  /**
+   * Opens one order's sealed address with the private key this device holds
+   * for the envelope's key id. A key this device does not hold, or an
+   * envelope that fails authentication against the order's binding, is a
+   * hard stop: no address is returned.
+   */
+  static async getOrderDeliveryAddress(input: {
+    sellerPubky: string;
+    buyerPubky: string;
+    sealed: SealedOrderDeliveryAddress;
+  }): Promise<OrderDeliveryAddressResult> {
+    const privateKey = await getDeliveryPrivateKey(input.sellerPubky, input.sealed.keyId);
+    if (!privateKey) return { kind: 'undecryptable', reason: 'key_missing' };
+    try {
+      const address = await openDeliveryAddress({
+        envelope: input.sealed.envelope,
+        privateKey,
+        binding: {
+          checkoutCommandId: input.sealed.commandId,
+          buyerPubky: input.buyerPubky,
+          sellerPubky: input.sellerPubky,
+          keyId: input.sealed.keyId,
+        },
+      });
+      return { kind: 'address', address };
+    } catch (error) {
+      if (error instanceof DeliveryEnvelopeError) return { kind: 'undecryptable', reason: 'rejected' };
+      throw error;
+    } finally {
+      privateKey.fill(0);
+    }
   }
 
   /** The buyer confirmed the seller's new key; pin it. */

@@ -3,34 +3,37 @@
 import { useEffect, useState } from 'react';
 import { usePathname } from 'next/navigation';
 import { CommerceController } from '@/controllers/commerce/commerce';
+import type { CommerceDeliveryAddressValue } from '@/libs/commerce/postal-address';
+import { Logger } from '@/libs/logger/logger';
 import type { MarketplaceOrder } from '@/services/marketplace/marketplace';
 import { useAuthStore } from '@/stores/auth/auth.store';
 
+export type PackingSlipAddressState =
+  | { status: 'idle' }
+  | { status: 'loading' }
+  | { status: 'ready'; address: CommerceDeliveryAddressValue }
+  | { status: 'undecryptable'; reason: 'key_missing' | 'rejected' }
+  | { status: 'unavailable' };
+
 export type UsePackingSlipAddressResult = {
-  /** The pasted delivery address, or '' when nothing is staged. */
-  address: string;
-  /** Stage the next value (wire to the textarea's onChange). */
-  setAddress: (next: string) => void;
-  /** Drop the staged address (the dialog calls this on close). */
+  /** What this device can read of the order's delivery address. */
+  deliveryAddress: PackingSlipAddressState;
+  /** Drop the decrypted address (the dialog calls this on close). */
   clear: () => void;
-  /** The seller-only order detail, held in memory for this print dialog. */
-  sellerOrder: MarketplaceOrder | null;
 };
 
+const IDLE: PackingSlipAddressState = { status: 'idle' };
+
 /**
- * Local-only staging for a delivery address the seller pastes into the
- * packing slip so it prints on the slip instead of being hand-copied.
+ * Holds the seller's decrypted delivery address for one print dialog.
  *
- * PRIVACY INVARIANT: the value lives ONLY in this component state. It is
- * never persisted (no Dexie, no localStorage/sessionStorage, no URL), never
- * logged, and never sent anywhere — it exists only so `window.print()` can
- * put it on paper. It is cleared on print completion and on route change;
- * the dialog clears it on close.
- *
- * This does not weaken the delivery-address boundary (ADR-0019 §8,
- * docs/ecommerce/shipping.md): a service-provided address is accepted only
- * from the seller's paid/processing shipping order projection. The pasted
- * fallback remains local-only and is never sent anywhere.
+ * PRIVACY INVARIANT: the decrypted address lives ONLY in this component
+ * state. It is never persisted (no Dexie, no localStorage/sessionStorage, no
+ * URL), never logged, and never sent anywhere; it exists so the seller can
+ * read it and `window.print()` can put it on paper. It is dropped on dialog
+ * close, route change and account switch. The sealed envelope is opened with
+ * the delivery key kept on this device (`CommerceController.getOrderDeliveryAddress`);
+ * if this device cannot open it the state says so and no address is shown.
  */
 export function usePackingSlipAddress({
   order,
@@ -39,20 +42,16 @@ export function usePackingSlipAddress({
   order?: MarketplaceOrder;
   enabled?: boolean;
 } = {}): UsePackingSlipAddressResult {
-  const [address, setAddress] = useState('');
-  const [sellerOrder, setSellerOrder] = useState<MarketplaceOrder | null>(null);
+  const [deliveryAddress, setDeliveryAddress] = useState<PackingSlipAddressState>(IDLE);
   const pathname = usePathname();
   const currentUserPubky = useAuthStore((state) => state.currentUserPubky);
 
-  // Route change: the address must not outlive the screen it was pasted on.
-  // This also fires on mount, which is a no-op against the initial ''.
   useEffect(() => {
-    setAddress('');
-    setSellerOrder(null);
+    setDeliveryAddress(IDLE);
   }, [pathname, currentUserPubky]);
 
   useEffect(() => {
-    setSellerOrder(null);
+    setDeliveryAddress(IDLE);
     if (
       !enabled ||
       !order ||
@@ -64,36 +63,37 @@ export function usePackingSlipAddress({
     }
 
     let active = true;
-    void CommerceController.getMarketplaceOrder(order.id)
-      .then((freshOrder) => {
+    setDeliveryAddress({ status: 'loading' });
+    void (async () => {
+      try {
+        const freshOrder = await CommerceController.getMarketplaceOrder(order.id);
         if (
-          active &&
-          freshOrder &&
-          freshOrder.sellerPubky === currentUserPubky &&
-          freshOrder.fulfillment === 'shipping' &&
-          ['paid', 'processing'].includes(freshOrder.state)
+          !freshOrder ||
+          freshOrder.sellerPubky !== currentUserPubky ||
+          freshOrder.fulfillment !== 'shipping' ||
+          !['paid', 'processing'].includes(freshOrder.state)
         ) {
-          setSellerOrder(freshOrder);
+          if (active) setDeliveryAddress({ status: 'unavailable' });
+          return;
         }
-      })
-      .catch(() => undefined);
+        const result = await CommerceController.getOrderDeliveryAddress(freshOrder);
+        if (!active) return;
+        if (result.kind === 'address') setDeliveryAddress({ status: 'ready', address: result.address });
+        else if (result.kind === 'undecryptable')
+          setDeliveryAddress({ status: 'undecryptable', reason: result.reason });
+        else setDeliveryAddress({ status: 'unavailable' });
+      } catch (error) {
+        Logger.error('Delivery address could not be read for the packing slip', { error });
+        if (active) setDeliveryAddress({ status: 'undecryptable', reason: 'rejected' });
+      }
+    })();
 
     return () => {
       active = false;
     };
   }, [currentUserPubky, enabled, order]);
 
-  // Print completion: the address's only job was the printed slip.
-  useEffect(() => {
-    const clearAfterPrint = () => setAddress('');
-    window.addEventListener('afterprint', clearAfterPrint);
-    return () => window.removeEventListener('afterprint', clearAfterPrint);
-  }, []);
+  const clear = () => setDeliveryAddress(IDLE);
 
-  const clear = () => {
-    setAddress('');
-    setSellerOrder(null);
-  };
-
-  return { address, setAddress, clear, sellerOrder };
+  return { deliveryAddress, clear };
 }
