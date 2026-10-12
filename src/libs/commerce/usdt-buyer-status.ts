@@ -110,11 +110,15 @@ export function usdtAmountLabel(order: UsdtStatusOrder): string | null {
   return formatUsdt(minor);
 }
 
-/** The receipt line: "$25.00, paid as 25.000000 USDT". Null until the order carries both amounts. */
+/**
+ * The receipt line: "$1,250.00, paid as 1,250.000000 USDT". Null until the
+ * order carries both amounts. It is a record, so the USDT figure is grouped
+ * like the dollar figure beside it; the amount to pay stays ungrouped.
+ */
 export function usdtPaidAsLine(order: UsdtStatusOrder): string | null {
-  const amount = usdtAmountLabel(order);
-  if (amount === null || !order.total) return null;
-  return `${formatCommerceMoney(order.total)}, paid as ${amount}`;
+  const minor = order.paymentAmountMinor;
+  if (minor === null || minor === undefined || !isUsdtOrder(order) || !order.total) return null;
+  return `${formatCommerceMoney(order.total)}, paid as ${formatUsdt(minor, { grouped: true })}`;
 }
 
 const USDT_MILLIONTHS_PER_CENT = 10 ** (USDT_EXPONENT - 2);

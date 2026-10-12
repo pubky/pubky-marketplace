@@ -129,4 +129,24 @@ describe('formatUsdt', () => {
   it.each([-1, 0.5, Number.NaN, Number.POSITIVE_INFINITY, 2 ** 53])('refuses %s', (value) => {
     expect(() => formatUsdt(value)).toThrow();
   });
+
+  it.each([
+    [999_999_999, '999.999999 USDT'],
+    [1_000_000_000, '1,000.000000 USDT'],
+    [1_250_000_000, '1,250.000000 USDT'],
+    [1_234_567_890_123, '1,234,567.890123 USDT'],
+    [0, '0.000000 USDT'],
+    [1, '0.000001 USDT'],
+  ])('groups the digits of %i millionths as %s when asked, keeping all six decimals', (millionths, expected) => {
+    expect(formatUsdt(millionths, { grouped: true })).toBe(expected);
+  });
+
+  it('keeps the exact ungrouped form by default, for the amount to pay or send', () => {
+    expect(formatUsdt(1_250_000_000)).toBe('1250.000000 USDT');
+    expect(formatUsdt(1_250_000_000, {})).toBe('1250.000000 USDT');
+  });
+
+  it('refuses an invalid amount in the grouped form too', () => {
+    expect(() => formatUsdt(-1, { grouped: true })).toThrow();
+  });
 });
