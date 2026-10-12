@@ -563,17 +563,22 @@ async function setup() {
 
 // ---- buyer: checkout, payment wait -------------------------------------------------------------
 
-async function ordersCard(page, title) {
+async function ordersCard(page, title, orderId = null) {
   await page.goto(`${ORIGIN}/marketplace/orders`, { waitUntil: 'domcontentloaded' });
   await waitForAppReady(page);
   await page.locator('[data-surface="marketplace-orders"]').waitFor({ state: 'visible', timeout: 60_000 });
-  await page.waitForTimeout(2500);
-  const all = page.getByRole('button', { name: /^All/ }).first();
-  if (await all.count()) {
-    await all.click();
-    await page.waitForTimeout(800);
-  }
-  return page.locator('[id^="order-"]').filter({ hasText: title }).first();
+  // The page picks a default tab once the orders load, so wait for the counts before choosing All.
+  const all = page.getByRole('tab', { name: /^All\s*[1-9]/ }).first();
+  await all.waitFor({ state: 'visible', timeout: 60_000 }).catch(async (error) => {
+    await page.screenshot({ path: join(OUT, 'digital-orders-tabs-missing.png') }).catch(() => {});
+    throw error;
+  });
+  await page.waitForTimeout(1500);
+  await all.click();
+  await page.waitForTimeout(1500);
+  // The same listing can have older expired orders from a retried buy, so pin the order once its id is known.
+  const cards = page.locator(orderId ? `#order-${orderId}` : '[id^="order-"]').filter({ hasText: title });
+  return orderId ? cards.first() : cards.filter({ hasNotText: /expired|cancell?ed/i }).first();
 }
 
 // A seller whose Paykit creator is shared_manual confirms Bitcoin themselves: the order only becomes
@@ -762,16 +767,16 @@ async function buy(kind) {
 
 // ---- both sides: delivery checks ---------------------------------------------------------------
 
-async function buyerPanel(page, title) {
-  const card = await ordersCard(page, title);
+async function buyerPanel(page, title, orderId) {
+  const card = await ordersCard(page, title, orderId);
   await card.waitFor({ state: 'visible', timeout: 60_000 });
   const panel = card.locator('[data-surface="order-digital-panel"]');
   await panel.waitFor({ state: 'visible', timeout: 60_000 });
   return { panel };
 }
 
-async function sellerCard(page, title) {
-  const card = await ordersCard(page, title);
+async function sellerCard(page, title, orderId) {
+  const card = await ordersCard(page, title, orderId);
   await card.waitFor({ state: 'visible', timeout: 60_000 });
   return card;
 }
@@ -785,7 +790,7 @@ async function settle(kind) {
   try {
     const { page } = buyerSession;
     await ringSignIn(page, buyer);
-    let { panel } = await buyerPanel(page, listing.title);
+    let { panel } = await buyerPanel(page, listing.title, state.orders[kind].id);
     await page.screenshot({ path: join(OUT, `digital-order-${kind}-before.png`) });
     if (kind === 'file') {
       const hashes = [];
@@ -797,7 +802,7 @@ async function settle(kind) {
         const path = await download.path();
         hashes.push({ name: download.suggestedFilename(), sha256: sha256Hex(readFileSync(path)) });
         await page.waitForTimeout(2000);
-        ({ panel } = await buyerPanel(page, listing.title));
+        ({ panel } = await buyerPanel(page, listing.title, state.orders[kind].id));
       }
       check(
         'settle file: the downloaded bytes match the fixture SHA-256, twice',
@@ -839,7 +844,7 @@ async function settle(kind) {
   try {
     const { page } = sellerSession;
     await ringSignIn(page, seller);
-    const card = await sellerCard(page, listing.title);
+    const card = await sellerCard(page, listing.title, state.orders[kind].id);
     const sellerPanel = card.locator('[data-surface="order-seller-digital-panel"]');
     await sellerPanel.waitFor({ state: 'visible', timeout: 60_000 });
     if (isInstantKind(kind)) {
@@ -889,7 +894,7 @@ async function settle(kind) {
     const again = await openBrowser();
     try {
       await ringSignIn(again.page, buyer);
-      const { panel } = await buyerPanel(again.page, listing.title);
+      const { panel } = await buyerPanel(again.page, listing.title, state.orders[kind].id);
       const text = await panel.innerText();
       if (kind === 'email')
         check('settle email: the buyer sees "Emailed to" with the date', /Emailed to .* on /.test(text));
