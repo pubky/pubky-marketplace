@@ -216,6 +216,10 @@ export const getMarketplaceUrl = (): string => getRuntimeConfig().marketplaceUrl
  */
 export const getMarketplaceNexusUrl = (): string =>
   getRuntimeConfig().marketplaceNexusUrl ?? getRuntimeConfig().nexusUrl;
+/** The chat inbox ping service; `null` when the deployment has none. */
+export const getInboxUrl = (): string | null => getRuntimeConfig().inboxUrl ?? null;
+/** Audience the inbox expects in session proofs; defaults to the inbox URL. */
+export const getInboxAudience = (): string | null => getRuntimeConfig().inboxAudience ?? getInboxUrl();
 export const getLocksUrl = (): string => getRuntimeConfig().locksUrl;
 export const getPaykitSetupUrl = (): string => getRuntimeConfig().paykitSetupUrl;
 export const getPaykitSetupCreatorParam = (): boolean => getRuntimeConfig().paykitSetupCreatorParam;

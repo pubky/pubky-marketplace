@@ -30,6 +30,7 @@ export enum ErrorService {
   Marketplace = 'marketplace',
   Locks = 'locks',
   Paykit = 'paykit',
+  Inbox = 'inbox',
   PubkyAppSpecs = 'pubky-app-specs',
   Local = 'local', // Client-side operations
   NextJsServer = 'nextjs-server', // Server-side operations

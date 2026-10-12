@@ -3,6 +3,7 @@
 import { useEffect } from 'react';
 import { usePathname } from 'next/navigation';
 import { CommerceController } from '@/controllers/commerce/commerce';
+import { ChatSyncCoordinator } from '@/coordinators/chat-sync/chat-sync';
 import { MuteListSyncCoordinator } from '@/coordinators/mute-list-sync/mute-list-sync';
 import { NotificationCoordinator } from '@/coordinators/notifications/notifications';
 import { StreamCoordinator } from '@/coordinators/streams/stream';
@@ -14,6 +15,7 @@ function getAppCoordinators() {
     stream: StreamCoordinator.getInstance(),
     ttl: TtlCoordinator.getInstance(),
     muteListSync: MuteListSyncCoordinator.getInstance(),
+    chatSync: ChatSyncCoordinator.getInstance(),
   };
 }
 
@@ -23,6 +25,7 @@ function applyRouteToCoordinators(pathname: string): void {
   void coordinators.stream.setRoute(pathname);
   coordinators.ttl.setRoute(pathname);
   coordinators.muteListSync.setRoute(pathname);
+  coordinators.chatSync.setRoute(pathname);
 }
 
 function startAppCoordinators(): void {
@@ -32,6 +35,7 @@ function startAppCoordinators(): void {
   void coordinators.stream.start();
   coordinators.ttl.start();
   coordinators.muteListSync.start();
+  coordinators.chatSync.start();
 }
 
 function stopAppCoordinators(): void {
@@ -41,6 +45,7 @@ function stopAppCoordinators(): void {
   coordinators.stream.stop();
   coordinators.ttl.stop();
   coordinators.muteListSync.stop();
+  coordinators.chatSync.stop();
 }
 
 /**
@@ -51,7 +56,7 @@ function stopAppCoordinators(): void {
  *
  * Responsibilities:
  * - Initialize coordinators on mount (NotificationCoordinator, StreamCoordinator,
- *   MuteListSyncCoordinator, TtlCoordinator)
+ *   MuteListSyncCoordinator, TtlCoordinator, ChatSyncCoordinator)
  * - Start coordination when the component is mounted
  * - Track route changes and inform coordinators
  * - Stop coordination and cleanup when unmounted

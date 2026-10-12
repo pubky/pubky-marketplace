@@ -425,6 +425,14 @@ export const runtimeConfigValueSchema = networkConfigValueSchema.extend({
    * `getMarketplaceNexusUrl`).
    */
   marketplaceNexusUrl: urlValue.optional(),
+  /**
+   * The inbox ping service used by chat for first contact and wake-ups.
+   * Absent means chat runs on homeserver streams and polling alone.
+   * `inboxAudience` is the audience string the deployment expects in
+   * session proofs; it defaults to `inboxUrl`.
+   */
+  inboxUrl: urlValue.optional(),
+  inboxAudience: nonEmptyStringValue.optional(),
   locksUrl: urlValue.default(APP_RUNTIME_DEFAULTS.locksUrl),
   paykitSetupUrl: urlValue.default(APP_RUNTIME_DEFAULTS.paykitSetupUrl),
   /**
@@ -561,6 +569,8 @@ export const runtimeEnvInputSchema = z
     exchangeRateApi: optionalUrlFromString,
     marketplaceUrl: optionalUrlFromString,
     marketplaceNexusUrl: optionalUrlFromString,
+    inboxUrl: optionalUrlFromString,
+    inboxAudience: optionalTrimmedString,
     locksUrl: optionalUrlFromString,
     paykitSetupUrl: optionalUrlFromString,
     paykitSetupCreatorParam: optionalBooleanFromString,
@@ -658,6 +668,8 @@ export const runtimeEnvInputSchemaWithDefaults = z
     exchangeRateApi: optionalUrlFromString,
     marketplaceUrl: optionalUrlFromString,
     marketplaceNexusUrl: optionalUrlFromString,
+    inboxUrl: optionalUrlFromString,
+    inboxAudience: optionalTrimmedString,
     locksUrl: optionalUrlFromString,
     paykitSetupUrl: optionalUrlFromString,
     paykitSetupCreatorParam: optionalBooleanFromString,
@@ -747,6 +759,8 @@ export const PUBKY_RUNTIME_ENV_NAMES: Record<keyof RuntimeConfig, string> = {
   exchangeRateApi: 'PUBKY_RUNTIME_EXCHANGE_RATE_API',
   marketplaceUrl: 'PUBKY_RUNTIME_MARKETPLACE_URL',
   marketplaceNexusUrl: 'PUBKY_RUNTIME_MARKETPLACE_NEXUS_URL',
+  inboxUrl: 'PUBKY_RUNTIME_INBOX_URL',
+  inboxAudience: 'PUBKY_RUNTIME_INBOX_AUDIENCE',
   locksUrl: 'PUBKY_RUNTIME_LOCKS_URL',
   paykitSetupUrl: 'PUBKY_RUNTIME_PAYKIT_SETUP_URL',
   paykitSetupCreatorParam: 'PUBKY_RUNTIME_PAYKIT_SETUP_CREATOR_PARAM',

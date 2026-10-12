@@ -37,6 +37,7 @@ export class ChatConversationModel
   peer_pubky: string;
   folder_id: string | null;
   peer_key_id: string | null;
+  peer_public_key: string | null;
   my_key_id: string;
   peer_state: ChatConversationModelSchema['peer_state'];
   origin: ChatConversationModelSchema['origin'];
@@ -55,6 +56,7 @@ export class ChatConversationModel
     this.peer_pubky = row.peer_pubky;
     this.folder_id = row.folder_id;
     this.peer_key_id = row.peer_key_id;
+    this.peer_public_key = row.peer_public_key;
     this.my_key_id = row.my_key_id;
     this.peer_state = row.peer_state;
     this.origin = row.origin;

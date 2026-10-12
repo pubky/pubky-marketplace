@@ -31,6 +31,7 @@ import {
   isGrantKeyCleanupPending,
   markGrantKeyCleanupPending,
 } from '@/controllers/auth/grant-key-cleanup';
+import { ChatController } from '@/controllers/chat/chat';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import { NotificationCoordinator } from '@/coordinators/notifications/notifications';
 import { StreamCoordinator } from '@/coordinators/streams/stream';
@@ -827,6 +828,7 @@ export class AuthController {
       // the account that left must not keep a bearer at rest here.
       if ([captured?.pubky ?? null, currentPubky, persistedPubky].some((pubky) => pubky && pubky !== newPubky)) {
         CommerceController.clearMarketplaceSessionsOfOtherAccounts(newPubky);
+        ChatController.clearSessionsOfOtherAccounts(newPubky);
       }
       this.markLocalStateDirty();
       this.pendingLocalStateCapture = null;
@@ -880,6 +882,10 @@ export class AuthController {
     PubkySpecsSingleton.reset();
     // No marketplace bearer may stay at rest for the user who is leaving.
     CommerceController.clearMarketplaceSessionForSignOut();
+    // Same for the chat inbox session and the derived conversation keys.
+    void ChatController.clearForSignOut(pubky ?? null).catch((error: unknown) => {
+      Logger.warn('Chat sign-out cleanup failed', { error });
+    });
     TtlCoordinator.resetInstance();
     StreamCoordinator.resetInstance();
     NotificationCoordinator.resetInstance();

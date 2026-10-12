@@ -37,6 +37,8 @@ export interface ChatConversationModelSchema {
   folder_id: string | null;
   /** The peer kid the folder was derived from (rotation detection). */
   peer_key_id: string | null;
+  /** The peer's X25519 public key (base64url), cached from `/pub/chat/v0/key.json`. */
+  peer_public_key: string | null;
   my_key_id: string;
   peer_state: ChatPeerState;
   origin: ChatConversationOrigin;
