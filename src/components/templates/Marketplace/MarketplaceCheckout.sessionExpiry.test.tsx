@@ -119,6 +119,10 @@ vi.mock('@/hooks/useMarketplaceOfferCheckout/useMarketplaceOfferCheckout', () =>
   useMarketplaceOfferCheckout: () => ({ submit: vi.fn(), isSubmitting: false }),
 }));
 
+vi.mock('@/hooks/useMarketplaceSellerDeliveryTerms/useMarketplaceSellerDeliveryTerms', () => ({
+  useMarketplaceSellerDeliveryTerms: () => ({ isLoading: false, entries: [] }),
+}));
+
 vi.mock('@/hooks/useMarketplaceCartCount/useMarketplaceCartCount', () => ({
   useMarketplaceCartCount: () => 0,
 }));

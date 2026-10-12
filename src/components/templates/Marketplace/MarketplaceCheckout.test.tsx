@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MARKETPLACE_DELIVERY_ADDRESS_DISCLOSURE } from '@/config/commerce-copy';
@@ -45,6 +45,7 @@ const view = vi.hoisted(() => ({
   orderCount: 1,
   payResult: { ok: false, orderIds: [] as string[], boundOrders: [] as unknown[] },
   awardItems: [] as Array<{ awardId: string; listingId: string; variantId: string }>,
+  shops: {} as Record<string, { name: string; deliveryAssumeDays?: number; autoCompleteDays?: number }>,
 }));
 
 const checkoutActions = vi.hoisted(() => ({
@@ -257,6 +258,12 @@ vi.mock('@/controllers/commerce/commerce', () => ({
     getListing: vi.fn(async () => listing),
     getCartItems: vi.fn(async () => []),
     getManyListings: vi.fn(async () => new Map()),
+    refreshShop: vi.fn(async (sellerPubky: string) => {
+      const shop = view.shops[sellerPubky];
+      if (!shop) throw new Error('no shop record in this test');
+      return { ...shop };
+    }),
+    getShop: vi.fn(async () => null),
   },
 }));
 
@@ -353,6 +360,7 @@ function resetCheckoutView() {
   view.payResult = { ok: false, orderIds: [], boundOrders: [] };
   navigation.navigateTop.mockReset();
   view.awardItems = [];
+  view.shops = {};
   offerState.offers = [];
   offerState.isLoading = false;
   offerState.refresh.mockClear();
@@ -403,6 +411,71 @@ describe('MarketplaceCheckout', () => {
 
     expect(screen.queryByRole('heading', { name: 'Enable purchases' })).not.toBeInTheDocument();
     expect(screen.queryByText(/Pubky Ring/)).not.toBeInTheDocument();
+  });
+
+  it("states the seller's delivery periods in the order summary", async () => {
+    seededCart();
+    view.shops = {
+      [listing.record.ownerPubky]: { name: 'Satoshi Vintage', deliveryAssumeDays: 3, autoCompleteDays: 5 },
+    };
+
+    render(<MarketplaceCheckout />);
+
+    expect(await screen.findByTestId('marketplace-delivery-terms')).toHaveTextContent(
+      'Delivery is assumed after 3 days; the order completes 5 days after delivery unless you open a return.',
+    );
+    expect(within(screen.getByTestId('marketplace-checkout-summary')).getByTestId('marketplace-delivery-terms')).toBe(
+      screen.getByTestId('marketplace-delivery-terms'),
+    );
+  });
+
+  it('fills only the periods a seller left unset with the defaults', async () => {
+    seededCart();
+    view.shops = { [listing.record.ownerPubky]: { name: 'Satoshi Vintage', autoCompleteDays: 9 } };
+
+    render(<MarketplaceCheckout />);
+
+    expect(await screen.findByTestId('marketplace-delivery-terms')).toHaveTextContent(
+      'Delivery is assumed after 14 days; the order completes 9 days after delivery unless you open a return.',
+    );
+  });
+
+  it('names each shop when two sellers set different periods', async () => {
+    view.items = [
+      { id: 'seller:boots:variant_42', listingId: listing.id, variantId: 'variant_42', quantity: 1, listing },
+      {
+        id: 'other:camera:variant_01',
+        listingId: secondSellerListing.id,
+        variantId: 'variant_01',
+        quantity: 1,
+        listing: secondSellerListing,
+      },
+    ];
+    view.orderCount = 2;
+    view.shops = {
+      [listing.record.ownerPubky]: { name: 'Satoshi Vintage', deliveryAssumeDays: 3, autoCompleteDays: 5 },
+      [secondSellerListing.record.ownerPubky]: {
+        name: 'Film Camera Supply',
+        deliveryAssumeDays: 30,
+        autoCompleteDays: 45,
+      },
+    };
+
+    render(<MarketplaceCheckout />);
+
+    const terms = await screen.findByTestId('marketplace-delivery-terms');
+    await waitFor(() => expect(terms).toHaveTextContent('Film Camera Supply: Delivery is assumed after 30 days'));
+    expect(terms).toHaveTextContent('Satoshi Vintage: Delivery is assumed after 3 days');
+  });
+
+  it('shows no periods when the seller shop cannot be read, rather than guessing', async () => {
+    seededCart();
+
+    render(<MarketplaceCheckout />);
+
+    await screen.findByTestId('marketplace-checkout-summary');
+    await waitFor(() => expect(CommerceController.refreshShop).toHaveBeenCalled());
+    expect(screen.queryByTestId('marketplace-delivery-terms')).not.toBeInTheDocument();
   });
 
   it('never includes Stripe in the checkout rail list', async () => {
