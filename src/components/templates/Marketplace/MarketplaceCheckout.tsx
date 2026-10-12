@@ -31,6 +31,7 @@ import {
   groupMarketplaceCartItems,
   type MarketplaceCartItem,
   marketplaceCartShippingTotals,
+  priceForCartItem,
   useMarketplaceCart,
 } from '@/hooks/useMarketplaceCart/useMarketplaceCart';
 import { useMarketplaceCheckout } from '@/hooks/useMarketplaceCheckout/useMarketplaceCheckout';
@@ -72,6 +73,7 @@ import {
   USDT_WALLET_HINT,
   usdtParityMillionths,
 } from '@/libs/commerce/usdt-buyer-status';
+import { usdtMissingOptionExplanation } from '@/libs/commerce/usdt-missing-option';
 import { navigateTop } from '@/libs/navigation/navigate-top';
 import { getDeployEnv } from '@/libs/runtime-config/runtime-config';
 import type { CommerceListingModelSchema } from '@/models/commerce/commerce.schema';
@@ -90,6 +92,7 @@ import { MarketplaceOrderReference } from '@/organisms/Marketplace/MarketplaceOr
 import { MarketplacePaymentStatusCard } from '@/organisms/Marketplace/MarketplacePaymentStatusCard';
 import { MarketplaceSectionNav } from '@/organisms/Marketplace/MarketplaceSectionNav';
 import { MarketplaceSessionRequiredCard } from '@/organisms/Marketplace/MarketplaceSessionRequiredCard';
+import { MarketplaceUsdtMissingNote } from '@/organisms/Marketplace/MarketplaceUsdtMissingNote';
 import type { MarketplaceOfferAward } from '@/services/marketplace/marketplace';
 import { useAuthStore } from '@/stores/auth/auth.store';
 import { useCommerceStore } from '@/stores/commerce/commerce.store';
@@ -262,6 +265,7 @@ function MarketplaceCartCheckout() {
     sellerKey: string;
     attempt: number;
     methods: PaymentMethodKind[] | null;
+    sellerAcceptsUsdt: Map<string, boolean> | null;
   } | null>(null);
   const [railAttempt, setRailAttempt] = useState(0);
   const [nowMs, setNowMs] = useState(() => Date.now());
@@ -305,6 +309,17 @@ function MarketplaceCartCheckout() {
   const availableCheckoutMethods = checkoutRails(
     isSandbox ? SANDBOX_CHECKOUT_RAILS : (sharedMethods ?? []).filter((method) => method !== 'usdt' || usdtOffered),
   );
+  const usdtMissingExplanation = usdtMissingOptionExplanation({
+    gateOpen: usdtPaymentsAvailable && !isSandbox && !isLocksCheckout,
+    offered: availableCheckoutMethods.includes('usdt'),
+    refused: usdtRefusal !== null,
+    sellerAcceptsUsdt: loadedForCart?.sellerAcceptsUsdt ?? null,
+    items: checkoutItems.map((item) => ({
+      title: item.listing.record.title,
+      sellerPubky: item.listing.record.ownerPubky,
+      currency: priceForCartItem(item)?.currency ?? null,
+    })),
+  });
   const selectedMethod =
     preferredMethod && availableCheckoutMethods.includes(preferredMethod)
       ? preferredMethod
@@ -341,11 +356,16 @@ function MarketplaceCartCheckout() {
       if (!active) return;
       const sets = results.filter((set): set is PaymentMethodKind[] => set !== null);
       if (sets.length !== results.length) {
-        setLoadedMethods({ sellerKey, attempt: railAttempt, methods: null });
+        setLoadedMethods({ sellerKey, attempt: railAttempt, methods: null, sellerAcceptsUsdt: null });
         return;
       }
       const next = intersectPaymentMethods(sets);
-      setLoadedMethods({ sellerKey, attempt: railAttempt, methods: next });
+      setLoadedMethods({
+        sellerKey,
+        attempt: railAttempt,
+        methods: next,
+        sellerAcceptsUsdt: new Map(sellers.map((sellerPubky, index) => [sellerPubky, sets[index].includes('usdt')])),
+      });
     });
     return () => {
       active = false;
@@ -1071,6 +1091,7 @@ function MarketplaceCartCheckout() {
                           ))}
                         </div>
                       )}
+                      {usdtMissingExplanation && <MarketplaceUsdtMissingNote explanation={usdtMissingExplanation} />}
                       {bitcoinSelected && (
                         <Typography
                           as="p"
