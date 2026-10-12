@@ -10,6 +10,7 @@ describe('isDurableCommerceMode', () => {
 describe('MARKETPLACE_TRUSTED_ATTESTORS', () => {
   it('pins the staging and production transaction-service attestors', () => {
     expect(MARKETPLACE_TRUSTED_ATTESTORS).toEqual([
+      'rhmo67eonanguhd3imztepbdkpm3z7nyt8u1n1bjymkmegjipfto',
       'ws343aqzmcahagojhmhkbri8odqz9iqg61woxbkh9fd3bxhqomdy',
       'szhtpayftdz3mpkoyyk3zesuad11ufuudqqrc73s35w1tfju7gxy',
     ]);
