@@ -2,6 +2,7 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { COMMERCE_LISTING_MAX_QUANTITY } from '@/config/commerce';
 import { CommerceController } from '@/controllers/commerce/commerce';
+import { toast } from '@/molecules/Toaster/use-toast';
 import { createCommerceListingFixture } from '@/test/fixtures/commerce/commerce';
 import { useMarketplaceSellerDashboard } from './useMarketplaceSellerDashboard';
 
@@ -64,6 +65,7 @@ vi.mock('@/controllers/commerce/commerce', () => ({
     commitUpsertListing: vi.fn(),
     getListingDrafts: vi.fn(async () => []),
     commitDeleteListingDraft: vi.fn(),
+    exportInventoryListingsCsv: vi.fn(async () => new Uint8Array()),
   },
 }));
 
@@ -518,7 +520,7 @@ describe('useMarketplaceSellerDashboard duplicateListing', () => {
     expect(result.current.metrics.lowStock).toBe(0);
   });
 
-  it('still flags a numbered copy of 1 and keeps the cap numeric in the CSV', () => {
+  it('still flags a numbered copy of 1 next to the unlimited cap', () => {
     const record = createCommerceListingFixture({
       listingId: 'guide',
       fulfillmentMethods: ['digital'],
@@ -553,9 +555,31 @@ describe('useMarketplaceSellerDashboard duplicateListing', () => {
     ];
     const { result } = renderHook(() => useMarketplaceSellerDashboard());
     expect(result.current.metrics.lowStock).toBe(1);
-    const csv = result.current.exportCsv();
-    expect(csv).toContain(String(COMMERCE_LISTING_MAX_QUANTITY + 1));
-    expect(csv).not.toContain('Unlimited');
+  });
+
+  describe('exportCsv', () => {
+    it('returns the canonical import CSV for the signed-in seller', async () => {
+      const bytes = new TextEncoder().encode('record_uri,seller_pubky\r\n');
+      vi.mocked(CommerceController.exportInventoryListingsCsv).mockResolvedValue(bytes);
+      const { result } = renderHook(() => useMarketplaceSellerDashboard());
+      let exported: Uint8Array | null = null;
+      await act(async () => {
+        exported = await result.current.exportCsv();
+      });
+      expect(CommerceController.exportInventoryListingsCsv).toHaveBeenCalledWith(OWNER);
+      expect(exported).toBe(bytes);
+    });
+
+    it('toasts and returns nothing when the export fails', async () => {
+      vi.mocked(CommerceController.exportInventoryListingsCsv).mockRejectedValue(new Error('boom'));
+      const { result } = renderHook(() => useMarketplaceSellerDashboard());
+      let exported: Uint8Array | null = new Uint8Array();
+      await act(async () => {
+        exported = await result.current.exportCsv();
+      });
+      expect(exported).toBeNull();
+      expect(toast).toHaveBeenCalledWith({ variant: 'error', description: 'Could not export your listings.' });
+    });
   });
 
   it('marks a one-shot resume id without deleting the row', () => {

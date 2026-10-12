@@ -52,6 +52,9 @@ mean exactly that.
   - Return policy (window or no-returns)
 - **Listing management**
   - Edit, unlist/relist (fixed-price), delete, copy public link
+  - Dashboard **Export CSV** emits the canonical import CSV; an exported file
+    imports back with zero diffs and edits become planned updates (see
+    [`import-export.md`](import-export.md))
   - Owner panel self-heals transaction-service registration (re-runs on
     session connect)
   - Listing thumbnails in seller lists

@@ -159,7 +159,7 @@ vi.mock('@/hooks/useMarketplaceSellerDashboard/useMarketplaceSellerDashboard', (
     unfinishedDrafts: view.unfinishedDrafts,
     discardListingDraft: vi.fn(async () => undefined),
     resumeListingDraft: vi.fn(),
-    exportCsv: () => 'listing_id,title,state,format,price_minor,currency,inventory',
+    exportCsv: async () => new TextEncoder().encode('record_uri,seller_pubky\r\n'),
   }),
 }));
 

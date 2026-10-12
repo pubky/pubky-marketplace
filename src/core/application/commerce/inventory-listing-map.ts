@@ -152,15 +152,114 @@ function listingState(value: string): CommerceListingRecord['state'] {
   return 'active';
 }
 
-function fromRecordJson(row: CanonicalImportRow, ownerPubky: string): CommerceListingRecord | null {
-  const parsed = parseJsonField(row.extraFields.record_json);
-  if (!parsed) return null;
+/**
+ * The SDK CSV parser accepts only CRLF inside a quoted cell and refuses a bare
+ * LF or CR, so line breaks in free text are written as CRLF and read back as LF.
+ */
+function toCsvText(value: string): string {
+  return value.replace(/\r\n|\r|\n/g, '\r\n');
+}
+
+function fromCsvText(value: string): string {
+  return value.replace(/\r\n|\r/g, '\n');
+}
+
+/** The record's own text when the cell only differs by line-break encoding. */
+function csvTextOrBase(cell: string, base: string): string {
+  return fromCsvText(cell) === fromCsvText(base) ? base : fromCsvText(cell);
+}
+
+function stableJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(stableJson).join(',')}]`;
+  const object = asObject(value);
+  if (object) {
+    return `{${Object.keys(object)
+      .filter((key) => object[key] !== undefined)
+      .sort()
+      .map((key) => `${JSON.stringify(key)}:${stableJson(object[key])}`)
+      .join(',')}}`;
+  }
+  return JSON.stringify(value) ?? 'null';
+}
+
+function overlaySale(base: CommerceListingRecord['sale'], row: CanonicalImportRow): CommerceListingRecord['sale'] {
+  const object = asObject(row.sale);
+  const sale =
+    object && (object.format === 'fixed_price' || object.format === 'auction') && object.format === base.format
+      ? commerceSaleSchema.parse(object)
+      : base;
+  const price = { amountMinor: row.amountMinor, currency: row.currency, exponent: row.exponent };
+  return sale.format === 'fixed_price'
+    ? { ...sale, unitPrice: { ...sale.unitPrice, ...price } }
+    : { ...sale, startingPrice: { ...sale.startingPrice, ...price } };
+}
+
+function overlayVariants(
+  base: CommerceListingRecord['variants'],
+  rows: readonly CanonicalImportRow[],
+): CommerceListingRecord['variants'] {
+  const baseById = new Map(base.map((variant) => [variant.id, variant]));
+  const position = (id: string) => base.findIndex((variant) => variant.id === id);
+  const ordered = [...rows].sort((left, right) => {
+    const l = position(left.variantId);
+    const r = position(right.variantId);
+    return (l === -1 ? Number.MAX_SAFE_INTEGER : l) - (r === -1 ? Number.MAX_SAFE_INTEGER : r);
+  });
+  return ordered.map((row) => {
+    const prior = baseById.get(row.variantId);
+    const { sku: _sku, ...rest } = prior ?? {};
+    return commerceVariantSchema.parse({
+      mediaIds: [],
+      ...rest,
+      id: row.variantId,
+      ...(row.sku.length > 0 ? { sku: row.sku } : {}),
+      options: asObject(row.options) ?? prior?.options ?? { option: 'default' },
+      quantity: row.variantQuantity,
+      enabled: row.variantEnabled,
+    });
+  });
+}
+
+/**
+ * `record_json` carries every field the CSV columns cannot (location, package,
+ * digital lock, variant media, price overrides, return-policy details). The
+ * editable columns are applied over it, so an exported row that a seller
+ * edited publishes the edit. The revision advances only when a column changed
+ * the record, which keeps an unedited re-import a no-op.
+ */
+function fromRecordJson(rows: readonly CanonicalImportRow[], ownerPubky: string): CommerceListingRecord | null {
+  const first = rows[0];
+  const parsed = parseJsonField(first.extraFields.record_json);
   const object = asObject(parsed);
   if (!object) return null;
-  return commerceListingRecordSchema.parse({
+  const base = commerceListingRecordSchema.parse({
     ...object,
     ownerPubky: typeof object.ownerPubky === 'string' ? object.ownerPubky : ownerPubky,
-    listingId: typeof object.listingId === 'string' ? object.listingId : row.listingId,
+    listingId: typeof object.listingId === 'string' ? object.listingId : first.listingId,
+  });
+  const shippingOptions = Array.isArray(first.shippingOptions)
+    ? first.shippingOptions.map((option) => commerceShippingOptionSchema.parse(option))
+    : base.shippingOptions;
+  const media = Array.isArray(first.media) && first.media.length > 0 ? mapMedia(first) : base.media;
+  const overlaid = commerceListingRecordSchema.parse({
+    ...base,
+    state: listingState(first.state),
+    title: csvTextOrBase(first.title, base.title),
+    description: csvTextOrBase(first.description, base.description),
+    categoryId: kebabCategory(first.category),
+    condition: first.condition,
+    tags: Array.isArray(first.tags) ? first.tags.filter((tag) => typeof tag === 'string') : base.tags,
+    media,
+    variants: overlayVariants(base.variants, rows),
+    sale: overlaySale(base.sale, first),
+    shippingOptions,
+    returnPolicy: asObject(first.returnPolicy) ? mapReturnPolicy(first.returnPolicy) : base.returnPolicy,
+  });
+  if (stableJson(overlaid) === stableJson(base)) return base;
+  return commerceListingRecordSchema.parse({
+    ...overlaid,
+    revision: base.revision + 1,
+    updatedAt: new Date().toISOString(),
   });
 }
 
@@ -177,7 +276,7 @@ export function mapCanonicalRowsToListing(rows: readonly CanonicalImportRow[], o
   }
   try {
     const first = rows[0];
-    const fromJson = fromRecordJson(first, ownerPubky);
+    const fromJson = fromRecordJson(rows, ownerPubky);
     if (fromJson) {
       return publishable(fromJson);
     }
@@ -192,8 +291,8 @@ export function mapCanonicalRowsToListing(rows: readonly CanonicalImportRow[], o
       updatedAt: now,
       listingId: first.listingId,
       state: listingState(first.state),
-      title: first.title,
-      description: first.description,
+      title: fromCsvText(first.title),
+      description: fromCsvText(first.description),
       taxonomyVersion: COMMERCE_TAXONOMY_VERSION,
       categoryId: kebabCategory(first.category),
       condition: first.condition,
@@ -240,8 +339,8 @@ export function listingToCanonicalRows(record: CommerceListingRecord): Canonical
     variantId: variant.id,
     sku: variant.sku ?? '',
     state: record.state,
-    title: record.title,
-    description: record.description,
+    title: toCsvText(record.title),
+    description: toCsvText(record.description),
     taxonomy: asImportJson({ taxonomyVersion: record.taxonomyVersion }),
     category: record.categoryId,
     condition: record.condition,
@@ -254,11 +353,8 @@ export function listingToCanonicalRows(record: CommerceListingRecord): Canonical
     options: asImportJson(variant.options),
     media: asImportJson(record.media),
     shippingOptions: asImportJson(record.shippingOptions ?? []),
-    returnPolicy: asImportJson({
-      accepted: record.returnPolicy.acceptsReturns,
-      ...(record.returnPolicy.returnWindowDays !== undefined ? { days: record.returnPolicy.returnWindowDays } : {}),
-    }),
-    sale: asImportJson({ format: record.sale.format }),
+    returnPolicy: asImportJson(record.returnPolicy),
+    sale: asImportJson(record.sale),
     externalRefs: {},
     extraFields: {
       record_json: recordJson,
