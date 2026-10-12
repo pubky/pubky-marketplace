@@ -3,12 +3,14 @@ import type { ChangeEvent } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { IMAGE_MAX_RAW_SIZE } from '@/config/images';
 import { CommerceController } from '@/controllers/commerce/commerce';
+import type { CommerceShopRecord } from '@/libs/commerce/marketplace-records';
 import { AppError } from '@/libs/error/error';
 import { ClientErrorCode } from '@/libs/error/error.codes';
 import { ErrorCategory, ErrorService } from '@/libs/error/error.types';
 import { Logger } from '@/libs/logger/logger';
 import { asOpaque } from '@/test-utils/type-assertions';
 import { useMarketplaceShopSettings } from './useMarketplaceShopSettings';
+import { marketplaceShopSettingsSchema } from './useMarketplaceShopSettings.types';
 
 const OWNER = 'y'.repeat(52);
 const AVATAR_MEDIA_URL = `pubky://${OWNER}/pub/pubky.app/marketplace/v1/media/avatar_media_id`;
@@ -188,6 +190,74 @@ describe('useMarketplaceShopSettings', () => {
         revision: 4,
       }),
     );
+  });
+
+  it('publishes the seller-set delivery periods and hydrates them back into the form', async () => {
+    vi.mocked(CommerceController.refreshShop).mockResolvedValue({
+      ...publishedShop,
+      deliveryAssumeDays: 5,
+      autoCompleteDays: 30,
+    });
+
+    const { result } = renderHook(() => useMarketplaceShopSettings());
+    await waitFor(() => expect(result.current.hasShop).toBe(true));
+    expect(result.current.form.getValues('deliveryAssumeDays')).toBe('5');
+    expect(result.current.form.getValues('autoCompleteDays')).toBe('30');
+
+    act(() => {
+      result.current.form.setValue('deliveryAssumeDays', '7');
+      result.current.form.setValue('autoCompleteDays', ' 21 ');
+    });
+    await act(() => result.current.submit());
+
+    expect(CommerceController.commitUpsertShop).toHaveBeenCalledWith(
+      expect.objectContaining({ deliveryAssumeDays: 7, autoCompleteDays: 21 }),
+    );
+  });
+
+  it('publishes cleared periods as absent, not as the previously published values', async () => {
+    vi.mocked(CommerceController.refreshShop).mockResolvedValue({
+      ...publishedShop,
+      deliveryAssumeDays: 5,
+      autoCompleteDays: 30,
+    });
+
+    const { result } = renderHook(() => useMarketplaceShopSettings());
+    await waitFor(() => expect(result.current.hasShop).toBe(true));
+    act(() => {
+      result.current.form.setValue('deliveryAssumeDays', '');
+      result.current.form.setValue('autoCompleteDays', '');
+    });
+    await act(() => result.current.submit());
+
+    const published = vi.mocked(CommerceController.commitUpsertShop).mock.calls[0]?.[0] as
+      | CommerceShopRecord
+      | undefined;
+    expect(published?.deliveryAssumeDays).toBeUndefined();
+    expect(published?.autoCompleteDays).toBeUndefined();
+  });
+
+  it('refuses periods outside 1 to 60 whole days and does not publish', async () => {
+    vi.mocked(CommerceController.refreshShop).mockResolvedValue(publishedShop);
+
+    const { result } = renderHook(() => useMarketplaceShopSettings());
+    await waitFor(() => expect(result.current.hasShop).toBe(true));
+
+    for (const invalid of ['0', '61', '1.5', 'abc', '-3']) {
+      act(() => result.current.form.setValue('deliveryAssumeDays', invalid));
+      await act(async () => expect(await result.current.submit()).toBe(false));
+    }
+    act(() => {
+      result.current.form.setValue('deliveryAssumeDays', '');
+      result.current.form.setValue('autoCompleteDays', '99');
+    });
+    await act(async () => expect(await result.current.submit()).toBe(false));
+    expect(CommerceController.commitUpsertShop).not.toHaveBeenCalled();
+    const parsed = marketplaceShopSettingsSchema.safeParse({
+      ...result.current.form.getValues(),
+      autoCompleteDays: '99',
+    });
+    expect(parsed.error?.issues[0]?.message).toContain('1 to 60');
   });
 
   it('preserves cached settings but blocks saving when the homeserver is unreachable', async () => {

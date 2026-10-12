@@ -21,6 +21,7 @@ import {
   type MarketplaceShopSettingsData,
   marketplaceShopSettingsDefaults,
   marketplaceShopSettingsSchema,
+  termDaysFromField,
 } from './useMarketplaceShopSettings.types';
 
 export type ShopImageSlotError = 'invalid-type' | 'too-large';
@@ -199,6 +200,8 @@ export function useMarketplaceShopSettings() {
         shippingPolicy: record.shippingPolicy,
         returnPolicy: record.returnPolicy,
         vacationMode: record.vacationMode,
+        deliveryAssumeDays: record.deliveryAssumeDays?.toString() ?? '',
+        autoCompleteDays: record.autoCompleteDays?.toString() ?? '',
       });
       setIsLoading(false);
     }
@@ -265,6 +268,9 @@ export function useMarketplaceShopSettings() {
           shippingPolicy: data.shippingPolicy,
           returnPolicy: data.returnPolicy,
           vacationMode: data.vacationMode,
+          // Cleared fields are published absent, which restores the service defaults.
+          deliveryAssumeDays: termDaysFromField(data.deliveryAssumeDays),
+          autoCompleteDays: termDaysFromField(data.autoCompleteDays),
         });
         setRevision((current) => current + 1);
         setCreatedAt((current) => current ?? now);
