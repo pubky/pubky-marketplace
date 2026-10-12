@@ -10,6 +10,21 @@ Handoff readiness lives in these docs; start with the team brief.
 - [Beta launch and handoff plan](launch/shop-launch-plan.md): this week's deadlines and what's frozen, launch blockers, the two-week timeline, infrastructure options, risks and the open decisions with who makes each, for the [shop.pubky.app](https://shop.pubky.app) beta.
 - [Verifying a marketplace installation](launch/install-verification.md): the post-deployment check of every service, its wiring, keys, origins, migrations and versions, with the fix for each failure.
 
+## Marketplace
+
+- [Developer onboarding](ecommerce/onboarding.md): run, test and release the Shop; the repositories behind it.
+- [Running the marketplace locally](ecommerce/RUNNING.md): the four commerce modes (`unavailable`, `sandbox`, `transaction-service`, `locks-paykit`), the sandbox service and the test suites.
+- [Feature inventory](ecommerce/FEATURES.md): every marketplace feature with its honesty label, including digital delivery.
+- [Status](ecommerce/status.md): what is real, simulated or deferred, with the proof ledger. The authority on honesty about the feature.
+- [Release](ecommerce/release.md) and [release notes](ecommerce/release-notes/): the release lane, the pre-push and release gates, and the notes for each `shop-v*` tag.
+- [Production runbook](ecommerce/runbook-production.md): kill switches and rollback.
+- [Environment variables](environment.md): build-time and `PUBKY_RUNTIME_*` configuration, including the marketplace, Paykit, USDT and framing keys.
+- [USDT payments](ecommerce/usdt-payments.md): the dark flag, the payment option model and the service gate.
+- [Serving the Shop inside pubky.app](launch/shop-embedding.md): base path, framing, embedded mode and the `shop-` storage namespace.
+- [Messaging](ecommerce/messaging/README.md): the encrypted-messaging record and its current status.
+- [Upstream integration](ecommerce/upstream-integration.md): pinned Locks, Paykit and Paykit server contracts.
+- Architectural decisions: [`adr/`](adr/), indexed in [`architecture.md`](architecture.md). ADRs 0019 to 0029 cover the marketplace (transaction authority, public records, namespaces, the Rust service, portable reputation, drops, the indexer contract and the vibe session consumer).
+
 ## Single sign-on
 
 - [SSO proposal](sso/sso-proposal-for-team.md): the problem, the proposed delegated-grant model, phases, per-repo changes and asks for each Pubky team.

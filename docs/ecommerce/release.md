@@ -15,7 +15,7 @@ Local setup is in [`onboarding.md`](onboarding.md) and [`RUNNING.md`](RUNNING.md
 | Tags               | `shop-vX.Y.Z` on the deployed commit, with a GitHub release                                                                                                                                                                 |
 | Production client  | Vercel project `pubky-marketplace-production`, team `synonymdev`, alias `shop.pubky.app`                                                                                                                                    |
 | Staging client     | Vercel project `pubky-marketplace-staging`, team `synonymdev`, <https://pubky-marketplace-staging.vercel.app>                                                                                                               |
-| Backend services   | Separate repositories, deployed separately: `pubky-marketplace-service`, the `pubky-nexus` fork, the `paykit-server` fork. See their READMEs.                                                                               |
+| Backend services   | Separate repositories, deployed separately: `pubky-marketplace-service`, `pubky/marketplace-nexus`, the `paykit-server` fork (until the upstream Paykit switch). See their READMEs.                                         |
 | Unrelated branches | `pubchi/v1` is a different product. Do not base Shop work on it.                                                                                                                                                            |
 
 ## Tools
@@ -274,6 +274,8 @@ git tag shop-vX.Y.Z <deployed-sha>
 git push origin shop-vX.Y.Z
 gh release create shop-vX.Y.Z -R pubky/pubky-marketplace --title "Shop vX.Y.Z" --notes-file <evidence-folder>/notes.md
 ```
+
+The notes body is also kept in the repository as `docs/ecommerce/release-notes/shop-vX.Y.Z.md` (see `shop-v0.6.50.md` and `shop-v0.6.51.md`). The GitHub release is the record; the file is its committed copy.
 
 The notes carry the version, date, exact commit, Vercel deployment id and URL, one line per user-visible change, the
 backend deploys the release depends on (for example `marketplace-service <sha>`), known limitations, the proof result
