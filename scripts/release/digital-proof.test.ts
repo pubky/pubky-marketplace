@@ -22,6 +22,7 @@ import {
   makeFixtureFile,
   minPriceCents,
   newDeliverablePaths,
+  parseBtcUsdRate,
   parseKinds,
   parsePayTimeoutMinutes,
   parsePriceUsd,
@@ -102,6 +103,26 @@ describe('price', () => {
     expect(priceClearsMinimum(200, 120_000)).toBe(false);
     expect(() => minPriceCents(0)).toThrow();
     expect(() => minPriceCents(Number.NaN)).toThrow();
+  });
+});
+
+describe('FX feed', () => {
+  it('reads the BTCUSD row of the Blocktank ticker shape', () => {
+    const body = {
+      tickers: [
+        { symbol: 'BTCARS', lastPrice: '127286275' },
+        { symbol: 'BTCUSD', lastPrice: '83921' },
+      ],
+    };
+    expect(parseBtcUsdRate(body)).toBe(83921);
+  });
+
+  it('returns null for anything else', () => {
+    expect(parseBtcUsdRate(null)).toBeNull();
+    expect(parseBtcUsdRate({})).toBeNull();
+    expect(parseBtcUsdRate({ tickers: [{ symbol: 'BTCEUR', lastPrice: '70000' }] })).toBeNull();
+    expect(parseBtcUsdRate({ tickers: [{ symbol: 'BTCUSD', lastPrice: '0' }] })).toBeNull();
+    expect(parseBtcUsdRate({ USD: 90000 })).toBeNull();
   });
 });
 
