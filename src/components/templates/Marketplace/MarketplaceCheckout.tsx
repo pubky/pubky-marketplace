@@ -1180,9 +1180,14 @@ function MarketplaceCartCheckout() {
                             </Typography>
                           </div>
                         )}
-                        <Typography as="p" className="text-sm" data-testid="marketplace-checkout-payment-notice">
+                        <Typography
+                          as="p"
+                          size="xs"
+                          className="text-muted-foreground"
+                          data-testid="marketplace-checkout-payment-notice"
+                        >
                           {isSandbox
-                            ? 'Sandbox checkout: no real funds move. This marketplace never holds funds.'
+                            ? 'Sandbox checkout: no real funds move.'
                             : isLocksPaykitCommerceMode(adapterMode)
                               ? 'Payment goes directly to the seller. This marketplace never holds funds.'
                               : 'No payment rails are live in this deployment, so no real funds move. This marketplace never holds funds.'}

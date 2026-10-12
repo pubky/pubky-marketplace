@@ -524,7 +524,7 @@ describe('MarketplaceCheckout', () => {
   );
 
   it.each([
-    ['sandbox', 'Sandbox checkout: no real funds move. This marketplace never holds funds.'],
+    ['sandbox', 'Sandbox checkout: no real funds move.'],
     ['locks-paykit', 'Payment goes directly to the seller. This marketplace never holds funds.'],
     [
       'unavailable',
