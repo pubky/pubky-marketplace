@@ -18,6 +18,14 @@
 //   node production-digital-fixture.mjs teardown            delete listings and ciphertext, revoke run sessions, verify
 //   node production-digital-fixture.mjs verify              verification only
 //
+// External buyer (PROOF_EXTERNAL_BUYER=1, no buyer seat): a person pays from their own wallet.
+//   node production-digital-fixture.mjs prepare             make the fixture file and the state file; reads only service health and the FX feed
+//   node production-digital-fixture.mjs publish             publish the prepared listing(s); the first step that touches the Shop
+//   node production-digital-fixture.mjs await-buyer         as the seller: wait for the order, confirm the seen Bitcoin payment,
+//                                                           wait for the buyer's delivery evidence (PROOF_DIGITAL_WAIT_MIN, default 90)
+// Rehearsal on a stack where a buyer seat exists: PROOF_SELLER_CONFIRMS_ELSEWHERE=1 lets `buy` pay without confirming as
+// the seller, so a second process running await-buyer is the seller.
+//
 // Env: PROOF_EVIDENCE (state and results; outside the repository), seats and both PROOF_*_PREFIX values (see
 // seats.mjs), EXPECTED_DPL, PROOF_DIGITAL_GO, PROOF_DIGITAL_KINDS (default file), PROOF_DIGITAL_PRICE_USD (default
 // 2.00), PROOF_DIGITAL_PAY_TIMEOUT_MIN (default 25), PROOF_DIGITAL_BUYER_EMAIL (required for the email kind: a
@@ -47,6 +55,7 @@ import {
   parseBtcUsdRate,
   parseKinds,
   parsePayTimeoutMinutes,
+  parsePositiveMinutes,
   parsePriceUsd,
   pathFromPubkyUrl,
   payOutcome,
@@ -69,7 +78,11 @@ const CLIENT_ID = 'release-proof-digital';
 
 const mode = process.argv[2] ?? '';
 const kindArg = process.argv[3] ?? '';
-const MODES = ['plan', 'proof', 'setup', 'buy', 'settle', 'teardown', 'verify'];
+const MODES = ['plan', 'proof', 'setup', 'prepare', 'publish', 'await-buyer', 'buy', 'settle', 'teardown', 'verify'];
+const EXTERNAL = process.env.PROOF_EXTERNAL_BUYER === '1';
+if (EXTERNAL && ['proof', 'buy', 'settle'].includes(mode)) {
+  throw new Error('PROOF_EXTERNAL_BUYER=1 has no buyer seat: use prepare, publish, await-buyer, teardown, verify');
+}
 if (!MODES.includes(mode)) throw new Error(`usage: production-digital-fixture.mjs ${MODES.join('|')} [kind]`);
 if ((mode === 'buy' || mode === 'settle') && !DIGITAL_KINDS.includes(kindArg)) {
   throw new Error(`usage: production-digital-fixture.mjs ${mode} <${DIGITAL_KINDS.join('|')}>`);
@@ -79,7 +92,8 @@ const kinds = parseKinds(process.env.PROOF_DIGITAL_KINDS);
 const price = parsePriceUsd(process.env.PROOF_DIGITAL_PRICE_USD);
 const payTimeoutMs = parsePayTimeoutMinutes(process.env.PROOF_DIGITAL_PAY_TIMEOUT_MIN) * 60_000;
 const buyerEmail = process.env.PROOF_DIGITAL_BUYER_EMAIL ?? '';
-const spends = ['proof', 'setup', 'buy', 'settle'].includes(mode);
+const spends = ['proof', 'setup', 'publish', 'await-buyer', 'buy', 'settle'].includes(mode);
+const waitMs = parsePositiveMinutes(process.env.PROOF_DIGITAL_WAIT_MIN, 90) * 60_000;
 
 if (mode === 'plan') {
   console.log(describePlan({ kinds, priceText: price.text, origin: ORIGIN, service: SERVICE }).join('\n'));
@@ -97,7 +111,7 @@ if (spends && !hasGoAhead(process.env)) {
   );
 }
 if (spends && !process.env.EXPECTED_DPL) throw new Error('set EXPECTED_DPL to the dpl_… id now aliased to the origin');
-if (spends && (!process.env.PROOF_SELLER_PREFIX || !process.env.PROOF_BUYER_PREFIX)) {
+if (spends && (!process.env.PROOF_SELLER_PREFIX || (!EXTERNAL && !process.env.PROOF_BUYER_PREFIX))) {
   throw new Error('set PROOF_SELLER_PREFIX and PROOF_BUYER_PREFIX: a paid run must not start on a swapped seat');
 }
 if (spends && (kinds.includes('email') || kindArg === 'email') && !buyerEmail) {
@@ -115,9 +129,9 @@ const redact = (text) =>
 const log = (line) => console.log(redact(line));
 
 const seller = loadSellerSeat();
-const buyer = loadBuyerSeat();
+const buyer = EXTERNAL ? null : loadBuyerSeat();
 const sellerPubky = seller.publicKey.z32();
-const buyerPubky = buyer.publicKey.z32();
+const buyerPubky = buyer ? buyer.publicKey.z32() : null;
 if (sellerPubky === buyerPubky) throw new Error('the seller and buyer seats are the same identity');
 
 const checks = [];
@@ -463,10 +477,9 @@ async function setDelivery(page, kind, fixture) {
   return { saved, error, ...detail };
 }
 
-async function setup() {
+async function prepare() {
   if (readState()) throw new Error('a digital fixture state file exists; run teardown before setting up again');
   const runId = newRunId();
-  const runStart = Date.now();
   const fixture = makeFixtureFile(runId);
   writeFileSync(FILE_PATH, fixture.bytes, { mode: 0o600 });
   const capability = await serviceCapability();
@@ -487,24 +500,35 @@ async function setup() {
     );
     if (!priceClearsMinimum(price.cents, rate)) throw new Error('raise PROOF_DIGITAL_PRICE_USD');
   }
-  const deliverablesBefore = await listDeliverables();
-  let state = {
+  writeState({
     runId,
-    runStart,
+    runStart: null,
     price: price.text,
     fixture: { name: fixture.name, sha256: fixture.sha256, size: fixture.bytes.length },
     kinds,
-    deliverablesBefore,
+    deliverablesBefore: null,
     listings: {},
     orders: {},
-    phase: 'started',
-  };
+    phase: 'prepared',
+  });
+  log(`prepare: run ${runId}, ${fixture.name}, ${fixture.bytes.length} bytes, sha256 ${fixture.sha256}`);
+}
+
+async function publish() {
+  let state = readState();
+  if (state?.phase !== 'prepared') throw new Error('no prepared state file; run prepare first');
+  const fixture = { ...state.fixture, bytes: readFileSync(FILE_PATH) };
+  if (sha256Hex(fixture.bytes) !== fixture.sha256)
+    throw new Error('the fixture file no longer matches its recorded SHA-256');
+  const { runId } = state;
+  const deliverablesBefore = await listDeliverables();
+  state = { ...state, runStart: Date.now(), deliverablesBefore, phase: 'started' };
   writeState(state);
   const { browser, page } = await openBrowser();
   try {
     await ringSignIn(page, seller);
     log(`setup: seller ${prefix(sellerPubky)} run ${runId}`);
-    for (const kind of kinds) {
+    for (const kind of state.kinds) {
       const title = listingTitle(runId, kind);
       state.listings[kind] = { title, id: null, delivery: null };
       writeState(state);
@@ -548,7 +572,7 @@ async function setup() {
       deliverablePaths: newDeliverablePaths(deliverablesBefore, await listDeliverables()),
     };
     writeState(state);
-    if (kinds.includes('file')) {
+    if (state.kinds.includes('file')) {
       check(
         'setup: the file ciphertext is on the seller homeserver',
         state.deliverablePaths.length >= 1,
@@ -559,6 +583,11 @@ async function setup() {
   } finally {
     await browser.close();
   }
+}
+
+async function setup() {
+  await prepare();
+  await publish();
 }
 
 // ---- buyer: checkout, payment wait -------------------------------------------------------------
@@ -727,13 +756,15 @@ async function buy(kind) {
     let outcome = 'waiting';
     let cardId = null;
     let sellerConfirmed = false;
-    const sellerSession = await openBrowser();
+    // Rehearsal only: another process (await-buyer) is the seller and confirms the payment.
+    const sellerElsewhere = process.env.PROOF_SELLER_CONFIRMS_ELSEWHERE === '1';
+    const sellerSession = sellerElsewhere ? null : await openBrowser();
     try {
-      await ringSignIn(sellerSession.page, seller);
-      const sellerPage = sellerSession.page;
+      if (sellerSession) await ringSignIn(sellerSession.page, seller);
       while (outcome === 'waiting') {
         await sleep(20_000);
-        if (!sellerConfirmed) sellerConfirmed = await confirmSeenBitcoin(sellerPage, listing.title, kind);
+        if (sellerSession && !sellerConfirmed)
+          sellerConfirmed = await confirmSeenBitcoin(sellerSession.page, listing.title, kind);
         const card = await ordersCard(page, listing.title);
         const paid = (await card.count()) > 0 && (await card.getByTestId('order-receipt-details').count()) > 0;
         if ((await card.count()) > 0) cardId = (await card.getAttribute('id'))?.replace(/^order-/, '') ?? cardId;
@@ -741,7 +772,7 @@ async function buy(kind) {
         log(`buy ${kind}: waiting for payment, ${Math.round((Date.now() - started) / 1000)}s, ${outcome}`);
       }
     } finally {
-      await sellerSession.browser.close();
+      await sellerSession?.browser.close();
     }
     state.orders[kind] = { id: cardId, outcome, paidAfterSeconds: Math.round((Date.now() - started) / 1000) };
     writeState(state);
@@ -913,12 +944,74 @@ async function settle(kind) {
   writeState(state);
 }
 
+// ---- external buyer: the seller side ----------------------------------------------------------
+
+// A person pays from their own wallet. This waits for their order, confirms the seen Bitcoin payment as the
+// seller, then waits for the buyer's delivery evidence (the file was downloaded). The buyer's own hash is compared
+// by people against the fixture hash this script printed at prepare time.
+async function awaitBuyer() {
+  const state = readState();
+  const listing = state?.listings?.file;
+  if (!listing?.id || state.phase !== 'ready')
+    throw new Error('no published file listing in the state file; run publish first');
+  const started = Date.now();
+  const { browser, page } = await openBrowser();
+  let orderId = null;
+  let confirmed = false;
+  let delivered = false;
+  let opened = false;
+  let outcome = 'no-order';
+  try {
+    await ringSignIn(page, seller);
+    log(`await-buyer: listing ${listing.id.slice(0, 8)} is live; waiting up to ${Math.round(waitMs / 60000)} min`);
+    while (Date.now() - started < waitMs) {
+      const card = await ordersCard(page, listing.title);
+      if ((await card.count()) > 0) {
+        orderId = (await card.getAttribute('id'))?.replace(/^order-/, '') ?? orderId;
+        if (outcome === 'no-order') outcome = 'ordered';
+        if (!confirmed) confirmed = await confirmSeenBitcoin(page, listing.title, 'file');
+        const lines = await card
+          .locator('[data-surface="order-seller-digital-panel"]')
+          .getByTestId('seller-digital-evidence')
+          .allInnerTexts();
+        // "Delivered automatically" appears once the order is paid; "first opened" only after the buyer downloads.
+        delivered = lines.some((line) => /^Delivered automatically/.test(line.trim()));
+        opened = lines.some((line) => /first opened/.test(line));
+        if (delivered && outcome !== 'paid') {
+          outcome = 'paid';
+          log(`await-buyer: order ${(orderId ?? '').slice(0, 8)} is paid and delivered`);
+        }
+        if (opened) {
+          await card.scrollIntoViewIfNeeded().catch(() => {});
+          await card.screenshot({ path: join(OUT, 'digital-seller-await-buyer.png') }).catch(() => {});
+          break;
+        }
+      }
+      log(`await-buyer: ${Math.round((Date.now() - started) / 1000)}s, ${outcome}, buyer opened=${opened}`);
+      await sleep(20_000);
+    }
+    state.orders.file = { id: orderId, outcome, confirmedBySeller: confirmed, buyerOpened: opened, settled: opened };
+    writeState(state);
+    check('await-buyer: an order for the listing arrived', outcome !== 'no-order');
+    check('await-buyer: the order was paid and delivered', outcome === 'paid', `order=${(orderId ?? '').slice(0, 8)}`);
+    check('await-buyer: the seller sees the buyer opened the file', opened);
+    await signOut(page).catch(() => false);
+  } finally {
+    await browser.close();
+  }
+}
+
 // ---- teardown and verification -----------------------------------------------------------------
 
 async function teardown() {
   const state = readState();
   if (!state) {
     log('teardown: no state file; nothing was set up, so nothing is changed');
+    return;
+  }
+  if (state.runStart === null) {
+    writeState({ ...state, phase: 'torn-down' });
+    log('teardown: the run was prepared but never published; only the local fixture file is removed');
     return;
   }
   const { browser, page } = await openBrowser();
@@ -964,7 +1057,7 @@ async function teardown() {
   for (const [name, seat] of [
     ['seller', seller],
     ['buyer', buyer],
-  ]) {
+  ].filter(([, seat]) => seat)) {
     try {
       const { listStatus, statuses } = await revokeRunSessions(seat, state.runStart);
       check(
@@ -982,6 +1075,10 @@ async function verify() {
   const state = readState();
   if (!state) {
     log('verify: no state file; nothing to verify');
+    return;
+  }
+  if (state.runStart === null) {
+    log('verify: the run was never published; nothing to verify');
     return;
   }
   await sleep(10_000);
@@ -1043,7 +1140,7 @@ async function verify() {
   for (const [name, seat] of [
     ['seller', seller],
     ['buyer', buyer],
-  ]) {
+  ].filter(([, seat]) => seat)) {
     const probe = await mintBearer(seat);
     const { status, sessions } = await listSessions(probe.token);
     const residual = sessions.filter(
@@ -1115,6 +1212,9 @@ try {
       await tearDownAndVerify();
     }
   } else if (mode === 'setup') await setup();
+  else if (mode === 'prepare') await prepare();
+  else if (mode === 'publish') await publish();
+  else if (mode === 'await-buyer') await awaitBuyer();
   else if (mode === 'buy') await buy(kindArg);
   else if (mode === 'settle') await settle(kindArg);
   else if (mode === 'teardown') await tearDownAndVerify();
