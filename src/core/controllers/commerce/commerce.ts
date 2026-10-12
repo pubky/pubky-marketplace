@@ -1,4 +1,5 @@
 import { CommerceApplication, type CommerceCheckoutFulfillmentInput } from '@/application/commerce/commerce';
+import { CommerceDeliveryKeysApplication } from '@/application/commerce/delivery-keys';
 import { CommerceInventoryApplication, type InventoryBoardRow } from '@/application/commerce/inventory';
 import { CommerceInventoryAutomationsApplication } from '@/application/commerce/inventory-automations';
 import { CommerceInventoryImportApplication } from '@/application/commerce/inventory-import';
@@ -620,6 +621,20 @@ export class CommerceController {
   /** Buyer's PayPal payment report (attestation, never advances payment). */
   static async markFiatPaid(orderId: string, transactionRef?: string) {
     return await CommerceApplication.markFiatPaid(this.getCurrentUserPubky(), orderId, transactionRef);
+  }
+
+  /** This device's delivery key and whether the seller's homeserver publishes it. */
+  static async getMyDeliveryKeyStatus() {
+    return await CommerceDeliveryKeysApplication.getSellerKeyStatus(this.getCurrentUserPubky());
+  }
+
+  /** First setup and rotation: a fresh device key, published as the current one. */
+  static async commitCreateMyDeliveryKey() {
+    return await CommerceDeliveryKeysApplication.commitCreateKey(this.getCurrentUserPubky());
+  }
+
+  static async commitPublishMyDeliveryKey() {
+    return await CommerceDeliveryKeysApplication.commitPublishCurrentKey(this.getCurrentUserPubky());
   }
 
   /** The seller's own Shippo shipping configuration (token is write-only). */

@@ -228,7 +228,7 @@ export const deliveryKeyRecordSchema = z
 
 export type DeliveryKeyRecord = z.infer<typeof deliveryKeyRecordSchema>;
 
-export function buildDeliveryKeyRecord(pair: DeliveryKeyPair, createdAt: Date): DeliveryKeyRecord {
+export function buildDeliveryKeyRecord(pair: Pick<DeliveryKeyPair, 'keyId' | 'publicKey'>, createdAt: Date): DeliveryKeyRecord {
   return {
     v: 1,
     keyId: pair.keyId,

@@ -17,11 +17,13 @@ import {
   bareShippingPresetId,
   useMarketplaceShippingPresets,
 } from '@/hooks/useMarketplaceShippingPresets/useMarketplaceShippingPresets';
+import { useMyDeliveryKey } from '@/hooks/useMyDeliveryKey/useMyDeliveryKey';
 import { formatCommerceMoney } from '@/libs/commerce/format';
 import { isPlausibleShippoApiKey, type ShipFromAddress } from '@/libs/commerce/shipping';
 import type { CommerceShippingPresetModelSchema } from '@/models/commerce/commerce.schema';
 import { ControlledInputField } from '@/molecules/ControlledInputField/ControlledInputField';
 import { BackToMyShop } from '@/molecules/Marketplace/BackToMyShop';
+import { DeliveryPrivacyCard } from '@/molecules/Marketplace/DeliveryPrivacyCard';
 import { SettingsSectionContent } from '@/molecules/Settings/SettingsSectionContent/SettingsSectionContent';
 import { ContentLayout } from '@/organisms/ContentLayout/ContentLayout';
 
@@ -185,6 +187,20 @@ function ShippoIntegrationCard() {
   );
 }
 
+function DeliveryPrivacySection() {
+  const deliveryKey = useMyDeliveryKey();
+  if (!deliveryKey.enabled || deliveryKey.isLoading) return null;
+  return (
+    <DeliveryPrivacyCard
+      status={deliveryKey.status}
+      isWorking={deliveryKey.isWorking}
+      loadFailed={deliveryKey.loadFailed}
+      onCreate={deliveryKey.create}
+      onPublish={deliveryKey.publish}
+    />
+  );
+}
+
 const presetFormSchema = z
   .object({
     shippingLabel: z
@@ -291,6 +307,8 @@ export function MarketplaceShippingSettings() {
             </Button>
           )}
         </div>
+
+        <DeliveryPrivacySection />
 
         <ShippoIntegrationCard />
 
