@@ -671,6 +671,28 @@ describe('Marketplace checkout — visual regression', () => {
     await captureCheckout('checkout-usdt-selected-mobile');
   });
 
+  it('renders the one-approval-per-seller note on a multi-seller USDT cart at desktop viewport', async () => {
+    const { multiSeller } = await fixtures;
+    view.items = multiSeller;
+    view.adapterMode = 'transaction-service';
+    view.deployEnv = 'production';
+    view.hasMarketplaceSession = true;
+    view.usdtAvailable = true;
+
+    await renderForVRT(<MarketplaceCheckout />, { viewport: VRT_VIEWPORT_DESKTOP });
+    await vi.waitFor(() => {
+      const button = document.querySelector('[data-testid="marketplace-checkout-method-usdt"]');
+      if (!(button instanceof HTMLElement)) throw new Error('USDT has not loaded yet.');
+      button.click();
+    });
+    await vi.waitFor(() => {
+      if (!document.querySelector('[data-testid="marketplace-checkout-usdt-multi-seller-note"]')) {
+        throw new Error('The multi-seller note has not rendered yet.');
+      }
+    });
+    await captureCheckout('checkout-usdt-selected-multi-seller-desktop');
+  });
+
   it('renders the locks-paykit checkout labels at desktop viewport', async () => {
     const { singleSeller } = await fixtures;
     view.items = singleSeller;
