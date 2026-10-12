@@ -196,6 +196,10 @@ describe('MarketplacePaymentStatusCard: seller resolution of a USDT payment in m
     await chooseOutcome('refunded');
 
     expect(screen.getByTestId('usdt-resolution-address')).toHaveTextContent(REFUND_FIXTURE_ADDRESS);
+    expect(screen.getByRole('link', { name: 'Look up address on Arbiscan' })).toHaveAttribute(
+      'href',
+      `https://arbiscan.io/address/${REFUND_FIXTURE_ADDRESS.toLowerCase()}`,
+    );
     expect(screen.getByTestId('usdt-resolution-refund')).toHaveTextContent('Refund to send');
     expect(screen.getByTestId('usdt-resolution-refund')).toHaveTextContent('$137.00 · 137.000000 USDT');
     expect(screen.getByTestId('usdt-resolution-recorded-note')).toHaveTextContent(

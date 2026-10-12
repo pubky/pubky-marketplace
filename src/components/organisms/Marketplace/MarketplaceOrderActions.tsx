@@ -25,6 +25,7 @@ import { formatUsdtParity, isUsdtRefundOrder, USDT_REFUND_COPY } from '@/libs/co
 import type { CommerceReviewModelSchema } from '@/models/commerce/commerce.schema';
 import { ControlledInputField } from '@/molecules/ControlledInputField/ControlledInputField';
 import { ControlledTextareaField } from '@/molecules/ControlledTextareaField/ControlledTextareaField';
+import { ArbiscanLookupLink } from '@/molecules/Marketplace/ArbiscanLookupLink';
 import { MarketplaceStarRating } from '@/molecules/MarketplaceStarRating/MarketplaceStarRating';
 import { toast } from '@/molecules/Toaster/use-toast';
 import { MarketplaceBitcoinAmountBreakdown } from '@/organisms/Marketplace/MarketplaceBitcoinAmountBreakdown';
@@ -466,6 +467,7 @@ export function MarketplaceOrderActions({
               <Typography as="p" className="font-mono text-sm break-all" data-sentry-mask>
                 {usdtRefundAddress}
               </Typography>
+              <ArbiscanLookupLink kind="address" value={usdtRefundAddress} />
               {usdtRefundAmount && (
                 <Typography as="p" className="text-sm text-muted-foreground">
                   Amount to send: {usdtRefundAmount}

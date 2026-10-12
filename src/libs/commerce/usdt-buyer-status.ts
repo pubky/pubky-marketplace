@@ -21,6 +21,22 @@ export const USDT_WALLET_HINT = 'Pay with a Bitkit version that supports USDT.';
 export const USDT_FUNDS_HINT =
   "If your wallet can't cover the amount plus network fees, choose another method before the hold ends.";
 
+/** Shown before and while a buyer pays in USDT for goods the seller has to ship or hand over. */
+export const USDT_FINALITY_EXPECTATION_COPY =
+  'The seller ships once Arbitrum finalizes your payment, usually within minutes.';
+
+/**
+ * Paykit gives the buyer half the payment window, counted from activation, to
+ * approve the request in Bitkit (plan §2.4, D4). The default 1,800 s window
+ * makes that 15 minutes; the order carries no accept-by of its own.
+ */
+export const USDT_ACCEPT_BY_MINUTES = 15;
+
+export const USDT_ACCEPT_BY_COPY = `Approve in Bitkit within ${USDT_ACCEPT_BY_MINUTES} minutes.`;
+
+/** A multi-seller USDT cart sends one Paykit request per seller. */
+export const USDT_MULTI_SELLER_COPY = "You'll approve one request per seller in Bitkit.";
+
 /** Seller-facing refusal and disabled-action copy for ship, mark ready and pickup. */
 export const PAYMENT_NOT_FINAL_COPY =
   "Wait to ship: this USDT payment isn't final on Arbitrum yet. This usually takes a few minutes.";
@@ -37,6 +53,14 @@ type UsdtStatusOrder = {
 type UsdtStatusPayment = { state?: string | null; reviewReason?: string | null } | null;
 
 export type UsdtSettlementPhase = 'awaiting' | 'received' | 'final' | 'rechecking' | 'review';
+
+/**
+ * Shipped and pickup lines wait for Arbitrum finality before the seller acts;
+ * a service-sealed digital line releases at inclusion and never waits.
+ */
+export function usdtFulfilmentWaitsForFinality(fulfillments: readonly (string | undefined)[]): boolean {
+  return fulfillments.some((fulfillment) => fulfillment !== 'digital');
+}
 
 export function isUsdtOrder(order: { paymentMethod?: string | null }): boolean {
   return order.paymentMethod === 'usdt';
@@ -81,6 +105,23 @@ export const USDT_SELLER_PHASE_COPY: Record<Exclude<UsdtSettlementPhase, 'review
   rechecking: "The buyer's payment is being re-checked on Arbitrum. Don't ship.",
 };
 
+/**
+ * What the seller does while a reorged payment is re-checked. Plan §2.5: money
+ * that never settles owes no refund, and the seller checks Bitkit before
+ * approving a cancellation. The order carries no re-check timestamp, so the
+ * line shows for the whole re-checking phase and reads as conditional.
+ */
+export const USDT_RECHECKING_NEXT_STEP_COPY =
+  "If the payment doesn't come back, check Bitkit before approving any cancellation.";
+
+/** The seller's review line for a USDT payment, keyed by why it needs a decision. */
+export const USDT_SELLER_REVIEW_COPY = {
+  late_settlement:
+    'This USDT payment arrived after the payment window ended, so you decide the outcome below. No funds are held by this marketplace.',
+  amount_mismatch:
+    "This USDT payment doesn't match the order total, so you decide the outcome below. No funds are held by this marketplace.",
+} as const;
+
 export const USDT_PHASE_BADGE_LABEL: Record<UsdtSettlementPhase, string> = {
   awaiting: 'Awaiting payment',
   received: 'Payment received',
@@ -97,6 +138,16 @@ export function usdtPhaseCopy(order: UsdtStatusOrder, payment: UsdtStatusPayment
   return (isBuyer ? USDT_BUYER_PHASE_COPY : USDT_SELLER_PHASE_COPY)[phase];
 }
 
+/**
+ * The seller's reason-keyed line for a USDT payment in manual review, or null
+ * for a reason that has none (`refund_required` has its own copy, and an
+ * unknown or missing reason keeps the generic review line).
+ */
+export function usdtSellerReviewCopy(payment: UsdtStatusPayment): string | null {
+  const reason = payment?.reviewReason;
+  return reason === 'late_settlement' || reason === 'amount_mismatch' ? USDT_SELLER_REVIEW_COPY[reason] : null;
+}
+
 function usdtBuyerReviewCopy(payment: UsdtStatusPayment): string {
   if (payment?.reviewReason === 'refund_required') return CHECKOUT_HOLD_COPY.refundRequiredBuyer;
   if (payment?.reviewReason === 'amount_mismatch') return USDT_AMOUNT_MISMATCH_COPY;
@@ -110,11 +161,15 @@ export function usdtAmountLabel(order: UsdtStatusOrder): string | null {
   return formatUsdt(minor);
 }
 
-/** The receipt line: "$25.00, paid as 25.000000 USDT". Null until the order carries both amounts. */
+/**
+ * The receipt line: "$1,250.00, paid as 1,250.000000 USDT". Null until the
+ * order carries both amounts. It is a record, so the USDT figure is grouped
+ * like the dollar figure beside it; the amount to pay stays ungrouped.
+ */
 export function usdtPaidAsLine(order: UsdtStatusOrder): string | null {
-  const amount = usdtAmountLabel(order);
-  if (amount === null || !order.total) return null;
-  return `${formatCommerceMoney(order.total)}, paid as ${amount}`;
+  const minor = order.paymentAmountMinor;
+  if (minor === null || minor === undefined || !isUsdtOrder(order) || !order.total) return null;
+  return `${formatCommerceMoney(order.total)}, paid as ${formatUsdt(minor, { grouped: true })}`;
 }
 
 const USDT_MILLIONTHS_PER_CENT = 10 ** (USDT_EXPONENT - 2);

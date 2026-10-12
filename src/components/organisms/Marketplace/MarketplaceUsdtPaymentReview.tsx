@@ -1,6 +1,7 @@
 'use client';
 
 import { LoaderCircle } from 'lucide-react';
+import type { ReactNode } from 'react';
 import { Controller, type UseFormReturn } from 'react-hook-form';
 import { Button, buttonVariants } from '@/atoms/Button/Button';
 import { Input } from '@/atoms/Input/Input';
@@ -15,6 +16,7 @@ import {
   usdtReviewRefundAddress,
   usdtReviewTotalLine,
 } from '@/libs/commerce/usdt-payment-review';
+import { ArbiscanLookupLink } from '@/molecules/Marketplace/ArbiscanLookupLink';
 import type { MarketplaceOrder } from '@/services/marketplace/marketplace';
 
 /**
@@ -96,7 +98,9 @@ export function SellerUsdtResolutionReview({
                 value={refundAddress}
                 testId="usdt-resolution-address"
                 mono
-              />
+              >
+                <ArbiscanLookupLink kind="address" value={refundAddress} className="mt-1" />
+              </ReviewFact>
             </dl>
           ) : (
             <Typography
@@ -178,11 +182,13 @@ function ReviewFact({
   value,
   testId,
   mono = false,
+  children,
 }: {
   label: string;
   value: string;
   testId?: string;
   mono?: boolean;
+  children?: ReactNode;
 }) {
   return (
     <div>
@@ -194,6 +200,7 @@ function ReviewFact({
       >
         {value}
       </dd>
+      {children}
     </div>
   );
 }

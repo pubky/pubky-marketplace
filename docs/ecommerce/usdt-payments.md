@@ -25,7 +25,7 @@ The flag does not cover the Locks path. Once locks#75 and a `[usdt]` Paykit conf
 - Settlement mode: `locked` (Lock Server entitlement) or a service-verified mode: `paykit`, `gateway-notified`, `processor`, `seller-attested`.
 - Option id: `{method}.{asset}.{network}`, or `{method}.fiat` for fiat methods: `paykit.btc.bitcoin`, `paykit.usdt.arbitrum-one`, `paypal.fiat`, `stripe.fiat`.
 
-The order projection accepts the optional, display-only `paymentAsset`, `paymentNetwork`, `paymentAmountMinor`, `paymentExponent` and `paymentQuoteBasis`. A value the Shop does not recognise is dropped for that order; it never fails the order parse. `formatUsdt` renders USDT millionths with six decimals.
+The order projection accepts the optional, display-only `paymentAsset`, `paymentNetwork`, `paymentAmountMinor`, `paymentExponent` and `paymentQuoteBasis`. A value the Shop does not recognise is dropped for that order; it never fails the order parse. `formatUsdt` renders USDT millionths with six decimals. Receipts and summaries group the digits ("$1,250.00, paid as 1,250.000000 USDT", and the amount in a recorded refund line; UX audit P12) with `formatUsdt(millionths, { grouped: true })`; every amount the buyer must pay or the seller must send ("Pay exactly", the checkout quote, "Amount to send", "Refund to send") stays ungrouped so it can be read back and copied digit for digit.
 
 Listings stay priced in `USD/2` or `BTC/8`; USDT is a payment method, never a price currency. The same rule applies to Locks and Paykit requests: the lock or request asset is the price denomination, and a USD-priced listing may be paid in quoted BTC or USDT.
 
@@ -80,6 +80,8 @@ Wire contract with the service's S6 slice (`src/libs/commerce/usdt-refund.ts`, f
 
 The address check is `0x` + 40 hex; a mixed-case address must carry a valid EIP-55 checksum, an all-lowercase or all-uppercase one is accepted as typed. The buyer must also tick "This address accepts USDT on Arbitrum One" and sees the exchange-deposit warning.
 
+Both parties get a "Look up address on Arbiscan" link beside the confirmed address (the panels, the seller's resolve panel and the Record refund dialog), and the order card's recorded-refund line adds "Look up transaction on Arbiscan" for the recorded hash (UX audit P6). They are plain links to `https://arbiscan.io/tx/<hash>` and `/address/<address>`, worded as a lookup: the Shop never checks the transfer and never calls it verified. A recorded reference that is not exactly `0x` plus 64 hex characters gets no link, because it comes from the seller and never becomes part of a URL (`src/libs/commerce/arbiscan.ts`).
+
 The "send it back to the address I paid from" choice appears only when the order projection carries an optional `payment_address`. The service does not send it today (paykit-server's status exposes no payer address), so the buyer enters an address.
 
 ## Resolving a USDT payment in manual review (W5)
@@ -114,9 +116,16 @@ USDT is its own picker option, never a merged "Bitcoin or USDT" entry. It appear
 - every seller's public config says `usdtAvailable: true` (a multi-seller cart offers only options all sellers offer);
 - every total is `USD/2`. USDT is quoted at exact parity, so one cent is 10,000 millionths and nothing rounds. A Bitcoin-priced cart never offers it.
 
-The bind sends `{ method: 'usdt' }`. Once USDT is chosen the summary shows "25.000000 USDT · USDT0 on Arbitrum One · pay with Bitkit" and "Pay with a Bitkit version that supports USDT.", and the indicative bitcoin estimate is hidden. There is no accept-by line and no pre-check of the buyer's wallet: a missing Paykit wallet is the existing refusal, read in USDT copy.
+The bind sends `{ method: 'usdt' }`. Once USDT is chosen the summary shows "25.000000 USDT · USDT0 on Arbitrum One · pay with Bitkit" and "Pay with a Bitkit version that supports USDT.", and the indicative bitcoin estimate is hidden. There is no pre-check of the buyer's wallet: a missing Paykit wallet is the existing refusal, read in USDT copy.
+
+Two more lines can follow it (UX audit P3 and P13):
+
+- Any cart with a shipped or pickup line adds "The seller ships once Arbitrum finalizes your payment, usually within minutes." A cart whose lines are all digital omits it, because a service-sealed digital line releases at inclusion.
+- A cart with more than one seller adds "You'll approve one request per seller in Bitkit.", because the bind sends one Paykit request per seller.
 
 An unbound order's method picker (the status card) offers "Continue with USDT" under the same rules.
+
+Once the request is bound, the order page's pay panel (`BuyerUsdtPaymentProgress`) adds "Approve in Bitkit within 15 minutes." under the "Pay by" line (UX audit P4). Paykit gives the buyer half the payment window, counted from activation, to approve the request (plan §2.4, D4), which is 15 minutes for the default 1,800 s window; the order carries no accept-by of its own, so `USDT_ACCEPT_BY_MINUTES` pins the default and must change with `USDT_PAYMENT_WINDOW_SECONDS`. It needs a Paykit that has the half-window accept-by (paykit-server #67, on `master`, in no deployed Paykit as of 12 Oct 2026), and it is hidden once the wallet delivery failed. The same panel repeats the finality line above for non-digital orders. The checkout itself never shows an accept-by line, because the window starts at activation.
 
 ### Order status
 
@@ -129,7 +138,9 @@ Everything below renders whenever an order carries `payment_method: "usdt"`, wha
 | final                                                      | USDT payment confirmed                                                           | Payment final. You can ship.                                                                 |
 | re-checking (finality `reverted`)                          | Your payment is being re-checked on Arbitrum. You don't need to do anything yet. | The buyer's payment is being re-checked on Arbitrum. Don't ship.                             |
 
-A paid order shows "$137.00, paid as 137.000000 USDT" and the network on the status card and in the receipt. A manual-review USDT payment reuses the existing review copy; an amount mismatch reads "The USDT amount does not match. The seller is reviewing it."
+While a payment is re-checking, the seller also reads "If the payment doesn't come back, check Bitkit before approving any cancellation." (UX audit P10). It follows plan §2.5: money that never settled owes no refund, and the seller checks Bitkit before approving. The order carries no re-check timestamp, so the line is conditional and shows for the whole re-checking phase rather than only after a long one; a threshold needs a field from S3.
+
+A paid order shows "$137.00, paid as 137.000000 USDT" and the network on the status card and in the receipt. A manual-review USDT payment reuses the existing review copy for the buyer; an amount mismatch reads "The USDT amount does not match. The seller is reviewing it." The seller's line is keyed to the review reason (UX audit P11): `late_settlement` reads "This USDT payment arrived after the payment window ended, so you decide the outcome below. No funds are held by this marketplace.", `amount_mismatch` reads "This USDT payment doesn't match the order total, so you decide the outcome below. No funds are held by this marketplace." `refund_required` keeps its own copy, and an unpinned or missing reason keeps the generic review line.
 
 A Locks-verified (`locked`) receipt carries no payment method, so it is never labelled Bitcoin; after locks#75 the rail that paid it may be USDT and the Shop does not know which.
 
@@ -145,6 +156,10 @@ A Locks-verified (`locked`) receipt carries no payment method, so it is never la
 ### Fulfilment gate
 
 Until a USDT payment is `final`, Add tracking, the shipping label's "Mark shipped", Mark ready for pickup and the pickup handover are disabled, and the seller sees "Wait to ship: this USDT payment isn't final on Arbitrum yet. This usually takes a few minutes." A refusal from the service shows the same copy. Service-sealed digital orders release at inclusion and are never gated.
+
+### Why USDT can be missing from checkout
+
+When USDT is missing for a reason the buyer could not see, a muted line under the picker says why (UX audit P5, `usdtMissingOptionExplanation`): "USDT isn't available for this cart: Brass desk lamp is priced in bitcoin." and/or "Film Camera Supply doesn't accept USDT." (joined with a semicolon when both apply). It shows only when the gate is open and at least one seller in the cart takes USDT, so a cart whose sellers never offered USDT stays silent, and never in the sandbox, on a Locks checkout, or after the service refused USDT (that has its own copy). It explains only the two checks above; the picker is unchanged. The order page's method picker has no such line.
 
 ### Refusals
 

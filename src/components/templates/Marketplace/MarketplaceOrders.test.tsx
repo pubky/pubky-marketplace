@@ -12,6 +12,7 @@ import {
   ORDER_FIXTURE_BUYER,
   ORDER_FIXTURE_SELLER,
 } from '@/test/fixtures/commerce/orders';
+import { REFUND_FIXTURE_ADDRESS, REFUND_FIXTURE_TX_HASH } from '@/test/fixtures/commerce/usdt-refund.wire';
 import { setHeavySuiteBudgets } from '@/test-utils/load-budget';
 import { MarketplaceOrders } from './MarketplaceOrders';
 
@@ -1416,6 +1417,82 @@ describe('MarketplaceOrders USDT orders', () => {
 
     expect(await screen.findByText('USDT boots × 1')).toBeInTheDocument();
     expect(screen.queryByText('≈ ₿137,000')).not.toBeInTheDocument();
+  });
+
+  it('links the recorded refund hash and address to Arbiscan as lookups, and never calls them verified', async () => {
+    ordersState.orders = [
+      orderView('refunded_external', 'USDT refunded boots', 'buyer', {
+        ...usdtFields,
+        paymentFinality: 'final',
+        refundDestination: {
+          address: REFUND_FIXTURE_ADDRESS,
+          network: 'arbitrum-one',
+          asset: 'USDT',
+          source: 'buyer_entered',
+          confirmedAt: '2026-10-09T16:00:00.000Z',
+        },
+        externalRefund: {
+          amountMinor: 13_700,
+          transactionId: REFUND_FIXTURE_TX_HASH,
+          recordedAt: '2026-10-09T18:00:00.000Z',
+        },
+      }),
+    ];
+
+    render(<MarketplaceOrders />);
+    await userEvent.setup().click(screen.getByRole('tab', { name: /All 1/i }));
+
+    const lookups = await screen.findByTestId('order-refund-lookups');
+    expect(within(lookups).getByRole('link', { name: 'Look up transaction on Arbiscan' })).toHaveAttribute(
+      'href',
+      `https://arbiscan.io/tx/${REFUND_FIXTURE_TX_HASH}`,
+    );
+    expect(within(lookups).getByRole('link', { name: 'Look up address on Arbiscan' })).toHaveAttribute(
+      'href',
+      `https://arbiscan.io/address/${REFUND_FIXTURE_ADDRESS.toLowerCase()}`,
+    );
+    expect(screen.getByTestId('order-refund-record')).toHaveTextContent("The Shop hasn't checked it on Arbitrum.");
+    expect(screen.getByTestId('order-refund-record')).not.toHaveTextContent(/verified/i);
+  });
+
+  it('links no refund lookup for a recorded reference that is not an Arbitrum hash, or for a non-USDT order', async () => {
+    ordersState.orders = [
+      orderView('refunded_external', 'USDT odd reference boots', 'buyer', {
+        ...usdtFields,
+        paymentFinality: 'final',
+        externalRefund: { amountMinor: 13_700, transactionId: 'BANK-REF-77', recordedAt: '2026-10-09T18:00:00.000Z' },
+      }),
+      orderView('refunded_external', 'Bitcoin refunded boots', 'buyer', {
+        externalRefund: {
+          amountMinor: 10_000,
+          transactionId: REFUND_FIXTURE_TX_HASH,
+          recordedAt: '2026-10-09T18:00:00.000Z',
+        },
+      }),
+    ];
+
+    render(<MarketplaceOrders />);
+    await userEvent.setup().click(screen.getByRole('tab', { name: /All 2/i }));
+
+    expect(await screen.findAllByTestId('order-refund-record')).toHaveLength(2);
+    expect(screen.queryByRole('link', { name: /Arbiscan/ })).not.toBeInTheDocument();
+  });
+
+  it('groups the digits of a large paid-as amount in the receipt', async () => {
+    const view = orderView('paid', 'USDT big receipt boots', 'buyer', {
+      ...usdtFields,
+      total: { amountMinor: 125_000, currency: 'USD', exponent: 2 },
+      paymentAmountMinor: 1_250_000_000,
+      paymentFinality: 'final',
+    });
+    ordersState.orders = [{ ...view, receipt: createReceiptFixture() }];
+
+    render(<MarketplaceOrders />);
+    await userEvent.setup().click(screen.getByRole('tab', { name: /All 1/i }));
+
+    expect(
+      within(await screen.findByTestId('order-receipt-details')).getByTestId('order-receipt-usdt-paid-as'),
+    ).toHaveTextContent('$1,250.00, paid as 1,250.000000 USDT');
   });
 
   it('writes the paid-as line in the receipt', async () => {

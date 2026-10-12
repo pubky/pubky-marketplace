@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { COMMERCE_REVIEW_EDIT_WINDOW_SECONDS } from '@/config/commerce';
@@ -828,6 +828,9 @@ describe('MarketplaceOrderActions USDT refund recording', () => {
     await user.click(screen.getByRole('button', { name: 'Record refund' }));
     expect(screen.getByTestId('refund-usdt-destination')).toHaveTextContent(REFUND_FIXTURE_ADDRESS);
     expect(screen.getByTestId('refund-usdt-destination')).toHaveTextContent('Amount to send: 137.000000 USDT');
+    expect(
+      within(screen.getByTestId('refund-usdt-destination')).getByRole('link', { name: 'Look up address on Arbiscan' }),
+    ).toHaveAttribute('href', `https://arbiscan.io/address/${REFUND_FIXTURE_ADDRESS.toLowerCase()}`);
 
     await user.type(screen.getByLabelText('Arbitrum transaction hash'), 'not-a-hash');
     await user.click(screen.getByRole('button', { name: 'Confirm' }));
