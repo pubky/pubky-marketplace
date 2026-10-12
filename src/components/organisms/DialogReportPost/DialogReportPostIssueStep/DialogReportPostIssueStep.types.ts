@@ -1,6 +1,9 @@
 import type { ReportIssueType } from '@/pipes/report/report.types';
+import type { DialogReportSubject } from '../DialogReportPost.types';
 
 export interface DialogReportPostIssueStepProps {
+  /** What is being reported; drives the title. Defaults to a post. */
+  subject?: DialogReportSubject;
   /** Handler when an issue type is selected and Next is clicked */
   onSelectIssueType: (issueType: ReportIssueType) => void;
   /** Handler when Cancel is clicked */

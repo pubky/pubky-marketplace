@@ -1,8 +1,9 @@
+import { commerceEntityIdSchema, commercePubkySchema } from '@/libs/commerce/transaction-contracts';
 import { ValidationErrorCode } from '@/libs/error/error.codes';
 import { Err } from '@/libs/error/error.factories';
 import { ErrorService } from '@/libs/error/error.types';
 import { REPORT_ISSUE_TYPE_VALUES, REPORT_REASON_MAX_LENGTH } from './report.constants';
-import type { ReportIssueType } from './report.types';
+import type { ReportIssueType, ReportListingReference } from './report.types';
 
 /**
  * Report input validators
@@ -144,5 +145,56 @@ export class ReportValidators {
       });
     }
     return name.trim();
+  }
+
+  /**
+   * Validates the optional listing reference of a listing report.
+   *
+   * A report either names a listing (listing id and seller pubky together) or
+   * names neither. Half a reference is refused so a listing report always
+   * carries what moderators need to find the listing.
+   *
+   * @param listingId - Seller-scoped listing id
+   * @param sellerPubky - Seller's public key
+   * @returns The validated reference, or null for a report about a post
+   * @throws AppError if only one half is present or either half is malformed
+   */
+  static validateListingReference(
+    listingId: string | undefined | null,
+    sellerPubky: string | undefined | null,
+  ): ReportListingReference | null {
+    const hasListingId = typeof listingId === 'string' && listingId.trim() !== '';
+    const hasSellerPubky = typeof sellerPubky === 'string' && sellerPubky.trim() !== '';
+    if (!hasListingId && !hasSellerPubky) return null;
+
+    if (!hasListingId || !hasSellerPubky) {
+      throw Err.validation(
+        ValidationErrorCode.MISSING_FIELD,
+        'A listing report needs both the listing id and the seller pubky',
+        {
+          service: ErrorService.NextJsServer,
+          operation: 'validateListingReference',
+          context: { field: hasListingId ? 'sellerPubky' : 'listingId' },
+        },
+      );
+    }
+
+    const parsedListingId = commerceEntityIdSchema.safeParse(listingId.trim());
+    if (!parsedListingId.success) {
+      throw Err.validation(ValidationErrorCode.FORMAT_ERROR, 'Listing id is not valid', {
+        service: ErrorService.NextJsServer,
+        operation: 'validateListingReference',
+        context: { field: 'listingId' },
+      });
+    }
+    const parsedSellerPubky = commercePubkySchema.safeParse(sellerPubky.trim());
+    if (!parsedSellerPubky.success) {
+      throw Err.validation(ValidationErrorCode.FORMAT_ERROR, 'Seller pubky is not valid', {
+        service: ErrorService.NextJsServer,
+        operation: 'validateListingReference',
+        context: { field: 'sellerPubky' },
+      });
+    }
+    return { listingId: parsedListingId.data, sellerPubky: parsedSellerPubky.data };
   }
 }

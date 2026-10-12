@@ -26,3 +26,8 @@ export const CHATWOOT_FEEDBACK_MESSAGE_PREFIX = 'Feedback';
  * Message prefix for report submissions
  */
 export const CHATWOOT_REPORT_MESSAGE_PREFIX = 'Report Post';
+
+/**
+ * Message prefix for listing report submissions
+ */
+export const CHATWOOT_REPORT_LISTING_MESSAGE_PREFIX = 'Report Listing';

@@ -271,4 +271,49 @@ describe('ReportValidators', () => {
       expect(() => ReportValidators.validateName(undefined)).toThrow(AppError);
     });
   });
+
+  describe('validateListingReference', () => {
+    const SELLER = 'o1gg96ewuojmopcjbz8895478wdtxtzzuxnfjjz8o8e77csa1ngo';
+
+    it('returns null when neither half is present, so a post report is unchanged', () => {
+      expect(ReportValidators.validateListingReference(undefined, undefined)).toBeNull();
+      expect(ReportValidators.validateListingReference('', '  ')).toBeNull();
+      expect(ReportValidators.validateListingReference(null, null)).toBeNull();
+    });
+
+    it('returns the trimmed reference when both halves are valid', () => {
+      expect(ReportValidators.validateListingReference('  boots_01 ', `  ${SELLER} `)).toEqual({
+        listingId: 'boots_01',
+        sellerPubky: SELLER,
+      });
+    });
+
+    it.each([
+      ['boots_01', undefined, 'sellerPubky'],
+      [undefined, SELLER, 'listingId'],
+    ])('refuses half a reference (%s, %s)', (listingId, sellerPubky, field) => {
+      try {
+        ReportValidators.validateListingReference(listingId, sellerPubky);
+        expect.fail('Should have thrown');
+      } catch (error) {
+        expect(error).toBeInstanceOf(AppError);
+        const appError = error as AppError;
+        expect(appError.code).toBe(ValidationErrorCode.MISSING_FIELD);
+        expect(appError.operation).toBe('validateListingReference');
+        expect(appError.context).toEqual({ field });
+      }
+    });
+
+    it('refuses a listing id that is not path-safe', () => {
+      expect(() => ReportValidators.validateListingReference('boots 01/../x', SELLER)).toThrow(
+        'Listing id is not valid',
+      );
+    });
+
+    it('refuses a seller pubky that is not a 52-character z-base-32 key', () => {
+      expect(() => ReportValidators.validateListingReference('boots_01', 'not-a-pubky')).toThrow(
+        'Seller pubky is not valid',
+      );
+    });
+  });
 });

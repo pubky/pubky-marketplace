@@ -44,6 +44,16 @@ describe('DialogReportPostIssueStep', () => {
     expect(screen.getByText('What sort of issue are you reporting?')).toBeInTheDocument();
   });
 
+  it('titles the step Report Listing for a listing report and offers the same reasons', () => {
+    renderWithDialog(
+      <DialogReportPostIssueStep subject="listing" onSelectIssueType={mockOnSelectIssueType} onCancel={mockOnCancel} />,
+    );
+
+    expect(screen.getByText('Report Listing')).toBeInTheDocument();
+    expect(screen.getByText(REPORT_ISSUE_LABELS[REPORT_ISSUE_TYPES.ILLEGAL_SALES])).toBeInTheDocument();
+    expect(screen.getByText(REPORT_ISSUE_LABELS[REPORT_ISSUE_TYPES.COPYRIGHT])).toBeInTheDocument();
+  });
+
   it('renders all issue type options', () => {
     renderWithDialog(<DialogReportPostIssueStep onSelectIssueType={mockOnSelectIssueType} onCancel={mockOnCancel} />);
 

@@ -19,6 +19,8 @@ export class ReportController {
    * @param params.issueType - Type of issue being reported
    * @param params.reason - User's description of the issue
    * @param params.name - Reporter's display name
+   * @param params.listingId - Listing id, when the report is about a listing
+   * @param params.sellerPubky - Listing seller, required with `listingId`
    * @throws AppError if validation fails or submission fails
    */
   static async submit(params: TReportSubmitParams): Promise<void> {
@@ -28,7 +30,8 @@ export class ReportController {
     const issueType = ReportValidators.validateIssueType(params.issueType);
     const reason = ReportValidators.validateReason(params.reason);
     const name = ReportValidators.validateName(params.name);
+    const listing = ReportValidators.validateListingReference(params.listingId, params.sellerPubky);
 
-    await ReportApplication.submit({ pubky, postUrl, issueType, reason, name });
+    await ReportApplication.submit({ pubky, postUrl, issueType, reason, name, ...(listing ? { listing } : {}) });
   }
 }

@@ -56,6 +56,33 @@ describe('API Route: /api/report', () => {
       });
     });
 
+    it('should forward the listing id and seller pubky of a listing report', async () => {
+      const request = createPostRequest({
+        pubky: testData.userPubky,
+        postUrl:
+          'https://example.com/marketplace/listing/o1gg96ewuojmopcjbz8895478wdtxtzzuxnfjjz8o8e77csa1ngo/boots_01',
+        issueType: 'illegal-sales',
+        reason: testData.reason,
+        name: testData.userName,
+        listingId: 'boots_01',
+        sellerPubky: 'o1gg96ewuojmopcjbz8895478wdtxtzzuxnfjjz8o8e77csa1ngo',
+      });
+
+      const response = await POST(request);
+
+      expect(response.status).toBe(200);
+      expect(ReportController.submit).toHaveBeenCalledWith({
+        pubky: testData.userPubky,
+        postUrl:
+          'https://example.com/marketplace/listing/o1gg96ewuojmopcjbz8895478wdtxtzzuxnfjjz8o8e77csa1ngo/boots_01',
+        issueType: 'illegal-sales',
+        reason: testData.reason,
+        name: testData.userName,
+        listingId: 'boots_01',
+        sellerPubky: 'o1gg96ewuojmopcjbz8895478wdtxtzzuxnfjjz8o8e77csa1ngo',
+      });
+    });
+
     it('should handle AppError from application layer with correct status code', async () => {
       const appError = Err.validation(ValidationErrorCode.INVALID_INPUT, 'Validation failed', {
         service: ErrorService.Local,

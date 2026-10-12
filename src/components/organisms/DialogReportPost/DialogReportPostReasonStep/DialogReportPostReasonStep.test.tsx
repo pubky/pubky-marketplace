@@ -70,6 +70,21 @@ describe('DialogReportPostReasonStep', () => {
     expect(title).toBeInTheDocument();
   });
 
+  it('names the listing in the title, description and submit button for a listing report', () => {
+    renderWithDialog(<DialogReportPostReasonStep {...defaultProps} subject="listing" hasContent />);
+
+    expect(screen.getByRole('heading', { name: 'Report Listing' })).toBeInTheDocument();
+    expect(screen.getByText(/reporting this listing\./)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Submit report' })).toHaveTextContent('Report Listing');
+  });
+
+  it('keeps the post copy by default', () => {
+    renderWithDialog(<DialogReportPostReasonStep {...defaultProps} hasContent />);
+
+    expect(screen.getByText(/reporting this post\./)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Submit report' })).toHaveTextContent('Report Post');
+  });
+
   it('displays PostHeader when currentUserPubky is available', () => {
     renderWithDialog(<DialogReportPostReasonStep {...defaultProps} />);
 
