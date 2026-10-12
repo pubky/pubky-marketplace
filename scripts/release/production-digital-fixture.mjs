@@ -590,12 +590,22 @@ async function buy(kind) {
     await emptyCart(page);
     await page.goto(`${ORIGIN}${listingPath(listing.id)}`, { waitUntil: 'domcontentloaded', timeout: 180_000 });
     await waitForAppReady(page);
-    const add = page.getByRole('button', { name: 'Add to cart', exact: true }).first();
+    const add = page
+      .locator('[data-surface="marketplace-listing-purchase"]')
+      .getByRole('button', { name: 'Buy', exact: true });
+    // Buy is visible at once but stays disabled until the service availability for the listing has loaded.
     const addOk = await add.waitFor({ state: 'visible', timeout: 60_000 }).then(
-      () => true,
+      async () => {
+        for (let i = 0; i < 60; i += 1) {
+          if (await add.isEnabled()) return true;
+          await page.waitForTimeout(1000);
+        }
+        return false;
+      },
       () => false,
     );
-    if (!check(`buy ${kind}: Add to cart is enabled for the buyer`, addOk && (await add.isEnabled()))) {
+    if (!check(`buy ${kind}: the Buy button is enabled for the buyer`, addOk)) {
+      await page.screenshot({ path: join(OUT, `digital-buy-blocked-${kind}.png`) }).catch(() => {});
       throw new Error('the buyer cannot add the listing');
     }
     await add.click();
@@ -611,7 +621,13 @@ async function buy(kind) {
 
     const line = page.getByTestId('checkout-digital-line').first();
     await line.waitFor({ state: 'visible', timeout: 60_000 });
-    const lineText = (await line.innerText()).replace(/^Digital delivery\s*·\s*/, '').trim();
+    // The delivery projection loads after the line renders, so wait for the line that names the kind.
+    let lineText = '';
+    for (let i = 0; i < 60; i += 1) {
+      lineText = (await line.innerText()).replace(/^Digital delivery\s*·\s*/, '').trim();
+      if (expectedCheckoutLine(kind).test(lineText)) break;
+      await page.waitForTimeout(1000);
+    }
     check(`buy ${kind}: checkout names how it arrives`, expectedCheckoutLine(kind).test(lineText), lineText);
     check(
       `buy ${kind}: no shipping address is asked for`,
@@ -650,9 +666,26 @@ async function buy(kind) {
       `expected $${state.price}`,
     );
     await page.screenshot({ path: join(OUT, `digital-checkout-${kind}.png`) });
+    const guarantee = page.getByTestId('marketplace-checkout-guarantee').getByRole('checkbox').first();
+    await guarantee.check();
+    check(`buy ${kind}: the guarantee policy is accepted`, await guarantee.isChecked());
     const pay = page.getByTestId('marketplace-checkout-pay');
-    check(`buy ${kind}: Pay is enabled`, await pay.isEnabled());
-    if (!(await pay.isEnabled())) throw new Error('Pay is disabled');
+    // Pay stays disabled while checkout checks the buyer's Bitcoin wallet.
+    let payReady = false;
+    for (let i = 0; i < 90 && !payReady; i += 1) {
+      payReady = await pay.isEnabled();
+      if (!payReady) await page.waitForTimeout(1000);
+    }
+    check(`buy ${kind}: Pay is enabled`, payReady);
+    if (!payReady) {
+      await page.screenshot({ path: join(OUT, `digital-pay-blocked-${kind}.png`), fullPage: true }).catch(() => {});
+      const reason = await page
+        .locator('#checkout-pay-reason')
+        .innerText()
+        .catch(() => 'no reason shown');
+      const alerts = await page.getByRole('alert').allInnerTexts();
+      throw new Error(`Pay is disabled: ${reason} ${JSON.stringify(alerts).slice(0, 400)}`);
+    }
 
     const before = commands.length;
     await pay.click();
@@ -956,15 +989,15 @@ async function verify() {
         const shop = await page.evaluate(
           (title) => ({
             title: [...document.querySelectorAll('h1')].some((node) => node.textContent?.trim() === title),
-            addToCart: [...document.querySelectorAll('button')].some(
-              (node) => node.textContent?.trim() === 'Add to cart',
+            buy: [...document.querySelectorAll('[data-surface="marketplace-listing-purchase"] button')].some(
+              (node) => node.textContent?.trim() === 'Buy',
             ),
           }),
           listing.title,
         );
         check(
           `verify ${kind}: Shop page no longer sells ${id.slice(0, 8)}`,
-          !shop.title && !shop.addToCart,
+          !shop.title && !shop.buy,
           JSON.stringify(shop),
         );
       }
