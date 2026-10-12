@@ -215,7 +215,7 @@ describe('single-approval ceremony at the transport seams', () => {
 
     expect(mockState.startAuthFlow).toHaveBeenCalledTimes(1);
     expect(mockState.startAuthFlow).toHaveBeenCalledWith(
-      '/pub/pubky.app/:rw,/pub/paykit/:rw,/priv/pubky.app/:rw,/priv/social/:rw,/priv/app.locks/content/:r',
+      '/pub/pubky.app/:rw,/pub/paykit/:rw,/priv/pubky.app/:rw,/pub/chat/:rw,/priv/chat/:rw,/priv/social/:rw,/priv/app.locks/content/:r',
       'signin-kind',
       expect.any(String),
     );

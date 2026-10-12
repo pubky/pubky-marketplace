@@ -3,5 +3,5 @@
   "scheme": "pubkyauth:",
   "host": "signin",
   "params": ["caps", "relay", "secret"],
-  "caps": "/pub/pubky.app/:rw,/pub/paykit/:rw,/priv/pubky.app/:rw"
+  "caps": "/pub/pubky.app/:rw,/pub/paykit/:rw,/priv/pubky.app/:rw,/pub/chat/:rw,/priv/chat/:rw"
 }

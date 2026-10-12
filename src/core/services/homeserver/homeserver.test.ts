@@ -1092,7 +1092,7 @@ describe('HomeserverService', () => {
 
         expect(mockState.startAuthFlow).toHaveBeenCalledWith(
           // The Shop's scopes plus pubky.app's, so the shared cookie keeps both sites working.
-          '/pub/pubky.app/:rw,/pub/paykit/:rw,/priv/pubky.app/:rw,/priv/social/:rw,/priv/app.locks/content/:r',
+          '/pub/pubky.app/:rw,/pub/paykit/:rw,/priv/pubky.app/:rw,/pub/chat/:rw,/priv/chat/:rw,/priv/social/:rw,/priv/app.locks/content/:r',
           'signin-kind', // AuthFlowKind.signin()
           expect.stringContaining('/inbox'), // HTTP relay (Pubky 0.7+ inbox endpoint)
         );
@@ -2364,7 +2364,7 @@ describe('HomeserverService', () => {
         expect(path).toHaveBeenCalledWith('/pub/pubky.app/mutes/');
         expect(live).toHaveBeenCalled();
         expect(subscribe).toHaveBeenCalled();
-        expect(result.value).toEqual({ cursor: 'cursor-1', eventType: 'PUT' });
+        expect(result.value).toEqual({ cursor: 'cursor-1', eventType: 'PUT', owner: '', path: '' });
         expect(result.value).not.toHaveProperty('free');
         expect(free).toHaveBeenCalledTimes(1);
       });

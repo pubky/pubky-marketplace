@@ -9,16 +9,18 @@ export const APP_VERSION = Env.NEXT_PUBLIC_APP_VERSION;
  * splitting capabilities across separate approvals means each new approval
  * clobbers the previous session (this broke all pubky.app writes when the
  * paykit-only messaging grant landed — see `messaging-contracts.ts`).
- * Scopes: the app's own tree, the Paykit tree (encrypted messaging), and the
+ * Scopes: the app's own tree, the Paykit tree (Bitcoin wallet markers), the
  * app's private tree (cross-device watchlist sync — `/priv/` is enforced
  * private by the homeserver, verified empirically in
- * `docs/ecommerce/watchlist.md`).
+ * `docs/ecommerce/watchlist.md`), and the chat trees: `/pub/chat/` holds a
+ * user's published chat key and the encrypted messages they send,
+ * `/priv/chat/` their private key and conversation index (docs/chat).
  *
  * This is the grant Bitkit approves for client id {@link SHOP_GRANT_CLIENT_ID}.
  * Pubky Ring cookie approvals request {@link RING_COOKIE_CAPABILITIES}, a
  * superset of it.
  */
-export const CAPABILITIES = '/pub/pubky.app/:rw,/pub/paykit/:rw,/priv/pubky.app/:rw';
+export const CAPABILITIES = '/pub/pubky.app/:rw,/pub/paykit/:rw,/priv/pubky.app/:rw,/pub/chat/:rw,/priv/chat/:rw';
 
 /** Client id Bitkit shows on its Authorize screen for the Shop's grant sign-in. */
 export const SHOP_GRANT_CLIENT_ID = 'shop.pubky.app';
@@ -49,7 +51,7 @@ export function isSingleApprovalSignInEnabled(): boolean {
  * cookie, and keep requesting and checking {@link CAPABILITIES}.
  */
 export const RING_COOKIE_CAPABILITIES =
-  '/pub/pubky.app/:rw,/pub/paykit/:rw,/priv/pubky.app/:rw,/priv/social/:rw,/priv/app.locks/content/:r';
+  '/pub/pubky.app/:rw,/pub/paykit/:rw,/priv/pubky.app/:rw,/pub/chat/:rw,/priv/chat/:rw,/priv/social/:rw,/priv/app.locks/content/:r';
 
 function capabilitiesMatchSet(capabilities: readonly string[], expectedSet: string): boolean {
   const expected = expectedSet
