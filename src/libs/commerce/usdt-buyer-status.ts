@@ -21,6 +21,22 @@ export const USDT_WALLET_HINT = 'Pay with a Bitkit version that supports USDT.';
 export const USDT_FUNDS_HINT =
   "If your wallet can't cover the amount plus network fees, choose another method before the hold ends.";
 
+/** Shown before and while a buyer pays in USDT for goods the seller has to ship or hand over. */
+export const USDT_FINALITY_EXPECTATION_COPY =
+  'The seller ships once Arbitrum finalizes your payment, usually within minutes.';
+
+/**
+ * Paykit gives the buyer half the payment window, counted from activation, to
+ * approve the request in Bitkit (plan §2.4, D4). The default 1,800 s window
+ * makes that 15 minutes; the order carries no accept-by of its own.
+ */
+export const USDT_ACCEPT_BY_MINUTES = 15;
+
+export const USDT_ACCEPT_BY_COPY = `Approve in Bitkit within ${USDT_ACCEPT_BY_MINUTES} minutes.`;
+
+/** A multi-seller USDT cart sends one Paykit request per seller. */
+export const USDT_MULTI_SELLER_COPY = "You'll approve one request per seller in Bitkit.";
+
 /** Seller-facing refusal and disabled-action copy for ship, mark ready and pickup. */
 export const PAYMENT_NOT_FINAL_COPY =
   "Wait to ship: this USDT payment isn't final on Arbitrum yet. This usually takes a few minutes.";
@@ -37,6 +53,14 @@ type UsdtStatusOrder = {
 type UsdtStatusPayment = { state?: string | null; reviewReason?: string | null } | null;
 
 export type UsdtSettlementPhase = 'awaiting' | 'received' | 'final' | 'rechecking' | 'review';
+
+/**
+ * Shipped and pickup lines wait for Arbitrum finality before the seller acts;
+ * a service-sealed digital line releases at inclusion and never waits.
+ */
+export function usdtFulfilmentWaitsForFinality(fulfillments: readonly (string | undefined)[]): boolean {
+  return fulfillments.some((fulfillment) => fulfillment !== 'digital');
+}
 
 export function isUsdtOrder(order: { paymentMethod?: string | null }): boolean {
   return order.paymentMethod === 'usdt';

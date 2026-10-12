@@ -76,9 +76,12 @@ import {
 } from '@/libs/commerce/paykit-wallet';
 import { buildMarketplaceOrderAggregateId } from '@/libs/commerce/transaction-commands';
 import {
+  USDT_ACCEPT_BY_COPY,
   USDT_BUYER_PHASE_COPY,
+  USDT_FINALITY_EXPECTATION_COPY,
   USDT_FUNDS_HINT,
   USDT_WALLET_HINT,
+  usdtFulfilmentWaitsForFinality,
   usdtPhaseCopy,
 } from '@/libs/commerce/usdt-buyer-status';
 import { paymentReviewRail } from '@/libs/commerce/usdt-payment-review';
@@ -898,6 +901,11 @@ function BuyerUsdtPaymentProgress({ order }: { order: MarketplaceOrder }) {
       <Typography as="p" className="text-sm text-muted-foreground">
         {holderBoundCopy(order.holdExpiresAt)}
       </Typography>
+      {order.paykitDeliveryState !== 'failed' && (
+        <Typography as="p" className="text-xs text-muted-foreground" data-testid="usdt-accept-by">
+          {USDT_ACCEPT_BY_COPY}
+        </Typography>
+      )}
       {order.paykitDeliveryState === 'failed' ? (
         <Typography as="p" role="alert" className="text-sm text-amber-300" data-testid="paykit-delivery-failed">
           {PAYKIT_DELIVERY_FAILED_COPY}
@@ -911,6 +919,11 @@ function BuyerUsdtPaymentProgress({ order }: { order: MarketplaceOrder }) {
       <Typography as="p" className="text-xs text-muted-foreground" data-testid="usdt-wallet-hint">
         {USDT_WALLET_HINT} {USDT_FUNDS_HINT}
       </Typography>
+      {usdtFulfilmentWaitsForFinality([order.fulfillment]) && (
+        <Typography as="p" className="text-xs text-muted-foreground" data-testid="usdt-finality-note">
+          {USDT_FINALITY_EXPECTATION_COPY}
+        </Typography>
+      )}
     </div>
   );
 }

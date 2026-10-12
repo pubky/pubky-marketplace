@@ -68,8 +68,11 @@ import { availablePaymentMethods, type PaymentMethodKind } from '@/libs/commerce
 import { formatUsdt } from '@/libs/commerce/payment-options';
 import {
   isUsdPricedTotals,
+  USDT_FINALITY_EXPECTATION_COPY,
+  USDT_MULTI_SELLER_COPY,
   USDT_NETWORK_LABEL,
   USDT_WALLET_HINT,
+  usdtFulfilmentWaitsForFinality,
   usdtParityMillionths,
 } from '@/libs/commerce/usdt-buyer-status';
 import { navigateTop } from '@/libs/navigation/navigate-top';
@@ -1092,6 +1095,24 @@ function MarketplaceCartCheckout() {
                           <Typography as="p" className="text-xs text-muted-foreground">
                             {USDT_WALLET_HINT}
                           </Typography>
+                          {usdtFulfilmentWaitsForFinality(lineMethods) && (
+                            <Typography
+                              as="p"
+                              className="text-xs text-muted-foreground"
+                              data-testid="marketplace-checkout-usdt-finality-note"
+                            >
+                              {USDT_FINALITY_EXPECTATION_COPY}
+                            </Typography>
+                          )}
+                          {isMultiSeller && (
+                            <Typography
+                              as="p"
+                              className="text-xs text-muted-foreground"
+                              data-testid="marketplace-checkout-usdt-multi-seller-note"
+                            >
+                              {USDT_MULTI_SELLER_COPY}
+                            </Typography>
+                          )}
                         </div>
                       )}
                       {buyerWalletChecking && (

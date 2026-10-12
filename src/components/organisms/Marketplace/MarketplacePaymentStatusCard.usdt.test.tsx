@@ -5,7 +5,9 @@ import { useMarketplaceOrderPayment } from '@/hooks/useMarketplaceOrderPayment/u
 import { CHECKOUT_HOLD_COPY } from '@/libs/commerce/checkout-hold';
 import type { PaymentMethodKind } from '@/libs/commerce/payment-methods';
 import {
+  USDT_ACCEPT_BY_COPY,
   USDT_BUYER_PHASE_COPY,
+  USDT_FINALITY_EXPECTATION_COPY,
   USDT_FUNDS_HINT,
   USDT_SELLER_PHASE_COPY,
   USDT_WALLET_HINT,
@@ -110,6 +112,40 @@ describe('MarketplacePaymentStatusCard — USDT orders', () => {
     expect(screen.getByTestId('usdt-wallet-hint')).toHaveTextContent(`${USDT_WALLET_HINT} ${USDT_FUNDS_HINT}`);
     expect(container).not.toHaveTextContent(/Bitcoin|₿|sats/);
     expect(screen.queryByTestId('bitcoin-amount-breakdown')).not.toBeInTheDocument();
+  });
+
+  it('tells the buyer of an unpaid USDT order when to approve in Bitkit and that shipping waits for finality', () => {
+    renderPhase('awaiting', true);
+
+    expect(screen.getByTestId('usdt-accept-by')).toHaveTextContent('Approve in Bitkit within 15 minutes.');
+    expect(screen.getByTestId('usdt-accept-by')).toHaveTextContent(USDT_ACCEPT_BY_COPY);
+    expect(screen.getByTestId('usdt-finality-note')).toHaveTextContent(
+      'The seller ships once Arbitrum finalizes your payment, usually within minutes.',
+    );
+    expect(screen.getByTestId('usdt-finality-note')).toHaveTextContent(USDT_FINALITY_EXPECTATION_COPY);
+  });
+
+  it('leaves the finality note off a digital USDT order, which releases at inclusion', () => {
+    const { order, payment } = createUsdtOrderFixture('awaiting', { fulfillment: 'digital' });
+    renderCard(order, payment, true);
+
+    expect(screen.queryByTestId('usdt-finality-note')).not.toBeInTheDocument();
+    expect(screen.getByTestId('usdt-accept-by')).toBeInTheDocument();
+  });
+
+  it('drops the accept-by line when the request never reached the buyer wallet', () => {
+    const { order, payment } = createUsdtOrderFixture('awaiting', { paykitDeliveryState: 'failed' });
+    renderCard(order, payment, true);
+
+    expect(screen.getByTestId('paykit-delivery-failed')).toBeInTheDocument();
+    expect(screen.queryByTestId('usdt-accept-by')).not.toBeInTheDocument();
+  });
+
+  it('shows the seller of an unpaid USDT order neither the accept-by nor the buyer finality note', () => {
+    renderPhase('awaiting', false);
+
+    expect(screen.queryByTestId('usdt-accept-by')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('usdt-finality-note')).not.toBeInTheDocument();
   });
 
   it('keeps the seller of an unpaid USDT order informed without a pay amount', () => {
