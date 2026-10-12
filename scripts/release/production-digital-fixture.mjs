@@ -576,6 +576,22 @@ async function ordersCard(page, title) {
   return page.locator('[id^="order-"]').filter({ hasText: title }).first();
 }
 
+// A seller whose Paykit creator is shared_manual confirms Bitcoin themselves: the order only becomes
+// paid when the seller attests receipt, which the Shop offers once the service has seen a matching payment.
+async function confirmSeenBitcoin(page, title, kind) {
+  const card = await ordersCard(page, title);
+  if ((await card.count()) === 0) return false;
+  const prompt = card.getByTestId('seller-bitcoin-confirm-prompt');
+  if ((await prompt.count()) === 0) return false;
+  const facts = (await card.innerText()).replace(/\s+/g, ' ');
+  if (!/Amount matched Yes/.test(facts)) return false;
+  await page.screenshot({ path: join(OUT, `digital-seller-confirm-${kind}.png`) });
+  await card.getByRole('button', { name: 'Confirm payment received' }).click();
+  await page.waitForTimeout(8000);
+  log(`buy ${kind}: the seller confirmed receipt of the matched payment`);
+  return true;
+}
+
 async function buy(kind) {
   const state = readState();
   const listing = state?.listings?.[kind];
@@ -705,13 +721,22 @@ async function buy(kind) {
     const started = Date.now();
     let outcome = 'waiting';
     let cardId = null;
-    while (outcome === 'waiting') {
-      await sleep(20_000);
-      const card = await ordersCard(page, listing.title);
-      const paid = (await card.count()) > 0 && (await card.getByTestId('order-receipt-details').count()) > 0;
-      if ((await card.count()) > 0) cardId = (await card.getAttribute('id'))?.replace(/^order-/, '') ?? cardId;
-      outcome = payOutcome({ paid, elapsedMs: Date.now() - started, timeoutMs: payTimeoutMs });
-      log(`buy ${kind}: waiting for payment, ${Math.round((Date.now() - started) / 1000)}s, ${outcome}`);
+    let sellerConfirmed = false;
+    const sellerSession = await openBrowser();
+    try {
+      await ringSignIn(sellerSession.page, seller);
+      const sellerPage = sellerSession.page;
+      while (outcome === 'waiting') {
+        await sleep(20_000);
+        if (!sellerConfirmed) sellerConfirmed = await confirmSeenBitcoin(sellerPage, listing.title, kind);
+        const card = await ordersCard(page, listing.title);
+        const paid = (await card.count()) > 0 && (await card.getByTestId('order-receipt-details').count()) > 0;
+        if ((await card.count()) > 0) cardId = (await card.getAttribute('id'))?.replace(/^order-/, '') ?? cardId;
+        outcome = payOutcome({ paid, elapsedMs: Date.now() - started, timeoutMs: payTimeoutMs });
+        log(`buy ${kind}: waiting for payment, ${Math.round((Date.now() - started) / 1000)}s, ${outcome}`);
+      }
+    } finally {
+      await sellerSession.browser.close();
     }
     state.orders[kind] = { id: cardId, outcome, paidAfterSeconds: Math.round((Date.now() - started) / 1000) };
     writeState(state);
