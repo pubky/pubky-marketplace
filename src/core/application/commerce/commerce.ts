@@ -102,6 +102,7 @@ import {
   buildMarketplacePaymentAggregateId,
   classifyMarketplacePickupCommandRefusal,
   type CreateMarketplaceCheckoutCommand,
+  GUARANTEE_POLICY_VERSION,
   isCorrelatedBenignListingRegistrationResponse,
   isListingRecordNotFoundResponse,
   isSuccessfulListingRegistrationResponse,
@@ -1161,7 +1162,7 @@ export class CommerceApplication {
         })),
         ...(input.deliveryAddress ? { deliveryAddress: input.deliveryAddress } : {}),
         ...(input.deliveryEmail !== undefined ? { deliveryEmail: input.deliveryEmail } : {}),
-        guaranteePolicyVersion: 1 as const,
+        guaranteePolicyVersion: GUARANTEE_POLICY_VERSION,
       },
     });
     return await this.executeMarketplaceCommand(actorPubky, command);

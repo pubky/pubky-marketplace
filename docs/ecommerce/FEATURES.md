@@ -134,7 +134,8 @@ transaction service (PostgreSQL, exactly-one-winner concurrency proofs).
     action, header cart pill with count)
   - Three-step checkout; `Approve in Pubky Ring` up front when there is no
     marketplace session; Place order disabled until approval and a valid
-    form; purchase-guarantee opt-in default unchecked
+    form; a non-interactive notice states that payment goes directly to the seller
+    and the marketplace never holds funds
   - Checkout with delivery address book (save, reuse, last-used ordering)
     plus an orientation line; the address travels only inside the checkout
     command

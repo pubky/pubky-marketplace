@@ -523,6 +523,29 @@ describe('MarketplaceCheckout', () => {
     },
   );
 
+  it.each([
+    ['sandbox', 'Sandbox checkout: no real funds move.'],
+    ['locks-paykit', 'Payment goes directly to the seller. This marketplace never holds funds.'],
+    [
+      'unavailable',
+      'No payment rails are live in this deployment, so no real funds move. This marketplace never holds funds.',
+    ],
+  ] as const)(
+    'replaces the guarantee checkbox with a non-interactive payment notice in %s mode',
+    (adapterMode, copy) => {
+      seededCart();
+      view.adapterMode = adapterMode;
+      view.hasMarketplaceSession = true;
+
+      render(<MarketplaceCheckout />);
+
+      const notice = screen.getByTestId('marketplace-checkout-payment-notice');
+      expect(notice).toHaveTextContent(copy);
+      expect(notice.querySelector('input, button, [role="checkbox"]')).toBeNull();
+      expect(screen.queryByRole('checkbox', { name: /guarantee/i })).not.toBeInTheDocument();
+    },
+  );
+
   it('does not show a production money warning when the deploy environment is unknown', () => {
     seededCart();
     view.adapterMode = 'sandbox';
@@ -570,10 +593,7 @@ describe('MarketplaceCheckout', () => {
     expect(pay).toBeDisabled();
 
     await fillValidDelivery(user);
-    expect(pay).toBeDisabled();
-    expect(screen.getByRole('checkbox', { name: /I accept guarantee policy v1/ })).not.toBeChecked();
 
-    await user.click(screen.getByRole('checkbox', { name: /I accept guarantee policy v1/ }));
     await waitFor(() => expect(pay).toBeEnabled());
   });
 
@@ -606,7 +626,6 @@ describe('MarketplaceCheckout', () => {
 
     const pay = screen.getByTestId('marketplace-checkout-pay');
     await fillValidDelivery(user);
-    await user.click(screen.getByRole('checkbox', { name: /I accept guarantee policy v1/ }));
     const notice = await screen.findByTestId('marketplace-checkout-bitkit-required');
     expect(notice).toHaveTextContent('Connect Bitkit to pay with Bitcoin');
     expect(notice).toHaveTextContent('You can also pay with PayPal.');
@@ -636,7 +655,6 @@ describe('MarketplaceCheckout', () => {
 
     const pay = screen.getByTestId('marketplace-checkout-pay');
     await fillValidDelivery(user);
-    await user.click(screen.getByRole('checkbox', { name: /I accept guarantee policy v1/ }));
     const notice = await screen.findByTestId('marketplace-checkout-bitkit-unsupported');
     expect(notice).toHaveAttribute('role', 'alert');
     expect(notice).toHaveTextContent('Bitcoin checkout does not support Bitkit 2.6 yet');
@@ -666,7 +684,6 @@ describe('MarketplaceCheckout', () => {
 
     const pay = screen.getByTestId('marketplace-checkout-pay');
     await fillValidDelivery(user);
-    await user.click(screen.getByRole('checkbox', { name: /I accept guarantee policy v1/ }));
     const notice = await screen.findByTestId('marketplace-checkout-bitkit-unverified');
     expect(notice).toHaveAttribute('role', 'alert');
     expect(notice).toHaveTextContent("Couldn't verify your Bitcoin wallet");
@@ -695,7 +712,6 @@ describe('MarketplaceCheckout', () => {
     const { rerender } = render(<MarketplaceCheckout />);
     const pay = screen.getByTestId('marketplace-checkout-pay');
     await fillValidDelivery(user);
-    await user.click(screen.getByRole('checkbox', { name: /I accept guarantee policy v1/ }));
     expect(await screen.findByText('Checking your Bitcoin wallet…')).toBeInTheDocument();
     expect(pay).toBeDisabled();
 
@@ -715,7 +731,6 @@ describe('MarketplaceCheckout', () => {
     expect(await screen.findByTestId('marketplace-checkout-method-bitcoin')).toHaveAttribute('aria-pressed', 'true');
     if (method === 'paypal') await user.click(screen.getByTestId('marketplace-checkout-method-paypal'));
     await fillValidDelivery(user);
-    await user.click(screen.getByRole('checkbox', { name: /I accept sandbox guarantee policy v1/ }));
     await user.click(screen.getByTestId('marketplace-checkout-pay'));
 
     expect(checkoutActions.pay).toHaveBeenCalledWith(null, expect.any(Function));
@@ -731,7 +746,6 @@ describe('MarketplaceCheckout', () => {
     render(<MarketplaceCheckout />);
     await user.click(await screen.findByTestId(`marketplace-checkout-method-${method}`));
     await fillValidDelivery(user);
-    await user.click(screen.getByRole('checkbox', { name: /I accept guarantee policy v1/ }));
     const pay = screen.getByTestId('marketplace-checkout-pay');
     await waitFor(() => expect(pay).toBeEnabled());
     await user.click(pay);
@@ -750,7 +764,6 @@ describe('MarketplaceCheckout', () => {
       render(<MarketplaceCheckout />);
       await user.click(await screen.findByTestId('marketplace-checkout-method-paypal'));
       await fillValidDelivery(user);
-      await user.click(screen.getByRole('checkbox', { name: /I accept guarantee policy v1/ }));
       const pay = screen.getByTestId('marketplace-checkout-pay');
       await waitFor(() => expect(pay).toBeEnabled());
       await user.click(pay);
@@ -796,20 +809,17 @@ describe('MarketplaceCheckout', () => {
     });
   });
 
-  it('requires the guarantee after a pay attempt and leaves it unchecked by default', async () => {
+  it('shows no guarantee checkbox and enables pay on a valid delivery alone', async () => {
     seededCart();
 
     render(<MarketplaceCheckout />);
 
-    const guarantee = screen.getByRole('checkbox', { name: /I accept sandbox guarantee policy v1/ });
-    expect(guarantee).not.toBeChecked();
-    expect(screen.queryByText('Accept the guarantee terms.')).not.toBeInTheDocument();
+    expect(screen.queryByRole('checkbox', { name: /guarantee/i })).not.toBeInTheDocument();
+    expect(screen.queryByText(/guarantee/i)).not.toBeInTheDocument();
+    expect(screen.getByTestId('marketplace-checkout-pay')).toBeDisabled();
 
     await fillValidDelivery(userEvent.setup());
-    expect(screen.getByTestId('marketplace-checkout-pay')).toBeDisabled();
-    expect(
-      screen.getByText('Fill in delivery details, accept the guarantee, and choose a payment method to pay.'),
-    ).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByTestId('marketplace-checkout-pay')).toBeEnabled());
   });
 
   it('re-opens Ring approval when a session expires mid-flow', () => {
@@ -936,7 +946,7 @@ describe('MarketplaceCheckout local pickup (Wave 7, §A2)', () => {
     expect(screen.queryByLabelText('Full name')).not.toBeInTheDocument();
     expect(screen.getByText(/No delivery address is needed/)).toBeInTheDocument();
     expect(screen.getByText('No shipping — pickup is arranged with the seller after payment.')).toBeInTheDocument();
-    expect(screen.getByRole('checkbox', { name: /I accept sandbox guarantee policy v1/ })).toBeInTheDocument();
+    expect(screen.getByTestId('marketplace-checkout-payment-notice')).toBeInTheDocument();
   });
 
   it('states the (seller, fulfillment) split plainly before pay', () => {
@@ -1169,7 +1179,6 @@ describe('MarketplaceCheckout digital lines (digital delivery design §3 "Checko
 
     render(<MarketplaceCheckout />);
     await fillValidDelivery(user);
-    await user.click(screen.getByRole('checkbox', { name: /I accept sandbox guarantee policy v1/ }));
 
     expect(screen.getByTestId('marketplace-checkout-pay')).toBeDisabled();
   });
@@ -1492,7 +1501,6 @@ describe('MarketplaceCheckout USDT option', () => {
       await screen.findByTestId('marketplace-checkout-method-bitcoin');
       expect(screen.queryByTestId('marketplace-checkout-method-usdt')).not.toBeInTheDocument();
       await fillValidDelivery(user);
-      await user.click(screen.getByRole('checkbox', { name: /I accept guarantee policy v1/ }));
       const pay = screen.getByTestId('marketplace-checkout-pay');
       await waitFor(() => expect(pay).toBeEnabled());
       await user.click(pay);
@@ -1537,7 +1545,6 @@ describe('MarketplaceCheckout USDT option', () => {
     render(<MarketplaceCheckout />);
     await user.click(await screen.findByTestId('marketplace-checkout-method-usdt'));
     await fillValidDelivery(user);
-    await user.click(screen.getByRole('checkbox', { name: /I accept guarantee policy v1/ }));
     const pay = screen.getByTestId('marketplace-checkout-pay');
     await waitFor(() => expect(pay).toBeEnabled());
     await user.click(pay);
@@ -1591,7 +1598,6 @@ describe('MarketplaceCheckout accepted-offer path', () => {
 
   async function fillAndPay(user: ReturnType<typeof userEvent.setup>) {
     await fillValidDelivery(user);
-    await user.click(screen.getByRole('checkbox', { name: /I accept sandbox guarantee policy v1/ }));
     const pay = screen.getByTestId('marketplace-checkout-pay');
     await waitFor(() => expect(pay).toBeEnabled());
     await user.click(pay);
@@ -1660,7 +1666,6 @@ describe('MarketplaceCheckout accepted-offer path', () => {
     expect(screen.getByText('Shipping').parentElement).toHaveTextContent('$0.00');
     expect(screen.getByText('Merchandise total').parentElement).toHaveTextContent('$6.00');
 
-    await user.click(screen.getByRole('checkbox', { name: /I accept sandbox guarantee policy v1/ }));
     const pay = screen.getByTestId('marketplace-checkout-pay');
     await waitFor(() => expect(pay).toBeEnabled());
     await user.click(pay);

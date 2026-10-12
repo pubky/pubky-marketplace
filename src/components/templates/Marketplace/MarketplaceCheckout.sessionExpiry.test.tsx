@@ -221,7 +221,6 @@ describe('MarketplaceCheckout session expiry (real checkout hook)', () => {
     await user.type(screen.getByLabelText('City'), 'New York');
     await user.type(screen.getByLabelText('State'), 'NY');
     await user.type(screen.getByLabelText('ZIP code'), '10001');
-    await user.click(screen.getByRole('checkbox', { name: /I accept guarantee policy v1/ }));
 
     const pay = screen.getByTestId('marketplace-checkout-pay');
     await waitFor(() => expect(pay).toBeEnabled());
