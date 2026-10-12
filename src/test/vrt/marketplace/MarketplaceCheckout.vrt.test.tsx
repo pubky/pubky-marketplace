@@ -66,6 +66,19 @@ const fixtures = vi.hoisted(async () => {
     }),
   );
 
+  const btcLamp = toCommerceListingModel(
+    createCommerceListingFixture({
+      listingId: 'brass_lamp',
+      title: 'Brass desk lamp',
+      variants: [{ id: 'variant_01', options: {}, quantity: 2, mediaIds: ['image_01'], enabled: true }],
+      sale: {
+        format: 'fixed_price',
+        unitPrice: { amountMinor: 150_000, currency: 'BTC', exponent: 8 },
+        acceptsOffers: false,
+      },
+    }),
+  );
+
   const item = (listing: ReturnType<typeof toCommerceListingModel>, variantId: string, quantity: number) => ({
     id: `${listing.id}:${variantId}`,
     listingId: listing.id,
@@ -101,6 +114,7 @@ const fixtures = vi.hoisted(async () => {
     digitalOnly: [item(guide, 'variant_01', 1)],
     digitalMixed: [item(boots, 'variant_42', 1), item(album, 'variant_01', 1), item(pattern, 'variant_01', 1)],
     singleSeller: [item(boots, 'variant_42', 1), item(boots, 'variant_43', 1)],
+    bitcoinPriced: [item(btcLamp, 'variant_01', 1)],
     multiSeller: [item(boots, 'variant_42', 2), item(jacket, 'variant_01', 1), item(camera, 'variant_01', 1)],
   };
 });
@@ -142,6 +156,7 @@ const view = vi.hoisted(() => ({
   hasManualDigitalLine: false,
   usdtAvailable: false,
   usdtOnly: false,
+  usdtSellers: null as string[] | null,
 }));
 
 const savedAddresses = vi.hoisted(() => {
@@ -322,11 +337,11 @@ vi.mock('@/hooks/useMarketplaceSessionConnect/useMarketplaceSessionConnect', () 
 
 vi.mock('@/controllers/commerce/commerce', () => ({
   CommerceController: {
-    getSellerPaymentConfig: vi.fn(async () => ({
+    getSellerPaymentConfig: vi.fn(async (sellerPubky: string) => ({
       bitcoinAvailable: !view.usdtOnly,
       bitcoinOfferAvailable: true,
       paypalAvailable: !view.usdtOnly,
-      usdtAvailable: view.usdtAvailable,
+      usdtAvailable: view.usdtAvailable && (view.usdtSellers === null || view.usdtSellers.includes(sellerPubky)),
     })),
     fetchUsdtPaymentsAvailable: vi.fn(async () => view.usdtAvailable),
     getIndicativeBtcRate: vi.fn(async () => null),
@@ -367,6 +382,7 @@ beforeEach(async () => {
   view.hasManualDigitalLine = false;
   view.usdtAvailable = false;
   view.usdtOnly = false;
+  view.usdtSellers = null;
   useCommerceStore.getState().reset();
   window.history.replaceState(null, '', '/marketplace/checkout');
 });
@@ -669,6 +685,43 @@ describe('Marketplace checkout — visual regression', () => {
       }
     });
     await captureCheckout('checkout-usdt-selected-mobile');
+  });
+
+  it('explains the missing USDT option on a bitcoin-priced cart at desktop viewport', async () => {
+    const { bitcoinPriced } = await fixtures;
+    view.items = bitcoinPriced;
+    view.adapterMode = 'transaction-service';
+    view.deployEnv = 'production';
+    view.hasMarketplaceSession = true;
+    view.usdtAvailable = true;
+
+    await renderForVRT(<MarketplaceCheckout />, { viewport: VRT_VIEWPORT_DESKTOP });
+    await vi.waitFor(() => {
+      if (!document.querySelector('[data-testid="marketplace-checkout-usdt-missing-note"]')) {
+        throw new Error('The missing-USDT note has not rendered yet.');
+      }
+    });
+    expect(document.querySelector('[data-testid="marketplace-checkout-method-usdt"]')).toBeNull();
+    await captureCheckout('checkout-usdt-missing-bitcoin-priced-desktop');
+  });
+
+  it('names the seller who does not take USDT on a multi-seller cart at desktop viewport', async () => {
+    const { multiSeller } = await fixtures;
+    view.items = multiSeller;
+    view.adapterMode = 'transaction-service';
+    view.deployEnv = 'production';
+    view.hasMarketplaceSession = true;
+    view.usdtAvailable = true;
+    view.usdtSellers = [multiSeller[0].listing.record.ownerPubky];
+
+    await renderForVRT(<MarketplaceCheckout />, { viewport: VRT_VIEWPORT_DESKTOP });
+    await vi.waitFor(() => {
+      if (!document.querySelector('[data-testid="marketplace-checkout-usdt-missing-note"]')) {
+        throw new Error('The missing-USDT note has not rendered yet.');
+      }
+    });
+    expect(document.querySelector('[data-testid="marketplace-checkout-method-usdt"]')).toBeNull();
+    await captureCheckout('checkout-usdt-missing-seller-desktop');
   });
 
   it('renders the locks-paykit checkout labels at desktop viewport', async () => {
