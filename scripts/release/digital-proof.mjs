@@ -143,6 +143,15 @@ export function parsePayTimeoutMinutes(value) {
   return minutes;
 }
 
+// How long the seller side waits for an external buyer to order, pay and download, in whole minutes (PROOF_DIGITAL_WAIT_MIN).
+export function parsePositiveMinutes(value, fallback) {
+  const minutes = Number(value ?? fallback);
+  if (!Number.isInteger(minutes) || minutes < 5 || minutes > 480) {
+    throw new Error('PROOF_DIGITAL_WAIT_MIN must be a whole number of minutes from 5 to 480');
+  }
+  return minutes;
+}
+
 // Deliverable ciphertext paths the run created: those under the deliverables folder now that were not there
 // before setup. Only these are ever deleted.
 export const DELIVERABLES_PREFIX = '/pub/pubky.app/marketplace/v1/deliverables/';

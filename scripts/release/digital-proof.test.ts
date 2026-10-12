@@ -25,6 +25,7 @@ import {
   parseBtcUsdRate,
   parseKinds,
   parsePayTimeoutMinutes,
+  parsePositiveMinutes,
   parsePriceUsd,
   pathFromPubkyUrl,
   payOutcome,
@@ -132,6 +133,13 @@ describe('pay wait', () => {
     expect(parsePayTimeoutMinutes('2')).toBe(2);
     expect(parsePayTimeoutMinutes(String(BITCOIN_WINDOW_MINUTES - 3))).toBe(BITCOIN_WINDOW_MINUTES - 3);
     for (const bad of ['1', '28', '30', '2.5', 'x']) expect(() => parsePayTimeoutMinutes(bad)).toThrow();
+  });
+
+  it('bounds the external-buyer wait in whole minutes', () => {
+    expect(parsePositiveMinutes(undefined, 90)).toBe(90);
+    expect(parsePositiveMinutes('5', 90)).toBe(5);
+    expect(parsePositiveMinutes('480', 90)).toBe(480);
+    for (const bad of ['4', '481', '2.5', 'x', '']) expect(() => parsePositiveMinutes(bad, 90)).toThrow();
   });
 
   it('decides the outcome from payment first, then the clock', () => {
