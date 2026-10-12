@@ -180,18 +180,15 @@ export function useMarketplaceSellerDashboard() {
 
   const hasUnsavedListingDraft = async (): Promise<string | null> => unsavedListingDraftId();
 
-  const exportCsv = (): string => {
-    const header = ['listing_id', 'title', 'state', 'format', 'price_minor', 'currency', 'inventory'];
-    const rows = (localListings ?? []).map((listing) => [
-      csvCell(listing.listing_id),
-      csvCell(listing.record.title),
-      listing.state,
-      listing.format,
-      String(listing.price_minor),
-      listing.currency,
-      String(listing.record.variants.reduce((total, variant) => total + variant.quantity, 0)),
-    ]);
-    return [header.join(','), ...rows.map((row) => row.join(','))].join('\n');
+  /** The canonical import CSV, so an exported file can be edited and imported back. */
+  const exportCsv = async (): Promise<Uint8Array | null> => {
+    if (!currentUserPubky) return null;
+    try {
+      return await CommerceController.exportInventoryListingsCsv(currentUserPubky);
+    } catch {
+      toast({ variant: 'error', description: 'Could not export your listings.' });
+      return null;
+    }
   };
 
   useEffect(() => {
@@ -246,10 +243,6 @@ export function useMarketplaceSellerDashboard() {
     exportCsv,
     nowMs,
   };
-}
-
-function csvCell(value: string): string {
-  return `"${value.replaceAll('"', '""').replace(/^[=+\-@]/, "'$&")}"`;
 }
 
 async function unsavedListingDraftId(): Promise<string | null> {
