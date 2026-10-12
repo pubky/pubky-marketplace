@@ -7,7 +7,9 @@ import type { PaymentMethodKind } from '@/libs/commerce/payment-methods';
 import {
   USDT_BUYER_PHASE_COPY,
   USDT_FUNDS_HINT,
+  USDT_RECHECKING_NEXT_STEP_COPY,
   USDT_SELLER_PHASE_COPY,
+  USDT_SELLER_REVIEW_COPY,
   USDT_WALLET_HINT,
 } from '@/libs/commerce/usdt-buyer-status';
 import { createOrderFixture, createPaymentFixture } from '@/test/fixtures/commerce/orders';
@@ -154,6 +156,55 @@ describe('MarketplacePaymentStatusCard — USDT orders', () => {
     expect(screen.getByTestId('usdt-phase-copy')).toHaveTextContent(copy);
     expect(screen.queryByText('Payment confirmed')).not.toBeInTheDocument();
     expect(container.querySelector('.lucide-check')).toBeNull();
+  });
+
+  it('tells the seller what to do if a re-checked payment does not come back, and not the buyer', () => {
+    const { unmount } = renderPhase('rechecking', false);
+    expect(screen.getByTestId('usdt-recheck-next-step')).toHaveTextContent(USDT_RECHECKING_NEXT_STEP_COPY);
+    unmount();
+
+    renderPhase('rechecking', true);
+    expect(screen.queryByTestId('usdt-recheck-next-step')).not.toBeInTheDocument();
+  });
+
+  it.each(['received', 'final'] as const)('shows no re-check next step while the payment is %s', (phase) => {
+    renderPhase(phase, false);
+
+    expect(screen.queryByTestId('usdt-recheck-next-step')).not.toBeInTheDocument();
+  });
+
+  it.each([
+    ['late_settlement', USDT_SELLER_REVIEW_COPY.late_settlement],
+    ['amount_mismatch', USDT_SELLER_REVIEW_COPY.amount_mismatch],
+  ] as const)('gives the seller a USDT line for a %s review instead of the generic one', (reviewReason, copy) => {
+    const { order } = createUsdtOrderFixture('final');
+    renderCard(order, createPaymentFixture('manual_review', { adapter: 'paykit', reviewReason }), false);
+
+    expect(screen.getByTestId('payment-manual-review-copy')).toHaveTextContent(copy);
+    expect(screen.getByTestId('payment-manual-review-copy')).not.toHaveTextContent(/verified event/);
+  });
+
+  it.each(['unpinned_legacy', null] as const)(
+    'keeps the generic review line for the seller when the reason is %s',
+    (reviewReason) => {
+      const { order } = createUsdtOrderFixture('final');
+      renderCard(order, createPaymentFixture('manual_review', { adapter: 'paykit', reviewReason }), false);
+
+      expect(screen.getByTestId('payment-manual-review-copy')).toHaveTextContent(/A verified event arrived/);
+    },
+  );
+
+  it('leaves the buyer review copy untouched by the seller line', () => {
+    const { order } = createUsdtOrderFixture('final');
+    renderCard(
+      order,
+      createPaymentFixture('manual_review', { adapter: 'paykit', reviewReason: 'late_settlement' }),
+      true,
+    );
+
+    expect(screen.getByTestId('payment-manual-review-copy')).toHaveTextContent(
+      'Payment received — the seller is reviewing it.',
+    );
   });
 
   it('puts an amount-mismatch review in USDT terms for the buyer', () => {

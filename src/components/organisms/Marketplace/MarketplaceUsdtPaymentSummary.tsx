@@ -1,6 +1,7 @@
 import { Typography } from '@/atoms/Typography/Typography';
 import {
   USDT_NETWORK_LABEL,
+  USDT_RECHECKING_NEXT_STEP_COPY,
   usdtAmountLabel,
   usdtPaidAsLine,
   usdtPhaseCopy,
@@ -57,6 +58,11 @@ export function MarketplaceUsdtPaymentSummary({
       {showCopy && copy ? (
         <Typography as="p" className="text-sm text-muted-foreground" data-testid="usdt-phase-copy">
           {copy}
+        </Typography>
+      ) : null}
+      {phase === 'rechecking' && !isBuyer ? (
+        <Typography as="p" className="text-sm text-muted-foreground" data-testid="usdt-recheck-next-step">
+          {USDT_RECHECKING_NEXT_STEP_COPY}
         </Typography>
       ) : null}
     </div>

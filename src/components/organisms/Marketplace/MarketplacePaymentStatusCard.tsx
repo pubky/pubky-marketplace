@@ -80,6 +80,7 @@ import {
   USDT_FUNDS_HINT,
   USDT_WALLET_HINT,
   usdtPhaseCopy,
+  usdtSellerReviewCopy,
 } from '@/libs/commerce/usdt-buyer-status';
 import { paymentReviewRail } from '@/libs/commerce/usdt-payment-review';
 import { getDeployEnv } from '@/libs/runtime-config/runtime-config';
@@ -91,6 +92,9 @@ import { useAuthStore } from '@/stores/auth/auth.store';
 import { MarketplaceBitcoinAmountBreakdown } from './MarketplaceBitcoinAmountBreakdown';
 import { SellerUsdtResolutionReview } from './MarketplaceUsdtPaymentReview';
 import { MarketplaceUsdtPaymentSummary } from './MarketplaceUsdtPaymentSummary';
+
+const GENERIC_MANUAL_REVIEW_COPY =
+  'A verified event arrived outside the normal flow (for example after the payment window expired), so the seller must resolve this order manually. No funds are held by this marketplace.';
 
 const PAYKIT_DELIVERY_FAILED_COPY =
   "Your wallet didn't receive the request. In Bitkit, add the seller as a contact, then try again.";
@@ -349,7 +353,8 @@ export function MarketplacePaymentStatusCard({
             ? buyerBitcoinReviewCopy(order, payment)
             : isBuyer && order.paymentMethod === 'usdt'
               ? usdtPhaseCopy(order, payment, true)
-              : 'A verified event arrived outside the normal flow (for example after the payment window expired), so the seller must resolve this order manually. No funds are held by this marketplace.'}
+              : ((!isBuyer && order.paymentMethod === 'usdt' ? usdtSellerReviewCopy(payment) : null) ??
+                GENERIC_MANUAL_REVIEW_COPY)}
         </Typography>
       )}
 
