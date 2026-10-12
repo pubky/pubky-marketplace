@@ -105,6 +105,23 @@ export const USDT_SELLER_PHASE_COPY: Record<Exclude<UsdtSettlementPhase, 'review
   rechecking: "The buyer's payment is being re-checked on Arbitrum. Don't ship.",
 };
 
+/**
+ * What the seller does while a reorged payment is re-checked. Plan §2.5: money
+ * that never settles owes no refund, and the seller checks Bitkit before
+ * approving a cancellation. The order carries no re-check timestamp, so the
+ * line shows for the whole re-checking phase and reads as conditional.
+ */
+export const USDT_RECHECKING_NEXT_STEP_COPY =
+  "If the payment doesn't come back, check Bitkit before approving any cancellation.";
+
+/** The seller's review line for a USDT payment, keyed by why it needs a decision. */
+export const USDT_SELLER_REVIEW_COPY = {
+  late_settlement:
+    'This USDT payment arrived after the payment window ended, so you decide the outcome below. No funds are held by this marketplace.',
+  amount_mismatch:
+    "This USDT payment doesn't match the order total, so you decide the outcome below. No funds are held by this marketplace.",
+} as const;
+
 export const USDT_PHASE_BADGE_LABEL: Record<UsdtSettlementPhase, string> = {
   awaiting: 'Awaiting payment',
   received: 'Payment received',
@@ -119,6 +136,16 @@ export function usdtPhaseCopy(order: UsdtStatusOrder, payment: UsdtStatusPayment
   if (phase === null) return null;
   if (phase === 'review') return isBuyer ? usdtBuyerReviewCopy(payment) : null;
   return (isBuyer ? USDT_BUYER_PHASE_COPY : USDT_SELLER_PHASE_COPY)[phase];
+}
+
+/**
+ * The seller's reason-keyed line for a USDT payment in manual review, or null
+ * for a reason that has none (`refund_required` has its own copy, and an
+ * unknown or missing reason keeps the generic review line).
+ */
+export function usdtSellerReviewCopy(payment: UsdtStatusPayment): string | null {
+  const reason = payment?.reviewReason;
+  return reason === 'late_settlement' || reason === 'amount_mismatch' ? USDT_SELLER_REVIEW_COPY[reason] : null;
 }
 
 function usdtBuyerReviewCopy(payment: UsdtStatusPayment): string {
