@@ -129,6 +129,18 @@ export type THomeserverUserEvent = {
   eventType: string;
 };
 
+/** A user event with the resource it touched: `owner` (z32) and absolute `path`. */
+export type THomeserverResourceEvent = THomeserverUserEvent & {
+  owner: string;
+  path: string;
+};
+
+/** Credentials the inbox service accepts: the grant JWS plus a client-signed custom proof. */
+export type THomeserverInboxCredentials = {
+  grant: string;
+  pop: string;
+};
+
 // Utility function parameter types
 export type TParseResponseOrUndefinedParams = {
   response: Response;
