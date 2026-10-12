@@ -585,6 +585,43 @@ describe('Marketplace checkout — visual regression', () => {
     await captureCheckout('checkout-durable-desktop');
   });
 
+  it('explains the missing USDT option on a bitcoin-priced cart at desktop viewport', async () => {
+    const { bitcoinPriced } = await fixtures;
+    view.items = bitcoinPriced;
+    view.adapterMode = 'transaction-service';
+    view.deployEnv = 'production';
+    view.hasMarketplaceSession = true;
+    view.usdtAvailable = true;
+
+    await renderForVRT(<MarketplaceCheckout />, { viewport: VRT_VIEWPORT_DESKTOP });
+    await vi.waitFor(() => {
+      if (!document.querySelector('[data-testid="marketplace-checkout-usdt-missing-note"]')) {
+        throw new Error('The missing-USDT note has not rendered yet.');
+      }
+    });
+    expect(document.querySelector('[data-testid="marketplace-checkout-method-usdt"]')).toBeNull();
+    await captureCheckout('checkout-usdt-missing-bitcoin-priced-desktop');
+  });
+
+  it('names the seller who does not take USDT on a multi-seller cart at desktop viewport', async () => {
+    const { multiSeller } = await fixtures;
+    view.items = multiSeller;
+    view.adapterMode = 'transaction-service';
+    view.deployEnv = 'production';
+    view.hasMarketplaceSession = true;
+    view.usdtAvailable = true;
+    view.usdtSellers = [multiSeller[0].listing.record.ownerPubky];
+
+    await renderForVRT(<MarketplaceCheckout />, { viewport: VRT_VIEWPORT_DESKTOP });
+    await vi.waitFor(() => {
+      if (!document.querySelector('[data-testid="marketplace-checkout-usdt-missing-note"]')) {
+        throw new Error('The missing-USDT note has not rendered yet.');
+      }
+    });
+    expect(document.querySelector('[data-testid="marketplace-checkout-method-usdt"]')).toBeNull();
+    await captureCheckout('checkout-usdt-missing-seller-desktop');
+  });
+
   it('renders USDT beside Bitcoin and PayPal, unselected, at desktop viewport', async () => {
     const { singleSeller } = await fixtures;
     view.items = singleSeller;
@@ -685,43 +722,6 @@ describe('Marketplace checkout — visual regression', () => {
       }
     });
     await captureCheckout('checkout-usdt-selected-mobile');
-  });
-
-  it('explains the missing USDT option on a bitcoin-priced cart at desktop viewport', async () => {
-    const { bitcoinPriced } = await fixtures;
-    view.items = bitcoinPriced;
-    view.adapterMode = 'transaction-service';
-    view.deployEnv = 'production';
-    view.hasMarketplaceSession = true;
-    view.usdtAvailable = true;
-
-    await renderForVRT(<MarketplaceCheckout />, { viewport: VRT_VIEWPORT_DESKTOP });
-    await vi.waitFor(() => {
-      if (!document.querySelector('[data-testid="marketplace-checkout-usdt-missing-note"]')) {
-        throw new Error('The missing-USDT note has not rendered yet.');
-      }
-    });
-    expect(document.querySelector('[data-testid="marketplace-checkout-method-usdt"]')).toBeNull();
-    await captureCheckout('checkout-usdt-missing-bitcoin-priced-desktop');
-  });
-
-  it('names the seller who does not take USDT on a multi-seller cart at desktop viewport', async () => {
-    const { multiSeller } = await fixtures;
-    view.items = multiSeller;
-    view.adapterMode = 'transaction-service';
-    view.deployEnv = 'production';
-    view.hasMarketplaceSession = true;
-    view.usdtAvailable = true;
-    view.usdtSellers = [multiSeller[0].listing.record.ownerPubky];
-
-    await renderForVRT(<MarketplaceCheckout />, { viewport: VRT_VIEWPORT_DESKTOP });
-    await vi.waitFor(() => {
-      if (!document.querySelector('[data-testid="marketplace-checkout-usdt-missing-note"]')) {
-        throw new Error('The missing-USDT note has not rendered yet.');
-      }
-    });
-    expect(document.querySelector('[data-testid="marketplace-checkout-method-usdt"]')).toBeNull();
-    await captureCheckout('checkout-usdt-missing-seller-desktop');
   });
 
   it('renders the locks-paykit checkout labels at desktop viewport', async () => {
