@@ -1,3 +1,4 @@
+import { Suspense } from 'react';
 import { stripPubkyPrefix } from '@/libs/utils/utils';
 import { ChatConversation } from '@/templates/Chat/ChatConversation';
 
@@ -8,5 +9,9 @@ interface ChatConversationPageProps {
 export default async function ChatConversationPage({ params }: ChatConversationPageProps) {
   const { pubky } = await params;
   const peerPubky = stripPubkyPrefix(decodeURIComponent(pubky));
-  return <ChatConversation peerPubky={peerPubky} />;
+  return (
+    <Suspense>
+      <ChatConversation peerPubky={peerPubky} />
+    </Suspense>
+  );
 }
