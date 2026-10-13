@@ -20,6 +20,7 @@ Minimum:
 ```bash
 MIV_ENV=staging                       # or production
 SHOP_ORIGINS=https://staging.shop.example
+SHOP_PATH=/marketplace                # default; /shop/marketplace when the Shop is mounted at pubky.app/shop
 SERVICE_URL=https://api.staging.shop.example
 PAYKIT_URL=https://paykit.staging.shop.example
 LOCKS_URL=https://locks.staging.shop.example
@@ -108,7 +109,7 @@ Exit code 0 means no FAIL; `--strict` also fails on WARN. `report.md` in the out
 | `wiring`  | `wiring.shop-paykit-server-api`           | the Shop's Paykit Server API (`fork` when unset) matches the Paykit server it is wired to                            | set `PUBKY_RUNTIME_PAYKIT_SERVER_API` (`upstream` for upstream Paykit)                                    |
 | `version` | `version.<svc>`                           | the running commit equals the source pin (`<SVC>_BUILD_SOURCE` when a wrapper repo builds the image)                 | rebuild from the pin                                                                                      |
 | `db`      | `db.<svc>.migrations`                     | `_sqlx_migrations` holds exactly the source's migrations, all successful, with matching SHA-384 checksums. Without a source pin, `db.<svc>.migrations-applied` checks only for failures and the exact match is SKIP | extra or mismatched rows mean another build migrated this database: use a fresh database for this release |
-| `flow`    | `flow.paykit-setup.*`, `flow.locks-connect.*` | the setup and connect pages frame each Shop origin and refuse a foreign one                                      | fix `[setup] allowed_origins` or `allowed_return_origins`                                                 |
+| `flow`    | `flow.paykit-setup.*`, `flow.locks-connect.*` | the setup and connect pages frame each Shop origin and refuse a foreign one                                      | fix `[setup] allowed_origins` or `allowed_return_origins` (the `grant_connect` list when Locks runs `grant-connect`) |
 | `write`   | `write.nexus*`                            | a fresh post appears in the Nexus, its delete is indexed, and the probe data is gone from the homeserver             | check the watcher's homeserver and its log                                                                |
 | `browser` | `browser.<host>.*`                        | the running client reads from this Nexus, calls no retired host, and logs no CORS error                              | fix the Shop runtime config or CORS                                                                       |
 | `deep`    | `deep.<name>`                             | each configured staging proof exits 0 and prints its pass marker                                                     | read `deep-<name>.log` in the output folder                                                               |

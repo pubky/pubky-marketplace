@@ -1,11 +1,12 @@
 import type { Session } from '@synonymdev/pubky';
 import { act, renderHook, waitFor } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AppError } from '@/libs/error/error';
 import { AuthErrorCode } from '@/libs/error/error.codes';
 import { ErrorCategory, ErrorService } from '@/libs/error/error.types';
 import { type PassportApproval, PassportAttemptError } from '@/libs/passport/passport-popup';
 import { AUTH_FLOW_CANCELED_ERROR_NAME } from '@/services/homeserver/error.utils';
+import { setBasePath } from '@/test-utils/base-path';
 import { asOpaque } from '@/test-utils/type-assertions';
 import { PASSPORT_ATTEMPT_FAILURE_COPY, usePassportSignIn } from './usePassportSignIn';
 
@@ -16,6 +17,7 @@ const mocks = vi.hoisted(() => ({
   passportSignIn: true,
   attempt: null as null | ((begin: () => Promise<PassportApproval<unknown>>) => Promise<unknown>),
   startPassportAttempt: vi.fn(),
+  passportCallbacks: vi.fn(),
   toast: vi.fn(),
 }));
 
@@ -35,7 +37,8 @@ vi.mock('@/libs/runtime-config/runtime-config', async (importOriginal) => ({
 
 vi.mock('@/libs/passport/passport-popup', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/libs/passport/passport-popup')>();
-  return { ...actual, startPassportAttempt: mocks.startPassportAttempt };
+  mocks.passportCallbacks.mockImplementation(actual.passportCallbacks);
+  return { ...actual, startPassportAttempt: mocks.startPassportAttempt, passportCallbacks: mocks.passportCallbacks };
 });
 
 vi.mock('@/molecules/Toaster/use-toast', () => ({ toast: mocks.toast }));
@@ -50,6 +53,8 @@ describe('usePassportSignIn', () => {
     mocks.initializeAuthenticatedSession.mockResolvedValue(undefined);
   });
 
+  afterEach(() => setBasePath(''));
+
   it('is available only with a holdable grant key and Passport switched on', () => {
     expect(renderHook(() => usePassportSignIn()).result.current.isAvailable).toBe(true);
 
@@ -59,6 +64,26 @@ describe('usePassportSignIn', () => {
     mocks.passportSignIn = true;
     mocks.isGrantSignInAvailable.mockReturnValue(false);
     expect(renderHook(() => usePassportSignIn()).result.current.isAvailable).toBe(false);
+  });
+
+  it('asks Passport to return under the mount path when the Shop is served from /shop', async () => {
+    setBasePath('/shop');
+    mocks.getPassportGrantAuthUrl.mockResolvedValue({
+      authorizationUrl: 'pubkyauth://signin_grant?caps=x',
+      awaitApproval: Promise.resolve(session),
+      cancelAuthFlow: vi.fn(),
+    });
+    mocks.startPassportAttempt.mockImplementation(async (begin: () => Promise<PassportApproval<Session>>) => {
+      const approval = await begin();
+      return await approval.result;
+    });
+
+    const { result } = renderHook(() => usePassportSignIn());
+    act(() => result.current.start());
+
+    await waitFor(() => expect(mocks.getPassportGrantAuthUrl).toHaveBeenCalled());
+    expect(mocks.passportCallbacks).toHaveBeenCalledWith(window.location.origin, '/shop');
+    await waitFor(() => expect(result.current.isPending).toBe(false));
   });
 
   it('runs the Shop grant ceremony inside the Passport attempt and initializes the approved session', async () => {

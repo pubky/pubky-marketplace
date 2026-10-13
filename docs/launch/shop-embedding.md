@@ -56,20 +56,31 @@ On the App's side:
 
 ## Allowed origins on the backing services
 
-The Shop's origin changes to `https://pubky.app`, and the setup and connect frames are nested one level deeper, so each service must accept it. Keep the `shop.pubky.app` entries in place until the standalone site is retired; it is the rollback.
+At launch the Shop is served at `https://pubky.app/shop` (staging: `https://staging.pubky.app/shop`). Every allow-list below holds **origins only**: scheme and host, no path, no trailing slash. `https://pubky.app/shop` is rejected by Locks and by the Shop's own config, and Paykit and the service compare the origin of the URL they are given. The `/shop` base path matters only where a full URL is built (the PayPal return, covered below).
 
-| Service | Setting | Add |
-|---|---|---|
-| Marketplace service | `SERVICE_ALLOWED_ORIGINS` (CORS) | `https://pubky.app` |
-| Shop grant bridge (in the Shop deployment) | `SHOP_ALLOWED_ORIGINS` | `https://pubky.app` |
-| Paykit server | `[setup] allowed_origins` | `https://pubky.app` |
-| Lock Server | `allowed_return_origins` | `https://pubky.app` |
-| Marketplace Nexus | CORS allow-list | `https://pubky.app` |
-| Fiat verifier | CORS allow-list | `https://pubky.app` |
+`shop.pubky.app` permanently redirects (301) to `pubky.app/shop`, keeping path and query, so it no longer serves the Shop and drops out of every list once the redirect is live. Development instances keep their own hosted URLs (for example `https://pubky-marketplace-staging.vercel.app`) and stay in the lists of the stack they talk to, so the same Shop build can be tried from them.
 
-Also decide for the embedded deployment: `SHOP_PUBLIC_ORIGIN` and `SHOP_GRANT_ASSERTION_ISSUER` must be equal, and the marketplace service must trust that issuer and its key. If the embedded deployment is a separate instance from `shop.pubky.app`, it carries its own origin there; this is a trust change on the service, not a Shop setting.
+| Service | Setting | Production | Staging |
+|---|---|---|---|
+| Marketplace service | `ALLOWED_ORIGINS` (CORS, comma separated) | `https://pubky.app` | `https://staging.pubky.app` |
+| Marketplace service | `PUBLIC_APP_ORIGIN` (PayPal `return` and `cancel_return`, the buyer lands on `{value}/marketplace/orders`) | `https://pubky.app/shop` | `https://staging.pubky.app/shop` |
+| Marketplace service | `SHOP_GRANT_ASSERTION_ISSUER` | `https://pubky.app` | `https://staging.pubky.app` |
+| Shop grant bridge (Shop deployment) | `SHOP_ALLOWED_ORIGINS` (JSON array) | `["https://pubky.app"]` | `["https://staging.pubky.app"]` |
+| Shop grant bridge (Shop deployment) | `SHOP_PUBLIC_ORIGIN` and `SHOP_GRANT_ASSERTION_ISSUER` (equal, one origin) | `https://pubky.app` | `https://staging.pubky.app` |
+| Paykit server | `[setup] allowed_origins` | `["https://pubky.app"]` | `["https://staging.pubky.app"]` |
+| Lock Server | `[creator_authority_acquisition.grant_connect] allowed_return_origins` | `["https://pubky.app"]` | `["https://staging.pubky.app"]` |
+| Marketplace Nexus | CORS allow-list | `https://pubky.app` | `https://staging.pubky.app` |
+| Fiat verifier | CORS allow-list and `BUYER_RETURN_ORIGINS` | `https://pubky.app` | `https://staging.pubky.app` |
 
-Apply on staging first, then re-run [install verification](install-verification.md) with the new origin: the `service.cors.*`, `flow.paykit-setup.*` and `flow.locks-connect.*` checks cover these settings.
+Notes:
+
+- **Lock Server mode.** With `method = "grant-connect"` (the launch mode) the Lock Server reads only `grant_connect.allowed_return_origins`; the `legacy_connect` list is ignored. A server still on `legacy-connect` uses `[creator_authority_acquisition.legacy_connect] allowed_return_origins`. Neither accepts `*` in production.
+- **Grant-bridge trust.** `SHOP_PUBLIC_ORIGIN` and `SHOP_GRANT_ASSERTION_ISSUER` on the Shop must be equal, and the marketplace service's `SHOP_GRANT_ASSERTION_ISSUER` must name the same origin and trust the Shop's assertion key (`SHOP_GRANT_ASSERTION_VERIFYING_KEYS_JSON`). Moving the Shop to `pubky.app` changes the issuer from `https://shop.pubky.app`; it is a trust change on the service, not only a Shop setting.
+- **PayPal return.** The service builds `return` and `cancel_return` as `{PUBLIC_APP_ORIGIN}/marketplace/orders`. With the value above the buyer lands on `https://pubky.app/shop/marketplace/orders`, a full page load of the Shop (see the `Returns that land top-level` note above). A value without `/shop` sends the buyer to a `pubky.app` route that is not the Shop. The service accepts a mount path in this one variable; see the service README.
+- **Passport.** The Passport return page is `{origin}/shop/auth/passport/return`; it needs no allow-list entry on our side. Passport itself accepts any HTTPS callback.
+- **Development instances.** A development Shop on its own host (Vercel or Railway) lists its own origin in `SHOP_ALLOWED_ORIGINS`, `SHOP_PUBLIC_ORIGIN` and `SHOP_GRANT_ASSERTION_ISSUER`. The development services it talks to list that host in `ALLOWED_ORIGINS`, Paykit `[setup] allowed_origins`, Locks `allowed_return_origins` and the Nexus and fiat verifier CORS lists, next to `https://staging.pubky.app` when both are in use.
+
+Apply on staging first, then re-run [install verification](install-verification.md) against `https://staging.pubky.app` with `SHOP_PATH=/shop/marketplace`: the `service.cors.*`, `wiring.*-origins`, `flow.paykit-setup.*` and `flow.locks-connect.*` checks cover these settings.
 
 ## Leaving the frame
 

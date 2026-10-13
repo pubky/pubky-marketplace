@@ -100,6 +100,18 @@ describe('passportCallbacks', () => {
     });
   });
 
+  it('returns under the mount path when the Shop is served from pubky.app/shop', () => {
+    expect(passportCallbacks('https://pubky.app', '/shop')).toEqual({
+      xSource: 'Pubky Shop',
+      xSuccess: 'https://pubky.app/shop/auth/passport/return?outcome=success',
+      xError: 'https://pubky.app/shop/auth/passport/return?outcome=error',
+      xCancel: 'https://pubky.app/shop/auth/passport/return?outcome=cancel',
+    });
+    expect(passportCallbacks('https://staging.pubky.app', '/shop')?.xSuccess).toBe(
+      'https://staging.pubky.app/shop/auth/passport/return?outcome=success',
+    );
+  });
+
   it('sends no callbacks from plain HTTP, which Passport would reject', () => {
     expect(passportCallbacks('http://localhost:3000')).toBeUndefined();
   });

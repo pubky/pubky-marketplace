@@ -22,6 +22,7 @@ import {
   extractRuntimeConfig,
   frameAncestorsAllow,
   isTruthy,
+  locksReturnOriginsFromToml,
   missingOrigins,
   normalizeBase,
   parseEnvFile,
@@ -112,6 +113,8 @@ const url = (key) => {
   return value ? value.replace(/\/+$/, '') : undefined;
 };
 const SHOP_ORIGINS = parseList(get('SHOP_ORIGINS')).map((o) => o.replace(/\/+$/, ''));
+// The Shop's landing path on each origin: `/shop/marketplace` when it is mounted at pubky.app/shop.
+const SHOP_PATH = get('SHOP_PATH') ?? '/marketplace';
 const SERVICE = url('SERVICE_URL');
 const PAYKIT = url('PAYKIT_URL');
 const LOCKS = url('LOCKS_URL');
@@ -130,7 +133,7 @@ const facts = {
   locksPublicKey: get('LOCKS_PUBLIC_KEY') ?? locksToml['credentials.lock_server_public_key'],
   locksPaykitServerUrl: get('LOCKS_PAYKIT_SERVER_URL') ?? locksToml['paykit.server_url'],
   locksReturnOrigins:
-    get('LOCKS_ALLOWED_RETURN_ORIGINS') ?? locksToml['creator_authority_acquisition.legacy_connect.allowed_return_origins'],
+    get('LOCKS_ALLOWED_RETURN_ORIGINS') ?? locksReturnOriginsFromToml(locksToml),
   locksRuntimeEnvironment: get('LOCKS_RUNTIME_ENVIRONMENT') ?? locksToml['runtime.environment'],
   servicePaykitUrl: get('SERVICE_PAYKIT_SERVER_URL'),
   serviceLocksUrl: get('SERVICE_LOCKS_SERVER_URL'),
@@ -366,12 +369,11 @@ async function sectionTls() {
 async function sectionShop() {
   heading('shop');
   if (!SHOP_ORIGINS.length) return fail('shop.origins', 'Shop origins configured', '', 'set SHOP_ORIGINS');
-  const path = get('SHOP_PATH') ?? '/marketplace';
   for (const origin of SHOP_ORIGINS) {
     const host = new URL(origin).host;
-    const page = await http(`${origin}${path}`);
+    const page = await http(`${origin}${SHOP_PATH}`);
     const isHtml = (page.headers.get('content-type') ?? '').includes('text/html');
-    if (!check(`shop.page.${host}`, page.status === 200 && isHtml, `${path} loads`, describe(page), 'check the Shop deployment and its logs')) continue;
+    if (!check(`shop.page.${host}`, page.status === 200 && isHtml, `${SHOP_PATH} loads`, describe(page), 'check the Shop deployment and its logs')) continue;
     const hsts = page.headers.get('strict-transport-security');
     if (hsts) pass(`shop.hsts.${host}`, 'HSTS header', hsts);
     else warn(`shop.hsts.${host}`, 'HSTS header', 'missing', 'send Strict-Transport-Security: max-age=63072000');
@@ -845,7 +847,7 @@ async function probeFlows() {
     if (state.paykitFlavor === 'fork') skip('flow.paykit-setup', 'Paykit setup page frames the Shop', 'the fork’s /setup needs a seller key; config check covers it');
     else {
       for (const origin of SHOP_ORIGINS) {
-        const page = await http(`${PAYKIT}/setup?return_to=${encodeURIComponent(`${origin}/marketplace`)}&state=install-verify`);
+        const page = await http(`${PAYKIT}/setup?return_to=${encodeURIComponent(`${origin}${SHOP_PATH}`)}&state=install-verify`);
         const csp = page.headers.get('content-security-policy') ?? '';
         check(`flow.paykit-setup.${new URL(origin).host}`, page.status === 200 && frameAncestorsAllow(csp, origin), 'Paykit setup page frames the Shop', `${describe(page)}, ${csp || 'no CSP'}`, `add ${origin} to [setup] allowed_origins`);
       }
@@ -857,9 +859,9 @@ async function probeFlows() {
   }
   if (LOCKS) {
     for (const origin of SHOP_ORIGINS) {
-      const page = await http(`${LOCKS}/connect?return_to=${encodeURIComponent(`${origin}/marketplace`)}&state=install-verify&delivery=postmessage`);
+      const page = await http(`${LOCKS}/connect?return_to=${encodeURIComponent(`${origin}${SHOP_PATH}`)}&state=install-verify&delivery=postmessage`);
       const csp = page.headers.get('content-security-policy') ?? '';
-      check(`flow.locks-connect.${new URL(origin).host}`, page.status === 200 && frameAncestorsAllow(csp, origin), 'Locks connect page frames the Shop', `${describe(page)}, ${csp || 'no CSP'}`, `add ${origin} to [creator_authority_acquisition.legacy_connect] allowed_return_origins`);
+      check(`flow.locks-connect.${new URL(origin).host}`, page.status === 200 && frameAncestorsAllow(csp, origin), 'Locks connect page frames the Shop', `${describe(page)}, ${csp || 'no CSP'}`, `add ${origin} to allowed_return_origins of the acquisition method in use ([creator_authority_acquisition.grant_connect] for grant-connect)`);
     }
     const foreign = await http(`${LOCKS}/connect?return_to=${encodeURIComponent(`${PROBE_ORIGIN}/x`)}&state=install-verify&delivery=postmessage`);
     check('flow.locks-connect.foreign', foreign.status === 400, 'Locks connect refuses other origins', describe(foreign), 'allowed_return_origins must list exact origins');
@@ -878,7 +880,7 @@ async function probeBrowser() {
   heading('browser');
   const { runShopBrowserProbe } = await import('./shop-browser-probe.mjs');
   for (const origin of SHOP_ORIGINS)
-    await runShopBrowserProbe({ get, origin, path: get('SHOP_PATH') ?? '/marketplace', service: SERVICE, nexus: NEXUS, forbiddenHosts: FORBIDDEN_HOSTS, out: OUT, record });
+    await runShopBrowserProbe({ get, origin, path: SHOP_PATH, service: SERVICE, nexus: NEXUS, forbiddenHosts: FORBIDDEN_HOSTS, out: OUT, record });
 }
 
 async function probeDeep() {
