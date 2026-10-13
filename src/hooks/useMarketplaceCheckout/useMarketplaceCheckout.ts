@@ -307,18 +307,19 @@ export function useMarketplaceCheckout(
     };
   }, []);
 
+  // A Locks listing registers as shipping, but the Lock Server delivers what
+  // it sells: the buyer pays it as digital, which collects no address and
+  // needs no seller deliverable.
+  const isLocksItem = (item: MarketplaceCartItem) => item.listing.record.digitalLock !== undefined;
   const publishedByItem = new Map<string, MarketplaceFulfillmentMethod[]>();
   for (const item of items) {
     publishedByItem.set(
       item.id,
-      commerceListingFulfillmentMethods(
-        item.listing.record.fulfillmentMethods,
-        item.listing.record.digitalLock !== undefined,
-      ),
+      isLocksItem(item) ? ['digital'] : commerceListingFulfillmentMethods(item.listing.record.fulfillmentMethods),
     );
   }
   const publishedFor = (item: MarketplaceCartItem) => publishedByItem.get(item.id) ?? [];
-  const anyPublishesDigital = items.some((item) => publishedFor(item).includes('digital'));
+  const anyPublishesDigital = items.some((item) => !isLocksItem(item) && publishedFor(item).includes('digital'));
 
   // The deployment's digital capability (digital delivery design §6 B5):
   // digital lines are offered only when /health reports it.
@@ -344,15 +345,19 @@ export function useMarketplaceCheckout(
   const physicalOptionsFor = (item: MarketplaceCartItem) =>
     publishedFor(item).filter((method) => method === 'shipping' || (method === 'pickup' && pickupAvailable === true));
   const digitalOffered = (item: MarketplaceCartItem) =>
-    digitalAvailable === true && publishedFor(item).includes('digital');
+    (isLocksItem(item) || digitalAvailable === true) && publishedFor(item).includes('digital');
   // A pickup line whose capability is still loading may yet be physical.
   const physicalPossible = (item: MarketplaceCartItem) =>
     physicalOptionsFor(item).length > 0 || (pickupAvailable === null && publishedFor(item).includes('pickup'));
   const digitalPending = (item: MarketplaceCartItem) =>
-    digitalAvailable === null && publishedFor(item).includes('digital') && !physicalPossible(item);
+    !isLocksItem(item) &&
+    digitalAvailable === null &&
+    publishedFor(item).includes('digital') &&
+    !physicalPossible(item);
   const goesDigital = (item: MarketplaceCartItem) =>
     digitalOffered(item) && (!physicalPossible(item) || digitalChoices[item.id] === true);
   const digitalItems = items.filter(goesDigital);
+  const deliverableItems = digitalItems.filter((item) => !isLocksItem(item));
   const physicalItems = items.filter((item) => !goesDigital(item) && !digitalPending(item));
 
   // Per-seller-group fulfillment resolution (§A2): the intersection of the
@@ -415,7 +420,7 @@ export function useMarketplaceCheckout(
   // lines change or a checkout refusal says the delivery moved.
   const digitalKindsKey = JSON.stringify({
     attempt: digitalKindsAttempt,
-    lines: digitalItems.map((item) => [item.id, item.listing.record.ownerPubky, item.listing.record.listingId]),
+    lines: deliverableItems.map((item) => [item.id, item.listing.record.ownerPubky, item.listing.record.listingId]),
   });
   useEffect(() => {
     const { lines } = JSON.parse(digitalKindsKey) as { lines: Array<[string, string, string]> };
@@ -440,10 +445,10 @@ export function useMarketplaceCheckout(
       active = false;
     };
   }, [digitalKindsKey]);
-  const kindsLoaded = digitalItems.length === 0 || digitalKinds?.key === digitalKindsKey;
+  const kindsLoaded = deliverableItems.length === 0 || digitalKinds?.key === digitalKindsKey;
   const digitalKindForItem = (itemId: string): MarketplaceDigitalDeliveryKind | null | undefined => {
     const item = itemById.get(itemId);
-    if (!item || !goesDigital(item) || !kindsLoaded) return undefined;
+    if (!item || !goesDigital(item) || isLocksItem(item) || !kindsLoaded) return undefined;
     return digitalKinds?.kinds[itemId] ?? null;
   };
   const digitalLineKinds = digitalItems.map((item) => digitalKindForItem(item.id));
@@ -562,7 +567,7 @@ export function useMarketplaceCheckout(
         }
         if (!projection) return null;
         const digital = goesDigital(item);
-        if (digital) freshKinds.push(projection.digitalDelivery?.kind ?? null);
+        if (digital && !isLocksItem(item)) freshKinds.push(projection.digitalDelivery?.kind ?? null);
         const variant = record.variants.find(({ id }) => id === item.variantId);
         const variantOptions = variant ? Object.entries(variant.options) : [];
         return {

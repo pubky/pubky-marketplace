@@ -960,6 +960,35 @@ describe('useMarketplaceCheckout Locks checkout on upstream Paykit', () => {
     expect(CommerceController.bindPaymentMethod).toHaveBeenCalledWith(orderId, 'bitcoin');
   });
 
+  it('checks a Locks line out as digital, with no address, whatever the deployment offers for digital delivery', async () => {
+    vi.mocked(CommerceController.fetchDigitalDeliveryCapability).mockResolvedValue({
+      available: false,
+      maxBytes: null,
+    });
+    const { result } = renderHook(() =>
+      useMarketplaceCheckout(
+        [lockedItem],
+        vi.fn(async () => {}),
+      ),
+    );
+
+    expect(result.current.requiresDeliveryAddress).toBe(false);
+    expect(result.current.fulfillmentForItem(lockedItem.id)).toBe('digital');
+    expect(result.current.isDigitalReady).toBe(true);
+    expect(result.current.digitalNotReadyItemIds).toEqual([]);
+    expect(result.current.isDigitalCapabilityLoading).toBe(false);
+    expect(CommerceController.fetchDigitalDeliveryCapability).not.toHaveBeenCalled();
+
+    const paid = await act(async () => result.current.pay(null));
+
+    expect(paid.ok).toBe(true);
+    const command = vi.mocked(CommerceController.commitCreateMarketplaceCheckout).mock.calls[0][0];
+    expect(command.lines.map((line) => line.fulfillmentChoice)).toEqual(['digital']);
+    expect(command.lines[0].publishedFulfillmentMethods).toEqual(['digital']);
+    expect(command).not.toHaveProperty('deliveryAddress');
+    expect(CommerceController.getMarketplaceListingProjection).toHaveBeenCalledTimes(1);
+  });
+
   it('refuses a cart mixing Locks and other lines before creating any order', async () => {
     const { result } = renderHook(() =>
       useMarketplaceCheckout(
