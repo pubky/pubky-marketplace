@@ -8,12 +8,12 @@ exports[`DialogPrivacy - Snapshots > matches snapshot for default DialogPrivacy 
     data-as-child="true"
     data-testid="dialog-trigger"
   >
-    <span
-      class="cursor-pointer font-medium text-brand"
-      data-testid="typography"
+    <button
+      class="inline cursor-pointer rounded-sm text-sm font-medium text-brand outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+      type="button"
     >
       Privacy Policy
-    </span>
+    </button>
   </div>
   <div
     class="sm:max-w-xl"
