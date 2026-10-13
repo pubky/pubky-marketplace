@@ -69,7 +69,7 @@ describe('CommerceApplication Locks payment start (pubky/locks#72 no-resubmit ru
       .mockResolvedValueOnce(BUNDLE_ID)
       .mockResolvedValueOnce(SECOND_BUNDLE_ID);
     vi.spyOn(MarketplaceGatewayService, 'execute').mockResolvedValue(
-      asOpaque({ ok: true, result: { verification: { windowExpiresAt: '2026-10-06T19:00:00.000Z' } } }),
+      asOpaque({ ok: true, revision: 4, result: { verification: { windowExpiresAt: '2026-10-06T19:00:00.000Z' } } }),
     );
   });
 
@@ -140,6 +140,69 @@ describe('CommerceApplication Locks payment start (pubky/locks#72 no-resubmit ru
     expect(LocksGatewayService.generateBundleId).toHaveBeenCalledTimes(1);
   });
 
+  it('prepares the payment, then submits the bundle, then registers only the payment and bundle ids', async () => {
+    const steps: string[] = [];
+    vi.mocked(MarketplaceGatewayService.execute).mockImplementation(async (_actor, command) => {
+      steps.push(command.kind);
+      return asOpaque({ ok: true, revision: command.kind === 'payment.prepare_locks' ? 4 : 5, result: {} });
+    });
+    vi.spyOn(LocksGatewayService, 'submitPaykitProof').mockImplementation(async () => {
+      steps.push('submit');
+      return pendingLifecycle();
+    });
+
+    await expect(begin()).resolves.toMatchObject({ ok: true });
+
+    expect(steps).toEqual(['payment.prepare_locks', 'submit', 'payment.register_locks']);
+    const [prepare, register] = vi.mocked(MarketplaceGatewayService.execute).mock.calls.map(([, command]) => command);
+    expect(prepare).toMatchObject({ expectedRevision: 3, payload: { paymentId: 'payment-1' } });
+    expect(register).toMatchObject({ expectedRevision: 4 });
+    expect(register.payload).toEqual({ paymentId: 'payment-1', bundleId: BUNDLE_ID });
+  });
+
+  it('registers a bundle submitted before any preparation by preparing first, without a new submit', async () => {
+    store.set('payment-1', {
+      id: 'payment-1',
+      owner_id: ORDER_FIXTURE_BUYER,
+      payment_id: 'payment-1',
+      order_id: order.id,
+      seller_pubky: ORDER_FIXTURE_SELLER,
+      bundle_id: BUNDLE_ID,
+      policy_uri: POLICY_URI,
+      criterion_id: 'paykit',
+      content_path: digitalLock.contentPath,
+      resource_hash: digitalLock.resourceHash,
+      window_expires_at: null,
+      registered: false,
+      created_at: 1,
+      updated_at: 1,
+    });
+    const submit = vi.spyOn(LocksGatewayService, 'submitPaykitProof');
+    vi.spyOn(LocksGatewayService, 'findVerification').mockResolvedValue(pendingLifecycle());
+
+    await expect(begin()).resolves.toMatchObject({ ok: true });
+
+    expect(submit).not.toHaveBeenCalled();
+    expect(vi.mocked(MarketplaceGatewayService.execute).mock.calls.map(([, command]) => command.kind)).toEqual([
+      'payment.prepare_locks',
+      'payment.register_locks',
+    ]);
+    expect(store.get('payment-1')).toMatchObject({ bundle_id: BUNDLE_ID, registered: true });
+  });
+
+  it('submits nothing to the Lock Server when the service refuses the preparation', async () => {
+    vi.mocked(MarketplaceGatewayService.execute).mockResolvedValueOnce(
+      asOpaque({ ok: false, error: { code: 'INVALID_STATE', message: 'refused' } }),
+    );
+    const submit = vi.spyOn(LocksGatewayService, 'submitPaykitProof');
+
+    await expect(begin()).resolves.toMatchObject({ ok: false });
+
+    expect(submit).not.toHaveBeenCalled();
+    expect(LocksGatewayService.generateBundleId).not.toHaveBeenCalled();
+    expect(MarketplaceGatewayService.execute).toHaveBeenCalledTimes(1);
+  });
+
   it('a registered correlation is neither looked up nor submitted again', async () => {
     const submit = vi.spyOn(LocksGatewayService, 'submitPaykitProof').mockResolvedValue(pendingLifecycle());
     const find = vi.spyOn(LocksGatewayService, 'findVerification');
@@ -173,6 +236,7 @@ describe('CommerceApplication Locks payment start (pubky/locks#72 no-resubmit ru
       {
         kind: 'in_flight',
         readerWalletSetupNeeded: true,
+        stalled: false,
       },
     );
     await expect(CommerceApplication.fetchMarketplaceLocksAdmission(ORDER_FIXTURE_BUYER, 'payment-1')).resolves.toEqual(
@@ -186,5 +250,46 @@ describe('CommerceApplication Locks payment start (pubky/locks#72 no-resubmit ru
     ).resolves.toBeNull();
     expect(find).toHaveBeenCalledTimes(3);
     expect(LocksGatewayService.submitPaykitProof).toHaveBeenCalledTimes(1);
+  });
+
+  it('reads a pending task past its admission deadline as stalled, and an expired one by its terminal reason', async () => {
+    vi.spyOn(LocksGatewayService, 'submitPaykitProof').mockResolvedValue(pendingLifecycle());
+    vi.spyOn(LocksGatewayService, 'findVerification')
+      .mockResolvedValueOnce({
+        ...pendingLifecycle(),
+        admission_deadline_at: new Date(Date.now() - 10 * 60_000).toISOString(),
+      })
+      .mockResolvedValueOnce({
+        ...pendingLifecycle(),
+        admission_deadline_at: new Date(Date.now() + 5 * 60_000).toISOString(),
+      })
+      .mockResolvedValueOnce({
+        ...pendingLifecycle(),
+        status: 'expired',
+        failure_message: null,
+        terminal_reason: 'payment_request_rejected',
+      });
+    await begin();
+
+    await expect(CommerceApplication.fetchMarketplaceLocksAdmission(ORDER_FIXTURE_BUYER, 'payment-1')).resolves.toEqual(
+      {
+        kind: 'in_flight',
+        readerWalletSetupNeeded: false,
+        stalled: true,
+      },
+    );
+    await expect(CommerceApplication.fetchMarketplaceLocksAdmission(ORDER_FIXTURE_BUYER, 'payment-1')).resolves.toEqual(
+      {
+        kind: 'in_flight',
+        readerWalletSetupNeeded: false,
+        stalled: false,
+      },
+    );
+    await expect(CommerceApplication.fetchMarketplaceLocksAdmission(ORDER_FIXTURE_BUYER, 'payment-1')).resolves.toEqual(
+      {
+        kind: 'expired',
+        reason: 'payment_request_rejected',
+      },
+    );
   });
 });

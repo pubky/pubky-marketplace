@@ -12,6 +12,7 @@ import {
   ORDER_FIXTURE_BUYER,
   ORDER_FIXTURE_SELLER,
 } from '@/test/fixtures/commerce/orders';
+import { REFUND_FIXTURE_ADDRESS, REFUND_FIXTURE_TX_HASH } from '@/test/fixtures/commerce/usdt-refund.wire';
 import { setHeavySuiteBudgets } from '@/test-utils/load-budget';
 import { MarketplaceOrders } from './MarketplaceOrders';
 
@@ -647,6 +648,44 @@ describe('MarketplaceOrders tabs', () => {
     expect(screen.getByTestId('payment-status')).toBeInTheDocument();
     expect(screen.queryByText(/restocks/)).not.toBeInTheDocument();
     expect(screen.queryByText(/Pay by/)).not.toBeInTheDocument();
+  });
+
+  describe('a USDT payment held for manual review', () => {
+    const usdtOrder = { paymentMethod: 'usdt' as const, paymentAsset: 'USDT' as const, nextActor: 'seller' as const };
+
+    it('lists the seller a sale with the payment card to resolve, not a reservation', () => {
+      ordersState.adapterMode = 'transaction-service';
+      ordersState.orders = [
+        orderView(
+          'pending_payment',
+          'Sold review boots',
+          'seller',
+          { ...usdtOrder, holdExpiresAt: '2026-09-29T10:56:41.980Z' },
+          'manual_review',
+          createPaymentFixture('manual_review', { adapter: 'paykit' }),
+        ),
+      ];
+      render(<MarketplaceOrders />);
+
+      expect(screen.queryByRole('heading', { name: 'Reservations' })).not.toBeInTheDocument();
+      expect(screen.getByText(/Sold review boots/)).toBeInTheDocument();
+      expect(screen.getByText('You sold')).toBeInTheDocument();
+      expect(screen.getByTestId('payment-status')).toBeInTheDocument();
+      expect(screen.queryByText(/restocks/)).not.toBeInTheDocument();
+    });
+
+    it('keeps an unpaid USDT order, and a method-less order in review, as reservations', () => {
+      ordersState.orders = [
+        orderView('pending_payment', 'Sold unpaid usdt bag', 'seller', usdtOrder, 'awaiting_entitlement'),
+        orderView('pending_payment', 'Sold plain review bag', 'seller', { nextActor: 'buyer' }, 'manual_review'),
+      ];
+      render(<MarketplaceOrders />);
+
+      expect(screen.getByRole('heading', { name: 'Reservations' })).toBeInTheDocument();
+      expect(screen.getByText(/Sold unpaid usdt bag/)).toBeInTheDocument();
+      expect(screen.getByText(/Sold plain review bag/)).toBeInTheDocument();
+      expect(screen.queryByText('You sold')).not.toBeInTheDocument();
+    });
   });
 
   it('keeps a cancelled paid order in buyer and seller history, never Abandoned', async () => {
@@ -1348,5 +1387,202 @@ describe('MarketplaceOrders Activity link to an order no section lists', () => {
     window.dispatchEvent(new HashChangeEvent('hashchange'));
 
     expect(await screen.findByTestId('marketplace-linked-order-state')).toHaveTextContent('Cancelled before payment');
+  });
+});
+
+describe('MarketplaceOrders USDT orders', () => {
+  const usdtFields = {
+    paymentMethod: 'usdt' as const,
+    paymentAsset: 'USDT' as const,
+    paymentNetwork: 'arbitrum-one' as const,
+    paymentAmountMinor: 137_000_000,
+    paymentExponent: 6,
+    paymentQuoteBasis: 'parity' as const,
+  };
+
+  beforeEach(() => {
+    ordersState.currentUserPubky = CURRENT_USER;
+    ordersState.orders = [];
+    ordersState.adapterMode = 'transaction-service';
+    ordersState.needsSession = false;
+    ordersState.error = null;
+    useMarketplaceDisplayStore.setState({ showFxEstimate: true, measurementSystem: null });
+  });
+
+  it('never shows the indicative bitcoin estimate on a USDT-paid USD order', async () => {
+    ordersState.orders = [orderView('paid', 'USDT boots', 'buyer', { ...usdtFields, paymentFinality: 'final' })];
+
+    render(<MarketplaceOrders />);
+    await userEvent.setup().click(screen.getByRole('tab', { name: /All 1/i }));
+
+    expect(await screen.findByText('USDT boots × 1')).toBeInTheDocument();
+    expect(screen.queryByText('≈ ₿137,000')).not.toBeInTheDocument();
+  });
+
+  it('links the recorded refund hash and address to Arbiscan as lookups, and never calls them verified', async () => {
+    ordersState.orders = [
+      orderView('refunded_external', 'USDT refunded boots', 'buyer', {
+        ...usdtFields,
+        paymentFinality: 'final',
+        refundDestination: {
+          address: REFUND_FIXTURE_ADDRESS,
+          network: 'arbitrum-one',
+          asset: 'USDT',
+          source: 'buyer_entered',
+          confirmedAt: '2026-10-09T16:00:00.000Z',
+        },
+        externalRefund: {
+          amountMinor: 13_700,
+          transactionId: REFUND_FIXTURE_TX_HASH,
+          recordedAt: '2026-10-09T18:00:00.000Z',
+        },
+      }),
+    ];
+
+    render(<MarketplaceOrders />);
+    await userEvent.setup().click(screen.getByRole('tab', { name: /All 1/i }));
+
+    const lookups = await screen.findByTestId('order-refund-lookups');
+    expect(within(lookups).getByRole('link', { name: 'Look up transaction on Arbiscan' })).toHaveAttribute(
+      'href',
+      `https://arbiscan.io/tx/${REFUND_FIXTURE_TX_HASH}`,
+    );
+    expect(within(lookups).getByRole('link', { name: 'Look up address on Arbiscan' })).toHaveAttribute(
+      'href',
+      `https://arbiscan.io/address/${REFUND_FIXTURE_ADDRESS.toLowerCase()}`,
+    );
+    expect(screen.getByTestId('order-refund-record')).toHaveTextContent("The Shop hasn't checked it on Arbitrum.");
+    expect(screen.getByTestId('order-refund-record')).not.toHaveTextContent(/verified/i);
+  });
+
+  it('links no refund lookup for a recorded reference that is not an Arbitrum hash, or for a non-USDT order', async () => {
+    ordersState.orders = [
+      orderView('refunded_external', 'USDT odd reference boots', 'buyer', {
+        ...usdtFields,
+        paymentFinality: 'final',
+        externalRefund: { amountMinor: 13_700, transactionId: 'BANK-REF-77', recordedAt: '2026-10-09T18:00:00.000Z' },
+      }),
+      orderView('refunded_external', 'Bitcoin refunded boots', 'buyer', {
+        externalRefund: {
+          amountMinor: 10_000,
+          transactionId: REFUND_FIXTURE_TX_HASH,
+          recordedAt: '2026-10-09T18:00:00.000Z',
+        },
+      }),
+    ];
+
+    render(<MarketplaceOrders />);
+    await userEvent.setup().click(screen.getByRole('tab', { name: /All 2/i }));
+
+    expect(await screen.findAllByTestId('order-refund-record')).toHaveLength(2);
+    expect(screen.queryByRole('link', { name: /Arbiscan/ })).not.toBeInTheDocument();
+  });
+
+  it('groups the digits of a large paid-as amount in the receipt', async () => {
+    const view = orderView('paid', 'USDT big receipt boots', 'buyer', {
+      ...usdtFields,
+      total: { amountMinor: 125_000, currency: 'USD', exponent: 2 },
+      paymentAmountMinor: 1_250_000_000,
+      paymentFinality: 'final',
+    });
+    ordersState.orders = [{ ...view, receipt: createReceiptFixture() }];
+
+    render(<MarketplaceOrders />);
+    await userEvent.setup().click(screen.getByRole('tab', { name: /All 1/i }));
+
+    expect(
+      within(await screen.findByTestId('order-receipt-details')).getByTestId('order-receipt-usdt-paid-as'),
+    ).toHaveTextContent('$1,250.00, paid as 1,250.000000 USDT');
+  });
+
+  it('writes the paid-as line in the receipt', async () => {
+    const view = orderView('paid', 'USDT receipt boots', 'buyer', { ...usdtFields, paymentFinality: 'final' });
+    ordersState.orders = [{ ...view, receipt: createReceiptFixture() }];
+
+    render(<MarketplaceOrders />);
+    await userEvent.setup().click(screen.getByRole('tab', { name: /All 1/i }));
+
+    expect(
+      within(await screen.findByTestId('order-receipt-details')).getByTestId('order-receipt-usdt-paid-as'),
+    ).toHaveTextContent('$137.00, paid as 137.000000 USDT');
+    expect(screen.getByTestId('order-receipt-details')).not.toHaveTextContent(/Bitcoin|₿/);
+  });
+
+  it('holds Add tracking back for the seller until Arbitrum finalizes, then opens it', async () => {
+    ordersState.orders = [
+      orderView('paid', 'USDT pending boots', 'seller', { ...usdtFields, paymentFinality: 'pending' }),
+    ];
+    const { unmount } = render(<MarketplaceOrders />);
+    await userEvent.setup().click(screen.getByRole('tab', { name: /All 1/i }));
+    expect(await screen.findByRole('button', { name: 'Add tracking' })).toBeDisabled();
+    expect(screen.getByTestId('usdt-payment-not-final')).toBeInTheDocument();
+    unmount();
+
+    ordersState.orders = [orderView('paid', 'USDT final boots', 'seller', { ...usdtFields, paymentFinality: 'final' })];
+    render(<MarketplaceOrders />);
+    await userEvent.setup().click(screen.getByRole('tab', { name: /All 1/i }));
+    expect(await screen.findByRole('button', { name: 'Add tracking' })).toBeEnabled();
+    expect(screen.queryByTestId('usdt-payment-not-final')).not.toBeInTheDocument();
+  });
+
+  it('tells a seller with an unpaid USDT reservation that the buyer has not paid yet', async () => {
+    ordersState.orders = [
+      orderView(
+        'pending_payment',
+        'USDT reserved boots',
+        'seller',
+        { ...usdtFields, holdExpiresAt: '2026-09-13T20:00:00.000Z' },
+        'awaiting_entitlement',
+      ),
+    ];
+
+    render(<MarketplaceOrders />);
+
+    expect(await screen.findByTestId('marketplace-reservations')).toHaveTextContent(
+      "Waiting for the buyer's USDT payment",
+    );
+  });
+
+  it('keeps Bitcoin, PayPal and unbound orders free of any USDT surface', async () => {
+    ordersState.orders = [
+      orderView('paid', 'Bitcoin boots', 'buyer', { paymentMethod: 'bitcoin' }),
+      orderView('paid', 'PayPal boots', 'buyer', { paymentMethod: 'paypal' }),
+      orderView('paid', 'Locked boots', 'buyer', { paymentMethod: null }),
+    ];
+
+    const { container } = render(<MarketplaceOrders />);
+    await userEvent.setup().click(screen.getByRole('tab', { name: /All 3/i }));
+
+    expect(await screen.findByText('Bitcoin boots × 1')).toBeInTheDocument();
+    expect(container).not.toHaveTextContent(/USDT|Arbitrum/);
+  });
+});
+
+describe('MarketplaceOrders USDT refund address', () => {
+  beforeEach(() => {
+    ordersState.currentUserPubky = CURRENT_USER;
+    ordersState.adapterMode = 'transaction-service';
+    ordersState.needsSession = false;
+    ordersState.error = null;
+    useMarketplaceDisplayStore.setState({ showFxEstimate: false, measurementSystem: null });
+    window.history.replaceState(null, '', '/marketplace/orders');
+  });
+
+  it('shows the refund address only on a USDT order, to the buyer and the seller', async () => {
+    ordersState.orders = [
+      orderView('return_approved', 'Bought USDT boots', 'buyer', { paymentMethod: 'usdt', paymentAsset: 'USDT' }),
+      orderView('return_approved', 'Sold USDT boots', 'seller', { paymentMethod: 'usdt', paymentAsset: 'USDT' }),
+      orderView('return_approved', 'Bought Bitcoin boots', 'buyer', { paymentMethod: 'bitcoin' }),
+      orderView('return_approved', 'Bought PayPal boots', 'buyer', { paymentMethod: 'paypal' }),
+    ];
+
+    render(<MarketplaceOrders />);
+    await userEvent.setup().click(await screen.findByRole('tab', { name: /^All/ }));
+
+    await waitFor(() => expect(screen.getByText('Bought USDT boots × 1')).toBeInTheDocument());
+    expect(screen.getAllByTestId('usdt-refund-buyer')).toHaveLength(1);
+    expect(screen.getAllByTestId('usdt-refund-seller')).toHaveLength(1);
+    expect(screen.getByText('Bought Bitcoin boots × 1')).toBeInTheDocument();
+    expect(screen.getByText('Bought PayPal boots × 1')).toBeInTheDocument();
   });
 });

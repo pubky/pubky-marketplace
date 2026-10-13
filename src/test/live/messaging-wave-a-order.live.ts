@@ -706,7 +706,6 @@ async function createDurableOrder(): Promise<{
         postalCode: '1100-053',
         countryCode: 'PT',
       },
-      guaranteePolicyVersion: 1 as const,
     },
   })) as MarketplaceCommandResponse;
   expect(checkedOut.ok, `checkout.create failed: ${JSON.stringify(checkedOut)}`).toBe(true);

@@ -17,11 +17,13 @@ import {
   bareShippingPresetId,
   useMarketplaceShippingPresets,
 } from '@/hooks/useMarketplaceShippingPresets/useMarketplaceShippingPresets';
+import { useMyDeliveryKey } from '@/hooks/useMyDeliveryKey/useMyDeliveryKey';
 import { formatCommerceMoney } from '@/libs/commerce/format';
 import { isPlausibleShippoApiKey, type ShipFromAddress } from '@/libs/commerce/shipping';
 import type { CommerceShippingPresetModelSchema } from '@/models/commerce/commerce.schema';
 import { ControlledInputField } from '@/molecules/ControlledInputField/ControlledInputField';
 import { BackToMyShop } from '@/molecules/Marketplace/BackToMyShop';
+import { DeliveryPrivacyCard } from '@/molecules/Marketplace/DeliveryPrivacyCard';
 import { SettingsSectionContent } from '@/molecules/Settings/SettingsSectionContent/SettingsSectionContent';
 import { ContentLayout } from '@/organisms/ContentLayout/ContentLayout';
 
@@ -96,7 +98,7 @@ function ShippoIntegrationCard() {
 
   const submit = form.handleSubmit(async (data) => {
     const saved = await shipping.save({
-      // Empty means "keep the stored token" (it is write-only server-side).
+      // Empty means "keep the stored token" (it is write-only: never read back into the form).
       ...(data.shippoApiKey ? { shippoApiKey: data.shippoApiKey } : {}),
       shipFrom: {
         name: data.fromName,
@@ -125,8 +127,10 @@ function ShippoIntegrationCard() {
           </div>
           <Typography as="p" className="mt-1 text-sm text-muted-foreground">
             Buy real shipping labels for paid orders with your own Shippo account. The API token is yours (Shippo
-            settings → API), stored sealed and never readable back; labels are charged by Shippo to your account — this
-            marketplace never touches the money.
+            settings → API). It stays on this device, encrypted, and is sent only to Shippo — never to the marketplace
+            service, which never sees it or your buyers&rsquo; addresses. These settings do not follow you to another
+            browser, and clearing this browser&rsquo;s data removes them. Labels are charged by Shippo to your account;
+            this marketplace never touches the money.
           </Typography>
         </div>
         <SettingsSectionContent>
@@ -182,6 +186,20 @@ function ShippoIntegrationCard() {
         </SettingsSectionContent>
       </CardContent>
     </Card>
+  );
+}
+
+function DeliveryPrivacySection() {
+  const deliveryKey = useMyDeliveryKey();
+  if (!deliveryKey.enabled || deliveryKey.isLoading) return null;
+  return (
+    <DeliveryPrivacyCard
+      status={deliveryKey.status}
+      isWorking={deliveryKey.isWorking}
+      loadFailed={deliveryKey.loadFailed}
+      onCreate={deliveryKey.create}
+      onPublish={deliveryKey.publish}
+    />
   );
 }
 
@@ -291,6 +309,8 @@ export function MarketplaceShippingSettings() {
             </Button>
           )}
         </div>
+
+        <DeliveryPrivacySection />
 
         <ShippoIntegrationCard />
 

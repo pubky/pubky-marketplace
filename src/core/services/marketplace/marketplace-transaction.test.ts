@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
-import { buildMarketplaceListingAggregateId } from '@/libs/commerce/transaction-commands';
+import { buildMarketplaceListingAggregateId, marketplaceCommandSchema } from '@/libs/commerce/transaction-commands';
+import { toCamelCaseWire } from '@/libs/commerce/wire-casing';
 import type { AppError } from '@/libs/error/error';
 import { ErrorService } from '@/libs/error/error.types';
 import { PARSE_JSON_WITH_BODY_EXCERPT, parseResponseOrThrow } from '@/libs/http/response.utils';
@@ -9,6 +10,7 @@ import { scrubSensitiveData } from '@/libs/observability/sentry.utils';
 import { MarketplaceNotificationNormalizer } from '@/pipes/marketplaceNotification/marketplaceNotification.normalizer';
 import sellerDropCapture from '@/test/fixtures/commerce/live/seller-drop-v0621.json';
 import { LIVE_ORDERS_WIRE_FIXTURE } from '@/test/fixtures/commerce/orders.wire';
+import { CONFIRM_REFUND_DESTINATION_WIRE_COMMAND } from '@/test/fixtures/commerce/usdt-refund.wire';
 import { asOpaque } from '@/test-utils/type-assertions';
 import { MARKETPLACE_NOTIFICATION_TYPE_MAX_LENGTH, marketplaceNotificationSchema } from './marketplace-projections';
 import { MARKETPLACE_SESSION_STORAGE_KEY, MarketplaceSessionService } from './marketplace-session';
@@ -344,6 +346,7 @@ describe('MarketplaceTransactionService.execute', () => {
     'return.approve',
     'return.receive',
     'refund.record_external',
+    'refund.confirm_destination',
     'review.create',
     'review.update',
   ] as const)('sends the ported post-purchase command kind %s to the service', async (kind) => {
@@ -365,6 +368,27 @@ describe('MarketplaceTransactionService.execute', () => {
     expect(response).toMatchObject({ ok: true, result: { kind: 'order' } });
     const [, init] = vi.mocked(fetch).mock.calls[0] as [string, RequestInit];
     expect(JSON.parse(init.body as string)).toMatchObject({ kind });
+  });
+
+  it('sends refund.confirm_destination in the pinned snake_case wire shape', async () => {
+    await establishSession();
+    vi.mocked(fetch).mockResolvedValueOnce(
+      jsonResponse(200, {
+        ok: true,
+        version: 1,
+        command_id: CONFIRM_REFUND_DESTINATION_WIRE_COMMAND.command_id,
+        aggregate_id: CONFIRM_REFUND_DESTINATION_WIRE_COMMAND.aggregate_id,
+        revision: 5,
+        event_ids: ['00000000-0000-4000-8000-000000000721'],
+        result: { kind: 'order' },
+      }),
+    );
+    const command = marketplaceCommandSchema.parse(toCamelCaseWire(CONFIRM_REFUND_DESTINATION_WIRE_COMMAND));
+
+    await MarketplaceTransactionService.execute(ACTOR, command);
+
+    const [, init] = vi.mocked(fetch).mock.calls[0] as [string, RequestInit];
+    expect(JSON.parse(init.body as string)).toEqual(CONFIRM_REFUND_DESTINATION_WIRE_COMMAND);
   });
 
   it('fails closed outside transaction-service mode', async () => {
@@ -1189,6 +1213,66 @@ describe('MarketplaceTransactionService read projections', () => {
     expect(MarketplaceSessionService.getActiveSession()).toBeNull();
   });
 
+  describe('public listing availability', () => {
+    beforeEach(() => {
+      config.mode = 'transaction-service';
+      MarketplaceSessionService.clearSession();
+    });
+
+    it('reads a listing availability publicly, without any session', async () => {
+      vi.mocked(fetch).mockResolvedValueOnce(
+        jsonResponse(200, {
+          aggregate_id: AGGREGATE_ID,
+          state: 'reserved',
+          server_time: '2026-10-13T07:45:00.000Z',
+        }),
+      );
+
+      const availability = await MarketplaceTransactionService.getPublicListingAvailability(ACTOR, 'boots_01');
+
+      expect(availability).toEqual({
+        aggregateId: AGGREGATE_ID,
+        state: 'reserved',
+        serverTime: '2026-10-13T07:45:00.000Z',
+      });
+      const [url, init] = vi.mocked(fetch).mock.calls[0] as [string, RequestInit];
+      expect(url).toBe(`http://127.0.0.1:8080/v0/listings/${ACTOR}/boots_01/availability`);
+      expect(init.method).toBe('GET');
+      expect(init.headers).toEqual(expect.not.objectContaining({ authorization: expect.anything() }));
+    });
+
+    it('is null for an unknown or removed listing', async () => {
+      vi.mocked(fetch).mockResolvedValueOnce(
+        jsonResponse(404, { ok: false, error: { code: 'NOT_FOUND', message: 'The listing was not found.' } }),
+      );
+
+      await expect(MarketplaceTransactionService.getPublicListingAvailability(ACTOR, 'gone')).resolves.toBeNull();
+    });
+
+    it('rejects an unknown state rather than showing it', async () => {
+      vi.mocked(fetch).mockResolvedValueOnce(
+        jsonResponse(200, { aggregate_id: AGGREGATE_ID, state: 'exploding', server_time: '2026-10-13T07:45:00.000Z' }),
+      );
+
+      await expect(MarketplaceTransactionService.getPublicListingAvailability(ACTOR, 'boots_01')).rejects.toMatchObject(
+        { name: 'AppError', code: 'INVALID_RESPONSE' },
+      );
+    });
+
+    it('surfaces a rate limit as an error', async () => {
+      vi.mocked(fetch).mockResolvedValueOnce(
+        jsonResponse(429, {
+          ok: false,
+          error: { code: 'rate_limited', message: 'The request rate limit was exceeded.' },
+        }),
+      );
+
+      await expect(MarketplaceTransactionService.getPublicListingAvailability(ACTOR, 'boots_01')).rejects.toMatchObject(
+        { name: 'AppError' },
+      );
+    });
+  });
+
   describe('seller payment methods', () => {
     beforeEach(() => {
       config.mode = 'transaction-service';
@@ -1201,7 +1285,6 @@ describe('MarketplaceTransactionService read projections', () => {
           bitcoin_available: true,
           bitcoin_offer_available: true,
           paypal_available: true,
-          stripe_available: true,
         }),
       );
 
@@ -1255,7 +1338,7 @@ describe('MarketplaceTransactionService read projections', () => {
       loggerError.mockRestore();
     });
 
-    it('saves the own config with the bearer, omitting the key unless provided, and never gets it back', async () => {
+    it('saves the own config with the bearer and sends only the Bitcoin and PayPal rails', async () => {
       await establishSession();
       vi.mocked(fetch).mockResolvedValueOnce(
         jsonResponse(200, {
@@ -1272,43 +1355,14 @@ describe('MarketplaceTransactionService read projections', () => {
 
       const saved = await MarketplaceTransactionService.putMyPaymentConfig(ACTOR, {
         bitcoinEnabled: true,
-        stripePaymentLink: 'https://buy.stripe.com/test_abc',
         paypalMerchantEmail: null,
       });
 
-      expect(saved.stripeRestrictedKeySet).toBe(true);
-      expect(Object.keys(saved)).not.toContain('stripeRestrictedKey');
+      expect(Object.keys(saved)).toEqual(expect.not.arrayContaining(['stripePaymentLink', 'stripeRestrictedKeySet']));
       const [, init] = vi.mocked(fetch).mock.calls[0] as [string, RequestInit];
       const body = JSON.parse(init.body as string) as Record<string, unknown>;
-      expect(body).not.toHaveProperty('stripe_restricted_key');
+      expect(body).toStrictEqual({ bitcoin_enabled: true, paypal_merchant_email: null });
       expect((init.headers as Record<string, string>).authorization).toBe(SESSION_BEARER);
-    });
-
-    it('sends the restricted key on the wire only when the seller supplies one', async () => {
-      await establishSession();
-      vi.mocked(fetch).mockResolvedValueOnce(
-        jsonResponse(200, {
-          ok: true,
-          payment_config: {
-            bitcoin_enabled: false,
-            stripe_payment_link: null,
-            paypal_merchant_email: null,
-            stripe_restricted_key_set: true,
-            updated_at: '2026-08-22T12:00:00.000Z',
-          },
-        }),
-      );
-
-      await MarketplaceTransactionService.putMyPaymentConfig(ACTOR, {
-        bitcoinEnabled: false,
-        stripePaymentLink: null,
-        stripeRestrictedKey: 'rk_test_12345678',
-        paypalMerchantEmail: null,
-      });
-
-      const [, init] = vi.mocked(fetch).mock.calls[0] as [string, RequestInit];
-      const body = JSON.parse(init.body as string) as Record<string, unknown>;
-      expect(body.stripe_restricted_key).toBe('rk_test_12345678');
     });
 
     it('surfaces the service error envelope message and reason on a refused binding', async () => {
@@ -1324,7 +1378,7 @@ describe('MarketplaceTransactionService read projections', () => {
         }),
       );
 
-      await expect(MarketplaceTransactionService.bindPaymentMethod(ACTOR, ORDER_ID, 'stripe')).rejects.toMatchObject({
+      await expect(MarketplaceTransactionService.bindPaymentMethod(ACTOR, ORDER_ID, 'paypal')).rejects.toMatchObject({
         message: 'A payment method is already bound to this checkout.',
       });
     });
@@ -1350,6 +1404,58 @@ describe('MarketplaceTransactionService read projections', () => {
         context: { statusCode: 409, reason: 'buyer_paykit_wallet_setup_needed', serviceCode: 'INVALID_STATE' },
       });
       expect(fetch).toHaveBeenCalledTimes(1);
+    });
+
+    it('sends usdt as the bind method and reads each USDT refusal in USDT copy, tagged with the rail', async () => {
+      await establishSession();
+      vi.mocked(fetch).mockClear();
+      vi.mocked(fetch).mockResolvedValueOnce(
+        jsonResponse(409, {
+          ok: false,
+          error: {
+            code: 'INVALID_STATE',
+            message: 'SENTINEL_SERVER_TEXT',
+            reason: 'usdt_seller_not_ready',
+          },
+        }),
+      );
+
+      await expect(MarketplaceTransactionService.bindPaymentMethod(ACTOR, ORDER_ID, 'usdt')).rejects.toMatchObject({
+        message: "This seller can't take USDT right now. Choose another payment method, or contact the seller.",
+        context: {
+          statusCode: 409,
+          reason: 'usdt_seller_not_ready',
+          serviceCode: 'INVALID_STATE',
+          paymentMethod: 'usdt',
+        },
+      });
+      const [, init] = vi.mocked(fetch).mock.calls[0] as [string, RequestInit];
+      expect(JSON.parse(init.body as string)).toEqual({ method: 'usdt' });
+
+      vi.mocked(fetch).mockResolvedValueOnce(
+        jsonResponse(409, {
+          ok: false,
+          error: { code: 'INVALID_STATE', message: 'SENTINEL', reason: 'buyer_paykit_wallet_required' },
+        }),
+      );
+      await expect(MarketplaceTransactionService.bindPaymentMethod(ACTOR, ORDER_ID, 'usdt')).rejects.toMatchObject({
+        message:
+          'Connect Bitkit to pay with USDT: this account has no Paykit wallet that can receive a payment request.',
+      });
+    });
+
+    it('leaves the Bitcoin refusal context untouched: no rail tag', async () => {
+      await establishSession();
+      vi.mocked(fetch).mockResolvedValueOnce(
+        jsonResponse(409, {
+          ok: false,
+          error: { code: 'INVALID_STATE', message: 'SENTINEL', reason: 'buyer_paykit_wallet_required' },
+        }),
+      );
+
+      await expect(MarketplaceTransactionService.bindPaymentMethod(ACTOR, ORDER_ID, 'bitcoin')).rejects.toSatisfy(
+        (error: { context?: Record<string, unknown> }) => !('paymentMethod' in (error.context ?? {})),
+      );
     });
 
     it('surfaces capability_required, method_unavailable, and CAS revision conflict as static copy', async () => {
@@ -1400,14 +1506,14 @@ describe('MarketplaceTransactionService read projections', () => {
 
     it('maps payment-method reasons to static copy and never logs the server message', async () => {
       await establishSession();
-      const echoed = 'rk_live_echoed_restricted_key_value';
+      const echoed = 'echoed.private.value@example.com';
       vi.mocked(fetch).mockResolvedValueOnce(
         jsonResponse(400, {
           ok: false,
           error: {
             code: 'INVALID_COMMAND',
-            message: `Stripe rejected ${echoed}`,
-            reason: 'stripe_key_invalid',
+            message: `PayPal rejected ${echoed}`,
+            reason: 'invalid_paypal_email',
           },
         }),
       );
@@ -1415,159 +1521,14 @@ describe('MarketplaceTransactionService read projections', () => {
 
       const error = (await MarketplaceTransactionService.putMyPaymentConfig(ACTOR, {
         bitcoinEnabled: false,
-        stripePaymentLink: null,
-        stripeRestrictedKey: 'rk_test_12345678',
-        paypalMerchantEmail: null,
+        paypalMerchantEmail: echoed,
       }).catch((caught: unknown) => caught)) as AppError;
 
-      expect(error).toMatchObject({
-        message: 'The seller payment key was rejected. The seller must update their payment settings.',
-      });
+      expect(error).toMatchObject({ message: 'The PayPal merchant email is not valid.' });
       expect(error.message).not.toContain(echoed);
       expect(JSON.stringify(error.context)).not.toContain(echoed);
       expect(JSON.stringify(loggerError.mock.calls)).not.toContain(echoed);
       loggerError.mockRestore();
-    });
-
-    it('reports an honest not-found verification without touching the order', async () => {
-      await establishSession();
-      vi.mocked(fetch).mockResolvedValueOnce(jsonResponse(200, { ok: true, verified: false, status: 'not_found' }));
-
-      const result = await MarketplaceTransactionService.verifyStripePayment(ACTOR, ORDER_ID);
-
-      expect(result).toEqual({ verified: false, order: null });
-    });
-  });
-
-  describe('seller shipping integration', () => {
-    const SHIP_FROM_WIRE = {
-      name: 'Olive Farm',
-      line1: 'Maslinska 1',
-      line2: '',
-      city: 'Split',
-      region: '',
-      postal_code: '21000',
-      country_code: 'HR',
-      phone: '',
-      email: '',
-    };
-
-    beforeEach(() => {
-      config.mode = 'transaction-service';
-      MarketplaceSessionService.clearSession();
-    });
-
-    it('saves the shipping config; the Shippo token is write-only and only its presence returns', async () => {
-      await establishSession();
-      vi.mocked(fetch).mockResolvedValueOnce(
-        jsonResponse(200, {
-          shipping_config: {
-            ship_from: SHIP_FROM_WIRE,
-            shippo_api_key_set: true,
-            updated_at: '2026-08-24T12:00:00.000Z',
-          },
-        }),
-      );
-
-      const saved = await MarketplaceTransactionService.putMyShippingConfig(ACTOR, {
-        shippoApiKey: 'shippo_test_1234567890',
-        shipFrom: {
-          name: 'Olive Farm',
-          line1: 'Maslinska 1',
-          line2: '',
-          city: 'Split',
-          region: '',
-          postalCode: '21000',
-          countryCode: 'HR',
-          phone: '',
-          email: '',
-        },
-      });
-
-      expect(saved.shippoApiKeySet).toBe(true);
-      expect(saved.shipFrom?.city).toBe('Split');
-      expect(Object.keys(saved)).not.toContain('shippoApiKey');
-      const [, init] = vi.mocked(fetch).mock.calls[0] as [string, RequestInit];
-      const body = JSON.parse(init.body as string) as Record<string, unknown>;
-      expect(body.shippo_api_key).toBe('shippo_test_1234567890');
-      expect((init.headers as Record<string, string>).authorization).toBe(SESSION_BEARER);
-    });
-
-    it('quotes rates for a parcel and parses them', async () => {
-      await establishSession();
-      vi.mocked(fetch).mockResolvedValueOnce(
-        jsonResponse(200, {
-          ok: true,
-          rates: [
-            {
-              rate_id: 'rate_1',
-              provider: 'USPS',
-              servicelevel: 'Ground',
-              amount: '7.85',
-              currency: 'USD',
-              estimated_days: 3,
-              duration_terms: null,
-            },
-          ],
-        }),
-      );
-
-      const rates = await MarketplaceTransactionService.quoteShippingRates(ACTOR, ORDER_ID, {
-        weightGrams: 900,
-        lengthMm: 300,
-        widthMm: 200,
-        heightMm: 150,
-      });
-
-      expect(rates).toEqual([
-        {
-          rateId: 'rate_1',
-          provider: 'USPS',
-          servicelevel: 'Ground',
-          amount: '7.85',
-          currency: 'USD',
-          estimatedDays: 3,
-          durationTerms: null,
-        },
-      ]);
-      const [url, init] = vi.mocked(fetch).mock.calls[0] as [string, RequestInit];
-      expect(url).toBe(`http://127.0.0.1:8080/v0/orders/${ORDER_ID}/shipping/rates`);
-      const body = JSON.parse(init.body as string) as Record<string, unknown>;
-      expect(body.weight_grams).toBe(900);
-    });
-
-    it('purchases a label and reads the stored one back; absent labels are null', async () => {
-      await establishSession();
-      const labelWire = {
-        transaction_id: 'txn_1',
-        carrier: 'USPS',
-        servicelevel: 'Ground',
-        amount: '7.85',
-        currency: 'USD',
-        tracking_number: 'TRACK123',
-        tracking_url: null,
-        label_url: 'https://deliver.goshippo.com/label_1.pdf',
-        purchased_at: '2026-08-24T12:00:00.000Z',
-      };
-      vi.mocked(fetch)
-        .mockResolvedValueOnce(jsonResponse(200, { ok: true, label: labelWire }))
-        .mockResolvedValueOnce(jsonResponse(200, { ok: true, label: labelWire }))
-        .mockResolvedValueOnce(
-          jsonResponse(404, {
-            ok: false,
-            error: { code: 'NOT_FOUND', message: 'No shipping label has been purchased for this order.' },
-          }),
-        );
-
-      const purchased = await MarketplaceTransactionService.purchaseShippingLabel(ACTOR, ORDER_ID, 'rate_1');
-      expect(purchased.trackingNumber).toBe('TRACK123');
-      expect(purchased.labelUrl).toContain('.pdf');
-
-      const stored = await MarketplaceTransactionService.getShippingLabel(ACTOR, ORDER_ID);
-      expect(stored?.transactionId).toBe('txn_1');
-
-      const missing = await MarketplaceTransactionService.getShippingLabel(ACTOR, ORDER_ID);
-      expect(missing).toBeNull();
     });
   });
 });

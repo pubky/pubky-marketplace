@@ -1,18 +1,23 @@
 import { z } from 'zod';
+import { DELIVERY_ENVELOPE_BYTES, DELIVERY_KEY_ID_PATTERN } from '@/libs/commerce/delivery-envelope-format';
 import {
   marketplaceDigitalDeliveryKindSchema,
   marketplaceListingDigitalDeliveryFieldSchema,
 } from '@/libs/commerce/digital';
 import { sellerPaymentObservationSchema } from '@/libs/commerce/marketplace-payment-review';
 import { findForbiddenPublicReserveKey } from '@/libs/commerce/marketplace-records';
+import { PAYMENT_METHOD_KINDS, paymentAssetFieldsShape } from '@/libs/commerce/payment-options';
 import { marketplaceFulfillmentMethodSchema, marketplaceFulfillmentMethodsSchema } from '@/libs/commerce/pickup';
 import { MAX_BITCOIN_BASE_UNITS } from '@/libs/commerce/pricing';
 import {
   commercePubkySchema,
   dropStateSchema,
+  listingStateSchema,
   orderStateSchema,
   PARTIAL_REFUND_ORDER_STATE,
 } from '@/libs/commerce/transaction-contracts';
+import { refundDestinationFieldsShape } from '@/libs/commerce/usdt-refund';
+import { usdtSettlementFieldsShape } from '@/libs/commerce/usdt-settlement-contract';
 import { ServerErrorCode } from '@/libs/error/error.codes';
 import { Err } from '@/libs/error/error.factories';
 import { ErrorService } from '@/libs/error/error.types';
@@ -300,6 +305,9 @@ export const marketplaceNotificationSchema = z
       'order_completed',
       'return_updated',
       'refund_recorded',
+      // USDT (S6): the buyer confirmed where a refund should go. Only the seller
+      // receives it, and only for USDT orders.
+      'refund_destination_confirmed',
       'review_received',
       // Local pickup (Wave 7, §A3/§A6): details edited or cleared on a paid
       // order (buyer-facing), and the seller arming pickup readiness.
@@ -427,8 +435,9 @@ export const marketplacePaymentSchema = z
     // sandbox advancement and only the service's independent Locks
     // verification can confirm it. Binding a payment method rewrites the
     // adapter to the bound rail: `paykit` (physical bitcoin via the seller's
-    // claimed watch-only account), `stripe` (processor-verified), or
-    // `paypal` (seller-attested).
+    // claimed watch-only account) or `paypal` (seller-attested). `stripe` is
+    // kept only so a payment row written before Stripe was removed still
+    // parses; the Shop never binds it.
     adapter: z.enum(['sandbox', 'locks', 'paykit', 'stripe', 'paypal']),
     state: z.enum(['awaiting_entitlement', 'detected', 'confirmed', 'expired', 'manual_review']),
     confirmations: z.number().int().min(0).max(6),
@@ -480,6 +489,13 @@ const marketplaceDeliveryAddressPlaintextSchema = z.object({
   address: marketplaceDeliveryAddressValueSchema,
 });
 
+const marketplaceDeliveryAddressSealedSchema = z.object({
+  format: z.literal('hpke_v1'),
+  keyId: z.string().regex(DELIVERY_KEY_ID_PATTERN),
+  commandId: z.uuid(),
+  envelope: z.string().length(Math.ceil((DELIVERY_ENVELOPE_BYTES * 4) / 3)),
+});
+
 const marketplaceDeliveryAddressUnsupportedSchema = z.object({
   format: z.literal('unsupported'),
 });
@@ -494,11 +510,12 @@ export const marketplaceDeliveryAddressSchema = z.preprocess(
     if (input === undefined || input === null) return undefined;
     if (typeof input !== 'object') return { format: 'unsupported' };
     const record = input as Record<string, unknown>;
-    return record.format === 'plaintext_v1' ? input : { format: 'unsupported' };
+    return record.format === 'plaintext_v1' || record.format === 'hpke_v1' ? input : { format: 'unsupported' };
   },
   z
     .discriminatedUnion('format', [
       marketplaceDeliveryAddressPlaintextSchema,
+      marketplaceDeliveryAddressSealedSchema,
       marketplaceDeliveryAddressUnsupportedSchema,
     ])
     .optional()
@@ -552,7 +569,6 @@ export const marketplaceOrderProjectionSchema = z
     total: marketplaceMoneySchema,
     pricedFrom: z.string().optional(),
     offerAwardId: z.uuid().nullable().optional(),
-    guaranteePolicyVersion: z.literal(1),
     paymentId: z.uuid(),
     receiptId: z.uuid().nullable(),
     holdExpiresAt: z.string().nullable().optional(),
@@ -570,6 +586,10 @@ export const marketplaceOrderProjectionSchema = z
     pickupTermsChanged: z.boolean().optional(),
     cancellationReason: z.string().nullable().optional(),
     deliveryAssumed: z.boolean().optional().default(false),
+    // The seller's periods frozen on the order when its payment started;
+    // null when the seller left one unset (the service default applies).
+    deliveryAssumeDays: z.number().int().positive().nullish(),
+    autoCompleteDays: z.number().int().positive().nullish(),
     nextActor: z
       .enum(['buyer', 'seller', 'none'])
       .nullable()
@@ -625,17 +645,36 @@ export const marketplaceOrderProjectionSchema = z
     // absent on sandbox orders and on durable orders predating the feature).
     // `paymentMethod` stays null until the buyer binds one — one-shot per
     // order. `fiatCheckoutUrl` is the service-built checkout URL snapshot
-    // taken at binding (Stripe payment link with `client_reference_id`, or
-    // the PayPal web-accept URL with the order id in `custom`).
-    paymentMethod: z.enum(['bitcoin', 'stripe', 'paypal']).nullable().optional(),
+    // taken at binding (the PayPal web-accept URL with the order id in
+    // `custom`).
+    // `usdt` is accepted so a service with USDT on never breaks the order page;
+    // nothing renders it until the flag-gated USDT surfaces exist.
+    // `stripe` is the one removed value still read, as unbound, so an order
+    // bound before Stripe was removed keeps loading; any other unknown value
+    // still fails the parse.
+    paymentMethod: z.preprocess(
+      (value) => (value === 'stripe' ? null : value),
+      z.enum(PAYMENT_METHOD_KINDS).nullable().optional(),
+    ),
+    // Asset-bearing payment attempt (USDT orders only; null/absent for
+    // Bitcoin and PayPal). Display-only and tolerant.
+    ...paymentAssetFieldsShape,
+    // Finality of a USDT payment (`pending | final | reverted`): gates physical
+    // fulfilment only. One pinned contract in `usdt-settlement-contract.ts`.
+    ...usdtSettlementFieldsShape,
+    // Participant-only USDT refund address (S6) and the buyer's paying
+    // address when the service knows it. Tolerant and display-only.
+    ...refundDestinationFieldsShape,
     fiatCheckoutUrl: z.string().nullable().optional(),
-    // How the bound fiat rail is verified: Stripe is `processor` (the
-    // service checks with the seller's restricted key), PayPal is
-    // `gateway-notified` when a postback-verified IPN from PayPal's servers
-    // paid the order automatically, or `seller-attested` as the fallback
-    // (buyer reports, seller confirms). Deliberately visible to both
-    // parties.
-    fiatVerification: z.enum(['processor', 'gateway-notified', 'seller-attested']).nullable().optional(),
+    // How the bound fiat rail is verified: PayPal is `gateway-notified` when
+    // a postback-verified IPN from PayPal's servers paid the order
+    // automatically, or `seller-attested` as the fallback (buyer reports,
+    // seller confirms). Deliberately visible to both parties. `processor`
+    // (Stripe) is the one removed value still read, as absent.
+    fiatVerification: z.preprocess(
+      (value) => (value === 'processor' ? null : value),
+      z.enum(['gateway-notified', 'seller-attested']).nullable().optional(),
+    ),
     paymentReportedAt: z.string().nullable().optional(),
     fiatTransactionRef: z.string().nullable().optional(),
     // FX-quoted Bitcoin orders carry the service's exact settlement amount.
@@ -665,9 +704,9 @@ export const marketplaceOrderProjectionSchema = z
     merchandiseTotal: marketplaceMoneySchema.nullish().catch(undefined),
     bitcoinPayable: marketplaceMoneySchema.nullish().catch(undefined),
     /**
-     * Seller-only interim projection: readable only by the order's seller
-     * while the order is paid/processing and shipping; encryption to the
-     * seller key is scheduled (ADR-0019 §8 interim).
+     * Seller-only: the sealed address (`hpke_v1`) while the order is
+     * paid/processing and shipping. `plaintext_v1` appears only on orders
+     * placed before sealing shipped and is purged when the order ends.
      */
     deliveryAddress: marketplaceDeliveryAddressSchema.optional(),
     // Drop orders (ADR 0026): the bound drop aggregate and, once paid, the
@@ -791,6 +830,18 @@ export const marketplaceReceiptSchema = z.object({
   issuedAt: z.string(),
 });
 
+/**
+ * `GET /v0/listings/{seller}/{listing}/availability` is public and answers
+ * the listing's stock state and the service clock, nothing else. It is the
+ * only hold signal a viewer without a marketplace session can read.
+ */
+export const marketplacePublicListingAvailabilitySchema = z.object({
+  aggregateId: z.string(),
+  state: listingStateSchema,
+  serverTime: z.string(),
+});
+
+export type MarketplacePublicListingAvailability = z.infer<typeof marketplacePublicListingAvailabilitySchema>;
 export type MarketplaceListingProjection = z.infer<typeof marketplaceListingProjectionSchema>;
 export type MarketplaceSellerListingProjection = z.infer<typeof marketplaceSellerListingProjectionSchema>;
 export type MarketplaceNotification = z.infer<typeof marketplaceNotificationSchema> & { kind?: never };

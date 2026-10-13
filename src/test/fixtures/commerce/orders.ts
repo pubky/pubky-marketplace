@@ -71,7 +71,6 @@ export function createOrderFixture(
     subtotal: usd(12_500),
     shipping: usd(1_200),
     total: usd(13_700),
-    guaranteePolicyVersion: 1,
     paymentId: uuid(100 + stateIndex),
     receiptId: state === 'pending_payment' ? null : uuid(200 + stateIndex),
     // `ready_for_pickup` is the pickup-path state (§A6); every other state
@@ -122,6 +121,26 @@ export function createBitcoinQuotedOrderFixture(): MarketplaceOrder {
       expiresAt: '2026-09-13T20:15:09.050Z',
       spreadBps: 0,
     },
+  });
+}
+
+/**
+ * A durable-service order paid in USDT: the order total is the USD price of
+ * record, and the payment attempt carries the exact parity amount in
+ * millionths (13,700 cents = 137.000000 USDT).
+ */
+export function createUsdtOrderFixture(
+  state: MarketplaceOrder['state'],
+  overrides: Partial<MarketplaceOrder> = {},
+): MarketplaceOrder {
+  return createOrderFixture(state, {
+    paymentMethod: 'usdt',
+    paymentAsset: 'USDT',
+    paymentNetwork: 'arbitrum-one',
+    paymentAmountMinor: 137_000_000,
+    paymentExponent: 6,
+    paymentQuoteBasis: 'parity',
+    ...overrides,
   });
 }
 

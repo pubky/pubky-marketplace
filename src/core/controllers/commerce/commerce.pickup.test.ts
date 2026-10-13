@@ -1,9 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { CommerceApplication } from '@/application/commerce/commerce';
+import { CommerceDeliveryKeysApplication } from '@/application/commerce/delivery-keys';
 import type { CommerceAdapterMode } from '@/config/commerce';
 import { buildMarketplaceListingAggregateId } from '@/libs/commerce/transaction-commands';
 import { useAuthStore } from '@/stores/auth/auth.store';
 import { COMMERCE_FIXTURE_SELLER } from '@/test/fixtures/commerce/commerce';
+import { createOrderFixture, ORDER_FIXTURE_SELLER } from '@/test/fixtures/commerce/orders';
 import { CommerceController } from './commerce';
 
 const commerceConfig = vi.hoisted(() => ({ mode: 'transaction-service' as string }));
@@ -142,5 +144,96 @@ describe('CommerceController local pickup (Wave 7)', () => {
     await CommerceController.commitCreateMarketplaceCheckout(input);
 
     expect(checkout).toHaveBeenCalledWith(SELLER, input);
+  });
+
+  describe('getShippedSellers', () => {
+    const sellerB = 'b'.repeat(52);
+    const line = (sellerPubky: string, listing: string, methods: readonly ('shipping' | 'pickup' | 'digital')[]) =>
+      ({
+        listingAggregateId: `listing:${sellerPubky}_${listing}`,
+        sellerPubky,
+        publishedFulfillmentMethods: methods,
+        expectedRevision: 1,
+        quantity: 1,
+      }) as const;
+
+    it('lists each seller whose lines ship, once, and skips pickup sellers', () => {
+      const lines = [
+        line(SELLER, 'boots', ['shipping', 'pickup']),
+        line(SELLER, 'hat', ['shipping']),
+        line(sellerB, 'chair', ['shipping', 'pickup']),
+      ];
+
+      expect(
+        CommerceController.getShippedSellers({ lines, fulfillmentChoiceBySeller: { [sellerB]: 'pickup' } }),
+      ).toEqual([SELLER]);
+    });
+
+    it('returns no sellers for a choice the lines do not publish', () => {
+      const lines = [line(sellerB, 'chair', ['shipping'])];
+
+      expect(
+        CommerceController.getShippedSellers({ lines, fulfillmentChoiceBySeller: { [sellerB]: 'pickup' } }),
+      ).toEqual([]);
+    });
+  });
+
+  describe('getOrderDeliveryAddress', () => {
+    const address = {
+      name: 'Alice Buyer',
+      line1: '1 Market Street',
+      line2: '',
+      city: 'New York',
+      region: 'NY',
+      postalCode: '10001',
+      countryCode: 'US',
+    };
+    const sealed = {
+      format: 'hpke_v1' as const,
+      keyId: 'a'.repeat(32),
+      commandId: '018f47d2-6a27-7c23-a62f-000000000734',
+      envelope: 'A'.repeat(2795),
+    };
+
+    beforeEach(() => {
+      useAuthStore.setState({ currentUserPubky: ORDER_FIXTURE_SELLER });
+    });
+
+    it('returns a legacy plaintext address as is', async () => {
+      const order = createOrderFixture('paid', { deliveryAddress: { format: 'plaintext_v1', address } });
+      await expect(CommerceController.getOrderDeliveryAddress(order)).resolves.toEqual({ kind: 'address', address });
+    });
+
+    it('opens a sealed address through the application with the order binding', async () => {
+      const open = vi
+        .spyOn(CommerceDeliveryKeysApplication, 'getOrderDeliveryAddress')
+        .mockResolvedValue({ kind: 'address', address });
+      const order = createOrderFixture('paid', { deliveryAddress: sealed });
+
+      await expect(CommerceController.getOrderDeliveryAddress(order)).resolves.toEqual({ kind: 'address', address });
+      expect(open).toHaveBeenCalledWith({
+        sellerPubky: ORDER_FIXTURE_SELLER,
+        buyerPubky: order.buyerPubky,
+        sealed: { keyId: sealed.keyId, commandId: sealed.commandId, envelope: sealed.envelope },
+      });
+    });
+
+    it('returns nothing for an unsupported projection, a missing one, or an order the viewer did not sell', async () => {
+      const open = vi.spyOn(CommerceDeliveryKeysApplication, 'getOrderDeliveryAddress');
+
+      await expect(
+        CommerceController.getOrderDeliveryAddress(
+          createOrderFixture('paid', { deliveryAddress: { format: 'unsupported' } }),
+        ),
+      ).resolves.toEqual({ kind: 'none' });
+      await expect(CommerceController.getOrderDeliveryAddress(createOrderFixture('paid'))).resolves.toEqual({
+        kind: 'none',
+      });
+      useAuthStore.setState({ currentUserPubky: 'z'.repeat(52) });
+      await expect(
+        CommerceController.getOrderDeliveryAddress(createOrderFixture('paid', { deliveryAddress: sealed })),
+      ).resolves.toEqual({ kind: 'none' });
+      expect(open).not.toHaveBeenCalled();
+    });
   });
 });

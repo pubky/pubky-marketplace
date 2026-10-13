@@ -14,11 +14,13 @@ import { Typography } from '@/atoms/Typography/Typography';
 import { getSocialHostUrl } from '@/config/social';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import { useCommerceShopFollow } from '@/hooks/useCommerceShopFollow/useCommerceShopFollow';
+import { useIsEmbedded } from '@/hooks/useIsEmbedded/useIsEmbedded';
 import {
   buildMarketplaceCatalogItems,
   type MarketplaceCatalogItem,
 } from '@/hooks/useMarketplaceCatalog/useMarketplaceCatalog.utils';
 import { useMarketplaceMediaUrl } from '@/hooks/useMarketplaceMediaUrl/useMarketplaceMediaUrl';
+import { resolveSellerDeliveryTerms, sellerDeliveryTermsCopy } from '@/libs/commerce/seller-delivery-terms';
 import { ContentLayout } from '@/organisms/ContentLayout/ContentLayout';
 import { MarketplaceCommunityTags } from '@/organisms/Marketplace/MarketplaceCommunityTags';
 import { MarketplaceListingCard } from '@/organisms/Marketplace/MarketplaceListingCard';
@@ -35,6 +37,8 @@ export function MarketplaceShop({ sellerPubky }: { sellerPubky: string }) {
   const profileRoute = getProfileRoute(PROFILE_ROUTES.PROFILE, sellerPubky);
   // With social link-out on, profiles live on the social host; plain <a>, same tab.
   const socialProfileUrl = getSocialHostUrl(profileRoute);
+  // Embedded in the host app, the profile link must replace the whole page, not just this frame.
+  const isEmbedded = useIsEmbedded();
   // The shop record lives on the seller's homeserver; a visitor's local cache
   // may not hold it yet, so resolve network-first and only then treat a
   // missing record as "this seller has no shop".
@@ -128,7 +132,11 @@ export function MarketplaceShop({ sellerPubky }: { sellerPubky: string }) {
                     )}
                     <Button asChild variant="secondary" className="rounded-full">
                       {socialProfileUrl ? (
-                        <a href={socialProfileUrl} data-cy="profile-on-pubky-link">
+                        <a
+                          href={socialProfileUrl}
+                          target={isEmbedded ? '_top' : undefined}
+                          data-cy="profile-on-pubky-link"
+                        >
                           <User className="size-4" />
                           {isOwner ? 'My profile on Pubky' : 'Profile on Pubky'}
                         </a>
@@ -162,6 +170,10 @@ export function MarketplaceShop({ sellerPubky }: { sellerPubky: string }) {
               }
             />
 
+            <Typography as="p" className="text-sm text-muted-foreground" data-testid="marketplace-shop-delivery-terms">
+              {sellerDeliveryTermsCopy(resolveSellerDeliveryTerms(shop.record))}
+            </Typography>
+
             <ShopListingsGrid listings={listings} shopName={shop.record.name} isOwner={isOwner} />
 
             {/* The section styles its own container and renders NOTHING when no
@@ -193,7 +205,11 @@ export function MarketplaceShop({ sellerPubky }: { sellerPubky: string }) {
                   ) : (
                     <Button asChild variant="secondary" className="rounded-full">
                       {socialProfileUrl ? (
-                        <a href={socialProfileUrl} data-cy="profile-on-pubky-link">
+                        <a
+                          href={socialProfileUrl}
+                          target={isEmbedded ? '_top' : undefined}
+                          data-cy="profile-on-pubky-link"
+                        >
                           <User className="size-4" />
                           Profile on Pubky
                         </a>

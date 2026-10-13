@@ -1,5 +1,8 @@
-import { act, renderHook } from '@testing-library/react';
+import { renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { CommerceController } from '@/controllers/commerce/commerce';
+import { useAuthStore } from '@/stores/auth/auth.store';
+import { createOrderFixture, ORDER_FIXTURE_SELLER } from '@/test/fixtures/commerce/orders';
 import { usePackingSlipAddress } from './usePackingSlipAddress';
 
 const mockPathname = vi.fn(() => '/marketplace/orders');
@@ -7,48 +10,76 @@ vi.mock('next/navigation', () => ({
   usePathname: () => mockPathname(),
 }));
 
+const ADDRESS = {
+  name: 'Alice Buyer',
+  line1: '1 Market Street',
+  line2: '',
+  city: 'New York',
+  region: 'NY',
+  postalCode: '10001',
+  countryCode: 'US',
+};
+
 describe('usePackingSlipAddress', () => {
+  const order = createOrderFixture('paid');
+
   beforeEach(() => {
-    vi.clearAllMocks();
+    vi.restoreAllMocks();
     mockPathname.mockReturnValue('/marketplace/orders');
+    useAuthStore.setState({ currentUserPubky: ORDER_FIXTURE_SELLER });
     window.localStorage.clear();
     window.sessionStorage.clear();
+    vi.spyOn(CommerceController, 'getMarketplaceOrder').mockResolvedValue(order);
   });
 
-  it('starts empty and stages the pasted value in component state', () => {
-    const { result } = renderHook(() => usePackingSlipAddress());
-    expect(result.current.address).toBe('');
+  it('stays idle until the dialog is enabled', () => {
+    const open = vi.spyOn(CommerceController, 'getOrderDeliveryAddress');
+    const { result } = renderHook(() => usePackingSlipAddress({ order, enabled: false }));
 
-    act(() => result.current.setAddress('123 Privacy Lane\n83820 Someville'));
-    expect(result.current.address).toBe('123 Privacy Lane\n83820 Someville');
+    expect(result.current.deliveryAddress).toEqual({ status: 'idle' });
+    expect(open).not.toHaveBeenCalled();
   });
 
-  it('clear() drops the staged address', () => {
-    const { result } = renderHook(() => usePackingSlipAddress());
-    act(() => result.current.setAddress('123 Privacy Lane'));
-    act(() => result.current.clear());
-    expect(result.current.address).toBe('');
+  it('opens the address on this device and holds it in state', async () => {
+    vi.spyOn(CommerceController, 'getOrderDeliveryAddress').mockResolvedValue({ kind: 'address', address: ADDRESS });
+    const { result } = renderHook(() => usePackingSlipAddress({ order, enabled: true }));
+
+    await waitFor(() => expect(result.current.deliveryAddress).toEqual({ status: 'ready', address: ADDRESS }));
   });
 
-  it('clears the staged address on route change', () => {
-    const { result, rerender } = renderHook(() => usePackingSlipAddress());
-    act(() => result.current.setAddress('123 Privacy Lane'));
-    expect(result.current.address).toBe('123 Privacy Lane');
+  it.each([
+    [{ kind: 'undecryptable', reason: 'key_missing' } as const, { status: 'undecryptable', reason: 'key_missing' }],
+    [{ kind: 'none' } as const, { status: 'unavailable' }],
+  ])('maps %j to the slip state', async (result, expected) => {
+    vi.spyOn(CommerceController, 'getOrderDeliveryAddress').mockResolvedValue(result);
+    const hook = renderHook(() => usePackingSlipAddress({ order, enabled: true }));
+
+    await waitFor(() => expect(hook.result.current.deliveryAddress).toEqual(expected));
+  });
+
+  it('reads nothing for an order the viewer did not sell', async () => {
+    useAuthStore.setState({ currentUserPubky: 'z'.repeat(52) });
+    const open = vi.spyOn(CommerceController, 'getOrderDeliveryAddress');
+    const { result } = renderHook(() => usePackingSlipAddress({ order, enabled: true }));
+
+    expect(result.current.deliveryAddress).toEqual({ status: 'idle' });
+    expect(open).not.toHaveBeenCalled();
+  });
+
+  it('drops the address on clear() and on route change, and never touches web storage', async () => {
+    const setItem = vi.spyOn(Storage.prototype, 'setItem');
+    vi.spyOn(CommerceController, 'getOrderDeliveryAddress').mockResolvedValue({ kind: 'address', address: ADDRESS });
+    const { result, rerender } = renderHook(() => usePackingSlipAddress({ order, enabled: true }));
+    await waitFor(() => expect(result.current.deliveryAddress.status).toBe('ready'));
+
+    result.current.clear();
+    await waitFor(() => expect(result.current.deliveryAddress).toEqual({ status: 'idle' }));
 
     mockPathname.mockReturnValue('/marketplace/dashboard');
     rerender();
-    expect(result.current.address).toBe('');
-  });
-
-  it('never touches web storage', () => {
-    const localSet = vi.spyOn(Storage.prototype, 'setItem');
-    const { result } = renderHook(() => usePackingSlipAddress());
-    act(() => result.current.setAddress('123 Privacy Lane'));
-    act(() => result.current.clear());
-
-    expect(localSet).not.toHaveBeenCalled();
+    await waitFor(() => expect(result.current.deliveryAddress.status).not.toBe('ready'));
+    expect(setItem).not.toHaveBeenCalled();
     expect(window.localStorage.length).toBe(0);
     expect(window.sessionStorage.length).toBe(0);
-    localSet.mockRestore();
   });
 });

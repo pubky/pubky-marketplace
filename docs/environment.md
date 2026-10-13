@@ -50,6 +50,25 @@ The redirects are unconditional and carry no session. Until single sign-on exist
 
 The build also fails when the value is one of the Shop's own origins (a leading `www.` on either side is ignored), because every social route would redirect to itself. Those origins are `PUBKY_RUNTIME_DEFAULT_URL` (only when set explicitly) and, on Vercel, `VERCEL_PROJECT_PRODUCTION_URL`, `VERCEL_BRANCH_URL` and `VERCEL_URL`.
 
+### Serving under a base path (optional)
+
+`NEXT_PUBLIC_BASE_PATH` and `NEXT_PUBLIC_ASSET_PREFIX` let the Shop run under a sub-path of another origin, for example `https://pubky.app/shop` behind a reverse proxy. Both are baked into the build by Next.js (routes manifest, client bundles), so a change needs a rebuild; in Docker, pass them as build args.
+
+| Variable                   | Required | Meaning                                                                                                                                       |
+| -------------------------- | -------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| `NEXT_PUBLIC_BASE_PATH`    | No       | Mount path, `/shop`. Leading slash, no trailing slash, unreserved characters only. Unset or empty serves from the origin root (the default).  |
+| `NEXT_PUBLIC_ASSET_PREFIX` | No       | Prefix for `/_next/*` assets: a path (`/shop-static`) or an absolute `http(s)` URL without a trailing slash. Unset keeps the Next.js default. |
+
+Components must not hard-code root-relative URLs for things the Next.js router does not rewrite. Use `withBasePath('/api/...')` from `@/config/base-path` for `fetch`, `<video>`, CSS `url()` and `history.replaceState`; `next/image` goes through `BasePathImage` (`@/atoms/BasePathImage/BasePathImage`), and `next/link`, `router.push` and redirects need nothing. See [docs/launch/shop-embedding.md](launch/shop-embedding.md) for the proxy, framing, storage and navigation contract.
+
+### Browser storage namespace
+
+`NEXT_PUBLIC_DB_NAME` defaults to `shop-franky` (it was `franky`). Persisted store keys, the feature-discovery flags and a few session keys carry a `shop-` prefix (`shopStorageKey` in `@/libs/storage-namespace/storage-namespace`), so the Shop and pubky.app can share an origin. A one-time, idempotent migration moves an existing user's data into the namespace; `PUBKY_RUNTIME_STORAGE_ADOPT_LEGACY` says whether this origin's old names belong to the Shop (default: yes unless `NEXT_PUBLIC_BASE_PATH` is set). New persisted keys must be added to `src/core/stores/persistedKeys.ts` so they are namespaced and migrated.
+
+### Framing and embedded mode (runtime)
+
+`PUBKY_RUNTIME_FRAME_ANCESTORS` lists the origins allowed to frame the Shop (exact origins and `'self'`, space- or comma-separated). Unset keeps `frame-ancestors 'none'` and `X-Frame-Options: DENY`. The headers are set per request by `src/proxy.ts`, so the value is read at run time, not build time. `PUBKY_RUNTIME_EMBEDDED=true` forces the embedded layout and behaviour (no Shop header or footer, top-window navigation, no service worker) without frame detection; a framed page (when `PUBKY_RUNTIME_FRAME_ANCESTORS` is set) and `?embedded=1` are detected without it.
+
 ### Adding or Modifying Variables
 
 First decide which surface the value belongs to:
@@ -106,7 +125,7 @@ The contract has these tiers:
 - **Optional (5 Sentry values)**: `sentryDsn` (absent/empty disables Sentry entirely), `sentryEnvironment` (absent falls back to `NODE_ENV`), `sentryTracesSampleRate` / `sentryReplaysSessionSampleRate` / `sentryReplaysOnErrorSampleRate` (defaults `0.1` / `0.0` / `1.0`). A malformed value (bad DSN URL, rate outside `[0,1]`) fails loudly.
 - **Optional (2 Pulse values)**: `pulseClientKey` (absent/empty disables Pulse entirely; a provided value must start with `pulse_client_`) and `pulseEndpoint` (absent uses the SDK's hosted ingest host). See the Pulse paragraph below.
 - **Optional moderation identity**: `moderationId` must be a raw 52-character z-base-32 Pubky when set. In deployed environments, leaving it unset disables moderation-tag matching and the one-time default follow.
-- **Optional/defaulted public values**: operational polling and TTL settings, moderated tags, exchange-rate API, Prelude, Plausible, metadata/branding defaults, and external links. Missing values use the defaults in `src/libs/runtime-config/runtime-config.schema.ts`; malformed provided values still fail loudly.
+- **Optional/defaulted public values**: operational polling and TTL settings, moderated tags, exchange-rate API, Prelude, Plausible, metadata/branding defaults, external links, and the USDT payments switch (`PUBKY_RUNTIME_USDT_PAYMENTS_ENABLED`, default `false`; see [USDT payments](ecommerce/usdt-payments.md)). The Paykit Server API switch (`PUBKY_RUNTIME_PAYKIT_SERVER_API`, `fork` by default or `upstream`) mirrors the marketplace service's `PAYKIT_SERVER_API`: `upstream` targets pubky/paykit-server and pubky/locks, takes buyers only through a Paykit App Registry, reads seller readiness from the Lock Server, and fails the config parse unless `PUBKY_RUNTIME_PAYKIT_SETUP_CREATOR_PARAM=false`. Missing values use the defaults in `src/libs/runtime-config/runtime-config.schema.ts`; malformed provided values still fail loudly.
 
 Pulse browser telemetry is opt-in: set the public, write-only `PUBKY_RUNTIME_PULSE_CLIENT_KEY`
 (`pulse_client_…`, never an admin key); omit it for zero Pulse tracking. `PUBKY_RUNTIME_PULSE_ENDPOINT`
@@ -198,9 +217,32 @@ docker run -p 3000:3000 \
 
 Omit the `PUBKY_RUNTIME_SENTRY_*` lines to run without Sentry, and the `PUBKY_RUNTIME_PULSE_*` lines to run without Pulse (no consent banner, no analytics controls). Set both Pulse values together: a client key with no endpoint sends to Pubky's hosted ingest host. Other public runtime values are optional/defaulted; set them only when you need to tune polling/TTL behavior, branding/metadata, analytics, moderation, Prelude, exchange rates, or external links. Note for Sentry users: the image ships without browser source maps (Debug IDs only) — see the source-maps section of [docs/sentry.md](sentry.md).
 
+### Marketplace and payments (runtime)
+
+With none of these keys set the Shop runs with `PUBKY_RUNTIME_COMMERCE_ADAPTER_MODE=unavailable` and offers no checkout. All of them are `PUBKY_RUNTIME_*` keys validated by `runtime-config.schema.ts`. How to run each mode locally is in [`ecommerce/RUNNING.md`](ecommerce/RUNNING.md).
+
+| Variable                                            | Default                       | Meaning                                                                                                                                                                                                                                                             |
+| --------------------------------------------------- | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `PUBKY_RUNTIME_COMMERCE_ADAPTER_MODE`               | `unavailable`                 | `unavailable`, `sandbox`, `transaction-service` or `locks-paykit`. `locks-paykit` is real payments and refuses to start unless `MARKETPLACE_URL`, `LOCKS_URL` and `PAYKIT_SETUP_URL` are all set explicitly.                                                        |
+| `PUBKY_RUNTIME_MARKETPLACE_URL`                     | `http://localhost:3100`       | Marketplace transaction service.                                                                                                                                                                                                                                    |
+| `PUBKY_RUNTIME_MARKETPLACE_NEXUS_URL`               | unset                         | Marketplace indexing Nexus (`pubky/marketplace-nexus`). Only commerce reads use it; social surfaces keep `PUBKY_RUNTIME_NEXUS_URL`. Unset means marketplace reads use `PUBKY_RUNTIME_NEXUS_URL` too.                                                                |
+| `PUBKY_RUNTIME_LOCKS_URL`                           | `http://localhost:3101`       | Lock Server.                                                                                                                                                                                                                                                        |
+| `PUBKY_RUNTIME_PAYKIT_SETUP_URL`                    | `http://localhost:3102/setup` | Paykit `/setup` iframe URL (seller payment setup).                                                                                                                                                                                                                  |
+| `PUBKY_RUNTIME_PAYKIT_SERVER_API`                   | `fork`                        | `fork` talks to the `BitcoinErrorLog/paykit-server` fork (rc55), which production runs today. `upstream` talks to `pubky/paykit-server` (rc11) with `pubky/locks` (rc10). Mirrors the service's `PAYKIT_SERVER_API`; switch both together with the setup URL.       |
+| `PUBKY_RUNTIME_PAYKIT_SETUP_CREATOR_PARAM`          | `true`                        | Whether the setup URL carries `creator`. The fork needs it. Upstream rejects it, so `PAYKIT_SERVER_API=upstream` fails startup unless this is `false`.                                                                                                              |
+| `PUBKY_RUNTIME_COMMERCE_POLL_INTERVAL_MS`           | `2000`                        | Order and payment status polling.                                                                                                                                                                                                                                   |
+| `PUBKY_RUNTIME_USDT_PAYMENTS_ENABLED`               | `false`                       | Dark flag. The Shop may offer USDT only when this is on and the service `/health` reports `usdt_payments.available`. See [`ecommerce/usdt-payments.md`](ecommerce/usdt-payments.md).                                                                                |
+| `PUBKY_RUNTIME_SINGLE_APPROVAL_SIGN_IN`             | `true`                        | One Ring approval at sign-in. `false` restores the two-prompt path ([`ecommerce/single-approval.md`](ecommerce/single-approval.md)).                                                                                                                                |
+| `PUBKY_RUNTIME_MARKETPLACE_GRANT_FLOW_ENABLED`      | `false`                       | Client side of the grant-based approval flow (`pubkyauth://signin_grant`, [`ecommerce/step-up-approval.md`](ecommerce/step-up-approval.md)). The server side is `SHOP_BFF_GRANT_FLOW_ENABLED` ([`operations/RESUME-grant-bff.md`](operations/RESUME-grant-bff.md)). |
+| `PUBKY_RUNTIME_MARKETPLACE_GRANT_POLL_MILLISECONDS` | `1000`                        | Grant approval polling, 750 to 5000.                                                                                                                                                                                                                                |
+| `PUBKY_RUNTIME_PASSPORT_SIGN_IN`                    | `true`                        | Offer Pubky Passport ("Continue with Google"). `false` hides every entry point without a rebuild.                                                                                                                                                                   |
+| `PUBKY_RUNTIME_PASSPORT_URL`                        | unset                         | Passport origin override. Unset uses the Passport deployment for this deploy's homeserver.                                                                                                                                                                          |
+
+Framing, embedding and storage keys (`PUBKY_RUNTIME_FRAME_ANCESTORS`, `PUBKY_RUNTIME_EMBEDDED`, `PUBKY_RUNTIME_STORAGE_ADOPT_LEGACY`) are described in [Framing and embedded mode](#framing-and-embedded-mode-runtime) and [`launch/shop-embedding.md`](launch/shop-embedding.md).
+
 ### Homeserver mute list sync
 
-Cross-session mute alignment uses the `@synonymdev/pubky` homeserver **event stream** (SSE). Debouncing uses a fixed delay in [`src/config/mute-sync.ts`](src/config/mute-sync.ts) (`MUTE_SYNC_DEBOUNCE_MS`), not an environment variable.
+Cross-session mute alignment uses the `@synonymdev/pubky` homeserver **event stream** (SSE). Debouncing uses a fixed delay in [`src/config/mute-sync.ts`](../src/config/mute-sync.ts) (`MUTE_SYNC_DEBOUNCE_MS`), not an environment variable.
 
 ## Setting Variables
 

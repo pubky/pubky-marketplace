@@ -9,6 +9,11 @@ export class CommerceHomeserverService {
     return await HomeserverService.request<unknown>({ method: HttpMethod.GET, url, logUrl });
   }
 
+  /** A JSON read where a missing record is an ordinary answer, not an error. */
+  static async fetchJsonIfFound(url: string): Promise<{ found: false } | { found: true; json: unknown }> {
+    return await HomeserverService.getJsonIfFound<unknown>({ url });
+  }
+
   static async putJson(
     url: string,
     bodyJson: Record<string, unknown>,

@@ -1,8 +1,9 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MARKETPLACE_DELIVERY_ADDRESS_DISCLOSURE } from '@/config/commerce-copy';
 import { CommerceController } from '@/controllers/commerce/commerce';
+import { useCommerceStore } from '@/stores/commerce/commerce.store';
 import { createOrderFixture, createPaymentFixture } from '@/test/fixtures/commerce/orders';
 import { setHeavySuiteBudgets } from '@/test-utils/load-budget';
 import { MarketplaceCheckout } from './MarketplaceCheckout';
@@ -44,6 +45,7 @@ const view = vi.hoisted(() => ({
   orderCount: 1,
   payResult: { ok: false, orderIds: [] as string[], boundOrders: [] as unknown[] },
   awardItems: [] as Array<{ awardId: string; listingId: string; variantId: string }>,
+  shops: {} as Record<string, { name: string; deliveryAssumeDays?: number; autoCompleteDays?: number }>,
 }));
 
 const checkoutActions = vi.hoisted(() => ({
@@ -107,6 +109,10 @@ vi.mock('@/hooks/useBuyerPaykitWallet/useBuyerPaykitWallet', () => ({
     return { state: enabled ? buyerWallet.state : 'idle', recheck: buyerWallet.recheck };
   },
 }));
+
+const navigation = vi.hoisted(() => ({ navigateTop: vi.fn() }));
+
+vi.mock('@/libs/navigation/navigate-top', () => ({ navigateTop: navigation.navigateTop }));
 
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn() }),
@@ -195,6 +201,8 @@ vi.mock('@/hooks/useMarketplaceCheckout/useMarketplaceCheckout', async () => {
         selectedAddressId: view.selectedAddressId,
         selectAddress: vi.fn(),
         rememberAddress: checkoutActions.rememberAddress,
+        pendingKeyChange: null,
+        decideKeyChange: vi.fn(),
         fulfillmentOptionsForSeller: (sellerPubky: string) => view.fulfillmentOptions[sellerPubky] ?? ['shipping'],
         fulfillmentForSeller: (sellerPubky: string) => view.fulfillmentEffective[sellerPubky] ?? 'shipping',
         setFulfillmentChoice: checkoutActions.setFulfillmentChoice,
@@ -246,11 +254,18 @@ vi.mock('@/controllers/commerce/commerce', () => ({
       bitcoinOfferAvailable: true,
       paypalAvailable: true,
     })),
+    fetchUsdtPaymentsAvailable: vi.fn(async () => false),
     getIndicativeBtcRate: vi.fn(async () => null),
     getOrFetchListing: vi.fn(async () => listing.record),
     getListing: vi.fn(async () => listing),
     getCartItems: vi.fn(async () => []),
     getManyListings: vi.fn(async () => new Map()),
+    refreshShop: vi.fn(async (sellerPubky: string) => {
+      const shop = view.shops[sellerPubky];
+      if (!shop) throw new Error('no shop record in this test');
+      return { ...shop };
+    }),
+    getShop: vi.fn(async () => null),
   },
 }));
 
@@ -271,7 +286,12 @@ vi.mock('@/hooks/useMarketplaceOffers/useMarketplaceOffers', () => ({
 }));
 
 vi.mock('@/hooks/useMarketplaceOfferCheckout/useMarketplaceOfferCheckout', () => ({
-  useMarketplaceOfferCheckout: () => ({ submit: offerState.submit, isSubmitting: false }),
+  useMarketplaceOfferCheckout: () => ({
+    submit: offerState.submit,
+    isSubmitting: false,
+    pendingKeyChange: null,
+    decideKeyChange: vi.fn(),
+  }),
 }));
 
 const approval = vi.hoisted(() => ({ signer: 'Pubky Ring' as 'Bitkit' | 'Pubky Ring' }));
@@ -345,7 +365,9 @@ function resetCheckoutView() {
   checkoutActions.setDigitalChoice.mockReset();
   view.orderCount = 1;
   view.payResult = { ok: false, orderIds: [], boundOrders: [] };
+  navigation.navigateTop.mockReset();
   view.awardItems = [];
+  view.shops = {};
   offerState.offers = [];
   offerState.isLoading = false;
   offerState.refresh.mockClear();
@@ -398,6 +420,71 @@ describe('MarketplaceCheckout', () => {
     expect(screen.queryByText(/Pubky Ring/)).not.toBeInTheDocument();
   });
 
+  it("states the seller's delivery periods in the order summary", async () => {
+    seededCart();
+    view.shops = {
+      [listing.record.ownerPubky]: { name: 'Satoshi Vintage', deliveryAssumeDays: 3, autoCompleteDays: 5 },
+    };
+
+    render(<MarketplaceCheckout />);
+
+    expect(await screen.findByTestId('marketplace-delivery-terms')).toHaveTextContent(
+      'Delivery is assumed after 3 days (counted from payment for items the seller emails or sends in messages); the order completes 5 days after delivery unless you open a return.',
+    );
+    expect(within(screen.getByTestId('marketplace-checkout-summary')).getByTestId('marketplace-delivery-terms')).toBe(
+      screen.getByTestId('marketplace-delivery-terms'),
+    );
+  });
+
+  it('fills only the periods a seller left unset with the defaults', async () => {
+    seededCart();
+    view.shops = { [listing.record.ownerPubky]: { name: 'Satoshi Vintage', autoCompleteDays: 9 } };
+
+    render(<MarketplaceCheckout />);
+
+    expect(await screen.findByTestId('marketplace-delivery-terms')).toHaveTextContent(
+      'Delivery is assumed after 14 days (counted from payment for items the seller emails or sends in messages); the order completes 9 days after delivery unless you open a return.',
+    );
+  });
+
+  it('names each shop when two sellers set different periods', async () => {
+    view.items = [
+      { id: 'seller:boots:variant_42', listingId: listing.id, variantId: 'variant_42', quantity: 1, listing },
+      {
+        id: 'other:camera:variant_01',
+        listingId: secondSellerListing.id,
+        variantId: 'variant_01',
+        quantity: 1,
+        listing: secondSellerListing,
+      },
+    ];
+    view.orderCount = 2;
+    view.shops = {
+      [listing.record.ownerPubky]: { name: 'Satoshi Vintage', deliveryAssumeDays: 3, autoCompleteDays: 5 },
+      [secondSellerListing.record.ownerPubky]: {
+        name: 'Film Camera Supply',
+        deliveryAssumeDays: 30,
+        autoCompleteDays: 45,
+      },
+    };
+
+    render(<MarketplaceCheckout />);
+
+    const terms = await screen.findByTestId('marketplace-delivery-terms');
+    await waitFor(() => expect(terms).toHaveTextContent('Film Camera Supply: Delivery is assumed after 30 days'));
+    expect(terms).toHaveTextContent('Satoshi Vintage: Delivery is assumed after 3 days');
+  });
+
+  it('shows no periods when the seller shop cannot be read, rather than guessing', async () => {
+    seededCart();
+
+    render(<MarketplaceCheckout />);
+
+    await screen.findByTestId('marketplace-checkout-summary');
+    await waitFor(() => expect(CommerceController.refreshShop).toHaveBeenCalled());
+    expect(screen.queryByTestId('marketplace-delivery-terms')).not.toBeInTheDocument();
+  });
+
   it('never includes Stripe in the checkout rail list', async () => {
     seededCart();
     view.adapterMode = 'transaction-service';
@@ -440,6 +527,29 @@ describe('MarketplaceCheckout', () => {
       ).not.toBeInTheDocument();
       expect(screen.getByText('Paid directly to the seller.')).toBeInTheDocument();
       expect(screen.getByText(MARKETPLACE_DELIVERY_ADDRESS_DISCLOSURE)).toBeInTheDocument();
+    },
+  );
+
+  it.each([
+    ['sandbox', 'Sandbox checkout: no real funds move.'],
+    ['locks-paykit', 'Payment goes directly to the seller. This marketplace never holds funds.'],
+    [
+      'unavailable',
+      'No payment rails are live in this deployment, so no real funds move. This marketplace never holds funds.',
+    ],
+  ] as const)(
+    'replaces the guarantee checkbox with a non-interactive payment notice in %s mode',
+    (adapterMode, copy) => {
+      seededCart();
+      view.adapterMode = adapterMode;
+      view.hasMarketplaceSession = true;
+
+      render(<MarketplaceCheckout />);
+
+      const notice = screen.getByTestId('marketplace-checkout-payment-notice');
+      expect(notice).toHaveTextContent(copy);
+      expect(notice.querySelector('input, button, [role="checkbox"]')).toBeNull();
+      expect(screen.queryByRole('checkbox', { name: /guarantee/i })).not.toBeInTheDocument();
     },
   );
 
@@ -490,10 +600,7 @@ describe('MarketplaceCheckout', () => {
     expect(pay).toBeDisabled();
 
     await fillValidDelivery(user);
-    expect(pay).toBeDisabled();
-    expect(screen.getByRole('checkbox', { name: /I accept guarantee policy v1/ })).not.toBeChecked();
 
-    await user.click(screen.getByRole('checkbox', { name: /I accept guarantee policy v1/ }));
     await waitFor(() => expect(pay).toBeEnabled());
   });
 
@@ -526,7 +633,6 @@ describe('MarketplaceCheckout', () => {
 
     const pay = screen.getByTestId('marketplace-checkout-pay');
     await fillValidDelivery(user);
-    await user.click(screen.getByRole('checkbox', { name: /I accept guarantee policy v1/ }));
     const notice = await screen.findByTestId('marketplace-checkout-bitkit-required');
     expect(notice).toHaveTextContent('Connect Bitkit to pay with Bitcoin');
     expect(notice).toHaveTextContent('You can also pay with PayPal.');
@@ -556,7 +662,6 @@ describe('MarketplaceCheckout', () => {
 
     const pay = screen.getByTestId('marketplace-checkout-pay');
     await fillValidDelivery(user);
-    await user.click(screen.getByRole('checkbox', { name: /I accept guarantee policy v1/ }));
     const notice = await screen.findByTestId('marketplace-checkout-bitkit-unsupported');
     expect(notice).toHaveAttribute('role', 'alert');
     expect(notice).toHaveTextContent('Bitcoin checkout does not support Bitkit 2.6 yet');
@@ -586,7 +691,6 @@ describe('MarketplaceCheckout', () => {
 
     const pay = screen.getByTestId('marketplace-checkout-pay');
     await fillValidDelivery(user);
-    await user.click(screen.getByRole('checkbox', { name: /I accept guarantee policy v1/ }));
     const notice = await screen.findByTestId('marketplace-checkout-bitkit-unverified');
     expect(notice).toHaveAttribute('role', 'alert');
     expect(notice).toHaveTextContent("Couldn't verify your Bitcoin wallet");
@@ -615,7 +719,6 @@ describe('MarketplaceCheckout', () => {
     const { rerender } = render(<MarketplaceCheckout />);
     const pay = screen.getByTestId('marketplace-checkout-pay');
     await fillValidDelivery(user);
-    await user.click(screen.getByRole('checkbox', { name: /I accept guarantee policy v1/ }));
     expect(await screen.findByText('Checking your Bitcoin wallet…')).toBeInTheDocument();
     expect(pay).toBeDisabled();
 
@@ -635,7 +738,6 @@ describe('MarketplaceCheckout', () => {
     expect(await screen.findByTestId('marketplace-checkout-method-bitcoin')).toHaveAttribute('aria-pressed', 'true');
     if (method === 'paypal') await user.click(screen.getByTestId('marketplace-checkout-method-paypal'));
     await fillValidDelivery(user);
-    await user.click(screen.getByRole('checkbox', { name: /I accept sandbox guarantee policy v1/ }));
     await user.click(screen.getByTestId('marketplace-checkout-pay'));
 
     expect(checkoutActions.pay).toHaveBeenCalledWith(null, expect.any(Function));
@@ -651,7 +753,6 @@ describe('MarketplaceCheckout', () => {
     render(<MarketplaceCheckout />);
     await user.click(await screen.findByTestId(`marketplace-checkout-method-${method}`));
     await fillValidDelivery(user);
-    await user.click(screen.getByRole('checkbox', { name: /I accept guarantee policy v1/ }));
     const pay = screen.getByTestId('marketplace-checkout-pay');
     await waitFor(() => expect(pay).toBeEnabled());
     await user.click(pay);
@@ -659,20 +760,73 @@ describe('MarketplaceCheckout', () => {
     expect(checkoutActions.pay).toHaveBeenCalledWith(method, expect.any(Function));
   });
 
-  it('requires the guarantee after a pay attempt and leaves it unchecked by default', async () => {
+  describe('PayPal hand-off leaves the Shop through the top window', () => {
+    const PAYPAL_URL = 'https://www.paypal.com/checkoutnow?token=EC-ABC123';
+
+    async function payWithPaypal() {
+      const user = userEvent.setup();
+      seededCart();
+      view.adapterMode = 'transaction-service';
+      view.hasMarketplaceSession = true;
+      render(<MarketplaceCheckout />);
+      await user.click(await screen.findByTestId('marketplace-checkout-method-paypal'));
+      await fillValidDelivery(user);
+      const pay = screen.getByTestId('marketplace-checkout-pay');
+      await waitFor(() => expect(pay).toBeEnabled());
+      await user.click(pay);
+    }
+
+    it('navigates the top window to the single PayPal checkout URL', async () => {
+      view.payResult = {
+        ok: true,
+        orderIds: ['018f47d2-6a27-7c23-a49d-000000000001'],
+        boundOrders: [{ fiatCheckoutUrl: PAYPAL_URL }],
+      };
+
+      await payWithPaypal();
+
+      await waitFor(() => expect(navigation.navigateTop).toHaveBeenCalledTimes(1));
+      expect(navigation.navigateTop).toHaveBeenCalledWith(PAYPAL_URL);
+    });
+
+    it('stays on the order overview when no order carries a PayPal URL', async () => {
+      view.payResult = {
+        ok: true,
+        orderIds: ['018f47d2-6a27-7c23-a49d-000000000001'],
+        boundOrders: [{ fiatCheckoutUrl: null }],
+      };
+
+      await payWithPaypal();
+
+      await waitFor(() => expect(window.location.hash).toBe('#018f47d2-6a27-7c23-a49d-000000000001'));
+      expect(navigation.navigateTop).not.toHaveBeenCalled();
+    });
+
+    it('does not guess when several orders carry a PayPal URL', async () => {
+      view.payResult = {
+        ok: true,
+        orderIds: ['018f47d2-6a27-7c23-a49d-000000000001', '018f47d2-6a27-7c23-a49d-000000000002'],
+        boundOrders: [{ fiatCheckoutUrl: PAYPAL_URL }, { fiatCheckoutUrl: `${PAYPAL_URL}-2` }],
+      };
+
+      await payWithPaypal();
+
+      await waitFor(() => expect(window.location.hash).toBe('#018f47d2-6a27-7c23-a49d-000000000001'));
+      expect(navigation.navigateTop).not.toHaveBeenCalled();
+    });
+  });
+
+  it('shows no guarantee checkbox and enables pay on a valid delivery alone', async () => {
     seededCart();
 
     render(<MarketplaceCheckout />);
 
-    const guarantee = screen.getByRole('checkbox', { name: /I accept sandbox guarantee policy v1/ });
-    expect(guarantee).not.toBeChecked();
-    expect(screen.queryByText('Accept the guarantee terms.')).not.toBeInTheDocument();
+    expect(screen.queryByRole('checkbox', { name: /guarantee/i })).not.toBeInTheDocument();
+    expect(screen.queryByText(/guarantee/i)).not.toBeInTheDocument();
+    expect(screen.getByTestId('marketplace-checkout-pay')).toBeDisabled();
 
     await fillValidDelivery(userEvent.setup());
-    expect(screen.getByTestId('marketplace-checkout-pay')).toBeDisabled();
-    expect(
-      screen.getByText('Fill in delivery details, accept the guarantee, and choose a payment method to pay.'),
-    ).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByTestId('marketplace-checkout-pay')).toBeEnabled());
   });
 
   it('re-opens Ring approval when a session expires mid-flow', () => {
@@ -747,6 +901,42 @@ describe('MarketplaceCheckout', () => {
       );
     });
 
+    it('shows the reserved header for a pending PayPal checkout that is not yet awaiting entitlement', () => {
+      const order = createOrderFixture('pending_payment', { paymentMethod: 'paypal' });
+      view.orders = [{ order, payment: null }];
+      window.location.hash = `#${order.id}`;
+      render(<MarketplaceCheckout />);
+
+      expect(screen.getByText(/Awaiting payment · Item reserved/)).toBeInTheDocument();
+    });
+
+    it('drops the reserved header once the buyer has cancelled the checkout (#50)', () => {
+      const payment = createPaymentFixture('awaiting_entitlement');
+      const order = createOrderFixture('cancelled', {
+        paymentId: payment.id,
+        paymentMethod: 'paypal',
+        holdExpiresAt: new Date(Date.now() + 10 * 60_000).toISOString(),
+      });
+      view.orders = [{ order, payment }];
+      window.location.hash = `#${order.id}`;
+      render(<MarketplaceCheckout />);
+
+      expect(screen.getByTestId('payment-status-panel')).toBeInTheDocument();
+      expect(screen.queryByText(/Awaiting payment/)).not.toBeInTheDocument();
+      expect(screen.queryByText(/Item reserved/)).not.toBeInTheDocument();
+      expect(screen.queryByText('Checkout in progress')).not.toBeInTheDocument();
+    });
+
+    it('drops the reserved header for a cancelled order that was never bound to a method', () => {
+      const order = createOrderFixture('cancelled', { paymentMethod: null });
+      view.orders = [{ order, payment: null }];
+      window.location.hash = `#${order.id}`;
+      render(<MarketplaceCheckout />);
+
+      expect(screen.queryByText('Checkout in progress')).not.toBeInTheDocument();
+      expect(screen.queryByText(/Awaiting payment/)).not.toBeInTheDocument();
+    });
+
     it('omits the duplicate confirmation heading and cancellation for a paid order', () => {
       showPaidOrder({ paymentMethod: 'paypal', confirmations: 0 });
       expect(screen.queryByTestId('marketplace-checkout-paid-headline')).not.toBeInTheDocument();
@@ -799,7 +989,7 @@ describe('MarketplaceCheckout local pickup (Wave 7, §A2)', () => {
     expect(screen.queryByLabelText('Full name')).not.toBeInTheDocument();
     expect(screen.getByText(/No delivery address is needed/)).toBeInTheDocument();
     expect(screen.getByText('No shipping — pickup is arranged with the seller after payment.')).toBeInTheDocument();
-    expect(screen.getByRole('checkbox', { name: /I accept sandbox guarantee policy v1/ })).toBeInTheDocument();
+    expect(screen.getByTestId('marketplace-checkout-payment-notice')).toBeInTheDocument();
   });
 
   it('states the (seller, fulfillment) split plainly before pay', () => {
@@ -1032,7 +1222,6 @@ describe('MarketplaceCheckout digital lines (digital delivery design §3 "Checko
 
     render(<MarketplaceCheckout />);
     await fillValidDelivery(user);
-    await user.click(screen.getByRole('checkbox', { name: /I accept sandbox guarantee policy v1/ }));
 
     expect(screen.getByTestId('marketplace-checkout-pay')).toBeDisabled();
   });
@@ -1168,6 +1357,394 @@ describe('MarketplaceCheckout with no usable payment method', () => {
   });
 });
 
+describe('MarketplaceCheckout USDT option', () => {
+  const RAILS_WITH_USDT = {
+    bitcoinAvailable: true,
+    bitcoinOfferAvailable: true,
+    paypalAvailable: true,
+    usdtAvailable: true,
+  };
+
+  beforeEach(() => {
+    resetCheckoutView();
+    view.adapterMode = 'transaction-service';
+    view.hasMarketplaceSession = true;
+    vi.mocked(CommerceController.fetchUsdtPaymentsAvailable).mockResolvedValue(true);
+    vi.mocked(CommerceController.getSellerPaymentConfig).mockImplementation(async () => RAILS_WITH_USDT);
+  });
+
+  afterEach(() => {
+    useCommerceStore.getState().reset();
+    vi.mocked(CommerceController.fetchUsdtPaymentsAvailable).mockResolvedValue(false);
+    vi.mocked(CommerceController.getSellerPaymentConfig).mockImplementation(async () => ({
+      bitcoinAvailable: true,
+      bitcoinOfferAvailable: true,
+      paypalAvailable: true,
+    }));
+  });
+
+  it('offers USDT as its own option beside Bitcoin and PayPal, never a merged entry', async () => {
+    seededCart();
+
+    render(<MarketplaceCheckout />);
+
+    const usdt = await screen.findByTestId('marketplace-checkout-method-usdt');
+    expect(usdt).toHaveTextContent('USDT');
+    expect(screen.getByTestId('marketplace-checkout-method-bitcoin')).toHaveTextContent(/^Bitcoin$/);
+    expect(screen.getByTestId('marketplace-checkout-method-paypal')).toBeInTheDocument();
+    expect(screen.queryByText(/Bitcoin or USDT/)).not.toBeInTheDocument();
+    expect(screen.getByTestId('marketplace-checkout-method-bitcoin')).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('hides USDT while the gate is off, even when the seller says it is available', async () => {
+    seededCart();
+    vi.mocked(CommerceController.fetchUsdtPaymentsAvailable).mockResolvedValue(false);
+
+    render(<MarketplaceCheckout />);
+
+    expect(await screen.findByTestId('marketplace-checkout-method-bitcoin')).toBeInTheDocument();
+    expect(screen.queryByTestId('marketplace-checkout-method-usdt')).not.toBeInTheDocument();
+    expect(screen.queryByText(/USDT/)).not.toBeInTheDocument();
+  });
+
+  it('hides USDT when the seller public config does not say usdt_available', async () => {
+    seededCart();
+    vi.mocked(CommerceController.getSellerPaymentConfig).mockImplementation(async () => ({
+      ...RAILS_WITH_USDT,
+      usdtAvailable: false,
+    }));
+
+    render(<MarketplaceCheckout />);
+
+    expect(await screen.findByTestId('marketplace-checkout-method-bitcoin')).toBeInTheDocument();
+    expect(screen.queryByTestId('marketplace-checkout-method-usdt')).not.toBeInTheDocument();
+  });
+
+  it('hides USDT on a Bitcoin-priced cart', async () => {
+    view.items = [
+      {
+        id: 'other:camera:variant_01',
+        listingId: secondSellerListing.id,
+        variantId: 'variant_01',
+        quantity: 1,
+        listing: secondSellerListing,
+      },
+    ];
+
+    render(<MarketplaceCheckout />);
+
+    expect(await screen.findByTestId('marketplace-checkout-method-bitcoin')).toBeInTheDocument();
+    expect(screen.queryByTestId('marketplace-checkout-method-usdt')).not.toBeInTheDocument();
+    expect(await screen.findByTestId('marketplace-checkout-usdt-missing-note')).toHaveTextContent(
+      "USDT isn't available for this cart: Rangefinder camera is priced in bitcoin.",
+    );
+  });
+
+  it('offers USDT on a multi-seller cart only when every seller offers it', async () => {
+    const secondSellerUsd = {
+      ...secondSellerListing,
+      record: {
+        ...secondSellerListing.record,
+        sale: { format: 'fixed_price', unitPrice: { amountMinor: 4500, currency: 'USD', exponent: 2 } },
+      },
+    };
+    view.items = [
+      { id: 'seller:boots:variant_42', listingId: listing.id, variantId: 'variant_42', quantity: 1, listing },
+      {
+        id: 'other:camera:variant_01',
+        listingId: secondSellerUsd.id,
+        variantId: 'variant_01',
+        quantity: 1,
+        listing: secondSellerUsd,
+      },
+    ];
+    vi.mocked(CommerceController.getSellerPaymentConfig).mockImplementation(async (sellerPubky: unknown) =>
+      sellerPubky === listing.record.ownerPubky ? RAILS_WITH_USDT : { ...RAILS_WITH_USDT, usdtAvailable: false },
+    );
+
+    render(<MarketplaceCheckout />);
+
+    expect(await screen.findByTestId('marketplace-checkout-method-bitcoin')).toBeInTheDocument();
+    expect(screen.queryByTestId('marketplace-checkout-method-usdt')).not.toBeInTheDocument();
+    expect(await screen.findByTestId('marketplace-checkout-usdt-missing-note')).toHaveTextContent(
+      "USDT isn't available for this cart: Film Camera Supply doesn't accept USDT.",
+    );
+  });
+
+  it('gives both reasons when a bitcoin-priced line and a seller without USDT both apply', async () => {
+    view.items = [
+      { id: 'seller:boots:variant_42', listingId: listing.id, variantId: 'variant_42', quantity: 1, listing },
+      {
+        id: 'other:camera:variant_01',
+        listingId: secondSellerListing.id,
+        variantId: 'variant_01',
+        quantity: 1,
+        listing: secondSellerListing,
+      },
+    ];
+    vi.mocked(CommerceController.getSellerPaymentConfig).mockImplementation(async (sellerPubky: unknown) =>
+      sellerPubky === listing.record.ownerPubky ? RAILS_WITH_USDT : { ...RAILS_WITH_USDT, usdtAvailable: false },
+    );
+
+    render(<MarketplaceCheckout />);
+
+    expect(await screen.findByTestId('marketplace-checkout-usdt-missing-note')).toHaveTextContent(
+      "USDT isn't available for this cart: Rangefinder camera is priced in bitcoin; Film Camera Supply doesn't accept USDT.",
+    );
+  });
+
+  it('explains nothing when no seller takes USDT, when USDT is offered, or when the gate is off', async () => {
+    seededCart();
+    vi.mocked(CommerceController.getSellerPaymentConfig).mockImplementation(async () => ({
+      ...RAILS_WITH_USDT,
+      usdtAvailable: false,
+    }));
+    const noSeller = render(<MarketplaceCheckout />);
+    expect(await screen.findByTestId('marketplace-checkout-method-bitcoin')).toBeInTheDocument();
+    expect(screen.queryByTestId('marketplace-checkout-usdt-missing-note')).not.toBeInTheDocument();
+    noSeller.unmount();
+
+    vi.mocked(CommerceController.getSellerPaymentConfig).mockImplementation(async () => RAILS_WITH_USDT);
+    const offered = render(<MarketplaceCheckout />);
+    expect(await screen.findByTestId('marketplace-checkout-method-usdt')).toBeInTheDocument();
+    expect(screen.queryByTestId('marketplace-checkout-usdt-missing-note')).not.toBeInTheDocument();
+    offered.unmount();
+
+    vi.mocked(CommerceController.fetchUsdtPaymentsAvailable).mockResolvedValue(false);
+    render(<MarketplaceCheckout />);
+    expect(await screen.findByTestId('marketplace-checkout-method-bitcoin')).toBeInTheDocument();
+    expect(screen.queryByTestId('marketplace-checkout-usdt-missing-note')).not.toBeInTheDocument();
+    expect(screen.queryByText(/USDT/)).not.toBeInTheDocument();
+  });
+
+  it('adds no explanation after the service refused USDT, which has its own copy', async () => {
+    seededCart();
+    useCommerceStore.getState().setUsdtRefusal(listing.record.ownerPubky, 'usdt_unavailable');
+
+    render(<MarketplaceCheckout />);
+
+    expect(await screen.findByTestId('marketplace-checkout-method-bitcoin')).toBeInTheDocument();
+    expect(screen.queryByTestId('marketplace-checkout-usdt-missing-note')).not.toBeInTheDocument();
+  });
+
+  it('adds no explanation in the sandbox', async () => {
+    seededCart();
+    view.adapterMode = 'sandbox';
+    vi.mocked(CommerceController.getSellerPaymentConfig).mockImplementation(async () => RAILS_WITH_USDT);
+
+    render(<MarketplaceCheckout />);
+
+    expect(await screen.findByTestId('marketplace-checkout-method-bitcoin')).toBeInTheDocument();
+    expect(screen.queryByTestId('marketplace-checkout-usdt-missing-note')).not.toBeInTheDocument();
+  });
+
+  it('never offers USDT in the sandbox, which binds no real rail', async () => {
+    seededCart();
+    view.adapterMode = 'sandbox';
+
+    render(<MarketplaceCheckout />);
+
+    expect(await screen.findByTestId('marketplace-checkout-method-bitcoin')).toBeInTheDocument();
+    expect(screen.queryByTestId('marketplace-checkout-method-usdt')).not.toBeInTheDocument();
+    expect(CommerceController.fetchUsdtPaymentsAvailable).not.toHaveBeenCalled();
+  });
+
+  it('shows the exact USDT amount, the network and the Bitkit hint once USDT is chosen', async () => {
+    const user = userEvent.setup();
+    seededCart();
+
+    render(<MarketplaceCheckout />);
+    await user.click(await screen.findByTestId('marketplace-checkout-method-usdt'));
+
+    expect(screen.getByTestId('marketplace-checkout-usdt-amount')).toHaveTextContent(
+      '12.000000 USDT · USDT0 on Arbitrum One · pay with Bitkit',
+    );
+    expect(screen.getByTestId('marketplace-checkout-usdt-amount-note')).toHaveTextContent(
+      'Pay with a Bitkit version that supports USDT.',
+    );
+    expect(screen.queryByTestId('marketplace-checkout-bitcoin-amount-note')).not.toBeInTheDocument();
+  });
+
+  it('shows no accept-by line before the request exists: the window starts at activation, on the order page', async () => {
+    const user = userEvent.setup();
+    seededCart();
+
+    render(<MarketplaceCheckout />);
+    await user.click(await screen.findByTestId('marketplace-checkout-method-usdt'));
+
+    expect(screen.queryByText(/accept-by|accept by|Approve in Bitkit within/i)).not.toBeInTheDocument();
+  });
+
+  it('tells the buyer of a shipped USDT cart that the seller ships once Arbitrum finalizes the payment', async () => {
+    const user = userEvent.setup();
+    seededCart();
+
+    render(<MarketplaceCheckout />);
+    expect(screen.queryByTestId('marketplace-checkout-usdt-finality-note')).not.toBeInTheDocument();
+    await user.click(await screen.findByTestId('marketplace-checkout-method-usdt'));
+
+    expect(screen.getByTestId('marketplace-checkout-usdt-finality-note')).toHaveTextContent(
+      'The seller ships once Arbitrum finalizes your payment, usually within minutes.',
+    );
+    await user.click(screen.getByTestId('marketplace-checkout-method-bitcoin'));
+    expect(screen.queryByTestId('marketplace-checkout-usdt-finality-note')).not.toBeInTheDocument();
+  });
+
+  it('leaves the finality note off a USDT cart that is only digital', async () => {
+    const user = userEvent.setup();
+    seededCart();
+    view.fulfillmentByItem = { 'seller:boots:variant_42': 'digital' };
+
+    render(<MarketplaceCheckout />);
+    await user.click(await screen.findByTestId('marketplace-checkout-method-usdt'));
+
+    expect(screen.getByTestId('marketplace-checkout-usdt-amount')).toBeInTheDocument();
+    expect(screen.queryByTestId('marketplace-checkout-usdt-finality-note')).not.toBeInTheDocument();
+  });
+
+  it('keeps the finality note when a digital line rides with a shipped one', async () => {
+    const user = userEvent.setup();
+    view.items = [
+      { id: 'seller:boots:variant_42', listingId: listing.id, variantId: 'variant_42', quantity: 1, listing },
+      { id: 'seller:boots:variant_43', listingId: listing.id, variantId: 'variant_43', quantity: 1, listing },
+    ];
+    view.fulfillmentByItem = { 'seller:boots:variant_42': 'digital' };
+
+    render(<MarketplaceCheckout />);
+    await user.click(await screen.findByTestId('marketplace-checkout-method-usdt'));
+
+    expect(screen.getByTestId('marketplace-checkout-usdt-finality-note')).toBeInTheDocument();
+  });
+
+  it('says a multi-seller USDT cart needs one approval per seller, and a single-seller cart does not', async () => {
+    const user = userEvent.setup();
+    seededCart();
+
+    const single = render(<MarketplaceCheckout />);
+    await user.click(await screen.findByTestId('marketplace-checkout-method-usdt'));
+    expect(screen.queryByTestId('marketplace-checkout-usdt-multi-seller-note')).not.toBeInTheDocument();
+    single.unmount();
+
+    const secondSellerUsd = {
+      ...secondSellerListing,
+      record: {
+        ...secondSellerListing.record,
+        sale: { format: 'fixed_price', unitPrice: { amountMinor: 4500, currency: 'USD', exponent: 2 } },
+      },
+    };
+    view.items = [
+      { id: 'seller:boots:variant_42', listingId: listing.id, variantId: 'variant_42', quantity: 1, listing },
+      {
+        id: 'other:camera:variant_01',
+        listingId: secondSellerUsd.id,
+        variantId: 'variant_01',
+        quantity: 1,
+        listing: secondSellerUsd,
+      },
+    ];
+
+    render(<MarketplaceCheckout />);
+    await user.click(await screen.findByTestId('marketplace-checkout-method-usdt'));
+
+    expect(screen.getByTestId('marketplace-checkout-usdt-multi-seller-note')).toHaveTextContent(
+      "You'll approve one request per seller in Bitkit.",
+    );
+  });
+
+  it('hides the indicative bitcoin estimate once USDT is chosen and brings it back for Bitcoin', async () => {
+    const user = userEvent.setup();
+    seededCart();
+
+    render(<MarketplaceCheckout />);
+    await screen.findByTestId('marketplace-checkout-method-usdt');
+    expect(screen.getAllByText('≈ ₿137,000').length).toBeGreaterThan(0);
+
+    await user.click(screen.getByTestId('marketplace-checkout-method-usdt'));
+    expect(screen.queryByText('≈ ₿137,000')).not.toBeInTheDocument();
+
+    await user.click(screen.getByTestId('marketplace-checkout-method-bitcoin'));
+    expect(screen.getAllByText('≈ ₿137,000').length).toBeGreaterThan(0);
+  });
+
+  describe('after the service refused a USDT bind', () => {
+    const SELLER = listing.record.ownerPubky;
+
+    it('stops offering USDT and moves to the next rail, keeping Bitcoin and PayPal as before', async () => {
+      const user = userEvent.setup();
+      seededCart();
+      render(<MarketplaceCheckout />);
+      await user.click(await screen.findByTestId('marketplace-checkout-method-usdt'));
+      expect(screen.getByTestId('marketplace-checkout-method-usdt')).toHaveAttribute('aria-pressed', 'true');
+
+      act(() => useCommerceStore.getState().setUsdtRefusal(SELLER, 'usdt_unavailable'));
+
+      await waitFor(() => expect(screen.queryByTestId('marketplace-checkout-method-usdt')).not.toBeInTheDocument());
+      expect(screen.queryByTestId('marketplace-checkout-usdt-amount-note')).not.toBeInTheDocument();
+      expect(screen.getByTestId('marketplace-checkout-method-bitcoin')).toHaveAttribute('aria-pressed', 'true');
+      expect(screen.getByTestId('marketplace-checkout-method-paypal')).toBeInTheDocument();
+    });
+
+    it('never offers USDT on a fresh render of the same sellers, and pays with the remaining rail', async () => {
+      const user = userEvent.setup();
+      seededCart();
+      useCommerceStore.getState().setUsdtRefusal(SELLER, 'usdt_seller_not_ready');
+      render(<MarketplaceCheckout />);
+
+      await screen.findByTestId('marketplace-checkout-method-bitcoin');
+      expect(screen.queryByTestId('marketplace-checkout-method-usdt')).not.toBeInTheDocument();
+      await fillValidDelivery(user);
+      const pay = screen.getByTestId('marketplace-checkout-pay');
+      await waitFor(() => expect(pay).toBeEnabled());
+      await user.click(pay);
+
+      expect(checkoutActions.pay).toHaveBeenCalledWith('bitcoin', expect.any(Function));
+    });
+
+    it('offers USDT again for a different seller set', async () => {
+      seededCart();
+      useCommerceStore.getState().setUsdtRefusal('o'.repeat(52), 'usdt_unavailable');
+      render(<MarketplaceCheckout />);
+
+      expect(await screen.findByTestId('marketplace-checkout-method-usdt')).toBeInTheDocument();
+    });
+
+    it('explains itself instead of blaming the seller when USDT was the only shared method', async () => {
+      seededCart();
+      vi.mocked(CommerceController.getSellerPaymentConfig).mockImplementation(async () => ({
+        bitcoinAvailable: false,
+        bitcoinOfferAvailable: false,
+        paypalAvailable: false,
+        usdtAvailable: true,
+      }));
+      useCommerceStore.getState().setUsdtRefusal(SELLER, 'usdt_seller_not_ready');
+      render(<MarketplaceCheckout />);
+
+      await waitFor(() =>
+        expect(screen.getByRole('alert')).toHaveTextContent(
+          "This seller can't take USDT right now. Choose another payment method, or contact the seller.",
+        ),
+      );
+      expect(screen.queryByText(/hasn't set up a payment method/)).not.toBeInTheDocument();
+      expect(screen.getByTestId('marketplace-checkout-pay')).toBeDisabled();
+      expect(screen.getAllByText(/This seller can't take USDT right now/)).toHaveLength(1);
+    });
+  });
+
+  it('binds usdt for real checkout', async () => {
+    const user = userEvent.setup();
+    seededCart();
+
+    render(<MarketplaceCheckout />);
+    await user.click(await screen.findByTestId('marketplace-checkout-method-usdt'));
+    await fillValidDelivery(user);
+    const pay = screen.getByTestId('marketplace-checkout-pay');
+    await waitFor(() => expect(pay).toBeEnabled());
+    await user.click(pay);
+
+    expect(checkoutActions.pay).toHaveBeenCalledWith('usdt', expect.any(Function));
+  });
+});
+
 const acceptedOffer = {
   id: 'offer-1',
   state: 'accepted',
@@ -1213,7 +1790,6 @@ describe('MarketplaceCheckout accepted-offer path', () => {
 
   async function fillAndPay(user: ReturnType<typeof userEvent.setup>) {
     await fillValidDelivery(user);
-    await user.click(screen.getByRole('checkbox', { name: /I accept sandbox guarantee policy v1/ }));
     const pay = screen.getByTestId('marketplace-checkout-pay');
     await waitFor(() => expect(pay).toBeEnabled());
     await user.click(pay);
@@ -1254,6 +1830,21 @@ describe('MarketplaceCheckout accepted-offer path', () => {
     expect(checkoutActions.rememberAddress).toHaveBeenCalled();
   });
 
+  it('hands an accepted offer to PayPal through the top window', async () => {
+    const paypalUrl = 'https://www.paypal.com/checkoutnow?token=EC-OFFER';
+    offerState.submit.mockResolvedValue({
+      ok: true,
+      orderId: '00000000-0000-4000-8000-000000000803',
+      boundOrder: { fiatCheckoutUrl: paypalUrl },
+    });
+    const user = userEvent.setup();
+    render(<MarketplaceCheckout />);
+    await fillAndPay(user);
+
+    await waitFor(() => expect(navigation.navigateTop).toHaveBeenCalledWith(paypalUrl));
+    expect(navigation.navigateTop).toHaveBeenCalledTimes(1);
+  });
+
   it('checks out a pickup award with the pickup UI: no address, no shipping, merchandise only', async () => {
     view.fulfillmentEffective = { ['s'.repeat(52)]: 'pickup' };
     view.requiresDeliveryAddress = false;
@@ -1267,7 +1858,6 @@ describe('MarketplaceCheckout accepted-offer path', () => {
     expect(screen.getByText('Shipping').parentElement).toHaveTextContent('$0.00');
     expect(screen.getByText('Merchandise total').parentElement).toHaveTextContent('$6.00');
 
-    await user.click(screen.getByRole('checkbox', { name: /I accept sandbox guarantee policy v1/ }));
     const pay = screen.getByTestId('marketplace-checkout-pay');
     await waitFor(() => expect(pay).toBeEnabled());
     await user.click(pay);

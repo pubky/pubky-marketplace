@@ -36,11 +36,16 @@ const item: MarketplaceCartItem = {
 
 const config = vi.hoisted(() => ({
   mode: 'sandbox' as string,
+  paykitServerApi: 'fork' as 'fork' | 'upstream',
 }));
 
 vi.mock('@/config/commerce', async () => {
   const actual = await vi.importActual<typeof import('@/config/commerce')>('@/config/commerce');
-  return { ...actual, getCommerceAdapterMode: () => config.mode };
+  return {
+    ...actual,
+    getCommerceAdapterMode: () => config.mode,
+    getPaykitServerApi: () => config.paykitServerApi,
+  };
 });
 
 vi.mock('@/controllers/commerce/commerce', () => ({
@@ -51,6 +56,9 @@ vi.mock('@/controllers/commerce/commerce', () => ({
     fetchPickupAvailable: vi.fn(async () => true),
     fetchDigitalDeliveryCapability: vi.fn(async () => ({ available: true, maxBytes: null })),
     commitCreateMarketplaceCheckout: vi.fn(),
+    getShippedSellers: vi.fn(),
+    resolveDeliveryKeysForCheckout: vi.fn(),
+    commitAcceptDeliveryKeyChange: vi.fn(),
     getDeliveryAddresses: vi.fn(async () => []),
     commitUpsertDeliveryAddress: vi.fn(async () => {}),
     commitMarkDeliveryAddressUsed: vi.fn(async () => {}),
@@ -58,6 +66,7 @@ vi.mock('@/controllers/commerce/commerce', () => ({
     clearMarketplaceSession: vi.fn(),
     clearIdentitySession: vi.fn(),
     bindPaymentMethod: vi.fn(),
+    rememberUsdtRefusal: vi.fn(),
     getMarketplaceOrders: vi.fn(async () => []),
   },
 }));
@@ -78,6 +87,7 @@ vi.mock('@/stores/auth/auth.store', () => ({
 }));
 
 const BUYER = 'b'.repeat(52);
+const SELLER_KEY = { keyId: 'a'.repeat(32), publicKey: new Uint8Array(32).fill(7) };
 
 const savedAddress = {
   id: `${BUYER}:addr1`,
@@ -100,6 +110,7 @@ describe('useMarketplaceCheckout', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     config.mode = 'sandbox';
+    config.paykitServerApi = 'fork';
     authMock.currentUserPubky = null;
     useCommerceStore.setState({ marketplaceSession: null });
     vi.mocked(CommerceController.getDeliveryAddresses).mockResolvedValue([]);
@@ -121,6 +132,11 @@ describe('useMarketplaceCheckout', () => {
       fulfillmentMethods: ['shipping'],
       auction: null,
     });
+    vi.mocked(CommerceController.getShippedSellers).mockReturnValue([listing.ownerPubky]);
+    vi.mocked(CommerceController.resolveDeliveryKeysForCheckout).mockResolvedValue({
+      ok: true,
+      keys: new Map([[listing.ownerPubky, SELLER_KEY]]),
+    });
     vi.mocked(CommerceController.commitCreateMarketplaceCheckout).mockResolvedValue({
       ok: true,
       version: 1,
@@ -132,6 +148,35 @@ describe('useMarketplaceCheckout', () => {
     });
   });
 
+  it('does not create a checkout when a shipped seller has no delivery key', async () => {
+    vi.mocked(CommerceController.resolveDeliveryKeysForCheckout).mockResolvedValue({
+      ok: false,
+      sellerPubky: listing.ownerPubky,
+      problem: { kind: 'no_key' },
+    });
+    const { result } = renderHook(() =>
+      useMarketplaceCheckout(
+        [item],
+        vi.fn(async () => {}),
+      ),
+    );
+    act(() => {
+      result.current.form.setValue('name', 'Alice Buyer');
+      result.current.form.setValue('line1', '1 Market Street');
+      result.current.form.setValue('city', 'New York');
+      result.current.form.setValue('region', 'NY');
+      result.current.form.setValue('postalCode', '10001');
+    });
+
+    let succeeded = true;
+    await act(async () => {
+      succeeded = await result.current.submit();
+    });
+
+    expect(succeeded).toBe(false);
+    expect(CommerceController.commitCreateMarketplaceCheckout).not.toHaveBeenCalled();
+  });
+
   it('refreshes terms and creates a guarantee-versioned checkout', async () => {
     const clear = vi.fn(async () => {});
     const { result } = renderHook(() => useMarketplaceCheckout([item], clear));
@@ -141,7 +186,6 @@ describe('useMarketplaceCheckout', () => {
       result.current.form.setValue('city', 'New York');
       result.current.form.setValue('region', 'NY');
       result.current.form.setValue('postalCode', '10001');
-      result.current.form.setValue('acceptsGuarantee', true);
     });
 
     let succeeded = false;
@@ -154,6 +198,7 @@ describe('useMarketplaceCheckout', () => {
       expect.objectContaining({
         fulfillmentChoiceBySeller: { [listing.ownerPubky]: 'shipping' },
         deliveryAddress: expect.objectContaining({ line1: '1 Market Street' }),
+        deliveryKeys: new Map([[listing.ownerPubky, SELLER_KEY]]),
         lines: [
           {
             listingAggregateId: `listing:${listing.ownerPubky}_${listing.listingId}`,
@@ -198,7 +243,6 @@ describe('useMarketplaceCheckout', () => {
       result.current.form.setValue('city', 'New York');
       result.current.form.setValue('region', 'NY');
       result.current.form.setValue('postalCode', '10001');
-      result.current.form.setValue('acceptsGuarantee', true);
     });
 
     let succeeded = false;
@@ -231,7 +275,6 @@ describe('useMarketplaceCheckout', () => {
       result.current.form.setValue('city', 'New York');
       result.current.form.setValue('region', 'NY');
       result.current.form.setValue('postalCode', '10001');
-      result.current.form.setValue('acceptsGuarantee', true);
     });
 
     let succeeded = true;
@@ -270,7 +313,6 @@ describe('useMarketplaceCheckout', () => {
       result.current.form.setValue('city', 'New York');
       result.current.form.setValue('region', 'NY');
       result.current.form.setValue('postalCode', '10001');
-      result.current.form.setValue('acceptsGuarantee', true);
     });
 
     let succeeded = true;
@@ -301,7 +343,6 @@ describe('useMarketplaceCheckout', () => {
       result.current.form.setValue('city', 'New York');
       result.current.form.setValue('region', 'NY');
       result.current.form.setValue('postalCode', '10001');
-      result.current.form.setValue('acceptsGuarantee', true);
     });
 
     let succeeded = true;
@@ -334,7 +375,6 @@ describe('useMarketplaceCheckout', () => {
       result.current.form.setValue('city', 'New York');
       result.current.form.setValue('region', 'NY');
       result.current.form.setValue('postalCode', '10001');
-      result.current.form.setValue('acceptsGuarantee', true);
     });
 
     let succeeded = true;
@@ -367,7 +407,6 @@ describe('useMarketplaceCheckout', () => {
       result.current.form.setValue('city', 'New York');
       result.current.form.setValue('region', 'NY');
       result.current.form.setValue('postalCode', '10001');
-      result.current.form.setValue('acceptsGuarantee', true);
     });
 
     await act(async () => {
@@ -399,7 +438,6 @@ describe('useMarketplaceCheckout', () => {
       result.current.form.setValue('city', 'New York');
       result.current.form.setValue('region', 'NY');
       result.current.form.setValue('postalCode', '10001');
-      result.current.form.setValue('acceptsGuarantee', true);
     });
 
     await act(async () => {
@@ -421,7 +459,6 @@ describe('useMarketplaceCheckout', () => {
       result.current.form.setValue('city', 'New York');
       result.current.form.setValue('region', 'NY');
       result.current.form.setValue('postalCode', '10001');
-      result.current.form.setValue('acceptsGuarantee', true);
     });
 
     await act(async () => {
@@ -450,7 +487,6 @@ describe('useMarketplaceCheckout', () => {
       result.current.form.setValue('postalCode', '10001');
       result.current.form.setValue('saveAddress', true);
       result.current.form.setValue('saveLabel', 'Home');
-      result.current.form.setValue('acceptsGuarantee', true);
     });
 
     await act(async () => {
@@ -501,11 +537,7 @@ describe('useMarketplaceCheckout', () => {
     });
     expect(result.current.addresses).toEqual([savedAddress]);
     expect(result.current.form.getValues('line1')).toBe('1 Market Street');
-    expect(result.current.form.getValues('acceptsGuarantee')).toBe(false);
-
-    act(() => {
-      result.current.form.setValue('acceptsGuarantee', true);
-    });
+    expect(result.current.form.getValues()).not.toHaveProperty('acceptsGuarantee');
 
     let succeeded = false;
     await act(async () => {
@@ -542,7 +574,6 @@ describe('useMarketplaceCheckout', () => {
       result.current.form.setValue('postalCode', '10001');
       result.current.form.setValue('saveAddress', true);
       result.current.form.setValue('saveLabel', 'Home');
-      result.current.form.setValue('acceptsGuarantee', true);
     });
 
     let succeeded = false;
@@ -591,27 +622,6 @@ describe('useMarketplaceCheckout', () => {
     });
     expect(result.current.form.getValues('line1')).toBe('1 Market Street');
     expect(result.current.selectedAddressId).toBe(savedAddress.id);
-  });
-
-  it('leaves the guarantee unchecked until the buyer opts in', async () => {
-    const { result } = renderHook(() =>
-      useMarketplaceCheckout(
-        [item],
-        vi.fn(async () => {}),
-      ),
-    );
-
-    expect(result.current.form.getValues('acceptsGuarantee')).toBe(false);
-    expect(result.current.form.formState.errors.acceptsGuarantee).toBeUndefined();
-
-    let succeeded = true;
-    await act(async () => {
-      succeeded = await result.current.submit();
-    });
-
-    expect(succeeded).toBe(false);
-    expect(CommerceController.commitCreateMarketplaceCheckout).not.toHaveBeenCalled();
-    expect(result.current.form.formState.errors.acceptsGuarantee?.message).toBe('Accept the guarantee terms.');
   });
 
   it('reports hasMarketplaceSession only when the store and getActiveSession agree', () => {
@@ -694,7 +704,6 @@ describe('useMarketplaceCheckout', () => {
       result.current.form.setValue('city', 'New York');
       result.current.form.setValue('region', 'NY');
       result.current.form.setValue('postalCode', '10001');
-      result.current.form.setValue('acceptsGuarantee', true);
     });
 
     let paid: Awaited<ReturnType<typeof result.current.pay>> | null = null;
@@ -749,6 +758,85 @@ describe('useMarketplaceCheckout', () => {
     expect(vi.mocked(CommerceController.bindPaymentMethod).mock.calls.length).toBe(bindsBefore + 1);
   });
 
+  describe('after a refused USDT bind', () => {
+    const orderId = '018f47d2-6a27-7c23-a49d-000000001210';
+
+    const usdtBindRefusal = (reason: string) =>
+      new AppError({
+        category: ErrorCategory.Client,
+        code: ClientErrorCode.BAD_REQUEST,
+        message: 'SENTINEL',
+        service: ErrorService.Marketplace,
+        operation: 'bindPaymentMethod',
+        context: { statusCode: 409, reason, paymentMethod: 'usdt' },
+      });
+
+    async function payRefused(method: 'usdt' | 'bitcoin', error: unknown) {
+      config.mode = 'locks-paykit';
+      vi.mocked(CommerceController.commitCreateMarketplaceCheckout).mockResolvedValue({
+        ok: true,
+        version: 1,
+        commandId: '00000000-0000-4000-8000-000000001110',
+        aggregateId: 'checkout:00000000-0000-4000-8000-000000001110',
+        revision: 1,
+        eventIds: [],
+        result: { kind: 'checkout', orders: [{ id: orderId }] },
+      });
+      vi.mocked(CommerceController.bindPaymentMethod).mockRejectedValueOnce(error);
+      const { result } = renderHook(() =>
+        useMarketplaceCheckout(
+          [item],
+          vi.fn(async () => {}),
+        ),
+      );
+      act(() => {
+        result.current.form.setValue('name', 'Alice Buyer');
+        result.current.form.setValue('line1', '1 Market Street');
+        result.current.form.setValue('city', 'New York');
+        result.current.form.setValue('region', 'NY');
+        result.current.form.setValue('postalCode', '10001');
+      });
+      return await act(async () => result.current.pay(method));
+    }
+
+    it.each(['usdt_unavailable', 'usdt_seller_not_ready'] as const)(
+      'remembers %s for this seller and still cancels the order and shows the refusal once',
+      async (reason) => {
+        vi.mocked(CommerceController.rememberUsdtRefusal).mockClear();
+        vi.mocked(toast).mockClear();
+
+        const paid = await payRefused('usdt', usdtBindRefusal(reason));
+
+        expect(paid.ok).toBe(false);
+        expect(CommerceController.rememberUsdtRefusal).toHaveBeenCalledTimes(1);
+        expect(CommerceController.rememberUsdtRefusal).toHaveBeenCalledWith(item.listing.record.ownerPubky, reason);
+        expect(CommerceController.executeMarketplaceCommand).toHaveBeenCalledWith(
+          expect.objectContaining({ kind: 'order.cancel_request', payload: expect.objectContaining({ orderId }) }),
+        );
+        expect(vi.mocked(toast)).toHaveBeenCalledTimes(1);
+      },
+    );
+
+    it.each(['buyer_usdt_wallet_required', 'paykit_rejected'])(
+      'does not remember %s, which another try or the buyer can fix',
+      async (reason) => {
+        vi.mocked(CommerceController.rememberUsdtRefusal).mockClear();
+
+        await payRefused('usdt', usdtBindRefusal(reason));
+
+        expect(CommerceController.rememberUsdtRefusal).not.toHaveBeenCalled();
+      },
+    );
+
+    it('does not remember a refusal of another rail', async () => {
+      vi.mocked(CommerceController.rememberUsdtRefusal).mockClear();
+
+      await payRefused('bitcoin', new Error('bind failed'));
+
+      expect(CommerceController.rememberUsdtRefusal).not.toHaveBeenCalled();
+    });
+  });
+
   it.each([null, 'bitcoin', 'paypal'] as const)('skips durable binding in sandbox with method %s', async (method) => {
     const orderId = '018f47d2-6a27-7c23-a49d-000000001201';
     config.mode = 'sandbox';
@@ -769,7 +857,6 @@ describe('useMarketplaceCheckout', () => {
       result.current.form.setValue('city', 'New York');
       result.current.form.setValue('region', 'NY');
       result.current.form.setValue('postalCode', '10001');
-      result.current.form.setValue('acceptsGuarantee', true);
     });
 
     let paid: Awaited<ReturnType<typeof result.current.pay>> | null = null;
@@ -780,6 +867,108 @@ describe('useMarketplaceCheckout', () => {
     expect(paid).toEqual({ ok: true, orderIds: [orderId], boundOrders: [] });
     expect(CommerceController.bindPaymentMethod).not.toHaveBeenCalled();
     expect(clear).toHaveBeenCalled();
+  });
+});
+
+describe('useMarketplaceCheckout Locks checkout on upstream Paykit', () => {
+  const orderId = '018f47d2-6a27-7c23-a49d-000000001300';
+  const lockedItem: MarketplaceCartItem = {
+    ...item,
+    id: 'locked-item',
+    listing: {
+      ...item.listing,
+      record: {
+        ...item.listing.record,
+        digitalLock: { policyUri: 'pubky://lock', criterionId: 'c', contentPath: 'p', resourceHash: 'h' },
+      } as MarketplaceCartItem['listing']['record'],
+    },
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    config.mode = 'locks-paykit';
+    config.paykitServerApi = 'upstream';
+    vi.mocked(CommerceController.getDeliveryAddresses).mockResolvedValue([]);
+    vi.mocked(CommerceController.getMarketplaceListingProjection).mockResolvedValue({
+      aggregateId: `listing:${listing.ownerPubky}_${listing.listingId}`,
+      sellerPubky: listing.ownerPubky,
+      listingId: listing.listingId,
+      listingRevision: listing.revision,
+      contentHash: listing.media[0].contentHash,
+      serverRevision: 1,
+      state: 'available',
+      availableQuantity: 1,
+      reservedQuantity: 0,
+      unitPrice: price,
+      saleFormat: 'fixed_price',
+      fulfillmentMethods: ['shipping'],
+      auction: null,
+    });
+    vi.mocked(CommerceController.commitCreateMarketplaceCheckout).mockResolvedValue({
+      ok: true,
+      version: 1,
+      commandId: '00000000-0000-4000-8000-000000001100',
+      aggregateId: 'checkout:00000000-0000-4000-8000-000000001100',
+      revision: 1,
+      eventIds: [],
+      result: { kind: 'checkout', orders: [{ id: orderId }] },
+    });
+  });
+
+  const fillForm = (current: ReturnType<typeof useMarketplaceCheckout>) => {
+    act(() => {
+      current.form.setValue('name', 'Alice Buyer');
+      current.form.setValue('line1', '1 Market Street');
+      current.form.setValue('city', 'New York');
+      current.form.setValue('region', 'NY');
+      current.form.setValue('postalCode', '10001');
+    });
+  };
+
+  it('creates the order and binds no method, leaving the payment to the order page', async () => {
+    const clear = vi.fn(async () => {});
+    const { result } = renderHook(() => useMarketplaceCheckout([lockedItem], clear));
+    fillForm(result.current);
+
+    const paid = await act(async () => result.current.pay(null));
+
+    expect(paid).toEqual({ ok: true, orderIds: [orderId], boundOrders: [] });
+    expect(CommerceController.bindPaymentMethod).not.toHaveBeenCalled();
+    expect(CommerceController.executeMarketplaceCommand).not.toHaveBeenCalled();
+    expect(clear).toHaveBeenCalled();
+  });
+
+  it('still binds a Locks checkout on the fork Paykit Server', async () => {
+    config.paykitServerApi = 'fork';
+    vi.mocked(CommerceController.bindPaymentMethod).mockResolvedValue({ id: orderId } as never);
+    const { result } = renderHook(() =>
+      useMarketplaceCheckout(
+        [lockedItem],
+        vi.fn(async () => {}),
+      ),
+    );
+    fillForm(result.current);
+
+    await act(async () => result.current.pay('bitcoin'));
+
+    expect(CommerceController.bindPaymentMethod).toHaveBeenCalledWith(orderId, 'bitcoin');
+  });
+
+  it('refuses a cart mixing Locks and other lines before creating any order', async () => {
+    const { result } = renderHook(() =>
+      useMarketplaceCheckout(
+        [lockedItem, item],
+        vi.fn(async () => {}),
+      ),
+    );
+    fillForm(result.current);
+
+    const paid = await act(async () => result.current.pay('bitcoin'));
+
+    expect(paid.ok).toBe(false);
+    expect(CommerceController.commitCreateMarketplaceCheckout).not.toHaveBeenCalled();
+    expect(CommerceController.bindPaymentMethod).not.toHaveBeenCalled();
+    expect(toast).toHaveBeenCalledWith(expect.objectContaining({ variant: 'error' }));
   });
 });
 
@@ -896,9 +1085,6 @@ describe('useMarketplaceCheckout local pickup (§A2)', () => {
       expect(result.current.requiresDeliveryAddress).toBe(false);
     });
     expect(result.current.fulfillmentForSeller(listing.ownerPubky)).toBe('pickup');
-    act(() => {
-      result.current.form.setValue('acceptsGuarantee', true);
-    });
 
     let succeeded = false;
     await act(async () => {
@@ -933,7 +1119,6 @@ describe('useMarketplaceCheckout local pickup (§A2)', () => {
       result.current.form.setValue('city', 'New York');
       result.current.form.setValue('region', 'NY');
       result.current.form.setValue('postalCode', '10001');
-      result.current.form.setValue('acceptsGuarantee', true);
     });
 
     let succeeded = false;
@@ -1041,7 +1226,6 @@ describe('useMarketplaceCheckout local pickup (§A2)', () => {
       result.current.form.setValue('city', 'New York');
       result.current.form.setValue('region', 'NY');
       result.current.form.setValue('postalCode', '10001');
-      result.current.form.setValue('acceptsGuarantee', true);
     });
 
     vi.mocked(CommerceController.commitCreateMarketplaceCheckout).mockResolvedValueOnce({
@@ -1158,7 +1342,6 @@ describe('useMarketplaceCheckout digital delivery (digital delivery design §3 "
     expect(result.current.hasInstantDigitalLine).toBe(true);
     expect(result.current.hasManualDigitalLine).toBe(false);
     expect(result.current.orderCount).toBe(1);
-    act(() => result.current.form.setValue('acceptsGuarantee', true));
 
     let succeeded = false;
     await act(async () => {
@@ -1185,7 +1368,6 @@ describe('useMarketplaceCheckout digital delivery (digital delivery design §3 "
 
     await waitFor(() => expect(result.current.requiresDeliveryEmail).toBe(true));
     expect(result.current.hasManualDigitalLine).toBe(true);
-    act(() => result.current.form.setValue('acceptsGuarantee', true));
     await act(async () => {
       await result.current.submit();
     });
@@ -1214,7 +1396,6 @@ describe('useMarketplaceCheckout digital delivery (digital delivery design §3 "
     );
     await waitFor(() => expect(result.current.requiresDeliveryEmail).toBe(true));
     act(() => {
-      result.current.form.setValue('acceptsGuarantee', true);
       result.current.form.setValue('deliveryEmail', 'buyer at example.com');
     });
 
@@ -1246,7 +1427,6 @@ describe('useMarketplaceCheckout digital delivery (digital delivery design §3 "
     expect(result.current.orderCount).toBe(2);
     act(() => {
       fillAddress(result.current.form);
-      result.current.form.setValue('acceptsGuarantee', true);
     });
 
     await act(async () => {
@@ -1354,7 +1534,6 @@ describe('useMarketplaceCheckout digital delivery (digital delivery design §3 "
       ),
     );
     await waitFor(() => expect(result.current.isDigitalReady).toBe(true));
-    act(() => result.current.form.setValue('acceptsGuarantee', true));
 
     kinds.pattern = 'email';
     await act(async () => {
@@ -1380,7 +1559,6 @@ describe('useMarketplaceCheckout digital delivery (digital delivery design §3 "
       ),
     );
     await waitFor(() => expect(result.current.isDigitalReady).toBe(true));
-    act(() => result.current.form.setValue('acceptsGuarantee', true));
     vi.mocked(CommerceController.commitCreateMarketplaceCheckout).mockResolvedValueOnce({
       ok: false,
       error: {

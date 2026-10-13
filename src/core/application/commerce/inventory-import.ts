@@ -83,6 +83,7 @@ export type InventoryImportHost = {
   listingExists: (url: string) => Promise<boolean>;
   syncMany: (listings: readonly SyncManyListing[]) => Promise<SdkResult<SyncManyEnvelope>>;
   currentItems: () => Promise<Readonly<Record<string, CurrentImportItem>>>;
+  localRecords: () => Promise<readonly CommerceListingRecord[]>;
 };
 
 function csvCell(value: string): string {
@@ -149,6 +150,9 @@ export class CommerceInventoryImportApplication {
 
   static createHost(sellerPubky: string, overrides: Partial<InventoryImportHost> = {}): InventoryImportHost {
     const store = overrides.store ?? new DexieManifestStore(sellerPubky);
+    const localRecords =
+      overrides.localRecords ??
+      (async () => (await LocalCommerceService.getListingsBySeller(sellerPubky)).map((listing) => listing.record));
     return {
       sellerPubky,
       store,
@@ -175,14 +179,11 @@ export class CommerceInventoryImportApplication {
           const client = MarketplaceShopClientService.createInventoryClient(inventory.token);
           return MarketplaceShopClientService.syncMany(client, listings);
         }),
+      localRecords,
       currentItems:
         overrides.currentItems ??
-        (async () => {
-          const listings = await LocalCommerceService.getListingsBySeller(sellerPubky);
-          return MarketplaceShopClientService.currentItemsFromRows(
-            listings.flatMap((listing) => listingToCanonicalRows(listing.record)),
-          );
-        }),
+        (async () =>
+          MarketplaceShopClientService.currentItemsFromRows((await localRecords()).flatMap(listingToCanonicalRows))),
     };
   }
 
@@ -301,41 +302,47 @@ export class CommerceInventoryImportApplication {
     return this.afterConflictAck(manifestId);
   }
 
+  /**
+   * The canonical import CSV for the seller's catalog: one row per variant,
+   * with `record_json` so every field the columns cannot carry survives a
+   * re-import. The service listing is read when the seller holds an Inventory
+   * grant; any failed page falls back to the local catalog so an export is
+   * never silently partial.
+   */
   async exportListingsCsv(): Promise<Uint8Array> {
-    const rows: CanonicalCsvRow[] = [];
     const inventory = MarketplaceInventorySessionService.getCoveringBearer(this.host.sellerPubky);
-    if (!inventory) {
-      const local = await LocalCommerceService.getListingsBySeller(this.host.sellerPubky);
-      return MarketplaceShopClientService.exportListingsCsv(
-        local.flatMap((listing) => listingToCanonicalRows(listing.record)),
-      );
-    }
-    const client = MarketplaceShopClientService.createInventoryClient(inventory.token);
+    const served = inventory ? await this.serviceListingRows(inventory.token) : null;
+    if (served) return MarketplaceShopClientService.exportListingsCsv(served);
+    const local = await this.host.localRecords();
+    return MarketplaceShopClientService.exportListingsCsv(local.flatMap(listingToCanonicalRows));
+  }
+
+  private async serviceListingRows(token: string): Promise<CanonicalCsvRow[] | null> {
+    const rows: CanonicalCsvRow[] = [];
+    const client = MarketplaceShopClientService.createInventoryClient(token);
     let cursor: string | undefined;
     for (;;) {
       const page = await MarketplaceShopClientService.listSellerListings(client, this.host.sellerPubky, {
         limit: 100,
         cursor,
       });
-      if (!page.ok) break;
+      if (!page.ok) return null;
       const listings = page.value.listings;
       if (Array.isArray(listings)) {
         for (const entry of listings) {
-          const object = asObject(entry);
-          const record = object?.record;
-          if (!record || typeof record !== 'object') continue;
+          const record = asObject(entry)?.record;
+          if (!record || typeof record !== 'object') return null;
           try {
             rows.push(...listingToCanonicalRows(record as CommerceListingRecord));
           } catch {
-            continue;
+            return null;
           }
         }
       }
       const next = typeof page.value.next_cursor === 'string' ? page.value.next_cursor : null;
-      if (!next) break;
+      if (!next) return rows;
       cursor = next;
     }
-    return MarketplaceShopClientService.exportListingsCsv(rows);
   }
 
   async exportOrdersJson(): Promise<string> {

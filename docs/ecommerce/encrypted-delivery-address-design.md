@@ -1,12 +1,16 @@
-DESIGN STATUS: NEEDS-OWNER-INPUT (r4 = r3 + two Kimi round-3 P3 wording fixes; Kimi round 3 verdict SHIP-DESIGN)
+DESIGN STATUS: DECIDED (r5, 12 Oct 2026: owner approved the recommendations; J1-J8 closed in §J; implementation in progress)
 
 # Encrypted buyer delivery address to seller
 
-**Scope.** This design applies to Shop at `mp-ux` commit `17a21e77` and marketplace-service at `132a61a`. It follows the owner decision on pubky/pubky-marketplace#12: encrypt the address in the buyer client, store only ciphertext the service cannot open, and decrypt in the seller client. The issue has no additional comments beyond that decision. This document is design-only.
+**Scope.** Shop at `master` and marketplace-service at `main` as of 12 Oct 2026. It follows the owner decision on pubky/pubky-marketplace#12: encrypt the address in the buyer client, store only ciphertext the service cannot open, and decrypt in the seller client. The owner approved the recommendations on 12 Oct 2026 (11:42 Lisbon) with one instruction: use existing, audited options; do not roll our own or add complexity.
 
-V1 covers `checkout.create` orders only. Auction-won orders and offer flows remain conversation-based address exchange in v1 and must not accidentally gain a plaintext address path.
+r5 changes against r4: the sealing primitive is RFC 9180 HPKE (§D1) instead of a hand-assembled X25519 + HKDF + XChaCha20 construction; the envelope, AAD and padding are simplified; the key record is published by the Shop itself under the grant it already holds (§C); offer checkout and drop claims are in scope; Shippo moves to the seller's browser (§E, §F); legacy plaintext is purged (§F); J1-J8 are closed (§J).
 
-## A. Current data flow
+V1 covers every order created by `checkout.create` and `offer.checkout` that ships. Auction-won orders carry no address in the service today (`handlers/auction.rs` inserts the column as NULL) and keep conversation-based exchange; they must not gain a plaintext path.
+
+## A. Data flow before this work
+
+This section records the flow as of r4, before the stacked implementation; later slices change it as described in §F.
 
 | Field                                                                                 | Who writes it                                   | Stored today                                                                                                                                                                                                   | Who can read today                                                                                                                                                                                                                                                        |
 | ------------------------------------------------------------------------------------- | ----------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -28,177 +32,152 @@ Plaintext remains visible to the buyer while entering and retaining an address; 
 
 The seller delivery-key record is authenticated only by homeserver path ownership. A malicious or compromised seller homeserver (or any holder of a seller session grant covering the key path, including XSS in an origin holding a broad grant) can substitute the key document at fetch time and receive addresses sealed to it; TOFU pinning (§C) provides cross-order detection, not prevention. Separately, the envelope is unauthenticated at the crypto layer: the seller cannot prove to a third party that the buyer authored a ciphertext, the recipient can forge a valid envelope for an order it can read, and the buyer cannot prove which plaintext they sealed. Buyer authentication for the order is provided solely by the marketplace bearer session (`docs/ecommerce/status.md:25`); the service-stored envelope is the only committed evidence in a dispute.
 
-Padding is mandatory: before sealing, pad the canonical plaintext to the next 512-byte bucket, with 1,024 bytes the maximum padded plaintext. The padding format is specified in §D (0x80 then zeros to the bucket boundary) and is covered by shared vectors; an over-limit plaintext is rejected rather than truncated. The ciphertext length side channel is consequently limited to the two buckets plus envelope metadata.
+Padding is mandatory and fixed: every plaintext is padded to exactly 2,048 bytes before sealing (§D), so every envelope has the same length and the ciphertext length leaks nothing beyond "a delivery address exists". An over-limit plaintext is rejected rather than truncated.
 
-## C. Key model and recommendation
+## C. Key model
 
-### Recommendation: seller-published app-scoped X25519 public key
+### Decision: a seller-published delivery public key, private half device-bound
 
-Publish a versioned seller encryption-key document at a marketplace public homeserver record controlled by the seller's authenticated session. The seller browser generates a random X25519 keypair locally. It publishes only `{v, keyId, publicKey, createdAt, revokedAt?}`. It stores the private key as an account-scoped encrypted IndexedDB record using the existing device-keyring AES-GCM storage pattern documented for messaging: receiver Noise material is wrapped under a non-extractable device key before IndexedDB (`docs/ecommerce/paykit-wasm-provenance.md:128-133`). The exact reusable module/API and its backup semantics require code confirmation.
+The seller's browser generates a random X25519 keypair (HPKE KEM keypair). It publishes a small public JSON record and keeps the private key wrapped in account-scoped IndexedDB using the existing non-extractable device-key AES-GCM wrapping (`src/libs/crypto/secret-wrapping.ts`, the pattern `messaging-keyring.ts` already uses for receiver key material).
 
-The key record lives on a marketplace-specific path with its own Ring capability, not under the standing `/pub/pubky.app/:rw` grant; follow messaging’s separate `/pub/paykit/:rw` approval precedent (`docs/ecommerce/messaging/README.md:38`). A service must never author, substitute, or proxy the key.
+Public record, one per seller, overwritten on rotation:
 
-Buyer-side TOFU pins `(sellerPubky → kid, key fingerprint, firstSeenAt)` in account-scoped Dexie. On key change, show the fingerprint difference and require explicit re-confirmation before sealing. A previously retired `kid` reappearing is a hard failure. Require monotonic `createdAt`; a rollback warns and requires re-confirmation.
-
-This is a deliberately device-bound v1 key: a seller may decrypt on the device that generated/imported the key. On a second device, onboarding must either import a seller-exported encrypted key package through an explicit recovery ceremony or generate a new key epoch; do not silently copy a raw secret through homeserver storage. The existing messaging documentation states that its multi-device backup-key decision is open (`docs/ecommerce/messaging/README.md:13`), so it cannot be claimed as an address-key backup solution. A lost private key means previously encrypted undelivered addresses cannot be recovered; seller UI must say that before replacing/revoking a key. The safe recovery outcome is seller/buyer contact and buyer re-encryption only while their local plaintext/saved address remains available; no service escrow.
-
-Rotation publishes a new `keyId`, retains the previous private key locally until every associated shippable order is terminal, and marks the old public key retired rather than deleting it. Buyers fetch the current key immediately before creating each seller order and include `keyId` in the envelope. A seller with no active key makes shipping checkout unavailable for that seller: show “This seller has not set up encrypted delivery. Remove this shipping item or ask the seller to finish setup.” Pickup-only orders remain address-free. A key document must be written only with a seller-authenticated homeserver session; the service must never author, substitute, or proxy the key.
-
-### Rejected: derive an encryption key from Ring/Bitkit identity
-
-Reject for v1. The code/docs establish that Shop normally receives Ring/bridge sessions and that the identity secret does not enter the browser for the existing encrypted messaging path (`docs/ecommerce/status.md:33`). The messaging path instead creates a receiver-scoped key in-browser (`docs/ecommerce/paykit-wasm-provenance.md:128-133`). No verified code path exposes an authorized deterministic X25519 derivation from the seller's Ed25519 identity secret to Shop. Ed25519 signing authentication is not an authorization to export or repurpose its signing seed. Do not add a conversion/derivation scheme.
-
-### Rejected: Paykit Noise Encrypted Link delivery
-
-Reject for address delivery: the existing Paykit Noise Encrypted Link requires an interactive XX handshake, both parties enrolled, and no store-and-forward delivery property (`docs/ecommerce/status.md:33-34`).
-
-### Rejected: service-mediated escrow
-
-Escrow would give the marketplace service a decryption capability, contradicting the owner’s “stored only as ciphertext the service cannot open” decision. It is justified only by an explicit owner reversal for cross-device recovery or server-side Shippo, neither of which this design assumes.
-
-## D. Envelope and storage
-
-Use an audited hybrid construction, not bespoke crypto: ephemeral X25519 Diffie-Hellman, HKDF-SHA-256 with a domain-separated salt/info, then XChaCha20-Poly1305 AEAD. `@noble/curves` is already declared as `^2.3.0` (`package.json:59`) and provides X25519; however its exact installed version and whether an already-vendored client AEAD API is suitable have not been verified — **UNVERIFIED**. `chacha20poly1305` is already a service dependency (`crates/service/Cargo.toml:10-18`, workspace version `0.10` at `Cargo.toml:21`), but the service must never decrypt this envelope. The browser AEAD provider is @noble/ciphers (same author/family as the already-declared @noble/curves and @noble/hashes at package.json:59-60); it is not yet declared and must be ADDED and pinned to an exact reviewed version in the buyer/seller slice, with interoperable vectors run before the slice is gated; do not write crypto primitives.
-
-`@noble/ciphers` is added and pinned to an exact reviewed version as the browser AEAD provider; `@noble/curves` supplies X25519, while the pinned ciphers package supplies XChaCha20-Poly1305.
-
-Suggested wire value, encoded as strict JSON:
+`pubky://{seller}/pub/pubky.app/marketplace/v1/delivery-keys/current`
 
 ```json
 {
   "v": 1,
-  "alg": "X25519-HKDF-SHA256-XCHACHA20POLY1305",
-  "kid": "base64url-random-key-id",
-  "epk": "base64url-32-byte-ephemeral-public-key",
-  "nonce": "base64url-24-byte-nonce",
-  "ct": "base64url-ciphertext-and-16-byte-tag"
+  "keyId": "<hex of first 16 bytes of SHA-256(publicKey)>",
+  "publicKey": "<base64url, 32 bytes>",
+  "createdAt": "<ISO 8601>"
 }
 ```
 
-The AAD is a fixed byte layout, not JSON: `DOMAIN || u16be(orderId_len) || orderId_utf8 || sellerPubky_raw32 || buyerPubky_raw32 || u8(count) || for each listingAggregateId, sorted lexicographically by UTF-8 bytes and deduplicated: u16be(len) || bytes`, where `DOMAIN = "pubky-marketplace.delivery-address/v1"`, orderId is the canonical lowercase hyphenated UUID string, and pubkys are the decoded 32-byte keys (not z-base-32 text). HKDF-SHA-256: `salt = empty`, `info = DOMAIN || 0x00 || kid || seller_static_x25519_pk` (transcript/key binding). Test vectors in both implementations are a release gate (§I docs/vectors slice).
+`keyId` is derived, not chosen: the reader recomputes it from `publicKey` and rejects a mismatch, so there is no second field to forge.
 
-The buyer must generate the order UUID client-side before sealing, and the service must validate that the submitted UUID is the ID it persists; current service code generates IDs after receiving plaintext (`crates/service/src/handlers/checkout.rs:250-252`), so this is a required contract change. UUIDs are v4 only and the service validates version and variant; a duplicate order UUID is a clean `INVALID_COMMAND` rejection on the orders-PK conflict, never an upsert or 500. Existing idempotency remains scoped to `checkout_command_id`. The service must validate that every listed aggregate maps to the order’s seller and exact lines before storing. This prevents replay to a different order, seller, buyer, or listing set.
+**Where it lives, and why this is safe without Ring, Bitkit or homeserver changes.** The Shop already holds `/pub/pubky.app/:rw` and already writes Shop-owned public records under `/pub/pubky.app/marketplace/v1/` (`deliverables/`, `conversation-requests/`, `cli-grant-proofs/`). Writing one more record there needs no new path or capability. r4 asked for a separate narrower Ring capability; that would narrow the set of origins that can overwrite the record, but the residual risk it addresses (XSS or a malicious origin holding the broad grant swaps the key) is the same risk that already lets that origin rewrite the seller's listings and shop record, and the buyer-side pin below detects a swap after the first order. It is not a reason to block. A narrower grant is a later hardening, not a prerequisite, and no issue is opened against Ring or Bitkit for it. The one cross-repo effect is marketplace-nexus logging an unknown-resource error per key publish; a skip-prefix issue is filed against pubky/marketplace-nexus.
 
-Cap canonical plaintext at 1,000 UTF-8 bytes and envelope JSON at 2,048 bytes; reject malformed base64url, unknown fields/version/algorithm, non-32-byte `epk`, non-24-byte nonce, or a ciphertext whose length is not exactly 528 or 1,040 bytes (the two padding buckets plus the 16-byte Poly1305 tag; any other length is rejected before AEAD open). Store the ciphertext envelope in `orders.delivery_address_ciphertext` (JSONB or bounded TEXT) and never in the current plaintext `delivery_address`. Buyer keeps the entered/saved address only in its existing local address book by opt-in, and keeps no plaintext order-address copy beyond form state unless it chooses a saved address.
+**Buyer pin (TOFU).** Rows in the `pins` store of the delivery key-store IndexedDB (`{databaseName}-delivery-keys`, the same database that holds seller private keys, so one reset clears both), scoped by the buyer's pubky, one row per seller: `{sellerPubky, keyId, firstSeenAt}`. At checkout the buyer reads the record directly from the seller's homeserver (never through the service). First sight pins the key and shows its fingerprint. A different `keyId` than the pin blocks sealing until the buyer confirms the change in a dialog showing both fingerprints. J7: this friction is accepted.
 
-Canonical plaintext (≤ 1,000 UTF-8 bytes) is followed by a single `0x80` byte then `0x00` bytes up to the next bucket boundary (512 or 1,024); the seller client, after AEAD open, strips from the last `0x80` and rejects if no `0x80` is present or any byte after it is non-zero; the padding bytes are inside the AEAD plaintext, so they are integrity-protected; padding vectors are part of the shared test vectors gated in §I.
+**No key, no shipping checkout (J4).** A seller with no published key cannot sell shipped items. The buyer sees: "This seller has not set up encrypted delivery. Remove this shipping item or ask the seller to finish setup." Pickup and digital items are unaffected. The seller is told in the listing editor and in Get Paid → Delivery privacy. No plaintext fallback exists on the new client.
+
+**Device-bound private key (J3).** The key lives on the device that generated it. Settings says so, and says that losing it means undelivered addresses cannot be opened (the buyer can re-send; the service holds nothing). Rotation generates a new keypair, republishes the record, and keeps old private keys locally so earlier orders still open. A multi-device backup follows the pattern of Shop #148 (wrap private data keys under the signer's scoped `e` key, homeserver #668) once Ring and Bitkit ship the `e` consent line (pubky-ring#385, pubky-passport#254, bitkit-ios#885, bitkit-android#1433, all open). Nothing in v1 depends on it.
+
+### Rejected: derive an encryption key from Ring/Bitkit identity
+
+No verified code path exposes an authorized X25519 derivation from the seller's Ed25519 identity secret to the Shop, and signing authority is not authority to repurpose the seed. Do not add a conversion scheme.
+
+### Rejected: Paykit Noise Encrypted Link delivery
+
+It needs an interactive XX handshake, both parties enrolled, and has no store-and-forward property (`docs/ecommerce/status.md`).
+
+### Rejected: service-mediated escrow and service-held keys
+
+The service's own sealing (`seal.rs` XChaCha20-Poly1305, `/priv` DEKs, pickup and digital seals) is opened by the service. Using it would break "stored only as ciphertext the service cannot open".
+
+## D. Envelope and storage
+
+### D1. Primitive choice (existing options, in the owner's order)
+
+1. **Homeserver HPKE (#689, merged 12 Oct 2026, "encrypt grant approvals with HPKE"): the suite is chosen, the code is not reusable.** The stack's HPKE is RFC 9180 base mode, DHKEM(X25519, HKDF-SHA256) / HKDF-SHA256 / ChaCha20-Poly1305. In the SDK it is `pub(crate)` (`approval_encryption.rs`) and `@synonymdev/pubky` exposes no HPKE function to JavaScript, so the Shop cannot call it. Nothing to import; the suite is what we adopt, so the whole stack speaks one HPKE.
+2. **An audited library already in the dependency trees: not available for HPKE.** The Shop declares `@noble/curves`, `@noble/hashes` and `@noble/ciphers` (primitives, not a protocol; composing them is the hand-rolling the owner ruled out). There is no libsodium in the Shop tree, and libsodium sealed boxes use X25519 + XSalsa20-Poly1305 with a BLAKE2b nonce, a different construction from the stack's. The service has `chacha20poly1305` (it never decrypts this envelope).
+3. **Vendored SB2/InboxKey: rejected.** `paykit-wasm-provenance.md` records that the app does not use the SB2 primitives; adopting them would bind addresses to a Paykit inbox key lifecycle the seller has not got, and it is a scheme with no published suite.
+
+**Chosen:** RFC 9180 HPKE with the homeserver's suite, implemented by the standard `hpke-js` packages (`@hpke/core`, `@hpke/dhkem-x25519`, `@hpke/chacha20poly1305`, pinned exact), the reference JavaScript HPKE implementation. The Rust side never seals or opens; the service validates only the byte length of the envelope. Interoperability with the Rust `hpke` crate (the one the homeserver uses) is proven by a vector test in the service repo (open with the Rust crate a vector sealed by hpke-js), so a future Rust client or the homeserver SDK can interoperate with no format change.
+
+No custom key schedule, KDF, nonce handling or AEAD composition is written. HPKE's single-shot `seal` does key derivation, nonce and AEAD internally.
+
+### D2. Envelope
+
+One envelope per shipped order, sealed to the seller's current delivery public key:
+
+- `info` = `"pubky-marketplace/delivery-address/v1"` (HPKE context separation).
+- `aad` = `"pubky-marketplace/delivery-address/v1|" + checkoutCommandId + "|" + buyerPubky + "|" + sellerPubky + "|" + keyId`, UTF-8. `checkoutCommandId` is the client-generated v4 UUID the buyer already sends as the command id (lowercase hyphenated); the service persists it as `orders.checkout_command_id`. A ciphertext therefore cannot be replayed onto another checkout, buyer or seller, or after a key change. The seller recomputes the AAD from the order projection (command id, buyer, seller) and the envelope's `key_id`.
+- Plaintext = canonical JSON of the address (the existing postal-address shape), UTF-8, at most 2,047 bytes, then `0x80`, then `0x00` bytes to exactly 2,048 bytes. The bucket holds the address schema's worst-case ASCII field lengths with room to spare and ordinary multi-byte addresses; a plaintext above 2,047 bytes is refused before sealing with a validation message, never truncated. After open, the seller strips from the last `0x80` and rejects if there is none or any later byte is non-zero.
+- Wire bytes = `enc (32 bytes) || ciphertext (2,048 + 16 bytes)` = exactly 2,096 bytes, base64url without padding (2,795 characters). The service rejects any other length before storing.
+
+No version byte inside the envelope: the field name (`delivery_address_envelope`) and the key record's `v` carry the version; a future suite is a new field.
+
+The service never receives `info`, AAD inputs it does not already have, or any key. It cannot open the envelope.
+
+Duplicate-`epk` rejection (r4) is dropped: HPKE generates a fresh ephemeral key per seal inside the library, which is the library's job, and a unique index on it would add a failure mode without a threat to answer.
 
 ## E. State machines and credential provenance
 
 ### Buyer
 
-1. **Address entered** → validate locally; selected saved address only fills the same form (`src/hooks/useMarketplaceCheckout/useMarketplaceCheckout.ts:150-177,237-245`).
-2. **Seller key discovery** → read public seller key document directly from homeserver; reject absent, malformed, expired, non-current, or identity-mismatched document.
-3. **Order identity allocated** → generate UUID(s), one per `(seller, fulfillment)` group; pickup groups allocate an order but no envelope.
-4. **Envelope sealed** → bind the exact group/order AAD; discard transient plaintext after request construction.
-   Pad per §D (0x80 then zeros to the 512/1,024 bucket) before sealing.
-5. **Checkout submitted** → marketplace session bearer authorizes the service command. Provenance: Ring/bridge signer mints an AuthToken; service exchanges it for an opaque marketplace bearer (documented at `docs/ecommerce/status.md:25`). The bearer authenticates actor/request; it is not an encryption key and must not be included in ciphertext/AAD.
-6. **Accepted** → service stores ciphertext atomically with order. **Key changed before submit / typed refusal** → refetch once, re-seal from in-memory form, show a confirmation that destination-key changed; never retry with a different seller identity. **Buyer edit after sealing** → invalidate envelope and re-seal; no “edit order” mutates an existing ciphertext.
+1. Address entered, validated locally; a saved address only fills the same form.
+2. Seller key discovery: read `delivery-keys/current` directly from the seller's homeserver; reject absent, malformed, `keyId` mismatch or owner mismatch; apply the pin (§C).
+3. Seal: per shipped seller group, with the command id that the checkout command will carry. Pickup and digital groups get no envelope. Plaintext is discarded after sealing.
+4. Submit: `checkout.create` carries `delivery_address_envelopes`, one `{seller_pubky, key_id, envelope}` per shipped seller. Offer checkout carries `delivery_address_envelope` (`{key_id, envelope}`); the seller is the offer's seller. Drop claims go through checkout.
+5. The marketplace bearer authenticates the request and is not part of any ciphertext.
+6. A key change between fetch and submit: the service refuses nothing (it cannot know), the seller's decrypt fails (wrong key id), so the buyer re-fetches once immediately before sealing and the AAD binds the key id used.
 
 ### Seller
 
-1. **No active key** → settings requires key creation/import before enabling shipping checkout.
-2. **Active key / order notification** → service notification contains order metadata only; notification insertion explicitly forbids address-bearing data (`crates/service/src/handlers/mod.rs:193-203`).
-3. **Order received** → seller client loads seller-authorized order projection plus its ciphertext envelope through a seller-only endpoint. The current projection strips `delivery_address` (`crates/service/src/model.rs:356-367`); adding an envelope must not accidentally make it public or buyer-readable.
+1. No key: shipping checkout unavailable (§C).
+2. Order notification carries metadata only (existing rule).
+3. Order view: the seller-only single-order projection returns `delivery_address: {format: "hpke_v1", key_id, command_id, envelope}` while the order is `paid` or `processing` and ships, and returns nothing else about the address. Buyers get neither.
+4. Decrypt: look up the private key by `key_id`, rebuild the AAD, open, unpad. Unknown key id, authentication failure or malformed input is a hard stop: no guessed address, no Shippo call.
+5. Packing slip and Shippo use the decrypted address held in component state only.
+6. Shippo runs in the seller's browser against the Shippo API with the seller's own token (J1, §F).
 
-Model the ciphertext endpoint on the existing seller-scoped label endpoint (`crates/service/src/shipping.rs:611-649`, actor check at 632): it must compare the authenticated actor to `order.seller_pubky` and reject a non-seller. Never add the envelope to `OrderRow::view()` or `projection()` for non-sellers. The buyer’s own checkout result may echo the envelope because the buyer authored it.
-
-4. **Decrypt** → confirm AAD against returned order facts before rendering. Unknown `kid`, authentication failure, malformed envelope, or unavailable private key is a hard failure: do not show a guessed address or call Shippo.
-5. **Packing slip** → render decrypted address in local component state; existing pasted-address behavior is local-only and clears after printing (`src/components/organisms/Marketplace/MarketplacePackingSlipDialog.tsx:16-33,150-172`).
-6. **Shippo** → seller browser, not service, submits the seller’s own Shippo request or accesses a Shippo-hosted flow. Current server-side Shippo uses server-held seller token and plaintext `order.delivery_address` (`crates/service/src/shipping.rs:420-512`), so it is incompatible and must be disabled/migrated before this feature is enabled.
-
-Key provenance: seller browser mints encryption keypair; seller-authenticated homeserver session writes public half; only the seller device imports/generates private half; buyer reads public half; buyer browser mints ephemeral key and ciphertext; service stores/routs ciphertext but owns no decryption credential; Shippo receives plaintext only from the seller-side label action.
+Key provenance: the seller browser mints the keypair and writes the public half with the seller's session; the private half never leaves the device; the buyer reads the public half; the buyer browser mints the ephemeral key inside HPKE; the service stores and routes ciphertext and owns no decryption credential; Shippo receives plaintext only from the seller's browser.
 
 ## F. Service impact, migration, and rollout
 
-- Replace `orders.delivery_address JSONB` for newly created shipped orders with `delivery_address_ciphertext` plus `delivery_key_id`; make plaintext null. Update `OrderRow`, `ORDER_COLUMNS`, checkout insert, command schema/domain models, serializers, and all test fixtures. Current inserts are at `crates/service/src/handlers/checkout.rs:310-339`; current read model is at `crates/service/src/model.rs:270-367`.
-- `orders.delivery_address_epk BYTEA` (32 bytes, NULL for plaintext/legacy rows) with a `UNIQUE` index (partial, `WHERE delivery_address_epk IS NOT NULL`); the service extracts `epk` from the validated envelope and writes it in the same transaction as the ciphertext; a unique-violation is surfaced as `INVALID_COMMAND` (same clean path as the order-UUID conflict).
-- Remove service-side address use from `quote_shipping_rates` and `purchase_shipping_label`; it currently performs the plaintext conversion at `crates/service/src/shipping.rs:477-512`. Do not merely encrypt the column then decrypt in the service.
-- Preserve the no-address notification rule; it is already explicit (`crates/service/src/handlers/mod.rs:193-203`). Audit events, IPN/webhooks, error strings, tracing, metrics, and label metadata so no address is copied there. Their full absence is **UNVERIFIED**.
-- Existing plaintext rows: keep only for legally/operationally required in-progress fulfillment, with a service-enforced terminal-state purge deadline. The exact deadline is owner input. New ciphertext-only service must never offer legacy plaintext to a new endpoint. Before purge, restrict the legacy Shippo path to legacy rows and seller authorization; do not coerce plaintext into a seller envelope because the seller key might be absent and the migration would create a new trust event.
-- Shippo launch behavior is an owner decision. If Shippo must work at launch, implement seller-client direct Shippo interaction without transmitting a Shippo token/address through marketplace-service, or retain the legacy server path only for legacy plaintext orders. A service-side proxy necessarily sees the destination and violates this design.
+- **Migration 0057** (claimed by this work; 0052-0055 are open upstream PRs, 0056 is the seller delivery terms PR): `orders.delivery_address_envelope BYTEA`, `orders.delivery_key_id TEXT`, a CHECK that they are set together and that a plaintext address and an envelope are never both present, and a one-time update that nulls `delivery_address` on every order already in `completed`, `cancelled`, `refunded_external` or `closed` (J2).
+- Checkout and offer checkout accept either the legacy plaintext `delivery_address` or the envelopes, never both. A config flag `REQUIRE_ENCRYPTED_DELIVERY_ADDRESS` (default false until the Shop release is deployed, then true) refuses plaintext. A shipped group without an envelope is refused when the flag is on. The service validates, per envelope: seller is a shipped group's seller, one envelope per shipped seller, `key_id` is 32 lowercase hex characters, base64url decodes to exactly 2,096 bytes. Messages never echo the envelope.
+- The order projection for the seller emits the `hpke_v1` shape above; legacy rows still emit `plaintext_v1` until purged. Redaction for buyers and everyone else is unchanged and tested to contain neither field.
+- **Purge (J2):** a worker task on the existing `delivery_email_purge` pattern (lease, per-tick, summary counter) nulls `delivery_address`, `delivery_address_envelope` and `delivery_key_id` for orders in a final state: `completed`, `cancelled`, `refunded_external`, `closed`. It deletes at the final state, with no extra retention window; a window would be a config value if counsel asks for one.
+- **Shippo (J1):** the service no longer calls Shippo. `shipping.rs`, its routes and its config go. The `shipping_configs` table and `orders.shipping_label` column stay because migrations are additive-only (`docs/migrations.md`); a later contract migration drops them. The seller's Shippo token and ship-from address move to device-local storage in the Shop. Labels and tracking: the Shop calls the Shippo API directly (CORS allows any origin with an Authorization header, checked 12 Oct 2026 with a preflight to api.goshippo.com) and records tracking through the existing ship command.
+- No address-derived shipping quote (J6): checkout shipping is the seller's flat rate and needs no destination.
 
-Scrub upstream Shippo rejection text before logging or returning it: carrier validation errors can echo submitted address fields into logs. Errors returned to callers use stable, non-address-bearing categories.
-
-**Rollout, in order:** (1) service deploy accepts BOTH plaintext and validated ciphertext for new orders — no behavior change for legacy clients; (2) client ships seller key lifecycle + seller decrypt/packing slip; (3) client ships buyer sealing behind a runtime flag, active only for seller groups whose published key passed discovery — groups without a key fall back to the transition behavior chosen by the owner (legacy plaintext with disclosure, or shipping checkout unavailable per §C); (4) after an adoption threshold, a service flag rejects plaintext for new rows (v2 command schema + DB check). Step 3 must never activate before step 2 ships; step 4 is the only irreversible step and is an owner decision.
+**Rollout, in order:** (1) service accepts both formats; (2) Shop ships the seller key lifecycle, decrypt and Shippo; (3) Shop ships buyer sealing; sellers without a key show the no-key message; (4) service flag turns plaintext off. Step 3 must not precede step 2.
 
 ## G. UX
 
-Add **Get Paid → Delivery privacy** settings: “Create delivery key” explains device custody, loss risk, rotation, and multi-device limitation before generation. Show active key fingerprint/key ID, creation date, “retire and replace” (requires loss warning), and an explicit import/recovery entry only once such a verified format exists.
-
-Retire the interim Cart copy: “Your delivery address is sent with your order and shown only to the seller of that order. Encrypting it to the seller’s key is scheduled.” (`src/components/templates/Marketplace/MarketplaceCart.tsx:320-324`). Replace it only after the end-to-end gate passes with “Encrypted to this seller’s delivery key. The marketplace service cannot read it.”
-
-Seller failures: “This delivery address cannot be opened on this device. Do not ship yet. Restore the key that received this order or contact the buyer through the order conversation.” Never ask the buyer to paste an address into a service form. The packing slip receives a decrypted address as an in-memory prop/state and retains the existing print/PDF warning; it must remove the “pasted delivery address” normal workflow once decrypted rendering ships.
-
-The decrypted packing-slip render must warn where the seller initiates printing that browser and OS print systems, printer queues, print previews, and print-to-PDF destinations can retain a plaintext address after the component clears its in-memory state.
+Get Paid → Delivery privacy: create key (explains device custody, loss, rotation before generating), show fingerprint and date, rotate (loss warning). Cart: the interim copy ("Encrypting it to the seller's key is scheduled.") becomes "Encrypted to this seller's delivery key. The marketplace service cannot read it." once sealing ships. Key-change dialog shows both fingerprints. Seller decrypt failure: "This delivery address cannot be opened on this device. Do not ship yet. Restore the key that received this order or contact the buyer through the order conversation." The packing slip keeps the print-system warning. The Shippo settings panel says the token stays on this device.
 
 ## H. Self-attack table
 
-| Attack                                                                 | Required control / gate                                                                                                                                                                                                                                                                       |
-| ---------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Replay ciphertext onto another order                                   | Exact fixed AAD includes order UUID, parties, and listing IDs; wrong AAD makes AEAD open fail (fail closed)                                                                                                                                                                                   |
-| Downgrade a shipping order to plaintext                                | v2 command schema rejects `deliveryAddress`; DB constraint/check rejects non-null plaintext for new rows; deliberate plaintext request fails                                                                                                                                                  |
-| Malicious seller key swap                                              | Buyer fetches immediately before submit; show seller fingerprint/key change; require seller-authenticated homeserver write and preserve key epochs                                                                                                                                            |
-| Service substitutes key                                                | Client reads seller homeserver record directly, validates owner path/signature/authorship, binds seller pubky and key ID in AAD; integration test substitutes service response and proves no effect                                                                                           |
-| Seller loses private key                                               | Explicit device custody/recovery UX; no escrow; decryption failure is safe-stop, not plaintext fallback                                                                                                                                                                                       |
-| XSS exfiltrates seller plaintext/key                                   | CSP/dependency hygiene remain necessary; at-rest wrapping does not protect live same-origin JS; minimize plaintext lifetime and do not claim XSS protection                                                                                                                                   |
-| Buyer edits after encryption                                           | Form mutation invalidates envelope; submission creates fresh order UUID/envelope; test edited address differs after decrypt                                                                                                                                                                   |
-| Key published by non-owner                                             | Homeserver write requires seller session with narrow path grant; client verifies record owner equals seller pubky; unauthorized publish fails                                                                                                                                                 |
-| Ciphertext/parser resource exhaustion                                  | Strict JSON/base64/byte caps before cryptographic work; oversized or unknown-field envelope fails                                                                                                                                                                                             |
-| Legacy plaintext endpoint leak                                         | Separate legacy-only route/retention, redaction tests, deadline purge; grep/contract tests assert new order has null plaintext                                                                                                                                                                |
-| Garbage-ciphertext griefing (buyer sends undecryptable envelope)       | Ordinary orders hold no stock until payment starts (status.md:26 inventory rule), but the bounded payment window and drop lock-at-claim (`DROP_CLAIM_WINDOW_SECONDS`) burn scarce slots; define a decrypt-failure cancel/refund path and rate-limit checkout; owner policy for drop-slot burn |
-| Seller falsely claims "cannot decrypt" to stall                        | Order state machine needs a decrypt-failure/dispute path; the service-stored envelope is the only committed evidence (no third party can verify without the seller key — disclosed in §B)                                                                                                     |
-| Ephemeral key/nonce reuse across envelopes                             | Fresh X25519 keypair + fresh 24-byte nonce per envelope, never persisted; service rejects a duplicate `epk` across orders; test asserts two envelopes never share `epk`                                                                                                                       |
-| Homeserver substitutes or rolls back the seller key record             | Buyer TOFU pin (§C); `createdAt` monotonicity check; warn + require re-confirmation on change                                                                                                                                                                                                 |
-| Seller session with a broad pre-existing grant overwrites the key path | Key record lives on a marketplace-specific path with its own Ring capability (precedent: messaging’s `/pub/paykit/:rw`), not under the general app grant                                                                                                                                      |
+| Attack                                                     | Control                                                                                                                                  |
+| ---------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| Replay ciphertext onto another order, buyer, seller or key | AAD binds command id, buyer, seller, key id; open fails closed                                                                           |
+| Downgrade to plaintext                                     | Flag refuses plaintext; DB CHECK forbids both fields; contract tests assert new rows hold null plaintext                                 |
+| Service substitutes the key                                | Buyer reads the seller's homeserver directly; the record's `keyId` must match its key; the pin flags a change                            |
+| Homeserver or broad-grant origin swaps the key             | Pin detects after first order; same trust as listings (§C); residual risk disclosed in §B                                                |
+| Seller loses the key                                       | Device custody warning; safe stop; buyer re-send; no escrow                                                                              |
+| XSS exfiltrates seller plaintext or key                    | Not protected against; minimize plaintext lifetime; CSP and dependency hygiene                                                           |
+| Oversize or malformed envelope                             | Exact length 2,096 bytes, strict base64url, checked before storage                                                                       |
+| Garbage ciphertext to burn a drop slot (J8)                | The existing claim window bounds an unpaid hold; a paid order the seller cannot open goes through the existing cancel request and refund |
+| Seller falsely claims "cannot decrypt"                     | The stored envelope is the only evidence; disputes use the existing refund path                                                          |
+| Legacy plaintext leak                                      | Sweep at migration, purge at final state, redaction tests                                                                                |
+| Shippo token exposure                                      | Token never reaches the service; device-local only                                                                                       |
 
-## I. Implementation slices
+## I. Implementation slices (stacked, per repo)
 
-| Slice (one agent)                 | Scope / hot files                                                                                                                                                                                                     | Proof command                                                                                                              | Required FAIL calibration                                                                                                |
-| --------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| Client key lifecycle              | Public key record, seller settings, encrypted local private-key storage, key discovery. Touches **W1.x one-approval** only if a new homeserver capability is necessary; otherwise avoid it.                           | Focused Vitest key storage/discovery suite, then `npm run typecheck`                                                       | Attempt publish with wrong seller identity; malformed/retired key unavailable at checkout                                |
-| Client envelope + checkout        | Envelope module, canonical AAD, UUID-before-seal contract, Cart UX. Touches **W1.x `MarketplaceCart`** and likely one-approval only if scope changes.                                                                 | Real-crypto known-answer and tamper tests; `npm run test -- --project unit` narrowed to changed tests; `npm run typecheck` | Wrong order/seller/buyer/listing AAD fails; plaintext `deliveryAddress` request rejected                                 |
-| Service ciphertext contract       | Migration, checkout validation/store/read endpoint, redactions, legacy separation.                                                                                                                                    | `cargo test -p marketplace-service`; `cargo clippy -p marketplace-service --all-targets`                                   | Raw DB/order JSON contains no plaintext for a new order; malformed/oversize ciphertext and mismatched actor are rejected |
-| Service duplicate `epk` rejection | Validate the envelope ephemeral public key and calibrate the duplicate rejection; the `delivery_address_epk` column and its partial UNIQUE index ship in the Service ciphertext contract slice's migration, not here. | `cargo test -p marketplace-service`; `cargo clippy -p marketplace-service --all-targets`                                   | submit two orders with the same `epk`; the second must be rejected with `INVALID_COMMAND` and no ciphertext row written  |
-| Seller decrypt + packing slip     | Seller-only fetch/decrypt, local display/print lifecycle; remove paste-as-normal path.                                                                                                                                | Focused Vitest component + crypto tests; `npm run typecheck`                                                               | Wrong `kid`/tag cannot render or trigger Shippo/print address                                                            |
-| Shippo migration                  | Disable server plaintext Shippo path for ciphertext orders; add seller-client direct path only if owner requires it.                                                                                                  | Service/client focused tests and an integration fixture with a fake Shippo endpoint                                        | Ciphertext order cannot cause server to call Shippo with any address; legacy-only behavior rejected for new row          |
-| Docs and protocol vectors         | ADR/spec, exact wire vectors, privacy and recovery UX copy.                                                                                                                                                           | Parser/vector tests in both client and Rust where applicable                                                               | Version 0/2, altered field order/AAD, and malformed vector rejected                                                      |
-| External audit                    | Kimi audit after implementation, plus a strongest-tier state-machine review before/after first implementation.                                                                                                        | OpenCode newest Kimi verdict plus rerun relevant proofs                                                                    | Audit prompt includes a deliberately insecure plaintext fallback/key-substitution diff and must flag it                  |
+Service: (1) migration 0057, payload contract, storage, projection, flag, hpke-js vector test; (2) purge worker; (3) remove server-side Shippo.
+Shop: (1) this document; (2) envelope module, key lifecycle, pin; (3) sealing at checkout, offer checkout, drop claim; (4) seller decrypt and packing slip; (5) seller-direct Shippo.
 
-| Rollout sequencing | Four flags/releases: dual-format service acceptance, seller lifecycle/decrypt, buyer sealing flag only after seller ship, then owner-authorized plaintext retirement | Service/client focused tests and flag-gated release checks | Runtime-flag attempt before seller decrypt ships is blocked; groups without a key follow the owner-selected transition behavior |
-| Test vectors in both implementations | Fixed AAD/KDF and envelope vectors are a release gate in browser and Rust implementations | Browser and Rust parser/vector tests | Successful vector plus malformed, tampered, wrong-AAD, wrong-version, and altered-layout vectors reject |
+Proof: real crypto in every test, no mocked seams; known-answer, tamper, wrong-AAD and wrong-key cases fail before any pass is accepted; the service opens a vector sealed by hpke-js with the Rust `hpke` crate. External audit (Kimi, full tier) is run by the Mac lane before review.
 
-The existing Service ciphertext contract slice must additionally calibrate duplicate client UUID → clean `INVALID_COMMAND` rejection. The Client key lifecycle slice must calibrate retired `kid` rejected at checkout. The Client envelope + checkout slice must calibrate substitute-key AND rollback-key responses have no effect.
+## J. Owner questions, closed 12 Oct 2026
 
-Every slice must use real production components/handlers, no mocked crypto seam; envelope tests need one calibrated failure before any passing baseline. Kimi external audit is mandatory because this changes keys, privacy, auth-adjacent access, and cryptographic handling.
+| #   | Decision                                                                                                                                                                                                                                         |
+| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| J1  | Shippo stays, seller-direct from the seller's browser. The service never sees the address or the token.                                                                                                                                          |
+| J2  | Purge at final state (completed, cancelled, refunded_external, closed), plus a one-time sweep of already-final legacy rows in migration 0057.                                                                                                    |
+| J3  | v1 is device-bound. Backup follows Shop #148's `e`-key pattern once Ring and Bitkit ship consent for it.                                                                                                                                         |
+| J4  | No published key, no shipping checkout for that seller. No plaintext fallback.                                                                                                                                                                   |
+| J5  | Offer checkout is encrypted too. Auction orders hold no address.                                                                                                                                                                                 |
+| J6  | No address-derived quote; no country code in the clear.                                                                                                                                                                                          |
+| J7  | TOFU confirmation friction accepted.                                                                                                                                                                                                             |
+| J8  | No new service state. An undecryptable envelope on an unpaid drop claim lapses with the existing claim window. Once paid, the seller uses the existing cancel request and the buyer's approval refunds it. Checkout stays rate-limited as today. |
 
-## J. Owner questions
+## Changes from r4
 
-J4 merges r1 J4 into J3; Kimi questions 5–8 are renumbered J4–J7.
-
-1. Must the Shippo integration remain available when ciphertext-only orders launch? If yes, choose seller-direct Shippo (recommended) versus an explicit relaxation of the no-service-plaintext rule.
-2. What exact terminal-state retention/purge deadline is acceptable for legacy plaintext orders, including disputes/returns?
-3. Is v1 acceptable as device-bound seller decryption with deliberate key import/recovery deferred, or is a multi-device recovery experience a launch requirement? If yes, should a buyer be able to re-send to a rotated seller key after payment, and what order state/consent must constrain that action?
-4. Transition-window behavior for sellers without a published key: legacy plaintext with disclosure, shipping checkout unavailable (the §C default — adoption impact?), or buyer choice? This gates rollout step 3.
-5. Scope confirmation: auction-won and offer-accepted shipped orders (`auction.rs:412,422` carries no address today) stay conversation-based in v1?
-6. Coarse-destination (country + postal code) server-side Shippo rate quotes for ciphertext orders — acceptable privacy trade, or does §B’s no-address-derived-quote rule stand absolute?
-7. Buyer-facing key-pinning change warnings (TOFU) — acceptable friction?
-   J8. What policy should govern drop-slot burn by undecryptable envelopes: auto-release the slot on seller `cannot_decrypt` after N minutes, hold until buyer re-sends, or count it against the buyer?
-
-## Changes from r1
-
-- P1-1 → §B; P1-2 → §D; P1-3 → §F, §I; P1-4 → §H.
-- P2-1, P2-2 → §D; P2-3, P2-4 → §C; P2-5 → Scope, §E; P2-6 → §E.
-- P3-1 → §D; P3-2 → §F; P3-3 → §B; P3-4 → §G; P3-5 → §C.
-
-## Changes from r2
-
-- Padding bucket lengths, format, and buyer sealing are specified in §B, §D, and §E.
-- Duplicate `epk` persistence and rejection are specified in §F and §I.
-- Browser AEAD provider declaration and pinning language are aligned in §D.
-- Drop-slot burn policy is added as owner question J8.
-- The design status reflects Kimi r1+r2 folding.
-
-DESIGN STATUS: NEEDS-OWNER-INPUT
-
-The encrypt-to-seller decision is implementable without giving the marketplace service a decrypting credential: a seller-owned, versioned X25519 key record plus buyer-side hybrid encryption can bind each address to one order and let the seller decrypt only in their browser. The two unresolved product constraints are material: current Shippo code is server-side and consumes plaintext, and the appropriate retention deadline for existing plaintext orders is not a code question. Until those are decided, implementation must not claim that operators cannot read addresses or silently preserve a plaintext fallback.
+- Primitive: hand-assembled X25519/HKDF/XChaCha20 replaced by RFC 9180 HPKE (§D1).
+- Envelope, AAD and padding simplified (§D2); duplicate-`epk` rejection removed.
+- Key record published by the Shop under its existing grant; no new capability (§C).
+- Offers and drop claims in scope; Shippo seller-direct; legacy purge defined; J1-J8 closed.

@@ -16,6 +16,8 @@ import {
   COMMERCE_SHOP_BIO_MAX_CHARS,
   COMMERCE_SHOP_NAME_MAX_CHARS,
   COMMERCE_SHOP_POLICY_MAX_CHARS,
+  COMMERCE_SHOP_TERM_DAYS_MAX,
+  COMMERCE_SHOP_TERM_DAYS_MIN,
   COMMERCE_TAXONOMY_VERSION_MAX,
   COMMERCE_TAXONOMY_VERSION_MIN,
 } from '@/config/commerce';
@@ -122,10 +124,11 @@ export const marketplacePublicUriSchema = z
     'Expected a Pubky marketplace v1 URI',
   );
 
+/** `/pub/locks.app/` (fork Lock Server) or `/pub/app.locks/` (pubky/locks rc10 and later). */
 export const locksPublicUriSchema = z
   .string()
   .regex(
-    /^pubky:\/\/[ybndrfg8ejkmcpqxot1uwisza345h769]{52}\/pub\/locks\.app\/[A-Za-z0-9_./-]+\.json$/,
+    /^pubky:\/\/[ybndrfg8ejkmcpqxot1uwisza345h769]{52}\/pub\/(?:locks\.app|app\.locks)\/[A-Za-z0-9_./-]+\.json$/,
     'Expected a public Locks policy URI',
   );
 
@@ -394,6 +397,9 @@ const commerceTransactionServiceSchema = z
     );
   }, 'Expected a plain https URL without credentials, query, or fragment');
 
+/** Whole days, `COMMERCE_SHOP_TERM_DAYS_MIN` to `COMMERCE_SHOP_TERM_DAYS_MAX`. */
+const commerceShopTermDaysSchema = z.number().int().min(COMMERCE_SHOP_TERM_DAYS_MIN).max(COMMERCE_SHOP_TERM_DAYS_MAX);
+
 const commerceShopRecordSchemaInner = commercePublicRecordBaseSchema
   .extend({
     recordType: z.literal('shop'),
@@ -408,6 +414,10 @@ const commerceShopRecordSchemaInner = commercePublicRecordBaseSchema
     // Optional since 0.6.2-marketplace.7; absent on every earlier record.
     // See docs/ecommerce/multi-operator.md for the routing semantics.
     transactionService: commerceTransactionServiceSchema.optional(),
+    // Seller-set post-purchase periods. Optional: unset means the transaction
+    // service's configured defaults apply. See docs/ecommerce/seller-delivery-terms.md.
+    deliveryAssumeDays: commerceShopTermDaysSchema.optional(),
+    autoCompleteDays: commerceShopTermDaysSchema.optional(),
     createdAt: commerceTimestampSchema,
     updatedAt: commerceTimestampSchema,
   })

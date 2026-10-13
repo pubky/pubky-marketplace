@@ -1,10 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import {
+  CONFIRM_REFUND_DESTINATION_WIRE_COMMAND,
+  REFUND_FIXTURE_ADDRESS,
+} from '@/test/fixtures/commerce/usdt-refund.wire';
+import {
   asDigitalDeliveryCommandResult,
   asPickupDetailsCommandResult,
   clearDigitalDeliveryCommandSchema,
   clearPickupDetailsCommandSchema,
   confirmPickupCommandSchema,
+  confirmRefundDestinationCommandSchema,
   createMarketplaceCheckoutCommandSchema,
   createReviewCommandSchema,
   deliverDigitalCommandSchema,
@@ -22,7 +27,7 @@ import {
   setPickupDetailsCommandSchema,
   updateReviewCommandSchema,
 } from './transaction-commands';
-import { toSnakeCaseWire } from './wire-casing';
+import { toCamelCaseWire, toSnakeCaseWire } from './wire-casing';
 
 const ORDER_ID = '018f47d2-6a27-7c23-a62f-000000000720';
 
@@ -530,7 +535,6 @@ describe('checkout.create fulfillment and address rules (§A2)', () => {
       payload: {
         lines,
         ...(withAddress ? { deliveryAddress: address } : {}),
-        guaranteePolicyVersion: 1,
       },
     };
   }
@@ -542,6 +546,16 @@ describe('checkout.create fulfillment and address rules (§A2)', () => {
     fulfillment: 'pickup',
   };
   const shippingLine = { listingAggregateId: `listing:${SELLER}_lamp_02`, expectedRevision: 2, quantity: 1 };
+
+  it('no longer carries a guarantee policy version on checkout', () => {
+    expect(createMarketplaceCheckoutCommandSchema.safeParse(checkoutCommand([shippingLine], true)).success).toBe(true);
+    expect(
+      createMarketplaceCheckoutCommandSchema.safeParse({
+        ...checkoutCommand([shippingLine], true),
+        payload: { ...checkoutCommand([shippingLine], true).payload, guaranteePolicyVersion: 1 },
+      }).success,
+    ).toBe(false);
+  });
 
   it('accepts a pickup-only checkout with NO delivery address', () => {
     const parsed = createMarketplaceCheckoutCommandSchema.parse(checkoutCommand([pickupLine], false));
@@ -804,7 +818,6 @@ describe('offer.checkout fulfillment and address rules (mirrors the service vali
         listingRecordSha256: 'a'.repeat(64),
         variantId: 'variant_01',
         quantity: 1,
-        guaranteePolicyVersion: 1,
         ...extra,
       },
     };
@@ -821,9 +834,166 @@ describe('offer.checkout fulfillment and address rules (mirrors the service vali
     expect(offerCheckoutCommandSchema.safeParse(offerCheckout({})).success).toBe(false);
   });
 
+  it('no longer carries a guarantee policy version on an offer checkout', () => {
+    const command = offerCheckout({ fulfillment: 'pickup' });
+    expect(offerCheckoutCommandSchema.safeParse(command).success).toBe(true);
+    expect(
+      offerCheckoutCommandSchema.safeParse({ ...command, payload: { ...command.payload, guaranteePolicyVersion: 1 } })
+        .success,
+    ).toBe(false);
+  });
+
   it('rejects a pickup award that presents an address', () => {
     expect(
       offerCheckoutCommandSchema.safeParse(offerCheckout({ fulfillment: 'pickup', deliveryAddress: address })).success,
     ).toBe(false);
+  });
+});
+
+describe('confirmRefundDestinationCommandSchema (S6 wire contract)', () => {
+  const command = (address: unknown, extra: Record<string, unknown> = {}) => ({
+    ...(toCamelCaseWire(CONFIRM_REFUND_DESTINATION_WIRE_COMMAND) as Record<string, unknown>),
+    payload: { orderId: ORDER_ID, address, ...extra },
+  });
+
+  it('round-trips the pinned snake_case body and is part of the command union', () => {
+    const parsed = confirmRefundDestinationCommandSchema.parse(
+      toCamelCaseWire(CONFIRM_REFUND_DESTINATION_WIRE_COMMAND),
+    );
+    expect(toSnakeCaseWire(parsed)).toEqual(CONFIRM_REFUND_DESTINATION_WIRE_COMMAND);
+    expect(marketplaceCommandSchema.parse(parsed).kind).toBe('refund.confirm_destination');
+  });
+
+  it('trims the address and accepts a lowercase one', () => {
+    expect(confirmRefundDestinationCommandSchema.parse(command(`  ${REFUND_FIXTURE_ADDRESS} `)).payload.address).toBe(
+      REFUND_FIXTURE_ADDRESS,
+    );
+    expect(confirmRefundDestinationCommandSchema.safeParse(command(REFUND_FIXTURE_ADDRESS.toLowerCase())).success).toBe(
+      true,
+    );
+  });
+
+  it('refuses a bad checksum, a wrong length, a non-string and extra payload keys', () => {
+    expect(
+      confirmRefundDestinationCommandSchema.safeParse(command(`0x${REFUND_FIXTURE_ADDRESS.slice(2).replace('a', 'A')}`))
+        .success,
+    ).toBe(false);
+    expect(confirmRefundDestinationCommandSchema.safeParse(command('0x1234')).success).toBe(false);
+    expect(confirmRefundDestinationCommandSchema.safeParse(command(42)).success).toBe(false);
+    expect(
+      confirmRefundDestinationCommandSchema.safeParse(command(REFUND_FIXTURE_ADDRESS, { network: 'base' })).success,
+    ).toBe(false);
+  });
+});
+
+describe('sealed delivery address fields', () => {
+  const ENVELOPE = 'A'.repeat(2795);
+  const KEY_ID = 'a'.repeat(32);
+  const sealed = { keyId: KEY_ID, envelope: ENVELOPE };
+  const address = {
+    name: 'Alice Buyer',
+    line1: '1 Market Street',
+    line2: '',
+    city: 'New York',
+    region: 'NY',
+    postalCode: '10001',
+    countryCode: 'US',
+  };
+  const shippingLine = { listingAggregateId: LISTING_AGGREGATE_ID, expectedRevision: 1, quantity: 1 };
+  const pickupLine = { ...shippingLine, fulfillment: 'pickup' };
+
+  function checkout(lines: Record<string, unknown>[], extra: Record<string, unknown>) {
+    return {
+      version: 1,
+      commandId: '018f47d2-6a27-7c23-a62f-000000000734',
+      aggregateId: 'checkout:018f47d2-6a27-7c23-a62f-000000000734',
+      expectedRevision: 0,
+      issuedAt: '2026-08-19T22:00:00.000Z',
+      kind: 'checkout.create',
+      payload: { lines, ...extra },
+    };
+  }
+
+  function offer(extra: Record<string, unknown>) {
+    return {
+      version: 1,
+      commandId: '018f47d2-6a27-7c23-a62f-000000000740',
+      aggregateId: 'offer:018f47d2-6a27-7c23-a62f-000000000741',
+      expectedRevision: 2,
+      issuedAt: '2026-08-19T22:00:00.000Z',
+      kind: 'offer.checkout',
+      payload: {
+        offerId: '018f47d2-6a27-7c23-a62f-000000000741',
+        awardId: '018f47d2-6a27-7c23-a62f-000000000742',
+        listingAggregateId: LISTING_AGGREGATE_ID,
+        listingRevision: 1,
+        listingRecordSha256: 'a'.repeat(64),
+        variantId: 'variant_01',
+        quantity: 1,
+        ...extra,
+      },
+    };
+  }
+
+  it('accepts sealed envelopes on a shipping checkout in place of the plaintext address', () => {
+    const command = checkout([shippingLine], { deliveryAddressEnvelopes: [{ sellerPubky: SELLER, ...sealed }] });
+    expect(createMarketplaceCheckoutCommandSchema.safeParse(command).success).toBe(true);
+  });
+
+  it('refuses a checkout that carries both the plaintext address and envelopes', () => {
+    const command = checkout([shippingLine], {
+      deliveryAddress: address,
+      deliveryAddressEnvelopes: [{ sellerPubky: SELLER, ...sealed }],
+    });
+    expect(createMarketplaceCheckoutCommandSchema.safeParse(command).success).toBe(false);
+  });
+
+  it('refuses envelopes on a pickup-only checkout and two envelopes for one seller', () => {
+    expect(
+      createMarketplaceCheckoutCommandSchema.safeParse(
+        checkout([pickupLine], { deliveryAddressEnvelopes: [{ sellerPubky: SELLER, ...sealed }] }),
+      ).success,
+    ).toBe(false);
+    expect(
+      createMarketplaceCheckoutCommandSchema.safeParse(
+        checkout([shippingLine], {
+          deliveryAddressEnvelopes: [
+            { sellerPubky: SELLER, ...sealed },
+            { sellerPubky: SELLER, ...sealed },
+          ],
+        }),
+      ).success,
+    ).toBe(false);
+  });
+
+  it.each([
+    ['a wrong length', { keyId: KEY_ID, envelope: 'A'.repeat(100) }],
+    ['padding characters', { keyId: KEY_ID, envelope: `${'A'.repeat(2794)}=` }],
+    ['a malformed key id', { keyId: 'XYZ', envelope: ENVELOPE }],
+    ['an unknown field', { ...sealed, address: 'x' }],
+  ])('refuses an envelope with %s', (_label, entry) => {
+    const command = checkout([shippingLine], { deliveryAddressEnvelopes: [{ sellerPubky: SELLER, ...entry }] });
+    expect(createMarketplaceCheckoutCommandSchema.safeParse(command).success).toBe(false);
+  });
+
+  it('accepts a sealed offer checkout, and refuses it beside a plaintext address or on pickup', () => {
+    expect(offerCheckoutCommandSchema.safeParse(offer({ deliveryAddressEnvelope: sealed })).success).toBe(true);
+    expect(
+      offerCheckoutCommandSchema.safeParse(offer({ deliveryAddressEnvelope: sealed, deliveryAddress: address }))
+        .success,
+    ).toBe(false);
+    expect(
+      offerCheckoutCommandSchema.safeParse(offer({ deliveryAddressEnvelope: sealed, fulfillment: 'pickup' })).success,
+    ).toBe(false);
+  });
+
+  it('puts the sealed fields on the wire in snake case', () => {
+    const command = checkout([shippingLine], { deliveryAddressEnvelopes: [{ sellerPubky: SELLER, ...sealed }] });
+    const wire = toSnakeCaseWire(createMarketplaceCheckoutCommandSchema.parse(command)) as {
+      payload: { delivery_address_envelopes: { seller_pubky: string; key_id: string; envelope: string }[] };
+    };
+    expect(wire.payload.delivery_address_envelopes).toEqual([
+      { seller_pubky: SELLER, key_id: KEY_ID, envelope: ENVELOPE },
+    ]);
   });
 });

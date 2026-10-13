@@ -7,11 +7,7 @@ import {
   marketplaceErrorCode,
   marketplaceFailureMessage,
 } from '@/libs/commerce/failure-messages';
-import {
-  isStripePaymentLink,
-  isStripeRestrictedKey,
-  type SellerPaymentConfigOwnView,
-} from '@/libs/commerce/payment-methods';
+import type { SellerPaymentConfigOwnView } from '@/libs/commerce/payment-methods';
 import { Logger } from '@/libs/logger/logger';
 import { toast } from '@/molecules/Toaster/use-toast';
 import { useCommerceStore } from '@/stores/commerce/commerce.store';
@@ -19,7 +15,8 @@ import { useCommerceStore } from '@/stores/commerce/commerce.store';
 /**
  * The seller's "Get paid" configuration: stored rails (loaded from the
  * durable service) and the save action. Watch-only registration is the
- * Bitkit setup grant; `accountClaimed` is read from paykit-server.
+ * Bitkit setup grant; `accountClaimed` is read from the fork paykit-server,
+ * or from the Lock Server with `paykitServerApi=upstream`.
  */
 export function useMarketplaceSellerPaymentConfig() {
   const marketplaceSession = useCommerceStore((state) => state.marketplaceSession);
@@ -31,6 +28,7 @@ export function useMarketplaceSellerPaymentConfig() {
   // Reads overlap: a session refresh can still be in flight when Step 2's
   // claim read returns. The older read must not put the claim back.
   const loadGeneration = useRef(0);
+  const ownConfigGeneration = useRef(0);
 
   const load = useCallback(async (): Promise<boolean | null> => {
     const generation = ++loadGeneration.current;
@@ -59,6 +57,25 @@ export function useMarketplaceSellerPaymentConfig() {
     return claimed;
   }, []);
 
+  /**
+   * Re-reads only the stored configuration (no Paykit claim lookup, no loading
+   * state), so a USDT reconnect or a "can't be checked" retry can see the
+   * service's fresh readiness without blanking the page. Resolves null when
+   * the read fails or a newer config-only read superseded it.
+   */
+  const refreshOwnConfig = useCallback(async (): Promise<SellerPaymentConfigOwnView | null> => {
+    const generation = ++ownConfigGeneration.current;
+    try {
+      const next = await CommerceController.getMyPaymentConfig();
+      if (generation !== ownConfigGeneration.current) return null;
+      setConfig(next);
+      return next;
+    } catch (error) {
+      Logger.error('Failed to refresh the payment configuration', { error });
+      return null;
+    }
+  }, []);
+
   const commitAccountClaimed = useCallback((claimed: boolean) => {
     loadGeneration.current += 1;
     setAccountClaimed(claimed);
@@ -77,36 +94,17 @@ export function useMarketplaceSellerPaymentConfig() {
   const save = useCallback(
     async (input: {
       bitcoinEnabled: boolean;
-      stripePaymentLink: string;
-      stripeRestrictedKey: string;
       paypalMerchantEmail: string;
+      /** Sent only when the service reports USDT; omitted keeps the request unchanged. */
+      usdtEnabled?: boolean;
     }): Promise<SellerPaymentConfigOwnView | false> => {
-      const stripePaymentLink = input.stripePaymentLink.trim();
       const paypalMerchantEmail = input.paypalMerchantEmail.trim();
-      const stripeRestrictedKey = input.stripeRestrictedKey.trim();
-      if (stripePaymentLink && !isStripePaymentLink(stripePaymentLink)) {
-        toast({
-          title: 'Payment settings were not saved',
-          description: 'The stored payment link could not be kept.',
-        });
-        return false;
-      }
-      if (stripeRestrictedKey && !isStripeRestrictedKey(stripeRestrictedKey)) {
-        toast({
-          title: 'Payment settings were not saved',
-          description: 'The payment key is not a restricted key.',
-        });
-        return false;
-      }
       setIsSaving(true);
       try {
         const saved = await CommerceController.putMyPaymentConfig({
           bitcoinEnabled: input.bitcoinEnabled,
-          stripePaymentLink: stripePaymentLink || null,
-          // Omit to preserve the stored key; the empty string clears it only
-          // when a key exists to clear (an explicit user action in the form).
-          ...(stripeRestrictedKey ? { stripeRestrictedKey } : {}),
           paypalMerchantEmail: paypalMerchantEmail || null,
+          ...(input.usdtEnabled === undefined ? {} : { usdtEnabled: input.usdtEnabled }),
         });
         setConfig(saved);
         toast({ title: 'Payment settings saved' });
@@ -128,35 +126,6 @@ export function useMarketplaceSellerPaymentConfig() {
     [],
   );
 
-  const clearStripeKey = useCallback(async (): Promise<boolean> => {
-    if (!config) return false;
-    setIsSaving(true);
-    try {
-      const saved = await CommerceController.putMyPaymentConfig({
-        bitcoinEnabled: config.bitcoinEnabled,
-        stripePaymentLink: config.stripePaymentLink,
-        stripeRestrictedKey: '',
-        paypalMerchantEmail: config.paypalMerchantEmail,
-      });
-      setConfig(saved);
-      toast({ title: 'Payment key removed' });
-      return true;
-    } catch (error) {
-      Logger.error('Failed to remove the Stripe key', { error });
-      toast({
-        title: 'Removing the payment key failed',
-        description: marketplaceFailureMessage(
-          marketplaceErrorCode(error),
-          MARKETPLACE_FAILURE_MESSAGES.stripeKeyRemoval,
-          error,
-        ),
-      });
-      return false;
-    } finally {
-      setIsSaving(false);
-    }
-  }, [config]);
-
   return {
     isLoading,
     isSaving,
@@ -164,8 +133,8 @@ export function useMarketplaceSellerPaymentConfig() {
     accountClaimed,
     loadError,
     save,
-    clearStripeKey,
     refresh: load,
+    refreshOwnConfig,
     commitAccountClaimed,
   };
 }

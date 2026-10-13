@@ -1,4 +1,5 @@
 import { CHECKOUT_HOLD_COPY } from '@/libs/commerce/checkout-hold';
+import { SHIPPO_FAILURE_REASONS } from '@/libs/commerce/shipping';
 import { isAppError } from '@/libs/error/error';
 import { ValidationErrorCode } from '@/libs/error/error.codes';
 import { ErrorCategory } from '@/libs/error/error.types';
@@ -57,7 +58,6 @@ export const MARKETPLACE_FAILURE_MESSAGES = {
   shippingLabel: 'The shipping label could not be purchased.',
   paymentSettings: 'Payment settings are unavailable.',
   bitcoinOfferUnavailable: 'Bitcoin is temporarily unavailable. Other payment methods are unaffected.',
-  stripeKeyRemoval: 'The stored payment key could not be removed.',
   messagingStart: 'Could not start marketplace messaging.',
   messagingStorage: 'Messaging paused: storage protection unavailable',
   sandboxPayment: 'Could not advance the sandbox payment.',
@@ -236,14 +236,21 @@ export const READER_WALLET_SETUP_COPY = {
   retry: 'Try again',
 } as const;
 
+const USDT_SELLER_NOT_READY_COPY =
+  "This seller can't take USDT right now. Choose another payment method, or contact the seller.";
+
 /**
  * Static copy for durable payment-method refusals. Keys are service
  * `error.reason` values and, for families that ship `code` with no `reason`
  * (`capability_required`, CAS `REVISION_CONFLICT`), the wire `error.code`.
- * Never copy the service `error.message` — it can echo a rejected Stripe key.
+ * Never copy the service `error.message` — it can echo a rejected private value.
  */
 export const MARKETPLACE_PAYMENT_METHOD_REASON_MESSAGES: ReadonlyMap<string, string> = new Map([
   ['bitcoin_unavailable', 'Bitcoin payments are not available for this seller.'],
+  [
+    'buyer_usdt_wallet_required',
+    "Your wallet doesn't support USDT yet. Pay with a Bitkit version that supports USDT, or choose another payment method.",
+  ],
   [BUYER_PAYKIT_WALLET_SETUP_NEEDED, `${READER_WALLET_SETUP_COPY.title}. ${READER_WALLET_SETUP_COPY.description}`],
   [
     'buyer_paykit_wallet_required',
@@ -255,10 +262,8 @@ export const MARKETPLACE_PAYMENT_METHOD_REASON_MESSAGES: ReadonlyMap<string, str
   ['hold_unavailable', 'The inventory hold for this checkout is no longer available.'],
   ['INTERNAL', MARKETPLACE_FAILURE_MESSAGES.unavailable],
   ['invalid_method', 'That payment method is not valid for this checkout.'],
-  ['invalid_payment_link', 'The payment link is not valid.'],
   ['invalid_paypal_email', 'The PayPal merchant email is not valid.'],
   ['invalid_pubky', 'The seller identity on this payment configuration is not valid.'],
-  ['invalid_restricted_key', 'The payment key is not valid.'],
   ['invalid_sats', 'The Bitcoin amount must be a positive satoshi amount.'],
   ['invalid_transaction_ref', 'The payment reference is not valid.'],
   ['INVALID_RESPONSE', MARKETPLACE_FAILURE_MESSAGES.unavailable],
@@ -270,22 +275,60 @@ export const MARKETPLACE_PAYMENT_METHOD_REASON_MESSAGES: ReadonlyMap<string, str
   ['not_seller', 'Only the seller can continue this payment step.'],
   ['order_not_found', 'The order was not found.'],
   ['order_not_pending', 'Only a checkout pending payment can bind a payment method.'],
-  ['paykit_expiry_inconsistent', 'The Paykit payment window does not match this checkout.'],
-  ['paykit_rejected', 'The Paykit server rejected the payment request.'],
-  ['paykit_total_inconsistent', 'The Paykit amount does not match this checkout.'],
-  ['paykit_unavailable', 'The Paykit server is unavailable. Try again shortly.'],
+  [
+    'paykit_expiry_inconsistent',
+    'The Bitcoin payment window didn’t match this checkout, so Bitcoin wasn’t started. Try again, or choose another payment method.',
+  ],
+  ['paykit_rejected', 'The Bitcoin payment request was refused. Try again, or choose another payment method.'],
+  [
+    'paykit_total_inconsistent',
+    'The Bitcoin amount didn’t match this checkout, so Bitcoin wasn’t started. Try again, or choose another payment method.',
+  ],
+  [
+    'paykit_unavailable',
+    'Bitcoin payment requests are unavailable right now. If you haven’t set up Bitkit for this Pubky account yet, do that first. Then try again shortly.',
+  ],
   ['payment_method_already_bound', 'A payment method is already bound to this checkout.'],
   ['payment_not_awaiting', 'The payment is no longer awaiting a method.'],
   ['payments_disabled', 'Payments are disabled on this marketplace.'],
   ['REVISION_CONFLICT', MARKETPLACE_FAILURE_MESSAGES.paymentChanged],
   ['revision_conflict', MARKETPLACE_FAILURE_MESSAGES.paymentChanged],
-  ['seller_account_unclaimed', 'The seller has not claimed a Bitcoin account yet.'],
+  [
+    'seller_account_unclaimed',
+    'This seller can’t take Bitcoin right now. Choose another payment method, or contact the seller.',
+  ],
   ['sold_out', 'This listing no longer has enough inventory.'],
-  ['stripe_key_invalid', 'The seller payment key was rejected. The seller must update their payment settings.'],
-  ['stripe_key_missing', 'This seller has not finished payment setup.'],
-  ['stripe_unavailable', 'Payment verification could not be reached. Try again shortly.'],
   ['unavailable', 'The payment method request was refused.'],
   ['UPSTREAM_UNAVAILABLE', MARKETPLACE_FAILURE_MESSAGES.unavailable],
+  ['usdt_seller_not_ready', USDT_SELLER_NOT_READY_COPY],
+  ['usdt_unavailable', "USDT payments aren't available right now. Choose another payment method."],
+]);
+
+/**
+ * The same service reasons read differently when the buyer chose USDT: the
+ * Bitcoin strings above name Bitcoin, so a USDT bind never shows them. Only
+ * reasons that exist for both rails need an entry; USDT-only reasons live in
+ * the main table.
+ */
+export const USDT_PAYMENT_METHOD_REASON_MESSAGES: ReadonlyMap<string, string> = new Map([
+  [
+    'buyer_paykit_wallet_required',
+    'Connect Bitkit to pay with USDT: this account has no Paykit wallet that can receive a payment request.',
+  ],
+  [
+    'paykit_expiry_inconsistent',
+    'The USDT payment window didn’t match this checkout, so USDT wasn’t started. Try again, or choose another payment method.',
+  ],
+  ['paykit_rejected', 'The USDT payment request was refused. Try again, or choose another payment method.'],
+  [
+    'paykit_total_inconsistent',
+    'The USDT amount didn’t match this checkout, so USDT wasn’t started. Try again, or choose another payment method.',
+  ],
+  [
+    'paykit_unavailable',
+    'USDT payment requests are unavailable right now. If you haven’t set up Bitkit for this Pubky account yet, do that first. Then try again shortly.',
+  ],
+  ['seller_account_unclaimed', USDT_SELLER_NOT_READY_COPY],
 ]);
 
 function paymentMethodRefusalLookupKeys(error: unknown): string[] {
@@ -299,15 +342,42 @@ function paymentMethodRefusalLookupKeys(error: unknown): string[] {
   return keys;
 }
 
-export function marketplacePaymentMethodReasonMessage(reason: string | null | undefined): string {
+export function marketplacePaymentMethodReasonMessage(
+  reason: string | null | undefined,
+  method?: string | null,
+): string {
   if (typeof reason !== 'string' || reason.length === 0) {
     return MARKETPLACE_PAYMENT_METHOD_REASON_MESSAGES.get('unavailable') ?? 'The payment method request was refused.';
   }
   return (
+    (method === 'usdt' ? USDT_PAYMENT_METHOD_REASON_MESSAGES.get(reason) : undefined) ??
     MARKETPLACE_PAYMENT_METHOD_REASON_MESSAGES.get(reason) ??
     MARKETPLACE_PAYMENT_METHOD_REASON_MESSAGES.get('unavailable') ??
     'The payment method request was refused.'
   );
+}
+
+/**
+ * The refusals after which the same USDT bind would be refused again: the
+ * deployment cannot take USDT (`usdt_unavailable`) or this seller cannot
+ * (`usdt_seller_not_ready`). The picker stops offering USDT after either.
+ */
+export const USDT_OFFER_REFUSAL_REASONS = ['usdt_unavailable', 'usdt_seller_not_ready'] as const;
+export type UsdtOfferRefusalReason = (typeof USDT_OFFER_REFUSAL_REASONS)[number];
+
+/** The key a USDT refusal is remembered under: the seller pubky, or the distinct pubkys joined with `|`. */
+export function usdtRefusalKey(sellerPubkys: readonly string[]): string {
+  return [...new Set(sellerPubkys)].join('|');
+}
+
+/** The USDT offer refusal a failed bind carries, or null for any other failure or rail. */
+export function usdtOfferRefusalReason(error: unknown): UsdtOfferRefusalReason | null {
+  if (!isAppError(error) || error.context?.paymentMethod !== 'usdt') return null;
+  for (const key of paymentMethodRefusalLookupKeys(error)) {
+    const refusal = USDT_OFFER_REFUSAL_REASONS.find((reason) => reason === key);
+    if (refusal) return refusal;
+  }
+  return null;
 }
 
 /** True for the bind refusal that asks the buyer to finish Paykit wallet setup. */
@@ -317,8 +387,11 @@ export function isReaderWalletSetupNeeded(error: unknown): boolean {
 
 /** Buyer/seller payment-action toast: map reason or family code, never a wire message. */
 export function marketplacePaymentMethodFailureMessage(error: unknown, fallback: string): string {
+  const usdtBind = isAppError(error) && error.context?.paymentMethod === 'usdt';
   for (const key of paymentMethodRefusalLookupKeys(error)) {
-    const mapped = MARKETPLACE_PAYMENT_METHOD_REASON_MESSAGES.get(key);
+    const mapped =
+      (usdtBind ? USDT_PAYMENT_METHOD_REASON_MESSAGES.get(key) : undefined) ??
+      MARKETPLACE_PAYMENT_METHOD_REASON_MESSAGES.get(key);
     if (mapped) return mapped;
   }
   return marketplaceFailureMessage(marketplaceErrorCode(error), fallback, error);
@@ -349,4 +422,27 @@ export function marketplaceErrorCode(error: unknown): string | null {
   if (!error || typeof error !== 'object' || !('code' in error)) return null;
   const code = (error as { code?: unknown }).code;
   return typeof code === 'string' ? code : null;
+}
+
+const SHIPPO_REASON_MESSAGES: ReadonlyMap<string, string> = new Map([
+  [SHIPPO_FAILURE_REASONS.keyInvalid, 'Shippo rejected your API token. Update it in Shipping settings and try again.'],
+  [
+    SHIPPO_FAILURE_REASONS.rejected,
+    'Shippo refused this request. Check the parcel and the ship-from address in Shipping settings, or add tracking by hand.',
+  ],
+  [SHIPPO_FAILURE_REASONS.unavailable, 'Shippo could not be reached. Try again in a moment.'],
+]);
+
+/**
+ * Seller toast for a Shippo call made from this browser: static copy keyed by
+ * the failure reason, never Shippo's own text (it can quote the address) and
+ * never the error message.
+ */
+export function shippingFailureMessage(error: unknown, fallback: string): string {
+  if (isAppError(error)) {
+    const reason = error.context?.reason;
+    const mapped = typeof reason === 'string' ? SHIPPO_REASON_MESSAGES.get(reason) : undefined;
+    if (mapped) return mapped;
+  }
+  return marketplaceFailureMessage(marketplaceErrorCode(error), fallback, error);
 }

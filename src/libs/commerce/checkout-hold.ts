@@ -10,6 +10,7 @@ export const CHECKOUT_HOLD_COPY = {
   heldForYouCta: 'Held for you · view your order',
   heldForYouOfferCta: 'Held for you · continue checkout',
   heldWhileAnotherPays: 'Held while another buyer pays',
+  holdOwnerCheckPrompt: 'Is this your hold? Approve purchases to check.',
   expiredNoLateMoney: 'Payment window elapsed. The item is available again.',
   pendingBitcoinPaymentBuyer:
     'If a payment is still pending in Bitkit, another wallet or another device, let it finish or resolve it before you order again.',
@@ -20,11 +21,10 @@ export const CHECKOUT_HOLD_COPY = {
     'Your payment arrived after another buyer took this item. This order cannot be completed. The seller must return your funds.',
   refundRequiredBitcoinSeller:
     'Return the observed bitcoin to the buyer. This marketplace cannot reverse Bitcoin. Message the buyer for a return address, send the transaction, then record it as an external refund.',
+  refundRequiredUsdtSeller:
+    'Return the received USDT to the buyer. This marketplace cannot reverse an Arbitrum transfer. Send it from Bitkit, then record the refund.',
   refundRequiredPaypalSeller:
     'Refund this PayPal payment from your PayPal account. This marketplace cannot refund PayPal. Then record the refund.',
-  refundRequiredStripeSeller: 'Refund this card payment from the account that received it. Then record the refund.',
-  stripeRefundSubmitted: 'Refund submitted.',
-  stripeRefundRefused: 'The refund was refused. Refund it from the account that received the payment.',
 } as const;
 
 /** An order timestamp with its day, e.g. `Oct 1, 2026, 10:10 AM UTC`. Holds can run 24 hours. */
@@ -77,7 +77,7 @@ export function isHoldExpiredNoLateMoney(
 
 export function refundRequiredSellerCopy(paymentMethod: string | null | undefined): string {
   if (paymentMethod === 'paypal') return CHECKOUT_HOLD_COPY.refundRequiredPaypalSeller;
-  if (paymentMethod === 'stripe') return CHECKOUT_HOLD_COPY.refundRequiredStripeSeller;
+  if (paymentMethod === 'usdt') return CHECKOUT_HOLD_COPY.refundRequiredUsdtSeller;
   return CHECKOUT_HOLD_COPY.refundRequiredBitcoinSeller;
 }
 

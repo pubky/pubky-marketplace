@@ -2,11 +2,13 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import { MARKETPLACE_FAILURE_MESSAGES } from '@/libs/commerce/failure-messages';
+import { PAYMENT_NOT_FINAL_COPY } from '@/libs/commerce/usdt-buyer-status';
 import { AppError } from '@/libs/error/error';
 import { AuthErrorCode, ClientErrorCode } from '@/libs/error/error.codes';
 import { ErrorCategory, ErrorService } from '@/libs/error/error.types';
 import type { MarketplaceOrder } from '@/services/marketplace/marketplace';
 import { useCommerceStore } from '@/stores/commerce/commerce.store';
+import { USDT_WIRE_PAYMENT_NOT_FINAL_REFUSAL } from '@/test/fixtures/commerce/usdt-orders';
 import { useMarketplaceOrders } from './useMarketplaceOrders';
 
 const BUYER = 'b'.repeat(52);
@@ -87,7 +89,6 @@ describe('useMarketplaceOrders', () => {
         subtotal: { amountMinor: 10_000, currency: 'USD', exponent: 2 },
         shipping: { amountMinor: 1_200, currency: 'USD', exponent: 2 },
         total: { amountMinor: 11_200, currency: 'USD', exponent: 2 },
-        guaranteePolicyVersion: 1,
         paymentId: PAYMENT_ID,
         receiptId: null,
         fulfillment: 'shipping',
@@ -373,6 +374,29 @@ describe('useMarketplaceOrders', () => {
     expect(JSON.stringify(vi.mocked(toast).mock.calls)).not.toContain('14 Oak Lane');
   });
 
+  it.each(['fulfillment.ship', 'fulfillment.mark_ready', 'fulfillment.confirm_pickup'])(
+    'shows the payment_not_final copy, never the server message, when %s is refused on a USDT order',
+    async (kind) => {
+      const { result } = renderHook(() => useMarketplaceOrders());
+      await waitFor(() => expect(result.current.orders).toHaveLength(1));
+      const order = result.current.orders[0].order;
+      const { toast } = await import('@/molecules/Toaster/use-toast');
+      vi.mocked(toast).mockClear();
+
+      vi.mocked(CommerceController.executeMarketplaceCommand).mockResolvedValueOnce(
+        USDT_WIRE_PAYMENT_NOT_FINAL_REFUSAL,
+      );
+      let succeeded = true;
+      await act(async () => {
+        succeeded = await result.current.actOnOrder(order, kind, {});
+      });
+
+      expect(succeeded).toBe(false);
+      expect(vi.mocked(toast)).toHaveBeenCalledWith({ variant: 'error', description: PAYMENT_NOT_FINAL_COPY });
+      expect(JSON.stringify(vi.mocked(toast).mock.calls)).not.toContain('The payment is not final.');
+    },
+  );
+
   it('shows a plain refund refusal and keeps markup off the toast', async () => {
     const { result } = renderHook(() => useMarketplaceOrders());
     await waitFor(() => expect(result.current.orders).toHaveLength(1));
@@ -429,6 +453,43 @@ describe('useMarketplaceOrders', () => {
       description: 'Could not update this order.',
     });
     expect(JSON.stringify(vi.mocked(toast).mock.calls)).not.toContain('The external refund cannot be recorded.');
+  });
+
+  it.each([
+    [
+      'refund.record_external',
+      'invalid_refund_reference',
+      'Enter the Arbitrum transaction hash (0x followed by 64 characters).',
+    ],
+    [
+      'refund.record_external',
+      'refund_destination_required',
+      "Ask the buyer to confirm a refund address first. It's on their order page.",
+    ],
+    [
+      'refund.confirm_destination',
+      'invalid_refund_destination',
+      "That isn't a valid Arbitrum address. Check it and try again.",
+    ],
+  ] as const)('maps the USDT refusal reason on %s (%s) to its static copy', async (kind, reason, copy) => {
+    const { result } = renderHook(() => useMarketplaceOrders());
+    await waitFor(() => expect(result.current.orders).toHaveLength(1));
+    const order = result.current.orders[0].order;
+    const { toast } = await import('@/molecules/Toaster/use-toast');
+    vi.mocked(toast).mockClear();
+    vi.mocked(CommerceController.executeMarketplaceCommand).mockResolvedValueOnce({
+      ok: false,
+      error: { code: 'INVALID_COMMAND', message: 'rejected 0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed', reason },
+    });
+
+    let succeeded = true;
+    await act(async () => {
+      succeeded = await result.current.actOnOrder(order, kind, { address: '0x1' });
+    });
+
+    expect(succeeded).toBe(false);
+    expect(vi.mocked(toast)).toHaveBeenCalledWith({ variant: 'error', description: copy });
+    expect(JSON.stringify(vi.mocked(toast).mock.calls)).not.toContain('5aAeb');
   });
 
   it('flags needsSession on a session-required load failure and refetches once a session connects', async () => {

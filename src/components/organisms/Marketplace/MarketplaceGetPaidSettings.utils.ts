@@ -1,4 +1,5 @@
 import type { SellerPaymentConfigOwnView } from '@/libs/commerce/payment-methods';
+import type { UsdtSellerReadiness } from '@/libs/commerce/usdt-seller-setup';
 import { locksCreatorMatchesShopPubky } from '@/services/locks/locks-frontend-session';
 
 /** Plain-language setup state shown as the status pill on each method card. */
@@ -24,16 +25,6 @@ export function derivePaypalStatus(config: SellerPaymentConfigOwnView | null): P
   return config?.paypalMerchantEmail ? 'email_saved' : 'not_set_up';
 }
 
-export function deriveStripeStatus(config: SellerPaymentConfigOwnView | null): PaymentMethodStatus {
-  const hasLink = Boolean(config?.stripePaymentLink);
-  const hasKey = Boolean(config?.stripeRestrictedKeySet);
-  if (hasLink && hasKey) return 'connected';
-  // Half-configured Stripe cannot verify payments: the link without the key
-  // (or a stored key without a link) needs the seller to finish the pair.
-  if (hasLink || hasKey) return 'needs_attention';
-  return 'not_set_up';
-}
-
 /**
  * Bitcoin is connected only when both live signals are present:
  * - Lock Server authorization: `connectedCreator` from `useMarketplaceLocksConnect`
@@ -53,6 +44,13 @@ export function deriveBitcoinStatus(args: {
   if (locksAuthorized && paykitClaimed) return 'connected';
   if (!locksAuthorized && !paykitClaimed) return 'not_set_up';
   return 'needs_attention';
+}
+
+/** USDT is Connected only when the service reports it ready; a lookup it cannot make needs attention. */
+export function deriveUsdtStatus(readiness: UsdtSellerReadiness): PaymentMethodStatus {
+  if (readiness === 'ready') return 'connected';
+  if (readiness === 'unavailable') return 'needs_attention';
+  return 'not_set_up';
 }
 
 export function atLeastOneMethodSentence(readyCount: number): string {

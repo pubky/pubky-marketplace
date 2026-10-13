@@ -15,7 +15,7 @@ Local setup is in [`onboarding.md`](onboarding.md) and [`RUNNING.md`](RUNNING.md
 | Tags               | `shop-vX.Y.Z` on the deployed commit, with a GitHub release                                                                                                                                                                 |
 | Production client  | Vercel project `pubky-marketplace-production`, team `synonymdev`, alias `shop.pubky.app`                                                                                                                                    |
 | Staging client     | Vercel project `pubky-marketplace-staging`, team `synonymdev`, <https://pubky-marketplace-staging.vercel.app>                                                                                                               |
-| Backend services   | Separate repositories, deployed separately: `pubky-marketplace-service`, the `pubky-nexus` fork, the `paykit-server` fork. See their READMEs.                                                                               |
+| Backend services   | Separate repositories, deployed separately: `pubky-marketplace-service`, `pubky/marketplace-nexus`, the `paykit-server` fork (until the upstream Paykit switch). See their READMEs.                                         |
 | Unrelated branches | `pubchi/v1` is a different product. Do not base Shop work on it.                                                                                                                                                            |
 
 ## Tools
@@ -150,6 +150,12 @@ Deploy with a fresh build cache. Corrupt caches have stalled builds at `Running 
 vercel --prod --yes --force --scope synonymdev 2>&1 | tee <evidence-folder>/deploy.log
 ```
 
+The Shop serves no version endpoint, so a deployment is identified from the records we already keep, never from the
+served site. `vercel inspect shop.pubky.app --scope synonymdev` prints the `dpl_…` id and the build for the alias; the
+id is what the proof's `EXPECTED_DPL` pins, and the release notes record it next to the tag and exact commit. For the
+marketplace service, the digest of the running image (Railway, or GCP once the service runs there) is the record; see
+[Backend releases](#backend-releases).
+
 A build takes about six minutes. Allow ten before treating it as stuck, and do not cancel earlier. On
 `Error: Deployment not found`, run `vercel ls pubky-marketplace-production --scope synonymdev` before redeploying.
 
@@ -270,6 +276,8 @@ git tag shop-vX.Y.Z <deployed-sha>
 git push origin shop-vX.Y.Z
 gh release create shop-vX.Y.Z -R pubky/pubky-marketplace --title "Shop vX.Y.Z" --notes-file <evidence-folder>/notes.md
 ```
+
+The notes body is also kept in the repository as `docs/ecommerce/release-notes/shop-vX.Y.Z.md` (see `shop-v0.6.50.md` and `shop-v0.6.51.md`). The GitHub release is the record; the file is its committed copy.
 
 The notes carry the version, date, exact commit, Vercel deployment id and URL, one line per user-visible change, the
 backend deploys the release depends on (for example `marketplace-service <sha>`), known limitations, the proof result

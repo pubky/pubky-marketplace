@@ -2,26 +2,29 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { CommerceController } from '@/controllers/commerce/commerce';
+import { useUsdtPaymentsAvailable } from '@/hooks/useUsdtPaymentsAvailable/useUsdtPaymentsAvailable';
 import {
   MARKETPLACE_FAILURE_MESSAGES,
   marketplaceErrorCode,
   marketplaceFailureMessage,
+  usdtOfferRefusalReason,
+  usdtRefusalKey,
 } from '@/libs/commerce/failure-messages';
 import {
   availablePaymentMethods,
   type PaymentMethodKind,
   type SellerPaymentConfig,
 } from '@/libs/commerce/payment-methods';
+import { isUsdPricedTotals } from '@/libs/commerce/usdt-buyer-status';
 import { Logger } from '@/libs/logger/logger';
 import { showPaymentMethodRefusalToast } from '@/molecules/Toaster/payment-method-refusal-toast';
-import { toast } from '@/molecules/Toaster/use-toast';
 import type { MarketplaceOrder } from '@/services/marketplace/marketplace';
+import { useCommerceStore } from '@/stores/commerce/commerce.store';
 
 /**
  * Buyer/seller actions for one order's payment method (durable modes only):
  * loads the seller's available rails while no method is bound, binds the
- * buyer's choice, and drives the per-rail follow-ups — Stripe verification,
- * the PayPal report, and the seller's PayPal receipt confirmation. Every
+ * buyer's choice, and drives the per-rail follow-ups — the PayPal report, and the seller's PayPal receipt confirmation. Every
  * successful action calls `onPaymentChanged` so the parent refetches the
  * authoritative order.
  */
@@ -39,6 +42,9 @@ export function useMarketplaceOrderPayment({
   const [pendingAction, setPendingAction] = useState<'bind' | 'verify' | 'mark-paid' | 'confirm' | null>(null);
 
   const needsConfig = enabled && !order.paymentMethod;
+  const usdtPaymentsAvailable = useUsdtPaymentsAvailable(needsConfig);
+  const sellerKey = usdtRefusalKey([order.sellerPubky]);
+  const usdtRefused = useCommerceStore((state) => state.usdtRefusals[sellerKey] !== undefined);
 
   useEffect(() => {
     if (!needsConfig) return;
@@ -70,6 +76,8 @@ export function useMarketplaceOrderPayment({
         await onPaymentChanged();
       } catch (error) {
         Logger.error(`Marketplace payment action '${action}' failed`, { error });
+        const usdtRefusal = usdtOfferRefusalReason(error);
+        if (usdtRefusal) CommerceController.rememberUsdtRefusal(sellerKey, usdtRefusal);
         showPaymentMethodRefusalToast({
           error,
           fallback: 'The payment action could not be completed.',
@@ -80,7 +88,7 @@ export function useMarketplaceOrderPayment({
         setPendingAction(null);
       }
     },
-    [onPaymentChanged],
+    [onPaymentChanged, sellerKey],
   );
 
   const bind = useCallback(
@@ -95,19 +103,6 @@ export function useMarketplaceOrderPayment({
     },
     [order.id, runAction],
   );
-
-  const verifyStripe = useCallback(async () => {
-    await runAction('verify', async () => {
-      const result = await CommerceController.verifyStripePayment(order.id);
-      if (!result.verified) {
-        toast({
-          title: 'Payment not found yet',
-          description:
-            'No matching payment has been reported on the seller\u2019s account. If you just paid, wait a moment and verify again.',
-        });
-      }
-    });
-  }, [order.id, runAction]);
 
   const markPaid = useCallback(
     async (transactionRef: string) => {
@@ -125,12 +120,15 @@ export function useMarketplaceOrderPayment({
   }, [order.id, runAction]);
 
   return {
-    availableMethods: sellerConfig ? availablePaymentMethods(sellerConfig) : null,
+    availableMethods: sellerConfig
+      ? availablePaymentMethods(sellerConfig, {
+          usdtPaymentsAvailable: usdtPaymentsAvailable && !usdtRefused && isUsdPricedTotals([order.total]),
+        })
+      : null,
     bitcoinOfferUnavailable: sellerConfig?.bitcoinAvailable === true && sellerConfig.bitcoinOfferAvailable === false,
     configError,
     pendingAction,
     bind,
-    verifyStripe,
     markPaid,
     confirmReceived,
   };

@@ -622,7 +622,7 @@ export interface CommerceLocksCorrelationModelSchema {
   order_id: string;
   seller_pubky: string;
   bundle_id: string;
-  /** Public Locks policy URI (`pubky://<creator>/pub/locks.app/<lock>.json`). */
+  /** Public Locks policy URI (`pubky://<creator>/pub/<locks.app|app.locks>/<lock>.json`). */
   policy_uri: string;
   criterion_id: string;
   /** Guarded content path for the Lock Server proxy read, from the listing record. */
@@ -647,11 +647,9 @@ export const commerceLocksCorrelationTableSchema = '&id, owner_id, payment_id, o
  *
  * Addresses are PRIVATE DELIVERY DETAILS and live only in this account-scoped
  * table — never on the homeserver, never in public records, and never
- * readable back from the transaction service. The seller-only single-order
- * projection can read it while the order is paid/processing and shipping;
- * encryption to the seller key is scheduled (ADR-0019 §8 interim). The only
- * other place an address travels is inside the buyer's own `checkout.create`
- * command.
+ * readable back from the transaction service. On a durable deployment the
+ * only other place an address travels is inside the buyer's own
+ * `checkout.create` command, sealed to the seller's delivery key.
  *
  * Field limits mirror the checkout command contract exactly, so anything
  * saved here is guaranteed submittable.

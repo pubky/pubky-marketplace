@@ -216,6 +216,7 @@ const view = vi.hoisted(() => ({
   currentUserPubky: 'u'.repeat(52) as string | null,
   listingTags: [] as unknown[],
   needsSession: false,
+  publicStock: null as 'available' | 'reserved' | 'sold' | null,
   orders: [] as Array<{
     order: { id: string; buyerPubky: string; state: string; lines: Array<{ listingAggregateId: string }> };
   }>,
@@ -232,6 +233,10 @@ const view = vi.hoisted(() => ({
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn() }),
   usePathname: () => '/marketplace',
+}));
+
+vi.mock('@/hooks/useCurrentUserProfile/useCurrentUserProfile', () => ({
+  useCurrentUserProfile: () => ({ currentUserPubky: 'u'.repeat(52), userDetails: { name: 'VRT Reporter' } }),
 }));
 
 vi.mock('@/hooks/useRequireAuth/useRequireAuth', () => ({
@@ -275,6 +280,12 @@ vi.mock('@/controllers/commerce/commerce', () => ({
     ...createMarketplaceVrtCommerceController(),
     getListing: () => view.listing,
     getShop: () => view.shop,
+    getPublicListingAvailability: () =>
+      Promise.resolve(
+        view.publicStock
+          ? { aggregateId: 'listing:vrt', state: view.publicStock, serverTime: '2026-10-13T07:45:00.000Z' }
+          : null,
+      ),
     getOrFetchListing: () => (view.fetchFails ? Promise.reject(new Error('offline')) : Promise.resolve(null)),
     isListingConfirmedRemoved: () => Promise.resolve(false),
     getListingTags: () => view.listingTags,
@@ -431,6 +442,7 @@ async function setView(overrides: Partial<typeof view>) {
   view.currentUserPubky = 'u'.repeat(52);
   view.listingTags = [];
   view.needsSession = false;
+  view.publicStock = null;
   view.orders = [];
   view.offers = [];
   view.sessionPubky = null;
@@ -501,6 +513,20 @@ describe('Marketplace listing detail — visual regression', () => {
       viewport: VRT_VIEWPORT_DESKTOP,
     });
     await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('listing-shop-avatar-desktop');
+  });
+
+  it('renders the Report listing dialog with the pubky.app reasons at desktop viewport', async () => {
+    const { seller, fixedPriceListing, fixedPriceProjection } = await fixtures;
+    await setView({ listing: fixedPriceListing, projection: fixedPriceProjection });
+
+    const screen = await renderForVRT(<MarketplaceListing sellerPubky={seller} listingId="boots_01" />, {
+      viewport: VRT_VIEWPORT_DESKTOP,
+    });
+    await screen.getByRole('button', { name: 'Report listing' }).click();
+    await vi.waitFor(() => {
+      if (!document.querySelector('[role="dialog"]')) throw new Error('Report dialog has not opened yet.');
+    });
+    await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('listing-report-dialog-desktop');
   });
 
   it('renders a fixed-price listing at mobile viewport', async () => {
@@ -832,6 +858,47 @@ describe('Marketplace listing detail — visual regression', () => {
     await expect(screen.getByRole('button', { name: 'Held while another buyer pays' })).toBeDisabled();
     await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot(
       'listing-held-another-mobile',
+      VRT_DENSE_CHROME_SCREENSHOT,
+    );
+  });
+
+  it('shows the hold before approval when another buyer pays and the session has lapsed at desktop viewport', async () => {
+    const { seller, fixedPriceListing } = await fixtures;
+    await setView({
+      listing: fixedPriceListing,
+      adapterMode: 'transaction-service',
+      currentUserPubky: 'u'.repeat(52),
+      needsSession: true,
+      projection: null,
+      publicStock: 'reserved',
+    });
+
+    const screen = await renderForVRT(<MarketplaceListing sellerPubky={seller} listingId="boots_01" />, {
+      viewport: { width: 1440, height: 1800 },
+    });
+    await expect(screen.getByRole('button', { name: 'Held while another buyer pays' })).toBeDisabled();
+    await expect(screen.getByRole('button', { name: 'Buy', exact: true })).toBeDisabled();
+    await expect(screen.getByRole('button', { name: 'Is this your hold? Approve purchases to check.' })).toBeVisible();
+    await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('listing-held-no-session-desktop');
+  });
+
+  it('shows the hold before approval when another buyer pays and the session has lapsed at mobile viewport', async () => {
+    const { seller, fixedPriceListing } = await fixtures;
+    await setView({
+      listing: fixedPriceListing,
+      adapterMode: 'transaction-service',
+      currentUserPubky: 'u'.repeat(52),
+      needsSession: true,
+      projection: null,
+      publicStock: 'reserved',
+    });
+
+    const screen = await renderForVRT(<MarketplaceListing sellerPubky={seller} listingId="boots_01" />, {
+      viewport: { width: 390, height: 2200 },
+    });
+    await expect(screen.getByRole('button', { name: 'Held while another buyer pays' })).toBeDisabled();
+    await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot(
+      'listing-held-no-session-mobile',
       VRT_DENSE_CHROME_SCREENSHOT,
     );
   });

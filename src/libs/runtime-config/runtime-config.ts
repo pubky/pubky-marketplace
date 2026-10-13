@@ -2,6 +2,7 @@ import { PHASE_PRODUCTION_BUILD } from 'next/constants';
 import {
   type CommerceAdapterMode,
   type DeployEnv,
+  type PaykitServerApi,
   PUBKY_RUNTIME_ENV_NAMES,
   type RuntimeConfig,
   runtimeConfigValueSchema,
@@ -220,12 +221,14 @@ export const getMarketplaceNexusUrl = (): string =>
 export const getLocksUrl = (): string => getRuntimeConfig().locksUrl;
 export const getPaykitSetupUrl = (): string => getRuntimeConfig().paykitSetupUrl;
 export const getPaykitSetupCreatorParam = (): boolean => getRuntimeConfig().paykitSetupCreatorParam;
+export const getPaykitServerApi = (): PaykitServerApi => getRuntimeConfig().paykitServerApi;
 export const getCommerceAdapterMode = (): CommerceAdapterMode => getRuntimeConfig().commerceAdapterMode;
 export const getCommercePollIntervalMs = (): number => getRuntimeConfig().commercePollIntervalMs;
 export const getSingleApprovalSignIn = (): boolean => getRuntimeConfig().singleApprovalSignIn;
 export const getMarketplaceGrantFlowEnabled = (): boolean => getRuntimeConfig().marketplaceGrantFlowEnabled;
 export const getMarketplaceGrantPollMilliseconds = (): number => getRuntimeConfig().marketplaceGrantPollMilliseconds;
 export const getPassportSignInEnabled = (): boolean => getRuntimeConfig().passportSignIn;
+export const getUsdtPaymentsEnabled = (): boolean => getRuntimeConfig().usdtPaymentsEnabled;
 
 /** The Passport deployment whose Google sign-up lands on each deploy's homeserver. */
 const PASSPORT_ORIGIN_BY_DEPLOY_ENV: Record<DeployEnv, string> = {
@@ -240,6 +243,12 @@ const PASSPORT_ORIGIN_BY_DEPLOY_ENV: Record<DeployEnv, string> = {
  */
 export const getPassportOrigin = (): string =>
   new URL(getRuntimeConfig().passportUrl ?? PASSPORT_ORIGIN_BY_DEPLOY_ENV[getRuntimeConfig().deployEnv]).origin;
+/** Origins (and `'self'`) allowed to frame the Shop. Empty denies framing. */
+export const getFrameAncestors = (): string[] => getRuntimeConfig().frameAncestors;
+/** Deployer override that forces the embedded layout and behaviour. */
+export const getEmbeddedFlag = (): boolean => getRuntimeConfig().embedded;
+/** Explicit deployer choice for legacy-storage adoption; `undefined` lets the caller derive it. */
+export const getStorageAdoptLegacyOverride = (): boolean | undefined => getRuntimeConfig().storageAdoptLegacy;
 export const getPreludeSdkKey = (): string | undefined => getRuntimeConfig().preludeSdkKey;
 export const getPreludeSdkTimeoutMs = (): number => getRuntimeConfig().preludeSdkTimeoutMs;
 export const getPlausibleDomain = (): string | undefined => getRuntimeConfig().plausibleDomain;

@@ -164,12 +164,14 @@ describe('locks-paykit live purchase (composed environment)', () => {
     }
     // The Locks SDK is wasm-pack `--target web`: its default init fetches the
     // .wasm by URL, which Node's fetch cannot do. Pre-initialize it here with
-    // the vendored bytes; init is idempotent, so the service's own lazy
+    // the installed package's bytes; init is idempotent, so the service's own lazy
     // `sdk.default()` becomes a no-op against the same module instance.
     const { readFile } = await import('node:fs/promises');
-    const locksSdk = await import('locks-sdk-wasm');
+    const locksSdk = await import('@synonymdev/locks-sdk');
     await locksSdk.default({
-      module_or_path: await readFile(new URL('../../../vendor/locks-sdk-wasm/locks_sdk_wasm_bg.wasm', import.meta.url)),
+      module_or_path: await readFile(
+        new URL('../../../node_modules/@synonymdev/locks-sdk/pkg/locks_sdk_wasm_bg.wasm', import.meta.url),
+      ),
     });
     const [
       { CommerceApplication },
@@ -446,7 +448,6 @@ describe('locks-paykit live purchase (composed environment)', () => {
           postalCode: '1000-001',
           countryCode: 'PT',
         },
-        guaranteePolicyVersion: 1 as const,
       },
     });
     expect(checkedOut).toMatchObject({ ok: true, result: { kind: 'checkout' } });
@@ -458,8 +459,9 @@ describe('locks-paykit live purchase (composed environment)', () => {
     expect(order!.payment).toMatchObject({ adapter: 'sandbox', state: 'awaiting_entitlement' });
 
     // --- 9. Buyer purchase flow through the client application ---------------
-    // Proof bundle to the Lock Server (which signs and sends the real Paykit
-    // invoice request), then `payment.register_locks` with the fresh revision.
+    // `payment.prepare_locks`, the proof bundle to the Lock Server (which
+    // signs and sends the real Paykit invoice request), then
+    // `payment.register_locks` with the payment and bundle ids.
     const begun = await CommerceApplication.beginMarketplaceLocksPayment({
       buyerPubky: buyer,
       order: order!,

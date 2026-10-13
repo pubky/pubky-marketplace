@@ -209,7 +209,6 @@ function checkoutCommand() {
         postalCode: '10001',
         countryCode: 'US',
       },
-      guaranteePolicyVersion: 1,
     },
   };
 }
@@ -371,7 +370,6 @@ function fulfillmentCheckoutCommand(
         ...(line.fulfillment ? { fulfillment: line.fulfillment } : {}),
       })),
       ...(withDeliveryAddress ? { deliveryAddress: base.payload.deliveryAddress } : {}),
-      guaranteePolicyVersion: 1,
     },
   };
 }
@@ -1003,7 +1001,6 @@ describe('MarketplaceTransactionService', () => {
             subtotal: { amountMinor: 12_500 },
             shipping: { amountMinor: 1_200 },
             total: { amountMinor: 13_700 },
-            guaranteePolicyVersion: 1,
             lines: [{ listingRevision: 1, contentHash: 'a'.repeat(64), quantity: 1 }],
           },
         ],

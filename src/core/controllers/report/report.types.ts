@@ -6,4 +6,8 @@ export interface TReportSubmitParams {
   issueType: string;
   reason: string;
   name: string;
+  /** Seller-scoped listing id; sent together with `sellerPubky` when the report is about a listing. */
+  listingId?: string;
+  /** The listing seller's public key; sent together with `listingId`. */
+  sellerPubky?: string;
 }

@@ -103,6 +103,17 @@ export function parseTomlFlat(text) {
   return out;
 }
 
+/**
+ * The Lock Server's return origins for the acquisition method it runs. `grant-connect` (the
+ * production mode) reads its own list and never falls back to the legacy one, so checking the
+ * legacy table on a grant-connect server would verify an allow-list the server does not use.
+ */
+export function locksReturnOriginsFromToml(toml) {
+  const prefix = 'creator_authority_acquisition';
+  const table = toml[`${prefix}.method`] === 'grant-connect' ? 'grant_connect' : 'legacy_connect';
+  return toml[`${prefix}.${table}.allowed_return_origins`];
+}
+
 /** Splits a list given as a JSON array, a TOML array, or comma/space separated text. */
 export function parseList(value) {
   if (Array.isArray(value)) return value.map(String);

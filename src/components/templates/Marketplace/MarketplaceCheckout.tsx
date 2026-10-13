@@ -16,7 +16,13 @@ import { Link } from '@/atoms/Link/Link';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/atoms/Select/Select';
 import { Skeleton } from '@/atoms/Skeleton/Skeleton';
 import { Typography } from '@/atoms/Typography/Typography';
-import { getCommerceAdapterMode, isDurableCommerceMode, isLocksPaykitCommerceMode } from '@/config/commerce';
+import { withBasePath } from '@/config/base-path';
+import {
+  getCommerceAdapterMode,
+  getPaykitServerApi,
+  isDurableCommerceMode,
+  isLocksPaykitCommerceMode,
+} from '@/config/commerce';
 import { MARKETPLACE_DELIVERY_ADDRESS_DISCLOSURE } from '@/config/commerce-copy';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import { isMarketplaceAwardCheckoutEligible } from '@/core/services/marketplace/marketplace-projections';
@@ -25,6 +31,7 @@ import {
   groupMarketplaceCartItems,
   type MarketplaceCartItem,
   marketplaceCartShippingTotals,
+  priceForCartItem,
   useMarketplaceCart,
 } from '@/hooks/useMarketplaceCart/useMarketplaceCart';
 import { useMarketplaceCheckout } from '@/hooks/useMarketplaceCheckout/useMarketplaceCheckout';
@@ -33,16 +40,24 @@ import { useMarketplaceFirstMediaUrls } from '@/hooks/useMarketplaceMediaUrl/use
 import { useMarketplaceOfferCheckout } from '@/hooks/useMarketplaceOfferCheckout/useMarketplaceOfferCheckout';
 import { useMarketplaceOffers } from '@/hooks/useMarketplaceOffers/useMarketplaceOffers';
 import { useMarketplaceOrders } from '@/hooks/useMarketplaceOrders/useMarketplaceOrders';
+import { useMarketplaceSellerDeliveryTerms } from '@/hooks/useMarketplaceSellerDeliveryTerms/useMarketplaceSellerDeliveryTerms';
+import { useUsdtPaymentsAvailable } from '@/hooks/useUsdtPaymentsAvailable/useUsdtPaymentsAvailable';
+import { Tether } from '@/icons';
 import { buyerCheckoutProgressCopy } from '@/libs/commerce/bitcoin-buyer-status';
 import { BITCOIN_PAYMENT_CODE_CHECKOUT_NOTE } from '@/libs/commerce/bitcoin-payment-code';
 import {
   getMarketplaceCheckoutRoute,
   intersectPaymentMethods,
+  isPendingPaymentState,
   readCheckoutHashOrderId,
 } from '@/libs/commerce/checkout-phase';
 import { DELIVERY_EMAIL_MAX_CHARS, DIGITAL_CHECKOUT_COPY, digitalCheckoutLineLabel } from '@/libs/commerce/digital';
-import { marketplaceOfferCheckoutFailureMessage } from '@/libs/commerce/failure-messages';
+import {
+  marketplaceOfferCheckoutFailureMessage,
+  marketplacePaymentMethodReasonMessage,
+} from '@/libs/commerce/failure-messages';
 import { formatCommerceMoney } from '@/libs/commerce/format';
+import { LOCKS_MIXED_CHECKOUT_COPY, locksCheckoutRoute } from '@/libs/commerce/locks-payment';
 import {
   BITCOIN_WALLET_UNSUPPORTED_TITLE,
   BITCOIN_WALLET_UNVERIFIED_TITLE,
@@ -52,6 +67,18 @@ import {
   bitcoinWalletUnverifiedPayReason,
 } from '@/libs/commerce/paykit-wallet';
 import { availablePaymentMethods, type PaymentMethodKind } from '@/libs/commerce/payment-methods';
+import { formatUsdt } from '@/libs/commerce/payment-options';
+import {
+  isUsdPricedTotals,
+  USDT_FINALITY_EXPECTATION_COPY,
+  USDT_MULTI_SELLER_COPY,
+  USDT_NETWORK_LABEL,
+  USDT_WALLET_HINT,
+  usdtFulfilmentWaitsForFinality,
+  usdtParityMillionths,
+} from '@/libs/commerce/usdt-buyer-status';
+import { usdtMissingOptionExplanation } from '@/libs/commerce/usdt-missing-option';
+import { navigateTop } from '@/libs/navigation/navigate-top';
 import { getDeployEnv } from '@/libs/runtime-config/runtime-config';
 import type { CommerceListingModelSchema } from '@/models/commerce/commerce.schema';
 import { ControlledInputField } from '@/molecules/ControlledInputField/ControlledInputField';
@@ -62,25 +89,33 @@ import { MarketplaceAddressFields } from '@/molecules/MarketplaceAddressFields/M
 import { SettingsSectionContent } from '@/molecules/Settings/SettingsSectionContent/SettingsSectionContent';
 import { ContentLayout } from '@/organisms/ContentLayout/ContentLayout';
 import { MarketplaceCheckoutItem } from '@/organisms/Marketplace/MarketplaceCheckoutItem';
+import { MarketplaceDeliveryKeyChangeDialog } from '@/organisms/Marketplace/MarketplaceDeliveryKeyChangeDialog';
+import { MarketplaceDeliveryTerms } from '@/organisms/Marketplace/MarketplaceDeliveryTerms';
 import { MarketplaceIndicativePrice } from '@/organisms/Marketplace/MarketplaceIndicativePrice';
 import { MarketplaceOrderActions } from '@/organisms/Marketplace/MarketplaceOrderActions';
 import { MarketplaceOrderReference } from '@/organisms/Marketplace/MarketplaceOrderReference';
 import { MarketplacePaymentStatusCard } from '@/organisms/Marketplace/MarketplacePaymentStatusCard';
 import { MarketplaceSectionNav } from '@/organisms/Marketplace/MarketplaceSectionNav';
 import { MarketplaceSessionRequiredCard } from '@/organisms/Marketplace/MarketplaceSessionRequiredCard';
+import { MarketplaceUsdtMissingNote } from '@/organisms/Marketplace/MarketplaceUsdtMissingNote';
 import type { MarketplaceOfferAward } from '@/services/marketplace/marketplace';
 import { useAuthStore } from '@/stores/auth/auth.store';
+import { useCommerceStore } from '@/stores/commerce/commerce.store';
 import { MarketplaceCartSkeleton } from './MarketplaceCart.skeleton';
 
 type AwardPayOutcome = 'expired' | 'converted' | 'error' | 'success' | 'unavailable' | 'session';
 
 const EMPTY_CHECKOUT_ITEMS: MarketplaceCartItem[] = [];
 
-const CHECKOUT_RAILS = ['bitcoin', 'paypal'] as const;
+const CHECKOUT_RAILS = ['bitcoin', 'usdt', 'paypal'] as const;
 type CheckoutRail = (typeof CHECKOUT_RAILS)[number];
+
+// The sandbox simulates payments and can bind no real rail, so it never offers USDT.
+const SANDBOX_CHECKOUT_RAILS = ['bitcoin', 'paypal'] as const;
 
 const METHOD_COPY: Record<CheckoutRail, string> = {
   bitcoin: 'Bitcoin',
+  usdt: 'USDT',
   paypal: 'PayPal',
 };
 
@@ -183,6 +218,7 @@ function MarketplaceCartCheckout() {
   const orders = useMarketplaceOrders();
   const adapterMode = getCommerceAdapterMode();
   const isSandbox = adapterMode === 'sandbox';
+  const usdtPaymentsAvailable = useUsdtPaymentsAvailable(!isSandbox);
   const isStaging = getDeployEnv() === 'staging';
   const formValues = useWatch({ control: checkout.form.control });
   const formValid = marketplaceCheckoutSchema.safeParse(formValues).success;
@@ -192,6 +228,7 @@ function MarketplaceCartCheckout() {
   );
   // The award renders as its own fulfillment section (no cart line cards).
   const fulfillmentGroups = awardSeller ? [{ sellerPubky: awardSeller, items: [], subtotals: [] }] : displayGroups;
+  const sellerDeliveryTerms = useMarketplaceSellerDeliveryTerms(fulfillmentGroups.map((group) => group.sellerPubky));
   const shipping = marketplaceCartShippingTotals(displayGroups, (item) => checkout.fulfillmentForItem(item.id));
   // A pickup award pays the accepted merchandise only; its shipping is zero.
   const isPickupAward = Boolean(awardSeller && checkout.fulfillmentForSeller(awardSeller) === 'pickup');
@@ -233,6 +270,7 @@ function MarketplaceCartCheckout() {
     sellerKey: string;
     attempt: number;
     methods: PaymentMethodKind[] | null;
+    sellerAcceptsUsdt: Map<string, boolean> | null;
   } | null>(null);
   const [railAttempt, setRailAttempt] = useState(0);
   const [nowMs, setNowMs] = useState(() => Date.now());
@@ -246,10 +284,47 @@ function MarketplaceCartCheckout() {
     sellerKey.length > 0 && loadedMethods?.sellerKey === sellerKey && loadedMethods.attempt === railAttempt
       ? loadedMethods
       : null;
+  // A Locks checkout on upstream Paykit pays in Bitcoin from the order page,
+  // whatever rails the seller configured, and binds no method here.
+  const locksRoute = isOfferCheckout ? 'method' : locksCheckoutRoute(adapterMode, getPaykitServerApi(), checkoutItems);
+  const isLocksCheckout = locksRoute === 'locks';
   // A failed config read says nothing about the seller's rails; sandbox offers every rail regardless.
-  const railsFailed = loadedForCart !== null && loadedForCart.methods === null && !isSandbox;
-  const sharedMethods = loadedForCart === null ? null : (loadedForCart.methods ?? []);
-  const availableCheckoutMethods = checkoutRails(isSandbox ? CHECKOUT_RAILS : (sharedMethods ?? []));
+  const railsFailed = loadedForCart !== null && loadedForCart.methods === null && !isSandbox && !isLocksCheckout;
+  // After the service refuses a USDT bind for these sellers, USDT is no longer
+  // offered for this browser session: Pay would only be refused again. The
+  // toast already told the buyer why; the picker just stops offering it.
+  const usdtRefusal = useCommerceStore((state) => state.usdtRefusals[sellerKey] ?? null);
+  const loadedMethodsForCart = isLocksCheckout
+    ? (['bitcoin'] satisfies PaymentMethodKind[])
+    : loadedForCart === null
+      ? null
+      : (loadedForCart.methods ?? []);
+  const sharedMethods =
+    usdtRefusal && loadedMethodsForCart
+      ? loadedMethodsForCart.filter((method) => method !== 'usdt')
+      : loadedMethodsForCart;
+  const usdtRefusedOnly =
+    usdtRefusal !== null &&
+    !isSandbox &&
+    sharedMethods?.length === 0 &&
+    loadedMethodsForCart?.includes('usdt') === true;
+  // USDT is quoted at parity against a USD total, so it is offered only when every total is USD.
+  // An accepted offer without a merchandise total is withheld, so it prices nothing here.
+  const usdtOffered = totalSubtotals.every((money) => money !== undefined) && isUsdPricedTotals(totalSubtotals);
+  const availableCheckoutMethods = checkoutRails(
+    isSandbox ? SANDBOX_CHECKOUT_RAILS : (sharedMethods ?? []).filter((method) => method !== 'usdt' || usdtOffered),
+  );
+  const usdtMissingExplanation = usdtMissingOptionExplanation({
+    gateOpen: usdtPaymentsAvailable && !isSandbox && !isLocksCheckout,
+    offered: availableCheckoutMethods.includes('usdt'),
+    refused: usdtRefusal !== null,
+    sellerAcceptsUsdt: loadedForCart?.sellerAcceptsUsdt ?? null,
+    items: checkoutItems.map((item) => ({
+      title: item.listing.record.title,
+      sellerPubky: item.listing.record.ownerPubky,
+      currency: priceForCartItem(item)?.currency ?? null,
+    })),
+  });
   const selectedMethod =
     preferredMethod && availableCheckoutMethods.includes(preferredMethod)
       ? preferredMethod
@@ -275,7 +350,9 @@ function MarketplaceCartCheckout() {
     void Promise.all(
       sellers.map(async (sellerPubky) => {
         try {
-          return availablePaymentMethods(await CommerceController.getSellerPaymentConfig(sellerPubky));
+          return availablePaymentMethods(await CommerceController.getSellerPaymentConfig(sellerPubky), {
+            usdtPaymentsAvailable,
+          });
         } catch {
           return null;
         }
@@ -284,16 +361,21 @@ function MarketplaceCartCheckout() {
       if (!active) return;
       const sets = results.filter((set): set is PaymentMethodKind[] => set !== null);
       if (sets.length !== results.length) {
-        setLoadedMethods({ sellerKey, attempt: railAttempt, methods: null });
+        setLoadedMethods({ sellerKey, attempt: railAttempt, methods: null, sellerAcceptsUsdt: null });
         return;
       }
       const next = intersectPaymentMethods(sets);
-      setLoadedMethods({ sellerKey, attempt: railAttempt, methods: next });
+      setLoadedMethods({
+        sellerKey,
+        attempt: railAttempt,
+        methods: next,
+        sellerAcceptsUsdt: new Map(sellers.map((sellerPubky, index) => [sellerPubky, sets[index].includes('usdt')])),
+      });
     });
     return () => {
       active = false;
     };
-  }, [sellerKey, railAttempt]);
+  }, [sellerKey, railAttempt, usdtPaymentsAvailable]);
 
   const targetPayingIds = [...new Set([...payingOrderIds, ...(hashOrderId ? [hashOrderId] : [])])];
   const focusedPaying = orders.orders.filter((view) => targetPayingIds.includes(view.order.id));
@@ -302,9 +384,9 @@ function MarketplaceCartCheckout() {
     targetPayingIds.length > 0 &&
     focusedPaying.length === targetPayingIds.length &&
     focusedPaying.every(({ payment }) => payment?.state === 'confirmed');
-  const payingView = focusedPaying[0];
-  const payingOrder = payingView?.order;
-  const holdCopy = payingOrder ? buyerCheckoutProgressCopy(payingOrder, payingView.payment, nowMs) : null;
+  const headerView = focusedPaying.find(({ order }) => isPendingPaymentState(order.state));
+  const headerOrder = headerView?.order;
+  const holdCopy = headerOrder ? buyerCheckoutProgressCopy(headerOrder, headerView.payment, nowMs) : null;
 
   useEffect(() => {
     if (!showPaying) return;
@@ -315,6 +397,8 @@ function MarketplaceCartCheckout() {
   // A Bitcoin payment request is delivered to the buyer's Paykit wallet;
   // without one, Pay cannot succeed, so it is gated before the attempt.
   const bitcoinSelected = !isSandbox && isDurableCommerceMode(adapterMode) && selectedMethod === 'bitcoin';
+  const usdtSelected = !isSandbox && selectedMethod === 'usdt';
+  const usdtMillionths = usdtSelected ? usdtParityMillionths(totalSubtotals) : null;
   const buyerWallet = useBuyerPaykitWallet(currentUserPubky ?? null, bitcoinSelected);
   const buyerWalletMissing = bitcoinSelected && buyerWallet.state === 'not_payable';
   const buyerWalletUnsupported = bitcoinSelected && buyerWallet.state === 'unsupported';
@@ -326,6 +410,7 @@ function MarketplaceCartCheckout() {
     !approvalNeeded &&
     formValid &&
     !checkout.hasFulfillmentConflict &&
+    locksRoute !== 'mixed' &&
     checkout.isDigitalReady &&
     !isPaying &&
     !buyerWalletMissing &&
@@ -335,7 +420,7 @@ function MarketplaceCartCheckout() {
     (!isOfferCheckout || offerEligible) &&
     (isSandbox || (sharedMethods !== null && sharedMethods.length > 0 && selectedMethod !== null));
 
-  const payDisabledReason = checkout.hasFulfillmentConflict
+  const checkoutPayDisabledReason = checkout.hasFulfillmentConflict
     ? "Some items can't be checked out together — see the note above."
     : !checkout.isDigitalReady
       ? checkout.digitalNotReadyItemIds.length > 0
@@ -351,11 +436,14 @@ function MarketplaceCartCheckout() {
               ? 'Pay unlocks once your Bitcoin wallet is checked.'
               : railsFailed
                 ? 'Pay unlocks once payment options load.'
-                : sharedMethods && sharedMethods.length === 0 && !isSandbox
-                  ? isMultiSeller
-                    ? 'Choose sellers that share a payment method.'
-                    : 'Pay unlocks once this seller sets up a payment method.'
-                  : 'Fill in delivery details, accept the guarantee, and choose a payment method to pay.';
+                : usdtRefusedOnly
+                  ? 'Pay unlocks once a payment method is available.'
+                  : sharedMethods && sharedMethods.length === 0 && !isSandbox
+                    ? isMultiSeller
+                      ? 'Choose sellers that share a payment method.'
+                      : 'Pay unlocks once this seller sets up a payment method.'
+                    : 'Fill in delivery details and choose a payment method to pay.';
+  const payDisabledReason = locksRoute === 'mixed' ? LOCKS_MIXED_CHECKOUT_COPY : checkoutPayDisabledReason;
 
   const removeAwardLine = async () => {
     const line = cart.awardItems.find((item) => item.awardId === award?.id);
@@ -388,12 +476,12 @@ function MarketplaceCartCheckout() {
       await offers.refresh();
       if (!isPickupAward) await checkout.rememberAddress();
       if (result.boundOrder?.fiatCheckoutUrl) {
-        window.location.assign(result.boundOrder.fiatCheckoutUrl);
+        navigateTop(result.boundOrder.fiatCheckoutUrl);
         return;
       }
       if (result.orderId) {
         setPayingOrderIds([result.orderId]);
-        window.history.replaceState(null, '', getMarketplaceCheckoutRoute(result.orderId));
+        window.history.replaceState(null, '', withBasePath(getMarketplaceCheckoutRoute(result.orderId)));
         setHashOrderId(result.orderId);
         await orders.refresh();
         return;
@@ -426,18 +514,19 @@ function MarketplaceCartCheckout() {
       await payOffer();
       return;
     }
-    // Sandbox creates its simulated payment with the order; it cannot bind a real rail.
-    const method = isSandbox ? null : selectedMethod;
+    // Sandbox creates its simulated payment with the order; it cannot bind a
+    // real rail. A Locks checkout binds none either (`locksCheckoutRoute`).
+    const method = isSandbox || isLocksCheckout ? null : selectedMethod;
     const result = await checkout.pay(method, () => void pay());
     if (!result.ok) return;
     setPayingOrderIds(result.orderIds);
     if (result.orderIds[0]) {
-      window.history.replaceState(null, '', getMarketplaceCheckoutRoute(result.orderIds[0]));
+      window.history.replaceState(null, '', withBasePath(getMarketplaceCheckoutRoute(result.orderIds[0])));
       setHashOrderId(result.orderIds[0]);
     }
     const fiatBound = result.boundOrders.filter((order) => order.fiatCheckoutUrl);
     if (fiatBound.length === 1 && fiatBound[0].fiatCheckoutUrl) {
-      window.location.assign(fiatBound[0].fiatCheckoutUrl);
+      navigateTop(fiatBound[0].fiatCheckoutUrl);
       return;
     }
     await orders.refresh();
@@ -451,6 +540,10 @@ function MarketplaceCartCheckout() {
       showRightMobileButton={false}
       className="pb-28"
     >
+      <MarketplaceDeliveryKeyChangeDialog
+        change={checkout.pendingKeyChange ?? offerPay.pendingKeyChange}
+        onDecision={checkout.pendingKeyChange ? checkout.decideKeyChange : offerPay.decideKeyChange}
+      />
       <Container
         overrideDefaults
         className="flex w-full flex-col gap-6"
@@ -493,11 +586,7 @@ function MarketplaceCartCheckout() {
           <div className="grid gap-4" data-testid="marketplace-checkout-paying">
             {holdCopy &&
               !allPaymentsConfirmed &&
-              !(
-                payingOrder?.state === 'pending_payment' &&
-                payingOrder.paymentMethod === 'paypal' &&
-                payingView?.payment?.state === 'awaiting_entitlement'
-              ) && (
+              !(headerOrder?.paymentMethod === 'paypal' && headerView?.payment?.state === 'awaiting_entitlement') && (
                 <Typography as="p" className="rounded-md bg-card/60 px-4 py-3 text-sm">
                   {holdCopy}
                 </Typography>
@@ -523,7 +612,7 @@ function MarketplaceCartCheckout() {
                       order={order}
                       isBuyer
                       status={
-                        payment?.state === 'confirmed' ? (
+                        payment?.state === 'confirmed' && order.paymentMethod !== 'usdt' ? (
                           <MarketplacePaymentStatusBadge order={order} payment={payment} />
                         ) : undefined
                       }
@@ -534,7 +623,7 @@ function MarketplaceCartCheckout() {
                         line={line}
                       />
                     ))}
-                    {payment?.state !== 'confirmed' && (
+                    {(payment?.state !== 'confirmed' || order.paymentMethod === 'usdt') && (
                       <MarketplacePaymentStatusCard
                         order={order}
                         payment={payment}
@@ -725,7 +814,9 @@ function MarketplaceCartCheckout() {
                               {price && (
                                 <Typography as="p" className="mt-1 font-bold text-brand">
                                   {formatCommerceMoney(price)}{' '}
-                                  <MarketplaceIndicativePrice money={price} className="font-normal" />
+                                  {!usdtSelected && (
+                                    <MarketplaceIndicativePrice money={price} className="font-normal" />
+                                  )}
                                 </Typography>
                               )}
                               {checkout.fulfillmentForItem(item.id) === 'digital' && (
@@ -881,7 +972,9 @@ function MarketplaceCartCheckout() {
                                 className="flex flex-col items-end font-bold"
                               >
                                 {formatCommerceMoney(subtotal)}
-                                <MarketplaceIndicativePrice money={subtotal} className="font-normal" />
+                                {!usdtSelected && (
+                                  <MarketplaceIndicativePrice money={subtotal} className="font-normal" />
+                                )}
                               </Typography>
                             ))}
                           </div>
@@ -901,7 +994,9 @@ function MarketplaceCartCheckout() {
                                     className="flex flex-col items-end font-bold"
                                   >
                                     {formatCommerceMoney(subtotal)}
-                                    <MarketplaceIndicativePrice money={subtotal} className="font-normal" />
+                                    {!usdtSelected && (
+                                      <MarketplaceIndicativePrice money={subtotal} className="font-normal" />
+                                    )}
                                   </Typography>
                                 ))}
                               </div>
@@ -935,11 +1030,14 @@ function MarketplaceCartCheckout() {
                                 className="flex flex-col items-end font-bold"
                               >
                                 {formatCommerceMoney(subtotal)}
-                                <MarketplaceIndicativePrice money={subtotal} className="font-normal" />
+                                {!usdtSelected && (
+                                  <MarketplaceIndicativePrice money={subtotal} className="font-normal" />
+                                )}
                               </Typography>
                             ))}
                           </div>
                         </div>
+                        <MarketplaceDeliveryTerms entries={sellerDeliveryTerms.entries} />
                       </div>
                     </SettingsSectionContent>
                   </section>
@@ -972,9 +1070,11 @@ function MarketplaceCartCheckout() {
                         <Skeleton className="h-11 w-full" aria-label="Loading payment methods" />
                       ) : sharedMethods.length === 0 && !isSandbox ? (
                         <Typography as="p" role="alert" className="text-sm text-muted-foreground">
-                          {isMultiSeller
-                            ? 'These sellers do not share a payment method, so Pay stays disabled. Remove a seller in the cart or ask them to add a shared rail.'
-                            : "This seller hasn't set up a payment method this cart can use, so Pay stays disabled. Message the seller to ask them to add one."}
+                          {usdtRefusedOnly && usdtRefusal
+                            ? marketplacePaymentMethodReasonMessage(usdtRefusal, 'usdt')
+                            : isMultiSeller
+                              ? 'These sellers do not share a payment method, so Pay stays disabled. Remove a seller in the cart or ask them to add a shared rail.'
+                              : "This seller hasn't set up a payment method this cart can use, so Pay stays disabled. Message the seller to ask them to add one."}
                         </Typography>
                       ) : (
                         <div className="grid grid-cols-2 gap-3" role="group" aria-label="Payment method">
@@ -989,12 +1089,14 @@ function MarketplaceCartCheckout() {
                               onClick={() => setSelectedMethod(method)}
                             >
                               {method === 'bitcoin' && <Bitcoin className="size-6" aria-hidden="true" />}
+                              {method === 'usdt' && <Tether className="size-6" aria-hidden="true" />}
                               {method === 'paypal' && <HandCoins className="size-6" aria-hidden="true" />}
                               {METHOD_COPY[method]}
                             </Button>
                           ))}
                         </div>
                       )}
+                      {usdtMissingExplanation && <MarketplaceUsdtMissingNote explanation={usdtMissingExplanation} />}
                       {bitcoinSelected && (
                         <Typography
                           as="p"
@@ -1003,6 +1105,38 @@ function MarketplaceCartCheckout() {
                         >
                           {BITCOIN_PAYMENT_CODE_CHECKOUT_NOTE}
                         </Typography>
+                      )}
+                      {usdtMillionths !== null && (
+                        <div className="grid gap-1" data-testid="marketplace-checkout-usdt-amount-note">
+                          <Typography
+                            as="p"
+                            className="text-sm font-medium"
+                            data-testid="marketplace-checkout-usdt-amount"
+                          >
+                            {formatUsdt(usdtMillionths)} · {USDT_NETWORK_LABEL} · pay with Bitkit
+                          </Typography>
+                          <Typography as="p" className="text-xs text-muted-foreground">
+                            {USDT_WALLET_HINT}
+                          </Typography>
+                          {usdtFulfilmentWaitsForFinality(lineMethods) && (
+                            <Typography
+                              as="p"
+                              className="text-xs text-muted-foreground"
+                              data-testid="marketplace-checkout-usdt-finality-note"
+                            >
+                              {USDT_FINALITY_EXPECTATION_COPY}
+                            </Typography>
+                          )}
+                          {isMultiSeller && (
+                            <Typography
+                              as="p"
+                              className="text-xs text-muted-foreground"
+                              data-testid="marketplace-checkout-usdt-multi-seller-note"
+                            >
+                              {USDT_MULTI_SELLER_COPY}
+                            </Typography>
+                          )}
+                        </div>
                       )}
                       {buyerWalletChecking && (
                         <Typography as="p" aria-live="polite" className="text-xs text-muted-foreground">
@@ -1078,7 +1212,7 @@ function MarketplaceCartCheckout() {
                           </div>
                         </div>
                       )}
-                      <div className="grid gap-3" data-testid="marketplace-checkout-guarantee">
+                      <div className="grid gap-3" data-testid="marketplace-checkout-payment-notice-group">
                         {allPickup && (
                           <div className="rounded-md bg-card/60 p-6">
                             <Typography as="p" className="text-sm font-medium">
@@ -1090,34 +1224,18 @@ function MarketplaceCartCheckout() {
                             </Typography>
                           </div>
                         )}
-                        <Controller
-                          name="acceptsGuarantee"
-                          control={checkout.form.control}
-                          render={({ field, fieldState }) => (
-                            <div className="grid gap-2">
-                              <Label className="items-start gap-3">
-                                <Checkbox
-                                  checked={field.value}
-                                  onCheckedChange={field.onChange}
-                                  onBlur={field.onBlur}
-                                  aria-invalid={fieldState.error ? true : undefined}
-                                />
-                                <span>
-                                  {isSandbox
-                                    ? 'I accept sandbox guarantee policy v1. This is not legal escrow and moves no real funds.'
-                                    : isLocksPaykitCommerceMode(adapterMode)
-                                      ? 'I accept guarantee policy v1. This is not legal escrow — payment goes from your wallet directly to the seller, and this marketplace never holds funds.'
-                                      : 'I accept guarantee policy v1. This is not legal escrow, and no payment rails are live in this deployment — no real funds move.'}
-                                </span>
-                              </Label>
-                              {fieldState.error && (
-                                <Typography as="p" role="alert" className="text-sm text-destructive">
-                                  {fieldState.error.message}
-                                </Typography>
-                              )}
-                            </div>
-                          )}
-                        />
+                        <Typography
+                          as="p"
+                          size="xs"
+                          className="text-muted-foreground"
+                          data-testid="marketplace-checkout-payment-notice"
+                        >
+                          {isSandbox
+                            ? 'Sandbox checkout: no real funds move.'
+                            : isLocksPaykitCommerceMode(adapterMode)
+                              ? 'Payment goes directly to the seller. This marketplace never holds funds.'
+                              : 'No payment rails are live in this deployment, so no real funds move. This marketplace never holds funds.'}
+                        </Typography>
                       </div>
                       {checkout.hasInstantDigitalLine && (
                         <Typography

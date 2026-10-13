@@ -3,10 +3,12 @@ import {
   getCommercePollIntervalMs,
   getLocksUrl,
   getMarketplaceUrl,
+  getPaykitServerApi,
   getPaykitSetupCreatorParam,
   getPaykitSetupUrl,
+  getUsdtPaymentsEnabled,
 } from '@/libs/runtime-config/runtime-config';
-import type { CommerceAdapterMode } from '@/libs/runtime-config/runtime-config.schema';
+import type { CommerceAdapterMode, PaykitServerApi } from '@/libs/runtime-config/runtime-config.schema';
 
 export {
   type CommerceAdapterMode,
@@ -14,8 +16,11 @@ export {
   getCommercePollIntervalMs,
   getLocksUrl,
   getMarketplaceUrl,
+  getPaykitServerApi,
   getPaykitSetupCreatorParam,
   getPaykitSetupUrl,
+  getUsdtPaymentsEnabled,
+  type PaykitServerApi,
 };
 
 /**
@@ -69,6 +74,20 @@ export const COMMERCE_TAXONOMY_VERSION_MAX = 1_000_000;
 export const COMMERCE_SHOP_NAME_MAX_CHARS = 60;
 export const COMMERCE_SHOP_BIO_MAX_CHARS = 1_000;
 export const COMMERCE_SHOP_POLICY_MAX_CHARS = 4_000;
+/**
+ * Bounds for the seller-set post-purchase periods on the shop record
+ * (`deliveryAssumeDays`, `autoCompleteDays`). The transaction service reads
+ * the same fields and honors only values inside this range.
+ */
+export const COMMERCE_SHOP_TERM_DAYS_MIN = 1;
+export const COMMERCE_SHOP_TERM_DAYS_MAX = 60;
+/**
+ * What a shop that leaves a period unset is shown with. These mirror the
+ * transaction service's `DELIVERY_ASSUME_DAYS` / `AUTO_COMPLETE_DAYS`
+ * defaults, which apply to exactly those orders.
+ */
+export const COMMERCE_DEFAULT_DELIVERY_ASSUME_DAYS = 14;
+export const COMMERCE_DEFAULT_AUTO_COMPLETE_DAYS = 14;
 
 export const COMMERCE_LISTING_TITLE_MIN_CHARS = 3;
 export const COMMERCE_LISTING_TITLE_MAX_CHARS = 80;
@@ -105,13 +124,15 @@ export const COMMERCE_REVIEW_EDIT_WINDOW_SECONDS = 24 * 60 * 60;
  * (ADR 0024 §3: the signature proves key possession, never legitimacy —
  * verifiers pin attestor identities out of band, and this list is that
  * pinning). Nexus indexes every cryptographically verified review and names
- * its attestor; display trust is decided here. Two entries, one per deployed
+ * its attestor; display trust is decided here. Entries cover each deployed
  * transaction service — the staging Railway project
  * `pubky-marketplace-staging` and the production project
  * `pubky-marketplace-production` — both operated by the marketplace operator.
  */
 export const MARKETPLACE_TRUSTED_ATTESTORS: readonly string[] = [
-  // pubky-marketplace-staging (Railway)
+  // pubky-marketplace-staging (Railway), current key (rotated 12 Oct 2026)
+  'rhmo67eonanguhd3imztepbdkpm3z7nyt8u1n1bjymkmegjipfto',
+  // pubky-marketplace-staging (Railway), earlier key
   'ws343aqzmcahagojhmhkbri8odqz9iqg61woxbkh9fd3bxhqomdy',
   // pubky-marketplace-production (Railway)
   'szhtpayftdz3mpkoyyk3zesuad11ufuudqqrc73s35w1tfju7gxy',

@@ -47,6 +47,14 @@ vi.mock('@/controllers/commerce/commerce', () => ({
       url.searchParams.set('creator', creator);
       return url.toString();
     }),
+    getPaykitReconnectUrl: vi.fn((returnTo: string, state: string, creator: string) => {
+      const url = new URL('https://paykit.example/setup/reconnect');
+      url.searchParams.set('creator', creator);
+      url.searchParams.set('return_to', returnTo);
+      url.searchParams.set('state', state);
+      return url.toString();
+    }),
+    fetchUsdtPaymentsAvailable: vi.fn(),
     getMyPaymentConfig: vi.fn(),
     isOwnPaykitAccountClaimed: vi.fn(),
     putMyPaymentConfig: vi.fn(),
@@ -86,9 +94,7 @@ const mockedToast = vi.mocked(toast);
 
 const EMPTY_CONFIG: SellerPaymentConfigOwnView = {
   bitcoinEnabled: false,
-  stripePaymentLink: null,
   paypalMerchantEmail: null,
-  stripeRestrictedKeySet: false,
   updatedAt: '2026-08-22T12:00:00.000Z',
 };
 
@@ -110,13 +116,12 @@ beforeEach(() => {
     bitcoinOfferAvailable: true,
     paypalAvailable: false,
   });
+  mockedController.fetchUsdtPaymentsAvailable.mockReset().mockResolvedValue(false);
   mockedController.getMyPaymentConfig.mockReset().mockResolvedValue(EMPTY_CONFIG);
   mockedController.isOwnPaykitAccountClaimed.mockReset().mockResolvedValue(false);
   mockedController.putMyPaymentConfig.mockReset().mockImplementation(async (input) => ({
     bitcoinEnabled: input.bitcoinEnabled,
-    stripePaymentLink: input.stripePaymentLink,
     paypalMerchantEmail: input.paypalMerchantEmail,
-    stripeRestrictedKeySet: Boolean('stripeRestrictedKey' in input && input.stripeRestrictedKey),
     updatedAt: '2026-08-22T12:30:00.000Z',
   }));
   // A marketplace session makes the stored-rail forms render; the page is the
@@ -192,8 +197,6 @@ describe('MarketplacePaymentSettings', () => {
     mockedController.getMyPaymentConfig.mockResolvedValue({
       ...EMPTY_CONFIG,
       paypalMerchantEmail: 'seller@example.com',
-      // Stripe link without the restricted key cannot verify payments.
-      stripePaymentLink: 'https://buy.stripe.com/test_abc',
     });
     mockedController.isOwnPaykitAccountClaimed.mockResolvedValue(true);
 
@@ -218,8 +221,6 @@ describe('MarketplacePaymentSettings', () => {
     mockedController.getMyPaymentConfig.mockResolvedValue({
       ...EMPTY_CONFIG,
       paypalMerchantEmail: 'seller@example.com',
-      stripePaymentLink: 'https://buy.stripe.com/test_abc',
-      stripeRestrictedKeySet: true,
     });
     mockedController.isOwnPaykitAccountClaimed.mockResolvedValue(true);
 
@@ -300,17 +301,15 @@ describe('MarketplacePaymentSettings', () => {
     expect(mockedController.putMyPaymentConfig).toHaveBeenLastCalledWith({
       bitcoinEnabled: false,
       paypalMerchantEmail: 'new-seller@example.com',
-      stripePaymentLink: null,
     });
   });
 
-  it('keeps stored bitcoin and the Stripe link when an existing config PayPal email changes', async () => {
+  it('keeps stored bitcoin when an existing config PayPal email changes', async () => {
     const user = userEvent.setup();
     mockedController.getMyPaymentConfig.mockResolvedValue({
       ...EMPTY_CONFIG,
       bitcoinEnabled: true,
       paypalMerchantEmail: 'old@example.com',
-      stripePaymentLink: 'https://buy.stripe.com/test_kept',
     });
 
     await renderSettings();
@@ -326,11 +325,10 @@ describe('MarketplacePaymentSettings', () => {
     expect(mockedController.putMyPaymentConfig).toHaveBeenLastCalledWith({
       bitcoinEnabled: true,
       paypalMerchantEmail: 'updated@example.com',
-      stripePaymentLink: 'https://buy.stripe.com/test_kept',
     });
   });
 
-  it('saves PayPal without writing a card key', async () => {
+  it('saves PayPal without any card fields', async () => {
     const user = userEvent.setup();
     await renderSettings();
 
@@ -343,7 +341,6 @@ describe('MarketplacePaymentSettings', () => {
     expect(mockedController.putMyPaymentConfig).toHaveBeenLastCalledWith({
       bitcoinEnabled: false,
       paypalMerchantEmail: 'seller@example.com',
-      stripePaymentLink: null,
     });
   });
 
@@ -495,12 +492,13 @@ describe('MarketplacePaymentSettings', () => {
     expect(sandbox).toEqual(expect.arrayContaining(HANDOFF_SANDBOX_TOKENS));
   });
 
-  it('does not offer a card rail to a seller who already saved one', async () => {
-    mockedController.getMyPaymentConfig.mockResolvedValue({
+  it('does not offer a card rail to a seller whose service still stores one', async () => {
+    const legacyConfig = {
       ...EMPTY_CONFIG,
       stripePaymentLink: 'https://buy.stripe.com/test_kept',
       stripeRestrictedKeySet: true,
-    });
+    };
+    mockedController.getMyPaymentConfig.mockResolvedValue(legacyConfig);
 
     await renderSettings();
 
@@ -834,7 +832,6 @@ describe('MarketplacePaymentSettings', () => {
       ...EMPTY_CONFIG,
       bitcoinEnabled: true,
       paypalMerchantEmail: 'kept@example.com',
-      stripePaymentLink: 'https://buy.stripe.com/test_kept',
     });
 
     await renderSettings();
@@ -851,7 +848,6 @@ describe('MarketplacePaymentSettings', () => {
       expect.objectContaining({
         bitcoinEnabled: true,
         paypalMerchantEmail: 'kept@example.com',
-        stripePaymentLink: 'https://buy.stripe.com/test_kept',
       }),
     );
   });
@@ -883,12 +879,10 @@ describe('MarketplacePaymentSettings', () => {
     );
   });
 
-  it('does not clear an untouched Stripe link when PayPal is saved', async () => {
+  it('never sends Stripe fields, even when the service still stores a link', async () => {
     const user = userEvent.setup();
-    mockedController.getMyPaymentConfig.mockResolvedValue({
-      ...EMPTY_CONFIG,
-      stripePaymentLink: 'https://buy.stripe.com/test_keep',
-    });
+    const legacyConfig = { ...EMPTY_CONFIG, stripePaymentLink: 'https://buy.stripe.com/test_keep' };
+    mockedController.getMyPaymentConfig.mockResolvedValue(legacyConfig);
 
     await renderSettings();
     await waitFor(() => expect(screen.getAllByRole('button', { name: 'Save changes' })[0]).toBeEnabled());
@@ -898,13 +892,8 @@ describe('MarketplacePaymentSettings', () => {
     await user.click(screen.getAllByRole('button', { name: 'Save changes' })[0]);
 
     await waitFor(() => expect(mockedController.putMyPaymentConfig).toHaveBeenCalledTimes(1));
-    expect(mockedController.putMyPaymentConfig).toHaveBeenLastCalledWith(
-      expect.objectContaining({
-        paypalMerchantEmail: 'seller@example.com',
-        stripePaymentLink: 'https://buy.stripe.com/test_keep',
-        bitcoinEnabled: false,
-      }),
-    );
+    const sent = mockedController.putMyPaymentConfig.mock.calls[0]?.[0];
+    expect(sent).toStrictEqual({ bitcoinEnabled: false, paypalMerchantEmail: 'seller@example.com' });
   });
 
   it('does not offer Claim with signer', async () => {

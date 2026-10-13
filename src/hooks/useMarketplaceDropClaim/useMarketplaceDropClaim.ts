@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { getCommerceAdapterMode, isDurableCommerceMode } from '@/config/commerce';
 import { CommerceController } from '@/controllers/commerce/commerce';
+import { type PendingDeliveryKeyChange, useDeliveryKeyGate } from '@/hooks/useDeliveryKeyGate/useDeliveryKeyGate';
 import { extractCheckoutOrderIds } from '@/libs/commerce/checkout-phase';
 import { MARKETPLACE_FAILURE_MESSAGES, marketplaceDropRefusalMessage } from '@/libs/commerce/failure-messages';
 import {
@@ -36,6 +37,9 @@ export interface UseMarketplaceDropClaimResult {
   failure: string | null;
   needsSession: boolean;
   sessionError: string | null;
+  /** A seller key change the buyer must confirm before the claim continues. */
+  pendingKeyChange: PendingDeliveryKeyChange | null;
+  decideKeyChange: (accepted: boolean) => void;
   claim: (listingOwnerPubky: string, listingId: string, remainingAllowance: number | null) => Promise<boolean>;
 }
 
@@ -60,6 +64,7 @@ export function useMarketplaceDropClaim(onClaimed?: () => void | Promise<void>):
   const [failure, setFailure] = useState<string | null>(null);
   const [needsSession, setNeedsSession] = useState(false);
   const [sessionError, setSessionError] = useState<string | null>(null);
+  const { resolveKeys, pendingChange: pendingKeyChange, decide: decideKeyChange } = useDeliveryKeyGate();
 
   const addresses = useLiveQuery(
     async () => {
@@ -111,6 +116,27 @@ export function useMarketplaceDropClaim(onClaimed?: () => void | Promise<void>):
         return false;
       }
       const commandId = crypto.randomUUID();
+      const address = {
+        name: claimAddress.name,
+        line1: claimAddress.line1,
+        line2: claimAddress.line2,
+        city: claimAddress.city,
+        region: claimAddress.region,
+        postalCode: claimAddress.postal_code,
+        countryCode: claimAddress.country_code.toUpperCase(),
+      };
+      const gate = await resolveKeys([listingOwnerPubky]);
+      if (!gate.ok) return false;
+      const key = gate.keys.get(listingOwnerPubky);
+      const addressFields = key
+        ? {
+            deliveryAddressEnvelopes: await CommerceController.sealDeliveryAddressForCheckout({
+              checkoutCommandId: commandId,
+              address,
+              keys: new Map([[listingOwnerPubky, key]]),
+            }),
+          }
+        : { deliveryAddress: address };
       const response = await CommerceController.executeMarketplaceCommand({
         version: 1,
         commandId,
@@ -126,16 +152,7 @@ export function useMarketplaceDropClaim(onClaimed?: () => void | Promise<void>):
               quantity: 1,
             },
           ],
-          deliveryAddress: {
-            name: claimAddress.name,
-            line1: claimAddress.line1,
-            line2: claimAddress.line2,
-            city: claimAddress.city,
-            region: claimAddress.region,
-            postalCode: claimAddress.postal_code,
-            countryCode: claimAddress.country_code.toUpperCase(),
-          },
-          guaranteePolicyVersion: 1,
+          ...addressFields,
         },
       });
       if (!response.ok) {
@@ -193,6 +210,8 @@ export function useMarketplaceDropClaim(onClaimed?: () => void | Promise<void>):
     failure,
     needsSession,
     sessionError,
+    pendingKeyChange,
+    decideKeyChange,
     claim,
   };
 }

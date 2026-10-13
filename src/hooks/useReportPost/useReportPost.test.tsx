@@ -12,6 +12,10 @@ const TEST_USER_PUBKY = 'test-user-123';
 const TEST_USER_NAME = 'Test User';
 const TEST_POST_ID = 'author-pubky-456:post-id-789';
 const TEST_POST_URL = 'https://example.com/post/author-pubky-456/post-id-789';
+const POST_TARGET = { kind: 'post', postId: TEST_POST_ID } as const;
+const TEST_SELLER_PUBKY = 'o1gg96ewuojmopcjbz8895478wdtxtzzuxnfjjz8o8e77csa1ngo';
+const TEST_LISTING_ID = 'boots_01';
+const LISTING_TARGET = { kind: 'listing', sellerPubky: TEST_SELLER_PUBKY, listingId: TEST_LISTING_ID } as const;
 
 // Mock window.location
 Object.defineProperty(window, 'location', {
@@ -71,7 +75,7 @@ describe('useReportPost', () => {
 
   describe('Initial State', () => {
     it('should return initial state with issue selection step', () => {
-      const { result } = renderHook(() => useReportPost(TEST_POST_ID));
+      const { result } = renderHook(() => useReportPost(POST_TARGET));
 
       expect(result.current.step).toBe(REPORT_POST_STEPS.ISSUE_SELECTION);
       expect(result.current.selectedIssueType).toBeNull();
@@ -84,7 +88,7 @@ describe('useReportPost', () => {
 
   describe('postUrl construction', () => {
     it('should construct postUrl correctly from postId', async () => {
-      const { result } = renderHook(() => useReportPost(TEST_POST_ID));
+      const { result } = renderHook(() => useReportPost(POST_TARGET));
 
       act(() => {
         result.current.selectIssueType(REPORT_ISSUE_TYPES.PERSONAL_INFO);
@@ -110,9 +114,81 @@ describe('useReportPost', () => {
     });
   });
 
+  describe('listing target', () => {
+    async function submitListingReport(target: typeof LISTING_TARGET = LISTING_TARGET) {
+      const { result } = renderHook(() => useReportPost(target));
+      act(() => {
+        result.current.selectIssueType(REPORT_ISSUE_TYPES.ILLEGAL_SALES);
+      });
+      act(() => {
+        result.current.handleReasonChange({
+          target: { value: 'Sells counterfeit goods' },
+        } as React.ChangeEvent<HTMLTextAreaElement>);
+      });
+      await act(async () => {
+        await result.current.submit();
+      });
+      return result;
+    }
+
+    it('posts the listing URL, listing id and seller pubky to the report route', async () => {
+      const result = await submitListingReport();
+
+      expect(global.fetch).toHaveBeenCalledTimes(1);
+      const [endpoint, init] = (global.fetch as ReturnType<typeof vi.fn>).mock.calls[0] as [string, RequestInit];
+      expect(endpoint).toBe(REPORT_API_ENDPOINT);
+      expect(JSON.parse(init.body as string)).toEqual({
+        pubky: TEST_USER_PUBKY,
+        postUrl: `https://example.com/marketplace/listing/${TEST_SELLER_PUBKY}/${TEST_LISTING_ID}`,
+        issueType: REPORT_ISSUE_TYPES.ILLEGAL_SALES,
+        reason: 'Sells counterfeit goods',
+        name: TEST_USER_NAME,
+        listingId: TEST_LISTING_ID,
+        sellerPubky: TEST_SELLER_PUBKY,
+      });
+      expect(result.current.isSuccess).toBe(true);
+    });
+
+    it('never adds listing fields to a post report', async () => {
+      const { result } = renderHook(() => useReportPost(POST_TARGET));
+      act(() => {
+        result.current.selectIssueType(REPORT_ISSUE_TYPES.HARASSMENT);
+      });
+      act(() => {
+        result.current.handleReasonChange({ target: { value: 'Spam' } } as React.ChangeEvent<HTMLTextAreaElement>);
+      });
+      await act(async () => {
+        await result.current.submit();
+      });
+
+      const [, init] = (global.fetch as ReturnType<typeof vi.fn>).mock.calls[0] as [string, RequestInit];
+      const payload = JSON.parse(init.body as string) as Record<string, unknown>;
+      expect(payload).not.toHaveProperty('listingId');
+      expect(payload).not.toHaveProperty('sellerPubky');
+    });
+
+    it('falls back to the reporter pubky when no profile name has loaded', async () => {
+      mockUseCurrentUserProfile.mockReturnValue({ currentUserPubky: TEST_USER_PUBKY, userDetails: undefined });
+
+      await submitListingReport();
+
+      const [, init] = (global.fetch as ReturnType<typeof vi.fn>).mock.calls[0] as [string, RequestInit];
+      expect(JSON.parse(init.body as string)).toMatchObject({ name: TEST_USER_PUBKY });
+    });
+
+    it('does not submit a listing report without a signed-in reporter', async () => {
+      mockUseCurrentUserProfile.mockReturnValue({ currentUserPubky: null, userDetails: undefined });
+
+      await submitListingReport();
+
+      expect(global.fetch).not.toHaveBeenCalled();
+      expect(mockToast).toHaveBeenCalledWith({ variant: 'error', description: 'Could not load profile' });
+    });
+  });
+
   describe('selectIssueType', () => {
     it('should update selectedIssueType and advance to reason step', () => {
-      const { result } = renderHook(() => useReportPost(TEST_POST_ID));
+      const { result } = renderHook(() => useReportPost(POST_TARGET));
 
       act(() => {
         result.current.selectIssueType(REPORT_ISSUE_TYPES.PERSONAL_INFO);
@@ -125,7 +201,7 @@ describe('useReportPost', () => {
 
   describe('handleReasonChange', () => {
     it('should update reason when handleReasonChange is called', () => {
-      const { result } = renderHook(() => useReportPost(TEST_POST_ID));
+      const { result } = renderHook(() => useReportPost(POST_TARGET));
 
       act(() => {
         result.current.selectIssueType(REPORT_ISSUE_TYPES.PERSONAL_INFO);
@@ -143,7 +219,7 @@ describe('useReportPost', () => {
     });
 
     it('should accept reason value regardless of length (prevention handled by textarea maxLength)', () => {
-      const { result } = renderHook(() => useReportPost(TEST_POST_ID));
+      const { result } = renderHook(() => useReportPost(POST_TARGET));
       const longText = 'a'.repeat(REPORT_REASON_MAX_LENGTH + 10);
 
       act(() => {
@@ -159,12 +235,12 @@ describe('useReportPost', () => {
 
   describe('hasContent', () => {
     it('should be false when reason is empty', () => {
-      const { result } = renderHook(() => useReportPost(TEST_POST_ID));
+      const { result } = renderHook(() => useReportPost(POST_TARGET));
       expect(result.current.hasContent).toBe(false);
     });
 
     it('should be false when reason is only whitespace', () => {
-      const { result } = renderHook(() => useReportPost(TEST_POST_ID));
+      const { result } = renderHook(() => useReportPost(POST_TARGET));
 
       act(() => {
         const event = {
@@ -177,7 +253,7 @@ describe('useReportPost', () => {
     });
 
     it('should be true when reason has content', () => {
-      const { result } = renderHook(() => useReportPost(TEST_POST_ID));
+      const { result } = renderHook(() => useReportPost(POST_TARGET));
 
       act(() => {
         const event = {
@@ -192,7 +268,7 @@ describe('useReportPost', () => {
 
   describe('submit', () => {
     it('should not submit when reason is empty', async () => {
-      const { result } = renderHook(() => useReportPost(TEST_POST_ID));
+      const { result } = renderHook(() => useReportPost(POST_TARGET));
 
       act(() => {
         result.current.selectIssueType(REPORT_ISSUE_TYPES.PERSONAL_INFO);
@@ -208,7 +284,7 @@ describe('useReportPost', () => {
     });
 
     it('should not submit when issue type is not selected', async () => {
-      const { result } = renderHook(() => useReportPost(TEST_POST_ID));
+      const { result } = renderHook(() => useReportPost(POST_TARGET));
 
       act(() => {
         const event = {
@@ -227,7 +303,7 @@ describe('useReportPost', () => {
     });
 
     it('should submit report and set isSuccess on success', async () => {
-      const { result } = renderHook(() => useReportPost(TEST_POST_ID));
+      const { result } = renderHook(() => useReportPost(POST_TARGET));
 
       act(() => {
         result.current.selectIssueType(REPORT_ISSUE_TYPES.PERSONAL_INFO);
@@ -268,7 +344,7 @@ describe('useReportPost', () => {
         json: async () => ({ error: 'Server error' }),
       } as Response);
 
-      const { result } = renderHook(() => useReportPost(TEST_POST_ID));
+      const { result } = renderHook(() => useReportPost(POST_TARGET));
 
       act(() => {
         result.current.selectIssueType(REPORT_ISSUE_TYPES.PERSONAL_INFO);
@@ -309,7 +385,7 @@ describe('useReportPost', () => {
         return { ok: true, json: async () => ({}) } as Response;
       });
 
-      const { result } = renderHook(() => useReportPost(TEST_POST_ID));
+      const { result } = renderHook(() => useReportPost(POST_TARGET));
 
       act(() => {
         result.current.selectIssueType(REPORT_ISSUE_TYPES.PERSONAL_INFO);
@@ -358,7 +434,7 @@ describe('useReportPost', () => {
         userDetails: { name: TEST_USER_NAME },
       });
 
-      const { result } = renderHook(() => useReportPost(TEST_POST_ID));
+      const { result } = renderHook(() => useReportPost(POST_TARGET));
 
       act(() => {
         result.current.selectIssueType(REPORT_ISSUE_TYPES.PERSONAL_INFO);
@@ -392,7 +468,7 @@ describe('useReportPost', () => {
         userDetails: null,
       });
 
-      const { result } = renderHook(() => useReportPost(TEST_POST_ID));
+      const { result } = renderHook(() => useReportPost(POST_TARGET));
 
       act(() => {
         result.current.selectIssueType(REPORT_ISSUE_TYPES.PERSONAL_INFO);
@@ -423,7 +499,7 @@ describe('useReportPost', () => {
     it('should show toast on network errors', async () => {
       (global.fetch as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('Network error'));
 
-      const { result } = renderHook(() => useReportPost(TEST_POST_ID));
+      const { result } = renderHook(() => useReportPost(POST_TARGET));
 
       act(() => {
         result.current.selectIssueType(REPORT_ISSUE_TYPES.PERSONAL_INFO);
@@ -456,7 +532,7 @@ describe('useReportPost', () => {
 
   describe('reset', () => {
     it('should reset all state when reset is called', async () => {
-      const { result } = renderHook(() => useReportPost(TEST_POST_ID));
+      const { result } = renderHook(() => useReportPost(POST_TARGET));
 
       // Set up some state
       act(() => {

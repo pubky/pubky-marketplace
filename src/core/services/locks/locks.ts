@@ -3,6 +3,8 @@
 // file stays safe to pull into server-rendered module graphs.
 import { z } from 'zod';
 import { getLocksUrl, getPaykitSetupCreatorParam, getPaykitSetupUrl } from '@/config/commerce';
+import { LOCKS_SUBMIT_REFUSAL_CODES, type LocksSubmitRefusalCode } from '@/libs/commerce/locks-submit-refusal';
+import type { ListingCurrencyChoice } from '@/libs/commerce/pricing';
 import { isAppError } from '@/libs/error/error';
 import { ServerErrorCode, ValidationErrorCode } from '@/libs/error/error.codes';
 import { Err } from '@/libs/error/error.factories';
@@ -10,12 +12,12 @@ import { httpResponseToError, safeFetch } from '@/libs/error/error.http';
 import { ErrorService } from '@/libs/error/error.types';
 import { parseResponseOrThrow } from '@/libs/http/response.utils';
 
-type LocksSdkModule = typeof import('locks-sdk-wasm');
+type LocksSdkModule = typeof import('@synonymdev/locks-sdk');
 
 /*
- * TRANSPORT DECISION — vendored SDK vs raw HTTP (see docs/ecommerce/locks-sdk-provenance.md):
+ * TRANSPORT DECISION — SDK vs raw HTTP (see docs/ecommerce/locks-sdk-provenance.md):
  *
- * The vendored Locks browser SDK (`vendor/locks-sdk-wasm`) is used for what it can do
+ * The Locks browser SDK (`@synonymdev/locks-sdk`, npm) is used for what it can do
  * from ANY deployment: canonical identifier generation (`BundleId.generate()`), pure
  * WASM with no network. Every network route in this service deliberately stays on the
  * Lock Server's documented HTTP contract at the explicitly configured `getLocksUrl()`:
@@ -52,6 +54,7 @@ const lifecycleSchema = z.object({
   // Lock Servers with durable invoice admission (pubky/locks#72) add these;
   // older ones omit them, so both stay optional.
   status_message: z.string().nullable().optional(),
+  admission_deadline_at: z.string().nullable().optional(),
   terminal_reason: z.string().nullable().optional(),
 });
 
@@ -70,6 +73,10 @@ const creatorAuthorityStatusSchema = z.object({
   authorized: z.boolean(),
 });
 
+const creatorPaykitSetupStatusSchema = z
+  .object({ status: z.enum(['ready', 'setup_required', 'unavailable']) })
+  .strict();
+
 export type LocksVerificationLifecycle = z.infer<typeof lifecycleSchema>;
 export type LocksAccessCredential = z.infer<typeof accessCredentialSchema>;
 
@@ -80,17 +87,18 @@ export type LocksAccessCredential = z.infer<typeof accessCredentialSchema>;
  */
 export type LocksFrontendSession = z.infer<typeof frontendSessionSchema>;
 export type LocksCreatorAuthorityStatus = z.infer<typeof creatorAuthorityStatusSchema>;
+export type LocksCreatorPaykitSetupStatus = z.infer<typeof creatorPaykitSetupStatusSchema>['status'];
 
 let sdkModulePromise: Promise<LocksSdkModule> | null = null;
 
 /**
- * Loads and initializes the vendored Locks SDK WASM module exactly once. The dynamic
- * import keeps the ~1.2 MB WASM binary out of every server-rendered and initial-client
+ * Loads and initializes the Locks SDK WASM module exactly once. The dynamic
+ * import keeps the ~1.3 MB WASM binary out of every server-rendered and initial-client
  * module graph; it is only fetched when a Locks operation actually runs in the browser.
  */
 async function loadLocksSdk(): Promise<LocksSdkModule> {
   sdkModulePromise ??= (async () => {
-    const sdk = await import('locks-sdk-wasm');
+    const sdk = await import('@synonymdev/locks-sdk');
     await sdk.default();
     return sdk;
   })();
@@ -118,7 +126,7 @@ export class LocksGatewayService {
   private constructor() {}
 
   /**
-   * Generates a canonical Locks bundle id through the vendored SDK. Bundle ids are
+   * Generates a canonical Locks bundle id through the SDK. Bundle ids are
    * Crockford base32 identifiers validated by the Lock Server; callers must never
    * mint their own (upstream guidance: no hand-written substitutes for Locks
    * canonicalization or identifiers).
@@ -295,6 +303,37 @@ export class LocksGatewayService {
   }
 
   /**
+   * Whether upstream Paykit Server holds the creator's watch-only setup
+   * (`GET /creator/paykit/setup-status?asset=...`) for the price denomination,
+   * asked by the Lock Server for the creator its frontend session names.
+   * `unavailable` means the Lock Server could not ask Paykit; it is not a setup
+   * verdict. The token is bearer material — callers must not log it.
+   */
+  static async getCreatorPaykitSetupStatus(
+    sessionToken: string,
+    asset: ListingCurrencyChoice,
+  ): Promise<LocksCreatorPaykitSetupStatus> {
+    const url = `${getLocksUrl()}/creator/paykit/setup-status?asset=${asset}`;
+    const response = await safeFetch(
+      url,
+      { method: 'GET', headers: { authorization: `Bearer ${sessionToken}` } },
+      ErrorService.Locks,
+      'getCreatorPaykitSetupStatus',
+    );
+    if (!response.ok) throw httpResponseToError(response, ErrorService.Locks, 'getCreatorPaykitSetupStatus', url);
+    const raw = await parseResponseOrThrow<unknown>(response, ErrorService.Locks, 'getCreatorPaykitSetupStatus', url);
+    const parsed = creatorPaykitSetupStatusSchema.safeParse(raw);
+    if (!parsed.success) {
+      throw Err.server(ServerErrorCode.INVALID_RESPONSE, 'Locks returned an invalid Paykit setup-status response.', {
+        service: ErrorService.Locks,
+        operation: 'getCreatorPaykitSetupStatus',
+        context: { statusCode: response.status },
+      });
+    }
+    return parsed.data.status;
+  }
+
+  /**
    * Creator-keyed status (`GET /creators/{creator}/authority-status`): whether
    * the Lock Server holds creator authority for `creatorPubky`, with no
    * frontend session. It reads the same stored authority record as
@@ -348,6 +387,23 @@ export class LocksGatewayService {
     return url.toString();
   }
 
+  /**
+   * Upstream paykit-server reconnect URL (`GET /setup/reconnect`), the flow
+   * that adds a previously omitted USDT address to an existing Bitkit account
+   * without changing the account or the approved Bitcoin binding. Unlike
+   * `/setup` (which rejects `creator`), reconnect requires it, so it is always
+   * sent regardless of `paykitSetupCreatorParam`. The configured
+   * `paykitSetupUrl` is the full setup URL (it already ends in `/setup`), so
+   * the route is built from its origin as exactly `/setup/reconnect`.
+   */
+  static buildPaykitReconnectUrl(returnTo: string, state: string, creator: string): string {
+    const url = new URL('/setup/reconnect', new URL(getPaykitSetupUrl()).origin);
+    url.searchParams.set('creator', creator);
+    url.searchParams.set('return_to', returnTo);
+    url.searchParams.set('state', state);
+    return url.toString();
+  }
+
   private static async postLifecycle(url: string, body: Record<string, unknown>): Promise<LocksVerificationLifecycle>;
   private static async postLifecycle(
     url: string,
@@ -370,7 +426,16 @@ export class LocksGatewayService {
       'postLifecycle',
     );
     if (options?.notFoundAsNull && response.status === 404) return null;
-    if (!response.ok) throw httpResponseToError(response, ErrorService.Locks, 'postLifecycle', url);
+    if (!response.ok) {
+      const locksCode = await readLocksRefusalCode(response);
+      throw httpResponseToError(
+        response,
+        ErrorService.Locks,
+        'postLifecycle',
+        url,
+        locksCode ? { locksCode } : undefined,
+      );
+    }
     const raw = await parseResponseOrThrow<unknown>(response, ErrorService.Locks, 'postLifecycle', url);
     const parsed = lifecycleSchema.safeParse(raw);
     if (!parsed.success) {
@@ -381,6 +446,21 @@ export class LocksGatewayService {
       });
     }
     return parsed.data;
+  }
+}
+
+/**
+ * The Lock Server's stable error code from a refused submit or lookup, kept
+ * only when it is one the Shop has buyer copy for. The server's message and
+ * any other body text are discarded.
+ */
+async function readLocksRefusalCode(response: Response): Promise<LocksSubmitRefusalCode | undefined> {
+  try {
+    const body: unknown = await response.json();
+    const code = (body as { error?: { code?: unknown } } | null)?.error?.code;
+    return LOCKS_SUBMIT_REFUSAL_CODES.find((known) => known === code);
+  } catch {
+    return undefined;
   }
 }
 

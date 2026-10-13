@@ -4,13 +4,18 @@ import { orderStateSchema } from '@/libs/commerce/transaction-contracts';
 import { toCamelCaseWire } from '@/libs/commerce/wire-casing';
 import sellerOffersCapture from '@/test/fixtures/commerce/live/seller-offers-v062.json';
 import { ACCEPTED_OFFER_AWARD_WIRE_FIXTURE, createOfferFixture } from '@/test/fixtures/commerce/offers';
-import { createBitcoinQuotedOrderFixture, createOrderFixture } from '@/test/fixtures/commerce/orders';
+import {
+  createBitcoinQuotedOrderFixture,
+  createOrderFixture,
+  createUsdtOrderFixture,
+} from '@/test/fixtures/commerce/orders';
 import { LIVE_OFFER_ORDER_WIRE_FIXTURE } from '@/test/fixtures/commerce/orders-award.wire';
 import {
   createAuctionProjectionFixture,
   createViewerBidAuctionProjectionFixture,
 } from '@/test/fixtures/commerce/projections';
 import sellerPaidShippingAddress from '@/test/fixtures/commerce/seller-paid-shipping-address.json';
+import { REFUND_FIXTURE_ADDRESS, USDT_ORDER_REFUND_DESTINATION_WIRE } from '@/test/fixtures/commerce/usdt-refund.wire';
 import {
   isMarketplaceAwardCheckoutEligible,
   marketplaceBidHistorySchema,
@@ -81,6 +86,38 @@ describe('marketplace seller delivery address projection', () => {
         },
       });
     }
+  });
+
+  it('parses the sealed hpke_v1 projection through wire casing', () => {
+    const wire = {
+      format: 'hpke_v1',
+      key_id: 'a'.repeat(32),
+      command_id: '018f47d2-6a27-7c23-a62f-000000000734',
+      envelope: 'A'.repeat(2795),
+    };
+
+    expect(marketplaceDeliveryAddressSchema.parse(toCamelCaseWire(wire))).toEqual({
+      format: 'hpke_v1',
+      keyId: 'a'.repeat(32),
+      commandId: '018f47d2-6a27-7c23-a62f-000000000734',
+      envelope: 'A'.repeat(2795),
+    });
+  });
+
+  it.each([
+    ['a short envelope', { envelope: 'A'.repeat(100) }],
+    ['a malformed key id', { keyId: 'not-hex' }],
+    ['a non-uuid command id', { commandId: 'abc' }],
+  ])('quarantines an hpke_v1 projection with %s as unsupported', (_name, override) => {
+    const sealed = {
+      format: 'hpke_v1',
+      keyId: 'a'.repeat(32),
+      commandId: '018f47d2-6a27-7c23-a62f-000000000734',
+      envelope: 'A'.repeat(2795),
+      ...override,
+    };
+
+    expect(marketplaceDeliveryAddressSchema.parse(sealed)).toEqual({ format: 'unsupported' });
   });
 
   it.each([
@@ -622,5 +659,146 @@ describe('marketplace order projection — PayPal refund notification fields', (
     expect(parsed.paymentReversedAt).toBeNull();
     expect(parsed.gatewayRefundReviewAt).toBeNull();
     expect(parsed.gatewayRefundUnmatched).toBe(false);
+  });
+});
+
+describe('marketplace order projection — seller periods and the optional guarantee version', () => {
+  const wire = (values: Record<string, unknown>) => ({
+    ...createOrderFixture('shipped'),
+    ...(toCamelCaseWire(values) as Record<string, unknown>),
+  });
+
+  it('reads the periods frozen on the order through wire casing', () => {
+    const parsed = marketplaceOrderSchema.parse(wire({ delivery_assume_days: 3, auto_complete_days: 5 }));
+    expect(parsed.deliveryAssumeDays).toBe(3);
+    expect(parsed.autoCompleteDays).toBe(5);
+  });
+
+  it('accepts orders where the seller left a period unset or the service predates the fields', () => {
+    const unset = marketplaceOrderSchema.parse(wire({ delivery_assume_days: null, auto_complete_days: null }));
+    expect(unset.deliveryAssumeDays).toBeNull();
+    expect(unset.autoCompleteDays).toBeNull();
+
+    const { deliveryAssumeDays: _omitted, autoCompleteDays: _alsoOmitted, ...legacy } = wire({});
+    const parsed = marketplaceOrderSchema.parse(legacy);
+    expect(parsed.deliveryAssumeDays).toBeUndefined();
+  });
+
+  it('tolerates the retired guarantee policy version being sent or absent', () => {
+    for (const legacy of [{ guarantee_policy_version: null }, { guarantee_policy_version: 1 }, {}]) {
+      expect(() => marketplaceOrderSchema.parse(wire(legacy))).not.toThrow();
+    }
+  });
+});
+
+describe('marketplace order projection — USDT payment method (default-off plumbing)', () => {
+  const usdtWire = {
+    payment_method: 'usdt',
+    payment_asset: 'USDT',
+    payment_network: 'arbitrum-one',
+    payment_amount_minor: 25_000_000,
+    payment_exponent: 6,
+    payment_quote_basis: 'parity',
+  };
+  const wire = (values: Record<string, unknown>) => ({
+    ...createOrderFixture('pending_payment'),
+    ...(toCamelCaseWire(values) as Record<string, unknown>),
+  });
+
+  it('accepts a usdt order and its asset-bearing fields in both projections', () => {
+    for (const schema of [marketplaceOrderSchema, marketplaceParticipantOrderSchema]) {
+      const parsed = schema.parse(wire(usdtWire));
+      expect(parsed.paymentMethod).toBe('usdt');
+      expect(parsed.paymentAsset).toBe('USDT');
+      expect(parsed.paymentNetwork).toBe('arbitrum-one');
+      expect(parsed.paymentAmountMinor).toBe(25_000_000);
+      expect(parsed.paymentExponent).toBe(6);
+      expect(parsed.paymentQuoteBasis).toBe('parity');
+    }
+  });
+
+  it('still rejects a payment method the Shop does not know', () => {
+    expect(marketplaceOrderSchema.safeParse(wire({ payment_method: 'dogecoin' })).success).toBe(false);
+  });
+
+  it('reads an order bound to the removed Stripe rail as unbound instead of failing the parse', () => {
+    const parsed = marketplaceOrderSchema.parse(wire({ payment_method: 'stripe', fiat_verification: 'processor' }));
+    expect(parsed.paymentMethod).toBeNull();
+    expect(parsed.fiatVerification).toBeNull();
+  });
+
+  it('parses every existing method with no asset fields, byte-for-byte as before', () => {
+    for (const method of ['bitcoin', 'paypal', null] as const) {
+      const input = wire({ payment_method: method });
+      const parsed = marketplaceOrderSchema.parse(input);
+      expect(parsed.paymentMethod).toBe(method);
+      expect(parsed.paymentAsset).toBeUndefined();
+      expect(parsed.paymentNetwork).toBeUndefined();
+      expect(parsed.paymentAmountMinor).toBeUndefined();
+      expect(parsed.paymentExponent).toBeUndefined();
+      expect(parsed.paymentQuoteBasis).toBeUndefined();
+      expect(parsed).toEqual(
+        marketplaceOrderSchema.parse(createOrderFixture('pending_payment', { paymentMethod: method })),
+      );
+    }
+  });
+
+  it('keeps the order when an asset field holds a value the Shop does not know', () => {
+    const parsed = marketplaceOrderSchema.parse(
+      wire({ ...usdtWire, payment_asset: 'DAI', payment_network: 'base', payment_amount_minor: 'lots' }),
+    );
+    expect(parsed.paymentMethod).toBe('usdt');
+    expect(parsed.paymentAsset).toBeUndefined();
+    expect(parsed.paymentNetwork).toBeUndefined();
+    expect(parsed.paymentAmountMinor).toBeUndefined();
+  });
+});
+
+describe('marketplace order projection — USDT refund destination (S6 wire contract)', () => {
+  const wire = (values: Record<string, unknown>) => ({
+    ...createUsdtOrderFixture('paid'),
+    ...(toCamelCaseWire(values) as Record<string, unknown>),
+  });
+
+  it('reads the pinned participant fields through wire casing in both projections', () => {
+    for (const schema of [marketplaceOrderSchema, marketplaceParticipantOrderSchema]) {
+      const parsed = schema.parse(wire(USDT_ORDER_REFUND_DESTINATION_WIRE));
+      expect(parsed.refundDestination).toEqual({
+        address: REFUND_FIXTURE_ADDRESS,
+        network: 'arbitrum-one',
+        asset: 'USDT',
+        source: 'buyer_entered',
+        confirmedAt: '2026-10-09T16:00:00.000Z',
+      });
+      expect(parsed.paymentAsset).toBe('USDT');
+    }
+  });
+
+  it('reads a null or absent destination as unconfirmed', () => {
+    expect(marketplaceOrderSchema.parse(wire({ refund_destination: null })).refundDestination).toBeNull();
+    expect(marketplaceOrderSchema.parse(createUsdtOrderFixture('paid')).refundDestination).toBeUndefined();
+  });
+
+  it('keeps the order and drops only a destination it cannot read', () => {
+    const parsed = marketplaceOrderSchema.parse(
+      wire({ refund_destination: { address: 'nope', network: 'base', asset: 'DAI', source: '', confirmed_at: 7 } }),
+    );
+    expect(parsed.paymentMethod).toBe('usdt');
+    expect(parsed.refundDestination).toBeUndefined();
+  });
+
+  it('reads the buyer paying address only when it is a valid address', () => {
+    expect(marketplaceOrderSchema.parse(wire({ payment_address: REFUND_FIXTURE_ADDRESS })).paymentAddress).toBe(
+      REFUND_FIXTURE_ADDRESS,
+    );
+    expect(marketplaceOrderSchema.parse(wire({ payment_address: 'bc1q' })).paymentAddress).toBeUndefined();
+  });
+
+  it('leaves every Bitcoin and PayPal order without refund fields', () => {
+    for (const method of ['bitcoin', 'paypal', null] as const) {
+      const parsed = marketplaceOrderSchema.parse(createOrderFixture('paid', { paymentMethod: method }));
+      expect(parsed.refundDestination).toBeUndefined();
+      expect(parsed.paymentAddress).toBeUndefined();
+    }
   });
 });

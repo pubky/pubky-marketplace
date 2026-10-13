@@ -49,16 +49,6 @@ import {
   privKeyringFromResponse,
 } from '@/libs/commerce/priv-keys';
 import {
-  type SellerShippingConfig,
-  sellerShippingConfigSchema,
-  type ShipFromAddress,
-  type ShippingLabel,
-  shippingLabelSchema,
-  type ShippingParcel,
-  type ShippoRate,
-  shippoRateSchema,
-} from '@/libs/commerce/shipping';
-import {
   type MarketplaceCommand,
   type MarketplaceCommandResponse,
   marketplaceCommandResponseSchema,
@@ -91,6 +81,8 @@ import {
   marketplacePaymentSchema,
   type MarketplacePublicDrop,
   marketplacePublicDropSchema,
+  type MarketplacePublicListingAvailability,
+  marketplacePublicListingAvailabilitySchema,
   type MarketplaceReceipt,
   marketplaceReceiptSchema,
   type MarketplaceSellerDrop,
@@ -111,7 +103,7 @@ import { MarketplaceSessionService } from './marketplace-session';
  * - `payment.sandbox_advance` exists on the service (it drives the sandbox
  *   payment adapter end to end in its own tests), but this client refuses to
  *   send it as a matter of policy — simulate buttons are sandbox-only.
- * - `payment.register_locks` IS sent: it registers the buyer's Locks
+ * - `payment.prepare_locks` and `payment.register_locks` ARE sent: they prepare and register the buyer's Locks
  *   lifecycle correlation and never advances the payment — the service's
  *   worker independently verifies the Locks lifecycle and confirms exactly
  *   once (ADR-0019 §7). Deployments without Locks configured refuse it.
@@ -134,6 +126,7 @@ const TRANSACTION_SERVICE_COMMAND_KINDS: ReadonlySet<MarketplaceCommand['kind']>
   'offer.withdraw',
   'auction.place_bid',
   'auction.close',
+  'payment.prepare_locks',
   'payment.register_locks',
   'fulfillment.ship',
   'fulfillment.confirm_delivery',
@@ -156,6 +149,7 @@ const TRANSACTION_SERVICE_COMMAND_KINDS: ReadonlySet<MarketplaceCommand['kind']>
   'return.approve',
   'return.receive',
   'refund.record_external',
+  'refund.confirm_destination',
   'review.create',
   'review.update',
 ] satisfies MarketplaceCommand['kind'][]);
@@ -881,6 +875,35 @@ export class MarketplaceTransactionService {
     ).drop;
   }
 
+  /**
+   * `GET /v0/listings/{seller}/{listingId}/availability` — deliberately
+   * public (no bearer): the listing's stock state, so a viewer whose
+   * marketplace session has lapsed still sees another buyer's hold. Null when
+   * the listing is unknown or removed.
+   */
+  static async getPublicListingAvailability(
+    sellerPubky: string,
+    listingId: string,
+  ): Promise<MarketplacePublicListingAvailability | null> {
+    this.assertTransactionServiceMode('getPublicListingAvailability');
+    const url = `${getMarketplaceUrl()}/v0/listings/${encodeURIComponent(sellerPubky)}/${encodeURIComponent(listingId)}/availability`;
+    const response = await safeFetch(url, { method: 'GET' }, ErrorService.Marketplace, 'getPublicListingAvailability');
+    if (response.status === 404) return null;
+    const raw = await parseResponseOrThrow<unknown>(
+      response,
+      ErrorService.Marketplace,
+      'getPublicListingAvailability',
+      url,
+      PARSE_JSON_WITH_BODY_EXCERPT,
+    );
+    return this.parseProjection(
+      'getPublicListingAvailability',
+      marketplacePublicListingAvailabilitySchema,
+      toCamelCaseWire(raw),
+      'Marketplace returned an invalid listing availability.',
+    );
+  }
+
   /** `GET /v1/drops/{aggregateId}` — the seller's own full-detail drop read. */
   static async getDrop(actor: string, aggregateId: string): Promise<MarketplaceSellerDrop | null> {
     const raw = await this.readProjection('getDrop', actor, `/v1/drops/${encodeURIComponent(aggregateId)}`, {
@@ -958,7 +981,7 @@ export class MarketplaceTransactionService {
    * order. `bitcoinAvailable` is service-verified against paykit-server
    * (enabled AND actually claimed); a paykit outage surfaces as an error,
    * never a silent `false`. The response carries availability booleans
-   * only, never the seller's PayPal email or Stripe link.
+   * only, never the seller's PayPal email.
    */
   static async getSellerPaymentConfig(sellerPubky: string): Promise<SellerPaymentConfig> {
     this.assertTransactionServiceMode('getSellerPaymentConfig');
@@ -998,18 +1021,14 @@ export class MarketplaceTransactionService {
   }
 
   /**
-   * `PUT /v0/sellers/me/payment-config` — the seller's own rails. The Stripe
-   * restricted key is write-only: send it to set it, send `''` to clear it,
-   * omit it to keep the stored one; only `stripeRestrictedKeySet` ever comes
-   * back.
+   * `PUT /v0/sellers/me/payment-config` — the seller's own rails.
    */
   static async putMyPaymentConfig(
     actor: string,
     input: {
       bitcoinEnabled: boolean;
-      stripePaymentLink: string | null;
-      stripeRestrictedKey?: string;
       paypalMerchantEmail: string | null;
+      usdtEnabled?: boolean;
     },
   ): Promise<SellerPaymentConfigOwnView> {
     const raw = await this.paymentMethodRequest('putMyPaymentConfig', actor, '/v0/sellers/me/payment-config', {
@@ -1035,34 +1054,9 @@ export class MarketplaceTransactionService {
       'bindPaymentMethod',
       actor,
       `/v0/orders/${encodeURIComponent(orderId)}/payment-method`,
-      { method: 'POST', body: { method } },
+      { method: 'POST', body: { method }, boundPaymentMethod: method },
     );
     return this.parseOrderEnvelope('bindPaymentMethod', raw);
-  }
-
-  /**
-   * `POST /v0/orders/{id}/fiat/verify` — Stripe only. The service checks the
-   * seller's own Stripe account with their stored restricted key and pays the
-   * order on an exact match; `verified: false` is an honest "not found yet",
-   * not a failure.
-   */
-  static async verifyStripePayment(
-    actor: string,
-    orderId: string,
-  ): Promise<{ verified: boolean; order: MarketplaceOrder | null }> {
-    const raw = await this.paymentMethodRequest(
-      'verifyStripePayment',
-      actor,
-      `/v0/orders/${encodeURIComponent(orderId)}/fiat/verify`,
-      { method: 'POST', body: {} },
-    );
-    const parsed = this.parseProjection(
-      'verifyStripePayment',
-      z.object({ verified: z.boolean(), order: marketplaceOrderSchema.optional() }),
-      raw,
-      'Marketplace returned an invalid fiat verification response.',
-    );
-    return { verified: parsed.verified, order: parsed.order ?? null };
   }
 
   /** `POST /v0/orders/{id}/fiat/mark-paid` — buyer's PayPal payment report; never advances the payment itself. */
@@ -1074,98 +1068,6 @@ export class MarketplaceTransactionService {
       { method: 'POST', body: transactionRef ? { transactionRef } : {} },
     );
     return this.parseOrderEnvelope('markFiatPaid', raw);
-  }
-
-  /**
-   * `GET /v0/sellers/me/shipping-config` — the seller's own Shippo
-   * configuration. `null` when nothing was ever saved.
-   */
-  static async getMyShippingConfig(actor: string): Promise<SellerShippingConfig | null> {
-    const raw = await this.readProjection('getMyShippingConfig', actor, '/v0/sellers/me/shipping-config');
-    return this.parseProjection(
-      'getMyShippingConfig',
-      z.object({ shippingConfig: sellerShippingConfigSchema.nullable() }),
-      raw,
-      'Marketplace returned an invalid shipping configuration.',
-    ).shippingConfig;
-  }
-
-  /**
-   * `PUT /v0/sellers/me/shipping-config` — the Shippo token is write-only:
-   * send it to set it, send `''` to clear it, omit it to keep the stored
-   * one; only `shippoApiKeySet` ever comes back.
-   */
-  static async putMyShippingConfig(
-    actor: string,
-    input: { shippoApiKey?: string; shipFrom: ShipFromAddress | null },
-  ): Promise<SellerShippingConfig> {
-    const raw = await this.paymentMethodRequest('putMyShippingConfig', actor, '/v0/sellers/me/shipping-config', {
-      method: 'PUT',
-      body: input,
-    });
-    return this.parseProjection(
-      'putMyShippingConfig',
-      z.object({ shippingConfig: sellerShippingConfigSchema }),
-      raw,
-      'Marketplace returned an invalid shipping configuration response.',
-    ).shippingConfig;
-  }
-
-  /**
-   * `POST /v0/orders/{id}/shipping/rates` — real Shippo rates for this
-   * order's delivery address with the seller's own token. Nothing is
-   * purchased.
-   */
-  static async quoteShippingRates(actor: string, orderId: string, parcel: ShippingParcel): Promise<ShippoRate[]> {
-    const raw = await this.paymentMethodRequest(
-      'quoteShippingRates',
-      actor,
-      `/v0/orders/${encodeURIComponent(orderId)}/shipping/rates`,
-      { method: 'POST', body: parcel },
-    );
-    return this.parseProjection(
-      'quoteShippingRates',
-      z.object({ rates: z.array(shippoRateSchema) }),
-      raw,
-      'Marketplace returned invalid shipping rates.',
-    ).rates;
-  }
-
-  /**
-   * `POST /v0/orders/{id}/shipping/label` — purchases the selected rate on
-   * the seller's own Shippo account (REAL money). One label per order: a
-   * repeat call returns the stored label unchanged.
-   */
-  static async purchaseShippingLabel(actor: string, orderId: string, rateId: string): Promise<ShippingLabel> {
-    const raw = await this.paymentMethodRequest(
-      'purchaseShippingLabel',
-      actor,
-      `/v0/orders/${encodeURIComponent(orderId)}/shipping/label`,
-      { method: 'POST', body: { rateId } },
-    );
-    return this.parseProjection(
-      'purchaseShippingLabel',
-      z.object({ label: shippingLabelSchema }),
-      raw,
-      'Marketplace returned an invalid shipping label.',
-    ).label;
-  }
-
-  /** `GET /v0/orders/{id}/shipping/label` — the stored label, null when none was purchased. */
-  static async getShippingLabel(actor: string, orderId: string): Promise<ShippingLabel | null> {
-    const raw = await this.readProjection(
-      'getShippingLabel',
-      actor,
-      `/v0/orders/${encodeURIComponent(orderId)}/shipping/label`,
-      { nullOnNotFound: true },
-    );
-    if (raw === null) return null;
-    return this.parseProjection(
-      'getShippingLabel',
-      z.object({ label: shippingLabelSchema }),
-      raw,
-      'Marketplace returned an invalid shipping label.',
-    ).label;
   }
 
   /** `POST /v0/orders/{id}/fiat/confirm-received` — the seller's confirmation pays a PayPal order. */
@@ -1235,7 +1137,13 @@ export class MarketplaceTransactionService {
     operation: string,
     actor: string,
     path: string,
-    request: { method: 'PUT' | 'POST'; body: unknown; headers?: Record<string, string> },
+    request: {
+      method: 'PUT' | 'POST';
+      body: unknown;
+      headers?: Record<string, string>;
+      /** The rail a bind chose, so a refusal reads in that rail's copy. */
+      boundPaymentMethod?: PaymentMethodKind;
+    },
   ): Promise<unknown> {
     this.assertTransactionServiceMode(operation);
     const session = this.requireSession(operation, actor);
@@ -1260,7 +1168,7 @@ export class MarketplaceTransactionService {
     if (operation === 'confirmBitcoinPayment' || operation === 'resolveBitcoinPayment') {
       await this.throwSellerPaymentReviewError(response, operation);
     } else {
-      await this.throwPaymentMethodError(response, operation);
+      await this.throwPaymentMethodError(response, operation, request.boundPaymentMethod);
     }
     const raw = await parseResponseOrThrow<unknown>(response, ErrorService.Marketplace, operation, url);
     return toCamelCaseWire(raw);
@@ -1323,9 +1231,13 @@ export class MarketplaceTransactionService {
    * `{ok:false, error:{code, message, reason}}`. Map `reason`, or `code` when
    * the family ships no reason (`capability_required`, CAS `REVISION_CONFLICT`),
    * to a static client string — never copy `error.message`, which can echo a
-   * rejected Stripe restricted key or other private value into logs and the reporter.
+   * rejected private value into logs and the reporter.
    */
-  private static async throwPaymentMethodError(response: Response, operation: string): Promise<void> {
+  private static async throwPaymentMethodError(
+    response: Response,
+    operation: string,
+    boundPaymentMethod?: PaymentMethodKind,
+  ): Promise<void> {
     if (response.ok) return;
     let reason: string | undefined;
     let serviceCode: string | undefined;
@@ -1337,15 +1249,21 @@ export class MarketplaceTransactionService {
       // A non-JSON failure body falls through to the generic parse error.
       return;
     }
-    throw Err.client(ClientErrorCode.BAD_REQUEST, marketplacePaymentMethodReasonMessage(reason ?? serviceCode), {
-      service: ErrorService.Marketplace,
-      operation,
-      context: {
-        statusCode: response.status,
-        ...(reason ? { reason } : {}),
-        ...(serviceCode ? { serviceCode } : {}),
+    const usdtBind = boundPaymentMethod === 'usdt';
+    throw Err.client(
+      ClientErrorCode.BAD_REQUEST,
+      marketplacePaymentMethodReasonMessage(reason ?? serviceCode, boundPaymentMethod),
+      {
+        service: ErrorService.Marketplace,
+        operation,
+        context: {
+          statusCode: response.status,
+          ...(reason ? { reason } : {}),
+          ...(serviceCode ? { serviceCode } : {}),
+          ...(usdtBind ? { paymentMethod: 'usdt' } : {}),
+        },
       },
-    });
+    );
   }
 
   private static parseOrderEnvelope(operation: string, raw: unknown): MarketplaceOrder {

@@ -215,8 +215,9 @@ vi.mock('@/stores/auth/auth.store', async () => {
 });
 
 vi.mock('@/stores/commerce/commerce.store', () => ({
-  useCommerceStore: (selector: (state: { receiptsPublicationStatus: string }) => unknown) =>
-    selector({ receiptsPublicationStatus: 'idle' }),
+  useCommerceStore: (
+    selector: (state: { receiptsPublicationStatus: string; usdtRefusals: Record<string, string> }) => unknown,
+  ) => selector({ receiptsPublicationStatus: 'idle', usdtRefusals: {} }),
 }));
 
 vi.mock('@/hooks/useMarketplaceOrders/useMarketplaceOrders', () => ({
@@ -237,7 +238,12 @@ vi.mock('@/hooks/useMarketplaceOffers/useMarketplaceOffers', () => ({
 }));
 
 vi.mock('@/hooks/useMarketplaceOfferCheckout/useMarketplaceOfferCheckout', () => ({
-  useMarketplaceOfferCheckout: () => ({ submit: vi.fn(), isSubmitting: false }),
+  useMarketplaceOfferCheckout: () => ({
+    submit: vi.fn(),
+    isSubmitting: false,
+    pendingKeyChange: null,
+    decideKeyChange: vi.fn(),
+  }),
 }));
 
 vi.mock('@/hooks/useMarketplaceCartCount/useMarketplaceCartCount', () => ({

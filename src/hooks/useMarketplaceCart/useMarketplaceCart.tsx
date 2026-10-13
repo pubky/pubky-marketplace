@@ -62,7 +62,7 @@ export function marketplaceCartShippingTotals(
   return { totals: sumMoneyByAsset(shippingLines), hasCalculatedShipping };
 }
 
-function priceForCartItem(item: MarketplaceCartItem) {
+export function priceForCartItem(item: MarketplaceCartItem) {
   const variant = item.listing.record.variants.find(({ id }) => id === item.variantId);
   return (
     variant?.priceOverride ??

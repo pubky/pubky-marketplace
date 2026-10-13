@@ -35,6 +35,7 @@ import {
   isPendingPaymentState,
   isSellerReservation,
   isSellerSalesOrder,
+  isSellerUsdtReviewOrder,
   readCheckoutHashOrderId,
   sellerReservationCopy,
   unlistedOrderStateLabel,
@@ -57,6 +58,9 @@ import {
   refundStateLabel,
 } from '@/libs/commerce/refund-copy';
 import { buildMarketplaceConversationAggregateId } from '@/libs/commerce/transaction-commands';
+import { usdtPaidAsLine } from '@/libs/commerce/usdt-buyer-status';
+import { isUsdtRefundOrder } from '@/libs/commerce/usdt-refund';
+import { ArbiscanLookupLink } from '@/molecules/Marketplace/ArbiscanLookupLink';
 import { MarketplaceEmptyState } from '@/molecules/Marketplace/MarketplaceEmptyState';
 import { ContentLayout } from '@/organisms/ContentLayout/ContentLayout';
 import { DropEditionBadge, DropEditionReceiptLine } from '@/organisms/Marketplace/DropEditionBadge';
@@ -72,6 +76,8 @@ import { MarketplacePaymentStatusCard } from '@/organisms/Marketplace/Marketplac
 import { MarketplaceReauthDialog } from '@/organisms/Marketplace/MarketplaceReauthDialog';
 import { MarketplaceSectionNav } from '@/organisms/Marketplace/MarketplaceSectionNav';
 import { MarketplaceSellerDigitalPanel } from '@/organisms/Marketplace/MarketplaceSellerDigitalPanel';
+import { MarketplaceUsdtPaymentSummary } from '@/organisms/Marketplace/MarketplaceUsdtPaymentSummary';
+import { MarketplaceUsdtRefundAddress } from '@/organisms/Marketplace/MarketplaceUsdtRefundAddress';
 import type { MarketplaceOrder, MarketplacePayment } from '@/services/marketplace/marketplace';
 import { useAuthStore } from '@/stores/auth/auth.store';
 import { useCommerceStore } from '@/stores/commerce/commerce.store';
@@ -103,10 +109,13 @@ export function MarketplaceOrders() {
   const [anchorOrderId, setAnchorOrderId] = useState<string | null>(null);
   const nowMs = useNowMs(orders.some(({ order }) => order.state === 'pending_payment' && Boolean(order.holdExpiresAt)));
   const buyerCheckouts = orders.filter(({ order }) => isBuyerCheckoutInProgress(order, currentUserPubky));
-  const sellerReservations = orders.filter(({ order }) => isSellerReservation(order, currentUserPubky));
+  const sellerReservations = orders.filter(({ order, payment }) =>
+    isSellerReservation(order, currentUserPubky, payment),
+  );
   const abandonedCheckouts = orders.filter(({ order }) => isAbandonedCheckout(order, currentUserPubky));
   const historyOrders = orders.filter(
-    ({ order }) => isBuyerOrderHistory(order, currentUserPubky) || isSellerSalesOrder(order, currentUserPubky),
+    ({ order, payment }) =>
+      isBuyerOrderHistory(order, currentUserPubky) || isSellerSalesOrder(order, currentUserPubky, payment),
   );
   const orderCounts = getOrderTabCounts(historyOrders, currentUserPubky);
   const visibleOrders = historyOrders.filter((view) => isOrderInTab(view, activeTab, currentUserPubky));
@@ -313,6 +322,7 @@ export function MarketplaceOrders() {
                         <Typography as="p" className="text-sm text-muted-foreground">
                           {decision ? PAYMENT_SEEN_LABEL : sellerReservationCopy(order.holdExpiresAt)}
                         </Typography>
+                        <MarketplaceUsdtPaymentSummary order={order} payment={payment} isBuyer={false} />
                         <MarketplaceOrderReference order={order} isBuyer={false} showPlacedAt />
                         {decision && (
                           <MarketplacePaymentStatusCard
@@ -421,7 +431,10 @@ export function MarketplaceOrders() {
                             <MarketplaceOrderReference order={order} isBuyer={isBuyer} showPlacedAt />
                             {order.state === 'pending_payment' &&
                               order.holdExpiresAt &&
-                              (isBuyer || !sellerBitcoinDecision(order, payment)) && (
+                              (isBuyer ||
+                                !(
+                                  sellerBitcoinDecision(order, payment) || isSellerUsdtReviewOrder(order, payment)
+                                )) && (
                                 <Typography as="p" className="mt-2 text-sm text-muted-foreground">
                                   {isBuyer
                                     ? buyerCheckoutProgressCopy(order, payment, nowMs)
@@ -448,6 +461,11 @@ export function MarketplaceOrders() {
                               >
                                 <summary className="cursor-pointer text-sm text-muted-foreground">Receipt</summary>
                                 <MarketplaceBitcoinAmountBreakdown order={order} className="mt-2" />
+                                {usdtPaidAsLine(order) && (
+                                  <Typography as="p" className="mt-2 text-sm" data-testid="order-receipt-usdt-paid-as">
+                                    {usdtPaidAsLine(order)}
+                                  </Typography>
+                                )}
                                 <div
                                   className="mt-1 flex items-center gap-2 text-sm break-all text-muted-foreground"
                                   data-testid="order-receipt-hash"
@@ -545,6 +563,12 @@ export function MarketplaceOrders() {
                                 {refundRecord}
                               </Typography>
                             )}
+                            {refundRecord && isUsdtRefundOrder(order) && (
+                              <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1" data-testid="order-refund-lookups">
+                                <ArbiscanLookupLink kind="transaction" value={order.externalRefund?.transactionId} />
+                                <ArbiscanLookupLink kind="address" value={order.refundDestination?.address} />
+                              </div>
+                            )}
                             {refundOrderNotices(order).map((notice) => (
                               <Typography
                                 key={notice}
@@ -555,6 +579,12 @@ export function MarketplaceOrders() {
                                 {REFUND_ORDER_NOTICES[notice]}
                               </Typography>
                             ))}
+                            <MarketplaceUsdtRefundAddress
+                              order={order}
+                              isBuyer={isBuyer}
+                              paymentInReview={payment?.state === 'manual_review'}
+                              actOnOrder={actOnOrder}
+                            />
                             {isBuyer && order.fulfillment === 'digital' && (
                               <MarketplaceOrderDigitalPanel order={order} onChanged={refresh} />
                             )}
@@ -673,6 +703,8 @@ function MarketplaceOrderMessageCta({
 
 function MarketplaceOrderBitcoinAmount({ order }: { order: MarketplaceOrder }): ReactNode {
   if (bitcoinPaymentBreakdown(order)) return null;
+  // A USDT order settles at parity with its USD price; a bitcoin estimate would mislead.
+  if (order.paymentMethod === 'usdt') return null;
   const quote = order.paymentMethod === 'bitcoin' ? order.bitcoinQuote : null;
   if (quote?.quotedSats !== null && quote?.quotedSats !== undefined) {
     return (

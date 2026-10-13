@@ -16,6 +16,7 @@ import {
   isSellerPaidOrder,
   isSellerReservation,
   isSellerSalesOrder,
+  isSellerUsdtReviewOrder,
   readCheckoutHashOrderId,
   reservedWhileYouPayCopy,
   resolveCreatedCheckoutOrderIds,
@@ -109,6 +110,42 @@ describe('checkout-phase', () => {
     ).toBe(false);
   });
 
+  it('lists a USDT payment in manual review as a sale to resolve, keyed on the order asset', () => {
+    const usdt = {
+      state: 'pending_payment',
+      sellerPubky: SELLER,
+      buyerPubky: BUYER,
+      paymentMethod: 'usdt' as const,
+      paymentAsset: 'USDT',
+    };
+    const review = { state: 'manual_review' };
+
+    expect(isSellerUsdtReviewOrder(usdt, review)).toBe(true);
+    expect(isSellerReservation(usdt, SELLER, review)).toBe(false);
+    expect(isSellerSalesOrder(usdt, SELLER, review)).toBe(true);
+    expect(isSellerUsdtReviewOrder({ ...usdt, paymentMethod: undefined }, review)).toBe(true);
+
+    for (const payment of [{ state: 'awaiting_entitlement' }, { state: 'confirmed' }, null, undefined]) {
+      expect(isSellerUsdtReviewOrder(usdt, payment)).toBe(false);
+      expect(isSellerReservation(usdt, SELLER, payment)).toBe(true);
+      expect(isSellerSalesOrder(usdt, SELLER, payment)).toBe(false);
+    }
+  });
+
+  it('never moves a Bitcoin, PayPal or method-less order in review, nor a buyer view or a paid USDT order', () => {
+    const unpaid = { state: 'pending_payment', sellerPubky: SELLER, buyerPubky: BUYER };
+    const review = { state: 'manual_review' };
+
+    expect(isSellerUsdtReviewOrder({ ...unpaid, paymentMethod: 'paypal' }, review)).toBe(false);
+    expect(isSellerUsdtReviewOrder(unpaid, review)).toBe(false);
+    expect(isSellerReservation({ ...unpaid, paymentMethod: 'paypal' }, SELLER, review)).toBe(true);
+    expect(isSellerReservation(unpaid, SELLER, review)).toBe(true);
+    expect(isSellerSalesOrder({ ...unpaid, paymentMethod: 'bitcoin' }, SELLER, review)).toBe(true);
+    expect(isSellerUsdtReviewOrder({ ...unpaid, state: 'paid', paymentAsset: 'USDT' }, review)).toBe(false);
+    expect(isSellerSalesOrder({ ...unpaid, paymentAsset: 'USDT' }, BUYER, review)).toBe(false);
+    expect(isSellerReservation({ ...unpaid, paymentAsset: 'USDT' }, BUYER, review)).toBe(false);
+  });
+
   it('labels unbound vs bound checkout without the word order', () => {
     expect(buyerCheckoutStateLabel({ paymentMethod: null })).toBe('Checkout in progress');
     expect(buyerCheckoutStateLabel({ paymentMethod: 'paypal' })).toBe('Awaiting payment · Item reserved');
@@ -146,14 +183,21 @@ describe('checkout-phase', () => {
     expect(
       intersectPaymentMethods([
         ['bitcoin', 'paypal'],
-        ['paypal', 'stripe'],
+        ['paypal', 'usdt'],
       ]),
     ).toEqual(['paypal']);
-    expect(intersectPaymentMethods([['bitcoin'], ['stripe']])).toEqual([]);
+    expect(intersectPaymentMethods([['bitcoin'], ['usdt']])).toEqual([]);
     expect(
       intersectPaymentMethods([
-        ['bitcoin', 'stripe', 'paypal'],
-        ['bitcoin', 'stripe', 'paypal'],
+        ['paypal', 'usdt', 'bitcoin'],
+        ['bitcoin', 'usdt'],
+      ]),
+    ).toEqual(['bitcoin', 'usdt']);
+    expect(intersectPaymentMethods([['bitcoin', 'usdt'], ['bitcoin']])).toEqual(['bitcoin']);
+    expect(
+      intersectPaymentMethods([
+        ['bitcoin', 'paypal'],
+        ['bitcoin', 'paypal'],
       ]),
     ).toEqual(['bitcoin', 'paypal']);
     expect(readCheckoutHashOrderId('#018f47d2-6a27-7c23-a49d-000000000001')).toBe(

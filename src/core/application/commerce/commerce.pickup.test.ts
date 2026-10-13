@@ -1,5 +1,12 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+/** @vitest-environment node */
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as commerceConfig from '@/config/commerce';
+import {
+  type DeliveryKeyPair,
+  generateDeliveryKeyPair,
+  openDeliveryAddress,
+  type SellerDeliveryEnvelope,
+} from '@/libs/commerce/delivery-envelope';
 import { buildMarketplaceListingAggregateId } from '@/libs/commerce/transaction-commands';
 import { LocalCommerceService } from '@/services/local/commerce/commerce';
 import { MarketplaceGatewayService } from '@/services/marketplace/marketplace';
@@ -207,6 +214,15 @@ describe('CommerceApplication local pickup (Wave 7)', () => {
 
   describe('commitCreateMarketplaceCheckout (§A2 fulfillment plumbing)', () => {
     const sellerB = 'b'.repeat(52);
+    const BUYER = 'c'.repeat(52);
+    let sellerKey: DeliveryKeyPair;
+    let sellerBKey: DeliveryKeyPair;
+    beforeAll(async () => {
+      sellerKey = await generateDeliveryKeyPair();
+      sellerBKey = await generateDeliveryKeyPair();
+    });
+    const keysFor = (...pairs: [string, DeliveryKeyPair][]) =>
+      new Map(pairs.map(([pubky, pair]) => [pubky, { keyId: pair.keyId, publicKey: pair.publicKey }]));
     const address = {
       name: 'Alice Buyer',
       line1: '1 Market Street',
@@ -246,21 +262,67 @@ describe('CommerceApplication local pickup (Wave 7)', () => {
       expect(payload.deliveryAddress).toBeUndefined();
     });
 
-    it('defaults unchosen groups to shipping and carries the address when any group ships', async () => {
+    it('defaults unchosen groups to shipping and seals the address to the shipped seller only', async () => {
       const execute = vi.spyOn(MarketplaceGatewayService, 'execute').mockResolvedValue(okResponse as never);
 
-      await CommerceApplication.commitCreateMarketplaceCheckout(SELLER, {
+      await CommerceApplication.commitCreateMarketplaceCheckout(BUYER, {
         lines: [lineA, lineB],
         fulfillmentChoiceBySeller: { [sellerB]: 'pickup' },
         deliveryAddress: address,
+        deliveryKeys: keysFor([SELLER, sellerKey], [sellerB, sellerBKey]),
       });
 
-      const payload = execute.mock.calls[0][1].payload as {
+      const command = execute.mock.calls[0][1];
+      const payload = command.payload as {
         lines: { fulfillment: string }[];
         deliveryAddress?: unknown;
+        deliveryAddressEnvelopes?: SellerDeliveryEnvelope[];
       };
       expect(payload.lines.map((line) => line.fulfillment)).toEqual(['shipping', 'pickup']);
-      expect(payload.deliveryAddress).toEqual(address);
+      expect(payload).not.toHaveProperty('deliveryAddress');
+      expect(JSON.stringify(payload)).not.toContain('1 Market Street');
+      expect(payload.deliveryAddressEnvelopes).toHaveLength(1);
+      const [sealed] = payload.deliveryAddressEnvelopes ?? [];
+      expect(sealed).toMatchObject({ sellerPubky: SELLER, keyId: sellerKey.keyId });
+      await expect(
+        openDeliveryAddress({
+          envelope: sealed.envelope,
+          privateKey: sellerKey.privateKey,
+          binding: {
+            checkoutCommandId: command.commandId,
+            buyerPubky: BUYER,
+            sellerPubky: SELLER,
+            keyId: sellerKey.keyId,
+          },
+        }),
+      ).resolves.toEqual(address);
+    });
+
+    it('stops a durable shipping checkout whose seller has no resolved delivery key', async () => {
+      const execute = vi.spyOn(MarketplaceGatewayService, 'execute');
+
+      await expect(
+        CommerceApplication.commitCreateMarketplaceCheckout(BUYER, {
+          lines: [lineA],
+          deliveryAddress: address,
+          deliveryKeys: keysFor([sellerB, sellerBKey]),
+        }),
+      ).rejects.toMatchObject({ category: 'validation', context: { sellerPubky: SELLER } });
+      expect(execute).not.toHaveBeenCalled();
+    });
+
+    it('keeps the plaintext address on the sandbox adapter', async () => {
+      vi.spyOn(commerceConfig, 'getCommerceAdapterMode').mockReturnValue('sandbox');
+      const execute = vi.spyOn(MarketplaceGatewayService, 'execute').mockResolvedValue(okResponse as never);
+
+      await CommerceApplication.commitCreateMarketplaceCheckout(BUYER, {
+        lines: [lineA],
+        deliveryAddress: address,
+      });
+
+      const payload = execute.mock.calls[0]?.[1].payload as Record<string, unknown> | undefined;
+      expect(payload?.deliveryAddress).toEqual(address);
+      expect(payload).not.toHaveProperty('deliveryAddressEnvelopes');
     });
 
     it('refuses a choice a line does not publish with a typed validation error — never a silent fallback', async () => {
@@ -318,16 +380,19 @@ describe('CommerceApplication local pickup (Wave 7)', () => {
         lines: [lineA, digitalLine],
         fulfillmentChoiceBySeller: { [SELLER]: 'shipping' },
         deliveryAddress: address,
+        deliveryKeys: keysFor([SELLER, sellerKey]),
         deliveryEmail: 'buyer@example.com',
       });
 
       const payload = execute.mock.calls[0][1].payload as {
         lines: { fulfillment: string }[];
         deliveryAddress?: unknown;
+        deliveryAddressEnvelopes?: unknown[];
         deliveryEmail?: unknown;
       };
       expect(payload.lines.map((line) => line.fulfillment)).toEqual(['shipping', 'digital']);
-      expect(payload.deliveryAddress).toEqual(address);
+      expect(payload.deliveryAddress).toBeUndefined();
+      expect(payload.deliveryAddressEnvelopes).toHaveLength(1);
       expect(payload.deliveryEmail).toBe('buyer@example.com');
     });
 
@@ -353,5 +418,28 @@ describe('CommerceApplication local pickup (Wave 7)', () => {
       expect(JSON.stringify(refusal)).not.toContain('not an email');
       expect(execute).not.toHaveBeenCalled();
     });
+  });
+});
+
+describe('CommerceApplication USDT payments gate', () => {
+  beforeEach(() => {
+    vi.spyOn(commerceConfig, 'getCommerceAdapterMode').mockReturnValue('transaction-service');
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it.each([
+    { flag: false, capability: false, expected: false },
+    { flag: false, capability: true, expected: false },
+    { flag: true, capability: false, expected: false },
+    { flag: true, capability: true, expected: true },
+  ])('flag=$flag capability=$capability -> $expected', async ({ flag, capability, expected }) => {
+    vi.spyOn(commerceConfig, 'getUsdtPaymentsEnabled').mockReturnValue(flag);
+    const read = vi.spyOn(MarketplaceGatewayService, 'getUsdtPaymentsCapability').mockResolvedValue(capability);
+
+    await expect(CommerceApplication.fetchUsdtPaymentsAvailable()).resolves.toBe(expected);
+    expect(read).toHaveBeenCalledTimes(flag ? 1 : 0);
   });
 });

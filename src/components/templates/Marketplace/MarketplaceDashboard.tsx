@@ -129,8 +129,10 @@ export function MarketplaceDashboard() {
     await runDuplicate(listingId);
   };
 
-  const exportCsv = () => {
-    const url = URL.createObjectURL(new Blob([dashboard.exportCsv()], { type: 'text/csv;charset=utf-8' }));
+  const exportCsv = async () => {
+    const csv = await dashboard.exportCsv();
+    if (!csv) return;
+    const url = URL.createObjectURL(new Blob([csv.slice()], { type: 'text/csv;charset=utf-8' }));
     const anchor = document.createElement('a');
     anchor.href = url;
     anchor.download = 'pubky-marketplace-inventory.csv';

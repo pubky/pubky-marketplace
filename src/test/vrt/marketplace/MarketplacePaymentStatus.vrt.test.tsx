@@ -9,6 +9,11 @@ import projectionSamples from '@/libs/commerce/contracts/samples/projections.jso
 import { marketplaceOrderSchema } from '@/core/services/marketplace/marketplace-projections';
 import { toCamelCaseWire } from '@/libs/commerce/wire-casing';
 import { MarketplacePaymentStatusCard } from '@/organisms/Marketplace/MarketplacePaymentStatusCard';
+import { USDT_ORDER_FIELDS } from '@/test/fixtures/commerce/usdt-orders';
+import { USDT_RESOLVE_TX_HASH } from '@/test/fixtures/commerce/usdt-payment-review.wire';
+import { REFUND_FIXTURE_ADDRESS } from '@/test/fixtures/commerce/usdt-refund.wire';
+import { userEvent } from 'vitest/browser';
+import { useCommerceStore } from '@/stores/commerce/commerce.store';
 
 /**
  * Every buyer-visible payment state of the truthful status card (plan task
@@ -47,7 +52,8 @@ const view = vi.hoisted(() => ({
     bitcoinAvailable: true,
     bitcoinOfferAvailable: true,
     paypalAvailable: true,
-  },
+  } as Record<string, boolean>,
+  usdtAvailable: false,
 }));
 
 vi.mock('@/hooks/useMarketplaceLocksPayment/useMarketplaceLocksPayment', () => ({
@@ -90,8 +96,8 @@ vi.mock('@/controllers/commerce/commerce', async () => {
         },
       })),
       getSellerPaymentConfig: vi.fn(async () => view.sellerConfig),
+      fetchUsdtPaymentsAvailable: vi.fn(async () => view.usdtAvailable),
       bindPaymentMethod: vi.fn(async () => ({})),
-      verifyStripePayment: vi.fn(async () => ({ verified: false, order: null })),
       markFiatPaid: vi.fn(async () => ({})),
       confirmFiatReceived: vi.fn(async () => ({})),
       executeMarketplaceCommand: vi.fn(async () => ({ ok: true })),
@@ -128,7 +134,7 @@ async function renderCard(
   paymentState: 'awaiting_entitlement' | 'detected' | 'confirmed' | 'expired' | 'manual_review',
   adapterMode: 'sandbox' | 'transaction-service' | 'locks-paykit',
   options: {
-    adapter?: 'sandbox' | 'locks' | 'paykit' | 'stripe' | 'paypal';
+    adapter?: 'sandbox' | 'locks' | 'paykit' | 'paypal';
     orderState?: 'pending_payment' | 'paid' | 'cancelled';
     orderOverrides?: Record<string, unknown>;
     paymentOverrides?: Record<string, unknown>;
@@ -417,24 +423,6 @@ describe('Marketplace payment status card — visual regression', () => {
     view.locks.enabled = true;
   });
 
-  it('renders a bound card order without offering card checkout at desktop viewport', async () => {
-    view.locks = { ...view.locks, enabled: false, correlation: null, delivery: null, error: null };
-    const screen = await renderCard('awaiting_entitlement', 'transaction-service', {
-      deployEnv: 'staging',
-      orderOverrides: {
-        paymentMethod: 'stripe',
-        fiatCheckoutUrl: 'https://buy.stripe.com/test_fixture?client_reference_id=order-1',
-        fiatVerification: 'processor',
-        holdExpiresAt: HOLD_DEADLINE,
-        holdSource: 'bind',
-      },
-    });
-    await expect.element(screen.getByRole('button', { name: /Stripe/ })).not.toBeInTheDocument();
-    await expect.element(screen.getByText('Card (Stripe)')).not.toBeInTheDocument();
-    await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('payment-status-method-stripe-desktop');
-    view.locks.enabled = true;
-  });
-
   it('renders the buyer paypal report affordances at desktop viewport', async () => {
     view.locks = { ...view.locks, enabled: false, correlation: null, delivery: null, error: null };
     const screen = await renderCard('awaiting_entitlement', 'transaction-service', {
@@ -542,7 +530,7 @@ describe('Marketplace payment status card — visual regression', () => {
     const screen = await renderCard('manual_review', 'transaction-service', {
       isBuyer: false,
       currentUserPubky: 's'.repeat(52),
-      orderOverrides: { paymentMethod: 'stripe' },
+      orderOverrides: { paymentMethod: 'paypal' },
       deployEnv: 'staging',
     });
     await expect.element(screen.getByText('Resolve Bitcoin payment review')).not.toBeInTheDocument();
@@ -663,3 +651,194 @@ function projectionBody(scene: keyof typeof projectionSamples): Record<string, u
     ),
   ) as Record<string, unknown>;
 }
+
+describe('Marketplace payment status card — USDT orders', () => {
+  const usdt = (overrides: Record<string, unknown> = {}) => ({
+    ...USDT_ORDER_FIELDS,
+    holdExpiresAt: HOLD_DEADLINE,
+    ...overrides,
+  });
+
+  it('renders the payment method picker with USDT beside Bitcoin and PayPal at desktop viewport', async () => {
+    view.locks = { ...view.locks, enabled: false, correlation: null, delivery: null, error: null };
+    view.usdtAvailable = true;
+    view.sellerConfig = { ...view.sellerConfig, usdtAvailable: true };
+    const screen = await renderCard('awaiting_entitlement', 'transaction-service', {
+      deployEnv: 'production',
+      orderOverrides: { holdExpiresAt: HOLD_DEADLINE, holdSource: 'checkout' },
+    });
+    await expect.element(screen.getByRole('button', { name: 'Continue with USDT' })).toBeInTheDocument();
+    await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('payment-status-usdt-method-picker-desktop');
+    view.usdtAvailable = false;
+    view.sellerConfig = { bitcoinAvailable: true, bitcoinOfferAvailable: true, paypalAvailable: true };
+    view.locks.enabled = true;
+  });
+
+  it('drops Continue with USDT from the method picker after the service refused USDT for this seller at desktop viewport', async () => {
+    view.locks = { ...view.locks, enabled: false, correlation: null, delivery: null, error: null };
+    view.usdtAvailable = true;
+    view.sellerConfig = { ...view.sellerConfig, usdtAvailable: true };
+    useCommerceStore.getState().setUsdtRefusal('s'.repeat(52), 'usdt_unavailable');
+    const screen = await renderCard('awaiting_entitlement', 'transaction-service', {
+      deployEnv: 'production',
+      orderOverrides: { holdExpiresAt: HOLD_DEADLINE, holdSource: 'checkout' },
+    });
+    await expect.element(screen.getByRole('button', { name: 'Continue with PayPal' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Continue with USDT' }).elements()).toHaveLength(0);
+    await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot(
+      'payment-status-usdt-method-picker-refused-desktop',
+    );
+    useCommerceStore.getState().reset();
+    view.usdtAvailable = false;
+    view.sellerConfig = { bitcoinAvailable: true, bitcoinOfferAvailable: true, paypalAvailable: true };
+    view.locks.enabled = true;
+  });
+
+  it('renders a bound USDT order waiting for the buyer payment at desktop viewport', async () => {
+    const screen = await renderCard('awaiting_entitlement', 'transaction-service', {
+      adapter: 'paykit',
+      deployEnv: 'production',
+      orderOverrides: usdt({ paykitDeliveryState: 'delivered' }),
+    });
+    await expect.element(screen.getByText('Pay exactly 137.000000 USDT')).toBeInTheDocument();
+    await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('payment-status-usdt-awaiting-desktop');
+  });
+
+  it('renders a bound USDT order waiting for the buyer payment at mobile viewport', async () => {
+    const screen = await renderCard('awaiting_entitlement', 'transaction-service', {
+      adapter: 'paykit',
+      deployEnv: 'production',
+      viewport: VRT_VIEWPORT_MOBILE,
+      orderOverrides: usdt({ paykitDeliveryState: 'delivered' }),
+    });
+    await expect.element(screen.getByText('Pay exactly 137.000000 USDT')).toBeInTheDocument();
+    await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('payment-status-usdt-awaiting-mobile');
+  });
+
+  it('renders a payment received at inclusion, not yet final, for the buyer at desktop viewport', async () => {
+    const screen = await renderCard('confirmed', 'transaction-service', {
+      adapter: 'paykit',
+      deployEnv: 'production',
+      orderOverrides: usdt({ paymentFinality: 'pending' }),
+    });
+    await expect.element(screen.getByText(/The seller ships once Arbitrum finalizes it/)).toBeInTheDocument();
+    await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('payment-status-usdt-received-desktop');
+  });
+
+  it('renders a payment received at inclusion, not yet final, for the seller at desktop viewport', async () => {
+    const screen = await renderCard('confirmed', 'transaction-service', {
+      adapter: 'paykit',
+      deployEnv: 'production',
+      isBuyer: false,
+      orderOverrides: usdt({ paymentFinality: 'pending' }),
+    });
+    await expect.element(screen.getByText(/Don't ship yet/)).toBeInTheDocument();
+    await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('payment-status-usdt-received-seller-desktop');
+  });
+
+  it('renders a final USDT payment for the buyer at desktop viewport', async () => {
+    const screen = await renderCard('confirmed', 'transaction-service', {
+      adapter: 'paykit',
+      deployEnv: 'production',
+      orderOverrides: usdt({ paymentFinality: 'final' }),
+    });
+    await expect.element(screen.getByText('USDT payment confirmed')).toBeInTheDocument();
+    await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('payment-status-usdt-final-desktop');
+  });
+
+  it('renders a reorged USDT payment being re-checked for the buyer at desktop viewport', async () => {
+    const screen = await renderCard('confirmed', 'transaction-service', {
+      adapter: 'paykit',
+      deployEnv: 'production',
+      orderOverrides: usdt({ paymentFinality: 'reverted' }),
+    });
+    await expect.element(screen.getByText(/being re-checked on Arbitrum/)).toBeInTheDocument();
+    await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('payment-status-usdt-rechecking-desktop');
+  });
+
+  it('renders a USDT amount mismatch under review for the buyer at desktop viewport', async () => {
+    const screen = await renderCard('manual_review', 'transaction-service', {
+      adapter: 'paykit',
+      deployEnv: 'production',
+      orderOverrides: usdt(),
+      paymentOverrides: { reviewReason: 'amount_mismatch' },
+    });
+    await expect
+      .element(screen.getByText('The USDT amount does not match. The seller is reviewing it.'))
+      .toBeInTheDocument();
+    await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('payment-status-usdt-review-desktop');
+  });
+
+  describe('seller resolution of a payment in manual review', () => {
+    const REVIEW_ENTERED_AT = '2026-10-09T15:00:00.000Z';
+    const confirmedDestination = {
+      address: REFUND_FIXTURE_ADDRESS,
+      network: 'arbitrum-one' as const,
+      asset: 'USDT' as const,
+      source: 'buyer_entered',
+      confirmedAt: '2026-10-09T16:00:00.000Z',
+    };
+
+    async function renderSellerReview(
+      options: { destination?: boolean; viewport?: object; refundRequired?: boolean } = {},
+    ) {
+      view.locks = { ...view.locks, enabled: false, correlation: null, delivery: null, error: null };
+      const screen = await renderCard('manual_review', 'transaction-service', {
+        adapter: 'paykit',
+        deployEnv: 'production',
+        isBuyer: false,
+        viewport: options.viewport,
+        ...(options.refundRequired ? { orderState: 'cancelled' as const } : {}),
+        orderOverrides: usdt({
+          ...(options.destination === false ? {} : { refundDestination: confirmedDestination }),
+          ...(options.refundRequired ? { cancellationReason: 'payment window elapsed' } : {}),
+        }),
+        paymentOverrides: {
+          reviewReason: options.refundRequired ? 'refund_required' : 'amount_mismatch',
+          manualReviewEnteredAt: REVIEW_ENTERED_AT,
+        },
+      });
+      await expect.element(screen.getByText('Resolve USDT payment review')).toBeInTheDocument();
+      return screen;
+    }
+
+    it('renders the seller resolution of a USDT payment at desktop viewport', async () => {
+      const screen = await renderSellerReview();
+      await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('payment-status-usdt-resolve-seller-desktop');
+      view.locks.enabled = true;
+    });
+
+    it('renders a USDT refund with the buyer address and its transaction hash at desktop viewport', async () => {
+      const screen = await renderSellerReview();
+      await userEvent.selectOptions(screen.getByLabelText('Outcome'), 'refunded');
+      await userEvent.type(screen.getByLabelText(/Arbitrum transaction hash/), USDT_RESOLVE_TX_HASH);
+      await expect.element(screen.getByText(REFUND_FIXTURE_ADDRESS)).toBeInTheDocument();
+      await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('payment-status-usdt-resolve-refund-desktop');
+      view.locks.enabled = true;
+    });
+
+    it('renders a USDT refund while the buyer has not confirmed an address at desktop viewport', async () => {
+      const screen = await renderSellerReview({ destination: false });
+      await userEvent.selectOptions(screen.getByLabelText('Outcome'), 'refunded');
+      await expect.element(screen.getByTestId('usdt-resolution-no-address')).toBeInTheDocument();
+      await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot(
+        'payment-status-usdt-resolve-no-address-desktop',
+      );
+      view.locks.enabled = true;
+    });
+
+    it('renders a USDT refund that must be returned, without Paid or an address, at mobile viewport', async () => {
+      const screen = await renderSellerReview({
+        refundRequired: true,
+        destination: false,
+        viewport: VRT_VIEWPORT_MOBILE,
+      });
+      await userEvent.selectOptions(screen.getByLabelText('Outcome'), 'refunded');
+      await expect.element(screen.getByTestId('usdt-resolution-reference-error')).toBeInTheDocument();
+      await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot(
+        'payment-status-usdt-resolve-refund-required-mobile',
+      );
+      view.locks.enabled = true;
+    });
+  });
+});

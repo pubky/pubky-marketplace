@@ -5,7 +5,7 @@ on:
     tags: ['v*']
 
 permissions:
-      contents: read
+  contents: read
 
 jobs:
   build-and-push:
@@ -39,8 +39,6 @@ jobs:
           cache_to: type=gha,mode=max
           build_args: |
             NEXT_PUBLIC_DB_VERSION=3
-            NEXT_PUBLIC_DB_NAME=franky
+            NEXT_PUBLIC_DB_NAME=shop-franky
             NEXT_PUBLIC_DEBUG_MODE=false
             NEXT_PUBLIC_APP_VERSION=${{ github.sha }}
-
-

@@ -4,8 +4,9 @@ import { useEffect, useRef, useState } from 'react';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { useForm, type UseFormReturn, useWatch } from 'react-hook-form';
-import { getCommerceAdapterMode, isDurableCommerceMode } from '@/config/commerce';
+import { getCommerceAdapterMode, getPaykitServerApi, isDurableCommerceMode } from '@/config/commerce';
 import { CommerceController } from '@/controllers/commerce/commerce';
+import { type PendingDeliveryKeyChange, useDeliveryKeyGate } from '@/hooks/useDeliveryKeyGate/useDeliveryKeyGate';
 import type { MarketplaceCartItem } from '@/hooks/useMarketplaceCart/useMarketplaceCart';
 import {
   BIND_FAIL_CANCEL_REASON,
@@ -23,7 +24,10 @@ import {
   marketplaceCheckoutRefusalMessage,
   marketplaceErrorCode,
   marketplaceFailureMessage,
+  usdtOfferRefusalReason,
+  usdtRefusalKey,
 } from '@/libs/commerce/failure-messages';
+import { LOCKS_MIXED_CHECKOUT_COPY, locksCheckoutRoute } from '@/libs/commerce/locks-payment';
 import { commerceListingFulfillmentMethods } from '@/libs/commerce/marketplace-records';
 import type { PaymentMethodKind } from '@/libs/commerce/payment-methods';
 import type { MarketplaceFulfillmentMethod } from '@/libs/commerce/pickup';
@@ -183,6 +187,8 @@ export function useMarketplaceCheckout(
   /** The number of durable rows this checkout creates — one per (seller, fulfillment) group. */
   orderCount: number;
   /** Persist a used or newly saved address after a successful create (offer or cart). */
+  pendingKeyChange: PendingDeliveryKeyChange | null;
+  decideKeyChange: (accepted: boolean) => void;
   rememberAddress: () => Promise<void>;
 } {
   const currentUserPubky = useAuthStore((state) => state.currentUserPubky);
@@ -204,6 +210,7 @@ export function useMarketplaceCheckout(
   } | null>(null);
   const [digitalKindsAttempt, setDigitalKindsAttempt] = useState(0);
   const appliedInitialAddressRef = useRef(false);
+  const { resolveKeys, pendingChange: pendingKeyChange, decide: decideKeyChange } = useDeliveryKeyGate();
   const form = useForm<MarketplaceCheckoutData>({
     resolver: zodResolver(marketplaceCheckoutSchema),
     defaultValues: marketplaceCheckoutDefaults,
@@ -588,9 +595,15 @@ export function useMarketplaceCheckout(
       if (fulfillment) fulfillmentChoiceBySeller[sellerPubky] = fulfillment;
     }
     const checkoutLines = lines.filter((line): line is CheckoutLine => line !== null);
+    const shippedSellers = requiresDeliveryAddress
+      ? CommerceController.getShippedSellers({ lines: checkoutLines, fulfillmentChoiceBySeller })
+      : [];
+    const sealedTo = await resolveKeys(shippedSellers);
+    if (!sealedTo.ok) return { ok: false };
     const response = await CommerceController.commitCreateMarketplaceCheckout({
       lines: checkoutLines,
       fulfillmentChoiceBySeller,
+      deliveryKeys: sealedTo.keys,
       ...(freshKinds.includes('email') ? { deliveryEmail: data.deliveryEmail } : {}),
       ...(requiresDeliveryAddress
         ? {
@@ -688,6 +701,11 @@ export function useMarketplaceCheckout(
   const pay = async (method: PaymentMethodKind | null, onRetry?: () => void): Promise<MarketplacePayResult> => {
     const empty: MarketplacePayResult = { ok: false, orderIds: [], boundOrders: [] };
     if (!items.length || isPaying) return empty;
+    const route = locksCheckoutRoute(getCommerceAdapterMode(), getPaykitServerApi(), items);
+    if (route === 'mixed') {
+      toast({ variant: 'error', description: LOCKS_MIXED_CHECKOUT_COPY });
+      return empty;
+    }
     let outcome = empty;
     setIsPaying(true);
     await form.handleSubmit(async (data) => {
@@ -713,8 +731,10 @@ export function useMarketplaceCheckout(
         }
         const mode = getCommerceAdapterMode();
         // Sandbox checkout already creates its simulated payment. Binding a
-        // real payment rail is only supported by the durable service.
-        const skipBind = mode === 'sandbox';
+        // real payment rail is only supported by the durable service. A Locks
+        // checkout on upstream Paykit pays from the order page instead (see
+        // `locksCheckoutRoute`).
+        const skipBind = mode === 'sandbox' || route === 'locks';
         if (skipBind) {
           await finishCreatedCheckout(data);
           outcome = { ok: true, orderIds: createdIds, boundOrders: [] };
@@ -732,6 +752,13 @@ export function useMarketplaceCheckout(
           }
         } catch (bindError) {
           await cancelCreatedCheckouts(createdIds);
+          const usdtRefusal = usdtOfferRefusalReason(bindError);
+          if (usdtRefusal) {
+            CommerceController.rememberUsdtRefusal(
+              usdtRefusalKey(items.map((item) => item.listing.record.ownerPubky)),
+              usdtRefusal,
+            );
+          }
           showPaymentMethodRefusalToast({ error: bindError, fallback: MARKETPLACE_FAILURE_MESSAGES.checkout, onRetry });
           return;
         }
@@ -778,6 +805,8 @@ export function useMarketplaceCheckout(
     isPickupCapabilityLoadingForSeller: (sellerPubky: string) =>
       pickupAvailable === null && sellersPublishingPickup.has(sellerPubky),
     orderCount,
+    pendingKeyChange,
+    decideKeyChange,
     rememberAddress: async () => {
       await persistAddressBookAfterOrder(form.getValues());
     },

@@ -17,8 +17,12 @@ import {
 } from '@/atoms/Dialog/Dialog';
 import { Link } from '@/atoms/Link/Link';
 import { Typography } from '@/atoms/Typography/Typography';
+import { withBasePath } from '@/config/base-path';
 import { CommerceController } from '@/controllers/commerce/commerce';
+import { LISTING_PUBLISH_BLOCK_COPY } from '@/libs/commerce/listing-publish-guards';
 import type { CommerceListingRecord } from '@/libs/commerce/marketplace-records';
+import { AuthErrorCode } from '@/libs/error/error.codes';
+import { isAppError } from '@/libs/error/error.utils';
 import { Logger } from '@/libs/logger/logger';
 import {
   type CommerceListingRegistrationStatus,
@@ -51,6 +55,7 @@ export function MarketplaceListingOwnerPanel({ record, registrationStatus }: Mar
   // here: the transactional surfaces own session guidance, buyers self-heal
   // via `listing.sync`, and the next visit retries.
   const marketplaceSession = useCommerceStore((state) => state.marketplaceSession);
+  const [isMutating, setIsMutating] = useState(false);
   const retryRegistration = async () => {
     setIsMutating(true);
     const registered = await CommerceController.ensureListingRegistered(record);
@@ -64,16 +69,18 @@ export function MarketplaceListingOwnerPanel({ record, registrationStatus }: Mar
 
   const canRegister = CommerceController.canRegisterListings();
   const registrationPending = isListingRegistrationPending({ registration_status: registrationStatus });
+  // Not while this panel is committing: Unlist and Relist stage the row as pending registration before they
+  // write, and a heal started from that staged row races the publish for it. The effect runs again when the
+  // commit ends, so a registration the commit left pending is still retried.
   useEffect(() => {
-    if (!registrationPending || !marketplaceSession || !canRegister) return;
+    if (!registrationPending || !marketplaceSession || !canRegister || isMutating) return;
     void CommerceController.ensureListingRegistered(record);
-  }, [record, registrationPending, marketplaceSession, canRegister]);
+  }, [record, registrationPending, marketplaceSession, canRegister, isMutating]);
 
   const router = useRouter();
   // A page opened in a fresh tab renders from the persisted pubky before the homeserver session is restored;
   // a delete sent in that window fails with "Authenticated writes must target an owned path".
   const hasHomeserverSession = useAuthStore((state) => state.session !== null);
-  const [isMutating, setIsMutating] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const canToggleVisibility = record.sale.format === 'fixed_price' && ['active', 'paused'].includes(record.state);
 
@@ -91,10 +98,33 @@ export function MarketplaceListingOwnerPanel({ record, registrationStatus }: Mar
           ? { title: 'Listing unlisted', description: 'Buyers can no longer purchase it. Relist it anytime.' }
           : { title: 'Listing relisted', description: 'Buyers can purchase it again.' },
       );
-    } catch {
-      toast({ variant: 'error', description: 'Could not update the listing state.' });
+    } catch (error) {
+      Logger.error('Failed to update a marketplace listing state', {
+        listing: `${record.ownerPubky}:${record.listingId}`,
+        state,
+        error,
+      });
+      await showPublishedListingState();
+      toast(
+        isAppError(error) && error.code === AuthErrorCode.SESSION_EXPIRED
+          ? { variant: 'error', description: LISTING_PUBLISH_BLOCK_COPY.session.title }
+          : { variant: 'error', description: 'Could not update the listing state.' },
+      );
     } finally {
       setIsMutating(false);
+    }
+  };
+
+  // A failed commit leaves the revision it staged in the local row; show the published one instead, so the
+  // page never says "unlisted" about a listing buyers can still purchase.
+  const showPublishedListingState = async () => {
+    try {
+      await CommerceController.refreshListing(record.ownerPubky, record.listingId);
+    } catch (error) {
+      Logger.warn('Could not re-read a listing after a failed state update', {
+        listing: `${record.ownerPubky}:${record.listingId}`,
+        error,
+      });
     }
   };
 
@@ -117,7 +147,7 @@ export function MarketplaceListingOwnerPanel({ record, registrationStatus }: Mar
   };
 
   const copyLink = async () => {
-    const url = `${window.location.origin}${getMarketplaceListingRoute(record.ownerPubky, record.listingId)}`;
+    const url = `${window.location.origin}${withBasePath(getMarketplaceListingRoute(record.ownerPubky, record.listingId))}`;
     try {
       await navigator.clipboard.writeText(url);
       toast({ title: 'Link copied', description: 'Share it anywhere — the listing page is public.' });

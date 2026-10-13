@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { DELIVERY_ENVELOPE_BYTES, DELIVERY_KEY_ID_PATTERN } from './delivery-envelope-format';
 import {
   type DigitalDeliveryCommandResult,
   digitalDeliveryCommandResultSchema,
@@ -20,6 +21,21 @@ import {
   commercePubkySchema,
   createCommerceCommandSchema,
 } from './transaction-contracts';
+import { isValidArbitrumAddress } from './usdt-refund';
+
+const DELIVERY_ENVELOPE_CHARACTERS = Math.ceil((DELIVERY_ENVELOPE_BYTES * 4) / 3);
+
+/** One sealed delivery address: the key id it was sealed to and the unpadded base64url bytes. */
+const deliveryEnvelopeFieldsSchema = z.object({
+  keyId: z.string().regex(DELIVERY_KEY_ID_PATTERN),
+  envelope: z
+    .string()
+    .length(DELIVERY_ENVELOPE_CHARACTERS)
+    .regex(/^[A-Za-z0-9_-]+$/),
+});
+
+const sellerDeliveryEnvelopeSchema = deliveryEnvelopeFieldsSchema.extend({ sellerPubky: commercePubkySchema }).strict();
+const offerDeliveryEnvelopeSchema = deliveryEnvelopeFieldsSchema.strict();
 
 const auctionTermsSchema = z
   .object({
@@ -227,25 +243,37 @@ export const offerCheckoutCommandSchema = createCommerceCommandSchema(
       listingRecordSha256: z.string().min(1),
       variantId: z.string().min(1),
       quantity: z.number().int().positive(),
+      // The buyer's client sends `deliveryAddressEnvelope`, sealed to the
+      // seller's delivery key. The plaintext field stays in the schema for
+      // the local prototype adapter and for service releases that still
+      // accept it; the Shop's durable path never sets it.
       deliveryAddress: commerceDeliveryAddressValueSchema.optional(),
+      deliveryAddressEnvelope: offerDeliveryEnvelopeSchema.optional(),
       // Absent means shipping; a pickup award sends `pickup` and no address.
       fulfillment: z.literal('pickup').optional(),
-      guaranteePolicyVersion: z.literal(1),
     })
     .strict()
     .superRefine((payload, context) => {
       const pickup = payload.fulfillment === 'pickup';
-      if (!pickup && payload.deliveryAddress === undefined) {
+      if (payload.deliveryAddress !== undefined && payload.deliveryAddressEnvelope !== undefined) {
+        context.addIssue({
+          code: 'custom',
+          path: ['deliveryAddressEnvelope'],
+          message: 'An offer checkout carries a delivery address or a sealed envelope, not both',
+        });
+      }
+      const hasAddress = payload.deliveryAddress !== undefined || payload.deliveryAddressEnvelope !== undefined;
+      if (!pickup && !hasAddress) {
         context.addIssue({
           code: 'custom',
           path: ['deliveryAddress'],
           message: 'A delivery address is required when the offer ships',
         });
       }
-      if (pickup && payload.deliveryAddress !== undefined) {
+      if (pickup && hasAddress) {
         context.addIssue({
           code: 'custom',
-          path: ['deliveryAddress'],
+          path: [payload.deliveryAddressEnvelope !== undefined ? 'deliveryAddressEnvelope' : 'deliveryAddress'],
           message: 'A pickup offer checkout must not carry a delivery address',
         });
       }
@@ -317,13 +345,16 @@ export const createMarketplaceCheckoutCommandSchema = createCommerceCommandSchem
       // absent when every group is pickup — a pickup-only checkout that
       // PRESENTS an address is rejected, so a buggy or malicious client
       // cannot smuggle one into storage (§A2).
+      // Sealed per shipped seller (one entry each, none for pickup or
+      // digital sellers). `deliveryAddress` remains for the local prototype
+      // adapter and older service releases; the durable path never sets it.
       deliveryAddress: commerceDeliveryAddressValueSchema.optional(),
+      deliveryAddressEnvelopes: z.array(sellerDeliveryEnvelopeSchema).min(1).max(50).optional(),
       // Where the seller of an email-kind digital line sends the purchase
       // (digital delivery design §4.3). The service requires it exactly when
       // a line is email-kind, which only the listing projection says, so the
       // checkout hook decides and this schema checks only its form.
       deliveryEmail: marketplaceDeliveryEmailSchema.optional(),
-      guaranteePolicyVersion: z.literal(1),
     })
     .strict()
     .superRefine((payload, context) => {
@@ -337,17 +368,35 @@ export const createMarketplaceCheckoutCommandSchema = createCommerceCommandSchem
       const anyShipping = payload.lines.some(
         (line) => line.fulfillment === undefined || line.fulfillment === 'shipping',
       );
-      if (anyShipping && payload.deliveryAddress === undefined) {
+      const hasAddress = payload.deliveryAddress !== undefined || payload.deliveryAddressEnvelopes !== undefined;
+      if (payload.deliveryAddress !== undefined && payload.deliveryAddressEnvelopes !== undefined) {
+        context.addIssue({
+          code: 'custom',
+          path: ['deliveryAddressEnvelopes'],
+          message: 'A checkout carries a delivery address or sealed envelopes, not both.',
+        });
+      }
+      if (anyShipping && !hasAddress) {
         context.addIssue({
           code: 'custom',
           path: ['deliveryAddress'],
           message: 'A delivery address is required when any checkout line ships.',
         });
       }
-      if (!anyShipping && payload.deliveryAddress !== undefined) {
+      if (payload.deliveryAddressEnvelopes !== undefined) {
+        const envelopeSellers = payload.deliveryAddressEnvelopes.map(({ sellerPubky }) => sellerPubky);
+        if (new Set(envelopeSellers).size !== envelopeSellers.length) {
+          context.addIssue({
+            code: 'custom',
+            path: ['deliveryAddressEnvelopes'],
+            message: 'A checkout carries at most one sealed envelope per seller.',
+          });
+        }
+      }
+      if (!anyShipping && hasAddress) {
         context.addIssue({
           code: 'custom',
-          path: ['deliveryAddress'],
+          path: [payload.deliveryAddressEnvelopes !== undefined ? 'deliveryAddressEnvelopes' : 'deliveryAddress'],
           message: payload.lines.every((line) => line.fulfillment === 'pickup')
             ? 'A pickup-only checkout must not carry a delivery address.'
             : 'A checkout with no shipped line must not carry a delivery address.',
@@ -381,15 +430,28 @@ export const locksBundleIdSchema = z
 
 /**
  * The addressed public lock resource in the transaction service's bare form:
- * `<z-base-32 creator>/pub/locks.app/<52-char Crockford lock id>.json` — no
- * `pubky://` scheme and no `pubky` prefix.
+ * `<z-base-32 creator>/pub/<locks.app|app.locks>/<52-char Crockford lock id>.json`
+ * — no `pubky://` scheme and no `pubky` prefix. `locks.app` is the fork Lock
+ * Server's prefix, `app.locks` that of pubky/locks rc10 and later.
  */
 export const locksBareLockResourceSchema = z
   .string()
   .regex(
-    /^[ybndrfg8ejkmcpqxot1uwisza345h769]{52}\/pub\/locks\.app\/[0-9A-HJKMNP-TV-Z]{52}\.json$/,
-    'Expected <creator>/pub/locks.app/<lock-id>.json',
+    /^[ybndrfg8ejkmcpqxot1uwisza345h769]{52}\/pub\/(?:locks\.app|app\.locks)\/[0-9A-HJKMNP-TV-Z]{52}\.json$/,
+    'Expected <creator>/pub/locks.app/<lock-id>.json or <creator>/pub/app.locks/<lock-id>.json',
   );
+
+/**
+ * `payment.prepare_locks` (buyer only, payment `awaiting_entitlement`): the
+ * service validates the seller's lock against the checkout-time snapshot,
+ * takes the payment hold and pins the payment to the `locks` adapter. It must
+ * succeed before `payment.register_locks`. A repeat for a live preparation
+ * replays it. Its opaque `client_reference` is not needed by the Shop.
+ */
+export const prepareLocksPaymentCommandSchema = createCommerceCommandSchema(
+  'payment.prepare_locks',
+  z.object({ paymentId: z.uuid() }).strict(),
+);
 
 /**
  * `payment.register_locks` (buyer only, payment `awaiting_entitlement`):
@@ -407,7 +469,6 @@ export const registerLocksPaymentCommandSchema = createCommerceCommandSchema(
     .object({
       paymentId: z.uuid(),
       bundleId: locksBundleIdSchema,
-      pubkyLockResource: locksBareLockResourceSchema,
     })
     .strict(),
 );
@@ -577,6 +638,22 @@ export const recordExternalRefundCommandSchema = createCommerceCommandSchema(
 );
 
 /**
+ * `refund.confirm_destination` (buyer, own USDT order only): the Arbitrum One
+ * address the buyer wants a refund sent to. The buyer may replace it until the
+ * seller records a refund; the service then refuses with `INVALID_STATE`
+ * (plan §2.6, service S6). A mixed-case address must carry a valid EIP-55
+ * checksum.
+ */
+export const confirmRefundDestinationCommandSchema = createCommerceCommandSchema(
+  'refund.confirm_destination',
+  orderIdPayload
+    .extend({
+      address: z.string().trim().refine(isValidArbitrumAddress, { message: 'Enter a valid Arbitrum address.' }),
+    })
+    .strict(),
+);
+
+/**
  * Review terms shared by `review.create` and `review.update`, mirroring the
  * service's single `ReviewTermsPayload` validator: an integer rating 1–5 and
  * trimmed text of 1–5,000 characters against the reviewed order.
@@ -643,6 +720,7 @@ export const marketplaceCommandSchema = z.union([
   updateMarketplaceNotificationPreferencesCommandSchema,
   createMarketplaceCheckoutCommandSchema,
   advanceSandboxPaymentCommandSchema,
+  prepareLocksPaymentCommandSchema,
   registerLocksPaymentCommandSchema,
   requestOrderCancellationCommandSchema,
   approveOrderCancellationCommandSchema,
@@ -660,6 +738,7 @@ export const marketplaceCommandSchema = z.union([
   approveReturnCommandSchema,
   receiveReturnCommandSchema,
   recordExternalRefundCommandSchema,
+  confirmRefundDestinationCommandSchema,
   createReviewCommandSchema,
   updateReviewCommandSchema,
 ]);
@@ -736,6 +815,7 @@ export type UpdateMarketplaceNotificationPreferencesCommand = z.infer<
 >;
 export type CreateMarketplaceCheckoutCommand = z.infer<typeof createMarketplaceCheckoutCommandSchema>;
 export type AdvanceSandboxPaymentCommand = z.infer<typeof advanceSandboxPaymentCommandSchema>;
+export type PrepareLocksPaymentCommand = z.infer<typeof prepareLocksPaymentCommandSchema>;
 export type RegisterLocksPaymentCommand = z.infer<typeof registerLocksPaymentCommandSchema>;
 export type RequestOrderCancellationCommand = z.infer<typeof requestOrderCancellationCommandSchema>;
 export type ApproveOrderCancellationCommand = z.infer<typeof approveOrderCancellationCommandSchema>;
@@ -753,6 +833,7 @@ export type RequestReturnCommand = z.infer<typeof requestReturnCommandSchema>;
 export type ApproveReturnCommand = z.infer<typeof approveReturnCommandSchema>;
 export type ReceiveReturnCommand = z.infer<typeof receiveReturnCommandSchema>;
 export type RecordExternalRefundCommand = z.infer<typeof recordExternalRefundCommandSchema>;
+export type ConfirmRefundDestinationCommand = z.infer<typeof confirmRefundDestinationCommandSchema>;
 export type CreateReviewCommand = z.infer<typeof createReviewCommandSchema>;
 export type UpdateReviewCommand = z.infer<typeof updateReviewCommandSchema>;
 export type MarketplaceCommand = z.infer<typeof marketplaceCommandSchema>;

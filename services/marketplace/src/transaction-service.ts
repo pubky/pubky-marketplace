@@ -546,7 +546,6 @@ export interface MarketplaceOrder {
   subtotal: MarketplaceListingAggregate['unitPrice'];
   shipping: MarketplaceListingAggregate['unitPrice'];
   total: MarketplaceListingAggregate['unitPrice'];
-  guaranteePolicyVersion: 1;
   paymentId: string;
   receiptId: string | null;
   cancellationReason: string | null;
@@ -1195,6 +1194,7 @@ export class MarketplaceTransactionService {
         return this.createCheckout(actorPubky, command);
       case 'payment.sandbox_advance':
         return this.advanceSandboxPayment(actorPubky, command);
+      case 'payment.prepare_locks':
       case 'payment.register_locks':
         // The sandbox has no Lock Server and no verification worker, so it
         // refuses the registration outright — mirroring the durable service's
@@ -1216,6 +1216,10 @@ export class MarketplaceTransactionService {
         return this.receiveReturn(actorPubky, command);
       case 'refund.record_external':
         return this.recordExternalRefund(actorPubky, command);
+      case 'refund.confirm_destination':
+        // USDT orders exist only on the durable service, so the sandbox has
+        // no refund address to confirm.
+        return failure('INVALID_COMMAND', 'The sandbox marketplace does not take USDT payments.');
       case 'review.create':
         return this.createReview(actorPubky, command);
       case 'review.update':
@@ -2062,7 +2066,6 @@ export class MarketplaceTransactionService {
         subtotal: { ...asset, amountMinor: subtotalMinor },
         shipping: { ...asset, amountMinor: shippingMinor },
         total: { ...asset, amountMinor: subtotalMinor + shippingMinor },
-        guaranteePolicyVersion: command.payload.guaranteePolicyVersion,
         paymentId,
         receiptId: null,
         cancellationReason: null,

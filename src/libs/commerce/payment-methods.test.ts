@@ -2,10 +2,10 @@ import { describe, expect, it } from 'vitest';
 import {
   availablePaymentMethods,
   isPlausibleAccountXpub,
-  isStripePaymentLink,
-  isStripeRestrictedKey,
+  sellerPaymentConfigOwnViewSchema,
   sellerPaymentConfigSchema,
 } from './payment-methods';
+import { PAYMENT_METHOD_KINDS } from './payment-options';
 
 const TPUB =
   'tpubDC5FSnBiZDMmhiuCmWAYsLwgLYrrT9rAqvTySfuCCrgsWz8wxMXUS9Tb9iVMvcRbvFcAHGkMD5Kx8koh4GquNGNTfohfk7pgjhaPCdXpoba';
@@ -36,6 +36,34 @@ describe('payment-methods', () => {
       ).toEqual(['paypal']);
     });
 
+    describe('USDT gate', () => {
+      const base = { bitcoinAvailable: true, bitcoinOfferAvailable: true, paypalAvailable: true };
+
+      it.each([
+        { gate: undefined, usdtAvailable: true, expected: ['bitcoin', 'paypal'] },
+        { gate: false, usdtAvailable: true, expected: ['bitcoin', 'paypal'] },
+        { gate: true, usdtAvailable: undefined, expected: ['bitcoin', 'paypal'] },
+        { gate: true, usdtAvailable: false, expected: ['bitcoin', 'paypal'] },
+        { gate: true, usdtAvailable: true, expected: ['bitcoin', 'usdt', 'paypal'] },
+      ])('gate=$gate usdtAvailable=$usdtAvailable offers $expected', ({ gate, usdtAvailable, expected }) => {
+        const config = { ...base, ...(usdtAvailable === undefined ? {} : { usdtAvailable }) };
+        expect(
+          availablePaymentMethods(config, gate === undefined ? undefined : { usdtPaymentsAvailable: gate }),
+        ).toEqual(expected);
+      });
+
+      it('offers USDT on its own for a seller with no other rail, only through the gate', () => {
+        const config = {
+          bitcoinAvailable: false,
+          bitcoinOfferAvailable: true,
+          paypalAvailable: false,
+          usdtAvailable: true,
+        };
+        expect(availablePaymentMethods(config)).toEqual([]);
+        expect(availablePaymentMethods(config, { usdtPaymentsAvailable: true })).toEqual(['usdt']);
+      });
+    });
+
     it('defaults an absent Bitcoin offer gate to available for older services', () => {
       const config = sellerPaymentConfigSchema.parse({
         bitcoinAvailable: true,
@@ -56,26 +84,21 @@ describe('payment-methods', () => {
       expect(availablePaymentMethods(config)).toEqual([]);
     });
 
-    it('never includes Stripe in the checkout rail list', () => {
-      const withStripe = availablePaymentMethods(
-        sellerPaymentConfigSchema.parse({
-          bitcoinAvailable: true,
-          bitcoinOfferAvailable: true,
-          paypalAvailable: true,
-          stripeAvailable: true,
-        }),
-      );
-      const stripeOnly = availablePaymentMethods(
-        sellerPaymentConfigSchema.parse({
-          bitcoinAvailable: false,
-          bitcoinOfferAvailable: true,
-          paypalAvailable: false,
-          stripeAvailable: true,
-        }),
-      );
+    it('lists only Bitcoin, USDT and PayPal, whatever else a service sends', () => {
+      const config = sellerPaymentConfigSchema.parse({
+        bitcoinAvailable: true,
+        bitcoinOfferAvailable: true,
+        paypalAvailable: true,
+        stripeAvailable: true,
+      });
 
-      expect(withStripe).not.toContain('stripe');
-      expect(stripeOnly).toEqual([]);
+      expect(availablePaymentMethods(config)).toEqual(['bitcoin', 'paypal']);
+      expect(PAYMENT_METHOD_KINDS).toEqual(['bitcoin', 'usdt', 'paypal']);
+      expect(
+        availablePaymentMethods(
+          sellerPaymentConfigSchema.parse({ bitcoinAvailable: false, paypalAvailable: false, stripeAvailable: true }),
+        ),
+      ).toEqual([]);
     });
   });
 
@@ -85,7 +108,6 @@ describe('payment-methods', () => {
         bitcoinAvailable: false,
         bitcoinOfferAvailable: true,
         paypalAvailable: true,
-        stripeAvailable: false,
       });
 
       expect(config).toEqual({ bitcoinAvailable: false, bitcoinOfferAvailable: true, paypalAvailable: true });
@@ -96,12 +118,11 @@ describe('payment-methods', () => {
       const config = sellerPaymentConfigSchema.parse({
         bitcoinAvailable: false,
         bitcoinOfferAvailable: true,
-        stripePaymentLink: 'https://buy.stripe.com/test_abc',
         paypalMerchantEmail: 'seller@example.com',
       });
 
       expect(config).toEqual({ bitcoinAvailable: false, bitcoinOfferAvailable: true, paypalAvailable: true });
-      expect(JSON.stringify(config)).not.toMatch(/@|stripe\.com|example\.com/);
+      expect(JSON.stringify(config)).not.toMatch(/@|example\.com/);
       expect(availablePaymentMethods(config)).toEqual(['paypal']);
     });
 
@@ -136,29 +157,6 @@ describe('payment-methods', () => {
     });
   });
 
-  describe('isStripePaymentLink', () => {
-    it('accepts only https links on Stripe-hosted payment link hosts', () => {
-      expect(isStripePaymentLink('https://buy.stripe.com/test_abc123')).toBe(true);
-      expect(isStripePaymentLink('https://book.stripe.com/abc123')).toBe(true);
-      expect(isStripePaymentLink('http://buy.stripe.com/test_abc123')).toBe(false);
-      expect(isStripePaymentLink('https://evil.example.com/buy.stripe.com')).toBe(false);
-      expect(isStripePaymentLink('https://stripe.com/payments')).toBe(false);
-      expect(isStripePaymentLink('not a url')).toBe(false);
-    });
-  });
-
-  describe('isStripeRestrictedKey', () => {
-    it('accepts rk_ keys and refuses secret sk_ keys so they never leave the browser', () => {
-      expect(isStripeRestrictedKey('rk_test_51NzXAbCdEfGh')).toBe(true);
-      expect(isStripeRestrictedKey('rk_live_51NzXAbCdEfGh')).toBe(true);
-      expect(isStripeRestrictedKey(' rk_test_51NzXAbCdEfGh ')).toBe(true);
-      expect(isStripeRestrictedKey('sk_test_51NzXAbCdEfGh')).toBe(false);
-      expect(isStripeRestrictedKey('pk_test_51NzXAbCdEfGh')).toBe(false);
-      expect(isStripeRestrictedKey('rk_test_')).toBe(false);
-      expect(isStripeRestrictedKey('')).toBe(false);
-    });
-  });
-
   describe('isPlausibleAccountXpub', () => {
     it('accepts a real tpub and tolerates surrounding whitespace', () => {
       expect(isPlausibleAccountXpub(TPUB)).toBe(true);
@@ -171,6 +169,58 @@ describe('payment-methods', () => {
       expect(isPlausibleAccountXpub('tpubshort')).toBe(false);
       expect(isPlausibleAccountXpub(`${TPUB}0`)).toBe(false); // '0' is not base58
       expect(isPlausibleAccountXpub('bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4')).toBe(false);
+    });
+  });
+
+  describe('USDT fields on the seller configs', () => {
+    it('parses an old public payload with no usdtAvailable key, exactly as before', () => {
+      const parsed = sellerPaymentConfigSchema.parse({ bitcoinAvailable: true, paypalAvailable: true });
+      expect(parsed).toStrictEqual({ bitcoinAvailable: true, bitcoinOfferAvailable: true, paypalAvailable: true });
+    });
+
+    it('reads usdtAvailable when the service sends it and drops a malformed value', () => {
+      expect(sellerPaymentConfigSchema.parse({ bitcoinAvailable: true, usdtAvailable: true }).usdtAvailable).toBe(true);
+      expect(sellerPaymentConfigSchema.parse({ bitcoinAvailable: true, usdtAvailable: false }).usdtAvailable).toBe(
+        false,
+      );
+      expect('usdtAvailable' in sellerPaymentConfigSchema.parse({ bitcoinAvailable: true, usdtAvailable: 'yes' })).toBe(
+        false,
+      );
+    });
+
+    const ownView = {
+      bitcoinEnabled: true,
+      paypalMerchantEmail: null,
+      updatedAt: '2026-10-09T00:00:00.000Z',
+    };
+
+    it('parses an old own view with no usdtEnabled key, exactly as before', () => {
+      expect(sellerPaymentConfigOwnViewSchema.parse(ownView)).toStrictEqual(ownView);
+    });
+
+    it('drops the Stripe fields a service that still stores them sends back', () => {
+      const parsed = sellerPaymentConfigOwnViewSchema.parse({
+        ...ownView,
+        stripePaymentLink: 'https://buy.stripe.com/test_abc',
+        stripeRestrictedKeySet: true,
+      });
+      expect(parsed).toStrictEqual(ownView);
+    });
+
+    it('reads usdtEnabled when the service sends it and drops a malformed value', () => {
+      expect(sellerPaymentConfigOwnViewSchema.parse({ ...ownView, usdtEnabled: true }).usdtEnabled).toBe(true);
+      expect(sellerPaymentConfigOwnViewSchema.parse({ ...ownView, usdtEnabled: 'on' }).usdtEnabled).toBeUndefined();
+    });
+
+    it('reads the USDT readiness fields and ignores them when absent', () => {
+      const ready = sellerPaymentConfigOwnViewSchema.parse({
+        ...ownView,
+        usdtEnabled: true,
+        usdtSetup: 'ready',
+        usdtSetupAction: null,
+      });
+      expect(ready).toMatchObject({ usdtEnabled: true, usdtSetup: 'ready', usdtSetupAction: null });
+      expect(sellerPaymentConfigOwnViewSchema.parse(ownView)).not.toHaveProperty('usdtSetup');
     });
   });
 });

@@ -27,6 +27,9 @@ ARG NEXT_PUBLIC_DB_NAME
 ARG NEXT_PUBLIC_DEBUG_MODE
 ARG NEXT_PUBLIC_APP_VERSION
 ARG NEXT_PUBLIC_SOCIAL_HOST
+# Mount the Shop under a sub-path (for example /shop) behind a reverse proxy; see docs/launch/shop-embedding.md
+ARG NEXT_PUBLIC_BASE_PATH
+ARG NEXT_PUBLIC_ASSET_PREFIX
 # NOTE: NEXUS_URL, CDN_URL, HOMESERVER, HOMESERVER_URL, HOMEGATE_URL, DEFAULT_HTTP_RELAY,
 # PKARR_RELAYS and TESTNET are intentionally NOT build args. They are runtime-configurable and must
 # be supplied as PUBKY_RUNTIME_* environment variables on the running container (see runner stage

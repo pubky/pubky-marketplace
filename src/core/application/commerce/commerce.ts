@@ -11,6 +11,8 @@ import {
   COMMERCE_WATCH_ENDING_SOON_THRESHOLD_MS,
   getCommerceAdapterMode,
   getMarketplaceUrl,
+  getPaykitServerApi,
+  getUsdtPaymentsEnabled,
   isDurableCommerceMode,
   isTransactionalCommerceMode,
   MARKETPLACE_FOLLOWED_SHELF_MAX_SELLER_FETCHES,
@@ -24,6 +26,11 @@ import {
   verifyOwnOrderReceipt,
   verifyOwnReviewAttestation,
 } from '@/libs/commerce/attestation';
+import {
+  sealDeliveryAddressForSellers,
+  type SellerDeliveryEnvelope,
+  type SellerDeliveryKey,
+} from '@/libs/commerce/delivery-envelope';
 import {
   DIGITAL_DELIVERY_COPY,
   type DigitalFileOpenFailure,
@@ -63,10 +70,13 @@ import {
   stripForbiddenPublicReserveKeys,
 } from '@/libs/commerce/marketplace-records';
 import {
+  appRegistryTakesPaymentRequests,
   type BuyerPaykitWallet,
   foundAppRegistryShowsNewWallet,
   PAYKIT_APP_REGISTRY_PATH,
+  PAYKIT_READER_AUTHORIZATION_PATH,
   paykitAppRegistryUrl,
+  paykitReaderAuthorizationUrl,
 } from '@/libs/commerce/paykit-wallet';
 import type { PaymentMethodKind } from '@/libs/commerce/payment-methods';
 import {
@@ -88,7 +98,6 @@ import {
 } from '@/libs/commerce/priv-envelope';
 import type { MarketplacePrivKeysResult } from '@/libs/commerce/priv-keys';
 import { createCommerceSandboxCatalog } from '@/libs/commerce/sandbox-catalog';
-import type { ShipFromAddress, ShippingParcel } from '@/libs/commerce/shipping';
 import {
   buildMarketplaceCheckoutAggregateId,
   buildMarketplaceDropAggregateId,
@@ -346,6 +355,12 @@ export type CommerceCheckoutFulfillmentInput = {
   lines: CommerceCheckoutLineInput[];
   fulfillmentChoiceBySeller?: Readonly<Record<string, MarketplaceFulfillmentMethod | undefined>>;
   deliveryAddress?: CreateMarketplaceCheckoutCommand['payload']['deliveryAddress'];
+  /**
+   * Each shipped seller's published delivery key, resolved by the caller
+   * (the controller) just before checkout. On a durable deployment the
+   * address is sealed to these keys and only ciphertext leaves the device.
+   */
+  deliveryKeys?: ReadonlyMap<string, SellerDeliveryKey>;
   deliveryEmail?: string;
 };
 
@@ -380,6 +395,8 @@ export class CommerceApplication {
   private constructor() {}
 
   private static sellerListingsRefreshInFlight = new Map<string, Promise<void>>();
+  /** Listings (composite id → count) with a `commitUpsertListing` running in this tab. */
+  private static listingPublishesInFlight = new Map<string, number>();
 
   static async getShop(ownerPubky: string) {
     return await LocalCommerceService.getShop(ownerPubky);
@@ -709,6 +726,17 @@ export class CommerceApplication {
   /** The deployment's digital delivery capability (digital delivery design §6 B5), read from /health. */
   static async fetchDigitalDeliveryCapability(): Promise<MarketplaceDigitalDeliveryCapability> {
     return await MarketplaceGatewayService.getDigitalDeliveryCapability();
+  }
+
+  /**
+   * Whether the Shop may offer USDT: the runtime flag AND the service's
+   * `/health` capability. With the flag off the service is never asked, so a
+   * default deploy makes no extra request. Gates new offers only; it never
+   * hides an existing USDT order.
+   */
+  static async fetchUsdtPaymentsAvailable(): Promise<boolean> {
+    if (!getUsdtPaymentsEnabled()) return false;
+    return await MarketplaceGatewayService.getUsdtPaymentsCapability();
   }
 
   /**
@@ -1127,6 +1155,7 @@ export class CommerceApplication {
       );
     }
     const commandId = crypto.randomUUID();
+    const sealedAddress = await this.sealCheckoutAddress(actorPubky, commandId, input, plan.lineFulfillments);
     const command = CommerceRecordNormalizer.marketplaceCommand({
       version: 1,
       commandId,
@@ -1143,12 +1172,60 @@ export class CommerceApplication {
           ...(line.variantOptions && line.variantOptions.length > 0 ? { variantOptions: line.variantOptions } : {}),
           fulfillment: plan.lineFulfillments[index],
         })),
-        ...(input.deliveryAddress ? { deliveryAddress: input.deliveryAddress } : {}),
+        ...sealedAddress,
         ...(input.deliveryEmail !== undefined ? { deliveryEmail: input.deliveryEmail } : {}),
-        guaranteePolicyVersion: 1 as const,
       },
     });
     return await this.executeMarketplaceCommand(actorPubky, command);
+  }
+
+  /**
+   * The address part of a checkout payload. A durable deployment never
+   * receives the plaintext address: it is sealed once per shipped seller to
+   * the key the caller resolved, and a shipped seller with no resolved key
+   * stops the checkout here. The local prototype adapter keeps the address
+   * on the device and takes it as typed.
+   */
+  private static async sealCheckoutAddress(
+    actorPubky: string,
+    commandId: string,
+    input: CommerceCheckoutFulfillmentInput,
+    lineFulfillments: readonly MarketplaceFulfillmentMethod[],
+  ): Promise<
+    | { deliveryAddress?: NonNullable<CommerceCheckoutFulfillmentInput['deliveryAddress']> }
+    | {
+        deliveryAddressEnvelopes: SellerDeliveryEnvelope[];
+      }
+  > {
+    if (!input.deliveryAddress) return {};
+    if (!isDurableCommerceMode(getCommerceAdapterMode())) return { deliveryAddress: input.deliveryAddress };
+    const shippedSellers = new Set(
+      input.lines.filter((_, index) => lineFulfillments[index] === 'shipping').map((line) => line.sellerPubky),
+    );
+    const keys = new Map<string, SellerDeliveryKey>();
+    for (const sellerPubky of shippedSellers) {
+      const key = input.deliveryKeys?.get(sellerPubky);
+      if (!key) {
+        throw Err.validation(
+          ValidationErrorCode.INVALID_INPUT,
+          'A seller that ships this checkout has no delivery key to seal the address to.',
+          {
+            service: ErrorService.Marketplace,
+            operation: 'commitCreateMarketplaceCheckout',
+            context: { sellerPubky },
+          },
+        );
+      }
+      keys.set(sellerPubky, key);
+    }
+    return {
+      deliveryAddressEnvelopes: await sealDeliveryAddressForSellers({
+        address: input.deliveryAddress,
+        checkoutCommandId: commandId,
+        buyerPubky: actorPubky,
+        keys,
+      }),
+    };
   }
 
   /**
@@ -1388,9 +1465,11 @@ export class CommerceApplication {
    * longer answers on them. So a registry read that fails (anything but a
    * 404, already logged by the homeserver service) is `unverified`, never a
    * marker verdict. Rejects only when the marker read fails after the
-   * registry was ruled out.
+   * registry was ruled out. With `paykitServerApi=upstream` the registry
+   * alone decides (see {@link appRegistryTakesPaymentRequests}).
    */
   static async fetchBuyerPaykitWallet(buyerPubky: string): Promise<BuyerPaykitWallet> {
+    const upstream = getPaykitServerApi() === 'upstream';
     let registry: { found: false } | { found: true; json: unknown };
     try {
       registry = await HomeserverService.getJsonIfFound<unknown>({
@@ -1399,6 +1478,21 @@ export class CommerceApplication {
       });
     } catch {
       return 'unverified';
+    }
+    // Upstream Paykit delivers only to an App Registry wallet that also
+    // published its signed key authorization: markers never decide. The
+    // Shop checks the authorization is there; Paykit verifies its signature.
+    if (upstream) {
+      if (!registry.found || !appRegistryTakesPaymentRequests(registry.json)) return 'not_payable';
+      try {
+        const authorization = await HomeserverService.getJsonIfFound<unknown>({
+          url: paykitReaderAuthorizationUrl(buyerPubky),
+          logUrl: PAYKIT_READER_AUTHORIZATION_PATH,
+        });
+        return authorization.found ? 'payable' : 'not_payable';
+      } catch {
+        return 'unverified';
+      }
     }
     if (registry.found && foundAppRegistryShowsNewWallet(registry.json)) return 'unsupported';
     return (await PaykitMessagingService.hasPaymentRequestReceiver(buyerPubky)) ? 'payable' : 'not_payable';
@@ -1412,9 +1506,8 @@ export class CommerceApplication {
     actorPubky: string,
     input: {
       bitcoinEnabled: boolean;
-      stripePaymentLink: string | null;
-      stripeRestrictedKey?: string;
       paypalMerchantEmail: string | null;
+      usdtEnabled?: boolean;
     },
   ) {
     return await MarketplaceGatewayService.putMyPaymentConfig(actorPubky, input);
@@ -1424,43 +1517,45 @@ export class CommerceApplication {
     return await MarketplaceGatewayService.bindPaymentMethod(actorPubky, orderId, method);
   }
 
-  static async verifyStripePayment(actorPubky: string, orderId: string) {
-    return await MarketplaceGatewayService.verifyStripePayment(actorPubky, orderId);
-  }
-
   static async markFiatPaid(actorPubky: string, orderId: string, transactionRef?: string) {
     return await MarketplaceGatewayService.markFiatPaid(actorPubky, orderId, transactionRef);
-  }
-
-  static async getMyShippingConfig(actorPubky: string) {
-    return await MarketplaceGatewayService.getMyShippingConfig(actorPubky);
-  }
-
-  static async putMyShippingConfig(
-    actorPubky: string,
-    input: { shippoApiKey?: string; shipFrom: ShipFromAddress | null },
-  ) {
-    return await MarketplaceGatewayService.putMyShippingConfig(actorPubky, input);
-  }
-
-  static async quoteShippingRates(actorPubky: string, orderId: string, parcel: ShippingParcel) {
-    return await MarketplaceGatewayService.quoteShippingRates(actorPubky, orderId, parcel);
-  }
-
-  static async purchaseShippingLabel(actorPubky: string, orderId: string, rateId: string) {
-    return await MarketplaceGatewayService.purchaseShippingLabel(actorPubky, orderId, rateId);
-  }
-
-  static async getShippingLabel(actorPubky: string, orderId: string) {
-    return await MarketplaceGatewayService.getShippingLabel(actorPubky, orderId);
   }
 
   static async confirmFiatReceived(actorPubky: string, orderId: string) {
     return await MarketplaceGatewayService.confirmFiatReceived(actorPubky, orderId);
   }
 
+  /**
+   * Whether Paykit holds the seller's watch-only setup. The fork answers on
+   * its public `GET /v0/accounts/{creator}`. Upstream Paykit has no such
+   * route, so `paykitServerApi=upstream` first takes the service's
+   * `bitcoinAvailable` (Bitcoin on and Paykit's signed setup status ready),
+   * then asks the Lock Server with the seller's own Locks frontend session.
+   * With neither, or when the Lock Server cannot reach Paykit, the state is
+   * unknown and this rejects rather than report a setup it has not seen.
+   */
   static async isPaykitAccountClaimed(pubky: string) {
-    return await MarketplacePaykitClaimService.isAccountClaimed(pubky);
+    if (getPaykitServerApi() !== 'upstream') return await MarketplacePaykitClaimService.isAccountClaimed(pubky);
+    try {
+      if ((await MarketplaceGatewayService.getSellerPaymentConfig(pubky)).bitcoinAvailable) return true;
+    } catch {
+      // The Lock Server read below still decides.
+    }
+    const session = LocksFrontendSessionStore.restore(pubky);
+    if (!session) {
+      throw Err.auth(AuthErrorCode.UNAUTHORIZED, 'Connect the Lock Server to read the Paykit setup state.', {
+        service: ErrorService.Locks,
+        operation: 'isPaykitAccountClaimed',
+      });
+    }
+    const status = await LocksGatewayService.getCreatorPaykitSetupStatus(session.token, 'BTC');
+    if (status === 'unavailable') {
+      throw Err.server(ServerErrorCode.SERVICE_UNAVAILABLE, 'The Lock Server could not read the Paykit setup state.', {
+        service: ErrorService.Locks,
+        operation: 'isPaykitAccountClaimed',
+      });
+    }
+    return status === 'ready';
   }
 
   static async getMarketplaceReceipt(actorPubky: string, receiptId: string) {
@@ -1492,13 +1587,15 @@ export class CommerceApplication {
   /**
    * The buyer's side of a real Locks/Paykit payment (`locks-paykit` mode):
    *
+   * 0. Prepare the payment with `payment.prepare_locks` (replayed when it
+   *    already is), which the service requires before registration.
    * 1. Generate (or reuse a persisted, not-yet-registered) bundle id and
    *    submit the proof bundle to the Lock Server, which requests the real
    *    Paykit invoice and delivers the private Payment Request to the buyer's
    *    wallet.
    * 2. Register the correlation with the transaction service via
-   *    `payment.register_locks`, sourcing `expected_revision` from the fresh
-   *    payment projection the caller just read.
+   *    `payment.register_locks` with only the payment and bundle ids, at the
+   *    revision the preparation left.
    *
    * This NEVER advances the payment: registration flips the payment to the
    * `locks` adapter and the service's worker independently verifies the Locks
@@ -1543,6 +1640,26 @@ export class CommerceApplication {
     }
 
     const existing = await LocalCommerceService.getLocksCorrelation(buyerPubky, payment.id);
+    // Prepare first: the service checks the seller's lock against the
+    // checkout snapshot, takes the hold and pins the `locks` adapter, so a
+    // refused payment never gets a Lock Server invoice. A repeat replays a
+    // live preparation, so a bundle submitted earlier (or before the service
+    // required this step) still registers after it. Locks takes no client
+    // reference yet (pubky/locks#52), so the minted one is not sent.
+    let expectedRevision = payment.revision;
+    if (!existing?.registered) {
+      const prepared = await MarketplaceGatewayService.execute(buyerPubky, {
+        version: 1,
+        commandId: crypto.randomUUID(),
+        aggregateId: buildMarketplacePaymentAggregateId(payment.id),
+        expectedRevision,
+        issuedAt: new Date().toISOString(),
+        kind: 'payment.prepare_locks',
+        payload: { paymentId: payment.id },
+      });
+      if (!prepared.ok) return prepared;
+      expectedRevision = prepared.revision;
+    }
     let bundleId = existing?.bundle_id;
     const submit = async (id: string) => {
       await LocksGatewayService.submitPaykitProof({
@@ -1588,10 +1705,10 @@ export class CommerceApplication {
       version: 1,
       commandId: crypto.randomUUID(),
       aggregateId: buildMarketplacePaymentAggregateId(payment.id),
-      expectedRevision: payment.revision,
+      expectedRevision,
       issuedAt: new Date().toISOString(),
       kind: 'payment.register_locks',
-      payload: { paymentId: payment.id, bundleId: bundleId!, pubkyLockResource: bareLockResource },
+      payload: { paymentId: payment.id, bundleId: bundleId! },
     });
     if (response.ok) {
       const verification = (response.result as { verification?: { windowExpiresAt?: string } }).verification;
@@ -1703,6 +1820,10 @@ export class CommerceApplication {
 
   static getPaykitSetupUrl(returnTo: string, state: string, creator: string) {
     return LocksGatewayService.buildPaykitSetupUrl(returnTo, state, creator);
+  }
+
+  static getPaykitReconnectUrl(returnTo: string, state: string, creator: string) {
+    return LocksGatewayService.buildPaykitReconnectUrl(returnTo, state, creator);
   }
 
   /**
@@ -2868,6 +2989,18 @@ export class CommerceApplication {
   }
 
   /**
+   * Re-reads the canonical record from the owner's homeserver and replaces the
+   * cached row with it, so the Shop shows what is published rather than a
+   * revision a failed publish staged locally. Network first, then local:
+   * `getOrFetchListing` would serve the staged row back.
+   */
+  static async refreshListing(ownerPubky: string, listingId: string): Promise<CommerceListingRecord> {
+    const record = await this.fetchListing(ownerPubky, listingId);
+    await LocalCommerceService.upsertListing(record, 'synced');
+    return record;
+  }
+
+  /**
    * Returns the canonical listing record, fetching it from the owner
    * homeserver when it is not cached — or when the Nexus index has seen a
    * newer revision than the cache holds, so opening a listing always shows
@@ -3429,7 +3562,31 @@ export class CommerceApplication {
     await LocalCommerceService.completeSyncJob(job.id);
   }
 
+  /**
+   * Publishes a listing revision. While it runs, {@link ensureListingRegistered}
+   * declines the same listing: a heal that settled the row between this
+   * publish's staging and its write would advance the row's generation, and the
+   * publish would then fail as "The listing changed" without ever writing.
+   */
   static async commitUpsertListing(
+    record: CommerceListingRecord,
+    reservePrice?: CommerceMoney | null,
+  ): Promise<{ registered: boolean; verified: boolean }> {
+    const compositeListingId = `${record.ownerPubky}:${record.listingId}`;
+    this.listingPublishesInFlight.set(
+      compositeListingId,
+      (this.listingPublishesInFlight.get(compositeListingId) ?? 0) + 1,
+    );
+    try {
+      return await this.publishListing(record, reservePrice);
+    } finally {
+      const remaining = (this.listingPublishesInFlight.get(compositeListingId) ?? 1) - 1;
+      if (remaining > 0) this.listingPublishesInFlight.set(compositeListingId, remaining);
+      else this.listingPublishesInFlight.delete(compositeListingId);
+    }
+  }
+
+  private static async publishListing(
     record: CommerceListingRecord,
     reservePrice?: CommerceMoney | null,
   ): Promise<{ registered: boolean; verified: boolean }> {
@@ -3519,6 +3676,8 @@ export class CommerceApplication {
    */
   static async ensureListingRegistered(record: CommerceListingRecord): Promise<boolean> {
     if (getCommerceAdapterMode() === 'unavailable' || !this.canCoordinateListingRegistration()) return false;
+    // The publish registers the listing itself once its write is verified.
+    if (this.listingPublishesInFlight.has(`${record.ownerPubky}:${record.listingId}`)) return false;
     const attempt = this.beginListingRegistration(record.ownerPubky, record.listingId);
     attempt.observed = await LocalCommerceService.getListingRowGeneration(attempt.compositeListingId);
     return await this.runListingRegistration(record, attempt, 'heal', null);
@@ -3813,6 +3972,14 @@ export class CommerceApplication {
    */
   static async getPublicDrop(sellerPubky: string, dropId: string) {
     return await MarketplaceGatewayService.getPublicDrop(sellerPubky, dropId);
+  }
+
+  /**
+   * Public stock state of a listing, readable with no marketplace session.
+   * Null in sandbox mode or when the listing is unknown or removed.
+   */
+  static async getPublicListingAvailability(sellerPubky: string, listingId: string) {
+    return await MarketplaceGatewayService.getPublicListingAvailability(sellerPubky, listingId);
   }
 
   static async getSellerDrop(actorPubky: string, sellerPubky: string, dropId: string) {

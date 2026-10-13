@@ -52,6 +52,9 @@ mean exactly that.
   - Return policy (window or no-returns)
 - **Listing management**
   - Edit, unlist/relist (fixed-price), delete, copy public link
+  - Dashboard **Export CSV** emits the canonical import CSV; an exported file
+    imports back with zero diffs and edits become planned updates (see
+    [`import-export.md`](import-export.md))
   - Owner panel self-heals transaction-service registration (re-runs on
     session connect)
   - Listing thumbnails in seller lists
@@ -78,8 +81,48 @@ calculated at checkout`. Seller-stated tenure is not shown.
   - Optional `transactionService` authority declaration in the record
     (specs `0.6.2-marketplace.7`); the editor deliberately does not offer
     the field yet (see the multi-operator guard under Buying)
+  - Seller-set delivery and completion periods (`deliveryAssumeDays`,
+    `autoCompleteDays`, 1–60 days, optional): set in the shop editor, shown on
+    the shop page and in the checkout summary, frozen on each order by the
+    transaction service (see `seller-delivery-terms.md`)
 - **Digital delivery**
   - Locks-guarded content entitlements delivered on completed payment
+  - Digital delivery on a Buy now listing (service-backed modes), alone or
+    beside shipping and local pickup, via three delivery checkboxes on the
+    sell form; auctions stay ship-only. The seller sets what buyers receive
+    on the edit page after publishing; the listing page badges the kind
+    ("Instant download · PDF · 12 MB", "Instant access", "Emailed by the
+    seller after payment") and takes no offers on digital-only listings
+  - Five delivery kinds: **file** (up to 50 MB; encrypted in the seller's
+    browser with AES-256-GCM, ciphertext on the seller's homeserver, the key
+    sealed by the transaction service, which never decrypts it; the buyer's
+    browser checks length and hashes and decrypts), **link**, **text** (one
+    licence key or text, the same for every buyer), **email** ("I'll email
+    it": the buyer gives an address at checkout, the seller reads it once
+    paid and marks it emailed) and **message** ("I'll send it in
+    messages", marked delivered by the seller). A per-buyer key list is not
+    built yet
+  - Checkout: an all-digital cart has no address step; an email field
+    appears only for email-kind lines; Pay is blocked until the seller has
+    set delivery; a mixed cart splits per seller and method
+  - Release happens on the service's single payment-confirmation step, so
+    Bitcoin and PayPal behave alike; nothing is released or shown to the
+    seller while a payment is pending. The buyer's order page offers
+    Download, Reveal text or Open link (re-downloadable while the order
+    stands, including completed), or the email line with Change until
+    emailed; the seller's order page offers To deliver, Show email, Mark
+    emailed, Mark delivered, the delivery evidence (first opened, open
+    count, marked times) and Record refund. Ship, return and offer actions
+    do not apply to digital orders
+  - PayPal reversals and refunds (DD3): a reversal outstanding at PayPal,
+    full or partial, withholds the download and the seller's read of the
+    buyer's email, with "The payment was reversed, so the download is
+    disabled."; a partial PayPal refund withholds them for good ("PayPal
+    refunded this payment, so the download is no longer available."); a
+    canceled reversal restores them. The Shop shows this from the order's
+    `paymentReversedAt` and `externalRefund` and from the service's
+    `payment_reversed` / `payment_refunded` refusals. Sellers see a warning
+    when publishing a digital listing with PayPal on
 
 ## 3. Buying and transactions
 
@@ -91,7 +134,8 @@ transaction service (PostgreSQL, exactly-one-winner concurrency proofs).
     action, header cart pill with count)
   - Three-step checkout; `Approve in Pubky Ring` up front when there is no
     marketplace session; Place order disabled until approval and a valid
-    form; purchase-guarantee opt-in default unchecked
+    form; a non-interactive notice states that payment goes directly to the seller
+    and the marketplace never holds funds
   - Checkout with delivery address book (save, reuse, last-used ordering)
     plus an orientation line; the address travels only inside the checkout
     command
@@ -145,10 +189,18 @@ transaction service (PostgreSQL, exactly-one-winner concurrency proofs).
 
 Bitcoin and PayPal are the offered rails. The same lock and proof-bundle
 flow settles over either of them, and both are live-proven on the deployed
-stack (see the proof ledger). Card payments are paused in the shop.
+stack (see the proof ledger). Card payments are paused in the shop. USDT
+(USDT0 on Arbitrum One) is built behind
+`PUBKY_RUNTIME_USDT_PAYMENTS_ENABLED`, which is off, so it is not offered
+([`usdt-payments.md`](usdt-payments.md)).
 
 - **Bitcoin (Locks + Paykit)**
-  - Regtest rails deployed (bitcoind, Fulcrum, Lock Server, Paykit Server)
+  - Production binds Bitcoin through mainnet Paykit; staging runs regtest
+    rails (bitcoind, Fulcrum, Lock Server, Paykit Server)
+  - Paykit server choice is a runtime switch,
+    `PUBKY_RUNTIME_PAYKIT_SERVER_API` (`fork` is the default and what
+    production runs; `upstream` targets `pubky/paykit-server` and
+    `pubky/locks` and stays off until the cutover)
   - Proof bundle → invoice → on-chain payment → worker confirmation →
     receipt → access credential
   - Real-wallet proof: Bitkit iOS seller watch-only claim AND buyer
@@ -231,6 +283,11 @@ stack (see the proof ledger). Card payments are paused in the shop.
   - Dashboard Action-needed strip; KPI chip strip on mobile
 
 ## 7. Messaging
+
+Status: beta, frozen. It runs on Ring cookie sessions only, so Bitkit and
+Passport sign-ins have no messaging. Moving the Shop to the shared chat
+library, with its inbox service, is deferred, and that stack is owned by
+other teams ([`messaging/README.md`](messaging/README.md)).
 
 - **End-to-end encrypted messaging** (durable modes): Noise XX over Paykit
   Encrypted Links via the vendored WASM binding — marketplace listing

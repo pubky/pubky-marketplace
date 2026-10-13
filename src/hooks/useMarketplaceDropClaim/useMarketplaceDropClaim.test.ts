@@ -23,6 +23,9 @@ vi.mock('@/controllers/commerce/commerce', () => ({
     syncListingRegistration: vi.fn(),
     executeMarketplaceCommand: vi.fn(),
     getDeliveryAddresses: vi.fn(async () => []),
+    resolveDeliveryKeysForCheckout: vi.fn(),
+    commitAcceptDeliveryKeyChange: vi.fn(),
+    sealDeliveryAddressForCheckout: vi.fn(),
   },
 }));
 
@@ -38,6 +41,9 @@ vi.mock('@/stores/auth/auth.store', () => ({
   useAuthStore: (selector: (state: { currentUserPubky: string | null }) => unknown) =>
     selector({ currentUserPubky: 'b'.repeat(52) }),
 }));
+
+const SELLER_KEY = { keyId: 'a'.repeat(32), publicKey: new Uint8Array(32).fill(7) };
+const SEALED = { sellerPubky: SELLER, keyId: SELLER_KEY.keyId, envelope: 'E'.repeat(2795) };
 
 const savedAddress = {
   id: `${BUYER}:addr1`,
@@ -62,6 +68,11 @@ describe('useMarketplaceDropClaim', () => {
     config.mode = 'transaction-service';
     vi.spyOn(globalThis.crypto, 'randomUUID').mockReturnValue('00000000-0000-4000-8000-000000002200');
     vi.mocked(CommerceController.getDeliveryAddresses).mockResolvedValue([savedAddress] as never);
+    vi.mocked(CommerceController.resolveDeliveryKeysForCheckout).mockResolvedValue({
+      ok: true,
+      keys: new Map([[SELLER, SELLER_KEY]]),
+    });
+    vi.mocked(CommerceController.sealDeliveryAddressForCheckout).mockResolvedValue([SEALED]);
     vi.mocked(CommerceController.getMarketplaceListingProjection).mockResolvedValue({
       aggregateId: `listing:${SELLER}_listing1`,
       sellerPubky: SELLER,
@@ -101,14 +112,40 @@ describe('useMarketplaceDropClaim', () => {
         kind: 'checkout.create',
         payload: expect.objectContaining({
           lines: [{ listingAggregateId: `listing:${SELLER}_listing1`, expectedRevision: 4, quantity: 1 }],
-          deliveryAddress: expect.objectContaining({ name: 'Alice Buyer', countryCode: 'US' }),
-          guaranteePolicyVersion: 1,
+          deliveryAddressEnvelopes: [SEALED],
         }),
       }),
     );
+    expect(CommerceController.sealDeliveryAddressForCheckout).toHaveBeenCalledWith({
+      checkoutCommandId: '00000000-0000-4000-8000-000000002200',
+      address: expect.objectContaining({ name: 'Alice Buyer', countryCode: 'US' }),
+      keys: new Map([[SELLER, SELLER_KEY]]),
+    });
+    const sent = vi.mocked(CommerceController.executeMarketplaceCommand).mock.calls[0][0] as {
+      payload: Record<string, unknown>;
+    };
+    expect(sent.payload).not.toHaveProperty('deliveryAddress');
     expect(onClaimed).toHaveBeenCalledTimes(1);
     expect(result.current.claimedListingIds.has(`${SELLER}:listing1`)).toBe(true);
     expect(result.current.failure).toBeNull();
+  });
+
+  it('does not claim when the seller has no delivery key', async () => {
+    vi.mocked(CommerceController.resolveDeliveryKeysForCheckout).mockResolvedValue({
+      ok: false,
+      sellerPubky: SELLER,
+      problem: { kind: 'no_key' },
+    });
+    const { result } = renderHook(() => useMarketplaceDropClaim());
+    await waitFor(() => expect(result.current.claimAddress).not.toBeNull());
+
+    let ok = true;
+    await act(async () => {
+      ok = await result.current.claim(SELLER, 'listing1', 1);
+    });
+
+    expect(ok).toBe(false);
+    expect(CommerceController.executeMarketplaceCommand).not.toHaveBeenCalled();
   });
 
   it('keeps the payment deadline from the claimed order for the confirmation surface', async () => {

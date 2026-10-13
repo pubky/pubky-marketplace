@@ -1,0 +1,1 @@
+Sellers set how long after shipment delivery is assumed and how long after delivery an order completes (1–60 days each, in My Shop settings). Buyers see both periods on the shop page and in the checkout summary, and each order keeps the periods that applied when its payment started.
