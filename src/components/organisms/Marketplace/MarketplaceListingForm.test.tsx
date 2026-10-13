@@ -261,6 +261,13 @@ describe('MarketplaceListingForm', () => {
     await waitFor(() => expect(formRef.current?.getValues('auctionDurationMinutes')).toBe(String(7 * 24 * 60)));
   });
 
+  it('hides the auction length when editing a published auction', () => {
+    vi.mocked(getAuctionDurationsMinutes).mockReturnValue([7 * 24 * 60, 15]);
+    render(<FormHarness mode="edit" saleTermsLocked defaultValues={{ saleFormat: 'auction' }} />);
+
+    expect(screen.queryByText('Auction length')).not.toBeInTheDocument();
+  });
+
   it('hides package fields for pickup listings', () => {
     render(<FormHarness fulfillment="pickup" />);
 

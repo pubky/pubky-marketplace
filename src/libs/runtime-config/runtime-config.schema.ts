@@ -168,6 +168,10 @@ const optionalPositiveIntArrayFromString = (label: string) =>
         ctx.addIssue({ code: 'custom', message: `Invalid ${label} value: expected a JSON array of positive integers` });
         return z.NEVER;
       }
+      if (new Set(parsed).size !== parsed.length) {
+        ctx.addIssue({ code: 'custom', message: `Invalid ${label} value: duplicate lengths are not allowed` });
+        return z.NEVER;
+      }
       return parsed as number[];
     })
     .pipe(z.array(positiveIntValue).min(1).optional());
@@ -608,7 +612,7 @@ export const runtimeEnvInputSchema = z
     ttlRetryDelayMs: optionalPositiveIntFromString,
     moderationId: optionalTrimmedString,
     moderatedTags: optionalStringArrayFromString('MODERATED_TAGS'),
-    auctionDurationsMinutes: optionalPositiveIntArrayFromString('AUCTION_DURATIONS_MINUTES'),
+    auctionDurationsMinutes: optionalPositiveIntArrayFromString('PUBKY_RUNTIME_AUCTION_DURATIONS_MINUTES'),
     exchangeRateApi: optionalUrlFromString,
     marketplaceUrl: optionalUrlFromString,
     marketplaceNexusUrl: optionalUrlFromString,
@@ -707,7 +711,7 @@ export const runtimeEnvInputSchemaWithDefaults = z
     ttlRetryDelayMs: optionalPositiveIntFromString,
     moderationId: optionalTrimmedString,
     moderatedTags: optionalStringArrayFromString('MODERATED_TAGS'),
-    auctionDurationsMinutes: optionalPositiveIntArrayFromString('AUCTION_DURATIONS_MINUTES'),
+    auctionDurationsMinutes: optionalPositiveIntArrayFromString('PUBKY_RUNTIME_AUCTION_DURATIONS_MINUTES'),
     exchangeRateApi: optionalUrlFromString,
     marketplaceUrl: optionalUrlFromString,
     marketplaceNexusUrl: optionalUrlFromString,
