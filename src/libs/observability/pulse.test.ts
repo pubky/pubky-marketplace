@@ -8,6 +8,7 @@ import { Err } from '@/libs/error/error.factories';
 import { ErrorCategory, ErrorService } from '@/libs/error/error.types';
 import { resetRuntimeConfigForTests, RUNTIME_CONFIG_WINDOW_KEY } from '@/libs/runtime-config/runtime-config';
 import { NETWORK_RUNTIME_DEFAULTS } from '@/libs/runtime-config/runtime-config.schema';
+import { setBasePath } from '@/test-utils/base-path';
 import { PUBKY_52_STAGING_FIXTURE as PUBLIC_KEY } from '@/test-utils/pubky';
 import { beforeSendPulse, initPulse, pulseScreenName } from './pulse';
 import { PULSE_CONSENT_KEY } from './pulse-consent';
@@ -15,7 +16,9 @@ import { OBSERVABILITY_IGNORE_ERRORS } from './sentry.constants';
 
 // Fresh module registry so the SDK mock below reaches error.factories, already imported by env.ts.
 vi.hoisted(() => vi.resetModules());
-vi.mock('@/libs/env/env', () => ({ Env: { NODE_ENV: 'production', NEXT_PUBLIC_APP_VERSION: 'test' } }));
+vi.mock('@/libs/env/env', () => ({
+  Env: { NODE_ENV: 'production', NEXT_PUBLIC_APP_VERSION: 'test', NEXT_PUBLIC_BASE_PATH: '' },
+}));
 vi.mock('@synonymdev/pubky-pulse-web', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@synonymdev/pubky-pulse-web')>()),
   Pulse: { init: vi.fn(), captureException: vi.fn() },
@@ -57,6 +60,7 @@ beforeEach(() => {
 
 afterEach(() => {
   Env.NODE_ENV = 'production';
+  setBasePath('');
   delete window[RUNTIME_CONFIG_WINDOW_KEY];
   resetRuntimeConfigForTests();
   localStorage.removeItem(PULSE_CONSENT_KEY);
@@ -147,6 +151,22 @@ describe('route privacy', () => {
     ['/profile/user/private-tab', '/unknown'],
     ['/settings/private-setting', '/unknown'],
   ])('maps %s to %s', (path, expected) => {
+    expect(pulseScreenName(path)).toBe(expected);
+  });
+
+  // The SDK reports `location.pathname`, which includes the mount path on a build served under one.
+  it.each([
+    ['/shop', '/'],
+    ['/shop/', '/'],
+    ['/shop/marketplace', '/marketplace'],
+    ['/shop/marketplace/orders?returnTo=%2Fshop%2Fprivate', '/marketplace/orders'],
+    [`/shop/marketplace/shop/${PUBLIC_KEY}`, '/marketplace/shop/[sellerPubky]'],
+    [`/shop/marketplace/listing/${PUBLIC_KEY}/private-listing`, '/marketplace/listing/[sellerPubky]/[listingId]'],
+    [`/shop/messages/${PUBLIC_KEY}`, '/messages/[pubky]'],
+    ['/shop/unknown/private-path', '/unknown'],
+    ['/shopping/private-path', '/unknown'],
+  ])('maps %s to %s under the /shop mount path', (path, expected) => {
+    setBasePath('/shop');
     expect(pulseScreenName(path)).toBe(expected);
   });
 });

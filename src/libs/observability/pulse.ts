@@ -23,6 +23,7 @@ import {
   ROOT_ROUTES,
   SETTINGS_ROUTES,
 } from '@/app/routes';
+import { withoutBasePath } from '@/config/base-path';
 import { Env } from '@/libs/env/env';
 import { AppError } from '@/libs/error/error';
 import { OBSERVABILITY_IGNORE_ERRORS } from '@/libs/observability/sentry.constants';
@@ -77,7 +78,7 @@ function predatesCurrentConsent(): boolean {
 }
 
 /** Route definitions are a telemetry allowlist: never add user identifiers or arbitrary paths. */
-export const pulseScreenName = createScreenNameMapper(
+const screenNameForRoute = createScreenNameMapper(
   [
     ROOT_ROUTES,
     '/offline',
@@ -113,6 +114,15 @@ export const pulseScreenName = createScreenNameMapper(
   ],
   { fallback: '/unknown' },
 );
+
+/**
+ * The screen name for a pathname the browser reports. The SDK passes `location.pathname`, which carries the
+ * mount path when the Shop is served under one (`/shop/marketplace`); the route templates never do, so
+ * without stripping it every screen on a mounted build would be '/unknown'.
+ */
+export function pulseScreenName(pathname: string): string {
+  return screenNameForRoute(withoutBasePath(pathname));
+}
 
 export function beforeSendPulse(event: LogEvent, { originalException: error }: PulseEventHint): LogEvent | null {
   if (getPulseConsent() !== 'accepted' || predatesCurrentConsent()) return null;
