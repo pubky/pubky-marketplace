@@ -35,7 +35,7 @@ This overview maps every repository, branch, and document that makes up the Pubk
 - `docs/ecommerce/pr-split.md` — the stacked-PR plan and specs-upstreaming reconciliation notes.
 - `docs/ecommerce/upstream-integration.md` — pinned upstream commits (`pubky/locks`, `pubky/paykit-rs`, `pubky/paykit-server`) and API contracts.
 - `docs/ecommerce/service-auth.md` — Pubky AuthToken design for service authentication.
-- `docs/chat/` — buyer↔seller chat: end-to-end encrypted files on the sender's homeserver, delivered by homeserver event streams, `pubky/inbox` pings and reconciliation (`README.md` is the design, `STATUS.md` the working log, ADR 0030 the decision). The Paykit Encrypted Links messaging record formerly under `docs/ecommerce/messaging/` was removed with that transport.
+- `docs/chat/` — buyer↔seller chat: end-to-end encrypted files on the sender's homeserver, delivered by homeserver event streams, `pubky/inbox` pings and reconciliation (`README.md` is the design, ADR 0030 the decision). The Paykit Encrypted Links messaging record formerly under `docs/ecommerce/messaging/` was removed with that transport.
 - `docs/ecommerce/trust-reputation-design.md` / `trust-reputation-plan.md` — attested public reviews and portable reputation (Phases 0–2 and the Phase 4 surfaces landed).
 - `docs/ecommerce/multi-operator.md` — per-shop transaction-service authorities (the `transactionService` shop field, the client's mismatch guard, and the routing plan).
 - `docs/ecommerce/drops-design.md` — the drops feature set (timed limited releases, editions, sealed pre-commitment, auditable raffles).
