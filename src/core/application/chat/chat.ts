@@ -8,6 +8,10 @@ import {
   CHAT_PEER_KEY_RECHECK_MS,
   CHAT_PEER_KEY_WAITING_RECHECK_MS,
   CHAT_PING_MAX_BYTES,
+  CHAT_PING_REPEAT_MAX_AGE_MS,
+  CHAT_PING_REPEAT_MS,
+  CHAT_PING_RETRY_BASE_MS,
+  CHAT_PING_RETRY_MAX_MS,
   CHAT_PING_TTL_SECONDS,
   CHAT_SEND_MAX_ATTEMPTS,
   CHAT_SEND_RETRY_BASE_MS,
@@ -37,7 +41,7 @@ import { isAppError } from '@/libs/error/error';
 import { AuthErrorCode, ValidationErrorCode } from '@/libs/error/error.codes';
 import { Err } from '@/libs/error/error.factories';
 import { ErrorService } from '@/libs/error/error.types';
-import { isRetryable } from '@/libs/error/error.utils';
+import { isRateLimitError, isRetryable } from '@/libs/error/error.utils';
 import { Logger } from '@/libs/logger/logger';
 import { ChatConversationModel, ChatMessageModel } from '@/models/chat/chat.models';
 import type {
@@ -350,95 +354,142 @@ export class ChatApplication {
 
   /**
    * Sends every due queued message in file order: encrypt, PUT to my folder,
-   * mark sent, ping the inbox. Exclusive per account across tabs. Retryable
-   * failures back off; permanent ones mark the message `failed`.
+   * mark sent, then ping the inbox for every conversation that is owed one.
+   * Exclusive per account across tabs. Retryable failures back off; permanent
+   * ones mark the message `failed`.
    */
   static async flushOutbox(me: string): Promise<void> {
     if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
     await withExclusiveLock(CHAT_LOCKS.outbox(me), async () => {
-      const due = await LocalChatService.listDueOutbox(me, Date.now());
-      if (due.length === 0) return;
-      const identity = await this.requireIdentity(me);
-      const keysByPeer = new Map<string, ChatPeerKeyResult>();
-      const pingedFolders = new Set<string>();
-
-      for (const row of due) {
-        let keys = keysByPeer.get(row.peer_pubky);
-        if (!keys) {
-          // A message waiting on a keyless peer re-probes them on a short cadence:
-          // the peer may have signed in seconds ago.
-          const state = await LocalChatService.getSyncState(me, row.peer_pubky);
-          const force = Date.now() - (state?.peer_key_checked_at ?? 0) > CHAT_PEER_KEY_WAITING_RECHECK_MS;
-          keys = await this.resolvePeerKey(me, row.peer_pubky, { force });
-          keysByPeer.set(row.peer_pubky, keys);
-        }
-        if (keys.state !== 'ready') {
-          await LocalChatService.updateMessage(row.id, {
-            next_attempt_at: Date.now() + CHAT_PEER_KEY_WAITING_RECHECK_MS,
-            last_error: 'peer_not_enabled',
-          });
-          continue;
-        }
-        const messageId = row.id.slice(me.length + 1);
-        const plaintext: ChatPlaintext = {
-          v: 0,
-          id: messageId,
-          from: me,
-          to: row.peer_pubky,
-          sent_at: row.sent_at,
-          body: row.body,
-          ...(row.context ? { context: stripContext(row.context) } : {}),
-        };
-        const path = chatMessagePath(keys.folderId, row.file_name);
-        try {
-          const envelope = encryptChatEnvelope({
-            messageKey: keys.messageKey,
-            senderKid: identity.kid,
-            recipientKid: keys.peerKid,
-            aad: chatAad(me, row.peer_pubky, path),
-            plaintext,
-          });
-          await ChatHomeserverService.putMessageFile(me, keys.folderId, row.file_name, envelope);
-        } catch (error) {
-          const attempts = row.attempts + 1;
-          const permanent = !(isAppError(error) && isRetryable(error)) || attempts >= CHAT_SEND_MAX_ATTEMPTS;
-          await LocalChatService.updateMessage(row.id, {
-            attempts,
-            status: permanent ? 'failed' : 'queued',
-            next_attempt_at: permanent ? null : Date.now() + backoffDelay(attempts),
-            last_error: error instanceof Error ? error.message : String(error),
-          });
-          Logger.warn('Chat message send failed', { permanent, attempts });
-          continue;
-        }
-        await LocalChatService.updateMessage(row.id, {
-          status: 'sent',
-          attempts: row.attempts + 1,
-          next_attempt_at: null,
-          last_error: null,
-        });
-        await LocalChatService.updateConversation(me, row.peer_pubky, { priv_state_dirty: true });
-        if (!pingedFolders.has(keys.folderId)) {
-          pingedFolders.add(keys.folderId);
-          await this.pingPeer(me, row.peer_pubky, keys.folderId, row.file_name);
-        }
-      }
-      await this.flushPrivState(me);
+      await this.sendDueMessages(me);
+      await this.flushPings(me);
     });
   }
 
-  /** Best-effort wake-up through the inbox; never changes message state. */
-  private static async pingPeer(me: string, peer: string, folderId: string, fileName: string): Promise<void> {
-    try {
-      if ((await this.ensureInbox(me)) !== 'ready') return;
-      await InboxService.ping(me, {
-        slot: chatPingSlot(folderId),
-        recipient: peer,
-        payload: padPingPayload({ v: 0, t: 'chat', folder: folderId, file: fileName }),
-        ttlSeconds: CHAT_PING_TTL_SECONDS,
+  private static async sendDueMessages(me: string): Promise<void> {
+    const due = await LocalChatService.listDueOutbox(me, Date.now());
+    if (due.length === 0) return;
+    const identity = await this.requireIdentity(me);
+    const keysByPeer = new Map<string, ChatPeerKeyResult>();
+
+    for (const row of due) {
+      let keys = keysByPeer.get(row.peer_pubky);
+      if (!keys) {
+        // A message waiting on a keyless peer re-probes them on a short cadence:
+        // the peer may have signed in seconds ago.
+        const state = await LocalChatService.getSyncState(me, row.peer_pubky);
+        const force = Date.now() - (state?.peer_key_checked_at ?? 0) > CHAT_PEER_KEY_WAITING_RECHECK_MS;
+        keys = await this.resolvePeerKey(me, row.peer_pubky, { force });
+        keysByPeer.set(row.peer_pubky, keys);
+      }
+      if (keys.state !== 'ready') {
+        await LocalChatService.updateMessage(row.id, {
+          next_attempt_at: Date.now() + CHAT_PEER_KEY_WAITING_RECHECK_MS,
+          last_error: 'peer_not_enabled',
+        });
+        continue;
+      }
+      const messageId = row.id.slice(me.length + 1);
+      const plaintext: ChatPlaintext = {
+        v: 0,
+        id: messageId,
+        from: me,
+        to: row.peer_pubky,
+        sent_at: row.sent_at,
+        body: row.body,
+        ...(row.context ? { context: stripContext(row.context) } : {}),
+      };
+      const path = chatMessagePath(keys.folderId, row.file_name);
+      try {
+        const envelope = encryptChatEnvelope({
+          messageKey: keys.messageKey,
+          senderKid: identity.kid,
+          recipientKid: keys.peerKid,
+          aad: chatAad(me, row.peer_pubky, path),
+          plaintext,
+        });
+        await ChatHomeserverService.putMessageFile(me, keys.folderId, row.file_name, envelope);
+      } catch (error) {
+        const attempts = row.attempts + 1;
+        const permanent = !(isAppError(error) && isRetryable(error)) || attempts >= CHAT_SEND_MAX_ATTEMPTS;
+        await LocalChatService.updateMessage(row.id, {
+          attempts,
+          status: permanent ? 'failed' : 'queued',
+          next_attempt_at: permanent
+            ? null
+            : Date.now() + backoffDelay(attempts, CHAT_SEND_RETRY_BASE_MS, CHAT_SEND_RETRY_MAX_MS),
+          last_error: error instanceof Error ? error.message : String(error),
+        });
+        Logger.warn('Chat message send failed', { permanent, attempts });
+        continue;
+      }
+      await LocalChatService.updateMessage(row.id, {
+        status: 'sent',
+        attempts: row.attempts + 1,
+        next_attempt_at: null,
+        last_error: null,
       });
+      await LocalChatService.updateConversation(me, row.peer_pubky, { priv_state_dirty: true });
+      // The newest sent file is the one to wake the peer with; the inbox replaces the
+      // pending ping per slot, so one ping per conversation is enough.
+      await LocalChatService.updateSyncState(me, row.peer_pubky, {
+        ping_file: row.file_name,
+        ping_next_at: 0,
+        ping_attempts: 0,
+      });
+    }
+    await this.flushPrivState(me);
+  }
+
+  /**
+   * Wake-ups through the inbox, never a condition for a message being sent:
+   * the file is already on my homeserver. A failed ping is retried with a
+   * backoff (a 429 `Retry-After` wins), and while the peer has never written
+   * back the newest file is pinged again every {@link CHAT_PING_REPEAT_MS}, so a
+   * dropped or expired first-contact ping still ends in a wake-up. Once the
+   * peer has replied they stream and reconcile the folder themselves.
+   */
+  static async flushPings(me: string): Promise<void> {
+    const now = Date.now();
+    const due = (await LocalChatService.listSyncStates(me)).filter(
+      (state) => state.ping_file !== null && (state.ping_next_at ?? 0) <= now,
+    );
+    if (due.length === 0) return;
+    let availability: InboxAvailability;
+    try {
+      availability = await this.ensureInbox(me);
     } catch (error) {
-      Logger.warn('Chat inbox ping failed; the peer will see the message on their next sync', { error });
+      Logger.warn('Chat inbox session failed; pings wait for the next flush', { error });
+      return;
+    }
+    if (availability !== 'ready') return;
+
+    for (const state of due) {
+      const peer = state.peer_pubky;
+      const fileName = state.ping_file!;
+      const conversation = await LocalChatService.getConversation(me, peer);
+      if (!conversation?.folder_id) continue;
+      const replied = await LocalChatService.hasReceivedFrom(me, peer);
+      try {
+        await InboxService.ping(me, {
+          slot: chatPingSlot(conversation.folder_id),
+          recipient: peer,
+          payload: padPingPayload({ v: 0, t: 'chat', folder: conversation.folder_id, file: fileName }),
+          ttlSeconds: CHAT_PING_TTL_SECONDS,
+        });
+        const expired = now - fileSentAt(fileName) > CHAT_PING_REPEAT_MAX_AGE_MS;
+        await LocalChatService.updateSyncState(me, peer, {
+          ping_file: replied || expired ? null : fileName,
+          ping_next_at: replied || expired ? 0 : now + CHAT_PING_REPEAT_MS,
+          ping_attempts: 0,
+        });
+      } catch (error) {
+        const attempts = (state.ping_attempts ?? 0) + 1;
+        const retryAfterMs = pingRetryAfterMs(error);
+        const delay = retryAfterMs ?? backoffDelay(attempts, CHAT_PING_RETRY_BASE_MS, CHAT_PING_RETRY_MAX_MS);
+        await LocalChatService.updateSyncState(me, peer, { ping_next_at: now + delay, ping_attempts: attempts });
+        Logger.warn('Chat inbox ping failed; retrying later', { attempts, delay, rateLimited: retryAfterMs !== null });
+      }
     }
   }
 
@@ -784,9 +835,22 @@ export class ChatApplication {
   }
 }
 
-function backoffDelay(attempts: number): number {
-  const cap = Math.min(CHAT_SEND_RETRY_MAX_MS, CHAT_SEND_RETRY_BASE_MS * 2 ** (attempts - 1));
+function backoffDelay(attempts: number, baseMs: number, maxMs: number): number {
+  const cap = Math.min(maxMs, baseMs * 2 ** (attempts - 1));
   return Math.round(cap / 2 + Math.random() * (cap / 2));
+}
+
+/** The `Retry-After` of a rate-limited inbox call in ms, else null. */
+function pingRetryAfterMs(error: unknown): number | null {
+  if (!isAppError(error) || !isRateLimitError(error)) return null;
+  const retryAfter = error.context?.retryAfter;
+  return typeof retryAfter === 'number' && retryAfter > 0 ? retryAfter * 1000 : null;
+}
+
+/** The sender's clock at send time, from the `<ms>-<rand>.json` file name. */
+function fileSentAt(fileName: string): number {
+  const ms = Number.parseInt(fileName.slice(0, 13), 10);
+  return Number.isFinite(ms) ? ms : 0;
 }
 
 function sameContext(a: ChatContext | null, b: ChatContext | null | undefined): boolean {

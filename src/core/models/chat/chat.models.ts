@@ -130,6 +130,9 @@ export class ChatSyncStateModel
   last_synced_at: number;
   consecutive_failures: number;
   last_error: string | null;
+  ping_file: string | null;
+  ping_next_at: number;
+  ping_attempts: number;
 
   constructor(row: ChatSyncStateModelSchema) {
     super(row);
@@ -143,5 +146,8 @@ export class ChatSyncStateModel
     this.last_synced_at = row.last_synced_at;
     this.consecutive_failures = row.consecutive_failures;
     this.last_error = row.last_error;
+    this.ping_file = row.ping_file ?? null;
+    this.ping_next_at = row.ping_next_at ?? 0;
+    this.ping_attempts = row.ping_attempts ?? 0;
   }
 }

@@ -146,7 +146,7 @@ Docker and Vercel env), or the chat tables are not declared and `db.table('chat_
 | `chat_identity`      | The account's key pair (`kid`, `public_key`, `secret_key`, `published`), mirrored from `/priv/chat/v0/key.json`.                                                                                                                                    |
 | `chat_conversations` | One row per peer: `folder_id`, the cached peer key (`peer_key_id`, `peer_public_key`), `peer_state` (`ready` / `no_key`), `origin` (`local`, `remote`, `seeded`, `ping`), last-message preview, `last_read_at`, `last_context`, `priv_state_dirty`. |
 | `chat_messages`      | One row per message in both directions: `file_name`, `sent_at`, `body`, `context`, `status` (`queued` / `sent` / `failed`), retry bookkeeping, `clock_skewed`. Row id is `<owner>:<message uuid>`, so re-ingesting a file is a no-op.               |
-| `chat_sync_state`    | Per peer: homeserver list cursors for the peer's folder and my own, the peer's homeserver (cached pkarr lookup), key re-check time, failure counters.                                                                                               |
+| `chat_sync_state`    | Per peer: homeserver list cursors for the peer's folder and my own, the peer's homeserver (cached pkarr lookup), key re-check time, failure counters, and the file owed an inbox ping with its retry schedule.                                      |
 
 ## Cryptography
 
@@ -204,8 +204,14 @@ envelope    = XChaCha20-Poly1305(message key, random 24-byte nonce, AAD).encrypt
      5 min, jittered) for up to 8 attempts; a permanent failure or the 8th attempt marks the row `failed`
      ("Not sent", with Retry). A sent row is marked `sent` and the conversation's `/priv` record is marked
      dirty.
-   - Ping the peer through the inbox once per folder per flush (best effort; never changes message state).
+   - Record the file as the one owed an inbox ping for that conversation.
 3. Dirty `/priv` conversation records are written at the end of the flush.
+4. `flushPings`: for every conversation owed a ping, send one (never a condition for the message being
+   sent; the file is already on my homeserver). A failed ping is retried with a jittered backoff
+   (`CHAT_PING_RETRY_BASE_MS` to `CHAT_PING_RETRY_MAX_MS`; a 429 `Retry-After` takes precedence). While the
+   peer has never written back, the newest file is pinged again every `CHAT_PING_REPEAT_MS` until they do (or
+   the file is older than `CHAT_PING_REPEAT_MAX_AGE_MS`), so a dropped or expired first-contact ping still
+   ends in a wake-up. Once the peer has replied they stream and reconcile the folder themselves.
 
 Flush triggers: right after queueing, when the thread opens, on `online`, when the page becomes visible,
 each reconcile pass, and when a keyless peer becomes reachable.
@@ -308,7 +314,8 @@ has never seen). A ping is never the message.
 - **Send.** `POST /v1/pings` with slot `chat-<folder id>` (slots are 1–64 Base64url characters; a colon is
   rejected), the recipient pubky, the payload `{ "v": 0, "t": "chat", "folder", "file", "p": <padding> }`
   padded to exactly 512 bytes (`CHAT_PING_MAX_BYTES`) so every ping has the same size, and
-  `ttl_seconds = 604800` (7 days). The service keeps one pending ping per sender, recipient and slot.
+  `ttl_seconds = 604800` (7 days). The service keeps one pending ping per sender, recipient and slot, which is
+  what makes retries and repeats free for the receiver: a repeat replaces the pending ping instead of adding one.
 - **Receive.** The leader long-polls `GET /v1/pings?limit=50&wait=25` (25 s is the service cap). For each
   ping the **server-asserted sender** is the peer (the payload is only a hint): the conversation row is
   created if unknown (origin `ping`), the peer key is resolved, and the conversation is synced with the
@@ -335,31 +342,34 @@ queries (`useLiveQuery`), so everything the leader writes appears everywhere.
 
 ## Limits (`src/config/chat.ts`)
 
-| Constant                                   | Value        | Meaning                                                     |
-| ------------------------------------------ | ------------ | ----------------------------------------------------------- |
-| `CHAT_BODY_MAX_BYTES`                      | 4096         | Message body cap, UTF-8 bytes.                              |
-| `CHAT_FILE_MAX_BYTES`                      | 8192         | A larger message file is refused on read.                   |
-| `CHAT_PING_MAX_BYTES`                      | 512          | Inbox payload size; every ping is padded to it.             |
-| `CHAT_PING_TTL_SECONDS`                    | 7 days       | How long the inbox keeps an unread ping.                    |
-| `CHAT_INBOX_WAIT_SECONDS`                  | 25           | Long-poll wait (service cap).                               |
-| `CHAT_INBOX_PAGE`                          | 50           | Pings per poll.                                             |
-| `CHAT_INBOX_RETRY_MS`                      | 5 min        | Re-check when the inbox is disabled or needs a grant.       |
-| `CHAT_LIST_PAGE`                           | 200          | Homeserver list page.                                       |
-| `CHAT_FETCH_CONCURRENCY`                   | 4            | Files fetched at once per conversation.                     |
-| `CHAT_TAIL_CHECK_LIMIT`                    | 25           | Reverse-list size of the reconcile tail check.              |
-| `CHAT_PEER_KEY_RECHECK_MS`                 | 5 min        | Re-probe cadence for a peer without a key.                  |
-| `CHAT_PEER_KEY_WAITING_RECHECK_MS`         | 15 s         | Re-probe cadence while a queued message waits on that peer. |
-| `CHAT_CLOCK_SKEW_TOLERANCE_MS`             | 5 min        | `sent_at` further ahead than this is flagged.               |
-| `CHAT_SEND_MAX_ATTEMPTS`                   | 8            | Then the message is `failed`.                               |
-| `CHAT_SEND_RETRY_BASE_MS` / `_MAX_MS`      | 2 s / 5 min  | Exponential backoff bounds (jittered).                      |
-| `CHAT_RECONCILE_VISIBLE_MS` / `_HIDDEN_MS` | 60 s / 5 min | Leader reconciliation cadence.                              |
-| `CHAT_DISCOVERY_INTERVAL_MS`               | 10 min       | Order counterparty discovery cadence.                       |
-| `CHAT_EVENT_DEBOUNCE_MS`                   | 250 ms       | Between an event-stream `PUT` and the sync it triggers.     |
-| `CHAT_SSE_RECONNECT_BACKOFF_MS`            | 2 s          | Stream reconnect delay.                                     |
-| `CHAT_SSE_MAX_USERS_PER_STREAM`            | 20           | Peers per homeserver stream (SDK cap 50).                   |
-| `CHAT_SSE_MAX_CONVERSATIONS`               | 20           | Most recent conversations with live streams.                |
-| `CHAT_OPEN_THREAD_POLL_MS`                 | 10 s         | Open-thread poll while visible.                             |
-| `CHAT_THREAD_PAGE`                         | 50           | Messages per page in a thread.                              |
+| Constant                                   | Value        | Meaning                                                      |
+| ------------------------------------------ | ------------ | ------------------------------------------------------------ |
+| `CHAT_BODY_MAX_BYTES`                      | 4096         | Message body cap, UTF-8 bytes.                               |
+| `CHAT_FILE_MAX_BYTES`                      | 8192         | A larger message file is refused on read.                    |
+| `CHAT_PING_MAX_BYTES`                      | 512          | Inbox payload size; every ping is padded to it.              |
+| `CHAT_PING_TTL_SECONDS`                    | 7 days       | How long the inbox keeps an unread ping.                     |
+| `CHAT_PING_RETRY_BASE_MS` / `_MAX_MS`      | 5 s / 10 min | Backoff bounds for a failed ping (a 429 `Retry-After` wins). |
+| `CHAT_PING_REPEAT_MS`                      | 30 min       | Re-ping cadence while the peer has never written back.       |
+| `CHAT_PING_REPEAT_MAX_AGE_MS`              | 7 days       | Re-pings stop once the newest sent file is this old.         |
+| `CHAT_INBOX_WAIT_SECONDS`                  | 25           | Long-poll wait (service cap).                                |
+| `CHAT_INBOX_PAGE`                          | 50           | Pings per poll.                                              |
+| `CHAT_INBOX_RETRY_MS`                      | 5 min        | Re-check when the inbox is disabled or needs a grant.        |
+| `CHAT_LIST_PAGE`                           | 200          | Homeserver list page.                                        |
+| `CHAT_FETCH_CONCURRENCY`                   | 4            | Files fetched at once per conversation.                      |
+| `CHAT_TAIL_CHECK_LIMIT`                    | 25           | Reverse-list size of the reconcile tail check.               |
+| `CHAT_PEER_KEY_RECHECK_MS`                 | 5 min        | Re-probe cadence for a peer without a key.                   |
+| `CHAT_PEER_KEY_WAITING_RECHECK_MS`         | 15 s         | Re-probe cadence while a queued message waits on that peer.  |
+| `CHAT_CLOCK_SKEW_TOLERANCE_MS`             | 5 min        | `sent_at` further ahead than this is flagged.                |
+| `CHAT_SEND_MAX_ATTEMPTS`                   | 8            | Then the message is `failed`.                                |
+| `CHAT_SEND_RETRY_BASE_MS` / `_MAX_MS`      | 2 s / 5 min  | Exponential backoff bounds (jittered).                       |
+| `CHAT_RECONCILE_VISIBLE_MS` / `_HIDDEN_MS` | 60 s / 5 min | Leader reconciliation cadence.                               |
+| `CHAT_DISCOVERY_INTERVAL_MS`               | 10 min       | Order counterparty discovery cadence.                        |
+| `CHAT_EVENT_DEBOUNCE_MS`                   | 250 ms       | Between an event-stream `PUT` and the sync it triggers.      |
+| `CHAT_SSE_RECONNECT_BACKOFF_MS`            | 2 s          | Stream reconnect delay.                                      |
+| `CHAT_SSE_MAX_USERS_PER_STREAM`            | 20           | Peers per homeserver stream (SDK cap 50).                    |
+| `CHAT_SSE_MAX_CONVERSATIONS`               | 20           | Most recent conversations with live streams.                 |
+| `CHAT_OPEN_THREAD_POLL_MS`                 | 10 s         | Open-thread poll while visible.                              |
+| `CHAT_THREAD_PAGE`                         | 50           | Messages per page in a thread.                               |
 
 These are project-wide hard limits; do not tune them per component.
 
@@ -457,6 +467,9 @@ What the design protects, and what it does not. Threat IDs refer to
   sizes are bounded by the 8 KiB cap but not padded. The inbox learns sender, recipient, slot (which contains
   the folder id) and timing; payloads are padded to a fixed size. The homeserver event stream subscription
   tells the peer's homeserver which users and folders this client watches.
+- **Inbox rate limits.** A rate-limited or failed ping never loses a message: the file is already on the
+  sender's homeserver, the ping is retried after `Retry-After`, and a first contact is pinged again until the
+  peer answers.
 - **Spam and abuse (MSG-05).** Anyone with an inbox session can ping anyone; a ping from an unknown sender
   creates a conversation entry on the recipient's device (the message itself only arrives if the sender has a
   published key and wrote a file). There is no block or mute in v0, and no rate limit on the client side; the

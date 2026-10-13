@@ -331,6 +331,9 @@ export class LocalChatService {
           last_synced_at: 0,
           consecutive_failures: 0,
           last_error: null,
+          ping_file: null,
+          ping_next_at: 0,
+          ping_attempts: 0,
           ...changes,
         });
       }

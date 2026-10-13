@@ -8,6 +8,16 @@ export const CHAT_FILE_MAX_BYTES = 8192;
 export const CHAT_PING_MAX_BYTES = 512;
 /** How long an inbox ping waits for the recipient before the service drops it. */
 export const CHAT_PING_TTL_SECONDS = 7 * 24 * 60 * 60;
+/** Backoff bounds (jittered) for a failed inbox ping; a 429 `Retry-After` takes precedence. */
+export const CHAT_PING_RETRY_BASE_MS = 5_000;
+export const CHAT_PING_RETRY_MAX_MS = 10 * 60_000;
+/**
+ * While the peer has never written back, the newest sent file is pinged again
+ * on this cadence: a dropped or expired first-contact ping is not the end of it.
+ */
+export const CHAT_PING_REPEAT_MS = 30 * 60_000;
+/** Re-pings stop once the newest sent file is older than this (the inbox keeps a ping that long anyway). */
+export const CHAT_PING_REPEAT_MAX_AGE_MS = CHAT_PING_TTL_SECONDS * 1000;
 /** Inbox long-poll wait, capped by the service at 25 s. */
 export const CHAT_INBOX_WAIT_SECONDS = 25;
 export const CHAT_INBOX_PAGE = 50;

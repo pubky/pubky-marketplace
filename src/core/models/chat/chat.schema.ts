@@ -105,5 +105,14 @@ export interface ChatSyncStateModelSchema {
   last_synced_at: number;
   consecutive_failures: number;
   last_error: string | null;
+  /**
+   * Newest sent file still owed an inbox ping: retried on failure, and while
+   * the peer has never written back repeated until they do.
+   */
+  ping_file: string | null;
+  /** When the next ping attempt is due (ms epoch; 0 = at once). */
+  ping_next_at: number;
+  /** Consecutive failed ping attempts, for the backoff. */
+  ping_attempts: number;
 }
 export const chatSyncStateTableSchema = '&id, owner_id, [owner_id+peer_homeserver]';

@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ChatApplication } from '@/application/chat/chat';
+import { CHAT_PING_REPEAT_MS } from '@/config/chat';
 import { chatMessageUrl, chatPingSlot, chatPrivateKeyUrl, chatPublicKeyUrl } from '@/libs/chat/paths';
-import { NetworkErrorCode } from '@/libs/error/error.codes';
+import { NetworkErrorCode, RateLimitErrorCode } from '@/libs/error/error.codes';
 import { Err } from '@/libs/error/error.factories';
 import { ErrorService } from '@/libs/error/error.types';
 import { ChatHomeserverService } from '@/services/homeserver/chat/chat-storage';
@@ -225,6 +226,89 @@ describe('ChatApplication', () => {
       const row = await LocalChatService.getMessage(id);
       expect(row?.status).toBe('queued');
       expect(row?.last_error).toBe('peer_not_enabled');
+    });
+
+    it('retries a failed ping after Retry-After and repeats it until the peer writes back', async () => {
+      vi.useFakeTimers({ toFake: ['Date'] });
+      try {
+        vi.spyOn(InboxService, 'isConfigured').mockReturnValue(true);
+        vi.spyOn(InboxService, 'ensureSession').mockResolvedValue('ready');
+        const ping = vi.spyOn(InboxService, 'ping');
+        const alicePings = () => ping.mock.calls.filter(([me]) => me === ALICE).length;
+        ping.mockRejectedValueOnce(
+          Err.rateLimit(RateLimitErrorCode.RATE_LIMITED, 'slow down', {
+            service: ErrorService.Inbox,
+            operation: 'ping',
+            context: { retryAfter: 7 },
+          }),
+        );
+        ping.mockResolvedValue(undefined);
+
+        await ChatApplication.ensureIdentity(ALICE);
+        await ChatApplication.ensureIdentity(BOB);
+        await ChatApplication.openConversation(ALICE, BOB);
+        const id = await ChatApplication.queueMessage(ALICE, { peer: BOB, body: 'hello' });
+        const sentAt = Date.now();
+        await ChatApplication.flushOutbox(ALICE);
+
+        // The message is sent regardless; the ping waits out the Retry-After.
+        expect((await LocalChatService.getMessage(id))?.status).toBe('sent');
+        expect(alicePings()).toBe(1);
+        let state = await LocalChatService.getSyncState(ALICE, BOB);
+        const file = (await LocalChatService.getMessage(id))?.file_name;
+        expect(state?.ping_file).toBe(file);
+        expect(state?.ping_attempts).toBe(1);
+        expect(state?.ping_next_at).toBe(sentAt + 7_000);
+
+        await ChatApplication.flushOutbox(ALICE);
+        expect(alicePings()).toBe(1);
+
+        vi.setSystemTime(sentAt + 7_000);
+        await ChatApplication.flushOutbox(ALICE);
+        expect(alicePings()).toBe(2);
+        const folder = (await LocalChatService.getConversation(ALICE, BOB))?.folder_id;
+        expect(ping).toHaveBeenLastCalledWith(
+          ALICE,
+          expect.objectContaining({ recipient: BOB, slot: chatPingSlot(folder!) }),
+        );
+        // Bob has never written back: the same file is pinged again later.
+        state = await LocalChatService.getSyncState(ALICE, BOB);
+        expect(state?.ping_attempts).toBe(0);
+        expect(state?.ping_file).toBe(file);
+        expect(state?.ping_next_at).toBe(sentAt + 7_000 + CHAT_PING_REPEAT_MS);
+
+        // Bob replies; after the next ping nothing more is owed.
+        await ChatApplication.openConversation(BOB, ALICE);
+        await ChatApplication.queueMessage(BOB, { peer: ALICE, body: 'hi' });
+        await ChatApplication.flushOutbox(BOB);
+        await ChatApplication.syncConversation(ALICE, BOB, { reason: 'reconcile' });
+        vi.setSystemTime(sentAt + 7_000 + CHAT_PING_REPEAT_MS);
+        await ChatApplication.flushOutbox(ALICE);
+        expect(alicePings()).toBe(3);
+        state = await LocalChatService.getSyncState(ALICE, BOB);
+        expect(state?.ping_file).toBeNull();
+        await ChatApplication.flushOutbox(ALICE);
+        expect(alicePings()).toBe(3);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('keeps the ping owed while the inbox is unavailable and sends it once it is', async () => {
+      const ping = vi.spyOn(InboxService, 'ping').mockResolvedValue(undefined);
+      await ChatApplication.ensureIdentity(ALICE);
+      await ChatApplication.ensureIdentity(BOB);
+      await ChatApplication.openConversation(ALICE, BOB);
+      const id = await ChatApplication.queueMessage(ALICE, { peer: BOB, body: 'hello' });
+      await ChatApplication.flushOutbox(ALICE);
+      expect((await LocalChatService.getMessage(id))?.status).toBe('sent');
+      expect(ping).not.toHaveBeenCalled();
+      expect((await LocalChatService.getSyncState(ALICE, BOB))?.ping_file).toBeTruthy();
+
+      vi.spyOn(InboxService, 'isConfigured').mockReturnValue(true);
+      vi.spyOn(InboxService, 'ensureSession').mockResolvedValue('ready');
+      await ChatApplication.flushOutbox(ALICE);
+      expect(ping).toHaveBeenCalledTimes(1);
     });
 
     it('refuses self-chat and empty bodies', async () => {
