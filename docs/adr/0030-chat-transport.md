@@ -93,8 +93,9 @@ for first contact. Full description: [`docs/chat/README.md`](../chat/README.md).
 - Key authenticity is trust-on-first-use from the peer's homeserver; there is no fingerprint check.
 - First contact from a stranger depends on the inbox, which needs a deployed, CORS-enabled inbox service;
   without it a stranger is reachable only once the recipient opens the thread or discovery finds the files.
-- Metadata leaks: folder ids link a pair across both homeservers to an observer who can list both; file
-  names carry send times; the inbox learns who pings whom.
+- Metadata leaks: `/pub/chat/v0/` listings show how many conversations a user has and, from file names,
+  when they send (folder ids are per direction, so listings do not reveal who talks to whom); the inbox
+  learns who pings whom.
 - One more re-approval for existing sessions (acceptable: the app had not launched).
 
 ### Neutral ⚠️

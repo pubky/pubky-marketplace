@@ -72,7 +72,12 @@ function concatBytes(...parts: Uint8Array[]): Uint8Array {
  * peer key (all-zero shared secret) and on a peer key equal to my own (a
  * copied key file).
  */
+const PUBKY_Z32 = /^[a-z0-9]{52}$/u;
+
 export function derivePairwiseRoot(mySecretKey: Uint8Array, me: ChatPairParty, peer: ChatPairParty): Uint8Array {
+  // Fixed-length parts keep the unseparated info unambiguous.
+  if (!PUBKY_Z32.test(me.pubky) || !PUBKY_Z32.test(peer.pubky)) throw new Error('Pubky is not 52 z-base-32 chars');
+  if (me.publicKey.length !== 32 || peer.publicKey.length !== 32) throw new Error('Chat key is not 32 bytes');
   if (compareBytes(me.publicKey, peer.publicKey) === 0) throw new Error('Peer key equals own key');
   const shared = x25519.getSharedSecret(mySecretKey, peer.publicKey);
   if (shared.every((byte) => byte === 0)) throw new Error('Low-order peer key');

@@ -74,8 +74,9 @@ type PairKeysCacheEntry = ChatPeerKeys & { myKid: string };
 /**
  * Buyer↔seller chat on homeserver files.
  *
- * Messages I send live on MY homeserver under an opaque pairwise folder;
- * messages I receive live on the PEER's homeserver under the same folder id.
+ * Messages I send live on MY homeserver under my folder for the pair;
+ * messages I receive live on the PEER's homeserver under their folder for
+ * the pair (both derived from the shared root, one per writer).
  * Dexie is a cache rebuilt from `/priv/chat/v0/conversations/*` plus both
  * folders. The inbox service only wakes the other side up.
  *
@@ -197,7 +198,17 @@ export class ChatApplication {
       }
       return { state: 'no_key' };
     }
-    const keys = this.deriveFor(identity, peer, record.kid, publicKey);
+    let keys: ChatPeerKeys;
+    try {
+      keys = this.deriveFor(identity, peer, record.kid, publicKey);
+    } catch (error) {
+      // A low-order key, or a copy of my own key published under their account: nothing to encrypt to.
+      Logger.warn('Chat peer key rejected; treating the peer as not enabled', { error });
+      if (row && row.peer_state !== 'no_key') {
+        await LocalChatService.updateConversation(me, peer, { peer_state: 'no_key' });
+      }
+      return { state: 'no_key' };
+    }
     if (row) {
       const rotated = row.peer_key_id !== null && row.peer_key_id !== record.kid;
       await LocalChatService.updateConversation(me, peer, {
