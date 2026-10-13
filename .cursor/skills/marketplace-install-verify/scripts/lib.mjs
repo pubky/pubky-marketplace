@@ -171,6 +171,19 @@ export function normalizeBase(value) {
   }
 }
 
+/**
+ * The Shop's landing path (`SHOP_PATH`). Unset means `/marketplace`. A value is joined straight onto each
+ * origin, so one without a leading slash would build a different host (`https://staging.pubky.appshop`).
+ */
+export function parseShopPath(value) {
+  const raw = String(value ?? '').trim();
+  if (!raw) return '/marketplace';
+  if (!/^\/(?!\/)[^\s?#]*$/.test(raw)) {
+    throw new Error('SHOP_PATH must start with one "/" and carry no query, fragment or spaces (for example /shop/marketplace)');
+  }
+  return raw.length > 1 ? raw.replace(/\/+$/, '') : raw;
+}
+
 /** Origins in `required` that `allowed` does not list. A `*` entry is reported separately by callers. */
 export function missingOrigins(allowed, required) {
   const have = new Set(parseList(allowed).map(normalizeOrigin).filter(Boolean));

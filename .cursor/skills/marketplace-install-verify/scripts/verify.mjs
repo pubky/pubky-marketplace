@@ -29,6 +29,7 @@ import {
   parseJsonLenient,
   parseList,
   parseMigrationRows,
+  parseShopPath,
   parseSourceRef,
   parseTomlFlat,
   redact,
@@ -114,7 +115,14 @@ const url = (key) => {
 };
 const SHOP_ORIGINS = parseList(get('SHOP_ORIGINS')).map((o) => o.replace(/\/+$/, ''));
 // The Shop's landing path on each origin: `/shop/marketplace` when it is mounted at pubky.app/shop.
-const SHOP_PATH = get('SHOP_PATH') ?? '/marketplace';
+const SHOP_PATH = (() => {
+  try {
+    return parseShopPath(get('SHOP_PATH'));
+  } catch (error) {
+    console.error(error.message);
+    process.exit(2);
+  }
+})();
 const SERVICE = url('SERVICE_URL');
 const PAYKIT = url('PAYKIT_URL');
 const LOCKS = url('LOCKS_URL');

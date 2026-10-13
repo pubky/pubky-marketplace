@@ -17,6 +17,7 @@ import {
   parseJsonLenient,
   parseList,
   parseMigrationRows,
+  parseShopPath,
   parseSourceRef,
   parseTomlFlat,
   redact,
@@ -187,4 +188,15 @@ allowed_return_origins = ["https://shop.example"]
 `);
   assert.deepEqual(locksReturnOriginsFromToml(unset), ['https://shop.example']);
   assert.equal(locksReturnOriginsFromToml({}), undefined);
+});
+
+test('parseShopPath defaults, trims a trailing slash and rejects values that would build another host', () => {
+  assert.equal(parseShopPath(undefined), '/marketplace');
+  assert.equal(parseShopPath('  '), '/marketplace');
+  assert.equal(parseShopPath('/shop/marketplace'), '/shop/marketplace');
+  assert.equal(parseShopPath('/shop/marketplace/'), '/shop/marketplace');
+  assert.equal(parseShopPath('/'), '/');
+  for (const bad of ['shop/marketplace', '//evil.example', '/shop?x=1', '/shop#a', '/shop marketplace']) {
+    assert.throws(() => parseShopPath(bad), /SHOP_PATH must start with one "\/"/, bad);
+  }
 });
