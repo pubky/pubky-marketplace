@@ -20,6 +20,7 @@ import {
   parseShopPath,
   parseSourceRef,
   parseTomlFlat,
+  paykitTrustedKeys,
   redact,
 } from './lib.mjs';
 
@@ -59,8 +60,8 @@ bind_addr = "127.0.0.1:3000"
 [credentials]
 lock_server_secret_key = "/data/secret.sess" # path, never read by the checks
 lock_server_public_key = "pubkyabc"
-[locks]
-trusted_public_key = "pubkyabc"
+[signed_services]
+trusted_public_keys = ["pubkyabc", "pubkydef"]
 [setup]
 allowed_origins = [
   "https://shop.example", # production
@@ -73,7 +74,7 @@ allowed_return_origins = ["https://shop.example"]
 max_resource_bytes = 10_000_000
 `);
   assert.equal(toml.bind_addr, '127.0.0.1:3000');
-  assert.equal(toml['locks.trusted_public_key'], 'pubkyabc');
+  assert.deepEqual(toml['signed_services.trusted_public_keys'], ['pubkyabc', 'pubkydef']);
   assert.deepEqual(toml['setup.allowed_origins'], ['https://shop.example', 'https://staging.shop.example']);
   assert.equal(toml['setup.log_authorization_url'], false);
   assert.deepEqual(toml['creator_authority_acquisition.legacy_connect.allowed_return_origins'], ['https://shop.example']);
@@ -199,4 +200,19 @@ test('parseShopPath defaults, trims a trailing slash and rejects values that wou
   for (const bad of ['shop/marketplace', '//evil.example', '/shop?x=1', '/shop#a', '/shop marketplace']) {
     assert.throws(() => parseShopPath(bad), /SHOP_PATH must start with one "\/"/, bad);
   }
+});
+
+test('paykitTrustedKeys reads the rc13 allowlist and falls back to the retired [locks] key only when it is absent', () => {
+  assert.deepEqual(
+    paykitTrustedKeys(parseTomlFlat('[signed_services]\ntrusted_public_keys = ["pubkyabc", "pubkydef"]')),
+    ['pubkyabc', 'pubkydef'],
+  );
+  assert.deepEqual(
+    paykitTrustedKeys(
+      parseTomlFlat('[signed_services]\ntrusted_public_keys = ["pubkynew"]\n[locks]\ntrusted_public_key = "pubkyold"'),
+    ),
+    ['pubkynew'],
+  );
+  assert.deepEqual(paykitTrustedKeys(parseTomlFlat('[locks]\ntrusted_public_key = "pubkyold"')), ['pubkyold']);
+  assert.equal(paykitTrustedKeys(parseTomlFlat('[setup]\nallowed_origins = []')), undefined);
 });

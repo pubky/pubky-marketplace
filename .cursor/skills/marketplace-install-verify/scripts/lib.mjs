@@ -184,6 +184,19 @@ export function parseShopPath(value) {
   return raw.length > 1 ? raw.replace(/\/+$/, '') : raw;
 }
 
+/**
+ * The Lock Server keys Paykit trusts, from its parsed config. Paykit rc13 reads the closed
+ * `[signed_services] trusted_public_keys` allowlist (Locks and marketplace service keys together) and rejects the
+ * retired `[locks] trusted_public_key`, which is read only when the new table is absent so an older config still
+ * verifies. Returns undefined when neither is present.
+ */
+export function paykitTrustedKeys(toml) {
+  const list = toml['signed_services.trusted_public_keys'];
+  if (list !== undefined) return parseList(list);
+  const legacy = toml['locks.trusted_public_key'];
+  return legacy === undefined ? undefined : [String(legacy)];
+}
+
 /** Origins in `required` that `allowed` does not list. A `*` entry is reported separately by callers. */
 export function missingOrigins(allowed, required) {
   const have = new Set(parseList(allowed).map(normalizeOrigin).filter(Boolean));
