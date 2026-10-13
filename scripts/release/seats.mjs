@@ -26,6 +26,16 @@ export function shopCapabilities() {
   return match[1];
 }
 
+// PROOF_ORIGIN is the origin the Shop is served from, with its mount path when embedded
+// (`https://pubky.app/shop`). `origin` is what browser permissions and the service CORS check see;
+// `at(path)` joins the mount path in front of a Shop route such as `/sign-in`.
+export function proofTarget(raw = process.env.PROOF_ORIGIN ?? 'https://shop.pubky.app') {
+  const url = new URL(raw);
+  if (url.search || url.hash) throw new Error('PROOF_ORIGIN must not carry a query or fragment');
+  const basePath = url.pathname.replace(/\/+$/, '');
+  return { origin: url.origin, basePath, at: (path) => `${url.origin}${basePath}${path}` };
+}
+
 const lexists = (path) => {
   try {
     lstatSync(path);

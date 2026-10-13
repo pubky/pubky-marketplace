@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { evidenceDir, isOutside, realpathAllowingMissing, REPO_ROOT } from './seats.mjs';
+import { evidenceDir, isOutside, proofTarget, realpathAllowingMissing, REPO_ROOT } from './seats.mjs';
 
 describe('release proof evidence folder guard', () => {
   let sandbox = '';
@@ -62,5 +62,28 @@ describe('release proof evidence folder guard', () => {
       if (previous === undefined) delete process.env.PROOF_EVIDENCE;
       else process.env.PROOF_EVIDENCE = previous;
     }
+  });
+});
+
+describe('release proof target', () => {
+  it('keeps an origin-only target at the root', () => {
+    const target = proofTarget('https://shop.pubky.app');
+    expect(target.origin).toBe('https://shop.pubky.app');
+    expect(target.basePath).toBe('');
+    expect(target.at('/sign-in')).toBe('https://shop.pubky.app/sign-in');
+  });
+
+  it('joins the mount path in front of every route and keeps the bare origin for permissions', () => {
+    for (const raw of ['https://pubky.app/shop', 'https://pubky.app/shop/']) {
+      const target = proofTarget(raw);
+      expect(target.origin).toBe('https://pubky.app');
+      expect(target.basePath).toBe('/shop');
+      expect(target.at('/marketplace/orders')).toBe('https://pubky.app/shop/marketplace/orders');
+    }
+  });
+
+  it('rejects a query or fragment', () => {
+    expect(() => proofTarget('https://pubky.app/shop?x=1')).toThrow(/query or fragment/);
+    expect(() => proofTarget('https://pubky.app/shop#top')).toThrow(/query or fragment/);
   });
 });

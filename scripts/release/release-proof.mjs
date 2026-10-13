@@ -10,7 +10,8 @@
 //   6. Sign-out of the Ring session through Settings, held across reload.
 // Afterwards every marketplace session the seat gained during the run is revoked and the
 // revocation is verified. Nothing else is written: the cart is local (Dexie) and is emptied.
-// Env: PROOF_EVIDENCE and EXPECTED_DPL (required), seats (see seats.mjs), PROOF_ORIGIN, PROOF_SERVICE,
+// Env: PROOF_EVIDENCE and EXPECTED_DPL (required), seats (see seats.mjs), PROOF_ORIGIN (with the mount path when
+// the Shop is embedded, e.g. https://pubky.app/shop), PROOF_SERVICE,
 // PROOF_RELAY, PROOF_PAYPAL_LISTING_URL (fixture listing path for step 4, set by production-paypal-fixture.mjs).
 // Runbook: docs/ecommerce/release.md.
 // Output: 8-char pubky prefixes only; auth URLs, exports and bearers never print.
@@ -21,6 +22,7 @@ import {
   loadBuyerSeat,
   loadSellerSeat,
   prefix,
+  proofTarget,
   repoRequire,
   seatSource,
   shopCapabilities,
@@ -29,7 +31,8 @@ import {
 const { chromium } = repoRequire('playwright');
 const { AuthFlowKind, Pubky, SigninGrantDeepLink } = repoRequire('@synonymdev/pubky');
 
-const ORIGIN = process.env.PROOF_ORIGIN ?? 'https://shop.pubky.app';
+const { origin: ORIGIN, basePath: BASE_PATH, at } = proofTarget();
+const signInPath = `${BASE_PATH}/sign-in`;
 const EVIDENCE = evidenceDir();
 const EXPECTED_DPL = process.env.EXPECTED_DPL ?? '';
 if (!EXPECTED_DPL) throw new Error('set EXPECTED_DPL to the dpl_… id now aliased to the origin');
@@ -136,7 +139,7 @@ const signedInAs = (page, key, timeout = 180_000) =>
   );
 
 async function bothQrsLive(page) {
-  await page.goto(`${ORIGIN}/sign-in`, { waitUntil: 'domcontentloaded', timeout: 180_000 });
+  await page.goto(at('/sign-in'), { waitUntil: 'domcontentloaded', timeout: 180_000 });
   await waitForAppReady(page);
   await page
     .getByRole('button', { name: 'Copy authentication link' })
@@ -183,7 +186,7 @@ async function qrDomLeak(page, authUrl) {
 }
 
 async function signOutThroughSettings(page) {
-  await page.goto(`${ORIGIN}/settings/account`, { waitUntil: 'domcontentloaded', timeout: 180_000 });
+  await page.goto(at('/settings/account'), { waitUntil: 'domcontentloaded', timeout: 180_000 });
   await waitForAppReady(page);
   const button = page.locator('#sign-out-btn');
   const viaSettings = await button
@@ -191,7 +194,7 @@ async function signOutThroughSettings(page) {
     .then(() => true)
     .catch(() => false);
   if (viaSettings) await button.click();
-  else await page.goto(`${ORIGIN}/logout`, { waitUntil: 'domcontentloaded', timeout: 180_000 });
+  else await page.goto(at('/logout'), { waitUntil: 'domcontentloaded', timeout: 180_000 });
   await page.waitForFunction(
     () => {
       const raw = localStorage.getItem('shop-auth-store') ?? localStorage.getItem('auth-store');
@@ -216,7 +219,7 @@ async function newContext(browser) {
 }
 
 async function emptyCart(page) {
-  await page.goto(`${ORIGIN}/marketplace/cart`, { waitUntil: 'domcontentloaded' });
+  await page.goto(at('/marketplace/cart'), { waitUntil: 'domcontentloaded' });
   await waitForAppReady(page);
   await page.waitForTimeout(1200);
   for (let n = 0; n < 8; n += 1) {
@@ -243,7 +246,7 @@ async function paypalCheckout(page, commands, href) {
   log(`fixture seller ${sellerOf(href).slice(0, 8)} public payment-config paypal=${sellerHasPaypal}`);
   await emptyCart(page);
   {
-    await page.goto(new URL(href, ORIGIN).toString(), { waitUntil: 'domcontentloaded' });
+    await page.goto(at(href), { waitUntil: 'domcontentloaded' });
     await waitForAppReady(page);
     const title = (
       (await page
@@ -277,7 +280,7 @@ async function paypalCheckout(page, commands, href) {
     }
     await add.click();
     await page.waitForTimeout(1200);
-    await page.goto(`${ORIGIN}/marketplace/cart`, { waitUntil: 'domcontentloaded' });
+    await page.goto(at('/marketplace/cart'), { waitUntil: 'domcontentloaded' });
     await waitForAppReady(page);
     const checkout = page.getByTestId('marketplace-cart-checkout');
     await checkout
@@ -353,7 +356,7 @@ async function paypalCheckout(page, commands, href) {
 }
 
 async function renderedOrderCards(page) {
-  await page.goto(`${ORIGIN}/marketplace/orders`, { waitUntil: 'domcontentloaded' });
+  await page.goto(at('/marketplace/orders'), { waitUntil: 'domcontentloaded' });
   await waitForAppReady(page);
   await page.locator('[data-surface="marketplace-orders"]').waitFor({ state: 'visible', timeout: 60_000 });
   await page
@@ -381,7 +384,7 @@ async function renderedOrderCards(page) {
 // card per order that belongs in its history (paid/receipted, or held reservations).
 async function activityAndOrder(page, tag) {
   const rendered = new Set(await renderedOrderCards(page));
-  await page.goto(`${ORIGIN}/marketplace/notifications`, { waitUntil: 'domcontentloaded' });
+  await page.goto(at('/marketplace/notifications'), { waitUntil: 'domcontentloaded' });
   await waitForAppReady(page);
   await page
     .locator('a[href*="#order-"]')
@@ -555,7 +558,7 @@ const consoleErrors = [];
 const summary = {};
 const browser = await chromium.launch({ headless: true });
 try {
-  const html = await (await fetch(`${ORIGIN}/marketplace`)).text();
+  const html = await (await fetch(at('/marketplace'))).text();
   const dpl = (html.match(/dpl_[A-Za-z0-9]+/) || [])[0] || null;
   summary.dpl = dpl;
   check('0', 'production serves the expected deployment', !EXPECTED_DPL || dpl === EXPECTED_DPL, `${dpl}`);
@@ -584,7 +587,7 @@ try {
       await new Pubky().signer(seat).approveAuthRequest(ringUrl);
       log('ring: approved');
       await signedInAs(page, 'sessionExport');
-      await page.waitForFunction(() => window.location.pathname !== '/sign-in', null, { timeout: 180_000 });
+      await page.waitForFunction((path) => window.location.pathname !== path, signInPath, { timeout: 180_000 });
       await page.waitForTimeout(4000);
       await shot(page, '02-ring-signed-in.png');
       const state = await authState(page);
@@ -700,7 +703,7 @@ try {
         'reload restores the stored grant',
         reloaded.currentUserPubky === pubky &&
           reloaded.grantSessionRecordId === state.grantSessionRecordId &&
-          new URL(page.url()).pathname !== '/sign-in',
+          new URL(page.url()).pathname !== signInPath,
         new URL(page.url()).pathname,
       );
       const netBefore = net.length;
@@ -826,7 +829,12 @@ try {
   check(
     '5',
     'an Activity row opens that order on the Orders page (card rendered, in view, label matches)',
-    Boolean(opened?.hashIsOrder && opened?.labelMatches && opened?.inView && opened.path === '/marketplace/orders'),
+    Boolean(
+      opened?.hashIsOrder &&
+      opened?.labelMatches &&
+      opened?.inView &&
+      opened.path === `${BASE_PATH}/marketplace/orders`,
+    ),
     `${openedBy} ${JSON.stringify(opened)}`,
   );
 } finally {

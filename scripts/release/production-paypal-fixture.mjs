@@ -18,19 +18,27 @@
 // Env: PROOF_EVIDENCE (required; state and results are written there), seats (see seats.mjs),
 // PAYPAL_TEST_EMAIL (required for setup and proof, and for a teardown that restores it; never logged or
 // written to disk), EXPECTED_DPL (optional,
-// checked before checkout), PROOF_ORIGIN, PROOF_SERVICE, PROOF_NEXUS, PROOF_RELAY, PROOF_FIXTURE_PHOTO.
+// checked before checkout), PROOF_ORIGIN (with the mount path when embedded), PROOF_SERVICE, PROOF_NEXUS, PROOF_RELAY, PROOF_FIXTURE_PHOTO.
 // Exit 0 only when every check passed; teardown and verify exit 1 while anything is left behind.
 import { spawnSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { chmodSync, existsSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { evidenceDir, loadBuyerSeat, loadSellerSeat, prefix, repoRequire, shopCapabilities } from './seats.mjs';
+import {
+  evidenceDir,
+  loadBuyerSeat,
+  loadSellerSeat,
+  prefix,
+  proofTarget,
+  repoRequire,
+  shopCapabilities,
+} from './seats.mjs';
 
 const { chromium } = repoRequire('playwright');
 const { AuthFlowKind, Pubky } = repoRequire('@synonymdev/pubky');
 
-const ORIGIN = process.env.PROOF_ORIGIN ?? 'https://shop.pubky.app';
+const { origin: ORIGIN, at } = proofTarget();
 const SERVICE = process.env.PROOF_SERVICE ?? 'https://marketplace-service-production-ce23.up.railway.app';
 const NEXUS = process.env.PROOF_NEXUS ?? 'https://nexusd-production-7108.up.railway.app';
 const RELAY = process.env.PROOF_RELAY ?? 'https://httprelay.pubky.app/inbox';
@@ -118,7 +126,7 @@ async function copyAuthUrl(page, label) {
 }
 
 async function ringSignIn(page, seat) {
-  await page.goto(`${ORIGIN}/sign-in`, { waitUntil: 'domcontentloaded', timeout: 180_000 });
+  await page.goto(at('/sign-in'), { waitUntil: 'domcontentloaded', timeout: 180_000 });
   await waitForAppReady(page);
   await new Pubky().signer(seat).approveAuthRequest(await copyAuthUrl(page, 'Copy authentication link'));
   await page.waitForFunction(
@@ -153,7 +161,7 @@ async function approveMarketplaceSession(page, seat) {
 }
 
 async function signOut(page) {
-  await page.goto(`${ORIGIN}/settings/account`, { waitUntil: 'domcontentloaded' });
+  await page.goto(at('/settings/account'), { waitUntil: 'domcontentloaded' });
   await waitForAppReady(page);
   const button = page.locator('#sign-out-btn');
   await button.waitFor({ state: 'visible', timeout: 30_000 });
@@ -166,7 +174,7 @@ async function signOut(page) {
 // The field renders only after the seller's own payment config loaded without error, so its value is the
 // stored rail ('' when none is set).
 async function openPaypalField(page) {
-  await page.goto(`${ORIGIN}/marketplace/settings`, { waitUntil: 'domcontentloaded' });
+  await page.goto(at('/marketplace/settings'), { waitUntil: 'domcontentloaded' });
   await waitForAppReady(page);
   await approveMarketplaceSession(page, seller);
   const field = page.locator('#get-paid-paypal');
@@ -209,7 +217,7 @@ async function pickCategoryLeaf(page) {
 }
 
 async function fillShippingListing(page, title) {
-  await page.goto(`${ORIGIN}/marketplace/sell`, { waitUntil: 'domcontentloaded' });
+  await page.goto(at('/marketplace/sell'), { waitUntil: 'domcontentloaded' });
   await waitForAppReady(page);
   const discard = page.getByRole('button', { name: 'Discard draft and start fresh' });
   if (await discard.isVisible().catch(() => false)) {
@@ -265,7 +273,7 @@ async function fillShippingListing(page, title) {
 }
 
 async function emptyCart(page) {
-  await page.goto(`${ORIGIN}/marketplace/cart`, { waitUntil: 'domcontentloaded' });
+  await page.goto(at('/marketplace/cart'), { waitUntil: 'domcontentloaded' });
   await waitForAppReady(page);
   for (let n = 0; n < 8; n += 1) {
     const remove = page.getByRole('button', { name: /^Remove / }).first();
@@ -376,13 +384,13 @@ async function checkout() {
   const { browser, page, commands } = await openBrowser();
   try {
     if (process.env.EXPECTED_DPL) {
-      const dpl = ((await (await fetch(`${ORIGIN}/marketplace`)).text()).match(/dpl_[A-Za-z0-9]+/) || [])[0] || null;
+      const dpl = ((await (await fetch(at('/marketplace'))).text()).match(/dpl_[A-Za-z0-9]+/) || [])[0] || null;
       check('checkout: expected deployment is live', dpl === process.env.EXPECTED_DPL, String(dpl));
     }
     await ringSignIn(page, buyer);
     log(`buyer ${prefix(buyer.publicKey.z32())} signed in`);
     await emptyCart(page);
-    await page.goto(`${ORIGIN}${listingPath(state.listingId)}`, { waitUntil: 'domcontentloaded', timeout: 180_000 });
+    await page.goto(at(listingPath(state.listingId)), { waitUntil: 'domcontentloaded', timeout: 180_000 });
     await waitForAppReady(page);
     const add = page.getByRole('button', { name: 'Add to cart', exact: true }).first();
     const addVisible = await add.waitFor({ state: 'visible', timeout: 60_000 }).then(
@@ -394,7 +402,7 @@ async function checkout() {
     ) {
       await add.click();
       await page.waitForTimeout(1200);
-      await page.goto(`${ORIGIN}/marketplace/cart`, { waitUntil: 'domcontentloaded' });
+      await page.goto(at('/marketplace/cart'), { waitUntil: 'domcontentloaded' });
       await waitForAppReady(page);
       const go = page.getByTestId('marketplace-cart-checkout').first();
       await go.waitFor({ state: 'visible', timeout: 30_000 });
@@ -452,7 +460,7 @@ async function teardown() {
     let ids = state.listingId ? [state.listingId] : [];
     if (state.listingTitle && ids.length === 0) ids = (await nexusListingsByTitle(state.listingTitle)).ids;
     for (const id of ids) {
-      await page.goto(`${ORIGIN}${listingPath(id)}`, { waitUntil: 'domcontentloaded' });
+      await page.goto(at(listingPath(id)), { waitUntil: 'domcontentloaded' });
       await waitForAppReady(page);
       await approveMarketplaceSession(page, seller);
       const openDelete = page.getByRole('button', { name: /^Delete$/i }).first();
@@ -524,7 +532,7 @@ async function verify() {
     const { browser, page } = await openBrowser();
     try {
       for (const id of ids) {
-        await page.goto(`${ORIGIN}${listingPath(id)}`, { waitUntil: 'domcontentloaded', timeout: 180_000 });
+        await page.goto(at(listingPath(id)), { waitUntil: 'domcontentloaded', timeout: 180_000 });
         await page.waitForTimeout(8000);
         const shop = await page.evaluate(
           (title) => ({
