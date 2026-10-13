@@ -61,9 +61,8 @@ for first contact. Full description: [`docs/chat/README.md`](../chat/README.md).
    counterparties are discovered from the transaction service in transactional commerce modes. Every loop
    ends in the same idempotent sync.
 3. **Inbox-first.** A stranger's first message is noticed through the inbox; without an inbox session
-   (deployment without `PUBKY_RUNTIME_INBOX_URL`, or a cookie session that cannot sign a grant proof) chat
-   still works through streams and reconciliation, and the gap is documented rather than papered over.
-4. **Scopes.** The sign-in grant and the Ring cookie set gain `/pub/chat/:rw` and `/priv/chat/:rw`. Sessions
+   (deployment without `PUBKY_RUNTIME_INBOX_URL`) chat still works through streams and reconciliation, and the gap is documented rather than papered over.
+4. **Scopes.** The sign-in grant gains `/pub/chat/:rw` and `/priv/chat/:rw`. Sessions
    approved before that see a re-approval notice; the `/pub/paykit/:rw` enrollment flow is gone.
 5. **Layering.** `ChatSyncCoordinator` → `ChatController` → `ChatApplication` → `ChatHomeserverService`,
    `InboxService`, `LocalChatService`, per [ADR 0004](./0004-layering-and-dependency-rules.md). One leader
@@ -75,7 +74,7 @@ for first contact. Full description: [`docs/chat/README.md`](../chat/README.md).
 
 ### Positive ✅
 
-- Works for every sign-in that holds the chat scopes: Ring cookie, Bitkit, Ring grant and Passport.
+- Works for every grant sign-in that holds the chat scopes: Bitkit, Ring and Passport.
 - Store-and-forward: a message to an offline peer, or to one who has not opened Messages yet, waits on the
   sender's homeserver (and in the sender's queue while the peer has no key) and is delivered later.
 - Multi-device by construction: keys and conversations live on the homeserver; a fresh browser rebuilds the
@@ -92,8 +91,8 @@ for first contact. Full description: [`docs/chat/README.md`](../chat/README.md).
 - The private key sits unsealed under `/priv` (owner-only, but readable by the homeserver operator and by any
   session holding `/priv/chat/:rw`), and as plain bytes in IndexedDB. Hardening is deferred.
 - Key authenticity is trust-on-first-use from the peer's homeserver; there is no fingerprint check.
-- First contact from a stranger depends on the inbox, which needs a grant session and a deployed, CORS-enabled
-  inbox service; cookie users are reachable only once they open the thread or discovery finds the files.
+- First contact from a stranger depends on the inbox, which needs a deployed, CORS-enabled inbox service;
+  without it a stranger is reachable only once the recipient opens the thread or discovery finds the files.
 - Metadata leaks: folder ids link a pair across both homeservers to an observer who can list both; file
   names carry send times; the inbox learns who pings whom.
 - One more re-approval for existing sessions (acceptable: the app had not launched).
@@ -189,7 +188,7 @@ layout.
 - Dexie version 9 adds `chat_identity`, `chat_conversations`, `chat_messages`, `chat_sync_state` and drops
   the `commerce_messaging_*` tables (`src/core/database/franky/franky.ts`); `NEXT_PUBLIC_DB_VERSION=9`.
 - Runtime config: `PUBKY_RUNTIME_INBOX_URL`, `PUBKY_RUNTIME_INBOX_AUDIENCE` ([environment](../environment.md)).
-- Scopes: `CAPABILITIES`, `RING_COOKIE_CAPABILITIES` in `src/config/app.ts`.
+- Scopes: `CAPABILITIES` in `src/config/app.ts`.
 - Proof: `npm run test:e2e:chat` against the local testnet and inbox.
 - Rollout: no migration; existing sessions re-approve once.
 

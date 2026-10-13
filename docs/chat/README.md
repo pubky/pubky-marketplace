@@ -32,10 +32,8 @@ background loops and every tab renders through Dexie live queries.
   `?listing=` / `?order=` set the context of the next message). Entry points: **Message seller** on a
   listing, **Message about this order** on an order, **Message** on a profile, and the Messages item in the
   header, mobile footer and marketplace section nav with an unread badge.
-- Works with every sign-in that holds the chat scopes (`/pub/chat/:rw`, `/priv/chat/:rw`): Ring cookie
-  sessions and Bitkit, Ring and Passport grant sessions. The inbox needs a grant session (see
-  [Inbox](#inbox-pings)); a cookie session still gets live delivery through the event stream and
-  reconciliation.
+- Works with every grant sign-in that holds the chat scopes (`/pub/chat/:rw`, `/priv/chat/:rw`): Bitkit,
+  Ring and Passport. The inbox signs its session with the grant (see [Inbox](#inbox-pings)).
 
 ## Code map
 
@@ -58,7 +56,7 @@ background loops and every tab renders through Dexie live queries.
 | Pages                                | `src/app/messages/page.tsx`, `src/app/messages/[pubky]/page.tsx`              |
 | Two-account live proof               | `src/test/e2e/chat-two-accounts.mjs` (`npm run test:e2e:chat`)                |
 
-Session capabilities: `CAPABILITIES` and `RING_COOKIE_CAPABILITIES` in `src/config/app.ts`. Runtime config:
+Session capabilities: `CAPABILITIES` in `src/config/app.ts`. Runtime config:
 `inboxUrl` / `inboxAudience` in `src/libs/runtime-config/runtime-config.schema.ts`.
 
 ## Storage layout
@@ -305,10 +303,8 @@ has never seen). A ping is never the message.
   and mirrored to a `shop-` namespaced `localStorage` key (`chat-inbox-session:v1`) so one account holds one
   session across tabs. It is dropped 60 s before expiry and on a 401; sign-out sends
   `DELETE /v1/auth/session` best effort and forgets it; signing in as another account forgets the previous
-  account's bearer. **Cookie sessions have no grant** to sign with, so `createInboxCredentials` returns
-  `null` and the availability is `needs_grant`: chat still works through streams and reconciliation, but a
-  cookie-session user is not reachable by a stranger's first message until they open the thread or discovery
-  finds it.
+  account's bearer. A session without a grant cannot sign the proof: `createInboxCredentials` returns `null`
+  and the inbox is `disabled` for that sign-in (chat still works through streams and reconciliation).
 - **Send.** `POST /v1/pings` with slot `chat-<folder id>` (slots are 1–64 Base64url characters; a colon is
   rejected), the recipient pubky, the payload `{ "v": 0, "t": "chat", "folder", "file", "p": <padding> }`
   padded to exactly 512 bytes (`CHAT_PING_MAX_BYTES`) so every ping has the same size, and
@@ -318,7 +314,7 @@ has never seen). A ping is never the message.
   created if unknown (origin `ping`), the peer key is resolved, and the conversation is synced with the
   hinted file when its folder matches. Pings are acknowledged (`POST /v1/pings/ack`) after handling, for
   every device of the account. Failures back off from 1 s to 60 s; past 30 s the store reports the inbox as
-  `unavailable`. When the inbox is `disabled` or `needs_grant` the loop re-checks every 5 min.
+  `unavailable`. When the inbox is `disabled` the loop re-checks every 5 min.
 
 ## Tabs, locks and the leader
 
@@ -375,9 +371,8 @@ These are project-wide hard limits; do not tune them per component.
 | `PUBKY_RUNTIME_INBOX_AUDIENCE` | the inbox URL | Audience string the inbox expects in session proofs (`INBOX_AUTH__AUDIENCE` on the service).                                                              |
 | `NEXT_PUBLIC_DB_VERSION`       | `9`           | Must be 9 or higher: the chat tables arrive at Dexie version 9.                                                                                           |
 
-The sign-in grant (`CAPABILITIES`) now includes `/pub/chat/:rw,/priv/chat/:rw`; the Ring cookie set adds
-them too. A session approved before this change lacks them and gets the `needs_reauth` notice until the user
-signs in again. The inbox deployment must allow the Shop's origin in `INBOX_SERVER__CORS_ALLOWED_ORIGINS`.
+The sign-in grant (`CAPABILITIES`) now includes `/pub/chat/:rw,/priv/chat/:rw`. A session approved before
+this change lacks them and gets the `needs_reauth` notice until the user signs in again. The inbox deployment must allow the Shop's origin in `INBOX_SERVER__CORS_ALLOWED_ORIGINS`.
 
 Errors: expected conditions (a peer without a key, an undecryptable file, an inbox that is down) are return
 values and `Logger.warn` calls; `Err.*` is reserved for bugs and broken dependencies. Logs and error context
@@ -471,8 +466,7 @@ What the design protects, and what it does not. Threat IDs refer to
 
 ## Known gaps
 
-- **Stranger first contact needs the inbox.** Without `PUBKY_RUNTIME_INBOX_URL`, or for a cookie session
-  (`needs_grant`), a message from someone the recipient has never talked to is found only when the recipient
+- **Stranger first contact needs the inbox.** Without `PUBKY_RUNTIME_INBOX_URL`, a message from someone the recipient has never talked to is found only when the recipient
   opens that thread, when order counterparty discovery runs (transactional commerce modes), or when another
   device of the recipient already recorded the conversation in `/priv`.
 - **Private key unsealed in `/priv`** (above). Hardening later.

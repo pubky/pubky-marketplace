@@ -9,7 +9,7 @@ import { isPubkyIdentifier, stripPubkyPrefix } from '@/libs/utils/utils';
 import type { ChatContext } from '@/models/chat/chat.schema';
 import { HomeserverService } from '@/services/homeserver/homeserver';
 import type { THomeserverResourceEvent } from '@/services/homeserver/homeserver.types';
-import type { InboxPing, InboxPingRef } from '@/services/inbox/inbox.types';
+import type { InboxAvailability, InboxPing, InboxPingRef } from '@/services/inbox/inbox.types';
 import { LocalChatService } from '@/services/local/chat/chat';
 import { useAuthStore } from '@/stores/auth/auth.store';
 import { useChatStore } from '@/stores/chat/chat.store';
@@ -163,7 +163,7 @@ export class ChatController {
     await ChatApplication.seedConversations(this.me(), peers);
   }
 
-  static async fetchInboxAvailability(): Promise<'disabled' | 'needs_grant' | 'ready'> {
+  static async fetchInboxAvailability(): Promise<InboxAvailability> {
     const store = useChatStore.getState();
     try {
       const availability = await ChatApplication.ensureInbox(this.me());

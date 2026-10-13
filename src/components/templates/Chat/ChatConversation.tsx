@@ -44,7 +44,7 @@ export function ChatConversation({ peerPubky }: { peerPubky: string }) {
       ? 'Sign in again to send messages.'
       : undefined;
   const emptyHint = peerNotEnabled
-    ? `${name} has not opened Messages yet. You can write now; it is delivered once they do.`
+    ? `${name} hasn't set up messages yet. You can write now; it's delivered once they sign in.`
     : `Say hello to ${name}. Messages are private between the two of you.`;
 
   return (
@@ -106,7 +106,7 @@ export function ChatConversation({ peerPubky }: { peerPubky: string }) {
             />
             {peerNotEnabled && thread.messages.length > 0 ? (
               <Typography as="p" size="xs" className="px-1 text-muted-foreground" data-testid="chat-peer-not-enabled">
-                {name} has not opened Messages yet. New messages wait until they do.
+                {name} hasn&apos;t set up messages yet. New messages wait until they sign in.
               </Typography>
             ) : null}
             <ChatComposer

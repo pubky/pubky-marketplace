@@ -20,6 +20,7 @@ import { CHAT_LOCKS, holdLeadership, type LeadershipHandle } from '@/libs/chat/w
 import { Logger } from '@/libs/logger/logger';
 import { getNotificationRespectPageVisibility } from '@/libs/runtime-config/runtime-config';
 import type { THomeserverResourceEvent } from '@/services/homeserver/homeserver.types';
+import type { InboxAvailability } from '@/services/inbox/inbox.types';
 import { useAuthStore } from '@/stores/auth/auth.store';
 import { useChatStore } from '@/stores/chat/chat.store';
 import type { ChatSyncCoordinatorState } from './chat-sync.types';
@@ -313,7 +314,7 @@ export class ChatSyncCoordinator {
 
   private async runInboxLoop(owner: string, generation: number): Promise<void> {
     while (generation === this.generation && this.state.isLeader) {
-      let availability: 'disabled' | 'needs_grant' | 'ready';
+      let availability: InboxAvailability;
       try {
         availability = await ChatController.fetchInboxAvailability();
       } catch (error) {

@@ -47,13 +47,13 @@ describe('InboxService', () => {
     vi.unstubAllGlobals();
   });
 
-  it('is disabled without a configured URL and needs a grant without credentials', async () => {
+  it('is disabled without a configured URL and without credentials', async () => {
     config.inboxUrl = null;
     expect(InboxService.isConfigured()).toBe(false);
     expect(await InboxService.ensureSession(ME, credentials)).toBe('disabled');
     config.inboxUrl = 'https://inbox.test';
     installFetch(() => json(500, {}));
-    expect(await InboxService.ensureSession(ME, async () => null)).toBe('needs_grant');
+    expect(await InboxService.ensureSession(ME, async () => null)).toBe('disabled');
   });
 
   it('establishes a session with the audience proof, persists it and reuses it', async () => {

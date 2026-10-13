@@ -69,7 +69,11 @@ export class InboxService {
     if (this.readSession(me)) return 'ready';
 
     const credentials = await getCredentials({ type: 'pubky-inbox-session-v1', audience });
-    if (!credentials) return 'needs_grant';
+    if (!credentials) {
+      // Only a grant-backed session can sign the proof; nothing to do for this sign-in.
+      Logger.debug('Inbox disabled: the session cannot sign an inbox proof');
+      return 'disabled';
+    }
 
     const url = `${baseUrl}/v1/auth/session`;
     const response = await safeFetch(

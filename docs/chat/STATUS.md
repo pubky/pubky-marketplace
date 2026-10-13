@@ -7,7 +7,12 @@
 
 ## Current step
 
-**Build complete; verification done on the local testnet.** Remaining: merge Vlada's SDK/grant PR when it lands (take his side for auth files, keep the chat scopes and the facade `startGrantAuthFlow` call), optionally re-run the `VRT Update Baselines` workflow on the branch for `src/test/vrt/chat/*.vrt.test.tsx` and `MarketplaceOrders.vrt.test.tsx` (CI compares Linux baselines only; the committed ones came from the same Playwright image), and Matthew's manual QA (recipe below, screenshots in the handoff message).
+**Build complete; verification done on the local testnet.** Next, in order:
+
+1. Code review passes on the new code only (not the rip-out): security review first on `src/libs/chat`, `src/core/application/chat`, `src/core/services/{inbox,homeserver/chat}` and the auth touches (`homeserver.ts` grant/inbox methods, `config/app.ts` scopes); then a code review on coordinator, controller, hooks and UI.
+2. Fix what the reviews find; if chat behaviour changes, re-run `npm test`, `npm run test:e2e:chat`, the chat VRT suites in the container, and a browser pass (two accounts on the testnet Shop, entry points in sandbox mode).
+3. Matthew's manual QA (recipe in `docs/chat/README.md`, "Local development"; two windows = the app's browser pane plus his own Chrome, each signed in through the ring simulator with a fresh identity).
+4. Merge Vlada's SDK/grant-only PR when it lands: take his side for auth files, keep the chat scopes in `CAPABILITIES`, keep the facade `startGrantAuthFlow` call, and delete `RING_COOKIE_CAPABILITIES` together with the cookie flow.
 
 ## Progress
 
@@ -55,7 +60,7 @@
 - Playwright refuses `npx playwright install` on this Ubuntu; the e2e script takes `CHROMIUM_PATH` (e.g. `~/.cache/ms-playwright/chromium_headless_shell-1234/chrome-headless-shell-linux64/chrome-headless-shell`).
 - Local Nexus (pubky-docker) needed `testnet = true` and `testnet_host = "homeserver"` under `[watcher]` in `pubky-nexus-config-testnet.toml` for the current image; edited in Matt's checkout (uncommitted, tell him).
 - The Shop's dev signup-token route needs `HOMESERVER_ADMIN_URL=http://localhost:6288/generate_signup_token` and `HOMESERVER_ADMIN_PASSWORD=admin` (set in `.claude/launch.json`, gitignored).
-- Cookie sessions (Ring today) cannot get an inbox session (`needs_grant`); chat still works through streams + reconciliation. Stranger first contact needs the inbox.
+- A session without a grant (Ring cookie sign-in, until Vlada's PR removes it) cannot sign an inbox proof, so its inbox is `disabled`; chat still works through streams + reconciliation. `RING_COOKIE_CAPABILITIES` is defined as `CAPABILITIES` plus pubky.app's scopes (tested invariant), so it carries the chat scopes until his PR deletes the cookie flow and that constant with it.
 - Grant sign-in must start on the facade (`getPubkySdk().startGrantAuthFlow`), not the static `GrantAuthFlow.startDelegated`: the static call spins up a default mainnet DHT client that cannot resolve testnet identities (and ignores custom pkarr relays). Symptom: "could not resolve homeserver for <pubky>" right after the signer approves.
 - Inbox ping slots are 1–64 Base64url characters: the slot is `chat-<folder>` (`chatPingSlot`), not `chat:<folder>` (the inbox answered 400 `invalid_slot`).
 - The ring simulator's `node_modules` can lag its lockfile (had SDK 0.11 installed with 0.15 pinned, so grant links were approved with the wrong protocol). `npm ci` in `/home/mk/CODE/pubky-ring-simulator` and clear `node_modules/.vite` before `npm run dev`. The simulator approves grant links through a real paste event; a synthetic `ClipboardEvent('paste')` on `#shortcut-auth-input` works.

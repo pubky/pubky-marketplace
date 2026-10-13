@@ -99,14 +99,14 @@ describe('ChatSyncCoordinator', () => {
   });
 
   it('skips the inbox loop while the inbox is unavailable and keeps reconciling', async () => {
-    vi.mocked(ChatController.fetchInboxAvailability).mockResolvedValue('needs_grant');
+    vi.mocked(ChatController.fetchInboxAvailability).mockResolvedValue('disabled');
     const coordinator = ChatSyncCoordinator.getInstance();
     coordinator.setRoute('/marketplace');
     coordinator.start();
     signIn();
     await settle();
     expect(pingsCalls).toBe(0);
-    expect(useChatStore.getState().inboxStatus).toBe('needs_grant');
+    expect(useChatStore.getState().inboxStatus).toBe('disabled');
     expect(ChatController.fetchAllConversationUpdates).toHaveBeenCalled();
   });
 

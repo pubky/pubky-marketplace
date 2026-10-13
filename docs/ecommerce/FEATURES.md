@@ -286,8 +286,8 @@ stack (see the proof ledger). Card payments are paused in the shop. USDT
 
 Status: rebuilt on the chat transport ([ADR 0030](../adr/0030-chat-transport.md),
 [`../chat/README.md`](../chat/README.md)); on the rewrite branch, not yet in a `shop-v*`
-release. Works with every sign-in that holds the chat scopes (Ring cookie,
-Bitkit, Ring grant, Passport).
+release. Works with every grant sign-in that holds the chat scopes (Bitkit,
+Ring, Passport).
 
 - **End-to-end encrypted 1:1 chat**: each message is an XChaCha20-Poly1305
   envelope written to the sender's own homeserver under a pairwise folder

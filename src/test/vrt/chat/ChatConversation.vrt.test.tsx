@@ -14,7 +14,7 @@ import { ChatConversation } from '@/templates/Chat/ChatConversation';
  * `/messages/[pubky]`: one thread — day separators, received and sent bubbles
  * in every delivery state (sent, sending, waiting for the peer, not sent with
  * Retry), the listing context chip from `?listing=`, the composer, plus the
- * empty thread with a peer who has not opened Messages, and the re-approval
+ * empty thread with a peer who has not set up messages, and the re-approval
  * notice that disables the composer.
  */
 
@@ -196,14 +196,14 @@ describe('Chat conversation — visual regression', () => {
     await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('chat-conversation-mobile');
   });
 
-  it('renders an empty thread with a peer who has not opened Messages at desktop viewport', async () => {
+  it('renders an empty thread with a peer who has not set up messages at desktop viewport', async () => {
     scene.openState = 'peer_not_enabled';
 
     const screen = await renderForVRT(<ChatConversation peerPubky={PEER} />, {
       viewport: VRT_VIEWPORT_DESKTOP,
       disableHover: true,
     });
-    await expect.element(screen.getByText(/has not opened Messages yet/u)).toBeInTheDocument();
+    await expect.element(screen.getByText(/hasn't set up messages yet/u)).toBeInTheDocument();
     await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('chat-conversation-peer-not-enabled-desktop');
   });
 
