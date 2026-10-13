@@ -177,6 +177,20 @@ describe('marketplacePaymentMethodFailureMessage', () => {
     );
   });
 
+  it('maps an auction win with too little time left for Bitcoin', () => {
+    const error = new AppError({
+      category: ErrorCategory.Client,
+      code: ClientErrorCode.BAD_REQUEST,
+      message: 'SENTINEL_AUCTION_WINDOW_WIRE',
+      service: ErrorService.Marketplace,
+      operation: 'bindPaymentMethod',
+      context: { statusCode: 409, reason: 'auction_payment_window_too_short' },
+    });
+    expect(marketplacePaymentMethodFailureMessage(error, 'fallback')).toBe(
+      'Too little time is left on this auction win to pay with Bitcoin. Message the seller about the item.',
+    );
+  });
+
   it('maps the service-unavailable family', () => {
     const unavailable = new AppError({
       category: ErrorCategory.Client,
