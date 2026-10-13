@@ -87,10 +87,13 @@ describe('ChatApplication', () => {
       expect(sent?.status).toBe('sent');
       const alice = await LocalChatService.getConversation(ALICE, BOB);
       expect(alice?.folder_id).toMatch(/^[0-9a-f]{32}$/u);
-      expect(homeserver.files.has(chatMessageUrl(ALICE, alice!.folder_id!, sent!.file_name))).toBe(true);
+      expect(alice?.own_folder_id).toMatch(/^[0-9a-f]{32}$/u);
+      // Alice writes into her own folder, which differs from the one she reads Bob from.
+      expect(alice?.own_folder_id).not.toBe(alice?.folder_id);
+      expect(homeserver.files.has(chatMessageUrl(ALICE, alice!.own_folder_id!, sent!.file_name))).toBe(true);
       // The file on the homeserver is ciphertext, never the body.
       expect(
-        JSON.stringify(homeserver.files.get(chatMessageUrl(ALICE, alice!.folder_id!, sent!.file_name))),
+        JSON.stringify(homeserver.files.get(chatMessageUrl(ALICE, alice!.own_folder_id!, sent!.file_name))),
       ).not.toContain('available');
       // Alice's private index names the conversation.
       expect(await ChatHomeserverService.readConversationState(ALICE, BOB)).toMatchObject({
@@ -102,7 +105,9 @@ describe('ChatApplication', () => {
       await ChatApplication.seedConversations(BOB, [ALICE, CAROL]);
       expect(await LocalChatService.getConversation(BOB, CAROL)).toBeNull();
       const bobRow = await LocalChatService.getConversation(BOB, ALICE);
-      expect(bobRow?.folder_id).toBe(alice!.folder_id);
+      // Bob reads the folder Alice writes into, and writes into the one Alice reads.
+      expect(bobRow?.folder_id).toBe(alice!.own_folder_id);
+      expect(bobRow?.own_folder_id).toBe(alice!.folder_id);
       const received = await LocalChatService.listMessages(BOB, ALICE, { limit: 10 });
       expect(received.map((row) => [row.direction, row.body, row.context])).toEqual([
         ['received', 'Is this still available?', { listingId: 'boots' }],
@@ -138,11 +143,11 @@ describe('ChatApplication', () => {
 
       await ChatApplication.handlePing(BOB, {
         sender: ALICE,
-        slot: chatPingSlot(alice!.folder_id!),
+        slot: chatPingSlot(alice!.own_folder_id!),
         revision: 'r1',
         received_at: 'now',
         expires_at: 'later',
-        payload: JSON.stringify({ v: 0, t: 'chat', folder: alice!.folder_id, file }),
+        payload: JSON.stringify({ v: 0, t: 'chat', folder: alice!.own_folder_id, file }),
       });
       const bob = await LocalChatService.getConversation(BOB, ALICE);
       expect(bob?.origin).toBe('ping');
@@ -266,7 +271,7 @@ describe('ChatApplication', () => {
         vi.setSystemTime(sentAt + 7_000);
         await ChatApplication.flushOutbox(ALICE);
         expect(alicePings()).toBe(2);
-        const folder = (await LocalChatService.getConversation(ALICE, BOB))?.folder_id;
+        const folder = (await LocalChatService.getConversation(ALICE, BOB))?.own_folder_id;
         expect(ping).toHaveBeenLastCalledWith(
           ALICE,
           expect.objectContaining({ recipient: BOB, slot: chatPingSlot(folder!) }),

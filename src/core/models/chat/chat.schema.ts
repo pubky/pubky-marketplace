@@ -33,8 +33,10 @@ export interface ChatConversationModelSchema {
   id: string;
   owner_id: string;
   peer_pubky: string;
-  /** Opaque pairwise folder under `/pub/chat/v0/`; null while the peer has no key. */
+  /** The peer's folder under their `/pub/chat/v0/` that I read (per direction); null while the peer has no key. */
   folder_id: string | null;
+  /** The folder under my `/pub/chat/v0/` that I write into for this peer; null while the peer has no key. */
+  own_folder_id: string | null;
   /** The peer kid the folder was derived from (rotation detection). */
   peer_key_id: string | null;
   /** The peer's X25519 public key (base64url), cached from `/pub/chat/v0/key.json`. */

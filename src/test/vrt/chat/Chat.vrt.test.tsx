@@ -80,6 +80,7 @@ function conversation(peer: string, overrides: Partial<ChatConversationView> = {
     owner_id: ME,
     peer_pubky: peer,
     folder_id: 'f'.repeat(32),
+    own_folder_id: 'e'.repeat(32),
     peer_key_id: 'k'.repeat(16),
     peer_public_key: null,
     my_key_id: 'm'.repeat(16),
@@ -109,6 +110,7 @@ const populated = (): ChatConversationView[] => [
   conversation(STRANGER, {
     peer_state: 'no_key',
     folder_id: null,
+    own_folder_id: null,
     peer_key_id: null,
     last_message_at: null,
     last_message_preview: null,

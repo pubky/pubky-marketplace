@@ -204,8 +204,9 @@ export class ChatApplication {
         peer_state: 'ready',
         peer_key_id: record.kid,
         peer_public_key: record.pk,
-        folder_id: keys.folderId,
-        priv_state_dirty: row.priv_state_dirty || rotated || row.folder_id !== keys.folderId,
+        folder_id: keys.peerFolderId,
+        own_folder_id: keys.ownFolderId,
+        priv_state_dirty: row.priv_state_dirty || rotated || row.folder_id !== keys.peerFolderId,
       });
       if (rotated) {
         // New epoch: the peer re-keyed (new device, reset). Older messages
@@ -226,12 +227,17 @@ export class ChatApplication {
     const cacheKey = `${identity.id}:${peer}:${peerKid}:${identity.kid}`;
     const cached = this.pairKeys.get(cacheKey);
     if (cached) return cached;
-    const { folderId, messageKey } = derivePairwise(identity.secret_key, identity.public_key, peerPublicKey);
+    const { ownFolderId, peerFolderId, messageKey } = derivePairwise(
+      identity.secret_key,
+      { pubky: identity.id, publicKey: identity.public_key },
+      { pubky: peer, publicKey: peerPublicKey },
+    );
     const entry: PairKeysCacheEntry = {
       state: 'ready',
       peerKid,
       peerPublicKey,
-      folderId,
+      ownFolderId,
+      peerFolderId,
       messageKey,
       myKid: identity.kid,
     };
@@ -288,6 +294,7 @@ export class ChatApplication {
       owner_id: me,
       peer_pubky: peer,
       folder_id: null,
+      own_folder_id: null,
       peer_key_id: null,
       peer_public_key: null,
       my_key_id: identity.kid,
@@ -407,7 +414,7 @@ export class ChatApplication {
         body: row.body,
         ...(row.context ? { context: stripContext(row.context) } : {}),
       };
-      const path = chatMessagePath(keys.folderId, row.file_name);
+      const path = chatMessagePath(keys.ownFolderId, row.file_name);
       try {
         const envelope = encryptChatEnvelope({
           messageKey: keys.messageKey,
@@ -416,7 +423,7 @@ export class ChatApplication {
           aad: chatAad(me, row.peer_pubky, path),
           plaintext,
         });
-        await ChatHomeserverService.putMessageFile(me, keys.folderId, row.file_name, envelope);
+        await ChatHomeserverService.putMessageFile(me, keys.ownFolderId, row.file_name, envelope);
       } catch (error) {
         const attempts = row.attempts + 1;
         const permanent = !(isAppError(error) && isRetryable(error)) || attempts >= CHAT_SEND_MAX_ATTEMPTS;
@@ -476,13 +483,13 @@ export class ChatApplication {
       const peer = state.peer_pubky;
       const fileName = state.ping_file!;
       const conversation = await LocalChatService.getConversation(me, peer);
-      if (!conversation?.folder_id) continue;
+      if (!conversation?.own_folder_id) continue;
       const replied = await LocalChatService.hasReceivedFrom(me, peer);
       try {
         await InboxService.ping(me, {
-          slot: chatPingSlot(conversation.folder_id),
+          slot: chatPingSlot(conversation.own_folder_id),
           recipient: peer,
-          payload: padPingPayload({ v: 0, t: 'chat', folder: conversation.folder_id, file: fileName }),
+          payload: padPingPayload({ v: 0, t: 'chat', folder: conversation.own_folder_id, file: fileName }),
           ttlSeconds: CHAT_PING_TTL_SECONDS,
         });
         const expired = now - fileSentAt(fileName) > CHAT_PING_REPEAT_MAX_AGE_MS;
@@ -547,18 +554,18 @@ export class ChatApplication {
       }
       let cursor = state?.list_cursor ?? null;
       for (;;) {
-        const names = await ChatHomeserverService.listMessageFiles(peer, keys.folderId, {
+        const names = await ChatHomeserverService.listMessageFiles(peer, keys.peerFolderId, {
           cursor,
           limit: CHAT_LIST_PAGE,
         });
         if (names.length === 0) break;
         await this.ingestFiles(me, peer, keys, identity, 'received', names);
-        cursor = chatMessageUrl(peer, keys.folderId, names[names.length - 1]);
+        cursor = chatMessageUrl(peer, keys.peerFolderId, names[names.length - 1]);
         await LocalChatService.updateSyncState(me, peer, { list_cursor: cursor });
         if (names.length < CHAT_LIST_PAGE) break;
       }
       if (options.reason === 'reconcile' || options.reason === 'rebuild') {
-        const tail = await ChatHomeserverService.listMessageFiles(peer, keys.folderId, {
+        const tail = await ChatHomeserverService.listMessageFiles(peer, keys.peerFolderId, {
           reverse: true,
           limit: CHAT_TAIL_CHECK_LIMIT,
         });
@@ -593,10 +600,13 @@ export class ChatApplication {
   ): Promise<void> {
     let cursor = startCursor;
     for (;;) {
-      const names = await ChatHomeserverService.listMessageFiles(me, keys.folderId, { cursor, limit: CHAT_LIST_PAGE });
+      const names = await ChatHomeserverService.listMessageFiles(me, keys.ownFolderId, {
+        cursor,
+        limit: CHAT_LIST_PAGE,
+      });
       if (names.length === 0) break;
       await this.ingestFiles(me, peer, keys, identity, 'sent', names);
-      cursor = chatMessageUrl(me, keys.folderId, names[names.length - 1]);
+      cursor = chatMessageUrl(me, keys.ownFolderId, names[names.length - 1]);
       await LocalChatService.updateSyncState(me, peer, { own_list_cursor: cursor });
       if (names.length < CHAT_LIST_PAGE) break;
     }
@@ -611,6 +621,7 @@ export class ChatApplication {
     names: string[],
   ): Promise<void> {
     const owner = direction === 'received' ? peer : me;
+    const folderId = direction === 'received' ? keys.peerFolderId : keys.ownFolderId;
     const sender = owner;
     const recipient = direction === 'received' ? me : peer;
     const senderKid = direction === 'received' ? keys.peerKid : identity.kid;
@@ -621,7 +632,7 @@ export class ChatApplication {
     for (let index = 0; index < names.length; index += CHAT_FETCH_CONCURRENCY) {
       const batch = names.slice(index, index + CHAT_FETCH_CONCURRENCY);
       const files = await Promise.all(
-        batch.map((name) => ChatHomeserverService.readMessageFile(owner, keys.folderId, name)),
+        batch.map((name) => ChatHomeserverService.readMessageFile(owner, folderId, name)),
       );
       files.forEach((file, position) => {
         const name = batch[position];
@@ -630,7 +641,7 @@ export class ChatApplication {
           messageKey: keys.messageKey,
           expectedSenderKid: senderKid,
           expectedRecipientKid: recipientKid,
-          aad: chatAad(sender, recipient, chatMessagePath(keys.folderId, name)),
+          aad: chatAad(sender, recipient, chatMessagePath(folderId, name)),
           envelope: file,
         });
         if (!opened.ok || opened.plaintext.from !== sender || opened.plaintext.to !== recipient) {
@@ -749,14 +760,18 @@ export class ChatApplication {
         const publicKey = record ? base64UrlToBytes(record.pk) : null;
         if (!record || !publicKey || publicKey.length !== 32) continue;
         const keys = this.deriveFor(identity, peer, record.kid, publicKey);
-        const newest = await ChatHomeserverService.listMessageFiles(peer, keys.folderId, { reverse: true, limit: 1 });
+        const newest = await ChatHomeserverService.listMessageFiles(peer, keys.peerFolderId, {
+          reverse: true,
+          limit: 1,
+        });
         const mine =
           newest.length > 0
             ? []
-            : await ChatHomeserverService.listMessageFiles(me, keys.folderId, { reverse: true, limit: 1 });
+            : await ChatHomeserverService.listMessageFiles(me, keys.ownFolderId, { reverse: true, limit: 1 });
         if (newest.length === 0 && mine.length === 0) continue;
         await this.ensureConversationRow(me, peer, 'seeded', undefined, {
-          folder_id: keys.folderId,
+          folder_id: keys.peerFolderId,
+          own_folder_id: keys.ownFolderId,
           peer_key_id: record.kid,
           peer_public_key: record.pk,
           peer_state: 'ready',
@@ -784,7 +799,7 @@ export class ChatApplication {
     if (!existing) await this.ensureConversationRow(me, peer, 'ping');
     const keys = await this.resolvePeerKey(me, peer, { force: existing === null });
     if (keys.state !== 'ready') return;
-    const hintFile = payload && payload.folder === keys.folderId ? payload.file : undefined;
+    const hintFile = payload && payload.folder === keys.peerFolderId ? payload.file : undefined;
     await this.syncConversation(me, peer, { reason: 'ping', hintFile });
   }
 

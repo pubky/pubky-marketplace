@@ -12,40 +12,61 @@ import type { ChatPlaintext } from './schemas';
 
 const A = 'a'.repeat(52);
 const B = 'b'.repeat(52);
+const C = 'c'.repeat(52);
+
+const party = (pubky: string, keys: { publicKey: Uint8Array }) => ({ pubky, publicKey: keys.publicKey });
 
 function plaintext(from: string, to: string, body = 'hello'): ChatPlaintext {
   return { v: 0, id: '018f47d2-6a27-7c23-a62f-000000000001', from, to, sent_at: 1_700_000_000_000, body };
 }
 
 describe('chat crypto', () => {
-  it('derives the same folder and message key from either side', () => {
+  it('derives the same message key and mirrored folders from either side', () => {
     const alice = generateChatKeypair();
     const bob = generateChatKeypair();
-    const fromAlice = derivePairwise(alice.secretKey, alice.publicKey, bob.publicKey);
-    const fromBob = derivePairwise(bob.secretKey, bob.publicKey, alice.publicKey);
-    expect(fromAlice.folderId).toBe(fromBob.folderId);
-    expect(fromAlice.folderId).toMatch(/^[0-9a-f]{32}$/u);
+    const fromAlice = derivePairwise(alice.secretKey, party(A, alice), party(B, bob));
+    const fromBob = derivePairwise(bob.secretKey, party(B, bob), party(A, alice));
     expect(fromAlice.messageKey).toEqual(fromBob.messageKey);
+    // Alice writes into the folder Bob reads, and the other way round.
+    expect(fromAlice.ownFolderId).toBe(fromBob.peerFolderId);
+    expect(fromAlice.peerFolderId).toBe(fromBob.ownFolderId);
+    expect(fromAlice.ownFolderId).toMatch(/^[0-9a-f]{32}$/u);
+    // The two folders differ, so listing both homeservers links nothing.
+    expect(fromAlice.ownFolderId).not.toBe(fromAlice.peerFolderId);
   });
 
   it('gives different pairs different folders', () => {
     const alice = generateChatKeypair();
     const bob = generateChatKeypair();
     const carol = generateChatKeypair();
-    const ab = derivePairwise(alice.secretKey, alice.publicKey, bob.publicKey);
-    const ac = derivePairwise(alice.secretKey, alice.publicKey, carol.publicKey);
-    expect(ab.folderId).not.toBe(ac.folderId);
+    const ab = derivePairwise(alice.secretKey, party(A, alice), party(B, bob));
+    const ac = derivePairwise(alice.secretKey, party(A, alice), party(C, carol));
+    expect(ab.ownFolderId).not.toBe(ac.ownFolderId);
+    expect(ab.peerFolderId).not.toBe(ac.peerFolderId);
   });
 
-  it('rejects a low-order peer key', () => {
+  it('binds the accounts: a copied public key under another pubky derives different folders and key', () => {
     const alice = generateChatKeypair();
-    expect(() => derivePairwiseRoot(alice.secretKey, alice.publicKey, new Uint8Array(32))).toThrow();
+    const bob = generateChatKeypair();
+    const withAlice = derivePairwise(bob.secretKey, party(B, bob), party(A, alice));
+    const withMallory = derivePairwise(bob.secretKey, party(B, bob), party(C, alice));
+    expect(withMallory.messageKey).not.toEqual(withAlice.messageKey);
+    expect(withMallory.ownFolderId).not.toBe(withAlice.ownFolderId);
+    expect(withMallory.peerFolderId).not.toBe(withAlice.peerFolderId);
+  });
+
+  it('rejects a low-order peer key and a peer key equal to my own', () => {
+    const alice = generateChatKeypair();
+    expect(() =>
+      derivePairwiseRoot(alice.secretKey, party(A, alice), party(B, { publicKey: new Uint8Array(32) })),
+    ).toThrow();
+    expect(() => derivePairwiseRoot(alice.secretKey, party(A, alice), party(B, alice))).toThrow(/equals own key/u);
   });
 
   it('round-trips a message and binds it to its path', () => {
     const alice = generateChatKeypair();
     const bob = generateChatKeypair();
-    const { messageKey } = derivePairwise(alice.secretKey, alice.publicKey, bob.publicKey);
+    const { messageKey } = derivePairwise(alice.secretKey, party(A, alice), party(B, bob));
     const senderKid = chatKeyId(alice.publicKey);
     const recipientKid = chatKeyId(bob.publicKey);
     const path = '/pub/chat/v0/0123456789abcdef0123456789abcdef/1700000000000-deadbeef.json';
@@ -89,7 +110,7 @@ describe('chat crypto', () => {
   it('reports malformed files and foreign keys without throwing', () => {
     const alice = generateChatKeypair();
     const bob = generateChatKeypair();
-    const { messageKey } = derivePairwise(alice.secretKey, alice.publicKey, bob.publicKey);
+    const { messageKey } = derivePairwise(alice.secretKey, party(A, alice), party(B, bob));
     const base = {
       messageKey,
       expectedSenderKid: chatKeyId(alice.publicKey),
@@ -111,7 +132,7 @@ describe('chat crypto', () => {
   it('rejects an invalid plaintext even when it authenticates', () => {
     const alice = generateChatKeypair();
     const bob = generateChatKeypair();
-    const { messageKey } = derivePairwise(alice.secretKey, alice.publicKey, bob.publicKey);
+    const { messageKey } = derivePairwise(alice.secretKey, party(A, alice), party(B, bob));
     const kids = { senderKid: chatKeyId(alice.publicKey), recipientKid: chatKeyId(bob.publicKey) };
     const aad = chatAad(A, B, '/pub/chat/v0/x/y');
     const envelope = encryptChatEnvelope({

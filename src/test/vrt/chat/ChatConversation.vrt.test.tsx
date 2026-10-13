@@ -142,6 +142,7 @@ const conversation = (): ChatConversationView => ({
   owner_id: ME,
   peer_pubky: PEER,
   folder_id: 'f'.repeat(32),
+  own_folder_id: 'e'.repeat(32),
   peer_key_id: 'k'.repeat(16),
   peer_public_key: null,
   my_key_id: 'm'.repeat(16),

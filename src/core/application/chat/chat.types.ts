@@ -6,7 +6,10 @@ export type ChatPeerKeys = {
   state: 'ready';
   peerKid: string;
   peerPublicKey: Uint8Array;
-  folderId: string;
+  /** The folder I write into on my homeserver. */
+  ownFolderId: string;
+  /** The folder the peer writes into on their homeserver; what I list and stream. */
+  peerFolderId: string;
   messageKey: Uint8Array;
 };
 export type ChatPeerKeyResult = ChatPeerKeys | { state: 'no_key' };

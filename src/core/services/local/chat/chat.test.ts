@@ -12,6 +12,7 @@ function conversation(peer: string, extra: Partial<ChatConversationModelSchema> 
     owner_id: OWNER,
     peer_pubky: peer,
     folder_id: '0'.repeat(32),
+    own_folder_id: '1'.repeat(32),
     peer_key_id: 'a'.repeat(16),
     peer_public_key: null,
     my_key_id: 'b'.repeat(16),

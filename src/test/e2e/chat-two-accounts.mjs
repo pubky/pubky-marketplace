@@ -474,6 +474,21 @@ try {
     if (body.includes('boots') || body.includes('Hi Bob')) plaintextLeak = true;
   }
   record('homeserver:messages-are-ciphertext', files.length > 0 && !plaintextLeak, `${files.length} file(s)`);
+  // Folder ids are per direction: listing both accounts' chat roots links nothing.
+  const folderIdsOf = async (id) =>
+    new Set(
+      (await pubky.publicStorage.list(`pubky://${id}/pub/chat/v0/`, null, false, 100, true))
+        .map((line) => line.split('/pub/chat/v0/')[1]?.replace(/\/$/u, ''))
+        .filter((name) => name && name !== 'key.json'),
+    );
+  const aliceFolders = await folderIdsOf(alice.id);
+  const bobFolders = await folderIdsOf(bob.id);
+  const shared = [...aliceFolders].filter((folder) => bobFolders.has(folder));
+  record(
+    'homeserver:folders-differ-per-direction',
+    aliceFolders.size > 0 && bobFolders.size > 0 && shared.length === 0,
+    `alice ${aliceFolders.size}, bob ${bobFolders.size}, shared ${shared.length}`,
+  );
 } catch (error) {
   record('run', false, String(error).slice(0, 500));
   for (const context of browser.contexts()) {

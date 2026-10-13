@@ -69,9 +69,10 @@ pubky://<me>/priv/chat/v0/key.json                   private key (owner-only; se
 pubky://<me>/priv/chat/v0/conversations/<peer>.json  conversation index entry + read checkpoint
 ```
 
-- `<folder>` is 32 lowercase hex characters derived from the pair's shared secret (below). Only the two
-  parties can compute it, and both compute the same one, so each party's folder for the pair has the same
-  name on their own homeserver.
+- `<folder>` is 32 lowercase hex characters derived from the pair's shared secret and the writer's pubky
+  (below). Only the two parties can compute it, and each side writes into its own folder: Alice's folder for
+  Bob on Alice's homeserver has a different name from Bob's folder for Alice on Bob's homeserver, so listing
+  both `/pub/chat/v0/` directories (which anyone can do) never links the two accounts.
 - `<file>` is `<sent_at ms, 13 digits zero-padded>-<8 random hex>.json`, so a directory list is
   chronological by the sender's clock.
 - Messages I **received** live in the peer's folder on the peer's homeserver; messages I **sent** live in
@@ -153,16 +154,20 @@ Implemented in `src/libs/chat/crypto.ts` with `@noble/curves` (X25519), `@noble/
 `@noble/ciphers` (XChaCha20-Poly1305).
 
 ```text
-shared      = X25519(sk_me, pk_peer)                 rejected if all-zero (low-order peer key)
-root        = HKDF-SHA256(ikm = shared, salt = "pubky-chat/v0", info = "root" || min(pk) || max(pk), 32)
-folder id   = hex(HKDF-SHA256(ikm = root, salt = "pubky-chat/v0", info = "folder", 16))
+shared      = X25519(sk_me, pk_peer)                 rejected if all-zero (low-order) or equal to my own key
+root        = HKDF-SHA256(ikm = shared, salt = "pubky-chat/v0",
+                          info = "root" || pubky_low || pk_low || pubky_high || pk_high, 32)   (low/high by pk bytes)
+folder id   = hex(HKDF-SHA256(ikm = root, salt = "pubky-chat/v0", info = "folder" || <writer pubky>, 16))
 message key = HKDF-SHA256(ikm = root, salt = "pubky-chat/v0", info = "message", 32)
 AAD         = "<sender pubky>|<recipient pubky>|/pub/chat/v0/<folder>/<file>"
 envelope    = XChaCha20-Poly1305(message key, random 24-byte nonce, AAD).encrypt(JSON(plaintext))
 ```
 
-- `min(pk)`/`max(pk)` sort the two public keys bytewise, so both parties derive the same root, folder and
-  key.
+- The info sorts the two (pubky, public key) pairs by public key bytes, so both parties derive the same root
+  and message key. Binding the pubkys means a public key file copied under another account derives a
+  different root, folder and key, so a clone cannot collide with the real pair's conversation.
+- The folder id includes the writer's pubky: Alice derives her own folder (`folder(root, alice)`) to write
+  and Bob's (`folder(root, bob)`) to read.
 - The AAD binds a ciphertext to its direction and its path: a file copied to another folder, another
   owner's homeserver or another name fails authentication.
 - Decryption never throws for bad input; it returns `malformed`, `unknown_key` (the envelope's `ks`/`kr` are
@@ -458,7 +463,11 @@ What the design protects, and what it does not. Threat IDs refer to
 - **Key authenticity.** A peer's public key is whatever their homeserver serves at
   `/pub/chat/v0/key.json` (trust on first use; no out-of-band fingerprint check). A homeserver operator who
   can write to a user's `/pub` tree could substitute a key. A changed `kid` switches to a new folder; it is
-  logged, not surfaced to the user.
+  logged, not surfaced to the user. The record is not signed: a third party can publish a copy of someone
+  else's public key under their own account. The pubky binding in the derivation keeps such a clone out of the
+  real pair's folders and key, and the clone cannot read anything sent to it (they lack the private key), but
+  messages sent to the clone are encrypted to the copied key. Signing `key.json` with the account's key is a
+  planned hardening.
 - **Private key at rest.** The thread shows a one-line note ("Messages are encrypted but stored on your
   homeserver. Keep payment details, passwords and ID numbers out of chat."), dismissable once per account, so
   users do not mistake v0 for a vault. `/priv/chat/v0/key.json` is plain JSON under the homeserver's owner-only tree. The
@@ -469,9 +478,10 @@ What the design protects, and what it does not. Threat IDs refer to
 - **No forward secrecy.** The keys are static: a leaked private key opens every past and future message with
   every peer until the key is rotated. Rotation support is minimal: a peer's new `kid` starts a new folder,
   the earlier folder is no longer derived, so a new device rebuilds only the current epoch.
-- **Metadata.** Folder ids are opaque and pairwise, but the same id appears on both homeservers, so an
-  observer who can list both can link the two users; file names reveal send times and the count of messages;
-  sizes are bounded by the 8 KiB cap but not padded. The inbox learns sender, recipient, slot (which contains
+- **Metadata.** `/pub/chat/v0/` is world-readable, so anyone can see how many conversations a user has and,
+  from the file names, when they send messages. Folder ids are per direction, so the two sides of one
+  conversation carry different ids and listing both homeservers does not reveal who talks to whom; only the
+  two parties can compute the ids. Sizes are bounded by the 8 KiB cap but not padded. The inbox learns sender, recipient, slot (which contains
   the folder id) and timing; payloads are padded to a fixed size. The homeserver event stream subscription
   tells the peer's homeserver which users and folders this client watches.
 - **Inbox rate limits.** A rate-limited or failed ping never loses a message: the file is already on the

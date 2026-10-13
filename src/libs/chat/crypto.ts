@@ -10,15 +10,20 @@ import { type ChatEnvelope, chatEnvelopeSchema, type ChatPlaintext, chatPlaintex
  * Chat crypto, version 0: a static X25519 key per user, a pairwise root from
  * ECDH, and XChaCha20-Poly1305 message envelopes bound to their path.
  *
- *   root        = HKDF(X25519(sk_me, pk_peer), salt "pubky-chat/v0", info "root" || min(pk) || max(pk))
- *   folder id   = hex(HKDF(root, "folder", 16))
+ *   root        = HKDF(X25519(sk_me, pk_peer), salt "pubky-chat/v0",
+ *                      info "root" || pubky_low || pk_low || pubky_high || pk_high)   (low/high by pk bytes)
+ *   folder id   = hex(HKDF(root, "folder" || <sender pubky>, 16))
  *   message key = HKDF(root, "message", 32)
  *   AAD         = "<sender>|<recipient>|<path>"
  *
- * Both parties compute the same root (the info sorts the public keys), so
- * both derive the same folder id and message key. No forward secrecy: a
- * leaked private key opens every message with that peer. Key material is
- * zeroed after use where the caller hands it over.
+ * Both parties compute the same root and message key (the info sorts the
+ * two (pubky, pk) pairs). Binding the pubkys means a copied public key file
+ * under another account yields a different root. Folder ids are per
+ * direction: the folder a user writes into is derived from their own pubky,
+ * so the same id never appears on both homeservers and a third party cannot
+ * link two users by intersecting their public folder listings. No forward
+ * secrecy: a leaked private key opens every message with that peer. Key
+ * material is zeroed after use where the caller hands it over.
  */
 
 const SALT = new TextEncoder().encode('pubky-chat/v0');
@@ -49,41 +54,69 @@ function compareBytes(a: Uint8Array, b: Uint8Array): number {
   return a.length - b.length;
 }
 
-/** Symmetric pairwise root; throws on a low-order peer key (all-zero shared secret). */
-export function derivePairwiseRoot(
-  mySecretKey: Uint8Array,
-  myPublicKey: Uint8Array,
-  peerPublicKey: Uint8Array,
-): Uint8Array {
-  const shared = x25519.getSharedSecret(mySecretKey, peerPublicKey);
+/** One side of a conversation: the account and its published chat key. */
+export type ChatPairParty = { pubky: string; publicKey: Uint8Array };
+
+function concatBytes(...parts: Uint8Array[]): Uint8Array {
+  const out = new Uint8Array(parts.reduce((length, part) => length + part.length, 0));
+  let offset = 0;
+  for (const part of parts) {
+    out.set(part, offset);
+    offset += part.length;
+  }
+  return out;
+}
+
+/**
+ * Symmetric pairwise root bound to both accounts. Throws on a low-order
+ * peer key (all-zero shared secret) and on a peer key equal to my own (a
+ * copied key file).
+ */
+export function derivePairwiseRoot(mySecretKey: Uint8Array, me: ChatPairParty, peer: ChatPairParty): Uint8Array {
+  if (compareBytes(me.publicKey, peer.publicKey) === 0) throw new Error('Peer key equals own key');
+  const shared = x25519.getSharedSecret(mySecretKey, peer.publicKey);
   if (shared.every((byte) => byte === 0)) throw new Error('Low-order peer key');
-  const [low, high] =
-    compareBytes(myPublicKey, peerPublicKey) <= 0 ? [myPublicKey, peerPublicKey] : [peerPublicKey, myPublicKey];
-  const info = new Uint8Array(4 + low.length + high.length);
-  info.set(new TextEncoder().encode('root'), 0);
-  info.set(low, 4);
-  info.set(high, 4 + low.length);
+  const [low, high] = compareBytes(me.publicKey, peer.publicKey) < 0 ? [me, peer] : [peer, me];
+  const encoder = new TextEncoder();
+  const info = concatBytes(
+    encoder.encode('root'),
+    encoder.encode(low.pubky),
+    low.publicKey,
+    encoder.encode(high.pubky),
+    high.publicKey,
+  );
   const root = hkdf(sha256, shared, SALT, info, KEY_BYTES);
   shared.fill(0);
   return root;
 }
 
-export function deriveFolderId(root: Uint8Array): string {
-  return bytesToHex(hkdf(sha256, root, SALT, new TextEncoder().encode('folder'), 16));
+/** The folder `senderPubky` writes into for this pair; the other side derives it to read. */
+export function deriveFolderId(root: Uint8Array, senderPubky: string): string {
+  const encoder = new TextEncoder();
+  const info = concatBytes(encoder.encode('folder'), encoder.encode(senderPubky));
+  return bytesToHex(hkdf(sha256, root, SALT, info, 16));
 }
 
 export function deriveMessageKey(root: Uint8Array): Uint8Array {
   return hkdf(sha256, root, SALT, new TextEncoder().encode('message'), KEY_BYTES);
 }
 
-/** Everything a conversation needs from the pair of keys. */
+/**
+ * Everything a conversation needs from the pair: the folder I write into
+ * (`ownFolderId`), the folder I read the peer's messages from
+ * (`peerFolderId`) and the shared message key.
+ */
 export function derivePairwise(
   mySecretKey: Uint8Array,
-  myPublicKey: Uint8Array,
-  peerPublicKey: Uint8Array,
-): { folderId: string; messageKey: Uint8Array } {
-  const root = derivePairwiseRoot(mySecretKey, myPublicKey, peerPublicKey);
-  const result = { folderId: deriveFolderId(root), messageKey: deriveMessageKey(root) };
+  me: ChatPairParty,
+  peer: ChatPairParty,
+): { ownFolderId: string; peerFolderId: string; messageKey: Uint8Array } {
+  const root = derivePairwiseRoot(mySecretKey, me, peer);
+  const result = {
+    ownFolderId: deriveFolderId(root, me.pubky),
+    peerFolderId: deriveFolderId(root, peer.pubky),
+    messageKey: deriveMessageKey(root),
+  };
   root.fill(0);
   return result;
 }

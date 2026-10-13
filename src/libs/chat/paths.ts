@@ -6,8 +6,10 @@
  *   pubky://<me>/priv/chat/v0/key.json                    private key (owner-only)
  *   pubky://<me>/priv/chat/v0/conversations/<peer>.json   conversation index + read checkpoint
  *
- * `<folder>` is derived from the pair's shared secret, so only the two
- * parties know which folder is theirs. `<file>` sorts chronologically.
+ * `<folder>` is derived from the pair's shared secret and the writer's
+ * pubky: each side writes into its own folder, and only the two parties can
+ * compute either. A listing of `/pub/chat/v0/` shows opaque ids that do not
+ * match across the two homeservers. `<file>` sorts chronologically.
  */
 
 export const CHAT_PUB_ROOT = '/pub/chat/v0/';
