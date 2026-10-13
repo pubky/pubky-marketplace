@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { getBasePath } from '@/config/base-path';
 import { AuthController } from '@/controllers/auth/auth';
 import { getWrongEnvironmentHomeserverMessage, isWrongEnvironmentHomeserverError } from '@/libs/error/error.utils';
 import { Logger } from '@/libs/logger/logger';
@@ -58,7 +59,7 @@ export function usePassportSignIn() {
     startPassportAttempt(
       async () => {
         const { authorizationUrl, awaitApproval, cancelAuthFlow } = await AuthController.getPassportGrantAuthUrl(
-          passportCallbacks(window.location.origin),
+          passportCallbacks(window.location.origin, getBasePath()),
         );
         return { authorizationUrl, result: awaitApproval, cancel: cancelAuthFlow };
       },

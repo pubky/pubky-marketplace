@@ -8,6 +8,7 @@ import {
   extractRuntimeConfig,
   frameAncestorsAllow,
   isTruthy,
+  locksReturnOriginsFromToml,
   missingOrigins,
   normalizeBase,
   parseBearerChallenge,
@@ -156,4 +157,34 @@ test('redact removes connection strings, bearer tokens and secret parameters', (
   const text = redact('psql: postgres://u:p@db.internal:5432/x failed; Authorization: Bearer abc.def; url?secret=s3cr3t&x=1');
   assert.doesNotMatch(text, /u:p@|abc\.def|s3cr3t/);
   assert.match(text, /postgres:\/\/\[redacted\]/);
+});
+
+test('Locks return origins come from the table of the acquisition method in use', () => {
+  const grant = parseTomlFlat(`
+[creator_authority_acquisition]
+method = "grant-connect"
+[creator_authority_acquisition.legacy_connect]
+allowed_return_origins = ["https://old.example"]
+[creator_authority_acquisition.grant_connect]
+client_id = "locks.example"
+allowed_return_origins = ["https://pubky.app", "https://staging.pubky.app"]
+`);
+  assert.deepEqual(locksReturnOriginsFromToml(grant), ['https://pubky.app', 'https://staging.pubky.app']);
+
+  const legacy = parseTomlFlat(`
+[creator_authority_acquisition]
+method = "legacy-connect"
+[creator_authority_acquisition.legacy_connect]
+allowed_return_origins = ["https://shop.example"]
+[creator_authority_acquisition.grant_connect]
+allowed_return_origins = ["https://unused.example"]
+`);
+  assert.deepEqual(locksReturnOriginsFromToml(legacy), ['https://shop.example']);
+
+  const unset = parseTomlFlat(`
+[creator_authority_acquisition.legacy_connect]
+allowed_return_origins = ["https://shop.example"]
+`);
+  assert.deepEqual(locksReturnOriginsFromToml(unset), ['https://shop.example']);
+  assert.equal(locksReturnOriginsFromToml({}), undefined);
 });

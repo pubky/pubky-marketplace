@@ -76,9 +76,11 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 /**
  * Return destinations for a Passport request made from `appOrigin`. Passport
  * rejects callbacks that are not HTTPS, so a plain-HTTP origin (local
- * development) sends none and Passport shows its own result screen.
+ * development) sends none and Passport shows its own result screen. The return
+ * page lives under the Shop's mount path (`/shop` on pubky.app), so callers pass it
+ * as `basePath`; without it Passport would return to a route the host app owns.
  */
-export function passportCallbacks(appOrigin: string): XCallbackParams | undefined {
+export function passportCallbacks(appOrigin: string, basePath = ''): XCallbackParams | undefined {
   let origin: URL;
   try {
     origin = new URL(appOrigin);
@@ -87,7 +89,7 @@ export function passportCallbacks(appOrigin: string): XCallbackParams | undefine
   }
   if (origin.protocol !== 'https:') return undefined;
   const callback = (outcome: PassportOutcome) => {
-    const url = new URL(PASSPORT_CALLBACK_PATH, origin.origin);
+    const url = new URL(`${basePath}${PASSPORT_CALLBACK_PATH}`, origin.origin);
     url.searchParams.set('outcome', outcome);
     return url.href;
   };
