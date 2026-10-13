@@ -303,6 +303,10 @@ try {
     .first()
     .waitFor({ state: 'visible', timeout: 30_000 });
   record('alice:inbox-unread-badge', true);
+  // The header's Messages button carries the same count.
+  const headerCounter = alicePage.locator('[data-cy="header-messages-btn-counter"]');
+  await headerCounter.waitFor({ state: 'visible', timeout: 30_000 });
+  record('alice:header-badge', (await headerCounter.textContent())?.trim() === '1', await headerCounter.textContent());
   await snap(alicePage, '04-alice-inbox-unread');
 
   // Opening the thread clears the unread badge.
@@ -314,7 +318,12 @@ try {
     .first()
     .waitFor({ state: 'visible', timeout: 30_000 });
   const unreadAfterRead = await alicePage.locator('[data-testid="chat-conversation-unread"]').count();
-  record('alice:read-clears-badge', unreadAfterRead === 0, `badges: ${unreadAfterRead}`);
+  const headerAfterRead = await alicePage.locator('[data-cy="header-messages-btn-counter"]').count();
+  record(
+    'alice:read-clears-badge',
+    unreadAfterRead === 0 && headerAfterRead === 0,
+    `badges: ${unreadAfterRead}, header: ${headerAfterRead}`,
+  );
 
   {
     // A grant session yields an inbox PoP: both tabs hold an inbox bearer.
@@ -385,12 +394,52 @@ try {
     await bobContext.unroute('**/events-stream**');
   }
 
+  // Offline: a message queues locally and goes out by itself once the browser is back online.
+  // (The ping check left Bob on his inbox list; bring him back to the thread.)
+  await bobPage.goto(`${BASE}/messages/${alice.id}`, { waitUntil: 'domcontentloaded' });
+  await alicePage.goto(`${BASE}/messages/${bob.id}`, { waitUntil: 'domcontentloaded' });
+  await alicePage.locator('#chat-composer-body').waitFor({ state: 'visible', timeout: 30_000 });
+  await aliceContext.setOffline(true);
+  await sendMessage(alicePage, 'Written offline');
+  await messageWithText(alicePage, 'Written offline').first().waitFor({ state: 'visible', timeout: 30_000 });
+  await sleep(3_000);
+  const offlineStatus = await alicePage.evaluate(
+    () =>
+      [...document.querySelectorAll('[data-testid="chat-message"]')]
+        .find((node) => node.textContent?.includes('Written offline'))
+        ?.getAttribute('data-status') ?? null,
+  );
+  await aliceContext.setOffline(false);
+  const onlineAt = Date.now();
+  await waitForSent(alicePage, 'Written offline', 60_000);
+  await messageWithText(bobPage, 'Written offline').first().waitFor({ state: 'visible', timeout: 60_000 });
+  record(
+    'alice:offline-queues-then-sends',
+    offlineStatus === 'queued',
+    `offline status ${offlineStatus}; sent and received ${Date.now() - onlineAt} ms after reconnecting`,
+  );
+
+  // A second tab of the same account: one leader, every tab live.
+  const aliceTabTwo = await aliceContext.newPage();
+  await aliceTabTwo.goto(`${BASE}/messages/${bob.id}`, { waitUntil: 'domcontentloaded' });
+  await messageWithText(aliceTabTwo, 'Written offline').first().waitFor({ state: 'visible', timeout: 30_000 });
+  await sendMessage(aliceTabTwo, 'From tab two');
+  await waitForSent(aliceTabTwo, 'From tab two');
+  await waitForSent(alicePage, 'From tab two');
+  await messageWithText(bobPage, 'From tab two').first().waitFor({ state: 'visible', timeout: 30_000 });
+  const leaders = await aliceTabTwo.evaluate(async () => {
+    const locks = await navigator.locks.query();
+    return locks.held.filter((lock) => lock.name?.startsWith('pubky-chat-leader|')).length;
+  });
+  record('alice:second-tab-live-one-leader', leaders === 1, `leader locks held: ${leaders}`);
+  await aliceTabTwo.close();
+
   // Reload keeps history.
   await alicePage.goto(`${BASE}/messages/${bob.id}`, { waitUntil: 'domcontentloaded' });
   await alicePage.reload({ waitUntil: 'domcontentloaded' });
   await messageWithText(alicePage, 'Lisbon').first().waitFor({ state: 'visible', timeout: 30_000 });
   const countAfterReload = await alicePage.locator('[data-testid="chat-message"]').count();
-  record('alice:history-survives-reload', countAfterReload >= 3, `${countAfterReload} messages`);
+  record('alice:history-survives-reload', countAfterReload >= 5, `${countAfterReload} messages`);
 
   // A fresh browser context (new device) rebuilds everything from the homeservers.
   const aliceConversations = await alicePage.evaluate(
@@ -467,7 +516,7 @@ try {
       (node) => `${node.getAttribute('data-direction')}:${node.textContent?.slice(0, 16)}`,
     ),
   );
-  record('alice:new-device-rebuild', countDeviceTwo >= 3, `${countDeviceTwo} messages: ${deviceTwoOrder.join(' | ')}`);
+  record('alice:new-device-rebuild', countDeviceTwo >= 5, `${countDeviceTwo} messages: ${deviceTwoOrder.join(' | ')}`);
   await snap(alicePageTwo, '05-alice-new-device');
 
   // The homeserver only ever holds ciphertext.
