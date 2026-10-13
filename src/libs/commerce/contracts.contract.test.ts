@@ -2,11 +2,15 @@ import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
+// The three `samples` files are the pinned service samples with only their
+// `guarantee_policy_version` lines removed (the field is retired; service PR
+// pubky-marketplace-service#113 removes it from its own samples). A full
+// re-vendor from the service replaces these hashes.
 const ARTIFACT_HASHES = {
   'contracts/endpoints.json': '4946005e24393b650248687c5f659b30c599456b182de291ebae1ee0fc2d1f1e',
-  'contracts/samples/confirm.json': 'b78586366a46d7061e630f436afdc01779c24a8a9315be62413bfdbcd8977bbd',
-  'contracts/samples/resolve.json': '8a7a03c2713b61b08914cd50fa146307753f5175d49b87918ee11a58f568f6af',
-  'contracts/samples/projections.json': 'cf14b6ab8c83ee8d6e289c74610db5f3b409b2f5dfd84fde8b91137f1e1cfb99',
+  'contracts/samples/confirm.json': 'b72c9adb92d308208c371b61f50b22d970400cbee46484e0865b6a3b2d15f0fd',
+  'contracts/samples/resolve.json': '135bee42482b6dea2fc89c69b3758bdfa6d08cc270cb87e4301636eb668763ea',
+  'contracts/samples/projections.json': 'b610e9ed474e02ac89a398804bcb71669d04f3559469d54e7404c50a8d7f8035',
   // Service c37481c plus only the `paypal_refund` / `paypal_reversal_cancelled`
   // transitions of pubky-marketplace-service `cursor/paypal-refund-ipn-95c1`
   // (4ba877cd). A full re-vendor also brings the offer `converted` state.
