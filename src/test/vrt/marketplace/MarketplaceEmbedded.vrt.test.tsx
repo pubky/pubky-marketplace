@@ -13,9 +13,9 @@ import { MarketplaceSectionNav } from '@/organisms/Marketplace/MarketplaceSectio
 
 // The Shop shell as pubky.app's iframe shows it: the real root-layout chrome (Header, Fab) and
 // the real ContentLayout (mobile header and footer) around the marketplace section bar, plus the
-// legal strip the root layout adds when embedded. Embedded,
-// the host app owns the page chrome, so only the Shop's own content and the legal strip may remain. Scenes exist for
-// the embedded variant only; the standalone shell is covered by the existing scenes.
+// legal strip the root layout adds when embedded. Embedded, the host app owns the page chrome, so
+// only the Shop's own content and the legal strip may remain. Scenes exist for the embedded
+// variant only; the standalone shell is covered by the existing scenes.
 
 const USER = vi.hoisted(() => 'y'.repeat(52));
 
