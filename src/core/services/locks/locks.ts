@@ -4,6 +4,7 @@
 import { z } from 'zod';
 import { getLocksUrl, getPaykitSetupCreatorParam, getPaykitSetupUrl } from '@/config/commerce';
 import { LOCKS_SUBMIT_REFUSAL_CODES, type LocksSubmitRefusalCode } from '@/libs/commerce/locks-submit-refusal';
+import type { ListingCurrencyChoice } from '@/libs/commerce/pricing';
 import { isAppError } from '@/libs/error/error';
 import { ServerErrorCode, ValidationErrorCode } from '@/libs/error/error.codes';
 import { Err } from '@/libs/error/error.factories';
@@ -303,13 +304,16 @@ export class LocksGatewayService {
 
   /**
    * Whether upstream Paykit Server holds the creator's watch-only setup
-   * (`GET /creator/paykit/setup-status`), asked by the Lock Server for the
-   * creator its frontend session names. `unavailable` means the Lock Server
-   * could not ask Paykit; it is not a setup verdict. The token is bearer
-   * material — callers must not log it.
+   * (`GET /creator/paykit/setup-status?asset=...`) for the price denomination,
+   * asked by the Lock Server for the creator its frontend session names.
+   * `unavailable` means the Lock Server could not ask Paykit; it is not a setup
+   * verdict. The token is bearer material — callers must not log it.
    */
-  static async getCreatorPaykitSetupStatus(sessionToken: string): Promise<LocksCreatorPaykitSetupStatus> {
-    const url = `${getLocksUrl()}/creator/paykit/setup-status`;
+  static async getCreatorPaykitSetupStatus(
+    sessionToken: string,
+    asset: ListingCurrencyChoice,
+  ): Promise<LocksCreatorPaykitSetupStatus> {
+    const url = `${getLocksUrl()}/creator/paykit/setup-status?asset=${asset}`;
     const response = await safeFetch(
       url,
       { method: 'GET', headers: { authorization: `Bearer ${sessionToken}` } },
