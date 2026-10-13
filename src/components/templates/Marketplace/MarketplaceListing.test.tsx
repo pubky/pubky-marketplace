@@ -1,6 +1,6 @@
 import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CommerceSellerReputationOverview } from '@/application/commerce/commerce';
 import { CAPABILITIES } from '@/config/app';
 import { COMMERCE_LISTING_MAX_QUANTITY } from '@/config/commerce';
@@ -16,6 +16,7 @@ import { toCommerceListingModel, toCommerceShopModel } from '@/test/fixtures/com
 import { parseContractFaithfulOffer } from '@/test/fixtures/commerce/offer-award';
 import { createOrderFixture } from '@/test/fixtures/commerce/orders';
 import { createListingProjectionFixture } from '@/test/fixtures/commerce/projections';
+import { setEmbedded } from '@/test-utils/embedded';
 import { MarketplaceListing } from './MarketplaceListing';
 
 const LOCKS_POLICY_URL = `pubky://${COMMERCE_FIXTURE_SELLER}/pub/locks.app/boots_01.json`;
@@ -603,6 +604,18 @@ describe('MarketplaceListing', () => {
   });
 
   describe('Report listing', () => {
+    afterEach(() => setEmbedded(false));
+
+    it('stays on the listing and opens the dialog when the Shop is embedded in pubky.app', async () => {
+      setEmbedded(true);
+      const user = userEvent.setup();
+      renderListing();
+
+      await user.click(screen.getByRole('button', { name: 'Report listing' }));
+
+      expect(await screen.findByRole('dialog')).toBeInTheDocument();
+    });
+
     it('opens the report dialog with the pubky.app reasons for a signed-in viewer', async () => {
       const user = userEvent.setup();
       renderListing();

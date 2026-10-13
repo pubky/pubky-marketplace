@@ -7,6 +7,7 @@ import { renderPerRequestOutsideVercel } from '@/libs/runtime-config/render-mode
 import { RootContainer } from '@/molecules/ContainerRoot/ContainerRoot';
 import { EmbeddedDocumentFlag } from '@/molecules/EmbeddedDocumentFlag/EmbeddedDocumentFlag';
 import { EmbeddedExternalLinks } from '@/molecules/EmbeddedExternalLinks/EmbeddedExternalLinks';
+import { EmbeddedLegalFooter } from '@/molecules/EmbeddedLegalFooter/EmbeddedLegalFooter';
 import { Fab } from '@/molecules/Fab/Fab';
 import { Metadata } from '@/molecules/Metadata/Metadata';
 import { ServiceWorkerRegistration } from '@/molecules/ServiceWorkerRegistration/ServiceWorkerRegistration';
@@ -64,6 +65,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
                 <EmbeddedExternalLinks />
                 <Header />
                 {children}
+                <EmbeddedLegalFooter />
                 <Fab />
                 <Toaster />
                 <DialogSignIn />
