@@ -195,6 +195,47 @@ describe('CommerceApplication', () => {
     });
   });
 
+  it('refreshListing replaces a locally staged revision with the record the homeserver publishes', async () => {
+    const published = createCommerceListingFixture();
+    const staged = {
+      ...published,
+      revision: published.revision + 1,
+      state: 'paused' as const,
+      updatedAt: new Date().toISOString(),
+    };
+    const listingId = `${published.ownerPubky}:${published.listingId}`;
+    await LocalCommerceService.upsertListing(staged, 'pending');
+    publishOnHomeserver(published);
+
+    await expect(CommerceApplication.refreshListing(published.ownerPubky, published.listingId)).resolves.toEqual(
+      published,
+    );
+
+    await expect(LocalCommerceService.getListing(listingId)).resolves.toMatchObject({
+      record: published,
+      revision: published.revision,
+      state: 'active',
+      sync_status: 'synced',
+    });
+  });
+
+  it('refreshListing keeps the staged row when the homeserver cannot be read', async () => {
+    const published = createCommerceListingFixture();
+    const staged = { ...published, revision: published.revision + 1, state: 'paused' as const };
+    const listingId = `${published.ownerPubky}:${published.listingId}`;
+    await LocalCommerceService.upsertListing(staged, 'pending');
+    vi.mocked(CommerceHomeserverService.fetchJson).mockRejectedValue(new TypeError('network unavailable'));
+
+    await expect(CommerceApplication.refreshListing(published.ownerPubky, published.listingId)).rejects.toThrow(
+      'network unavailable',
+    );
+
+    await expect(LocalCommerceService.getListing(listingId)).resolves.toMatchObject({
+      revision: staged.revision,
+      sync_status: 'pending',
+    });
+  });
+
   it('returns a local shop without a network request', async () => {
     const record = createCommerceShopFixture();
     vi.spyOn(LocalCommerceService, 'getShop').mockResolvedValue(
@@ -1895,6 +1936,59 @@ describe('CommerceApplication', () => {
         registration_status: 'unregistered',
       });
       expect(CommerceApplication.canCoordinateListingRegistration()).toBe(false);
+    });
+
+    it('a heal started while the same listing is publishing declines, so the publish still writes and registers', async () => {
+      const record = createCommerceListingFixture();
+      const listingId = await durableSeller(record);
+      const put = vi.spyOn(CommerceHomeserverService, 'putJson').mockResolvedValue(undefined);
+      const execute = vi
+        .spyOn(MarketplaceGatewayService, 'execute')
+        .mockImplementation(async (_actor, command) => listingRegisteredResponse(command));
+      const gate: { release?: () => void } = {};
+      const homeserverRead = new Promise<void>((resolve) => {
+        gate.release = resolve;
+      });
+      const served = vi.mocked(CommerceHomeserverService.fetchJson).getMockImplementation()!;
+      vi.mocked(CommerceHomeserverService.fetchJson).mockImplementation(async (url, logUrl) => {
+        await homeserverRead;
+        return put.mock.calls.findLast(([written]) => written === url)?.[1] ?? served(url, logUrl);
+      });
+
+      const unlisted = {
+        ...record,
+        revision: record.revision + 1,
+        state: 'paused' as const,
+        updatedAt: new Date().toISOString(),
+      };
+      const publish = CommerceApplication.commitUpsertListing(unlisted);
+      await vi.waitFor(async () =>
+        expect(await LocalCommerceService.getListing(listingId)).toMatchObject({ sync_status: 'pending' }),
+      );
+
+      await expect(CommerceApplication.ensureListingRegistered(unlisted)).resolves.toBe(false);
+      expect(execute).not.toHaveBeenCalled();
+
+      gate.release?.();
+      await expect(publish).resolves.toEqual({ registered: true, verified: true });
+      expect(put).toHaveBeenCalledOnce();
+      expect(put.mock.calls[0][1]).toMatchObject({ state: 'paused', revision: unlisted.revision });
+      expect(execute).toHaveBeenCalledOnce();
+      await expect(CommerceApplication.ensureListingRegistered(unlisted)).resolves.toBe(true);
+    });
+
+    it('heals the listing again once the publish that was running has failed', async () => {
+      const record = createCommerceListingFixture();
+      await durableSeller(record);
+      vi.spyOn(CommerceHomeserverService, 'putJson').mockRejectedValue(new TypeError('network unavailable'));
+      const execute = vi
+        .spyOn(MarketplaceGatewayService, 'execute')
+        .mockImplementation(async (_actor, command) => listingRegisteredResponse(command));
+      const edited = { ...record, revision: record.revision + 1, updatedAt: new Date().toISOString() };
+
+      await expect(CommerceApplication.commitUpsertListing(edited)).rejects.toThrow('network unavailable');
+      await expect(CommerceApplication.ensureListingRegistered(record)).resolves.toBe(true);
+      expect(execute).toHaveBeenCalledOnce();
     });
 
     it('requests no other lock while holding a listing registration lock', async () => {

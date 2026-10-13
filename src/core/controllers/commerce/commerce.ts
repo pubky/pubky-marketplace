@@ -126,6 +126,13 @@ export class CommerceController {
     return await CommerceApplication.fetchListing(owner, id);
   }
 
+  /** Network, then local: replaces the cached row with the record the owner's homeserver publishes. */
+  static async refreshListing(ownerPubky: unknown, listingId: unknown) {
+    const owner = CommerceRecordNormalizer.pubky(ownerPubky);
+    const id = CommerceRecordNormalizer.entityId(listingId);
+    return await CommerceApplication.refreshListing(owner, id);
+  }
+
   static async getOrFetchListing(ownerPubky: unknown, listingId: unknown) {
     const owner = CommerceRecordNormalizer.pubky(ownerPubky);
     const id = CommerceRecordNormalizer.entityId(listingId);

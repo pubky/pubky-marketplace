@@ -45,6 +45,17 @@ describe('CommerceController', () => {
     useNotificationStore.getState().reset();
   });
 
+  it('refreshListing validates its inputs and delegates to the application', async () => {
+    const record = createCommerceListingFixture();
+    const refresh = vi.spyOn(CommerceApplication, 'refreshListing').mockResolvedValue(record);
+
+    await expect(CommerceController.refreshListing(record.ownerPubky, record.listingId)).resolves.toBe(record);
+    expect(refresh).toHaveBeenCalledWith(record.ownerPubky, record.listingId);
+
+    await expect(CommerceController.refreshListing('not-a-pubky', record.listingId)).rejects.toThrow();
+    expect(refresh).toHaveBeenCalledOnce();
+  });
+
   it('remembers a refused USDT bind for the seller set until the store resets', () => {
     CommerceController.rememberUsdtRefusal(COMMERCE_FIXTURE_SELLER, 'usdt_seller_not_ready');
 
