@@ -46,6 +46,26 @@ and without a signed approval, the separate sign-in without keys. With the gate
 closed, which is the default, the Shop's requests are byte for byte what they
 were before.
 
+**The gate stays closed at launch** (decision EK1). Both pull requests land
+behind it, so nothing about sign-in changes when they merge: no `e` scope, no
+signed approval, no `epk` in the link, and the service keeps the data keys.
+Opening the gate later is configuration only: set the two variables above on
+the Shop deployment and redeploy, with no code change. Open it only after the
+service has migration `0055` and the homeserver runs 0.16.0 or later. Merged
+but unreleased homeserver work, such as selective approval
+(pubky-core#697), is not required and not depended on.
+
+## SDK
+
+The Shop pins `@synonymdev/pubky` **0.16.0** from npm, the first release that
+carries scoped encryption keys (`e`, `EncryptionKeys`) and HPKE-sealed
+approvals (`epk` in an `af=v1` link). `@bitcoinerrorlog/pubky-shop` follows the
+root dependency through the `overrides` entry, so the SDK is pinned in one
+place. `sdk-call-sites.gate.test.ts` asserts one registry copy in the lockfile,
+the override, and that the copy declares `EncryptionKeys`, `approvalFormat` and
+the `e` action. A bare-grant sign-in (the gate closed) is the SDK's default and
+keeps the shared relay secret in the link.
+
 ## The wrapped file
 
 One file per data key:

@@ -26,6 +26,7 @@ import {
   warnIfModerationDisabled,
 } from './runtime-config';
 import {
+  APP_RUNTIME_DEFAULTS,
   NETWORK_RUNTIME_DEFAULTS,
   PUBKY_RUNTIME_ENV_NAMES,
   type RuntimeConfig,
@@ -269,6 +270,27 @@ describe('runtime-config resolver', () => {
       const config = readServerConfig();
       expect(config.privEncryptionKeys).toBe(false);
       expect(config.privEncryptionKeysHomeservers).toEqual([]);
+    });
+
+    it('ships the scoped-keys gate closed: the shipped defaults, dev and every deployed environment', () => {
+      expect(APP_RUNTIME_DEFAULTS.privEncryptionKeys).toBe(false);
+      expect(APP_RUNTIME_DEFAULTS.privEncryptionKeysHomeservers).toEqual([]);
+
+      expect(readServerConfig().privEncryptionKeys).toBe(false);
+      expect(readServerConfig().privEncryptionKeysHomeservers).toEqual([]);
+      expect(getPrivEncryptionKeysEnabled()).toBe(false);
+      expect(getPrivEncryptionKeysHomeservers()).toEqual([]);
+
+      for (const deployEnv of ['production', 'staging']) {
+        resetRuntimeConfigForTests();
+        clearAllRuntimeEnv();
+        simulateDeployedEnv();
+        setAllRuntimeEnv();
+        process.env[PUBKY_RUNTIME_ENV_NAMES.deployEnv] = deployEnv;
+        const config = readServerConfig();
+        expect(config.privEncryptionKeys, deployEnv).toBe(false);
+        expect(config.privEncryptionKeysHomeservers, deployEnv).toEqual([]);
+      }
     });
 
     it('a deployed container takes only an https:// Passport override', () => {
