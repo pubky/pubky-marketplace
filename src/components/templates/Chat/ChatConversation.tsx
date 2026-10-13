@@ -116,6 +116,9 @@ export function ChatConversation({ peerPubky }: { peerPubky: string }) {
               disabledReason={disabledReason}
               placeholder={`Message ${name}`}
             />
+            <Typography as="p" size="xs" className="px-1 text-muted-foreground" data-testid="chat-privacy-note">
+              {CHAT_COPY.privacyNote}
+            </Typography>
           </>
         )}
       </Container>

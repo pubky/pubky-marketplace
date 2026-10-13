@@ -286,8 +286,11 @@ browser hands the lock to a waiting tab when the holder closes):
 2. **Inbox long-poll.** See [Inbox](#inbox-pings).
 3. **Reconciliation.** Every 60 s while the page is visible, every 5 min while hidden
    (`CHAT_RECONCILE_VISIBLE_MS` / `CHAT_RECONCILE_HIDDEN_MS`), and at once on focus, `online` and when
-   becoming visible: counterparty discovery (below, at most every 10 min), outbox flush, `syncAll('reconcile')`
-   for every conversation, stream refresh.
+   becoming visible: counterparty discovery (below, at most every 10 min), outbox flush, `syncAll('reconcile')`,
+   stream refresh. A pass lists every conversation with activity in the last 7 days
+   (`CHAT_RECONCILE_ACTIVE_WINDOW_MS`); an older conversation is listed only when it has not been synced for an
+   hour (`CHAT_RECONCILE_IDLE_MS`), so a long-tail inbox costs a bounded number of list requests per minute.
+   Streams and pings still reach an idle conversation at once; the tier only sets the polling floor.
 4. **Counterparty discovery** (`CHAT_DISCOVERY_INTERVAL_MS`, transactional commerce modes only, because
    orders live in the transaction service): the other party of every order is probed. A conversation row is
    created only when that peer has a published key and at least one message file exists in either folder,
@@ -363,6 +366,8 @@ queries (`useLiveQuery`), so everything the leader writes appears everywhere.
 | `CHAT_SEND_MAX_ATTEMPTS`                   | 8            | Then the message is `failed`.                                |
 | `CHAT_SEND_RETRY_BASE_MS` / `_MAX_MS`      | 2 s / 5 min  | Exponential backoff bounds (jittered).                       |
 | `CHAT_RECONCILE_VISIBLE_MS` / `_HIDDEN_MS` | 60 s / 5 min | Leader reconciliation cadence.                               |
+| `CHAT_RECONCILE_ACTIVE_WINDOW_MS`          | 7 days       | Conversations with newer activity are listed every pass.     |
+| `CHAT_RECONCILE_IDLE_MS`                   | 1 h          | Older conversations are listed once per this period.         |
 | `CHAT_DISCOVERY_INTERVAL_MS`               | 10 min       | Order counterparty discovery cadence.                        |
 | `CHAT_EVENT_DEBOUNCE_MS`                   | 250 ms       | Between an event-stream `PUT` and the sync it triggers.      |
 | `CHAT_SSE_RECONNECT_BACKOFF_MS`            | 2 s          | Stream reconnect delay.                                      |
@@ -454,7 +459,9 @@ What the design protects, and what it does not. Threat IDs refer to
   `/pub/chat/v0/key.json` (trust on first use; no out-of-band fingerprint check). A homeserver operator who
   can write to a user's `/pub` tree could substitute a key. A changed `kid` switches to a new folder; it is
   logged, not surfaced to the user.
-- **Private key at rest.** `/priv/chat/v0/key.json` is plain JSON under the homeserver's owner-only tree. The
+- **Private key at rest.** The thread shows a one-line note ("Messages are encrypted but stored on your
+  homeserver. Keep payment details, passwords and ID numbers out of chat.") so users do not mistake v0 for a
+  vault. `/priv/chat/v0/key.json` is plain JSON under the homeserver's owner-only tree. The
   homeserver enforces access, so the account's sessions (any app holding `/priv/chat/:rw`) and the homeserver
   operator can read it. Sealing it (for example under the marketplace data key used for `/priv` records, or a
   user-held secret) is deferred hardening. The key is also in Dexie (`chat_identity`) as plain bytes; XSS on

@@ -15,4 +15,7 @@ export const CHAT_COPY = {
   inboxEmptyTitle: 'No messages yet.',
   inboxEmptyBody: 'Open a listing or an order and message the other party to begin.',
   inboxRetry: 'Try again',
+  /** Honest about the v0 key custody: encrypted, but the private key sits unsealed on the homeserver. */
+  privacyNote:
+    'Messages are encrypted but stored on your homeserver. Keep payment details, passwords and ID numbers out of chat.',
 } as const;

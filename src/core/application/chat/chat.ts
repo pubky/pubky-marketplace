@@ -13,6 +13,8 @@ import {
   CHAT_PING_RETRY_BASE_MS,
   CHAT_PING_RETRY_MAX_MS,
   CHAT_PING_TTL_SECONDS,
+  CHAT_RECONCILE_ACTIVE_WINDOW_MS,
+  CHAT_RECONCILE_IDLE_MS,
   CHAT_SEND_MAX_ATTEMPTS,
   CHAT_SEND_RETRY_BASE_MS,
   CHAT_SEND_RETRY_MAX_MS,
@@ -667,7 +669,7 @@ export class ChatApplication {
   static async syncAll(me: string, reason: ChatSyncReason): Promise<void> {
     await this.flushPrivState(me);
     const conversations = await LocalChatService.listConversations(me);
-    const queue = [...conversations];
+    const queue = reason === 'reconcile' ? await this.dueForReconcile(me, conversations) : [...conversations];
     const workers = Array.from({ length: 3 }, async () => {
       for (;;) {
         const next = queue.shift();
@@ -680,6 +682,25 @@ export class ChatApplication {
       }
     });
     await Promise.all(workers);
+  }
+
+  /**
+   * Recent conversations reconcile on every pass; a conversation idle for more
+   * than the active window is listed only once per idle period. Live streams
+   * and pings still cover it at once, this is only the polling floor.
+   */
+  private static async dueForReconcile(
+    me: string,
+    conversations: ChatConversationModelSchema[],
+  ): Promise<ChatConversationModelSchema[]> {
+    const now = Date.now();
+    const states = new Map((await LocalChatService.listSyncStates(me)).map((state) => [state.peer_pubky, state]));
+    return conversations.filter((conversation) => {
+      const active = now - (conversation.last_message_at ?? conversation.created_at) <= CHAT_RECONCILE_ACTIVE_WINDOW_MS;
+      if (active) return true;
+      const lastSynced = states.get(conversation.peer_pubky)?.last_synced_at ?? 0;
+      return now - lastSynced >= CHAT_RECONCILE_IDLE_MS;
+    });
   }
 
   /**

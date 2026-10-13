@@ -34,6 +34,14 @@ export const CHAT_TAIL_CHECK_LIMIT = 25;
 export const CHAT_PEER_KEY_RECHECK_MS = 5 * 60_000;
 /** Re-probe cadence while a queued message waits on that peer's key. */
 export const CHAT_PEER_KEY_WAITING_RECHECK_MS = 15_000;
+/**
+ * Reconciliation tiers: a conversation with activity in this window is listed
+ * on every pass; an older one only when it has not been synced for
+ * `CHAT_RECONCILE_IDLE_MS`, so a long-tail inbox does not list every folder
+ * every minute.
+ */
+export const CHAT_RECONCILE_ACTIVE_WINDOW_MS = 7 * 24 * 60 * 60_000;
+export const CHAT_RECONCILE_IDLE_MS = 60 * 60_000;
 /** `sent_at` this far ahead of the local clock is flagged. */
 export const CHAT_CLOCK_SKEW_TOLERANCE_MS = 5 * 60_000;
 

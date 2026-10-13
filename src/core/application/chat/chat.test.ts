@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ChatApplication } from '@/application/chat/chat';
-import { CHAT_PING_REPEAT_MS } from '@/config/chat';
+import { CHAT_PING_REPEAT_MS, CHAT_RECONCILE_ACTIVE_WINDOW_MS, CHAT_RECONCILE_IDLE_MS } from '@/config/chat';
 import { chatMessageUrl, chatPingSlot, chatPrivateKeyUrl, chatPublicKeyUrl } from '@/libs/chat/paths';
 import { NetworkErrorCode, RateLimitErrorCode } from '@/libs/error/error.codes';
 import { Err } from '@/libs/error/error.factories';
@@ -315,6 +315,34 @@ describe('ChatApplication', () => {
       await ChatApplication.ensureIdentity(ALICE);
       await expect(ChatApplication.queueMessage(ALICE, { peer: ALICE, body: 'me' })).rejects.toThrow(/yourself/u);
       await expect(ChatApplication.queueMessage(ALICE, { peer: BOB, body: '   ' })).rejects.toThrow();
+    });
+  });
+
+  describe('reconcile tiers', () => {
+    it('lists recent conversations every pass and idle ones once per idle period', async () => {
+      await ChatApplication.ensureIdentity(ALICE);
+      await ChatApplication.ensureIdentity(BOB);
+      await ChatApplication.ensureIdentity(CAROL);
+      await ChatApplication.openConversation(ALICE, BOB);
+      await ChatApplication.openConversation(ALICE, CAROL);
+      const now = Date.now();
+      await LocalChatService.updateConversation(ALICE, CAROL, {
+        last_message_at: now - CHAT_RECONCILE_ACTIVE_WINDOW_MS - 60_000,
+      });
+      await LocalChatService.updateSyncState(ALICE, CAROL, { last_synced_at: now });
+      const sync = vi.spyOn(ChatApplication, 'syncConversation').mockResolvedValue('synced');
+
+      await ChatApplication.syncAll(ALICE, 'reconcile');
+      expect(sync.mock.calls.map(([, peer]) => peer)).toEqual([BOB]);
+
+      await LocalChatService.updateSyncState(ALICE, CAROL, { last_synced_at: now - CHAT_RECONCILE_IDLE_MS });
+      sync.mockClear();
+      await ChatApplication.syncAll(ALICE, 'reconcile');
+      expect(sync.mock.calls.map(([, peer]) => peer).sort()).toEqual([BOB, CAROL]);
+
+      sync.mockClear();
+      await ChatApplication.syncAll(ALICE, 'rebuild');
+      expect(sync.mock.calls.map(([, peer]) => peer).sort()).toEqual([BOB, CAROL]);
     });
   });
 

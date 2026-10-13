@@ -11,14 +11,14 @@
 
 1. Code review passes on the new code only (not the rip-out): security review first on `src/libs/chat`, `src/core/application/chat`, `src/core/services/{inbox,homeserver/chat}` and the auth touches (`homeserver.ts` grant/inbox methods, `config/app.ts` scopes); then a code review on coordinator, controller, hooks and UI.
 2. Fix what the reviews find; if chat behaviour changes, re-run `npm test`, `npm run test:e2e:chat`, the chat VRT suites in the container, and a browser pass (two accounts on the testnet Shop, entry points in sandbox mode).
-3. Matthew's manual QA (recipe in `docs/chat/README.md`, "Local development"; two windows = the app's browser pane plus his own Chrome, each signed in through the ring simulator with a fresh identity).
-4. Merge Vlada's SDK/grant-only PR when it lands: take his side for auth files, keep the chat scopes in `CAPABILITIES`, keep the facade `startGrantAuthFlow` call, and delete `RING_COOKIE_CAPABILITIES` together with the cookie flow.
+3. the maintainer's manual QA (recipe in `docs/chat/README.md`, "Local development"; two windows = the app's browser pane plus his own Chrome, each signed in through the ring simulator with a fresh identity).
+4. Merge the SDK/grant-only sign-in PR when it lands: take its side for auth files, keep the chat scopes in `CAPABILITIES`, keep the facade `startGrantAuthFlow` call, and delete `RING_COOKIE_CAPABILITIES` together with the cookie flow.
 
 ## Progress
 
 | Step                                                                                                                                                                | Status      | Commit                   |
 | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------- | ------------------------ |
-| P0 Old UI screenshots sent to Matthew (21 VRT baselines)                                                                                                            | done        | —                        |
+| P0 Old UI screenshots captured for the UX comparison (21 VRT baselines)                                                                                             | done        | —                        |
 | P0 `npm install`, baseline typecheck/test (1119 files / 17756 tests green)                                                                                          | done        | 0a5098b3a                |
 | P1.1 Extract `hasPaymentRequestReceiver` → `paykit-receiver.ts`; move retry-backoff/pass-deadline to `libs/chat`                                                    | done        | 9854ab6d9                |
 | P1.2 UI detach (routes, templates, organisms, hooks, VRT, live tests, entry points → `ChatEntryButton`)                                                             | done        | (next commit)            |
@@ -27,25 +27,25 @@
 | P1.4 Inbox service + ChatSyncCoordinator                                                                                                                            | done        | b20cbbb15                |
 | P1.5 UI (hooks, organisms, templates, pages); VRT suites still todo                                                                                                 | done        | f2c7277b1                |
 | P2 SDK 0.16 minimal bump + real `createInboxCredentials`; grant flow on the facade client; inbox slot fix                                                           | done        | 8493c562f, (next commit) |
-| P2 Merge Vlada's grant PR when it lands                                                                                                                             | todo        | blocked on his PR        |
+| P2 Merge the grant-only sign-in PR when it lands                                                                                                                    | todo        | blocked on that PR       |
 | P4 Docs (README, ADR 0030, status/FEATURES/RUNNING/environment/threat-model, changelog)                                                                             | done        | (next commit)            |
 | V1 Unit suites green (1096 files / 17278 tests), typecheck, lint, format                                                                                            | done        | (next commit)            |
 | V2 Live two-account proof on grant sign-in with inbox pings (`npm run test:e2e:chat`, 16/16)                                                                        | done        | 2d93aac6e, 06ec87141     |
 | V3 Real-browser session: grant sign-in via ring simulator, inbox session, sandbox listing/order entry points, screenshots                                           | done        | —                        |
 | V4 VRT: new `src/test/vrt/chat/*` suites (linux chromium+firefox baselines), orders CTA mobile baseline regenerated; Cypress listing case unchanged and still valid | done        | 1b490d826, (next commit) |
 | V5 Regression: full unit suite green; sandbox orders/listing/cart/notifications render; grant sign-in verified in the browser and the e2e                           | done        | —                        |
-| Handoff to Matthew for manual QA                                                                                                                                    | in progress | —                        |
+| Handoff for manual QA                                                                                                                                               | in progress | —                        |
 
 ## Waiting on others
 
-| #   | Item                                                                                                         | Owner                 | Status                           |
-| --- | ------------------------------------------------------------------------------------------------------------ | --------------------- | -------------------------------- |
-| 1   | Inbox CORS for `http://localhost:3000`, staging Shop host, `https://pubky.app` / `https://staging.pubky.app` | Severin               | asked                            |
-| 2   | Staging/prod inbox deployment + audience                                                                     | Severin               | asked                            |
-| 3   | Shop SDK 0.16 + grant-only sign-in PR                                                                        | Vlada                 | due 2026-10-13; we merge it in   |
-| 4   | pubky.app SDK 0.16 bump together with the Shop for `/shop` same-origin embedding                             | pubky-app maintainers | to raise                         |
-| 5   | Inbox multi-device semantics (pings = wake-ups only)                                                         | Severin               | FYI                              |
-| 6   | Staging signup tokens for two test accounts                                                                  | Matthew               | optional (local testnet default) |
+| #   | Item                                                                                                         | Owner      | Status                           |
+| --- | ------------------------------------------------------------------------------------------------------------ | ---------- | -------------------------------- |
+| 1   | Inbox CORS for `http://localhost:3000`, staging Shop host, `https://pubky.app` / `https://staging.pubky.app` | inbox team | asked                            |
+| 2   | Staging/prod inbox deployment + audience                                                                     | inbox team | asked                            |
+| 3   | Shop SDK 0.16 + grant-only sign-in PR                                                                        | Shop auth  | due 2026-10-13; we merge it in   |
+| 4   | pubky.app SDK 0.16 bump together with the Shop for `/shop` same-origin embedding                             | pubky-app  | to raise                         |
+| 5   | Inbox multi-device semantics (pings = wake-ups only)                                                         | inbox team | FYI                              |
+| 6   | Staging signup tokens for two test accounts                                                                  | maintainer | optional (local testnet default) |
 
 ## Gotchas / decisions taken mid-way
 
@@ -58,9 +58,9 @@
 - Dexie `where(compound).between().reverse().limit()` returned pages out of order in Chromium; `LocalChatService.listMessages` sorts explicitly.
 - Never nest `runInOneTab` with the same lock name: the inner `ifAvailable` request sees the lock held and skips (bit the new-device rebuild).
 - Playwright refuses `npx playwright install` on this Ubuntu; the e2e script takes `CHROMIUM_PATH` (e.g. `~/.cache/ms-playwright/chromium_headless_shell-1234/chrome-headless-shell-linux64/chrome-headless-shell`).
-- Local Nexus (pubky-docker) needed `testnet = true` and `testnet_host = "homeserver"` under `[watcher]` in `pubky-nexus-config-testnet.toml` for the current image; edited in Matt's checkout (uncommitted, tell him).
+- Local Nexus (pubky-docker) needed `testnet = true` and `testnet_host = "homeserver"` under `[watcher]` in `pubky-nexus-config-testnet.toml` for the current image; edited in Matt's checkout (uncommitted in the local pubky-docker checkout).
 - The Shop's dev signup-token route needs `HOMESERVER_ADMIN_URL=http://localhost:6288/generate_signup_token` and `HOMESERVER_ADMIN_PASSWORD=admin` (set in `.claude/launch.json`, gitignored).
-- A session without a grant (Ring cookie sign-in, until Vlada's PR removes it) cannot sign an inbox proof, so its inbox is `disabled`; chat still works through streams + reconciliation. `RING_COOKIE_CAPABILITIES` is defined as `CAPABILITIES` plus pubky.app's scopes (tested invariant), so it carries the chat scopes until his PR deletes the cookie flow and that constant with it.
+- A session without a grant (Ring cookie sign-in, until the grant-only sign-in PR removes it) cannot sign an inbox proof, so its inbox is `disabled`; chat still works through streams + reconciliation. `RING_COOKIE_CAPABILITIES` is defined as `CAPABILITIES` plus pubky.app's scopes (tested invariant), so it carries the chat scopes until that PR deletes the cookie flow and that constant with it.
 - Grant sign-in must start on the facade (`getPubkySdk().startGrantAuthFlow`), not the static `GrantAuthFlow.startDelegated`: the static call spins up a default mainnet DHT client that cannot resolve testnet identities (and ignores custom pkarr relays). Symptom: "could not resolve homeserver for <pubky>" right after the signer approves.
 - A failed inbox ping (429 or otherwise) is retried with backoff and a first-contact ping is repeated every 30 min until the peer writes back (`flushPings`, state in `chat_sync_state.ping_*`); before this a dropped first-contact ping left the receiver unaware until the next message.
 - Inbox ping slots are 1–64 Base64url characters: the slot is `chat-<folder>` (`chatPingSlot`), not `chat:<folder>` (the inbox answered 400 `invalid_slot`).
