@@ -99,10 +99,9 @@ export interface ChatSyncStateModelSchema {
   list_cursor: string | null;
   /** Same for the owner's own folder (new-device rebuild). */
   own_list_cursor: string | null;
-  /** Event-stream cursor for this peer. */
-  sse_cursor: string | null;
-  /** The peer's homeserver pubky (cached pkarr lookup). */
+  /** The peer's homeserver pubky (cached pkarr lookup) and when it was last resolved. */
   peer_homeserver: string | null;
+  peer_homeserver_checked_at: number;
   peer_key_checked_at: number;
   last_synced_at: number;
   consecutive_failures: number;

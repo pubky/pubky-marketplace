@@ -18,7 +18,6 @@ import { CHAT_LOG_PUBLIC_KEY, chatFolderPath, parseChatEventPath } from '@/libs/
 import { RetryBackoff } from '@/libs/chat/retry-backoff';
 import { CHAT_LOCKS, holdLeadership, type LeadershipHandle } from '@/libs/chat/web-locks';
 import { Logger } from '@/libs/logger/logger';
-import { getNotificationRespectPageVisibility } from '@/libs/runtime-config/runtime-config';
 import type { THomeserverResourceEvent } from '@/services/homeserver/homeserver.types';
 import type { InboxAvailability } from '@/services/inbox/inbox.types';
 import { useAuthStore } from '@/stores/auth/auth.store';
@@ -26,6 +25,9 @@ import { useChatStore } from '@/stores/chat/chat.store';
 import type { ChatSyncCoordinatorState } from './chat-sync.types';
 
 type StreamTarget = { homeserver: string; users: Array<[string, string | null]>; folders: string[] };
+
+const streamSignature = (target: StreamTarget): string =>
+  JSON.stringify([target.users.map(([peer]) => peer), target.folders]);
 
 /**
  * Keeps chat fresh in the background.
@@ -48,8 +50,6 @@ export class ChatSyncCoordinator {
     routeToRegex(AUTH_ROUTES.LOGOUT),
     routeToRegex(AUTH_ROUTES.SIGN_IN),
   ];
-
-  private respectPageVisibility = getNotificationRespectPageVisibility();
 
   private state: ChatSyncCoordinatorState = {
     isStarted: false,
@@ -355,7 +355,7 @@ export class ChatSyncCoordinator {
 
   /** One live stream per homeserver for the most recent conversations; restarts only what changed. */
   private async refreshStreams(owner: string, generation: number): Promise<void> {
-    const conversations = (await ChatController.getConversations())
+    const conversations = (await ChatController.getConversations({ includeEmpty: true }))
       .filter((row) => row.peer_state === 'ready' && row.folder_id)
       .slice(0, CHAT_SSE_MAX_CONVERSATIONS);
     const targets = new Map<string, StreamTarget>();
@@ -374,7 +374,7 @@ export class ChatSyncCoordinator {
       targets.set(homeserver, target);
     }
     for (const [homeserver, target] of targets) {
-      const signature = JSON.stringify([target.users.map(([peer]) => peer), target.folders]);
+      const signature = streamSignature(target);
       if (this.streamTargets.get(homeserver) === signature) continue;
       this.streamTargets.set(homeserver, signature);
       const previous = this.streamReaders.get(homeserver);
@@ -395,6 +395,7 @@ export class ChatSyncCoordinator {
   }
 
   private async runStream(owner: string, target: StreamTarget, generation: number): Promise<void> {
+    const signature = streamSignature(target);
     const folderToPeer = new Map(target.folders.map((folder, index) => [folder, target.users[index][0]]));
     const peers = new Set(target.users.map(([peer]) => peer));
     while (generation === this.generation && this.state.isLeader) {
@@ -436,7 +437,9 @@ export class ChatSyncCoordinator {
         if (reader) await reader.cancel().catch(() => {});
         if (this.streamReaders.get(target.homeserver) === reader) this.streamReaders.delete(target.homeserver);
       }
-      if (this.streamTargets.get(target.homeserver) === undefined) return;
+      // Reconnect only while this is still the stream wanted for the homeserver; a refreshed
+      // conversation set starts its own loop and this one must not come back beside it.
+      if (this.streamTargets.get(target.homeserver) !== signature) return;
       await this.sleep(CHAT_SSE_RECONNECT_BACKOFF_MS, generation);
     }
   }

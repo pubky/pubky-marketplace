@@ -110,6 +110,39 @@ describe('ChatSyncCoordinator', () => {
     expect(ChatController.fetchAllConversationUpdates).toHaveBeenCalled();
   });
 
+  it('replaces a live stream when the conversation set changes instead of running both', async () => {
+    const subscriptions: ReadableStreamDefaultController[] = [];
+    vi.spyOn(ChatController, 'fetchPeerHomeserver').mockResolvedValue('h'.repeat(52));
+    vi.spyOn(ChatController, 'subscribeChatEventStream').mockImplementation(
+      async () =>
+        new ReadableStream({
+          start(controller) {
+            subscriptions.push(controller);
+          },
+        }),
+    );
+    const conversation = (peer: string) =>
+      ({ peer_pubky: peer, peer_state: 'ready', folder_id: peer.slice(0, 32) }) as never;
+    vi.mocked(ChatController.getConversations).mockResolvedValue([conversation(PEER)]);
+
+    const coordinator = ChatSyncCoordinator.getInstance();
+    coordinator.setRoute('/marketplace');
+    coordinator.start();
+    signIn();
+    await settle();
+    expect(subscriptions).toHaveLength(1);
+
+    // A second conversation appears: the stream for that homeserver is replaced.
+    vi.mocked(ChatController.getConversations).mockResolvedValue([conversation(PEER), conversation('q'.repeat(52))]);
+    coordinator.requestReconcile();
+    await settle();
+    expect(subscriptions).toHaveLength(2);
+
+    // The superseded stream was cancelled; it must not come back beside the new one after its backoff.
+    await new Promise((resolve) => setTimeout(resolve, 2_300));
+    expect(subscriptions).toHaveLength(2);
+  }, 10_000);
+
   it('tears everything down on sign-out and on disabled routes', async () => {
     const coordinator = ChatSyncCoordinator.getInstance();
     coordinator.setRoute('/marketplace');

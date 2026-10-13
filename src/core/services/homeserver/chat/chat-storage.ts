@@ -37,28 +37,33 @@ import { HomeserverService } from '@/services/homeserver/homeserver';
  * `/priv/chat/v0/`. Everything goes through {@link HomeserverService};
  * logs and error context carry redacted paths, never a folder next to a peer.
  */
+export type ChatPublicKeyLookup =
+  | { state: 'found'; record: ChatPublicKeyRecord }
+  | { state: 'absent' }
+  | { state: 'unreachable' };
+
 export class ChatHomeserverService {
   private constructor() {}
 
   /**
-   * The peer's published key; `null` when absent, malformed (logged) or
-   * unreachable (their homeserver could not be resolved or answered with an
-   * error). All three mean "cannot encrypt to them right now": the caller
-   * keeps the message queued and probes again later.
+   * The peer's published key. `absent` covers a missing or malformed record
+   * (logged); `unreachable` means their homeserver could not be resolved or
+   * answered with an error, so a key known from before is still the best
+   * information there is.
    */
-  static async readPublicKey(pubky: string): Promise<ChatPublicKeyRecord | null> {
+  static async readPublicKey(pubky: string): Promise<ChatPublicKeyLookup> {
     const result = await HomeserverService.getJsonIfFound<unknown>({
       url: chatPublicKeyUrl(pubky),
       logUrl: CHAT_LOG_PUBLIC_KEY,
       tolerateUnreachable: true,
     });
-    if (!result.found) return null;
+    if (!result.found) return { state: result.unreachable ? 'unreachable' : 'absent' };
     const parsed = chatPublicKeySchema.safeParse(result.json);
     if (!parsed.success) {
       Logger.warn('Chat public key record is malformed; treating the peer as not enabled', { pubky });
-      return null;
+      return { state: 'absent' };
     }
-    return parsed.data;
+    return { state: 'found', record: parsed.data };
   }
 
   static async publishPublicKey(me: string, record: ChatPublicKeyRecord): Promise<void> {

@@ -29,11 +29,13 @@ describe('ChatHomeserverService', () => {
   });
 
   it('reads public keys and treats malformed ones as absent', async () => {
-    expect(await ChatHomeserverService.readPublicKey(PEER)).toBeNull();
+    expect(await ChatHomeserverService.readPublicKey(PEER)).toEqual({ state: 'absent' });
     homeserver.files.set(chatPublicKeyUrl(PEER), KEY);
-    expect(await ChatHomeserverService.readPublicKey(PEER)).toEqual(KEY);
+    expect(await ChatHomeserverService.readPublicKey(PEER)).toEqual({ state: 'found', record: KEY });
     homeserver.files.set(chatPublicKeyUrl(PEER), { v: 1 });
-    expect(await ChatHomeserverService.readPublicKey(PEER)).toBeNull();
+    expect(await ChatHomeserverService.readPublicKey(PEER)).toEqual({ state: 'absent' });
+    homeserver.failNext('GET' as never, /\/pub\/chat\/v0\/key\.json/u, 503);
+    expect(await ChatHomeserverService.readPublicKey(PEER)).toEqual({ state: 'unreachable' });
   });
 
   it('writes the private key with a verified read-back and never logs its path', async () => {

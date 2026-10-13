@@ -198,7 +198,9 @@ envelope    = XChaCha20-Poly1305(message key, random 24-byte nonce, AAD).encrypt
 
 1. `ChatController.commitSendMessage` → `ChatApplication.queueMessage`: trims the body, checks it is 1 to
    4,096 bytes, makes sure a conversation row exists, mints the message uuid, `sent_at` and the file name,
-   and stores the row as `queued`. The thread renders it at once ("Sending").
+   and stores the row as `queued`. The thread renders it at once ("Sending"). Opening a thread also creates
+   the row (it holds the peer's key), but a thread without a message stays out of the inbox list and is not
+   written to `/priv`.
 2. `flushOutbox` runs under the account's outbox lock (one tab at a time) and is skipped while
    `navigator.onLine === false`. For every due queued row, oldest file first:
    - Resolve the peer's key (below). A peer without a key leaves the row queued with
@@ -223,8 +225,10 @@ each reconcile pass, and when a keyless peer becomes reachable.
 ### Peer key resolution
 
 `resolvePeerKey` uses the key cached on the conversation row when present. Otherwise (or when forced) it reads
-the peer's `/pub/chat/v0/key.json`: absent, malformed or unreachable (the peer's homeserver cannot be resolved
-or answers with an error; logged as a warning, never an error) means `no_key`, rechecked after 5 min
+the peer's `/pub/chat/v0/key.json`: absent or malformed means `no_key`, rechecked after 5 min; unreachable
+(the peer's homeserver cannot be resolved or answers with an error; logged as a warning, never an error) keeps
+a key known from before and only means `no_key` when there is none. A ping from a peer last seen without a
+key re-probes them at once. `no_key` is also rechecked
 (`CHAT_PEER_KEY_RECHECK_MS`), at once when the user opens the thread, on a ping, or on a key event. A peer
 whose `kid` changed is a new epoch: the folder id changes, list cursors reset, earlier messages stay in Dexie
 and the new folder takes over.
@@ -252,8 +256,9 @@ pages out of order in Chromium.
 ### Read state
 
 Looking at a thread reads it: while the page is visible and the newest received message is newer than
-`last_read_at`, the hook calls `commitMarkRead`, which moves the checkpoint, marks the `/priv` record dirty
-and writes it. Unread for a conversation is the count of received messages with `sent_at > last_read_at`;
+`last_read_at`, the hook calls `commitMarkRead` with that message's `sent_at` (the sender's clock, which is
+what unread counts compare against, so a peer whose clock lags ours cannot have a later message counted as
+read), which moves the checkpoint, marks the `/priv` record dirty and writes it. Unread for a conversation is the count of received messages with `sent_at > last_read_at`;
 the nav badge counts conversations with at least one. The checkpoint travels with the account through
 `/priv`, so another device clears the same badge.
 
@@ -281,13 +286,16 @@ visibility change to visible: flush and request a reconcile.
 browser hands the lock to a waiting tab when the holder closes):
 
 1. **Homeserver event streams (SSE).** For the 20 most recent conversations with a known peer key
-   (`CHAT_SSE_MAX_CONVERSATIONS`), grouped by the peer's homeserver (resolved through pkarr and cached in
-   `chat_sync_state`), one `/events-stream` subscription per homeserver with up to 20 users each
+   (`CHAT_SSE_MAX_CONVERSATIONS`), grouped by the peer's homeserver (resolved through pkarr, cached in
+   `chat_sync_state` and re-resolved daily, `CHAT_PEER_HOMESERVER_RECHECK_MS`), one `/events-stream`
+   subscription per homeserver with up to 20 users each
    (`CHAT_SSE_MAX_USERS_PER_STREAM`; the SDK allows 50, the browser connection budget is the real limit),
    filtered to the conversation folders and `/pub/chat/v0/key.json`. A `PUT` under a folder schedules a
    sync for that peer with the file as hint after a 250 ms debounce; a `key.json` event schedules a
-   `key_event` sync. A dropped stream reconnects after 2 s. Streams are refreshed whenever the conversation
-   list changes (Dexie live query) and after each reconcile.
+   `key_event` sync. A dropped stream reconnects after 2 s; a stream whose conversation set changed is
+   replaced, never doubled. Streams subscribe without a cursor: whatever happened while a stream was down is
+   covered by the next reconciliation pass. Streams are refreshed whenever the conversation list changes
+   (Dexie live query) and after each reconcile.
 2. **Inbox long-poll.** See [Inbox](#inbox-pings).
 3. **Reconciliation.** Every 60 s while the page is visible, every 5 min while hidden
    (`CHAT_RECONCILE_VISIBLE_MS` / `CHAT_RECONCILE_HIDDEN_MS`), and at once on focus, `online` and when
@@ -376,6 +384,7 @@ queries (`useLiveQuery`), so everything the leader writes appears everywhere.
 | `CHAT_DISCOVERY_INTERVAL_MS`               | 10 min       | Order counterparty discovery cadence.                        |
 | `CHAT_EVENT_DEBOUNCE_MS`                   | 250 ms       | Between an event-stream `PUT` and the sync it triggers.      |
 | `CHAT_SSE_RECONNECT_BACKOFF_MS`            | 2 s          | Stream reconnect delay.                                      |
+| `CHAT_PEER_HOMESERVER_RECHECK_MS`          | 24 h         | A peer's cached homeserver is re-resolved after this.        |
 | `CHAT_SSE_MAX_USERS_PER_STREAM`            | 20           | Peers per homeserver stream (SDK cap 50).                    |
 | `CHAT_SSE_MAX_CONVERSATIONS`               | 20           | Most recent conversations with live streams.                 |
 | `CHAT_OPEN_THREAD_POLL_MS`                 | 10 s         | Open-thread poll while visible.                              |

@@ -83,13 +83,15 @@ export function useChatConversation(peerPubky: string, context?: ChatContext): U
   const messages = page?.messages ?? [];
   const newestReceived = [...messages].reverse().find((row) => row.direction === 'received');
 
-  // Seeing the thread reads it: the checkpoint moves as soon as a newer
-  // received message is on screen, so a glance at the thread clears the badge.
+  // Seeing the thread reads it: the checkpoint moves to the newest received
+  // message on screen (its sender's clock, which is what unread counts
+  // compare against), so a glance at the thread clears the badge without
+  // hiding a later message from a peer whose clock lags ours.
   useEffect(() => {
     if (!conversation || !newestReceived) return;
     if (newestReceived.sent_at <= conversation.last_read_at) return;
     if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
-    void ChatController.commitMarkRead(peerPubky, Math.max(Date.now(), newestReceived.sent_at));
+    void ChatController.commitMarkRead(peerPubky, newestReceived.sent_at);
   }, [conversation, newestReceived, peerPubky]);
 
   return {

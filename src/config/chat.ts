@@ -57,6 +57,8 @@ export const CHAT_DISCOVERY_INTERVAL_MS = 10 * 60_000;
 /** Debounce between an event-stream PUT and the conversation sync it triggers. */
 export const CHAT_EVENT_DEBOUNCE_MS = 250;
 export const CHAT_SSE_RECONNECT_BACKOFF_MS = 2_000;
+/** A peer's homeserver (pkarr lookup) is cached this long before the live stream re-resolves it. */
+export const CHAT_PEER_HOMESERVER_RECHECK_MS = 24 * 60 * 60_000;
 /** Peers per homeserver event stream (SDK cap is 50; the browser connection budget is the real limit). */
 export const CHAT_SSE_MAX_USERS_PER_STREAM = 20;
 /** How many most-recent conversations the leader keeps live streams for. */

@@ -87,7 +87,14 @@ async function signIn(context, identity, name) {
     throw new Error(`[${identity.label}] expected a grant sign-in link, got ${url.slice(0, 40)}`);
   }
   console.log(`[${identity.label}] approving ${url.slice(0, 60)}…`);
-  await pubky.signer(identity.keypair).approveAuthRequest(url);
+  // The local relay occasionally drops the first POST right after a dev-server rebuild; one retry covers it.
+  try {
+    await pubky.signer(identity.keypair).approveAuthRequest(url);
+  } catch (error) {
+    console.warn(`[${identity.label}] approval failed once, retrying`, String(error).slice(0, 120));
+    await sleep(1_000);
+    await pubky.signer(identity.keypair).approveAuthRequest(url);
+  }
   console.log(`[${identity.label}] approved`);
   page.on('console', (message) => {
     const text = message.text();

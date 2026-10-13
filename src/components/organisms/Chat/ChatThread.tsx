@@ -47,20 +47,29 @@ export function ChatThread({
   const scrollRef = useRef<HTMLDivElement>(null);
   const [pinnedToBottom, setPinnedToBottom] = useState(true);
   const [unseen, setUnseen] = useState(0);
-  const lastId = messages[messages.length - 1]?.id;
+  const newest = messages[messages.length - 1];
+  const lastId = newest?.id;
   const previousLastId = useRef<string | undefined>(undefined);
 
   useEffect(() => {
     const element = scrollRef.current;
     if (!element) return;
-    if (pinnedToBottom || previousLastId.current === undefined) {
+    const firstRender = previousLastId.current === undefined;
+    const changed = lastId !== previousLastId.current;
+    // My own send always goes to the bottom; the peer's messages only when I am already there.
+    if (pinnedToBottom || firstRender || (changed && newest?.direction === 'sent')) {
       element.scrollTop = element.scrollHeight;
+      setPinnedToBottom(true);
       setUnseen(0);
-    } else if (lastId !== previousLastId.current) {
-      setUnseen((count) => count + 1);
+    } else if (changed) {
+      const previousIndex = messages.findIndex((message) => message.id === previousLastId.current);
+      const arrived = messages.slice(previousIndex + 1).filter((message) => message.direction === 'received').length;
+      setUnseen((count) => count + arrived);
     }
     previousLastId.current = lastId;
-  }, [lastId, pinnedToBottom, messages.length]);
+    // `messages` changes identity on every live-query tick; lastId and pinnedToBottom capture the cases that matter.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lastId, pinnedToBottom]);
 
   const onScroll = () => {
     const element = scrollRef.current;

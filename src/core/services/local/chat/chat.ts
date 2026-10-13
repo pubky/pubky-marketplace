@@ -62,17 +62,6 @@ export class LocalChatService {
     }
   }
 
-  static async getConversationByFolder(owner: string, folderId: string): Promise<ChatConversationModelSchema | null> {
-    try {
-      return (
-        (await ChatConversationModel.table.where('[owner_id+folder_id]').equals([owner, folderId]).first()) ?? null
-      );
-    } catch (error) {
-      throw dbError('getConversationByFolder', error);
-    }
-  }
-
-  /** Newest activity first; conversations without a message yet come last. */
   static async listConversations(owner: string): Promise<ChatConversationModelSchema[]> {
     try {
       const rows = await ChatConversationModel.table.where('owner_id').equals(owner).toArray();
@@ -325,8 +314,8 @@ export class LocalChatService {
           peer_pubky: peer,
           list_cursor: null,
           own_list_cursor: null,
-          sse_cursor: null,
           peer_homeserver: null,
+          peer_homeserver_checked_at: 0,
           peer_key_checked_at: 0,
           last_synced_at: 0,
           consecutive_failures: 0,

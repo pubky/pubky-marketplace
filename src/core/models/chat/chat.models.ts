@@ -126,8 +126,8 @@ export class ChatSyncStateModel
   peer_pubky: string;
   list_cursor: string | null;
   own_list_cursor: string | null;
-  sse_cursor: string | null;
   peer_homeserver: string | null;
+  peer_homeserver_checked_at: number;
   peer_key_checked_at: number;
   last_synced_at: number;
   consecutive_failures: number;
@@ -142,8 +142,8 @@ export class ChatSyncStateModel
     this.peer_pubky = row.peer_pubky;
     this.list_cursor = row.list_cursor;
     this.own_list_cursor = row.own_list_cursor;
-    this.sse_cursor = row.sse_cursor;
     this.peer_homeserver = row.peer_homeserver;
+    this.peer_homeserver_checked_at = row.peer_homeserver_checked_at ?? 0;
     this.peer_key_checked_at = row.peer_key_checked_at;
     this.last_synced_at = row.last_synced_at;
     this.consecutive_failures = row.consecutive_failures;

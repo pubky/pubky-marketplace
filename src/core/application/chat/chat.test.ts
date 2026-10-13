@@ -333,6 +333,51 @@ describe('ChatApplication', () => {
       expect((await LocalChatService.getMessage(toCarol))?.status).toBe('sent');
     });
 
+    it('keeps a known peer key while their homeserver is unreachable', async () => {
+      await ChatApplication.ensureIdentity(ALICE);
+      await ChatApplication.ensureIdentity(BOB);
+      expect(await ChatApplication.openConversation(ALICE, BOB)).toEqual({ state: 'ready' });
+
+      homeserver.failNext('GET' as never, new RegExp(`${BOB}/pub/chat/v0/key.json`, 'u'), 503);
+      const keys = await ChatApplication.resolvePeerKey(ALICE, BOB, { force: true });
+      expect(keys.state).toBe('ready');
+      expect((await LocalChatService.getConversation(ALICE, BOB))?.peer_state).toBe('ready');
+    });
+
+    it('re-probes a peer last seen without a key as soon as they ping', async () => {
+      await ChatApplication.ensureIdentity(ALICE);
+      expect(await ChatApplication.openConversation(ALICE, BOB)).toEqual({ state: 'peer_not_enabled' });
+
+      // Bob sets up messages and writes to Alice; his ping arrives before Alice's next recheck.
+      await ChatApplication.ensureIdentity(BOB);
+      await ChatApplication.openConversation(BOB, ALICE);
+      await ChatApplication.queueMessage(BOB, { peer: ALICE, body: 'hello alice' });
+      await ChatApplication.flushOutbox(BOB);
+      await ChatApplication.handlePing(ALICE, {
+        sender: BOB,
+        slot: 'chat-unknown',
+        revision: 'r1',
+        received_at: 'now',
+        expires_at: 'later',
+        payload: 'not json',
+      });
+
+      expect((await LocalChatService.getConversation(ALICE, BOB))?.peer_state).toBe('ready');
+      expect((await LocalChatService.listMessages(ALICE, BOB, { limit: 5 })).map((row) => row.body)).toEqual([
+        'hello alice',
+      ]);
+    });
+
+    it('lists only conversations with a message in the inbox', async () => {
+      await ChatApplication.ensureIdentity(ALICE);
+      await ChatApplication.ensureIdentity(BOB);
+      await ChatApplication.openConversation(ALICE, BOB);
+      expect(await ChatApplication.getConversations(ALICE)).toEqual([]);
+      expect(await ChatApplication.getConversations(ALICE, { includeEmpty: true })).toHaveLength(1);
+      await ChatApplication.queueMessage(ALICE, { peer: BOB, body: 'now it counts' });
+      expect(await ChatApplication.getConversations(ALICE)).toHaveLength(1);
+    });
+
     it('refuses self-chat and empty bodies', async () => {
       await ChatApplication.ensureIdentity(ALICE);
       await expect(ChatApplication.queueMessage(ALICE, { peer: ALICE, body: 'me' })).rejects.toThrow(/yourself/u);

@@ -5,6 +5,7 @@ import {
   CHAT_INBOX_PAGE,
   CHAT_INBOX_WAIT_SECONDS,
   CHAT_LIST_PAGE,
+  CHAT_PEER_HOMESERVER_RECHECK_MS,
   CHAT_PEER_KEY_RECHECK_MS,
   CHAT_PEER_KEY_WAITING_RECHECK_MS,
   CHAT_PING_MAX_BYTES,
@@ -19,6 +20,7 @@ import {
   CHAT_SEND_RETRY_BASE_MS,
   CHAT_SEND_RETRY_MAX_MS,
   CHAT_TAIL_CHECK_LIMIT,
+  CHAT_THREAD_PAGE,
 } from '@/config/chat';
 import {
   chatAad,
@@ -56,6 +58,7 @@ import type {
 } from '@/models/chat/chat.schema';
 import { ChatHomeserverService } from '@/services/homeserver/chat/chat-storage';
 import { HomeserverService } from '@/services/homeserver/homeserver';
+import type { THomeserverResourceEvent } from '@/services/homeserver/homeserver.types';
 import { InboxService } from '@/services/inbox/inbox';
 import type { InboxAvailability, InboxPing, InboxPingRef } from '@/services/inbox/inbox.types';
 import { LocalChatService } from '@/services/local/chat/chat';
@@ -152,7 +155,7 @@ export class ChatApplication {
       }
 
       const published = await ChatHomeserverService.readPublicKey(me);
-      if (!published || published.kid !== identity.kid) {
+      if (published.state !== 'found' || published.record.kid !== identity.kid) {
         await ChatHomeserverService.publishPublicKey(me, {
           v: 0,
           alg: 'x25519',
@@ -183,14 +186,17 @@ export class ChatApplication {
     const state = await LocalChatService.getSyncState(me, peer);
     const stale = Date.now() - (state?.peer_key_checked_at ?? 0) > CHAT_PEER_KEY_RECHECK_MS;
 
-    if (row?.peer_public_key && row.peer_key_id && !options.force) {
-      const publicKey = base64UrlToBytes(row.peer_public_key);
-      if (publicKey?.length === 32) return this.deriveFor(identity, peer, row.peer_key_id, publicKey);
-    }
+    const known = this.knownPeerKeys(identity, row);
+    if (known && !options.force) return known;
     if (row && row.peer_state === 'no_key' && !stale && !options.force) return { state: 'no_key' };
 
-    const record = await ChatHomeserverService.readPublicKey(peer);
+    const lookup = await ChatHomeserverService.readPublicKey(peer);
     await LocalChatService.updateSyncState(me, peer, { peer_key_checked_at: Date.now() });
+    if (lookup.state === 'unreachable' && known) {
+      // Their homeserver is down or unresolvable right now; the key we have is still the best information.
+      return known;
+    }
+    const record = lookup.state === 'found' ? lookup.record : null;
     const publicKey = record ? base64UrlToBytes(record.pk) : null;
     if (!record || !publicKey || publicKey.length !== 32 || chatKeyId(publicKey) !== record.kid) {
       if (row && row.peer_state !== 'no_key') {
@@ -227,6 +233,21 @@ export class ChatApplication {
       }
     }
     return keys;
+  }
+
+  /** The keys derived from the key cached on a `ready` conversation row, if any. */
+  private static knownPeerKeys(
+    identity: ChatIdentityModelSchema,
+    row: ChatConversationModelSchema | null,
+  ): ChatPeerKeys | null {
+    if (!row || row.peer_state !== 'ready' || !row.peer_public_key || !row.peer_key_id) return null;
+    const publicKey = base64UrlToBytes(row.peer_public_key);
+    if (publicKey?.length !== 32) return null;
+    try {
+      return this.deriveFor(identity, row.peer_pubky, row.peer_key_id, publicKey);
+    } catch {
+      return null;
+    }
   }
 
   private static deriveFor(
@@ -766,11 +787,9 @@ export class ChatApplication {
       if (peer === me) continue;
       try {
         if (await LocalChatService.getConversation(me, peer)) continue;
-        const identity = await this.requireIdentity(me);
-        const record = await ChatHomeserverService.readPublicKey(peer);
-        const publicKey = record ? base64UrlToBytes(record.pk) : null;
-        if (!record || !publicKey || publicKey.length !== 32) continue;
-        const keys = this.deriveFor(identity, peer, record.kid, publicKey);
+        // No row yet, so this derives from the network without persisting anything.
+        const keys = await this.resolvePeerKey(me, peer);
+        if (keys.state !== 'ready') continue;
         const newest = await ChatHomeserverService.listMessageFiles(peer, keys.peerFolderId, {
           reverse: true,
           limit: 1,
@@ -783,8 +802,8 @@ export class ChatApplication {
         await this.ensureConversationRow(me, peer, 'seeded', undefined, {
           folder_id: keys.peerFolderId,
           own_folder_id: keys.ownFolderId,
-          peer_key_id: record.kid,
-          peer_public_key: record.pk,
+          peer_key_id: keys.peerKid,
+          peer_public_key: bytesToBase64Url(keys.peerPublicKey),
           peer_state: 'ready',
         });
         await this.syncConversation(me, peer, { reason: 'rebuild' });
@@ -808,7 +827,8 @@ export class ChatApplication {
     }
     const existing = await LocalChatService.getConversation(me, peer);
     if (!existing) await this.ensureConversationRow(me, peer, 'ping');
-    const keys = await this.resolvePeerKey(me, peer, { force: existing === null });
+    // A ping is strong evidence the sender has a key now: re-probe a peer we last saw without one.
+    const keys = await this.resolvePeerKey(me, peer, { force: existing === null || existing.peer_state === 'no_key' });
     if (keys.state !== 'ready') return;
     const hintFile = payload && payload.folder === keys.peerFolderId ? payload.file : undefined;
     await this.syncConversation(me, peer, { reason: 'ping', hintFile });
@@ -824,7 +844,8 @@ export class ChatApplication {
   static async flushPrivState(me: string): Promise<void> {
     const dirty = await LocalChatService.listDirtyConversations(me);
     for (const row of dirty) {
-      if (!row.folder_id || !row.peer_key_id) continue;
+      // A thread that was only opened is not a conversation yet; other devices need not know.
+      if (!row.folder_id || !row.peer_key_id || row.last_message_at === null) continue;
       try {
         await ChatHomeserverService.writeConversationState(me, {
           v: 0,
@@ -859,6 +880,74 @@ export class ChatApplication {
 
   static async ackPings(me: string, pings: InboxPingRef[]): Promise<void> {
     await InboxService.ack(me, pings);
+  }
+
+  // ================================================================== reads
+
+  /** Conversations for the inbox list, newest activity first; a merely opened thread stays out until it has a message. */
+  static async getConversations(
+    me: string,
+    options: { includeEmpty?: boolean } = {},
+  ): Promise<Array<ChatConversationModelSchema & { unreadCount: number }>> {
+    const rows = await LocalChatService.listConversations(me);
+    const listed = options.includeEmpty ? rows : rows.filter((row) => row.last_message_at !== null);
+    return await Promise.all(
+      listed.map(async (row) => ({
+        ...row,
+        unreadCount: await LocalChatService.countUnread(me, row.peer_pubky, row.last_read_at),
+      })),
+    );
+  }
+
+  static async getConversation(
+    me: string,
+    peer: string,
+  ): Promise<(ChatConversationModelSchema & { unreadCount: number }) | null> {
+    const row = await LocalChatService.getConversation(me, peer);
+    if (!row) return null;
+    return { ...row, unreadCount: await LocalChatService.countUnread(me, peer, row.last_read_at) };
+  }
+
+  static async getMessages(
+    me: string,
+    peer: string,
+    options: { before?: string; limit?: number } = {},
+  ): Promise<ChatMessageModelSchema[]> {
+    return await LocalChatService.listMessages(me, peer, {
+      before: options.before,
+      limit: options.limit ?? CHAT_THREAD_PAGE,
+    });
+  }
+
+  static async getMessageCount(me: string, peer: string): Promise<number> {
+    return await LocalChatService.countMessages(me, peer);
+  }
+
+  static async getUnreadConversationCount(me: string): Promise<number> {
+    return await LocalChatService.countUnreadConversations(me);
+  }
+
+  /** The peer's homeserver for live streams: a cached pkarr lookup, refreshed on a daily cadence. */
+  static async resolvePeerHomeserver(me: string, peer: string): Promise<string | null> {
+    const state = await LocalChatService.getSyncState(me, peer);
+    const fresh = Date.now() - (state?.peer_homeserver_checked_at ?? 0) < CHAT_PEER_HOMESERVER_RECHECK_MS;
+    if (state?.peer_homeserver && fresh) return state.peer_homeserver;
+    const homeserver = await HomeserverService.resolveHomeserverOf(peer);
+    if (homeserver) {
+      await LocalChatService.updateSyncState(me, peer, {
+        peer_homeserver: homeserver,
+        peer_homeserver_checked_at: Date.now(),
+      });
+    }
+    return homeserver ?? state?.peer_homeserver ?? null;
+  }
+
+  static async subscribeEventStream(params: {
+    homeserver: string;
+    users: Array<[string, string | null]>;
+    pathPrefixes: string[];
+  }): Promise<ReadableStream<THomeserverResourceEvent>> {
+    return await HomeserverService.subscribeHomeserverEventStream(params);
   }
 
   // ================================================================= teardown

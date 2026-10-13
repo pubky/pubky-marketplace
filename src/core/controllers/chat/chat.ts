@@ -1,16 +1,13 @@
 import { ChatApplication } from '@/application/chat/chat';
 import type { ChatOpenResult, ChatSyncOutcome, ChatSyncReason } from '@/application/chat/chat.types';
-import { CHAT_THREAD_PAGE } from '@/config/chat';
 import { ValidationErrorCode } from '@/libs/error/error.codes';
 import { Err } from '@/libs/error/error.factories';
 import { ErrorService } from '@/libs/error/error.types';
 import { Logger } from '@/libs/logger/logger';
 import { isPubkyIdentifier, stripPubkyPrefix } from '@/libs/utils/utils';
 import type { ChatContext } from '@/models/chat/chat.schema';
-import { HomeserverService } from '@/services/homeserver/homeserver';
 import type { THomeserverResourceEvent } from '@/services/homeserver/homeserver.types';
 import type { InboxAvailability, InboxPing, InboxPingRef } from '@/services/inbox/inbox.types';
-import { LocalChatService } from '@/services/local/chat/chat';
 import { useAuthStore } from '@/stores/auth/auth.store';
 import { useChatStore } from '@/stores/chat/chat.store';
 import type { ChatConversationView, ChatMessageView, ChatSendParams } from './chat.types';
@@ -55,43 +52,31 @@ export class ChatController {
 
   // ----------------------------------------------------------- local reads
 
-  static async getConversations(): Promise<ChatConversationView[]> {
-    const me = this.me();
-    const rows = await LocalChatService.listConversations(me);
-    return await Promise.all(
-      rows.map(async (row) => ({
-        ...row,
-        unreadCount: await LocalChatService.countUnread(me, row.peer_pubky, row.last_read_at),
-      })),
-    );
+  /** The inbox list; `includeEmpty` also returns threads that were only opened (the coordinator streams them). */
+  static async getConversations(options: { includeEmpty?: boolean } = {}): Promise<ChatConversationView[]> {
+    return await ChatApplication.getConversations(this.me(), options);
   }
 
   static async getConversation(peerPubky: string): Promise<ChatConversationView | null> {
-    const me = this.me();
-    const row = await LocalChatService.getConversation(me, peerPubky);
-    if (!row) return null;
-    return { ...row, unreadCount: await LocalChatService.countUnread(me, peerPubky, row.last_read_at) };
+    return await ChatApplication.getConversation(this.me(), peerPubky);
   }
 
   static async getMessages(
     peerPubky: string,
     options: { before?: string; limit?: number } = {},
   ): Promise<ChatMessageView[]> {
-    return await LocalChatService.listMessages(this.me(), peerPubky, {
-      before: options.before,
-      limit: options.limit ?? CHAT_THREAD_PAGE,
-    });
+    return await ChatApplication.getMessages(this.me(), peerPubky, options);
   }
 
   static async getMessageCount(peerPubky: string): Promise<number> {
-    return await LocalChatService.countMessages(this.me(), peerPubky);
+    return await ChatApplication.getMessageCount(this.me(), peerPubky);
   }
 
   /** Conversations with unread messages, for the nav badge. */
   static async getUnreadConversationCount(): Promise<number> {
     const pubky = useAuthStore.getState().currentUserPubky;
     if (!pubky) return 0;
-    return await LocalChatService.countUnreadConversations(pubky);
+    return await ChatApplication.getUnreadConversationCount(pubky);
   }
 
   // ------------------------------------------------------------------ writes
@@ -200,20 +185,11 @@ export class ChatController {
     users: Array<[string, string | null]>;
     pathPrefixes: string[];
   }): Promise<ReadableStream<THomeserverResourceEvent>> {
-    return await HomeserverService.subscribeHomeserverEventStream(params);
+    return await ChatApplication.subscribeEventStream(params);
   }
 
   static async fetchPeerHomeserver(peerPubky: string): Promise<string | null> {
-    const me = this.me();
-    const state = await LocalChatService.getSyncState(me, peerPubky);
-    if (state?.peer_homeserver) return state.peer_homeserver;
-    const homeserver = await HomeserverService.resolveHomeserverOf(peerPubky);
-    if (homeserver) await LocalChatService.updateSyncState(me, peerPubky, { peer_homeserver: homeserver });
-    return homeserver;
-  }
-
-  static async commitPersistStreamCursor(peerPubky: string, cursor: string): Promise<void> {
-    await LocalChatService.updateSyncState(this.me(), peerPubky, { sse_cursor: cursor });
+    return await ChatApplication.resolvePeerHomeserver(this.me(), peerPubky);
   }
 
   // ------------------------------------------------------------- teardown

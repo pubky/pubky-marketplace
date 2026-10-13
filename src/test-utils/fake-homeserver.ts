@@ -121,6 +121,8 @@ export function installFakeHomeserver(): FakeHomeserver {
       return { found: true, json: (await perform({ method: HttpMethod.GET, ...params })) as never };
     } catch (error) {
       if (error instanceof AppError && error.context?.statusCode === 404) return { found: false };
+      // Mirror the real service: a tolerant probe reports an unreachable record instead of throwing.
+      if (params.tolerateUnreachable) return { found: false, unreachable: true };
       throw error;
     } finally {
       notify(entry, 'after');
