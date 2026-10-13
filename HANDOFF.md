@@ -64,7 +64,7 @@ Source pointers in `mp-ux`: `PUBKY_RUNTIME_*` names and defaults live in `src/li
 
 Core service vars: `DATABASE_URL` (Postgres), `BIND_ADDR` (HTTP bind), `ALLOWED_ORIGINS` (CORS), `AUTH_TOKEN_WINDOW_SECONDS` (AuthToken timestamp window), `AUTH_SESSION_TTL_SECONDS` (bearer session TTL), `WORKER_INTERVAL_SECONDS` (worker cadence), `WORKER_LEASE_SECONDS` (worker lease), `SANDBOX_PAYMENTS_ENABLED` (sandbox command gate; false in production).
 
-Authority/payment vars: `LOCKS_SERVER_URL` (Lock Server base), `LOCKS_BUNDLE_ENCRYPTION_KEY` (sealed bundle IDs), `LOCKS_LOOKUP_HMAC_KEY` (correlation lookup HMAC), `LOCKS_PAYMENT_WINDOW_SECONDS` (Locks hold window), `FIAT_PAYMENT_WINDOW_SECONDS` (fiat hold window), `SANDBOX_PAYMENT_WINDOW_SECONDS` (sandbox hold window), `DROP_CLAIM_WINDOW_SECONDS` (drop claim hold), `LOCKS_POLL_SECONDS` (Locks polling), `ATTESTOR_SECRET_KEY` (service attestor identity), `ATTESTOR_ORDER_SALT` (stable order-ref salt), `STRIPE_KEY_ENCRYPTION_KEY` (seller Stripe key sealing), `STRIPE_API_BASE` (Stripe API base), `PAYKIT_SERVER_URL` (paykit-server base), `PAYKIT_REQUEST_SIGNING_KEY` (request-signing seed trusted by paykit-server), `PAYKIT_POLL_SECONDS` (Paykit polling), `PUBLIC_APP_ORIGIN` (Shop return origin), `PUBLIC_SERVICE_ORIGIN` (service origin for PayPal IPN), `PAYPAL_IPN_VERIFY_URL` (PayPal IPN validation), `SHIPPO_API_BASE` (Shippo API base).
+Authority/payment vars: `LOCKS_SERVER_URL` (Lock Server base), `LOCKS_BUNDLE_ENCRYPTION_KEY` (sealed bundle IDs), `LOCKS_LOOKUP_HMAC_KEY` (correlation lookup HMAC), `LOCKS_PAYMENT_WINDOW_SECONDS` (Locks hold window), `FIAT_PAYMENT_WINDOW_SECONDS` (fiat hold window), `SANDBOX_PAYMENT_WINDOW_SECONDS` (sandbox hold window), `DROP_CLAIM_WINDOW_SECONDS` (drop claim hold), `LOCKS_POLL_SECONDS` (Locks polling), `ATTESTOR_SECRET_KEY` (service attestor identity), `ATTESTOR_ORDER_SALT` (stable order-ref salt), `STRIPE_KEY_ENCRYPTION_KEY` (seller Stripe key sealing), `STRIPE_API_BASE` (Stripe API base), `PAYKIT_SERVER_URL` (paykit-server base), `PAYKIT_REQUEST_SIGNING_KEY` (request-signing seed trusted by paykit-server), `PAYKIT_POLL_SECONDS` (Paykit polling), `PUBLIC_APP_ORIGIN` (Shop return origin), `PUBLIC_SERVICE_ORIGIN` (service origin for PayPal IPN), `PAYPAL_IPN_VERIFY_URL` (PayPal IPN validation).
 
 `MODERATOR_PUBKYS` no longer exists in `marketplace-service`: migration 0018 removed operator authority because the target product has no operator arbiter or moderator role.
 
@@ -213,7 +213,7 @@ Between 12:53 and 19:37 on 2026-09-08, the P1 credential-leak fix and session-fi
 - Same-site bridge rehearsal domains still need `_vercel.pubky.app` TXT verification before the rehearsal is publicly live.
 - Production Nexus replay will **not** run; staging-era residue stays dead by owner decision.
 - Pubky Ring empty-capabilities display is unverified and blocks the bridged-session step-up UX claim.
-- Shippo live API proof is still open; only service/client tests through a local Shippo double are verified.
+- Shippo live API proof is still open; the Shop now calls Shippo from the seller's browser and only mocked-response tests are verified.
 - Production write probe is pending the owner's Ring scan; the script is on branch `marketplace/prod-probe`.
 
 ## Known Decisions From 2026-09-05

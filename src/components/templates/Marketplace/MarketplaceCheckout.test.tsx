@@ -201,6 +201,8 @@ vi.mock('@/hooks/useMarketplaceCheckout/useMarketplaceCheckout', async () => {
         selectedAddressId: view.selectedAddressId,
         selectAddress: vi.fn(),
         rememberAddress: checkoutActions.rememberAddress,
+        pendingKeyChange: null,
+        decideKeyChange: vi.fn(),
         fulfillmentOptionsForSeller: (sellerPubky: string) => view.fulfillmentOptions[sellerPubky] ?? ['shipping'],
         fulfillmentForSeller: (sellerPubky: string) => view.fulfillmentEffective[sellerPubky] ?? 'shipping',
         setFulfillmentChoice: checkoutActions.setFulfillmentChoice,
@@ -284,7 +286,12 @@ vi.mock('@/hooks/useMarketplaceOffers/useMarketplaceOffers', () => ({
 }));
 
 vi.mock('@/hooks/useMarketplaceOfferCheckout/useMarketplaceOfferCheckout', () => ({
-  useMarketplaceOfferCheckout: () => ({ submit: offerState.submit, isSubmitting: false }),
+  useMarketplaceOfferCheckout: () => ({
+    submit: offerState.submit,
+    isSubmitting: false,
+    pendingKeyChange: null,
+    decideKeyChange: vi.fn(),
+  }),
 }));
 
 const approval = vi.hoisted(() => ({ signer: 'Pubky Ring' as 'Bitkit' | 'Pubky Ring' }));

@@ -3,6 +3,8 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import * as commerceConfig from '@/config/commerce';
 import { CommerceController } from '@/controllers/commerce/commerce';
+import { DELIVERY_KEY_COPY } from '@/libs/commerce/delivery-key-copy';
+import { SHIPPO_FAILURE_REASONS } from '@/libs/commerce/shipping';
 import { AppError } from '@/libs/error/error';
 import { ClientErrorCode } from '@/libs/error/error.codes';
 import { ErrorCategory, ErrorService } from '@/libs/error/error.types';
@@ -14,7 +16,7 @@ import { MarketplaceShippingLabelDialog } from './MarketplaceShippingLabelDialog
 vi.mock('@/controllers/commerce/commerce', () => ({
   CommerceController: {
     getShippingLabel: vi.fn(async () => null),
-    quoteShippingRates: vi.fn(async () => []),
+    quoteShippingRates: vi.fn(),
     purchaseShippingLabel: vi.fn(async () => null),
   },
 }));
@@ -47,7 +49,7 @@ const LABEL = {
 
 beforeEach(() => {
   mockedController.getShippingLabel.mockReset().mockResolvedValue(null);
-  mockedController.quoteShippingRates.mockReset().mockResolvedValue([RATE]);
+  mockedController.quoteShippingRates.mockReset().mockResolvedValue({ kind: 'rates', rates: [RATE] });
   mockedController.purchaseShippingLabel.mockReset().mockResolvedValue(LABEL);
   vi.spyOn(commerceConfig, 'getCommerceAdapterMode').mockReturnValue('transaction-service');
 });
@@ -74,7 +76,7 @@ describe('MarketplaceShippingLabelDialog', () => {
     await waitFor(() => expect(mockedController.getShippingLabel).toHaveBeenCalledWith(order.id));
 
     await fillParcelAndQuote();
-    expect(mockedController.quoteShippingRates).toHaveBeenCalledWith(order.id, {
+    expect(mockedController.quoteShippingRates).toHaveBeenCalledWith(order, {
       weightGrams: 900,
       lengthMm: 300,
       widthMm: 200,
@@ -120,7 +122,7 @@ describe('MarketplaceShippingLabelDialog', () => {
     await waitFor(() => expect(vi.mocked(toast)).toHaveBeenCalled());
     expect(JSON.stringify(vi.mocked(toast).mock.calls)).not.toContain('SENTINEL_SHIPPING_LABEL_quote');
 
-    mockedController.quoteShippingRates.mockResolvedValueOnce([RATE]);
+    mockedController.quoteShippingRates.mockResolvedValueOnce({ kind: 'rates', rates: [RATE] });
     await fillParcelAndQuote();
     await screen.findByText('USPS Ground');
     mockedController.purchaseShippingLabel.mockRejectedValueOnce(sentinel('purchase'));
@@ -128,6 +130,43 @@ describe('MarketplaceShippingLabelDialog', () => {
     await waitFor(() => expect(vi.mocked(toast).mock.calls.length).toBeGreaterThan(1));
     expect(JSON.stringify(vi.mocked(toast).mock.calls)).not.toContain('SENTINEL_SHIPPING_LABEL_purchase');
     expect(order.id).toBeTruthy();
+  });
+
+  it.each([
+    ['undecryptable', { kind: 'undecryptable', reason: 'key_missing' }, DELIVERY_KEY_COPY.undecryptable],
+    ['none', { kind: 'none' }, DELIVERY_KEY_COPY.addressUnavailable],
+  ] as const)(
+    'shows no rates and says so when this device cannot open the address (%s)',
+    async (_name, result, copy) => {
+      mockedController.quoteShippingRates.mockResolvedValueOnce(result);
+      renderDialog();
+      await userEvent.click(screen.getByRole('button', { name: /Shipping label/ }));
+      await fillParcelAndQuote();
+
+      expect(await screen.findByTestId('shipping-address-problem')).toHaveTextContent(copy);
+      expect(screen.queryByRole('button', { name: /^Buy for/ })).not.toBeInTheDocument();
+    },
+  );
+
+  it('maps a Shippo failure to static copy keyed by its reason', async () => {
+    mockedController.quoteShippingRates.mockRejectedValueOnce(
+      new AppError({
+        category: ErrorCategory.Client,
+        code: ClientErrorCode.UNPROCESSABLE,
+        message: 'Shippo said: 10 Downing Street is not deliverable',
+        service: ErrorService.Shippo,
+        operation: 'quoteRates',
+        context: { reason: SHIPPO_FAILURE_REASONS.keyInvalid },
+      }),
+    );
+    renderDialog();
+    await userEvent.click(screen.getByRole('button', { name: /Shipping label/ }));
+    await fillParcelAndQuote();
+
+    await waitFor(() => expect(vi.mocked(toast)).toHaveBeenCalled());
+    const description = vi.mocked(toast).mock.calls.at(-1)?.[0]?.description;
+    expect(description).toBe('Shippo rejected your API token. Update it in Shipping settings and try again.');
+    expect(JSON.stringify(vi.mocked(toast).mock.calls)).not.toContain('Downing');
   });
 
   it('renders nothing outside the durable modes', () => {

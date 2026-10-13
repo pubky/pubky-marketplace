@@ -88,6 +88,38 @@ describe('marketplace seller delivery address projection', () => {
     }
   });
 
+  it('parses the sealed hpke_v1 projection through wire casing', () => {
+    const wire = {
+      format: 'hpke_v1',
+      key_id: 'a'.repeat(32),
+      command_id: '018f47d2-6a27-7c23-a62f-000000000734',
+      envelope: 'A'.repeat(2795),
+    };
+
+    expect(marketplaceDeliveryAddressSchema.parse(toCamelCaseWire(wire))).toEqual({
+      format: 'hpke_v1',
+      keyId: 'a'.repeat(32),
+      commandId: '018f47d2-6a27-7c23-a62f-000000000734',
+      envelope: 'A'.repeat(2795),
+    });
+  });
+
+  it.each([
+    ['a short envelope', { envelope: 'A'.repeat(100) }],
+    ['a malformed key id', { keyId: 'not-hex' }],
+    ['a non-uuid command id', { commandId: 'abc' }],
+  ])('quarantines an hpke_v1 projection with %s as unsupported', (_name, override) => {
+    const sealed = {
+      format: 'hpke_v1',
+      keyId: 'a'.repeat(32),
+      commandId: '018f47d2-6a27-7c23-a62f-000000000734',
+      envelope: 'A'.repeat(2795),
+      ...override,
+    };
+
+    expect(marketplaceDeliveryAddressSchema.parse(sealed)).toEqual({ format: 'unsupported' });
+  });
+
   it.each([
     ['absent undefined', undefined, undefined],
     ['null', null, undefined],
