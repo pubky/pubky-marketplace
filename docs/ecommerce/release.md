@@ -45,9 +45,10 @@ missing dependency: fix `package-lock.json` in a pull request, then `HUSKY=0 npm
 4. Required checks on `master`: Check Code Quality, Check NextJS Build, Run Shard Tests (1) to (5), Run Tests, Merge
    Coverage Reports, `vrt-marketplace`, `vrt-core`, `launch-e2e`. A pull request is required; no approving review is
    configured, so the team sets its own review rule. Force pushes and branch deletion are blocked. `launch-e2e` runs on
-   pull requests into `master` and `release/shop-*` with the repository secret `LAUNCH_E2E_SELLER_SECRET_HEX`; it
-   fails closed on a same-repository pull request if the secret is missing, and skips with a notice on fork pull
-   requests. Pull requests that change only `docs/`, `payments-env/` or `*.md` files skip the build, the unit suite
+   pull requests into `master` and `release/shop-*` in explicit synthetic mode: real SDK grants and browser
+   persistence, with isolated PKARR, homeserver, BFF and marketplace fixtures. It needs no seller secret and also
+   runs on forks. Optional live mode requires `LAUNCH_E2E_SELLER_SECRET_HEX` and a grant-enabled backend; synthetic
+   success does not replace staging approval/payment QA. Pull requests that change only `docs/`, `payments-env/` or `*.md` files skip the build, the unit suite
    and VRT; their checks still report.
 
 **Flake outside the diff.** If the only failures are test files the diff does not touch, rerun those files alone

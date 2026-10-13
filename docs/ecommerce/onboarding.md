@@ -66,7 +66,7 @@ messaging, drops, and real Locks/Paykit payments.
 | Unit tests                      | `npm run test`                                                          |
 | Sandbox service tests           | `npm run test:marketplace`                                              |
 | Linux visual regression         | `bash scripts/vrt-linux.sh [spec...]` (Docker; the CI merge gate)       |
-| Launch-critical browser journey | `npm run test:e2e:launch-critical`                                      |
+| Launch-critical browser journey | `LAUNCH_E2E_MODE=synthetic bash scripts/ci-launch-e2e.sh`               |
 
 Live suites that need a running service, a local Pubky testnet, or staging signup tokens are listed in
 [`RUNNING.md`](RUNNING.md#running-the-tests). They are run on demand, not as standing gates.

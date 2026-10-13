@@ -95,9 +95,11 @@ npm run test:marketplace                            # sandbox service
 npm run test:marketplace:service                    # durable Rust service transport, needs it running (see below)
 npm run test:marketplace:locks                      # LIVE real-payment purchase, needs the composed stack (see below)
 npm run test:marketplace:drops                      # LIVE FCFS drop race on the deployed staging stack (see below)
-npm run test:e2e:launch-critical                    # launch-critical browser journey (CI runs it as launch-e2e)
+LAUNCH_E2E_MODE=synthetic bash scripts/ci-launch-e2e.sh # CI browser journey; reuses a standalone production build
 bash scripts/vrt-linux.sh [spec...]                 # Linux visual regression in Docker (npm run test:vrt is the same)
 ```
+
+The synthetic launch gate runs the real SDK and production UI against isolated network fixtures. It requires positive Shop sign-in, exact saved-grant reload, separate marketplace approval, proof upload/verification/removal and an authorized seller inventory read. It does not establish live backend or signer compatibility. For an opt-in live run, use `LAUNCH_E2E_MODE=live` with the seller secret and a correctly configured grant-enabled BFF/service; unsupported live configuration fails rather than silently switching to fixtures.
 
 Run `bash scripts/prepush.sh` before every push; its last line is `PREPUSH OK <sha> <seconds> fast`. Releases use `PREPUSH_FULL=1 bash scripts/prepush.sh`, which adds Linux VRT for every spec that renders a changed file.
 

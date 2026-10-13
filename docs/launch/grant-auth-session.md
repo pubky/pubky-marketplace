@@ -65,6 +65,8 @@ On 2026-10-13, the local production App/Shop pair passed unsigned and authentica
 
 The focused marketplace session-connect visual regression passed all 16 scenes in Linux Chromium and Firefox, with the updated baselines checked by a second comparison run. Darwin Chromium also passed. These scenes cover Ring/Bitkit approval, explicit signer choice, Passport's popup action and an unavailable grant deployment; they do not exercise a live approval.
 
+The required `launch-e2e` gate uses explicit synthetic mode with no staging seller secret. It drives production UI and real SDK Shop/service grant approvals, checks the exact saved SDK record across reload, then requires bootstrap proof upload, verification and removal plus an authorized seller inventory read. PKARR, homeserver, BFF and marketplace HTTP responses are fixtures; unexpected external requests fail the test. Live mode remains opt-in and requires a grant-enabled backend.
+
 Before enabling the deployed pair, verify:
 
 - Ring, Bitkit, Passport, recovery-file/phrase and signup grants; reload and explicit sign-out; blocked IndexedDB and a failed save/removal without losing the reference or deleting another record.

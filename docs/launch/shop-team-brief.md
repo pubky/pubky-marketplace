@@ -50,7 +50,7 @@ PUBKY_RUNTIME_MARKETPLACE_URL=http://localhost:3100 npm run dev   # terminal 2
 
 - **Before every push, run `bash scripts/prepush.sh`.** The fast mode (default) runs prettier and eslint on changed files, typecheck, and `vitest related`. Its last line is `PREPUSH OK <sha> <seconds> <mode>`. A passing tree is reused, so pushing the same tree again doesn't rerun it.
 - **Releases run the full gate:** `PREPUSH_FULL=1 bash scripts/prepush.sh`. It adds Linux visual-regression (VRT) tests in the pinned Playwright container (`bash scripts/vrt-linux.sh src/test/vrt/marketplace/`).
-- **CI checks for `master`** (to be marked required in this repo's branch protection; `launch-e2e` runs on PRs into `master` once the repo has its seller secret):
+- **CI checks for `master`** (to be marked required in this repo's branch protection; `launch-e2e` runs on PRs into `master` with real SDK grants and synthetic network fixtures, without a seller secret):
   - Code Quality, NextJS Build;
   - the five test shards, Run Tests, Merge Coverage Reports;
   - `vrt-marketplace`, `vrt-core`, `launch-e2e`.

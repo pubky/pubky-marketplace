@@ -2,6 +2,8 @@
 # Start the committed Nexus fixture stub, then `next start`, then the
 # launch-critical Chromium suite. Does not run `next build` — CI downloads
 # the Build job's `.next`. Required gate never reads live nexusd 7108.
+# CI explicitly selects LAUNCH_E2E_MODE=synthetic (real SDK, stubbed services).
+# Optional LAUNCH_E2E_MODE=live also needs grant-enabled staging/BFF config.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -10,7 +12,13 @@ cd "$ROOT"
 PORT="${PORT:-3000}"
 BASE_URL="${LAUNCH_E2E_BASE_URL:-http://127.0.0.1:${PORT}}"
 export LAUNCH_E2E_BASE_URL="$BASE_URL"
-export LAUNCH_E2E_SERVICE_URL="${LAUNCH_E2E_SERVICE_URL:-https://staging-api.pubky.app}"
+if [[ "${LAUNCH_E2E_MODE:-live}" == "synthetic" ]]; then
+  export LAUNCH_E2E_SERVICE_URL="${LAUNCH_E2E_SERVICE_URL:-https://launch-marketplace.test}"
+  # Never let server-rendered marketplace reads reach live staging in fixture mode.
+  export PUBKY_RUNTIME_MARKETPLACE_URL="$LAUNCH_E2E_SERVICE_URL"
+else
+  export LAUNCH_E2E_SERVICE_URL="${LAUNCH_E2E_SERVICE_URL:-https://staging-api.pubky.app}"
+fi
 export LAUNCH_E2E_REQUIRE_SELLER_BOARD="${LAUNCH_E2E_REQUIRE_SELLER_BOARD:-1}"
 if [[ -d /ms-playwright ]]; then
   export PLAYWRIGHT_BROWSERS_PATH="${PLAYWRIGHT_BROWSERS_PATH:-/ms-playwright}"

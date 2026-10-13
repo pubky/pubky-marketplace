@@ -87,6 +87,12 @@ const paidSellerPaymentConfig = {
   paypalAvailable: false,
 };
 
+// The expired-approval scene requires a deployment with grant approval enabled.
+vi.mock('@/libs/runtime-config/runtime-config', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/libs/runtime-config/runtime-config')>();
+  return { ...actual, getMarketplaceGrantFlowEnabled: () => true };
+});
+
 vi.mock('@/config/commerce', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/config/commerce')>();
   return { ...actual, getCommerceAdapterMode: () => view.adapterMode };
@@ -128,7 +134,11 @@ vi.mock('next/navigation', () => ({
 }));
 
 vi.mock('@/stores/auth/auth.store', () => ({
-  useAuthStore: createMarketplaceVrtAuthStore({ currentUserPubky: 'y'.repeat(52) }),
+  useAuthStore: createMarketplaceVrtAuthStore({
+    currentUserPubky: 'y'.repeat(52),
+    session: { grant: {} },
+    grantSigner: 'ring',
+  }),
 }));
 
 vi.mock('@/stores/commerce/commerce.store', () => ({
