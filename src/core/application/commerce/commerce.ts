@@ -3974,6 +3974,14 @@ export class CommerceApplication {
     return await MarketplaceGatewayService.getPublicDrop(sellerPubky, dropId);
   }
 
+  /**
+   * Public stock state of a listing, readable with no marketplace session.
+   * Null in sandbox mode or when the listing is unknown or removed.
+   */
+  static async getPublicListingAvailability(sellerPubky: string, listingId: string) {
+    return await MarketplaceGatewayService.getPublicListingAvailability(sellerPubky, listingId);
+  }
+
   static async getSellerDrop(actorPubky: string, sellerPubky: string, dropId: string) {
     return await MarketplaceGatewayService.getDrop(actorPubky, buildMarketplaceDropAggregateId(sellerPubky, dropId));
   }

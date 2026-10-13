@@ -542,6 +542,14 @@ export class CommerceController {
     return await CommerceApplication.getPublicDrop(sellerPubky, dropId);
   }
 
+  /** Public stock state of a listing: the hold signal for a viewer with no marketplace session. */
+  static async getPublicListingAvailability(sellerPubky: unknown, listingId: unknown) {
+    return await CommerceApplication.getPublicListingAvailability(
+      CommerceRecordNormalizer.pubky(sellerPubky),
+      CommerceRecordNormalizer.entityId(listingId),
+    );
+  }
+
   /** The current seller's full-detail drop read (mission control). */
   static async getOwnDrop(dropId: string) {
     const pubky = this.getCurrentUserPubky();

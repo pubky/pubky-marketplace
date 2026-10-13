@@ -34,6 +34,7 @@ import { useMarketplaceMediaUrl } from '@/hooks/useMarketplaceMediaUrl/useMarket
 import { useMarketplaceOffers } from '@/hooks/useMarketplaceOffers/useMarketplaceOffers';
 import { useMarketplaceOrders } from '@/hooks/useMarketplaceOrders/useMarketplaceOrders';
 import { useMarketplaceProjection } from '@/hooks/useMarketplaceProjection/useMarketplaceProjection';
+import { useMarketplacePublicAvailability } from '@/hooks/useMarketplacePublicAvailability/useMarketplacePublicAvailability';
 import { useSellerReputation } from '@/hooks/useMarketplaceReviews/useMarketplaceReviews';
 import { useMeasurementSystem } from '@/hooks/useMeasurementSystem/useMeasurementSystem';
 import { useRequireAuth } from '@/hooks/useRequireAuth/useRequireAuth';
@@ -101,6 +102,7 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
   const isOwner = currentUserPubky === sellerPubky;
   const favorite = useCommerceFavorite(`${sellerPubky}:${listingId}`);
   const negotiation = useMarketplaceProjection(sellerPubky, listingId);
+  const publicStockState = useMarketplacePublicAvailability(sellerPubky, listingId, negotiation.needsSession);
   const sellerReputation = useSellerReputation(sellerPubky);
   const cart = useMarketplaceCart();
   const orders = useMarketplaceOrders();
@@ -260,6 +262,9 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
   const isPurchasable = record.state === 'active';
   const availabilityPending = isDurable && negotiation.isLoading;
   const availabilityNeedsSession = isDurable && negotiation.needsSession;
+  // Without a session the projection is unreadable, so another buyer's hold
+  // comes from the public availability read instead.
+  const publicHold = availabilityNeedsSession && publicStockState === 'reserved';
   const availabilityReady =
     !isDurable || (!availabilityPending && !availabilityNeedsSession && negotiation.projection !== null);
   const stateNotice =
@@ -481,7 +486,7 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
                       className="w-fit rounded-full"
                       disabled={
                         availabilityNeedsSession
-                          ? isOwner || adapterMode === 'unavailable'
+                          ? isOwner || adapterMode === 'unavailable' || publicHold
                           : isOwner ||
                             adapterMode === 'unavailable' ||
                             !isPurchasable ||
@@ -497,10 +502,21 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
                       Buy
                     </Button>
                   )}
-                  {projectionIsReserved && !viewerHoldOrder && !viewerOfferHold && (
+                  {((projectionIsReserved && !viewerHoldOrder && !viewerOfferHold) || publicHold) && (
                     <Typography as="p" className="w-full text-sm text-muted-foreground">
                       {CHECKOUT_HOLD_COPY.listingReserved}
                     </Typography>
+                  )}
+                  {publicHold && !isOwner && (
+                    <Button
+                      type="button"
+                      variant="link"
+                      className="h-auto w-full justify-start p-0 text-sm"
+                      data-cy="marketplace-listing-hold-owner-check"
+                      onClick={beginPurchaseAuth}
+                    >
+                      {CHECKOUT_HOLD_COPY.holdOwnerCheckPrompt}
+                    </Button>
                   )}
                   {commerceListingTakesOffers(record) && !viewerOfferHold && (
                     <MarketplaceOfferDialog
@@ -512,7 +528,7 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
                       onSessionRequired={revealSessionRequired}
                       onAccepted={negotiation.refresh}
                       isOwner={isOwner}
-                      holdDisabled={projectionIsReserved}
+                      holdDisabled={projectionIsReserved || publicHold}
                       holdLabel={
                         viewerHoldOrder ? CHECKOUT_HOLD_COPY.heldForYouCta : CHECKOUT_HOLD_COPY.heldWhileAnotherPays
                       }

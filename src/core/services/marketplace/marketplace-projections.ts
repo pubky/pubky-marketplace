@@ -12,6 +12,7 @@ import { MAX_BITCOIN_BASE_UNITS } from '@/libs/commerce/pricing';
 import {
   commercePubkySchema,
   dropStateSchema,
+  listingStateSchema,
   orderStateSchema,
   PARTIAL_REFUND_ORDER_STATE,
 } from '@/libs/commerce/transaction-contracts';
@@ -829,6 +830,18 @@ export const marketplaceReceiptSchema = z.object({
   issuedAt: z.string(),
 });
 
+/**
+ * `GET /v0/listings/{seller}/{listing}/availability` is public and answers
+ * the listing's stock state and the service clock, nothing else. It is the
+ * only hold signal a viewer without a marketplace session can read.
+ */
+export const marketplacePublicListingAvailabilitySchema = z.object({
+  aggregateId: z.string(),
+  state: listingStateSchema,
+  serverTime: z.string(),
+});
+
+export type MarketplacePublicListingAvailability = z.infer<typeof marketplacePublicListingAvailabilitySchema>;
 export type MarketplaceListingProjection = z.infer<typeof marketplaceListingProjectionSchema>;
 export type MarketplaceSellerListingProjection = z.infer<typeof marketplaceSellerListingProjectionSchema>;
 export type MarketplaceNotification = z.infer<typeof marketplaceNotificationSchema> & { kind?: never };

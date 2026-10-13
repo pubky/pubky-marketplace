@@ -112,6 +112,7 @@ export type {
   MarketplaceOrder,
   MarketplacePayment,
   MarketplacePublicDrop,
+  MarketplacePublicListingAvailability,
   MarketplaceReceipt,
   MarketplaceSellerDrop,
   MarketplaceSellerListingProjection,
@@ -269,6 +270,17 @@ export class MarketplaceGatewayService {
   static async getPublicDrop(sellerPubky: string, dropId: string) {
     if (isDurableCommerceMode(getCommerceAdapterMode())) {
       return await MarketplaceTransactionService.getPublicDrop(sellerPubky, dropId);
+    }
+    return null;
+  }
+
+  /**
+   * The public stock state of a listing, readable without a marketplace
+   * session. Null in sandbox mode and for an unknown or removed listing.
+   */
+  static async getPublicListingAvailability(sellerPubky: string, listingId: string) {
+    if (isDurableCommerceMode(getCommerceAdapterMode())) {
+      return await MarketplaceTransactionService.getPublicListingAvailability(sellerPubky, listingId);
     }
     return null;
   }

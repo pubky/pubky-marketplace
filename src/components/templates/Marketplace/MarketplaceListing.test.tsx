@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CommerceSellerReputationOverview } from '@/application/commerce/commerce';
@@ -20,6 +20,7 @@ import { MarketplaceListing } from './MarketplaceListing';
 
 const LOCKS_POLICY_URL = `pubky://${COMMERCE_FIXTURE_SELLER}/pub/locks.app/boots_01.json`;
 const cartAdd = vi.hoisted(() => vi.fn());
+const publicAvailabilityRead = vi.hoisted(() => vi.fn());
 const projectionRefresh = vi.hoisted(() => vi.fn());
 const confirmRemovedCalls = vi.hoisted(() => vi.fn());
 const sellerReputation = vi.hoisted((): { value: CommerceSellerReputationOverview | { status: 'loading' } } => ({
@@ -42,6 +43,8 @@ const view = vi.hoisted(() => ({
   fetchFailure: null as unknown,
   confirmedRemoved: false as boolean | Error,
   needsSession: false,
+  publicStock: null as 'available' | 'reserved' | 'sold' | null,
+  publicStockFailure: false,
   hasFullHomeserverGrant: false,
   orders: [] as Array<{ order: ReturnType<typeof createOrderFixture> }>,
   offers: [] as MarketplaceOffer[],
@@ -77,6 +80,7 @@ vi.mock('@/controllers/commerce/commerce', () => ({
         ? Promise.reject(view.confirmedRemoved)
         : Promise.resolve(view.confirmedRemoved);
     },
+    getPublicListingAvailability: publicAvailabilityRead,
     hasFullHomeserverGrant: () => view.hasFullHomeserverGrant,
     canRegisterListings: () => false,
     ensureListingRegistered: vi.fn(async () => {}),
@@ -207,6 +211,16 @@ describe('MarketplaceListing', () => {
     view.confirmedRemoved = false;
     confirmRemovedCalls.mockClear();
     view.needsSession = false;
+    view.publicStock = null;
+    view.publicStockFailure = false;
+    publicAvailabilityRead.mockReset();
+    publicAvailabilityRead.mockImplementation(async () =>
+      view.publicStockFailure
+        ? Promise.reject(new Error('offline'))
+        : view.publicStock
+          ? { aggregateId: 'listing:x', state: view.publicStock, serverTime: '2026-10-13T07:45:00.000Z' }
+          : null,
+    );
     view.hasFullHomeserverGrant = false;
     view.orders = [];
     view.offers = [];
@@ -649,6 +663,71 @@ describe('MarketplaceListing', () => {
     expect(screen.queryByRole('button', { name: 'Sold out' })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: CHECKOUT_HOLD_COPY.heldWhileAnotherPays })).toBeDisabled();
     expect(screen.queryByRole('button', { name: 'Make offer' })).not.toBeInTheDocument();
+  });
+
+  describe('another buyer holds the item and the viewer has no marketplace session (#50)', () => {
+    beforeEach(() => {
+      view.projection = null;
+      view.projectionError = 'A marketplace session is required.';
+      view.needsSession = true;
+    });
+
+    it('shows the hold notice and disables Buy and Make offer from the public availability read', async () => {
+      view.publicStock = 'reserved';
+
+      renderListing();
+
+      expect(await screen.findByText(CHECKOUT_HOLD_COPY.listingReserved)).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Buy' })).toBeDisabled();
+      expect(screen.getByRole('button', { name: CHECKOUT_HOLD_COPY.heldWhileAnotherPays })).toBeDisabled();
+      expect(screen.queryByRole('button', { name: 'Make offer' })).not.toBeInTheDocument();
+      expect(publicAvailabilityRead).toHaveBeenCalledWith(view.listing?.seller_id, view.listing?.listing_id);
+    });
+
+    it('lets a viewer who may be the holder approve purchases to check', async () => {
+      view.publicStock = 'reserved';
+      const user = userEvent.setup();
+
+      renderListing();
+
+      await user.click(await screen.findByRole('button', { name: CHECKOUT_HOLD_COPY.holdOwnerCheckPrompt }));
+
+      expect(screen.getByRole('heading', { name: 'Enable purchases' })).toBeInTheDocument();
+    });
+
+    it('leaves Buy and Make offer enabled when the public read says the item is available', async () => {
+      view.publicStock = 'available';
+
+      renderListing();
+
+      await waitFor(() => expect(publicAvailabilityRead).toHaveBeenCalled());
+      expect(screen.getByRole('button', { name: 'Buy' })).toBeEnabled();
+      expect(screen.getByRole('button', { name: 'Make offer' })).toBeEnabled();
+      expect(screen.queryByText(CHECKOUT_HOLD_COPY.listingReserved)).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: CHECKOUT_HOLD_COPY.holdOwnerCheckPrompt })).not.toBeInTheDocument();
+    });
+
+    it('shows no hold when the public read fails, rather than guessing', async () => {
+      view.publicStockFailure = true;
+
+      renderListing();
+
+      await waitFor(() => expect(publicAvailabilityRead).toHaveBeenCalled());
+      expect(screen.getByRole('button', { name: 'Buy' })).toBeEnabled();
+      expect(screen.queryByText(CHECKOUT_HOLD_COPY.listingReserved)).not.toBeInTheDocument();
+    });
+
+    it('does not read availability for a viewer whose session is fine', async () => {
+      view.needsSession = false;
+      view.projection = createListingProjectionFixture();
+      view.projectionError = null;
+      view.publicStock = 'reserved';
+
+      renderListing();
+
+      expect(publicAvailabilityRead).not.toHaveBeenCalled();
+      expect(screen.queryByText(CHECKOUT_HOLD_COPY.listingReserved)).not.toBeInTheDocument();
+    });
   });
 
   it('links Held for you to the viewer pending_payment order, not a session id', () => {
