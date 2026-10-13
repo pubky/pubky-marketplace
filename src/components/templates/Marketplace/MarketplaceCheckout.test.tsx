@@ -22,6 +22,7 @@ const view = vi.hoisted(() => ({
   orders: [] as unknown[],
   isLoading: false,
   adapterMode: 'sandbox' as string,
+  paykitServerApi: 'fork' as 'fork' | 'upstream',
   deployEnv: 'production' as 'production' | 'staging' | undefined,
   hasMarketplaceSession: false,
   needsSession: false,
@@ -122,7 +123,7 @@ vi.mock('next/navigation', () => ({
 
 vi.mock('@/config/commerce', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/config/commerce')>();
-  return { ...actual, getCommerceAdapterMode: () => view.adapterMode };
+  return { ...actual, getCommerceAdapterMode: () => view.adapterMode, getPaykitServerApi: () => view.paykitServerApi };
 });
 
 vi.mock('@/libs/runtime-config/runtime-config', async (importOriginal) => {
@@ -342,6 +343,7 @@ function resetCheckoutView() {
   view.items = [];
   view.isLoading = false;
   view.adapterMode = 'sandbox';
+  view.paykitServerApi = 'fork';
   view.deployEnv = 'production';
   view.hasMarketplaceSession = false;
   view.needsSession = false;
@@ -620,6 +622,19 @@ describe('MarketplaceCheckout', () => {
 
     await user.click(screen.getByTestId('marketplace-checkout-method-paypal'));
     expect(screen.queryByTestId('marketplace-checkout-bitcoin-amount-note')).not.toBeInTheDocument();
+  });
+
+  it('says nothing about a unique amount on upstream Paykit, which requests exactly the price', async () => {
+    seededCart();
+    view.adapterMode = 'transaction-service';
+    view.hasMarketplaceSession = true;
+    view.paykitServerApi = 'upstream';
+
+    render(<MarketplaceCheckout />);
+
+    await screen.findByTestId('marketplace-checkout-method-bitcoin');
+    expect(screen.queryByTestId('marketplace-checkout-bitcoin-amount-note')).not.toBeInTheDocument();
+    expect(screen.queryByText(/unique amount/i)).not.toBeInTheDocument();
   });
 
   it('asks a buyer without a Paykit wallet to connect Bitkit instead of letting Bitcoin Pay fail', async () => {
