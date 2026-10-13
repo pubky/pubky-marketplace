@@ -195,13 +195,23 @@ export class AuthApplication {
     HomeserverService.commitGrantSession(recordId);
   }
 
+  static queueGrantRetirement(recordId: string): void {
+    HomeserverService.queueGrantRetirement(recordId);
+  }
+
   /** Removes one stored grant session and its key; rejects while it is still stored. */
   static async removeGrantSession(recordId: string): Promise<void> {
     await this.withGrantKeyRemovalRetry(() => HomeserverService.removeGrantSession(recordId));
   }
 
-  /** Removes every stored grant session and key for this origin; rejects while any remains. */
-  static async clearGrantSessions(options: { requireAvailable?: boolean; recordIds?: string[] } = {}): Promise<void> {
+  /** Retires exact Shop obligations, retaining failures and protecting active references. */
+  static async clearGrantSessions(
+    options: {
+      requireAvailable?: boolean;
+      recordIds?: string[];
+      protectedRecordIds?: string[];
+    } = {},
+  ): Promise<void> {
     await this.withGrantKeyRemovalRetry(() => HomeserverService.clearGrantSessions(options));
   }
 

@@ -248,7 +248,7 @@ describe('grant-only authentication lifecycle', () => {
     await AuthController.completeStepUpReauth({ session: await flow.awaitApproval });
     expect(AuthApplication.generateGrantAuthUrl).toHaveBeenCalledWith(callback);
     expect(useAuthStore.getState()).toMatchObject({ session, grantSigner: 'passport' });
-    expect(AuthApplication.removeGrantSession).toHaveBeenCalledWith('alice:old');
+    expect(AuthApplication.clearGrantSessions).toHaveBeenCalledWith({ protectedRecordIds: ['alice:grant-1'] });
   });
 
   it('rejects a wrong-identity step-up before saving its record', async () => {

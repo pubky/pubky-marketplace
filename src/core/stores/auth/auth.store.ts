@@ -31,7 +31,10 @@ export function createAuthStore() {
           }),
 
           merge: (persisted, current) => {
-            const restored = persisted as Partial<AuthStore>;
+            // Zustand calls merge with undefined on the first visit. Finish
+            // normal hydration before any hosted session or private route starts.
+            const restored: Partial<AuthStore> =
+              persisted && typeof persisted === 'object' && !Array.isArray(persisted) ? { ...persisted } : {};
             // Explicit migration: pre-signer grant records were created by Bitkit.
             if (restored.grantSessionRecordId && !restored.grantSigner) restored.grantSigner = 'bitkit';
             return { ...current, ...restored, sessionOwner: restored.grantSessionRecordId ? 'shop' : null };

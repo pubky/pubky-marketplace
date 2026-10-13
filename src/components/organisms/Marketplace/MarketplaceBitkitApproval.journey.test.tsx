@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CAPABILITIES } from '@/config/app';
@@ -172,6 +172,43 @@ describe('#49 Bitkit approval journeys (real hooks)', () => {
     expect(useCommerceStore.getState().marketplaceSession?.capabilities).toBe(
       parityCapture.parity_request.homeserver_verified,
     );
+  });
+
+  it('switching the approval signer cancels the previous flow and ignores its late result', async () => {
+    signIn('ring');
+    const first = deferredGrantFlow(grantUrl(parityCapture.parity_request.caps));
+    const second = deferredGrantFlow(grantUrl(parityCapture.parity_request.caps));
+    vi.mocked(beginMarketplaceBootstrapFlow).mockResolvedValueOnce(first.flow).mockResolvedValueOnce(second.flow);
+    const user = userEvent.setup();
+    render(<MarketplaceSessionRequiredCard />);
+    await user.click(screen.getByRole('button', { name: 'Authorize' }));
+    await waitFor(() => expect(first.flow.awaitResult).toHaveBeenCalledOnce());
+
+    await user.click(screen.getByRole('radio', { name: 'Bitkit' }));
+    await waitFor(() => expect(second.flow.awaitResult).toHaveBeenCalledOnce());
+    expect(first.flow.cancel).toHaveBeenCalledOnce();
+    expect(screen.getByRole('button', { name: 'Authorize with Bitkit' })).toBeEnabled();
+
+    await act(async () => {
+      first.resolve({
+        status: 'connected',
+        token: CURRENT_TOKEN,
+        pubky: PUBKY,
+        capabilities: parityCapture.parity_request.homeserver_verified,
+        expires_at: FUTURE,
+      });
+    });
+    expect(MarketplaceSessionService.getActiveSession()).toBeNull();
+    expect(useCommerceStore.getState().marketplaceSession).toBeNull();
+
+    second.resolve({
+      status: 'connected',
+      token: CLAIMED_TOKEN,
+      pubky: PUBKY,
+      capabilities: parityCapture.parity_request.homeserver_verified,
+      expires_at: FUTURE,
+    });
+    await waitFor(() => expect(MarketplaceSessionService.getActiveSession()?.token).toBe(CLAIMED_TOKEN));
   });
 
   it.each([

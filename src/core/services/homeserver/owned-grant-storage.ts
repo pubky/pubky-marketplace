@@ -5,7 +5,7 @@ import { ErrorService } from '@/libs/error/error.types';
 // Public identifiers only. Each entry has its own key so concurrent tabs cannot
 // overwrite another tab's cleanup obligations with a read/modify/write race.
 const PREFIX = 'shop-owned-grant-v1:';
-type Obligation = { version: 1; kind: 'key' | 'record'; id: string; expiresAt: number };
+type Obligation = { version: 1; kind: 'key' | 'record' | 'retirement'; id: string; expiresAt: number };
 const active = new Set<string>();
 const key = (kind: Obligation['kind'], id: string) => `${PREFIX}${kind}:${id}`;
 
@@ -65,7 +65,7 @@ export function pendingOwnedGrants(): Obligation[] {
     if (
       !entry ||
       entry.version !== 1 ||
-      (entry.kind !== 'key' && entry.kind !== 'record') ||
+      (entry.kind !== 'key' && entry.kind !== 'record' && entry.kind !== 'retirement') ||
       typeof entry.id !== 'string' ||
       !entry.id ||
       typeof entry.expiresAt !== 'number'

@@ -31,6 +31,7 @@ import { AuthErrorCode, DatabaseErrorCode, ServerErrorCode, ValidationErrorCode 
 import { Err } from '@/libs/error/error.factories';
 import { httpResponseToError } from '@/libs/error/error.http';
 import { ErrorCategory, ErrorService } from '@/libs/error/error.types';
+import { isAppError, isAuthError } from '@/libs/error/error.utils';
 import { HttpMethod, HttpStatusCode } from '@/libs/http/http.types';
 import { signRootAuthToken } from '@/libs/identity/auth-token';
 import { Identity } from '@/libs/identity/identity';
@@ -741,6 +742,38 @@ export class HomeserverService {
     }
   }
 
+  /** Durable intent recorded before a replacement overwrites the old Shop pointer. */
+  static queueGrantRetirement(recordId: string): void {
+    rememberOwnedGrant('retirement', recordId);
+  }
+
+  /** Revoke a superseded Shop grant while its proof key still exists, then remove it. */
+  private static async retireGrantSession(recordId: string): Promise<void> {
+    let session: Session;
+    try {
+      session = await this.restoreGrantSession(recordId);
+    } catch (error) {
+      // A missing/revoked grant cannot be signed out. Storage/network failures
+      // are inconclusive and must retain both its key and retry obligation.
+      if (!(isAppError(error) && isAuthError(error))) throw error;
+      await this.removeGrantSession(recordId);
+      forgetOwnedGrant('retirement', recordId);
+      return;
+    }
+    const info = await session.grant?.sessionInfo();
+    if (!info || info.clientId !== SHOP_GRANT_CLIENT_ID || `${info.publicKey.z32()}:${info.grantId}` !== recordId) {
+      throw Err.validation(ValidationErrorCode.INVALID_INPUT, 'Only an owned Shop grant may be retired.', {
+        service: ErrorService.Homeserver,
+        operation: 'retireGrantSession',
+      });
+    }
+    // Unlike an explicit user logout, automatic retirement keeps its key if
+    // remote revocation cannot be confirmed, so a later retry can finish it.
+    await session.signout();
+    await this.removeGrantSession(recordId);
+    forgetOwnedGrant('retirement', recordId);
+  }
+
   /** Restores a grant session saved by {@link saveGrantSession}. Never saves. */
   static async restoreGrantSession(recordId: string): Promise<Session> {
     try {
@@ -794,7 +827,8 @@ export class HomeserverService {
   /** Remove explicit Shop-owned records and retired Shop flow keys; never clear the origin. */
   static async clearGrantSessions({
     recordIds = [],
-  }: { requireAvailable?: boolean; recordIds?: string[] } = {}): Promise<void> {
+    protectedRecordIds = [],
+  }: { requireAvailable?: boolean; recordIds?: string[]; protectedRecordIds?: string[] } = {}): Promise<void> {
     // Only exact Shop references/cleanup obligations, never all origin records.
     for (const id of new Set(recordIds)) {
       rememberOwnedGrant('record', id);
@@ -802,7 +836,13 @@ export class HomeserverService {
       forgetOwnedGrant('record', id);
     }
     const pending = pendingOwnedGrants();
+    for (const entry of pending.filter((entry) => entry.kind === 'retirement')) {
+      // A crash before replacement leaves the old pointer active. Merely
+      // scheduling retirement must never revoke the currently selected grant.
+      if (!protectedRecordIds.includes(entry.id)) await this.retireGrantSession(entry.id);
+    }
     for (const entry of pending.filter((entry) => entry.kind === 'record')) {
+      if (protectedRecordIds.includes(entry.id)) continue;
       await this.removeGrantSession(entry.id);
       forgetOwnedGrant('record', entry.id);
     }

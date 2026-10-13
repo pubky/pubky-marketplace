@@ -224,7 +224,7 @@ describe('MarketplaceSessionConnectDialog', () => {
       expect(screen.queryByText(/coming soon/i)).not.toBeInTheDocument();
     });
 
-    it('a Ring sign-in can switch the approval app without restarting the grant link', () => {
+    it('a Ring sign-in can select Bitkit in the approval controls', () => {
       view.status = 'awaiting';
       view.authorizationUrl = grantUrl(MARKETPLACE_SESSION_GRANT);
       view.grantEnabled = true;
@@ -243,8 +243,6 @@ describe('MarketplaceSessionConnectDialog', () => {
       expect(screen.getByRole('button', { name: 'Authorize with Bitkit' })).toBeEnabled();
       expect(screen.getByLabelText('Copy authorization link')).toBeEnabled();
       expect(screen.queryByText(/coming soon/i)).not.toBeInTheDocument();
-      expect(view.start).toHaveBeenCalledOnce();
-      expect(view.cancel).not.toHaveBeenCalled();
     });
 
     it('refuses all signer approvals when grant service is disabled', () => {

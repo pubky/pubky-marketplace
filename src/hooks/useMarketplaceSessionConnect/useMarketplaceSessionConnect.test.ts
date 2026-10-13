@@ -9,9 +9,12 @@ import { MarketplaceSessionService } from '@/services/marketplace/marketplace-se
 import { useAuthStore } from '@/stores/auth/auth.store';
 import type { GrantSigner } from '@/stores/auth/auth.types';
 import { asOpaque } from '@/test-utils/type-assertions';
+import { navigatesWithinGesture } from '@/test-utils/user-gesture';
 import { useMarketplaceSessionConnect } from './useMarketplaceSessionConnect';
 
 const runtime = vi.hoisted(() => ({ grants: true, passport: true }));
+const navigation = vi.hoisted(() => ({ navigateTop: vi.fn() }));
+vi.mock('@/libs/navigation/navigate-top', () => ({ navigateTop: navigation.navigateTop }));
 vi.mock('@/libs/runtime-config/runtime-config', async (original) => ({
   ...(await original<typeof import('@/libs/runtime-config/runtime-config')>()),
   getMarketplaceGrantFlowEnabled: () => runtime.grants,
@@ -206,6 +209,56 @@ describe('grant-only marketplace approval', () => {
     await act(async () => created(flow));
     expect(flow.cancel).toHaveBeenCalled();
     expect(result.current.authorizationUrl).toBe('');
+  });
+
+  it('opens the prepared grant in the top window within the phone tap gesture', async () => {
+    vi.mocked(beginMarketplaceBootstrapFlow).mockResolvedValue(pendingFlow().flow);
+    const { result } = renderHook(() => useMarketplaceSessionConnect());
+    act(() => result.current.start());
+    await waitFor(() => expect(result.current.status).toBe('awaiting'));
+
+    expect(navigatesWithinGesture(navigation.navigateTop, URL, () => result.current.openInRing())).toBe(true);
+  });
+
+  it('does not commit an approval that arrives after the dialog unmounts', async () => {
+    const { flow, resolve } = pendingFlow();
+    vi.mocked(beginMarketplaceBootstrapFlow).mockResolvedValue(flow);
+    const connected = vi.fn();
+    const { result, unmount } = renderHook(() => useMarketplaceSessionConnect({ onConnected: connected }));
+    act(() => result.current.start());
+    await waitFor(() => expect(result.current.status).toBe('awaiting'));
+    unmount();
+    await act(async () => {
+      resolve({
+        status: 'connected',
+        token: 'late-token',
+        pubky: PUBKY,
+        capabilities: CAPS,
+        expires_at: SESSION.expiresAt,
+      });
+    });
+
+    expect(flow.cancel).toHaveBeenCalledOnce();
+    expect(MarketplaceSessionService.establishClaimedGrantSession).not.toHaveBeenCalled();
+    expect(CommerceController.writeMarketplaceSessionStore).not.toHaveBeenCalled();
+    expect(connected).not.toHaveBeenCalled();
+  });
+
+  it('retries an expired approval with a fresh flow and cannot accept the old result', async () => {
+    const first = pendingFlow();
+    const second = pendingFlow();
+    vi.mocked(beginMarketplaceBootstrapFlow).mockResolvedValueOnce(first.flow).mockResolvedValueOnce(second.flow);
+    const { result } = renderHook(() => useMarketplaceSessionConnect());
+    act(() => result.current.start());
+    await waitFor(() => expect(result.current.status).toBe('awaiting'));
+    first.resolve({ status: 'expired' });
+    await waitFor(() => expect(result.current.status).toBe('expired'));
+    expect(result.current.authorizationUrl).toBe('');
+
+    act(() => result.current.start());
+    await waitFor(() => expect(second.flow.awaitResult).toHaveBeenCalledOnce());
+    expect(beginMarketplaceBootstrapFlow).toHaveBeenCalledTimes(2);
+    expect(MarketplaceSessionService.establishClaimedGrantSession).not.toHaveBeenCalled();
   });
 
   it('reconnects through a grant and bootstraps if the BFF pairing expired', async () => {

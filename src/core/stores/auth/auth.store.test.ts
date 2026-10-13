@@ -4,7 +4,7 @@ import * as vibeSessionConfig from '@/libs/vibe-session/config';
 import type { THomeserverSessionResult } from '@/services/homeserver/homeserver.types';
 import { asOpaque } from '@/test-utils/type-assertions';
 import { AUTH_PERSIST_KEY } from '../persistedKeys';
-import { useAuthStore } from './auth.store';
+import { createAuthStore, useAuthStore } from './auth.store';
 
 // Mock the logger
 vi.mock('@/libs/logger/logger', () => ({
@@ -25,6 +25,38 @@ describe('AuthStore', () => {
   });
 
   describe('Persistence Hydration', () => {
+    it('finishes initial hydration on a fresh origin before accepting a host session', () => {
+      localStorage.removeItem(AUTH_PERSIST_KEY);
+      const freshStore = createAuthStore();
+
+      expect(freshStore.persist.hasHydrated()).toBe(true);
+      expect(freshStore.getState().hasHydrated).toBe(true);
+      freshStore.getState().init({
+        session: asOpaque({ grant: {}, info: { publicKey: { z32: () => 'host-pubky' } } }),
+        currentUserPubky: 'host-pubky',
+        hasProfile: true,
+        sessionOwner: 'host',
+        hostGeneration: 'host-generation',
+        grantSigner: 'host',
+      });
+      expect(freshStore.getState().hasHydrated).toBe(true);
+      expect(freshStore.getState().hasProfile).toBe(true);
+      expect(freshStore.getState().sessionOwner).toBe('host');
+      expect(freshStore.getState().isRestoringSession).toBe(false);
+    });
+
+    it.each([null, [], 'invalid persisted state'])(
+      'finishes hydration when a legacy persistence value is not an object: %j',
+      (state) => {
+        localStorage.setItem(AUTH_PERSIST_KEY, JSON.stringify({ state, version: 0 }));
+        const freshStore = createAuthStore();
+        expect(freshStore.persist.hasHydrated()).toBe(true);
+        expect(freshStore.getState().hasHydrated).toBe(true);
+        expect(freshStore.getState().currentUserPubky).toBeNull();
+        expect(freshStore.getState().grantSessionRecordId).toBeNull();
+      },
+    );
+
     it('marks the store as hydrated when persisted storage cannot be read', async () => {
       const originalStorage = useAuthStore.persist.getOptions().storage;
       const failingStorage: NonNullable<typeof originalStorage> = {
