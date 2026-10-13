@@ -559,9 +559,6 @@ export const marketplaceOrderProjectionSchema = z
     total: marketplaceMoneySchema,
     pricedFrom: z.string().optional(),
     offerAwardId: z.uuid().nullable().optional(),
-    // Legacy: present only on orders whose checkout carried it. New orders
-    // project null, and the field is not shown anywhere.
-    guaranteePolicyVersion: z.literal(1).nullish(),
     paymentId: z.uuid(),
     receiptId: z.uuid().nullable(),
     holdExpiresAt: z.string().nullable().optional(),

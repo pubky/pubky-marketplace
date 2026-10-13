@@ -264,7 +264,6 @@ describe('marketplace transaction service integration', () => {
           postalCode: '1000-001',
           countryCode: 'PT',
         },
-        guaranteePolicyVersion: 1 as const,
       },
     });
     expect(checkedOut).toMatchObject({ ok: true, result: { kind: 'checkout' } });
@@ -276,7 +275,6 @@ describe('marketplace transaction service integration', () => {
       buyerPubky: buyer,
       sellerPubky: seller,
       state: 'pending_payment',
-      guaranteePolicyVersion: 1,
       // No receipt until payment confirmation — which this client refuses to
       // simulate against the durable service — so this is honestly null.
       receiptId: null,

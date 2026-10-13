@@ -11,7 +11,7 @@ import {
   usdtRefusalKey,
 } from '@/libs/commerce/failure-messages';
 import type { PaymentMethodKind } from '@/libs/commerce/payment-methods';
-import { buildMarketplaceOrderAggregateId, GUARANTEE_POLICY_VERSION } from '@/libs/commerce/transaction-commands';
+import { buildMarketplaceOrderAggregateId } from '@/libs/commerce/transaction-commands';
 import { isMarketplaceSessionRequiredError } from '@/libs/error/error.utils';
 import { showPaymentMethodRefusalToast } from '@/molecules/Toaster/payment-method-refusal-toast';
 import { toast } from '@/molecules/Toaster/use-toast';
@@ -85,7 +85,6 @@ export function useMarketplaceOfferCheckout(onCompleted?: () => Promise<void> | 
             variantId: award.variant.id,
             quantity: award.quantity,
             ...(deliveryAddress ? { deliveryAddress } : { fulfillment: 'pickup' as const }),
-            guaranteePolicyVersion: GUARANTEE_POLICY_VERSION,
           },
         });
         if (!response.ok) {

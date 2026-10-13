@@ -57,7 +57,6 @@ re-pinned.
 
 ## `guaranteePolicyVersion`
 
-The service no longer requires `guarantee_policy_version` on `checkout.create`
-and `offer.checkout`, and projects `null` for an order whose command omitted
-it. The Shop's order projection accepts both. The checkout still sends the
-field until the guarantee checkbox is removed.
+Retired. The Shop no longer sends `guarantee_policy_version` on `checkout.create`
+or `offer.checkout`, and its order projection no longer reads it. The service
+still accepts the field from an older client and no longer projects it.
