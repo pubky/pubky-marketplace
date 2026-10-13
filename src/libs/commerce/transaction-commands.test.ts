@@ -885,3 +885,115 @@ describe('confirmRefundDestinationCommandSchema (S6 wire contract)', () => {
     ).toBe(false);
   });
 });
+
+describe('sealed delivery address fields', () => {
+  const ENVELOPE = 'A'.repeat(2795);
+  const KEY_ID = 'a'.repeat(32);
+  const sealed = { keyId: KEY_ID, envelope: ENVELOPE };
+  const address = {
+    name: 'Alice Buyer',
+    line1: '1 Market Street',
+    line2: '',
+    city: 'New York',
+    region: 'NY',
+    postalCode: '10001',
+    countryCode: 'US',
+  };
+  const shippingLine = { listingAggregateId: LISTING_AGGREGATE_ID, expectedRevision: 1, quantity: 1 };
+  const pickupLine = { ...shippingLine, fulfillment: 'pickup' };
+
+  function checkout(lines: Record<string, unknown>[], extra: Record<string, unknown>) {
+    return {
+      version: 1,
+      commandId: '018f47d2-6a27-7c23-a62f-000000000734',
+      aggregateId: 'checkout:018f47d2-6a27-7c23-a62f-000000000734',
+      expectedRevision: 0,
+      issuedAt: '2026-08-19T22:00:00.000Z',
+      kind: 'checkout.create',
+      payload: { lines, ...extra },
+    };
+  }
+
+  function offer(extra: Record<string, unknown>) {
+    return {
+      version: 1,
+      commandId: '018f47d2-6a27-7c23-a62f-000000000740',
+      aggregateId: 'offer:018f47d2-6a27-7c23-a62f-000000000741',
+      expectedRevision: 2,
+      issuedAt: '2026-08-19T22:00:00.000Z',
+      kind: 'offer.checkout',
+      payload: {
+        offerId: '018f47d2-6a27-7c23-a62f-000000000741',
+        awardId: '018f47d2-6a27-7c23-a62f-000000000742',
+        listingAggregateId: LISTING_AGGREGATE_ID,
+        listingRevision: 1,
+        listingRecordSha256: 'a'.repeat(64),
+        variantId: 'variant_01',
+        quantity: 1,
+        ...extra,
+      },
+    };
+  }
+
+  it('accepts sealed envelopes on a shipping checkout in place of the plaintext address', () => {
+    const command = checkout([shippingLine], { deliveryAddressEnvelopes: [{ sellerPubky: SELLER, ...sealed }] });
+    expect(createMarketplaceCheckoutCommandSchema.safeParse(command).success).toBe(true);
+  });
+
+  it('refuses a checkout that carries both the plaintext address and envelopes', () => {
+    const command = checkout([shippingLine], {
+      deliveryAddress: address,
+      deliveryAddressEnvelopes: [{ sellerPubky: SELLER, ...sealed }],
+    });
+    expect(createMarketplaceCheckoutCommandSchema.safeParse(command).success).toBe(false);
+  });
+
+  it('refuses envelopes on a pickup-only checkout and two envelopes for one seller', () => {
+    expect(
+      createMarketplaceCheckoutCommandSchema.safeParse(
+        checkout([pickupLine], { deliveryAddressEnvelopes: [{ sellerPubky: SELLER, ...sealed }] }),
+      ).success,
+    ).toBe(false);
+    expect(
+      createMarketplaceCheckoutCommandSchema.safeParse(
+        checkout([shippingLine], {
+          deliveryAddressEnvelopes: [
+            { sellerPubky: SELLER, ...sealed },
+            { sellerPubky: SELLER, ...sealed },
+          ],
+        }),
+      ).success,
+    ).toBe(false);
+  });
+
+  it.each([
+    ['a wrong length', { keyId: KEY_ID, envelope: 'A'.repeat(100) }],
+    ['padding characters', { keyId: KEY_ID, envelope: `${'A'.repeat(2794)}=` }],
+    ['a malformed key id', { keyId: 'XYZ', envelope: ENVELOPE }],
+    ['an unknown field', { ...sealed, address: 'x' }],
+  ])('refuses an envelope with %s', (_label, entry) => {
+    const command = checkout([shippingLine], { deliveryAddressEnvelopes: [{ sellerPubky: SELLER, ...entry }] });
+    expect(createMarketplaceCheckoutCommandSchema.safeParse(command).success).toBe(false);
+  });
+
+  it('accepts a sealed offer checkout, and refuses it beside a plaintext address or on pickup', () => {
+    expect(offerCheckoutCommandSchema.safeParse(offer({ deliveryAddressEnvelope: sealed })).success).toBe(true);
+    expect(
+      offerCheckoutCommandSchema.safeParse(offer({ deliveryAddressEnvelope: sealed, deliveryAddress: address }))
+        .success,
+    ).toBe(false);
+    expect(
+      offerCheckoutCommandSchema.safeParse(offer({ deliveryAddressEnvelope: sealed, fulfillment: 'pickup' })).success,
+    ).toBe(false);
+  });
+
+  it('puts the sealed fields on the wire in snake case', () => {
+    const command = checkout([shippingLine], { deliveryAddressEnvelopes: [{ sellerPubky: SELLER, ...sealed }] });
+    const wire = toSnakeCaseWire(createMarketplaceCheckoutCommandSchema.parse(command)) as {
+      payload: { delivery_address_envelopes: { seller_pubky: string; key_id: string; envelope: string }[] };
+    };
+    expect(wire.payload.delivery_address_envelopes).toEqual([
+      { seller_pubky: SELLER, key_id: KEY_ID, envelope: ENVELOPE },
+    ]);
+  });
+});

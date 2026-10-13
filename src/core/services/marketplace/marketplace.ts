@@ -16,13 +16,6 @@ import type {
 } from '@/libs/commerce/payment-methods';
 import type { MarketplacePickupReveal, MarketplaceSellerPickupDetails } from '@/libs/commerce/pickup';
 import type { MarketplacePrivKeysResult } from '@/libs/commerce/priv-keys';
-import type {
-  SellerShippingConfig,
-  ShipFromAddress,
-  ShippingLabel,
-  ShippingParcel,
-  ShippoRate,
-} from '@/libs/commerce/shipping';
 import {
   type MarketplaceCommand,
   type MarketplaceCommandResponse,
@@ -623,34 +616,6 @@ export class MarketplaceGatewayService {
   ) {
     this.assertDurableServiceOnly('resolveBitcoinPayment');
     return await MarketplaceTransactionService.resolveBitcoinPayment(actor, orderId, input, idempotencyKey);
-  }
-
-  static async getMyShippingConfig(actor: string): Promise<SellerShippingConfig | null> {
-    this.assertDurableServiceOnly('getMyShippingConfig');
-    return await MarketplaceTransactionService.getMyShippingConfig(actor);
-  }
-
-  static async putMyShippingConfig(
-    actor: string,
-    input: { shippoApiKey?: string; shipFrom: ShipFromAddress | null },
-  ): Promise<SellerShippingConfig> {
-    this.assertDurableServiceOnly('putMyShippingConfig');
-    return await MarketplaceTransactionService.putMyShippingConfig(actor, input);
-  }
-
-  static async quoteShippingRates(actor: string, orderId: string, parcel: ShippingParcel): Promise<ShippoRate[]> {
-    this.assertDurableServiceOnly('quoteShippingRates');
-    return await MarketplaceTransactionService.quoteShippingRates(actor, orderId, parcel);
-  }
-
-  static async purchaseShippingLabel(actor: string, orderId: string, rateId: string): Promise<ShippingLabel> {
-    this.assertDurableServiceOnly('purchaseShippingLabel');
-    return await MarketplaceTransactionService.purchaseShippingLabel(actor, orderId, rateId);
-  }
-
-  static async getShippingLabel(actor: string, orderId: string): Promise<ShippingLabel | null> {
-    this.assertDurableServiceOnly('getShippingLabel');
-    return await MarketplaceTransactionService.getShippingLabel(actor, orderId);
   }
 
   static async uploadAttachment(actor: string, recipient: string, file: File): Promise<MarketplaceAttachmentMetadata> {

@@ -1,10 +1,9 @@
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import { db } from '@/database/franky/franky';
+import { DELIVERY_KEY_COPY } from '@/libs/commerce/delivery-key-copy';
 import { useAuthStore } from '@/stores/auth/auth.store';
 import { createOrderFixture, ORDER_FIXTURE_SELLER } from '@/test/fixtures/commerce/orders';
 import { MarketplacePackingSlipDialog } from './MarketplacePackingSlipDialog';
@@ -13,12 +12,24 @@ vi.mock('next/navigation', () => ({
   usePathname: () => '/marketplace/orders',
 }));
 
-const PASTED_ADDRESS = 'Ada Buyer\n123 Privacy Lane\n83820 Someville, US';
+const UNAVAILABLE_NOTE = DELIVERY_KEY_COPY.addressUnavailable;
+const PASTE_FIELD = 'Paste delivery address (optional)';
 
-const UNAVAILABLE_NOTE = 'Delivery address unavailable for this order — paste it below.';
-
-const LOCAL_ONLY_NOTE =
-  'Kept only in this dialog on this device — not saved, not sent to the marketplace or any server. Anything you print (including print-to-PDF) will contain it.';
+const ADDRESS = {
+  name: 'Alice Buyer',
+  line1: '1 Market Street',
+  line2: '',
+  city: 'New York',
+  region: 'NY',
+  postalCode: '10001',
+  countryCode: 'US',
+};
+const SEALED = {
+  format: 'hpke_v1' as const,
+  keyId: 'a'.repeat(32),
+  commandId: '018f47d2-6a27-7c23-a62f-000000000734',
+  envelope: 'A'.repeat(2795),
+};
 
 async function openSlip() {
   render(<MarketplacePackingSlipDialog order={createOrderFixture('paid')} />);
@@ -53,6 +64,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.restoreAllMocks();
   useAuthStore.setState({ currentUserPubky: null });
   window.localStorage.clear();
   window.sessionStorage.clear();
@@ -81,74 +93,84 @@ describe('MarketplacePackingSlipDialog — bitcoin amount', () => {
   });
 });
 
-describe('MarketplacePackingSlipDialog — paste delivery address', () => {
-  it('shows the deployment limitation note and ruled lines while the field is empty', async () => {
-    const dialog = await openSlip();
-
-    const slip = within(dialog).getByText('Packing slip', { selector: 'p' }).closest('[data-packing-slip]')!;
-    expect(within(slip as HTMLElement).getByText(new RegExp(UNAVAILABLE_NOTE))).toBeInTheDocument();
-    expect(within(dialog).getByLabelText('Paste delivery address (optional)')).toHaveValue('');
-    expect(within(dialog).getByText(LOCAL_ONLY_NOTE)).toBeInTheDocument();
-  });
-
-  it('marks the paste field for Sentry Replay masking', async () => {
-    const dialog = await openSlip();
-    expect(within(dialog).getByLabelText('Paste delivery address (optional)')).toHaveAttribute('data-sentry-mask');
-
-    // instrumentation-client.test.ts is out of this wave's edit set; pin the
-    // Replay options from the client source so a maskAllInputs regression
-    // still fails this suite. The module is not imported (side effects).
-    const clientInit = readFileSync(resolve(__dirname, '../../../instrumentation-client.ts'), 'utf8');
-    expect(clientInit).toMatch(/replayIntegration\(\{[\s\S]*maskAllText:\s*true/);
-    expect(clientInit).toMatch(/replayIntegration\(\{[\s\S]*maskAllInputs:\s*true/);
-  });
-
-  it('renders the pasted address into the printed slip only when non-empty', async () => {
-    const dialog = await openSlip();
-    const field = within(dialog).getByLabelText('Paste delivery address (optional)');
-
-    await userEvent.type(field, PASTED_ADDRESS);
-    const slip = dialog.querySelector('[data-packing-slip]')!;
-    expect(within(slip as HTMLElement).getByText(/123 Privacy Lane/)).toBeInTheDocument();
-    // The deployment limitation note gives way to the pasted destination.
-    expect(within(slip as HTMLElement).queryByText(new RegExp(UNAVAILABLE_NOTE))).toBeNull();
-
-    await userEvent.clear(field);
-    expect(within(slip as HTMLElement).queryByText(/123 Privacy Lane/)).toBeNull();
-    expect(within(slip as HTMLElement).getByText(new RegExp(UNAVAILABLE_NOTE))).toBeInTheDocument();
-  });
-
-  it('clears the pasted address when the dialog closes', async () => {
-    const dialog = await openSlip();
-    const field = within(dialog).getByLabelText('Paste delivery address (optional)');
-    await userEvent.type(field, PASTED_ADDRESS);
-
-    await closeSlip();
-
-    // Reopen: the field and the slip are back to the withheld state.
+describe('MarketplacePackingSlipDialog — sealed delivery address', () => {
+  async function openSealedSlip() {
+    const order = createOrderFixture('paid');
+    vi.spyOn(CommerceController, 'getMarketplaceOrder').mockResolvedValue(
+      createOrderFixture('paid', { deliveryAddress: SEALED }),
+    );
+    useAuthStore.setState({ currentUserPubky: ORDER_FIXTURE_SELLER });
+    render(<MarketplacePackingSlipDialog order={order} />);
     await userEvent.click(screen.getByRole('button', { name: 'Packing slip' }));
-    const reopened = screen.getByRole('dialog');
-    expect(within(reopened).getByLabelText('Paste delivery address (optional)')).toHaveValue('');
-    const slip = reopened.querySelector('[data-packing-slip]')!;
-    expect(within(slip as HTMLElement).queryByText(/123 Privacy Lane/)).toBeNull();
+    return screen.getByRole('dialog');
+  }
+
+  it('prints the address this device opened, with no paste field', async () => {
+    const open = vi.spyOn(CommerceController, 'getOrderDeliveryAddress').mockResolvedValue({
+      kind: 'address',
+      address: ADDRESS,
+    });
+    const dialog = await openSealedSlip();
+
+    await waitFor(() => expect(within(dialog).getByText('1 Market Street')).toBeInTheDocument());
+    expect(open).toHaveBeenCalledWith(expect.objectContaining({ deliveryAddress: SEALED }));
+    expect(within(dialog).queryByLabelText(PASTE_FIELD)).toBeNull();
   });
 
-  it('never persists the pasted address (Dexie, localStorage, sessionStorage)', async () => {
-    const dialog = await openSlip();
-    await userEvent.type(within(dialog).getByLabelText('Paste delivery address (optional)'), PASTED_ADDRESS);
+  it('stops with the restore-the-key message when this device cannot open the envelope', async () => {
+    vi.spyOn(CommerceController, 'getOrderDeliveryAddress').mockResolvedValue({
+      kind: 'undecryptable',
+      reason: 'key_missing',
+    });
+    const dialog = await openSealedSlip();
+
+    await waitFor(() => expect(within(dialog).getByRole('alert')).toHaveTextContent(DELIVERY_KEY_COPY.undecryptable));
+    expect(within(dialog).queryByText('1 Market Street')).toBeNull();
+    expect(within(dialog).queryByLabelText(PASTE_FIELD)).toBeNull();
+  });
+
+  it('treats a failure while reading the key as unopenable, never as an address', async () => {
+    vi.spyOn(CommerceController, 'getOrderDeliveryAddress').mockRejectedValue(new Error('indexeddb unavailable'));
+    const dialog = await openSealedSlip();
+
+    await waitFor(() => expect(within(dialog).getByRole('alert')).toHaveTextContent(DELIVERY_KEY_COPY.undecryptable));
+  });
+
+  it('drops the decrypted address when the dialog closes', async () => {
+    vi.spyOn(CommerceController, 'getOrderDeliveryAddress')
+      .mockResolvedValueOnce({ kind: 'address', address: ADDRESS })
+      .mockReturnValue(new Promise(() => {}));
+    const dialog = await openSealedSlip();
+    await waitFor(() => expect(within(dialog).getByText('1 Market Street')).toBeInTheDocument());
+
+    await closeSlip();
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    await userEvent.click(screen.getByRole('button', { name: 'Packing slip' }));
+
+    const reopened = screen.getByRole('dialog');
+    expect(within(reopened).queryByText('1 Market Street')).toBeNull();
+    expect(within(reopened).getByText(DELIVERY_KEY_COPY.addressLoading)).toBeInTheDocument();
+  });
+
+  it('never persists the decrypted address (Dexie, localStorage, sessionStorage)', async () => {
+    vi.spyOn(CommerceController, 'getOrderDeliveryAddress').mockResolvedValue({ kind: 'address', address: ADDRESS });
+    const dialog = await openSealedSlip();
+    // The persisted auth store legitimately holds the signed-in pubky.
+    window.localStorage.clear();
+    await waitFor(() => expect(within(dialog).getByText('1 Market Street')).toBeInTheDocument());
     await closeSlip();
 
-    await expectNothingPersisted(PASTED_ADDRESS);
+    await expectNothingPersisted('1 Market Street');
   });
 });
 
 describe('MarketplacePackingSlipDialog — pickup orders (§A5)', () => {
-  it('suppresses the delivery-address block and the paste field, naming the in-app meeting point', async () => {
+  it('suppresses the delivery-address block, naming the in-app meeting point', async () => {
     render(<MarketplacePackingSlipDialog order={createOrderFixture('ready_for_pickup')} />);
     await userEvent.click(screen.getByRole('button', { name: 'Packing slip' }));
     const dialog = screen.getByRole('dialog');
 
-    expect(within(dialog).queryByLabelText('Paste delivery address (optional)')).not.toBeInTheDocument();
+    expect(within(dialog).queryByLabelText(PASTE_FIELD)).not.toBeInTheDocument();
     expect(within(dialog).queryByText(new RegExp(UNAVAILABLE_NOTE))).not.toBeInTheDocument();
     expect(
       within(dialog).getByText('Local pickup — meeting point is only visible to the buyer in the app.'),
@@ -161,7 +183,7 @@ describe('MarketplacePackingSlipDialog — pickup orders (§A5)', () => {
   it('keeps the shipped-order slip unchanged', async () => {
     const dialog = await openSlip();
 
-    expect(within(dialog).getByLabelText('Paste delivery address (optional)')).toBeInTheDocument();
+    expect(within(dialog).queryByLabelText(PASTE_FIELD)).toBeNull();
     expect(within(dialog).getByText(new RegExp(UNAVAILABLE_NOTE))).toBeInTheDocument();
     expect(
       within(dialog).queryByText('Local pickup — meeting point is only visible to the buyer in the app.'),
@@ -196,10 +218,10 @@ describe('MarketplacePackingSlipDialog — seller delivery projection', () => {
     await waitFor(() => expect(within(slip as HTMLElement).getByText('1 Market Street')).toBeInTheDocument());
     expect(within(slip as HTMLElement).getByText('Alice Buyer')).toBeInTheDocument();
     expect(within(slip as HTMLElement).getByText('New York, NY 10001')).toBeInTheDocument();
-    expect(within(screen.getByRole('dialog')).queryByLabelText('Paste delivery address (optional)')).toBeNull();
+    expect(within(screen.getByRole('dialog')).queryByLabelText(PASTE_FIELD)).toBeNull();
   });
 
-  it('falls back to the static paste guidance for an unsupported format', async () => {
+  it('says the address is unavailable for an unsupported format', async () => {
     const order = createOrderFixture('paid');
     vi.spyOn(CommerceController, 'getMarketplaceOrder').mockResolvedValue(
       createOrderFixture('paid', { deliveryAddress: { format: 'unsupported' } }),
@@ -210,15 +232,11 @@ describe('MarketplacePackingSlipDialog — seller delivery projection', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Packing slip' }));
 
     const dialog = screen.getByRole('dialog');
-    await waitFor(() =>
-      expect(
-        within(dialog).getByText('Delivery address unavailable for this order — paste it below.'),
-      ).toBeInTheDocument(),
-    );
-    expect(within(dialog).getByLabelText('Paste delivery address (optional)')).toBeInTheDocument();
+    await waitFor(() => expect(within(dialog).getByText(DELIVERY_KEY_COPY.addressUnavailable)).toBeInTheDocument());
+    expect(within(dialog).queryByLabelText(PASTE_FIELD)).toBeNull();
   });
 
-  it('clears the rendered and pasted address on account switch', async () => {
+  it('clears the rendered address on account switch', async () => {
     const order = createOrderFixture('paid');
     vi.spyOn(CommerceController, 'getMarketplaceOrder').mockResolvedValue(
       createOrderFixture('paid', {
@@ -249,6 +267,6 @@ describe('MarketplacePackingSlipDialog — seller delivery projection', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Packing slip' }));
     const reopened = screen.getByRole('dialog');
     expect(within(reopened).queryByText('1 Market Street')).toBeNull();
-    expect(within(reopened).getByLabelText('Paste delivery address (optional)')).toBeInTheDocument();
+    expect(within(reopened).queryByLabelText(PASTE_FIELD)).toBeNull();
   });
 });

@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { DELIVERY_ENVELOPE_BYTES, DELIVERY_KEY_ID_PATTERN } from './delivery-envelope-format';
 import {
   type DigitalDeliveryCommandResult,
   digitalDeliveryCommandResultSchema,
@@ -21,6 +22,20 @@ import {
   createCommerceCommandSchema,
 } from './transaction-contracts';
 import { isValidArbitrumAddress } from './usdt-refund';
+
+const DELIVERY_ENVELOPE_CHARACTERS = Math.ceil((DELIVERY_ENVELOPE_BYTES * 4) / 3);
+
+/** One sealed delivery address: the key id it was sealed to and the unpadded base64url bytes. */
+const deliveryEnvelopeFieldsSchema = z.object({
+  keyId: z.string().regex(DELIVERY_KEY_ID_PATTERN),
+  envelope: z
+    .string()
+    .length(DELIVERY_ENVELOPE_CHARACTERS)
+    .regex(/^[A-Za-z0-9_-]+$/),
+});
+
+const sellerDeliveryEnvelopeSchema = deliveryEnvelopeFieldsSchema.extend({ sellerPubky: commercePubkySchema }).strict();
+const offerDeliveryEnvelopeSchema = deliveryEnvelopeFieldsSchema.strict();
 
 const auctionTermsSchema = z
   .object({
@@ -228,24 +243,37 @@ export const offerCheckoutCommandSchema = createCommerceCommandSchema(
       listingRecordSha256: z.string().min(1),
       variantId: z.string().min(1),
       quantity: z.number().int().positive(),
+      // The buyer's client sends `deliveryAddressEnvelope`, sealed to the
+      // seller's delivery key. The plaintext field stays in the schema for
+      // the local prototype adapter and for service releases that still
+      // accept it; the Shop's durable path never sets it.
       deliveryAddress: commerceDeliveryAddressValueSchema.optional(),
+      deliveryAddressEnvelope: offerDeliveryEnvelopeSchema.optional(),
       // Absent means shipping; a pickup award sends `pickup` and no address.
       fulfillment: z.literal('pickup').optional(),
     })
     .strict()
     .superRefine((payload, context) => {
       const pickup = payload.fulfillment === 'pickup';
-      if (!pickup && payload.deliveryAddress === undefined) {
+      if (payload.deliveryAddress !== undefined && payload.deliveryAddressEnvelope !== undefined) {
+        context.addIssue({
+          code: 'custom',
+          path: ['deliveryAddressEnvelope'],
+          message: 'An offer checkout carries a delivery address or a sealed envelope, not both',
+        });
+      }
+      const hasAddress = payload.deliveryAddress !== undefined || payload.deliveryAddressEnvelope !== undefined;
+      if (!pickup && !hasAddress) {
         context.addIssue({
           code: 'custom',
           path: ['deliveryAddress'],
           message: 'A delivery address is required when the offer ships',
         });
       }
-      if (pickup && payload.deliveryAddress !== undefined) {
+      if (pickup && hasAddress) {
         context.addIssue({
           code: 'custom',
-          path: ['deliveryAddress'],
+          path: [payload.deliveryAddressEnvelope !== undefined ? 'deliveryAddressEnvelope' : 'deliveryAddress'],
           message: 'A pickup offer checkout must not carry a delivery address',
         });
       }
@@ -317,7 +345,11 @@ export const createMarketplaceCheckoutCommandSchema = createCommerceCommandSchem
       // absent when every group is pickup — a pickup-only checkout that
       // PRESENTS an address is rejected, so a buggy or malicious client
       // cannot smuggle one into storage (§A2).
+      // Sealed per shipped seller (one entry each, none for pickup or
+      // digital sellers). `deliveryAddress` remains for the local prototype
+      // adapter and older service releases; the durable path never sets it.
       deliveryAddress: commerceDeliveryAddressValueSchema.optional(),
+      deliveryAddressEnvelopes: z.array(sellerDeliveryEnvelopeSchema).min(1).max(50).optional(),
       // Where the seller of an email-kind digital line sends the purchase
       // (digital delivery design §4.3). The service requires it exactly when
       // a line is email-kind, which only the listing projection says, so the
@@ -336,17 +368,35 @@ export const createMarketplaceCheckoutCommandSchema = createCommerceCommandSchem
       const anyShipping = payload.lines.some(
         (line) => line.fulfillment === undefined || line.fulfillment === 'shipping',
       );
-      if (anyShipping && payload.deliveryAddress === undefined) {
+      const hasAddress = payload.deliveryAddress !== undefined || payload.deliveryAddressEnvelopes !== undefined;
+      if (payload.deliveryAddress !== undefined && payload.deliveryAddressEnvelopes !== undefined) {
+        context.addIssue({
+          code: 'custom',
+          path: ['deliveryAddressEnvelopes'],
+          message: 'A checkout carries a delivery address or sealed envelopes, not both.',
+        });
+      }
+      if (anyShipping && !hasAddress) {
         context.addIssue({
           code: 'custom',
           path: ['deliveryAddress'],
           message: 'A delivery address is required when any checkout line ships.',
         });
       }
-      if (!anyShipping && payload.deliveryAddress !== undefined) {
+      if (payload.deliveryAddressEnvelopes !== undefined) {
+        const envelopeSellers = payload.deliveryAddressEnvelopes.map(({ sellerPubky }) => sellerPubky);
+        if (new Set(envelopeSellers).size !== envelopeSellers.length) {
+          context.addIssue({
+            code: 'custom',
+            path: ['deliveryAddressEnvelopes'],
+            message: 'A checkout carries at most one sealed envelope per seller.',
+          });
+        }
+      }
+      if (!anyShipping && hasAddress) {
         context.addIssue({
           code: 'custom',
-          path: ['deliveryAddress'],
+          path: [payload.deliveryAddressEnvelopes !== undefined ? 'deliveryAddressEnvelopes' : 'deliveryAddress'],
           message: payload.lines.every((line) => line.fulfillment === 'pickup')
             ? 'A pickup-only checkout must not carry a delivery address.'
             : 'A checkout with no shipped line must not carry a delivery address.',

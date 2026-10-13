@@ -30,7 +30,6 @@ export const LIVE_OFFER_ORDER_WIRE_FIXTURE = {
   subtotal: { amount_minor: 100, currency: 'USD', exponent: 2 },
   shipping: { amount_minor: 100, currency: 'USD', exponent: 2 },
   total: { amount_minor: 200, currency: 'USD', exponent: 2 },
-  guarantee_policy_version: 1,
   payment_id: 'cfaa7a37-63a6-4c1a-bb4f-faaf116f01e2',
   receipt_id: null,
   stock_held: true,

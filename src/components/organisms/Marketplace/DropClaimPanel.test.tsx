@@ -57,6 +57,8 @@ function makeClaim(): UseMarketplaceDropClaimResult {
     failure: null,
     needsSession: false,
     sessionError: null,
+    pendingKeyChange: null,
+    decideKeyChange: vi.fn(),
     claim: vi.fn(async () => true),
   };
 }

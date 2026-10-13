@@ -4,10 +4,9 @@ import { useEffect, useState } from 'react';
 import { Printer } from 'lucide-react';
 import { Button } from '@/atoms/Button/Button';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/atoms/Dialog/Dialog';
-import { Label } from '@/atoms/Label/Label';
-import { Textarea } from '@/atoms/Textarea/Textarea';
 import { usePackingSlipAddress } from '@/hooks/usePackingSlipAddress/usePackingSlipAddress';
 import { bitcoinPaymentBreakdown, formatBitcoinAwareMoney } from '@/libs/commerce/bitcoin-payment-code';
+import { DELIVERY_KEY_COPY } from '@/libs/commerce/delivery-key-copy';
 import { formatCommerceMoney } from '@/libs/commerce/format';
 import { formatPublicKey } from '@/libs/utils/utils';
 import type { MarketplaceOrder } from '@/services/marketplace/marketplace';
@@ -18,16 +17,11 @@ import { useAuthStore } from '@/stores/auth/auth.store';
  * seller's client legitimately holds: the order projection the transaction
  * service serves to participants.
  *
- * The seller's paid/processing shipping single-order projection can carry a
- * tagged `plaintext_v1` delivery address. Unknown and untagged formats are
- * treated as unavailable and never rendered.
- *
- * As a convenience for sellers shipping many orders, the dialog offers an
- * OPTIONAL paste field: the seller copies the destination the buyer sent
- * them directly (e.g. the encrypted conversation) and it is rendered onto
- * the printed slip. The pasted value lives only in component state — never
- * persisted, never logged, never sent anywhere — and is cleared on dialog
- * close, print completion, and route change (see `usePackingSlipAddress`).
+ * The seller's paid/processing shipping single-order projection carries the
+ * delivery address sealed to this seller's delivery key. The dialog opens it
+ * with the key kept on this device and holds the plaintext in component state
+ * only (see `usePackingSlipAddress`). If this device cannot open it, the slip
+ * says so and shows no address: there is no paste fallback and no guess.
  *
  * Printing uses plain browser print CSS (`@media print` rules in
  * `globals.css` keyed on `data-packing-slip`) — no PDF dependency.
@@ -35,14 +29,12 @@ import { useAuthStore } from '@/stores/auth/auth.store';
 export function MarketplacePackingSlipDialog({ order }: { order: MarketplaceOrder }) {
   const [open, setOpen] = useState(false);
   const currentUserPubky = useAuthStore((state) => state.currentUserPubky);
-  const { address, setAddress, clear, sellerOrder } = usePackingSlipAddress({ order, enabled: open });
-  const pastedAddress = address.trim();
-  const serviceAddress =
-    sellerOrder?.deliveryAddress?.format === 'plaintext_v1' ? sellerOrder.deliveryAddress.address : null;
+  const { deliveryAddress, clear } = usePackingSlipAddress({ order, enabled: open });
+  const serviceAddress = deliveryAddress.status === 'ready' ? deliveryAddress.address : null;
   // Pickup orders (local pickup design §A5): nothing is posted, so the
-  // delivery-address block and the paste field are suppressed — a pickup
-  // order never had an address, and the meeting point is only ever visible
-  // to the buyer in the app.
+  // delivery-address block is suppressed — a pickup order never had an
+  // address, and the meeting point is only ever visible to the buyer in the
+  // app.
   const isPickup = order.fulfillment === 'pickup';
   const bitcoinBreakdown = bitcoinPaymentBreakdown(order);
 
@@ -51,7 +43,7 @@ export function MarketplacePackingSlipDialog({ order }: { order: MarketplaceOrde
   }, [currentUserPubky]);
 
   const handleOpenChange = (next: boolean) => {
-    // Closing the dialog always drops the staged address — it is staged for
+    // Closing the dialog always drops the decrypted address; it is held for
     // one print job, not remembered.
     if (!next) clear();
     setOpen(next);
@@ -73,31 +65,6 @@ export function MarketplacePackingSlipDialog({ order }: { order: MarketplaceOrde
           <DialogHeader>
             <DialogTitle>Packing slip</DialogTitle>
           </DialogHeader>
-          {/* Optional convenience: paste the destination the buyer sent you
-              directly and it prints in the slip's "Deliver to" block. The
-              value lives only in component state (usePackingSlipAddress) —
-              never persisted, never sent — and Sentry Replay masks all
-              inputs (`maskAllInputs`), with `data-sentry-mask` making that
-              explicit for this field. Suppressed on pickup orders (§A5). */}
-          {!isPickup && !serviceAddress && (
-            <div className="space-y-1.5">
-              <Label htmlFor="packing-slip-address">Paste delivery address (optional)</Label>
-              <Textarea
-                variant="dashed"
-                id="packing-slip-address"
-                data-sentry-mask
-                autoComplete="off"
-                rows={3}
-                value={address}
-                onChange={(event) => setAddress(event.target.value)}
-                placeholder="Paste the destination the buyer sent you, exactly as you want it printed…"
-              />
-              <p className="text-xs text-muted-foreground">
-                Kept only in this dialog on this device — not saved, not sent to the marketplace or any server. Anything
-                you print (including print-to-PDF) will contain it.
-              </p>
-            </div>
-          )}
           <div
             data-packing-slip
             className="rounded-md border border-neutral-300 bg-white p-6 font-mono text-sm text-black"
@@ -184,14 +151,16 @@ export function MarketplacePackingSlipDialog({ order }: { order: MarketplaceOrde
                   </p>
                   <p>{serviceAddress.countryCode}</p>
                 </div>
-              ) : pastedAddress ? (
-                // The seller pasted the destination they got from the buyer
-                // directly — print it verbatim, preserving line breaks.
-                <p className="mt-1 whitespace-pre-line">{pastedAddress}</p>
+              ) : deliveryAddress.status === 'undecryptable' ? (
+                <p className="mt-1 text-xs leading-relaxed text-neutral-700" role="alert">
+                  {DELIVERY_KEY_COPY.undecryptable}
+                </p>
+              ) : deliveryAddress.status === 'loading' ? (
+                <p className="mt-1 text-xs leading-relaxed text-neutral-700">{DELIVERY_KEY_COPY.addressLoading}</p>
               ) : (
                 <>
                   <p className="mt-1 text-xs leading-relaxed text-neutral-700">
-                    Delivery address unavailable for this order — paste it below.
+                    {DELIVERY_KEY_COPY.addressUnavailable}
                   </p>
                   <div className="mt-3 space-y-4" aria-hidden="true">
                     <div className="border-b border-neutral-400" />

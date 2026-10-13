@@ -63,7 +63,7 @@ describe('CommerceApplication.isPaykitAccountClaimed', () => {
       await expect(CommerceApplication.isPaykitAccountClaimed(SELLER)).resolves.toBe(true);
       await expect(CommerceApplication.isPaykitAccountClaimed(SELLER)).resolves.toBe(false);
       expect(restore).toHaveBeenCalledWith(SELLER);
-      expect(setupStatus).toHaveBeenCalledWith('session-token');
+      expect(setupStatus).toHaveBeenCalledWith('session-token', 'BTC');
     });
 
     it('rejects when the Lock Server cannot reach Paykit', async () => {

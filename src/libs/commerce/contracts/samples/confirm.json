@@ -196,7 +196,6 @@
           "fiat_verification": null,
           "first_revealed_at": null,
           "fulfillment": "shipping",
-          "guarantee_policy_version": 1,
           "hold_expires_at": null,
           "id": "<uuid:1>",
           "lines": [

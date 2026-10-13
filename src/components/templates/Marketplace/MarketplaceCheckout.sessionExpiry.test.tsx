@@ -2,6 +2,7 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CommerceApplication } from '@/application/commerce/commerce';
+import { CommerceDeliveryKeysApplication } from '@/application/commerce/delivery-keys';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import { AuthErrorCode } from '@/libs/error/error.codes';
 import { Err } from '@/libs/error/error.factories';
@@ -51,6 +52,17 @@ vi.mock('next/navigation', () => ({
 vi.mock('@/config/commerce', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/config/commerce')>();
   return { ...actual, getCommerceAdapterMode: () => 'transaction-service' };
+});
+
+// hpke-js needs the platform WebCrypto, which jsdom does not provide; the
+// seal itself is covered in node-environment tests.
+vi.mock('@/libs/commerce/delivery-envelope', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/libs/commerce/delivery-envelope')>();
+  return {
+    ...actual,
+    sealDeliveryAddressForSellers: async ({ keys }: { keys: ReadonlyMap<string, { keyId: string }> }) =>
+      [...keys].map(([sellerPubky, { keyId }]) => ({ sellerPubky, keyId, envelope: 'A'.repeat(2795) })),
+  };
 });
 
 vi.mock('@/hooks/useMarketplaceCart/useMarketplaceCart', async (importOriginal) => {
@@ -116,7 +128,12 @@ vi.mock('@/hooks/useMarketplaceOffers/useMarketplaceOffers', () => ({
 }));
 
 vi.mock('@/hooks/useMarketplaceOfferCheckout/useMarketplaceOfferCheckout', () => ({
-  useMarketplaceOfferCheckout: () => ({ submit: vi.fn(), isSubmitting: false }),
+  useMarketplaceOfferCheckout: () => ({
+    submit: vi.fn(),
+    isSubmitting: false,
+    pendingKeyChange: null,
+    decideKeyChange: vi.fn(),
+  }),
 }));
 
 vi.mock('@/hooks/useMarketplaceSellerDeliveryTerms/useMarketplaceSellerDeliveryTerms', () => ({
@@ -178,6 +195,10 @@ describe('MarketplaceCheckout session expiry (real checkout hook)', () => {
       bitcoinOfferAvailable: true,
       paypalAvailable: false,
     });
+    vi.spyOn(CommerceDeliveryKeysApplication, 'resolveKeysForCheckout').mockImplementation(async (_buyer, sellers) => ({
+      ok: true,
+      keys: new Map(sellers.map((seller) => [seller, { keyId: 'a'.repeat(32), publicKey: new Uint8Array(32) }])),
+    }));
     vi.spyOn(CommerceApplication, 'fetchBuyerPaykitWallet').mockResolvedValue('payable');
     vi.spyOn(CommerceApplication, 'getMarketplaceListingProjection').mockResolvedValue({
       aggregateId: `listing:${BUYER}_boots`,

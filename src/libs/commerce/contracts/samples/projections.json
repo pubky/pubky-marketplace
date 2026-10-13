@@ -22,7 +22,6 @@
         "fiat_verification": null,
         "first_revealed_at": null,
         "fulfillment": "shipping",
-        "guarantee_policy_version": 1,
         "hold_expires_at": "<timestamp:2>",
         "id": "<uuid:1>",
         "lines": [
@@ -125,7 +124,6 @@
         "fiat_verification": null,
         "first_revealed_at": null,
         "fulfillment": "shipping",
-        "guarantee_policy_version": 1,
         "hold_expires_at": null,
         "id": "<uuid:3>",
         "lines": [
@@ -228,7 +226,6 @@
         "fiat_verification": null,
         "first_revealed_at": null,
         "fulfillment": "shipping",
-        "guarantee_policy_version": 1,
         "hold_expires_at": null,
         "id": "<uuid:5>",
         "lines": [
@@ -331,7 +328,6 @@
         "fiat_verification": null,
         "first_revealed_at": null,
         "fulfillment": "shipping",
-        "guarantee_policy_version": 1,
         "hold_expires_at": "<timestamp:2>",
         "id": "<uuid:1>",
         "lines": [
@@ -445,7 +441,6 @@
         "fiat_verification": null,
         "first_revealed_at": null,
         "fulfillment": "shipping",
-        "guarantee_policy_version": 1,
         "hold_expires_at": null,
         "id": "<uuid:3>",
         "lines": [
@@ -559,7 +554,6 @@
         "fiat_verification": null,
         "first_revealed_at": null,
         "fulfillment": "shipping",
-        "guarantee_policy_version": 1,
         "hold_expires_at": null,
         "id": "<uuid:5>",
         "lines": [
