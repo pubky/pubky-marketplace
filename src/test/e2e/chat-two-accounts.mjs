@@ -2,20 +2,20 @@
  * Two-account live proof of buyer↔seller chat against a local Pubky testnet.
  *
  * Needs: the Shop dev server (see .claude/launch.json "shop-testnet"), the
- * pubky-docker homeserver on :6286/:6288 (admin password "admin"), and
- * Playwright's Chromium. With CHAT_E2E_AUTH=grant it also needs the local
- * inbox the Shop is configured with (PUBKY_RUNTIME_INBOX_URL).
+ * pubky-docker homeserver on :6286/:6288 (admin password "admin"), the local
+ * inbox the Shop is configured with (PUBKY_RUNTIME_INBOX_URL), and
+ * Playwright's Chromium.
  *
- *   node src/test/e2e/chat-two-accounts.mjs                 # Ring cookie sign-in
- *   CHAT_E2E_AUTH=grant node src/test/e2e/chat-two-accounts.mjs   # Bitkit grant sign-in + inbox pings
+ *   node src/test/e2e/chat-two-accounts.mjs
  *
- * Two browser contexts (Alice, Bob), each signed in by approving the Shop's
- * sign-in link with a Node-side signer. Checks: identity key published, a
- * message from Alice reaches Bob's thread, Bob's reply reaches Alice's OPEN
- * thread live, history survives a reload, and a fresh browser context
- * rebuilds the conversation from the homeservers. Grant mode adds: both tabs
- * open an inbox session, and with the event stream blocked a message still
- * reaches Bob's inbox list through a ping. Screenshots land in SCREENSHOT_DIR.
+ * Two browser contexts (Alice, Bob), each signed in through the Shop's grant
+ * sign-in link (the Bitkit option) approved by a Node-side signer. Checks:
+ * identity key published, a message from Alice reaches Bob's thread, Bob's
+ * reply reaches Alice's OPEN thread live, both tabs open an inbox session,
+ * with the event stream blocked a message still reaches Bob's inbox list
+ * through a ping, history survives a reload, and a fresh browser context
+ * rebuilds the conversation from the homeservers. Screenshots land in
+ * SCREENSHOT_DIR.
  */
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
@@ -27,7 +27,6 @@ const ADMIN_URL = process.env.HOMESERVER_ADMIN_URL ?? 'http://localhost:6288/gen
 const ADMIN_PASSWORD = process.env.HOMESERVER_ADMIN_PASSWORD ?? 'admin';
 const SCREENSHOT_DIR = process.env.SCREENSHOT_DIR ?? join(process.cwd(), '.chat-e2e');
 const HEADLESS = process.env.HEADED !== '1';
-const AUTH_MODE = process.env.CHAT_E2E_AUTH === 'grant' ? 'grant' : 'cookie';
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const sdk = await import('@synonymdev/pubky');
@@ -82,10 +81,11 @@ async function signIn(context, identity, name) {
   const page = await context.newPage();
   page.on('pageerror', (error) => console.error(`[${identity.label}] pageerror`, String(error)));
   await page.goto(`${BASE}/sign-in`, { waitUntil: 'domcontentloaded' });
-  if (AUTH_MODE === 'grant') await page.getByRole('radio', { name: 'Bitkit' }).click();
+  await page.getByRole('radio', { name: 'Bitkit' }).click();
   const url = await readAuthUrl(page);
-  const expectedScheme = AUTH_MODE === 'grant' ? 'pubkyauth://signin_grant' : 'pubkyauth://signin';
-  if (!url.startsWith(expectedScheme)) throw new Error(`[${identity.label}] unexpected auth link ${url.slice(0, 40)}`);
+  if (!url.startsWith('pubkyauth://signin_grant')) {
+    throw new Error(`[${identity.label}] expected a grant sign-in link, got ${url.slice(0, 40)}`);
+  }
   console.log(`[${identity.label}] approving ${url.slice(0, 60)}…`);
   await pubky.signer(identity.keypair).approveAuthRequest(url);
   console.log(`[${identity.label}] approved`);
@@ -116,9 +116,7 @@ async function waitForSignedIn(page, identity, name) {
     () => {
       try {
         const state = JSON.parse(localStorage.getItem('shop-auth-store') ?? '{}').state ?? {};
-        const cookie = typeof state.sessionExport === 'string' && state.sessionExport.length > 0;
-        const grant = typeof state.grantSessionRecordId === 'string' && state.grantSessionRecordId.length > 0;
-        return cookie || grant;
+        return typeof state.grantSessionRecordId === 'string' && state.grantSessionRecordId.length > 0;
       } catch {
         return false;
       }
@@ -311,7 +309,7 @@ try {
   const unreadAfterRead = await alicePage.locator('[data-testid="chat-conversation-unread"]').count();
   record('alice:read-clears-badge', unreadAfterRead === 0, `badges: ${unreadAfterRead}`);
 
-  if (AUTH_MODE === 'grant') {
+  {
     // A grant session yields an inbox PoP: both tabs hold an inbox bearer.
     const hasInboxSession = (page) =>
       page.evaluate(() => Object.keys(localStorage).some((key) => key.includes('chat-inbox-session')));

@@ -84,7 +84,7 @@ for first contact. Full description: [`docs/chat/README.md`](../chat/README.md).
   inbox see ciphertext and metadata only.
 - Small, auditable crypto surface (`@noble` X25519, HKDF, XChaCha20-Poly1305) in `src/libs/chat/crypto.ts`
   instead of a vendored WASM fork; no handshake state machine to persist.
-- Live delivery under a second on the stream path, proven by the two-account e2e in cookie and grant modes.
+- Live delivery under a second on the stream path and about a second on the ping path, proven by the two-account e2e.
 
 ### Negative ❌
 
@@ -190,7 +190,7 @@ layout.
   the `commerce_messaging_*` tables (`src/core/database/franky/franky.ts`); `NEXT_PUBLIC_DB_VERSION=9`.
 - Runtime config: `PUBKY_RUNTIME_INBOX_URL`, `PUBKY_RUNTIME_INBOX_AUDIENCE` ([environment](../environment.md)).
 - Scopes: `CAPABILITIES`, `RING_COOKIE_CAPABILITIES` in `src/config/app.ts`.
-- Proof: `npm run test:e2e:chat` and `CHAT_E2E_AUTH=grant npm run test:e2e:chat` against the local testnet.
+- Proof: `npm run test:e2e:chat` against the local testnet and inbox.
 - Rollout: no migration; existing sessions re-approve once.
 
 ## Related Decisions

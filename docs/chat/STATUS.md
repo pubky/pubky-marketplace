@@ -25,10 +25,10 @@
 | P2 Merge Vlada's grant PR when it lands                                                                                                                             | todo        | blocked on his PR        |
 | P4 Docs (README, ADR 0030, status/FEATURES/RUNNING/environment/threat-model, changelog)                                                                             | done        | (next commit)            |
 | V1 Unit suites green (1096 files / 17278 tests), typecheck, lint, format                                                                                            | done        | (next commit)            |
-| V2 Live two-account proof, cookie mode (`npm run test:e2e:chat`, 13/13) and grant mode (`CHAT_E2E_AUTH=grant`, 16/16)                                               | done        | 2d93aac6e, (next commit) |
+| V2 Live two-account proof on grant sign-in with inbox pings (`npm run test:e2e:chat`, 16/16)                                                                        | done        | 2d93aac6e, 06ec87141     |
 | V3 Real-browser session: grant sign-in via ring simulator, inbox session, sandbox listing/order entry points, screenshots                                           | done        | —                        |
 | V4 VRT: new `src/test/vrt/chat/*` suites (linux chromium+firefox baselines), orders CTA mobile baseline regenerated; Cypress listing case unchanged and still valid | done        | 1b490d826, (next commit) |
-| V5 Regression: full unit suite green; sandbox orders/listing/cart/notifications render; cookie and grant sign-in verified                                           | done        | —                        |
+| V5 Regression: full unit suite green; sandbox orders/listing/cart/notifications render; grant sign-in verified in the browser and the e2e                           | done        | —                        |
 | Handoff to Matthew for manual QA                                                                                                                                    | in progress | —                        |
 
 ## Waiting on others
@@ -59,7 +59,7 @@
 - Grant sign-in must start on the facade (`getPubkySdk().startGrantAuthFlow`), not the static `GrantAuthFlow.startDelegated`: the static call spins up a default mainnet DHT client that cannot resolve testnet identities (and ignores custom pkarr relays). Symptom: "could not resolve homeserver for <pubky>" right after the signer approves.
 - Inbox ping slots are 1–64 Base64url characters: the slot is `chat-<folder>` (`chatPingSlot`), not `chat:<folder>` (the inbox answered 400 `invalid_slot`).
 - The ring simulator's `node_modules` can lag its lockfile (had SDK 0.11 installed with 0.15 pinned, so grant links were approved with the wrong protocol). `npm ci` in `/home/mk/CODE/pubky-ring-simulator` and clear `node_modules/.vite` before `npm run dev`. The simulator approves grant links through a real paste event; a synthetic `ClipboardEvent('paste')` on `#shortcut-auth-input` works.
-- The Node SDK signer approves `signin_grant` links too, so the e2e runs the Bitkit path without the simulator (`CHAT_E2E_AUTH=grant`).
+- The Node SDK signer approves `signin_grant` links too, so the e2e runs the grant (Bitkit option) path without the simulator. The cookie mode was dropped: cookie sign-in leaves with Vlada's grant-only PR.
 - A hard navigation while the inbox long-poll is in flight logs one `Err.network` ("Chat inbox poll failed") from the unloading page; client-side route changes do not. Shared `safeFetch` behaviour, left as is.
 
 ## How to resume
@@ -79,9 +79,8 @@ cd /home/mk/CODE/pubky-ring-simulator && npm run dev
 docker run -d --name pubky-inbox-dev --network pubky-docker_pubky -p 8088:8080 \
   -e INBOX_DATABASE__URL=postgres://test_user:test_pass@postgres:5432/inbox -e INBOX_AUTH__AUDIENCE=http://localhost:8088 \
   -e 'INBOX_SERVER__CORS_ALLOWED_ORIGINS=["http://localhost:3000"]' -v pubky-inbox-dev-data:/data pubky-inbox:dev
-# 5b. Two-account proof (dev server + homeserver running); grant mode also needs the inbox container
+# 5b. Two-account proof (dev server, homeserver and inbox container running)
 CHROMIUM_PATH=~/.cache/ms-playwright/chromium_headless_shell-1243/chrome-headless-shell-linux64/chrome-headless-shell npm run test:e2e:chat
-CHAT_E2E_AUTH=grant CHROMIUM_PATH=~/.cache/ms-playwright/chromium_headless_shell-1243/chrome-headless-shell-linux64/chrome-headless-shell npm run test:e2e:chat
 # 6. The app against the local stack (see .env.example "Local testnet example")
 PUBKY_RUNTIME_TESTNET=true PUBKY_RUNTIME_HOMESERVER=8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo \
 PUBKY_RUNTIME_HOMESERVER_URL=http://localhost:6286 PUBKY_RUNTIME_NEXUS_URL=http://localhost:8080 \

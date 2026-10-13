@@ -214,14 +214,13 @@ PUBKY_RUNTIME_INBOX_URL=http://localhost:8088 PUBKY_RUNTIME_INBOX_AUDIENCE=http:
 
 The dev signup-token route needs `HOMESERVER_ADMIN_URL=http://localhost:6288/generate_signup_token` and `HOMESERVER_ADMIN_PASSWORD=admin`.
 
-To prove chat live — two accounts, real crypto, real homeserver — against that stack (dev server and homeserver running; grant mode also needs the inbox container):
+To prove chat live — two accounts, real crypto, real homeserver — against that stack (dev server, homeserver and inbox container running):
 
 ```bash
-npm run test:e2e:chat                        # Ring cookie sign-in: streams + reconciliation
-CHAT_E2E_AUTH=grant npm run test:e2e:chat    # Bitkit grant sign-in: adds inbox sessions and a ping-only delivery
+npm run test:e2e:chat
 ```
 
-The script (`src/test/e2e/chat-two-accounts.mjs`) drives two Playwright browser contexts signed in with a Node-side signer, and checks: keys published, a message reaches the other thread, a reply reaches the open thread live, thread order, the unread badge appears and clears on read, history survives a reload, a fresh browser context rebuilds the conversation from the homeservers, the published key file carries no secret, and the message files on the homeserver are ciphertext. Where Playwright cannot install its own browser, set `CHROMIUM_PATH` to an existing `chrome-headless-shell`. It is intentionally not part of the unit gates.
+The script (`src/test/e2e/chat-two-accounts.mjs`) drives two Playwright browser contexts signed in through the grant sign-in link with a Node-side signer, and checks: keys published, a message reaches the other thread, a reply reaches the open thread live, thread order, the unread badge appears and clears on read, both tabs hold an inbox session, a ping-only delivery with the event stream blocked, history survives a reload, a fresh browser context rebuilds the conversation from the homeservers, the published key file carries no secret, and the message files on the homeserver are ciphertext. Where Playwright cannot install its own browser, set `CHROMIUM_PATH` to an existing `chrome-headless-shell`. It is intentionally not part of the unit gates.
 
 ## Cross-account live proof (stranger reads a published listing)
 

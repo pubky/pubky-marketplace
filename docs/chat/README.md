@@ -402,9 +402,8 @@ cd /home/mk/CODE/pubky-ring-simulator && npm run dev
 docker run -d --name pubky-inbox-dev --network pubky-docker_pubky -p 8088:8080 \
   -e INBOX_DATABASE__URL=postgres://test_user:test_pass@postgres:5432/inbox -e INBOX_AUTH__AUDIENCE=http://localhost:8088 \
   -e 'INBOX_SERVER__CORS_ALLOWED_ORIGINS=["http://localhost:3000"]' -v pubky-inbox-dev-data:/data pubky-inbox:dev
-# 5b. Two-account proof (dev server + homeserver running); grant mode also needs the inbox container
+# 5b. Two-account proof (dev server, homeserver and inbox container running)
 CHROMIUM_PATH=~/.cache/ms-playwright/chromium_headless_shell-1243/chrome-headless-shell-linux64/chrome-headless-shell npm run test:e2e:chat
-CHAT_E2E_AUTH=grant CHROMIUM_PATH=~/.cache/ms-playwright/chromium_headless_shell-1243/chrome-headless-shell-linux64/chrome-headless-shell npm run test:e2e:chat
 # 6. The app against the local stack (see .env.example "Local testnet example")
 PUBKY_RUNTIME_TESTNET=true PUBKY_RUNTIME_HOMESERVER=8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo \
 PUBKY_RUNTIME_HOMESERVER_URL=http://localhost:6286 PUBKY_RUNTIME_NEXUS_URL=http://localhost:8080 \
@@ -424,14 +423,13 @@ Notes:
 ### Two-account live proof
 
 `npm run test:e2e:chat` (`src/test/e2e/chat-two-accounts.mjs`) drives two Playwright browser contexts, Alice
-and Bob, each registered on the local homeserver and signed in by approving the Shop's sign-in link with a
-Node-side signer. Cookie mode uses the Ring cookie path; `CHAT_E2E_AUTH=grant` uses the Bitkit grant path
-(the Node SDK signer approves `signin_grant` links too) and needs the inbox the Shop is configured with.
-Checks: both signed in; both keys published; Alice's first message reaches Bob's thread; Bob's reply reaches
-Alice's **open** thread live; thread order; the inbox unread badge appears and clears on read; history
-survives a reload; a fresh browser context rebuilds the conversation from the homeservers; the published key
-file carries no secret; the message files on the homeserver are ciphertext. Grant mode adds: both tabs open an
-inbox session, and with the event stream blocked a message still reaches Bob's inbox list through a ping.
+and Bob, each registered on the local homeserver and signed in through the Shop's grant sign-in link (the
+Bitkit option) approved by a Node-side signer; it needs the inbox the Shop is configured with. Checks: both
+signed in; both keys published; Alice's first message reaches Bob's thread; Bob's reply reaches Alice's
+**open** thread live; thread order; the inbox unread badge appears and clears on read; both tabs hold an inbox
+session; with the event stream blocked a message still reaches Bob's inbox list through a ping, which is
+acknowledged; history survives a reload; a fresh browser context rebuilds the conversation from the
+homeservers; the published key file carries no secret; the message files on the homeserver are ciphertext.
 Screenshots land in `.chat-e2e/` (`SCREENSHOT_DIR`).
 
 ## Threat model notes
