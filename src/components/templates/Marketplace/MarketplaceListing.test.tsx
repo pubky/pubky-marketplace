@@ -614,6 +614,10 @@ describe('MarketplaceListing', () => {
       await user.click(screen.getByRole('button', { name: 'Report listing' }));
 
       expect(await screen.findByRole('dialog')).toBeInTheDocument();
+      expect(screen.getByText('What sort of issue are you reporting?')).toBeInTheDocument();
+      for (const label of ['Illegal Sales or Criminal', 'Copyright Infringement', 'Personal Info Leak']) {
+        expect(screen.getByRole('option', { name: label })).toBeInTheDocument();
+      }
     });
 
     it('opens the report dialog with the pubky.app reasons for a signed-in viewer', async () => {
