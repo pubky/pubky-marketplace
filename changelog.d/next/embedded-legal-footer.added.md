@@ -1,0 +1,1 @@
+When the Shop is embedded in pubky.app, a legal strip at the bottom of every page names the contracting entity (Synonym Software, S.A. de C.V.), opens the Terms of Service, gives the complaint address and points to Report listing, since the host app owns the page footer. The top-level Shop is unchanged.
