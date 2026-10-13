@@ -81,6 +81,8 @@ import {
   marketplacePaymentSchema,
   type MarketplacePublicDrop,
   marketplacePublicDropSchema,
+  type MarketplacePublicListingAvailability,
+  marketplacePublicListingAvailabilitySchema,
   type MarketplaceReceipt,
   marketplaceReceiptSchema,
   type MarketplaceSellerDrop,
@@ -871,6 +873,35 @@ export class MarketplaceTransactionService {
       toCamelCaseWire(raw),
       'Marketplace returned an invalid public drop projection.',
     ).drop;
+  }
+
+  /**
+   * `GET /v0/listings/{seller}/{listingId}/availability` — deliberately
+   * public (no bearer): the listing's stock state, so a viewer whose
+   * marketplace session has lapsed still sees another buyer's hold. Null when
+   * the listing is unknown or removed.
+   */
+  static async getPublicListingAvailability(
+    sellerPubky: string,
+    listingId: string,
+  ): Promise<MarketplacePublicListingAvailability | null> {
+    this.assertTransactionServiceMode('getPublicListingAvailability');
+    const url = `${getMarketplaceUrl()}/v0/listings/${encodeURIComponent(sellerPubky)}/${encodeURIComponent(listingId)}/availability`;
+    const response = await safeFetch(url, { method: 'GET' }, ErrorService.Marketplace, 'getPublicListingAvailability');
+    if (response.status === 404) return null;
+    const raw = await parseResponseOrThrow<unknown>(
+      response,
+      ErrorService.Marketplace,
+      'getPublicListingAvailability',
+      url,
+      PARSE_JSON_WITH_BODY_EXCERPT,
+    );
+    return this.parseProjection(
+      'getPublicListingAvailability',
+      marketplacePublicListingAvailabilitySchema,
+      toCamelCaseWire(raw),
+      'Marketplace returned an invalid listing availability.',
+    );
   }
 
   /** `GET /v1/drops/{aggregateId}` — the seller's own full-detail drop read. */

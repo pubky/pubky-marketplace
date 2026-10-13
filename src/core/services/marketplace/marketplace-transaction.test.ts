@@ -1213,6 +1213,66 @@ describe('MarketplaceTransactionService read projections', () => {
     expect(MarketplaceSessionService.getActiveSession()).toBeNull();
   });
 
+  describe('public listing availability', () => {
+    beforeEach(() => {
+      config.mode = 'transaction-service';
+      MarketplaceSessionService.clearSession();
+    });
+
+    it('reads a listing availability publicly, without any session', async () => {
+      vi.mocked(fetch).mockResolvedValueOnce(
+        jsonResponse(200, {
+          aggregate_id: AGGREGATE_ID,
+          state: 'reserved',
+          server_time: '2026-10-13T07:45:00.000Z',
+        }),
+      );
+
+      const availability = await MarketplaceTransactionService.getPublicListingAvailability(ACTOR, 'boots_01');
+
+      expect(availability).toEqual({
+        aggregateId: AGGREGATE_ID,
+        state: 'reserved',
+        serverTime: '2026-10-13T07:45:00.000Z',
+      });
+      const [url, init] = vi.mocked(fetch).mock.calls[0] as [string, RequestInit];
+      expect(url).toBe(`http://127.0.0.1:8080/v0/listings/${ACTOR}/boots_01/availability`);
+      expect(init.method).toBe('GET');
+      expect(init.headers).toEqual(expect.not.objectContaining({ authorization: expect.anything() }));
+    });
+
+    it('is null for an unknown or removed listing', async () => {
+      vi.mocked(fetch).mockResolvedValueOnce(
+        jsonResponse(404, { ok: false, error: { code: 'NOT_FOUND', message: 'The listing was not found.' } }),
+      );
+
+      await expect(MarketplaceTransactionService.getPublicListingAvailability(ACTOR, 'gone')).resolves.toBeNull();
+    });
+
+    it('rejects an unknown state rather than showing it', async () => {
+      vi.mocked(fetch).mockResolvedValueOnce(
+        jsonResponse(200, { aggregate_id: AGGREGATE_ID, state: 'exploding', server_time: '2026-10-13T07:45:00.000Z' }),
+      );
+
+      await expect(MarketplaceTransactionService.getPublicListingAvailability(ACTOR, 'boots_01')).rejects.toMatchObject(
+        { name: 'AppError', code: 'INVALID_RESPONSE' },
+      );
+    });
+
+    it('surfaces a rate limit as an error', async () => {
+      vi.mocked(fetch).mockResolvedValueOnce(
+        jsonResponse(429, {
+          ok: false,
+          error: { code: 'rate_limited', message: 'The request rate limit was exceeded.' },
+        }),
+      );
+
+      await expect(MarketplaceTransactionService.getPublicListingAvailability(ACTOR, 'boots_01')).rejects.toMatchObject(
+        { name: 'AppError' },
+      );
+    });
+  });
+
   describe('seller payment methods', () => {
     beforeEach(() => {
       config.mode = 'transaction-service';
