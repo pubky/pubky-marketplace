@@ -460,8 +460,8 @@ What the design protects, and what it does not. Threat IDs refer to
   can write to a user's `/pub` tree could substitute a key. A changed `kid` switches to a new folder; it is
   logged, not surfaced to the user.
 - **Private key at rest.** The thread shows a one-line note ("Messages are encrypted but stored on your
-  homeserver. Keep payment details, passwords and ID numbers out of chat.") so users do not mistake v0 for a
-  vault. `/priv/chat/v0/key.json` is plain JSON under the homeserver's owner-only tree. The
+  homeserver. Keep payment details, passwords and ID numbers out of chat."), dismissable once per account, so
+  users do not mistake v0 for a vault. `/priv/chat/v0/key.json` is plain JSON under the homeserver's owner-only tree. The
   homeserver enforces access, so the account's sessions (any app holding `/priv/chat/:rw`) and the homeserver
   operator can read it. Sealing it (for example under the marketplace data key used for `/priv` records, or a
   user-held secret) is deferred hardening. The key is also in Dexie (`chat_identity`) as plain bytes; XSS on

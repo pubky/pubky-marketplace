@@ -15,6 +15,7 @@ import { ChatComposer } from '@/organisms/Chat/ChatComposer';
 import { ChatContextChip } from '@/organisms/Chat/ChatContextChip';
 import { ChatIdentityNotice } from '@/organisms/Chat/ChatIdentityNotice';
 import { ChatPeerIdentity, useChatPeerName } from '@/organisms/Chat/ChatPeerIdentity';
+import { ChatPrivacyNote } from '@/organisms/Chat/ChatPrivacyNote';
 import { ChatThread } from '@/organisms/Chat/ChatThread';
 import { ContentLayout } from '@/organisms/ContentLayout/ContentLayout';
 import { useAuthStore } from '@/stores/auth/auth.store';
@@ -116,9 +117,7 @@ export function ChatConversation({ peerPubky }: { peerPubky: string }) {
               disabledReason={disabledReason}
               placeholder={`Message ${name}`}
             />
-            <Typography as="p" size="xs" className="px-1 text-muted-foreground" data-testid="chat-privacy-note">
-              {CHAT_COPY.privacyNote}
-            </Typography>
+            <ChatPrivacyNote />
           </>
         )}
       </Container>
