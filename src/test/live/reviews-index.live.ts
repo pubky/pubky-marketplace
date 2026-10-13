@@ -274,7 +274,6 @@ describe('marketplace reviews — live attested publication and Nexus indexing',
           postalCode: '1000-001',
           countryCode: 'PT',
         },
-        guaranteePolicyVersion: 1 as const,
       },
     })) as unknown as { ok: boolean; result: { orders: { id: string }[]; payments: { id: string }[] } };
     expect(checkedOut.ok).toBe(true);

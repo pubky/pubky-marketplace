@@ -3582,7 +3582,6 @@ describe('CommerceApplication', () => {
               postalCode: '1000-001',
               countryCode: 'PT',
             },
-            guaranteePolicyVersion: 1,
           },
         } as never),
       ).rejects.toMatchObject({ code: AuthErrorCode.SESSION_EXPIRED, service: ErrorService.Marketplace });

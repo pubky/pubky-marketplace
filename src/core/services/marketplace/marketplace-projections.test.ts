@@ -684,11 +684,10 @@ describe('marketplace order projection — seller periods and the optional guara
     expect(parsed.deliveryAssumeDays).toBeUndefined();
   });
 
-  it('no longer requires the guarantee policy version, and still accepts it when present', () => {
-    expect(marketplaceOrderSchema.parse(wire({ guarantee_policy_version: null })).guaranteePolicyVersion).toBeNull();
-    const { guaranteePolicyVersion: _omitted, ...withoutVersion } = wire({});
-    expect(marketplaceOrderSchema.parse(withoutVersion).guaranteePolicyVersion).toBeUndefined();
-    expect(marketplaceOrderSchema.parse(wire({ guarantee_policy_version: 1 })).guaranteePolicyVersion).toBe(1);
+  it('tolerates the retired guarantee policy version being sent or absent', () => {
+    for (const legacy of [{ guarantee_policy_version: null }, { guarantee_policy_version: 1 }, {}]) {
+      expect(() => marketplaceOrderSchema.parse(wire(legacy))).not.toThrow();
+    }
   });
 });
 

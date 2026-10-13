@@ -23,14 +23,6 @@ import {
 } from './transaction-contracts';
 import { isValidArbitrumAddress } from './usdt-refund';
 
-/**
- * The legacy guarantee-policy version the transaction service still requires
- * on checkout and offer-checkout commands. The Shop no longer asks the buyer
- * to accept a guarantee policy; the client sends this constant until the
- * service stops requiring the field.
- */
-export const GUARANTEE_POLICY_VERSION = 1 as const;
-
 const DELIVERY_ENVELOPE_CHARACTERS = Math.ceil((DELIVERY_ENVELOPE_BYTES * 4) / 3);
 
 /** One sealed delivery address: the key id it was sealed to and the unpadded base64url bytes. */
@@ -259,7 +251,6 @@ export const offerCheckoutCommandSchema = createCommerceCommandSchema(
       deliveryAddressEnvelope: offerDeliveryEnvelopeSchema.optional(),
       // Absent means shipping; a pickup award sends `pickup` and no address.
       fulfillment: z.literal('pickup').optional(),
-      guaranteePolicyVersion: z.literal(GUARANTEE_POLICY_VERSION).optional(),
     })
     .strict()
     .superRefine((payload, context) => {
@@ -364,7 +355,6 @@ export const createMarketplaceCheckoutCommandSchema = createCommerceCommandSchem
       // a line is email-kind, which only the listing projection says, so the
       // checkout hook decides and this schema checks only its form.
       deliveryEmail: marketplaceDeliveryEmailSchema.optional(),
-      guaranteePolicyVersion: z.literal(GUARANTEE_POLICY_VERSION).optional(),
     })
     .strict()
     .superRefine((payload, context) => {

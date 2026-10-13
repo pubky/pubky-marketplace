@@ -10,7 +10,6 @@ import { MARKETPLACE_FAILURE_MESSAGES, marketplaceDropRefusalMessage } from '@/l
 import {
   buildMarketplaceCheckoutAggregateId,
   buildMarketplaceListingAggregateId,
-  GUARANTEE_POLICY_VERSION,
   isListingDeletedResponse,
   isMarketplaceRevisionConflict,
 } from '@/libs/commerce/transaction-commands';
@@ -154,7 +153,6 @@ export function useMarketplaceDropClaim(onClaimed?: () => void | Promise<void>):
             },
           ],
           ...addressFields,
-          guaranteePolicyVersion: GUARANTEE_POLICY_VERSION,
         },
       });
       if (!response.ok) {

@@ -284,7 +284,6 @@ export function purchaseListingAs(actor: string, aggregateOfListing: string): vo
             postalCode: '00001',
             countryCode: 'US',
           },
-          guaranteePolicyVersion: 1,
         },
       },
     }).then((response) => {

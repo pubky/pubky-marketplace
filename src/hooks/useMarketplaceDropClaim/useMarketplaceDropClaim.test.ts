@@ -113,7 +113,6 @@ describe('useMarketplaceDropClaim', () => {
         payload: expect.objectContaining({
           lines: [{ listingAggregateId: `listing:${SELLER}_listing1`, expectedRevision: 4, quantity: 1 }],
           deliveryAddressEnvelopes: [SEALED],
-          guaranteePolicyVersion: 1,
         }),
       }),
     );

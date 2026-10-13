@@ -315,7 +315,6 @@ function buildDropCheckout(listingAggregateId: string, expectedRevision: number,
           postalCode: '1000-001',
           countryCode: 'PT',
         },
-        guaranteePolicyVersion: 1 as const,
       },
     } as never,
   };

@@ -448,7 +448,6 @@ describe('locks-paykit live purchase (composed environment)', () => {
           postalCode: '1000-001',
           countryCode: 'PT',
         },
-        guaranteePolicyVersion: 1 as const,
       },
     });
     expect(checkedOut).toMatchObject({ ok: true, result: { kind: 'checkout' } });
