@@ -89,7 +89,6 @@ describe('useMarketplaceOrders', () => {
         subtotal: { amountMinor: 10_000, currency: 'USD', exponent: 2 },
         shipping: { amountMinor: 1_200, currency: 'USD', exponent: 2 },
         total: { amountMinor: 11_200, currency: 'USD', exponent: 2 },
-        guaranteePolicyVersion: 1,
         paymentId: PAYMENT_ID,
         receiptId: null,
         fulfillment: 'shipping',

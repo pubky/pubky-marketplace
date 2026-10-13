@@ -103,6 +103,17 @@ export function parseTomlFlat(text) {
   return out;
 }
 
+/**
+ * The Lock Server's return origins for the acquisition method it runs. `grant-connect` (the
+ * production mode) reads its own list and never falls back to the legacy one, so checking the
+ * legacy table on a grant-connect server would verify an allow-list the server does not use.
+ */
+export function locksReturnOriginsFromToml(toml) {
+  const prefix = 'creator_authority_acquisition';
+  const table = toml[`${prefix}.method`] === 'grant-connect' ? 'grant_connect' : 'legacy_connect';
+  return toml[`${prefix}.${table}.allowed_return_origins`];
+}
+
 /** Splits a list given as a JSON array, a TOML array, or comma/space separated text. */
 export function parseList(value) {
   if (Array.isArray(value)) return value.map(String);
@@ -158,6 +169,32 @@ export function normalizeBase(value) {
   } catch {
     return String(value).trim().replace(/\/+$/, '');
   }
+}
+
+/**
+ * The Shop's landing path (`SHOP_PATH`). Unset means `/marketplace`. A value is joined straight onto each
+ * origin, so one without a leading slash would build a different host (`https://staging.pubky.appshop`).
+ */
+export function parseShopPath(value) {
+  const raw = String(value ?? '').trim();
+  if (!raw) return '/marketplace';
+  if (!/^\/(?!\/)[^\s?#]*$/.test(raw)) {
+    throw new Error('SHOP_PATH must start with one "/" and carry no query, fragment or spaces (for example /shop/marketplace)');
+  }
+  return raw.length > 1 ? raw.replace(/\/+$/, '') : raw;
+}
+
+/**
+ * The Lock Server keys Paykit trusts, from its parsed config. Paykit rc13 reads the closed
+ * `[signed_services] trusted_public_keys` allowlist (Locks and marketplace service keys together) and rejects the
+ * retired `[locks] trusted_public_key`, which is read only when the new table is absent so an older config still
+ * verifies. Returns undefined when neither is present.
+ */
+export function paykitTrustedKeys(toml) {
+  const list = toml['signed_services.trusted_public_keys'];
+  if (list !== undefined) return parseList(list);
+  const legacy = toml['locks.trusted_public_key'];
+  return legacy === undefined ? undefined : [String(legacy)];
 }
 
 /** Origins in `required` that `allowed` does not list. A `*` entry is reported separately by callers. */

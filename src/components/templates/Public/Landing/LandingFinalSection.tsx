@@ -9,6 +9,7 @@ import { FooterLinks } from '@/atoms/FooterLinks/FooterLinks';
 import { Heading } from '@/atoms/Heading/Heading';
 import { Link } from '@/atoms/Link/Link';
 import { getPubkyCoreLink } from '@/config/externalLinks';
+import { LEGAL_ENTITY_NAME } from '@/config/legal';
 import { HomeBrandFooter } from '@/molecules/Home/Home';
 import { Logo } from '@/molecules/Logo/Logo';
 import { DialogAge } from '@/organisms/DialogAge/DialogAge';
@@ -47,7 +48,7 @@ export function LandingFinalSection() {
           <Link href={getPubkyCoreLink()} target="_blank">
             {'Pubky Core'}
           </Link>
-          {' and was built with love and dedication by Synonym Software, S.A. DE C.V. ©2026. All rights reserved.'}
+          {` and was built with love and dedication by ${LEGAL_ENTITY_NAME} ©2026. All rights reserved.`}
         </FooterLinks>
         <HomeBrandFooter />
       </Container>

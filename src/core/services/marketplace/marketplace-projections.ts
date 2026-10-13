@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { DELIVERY_ENVELOPE_BYTES, DELIVERY_KEY_ID_PATTERN } from '@/libs/commerce/delivery-envelope-format';
 import {
   marketplaceDigitalDeliveryKindSchema,
   marketplaceListingDigitalDeliveryFieldSchema,
@@ -11,6 +12,7 @@ import { MAX_BITCOIN_BASE_UNITS } from '@/libs/commerce/pricing';
 import {
   commercePubkySchema,
   dropStateSchema,
+  listingStateSchema,
   orderStateSchema,
   PARTIAL_REFUND_ORDER_STATE,
 } from '@/libs/commerce/transaction-contracts';
@@ -487,6 +489,13 @@ const marketplaceDeliveryAddressPlaintextSchema = z.object({
   address: marketplaceDeliveryAddressValueSchema,
 });
 
+const marketplaceDeliveryAddressSealedSchema = z.object({
+  format: z.literal('hpke_v1'),
+  keyId: z.string().regex(DELIVERY_KEY_ID_PATTERN),
+  commandId: z.uuid(),
+  envelope: z.string().length(Math.ceil((DELIVERY_ENVELOPE_BYTES * 4) / 3)),
+});
+
 const marketplaceDeliveryAddressUnsupportedSchema = z.object({
   format: z.literal('unsupported'),
 });
@@ -501,11 +510,12 @@ export const marketplaceDeliveryAddressSchema = z.preprocess(
     if (input === undefined || input === null) return undefined;
     if (typeof input !== 'object') return { format: 'unsupported' };
     const record = input as Record<string, unknown>;
-    return record.format === 'plaintext_v1' ? input : { format: 'unsupported' };
+    return record.format === 'plaintext_v1' || record.format === 'hpke_v1' ? input : { format: 'unsupported' };
   },
   z
     .discriminatedUnion('format', [
       marketplaceDeliveryAddressPlaintextSchema,
+      marketplaceDeliveryAddressSealedSchema,
       marketplaceDeliveryAddressUnsupportedSchema,
     ])
     .optional()
@@ -559,9 +569,6 @@ export const marketplaceOrderProjectionSchema = z
     total: marketplaceMoneySchema,
     pricedFrom: z.string().optional(),
     offerAwardId: z.uuid().nullable().optional(),
-    // Legacy: present only on orders whose checkout carried it. New orders
-    // project null, and the field is not shown anywhere.
-    guaranteePolicyVersion: z.literal(1).nullish(),
     paymentId: z.uuid(),
     receiptId: z.uuid().nullable(),
     holdExpiresAt: z.string().nullable().optional(),
@@ -697,9 +704,9 @@ export const marketplaceOrderProjectionSchema = z
     merchandiseTotal: marketplaceMoneySchema.nullish().catch(undefined),
     bitcoinPayable: marketplaceMoneySchema.nullish().catch(undefined),
     /**
-     * Seller-only interim projection: readable only by the order's seller
-     * while the order is paid/processing and shipping; encryption to the
-     * seller key is scheduled (ADR-0019 §8 interim).
+     * Seller-only: the sealed address (`hpke_v1`) while the order is
+     * paid/processing and shipping. `plaintext_v1` appears only on orders
+     * placed before sealing shipped and is purged when the order ends.
      */
     deliveryAddress: marketplaceDeliveryAddressSchema.optional(),
     // Drop orders (ADR 0026): the bound drop aggregate and, once paid, the
@@ -823,6 +830,18 @@ export const marketplaceReceiptSchema = z.object({
   issuedAt: z.string(),
 });
 
+/**
+ * `GET /v0/listings/{seller}/{listing}/availability` is public and answers
+ * the listing's stock state and the service clock, nothing else. It is the
+ * only hold signal a viewer without a marketplace session can read.
+ */
+export const marketplacePublicListingAvailabilitySchema = z.object({
+  aggregateId: z.string(),
+  state: listingStateSchema,
+  serverTime: z.string(),
+});
+
+export type MarketplacePublicListingAvailability = z.infer<typeof marketplacePublicListingAvailabilitySchema>;
 export type MarketplaceListingProjection = z.infer<typeof marketplaceListingProjectionSchema>;
 export type MarketplaceSellerListingProjection = z.infer<typeof marketplaceSellerListingProjectionSchema>;
 export type MarketplaceNotification = z.infer<typeof marketplaceNotificationSchema> & { kind?: never };

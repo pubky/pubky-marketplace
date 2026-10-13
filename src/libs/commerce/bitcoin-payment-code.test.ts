@@ -5,6 +5,7 @@ import { createBitcoinQuotedOrderFixture, createOrderFixture } from '@/test/fixt
 import {
   BITCOIN_PAYMENT_CODE_CHECKOUT_NOTE,
   bitcoinPaymentBreakdown,
+  bitcoinPaymentCodeCheckoutNote,
   formatBitcoinAmountBreakdown,
   orderAmountEntry,
 } from './bitcoin-payment-code';
@@ -142,5 +143,10 @@ describe('bitcoin payment code', () => {
   it('says the checkout payment adds 1–999 sats, without a protocol name', () => {
     expect(BITCOIN_PAYMENT_CODE_CHECKOUT_NOTE).toContain('1–999 sats');
     expect(BITCOIN_PAYMENT_CODE_CHECKOUT_NOTE).not.toMatch(/paykit|protocol/i);
+  });
+
+  it('shows the checkout note only where the Paykit server adds a code', () => {
+    expect(bitcoinPaymentCodeCheckoutNote('fork')).toBe(BITCOIN_PAYMENT_CODE_CHECKOUT_NOTE);
+    expect(bitcoinPaymentCodeCheckoutNote('upstream')).toBeNull();
   });
 });

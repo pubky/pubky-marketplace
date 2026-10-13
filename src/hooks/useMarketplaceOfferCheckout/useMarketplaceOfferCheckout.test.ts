@@ -1,6 +1,7 @@
 import { act, renderHook } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { CommerceController } from '@/controllers/commerce/commerce';
+import { DELIVERY_KEY_COPY } from '@/libs/commerce/delivery-key-copy';
 import { AppError } from '@/libs/error/error';
 import { ClientErrorCode } from '@/libs/error/error.codes';
 import { ErrorCategory, ErrorService } from '@/libs/error/error.types';
@@ -16,6 +17,9 @@ vi.mock('@/controllers/commerce/commerce', () => ({
     bindPaymentMethod: vi.fn(),
     executeMarketplaceCommand: vi.fn(),
     rememberUsdtRefusal: vi.fn(),
+    resolveDeliveryKeysForCheckout: vi.fn(),
+    commitAcceptDeliveryKeyChange: vi.fn(),
+    sealDeliveryAddressForCheckout: vi.fn(),
   },
 }));
 
@@ -62,6 +66,9 @@ const offer: MarketplaceOffer = {
   },
 };
 
+const SELLER_KEY = { keyId: 'a'.repeat(32), publicKey: new Uint8Array(32).fill(7) };
+const SEALED = { sellerPubky: 's'.repeat(52), keyId: SELLER_KEY.keyId, envelope: 'E'.repeat(2795) };
+
 const address = {
   name: 'Alice Buyer',
   line1: '1 Market Street',
@@ -88,6 +95,11 @@ describe('useMarketplaceOfferCheckout', () => {
       ok: true,
       result: { order: { id: '00000000-0000-4000-8000-000000000703' } },
     } as never);
+    vi.mocked(CommerceController.resolveDeliveryKeysForCheckout).mockResolvedValue({
+      ok: true,
+      keys: new Map([['s'.repeat(52), SELLER_KEY]]),
+    });
+    vi.mocked(CommerceController.sealDeliveryAddressForCheckout).mockResolvedValue([SEALED]);
     vi.spyOn(globalThis.crypto, 'randomUUID').mockReturnValue('00000000-0000-4000-8000-000000000704');
   });
 
@@ -163,14 +175,41 @@ describe('useMarketplaceOfferCheckout', () => {
     expect(completed).toHaveBeenCalledTimes(1);
   });
 
-  it('sends a shipped award exactly as before: the address and no fulfillment field', async () => {
+  it('seals a shipped award to the seller key and sends no plaintext address', async () => {
     const { result } = renderHook(() => useMarketplaceOfferCheckout());
     await act(async () => {
       await result.current.submit(offer, address);
     });
+    expect(CommerceController.sealDeliveryAddressForCheckout).toHaveBeenCalledWith({
+      checkoutCommandId: '00000000-0000-4000-8000-000000000704',
+      address,
+      keys: new Map([['s'.repeat(52), SELLER_KEY]]),
+    });
     const payload = committedPayload();
-    expect(payload).toMatchObject({ deliveryAddress: address });
+    expect(payload).toMatchObject({
+      deliveryAddressEnvelope: { keyId: SELLER_KEY.keyId, envelope: SEALED.envelope },
+    });
+    expect(payload).not.toHaveProperty('deliveryAddress');
     expect(payload).not.toHaveProperty('fulfillment');
+  });
+
+  it('stops before checkout when the seller has no delivery key', async () => {
+    vi.mocked(CommerceController.resolveDeliveryKeysForCheckout).mockResolvedValue({
+      ok: false,
+      sellerPubky: 's'.repeat(52),
+      problem: { kind: 'no_key' },
+    });
+    const { result } = renderHook(() => useMarketplaceOfferCheckout());
+    await act(async () => {
+      await expect(result.current.submit(offer, address)).resolves.toEqual({ ok: false, code: 'DELIVERY_KEY' });
+    });
+    expect(CommerceController.commitOfferCheckout).not.toHaveBeenCalled();
+    expect(CommerceController.sealDeliveryAddressForCheckout).not.toHaveBeenCalled();
+    expect(result.current.deliveryKeyBlock).toEqual({
+      kind: 'no_key',
+      sellerPubky: 's'.repeat(52),
+      message: DELIVERY_KEY_COPY.noKey,
+    });
   });
 
   it('settles a pickup award with fulfillment pickup and no delivery address', async () => {
@@ -181,6 +220,8 @@ describe('useMarketplaceOfferCheckout', () => {
     const payload = committedPayload();
     expect(payload).toMatchObject({ fulfillment: 'pickup' });
     expect(payload).not.toHaveProperty('deliveryAddress');
+    expect(payload).not.toHaveProperty('deliveryAddressEnvelope');
+    expect(CommerceController.resolveDeliveryKeysForCheckout).not.toHaveBeenCalled();
   });
 
   it.each([

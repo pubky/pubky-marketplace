@@ -176,7 +176,7 @@ describe('fetchMarketplaceCatalogForSsr', () => {
 
       expect(catalog).toHaveLength(7);
       expect(shops).toHaveLength(6);
-      expect(CATALOG_SHOP_FETCH_TIMEOUT_MS).toBe(800);
+      expect(CATALOG_SHOP_FETCH_TIMEOUT_MS).toBe(3_000);
     });
   });
 });

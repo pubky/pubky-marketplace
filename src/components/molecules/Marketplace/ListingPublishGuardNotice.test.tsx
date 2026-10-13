@@ -40,6 +40,25 @@ describe('ListingPublishGuardNotice', () => {
     expect(screen.queryByRole('button', { name: 'Enable selling' })).not.toBeInTheDocument();
   });
 
+  it('links Shipping settings, where the delivery key is created, for the no-delivery-key guard', () => {
+    render(<ListingPublishGuardNotice reason="no-delivery-key" surface="listing-publish-guard" density="action" />);
+
+    expect(screen.getByRole('link', { name: 'Create delivery key' })).toHaveAttribute(
+      'href',
+      MARKETPLACE_ROUTES.SETTINGS_SHIPPING,
+    );
+    expect(screen.queryByRole('button', { name: 'Enable selling' })).not.toBeInTheDocument();
+  });
+
+  it('offers no action for an unreadable delivery key, which a reload resolves', () => {
+    render(
+      <ListingPublishGuardNotice reason="delivery-key-unverified" surface="listing-publish-guard" density="action" />,
+    );
+
+    expect(screen.queryByRole('link')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button')).not.toBeInTheDocument();
+  });
+
   it('bootstraps a marketplace session from the session guard, not the buyer reconnect card', () => {
     render(<ListingPublishGuardNotice reason="session" surface="listing-publish-guard" density="action" />);
 

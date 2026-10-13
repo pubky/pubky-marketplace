@@ -71,7 +71,6 @@ export function createOrderFixture(
     subtotal: usd(12_500),
     shipping: usd(1_200),
     total: usd(13_700),
-    guaranteePolicyVersion: 1,
     paymentId: uuid(100 + stateIndex),
     receiptId: state === 'pending_payment' ? null : uuid(200 + stateIndex),
     // `ready_for_pickup` is the pickup-path state (§A6); every other state

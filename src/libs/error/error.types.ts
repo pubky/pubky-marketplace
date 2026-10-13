@@ -28,6 +28,7 @@ export enum ErrorService {
   Exchangerate = 'exchangerate',
   Chatwoot = 'chatwoot',
   Marketplace = 'marketplace',
+  Shippo = 'shippo',
   Locks = 'locks',
   Paykit = 'paykit',
   Inbox = 'inbox',

@@ -4,48 +4,56 @@ Post-purchase logistics for the marketplace: where each piece of shipping
 data lives, who can read it, and what is deliberately not built. Read
 [`status.md`](status.md) first for the general real-vs-simulated map.
 
-Last updated: 2026-09-06.
+Last updated: 2026-10-12.
 
 ## Where shipping data lives
 
-| Data                         | Lives                                                                      | Who can read it                                                                                                                                                                                                                        |
-| ---------------------------- | -------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Buyer address book           | Account-scoped IndexedDB (`commerce_delivery_addresses`), this device only | Only this browser profile. Never on the homeserver, never in any public record, never in telemetry.                                                                                                                                    |
-| Delivery address of an order | The transaction service's `orders.delivery_address` column                 | The bound seller may read it only from the seller's single-order projection while the order is `paid`/`processing` and `shipping`; all other projections withhold it. Encryption to the seller key is scheduled (ADR-0019 §8 interim). |
-| Seller shipping presets      | Account-scoped IndexedDB (`commerce_shipping_presets`), this device only   | Only this browser profile. Presets are authoring convenience; nothing about them is published.                                                                                                                                         |
-| Listing shipping option      | The owner-signed listing record (`shippingOptions`, one flat-rate entry)   | Public, like the rest of the listing record. The sell studio now authors its label, price, and min/max day estimates (previously label and days were fixed copy).                                                                      |
-| Shipment carrier + tracking  | The transaction service's order `shipment` object                          | Both order participants, via their scoped order reads. `carrier` and `tracking_number` are structured fields in the existing ship command contract.                                                                                    |
+| Data                                                              | Lives                                                                                                                                                                                                                                | Who can read it                                                                                                                                                                                                                                                                                                                              |
+| ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Buyer address book                                                | Account-scoped IndexedDB (`commerce_delivery_addresses`), this device only                                                                                                                                                           | Only this browser profile. Never on the homeserver, never in any public record, never in telemetry.                                                                                                                                                                                                                                          |
+| Delivery address of an order                                      | The transaction service stores only an HPKE-sealed envelope (`orders.delivery_address_envelope`), encrypted on the buyer's device to the shipping seller's delivery key; the service deletes it when the order reaches a final state | Only the seller's device, which holds the private key. The service, the operator and every other projection see ciphertext at most. Orders that predate sealing may still carry a `plaintext_v1` value until the service purges it. Design and threat model: [`encrypted-delivery-address-design.md`](encrypted-delivery-address-design.md). |
+| Seller delivery key                                               | Public half on the seller's homeserver (`/pub/pubky.app/marketplace/v1/delivery-keys/current`); private half wrapped under a non-extractable key in a separate IndexedDB on the seller's device                                      | Public half: anyone. Private half: that browser profile only. Losing the device loses the ability to open addresses sealed to that key.                                                                                                                                                                                                      |
+| Seller Shippo token, ship-from address, purchased label reference | Device-local, wrapped at rest under the same device key (`putDeviceRecord`)                                                                                                                                                          | Only that browser profile. Never sent to the marketplace service; the token goes to Shippo only.                                                                                                                                                                                                                                             |
+| Seller shipping presets                                           | Account-scoped IndexedDB (`commerce_shipping_presets`), this device only                                                                                                                                                             | Only this browser profile. Presets are authoring convenience; nothing about them is published.                                                                                                                                                                                                                                               |
+| Listing shipping option                                           | The owner-signed listing record (`shippingOptions`, one flat-rate entry)                                                                                                                                                             | Public, like the rest of the listing record. The sell studio now authors its label, price, and min/max day estimates (previously label and days were fixed copy).                                                                                                                                                                            |
+| Shipment carrier + tracking                                       | The transaction service's order `shipment` object                                                                                                                                                                                    | Both order participants, via their scoped order reads. `carrier` and `tracking_number` are structured fields in the existing ship command contract.                                                                                                                                                                                          |
 
 ## The delivery-address privacy boundary (exact)
 
-This is load-bearing and verified against the service source
-(`pubky-marketplace-service`):
+This is load-bearing; the service side is in `pubky-marketplace-service`
+(`docs/` there and migration 0057):
 
-1. The buyer's address travels **exactly once**: inside the buyer's own
-   `checkout.create` command payload (`payload.delivery_address`, validated
-   field-by-field: name 1–100, line1 1–200, line2 0–200, city 1–100, region
-   1–100, postal code 1–32, ISO 3166-1 alpha-2 country).
-2. The service stores it on the order row. Fresh checkout command results and
-   exact replays redact it before returning to the command's author.
-3. Ordinary read projections strip it: order lists, buyer reads, receipts,
-   notifications, and all command results never carry it. The bound seller's
-   single-order read is the narrow interim exception: it carries a tagged
-   `plaintext_v1` value only while the order is `paid`/`processing` and
-   `shipping`; unknown or untagged formats are unavailable. Encryption to the
-   seller key is scheduled (ADR-0019 §8 interim).
-4. Consequently **the seller's client only legitimately holds the buyer's
-   address during that narrow seller order window**, and this client does not
-   invent any other read path.
+1. The buyer's address is sealed **on the buyer's device** to the delivery key
+   of each seller who ships part of the cart (RFC 9180 HPKE, base mode,
+   DHKEM(X25519)/HKDF-SHA256/ChaCha20-Poly1305), bound to the checkout command,
+   buyer, seller and key id. It leaves the browser only as that envelope inside
+   `checkout.create` (`delivery_address_envelopes`), the offer checkout
+   (`delivery_address_envelope`) or a drop claim.
+2. The service validates the envelope's shape and size, stores the ciphertext,
+   and cannot open it. Command results and exact replays never echo it.
+3. The seller's single-order projection carries the envelope in an
+   `hpke_v1` object while the order is `paid`/`processing` and `shipping`;
+   every other projection withholds it. Legacy rows still project
+   `plaintext_v1` until the service purges them.
+4. The seller's client opens the envelope with the delivery key kept on the
+   seller's device. An unknown key id or an envelope that fails authentication
+   is a hard stop: no address, no Shippo call, and the UI says "Do not ship
+   yet".
+5. At `completed`, `cancelled`, `refunded_external` or `closed` the service
+   deletes the ciphertext. A seller without a published key cannot receive a
+   shipping checkout; the buyer is told before anything is reserved (an inline
+   notice beside Pay, which stays until the next attempt). The seller cannot
+   publish or save a listing that ships until the key is published, and
+   Payment settings lists the delivery key as a setup step linking to
+   Shipping settings, where it is created.
 
 What that means for the tooling here:
 
 - The **address book** is buyer-side only and purely device-local. The
-  checkout picker fills the same form checkout always had; the address still
-  goes only into the buyer's own command.
-- The **packing slip** renders the tagged service-provided address when the
-  seller's paid/processing shipping order projection carries `plaintext_v1`.
-  If it is absent or unsupported, it says "Delivery address unavailable for
-  this order — paste it below." and keeps the optional local paste field.
+  checkout picker fills the same form checkout always had; the address is
+  then sealed to the seller before it goes into the buyer's own command.
+- The **packing slip** opens the sealed address on the seller's device (see
+  "Packing slip" below) and never falls back to a pasted or guessed address.
 - The slip (and the order rows) now show the buyer's **variant snapshot**
   when the checkout carried one: `checkout.create` lines accept an optional
   `variant_id` plus up to three `{name, value}` option pairs (an ordered
@@ -122,51 +130,64 @@ and presets template them:
 From a seller's view: a print-friendly slip (browser `@media print` CSS
 keyed on `data-packing-slip` in `globals.css` — no PDF dependency) with the
 order id, order date, line items and quantities, totals, the buyer's short
-pubky, shipment facts once tracking exists, and a notes area. A paid or
-processing shipping order can show the tagged service-provided destination.
-Shipped, unsupported, absent, and non-shipping orders show the truthful
-no-address notice and retain ruled space plus the local paste fallback.
-Line items include the buyer's variant snapshot when the checkout carried one
-(see "Where shipping data lives" above); orders placed before the field
-existed have no variant line, and the slip shows exactly what the order record
-holds.
+pubky, shipment facts once tracking exists, and a notes area. For a paid or
+processing shipping order the dialog opens the sealed address on this device
+and prints it in the "Deliver to" block. If this device holds no key that
+can open it, the slip says so and shows no address; there is no paste
+fallback. Shipped, absent and non-shipping orders show the truthful
+no-address notice. Line items include the buyer's variant snapshot when the
+checkout carried one (see "Where shipping data lives" above); orders placed
+before the field existed have no variant line.
 
-### Optional pasted-address field
+Guarantees for the opened address:
 
-Sellers who already have the destination from the buyer (for example the
-encrypted conversation) can paste it into the packing-slip dialog so it
-prints in the "Deliver to" block instead of being copied by hand.
-
-Guarantees:
-
-- The value lives in **component state of that dialog instance only**. It is
-  not written to Dexie, localStorage, sessionStorage, cookies, or the URL.
-- It is **cleared** when the dialog closes, when the route changes, and when
-  a print job completes (`afterprint`, when the browser fires it). Residue
-  after an unreliable print event is still only in-memory React state.
-- It is **never sent** to the marketplace, the transaction service, or any
-  other server by this client.
-- Sentry Replay is instructed not to capture it: the textarea carries
-  `data-sentry-mask`, and client Replay is configured with `maskAllText` and
-  `maskAllInputs`.
-- It is **never logged**.
+- It lives in **component state of that dialog only**. It is not written to
+  Dexie, localStorage, sessionStorage, cookies, or the URL, and is dropped
+  when the dialog closes, the route changes or the account switches.
+- It is **never sent** anywhere by this client except to Shippo when the
+  seller asks for rates or a label (below).
+- It is **never logged**, and error contexts never carry it.
 - **Print-output caveat:** using Print, including print-to-PDF or a network
-  printer, puts the pasted text into that output. The file or print job is
+  printer, puts the address into that output. The file or print job is
   outside the app; delete it when you are done if you do not want a copy.
+
+## Shippo labels (seller device only)
+
+The seller supplies their own Shippo API token and a ship-from address in
+Get Paid → Shipping. Both are stored encrypted on that device and are never
+sent to the marketplace service, which does not call Shippo at all. For a paid
+order the seller confirms a parcel; the Shop opens the delivery address on the
+device, quotes real rates from `api.goshippo.com` (which answers CORS
+preflights for an `Authorization` header from any origin, checked 12 Oct
+2026), buys the chosen rate (real money, charged by Shippo to the seller's own
+account) and keeps the label reference on the device for reprinting. The
+tracking number goes through the existing `fulfillment.ship` command, so the
+buyer sees it exactly as with a manually entered number.
+
+- Shippo necessarily receives the plaintext address of the order it is asked
+  to quote or label. The dialog says so; the service never does.
+- Settings and labels do not follow the seller to another browser, and
+  clearing the browser's data removes them.
+- A failed Shippo call shows static copy keyed by a reason
+  (`shippo_key_invalid`, `shippo_rejected`, `shippo_unavailable`); Shippo's own
+  messages can quote the address and are never shown or logged.
+- If storing the label fails after a successful purchase, the label exists
+  at Shippo but not on the device; the seller can void or find it in Shippo.
+- The page CSP only sets `frame-ancestors`, so no `connect-src` change is
+  needed; add `https://api.goshippo.com` there if a stricter policy is ever
+  introduced.
 
 ## Follow-ups (deliberately not built)
 
-- **Encrypted seller-facing address delivery.** The interim
-  `plaintext_v1` seller projection is deliberately bounded; encryption to the
-  seller key remains a separate program and is not implemented here.
 - **Service-side shipment enrichment** (shipped-at estimates, delivery-day
   windows, carrier enum server-side). The `carrier` field staying a free
   string is the service's contract; a server-side curated enum would be a
   service change, not a client one.
-- **Label purchase / carrier APIs.** Buying postage, rate quotes, and live
-  tracking status require carrier accounts and server-side credentials —
-  out of scope for a client-only change and gated on the independent
-  security review like everything real-funds-adjacent.
+- **Live carrier tracking status and Shippo webhooks.** Labels are bought
+  from the seller's device; tracking status is still seller-entered, with no
+  carrier webhooks.
+- **Syncing Shippo settings across a seller's devices.** Deliberately not
+  done: the token would have to leave the device.
 - **Multiple shipping options per listing.** The record supports up to 20;
   the sell studio still authors exactly one flat-rate option. Presets make
   the single option cheap to reuse; a multi-option composer is future work.

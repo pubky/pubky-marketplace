@@ -13,6 +13,7 @@ import { useRequireAuth } from '@/hooks/useRequireAuth/useRequireAuth';
 import { getMarketplaceCheckoutRoute, getMarketplaceDropCheckoutRoute } from '@/libs/commerce/checkout-phase';
 import { formatCommerceMoney } from '@/libs/commerce/format';
 import type { CommerceDropRecord, CommerceListingRecord } from '@/libs/commerce/marketplace-records';
+import { MarketplaceDeliveryKeyChangeDialog } from '@/organisms/Marketplace/MarketplaceDeliveryKeyChangeDialog';
 import { useAuthStore } from '@/stores/auth/auth.store';
 import { MarketplaceIndicativePrice } from './MarketplaceIndicativePrice';
 import { MarketplaceSessionRequiredCard } from './MarketplaceSessionRequiredCard';
@@ -175,6 +176,7 @@ export function DropClaimPanel({
           You have reached this drop&apos;s per-buyer limit.
         </Typography>
       )}
+      <MarketplaceDeliveryKeyChangeDialog change={claim.pendingKeyChange} onDecision={claim.decideKeyChange} />
     </section>
   );
 }

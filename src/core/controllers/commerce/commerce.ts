@@ -1,15 +1,23 @@
 import { CommerceApplication, type CommerceCheckoutFulfillmentInput } from '@/application/commerce/commerce';
+import {
+  type CheckoutDeliveryKeysResolution,
+  CommerceDeliveryKeysApplication,
+  type OrderDeliveryAddressResult,
+} from '@/application/commerce/delivery-keys';
 import { CommerceInventoryApplication, type InventoryBoardRow } from '@/application/commerce/inventory';
 import { CommerceInventoryAutomationsApplication } from '@/application/commerce/inventory-automations';
 import { CommerceInventoryImportApplication } from '@/application/commerce/inventory-import';
 import { CommercePrivKeyringApplication } from '@/application/commerce/priv-keyring';
+import { CommerceShippingApplication } from '@/application/commerce/shipping';
 import { TagKind } from '@/application/tag/tag.types';
 import {
   COMMERCE_SAVED_SEARCH_NAME_MAX_CHARS,
   getCommerceAdapterMode,
+  isDurableCommerceMode,
   isTransactionalCommerceMode,
 } from '@/config/commerce';
 import { IMAGE_MAX_UPLOAD_SIZE } from '@/config/images';
+import type { SellerDeliveryKey } from '@/libs/commerce/delivery-envelope';
 import {
   type MarketplaceDigitalDeliveryCapability,
   marketplaceDigitalDeliveryChannelSchema,
@@ -17,8 +25,10 @@ import {
 } from '@/libs/commerce/digital';
 import type { CommerceDigitalLock } from '@/libs/commerce/marketplace-records';
 import type { PaymentMethodKind } from '@/libs/commerce/payment-methods';
+import { resolveCheckoutFulfillment } from '@/libs/commerce/pickup';
+import type { CommerceDeliveryAddressValue } from '@/libs/commerce/postal-address';
 import type { PrivRecoveryKeyExport } from '@/libs/commerce/priv-recovery-key';
-import type { ShipFromAddress, ShippingParcel } from '@/libs/commerce/shipping';
+import type { ShipFromAddress, ShippingParcel, ShippoRate } from '@/libs/commerce/shipping';
 import { buildMarketplaceListingAggregateId } from '@/libs/commerce/transaction-commands';
 import { commercePositiveMoneySchema, commercePubkySchema } from '@/libs/commerce/transaction-contracts';
 import { ValidationErrorCode } from '@/libs/error/error.codes';
@@ -39,6 +49,11 @@ import type {
   CommerceUsdtRefusalReason,
 } from '@/stores/commerce/commerce.types';
 import { useNotificationStore } from '@/stores/notification/notification.store';
+
+/** Rates for an order, or why this device could not open the address to quote against. */
+export type ShippingRatesResult =
+  | { kind: 'rates'; rates: ShippoRate[] }
+  | Exclude<OrderDeliveryAddressResult, { kind: 'address' }>;
 
 export class CommerceController {
   private constructor() {}
@@ -109,6 +124,13 @@ export class CommerceController {
     const owner = CommerceRecordNormalizer.pubky(ownerPubky);
     const id = CommerceRecordNormalizer.entityId(listingId);
     return await CommerceApplication.fetchListing(owner, id);
+  }
+
+  /** Network, then local: replaces the cached row with the record the owner's homeserver publishes. */
+  static async refreshListing(ownerPubky: unknown, listingId: unknown) {
+    const owner = CommerceRecordNormalizer.pubky(ownerPubky);
+    const id = CommerceRecordNormalizer.entityId(listingId);
+    return await CommerceApplication.refreshListing(owner, id);
   }
 
   static async getOrFetchListing(ownerPubky: unknown, listingId: unknown) {
@@ -520,6 +542,14 @@ export class CommerceController {
     return await CommerceApplication.getPublicDrop(sellerPubky, dropId);
   }
 
+  /** Public stock state of a listing: the hold signal for a viewer with no marketplace session. */
+  static async getPublicListingAvailability(sellerPubky: unknown, listingId: unknown) {
+    return await CommerceApplication.getPublicListingAvailability(
+      CommerceRecordNormalizer.pubky(sellerPubky),
+      CommerceRecordNormalizer.entityId(listingId),
+    );
+  }
+
   /** The current seller's full-detail drop read (mission control). */
   static async getOwnDrop(dropId: string) {
     const pubky = this.getCurrentUserPubky();
@@ -615,27 +645,98 @@ export class CommerceController {
     return await CommerceApplication.markFiatPaid(this.getCurrentUserPubky(), orderId, transactionRef);
   }
 
-  /** The seller's own Shippo shipping configuration (token is write-only). */
+  /** This device's delivery key and whether the seller's homeserver publishes it. */
+  static async getMyDeliveryKeyStatus() {
+    return await CommerceDeliveryKeysApplication.getSellerKeyStatus(this.getCurrentUserPubky());
+  }
+
+  /** First setup and rotation: a fresh device key, published as the current one. */
+  static async commitCreateMyDeliveryKey() {
+    return await CommerceDeliveryKeysApplication.commitCreateKey(this.getCurrentUserPubky());
+  }
+
+  static async commitPublishMyDeliveryKey() {
+    return await CommerceDeliveryKeysApplication.commitPublishCurrentKey(this.getCurrentUserPubky());
+  }
+
+  /**
+   * The delivery keys a buyer must seal to before checkout: one per seller
+   * that ships. Not durable means no service and nothing to seal to.
+   */
+  static async resolveDeliveryKeysForCheckout(
+    sellerPubkys: readonly string[],
+  ): Promise<CheckoutDeliveryKeysResolution> {
+    if (!isDurableCommerceMode(getCommerceAdapterMode()) || sellerPubkys.length === 0) {
+      return { ok: true, keys: new Map() };
+    }
+    return await CommerceDeliveryKeysApplication.resolveKeysForCheckout(this.getCurrentUserPubky(), sellerPubkys);
+  }
+
+  /** The sellers of a checkout whose lines ship, given the buyer's per-seller fulfillment choices. */
+  static getShippedSellers(
+    input: Pick<CommerceCheckoutFulfillmentInput, 'lines' | 'fulfillmentChoiceBySeller'>,
+  ): string[] {
+    const plan = resolveCheckoutFulfillment(input.lines, input.fulfillmentChoiceBySeller ?? {});
+    if (!plan.ok) return [];
+    return [
+      ...new Set(
+        input.lines.filter((_, index) => plan.lineFulfillments[index] === 'shipping').map((line) => line.sellerPubky),
+      ),
+    ];
+  }
+
+  /** The buyer confirmed a seller's changed delivery key; pin it. */
+  static async commitAcceptDeliveryKeyChange(sellerPubky: string, keyId: string) {
+    await CommerceDeliveryKeysApplication.commitAcceptKeyChange(this.getCurrentUserPubky(), sellerPubky, keyId);
+  }
+
+  /** Seals an address to resolved seller keys for a command whose id the caller already holds. */
+  static async sealDeliveryAddressForCheckout(input: {
+    checkoutCommandId: string;
+    address: CommerceDeliveryAddressValue;
+    keys: ReadonlyMap<string, SellerDeliveryKey>;
+  }) {
+    return await CommerceDeliveryKeysApplication.sealForCheckout({
+      buyerPubky: this.getCurrentUserPubky(),
+      ...input,
+    });
+  }
+
+  // --- Seller shipping (Shippo, on this device) ----------------------------
+  //
+  // The token, the ship-from address and purchased labels live in this
+  // browser. The delivery address is opened with the device delivery key for
+  // one quote and handed to Shippo; the marketplace service is not involved.
+
+  /** The seller's own shipping configuration on this device (the token never comes back). */
   static async getMyShippingConfig() {
-    return await CommerceApplication.getMyShippingConfig(this.getCurrentUserPubky());
+    return await CommerceShippingApplication.getMyConfig(this.getCurrentUserPubky());
   }
 
   static async putMyShippingConfig(input: { shippoApiKey?: string; shipFrom: ShipFromAddress | null }) {
-    return await CommerceApplication.putMyShippingConfig(this.getCurrentUserPubky(), input);
+    return await CommerceShippingApplication.putMyConfig(this.getCurrentUserPubky(), input);
   }
 
-  /** Real Shippo rates for a paid order's delivery address (seller only). */
-  static async quoteShippingRates(orderId: string, parcel: ShippingParcel) {
-    return await CommerceApplication.quoteShippingRates(this.getCurrentUserPubky(), orderId, parcel);
+  /**
+   * Real Shippo rates for a paid order, using the delivery address opened on
+   * this device. When this device cannot open the address no Shippo call is
+   * made and the reason is returned instead.
+   */
+  static async quoteShippingRates(order: MarketplaceOrder, parcel: ShippingParcel): Promise<ShippingRatesResult> {
+    const owner = this.getCurrentUserPubky();
+    const opened = await this.getOrderDeliveryAddress(order);
+    if (opened.kind !== 'address') return opened;
+    const rates = await CommerceShippingApplication.quoteRates({ owner, destination: opened.address, parcel });
+    return { kind: 'rates', rates };
   }
 
   /** Purchases the selected rate on the seller's own Shippo account (real money). */
   static async purchaseShippingLabel(orderId: string, rateId: string) {
-    return await CommerceApplication.purchaseShippingLabel(this.getCurrentUserPubky(), orderId, rateId);
+    return await CommerceShippingApplication.purchaseLabel({ owner: this.getCurrentUserPubky(), orderId, rateId });
   }
 
   static async getShippingLabel(orderId: string) {
-    return await CommerceApplication.getShippingLabel(this.getCurrentUserPubky(), orderId);
+    return await CommerceShippingApplication.getLabel(this.getCurrentUserPubky(), orderId);
   }
 
   /** Seller's PayPal receipt confirmation — this is what pays the order. */
@@ -888,6 +989,24 @@ export class CommerceController {
       this.getCurrentUserPubky(),
       CommerceRecordNormalizer.entityId(orderId),
     );
+  }
+
+  /**
+   * What this device can read of a seller order's delivery address: a legacy
+   * plaintext address, or a sealed one opened with the private key kept on
+   * this device. Never reads or stores anything beyond the passed order.
+   */
+  static async getOrderDeliveryAddress(order: MarketplaceOrder): Promise<OrderDeliveryAddressResult> {
+    const sellerPubky = this.getCurrentUserPubky();
+    const projection = order.deliveryAddress;
+    if (order.sellerPubky !== sellerPubky || !projection) return { kind: 'none' };
+    if (projection.format === 'plaintext_v1') return { kind: 'address', address: projection.address };
+    if (projection.format !== 'hpke_v1') return { kind: 'none' };
+    return await CommerceDeliveryKeysApplication.getOrderDeliveryAddress({
+      sellerPubky,
+      buyerPubky: order.buyerPubky,
+      sealed: { keyId: projection.keyId, commandId: projection.commandId, envelope: projection.envelope },
+    });
   }
 
   // --- Local pickup (Wave 7 safe subset, local pickup design PART A) ------

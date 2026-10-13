@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MARKETPLACE_DELIVERY_ADDRESS_DISCLOSURE } from '@/config/commerce-copy';
 import { CommerceController } from '@/controllers/commerce/commerce';
+import { DELIVERY_KEY_COPY } from '@/libs/commerce/delivery-key-copy';
 import { useCommerceStore } from '@/stores/commerce/commerce.store';
 import { createOrderFixture, createPaymentFixture } from '@/test/fixtures/commerce/orders';
 import { setHeavySuiteBudgets } from '@/test-utils/load-budget';
@@ -22,6 +23,8 @@ const view = vi.hoisted(() => ({
   orders: [] as unknown[],
   isLoading: false,
   adapterMode: 'sandbox' as string,
+  paykitServerApi: 'fork' as 'fork' | 'upstream',
+  deliveryKeyBlock: null as null | { kind: string; sellerPubky: string | null; message: string },
   deployEnv: 'production' as 'production' | 'staging' | undefined,
   hasMarketplaceSession: false,
   needsSession: false,
@@ -122,7 +125,7 @@ vi.mock('next/navigation', () => ({
 
 vi.mock('@/config/commerce', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/config/commerce')>();
-  return { ...actual, getCommerceAdapterMode: () => view.adapterMode };
+  return { ...actual, getCommerceAdapterMode: () => view.adapterMode, getPaykitServerApi: () => view.paykitServerApi };
 });
 
 vi.mock('@/libs/runtime-config/runtime-config', async (importOriginal) => {
@@ -201,6 +204,9 @@ vi.mock('@/hooks/useMarketplaceCheckout/useMarketplaceCheckout', async () => {
         selectedAddressId: view.selectedAddressId,
         selectAddress: vi.fn(),
         rememberAddress: checkoutActions.rememberAddress,
+        pendingKeyChange: null,
+        decideKeyChange: vi.fn(),
+        deliveryKeyBlock: view.deliveryKeyBlock,
         fulfillmentOptionsForSeller: (sellerPubky: string) => view.fulfillmentOptions[sellerPubky] ?? ['shipping'],
         fulfillmentForSeller: (sellerPubky: string) => view.fulfillmentEffective[sellerPubky] ?? 'shipping',
         setFulfillmentChoice: checkoutActions.setFulfillmentChoice,
@@ -284,7 +290,12 @@ vi.mock('@/hooks/useMarketplaceOffers/useMarketplaceOffers', () => ({
 }));
 
 vi.mock('@/hooks/useMarketplaceOfferCheckout/useMarketplaceOfferCheckout', () => ({
-  useMarketplaceOfferCheckout: () => ({ submit: offerState.submit, isSubmitting: false }),
+  useMarketplaceOfferCheckout: () => ({
+    submit: offerState.submit,
+    isSubmitting: false,
+    pendingKeyChange: null,
+    decideKeyChange: vi.fn(),
+  }),
 }));
 
 const approval = vi.hoisted(() => ({ signer: 'Pubky Ring' as 'Bitkit' | 'Pubky Ring' }));
@@ -335,6 +346,8 @@ function resetCheckoutView() {
   view.items = [];
   view.isLoading = false;
   view.adapterMode = 'sandbox';
+  view.paykitServerApi = 'fork';
+  view.deliveryKeyBlock = null;
   view.deployEnv = 'production';
   view.hasMarketplaceSession = false;
   view.needsSession = false;
@@ -615,6 +628,38 @@ describe('MarketplaceCheckout', () => {
     expect(screen.queryByTestId('marketplace-checkout-bitcoin-amount-note')).not.toBeInTheDocument();
   });
 
+  it('shows why Pay stopped when the seller has no delivery key, next to the Pay button', async () => {
+    seededCart();
+    view.adapterMode = 'transaction-service';
+    view.hasMarketplaceSession = true;
+    view.deliveryKeyBlock = {
+      kind: 'no_key',
+      sellerPubky: 's'.repeat(52),
+      message: DELIVERY_KEY_COPY.noKey,
+    };
+
+    render(<MarketplaceCheckout />);
+
+    const notice = await screen.findByTestId('delivery-key-blocked');
+    expect(notice).toHaveTextContent("This seller hasn't finished setting up delivery yet");
+    expect(notice.compareDocumentPosition(screen.getByTestId('marketplace-checkout-pay'))).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
+  });
+
+  it('says nothing about a unique amount on upstream Paykit, which requests exactly the price', async () => {
+    seededCart();
+    view.adapterMode = 'transaction-service';
+    view.hasMarketplaceSession = true;
+    view.paykitServerApi = 'upstream';
+
+    render(<MarketplaceCheckout />);
+
+    await screen.findByTestId('marketplace-checkout-method-bitcoin');
+    expect(screen.queryByTestId('marketplace-checkout-bitcoin-amount-note')).not.toBeInTheDocument();
+    expect(screen.queryByText(/unique amount/i)).not.toBeInTheDocument();
+  });
+
   it('asks a buyer without a Paykit wallet to connect Bitkit instead of letting Bitcoin Pay fail', async () => {
     const user = userEvent.setup();
     seededCart();
@@ -892,6 +937,42 @@ describe('MarketplaceCheckout', () => {
           reason: 'Changed my mind',
         }),
       );
+    });
+
+    it('shows the reserved header for a pending PayPal checkout that is not yet awaiting entitlement', () => {
+      const order = createOrderFixture('pending_payment', { paymentMethod: 'paypal' });
+      view.orders = [{ order, payment: null }];
+      window.location.hash = `#${order.id}`;
+      render(<MarketplaceCheckout />);
+
+      expect(screen.getByText(/Awaiting payment · Item reserved/)).toBeInTheDocument();
+    });
+
+    it('drops the reserved header once the buyer has cancelled the checkout (#50)', () => {
+      const payment = createPaymentFixture('awaiting_entitlement');
+      const order = createOrderFixture('cancelled', {
+        paymentId: payment.id,
+        paymentMethod: 'paypal',
+        holdExpiresAt: new Date(Date.now() + 10 * 60_000).toISOString(),
+      });
+      view.orders = [{ order, payment }];
+      window.location.hash = `#${order.id}`;
+      render(<MarketplaceCheckout />);
+
+      expect(screen.getByTestId('payment-status-panel')).toBeInTheDocument();
+      expect(screen.queryByText(/Awaiting payment/)).not.toBeInTheDocument();
+      expect(screen.queryByText(/Item reserved/)).not.toBeInTheDocument();
+      expect(screen.queryByText('Checkout in progress')).not.toBeInTheDocument();
+    });
+
+    it('drops the reserved header for a cancelled order that was never bound to a method', () => {
+      const order = createOrderFixture('cancelled', { paymentMethod: null });
+      view.orders = [{ order, payment: null }];
+      window.location.hash = `#${order.id}`;
+      render(<MarketplaceCheckout />);
+
+      expect(screen.queryByText('Checkout in progress')).not.toBeInTheDocument();
+      expect(screen.queryByText(/Awaiting payment/)).not.toBeInTheDocument();
     });
 
     it('omits the duplicate confirmation heading and cancellation for a paid order', () => {

@@ -1213,6 +1213,66 @@ describe('MarketplaceTransactionService read projections', () => {
     expect(MarketplaceSessionService.getActiveSession()).toBeNull();
   });
 
+  describe('public listing availability', () => {
+    beforeEach(() => {
+      config.mode = 'transaction-service';
+      MarketplaceSessionService.clearSession();
+    });
+
+    it('reads a listing availability publicly, without any session', async () => {
+      vi.mocked(fetch).mockResolvedValueOnce(
+        jsonResponse(200, {
+          aggregate_id: AGGREGATE_ID,
+          state: 'reserved',
+          server_time: '2026-10-13T07:45:00.000Z',
+        }),
+      );
+
+      const availability = await MarketplaceTransactionService.getPublicListingAvailability(ACTOR, 'boots_01');
+
+      expect(availability).toEqual({
+        aggregateId: AGGREGATE_ID,
+        state: 'reserved',
+        serverTime: '2026-10-13T07:45:00.000Z',
+      });
+      const [url, init] = vi.mocked(fetch).mock.calls[0] as [string, RequestInit];
+      expect(url).toBe(`http://127.0.0.1:8080/v0/listings/${ACTOR}/boots_01/availability`);
+      expect(init.method).toBe('GET');
+      expect(init.headers).toEqual(expect.not.objectContaining({ authorization: expect.anything() }));
+    });
+
+    it('is null for an unknown or removed listing', async () => {
+      vi.mocked(fetch).mockResolvedValueOnce(
+        jsonResponse(404, { ok: false, error: { code: 'NOT_FOUND', message: 'The listing was not found.' } }),
+      );
+
+      await expect(MarketplaceTransactionService.getPublicListingAvailability(ACTOR, 'gone')).resolves.toBeNull();
+    });
+
+    it('rejects an unknown state rather than showing it', async () => {
+      vi.mocked(fetch).mockResolvedValueOnce(
+        jsonResponse(200, { aggregate_id: AGGREGATE_ID, state: 'exploding', server_time: '2026-10-13T07:45:00.000Z' }),
+      );
+
+      await expect(MarketplaceTransactionService.getPublicListingAvailability(ACTOR, 'boots_01')).rejects.toMatchObject(
+        { name: 'AppError', code: 'INVALID_RESPONSE' },
+      );
+    });
+
+    it('surfaces a rate limit as an error', async () => {
+      vi.mocked(fetch).mockResolvedValueOnce(
+        jsonResponse(429, {
+          ok: false,
+          error: { code: 'rate_limited', message: 'The request rate limit was exceeded.' },
+        }),
+      );
+
+      await expect(MarketplaceTransactionService.getPublicListingAvailability(ACTOR, 'boots_01')).rejects.toMatchObject(
+        { name: 'AppError' },
+      );
+    });
+  });
+
   describe('seller payment methods', () => {
     beforeEach(() => {
       config.mode = 'transaction-service';
@@ -1469,138 +1529,6 @@ describe('MarketplaceTransactionService read projections', () => {
       expect(JSON.stringify(error.context)).not.toContain(echoed);
       expect(JSON.stringify(loggerError.mock.calls)).not.toContain(echoed);
       loggerError.mockRestore();
-    });
-  });
-
-  describe('seller shipping integration', () => {
-    const SHIP_FROM_WIRE = {
-      name: 'Olive Farm',
-      line1: 'Maslinska 1',
-      line2: '',
-      city: 'Split',
-      region: '',
-      postal_code: '21000',
-      country_code: 'HR',
-      phone: '',
-      email: '',
-    };
-
-    beforeEach(() => {
-      config.mode = 'transaction-service';
-      MarketplaceSessionService.clearSession();
-    });
-
-    it('saves the shipping config; the Shippo token is write-only and only its presence returns', async () => {
-      await establishSession();
-      vi.mocked(fetch).mockResolvedValueOnce(
-        jsonResponse(200, {
-          shipping_config: {
-            ship_from: SHIP_FROM_WIRE,
-            shippo_api_key_set: true,
-            updated_at: '2026-08-24T12:00:00.000Z',
-          },
-        }),
-      );
-
-      const saved = await MarketplaceTransactionService.putMyShippingConfig(ACTOR, {
-        shippoApiKey: 'shippo_test_1234567890',
-        shipFrom: {
-          name: 'Olive Farm',
-          line1: 'Maslinska 1',
-          line2: '',
-          city: 'Split',
-          region: '',
-          postalCode: '21000',
-          countryCode: 'HR',
-          phone: '',
-          email: '',
-        },
-      });
-
-      expect(saved.shippoApiKeySet).toBe(true);
-      expect(saved.shipFrom?.city).toBe('Split');
-      expect(Object.keys(saved)).not.toContain('shippoApiKey');
-      const [, init] = vi.mocked(fetch).mock.calls[0] as [string, RequestInit];
-      const body = JSON.parse(init.body as string) as Record<string, unknown>;
-      expect(body.shippo_api_key).toBe('shippo_test_1234567890');
-      expect((init.headers as Record<string, string>).authorization).toBe(SESSION_BEARER);
-    });
-
-    it('quotes rates for a parcel and parses them', async () => {
-      await establishSession();
-      vi.mocked(fetch).mockResolvedValueOnce(
-        jsonResponse(200, {
-          ok: true,
-          rates: [
-            {
-              rate_id: 'rate_1',
-              provider: 'USPS',
-              servicelevel: 'Ground',
-              amount: '7.85',
-              currency: 'USD',
-              estimated_days: 3,
-              duration_terms: null,
-            },
-          ],
-        }),
-      );
-
-      const rates = await MarketplaceTransactionService.quoteShippingRates(ACTOR, ORDER_ID, {
-        weightGrams: 900,
-        lengthMm: 300,
-        widthMm: 200,
-        heightMm: 150,
-      });
-
-      expect(rates).toEqual([
-        {
-          rateId: 'rate_1',
-          provider: 'USPS',
-          servicelevel: 'Ground',
-          amount: '7.85',
-          currency: 'USD',
-          estimatedDays: 3,
-          durationTerms: null,
-        },
-      ]);
-      const [url, init] = vi.mocked(fetch).mock.calls[0] as [string, RequestInit];
-      expect(url).toBe(`http://127.0.0.1:8080/v0/orders/${ORDER_ID}/shipping/rates`);
-      const body = JSON.parse(init.body as string) as Record<string, unknown>;
-      expect(body.weight_grams).toBe(900);
-    });
-
-    it('purchases a label and reads the stored one back; absent labels are null', async () => {
-      await establishSession();
-      const labelWire = {
-        transaction_id: 'txn_1',
-        carrier: 'USPS',
-        servicelevel: 'Ground',
-        amount: '7.85',
-        currency: 'USD',
-        tracking_number: 'TRACK123',
-        tracking_url: null,
-        label_url: 'https://deliver.goshippo.com/label_1.pdf',
-        purchased_at: '2026-08-24T12:00:00.000Z',
-      };
-      vi.mocked(fetch)
-        .mockResolvedValueOnce(jsonResponse(200, { ok: true, label: labelWire }))
-        .mockResolvedValueOnce(jsonResponse(200, { ok: true, label: labelWire }))
-        .mockResolvedValueOnce(
-          jsonResponse(404, {
-            ok: false,
-            error: { code: 'NOT_FOUND', message: 'No shipping label has been purchased for this order.' },
-          }),
-        );
-
-      const purchased = await MarketplaceTransactionService.purchaseShippingLabel(ACTOR, ORDER_ID, 'rate_1');
-      expect(purchased.trackingNumber).toBe('TRACK123');
-      expect(purchased.labelUrl).toContain('.pdf');
-
-      const stored = await MarketplaceTransactionService.getShippingLabel(ACTOR, ORDER_ID);
-      expect(stored?.transactionId).toBe('txn_1');
-
-      const missing = await MarketplaceTransactionService.getShippingLabel(ACTOR, ORDER_ID);
-      expect(missing).toBeNull();
     });
   });
 });

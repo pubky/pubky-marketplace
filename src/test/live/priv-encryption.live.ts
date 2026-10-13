@@ -363,7 +363,6 @@ async function paidOrder(buyer: Identity, listingAggregateId: string) {
         postalCode: '1000-001',
         countryCode: 'PT',
       },
-      guaranteePolicyVersion: 1 as const,
     },
   } as never)) as unknown as { ok: boolean; result: { orders: { id: string }[]; payments: { id: string }[] } };
   expect(checkout.ok, JSON.stringify(checkout)).toBe(true);

@@ -14,10 +14,11 @@ import { toast } from '@/molecules/Toaster/use-toast';
 import { useAuthStore } from '@/stores/auth/auth.store';
 
 /**
- * The seller's Shippo shipping integration settings (durable service only):
+ * The seller's Shippo shipping integration settings, kept on THIS device:
  * loads the stored configuration and saves changes. The Shippo API token is
- * write-only on the service — only `shippoApiKeySet` ever comes back, so
- * the UI can show that a token exists without ever holding it.
+ * write-only here too: only `shippoApiKeySet` comes back, so the UI can show
+ * that a token exists without ever holding it. Nothing is sent to the
+ * marketplace service.
  */
 export function useMarketplaceShippingIntegration() {
   const currentUserPubky = useAuthStore((state) => state.currentUserPubky);

@@ -10,7 +10,14 @@ import { availablePaymentMethods, type SellerPaymentConfig } from '@/libs/commer
  * no-method reason still exists here as defence in depth for a method removed
  * while a draft or published listing is open.
  */
-export const LISTING_PUBLISH_BLOCK_REASONS = ['unsigned', 'session', 'no-method', 'unverified'] as const;
+export const LISTING_PUBLISH_BLOCK_REASONS = [
+  'unsigned',
+  'session',
+  'no-method',
+  'unverified',
+  'no-delivery-key',
+  'delivery-key-unverified',
+] as const;
 
 export type ListingPublishBlockReason = (typeof LISTING_PUBLISH_BLOCK_REASONS)[number];
 
@@ -47,6 +54,16 @@ export const LISTING_PUBLISH_BLOCK_COPY: Record<
     body: 'Your payment settings could not be checked against the marketplace service.',
     checklist: 'Payment settings',
   },
+  'no-delivery-key': {
+    title: 'Create your delivery key before publishing a listing that ships',
+    body: 'Buyers encrypt their delivery address to your delivery key. Without a published key they cannot check out shipped items from you. Create it once in Shipping settings, or offer pickup or digital delivery instead.',
+    checklist: 'Delivery key',
+  },
+  'delivery-key-unverified': {
+    title: 'We could not check your delivery key. Try again.',
+    body: 'Your delivery key could not be read from your homeserver. Check your connection and reload this page.',
+    checklist: 'Delivery key',
+  },
 };
 
 export type SellerPaymentMethodGateReason = 'unsigned' | 'no-method' | 'unverified';
@@ -71,14 +88,43 @@ export async function evaluateSellerPaymentMethodGate(input: {
   }
 }
 
+/** What the seller's homeserver publishes, compared with the key this device holds. */
+export type SellerDeliveryKeyPublication = 'matches' | 'missing' | 'different' | 'invalid';
+
+export type SellerDeliveryKeyRequirement = {
+  required: boolean;
+  loadPublication: () => Promise<SellerDeliveryKeyPublication>;
+};
+
+/**
+ * A listing that ships needs the seller's published delivery key: checkout
+ * seals the buyer's address to it, so without one no buyer can pay. A key the
+ * seller published from another device still counts; this device then cannot
+ * open the addresses, which Shipping settings explains.
+ */
+export async function evaluateDeliveryKeyGate(
+  requirement: SellerDeliveryKeyRequirement,
+): Promise<'no-delivery-key' | 'delivery-key-unverified' | null> {
+  if (!requirement.required) return null;
+  try {
+    const publication = await requirement.loadPublication();
+    return publication === 'missing' || publication === 'invalid' ? 'no-delivery-key' : null;
+  } catch {
+    return 'delivery-key-unverified';
+  }
+}
+
 export async function evaluateDurableListingPublishGuards(input: {
   ownerPubky: string | null;
   hasMarketplaceSession: boolean;
   loadPaymentConfig: (ownerPubky: string) => Promise<SellerPaymentConfig>;
+  deliveryKey?: SellerDeliveryKeyRequirement;
 }): Promise<ListingPublishBlockReason | null> {
   if (!input.ownerPubky) return 'unsigned';
   if (!input.hasMarketplaceSession) return 'session';
-  return evaluateSellerPaymentMethodGate(input);
+  const paymentReason = await evaluateSellerPaymentMethodGate(input);
+  if (paymentReason) return paymentReason;
+  return input.deliveryKey ? evaluateDeliveryKeyGate(input.deliveryKey) : null;
 }
 
 export function rememberListingComposerReturnTo(path: string): void {

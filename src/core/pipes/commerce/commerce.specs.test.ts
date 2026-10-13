@@ -78,6 +78,27 @@ describe('commerce records against pubky-app-specs', () => {
     expect(() => builder().createListing(record)).toThrow();
   });
 
+  it('round-trips the seller-set delivery and completion periods through the spec', () => {
+    const result = builder().createShop(createCommerceShopFixture({ deliveryAssumeDays: 14, autoCompleteDays: 30 }));
+    const serialized = result.shop.toJson() as Record<string, unknown>;
+
+    expect(serialized.deliveryAssumeDays).toBe(14);
+    expect(serialized.autoCompleteDays).toBe(30);
+  });
+
+  it('keeps a shop without seller-set periods free of the period fields', () => {
+    const result = builder().createShop(createCommerceShopFixture());
+    const serialized = result.shop.toJson() as Record<string, unknown>;
+
+    expect('deliveryAssumeDays' in serialized).toBe(false);
+    expect('autoCompleteDays' in serialized).toBe(false);
+  });
+
+  it('rejects seller-set periods outside the spec bounds at the wasm boundary', () => {
+    expect(() => builder().createShop(createCommerceShopFixture({ deliveryAssumeDays: 0 }))).toThrow();
+    expect(() => builder().createShop(createCommerceShopFixture({ autoCompleteDays: 61 }))).toThrow();
+  });
+
   it('rejects a shop record missing a spec-required field', () => {
     const { schemaVersion: _schemaVersion, ...incomplete } = createCommerceShopFixture();
 

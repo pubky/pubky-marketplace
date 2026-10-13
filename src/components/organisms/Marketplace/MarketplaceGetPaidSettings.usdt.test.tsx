@@ -440,7 +440,7 @@ describe('MarketplaceGetPaidSettings USDT', () => {
     it('reports a different Bitkit identity', async () => {
       const iframe = await openReconnect();
       sendCallback(iframe, { error: 'identity-mismatch' });
-      expect(screen.getByRole('alert')).toHaveTextContent('Bitkit approved a different account');
+      expect(screen.getByRole('alert')).toHaveTextContent('Bitkit approved a different Pubky key');
     });
 
     it('ignores a late callback from a closed reconnect dialog', async () => {

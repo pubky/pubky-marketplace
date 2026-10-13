@@ -151,6 +151,31 @@ const optionalStringArrayFromString = (label: string) =>
     // Unset / blank strings stay `undefined` so the value-schema default still applies.
     .pipe(z.array(nonEmptyStringValue).optional());
 
+const optionalPositiveIntArrayFromString = (label: string) =>
+  z
+    .string()
+    .optional()
+    .transform((val, ctx) => {
+      if (val === undefined || val.trim() === '') return undefined;
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(val);
+      } catch (error) {
+        ctx.addIssue({ code: 'custom', message: `Invalid ${label} value: ${(error as Error).message}` });
+        return z.NEVER;
+      }
+      if (!Array.isArray(parsed) || parsed.length === 0 || !parsed.every((n) => Number.isInteger(n) && n > 0)) {
+        ctx.addIssue({ code: 'custom', message: `Invalid ${label} value: expected a JSON array of positive integers` });
+        return z.NEVER;
+      }
+      if (new Set(parsed).size !== parsed.length) {
+        ctx.addIssue({ code: 'custom', message: `Invalid ${label} value: duplicate lengths are not allowed` });
+        return z.NEVER;
+      }
+      return parsed as number[];
+    })
+    .pipe(z.array(positiveIntValue).min(1).optional());
+
 /**
  * Optional-tier env strings: a missing OR empty/whitespace value means "unset".
  * The outer `.optional()` keeps the key optional in the OUTPUT type too, so the env-input
@@ -280,6 +305,29 @@ function validateLocksPaykitEnvInput(
   }
 }
 
+/** Auction length the listing studio offers when no override is set: 7 days. */
+export const DEFAULT_AUCTION_DURATION_MINUTES = 7 * 24 * 60;
+/** Shortest auction a production deploy may offer; shorter ones are a staging test aid. */
+export const MIN_PRODUCTION_AUCTION_DURATION_MINUTES = 24 * 60;
+
+/**
+ * Short auctions exist so staging can reach the auction close and the winner's
+ * payment window within a test run. A production deploy refuses them, so a staging
+ * value copied into production config fails the parse instead of going live.
+ */
+function validateAuctionDurationsEnvInput(
+  input: { deployEnv?: DeployEnv; auctionDurationsMinutes?: number[] },
+  ctx: z.RefinementCtx,
+): void {
+  if (input.deployEnv !== 'production' || !input.auctionDurationsMinutes) return;
+  if (input.auctionDurationsMinutes.every((minutes) => minutes >= MIN_PRODUCTION_AUCTION_DURATION_MINUTES)) return;
+  ctx.addIssue({
+    code: 'custom',
+    path: ['auctionDurationsMinutes'],
+    message: `${PUBKY_RUNTIME_ENV_NAMES.auctionDurationsMinutes} below ${MIN_PRODUCTION_AUCTION_DURATION_MINUTES} minutes is only allowed when ${PUBKY_RUNTIME_ENV_NAMES.deployEnv}=staging.`,
+  });
+}
+
 /**
  * Upstream pubky/paykit-server rejects every `/setup` query parameter except
  * `return_to` and `state`, so `paykitServerApi=upstream` needs the creator
@@ -326,6 +374,7 @@ export const APP_RUNTIME_DEFAULTS = {
   ttlRetryDelayMs: 60_000,
   moderationId: 'nto4u7kkagk5hfjk4wgueemzy61nssic811hid1ty9u81uatmqzy',
   moderatedTags: ['nudity'],
+  auctionDurationsMinutes: [DEFAULT_AUCTION_DURATION_MINUTES],
   exchangeRateApi: 'https://api1.blocktank.to/api/fx/rates/btc',
   marketplaceUrl: 'http://localhost:3100',
   locksUrl: 'http://localhost:3101',
@@ -414,6 +463,11 @@ export const runtimeConfigValueSchema = networkConfigValueSchema.extend({
   ttlRetryDelayMs: positiveIntValue.default(APP_RUNTIME_DEFAULTS.ttlRetryDelayMs),
   moderationId: pubkyValue.optional(),
   moderatedTags: z.array(nonEmptyStringValue).default([...APP_RUNTIME_DEFAULTS.moderatedTags]),
+  /** Auction lengths the listing studio offers, in minutes; the first is preselected. */
+  auctionDurationsMinutes: z
+    .array(positiveIntValue)
+    .min(1)
+    .default([...APP_RUNTIME_DEFAULTS.auctionDurationsMinutes]),
   exchangeRateApi: urlValue.default(APP_RUNTIME_DEFAULTS.exchangeRateApi),
   marketplaceUrl: urlValue.default(APP_RUNTIME_DEFAULTS.marketplaceUrl),
   /**
@@ -566,6 +620,7 @@ export const runtimeEnvInputSchema = z
     ttlRetryDelayMs: optionalPositiveIntFromString,
     moderationId: optionalTrimmedString,
     moderatedTags: optionalStringArrayFromString('MODERATED_TAGS'),
+    auctionDurationsMinutes: optionalPositiveIntArrayFromString('PUBKY_RUNTIME_AUCTION_DURATIONS_MINUTES'),
     exchangeRateApi: optionalUrlFromString,
     marketplaceUrl: optionalUrlFromString,
     marketplaceNexusUrl: optionalUrlFromString,
@@ -611,6 +666,7 @@ export const runtimeEnvInputSchema = z
   })
   .superRefine(validateLocksPaykitEnvInput)
   .superRefine(validatePaykitServerApiEnvInput)
+  .superRefine(validateAuctionDurationsEnvInput)
   .pipe(runtimeConfigValueSchema);
 
 /**
@@ -665,6 +721,7 @@ export const runtimeEnvInputSchemaWithDefaults = z
     ttlRetryDelayMs: optionalPositiveIntFromString,
     moderationId: optionalTrimmedString,
     moderatedTags: optionalStringArrayFromString('MODERATED_TAGS'),
+    auctionDurationsMinutes: optionalPositiveIntArrayFromString('PUBKY_RUNTIME_AUCTION_DURATIONS_MINUTES'),
     exchangeRateApi: optionalUrlFromString,
     marketplaceUrl: optionalUrlFromString,
     marketplaceNexusUrl: optionalUrlFromString,
@@ -710,6 +767,7 @@ export const runtimeEnvInputSchemaWithDefaults = z
   })
   .superRefine(validateLocksPaykitEnvInput)
   .superRefine(validatePaykitServerApiEnvInput)
+  .superRefine(validateAuctionDurationsEnvInput)
   .pipe(lenientRuntimeConfigValueSchema);
 
 // ---------------------------------------------------------------------------
@@ -756,6 +814,7 @@ export const PUBKY_RUNTIME_ENV_NAMES: Record<keyof RuntimeConfig, string> = {
   ttlRetryDelayMs: 'PUBKY_RUNTIME_TTL_RETRY_DELAY_MS',
   moderationId: 'PUBKY_RUNTIME_MODERATION_ID',
   moderatedTags: 'PUBKY_RUNTIME_MODERATED_TAGS',
+  auctionDurationsMinutes: 'PUBKY_RUNTIME_AUCTION_DURATIONS_MINUTES',
   exchangeRateApi: 'PUBKY_RUNTIME_EXCHANGE_RATE_API',
   marketplaceUrl: 'PUBKY_RUNTIME_MARKETPLACE_URL',
   marketplaceNexusUrl: 'PUBKY_RUNTIME_MARKETPLACE_NEXUS_URL',

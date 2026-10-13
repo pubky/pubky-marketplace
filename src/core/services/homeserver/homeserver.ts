@@ -32,7 +32,7 @@ import {
 } from '@/config/network';
 import { readAuthEpoch } from '@/controllers/auth/auth-epoch';
 import { AppError } from '@/libs/error/error';
-import { AuthErrorCode, ServerErrorCode, ValidationErrorCode } from '@/libs/error/error.codes';
+import { AuthErrorCode, DatabaseErrorCode, ServerErrorCode, ValidationErrorCode } from '@/libs/error/error.codes';
 import { Err } from '@/libs/error/error.factories';
 import { httpResponseToError } from '@/libs/error/error.http';
 import { ErrorCategory, ErrorService } from '@/libs/error/error.types';
@@ -726,12 +726,12 @@ export class HomeserverService {
 
   /**
    * Whether this browser can hold a grant key that JavaScript cannot read
-   * (secure context, IndexedDB, WebCrypto Ed25519). Without it the Shop does
+   * (secure context, IndexedDB, WebCrypto Ed25519 and Web Locks). Without it the Shop does
    * not offer the Bitkit or Pubky Passport sign-in.
    */
   static isGrantSignInAvailable(): boolean {
     try {
-      return GrantAuthFlow.isDelegationAvailable;
+      return GrantAuthFlow.isDelegationAvailable && typeof globalThis.navigator?.locks?.request === 'function';
     } catch {
       return false;
     }
@@ -758,6 +758,12 @@ export class HomeserverService {
     xCallback?: XCallbackParams,
   ): Promise<TGenerateAuthUrlResult> {
     try {
+      if (!this.isGrantSignInAvailable() || !(await this.getPubkySdk().browserSessionStore.isAvailable())) {
+        throw Err.database(DatabaseErrorCode.INIT_FAILED, 'This browser cannot securely save a grant sign-in.', {
+          service: ErrorService.Homeserver,
+          operation,
+        });
+      }
       // The facade reuses the configured client (testnet or custom pkarr relays); the static
       // `GrantAuthFlow.startDelegated` spins up a default mainnet client and cannot resolve
       // identities that only exist on those relays. In browsers it still picks delegated keys.
@@ -820,6 +826,9 @@ export class HomeserverService {
     }
     let remaining: string[];
     try {
+      // list() can return [] when IndexedDB is unavailable. A failed delete
+      // must not let restore cleanup discard its only record reference.
+      if (removeError && !(await store.isAvailable())) throw removeError;
       remaining = (await store.list()).map((record) => record.id);
     } catch (error) {
       throw grantKeyRemovalFailed('removeGrantSession', error);
@@ -831,13 +840,22 @@ export class HomeserverService {
   /**
    * Drops every stored grant session record and delegated key for this
    * origin, then reads the store back. Rejects while any record is still
-   * listed. A browser without IndexedDB persistence holds no records.
+   * listed. Unavailable persistence is not proof of an empty store: it may
+   * mean Web Locks are missing, or a previously used IndexedDB is blocked.
+   * Callers with a known grant or unfinished key cleanup require availability.
    */
-  static async clearGrantSessions(): Promise<void> {
+  static async clearGrantSessions({ requireAvailable = false }: { requireAvailable?: boolean } = {}): Promise<void> {
     const store = this.getPubkySdk().browserSessionStore;
+    let available: boolean;
+    try {
+      available = await store.isAvailable();
+      if (!available && !requireAvailable && (await store.list()).length === 0) return;
+    } catch (error) {
+      throw grantKeyRemovalFailed('clearGrantSessions', error);
+    }
+    if (!available) throw grantKeyRemovalFailed('clearGrantSessions', undefined);
     let clearError: unknown;
     try {
-      if (!(await store.isAvailable())) return;
       await store.clearAll();
     } catch (error) {
       clearError = error;
@@ -848,7 +866,10 @@ export class HomeserverService {
     } catch (error) {
       throw grantKeyRemovalFailed('clearGrantSessions', error);
     }
-    if (remaining > 0) throw grantKeyRemovalFailed('clearGrantSessions', clearError);
+    // A failed clear can leave a pending flow's key even if no session was saved.
+    if (remaining > 0 || (clearError && requireAvailable)) {
+      throw grantKeyRemovalFailed('clearGrantSessions', clearError);
+    }
     if (clearError) Logger.warn('Grant session clear reported an error, but no record remains', { clearError });
   }
 

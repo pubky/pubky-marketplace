@@ -205,6 +205,7 @@ export const getTtlUserMaxBatchSize = (): number => getRuntimeConfig().ttlUserMa
 export const getTtlRetryDelayMs = (): number => getRuntimeConfig().ttlRetryDelayMs;
 export const getModerationId = (): string | undefined => getRuntimeConfig().moderationId;
 export const getModeratedTags = (): string[] => getRuntimeConfig().moderatedTags;
+export const getAuctionDurationsMinutes = (): number[] => getRuntimeConfig().auctionDurationsMinutes;
 export const getExchangeRateApi = (): string => getRuntimeConfig().exchangeRateApi;
 export const getMarketplaceUrl = (): string => getRuntimeConfig().marketplaceUrl;
 /**

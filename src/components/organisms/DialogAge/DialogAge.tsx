@@ -1,14 +1,13 @@
 import { Container } from '@/atoms/Container/Container';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/atoms/Dialog/Dialog';
+import { LinkButton } from '@/atoms/LinkButton/LinkButton';
 import { Typography } from '@/atoms/Typography/Typography';
 
 export function DialogAge() {
   return (
     <Dialog>
       <DialogTrigger asChild>
-        <Typography as="span" size="sm" className="cursor-pointer font-medium text-brand">
-          over 18 years old.
-        </Typography>
+        <LinkButton>over 18 years old.</LinkButton>
       </DialogTrigger>
       <DialogContent className="sm:max-w-xl" hiddenTitle="Age minimum: 18">
         <DialogHeader className="pr-6">

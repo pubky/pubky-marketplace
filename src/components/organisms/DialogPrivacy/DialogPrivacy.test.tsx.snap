@@ -8,12 +8,12 @@ exports[`DialogPrivacy - Snapshots > matches snapshot for default DialogPrivacy 
     data-as-child="true"
     data-testid="dialog-trigger"
   >
-    <span
-      class="cursor-pointer font-medium text-brand"
-      data-testid="typography"
+    <button
+      class="inline cursor-pointer rounded-sm text-sm font-medium text-brand outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+      type="button"
     >
       Privacy Policy
-    </span>
+    </button>
   </div>
   <div
     class="sm:max-w-xl"
@@ -49,7 +49,9 @@ exports[`DialogPrivacy - Snapshots > matches snapshot for default DialogPrivacy 
         >
           SCOPE
           <br />
-           This Privacy Policy (“Policy“) describes how Synonym Software Ltd. treats personal information on the Pubky progressive web application and the products, services and features made available as part of the application (collectively, the “Platform“).
+           This Privacy Policy (“Policy“) describes how 
+          Synonym Software, S.A. de C.V.
+           treats personal information on the Pubky progressive web application and the products, services and features made available as part of the application (collectively, the “Platform“).
         </p>
         <p
           class="text-muted-foreground text-base font-normal"
@@ -57,7 +59,9 @@ exports[`DialogPrivacy - Snapshots > matches snapshot for default DialogPrivacy 
         >
           POLICY SUMMARY
           <br />
-           This summary offers a concise overview of how Synonym Software Ltd. (“Synonym“) collects, uses, shares, and protects your personal information on the Pubky platform. For full details, please read the complete Privacy Policy.
+           This summary offers a concise overview of how 
+          Synonym Software, S.A. de C.V.
+           (“Synonym“) collects, uses, shares, and protects your personal information on the Pubky platform. For full details, please read the complete Privacy Policy.
         </p>
         <p
           class="text-muted-foreground text-base font-normal"

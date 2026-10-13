@@ -157,6 +157,7 @@ const view = vi.hoisted(() => ({
   usdtAvailable: false,
   usdtOnly: false,
   usdtSellers: null as string[] | null,
+  orders: [] as unknown[],
 }));
 
 const savedAddresses = vi.hoisted(() => {
@@ -268,6 +269,8 @@ vi.mock('@/hooks/useMarketplaceCheckout/useMarketplaceCheckout', async () => {
       isPickupCapabilityLoadingForSeller: () => false,
       orderCount: view.orderCount,
       rememberAddress: vi.fn(async () => {}),
+      pendingKeyChange: null,
+      decideKeyChange: vi.fn(),
       fulfillmentForItem: (itemId: string) => {
         const line = (view.items as Array<{ id: string; listing: { record: { ownerPubky: string } } }>).find(
           ({ id }) => id === itemId,
@@ -293,7 +296,7 @@ vi.mock('@/hooks/useMarketplaceCheckout/useMarketplaceCheckout', async () => {
 
 vi.mock('@/hooks/useMarketplaceOrders/useMarketplaceOrders', () => ({
   useMarketplaceOrders: () => ({
-    orders: [],
+    orders: view.orders,
     isLoading: false,
     error: null,
     needsSession: false,
@@ -309,7 +312,12 @@ vi.mock('@/hooks/useMarketplaceOffers/useMarketplaceOffers', () => ({
 }));
 
 vi.mock('@/hooks/useMarketplaceOfferCheckout/useMarketplaceOfferCheckout', () => ({
-  useMarketplaceOfferCheckout: () => ({ submit: vi.fn(), isSubmitting: false }),
+  useMarketplaceOfferCheckout: () => ({
+    submit: vi.fn(),
+    isSubmitting: false,
+    pendingKeyChange: null,
+    decideKeyChange: vi.fn(),
+  }),
 }));
 
 vi.mock('@/hooks/useMarketplaceCartCount/useMarketplaceCartCount', () => ({
@@ -345,6 +353,7 @@ vi.mock('@/controllers/commerce/commerce', () => ({
     })),
     fetchUsdtPaymentsAvailable: vi.fn(async () => view.usdtAvailable),
     getIndicativeBtcRate: vi.fn(async () => null),
+    getOrFetchListing: vi.fn(async () => null),
   },
 }));
 
@@ -383,6 +392,7 @@ beforeEach(async () => {
   view.usdtAvailable = false;
   view.usdtOnly = false;
   view.usdtSellers = null;
+  view.orders = [];
   useCommerceStore.getState().reset();
   window.history.replaceState(null, '', '/marketplace/checkout');
 });
@@ -456,6 +466,30 @@ describe('Marketplace checkout — visual regression', () => {
 
     await renderForVRT(<MarketplaceCheckout />, { viewport: VRT_VIEWPORT_DESKTOP });
     await captureCheckout('checkout-single-seller-desktop');
+  });
+
+  // Issue #50: a cancelled checkout carries no "Awaiting payment · Item reserved" header.
+  it('renders a cancelled PayPal checkout without the reserved header at desktop viewport', async () => {
+    const { createOrderFixture, createPaymentFixture } = await import('@/test/fixtures/commerce/orders');
+    const payment = createPaymentFixture('awaiting_entitlement');
+    const order = createOrderFixture('cancelled', {
+      paymentId: payment.id,
+      paymentMethod: 'paypal',
+      holdExpiresAt: '2026-10-13T06:23:00.000Z',
+    });
+    view.adapterMode = 'transaction-service';
+    view.orders = [{ order, payment }];
+    window.history.replaceState(null, '', `/marketplace/checkout#${order.id}`);
+
+    await renderForVRT(<MarketplaceCheckout />, { viewport: VRT_VIEWPORT_DESKTOP });
+    await vi.waitFor(() => {
+      if (!document.querySelector('[data-testid="marketplace-checkout-paying"]')) {
+        throw new Error('The cancelled checkout has not rendered yet.');
+      }
+    });
+    expect(document.body.textContent).toContain('Order cancelled');
+    expect(document.body.textContent).not.toContain('Item reserved');
+    await captureCheckout('checkout-cancelled-paypal-desktop', false);
   });
 
   it('renders a single-seller checkout at mobile viewport', async () => {

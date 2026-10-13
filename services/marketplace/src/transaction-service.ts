@@ -23,7 +23,6 @@ import {
   createMarketplaceCheckoutCommandSchema,
   type CreateOfferCommand,
   type CreateReviewCommand,
-  GUARANTEE_POLICY_VERSION,
   type MarketplaceCommand,
   marketplaceCommandSchema,
   type MarkMarketplaceNotificationReadCommand,
@@ -547,7 +546,6 @@ export interface MarketplaceOrder {
   subtotal: MarketplaceListingAggregate['unitPrice'];
   shipping: MarketplaceListingAggregate['unitPrice'];
   total: MarketplaceListingAggregate['unitPrice'];
-  guaranteePolicyVersion: 1;
   paymentId: string;
   receiptId: string | null;
   cancellationReason: string | null;
@@ -2068,7 +2066,6 @@ export class MarketplaceTransactionService {
         subtotal: { ...asset, amountMinor: subtotalMinor },
         shipping: { ...asset, amountMinor: shippingMinor },
         total: { ...asset, amountMinor: subtotalMinor + shippingMinor },
-        guaranteePolicyVersion: command.payload.guaranteePolicyVersion ?? GUARANTEE_POLICY_VERSION,
         paymentId,
         receiptId: null,
         cancellationReason: null,

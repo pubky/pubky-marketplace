@@ -55,8 +55,16 @@ export async function fetchMarketplaceCatalogForSsr(): Promise<MarketplaceCatalo
  * Per-seller budget for catalog shop names. A seller whose record misses it
  * renders with the pubky fallback instead of holding up the catalog HTML.
  * One page caps the fan-out at `NEXUS_LISTINGS_PER_PAGE` sellers.
+ *
+ * The first read from a cold process (the `next build` prerender, a fresh
+ * serverless instance) resolves the seller and its homeserver through PKARR and,
+ * since `@synonymdev/pubky` 0.16, reads the homeserver's `/info` before the
+ * record itself: four sequential round trips, one more than 0.11. 800 ms no
+ * longer covered that path, so every seller timed out and the prerendered
+ * catalog shipped without shop names until its first revalidation. Later reads
+ * reuse those lookups and finish in a few hundred milliseconds.
  */
-export const CATALOG_SHOP_FETCH_TIMEOUT_MS = 800;
+export const CATALOG_SHOP_FETCH_TIMEOUT_MS = 3_000;
 
 async function fetchShopsForCatalogSellers(listings: MarketplaceCatalogItem[]): Promise<CommerceShopRecord[]> {
   const sellers = [...new Set(listings.map((listing) => listing.sellerId))];

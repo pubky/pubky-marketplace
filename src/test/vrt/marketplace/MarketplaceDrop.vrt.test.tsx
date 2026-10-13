@@ -172,6 +172,8 @@ function setClaimView(overrides: Record<string, unknown> = {}) {
     failure: null,
     needsSession: false,
     sessionError: null,
+    pendingKeyChange: null,
+    decideKeyChange: vi.fn(),
     claim: vi.fn(async () => true),
     ...overrides,
   };

@@ -57,6 +57,12 @@ export function ListingPublishGuardNotice({
             Payment settings
           </Link>
         </Button>
+      ) : reason === 'no-delivery-key' ? (
+        <Button asChild variant="link" className="mt-2 h-auto p-0">
+          <Link href={MARKETPLACE_ROUTES.SETTINGS_SHIPPING} overrideDefaults>
+            Create delivery key
+          </Link>
+        </Button>
       ) : needsSession ? (
         <div className="mt-3">
           <MarketplaceSessionConnectDialog

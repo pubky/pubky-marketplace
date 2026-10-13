@@ -44,10 +44,11 @@ import { useMarketplaceSellerDeliveryTerms } from '@/hooks/useMarketplaceSellerD
 import { useUsdtPaymentsAvailable } from '@/hooks/useUsdtPaymentsAvailable/useUsdtPaymentsAvailable';
 import { Tether } from '@/icons';
 import { buyerCheckoutProgressCopy } from '@/libs/commerce/bitcoin-buyer-status';
-import { BITCOIN_PAYMENT_CODE_CHECKOUT_NOTE } from '@/libs/commerce/bitcoin-payment-code';
+import { bitcoinPaymentCodeCheckoutNote } from '@/libs/commerce/bitcoin-payment-code';
 import {
   getMarketplaceCheckoutRoute,
   intersectPaymentMethods,
+  isPendingPaymentState,
   readCheckoutHashOrderId,
 } from '@/libs/commerce/checkout-phase';
 import { DELIVERY_EMAIL_MAX_CHARS, DIGITAL_CHECKOUT_COPY, digitalCheckoutLineLabel } from '@/libs/commerce/digital';
@@ -81,6 +82,7 @@ import { navigateTop } from '@/libs/navigation/navigate-top';
 import { getDeployEnv } from '@/libs/runtime-config/runtime-config';
 import type { CommerceListingModelSchema } from '@/models/commerce/commerce.schema';
 import { ControlledInputField } from '@/molecules/ControlledInputField/ControlledInputField';
+import { DeliveryKeyBlockedNotice } from '@/molecules/Marketplace/DeliveryKeyBlockedNotice';
 import { MarketplaceCheckoutSteps } from '@/molecules/Marketplace/MarketplaceCheckoutSteps';
 import { MarketplacePaymentStatusBadge } from '@/molecules/Marketplace/MarketplacePaymentStatusBadge';
 import { MarketplaceSellerLink } from '@/molecules/Marketplace/MarketplaceSellerLink';
@@ -88,6 +90,7 @@ import { MarketplaceAddressFields } from '@/molecules/MarketplaceAddressFields/M
 import { SettingsSectionContent } from '@/molecules/Settings/SettingsSectionContent/SettingsSectionContent';
 import { ContentLayout } from '@/organisms/ContentLayout/ContentLayout';
 import { MarketplaceCheckoutItem } from '@/organisms/Marketplace/MarketplaceCheckoutItem';
+import { MarketplaceDeliveryKeyChangeDialog } from '@/organisms/Marketplace/MarketplaceDeliveryKeyChangeDialog';
 import { MarketplaceDeliveryTerms } from '@/organisms/Marketplace/MarketplaceDeliveryTerms';
 import { MarketplaceIndicativePrice } from '@/organisms/Marketplace/MarketplaceIndicativePrice';
 import { MarketplaceOrderActions } from '@/organisms/Marketplace/MarketplaceOrderActions';
@@ -382,9 +385,9 @@ function MarketplaceCartCheckout() {
     targetPayingIds.length > 0 &&
     focusedPaying.length === targetPayingIds.length &&
     focusedPaying.every(({ payment }) => payment?.state === 'confirmed');
-  const payingView = focusedPaying[0];
-  const payingOrder = payingView?.order;
-  const holdCopy = payingOrder ? buyerCheckoutProgressCopy(payingOrder, payingView.payment, nowMs) : null;
+  const headerView = focusedPaying.find(({ order }) => isPendingPaymentState(order.state));
+  const headerOrder = headerView?.order;
+  const holdCopy = headerOrder ? buyerCheckoutProgressCopy(headerOrder, headerView.payment, nowMs) : null;
 
   useEffect(() => {
     if (!showPaying) return;
@@ -395,6 +398,7 @@ function MarketplaceCartCheckout() {
   // A Bitcoin payment request is delivered to the buyer's Paykit wallet;
   // without one, Pay cannot succeed, so it is gated before the attempt.
   const bitcoinSelected = !isSandbox && isDurableCommerceMode(adapterMode) && selectedMethod === 'bitcoin';
+  const bitcoinPaymentCodeNote = bitcoinPaymentCodeCheckoutNote(getPaykitServerApi());
   const usdtSelected = !isSandbox && selectedMethod === 'usdt';
   const usdtMillionths = usdtSelected ? usdtParityMillionths(totalSubtotals) : null;
   const buyerWallet = useBuyerPaykitWallet(currentUserPubky ?? null, bitcoinSelected);
@@ -538,6 +542,10 @@ function MarketplaceCartCheckout() {
       showRightMobileButton={false}
       className="pb-28"
     >
+      <MarketplaceDeliveryKeyChangeDialog
+        change={checkout.pendingKeyChange ?? offerPay.pendingKeyChange}
+        onDecision={checkout.pendingKeyChange ? checkout.decideKeyChange : offerPay.decideKeyChange}
+      />
       <Container
         overrideDefaults
         className="flex w-full flex-col gap-6"
@@ -580,11 +588,7 @@ function MarketplaceCartCheckout() {
           <div className="grid gap-4" data-testid="marketplace-checkout-paying">
             {holdCopy &&
               !allPaymentsConfirmed &&
-              !(
-                payingOrder?.state === 'pending_payment' &&
-                payingOrder.paymentMethod === 'paypal' &&
-                payingView?.payment?.state === 'awaiting_entitlement'
-              ) && (
+              !(headerOrder?.paymentMethod === 'paypal' && headerView?.payment?.state === 'awaiting_entitlement') && (
                 <Typography as="p" className="rounded-md bg-card/60 px-4 py-3 text-sm">
                   {holdCopy}
                 </Typography>
@@ -1095,13 +1099,13 @@ function MarketplaceCartCheckout() {
                         </div>
                       )}
                       {usdtMissingExplanation && <MarketplaceUsdtMissingNote explanation={usdtMissingExplanation} />}
-                      {bitcoinSelected && (
+                      {bitcoinSelected && bitcoinPaymentCodeNote && (
                         <Typography
                           as="p"
                           className="text-xs text-muted-foreground"
                           data-testid="marketplace-checkout-bitcoin-amount-note"
                         >
-                          {BITCOIN_PAYMENT_CODE_CHECKOUT_NOTE}
+                          {bitcoinPaymentCodeNote}
                         </Typography>
                       )}
                       {usdtMillionths !== null && (
@@ -1253,6 +1257,7 @@ function MarketplaceCartCheckout() {
                           {DIGITAL_CHECKOUT_COPY.consentManual}
                         </Typography>
                       )}
+                      <DeliveryKeyBlockedNotice block={checkout.deliveryKeyBlock ?? offerPay.deliveryKeyBlock} />
                       <Button
                         className="w-full rounded-full"
                         onClick={() => void pay()}

@@ -22,14 +22,17 @@ import {
   extractRuntimeConfig,
   frameAncestorsAllow,
   isTruthy,
+  locksReturnOriginsFromToml,
   missingOrigins,
   normalizeBase,
   parseEnvFile,
   parseJsonLenient,
   parseList,
   parseMigrationRows,
+  parseShopPath,
   parseSourceRef,
   parseTomlFlat,
+  paykitTrustedKeys,
   redact,
   short,
 } from './lib.mjs';
@@ -112,6 +115,15 @@ const url = (key) => {
   return value ? value.replace(/\/+$/, '') : undefined;
 };
 const SHOP_ORIGINS = parseList(get('SHOP_ORIGINS')).map((o) => o.replace(/\/+$/, ''));
+// The Shop's landing path on each origin: `/shop/marketplace` when it is mounted at pubky.app/shop.
+const SHOP_PATH = (() => {
+  try {
+    return parseShopPath(get('SHOP_PATH'));
+  } catch (error) {
+    console.error(error.message);
+    process.exit(2);
+  }
+})();
 const SERVICE = url('SERVICE_URL');
 const PAYKIT = url('PAYKIT_URL');
 const LOCKS = url('LOCKS_URL');
@@ -123,14 +135,14 @@ const FORBIDDEN_HOSTS = parseList(get('FORBIDDEN_HOSTS')).map((h) => h.toLowerCa
 const paykitToml = get('PAYKIT_CONFIG_FILE') ? parseTomlFlat(readFileSync(get('PAYKIT_CONFIG_FILE'), 'utf8')) : {};
 const locksToml = get('LOCKS_CONFIG_FILE') ? parseTomlFlat(readFileSync(get('LOCKS_CONFIG_FILE'), 'utf8')) : {};
 const facts = {
-  paykitTrustedLocksKey: get('PAYKIT_TRUSTED_LOCKS_KEY') ?? paykitToml['locks.trusted_public_key'],
+  paykitTrustedKeys: get('PAYKIT_TRUSTED_LOCKS_KEY') ? parseList(get('PAYKIT_TRUSTED_LOCKS_KEY')) : paykitTrustedKeys(paykitToml),
   paykitSetupOrigins: get('PAYKIT_SETUP_ALLOWED_ORIGINS') ?? paykitToml['setup.allowed_origins'],
   paykitLogAuthorizationUrl: get('PAYKIT_LOG_AUTHORIZATION_URL') ?? paykitToml['setup.log_authorization_url'],
   paykitBitcoinNetwork: get('PAYKIT_BITCOIN_NETWORK') ?? paykitToml['bitcoin.network'],
   locksPublicKey: get('LOCKS_PUBLIC_KEY') ?? locksToml['credentials.lock_server_public_key'],
   locksPaykitServerUrl: get('LOCKS_PAYKIT_SERVER_URL') ?? locksToml['paykit.server_url'],
   locksReturnOrigins:
-    get('LOCKS_ALLOWED_RETURN_ORIGINS') ?? locksToml['creator_authority_acquisition.legacy_connect.allowed_return_origins'],
+    get('LOCKS_ALLOWED_RETURN_ORIGINS') ?? locksReturnOriginsFromToml(locksToml),
   locksRuntimeEnvironment: get('LOCKS_RUNTIME_ENVIRONMENT') ?? locksToml['runtime.environment'],
   servicePaykitUrl: get('SERVICE_PAYKIT_SERVER_URL'),
   serviceLocksUrl: get('SERVICE_LOCKS_SERVER_URL'),
@@ -366,12 +378,11 @@ async function sectionTls() {
 async function sectionShop() {
   heading('shop');
   if (!SHOP_ORIGINS.length) return fail('shop.origins', 'Shop origins configured', '', 'set SHOP_ORIGINS');
-  const path = get('SHOP_PATH') ?? '/marketplace';
   for (const origin of SHOP_ORIGINS) {
     const host = new URL(origin).host;
-    const page = await http(`${origin}${path}`);
+    const page = await http(`${origin}${SHOP_PATH}`);
     const isHtml = (page.headers.get('content-type') ?? '').includes('text/html');
-    if (!check(`shop.page.${host}`, page.status === 200 && isHtml, `${path} loads`, describe(page), 'check the Shop deployment and its logs')) continue;
+    if (!check(`shop.page.${host}`, page.status === 200 && isHtml, `${SHOP_PATH} loads`, describe(page), 'check the Shop deployment and its logs')) continue;
     const hsts = page.headers.get('strict-transport-security');
     if (hsts) pass(`shop.hsts.${host}`, 'HSTS header', hsts);
     else warn(`shop.hsts.${host}`, 'HSTS header', 'missing', 'send Strict-Transport-Security: max-age=63072000');
@@ -698,9 +709,9 @@ async function sectionWiring() {
   };
   const configHint = (key, file) => `set ${key}${file ? ` or ${file}` : ''} in ${args.config} to check this`;
   if (!state.lockServerKey && LOCKS) state.lockServerKey = jsonOf(await http(`${LOCKS}/.well-known/locks-server`))?.lock_server;
-  if (!facts.paykitTrustedLocksKey) skip('wiring.paykit-trusts-locks', 'Paykit trusts the Lock Server key', configHint('PAYKIT_TRUSTED_LOCKS_KEY', 'PAYKIT_CONFIG_FILE'));
+  if (!facts.paykitTrustedKeys?.length) skip('wiring.paykit-trusts-locks', 'Paykit trusts the Lock Server key', configHint('PAYKIT_TRUSTED_LOCKS_KEY', 'PAYKIT_CONFIG_FILE'));
   else
-    check('wiring.paykit-trusts-locks', facts.paykitTrustedLocksKey === state.lockServerKey, 'Paykit trusts the Lock Server key', `trusted ${short(facts.paykitTrustedLocksKey)}, Locks ${short(state.lockServerKey)}`, 'set [locks] trusted_public_key in the Paykit config to the value of LOCKS_URL/.well-known/locks-server "lock_server", then restart Paykit');
+    check('wiring.paykit-trusts-locks', facts.paykitTrustedKeys.includes(state.lockServerKey), 'Paykit trusts the Lock Server key', `${facts.paykitTrustedKeys.length} trusted key(s), Locks ${short(state.lockServerKey)}`, 'add the value of LOCKS_URL/.well-known/locks-server "lock_server" to [signed_services] trusted_public_keys in the Paykit config, then restart Paykit');
   const originCheck = (id, title, allowed, key, file) => {
     if (allowed === undefined) return skip(id, title, configHint(key, file));
     const list = parseList(allowed);
@@ -845,7 +856,7 @@ async function probeFlows() {
     if (state.paykitFlavor === 'fork') skip('flow.paykit-setup', 'Paykit setup page frames the Shop', 'the fork’s /setup needs a seller key; config check covers it');
     else {
       for (const origin of SHOP_ORIGINS) {
-        const page = await http(`${PAYKIT}/setup?return_to=${encodeURIComponent(`${origin}/marketplace`)}&state=install-verify`);
+        const page = await http(`${PAYKIT}/setup?return_to=${encodeURIComponent(`${origin}${SHOP_PATH}`)}&state=install-verify`);
         const csp = page.headers.get('content-security-policy') ?? '';
         check(`flow.paykit-setup.${new URL(origin).host}`, page.status === 200 && frameAncestorsAllow(csp, origin), 'Paykit setup page frames the Shop', `${describe(page)}, ${csp || 'no CSP'}`, `add ${origin} to [setup] allowed_origins`);
       }
@@ -857,9 +868,9 @@ async function probeFlows() {
   }
   if (LOCKS) {
     for (const origin of SHOP_ORIGINS) {
-      const page = await http(`${LOCKS}/connect?return_to=${encodeURIComponent(`${origin}/marketplace`)}&state=install-verify&delivery=postmessage`);
+      const page = await http(`${LOCKS}/connect?return_to=${encodeURIComponent(`${origin}${SHOP_PATH}`)}&state=install-verify&delivery=postmessage`);
       const csp = page.headers.get('content-security-policy') ?? '';
-      check(`flow.locks-connect.${new URL(origin).host}`, page.status === 200 && frameAncestorsAllow(csp, origin), 'Locks connect page frames the Shop', `${describe(page)}, ${csp || 'no CSP'}`, `add ${origin} to [creator_authority_acquisition.legacy_connect] allowed_return_origins`);
+      check(`flow.locks-connect.${new URL(origin).host}`, page.status === 200 && frameAncestorsAllow(csp, origin), 'Locks connect page frames the Shop', `${describe(page)}, ${csp || 'no CSP'}`, `add ${origin} to allowed_return_origins of the acquisition method in use ([creator_authority_acquisition.grant_connect] for grant-connect)`);
     }
     const foreign = await http(`${LOCKS}/connect?return_to=${encodeURIComponent(`${PROBE_ORIGIN}/x`)}&state=install-verify&delivery=postmessage`);
     check('flow.locks-connect.foreign', foreign.status === 400, 'Locks connect refuses other origins', describe(foreign), 'allowed_return_origins must list exact origins');
@@ -878,7 +889,7 @@ async function probeBrowser() {
   heading('browser');
   const { runShopBrowserProbe } = await import('./shop-browser-probe.mjs');
   for (const origin of SHOP_ORIGINS)
-    await runShopBrowserProbe({ get, origin, path: get('SHOP_PATH') ?? '/marketplace', service: SERVICE, nexus: NEXUS, forbiddenHosts: FORBIDDEN_HOSTS, out: OUT, record });
+    await runShopBrowserProbe({ get, origin, path: SHOP_PATH, service: SERVICE, nexus: NEXUS, forbiddenHosts: FORBIDDEN_HOSTS, out: OUT, record });
 }
 
 async function probeDeep() {

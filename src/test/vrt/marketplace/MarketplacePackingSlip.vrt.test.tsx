@@ -8,10 +8,9 @@ import { VRT_VIEWPORT_DESKTOP, VRT_VIEWPORT_MOBILE } from '@/test-utils/vrt.view
 import { MarketplacePackingSlipDialog } from '@/organisms/Marketplace/MarketplacePackingSlipDialog';
 
 // The seller's print-friendly packing slip. The slip renders ONLY what the
-// seller's client legitimately holds — the seller's single-order projection
-// when eligible, or the truthful unavailable notice with ruled lines. The
-// pasted-address scene covers the optional local-only fallback: pasted text
-// renders onto the slip but is never persisted or sent anywhere.
+// seller's client legitimately holds — the address this device opened from
+// the seller's single-order projection, the restore-the-key stop when it
+// cannot, or the truthful unavailable notice with ruled lines.
 const fixtures = vi.hoisted(async () => {
   const { createOrderFixture } = await import('@/test/fixtures/commerce/orders');
   const { marketplaceDeliveryAddressSchema } = await import('@/services/marketplace/marketplace-projections');
@@ -24,6 +23,15 @@ const fixtures = vi.hoisted(async () => {
     sellerPaidShippingOrder: createOrderFixture('paid', {
       id: '018f47d2-6a27-7c23-a49d-000000009999',
       deliveryAddress,
+    }),
+    undecryptableOrder: createOrderFixture('paid', {
+      id: '018f47d2-6a27-7c23-a49d-000000009998',
+      deliveryAddress: {
+        format: 'hpke_v1' as const,
+        keyId: 'a'.repeat(32),
+        commandId: '018f47d2-6a27-7c23-a62f-000000000734',
+        envelope: 'A'.repeat(2795),
+      },
     }),
     shippedOrder: createOrderFixture('shipped', {
       shipment: {
@@ -50,9 +58,15 @@ vi.mock('@/stores/auth/auth.store', async () => ({
 vi.mock('@/controllers/commerce/commerce', async () => ({
   CommerceController: {
     getMarketplaceOrder: async (orderId: string) => {
-      const { sellerPaidShippingOrder } = await fixtures;
-      return orderId === sellerPaidShippingOrder.id ? sellerPaidShippingOrder : null;
+      const { sellerPaidShippingOrder, undecryptableOrder } = await fixtures;
+      return [sellerPaidShippingOrder, undecryptableOrder].find((order) => order.id === orderId) ?? null;
     },
+    getOrderDeliveryAddress: async (order: { deliveryAddress?: { format: string; address?: unknown } }) =>
+      order.deliveryAddress?.format === 'plaintext_v1'
+        ? { kind: 'address', address: order.deliveryAddress.address }
+        : order.deliveryAddress?.format === 'hpke_v1'
+          ? { kind: 'undecryptable', reason: 'key_missing' }
+          : { kind: 'none' },
   },
 }));
 
@@ -61,10 +75,9 @@ async function openSlip(trigger: { click: () => Promise<void> }) {
   await vi.waitFor(() => {
     if (!document.querySelector('[data-packing-slip]')) throw new Error('The packing slip has not opened yet.');
   });
-  // The dialog's open-auto-focus lands on the paste textarea; whether the
-  // focus ring paints depends on focus-visible heuristics that differ by
-  // browser and by what ran before in the session. Blur so the capture is
-  // deterministic regardless of suite context.
+  // Whether a focus ring paints depends on focus-visible heuristics that
+  // differ by browser and by what ran before in the session. Blur so the
+  // capture is deterministic regardless of suite context.
   (document.activeElement as HTMLElement | null)?.blur();
 }
 
@@ -112,22 +125,22 @@ describe('Marketplace packing slip — visual regression', () => {
     await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('packing-slip-shipped-desktop');
   });
 
-  it('renders the packing slip with a pasted delivery address at desktop viewport', async () => {
-    const { paidOrder } = await fixtures;
+  it('renders the restore-the-key stop when this device cannot open the address at desktop viewport', async () => {
+    const { undecryptableOrder } = await fixtures;
 
     const screen = await renderForVRT(
       <SlipHarness>
-        <MarketplacePackingSlipDialog order={paidOrder} />
+        <MarketplacePackingSlipDialog order={undecryptableOrder} />
       </SlipHarness>,
       { viewport: VRT_VIEWPORT_DESKTOP },
     );
     await openSlip(screen.getByRole('button', { name: 'Packing slip' }));
-    await screen
-      .getByLabelText('Paste delivery address (optional)')
-      .fill('Ada Buyer\n123 Privacy Lane\n83820 Someville, US');
-    // See openSlip: drop the focus the fill left on the textarea.
-    (document.activeElement as HTMLElement | null)?.blur();
-    await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('packing-slip-pasted-address-desktop');
+    await vi.waitFor(() => {
+      if (!document.querySelector('[data-packing-slip]')?.textContent?.includes('Do not ship yet')) {
+        throw new Error('The undecryptable branch has not rendered yet.');
+      }
+    });
+    await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('packing-slip-undecryptable-desktop');
   });
 
   it('renders a seller paid shipping address at desktop viewport', async () => {

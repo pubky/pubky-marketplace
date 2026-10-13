@@ -2,6 +2,7 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import type { MarketplaceCartItem } from '@/hooks/useMarketplaceCart/useMarketplaceCart';
+import { DELIVERY_KEY_COPY } from '@/libs/commerce/delivery-key-copy';
 import { createCommerceSandboxCatalog } from '@/libs/commerce/sandbox-catalog';
 import { AppError } from '@/libs/error/error';
 import { ClientErrorCode } from '@/libs/error/error.codes';
@@ -56,6 +57,9 @@ vi.mock('@/controllers/commerce/commerce', () => ({
     fetchPickupAvailable: vi.fn(async () => true),
     fetchDigitalDeliveryCapability: vi.fn(async () => ({ available: true, maxBytes: null })),
     commitCreateMarketplaceCheckout: vi.fn(),
+    getShippedSellers: vi.fn(),
+    resolveDeliveryKeysForCheckout: vi.fn(),
+    commitAcceptDeliveryKeyChange: vi.fn(),
     getDeliveryAddresses: vi.fn(async () => []),
     commitUpsertDeliveryAddress: vi.fn(async () => {}),
     commitMarkDeliveryAddressUsed: vi.fn(async () => {}),
@@ -84,6 +88,7 @@ vi.mock('@/stores/auth/auth.store', () => ({
 }));
 
 const BUYER = 'b'.repeat(52);
+const SELLER_KEY = { keyId: 'a'.repeat(32), publicKey: new Uint8Array(32).fill(7) };
 
 const savedAddress = {
   id: `${BUYER}:addr1`,
@@ -128,6 +133,11 @@ describe('useMarketplaceCheckout', () => {
       fulfillmentMethods: ['shipping'],
       auction: null,
     });
+    vi.mocked(CommerceController.getShippedSellers).mockReturnValue([listing.ownerPubky]);
+    vi.mocked(CommerceController.resolveDeliveryKeysForCheckout).mockResolvedValue({
+      ok: true,
+      keys: new Map([[listing.ownerPubky, SELLER_KEY]]),
+    });
     vi.mocked(CommerceController.commitCreateMarketplaceCheckout).mockResolvedValue({
       ok: true,
       version: 1,
@@ -136,6 +146,40 @@ describe('useMarketplaceCheckout', () => {
       revision: 1,
       eventIds: ['00000000-0000-4000-8000-000000001101'],
       result: { kind: 'checkout' },
+    });
+  });
+
+  it('does not create a checkout when a shipped seller has no delivery key', async () => {
+    vi.mocked(CommerceController.resolveDeliveryKeysForCheckout).mockResolvedValue({
+      ok: false,
+      sellerPubky: listing.ownerPubky,
+      problem: { kind: 'no_key' },
+    });
+    const { result } = renderHook(() =>
+      useMarketplaceCheckout(
+        [item],
+        vi.fn(async () => {}),
+      ),
+    );
+    act(() => {
+      result.current.form.setValue('name', 'Alice Buyer');
+      result.current.form.setValue('line1', '1 Market Street');
+      result.current.form.setValue('city', 'New York');
+      result.current.form.setValue('region', 'NY');
+      result.current.form.setValue('postalCode', '10001');
+    });
+
+    let succeeded = true;
+    await act(async () => {
+      succeeded = await result.current.submit();
+    });
+
+    expect(succeeded).toBe(false);
+    expect(CommerceController.commitCreateMarketplaceCheckout).not.toHaveBeenCalled();
+    expect(result.current.deliveryKeyBlock).toEqual({
+      kind: 'no_key',
+      sellerPubky: listing.ownerPubky,
+      message: DELIVERY_KEY_COPY.noKey,
     });
   });
 
@@ -160,6 +204,7 @@ describe('useMarketplaceCheckout', () => {
       expect.objectContaining({
         fulfillmentChoiceBySeller: { [listing.ownerPubky]: 'shipping' },
         deliveryAddress: expect.objectContaining({ line1: '1 Market Street' }),
+        deliveryKeys: new Map([[listing.ownerPubky, SELLER_KEY]]),
         lines: [
           {
             listingAggregateId: `listing:${listing.ownerPubky}_${listing.listingId}`,

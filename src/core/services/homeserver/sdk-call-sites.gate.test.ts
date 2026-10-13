@@ -45,7 +45,7 @@ describe('@synonymdev/pubky 0.16 call sites', () => {
       overrides: Record<string, Record<string, string>>;
     };
     expect(pkg.dependencies['@synonymdev/pubky']).toBe('0.16.0');
-    expect(pkg.overrides['@bitcoinerrorlog/pubky-shop']['@synonymdev/pubky']).toBe('0.16.0');
+    expect(pkg.overrides['@bitcoinerrorlog/pubky-shop']['@synonymdev/pubky']).toBe('$@synonymdev/pubky');
   });
 
   it('routes every direct session-storage write through HomeserverService retry policy', () => {

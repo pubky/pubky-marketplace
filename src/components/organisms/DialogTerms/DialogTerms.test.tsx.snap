@@ -8,12 +8,12 @@ exports[`DialogTerms - Snapshots > matches snapshot for default DialogTerms 1`] 
     data-as-child="true"
     data-testid="dialog-trigger"
   >
-    <span
-      class="cursor-pointer font-medium text-brand"
-      data-testid="typography"
+    <button
+      class="inline cursor-pointer rounded-sm text-sm font-medium text-brand outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+      type="button"
     >
       Terms of Service
-    </span>
+    </button>
   </div>
   <div
     class="sm:max-w-xl"
@@ -104,7 +104,9 @@ exports[`DialogTerms - Snapshots > matches snapshot for default DialogTerms 1`] 
           <strong>
             User
           </strong>
-          ”) and Synonym Software Ltd., a company operating under the laws of the Republic of El Salvador, located at 87 Avenida Norte, Calle El Mirador, Edificio Torre Futura, Oficina 06, Nivel 11, Colonia Escalón, Del Municipio de San Salvador, Departamento de San Salvador, Código Postal 01101, República de El Salvador (referred to as “
+          ”) and 
+          Synonym Software, S.A. de C.V.
+          , a company operating under the laws of the Republic of El Salvador, located at 87 Avenida Norte, Calle El Mirador, Edificio Torre Futura, Oficina 06, Nivel 11, Colonia Escalón, Del Municipio de San Salvador, Departamento de San Salvador, Código Postal 01101, República de El Salvador (referred to as “
           <strong>
             Synonym
           </strong>

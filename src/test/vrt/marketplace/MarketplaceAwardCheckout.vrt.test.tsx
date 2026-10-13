@@ -104,6 +104,8 @@ vi.mock('@/hooks/useMarketplaceCheckout/useMarketplaceCheckout', async () => {
       isPickupCapabilityLoadingForSeller: () => false,
       orderCount: 1,
       rememberAddress: vi.fn(async () => {}),
+      pendingKeyChange: null,
+      decideKeyChange: vi.fn(),
       fulfillmentForItem: () => 'shipping',
       setDigitalChoice: vi.fn(),
       canChooseDigitalForItem: () => false,
@@ -132,6 +134,8 @@ vi.mock('@/hooks/useMarketplaceOrders/useMarketplaceOrders', () => ({
 vi.mock('@/hooks/useMarketplaceOfferCheckout/useMarketplaceOfferCheckout', () => ({
   useMarketplaceOfferCheckout: () => ({
     isSubmitting: false,
+    pendingKeyChange: null,
+    decideKeyChange: vi.fn(),
     submit: vi.fn(async () =>
       state.outcome === 'success' ? { ok: true, orderId: '' } : { ok: false, code: 'AWARD_EXPIRED' },
     ),

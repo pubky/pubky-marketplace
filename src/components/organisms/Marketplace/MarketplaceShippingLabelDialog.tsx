@@ -11,11 +11,8 @@ import { Typography } from '@/atoms/Typography/Typography';
 import { getCommerceAdapterMode, isDurableCommerceMode } from '@/config/commerce';
 import { FORM_LABEL_CLASSES } from '@/config/forms';
 import { CommerceController } from '@/controllers/commerce/commerce';
-import {
-  MARKETPLACE_FAILURE_MESSAGES,
-  marketplaceErrorCode,
-  marketplaceFailureMessage,
-} from '@/libs/commerce/failure-messages';
+import { DELIVERY_KEY_COPY } from '@/libs/commerce/delivery-key-copy';
+import { MARKETPLACE_FAILURE_MESSAGES, shippingFailureMessage } from '@/libs/commerce/failure-messages';
 import type { ShippingLabel, ShippoRate } from '@/libs/commerce/shipping';
 import { isUsdtFulfilmentBlocked, PAYMENT_NOT_FINAL_COPY } from '@/libs/commerce/usdt-buyer-status';
 import { Logger } from '@/libs/logger/logger';
@@ -26,8 +23,12 @@ import type { MarketplaceOrder } from '@/services/marketplace/marketplace';
  * Seller-side Shippo label purchase for a paid order: confirm the parcel,
  * quote REAL rates against the seller's own Shippo account, buy one (real
  * money, charged by Shippo to the seller), then print the label and reuse
- * its tracking number for the ship action. The label PDF embeds the buyer's
- * address, so the whole surface is seller-only — the service enforces it.
+ * its tracking number for the ship action.
+ *
+ * Everything runs in this browser: the delivery address is opened with the
+ * key kept on this device, goes to Shippo for the quote and nowhere else, and
+ * is not stored. The marketplace service is never called. When this device
+ * cannot open the address the dialog says so and no Shippo call is made.
  */
 export function MarketplaceShippingLabelDialog({
   order,
@@ -44,11 +45,13 @@ export function MarketplaceShippingLabelDialog({
   const [rates, setRates] = useState<ShippoRate[] | null>(null);
   const [label, setLabel] = useState<ShippingLabel | null>(null);
   const [pending, setPending] = useState<'quote' | 'buy' | 'load' | 'ship' | null>(null);
+  const [addressProblem, setAddressProblem] = useState<string | null>(null);
 
   if (!isDurableCommerceMode(getCommerceAdapterMode())) return null;
 
   const openDialog = async () => {
     setOpen(true);
+    setAddressProblem(null);
     setPending('load');
     try {
       const stored = await CommerceController.getShippingLabel(order.id);
@@ -75,17 +78,19 @@ export function MarketplaceShippingLabelDialog({
     }
     setPending('quote');
     setRates(null);
+    setAddressProblem(null);
     try {
-      setRates(await CommerceController.quoteShippingRates(order.id, body));
+      const result = await CommerceController.quoteShippingRates(order, body);
+      if (result.kind === 'rates') setRates(result.rates);
+      else
+        setAddressProblem(
+          result.kind === 'undecryptable' ? DELIVERY_KEY_COPY.undecryptable : DELIVERY_KEY_COPY.addressUnavailable,
+        );
     } catch (error) {
       Logger.error('Failed to quote shipping rates', { error });
       toast({
         title: 'Could not quote rates',
-        description: marketplaceFailureMessage(
-          marketplaceErrorCode(error),
-          MARKETPLACE_FAILURE_MESSAGES.shippingRates,
-          error,
-        ),
+        description: shippingFailureMessage(error, MARKETPLACE_FAILURE_MESSAGES.shippingRates),
       });
     } finally {
       setPending(null);
@@ -103,7 +108,7 @@ export function MarketplaceShippingLabelDialog({
       Logger.error('Failed to purchase the shipping label', { error });
       toast({
         title: 'Label purchase failed',
-        description: marketplaceFailureMessage(marketplaceErrorCode(error), MARKETPLACE_FAILURE_MESSAGES.shippingLabel),
+        description: shippingFailureMessage(error, MARKETPLACE_FAILURE_MESSAGES.shippingLabel),
       });
     } finally {
       setPending(null);
@@ -157,8 +162,8 @@ export function MarketplaceShippingLabelDialog({
                 </Badge>
               </div>
               <Typography as="p" className="text-sm text-muted-foreground">
-                Tracking {label.trackingNumber}. The label was purchased through your own Shippo account; keep this page
-                seller-side — the PDF shows the buyer&rsquo;s address.
+                Tracking {label.trackingNumber}. The label was purchased through your own Shippo account and is
+                remembered on this device only. Keep it seller-side — the PDF shows the buyer&rsquo;s address.
               </Typography>
               <div className="flex flex-wrap gap-2">
                 <Button asChild size="sm" className="rounded-full">
@@ -189,9 +194,20 @@ export function MarketplaceShippingLabelDialog({
           ) : (
             <div className="grid gap-3">
               <Typography as="p" className="text-sm text-muted-foreground">
-                Quote real rates from your own Shippo account for this order&rsquo;s delivery address. Buying a label
-                charges your Shippo account — this marketplace never touches the money.
+                Quote real rates from your own Shippo account for this order&rsquo;s delivery address. The address is
+                opened on this device and sent to Shippo to quote and print the label; the marketplace service never
+                sees it. Buying a label charges your Shippo account — this marketplace never touches the money.
               </Typography>
+              {addressProblem && (
+                <Typography
+                  as="p"
+                  className="text-sm text-destructive"
+                  role="alert"
+                  data-testid="shipping-address-problem"
+                >
+                  {addressProblem}
+                </Typography>
+              )}
               <div className="grid grid-cols-2 gap-3">
                 {(
                   [

@@ -27,6 +27,11 @@ import {
   verifyOwnReviewAttestation,
 } from '@/libs/commerce/attestation';
 import {
+  sealDeliveryAddressForSellers,
+  type SellerDeliveryEnvelope,
+  type SellerDeliveryKey,
+} from '@/libs/commerce/delivery-envelope';
+import {
   DIGITAL_DELIVERY_COPY,
   type DigitalFileOpenFailure,
   type MarketplaceDigitalDeliveryCapability,
@@ -93,7 +98,6 @@ import {
 } from '@/libs/commerce/priv-envelope';
 import type { MarketplacePrivKeysResult } from '@/libs/commerce/priv-keys';
 import { createCommerceSandboxCatalog } from '@/libs/commerce/sandbox-catalog';
-import type { ShipFromAddress, ShippingParcel } from '@/libs/commerce/shipping';
 import {
   buildMarketplaceCheckoutAggregateId,
   buildMarketplaceDropAggregateId,
@@ -102,7 +106,6 @@ import {
   buildMarketplacePaymentAggregateId,
   classifyMarketplacePickupCommandRefusal,
   type CreateMarketplaceCheckoutCommand,
-  GUARANTEE_POLICY_VERSION,
   isCorrelatedBenignListingRegistrationResponse,
   isListingRecordNotFoundResponse,
   isSuccessfulListingRegistrationResponse,
@@ -352,6 +355,12 @@ export type CommerceCheckoutFulfillmentInput = {
   lines: CommerceCheckoutLineInput[];
   fulfillmentChoiceBySeller?: Readonly<Record<string, MarketplaceFulfillmentMethod | undefined>>;
   deliveryAddress?: CreateMarketplaceCheckoutCommand['payload']['deliveryAddress'];
+  /**
+   * Each shipped seller's published delivery key, resolved by the caller
+   * (the controller) just before checkout. On a durable deployment the
+   * address is sealed to these keys and only ciphertext leaves the device.
+   */
+  deliveryKeys?: ReadonlyMap<string, SellerDeliveryKey>;
   deliveryEmail?: string;
 };
 
@@ -386,6 +395,8 @@ export class CommerceApplication {
   private constructor() {}
 
   private static sellerListingsRefreshInFlight = new Map<string, Promise<void>>();
+  /** Listings (composite id → count) with a `commitUpsertListing` running in this tab. */
+  private static listingPublishesInFlight = new Map<string, number>();
 
   static async getShop(ownerPubky: string) {
     return await LocalCommerceService.getShop(ownerPubky);
@@ -1144,6 +1155,7 @@ export class CommerceApplication {
       );
     }
     const commandId = crypto.randomUUID();
+    const sealedAddress = await this.sealCheckoutAddress(actorPubky, commandId, input, plan.lineFulfillments);
     const command = CommerceRecordNormalizer.marketplaceCommand({
       version: 1,
       commandId,
@@ -1160,12 +1172,60 @@ export class CommerceApplication {
           ...(line.variantOptions && line.variantOptions.length > 0 ? { variantOptions: line.variantOptions } : {}),
           fulfillment: plan.lineFulfillments[index],
         })),
-        ...(input.deliveryAddress ? { deliveryAddress: input.deliveryAddress } : {}),
+        ...sealedAddress,
         ...(input.deliveryEmail !== undefined ? { deliveryEmail: input.deliveryEmail } : {}),
-        guaranteePolicyVersion: GUARANTEE_POLICY_VERSION,
       },
     });
     return await this.executeMarketplaceCommand(actorPubky, command);
+  }
+
+  /**
+   * The address part of a checkout payload. A durable deployment never
+   * receives the plaintext address: it is sealed once per shipped seller to
+   * the key the caller resolved, and a shipped seller with no resolved key
+   * stops the checkout here. The local prototype adapter keeps the address
+   * on the device and takes it as typed.
+   */
+  private static async sealCheckoutAddress(
+    actorPubky: string,
+    commandId: string,
+    input: CommerceCheckoutFulfillmentInput,
+    lineFulfillments: readonly MarketplaceFulfillmentMethod[],
+  ): Promise<
+    | { deliveryAddress?: NonNullable<CommerceCheckoutFulfillmentInput['deliveryAddress']> }
+    | {
+        deliveryAddressEnvelopes: SellerDeliveryEnvelope[];
+      }
+  > {
+    if (!input.deliveryAddress) return {};
+    if (!isDurableCommerceMode(getCommerceAdapterMode())) return { deliveryAddress: input.deliveryAddress };
+    const shippedSellers = new Set(
+      input.lines.filter((_, index) => lineFulfillments[index] === 'shipping').map((line) => line.sellerPubky),
+    );
+    const keys = new Map<string, SellerDeliveryKey>();
+    for (const sellerPubky of shippedSellers) {
+      const key = input.deliveryKeys?.get(sellerPubky);
+      if (!key) {
+        throw Err.validation(
+          ValidationErrorCode.INVALID_INPUT,
+          'A seller that ships this checkout has no delivery key to seal the address to.',
+          {
+            service: ErrorService.Marketplace,
+            operation: 'commitCreateMarketplaceCheckout',
+            context: { sellerPubky },
+          },
+        );
+      }
+      keys.set(sellerPubky, key);
+    }
+    return {
+      deliveryAddressEnvelopes: await sealDeliveryAddressForSellers({
+        address: input.deliveryAddress,
+        checkoutCommandId: commandId,
+        buyerPubky: actorPubky,
+        keys,
+      }),
+    };
   }
 
   /**
@@ -1461,29 +1521,6 @@ export class CommerceApplication {
     return await MarketplaceGatewayService.markFiatPaid(actorPubky, orderId, transactionRef);
   }
 
-  static async getMyShippingConfig(actorPubky: string) {
-    return await MarketplaceGatewayService.getMyShippingConfig(actorPubky);
-  }
-
-  static async putMyShippingConfig(
-    actorPubky: string,
-    input: { shippoApiKey?: string; shipFrom: ShipFromAddress | null },
-  ) {
-    return await MarketplaceGatewayService.putMyShippingConfig(actorPubky, input);
-  }
-
-  static async quoteShippingRates(actorPubky: string, orderId: string, parcel: ShippingParcel) {
-    return await MarketplaceGatewayService.quoteShippingRates(actorPubky, orderId, parcel);
-  }
-
-  static async purchaseShippingLabel(actorPubky: string, orderId: string, rateId: string) {
-    return await MarketplaceGatewayService.purchaseShippingLabel(actorPubky, orderId, rateId);
-  }
-
-  static async getShippingLabel(actorPubky: string, orderId: string) {
-    return await MarketplaceGatewayService.getShippingLabel(actorPubky, orderId);
-  }
-
   static async confirmFiatReceived(actorPubky: string, orderId: string) {
     return await MarketplaceGatewayService.confirmFiatReceived(actorPubky, orderId);
   }
@@ -1511,7 +1548,7 @@ export class CommerceApplication {
         operation: 'isPaykitAccountClaimed',
       });
     }
-    const status = await LocksGatewayService.getCreatorPaykitSetupStatus(session.token);
+    const status = await LocksGatewayService.getCreatorPaykitSetupStatus(session.token, 'BTC');
     if (status === 'unavailable') {
       throw Err.server(ServerErrorCode.SERVICE_UNAVAILABLE, 'The Lock Server could not read the Paykit setup state.', {
         service: ErrorService.Locks,
@@ -2952,6 +2989,18 @@ export class CommerceApplication {
   }
 
   /**
+   * Re-reads the canonical record from the owner's homeserver and replaces the
+   * cached row with it, so the Shop shows what is published rather than a
+   * revision a failed publish staged locally. Network first, then local:
+   * `getOrFetchListing` would serve the staged row back.
+   */
+  static async refreshListing(ownerPubky: string, listingId: string): Promise<CommerceListingRecord> {
+    const record = await this.fetchListing(ownerPubky, listingId);
+    await LocalCommerceService.upsertListing(record, 'synced');
+    return record;
+  }
+
+  /**
    * Returns the canonical listing record, fetching it from the owner
    * homeserver when it is not cached — or when the Nexus index has seen a
    * newer revision than the cache holds, so opening a listing always shows
@@ -3513,7 +3562,31 @@ export class CommerceApplication {
     await LocalCommerceService.completeSyncJob(job.id);
   }
 
+  /**
+   * Publishes a listing revision. While it runs, {@link ensureListingRegistered}
+   * declines the same listing: a heal that settled the row between this
+   * publish's staging and its write would advance the row's generation, and the
+   * publish would then fail as "The listing changed" without ever writing.
+   */
   static async commitUpsertListing(
+    record: CommerceListingRecord,
+    reservePrice?: CommerceMoney | null,
+  ): Promise<{ registered: boolean; verified: boolean }> {
+    const compositeListingId = `${record.ownerPubky}:${record.listingId}`;
+    this.listingPublishesInFlight.set(
+      compositeListingId,
+      (this.listingPublishesInFlight.get(compositeListingId) ?? 0) + 1,
+    );
+    try {
+      return await this.publishListing(record, reservePrice);
+    } finally {
+      const remaining = (this.listingPublishesInFlight.get(compositeListingId) ?? 1) - 1;
+      if (remaining > 0) this.listingPublishesInFlight.set(compositeListingId, remaining);
+      else this.listingPublishesInFlight.delete(compositeListingId);
+    }
+  }
+
+  private static async publishListing(
     record: CommerceListingRecord,
     reservePrice?: CommerceMoney | null,
   ): Promise<{ registered: boolean; verified: boolean }> {
@@ -3603,6 +3676,8 @@ export class CommerceApplication {
    */
   static async ensureListingRegistered(record: CommerceListingRecord): Promise<boolean> {
     if (getCommerceAdapterMode() === 'unavailable' || !this.canCoordinateListingRegistration()) return false;
+    // The publish registers the listing itself once its write is verified.
+    if (this.listingPublishesInFlight.has(`${record.ownerPubky}:${record.listingId}`)) return false;
     const attempt = this.beginListingRegistration(record.ownerPubky, record.listingId);
     attempt.observed = await LocalCommerceService.getListingRowGeneration(attempt.compositeListingId);
     return await this.runListingRegistration(record, attempt, 'heal', null);
@@ -3897,6 +3972,14 @@ export class CommerceApplication {
    */
   static async getPublicDrop(sellerPubky: string, dropId: string) {
     return await MarketplaceGatewayService.getPublicDrop(sellerPubky, dropId);
+  }
+
+  /**
+   * Public stock state of a listing, readable with no marketplace session.
+   * Null in sandbox mode or when the listing is unknown or removed.
+   */
+  static async getPublicListingAvailability(sellerPubky: string, listingId: string) {
+    return await MarketplaceGatewayService.getPublicListingAvailability(sellerPubky, listingId);
   }
 
   static async getSellerDrop(actorPubky: string, sellerPubky: string, dropId: string) {
