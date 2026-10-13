@@ -27,8 +27,36 @@ describe('EmbeddedLegalFooter', () => {
     const user = userEvent.setup();
     render(<EmbeddedLegalFooter />);
 
-    await user.click(screen.getByText('Terms of Service'));
+    await user.click(screen.getByRole('button', { name: 'Terms of Service' }));
 
     expect(await screen.findByRole('dialog', { name: 'Terms of Service' })).toBeInTheDocument();
+  });
+
+  it.each([
+    ['Enter', '{Enter}'],
+    ['Space', ' '],
+  ])('opens the Terms for a keyboard user with %s, reaching it by Tab alone', async (_name, key) => {
+    setEmbedded(true);
+    const user = userEvent.setup();
+    render(<EmbeddedLegalFooter />);
+
+    await user.tab();
+    const terms = screen.getByRole('button', { name: 'Terms of Service' });
+    expect(terms).toHaveFocus();
+    expect(terms.tagName).toBe('BUTTON');
+    await user.keyboard(key);
+
+    expect(await screen.findByRole('dialog', { name: 'Terms of Service' })).toBeInTheDocument();
+  });
+
+  it('puts the complaint address next in the Tab order', async () => {
+    setEmbedded(true);
+    const user = userEvent.setup();
+    render(<EmbeddedLegalFooter />);
+
+    await user.tab();
+    await user.tab();
+
+    expect(screen.getByRole('link', { name: 'report@synonym.to' })).toHaveFocus();
   });
 });
