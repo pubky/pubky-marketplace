@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm, type UseFormReturn, useWatch } from 'react-hook-form';
 import { COMMERCE_CONTRACT_VERSION, COMMERCE_LISTING_MAX_QUANTITY, COMMERCE_TAXONOMY_VERSION } from '@/config/commerce';
-import { getCommerceAdapterMode, isDurableCommerceMode } from '@/config/commerce';
+import { getAuctionDurationsMinutes, getCommerceAdapterMode, isDurableCommerceMode } from '@/config/commerce';
 import { commerceAttributeFieldsFor } from '@/config/taxonomy/taxonomy';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import {
@@ -51,7 +51,6 @@ import {
 } from '@/libs/commerce/units';
 import { isUnlimitedStockSentinel, stockFormFields } from '@/libs/commerce/unlimited-stock';
 import { Logger } from '@/libs/logger/logger';
-import { getAuctionDurationsMinutes } from '@/libs/runtime-config/runtime-config';
 import { toast } from '@/molecules/Toaster/use-toast';
 import { useAuthStore } from '@/stores/auth/auth.store';
 import { useCommerceStore } from '@/stores/commerce/commerce.store';

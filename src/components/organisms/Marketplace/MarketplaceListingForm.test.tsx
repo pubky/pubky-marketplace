@@ -3,7 +3,7 @@ import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useForm, type UseFormReturn } from 'react-hook-form';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { COMMERCE_LISTING_MAX_QUANTITY } from '@/config/commerce';
+import { COMMERCE_LISTING_MAX_QUANTITY, getAuctionDurationsMinutes } from '@/config/commerce';
 import { seedDraftFormFromListing } from '@/hooks/useCreateMarketplaceListing/useCreateMarketplaceListing';
 import {
   type CreateMarketplaceListingData,
@@ -19,7 +19,6 @@ import type {
 } from '@/hooks/useListingMediaManager/useListingMediaManager';
 import { DIGITAL_DELIVERY_COPY } from '@/libs/commerce/digital';
 import { PICKUP_NOTHING_PUBLISHED_TOAST } from '@/libs/commerce/pickup';
-import { getAuctionDurationsMinutes } from '@/libs/runtime-config/runtime-config';
 import { toast } from '@/molecules/Toaster/use-toast';
 import { useAuthStore } from '@/stores/auth/auth.store';
 import { createCommerceListingFixture } from '@/test/fixtures/commerce/commerce';
@@ -97,10 +96,8 @@ vi.mock('@/controllers/commerce/commerce', async (importOriginal) => {
   };
 });
 
-vi.mock('@/libs/runtime-config/runtime-config', async () => ({
-  ...(await vi.importActual<typeof import('@/libs/runtime-config/runtime-config')>(
-    '@/libs/runtime-config/runtime-config',
-  )),
+vi.mock('@/config/commerce', async () => ({
+  ...(await vi.importActual<typeof import('@/config/commerce')>('@/config/commerce')),
   getAuctionDurationsMinutes: vi.fn(() => [7 * 24 * 60]),
 }));
 

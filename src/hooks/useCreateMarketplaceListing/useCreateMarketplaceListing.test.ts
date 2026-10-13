@@ -1,6 +1,6 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { COMMERCE_LISTING_MAX_QUANTITY } from '@/config/commerce';
+import { COMMERCE_LISTING_MAX_QUANTITY, getAuctionDurationsMinutes } from '@/config/commerce';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import {
   LISTING_DRAFT_AUTOSAVE_MS,
@@ -8,7 +8,6 @@ import {
   markListingDraftResumeId,
 } from '@/libs/commerce/listing-drafts';
 import { commerceListingRecordSchema } from '@/libs/commerce/marketplace-records';
-import { getAuctionDurationsMinutes } from '@/libs/runtime-config/runtime-config';
 import type { CommerceListingDraftModelSchema } from '@/models/commerce/commerce.schema';
 import { toast } from '@/molecules/Toaster/use-toast';
 import { createCommerceListingFixture } from '@/test/fixtures/commerce/commerce';
@@ -22,14 +21,9 @@ import { createMarketplaceListingSchema } from './useCreateMarketplaceListing.ty
 
 const OWNER = 'y'.repeat(52);
 
-vi.mock('@/libs/runtime-config/runtime-config', async () => ({
-  ...(await vi.importActual<typeof import('@/libs/runtime-config/runtime-config')>(
-    '@/libs/runtime-config/runtime-config',
-  )),
-  getAuctionDurationsMinutes: vi.fn(() => [7 * 24 * 60]),
-}));
 vi.mock('@/config/commerce', async () => ({
   ...(await vi.importActual<typeof import('@/config/commerce')>('@/config/commerce')),
+  getAuctionDurationsMinutes: vi.fn(() => [7 * 24 * 60]),
   getCommerceAdapterMode: () => 'transaction-service',
 }));
 const mediaState = vi.hoisted(() => ({
