@@ -12,7 +12,7 @@
 1. Code review passes on the new code only (not the rip-out): security review first on `src/libs/chat`, `src/core/application/chat`, `src/core/services/{inbox,homeserver/chat}` and the auth touches (`homeserver.ts` grant/inbox methods, `config/app.ts` scopes); then a code review on coordinator, controller, hooks and UI.
 2. Fix what the reviews find; if chat behaviour changes, re-run `npm test`, `npm run test:e2e:chat`, the chat VRT suites in the container, and a browser pass (two accounts on the testnet Shop, entry points in sandbox mode).
 3. the maintainer's manual QA (recipe in `docs/chat/README.md`, "Local development"; two windows = the app's browser pane plus his own Chrome, each signed in through the ring simulator with a fresh identity).
-4. Merge the SDK/grant-only sign-in PR when it lands: take its side for auth files, keep the chat scopes in `CAPABILITIES`, keep the facade `startGrantAuthFlow` call, and delete `RING_COOKIE_CAPABILITIES` together with the cookie flow.
+4. Merge the grant-only sign-in PR when it lands (the SDK 0.16 bump already came in from master, 4bb558cd4): take its side for auth files, keep the chat scopes in `CAPABILITIES`, keep the facade `startGrantAuthFlow` call, and delete `RING_COOKIE_CAPABILITIES` together with the cookie flow.
 
 ## Progress
 
@@ -27,7 +27,7 @@
 | P1.4 Inbox service + ChatSyncCoordinator                                                                                                                            | done        | b20cbbb15                |
 | P1.5 UI (hooks, organisms, templates, pages); VRT suites still todo                                                                                                 | done        | f2c7277b1                |
 | P2 SDK 0.16 minimal bump + real `createInboxCredentials`; grant flow on the facade client; inbox slot fix                                                           | done        | 8493c562f, (next commit) |
-| P2 Merge the grant-only sign-in PR when it lands                                                                                                                    | todo        | blocked on that PR       |
+| P2 Merge the SDK 0.16 bump from master (done: merge 4bb558cd4); merge the grant-only sign-in PR when it lands                                                       | in progress | 4bb558cd4                |
 | P4 Docs (README, ADR 0030, status/FEATURES/RUNNING/environment/threat-model, changelog)                                                                             | done        | (next commit)            |
 | V1 Unit suites green (1096 files / 17278 tests), typecheck, lint, format                                                                                            | done        | (next commit)            |
 | V2 Live two-account proof on grant sign-in with inbox pings (`npm run test:e2e:chat`, 16/16)                                                                        | done        | 2d93aac6e, 06ec87141     |
@@ -63,6 +63,7 @@
 - A session without a grant (Ring cookie sign-in, until the grant-only sign-in PR removes it) cannot sign an inbox proof, so its inbox is `disabled`; chat still works through streams + reconciliation. `RING_COOKIE_CAPABILITIES` is defined as `CAPABILITIES` plus pubky.app's scopes (tested invariant), so it carries the chat scopes until that PR deletes the cookie flow and that constant with it.
 - Grant sign-in must start on the facade (`getPubkySdk().startGrantAuthFlow`), not the static `GrantAuthFlow.startDelegated`: the static call spins up a default mainnet DHT client that cannot resolve testnet identities (and ignores custom pkarr relays). Symptom: "could not resolve homeserver for <pubky>" right after the signer approves.
 - A failed inbox ping (429 or otherwise) is retried with backoff and a first-contact ping is repeated every 30 min until the peer writes back (`flushPings`, state in `chat_sync_state.ping_*`); before this a dropped first-contact ping left the receiver unaware until the next message.
+- Merging master restored `src/libs/crypto/secret-wrapping.ts`: the rip-out had deleted it with the messaging keyring, but master's delivery key store now uses it.
 - Inbox ping slots are 1–64 Base64url characters: the slot is `chat-<folder>` (`chatPingSlot`), not `chat:<folder>` (the inbox answered 400 `invalid_slot`).
 - The ring simulator's `node_modules` can lag its lockfile (had SDK 0.11 installed with 0.15 pinned, so grant links were approved with the wrong protocol). `npm ci` in `/home/mk/CODE/pubky-ring-simulator` and clear `node_modules/.vite` before `npm run dev`. The simulator approves grant links through a real paste event; a synthetic `ClipboardEvent('paste')` on `#shortcut-auth-input` works.
 - The Node SDK signer approves `signin_grant` links too, so the e2e runs the grant (Bitkit option) path without the simulator. The cookie mode was dropped: cookie sign-in leaves with Vlada's grant-only PR.
