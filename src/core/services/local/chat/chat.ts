@@ -215,7 +215,8 @@ export class LocalChatService {
         .reverse()
         .limit(options.limit)
         .toArray();
-      return rows.reverse();
+      // The index walk picks the newest page; the explicit sort is the order contract.
+      return rows.sort((a, b) => (a.file_name < b.file_name ? -1 : a.file_name > b.file_name ? 1 : 0));
     } catch (error) {
       throw dbError('listMessages', error);
     }

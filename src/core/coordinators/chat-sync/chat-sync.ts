@@ -1,3 +1,4 @@
+import { liveQuery, type Subscription } from 'dexie';
 import { AUTH_ROUTES } from '@/app/routes';
 import {
   CHAT_DISCOVERY_INTERVAL_MS,
@@ -9,12 +10,13 @@ import {
   CHAT_SSE_MAX_USERS_PER_STREAM,
   CHAT_SSE_RECONNECT_BACKOFF_MS,
 } from '@/config/chat';
+import { getCommerceAdapterMode, isTransactionalCommerceMode } from '@/config/commerce';
 import { ChatController } from '@/controllers/chat/chat';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import { routeToRegex } from '@/coordinators/base/coordinators.utils';
 import { CHAT_LOG_PUBLIC_KEY, chatFolderPath, parseChatEventPath } from '@/libs/chat/paths';
 import { RetryBackoff } from '@/libs/chat/retry-backoff';
-import { CHAT_LOCKS, holdLeadership, type LeadershipHandle, runInOneTab } from '@/libs/chat/web-locks';
+import { CHAT_LOCKS, holdLeadership, type LeadershipHandle } from '@/libs/chat/web-locks';
 import { Logger } from '@/libs/logger/logger';
 import { getNotificationRespectPageVisibility } from '@/libs/runtime-config/runtime-config';
 import type { THomeserverResourceEvent } from '@/services/homeserver/homeserver.types';
@@ -63,6 +65,7 @@ export class ChatSyncCoordinator {
   private focusHandler: (() => void) | null = null;
 
   private inboxAbort: AbortController | null = null;
+  private conversationsSubscription: Subscription | null = null;
   private streamReaders = new Map<string, ReadableStreamDefaultReader<THomeserverResourceEvent>>();
   private streamTargets = new Map<string, string>();
   private reconcileTimer: ReturnType<typeof setTimeout> | undefined;
@@ -215,6 +218,8 @@ export class ChatSyncCoordinator {
     useChatStore.getState().setLeaderTab(false);
     this.inboxAbort?.abort();
     this.inboxAbort = null;
+    this.conversationsSubscription?.unsubscribe();
+    this.conversationsSubscription = null;
     for (const reader of this.streamReaders.values()) void reader.cancel().catch(() => {});
     this.streamReaders.clear();
     this.streamTargets.clear();
@@ -230,9 +235,9 @@ export class ChatSyncCoordinator {
     try {
       const identity = await ChatController.getOrFetchIdentity();
       if (generation !== this.generation || identity !== 'ready') return;
-      await runInOneTab(CHAT_LOCKS.rebuild(owner), async () => {
-        await ChatController.fetchRebuild();
-      });
+      // The rebuild itself runs in one tab (application-level lock); a second
+      // tab's call returns at once.
+      await ChatController.fetchRebuild();
       if (generation !== this.generation) return;
       await ChatController.commitFlushOutbox();
     } catch (error) {
@@ -245,6 +250,16 @@ export class ChatSyncCoordinator {
   private async runLeader(owner: string, generation: number): Promise<void> {
     this.scheduleReconcile(0);
     void this.runInboxLoop(owner, generation);
+    // A conversation opened or created in any tab gets a live stream at once,
+    // not on the next reconcile pass.
+    this.conversationsSubscription?.unsubscribe();
+    this.conversationsSubscription = liveQuery(() => ChatController.getConversations()).subscribe({
+      next: () => {
+        if (generation !== this.generation || !this.state.isLeader) return;
+        void this.refreshStreams(owner, generation);
+      },
+      error: (error: unknown) => Logger.debug('Chat conversation watch failed', { error }),
+    });
   }
 
   private scheduleReconcile(delayMs: number): void {
@@ -279,6 +294,8 @@ export class ChatSyncCoordinator {
 
   /** Order counterparties already know each other: they become conversations once either side writes. */
   private async discoverCounterparties(owner: string): Promise<void> {
+    // Orders live in the transaction service; without one there is nothing to discover.
+    if (!isTransactionalCommerceMode(getCommerceAdapterMode())) return;
     try {
       const orders = await CommerceController.getMarketplaceOrders();
       const peers = new Set<string>();

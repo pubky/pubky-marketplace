@@ -10,6 +10,11 @@ import { installWebLocks, removeWebLocks } from '@/test-utils/web-locks';
 const OWNER = 'o'.repeat(52);
 const PEER = 'p'.repeat(52);
 
+vi.mock('@/config/commerce', async () => {
+  const actual = await vi.importActual<typeof import('@/config/commerce')>('@/config/commerce');
+  return { ...actual, getCommerceAdapterMode: () => 'transaction-service' };
+});
+
 vi.mock('@/libs/runtime-config/runtime-config', async () => {
   const actual = await vi.importActual<typeof import('@/libs/runtime-config/runtime-config')>(
     '@/libs/runtime-config/runtime-config',

@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import type { ChatOpenResult } from '@/application/chat/chat.types';
-import { CHAT_THREAD_PAGE } from '@/config/chat';
+import { CHAT_OPEN_THREAD_POLL_MS, CHAT_THREAD_PAGE } from '@/config/chat';
 import { ChatController } from '@/controllers/chat/chat';
 import type { ChatConversationView, ChatMessageView } from '@/controllers/chat/chat.types';
 import { Logger } from '@/libs/logger/logger';
@@ -51,11 +51,18 @@ export function useChatConversation(peerPubky: string, context?: ChatContext): U
   useEffect(() => {
     setOpenState('opening');
     void open();
-    const onFocus = () => {
+    const refresh = () => {
+      if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
       void ChatController.fetchConversationUpdates(peerPubky, 'open').catch(() => {});
     };
-    window.addEventListener('focus', onFocus);
-    return () => window.removeEventListener('focus', onFocus);
+    // The leader tab's live stream covers this thread in under a second; this
+    // short poll is the floor for follower tabs and for a dropped stream.
+    const interval = setInterval(refresh, CHAT_OPEN_THREAD_POLL_MS);
+    window.addEventListener('focus', refresh);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('focus', refresh);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- context identity is folded into contextKey
   }, [currentUserPubky, peerPubky, contextKey]);
 
@@ -76,14 +83,13 @@ export function useChatConversation(peerPubky: string, context?: ChatContext): U
   const messages = page?.messages ?? [];
   const newestReceived = [...messages].reverse().find((row) => row.direction === 'received');
 
+  // Seeing the thread reads it: the checkpoint moves as soon as a newer
+  // received message is on screen, so a glance at the thread clears the badge.
   useEffect(() => {
     if (!conversation || !newestReceived) return;
     if (newestReceived.sent_at <= conversation.last_read_at) return;
     if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
-    const timer = setTimeout(() => {
-      void ChatController.commitMarkRead(peerPubky, Math.max(Date.now(), newestReceived.sent_at));
-    }, 400);
-    return () => clearTimeout(timer);
+    void ChatController.commitMarkRead(peerPubky, Math.max(Date.now(), newestReceived.sent_at));
   }, [conversation, newestReceived, peerPubky]);
 
   return {

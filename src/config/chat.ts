@@ -22,6 +22,8 @@ export const CHAT_FETCH_CONCURRENCY = 4;
 export const CHAT_TAIL_CHECK_LIMIT = 25;
 /** How long a peer without a published key is left alone before re-probing. */
 export const CHAT_PEER_KEY_RECHECK_MS = 5 * 60_000;
+/** Re-probe cadence while a queued message waits on that peer's key. */
+export const CHAT_PEER_KEY_WAITING_RECHECK_MS = 15_000;
 /** `sent_at` this far ahead of the local clock is flagged. */
 export const CHAT_CLOCK_SKEW_TOLERANCE_MS = 5 * 60_000;
 
@@ -41,5 +43,7 @@ export const CHAT_SSE_RECONNECT_BACKOFF_MS = 2_000;
 export const CHAT_SSE_MAX_USERS_PER_STREAM = 20;
 /** How many most-recent conversations the leader keeps live streams for. */
 export const CHAT_SSE_MAX_CONVERSATIONS = 20;
+/** Poll cadence of an open thread while visible (the live stream is faster; this is the floor). */
+export const CHAT_OPEN_THREAD_POLL_MS = 10_000;
 /** Messages per page in a thread. */
 export const CHAT_THREAD_PAGE = 50;

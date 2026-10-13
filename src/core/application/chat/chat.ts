@@ -6,6 +6,7 @@ import {
   CHAT_INBOX_WAIT_SECONDS,
   CHAT_LIST_PAGE,
   CHAT_PEER_KEY_RECHECK_MS,
+  CHAT_PEER_KEY_WAITING_RECHECK_MS,
   CHAT_PING_MAX_BYTES,
   CHAT_PING_TTL_SECONDS,
   CHAT_SEND_MAX_ATTEMPTS,
@@ -357,12 +358,16 @@ export class ChatApplication {
       for (const row of due) {
         let keys = keysByPeer.get(row.peer_pubky);
         if (!keys) {
-          keys = await this.resolvePeerKey(me, row.peer_pubky);
+          // A message waiting on a keyless peer re-probes them on a short cadence:
+          // the peer may have signed in seconds ago.
+          const state = await LocalChatService.getSyncState(me, row.peer_pubky);
+          const force = Date.now() - (state?.peer_key_checked_at ?? 0) > CHAT_PEER_KEY_WAITING_RECHECK_MS;
+          keys = await this.resolvePeerKey(me, row.peer_pubky, { force });
           keysByPeer.set(row.peer_pubky, keys);
         }
         if (keys.state !== 'ready') {
           await LocalChatService.updateMessage(row.id, {
-            next_attempt_at: Date.now() + CHAT_PEER_KEY_RECHECK_MS,
+            next_attempt_at: Date.now() + CHAT_PEER_KEY_WAITING_RECHECK_MS,
             last_error: 'peer_not_enabled',
           });
           continue;
@@ -463,6 +468,10 @@ export class ChatApplication {
       (row.peer_state === 'no_key' && (options.reason === 'open' || options.reason === 'ping'));
     const keys = await this.resolvePeerKey(me, peer, { force });
     if (keys.state !== 'ready') return 'peer_not_enabled';
+    if (row.peer_state === 'no_key') {
+      // The peer just became reachable: anything queued for them can go now.
+      void this.flushOutbox(me).catch((error: unknown) => Logger.warn('Chat outbox flush failed', { error }));
+    }
     const identity = await this.requireIdentity(me);
     const state = await LocalChatService.getSyncState(me, peer);
 

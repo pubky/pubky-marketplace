@@ -7,7 +7,7 @@
 
 ## Current step
 
-**Phase 1: rip-out done (steps 1–3 deletions), chat core next.** Next action: Phase 1.3 "add" part — `src/libs/chat/*` (paths, schemas, crypto), models, `ChatHomeserverService`, `LocalChatService`, `ChatApplication`, `ChatController`, store; then Phase 1.4 inbox + coordinator; then Phase 1.5 UI.
+**Core, UI and live two-account proof done.** Next action: Phase 2 (minimal SDK 0.16 bump + real `createInboxCredentials`, test the inbox ping path locally with the Bitkit grant button + ring simulator), then sandbox-mode entry-point check (listing/order CTAs), stale sign-in copy, docs, VRT baselines.
 
 ## Progress
 
@@ -48,6 +48,13 @@
 - `message_received` notifications now deep-link to `/messages` (no per-thread aggregate id in the new model).
 - Test-file lint bans `as unknown as T`; use `asOpaque<T>()` from `@/test-utils/type-assertions`.
 - Nav VRT scenarios moved to `src/test/vrt/navigation/NavBadges.vrt.test.tsx` (baselines renamed with the folder; expect a regen).
+- `NEXT_PUBLIC_DB_VERSION` must be 9 everywhere (env default, `.env.example`, Docker workflows): with an older declared version the `chat_*` tables are not declared and `db.table('chat_identity')` throws at import time (SSR 500). Vercel env for staging/prod needs the same bump.
+- Dexie `where(compound).between().reverse().limit()` returned pages out of order in Chromium; `LocalChatService.listMessages` sorts explicitly.
+- Never nest `runInOneTab` with the same lock name: the inner `ifAvailable` request sees the lock held and skips (bit the new-device rebuild).
+- Playwright refuses `npx playwright install` on this Ubuntu; the e2e script takes `CHROMIUM_PATH` (e.g. `~/.cache/ms-playwright/chromium_headless_shell-1234/chrome-headless-shell-linux64/chrome-headless-shell`).
+- Local Nexus (pubky-docker) needed `testnet = true` and `testnet_host = "homeserver"` under `[watcher]` in `pubky-nexus-config-testnet.toml` for the current image; edited in Matt's checkout (uncommitted, tell him).
+- The Shop's dev signup-token route needs `HOMESERVER_ADMIN_URL=http://localhost:6288/generate_signup_token` and `HOMESERVER_ADMIN_PASSWORD=admin` (set in `.claude/launch.json`, gitignored).
+- Cookie sessions (Ring today) cannot get an inbox session (`needs_grant`); chat still works through streams + reconciliation. Stranger first contact needs the inbox.
 
 ## How to resume
 
@@ -63,6 +70,12 @@ cd /home/mk/CODE/pubky-docker && git pull && docker compose --profile backend up
 #    env: INBOX_AUTH__AUDIENCE=http://localhost:8080 INBOX_SERVER__CORS_ALLOWED_ORIGINS=["http://localhost:3000"]
 # 5. Ring simulator for approving sign-in QRs with disposable identities
 cd /home/mk/CODE/pubky-ring-simulator && npm run dev
+# 4b. Local inbox container (image built from the pubky/inbox Dockerfile as pubky-inbox:dev)
+docker run -d --name pubky-inbox-dev --network pubky-docker_pubky -p 8088:8080 \
+  -e INBOX_DATABASE__URL=postgres://test_user:test_pass@postgres:5432/inbox -e INBOX_AUTH__AUDIENCE=http://localhost:8088 \
+  -e 'INBOX_SERVER__CORS_ALLOWED_ORIGINS=["http://localhost:3000"]' -v pubky-inbox-dev-data:/data pubky-inbox:dev
+# 5b. Two-account proof (dev server + homeserver running)
+CHROMIUM_PATH=~/.cache/ms-playwright/chromium_headless_shell-1234/chrome-headless-shell-linux64/chrome-headless-shell npm run test:e2e:chat
 # 6. The app against the local stack (see .env.example "Local testnet example")
 PUBKY_RUNTIME_TESTNET=true PUBKY_RUNTIME_HOMESERVER=8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo \
 PUBKY_RUNTIME_HOMESERVER_URL=http://localhost:6286 PUBKY_RUNTIME_NEXUS_URL=http://localhost:8080 \
