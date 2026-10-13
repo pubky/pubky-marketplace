@@ -37,11 +37,11 @@ The Shop exposes no manifest and registers no service worker under a base path (
 
 ## Framing and the host page
 
-The Shop answers every response with:
+The Shop sets these framing headers. COOP applies only to standalone responses; embedded responses omit it, including Passport returns:
 
 ```
 Content-Security-Policy: frame-ancestors <PUBKY_RUNTIME_FRAME_ANCESTORS, or 'none'>
-Cross-Origin-Opener-Policy: same-origin-allow-popups
+Cross-Origin-Opener-Policy: same-origin-allow-popups (standalone only)
 X-Frame-Options: DENY            (only when no ancestor is allowed)
 X-Frame-Options: SAMEORIGIN      (only when the list is exactly 'self')
 ```
@@ -84,6 +84,21 @@ Notes:
 - **Development instances.** A development Shop on its own host (Vercel or Railway) lists its own origin in `SHOP_ALLOWED_ORIGINS`, `SHOP_PUBLIC_ORIGIN` and `SHOP_GRANT_ASSERTION_ISSUER`. The development services it talks to list that host in `ALLOWED_ORIGINS`, Paykit `[setup] allowed_origins`, Locks `allowed_return_origins` and the Nexus and fiat verifier CORS lists, next to `https://staging.pubky.app` when both are in use.
 
 Apply on staging first, then re-run [install verification](install-verification.md) against `https://staging.pubky.app` with `SHOP_PATH=/shop-embed/marketplace` for direct Shop HTTP probes: the `service.cors.*`, `wiring.*-origins`, `flow.paykit-setup.*` and `flow.locks-connect.*` checks cover these settings. The browser probe also needs to account for the App wrapper/iframe after the top-level return redirect; verify the shared-session journeys in the embedded browser, not just a standalone Shop tab.
+
+## Shop BFF prerequisites
+
+The embedded browser flow needs both `PUBKY_RUNTIME_MARKETPLACE_GRANT_FLOW_ENABLED=true` (client) and `SHOP_BFF_GRANT_FLOW_ENABLED=true` (server), plus the marketplace service's matching grant configuration. Enable App's `PUBKY_RUNTIME_SHOP_EMBED_ENABLED` only after the compatible pair and BFF are available. The browser flow does not require `SHOP_BFF_CLI_GRANT_ENABLED`.
+
+VV owns deployment values and secrets. The Shop server validates these required settings in [the BFF configuration schema](../../src/server/marketplace-grant/config.ts):
+
+- `SHOP_BFF_GRANT_STATE_DATABASE_URL`: BFF PostgreSQL connection, with both [migration 0001](../../db/bff/0001_shop_grant_bff.sql) and [migration 0002](../../db/bff/0002_shop_grant_bff_cli.sql) applied. Browser bootstrap requires schema version 2 even when CLI authentication is disabled.
+- `SHOP_ALLOWED_ORIGINS`, `SHOP_PUBLIC_ORIGIN`, `SHOP_GRANT_ASSERTION_ISSUER` and `MARKETPLACE_SERVICE_URL`: the exact origins described above; allowed origins is a JSON array and the issuer must equal the public origin.
+- `SHOP_GRANT_ASSERTION_KEY_ID`, `SHOP_GRANT_ASSERTION_KEY_EPOCH`, `SHOP_GRANT_ASSERTION_SIGNING_KEY`: the assertion signing identity, matched by the marketplace service's trusted verifying keys.
+- `MARKETPLACE_SERVICE_REQUEST_KEY_ID`, `MARKETPLACE_SERVICE_REQUEST_KEY_EPOCH`, `MARKETPLACE_SERVICE_REQUEST_SIGNING_KEY`: the service-request signing identity, matched by the service's request-key trust configuration.
+- `SHOP_BFF_GRANT_STATE_ENCRYPTION_KEY_B64` and `SHOP_BFF_GRANT_STATE_KEY_EPOCH`: active BFF state encryption key and epoch. The key is 32 bytes in canonical padded Base64; signing keys above are 32-byte seeds encoded as 64 lowercase hex characters. Key epochs are positive integers.
+- `CRON_SECRET`: at least 32 characters, used for the grant cleanup endpoint. Keep the mounted cleanup schedule configured as described above.
+
+These are server-side secrets/configuration, not `NEXT_PUBLIC_*` build values. Existing working keys can be retained; embedding changes origin/trust requirements and does not itself require a key rotation. Optional rotation keys and timeout settings are defined in the linked schema.
 
 ## Leaving the frame
 
@@ -206,6 +221,8 @@ The outer/inner route scheme, App-owned sign-in, targeted SDK cleanup and mounte
 - Coordinate Matthew's separate Inbox/chat migration with the same account lifecycle and existing history. No `e` scope or new messaging protocol is introduced by this embedding work.
 
 The local production pair passed unsigned and authenticated same-origin browser checks on 2026-10-13 through the `/shop` and `/shop-embed` proxy mounts. Authenticated checks use the actual SDK 0.16/WASM and IndexedDB with a synthetic identity and intercepted network responses. They cover shared restore, reload, two tabs, App-owned logout, missing records, temporary renewal failures, explicit permission upgrades, and fresh-origin Watchlist/Cart rendering with synchronized Back/Forward, query and hash navigation on desktop and mobile. Real signer and deployed payment journeys remain unverified.
+
+The final production-build recheck also passed in Chromium and WebKit with both Shop iframes absent during App logout: four Shop service credentials and the SDK record were removed, and neither tab revived the session on remount/reload. A Chromium check with an intercepted BFF HTTP 503 kept cleanup pending and preserved the App grant; an explicit retry against HTTP 204 completed cleanup. These SDK/network fixtures produced no browser page errors and do not establish real backend availability.
 
 The full migration contract and known recovery-file-only commerce limitation are in [Grant authentication and App-owned sessions](grant-auth-session.md). Automated source tests do not establish live payment or signer completion.
 
