@@ -1,10 +1,11 @@
 import type { Keypair, PublicKey, Session } from '@synonymdev/pubky';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CAPABILITIES, RING_COOKIE_CAPABILITIES } from '@/config/app';
 import { AppError } from '@/libs/error/error';
 import {
   AuthErrorCode,
   ClientErrorCode,
+  DatabaseErrorCode,
   NetworkErrorCode,
   ServerErrorCode,
   ValidationErrorCode,
@@ -13,6 +14,7 @@ import { ErrorCategory, ErrorService } from '@/libs/error/error.types';
 import { HttpMethod } from '@/libs/http/http.types';
 import { Logger } from '@/libs/logger/logger';
 import { asOpaque } from '@/test-utils/type-assertions';
+import { installWebLocks, removeWebLocks } from '@/test-utils/web-locks';
 import { bytesToBase64 } from './homeserver.utils';
 
 // =============================================================================
@@ -229,11 +231,15 @@ async function withStagingHomeserverEnv(
 describe('HomeserverService', () => {
   let HomeserverService: typeof import('@/services/homeserver/homeserver').HomeserverService;
 
+  afterEach(removeWebLocks);
+
   beforeEach(async () => {
     // Reset all mocks
     vi.clearAllMocks();
     mockFetch.mockReset();
     mockState.currentSession = null;
+    installWebLocks();
+    mockState.grantStoreIsAvailable.mockReset().mockResolvedValue(true);
 
     // Setup default successful behaviors
     mockState.signup.mockResolvedValue(createMockSession());
@@ -1146,6 +1152,42 @@ describe('HomeserverService', () => {
       it('reports grant sign-in availability from the SDK', () => {
         expect(HomeserverService.isGrantSignInAvailable()).toBe(true);
       });
+
+      it('does not offer or create a grant approval without Web Locks', async () => {
+        removeWebLocks();
+
+        expect(HomeserverService.isGrantSignInAvailable()).toBe(false);
+        await expect(HomeserverService.generateGrantAuthUrl()).rejects.toMatchObject({
+          category: ErrorCategory.Database,
+          code: DatabaseErrorCode.INIT_FAILED,
+        });
+        expect(mockState.grantStartDelegated).not.toHaveBeenCalled();
+      });
+
+      it('does not create a signer approval when browser persistence is unavailable', async () => {
+        mockState.grantStoreIsAvailable.mockResolvedValue(false);
+
+        await expect(HomeserverService.generateGrantAuthUrl()).rejects.toMatchObject({
+          category: ErrorCategory.Database,
+          code: DatabaseErrorCode.INIT_FAILED,
+        });
+        expect(mockState.grantStartDelegated).not.toHaveBeenCalled();
+      });
+
+      it('waits for persistence availability before creating a grant approval', async () => {
+        let resolveAvailability!: (available: boolean) => void;
+        mockState.grantStoreIsAvailable.mockReturnValue(
+          new Promise<boolean>((resolve) => {
+            resolveAvailability = resolve;
+          }),
+        );
+        const pending = HomeserverService.generateGrantAuthUrl();
+
+        expect(mockState.grantStartDelegated).not.toHaveBeenCalled();
+        resolveAvailability(false);
+        await expect(pending).rejects.toMatchObject({ code: DatabaseErrorCode.INIT_FAILED });
+        expect(mockState.grantStartDelegated).not.toHaveBeenCalled();
+      });
     });
 
     describe('grant key removal (sign-out and expiry cleanup)', () => {
@@ -1193,6 +1235,24 @@ describe('HomeserverService', () => {
         await expect(HomeserverService.removeGrantSession('rec-1')).resolves.toBeUndefined();
       });
 
+      it('remove rejects an unavailable store even when list silently reports no records', async () => {
+        mockState.grantStoreRemove.mockRejectedValue(new Error('IndexedDB unavailable'));
+        mockState.grantStoreIsAvailable.mockResolvedValue(false);
+
+        const failure = await HomeserverService.removeGrantSession('rec-1').catch((error: unknown) => error);
+
+        expect(isGrantKeyRemovalError(failure)).toBe(true);
+      });
+
+      it('remove preserves the cleanup error when availability cannot be checked after a failed delete', async () => {
+        mockState.grantStoreRemove.mockRejectedValue(new Error('IndexedDB unavailable'));
+        mockState.grantStoreIsAvailable.mockRejectedValue(new Error('Availability check failed'));
+
+        const failure = await HomeserverService.removeGrantSession('rec-1').catch((error: unknown) => error);
+
+        expect(isGrantKeyRemovalError(failure)).toBe(true);
+      });
+
       it('clearAll rejects while any record is still stored', async () => {
         mockState.grantStoreClearAll.mockRejectedValue(new Error('IndexedDB clear failed'));
         mockState.grantStoreList.mockResolvedValue([{ id: 'rec-1' }]);
@@ -1208,11 +1268,48 @@ describe('HomeserverService', () => {
         expect(mockState.grantStoreList).toHaveBeenCalledTimes(1);
       });
 
-      it('clearAll is a no-op without IndexedDB persistence', async () => {
+      it('clearAll allows cookie-only cleanup when persistence is unavailable and no grant records exist', async () => {
         mockState.grantStoreIsAvailable.mockResolvedValue(false);
 
         await expect(HomeserverService.clearGrantSessions()).resolves.toBeUndefined();
         expect(mockState.grantStoreClearAll).not.toHaveBeenCalled();
+        expect(mockState.grantStoreList).toHaveBeenCalled();
+      });
+
+      it('clearAll rejects unavailable persistence when an old grant record still exists', async () => {
+        mockState.grantStoreIsAvailable.mockResolvedValue(false);
+        mockState.grantStoreList.mockResolvedValue([{ id: 'old-sdk-record' }]);
+
+        const failure = await HomeserverService.clearGrantSessions().catch((error: unknown) => error);
+        expect(isGrantKeyRemovalError(failure)).toBe(true);
+        expect(mockState.grantStoreClearAll).not.toHaveBeenCalled();
+      });
+
+      it('clearAll cannot discharge a known grant cleanup while persistence is unavailable', async () => {
+        mockState.grantStoreIsAvailable.mockResolvedValue(false);
+
+        const failure = await HomeserverService.clearGrantSessions({ requireAvailable: true }).catch(
+          (error: unknown) => error,
+        );
+        expect(isGrantKeyRemovalError(failure)).toBe(true);
+        expect(mockState.grantStoreClearAll).not.toHaveBeenCalled();
+      });
+
+      it('clearAll rejects when unavailable persistence cannot be inspected', async () => {
+        mockState.grantStoreIsAvailable.mockResolvedValue(false);
+        mockState.grantStoreList.mockRejectedValue(new Error('IndexedDB is blocked'));
+
+        const failure = await HomeserverService.clearGrantSessions().catch((error: unknown) => error);
+        expect(isGrantKeyRemovalError(failure)).toBe(true);
+      });
+
+      it('a failed clear cannot discharge pending delegated keys merely because session records are empty', async () => {
+        mockState.grantStoreClearAll.mockRejectedValue(new Error('Key deletion failed'));
+
+        const failure = await HomeserverService.clearGrantSessions({ requireAvailable: true }).catch(
+          (error: unknown) => error,
+        );
+        expect(isGrantKeyRemovalError(failure)).toBe(true);
       });
     });
 
