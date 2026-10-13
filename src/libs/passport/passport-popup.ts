@@ -1,5 +1,5 @@
 import type { XCallbackParams } from '@synonymdev/pubky';
-import { withBasePath } from '@/config/base-path';
+import { getBasePath } from '@/config/base-path';
 
 /**
  * Pubky Passport popup attempts (https://github.com/pubky/pubky-passport/blob/main/docs/integration.md).
@@ -77,9 +77,11 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 /**
  * Return destinations for a Passport request made from `appOrigin`. Passport
  * rejects callbacks that are not HTTPS, so a plain-HTTP origin (local
- * development) sends none and Passport shows its own result screen.
+ * development) sends none and Passport shows its own result screen. The return
+ * page lives under the Shop's mount path (`/shop-embed` for the App wrapper).
+ * Callers may supply a mount explicitly; otherwise use the configured Shop base path.
  */
-export function passportCallbacks(appOrigin: string): XCallbackParams | undefined {
+export function passportCallbacks(appOrigin: string, basePath = getBasePath()): XCallbackParams | undefined {
   let origin: URL;
   try {
     origin = new URL(appOrigin);
@@ -88,7 +90,7 @@ export function passportCallbacks(appOrigin: string): XCallbackParams | undefine
   }
   if (origin.protocol !== 'https:') return undefined;
   const callback = (outcome: PassportOutcome) => {
-    const url = new URL(withBasePath(PASSPORT_CALLBACK_PATH), origin.origin);
+    const url = new URL(`${basePath}${PASSPORT_CALLBACK_PATH}`, origin.origin);
     url.searchParams.set('outcome', outcome);
     return url.href;
   };

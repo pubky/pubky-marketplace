@@ -44,6 +44,33 @@ describe('marketplace grant BFF config', () => {
     });
   });
 
+  it('accepts the pubky.app origins alongside a development instance URL, with the issuer on pubky.app', () => {
+    process.env = {
+      ...validEnv(),
+      SHOP_ALLOWED_ORIGINS: JSON.stringify([
+        'https://pubky.app',
+        'https://staging.pubky.app',
+        'https://pubky-marketplace-staging.vercel.app',
+      ]),
+      SHOP_PUBLIC_ORIGIN: 'https://pubky.app',
+      SHOP_GRANT_ASSERTION_ISSUER: 'https://pubky.app',
+    };
+    expect(getMarketplaceGrantConfig()).toMatchObject({
+      allowedOrigins: [
+        'https://pubky.app',
+        'https://staging.pubky.app',
+        'https://pubky-marketplace-staging.vercel.app',
+      ],
+      publicOrigin: 'https://pubky.app',
+      assertionIssuer: 'https://pubky.app',
+    });
+  });
+
+  it('rejects an allowed origin that carries the /shop mount path', () => {
+    process.env = { ...validEnv(), SHOP_ALLOWED_ORIGINS: '["https://pubky.app/shop"]' };
+    expect(() => getMarketplaceGrantConfig()).toThrow();
+  });
+
   it('rejects issuer/origin drift', () => {
     process.env = { ...validEnv(), SHOP_GRANT_ASSERTION_ISSUER: 'https://other.example' };
     expect(() => getMarketplaceGrantConfig()).toThrow();
