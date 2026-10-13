@@ -396,6 +396,8 @@ export class CommerceApplication {
   private constructor() {}
 
   private static sellerListingsRefreshInFlight = new Map<string, Promise<void>>();
+  /** Listings (composite id → count) with a `commitUpsertListing` running in this tab. */
+  private static listingPublishesInFlight = new Map<string, number>();
 
   static async getShop(ownerPubky: string) {
     return await LocalCommerceService.getShop(ownerPubky);
@@ -2989,6 +2991,18 @@ export class CommerceApplication {
   }
 
   /**
+   * Re-reads the canonical record from the owner's homeserver and replaces the
+   * cached row with it, so the Shop shows what is published rather than a
+   * revision a failed publish staged locally. Network first, then local:
+   * `getOrFetchListing` would serve the staged row back.
+   */
+  static async refreshListing(ownerPubky: string, listingId: string): Promise<CommerceListingRecord> {
+    const record = await this.fetchListing(ownerPubky, listingId);
+    await LocalCommerceService.upsertListing(record, 'synced');
+    return record;
+  }
+
+  /**
    * Returns the canonical listing record, fetching it from the owner
    * homeserver when it is not cached — or when the Nexus index has seen a
    * newer revision than the cache holds, so opening a listing always shows
@@ -3550,7 +3564,31 @@ export class CommerceApplication {
     await LocalCommerceService.completeSyncJob(job.id);
   }
 
+  /**
+   * Publishes a listing revision. While it runs, {@link ensureListingRegistered}
+   * declines the same listing: a heal that settled the row between this
+   * publish's staging and its write would advance the row's generation, and the
+   * publish would then fail as "The listing changed" without ever writing.
+   */
   static async commitUpsertListing(
+    record: CommerceListingRecord,
+    reservePrice?: CommerceMoney | null,
+  ): Promise<{ registered: boolean; verified: boolean }> {
+    const compositeListingId = `${record.ownerPubky}:${record.listingId}`;
+    this.listingPublishesInFlight.set(
+      compositeListingId,
+      (this.listingPublishesInFlight.get(compositeListingId) ?? 0) + 1,
+    );
+    try {
+      return await this.publishListing(record, reservePrice);
+    } finally {
+      const remaining = (this.listingPublishesInFlight.get(compositeListingId) ?? 1) - 1;
+      if (remaining > 0) this.listingPublishesInFlight.set(compositeListingId, remaining);
+      else this.listingPublishesInFlight.delete(compositeListingId);
+    }
+  }
+
+  private static async publishListing(
     record: CommerceListingRecord,
     reservePrice?: CommerceMoney | null,
   ): Promise<{ registered: boolean; verified: boolean }> {
@@ -3640,6 +3678,8 @@ export class CommerceApplication {
    */
   static async ensureListingRegistered(record: CommerceListingRecord): Promise<boolean> {
     if (getCommerceAdapterMode() === 'unavailable' || !this.canCoordinateListingRegistration()) return false;
+    // The publish registers the listing itself once its write is verified.
+    if (this.listingPublishesInFlight.has(`${record.ownerPubky}:${record.listingId}`)) return false;
     const attempt = this.beginListingRegistration(record.ownerPubky, record.listingId);
     attempt.observed = await LocalCommerceService.getListingRowGeneration(attempt.compositeListingId);
     return await this.runListingRegistration(record, attempt, 'heal', null);
