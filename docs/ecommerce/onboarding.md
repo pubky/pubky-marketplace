@@ -12,7 +12,8 @@ A peer-to-peer marketplace on Pubky:
 - **A small Rust service enforces what a browser can't:** single-winner inventory, auctions, orders and receipts.
 - **Payments go straight to the seller.** Bitcoin runs over Paykit and Locks; PayPal is seller-direct. Card payments
   are paused. The Shop never holds funds.
-- **Messaging is end-to-end encrypted** over Paykit Encrypted Links.
+- **Messaging is end-to-end encrypted** between the two parties: each message is an encrypted file on the sender's own
+  homeserver, and it works with every sign-in ([`../chat/README.md`](../chat/README.md)).
 
 This repository holds the Shop web client, built on the Pubky social app
 ([pubky/pubky-app](https://github.com/pubky/pubky-app)), together with the project documents and the tester issue
@@ -53,8 +54,8 @@ PUBKY_RUNTIME_MARKETPLACE_URL=http://localhost:3100 npm run dev   # terminal 2: 
 ```
 
 Sign in, open `/marketplace/sandbox`, and seed the catalog. [`RUNNING.md`](RUNNING.md) covers every mode: the durable
-Rust service (it needs a local Postgres using scram-sha-256 auth, which its `docker compose` provides), encrypted
-messaging, drops, and real Locks/Paykit payments.
+Rust service (it needs a local Postgres using scram-sha-256 auth, which its `docker compose` provides), chat against
+a local Pubky testnet, drops, and real Locks/Paykit payments.
 
 ## Test
 
@@ -103,8 +104,10 @@ in [`runbook-production.md`](runbook-production.md).
 
 ## Known limits
 
-- **Messaging needs a Pubky Ring cookie session.** The vendored `paykit-wasm` supports cookie sessions only, so users
-  signed in with a grant (Bitkit) have no messaging, and Ring sign-in cannot move to grants without losing it.
+- **A stranger's first message needs the inbox.** Chat works with every sign-in that holds the chat scopes, but a
+  message from someone you have never talked to is noticed through the `pubky/inbox` service, which needs a grant
+  session and a deployed inbox (`PUBKY_RUNTIME_INBOX_URL`). Ring cookie sessions get live delivery through homeserver
+  event streams and reconciliation only ([`../chat/README.md`](../chat/README.md)).
 - **No single sign-on with pubky.app.** Each site has its own sign-in. Both sites' Ring cookie sign-ins share one
   homeserver cookie, so signing in on one site replaces the permissions the other was granted, and signing out of the
   Shop with a Ring session also signs pubky.app out in that browser.

@@ -169,7 +169,7 @@ The client selects a wholly different transport in this mode (`MarketplaceTransa
 
 - **Auth is real.** A session is established by POSTing a Pubky `AuthToken` (obtained through the SDK auth flow after signer approval — see [`service-auth.md`](service-auth.md)) to `/v1/auth/sessions`; commands carry the returned opaque token as `Authorization: Bearer`. The forgeable `x-pubky-actor` header does not exist on this path. The bearer token lives in memory plus a `localStorage` mirror so reloads, new tabs, and browser restarts do not force a fresh signer approval — never in IndexedDB, cookies, or logs — and is dropped on sign-out, account switch, and expiry (see `service-auth.md` for the storage contract and tradeoff).
 - **Wire casing is snake_case** per ADR 0019 §3; the client converts its camelCase contracts at the transport boundary in both directions.
-- **The ported command set is accepted** — listings, offers, bids, checkout, order cancellation, fulfillment, returns, external-refund evidence, and reviews. Kinds the durable service does not implement (`payment.sandbox_advance`, messaging, notification read state/preferences) are rejected client-side before any bytes are sent, and the UI withholds those affordances in this mode.
+- **The ported command set is accepted** — listings, offers, bids, checkout, order cancellation, fulfillment, returns, external-refund evidence, and reviews. Kinds the durable service does not implement (`payment.sandbox_advance`, the sandbox's plaintext `message.send`, notification read state/preferences) are rejected client-side before any bytes are sent, and the UI withholds those affordances in this mode.
 - **Reads come from the service's role-scoped projections** (listings, offers, orders with embedded payment/shipment/return/refund/review sub-objects, payments, receipts, and notifications). The interactive shopping UI sources every `expected_revision` from a fresh projection read and treats `REVISION_CONFLICT` as refetch-and-retry.
 
 ### Connecting the session from the UI
@@ -193,34 +193,35 @@ This integration suite uses no mocks: it runs a genuine Pubky auth flow (acting 
 
 The client's state tables are held in lockstep with the service's canonical contract: `contracts/state-machines.json` from the service repo is vendored at `src/libs/commerce/contracts/state-machines.json`, and `src/libs/commerce/state-machines.contract.test.ts` fails CI on any drift. When the service contract changes, re-vendor the file and reconcile the TypeScript — the service is canonical.
 
-### Enabling encrypted messaging (durable modes)
+### Chat (every mode)
 
-Marketplace messaging in the durable modes is end-to-end encrypted over Paykit Encrypted Links (experiment grade — see [`status.md`](status.md) and [`paykit-wasm-provenance.md`](paykit-wasm-provenance.md)). It needs its OWN Pubky Ring approval, separate from the marketplace session above, because it grants a different capability:
+Buyer↔seller chat does not depend on the commerce adapter mode: it needs a signed-in session holding the chat scopes (`/pub/chat/:rw`, `/priv/chat/:rw`, part of the sign-in grant) and the homeserver. Each message is an end-to-end encrypted file on the sender's own homeserver; delivery runs on the peer homeserver's event stream, optional `pubky/inbox` pings and reconciliation. Design and threat model: [`../chat/README.md`](../chat/README.md); decision: [ADR 0030](../adr/0030-chat-transport.md).
 
-1. Open a listing's **Message seller** dialog or the marketplace **Messages** page. If messaging is not enabled yet, an **"Enable encrypted messaging"** step appears.
-2. The dialog shows a `pubkyauth://` URL (QR for cross-device Ring, deeplink/copy for same-device) requesting exactly `/pub/paykit/:rw` — the Paykit homeserver tree where receiver markers, handshake slots, and encrypted message slots live. Approve it in Pubky Ring.
-3. On approval the app generates a receiver-scoped Noise key on this device (never the identity key, which stays in Ring), publishes your receiver marker, and messaging is live for this tab.
+Facts to know: a session approved before the chat scopes existed shows "Messages need a newer sign-in approval" until the user signs in again; a message to someone who has not opened Messages yet stays queued ("Waiting for them to set up messages") and goes out once their key is published; the inbox (`PUBKY_RUNTIME_INBOX_URL`) is what makes a stranger's first message arrive at once, and it needs a grant session (Bitkit, Ring grant, Passport) because a Ring cookie session cannot sign the inbox proof; without it chat still works through streams and reconciliation. History and read state follow the account to other devices. One message is at most 4,096 bytes; no attachments.
 
-Facts to know, all disclosed in the UI: the messaging session survives reloads, new tabs, and browser restarts (secret-free metadata in `localStorage`; the real credential is the browser's HTTP-only homeserver cookie, revalidated on restore — see `service-auth.md`), and the **Reconnect** affordance asks for a fresh Ring approval only when the homeserver no longer accepts that cookie (stored history stays readable without one); BOTH parties must have enabled messaging before anything can be delivered, and the composer stays disabled with a truthful "waiting for the counterparty" state until the Noise handshake completes; one message is capped at 1,000 bytes (live byte meter, no attachments); conversation history and the local key material are device-local in origin-scoped IndexedDB (`shop-franky`, not per-pubky; it was `franky` before `shop-v0.6.51`) and wiped on sign-out/account switch — clearing site data also deletes them, and other devices cannot show the history (the multi-device backup key is an open product decision).
-
-To prove the encrypted transport live — two parties, real crypto, real homeserver — against a local Pubky testnet:
+To run chat against a local Pubky testnet with an inbox, start the stack from [pubky-docker](https://github.com/pubky/pubky-docker) and an inbox container built from the `pubky/inbox` Dockerfile (full recipe in [`../chat/README.md`](../chat/README.md), "Local development"):
 
 ```bash
-pubky-testnet   # stock ports: pkarr relay 15411, homeserver HTTP 6286, admin 6288
-npm run test:marketplace:messaging
+docker run -d --name pubky-inbox-dev --network pubky-docker_pubky -p 8088:8080 \
+  -e INBOX_DATABASE__URL=postgres://test_user:test_pass@postgres:5432/inbox -e INBOX_AUTH__AUDIENCE=http://localhost:8088 \
+  -e 'INBOX_SERVER__CORS_ALLOWED_ORIGINS=["http://localhost:3000"]' -v pubky-inbox-dev-data:/data pubky-inbox:dev
+
+PUBKY_RUNTIME_TESTNET=true PUBKY_RUNTIME_HOMESERVER=8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo \
+PUBKY_RUNTIME_HOMESERVER_URL=http://localhost:6286 PUBKY_RUNTIME_NEXUS_URL=http://localhost:8080 \
+PUBKY_RUNTIME_CDN_URL=http://localhost:8080/static PUBKY_RUNTIME_DEFAULT_HTTP_RELAY=http://localhost:15412/inbox/ \
+PUBKY_RUNTIME_INBOX_URL=http://localhost:8088 PUBKY_RUNTIME_INBOX_AUDIENCE=http://localhost:8088 npm run dev
 ```
 
-This live suite runs the vendored WASM binding in a real Chromium page with no mocks: enrollment and marker publish through the app's own messaging service, the not-enrolled honest dead end, the Noise XX handshake over live homeserver outbox slots, bidirectional `marketplace.chat_message.v0` delivery, IndexedDB persistence, and snapshot/restore across a simulated reload. Sessions come from the binding's dev signup helper — the interactive Ring approval is the one leg a machine cannot honestly perform. It is intentionally not part of the unit gates.
+The dev signup-token route needs `HOMESERVER_ADMIN_URL=http://localhost:6288/generate_signup_token` and `HOMESERVER_ADMIN_PASSWORD=admin`.
 
-The same proof also exists against the REAL staging network — the staging homeserver reached through the public pkarr relays, the exact topology of the staging deployment (`PUBKY_RUNTIME_TESTNET=false`). It passed on 2026-08-21. The staging homeserver requires single-use signup tokens, so this is a run-on-demand suite, never a standing gate:
+To prove chat live — two accounts, real crypto, real homeserver — against that stack (dev server and homeserver running; grant mode also needs the inbox container):
 
 ```bash
-PAYKIT_STAGING_SIGNUP_TOKEN_A=XXXX-XXXX-XXXX \
-PAYKIT_STAGING_SIGNUP_TOKEN_B=YYYY-YYYY-YYYY \
-npm run test:marketplace:messaging:staging
+npm run test:e2e:chat                        # Ring cookie sign-in: streams + reconciliation
+CHAT_E2E_AUTH=grant npm run test:e2e:chat    # Bitkit grant sign-in: adds inbox sessions and a ping-only delivery
 ```
 
-The harness prints the throwaway identity secrets it generates; if a run fails after signup (tokens consumed), re-run with `PAYKIT_STAGING_SECRET_A`/`PAYKIT_STAGING_SECRET_B` instead of tokens to sign back in.
+The script (`src/test/e2e/chat-two-accounts.mjs`) drives two Playwright browser contexts signed in with a Node-side signer, and checks: keys published, a message reaches the other thread, a reply reaches the open thread live, thread order, the unread badge appears and clears on read, history survives a reload, a fresh browser context rebuilds the conversation from the homeservers, the published key file carries no secret, and the message files on the homeserver are ciphertext. Where Playwright cannot install its own browser, set `CHROMIUM_PATH` to an existing `chrome-headless-shell`. It is intentionally not part of the unit gates.
 
 ## Cross-account live proof (stranger reads a published listing)
 

@@ -1,6 +1,6 @@
 # paykit-wasm Build Provenance
 
-The paykit-wasm browser binding — the Paykit Encrypted Link messaging surface compiled to WASM — is not published to npm. It is built from source at a pinned commit and vendored into this repository, then loaded through a dynamic import so the WASM module never enters a server-rendered module graph. This file records the provenance of the build so it is reproducible and auditable.
+The paykit-wasm browser binding — Paykit's client surface compiled to WASM — is not published to npm. Since the chat rewrite ([`../chat/README.md`](../chat/README.md)) the Shop uses only its public receiver-marker reads (the buyer's Bitcoin wallet check); the Encrypted Link messaging surface it also exposes is unused. It is built from source at a pinned commit and vendored into this repository, then loaded through a dynamic import so the WASM module never enters a server-rendered module graph. This file records the provenance of the build so it is reproducible and auditable.
 
 Vendored: 2026-09-05 (rc50, picking up the homeserver write-abort fixes and additive endpoint/SB2 surfaces; see the rc44 → rc50 summary below). The five vendored artifacts are byte-identical to `paykit-wasm/pkg` at the pinned commit — verified on copy by hashing the git blobs at the pin (`git show d4a73a57…:paykit-wasm/pkg/<file> | shasum -a 256`) against the files on disk; all five SHA-256 values matched.
 
@@ -19,7 +19,7 @@ Vendored: 2026-09-05 (rc50, picking up the homeserver write-abort fixes and addi
 | License         | MIT                                                                            |
 | Previous pin    | `0a6c6e4521fd41f5081ad9f074020f4813d8a03e` (`0.1.0-rc44`, `feat/wasm-binding`) |
 
-The upstream pin matches the audited paykit-rs commit recorded in [`messaging/README.md`](messaging/README.md). The fork adds packaging-class fixes for the wasm32 target plus additive binding surfaces (session export/restore, zero-approval cookie resume, and — new in rc50 — payment endpoints, SB2, X25519, public storage, and sign-out). Upstream paykit-rs is pre-1.0 ("WIP - not for production") and claims no independent security review; the binding and this integration inherit that status.
+The upstream pin matches the audited paykit-rs commit that the retired messaging record (formerly `docs/ecommerce/messaging/README.md`) documented. The fork adds packaging-class fixes for the wasm32 target plus additive binding surfaces (session export/restore, zero-approval cookie resume, and — new in rc50 — payment endpoints, SB2, X25519, public storage, and sign-out). Upstream paykit-rs is pre-1.0 ("WIP - not for production") and claims no independent security review; the binding and this integration inherit that status.
 
 ## rc44 → rc50 change summary
 
@@ -54,7 +54,7 @@ public/private Payment Endpoints and lists, `sendPrivatePaymentList`,
 `putPublic`/`deletePublic`/`publicGet`, `signOutSession`,
 `migrateHomeserverWithSecret`, `resolveMostRecentHomeserver`.
 
-The runtime-relevant changes for this app's messaging usage are the
+The runtime-relevant changes for this app's (then) messaging usage are the
 homeserver-write robustness fixes: WASM homeserver writes now drain response
 bodies (2xx and error paths, both bounded so a stalled/hostile homeserver
 cannot hang the fetch or abort the write), pkarr publish retries after CAS
@@ -120,17 +120,17 @@ npm symlinks `node_modules/paykit-wasm` to the vendored directory, so a fresh cl
 
 - Byte-identity with the source: all five artifacts hash-identical to `paykit-wasm/pkg` at `d4a73a5765e1f0b18ed451d78f98dab97c611a8c` in the source checkout (see the header). The sibling product's independent rebuild verification of the same pin (same-tree rebuild reproduced the `.wasm` SHA-256; clean-worktree rebuild matched JS/`.d.ts`/`package.json` with the `.wasm` differing only in the data segment, the documented `wasm-opt` non-determinism) is recorded in its own provenance file and was not re-run here.
 - `node scripts/paykit-wasm-smoke.mjs` passes against the vendored copy with REAL crypto in Node (module instantiation, the bound messaging API surface, receiver Noise key generation, in-memory Noise XX handshake, encrypted roundtrips, AEAD tamper rejection, the 1000-byte limit, `pubkyauth` URL construction). CI runs it in `.github/workflows/build.yml` ahead of `next build`. Note: in a network-restricted environment the script prints its pass line but the process lingers on the mainnet `PubkyClient`'s relay handles — pre-existing behavior, identical on rc44.
-- This repo's unit suites pass against the rc50 artifact with no consumer adaptation: the real-crypto integration tests (`paykit-messaging.realcrypto.test.ts`, which instantiate the vendored `.wasm`) and the full messaging/service suites.
+- This repo's unit suites passed against the rc50 artifact with no consumer adaptation at the time. The real-crypto `paykit-messaging.realcrypto.test.ts` suite went with the retired messaging service; `paykit-receiver.ts` keeps its own tests against the vendored `.wasm`.
 - The binding's own homeserver-backed browser e2e and the native unit tests for the new write-drain/retry behavior live in the source repository at the pinned commit; they were not re-run in this tree. As before, the production `startAuthFlow` signer approval leg remains the one flow proven only by this repo's live scripting, not by the binding's e2e.
 
 ## What the binding is used for here
 
-`PaykitMessagingService` (`src/core/services/paykit/paykit-messaging.ts`) uses the binding for end-to-end-encrypted marketplace messaging in durable commerce modes: a Ring-approved homeserver session scoped to `/pub/paykit/:rw`, a receiver-scoped Noise key generated in the browser (never the identity secret), receiver marker publish/discovery, Noise XX Encrypted Links per counterparty, and Private Application Messages with marketplace kinds. The WASM module is loaded lazily via dynamic import on first use, never at module scope, mirroring the Locks SDK loading pattern. The rc50 additions (payment endpoints, SB2, X25519, public storage, sign-out) are NOT used by this app today.
+`PaykitReceiverService` (`src/core/services/paykit/paykit-receiver.ts`) uses the binding for one public read: whether a pubky publishes a Paykit receiver that accepts private payments and Payment Requests, the buyer's Bitcoin wallet check at checkout. It needs no session. The WASM module is loaded lazily via dynamic import on first use, never at module scope, mirroring the Locks SDK loading pattern. The Encrypted Link messaging surface (receiver enrollment, Noise XX links, Private Application Messages) was used by the retired `PaykitMessagingService` and is no longer called: chat runs on homeserver files ([`../chat/README.md`](../chat/README.md)). The rc50 additions (payment endpoints, SB2, X25519, public storage, sign-out) are NOT used by this app today.
 
 ## Known limitations inherited from the binding
 
-- 1000-byte limit per Private Application Message (JSON envelope included) — attachments are not possible inline and are not offered in encrypted mode.
-- Link and handshake snapshots serialize UNENCRYPTED from the binding and contain key material; the caller owns at-rest protection. This app wraps them (and the receiver Noise secret) with AES-GCM-256 under a non-extractable device keyring key before they touch IndexedDB (`src/libs/crypto/`, DB 4 → 5 migration); the multi-device backup-key decision remains open.
+- 1000-byte limit per Private Application Message (JSON envelope included); the messaging surface is unused here since the chat rewrite.
+- Link and handshake snapshots serialize UNENCRYPTED from the binding and contain key material; the caller owns at-rest protection. The retired messaging service wrapped them with AES-GCM-256 under a device keyring key; that keyring database (`shop-franky-messaging-keyring`) is deleted once by the Shop's legacy cleanup and no snapshot is stored any more.
 - `PubkyClient` exposes only mainnet defaults and the fixed local-testnet topology (`testnet()`, pkarr relay `localhost:15411`); no custom relay/host overrides.
 - Link handles reject overlapping operations ("operation in flight"); callers serialize per-link operations (the service does).
 - No independent security review of paykit-rs, pubky-noise, or the binding.

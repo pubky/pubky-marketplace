@@ -284,28 +284,34 @@ stack (see the proof ledger). Card payments are paused in the shop. USDT
 
 ## 7. Messaging
 
-Status: beta, frozen. It runs on Ring cookie sessions only, so Bitkit and
-Passport sign-ins have no messaging. Moving the Shop to the shared chat
-library, with its inbox service, is deferred, and that stack is owned by
-other teams ([`messaging/README.md`](messaging/README.md)).
+Status: rebuilt on the chat transport ([ADR 0030](../adr/0030-chat-transport.md),
+[`../chat/README.md`](../chat/README.md)); on the rewrite branch, not yet in a `shop-v*`
+release. Works with every sign-in that holds the chat scopes (Ring cookie,
+Bitkit, Ring grant, Passport).
 
-- **End-to-end encrypted messaging** (durable modes): Noise XX over Paykit
-  Encrypted Links via the vendored WASM binding — marketplace listing
-  conversations and general direct messages on one link per counterparty.
-  **Experiment grade**; live browser e2e 16/16 across engines
-- Receiver markers with messaging-only capability advertisement
-- Session persistence across reloads and tabs (secret-free metadata;
-  the credential is a browser-held HTTP-only cookie)
-- Unencrypted key-snapshot storage is disclosed in the UI (backup-key
-  encryption is a deliberate open decision)
-- **Sandbox mode**: plaintext transport, labeled as operator-readable at
-  every point of use
+- **End-to-end encrypted 1:1 chat**: each message is an XChaCha20-Poly1305
+  envelope written to the sender's own homeserver under a pairwise folder
+  derived from the two users' X25519 keys; the recipient reads it there. No
+  Shop service, relay or operator sees a body
+- **Live delivery** through the peer homeserver's event stream, `pubky/inbox`
+  pings (grant sessions; wake-ups only) and a reconciliation pass; a message
+  to someone who has not opened Messages yet waits and is delivered later
+- **Cross-device**: the key and the conversation index (with the read
+  checkpoint) live on the homeserver, so a new browser rebuilds the inbox and
+  its badges
+- Text only, 4,096 bytes per message; one thread per user pair; listing and
+  order context chip; `/messages` and `/messages/[pubky]`
+- Honest unread badge: conversations with a received message newer than the
+  account's read checkpoint
+- **Sandbox mode**: the sandbox transaction service keeps its plaintext
+  `message.send` command for its own tests; the client no longer uses it
 
 ## 8. Identity and sessions
 
 - **Single Ring grant**: one sign-in approval covers the app's public
-  storage, the Paykit messaging tree, and the private watchlist scope —
-  immune to the homeserver's one-cookie-per-user session replacement
+  storage, the Paykit tree (wallet markers), the private watchlist scope
+  and the chat trees (`/pub/chat/`, `/priv/chat/`) — immune to the
+  homeserver's one-cookie-per-user session replacement
 - Sessions persist across tabs and browser restarts, bounded by service
   TTLs; account-scoped restore validation; sign-out clears everything
 
@@ -343,7 +349,9 @@ other teams ([`messaging/README.md`](messaging/README.md)).
   rails). Card payments are paused and are not offered, so no payout leg
   exists to build. Connect-style onboarding would only become relevant if
   the marketplace ever took custody or platform fees, which it does not.
-- Messaging backup-key encryption (open product decision, disclosed in UI)
+- Chat forward secrecy and a sealed chat private key (static X25519 keys;
+  the private key is plain JSON under the owner-only `/priv` tree; see the
+  threat model notes in [`../chat/README.md`](../chat/README.md))
 
 ## In progress (Sprint 3, not shipped)
 

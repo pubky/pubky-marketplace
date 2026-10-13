@@ -1,5 +1,7 @@
 # Shop graduation dossier
 
+> **Note (2026-10-12):** messaging rows and proofs here (Noise XX over Paykit Encrypted Links, the backup-key decision, the messaging VRT) describe a transport since retired; chat now runs on homeserver files ([`../chat/README.md`](../chat/README.md)). Kept as a record.
+
 Per-feature proof and next-state recommendations for the Shop vibe (pubky-app marketplace fork). Head of this tree: `0ac3f00b` (`marketplace/pr25-ux`). Wave 6 UX remediation shipped 2026-09-06 (ledger row “Wave 6 UX remediation”; changelog records `6554dd1f..420856c1`; this tree’s later VRT follow-up is `0ac3f00b`). Transaction service follow-up cited in the Wave 6 plan: `c697e5f`.
 
 Shop now serves the production client at `https://shop.pubky.app`, backed by the production homeserver, Nexus, Homegate, marketplace service, and marketplace Nexus. The staging Shop remains at `https://pubky-marketplace-staging.vercel.app`. Money remains on testnet/regtest by owner decision; this is not a real-money launch (`docs/ecommerce/status.md` preamble; `FEATURES.md` “Explicitly not included”). No operator, arbiter, or custody by design (ADR 0019 footer 2026-09-05; `0018_remove_operator_authority.sql`).

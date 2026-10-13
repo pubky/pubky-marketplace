@@ -274,7 +274,7 @@ Before completion, run the pinned upstream smoke suites plus a composed buyer/se
 - Keep the exact-pinned `@synonymdev/locks-sdk` release candidate current with the Lock Server release the Shop targets (re-pin procedure in [`locks-sdk-provenance.md`](locks-sdk-provenance.md)).
 - Add a protocol-real local Compose overlay; neither Pubky Docker nor Locks Compose alone is complete.
 - Implement Marketplace Transaction Service verification of the Locks lifecycle without exposing bearer material.
-- Define private marketplace messaging: use Paykit encrypted links through a Rust adapter or adopt another reviewed encrypted Pubky protocol.
+- Private marketplace messaging: done as chat on homeserver files ([`../chat/README.md`](../chat/README.md), [ADR 0030](../adr/0030-chat-transport.md)), not over Paykit encrypted links; the pubky-chat (MLS) cutover remains the long-term direction.
 - Add explicit expiry/reconciliation because Locks v1 has no terminal payment failure.
 - Perform an independent security review before any real-funds deployment.
 - Re-audit upstream revisions before upgrading any pin.

@@ -1,5 +1,7 @@
 # Weekly Vibes Review Packet
 
+> **Note (2026-10-12):** messaging rows and proofs here (Noise XX over Paykit Encrypted Links, the backup-key decision, the messaging VRT) describe a transport since retired; chat now runs on homeserver files ([`../chat/README.md`](../chat/README.md)). Kept as a record.
+
 Reusable packet for reviewing Shop as a Vibes experiment. Fill with repository or plan evidence only; write `not measured` where no server-side fact exists.
 
 ## Template

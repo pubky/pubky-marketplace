@@ -7,29 +7,29 @@
 
 ## Current step
 
-**Core, UI, SDK 0.16 bump and both live two-account proofs (cookie and grant + inbox pings) done.** Next action: stale sign-in copy (`SignIn.tsx` "Messages are not available with Passport sign-ins yet", reauth/connect dialog `messages` intent), sandbox-mode entry-point check (listing/order CTAs), docs (README, ADR, changelog), VRT baselines, full `npm test`/lint/format, handoff.
+**Build complete; verification done on the local testnet.** Remaining: merge Vlada's SDK/grant PR when it lands (take his side for auth files, keep the chat scopes and the facade `startGrantAuthFlow` call), regenerate the darwin VRT baselines for the two chat suites and the orders CTA on a Mac, and Matthew's manual QA (recipe below, screenshots in the handoff message).
 
 ## Progress
 
-| Step                                                                                                                     | Status | Commit                   |
-| ------------------------------------------------------------------------------------------------------------------------ | ------ | ------------------------ |
-| P0 Old UI screenshots sent to Matthew (21 VRT baselines)                                                                 | done   | —                        |
-| P0 `npm install`, baseline typecheck/test (1119 files / 17756 tests green)                                               | done   | 0a5098b3a                |
-| P1.1 Extract `hasPaymentRequestReceiver` → `paykit-receiver.ts`; move retry-backoff/pass-deadline to `libs/chat`         | done   | 9854ab6d9                |
-| P1.2 UI detach (routes, templates, organisms, hooks, VRT, live tests, entry points → `ChatEntryButton`)                  | done   | (next commit)            |
-| P1.3a Delete messaging core, Dexie 9 drops `commerce_messaging_*`, adds `chat_*` (schema only), auth/DB provider cleanup | done   | (next commit)            |
-| P1.3b Add libs/chat, models, services, application, controller, store; capabilities `/pub/chat:rw,/priv/chat:rw`         | done   | da5306973, 9e2bb0d8f     |
-| P1.4 Inbox service + ChatSyncCoordinator                                                                                 | done   | b20cbbb15                |
-| P1.5 UI (hooks, organisms, templates, pages); VRT suites still todo                                                      | done   | f2c7277b1                |
-| P2 SDK 0.16 minimal bump + real `createInboxCredentials`; grant flow on the facade client; inbox slot fix                | done   | 8493c562f, (next commit) |
-| P2 Merge Vlada's grant PR when it lands                                                                                  | todo   |                          |
-| P4 Docs (README, ADR 0030, status/FEATURES/RUNNING/environment/threat-model, changelog)                                  | todo   |                          |
-| V1 Unit suites green, typecheck, lint, format                                                                            | todo   |                          |
-| V2 Live two-account proof, cookie mode (`npm run test:e2e:chat`, 13/13) and grant mode (`CHAT_E2E_AUTH=grant`, 16/16)    | done   | 2d93aac6e, (next commit) |
-| V3 Real-browser two-tab session with screenshots                                                                         | todo   |                          |
-| V4 Cypress + VRT updates                                                                                                 | todo   |                          |
-| V5 Regression (must-not-break list)                                                                                      | todo   |                          |
-| Handoff to Matthew for manual QA                                                                                         | todo   |                          |
+| Step                                                                                                                                                                | Status      | Commit                   |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------- | ------------------------ |
+| P0 Old UI screenshots sent to Matthew (21 VRT baselines)                                                                                                            | done        | —                        |
+| P0 `npm install`, baseline typecheck/test (1119 files / 17756 tests green)                                                                                          | done        | 0a5098b3a                |
+| P1.1 Extract `hasPaymentRequestReceiver` → `paykit-receiver.ts`; move retry-backoff/pass-deadline to `libs/chat`                                                    | done        | 9854ab6d9                |
+| P1.2 UI detach (routes, templates, organisms, hooks, VRT, live tests, entry points → `ChatEntryButton`)                                                             | done        | (next commit)            |
+| P1.3a Delete messaging core, Dexie 9 drops `commerce_messaging_*`, adds `chat_*` (schema only), auth/DB provider cleanup                                            | done        | (next commit)            |
+| P1.3b Add libs/chat, models, services, application, controller, store; capabilities `/pub/chat:rw,/priv/chat:rw`                                                    | done        | da5306973, 9e2bb0d8f     |
+| P1.4 Inbox service + ChatSyncCoordinator                                                                                                                            | done        | b20cbbb15                |
+| P1.5 UI (hooks, organisms, templates, pages); VRT suites still todo                                                                                                 | done        | f2c7277b1                |
+| P2 SDK 0.16 minimal bump + real `createInboxCredentials`; grant flow on the facade client; inbox slot fix                                                           | done        | 8493c562f, (next commit) |
+| P2 Merge Vlada's grant PR when it lands                                                                                                                             | todo        | blocked on his PR        |
+| P4 Docs (README, ADR 0030, status/FEATURES/RUNNING/environment/threat-model, changelog)                                                                             | done        | (next commit)            |
+| V1 Unit suites green (1096 files / 17278 tests), typecheck, lint, format                                                                                            | done        | (next commit)            |
+| V2 Live two-account proof, cookie mode (`npm run test:e2e:chat`, 13/13) and grant mode (`CHAT_E2E_AUTH=grant`, 16/16)                                               | done        | 2d93aac6e, (next commit) |
+| V3 Real-browser session: grant sign-in via ring simulator, inbox session, sandbox listing/order entry points, screenshots                                           | done        | —                        |
+| V4 VRT: new `src/test/vrt/chat/*` suites (linux chromium+firefox baselines), orders CTA mobile baseline regenerated; Cypress listing case unchanged and still valid | done        | 1b490d826, (next commit) |
+| V5 Regression: full unit suite green; sandbox orders/listing/cart/notifications render; cookie and grant sign-in verified                                           | done        | —                        |
+| Handoff to Matthew for manual QA                                                                                                                                    | in progress | —                        |
 
 ## Waiting on others
 
@@ -72,8 +72,7 @@ npm install
 npm run typecheck && npm test
 # 3. Local stack (homeserver + pkarr + nexus + homegate)
 cd /home/mk/CODE/pubky-docker && git pull && docker compose --profile backend up -d
-# 4. Local inbox (clone pubky/inbox, build its Dockerfile; Postgres from postgres:17-alpine)
-#    env: INBOX_AUTH__AUDIENCE=http://localhost:8080 INBOX_SERVER__CORS_ALLOWED_ORIGINS=["http://localhost:3000"]
+# 4. Local inbox: clone pubky/inbox and build its Dockerfile as pubky-inbox:dev (Postgres comes from pubky-docker)
 # 5. Ring simulator for approving sign-in QRs with disposable identities
 cd /home/mk/CODE/pubky-ring-simulator && npm run dev
 # 4b. Local inbox container (image built from the pubky/inbox Dockerfile as pubky-inbox:dev)
@@ -86,6 +85,6 @@ CHAT_E2E_AUTH=grant CHROMIUM_PATH=~/.cache/ms-playwright/chromium_headless_shell
 # 6. The app against the local stack (see .env.example "Local testnet example")
 PUBKY_RUNTIME_TESTNET=true PUBKY_RUNTIME_HOMESERVER=8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo \
 PUBKY_RUNTIME_HOMESERVER_URL=http://localhost:6286 PUBKY_RUNTIME_NEXUS_URL=http://localhost:8080 \
-PUBKY_RUNTIME_CDN_URL=http://localhost:8080/static PUBKY_RUNTIME_DEFAULT_HTTP_RELAY=http://localhost:15412/inbox/ \
+PUBKY_RUNTIME_CDN_URL=http://localhost:8080/static PUBKY_RUNTIME_DEFAULT_HTTP_RELAY=http://localhost:15412/link/ \
 PUBKY_RUNTIME_INBOX_URL=http://localhost:8088 PUBKY_RUNTIME_INBOX_AUDIENCE=http://localhost:8088 npm run dev
 ```
