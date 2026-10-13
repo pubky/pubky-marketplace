@@ -19,6 +19,7 @@ import type {
 } from '@/hooks/useListingMediaManager/useListingMediaManager';
 import { DIGITAL_DELIVERY_COPY } from '@/libs/commerce/digital';
 import { PICKUP_NOTHING_PUBLISHED_TOAST } from '@/libs/commerce/pickup';
+import { getAuctionDurationsMinutes } from '@/libs/runtime-config/runtime-config';
 import { toast } from '@/molecules/Toaster/use-toast';
 import { useAuthStore } from '@/stores/auth/auth.store';
 import { createCommerceListingFixture } from '@/test/fixtures/commerce/commerce';
@@ -96,6 +97,13 @@ vi.mock('@/controllers/commerce/commerce', async (importOriginal) => {
   };
 });
 
+vi.mock('@/libs/runtime-config/runtime-config', async () => ({
+  ...(await vi.importActual<typeof import('@/libs/runtime-config/runtime-config')>(
+    '@/libs/runtime-config/runtime-config',
+  )),
+  getAuctionDurationsMinutes: vi.fn(() => [7 * 24 * 60]),
+}));
+
 vi.mock('@/molecules/Toaster/use-toast', () => ({
   toast: vi.fn(),
 }));
@@ -127,6 +135,7 @@ beforeEach(() => {
   pickupCapability.commitSetPickupDetails.mockReset();
   pickupCapability.commitSetPickupDetails.mockResolvedValue({ ok: true });
   vi.mocked(toast).mockReset();
+  vi.mocked(getAuctionDurationsMinutes).mockReturnValue([7 * 24 * 60]);
 });
 
 function buildMedia(items: ListingMediaItem[] = []): UseListingMediaManagerResult {
@@ -234,6 +243,25 @@ describe('MarketplaceListingForm', () => {
     expect(screen.getByText('Length (cm)')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Publish listing' })).toBeDisabled();
     expect(screen.getByText('You can add these later')).toBeInTheDocument();
+  });
+
+  it('offers only the 7-day auction, with no length choice, by default', () => {
+    const { container } = render(<FormHarness defaultValues={{ saleFormat: 'auction' }} />);
+
+    const optionTexts = Array.from(container.querySelectorAll('option')).map((option) => option.textContent);
+    expect(optionTexts).toContain('7-day auction');
+    expect(screen.queryByText('Auction length')).not.toBeInTheDocument();
+  });
+
+  it('offers the deploy auction lengths, preselecting the first', async () => {
+    vi.mocked(getAuctionDurationsMinutes).mockReturnValue([7 * 24 * 60, 15]);
+    const formRef: { current: UseFormReturn<CreateMarketplaceListingData> | null } = { current: null };
+    const { container } = render(<FormHarness defaultValues={{ saleFormat: 'auction' }} formRef={formRef} />);
+
+    expect(screen.getByText('Auction length')).toBeInTheDocument();
+    const optionTexts = Array.from(container.querySelectorAll('option')).map((option) => option.textContent);
+    expect(optionTexts).toEqual(expect.arrayContaining(['Auction', '7 days', '15 minutes']));
+    await waitFor(() => expect(formRef.current?.getValues('auctionDurationMinutes')).toBe(String(7 * 24 * 60)));
   });
 
   it('hides package fields for pickup listings', () => {

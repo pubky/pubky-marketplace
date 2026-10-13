@@ -15,6 +15,7 @@ import {
   type UseListingMediaManagerResult,
 } from '@/hooks/useListingMediaManager/useListingMediaManager';
 import { useMeasurementSystem } from '@/hooks/useMeasurementSystem/useMeasurementSystem';
+import { resolveAuctionDurationMinutes } from '@/libs/commerce/auction-duration';
 import {
   contentfulListingDrafts,
   hydrateListingDraftMedia,
@@ -50,6 +51,7 @@ import {
 } from '@/libs/commerce/units';
 import { isUnlimitedStockSentinel, stockFormFields } from '@/libs/commerce/unlimited-stock';
 import { Logger } from '@/libs/logger/logger';
+import { getAuctionDurationsMinutes } from '@/libs/runtime-config/runtime-config';
 import { toast } from '@/molecules/Toaster/use-toast';
 import { useAuthStore } from '@/stores/auth/auth.store';
 import { useCommerceStore } from '@/stores/commerce/commerce.store';
@@ -643,7 +645,10 @@ function buildListingRecord(
           startingPrice: unitPrice,
           minimumIncrement: { ...unitPrice, amountMinor: Math.max(100, Math.round(unitPrice.amountMinor * 0.05)) },
           startsAt: now.toISOString(),
-          endsAt: new Date(now.getTime() + 7 * 24 * 60 * 60 * 1_000).toISOString(),
+          endsAt: new Date(
+            now.getTime() +
+              resolveAuctionDurationMinutes(data.auctionDurationMinutes, getAuctionDurationsMinutes()) * 60_000,
+          ).toISOString(),
           antiSnipingWindowSeconds: 120,
           antiSnipingExtensionSeconds: 120,
         }

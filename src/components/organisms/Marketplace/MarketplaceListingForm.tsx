@@ -55,6 +55,7 @@ import type {
 import { isListingMediaPublishReady } from '@/hooks/useListingMediaManager/useListingMediaManager';
 import { useMarketplaceShippingPresets } from '@/hooks/useMarketplaceShippingPresets/useMarketplaceShippingPresets';
 import { presetToShippingFields } from '@/hooks/useMarketplaceShippingPresets/useMarketplaceShippingPresets.types';
+import { auctionDurationLabel, auctionDurationOptionLabel } from '@/libs/commerce/auction-duration';
 import { DIGITAL_DELIVERY_COPY } from '@/libs/commerce/digital';
 import { isListingDraftSectionId, type ListingDraftSectionId } from '@/libs/commerce/listing-drafts';
 import {
@@ -73,6 +74,7 @@ import {
   weightUnitLabel,
 } from '@/libs/commerce/units';
 import { UNLIMITED_STOCK_LABEL } from '@/libs/commerce/unlimited-stock';
+import { getAuctionDurationsMinutes } from '@/libs/runtime-config/runtime-config';
 import { ControlledInputField } from '@/molecules/ControlledInputField/ControlledInputField';
 import { ControlledTextareaField } from '@/molecules/ControlledTextareaField/ControlledTextareaField';
 import { ListingPublishGuardNotice } from '@/molecules/Marketplace/ListingPublishGuardNotice';
@@ -167,6 +169,7 @@ export function MarketplaceListingForm({
   } = media;
   const fulfillment = useWatch({ control: form.control, name: CREATE_MARKETPLACE_LISTING_FIELDS.FULFILLMENT });
   const saleFormat = useWatch({ control: form.control, name: CREATE_MARKETPLACE_LISTING_FIELDS.SALE_FORMAT });
+  const auctionDurations = getAuctionDurationsMinutes();
   const currency = useWatch({ control: form.control, name: CREATE_MARKETPLACE_LISTING_FIELDS.CURRENCY });
   const { presets, saveFromFields } = useMarketplaceShippingPresets();
   const [saveDeliveryPreset, setSaveDeliveryPreset] = useState(false);
@@ -223,6 +226,14 @@ export function MarketplaceListingForm({
     }
   };
   const isEdit = mode === 'edit';
+  const auctionDuration = useWatch({ control: form.control, name: CREATE_MARKETPLACE_LISTING_FIELDS.AUCTION_DURATION });
+  // The select shows the length that will publish: an empty or no-longer-offered
+  // value (a fresh form, an older draft) moves to the deploy's first offered length.
+  useEffect(() => {
+    if (isEdit || saleFormat !== 'auction') return;
+    if (auctionDurations.includes(Number(auctionDuration))) return;
+    form.setValue(CREATE_MARKETPLACE_LISTING_FIELDS.AUCTION_DURATION, String(auctionDurations[0]));
+  }, [auctionDuration, auctionDurations, form, isEdit, saleFormat]);
   // The deployment's `pickup_available` capability (§A7), the same source the
   // pickup-details editor and the checkout read: off without the sealing key
   // and on every sandbox deployment. When off (or unreadable), the form
@@ -584,9 +595,25 @@ export function MarketplaceListingForm({
               disabled={isPublishing || isEdit}
               options={[
                 { value: 'fixed_price', label: 'Buy now' },
-                { value: 'auction', label: '7-day auction' },
+                {
+                  value: 'auction',
+                  label:
+                    auctionDurations.length === 1 ? `${auctionDurationLabel(auctionDurations[0])} auction` : 'Auction',
+                },
               ]}
             />
+            {saleFormat === 'auction' && auctionDurations.length > 1 && (
+              <FormSelect
+                form={form}
+                name={CREATE_MARKETPLACE_LISTING_FIELDS.AUCTION_DURATION}
+                label="Auction length"
+                disabled={isPublishing || isEdit}
+                options={auctionDurations.map((minutes) => ({
+                  value: String(minutes),
+                  label: auctionDurationOptionLabel(minutes),
+                }))}
+              />
+            )}
             <FormSelect
               form={form}
               name={CREATE_MARKETPLACE_LISTING_FIELDS.CURRENCY}
@@ -1561,6 +1588,7 @@ function FormSelect({
   name:
     | typeof CREATE_MARKETPLACE_LISTING_FIELDS.CONDITION
     | typeof CREATE_MARKETPLACE_LISTING_FIELDS.SALE_FORMAT
+    | typeof CREATE_MARKETPLACE_LISTING_FIELDS.AUCTION_DURATION
     | typeof CREATE_MARKETPLACE_LISTING_FIELDS.CURRENCY
     | typeof CREATE_MARKETPLACE_LISTING_FIELDS.FULFILLMENT
     | typeof CREATE_MARKETPLACE_LISTING_FIELDS.RETURN_DAYS;
