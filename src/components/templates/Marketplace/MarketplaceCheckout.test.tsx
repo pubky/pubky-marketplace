@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MARKETPLACE_DELIVERY_ADDRESS_DISCLOSURE } from '@/config/commerce-copy';
 import { CommerceController } from '@/controllers/commerce/commerce';
+import { DELIVERY_KEY_COPY } from '@/libs/commerce/delivery-key-copy';
 import { useCommerceStore } from '@/stores/commerce/commerce.store';
 import { createOrderFixture, createPaymentFixture } from '@/test/fixtures/commerce/orders';
 import { setHeavySuiteBudgets } from '@/test-utils/load-budget';
@@ -23,6 +24,7 @@ const view = vi.hoisted(() => ({
   isLoading: false,
   adapterMode: 'sandbox' as string,
   paykitServerApi: 'fork' as 'fork' | 'upstream',
+  deliveryKeyBlock: null as null | { kind: string; sellerPubky: string | null; message: string },
   deployEnv: 'production' as 'production' | 'staging' | undefined,
   hasMarketplaceSession: false,
   needsSession: false,
@@ -204,6 +206,7 @@ vi.mock('@/hooks/useMarketplaceCheckout/useMarketplaceCheckout', async () => {
         rememberAddress: checkoutActions.rememberAddress,
         pendingKeyChange: null,
         decideKeyChange: vi.fn(),
+        deliveryKeyBlock: view.deliveryKeyBlock,
         fulfillmentOptionsForSeller: (sellerPubky: string) => view.fulfillmentOptions[sellerPubky] ?? ['shipping'],
         fulfillmentForSeller: (sellerPubky: string) => view.fulfillmentEffective[sellerPubky] ?? 'shipping',
         setFulfillmentChoice: checkoutActions.setFulfillmentChoice,
@@ -344,6 +347,7 @@ function resetCheckoutView() {
   view.isLoading = false;
   view.adapterMode = 'sandbox';
   view.paykitServerApi = 'fork';
+  view.deliveryKeyBlock = null;
   view.deployEnv = 'production';
   view.hasMarketplaceSession = false;
   view.needsSession = false;
@@ -622,6 +626,25 @@ describe('MarketplaceCheckout', () => {
 
     await user.click(screen.getByTestId('marketplace-checkout-method-paypal'));
     expect(screen.queryByTestId('marketplace-checkout-bitcoin-amount-note')).not.toBeInTheDocument();
+  });
+
+  it('shows why Pay stopped when the seller has no delivery key, next to the Pay button', async () => {
+    seededCart();
+    view.adapterMode = 'transaction-service';
+    view.hasMarketplaceSession = true;
+    view.deliveryKeyBlock = {
+      kind: 'no_key',
+      sellerPubky: 's'.repeat(52),
+      message: DELIVERY_KEY_COPY.noKey,
+    };
+
+    render(<MarketplaceCheckout />);
+
+    const notice = await screen.findByTestId('delivery-key-blocked');
+    expect(notice).toHaveTextContent("This seller hasn't finished setting up delivery yet");
+    expect(notice.compareDocumentPosition(screen.getByTestId('marketplace-checkout-pay'))).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
   });
 
   it('says nothing about a unique amount on upstream Paykit, which requests exactly the price', async () => {

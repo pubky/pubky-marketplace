@@ -1,6 +1,7 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { CommerceController } from '@/controllers/commerce/commerce';
+import { DELIVERY_KEY_COPY } from '@/libs/commerce/delivery-key-copy';
 import { AppError } from '@/libs/error/error';
 import { ClientErrorCode } from '@/libs/error/error.codes';
 import { ErrorCategory, ErrorService } from '@/libs/error/error.types';
@@ -146,6 +147,7 @@ describe('useMarketplaceDropClaim', () => {
 
     expect(ok).toBe(false);
     expect(CommerceController.executeMarketplaceCommand).not.toHaveBeenCalled();
+    expect(result.current.failure).toBe(DELIVERY_KEY_COPY.noKey);
   });
 
   it('keeps the payment deadline from the claimed order for the confirmation surface', async () => {

@@ -35,7 +35,12 @@ export type MarketplaceOfferCheckoutResult =
 export function useMarketplaceOfferCheckout(onCompleted?: () => Promise<void> | void) {
   const submittingRef = useRef(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const { resolveKeys, pendingChange: pendingKeyChange, decide: decideKeyChange } = useDeliveryKeyGate();
+  const {
+    resolveKeys,
+    pendingChange: pendingKeyChange,
+    decide: decideKeyChange,
+    blocked: deliveryKeyBlock,
+  } = useDeliveryKeyGate();
   /**
    * `deliveryAddress` is null exactly for a pickup award: the command then
    * carries `fulfillment: 'pickup'` and no address. A shipped award sends the
@@ -174,5 +179,5 @@ export function useMarketplaceOfferCheckout(onCompleted?: () => Promise<void> | 
     }
   };
 
-  return { submit, isSubmitting, pendingKeyChange, decideKeyChange };
+  return { submit, isSubmitting, pendingKeyChange, decideKeyChange, deliveryKeyBlock };
 }

@@ -82,6 +82,7 @@ import { navigateTop } from '@/libs/navigation/navigate-top';
 import { getDeployEnv } from '@/libs/runtime-config/runtime-config';
 import type { CommerceListingModelSchema } from '@/models/commerce/commerce.schema';
 import { ControlledInputField } from '@/molecules/ControlledInputField/ControlledInputField';
+import { DeliveryKeyBlockedNotice } from '@/molecules/Marketplace/DeliveryKeyBlockedNotice';
 import { MarketplaceCheckoutSteps } from '@/molecules/Marketplace/MarketplaceCheckoutSteps';
 import { MarketplacePaymentStatusBadge } from '@/molecules/Marketplace/MarketplacePaymentStatusBadge';
 import { MarketplaceSellerLink } from '@/molecules/Marketplace/MarketplaceSellerLink';
@@ -1256,6 +1257,7 @@ function MarketplaceCartCheckout() {
                           {DIGITAL_CHECKOUT_COPY.consentManual}
                         </Typography>
                       )}
+                      <DeliveryKeyBlockedNotice block={checkout.deliveryKeyBlock ?? offerPay.deliveryKeyBlock} />
                       <Button
                         className="w-full rounded-full"
                         onClick={() => void pay()}

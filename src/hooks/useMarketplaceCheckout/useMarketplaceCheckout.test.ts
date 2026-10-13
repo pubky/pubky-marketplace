@@ -2,6 +2,7 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import type { MarketplaceCartItem } from '@/hooks/useMarketplaceCart/useMarketplaceCart';
+import { DELIVERY_KEY_COPY } from '@/libs/commerce/delivery-key-copy';
 import { createCommerceSandboxCatalog } from '@/libs/commerce/sandbox-catalog';
 import { AppError } from '@/libs/error/error';
 import { ClientErrorCode } from '@/libs/error/error.codes';
@@ -175,6 +176,11 @@ describe('useMarketplaceCheckout', () => {
 
     expect(succeeded).toBe(false);
     expect(CommerceController.commitCreateMarketplaceCheckout).not.toHaveBeenCalled();
+    expect(result.current.deliveryKeyBlock).toEqual({
+      kind: 'no_key',
+      sellerPubky: listing.ownerPubky,
+      message: DELIVERY_KEY_COPY.noKey,
+    });
   });
 
   it('refreshes terms and creates a guarantee-versioned checkout', async () => {

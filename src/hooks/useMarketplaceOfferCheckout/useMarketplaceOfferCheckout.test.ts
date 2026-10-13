@@ -1,6 +1,7 @@
 import { act, renderHook } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { CommerceController } from '@/controllers/commerce/commerce';
+import { DELIVERY_KEY_COPY } from '@/libs/commerce/delivery-key-copy';
 import { AppError } from '@/libs/error/error';
 import { ClientErrorCode } from '@/libs/error/error.codes';
 import { ErrorCategory, ErrorService } from '@/libs/error/error.types';
@@ -204,6 +205,11 @@ describe('useMarketplaceOfferCheckout', () => {
     });
     expect(CommerceController.commitOfferCheckout).not.toHaveBeenCalled();
     expect(CommerceController.sealDeliveryAddressForCheckout).not.toHaveBeenCalled();
+    expect(result.current.deliveryKeyBlock).toEqual({
+      kind: 'no_key',
+      sellerPubky: 's'.repeat(52),
+      message: DELIVERY_KEY_COPY.noKey,
+    });
   });
 
   it('settles a pickup award with fulfillment pickup and no delivery address', async () => {
