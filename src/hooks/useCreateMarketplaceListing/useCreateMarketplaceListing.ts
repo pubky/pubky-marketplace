@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm, type UseFormReturn, useWatch } from 'react-hook-form';
 import { COMMERCE_CONTRACT_VERSION, COMMERCE_LISTING_MAX_QUANTITY, COMMERCE_TAXONOMY_VERSION } from '@/config/commerce';
-import { getCommerceAdapterMode, isDurableCommerceMode } from '@/config/commerce';
+import { getAuctionDurationsMinutes, getCommerceAdapterMode, isDurableCommerceMode } from '@/config/commerce';
 import { commerceAttributeFieldsFor } from '@/config/taxonomy/taxonomy';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import {
@@ -15,6 +15,7 @@ import {
   type UseListingMediaManagerResult,
 } from '@/hooks/useListingMediaManager/useListingMediaManager';
 import { useMeasurementSystem } from '@/hooks/useMeasurementSystem/useMeasurementSystem';
+import { resolveAuctionDurationMinutes } from '@/libs/commerce/auction-duration';
 import {
   contentfulListingDrafts,
   hydrateListingDraftMedia,
@@ -643,7 +644,10 @@ function buildListingRecord(
           startingPrice: unitPrice,
           minimumIncrement: { ...unitPrice, amountMinor: Math.max(100, Math.round(unitPrice.amountMinor * 0.05)) },
           startsAt: now.toISOString(),
-          endsAt: new Date(now.getTime() + 7 * 24 * 60 * 60 * 1_000).toISOString(),
+          endsAt: new Date(
+            now.getTime() +
+              resolveAuctionDurationMinutes(data.auctionDurationMinutes, getAuctionDurationsMinutes()) * 60_000,
+          ).toISOString(),
           antiSnipingWindowSeconds: 120,
           antiSnipingExtensionSeconds: 120,
         }

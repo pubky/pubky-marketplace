@@ -1,6 +1,6 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { COMMERCE_LISTING_MAX_QUANTITY } from '@/config/commerce';
+import { COMMERCE_LISTING_MAX_QUANTITY, getAuctionDurationsMinutes } from '@/config/commerce';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import {
   LISTING_DRAFT_AUTOSAVE_MS,
@@ -23,6 +23,7 @@ const OWNER = 'y'.repeat(52);
 
 vi.mock('@/config/commerce', async () => ({
   ...(await vi.importActual<typeof import('@/config/commerce')>('@/config/commerce')),
+  getAuctionDurationsMinutes: vi.fn(() => [7 * 24 * 60]),
   getCommerceAdapterMode: () => 'transaction-service',
 }));
 const mediaState = vi.hoisted(() => ({
@@ -130,6 +131,7 @@ vi.mock('@/molecules/Toaster/use-toast', () => ({
 describe('useCreateMarketplaceListing', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(getAuctionDurationsMinutes).mockReturnValue([7 * 24 * 60]);
     vi.mocked(CommerceController.getListingDrafts).mockResolvedValue([]);
     mediaState.prepared = true;
     mediaState.items = [];
@@ -366,6 +368,56 @@ describe('useCreateMarketplaceListing', () => {
     expect(listing).toMatchObject({
       sale: { format: 'fixed_price', unitPrice: { amountMinor: 15_000, currency: 'BTC', exponent: 8 } },
     });
+  });
+
+  function fillAuction(result: { current: ReturnType<typeof useCreateMarketplaceListing> }, duration?: string) {
+    act(() => {
+      result.current.form.setValue('title', 'Vintage leather boots');
+      result.current.form.setValue('description', 'Well cared for boots with light wear.');
+      result.current.form.setValue('categoryId', 'fashion-men-footwear-boots');
+      result.current.form.setValue('attrSize', 'US 9');
+      result.current.form.setValue('saleFormat', 'auction');
+      result.current.form.setValue('currency', 'BTC');
+      result.current.form.setValue('price', '15000');
+      result.current.form.setValue('fulfillment', 'shipping');
+      result.current.form.setValue('freeShipping', true);
+      result.current.form.setValue('packageWeight', '500');
+      result.current.form.setValue('packageLength', '30');
+      result.current.form.setValue('packageWidth', '20');
+      result.current.form.setValue('packageHeight', '10');
+      result.current.form.setValue('countryCode', 'US');
+      if (duration !== undefined) result.current.form.setValue('auctionDurationMinutes', duration);
+    });
+  }
+
+  function auctionLengthMinutes(): number {
+    const listing = vi.mocked(CommerceController.commitUpsertListing).mock.calls[0][0];
+    expect(commerceListingRecordSchema.safeParse(listing).success).toBe(true);
+    const sale = (listing as { sale: { startsAt: string; endsAt: string } }).sale;
+    return (Date.parse(sale.endsAt) - Date.parse(sale.startsAt)) / 60_000;
+  }
+
+  it('publishes a 7-day auction when the deploy offers only the default length', async () => {
+    const { result } = renderHook(() => useCreateMarketplaceListing());
+    fillAuction(result);
+
+    await act(async () => {
+      await result.current.submit();
+    });
+
+    expect(auctionLengthMinutes()).toBe(7 * 24 * 60);
+  });
+
+  it('publishes the chosen auction length when the deploy offers it', async () => {
+    vi.mocked(getAuctionDurationsMinutes).mockReturnValue([7 * 24 * 60, 15]);
+    const { result } = renderHook(() => useCreateMarketplaceListing());
+    fillAuction(result, '15');
+
+    await act(async () => {
+      await result.current.submit();
+    });
+
+    expect(auctionLengthMinutes()).toBe(15);
   });
 
   it('converts imperial package inputs to exact millimeters and grams on publish', async () => {

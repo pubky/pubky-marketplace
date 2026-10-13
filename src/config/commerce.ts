@@ -1,4 +1,5 @@
 import {
+  getAuctionDurationsMinutes,
   getCommerceAdapterMode,
   getCommercePollIntervalMs,
   getLocksUrl,
@@ -12,6 +13,7 @@ import type { CommerceAdapterMode, PaykitServerApi } from '@/libs/runtime-config
 
 export {
   type CommerceAdapterMode,
+  getAuctionDurationsMinutes,
   getCommerceAdapterMode,
   getCommercePollIntervalMs,
   getLocksUrl,
