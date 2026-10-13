@@ -4,9 +4,11 @@ How a Shop release goes from merged pull requests to a proven deployment on <htt
 operations (kill switch, rollback, Railway restarts, domain moves) are in [`runbook-production.md`](runbook-production.md).
 Local setup is in [`onboarding.md`](onboarding.md) and [`RUNNING.md`](RUNNING.md).
 
-"Live" means the signed-in production proof passed against the new deployment. A green build is not a release.
+"Live" means the deployed grant sign-in, shared-session lifecycle and service-approval journeys have passed against the release revisions. A green build or synthetic network fixture is not that proof. The older cookie-based production script below cannot certify the current grant-only release.
 
 ## Branches and targets
+
+The Vercel targets and deploy commands in this runbook describe the standalone deployment before the embedding cutover. Confirm the current target with VV in [pubky/shop-migration](https://github.com/pubky/shop-migration); the [embedding guide](../launch/shop-embedding.md) specifies the new frontend requirements.
 
 | Item               | Value                                                                                                                                                                                                                       |
 | ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -30,6 +32,26 @@ Local setup is in [`onboarding.md`](onboarding.md) and [`RUNNING.md`](RUNNING.md
 Install dependencies with `HUSKY=0 npm ci`. Husky's `prepare` script otherwise sets a repository-local
 `core.hooksPath`, which silently replaces any global git hooks you rely on. Never `npm install` a package to fix a
 missing dependency: fix `package-lock.json` in a pull request, then `HUSKY=0 npm ci` again.
+
+## Grant SDK and embedded release requirements
+
+App and Shop share the SDK's `pubky-auth` database on the embedded origin. For an SDK upgrade, bump `@synonymdev/pubky` in **both repositories**, update both lockfiles, and verify both builds resolve the same reviewed SDK version. This branch pins 0.16.1. Do not independently upgrade one consumer or assume the pending-key persistence adapter survives a schema change.
+
+Before shipping an SDK bump, rerun the real SDK storage/error and ownership contracts plus auth lifecycle tests in both checkouts:
+
+```bash
+# Shop checkout
+npm test -- src/core/services/homeserver src/core/controllers/auth src/core/stores/auth \
+  src/libs/shop-session src/hooks/useShopHostSession src/providers/ShopHostSessionProvider
+
+# App checkout (the paired App PR)
+npm test -- src/core/services/homeserver src/core/controllers/auth src/core/services/local/auth \
+  src/core/services/shop-embed src/libs/shop-embed src/hooks/useShopEmbed src/components/organisms/ShopEmbed
+```
+
+Then verify the paired production builds in a browser: restore/reload, two tabs, logout with and without the Shop iframe mounted, same-account return, account switch, failed storage/BFF cleanup and recovery, and preservation of unrelated SDK records. Confirm real signer approvals and commerce against the configured staging services before enabling the deployed pair. Keep exact revision and fixture/live provenance with each result.
+
+Follow [Shop embedding](../launch/shop-embedding.md) for the fixed `/shop-embed` build path, runtime environment, BFF schema/keys and App activation order. The [grant session guide](../launch/grant-auth-session.md) records migration and compatibility limits, including the parallel Inbox/chat work.
 
 ## Day-to-day merges
 
@@ -105,8 +127,8 @@ At most one or two Shop releases a day. An extra cut runs only for a production 
    names and targets only (every value reads `Encrypted`), so names and values are checked separately:
    - **Names, per target.** From a checkout linked to each project, run `vercel env ls production --scope synonymdev`
      and `vercel env ls preview --scope synonymdev`. `NEXT_PUBLIC_VIBE_SESSION_BRIDGE_ORIGIN` and
-     `NEXT_PUBLIC_VIBE_ID` must not be listed for either target. A Preview build of a project that still has them
-     ships with the session bridge on.
+     `NEXT_PUBLIC_VIBE_ID` must not be listed for either target. They no longer enable cookie-based sign-in; remove obsolete configuration so it cannot be mistaken for the
+     supported same-origin integration.
    - **Values, from what a deployment serves.** Public runtime values are inlined into each deployment's HTML, so
      read them there instead of pulling env (`vercel env pull` writes every secret to disk):
 
@@ -121,7 +143,9 @@ At most one or two Shop releases a day. An extra cut runs only for a production 
      A Preview target with no deployment has no served values; check it in the Vercel dashboard
      (Settings → Environment Variables) when one is about to be built.
 
-   Env changes take effect only on the next deployment.
+   Vercel env changes take effect on the next deployment. For a non-Vercel `next start` process, runtime values
+   are read from its environment and memoized; restart after changing them. Build-time `NEXT_PUBLIC_*` values
+   still require a rebuild. See [the non-Docker startup example](../launch/shop-embedding.md#running-with-next-start-without-docker).
 
 6. **Deploy** (next section), **prove** (the section after), then **tag and publish notes**.
 
@@ -171,6 +195,8 @@ current one. The commands are in [`runbook-production.md`](runbook-production.md
 
 ## Signed-in production proof
 
+**Legacy harness, not a grant-release gate.** The scripts in this section still require Ring cookie sign-in, an exported cookie session and the old AuthToken exchange. Their assertions deliberately do not match the current grant-only UI. Preserve this recipe for historical deployments; do not run it against this release or report its old 34/39-check counts as grant coverage. Migrating that harness is separate work. Until it is migrated, use the [grant release requirements above](#grant-sdk-and-embedded-release-requirements) and record the deployed manual results; the synthetic launch gate alone cannot establish live signer/payment completion.
+
 `scripts/release/release-proof.mjs` drives the deployed Shop in headless Chromium with two test seats and the same
 `approveAuthRequest` call Pubky Ring and Bitkit's Paykit make. `scripts/release/production-paypal-fixture.mjs` wraps
 it: it gives the seller seat a temporary PayPal rail and one `TEST, do not buy <run>` listing, runs the proof against
@@ -213,12 +239,12 @@ EXPECTED_DPL=dpl_<new> node scripts/release/production-paypal-fixture.mjs proof 
   node scripts/release/release-proof.mjs | tee "$PROOF_EVIDENCE/run.log"
 ```
 
-The release passes only when `release-proof.mjs` prints `RESULT PASS` and the fixture prints
-`PAYPAL_FIXTURE proof OK`.
+The legacy harness reports success when `release-proof.mjs` prints `RESULT PASS` and the fixture prints
+`PAYPAL_FIXTURE proof OK`. That result does not replace the grant-session release requirements above.
 
 ### What it checks
 
-Step ids are stable across releases; 3 is unused.
+These are the cookie-era script assertions, not the current authentication contract. Step 3 is unused.
 
 | Step    | Checks                                                                                                                                                                                                                                                         |
 | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

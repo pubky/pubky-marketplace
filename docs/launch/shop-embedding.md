@@ -11,7 +11,7 @@ Embedding is off by default. Standalone Shop still uses the new grant-only authe
 | `NEXT_PUBLIC_BASE_PATH` | build | empty | Shop mount path; use `/shop-embed` for the App integration. Leading slash, no trailing slash. Baked into the build by Next.js, so changing it needs a rebuild. In Docker, pass it as a build arg. |
 | `NEXT_PUBLIC_ASSET_PREFIX` | build | unset | Optional prefix for `/_next/*` assets: a path such as `/shop-static`, or an absolute `https://` CDN URL. Unset keeps the Next.js default (the base path). |
 | `NEXT_PUBLIC_DB_NAME` | build | `shop-franky` | Dexie database name. Was `franky`. Leave it at the default. |
-| `PUBKY_RUNTIME_FRAME_ANCESTORS` | runtime | unset | Origins allowed to frame the Shop. Space- or comma-separated exact origins and the `'self'` keyword. Unset denies framing everywhere. Read on every request, so one image serves both modes. |
+| `PUBKY_RUNTIME_FRAME_ANCESTORS` | runtime | unset | Origins allowed to frame the Shop. Space- or comma-separated exact origins and the `'self'` keyword. Unset denies framing everywhere. Read from server runtime configuration and memoized; restart the server after changes. |
 | `PUBKY_RUNTIME_EMBEDDED` | runtime | `false` | Force the embedded layout and behaviour even when the page is not detected as framed. Use it on a deployment that exists only to be embedded, so server-rendered HTML is already the embedded layout. |
 | `PUBKY_RUNTIME_STORAGE_ADOPT_LEGACY` | runtime | derived | Whether this origin's old storage names (`franky`, `auth-store`, ...) are the Shop's, so they are migrated. Unset means yes when `NEXT_PUBLIC_BASE_PATH` is empty and no when it is set. |
 
@@ -21,6 +21,32 @@ Invalid values fail the build (build keys) or startup (runtime keys), not silent
 
 For the App pair, build Shop with `NEXT_PUBLIC_BASE_PATH=/shop-embed`, set `PUBKY_RUNTIME_EMBEDDED=true`, `PUBKY_RUNTIME_FRAME_ANCESTORS='self'`, `PUBKY_RUNTIME_STORAGE_ADOPT_LEGACY=false`, and `PUBKY_RUNTIME_DEFAULT_URL` to the App origin. App sets `PUBKY_RUNTIME_SHOP_EMBED_ENABLED=true` and retains `PUBKY_RUNTIME_SHOP_URL` as its external fallback. Both deployments must use the same homeserver network. Do not change the App's auth client ID to the Shop client ID.
 
+## Running with next start without Docker
+
+The public build-time values must be present for `next build`. Keep the same values in the `next start` environment because Next also loads its configuration at startup. This example uses the database version in `.env.example`; preserve the deployed schema version when upgrading an existing installation:
+
+```bash
+NEXT_PUBLIC_BASE_PATH=/shop-embed \
+NEXT_PUBLIC_DB_NAME=shop-franky \
+NEXT_PUBLIC_DB_VERSION=8 \
+npm run build
+
+# Supply all required network values and BFF secrets through the process
+# environment or an untracked .env.production.local before starting.
+NEXT_PUBLIC_BASE_PATH=/shop-embed \
+NEXT_PUBLIC_DB_NAME=shop-franky \
+NEXT_PUBLIC_DB_VERSION=8 \
+PUBKY_RUNTIME_EMBEDDED=true \
+PUBKY_RUNTIME_FRAME_ANCESTORS="'self'" \
+PUBKY_RUNTIME_STORAGE_ADOPT_LEGACY=false \
+PUBKY_RUNTIME_DEFAULT_URL=https://staging.pubky.app \
+npm run start
+```
+
+This example intentionally does not invent the deployment's network values or secrets. Production-mode startup requires `PUBKY_RUNTIME_ENV`, `PUBKY_RUNTIME_TESTNET`, `PUBKY_RUNTIME_NEXUS_URL`, `PUBKY_RUNTIME_CDN_URL`, `PUBKY_RUNTIME_HOMESERVER`, `PUBKY_RUNTIME_HOMESERVER_URL`, `PUBKY_RUNTIME_HOMEGATE_URL`, `PUBKY_RUNTIME_DEFAULT_HTTP_RELAY` and JSON-array `PUBKY_RUNTIME_PKARR_RELAYS`; commerce also needs its service/mode configuration and the [BFF prerequisites](#shop-bff-prerequisites). Use the same network as App. See [environment configuration](../environment.md) for the schema.
+
+Outside Vercel, routes render per request and inject the running server's `PUBKY_RUNTIME_*` values into the HTML; a non-Docker production build does not freeze development defaults into that configuration. Values are memoized per server process, so restart after changing runtime environment values. Changing `NEXT_PUBLIC_BASE_PATH`, `NEXT_PUBLIC_DB_NAME`, `NEXT_PUBLIC_DB_VERSION` or another public build-time value requires rebuilding. On Vercel, prerendered HTML uses the deployment build environment, so change configuration through a new deployment.
+
 ## The reverse proxy
 
 Route `/shop` and `/shop/*` to **App**. Route `/shop-embed` and `/shop-embed/*` to **Shop**, preserving the prefix for documents, APIs, assets and callbacks. The browser-facing scheme, hostname and port must match. Do not redirect the iframe to `shop.pubky.app`: that loses shared IndexedDB access.
@@ -28,7 +54,7 @@ Route `/shop` and `/shop/*` to **App**. Route `/shop-embed` and `/shop-embed/*` 
 - **Static assets.** `/shop-embed/_next/static/*` can be cached according to its immutable response headers. If `NEXT_PUBLIC_ASSET_PREFIX` is set to a path, route that path too.
 - **HTML and API.** Do not cache Shop HTML or `/shop-embed/api/*`. Preserve request bodies, query strings, `Set-Cookie` and backend cache headers.
 - **Headers.** Pass `Host` and `X-Forwarded-Proto: https` through. The Shop's grant bridge checks the browser `Origin` against its allow-list, so `Origin` must arrive unmodified.
-- **Cookies.** The Shop's bridge cookies are `__Host-`prefixed, `Secure`, `HttpOnly`, `SameSite=Strict`, `Path=/`. On `pubky.app` they are sent to App routes too. They do not clash by name, but the App must not clear or overwrite cookies it did not set.
+- **Cookies.** The Shop's bridge cookies are `__Host-`prefixed, `Secure`, `HttpOnly`, `SameSite=Strict`, `Path=/`. On `pubky.app` they are sent to App routes too. They do not clash by name. App asks the mounted Shop BFF to clear these cookies at logout; it does not rewrite them directly.
 - **Entry.** App `/shop` opens `/shop-embed/marketplace` in its iframe. The Shop root redirect stays within its configured mount.
 - **Vercel cron.** If the embedded build runs on Vercel, the cron in `vercel.json` (`/api/marketplace/grant-cleanup`) must point at `/shop-embed/api/marketplace/grant-cleanup` in that deployment's config.
 - **Socials.** Leave `NEXT_PUBLIC_SOCIAL_HOST` unset in the embedded build. With it set, `/shop-embed/home` and the other social routes answer a 307 to the App and would load the App inside the frame.
@@ -53,7 +79,7 @@ On the App's side:
 - **Its own CSP.** If the App ships `frame-src` or `child-src`, it must allow `'self'`.
 - **The iframe element.** A same-origin iframe needs no `sandbox`. If the App adds one anyway, it must include `allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox allow-top-navigation allow-top-navigation-to-custom-protocols`, or the Shop cannot leave the frame (see [Leaving the frame](#leaving-the-frame)). Add `allow="clipboard-write"` so copy buttons work.
 - **Initial URL.** The implemented App wrapper uses `src="/shop-embed/marketplace"` for `/shop`, retaining a persistent iframe as nested Shop routes change.
-- **Inner path in the outer URL.** App `/shop/<path>` maps to Shop `/shop-embed/<path>`. The checked navigation bridge preserves query strings and fragments. Child navigation replaces the outer entry; outer navigation replaces the iframe location to avoid a second joint-history entry. API and asset paths are not accepted as wrapper destinations.
+- **Inner path in the outer URL.** App `/shop/<path>` maps to Shop `/shop-embed/<path>`. The checked navigation bridge preserves query strings and fragments. Child navigation replaces the outer entry; outer navigation replaces the iframe location to avoid a second joint-history entry. The reserved `/api` and `/_next` paths are not accepted as wrapper destinations.
 - **Returns that land top-level.** A top-level visit to `/shop-embed/...` redirects back into `/shop/...`, preserving search and hash, before restoring an account. The mounted Passport return page is exempt so it can notify its popup opener. Real signer and PayPal return journeys still need deployed QA.
 - **Authentication.** The same-origin host owns sign-in, capability upgrades and logout. Shop's login dialog defers to App, and the public-metadata handshake never opens a signer on its own. No credential or session export is passed through the bridge.
 
@@ -93,8 +119,8 @@ VV owns deployment values and secrets. The Shop server validates these required 
 
 - `SHOP_BFF_GRANT_STATE_DATABASE_URL`: BFF PostgreSQL connection, with both [migration 0001](../../db/bff/0001_shop_grant_bff.sql) and [migration 0002](../../db/bff/0002_shop_grant_bff_cli.sql) applied. Browser bootstrap requires schema version 2 even when CLI authentication is disabled.
 - `SHOP_ALLOWED_ORIGINS`, `SHOP_PUBLIC_ORIGIN`, `SHOP_GRANT_ASSERTION_ISSUER` and `MARKETPLACE_SERVICE_URL`: the exact origins described above; allowed origins is a JSON array and the issuer must equal the public origin.
-- `SHOP_GRANT_ASSERTION_KEY_ID`, `SHOP_GRANT_ASSERTION_KEY_EPOCH`, `SHOP_GRANT_ASSERTION_SIGNING_KEY`: the assertion signing identity, matched by the marketplace service's trusted verifying keys.
-- `MARKETPLACE_SERVICE_REQUEST_KEY_ID`, `MARKETPLACE_SERVICE_REQUEST_KEY_EPOCH`, `MARKETPLACE_SERVICE_REQUEST_SIGNING_KEY`: the service-request signing identity, matched by the service's request-key trust configuration.
+- `SHOP_GRANT_ASSERTION_KEY_ID`, `SHOP_GRANT_ASSERTION_KEY_EPOCH`, `SHOP_GRANT_ASSERTION_SIGNING_KEY`: the assertion signing identity, matched by the marketplace service's `SHOP_GRANT_ASSERTION_VERIFYING_KEYS_JSON` trust ring.
+- `MARKETPLACE_SERVICE_REQUEST_KEY_ID`, `MARKETPLACE_SERVICE_REQUEST_KEY_EPOCH`, `MARKETPLACE_SERVICE_REQUEST_SIGNING_KEY`: the service-request signing identity, matched by the service's `SHOP_BFF_REQUEST_VERIFYING_KEYS_JSON` trust ring.
 - `SHOP_BFF_GRANT_STATE_ENCRYPTION_KEY_B64` and `SHOP_BFF_GRANT_STATE_KEY_EPOCH`: active BFF state encryption key and epoch. The key is 32 bytes in canonical padded Base64; signing keys above are 32-byte seeds encoded as 64 lowercase hex characters. Key epochs are positive integers.
 - `CRON_SECRET`: at least 32 characters, used for the grant cleanup endpoint. Keep the mounted cleanup schedule configured as described above.
 
@@ -153,7 +179,7 @@ A deployment that sets `PUBKY_RUNTIME_EMBEDDED=true` renders this from the first
 
 ## Service worker
 
-The Serwist build plugin no longer registers the worker by itself. `ServiceWorkerRegistration` registers it only when the Shop is **not** embedded and **not** mounted under a base path. Shop therefore registers no worker under `/shop-embed`; App owns the origin's worker. App's updated worker excludes `/shop-embed` and all descendants from its navigation handler and offline fallback. `/shop` remains an App shell route. Activate the updated App worker before testing the mount.
+The Serwist build plugin no longer registers the worker by itself. `ServiceWorkerRegistration` registers it only when the Shop is **not** embedded and **not** mounted under a base path. Shop therefore registers no worker under `/shop-embed`; App owns the origin's worker. App's updated worker handles document navigations beneath `/shop-embed` as network-only, including navigation-preload responses, and excludes those navigations from its offline fallback. This does not add a worker cache rule for Shop APIs or assets. `/shop` remains an App shell route. Activate the updated App worker before testing the mount.
 
 ## Browser storage
 
@@ -220,9 +246,7 @@ The outer/inner route scheme, App-owned sign-in, targeted SDK cleanup and mounte
 - Verify deep links, refresh, Back/Forward, search/hash preservation, top-level signer/PayPal returns, and updated visual baselines.
 - Coordinate Matthew's separate Inbox/chat migration with the same account lifecycle and existing history. No `e` scope or new messaging protocol is introduced by this embedding work.
 
-The local production pair passed unsigned and authenticated same-origin browser checks on 2026-10-13 through the `/shop` and `/shop-embed` proxy mounts. Authenticated checks use the actual SDK 0.16/WASM and IndexedDB with a synthetic identity and intercepted network responses. They cover shared restore, reload, two tabs, App-owned logout, missing records, temporary renewal failures, explicit permission upgrades, and fresh-origin Watchlist/Cart rendering with synchronized Back/Forward, query and hash navigation on desktop and mobile. Real signer and deployed payment journeys remain unverified.
-
-The final production-build recheck also passed in Chromium and WebKit with both Shop iframes absent during App logout: four Shop service credentials and the SDK record were removed, and neither tab revived the session on remount/reload. A Chromium check with an intercepted BFF HTTP 503 kept cleanup pending and preserved the App grant; an explicit retry against HTTP 204 completed cleanup. These SDK/network fixtures produced no browser page errors and do not establish real backend availability.
+The SDK 0.16.1 local production pair passed restoration of genuine SDK 0.16.0 records, reload, two tabs, and App logout with both Shop iframes absent in Chromium and WebKit on 2026-10-13, without session revival. Chromium also passed temporary-renewal recovery and BFF HTTP 503 cleanup followed by explicit HTTP 204 retry. Synthetic cross-origin popups from App and framed Shop returned through the actual mounted Passport callback in both browsers, preserving the opener and mounted fallback. These checks used real SDK/WASM and IndexedDB with intercepted network fixtures; they do not establish deployed Passport behavior, real backend availability, mobile signer gestures or payment completion.
 
 The full migration contract and known recovery-file-only commerce limitation are in [Grant authentication and App-owned sessions](grant-auth-session.md). Automated source tests do not establish live payment or signer completion.
 

@@ -37,19 +37,19 @@ describe('@synonymdev/pubky 0.16 call sites', () => {
     expect(offenders).toEqual([]);
   });
 
-  it('one @synonymdev/pubky 0.16.0 in lockfile', () => {
+  it('one @synonymdev/pubky 0.16.1 in lockfile', () => {
     const lock = JSON.parse(readFileSync(join(ROOT, 'package-lock.json'), 'utf8')) as {
       packages: Record<string, { version?: string }>;
     };
     const copies = Object.entries(lock.packages).filter(([path]) => path.endsWith('node_modules/@synonymdev/pubky'));
     expect(copies.map(([path, entry]) => [path, entry.version])).toEqual([
-      ['node_modules/@synonymdev/pubky', '0.16.0'],
+      ['node_modules/@synonymdev/pubky', '0.16.1'],
     ]);
     const pkg = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')) as {
       dependencies: Record<string, string>;
       overrides: Record<string, Record<string, string>>;
     };
-    expect(pkg.dependencies['@synonymdev/pubky']).toBe('0.16.0');
+    expect(pkg.dependencies['@synonymdev/pubky']).toBe('0.16.1');
     expect(pkg.overrides['@bitcoinerrorlog/pubky-shop']['@synonymdev/pubky']).toBe('$@synonymdev/pubky');
   });
 
