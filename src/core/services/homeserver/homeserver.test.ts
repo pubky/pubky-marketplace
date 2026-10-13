@@ -99,6 +99,7 @@ vi.mock('@synonymdev/pubky', () => {
     restoreSession: (...args: unknown[]) => mockState.restoreSession(...args),
     startCookieAuthFlow: (...args: unknown[]) => mockState.startAuthFlow(...args),
     resumeCookieAuthFlow: (...args: unknown[]) => mockState.resumeAuthFlow(...args),
+    startGrantAuthFlow: (...args: unknown[]) => mockState.grantStartDelegated(...args),
     eventStreamForUser: (...args: unknown[]) => mockState.eventStreamForUser(...args),
     client: {
       fetch: (...args: unknown[]) => mockState.clientFetch(...args),
@@ -133,7 +134,6 @@ vi.mock('@synonymdev/pubky', () => {
       restore: (...args: unknown[]) => mockState.sessionRestore(...args),
     },
     GrantAuthFlow: {
-      startDelegated: (...args: unknown[]) => mockState.grantStartDelegated(...args),
       isDelegationAvailable: true,
     },
     PublicKey: {
@@ -1123,7 +1123,7 @@ describe('HomeserverService', () => {
     });
 
     describe('generateGrantAuthUrl (Bitkit sign-in)', () => {
-      it('bitkit qr is signin_grant with shop caps and cid', async () => {
+      it('bitkit qr is signin_grant with shop caps and cid, started on the configured facade client', async () => {
         const free = vi.fn();
         mockState.grantStartDelegated.mockResolvedValue({
           authorizationUrl: 'pubkyauth://signin_grant?caps=x&relay=r&secret=s&cid=shop.pubky.app&cpk=k',

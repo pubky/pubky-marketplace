@@ -23,7 +23,14 @@ import {
   generateChatKeypair,
 } from '@/libs/chat/crypto';
 import { base64UrlToBytes, bytesToBase64Url, utf8Bytes } from '@/libs/chat/encoding';
-import { CHAT_PRIV_ROOT, CHAT_PUB_ROOT, chatMessagePath, chatMessageUrl, mintChatFileName } from '@/libs/chat/paths';
+import {
+  CHAT_PRIV_ROOT,
+  CHAT_PUB_ROOT,
+  chatMessagePath,
+  chatMessageUrl,
+  chatPingSlot,
+  mintChatFileName,
+} from '@/libs/chat/paths';
 import { type ChatPingPayload, chatPingPayloadSchema, type ChatPlaintext } from '@/libs/chat/schemas';
 import { CHAT_LOCKS, runInOneTab, withExclusiveLock } from '@/libs/chat/web-locks';
 import { isAppError } from '@/libs/error/error';
@@ -425,7 +432,7 @@ export class ChatApplication {
     try {
       if ((await this.ensureInbox(me)) !== 'ready') return;
       await InboxService.ping(me, {
-        slot: `chat:${folderId}`,
+        slot: chatPingSlot(folderId),
         recipient: peer,
         payload: padPingPayload({ v: 0, t: 'chat', folder: folderId, file: fileName }),
         ttlSeconds: CHAT_PING_TTL_SECONDS,

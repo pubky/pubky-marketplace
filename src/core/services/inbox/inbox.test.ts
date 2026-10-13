@@ -82,14 +82,14 @@ describe('InboxService', () => {
       if (url.includes('/v1/pings?')) {
         return json(200, {
           pings: [
-            { sender: PEER, slot: 'chat:x', revision: 'r1', received_at: 'now', expires_at: 'later', payload: 'hi' },
+            { sender: PEER, slot: 'chat-x', revision: 'r1', received_at: 'now', expires_at: 'later', payload: 'hi' },
           ],
         });
       }
       return new Response(null, { status: 204 });
     });
     await InboxService.ensureSession(ME, credentials);
-    await InboxService.ping(ME, { slot: 'chat:x', recipient: PEER, payload: 'hello', ttlSeconds: 60 });
+    await InboxService.ping(ME, { slot: 'chat-x', recipient: PEER, payload: 'hello', ttlSeconds: 60 });
     const pings = await InboxService.waitForPings(ME, { limit: 10, waitSeconds: 5 });
     await InboxService.ack(ME, pings);
 
@@ -101,21 +101,30 @@ describe('InboxService', () => {
     ]);
     expect((calls[1].init.headers as Record<string, string>).authorization).toBe('Bearer TOKEN');
     expect(JSON.parse(String(calls[1].init.body))).toEqual({
-      slot: 'chat:x',
+      slot: 'chat-x',
       recipient: PEER,
       payload: 'hello',
       ttl_seconds: 60,
     });
     expect(JSON.parse(String(calls[3].init.body))).toEqual({
-      pings: [{ sender: PEER, slot: 'chat:x', revision: 'r1' }],
+      pings: [{ sender: PEER, slot: 'chat-x', revision: 'r1' }],
     });
+  });
+
+  it('refuses slots outside the Base64url alphabet before sending', async () => {
+    const calls = installFetch(() => json(201, { access_token: 'TOKEN', expires_at: future }));
+    await InboxService.ensureSession(ME, credentials);
+    await expect(
+      InboxService.ping(ME, { slot: 'chat:x', recipient: PEER, payload: 'hello', ttlSeconds: 60 }),
+    ).rejects.toThrow(/Base64url/u);
+    expect(calls.filter((call) => call.url.endsWith('/v1/pings'))).toHaveLength(0);
   });
 
   it('refuses oversize payloads before sending', async () => {
     installFetch(() => json(201, { access_token: 'TOKEN', expires_at: future }));
     await InboxService.ensureSession(ME, credentials);
     await expect(
-      InboxService.ping(ME, { slot: 'chat:x', recipient: PEER, payload: 'x'.repeat(513), ttlSeconds: 60 }),
+      InboxService.ping(ME, { slot: 'chat-x', recipient: PEER, payload: 'x'.repeat(513), ttlSeconds: 60 }),
     ).rejects.toThrow(/512/u);
   });
 

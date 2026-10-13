@@ -80,3 +80,11 @@ function randomHex(bytes: number): string {
   crypto.getRandomValues(buffer);
   return Array.from(buffer, (byte) => byte.toString(16).padStart(2, '0')).join('');
 }
+
+/**
+ * Inbox ping slot for a conversation folder. The inbox accepts 1–64 Base64url
+ * characters, so the folder id (hex) is joined with a dash, not a colon.
+ */
+export function chatPingSlot(folderId: string): string {
+  return `chat-${folderId}`;
+}

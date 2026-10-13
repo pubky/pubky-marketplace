@@ -758,7 +758,10 @@ export class HomeserverService {
     xCallback?: XCallbackParams,
   ): Promise<TGenerateAuthUrlResult> {
     try {
-      const flow = await GrantAuthFlow.startDelegated(CAPABILITIES, kind(), {
+      // The facade reuses the configured client (testnet or custom pkarr relays); the static
+      // `GrantAuthFlow.startDelegated` spins up a default mainnet client and cannot resolve
+      // identities that only exist on those relays. In browsers it still picks delegated keys.
+      const flow = await this.getPubkySdk().startGrantAuthFlow(CAPABILITIES, kind(), {
         clientId: SHOP_GRANT_CLIENT_ID,
         relay: getDefaultHttpRelay(),
         ...(xCallback ? { xCallback } : {}),

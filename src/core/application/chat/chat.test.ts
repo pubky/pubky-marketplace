@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ChatApplication } from '@/application/chat/chat';
-import { chatMessageUrl, chatPrivateKeyUrl, chatPublicKeyUrl } from '@/libs/chat/paths';
+import { chatMessageUrl, chatPingSlot, chatPrivateKeyUrl, chatPublicKeyUrl } from '@/libs/chat/paths';
 import { NetworkErrorCode } from '@/libs/error/error.codes';
 import { Err } from '@/libs/error/error.factories';
 import { ErrorService } from '@/libs/error/error.types';
@@ -137,7 +137,7 @@ describe('ChatApplication', () => {
 
       await ChatApplication.handlePing(BOB, {
         sender: ALICE,
-        slot: `chat:${alice!.folder_id}`,
+        slot: chatPingSlot(alice!.folder_id!),
         revision: 'r1',
         received_at: 'now',
         expires_at: 'later',

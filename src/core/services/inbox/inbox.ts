@@ -25,6 +25,9 @@ export const INBOX_SESSION_STORAGE_KEY = shopStorageKey('chat-inbox-session:v1')
 const SESSION_EXPIRY_MARGIN_MS = 60_000;
 
 const sessionResponseSchema = z.object({ access_token: z.string().min(1), expires_at: z.string().min(1) });
+/** The inbox accepts slots of 1–64 characters from the Base64url alphabet. */
+const INBOX_SLOT_PATTERN = /^[A-Za-z0-9_-]{1,64}$/u;
+
 const pingsResponseSchema = z.object({
   pings: z.array(
     z.object({
@@ -91,6 +94,13 @@ export class InboxService {
 
   /** Sends a ping; the service replaces any pending ping in the same slot for this pair. */
   static async ping(me: string, params: InboxSendParams): Promise<void> {
+    if (!INBOX_SLOT_PATTERN.test(params.slot)) {
+      throw Err.validation(ValidationErrorCode.INVALID_INPUT, 'An inbox slot is 1–64 Base64url characters.', {
+        service: ErrorService.Inbox,
+        operation: 'ping',
+        context: { slot: params.slot },
+      });
+    }
     const bytes = utf8Bytes(params.payload);
     if (bytes < 1 || bytes > CHAT_PING_MAX_BYTES) {
       throw Err.validation(ValidationErrorCode.INVALID_INPUT, `An inbox ping must be 1–${CHAT_PING_MAX_BYTES} bytes.`, {

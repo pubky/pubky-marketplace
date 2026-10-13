@@ -3,16 +3,19 @@
  *
  * Needs: the Shop dev server (see .claude/launch.json "shop-testnet"), the
  * pubky-docker homeserver on :6286/:6288 (admin password "admin"), and
- * Playwright's Chromium. Optional: the local inbox (only exercised when the
- * Shop runs on a grant session).
+ * Playwright's Chromium. With CHAT_E2E_AUTH=grant it also needs the local
+ * inbox the Shop is configured with (PUBKY_RUNTIME_INBOX_URL).
  *
- *   node src/test/e2e/chat-two-accounts.mjs
+ *   node src/test/e2e/chat-two-accounts.mjs                 # Ring cookie sign-in
+ *   CHAT_E2E_AUTH=grant node src/test/e2e/chat-two-accounts.mjs   # Bitkit grant sign-in + inbox pings
  *
  * Two browser contexts (Alice, Bob), each signed in by approving the Shop's
- * Ring QR with a Node-side signer. Checks: identity key published, a message
- * from Alice reaches Bob's thread, Bob's reply reaches Alice's OPEN thread
- * live, history survives a reload, and a fresh browser context rebuilds the
- * conversation from the homeservers. Screenshots land in SCREENSHOT_DIR.
+ * sign-in link with a Node-side signer. Checks: identity key published, a
+ * message from Alice reaches Bob's thread, Bob's reply reaches Alice's OPEN
+ * thread live, history survives a reload, and a fresh browser context
+ * rebuilds the conversation from the homeservers. Grant mode adds: both tabs
+ * open an inbox session, and with the event stream blocked a message still
+ * reaches Bob's inbox list through a ping. Screenshots land in SCREENSHOT_DIR.
  */
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
@@ -24,6 +27,8 @@ const ADMIN_URL = process.env.HOMESERVER_ADMIN_URL ?? 'http://localhost:6288/gen
 const ADMIN_PASSWORD = process.env.HOMESERVER_ADMIN_PASSWORD ?? 'admin';
 const SCREENSHOT_DIR = process.env.SCREENSHOT_DIR ?? join(process.cwd(), '.chat-e2e');
 const HEADLESS = process.env.HEADED !== '1';
+const AUTH_MODE = process.env.CHAT_E2E_AUTH === 'grant' ? 'grant' : 'cookie';
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const sdk = await import('@synonymdev/pubky');
 const pubky = sdk.Pubky.testnet();
@@ -77,7 +82,10 @@ async function signIn(context, identity, name) {
   const page = await context.newPage();
   page.on('pageerror', (error) => console.error(`[${identity.label}] pageerror`, String(error)));
   await page.goto(`${BASE}/sign-in`, { waitUntil: 'domcontentloaded' });
+  if (AUTH_MODE === 'grant') await page.getByRole('radio', { name: 'Bitkit' }).click();
   const url = await readAuthUrl(page);
+  const expectedScheme = AUTH_MODE === 'grant' ? 'pubkyauth://signin_grant' : 'pubkyauth://signin';
+  if (!url.startsWith(expectedScheme)) throw new Error(`[${identity.label}] unexpected auth link ${url.slice(0, 40)}`);
   console.log(`[${identity.label}] approving ${url.slice(0, 60)}…`);
   await pubky.signer(identity.keypair).approveAuthRequest(url);
   console.log(`[${identity.label}] approved`);
@@ -108,7 +116,9 @@ async function waitForSignedIn(page, identity, name) {
     () => {
       try {
         const state = JSON.parse(localStorage.getItem('shop-auth-store') ?? '{}').state ?? {};
-        return typeof state.sessionExport === 'string' && state.sessionExport.length > 0;
+        const cookie = typeof state.sessionExport === 'string' && state.sessionExport.length > 0;
+        const grant = typeof state.grantSessionRecordId === 'string' && state.grantSessionRecordId.length > 0;
+        return cookie || grant;
       } catch {
         return false;
       }
@@ -300,6 +310,75 @@ try {
     .waitFor({ state: 'visible', timeout: 30_000 });
   const unreadAfterRead = await alicePage.locator('[data-testid="chat-conversation-unread"]').count();
   record('alice:read-clears-badge', unreadAfterRead === 0, `badges: ${unreadAfterRead}`);
+
+  if (AUTH_MODE === 'grant') {
+    // A grant session yields an inbox PoP: both tabs hold an inbox bearer.
+    const hasInboxSession = (page) =>
+      page.evaluate(() => Object.keys(localStorage).some((key) => key.includes('chat-inbox-session')));
+    let sessions = false;
+    for (let attempt = 0; attempt < 30 && !sessions; attempt += 1) {
+      sessions = (await hasInboxSession(alicePage)) && (await hasInboxSession(bobPage));
+      if (!sessions) await sleep(1_000);
+    }
+    record('inbox:sessions', sessions);
+
+    // Ping path: Bob sits on the inbox list (no open-thread poll) with the homeserver event stream
+    // blocked. Reconciliation runs every 60 s, so a delivery within 30 s can only come from a ping.
+    await bobContext.route('**/events-stream**', (route) => route.abort());
+    const bobPings = [];
+    const bobAcks = [];
+    const alicePings = [];
+    const onBobResponse = async (response) => {
+      const url = response.url();
+      if (url.includes('/v1/pings?')) {
+        const body = await response.json().catch(() => null);
+        if (Array.isArray(body?.pings)) bobPings.push(...body.pings);
+      } else if (url.includes('/v1/pings/ack')) {
+        bobAcks.push(response.status());
+      }
+    };
+    const onAliceResponse = (response) => {
+      if (response.request().method() === 'POST' && response.url().endsWith('/v1/pings')) {
+        alicePings.push(response.status());
+      }
+    };
+    bobPage.on('response', onBobResponse);
+    alicePage.on('response', onAliceResponse);
+    await bobPage.goto(`${BASE}/messages`, { waitUntil: 'domcontentloaded' });
+    await bobPage.locator('[data-surface="chat-inbox"]').waitFor({ state: 'visible', timeout: 60_000 });
+    await sleep(3_000);
+    const nonce = `ping-${Date.now().toString(36)}`;
+    await alicePage.goto(`${BASE}/messages/${bob.id}`, { waitUntil: 'domcontentloaded' });
+    const pingAt = Date.now();
+    await sendMessage(alicePage, `Ping check ${nonce}`);
+    await waitForSent(alicePage, nonce);
+    let pingDelivered = true;
+    try {
+      await bobPage
+        .locator('[data-testid="chat-conversation-row"]', { hasText: nonce })
+        .first()
+        .waitFor({ state: 'visible', timeout: 30_000 });
+    } catch {
+      pingDelivered = false;
+    }
+    // The ack follows the sync that produced the row; give it a moment.
+    for (let attempt = 0; attempt < 10 && bobAcks.length === 0; attempt += 1) await sleep(500);
+    record(
+      'inbox:ping-delivers-without-sse',
+      pingDelivered,
+      `${Date.now() - pingAt} ms; alice POST /v1/pings → ${alicePings.join(',') || 'none'}; bob pings ${bobPings.length}; acks → ${bobAcks.join(',') || 'none'}`,
+    );
+    record(
+      'inbox:ping-posted-received-acked',
+      alicePings.some((status) => status >= 200 && status < 300) &&
+        bobPings.some((ping) => ping.sender === alice.id) &&
+        bobAcks.some((status) => status >= 200 && status < 300),
+    );
+    await snap(bobPage, '04b-bob-inbox-ping-delivery');
+    bobPage.off('response', onBobResponse);
+    alicePage.off('response', onAliceResponse);
+    await bobContext.unroute('**/events-stream**');
+  }
 
   // Reload keeps history.
   await alicePage.goto(`${BASE}/messages/${bob.id}`, { waitUntil: 'domcontentloaded' });
