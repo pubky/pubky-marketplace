@@ -137,7 +137,9 @@ export function useCreateMarketplaceListing(): UseCreateMarketplaceListingResult
     mode: 'onChange',
   });
   const watchedValues = useWatch({ control: form.control });
-  const shipsListing = fulfillmentRequiresShipping(watchedValues.fulfillment ?? createMarketplaceListingDefaults.fulfillment);
+  const shipsListing = fulfillmentRequiresShipping(
+    watchedValues.fulfillment ?? createMarketplaceListingDefaults.fulfillment,
+  );
   const mediaSignature = media.items
     .map((item) =>
       item.kind === 'new' ? `${item.key}:${item.file.size}:${item.altText}` : `${item.key}:${item.altText}`,

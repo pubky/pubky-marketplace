@@ -30,12 +30,12 @@ import { useUsdtPaymentsCapability } from '@/hooks/useUsdtPaymentsCapability/use
 import { Tether } from '@/icons';
 import { type SellerPaymentConfigOwnView } from '@/libs/commerce/payment-methods';
 import { deriveUsdtSellerReadiness } from '@/libs/commerce/usdt-seller-setup';
+import { truncateMiddle } from '@/libs/utils/utils';
 import { SettingsSectionContent } from '@/molecules/Settings/SettingsSectionContent/SettingsSectionContent';
 import { toast } from '@/molecules/Toaster/use-toast';
 import { MarketplaceSessionConnectDialog } from '@/organisms/Marketplace/MarketplaceSessionConnectDialog';
 import { MarketplaceUsdtSellerSetup } from '@/organisms/Marketplace/MarketplaceUsdtSellerSetup';
 import { locksCreatorMatchesShopPubky } from '@/services/locks/locks-frontend-session';
-import { truncateMiddle } from '@/libs/utils/utils';
 import { useAuthStore } from '@/stores/auth/auth.store';
 import { useCommerceStore } from '@/stores/commerce/commerce.store';
 import {
