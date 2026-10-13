@@ -71,6 +71,14 @@ describe('useMarketplaceLocksConnect', () => {
     vi.restoreAllMocks();
   });
 
+  it('does not promise that Bitkit approves the legacy Lock Server connect link', () => {
+    expect(LOCKS_CONNECT_REAPPROVE_NOTICE).toContain('Approve once more in Pubky Ring.');
+    expect(LOCKS_CONNECT_REAPPROVE_NOTICE).toContain(
+      'Bitkit can approve it only when this Lock Server offers a Bitkit sign-in.',
+    );
+    expect(LOCKS_CONNECT_REAPPROVE_NOTICE).not.toContain('Pubky Ring or Bitkit');
+  });
+
   it('opens the Lock Server iframe with postmessage delivery and never window.opens', () => {
     const { result } = renderHook(() => useMarketplaceLocksConnect());
 

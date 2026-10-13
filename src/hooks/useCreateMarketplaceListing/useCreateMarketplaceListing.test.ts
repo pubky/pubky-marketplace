@@ -20,6 +20,12 @@ import {
 import { createMarketplaceListingSchema } from './useCreateMarketplaceListing.types';
 
 const OWNER = 'y'.repeat(52);
+const PUBLISHED_KEY_STATUS = {
+  local: null,
+  publication: 'matches' as const,
+  publishedKeyId: 'k'.repeat(32),
+};
+const NO_KEY_STATUS = { local: null, publication: 'missing' as const, publishedKeyId: null };
 
 vi.mock('@/config/commerce', async () => ({
   ...(await vi.importActual<typeof import('@/config/commerce')>('@/config/commerce')),
@@ -121,6 +127,7 @@ vi.mock('@/controllers/commerce/commerce', () => ({
       bitcoinOfferAvailable: true,
       paypalAvailable: false,
     })),
+    getMyDeliveryKeyStatus: vi.fn(),
   },
 }));
 
@@ -147,6 +154,7 @@ describe('useCreateMarketplaceListing', () => {
       bitcoinOfferAvailable: true,
       paypalAvailable: false,
     });
+    vi.mocked(CommerceController.getMyDeliveryKeyStatus).mockResolvedValue(PUBLISHED_KEY_STATUS);
     vi.spyOn(globalThis.crypto, 'randomUUID').mockReturnValue('018f47d2-6a27-7c23-a49d-6b21bb770121');
   });
 
@@ -206,6 +214,45 @@ describe('useCreateMarketplaceListing', () => {
 
     expect(result.current.publishBlocked).toBe('no-method');
     expect(CommerceController.commitUpsertListing).not.toHaveBeenCalled();
+  });
+
+  it('blocks publishing a listing that ships until the seller has a published delivery key', async () => {
+    vi.mocked(CommerceController.getMyDeliveryKeyStatus).mockResolvedValue(NO_KEY_STATUS);
+    const { result } = renderHook(() => useCreateMarketplaceListing());
+    act(() => result.current.form.setValue('fulfillment', 'shipping'));
+    await waitFor(() => expect(result.current.publishBlocked).toBe('no-delivery-key'));
+
+    await act(async () => {
+      await result.current.submit();
+    });
+
+    expect(result.current.publishBlocked).toBe('no-delivery-key');
+    expect(toast).toHaveBeenCalledWith({
+      variant: 'error',
+      description: 'Create your delivery key before publishing a listing that ships',
+    });
+    expect(CommerceController.commitUpsertListing).not.toHaveBeenCalled();
+  });
+
+  it('lifts the delivery-key block when the listing switches to pickup, without reading the key', async () => {
+    vi.mocked(CommerceController.getMyDeliveryKeyStatus).mockResolvedValue(NO_KEY_STATUS);
+    const { result } = renderHook(() => useCreateMarketplaceListing());
+    act(() => result.current.form.setValue('fulfillment', 'shipping'));
+    await waitFor(() => expect(result.current.publishBlocked).toBe('no-delivery-key'));
+    vi.mocked(CommerceController.getMyDeliveryKeyStatus).mockClear();
+
+    act(() => result.current.form.setValue('fulfillment', 'pickup'));
+
+    await waitFor(() => expect(result.current.publishBlocked).toBeNull());
+    expect(CommerceController.getMyDeliveryKeyStatus).not.toHaveBeenCalled();
+  });
+
+  it('says the delivery key could not be checked when its status read fails', async () => {
+    vi.mocked(CommerceController.getMyDeliveryKeyStatus).mockRejectedValue(new Error('offline'));
+    const { result } = renderHook(() => useCreateMarketplaceListing());
+    act(() => result.current.form.setValue('fulfillment', 'shipping'));
+
+    await waitFor(() => expect(result.current.publishBlocked).toBe('delivery-key-unverified'));
   });
 
   it('blocks publishing when the public payment-config request is rejected', async () => {

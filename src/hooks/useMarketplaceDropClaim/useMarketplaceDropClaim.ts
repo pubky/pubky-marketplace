@@ -126,7 +126,10 @@ export function useMarketplaceDropClaim(onClaimed?: () => void | Promise<void>):
         countryCode: claimAddress.country_code.toUpperCase(),
       };
       const gate = await resolveKeys([listingOwnerPubky]);
-      if (!gate.ok) return false;
+      if (!gate.ok) {
+        if (gate.blocked) setFailure(gate.blocked.message);
+        return false;
+      }
       const key = gate.keys.get(listingOwnerPubky);
       const addressFields = key
         ? {

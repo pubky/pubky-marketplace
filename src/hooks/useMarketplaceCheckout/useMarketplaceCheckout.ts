@@ -6,7 +6,11 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { useForm, type UseFormReturn, useWatch } from 'react-hook-form';
 import { getCommerceAdapterMode, getPaykitServerApi, isDurableCommerceMode } from '@/config/commerce';
 import { CommerceController } from '@/controllers/commerce/commerce';
-import { type PendingDeliveryKeyChange, useDeliveryKeyGate } from '@/hooks/useDeliveryKeyGate/useDeliveryKeyGate';
+import {
+  type DeliveryKeyBlock,
+  type PendingDeliveryKeyChange,
+  useDeliveryKeyGate,
+} from '@/hooks/useDeliveryKeyGate/useDeliveryKeyGate';
 import type { MarketplaceCartItem } from '@/hooks/useMarketplaceCart/useMarketplaceCart';
 import {
   BIND_FAIL_CANCEL_REASON,
@@ -189,6 +193,8 @@ export function useMarketplaceCheckout(
   /** Persist a used or newly saved address after a successful create (offer or cart). */
   pendingKeyChange: PendingDeliveryKeyChange | null;
   decideKeyChange: (accepted: boolean) => void;
+  /** Why Pay stopped at a seller's delivery key; stays until the next attempt. */
+  deliveryKeyBlock: DeliveryKeyBlock | null;
   rememberAddress: () => Promise<void>;
 } {
   const currentUserPubky = useAuthStore((state) => state.currentUserPubky);
@@ -210,7 +216,12 @@ export function useMarketplaceCheckout(
   } | null>(null);
   const [digitalKindsAttempt, setDigitalKindsAttempt] = useState(0);
   const appliedInitialAddressRef = useRef(false);
-  const { resolveKeys, pendingChange: pendingKeyChange, decide: decideKeyChange } = useDeliveryKeyGate();
+  const {
+    resolveKeys,
+    pendingChange: pendingKeyChange,
+    decide: decideKeyChange,
+    blocked: deliveryKeyBlock,
+  } = useDeliveryKeyGate();
   const form = useForm<MarketplaceCheckoutData>({
     resolver: zodResolver(marketplaceCheckoutSchema),
     defaultValues: marketplaceCheckoutDefaults,
@@ -807,6 +818,7 @@ export function useMarketplaceCheckout(
     orderCount,
     pendingKeyChange,
     decideKeyChange,
+    deliveryKeyBlock,
     rememberAddress: async () => {
       await persistAddressBookAfterOrder(form.getValues());
     },

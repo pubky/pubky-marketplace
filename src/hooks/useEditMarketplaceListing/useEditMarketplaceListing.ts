@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useForm, type UseFormReturn } from 'react-hook-form';
+import { useForm, type UseFormReturn, useWatch } from 'react-hook-form';
 import { getCommerceAdapterMode, isDurableCommerceMode } from '@/config/commerce';
 import { commerceAttributeFieldsFor } from '@/config/taxonomy/taxonomy';
 import { CommerceController } from '@/controllers/commerce/commerce';
@@ -12,6 +12,7 @@ import {
   deriveTags,
   describeMediaFailure,
   listingAttributesFromFormData,
+  sellerDeliveryKeyRequirement,
   uploadListingMedia,
 } from '@/hooks/useCreateMarketplaceListing/useCreateMarketplaceListing';
 import {
@@ -93,6 +94,8 @@ export function useEditMarketplaceListing(sellerPubky: string, listingId: string
     defaultValues: createMarketplaceListingDefaults,
     mode: 'onChange',
   });
+  const watchedFulfillment = useWatch({ control: form.control, name: 'fulfillment' });
+  const shipsListing = fulfillmentRequiresShipping(watchedFulfillment ?? createMarketplaceListingDefaults.fulfillment);
 
   useEffect(() => {
     let active = true;
@@ -149,6 +152,7 @@ export function useEditMarketplaceListing(sellerPubky: string, listingId: string
       ownerPubky: currentUserPubky,
       hasMarketplaceSession: Boolean(marketplaceSession),
       loadPaymentConfig: (pubky) => CommerceController.getSellerPaymentConfig(pubky),
+      deliveryKey: sellerDeliveryKeyRequirement(shipsListing),
     }).then((reason) => {
       if (!active) return;
       setPublishBlocked(reason);
@@ -157,7 +161,7 @@ export function useEditMarketplaceListing(sellerPubky: string, listingId: string
     return () => {
       active = false;
     };
-  }, [currentUserPubky, durablePublish, marketplaceSession]);
+  }, [currentUserPubky, durablePublish, marketplaceSession, shipsListing]);
 
   const submit = async (options?: { silent?: boolean }): Promise<string | null> => {
     if (!currentUserPubky || !record) return null;
@@ -167,6 +171,7 @@ export function useEditMarketplaceListing(sellerPubky: string, listingId: string
         ownerPubky: currentUserPubky,
         hasMarketplaceSession: Boolean(marketplaceSession),
         loadPaymentConfig: (pubky) => CommerceController.getSellerPaymentConfig(pubky),
+        deliveryKey: sellerDeliveryKeyRequirement(fulfillmentRequiresShipping(form.getValues('fulfillment'))),
       });
       if (reason) {
         setPublishBlocked(reason);

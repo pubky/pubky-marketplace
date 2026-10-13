@@ -44,7 +44,7 @@ import { useMarketplaceSellerDeliveryTerms } from '@/hooks/useMarketplaceSellerD
 import { useUsdtPaymentsAvailable } from '@/hooks/useUsdtPaymentsAvailable/useUsdtPaymentsAvailable';
 import { Tether } from '@/icons';
 import { buyerCheckoutProgressCopy } from '@/libs/commerce/bitcoin-buyer-status';
-import { BITCOIN_PAYMENT_CODE_CHECKOUT_NOTE } from '@/libs/commerce/bitcoin-payment-code';
+import { bitcoinPaymentCodeCheckoutNote } from '@/libs/commerce/bitcoin-payment-code';
 import {
   getMarketplaceCheckoutRoute,
   intersectPaymentMethods,
@@ -82,6 +82,7 @@ import { navigateTop } from '@/libs/navigation/navigate-top';
 import { getDeployEnv } from '@/libs/runtime-config/runtime-config';
 import type { CommerceListingModelSchema } from '@/models/commerce/commerce.schema';
 import { ControlledInputField } from '@/molecules/ControlledInputField/ControlledInputField';
+import { DeliveryKeyBlockedNotice } from '@/molecules/Marketplace/DeliveryKeyBlockedNotice';
 import { MarketplaceCheckoutSteps } from '@/molecules/Marketplace/MarketplaceCheckoutSteps';
 import { MarketplacePaymentStatusBadge } from '@/molecules/Marketplace/MarketplacePaymentStatusBadge';
 import { MarketplaceSellerLink } from '@/molecules/Marketplace/MarketplaceSellerLink';
@@ -397,6 +398,7 @@ function MarketplaceCartCheckout() {
   // A Bitcoin payment request is delivered to the buyer's Paykit wallet;
   // without one, Pay cannot succeed, so it is gated before the attempt.
   const bitcoinSelected = !isSandbox && isDurableCommerceMode(adapterMode) && selectedMethod === 'bitcoin';
+  const bitcoinPaymentCodeNote = bitcoinPaymentCodeCheckoutNote(getPaykitServerApi());
   const usdtSelected = !isSandbox && selectedMethod === 'usdt';
   const usdtMillionths = usdtSelected ? usdtParityMillionths(totalSubtotals) : null;
   const buyerWallet = useBuyerPaykitWallet(currentUserPubky ?? null, bitcoinSelected);
@@ -1097,13 +1099,13 @@ function MarketplaceCartCheckout() {
                         </div>
                       )}
                       {usdtMissingExplanation && <MarketplaceUsdtMissingNote explanation={usdtMissingExplanation} />}
-                      {bitcoinSelected && (
+                      {bitcoinSelected && bitcoinPaymentCodeNote && (
                         <Typography
                           as="p"
                           className="text-xs text-muted-foreground"
                           data-testid="marketplace-checkout-bitcoin-amount-note"
                         >
-                          {BITCOIN_PAYMENT_CODE_CHECKOUT_NOTE}
+                          {bitcoinPaymentCodeNote}
                         </Typography>
                       )}
                       {usdtMillionths !== null && (
@@ -1255,6 +1257,7 @@ function MarketplaceCartCheckout() {
                           {DIGITAL_CHECKOUT_COPY.consentManual}
                         </Typography>
                       )}
+                      <DeliveryKeyBlockedNotice block={checkout.deliveryKeyBlock ?? offerPay.deliveryKeyBlock} />
                       <Button
                         className="w-full rounded-full"
                         onClick={() => void pay()}
