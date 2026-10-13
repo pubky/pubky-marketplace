@@ -381,7 +381,13 @@ export class ChatApplication {
         // the peer may have signed in seconds ago.
         const state = await LocalChatService.getSyncState(me, row.peer_pubky);
         const force = Date.now() - (state?.peer_key_checked_at ?? 0) > CHAT_PEER_KEY_WAITING_RECHECK_MS;
-        keys = await this.resolvePeerKey(me, row.peer_pubky, { force });
+        try {
+          keys = await this.resolvePeerKey(me, row.peer_pubky, { force });
+        } catch (error) {
+          // One peer's lookup failing must not hold back everyone else's messages.
+          Logger.warn('Chat peer key lookup failed; the message stays queued', { error });
+          keys = { state: 'no_key' };
+        }
         keysByPeer.set(row.peer_pubky, keys);
       }
       if (keys.state !== 'ready') {

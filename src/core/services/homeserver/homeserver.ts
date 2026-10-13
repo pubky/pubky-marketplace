@@ -1001,7 +1001,11 @@ export class HomeserverService {
    * 404 resolves `{ found: false }` and is neither logged nor reported as an
    * error. Every other failure throws as it does there.
    */
-  static async getJsonIfFound<T>({ url, logUrl }: THomeserverGetJsonIfFoundParams): Promise<THomeserverJsonIfFound<T>> {
+  static async getJsonIfFound<T>({
+    url,
+    logUrl,
+    tolerateUnreachable = false,
+  }: THomeserverGetJsonIfFoundParams): Promise<THomeserverJsonIfFound<T>> {
     const contextUrl = logUrl ?? url;
     const owned = this.resolveOwnedSessionPath(url);
     const load = owned
@@ -1010,7 +1014,17 @@ export class HomeserverService {
           const pubkySdk = this.getPubkySdk();
           return isHttpUrl(url) ? pubkySdk.client.fetch(url) : pubkySdk.publicStorage.get(url as Address);
         };
-    const response = await getResponseOrNullWhenMissing(load, contextUrl, 'getJsonIfFound');
+    let response: Response | null;
+    if (tolerateUnreachable) {
+      try {
+        response = await getResponseOrNullWhenMissing(load, contextUrl, 'getJsonIfFound');
+      } catch (error) {
+        Logger.warn('Homeserver record unreachable; treating it as absent for now', { url: contextUrl, error });
+        return { found: false, unreachable: true };
+      }
+    } else {
+      response = await getResponseOrNullWhenMissing(load, contextUrl, 'getJsonIfFound');
+    }
     if (response === null) return { found: false };
     return { found: true, json: await parseResponseOrUndefined<T>({ response }) };
   }

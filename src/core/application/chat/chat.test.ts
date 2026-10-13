@@ -311,6 +311,23 @@ describe('ChatApplication', () => {
       expect(ping).toHaveBeenCalledTimes(1);
     });
 
+    it('keeps a message to an unreachable peer queued without blocking other peers', async () => {
+      await ChatApplication.ensureIdentity(ALICE);
+      await ChatApplication.ensureIdentity(CAROL);
+      await ChatApplication.openConversation(ALICE, BOB);
+      await ChatApplication.openConversation(ALICE, CAROL);
+      const toBob = await ChatApplication.queueMessage(ALICE, { peer: BOB, body: 'anyone there?' });
+      const toCarol = await ChatApplication.queueMessage(ALICE, { peer: CAROL, body: 'hi carol' });
+
+      // Bob's homeserver cannot be reached (no pkarr record, network down, 5xx).
+      homeserver.failNext('GET' as never, new RegExp(`${BOB}/pub/chat/v0/key.json`, 'u'), 503);
+      await ChatApplication.flushOutbox(ALICE);
+
+      expect((await LocalChatService.getMessage(toBob))?.status).toBe('queued');
+      expect((await LocalChatService.getMessage(toBob))?.last_error).toBe('peer_not_enabled');
+      expect((await LocalChatService.getMessage(toCarol))?.status).toBe('sent');
+    });
+
     it('refuses self-chat and empty bodies', async () => {
       await ChatApplication.ensureIdentity(ALICE);
       await expect(ChatApplication.queueMessage(ALICE, { peer: ALICE, body: 'me' })).rejects.toThrow(/yourself/u);

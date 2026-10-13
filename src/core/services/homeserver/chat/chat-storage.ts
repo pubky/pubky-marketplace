@@ -40,11 +40,17 @@ import { HomeserverService } from '@/services/homeserver/homeserver';
 export class ChatHomeserverService {
   private constructor() {}
 
-  /** The peer's published key, `null` when absent or malformed (malformed is logged). */
+  /**
+   * The peer's published key; `null` when absent, malformed (logged) or
+   * unreachable (their homeserver could not be resolved or answered with an
+   * error). All three mean "cannot encrypt to them right now": the caller
+   * keeps the message queued and probes again later.
+   */
   static async readPublicKey(pubky: string): Promise<ChatPublicKeyRecord | null> {
     const result = await HomeserverService.getJsonIfFound<unknown>({
       url: chatPublicKeyUrl(pubky),
       logUrl: CHAT_LOG_PUBLIC_KEY,
+      tolerateUnreachable: true,
     });
     if (!result.found) return null;
     const parsed = chatPublicKeySchema.safeParse(result.json);

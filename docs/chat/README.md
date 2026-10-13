@@ -219,7 +219,8 @@ each reconcile pass, and when a keyless peer becomes reachable.
 ### Peer key resolution
 
 `resolvePeerKey` uses the key cached on the conversation row when present. Otherwise (or when forced) it reads
-the peer's `/pub/chat/v0/key.json`: absent or malformed means `no_key`, rechecked after 5 min
+the peer's `/pub/chat/v0/key.json`: absent, malformed or unreachable (the peer's homeserver cannot be resolved
+or answers with an error; logged as a warning, never an error) means `no_key`, rechecked after 5 min
 (`CHAT_PEER_KEY_RECHECK_MS`), at once when the user opens the thread, on a ping, or on a key event. A peer
 whose `kid` changed is a new epoch: the folder id changes, list cursors reset, earlier messages stay in Dexie
 and the new folder takes over.
