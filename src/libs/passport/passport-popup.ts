@@ -1,4 +1,5 @@
 import type { XCallbackParams } from '@synonymdev/pubky';
+import { withBasePath } from '@/config/base-path';
 
 /**
  * Pubky Passport popup attempts (https://github.com/pubky/pubky-passport/blob/main/docs/integration.md).
@@ -87,7 +88,7 @@ export function passportCallbacks(appOrigin: string): XCallbackParams | undefine
   }
   if (origin.protocol !== 'https:') return undefined;
   const callback = (outcome: PassportOutcome) => {
-    const url = new URL(PASSPORT_CALLBACK_PATH, origin.origin);
+    const url = new URL(withBasePath(PASSPORT_CALLBACK_PATH), origin.origin);
     url.searchParams.set('outcome', outcome);
     return url.href;
   };

@@ -27,16 +27,19 @@ export const createAuthActions = (set: ZustandSet<AuthStore>): AuthActions => ({
     hasProfile,
     grantSessionRecordId = null,
     grantSigner = null,
+    sessionOwner = 'shop',
+    hostGeneration = null,
   }: AuthInitParams) => {
     clearVibeSessionAutoRestoreSuppressed();
     set(
       (state) => ({
         ...state,
         session,
+        sessionOwner: session ? sessionOwner : null,
+        hostGeneration,
         sessionExport: safeSessionExport(session),
         grantSessionRecordId: session && session.grant !== undefined ? grantSessionRecordId : null,
-        grantSigner:
-          session && session.grant !== undefined ? (grantSigner === 'passport' ? 'passport' : 'bitkit') : null,
+        grantSigner: session && session.grant !== undefined ? grantSigner : null,
         currentUserPubky,
         hasProfile,
         sessionRestoreDeferred: false,

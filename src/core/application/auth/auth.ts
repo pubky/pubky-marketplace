@@ -1,16 +1,8 @@
-import type { AuthToken, Session, XCallbackParams } from '@synonymdev/pubky';
+import type { Session, XCallbackParams } from '@synonymdev/pubky';
 import { userUriBuilder } from 'pubky-app-specs';
-import type {
-  TKeypairParams,
-  TMarketplaceRedeemError,
-  TRestoreSessionOutcome,
-  TRestoreSessionParams,
-  TRestoreSessionResult,
-  TSingleApprovalCeremonyHooks,
-  TSingleApprovalResult,
-} from '@/application/auth/auth.types';
-import { capabilitiesMatchFullGrant, RING_COOKIE_CAPABILITIES } from '@/config/app';
-import { getCommerceAdapterMode, isDurableCommerceMode } from '@/config/commerce';
+import type { TKeypairParams, TRestoreSessionParams, TRestoreSessionResult } from '@/application/auth/auth.types';
+import { SHOP_GRANT_CLIENT_ID } from '@/config/app';
+import { capabilitiesMatchFullGrant } from '@/libs/auth/capabilities';
 import { ValidationErrorCode } from '@/libs/error/error.codes';
 import { Err } from '@/libs/error/error.factories';
 import { ErrorService } from '@/libs/error/error.types';
@@ -18,30 +10,22 @@ import {
   isAppError,
   isAuthError,
   isNotFound,
-  isRetryable,
   isWrongEnvironmentHomeserverError,
   toAppError,
 } from '@/libs/error/error.utils';
 import { HttpMethod } from '@/libs/http/http.types';
-import { Identity } from '@/libs/identity/identity';
 import { Logger } from '@/libs/logger/logger';
 import { sleep } from '@/libs/utils/utils';
-import { isVibeSessionBridgeLegSkipped, suppressVibeSessionAutoRestore } from '@/libs/vibe-session/auto-restore';
-import { requestFromBridge } from '@/libs/vibe-session/bridge';
-import { getVibeId, getVibeSessionBridgeOrigin } from '@/libs/vibe-session/config';
 import { isPubkyExpiredError } from '@/libs/vibe-session/expired';
-import { discardFragmentSessionExport, takeFragmentSessionExport } from '@/libs/vibe-session/fragment';
-import { VIBE_SESSION_LOAD_TIMEOUT_MS, VIBE_SESSION_REPLY_TIMEOUT_MS } from '@/libs/vibe-session/types';
+import { discardFragmentSessionExport } from '@/libs/vibe-session/fragment';
 import type { Pubky } from '@/models/models.types';
 import { HomeserverService } from '@/services/homeserver/homeserver';
 import type {
-  TGenerateAuthTokenFlowResult,
   TGenerateAuthUrlResult,
   THomeserverPublicKeyParams,
   THomeserverSessionResult,
   THomeserverSignUpParams,
 } from '@/services/homeserver/homeserver.types';
-import { MarketplaceSessionService } from '@/services/marketplace/marketplace-session';
 
 export function isDefinitiveSessionAuthFailure(error: unknown): boolean {
   if (isWrongEnvironmentHomeserverError(error)) {
@@ -56,268 +40,67 @@ export function isDefinitiveSessionAuthFailure(error: unknown): boolean {
 export class AuthApplication {
   private constructor() {} // Prevent instantiation
 
-  private static restoreSessionPromise: TRestoreSessionResult | null = null;
-  private static bridgeAbortController: AbortController | null = null;
-
-  static abortInFlightBridgeRequest(): void {
-    this.bridgeAbortController?.abort();
-    this.bridgeAbortController = null;
+  /** Restore only the selected SDK grant record; inconclusive failures retain it. */
+  static async restorePersistedSession({ authStore }: TRestoreSessionParams): TRestoreSessionResult {
+    const recordId = authStore.grantSessionRecordId;
+    // Legacy cookie metadata and fragment/bridge exports never authorize a restore.
+    discardFragmentSessionExport();
+    if (!recordId) return { status: 'signed-out' };
+    return this.restoreGrantSession(recordId, authStore.currentUserPubky);
   }
 
-  /** Max attempts before falling back to sign-out (~30 s with a 3 s delay between each) */
-  private static readonly RESTORE_MAX_ATTEMPTS = 10;
-  /** Fixed delay between retry attempts */
-  private static readonly RESTORE_RETRY_DELAY_MS = 3000;
-
-  /**
-   * Restores a session from a persisted session export.
-   * Prevents concurrent restoration attempts by managing a singleton promise.
-   *
-   * Retries on transient errors (network, timeout, server) to handle scenarios
-   * like ERR_NETWORK_CHANGED when the browser tab is resumed or the device
-   * reconnects. Non-retryable errors (e.g. genuinely expired session) bail out
-   * immediately. After all attempts are exhausted the session is cleared so the
-   * user is signed out rather than left on a loading spinner.
-   *
-   * @param authStore - The auth store object containing state and actions needed for restoration
-   * @returns The restored session, or null if restoration failed
-   */
-  static async restorePersistedSession({
-    authStore,
-    confirmSessionHandoff = async () => false,
-  }: TRestoreSessionParams): TRestoreSessionResult {
-    // If a restoration is already in progress, return the existing promise
-    if (this.restoreSessionPromise) {
-      return await this.restoreSessionPromise;
-    }
-
-    // A grant session (Bitkit sign-in) restores from BrowserSessionStore only:
-    // it has no cookie export and never takes the bridge or fragment legs.
-    const grantRecordId = authStore.grantSessionRecordId;
-    if (grantRecordId) {
-      this.restoreSessionPromise = (async () => {
-        try {
-          return await this.restoreGrantSession(grantRecordId);
-        } finally {
-          // Same bound as the cookie leg: a `#s=` captured on this load must
-          // not survive into a later restore after this one signs out.
-          discardFragmentSessionExport();
-          this.restoreSessionPromise = null;
-        }
-      })();
-      return await this.restoreSessionPromise;
-    }
-
-    const consumerOrigin = getVibeSessionBridgeOrigin();
-    const persistedExport = authStore.sessionExport;
-
-    // Safety check: if sessionExport is missing and consumer mode is off, return null
-    if (!persistedExport && !consumerOrigin) {
-      return { status: 'signed-out' };
-    }
-
-    // Start restoration and store the promise so concurrent calls can await the same one.
-    // Note: Application never touches `isRestoringSession` — the Controller owns that
-    // flag for the whole restore+finalization span so no leg can leave a loading gap.
-    this.restoreSessionPromise = (async () => {
-      try {
-        return await this.runSessionRestore({ persistedExport, consumerOrigin, confirmSessionHandoff });
-      } finally {
-        // The first restore decision of this page load has run (whichever leg
-        // decided it) — drop any cached `#s=` export so a later same-tab
-        // logout cannot resurrect the hand-off.
-        discardFragmentSessionExport();
-        this.restoreSessionPromise = null;
-      }
-    })();
-
-    return await this.restoreSessionPromise;
-  }
-
-  private static async runSessionRestore({
-    persistedExport,
-    consumerOrigin,
-    confirmSessionHandoff,
-  }: {
-    persistedExport: string | null;
-    consumerOrigin: string | undefined;
-    confirmSessionHandoff: (pubky: Pubky) => Promise<boolean>;
-  }): TRestoreSessionResult {
-    let keepPersistedExport = false;
-
-    if (persistedExport) {
-      const persisted = await this.restoreSessionFromExport(persistedExport);
-      if (persisted.session) {
-        return { status: 'restored', session: persisted.session };
-      }
-      if (isDefinitiveSessionAuthFailure(persisted.lastError)) {
-        keepPersistedExport = false;
-      } else {
-        // Transient / unknown persist failure: never erase the export, with or
-        // without consumer mode. The outcome is deferred (retryable on the next
-        // load); signed-out is reserved for definitive auth failures.
-        keepPersistedExport = true;
-      }
-    }
-
-    if (!consumerOrigin) {
-      return keepPersistedExport ? { status: 'deferred' } : { status: 'signed-out' };
-    }
-
-    const fragmentExport = takeFragmentSessionExport();
-    if (fragmentExport) {
-      const fromFragment = await this.restoreSessionFromExport(fragmentExport);
-      if (fromFragment.session) {
-        // Any page can link here with a `#s=` for a session the browser holds a
-        // cookie for, including one a third party planted. Nothing binds the
-        // hand-off to this device, so the user confirms the identity first.
-        if (await confirmSessionHandoff(Identity.z32FromSession({ session: fromFragment.session }))) {
-          return { status: 'restored', session: fromFragment.session };
-        }
-        // Declined: the bridge must not apply an identity the user just refused.
-        suppressVibeSessionAutoRestore();
-        return this.unresolvedConsumerRestore(keepPersistedExport);
-      }
-    }
-
-    if (isVibeSessionBridgeLegSkipped()) {
-      return this.unresolvedConsumerRestore(keepPersistedExport);
-    }
-
-    const bridgeExport = await this.obtainBridgeSessionExport(consumerOrigin);
-    if (!bridgeExport) {
-      return this.unresolvedConsumerRestore(keepPersistedExport);
-    }
-
-    const fromBridge = await this.restoreSessionFromExport(bridgeExport);
-    if (fromBridge.session) {
-      return { status: 'restored', session: fromBridge.session };
-    }
-    return this.unresolvedConsumerRestore(keepPersistedExport);
-  }
-
-  private static unresolvedConsumerRestore(keepPersistedExport: boolean): TRestoreSessionOutcome {
-    return keepPersistedExport ? { status: 'deferred' } : { status: 'signed-out' };
-  }
-
-  /**
-   * Restores a grant session from its BrowserSessionStore record. A transient
-   * failure keeps the record (deferred); a definitive one removes it and signs
-   * out, and a failed removal rejects so the record pointer is kept. There is
-   * no cookie fallback for a grant sign-in.
-   */
-  private static async restoreGrantSession(recordId: string): TRestoreSessionResult {
-    let session: Session | null = null;
+  private static async restoreGrantSession(recordId: string, expectedPubky: string | null): TRestoreSessionResult {
     try {
-      session = await HomeserverService.restoreGrantSession(recordId);
-      if (!capabilitiesMatchFullGrant(session.info.capabilities)) {
-        Logger.warn('Stored grant session does not hold the full Shop grant; removing its record');
-        await HomeserverService.logout({ session }).catch((logoutError) => {
-          Logger.warn('Failed to sign out a narrow grant session', { logoutError });
-        });
-        await this.removeGrantSession(recordId);
-        return { status: 'signed-out' };
+      const session = await HomeserverService.restoreGrantSession(recordId);
+      if (!session.grant || !capabilitiesMatchFullGrant(session.info.capabilities)) {
+        // A narrower grant needs an explicit scope upgrade, not credential destruction.
+        return { status: 'deferred' };
+      }
+      const info = await session.grant.sessionInfo();
+      if (info.clientId !== SHOP_GRANT_CLIENT_ID || (expectedPubky && info.publicKey.z32() !== expectedPubky)) {
+        return { status: 'deferred' };
       }
       await HomeserverService.assertUserHomeserverAllowed({ publicKey: session.info.publicKey });
       return { status: 'restored', session };
     } catch (error) {
-      if (isWrongEnvironmentHomeserverError(error)) {
-        if (session) {
-          await HomeserverService.logout({ session }).catch((logoutError) => {
-            Logger.warn('Failed to sign out wrong-environment grant session', { logoutError });
-          });
-        }
-        await this.removeGrantSession(recordId);
-        throw error;
-      }
-      if (session === null && !isDefinitiveSessionAuthFailure(error) && isAppError(error) && isRetryable(error)) {
-        Logger.warn('Grant session restore failed with a transient error; keeping the record', { error });
-        return { status: 'deferred' };
-      }
-      Logger.info('Grant session could not be restored; removing its record', { error });
-      // Rejects while the record is still stored: the caller keeps the pointer.
+      // Unknown, storage, and network errors are not proof credentials expired.
+      if (!isDefinitiveSessionAuthFailure(error)) return { status: 'deferred' };
       await this.removeGrantSession(recordId);
       return { status: 'signed-out' };
     }
   }
 
-  private static async restoreSessionFromExport(
-    sessionExport: string,
-  ): Promise<{ session: Session; lastError?: undefined } | { session: null; lastError: unknown }> {
-    // The restored session is kept across attempts so a transient
-    // environment-check failure retries only the PKARR lookup instead of
-    // re-running the whole restore round-trip.
-    let session: Session | null = null;
-    let lastError: unknown;
-    for (let attempt = 1; attempt <= this.RESTORE_MAX_ATTEMPTS; attempt++) {
-      try {
-        session ??= await HomeserverService.restoreSession({ sessionExport });
-        // Transient lookup failures fall through to the shared retry-or-cleanup
-        // policy below — keeping the store in a half-restored state would
-        // strand useAuthStatus in its loading branch with no retry trigger.
-        await HomeserverService.assertUserHomeserverAllowed({ publicKey: session.info.publicKey });
-        Logger.info('Session restored successfully');
-        return { session };
-      } catch (error) {
-        if (isWrongEnvironmentHomeserverError(error)) {
-          // The session is about to be discarded and its persisted export
-          // erased — sign it out on its own homeserver so it is not left
-          // dangling there. Best-effort: the rejection surfaces anyway.
-          if (session) {
-            await HomeserverService.logout({ session }).catch((logoutError) => {
-              Logger.warn('Failed to sign out wrong-environment session', { logoutError });
-            });
-          }
-          throw error;
-        }
-
-        lastError = error;
-        const canRetry = isAppError(error) && isRetryable(error) && attempt < this.RESTORE_MAX_ATTEMPTS;
-        if (!canRetry) {
-          Logger.error('Failed to restore session from persisted export', error);
-          break;
-        }
-
-        Logger.warn(
-          `Session restore attempt ${attempt}/${this.RESTORE_MAX_ATTEMPTS} failed with transient error, retrying in ${this.RESTORE_RETRY_DELAY_MS}ms`,
-          { error },
-        );
-        await sleep(this.RESTORE_RETRY_DELAY_MS);
-      }
+  /** Restore exactly the App-selected record. This consumer never mutates its lifetime. */
+  static async restoreHostSession(reference: {
+    pubky: string;
+    sessionStoreId: string;
+    clientId: string;
+    grantId: string;
+  }): Promise<Session> {
+    const session = await HomeserverService.restoreGrantSession(reference.sessionStoreId);
+    const info = await session.grant?.sessionInfo();
+    if (
+      !info ||
+      session.info.publicKey.z32() !== reference.pubky ||
+      info.publicKey.z32() !== reference.pubky ||
+      info.clientId !== reference.clientId ||
+      info.grantId !== reference.grantId
+    ) {
+      throw Err.validation(ValidationErrorCode.INVALID_INPUT, 'The App session reference is no longer valid.', {
+        service: ErrorService.Homeserver,
+        operation: 'restoreHostSession',
+        context: { reason: 'invalid-reference' },
+      });
     }
-    return { session: null, lastError };
-  }
-
-  private static async obtainBridgeSessionExport(bridgeOrigin: string): Promise<string | null> {
-    if (isVibeSessionBridgeLegSkipped()) {
-      return null;
+    if (!capabilitiesMatchFullGrant(info.capabilities)) {
+      throw Err.validation(ValidationErrorCode.INVALID_INPUT, 'The App session needs permission to open Shop.', {
+        service: ErrorService.Homeserver,
+        operation: 'restoreHostSession',
+        context: { reason: 'missing-capabilities' },
+      });
     }
-    const win = (globalThis as { window?: Window }).window;
-    if (!win) {
-      return null;
-    }
-    const vibeId = getVibeId();
-    Logger.info('Requesting vibe session from bridge', { vibeId });
-    this.abortInFlightBridgeRequest();
-    const controller = new AbortController();
-    this.bridgeAbortController = controller;
-    try {
-      const result = await requestFromBridge(
-        win,
-        bridgeOrigin,
-        VIBE_SESSION_LOAD_TIMEOUT_MS,
-        VIBE_SESSION_REPLY_TIMEOUT_MS,
-        controller.signal,
-      );
-      if (result.kind === 'export') {
-        return result.sessionExport;
-      }
-      return null;
-    } finally {
-      if (this.bridgeAbortController === controller) {
-        this.bridgeAbortController = null;
-      }
-    }
+    await HomeserverService.assertUserHomeserverAllowed({ publicKey: session.info.publicKey });
+    return session;
   }
 
   /**
@@ -393,7 +176,7 @@ export class AuthApplication {
    * out and refused, the way the Ring token path refuses it.
    */
   static async assertFullGrantSession(session: Session): Promise<void> {
-    if (capabilitiesMatchFullGrant(session.info.capabilities)) return;
+    if (session.grant && capabilitiesMatchFullGrant(session.info.capabilities)) return;
     await HomeserverService.logout({ session }).catch((logoutError) => {
       Logger.warn('Failed to sign out a narrow grant session', { logoutError });
     });
@@ -408,13 +191,17 @@ export class AuthApplication {
     return await HomeserverService.saveGrantSession(session);
   }
 
+  static commitGrantSession(recordId: string): void {
+    HomeserverService.commitGrantSession(recordId);
+  }
+
   /** Removes one stored grant session and its key; rejects while it is still stored. */
   static async removeGrantSession(recordId: string): Promise<void> {
     await this.withGrantKeyRemovalRetry(() => HomeserverService.removeGrantSession(recordId));
   }
 
   /** Removes every stored grant session and key for this origin; rejects while any remains. */
-  static async clearGrantSessions(options: { requireAvailable?: boolean } = {}): Promise<void> {
+  static async clearGrantSessions(options: { requireAvailable?: boolean; recordIds?: string[] } = {}): Promise<void> {
     await this.withGrantKeyRemovalRetry(() => HomeserverService.clearGrantSessions(options));
   }
 
@@ -432,77 +219,6 @@ export class AuthApplication {
         await sleep(delay);
       }
     }
-  }
-
-  static startDirectSignInFlow(): TGenerateAuthTokenFlowResult {
-    return HomeserverService.generateAuthTokenFlow(RING_COOKIE_CAPABILITIES);
-  }
-
-  /**
-   * The approval-flow wait bounded by the marketplace session-flow timeout.
-   * Lives on the Application so controllers never call the service directly.
-   */
-  static async withAuthFlowTimeout<T>(pending: Promise<T>, cancelFlow: () => void): Promise<T> {
-    return await MarketplaceSessionService.withFlowTimeout(pending, cancelFlow);
-  }
-
-  /**
-   * Homeserver first, marketplace second. Token bytes live only for this call.
-   *
-   * A marketplace failure is NOT a sign-in failure (single-approval.md §4.3
-   * rows 4–5): the homeserver session stands and the caller gets
-   * `marketplace: null` plus a no-excerpt `marketplaceError`, so commerce
-   * surfaces can offer a separate reconnect approval instead of throwing away
-   * a valid session.
-   */
-  static async completeSingleApprovalCeremony(
-    token: AuthToken,
-    hooks?: TSingleApprovalCeremonyHooks,
-  ): Promise<TSingleApprovalResult> {
-    const bytes = token.toBytes();
-    const pubky = token.publicKey.z32();
-    const tokenResolvedAtMs = Date.now();
-    const session = await HomeserverService.signInWithFullGrantAuthToken(bytes);
-    Logger.debug('Ring sign-in homeserver session established', { elapsedMs: Date.now() - tokenResolvedAtMs });
-    // The bridged ceremony swaps the auth-store session here, while the
-    // widened cookie and the store cannot drift apart (a failure after the
-    // marketplace POST would otherwise leave the cookie wide and the store
-    // narrow, and the next click would re-prompt for a grant already held).
-    await hooks?.onHomeserverSession?.(session);
-    let marketplace = null;
-    let marketplaceError: TMarketplaceRedeemError | null = null;
-    if (isDurableCommerceMode(getCommerceAdapterMode())) {
-      const marketplaceStartedAt = Date.now();
-      try {
-        marketplace = await MarketplaceSessionService.redeemAuthTokenAfterHomeserver(bytes, pubky, tokenResolvedAtMs);
-      } catch (error) {
-        marketplaceError = this.toMarketplaceRedeemError(error);
-        Logger.warn('Marketplace session redemption failed after homeserver sign-in; the Shop session stands', {
-          marketplaceError,
-        });
-      } finally {
-        Logger.debug('Ring sign-in marketplace session exchange completed', {
-          elapsedMs: Date.now() - marketplaceStartedAt,
-          succeeded: marketplace !== null,
-        });
-      }
-    }
-    return { session, marketplace, marketplaceError };
-  }
-
-  /**
-   * No-excerpt discipline for the marketplace half's failure: only
-   * `statusCode` / `alreadyUsed` may cross this boundary, never body text.
-   */
-  private static toMarketplaceRedeemError(error: unknown): TMarketplaceRedeemError {
-    if (!isAppError(error)) {
-      return {};
-    }
-    const context = error.context ?? {};
-    return {
-      statusCode: typeof context.statusCode === 'number' ? context.statusCode : undefined,
-      alreadyUsed: context.alreadyUsed === true ? true : undefined,
-    };
   }
 
   /**

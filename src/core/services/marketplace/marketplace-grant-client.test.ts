@@ -1,6 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import captured from '@/test/fixtures/auth/marketplace-grant-priv-parity.staging.json';
-import { beginMarketplaceGrantFlow } from './marketplace-grant-client';
+import { setBasePath } from '@/test-utils/base-path';
+import {
+  beginMarketplaceGrantFlow,
+  clearMarketplaceBffSession,
+  pairMarketplaceBffSession,
+} from './marketplace-grant-client';
 
 const STATE_ID = '11111111-1111-4111-8111-111111111111';
 
@@ -39,8 +44,32 @@ describe('marketplace reconnect grant client', () => {
   });
 
   afterEach(() => {
+    setBasePath('');
     fetchMock.mockReset();
     vi.unstubAllGlobals();
+  });
+
+  it('uses the mount prefix for pairing, reconnect, polling, cancellation and unpairing', async () => {
+    setBasePath('/shop-embed');
+    fetchMock
+      .mockResolvedValueOnce(new Response(null, { status: 204 }))
+      .mockResolvedValueOnce(created(urlFor(captured.parity_request)))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ status: 'cancelled' }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(null, { status: 204 }))
+      .mockResolvedValueOnce(new Response(null, { status: 204 }));
+    await pairMarketplaceBffSession({ token: 'token', pubky: 'pubky', sessionId: STATE_ID });
+    const flow = await beginMarketplaceGrantFlow();
+    await flow.awaitResult();
+    await flow.cancel();
+    await clearMarketplaceBffSession(STATE_ID);
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      '/shop-embed/api/marketplace/session',
+      '/shop-embed/api/marketplace/grant-flows',
+      `/shop-embed/api/marketplace/grant-flows/${STATE_ID}/status`,
+      `/shop-embed/api/marketplace/grant-flows/${STATE_ID}/cancel`,
+      `/shop-embed/api/marketplace/session?session_id=${STATE_ID}`,
+    ]);
+    expect(fetchMock.mock.calls.every(([, options]) => options?.credentials === 'same-origin')).toBe(true);
   });
 
   it.each([

@@ -1,11 +1,7 @@
 import { describe, expect, it } from 'vitest';
+import { capabilitiesMatchFullGrant } from '@/libs/auth/capabilities';
 import ringCookie from '@/test/fixtures/auth/ring-cookie-signin.pubky-common-0.11.json';
-import {
-  CAPABILITIES,
-  capabilitiesMatchFullGrant,
-  capabilitiesMatchRingCookieGrant,
-  RING_COOKIE_CAPABILITIES,
-} from './app';
+import { CAPABILITIES, capabilitiesMatchRingCookieGrant, RING_COOKIE_CAPABILITIES } from './app';
 
 describe('capabilitiesMatchFullGrant', () => {
   const full = CAPABILITIES.split(',');
@@ -18,17 +14,35 @@ describe('capabilitiesMatchFullGrant', () => {
     expect(capabilitiesMatchFullGrant([...full].reverse())).toBe(true);
   });
 
+  it('accepts root and broader subtree permissions, including separate action grants', () => {
+    expect(capabilitiesMatchFullGrant(['/:rw'])).toBe(true);
+    expect(capabilitiesMatchFullGrant(['/pub/:r', '/pub/:w', '/priv/:rw'])).toBe(true);
+    expect(capabilitiesMatchFullGrant(['/pub/:r', '/priv/:rw'])).toBe(false);
+    expect(capabilitiesMatchFullGrant(['/pub/pubky.app/foo:rw', '/pub/paykit/:rw', '/priv/pubky.app/:rw'])).toBe(false);
+  });
+
   it('refuses empty capabilities', () => {
     expect(capabilitiesMatchFullGrant([])).toBe(false);
   });
 
-  it('refuses a missing or extra entry', () => {
-    expect(capabilitiesMatchFullGrant(full.slice(0, 2))).toBe(false);
-    expect(capabilitiesMatchFullGrant([...full, '/extra/:rw'])).toBe(false);
+  it('does not treat file paths as subtree permissions', () => {
+    expect(capabilitiesMatchFullGrant(['/pub:rw', '/priv:rw'])).toBe(false);
+    expect(capabilitiesMatchFullGrant(['/pub/pubky.app:rw', '/pub/paykit/:rw', '/priv/pubky.app/:rw'])).toBe(false);
   });
 
-  it('refuses the Ring cookie set, so grant sessions keep the exact Shop grant', () => {
-    expect(capabilitiesMatchFullGrant(RING_COOKIE_CAPABILITIES.split(','))).toBe(false);
+  it('rejects an entire malformed capability list using the SDK parser', () => {
+    expect(capabilitiesMatchFullGrant(['/:rw', 'malformed'])).toBe(false);
+    expect(capabilitiesMatchFullGrant(['/:rw', '/pub/:invalid'])).toBe(false);
+    expect(capabilitiesMatchFullGrant(['/:wr'])).toBe(true);
+  });
+
+  it('refuses missing permissions but accepts additional scopes', () => {
+    expect(capabilitiesMatchFullGrant(full.slice(0, 2))).toBe(false);
+    expect(capabilitiesMatchFullGrant([...full, '/extra/:rw'])).toBe(true);
+  });
+
+  it('accepts broader App scope coverage', () => {
+    expect(capabilitiesMatchFullGrant(RING_COOKIE_CAPABILITIES.split(','))).toBe(true);
   });
 });
 

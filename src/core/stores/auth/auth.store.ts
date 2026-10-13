@@ -22,14 +22,20 @@ export function createAuthStore() {
           storage: createOwnerGuardedAuthJSONStorage(),
           // Only persist essential data
           partialize: (state) => ({
-            currentUserPubky: state.currentUserPubky,
+            currentUserPubky: state.sessionOwner === 'host' ? null : state.currentUserPubky,
             sessionExport: state.sessionExport,
-            grantSessionRecordId: state.grantSessionRecordId,
-            grantSigner: state.grantSigner,
-            hasProfile: state.hasProfile,
+            grantSessionRecordId: state.sessionOwner === 'host' ? null : state.grantSessionRecordId,
+            grantSigner: state.sessionOwner === 'host' ? null : state.grantSigner,
+            hasProfile: state.sessionOwner === 'host' ? null : state.hasProfile,
             hasHydrated: false, // Will be set by rehydration handler
           }),
 
+          merge: (persisted, current) => {
+            const restored = persisted as Partial<AuthStore>;
+            // Explicit migration: pre-signer grant records were created by Bitkit.
+            if (restored.grantSessionRecordId && !restored.grantSigner) restored.grantSigner = 'bitkit';
+            return { ...current, ...restored, sessionOwner: restored.grantSessionRecordId ? 'shop' : null };
+          },
           // Set hasHydrated to true after rehydration
           onRehydrateStorage: (state) => (rehydratedState) => {
             const resolvedState = rehydratedState ?? state;

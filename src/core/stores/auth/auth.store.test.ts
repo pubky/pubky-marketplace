@@ -108,7 +108,7 @@ describe('AuthStore', () => {
       expect(persisted.state?.grantSessionRecordId).toBe('rec-1');
     });
 
-    it('persists which signer approved a grant session, defaulting to Bitkit', () => {
+    it('persists the explicit signer without coercing an unspecified signer to Bitkit', () => {
       useAuthStore.getState().init({
         session: grantSession(vi.fn()),
         currentUserPubky: 'grant-pubky',
@@ -128,7 +128,7 @@ describe('AuthStore', () => {
         hasProfile: null,
         grantSessionRecordId: 'rec-2',
       });
-      expect(useAuthStore.getState().grantSigner).toBe('bitkit');
+      expect(useAuthStore.getState().grantSigner).toBeNull();
 
       useAuthStore.getState().reset();
       expect(useAuthStore.getState().grantSigner).toBeNull();

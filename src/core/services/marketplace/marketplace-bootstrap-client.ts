@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { withBasePath } from '@/config/base-path';
 import { isAppError } from '@/libs/error/error';
 import { ServerErrorCode } from '@/libs/error/error.codes';
 import { Err } from '@/libs/error/error.factories';
@@ -12,8 +13,7 @@ import type { MarketplaceGrantFlow } from './marketplace-grant-client';
 import { isMarketplaceSessionGrantUrl } from './marketplace-session-grant';
 
 /**
- * Browser purchase bootstrap for any Shop sign-in (Bitkit or Pubky Passport
- * grant, or Pubky Ring cookie). The Shop session proves write access to its
+ * Browser purchase bootstrap for every grant-backed Shop sign-in. The Shop session proves write access to its
  * own homeserver with a single-use proof document, the Shop BFF runs the CLI
  * verifier's checks and opens a marketplace `signin_grant`, and after the
  * signer approves it the BFF claims the bearer.
@@ -63,7 +63,7 @@ async function readJson(response: Response): Promise<unknown> {
 
 async function post(path: string, body: unknown): Promise<unknown> {
   return await readJson(
-    await fetch(path, {
+    await fetch(withBasePath(path), {
       method: 'POST',
       credentials: 'same-origin',
       headers: { 'content-type': 'application/json' },

@@ -10,12 +10,12 @@ vi.mock('@/hooks/useGrantSigner/useGrantSigner', async (importOriginal) => ({
 }));
 
 describe('grantSessionRefusalCopy', () => {
-  it('names the signer that approved the sign-in', () => {
+  it('explains deployment unavailability without sending users to a cookie login', () => {
     expect(grantSessionRefusalCopy('default', 'bitkit')).toBe(
-      'Bitkit sign-in does not cover this step yet. Sign in with Pubky Ring to continue.',
+      'Marketplace approvals are unavailable on this deployment. Try again when access is enabled.',
     );
     expect(grantSessionRefusalCopy('default', 'passport')).toBe(
-      'Pubky Passport sign-in does not cover this step yet. Sign in with Pubky Ring to continue.',
+      'Marketplace approvals are unavailable on this deployment. Try again when access is enabled.',
     );
   });
 
@@ -38,12 +38,12 @@ describe('GrantSessionRefusal', () => {
     );
   });
 
-  it('falls back to Bitkit copy when no grant signer is known', () => {
+  it('does not assume Bitkit when no signer is known', () => {
     view.signer = null;
     render(<GrantSessionRefusal />);
 
     expect(screen.getByTestId('grant-session-refusal')).toHaveTextContent(
-      'Bitkit sign-in does not cover this step yet.',
+      'Marketplace approvals are unavailable on this deployment.',
     );
   });
 });

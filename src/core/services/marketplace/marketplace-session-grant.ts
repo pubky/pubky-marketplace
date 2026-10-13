@@ -1,5 +1,4 @@
-import { CAPABILITIES, isSingleApprovalSignInEnabled, RING_COOKIE_CAPABILITIES } from '@/config/app';
-import { getCommerceAdapterMode, isDurableCommerceMode } from '@/config/commerce';
+import { CAPABILITIES, RING_COOKIE_CAPABILITIES } from '@/config/app';
 
 /**
  * The capabilities a marketplace purchase session requests, whichever signer
@@ -131,13 +130,7 @@ export function marketplaceApprovalDisclosure(authorizationUrl: string): string 
   return null;
 }
 
-/**
- * The disclosure for a Pubky Ring sign-in or step-up QR. Its AuthToken also
- * mints a marketplace session only under single approval in a durable
- * commerce mode (`AuthApplication.completeSingleApprovalCeremony`); otherwise
- * the QR hands the marketplace nothing and shows nothing.
- */
-export function signInApprovalDisclosure(authorizationUrl: string): string | null {
-  if (!isSingleApprovalSignInEnabled() || !isDurableCommerceMode(getCommerceAdapterMode())) return null;
-  return marketplaceApprovalDisclosure(authorizationUrl);
+/** Shop sign-in grants only the browser; marketplace access is approved separately. */
+export function signInApprovalDisclosure(_authorizationUrl: string): string | null {
+  return null;
 }

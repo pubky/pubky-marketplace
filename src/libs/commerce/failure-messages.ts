@@ -152,7 +152,7 @@ export const MARKETPLACE_BOOTSTRAP_CODE_MESSAGES: ReadonlyMap<string, string> = 
  * The signer a bootstrap message names: whichever approved the Shop sign-in,
  * or either phone signer for a Pubky Ring (cookie) sign-in.
  */
-export type BootstrapSignerName = 'Bitkit' | 'Pubky Passport' | 'Pubky Ring or Bitkit';
+export type BootstrapSignerName = 'Bitkit' | 'Pubky Passport' | 'Pubky Ring' | 'Pubky Ring or Bitkit' | 'your signer';
 
 function signerBootstrapMessage(code: string, signer: BootstrapSignerName): string | undefined {
   switch (code) {

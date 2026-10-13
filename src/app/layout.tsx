@@ -20,6 +20,7 @@ import { DatabaseProvider } from '@/providers/DatabaseProvider/DatabaseProvider'
 import { ErrorBoundaryProvider } from '@/providers/ErrorBoundaryProvider/ErrorBoundaryProvider';
 import { GlobalErrorHandlerProvider } from '@/providers/GlobalErrorHandlerProvider/GlobalErrorHandlerProvider';
 import { RouteGuardProvider } from '@/providers/RouteGuardProvider/RouteGuardProvider';
+import { ShopHostSessionProvider } from '@/providers/ShopHostSessionProvider/ShopHostSessionProvider';
 
 export const viewport: Viewport = {
   width: 'device-width',
@@ -57,19 +58,21 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         <GlobalErrorHandlerProvider>
           <ErrorBoundaryProvider>
             <DatabaseProvider>
-              <RouteGuardProvider>
-                <CoordinatorsManager />
-                <ServiceWorkerRegistration />
-                <EmbeddedDocumentFlag />
-                <EmbeddedExternalLinks />
-                <Header />
-                {children}
-                <Fab />
-                <Toaster />
-                <DialogSignIn />
-              </RouteGuardProvider>
-              {/* Outside RouteGuardProvider: it waits on the restore this dialog answers. */}
-              <DialogSessionHandoff />
+              <ShopHostSessionProvider>
+                <RouteGuardProvider>
+                  <CoordinatorsManager />
+                  <ServiceWorkerRegistration />
+                  <EmbeddedDocumentFlag />
+                  <EmbeddedExternalLinks />
+                  <Header />
+                  {children}
+                  <Fab />
+                  <Toaster />
+                  <DialogSignIn />
+                </RouteGuardProvider>
+                {/* Outside RouteGuardProvider: it waits on the restore this dialog answers. */}
+                <DialogSessionHandoff />
+              </ShopHostSessionProvider>
             </DatabaseProvider>
           </ErrorBoundaryProvider>
         </GlobalErrorHandlerProvider>

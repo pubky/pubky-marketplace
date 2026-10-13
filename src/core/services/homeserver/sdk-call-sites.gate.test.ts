@@ -16,7 +16,10 @@ function sourceFiles(dir: string): string[] {
 }
 
 describe('@synonymdev/pubky 0.16 call sites', () => {
-  const files = sourceFiles(SRC).map((path) => ({ path: relative(ROOT, path), text: readFileSync(path, 'utf8') }));
+  const files = sourceFiles(SRC).map((path) => ({
+    path: relative(ROOT, path),
+    text: readFileSync(path, 'utf8').replace(/\/\*[\s\S]*?\*\//g, ''),
+  }));
 
   it('no Pubky.restoreSession call site in src', () => {
     const offenders = files
@@ -25,9 +28,11 @@ describe('@synonymdev/pubky 0.16 call sites', () => {
     expect(offenders).toEqual([]);
   });
 
-  it('no removed 0.8 cookie API names on the pubky SDK', () => {
+  it('no cookie sign-in or signup calls on the pubky SDK', () => {
     const offenders = files
-      .filter(({ text }) => /\b(pubkySdk|getPubkySdk\(\))\.startAuthFlow\(|\bsigner\.(signin|signup)\(/.test(text))
+      .filter(({ text }) =>
+        /\b(pubkySdk|getPubkySdk\(\))\.startAuthFlow\(|\bsigner\.(signinCookie|signupCookie)\(/.test(text),
+      )
       .map(({ path }) => path);
     expect(offenders).toEqual([]);
   });

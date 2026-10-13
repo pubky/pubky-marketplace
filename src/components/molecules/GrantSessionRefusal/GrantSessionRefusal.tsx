@@ -10,6 +10,9 @@ export type GrantSessionRefusalReason = 'default' | 'messaging';
 const GRANT_SIGNER_NAMES: Record<GrantSigner, string> = {
   bitkit: 'Bitkit',
   passport: 'Pubky Passport',
+  ring: 'Pubky Ring',
+  'local-key': 'Recovery-key',
+  host: 'Pubky App',
 };
 
 /**
@@ -22,7 +25,7 @@ export function grantSessionRefusalCopy(reason: GrantSessionRefusalReason, signe
   const name = GRANT_SIGNER_NAMES[signer];
   return reason === 'messaging'
     ? `Messages are not available for ${name} sign-ins yet. Everything else in Shop works with this sign-in.`
-    : `${name} sign-in does not cover this step yet. Sign in with Pubky Ring to continue.`;
+    : 'Marketplace approvals are unavailable on this deployment. Try again when access is enabled.';
 }
 
 /** Shown instead of a Pubky Ring approval QR when the Shop session came from a grant sign-in. */

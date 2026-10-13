@@ -52,7 +52,16 @@ function tablesClearedOnIdentitySwitch(includePublicCache: boolean) {
   });
 }
 
-export async function clearDatabase(): Promise<void> {
+export interface ClearShopDataOptions {
+  /** Only for a same-identity auth migration; normal logout/account switch still removes private history. */
+  preserveMessagingHistory?: boolean;
+}
+
+function isMessagingTable(name: string): boolean {
+  return name.startsWith('commerce_messaging_');
+}
+
+export async function clearDatabase({ preserveMessagingHistory = false }: ClearShopDataOptions = {}): Promise<void> {
   if (!db.isOpen()) {
     await db.open();
   }
@@ -64,23 +73,29 @@ export async function clearDatabase(): Promise<void> {
   // cached key is known stale afterwards.
   await Promise.all(
     tablesClearedOnIdentitySwitch(true)
-      .filter((table) => !KEY_WRAPPED_MESSAGING_TABLES.has(table.name))
+      .filter(
+        (table) =>
+          !KEY_WRAPPED_MESSAGING_TABLES.has(table.name) && !(preserveMessagingHistory && isMessagingTable(table.name)),
+      )
       .map((table) => table.clear()),
   );
-  await tearDownMessagingKeys(clearKeyWrappedMessagingTables);
+  if (!preserveMessagingHistory) await tearDownMessagingKeys(clearKeyWrappedMessagingTables);
 }
 
-export async function clearPrivateData(): Promise<void> {
+export async function clearPrivateData({ preserveMessagingHistory = false }: ClearShopDataOptions = {}): Promise<void> {
   if (!db.isOpen()) {
     await db.open();
   }
 
   await Promise.all(
     tablesClearedOnIdentitySwitch(false)
-      .filter((table) => !KEY_WRAPPED_MESSAGING_TABLES.has(table.name))
+      .filter(
+        (table) =>
+          !KEY_WRAPPED_MESSAGING_TABLES.has(table.name) && !(preserveMessagingHistory && isMessagingTable(table.name)),
+      )
       .map((table) => table.clear()),
   );
-  await tearDownMessagingKeys(clearKeyWrappedMessagingTables);
+  if (!preserveMessagingHistory) await tearDownMessagingKeys(clearKeyWrappedMessagingTables);
 }
 
 /**

@@ -77,15 +77,12 @@ describe('classic Pubky Ring approvals and a grant session', () => {
     expect(state.inventoryStart).not.toHaveBeenCalled();
   });
 
-  it('inventory copy names Ring only', () => {
+  it('legacy sessions also use the marketplace approval boundary', () => {
     state.isGrantSession = false;
     render(<MarketplaceInventoryGrantDialog autoOpen />);
 
-    expect(
-      screen.getByText('Approve this grant in Pubky Ring; it does not replace your purchase session.'),
-    ).toBeInTheDocument();
-    expect(screen.queryByText(/Bitkit/)).not.toBeInTheDocument();
-    expect(state.inventoryStart).toHaveBeenCalled();
+    expect(screen.getByTestId('purchase-session-connect')).toBeInTheDocument();
+    expect(state.inventoryStart).not.toHaveBeenCalled();
   });
 
   it('grant session sees messaging refusal without qr', () => {

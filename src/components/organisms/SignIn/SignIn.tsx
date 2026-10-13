@@ -121,8 +121,7 @@ type TSignerAuth = ReturnType<typeof useMobileAuth>;
 const SIGNERS = SIGNER_AUTH_COPY.signIn;
 
 /**
- * The Ring sign-in token is also redeemed at the marketplace under single
- * approval; Bitkit's grant sign-in never is, so only Ring gets a disclosure.
+ * Shop sign-in grants browser access; service permissions are approved separately.
  */
 function ringSignInDisclosure(ring: TSignerAuth): string | null {
   return ring.url ? signInApprovalDisclosure(ring.url) : null;

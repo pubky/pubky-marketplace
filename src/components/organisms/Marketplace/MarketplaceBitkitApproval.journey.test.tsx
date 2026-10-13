@@ -73,8 +73,9 @@ function deferredGrantFlow(url: string) {
 function signIn(kind: 'bitkit' | 'ring') {
   useAuthStore.setState({
     currentUserPubky: asOpaque(PUBKY),
+    grantSigner: kind,
     session: asOpaque({
-      ...(kind === 'bitkit' ? { grant: {} } : {}),
+      grant: {},
       info: { publicKey: { z32: () => PUBKY }, capabilities: CAPABILITIES.split(',') },
     }),
   });
@@ -147,7 +148,7 @@ describe('#49 Bitkit approval journeys (real hooks)', () => {
 
     render(
       <MarketplaceReauthDialog
-        refusal="homeserver"
+        refusal="purchase_session"
         triggerLabel="Sign in again"
         onReauthenticated={onReauthenticated}
       />,

@@ -1,15 +1,4 @@
-import type { MarketplaceSessionFlow } from '@/services/marketplace/marketplace-session';
-
 export type { TRestorePersistedSessionResult } from '@/application/auth/auth.types';
-
-/**
- * The bridged first-commerce flow as handed to hooks. `joined: true` marks a
- * handle that JOINS a ceremony another surface already owns (e.g. a direct
- * sign-in in progress, whose approval URL this dialog never sees
- * synchronously): the hook must show an "already in progress elsewhere" state
- * instead of a blank QR. An own (non-joined) flow always carries its URL.
- */
-export type TBridgedCommerceSessionFlow = MarketplaceSessionFlow & { joined?: boolean };
 
 export interface TSignUpParams {
   secretKey: string;
@@ -24,3 +13,15 @@ export interface TLoginWithEncryptedFileParams {
   encryptedFile: File;
   password: string;
 }
+
+/** Public App reference; no tokens or key material crosses the bridge. */
+export type HostSessionSnapshot = {
+  generation: string;
+  status: 'ready' | 'signed-out' | 'restoring' | 'temporary-error' | 'reauth-required';
+  pubky: string | null;
+  sessionStoreId: string | null;
+  grantId: string | null;
+  clientId: string | null;
+};
+
+export type HostSessionApplyStatus = HostSessionSnapshot['status'] | 'capabilities-required';

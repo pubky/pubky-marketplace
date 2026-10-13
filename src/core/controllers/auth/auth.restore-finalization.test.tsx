@@ -46,7 +46,8 @@ describe('AuthController restore finalization — real useAuthStatus', () => {
     useOnboardingStore.getState().setHydrated(true);
     useAuthStore.setState({
       session: null,
-      sessionExport: 'old-session-export',
+      sessionExport: null,
+      grantSessionRecordId: 'shop-record',
       currentUserPubky: PREVIOUS_PUBKY,
       hasProfile: true,
       hasHydrated: true,

@@ -1,7 +1,6 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { RING_COOKIE_CAPABILITIES } from '@/config/app';
-import { MARKETPLACE_DISCLOSURE_RING_SIGN_IN } from '@/services/marketplace/marketplace-session-grant';
 import grantCapture from '@/test/fixtures/auth/marketplace-grant-priv-parity.staging.json';
 import ringCapture from '@/test/fixtures/auth/ring-signin-url.sdk-0.8.0.json';
 import { SignInContent } from './SignIn';
@@ -57,28 +56,17 @@ describe('Ring sign-in marketplace disclosure', () => {
     view.grantSignIn = false;
   });
 
-  it('shows the sign-in sentence beside the Ring-only desktop QR and the mobile deeplink', () => {
+  it('does not promise marketplace access from a browser sign-in approval', () => {
     render(<SignInContent />);
-
-    const disclosures = screen.getAllByTestId('session-approval-disclosure');
-    expect(disclosures).toHaveLength(2);
-    for (const disclosure of disclosures) expect(disclosure).toHaveTextContent(MARKETPLACE_DISCLOSURE_RING_SIGN_IN);
-    expect(screen.getByLabelText('Copy authentication link').parentElement).toContainElement(disclosures[0]);
-    expect(screen.getByTestId('button').parentElement).toContainElement(disclosures[1]);
+    expect(screen.queryByTestId('session-approval-disclosure')).toBeNull();
   });
 
-  it('shows it with Ring and not with Bitkit in the combined signer layout', () => {
+  it('keeps marketplace approval separate for both Ring and Bitkit', () => {
     view.grantSignIn = true;
     render(<SignInContent />);
-
-    expect(screen.getByTestId('sign-in-ring-option')).toBeInTheDocument();
-    expect(screen.getByTestId('session-approval-disclosure')).toHaveTextContent(MARKETPLACE_DISCLOSURE_RING_SIGN_IN);
-    expect(screen.getAllByTestId('session-approval-disclosure')).toHaveLength(1);
-
+    expect(screen.queryByTestId('session-approval-disclosure')).toBeNull();
     fireEvent.click(screen.getByRole('radio', { name: 'Bitkit' }));
-
-    expect(screen.getByTestId('sign-in-bitkit-option')).toBeInTheDocument();
-    expect(screen.queryByTestId('session-approval-disclosure')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('session-approval-disclosure')).toBeNull();
   });
 
   it.each([

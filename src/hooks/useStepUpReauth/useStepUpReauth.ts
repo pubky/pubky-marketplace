@@ -2,9 +2,22 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AuthController } from '@/controllers/auth/auth';
+import { useGrantSigner } from '@/hooks/useGrantSigner/useGrantSigner';
+import {
+  marketplaceApprovalSigner,
+  marketplaceSignerChoice,
+} from '@/hooks/useMarketplaceApprovalSigner/useMarketplaceApprovalSigner';
 import { getErrorMessage } from '@/libs/error/error.utils';
 import { Logger } from '@/libs/logger/logger';
 import { navigateTop } from '@/libs/navigation/navigate-top';
+import {
+  isPassportAttemptError,
+  PassportAttemptError,
+  passportCallbacks,
+  startPassportAttempt,
+} from '@/libs/passport/passport-popup';
+import { getPassportOrigin } from '@/libs/runtime-config/runtime-config';
+import { requestShopHostAction } from '@/libs/shop-session/bridge';
 import { copyToClipboard } from '@/libs/utils/utils';
 import { AUTH_FLOW_CANCELED_ERROR_NAME } from '@/services/homeserver/error.utils';
 import type { TGenerateAuthUrlResult } from '@/services/homeserver/homeserver.types';
@@ -27,9 +40,13 @@ type ActiveFlow = TGenerateAuthUrlResult;
  * rejection from a detached flow is control flow, not a failure), and the
  * flow is freed on unmount. On approval the controller swaps the auth-store
  * session for the widened one, so watchlist sync, receipts, and messaging
- * cookie-resume become capable without a reload.
+ * other homeserver writes become capable without a reload.
  */
 export function useStepUpReauth(options: UseStepUpReauthOptions = {}): UseStepUpReauthReturn {
+  const grantSigner = useGrantSigner();
+  const signer = options.signer ?? marketplaceSignerChoice(grantSigner) ?? (grantSigner === null ? 'ring' : null);
+  const requestsPassport = signer === 'passport';
+  const passportRunRef = useRef<(() => void) | null>(null);
   const [status, setStatus] = useState<StepUpReauthStatus>('idle');
   const [authorizationUrl, setAuthorizationUrl] = useState('');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -52,6 +69,7 @@ export function useStepUpReauth(options: UseStepUpReauthOptions = {}): UseStepUp
   }, []);
 
   const detachActiveFlow = useCallback(() => {
+    passportRunRef.current = null;
     const flow = activeFlowRef.current;
     activeFlowRef.current = null;
     // Route through the controller: when this flow is still the tracked
@@ -68,47 +86,53 @@ export function useStepUpReauth(options: UseStepUpReauthOptions = {}): UseStepUp
     setIsOpeningRing(false);
     setErrorMessage(null);
     setAuthorizationUrl('');
-    setStatus('starting');
-    // Invalidates a cancel/supersede that lands while the URL generates.
     const generation = ++startGenerationRef.current;
+    if (requestShopHostAction('request-capabilities')) {
+      setStatus('awaiting-host');
+      return;
+    }
+    setStatus('starting');
 
-    void (async () => {
-      let flow: ActiveFlow;
-      try {
-        flow = await AuthController.getStepUpAuthUrl();
-      } catch (error) {
-        if (startGenerationRef.current !== generation) return;
-        Logger.error('Failed to start the step-up re-approval flow', { error });
-        setErrorMessage(getErrorMessage(error));
-        setStatus('error');
-        return;
-      }
+    if (!signer) {
+      setStatus('idle');
+      return;
+    }
 
-      // Cancelled or superseded while the URL was generating: free the fresh
-      // single-use flow instead of showing its QR.
-      if (startGenerationRef.current !== generation) {
-        flow.cancelAuthFlow();
-        return;
-      }
-
-      activeFlowRef.current = flow;
-      setAuthorizationUrl(flow.authorizationUrl);
-      setStatus('awaiting');
-
-      flow.awaitApproval
+    const run = () => {
+      setStatus('starting');
+      const create = async () => {
+        const flow = await AuthController.getStepUpAuthUrl({
+          signer,
+          ...(requestsPassport ? { xCallback: passportCallbacks(window.location.origin) } : {}),
+        });
+        if (startGenerationRef.current !== generation) {
+          AuthController.releaseAuthFlow(flow.cancelAuthFlow);
+          return null;
+        }
+        activeFlowRef.current = flow;
+        setAuthorizationUrl(flow.authorizationUrl);
+        setStatus('awaiting');
+        return flow;
+      };
+      const approval = requestsPassport
+        ? startPassportAttempt(
+            async () => {
+              const flow = await create();
+              if (!flow) throw new PassportAttemptError('cancelled');
+              return {
+                authorizationUrl: flow.authorizationUrl,
+                result: flow.awaitApproval,
+                cancel: () => AuthController.releaseAuthFlow(flow.cancelAuthFlow),
+              };
+            },
+            { passportOrigin: getPassportOrigin() },
+          )
+        : create().then((flow) => flow?.awaitApproval);
+      void approval
         .then(async (session) => {
-          if (activeFlowRef.current !== flow) return;
-          try {
-            await AuthController.completeStepUpReauth({ session });
-          } catch (error) {
-            if (activeFlowRef.current !== flow) return;
-            activeFlowRef.current = null;
-            Logger.error('Step-up re-approval could not be applied', { error });
-            setAuthorizationUrl('');
-            setErrorMessage(getErrorMessage(error));
-            setStatus('error');
-            return;
-          }
+          if (!session || startGenerationRef.current !== generation) return;
+          await AuthController.completeStepUpReauth({ session });
+          if (startGenerationRef.current !== generation) return;
           activeFlowRef.current = null;
           setAuthorizationUrl('');
           setStatus('reauthenticated');
@@ -119,32 +143,40 @@ export function useStepUpReauth(options: UseStepUpReauthOptions = {}): UseStepUp
           }
         })
         .catch((error: unknown) => {
-          // A detached flow (cancelled or superseded) rejects as a side effect
-          // of being freed — that is control flow, not a failure to report.
-          if (activeFlowRef.current !== flow) return;
+          if (startGenerationRef.current !== generation) return;
           activeFlowRef.current = null;
-          // The CONTROLLER can also free this flow out from under the hook:
-          // a second start() anywhere supersedes it via
-          // `AuthController.cancelActiveAuthFlow` (wrapAuthFlow). The SDK
-          // canceled error that rejection carries is control flow too — the
-          // superseded flow ends idle, never error, and surfaces no toast.
+          setAuthorizationUrl('');
           if (
-            typeof error === 'object' &&
-            error !== null &&
-            'name' in error &&
-            (error as { name?: unknown }).name === AUTH_FLOW_CANCELED_ERROR_NAME
+            (typeof error === 'object' &&
+              error !== null &&
+              'name' in error &&
+              error.name === AUTH_FLOW_CANCELED_ERROR_NAME) ||
+            (isPassportAttemptError(error) && ['cancelled', 'closed', 'busy'].includes(error.reason))
           ) {
-            setAuthorizationUrl('');
             setStatus('idle');
             return;
           }
-          Logger.error('Step-up re-approval flow failed', { error });
-          setAuthorizationUrl('');
-          setErrorMessage(getErrorMessage(error));
+          setErrorMessage(
+            isPassportAttemptError(error) && error.reason === 'blocked'
+              ? 'Your browser blocked the Pubky Passport window. Allow pop-ups for this site and try again.'
+              : getErrorMessage(error),
+          );
           setStatus('error');
         });
-    })();
-  }, [detachActiveFlow, removeVisibilityHandler]);
+    };
+    if (requestsPassport) {
+      passportRunRef.current = run;
+      setStatus('idle');
+      return;
+    }
+    run();
+  }, [detachActiveFlow, removeVisibilityHandler, signer, requestsPassport]);
+
+  const startPassport = () => {
+    const run = passportRunRef.current;
+    passportRunRef.current = null;
+    run?.();
+  };
 
   const cancel = useCallback(() => {
     startGenerationRef.current += 1;
@@ -187,5 +219,18 @@ export function useStepUpReauth(options: UseStepUpReauthOptions = {}): UseStepUp
     };
   }, [detachActiveFlow, removeVisibilityHandler]);
 
-  return { status, authorizationUrl, errorMessage, start, cancel, copyAuthUrl, openInRing, isOpeningRing };
+  return {
+    status,
+    authorizationUrl,
+    errorMessage,
+    start,
+    startPassport,
+    requestsPassport,
+    requiresSignerChoice: signer === null,
+    signerName: marketplaceApprovalSigner(signer),
+    cancel,
+    copyAuthUrl,
+    openInRing,
+    isOpeningRing,
+  };
 }
