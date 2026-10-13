@@ -102,11 +102,17 @@ export class LocalChatService {
         const row = await ChatConversationModel.table.get(id);
         if (!row) return;
         if (row.last_message_at !== null && row.last_message_at > latest.sentAt) return;
+        const context = latest.context ?? row.last_context;
+        const contextChanged =
+          (context?.listingId ?? null) !== (row.last_context?.listingId ?? null) ||
+          (context?.orderId ?? null) !== (row.last_context?.orderId ?? null);
         await ChatConversationModel.table.update(id, {
           last_message_at: latest.sentAt,
           last_message_preview: chatPreview(latest.body),
           last_message_direction: latest.direction,
-          last_context: latest.context ?? row.last_context,
+          last_context: context,
+          // The /priv record carries the context; only a changed one is worth a write.
+          ...(contextChanged ? { priv_state_dirty: true } : {}),
           updated_at: Date.now(),
         });
       });

@@ -223,7 +223,9 @@ export class ChatApplication {
         peer_public_key: record.pk,
         folder_id: keys.peerFolderId,
         own_folder_id: keys.ownFolderId,
-        priv_state_dirty: row.priv_state_dirty || rotated || row.folder_id !== keys.peerFolderId,
+        // A row rebuilt from /priv starts without a folder; filling it in is not a change worth a write.
+        priv_state_dirty:
+          row.priv_state_dirty || rotated || (row.folder_id !== null && row.folder_id !== keys.peerFolderId),
       });
       if (rotated) {
         // New epoch: the peer re-keyed (new device, reset). Older messages
@@ -314,7 +316,7 @@ export class ChatApplication {
     const existing = await LocalChatService.getConversation(me, peer);
     if (existing) {
       if (context && !sameContext(existing.last_context, context)) {
-        await LocalChatService.updateConversation(me, peer, { last_context: context });
+        await LocalChatService.updateConversation(me, peer, { last_context: context, priv_state_dirty: true });
         return { ...existing, last_context: context };
       }
       return existing;
@@ -476,7 +478,6 @@ export class ChatApplication {
         next_attempt_at: null,
         last_error: null,
       });
-      await LocalChatService.updateConversation(me, row.peer_pubky, { priv_state_dirty: true });
       // The newest sent file is the one to wake the peer with; the inbox replaces the
       // pending ping per slot, so one ping per conversation is enough.
       await LocalChatService.updateSyncState(me, row.peer_pubky, {

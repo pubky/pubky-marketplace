@@ -378,6 +378,51 @@ describe('ChatApplication', () => {
       expect(await ChatApplication.getConversations(ALICE)).toHaveLength(1);
     });
 
+    it('writes the /priv conversation record once, not once per message', async () => {
+      await ChatApplication.ensureIdentity(ALICE);
+      await ChatApplication.ensureIdentity(BOB);
+      await ChatApplication.openConversation(ALICE, BOB);
+      const privWrites = () =>
+        homeserver.log.filter((entry) => entry.startsWith('PUT') && entry.includes('/priv/chat/v0/conversations/'))
+          .length;
+      await ChatApplication.queueMessage(ALICE, { peer: BOB, body: 'one' });
+      await ChatApplication.flushOutbox(ALICE);
+      expect(privWrites()).toBe(1);
+      await ChatApplication.queueMessage(ALICE, { peer: BOB, body: 'two' });
+      await ChatApplication.queueMessage(ALICE, { peer: BOB, body: 'three' });
+      await ChatApplication.flushOutbox(ALICE);
+      expect(privWrites()).toBe(1);
+      // A new context on the thread is part of the record and does get written.
+      await ChatApplication.queueMessage(ALICE, {
+        peer: BOB,
+        body: 'about the boots',
+        context: { listingId: 'boots' },
+      });
+      await ChatApplication.flushOutbox(ALICE);
+      expect(privWrites()).toBe(2);
+    });
+
+    it('does not rewrite unchanged /priv records on a new device', async () => {
+      await ChatApplication.ensureIdentity(ALICE);
+      await ChatApplication.ensureIdentity(BOB);
+      await ChatApplication.openConversation(ALICE, BOB);
+      await ChatApplication.queueMessage(ALICE, { peer: BOB, body: 'hello' });
+      await ChatApplication.flushOutbox(ALICE);
+      // Device two: the cache is empty, the record comes back from /priv.
+      await LocalChatService.clearAll();
+      ChatApplication.clearSessionsOfOtherAccounts(ALICE);
+      const before = homeserver.log.filter(
+        (entry) => entry.startsWith('PUT') && entry.includes('/priv/chat/v0/conversations/'),
+      ).length;
+      await ChatApplication.rebuildFromHomeserver(ALICE);
+      await ChatApplication.flushPrivState(ALICE);
+      const after = homeserver.log.filter(
+        (entry) => entry.startsWith('PUT') && entry.includes('/priv/chat/v0/conversations/'),
+      ).length;
+      expect(after).toBe(before);
+      expect((await LocalChatService.getConversation(ALICE, BOB))?.folder_id).toMatch(/^[0-9a-f]{32}$/u);
+    });
+
     it('refuses self-chat and empty bodies', async () => {
       await ChatApplication.ensureIdentity(ALICE);
       await expect(ChatApplication.queueMessage(ALICE, { peer: ALICE, body: 'me' })).rejects.toThrow(/yourself/u);
