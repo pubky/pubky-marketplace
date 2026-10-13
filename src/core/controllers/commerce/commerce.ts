@@ -318,11 +318,12 @@ export class CommerceController {
   }
 
   /** Sign-out and account switch (`AuthController` local-state cleanup). */
-  static clearMarketplaceSessionForSignOut(): void {
-    CommerceApplication.clearMarketplaceSessionForSignOut();
+  static clearMarketplaceSessionForSignOut(options?: { confirmBff?: boolean }): void | Promise<void> {
+    const cleanup = CommerceApplication.clearMarketplaceSessionForSignOut(options);
     this.clearMarketplaceSessionStore();
     CommerceApplication.clearInventorySessionForSignOut();
     this.clearInventorySessionStore();
+    return cleanup;
   }
 
   /**

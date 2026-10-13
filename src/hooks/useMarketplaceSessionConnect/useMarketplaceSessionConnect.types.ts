@@ -52,6 +52,8 @@ export interface UseMarketplaceSessionConnectReturn {
   /** The recorded or explicitly selected signer for this service approval. */
   approvalSigner: MarketplaceApprovalSigner;
   requiresSignerChoice: boolean;
+  /** A remembered identity alone cannot authorize the bootstrap proof. */
+  requiresSignIn: boolean;
   /** Begins a fresh flow, cancelling any in-flight one. */
   start: () => void;
   /** Opens the armed Passport approval. Call it from the click handler itself. */

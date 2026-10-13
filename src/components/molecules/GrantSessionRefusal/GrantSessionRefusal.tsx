@@ -16,7 +16,7 @@ const GRANT_SIGNER_NAMES: Record<GrantSigner, string> = {
 };
 
 /**
- * What a grant (Bitkit or Pubky Passport) sign-in reads where the Shop cannot
+ * What a grant sign-in reads where the Shop cannot
  * serve it yet. Messaging needs an encrypted-messaging session that grant
  * sign-ins cannot open today, so that copy names no other signer: it says
  * what is missing and that the rest of Shop works.
@@ -24,7 +24,7 @@ const GRANT_SIGNER_NAMES: Record<GrantSigner, string> = {
 export function grantSessionRefusalCopy(reason: GrantSessionRefusalReason, signer: GrantSigner): string {
   const name = GRANT_SIGNER_NAMES[signer];
   return reason === 'messaging'
-    ? `Messages are not available for ${name} sign-ins yet. Everything else in Shop works with this sign-in.`
+    ? `New messages cannot be enabled with this ${name} sign-in yet. You can still read saved conversations on this device.`
     : 'Marketplace approvals are unavailable on this deployment. Try again when access is enabled.';
 }
 

@@ -31,6 +31,9 @@ const sellerReputation = vi.hoisted((): { value: CommerceSellerReputationOvervie
 const authState = vi.hoisted(() => ({
   currentUserPubky: 'b'.repeat(52) as string | null,
   session: { grant: {} },
+  hasProfile: true,
+  isRestoringSession: false,
+  isLoggingOut: false,
   grantSigner: 'ring' as GrantSigner,
   setShowSignInDialog: vi.fn(),
 }));

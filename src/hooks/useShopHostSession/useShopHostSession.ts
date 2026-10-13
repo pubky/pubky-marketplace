@@ -54,10 +54,13 @@ export function useShopHostSession() {
       const sequence = ++latestMessage.current;
       // Logout can wait for serialized bootstrap/cleanup. Do not remount guest
       // consumers against the previous account's private state before it settles.
-      setStatus(snapshot.status === 'ready' || snapshot.status === 'signed-out' ? 'restoring' : snapshot.status);
+      setStatus('restoring');
       void AuthController.applyHostSession(snapshot).then(
         (result) => {
-          if (!disposed && sequence === latestMessage.current) setStatus(result);
+          if (!disposed && sequence === latestMessage.current) {
+            if (result === 'temporary-error') lastSnapshotKey.current = null;
+            setStatus(result);
+          }
         },
         () => {
           if (!disposed && sequence === latestMessage.current) {
@@ -74,7 +77,7 @@ export function useShopHostSession() {
       clearInterval(retry);
       if (!received) setStatus('temporary-error');
     }, 10_000);
-    requestShopHostAction('ready');
+    requestShopHostAction(attempt > 0 ? 'request-retry' : 'ready');
     return () => {
       disposed = true;
       latestMessage.current += 1;

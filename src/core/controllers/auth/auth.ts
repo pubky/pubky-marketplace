@@ -40,6 +40,12 @@ import { Logger } from '@/libs/logger/logger';
 import { clearMuteSyncCursorSessionStorage } from '@/libs/mute-sync/clear-cursor-session-storage';
 import { clearAllQueryClients } from '@/libs/query-client/query-client.factory';
 import { requestShopHostAction } from '@/libs/shop-session/bridge';
+import {
+  isCurrentHostCleanupSnapshot,
+  readAppliedHostCleanupEpoch,
+  withShopHostCleanupLock,
+  writeAppliedHostCleanupEpoch,
+} from '@/libs/shop-session/cleanup';
 import { sleep } from '@/libs/utils/utils';
 import { suppressVibeSessionAutoRestore } from '@/libs/vibe-session/auto-restore';
 import { isVibeSessionConsumerEnabled } from '@/libs/vibe-session/config';
@@ -126,102 +132,146 @@ export class AuthController {
     this.hostTransition = this.hostTransition
       .catch(() => 'temporary-error' as const)
       .then(() =>
-        withAuthFinalizationLock(async () => {
-          if (!current()) return 'restoring';
-          let previousPubky: string | null;
-          let sharedPubky: string | null;
-          try {
-            sharedPubky = readHostIdentity();
-            previousPubky = useAuthStore.getState().currentUserPubky ?? sharedPubky;
-          } catch {
-            this.hostSnapshotKey = null;
-            return 'temporary-error';
-          }
-          const identityChanged = Boolean(snapshot.pubky && previousPubky && snapshot.pubky !== previousPubky);
-          if (snapshot.status === 'signed-out' || identityChanged || (snapshot.status === 'ready' && !previousPubky)) {
-            this.markLocalStateDirty();
-            // Another iframe may have already prepared this account while this
-            // frame waited for the lock. Reset its old local view without wiping
-            // the new account's database, message keys or service approvals.
-            const preparedByAnotherFrame = Boolean(
-              snapshot.status !== 'signed-out' && snapshot.pubky && sharedPubky === snapshot.pubky,
-            );
-            await this.cleanupLocalState({
-              preservePublicCache: true,
-              preservePrivateData: preparedByAnotherFrame,
-              preserveServiceSessions: preparedByAnotherFrame || (snapshot.status !== 'signed-out' && !identityChanged),
-              keepServicePubky: preparedByAnotherFrame ? snapshot.pubky : null,
+        withShopHostCleanupLock(() =>
+          withAuthFinalizationLock(async () => {
+            if (!current()) return 'restoring';
+            let previousPubky: string | null;
+            let sharedPubky: string | null;
+            let appliedEpoch: string | null;
+            try {
+              if (!isCurrentHostCleanupSnapshot(snapshot)) {
+                this.hostSnapshotKey = null;
+                return 'restoring';
+              }
+              appliedEpoch = readAppliedHostCleanupEpoch();
+              sharedPubky = readHostIdentity();
+              previousPubky = useAuthStore.getState().currentUserPubky ?? sharedPubky;
+            } catch {
+              this.hostSnapshotKey = null;
+              return 'temporary-error';
+            }
+            const cleanupEpoch = snapshot.shopCleanupEpoch ?? '';
+            const boundaryChanged = appliedEpoch !== cleanupEpoch;
+            // Preserve ownership before the consumer clears a standalone pointer.
+            for (const id of this.activeShopGrantRecordIds()) {
+              if (id !== snapshot.sessionStoreId) AuthApplication.queueGrantRetirement(id);
+            }
+            const identityChanged = Boolean(snapshot.pubky && previousPubky && snapshot.pubky !== previousPubky);
+            if (
+              boundaryChanged ||
+              snapshot.status === 'signed-out' ||
+              identityChanged ||
+              (snapshot.status === 'ready' && !previousPubky)
+            ) {
+              this.markLocalStateDirty();
+              // Another iframe may have already prepared this account while this
+              // frame waited for the lock. Reset its old local view without wiping
+              // the new account's database, message keys or service approvals.
+              const preparedByAnotherFrame = Boolean(
+                !boundaryChanged &&
+                snapshot.status !== 'signed-out' &&
+                snapshot.pubky &&
+                sharedPubky === snapshot.pubky,
+              );
+              await this.cleanupLocalState({
+                preservePublicCache: true,
+                confirmMarketplaceBff: true,
+                preservePrivateData: preparedByAnotherFrame,
+                preserveServiceSessions:
+                  !boundaryChanged &&
+                  (preparedByAnotherFrame || (snapshot.status !== 'signed-out' && !identityChanged)),
+                keepServicePubky: preparedByAnotherFrame ? snapshot.pubky : null,
+              });
+              if (!current()) return 'restoring';
+              // Reserve the prepared identity before SDK/profile IO. This public
+              // marker is only a cleanup boundary and cannot authorize a restore.
+              if (!isCurrentHostCleanupSnapshot(snapshot)) {
+                this.hostSnapshotKey = null;
+                return 'restoring';
+              }
+              writeHostIdentity(snapshot.status === 'signed-out' ? null : snapshot.pubky);
+              writeAppliedHostCleanupEpoch(cleanupEpoch);
+            }
+            // An embedded consumer never persists an independently restorable pointer.
+            clearPersistedAuthIdentity();
+            // Only durable exact-record obligations are swept here. Their remote
+            // revocation must not hold the shared host cleanup lock across a
+            // later logout. The service validates Shop ownership before revoking
+            // and preserves failed obligations; it never adopts these records.
+            void AuthApplication.clearGrantSessions({
+              protectedRecordIds: snapshot.sessionStoreId ? [snapshot.sessionStoreId] : [],
+            }).catch((error) => {
+              Logger.warn('Owned Shop grant retirement remains pending after host adoption', { error });
             });
-            if (!current()) return 'restoring';
-            // Reserve the prepared identity before SDK/profile IO. This public
-            // marker is only a cleanup boundary and cannot authorize a restore.
-            writeHostIdentity(snapshot.status === 'signed-out' ? null : snapshot.pubky);
-          }
-          // An embedded consumer never persists an independently restorable pointer.
-          clearPersistedAuthIdentity();
-          const store = useAuthStore.getState();
-          store.setIsRestoringSession(snapshot.status === 'restoring' || snapshot.status === 'ready');
-          store.setSessionRestoreDeferred(
-            snapshot.status === 'temporary-error' || snapshot.status === 'reauth-required',
-          );
-          if (snapshot.status !== 'ready') return snapshot.status;
-          if (
-            !snapshot.generation ||
-            !snapshot.pubky ||
-            !snapshot.sessionStoreId ||
-            !snapshot.grantId ||
-            !snapshot.clientId
-          ) {
-            store.setIsRestoringSession(false);
-            return 'reauth-required';
-          }
-          try {
-            const session = await this.awaitHostRead(
-              AuthApplication.restoreHostSession({
-                pubky: snapshot.pubky,
-                sessionStoreId: snapshot.sessionStoreId,
-                grantId: snapshot.grantId,
-                clientId: snapshot.clientId,
-              }),
-              signal,
+            const store = useAuthStore.getState();
+            store.setIsRestoringSession(snapshot.status === 'restoring' || snapshot.status === 'ready');
+            store.setSessionRestoreDeferred(
+              snapshot.status === 'temporary-error' || snapshot.status === 'reauth-required',
             );
-            if (!session || !current()) return 'restoring';
-            const pubky = Identity.z32FromSession({ session });
-            const hasProfile = await this.awaitHostRead(AuthApplication.userIsSignedUp({ pubky }), signal);
-            if (hasProfile === null || !current()) return 'restoring';
-            store.init({
-              session,
-              currentUserPubky: pubky,
-              hasProfile: null,
-              sessionOwner: 'host',
-              hostGeneration: snapshot.generation,
-              grantSigner: 'host',
-            });
-            writeHostIdentity(pubky);
-            this.markLocalStateDirty();
-            const marketplaceSession = CommerceApplication.restoreMarketplaceSession(pubky);
-            if (marketplaceSession) CommerceController.writeMarketplaceSessionStore(marketplaceSession);
-            const inventorySession = CommerceApplication.restoreInventorySession(pubky);
-            if (inventorySession) CommerceController.writeInventorySessionStore(inventorySession);
-            if (hasProfile) await this.hydrateMeImAlive({ pubky, isCurrent: current });
-            if (!current()) return 'restoring';
-            store.setHasProfile(hasProfile);
-            return 'ready';
-          } catch (error) {
-            if (!current()) return 'restoring';
-            store.setSession(null);
-            store.setSessionRestoreDeferred(true);
-            this.hostSnapshotKey = null;
-            // The host alone decides whether to retry, upgrade, or retire its grant.
-            if (isAppError(error) && error.context?.reason === 'missing-capabilities') return 'capabilities-required';
-            return isDefinitiveSessionAuthFailure(error) ||
-              (isAppError(error) && error.operation === 'restoreHostSession')
-              ? 'reauth-required'
-              : 'temporary-error';
-          } finally {
-            if (current()) store.setIsRestoringSession(false);
-          }
-        }),
+            if (snapshot.status !== 'ready') return snapshot.status;
+            if (
+              !snapshot.generation ||
+              !snapshot.pubky ||
+              !snapshot.sessionStoreId ||
+              !snapshot.grantId ||
+              !snapshot.clientId
+            ) {
+              store.setIsRestoringSession(false);
+              return 'reauth-required';
+            }
+            try {
+              const session = await this.awaitHostRead(
+                AuthApplication.restoreHostSession({
+                  pubky: snapshot.pubky,
+                  sessionStoreId: snapshot.sessionStoreId,
+                  grantId: snapshot.grantId,
+                  clientId: snapshot.clientId,
+                }),
+                signal,
+              );
+              if (!session || !current() || !isCurrentHostCleanupSnapshot(snapshot)) return 'restoring';
+              const pubky = Identity.z32FromSession({ session });
+              const hasProfile = await this.awaitHostRead(AuthApplication.userIsSignedUp({ pubky }), signal);
+              if (hasProfile === null || !current() || !isCurrentHostCleanupSnapshot(snapshot)) return 'restoring';
+              store.init({
+                session,
+                currentUserPubky: pubky,
+                hasProfile: null,
+                sessionOwner: 'host',
+                hostGeneration: snapshot.generation,
+                grantSigner: 'host',
+              });
+              writeHostIdentity(pubky);
+              this.markLocalStateDirty();
+              const marketplaceSession = CommerceApplication.restoreMarketplaceSession(pubky);
+              if (marketplaceSession) CommerceController.writeMarketplaceSessionStore(marketplaceSession);
+              const inventorySession = CommerceApplication.restoreInventorySession(pubky);
+              if (inventorySession) CommerceController.writeInventorySessionStore(inventorySession);
+              const ownsBoundary = () => current() && isCurrentHostCleanupSnapshot(snapshot);
+              if (hasProfile) await this.hydrateMeImAlive({ pubky, isCurrent: ownsBoundary });
+              if (!ownsBoundary()) {
+                store.setSession(null);
+                this.hostSnapshotKey = null;
+                return 'restoring';
+              }
+              store.setHasProfile(hasProfile);
+              return 'ready';
+            } catch (error) {
+              if (!current()) return 'restoring';
+              store.setSession(null);
+              store.setSessionRestoreDeferred(true);
+              this.hostSnapshotKey = null;
+              // The host alone decides whether to retry, upgrade, or retire its grant.
+              if (isAppError(error) && error.context?.reason === 'missing-capabilities') return 'capabilities-required';
+              return isDefinitiveSessionAuthFailure(error) ||
+                (isAppError(error) && error.operation === 'restoreHostSession')
+                ? 'reauth-required'
+                : 'temporary-error';
+            } finally {
+              if (current()) store.setIsRestoringSession(false);
+            }
+          }),
+        ),
       )
       .catch(() => {
         if (!current()) return 'restoring';
@@ -969,9 +1019,17 @@ export class AuthController {
         return false;
       }
       const prepare = async () => {
-        if (captured?.pubky && captured.pubky !== newPubky) {
+        if ([captured?.pubky, currentPubky, persistedPubky].some((pubky) => pubky && pubky !== newPubky)) {
           await clearDatabase();
           useMigrationStore.getState().reset();
+          // Reset before bootstrap can upload local fallback preferences for
+          // the new account. Same-account renewal preserves these values.
+          useSettingsStore.getState().reset();
+          useSearchStore.getState().reset();
+          useNotificationStore.getState().reset();
+          useHomeStore.getState().reset();
+          useHotStore.getState().reset();
+          useLocalFilesStore.getState().reset();
         }
         // Identity replacement is committed only after the new grant is saved.
         if (persistedPubky && persistedPubky !== newPubky) clearPersistedAuthIdentity();
@@ -1010,12 +1068,14 @@ export class AuthController {
     preservePublicCache = false,
     preserveMessagingHistory = false,
     preserveServiceSessions = false,
+    confirmMarketplaceBff = false,
     preservePrivateData = false,
     keepServicePubky = null,
   }: {
     preservePublicCache?: boolean;
     preserveMessagingHistory?: boolean;
     preserveServiceSessions?: boolean;
+    confirmMarketplaceBff?: boolean;
     preservePrivateData?: boolean;
     keepServicePubky?: Pubky | null;
   } = {}): Promise<void> {
@@ -1029,6 +1089,7 @@ export class AuthController {
       preservePublicCache,
       preserveMessagingHistory,
       preserveServiceSessions,
+      confirmMarketplaceBff,
       preservePrivateData,
       keepServicePubky,
     }).finally(() => {
@@ -1042,12 +1103,14 @@ export class AuthController {
     preservePublicCache,
     preserveMessagingHistory,
     preserveServiceSessions,
+    confirmMarketplaceBff,
     preservePrivateData,
     keepServicePubky,
   }: {
     preservePublicCache: boolean;
     preserveMessagingHistory: boolean;
     preserveServiceSessions: boolean;
+    confirmMarketplaceBff: boolean;
     preservePrivateData: boolean;
     keepServicePubky: Pubky | null;
   }) {
@@ -1066,58 +1129,76 @@ export class AuthController {
     // Reset singletons
     PubkySpecsSingleton.reset();
     // No marketplace bearer may stay at rest for the user who is leaving.
+    let marketplaceCleanup: Promise<PromiseSettledResult<void>[]> | null = null;
     if (keepServicePubky) CommerceController.clearMarketplaceSessionsOfOtherAccounts(keepServicePubky);
-    else if (!preserveServiceSessions) CommerceController.clearMarketplaceSessionForSignOut();
-    // Keep the newly active account's persisted messaging approval on another
-    // frame's repeat cleanup, while dropping this frame's old live handles.
-    if (keepServicePubky) MessagingApplication.clearMessagingSessionsOfOtherAccounts(keepServicePubky);
-    else MessagingApplication.clearMessagingSession();
-    // The mute list, known contacts and message counters belong to the signed-out identity.
-    FirstContactApplication.clear();
-    useMessagingStore.getState().clearMessagingEnabled();
-    TtlCoordinator.resetInstance();
-    StreamCoordinator.resetInstance();
-    NotificationCoordinator.resetInstance();
-
-    // Clear in-memory feed stream queues
-    postStreamQueue.clear();
-
-    this.cancelAllAuthFlows();
-
-    // Cancel and clear all query clients (nexus, homegate, exchangerate, and any future ones)
-    clearAllQueryClients();
-
-    // Reset all Zustand stores.
-    useOnboardingStore.getState().reset();
-    // reset() rewrites the onboarding persist blob with nulled secrets; remove
-    // the key outright so no onboarding residue (secret key, mnemonic, invite
-    // code) survives at rest on a shared device.
+    else if (!preserveServiceSessions) {
+      if (confirmMarketplaceBff) {
+        // Observe rejection immediately, but finish removing local private state even
+        // while the BFF is offline. The host epoch is acknowledged only after both.
+        marketplaceCleanup = Promise.allSettled([
+          CommerceController.clearMarketplaceSessionForSignOut({ confirmBff: true }),
+        ]);
+      } else CommerceController.clearMarketplaceSessionForSignOut();
+    }
     try {
-      globalThis.localStorage?.removeItem(ONBOARDING_PERSIST_KEY);
-    } catch {
-      // Storage unavailable (private mode) — nothing could have persisted.
-    }
-    useAuthStore.getState().reset();
-    useSignInStore.getState().reset();
-    useLocalFilesStore.getState().reset();
-    useCommerceStore.getState().reset();
-    useHomeStore.getState().reset();
-    useHotStore.getState().reset();
-    useSearchStore.getState().reset();
-    useNotificationStore.getState().reset();
-    useSettingsStore.getState().reset();
+      // Keep the newly active account's persisted messaging approval on another
+      // frame's repeat cleanup, while dropping this frame's old live handles.
+      if (keepServicePubky) MessagingApplication.clearMessagingSessionsOfOtherAccounts(keepServicePubky);
+      else MessagingApplication.clearMessagingSession();
+      // The mute list, known contacts and message counters belong to the signed-out identity.
+      FirstContactApplication.clear();
+      useMessagingStore.getState().clearMessagingEnabled();
+      TtlCoordinator.resetInstance();
+      StreamCoordinator.resetInstance();
+      NotificationCoordinator.resetInstance();
 
-    // The only step that differs between a full sign-out wipe and the
-    // no-identity restore path: the latter keeps the public browse cache.
-    if (!preservePrivateData) {
-      if (preservePublicCache) {
-        await clearPrivateData({ preserveMessagingHistory });
-      } else {
-        await clearDatabase({ preserveMessagingHistory });
+      // Clear in-memory feed stream queues
+      postStreamQueue.clear();
+
+      this.cancelAllAuthFlows();
+
+      // Cancel and clear all query clients (nexus, homegate, exchangerate, and any future ones)
+      clearAllQueryClients();
+
+      // Reset all Zustand stores.
+      useOnboardingStore.getState().reset();
+      // reset() rewrites the onboarding persist blob with nulled secrets; remove
+      // the key outright so no onboarding residue (secret key, mnemonic, invite
+      // code) survives at rest on a shared device.
+      try {
+        globalThis.localStorage?.removeItem(ONBOARDING_PERSIST_KEY);
+      } catch {
+        // Storage unavailable (private mode) — nothing could have persisted.
       }
+      useAuthStore.getState().reset();
+      useSignInStore.getState().reset();
+      useLocalFilesStore.getState().reset();
+      useCommerceStore.getState().reset();
+      useHomeStore.getState().reset();
+      useHotStore.getState().reset();
+      useSearchStore.getState().reset();
+      useNotificationStore.getState().reset();
+      useSettingsStore.getState().reset();
+
+      // The only step that differs between a full sign-out wipe and the
+      // no-identity restore path: the latter keeps the public browse cache.
+      if (!preservePrivateData) {
+        if (preservePublicCache) {
+          await clearPrivateData({ preserveMessagingHistory });
+        } else {
+          await clearDatabase({ preserveMessagingHistory });
+        }
+      }
+      // Skip post-migration resync — full cleanup resets all state
+      useMigrationStore.getState().reset();
+    } finally {
+      // A failed local reset must not release the host lock while its unscoped
+      // DELETE can still clear a newly paired cookie. allSettled preserves the
+      // original local error while draining this bounded HTTP operation.
+      await marketplaceCleanup;
     }
-    // Skip post-migration resync — full cleanup resets all state
-    useMigrationStore.getState().reset();
+    const marketplaceOutcome = (await marketplaceCleanup)?.[0];
+    if (marketplaceOutcome?.status === 'rejected') throw marketplaceOutcome.reason;
   }
 
   /**
@@ -1287,7 +1368,11 @@ export class AuthController {
         grantSigner: this.grantSignerBySession.get(session) ?? 'ring',
       });
       AuthApplication.commitGrantSession(recordId);
-      await AuthApplication.clearGrantSessions({ protectedRecordIds: this.activeShopGrantRecordIds() });
+      try {
+        await AuthApplication.clearGrantSessions({ protectedRecordIds: this.activeShopGrantRecordIds() });
+      } catch (error) {
+        Logger.warn('The replacement grant is active; predecessor cleanup will retry', { error });
+      }
     });
     if (releaseAuthFlow) this.cancelAllAuthFlows();
   }
@@ -1330,56 +1415,43 @@ export class AuthController {
     authStore.setSessionRestoreDeferred(false);
 
     let session = authStore.session;
+    authStore.setSession(null);
     let signedOut = false;
 
-    try {
-      // Fresh loads can still have a persisted session export before the live session is restored.
-      // Reuse the restore flow so /logout performs a real homeserver sign-out before local cleanup.
-      if (!session && (authStore.sessionExport || authStore.grantSessionRecordId || isVibeSessionConsumerEnabled())) {
-        let restoreResult: TRestorePersistedSessionResult;
-        try {
-          restoreResult = await this.restorePersistedSession();
-        } catch (error) {
-          // restorePersistedSession already cleaned up local state; a wrong-environment
-          // rejection needs no toast here — the user asked to log out anyway.
-          Logger.warn('Persisted session restore during logout failed; local state already cleaned up', { error });
-          await this.removeSignedOutSessionsUnderLock(captured.pubky, capturedRecordId);
-          signedOut = true;
-          return;
-        }
-        if (restoreResult.status === 'signed-out') {
-          await this.removeSignedOutSessionsUnderLock(captured.pubky, capturedRecordId);
-          signedOut = true;
-          return;
-        }
-        if (restoreResult.status === 'deferred') {
-          Logger.warn('Homeserver logout failed, clearing local state anyway', {
-            error: 'Session restore deferred; homeserver sign-out could not run',
-          });
-          await this.removeSignedOutSessionsUnderLock(captured.pubky, capturedRecordId);
-          await this.finalizeSignedOutUnderLock({ captured, capturedRecordId, preservePublicCache: false });
-          signedOut = true;
-          return;
-        }
-        authStore = useAuthStore.getState();
-        session = authStore.session;
+    // Keep remote revocation retryable independently of the local auth pointer.
+    // The pointer is cleared on logout even when IndexedDB or the network fails.
+    if (capturedRecordId) {
+      try {
+        AuthApplication.queueGrantRetirement(capturedRecordId);
+      } catch (error) {
+        Logger.warn('Could not save the logout cleanup obligation; attempting cleanup now', { error });
       }
-
+    }
+    let remoteSignedOut = false;
+    try {
+      if (!session && (authStore.sessionExport || capturedRecordId || isVibeSessionConsumerEnabled())) {
+        try {
+          await this.restorePersistedSession();
+          authStore = useAuthStore.getState();
+          // Never sign out a newer approval that won during restore.
+          if (authStore.grantSessionRecordId === capturedRecordId) session = authStore.session;
+        } catch (error) {
+          Logger.warn('Session restore during logout failed; retaining exact cleanup obligations', { error });
+        }
+      }
       if (session) {
         try {
           await AuthApplication.logout({ session });
+          remoteSignedOut = true;
         } catch (error) {
-          Logger.warn('Homeserver logout failed, clearing local state anyway', { error });
+          Logger.warn('Homeserver logout failed; revocation will be retried after local sign-out', { error });
         }
       }
-
-      // After the homeserver sign-out (it needs the grant key) and before the
-      // record pointer is cleared: a key that cannot be removed keeps the
-      // pointer and fails the logout instead of reporting signed-out.
-      await this.removeSignedOutSessionsUnderLock(captured.pubky, capturedRecordId);
-      // Serialized with restore finalization and sign-in identity persists.
-      // Cleanup is keyed to the identity captured at logout start: a
-      // different live pubky means that sign-in now owns origin-scoped Dexie.
+      try {
+        await this.removeSignedOutSessionsUnderLock(captured.pubky, capturedRecordId, remoteSignedOut);
+      } catch (error) {
+        Logger.warn('Grant cleanup is pending; clearing local account and service access', { error });
+      }
       await this.finalizeSignedOutUnderLock({ captured, capturedRecordId, preservePublicCache: false });
       signedOut = true;
     } finally {
@@ -1403,6 +1475,7 @@ export class AuthController {
   private static async removeSignedOutSessionsUnderLock(
     pubky: string | null,
     capturedRecordId: string | null,
+    remoteSignedOut = true,
   ): Promise<void> {
     await withAuthFinalizationLock(async () => {
       const protectedRecordIds = this.activeShopGrantRecordIds().filter((id) => id !== capturedRecordId);
@@ -1411,7 +1484,7 @@ export class AuthController {
       if (protectedRecordIds.length === 0) bumpAuthEpoch();
       const authState = useAuthStore.getState();
       await AuthApplication.clearGrantSessions({
-        recordIds: capturedRecordId ? [capturedRecordId] : [],
+        recordIds: remoteSignedOut && capturedRecordId ? [capturedRecordId] : [],
         protectedRecordIds,
         requireAvailable: Boolean(
           authState.grantSessionRecordId ||
@@ -1479,24 +1552,30 @@ export class AuthController {
     this.cancelAllAuthFlows();
     BootstrapApplication.cancelModerationFollow();
     const { session, grantSessionRecordId } = useAuthStore.getState();
-    if (!AuthApplication.isGrantSession(session) || !session) return;
+    if (session && !AuthApplication.isGrantSession(session)) return;
+    if (!session && !grantSessionRecordId && !useAuthStore.getState().currentUserPubky) return;
     const captured = this.captureAuthIdentity();
     useAuthStore.getState().setSession(null);
-    await AuthApplication.logout({ session }).catch((error) => {
-      Logger.warn('Cross-tab grant sign-out could not reach the homeserver', { error });
-    });
     if (grantSessionRecordId) {
       try {
-        // Only this tab's record: a newer sign-in in another tab keeps its key.
-        await AuthApplication.removeGrantSession(grantSessionRecordId);
+        AuthApplication.queueGrantRetirement(grantSessionRecordId);
       } catch (error) {
-        if (useAuthStore.getState().grantSessionRecordId === grantSessionRecordId)
-          useAuthStore.getState().setSessionRestoreDeferred(true);
-        Logger.error("Cross-tab sign-out could not remove this tab's grant key; retaining its cleanup reference", {
-          error,
-        });
-        return;
+        Logger.warn('Could not save the cross-tab cleanup obligation; attempting cleanup now', { error });
       }
+    }
+    let remoteSignedOut = false;
+    try {
+      if (session) {
+        await AuthApplication.logout({ session });
+        remoteSignedOut = true;
+      }
+    } catch (error) {
+      Logger.warn('Cross-tab grant sign-out will retry its remote revocation', { error });
+    }
+    try {
+      await this.removeSignedOutSessionsUnderLock(captured.pubky, grantSessionRecordId, remoteSignedOut);
+    } catch (error) {
+      Logger.warn('Cross-tab cleanup is pending; clearing local account and service access', { error });
     }
     await this.finalizeSignedOutUnderLock({
       captured,

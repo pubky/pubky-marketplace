@@ -75,7 +75,9 @@ export function useMarketplaceSessionConnect(
   );
   // A Passport approval opens a popup, which needs a click: `start()` only
   // arms it and `startPassport()` runs it.
-  const selectedSigner = options.signer ?? marketplaceSignerChoice(readGrantSigner(useAuthStore.getState()));
+  const preferredSigner = options.signer ?? marketplaceSignerChoice(readGrantSigner(useAuthStore.getState()));
+  const selectedSigner = preferredSigner === 'passport' && !getPassportSignInEnabled() ? null : preferredSigner;
+  const requiresSignIn = !authSession?.grant;
   const requestsPassport =
     getMarketplaceGrantFlowEnabled() && selectedSigner === 'passport' && getPassportSignInEnabled();
   const approvalSigner = marketplaceApprovalSigner(selectedSigner);
@@ -125,7 +127,7 @@ export function useMarketplaceSessionConnect(
 
     const generation = generationRef.current;
 
-    const expectedSession = useAuthStore.getState().session;
+    const expectedSession = authSession;
     const expectedPubky = signedInPubky();
     const isCurrentIdentity = () =>
       useAuthStore.getState().session === expectedSession && signedInPubky() === expectedPubky;
@@ -323,7 +325,7 @@ export function useMarketplaceSessionConnect(
 
     setStatus('error');
     setErrorMessage('Sign in again to connect the marketplace.');
-  }, [armPassport, detachActiveFlow, grantFlowEnabled, removeVisibilityHandler, selectedSigner]);
+  }, [armPassport, authSession, detachActiveFlow, grantFlowEnabled, removeVisibilityHandler, selectedSigner]);
 
   /**
    * Runs the armed Pubky Passport approval. Call it from the click handler
@@ -391,6 +393,7 @@ export function useMarketplaceSessionConnect(
     requestsPassport,
     approvalSigner,
     requiresSignerChoice,
+    requiresSignIn,
     start,
     startPassport,
     cancel,

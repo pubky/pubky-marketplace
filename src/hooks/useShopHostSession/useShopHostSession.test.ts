@@ -119,7 +119,11 @@ describe('host session lifecycle hook', () => {
     act(() => dispatch(ready));
     await waitFor(() => expect(result.current.status).toBe('temporary-error'));
     act(() => result.current.retry());
-    expect(mocks.request.mock.calls.every(([type]) => type === 'ready')).toBe(true);
+    expect(mocks.request.mock.calls.map(([type]) => type)).toEqual(['ready', 'request-retry']);
+    act(() => dispatch(ready));
+    await waitFor(() => expect(result.current.status).toBe('ready'));
+    expect(mocks.apply).toHaveBeenCalledTimes(2);
+    expect(mocks.apply).toHaveBeenLastCalledWith(ready);
   });
   it('ignores messages rejected by the transport validator and stops listening after unmount', () => {
     mocks.parse.mockReturnValue(null);

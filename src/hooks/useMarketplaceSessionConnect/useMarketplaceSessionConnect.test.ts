@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CommerceController } from '@/controllers/commerce/commerce';
@@ -316,4 +317,45 @@ describe('grant-only marketplace approval', () => {
     expect(marketplaceApprovalSigner('passport')).toBe('Pubky Passport');
     expect(marketplaceApprovalSigner('ring')).toBe('Pubky Ring');
   });
+});
+
+it('offers another signer when Passport is disabled for a Passport-created session', () => {
+  signIn('passport');
+  runtime.passport = false;
+  const { result } = renderHook(() => useMarketplaceSessionConnect());
+  act(() => result.current.start());
+  expect(result.current.requiresSignerChoice).toBe(true);
+  expect(result.current.requestsPassport).toBe(false);
+  expect(beginMarketplaceBootstrapFlow).not.toHaveBeenCalled();
+});
+
+it('changes the start callback when restored authority arrives so an open dialog restarts', async () => {
+  useAuthStore.setState({ session: null });
+  vi.mocked(beginMarketplaceBootstrapFlow).mockResolvedValue(pendingFlow().flow);
+  const { result } = renderHook(() => useMarketplaceSessionConnect());
+  const beforeRestore = result.current.start;
+  act(() => result.current.start());
+  expect(result.current.requiresSignIn).toBe(true);
+  act(() => signIn());
+  expect(result.current.start).not.toBe(beforeRestore);
+  expect(result.current.requiresSignIn).toBe(false);
+  act(() => result.current.start());
+  await waitFor(() => expect(result.current.status).toBe('awaiting'));
+});
+
+it('restarts an already open approval when restore supplies the session', async () => {
+  useAuthStore.setState({ session: null });
+  vi.mocked(beginMarketplaceBootstrapFlow).mockResolvedValue(pendingFlow().flow);
+  const { result } = renderHook(() => {
+    const session = useMarketplaceSessionConnect();
+    const { start, requiresSignIn } = session;
+    useEffect(() => {
+      if (!requiresSignIn) start();
+    }, [start, requiresSignIn]);
+    return session;
+  });
+  expect(beginMarketplaceBootstrapFlow).not.toHaveBeenCalled();
+  act(() => signIn());
+  await waitFor(() => expect(result.current.status).toBe('awaiting'));
+  expect(result.current.authorizationUrl).toBe(URL);
 });

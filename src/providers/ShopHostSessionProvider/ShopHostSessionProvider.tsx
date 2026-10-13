@@ -2,6 +2,7 @@
 
 import { createContext, type ReactNode, Suspense, useContext, useEffect } from 'react';
 import { usePathname, useSearchParams } from 'next/navigation';
+import { isDynamicPublicRoute, PUBLIC_ROUTES } from '@/app/routes';
 import { Button } from '@/atoms/Button/Button';
 import { Spinner } from '@/atoms/Spinner/Spinner';
 import { useShopHostSession } from '@/hooks/useShopHostSession/useShopHostSession';
@@ -26,6 +27,8 @@ function ShopHostNavigation() {
 
 export function ShopHostSessionProvider({ children }: { children: ReactNode }) {
   const { configured, hosted, status, retry } = useShopHostSession();
+  const pathname = usePathname();
+  const publicRoute = PUBLIC_ROUTES.includes(pathname) || isDynamicPublicRoute(pathname);
   const pending = !configured || (hosted && (status === 'connecting' || status === 'restoring'));
   if (pending)
     return (
@@ -36,26 +39,32 @@ export function ShopHostSessionProvider({ children }: { children: ReactNode }) {
     );
   if (hosted && (status === 'temporary-error' || status === 'reauth-required' || status === 'capabilities-required')) {
     return (
-      <div className="flex min-h-64 flex-col items-center justify-center gap-4 p-6" role="status">
-        <p>
-          {status === 'capabilities-required'
-            ? 'Approve Shop access in Pubky App to continue.'
-            : status === 'reauth-required'
-              ? 'Sign in to Pubky App again to continue.'
-              : 'Your Pubky App session could not be restored. Your saved session has been kept.'}
-        </p>
-        <Button
-          onClick={
-            status === 'capabilities-required'
-              ? () => requestShopHostAction('request-capabilities')
+      <ShopHostContext.Provider value={true}>
+        <Suspense fallback={null}>
+          <ShopHostNavigation />
+        </Suspense>
+        <div className="flex min-h-64 flex-col items-center justify-center gap-4 p-6" role="status">
+          <p>
+            {status === 'capabilities-required'
+              ? 'Approve Shop access in Pubky App to continue.'
               : status === 'reauth-required'
-                ? () => requestShopHostAction('request-login')
-                : retry
-          }
-        >
-          {status === 'temporary-error' ? 'Try again' : 'Continue in Pubky App'}
-        </Button>
-      </div>
+                ? 'Sign in to Pubky App again to continue.'
+                : 'Your Pubky App session could not be restored. Your saved session has been kept.'}
+          </p>
+          <Button
+            onClick={
+              status === 'capabilities-required'
+                ? () => requestShopHostAction('request-capabilities')
+                : status === 'reauth-required'
+                  ? () => requestShopHostAction('request-login')
+                  : retry
+            }
+          >
+            {status === 'temporary-error' ? 'Try again' : 'Continue in Pubky App'}
+          </Button>
+        </div>
+        {publicRoute && children}
+      </ShopHostContext.Provider>
     );
   }
   return (

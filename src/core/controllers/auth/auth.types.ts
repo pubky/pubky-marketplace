@@ -17,6 +17,7 @@ export interface TLoginWithEncryptedFileParams {
 /** Public App reference; no tokens or key material crosses the bridge. */
 export type HostSessionSnapshot = {
   generation: string;
+  shopCleanupEpoch?: string;
   status: 'ready' | 'signed-out' | 'restoring' | 'temporary-error' | 'reauth-required';
   pubky: string | null;
   sessionStoreId: string | null;

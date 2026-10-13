@@ -1,14 +1,13 @@
 import { z } from 'zod';
 import { withBasePath } from '@/config/base-path';
 import { isAppError } from '@/libs/error/error';
-import { ServerErrorCode } from '@/libs/error/error.codes';
-import { Err } from '@/libs/error/error.factories';
-import { ErrorCategory, ErrorService } from '@/libs/error/error.types';
+import { ErrorCategory } from '@/libs/error/error.types';
 import { HttpMethod } from '@/libs/http/http.types';
 import { Logger } from '@/libs/logger/logger';
 import { getMarketplaceGrantPollMilliseconds } from '@/libs/runtime-config/runtime-config';
 import { sleep } from '@/libs/utils/utils';
 import { HomeserverService } from '@/services/homeserver/homeserver';
+import { marketplaceApprovalFailure } from './marketplace-approval-failure';
 import type { MarketplaceGrantFlow } from './marketplace-grant-client';
 import { isMarketplaceSessionGrantUrl } from './marketplace-session-grant';
 
@@ -42,11 +41,8 @@ const pollSchema = z.object({
   expires_at: z.string().optional(),
 });
 
-function bootstrapFailure(code: string) {
-  return Err.server(ServerErrorCode.SERVICE_UNAVAILABLE, code, {
-    service: ErrorService.Marketplace,
-    operation: 'marketplaceBootstrap',
-  });
+function bootstrapFailure(code: string, status?: number) {
+  return marketplaceApprovalFailure(code, 'marketplaceBootstrap', status);
 }
 
 async function readJson(response: Response): Promise<unknown> {
@@ -56,7 +52,7 @@ async function readJson(response: Response): Promise<unknown> {
       typeof body === 'object' && body !== null && typeof (body as { error?: unknown }).error === 'string'
         ? (body as { error: string }).error
         : 'grant_unavailable';
-    throw bootstrapFailure(/^[a-z_]{1,64}$/.test(code) ? code : 'grant_unavailable');
+    throw bootstrapFailure(/^[a-z_]{1,64}$/.test(code) ? code : 'grant_unavailable', response.status);
   }
   return body;
 }

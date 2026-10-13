@@ -22,7 +22,7 @@ describe('grantSessionRefusalCopy', () => {
   it('says messages are not available yet without sending the user to another signer', () => {
     for (const signer of ['bitkit', 'passport'] as const) {
       const copy = grantSessionRefusalCopy('messaging', signer);
-      expect(copy).toMatch(/^Messages are not available for (Bitkit|Pubky Passport) sign-ins yet\./);
+      expect(copy).toMatch(/^New messages cannot be enabled with this (Bitkit|Pubky Passport) sign-in yet\./);
       expect(copy).not.toMatch(/Pubky Ring/);
     }
   });
@@ -34,7 +34,7 @@ describe('GrantSessionRefusal', () => {
     render(<GrantSessionRefusal reason="messaging" />);
 
     expect(screen.getByTestId('grant-session-refusal')).toHaveTextContent(
-      'Messages are not available for Pubky Passport sign-ins yet. Everything else in Shop works with this sign-in.',
+      'New messages cannot be enabled with this Pubky Passport sign-in yet. You can still read saved conversations on this device.',
     );
   });
 

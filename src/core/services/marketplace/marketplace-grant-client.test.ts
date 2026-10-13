@@ -1,9 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { Err } from '@/libs/error/error.factories';
 import captured from '@/test/fixtures/auth/marketplace-grant-priv-parity.staging.json';
 import { setBasePath } from '@/test-utils/base-path';
 import {
   beginMarketplaceGrantFlow,
   clearMarketplaceBffSession,
+  clearMarketplaceBffSessionConfirmed,
   pairMarketplaceBffSession,
 } from './marketplace-grant-client';
 
@@ -44,9 +46,50 @@ describe('marketplace reconnect grant client', () => {
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     setBasePath('');
     fetchMock.mockReset();
     vi.unstubAllGlobals();
+  });
+
+  it('confirms one BFF deletion under the mounted path', async () => {
+    setBasePath('/shop-embed');
+    fetchMock.mockResolvedValue(new Response(null, { status: 204 }));
+
+    await clearMarketplaceBffSessionConfirmed();
+
+    expect(fetchMock).toHaveBeenCalledExactlyOnceWith('/shop-embed/api/marketplace/session', {
+      method: 'DELETE',
+      credentials: 'same-origin',
+      signal: expect.any(AbortSignal),
+    });
+  });
+
+  it.each([404, 503])('does not confirm cleanup after an HTTP %s', async (status) => {
+    fetchMock.mockResolvedValue(new Response(null, { status }));
+    await expect(clearMarketplaceBffSessionConfirmed()).rejects.toThrow('marketplace_session_clear_failed');
+  });
+
+  it('does not confirm cleanup after a network failure', async () => {
+    fetchMock.mockRejectedValue(new TypeError('Failed to fetch'));
+    await expect(clearMarketplaceBffSessionConfirmed()).rejects.toThrow('marketplace_session_clear_failed');
+  });
+
+  it('aborts a stalled cleanup and leaves confirmation unsuccessful', async () => {
+    vi.useFakeTimers();
+    fetchMock.mockImplementation(
+      (_input, options) =>
+        new Promise((_resolve, reject) => {
+          options?.signal?.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')));
+        }),
+    );
+    const failure = expect(clearMarketplaceBffSessionConfirmed()).rejects.toThrow('marketplace_session_clear_failed');
+
+    await vi.advanceTimersByTimeAsync(4_000);
+
+    await failure;
+    expect(fetchMock.mock.calls[0][1]?.signal?.aborted).toBe(true);
+    expect(vi.getTimerCount()).toBe(0);
   });
 
   it('uses the mount prefix for pairing, reconnect, polling, cancellation and unpairing', async () => {
@@ -100,4 +143,16 @@ describe('marketplace reconnect grant client', () => {
       `/api/marketplace/grant-flows/${STATE_ID}/cancel`,
     ]);
   });
+});
+
+it('treats a missing BFF cookie as expected bootstrap control flow without Sentry', async () => {
+  const report = vi.spyOn(Err, 'server');
+  vi.stubGlobal(
+    'fetch',
+    vi.fn().mockResolvedValue(new Response(JSON.stringify({ error: 'shop_session_missing' }), { status: 401 })),
+  );
+  await expect(beginMarketplaceGrantFlow()).rejects.toThrow('shop_session_missing');
+  expect(report).not.toHaveBeenCalled();
+  report.mockRestore();
+  vi.unstubAllGlobals();
 });

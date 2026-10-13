@@ -89,7 +89,7 @@ describe('classic Pubky Ring approvals and a grant session', () => {
     render(<MarketplaceMessagingEnablePanel reconnect={false} />);
 
     expect(screen.getByTestId('grant-session-refusal')).toHaveTextContent(
-      'Messages are not available for Bitkit sign-ins yet. Everything else in Shop works with this sign-in.',
+      'New messages cannot be enabled with this Bitkit sign-in yet. You can still read saved conversations on this device.',
     );
     expect(screen.queryByText(/Approve in your Pubky signer/)).not.toBeInTheDocument();
     expect(screen.queryByTestId('qr-auth-url')).not.toBeInTheDocument();
@@ -102,7 +102,7 @@ describe('classic Pubky Ring approvals and a grant session', () => {
 
     const refusal = screen.getByTestId('grant-session-refusal');
     expect(refusal).toHaveTextContent(
-      'Messages are not available for Pubky Passport sign-ins yet. Everything else in Shop works with this sign-in.',
+      'New messages cannot be enabled with this Pubky Passport sign-in yet. You can still read saved conversations on this device.',
     );
     expect(refusal).not.toHaveTextContent(/Pubky Ring/);
     expect(state.messagingStart).not.toHaveBeenCalled();

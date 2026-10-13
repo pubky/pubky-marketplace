@@ -82,10 +82,13 @@ import {
   assertOwnedGrantStorageAvailable,
   delegatedKeyId,
   forgetOwnedGrant,
+  holdOwnedGrant,
   pendingOwnedGrants,
+  releaseOwnedGrantLease,
   rememberOwnedGrant,
   removeOwnedDelegatedKey,
   retireOwnedGrant,
+  withAbandonedOwnedGrant,
 } from './owned-grant-storage';
 import { retryHomeserverWrite } from './write-retry';
 
@@ -642,10 +645,12 @@ export class HomeserverService {
       const savedFlow = flow.saveDelegated();
       const keyId = delegatedKeyId(savedFlow);
       try {
+        await holdOwnedGrant('key', keyId);
         rememberOwnedGrant('key', keyId, Date.now() + AUTH_RELAY_RETENTION_MS);
       } catch (error) {
         flow.free();
         await removeOwnedDelegatedKey(keyId).catch(() => {});
+        releaseOwnedGrantLease('key', keyId);
         throw error;
       }
       let approved = false;
@@ -707,9 +712,10 @@ export class HomeserverService {
         operation: 'saveGrantSession',
       });
     const id = `${info.publicKey.z32()}:${info.grantId}`;
-    rememberOwnedGrant('record', id, Date.now() + AUTH_RELAY_RETENTION_MS);
+    await holdOwnedGrant('record', id);
     this.pendingRecordBySession.set(session, id);
     try {
+      rememberOwnedGrant('record', id, Date.now() + AUTH_RELAY_RETENTION_MS);
       const stored = await this.getPubkySdk().browserSessionStore.save(session);
       if (stored.id !== id)
         throw Err.database(DatabaseErrorCode.WRITE_FAILED, 'Unexpected grant record identity.', {
@@ -758,6 +764,7 @@ export class HomeserverService {
       if (!(isAppError(error) && isAuthError(error))) throw error;
       await this.removeGrantSession(recordId);
       forgetOwnedGrant('retirement', recordId);
+      forgetOwnedGrant('record', recordId);
       return;
     }
     const info = await session.grant?.sessionInfo();
@@ -772,6 +779,7 @@ export class HomeserverService {
     await session.signout();
     await this.removeGrantSession(recordId);
     forgetOwnedGrant('retirement', recordId);
+    forgetOwnedGrant('record', recordId);
   }
 
   /** Restores a grant session saved by {@link saveGrantSession}. Never saves. */
@@ -784,6 +792,8 @@ export class HomeserverService {
         error.name === 'ClientStateError' &&
         (error.message === `Stored Pubky session not found: ${recordId}` ||
           error.message === 'Unsupported stored session version.' ||
+          error.message === 'Browser session is no longer valid.' ||
+          error.message === 'Browser session was signed out.' ||
           /^Delegated grant key not found: .+$/.test(error.message))
       ) {
         throw Err.auth(AuthErrorCode.SESSION_EXPIRED, 'This grant needs a new approval.', {
@@ -829,27 +839,44 @@ export class HomeserverService {
     recordIds = [],
     protectedRecordIds = [],
   }: { requireAvailable?: boolean; recordIds?: string[]; protectedRecordIds?: string[] } = {}): Promise<void> {
-    // Only exact Shop references/cleanup obligations, never all origin records.
+    // Each obligation is independent: a temporary failure must not starve
+    // unrelated cleanup, nor erase the failed obligation or its proof key.
+    let failure: unknown;
+    const attempt = async (clean: () => Promise<void>) => {
+      try {
+        await clean();
+      } catch (error) {
+        failure ??= error;
+      }
+    };
     for (const id of new Set(recordIds)) {
-      rememberOwnedGrant('record', id);
-      await this.removeGrantSession(id);
-      forgetOwnedGrant('record', id);
+      if (protectedRecordIds.includes(id)) continue;
+      await attempt(async () => {
+        rememberOwnedGrant('record', id);
+        await this.removeGrantSession(id);
+        forgetOwnedGrant('record', id);
+        forgetOwnedGrant('retirement', id);
+      });
     }
     const pending = pendingOwnedGrants();
-    for (const entry of pending.filter((entry) => entry.kind === 'retirement')) {
-      // A crash before replacement leaves the old pointer active. Merely
-      // scheduling retirement must never revoke the currently selected grant.
-      if (!protectedRecordIds.includes(entry.id)) await this.retireGrantSession(entry.id);
+    const retiring = new Set(pending.filter((entry) => entry.kind === 'retirement').map((entry) => entry.id));
+    for (const entry of pending) {
+      if (entry.kind === 'record' && retiring.has(entry.id)) continue;
+      if (entry.kind !== 'key' && protectedRecordIds.includes(entry.id)) continue;
+      await attempt(() =>
+        withAbandonedOwnedGrant(entry, async () => {
+          if (entry.kind === 'retirement') await this.retireGrantSession(entry.id);
+          else if (entry.kind === 'record') {
+            await this.removeGrantSession(entry.id);
+            forgetOwnedGrant('record', entry.id);
+          } else {
+            await removeOwnedDelegatedKey(entry.id);
+            forgetOwnedGrant('key', entry.id);
+          }
+        }),
+      );
     }
-    for (const entry of pending.filter((entry) => entry.kind === 'record')) {
-      if (protectedRecordIds.includes(entry.id)) continue;
-      await this.removeGrantSession(entry.id);
-      forgetOwnedGrant('record', entry.id);
-    }
-    for (const entry of pending.filter((entry) => entry.kind === 'key')) {
-      await removeOwnedDelegatedKey(entry.id);
-      forgetOwnedGrant('key', entry.id);
-    }
+    if (failure) throw failure;
   }
 
   /**

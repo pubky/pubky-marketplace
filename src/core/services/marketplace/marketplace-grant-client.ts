@@ -5,6 +5,7 @@ import { Err } from '@/libs/error/error.factories';
 import { ErrorService } from '@/libs/error/error.types';
 import { getMarketplaceGrantPollMilliseconds } from '@/libs/runtime-config/runtime-config';
 import { sleep } from '@/libs/utils/utils';
+import { marketplaceApprovalFailure } from './marketplace-approval-failure';
 import { isMarketplaceSessionGrantUrl } from './marketplace-session-grant';
 
 const createSchema = z.object({
@@ -28,11 +29,8 @@ export type MarketplaceGrantFlow = {
   cancel: () => Promise<void>;
 };
 
-function grantFailure(code: string) {
-  return Err.server(ServerErrorCode.SERVICE_UNAVAILABLE, code, {
-    service: ErrorService.Marketplace,
-    operation: 'marketplaceGrantReconnect',
-  });
+function grantFailure(code: string, status?: number) {
+  return marketplaceApprovalFailure(code, 'marketplaceGrantReconnect', status);
 }
 
 async function json(response: Response): Promise<unknown> {
@@ -42,7 +40,7 @@ async function json(response: Response): Promise<unknown> {
       typeof body === 'object' && body !== null && typeof (body as { error?: unknown }).error === 'string'
         ? (body as { error: string }).error
         : 'grant_unavailable';
-    throw grantFailure(/^[a-z_]{1,64}$/.test(code) ? code : 'grant_unavailable');
+    throw grantFailure(/^[a-z_]{1,64}$/.test(code) ? code : 'grant_unavailable', response.status);
   }
   return body;
 }
@@ -76,6 +74,28 @@ export async function clearMarketplaceBffSession(ownedSessionId?: string): Promi
     method: 'DELETE',
     credentials: 'same-origin',
   }).catch(() => undefined);
+}
+
+/** Host identity boundaries cannot acknowledge cleanup until the BFF has cleared its shared cookie. */
+export async function clearMarketplaceBffSessionConfirmed(): Promise<void> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 4_000);
+  try {
+    const response = await fetch(withBasePath('/api/marketplace/session'), {
+      method: 'DELETE',
+      credentials: 'same-origin',
+      signal: controller.signal,
+    });
+    if (response.ok) return;
+  } catch {
+    // A network failure or timeout leaves the durable cleanup marker pending for retry.
+  } finally {
+    clearTimeout(timeout);
+  }
+  throw Err.server(ServerErrorCode.SERVICE_UNAVAILABLE, 'marketplace_session_clear_failed', {
+    service: ErrorService.Marketplace,
+    operation: 'clearMarketplaceBffSession',
+  });
 }
 
 export async function beginMarketplaceGrantFlow(): Promise<MarketplaceGrantFlow> {

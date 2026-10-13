@@ -1334,10 +1334,11 @@ export class CommerceApplication {
    * Server creator session another tab persisted, because none may outlive
    * the user who is leaving.
    */
-  static clearMarketplaceSessionForSignOut(): void {
-    MarketplaceSessionService.clearForSignOut();
+  static clearMarketplaceSessionForSignOut(options?: { confirmBff?: boolean }): void | Promise<void> {
+    const cleanup = MarketplaceSessionService.clearForSignOut(options);
     LocksFrontendSessionStore.clearForSignOut();
     this.clearSessionScopedState();
+    return cleanup;
   }
 
   /**

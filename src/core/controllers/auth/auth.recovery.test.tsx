@@ -3,9 +3,11 @@ import { renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { AuthApplication } from '@/application/auth/auth';
 import { BootstrapApplication } from '@/application/bootstrap/bootstrap';
+import { SettingsApplication } from '@/application/settings/settings';
 import { AuthController } from '@/controllers/auth/auth';
 import { approve, deferred, grantSession, resetGrantTest } from '@/controllers/auth/auth.grant-test-utils';
 import { bumpAuthEpoch } from '@/controllers/auth/auth-epoch';
+import { CommerceController } from '@/controllers/commerce/commerce';
 import { clearDatabase } from '@/database/franky/franky.helpers';
 import { useAuthStatus } from '@/hooks/useAuthStatus/useAuthStatus';
 import { AuthStatus } from '@/hooks/useAuthStatus/useAuthStatus.types';
@@ -15,6 +17,9 @@ import { clearPersistedAuthIdentity } from '@/stores/auth/auth.persisted';
 import { useAuthStore } from '@/stores/auth/auth.store';
 import { useOnboardingStore } from '@/stores/onboarding/onboarding.store';
 import { AUTH_PERSIST_KEY } from '@/stores/persistedKeys';
+import { useSearchStore } from '@/stores/search/search.store';
+import { useSettingsStore } from '@/stores/settings/settings.store';
+import { settingsInitialState } from '@/stores/settings/settings.types';
 import { asOpaque } from '@/test-utils/type-assertions';
 
 vi.mock('@/database/franky/franky.helpers', () => ({ clearDatabase: vi.fn(), clearPrivateData: vi.fn() }));
@@ -131,7 +136,7 @@ it('retains failed step-up retirement for a later cleanup after the new pointer 
     if (id === 'alice:old') throw new Error('temporary blocked deletion');
     records.delete(id);
   });
-  await expect(AuthController.completeStepUpReauth({ session: replacement })).rejects.toBeDefined();
+  await expect(AuthController.completeStepUpReauth({ session: replacement })).resolves.toBeUndefined();
   expect(useAuthStore.getState().grantSessionRecordId).toBe('alice:new');
   expect(pendingOwnedGrants()).toMatchObject([{ kind: 'retirement', id: 'alice:old' }]);
   remove.mockImplementation(async (id: string) => {
@@ -323,4 +328,99 @@ it('does not complete recovery or resurrect the saved pointer after another tab 
   expect(BootstrapApplication.initialize).not.toHaveBeenCalled();
   expect(useAuthStore.getState().isRestoringSession).toBe(false);
   expect(localStorage.getItem(AUTH_PERSIST_KEY)).toBeNull();
+});
+
+it.each(['Browser session is no longer valid.', 'Browser session was signed out.'])(
+  'retires a stored SDK terminal credential (%s) without poisoning later logout',
+  async (message) => {
+    const old = grantSession('alice', 'shop.pubky.app', 'old');
+    await approve(old);
+    await AuthController.initializeAuthenticatedSession({ session: old });
+    const sdk = asOpaque<{ getPubkySdk: () => Pubky }>(HomeserverService).getPubkySdk();
+    vi.mocked(sdk.browserSessionStore.restore).mockImplementation(async (id) => {
+      if (id === 'alice:old') throw Object.assign(new Error(message), { name: 'ClientStateError' });
+      return records.get(id)!;
+    });
+    const next = grantSession('alice', 'shop.pubky.app', 'next');
+    await approve(next);
+    await AuthController.initializeAuthenticatedSession({ session: next });
+    expect(records.has('alice:old')).toBe(false);
+    expect(pendingOwnedGrants()).toEqual([]);
+    await AuthController.logout();
+    expect(useAuthStore.getState().currentUserPubky).toBeNull();
+    expect(records.size).toBe(0);
+  },
+);
+
+it('finishes local logout while preserving an offline predecessor retirement for retry', async () => {
+  const old = grantSession('alice', 'shop.pubky.app', 'old');
+  await approve(old);
+  await AuthController.initializeAuthenticatedSession({ session: old });
+  vi.mocked(old.signout).mockRejectedValue(new Error('offline'));
+  const next = grantSession('alice', 'shop.pubky.app', 'next');
+  await approve(next);
+  await AuthController.initializeAuthenticatedSession({ session: next });
+  const clearServices = vi.spyOn(CommerceController, 'clearMarketplaceSessionForSignOut');
+  await AuthController.logout();
+  expect(useAuthStore.getState()).toMatchObject({ currentUserPubky: null, session: null, grantSessionRecordId: null });
+  expect(clearServices).toHaveBeenCalled();
+  expect(records.has('alice:old')).toBe(true);
+  expect(records.has('alice:next')).toBe(false);
+  expect(pendingOwnedGrants()).toMatchObject([{ kind: 'retirement', id: 'alice:old' }]);
+  vi.mocked(old.signout).mockResolvedValue();
+  expect(await AuthController.settlePendingGrantKeyCleanup()).toBe(true);
+  expect(records.size).toBe(0);
+});
+
+it('clears local authority after failed remote logout but keeps its exact revocation obligation', async () => {
+  const session = grantSession();
+  await approve(session);
+  await AuthController.initializeAuthenticatedSession({ session });
+  vi.mocked(session.signout).mockRejectedValue(new Error('offline'));
+  await AuthController.logout();
+  expect(useAuthStore.getState()).toMatchObject({ session: null, currentUserPubky: null, grantSessionRecordId: null });
+  expect(records.has('alice:grant-1')).toBe(true);
+  expect(pendingOwnedGrants()).toMatchObject([{ kind: 'retirement', id: 'alice:grant-1' }]);
+  vi.mocked(session.signout).mockResolvedValue();
+  await AuthController.settlePendingGrantKeyCleanup();
+  expect(records.size).toBe(0);
+});
+
+it.each(['alice', 'bob'])('preserves settings only when replacing with the same identity (%s)', async (pubky) => {
+  const old = grantSession('alice', 'shop.pubky.app', 'old');
+  await approve(old);
+  await AuthController.initializeAuthenticatedSession({ session: old });
+  useSettingsStore.getState().setHideSearch(true);
+  useSettingsStore.getState().setMutedUsers(['muted-by-alice']);
+  useSearchStore.getState().addTag('alice-private-search');
+  vi.mocked(AuthApplication.userIsSignedUp).mockResolvedValue(true);
+  vi.mocked(SettingsApplication.initializeSettings).mockClear();
+  const next = grantSession(pubky, 'shop.pubky.app', 'next');
+  await approve(next);
+  await AuthController.initializeAuthenticatedSession({ session: next });
+  const settings = useSettingsStore.getState();
+  expect(settings.privacy.hideSearch).toBe(pubky === 'alice');
+  expect(settings.muted).toEqual(pubky === 'alice' ? ['muted-by-alice'] : []);
+  expect(useSearchStore.getState().recentTags.map((entry) => entry.tag)).toEqual(
+    pubky === 'alice' ? ['alice-private-search'] : [],
+  );
+  if (pubky === 'bob') expect(SettingsApplication.initializeSettings).toHaveBeenCalledWith('bob', settingsInitialState);
+  useSettingsStore.getState().reset();
+  useSearchStore.getState().reset();
+});
+
+it('does not let a record-removal marker erase the key of an unresolved retirement', async () => {
+  const old = grantSession('alice', 'shop.pubky.app', 'old');
+  records.set('alice:old', old);
+  vi.mocked(old.signout).mockRejectedValue(new Error('offline'));
+  const { rememberOwnedGrant } = await import('@/services/homeserver/owned-grant-storage');
+  rememberOwnedGrant('retirement', 'alice:old');
+  rememberOwnedGrant('record', 'alice:old');
+  expect(await AuthController.settlePendingGrantKeyCleanup()).toBe(false);
+  expect(records.has('alice:old')).toBe(true);
+  expect(remove).not.toHaveBeenCalled();
+  vi.mocked(old.signout).mockResolvedValue();
+  expect(await AuthController.settlePendingGrantKeyCleanup()).toBe(true);
+  expect(records.size).toBe(0);
+  expect(pendingOwnedGrants()).toEqual([]);
 });

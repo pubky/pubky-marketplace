@@ -10,6 +10,7 @@ import { AuthErrorCode } from '@/libs/error/error.codes';
 import { Err } from '@/libs/error/error.factories';
 import { ErrorService } from '@/libs/error/error.types';
 import { requestShopHostAction } from '@/libs/shop-session/bridge';
+import { writeAppliedHostCleanupEpoch } from '@/libs/shop-session/cleanup';
 import { useAuthStore } from '@/stores/auth/auth.store';
 import { AUTH_PERSIST_KEY } from '@/stores/persistedKeys';
 import { AuthController } from './auth';
@@ -24,6 +25,10 @@ vi.mock('@/libs/query-client/query-client.factory', async (original) => ({
 }));
 vi.mock('@/libs/shop-session/bridge', () => ({ requestShopHostAction: vi.fn().mockReturnValue(true) }));
 vi.mock('@/libs/utils/utils', async (original) => ({ ...(await original<object>()), clearCookies: vi.fn() }));
+vi.mock('@/services/marketplace/marketplace-grant-client', async (original) => ({
+  ...(await original<object>()),
+  clearMarketplaceBffSessionConfirmed: vi.fn().mockResolvedValue(undefined),
+}));
 const ready = (pubky = 'alice', generation = '1'): HostSessionSnapshot => ({
   status: 'ready',
   generation,
@@ -80,6 +85,7 @@ describe('App-owned grant consumer', () => {
     const session = grantSession('alice', 'pubky.app');
     vi.spyOn(AuthApplication, 'restoreHostSession').mockResolvedValue(session);
     await AuthController.applyHostSession(ready());
+    vi.mocked(AuthApplication.clearGrantSessions).mockClear();
     await AuthController.logout();
     expect(requestShopHostAction).toHaveBeenCalledWith('request-logout');
     expect(AuthApplication.logout).not.toHaveBeenCalled();
@@ -184,6 +190,7 @@ describe('App-owned grant consumer', () => {
   });
   it('restores same-account marketplace/inventory approvals across an iframe reload', async () => {
     writeHostIdentity('alice');
+    writeAppliedHostCleanupEpoch('');
     const clear = vi.spyOn(CommerceController, 'clearMarketplaceSessionForSignOut');
     const marketplace = {
       pubky: 'alice',
@@ -206,6 +213,7 @@ describe('App-owned grant consumer', () => {
   });
   it('clears prior service approvals on an account switch and host sign-out', async () => {
     writeHostIdentity('alice');
+    writeAppliedHostCleanupEpoch('');
     const clear = vi.spyOn(CommerceController, 'clearMarketplaceSessionForSignOut');
     vi.spyOn(AuthApplication, 'restoreHostSession').mockResolvedValue(grantSession('bob', 'pubky.app'));
     await AuthController.applyHostSession(ready('bob', '2'));
@@ -218,6 +226,7 @@ describe('App-owned grant consumer', () => {
   it('rechecks the shared owner after waiting for another frame to prepare the same account', async () => {
     useAuthStore.getState().init({ session: grantSession('alice'), currentUserPubky: 'alice', hasProfile: true });
     writeHostIdentity('alice');
+    writeAppliedHostCleanupEpoch('');
     const held = deferred<void>();
     const entered = deferred<void>();
     const otherFrame = withAuthFinalizationLock(async () => {
@@ -231,6 +240,7 @@ describe('App-owned grant consumer', () => {
     const restore = AuthController.applyHostSession(ready('bob', '2'));
     // The other frame owns the lock, has cleared Alice, and now owns Bob's private DB.
     writeHostIdentity('bob');
+    writeAppliedHostCleanupEpoch('');
     held.resolve();
     await otherFrame;
     expect(await restore).toBe('ready');
@@ -259,6 +269,7 @@ describe('App-owned grant consumer', () => {
   });
   it('defers a blocked cleanup without touching the App credential and permits retry', async () => {
     writeHostIdentity('alice');
+    writeAppliedHostCleanupEpoch('');
     vi.mocked(clearPrivateData).mockRejectedValueOnce(new DOMException('blocked', 'UnknownError'));
     vi.spyOn(AuthApplication, 'restoreHostSession').mockResolvedValue(grantSession('bob', 'pubky.app'));
     expect(await AuthController.applyHostSession(ready('bob', '2'))).toBe('temporary-error');
@@ -268,4 +279,201 @@ describe('App-owned grant consumer', () => {
     expect(AuthApplication.removeGrantSession).not.toHaveBeenCalled();
     expect(AuthApplication.logout).not.toHaveBeenCalled();
   });
+});
+
+it('retires a standalone owned record before host adoption discards its pointer', async () => {
+  useAuthStore.getState().init({
+    session: grantSession(),
+    currentUserPubky: 'alice',
+    hasProfile: true,
+    grantSessionRecordId: 'alice:owned',
+  });
+  const queue = vi.spyOn(AuthApplication, 'queueGrantRetirement');
+  vi.spyOn(AuthApplication, 'restoreHostSession').mockResolvedValue(grantSession('alice', 'pubky.app'));
+  await AuthController.applyHostSession(ready());
+  expect(queue).toHaveBeenCalledWith('alice:owned');
+  expect(AuthApplication.clearGrantSessions).toHaveBeenCalledWith(
+    expect.objectContaining({ protectedRecordIds: ['alice:grant-alice'] }),
+  );
+  expect(useAuthStore.getState().grantSessionRecordId).toBeNull();
+});
+
+it('does not block host logout behind a stalled retirement of an older standalone grant', async () => {
+  const retirement = deferred<void>();
+  vi.spyOn(AuthApplication, 'clearGrantSessions').mockReturnValueOnce(retirement.promise);
+  vi.spyOn(AuthApplication, 'restoreHostSession').mockResolvedValue(grantSession('alice', 'pubky.app'));
+  let status: string | undefined;
+  const applying = AuthController.applyHostSession(ready()).then((value) => {
+    status = value;
+  });
+  try {
+    await vi.waitFor(() => expect(status).toBe('ready'), { timeout: 300 });
+    expect(
+      await AuthController.applyHostSession({
+        ...ready('alice', '2'),
+        pubky: null,
+        status: 'signed-out',
+        sessionStoreId: null,
+        grantId: null,
+        clientId: null,
+      }),
+    ).toBe('signed-out');
+    expect(useAuthStore.getState().session).toBeNull();
+  } finally {
+    retirement.resolve();
+    await applying;
+  }
+});
+
+it('clears stale service approvals before a same-account return across an App logout boundary', async () => {
+  const clear = vi.spyOn(CommerceController, 'clearMarketplaceSessionForSignOut');
+  vi.spyOn(AuthApplication, 'restoreHostSession').mockResolvedValue(grantSession('alice', 'pubky.app'));
+  localStorage.setItem(
+    'auth-store-v3',
+    JSON.stringify({ state: { generation: '1', currentUserPubky: 'alice', shopCleanupEpoch: 'before-logout' } }),
+  );
+  await AuthController.applyHostSession({ ...ready(), shopCleanupEpoch: 'before-logout' });
+  clear.mockClear();
+  vi.mocked(clearPrivateData).mockClear();
+  localStorage.setItem(
+    'auth-store-v3',
+    JSON.stringify({ state: { generation: '2', currentUserPubky: 'alice', shopCleanupEpoch: 'after-logout' } }),
+  );
+  await AuthController.applyHostSession({ ...ready('alice', '2'), shopCleanupEpoch: 'after-logout' });
+  expect(clear).toHaveBeenCalledOnce();
+  expect(clearPrivateData).toHaveBeenCalledOnce();
+  clear.mockClear();
+  localStorage.setItem(
+    'auth-store-v3',
+    JSON.stringify({ state: { generation: '3', currentUserPubky: 'alice', shopCleanupEpoch: 'after-logout' } }),
+  );
+  await AuthController.applyHostSession({ ...ready('alice', '3'), shopCleanupEpoch: 'after-logout' });
+  expect(clear).not.toHaveBeenCalled();
+});
+
+it('does not install a stale same-account host snapshot after its durable boundary changed', async () => {
+  localStorage.setItem(
+    'auth-store-v3',
+    JSON.stringify({ state: { generation: '2', currentUserPubky: 'alice', shopCleanupEpoch: 'new' } }),
+  );
+  const restore = vi.spyOn(AuthApplication, 'restoreHostSession');
+  expect(await AuthController.applyHostSession({ ...ready(), shopCleanupEpoch: 'old' })).toBe('restoring');
+  expect(restore).not.toHaveBeenCalled();
+  expect(useAuthStore.getState().session).toBeNull();
+});
+
+it.each([
+  { generation: '1', currentUserPubky: 'alice', shopCleanupEpoch: 'new' },
+  { generation: '2', currentUserPubky: 'alice' },
+  { generation: '1', currentUserPubky: null },
+])('rejects a legacy host snapshot superseded by durable App state %j', async (state) => {
+  localStorage.setItem('auth-store-v3', JSON.stringify({ state }));
+  const restore = vi.spyOn(AuthApplication, 'restoreHostSession');
+  expect(await AuthController.applyHostSession(ready())).toBe('restoring');
+  expect(restore).not.toHaveBeenCalled();
+  expect(localStorage.getItem('shop-host-cleanup-epoch-v1')).toBeNull();
+  expect(useAuthStore.getState().session).toBeNull();
+});
+
+it('cleans once before accepting a matching legacy App snapshot without an epoch', async () => {
+  localStorage.setItem('auth-store-v3', JSON.stringify({ state: { generation: '1', currentUserPubky: 'alice' } }));
+  vi.spyOn(AuthApplication, 'restoreHostSession').mockResolvedValue(grantSession('alice', 'pubky.app'));
+  expect(await AuthController.applyHostSession(ready())).toBe('ready');
+  expect(clearPrivateData).toHaveBeenCalledOnce();
+  expect(localStorage.getItem('shop-host-cleanup-epoch-v1')).toBe('');
+});
+
+it('allows a fresh App guest with no durable auth metadata to clean up and browse publicly', async () => {
+  expect(localStorage.getItem('auth-store-v3')).toBeNull();
+  const restore = vi.spyOn(AuthApplication, 'restoreHostSession');
+  expect(
+    await AuthController.applyHostSession({
+      status: 'signed-out',
+      pubky: null,
+      generation: '',
+      shopCleanupEpoch: '',
+      sessionStoreId: null,
+      grantId: null,
+      clientId: null,
+    }),
+  ).toBe('signed-out');
+  expect(clearPrivateData).toHaveBeenCalledOnce();
+  expect(restore).not.toHaveBeenCalled();
+  expect(localStorage.getItem('shop-host-cleanup-epoch-v1')).toBe('');
+});
+
+it('keeps the cleanup boundary unacknowledged after private storage cleanup fails', async () => {
+  localStorage.setItem(
+    'auth-store-v3',
+    JSON.stringify({ state: { generation: '1', currentUserPubky: 'alice', shopCleanupEpoch: 'new' } }),
+  );
+  vi.mocked(clearPrivateData).mockRejectedValueOnce(new DOMException('blocked', 'UnknownError'));
+  const restore = vi.spyOn(AuthApplication, 'restoreHostSession').mockResolvedValue(grantSession('alice', 'pubky.app'));
+  const snapshot = { ...ready(), shopCleanupEpoch: 'new' };
+  expect(await AuthController.applyHostSession(snapshot)).toBe('temporary-error');
+  expect(localStorage.getItem('shop-host-cleanup-epoch-v1')).toBeNull();
+  expect(restore).not.toHaveBeenCalled();
+  expect(await AuthController.applyHostSession(snapshot)).toBe('ready');
+  expect(localStorage.getItem('shop-host-cleanup-epoch-v1')).toBe('new');
+});
+
+it('waits for confirmed BFF cleanup before acknowledging a host boundary or restoring its grant', async () => {
+  localStorage.setItem(
+    'auth-store-v3',
+    JSON.stringify({ state: { generation: '1', currentUserPubky: 'alice', shopCleanupEpoch: 'new' } }),
+  );
+  const confirmation = deferred<void>();
+  const clear = vi
+    .spyOn(CommerceController, 'clearMarketplaceSessionForSignOut')
+    .mockImplementationOnce(() => confirmation.promise);
+  const restore = vi.spyOn(AuthApplication, 'restoreHostSession').mockResolvedValue(grantSession('alice', 'pubky.app'));
+  const snapshot = { ...ready(), shopCleanupEpoch: 'new' };
+  const applying = AuthController.applyHostSession(snapshot);
+  await vi.waitFor(() => expect(clearPrivateData).toHaveBeenCalledOnce());
+  expect(clear).toHaveBeenCalledWith({ confirmBff: true });
+  expect(localStorage.getItem('shop-host-cleanup-epoch-v1')).toBeNull();
+  expect(restore).not.toHaveBeenCalled();
+  confirmation.reject(new Error('offline'));
+  expect(await applying).toBe('temporary-error');
+  expect(localStorage.getItem('shop-host-cleanup-epoch-v1')).toBeNull();
+  clear.mockImplementation(() => undefined);
+  expect(await AuthController.applyHostSession(snapshot)).toBe('ready');
+  expect(restore).toHaveBeenCalledOnce();
+  expect(localStorage.getItem('shop-host-cleanup-epoch-v1')).toBe('new');
+});
+
+it('drains a pending BFF deletion before a failed private cleanup releases the host transition', async () => {
+  const confirmation = deferred<void>();
+  const clear = vi
+    .spyOn(CommerceController, 'clearMarketplaceSessionForSignOut')
+    .mockImplementationOnce(() => confirmation.promise)
+    .mockImplementation(() => undefined);
+  vi.mocked(clearPrivateData).mockRejectedValueOnce(new DOMException('blocked', 'UnknownError'));
+  let settled = false;
+  const applying = AuthController.applyHostSession(ready()).then((status) => {
+    settled = true;
+    return status;
+  });
+  await vi.waitFor(() => expect(clearPrivateData).toHaveBeenCalledOnce());
+  // A second snapshot must wait behind the old DELETE even after local cleanup fails.
+  const signedOut = AuthController.applyHostSession({
+    ...ready('alice', '2'),
+    status: 'signed-out',
+    pubky: null,
+    clientId: null,
+    grantId: null,
+    sessionStoreId: null,
+  });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  try {
+    expect(settled).toBe(false);
+    expect(clear).toHaveBeenCalledOnce();
+    expect(localStorage.getItem('shop-host-cleanup-epoch-v1')).toBeNull();
+  } finally {
+    confirmation.resolve();
+    await applying;
+    await signedOut;
+  }
+  expect(await signedOut).toBe('signed-out');
+  expect(clear).toHaveBeenCalledTimes(2);
 });

@@ -9,6 +9,7 @@ export const SHOP_SESSION_VERSION = 1;
 const snapshotSchema = z
   .object({
     generation: z.string(),
+    shopCleanupEpoch: z.string().optional(),
     status: z.enum(['ready', 'signed-out', 'restoring', 'temporary-error', 'reauth-required']),
     pubky: z.string().min(1).nullable(),
     sessionStoreId: z.string().min(1).nullable(),
@@ -31,7 +32,7 @@ const sessionMessageSchema = z.object({
 });
 
 export type ShopHostSnapshot = z.infer<typeof snapshotSchema>;
-export type ShopHostAction = 'ready' | 'request-login' | 'request-capabilities' | 'request-logout';
+export type ShopHostAction = 'ready' | 'request-login' | 'request-capabilities' | 'request-logout' | 'request-retry';
 
 /** Top-level payment/share returns must re-enter the App shell before restoring an account. */
 export function shopWrapperReturnPath(win: Window | undefined = globalThis.window): string | null {

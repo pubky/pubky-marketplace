@@ -9,8 +9,13 @@ import {
   MARKETPLACE_DISCLOSURE_RING_SIGN_IN,
   MARKETPLACE_SESSION_GRANT,
 } from '@/services/marketplace/marketplace-session-grant';
+import { useAuthStore } from '@/stores/auth/auth.store';
 import parityCapture from '@/test/fixtures/auth/marketplace-grant-priv-parity.staging.json';
 import { GRANT_APPROVAL_SIGNER_HINT, MarketplaceSessionConnectDialog } from './MarketplaceSessionConnectDialog';
+
+const hostRequest = vi.hoisted(() => vi.fn(() => false));
+vi.mock('@/libs/shop-session/bridge', () => ({ requestShopHostAction: hostRequest }));
+vi.mock('@/providers/ShopHostSessionProvider/ShopHostSessionProvider', () => ({ useIsShopHosted: () => view.hosted }));
 
 /**
  * Dialog states are driven entirely by the mocked hook: these tests pin WHAT
@@ -29,6 +34,8 @@ const view = vi.hoisted(() => ({
   requestsPassport: false,
   approvalSigner: 'Pubky Ring' as 'Bitkit' | 'Pubky Passport' | 'Pubky Ring' | 'your signer',
   passportRefused: false,
+  requiresSignIn: false,
+  hosted: false,
   isGrantSession: false,
   grantEnabled: false,
   cancel: vi.fn(),
@@ -38,6 +45,7 @@ const view = vi.hoisted(() => ({
 vi.mock('@/libs/runtime-config/runtime-config', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/libs/runtime-config/runtime-config')>()),
   getMarketplaceGrantFlowEnabled: () => view.grantEnabled,
+  getPassportSignInEnabled: () => !view.passportRefused,
 }));
 vi.mock('@/hooks/useIsGrantSession/useIsGrantSession', () => ({
   useIsGrantSession: () => view.isGrantSession,
@@ -61,6 +69,7 @@ vi.mock('@/hooks/useMarketplaceSessionConnect/useMarketplaceSessionConnect', () 
     requestsGrantReconnect: view.requestsGrantReconnect,
     requestsGrantBootstrap: view.requestsGrantBootstrap,
     requestsPassport: view.requestsPassport,
+    requiresSignIn: view.requiresSignIn,
     approvalSigner: view.approvalSigner,
     start: view.start,
     startPassport: view.startPassport,
@@ -98,12 +107,31 @@ describe('MarketplaceSessionConnectDialog', () => {
     view.requestsPassport = false;
     view.approvalSigner = 'Pubky Ring';
     view.passportRefused = false;
+    view.requiresSignIn = false;
+    view.hosted = false;
+    hostRequest.mockClear();
+    useAuthStore.setState({ showSignInDialog: false });
     view.isGrantSession = false;
     view.grantEnabled = true;
     view.cancel.mockClear();
     view.start.mockClear();
     view.startPassport.mockClear();
   });
+
+  it.each([false, true])(
+    'offers working sign-in instead of retry for identity without authority (hosted=%s)',
+    (hosted) => {
+      view.requiresSignIn = true;
+      view.hosted = hosted;
+      hostRequest.mockReturnValue(hosted);
+      render(<MarketplaceSessionConnectDialog autoOpen />);
+      expect(screen.queryByLabelText('Copy authorization link')).not.toBeInTheDocument();
+      expect(view.start).not.toHaveBeenCalled();
+      fireEvent.click(screen.getByRole('button', { name: hosted ? 'Continue in Pubky App' : 'Sign in' }));
+      expect(hostRequest).toHaveBeenCalledWith('request-login');
+      expect(useAuthStore.getState().showSignInDialog).toBe(!hosted);
+    },
+  );
 
   it('grant session sees refusal not classic qr (grant flow off)', () => {
     view.status = 'awaiting';
@@ -523,10 +551,11 @@ describe('MarketplaceSessionConnectDialog', () => {
     });
   });
 
-  it('a Passport sign-in is refused, with no approval started, while Passport is switched off', () => {
+  it('offers supported signers with accurate copy while Passport is switched off', () => {
     view.isGrantSession = true;
     view.grantEnabled = true;
     view.passportRefused = true;
+    view.approvalSigner = 'Pubky Passport';
     view.requestsPassport = false;
     view.requestsGrantBootstrap = true;
     view.requestsFullGrant = false;
@@ -534,8 +563,10 @@ describe('MarketplaceSessionConnectDialog', () => {
 
     render(<MarketplaceSessionConnectDialog autoOpen />);
 
-    expect(screen.getByTestId('grant-session-refusal')).toBeInTheDocument();
-    expect(view.start).not.toHaveBeenCalled();
+    expect(screen.queryByTestId('grant-session-refusal')).not.toBeInTheDocument();
+    expect(screen.getByText(/Pubky Passport is disabled on this deployment/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Pubky Ring' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Bitkit' })).toBeEnabled();
     expect(screen.queryByRole('button', { name: 'Continue in Pubky Passport' })).not.toBeInTheDocument();
     expect(screen.queryByLabelText('Copy authorization link')).not.toBeInTheDocument();
   });

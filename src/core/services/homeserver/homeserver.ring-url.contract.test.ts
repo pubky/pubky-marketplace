@@ -94,6 +94,31 @@ describe('SDK 0.16 bare-grant and owned-key compatibility contract', () => {
     resumed.free();
     await removeOwnedDelegatedKey(delegatedKeyId(theirsSaved));
   });
+  it('keeps an active SDK flow resumable when another tab cleans keys after the relay retention window', async () => {
+    const start = GrantAuthFlow.startDelegated.bind(GrantAuthFlow);
+    let saved = '';
+    const spy = vi.spyOn(GrantAuthFlow, 'startDelegated').mockImplementation(async (...args) => {
+      const flow = await start(...args);
+      saved = flow.saveDelegated();
+      return flow;
+    });
+    const flow = await HomeserverService.generateAuthUrl();
+    flow.awaitApproval.catch(() => {});
+    const now = Date.now();
+    const time = vi.spyOn(Date, 'now').mockReturnValue(now + 301_000);
+    vi.resetModules();
+    const { HomeserverService: otherTab } = await import('./homeserver');
+    try {
+      await otherTab.clearGrantSessions();
+      const resumed = await GrantAuthFlow.resumeDelegated(saved);
+      resumed.free();
+    } finally {
+      time.mockRestore();
+      spy.mockRestore();
+      flow.cancelAuthFlow();
+      await vi.waitFor(() => expect(pendingOwnedGrants()).toEqual([]));
+    }
+  });
   it('preserves a cleanup marker after blocked IndexedDB removal', async () => {
     rememberOwnedGrant('key', 'only-owned-id');
     vi.stubGlobal('indexedDB', {

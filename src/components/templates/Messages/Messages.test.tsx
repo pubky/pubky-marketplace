@@ -260,7 +260,7 @@ describe('Messages inbox for a grant sign-in', () => {
     render(<Messages />);
 
     expect(screen.getByTestId('grant-session-messaging-unavailable')).toHaveTextContent(
-      `Messages are not available for ${name} sign-ins yet. Everything else in Shop works with this sign-in.`,
+      `New messages cannot be enabled with this ${name} sign-in yet. You can still read saved conversations on this device.`,
     );
     expect(screen.queryByText(/Enable encrypted messaging|Reconnect encrypted messaging/)).not.toBeInTheDocument();
     expect(screen.queryByText(MESSAGING_COPY.inboxNeedsEnable)).not.toBeInTheDocument();

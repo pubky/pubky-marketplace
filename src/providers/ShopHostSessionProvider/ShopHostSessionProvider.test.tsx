@@ -10,16 +10,18 @@ const mocks = vi.hoisted(() => ({
   hosted: false,
   owned: false,
   mode: vi.fn(),
+  apply: vi.fn(async () => 'signed-out'),
+  path: '/marketplace',
   mounted: vi.fn(),
 }));
 vi.mock('next/navigation', () => ({
-  usePathname: () => '/marketplace',
+  usePathname: () => mocks.path,
   useSearchParams: () => new URLSearchParams(),
 }));
 vi.mock('@/controllers/auth/auth', () => ({
   AuthController: {
     setHostSessionMode: mocks.mode,
-    applyHostSession: async () => 'signed-out',
+    applyHostSession: mocks.apply,
   },
 }));
 vi.mock('@/stores/auth/auth.store', () => ({ useAuthStore: () => false }));
@@ -41,6 +43,8 @@ beforeEach(() => {
   mocks.ancestors = [];
   mocks.hosted = false;
   mocks.owned = false;
+  mocks.path = '/marketplace';
+  mocks.apply.mockResolvedValue('signed-out');
   mocks.mode.mockImplementation((hosted: boolean) => {
     mocks.owned = hosted;
   });
@@ -101,7 +105,44 @@ describe('Shop host session rendering', () => {
         }),
       ),
     );
-    await waitFor(() => expect(screen.getByText('Hosted catalog')).toBeInTheDocument());
-    expect(mocks.mounted).toHaveBeenCalledWith(true);
+    await waitFor(() => {
+      expect(screen.getByText('Hosted catalog')).toBeInTheDocument();
+      expect(mocks.mounted).toHaveBeenCalledWith(true);
+    });
   });
+});
+
+it.each(['/marketplace', '/settings/account'])(
+  'keeps public browsing available after a host capability refusal at %s',
+  async (path) => {
+    mocks.embedded = true;
+    mocks.hosted = true;
+    mocks.path = path;
+    mocks.apply.mockResolvedValue('capabilities-required');
+    render(
+      <ShopHostSessionProvider>
+        <main>Route content</main>
+      </ShopHostSessionProvider>,
+    );
+    act(() => window.dispatchEvent(new MessageEvent('message', { data: { status: 'ready', generation: '1' } })));
+    await screen.findByText('Approve Shop access in Pubky App to continue.');
+    expect(Boolean(screen.queryByText('Route content'))).toBe(path === '/marketplace');
+  },
+);
+
+it('retries a duplicate host snapshot after the local restore temporarily failed', async () => {
+  mocks.embedded = true;
+  mocks.hosted = true;
+  mocks.apply.mockResolvedValueOnce('temporary-error').mockResolvedValueOnce('ready');
+  render(
+    <ShopHostSessionProvider>
+      <main>Route content</main>
+    </ShopHostSessionProvider>,
+  );
+  const snapshot = { status: 'ready', generation: '1' };
+  act(() => window.dispatchEvent(new MessageEvent('message', { data: snapshot })));
+  await screen.findByText('Your Pubky App session could not be restored. Your saved session has been kept.');
+  act(() => window.dispatchEvent(new MessageEvent('message', { data: snapshot })));
+  await waitFor(() => expect(mocks.apply).toHaveBeenCalledTimes(2));
+  expect(screen.queryByText('Try again')).not.toBeInTheDocument();
 });
