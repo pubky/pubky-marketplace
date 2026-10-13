@@ -7,6 +7,12 @@ import { toast } from '@/molecules/Toaster/use-toast';
 import { useEditMarketplaceListing } from './useEditMarketplaceListing';
 
 const OWNER = 'y'.repeat(52);
+const PUBLISHED_KEY_STATUS = {
+  local: null,
+  publication: 'matches' as const,
+  publishedKeyId: 'k'.repeat(32),
+};
+const NO_KEY_STATUS = { local: null, publication: 'missing' as const, publishedKeyId: null };
 const OTHER = 'z'.repeat(52);
 const LISTING_ID = 'listing01';
 
@@ -87,6 +93,7 @@ vi.mock('@/controllers/commerce/commerce', () => ({
       bitcoinOfferAvailable: true,
       paypalAvailable: false,
     })),
+    getMyDeliveryKeyStatus: vi.fn(),
   },
 }));
 
@@ -105,6 +112,7 @@ describe('useEditMarketplaceListing', () => {
       bitcoinOfferAvailable: true,
       paypalAvailable: false,
     });
+    vi.mocked(CommerceController.getMyDeliveryKeyStatus).mockResolvedValue(PUBLISHED_KEY_STATUS);
   });
 
   it('hydrates the form and photos from the published record', async () => {
@@ -188,6 +196,48 @@ describe('useEditMarketplaceListing', () => {
 
     expect(result.current.publishBlocked).toBe('no-method');
     expect(CommerceController.commitUpsertListing).not.toHaveBeenCalled();
+  });
+
+  it('refuses to save a listing that ships while the seller has no published delivery key', async () => {
+    vi.mocked(CommerceController.getOrFetchListing).mockResolvedValue({
+      ...structuredClone(publishedRecord),
+      fulfillmentMethods: ['shipping' as const],
+      package: { weightGrams: 500, lengthMillimeters: 300, widthMillimeters: 200, heightMillimeters: 100 },
+      shippingOptions: [
+        {
+          id: 'seller_flat_rate',
+          pricing: 'free' as const,
+          label: 'Free shipping',
+          estimatedMinDays: 2,
+          estimatedMaxDays: 5,
+        },
+      ],
+    });
+    vi.mocked(CommerceController.getMyDeliveryKeyStatus).mockResolvedValue(NO_KEY_STATUS);
+    const { result } = renderHook(() => useEditMarketplaceListing(OWNER, LISTING_ID));
+    await waitFor(() => expect(result.current.status).toBe('ready'));
+    await waitFor(() => expect(result.current.publishBlocked).toBe('no-delivery-key'));
+
+    await act(async () => {
+      await result.current.submit();
+    });
+
+    expect(result.current.publishBlocked).toBe('no-delivery-key');
+    expect(CommerceController.commitUpsertListing).not.toHaveBeenCalled();
+  });
+
+  it('saves a pickup listing without reading the delivery key', async () => {
+    vi.mocked(CommerceController.getMyDeliveryKeyStatus).mockResolvedValue(NO_KEY_STATUS);
+    const { result } = renderHook(() => useEditMarketplaceListing(OWNER, LISTING_ID));
+    await waitFor(() => expect(result.current.status).toBe('ready'));
+    await waitFor(() => expect(result.current.publishGuardReady).toBe(true));
+    await waitFor(() => expect(result.current.publishBlocked).toBeNull());
+
+    await act(async () => {
+      await result.current.submit();
+    });
+
+    expect(CommerceController.commitUpsertListing).toHaveBeenCalledOnce();
   });
 
   it('refuses to publish when the public payment-config request is rejected', async () => {

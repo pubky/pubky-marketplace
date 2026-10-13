@@ -1097,6 +1097,8 @@ describe('MarketplaceListingForm durable publish guards at the button', () => {
       'Payment settings',
       'We could not verify your payment settings. Reconnect your session and try again.',
     ],
+    ['no-delivery-key', 'Delivery key', 'Create your delivery key before publishing a listing that ships'],
+    ['delivery-key-unverified', 'Delivery key', 'We could not check your delivery key. Try again.'],
   ] as const)('disables Publish and lists %s on Review', (reason, checklist, title) => {
     render(
       <FormHarness

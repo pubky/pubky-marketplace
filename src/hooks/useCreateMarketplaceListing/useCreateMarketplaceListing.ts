@@ -33,6 +33,7 @@ import {
   evaluateDurableListingPublishGuards,
   type ListingPublishBlockReason,
   listingPublishBlockToast,
+  type SellerDeliveryKeyRequirement,
 } from '@/libs/commerce/listing-publish-guards';
 import { type CommerceListingRecord, commerceListingRecordSchema } from '@/libs/commerce/marketplace-records';
 import {
@@ -65,6 +66,14 @@ import {
   fulfillmentRequiresShipping,
   listingAttributeFormField,
 } from './useCreateMarketplaceListing.types';
+
+/** Publishing a listing that ships needs the seller's delivery key published; other fulfilments never read it. */
+export function sellerDeliveryKeyRequirement(required: boolean): SellerDeliveryKeyRequirement {
+  return {
+    required,
+    loadPublication: async () => (await CommerceController.getMyDeliveryKeyStatus()).publication,
+  };
+}
 
 export interface ListingDraftRestorePrompt {
   listingId: string;
@@ -128,6 +137,7 @@ export function useCreateMarketplaceListing(): UseCreateMarketplaceListingResult
     mode: 'onChange',
   });
   const watchedValues = useWatch({ control: form.control });
+  const shipsListing = fulfillmentRequiresShipping(watchedValues.fulfillment ?? createMarketplaceListingDefaults.fulfillment);
   const mediaSignature = media.items
     .map((item) =>
       item.kind === 'new' ? `${item.key}:${item.file.size}:${item.altText}` : `${item.key}:${item.altText}`,
@@ -283,6 +293,7 @@ export function useCreateMarketplaceListing(): UseCreateMarketplaceListingResult
       ownerPubky: currentUserPubky,
       hasMarketplaceSession: Boolean(marketplaceSession),
       loadPaymentConfig: (pubky) => CommerceController.getSellerPaymentConfig(pubky),
+      deliveryKey: sellerDeliveryKeyRequirement(shipsListing),
     }).then((reason) => {
       if (!active) return;
       setPublishBlocked(reason);
@@ -291,7 +302,7 @@ export function useCreateMarketplaceListing(): UseCreateMarketplaceListingResult
     return () => {
       active = false;
     };
-  }, [currentUserPubky, durablePublish, marketplaceSession]);
+  }, [currentUserPubky, durablePublish, marketplaceSession, shipsListing]);
 
   const submit = async (): Promise<string | null> => {
     if (!currentUserPubky) return null;
@@ -303,6 +314,7 @@ export function useCreateMarketplaceListing(): UseCreateMarketplaceListingResult
         ownerPubky: currentUserPubky,
         hasMarketplaceSession: Boolean(marketplaceSession),
         loadPaymentConfig: (pubky) => CommerceController.getSellerPaymentConfig(pubky),
+        deliveryKey: sellerDeliveryKeyRequirement(fulfillmentRequiresShipping(form.getValues('fulfillment'))),
       });
       if (reason) {
         setPublishBlocked(reason);
