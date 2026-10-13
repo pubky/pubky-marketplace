@@ -7,7 +7,7 @@
 
 ## Current step
 
-**Build complete; verification done on the local testnet.** Remaining: merge Vlada's SDK/grant PR when it lands (take his side for auth files, keep the chat scopes and the facade `startGrantAuthFlow` call), regenerate the darwin VRT baselines for the two chat suites and the orders CTA on a Mac, and Matthew's manual QA (recipe below, screenshots in the handoff message).
+**Build complete; verification done on the local testnet.** Remaining: merge Vlada's SDK/grant PR when it lands (take his side for auth files, keep the chat scopes and the facade `startGrantAuthFlow` call), optionally re-run the `VRT Update Baselines` workflow on the branch for `src/test/vrt/chat/*.vrt.test.tsx` and `MarketplaceOrders.vrt.test.tsx` (CI compares Linux baselines only; the committed ones came from the same Playwright image), and Matthew's manual QA (recipe below, screenshots in the handoff message).
 
 ## Progress
 
