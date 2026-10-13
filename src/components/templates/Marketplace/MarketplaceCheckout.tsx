@@ -48,6 +48,7 @@ import { BITCOIN_PAYMENT_CODE_CHECKOUT_NOTE } from '@/libs/commerce/bitcoin-paym
 import {
   getMarketplaceCheckoutRoute,
   intersectPaymentMethods,
+  isPendingPaymentState,
   readCheckoutHashOrderId,
 } from '@/libs/commerce/checkout-phase';
 import { DELIVERY_EMAIL_MAX_CHARS, DIGITAL_CHECKOUT_COPY, digitalCheckoutLineLabel } from '@/libs/commerce/digital';
@@ -383,9 +384,9 @@ function MarketplaceCartCheckout() {
     targetPayingIds.length > 0 &&
     focusedPaying.length === targetPayingIds.length &&
     focusedPaying.every(({ payment }) => payment?.state === 'confirmed');
-  const payingView = focusedPaying[0];
-  const payingOrder = payingView?.order;
-  const holdCopy = payingOrder ? buyerCheckoutProgressCopy(payingOrder, payingView.payment, nowMs) : null;
+  const headerView = focusedPaying.find(({ order }) => isPendingPaymentState(order.state));
+  const headerOrder = headerView?.order;
+  const holdCopy = headerOrder ? buyerCheckoutProgressCopy(headerOrder, headerView.payment, nowMs) : null;
 
   useEffect(() => {
     if (!showPaying) return;
@@ -585,11 +586,7 @@ function MarketplaceCartCheckout() {
           <div className="grid gap-4" data-testid="marketplace-checkout-paying">
             {holdCopy &&
               !allPaymentsConfirmed &&
-              !(
-                payingOrder?.state === 'pending_payment' &&
-                payingOrder.paymentMethod === 'paypal' &&
-                payingView?.payment?.state === 'awaiting_entitlement'
-              ) && (
+              !(headerOrder?.paymentMethod === 'paypal' && headerView?.payment?.state === 'awaiting_entitlement') && (
                 <Typography as="p" className="rounded-md bg-card/60 px-4 py-3 text-sm">
                   {holdCopy}
                 </Typography>

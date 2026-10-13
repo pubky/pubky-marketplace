@@ -901,6 +901,42 @@ describe('MarketplaceCheckout', () => {
       );
     });
 
+    it('shows the reserved header for a pending PayPal checkout that is not yet awaiting entitlement', () => {
+      const order = createOrderFixture('pending_payment', { paymentMethod: 'paypal' });
+      view.orders = [{ order, payment: null }];
+      window.location.hash = `#${order.id}`;
+      render(<MarketplaceCheckout />);
+
+      expect(screen.getByText(/Awaiting payment · Item reserved/)).toBeInTheDocument();
+    });
+
+    it('drops the reserved header once the buyer has cancelled the checkout (#50)', () => {
+      const payment = createPaymentFixture('awaiting_entitlement');
+      const order = createOrderFixture('cancelled', {
+        paymentId: payment.id,
+        paymentMethod: 'paypal',
+        holdExpiresAt: new Date(Date.now() + 10 * 60_000).toISOString(),
+      });
+      view.orders = [{ order, payment }];
+      window.location.hash = `#${order.id}`;
+      render(<MarketplaceCheckout />);
+
+      expect(screen.getByTestId('payment-status-panel')).toBeInTheDocument();
+      expect(screen.queryByText(/Awaiting payment/)).not.toBeInTheDocument();
+      expect(screen.queryByText(/Item reserved/)).not.toBeInTheDocument();
+      expect(screen.queryByText('Checkout in progress')).not.toBeInTheDocument();
+    });
+
+    it('drops the reserved header for a cancelled order that was never bound to a method', () => {
+      const order = createOrderFixture('cancelled', { paymentMethod: null });
+      view.orders = [{ order, payment: null }];
+      window.location.hash = `#${order.id}`;
+      render(<MarketplaceCheckout />);
+
+      expect(screen.queryByText('Checkout in progress')).not.toBeInTheDocument();
+      expect(screen.queryByText(/Awaiting payment/)).not.toBeInTheDocument();
+    });
+
     it('omits the duplicate confirmation heading and cancellation for a paid order', () => {
       showPaidOrder({ paymentMethod: 'paypal', confirmations: 0 });
       expect(screen.queryByTestId('marketplace-checkout-paid-headline')).not.toBeInTheDocument();
