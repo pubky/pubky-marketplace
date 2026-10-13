@@ -149,7 +149,7 @@ function HomeserverStepUpDialog({
           {intent === 'sync'
             ? 'Authorize with your keychain to sync your watchlist across devices and enable selling and buying.'
             : intent === 'messages'
-              ? 'Authorize with your keychain to access your messaging preferences and marketplace data.'
+              ? 'Approve the chat storage scopes with your keychain to send and receive messages on this device.'
               : 'Sign in again for this device.'}
         </Typography>
 

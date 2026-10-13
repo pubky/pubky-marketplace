@@ -7,7 +7,7 @@ import { Typography } from '@/atoms/Typography/Typography';
 import { usePassportSignIn } from '@/hooks/usePassportSignIn/usePassportSignIn';
 
 export const PASSPORT_SIGN_IN_HINT =
-  'Pubky Passport signs you in with your Google account and creates your Pubky identity if you have none. Messages are not available with Passport sign-ins yet.';
+  'Pubky Passport signs you in with your Google account and creates your Pubky identity if you have none.';
 
 /**
  * "Continue with Google" through Pubky Passport. Renders nothing where the
