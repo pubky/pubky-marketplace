@@ -182,7 +182,7 @@ layout.
 
 ## Implementation Notes
 
-- Design and sequences: [`docs/chat/README.md`](../chat/README.md); working log: [`docs/chat/STATUS.md`](../chat/STATUS.md).
+- Design and sequences: [`docs/chat/README.md`](../chat/README.md).
 - Crypto and paths: `src/libs/chat/crypto.ts`, `src/libs/chat/paths.ts`, `src/libs/chat/schemas.ts`.
 - Workflows: `src/core/application/chat/chat.ts`; loops: `src/core/coordinators/chat-sync/chat-sync.ts`.
 - Dexie version 9 adds `chat_identity`, `chat_conversations`, `chat_messages`, `chat_sync_state` and drops

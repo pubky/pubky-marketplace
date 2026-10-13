@@ -2,8 +2,7 @@
 
 Private, end-to-end encrypted 1:1 messages between Shop users. Every message is one encrypted file on the
 sender's own homeserver; the recipient reads it from there. Nothing in the Shop's own services ever sees a
-message body, and no relay holds messages. This document describes the design as implemented; the working
-log with decisions taken mid-way and the items pending with other teams is [`STATUS.md`](STATUS.md). The
+message body, and no relay holds messages. This document describes the design as implemented; the
 decision record is [ADR 0030](../adr/0030-chat-transport.md).
 
 Replaces the retired Paykit Encrypted Links (Noise XX) messaging, which needed a Pubky Ring cookie session on
@@ -396,7 +395,7 @@ carry redacted paths (`/pub/chat/v0/<folder>/<file>`), never a folder id next to
 
 ## Local development
 
-The recipe from `STATUS.md` ("How to resume"), against a local Pubky testnet:
+Against a local Pubky testnet:
 
 ```bash
 # 1. Orientation
@@ -492,8 +491,7 @@ What the design protects, and what it does not. Threat IDs refer to
   device of the recipient already recorded the conversation in `/priv`.
 - **Private key unsealed in `/priv`** (above). Hardening later.
 - **Inbox CORS and staging/production deployment** are pending with the inbox team, and the inbox's
-  multi-device semantics (pings are wake-ups only) are an FYI to them; see the "Waiting on others" table in
-  [`STATUS.md`](STATUS.md).
+  multi-device semantics (pings are wake-ups only) are an FYI to them.
 - **Re-approval.** Sessions approved before the chat scopes were added see the `needs_reauth` notice until
   they sign in again. The app had not launched, so no production session is affected.
 - **No migration.** Conversations from the retired transport were device-local and are gone with the
