@@ -7,6 +7,7 @@ import { Card } from '@/atoms/Card/Card';
 import { Container } from '@/atoms/Container/Container';
 import { RadioGroup, RadioGroupItem } from '@/atoms/RadioGroup/RadioGroup';
 import { Typography } from '@/atoms/Typography/Typography';
+import { LEGAL_ENTITY_NAME } from '@/config/legal';
 import { useCopyrightForm } from '@/hooks/useCopyrightForm/useCopyrightForm';
 import { COPYRIGHT_FORM_FIELDS, COPYRIGHT_ROLES } from '@/hooks/useCopyrightForm/useCopyrightForm.constants';
 import type { CopyrightFormData } from '@/hooks/useCopyrightForm/useCopyrightForm.types';
@@ -33,7 +34,7 @@ export function CopyrightForm() {
             </Typography>
 
             <Typography size="sm" className="font-normal text-muted-foreground">
-              {'Synonym Software, S.A. de C.V. ("Synonym")'}
+              {`${LEGAL_ENTITY_NAME} ("Synonym")`}
               <br />
               87 avenida norte, calle El Mirador, edificio Torre Futura, oficina 06, nivel 11, colonia Escalón, del
               municipio de San Salvador, departamento de San Salvador. Código postal 01101, República de El Salvador.

@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm, type UseFormReturn, useWatch } from 'react-hook-form';
 import { COMMERCE_CONTRACT_VERSION, COMMERCE_LISTING_MAX_QUANTITY, COMMERCE_TAXONOMY_VERSION } from '@/config/commerce';
-import { getCommerceAdapterMode, isDurableCommerceMode } from '@/config/commerce';
+import { getAuctionDurationsMinutes, getCommerceAdapterMode, isDurableCommerceMode } from '@/config/commerce';
 import { commerceAttributeFieldsFor } from '@/config/taxonomy/taxonomy';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import {
@@ -15,6 +15,7 @@ import {
   type UseListingMediaManagerResult,
 } from '@/hooks/useListingMediaManager/useListingMediaManager';
 import { useMeasurementSystem } from '@/hooks/useMeasurementSystem/useMeasurementSystem';
+import { resolveAuctionDurationMinutes } from '@/libs/commerce/auction-duration';
 import {
   contentfulListingDrafts,
   hydrateListingDraftMedia,
@@ -32,6 +33,7 @@ import {
   evaluateDurableListingPublishGuards,
   type ListingPublishBlockReason,
   listingPublishBlockToast,
+  type SellerDeliveryKeyRequirement,
 } from '@/libs/commerce/listing-publish-guards';
 import { type CommerceListingRecord, commerceListingRecordSchema } from '@/libs/commerce/marketplace-records';
 import {
@@ -64,6 +66,14 @@ import {
   fulfillmentRequiresShipping,
   listingAttributeFormField,
 } from './useCreateMarketplaceListing.types';
+
+/** Publishing a listing that ships needs the seller's delivery key published; other fulfilments never read it. */
+export function sellerDeliveryKeyRequirement(required: boolean): SellerDeliveryKeyRequirement {
+  return {
+    required,
+    loadPublication: async () => (await CommerceController.getMyDeliveryKeyStatus()).publication,
+  };
+}
 
 export interface ListingDraftRestorePrompt {
   listingId: string;
@@ -127,6 +137,9 @@ export function useCreateMarketplaceListing(): UseCreateMarketplaceListingResult
     mode: 'onChange',
   });
   const watchedValues = useWatch({ control: form.control });
+  const shipsListing = fulfillmentRequiresShipping(
+    watchedValues.fulfillment ?? createMarketplaceListingDefaults.fulfillment,
+  );
   const mediaSignature = media.items
     .map((item) =>
       item.kind === 'new' ? `${item.key}:${item.file.size}:${item.altText}` : `${item.key}:${item.altText}`,
@@ -282,6 +295,7 @@ export function useCreateMarketplaceListing(): UseCreateMarketplaceListingResult
       ownerPubky: currentUserPubky,
       hasMarketplaceSession: Boolean(marketplaceSession),
       loadPaymentConfig: (pubky) => CommerceController.getSellerPaymentConfig(pubky),
+      deliveryKey: sellerDeliveryKeyRequirement(shipsListing),
     }).then((reason) => {
       if (!active) return;
       setPublishBlocked(reason);
@@ -290,7 +304,7 @@ export function useCreateMarketplaceListing(): UseCreateMarketplaceListingResult
     return () => {
       active = false;
     };
-  }, [currentUserPubky, durablePublish, marketplaceSession]);
+  }, [currentUserPubky, durablePublish, marketplaceSession, shipsListing]);
 
   const submit = async (): Promise<string | null> => {
     if (!currentUserPubky) return null;
@@ -302,6 +316,7 @@ export function useCreateMarketplaceListing(): UseCreateMarketplaceListingResult
         ownerPubky: currentUserPubky,
         hasMarketplaceSession: Boolean(marketplaceSession),
         loadPaymentConfig: (pubky) => CommerceController.getSellerPaymentConfig(pubky),
+        deliveryKey: sellerDeliveryKeyRequirement(fulfillmentRequiresShipping(form.getValues('fulfillment'))),
       });
       if (reason) {
         setPublishBlocked(reason);
@@ -643,7 +658,10 @@ function buildListingRecord(
           startingPrice: unitPrice,
           minimumIncrement: { ...unitPrice, amountMinor: Math.max(100, Math.round(unitPrice.amountMinor * 0.05)) },
           startsAt: now.toISOString(),
-          endsAt: new Date(now.getTime() + 7 * 24 * 60 * 60 * 1_000).toISOString(),
+          endsAt: new Date(
+            now.getTime() +
+              resolveAuctionDurationMinutes(data.auctionDurationMinutes, getAuctionDurationsMinutes()) * 60_000,
+          ).toISOString(),
           antiSnipingWindowSeconds: 120,
           antiSnipingExtensionSeconds: 120,
         }

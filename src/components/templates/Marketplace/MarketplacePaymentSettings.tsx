@@ -24,6 +24,7 @@ import { availablePaymentMethods, type SellerPaymentConfigOwnView } from '@/libs
 import { BackToMyShop } from '@/molecules/Marketplace/BackToMyShop';
 import { SettingsSectionContent } from '@/molecules/Settings/SettingsSectionContent/SettingsSectionContent';
 import { ContentLayout } from '@/organisms/ContentLayout/ContentLayout';
+import { MarketplaceDeliveryKeyStep } from '@/organisms/Marketplace/MarketplaceDeliveryKeyStep';
 import { MarketplaceGetPaidSettings } from '@/organisms/Marketplace/MarketplaceGetPaidSettings';
 import { MarketplaceSectionNav } from '@/organisms/Marketplace/MarketplaceSectionNav';
 import { MarketplaceSignOutCard } from '@/organisms/Marketplace/MarketplaceSignOutCard';
@@ -124,6 +125,8 @@ export function MarketplacePaymentSettings() {
         </div>
 
         <MarketplaceGetPaidSettings locksConnect={locksConnect} onSaved={onPaymentSaved} />
+
+        <MarketplaceDeliveryKeyStep />
 
         <Card className="rounded-md p-0 shadow-lg">
           <CardContent className="grid gap-6 p-6">

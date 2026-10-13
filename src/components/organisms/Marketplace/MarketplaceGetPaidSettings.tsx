@@ -30,6 +30,7 @@ import { useUsdtPaymentsCapability } from '@/hooks/useUsdtPaymentsCapability/use
 import { Tether } from '@/icons';
 import { type SellerPaymentConfigOwnView } from '@/libs/commerce/payment-methods';
 import { deriveUsdtSellerReadiness } from '@/libs/commerce/usdt-seller-setup';
+import { truncateMiddle } from '@/libs/utils/utils';
 import { SettingsSectionContent } from '@/molecules/Settings/SettingsSectionContent/SettingsSectionContent';
 import { toast } from '@/molecules/Toaster/use-toast';
 import { MarketplaceSessionConnectDialog } from '@/organisms/Marketplace/MarketplaceSessionConnectDialog';
@@ -63,12 +64,38 @@ type MarketplaceGetPaidSettingsProps = {
   onSaved?: (config: SellerPaymentConfigOwnView) => void;
 };
 
-type PaykitSetupStatus = 'idle' | 'error' | 'mismatch' | 'verifying' | 'timeout' | 'usdt-missing';
+type PaykitSetupStatus = 'idle' | 'error' | 'mismatch' | 'unconfirmed' | 'verifying' | 'timeout' | 'usdt-missing';
+
+/** What stays under Step 2 after the setup dialog closes without a connection. */
+type PaykitSetupProblem = 'mismatch' | 'unconfirmed' | 'error';
 
 /** `setup` opens `/setup` (Bitcoin account, optional USDT address); `reconnect` adds a USDT address to an existing account. */
 type PaykitSetupMode = 'setup' | 'reconnect';
 
 const PAYKIT_SETUP_TIMEOUT_MS = 6 * 60 * 1_000;
+
+function paykitKeyLabel(pubky: string | null): string {
+  return pubky ? ` (${truncateMiddle(pubky, 16)})` : '';
+}
+
+/** Bitkit approved, but not for the Pubky key this Shop session is signed in with. */
+function paykitMismatchMessage(pubky: string | null): string {
+  return `Bitkit approved a different Pubky key than the one you're signed in with here${paykitKeyLabel(pubky)}. In Bitkit, switch to that key, then try again.`;
+}
+
+/**
+ * A setup that finished but could not be confirmed. The upstream claim read
+ * goes through the Lock Server, so without Step 1 it cannot answer at all.
+ */
+function paykitUnconfirmedMessage(locksConnected: boolean): string {
+  return locksConnected
+    ? "We couldn't confirm Bitkit's approval just now. Try again."
+    : "Bitkit finished, but we can't confirm it until the Lock Server is connected (step 1). Connect it, then try Bitkit again.";
+}
+
+function paykitTimeoutMessage(pubky: string | null): string {
+  return `No approval received. If you approved in Bitkit, check that Bitkit holds the key you're signed in with here${paykitKeyLabel(pubky)}, then try again.`;
+}
 
 /**
  * A seller who has never saved has no payment-config row. The service
@@ -177,6 +204,10 @@ export function MarketplaceGetPaidSettings({ locksConnect, onSaved }: Marketplac
   const [paykitSetupCreator, setPaykitSetupCreator] = useState<string | null>(null);
   const [paykitSetupStatus, setPaykitSetupStatus] = useState<PaykitSetupStatus>('idle');
   const [paykitSetupMode, setPaykitSetupMode] = useState<PaykitSetupMode>('setup');
+  const [paykitSetupProblemState, setPaykitSetupProblem] = useState<{
+    problem: PaykitSetupProblem;
+    pubky: string | null;
+  } | null>(null);
   const [isRetryingUsdt, setIsRetryingUsdt] = useState(false);
 
   const [railDraft, setRailDraft] = useState<{
@@ -220,10 +251,12 @@ export function MarketplaceGetPaidSettings({ locksConnect, onSaved }: Marketplac
       }
       if (event.data.error === 'identity-mismatch') {
         setPaykitSetupStatus('mismatch');
+        setPaykitSetupProblem({ problem: 'mismatch', pubky: currentUserPubky });
         return;
       }
       if (event.data.error) {
         setPaykitSetupStatus('error');
+        setPaykitSetupProblem({ problem: 'error', pubky: currentUserPubky });
         return;
       }
       setPaykitSetupStatus('verifying');
@@ -243,17 +276,23 @@ export function MarketplaceGetPaidSettings({ locksConnect, onSaved }: Marketplac
         if (paykitSetupGenerationRef.current !== event.data.state) return;
         if (claimed === true) {
           commitAccountClaimed(true);
+          setPaykitSetupProblem(null);
           closePaykitSetup();
           toast({ title: 'Bitkit setup connected' });
           return;
         }
-        setPaykitSetupStatus('mismatch');
+        // `false` is a definite answer: Bitkit finished, but not for this key.
+        // `null` is no answer, which must not accuse the seller of a wrong key.
+        const problem = claimed === false ? 'mismatch' : 'unconfirmed';
+        setPaykitSetupStatus(problem);
+        setPaykitSetupProblem({ problem, pubky: currentUserPubky });
       });
     };
     window.addEventListener('message', onMessage);
     return () => window.removeEventListener('message', onMessage);
   }, [
     commitAccountClaimed,
+    currentUserPubky,
     paykitSetupMode,
     paykitSetupOpen,
     paykitSetupState,
@@ -287,6 +326,7 @@ export function MarketplaceGetPaidSettings({ locksConnect, onSaved }: Marketplac
     setPaykitSetupUrl(url);
     setPaykitSetupCreator(currentUserPubky);
     setPaykitSetupStatus('idle');
+    setPaykitSetupProblem(null);
     setPaykitSetupOpen(true);
   };
 
@@ -330,6 +370,10 @@ export function MarketplaceGetPaidSettings({ locksConnect, onSaved }: Marketplac
   const serverBitcoin = serverConfig?.bitcoinEnabled ?? false;
   const bitcoinValue = railDraft.bitcoin ?? serverBitcoin;
   const step1Connected = locksCreatorMatchesShopPubky(connectedCreator, currentUserPubky);
+  const paykitSetupProblem =
+    paykitSetupProblemState && paykitSetupProblemState.pubky === currentUserPubky
+      ? paykitSetupProblemState.problem
+      : null;
   const paykitCodeExpired = paykitSetupStatus === 'error' || paykitSetupStatus === 'timeout';
 
   // Stored rails need the marketplace session and the loaded config; the
@@ -410,7 +454,8 @@ export function MarketplaceGetPaidSettings({ locksConnect, onSaved }: Marketplac
               1. Connect Lock Server
             </Typography>
             <Typography as="p" className="text-sm text-muted-foreground">
-              Authorize with your keychain to enable secure delivery.
+              Authorize with Pubky Ring to enable secure delivery. Bitkit works only when this Lock Server offers a
+              Bitkit sign-in.
             </Typography>
             {step1Connected && (
               <Typography as="p" className="mt-2 flex items-center gap-2 text-sm text-brand">
@@ -455,6 +500,20 @@ export function MarketplaceGetPaidSettings({ locksConnect, onSaved }: Marketplac
                 Wallet connected.
               </Typography>
             )}
+            {payments.accountClaimed !== true && !paykitSetupOpen && paykitSetupProblem && (
+              <Typography
+                as="p"
+                role="alert"
+                className="mt-2 text-sm text-amber-300"
+                data-testid="paykit-setup-problem"
+              >
+                {paykitSetupProblem === 'mismatch'
+                  ? paykitMismatchMessage(currentUserPubky)
+                  : paykitSetupProblem === 'unconfirmed'
+                    ? paykitUnconfirmedMessage(step1Connected)
+                    : 'Bitkit setup failed. Try again.'}
+              </Typography>
+            )}
           </div>
           <Button
             variant="secondary"
@@ -462,7 +521,7 @@ export function MarketplaceGetPaidSettings({ locksConnect, onSaved }: Marketplac
             disabled={!marketplaceSession || !currentUserPubky}
             onClick={() => openPaykitSetup('setup')}
           >
-            Connect Bitkit
+            {paykitSetupProblem && payments.accountClaimed !== true ? 'Try again' : 'Connect Bitkit'}
             <ExternalLink className="size-4" />
           </Button>
         </div>
@@ -568,7 +627,7 @@ export function MarketplaceGetPaidSettings({ locksConnect, onSaved }: Marketplac
             <DialogTitle>Connect Lock Server</DialogTitle>
           </DialogHeader>
           <Typography as="p" className="text-sm text-muted-foreground">
-            Scan with your keychain to enable secure delivery.
+            Scan with Pubky Ring to enable secure delivery. Bitkit works only if this page shows a Bitkit sign-in.
           </Typography>
           {connectUrl && (
             <iframe
@@ -615,14 +674,16 @@ export function MarketplaceGetPaidSettings({ locksConnect, onSaved }: Marketplac
                 {paykitSetupStatus === 'error'
                   ? 'Bitkit setup failed. Try again.'
                   : paykitSetupStatus === 'mismatch'
-                    ? 'Bitkit approved a different account. In Bitkit, sign in with the same Pubky identity you use here, then try again.'
-                    : paykitSetupStatus === 'verifying'
-                      ? paykitSetupMode === 'reconnect'
-                        ? 'Confirming your USDT address…'
-                        : 'Confirming your Bitkit account…'
-                      : paykitSetupStatus === 'usdt-missing'
-                        ? 'Bitkit did not confirm a USDT address. Try again.'
-                        : 'No approval received. Try again.'}
+                    ? paykitMismatchMessage(currentUserPubky)
+                    : paykitSetupStatus === 'unconfirmed'
+                      ? paykitUnconfirmedMessage(step1Connected)
+                      : paykitSetupStatus === 'verifying'
+                        ? paykitSetupMode === 'reconnect'
+                          ? 'Confirming your USDT address…'
+                          : 'Confirming your Bitkit account…'
+                        : paykitSetupStatus === 'usdt-missing'
+                          ? 'Bitkit did not confirm a USDT address. Try again.'
+                          : paykitTimeoutMessage(currentUserPubky)}
               </Typography>
               <Button
                 variant="secondary"

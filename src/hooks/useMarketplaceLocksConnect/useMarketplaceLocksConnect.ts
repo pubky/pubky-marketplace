@@ -32,7 +32,7 @@ export const LOCKS_CONNECT_IDENTITY_ERROR =
  * Lock Server does not serve the creator-keyed status that could confirm the connection.
  */
 export const LOCKS_CONNECT_REAPPROVE_NOTICE =
-  'Connected before? Approve once more in Pubky Ring or Bitkit. This browser keeps its Lock Server sign-in for 24 hours, and loses it when you sign out of the Shop or use another browser. Approving again does not reset your setup.';
+  'Connected before? Approve once more in Pubky Ring. Bitkit can approve it only when this Lock Server offers a Bitkit sign-in. This browser keeps its Lock Server sign-in for 24 hours, and loses it when you sign out of the Shop or use another browser. Approving again does not reset your setup.';
 
 /**
  * Shown under Step 1 when a status check fails (a 5xx, or no answer). The connection's

@@ -29,8 +29,10 @@ import {
   parseJsonLenient,
   parseList,
   parseMigrationRows,
+  parseShopPath,
   parseSourceRef,
   parseTomlFlat,
+  paykitTrustedKeys,
   redact,
   short,
 } from './lib.mjs';
@@ -114,7 +116,14 @@ const url = (key) => {
 };
 const SHOP_ORIGINS = parseList(get('SHOP_ORIGINS')).map((o) => o.replace(/\/+$/, ''));
 // The Shop's landing path on each origin: `/shop/marketplace` when it is mounted at pubky.app/shop.
-const SHOP_PATH = get('SHOP_PATH') ?? '/marketplace';
+const SHOP_PATH = (() => {
+  try {
+    return parseShopPath(get('SHOP_PATH'));
+  } catch (error) {
+    console.error(error.message);
+    process.exit(2);
+  }
+})();
 const SERVICE = url('SERVICE_URL');
 const PAYKIT = url('PAYKIT_URL');
 const LOCKS = url('LOCKS_URL');
@@ -126,7 +135,7 @@ const FORBIDDEN_HOSTS = parseList(get('FORBIDDEN_HOSTS')).map((h) => h.toLowerCa
 const paykitToml = get('PAYKIT_CONFIG_FILE') ? parseTomlFlat(readFileSync(get('PAYKIT_CONFIG_FILE'), 'utf8')) : {};
 const locksToml = get('LOCKS_CONFIG_FILE') ? parseTomlFlat(readFileSync(get('LOCKS_CONFIG_FILE'), 'utf8')) : {};
 const facts = {
-  paykitTrustedLocksKey: get('PAYKIT_TRUSTED_LOCKS_KEY') ?? paykitToml['locks.trusted_public_key'],
+  paykitTrustedKeys: get('PAYKIT_TRUSTED_LOCKS_KEY') ? parseList(get('PAYKIT_TRUSTED_LOCKS_KEY')) : paykitTrustedKeys(paykitToml),
   paykitSetupOrigins: get('PAYKIT_SETUP_ALLOWED_ORIGINS') ?? paykitToml['setup.allowed_origins'],
   paykitLogAuthorizationUrl: get('PAYKIT_LOG_AUTHORIZATION_URL') ?? paykitToml['setup.log_authorization_url'],
   paykitBitcoinNetwork: get('PAYKIT_BITCOIN_NETWORK') ?? paykitToml['bitcoin.network'],
@@ -700,9 +709,9 @@ async function sectionWiring() {
   };
   const configHint = (key, file) => `set ${key}${file ? ` or ${file}` : ''} in ${args.config} to check this`;
   if (!state.lockServerKey && LOCKS) state.lockServerKey = jsonOf(await http(`${LOCKS}/.well-known/locks-server`))?.lock_server;
-  if (!facts.paykitTrustedLocksKey) skip('wiring.paykit-trusts-locks', 'Paykit trusts the Lock Server key', configHint('PAYKIT_TRUSTED_LOCKS_KEY', 'PAYKIT_CONFIG_FILE'));
+  if (!facts.paykitTrustedKeys?.length) skip('wiring.paykit-trusts-locks', 'Paykit trusts the Lock Server key', configHint('PAYKIT_TRUSTED_LOCKS_KEY', 'PAYKIT_CONFIG_FILE'));
   else
-    check('wiring.paykit-trusts-locks', facts.paykitTrustedLocksKey === state.lockServerKey, 'Paykit trusts the Lock Server key', `trusted ${short(facts.paykitTrustedLocksKey)}, Locks ${short(state.lockServerKey)}`, 'set [locks] trusted_public_key in the Paykit config to the value of LOCKS_URL/.well-known/locks-server "lock_server", then restart Paykit');
+    check('wiring.paykit-trusts-locks', facts.paykitTrustedKeys.includes(state.lockServerKey), 'Paykit trusts the Lock Server key', `${facts.paykitTrustedKeys.length} trusted key(s), Locks ${short(state.lockServerKey)}`, 'add the value of LOCKS_URL/.well-known/locks-server "lock_server" to [signed_services] trusted_public_keys in the Paykit config, then restart Paykit');
   const originCheck = (id, title, allowed, key, file) => {
     if (allowed === undefined) return skip(id, title, configHint(key, file));
     const list = parseList(allowed);

@@ -41,7 +41,11 @@ This is load-bearing; the service side is in `pubky-marketplace-service`
    yet".
 5. At `completed`, `cancelled`, `refunded_external` or `closed` the service
    deletes the ciphertext. A seller without a published key cannot receive a
-   shipping checkout; the buyer is told before anything is reserved.
+   shipping checkout; the buyer is told before anything is reserved (an inline
+   notice beside Pay, which stays until the next attempt). The seller cannot
+   publish or save a listing that ships until the key is published, and
+   Payment settings lists the delivery key as a setup step linking to
+   Shipping settings, where it is created.
 
 What that means for the tooling here:
 

@@ -1,8 +1,10 @@
 import { Container } from '@/atoms/Container/Container';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/atoms/Dialog/Dialog';
 import { Link } from '@/atoms/Link/Link';
+import { LinkButton } from '@/atoms/LinkButton/LinkButton';
 import { List } from '@/atoms/List/List';
 import { Typography } from '@/atoms/Typography/Typography';
+import { LEGAL_ENTITY_NAME } from '@/config/legal';
 
 const EMAIL_PRIVACY_URL = 'mailto:privacy@synonym.to';
 
@@ -13,11 +15,7 @@ interface DialogPrivacyProps {
 export function DialogPrivacy({ trigger }: DialogPrivacyProps) {
   const baseCSS = 'text-muted-foreground text-base font-normal';
 
-  const defaultTrigger = (
-    <Typography as="span" size="sm" className="cursor-pointer font-medium text-brand">
-      Privacy Policy
-    </Typography>
-  );
+  const defaultTrigger = <LinkButton>Privacy Policy</LinkButton>;
 
   return (
     <Dialog>
@@ -32,13 +30,13 @@ export function DialogPrivacy({ trigger }: DialogPrivacyProps) {
             <Typography className={baseCSS}>Effective Date: January 29, 2026</Typography>
             <Typography className={baseCSS}>
               SCOPE
-              <br /> This Privacy Policy (“Policy“) describes how Synonym Software Ltd. treats personal information on
-              the Pubky progressive web application and the products, services and features made available as part of
-              the application (collectively, the “Platform“).
+              <br /> This Privacy Policy (“Policy“) describes how {LEGAL_ENTITY_NAME} treats personal information on the
+              Pubky progressive web application and the products, services and features made available as part of the
+              application (collectively, the “Platform“).
             </Typography>
             <Typography className={baseCSS}>
               POLICY SUMMARY
-              <br /> This summary offers a concise overview of how Synonym Software Ltd. (“Synonym“) collects, uses,
+              <br /> This summary offers a concise overview of how {LEGAL_ENTITY_NAME} (“Synonym“) collects, uses,
               shares, and protects your personal information on the Pubky platform. For full details, please read the
               complete Privacy Policy.
             </Typography>

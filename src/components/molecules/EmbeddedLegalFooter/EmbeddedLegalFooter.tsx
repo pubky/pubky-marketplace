@@ -1,6 +1,5 @@
 'use client';
 
-import { Button } from '@/atoms/Button/Button';
 import { FooterLinks } from '@/atoms/FooterLinks/FooterLinks';
 import { Link } from '@/atoms/Link/Link';
 import { COMPLAINT_EMAIL, LEGAL_ENTITY_NAME } from '@/config/legal';
@@ -25,17 +24,7 @@ export function EmbeddedLegalFooter() {
     >
       <FooterLinks>
         {`Pubky Shop is provided by ${LEGAL_ENTITY_NAME} · `}
-        <DialogTerms
-          trigger={
-            <Button
-              type="button"
-              overrideDefaults
-              className="inline cursor-pointer rounded-sm text-sm font-medium text-brand outline-none hover:underline focus-visible:ring-[3px] focus-visible:ring-ring/50"
-            >
-              Terms of Service
-            </Button>
-          }
-        />
+        <DialogTerms />
       </FooterLinks>
       <FooterLinks>
         {'Complaints: '}

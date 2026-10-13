@@ -193,6 +193,39 @@ describe('runtimeEnvInputSchema', () => {
     );
   });
 
+  it('offers only the 7-day auction when AUCTION_DURATIONS_MINUTES is unset', () => {
+    expect(runtimeEnvInputSchema.parse(VALID_ENV_INPUT).auctionDurationsMinutes).toEqual([7 * 24 * 60]);
+    expect(runtimeEnvInputSchemaWithDefaults.parse({}).auctionDurationsMinutes).toEqual([7 * 24 * 60]);
+  });
+
+  it('parses staging auction lengths in minutes', () => {
+    const parsed = runtimeEnvInputSchema.parse({
+      ...VALID_ENV_INPUT,
+      deployEnv: 'staging',
+      auctionDurationsMinutes: '[15, 60, 10080]',
+    });
+
+    expect(parsed.auctionDurationsMinutes).toEqual([15, 60, 10080]);
+  });
+
+  it('refuses auctions shorter than a day on a production deploy', () => {
+    expect(() => runtimeEnvInputSchema.parse({ ...VALID_ENV_INPUT, auctionDurationsMinutes: '[15, 10080]' })).toThrow(
+      /PUBKY_RUNTIME_AUCTION_DURATIONS_MINUTES/,
+    );
+    expect(
+      runtimeEnvInputSchema.parse({ ...VALID_ENV_INPUT, auctionDurationsMinutes: '[1440, 10080]' })
+        .auctionDurationsMinutes,
+    ).toEqual([1440, 10080]);
+  });
+
+  it('rejects malformed auction lengths', () => {
+    for (const value of ['[]', '[0]', '[1.5]', '["15"]', '15', 'not json']) {
+      expect(() =>
+        runtimeEnvInputSchemaWithDefaults.parse({ deployEnv: 'staging', auctionDurationsMinutes: value }),
+      ).toThrow();
+    }
+  });
+
   it('keeps the fork Paykit setup creator parameter unless explicitly turned off', () => {
     expect(runtimeEnvInputSchema.parse(VALID_ENV_INPUT).paykitSetupCreatorParam).toBe(true);
     expect(runtimeEnvInputSchemaWithDefaults.parse({}).paykitSetupCreatorParam).toBe(true);

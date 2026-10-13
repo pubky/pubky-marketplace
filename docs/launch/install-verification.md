@@ -28,6 +28,8 @@ NEXUS_URL=https://nexus.staging.shop.example
 FIAT_VERIFIER_URL=https://fiat.staging.shop.example   # only if deployed
 ```
 
+The Shop at `pubky.app/shop` uses the Paykit and Locks instances it shares with Pubky App: one Paykit process and one Postgres, one Lock Server. For that install, `PAYKIT_URL` and `LOCKS_URL` are the shared instances, `SHOP_ORIGINS` is the App origin (`https://pubky.app` or `https://staging.pubky.app`, no `/shop`) with `SHOP_PATH=/shop/marketplace`, and the shared Paykit config must list the Lock Server key and the marketplace service key under `[signed_services] trusted_public_keys` and the App origin under `[setup] allowed_origins`. See [Shop embedding](shop-embedding.md) for the full list of settings.
+
 Then add, as they become available:
 
 | What                       | Keys                                                                                                                                                       | Enables                                         |
@@ -100,7 +102,7 @@ Exit code 0 means no FAIL; `--strict` also fails on WARN. `report.md` in the out
 | `nexus`   | `nexus.info`, `nexus.commit`              | `/v0/info` answers and `commit_hash` equals `NEXUS_SOURCE`                                                           | build from a git checkout with `.git` in the Docker context                                               |
 | `nexus`   | `nexus.snapshot`, `nexus.listings`        | the index snapshot is recent; `/v0/stream/listings` returns at least `EXPECT_MIN_LISTINGS`                           | wait for the replay; check the watcher log                                                                |
 | `nexus`   | `nexus.parity`                            | the same listings, revisions and states as `REFERENCE_NEXUS_URL`                                                     | wait for the replay, then compare again                                                                   |
-| `wiring`  | `wiring.paykit-trusts-locks`              | Paykit `[locks] trusted_public_key` equals the Lock Server key Locks publishes                                       | copy the published `lock_server` value into the Paykit config and restart Paykit                          |
+| `wiring`  | `wiring.paykit-trusts-locks`              | Paykit `[signed_services] trusted_public_keys` lists the Lock Server key Locks publishes (rc13 rejects the retired `[locks] trusted_public_key`; an older config that still has it is read when the new table is absent)                                       | add the published `lock_server` value to `trusted_public_keys` in the Paykit config and restart Paykit                          |
 | `wiring`  | `wiring.*-origins`                        | Paykit setup, Locks connect, the service and the fiat verifier list every Shop origin, and no `*` in production      | add the missing origins                                                                                   |
 | `wiring`  | `wiring.*-url`, `wiring.*-reachable`      | the service, Locks and the fiat verifier point at this stack's Paykit and Locks, and those addresses answer          | fix the URL, or the network path                                                                          |
 | `wiring`  | `wiring.locks-paykit-url`, `wiring.fiat-paykit-url` | Locks-gated Bitcoin reaches this stack's Paykit. With `LOCKS_SHARED_FROM` declared, a route to the other environment's Paykit is INFO on staging and WARN on production, naming both Paykits | point Locks (or the fiat verifier) at this stack's Paykit |
@@ -133,7 +135,7 @@ Production on Railway, 6 October 2026 (read-only, excerpt). The stack declares `
 
 ```text
 == wiring
-PASS  wiring.paykit-trusts-locks             Paykit trusts the Lock Server key — trusted pubkyrqrnn1d…, Locks pubkyrqrnn1d…
+PASS  wiring.paykit-trusts-locks             Paykit trusts the Lock Server key — 2 trusted key(s), Locks pubkyrqrnn1d…
 PASS  wiring.paykit-setup-origins            Paykit setup allows the Shop origins — 1 origin(s)
 PASS  wiring.locks-paykit-reachable          Locks [paykit] server_url answers (from inside its network) — LOCKS_PAYKIT_REACH_CMD exit 0
 WARN  wiring.fiat-paykit-url                 fiat verifier forwards Bitcoin to this Paykit — Locks-gated Bitcoin goes to http://paykit-server.railway.internal:3001, not this stack’s Paykit https://paykit-shop.pubky.app (declared: Lock Server shared from staging)

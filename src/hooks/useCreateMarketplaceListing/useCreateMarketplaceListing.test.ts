@@ -1,6 +1,6 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { COMMERCE_LISTING_MAX_QUANTITY } from '@/config/commerce';
+import { COMMERCE_LISTING_MAX_QUANTITY, getAuctionDurationsMinutes } from '@/config/commerce';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import {
   LISTING_DRAFT_AUTOSAVE_MS,
@@ -20,9 +20,16 @@ import {
 import { createMarketplaceListingSchema } from './useCreateMarketplaceListing.types';
 
 const OWNER = 'y'.repeat(52);
+const PUBLISHED_KEY_STATUS = {
+  local: null,
+  publication: 'matches' as const,
+  publishedKeyId: 'k'.repeat(32),
+};
+const NO_KEY_STATUS = { local: null, publication: 'missing' as const, publishedKeyId: null };
 
 vi.mock('@/config/commerce', async () => ({
   ...(await vi.importActual<typeof import('@/config/commerce')>('@/config/commerce')),
+  getAuctionDurationsMinutes: vi.fn(() => [7 * 24 * 60]),
   getCommerceAdapterMode: () => 'transaction-service',
 }));
 const mediaState = vi.hoisted(() => ({
@@ -120,6 +127,7 @@ vi.mock('@/controllers/commerce/commerce', () => ({
       bitcoinOfferAvailable: true,
       paypalAvailable: false,
     })),
+    getMyDeliveryKeyStatus: vi.fn(),
   },
 }));
 
@@ -130,6 +138,7 @@ vi.mock('@/molecules/Toaster/use-toast', () => ({
 describe('useCreateMarketplaceListing', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(getAuctionDurationsMinutes).mockReturnValue([7 * 24 * 60]);
     vi.mocked(CommerceController.getListingDrafts).mockResolvedValue([]);
     mediaState.prepared = true;
     mediaState.items = [];
@@ -145,6 +154,7 @@ describe('useCreateMarketplaceListing', () => {
       bitcoinOfferAvailable: true,
       paypalAvailable: false,
     });
+    vi.mocked(CommerceController.getMyDeliveryKeyStatus).mockResolvedValue(PUBLISHED_KEY_STATUS);
     vi.spyOn(globalThis.crypto, 'randomUUID').mockReturnValue('018f47d2-6a27-7c23-a49d-6b21bb770121');
   });
 
@@ -204,6 +214,45 @@ describe('useCreateMarketplaceListing', () => {
 
     expect(result.current.publishBlocked).toBe('no-method');
     expect(CommerceController.commitUpsertListing).not.toHaveBeenCalled();
+  });
+
+  it('blocks publishing a listing that ships until the seller has a published delivery key', async () => {
+    vi.mocked(CommerceController.getMyDeliveryKeyStatus).mockResolvedValue(NO_KEY_STATUS);
+    const { result } = renderHook(() => useCreateMarketplaceListing());
+    act(() => result.current.form.setValue('fulfillment', 'shipping'));
+    await waitFor(() => expect(result.current.publishBlocked).toBe('no-delivery-key'));
+
+    await act(async () => {
+      await result.current.submit();
+    });
+
+    expect(result.current.publishBlocked).toBe('no-delivery-key');
+    expect(toast).toHaveBeenCalledWith({
+      variant: 'error',
+      description: 'Create your delivery key before publishing a listing that ships',
+    });
+    expect(CommerceController.commitUpsertListing).not.toHaveBeenCalled();
+  });
+
+  it('lifts the delivery-key block when the listing switches to pickup, without reading the key', async () => {
+    vi.mocked(CommerceController.getMyDeliveryKeyStatus).mockResolvedValue(NO_KEY_STATUS);
+    const { result } = renderHook(() => useCreateMarketplaceListing());
+    act(() => result.current.form.setValue('fulfillment', 'shipping'));
+    await waitFor(() => expect(result.current.publishBlocked).toBe('no-delivery-key'));
+    vi.mocked(CommerceController.getMyDeliveryKeyStatus).mockClear();
+
+    act(() => result.current.form.setValue('fulfillment', 'pickup'));
+
+    await waitFor(() => expect(result.current.publishBlocked).toBeNull());
+    expect(CommerceController.getMyDeliveryKeyStatus).not.toHaveBeenCalled();
+  });
+
+  it('says the delivery key could not be checked when its status read fails', async () => {
+    vi.mocked(CommerceController.getMyDeliveryKeyStatus).mockRejectedValue(new Error('offline'));
+    const { result } = renderHook(() => useCreateMarketplaceListing());
+    act(() => result.current.form.setValue('fulfillment', 'shipping'));
+
+    await waitFor(() => expect(result.current.publishBlocked).toBe('delivery-key-unverified'));
   });
 
   it('blocks publishing when the public payment-config request is rejected', async () => {
@@ -366,6 +415,56 @@ describe('useCreateMarketplaceListing', () => {
     expect(listing).toMatchObject({
       sale: { format: 'fixed_price', unitPrice: { amountMinor: 15_000, currency: 'BTC', exponent: 8 } },
     });
+  });
+
+  function fillAuction(result: { current: ReturnType<typeof useCreateMarketplaceListing> }, duration?: string) {
+    act(() => {
+      result.current.form.setValue('title', 'Vintage leather boots');
+      result.current.form.setValue('description', 'Well cared for boots with light wear.');
+      result.current.form.setValue('categoryId', 'fashion-men-footwear-boots');
+      result.current.form.setValue('attrSize', 'US 9');
+      result.current.form.setValue('saleFormat', 'auction');
+      result.current.form.setValue('currency', 'BTC');
+      result.current.form.setValue('price', '15000');
+      result.current.form.setValue('fulfillment', 'shipping');
+      result.current.form.setValue('freeShipping', true);
+      result.current.form.setValue('packageWeight', '500');
+      result.current.form.setValue('packageLength', '30');
+      result.current.form.setValue('packageWidth', '20');
+      result.current.form.setValue('packageHeight', '10');
+      result.current.form.setValue('countryCode', 'US');
+      if (duration !== undefined) result.current.form.setValue('auctionDurationMinutes', duration);
+    });
+  }
+
+  function auctionLengthMinutes(): number {
+    const listing = vi.mocked(CommerceController.commitUpsertListing).mock.calls[0][0];
+    expect(commerceListingRecordSchema.safeParse(listing).success).toBe(true);
+    const sale = (listing as { sale: { startsAt: string; endsAt: string } }).sale;
+    return (Date.parse(sale.endsAt) - Date.parse(sale.startsAt)) / 60_000;
+  }
+
+  it('publishes a 7-day auction when the deploy offers only the default length', async () => {
+    const { result } = renderHook(() => useCreateMarketplaceListing());
+    fillAuction(result);
+
+    await act(async () => {
+      await result.current.submit();
+    });
+
+    expect(auctionLengthMinutes()).toBe(7 * 24 * 60);
+  });
+
+  it('publishes the chosen auction length when the deploy offers it', async () => {
+    vi.mocked(getAuctionDurationsMinutes).mockReturnValue([7 * 24 * 60, 15]);
+    const { result } = renderHook(() => useCreateMarketplaceListing());
+    fillAuction(result, '15');
+
+    await act(async () => {
+      await result.current.submit();
+    });
+
+    expect(auctionLengthMinutes()).toBe(15);
   });
 
   it('converts imperial package inputs to exact millimeters and grams on publish', async () => {
