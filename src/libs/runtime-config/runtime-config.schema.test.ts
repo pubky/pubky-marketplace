@@ -226,6 +226,15 @@ describe('runtimeEnvInputSchema', () => {
     }
   });
 
+  it('refuses duplicate auction lengths', () => {
+    expect(() =>
+      runtimeEnvInputSchemaWithDefaults.parse({ deployEnv: 'staging', auctionDurationsMinutes: '[15, 15]' }),
+    ).toThrow(/PUBKY_RUNTIME_AUCTION_DURATIONS_MINUTES value: duplicate lengths are not allowed/);
+    expect(() =>
+      runtimeEnvInputSchema.parse({ ...VALID_ENV_INPUT, auctionDurationsMinutes: '[10080, 1440, 10080]' }),
+    ).toThrow(/PUBKY_RUNTIME_AUCTION_DURATIONS_MINUTES value: duplicate lengths are not allowed/);
+  });
+
   it('keeps the fork Paykit setup creator parameter unless explicitly turned off', () => {
     expect(runtimeEnvInputSchema.parse(VALID_ENV_INPUT).paykitSetupCreatorParam).toBe(true);
     expect(runtimeEnvInputSchemaWithDefaults.parse({}).paykitSetupCreatorParam).toBe(true);

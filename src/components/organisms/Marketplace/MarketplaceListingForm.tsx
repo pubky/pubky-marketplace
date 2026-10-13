@@ -602,12 +602,12 @@ export function MarketplaceListingForm({
                 },
               ]}
             />
-            {saleFormat === 'auction' && auctionDurations.length > 1 && (
+            {saleFormat === 'auction' && !isEdit && auctionDurations.length > 1 && (
               <FormSelect
                 form={form}
                 name={CREATE_MARKETPLACE_LISTING_FIELDS.AUCTION_DURATION}
                 label="Auction length"
-                disabled={isPublishing || isEdit}
+                disabled={isPublishing}
                 options={auctionDurations.map((minutes) => ({
                   value: String(minutes),
                   label: auctionDurationOptionLabel(minutes),
