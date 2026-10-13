@@ -1504,6 +1504,78 @@ describe('MarketplaceTransactionService read projections', () => {
       });
     });
 
+    it('sends only the method on an ordinary bind', async () => {
+      await establishSession();
+      vi.mocked(fetch).mockResolvedValueOnce(jsonResponse(200, { ok: true, order: orderWire() }));
+
+      await MarketplaceTransactionService.bindPaymentMethod(ACTOR, ORDER_ID, 'paypal');
+
+      const [url, init] = vi.mocked(fetch).mock.calls.at(-1) as [string, RequestInit];
+      expect(url).toContain(`/v0/orders/${ORDER_ID}/payment-method`);
+      expect(JSON.parse(init.body as string)).toStrictEqual({ method: 'paypal' });
+    });
+
+    it("sends an auction winner's sealed delivery address with the method, in the snake_case wire", async () => {
+      await establishSession();
+      vi.mocked(fetch).mockResolvedValueOnce(jsonResponse(200, { ok: true, order: orderWire() }));
+      const envelope = { keyId: 'a'.repeat(32), envelope: 'E'.repeat(2795) };
+
+      await MarketplaceTransactionService.bindPaymentMethod(ACTOR, ORDER_ID, 'bitcoin', {
+        deliveryAddressEnvelope: envelope,
+      });
+
+      const [, init] = vi.mocked(fetch).mock.calls.at(-1) as [string, RequestInit];
+      expect(JSON.parse(init.body as string)).toStrictEqual({
+        method: 'bitcoin',
+        delivery_address_envelope: { key_id: envelope.keyId, envelope: envelope.envelope },
+      });
+    });
+
+    it.each([
+      ['delivery_address_required', 'Add a delivery address before you choose a payment method.'],
+      ['auction_window_ended', 'Your window to pay for this auction has ended.'],
+      [
+        'encrypted_delivery_required',
+        'This marketplace takes only an encrypted delivery address. Reload the page and try again.',
+      ],
+    ])('maps the %s bind refusal to its static copy', async (reason, copy) => {
+      await establishSession();
+      vi.mocked(fetch).mockResolvedValueOnce(
+        jsonResponse(409, {
+          ok: false,
+          error: { code: 'INVALID_STATE', message: 'SENTINEL address 1 Example St', reason },
+        }),
+      );
+
+      const error = (await MarketplaceTransactionService.bindPaymentMethod(ACTOR, ORDER_ID, 'paypal').catch(
+        (caught: unknown) => caught,
+      )) as AppError;
+
+      expect(error.message).toBe(copy);
+      expect(JSON.stringify(error.context)).not.toContain('SENTINEL');
+    });
+
+    it('reads an auction winner order that still owes its address', async () => {
+      await establishSession();
+      vi.mocked(fetch).mockResolvedValueOnce(
+        jsonResponse(200, {
+          orders: [
+            orderWire({
+              auction_aggregate_id: AGGREGATE_ID,
+              shipping_address_required: true,
+              hold_expires_at: '2026-08-20T10:30:00.000Z',
+            }),
+          ],
+        }),
+      );
+
+      const [order] = await MarketplaceTransactionService.getOrders(ACTOR);
+
+      expect(order.auctionAggregateId).toBe(AGGREGATE_ID);
+      expect(order.shippingAddressRequired).toBe(true);
+      expect(order.holdExpiresAt).toBe('2026-08-20T10:30:00.000Z');
+    });
+
     it('maps payment-method reasons to static copy and never logs the server message', async () => {
       await establishSession();
       const echoed = 'echoed.private.value@example.com';

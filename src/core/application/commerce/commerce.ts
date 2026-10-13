@@ -78,7 +78,7 @@ import {
   paykitAppRegistryUrl,
   paykitReaderAuthorizationUrl,
 } from '@/libs/commerce/paykit-wallet';
-import type { PaymentMethodKind } from '@/libs/commerce/payment-methods';
+import type { BindDeliveryAddress, PaymentMethodKind } from '@/libs/commerce/payment-methods';
 import {
   type MarketplaceCheckoutFulfillmentLine,
   type MarketplaceFulfillmentMethod,
@@ -1513,8 +1513,13 @@ export class CommerceApplication {
     return await MarketplaceGatewayService.putMyPaymentConfig(actorPubky, input);
   }
 
-  static async bindPaymentMethod(actorPubky: string, orderId: string, method: PaymentMethodKind) {
-    return await MarketplaceGatewayService.bindPaymentMethod(actorPubky, orderId, method);
+  static async bindPaymentMethod(
+    actorPubky: string,
+    orderId: string,
+    method: PaymentMethodKind,
+    delivery?: BindDeliveryAddress,
+  ) {
+    return await MarketplaceGatewayService.bindPaymentMethod(actorPubky, orderId, method, delivery);
   }
 
   static async markFiatPaid(actorPubky: string, orderId: string, transactionRef?: string) {

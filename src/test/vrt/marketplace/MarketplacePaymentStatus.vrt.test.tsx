@@ -96,6 +96,7 @@ vi.mock('@/controllers/commerce/commerce', async () => {
         },
       })),
       getSellerPaymentConfig: vi.fn(async () => view.sellerConfig),
+      getDeliveryAddresses: vi.fn(async () => []),
       fetchUsdtPaymentsAvailable: vi.fn(async () => view.usdtAvailable),
       bindPaymentMethod: vi.fn(async () => ({})),
       markFiatPaid: vi.fn(async () => ({})),
@@ -302,6 +303,41 @@ describe('Marketplace payment status card — visual regression', () => {
       .not.toBeInTheDocument();
     await expect.element(screen.getByText(/Choose how to pay/i)).not.toBeInTheDocument();
     await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('payment-status-method-picker-desktop');
+    view.locks.enabled = true;
+  });
+
+  it('renders an auction winner order asking where to ship above the payment methods at desktop viewport', async () => {
+    view.locks = { ...view.locks, enabled: false, correlation: null, delivery: null, error: null };
+    const screen = await renderCard('awaiting_entitlement', 'transaction-service', {
+      deployEnv: 'production',
+      orderOverrides: {
+        holdExpiresAt: HOLD_DEADLINE,
+        auctionAggregateId: 'listing:seller_boots',
+        shippingAddressRequired: true,
+      },
+    });
+    await expect.element(screen.getByRole('heading', { name: 'Delivery address' })).toBeInTheDocument();
+    await expect.element(screen.getByRole('button', { name: 'Bitcoin' })).toBeInTheDocument();
+    await expect.element(screen.getByText(/The item is held for you until/)).toBeInTheDocument();
+    await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot(
+      'payment-status-auction-winner-address-desktop',
+    );
+    view.locks.enabled = true;
+  });
+
+  it('renders an auction winner order asking where to ship at mobile viewport', async () => {
+    view.locks = { ...view.locks, enabled: false, correlation: null, delivery: null, error: null };
+    const screen = await renderCard('awaiting_entitlement', 'transaction-service', {
+      deployEnv: 'production',
+      viewport: VRT_VIEWPORT_MOBILE,
+      orderOverrides: {
+        holdExpiresAt: HOLD_DEADLINE,
+        auctionAggregateId: 'listing:seller_boots',
+        shippingAddressRequired: true,
+      },
+    });
+    await expect.element(screen.getByRole('heading', { name: 'Delivery address' })).toBeInTheDocument();
+    await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('payment-status-auction-winner-address-mobile');
     view.locks.enabled = true;
   });
 

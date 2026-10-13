@@ -1,6 +1,7 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CommerceController } from '@/controllers/commerce/commerce';
+import { useAuctionWinnerDeliveryAddress } from '@/hooks/useAuctionWinnerDeliveryAddress/useAuctionWinnerDeliveryAddress';
 import { useMarketplaceOrderPayment } from '@/hooks/useMarketplaceOrderPayment/useMarketplaceOrderPayment';
 import {
   CHECKOUT_HOLD_COPY,
@@ -60,6 +61,7 @@ vi.mock('@/hooks/useMarketplaceOrderPayment/useMarketplaceOrderPayment', () => (
     availableMethods: null,
     bitcoinOfferUnavailable: false,
     configError: null,
+    deliveryAddress: null,
     pendingAction: null,
     bind: vi.fn(),
     markPaid: vi.fn(),
@@ -70,6 +72,7 @@ vi.mock('@/hooks/useMarketplaceOrderPayment/useMarketplaceOrderPayment', () => (
 vi.mock('@/controllers/commerce/commerce', () => ({
   CommerceController: {
     getOrFetchListing: vi.fn(async () => ({ digitalLock: null })),
+    getDeliveryAddresses: vi.fn(async () => []),
     executeMarketplaceCommand: vi.fn(async () => ({ ok: true })),
   },
 }));
@@ -90,6 +93,7 @@ describe('MarketplacePaymentStatusCard', () => {
       availableMethods: null,
       bitcoinOfferUnavailable: false,
       configError: null,
+      deliveryAddress: null,
       pendingAction: null,
       bind: vi.fn(),
       markPaid: vi.fn(),
@@ -348,6 +352,7 @@ describe('MarketplacePaymentStatusCard', () => {
       availableMethods: ['paypal'],
       bitcoinOfferUnavailable: true,
       configError: null,
+      deliveryAddress: null,
       pendingAction: null,
       bind: vi.fn(),
       markPaid: vi.fn(),
@@ -587,6 +592,7 @@ describe('MarketplacePaymentStatusCard', () => {
       availableMethods: ['bitcoin', 'paypal'],
       bitcoinOfferUnavailable: false,
       configError: null,
+      deliveryAddress: null,
       pendingAction: null,
       bind: vi.fn(),
       markPaid: vi.fn(),
@@ -621,6 +627,96 @@ describe('MarketplacePaymentStatusCard', () => {
     await waitFor(() => expect(onPaymentChanged).toHaveBeenCalled());
   });
 
+  describe('an auction winner order that still needs its delivery address', () => {
+    const reservationEnd = '2026-08-20T21:30:00.000Z';
+    const bind = vi.fn();
+
+    function mockWinnerPayment(order: ReturnType<typeof createOrderFixture>, needsAddress: boolean) {
+      vi.mocked(useMarketplaceOrderPayment).mockImplementation(() => {
+        const winner = useAuctionWinnerDeliveryAddress({
+          sellerPubky: order.sellerPubky,
+          orderId: order.id,
+          enabled: needsAddress,
+        });
+        return {
+          availableMethods: ['bitcoin', 'paypal'],
+          bitcoinOfferUnavailable: false,
+          configError: null,
+          deliveryAddress: needsAddress ? winner : null,
+          pendingAction: null,
+          bind,
+          markPaid: vi.fn(),
+          confirmReceived: vi.fn(),
+        };
+      });
+    }
+
+    function renderWinner(order: ReturnType<typeof createOrderFixture>) {
+      render(
+        <MarketplacePaymentStatusCard
+          order={order}
+          payment={createPaymentFixture('awaiting_entitlement')}
+          isBuyer
+          adapterMode="transaction-service"
+          advancePayment={async () => false}
+          onPaymentChanged={() => {}}
+        />,
+      );
+    }
+
+    beforeEach(() => {
+      bind.mockReset();
+      auth.currentUserPubky = 'b'.repeat(52);
+    });
+
+    it('asks where to ship above the payment methods and states the reservation end as the deadline', () => {
+      const order = createOrderFixture('pending_payment', {
+        paymentMethod: null,
+        holdExpiresAt: reservationEnd,
+        auctionAggregateId: 'listing:seller_boots',
+        shippingAddressRequired: true,
+      });
+      mockWinnerPayment(order, true);
+      renderWinner(order);
+
+      const section = screen.getByTestId('auction-delivery-address');
+      expect(section).toHaveTextContent('Delivery address');
+      expect(section).toHaveTextContent('Auctions ship to you.');
+      expect(screen.getByLabelText('Full name')).toBeInTheDocument();
+      expect(screen.getByText(holderUnboundCopy(reservationEnd), { exact: false })).toBeInTheDocument();
+      expect(section.compareDocumentPosition(screen.getByRole('button', { name: /Bitcoin/ }))).toBe(
+        Node.DOCUMENT_POSITION_FOLLOWING,
+      );
+    });
+
+    it('binds the chosen method through the payment hook, which seals the address', () => {
+      const order = createOrderFixture('pending_payment', {
+        paymentMethod: null,
+        auctionAggregateId: 'listing:seller_boots',
+        shippingAddressRequired: true,
+      });
+      mockWinnerPayment(order, true);
+      renderWinner(order);
+
+      fireEvent.click(screen.getByRole('button', { name: /PayPal/ }));
+
+      expect(bind).toHaveBeenCalledWith('paypal');
+    });
+
+    it('shows no address form once the order has one', () => {
+      const order = createOrderFixture('pending_payment', {
+        paymentMethod: null,
+        auctionAggregateId: 'listing:seller_boots',
+        shippingAddressRequired: false,
+      });
+      mockWinnerPayment(order, false);
+      renderWinner(order);
+
+      expect(screen.queryByTestId('auction-delivery-address')).not.toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /Bitcoin/ })).toBeInTheDocument();
+    });
+  });
+
   it('keeps a Bitkit 2.6 buyer off Bitcoin on the method picker and leaves PayPal open', () => {
     const buyer = 'b'.repeat(52);
     auth.currentUserPubky = buyer;
@@ -629,6 +725,7 @@ describe('MarketplacePaymentStatusCard', () => {
       availableMethods: ['bitcoin', 'paypal'],
       bitcoinOfferUnavailable: false,
       configError: null,
+      deliveryAddress: null,
       pendingAction: null,
       bind: vi.fn(),
       markPaid: vi.fn(),
@@ -660,6 +757,7 @@ describe('MarketplacePaymentStatusCard', () => {
       availableMethods: ['bitcoin', 'paypal'],
       bitcoinOfferUnavailable: false,
       configError: null,
+      deliveryAddress: null,
       pendingAction: null,
       bind: vi.fn(),
       markPaid: vi.fn(),
@@ -690,6 +788,7 @@ describe('MarketplacePaymentStatusCard', () => {
       availableMethods: ['bitcoin', 'paypal'],
       bitcoinOfferUnavailable: false,
       configError: null,
+      deliveryAddress: null,
       pendingAction: null,
       bind: vi.fn(),
       markPaid: vi.fn(),

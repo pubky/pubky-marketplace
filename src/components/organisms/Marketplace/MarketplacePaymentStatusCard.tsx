@@ -92,6 +92,7 @@ import { MarketplacePaymentStatusBadge } from '@/molecules/Marketplace/Marketpla
 import { SETTINGS_SECTION_CONTENT_CLASSNAME } from '@/molecules/Settings/SettingsSectionContent/SettingsSectionContent';
 import type { MarketplaceOrder, MarketplacePayment } from '@/services/marketplace/marketplace';
 import { useAuthStore } from '@/stores/auth/auth.store';
+import { MarketplaceAuctionDeliveryAddress } from './MarketplaceAuctionDeliveryAddress';
 import { MarketplaceBitcoinAmountBreakdown } from './MarketplaceBitcoinAmountBreakdown';
 import { SellerUsdtResolutionReview } from './MarketplaceUsdtPaymentReview';
 import { MarketplaceUsdtPaymentSummary } from './MarketplaceUsdtPaymentSummary';
@@ -468,6 +469,12 @@ export function MarketplacePaymentStatusCard({
                 <Typography as="p" className="text-sm text-muted-foreground">
                   {MARKETPLACE_FAILURE_MESSAGES.bitcoinOfferUnavailable}
                 </Typography>
+              )}
+              {methodPayment.deliveryAddress && (
+                <MarketplaceAuctionDeliveryAddress
+                  delivery={methodPayment.deliveryAddress}
+                  disabled={methodPayment.pendingAction !== null}
+                />
               )}
               <Typography as="p" className="text-sm text-muted-foreground">
                 Choose a payment method to continue. {holderUnboundCopy(order.holdExpiresAt)}

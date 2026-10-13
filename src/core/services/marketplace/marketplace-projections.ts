@@ -712,6 +712,10 @@ export const marketplaceOrderProjectionSchema = z
     // Drop orders (ADR 0026): the bound drop aggregate and, once paid, the
     // gapless edition number assigned inside the exactly-once confirmation.
     dropAggregateId: z.string().nullable().optional(),
+    // An auction winner's order is created at close, with no delivery
+    // address yet; true until the winner sends one with the payment method.
+    auctionAggregateId: z.string().nullable().optional(),
+    shippingAddressRequired: z.boolean().optional(),
     edition: z.number().int().min(1).nullable().optional(),
     createdAt: z.string(),
     updatedAt: z.string(),
