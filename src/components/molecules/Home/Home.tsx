@@ -9,6 +9,7 @@ import { Image } from '@/atoms/Image/Image';
 import { Link } from '@/atoms/Link/Link';
 import { Typography } from '@/atoms/Typography/Typography';
 import { getPubkyCoreLink } from '@/config/externalLinks';
+import { LEGAL_ENTITY_NAME } from '@/config/legal';
 import { cn } from '@/libs/utils/utils';
 import { DialogAge } from '@/organisms/DialogAge/DialogAge';
 import { DialogPrivacy } from '@/organisms/DialogPrivacy/DialogPrivacy';
@@ -52,7 +53,7 @@ export const HomeFooter = ({ className, ...props }: React.HTMLAttributes<HTMLDiv
         <Link href={getPubkyCoreLink()} target="_blank">
           {'Pubky Core'}
         </Link>
-        {' and was built with love and dedication by Synonym Software, S.A. DE C.V. ©2026. All rights reserved.'}
+        {` and was built with love and dedication by ${LEGAL_ENTITY_NAME} ©2026. All rights reserved.`}
       </FooterLinks>
       <HomeBrandFooter className="mt-2" />
     </Container>
