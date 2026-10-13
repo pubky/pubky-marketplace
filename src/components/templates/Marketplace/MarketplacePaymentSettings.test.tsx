@@ -146,6 +146,9 @@ async function renderSettings() {
   await screen.findByLabelText('PayPal merchant email');
 }
 
+const MISMATCH_MESSAGE =
+  "Bitkit approved a different Pubky key than the one you're signed in with here (gy1wnkh...tq3pco). In Bitkit, switch to that key, then try again.";
+
 function setPaykitIframeSource(iframe: HTMLIFrameElement): WindowProxy {
   const source = {} as WindowProxy;
   Object.defineProperty(iframe, 'contentWindow', { configurable: true, value: source });
@@ -368,8 +371,16 @@ describe('MarketplacePaymentSettings', () => {
     );
   });
 
+  it('tells a Bitkit-only seller that Step 1 needs Pubky Ring unless the Lock Server offers a Bitkit sign-in', async () => {
+    await renderSettings();
+
+    const step1 = screen.getByRole('heading', { name: '1. Connect Lock Server' }).parentElement;
+    expect(step1).toHaveTextContent('Authorize with Pubky Ring to enable secure delivery.');
+    expect(step1).toHaveTextContent('Bitkit works only when this Lock Server offers a Bitkit sign-in.');
+  });
+
   it('tells a seller why Step 1 asks for a fresh approval, beside Connect Lock Server', async () => {
-    const notice = 'Connected before? Approve once more in Pubky Ring or Bitkit.';
+    const notice = 'Connected before? Approve once more in Pubky Ring.';
     view.locksConnect = {
       connectedCreator: null,
       isExchanging: false,
@@ -406,7 +417,7 @@ describe('MarketplacePaymentSettings', () => {
       connectedCreator: 'gy1wnkhfwezwdnawnur1bc3kw1x3jf5ggjj3cm37e31i5ntq3pco',
       isExchanging: false,
       error: null,
-      reapproveNotice: 'Connected before? Approve once more in Pubky Ring or Bitkit.',
+      reapproveNotice: 'Connected before? Approve once more in Pubky Ring.',
       connectOpen: false,
       connectUrl: null,
     };
@@ -633,7 +644,9 @@ describe('MarketplacePaymentSettings', () => {
     await act(async () => {
       await vi.advanceTimersByTimeAsync(6 * 60 * 1_000);
     });
-    expect(screen.getByRole('alert')).toHaveTextContent('No approval received.');
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      "No approval received. If you approved in Bitkit, check that Bitkit holds the key you're signed in with here (gy1wnkh...tq3pco)",
+    );
     expect(screen.queryByTitle('Connect Bitkit')).not.toBeInTheDocument();
     expect(screen.getByTestId('paykit-setup-qr-expired')).toBeInTheDocument();
 
@@ -663,15 +676,64 @@ describe('MarketplacePaymentSettings', () => {
       ),
     );
 
-    await waitFor(() =>
-      expect(
-        screen.getByText(
-          'Bitkit approved a different account. In Bitkit, sign in with the same Pubky identity you use here, then try again.',
-        ),
-      ).toBeInTheDocument(),
-    );
+    await waitFor(() => expect(screen.getByText(MISMATCH_MESSAGE)).toBeInTheDocument());
     expect(mockedToast).not.toHaveBeenCalled();
     expect(screen.getByTitle('Connect Bitkit')).toBeInTheDocument();
+  });
+
+  it('keeps the mismatch under Step 2 after the dialog closes and retries with a fresh setup state', async () => {
+    await renderSettings();
+    fireEvent.click(screen.getByRole('button', { name: /Connect Bitkit/ }));
+    const iframe = screen.getByTitle('Connect Bitkit') as HTMLIFrameElement;
+    const source = setPaykitIframeSource(iframe);
+    const firstState = new URL(iframe.src).searchParams.get('state');
+    mockedController.isOwnPaykitAccountClaimed.mockResolvedValueOnce(false);
+    act(() =>
+      window.dispatchEvent(
+        new MessageEvent('message', {
+          origin: 'https://paykit.example',
+          source,
+          data: { type: 'paykit-setup-callback', state: firstState },
+        }),
+      ),
+    );
+    await screen.findByText(MISMATCH_MESSAGE);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(screen.queryByTitle('Connect Bitkit')).not.toBeInTheDocument();
+    expect(screen.getByTestId('paykit-setup-problem')).toHaveTextContent(MISMATCH_MESSAGE);
+    expect(screen.getByTestId('paykit-setup-problem')).toHaveAttribute('role', 'alert');
+
+    fireEvent.click(screen.getByRole('button', { name: /Try again/ }));
+    const secondState = new URL((screen.getByTitle('Connect Bitkit') as HTMLIFrameElement).src).searchParams.get(
+      'state',
+    );
+    expect(secondState).not.toBe(firstState);
+    expect(screen.queryByTestId('paykit-setup-problem')).not.toBeInTheDocument();
+  });
+
+  it('does not blame the key when the claim read could not answer, and points at Step 1 when it is missing', async () => {
+    await renderSettings();
+    fireEvent.click(screen.getByRole('button', { name: /Connect Bitkit/ }));
+    const iframe = screen.getByTitle('Connect Bitkit') as HTMLIFrameElement;
+    const source = setPaykitIframeSource(iframe);
+    const state = new URL(iframe.src).searchParams.get('state');
+    mockedController.isOwnPaykitAccountClaimed.mockRejectedValueOnce(new Error('Connect the Lock Server'));
+
+    act(() =>
+      window.dispatchEvent(
+        new MessageEvent('message', {
+          origin: 'https://paykit.example',
+          source,
+          data: { type: 'paykit-setup-callback', state },
+        }),
+      ),
+    );
+
+    await screen.findByText(/can't confirm it until the Lock Server is connected \(step 1\)/);
+    expect(screen.queryByText(/approved a different Pubky key/)).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(screen.getByTestId('paykit-setup-problem')).toHaveTextContent('Lock Server is connected (step 1)');
   });
 
   it('maps identity mismatch separately from other setup errors', async () => {
@@ -690,7 +752,7 @@ describe('MarketplacePaymentSettings', () => {
         }),
       ),
     );
-    expect(screen.getByRole('alert')).toHaveTextContent('Bitkit approved a different account');
+    expect(screen.getByRole('alert')).toHaveTextContent('Bitkit approved a different Pubky key');
 
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
     const secondIframe = screen.getByTitle('Connect Bitkit') as HTMLIFrameElement;
