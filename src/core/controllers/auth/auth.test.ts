@@ -2606,6 +2606,17 @@ describe('AuthController', () => {
       expect(isGrantKeyCleanupPending()).toBe(false);
     });
 
+    it('unavailable persistence cannot discharge the marker for a partially saved grant key', async () => {
+      vi.spyOn(useAuthStore, 'getState').mockReturnValue(grantAuthStore());
+      vi.spyOn(AuthApplication, 'clearGrantSessions').mockImplementation(async (options) => {
+        if (options?.requireAvailable) throw grantKeyRemovalFailed('clearGrantSessions', null);
+      });
+      markGrantKeyCleanupPending();
+
+      await expect(AuthController.settlePendingGrantKeyCleanup()).resolves.toBe(false);
+      expect(isGrantKeyCleanupPending()).toBe(true);
+    });
+
     it('a pending cleanup leaves a signed-in grant session alone until its sign-out removes every key', async () => {
       const authStore = grantAuthStore({ session: grantSession(), grantSessionRecordId: 'rec-live' });
       vi.spyOn(useAuthStore, 'getState').mockReturnValue(authStore);
@@ -2900,6 +2911,21 @@ describe('AuthController', () => {
       } finally {
         unsubscribe();
       }
+    });
+
+    it('logout retains its grant reference when SDK persistence becomes unavailable', async () => {
+      const authStore = grantAuthStore({ session: grantSession(), grantSessionRecordId: 'rec-1' });
+      vi.spyOn(useAuthStore, 'getState').mockReturnValue(authStore);
+      vi.spyOn(AuthApplication, 'logout').mockRejectedValue(new Error('Web Locks unavailable'));
+      vi.spyOn(AuthApplication, 'clearGrantSessions').mockImplementation(async (options) => {
+        if (options?.requireAvailable) throw grantKeyRemovalFailed('clearGrantSessions', null);
+      });
+
+      const failure = await AuthController.logout().catch((error: unknown) => error);
+      expect(isGrantKeyRemovalError(failure)).toBe(true);
+      expect(storeMocks.resetAuthStore).not.toHaveBeenCalled();
+      expect(authStore.grantSessionRecordId).toBe('rec-1');
+      expect(authStore.setIsLoggingOut).toHaveBeenLastCalledWith(false);
     });
 
     it('cold logout fails and keeps the record pointer when the grant key cannot be removed', async () => {

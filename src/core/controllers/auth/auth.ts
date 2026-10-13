@@ -1481,7 +1481,15 @@ export class AuthController {
   private static async removeSignedOutSessionsUnderLock(pubky: string | null): Promise<void> {
     await withAuthFinalizationLock(async () => {
       bumpAuthEpoch();
-      await AuthApplication.clearGrantSessions();
+      const authState = useAuthStore.getState();
+      await AuthApplication.clearGrantSessions({
+        requireAvailable: Boolean(
+          authState.grantSessionRecordId ||
+          readPersistedGrantSessionRecordId() ||
+          AuthApplication.isGrantSession(authState.session) ||
+          isGrantKeyCleanupPending(),
+        ),
+      });
       clearGrantKeyCleanupPending();
       if (pubky && readPersistedAuthIdentity().pubky === pubky) clearPersistedAuthIdentity();
     });
@@ -1501,7 +1509,7 @@ export class AuthController {
       return await withAuthFinalizationLock(async () => {
         if (!isGrantKeyCleanupPending()) return true;
         if (useAuthStore.getState().grantSessionRecordId || readPersistedGrantSessionRecordId()) return false;
-        await AuthApplication.clearGrantSessions();
+        await AuthApplication.clearGrantSessions({ requireAvailable: true });
         clearGrantKeyCleanupPending();
         return true;
       });

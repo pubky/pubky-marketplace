@@ -414,8 +414,8 @@ export class AuthApplication {
   }
 
   /** Removes every stored grant session and key for this origin; rejects while any remains. */
-  static async clearGrantSessions(): Promise<void> {
-    await this.withGrantKeyRemovalRetry(() => HomeserverService.clearGrantSessions());
+  static async clearGrantSessions(options: { requireAvailable?: boolean } = {}): Promise<void> {
+    await this.withGrantKeyRemovalRetry(() => HomeserverService.clearGrantSessions(options));
   }
 
   private static readonly GRANT_KEY_REMOVAL_RETRY_DELAYS_MS = [100, 400];
