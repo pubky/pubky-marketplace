@@ -8,7 +8,7 @@ import { Logger } from '@/libs/logger/logger';
 /**
  * Whether the buyer can receive a Bitcoin payment request:
  * - `idle`: not checked (no buyer, or Bitcoin is not in play);
- * - `checking`: the public Paykit read is in flight;
+ * - `checking`: the initial or explicitly requested public Paykit read is in flight;
  * - `payable`: the buyer publishes a Paykit receiver that takes payment
  *   requests (a Paykit wallet such as Bitkit);
  * - `not_payable`: they publish none, so a Bitcoin Pay cannot succeed;
@@ -22,25 +22,35 @@ import { Logger } from '@/libs/logger/logger';
 export type BuyerPaykitWalletState = 'idle' | 'checking' | BuyerPaykitWallet | 'unknown';
 
 export function useBuyerPaykitWallet(buyerPubky: string | null, enabled: boolean, watch = false) {
-  const [result, setResult] = useState<{ key: string; state: BuyerPaykitWalletState } | null>(null);
-  const [attempt, setAttempt] = useState(0);
-  const key = enabled && buyerPubky ? `${buyerPubky}:${attempt}` : null;
+  const [result, setResult] = useState<{ key: string; buyerPubky: string; state: BuyerPaykitWalletState } | null>(null);
+  const [attempt, setAttempt] = useState({ id: 0, background: false });
+  const key = enabled && buyerPubky ? `${buyerPubky}:${attempt.id}` : null;
   const inFlight = useRef<object | null>(null);
 
   useEffect(() => {
-    // A new read must not reuse a verdict from an earlier Bitcoin selection.
-    setResult(null);
-    if (!key || !buyerPubky) return;
+    // Deselection clears the verdict, so selecting Bitcoin again starts a fresh check.
+    if (!key || !buyerPubky) {
+      setResult(null);
+      return;
+    }
+    setResult((previous) => (attempt.background && previous?.buyerPubky === buyerPubky ? previous : null));
     let active = true;
     const request = {};
     inFlight.current = request;
     void (async () => {
       try {
         const wallet = await CommerceController.fetchBuyerPaykitWallet(buyerPubky);
-        if (active) setResult({ key, state: wallet });
+        if (active) setResult({ key, buyerPubky, state: wallet });
       } catch (error) {
         Logger.warn('Could not read the buyer Paykit wallet', { error });
-        if (active) setResult({ key, state: 'unknown' });
+        if (active) {
+          setResult((previous) => ({
+            key,
+            buyerPubky,
+            // A failed background read does not discard an established verdict.
+            state: attempt.background && previous?.buyerPubky === buyerPubky ? previous.state : 'unknown',
+          }));
+        }
       } finally {
         if (inFlight.current === request) inFlight.current = null;
       }
@@ -49,17 +59,21 @@ export function useBuyerPaykitWallet(buyerPubky: string | null, enabled: boolean
       active = false;
       if (inFlight.current === request) inFlight.current = null;
     };
-  }, [key, buyerPubky]);
+  }, [key, buyerPubky, attempt.background]);
 
-  const state: BuyerPaykitWalletState = !key ? 'idle' : result?.key === key ? result.state : 'checking';
+  const state: BuyerPaykitWalletState = !key
+    ? 'idle'
+    : result?.buyerPubky === buyerPubky && (result.key === key || attempt.background)
+      ? result.state
+      : 'checking';
 
   useEffect(() => {
-    if (!watch || !key || state === 'checking' || state === 'payable' || state === 'unsupported') return;
+    if (!watch || !key || result?.key !== key || state === 'payable' || state === 'unsupported') return;
     let requested = false;
     const check = () => {
       if (document.visibilityState === 'hidden' || requested || inFlight.current) return;
       requested = true;
-      setAttempt((current) => current + 1);
+      setAttempt((current) => ({ id: current.id + 1, background: true }));
     };
     // Recheck after returning from Bitkit, or while waiting for its public wallet setup.
     const timer = window.setTimeout(check, 5000);
@@ -70,12 +84,13 @@ export function useBuyerPaykitWallet(buyerPubky: string | null, enabled: boolean
       window.removeEventListener('focus', check);
       document.removeEventListener('visibilitychange', check);
     };
-  }, [watch, key, state]);
+  }, [watch, key, state, result?.key]);
 
   return {
     state,
     recheck: () => {
-      if (key && state !== 'checking' && !inFlight.current) setAttempt((current) => current + 1);
+      if (key && state !== 'checking' && !inFlight.current)
+        setAttempt((current) => ({ id: current.id + 1, background: false }));
     },
   };
 }

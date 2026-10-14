@@ -17,6 +17,12 @@ import {
   USDT_SELLER_CONFIG_UNAVAILABLE_WIRE,
 } from '@/test/fixtures/commerce/seller-payment-config-usdt.wire';
 
+const runtime = vi.hoisted(() => ({ api: 'fork' as 'fork' | 'upstream' }));
+vi.mock('@/config/commerce', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/config/commerce')>();
+  return { ...actual, getPaykitServerApi: () => runtime.api };
+});
+
 const PUBKY = 'gy1wnkhfwezwdnawnur1bc3kw1x3jf5ggjj3cm37e31i5ntq3pco';
 
 vi.mock('@/controllers/commerce/commerce', () => ({
@@ -83,6 +89,7 @@ function sendCallback(iframe: HTMLIFrameElement, data: Record<string, unknown> =
 }
 
 beforeEach(() => {
+  runtime.api = 'fork';
   mockedToast.mockReset();
   mocked.getPaykitSetupUrl.mockReset().mockImplementation(paykitUrl('/setup'));
   mocked.getPaykitReconnectUrl.mockReset().mockImplementation(paykitUrl('/setup/reconnect'));
@@ -115,6 +122,17 @@ function methodTitles() {
 }
 
 describe('MarketplaceGetPaidSettings USDT', () => {
+  it.each(['fork', 'upstream'] as const)(
+    'offers new wallet downloads only with a compatible backend (%s)',
+    async (api) => {
+      runtime.api = api;
+      await renderSettings();
+      const download = screen.queryByRole('link', { name: 'Download Bitkit on the App Store' });
+      if (api === 'upstream') expect(download).toBeVisible();
+      else expect(download).not.toBeInTheDocument();
+    },
+  );
+
   describe('gate', () => {
     it('renders nothing USDT-shaped and sends no USDT field while the gate is off', async () => {
       mocked.fetchUsdtPaymentsAvailable.mockResolvedValue(false);
@@ -389,10 +407,13 @@ describe('MarketplaceGetPaidSettings USDT', () => {
     }
 
     it('opens the reconnect URL in the same embedded Paykit iframe, not the setup URL', async () => {
+      runtime.api = 'upstream';
       const iframe = await openReconnect();
 
       expect(mocked.getPaykitReconnectUrl).toHaveBeenCalledTimes(1);
       expect(mocked.getPaykitSetupUrl).not.toHaveBeenCalled();
+      expect(iframe).not.toHaveAttribute('scrolling', 'no');
+      expect(iframe).toHaveClass('h-[40rem]', 'w-full');
       const url = new URL(iframe.getAttribute('src')!);
       expect(url.origin + url.pathname).toBe('https://paykit.example/setup/reconnect');
       expect(url.searchParams.get('creator')).toBe(PUBKY);

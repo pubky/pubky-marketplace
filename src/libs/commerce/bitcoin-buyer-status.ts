@@ -57,17 +57,19 @@ export const PAYMENT_CONFIRMED_WAITING_SELLER_COPY =
  * Paykit's `delivered` means the request was published for the buyer's
  * wallet, not that the wallet accepted it, so the copy says "sent".
  * Paykit sends only over an Encrypted Link, and Bitkit links only with saved
- * contacts, so the contact step belongs to the waiting help, not the sent state.
+ * contacts, so the contact step stays visible while waiting, not in the sent state.
  */
 export const BITCOIN_WALLET_SENT_COPY = 'Payment request sent. Open Bitkit to approve and pay.';
 
 export const BITCOIN_WALLET_SENT_HELP_COPY =
   'After you pay, this page updates automatically. Let any pending payment finish, or resolve it in your wallet, before ordering again.';
 
-export const BITCOIN_WALLET_WAITING_HELP_COPY = `If the request is missing, make sure the seller is in your Bitkit contacts. ${BITCOIN_WALLET_SENT_HELP_COPY}`;
+export const BITCOIN_WALLET_CONTACT_COPY = 'Make sure the seller is in your Bitkit contacts to receive the request.';
+
+export const BITCOIN_PAYMENT_EXPIRY_COPY = 'If the payment window ends, the item returns to stock.';
 
 export const BITCOIN_WALLET_WAITING_COPY =
-  'Waiting for your approval. Open Bitkit wallet to receive a payment request.';
+  'Waiting for your wallet. Open Bitkit so it can receive the payment request.';
 
 const SEEN_REQUEST_STATES = new Set(['detected', 'awaiting_seller_confirmation', 'confirmed']);
 

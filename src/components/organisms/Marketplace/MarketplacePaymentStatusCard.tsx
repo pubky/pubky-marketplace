@@ -21,7 +21,12 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/atoms/Col
 import { Input } from '@/atoms/Input/Input';
 import { Label } from '@/atoms/Label/Label';
 import { Typography } from '@/atoms/Typography/Typography';
-import { type CommerceAdapterMode, isDurableCommerceMode, isLocksPaykitCommerceMode } from '@/config/commerce';
+import {
+  type CommerceAdapterMode,
+  getPaykitServerApi,
+  isDurableCommerceMode,
+  isLocksPaykitCommerceMode,
+} from '@/config/commerce';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import { useBuyerPaykitWallet } from '@/hooks/useBuyerPaykitWallet/useBuyerPaykitWallet';
 import { useMarketplaceLocksPayment } from '@/hooks/useMarketplaceLocksPayment/useMarketplaceLocksPayment';
@@ -36,8 +41,9 @@ import {
 import { useNowMs } from '@/hooks/useNowMs/useNowMs';
 import { Tether } from '@/icons';
 import {
+  BITCOIN_PAYMENT_EXPIRY_COPY,
+  BITCOIN_WALLET_CONTACT_COPY,
   BITCOIN_WALLET_SENT_HELP_COPY,
-  BITCOIN_WALLET_WAITING_HELP_COPY,
   bitcoinPaidConfirmation,
   buyerBitcoinReviewCopy,
   buyerBitcoinWalletCopy,
@@ -49,6 +55,7 @@ import {
   sellerBitcoinConfirmPrompt,
   sellerConfirmsByCopy,
 } from '@/libs/commerce/bitcoin-buyer-status';
+import { bitcoinPaymentCodeCheckoutNote } from '@/libs/commerce/bitcoin-payment-code';
 import {
   buyerPayByDeadline,
   CHECKOUT_HOLD_COPY,
@@ -70,6 +77,8 @@ import {
 import { buyerVisiblePaymentStatus } from '@/libs/commerce/locks-payment';
 import type { CommerceDigitalLock } from '@/libs/commerce/marketplace-records';
 import {
+  BITCOIN_WALLET_FORK_REQUIRED_COPY,
+  BITCOIN_WALLET_FORK_REQUIRED_TITLE,
   BITCOIN_WALLET_UNSUPPORTED_TITLE,
   BITCOIN_WALLET_UNVERIFIED_TITLE,
   bitcoinWalletUnsupportedBody,
@@ -211,7 +220,10 @@ export function MarketplacePaymentStatusCard({
     usesMethodFlow && isBuyer && !order.paymentMethod && (methodPayment.availableMethods?.includes('bitcoin') ?? false);
   const buyerConnectionRequested =
     bitcoinBindOffered && buyerConnection?.owner === currentUserPubky && buyerConnection?.orderId === order.id;
-  const buyerConnectionOpen = buyerConnectionRequested && Boolean(buyerConnection?.open);
+  const supportsBuyerConnectionGuide = getPaykitServerApi() === 'upstream';
+  const paymentCodeNote = bitcoinPaymentCodeCheckoutNote(getPaykitServerApi());
+  const buyerConnectionOpen =
+    supportsBuyerConnectionGuide && buyerConnectionRequested && Boolean(buyerConnection?.open);
   const buyerWallet = useBuyerPaykitWallet(currentUserPubky, bitcoinBindOffered, buyerConnectionOpen);
   const buyerConnectionRequired = buyerConnectionRequested && buyerWallet.state !== 'payable';
   const bitcoinWalletMissing = bitcoinBindOffered && buyerWallet.state === 'not_payable';
@@ -511,6 +523,11 @@ export function MarketplacePaymentStatusCard({
                   {MARKETPLACE_FAILURE_MESSAGES.bitcoinOfferUnavailable}
                 </Typography>
               )}
+              {bitcoinBindOffered && paymentCodeNote && (
+                <Typography as="p" className="text-xs text-muted-foreground" data-testid="bitcoin-payment-code-note">
+                  {paymentCodeNote}
+                </Typography>
+              )}
               {methodPayment.deliveryAddress && (
                 <MarketplaceAuctionDeliveryAddress
                   delivery={methodPayment.deliveryAddress}
@@ -578,21 +595,27 @@ export function MarketplacePaymentStatusCard({
                   data-testid="order-payment-bitkit-required"
                 >
                   <Typography as="p" className="text-sm font-medium">
-                    Connect Bitkit to pay with Bitcoin
+                    {supportsBuyerConnectionGuide
+                      ? 'Connect Bitkit to pay with Bitcoin'
+                      : BITCOIN_WALLET_FORK_REQUIRED_TITLE}
                   </Typography>
-                  <BitkitDownloads compact />
+                  {supportsBuyerConnectionGuide && <BitkitDownloads compact />}
                   <Typography as="p" className="text-sm text-muted-foreground">
-                    Use your marketplace pubky in Bitkit to receive a payment request.
+                    {supportsBuyerConnectionGuide
+                      ? 'Use your marketplace pubky in Bitkit to receive a payment request.'
+                      : BITCOIN_WALLET_FORK_REQUIRED_COPY}
                   </Typography>
                   <div className="flex flex-wrap gap-2">
-                    <Button
-                      type="button"
-                      size="sm"
-                      disabled={!currentUserPubky}
-                      onClick={() => checkBuyerConnection(true)}
-                    >
-                      Connect Bitkit
-                    </Button>
+                    {supportsBuyerConnectionGuide && (
+                      <Button
+                        type="button"
+                        size="sm"
+                        disabled={!currentUserPubky}
+                        onClick={() => checkBuyerConnection(true)}
+                      >
+                        Connect Bitkit
+                      </Button>
+                    )}
                     <Button type="button" size="sm" variant="secondary" onClick={() => checkBuyerConnection(false)}>
                       Check connection
                     </Button>
@@ -934,9 +957,7 @@ export function MarketplacePaymentStatusCard({
             </CollapsibleTrigger>
             <CollapsibleContent>
               <Typography as="p" className="text-xs text-muted-foreground">
-                {order.paykitDeliveryState === 'delivered'
-                  ? BITCOIN_WALLET_SENT_HELP_COPY
-                  : BITCOIN_WALLET_WAITING_HELP_COPY}
+                {BITCOIN_WALLET_SENT_HELP_COPY}
               </Typography>
             </CollapsibleContent>
           </Collapsible>
@@ -996,6 +1017,16 @@ function BuyerBitcoinPaymentProgress({ order, payment }: { order: MarketplaceOrd
             ? `Payment request sent. Open Bitkit to approve and pay by ${paymentDeadline}.`
             : `${progress.text}${paymentDeadline ? ` Pay by ${paymentDeadline}.` : ''}`}
         </div>
+      )}
+      {!requestSent && order.paykitDeliveryState !== 'failed' && (
+        <Typography as="p" className="text-xs text-muted-foreground" data-testid="bitcoin-wallet-contact-hint">
+          {BITCOIN_WALLET_CONTACT_COPY}
+        </Typography>
+      )}
+      {paymentDeadline && (
+        <Typography as="p" className="text-xs text-muted-foreground">
+          {BITCOIN_PAYMENT_EXPIRY_COPY}
+        </Typography>
       )}
       {order.paykitDeliveryState === 'failed' && paymentDeadline && (
         <Typography as="p" className="text-xs text-muted-foreground">

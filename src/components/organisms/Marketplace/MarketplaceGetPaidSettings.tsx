@@ -378,7 +378,6 @@ export function MarketplaceGetPaidSettings({ locksConnect, onSaved }: Marketplac
       ? paykitSetupProblemState.problem
       : null;
   const paykitCodeExpired = paykitSetupStatus === 'error' || paykitSetupStatus === 'timeout';
-  const compactPaykitSetup = getPaykitServerApi() === 'upstream';
 
   // Stored rails need the marketplace session and the loaded config; the
   // bitcoin connect steps above them do not, so they render unconditionally.
@@ -451,7 +450,7 @@ export function MarketplaceGetPaidSettings({ locksConnect, onSaved }: Marketplac
         promise="Connect your Bitkit wallet to accept bitcoin."
         status={bitcoinStatus}
         statusTestId="payment-method-status-bitcoin"
-        headerContent={<BitkitDownloads compact />}
+        headerContent={getPaykitServerApi() === 'upstream' ? <BitkitDownloads compact /> : undefined}
       >
         <div className="grid gap-6 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
           <div>
@@ -731,12 +730,7 @@ export function MarketplaceGetPaidSettings({ locksConnect, onSaved }: Marketplac
                 title={paykitSetupMode === 'reconnect' ? 'Add USDT in Bitkit' : 'Connect Bitkit'}
                 sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-top-navigation-to-custom-protocols"
                 referrerPolicy="no-referrer"
-                scrolling="no"
-                className={
-                  compactPaykitSetup
-                    ? 'mx-auto h-48 w-48 max-w-full rounded-lg bg-popover [@media(hover:none)_and_(pointer:coarse)]:h-15 [@media(hover:none)_and_(pointer:coarse)]:w-full'
-                    : 'h-[40rem] w-full rounded-lg border bg-popover'
-                }
+                className="h-[40rem] w-full rounded-lg border bg-popover"
               />
             )
           )}

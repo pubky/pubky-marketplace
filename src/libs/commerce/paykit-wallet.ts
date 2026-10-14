@@ -78,6 +78,10 @@ export function appRegistryTakesPaymentRequests(json: unknown): boolean {
   );
 }
 
+export const BITCOIN_WALLET_FORK_REQUIRED_TITLE = 'A compatible Bitkit wallet is required';
+export const BITCOIN_WALLET_FORK_REQUIRED_COPY =
+  'Bitcoin checkout does not support Bitkit 2.6 or later yet. Support is coming in a marketplace update.';
+
 export const BITCOIN_WALLET_UNSUPPORTED_TITLE = 'Bitcoin checkout does not support Bitkit 2.6 yet';
 
 export function bitcoinWalletUnsupportedBody(canPayWithPaypal: boolean): string {

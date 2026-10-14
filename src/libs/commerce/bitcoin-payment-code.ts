@@ -1,3 +1,4 @@
+import type { PaykitServerApi } from '@/libs/runtime-config/runtime-config.schema';
 import { formatCommerceMoney } from './format';
 import type { PaymentMethodKind } from './payment-methods';
 import { formatBitcoinAmount, hasSameAsset, isBitcoinAsset, MAX_BITCOIN_BASE_UNITS } from './pricing';
@@ -12,6 +13,10 @@ import type { CommerceMoney } from './transaction-contracts';
  * equal the price, so the request is for exactly the price.
  */
 export const BITCOIN_PAYMENT_CODE_MIN_SATS = 1;
+
+export function bitcoinPaymentCodeCheckoutNote(api: PaykitServerApi): string | null {
+  return api === 'fork' ? 'Bitcoin payments include an extra ₿1–₿999 to help the seller match your payment.' : null;
+}
 
 export const BITCOIN_PAYMENT_CODE_EXPLANATION = 'The payment code helps the seller match your payment.';
 

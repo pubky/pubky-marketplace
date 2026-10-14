@@ -44,6 +44,7 @@ import { useMarketplaceSellerDeliveryTerms } from '@/hooks/useMarketplaceSellerD
 import { useUsdtPaymentsAvailable } from '@/hooks/useUsdtPaymentsAvailable/useUsdtPaymentsAvailable';
 import { Tether } from '@/icons';
 import { buyerCheckoutProgressCopy } from '@/libs/commerce/bitcoin-buyer-status';
+import { bitcoinPaymentCodeCheckoutNote } from '@/libs/commerce/bitcoin-payment-code';
 import {
   getMarketplaceCheckoutRoute,
   intersectPaymentMethods,
@@ -58,6 +59,8 @@ import {
 import { formatCommerceMoney } from '@/libs/commerce/format';
 import { LOCKS_MIXED_CHECKOUT_COPY, locksCheckoutRoute } from '@/libs/commerce/locks-payment';
 import {
+  BITCOIN_WALLET_FORK_REQUIRED_COPY,
+  BITCOIN_WALLET_FORK_REQUIRED_TITLE,
   BITCOIN_WALLET_UNSUPPORTED_TITLE,
   BITCOIN_WALLET_UNVERIFIED_TITLE,
   bitcoinWalletUnsupportedBody,
@@ -225,6 +228,8 @@ function MarketplaceCartCheckout() {
   const isSandbox = adapterMode === 'sandbox';
   const usdtPaymentsAvailable = useUsdtPaymentsAvailable(!isSandbox);
   const isStaging = getDeployEnv() === 'staging';
+  const isProduction = getDeployEnv() === 'production';
+  const supportsBuyerConnectionGuide = getPaykitServerApi() === 'upstream';
   const formValues = useWatch({ control: checkout.form.control });
   const formValid = marketplaceCheckoutSchema.safeParse(formValues).success;
   const displayGroups = useMemo(() => groupMarketplaceCartItems(checkoutItems), [checkoutItems]);
@@ -406,7 +411,8 @@ function MarketplaceCartCheckout() {
   const usdtSelected = !isSandbox && selectedMethod === 'usdt';
   const usdtMillionths = usdtSelected ? usdtParityMillionths(totalSubtotals) : null;
   const buyerConnectionRequested = bitcoinSelected && buyerConnection?.owner === currentUserPubky;
-  const buyerConnectionOpen = buyerConnectionRequested && Boolean(buyerConnection?.open) && !showPaying;
+  const buyerConnectionOpen =
+    supportsBuyerConnectionGuide && buyerConnectionRequested && Boolean(buyerConnection?.open) && !showPaying;
   const buyerWallet = useBuyerPaykitWallet(currentUserPubky ?? null, bitcoinSelected, buyerConnectionOpen);
   // A failed read during setup must never turn a known missing wallet into permission to pay.
   const buyerConnectionRequired = buyerConnectionRequested && buyerWallet.state !== 'payable';
@@ -447,29 +453,38 @@ function MarketplaceCartCheckout() {
     (!isOfferCheckout || offerEligible) &&
     (isSandbox || (sharedMethods !== null && sharedMethods.length > 0 && selectedMethod !== null));
 
-  const checkoutPayDisabledReason = checkout.hasFulfillmentConflict
-    ? "Some items can't be checked out together — see the note above."
-    : !checkout.isDigitalReady
-      ? checkout.digitalNotReadyItemIds.length > 0
-        ? DIGITAL_CHECKOUT_COPY.payReasonNotReady
-        : DIGITAL_CHECKOUT_COPY.payReasonLoading
-      : buyerWalletMissing
-        ? null
-        : buyerWalletUnsupported
-          ? bitcoinWalletUnsupportedPayReason(canPayWithPaypal)
-          : buyerWalletUnverified
-            ? bitcoinWalletUnverifiedPayReason(canPayWithPaypal)
-            : buyerWalletChecking
-              ? 'Pay unlocks once your Bitcoin wallet is checked.'
-              : railsFailed
-                ? 'Pay unlocks once payment options load.'
-                : usdtRefusedOnly
-                  ? 'Pay unlocks once a payment method is available.'
-                  : sharedMethods && sharedMethods.length === 0 && !isSandbox
-                    ? isMultiSeller
-                      ? 'Choose sellers that share a payment method.'
-                      : 'Pay unlocks once this seller sets up a payment method.'
-                    : null;
+  const paymentCodeNote = bitcoinSelected ? bitcoinPaymentCodeCheckoutNote(getPaykitServerApi()) : null;
+  const checkoutPayDisabledReason = approvalNeeded
+    ? 'Enable purchases to pay.'
+    : isPaying
+      ? 'Payment is in progress.'
+      : checkout.hasFulfillmentConflict
+        ? "Some items can't be checked out together — see the note above."
+        : !checkout.isDigitalReady
+          ? checkout.digitalNotReadyItemIds.length > 0
+            ? DIGITAL_CHECKOUT_COPY.payReasonNotReady
+            : DIGITAL_CHECKOUT_COPY.payReasonLoading
+          : buyerWalletMissing
+            ? 'A compatible Bitkit wallet is required to pay with Bitcoin.'
+            : buyerWalletUnsupported
+              ? bitcoinWalletUnsupportedPayReason(canPayWithPaypal)
+              : buyerWalletUnverified
+                ? bitcoinWalletUnverifiedPayReason(canPayWithPaypal)
+                : buyerWalletChecking
+                  ? 'Pay unlocks once your Bitcoin wallet is checked.'
+                  : railsFailed
+                    ? 'Pay unlocks once payment options load.'
+                    : usdtRefusedOnly
+                      ? 'Pay unlocks once a payment method is available.'
+                      : sharedMethods && sharedMethods.length === 0 && !isSandbox
+                        ? isMultiSeller
+                          ? 'Choose sellers that share a payment method.'
+                          : 'Pay unlocks once this seller sets up a payment method.'
+                        : buyerConnectionRequired
+                          ? 'Check your Bitkit connection to pay with Bitcoin.'
+                          : isOfferCheckout && !offerEligible
+                            ? 'This offer is not available for checkout.'
+                            : 'Fill in delivery details and choose a payment method to pay.';
   const payDisabledReason = locksRoute === 'mixed' ? LOCKS_MIXED_CHECKOUT_COPY : checkoutPayDisabledReason;
 
   const removeAwardLine = async () => {
@@ -1193,22 +1208,28 @@ function MarketplaceCartCheckout() {
                           data-testid="marketplace-checkout-bitkit-required"
                         >
                           <Typography as="p" className="text-sm font-medium">
-                            Connect Bitkit to pay with Bitcoin
+                            {supportsBuyerConnectionGuide
+                              ? 'Connect Bitkit to pay with Bitcoin'
+                              : BITCOIN_WALLET_FORK_REQUIRED_TITLE}
                           </Typography>
-                          <BitkitDownloads compact />
+                          {supportsBuyerConnectionGuide && <BitkitDownloads compact />}
                           <Typography as="p" className="text-sm text-muted-foreground">
-                            Use your marketplace pubky in Bitkit to receive a payment request.
+                            {supportsBuyerConnectionGuide
+                              ? 'Use your marketplace pubky in Bitkit to receive a payment request.'
+                              : BITCOIN_WALLET_FORK_REQUIRED_COPY}
                           </Typography>
                           <div className="flex flex-wrap gap-2">
-                            <Button
-                              type="button"
-                              size="sm"
-                              data-testid="marketplace-checkout-bitkit-connect"
-                              disabled={!currentUserPubky}
-                              onClick={() => checkBuyerConnection(true)}
-                            >
-                              Connect Bitkit
-                            </Button>
+                            {supportsBuyerConnectionGuide && (
+                              <Button
+                                type="button"
+                                size="sm"
+                                data-testid="marketplace-checkout-bitkit-connect"
+                                disabled={!currentUserPubky}
+                                onClick={() => checkBuyerConnection(true)}
+                              >
+                                Connect Bitkit
+                              </Button>
+                            )}
                             <Button
                               type="button"
                               size="sm"
@@ -1293,14 +1314,21 @@ function MarketplaceCartCheckout() {
                         </Typography>
                       )}
                       <DeliveryKeyBlockedNotice block={checkout.deliveryKeyBlock ?? offerPay.deliveryKeyBlock} />
+                      {paymentCodeNote && (
+                        <Typography
+                          as="p"
+                          className="text-xs text-muted-foreground"
+                          data-testid="bitcoin-payment-code-note"
+                        >
+                          {paymentCodeNote}
+                        </Typography>
+                      )}
                       <Button
                         className="w-full rounded-full"
                         onClick={() => void pay()}
                         disabled={!canPay}
                         data-testid="marketplace-checkout-pay"
-                        aria-describedby={
-                          !canPay && !approvalNeeded && payDisabledReason ? 'checkout-pay-reason' : undefined
-                        }
+                        aria-describedby={!canPay ? 'checkout-pay-reason' : undefined}
                       >
                         {isPaying ? (
                           <>
@@ -1313,7 +1341,7 @@ function MarketplaceCartCheckout() {
                           'Pay'
                         )}
                       </Button>
-                      {!isSandbox && (
+                      {isProduction && !isSandbox && (
                         <Typography
                           as="p"
                           size="xs"
@@ -1321,11 +1349,11 @@ function MarketplaceCartCheckout() {
                           data-testid="marketplace-checkout-payment-notice"
                         >
                           {isLocksPaykitCommerceMode(adapterMode)
-                            ? 'Payment goes directly to the seller.'
+                            ? 'Payment goes directly to the seller. This marketplace never holds funds.'
                             : 'No payment rails are live in this deployment, so no real funds move. This marketplace never holds funds.'}
                         </Typography>
                       )}
-                      {!canPay && !approvalNeeded && payDisabledReason && (
+                      {!canPay && (
                         <Typography id="checkout-pay-reason" as="p" className="text-xs text-muted-foreground">
                           {payDisabledReason}
                         </Typography>

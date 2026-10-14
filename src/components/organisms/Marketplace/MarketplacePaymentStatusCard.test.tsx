@@ -17,7 +17,10 @@ import {
 import { createOrderFixture, createPaymentFixture } from '@/test/fixtures/commerce/orders';
 import { MarketplacePaymentStatusCard } from './MarketplacePaymentStatusCard';
 
-const runtime = vi.hoisted(() => ({ deployEnv: 'production' as 'production' | 'staging' | undefined }));
+const runtime = vi.hoisted(() => ({
+  deployEnv: 'production' as 'production' | 'staging' | undefined,
+  paykitServerApi: 'fork' as 'fork' | 'upstream',
+}));
 const auth = vi.hoisted(() => ({ currentUserPubky: 's'.repeat(52) }));
 const buyerWallet = vi.hoisted(() => ({
   state: 'payable' as 'checking' | 'payable' | 'not_payable' | 'unsupported' | 'unverified' | 'unknown',
@@ -28,7 +31,7 @@ const buyerWallet = vi.hoisted(() => ({
 
 vi.mock('@/libs/runtime-config/runtime-config', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/libs/runtime-config/runtime-config')>();
-  return { ...actual, getDeployEnv: () => runtime.deployEnv };
+  return { ...actual, getDeployEnv: () => runtime.deployEnv, getPaykitServerApi: () => runtime.paykitServerApi };
 });
 
 const locksView = vi.hoisted(() => ({ overrides: {} as Record<string, unknown> }));
@@ -87,6 +90,7 @@ vi.mock('@/stores/auth/auth.store', () => ({
 describe('MarketplacePaymentStatusCard', () => {
   beforeEach(() => {
     runtime.deployEnv = 'production';
+    runtime.paykitServerApi = 'fork';
     auth.currentUserPubky = 's'.repeat(52);
     buyerWallet.state = 'payable';
     buyerWallet.calls = [];
@@ -829,7 +833,8 @@ describe('MarketplacePaymentStatusCard', () => {
   });
 
   describe('resumed Bitcoin connection', () => {
-    const renderResumed = () => {
+    const renderResumed = (api: 'fork' | 'upstream' = 'upstream') => {
+      runtime.paykitServerApi = api;
       auth.currentUserPubky = 'b'.repeat(52);
       buyerWallet.state = 'not_payable';
       const bind = vi.fn();
@@ -856,6 +861,21 @@ describe('MarketplacePaymentStatusCard', () => {
       };
       return { ...render(<MarketplacePaymentStatusCard {...props} />), props, bind };
     };
+
+    it('keeps the incompatible download guide out of fork checkout and explains the code before binding', () => {
+      const { bind } = renderResumed('fork');
+      const notice = screen.getByTestId('order-payment-bitkit-required');
+      expect(notice).toHaveTextContent('does not support Bitkit 2.6 or later yet');
+      expect(within(notice).queryByRole('link')).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Connect Bitkit' })).not.toBeInTheDocument();
+      expect(screen.getByTestId('bitcoin-payment-code-note')).toHaveTextContent('₿1–₿999');
+      expect(screen.getByRole('button', { name: 'Continue with Bitcoin' })).toBeDisabled();
+      expect(screen.getByRole('button', { name: 'Continue with PayPal' })).toBeEnabled();
+      fireEvent.click(screen.getByRole('button', { name: 'Check connection' }));
+      expect(buyerWallet.recheck).toHaveBeenCalledTimes(1);
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+      expect(bind).not.toHaveBeenCalled();
+    });
 
     it('verifies the pubky before continuing the same order, without paying from the guide', () => {
       const { rerender, props, bind } = renderResumed();
@@ -965,7 +985,7 @@ describe('MarketplacePaymentStatusCard', () => {
     );
 
     expect(screen.getByTestId('paykit-delivery-status')).toHaveTextContent(
-      `Waiting for your approval. Open Bitkit wallet to receive a payment request. Pay by ${formatOrderInstant(holdExpiresAt)}.`,
+      `Waiting for your wallet. Open Bitkit so it can receive the payment request. Pay by ${formatOrderInstant(holdExpiresAt)}.`,
     );
     expect(screen.queryByText(`Pay by ${formatOrderInstant(holdExpiresAt)}.`)).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Cancel checkout' })).not.toBeInTheDocument();
@@ -992,14 +1012,17 @@ describe('MarketplacePaymentStatusCard', () => {
     for (const state of [null, 'pending']) {
       const { unmount } = renderBound(state);
       expect(screen.getByTestId('paykit-delivery-status')).toHaveTextContent(
-        'Waiting for your approval. Open Bitkit wallet to receive a payment request.',
+        'Waiting for your wallet. Open Bitkit so it can receive the payment request.',
       );
       expect(screen.queryByText(/delivered privately/)).not.toBeInTheDocument();
       const help = screen.getByRole('button', { name: 'Need help?' });
       expect(help).toHaveAttribute('aria-expanded', 'false');
       expect(help.closest('[data-surface="marketplace-payment-status-card"]')).toBeNull();
+      expect(screen.getByTestId('bitcoin-wallet-contact-hint')).toBeVisible();
+      expect(screen.getByTestId('bitcoin-wallet-contact-hint')).toHaveTextContent('seller is in your Bitkit contacts');
+      expect(screen.getByText('If the payment window ends, the item returns to stock.')).toBeVisible();
       fireEvent.click(help);
-      expect(screen.getByText(/If the request is missing/)).toHaveTextContent('seller is in your Bitkit contacts');
+      expect(screen.getByText(/After you pay/)).toBeVisible();
       unmount();
     }
     const { unmount } = renderBound('delivered');
@@ -1009,7 +1032,7 @@ describe('MarketplacePaymentStatusCard', () => {
     expect(screen.getByTestId('paykit-delivery-status')).not.toHaveTextContent(/contact/);
     fireEvent.click(screen.getByRole('button', { name: 'Need help?' }));
     expect(screen.getByText(/After you pay/)).not.toHaveTextContent(/contact/);
-    expect(screen.queryByText(/If the request is missing/)).not.toBeInTheDocument();
+    expect(screen.queryByTestId('bitcoin-wallet-contact-hint')).not.toBeInTheDocument();
     expect(screen.queryByText(/Delivered/)).not.toBeInTheDocument();
     unmount();
   });
@@ -1175,7 +1198,7 @@ describe('MarketplacePaymentStatusCard', () => {
       expect(screen.getByText(/After you pay/)).toHaveTextContent(
         'After you pay, this page updates automatically. Let any pending payment finish, or resolve it in your wallet, before ordering again.',
       );
-      expect(screen.queryByText(/If the request is missing/)).not.toBeInTheDocument();
+      expect(screen.queryByTestId('bitcoin-wallet-contact-hint')).not.toBeInTheDocument();
       fireEvent.click(help);
       expect(help).toHaveAttribute('aria-expanded', 'false');
       expect(screen.queryByText(/After you pay/)).not.toBeInTheDocument();

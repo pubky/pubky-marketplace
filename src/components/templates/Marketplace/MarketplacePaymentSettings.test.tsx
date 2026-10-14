@@ -536,7 +536,8 @@ describe('MarketplacePaymentSettings', () => {
     expect(dialog?.className).toMatch(/overflow-y-auto/);
     expect(dialog?.className).not.toMatch(/overflow-hidden/);
     expect(iframe.className).not.toMatch(/overflow-y-auto|overflow-auto|h-\[min\(22rem/);
-    expect(iframe).toHaveAttribute('scrolling', 'no');
+    expect(iframe).not.toHaveAttribute('scrolling', 'no');
+    expect(iframe).toHaveClass('h-[40rem]', 'w-full');
   });
 
   it('keeps Accept bitcoin as step 3 and hides the separate selling prompt once enabled', async () => {

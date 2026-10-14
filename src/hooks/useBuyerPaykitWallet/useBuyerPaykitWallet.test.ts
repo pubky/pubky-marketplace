@@ -36,6 +36,7 @@ describe('useBuyerPaykitWallet', () => {
 
     controller.fetchBuyerPaykitWallet.mockResolvedValueOnce('payable');
     act(() => result.current.recheck());
+    expect(result.current.state).toBe('checking');
     await waitFor(() => expect(result.current.state).toBe('payable'));
     expect(controller.fetchBuyerPaykitWallet).toHaveBeenCalledTimes(2);
   });
@@ -53,6 +54,7 @@ describe('useBuyerPaykitWallet', () => {
 
     controller.fetchBuyerPaykitWallet.mockResolvedValueOnce('payable');
     act(() => result.current.recheck());
+    expect(result.current.state).toBe('checking');
     await waitFor(() => expect(result.current.state).toBe('payable'));
     expect(controller.fetchBuyerPaykitWallet).toHaveBeenCalledTimes(2);
   });
@@ -94,7 +96,7 @@ describe('useBuyerPaykitWallet', () => {
     let finishRead!: (wallet: BuyerPaykitWallet) => void;
     controller.fetchBuyerPaykitWallet.mockImplementationOnce(() => new Promise((resolve) => (finishRead = resolve)));
     await act(async () => vi.advanceTimersByTime(5000));
-    expect(result.current.state).toBe('checking');
+    expect(result.current.state).toBe('not_payable');
     act(() => {
       result.current.recheck();
       window.dispatchEvent(new Event('focus'));
@@ -110,6 +112,50 @@ describe('useBuyerPaykitWallet', () => {
       window.dispatchEvent(new Event('focus'));
     });
     expect(controller.fetchBuyerPaykitWallet).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps a missing-wallet verdict through background failures and keeps polling', async () => {
+    vi.useFakeTimers();
+    controller.fetchBuyerPaykitWallet.mockResolvedValueOnce('not_payable');
+    const { result } = renderHook(() => useBuyerPaykitWallet(BUYER, true, true));
+    await act(async () => {});
+    controller.fetchBuyerPaykitWallet.mockRejectedValueOnce(new TypeError('offline'));
+    await act(async () => vi.advanceTimersByTime(5000));
+    expect(result.current.state).toBe('not_payable');
+    controller.fetchBuyerPaykitWallet.mockResolvedValueOnce('not_payable');
+    await act(async () => vi.advanceTimersByTime(5000));
+    expect(result.current.state).toBe('not_payable');
+    controller.fetchBuyerPaykitWallet.mockResolvedValueOnce('payable');
+    await act(async () => vi.advanceTimersByTime(5000));
+    expect(result.current.state).toBe('payable');
+    expect(controller.fetchBuyerPaykitWallet).toHaveBeenCalledTimes(4);
+  });
+
+  it('does not carry a background verdict into another pubky or Bitcoin selection', async () => {
+    vi.useFakeTimers();
+    controller.fetchBuyerPaykitWallet.mockResolvedValueOnce('not_payable');
+    const { result, rerender } = renderHook(({ buyer, enabled }) => useBuyerPaykitWallet(buyer, enabled, true), {
+      initialProps: { buyer: BUYER, enabled: true },
+    });
+    await act(async () => {});
+    let finishOldRead!: (wallet: BuyerPaykitWallet) => void;
+    controller.fetchBuyerPaykitWallet.mockImplementationOnce(() => new Promise((resolve) => (finishOldRead = resolve)));
+    await act(async () => vi.advanceTimersByTime(5000));
+    expect(result.current.state).toBe('not_payable');
+    controller.fetchBuyerPaykitWallet.mockResolvedValueOnce('unsupported');
+    rerender({ buyer: 'c'.repeat(52), enabled: true });
+    expect(result.current.state).toBe('checking');
+    await act(async () => {});
+    expect(result.current.state).toBe('unsupported');
+    await act(async () => finishOldRead('payable'));
+    expect(result.current.state).toBe('unsupported');
+    rerender({ buyer: 'c'.repeat(52), enabled: false });
+    expect(result.current.state).toBe('idle');
+    controller.fetchBuyerPaykitWallet.mockResolvedValueOnce('not_payable');
+    rerender({ buyer: 'c'.repeat(52), enabled: true });
+    expect(result.current.state).toBe('checking');
+    await act(async () => {});
+    expect(result.current.state).toBe('not_payable');
   });
 
   it('waits while hidden and checks once when returning from Bitkit', async () => {

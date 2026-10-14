@@ -142,6 +142,7 @@ const view = vi.hoisted(() => ({
   items: [] as unknown[],
   isLoading: false,
   adapterMode: 'sandbox' as string,
+  paykitServerApi: 'fork' as 'fork' | 'upstream',
   deployEnv: 'staging' as 'production' | 'staging' | undefined,
   hasMarketplaceSession: false,
   currentUserPubky: null as string | null,
@@ -223,7 +224,7 @@ vi.mock('next/navigation', () => ({
 
 vi.mock('@/config/commerce', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/config/commerce')>();
-  return { ...actual, getCommerceAdapterMode: () => view.adapterMode };
+  return { ...actual, getCommerceAdapterMode: () => view.adapterMode, getPaykitServerApi: () => view.paykitServerApi };
 });
 
 vi.mock('@/libs/runtime-config/runtime-config', async (importOriginal) => {
@@ -394,6 +395,7 @@ beforeEach(async () => {
   view.hasMarketplaceSession = false;
   view.currentUserPubky = null;
   view.adapterMode = 'sandbox';
+  view.paykitServerApi = 'fork';
   view.deployEnv = 'staging';
   view.addresses = [];
   view.selectedAddressId = null;
@@ -499,6 +501,7 @@ describe('Marketplace checkout — visual regression', () => {
       view.hasMarketplaceSession = true;
       view.currentUserPubky = 'b'.repeat(52);
       view.buyerWalletState = 'not_payable';
+      view.paykitServerApi = 'upstream';
 
       const screen = await renderForVRT(<MarketplaceCheckout />, { viewport });
       await expect.element(screen.getByTestId('marketplace-checkout-bitkit-required')).toBeVisible();
@@ -513,6 +516,20 @@ describe('Marketplace checkout — visual regression', () => {
       await captureCheckout(`checkout-bitkit-required-${name}`);
     });
 
+    it(`keeps fork checkout free of incompatible downloads on ${name}`, async () => {
+      view.items = (await fixtures).singleSeller;
+      view.adapterMode = 'transaction-service';
+      view.deployEnv = 'production';
+      view.hasMarketplaceSession = true;
+      view.currentUserPubky = 'b'.repeat(52);
+      view.buyerWalletState = 'not_payable';
+      const screen = await renderForVRT(<MarketplaceCheckout />, { viewport });
+      await expect.element(screen.getByText('A compatible Bitkit wallet is required', { exact: true })).toBeVisible();
+      await expect.element(screen.getByRole('button', { name: 'Connect Bitkit', exact: true })).not.toBeInTheDocument();
+      await expect.element(screen.getByTestId('bitcoin-payment-code-note')).toBeVisible();
+      await captureCheckout(`checkout-bitkit-fork-${name}`);
+    });
+
     it(`opens and closes the shared connection dialog on ${name}`, async () => {
       const { singleSeller } = await fixtures;
       view.items = singleSeller;
@@ -521,6 +538,7 @@ describe('Marketplace checkout — visual regression', () => {
       view.hasMarketplaceSession = true;
       view.currentUserPubky = 'b'.repeat(52);
       view.buyerWalletState = 'not_payable';
+      view.paykitServerApi = 'upstream';
 
       const screen = await renderForVRT(<MarketplaceCheckout />, { viewport });
       await expect.element(screen.getByTestId('marketplace-checkout-bitkit-required')).toBeVisible();

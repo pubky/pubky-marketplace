@@ -28,7 +28,8 @@ Each recipe is a full URL and a trimmed real response (fields omitted are marked
 ### 1. Listings under a price
 
 "What's for sale under ₿20,000?"
-Bitcoin prices use currency BTC with exponent 8. ₿20,000 = 0.0002 BTC.
+Bitcoin prices use currency BTC with exponent 8. In marketplace display notation,
+₿1 = 0.00000001 BTC, so ₿20,000 = 0.0002 BTC.
 
 GET INDEX/v0/stream/listings?state=active&currency=BTC&max_price=0.0002&limit=30
 
@@ -53,7 +54,7 @@ GET INDEX/v0/stream/listings?state=active&currency=BTC&max_price=0.0002&limit=30
   …
 ]
 
-price_amount_minor is in minor units: for BTC (exponent 8), 1000 displays as ₿1,000.
+price_amount_minor is in minor units: for BTC (exponent 8), 1000 = 0.00001 BTC, displayed as ₿1,000.
 For USD (exponent 2) it is cents: 8800 = $88.00. Fiat: \`currency=USD&max_price=50\`.
 
 ### 2. Auctions ending soon
@@ -219,7 +220,7 @@ the authority on stock and on whether it is live.
   (comma-separated; matches any), sorting (timeline | ends_at), order (ascending | descending).
 - \`min_price\` / \`max_price\` are in major units of \`currency\`, and \`currency\` is required with
   them. Bitcoin listings are \`BTC\` with exponent 8, never \`SAT\`: "under ₿20,000" is
-  \`currency=BTC&max_price=0.0002\`. In responses, \`price_amount_minor\` for BTC is in bitcoin base units.
+  \`currency=BTC&max_price=0.0002\`. In responses, \`price_amount_minor\` for BTC is in bitcoin base units (₿1 = 0.00000001 BTC).
 - An auction is \`state: ended\` from its \`auction_ends_at\` on, without the seller editing it, and
   \`state=active\` excludes it. Some index builds still report a closed auction as \`active\`: with
   \`sorting=ends_at\`, \`end=<unix ms>\` keeps only auctions ending at or after that time (\`start\` is
