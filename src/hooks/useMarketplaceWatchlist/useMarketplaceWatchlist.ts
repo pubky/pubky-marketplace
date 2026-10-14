@@ -40,15 +40,21 @@ export function useMarketplaceWatchlist() {
   const currentUserPubky = useAuthStore((state) => state.currentUserPubky);
   const adapterMode = getCommerceAdapterMode();
   const watchlistSyncStatus = useCommerceStore((state) => state.watchlistSyncStatus);
+  const marketplaceSessionId = useCommerceStore((state) =>
+    state.marketplaceSession ? `${state.marketplaceSession.pubky}:${state.marketplaceSession.issuedAt}` : null,
+  );
 
   // One cross-device sync round per visit: pulls the private homeserver
   // document, merges (LWW per item), pushes back local changes, and mirrors
   // the outcome — including the honest "needs re-approval" state — into the
-  // store this hook reads.
+  // store this hook reads. The round also runs again whenever the marketplace
+  // session changes: the private data key is released to a purchase session,
+  // so a round that ran before one existed ended in "needs approval" and
+  // nothing else would pick the document up once the session arrives.
   useEffect(() => {
     if (!currentUserPubky) return;
     void CommerceController.syncWatchlist();
-  }, [currentUserPubky]);
+  }, [currentUserPubky, marketplaceSessionId]);
 
   /** Re-runs the sync round on demand — e.g. after a step-up re-approval widened the grant. */
   const syncWatchlist = () => CommerceController.syncWatchlist();

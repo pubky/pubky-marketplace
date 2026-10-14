@@ -200,4 +200,30 @@ describe('the first keyed sync after the owner takes custody of the data keys', 
     expect(await sync).toBe('needs_marketplace_approval');
     expect(await LocalCommerceService.getFavorites(OWNER)).toEqual([]);
   });
+
+  it('runs the round again for a caller that joined one that started before the purchase session existed', async () => {
+    sealWatchlistUnderServiceKey();
+    MarketplaceSessionService.clearSession();
+    let proceed: () => void = () => undefined;
+    const gate = new Promise<void>((resolve) => {
+      proceed = resolve;
+    });
+    vi.spyOn(CommercePrivKeyringApplication, 'get').mockImplementationOnce(async () => {
+      await gate;
+      return { kind: 'needs_reauth' };
+    });
+
+    const early = CommerceApplication.syncWatchlist(OWNER);
+    MarketplaceSessionService.establishClaimedGrantSession(
+      { token: 'C'.repeat(43), pubky: OWNER, capabilities: MARKETPLACE_SESSION_GRANT, expiresAt: FUTURE },
+      OWNER,
+    );
+    const joined = CommerceApplication.syncWatchlist(OWNER);
+    proceed();
+
+    expect(await early).toBe('needs_marketplace_approval');
+    expect(await joined).toBe('synced');
+    const favorites = await LocalCommerceService.getFavorites(OWNER);
+    expect(favorites.map((favorite) => favorite.listing_id)).toEqual([`${SELLER}:boots_01`]);
+  });
 });
