@@ -3,13 +3,17 @@
 import { getChatRoute } from '@/app/routes';
 import { Link } from '@/atoms/Link/Link';
 import { Typography } from '@/atoms/Typography/Typography';
+import { CHAT_INBOX_TIME_TICK_MS } from '@/config/chat';
 import type { ChatConversationView } from '@/controllers/chat/chat.types';
+import { useNowMs } from '@/hooks/useNowMs/useNowMs';
 import { useRelativeTime } from '@/hooks/useRelativeTime/useRelativeTime';
 import { cn } from '@/libs/utils/utils';
 import { ChatPeerIdentity } from './ChatPeerIdentity';
 
 export function ChatConversationRow({ conversation }: { conversation: ChatConversationView }) {
   const { formatRelativeTime } = useRelativeTime();
+  const lastMessageAt = conversation.last_message_at;
+  const nowMs = useNowMs(lastMessageAt !== null, CHAT_INBOX_TIME_TICK_MS);
   const unread = conversation.unreadCount > 0;
   const preview =
     conversation.last_message_preview === null
@@ -31,9 +35,9 @@ export function ChatConversationRow({ conversation }: { conversation: ChatConver
     >
       <ChatPeerIdentity peerPubky={conversation.peer_pubky} className="min-w-0 flex-1" subtitle={preview} />
       <div className="flex shrink-0 flex-col items-end gap-1">
-        {conversation.last_message_at !== null ? (
+        {lastMessageAt !== null ? (
           <Typography as="span" size="xs" className="text-muted-foreground">
-            {formatRelativeTime(new Date(conversation.last_message_at))}
+            {formatRelativeTime(new Date(lastMessageAt), nowMs)}
           </Typography>
         ) : null}
         {unread ? (

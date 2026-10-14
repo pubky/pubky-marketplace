@@ -38,7 +38,7 @@ export function ChatMessageBubble({
         className={cn(
           'max-w-[85%] rounded-2xl px-4 py-2 text-sm wrap-anywhere whitespace-pre-wrap sm:max-w-[70%]',
           mine ? 'rounded-br-md bg-brand text-background' : 'rounded-bl-md bg-secondary text-secondary-foreground',
-          message.status === 'queued' && 'opacity-70',
+          message.status === 'queued' && message.last_error === 'peer_not_enabled' && 'opacity-70',
           message.status === 'failed' && 'bg-destructive/20 text-foreground',
         )}
       >
@@ -49,10 +49,14 @@ export function ChatMessageBubble({
           {timeLabel(shownAt)}
         </Typography>
         {mine && message.status === 'queued' ? (
-          <Typography as="span" size="xs" className="flex items-center gap-1 text-muted-foreground" overrideDefaults>
-            <Clock className="size-3" aria-hidden="true" />
-            {message.last_error === 'peer_not_enabled' ? 'Waiting for them to set up messages' : 'Sending'}
-          </Typography>
+          message.last_error === 'peer_not_enabled' ? (
+            <Typography as="span" size="xs" className="flex items-center gap-1 text-muted-foreground" overrideDefaults>
+              <Clock className="size-3" aria-hidden="true" />
+              Waiting for them to set up messages
+            </Typography>
+          ) : (
+            <Clock className="size-3 text-muted-foreground" aria-label="Sending" />
+          )
         ) : null}
         {mine && message.status === 'sent' ? (
           <Check className="size-3 text-muted-foreground" aria-label="Sent" />

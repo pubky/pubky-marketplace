@@ -46,7 +46,7 @@ export function ChatConversation({ peerPubky }: { peerPubky: string }) {
       : undefined;
   const emptyHint = peerNotEnabled
     ? `${name} hasn't set up messages yet. You can write now; it's delivered once they sign in.`
-    : `Say hello to ${name}. Messages are private between the two of you.`;
+    : `Say hello to ${name}. Messages are encrypted for the two of you.`;
 
   return (
     <ContentLayout
@@ -58,7 +58,7 @@ export function ChatConversation({ peerPubky }: { peerPubky: string }) {
     >
       <Container
         overrideDefaults
-        className="mx-auto flex h-[calc(100svh-9rem)] w-full max-w-3xl flex-col gap-3"
+        className="mx-auto flex h-[calc(100svh-12rem)] w-full max-w-3xl flex-col gap-3 sm:h-[calc(100svh-15rem)] lg:h-[calc(100svh-10rem)]"
         data-surface="chat-conversation"
       >
         <div className="flex items-center gap-2">

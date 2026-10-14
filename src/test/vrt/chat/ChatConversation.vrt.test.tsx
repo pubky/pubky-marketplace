@@ -13,14 +13,17 @@ import { ChatConversation } from '@/templates/Chat/ChatConversation';
 /**
  * `/messages/[pubky]`: one thread — day separators, received and sent bubbles
  * in every delivery state (sent, sending, waiting for the peer, not sent with
- * Retry), the listing context chip from `?listing=`, the composer, plus the
- * empty thread with a peer who has not set up messages, and the re-approval
- * notice that disables the composer.
+ * Retry), the listing context chip from `?listing=`, the composer and the
+ * privacy note; an older thread about an order with the note dismissed, a
+ * lagging-clock row and "Load older"; the empty thread with a peer who has not
+ * set up messages; the signed-out thread; and the re-approval notice that
+ * disables the composer.
  */
 
 const ME = vi.hoisted(() => 'm'.repeat(52));
 const PEER = vi.hoisted(() => 's'.repeat(52));
 const LISTING_ID = vi.hoisted(() => 'boots-1');
+const ORDER_ID = vi.hoisted(() => 'ord_8f2c1a9e7b3d');
 
 const scene = vi.hoisted(() => ({
   messages: [] as ChatMessageView[],
@@ -29,6 +32,8 @@ const scene = vi.hoisted(() => ({
   identityState: 'ready' as ChatStore['identityState'],
   isSignedIn: true,
   query: '',
+  hasMore: false,
+  showNote: true,
 }));
 
 vi.mock('next/navigation', () => ({
@@ -45,7 +50,7 @@ vi.mock('@/hooks/useChatConversation/useChatConversation', () => ({
   useChatConversation: () => ({
     conversation: scene.conversation,
     messages: scene.messages,
-    hasMore: false,
+    hasMore: scene.hasMore,
     loadOlder: () => {},
     openState: scene.openState,
     reopen: async () => {},
@@ -56,6 +61,11 @@ vi.mock('@/hooks/useChatConversation/useChatConversation', () => ({
 
 vi.mock('@/hooks/useChatIdentity/useChatIdentity', () => ({
   useChatIdentity: () => ({ identityState: scene.identityState, inboxStatus: 'ready', retry: async () => {} }),
+}));
+
+// Dismissal lives in localStorage per account; the scene decides instead.
+vi.mock('@/hooks/useChatPrivacyNote/useChatPrivacyNote', () => ({
+  useChatPrivacyNote: () => ({ showNote: scene.showNote, dismissNote: () => {} }),
 }));
 
 vi.mock('@/hooks/useUserDetails/useUserDetails', () => ({
@@ -167,6 +177,8 @@ describe('Chat conversation — visual regression', () => {
     scene.identityState = 'ready';
     scene.isSignedIn = true;
     scene.query = '';
+    scene.hasMore = false;
+    scene.showNote = true;
   });
 
   it('renders a thread with every delivery state and a listing context at desktop viewport', async () => {
@@ -197,6 +209,39 @@ describe('Chat conversation — visual regression', () => {
     await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('chat-conversation-mobile');
   });
 
+  it('renders an order thread with older history, a lagging clock and the note dismissed at desktop viewport', async () => {
+    scene.messages = [
+      message({
+        id: 'o1',
+        direction: 'received',
+        body: 'Paid. When does it ship?',
+        sent_at: VRT_FROZEN_NOW_MS - 3 * HOUR_MS,
+        context: { orderId: ORDER_ID },
+      }),
+      message({ id: 'o2', body: 'Tomorrow morning, tracking follows.', sent_at: VRT_FROZEN_NOW_MS - 2 * HOUR_MS }),
+      message({
+        id: 'o3',
+        direction: 'received',
+        body: 'Thanks! My clock is a bit off, by the way.',
+        sent_at: VRT_FROZEN_NOW_MS + 40 * MINUTE_MS,
+        received_at: VRT_FROZEN_NOW_MS - 5 * MINUTE_MS,
+        clock_skewed: true,
+      }),
+    ];
+    scene.conversation = { ...conversation(), last_context: { orderId: ORDER_ID } };
+    scene.query = `order=${ORDER_ID}`;
+    scene.hasMore = true;
+    scene.showNote = false;
+
+    const screen = await renderForVRT(<ChatConversation peerPubky={PEER} />, {
+      viewport: VRT_VIEWPORT_DESKTOP,
+      disableHover: true,
+    });
+    await expect.element(screen.getByText('Load older messages')).toBeInTheDocument();
+    await expect.element(screen.getByText(`Order ${ORDER_ID.slice(0, 8)}`).first()).toBeInTheDocument();
+    await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('chat-conversation-order-desktop');
+  });
+
   it('renders an empty thread with a peer who has not set up messages at desktop viewport', async () => {
     scene.openState = 'peer_not_enabled';
 
@@ -206,6 +251,28 @@ describe('Chat conversation — visual regression', () => {
     });
     await expect.element(screen.getByText(/hasn't set up messages yet/u)).toBeInTheDocument();
     await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('chat-conversation-peer-not-enabled-desktop');
+  });
+
+  it('renders an empty thread with a peer who has not set up messages at mobile viewport', async () => {
+    scene.openState = 'peer_not_enabled';
+
+    const screen = await renderForVRT(<ChatConversation peerPubky={PEER} />, {
+      viewport: VRT_VIEWPORT_MOBILE,
+      disableHover: true,
+    });
+    await expect.element(screen.getByText(/hasn't set up messages yet/u)).toBeInTheDocument();
+    await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('chat-conversation-peer-not-enabled-mobile');
+  });
+
+  it('renders the signed-out thread at desktop viewport', async () => {
+    scene.isSignedIn = false;
+
+    const screen = await renderForVRT(<ChatConversation peerPubky={PEER} />, {
+      viewport: VRT_VIEWPORT_DESKTOP,
+      disableHover: true,
+    });
+    await expect.element(screen.getByText('Sign in to see your messages.')).toBeInTheDocument();
+    await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('chat-conversation-signed-out-desktop');
   });
 
   it('renders the re-approval notice with a disabled composer at desktop viewport', async () => {

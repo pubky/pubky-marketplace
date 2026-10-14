@@ -67,3 +67,5 @@ export const CHAT_SSE_MAX_CONVERSATIONS = 20;
 export const CHAT_OPEN_THREAD_POLL_MS = 10_000;
 /** Messages per page in a thread. */
 export const CHAT_THREAD_PAGE = 50;
+/** How often an inbox row refreshes its relative timestamp ("0s" must not sit there for minutes). */
+export const CHAT_INBOX_TIME_TICK_MS = 30_000;

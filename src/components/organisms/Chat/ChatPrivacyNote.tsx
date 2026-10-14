@@ -14,9 +14,9 @@ export function ChatPrivacyNote() {
     <div
       role="note"
       data-testid="chat-privacy-note"
-      className="flex items-start gap-2 rounded-xl border border-border bg-muted/40 py-2 pr-1 pl-3"
+      className="flex items-center gap-2 rounded-xl border border-border bg-muted/40 py-1.5 pr-1.5 pl-3"
     >
-      <Typography as="p" size="xs" className="flex-1 text-muted-foreground">
+      <Typography as="p" size="xs" className="flex-1 leading-snug text-muted-foreground">
         {CHAT_COPY.privacyNote}
       </Typography>
       <Button

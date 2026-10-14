@@ -10,9 +10,9 @@ import { VRT_VIEWPORT_DESKTOP, VRT_VIEWPORT_MOBILE } from '@/test-utils/vrt.view
 import { Chat } from '@/templates/Chat/Chat';
 
 /**
- * `/messages`: the inbox list in its four states — conversations (unread,
- * read, and a peer who has not set up messages yet), empty, signed out, and
- * a sign-in that lacks the chat scopes. The hooks are the units under their
+ * `/messages`: the inbox list in its five states — conversations (unread,
+ * read, and a peer who has not set up messages yet), loading, empty, signed
+ * out, and a sign-in that lacks the chat scopes. The hooks are the units under their
  * own tests; VRT pins their output so the capture is deterministic.
  */
 
@@ -142,6 +142,14 @@ describe('Chat inbox — visual regression', () => {
     const screen = await renderForVRT(<Chat />, { viewport: VRT_VIEWPORT_MOBILE, disableHover: true });
     await expect.element(screen.getByText('Boot Barn')).toBeInTheDocument();
     await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('chat-inbox-mobile');
+  });
+
+  it('renders the loading skeletons at desktop viewport', async () => {
+    scene.isLoading = true;
+
+    const screen = await renderForVRT(<Chat />, { viewport: VRT_VIEWPORT_DESKTOP, disableHover: true });
+    await expect.element(screen.getByTestId('chat-inbox-loading')).toBeInTheDocument();
+    await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('chat-inbox-loading-desktop');
   });
 
   it('renders the empty state at desktop viewport', async () => {
