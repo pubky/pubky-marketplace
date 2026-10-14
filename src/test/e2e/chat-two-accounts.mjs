@@ -1,7 +1,9 @@
 /**
  * Two-account live proof of buyer↔seller chat against a local Pubky testnet.
  *
- * Needs: the Shop dev server (see .claude/launch.json "shop-testnet"), the
+ * Needs: the Shop dev server (see .claude/launch.json "shop-testnet"; a Shop
+ * configured for a deployed homeserver works too with SHOP_URL,
+ * CHAT_E2E_HOMESERVER and CHAT_E2E_SIGNUP_TOKENS set), the
  * pubky-docker homeserver on :6286/:6288 (admin password "admin"), the local
  * inbox the Shop is configured with (PUBKY_RUNTIME_INBOX_URL), and
  * Playwright's Chromium.
@@ -39,16 +41,28 @@ function record(name, ok, detail = '') {
   console.log(`${ok ? 'PASS' : 'FAIL'} ${name}${detail ? ` — ${detail}` : ''}`);
 }
 
+// Against a deployed homeserver there is no admin endpoint: pass pre-issued
+// signup tokens, one per account, as CHAT_E2E_SIGNUP_TOKENS="tokA,tokB".
+const SIGNUP_TOKENS = (process.env.CHAT_E2E_SIGNUP_TOKENS ?? '')
+  .split(',')
+  .map((token) => token.trim())
+  .filter(Boolean);
+
 async function registerIdentity(label) {
   const keypair = sdk.Keypair.random();
   const signer = pubky.signer(keypair);
   const homeserver = sdk.PublicKey.from(HOMESERVER);
-  try {
-    await signer.signup(homeserver, null);
-  } catch {
-    const response = await fetch(ADMIN_URL, { headers: { 'X-Admin-Password': ADMIN_PASSWORD } });
-    const token = (await response.text()).trim();
-    await signer.signup(homeserver, token);
+  const issued = SIGNUP_TOKENS.shift();
+  if (issued) {
+    await signer.signup(homeserver, issued);
+  } else {
+    try {
+      await signer.signup(homeserver, null);
+    } catch {
+      const response = await fetch(ADMIN_URL, { headers: { 'X-Admin-Password': ADMIN_PASSWORD } });
+      const token = (await response.text()).trim();
+      await signer.signup(homeserver, token);
+    }
   }
   const id = keypair.publicKey.z32();
   console.log(`${label}: ${id}`);
