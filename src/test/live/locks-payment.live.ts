@@ -157,6 +157,9 @@ type AppModules = {
   sdk: typeof import('@synonymdev/pubky');
   commerceListingRecordSchema: typeof import('@/libs/commerce/marketplace-records').commerceListingRecordSchema;
   commerceConfig: typeof import('@/config/commerce');
+  HomeserverService: typeof import('@/services/homeserver/homeserver').HomeserverService;
+  CommerceHomeserverService: typeof import('@/services/homeserver/commerce/commerce').CommerceHomeserverService;
+  useAuthStore: typeof import('@/stores/auth/auth.store').useAuthStore;
 };
 
 describe('locks-paykit live purchase (composed environment)', () => {
@@ -195,6 +198,9 @@ describe('locks-paykit live purchase (composed environment)', () => {
       sdk,
       { commerceListingRecordSchema },
       commerceConfig,
+      { HomeserverService },
+      { CommerceHomeserverService },
+      { useAuthStore },
     ] = await Promise.all([
       import('@/application/commerce/commerce'),
       import('@/services/locks/locks'),
@@ -203,6 +209,9 @@ describe('locks-paykit live purchase (composed environment)', () => {
       import('@synonymdev/pubky'),
       import('@/libs/commerce/marketplace-records'),
       import('@/config/commerce'),
+      import('@/services/homeserver/homeserver'),
+      import('@/services/homeserver/commerce/commerce'),
+      import('@/stores/auth/auth.store'),
     ]);
     modules = {
       CommerceApplication,
@@ -212,6 +221,9 @@ describe('locks-paykit live purchase (composed environment)', () => {
       sdk,
       commerceListingRecordSchema,
       commerceConfig,
+      HomeserverService,
+      CommerceHomeserverService,
+      useAuthStore,
     };
   });
 
@@ -475,9 +487,13 @@ describe('locks-paykit live purchase (composed environment)', () => {
       adultOnly: false,
     });
     expect(listingRecord.fulfillmentMethods).toEqual(['digital']);
-    const sellerHomeserverSession = await new sdk.Pubky().signer(sellerKeypair).signinCookie();
-    await sellerHomeserverSession.storage.putJson(
-      `/pub/pubky.app/marketplace/v1/listings/${listingId}`,
+    // The write goes through the app's own homeserver path (retry policy
+    // included): its auth store holds the seller's homeserver session.
+    const sellerHomeserver = await modules.HomeserverService.signIn({ keypair: sellerKeypair });
+    if (sellerHomeserver === undefined) throw new Error(`Could not sign the seller ${seller} in to the homeserver.`);
+    modules.useAuthStore.setState({ session: sellerHomeserver.session, currentUserPubky: seller });
+    await modules.CommerceHomeserverService.putJson(
+      `pubky://${seller}/pub/pubky.app/marketplace/v1/listings/${listingId}`,
       listingRecord as unknown as Record<string, unknown>,
     );
     const synced = await MarketplaceGatewayService.execute(seller, {
