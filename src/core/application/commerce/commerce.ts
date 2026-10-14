@@ -3589,7 +3589,8 @@ export class CommerceApplication {
     const record = buildDefaultShopRecord({ ownerPubky, profile, location: shipsFrom, now: new Date() });
     await this.queueShopWrite(ownerPubky, async () => {
       if (await LocalCommerceService.getShop(ownerPubky)) return;
-      await this.writeShop(record);
+      // A failed default leaves no pending row, which would read as a settings save and block every retry.
+      await this.writeShop(record, { discardOnFailure: true });
     });
   }
 
@@ -3610,7 +3611,10 @@ export class CommerceApplication {
     }
   }
 
-  private static async writeShop(record: CommerceShopRecord): Promise<void> {
+  private static async writeShop(
+    record: CommerceShopRecord,
+    { discardOnFailure = false }: { discardOnFailure?: boolean } = {},
+  ): Promise<void> {
     const now = Date.now();
     const url = CommerceRecordNormalizer.shopUri(record.ownerPubky);
     const job = this.createSyncJob({
@@ -3623,7 +3627,13 @@ export class CommerceApplication {
     });
 
     await LocalCommerceService.stageShopSync(record, job);
-    await CommerceHomeserverService.putJson(url, { ...record });
+    try {
+      await CommerceHomeserverService.putJson(url, { ...record });
+    } catch (error) {
+      // The write error is the one to surface; a failed discard reports itself at its origin.
+      if (discardOnFailure) await LocalCommerceService.discardStagedShopSync(record, job.id).catch(() => undefined);
+      throw error;
+    }
     await LocalCommerceService.upsertShop(record, 'synced');
     await LocalCommerceService.completeSyncJob(job.id);
   }

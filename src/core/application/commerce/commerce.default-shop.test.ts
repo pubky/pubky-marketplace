@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, type MockInstance, vi } from 'vitest';
+import { db } from '@/database/franky/franky';
 import type { CommerceShopRecord } from '@/libs/commerce/marketplace-records';
+import { CommerceShopModel, CommerceSyncJobModel } from '@/models/commerce/commerce.models';
 import { CommerceRecordNormalizer } from '@/pipes/commerce/commerce.normalizer';
 import { CommerceHomeserverService } from '@/services/homeserver/commerce/commerce';
 import { LocalCommerceService } from '@/services/local/commerce/commerce';
@@ -153,5 +155,50 @@ describe('CommerceApplication default storefront', () => {
       expect(put).toHaveBeenCalledTimes(2);
       expect(CommerceApplication['shopWrites'].size).toBe(0);
     });
+  });
+});
+
+describe('CommerceApplication default storefront, with the local database', () => {
+  beforeEach(async () => {
+    vi.restoreAllMocks();
+    CommerceApplication['shopWrites'].clear();
+    await db.initialize();
+    await Promise.all([CommerceShopModel.table.clear(), CommerceSyncJobModel.table.clear()]);
+    vi.spyOn(CommerceHomeserverService, 'fetchJsonIfFound').mockResolvedValue({ found: false });
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('retries after a failed write instead of reading its staged row as a settings save', async () => {
+    const put = vi
+      .spyOn(CommerceHomeserverService, 'putJson')
+      .mockRejectedValueOnce(new TypeError('offline'))
+      .mockResolvedValue(undefined);
+
+    await expect(CommerceApplication.commitCreateDefaultShop({ ownerPubky: SELLER, profile: PROFILE })).rejects.toThrow(
+      'offline',
+    );
+    expect(await LocalCommerceService.getShop(SELLER)).toBeNull();
+    expect(await CommerceSyncJobModel.table.count()).toBe(0);
+    await expect(CommerceApplication.needsDefaultShop(SELLER)).resolves.toBe(true);
+
+    await CommerceApplication.commitCreateDefaultShop({ ownerPubky: SELLER, profile: PROFILE });
+
+    expect(put).toHaveBeenCalledTimes(2);
+    expect(await LocalCommerceService.getShop(SELLER)).toMatchObject({
+      sync_status: 'synced',
+      record: { name: 'Satoshi' },
+    });
+  });
+
+  it('keeps a failed settings save pending, as before', async () => {
+    vi.spyOn(CommerceHomeserverService, 'putJson').mockRejectedValue(new TypeError('offline'));
+    const saved = createCommerceShopFixture({ ownerPubky: SELLER, name: 'My own shop' });
+
+    await expect(CommerceApplication.commitUpsertShop(saved)).rejects.toThrow('offline');
+
+    expect(await LocalCommerceService.getShop(SELLER)).toMatchObject({ sync_status: 'pending', record: saved });
   });
 });
