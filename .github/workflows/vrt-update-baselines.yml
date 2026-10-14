@@ -44,6 +44,8 @@ jobs:
         run: npm ci
 
       - name: Regenerate named specs
+        # The container's default shell is sh; the step uses bash arrays and pipefail.
+        shell: bash
         env:
           FILES: ${{ inputs.files }}
           VRT_BROWSERS: chromium,firefox
@@ -73,6 +75,7 @@ jobs:
           bash scripts/vrt-revert-outside.sh $FILES
 
       - name: Commit Linux baselines
+        shell: bash
         env:
           FILES: ${{ inputs.files }}
         run: |
