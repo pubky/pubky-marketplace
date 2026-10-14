@@ -266,7 +266,7 @@ The Paykit server the Shop talks to is a runtime choice. The default, `PUBKY_RUN
 
 Three pieces must run:
 
-1. **The composed payments environment** (Lock Server, Paykit Server, Bitcoin regtest, Fulcrum, pinned Pubky testnet). It lives in its own repo checkout (`payments-env`); `./scripts/up.sh` brings it up with Lock Server on `13000` and Paykit Server on `13001`, and its own `verify.sh` re-proves the protocol leg independently.
+1. **The composed payments environment** (Lock Server, Paykit Server, Bitcoin regtest, Fulcrum, pinned Pubky testnet). It lives in its own repo checkout (`payments-env`); `./scripts/up.sh` brings it up with Lock Server on `13000` and Paykit Server on `13001`, and its own `verify.sh` re-proves the protocol leg independently. The live test drives the seller's homeserver write through the app's own homeserver path in the SDK's testnet mode, which talks to the testnet's fixed localhost ports. Publish the testnet on those stock ports in `payments-env/.env` (`LOCKS_DHT_PORT=6881`, `LOCKS_PKARR_RELAY_PORT=15411`, `LOCKS_HTTP_RELAY_PORT=15412`, `LOCKS_HOMESERVER_HTTP_PORT=6286`, `LOCKS_HOMESERVER_PUBKY_PORT=6287`, `LOCKS_HOMESERVER_ADMIN_PORT=6288`) instead of the shifted example values, and keep the `creator-demo` port (default `18080`) clear of the service's port.
 2. **The durable transaction service, with Locks verification enabled.** The three `LOCKS_*` values are all-or-nothing; the service fails closed at startup on a partial configuration and refuses `payment.register_locks` entirely when they are absent:
 
 ```bash
@@ -274,8 +274,13 @@ DATABASE_URL='postgres://marketplace:marketplace@localhost:55432/marketplace' \
 LOCKS_SERVER_URL='http://localhost:13000' \
 LOCKS_BUNDLE_ENCRYPTION_KEY="$(openssl rand -hex 32)" \
 LOCKS_LOOKUP_HMAC_KEY="$(openssl rand -hex 32)" \
-cargo run -p marketplace-service
+DIGITAL_DELIVERY_ENCRYPTION_KEY="$(openssl rand -hex 32)" \
+HOMESERVER_URL='http://localhost:6286' \
+NEXUS_URL='http://127.0.0.1:9' \
+cargo run -p marketplace-service --bin marketplace-service
 ```
+
+The service also refuses to boot without the refusal-audit settings (`REFUSAL_AUDIT_DATABASE_URL`, `REFUSAL_AUDIT_RETENTION_DATABASE_URL`, `REFUSAL_AUDIT_HMAC_ROOT_B64`, `REFUSAL_AUDIT_HMAC_KEY_EPOCH` and the three attestations); see the service README's _Run_ section. The audit logins are created by the service's migrations, so run the service once, then give them passwords with `ALTER ROLE marketplace_refusal_audit_writer_login PASSWORD '...'` and `ALTER ROLE marketplace_refusal_audit_retention PASSWORD '...'` (and `GRANT CONNECT ON DATABASE marketplace` to both) matching the URLs. `DIGITAL_DELIVERY_ENCRYPTION_KEY` is required because a Locks listing is digital and checkout refuses digital lines without it. The Nexus URL only needs to be a well-formed `http(s)` URL here: an unreachable index fails open. To use a port other than `8080` (the `creator-demo` container publishes `8080` by default), set `BIND_ADDR` and pass `MARKETPLACE_SERVICE_URL` to the test.
 
 3. **The app in `locks-paykit` mode.** Activation is validated fail-closed: every payment-rail URL must be EXPLICITLY set or the runtime config parse throws — the mode never activates on defaulted localhost URLs:
 
