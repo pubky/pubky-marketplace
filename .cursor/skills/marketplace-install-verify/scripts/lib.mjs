@@ -185,6 +185,71 @@ export function parseShopPath(value) {
 }
 
 /**
+ * The mount path of the Shop build the App frames (`SHOP_EMBED_PATH`, `/shop-embed` at pubky.app). Unset means the
+ * Shop is not served as a separate build behind a wrapper. Same shape as the Shop's `NEXT_PUBLIC_BASE_PATH`.
+ */
+export function parseEmbedPath(value) {
+  const raw = String(value ?? '').trim();
+  if (!raw) return '';
+  if (!/^\/[A-Za-z0-9][A-Za-z0-9._~-]*(\/[A-Za-z0-9][A-Za-z0-9._~-]*)*$/.test(raw) || raw.split('/').some((part) => part === '.' || part === '..')) {
+    throw new Error('SHOP_EMBED_PATH must be a mount path such as /shop-embed: leading slash, no trailing slash, no query or fragment');
+  }
+  return raw;
+}
+
+/**
+ * The path people use to reach the Shop, from its landing path: `/shop/marketplace` is served at `/shop`, the bare
+ * `/marketplace` at the origin root. Undefined when the landing path does not end in `/marketplace`.
+ */
+export function publicBasePath(shopPath) {
+  if (shopPath === '/marketplace') return '';
+  return shopPath.endsWith('/marketplace') ? shopPath.slice(0, -'/marketplace'.length) : undefined;
+}
+
+/**
+ * Whether nothing in the response stops a same-origin page from framing it. Browsers apply both headers, so each
+ * must allow it: a CSP `frame-ancestors` directive, when present, names `'self'` (or the page's own origin), and an
+ * `X-Frame-Options`, when present, is SAMEORIGIN. The Shop answers `frame-ancestors 'self'` plus
+ * `X-Frame-Options: SAMEORIGIN` for the App's iframe; a proxy that adds DENY in front of it breaks the wrapper.
+ */
+export function framableBySameOrigin(csp, xFrameOptions, origin) {
+  const directive = String(csp ?? '')
+    .split(';')
+    .map((part) => part.trim().split(/\s+/))
+    .find((tokens) => tokens[0]?.toLowerCase() === 'frame-ancestors');
+  const wanted = normalizeOrigin(origin);
+  const cspAllows =
+    !directive || directive.slice(1).some((token) => token === "'self'" || (wanted && normalizeOrigin(token) === wanted));
+  const option = String(xFrameOptions ?? '').trim().toLowerCase();
+  return Boolean(cspAllows && (option === '' || option === 'sameorigin'));
+}
+
+/**
+ * PayPal sends the buyer back to `{PUBLIC_APP_ORIGIN}/marketplace/orders` for both `return` and `cancel_return`,
+ * as a top-level page load. The value must therefore be a Shop origin plus the public path (`https://pubky.app/shop`,
+ * the App's wrapper), not the mount path of the framed build, which would land the buyer on the Shop outside the App.
+ * Returns `{ ok, detail, hint }`.
+ */
+export function checkPaypalReturnBase(value, { origins, publicBase, embedPath }) {
+  let url;
+  try {
+    url = new URL(String(value).trim());
+  } catch {
+    return { ok: false, detail: 'not a URL', hint: 'set PUBLIC_APP_ORIGIN on the marketplace service to the Shop origin plus its public path, for example https://pubky.app/shop' };
+  }
+  if ((url.protocol !== 'https:' && url.protocol !== 'http:') || url.search || url.hash) {
+    return { ok: false, detail: String(value), hint: 'PUBLIC_APP_ORIGIN is an http(s) origin plus a path, with no query or fragment' };
+  }
+  const actual = normalizeBase(url.href);
+  const expected = origins.map((origin) => `${normalizeOrigin(origin)}${publicBase}`);
+  if (embedPath && url.pathname.replace(/\/+$/, '') === embedPath) {
+    return { ok: false, detail: `${actual}/marketplace/orders`, hint: `PayPal would return the buyer to ${embedPath}, the build the App frames, outside the App. Set PUBLIC_APP_ORIGIN to ${expected[0] ?? `<origin>${publicBase}`}` };
+  }
+  if (expected.includes(actual)) return { ok: true, detail: `${actual}/marketplace/orders` };
+  return { ok: false, detail: `${actual}/marketplace/orders`, hint: `set PUBLIC_APP_ORIGIN to ${expected.join(' or ') || `<origin>${publicBase}`}: the buyer lands on {value}/marketplace/orders` };
+}
+
+/**
  * The Lock Server keys Paykit trusts, from its parsed config. Paykit rc13 reads the closed
  * `[signed_services] trusted_public_keys` allowlist (Locks and marketplace service keys together) and rejects the
  * retired `[locks] trusted_public_key`, which is read only when the new table is absent so an older config still

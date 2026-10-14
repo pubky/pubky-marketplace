@@ -2,6 +2,12 @@
 # Start the committed Nexus fixture stub, then `next start`, then the
 # launch-critical Chromium suite. Does not run `next build` — CI downloads
 # the Build job's `.next`. Required gate never reads live nexusd 7108.
+#
+# For a build made with NEXT_PUBLIC_BASE_PATH (the Shop the App frames at pubky.app/shop is built
+# with /shop-embed), export the same value for `npm run start` and put it on the URL:
+#   NEXT_PUBLIC_BASE_PATH=/shop-embed LAUNCH_E2E_BASE_URL=http://127.0.0.1:3000/shop-embed \
+#     bash scripts/ci-launch-e2e.sh
+# Without a path the suite targets a standalone build, as before.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
