@@ -6,7 +6,7 @@ import {
   SearchParamsContext,
 } from 'next/dist/shared/lib/hooks-client-context.shared-runtime';
 import type { EncryptionKeys, Session } from '@synonymdev/pubky';
-import { act, render, screen } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CommerceApplication } from '@/application/commerce/commerce';
 import { CommercePrivKeyringApplication } from '@/application/commerce/priv-keyring';
@@ -210,7 +210,7 @@ describe('first watchlist visit after the owner took custody of the data keys (S
     ringWroteWatchlist();
     renderWatchlist();
     expect(await screen.findByText(/0 watched items/)).toBeInTheDocument();
-    expect(useCommerceStore.getState().watchlistSyncStatus).toBe('needs_marketplace_approval');
+    await waitFor(() => expect(useCommerceStore.getState().watchlistSyncStatus).toBe('needs_marketplace_approval'));
 
     await act(async () => {
       connectMarketplace('C'.repeat(43));
@@ -241,7 +241,7 @@ describe('first watchlist visit after the owner took custody of the data keys (S
     ringWroteWatchlist();
     renderWatchlist();
     expect(await screen.findByText(/0 watched items/)).toBeInTheDocument();
-    expect(useCommerceStore.getState().watchlistSyncStatus).toBe('needs_marketplace_approval');
+    await waitFor(() => expect(useCommerceStore.getState().watchlistSyncStatus).toBe('needs_marketplace_approval'));
 
     // The purchase session reaches the service without the store copy changing,
     // then the badge checkpoints ask for the keys first.
