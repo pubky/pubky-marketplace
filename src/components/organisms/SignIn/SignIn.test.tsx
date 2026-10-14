@@ -786,7 +786,8 @@ describe('SignInContent - Continue with Google (Pubky Passport)', () => {
 
     const buttons = screen.getAllByRole('button', { name: 'Continue with Google' });
     expect(buttons).toHaveLength(1);
-    expect(screen.getByText(/Messages are not available with Passport sign-ins yet\./)).toBeInTheDocument();
+    expect(screen.getByText('Creates your Pubky identity if you have none.')).toBeInTheDocument();
+    expect(screen.queryByText(/Messages are not available/)).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Continue with Apple/ })).not.toBeInTheDocument();
     expect(screen.getByTestId('sign-in-ring-option')).toBeInTheDocument();
     expect(screen.getByRole('radio', { name: 'Bitkit' })).toBeInTheDocument();

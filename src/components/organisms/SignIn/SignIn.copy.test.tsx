@@ -1,7 +1,6 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { RING_COOKIE_CAPABILITIES } from '@/config/app';
-import { MARKETPLACE_DISCLOSURE_RING_SIGN_IN } from '@/services/marketplace/marketplace-session-grant';
 import grantCapture from '@/test/fixtures/auth/marketplace-grant-priv-parity.staging.json';
 import ringCapture from '@/test/fixtures/auth/ring-signin-url.sdk-0.8.0.json';
 import { SignInContent } from './SignIn';
@@ -50,45 +49,29 @@ vi.mock('@/hooks/useMobileAuth/useMobileAuth', () => ({
   }),
 }));
 
-describe('Ring sign-in marketplace disclosure', () => {
+describe('Sign-in page copy', () => {
   beforeEach(() => {
     view.singleApproval = true;
     view.mode = 'transaction-service';
     view.grantSignIn = false;
   });
 
-  it('shows the sign-in sentence beside the Ring-only desktop QR and the mobile deeplink', () => {
+  it.each([
+    ['Ring-only layout', false],
+    ['combined Ring and Bitkit layout', true],
+  ])('adds no marketplace approval paragraph beside the Ring QR in the %s', (_label, grantSignIn) => {
+    view.grantSignIn = grantSignIn;
     render(<SignInContent />);
 
-    const disclosures = screen.getAllByTestId('session-approval-disclosure');
-    expect(disclosures).toHaveLength(2);
-    for (const disclosure of disclosures) expect(disclosure).toHaveTextContent(MARKETPLACE_DISCLOSURE_RING_SIGN_IN);
-    expect(screen.getByLabelText('Copy authentication link').parentElement).toContainElement(disclosures[0]);
-    expect(screen.getByTestId('button').parentElement).toContainElement(disclosures[1]);
+    expect(screen.queryByTestId('session-approval-disclosure')).toBeNull();
+    expect(document.body.textContent).not.toMatch(/Approving signs you in|private Shop data|social and Locks access/);
   });
 
-  it('shows it with Ring and not with Bitkit in the combined signer layout', () => {
+  it('adds none after switching to Bitkit either', () => {
     view.grantSignIn = true;
     render(<SignInContent />);
-
-    expect(screen.getByTestId('sign-in-ring-option')).toBeInTheDocument();
-    expect(screen.getByTestId('session-approval-disclosure')).toHaveTextContent(MARKETPLACE_DISCLOSURE_RING_SIGN_IN);
-    expect(screen.getAllByTestId('session-approval-disclosure')).toHaveLength(1);
-
     fireEvent.click(screen.getByRole('radio', { name: 'Bitkit' }));
 
-    expect(screen.getByTestId('sign-in-bitkit-option')).toBeInTheDocument();
-    expect(screen.queryByTestId('session-approval-disclosure')).not.toBeInTheDocument();
-  });
-
-  it.each([
-    ['single approval off', false, 'transaction-service'],
-    ['no durable commerce backend', true, 'unavailable'],
-    ['sandbox commerce', true, 'sandbox'],
-  ])('shows nothing when the sign-in token reaches no marketplace (%s)', (_label, singleApproval, mode) => {
-    view.singleApproval = singleApproval;
-    view.mode = mode;
-    render(<SignInContent />);
     expect(screen.queryByTestId('session-approval-disclosure')).toBeNull();
   });
 
