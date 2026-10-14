@@ -1169,3 +1169,125 @@ describe('UserApplication.fetch', () => {
     await expect(UserApplication.fetch({ userId })).rejects.toThrow('IndexedDB error');
   });
 });
+
+describe('UserApplication.ensureSellerFollow', () => {
+  const follower = '5a1diz4pghi47ywdfyfzpit5f3bdomzt4pugpbmq4rngdd4iub4y' as Pubky;
+  let sellerCounter = 0;
+  const nextSeller = () => {
+    sellerCounter += 1;
+    return `${'ybndrfg8ejkmcpqxot1uwisza345h769'[sellerCounter]}uwmq57zefw5ynnkhh37b3gcmhs7g3cptdbw1doaxj1pbmzp3wro` as Pubky;
+  };
+  const followUrlOf = (seller: Pubky) => `pubky://${follower}/pub/pubky.app/follows/${seller}`;
+  const markerUrlOf = (seller: Pubky) =>
+    `pubky://${follower}/pub/pubky.app/migrations/seller-auto-follow/v1/${seller}.json`;
+
+  const spyHomeserver = (existing: Set<string>) => {
+    const exists = vi.spyOn(HomeserverService, 'exists').mockImplementation(async (url) => existing.has(url));
+    const request = vi.spyOn(HomeserverService, 'request').mockResolvedValue(undefined);
+    const localCreate = vi.spyOn(LocalFollowService, 'create').mockResolvedValue(undefined);
+    return { exists, request, localCreate };
+  };
+
+  it('follows the seller with the pubky.app follow record, then writes the once-only marker', async () => {
+    const seller = nextSeller();
+    const { request, localCreate } = spyHomeserver(new Set());
+
+    await UserApplication.ensureSellerFollow({ follower, seller });
+
+    expect(localCreate).toHaveBeenCalledWith({ follower, followee: seller, activeStreamId: null });
+    expect(request).toHaveBeenCalledTimes(2);
+    expect(request).toHaveBeenNthCalledWith(1, {
+      method: HttpMethod.PUT,
+      url: followUrlOf(seller),
+      bodyJson: { created_at: expect.any(Number) },
+    });
+    expect(request).toHaveBeenNthCalledWith(2, {
+      method: HttpMethod.PUT,
+      url: markerUrlOf(seller),
+      bodyJson: { seller, completedAt: expect.any(Number) },
+    });
+  });
+
+  it('never follows the signed-in account and does no work', async () => {
+    const { exists, request, localCreate } = spyHomeserver(new Set());
+
+    await UserApplication.ensureSellerFollow({ follower, seller: follower });
+    await UserApplication.ensureSellerFollow({ follower, seller: `pubky${follower}` });
+
+    expect(exists).not.toHaveBeenCalled();
+    expect(request).not.toHaveBeenCalled();
+    expect(localCreate).not.toHaveBeenCalled();
+  });
+
+  it('does nothing once the marker exists, so a later unfollow is never undone', async () => {
+    const seller = nextSeller();
+    const { request, localCreate } = spyHomeserver(new Set([markerUrlOf(seller)]));
+
+    await UserApplication.ensureSellerFollow({ follower, seller });
+
+    expect(request).not.toHaveBeenCalled();
+    expect(localCreate).not.toHaveBeenCalled();
+  });
+
+  it('leaves an existing follow as it is and only records the marker', async () => {
+    const seller = nextSeller();
+    const { request, localCreate } = spyHomeserver(new Set([followUrlOf(seller)]));
+
+    await UserApplication.ensureSellerFollow({ follower, seller });
+
+    expect(localCreate).not.toHaveBeenCalled();
+    expect(request).toHaveBeenCalledOnce();
+    expect(request).toHaveBeenCalledWith({
+      method: HttpMethod.PUT,
+      url: markerUrlOf(seller),
+      bodyJson: { seller, completedAt: expect.any(Number) },
+    });
+  });
+
+  it('checks the homeserver once per seller per session, even for concurrent triggers', async () => {
+    const seller = nextSeller();
+    const { exists, request } = spyHomeserver(new Set());
+
+    await Promise.all([
+      UserApplication.ensureSellerFollow({ follower, seller }),
+      UserApplication.ensureSellerFollow({ follower, seller }),
+    ]);
+    await UserApplication.ensureSellerFollow({ follower, seller });
+
+    expect(exists).toHaveBeenCalledTimes(2);
+    expect(request).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not re-follow within the session after the buyer unfollows', async () => {
+    const seller = nextSeller();
+    const { request } = spyHomeserver(new Set());
+
+    await UserApplication.ensureSellerFollow({ follower, seller });
+    request.mockClear();
+    await UserApplication.ensureSellerFollow({ follower, seller });
+
+    expect(request).not.toHaveBeenCalled();
+  });
+
+  it('retries on the next trigger after a failed attempt', async () => {
+    const seller = nextSeller();
+    const { request } = spyHomeserver(new Set());
+    request.mockRejectedValueOnce(new Error('homeserver unavailable'));
+
+    await expect(UserApplication.ensureSellerFollow({ follower, seller })).rejects.toThrow('homeserver unavailable');
+    request.mockResolvedValue(undefined);
+    await UserApplication.ensureSellerFollow({ follower, seller });
+
+    expect(request).toHaveBeenCalledTimes(3);
+  });
+
+  it('skips all work when already cancelled', async () => {
+    const controller = new AbortController();
+    controller.abort();
+    const { exists } = spyHomeserver(new Set());
+
+    await UserApplication.ensureSellerFollow({ follower, seller: nextSeller(), signal: controller.signal });
+
+    expect(exists).not.toHaveBeenCalled();
+  });
+});

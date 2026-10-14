@@ -1,0 +1,1 @@
+The Shop now follows a seller on Pubky for you, quietly and only once, when you add their item to the cart, check out, add it to your watchlist, follow their shop, make an offer or place a bid. A follow you remove is never added again, and Settings, Privacy says so.

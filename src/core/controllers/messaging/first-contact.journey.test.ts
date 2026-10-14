@@ -11,6 +11,7 @@ import { CommercePrivKeyringApplication } from '@/application/commerce/priv-keyr
 import { FIRST_CONTACT_FOLLOW_PAGE_SIZE, FirstContactApplication } from '@/application/messaging/first-contact';
 import { MessagingApplication } from '@/application/messaging/messaging';
 import { UserStreamApplication } from '@/application/stream/users/users';
+import { UserApplication } from '@/application/user/user';
 import { buildChatMessage, MARKETPLACE_CHAT_MESSAGE_KIND } from '@/libs/commerce/messaging-contracts';
 import { MESSAGING_COPY } from '@/libs/commerce/messaging-copy';
 import {
@@ -40,6 +41,7 @@ import {
   CommerceMessagingUnprocessedModel,
 } from '@/models/messaging/messaging.models';
 import type { Pubky } from '@/models/models.types';
+import { HomeserverService } from '@/services/homeserver/homeserver';
 import { LocalMessagingService } from '@/services/local/messaging/messaging';
 import { MarketplaceGatewayService } from '@/services/marketplace/marketplace';
 import { setPaykitWasmModuleForTests } from '@/services/paykit/paykit-messaging';
@@ -725,6 +727,37 @@ describe('journey: the buyer follows the seller on the first message', () => {
 
     expect(outcome.firstContact).toEqual({ followed: 'already', request: 'written' });
     expect(homeserver.log.filter((entry) => entry === `PUT ${followUrl(BUYER, SELLER)}`)).toEqual([]);
+  });
+
+  it('records the Shop seller-follow marker, so a later unfollow is not undone by the auto-follow', async () => {
+    await actAs(SELLER);
+    await actAs(BUYER);
+    await MessagingController.openConversation(SELLER, BUYER, LISTING);
+
+    await MessagingController.sendOrQueueMessage(SELLER, BUYER, LISTING, 'Hi');
+
+    const markerUrl = `pubky://${BUYER}/pub/pubky.app/migrations/seller-auto-follow/v1/${SELLER}.json`;
+    await vi.waitFor(() => expect(homeserver.files.has(markerUrl)).toBe(true));
+    vi.spyOn(HomeserverService, 'exists').mockImplementation(async (url) => homeserver.files.has(url));
+    homeserver.files.delete(followUrl(BUYER, SELLER));
+    homeserver.log.length = 0;
+
+    await UserApplication.ensureSellerFollow({ follower: BUYER as Pubky, seller: SELLER });
+
+    expect(homeserver.log).toEqual([]);
+    expect(homeserver.files.has(followUrl(BUYER, SELLER))).toBe(false);
+  });
+
+  it('records the marker when the buyer already followed the seller', async () => {
+    await actAs(SELLER);
+    await actAs(BUYER);
+    homeserver.files.set(followUrl(BUYER, SELLER), { uri: `pubky://${SELLER}` });
+    await MessagingController.openConversation(SELLER, BUYER, LISTING);
+
+    await MessagingController.sendOrQueueMessage(SELLER, BUYER, LISTING, 'Hi');
+
+    const markerUrl = `pubky://${BUYER}/pub/pubky.app/migrations/seller-auto-follow/v1/${SELLER}.json`;
+    await vi.waitFor(() => expect(homeserver.files.has(markerUrl)).toBe(true));
   });
 
   it('still queues the message and reports the failed follow, never a fake delivery', async () => {
