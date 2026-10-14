@@ -402,6 +402,37 @@ describe('commerceListingRecordSchema', () => {
     expect(commerceListingRecordSchema.safeParse(listing).success).toBe(true);
   });
 
+  it('a Locks listing must be digital-only: any physical or pickup method beside digital is rejected', () => {
+    const shipped = makeFixedListing();
+    const lock = {
+      policyUri: LOCK_URL,
+      criterionId: 'criterion-1',
+      contentPath: 'premium.txt',
+      resourceHash: 'b'.repeat(64),
+      minimumConfirmations: 1,
+    };
+    const mixed: Array<CommerceListingRecord['fulfillmentMethods']> = [
+      ['physical', 'shipping', 'digital'],
+      ['physical', 'digital'],
+      ['pickup', 'digital'],
+      ['physical', 'shipping', 'pickup', 'digital'],
+    ];
+    for (const fulfillmentMethods of mixed) {
+      const result = commerceListingRecordSchema.safeParse({ ...shipped, fulfillmentMethods, digitalLock: lock });
+      expect(result.success, fulfillmentMethods.join(',')).toBe(false);
+      expect(result.error?.issues.map(({ message }) => message)).toContain('A Locks listing must be digital-only');
+    }
+
+    const digitalOnly = {
+      ...shipped,
+      fulfillmentMethods: ['digital' as const],
+      package: undefined,
+      shippingOptions: [],
+      digitalLock: lock,
+    };
+    expect(commerceListingRecordSchema.safeParse(digitalOnly).success).toBe(true);
+  });
+
   it('rejects a Locks policy above Paykit Server finality', () => {
     const listing = makeFixedListing();
     listing.fulfillmentMethods = ['digital'];

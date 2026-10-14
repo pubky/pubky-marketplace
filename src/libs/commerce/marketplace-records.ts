@@ -615,6 +615,16 @@ const commerceListingRecordSchemaInner = commercePublicRecordBaseSchema
         path: ['digitalLock'],
       });
     }
+    // A Locks listing is digital end to end: the service registers it only
+    // as exactly [digital], so a record that also publishes shipping or
+    // pickup would bring the shipping UI and checkout back for it.
+    if (listing.digitalLock !== undefined && hasDigital && !listing.fulfillmentMethods.every((m) => m === 'digital')) {
+      context.addIssue({
+        code: 'custom',
+        message: 'A Locks listing must be digital-only',
+        path: ['fulfillmentMethods'],
+      });
+    }
 
     if (listing.sale.format === 'auction') {
       validateAuction(listing.sale, context);
