@@ -149,6 +149,7 @@ import {
   watchlistStatesEqual,
   watchlistStateToRecordBody,
 } from '@/pipes/commerce/commerce.watchlist';
+import { buildDefaultShopRecord } from '@/pipes/commerce/default-shop';
 import {
   detectWatchAlerts,
   type WatchIndexObservation,
@@ -204,6 +205,14 @@ const reviewResultSchema = z
     updatedAt: z.string().min(1),
   })
   .passthrough();
+
+export interface TEnsureDefaultShopParams {
+  ownerPubky: string;
+  /** Reads the seller's published profile; only called when a shop is about to be written. */
+  loadProfile: () => Promise<{ name: string; bio: string } | null>;
+  /** Where the triggering listing ships from; otherwise a cached listing of the seller's, then the default. */
+  location?: CommerceShopRecord['location'];
+}
 
 export interface CommerceCatalogStreamFilters {
   saleFormat?: NexusListingSaleFormat;
@@ -395,6 +404,8 @@ export class CommerceApplication {
   private constructor() {}
 
   private static sellerListingsRefreshInFlight = new Map<string, Promise<void>>();
+  /** Sellers whose default storefront check ran (or runs) in this session. */
+  private static defaultShopSession = new Map<string, Promise<void>>();
   /** Listings (composite id → count) with a `commitUpsertListing` running in this tab. */
   private static listingPublishesInFlight = new Map<string, number>();
 
@@ -3547,6 +3558,50 @@ export class CommerceApplication {
       }
     }
     return published;
+  }
+
+  /**
+   * Publishes a default storefront (`shop.json`) for a seller who has none, so
+   * apps that only trust sellers with a storefront (Bitkit's Shop contacts)
+   * see them. Never replaces a shop: any local row (saved or mid-save) or
+   * published record wins, and an unreadable homeserver is not taken as
+   * "no shop". Runs once per seller per session; a failure allows a retry.
+   */
+  static async ensureDefaultShop({ ownerPubky, loadProfile, location }: TEnsureDefaultShopParams): Promise<void> {
+    const inSession = this.defaultShopSession.get(ownerPubky);
+    if (inSession) return await inSession;
+
+    const attempt = this.runEnsureDefaultShop({ ownerPubky, loadProfile, location });
+    this.defaultShopSession.set(ownerPubky, attempt);
+    try {
+      await attempt;
+    } catch (error) {
+      this.defaultShopSession.delete(ownerPubky);
+      throw error;
+    }
+  }
+
+  private static async runEnsureDefaultShop({
+    ownerPubky,
+    loadProfile,
+    location,
+  }: TEnsureDefaultShopParams): Promise<void> {
+    if (await LocalCommerceService.getShop(ownerPubky)) return;
+    const published = await CommerceHomeserverService.fetchJsonIfFound(CommerceRecordNormalizer.shopUri(ownerPubky));
+    if (published.found) return;
+
+    const shipsFrom =
+      location ??
+      (await LocalCommerceService.getListingsBySeller(ownerPubky)).find((row) => row.record.location)?.record.location;
+    const record = buildDefaultShopRecord({
+      ownerPubky,
+      profile: await loadProfile(),
+      location: shipsFrom,
+      now: new Date(),
+    });
+    // A settings save may have started while the profile loaded; it wins.
+    if (await LocalCommerceService.getShop(ownerPubky)) return;
+    await this.commitUpsertShop(record);
   }
 
   static async commitUpsertShop(record: CommerceShopRecord): Promise<void> {

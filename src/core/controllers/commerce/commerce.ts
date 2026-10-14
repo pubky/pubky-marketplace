@@ -9,6 +9,7 @@ import { CommerceInventoryAutomationsApplication } from '@/application/commerce/
 import { CommerceInventoryImportApplication } from '@/application/commerce/inventory-import';
 import { CommercePrivKeyringApplication } from '@/application/commerce/priv-keyring';
 import { CommerceShippingApplication } from '@/application/commerce/shipping';
+import { ProfileApplication } from '@/application/profile/profile';
 import { TagKind } from '@/application/tag/tag.types';
 import { UserApplication } from '@/application/user/user';
 import {
@@ -25,7 +26,7 @@ import {
   type MarketplaceDigitalDeliveryInput,
 } from '@/libs/commerce/digital';
 import { parseListingAggregateId } from '@/libs/commerce/marketplace-conversation-query';
-import type { CommerceDigitalLock } from '@/libs/commerce/marketplace-records';
+import type { CommerceDigitalLock, CommerceShopRecord } from '@/libs/commerce/marketplace-records';
 import type { BindDeliveryAddress, PaymentMethodKind } from '@/libs/commerce/payment-methods';
 import { resolveCheckoutFulfillment } from '@/libs/commerce/pickup';
 import type { CommerceDeliveryAddressValue } from '@/libs/commerce/postal-address';
@@ -39,6 +40,7 @@ import { Err } from '@/libs/error/error.factories';
 import { ErrorService } from '@/libs/error/error.types';
 import { Logger } from '@/libs/logger/logger';
 import type { CommerceIndexedReview, CommerceListingProjectionModelSchema } from '@/models/commerce/commerce.schema';
+import type { Pubky } from '@/models/models.types';
 import { CommerceRecordNormalizer } from '@/pipes/commerce/commerce.normalizer';
 import { MarketplaceNotificationNormalizer } from '@/pipes/marketplaceNotification/marketplaceNotification.normalizer';
 import type { MarketplaceOrder, MarketplacePayment } from '@/services/marketplace/marketplace';
@@ -652,7 +654,10 @@ export class CommerceController {
 
   /** The current user's own stored payment configuration, or null. */
   static async getMyPaymentConfig() {
-    return await CommerceApplication.getMyPaymentConfig(this.getCurrentUserPubky());
+    const config = await CommerceApplication.getMyPaymentConfig(this.getCurrentUserPubky());
+    // Sellers who turned bitcoin on before the Shop published storefronts get one here.
+    if (config?.bitcoinEnabled) this.ensureStorefront();
+    return config;
   }
 
   /** Saves the current user's own payment configuration. */
@@ -661,7 +666,28 @@ export class CommerceController {
     paypalMerchantEmail: string | null;
     usdtEnabled?: boolean;
   }) {
-    return await CommerceApplication.putMyPaymentConfig(this.getCurrentUserPubky(), input);
+    const saved = await CommerceApplication.putMyPaymentConfig(this.getCurrentUserPubky(), input);
+    if (saved.bitcoinEnabled) this.ensureStorefront();
+    return saved;
+  }
+
+  /**
+   * A seller who can be paid in bitcoin (Accept bitcoin on, or a published
+   * listing) gets a default storefront when they have none, because Bitkit
+   * only makes a seller the buyer's contact when the seller publishes
+   * `shop.json`. Runs behind the seller's action and never blocks or fails it;
+   * see `CommerceApplication.ensureDefaultShop` for the never-overwrite rules.
+   */
+  private static ensureStorefront(location?: CommerceShopRecord['location']): void {
+    const ownerPubky = this.getCurrentUserPubky();
+    void CommerceApplication.ensureDefaultShop({
+      ownerPubky,
+      location,
+      loadProfile: () => ProfileApplication.readProfileSeed({ pubky: ownerPubky as Pubky }),
+    }).catch((error: unknown) => {
+      // AppError factories already report at their origin.
+      if (!isAppError(error)) Logger.warn('Could not publish a default storefront for the seller', { error });
+    });
   }
 
   /** Buyer's one-shot payment-method binding for an order. */
@@ -1864,9 +1890,11 @@ export class CommerceController {
     const record = CommerceRecordNormalizer.listing(input);
     const reserve = reservePrice === undefined ? undefined : commercePositiveMoneySchema.nullable().parse(reservePrice);
     this.assertCurrentUserOwns(record.ownerPubky);
-    return await this.withPending(`${record.ownerPubky}:${record.listingId}`, () =>
+    const result = await this.withPending(`${record.ownerPubky}:${record.listingId}`, () =>
       CommerceApplication.commitUpsertListing(record, reserve),
     );
+    this.ensureStorefront(record.location);
+    return result;
   }
 
   static async commitDeleteListing(ownerPubky: unknown, listingId: unknown): Promise<void> {
