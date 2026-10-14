@@ -1,6 +1,7 @@
 // Intentional import order — browser-mode mock factories rely on stable aliases.
 /* eslint-disable simple-import-sort/imports */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { createMarketplaceVrtAuthStore } from '@/test/mocks/marketplace-vrt';
 import { expectVrtSurface, parkVrtHover, renderForVRT, VRT_DENSE_CHROME_SCREENSHOT } from '@/test-utils/vrt';
 import { VRT_VIEWPORT_DESKTOP, VRT_VIEWPORT_MOBILE } from '@/test-utils/vrt.viewports';
 import { MarketplaceCheckout } from '@/templates/Marketplace/MarketplaceCheckout';
@@ -143,6 +144,7 @@ const view = vi.hoisted(() => ({
   adapterMode: 'sandbox' as string,
   deployEnv: 'staging' as 'production' | 'staging' | undefined,
   hasMarketplaceSession: false,
+  currentUserPubky: null as string | null,
   addresses: [] as unknown[],
   selectedAddressId: null as string | null,
   fulfillmentOptions: {} as Record<string, Array<'shipping' | 'pickup'>>,
@@ -166,6 +168,12 @@ vi.mock('@/hooks/useBuyerPaykitWallet/useBuyerPaykitWallet', () => ({
   useBuyerPaykitWallet: (_pubky: string | null, enabled: boolean) => ({
     state: enabled ? view.buyerWalletState : 'idle',
     recheck: vi.fn(),
+  }),
+}));
+
+vi.mock('@/stores/auth/auth.store', () => ({
+  useAuthStore: createMarketplaceVrtAuthStore({
+    getCurrentUserPubky: () => view.currentUserPubky,
   }),
 }));
 
@@ -384,6 +392,7 @@ beforeEach(async () => {
   view.items = [];
   view.isLoading = false;
   view.hasMarketplaceSession = false;
+  view.currentUserPubky = null;
   view.adapterMode = 'sandbox';
   view.deployEnv = 'staging';
   view.addresses = [];
@@ -488,10 +497,12 @@ describe('Marketplace checkout — visual regression', () => {
       view.adapterMode = 'transaction-service';
       view.deployEnv = 'production';
       view.hasMarketplaceSession = true;
+      view.currentUserPubky = 'b'.repeat(52);
       view.buyerWalletState = 'not_payable';
 
       const screen = await renderForVRT(<MarketplaceCheckout />, { viewport });
       await expect.element(screen.getByTestId('marketplace-checkout-bitkit-required')).toBeVisible();
+      await expect.element(screen.getByTestId('marketplace-checkout-bitkit-connect')).toBeEnabled();
       await expect.element(screen.getByTestId('marketplace-checkout-pay')).toBeDisabled();
       const earlyNotice = screen.getByTestId('marketplace-checkout-bitkit-notice');
       if (name === 'mobile') {
@@ -508,13 +519,16 @@ describe('Marketplace checkout — visual regression', () => {
       view.adapterMode = 'transaction-service';
       view.deployEnv = 'production';
       view.hasMarketplaceSession = true;
+      view.currentUserPubky = 'b'.repeat(52);
       view.buyerWalletState = 'not_payable';
 
       const screen = await renderForVRT(<MarketplaceCheckout />, { viewport });
       await expect.element(screen.getByTestId('marketplace-checkout-bitkit-required')).toBeVisible();
+      await expect.element(screen.getByTestId('marketplace-checkout-bitkit-connect')).toBeEnabled();
       await screen.getByTestId('marketplace-checkout-bitkit-connect').click();
       const dialog = screen.getByRole('dialog', { name: 'Connect Bitkit', exact: true });
       await expect.element(dialog).toBeVisible();
+      await expect.element(screen.getByTestId('buyer-bitkit-account')).toHaveTextContent(view.currentUserPubky);
       await expect(dialog).toMatchScreenshot(`checkout-bitkit-connect-dialog-${name}`);
       await screen.getByRole('button', { name: 'Close', exact: true }).click();
       await expect.element(dialog).not.toBeInTheDocument();
