@@ -34,6 +34,7 @@ const scene = vi.hoisted(() => ({
   query: '',
   hasMore: false,
   showNote: true,
+  inboxStatus: 'ready' as 'ready' | 'disabled',
 }));
 
 vi.mock('next/navigation', () => ({
@@ -60,7 +61,11 @@ vi.mock('@/hooks/useChatConversation/useChatConversation', () => ({
 }));
 
 vi.mock('@/hooks/useChatIdentity/useChatIdentity', () => ({
-  useChatIdentity: () => ({ identityState: scene.identityState, inboxStatus: 'ready', retry: async () => {} }),
+  useChatIdentity: () => ({
+    identityState: scene.identityState,
+    inboxStatus: scene.inboxStatus,
+    retry: async () => {},
+  }),
 }));
 
 // Dismissal lives in localStorage per account; the scene decides instead.
@@ -181,6 +186,7 @@ describe('Chat conversation — visual regression', () => {
     scene.query = '';
     scene.hasMore = false;
     scene.showNote = true;
+    scene.inboxStatus = 'ready';
   });
 
   it('renders a thread with every delivery state and a listing context at desktop viewport', async () => {
@@ -264,6 +270,22 @@ describe('Chat conversation — visual regression', () => {
     });
     await expect.element(screen.getByText(/hasn't set up messages yet/u)).toBeInTheDocument();
     await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('chat-conversation-peer-not-enabled-mobile');
+  });
+
+  it('renders the no-inbox note under the composer before the peer has replied at desktop viewport', async () => {
+    scene.messages = [
+      message({ id: 'n1', body: 'Hi, is this still available?', sent_at: VRT_FROZEN_NOW_MS - 3 * MINUTE_MS }),
+    ];
+    scene.conversation = conversation();
+    scene.inboxStatus = 'disabled';
+    scene.showNote = false;
+
+    const screen = await renderForVRT(<ChatConversation peerPubky={PEER} />, {
+      viewport: VRT_VIEWPORT_DESKTOP,
+      disableHover: true,
+    });
+    await expect.element(screen.getByTestId('chat-no-inbox-note')).toBeInTheDocument();
+    await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('chat-conversation-no-inbox-desktop');
   });
 
   it('renders the signed-out thread at desktop viewport', async () => {
