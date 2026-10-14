@@ -24,6 +24,7 @@ const listing = {
     listingId: 'boots',
     title: 'Vintage boots',
     media: [],
+    fulfillmentMethods: ['physical', 'shipping'],
     variants: [{ id: 'variant_42', options: { size: '42' }, quantity: 3 }],
     sale: { format: 'fixed_price', unitPrice: { amountMinor: 1200, currency: 'USD', exponent: 2 } },
   },
@@ -143,6 +144,62 @@ describe('MarketplaceCart', () => {
     expect(checkout).toHaveTextContent('Checkout');
     expect(screen.queryByRole('button', { name: /Place order/ })).not.toBeInTheDocument();
     expect(screen.queryByLabelText('Recipient')).not.toBeInTheDocument();
+  });
+
+  it('shows Shipping is calculated at checkout for a cart of shipped items', () => {
+    seededCart();
+    render(<MarketplaceCart />);
+
+    const summary = screen.getByTestId('marketplace-cart-summary');
+    expect(within(summary).getByText('Shipping')).toBeInTheDocument();
+    expect(within(summary).getByText('Shipping is calculated at checkout.')).toBeInTheDocument();
+  });
+
+  it('shows digital delivery with no shipping for a cart of Locks items', () => {
+    view.items = [
+      {
+        id: 'seller:boots:variant_42',
+        listingId: listing.id,
+        variantId: 'variant_42',
+        quantity: 1,
+        listing: { ...listing, record: { ...listing.record, fulfillmentMethods: ['digital'] } },
+      },
+    ];
+    render(<MarketplaceCart />);
+
+    const summary = screen.getByTestId('marketplace-cart-summary');
+    expect(within(summary).getByText('Delivery')).toBeInTheDocument();
+    expect(within(summary).getByText('No shipping for digital items.')).toBeInTheDocument();
+    expect(within(summary).queryByText('Shipping')).not.toBeInTheDocument();
+  });
+
+  it('says digital items have no shipping when the cart mixes them with shipped items', () => {
+    view.items = [
+      {
+        id: 'seller:boots:variant_42',
+        listingId: listing.id,
+        variantId: 'variant_42',
+        quantity: 1,
+        listing,
+      },
+      {
+        id: 'seller:locked:variant_01',
+        listingId: 'seller:locked',
+        variantId: 'variant_01',
+        quantity: 1,
+        listing: {
+          ...secondSellerListing,
+          record: { ...secondSellerListing.record, fulfillmentMethods: ['digital'] },
+        },
+      },
+    ];
+    render(<MarketplaceCart />);
+
+    const summary = screen.getByTestId('marketplace-cart-summary');
+    expect(within(summary).getByText('Shipping')).toBeInTheDocument();
+    expect(
+      within(summary).getByText('Shipping is calculated at checkout for items that ship. Digital items have none.'),
+    ).toBeInTheDocument();
   });
 
   it('renders a two-column loading skeleton', () => {

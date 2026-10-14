@@ -885,7 +885,15 @@ describe('useMarketplaceCheckout Locks checkout on upstream Paykit', () => {
       ...item.listing,
       record: {
         ...item.listing.record,
-        digitalLock: { policyUri: 'pubky://lock', criterionId: 'c', contentPath: 'p', resourceHash: 'h' },
+        fulfillmentMethods: ['digital'],
+        shippingOptions: [],
+        digitalLock: {
+          policyUri: 'pubky://lock',
+          criterionId: 'c',
+          contentPath: 'p',
+          resourceHash: 'h',
+          minimumConfirmations: 1,
+        },
       } as MarketplaceCartItem['listing']['record'],
     },
   };

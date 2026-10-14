@@ -1,1 +1,0 @@
-A Locks listing now checks out as digital: checkout no longer asks for a delivery address for a digital unlock, and does not wait on the deployment's digital delivery capability or a seller deliverable.

@@ -553,7 +553,7 @@ describe('CommerceApplication', () => {
     [['digital'], false, ['digital']],
     [['physical', 'shipping', 'digital'], false, ['shipping', 'digital']],
     [['pickup', 'digital'], false, ['pickup', 'digital']],
-    [['digital'], true, ['shipping']],
+    [['digital'], true, ['digital']],
   ] as const)('register_accepts_digital_method: %j (lock %s) registers %j', async (methods, locks, expected) => {
     const physical = (methods as readonly string[]).includes('physical');
     const base = createCommerceListingFixture();

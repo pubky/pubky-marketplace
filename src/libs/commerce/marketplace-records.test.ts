@@ -782,15 +782,11 @@ describe('commerceListingFulfillmentMethods (mirrors the service homeserver deri
 
   // Digital delivery design §6 A1–A3, mirroring the service's
   // `digital_without_lock_derives_digital_never_shipping`,
-  // `locks_listing_derivation_unchanged` and `mixed_method_derivations`.
+  // and `mixed_method_derivations`. A Locks listing carries `digitalLock` on a
+  // record that publishes `digital`, so it derives digital like any other.
   it('digital_without_lock_derives_digital_never_shipping', () => {
     expect(commerceListingFulfillmentMethods(['digital'])).toEqual(['digital']);
     expect(commerceListingFulfillmentMethods(['physical', 'digital'])).toEqual(['digital']);
-  });
-
-  it('locks_listing_derivation_unchanged', () => {
-    expect(commerceListingFulfillmentMethods(['digital'], true)).toEqual(['shipping']);
-    expect(commerceListingFulfillmentMethods(['physical', 'shipping', 'digital'], true)).toEqual(['shipping']);
   });
 
   it('mixed_method_derivations', () => {
@@ -828,7 +824,7 @@ describe('commerceListingTakesOffers (offers settle through shipping or pickup)'
     expect(commerceListingTakesOffers(listing({ fulfillmentMethods: ['physical', 'shipping', 'digital'] }))).toBe(true);
   });
 
-  it('takes no offers on a Locks listing, which is digital-only to the buyer', () => {
+  it('takes no offers on a Locks listing, which is a digital listing', () => {
     expect(commerceListingTakesOffers(listing({ fulfillmentMethods: ['digital'], digitalLock: lock }))).toBe(false);
   });
 });

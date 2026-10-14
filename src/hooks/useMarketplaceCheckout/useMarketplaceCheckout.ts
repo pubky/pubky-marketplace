@@ -307,16 +307,13 @@ export function useMarketplaceCheckout(
     };
   }, []);
 
-  // A Locks listing registers as shipping, but the Lock Server delivers what
-  // it sells: the buyer pays it as digital, which collects no address and
-  // needs no seller deliverable.
+  // A Locks listing is a digital listing: it collects no address, and the
+  // Lock Server delivers it, so it needs no seller deliverable and does not
+  // depend on the deployment's digital capability.
   const isLocksItem = (item: MarketplaceCartItem) => item.listing.record.digitalLock !== undefined;
   const publishedByItem = new Map<string, MarketplaceFulfillmentMethod[]>();
   for (const item of items) {
-    publishedByItem.set(
-      item.id,
-      isLocksItem(item) ? ['digital'] : commerceListingFulfillmentMethods(item.listing.record.fulfillmentMethods),
-    );
+    publishedByItem.set(item.id, commerceListingFulfillmentMethods(item.listing.record.fulfillmentMethods));
   }
   const publishedFor = (item: MarketplaceCartItem) => publishedByItem.get(item.id) ?? [];
   const anyPublishesDigital = items.some((item) => !isLocksItem(item) && publishedFor(item).includes('digital'));

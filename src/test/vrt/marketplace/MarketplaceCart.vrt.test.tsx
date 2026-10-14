@@ -68,6 +68,26 @@ const fixtures = vi.hoisted(async () => {
     }),
   );
 
+  const locksTrack = toCommerceListingModel(
+    createCommerceListingFixture({
+      listingId: 'field_recordings',
+      title: 'Field recordings archive (digital)',
+      categoryId: 'collectibles-music-vinyl',
+      condition: 'new',
+      fulfillmentMethods: ['digital'],
+      package: undefined,
+      shippingOptions: [],
+      variants: [{ id: 'variant_01', options: {}, quantity: 5, mediaIds: ['image_01'], enabled: true }],
+      digitalLock: {
+        policyUri: `pubky://${'s'.repeat(52)}/pub/locks.app/policies/field_recordings.json`,
+        criterionId: 'criterion-1',
+        contentPath: 'field_recordings/archive.zip',
+        resourceHash: 'a'.repeat(64),
+        minimumConfirmations: 3,
+      },
+    }),
+  );
+
   const item = (listing: ReturnType<typeof toCommerceListingModel>, variantId: string, quantity: number) => ({
     id: `${listing.id}:${variantId}`,
     listingId: listing.id,
@@ -79,6 +99,8 @@ const fixtures = vi.hoisted(async () => {
   return {
     singleSeller: [item(boots, 'variant_42', 1), item(boots, 'variant_43', 1)],
     multiSeller: [item(boots, 'variant_42', 2), item(jacket, 'variant_01', 1), item(camera, 'variant_01', 1)],
+    locksOnly: [item(locksTrack, 'variant_01', 1)],
+    locksWithShipped: [item(boots, 'variant_42', 1), item(locksTrack, 'variant_01', 1)],
     staleItem: [item(boots, 'variant_42', 1), item(jacket, 'variant_gone', 1)],
   };
 });
@@ -235,6 +257,33 @@ describe('Marketplace cart — visual regression', () => {
 
     await renderForVRT(<MarketplaceCart />, { viewport: VRT_VIEWPORT_MOBILE });
     await captureCart('cart-single-seller-mobile');
+  });
+
+  it('renders a Locks digital cart with no shipping at desktop viewport', async () => {
+    const { locksOnly } = await fixtures;
+    view.items = locksOnly;
+    view.isLoading = false;
+
+    await renderForVRT(<MarketplaceCart />, { viewport: VRT_VIEWPORT_DESKTOP });
+    await captureCart('cart-locks-digital-desktop');
+  });
+
+  it('renders a Locks digital cart with no shipping at mobile viewport', async () => {
+    const { locksOnly } = await fixtures;
+    view.items = locksOnly;
+    view.isLoading = false;
+
+    await renderForVRT(<MarketplaceCart />, { viewport: VRT_VIEWPORT_MOBILE });
+    await captureCart('cart-locks-digital-mobile');
+  });
+
+  it('renders a Locks item beside a shipped item at desktop viewport', async () => {
+    const { locksWithShipped } = await fixtures;
+    view.items = locksWithShipped;
+    view.isLoading = false;
+
+    await renderForVRT(<MarketplaceCart />, { viewport: VRT_VIEWPORT_DESKTOP });
+    await captureCart('cart-locks-with-shipped-desktop');
   });
 
   it('renders a multi-seller cart at desktop viewport', async () => {

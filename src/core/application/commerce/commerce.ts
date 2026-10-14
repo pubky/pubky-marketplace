@@ -4482,10 +4482,7 @@ export class CommerceApplication {
         unitPrice,
         shippingMinor: commerceListingShippingMinor(listing.shippingOptions),
         saleFormat: 'auction',
-        fulfillmentMethods: commerceListingFulfillmentMethods(
-          listing.fulfillmentMethods,
-          listing.digitalLock !== undefined,
-        ),
+        fulfillmentMethods: commerceListingFulfillmentMethods(listing.fulfillmentMethods),
         auctionTerms:
           listing.sale.format === 'auction'
             ? {
@@ -4583,10 +4580,7 @@ export class CommerceApplication {
         saleFormat: listing.sale.format,
         // The service-facing fulfillment methods (§A1), derived from the
         // record exactly as the service's own homeserver derivation would.
-        fulfillmentMethods: commerceListingFulfillmentMethods(
-          listing.fulfillmentMethods,
-          listing.digitalLock !== undefined,
-        ),
+        fulfillmentMethods: commerceListingFulfillmentMethods(listing.fulfillmentMethods),
         auctionTerms:
           listing.sale.format === 'auction'
             ? {

@@ -441,7 +441,7 @@ describe('MarketplaceListing', () => {
     );
   });
 
-  it('leaves a Locks listing on its own digital notice', () => {
+  it('presents a Locks listing as digital delivery with no shipping or ship-from', () => {
     view.listing = toCommerceListingModel(
       createCommerceListingFixture({
         fulfillmentMethods: ['digital'],
@@ -458,8 +458,10 @@ describe('MarketplaceListing', () => {
     );
     renderListing();
 
-    expect(screen.queryByTestId('marketplace-listing-digital-badge')).not.toBeInTheDocument();
-    expect(screen.queryByTestId('marketplace-listing-digital-offer-note')).not.toBeInTheDocument();
+    expect(screen.getByTestId('marketplace-listing-digital-badge')).toHaveTextContent('Digital');
+    expect(screen.queryByText(/Shipping/)).not.toBeInTheDocument();
+    expect(screen.queryByText('Ships from')).not.toBeInTheDocument();
+    expect(screen.queryByText('Pickup location')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Make offer/ })).not.toBeInTheDocument();
   });
 

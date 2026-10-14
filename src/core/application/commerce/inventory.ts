@@ -111,9 +111,7 @@ function exportRecordIsUnlimited(record: Record<string, unknown> | null): boolea
   return variants.some((entry) => {
     const object = asObject(entry);
     const quantity = object ? asInt(object.quantity) : null;
-    return (
-      quantity !== null && isUnlimitedStock({ fulfillmentMethods: methods, digitalLock: record.digitalLock }, quantity)
-    );
+    return quantity !== null && isUnlimitedStock({ fulfillmentMethods: methods }, quantity);
   });
 }
 

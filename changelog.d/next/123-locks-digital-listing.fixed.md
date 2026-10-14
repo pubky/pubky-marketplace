@@ -1,0 +1,1 @@
+A Locks listing is now a digital listing end to end. The Shop registers it with digital delivery only, and its listing page, cart, checkout and order cards show digital delivery with no shipping cost, ship-from or delivery address. Locks listings created before this change were registered for shipping and must be recreated.
