@@ -1,6 +1,13 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { setBasePath } from '@/test-utils/base-path';
 import { Metadata } from './Metadata';
+
+const runtime = vi.hoisted(() => ({ publicPath: undefined as string | undefined }));
+
+vi.mock('@/libs/runtime-config/runtime-config', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/libs/runtime-config/runtime-config')>();
+  return { ...actual, getShopPublicPathOverride: () => runtime.publicPath };
+});
 
 describe('Metadata - Snapshots', () => {
   it('matches snapshot for default metadata configuration', () => {
@@ -160,5 +167,35 @@ describe('Metadata - mounted under a base path', () => {
 
     expect(result.openGraph.images?.[0].url).toBe('https://cdn.example.com/a.png');
     expect(result.alternates.canonical).toBe('https://example.com/x');
+  });
+});
+
+describe('Metadata - build mounted at /shop-embed behind the App wrapper at /shop', () => {
+  afterEach(() => {
+    setBasePath('');
+    runtime.publicPath = undefined;
+  });
+
+  it('keeps assets on the mount path and points canonical and Open Graph URLs at the public path', () => {
+    setBasePath('/shop-embed');
+    runtime.publicPath = '/shop';
+    const result = Metadata({ title: 'T', description: 'D', url: '/marketplace/listing/s/l' });
+
+    expect(result.icons.icon).toBe('/shop-embed/pubky-favicon.svg');
+    expect(result.openGraph.images?.[0].url).toBe('/shop-embed/preview.webp');
+    expect(result.alternates.canonical).toBe('/shop/marketplace/listing/s/l');
+    expect(result.openGraph.url).toBe('/shop/marketplace/listing/s/l');
+  });
+
+  it('points the default canonical URL at the public path', () => {
+    setBasePath('/shop-embed');
+    runtime.publicPath = '/shop';
+    expect(Metadata({ title: 'T', description: 'D' }).alternates.canonical).toBe('https://pubky.app/shop');
+  });
+
+  it('is unchanged for a standalone build with no public path', () => {
+    const result = Metadata({ title: 'T', description: 'D', url: '/marketplace' });
+    expect(result.alternates.canonical).toBe('/marketplace');
+    expect(result.icons.icon).toBe('/pubky-favicon.svg');
   });
 });

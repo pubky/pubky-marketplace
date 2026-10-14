@@ -2,8 +2,16 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { HttpMethod, JSON_HEADERS } from '@/libs/http/http.types';
 import { REPORT_ISSUE_TYPES, REPORT_REASON_MAX_LENGTH } from '@/pipes/report/report.constants';
+import { setBasePath } from '@/test-utils/base-path';
 import { useReportPost } from './useReportPost';
 import { REPORT_API_ENDPOINT, REPORT_POST_STEPS } from './useReportPost.constants';
+
+const publicPath = vi.hoisted(() => ({ value: undefined as string | undefined }));
+
+vi.mock('@/libs/runtime-config/runtime-config', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/libs/runtime-config/runtime-config')>();
+  return { ...actual, getShopPublicPathOverride: () => publicPath.value };
+});
 
 // Mock fetch
 global.fetch = vi.fn();
@@ -111,6 +119,41 @@ describe('useReportPost', () => {
           body: expect.stringContaining(TEST_POST_URL),
         }),
       );
+    });
+  });
+
+  describe('when the App frames the Shop', () => {
+    it('reports the App /shop URL of a listing and a post, not the /shop-embed iframe path', async () => {
+      setBasePath('/shop-embed');
+      publicPath.value = '/shop';
+      try {
+        for (const target of [LISTING_TARGET, POST_TARGET]) {
+          vi.mocked(global.fetch).mockClear();
+          const { result } = renderHook(() => useReportPost(target));
+          act(() => {
+            result.current.selectIssueType(REPORT_ISSUE_TYPES.PERSONAL_INFO);
+          });
+          act(() => {
+            result.current.handleReasonChange({
+              target: { value: 'Test reason' },
+            } as React.ChangeEvent<HTMLTextAreaElement>);
+          });
+          await act(async () => {
+            await result.current.submit();
+          });
+
+          const [, init] = vi.mocked(global.fetch).mock.calls[0] as [string, RequestInit];
+          const { postUrl } = JSON.parse(init.body as string) as { postUrl: string };
+          expect(postUrl).toBe(
+            target.kind === 'listing'
+              ? `https://example.com/shop/marketplace/listing/${TEST_SELLER_PUBKY}/${TEST_LISTING_ID}`
+              : 'https://example.com/shop/post/author-pubky-456/post-id-789',
+          );
+        }
+      } finally {
+        setBasePath('');
+        publicPath.value = undefined;
+      }
     });
   });
 

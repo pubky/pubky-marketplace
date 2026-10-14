@@ -78,8 +78,11 @@ function isRecord(value: unknown): value is Record<string, unknown> {
  * Return destinations for a Passport request made from `appOrigin`. Passport
  * rejects callbacks that are not HTTPS, so a plain-HTTP origin (local
  * development) sends none and Passport shows its own result screen. The return
- * page lives under the Shop's mount path (`/shop-embed` for the App wrapper).
- * Callers may supply a mount explicitly; otherwise use the configured Shop base path.
+ * page lives under the build's mount path. Callers may supply it as `basePath`;
+ * otherwise the configured Shop base path is used. This must be the mount path
+ * (`/shop-embed` when the App frames the Shop at pubky.app/shop), never the App's
+ * public `/shop`: the popup must load the Shop page itself, because inside the
+ * App's wrapper it would sit in an iframe with no `window.opener` to message.
  */
 export function passportCallbacks(appOrigin: string, basePath = getBasePath()): XCallbackParams | undefined {
   let origin: URL;

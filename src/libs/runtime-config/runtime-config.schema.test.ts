@@ -226,6 +226,15 @@ describe('runtimeEnvInputSchema', () => {
     }
   });
 
+  it('refuses duplicate auction lengths', () => {
+    expect(() =>
+      runtimeEnvInputSchemaWithDefaults.parse({ deployEnv: 'staging', auctionDurationsMinutes: '[15, 15]' }),
+    ).toThrow(/PUBKY_RUNTIME_AUCTION_DURATIONS_MINUTES value: duplicate lengths are not allowed/);
+    expect(() =>
+      runtimeEnvInputSchema.parse({ ...VALID_ENV_INPUT, auctionDurationsMinutes: '[10080, 1440, 10080]' }),
+    ).toThrow(/PUBKY_RUNTIME_AUCTION_DURATIONS_MINUTES value: duplicate lengths are not allowed/);
+  });
+
   it('keeps the fork Paykit setup creator parameter unless explicitly turned off', () => {
     expect(runtimeEnvInputSchema.parse(VALID_ENV_INPUT).paykitSetupCreatorParam).toBe(true);
     expect(runtimeEnvInputSchemaWithDefaults.parse({}).paykitSetupCreatorParam).toBe(true);
@@ -494,5 +503,36 @@ describe('embedding runtime values', () => {
       'https://pubky.app',
     ]);
     expect(() => runtimeConfigValueSchema.parse({ ...base, frameAncestors: ['https://*.pubky.app'] })).toThrow();
+  });
+});
+
+describe('shop public path runtime value', () => {
+  it('is unset by default, so the mount path serves people too', () => {
+    expect(runtimeEnvInputSchema.parse(VALID_ENV_INPUT).shopPublicPath).toBeUndefined();
+    expect(runtimeEnvInputSchemaWithDefaults.parse({}).shopPublicPath).toBeUndefined();
+    expect(runtimeEnvInputSchema.parse({ ...VALID_ENV_INPUT, shopPublicPath: '  ' }).shopPublicPath).toBeUndefined();
+  });
+
+  it('parses a path the host app serves the Shop at', () => {
+    expect(runtimeEnvInputSchema.parse({ ...VALID_ENV_INPUT, shopPublicPath: '/shop' }).shopPublicPath).toBe('/shop');
+    expect(runtimeEnvInputSchemaWithDefaults.parse({ shopPublicPath: '/shop' }).shopPublicPath).toBe('/shop');
+  });
+
+  it.each([
+    ['no leading slash', 'shop'],
+    ['a trailing slash', '/shop/'],
+    ['a dot segment', '/shop/../x'],
+    ['an origin', 'https://pubky.app/shop'],
+    ['a query', '/shop?x=1'],
+  ])('rejects %s', (_label, value) => {
+    expect(() => runtimeEnvInputSchema.parse({ ...VALID_ENV_INPUT, shopPublicPath: value })).toThrow();
+    expect(() => runtimeEnvInputSchemaWithDefaults.parse({ shopPublicPath: value })).toThrow();
+  });
+
+  it('validates the parsed value schema too', () => {
+    const base = runtimeEnvInputSchema.parse(VALID_ENV_INPUT);
+    expect(runtimeConfigValueSchema.parse({ ...base, shopPublicPath: '/shop' }).shopPublicPath).toBe('/shop');
+    expect(() => runtimeConfigValueSchema.parse({ ...base, shopPublicPath: '' })).toThrow();
+    expect(() => runtimeConfigValueSchema.parse({ ...base, shopPublicPath: '/shop/' })).toThrow();
   });
 });

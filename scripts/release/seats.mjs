@@ -27,7 +27,8 @@ export function shopCapabilities() {
 }
 
 // PROOF_ORIGIN is the origin the Shop is served from, with its mount path when embedded
-// (`https://pubky.app/shop`). `origin` is what browser permissions and the service CORS check see;
+// (`https://pubky.app/shop`, or `https://pubky.app/shop-embed` when the App owns `/shop` and frames the build:
+// the proof drives the build itself). `origin` is what browser permissions and the service CORS check see;
 // `at(path)` joins the mount path in front of a Shop route such as `/sign-in`.
 export function proofTarget(raw = process.env.PROOF_ORIGIN ?? 'https://shop.pubky.app') {
   const url = new URL(raw);
