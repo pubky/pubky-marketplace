@@ -112,6 +112,15 @@ describe('passportCallbacks', () => {
     );
   });
 
+  it("returns to the build's own mount path, not the App's /shop wrapper, when the App frames the Shop", () => {
+    expect(passportCallbacks('https://pubky.app', '/shop-embed')).toEqual({
+      xSource: 'Pubky Shop',
+      xSuccess: 'https://pubky.app/shop-embed/auth/passport/return?outcome=success',
+      xError: 'https://pubky.app/shop-embed/auth/passport/return?outcome=error',
+      xCancel: 'https://pubky.app/shop-embed/auth/passport/return?outcome=cancel',
+    });
+  });
+
   it('sends no callbacks from plain HTTP, which Passport would reject', () => {
     expect(passportCallbacks('http://localhost:3000')).toBeUndefined();
   });
