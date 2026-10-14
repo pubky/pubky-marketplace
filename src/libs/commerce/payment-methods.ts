@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import type { PAYMENT_METHOD_KINDS } from '@/libs/commerce/payment-options';
+import type { CommerceDeliveryAddressValue } from '@/libs/commerce/postal-address';
 import { usdtSetupActionSchema, usdtSetupStatusSchema } from '@/libs/commerce/usdt-seller-setup';
 
 /**
@@ -11,6 +12,16 @@ import { usdtSetupActionSchema, usdtSetupStatusSchema } from '@/libs/commerce/us
  * service records attestations (PayPal, buyer-reported and seller-confirmed).
  */
 export type PaymentMethodKind = (typeof PAYMENT_METHOD_KINDS)[number];
+
+/**
+ * The delivery address an auction winner sends with the payment method: the
+ * winner's order is created at close, before anyone has said where to ship.
+ * Sealed to the seller's delivery key like a checkout address; plaintext only
+ * where the seller published no key and the deployment still allows it.
+ */
+export type BindDeliveryAddress =
+  | { deliveryAddressEnvelope: { keyId: string; envelope: string } }
+  | { deliveryAddress: CommerceDeliveryAddressValue };
 
 /**
  * Public view of one seller's payment rails, served unauthenticated so buyers

@@ -1244,6 +1244,18 @@ describe('MarketplaceOrders digital cards (digital delivery design §3 "After pa
     expect(within(card).queryByRole('link', { name: /Track package/ })).not.toBeInTheDocument();
   });
 
+  it('shows no shipping amount on a digital order card, for the buyer or the seller', () => {
+    ordersState.orders = [digitalView('delivered', 'buyer'), digitalView('paid', 'seller')];
+
+    render(<MarketplaceOrders />);
+
+    for (const card of screen.getAllByText(/Field guide/).map((node) => node.closest('[data-slot="card"]'))) {
+      expect(within(card as HTMLElement).queryByText(/Shipping/)).not.toBeInTheDocument();
+      expect(within(card as HTMLElement).queryByRole('button', { name: /Packing slip/i })).not.toBeInTheDocument();
+      expect(within(card as HTMLElement).queryByRole('button', { name: 'Add tracking' })).not.toBeInTheDocument();
+    }
+  });
+
   it('shows the seller no purchase panel', () => {
     ordersState.orders = [digitalView('delivered', 'seller')];
 

@@ -4,7 +4,12 @@ import {
   formatBitcoinAwareMoney,
   satoshiCount,
 } from '@/libs/commerce/bitcoin-payment-code';
-import { CHECKOUT_HOLD_COPY, formatHoldDeadline, PAYMENT_WINDOW_ELAPSED_REASON } from '@/libs/commerce/checkout-hold';
+import {
+  buyerPayByDeadline,
+  CHECKOUT_HOLD_COPY,
+  formatHoldDeadline,
+  PAYMENT_WINDOW_ELAPSED_REASON,
+} from '@/libs/commerce/checkout-hold';
 import { buyerCheckoutStateLabel, formatRemainingHMmSs, reservedWhileYouPayCopy } from '@/libs/commerce/checkout-phase';
 import type { PaymentMethodKind } from '@/libs/commerce/payment-methods';
 import type { CommerceMoney } from '@/libs/commerce/transaction-contracts';
@@ -65,6 +70,8 @@ type BitcoinStatusOrder = {
   paykitRequestState?: string | null;
   paykitDeliveryState?: string | null;
   holdExpiresAt?: string | null;
+  paykitExpiresAt?: string | null;
+  auctionAggregateId?: string | null;
   paykitSellerConfirmationDeadline?: string | null;
   subtotal?: CommerceMoney;
   shipping?: CommerceMoney;
@@ -486,7 +493,7 @@ export function buyerCheckoutProgressCopy(
       return bitcoinConfirmationExists(order, payment) ? PAYMENT_CONFIRMED_ON_CHAIN_COPY : PAYMENT_SEEN_LABEL;
     }
   }
-  if (order.paymentMethod) return reservedWhileYouPayCopy(order.holdExpiresAt, nowMs);
+  if (order.paymentMethod) return reservedWhileYouPayCopy(buyerPayByDeadline(order), nowMs);
   return buyerCheckoutStateLabel(order);
 }
 

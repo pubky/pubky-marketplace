@@ -43,6 +43,28 @@ export function formatHoldDeadline(holdExpiresAt: string | null | undefined): st
   return formatOrderInstant(holdExpiresAt);
 }
 
+type PayByOrder = {
+  holdExpiresAt?: string | null;
+  paykitExpiresAt?: string | null;
+  paykitRequestState?: string | null;
+  auctionAggregateId?: string | null;
+};
+
+/**
+ * The deadline the buyer is told to pay by. An auction winner's order starts
+ * from the reservation-based hold; once Paykit activates the request, the
+ * request's own deadline is the wallet's real one, so that is shown instead.
+ * Every other order keeps the hold deadline.
+ */
+export function buyerPayByDeadline(order: PayByOrder): string | null {
+  const requestDeadline = order.paykitExpiresAt;
+  const activated = Boolean(order.paykitRequestState) && order.paykitRequestState !== 'preparing';
+  if (order.auctionAggregateId && activated && requestDeadline && formatHoldDeadline(requestDeadline)) {
+    return requestDeadline;
+  }
+  return order.holdExpiresAt ?? null;
+}
+
 export function holderUnboundCopy(holdExpiresAt: string | null | undefined): string {
   const deadline = formatHoldDeadline(holdExpiresAt);
   return deadline ? `The item is held for you until ${deadline}.` : 'The item is held for you once a payment starts.';

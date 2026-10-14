@@ -217,6 +217,29 @@ describe('marketplace order projection — Bitcoin quote', () => {
     },
   );
 
+  it('carries the activated paykit request deadline from the wire', () => {
+    const parsed = marketplaceOrderSchema.safeParse({
+      ...createOrderFixture('pending_payment'),
+      ...(toCamelCaseWire({ paykit_expires_at: '2026-08-20T21:07:00.000Z' }) as Record<string, unknown>),
+    });
+
+    expect(parsed.success).toBe(true);
+    if (parsed.success) expect(parsed.data.paykitExpiresAt).toBe('2026-08-20T21:07:00.000Z');
+  });
+
+  it.each([undefined, null, 42])(
+    'reads paykit_expires_at=%s as no activated deadline without failing the order',
+    (value) => {
+      const parsed = marketplaceOrderSchema.safeParse({
+        ...createOrderFixture('pending_payment'),
+        ...(toCamelCaseWire({ paykit_expires_at: value }) as Record<string, unknown>),
+      });
+
+      expect(parsed.success).toBe(true);
+      if (parsed.success) expect(parsed.data.paykitExpiresAt ?? null).toBeNull();
+    },
+  );
+
   it.each([undefined, null])('accepts an order with bitcoin_quote %s', (bitcoinQuote) => {
     const parsed = marketplaceOrderSchema.safeParse({
       ...createOrderFixture('pending_payment'),

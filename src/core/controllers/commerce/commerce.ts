@@ -24,7 +24,7 @@ import {
   type MarketplaceDigitalDeliveryInput,
 } from '@/libs/commerce/digital';
 import type { CommerceDigitalLock } from '@/libs/commerce/marketplace-records';
-import type { PaymentMethodKind } from '@/libs/commerce/payment-methods';
+import type { BindDeliveryAddress, PaymentMethodKind } from '@/libs/commerce/payment-methods';
 import { resolveCheckoutFulfillment } from '@/libs/commerce/pickup';
 import type { CommerceDeliveryAddressValue } from '@/libs/commerce/postal-address';
 import type { PrivRecoveryKeyExport } from '@/libs/commerce/priv-recovery-key';
@@ -636,8 +636,8 @@ export class CommerceController {
   }
 
   /** Buyer's one-shot payment-method binding for an order. */
-  static async bindPaymentMethod(orderId: string, method: PaymentMethodKind) {
-    return await CommerceApplication.bindPaymentMethod(this.getCurrentUserPubky(), orderId, method);
+  static async bindPaymentMethod(orderId: string, method: PaymentMethodKind, delivery?: BindDeliveryAddress) {
+    return await CommerceApplication.bindPaymentMethod(this.getCurrentUserPubky(), orderId, method, delivery);
   }
 
   /** Buyer's PayPal payment report (attestation, never advances payment). */

@@ -95,6 +95,7 @@ beforeEach(() => {
     availableMethods: methodPayment.availableMethods,
     bitcoinOfferUnavailable: false,
     configError: null,
+    deliveryAddress: null,
     pendingAction: null,
     bind: methodPayment.bind,
     markPaid: vi.fn(),

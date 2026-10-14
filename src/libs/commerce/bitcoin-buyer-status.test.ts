@@ -76,6 +76,22 @@ describe('bitcoin buyer status', () => {
     }
   });
 
+  it('counts an auction winner down to the activated request deadline, not the reservation-based hold', () => {
+    const auction = {
+      paymentMethod: 'bitcoin' as const,
+      paykitRequestState: 'preparing' as string | null,
+      paykitExpiresAt: null as string | null,
+      holdExpiresAt: '2026-09-28T11:20:00.000Z',
+      auctionAggregateId: 'listing:seller_boots',
+    };
+    expect(buyerCheckoutProgressCopy(auction, null, NOW)).toBe('Awaiting payment · Item reserved · 20:00');
+    const activated = { ...auction, paykitRequestState: 'pending', paykitExpiresAt: '2026-09-28T11:12:00.000Z' };
+    expect(buyerCheckoutProgressCopy(activated, null, NOW)).toBe('Awaiting payment · Item reserved · 12:00');
+    expect(buyerCheckoutProgressCopy({ ...activated, auctionAggregateId: null }, null, NOW)).toBe(
+      'Awaiting payment · Item reserved · 20:00',
+    );
+  });
+
   it('names the seller confirm-by time once a payment is seen', () => {
     expect(buyerCheckoutProgressCopy(seenOrder, { state: 'awaiting_entitlement' }, NOW)).toBe(
       `Seller confirms by Sep 29, 2026, 10:56 AM UTC. ${COUNTDOWN}`,

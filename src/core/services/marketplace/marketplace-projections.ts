@@ -698,6 +698,11 @@ export const marketplaceOrderProjectionSchema = z
     paykitSellerConfirmationEnteredAt: z.string().nullable().optional(),
     paykitSellerConfirmationDeadline: z.string().nullable().optional(),
     paykitTotalSats: z.number().int().nonnegative().nullable().optional(),
+    // The activated Paykit request's deadline: the wallet's own "pay by".
+    // Null until the request is activated (an upstream auction bind starts
+    // from the reservation-based hold). Tolerant: a malformed value reads as
+    // absent so the hold deadline still shows.
+    paykitExpiresAt: z.string().nullish().catch(null),
     // Merchandise before the per-invoice amount code, and the exact bitcoin
     // amount the buyer pays. A malformed value is dropped so one bad money
     // object cannot fail the order.
@@ -712,6 +717,10 @@ export const marketplaceOrderProjectionSchema = z
     // Drop orders (ADR 0026): the bound drop aggregate and, once paid, the
     // gapless edition number assigned inside the exactly-once confirmation.
     dropAggregateId: z.string().nullable().optional(),
+    // An auction winner's order is created at close, with no delivery
+    // address yet; true until the winner sends one with the payment method.
+    auctionAggregateId: z.string().nullable().optional(),
+    shippingAddressRequired: z.boolean().optional(),
     edition: z.number().int().min(1).nullable().optional(),
     createdAt: z.string(),
     updatedAt: z.string(),

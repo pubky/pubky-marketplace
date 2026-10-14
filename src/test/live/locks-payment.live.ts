@@ -31,6 +31,18 @@ import { beforeAll, describe, expect, it } from 'vitest';
  *     (default http://127.0.0.1:8080) started with LOCKS_SERVER_URL and both
  *     LOCKS_* keys, per docs/ecommerce/RUNNING.md
  *   - network access to the Pubky HTTP relay for the AuthToken session flows.
+ *
+ * A Locks listing is digital-only: the seller publishes the listing record
+ * with `digitalLock` and `fulfillmentMethods: ['digital']` to their homeserver
+ * and the service registers it through `listing.sync` (the strict
+ * `listing.register` command cannot carry a lock, and the service refuses a
+ * lock beside any physical or pickup method). The buyer's checkout is a
+ * digital line with no delivery address.
+ *
+ * Run (env var names only; none is required when the defaults hold):
+ *   MARKETPLACE_SERVICE_URL, PAYMENTS_ENV_LOCKS_URL, PAYMENTS_ENV_PAYKIT_URL,
+ *   PAYMENTS_ENV_DIR
+ *   npm run test:marketplace:locks -- src/test/live/locks-payment.live.ts
  */
 
 const SERVICE_URL = process.env.MARKETPLACE_SERVICE_URL ?? 'http://127.0.0.1:8080';
@@ -143,6 +155,11 @@ type AppModules = {
   MarketplaceGatewayService: typeof import('@/services/marketplace/marketplace').MarketplaceGatewayService;
   MarketplaceSessionService: typeof import('@/services/marketplace/marketplace-session').MarketplaceSessionService;
   sdk: typeof import('@synonymdev/pubky');
+  commerceListingRecordSchema: typeof import('@/libs/commerce/marketplace-records').commerceListingRecordSchema;
+  commerceConfig: typeof import('@/config/commerce');
+  HomeserverService: typeof import('@/services/homeserver/homeserver').HomeserverService;
+  CommerceHomeserverService: typeof import('@/services/homeserver/commerce/commerce').CommerceHomeserverService;
+  useAuthStore: typeof import('@/stores/auth/auth.store').useAuthStore;
 };
 
 describe('locks-paykit live purchase (composed environment)', () => {
@@ -179,14 +196,35 @@ describe('locks-paykit live purchase (composed environment)', () => {
       { MarketplaceGatewayService },
       { MarketplaceSessionService },
       sdk,
+      { commerceListingRecordSchema },
+      commerceConfig,
+      { HomeserverService },
+      { CommerceHomeserverService },
+      { useAuthStore },
     ] = await Promise.all([
       import('@/application/commerce/commerce'),
       import('@/services/locks/locks'),
       import('@/services/marketplace/marketplace'),
       import('@/services/marketplace/marketplace-session'),
       import('@synonymdev/pubky'),
+      import('@/libs/commerce/marketplace-records'),
+      import('@/config/commerce'),
+      import('@/services/homeserver/homeserver'),
+      import('@/services/homeserver/commerce/commerce'),
+      import('@/stores/auth/auth.store'),
     ]);
-    modules = { CommerceApplication, LocksGatewayService, MarketplaceGatewayService, MarketplaceSessionService, sdk };
+    modules = {
+      CommerceApplication,
+      LocksGatewayService,
+      MarketplaceGatewayService,
+      MarketplaceSessionService,
+      sdk,
+      commerceListingRecordSchema,
+      commerceConfig,
+      HomeserverService,
+      CommerceHomeserverService,
+      useAuthStore,
+    };
   });
 
   async function establishSessionFor(keypair: import('@synonymdev/pubky').Keypair): Promise<string> {
@@ -399,31 +437,75 @@ describe('locks-paykit live purchase (composed environment)', () => {
     ) as { status: string };
     expect(prepared.status).toBe('prepared');
 
-    // --- 7. Marketplace: seller registers the digital listing ----------------
+    // --- 7. Marketplace: seller publishes the digital Locks listing ----------
+    // The record goes to the seller's homeserver (the canonical copy) with the
+    // Locks policy and exactly `['digital']`; then `listing.sync` makes the
+    // service read it and register the listing.
     await establishSessionFor(sellerKeypair);
     const listingId = `live_${runId}`;
     const aggregateId = `listing:${seller}_${listingId}`;
-    const registered = await MarketplaceGatewayService.execute(seller, {
+    const nowIso = new Date().toISOString();
+    const listingRecord = modules.commerceListingRecordSchema.parse({
+      schemaVersion: modules.commerceConfig.COMMERCE_CONTRACT_VERSION,
+      recordType: 'listing',
+      ownerPubky: seller,
+      revision: 1,
+      createdAt: nowIso,
+      updatedAt: nowIso,
+      listingId,
+      state: 'active',
+      title: 'Live locks-paykit digital listing',
+      description: 'A digital listing guarded by a Locks paykit-payment policy.',
+      taxonomyVersion: modules.commerceConfig.COMMERCE_TAXONOMY_VERSION,
+      categoryId: 'fashion-shoes-boots',
+      condition: 'new',
+      tags: ['live-proof'],
+      location: { countryCode: 'PT', region: 'Lisboa' },
+      media: [
+        {
+          id: 'image_01',
+          type: 'image',
+          url: `pubky://${seller}/pub/pubky.app/marketplace/v1/media/image_01`,
+          contentHash: resourceHash,
+          mimeType: 'image/jpeg',
+          byteSize: 10_000,
+          width: 1_200,
+          height: 1_600,
+          altText: 'Live locks-paykit digital listing',
+        },
+      ],
+      variants: [{ id: 'variant_01', options: {}, quantity: 3, mediaIds: ['image_01'], enabled: true }],
+      sale: {
+        format: 'fixed_price',
+        unitPrice: { amountMinor: AMOUNT_SATS, currency: 'BTC', exponent: 8 },
+        acceptsOffers: false,
+      },
+      fulfillmentMethods: ['digital'],
+      shippingOptions: [],
+      returnPolicy: { acceptsReturns: false, buyerPaysReturnShipping: false },
+      digitalLock: { policyUri, criterionId: 'criterion-1', contentPath, resourceHash, minimumConfirmations: 1 },
+      adultOnly: false,
+    });
+    expect(listingRecord.fulfillmentMethods).toEqual(['digital']);
+    // The write goes through the app's own homeserver path (retry policy
+    // included): its auth store holds the seller's homeserver session.
+    const sellerHomeserver = await modules.HomeserverService.signIn({ keypair: sellerKeypair });
+    if (sellerHomeserver === undefined) throw new Error(`Could not sign the seller ${seller} in to the homeserver.`);
+    modules.useAuthStore.setState({ session: sellerHomeserver.session, currentUserPubky: seller });
+    await modules.CommerceHomeserverService.putJson(
+      `pubky://${seller}/pub/pubky.app/marketplace/v1/listings/${listingId}`,
+      listingRecord as unknown as Record<string, unknown>,
+    );
+    const synced = await MarketplaceGatewayService.execute(seller, {
       version: 1 as const,
       commandId: crypto.randomUUID(),
       aggregateId,
       expectedRevision: 0,
       issuedAt: new Date().toISOString(),
-      kind: 'listing.register' as const,
-      payload: {
-        sellerPubky: seller,
-        listingId,
-        title: 'Live locks-paykit digital listing',
-        listingRevision: 1,
-        contentHash: resourceHash,
-        quantity: 3,
-        unitPrice: { amountMinor: AMOUNT_SATS, currency: 'BTC', exponent: 8 },
-        shippingMinor: 0,
-        saleFormat: 'fixed_price' as const,
-        fulfillmentMethods: ['shipping'] as ('shipping' | 'pickup')[],
-      },
+      kind: 'listing.sync' as const,
+      payload: { sellerPubky: seller, listingId },
     });
-    expect(registered).toMatchObject({ ok: true, revision: 1 });
+    expect(synced).toMatchObject({ ok: true });
 
     // --- 8. Buyer: checkout creates the order + awaiting_entitlement payment --
     const buyerActor = await establishSessionFor(buyerKeypair);
@@ -438,16 +520,14 @@ describe('locks-paykit live purchase (composed environment)', () => {
       issuedAt: new Date().toISOString(),
       kind: 'checkout.create' as const,
       payload: {
-        lines: [{ listingAggregateId: aggregateId, expectedRevision: listingProjection!.serverRevision, quantity: 1 }],
-        deliveryAddress: {
-          name: 'Live Buyer',
-          line1: '1 Regtest Way',
-          line2: '',
-          city: 'Lisbon',
-          region: 'Lisboa',
-          postalCode: '1000-001',
-          countryCode: 'PT',
-        },
+        lines: [
+          {
+            listingAggregateId: aggregateId,
+            expectedRevision: listingProjection!.serverRevision,
+            quantity: 1,
+            fulfillment: 'digital' as const,
+          },
+        ],
       },
     });
     expect(checkedOut).toMatchObject({ ok: true, result: { kind: 'checkout' } });

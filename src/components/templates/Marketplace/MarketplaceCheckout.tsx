@@ -985,7 +985,7 @@ function MarketplaceCartCheckout() {
                         <div className="grid gap-1">
                           <div className="flex justify-between">
                             <Typography as="span" className="text-foreground">
-                              Shipping
+                              {allDigital ? 'Delivery' : 'Shipping'}
                             </Typography>
                             {shippingTotals.length > 0 && (
                               <div className="flex flex-col items-end">
