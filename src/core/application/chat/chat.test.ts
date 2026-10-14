@@ -1,10 +1,21 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ChatApplication } from '@/application/chat/chat';
-import { CHAT_PING_REPEAT_MS, CHAT_RECONCILE_ACTIVE_WINDOW_MS, CHAT_RECONCILE_IDLE_MS } from '@/config/chat';
+import {
+  CHAT_PEER_KEY_RECHECK_MS,
+  CHAT_PING_REPEAT_MS,
+  CHAT_RECONCILE_ACTIVE_WINDOW_MS,
+  CHAT_RECONCILE_IDLE_MS,
+} from '@/config/chat';
 import { chatMessageUrl, chatPingSlot, chatPrivateKeyUrl, chatPublicKeyUrl } from '@/libs/chat/paths';
 import { NetworkErrorCode, RateLimitErrorCode } from '@/libs/error/error.codes';
 import { Err } from '@/libs/error/error.factories';
 import { ErrorService } from '@/libs/error/error.types';
+import {
+  ChatConversationModel,
+  ChatIdentityModel,
+  ChatMessageModel,
+  ChatSyncStateModel,
+} from '@/models/chat/chat.models';
 import { ChatHomeserverService } from '@/services/homeserver/chat/chat-storage';
 import { HomeserverService } from '@/services/homeserver/homeserver';
 import { InboxService } from '@/services/inbox/inbox';
@@ -485,6 +496,63 @@ describe('ChatApplication', () => {
       const rotated = await LocalChatService.getConversation(ALICE, BOB);
       expect(rotated?.folder_id).not.toBe(oldFolder);
       expect((await LocalChatService.getSyncState(ALICE, BOB))?.list_cursor).toBeNull();
+    });
+
+    // Bob reads Alice's first message, loses his private key (new install) and
+    // re-keys on his next sign-in while Alice's tab sees no key event, so she
+    // keeps the keys she cached. Bob then replies into the folder of the new pair.
+    async function rekeyBobAndReply(): Promise<void> {
+      await ChatApplication.ensureIdentity(ALICE);
+      await ChatApplication.ensureIdentity(BOB);
+      await ChatApplication.openConversation(ALICE, BOB);
+      await ChatApplication.queueMessage(ALICE, { peer: BOB, body: 'hi bob' });
+      await ChatApplication.flushOutbox(ALICE);
+      await ChatApplication.seedConversations(BOB, [ALICE]);
+      homeserver.files.delete(chatPrivateKeyUrl(BOB));
+      await ChatIdentityModel.table.delete(BOB);
+      for (const table of [ChatConversationModel.table, ChatMessageModel.table, ChatSyncStateModel.table]) {
+        await table.where('owner_id').equals(BOB).delete();
+      }
+      await ChatApplication.ensureIdentity(BOB);
+      await ChatApplication.openConversation(BOB, ALICE);
+      await ChatApplication.queueMessage(BOB, { peer: ALICE, body: 'reply with a new key' });
+      await ChatApplication.flushOutbox(BOB);
+    }
+
+    // Sorted: under a frozen clock both messages share a millisecond, so their order is the random suffix.
+    const aliceBodies = async () =>
+      (await LocalChatService.listMessages(ALICE, BOB, { limit: 5 })).map((row) => row.body).sort();
+
+    it('notices a re-keyed peer from a ping that names their new folder', async () => {
+      await rekeyBobAndReply();
+      const bob = await LocalChatService.getConversation(BOB, ALICE);
+      const file = (await LocalChatService.listMessages(BOB, ALICE, { limit: 1 }))[0].file_name;
+
+      await ChatApplication.handlePing(ALICE, {
+        sender: BOB,
+        slot: chatPingSlot(bob!.own_folder_id!),
+        revision: 'r1',
+        received_at: 'now',
+        expires_at: 'later',
+        payload: JSON.stringify({ v: 0, t: 'chat', folder: bob!.own_folder_id, file }),
+      });
+      expect(await aliceBodies()).toEqual(['hi bob', 'reply with a new key']);
+      expect((await LocalChatService.getConversation(ALICE, BOB))?.folder_id).toBe(bob!.own_folder_id);
+    });
+
+    it('notices a re-keyed peer on reconcile once the key check is stale', async () => {
+      vi.useFakeTimers({ toFake: ['Date'] });
+      try {
+        await rekeyBobAndReply();
+        await ChatApplication.syncAll(ALICE, 'reconcile');
+        expect(await aliceBodies()).toEqual(['hi bob']);
+
+        vi.setSystemTime(Date.now() + CHAT_PEER_KEY_RECHECK_MS + 1);
+        await ChatApplication.syncAll(ALICE, 'reconcile');
+        expect(await aliceBodies()).toEqual(['hi bob', 'reply with a new key']);
+      } finally {
+        vi.useRealTimers();
+      }
     });
   });
 });

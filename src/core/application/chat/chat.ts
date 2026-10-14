@@ -188,7 +188,10 @@ export class ChatApplication {
     const stale = Date.now() - (state?.peer_key_checked_at ?? 0) > CHAT_PEER_KEY_RECHECK_MS;
 
     const known = this.knownPeerKeys(identity, row);
-    if (known && !options.force) return known;
+    // A ready peer's key is re-read on the same cadence as a missing one: a
+    // peer who re-keys (new install) writes to a folder we would otherwise
+    // never list unless their homeserver's live stream happened to be open.
+    if (known && !options.force && !stale) return known;
     if (row && row.peer_state === 'no_key' && !stale && !options.force) return { state: 'no_key' };
 
     const lookup = await ChatHomeserverService.readPublicKey(peer);
@@ -216,7 +219,12 @@ export class ChatApplication {
       }
       return { state: 'no_key' };
     }
-    if (row) {
+    const unchanged =
+      row?.peer_state === 'ready' &&
+      row.peer_key_id === record.kid &&
+      row.folder_id === keys.peerFolderId &&
+      row.own_folder_id === keys.ownFolderId;
+    if (row && !unchanged) {
       const rotated = row.peer_key_id !== null && row.peer_key_id !== record.kid;
       await LocalChatService.updateConversation(me, peer, {
         peer_state: 'ready',
@@ -830,7 +838,11 @@ export class ChatApplication {
     const existing = await LocalChatService.getConversation(me, peer);
     if (!existing) await this.ensureConversationRow(me, peer, 'ping');
     // A ping is strong evidence the sender has a key now: re-probe a peer we last saw without one.
-    const keys = await this.resolvePeerKey(me, peer, { force: existing === null || existing.peer_state === 'no_key' });
+    let keys = await this.resolvePeerKey(me, peer, { force: existing === null || existing.peer_state === 'no_key' });
+    if (keys.state === 'ready' && payload && payload.folder !== keys.peerFolderId) {
+      // The sender writes to a folder we do not derive: their key may have changed since we cached it.
+      keys = await this.resolvePeerKey(me, peer, { force: true });
+    }
     if (keys.state !== 'ready') return;
     const hintFile = payload && payload.folder === keys.peerFolderId ? payload.file : undefined;
     await this.syncConversation(me, peer, { reason: 'ping', hintFile });
