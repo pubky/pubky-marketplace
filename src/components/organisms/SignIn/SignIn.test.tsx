@@ -554,7 +554,7 @@ describe('SignInContent - Bitkit grant sign-in', () => {
     expect(screen.getByRole('button', { name: 'Copy authentication link' })).toBeInTheDocument();
   });
 
-  it('tells new Bitkit users to create a Pubky identity before scanning the QR', async () => {
+  it('shows no identity hint on either signer tab', async () => {
     vi.mocked(useGrantSignInAvailable).mockReturnValue(true);
     await act(async () => {
       render(<SignInContent />);
@@ -565,7 +565,8 @@ describe('SignInContent - Bitkit grant sign-in', () => {
 
     fireEvent.click(screen.getByRole('radio', { name: 'Bitkit' }));
 
-    expect(screen.getByText(hint)).toBeInTheDocument();
+    expect(screen.getByTestId('sign-in-bitkit-option')).toBeInTheDocument();
+    expect(screen.queryByText(hint)).not.toBeInTheDocument();
   });
 
   it('authorizes using the selected signer on mobile', async () => {

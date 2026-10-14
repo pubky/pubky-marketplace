@@ -142,7 +142,6 @@ const SignInBothSigners = ({ ring }: { ring: TSignerAuth }) => {
   const bitkit = useMobileAuth({ type: 'grant' });
   const [signer, setSigner] = useState<keyof typeof SIGNERS>('ring');
   const auth = signer === 'ring' ? ring : bitkit;
-  const identityHint = SIGNERS[signer].identityHint;
   return (
     <Container size="container">
       <SignInHeader signer="both" />
@@ -171,11 +170,6 @@ const SignInBothSigners = ({ ring }: { ring: TSignerAuth }) => {
             <div className="w-full md:hidden">
               <SignInAuthorizeButton signer={signer} auth={auth} />
             </div>
-            {identityHint && (
-              <Typography as="p" className="text-sm text-muted-foreground">
-                {identityHint}
-              </Typography>
-            )}
           </div>
         </IllustratedCard>
         <IllustratedCard
