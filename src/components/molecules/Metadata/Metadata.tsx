@@ -1,4 +1,4 @@
-import { getBasePath, getShopBaseUrl, withBasePath } from '@/config/base-path';
+import { getBasePath, getShopBaseUrl, withBasePath, withPublicPath } from '@/config/base-path';
 import {
   getAuthor,
   getCreator,
@@ -73,7 +73,7 @@ export function Metadata({
   const resolvedImage = withBasePath(image ?? getPreviewImage());
   const resolvedType = type ?? getType();
   const shopBaseUrl = getShopBaseUrl();
-  const resolvedUrl = url === undefined ? shopBaseUrl : withBasePath(url);
+  const resolvedUrl = url === undefined ? shopBaseUrl : withPublicPath(url);
   const resolvedSiteName = siteName ?? getSiteName();
   const resolvedLocale = locale ?? getLocale();
   const resolvedAuthor = author ?? getAuthor();

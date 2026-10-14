@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { isValidBasePath } from '../base-path/base-path';
 
 /**
  * Shared, zod-only schema for the environment-specific values that must be configurable at
@@ -258,6 +259,16 @@ const optionalFrameAncestorsFromString = (allowLocalHttp: boolean) =>
       return parsed;
     })
     .pipe(z.array(frameAncestorValue).optional());
+
+/**
+ * The path the host app serves the Shop's user-facing pages at (`/shop`), when that differs from the
+ * build's mount path (`/shop-embed`). Same shape as a mount path, and never empty: unset means "same
+ * as the mount path".
+ */
+const shopPublicPathValue = z.string().refine((value) => value !== '' && isValidBasePath(value), {
+  message: 'Expected a path like /shop: leading slash, no trailing slash, unreserved characters only',
+});
+const optionalShopPublicPathFromString = optionalTrimmedString.pipe(shopPublicPathValue.optional());
 
 /** Rates validate eagerly (bad number/range throws here); the default applies in the value schema. */
 const sampleRateFromString = z
@@ -541,6 +552,14 @@ export const runtimeConfigValueSchema = networkConfigValueSchema.extend({
    * mounted under a base path" (see `getStorageAdoptLegacy`).
    */
   storageAdoptLegacy: z.boolean().optional(),
+  /**
+   * The path the host app serves the Shop at for people (`/shop` on pubky.app), when the build is
+   * mounted elsewhere (`NEXT_PUBLIC_BASE_PATH=/shop-embed`, the same-origin iframe target). Share
+   * links, canonical and Open Graph URLs and returns that land top-level use it; assets, API calls
+   * and the Passport popup return stay on the mount path. Absent means the mount path itself
+   * (see `getShopPublicPath`).
+   */
+  shopPublicPath: shopPublicPathValue.optional(),
   preludeSdkKey: nonEmptyStringValue.optional(),
   preludeSdkTimeoutMs: positiveIntValue.default(APP_RUNTIME_DEFAULTS.preludeSdkTimeoutMs),
   plausibleDomain: nonEmptyStringValue.optional(),
@@ -631,6 +650,7 @@ export const runtimeEnvInputSchema = z
     frameAncestors: optionalFrameAncestorsFromString(false),
     embedded: optionalBooleanFromString,
     storageAdoptLegacy: optionalBooleanFromString,
+    shopPublicPath: optionalShopPublicPathFromString,
     preludeSdkKey: optionalTrimmedString,
     preludeSdkTimeoutMs: optionalPositiveIntFromString,
     plausibleDomain: optionalTrimmedString,
@@ -730,6 +750,7 @@ export const runtimeEnvInputSchemaWithDefaults = z
     frameAncestors: optionalFrameAncestorsFromString(true),
     embedded: optionalBooleanFromString,
     storageAdoptLegacy: optionalBooleanFromString,
+    shopPublicPath: optionalShopPublicPathFromString,
     preludeSdkKey: optionalTrimmedString,
     preludeSdkTimeoutMs: optionalPositiveIntFromString,
     plausibleDomain: optionalTrimmedString,
@@ -821,6 +842,7 @@ export const PUBKY_RUNTIME_ENV_NAMES: Record<keyof RuntimeConfig, string> = {
   frameAncestors: 'PUBKY_RUNTIME_FRAME_ANCESTORS',
   embedded: 'PUBKY_RUNTIME_EMBEDDED',
   storageAdoptLegacy: 'PUBKY_RUNTIME_STORAGE_ADOPT_LEGACY',
+  shopPublicPath: 'PUBKY_RUNTIME_SHOP_PUBLIC_PATH',
   preludeSdkKey: 'PUBKY_RUNTIME_PRELUDE_SDK_KEY',
   preludeSdkTimeoutMs: 'PUBKY_RUNTIME_PRELUDE_SDK_TIMEOUT_MS',
   plausibleDomain: 'PUBKY_RUNTIME_PLAUSIBLE_DOMAIN',

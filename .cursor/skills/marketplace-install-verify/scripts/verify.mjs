@@ -17,14 +17,17 @@ import { dirname, join, resolve } from 'node:path';
 import tls from 'node:tls';
 import { fileURLToPath } from 'node:url';
 import {
+  checkPaypalReturnBase,
   compareMigrations,
   expectedMigration,
   extractRuntimeConfig,
+  framableBySameOrigin,
   frameAncestorsAllow,
   isTruthy,
   locksReturnOriginsFromToml,
   missingOrigins,
   normalizeBase,
+  parseEmbedPath,
   parseEnvFile,
   parseJsonLenient,
   parseList,
@@ -33,6 +36,7 @@ import {
   parseSourceRef,
   parseTomlFlat,
   paykitTrustedKeys,
+  publicBasePath,
   redact,
   short,
 } from './lib.mjs';
@@ -124,6 +128,16 @@ const SHOP_PATH = (() => {
     process.exit(2);
   }
 })();
+// The Shop build the App frames at <origin>/shop (`/shop-embed` at pubky.app). Unset when the Shop is served
+// directly at SHOP_PATH, the standalone shape (a Vercel instance, shop.pubky.app).
+const EMBED_PATH = (() => {
+  try {
+    return parseEmbedPath(get('SHOP_EMBED_PATH'));
+  } catch (error) {
+    console.error(error.message);
+    process.exit(2);
+  }
+})();
 const SERVICE = url('SERVICE_URL');
 const PAYKIT = url('PAYKIT_URL');
 const LOCKS = url('LOCKS_URL');
@@ -147,6 +161,7 @@ const facts = {
   servicePaykitUrl: get('SERVICE_PAYKIT_SERVER_URL'),
   serviceLocksUrl: get('SERVICE_LOCKS_SERVER_URL'),
   serviceAllowedOrigins: get('SERVICE_ALLOWED_ORIGINS'),
+  servicePublicAppOrigin: get('SERVICE_PUBLIC_APP_ORIGIN'),
   serviceSandboxPayments: get('SERVICE_SANDBOX_PAYMENTS_ENABLED'),
   fiatPaykitUrl: get('FIAT_PAYKIT_SERVER_URL'),
   fiatTrustedLocksKey: get('FIAT_TRUSTED_LOCKS_KEY'),
@@ -382,13 +397,24 @@ async function sectionShop() {
     const host = new URL(origin).host;
     const page = await http(`${origin}${SHOP_PATH}`);
     const isHtml = (page.headers.get('content-type') ?? '').includes('text/html');
-    if (!check(`shop.page.${host}`, page.status === 200 && isHtml, `${SHOP_PATH} loads`, describe(page), 'check the Shop deployment and its logs')) continue;
+    if (!check(`shop.page.${host}`, page.status === 200 && isHtml, `${SHOP_PATH} loads`, describe(page), EMBED_PATH ? 'check the App deployment: its /shop route frames the Shop' : 'check the Shop deployment and its logs')) continue;
     const hsts = page.headers.get('strict-transport-security');
     if (hsts) pass(`shop.hsts.${host}`, 'HSTS header', hsts);
     else warn(`shop.hsts.${host}`, 'HSTS header', 'missing', 'send Strict-Transport-Security: max-age=63072000');
+    // The response that carries the Shop build's own HTML: the landing page when the Shop is served directly, the
+    // framed build at EMBED_PATH when the App owns SHOP_PATH (its page has the App's runtime config, not the Shop's).
+    let build = page;
+    if (EMBED_PATH) {
+      build = await http(`${origin}${EMBED_PATH}/marketplace`);
+      const buildHtml = (build.headers.get('content-type') ?? '').includes('text/html');
+      if (!check(`shop.embed.page.${host}`, build.status === 200 && buildHtml, `${EMBED_PATH}/marketplace loads (the build the App frames)`, describe(build), `route ${EMBED_PATH} and everything under it to the Shop deployment with the prefix kept`)) continue;
+      const csp = build.headers.get('content-security-policy');
+      const frameOptions = build.headers.get('x-frame-options');
+      check(`shop.embed.framing.${host}`, framableBySameOrigin(csp, frameOptions, origin), 'the framed build lets the App frame it', `${csp ?? 'no CSP'}${frameOptions ? `, X-Frame-Options ${frameOptions}` : ''}`, "set PUBKY_RUNTIME_FRAME_ANCESTORS='self' on the Shop and remove any DENY X-Frame-Options or frame-ancestors added by a proxy");
+    }
     let runtime = null;
     try {
-      runtime = extractRuntimeConfig(page.text);
+      runtime = extractRuntimeConfig(build.text);
     } catch (error) {
       runtime = null;
       info(`shop.runtime.${host}`, 'runtime config parse error', error.message);
@@ -410,6 +436,16 @@ async function sectionShop() {
         `${key} points at this stack`,
         `${runtime[key] ?? 'unset'}`,
         `set ${envName}=${expected} on the Shop and redeploy (runtime values change only on restart)`,
+      );
+    }
+    const publicBase = publicBasePath(SHOP_PATH);
+    if (EMBED_PATH && publicBase) {
+      check(
+        `shop.runtime.${host}.shopPublicPath`,
+        (runtime.shopPublicPath ?? '') === publicBase,
+        `share links and canonical URLs use ${publicBase}, not ${EMBED_PATH}`,
+        `shopPublicPath=${runtime.shopPublicPath ?? 'unset'}`,
+        `set PUBKY_RUNTIME_SHOP_PUBLIC_PATH=${publicBase} on the Shop: people open the App's ${publicBase}, and links to ${EMBED_PATH} load the Shop outside the App`,
       );
     }
     const expectations = [
@@ -437,9 +473,9 @@ async function sectionShop() {
         leftovers.join(', '),
         'replace every retired host in the Shop PUBKY_RUNTIME_* values',
       );
-    const llms = await http(`${origin}/llms.txt`);
+    const llms = await http(`${origin}${EMBED_PATH}/llms.txt`);
     const index = llms.text.match(/^INDEX\s*=\s*(\S+)/m)?.[1];
-    if (llms.status !== 200) warn(`shop.llms.${host}`, '/llms.txt served', describe(llms), 'check the Shop route /llms.txt');
+    if (llms.status !== 200) warn(`shop.llms.${host}`, `${EMBED_PATH}/llms.txt served`, describe(llms), `check the Shop route ${EMBED_PATH}/llms.txt`);
     else if (!index) warn(`shop.llms.${host}`, '/llms.txt names the index', 'no INDEX line', 'check the llms.txt template');
     else
       check(
@@ -725,6 +761,13 @@ async function sectionWiring() {
   originCheck('wiring.paykit-setup-origins', 'Paykit setup allows the Shop origins', facts.paykitSetupOrigins, 'PAYKIT_SETUP_ALLOWED_ORIGINS', 'PAYKIT_CONFIG_FILE');
   originCheck('wiring.locks-return-origins', 'Locks connect allows the Shop origins', facts.locksReturnOrigins, 'LOCKS_ALLOWED_RETURN_ORIGINS', 'LOCKS_CONFIG_FILE');
   originCheck('wiring.service-allowed-origins', 'service ALLOWED_ORIGINS lists the Shop origins', facts.serviceAllowedOrigins, 'SERVICE_ALLOWED_ORIGINS');
+  const publicBase = publicBasePath(SHOP_PATH);
+  if (!facts.servicePublicAppOrigin) skip('wiring.service-paypal-return', 'PayPal returns the buyer to the Shop', configHint('SERVICE_PUBLIC_APP_ORIGIN'));
+  else if (publicBase === undefined) skip('wiring.service-paypal-return', 'PayPal returns the buyer to the Shop', 'SHOP_PATH does not end in /marketplace, so the public path is unknown');
+  else {
+    const paypal = checkPaypalReturnBase(facts.servicePublicAppOrigin, { origins: SHOP_ORIGINS, publicBase, embedPath: EMBED_PATH });
+    check('wiring.service-paypal-return', paypal.ok, 'PayPal return and cancel URLs land on the Shop orders page', paypal.detail, paypal.hint);
+  }
   if (!facts.locksPaykitServerUrl) skip('wiring.locks-paykit-url', 'Locks [paykit] server_url', configHint('LOCKS_PAYKIT_SERVER_URL', 'LOCKS_CONFIG_FILE'));
   else {
     const target = normalizeBase(facts.locksPaykitServerUrl);
@@ -889,7 +932,7 @@ async function probeBrowser() {
   heading('browser');
   const { runShopBrowserProbe } = await import('./shop-browser-probe.mjs');
   for (const origin of SHOP_ORIGINS)
-    await runShopBrowserProbe({ get, origin, path: SHOP_PATH, service: SERVICE, nexus: NEXUS, forbiddenHosts: FORBIDDEN_HOSTS, out: OUT, record });
+    await runShopBrowserProbe({ get, origin, path: SHOP_PATH, embedPath: EMBED_PATH, service: SERVICE, nexus: NEXUS, forbiddenHosts: FORBIDDEN_HOSTS, out: OUT, record });
 }
 
 async function probeDeep() {
