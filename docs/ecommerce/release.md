@@ -156,6 +156,12 @@ id is what the proof's `EXPECTED_DPL` pins, and the release notes record it next
 marketplace service, the digest of the running image (Railway, or GCP once the service runs there) is the record; see
 [Backend releases](#backend-releases).
 
+After a deploy, `PROOF_ORIGIN=<origin> EXPECTED_DPL=dpl_<new> node scripts/release/served-checks.mjs` checks what the site
+serves with plain HTTP: the deployment id, that the Locks SDK wasm is named in a chunk and served as `application/wasm`
+byte-identical to the pinned SDK, USDT off in the served config, and the service's `/health`. The wasm sits in a lazy
+chunk, so the script reads webpack's chunk map (Next.js writes it in more than one shape) and crawls every chunk. It has
+no build-meta or version check, because the Shop publishes neither.
+
 A build takes about six minutes. Allow ten before treating it as stuck, and do not cancel earlier. On
 `Error: Deployment not found`, run `vercel ls pubky-marketplace-production --scope synonymdev` before redeploying.
 
