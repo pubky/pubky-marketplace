@@ -44,9 +44,12 @@ export function ChatConversation({ peerPubky }: { peerPubky: string }) {
     : identityState === 'needs_reauth'
       ? 'Sign in again to send messages.'
       : undefined;
-  const emptyHint = peerNotEnabled
-    ? `${name} hasn't set up messages yet. You can write now; it's delivered once they sign in.`
-    : `Say hello to ${name}.`;
+  const emptyHint =
+    identityState === 'needs_reauth'
+      ? undefined
+      : peerNotEnabled
+        ? `${name} hasn't set up messages yet. You can write now; it's delivered once they sign in.`
+        : `Say hello to ${name}.`;
 
   return (
     <ContentLayout

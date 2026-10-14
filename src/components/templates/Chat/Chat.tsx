@@ -55,7 +55,7 @@ export function Chat() {
         ) : (
           <>
             <ChatIdentityNotice identityState={identityState} onRetry={retry} />
-            {isLoading ? (
+            {identityState === 'needs_reauth' ? null : isLoading ? (
               <div className="flex flex-col gap-3" data-testid="chat-inbox-loading">
                 {[0, 1, 2].map((index) => (
                   <Skeleton key={index} className="h-18 w-full rounded-xl" />

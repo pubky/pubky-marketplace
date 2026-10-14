@@ -166,12 +166,13 @@ describe('Chat inbox — visual regression', () => {
     await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('chat-inbox-signed-out-desktop');
   });
 
+  // Without the chat scopes no key can be provisioned, so nothing can be listed: the notice stands alone.
   it('renders the re-approval notice when the sign-in lacks the chat scopes at desktop viewport', async () => {
-    scene.conversations = populated();
     scene.identityState = 'needs_reauth';
 
     const screen = await renderForVRT(<Chat />, { viewport: VRT_VIEWPORT_DESKTOP, disableHover: true });
     await expect.element(screen.getByTestId('chat-identity-notice')).toBeInTheDocument();
+    await expect.element(screen.getByTestId('chat-inbox-empty')).not.toBeInTheDocument();
     await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('chat-inbox-needs-reauth-desktop');
   });
 });

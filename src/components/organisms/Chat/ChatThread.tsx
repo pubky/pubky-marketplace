@@ -41,7 +41,7 @@ export function ChatThread({
   hasMore: boolean;
   onLoadOlder: () => void;
   onRetry: (id: string) => void;
-  emptyHint: string;
+  emptyHint?: string;
   className?: string;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -103,7 +103,7 @@ export function ChatThread({
             </Button>
           </div>
         ) : null}
-        {messages.length === 0 ? (
+        {messages.length === 0 && emptyHint ? (
           <div className="flex flex-1 items-center justify-center">
             <Typography as="p" size="sm" className="max-w-xs text-center text-muted-foreground">
               {emptyHint}

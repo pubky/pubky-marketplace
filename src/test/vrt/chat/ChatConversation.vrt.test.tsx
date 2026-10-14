@@ -275,9 +275,8 @@ describe('Chat conversation — visual regression', () => {
     await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('chat-conversation-signed-out-desktop');
   });
 
+  // Without the chat scopes no key exists, so the thread cannot have loaded: notice plus a disabled composer.
   it('renders the re-approval notice with a disabled composer at desktop viewport', async () => {
-    scene.messages = thread().slice(0, 3);
-    scene.conversation = conversation();
     scene.identityState = 'needs_reauth';
 
     const screen = await renderForVRT(<ChatConversation peerPubky={PEER} />, {
