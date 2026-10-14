@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ChatApplication } from '@/application/chat/chat';
 import {
+  CHAT_LIST_MAX_PAGES_PER_PASS,
+  CHAT_LIST_PAGE,
   CHAT_PEER_KEY_RECHECK_MS,
   CHAT_PING_REPEAT_MS,
   CHAT_RECONCILE_ACTIVE_WINDOW_MS,
@@ -522,6 +524,31 @@ describe('ChatApplication', () => {
     // Sorted: under a frozen clock both messages share a millisecond, so their order is the random suffix.
     const aliceBodies = async () =>
       (await LocalChatService.listMessages(ALICE, BOB, { limit: 5 })).map((row) => row.body).sort();
+
+    it('lists at most CHAT_LIST_MAX_PAGES_PER_PASS pages of a peer folder per pass and keeps the cursor', async () => {
+      await ChatApplication.ensureIdentity(ALICE);
+      await ChatApplication.ensureIdentity(BOB);
+      await ChatApplication.openConversation(ALICE, BOB);
+      await ChatApplication.queueMessage(ALICE, { peer: BOB, body: 'one' });
+      await ChatApplication.flushOutbox(ALICE);
+      await ChatApplication.seedConversations(BOB, [ALICE]);
+
+      // A peer whose folder always has another full page: one pass must stop at the cap.
+      const page = Array.from(
+        { length: CHAT_LIST_PAGE },
+        (_, i) => `17000000${String(i).padStart(5, '0')}-aaaaaaaa.json`,
+      );
+      const list = vi.spyOn(ChatHomeserverService, 'listMessageFiles').mockResolvedValue(page);
+      const read = vi.spyOn(ChatHomeserverService, 'readMessageFile').mockResolvedValue(null);
+      try {
+        await ChatApplication.syncConversation(BOB, ALICE, { reason: 'open' });
+        expect(list).toHaveBeenCalledTimes(CHAT_LIST_MAX_PAGES_PER_PASS);
+        expect((await LocalChatService.getSyncState(BOB, ALICE))?.list_cursor).toContain(page[page.length - 1]);
+      } finally {
+        list.mockRestore();
+        read.mockRestore();
+      }
+    });
 
     it('notices a re-keyed peer from a ping that names their new folder', async () => {
       await rekeyBobAndReply();

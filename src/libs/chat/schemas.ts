@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { CHAT_BODY_MAX_BYTES } from '@/config/chat';
 import { commercePubkySchema } from '@/libs/commerce/transaction-contracts';
 import { utf8Bytes } from './encoding';
-import { CHAT_FOLDER_ID, CHAT_MESSAGE_FILE_NAME } from './paths';
+import { CHAT_FOLDER_ID, CHAT_MESSAGE_FILE_NAME, isChatPingSlot } from './paths';
 
 const b64url = z.string().regex(/^[A-Za-z0-9_-]+$/u);
 const kid = z.string().regex(/^[0-9a-f]{16}$/u);
@@ -88,3 +88,13 @@ export const chatPingPayloadSchema = z
   })
   .strict();
 export type ChatPingPayload = z.infer<typeof chatPingPayloadSchema>;
+
+/** A ping is ours when it sits in the chat slot family and carries a well-formed chat payload. */
+export function isChatPing(ping: { slot: string; payload: string }): boolean {
+  if (!isChatPingSlot(ping.slot)) return false;
+  try {
+    return chatPingPayloadSchema.safeParse(JSON.parse(ping.payload)).success;
+  } catch {
+    return false;
+  }
+}

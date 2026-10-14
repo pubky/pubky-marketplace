@@ -91,6 +91,8 @@ export type THomeserverRequestParams = {
 
 export type THomeserverGetJsonIfFoundParams = {
   url: string;
+  /** Refuse (as `{ found: false, tooLarge: true }`) a body larger than this, before parsing it. */
+  maxBytes?: number;
   /** The URL recorded in error context and logs; defaults to `url`. Unpublished paths pass a redacted form. */
   logUrl?: string;
   /**
@@ -103,7 +105,9 @@ export type THomeserverGetJsonIfFoundParams = {
 };
 
 /** A GET that may find nothing: `json` is the parsed body, `undefined` for an empty or non-JSON one. */
-export type THomeserverJsonIfFound<T> = { found: false; unreachable?: boolean } | { found: true; json: T | undefined };
+export type THomeserverJsonIfFound<T> =
+  | { found: false; unreachable?: boolean; tooLarge?: boolean }
+  | { found: true; json: T | undefined };
 
 export type TPutBlobParams = {
   url: string;

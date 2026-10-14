@@ -87,6 +87,13 @@ function randomHex(bytes: number): string {
  * Inbox ping slot for a conversation folder. The inbox accepts 1–64 Base64url
  * characters, so the folder id (hex) is joined with a dash, not a colon.
  */
+export const CHAT_PING_SLOT_PREFIX = 'chat-';
+
 export function chatPingSlot(folderId: string): string {
-  return `chat-${folderId}`;
+  return `${CHAT_PING_SLOT_PREFIX}${folderId}`;
+}
+
+/** Another app's pings can share the account's inbox; only this slot family is ours to handle or ack. */
+export function isChatPingSlot(slot: string): boolean {
+  return slot.startsWith(CHAT_PING_SLOT_PREFIX);
 }

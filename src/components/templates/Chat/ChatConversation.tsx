@@ -34,7 +34,7 @@ export function ChatConversation({ peerPubky }: { peerPubky: string }) {
   const context = contextFromQuery(searchParams);
   const currentUserPubky = useAuthStore((state) => state.currentUserPubky);
   const setShowSignInDialog = useAuthStore((state) => state.setShowSignInDialog);
-  const { identityState } = useChatIdentity();
+  const { identityState, inboxStatus } = useChatIdentity();
   const thread = useChatConversation(peerPubky, context);
   const { name } = useChatPeerName(peerPubky);
   const router = useRouter();
@@ -44,6 +44,7 @@ export function ChatConversation({ peerPubky }: { peerPubky: string }) {
   }, [router, thread.isSelf]);
 
   const peerNotEnabled = thread.openState === 'peer_not_enabled';
+  const awaitingFirstReply = !thread.messages.some((message) => message.direction === 'received');
   const composerDisabled = !currentUserPubky || identityState === 'needs_reauth' || thread.isSelf;
   const disabledReason = thread.isSelf
     ? 'This is you.'
@@ -126,6 +127,11 @@ export function ChatConversation({ peerPubky }: { peerPubky: string }) {
               disabledReason={disabledReason}
               placeholder={`Message ${name}`}
             />
+            {inboxStatus === 'disabled' && awaitingFirstReply && !peerNotEnabled ? (
+              <Typography as="p" size="xs" className="px-1 text-muted-foreground" data-testid="chat-no-inbox-note">
+                {CHAT_COPY.noInboxFirstContact}
+              </Typography>
+            ) : null}
             <ChatPrivacyNote />
           </>
         )}

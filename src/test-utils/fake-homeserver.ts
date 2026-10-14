@@ -118,7 +118,11 @@ export function installFakeHomeserver(): FakeHomeserver {
     const entry = `${HttpMethod.GET} ${params.url}`;
     notify(entry, 'before');
     try {
-      return { found: true, json: (await perform({ method: HttpMethod.GET, ...params })) as never };
+      const json = await perform({ method: HttpMethod.GET, ...params });
+      if (params.maxBytes !== undefined && JSON.stringify(json).length > params.maxBytes) {
+        return { found: false, tooLarge: true };
+      }
+      return { found: true, json: json as never };
     } catch (error) {
       if (error instanceof AppError && error.context?.statusCode === 404) return { found: false };
       // Mirror the real service: a tolerant probe reports an unreachable record instead of throwing.

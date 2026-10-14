@@ -3,6 +3,7 @@ import { AUTH_ROUTES } from '@/app/routes';
 import {
   CHAT_DISCOVERY_INTERVAL_MS,
   CHAT_EVENT_DEBOUNCE_MS,
+  CHAT_INBOX_FOREIGN_PAUSE_MS,
   CHAT_INBOX_RETRY_MS,
   CHAT_RECONCILE_HIDDEN_MS,
   CHAT_RECONCILE_VISIBLE_MS,
@@ -335,9 +336,15 @@ export class ChatSyncCoordinator {
         this.backoff.succeed('inbox');
         useChatStore.getState().setInboxStatus('ready');
         if (pings.length > 0) {
-          await ChatController.handleInboxPings(pings);
-          await ChatController.commitAckInboxPings(pings);
-          void this.refreshStreams(owner, generation);
+          const handled = await ChatController.handleInboxPings(pings);
+          if (handled.length > 0) {
+            await ChatController.commitAckInboxPings(handled);
+            void this.refreshStreams(owner, generation);
+          } else {
+            // Nothing of ours: the pending pings belong to another app or their handling
+            // failed. They stay on the inbox, so pause before asking again instead of spinning.
+            await this.sleep(CHAT_INBOX_FOREIGN_PAUSE_MS, generation);
+          }
         }
       } catch (error) {
         if (generation !== this.generation) return;

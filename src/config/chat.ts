@@ -23,9 +23,13 @@ export const CHAT_INBOX_WAIT_SECONDS = 25;
 export const CHAT_INBOX_PAGE = 50;
 /** Retry cadence when the inbox refuses a session (not configured, grant missing). */
 export const CHAT_INBOX_RETRY_MS = 5 * 60_000;
+/** Pause after a poll that returned only pings we do not handle (another app's, or failed), so we do not spin. */
+export const CHAT_INBOX_FOREIGN_PAUSE_MS = 30_000;
 
 /** Homeserver list page when syncing a conversation folder. */
 export const CHAT_LIST_PAGE = 200;
+/** Pages a single sync pass lists per folder; the cursor carries the rest to the next pass, so one peer cannot make a pass unbounded. */
+export const CHAT_LIST_MAX_PAGES_PER_PASS = 5;
 /** Files fetched concurrently while syncing one conversation. */
 export const CHAT_FETCH_CONCURRENCY = 4;
 /** Reverse list size of the reconcile tail check (lagging peer clocks). */

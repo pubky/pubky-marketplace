@@ -883,7 +883,7 @@ export class AuthController {
     // No marketplace bearer may stay at rest for the user who is leaving.
     CommerceController.clearMarketplaceSessionForSignOut();
     // Same for the chat inbox session and the derived conversation keys.
-    void ChatController.clearForSignOut(pubky ?? null).catch((error: unknown) => {
+    await ChatController.clearForSignOut(pubky ?? null).catch((error: unknown) => {
       Logger.warn('Chat sign-out cleanup failed', { error });
     });
     TtlCoordinator.resetInstance();

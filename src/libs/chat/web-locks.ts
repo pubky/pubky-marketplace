@@ -5,11 +5,11 @@
  */
 
 export const CHAT_LOCKS = {
-  leader: (owner: string) => `pubky-chat-leader|${owner}`,
-  identity: (owner: string) => `pubky-chat-identity|${owner}`,
-  outbox: (owner: string) => `pubky-chat-outbox|${owner}`,
-  sync: (owner: string, peer: string) => `pubky-chat-sync|${owner}|${peer}`,
-  rebuild: (owner: string) => `pubky-chat-rebuild|${owner}`,
+  leader: (owner: string) => `shop-chat-leader|${owner}`,
+  identity: (owner: string) => `shop-chat-identity|${owner}`,
+  outbox: (owner: string) => `shop-chat-outbox|${owner}`,
+  sync: (owner: string, peer: string) => `shop-chat-sync|${owner}|${peer}`,
+  rebuild: (owner: string) => `shop-chat-rebuild|${owner}`,
 } as const;
 
 function getLocks(): LockManager | null {

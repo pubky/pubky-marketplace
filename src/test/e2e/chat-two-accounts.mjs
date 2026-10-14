@@ -445,7 +445,7 @@ try {
   await messageWithText(bobPage, 'From tab two').first().waitFor({ state: 'visible', timeout: 30_000 });
   const leaders = await aliceTabTwo.evaluate(async () => {
     const locks = await navigator.locks.query();
-    return locks.held.filter((lock) => lock.name?.startsWith('pubky-chat-leader|')).length;
+    return locks.held.filter((lock) => lock.name?.startsWith('shop-chat-leader|')).length;
   });
   record('alice:second-tab-live-one-leader', leaders === 1, `leader locks held: ${leaders}`);
   await aliceTabTwo.close();

@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { chatPingPayloadSchema, chatPlaintextSchema, chatPrivConversationSchema, chatPublicKeySchema } from './schemas';
+import {
+  chatPingPayloadSchema,
+  chatPlaintextSchema,
+  chatPrivConversationSchema,
+  chatPublicKeySchema,
+  isChatPing,
+} from './schemas';
 
 const A = 'a'.repeat(52);
 const B = 'b'.repeat(52);
@@ -36,5 +42,19 @@ describe('chat schemas', () => {
         .success,
     ).toBe(true);
     expect(chatPingPayloadSchema.safeParse({ v: 0, t: 'chat', folder: 'short', file: 'x' }).success).toBe(false);
+  });
+});
+
+describe('isChatPing', () => {
+  const payload = JSON.stringify({ v: 0, t: 'chat', folder: 'f'.repeat(32), file: '1700000000000-aaaaaaaa.json' });
+
+  it('accepts a chat slot with a well-formed payload', () => {
+    expect(isChatPing({ slot: 'chat-' + 'f'.repeat(32), payload })).toBe(true);
+  });
+
+  it("refuses another app's slot and a payload that does not parse", () => {
+    expect(isChatPing({ slot: 'app-' + 'f'.repeat(32), payload })).toBe(false);
+    expect(isChatPing({ slot: 'chat-' + 'f'.repeat(32), payload: 'not json' })).toBe(false);
+    expect(isChatPing({ slot: 'chat-' + 'f'.repeat(32), payload: JSON.stringify({ v: 0, t: 'other' }) })).toBe(false);
   });
 });

@@ -186,13 +186,9 @@ export class ChatHomeserverService {
     const result = await HomeserverService.getJsonIfFound<unknown>({
       url: chatMessageUrl(owner, folderId, fileName),
       logUrl: CHAT_LOG_MESSAGE,
+      // Refused before the body is read; the homeserver declares the length.
+      maxBytes: CHAT_FILE_MAX_BYTES,
     });
-    if (!result.found) return null;
-    const size = JSON.stringify(result.json)?.length ?? 0;
-    if (size > CHAT_FILE_MAX_BYTES) {
-      Logger.warn('Chat message file is larger than the cap; skipped', { size });
-      return null;
-    }
-    return result.json;
+    return result.found ? result.json : null;
   }
 }

@@ -46,7 +46,11 @@ describe('ChatSyncCoordinator', () => {
     vi.spyOn(ChatController, 'fetchSeededConversations').mockResolvedValue();
     vi.spyOn(ChatController, 'getConversations').mockResolvedValue([]);
     vi.spyOn(ChatController, 'fetchInboxAvailability').mockResolvedValue('ready');
-    vi.spyOn(ChatController, 'handleInboxPings').mockResolvedValue();
+    vi.spyOn(ChatController, 'handleInboxPings').mockImplementation(async (pings) =>
+      pings
+        .filter((ping) => ping.slot.startsWith('chat-'))
+        .map(({ sender, slot, revision }) => ({ sender, slot, revision })),
+    );
     vi.spyOn(ChatController, 'commitAckInboxPings').mockResolvedValue();
     vi.spyOn(ChatController, 'fetchInboxPings').mockImplementation(
       () =>
@@ -90,12 +94,28 @@ describe('ChatSyncCoordinator', () => {
     coordinator.start();
     signIn();
     await settle();
-    const ping = { sender: PEER, slot: 's', revision: 'r', received_at: '', expires_at: '', payload: '' };
+    const ping = { sender: PEER, slot: 'chat-abc', revision: 'r', received_at: '', expires_at: '', payload: '' };
     resolvePings?.([ping] as never);
     await settle();
     expect(ChatController.handleInboxPings).toHaveBeenCalledWith([ping]);
-    expect(ChatController.commitAckInboxPings).toHaveBeenCalledWith([ping]);
+    expect(ChatController.commitAckInboxPings).toHaveBeenCalledWith([
+      { sender: PEER, slot: 'chat-abc', revision: 'r' },
+    ]);
     expect(pingsCalls).toBe(2);
+  });
+
+  it('leaves pings it did not handle on the inbox and pauses instead of polling again at once', async () => {
+    const coordinator = ChatSyncCoordinator.getInstance();
+    coordinator.setRoute('/marketplace');
+    coordinator.start();
+    signIn();
+    await settle();
+    const foreign = { sender: PEER, slot: 'app-xyz', revision: 'r2', received_at: '', expires_at: '', payload: '' };
+    resolvePings?.([foreign] as never);
+    await settle();
+    expect(ChatController.handleInboxPings).toHaveBeenCalledWith([foreign]);
+    expect(ChatController.commitAckInboxPings).not.toHaveBeenCalled();
+    expect(pingsCalls).toBe(1);
   });
 
   it('skips the inbox loop while the inbox is unavailable and keeps reconciling', async () => {

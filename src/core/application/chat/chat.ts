@@ -4,6 +4,7 @@ import {
   CHAT_FETCH_CONCURRENCY,
   CHAT_INBOX_PAGE,
   CHAT_INBOX_WAIT_SECONDS,
+  CHAT_LIST_MAX_PAGES_PER_PASS,
   CHAT_LIST_PAGE,
   CHAT_PEER_HOMESERVER_RECHECK_MS,
   CHAT_PEER_KEY_RECHECK_MS,
@@ -595,7 +596,7 @@ export class ChatApplication {
         await this.ingestFiles(me, peer, keys, identity, 'received', [options.hintFile]);
       }
       let cursor = state?.list_cursor ?? null;
-      for (;;) {
+      for (let pages = 0; pages < CHAT_LIST_MAX_PAGES_PER_PASS; pages += 1) {
         const names = await ChatHomeserverService.listMessageFiles(peer, keys.peerFolderId, {
           cursor,
           limit: CHAT_LIST_PAGE,
@@ -641,7 +642,7 @@ export class ChatApplication {
     startCursor: string | null,
   ): Promise<void> {
     let cursor = startCursor;
-    for (;;) {
+    for (let pages = 0; pages < CHAT_LIST_MAX_PAGES_PER_PASS; pages += 1) {
       const names = await ChatHomeserverService.listMessageFiles(me, keys.ownFolderId, {
         cursor,
         limit: CHAT_LIST_PAGE,
@@ -969,9 +970,17 @@ export class ChatApplication {
   /** Sign-out: forget the inbox session, the derived keys and every cached row. */
   static async clearSession(me: string | null): Promise<void> {
     this.pairKeys.clear();
-    if (me) await InboxService.endSession(me);
-    else InboxService.clearSession();
+    // The local wipe is what a sign-out must wait for, so a sign-in as someone
+    // else cannot race it. Ending the inbox session is a network call made
+    // best-effort after the session is forgotten locally.
     await LocalChatService.clearAll();
+    if (me) {
+      void InboxService.endSession(me).catch((error: unknown) => {
+        Logger.warn('Ending the chat inbox session failed', { error });
+      });
+    } else {
+      InboxService.clearSession();
+    }
   }
 
   static clearSessionsOfOtherAccounts(keepPubky: string): void {

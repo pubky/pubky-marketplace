@@ -1026,6 +1026,7 @@ export class HomeserverService {
     url,
     logUrl,
     tolerateUnreachable = false,
+    maxBytes,
   }: THomeserverGetJsonIfFoundParams): Promise<THomeserverJsonIfFound<T>> {
     const contextUrl = logUrl ?? url;
     const owned = this.resolveOwnedSessionPath(url);
@@ -1047,7 +1048,16 @@ export class HomeserverService {
       response = await getResponseOrNullWhenMissing(load, contextUrl, 'getJsonIfFound');
     }
     if (response === null) return { found: false };
-    return { found: true, json: await parseResponseOrUndefined<T>({ response }) };
+    if (maxBytes === undefined) return { found: true, json: await parseResponseOrUndefined<T>({ response }) };
+    // Another user's file: refuse anything over the cap before reading it, so a
+    // peer cannot make this browser download and parse an arbitrarily large body.
+    const declared = Number(response.headers.get('content-length') ?? Number.NaN);
+    if (Number.isFinite(declared) && declared > maxBytes) {
+      Logger.warn('Homeserver record larger than the cap; skipped', { url: contextUrl, declared, maxBytes });
+      return { found: false, tooLarge: true };
+    }
+    const bytes = await readResponseBytes(response, maxBytes, contextUrl);
+    return { found: true, json: JSON.parse(new TextDecoder().decode(bytes)) as T };
   }
 
   /**
