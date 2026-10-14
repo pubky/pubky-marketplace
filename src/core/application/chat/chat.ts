@@ -22,6 +22,7 @@ import {
   CHAT_TAIL_CHECK_LIMIT,
   CHAT_THREAD_PAGE,
 } from '@/config/chat';
+import { sameChatContext } from '@/libs/chat/context';
 import {
   chatAad,
   chatKeyId,
@@ -315,7 +316,7 @@ export class ChatApplication {
   ): Promise<ChatConversationModelSchema> {
     const existing = await LocalChatService.getConversation(me, peer);
     if (existing) {
-      if (context && !sameContext(existing.last_context, context)) {
+      if (context && !sameChatContext(existing.last_context, context)) {
         await LocalChatService.updateConversation(me, peer, { last_context: context, priv_state_dirty: true });
         return { ...existing, last_context: context };
       }
@@ -994,10 +995,6 @@ function pingRetryAfterMs(error: unknown): number | null {
 function fileSentAt(fileName: string): number {
   const ms = Number.parseInt(fileName.slice(0, 13), 10);
   return Number.isFinite(ms) ? ms : 0;
-}
-
-function sameContext(a: ChatContext | null, b: ChatContext | null | undefined): boolean {
-  return (a?.listingId ?? null) === (b?.listingId ?? null) && (a?.orderId ?? null) === (b?.orderId ?? null);
 }
 
 /** Drops undefined members so the plaintext schema (strict) accepts it. */

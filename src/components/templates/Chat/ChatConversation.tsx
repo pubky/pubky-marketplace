@@ -1,6 +1,7 @@
 'use client';
 
-import { useSearchParams } from 'next/navigation';
+import { useEffect } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { ArrowLeft, Store } from 'lucide-react';
 import { APP_ROUTES, getMarketplaceShopRoute } from '@/app/routes';
 import { Button } from '@/atoms/Button/Button';
@@ -36,6 +37,11 @@ export function ChatConversation({ peerPubky }: { peerPubky: string }) {
   const { identityState } = useChatIdentity();
   const thread = useChatConversation(peerPubky, context);
   const { name } = useChatPeerName(peerPubky);
+  const router = useRouter();
+  useEffect(() => {
+    // There is no thread with yourself; the inbox is the sensible place to land.
+    if (thread.isSelf) router.replace(APP_ROUTES.MESSAGES);
+  }, [router, thread.isSelf]);
 
   const peerNotEnabled = thread.openState === 'peer_not_enabled';
   const composerDisabled = !currentUserPubky || identityState === 'needs_reauth' || thread.isSelf;

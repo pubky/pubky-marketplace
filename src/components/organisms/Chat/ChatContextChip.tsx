@@ -43,7 +43,7 @@ export function ChatContextChip({
 
   if (!context?.listingId && !context?.orderId) return null;
   const chip =
-    'inline-flex max-w-full items-center gap-1.5 rounded-full border border-border bg-card px-3 py-1 text-xs text-muted-foreground hover:text-foreground';
+    'inline-flex max-w-full items-center gap-1.5 rounded-full border border-brand/30 bg-brand/10 px-3 py-1 text-xs font-medium text-foreground transition-colors hover:bg-brand/20 [&_svg]:text-brand';
   return (
     <div className={cn('flex flex-wrap gap-2', className)} data-testid="chat-context-chip">
       {context.listingId ? (

@@ -15,10 +15,13 @@ export function ChatMessageBubble({
   message,
   peerPubky,
   onRetry,
+  showContext = true,
 }: {
   message: ChatMessageView;
   peerPubky: string;
   onRetry?: (id: string) => void;
+  /** The thread shows a chip once per run of messages about the same listing or order. */
+  showContext?: boolean;
 }) {
   const mine = message.direction === 'sent';
   const shownAt = message.clock_skewed ? message.received_at : message.sent_at;
@@ -30,7 +33,7 @@ export function ChatMessageBubble({
       data-status={message.status}
     >
       <ChatContextChip
-        context={message.context}
+        context={showContext ? message.context : null}
         peerPubky={peerPubky}
         className={cn(mine ? 'justify-end' : 'justify-start')}
       />

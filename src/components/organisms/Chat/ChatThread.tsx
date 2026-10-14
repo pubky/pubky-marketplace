@@ -1,10 +1,11 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { ArrowDown } from 'lucide-react';
 import { Button } from '@/atoms/Button/Button';
 import { Typography } from '@/atoms/Typography/Typography';
 import type { ChatMessageView } from '@/controllers/chat/chat.types';
+import { sameChatContext } from '@/libs/chat/context';
 import { cn } from '@/libs/utils/utils';
 import { ChatMessageBubble } from './ChatMessageBubble';
 
@@ -24,8 +25,10 @@ function dayLabel(at: number): string {
 }
 
 /**
- * The scrolling message list: day separators, bubbles, "load older" at the
- * top, and a "new messages" pill when the user has scrolled up.
+ * The scrolling message list: day separators, bubbles, older pages loaded as
+ * the user nears the top (with a button for threads too short to scroll), and
+ * a "new messages" pill when the user has scrolled up. A listing or order chip
+ * is shown once per run of messages about the same thing.
  */
 export function ChatThread({
   messages,
@@ -49,7 +52,10 @@ export function ChatThread({
   const [unseen, setUnseen] = useState(0);
   const newest = messages[messages.length - 1];
   const lastId = newest?.id;
+  const firstId = messages[0]?.id;
   const previousLastId = useRef<string | undefined>(undefined);
+  // Scroll metrics taken when an older page was requested, so the prepend keeps the same messages in view.
+  const olderRequest = useRef<{ scrollHeight: number; scrollTop: number } | null>(null);
 
   useEffect(() => {
     const element = scrollRef.current;
@@ -71,6 +77,22 @@ export function ChatThread({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lastId, pinnedToBottom]);
 
+  const requestOlder = () => {
+    const element = scrollRef.current;
+    if (!element || !hasMore || olderRequest.current) return;
+    olderRequest.current = { scrollHeight: element.scrollHeight, scrollTop: element.scrollTop };
+    onLoadOlder();
+  };
+
+  useLayoutEffect(() => {
+    const element = scrollRef.current;
+    const pending = olderRequest.current;
+    if (!element || !pending) return;
+    element.scrollTop = pending.scrollTop + (element.scrollHeight - pending.scrollHeight);
+    olderRequest.current = null;
+    // Runs when the first message changes, i.e. an older page was prepended.
+  }, [firstId]);
+
   const onScroll = () => {
     const element = scrollRef.current;
     if (!element) return;
@@ -78,6 +100,7 @@ export function ChatThread({
     const atBottom = distance < 48;
     setPinnedToBottom(atBottom);
     if (atBottom) setUnseen(0);
+    if (element.scrollTop < 160) requestOlder();
   };
 
   const jumpToBottom = () => {
@@ -98,7 +121,7 @@ export function ChatThread({
       >
         {hasMore ? (
           <div className="flex justify-center">
-            <Button type="button" variant="secondary" size="sm" className="rounded-full" onClick={onLoadOlder}>
+            <Button type="button" variant="secondary" size="sm" className="rounded-full" onClick={requestOlder}>
               Load older messages
             </Button>
           </div>
@@ -113,6 +136,7 @@ export function ChatThread({
         {messages.map((message, index) => {
           const day = days[index];
           const separator = index === 0 || days[index - 1] !== day;
+          const showContext = index === 0 || !sameChatContext(messages[index - 1].context, message.context);
           return (
             <div key={message.id} className="flex flex-col gap-3">
               {separator ? (
@@ -124,7 +148,7 @@ export function ChatThread({
                   <div className="h-px flex-1 bg-border" />
                 </div>
               ) : null}
-              <ChatMessageBubble message={message} peerPubky={peerPubky} onRetry={onRetry} />
+              <ChatMessageBubble message={message} peerPubky={peerPubky} onRetry={onRetry} showContext={showContext} />
             </div>
           );
         })}

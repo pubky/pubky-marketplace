@@ -37,7 +37,7 @@ const scene = vi.hoisted(() => ({
 }));
 
 vi.mock('next/navigation', () => ({
-  useRouter: () => ({ push: vi.fn() }),
+  useRouter: () => ({ push: vi.fn(), replace: vi.fn() }),
   usePathname: () => `/messages/${PEER}`,
   useSearchParams: () => new URLSearchParams(scene.query),
 }));
@@ -119,10 +119,12 @@ const thread = (): ChatMessageView[] => [
     sent_at: VRT_FROZEN_NOW_MS - 26 * HOUR_MS,
     context: { listingId: LISTING_ID },
   }),
+  // Same listing as m1: the thread shows the chip once for the run.
   message({
     id: 'm2',
     body: 'Yes, still here. Shipping to Portugal is 12 EUR, about 4 days.',
     sent_at: VRT_FROZEN_NOW_MS - 25 * HOUR_MS,
+    context: { listingId: LISTING_ID },
   }),
   message({
     id: 'm3',
