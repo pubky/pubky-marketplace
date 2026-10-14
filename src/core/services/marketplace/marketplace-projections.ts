@@ -698,6 +698,11 @@ export const marketplaceOrderProjectionSchema = z
     paykitSellerConfirmationEnteredAt: z.string().nullable().optional(),
     paykitSellerConfirmationDeadline: z.string().nullable().optional(),
     paykitTotalSats: z.number().int().nonnegative().nullable().optional(),
+    // The activated Paykit request's deadline: the wallet's own "pay by".
+    // Null until the request is activated (an upstream auction bind starts
+    // from the reservation-based hold). Tolerant: a malformed value reads as
+    // absent so the hold deadline still shows.
+    paykitExpiresAt: z.string().nullish().catch(null),
     // Merchandise before the per-invoice amount code, and the exact bitcoin
     // amount the buyer pays. A malformed value is dropped so one bad money
     // object cannot fail the order.

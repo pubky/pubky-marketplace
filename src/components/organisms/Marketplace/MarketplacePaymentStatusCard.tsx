@@ -50,6 +50,7 @@ import {
   sellerConfirmsByCopy,
 } from '@/libs/commerce/bitcoin-buyer-status';
 import {
+  buyerPayByDeadline,
   CHECKOUT_HOLD_COPY,
   formatOrderInstant,
   holderBoundCopy,
@@ -888,7 +889,7 @@ function BuyerBitcoinPaymentProgress({ order, payment }: { order: MarketplaceOrd
   return (
     <div className="grid gap-2">
       <Typography as="p" className="text-sm text-muted-foreground">
-        {holderBoundCopy(order.holdExpiresAt)}
+        {holderBoundCopy(buyerPayByDeadline(order))}
       </Typography>
       {order.paykitDeliveryState === 'failed' ? (
         <Typography as="p" role="alert" className="text-sm text-amber-300" data-testid="paykit-delivery-failed">
@@ -908,7 +909,7 @@ function BuyerUsdtPaymentProgress({ order }: { order: MarketplaceOrder }) {
   return (
     <div className="grid gap-2" data-testid="usdt-payment-awaiting">
       <Typography as="p" className="text-sm text-muted-foreground">
-        {holderBoundCopy(order.holdExpiresAt)}
+        {holderBoundCopy(buyerPayByDeadline(order))}
       </Typography>
       {order.paykitDeliveryState !== 'failed' && (
         <Typography as="p" className="text-xs text-muted-foreground" data-testid="usdt-accept-by">

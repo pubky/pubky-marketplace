@@ -126,6 +126,7 @@ function makeCorrelation(registered: boolean) {
 }
 
 const HOLD_DEADLINE = '2026-08-20T21:15:00.000Z';
+const ACTIVATED_REQUEST_DEADLINE = '2026-08-20T21:07:00.000Z';
 
 function Harness({ children }: { children: React.ReactNode }) {
   return <main className="mx-auto flex w-full max-w-xl flex-col gap-6 px-6 py-10">{children}</main>;
@@ -338,6 +339,48 @@ describe('Marketplace payment status card — visual regression', () => {
     });
     await expect.element(screen.getByRole('heading', { name: 'Delivery address' })).toBeInTheDocument();
     await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('payment-status-auction-winner-address-mobile');
+    view.locks.enabled = true;
+  });
+
+  it('renders an auction winner bitcoin bind paying by the reservation-based deadline before the request activates', async () => {
+    view.locks = { ...view.locks, enabled: false, correlation: null, delivery: null, error: null };
+    const screen = await renderCard('awaiting_entitlement', 'transaction-service', {
+      deployEnv: 'production',
+      orderOverrides: {
+        paymentMethod: 'bitcoin',
+        paykitRequestState: 'preparing',
+        paykitExpiresAt: null,
+        holdExpiresAt: HOLD_DEADLINE,
+        holdSource: 'bind',
+        auctionAggregateId: 'listing:seller_boots',
+      },
+    });
+    await expect.element(screen.getByText(/Pay by Aug 20, 2026, 9:15 PM UTC\./)).toBeInTheDocument();
+    await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot(
+      'payment-status-auction-bitcoin-before-activation-desktop',
+    );
+    view.locks.enabled = true;
+  });
+
+  it('renders an auction winner bitcoin request paying by the activated wallet deadline', async () => {
+    view.locks = { ...view.locks, enabled: false, correlation: null, delivery: null, error: null };
+    const screen = await renderCard('awaiting_entitlement', 'transaction-service', {
+      deployEnv: 'production',
+      orderOverrides: {
+        paymentMethod: 'bitcoin',
+        paykitRequestState: 'pending',
+        paykitDeliveryState: 'delivered',
+        paykitExpiresAt: ACTIVATED_REQUEST_DEADLINE,
+        holdExpiresAt: HOLD_DEADLINE,
+        holdSource: 'bind',
+        auctionAggregateId: 'listing:seller_boots',
+      },
+    });
+    await expect.element(screen.getByText(/Pay by Aug 20, 2026, 9:07 PM UTC\./)).toBeInTheDocument();
+    await expect.element(screen.getByText(/Pay by Aug 20, 2026, 9:15 PM UTC/)).not.toBeInTheDocument();
+    await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot(
+      'payment-status-auction-bitcoin-activated-desktop',
+    );
     view.locks.enabled = true;
   });
 

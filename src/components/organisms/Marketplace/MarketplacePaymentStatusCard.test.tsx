@@ -877,6 +877,48 @@ describe('MarketplacePaymentStatusCard', () => {
     unmount();
   });
 
+  describe('auction winner pay-by deadline', () => {
+    const HOLD = '2026-08-20T21:15:00.000Z';
+    const REQUEST = '2026-08-20T21:07:00.000Z';
+    const renderAuction = (overrides: Record<string, unknown>) =>
+      render(
+        <MarketplacePaymentStatusCard
+          order={createOrderFixture('pending_payment', {
+            holdExpiresAt: HOLD,
+            holdSource: 'bind',
+            paymentMethod: 'bitcoin',
+            paykitDeliveryState: 'delivered',
+            auctionAggregateId: 'listing:seller_boots',
+            ...overrides,
+          })}
+          payment={createPaymentFixture('awaiting_entitlement', { adapter: 'paykit' })}
+          isBuyer
+          adapterMode="transaction-service"
+          advancePayment={async () => false}
+          onPaymentChanged={() => {}}
+        />,
+      );
+
+    it('shows the activated Paykit request deadline, the wallet deadline', () => {
+      renderAuction({ paykitRequestState: 'pending', paykitExpiresAt: REQUEST });
+
+      expect(screen.getByText(/Pay by Aug 20, 2026, 9:07 PM UTC\./)).toBeInTheDocument();
+      expect(screen.queryByText(/9:15 PM UTC/)).not.toBeInTheDocument();
+    });
+
+    it('shows the reservation-based deadline before the request activates', () => {
+      renderAuction({ paykitRequestState: 'preparing', paykitExpiresAt: null });
+
+      expect(screen.getByText(/Pay by Aug 20, 2026, 9:15 PM UTC\./)).toBeInTheDocument();
+    });
+
+    it('keeps the hold deadline on an ordinary bitcoin order', () => {
+      renderAuction({ auctionAggregateId: null, paykitRequestState: 'pending', paykitExpiresAt: REQUEST });
+
+      expect(screen.getByText(/Pay by Aug 20, 2026, 9:15 PM UTC\./)).toBeInTheDocument();
+    });
+  });
+
   it('stops telling the buyer to pay once the payment has been seen', () => {
     const deadline = '2026-09-29T10:56:41.980Z';
     render(

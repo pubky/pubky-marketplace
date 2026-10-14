@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createOrderFixture, ORDER_FIXTURE_BUYER } from '@/test/fixtures/commerce/orders';
 import {
+  buyerPayByDeadline,
   CHECKOUT_HOLD_COPY,
   findViewerAcceptedOfferHold,
   findViewerPendingHoldOrder,
@@ -16,6 +17,42 @@ import {
   refundRequiredSellerCopy,
   UNBOUND_BACK_CANCEL_REASON,
 } from './checkout-hold';
+
+describe('buyerPayByDeadline', () => {
+  const HOLD = '2026-08-20T21:15:00.000Z';
+  const REQUEST = '2026-08-20T21:07:00.000Z';
+  const activeAuction = {
+    holdExpiresAt: HOLD,
+    paykitExpiresAt: REQUEST,
+    paykitRequestState: 'pending',
+    auctionAggregateId: 'listing:seller_boots',
+  };
+
+  it('shows the activated request deadline on an auction order', () => {
+    expect(buyerPayByDeadline(activeAuction)).toBe(REQUEST);
+    expect(holderBoundCopy(buyerPayByDeadline(activeAuction))).toBe(
+      'Pay by Aug 20, 2026, 9:07 PM UTC. If the window ends, the item restocks.',
+    );
+  });
+
+  it.each([
+    ['not yet activated (preparing)', { paykitRequestState: 'preparing' }],
+    ['no request state yet', { paykitRequestState: null }],
+    ['no request deadline yet', { paykitExpiresAt: null }],
+    ['a malformed request deadline', { paykitExpiresAt: 'not a date' }],
+  ])('keeps the reservation-based hold deadline while %s', (_label, override) => {
+    expect(buyerPayByDeadline({ ...activeAuction, ...override })).toBe(HOLD);
+  });
+
+  it('keeps the hold deadline on an order that is not an auction win', () => {
+    expect(buyerPayByDeadline({ ...activeAuction, auctionAggregateId: null })).toBe(HOLD);
+    expect(buyerPayByDeadline({ ...activeAuction, auctionAggregateId: undefined })).toBe(HOLD);
+  });
+
+  it('is null when nothing carries a deadline', () => {
+    expect(buyerPayByDeadline({})).toBeNull();
+  });
+});
 
 describe('checkout-hold copy', () => {
   it('asks a Bitcoin buyer to settle a pending payment before ordering again, without claiming a wallet guards it', () => {
