@@ -248,7 +248,7 @@ const USDT_SELLER_NOT_READY_COPY =
 export const MARKETPLACE_PAYMENT_METHOD_REASON_MESSAGES: ReadonlyMap<string, string> = new Map([
   [
     'auction_payment_window_too_short',
-    'Too little time is left on this auction win to pay with Bitcoin. Message the seller about the item.',
+    'Too little time is left on this auction win to pay with Bitcoin. Choose another payment method, or message the seller.',
   ],
   ['bitcoin_unavailable', 'Bitcoin payments are not available for this seller.'],
   [

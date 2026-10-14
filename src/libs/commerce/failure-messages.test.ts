@@ -187,7 +187,7 @@ describe('marketplacePaymentMethodFailureMessage', () => {
       context: { statusCode: 409, reason: 'auction_payment_window_too_short' },
     });
     expect(marketplacePaymentMethodFailureMessage(error, 'fallback')).toBe(
-      'Too little time is left on this auction win to pay with Bitcoin. Message the seller about the item.',
+      'Too little time is left on this auction win to pay with Bitcoin. Choose another payment method, or message the seller.',
     );
   });
 
