@@ -1,5 +1,6 @@
 import { ChatApplication } from '@/application/chat/chat';
 import type { ChatOpenResult, ChatSyncOutcome, ChatSyncReason } from '@/application/chat/chat.types';
+import { CommerceApplication } from '@/application/commerce/commerce';
 import { UserApplication } from '@/application/user/user';
 import { isChatPing } from '@/libs/chat/schemas';
 import { isAppError } from '@/libs/error/error';
@@ -95,21 +96,40 @@ export class ChatController {
     const peer = this.normalizePeer(params.peerPubky);
     const id = await ChatApplication.queueMessage(me, { peer, body: params.body, context: params.context });
     void this.commitFlushOutbox();
-    if (params.context?.listingId || params.context?.orderId) this.followSellerOnIntent(me, peer);
+    if (params.context) void this.followSellerOnIntent(me, peer, params.context);
     return id;
   }
 
   /**
-   * A message about a listing or an order is buyer intent, like a cart or a
+   * A buyer's message about a listing or an order is intent, like a cart or a
    * checkout: follow the seller the same way (honours the privacy setting).
-   * Best effort; the message never waits on it.
+   * The seller is derived from the context, never assumed to be the peer, so
+   * a seller replying about an order does not follow the buyer. Best effort;
+   * the message never waits on it.
    */
-  private static followSellerOnIntent(me: string, seller: string): void {
-    void UserApplication.ensureSellerFollow({ follower: me as Pubky, seller: seller as Pubky }).catch(
-      (error: unknown) => {
-        if (!isAppError(error)) Logger.warn('Could not follow the seller for this message', { error });
-      },
-    );
+  private static async followSellerOnIntent(me: string, peer: string, context: ChatContext): Promise<void> {
+    try {
+      const seller = await this.sellerForContext(me, peer, context);
+      if (!seller) return;
+      await UserApplication.ensureSellerFollow({ follower: me as Pubky, seller: seller as Pubky });
+    } catch (error) {
+      if (!isAppError(error)) Logger.warn('Could not follow the seller for this message', { error });
+    }
+  }
+
+  /** The seller the context names, when the current user is its buyer side and the peer is that seller. */
+  private static async sellerForContext(me: string, peer: string, context: ChatContext): Promise<string | null> {
+    if (context.orderId) {
+      const orders = await CommerceApplication.getMarketplaceOrders(me);
+      const order = orders.find((candidate) => candidate.id === context.orderId);
+      return order && order.buyerPubky === me && order.sellerPubky === peer ? peer : null;
+    }
+    if (context.listingId) {
+      // A listing is cached under its seller's composite id; the peer is the seller only if it is theirs.
+      const listing = await CommerceApplication.getListing(`${peer}:${context.listingId}`);
+      return listing ? peer : null;
+    }
+    return null;
   }
 
   static async commitRetryMessage(id: string): Promise<void> {
