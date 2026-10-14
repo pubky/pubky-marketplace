@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { isIosUserAgent, toBitkitIosSignInUrl } from '@/libs/navigation/bitkit-ios-url';
 import { navigateTop } from '@/libs/navigation/navigate-top';
 import { useAuthUrl } from '../useAuthUrl/useAuthUrl';
 import type { UseAuthUrlOptions } from '../useAuthUrl/useAuthUrl.types';
@@ -18,6 +19,8 @@ type UseMobileAuthReturn = {
 /**
  * Manages mobile auth flow via deeplink navigation.
  * Resets the opening state when the page becomes hidden (app opened successfully).
+ * On iOS a grant sign-in opens Bitkit's own `bitkit://` link: Bitkit iOS leaves
+ * `pubkyauth://` to Pubky Ring. The QR and copied link stay `pubkyauth://`.
  */
 export function useMobileAuth(options: UseAuthUrlOptions = {}): UseMobileAuthReturn {
   const { url, isLoading, isExpired, fetchUrl, copyAuthUrl } = useAuthUrl(options);
@@ -65,7 +68,7 @@ export function useMobileAuth(options: UseAuthUrlOptions = {}): UseMobileAuthRet
     visibilityHandlerRef.current = onVisibilityChange;
 
     document.addEventListener('visibilitychange', onVisibilityChange, { once: true });
-    navigateTop(url);
+    navigateTop(options.type === 'grant' && isIosUserAgent() ? toBitkitIosSignInUrl(url) : url);
   };
 
   return {
