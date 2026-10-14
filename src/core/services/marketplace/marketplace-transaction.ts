@@ -26,6 +26,7 @@ import {
   sellerPaymentReviewReasonSchema,
 } from '@/libs/commerce/marketplace-payment-review';
 import {
+  type BindDeliveryAddress,
   type PaymentMethodKind,
   type SellerPaymentConfig,
   type SellerPaymentConfigOwnView,
@@ -1049,12 +1050,17 @@ export class MarketplaceTransactionService {
    * `bitcoin` creates the signed Paykit payment request inside the same
    * transaction, so a paykit refusal leaves the order unbound and retryable.
    */
-  static async bindPaymentMethod(actor: string, orderId: string, method: PaymentMethodKind): Promise<MarketplaceOrder> {
+  static async bindPaymentMethod(
+    actor: string,
+    orderId: string,
+    method: PaymentMethodKind,
+    delivery?: BindDeliveryAddress,
+  ): Promise<MarketplaceOrder> {
     const raw = await this.paymentMethodRequest(
       'bindPaymentMethod',
       actor,
       `/v0/orders/${encodeURIComponent(orderId)}/payment-method`,
-      { method: 'POST', body: { method }, boundPaymentMethod: method },
+      { method: 'POST', body: { method, ...delivery }, boundPaymentMethod: method },
     );
     return this.parseOrderEnvelope('bindPaymentMethod', raw);
   }

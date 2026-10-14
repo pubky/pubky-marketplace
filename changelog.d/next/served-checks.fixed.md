@@ -1,0 +1,1 @@
+The served checks now live in the repo as `scripts/release/served-checks.mjs`. They find the Locks SDK wasm by reading webpack's chunk map in every shape Next.js writes it and crawling the lazy chunks, and they no longer look for the removed `build` meta tag. The Mac-side copy failed 3 of 6 against staging and production, which serve the wasm correctly.

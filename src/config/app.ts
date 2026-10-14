@@ -1,5 +1,5 @@
 import { Env } from '@/libs/env/env';
-import { getSingleApprovalSignIn } from '@/libs/runtime-config/runtime-config';
+import { getShopGrantClientIdOverride, getSingleApprovalSignIn } from '@/libs/runtime-config/runtime-config';
 
 export const APP_VERSION = Env.NEXT_PUBLIC_APP_VERSION;
 
@@ -22,8 +22,13 @@ export const APP_VERSION = Env.NEXT_PUBLIC_APP_VERSION;
  */
 export const CAPABILITIES = '/pub/pubky.app/:rw,/pub/paykit/:rw,/priv/pubky.app/:rw,/pub/chat/:rw,/priv/chat/:rw';
 
-/** Client id Bitkit shows on its Authorize screen for the Shop's grant sign-in. */
+/** Default client id Bitkit shows on its Authorize screen for the Shop's grant sign-in. */
 export const SHOP_GRANT_CLIENT_ID = 'shop.pubky.app';
+
+/** The client id in use: `PUBKY_RUNTIME_SHOP_GRANT_CLIENT_ID` when set, else {@link SHOP_GRANT_CLIENT_ID}. */
+export function getShopGrantClientId(): string {
+  return getShopGrantClientIdOverride() ?? SHOP_GRANT_CLIENT_ID;
+}
 
 /**
  * Interim dual-POST ceremony (docs/ecommerce/single-approval.md). Runtime

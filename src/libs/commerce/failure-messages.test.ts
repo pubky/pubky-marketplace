@@ -177,6 +177,20 @@ describe('marketplacePaymentMethodFailureMessage', () => {
     );
   });
 
+  it('maps an auction win with too little time left for Bitcoin', () => {
+    const error = new AppError({
+      category: ErrorCategory.Client,
+      code: ClientErrorCode.BAD_REQUEST,
+      message: 'SENTINEL_AUCTION_WINDOW_WIRE',
+      service: ErrorService.Marketplace,
+      operation: 'bindPaymentMethod',
+      context: { statusCode: 409, reason: 'auction_payment_window_too_short' },
+    });
+    expect(marketplacePaymentMethodFailureMessage(error, 'fallback')).toBe(
+      'Too little time is left on this auction win to pay with Bitcoin. Choose another payment method, or message the seller.',
+    );
+  });
+
   it('maps the service-unavailable family', () => {
     const unavailable = new AppError({
       category: ErrorCategory.Client,
@@ -363,6 +377,25 @@ describe('marketplacePaymentMethodFailureMessage', () => {
       }
       for (const [reason, copy] of MARKETPLACE_PAYMENT_METHOD_REASON_MESSAGES) {
         if (reason.startsWith('usdt_') || reason === 'buyer_usdt_wallet_required') expect(copy).toMatch(/USDT/);
+      }
+    });
+
+    it("has static copy for every refusal an auction winner's bind can answer with", () => {
+      for (const reason of [
+        'auction_window_ended',
+        'delivery_address_and_envelope',
+        'delivery_address_not_accepted',
+        'delivery_address_required',
+        'encrypted_delivery_required',
+        'invalid_delivery_address',
+      ]) {
+        expect(marketplacePaymentMethodReasonMessage(reason)).toBe(
+          MARKETPLACE_PAYMENT_METHOD_REASON_MESSAGES.get(reason),
+        );
+        expect(MARKETPLACE_PAYMENT_METHOD_REASON_MESSAGES.get(reason)).toBeTruthy();
+        expect(MARKETPLACE_PAYMENT_METHOD_REASON_MESSAGES.get(reason)).not.toBe(
+          MARKETPLACE_PAYMENT_METHOD_REASON_MESSAGES.get('unavailable'),
+        );
       }
     });
 

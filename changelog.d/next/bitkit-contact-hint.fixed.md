@@ -1,0 +1,1 @@
+Bitcoin checkout no longer asks the buyer to check their Bitkit contacts once the request is sent, because the request can only be sent after Bitkit has the seller as a contact. The "Waiting for your wallet" step now says that Bitkit only receives requests from contacts, since that is the step where a missing contact holds the request back.

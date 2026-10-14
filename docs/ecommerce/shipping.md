@@ -28,7 +28,13 @@ This is load-bearing; the service side is in `pubky-marketplace-service`
    DHKEM(X25519)/HKDF-SHA256/ChaCha20-Poly1305), bound to the checkout command,
    buyer, seller and key id. It leaves the browser only as that envelope inside
    `checkout.create` (`delivery_address_envelopes`), the offer checkout
-   (`delivery_address_envelope`) or a drop claim.
+   (`delivery_address_envelope`), a drop claim, or, for an auction winner,
+   the payment-method bind (`POST /v0/orders/{id}/payment-method`). The
+   winner's order exists from the auction close without an address, so the
+   order page asks for it above the payment methods and the bind refuses an
+   auction order that has none. The envelope is bound to the order id in
+   place of a checkout command id, which the seller's projection returns as
+   `command_id`.
 2. The service validates the envelope's shape and size, stores the ciphertext,
    and cannot open it. Command results and exact replays never echo it.
 3. The seller's single-order projection carries the envelope in an

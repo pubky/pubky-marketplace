@@ -13,6 +13,11 @@ import { useMarketplaceOrderPayment } from './useMarketplaceOrderPayment';
 vi.mock('@/controllers/commerce/commerce', () => ({
   CommerceController: {
     fetchUsdtPaymentsAvailable: vi.fn(async () => false),
+    getDeliveryAddresses: vi.fn(async () => []),
+    commitMarkDeliveryAddressUsed: vi.fn(async () => undefined),
+    resolveDeliveryKeysForCheckout: vi.fn(),
+    commitAcceptDeliveryKeyChange: vi.fn(),
+    sealDeliveryAddressForCheckout: vi.fn(),
     rememberUsdtRefusal: vi.fn((sellerKey: string, reason: 'usdt_unavailable' | 'usdt_seller_not_ready') => {
       useCommerceStore.getState().setUsdtRefusal(sellerKey, reason);
     }),
@@ -125,8 +130,132 @@ describe('useMarketplaceOrderPayment', () => {
       asOpaque<{ props: { onClick: () => void } }>(toastCall?.action).props.onClick();
     });
     await waitFor(() => expect(CommerceController.bindPaymentMethod).toHaveBeenCalledTimes(2));
-    expect(CommerceController.bindPaymentMethod).toHaveBeenLastCalledWith(order.id, 'bitcoin');
+    expect(CommerceController.bindPaymentMethod).toHaveBeenLastCalledWith(order.id, 'bitcoin', undefined);
     await waitFor(() => expect(onPaymentChanged).toHaveBeenCalledTimes(1));
+  });
+
+  describe('an auction winner order that still needs its delivery address', () => {
+    const SELLER_KEY = { keyId: 'a'.repeat(32), publicKey: new Uint8Array(32) };
+    const ADDRESS = {
+      name: 'Ada Buyer',
+      line1: '1 Example Street',
+      line2: '',
+      city: 'Lisbon',
+      region: '',
+      postalCode: '1000-001',
+      countryCode: 'PT',
+    };
+    const config = { bitcoinAvailable: true, bitcoinOfferAvailable: true, paypalAvailable: true };
+    const winnerOrder = (overrides = {}) =>
+      createOrderFixture('pending_payment', {
+        paymentMethod: null,
+        auctionAggregateId: 'listing:seller_boots',
+        shippingAddressRequired: true,
+        ...overrides,
+      });
+
+    beforeEach(() => {
+      vi.mocked(CommerceController.bindPaymentMethod).mockReset();
+      vi.mocked(CommerceController.resolveDeliveryKeysForCheckout).mockResolvedValue({
+        ok: true,
+        keys: new Map([[createOrderFixture('paid').sellerPubky, SELLER_KEY]]),
+      });
+      vi.mocked(CommerceController.sealDeliveryAddressForCheckout).mockResolvedValue([
+        { sellerPubky: createOrderFixture('paid').sellerPubky, keyId: SELLER_KEY.keyId, envelope: 'E'.repeat(2795) },
+      ]);
+      vi.mocked(CommerceController.getSellerPaymentConfig).mockResolvedValue(config);
+    });
+
+    it('exposes the address form and binds with the sealed address, bound to the order id', async () => {
+      const order = winnerOrder();
+      const { result } = renderHook(() =>
+        useMarketplaceOrderPayment({ order, enabled: true, onPaymentChanged: vi.fn() }),
+      );
+      expect(result.current.deliveryAddress).not.toBeNull();
+      act(() => {
+        result.current.deliveryAddress?.form.reset(ADDRESS);
+      });
+
+      await act(async () => {
+        await result.current.bind('bitcoin');
+      });
+
+      expect(CommerceController.sealDeliveryAddressForCheckout).toHaveBeenCalledWith(
+        expect.objectContaining({ checkoutCommandId: order.id, address: ADDRESS }),
+      );
+      expect(CommerceController.bindPaymentMethod).toHaveBeenCalledWith(order.id, 'bitcoin', {
+        deliveryAddressEnvelope: { keyId: SELLER_KEY.keyId, envelope: 'E'.repeat(2795) },
+      });
+    });
+
+    it('does not bind while the address is incomplete', async () => {
+      const { result } = renderHook(() =>
+        useMarketplaceOrderPayment({ order: winnerOrder(), enabled: true, onPaymentChanged: vi.fn() }),
+      );
+
+      await act(async () => {
+        await result.current.bind('paypal');
+      });
+
+      expect(CommerceController.bindPaymentMethod).not.toHaveBeenCalled();
+      expect(result.current.pendingAction).toBeNull();
+    });
+
+    it('does not bind when the seller published no delivery key', async () => {
+      vi.mocked(CommerceController.resolveDeliveryKeysForCheckout).mockResolvedValue({
+        ok: false,
+        sellerPubky: createOrderFixture('paid').sellerPubky,
+        problem: { kind: 'no_key' },
+      });
+      const { result } = renderHook(() =>
+        useMarketplaceOrderPayment({ order: winnerOrder(), enabled: true, onPaymentChanged: vi.fn() }),
+      );
+      act(() => {
+        result.current.deliveryAddress?.form.reset(ADDRESS);
+      });
+
+      await act(async () => {
+        await result.current.bind('paypal');
+      });
+
+      expect(CommerceController.bindPaymentMethod).not.toHaveBeenCalled();
+      expect(result.current.deliveryAddress?.deliveryKeyBlock?.kind).toBe('no_key');
+    });
+
+    it('sends no address for an order that already has one', async () => {
+      const order = winnerOrder({ shippingAddressRequired: false });
+      const { result } = renderHook(() =>
+        useMarketplaceOrderPayment({ order, enabled: true, onPaymentChanged: vi.fn() }),
+      );
+      expect(result.current.deliveryAddress).toBeNull();
+
+      await act(async () => {
+        await result.current.bind('paypal');
+      });
+
+      expect(CommerceController.sealDeliveryAddressForCheckout).not.toHaveBeenCalled();
+      expect(CommerceController.bindPaymentMethod).toHaveBeenCalledWith(order.id, 'paypal', undefined);
+    });
+
+    it('tells the winner when the window to pay has ended', async () => {
+      vi.mocked(CommerceController.bindPaymentMethod).mockRejectedValueOnce(
+        appError('SENTINEL_ORDER_PAYMENT_ACTION', 'auction_window_ended'),
+      );
+      vi.mocked(toast).mockClear();
+      const { result } = renderHook(() =>
+        useMarketplaceOrderPayment({ order: winnerOrder(), enabled: true, onPaymentChanged: vi.fn() }),
+      );
+      act(() => {
+        result.current.deliveryAddress?.form.reset(ADDRESS);
+      });
+
+      await act(async () => {
+        await result.current.bind('paypal');
+      });
+
+      const toastCall = vi.mocked(toast).mock.calls.at(-1)?.[0];
+      expect(toastCall?.description).toBe('Your window to pay for this auction has ended.');
+    });
   });
 
   describe('USDT in the method picker', () => {

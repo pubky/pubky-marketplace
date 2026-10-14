@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { CommerceController } from '@/controllers/commerce/commerce';
+import { useAuctionWinnerDeliveryAddress } from '@/hooks/useAuctionWinnerDeliveryAddress/useAuctionWinnerDeliveryAddress';
 import { useUsdtPaymentsAvailable } from '@/hooks/useUsdtPaymentsAvailable/useUsdtPaymentsAvailable';
 import {
   MARKETPLACE_FAILURE_MESSAGES,
@@ -12,6 +13,7 @@ import {
 } from '@/libs/commerce/failure-messages';
 import {
   availablePaymentMethods,
+  type BindDeliveryAddress,
   type PaymentMethodKind,
   type SellerPaymentConfig,
 } from '@/libs/commerce/payment-methods';
@@ -42,6 +44,12 @@ export function useMarketplaceOrderPayment({
   const [pendingAction, setPendingAction] = useState<'bind' | 'verify' | 'mark-paid' | 'confirm' | null>(null);
 
   const needsConfig = enabled && !order.paymentMethod;
+  const shippingAddressRequired = needsConfig && order.shippingAddressRequired === true;
+  const winnerDelivery = useAuctionWinnerDeliveryAddress({
+    sellerPubky: order.sellerPubky,
+    orderId: order.id,
+    enabled: shippingAddressRequired,
+  });
   const usdtPaymentsAvailable = useUsdtPaymentsAvailable(needsConfig);
   const sellerKey = usdtRefusalKey([order.sellerPubky]);
   const usdtRefused = useCommerceStore((state) => state.usdtRefusals[sellerKey] !== undefined);
@@ -91,18 +99,26 @@ export function useMarketplaceOrderPayment({
     [onPaymentChanged, sellerKey],
   );
 
-  const bind = useCallback(
-    async (method: PaymentMethodKind) => {
-      const run = async () => {
-        await CommerceController.bindPaymentMethod(order.id, method);
-      };
-      async function attempt(): Promise<void> {
-        await runAction('bind', run, () => void attempt());
+  const bind = async (method: PaymentMethodKind) => {
+    let delivery: BindDeliveryAddress | undefined;
+    if (shippingAddressRequired) {
+      setPendingAction('bind');
+      const prepared = await winnerDelivery.prepare();
+      if (!prepared.ok) {
+        setPendingAction(null);
+        return;
       }
-      await attempt();
-    },
-    [order.id, runAction],
-  );
+      delivery = prepared.delivery;
+    }
+    const run = async () => {
+      await CommerceController.bindPaymentMethod(order.id, method, delivery);
+      if (shippingAddressRequired) await winnerDelivery.rememberUsed();
+    };
+    async function attempt(): Promise<void> {
+      await runAction('bind', run, () => void attempt());
+    }
+    await attempt();
+  };
 
   const markPaid = useCallback(
     async (transactionRef: string) => {
@@ -127,6 +143,8 @@ export function useMarketplaceOrderPayment({
       : null,
     bitcoinOfferUnavailable: sellerConfig?.bitcoinAvailable === true && sellerConfig.bitcoinOfferAvailable === false,
     configError,
+    /** Set while an auction winner's order still needs the address it ships to. */
+    deliveryAddress: shippingAddressRequired ? winnerDelivery : null,
     pendingAction,
     bind,
     markPaid,

@@ -15,12 +15,18 @@
  * never mounts. The gate forwards that one host through Node after the page
  * calls fetch. An unbound Window.fetch still throws in the page, before any
  * request exists to forward. The Nexus fixture stub is not forwarded.
+ *
+ * Mount path: LAUNCH_E2E_BASE_URL carries the Shop build's `NEXT_PUBLIC_BASE_PATH`
+ * (`http://127.0.0.1:3000/shop-embed` for the build the App frames at pubky.app/shop).
+ * Without a path the build is standalone, as before. The suite drives the build itself,
+ * never the App's /shop wrapper. See docs/launch/shop-embedding.md.
  */
 import { existsSync } from 'node:fs';
 import { readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
+import { launchTarget } from './launch-target.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 const FIXTURE_PATH = path.join(ROOT, 'src/test/e2e/fixtures/launch-critical.json');
@@ -28,7 +34,9 @@ const CANONICAL_LISTING_PATH = path.join(ROOT, 'src/test/e2e/fixtures/nexus/cano
 const SHOP_FIXTURE_PATH = path.join(ROOT, 'src/test/e2e/fixtures/nexus/shop.json');
 const DEFAULT_IDENTITIES_FILE = '/Users/johncarvalho/work/.staging-drop-identities.json';
 
-const BASE_URL = (process.env.LAUNCH_E2E_BASE_URL ?? 'http://127.0.0.1:3000').replace(/\/$/, '');
+const TARGET = launchTarget(process.env.LAUNCH_E2E_BASE_URL);
+const BASE_URL = TARGET.baseUrl;
+const routeOf = (url) => TARGET.routeOf(new URL(url).pathname);
 const SERVICE_URL = process.env.LAUNCH_E2E_SERVICE_URL ?? 'https://staging-api.pubky.app';
 const NEXUS_URL = (process.env.LAUNCH_E2E_NEXUS_URL ?? '').replace(/\/$/, '');
 const ALLOW_LIVE_NEXUS = process.env.LAUNCH_E2E_ALLOW_LIVE_NEXUS === '1';
@@ -337,7 +345,7 @@ async function installStagingServiceProxy(page) {
   }
   await page.route(`${service.origin}/**`, async (route) => {
     const request = route.request();
-    const origin = request.headers()['origin'] ?? new URL(BASE_URL).origin;
+    const origin = request.headers()['origin'] ?? TARGET.origin;
     const cors = {
       'access-control-allow-origin': origin,
       'access-control-allow-credentials': 'true',
@@ -547,8 +555,8 @@ async function collectBoardSignals(page, pageErrors, errorOffset) {
     nextCrash,
     applicationError,
     slice,
-    redirectedHome: new URL(page.url()).pathname === '/marketplace',
-    onInventory: new URL(page.url()).pathname === '/marketplace/dashboard/inventory',
+    redirectedHome: routeOf(page.url()) === '/marketplace',
+    onInventory: routeOf(page.url()) === '/marketplace/dashboard/inventory',
     joinVisible: await page
       .getByRole('heading', { name: 'Join Pubky' })
       .isVisible()
@@ -658,7 +666,7 @@ async function mountInventoryBoard(page, secretHex, pageErrors) {
     }
   }
 
-  if (!signals.onInventory && new URL(page.url()).pathname !== '/marketplace/dashboard/inventory') {
+  if (!signals.onInventory && routeOf(page.url()) !== '/marketplace/dashboard/inventory') {
     record('inventory:board-route', false, `expected inventory path, got ${page.url()}`);
     return;
   }
@@ -888,7 +896,7 @@ async function main() {
     await gotoAndSettle(page, '/marketplace/drops');
     const dropsHeading = page.getByRole('heading', { level: 1, name: 'Drops' });
     const dropsVisible = await expectVisible(page, dropsHeading, 'drops:heading');
-    const dropsPath = new URL(page.url()).pathname;
+    const dropsPath = routeOf(page.url());
     assert(
       'drops:guest-stays',
       dropsVisible && dropsPath === '/marketplace/drops',
@@ -907,16 +915,20 @@ async function main() {
     }
 
     await gotoAndSettle(page, fixture.pages[2].path);
-    await page.waitForURL((url) => url.pathname === '/marketplace', { timeout: 20_000 }).catch(() => undefined);
-    assert('cart:guest-redirect', new URL(page.url()).pathname === '/marketplace', page.url());
+    await page
+      .waitForURL((url) => TARGET.routeOf(url.pathname) === '/marketplace', { timeout: 20_000 })
+      .catch(() => undefined);
+    assert('cart:guest-redirect', routeOf(page.url()) === '/marketplace', page.url());
     await waitForJoinPubky(page);
     const placeOrder = await page.getByRole('button', { name: /Place .* order/i }).count();
     assert('cart:no-sandbox-checkout', placeOrder === 0, 'guest cannot place an order');
     await closeJoinDialog(page);
 
     await gotoAndSettle(page, fixture.pages[3].path);
-    await page.waitForURL((url) => url.pathname === '/marketplace', { timeout: 20_000 }).catch(() => undefined);
-    assert('compose:guest-redirect', new URL(page.url()).pathname === '/marketplace', page.url());
+    await page
+      .waitForURL((url) => TARGET.routeOf(url.pathname) === '/marketplace', { timeout: 20_000 })
+      .catch(() => undefined);
+    assert('compose:guest-redirect', routeOf(page.url()) === '/marketplace', page.url());
     await waitForJoinPubky(page);
     const studio = await page.locator('[data-surface="seller-studio"]').count();
     assert('compose:no-seller-studio', studio === 0, 'composer stays behind Join Pubky');
@@ -952,6 +964,7 @@ async function main() {
   } finally {
     const summary = {
       baseUrl: BASE_URL,
+      basePath: TARGET.basePath,
       serviceUrl: SERVICE_URL,
       nexusUrl: NEXUS_URL,
       fixture: path.relative(ROOT, FIXTURE_PATH),

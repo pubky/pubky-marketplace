@@ -2,7 +2,7 @@
 
 import { useCallback, useState } from 'react';
 import { getMarketplaceListingRoute, POST_ROUTES } from '@/app/routes';
-import { withBasePath } from '@/config/base-path';
+import { withPublicPath } from '@/config/base-path';
 import { useCurrentUserProfile } from '@/hooks/useCurrentUserProfile/useCurrentUserProfile';
 import { postJson } from '@/libs/api/client-request';
 import { Logger } from '@/libs/logger/logger';
@@ -110,8 +110,8 @@ export function useReportPost(target: ReportTarget): UseReportPostReturn {
 
 function buildReportedUrl(target: ReportTarget): string {
   if (target.kind === 'listing') {
-    return `${window.location.origin}${withBasePath(getMarketplaceListingRoute(target.sellerPubky, target.listingId))}`;
+    return `${window.location.origin}${withPublicPath(getMarketplaceListingRoute(target.sellerPubky, target.listingId))}`;
   }
   const parsedId = parseCompositeId(target.postId);
-  return `${window.location.origin}${withBasePath(POST_ROUTES.POST)}/${parsedId.pubky}/${parsedId.id}`;
+  return `${window.location.origin}${withPublicPath(POST_ROUTES.POST)}/${parsedId.pubky}/${parsedId.id}`;
 }

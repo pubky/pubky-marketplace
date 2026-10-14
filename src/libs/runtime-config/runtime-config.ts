@@ -252,6 +252,10 @@ export const getFrameAncestors = (): string[] => getRuntimeConfig().frameAncesto
 export const getEmbeddedFlag = (): boolean => getRuntimeConfig().embedded;
 /** Explicit deployer choice for legacy-storage adoption; `undefined` lets the caller derive it. */
 export const getStorageAdoptLegacyOverride = (): boolean | undefined => getRuntimeConfig().storageAdoptLegacy;
+/** The host app's path for the Shop, when it differs from the build's mount path; `undefined` otherwise. */
+export const getShopPublicPathOverride = (): string | undefined => getRuntimeConfig().shopPublicPath;
+/** Deployer override for the grant sign-in client id; `undefined` keeps the built-in default. */
+export const getShopGrantClientIdOverride = (): string | undefined => getRuntimeConfig().shopGrantClientId;
 export const getPreludeSdkKey = (): string | undefined => getRuntimeConfig().preludeSdkKey;
 export const getPreludeSdkTimeoutMs = (): number => getRuntimeConfig().preludeSdkTimeoutMs;
 export const getPlausibleDomain = (): string | undefined => getRuntimeConfig().plausibleDomain;

@@ -18,8 +18,8 @@ import {
   CAPABILITIES,
   capabilitiesMatchFullGrant,
   capabilitiesMatchRingCookieGrant,
+  getShopGrantClientId,
   RING_COOKIE_CAPABILITIES,
-  SHOP_GRANT_CLIENT_ID,
 } from '@/config/app';
 import {
   getDefaultHttpRelay,
@@ -768,7 +768,7 @@ export class HomeserverService {
       // `GrantAuthFlow.startDelegated` spins up a default mainnet client and cannot resolve
       // identities that only exist on those relays. In browsers it still picks delegated keys.
       const flow = await this.getPubkySdk().startGrantAuthFlow(CAPABILITIES, kind(), {
-        clientId: SHOP_GRANT_CLIENT_ID,
+        clientId: getShopGrantClientId(),
         relay: getDefaultHttpRelay(),
         ...(xCallback ? { xCallback } : {}),
       });

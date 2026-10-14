@@ -10,6 +10,7 @@ import type {
   MarketplaceSellerDigitalDelivery,
 } from '@/libs/commerce/digital';
 import type {
+  BindDeliveryAddress,
   PaymentMethodKind,
   SellerPaymentConfig,
   SellerPaymentConfigOwnView,
@@ -596,9 +597,14 @@ export class MarketplaceGatewayService {
     return await MarketplaceTransactionService.putMyPaymentConfig(actor, input);
   }
 
-  static async bindPaymentMethod(actor: string, orderId: string, method: PaymentMethodKind): Promise<MarketplaceOrder> {
+  static async bindPaymentMethod(
+    actor: string,
+    orderId: string,
+    method: PaymentMethodKind,
+    delivery?: BindDeliveryAddress,
+  ): Promise<MarketplaceOrder> {
     this.assertDurableServiceOnly('bindPaymentMethod');
-    return await MarketplaceTransactionService.bindPaymentMethod(actor, orderId, method);
+    return await MarketplaceTransactionService.bindPaymentMethod(actor, orderId, method, delivery);
   }
 
   static async markFiatPaid(actor: string, orderId: string, transactionRef?: string): Promise<MarketplaceOrder> {

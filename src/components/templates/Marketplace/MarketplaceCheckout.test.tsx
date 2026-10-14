@@ -1120,7 +1120,9 @@ describe('MarketplaceCheckout digital lines (digital delivery design §3 "Checko
     view.fulfillmentByItem = { [CART_ITEM_ID]: 'digital' };
     view.requiresDeliveryAddress = false;
     render(<MarketplaceCheckout />);
-    expect(screen.getByText('Shipping').parentElement).not.toHaveTextContent('$');
+    expect(screen.queryByText('Shipping')).not.toBeInTheDocument();
+    expect(screen.getByText('Delivery').parentElement).not.toHaveTextContent('$');
+    expect(screen.getByText('No shipping for digital items.')).toBeInTheDocument();
   });
 
   it('shows no fulfillment conflict for a seller whose lines are all digital', () => {

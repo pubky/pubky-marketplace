@@ -86,6 +86,25 @@ describe('usePassportSignIn', () => {
     await waitFor(() => expect(result.current.isPending).toBe(false));
   });
 
+  it("returns to the build's mount path, not the App's public /shop, when the App frames the Shop", async () => {
+    setBasePath('/shop-embed');
+    mocks.getPassportGrantAuthUrl.mockResolvedValue({
+      authorizationUrl: 'pubkyauth://signin_grant?caps=x',
+      awaitApproval: Promise.resolve(session),
+      cancelAuthFlow: vi.fn(),
+    });
+    mocks.startPassportAttempt.mockImplementation(async (begin: () => Promise<PassportApproval<Session>>) => {
+      const approval = await begin();
+      return await approval.result;
+    });
+
+    const { result } = renderHook(() => usePassportSignIn());
+    act(() => result.current.start());
+
+    await waitFor(() => expect(mocks.passportCallbacks).toHaveBeenCalledWith(window.location.origin, '/shop-embed'));
+    await waitFor(() => expect(result.current.isPending).toBe(false));
+  });
+
   it('runs the Shop grant ceremony inside the Passport attempt and initializes the approved session', async () => {
     const awaitApproval = Promise.resolve(session);
     const cancelAuthFlow = vi.fn();

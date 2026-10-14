@@ -61,6 +61,8 @@ The build also fails when the value is one of the Shop's own origins (a leading 
 
 Components must not hard-code root-relative URLs for things the Next.js router does not rewrite. Use `withBasePath('/api/...')` from `@/config/base-path` for `fetch`, `<video>`, CSS `url()` and `history.replaceState`; `next/image` goes through `BasePathImage` (`@/atoms/BasePathImage/BasePathImage`), and `next/link`, `router.push` and redirects need nothing. See [docs/launch/shop-embedding.md](launch/shop-embedding.md) for the proxy, framing, storage and navigation contract.
 
+`PUBKY_RUNTIME_SHOP_PUBLIC_PATH` (unset by default) is the path people use to reach the Shop when it differs from the build's mount path. On pubky.app the App owns `/shop` and frames the build mounted at `/shop-embed` (`NEXT_PUBLIC_BASE_PATH=/shop-embed`), so the Shop sets `PUBKY_RUNTIME_SHOP_PUBLIC_PATH=/shop`. Use `withBasePath` for what the iframe itself requests (assets, API calls, the Passport popup return) and `withPublicPath` for a URL that leaves the page and comes back top-level (share links, canonical and Open Graph URLs). Unset means the mount path, so a standalone Shop and a Shop served directly under `/shop` are unchanged.
+
 ### Browser storage namespace
 
 `NEXT_PUBLIC_DB_NAME` defaults to `shop-franky` (it was `franky`). Persisted store keys, the feature-discovery flags and a few session keys carry a `shop-` prefix (`shopStorageKey` in `@/libs/storage-namespace/storage-namespace`), so the Shop and pubky.app can share an origin. A one-time, idempotent migration moves an existing user's data into the namespace; `PUBKY_RUNTIME_STORAGE_ADOPT_LEGACY` says whether this origin's old names belong to the Shop (default: yes unless `NEXT_PUBLIC_BASE_PATH` is set). New persisted keys must be added to `src/core/stores/persistedKeys.ts` so they are namespaced and migrated.
@@ -209,7 +211,7 @@ With none of these keys set the Shop runs with `PUBKY_RUNTIME_COMMERCE_ADAPTER_M
 | `PUBKY_RUNTIME_INBOX_URL`                           | unset                         | Base URL of the `pubky/inbox` ping service that chat uses for wake-ups and stranger first contact ([`chat/README.md`](chat/README.md)). Unset or empty disables the inbox; chat then runs on homeserver event streams and reconciliation alone. Grant sessions only: cookie sessions cannot open an inbox session.       |
 | `PUBKY_RUNTIME_INBOX_AUDIENCE`                      | the inbox URL                 | Audience string the inbox expects in session proofs (`INBOX_AUTH__AUDIENCE` on the service).                                                                                                                                                                                                                             |
 
-Framing, embedding and storage keys (`PUBKY_RUNTIME_FRAME_ANCESTORS`, `PUBKY_RUNTIME_EMBEDDED`, `PUBKY_RUNTIME_STORAGE_ADOPT_LEGACY`) are described in [Framing and embedded mode](#framing-and-embedded-mode-runtime) and [`launch/shop-embedding.md`](launch/shop-embedding.md).
+Framing, embedding and storage keys (`PUBKY_RUNTIME_FRAME_ANCESTORS`, `PUBKY_RUNTIME_EMBEDDED`, `PUBKY_RUNTIME_STORAGE_ADOPT_LEGACY`, `PUBKY_RUNTIME_SHOP_PUBLIC_PATH`, `PUBKY_RUNTIME_SHOP_GRANT_CLIENT_ID`) are described in [Framing and embedded mode](#framing-and-embedded-mode-runtime) and [`launch/shop-embedding.md`](launch/shop-embedding.md).
 
 ### Homeserver mute list sync
 

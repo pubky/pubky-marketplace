@@ -505,3 +505,70 @@ describe('embedding runtime values', () => {
     expect(() => runtimeConfigValueSchema.parse({ ...base, frameAncestors: ['https://*.pubky.app'] })).toThrow();
   });
 });
+
+describe('shop public path runtime value', () => {
+  it('is unset by default, so the mount path serves people too', () => {
+    expect(runtimeEnvInputSchema.parse(VALID_ENV_INPUT).shopPublicPath).toBeUndefined();
+    expect(runtimeEnvInputSchemaWithDefaults.parse({}).shopPublicPath).toBeUndefined();
+    expect(runtimeEnvInputSchema.parse({ ...VALID_ENV_INPUT, shopPublicPath: '  ' }).shopPublicPath).toBeUndefined();
+  });
+
+  it('parses a path the host app serves the Shop at', () => {
+    expect(runtimeEnvInputSchema.parse({ ...VALID_ENV_INPUT, shopPublicPath: '/shop' }).shopPublicPath).toBe('/shop');
+    expect(runtimeEnvInputSchemaWithDefaults.parse({ shopPublicPath: '/shop' }).shopPublicPath).toBe('/shop');
+  });
+
+  it.each([
+    ['no leading slash', 'shop'],
+    ['a trailing slash', '/shop/'],
+    ['a dot segment', '/shop/../x'],
+    ['an origin', 'https://pubky.app/shop'],
+    ['a query', '/shop?x=1'],
+  ])('rejects %s', (_label, value) => {
+    expect(() => runtimeEnvInputSchema.parse({ ...VALID_ENV_INPUT, shopPublicPath: value })).toThrow();
+    expect(() => runtimeEnvInputSchemaWithDefaults.parse({ shopPublicPath: value })).toThrow();
+  });
+
+  it('validates the parsed value schema too', () => {
+    const base = runtimeEnvInputSchema.parse(VALID_ENV_INPUT);
+    expect(runtimeConfigValueSchema.parse({ ...base, shopPublicPath: '/shop' }).shopPublicPath).toBe('/shop');
+    expect(() => runtimeConfigValueSchema.parse({ ...base, shopPublicPath: '' })).toThrow();
+    expect(() => runtimeConfigValueSchema.parse({ ...base, shopPublicPath: '/shop/' })).toThrow();
+  });
+});
+
+describe('shop grant client id runtime value', () => {
+  it('is unset by default, so the built-in client id applies', () => {
+    expect(runtimeEnvInputSchema.parse(VALID_ENV_INPUT).shopGrantClientId).toBeUndefined();
+    expect(runtimeEnvInputSchemaWithDefaults.parse({}).shopGrantClientId).toBeUndefined();
+    expect(
+      runtimeEnvInputSchema.parse({ ...VALID_ENV_INPUT, shopGrantClientId: '  ' }).shopGrantClientId,
+    ).toBeUndefined();
+  });
+
+  it.each(['pubky.app', 'staging.pubky.app', 'shop.pubky.app'])('accepts the host name %s', (value) => {
+    expect(runtimeEnvInputSchema.parse({ ...VALID_ENV_INPUT, shopGrantClientId: value }).shopGrantClientId).toBe(value);
+    expect(runtimeEnvInputSchemaWithDefaults.parse({ shopGrantClientId: value }).shopGrantClientId).toBe(value);
+  });
+
+  it.each([
+    ['a scheme', 'https://pubky.app'],
+    ['a path', 'pubky.app/shop'],
+    ['a port', 'pubky.app:443'],
+    ['upper case', 'Pubky.app'],
+    ['no dot', 'pubky'],
+    ['a leading dot', '.pubky.app'],
+    ['a trailing dot', 'pubky.app.'],
+  ])('rejects %s', (_label, value) => {
+    expect(() => runtimeEnvInputSchema.parse({ ...VALID_ENV_INPUT, shopGrantClientId: value })).toThrow();
+    expect(() => runtimeEnvInputSchemaWithDefaults.parse({ shopGrantClientId: value })).toThrow();
+  });
+
+  it('validates the parsed value schema too', () => {
+    const base = runtimeEnvInputSchema.parse(VALID_ENV_INPUT);
+    expect(runtimeConfigValueSchema.parse({ ...base, shopGrantClientId: 'pubky.app' }).shopGrantClientId).toBe(
+      'pubky.app',
+    );
+    expect(() => runtimeConfigValueSchema.parse({ ...base, shopGrantClientId: 'https://pubky.app' })).toThrow();
+  });
+});

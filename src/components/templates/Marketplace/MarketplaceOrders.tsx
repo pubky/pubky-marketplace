@@ -422,8 +422,10 @@ export function MarketplaceOrders() {
                               <MarketplaceBitcoinAmountBreakdown order={order} className="mt-1" />
                             ) : (
                               <Typography as="p" className="mt-1 text-xs text-muted-foreground">
-                                Items {formatCommerceMoney(order.subtotal)} · Shipping{' '}
-                                {formatCommerceMoney(order.shipping)}
+                                Items {formatCommerceMoney(order.subtotal)}
+                                {order.fulfillment !== 'digital' && (
+                                  <> · Shipping {formatCommerceMoney(order.shipping)}</>
+                                )}
                               </Typography>
                             )}
                             <MarketplaceOrderReference order={order} isBuyer={isBuyer} showPlacedAt />

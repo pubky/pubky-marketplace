@@ -416,7 +416,7 @@ describe('CommerceInventoryApplication', () => {
     const byId = Object.fromEntries(board.rows.map((entry) => [entry.listingId, entry]));
     expect(byId.guide).toMatchObject({ unlimited: true, available: 4 });
     expect(byId.boots.unlimited).toBeUndefined();
-    expect(byId.locks.unlimited).toBeUndefined();
+    expect(byId.locks).toMatchObject({ unlimited: true });
   });
 });
 

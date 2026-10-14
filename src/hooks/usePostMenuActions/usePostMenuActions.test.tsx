@@ -1,8 +1,16 @@
 import { act, renderHook } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { EnrichedPostDetails } from '@/application/moderation/moderation.types';
+import { setBasePath } from '@/test-utils/base-path';
 import { usePostMenuActions } from './usePostMenuActions';
 import { POST_MENU_ACTION_IDS } from './usePostMenuActions.constants';
+
+const publicPath = vi.hoisted(() => ({ value: undefined as string | undefined }));
+
+vi.mock('@/libs/runtime-config/runtime-config', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/libs/runtime-config/runtime-config')>();
+  return { ...actual, getShopPublicPathOverride: () => publicPath.value };
+});
 
 // Hoist mocks
 const {
@@ -502,6 +510,26 @@ describe('usePostMenuActions', () => {
       });
 
       expect(defaultMocks.copyToClipboard).toHaveBeenCalledWith('https://example.com/post/author123/post456');
+    });
+
+    it('copies the App /shop link, not the /shop-embed iframe path, when the App frames the Shop', async () => {
+      setBasePath('/shop-embed');
+      publicPath.value = '/shop';
+      try {
+        const { result } = renderHook(() =>
+          usePostMenuActions(mockPostId, { onReportClick: vi.fn(), onEditClick: vi.fn(), onDeleteClick: vi.fn() }),
+        );
+        const copyLinkItem = result.current.menuItems.find((item) => item.id === POST_MENU_ACTION_IDS.COPY_LINK);
+
+        await act(async () => {
+          await copyLinkItem?.onClick();
+        });
+
+        expect(defaultMocks.copyToClipboard).toHaveBeenCalledWith('https://example.com/shop/post/author123/post456');
+      } finally {
+        setBasePath('');
+        publicPath.value = undefined;
+      }
     });
 
     it('includes copy text action for short posts', () => {

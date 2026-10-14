@@ -15,20 +15,43 @@ Everything here is off by default. With none of the keys below set, the Shop beh
 | `PUBKY_RUNTIME_EMBEDDED` | runtime | `false` | Force the embedded layout and behaviour even when the page is not detected as framed. Use it on a deployment that exists only to be embedded, so server-rendered HTML is already the embedded layout. |
 | `PUBKY_RUNTIME_STORAGE_ADOPT_LEGACY` | runtime | derived | Whether this origin's old storage names (`franky`, `auth-store`, ...) are the Shop's, so they are migrated. Unset means yes when `NEXT_PUBLIC_BASE_PATH` is empty and no when it is set. |
 
+| `PUBKY_RUNTIME_SHOP_PUBLIC_PATH` | runtime | unset | The path people use to reach the Shop when it is not the mount path: `/shop` when the App owns `/shop` and frames this build at `/shop-embed`. Share links, canonical and Open Graph URLs and structured data use it. Unset means the mount path. See [Who owns `/shop`](#who-owns-shop). |
+| `PUBKY_RUNTIME_SHOP_GRANT_CLIENT_ID` | runtime | `shop.pubky.app` | The client id Bitkit and other signers show on their approval screen for the Shop's grant sign-in (`cid=` in the `signin_grant` link): a bare host name, no scheme, port or path. On pubky.app set `pubky.app` (staging: `staging.pubky.app`). |
+
 `PUBKY_RUNTIME_DEFAULT_URL` stays the site **origin** (`https://pubky.app`). The mount path is appended where a public URL is built (canonical links, structured data, share links).
 
 Invalid values fail the build (build keys) or startup (runtime keys), not silently.
 
+## Who owns `/shop`
+
+There are two shapes. The rest of this page applies to both unless it says otherwise.
+
+- **Direct.** The Shop build is mounted at `/shop` (`NEXT_PUBLIC_BASE_PATH=/shop`) and the proxy sends `/shop` to it. The mount path and the public path are the same. A standalone Shop (no base path, for example a Vercel test instance or `shop.pubky.app`) is the same shape with an empty path.
+- **App-owned (the pubky.app launch).** The App owns `/shop`: it renders its own chrome around a same-origin iframe, and the Shop build runs at `/shop-embed` (`NEXT_PUBLIC_BASE_PATH=/shop-embed`, `PUBKY_RUNTIME_EMBEDDED=true`, `PUBKY_RUNTIME_STORAGE_ADOPT_LEGACY=false`, `PUBKY_RUNTIME_FRAME_ANCESTORS='self'`), proxied with the prefix kept. Set `PUBKY_RUNTIME_SHOP_PUBLIC_PATH=/shop`. The App's own guide is [`docs/shop-embedding.md` in pubky-app](https://github.com/pubky/pubky-app/blob/89db97edecfbf73536c8670f6192b65e3c6cdce3/docs/shop-embedding.md).
+
+In the App-owned shape every URL has one of two homes:
+
+| URL | Path | Why |
+|---|---|---|
+| Assets, `/api/*` calls, `history.replaceState` inside the frame | `/shop-embed` (mount path) | The iframe requests them itself. |
+| Passport popup return (`/auth/passport/return`) | `/shop-embed` | The popup must load the Shop page so it has a `window.opener` to message. Inside the App's wrapper it would sit in an iframe with none. |
+| Ring and Bitkit deep links (`pubkyring://`, `bitkit://`) | none | They carry the authorization URL and no Shop URL; the Shop hands them to the top window with `navigateTop` and the user returns to the tab they left. |
+| PayPal `return` and `cancel_return` | `/shop` (public path) | A top-level page load. The service builds them as `{PUBLIC_APP_ORIGIN}/marketplace/orders`, so `PUBLIC_APP_ORIGIN=https://pubky.app/shop`: the buyer lands in the App's chrome, which frames `/shop-embed/marketplace/orders`. |
+| Share links (listing, drop, post, profile), report links | `/shop` (public path) | People open them top-level; a `/shop-embed` link loads the Shop without the App around it. |
+| Canonical, Open Graph and structured-data URLs | `/shop` (public path) | Search engines and link previews should index the App's page. |
+
+Code uses `withBasePath` for the first group and `withPublicPath` (`@/config/base-path`) for the rest. [Install verification](install-verification.md) checks it from outside with `SHOP_EMBED_PATH=/shop-embed` and `SERVICE_PUBLIC_APP_ORIGIN`; the launch-critical suite takes the build's path on its URL (`LAUNCH_E2E_BASE_URL=http://127.0.0.1:3000/shop-embed`), and needs the Shop under test started with `PUBKY_RUNTIME_EMBEDDED=false`: the embedded layout hides the header the suite clicks (framing can stay on, a top-level page is not embedded).
+
 ## The reverse proxy
 
-Route `https://pubky.app/shop` and everything under it to the Shop deployment, with the path unchanged. The Shop is built for `/shop` and expects to receive `/shop/...`; do not strip the prefix.
+Route the Shop build's mount path and everything under it to the Shop deployment, with the path unchanged: `https://pubky.app/shop` in the direct shape, `https://pubky.app/shop-embed` in the App-owned shape (where `/shop` goes to the App). The Shop is built for its mount path and expects to receive `<mount path>/...`; do not strip the prefix. The paths below are written for the direct shape; read `/shop-embed` for the App-owned one.
 
 - **Static assets.** `/shop/_next/static/*` is immutable and safe to cache for a year. If `NEXT_PUBLIC_ASSET_PREFIX` is set to a path, route that path too.
 - **HTML and API.** Do not cache `/shop/*` HTML or `/shop/api/*`.
 - **Headers.** Pass `Host` and `X-Forwarded-Proto: https` through. The Shop's grant bridge checks the browser `Origin` against its allow-list, so `Origin` must arrive unmodified.
 - **Cookies.** The Shop's bridge cookies are `__Host-`prefixed, `Secure`, `HttpOnly`, `SameSite=Strict`, `Path=/`. On `pubky.app` they are sent to App routes too. They do not clash by name, but the App must not clear or overwrite cookies it did not set.
 - **Redirects.** `/shop` redirects to `/shop/marketplace`.
-- **Vercel cron.** If the embedded build runs on Vercel, the cron in `vercel.json` (`/api/marketplace/grant-cleanup`) must point at the prefixed path (`/shop/api/marketplace/grant-cleanup`) in that deployment's config.
+- **Vercel cron.** If the embedded build runs on Vercel, the cron in `vercel.json` (`/api/marketplace/grant-cleanup`) must point at the prefixed path (`/shop/api/marketplace/grant-cleanup`, or `/shop-embed/api/marketplace/grant-cleanup` when the App owns `/shop`) in that deployment's config.
 - **Socials.** Leave `NEXT_PUBLIC_SOCIAL_HOST` unset in the embedded build. With it set, `/shop/home` and the other social routes answer a 307 to the App and would load the App inside the frame.
 
 The Shop exposes no manifest and registers no service worker under a base path (see [Service worker](#service-worker)), so the App's manifest and worker are the only ones on the origin.
@@ -52,7 +75,7 @@ On the App's side:
 - **The iframe element.** A same-origin iframe needs no `sandbox`. If the App adds one anyway, it must include `allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox allow-top-navigation allow-top-navigation-to-custom-protocols`, or the Shop cannot leave the frame (see [Leaving the frame](#leaving-the-frame)). Add `allow="clipboard-write"` so copy buttons work.
 - **Initial URL.** `src="/shop/marketplace"` is enough: the Shop detects that it is framed, provided `PUBKY_RUNTIME_FRAME_ANCESTORS` is set (which framing needs anyway). Adding `?embedded=1` is harmless and also forces the embedded layout in a window that is not framed (useful for tests).
 - **Inner path in the outer URL.** The Shop does not rewrite the App's address bar. Deep links, refresh and Back need the App's `/shop/<path>` route to pass the path to the iframe and to update itself when the Shop navigates.
-- **Returns that land top-level.** PayPal and signer apps return to a top-level URL, so `https://pubky.app/shop/...` must also load as a full page, not only inside the frame. The Shop renders its own full layout when it is not framed.
+- **Returns that land top-level.** PayPal and signer apps return to a top-level URL, so `https://pubky.app/shop/...` must also load as a full page, not only inside the frame. When the App owns `/shop`, that route is the App's wrapper and frames the same path of the build; a direct load of the build (`/shop-embed/...`) renders the Shop's own full layout when it is not framed.
 
 ## Allowed origins on the backing services
 
@@ -76,11 +99,11 @@ Notes:
 
 - **Lock Server mode.** With `method = "grant-connect"` (the launch mode) the Lock Server reads only `grant_connect.allowed_return_origins`; the `legacy_connect` list is ignored. A server still on `legacy-connect` uses `[creator_authority_acquisition.legacy_connect] allowed_return_origins`. Neither accepts `*` in production.
 - **Grant-bridge trust.** `SHOP_PUBLIC_ORIGIN` and `SHOP_GRANT_ASSERTION_ISSUER` on the Shop must be equal, and the marketplace service's `SHOP_GRANT_ASSERTION_ISSUER` must name the same origin and trust the Shop's assertion key (`SHOP_GRANT_ASSERTION_VERIFYING_KEYS_JSON`). Moving the Shop to `pubky.app` changes the issuer from `https://shop.pubky.app`; it is a trust change on the service, not only a Shop setting.
-- **PayPal return.** The service builds `return` and `cancel_return` as `{PUBLIC_APP_ORIGIN}/marketplace/orders`. With the value above the buyer lands on `https://pubky.app/shop/marketplace/orders`, a full page load of the Shop (see the `Returns that land top-level` note above). A value without `/shop` sends the buyer to a `pubky.app` route that is not the Shop. The service accepts a mount path in this one variable; see the service README.
-- **Passport.** The Passport return page is `{origin}/shop/auth/passport/return`; it needs no allow-list entry on our side. Passport itself accepts any HTTPS callback.
+- **PayPal return.** The service builds `return` and `cancel_return` as `{PUBLIC_APP_ORIGIN}/marketplace/orders`. With the value above the buyer lands on `https://pubky.app/shop/marketplace/orders`, a full page load of the Shop (see the `Returns that land top-level` note above). A value without `/shop` sends the buyer to a `pubky.app` route that is not the Shop, and `…/shop-embed` sends them to the framed build outside the App. The service accepts a mount path in this one variable; see the service README.
+- **Passport.** The Passport return page is `{origin}{mount path}/auth/passport/return` (`/shop/...` in the direct shape, `/shop-embed/...` when the App owns `/shop`); it needs no allow-list entry on our side. Passport itself accepts any HTTPS callback.
 - **Development instances.** A development Shop on its own host (Vercel or Railway) lists its own origin in `SHOP_ALLOWED_ORIGINS`, `SHOP_PUBLIC_ORIGIN` and `SHOP_GRANT_ASSERTION_ISSUER`. The development services it talks to list that host in `ALLOWED_ORIGINS`, Paykit `[setup] allowed_origins`, Locks `allowed_return_origins` and the Nexus and fiat verifier CORS lists, next to `https://staging.pubky.app` when both are in use.
 
-Apply on staging first, then re-run [install verification](install-verification.md) against `https://staging.pubky.app` with `SHOP_PATH=/shop/marketplace`: the `service.cors.*`, `wiring.*-origins`, `flow.paykit-setup.*` and `flow.locks-connect.*` checks cover these settings.
+Apply on staging first, then re-run [install verification](install-verification.md) against `https://staging.pubky.app` with `SHOP_PATH=/shop/marketplace` (and `SHOP_EMBED_PATH=/shop-embed` and `SERVICE_PUBLIC_APP_ORIGIN` when the App owns `/shop`): the `service.cors.*`, `wiring.*-origins`, `flow.paykit-setup.*` and `flow.locks-connect.*` checks cover these settings.
 
 ## Leaving the frame
 
@@ -187,7 +210,7 @@ Ship the namespaced build to `shop.pubky.app` first and let users load it before
 
 ## Mounted-path details
 
-Prefixed with the mount path: same-origin API calls, public images (through `BasePathImage`), `<video>` and CSS-referenced artwork, share links, `history.replaceState` for the checkout URL, canonical and Open Graph URLs (`metadataBase` stays the origin; root-relative values are prefixed), structured data, and the OG fallback redirect. Next.js handles the router, `next/link`, redirects and `/_next` assets itself. The web manifest link is omitted under a base path.
+Prefixed with the mount path: same-origin API calls, public images (through `BasePathImage`), `<video>` and CSS-referenced artwork, `history.replaceState` for the checkout URL, and the OG fallback redirect. Prefixed with the public path (the mount path unless `PUBKY_RUNTIME_SHOP_PUBLIC_PATH` is set): share links, canonical and Open Graph URLs (`metadataBase` stays the origin; root-relative values are prefixed) and structured data. Next.js handles the router, `next/link`, redirects and `/_next` assets itself. The web manifest link is omitted under a base path.
 
 ## Out of scope and open items
 

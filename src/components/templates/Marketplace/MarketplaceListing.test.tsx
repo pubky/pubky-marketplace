@@ -441,7 +441,7 @@ describe('MarketplaceListing', () => {
     );
   });
 
-  it('leaves a Locks listing on its own digital notice', () => {
+  it('presents a Locks listing as digital delivery with no shipping or ship-from', () => {
     view.listing = toCommerceListingModel(
       createCommerceListingFixture({
         fulfillmentMethods: ['digital'],
@@ -458,8 +458,10 @@ describe('MarketplaceListing', () => {
     );
     renderListing();
 
-    expect(screen.queryByTestId('marketplace-listing-digital-badge')).not.toBeInTheDocument();
-    expect(screen.queryByTestId('marketplace-listing-digital-offer-note')).not.toBeInTheDocument();
+    expect(screen.getByTestId('marketplace-listing-digital-badge')).toHaveTextContent('Digital');
+    expect(screen.queryByText(/Shipping/)).not.toBeInTheDocument();
+    expect(screen.queryByText('Ships from')).not.toBeInTheDocument();
+    expect(screen.queryByText('Pickup location')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Make offer/ })).not.toBeInTheDocument();
   });
 
@@ -574,6 +576,63 @@ describe('MarketplaceListing', () => {
     expect(
       screen.queryByText('Connect to see availability before adding this item to your cart.'),
     ).not.toBeInTheDocument();
+  });
+
+  describe('Buy clicked before the marketplace session is known', () => {
+    const renderNeedingSession = () => {
+      view.projection = null;
+      view.projectionError = 'A marketplace session is required.';
+      view.needsSession = true;
+      const listing = view.listing;
+      if (!listing) throw new Error('Expected listing fixture');
+      const element = () => <MarketplaceListing sellerPubky={listing.seller_id} listingId={listing.listing_id} />;
+      const utils = render(element());
+      const sessionRestores = () => {
+        view.needsSession = false;
+        view.projection = createListingProjectionFixture();
+        view.projectionError = null;
+        utils.rerender(element());
+      };
+      return { listing, sessionRestores };
+    };
+
+    it('adds to the cart when the session restores in the background after the click', async () => {
+      const user = userEvent.setup();
+      const { listing, sessionRestores } = renderNeedingSession();
+
+      await user.click(screen.getByRole('button', { name: 'Buy' }));
+      expect(screen.getByRole('heading', { name: 'Enable purchases' })).toBeInTheDocument();
+      expect(cartAdd).not.toHaveBeenCalled();
+
+      sessionRestores();
+
+      await waitFor(() => expect(screen.queryByRole('heading', { name: 'Enable purchases' })).not.toBeInTheDocument());
+      expect(cartAdd).toHaveBeenCalledTimes(1);
+      expect(cartAdd).toHaveBeenCalledWith(`${listing.seller_id}:${listing.listing_id}`, 'variant_01', 1);
+    });
+
+    it('adds to the cart straight away when the session is already restored but the read is stale', async () => {
+      const user = userEvent.setup();
+      sessionState.pubky = 'b'.repeat(52);
+      const { listing } = renderNeedingSession();
+
+      await user.click(screen.getByRole('button', { name: 'Buy' }));
+
+      expect(cartAdd).toHaveBeenCalledWith(`${listing.seller_id}:${listing.listing_id}`, 'variant_01', 1);
+      expect(projectionRefresh).toHaveBeenCalled();
+      expect(screen.queryByRole('heading', { name: 'Enable purchases' })).not.toBeInTheDocument();
+    });
+
+    it('does not add to the cart after the buyer cancelled the approval', async () => {
+      const user = userEvent.setup();
+      const { sessionRestores } = renderNeedingSession();
+
+      await user.click(screen.getByRole('button', { name: 'Buy' }));
+      await user.click(screen.getByRole('button', { name: 'Cancel' }));
+      sessionRestores();
+
+      expect(cartAdd).not.toHaveBeenCalled();
+    });
   });
 
   it('uses one Sign in to buy path when the viewer has no identity', async () => {

@@ -3,7 +3,7 @@
 import { join } from 'node:path';
 import { requireOptional } from './resolve-deps.mjs';
 
-export async function runShopBrowserProbe({ get, origin, path, service, nexus, forbiddenHosts, out, record }) {
+export async function runShopBrowserProbe({ get, origin, path, embedPath = '', service, nexus, forbiddenHosts, out, record }) {
   const host = new URL(origin).host;
   const id = `browser.${host}`;
   let chromium;
@@ -36,7 +36,18 @@ export async function runShopBrowserProbe({ get, origin, path, service, nexus, f
       if (message.type() === 'error' && /CORS|Access-Control-Allow-Origin/i.test(message.text())) corsErrors.push(message.text().slice(0, 160));
     });
     await page.goto(`${origin}${path}`, { waitUntil: 'domcontentloaded', timeout: 90_000 });
-    await page.waitForFunction(
+    // Behind the App's wrapper the Shop runs in an iframe at `embedPath`; its page, not the App's, must render.
+    let content = page;
+    if (embedPath) {
+      const framePrefix = `${origin}${embedPath}/`;
+      const frameDeadline = Date.now() + 60_000;
+      let shopFrame;
+      while (!(shopFrame = page.frames().find((frame) => frame.url().startsWith(framePrefix))) && Date.now() < frameDeadline) await page.waitForTimeout(500);
+      record(`${id}.iframe`, shopFrame ? 'PASS' : 'FAIL', `the page at ${path} frames the Shop at ${embedPath}`, shopFrame ? shopFrame.url().replace(origin, '') : 'no frame loaded', `the App's /shop route must render an iframe whose src is ${embedPath}/…; check PUBKY_RUNTIME_SHOP_EMBED_ENABLED on the App and the proxy route for ${embedPath}`);
+      if (!shopFrame) return;
+      content = shopFrame;
+    }
+    await content.waitForFunction(
       () => !/^\s*Loading\.{0,3}\s*$/.test(document.body?.innerText ?? '') && (document.body?.innerText ?? '').length > 40,
       null,
       { timeout: 120_000 },

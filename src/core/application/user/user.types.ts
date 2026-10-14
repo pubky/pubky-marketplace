@@ -21,3 +21,9 @@ export type TEnsureModerationFollowParams = {
   moderationId?: Pubky;
   signal?: AbortSignal;
 };
+
+export type TEnsureSellerFollowParams = {
+  follower: Pubky;
+  seller: string;
+  signal?: AbortSignal;
+};

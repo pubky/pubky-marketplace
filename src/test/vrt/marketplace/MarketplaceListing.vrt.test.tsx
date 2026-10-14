@@ -553,6 +553,16 @@ describe('Marketplace listing detail — visual regression', () => {
     await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('listing-digital-locks-desktop');
   });
 
+  it('renders a digital listing with a Locks lock at mobile viewport', async () => {
+    const { seller, digitalListing, fixedPriceProjection } = await fixtures;
+    await setView({ listing: digitalListing, projection: fixedPriceProjection });
+
+    const screen = await renderForVRT(<MarketplaceListing sellerPubky={seller} listingId="field_recordings" />, {
+      viewport: VRT_VIEWPORT_MOBILE,
+    });
+    await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('listing-digital-locks-mobile');
+  });
+
   // In locks-paykit mode the digital-delivery notice describes the REAL
   // post-checkout wallet flow instead of the fail-closed unavailability note
   // covered by the scenario above (non-locks-paykit modes).

@@ -554,7 +554,7 @@ describe('SignInContent - Bitkit grant sign-in', () => {
     expect(screen.getByRole('button', { name: 'Copy authentication link' })).toBeInTheDocument();
   });
 
-  it('tells new Bitkit users to create a Pubky identity before scanning the QR', async () => {
+  it('shows no identity hint on either signer tab', async () => {
     vi.mocked(useGrantSignInAvailable).mockReturnValue(true);
     await act(async () => {
       render(<SignInContent />);
@@ -565,7 +565,8 @@ describe('SignInContent - Bitkit grant sign-in', () => {
 
     fireEvent.click(screen.getByRole('radio', { name: 'Bitkit' }));
 
-    expect(screen.getByText(hint)).toBeInTheDocument();
+    expect(screen.getByTestId('sign-in-bitkit-option')).toBeInTheDocument();
+    expect(screen.queryByText(hint)).not.toBeInTheDocument();
   });
 
   it('authorizes using the selected signer on mobile', async () => {
@@ -786,7 +787,8 @@ describe('SignInContent - Continue with Google (Pubky Passport)', () => {
 
     const buttons = screen.getAllByRole('button', { name: 'Continue with Google' });
     expect(buttons).toHaveLength(1);
-    expect(screen.getByText(/creates your Pubky identity if you have none\./)).toBeInTheDocument();
+    expect(screen.getByTestId('sign-in-passport-option')).toHaveTextContent(/^Continue with Google$/);
+    expect(document.body.textContent).not.toMatch(/Messages are not available|creates your Pubky identity/i);
     expect(screen.queryByRole('button', { name: /Continue with Apple/ })).not.toBeInTheDocument();
     expect(screen.getByTestId('sign-in-ring-option')).toBeInTheDocument();
     expect(screen.getByRole('radio', { name: 'Bitkit' })).toBeInTheDocument();
