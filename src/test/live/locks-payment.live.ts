@@ -39,6 +39,11 @@ import { beforeAll, describe, expect, it } from 'vitest';
  * lock beside any physical or pickup method). The buyer's checkout is a
  * digital line with no delivery address.
  *
+ * The pinned Pubky testnet must be published on its stock host ports (DHT
+ * 6881, PKARR relay 15411, HTTP relay 15412, homeserver 6286-6288): set
+ * `LOCKS_DHT_PORT`, `LOCKS_PKARR_RELAY_PORT`, `LOCKS_HTTP_RELAY_PORT` and
+ * `LOCKS_HOMESERVER_*_PORT` accordingly in payments-env `.env`.
+ *
  * Run (env var names only; none is required when the defaults hold):
  *   MARKETPLACE_SERVICE_URL, PAYMENTS_ENV_LOCKS_URL, PAYMENTS_ENV_PAYKIT_URL,
  *   PAYMENTS_ENV_DIR
@@ -70,7 +75,14 @@ process.env.PUBKY_RUNTIME_COMMERCE_ADAPTER_MODE = 'locks-paykit';
 process.env.PUBKY_RUNTIME_MARKETPLACE_URL = SERVICE_URL;
 process.env.PUBKY_RUNTIME_LOCKS_URL = LOCKS_URL;
 process.env.PUBKY_RUNTIME_PAYKIT_SETUP_URL = `${PAYKIT_URL}/setup`;
-process.env.PUBKY_RUNTIME_TESTNET = 'false';
+// The seller's identity lives on the environment's pinned Pubky testnet, so
+// the app's own homeserver path (sign-in guard, PKARR lookup, record write)
+// must resolve through that testnet: the SDK's testnet mode talks to its
+// fixed localhost ports and the staging sign-in guard compares against the
+// testnet homeserver's well-known key.
+process.env.PUBKY_RUNTIME_TESTNET ??= 'true';
+process.env.PUBKY_RUNTIME_HOMESERVER ??= '8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo';
+process.env.PUBKY_RUNTIME_HOMESERVER_URL ??= 'http://localhost:6286';
 process.env.NEXT_PUBLIC_APP_VERSION ??= '0.0.0-live';
 process.env.NEXT_PUBLIC_DB_VERSION ??= '3';
 process.env.NEXT_PUBLIC_DEBUG_MODE ??= 'false';
