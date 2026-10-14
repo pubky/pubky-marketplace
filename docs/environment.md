@@ -207,7 +207,7 @@ With none of these keys set the Shop runs with `PUBKY_RUNTIME_COMMERCE_ADAPTER_M
 | `PUBKY_RUNTIME_PASSPORT_SIGN_IN`                    | `true`                        | Offer Pubky Passport ("Continue with Google"). `false` hides every entry point without a rebuild.                                                                                                                                                                                                                        |
 | `PUBKY_RUNTIME_PASSPORT_URL`                        | unset                         | Passport origin override. Unset uses the Passport deployment for this deploy's homeserver.                                                                                                                                                                                                                               |
 
-Framing, embedding and storage keys (`PUBKY_RUNTIME_FRAME_ANCESTORS`, `PUBKY_RUNTIME_EMBEDDED`, `PUBKY_RUNTIME_STORAGE_ADOPT_LEGACY`, `PUBKY_RUNTIME_SHOP_PUBLIC_PATH`) are described in [Framing and embedded mode](#framing-and-embedded-mode-runtime) and [`launch/shop-embedding.md`](launch/shop-embedding.md).
+Framing, embedding and storage keys (`PUBKY_RUNTIME_FRAME_ANCESTORS`, `PUBKY_RUNTIME_EMBEDDED`, `PUBKY_RUNTIME_STORAGE_ADOPT_LEGACY`, `PUBKY_RUNTIME_SHOP_PUBLIC_PATH`, `PUBKY_RUNTIME_SHOP_GRANT_CLIENT_ID`) are described in [Framing and embedded mode](#framing-and-embedded-mode-runtime) and [`launch/shop-embedding.md`](launch/shop-embedding.md).
 
 ### Homeserver mute list sync
 

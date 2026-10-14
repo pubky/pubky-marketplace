@@ -270,6 +270,15 @@ const shopPublicPathValue = z.string().refine((value) => value !== '' && isValid
 });
 const optionalShopPublicPathFromString = optionalTrimmedString.pipe(shopPublicPathValue.optional());
 
+/**
+ * The client id signers show on their approval screen for the Shop's grant sign-in: a bare host name
+ * (`pubky.app`), no scheme, port or path.
+ */
+const shopGrantClientIdValue = z.string().regex(/^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/, {
+  message: 'Expected a lowercase host name like pubky.app: no scheme, port or path',
+});
+const optionalShopGrantClientIdFromString = optionalTrimmedString.pipe(shopGrantClientIdValue.optional());
+
 /** Rates validate eagerly (bad number/range throws here); the default applies in the value schema. */
 const sampleRateFromString = z
   .string()
@@ -560,6 +569,8 @@ export const runtimeConfigValueSchema = networkConfigValueSchema.extend({
    * (see `getShopPublicPath`).
    */
   shopPublicPath: shopPublicPathValue.optional(),
+  /** Client id of the Shop's grant sign-in. Absent means `SHOP_GRANT_CLIENT_ID` in `src/config/app.ts`. */
+  shopGrantClientId: shopGrantClientIdValue.optional(),
   preludeSdkKey: nonEmptyStringValue.optional(),
   preludeSdkTimeoutMs: positiveIntValue.default(APP_RUNTIME_DEFAULTS.preludeSdkTimeoutMs),
   plausibleDomain: nonEmptyStringValue.optional(),
@@ -651,6 +662,7 @@ export const runtimeEnvInputSchema = z
     embedded: optionalBooleanFromString,
     storageAdoptLegacy: optionalBooleanFromString,
     shopPublicPath: optionalShopPublicPathFromString,
+    shopGrantClientId: optionalShopGrantClientIdFromString,
     preludeSdkKey: optionalTrimmedString,
     preludeSdkTimeoutMs: optionalPositiveIntFromString,
     plausibleDomain: optionalTrimmedString,
@@ -751,6 +763,7 @@ export const runtimeEnvInputSchemaWithDefaults = z
     embedded: optionalBooleanFromString,
     storageAdoptLegacy: optionalBooleanFromString,
     shopPublicPath: optionalShopPublicPathFromString,
+    shopGrantClientId: optionalShopGrantClientIdFromString,
     preludeSdkKey: optionalTrimmedString,
     preludeSdkTimeoutMs: optionalPositiveIntFromString,
     plausibleDomain: optionalTrimmedString,
@@ -843,6 +856,7 @@ export const PUBKY_RUNTIME_ENV_NAMES: Record<keyof RuntimeConfig, string> = {
   embedded: 'PUBKY_RUNTIME_EMBEDDED',
   storageAdoptLegacy: 'PUBKY_RUNTIME_STORAGE_ADOPT_LEGACY',
   shopPublicPath: 'PUBKY_RUNTIME_SHOP_PUBLIC_PATH',
+  shopGrantClientId: 'PUBKY_RUNTIME_SHOP_GRANT_CLIENT_ID',
   preludeSdkKey: 'PUBKY_RUNTIME_PRELUDE_SDK_KEY',
   preludeSdkTimeoutMs: 'PUBKY_RUNTIME_PRELUDE_SDK_TIMEOUT_MS',
   plausibleDomain: 'PUBKY_RUNTIME_PLAUSIBLE_DOMAIN',
