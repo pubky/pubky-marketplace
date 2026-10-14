@@ -37,6 +37,7 @@ import { useNowMs } from '@/hooks/useNowMs/useNowMs';
 import { Tether } from '@/icons';
 import {
   BITCOIN_WALLET_SENT_HELP_COPY,
+  BITCOIN_WALLET_WAITING_HELP_COPY,
   bitcoinPaidConfirmation,
   buyerBitcoinReviewCopy,
   buyerBitcoinWalletCopy,
@@ -933,7 +934,9 @@ export function MarketplacePaymentStatusCard({
             </CollapsibleTrigger>
             <CollapsibleContent>
               <Typography as="p" className="text-xs text-muted-foreground">
-                {BITCOIN_WALLET_SENT_HELP_COPY}
+                {order.paykitDeliveryState === 'delivered'
+                  ? BITCOIN_WALLET_SENT_HELP_COPY
+                  : BITCOIN_WALLET_WAITING_HELP_COPY}
               </Typography>
             </CollapsibleContent>
           </Collapsible>

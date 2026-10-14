@@ -6,6 +6,8 @@ import {
   BITCOIN_BUYER_STATUS_TABLE,
   BITCOIN_WALLET_SENT_COPY,
   BITCOIN_WALLET_SENT_HELP_COPY,
+  BITCOIN_WALLET_WAITING_COPY,
+  BITCOIN_WALLET_WAITING_HELP_COPY,
   bitcoinConfirmationExists,
   bitcoinPaidConfirmation,
   bitcoinPaymentHasBeenSeen,
@@ -145,8 +147,25 @@ describe('bitcoin buyer status', () => {
     const unpaid = { ...seenOrder, paykitRequestState: 'pending' as const };
     const wallet = buyerBitcoinWalletCopy(unpaid, { state: 'awaiting_entitlement' });
     expect(wallet.text).toBe('Payment request sent. Open Bitkit to approve and pay.');
-    expect(BITCOIN_WALLET_SENT_HELP_COPY).toContain('make sure the seller is in your Bitkit contacts');
+    expect(wallet.text).not.toMatch(/contact/);
     expect(wallet.text).not.toMatch(/[Dd]elivered/);
+  });
+
+  it('keeps the contact hint in waiting help and leaves it out once the request is sent', () => {
+    const delivered = { ...seenOrder, paykitRequestState: 'pending' as const, paykitDeliveryState: 'delivered' };
+    expect(buyerBitcoinWalletCopy(delivered, { state: 'awaiting_entitlement' })).toEqual({
+      kind: 'pay',
+      text: BITCOIN_WALLET_SENT_COPY,
+    });
+    expect(BITCOIN_WALLET_SENT_HELP_COPY).not.toMatch(/contact/);
+
+    for (const paykitDeliveryState of ['pending', null]) {
+      expect(buyerBitcoinWalletCopy({ ...delivered, paykitDeliveryState }, { state: 'awaiting_entitlement' })).toEqual({
+        kind: 'pay',
+        text: BITCOIN_WALLET_WAITING_COPY,
+      });
+    }
+    expect(BITCOIN_WALLET_WAITING_HELP_COPY).toContain('make sure the seller is in your Bitkit contacts');
   });
 
   it('keeps guidance to settle a pending payment before ordering again in the help copy', () => {

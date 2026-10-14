@@ -1006,6 +1006,10 @@ describe('MarketplacePaymentStatusCard', () => {
     expect(screen.getByTestId('paykit-delivery-status')).toHaveTextContent(
       'Payment request sent. Open Bitkit to approve and pay by Aug 20, 2026, 9:15 PM UTC.',
     );
+    expect(screen.getByTestId('paykit-delivery-status')).not.toHaveTextContent(/contact/);
+    fireEvent.click(screen.getByRole('button', { name: 'Need help?' }));
+    expect(screen.getByText(/After you pay/)).not.toHaveTextContent(/contact/);
+    expect(screen.queryByText(/If the request is missing/)).not.toBeInTheDocument();
     expect(screen.queryByText(/Delivered/)).not.toBeInTheDocument();
     unmount();
   });
@@ -1165,15 +1169,16 @@ describe('MarketplacePaymentStatusCard', () => {
       const help = screen.getByRole('button', { name: 'Need help?' });
       expect(help).toHaveAttribute('aria-expanded', 'false');
       expect(help.closest('[data-surface="marketplace-payment-status-card"]')).toBeNull();
-      expect(screen.queryByText(/If the request is missing/)).not.toBeInTheDocument();
+      expect(screen.queryByText(/After you pay/)).not.toBeInTheDocument();
       fireEvent.click(help);
       expect(help).toHaveAttribute('aria-expanded', 'true');
-      expect(screen.getByText(/If the request is missing/)).toHaveTextContent(
-        'If the request is missing, make sure the seller is in your Bitkit contacts. After you pay, this page updates automatically. Let any pending payment finish, or resolve it in your wallet, before ordering again.',
+      expect(screen.getByText(/After you pay/)).toHaveTextContent(
+        'After you pay, this page updates automatically. Let any pending payment finish, or resolve it in your wallet, before ordering again.',
       );
+      expect(screen.queryByText(/If the request is missing/)).not.toBeInTheDocument();
       fireEvent.click(help);
       expect(help).toHaveAttribute('aria-expanded', 'false');
-      expect(screen.queryByText(/If the request is missing/)).not.toBeInTheDocument();
+      expect(screen.queryByText(/After you pay/)).not.toBeInTheDocument();
     });
 
     it('states the 24-hour hold and counts it down as H:MM:SS', () => {
