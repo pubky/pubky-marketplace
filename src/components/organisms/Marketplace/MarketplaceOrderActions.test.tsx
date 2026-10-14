@@ -309,9 +309,11 @@ describe('MarketplaceOrderActions refund reference labels', () => {
     await user.click(screen.getByRole('button', { name: 'Record refund' }));
     expect(screen.getByLabelText('Amount (₿)')).toHaveValue('1255');
     expect(screen.queryByLabelText('Amount (USD)')).not.toBeInTheDocument();
-    expect(screen.getByTestId('bitcoin-amount-breakdown')).toHaveTextContent(
-      'Items ₿1,000 · Shipping ₿0 · Payment code ₿255 = Total ₿1,255',
-    );
+    expect(
+      within(screen.getByRole('table', { name: 'Bitcoin payment breakdown' }))
+        .getAllByRole('row')
+        .map((row) => row.textContent),
+    ).toEqual(['Items₿1,000', 'Shipping₿0', 'Payment code₿255', 'Total₿1,255']);
     await user.type(screen.getByLabelText('External Bitcoin transaction reference'), 'txid-canary-refund');
     await user.click(screen.getByRole('button', { name: 'Confirm' }));
 

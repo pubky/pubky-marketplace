@@ -121,7 +121,7 @@ describe('MarketplaceGetPaidSettings USDT', () => {
       mocked.getMyPaymentConfig.mockResolvedValue(fromWire(USDT_SELLER_CONFIG_FLAG_OFF_WIRE));
       await renderSettings();
 
-      expect(methodTitles()).toEqual(['PayPal', 'Bitcoin wallet']);
+      expect(methodTitles()).toEqual(['PayPal', 'Bitcoin']);
       expect(screen.queryByText(/USDT/)).not.toBeInTheDocument();
       expect(screen.queryByTestId('usdt-seller-setup')).not.toBeInTheDocument();
 
@@ -137,7 +137,7 @@ describe('MarketplaceGetPaidSettings USDT', () => {
       mocked.fetchUsdtPaymentsAvailable.mockResolvedValue(false);
       mocked.getMyPaymentConfig.mockResolvedValue(fromWire(USDT_SELLER_CONFIG_FLAG_OFF_WIRE));
       await renderSettings();
-      expect(methodTitles()).toEqual(['PayPal', 'Bitcoin wallet']);
+      expect(methodTitles()).toEqual(['PayPal', 'Bitcoin']);
       expect(screen.queryByText(/USDT/)).not.toBeInTheDocument();
     });
 
@@ -147,7 +147,7 @@ describe('MarketplaceGetPaidSettings USDT', () => {
       await renderSettings();
 
       const panel = await screen.findByTestId('usdt-readiness-unavailable');
-      expect(methodTitles()).toEqual(['PayPal', 'Bitcoin wallet', 'USDT']);
+      expect(methodTitles()).toEqual(['PayPal', 'Bitcoin', 'USDT']);
       expect(panel).toHaveTextContent("USDT can't be checked right now");
       expect(screen.getByRole('switch', { name: 'Accept USDT' })).toBeDisabled();
       expect(screen.queryByRole('button', { name: /Add USDT in Bitkit/ })).not.toBeInTheDocument();
@@ -177,7 +177,7 @@ describe('MarketplaceGetPaidSettings USDT', () => {
     it('adds a USDT card after Bitcoin when the gate is on', async () => {
       await renderSettings();
       await screen.findByTestId('usdt-seller-setup');
-      expect(methodTitles()).toEqual(['PayPal', 'Bitcoin wallet', 'USDT']);
+      expect(methodTitles()).toEqual(['PayPal', 'Bitcoin', 'USDT']);
     });
 
     it('keeps the stored consent when the Shop flag is off but the service still reports it', async () => {
@@ -440,7 +440,7 @@ describe('MarketplaceGetPaidSettings USDT', () => {
     it('reports a different Bitkit identity', async () => {
       const iframe = await openReconnect();
       sendCallback(iframe, { error: 'identity-mismatch' });
-      expect(screen.getByRole('alert')).toHaveTextContent('Bitkit approved a different Pubky key');
+      expect(screen.getByRole('alert')).toHaveTextContent('Bitkit approved a different pubky');
     });
 
     it('ignores a late callback from a closed reconnect dialog', async () => {

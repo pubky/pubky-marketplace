@@ -81,7 +81,7 @@ export function appRegistryTakesPaymentRequests(json: unknown): boolean {
 export const BITCOIN_WALLET_UNSUPPORTED_TITLE = 'Bitcoin checkout does not support Bitkit 2.6 yet';
 
 export function bitcoinWalletUnsupportedBody(canPayWithPaypal: boolean): string {
-  return `This Pubky account uses Bitkit 2.6 or later. The Shop can't send it a Bitcoin payment request yet; that comes with an upcoming Shop update.${canPayWithPaypal ? ' You can pay with PayPal instead.' : ''}`;
+  return `This pubky uses Bitkit 2.6 or later. The Shop can't send it a Bitcoin payment request yet; that comes with an upcoming Shop update.${canPayWithPaypal ? ' You can pay with PayPal instead.' : ''}`;
 }
 
 export function bitcoinWalletUnsupportedPayReason(canPayWithPaypal: boolean): string {
@@ -91,7 +91,7 @@ export function bitcoinWalletUnsupportedPayReason(canPayWithPaypal: boolean): st
 export const BITCOIN_WALLET_UNVERIFIED_TITLE = "Couldn't verify your Bitcoin wallet";
 
 export function bitcoinWalletUnverifiedBody(canPayWithPaypal: boolean): string {
-  return `The Shop couldn't check which Bitkit version this Pubky account uses, so Bitcoin Pay is paused. Check again in a moment.${canPayWithPaypal ? ' You can also pay with PayPal.' : ''}`;
+  return `The Shop couldn't check which Bitkit version this pubky uses, so Bitcoin Pay is paused. Check again in a moment.${canPayWithPaypal ? ' You can also pay with PayPal.' : ''}`;
 }
 
 export function bitcoinWalletUnverifiedPayReason(canPayWithPaypal: boolean): string {

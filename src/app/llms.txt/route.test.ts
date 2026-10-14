@@ -6,7 +6,7 @@ import { GET } from './route';
 
 const indexLine = (body: string) => body.split('\n').find((line) => line.startsWith('INDEX = '));
 
-// The guide as it was served from public/llms.txt, with its fixed INDEX host.
+// Reference guide with the original fixed INDEX host and current display wording.
 const STATIC_GUIDE = readFileSync(
   path.join(process.cwd(), 'src/test/fixtures/agent-guide/llms-static-95a0.txt'),
   'utf8',
@@ -41,7 +41,7 @@ describe('GET /llms.txt', () => {
     expect(GET().headers.get('Cache-Control')).toBe('public, max-age=0, must-revalidate');
   });
 
-  it('serves the static guide byte for byte except the INDEX line', async () => {
+  it('serves the reference guide with the configured INDEX line', async () => {
     vi.stubEnv('PUBKY_RUNTIME_MARKETPLACE_NEXUS_URL', 'https://index.runtime.example.com');
     expect(STATIC_GUIDE.split(STATIC_INDEX_LINE)).toHaveLength(2);
 

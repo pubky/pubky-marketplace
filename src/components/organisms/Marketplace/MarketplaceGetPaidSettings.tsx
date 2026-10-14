@@ -23,7 +23,7 @@ import { Input } from '@/atoms/Input/Input';
 import { Label } from '@/atoms/Label/Label';
 import { Switch } from '@/atoms/Switch/Switch';
 import { Typography } from '@/atoms/Typography/Typography';
-import { getLocksUrl } from '@/config/commerce';
+import { getLocksUrl, getPaykitServerApi } from '@/config/commerce';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import { useMarketplaceSellerPaymentConfig } from '@/hooks/useMarketplaceSellerPaymentConfig/useMarketplaceSellerPaymentConfig';
 import { useUsdtPaymentsCapability } from '@/hooks/useUsdtPaymentsCapability/useUsdtPaymentsCapability';
@@ -31,6 +31,7 @@ import { Tether } from '@/icons';
 import { type SellerPaymentConfigOwnView } from '@/libs/commerce/payment-methods';
 import { deriveUsdtSellerReadiness } from '@/libs/commerce/usdt-seller-setup';
 import { truncateMiddle } from '@/libs/utils/utils';
+import { BitkitDownloads } from '@/molecules/BitkitDownloads/BitkitDownloads';
 import { SettingsSectionContent } from '@/molecules/Settings/SettingsSectionContent/SettingsSectionContent';
 import { toast } from '@/molecules/Toaster/use-toast';
 import { MarketplaceSessionConnectDialog } from '@/organisms/Marketplace/MarketplaceSessionConnectDialog';
@@ -80,7 +81,7 @@ function paykitKeyLabel(pubky: string | null): string {
 
 /** Bitkit approved, but not for the Pubky key this Shop session is signed in with. */
 function paykitMismatchMessage(pubky: string | null): string {
-  return `Bitkit approved a different Pubky key than the one you're signed in with here${paykitKeyLabel(pubky)}. In Bitkit, switch to that key, then try again.`;
+  return `Bitkit approved a different pubky than the one you're signed in with here${paykitKeyLabel(pubky)}. In Bitkit, switch to that pubky, then try again.`;
 }
 
 /**
@@ -94,7 +95,7 @@ function paykitUnconfirmedMessage(locksConnected: boolean): string {
 }
 
 function paykitTimeoutMessage(pubky: string | null): string {
-  return `No approval received. If you approved in Bitkit, check that Bitkit holds the key you're signed in with here${paykitKeyLabel(pubky)}, then try again.`;
+  return `No approval received. If you approved in Bitkit, check that Bitkit holds the pubky you're signed in with here${paykitKeyLabel(pubky)}, then try again.`;
 }
 
 /**
@@ -108,7 +109,6 @@ const UNSAVED_SELLER_PAYMENT_CONFIG: SellerPaymentConfigOwnView = {
   paypalMerchantEmail: null,
   updatedAt: '',
 };
-const PAYKIT_SETUP_EXPLANATION = 'Scan the code with Bitkit, or open this page on your phone and tap Open in Bitkit.';
 const PAYKIT_RECONNECT_EXPLANATION =
   'Scan the code with Bitkit, or open this page on your phone and tap Open in Bitkit, to share a USDT address. Your Bitkit account and Bitcoin setup stay the same.';
 
@@ -136,6 +136,7 @@ function MethodCard({
   promise,
   status,
   statusTestId,
+  headerContent,
   children,
 }: {
   icon: React.ComponentType<{ className?: string }>;
@@ -143,6 +144,7 @@ function MethodCard({
   promise: string;
   status: PaymentMethodStatus;
   statusTestId: string;
+  headerContent?: React.ReactNode;
   children: React.ReactNode;
 }) {
   return (
@@ -160,6 +162,7 @@ function MethodCard({
           </div>
           <StatusPill status={status} testId={statusTestId} />
         </div>
+        {headerContent}
 
         <SettingsSectionContent>{children}</SettingsSectionContent>
       </CardContent>
@@ -375,13 +378,14 @@ export function MarketplaceGetPaidSettings({ locksConnect, onSaved }: Marketplac
       ? paykitSetupProblemState.problem
       : null;
   const paykitCodeExpired = paykitSetupStatus === 'error' || paykitSetupStatus === 'timeout';
+  const compactPaykitSetup = getPaykitServerApi() === 'upstream';
 
   // Stored rails need the marketplace session and the loaded config; the
   // bitcoin connect steps above them do not, so they render unconditionally.
   const renderStoredRailBody = (children: React.ReactNode) => {
     if (!marketplaceSession) {
       return (
-        <div className="grid justify-items-start gap-3">
+        <div className="grid justify-items-start gap-6 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
           <Typography as="p" className="text-sm text-muted-foreground">
             Enable selling to save your payment methods.
           </Typography>
@@ -443,10 +447,11 @@ export function MarketplaceGetPaidSettings({ locksConnect, onSaved }: Marketplac
 
       <MethodCard
         icon={Bitcoin}
-        title="Bitcoin wallet"
-        promise="Connect your wallet to accept bitcoin."
+        title="Bitcoin"
+        promise="Connect your Bitkit wallet to accept bitcoin."
         status={bitcoinStatus}
         statusTestId="payment-method-status-bitcoin"
+        headerContent={<BitkitDownloads compact />}
       >
         <div className="grid gap-6 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
           <div>
@@ -460,7 +465,7 @@ export function MarketplaceGetPaidSettings({ locksConnect, onSaved }: Marketplac
             {step1Connected && (
               <Typography as="p" className="mt-2 flex items-center gap-2 text-sm text-brand">
                 <CheckCircle2 className="size-4" />
-                Connected to your account.
+                Connected to your pubky.
               </Typography>
             )}
             {locksError && (
@@ -526,29 +531,34 @@ export function MarketplaceGetPaidSettings({ locksConnect, onSaved }: Marketplac
           </Button>
         </div>
 
+        <div className="grid gap-6 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
+          <div>
+            <Typography as="label" htmlFor="get-paid-bitcoin" className="block text-sm font-semibold">
+              3. Accept bitcoin
+            </Typography>
+            <Typography as="p" className="text-sm text-muted-foreground">
+              Offer bitcoin payment option at checkout.
+            </Typography>
+          </div>
+          <Switch
+            id="get-paid-bitcoin"
+            checked={bitcoinValue}
+            onCheckedChange={(enabled) => {
+              if (enabled && bitcoinStatus !== 'connected') return;
+              setRailDraft((draft) => ({ ...draft, bitcoin: enabled }));
+            }}
+            disabled={
+              !marketplaceSession ||
+              payments.isLoading ||
+              Boolean(payments.loadError) ||
+              (!bitcoinValue && bitcoinStatus !== 'connected')
+            }
+            aria-label="Accept bitcoin"
+          />
+        </div>
+
         {renderStoredRailBody(
           <>
-            <div className="grid gap-6 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
-              <div>
-                <Typography as="label" htmlFor="get-paid-bitcoin" className="block text-sm font-semibold">
-                  3. Accept bitcoin
-                </Typography>
-                <Typography as="p" className="text-sm text-muted-foreground">
-                  Offer bitcoin payment option at checkout.
-                </Typography>
-              </div>
-              <Switch
-                id="get-paid-bitcoin"
-                checked={bitcoinValue}
-                onCheckedChange={(enabled) => {
-                  if (enabled && bitcoinStatus !== 'connected') return;
-                  setRailDraft((draft) => ({ ...draft, bitcoin: enabled }));
-                }}
-                disabled={!bitcoinValue && bitcoinStatus !== 'connected'}
-                aria-label="Accept bitcoin"
-              />
-            </div>
-
             <Collapsible>
               <CollapsibleTrigger className="group flex w-fit items-center gap-2 text-sm font-medium text-muted-foreground hover:text-foreground">
                 <ChevronDown className="size-4 transition-transform group-data-[state=open]:rotate-180" />
@@ -680,7 +690,7 @@ export function MarketplaceGetPaidSettings({ locksConnect, onSaved }: Marketplac
                       : paykitSetupStatus === 'verifying'
                         ? paykitSetupMode === 'reconnect'
                           ? 'Confirming your USDT address…'
-                          : 'Confirming your Bitkit account…'
+                          : 'Confirming your pubky…'
                         : paykitSetupStatus === 'usdt-missing'
                           ? 'Bitkit did not confirm a USDT address. Try again.'
                           : paykitTimeoutMessage(currentUserPubky)}
@@ -696,7 +706,14 @@ export function MarketplaceGetPaidSettings({ locksConnect, onSaved }: Marketplac
             </div>
           )}
           <Typography as="p" className="text-sm text-muted-foreground">
-            {paykitSetupMode === 'reconnect' ? PAYKIT_RECONNECT_EXPLANATION : PAYKIT_SETUP_EXPLANATION}
+            {paykitSetupMode === 'reconnect' ? (
+              PAYKIT_RECONNECT_EXPLANATION
+            ) : (
+              <>
+                <span className="[@media(hover:none)_and_(pointer:coarse)]:hidden">Scan the code with Bitkit</span>
+                <span className="hidden [@media(hover:none)_and_(pointer:coarse)]:inline">Tap Open in Bitkit</span>
+              </>
+            )}
           </Typography>
           {paykitSetupUrl && paykitCodeExpired ? (
             <div
@@ -715,7 +732,11 @@ export function MarketplaceGetPaidSettings({ locksConnect, onSaved }: Marketplac
                 sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-top-navigation-to-custom-protocols"
                 referrerPolicy="no-referrer"
                 scrolling="no"
-                className="h-[40rem] w-full rounded-lg border bg-popover"
+                className={
+                  compactPaykitSetup
+                    ? 'mx-auto h-48 w-48 max-w-full rounded-lg bg-popover [@media(hover:none)_and_(pointer:coarse)]:h-15 [@media(hover:none)_and_(pointer:coarse)]:w-full'
+                    : 'h-[40rem] w-full rounded-lg border bg-popover'
+                }
               />
             )
           )}

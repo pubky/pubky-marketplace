@@ -104,11 +104,13 @@ const buyerWallet = vi.hoisted(() => ({
   state: 'payable' as 'idle' | 'checking' | 'payable' | 'not_payable' | 'unsupported' | 'unverified' | 'unknown',
   recheck: vi.fn(),
   enabledCalls: [] as boolean[],
+  watchCalls: [] as boolean[],
 }));
 
 vi.mock('@/hooks/useBuyerPaykitWallet/useBuyerPaykitWallet', () => ({
-  useBuyerPaykitWallet: (_buyerPubky: string | null, enabled: boolean) => {
+  useBuyerPaykitWallet: (_buyerPubky: string | null, enabled: boolean, watch = false) => {
     buyerWallet.enabledCalls.push(enabled);
+    buyerWallet.watchCalls.push(watch);
     return { state: enabled ? buyerWallet.state : 'idle', recheck: buyerWallet.recheck };
   },
 }));
@@ -303,9 +305,9 @@ vi.mock('@/hooks/useMarketplaceApprovalSigner/useMarketplaceApprovalSigner', () 
   useMarketplaceApprovalSigner: () => approval.signer,
 }));
 
+const auth = vi.hoisted(() => ({ currentUserPubky: 'b'.repeat(52) }));
 vi.mock('@/stores/auth/auth.store', () => ({
-  useAuthStore: (selector: (state: { currentUserPubky: string }) => unknown) =>
-    selector({ currentUserPubky: 'b'.repeat(52) }),
+  useAuthStore: (selector: (state: { currentUserPubky: string }) => unknown) => selector(auth),
 }));
 
 vi.mock('@/organisms/Marketplace/MarketplaceIndicativePrice', () => ({
@@ -385,6 +387,8 @@ function resetCheckoutView() {
   buyerWallet.state = 'payable';
   buyerWallet.recheck.mockClear();
   buyerWallet.enabledCalls = [];
+  buyerWallet.watchCalls = [];
+  auth.currentUserPubky = 'b'.repeat(52);
 }
 
 function seededCart() {
@@ -518,7 +522,7 @@ describe('MarketplaceCheckout', () => {
   });
 
   it.each(['transaction-service', 'locks-paykit', 'unavailable'] as const)(
-    'shows muted seller-direct helper in %s production checkout, not an amber money warning',
+    'shows a single payment notice in %s production checkout without a duplicate seller-direct helper',
     (adapterMode) => {
       seededCart();
       view.adapterMode = adapterMode;
@@ -531,14 +535,14 @@ describe('MarketplaceCheckout', () => {
       expect(
         screen.queryByText('Real money. Payments are final and go directly to the seller.'),
       ).not.toBeInTheDocument();
-      expect(screen.getByText('Paid directly to the seller.')).toBeInTheDocument();
+      expect(screen.getByTestId('marketplace-checkout-payment-notice')).toBeInTheDocument();
+      expect(screen.queryByText('Paid directly to the seller.')).not.toBeInTheDocument();
       expect(screen.getByText(MARKETPLACE_DELIVERY_ADDRESS_DISCLOSURE)).toBeInTheDocument();
     },
   );
 
   it.each([
-    ['sandbox', 'Sandbox checkout: no real funds move.'],
-    ['locks-paykit', 'Payment goes directly to the seller. This marketplace never holds funds.'],
+    ['locks-paykit', 'Payment goes directly to the seller.'],
     [
       'unavailable',
       'No payment rails are live in this deployment, so no real funds move. This marketplace never holds funds.',
@@ -579,6 +583,7 @@ describe('MarketplaceCheckout', () => {
     render(<MarketplaceCheckout />);
 
     expect(screen.getByRole('note')).toHaveTextContent('Staging environment. No real funds move.');
+    expect(screen.queryByTestId('marketplace-checkout-payment-notice-group')).not.toBeInTheDocument();
     expect(screen.queryByText('Real money. Payments are final and go directly to the seller.')).not.toBeInTheDocument();
     expect(screen.queryByText('Paid directly to the seller.')).not.toBeInTheDocument();
   });
@@ -610,24 +615,6 @@ describe('MarketplaceCheckout', () => {
     await waitFor(() => expect(pay).toBeEnabled());
   });
 
-  it('tells a Bitcoin buyer the payment adds 1–999 sats, and hides that note for PayPal', async () => {
-    const user = userEvent.setup();
-    seededCart();
-    view.adapterMode = 'transaction-service';
-    view.hasMarketplaceSession = true;
-
-    render(<MarketplaceCheckout />);
-
-    const note = await screen.findByTestId('marketplace-checkout-bitcoin-amount-note');
-    expect(note).toHaveTextContent('The payment adds a small unique amount of 1–999 sats.');
-    expect(note).toHaveTextContent('The exact amount appears when you place the order.');
-    expect(note.className).not.toMatch(/border|bg-amber|alert/);
-    expect(note.textContent).not.toMatch(/paykit|protocol/i);
-
-    await user.click(screen.getByTestId('marketplace-checkout-method-paypal'));
-    expect(screen.queryByTestId('marketplace-checkout-bitcoin-amount-note')).not.toBeInTheDocument();
-  });
-
   it('shows why Pay stopped when the seller has no delivery key, next to the Pay button', async () => {
     seededCart();
     view.adapterMode = 'transaction-service';
@@ -647,19 +634,6 @@ describe('MarketplaceCheckout', () => {
     );
   });
 
-  it('says nothing about a unique amount on upstream Paykit, which requests exactly the price', async () => {
-    seededCart();
-    view.adapterMode = 'transaction-service';
-    view.hasMarketplaceSession = true;
-    view.paykitServerApi = 'upstream';
-
-    render(<MarketplaceCheckout />);
-
-    await screen.findByTestId('marketplace-checkout-method-bitcoin');
-    expect(screen.queryByTestId('marketplace-checkout-bitcoin-amount-note')).not.toBeInTheDocument();
-    expect(screen.queryByText(/unique amount/i)).not.toBeInTheDocument();
-  });
-
   it('asks a buyer without a Paykit wallet to connect Bitkit instead of letting Bitcoin Pay fail', async () => {
     const user = userEvent.setup();
     seededCart();
@@ -673,11 +647,9 @@ describe('MarketplaceCheckout', () => {
     await fillValidDelivery(user);
     const notice = await screen.findByTestId('marketplace-checkout-bitkit-required');
     expect(notice).toHaveTextContent('Connect Bitkit to pay with Bitcoin');
-    expect(notice).toHaveTextContent('You can also pay with PayPal.');
+    expect(notice).toHaveTextContent('Use your marketplace pubky in Bitkit to receive a payment request.');
     expect(pay).toBeDisabled();
-    expect(
-      screen.getByText('Connect Bitkit to pay with Bitcoin, or choose another payment method.'),
-    ).toBeInTheDocument();
+    expect(document.getElementById('checkout-pay-reason')).not.toBeInTheDocument();
 
     await user.click(screen.getByTestId('marketplace-checkout-bitkit-recheck'));
     expect(buyerWallet.recheck).toHaveBeenCalledTimes(1);
@@ -687,6 +659,101 @@ describe('MarketplaceCheckout', () => {
     await waitFor(() => expect(pay).toBeEnabled());
     expect(screen.queryByTestId('marketplace-checkout-bitkit-required')).not.toBeInTheDocument();
     expect(checkoutActions.pay).not.toHaveBeenCalled();
+  });
+
+  it('connects the buyer’s account through the guide and real recheck without paying automatically', async () => {
+    const user = userEvent.setup();
+    seededCart();
+    view.adapterMode = 'transaction-service';
+    view.hasMarketplaceSession = true;
+    buyerWallet.state = 'not_payable';
+    const { rerender } = render(<MarketplaceCheckout />);
+    await fillValidDelivery(user);
+    const pay = screen.getByTestId('marketplace-checkout-pay');
+
+    await user.click(await screen.findByTestId('marketplace-checkout-bitkit-connect'));
+    expect(screen.getByRole('dialog', { name: 'Connect Bitkit' })).toBeVisible();
+    expect(screen.getByTestId('buyer-bitkit-account')).toHaveTextContent(auth.currentUserPubky);
+    expect(buyerWallet.recheck).toHaveBeenCalledTimes(1);
+    expect(buyerWallet.watchCalls.at(-1)).toBe(true);
+
+    buyerWallet.state = 'checking';
+    rerender(<MarketplaceCheckout />);
+    expect(screen.getByRole('dialog', { name: 'Connect Bitkit' })).toBeVisible();
+    expect(pay).toBeDisabled();
+    buyerWallet.state = 'payable';
+    rerender(<MarketplaceCheckout />);
+    await user.click(screen.getByRole('button', { name: 'Continue checkout' }));
+    expect(screen.queryByRole('dialog', { name: 'Connect Bitkit' })).not.toBeInTheDocument();
+    expect(buyerWallet.watchCalls.at(-1)).toBe(false);
+    expect(pay).toBeEnabled();
+    expect(checkoutActions.pay).not.toHaveBeenCalled();
+  });
+
+  it('keeps a known missing wallet blocked after a failed connection check, including after closing', async () => {
+    const user = userEvent.setup();
+    seededCart();
+    view.adapterMode = 'transaction-service';
+    view.hasMarketplaceSession = true;
+    buyerWallet.state = 'not_payable';
+    const { rerender } = render(<MarketplaceCheckout />);
+    await fillValidDelivery(user);
+    const pay = screen.getByTestId('marketplace-checkout-pay');
+    await user.click(await screen.findByTestId('marketplace-checkout-bitkit-connect'));
+    buyerWallet.state = 'unknown';
+    rerender(<MarketplaceCheckout />);
+    expect(pay).toBeDisabled();
+    expect(screen.queryByRole('button', { name: 'Continue checkout' })).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(pay).toBeDisabled();
+    expect(buyerWallet.watchCalls.at(-1)).toBe(false);
+    expect(screen.getByTestId('marketplace-checkout-bitkit-unverified')).toBeInTheDocument();
+    await user.click(screen.getByTestId('marketplace-checkout-method-paypal'));
+    await waitFor(() => expect(pay).toBeEnabled());
+    await user.click(screen.getByTestId('marketplace-checkout-method-bitcoin'));
+    expect(pay).toBeDisabled();
+    expect(screen.queryByRole('dialog', { name: 'Connect Bitkit' })).not.toBeInTheDocument();
+    expect(checkoutActions.pay).not.toHaveBeenCalled();
+  });
+
+  it('keeps Pay blocked after an inline connection check fails until the wallet is verified', async () => {
+    const user = userEvent.setup();
+    seededCart();
+    view.adapterMode = 'transaction-service';
+    view.hasMarketplaceSession = true;
+    buyerWallet.state = 'not_payable';
+    const { rerender } = render(<MarketplaceCheckout />);
+    await fillValidDelivery(user);
+    const pay = screen.getByTestId('marketplace-checkout-pay');
+
+    await user.click(await screen.findByTestId('marketplace-checkout-bitkit-recheck'));
+    expect(buyerWallet.recheck).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole('dialog', { name: 'Connect Bitkit' })).not.toBeInTheDocument();
+    buyerWallet.state = 'unknown';
+    rerender(<MarketplaceCheckout />);
+    expect(pay).toBeDisabled();
+    expect(screen.getByTestId('marketplace-checkout-bitkit-unverified')).toBeInTheDocument();
+
+    buyerWallet.state = 'payable';
+    rerender(<MarketplaceCheckout />);
+    expect(pay).toBeEnabled();
+    expect(checkoutActions.pay).not.toHaveBeenCalled();
+  });
+
+  it('closes the buyer guide if the signed-in account changes', async () => {
+    const user = userEvent.setup();
+    seededCart();
+    view.adapterMode = 'transaction-service';
+    view.hasMarketplaceSession = true;
+    buyerWallet.state = 'not_payable';
+    const { rerender } = render(<MarketplaceCheckout />);
+    await user.click(await screen.findByTestId('marketplace-checkout-bitkit-connect'));
+    auth.currentUserPubky = 'c'.repeat(52);
+    rerender(<MarketplaceCheckout />);
+    expect(screen.queryByRole('dialog', { name: 'Connect Bitkit' })).not.toBeInTheDocument();
+    expect(buyerWallet.watchCalls.at(-1)).toBe(false);
+    await user.click(screen.getByTestId('marketplace-checkout-bitkit-connect'));
+    expect(screen.getByTestId('buyer-bitkit-account')).toHaveTextContent(auth.currentUserPubky);
   });
 
   it('tells a Bitkit 2.6 buyer Bitcoin checkout is not supported yet and keeps PayPal payable', async () => {
@@ -703,7 +770,7 @@ describe('MarketplaceCheckout', () => {
     const notice = await screen.findByTestId('marketplace-checkout-bitkit-unsupported');
     expect(notice).toHaveAttribute('role', 'alert');
     expect(notice).toHaveTextContent('Bitcoin checkout does not support Bitkit 2.6 yet');
-    expect(notice).toHaveTextContent('This Pubky account uses Bitkit 2.6 or later.');
+    expect(notice).toHaveTextContent('This pubky uses Bitkit 2.6 or later.');
     expect(notice).toHaveTextContent('You can pay with PayPal instead.');
     expect(screen.queryByTestId('marketplace-checkout-bitkit-required')).not.toBeInTheDocument();
     expect(screen.queryByTestId('marketplace-checkout-bitkit-recheck')).not.toBeInTheDocument();
@@ -1025,9 +1092,11 @@ describe('MarketplaceCheckout local pickup (Wave 7, §A2)', () => {
     render(<MarketplaceCheckout />);
 
     expect(screen.queryByLabelText('Full name')).not.toBeInTheDocument();
-    expect(screen.getByText(/No delivery address is needed/)).toBeInTheDocument();
+    expect(
+      screen.getByText('No delivery address needed. Pickup location is shared once payment is confirmed.'),
+    ).toBeInTheDocument();
     expect(screen.getByText('No shipping — pickup is arranged with the seller after payment.')).toBeInTheDocument();
-    expect(screen.getByTestId('marketplace-checkout-payment-notice')).toBeInTheDocument();
+    expect(screen.getByTestId('marketplace-checkout-payment-notice-group')).toHaveTextContent('Local pickup');
   });
 
   it('states the (seller, fulfillment) split plainly before pay', () => {
@@ -1250,7 +1319,7 @@ describe('MarketplaceCheckout digital lines (digital delivery design §3 "Checko
 
     render(<MarketplaceCheckout />);
 
-    expect(screen.queryByText(/No delivery address is needed/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/No delivery address needed/)).not.toBeInTheDocument();
     expect(screen.queryByText(/pickup is arranged/)).not.toBeInTheDocument();
     expect(screen.getByText('No shipping for digital items.')).toBeInTheDocument();
   });
@@ -1916,7 +1985,7 @@ describe('MarketplaceCheckout accepted-offer path', () => {
       await screen.findByText('No shipping — pickup is arranged with the seller after payment.'),
     ).toBeInTheDocument();
     expect(
-      screen.getByText(/No delivery address is needed — every item here is collected in person/),
+      screen.getByText('No delivery address needed. Pickup location is shared once payment is confirmed.'),
     ).toBeInTheDocument();
   });
 

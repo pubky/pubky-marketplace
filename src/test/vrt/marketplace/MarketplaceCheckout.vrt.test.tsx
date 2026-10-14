@@ -5,6 +5,7 @@ import { expectVrtSurface, parkVrtHover, renderForVRT, VRT_DENSE_CHROME_SCREENSH
 import { VRT_VIEWPORT_DESKTOP, VRT_VIEWPORT_MOBILE } from '@/test-utils/vrt.viewports';
 import { MarketplaceCheckout } from '@/templates/Marketplace/MarketplaceCheckout';
 import { useCommerceStore } from '@/stores/commerce/commerce.store';
+import type { BuyerPaykitWalletState } from '@/hooks/useBuyerPaykitWallet/useBuyerPaykitWallet';
 
 const VRT_VIEWPORT_LAPTOP = { width: 1280, height: 800 };
 
@@ -158,6 +159,14 @@ const view = vi.hoisted(() => ({
   usdtOnly: false,
   usdtSellers: null as string[] | null,
   orders: [] as unknown[],
+  buyerWalletState: 'payable' as BuyerPaykitWalletState,
+}));
+
+vi.mock('@/hooks/useBuyerPaykitWallet/useBuyerPaykitWallet', () => ({
+  useBuyerPaykitWallet: (_pubky: string | null, enabled: boolean) => ({
+    state: enabled ? view.buyerWalletState : 'idle',
+    recheck: vi.fn(),
+  }),
 }));
 
 const savedAddresses = vi.hoisted(() => {
@@ -393,6 +402,7 @@ beforeEach(async () => {
   view.usdtOnly = false;
   view.usdtSellers = null;
   view.orders = [];
+  view.buyerWalletState = 'payable';
   useCommerceStore.getState().reset();
   window.history.replaceState(null, '', '/marketplace/checkout');
 });
@@ -467,6 +477,49 @@ describe('Marketplace checkout — visual regression', () => {
     await renderForVRT(<MarketplaceCheckout />, { viewport: VRT_VIEWPORT_DESKTOP });
     await captureCheckout('checkout-single-seller-desktop');
   });
+
+  for (const [name, viewport] of [
+    ['desktop', VRT_VIEWPORT_DESKTOP],
+    ['mobile', VRT_VIEWPORT_MOBILE],
+  ] as const) {
+    it(`shows the missing-wallet guide on ${name}`, async () => {
+      const { singleSeller } = await fixtures;
+      view.items = singleSeller;
+      view.adapterMode = 'transaction-service';
+      view.deployEnv = 'production';
+      view.hasMarketplaceSession = true;
+      view.buyerWalletState = 'not_payable';
+
+      const screen = await renderForVRT(<MarketplaceCheckout />, { viewport });
+      await expect.element(screen.getByTestId('marketplace-checkout-bitkit-required')).toBeVisible();
+      await expect.element(screen.getByTestId('marketplace-checkout-pay')).toBeDisabled();
+      const earlyNotice = screen.getByTestId('marketplace-checkout-bitkit-notice');
+      if (name === 'mobile') {
+        await expect.element(earlyNotice).toBeVisible();
+      } else {
+        await expect.element(earlyNotice).not.toBeVisible();
+      }
+      await captureCheckout(`checkout-bitkit-required-${name}`);
+    });
+
+    it(`opens and closes the shared connection dialog on ${name}`, async () => {
+      const { singleSeller } = await fixtures;
+      view.items = singleSeller;
+      view.adapterMode = 'transaction-service';
+      view.deployEnv = 'production';
+      view.hasMarketplaceSession = true;
+      view.buyerWalletState = 'not_payable';
+
+      const screen = await renderForVRT(<MarketplaceCheckout />, { viewport });
+      await expect.element(screen.getByTestId('marketplace-checkout-bitkit-required')).toBeVisible();
+      await screen.getByTestId('marketplace-checkout-bitkit-connect').click();
+      const dialog = screen.getByRole('dialog', { name: 'Connect Bitkit', exact: true });
+      await expect.element(dialog).toBeVisible();
+      await expect(dialog).toMatchScreenshot(`checkout-bitkit-connect-dialog-${name}`);
+      await screen.getByRole('button', { name: 'Close', exact: true }).click();
+      await expect.element(dialog).not.toBeInTheDocument();
+    });
+  }
 
   // Issue #50: a cancelled checkout carries no "Awaiting payment · Item reserved" header.
   it('renders a cancelled PayPal checkout without the reserved header at desktop viewport', async () => {

@@ -9,7 +9,7 @@
 export const MESSAGING_COPY = {
   inboxSubtitleDurable: 'Private listing conversations. History stays on this device.',
   inboxSignedOutTitle: 'Sign in to see your messages.',
-  inboxSignedOutBody: 'Messages belong to the account signed in on this device.',
+  inboxSignedOutBody: 'Messages belong to the pubky signed in on this device.',
   inboxNeedsEnable: 'Approve in your Pubky signer so this device can send and receive private messages.',
   inboxNeedsReconnect: 'This device needs a new approval to send and receive. Your saved messages stay here.',
   inboxEmptyTitle: 'No messages yet.',
@@ -48,7 +48,7 @@ export const MESSAGING_COPY = {
   messagingKeysNone: 'Not set up yet',
   ownKeyReplaced:
     'Another app or device replaced your private-messaging key. This device published its own key again; conversations started elsewhere may need to reconnect.',
-  ownKeyMissing: 'Your private-messaging key was missing from your account. This device published it again.',
+  ownKeyMissing: 'Your private-messaging key was missing for your pubky. This device published it again.',
   inboxSyncFailed: 'Your messages could not be loaded right now. Check your connection and try again.',
   statusTimeout:
     'Connecting to private messages is taking longer than usual. Saved messages stay readable. Try again in a moment.',
@@ -66,7 +66,7 @@ export const MESSAGING_COPY = {
     "Sandbox messages are not encrypted: they are stored in plaintext in the sandbox service's memory and are readable by whoever runs it. Do not share anything private.",
   unavailable: 'Messaging is not available here.',
   deepLinkInvalid: 'That conversation link is not valid.',
-  deepLinkOtherAccount: 'This conversation is not on this account.',
+  deepLinkOtherAccount: 'This conversation belongs to a different pubky.',
   thisSeller: 'This seller',
   thisBuyer: 'This buyer',
   followOnSend: 'Sending also follows this shop so they can see your message.',

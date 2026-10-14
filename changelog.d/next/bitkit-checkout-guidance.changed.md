@@ -1,0 +1,1 @@
+Guide buyers through connecting their marketplace pubky in Bitkit, including when resuming checkout. Show the Bitkit requirement before delivery details on mobile, simplify payment instructions and costs, and keep payment help available in an expandable section. Clarify seller setup steps and use ₿ consistently for Bitcoin amounts without changing their value.
