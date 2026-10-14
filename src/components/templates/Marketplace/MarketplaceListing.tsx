@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import {
   ArrowLeft,
@@ -94,6 +94,10 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
   const [isFetchSettled, setIsFetchSettled] = useState(false);
   const [selectedVariantId, setSelectedVariantId] = useState('');
   const [showSessionRequired, setShowSessionRequired] = useState(false);
+  // The Buy click that opened the approval card. The click is kept until the
+  // marketplace session resolves, so a session that restores in the background
+  // completes the purchase the buyer asked for instead of silently closing the card.
+  const pendingPurchaseRef = useRef<(() => void) | null>(null);
   const [reportOpen, setReportOpen] = useState(false);
   const [nowMs, setNowMs] = useState(() => Date.now());
   const adapterMode = getCommerceAdapterMode();
@@ -161,7 +165,15 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
   }, [listing, selectedVariantId]);
 
   useEffect(() => {
-    if (!negotiation.needsSession) setShowSessionRequired(false);
+    pendingPurchaseRef.current = null;
+  }, [sellerPubky, listingId]);
+
+  useEffect(() => {
+    if (negotiation.needsSession) return;
+    setShowSessionRequired(false);
+    const pendingPurchase = pendingPurchaseRef.current;
+    pendingPurchaseRef.current = null;
+    pendingPurchase?.();
   }, [negotiation.needsSession]);
 
   useEffect(() => {
@@ -285,6 +297,18 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
     if (!selectedVariant) return;
     if (isOwner) return;
     void cart.add(`${record.ownerPubky}:${record.listingId}`, selectedVariant.id, 1);
+  };
+  const beginPurchase = () => {
+    requireAuth(() => {
+      if (MarketplaceSessionService.getActiveSession()) {
+        // The session is already restored; only this render's projection is stale.
+        addSelectedVariantToCart();
+        void negotiation.refresh();
+        return;
+      }
+      pendingPurchaseRef.current = addSelectedVariantToCart;
+      revealSessionRequired();
+    });
   };
 
   return (
@@ -494,7 +518,7 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
                             !selectedVariant ||
                             selectedVariant.quantity === 0
                       }
-                      onClick={availabilityNeedsSession ? beginPurchaseAuth : addSelectedVariantToCart}
+                      onClick={availabilityNeedsSession ? beginPurchase : addSelectedVariantToCart}
                     >
                       <ShoppingCart className="size-4" />
                       Buy
@@ -572,7 +596,10 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
             {isTransactionalCommerceMode(adapterMode) && (
               <MarketplaceSessionConnectDialog
                 open={showSessionRequired}
-                onOpenChange={setShowSessionRequired}
+                onOpenChange={(open) => {
+                  if (!open) pendingPurchaseRef.current = null;
+                  setShowSessionRequired(open);
+                }}
                 hideTrigger
                 onConnected={onSessionConnected}
               />
