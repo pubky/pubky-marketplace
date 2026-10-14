@@ -11,8 +11,6 @@ import {
   resetMessagingKeyringForTests,
 } from '@/libs/crypto/messaging-keyring';
 import { Identity } from '@/libs/identity/identity';
-import * as vibeSessionAutoRestore from '@/libs/vibe-session/auto-restore';
-import * as vibeSessionConfig from '@/libs/vibe-session/config';
 import * as vibeSessionFragment from '@/libs/vibe-session/fragment';
 import type { Pubky } from '@/models/models.types';
 import { ROUTE_GUARD_RETURN_TO_STORAGE_KEY } from '@/providers/RouteGuardProvider/RouteGuardProvider.returnPath';
@@ -28,7 +26,6 @@ import { AUTH_PERSIST_KEY, ONBOARDING_PERSIST_KEY } from '@/stores/persistedKeys
 import { mockKeypair, mockSession } from '@/test-utils/pubky';
 import { grantSession } from './auth.grant-test-utils';
 
-const BRIDGE_ORIGIN = 'https://pubky.app';
 const PERSISTED_PUBKY = '5a1diz4pghi47ywdfyfzpit5f3bdomzt4pugpbmq4rngdd4iub4y' as Pubky;
 const ACCOUNT_B = 'o1gg96ewuojmopcjbz8895478wdtxtzzuxnfjjz8o8e77csa1ngo' as Pubky;
 const ACCOUNT_B_BOOKMARK = 'account-b:bookmark';
@@ -282,15 +279,12 @@ async function runRealBridgeTimeoutRestore(currentUserPubky: Pubky | null) {
   return await restorePromise;
 }
 
-describe('AuthController restore cleanup with the real bridge and database', () => {
+describe('AuthController legacy restore cleanup with the real database', () => {
   beforeEach(() => {
     AuthController.resetCleanupLocalStateGuard();
     resetAuthFinalizationLockForTests();
     useAuthStore.getState().reset();
-    vi.spyOn(vibeSessionConfig, 'getVibeSessionBridgeOrigin').mockReturnValue(BRIDGE_ORIGIN);
-    vi.spyOn(vibeSessionConfig, 'getVibeId').mockReturnValue('marketplace-grid-test');
     vi.spyOn(vibeSessionFragment, 'takeFragmentSessionExport').mockReturnValue(null);
-    vi.spyOn(vibeSessionAutoRestore, 'isVibeSessionAutoRestoreSuppressed').mockReturnValue(false);
   });
 
   afterEach(async () => {
@@ -532,7 +526,6 @@ describe('AuthController restore cleanup with the real bridge and database', () 
       isLoggingOut: false,
     });
 
-    vi.spyOn(vibeSessionConfig, 'isVibeSessionConsumerEnabled').mockReturnValue(false);
     vi.spyOn(AuthApplication, 'logout').mockResolvedValue(undefined);
 
     const lock = holdAuthFinalizationLock();
@@ -629,7 +622,6 @@ describe('AuthController restore cleanup with the real bridge and database', () 
       currentUserPubky: PERSISTED_PUBKY,
       hasProfile: true,
     });
-    vi.spyOn(vibeSessionConfig, 'isVibeSessionConsumerEnabled').mockReturnValue(false);
     vi.spyOn(AuthApplication, 'logout').mockResolvedValue(undefined);
     vi.spyOn(AuthApplication, 'clearGrantSessions').mockResolvedValue(undefined);
 
@@ -651,7 +643,6 @@ describe('AuthController restore cleanup with the real bridge and database', () 
       sessionRestoreDeferred: false,
     });
     await persistAccountBFromOtherTab();
-    vi.spyOn(vibeSessionConfig, 'isVibeSessionConsumerEnabled').mockReturnValue(false);
     vi.spyOn(AuthApplication, 'logout').mockResolvedValue(undefined);
     vi.spyOn(AuthApplication, 'clearGrantSessions').mockResolvedValue(undefined);
 

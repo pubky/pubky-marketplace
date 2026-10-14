@@ -109,6 +109,10 @@ describe('grant-only authentication lifecycle', () => {
         grantSigner: 'local-key',
         grantSessionRecordId: 'alice:grant-1',
       });
+      if (mode === 'signup') {
+        expect(AuthApplication.userIsSignedUp).not.toHaveBeenCalled();
+        expect(useAuthStore.getState().hasProfile).toBe(false);
+      }
     },
   );
 

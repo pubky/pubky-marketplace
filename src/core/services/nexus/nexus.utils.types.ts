@@ -42,6 +42,8 @@ export type TFetchNexusParams = {
   method?: HttpMethod;
   /** Request body as JSON string */
   body?: string | null;
+  /** Optional bound for this request and its response body; enabled for auth bootstrap. */
+  timeoutMs?: number;
 };
 
 /**
@@ -55,4 +57,8 @@ export type TQueryNexusParams = {
   method?: HttpMethod;
   /** Request body as JSON string */
   body?: string | null;
+  /** Per-attempt IO deadline; query retry/cache behavior is unchanged. */
+  timeoutMs?: number;
+  /** Bound retries and offline/hidden pauses for auth bootstrap; cancels this exact query. */
+  totalTimeoutMs?: number;
 };

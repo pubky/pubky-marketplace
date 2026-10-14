@@ -379,7 +379,6 @@ export const APP_RUNTIME_DEFAULTS = {
   paykitServerApi: 'fork' as PaykitServerApi,
   commerceAdapterMode: 'unavailable' as CommerceAdapterMode,
   commercePollIntervalMs: 2_000,
-  singleApprovalSignIn: true,
   marketplaceGrantFlowEnabled: false,
   marketplaceGrantPollMilliseconds: 1_000,
   passportSignIn: true,
@@ -488,13 +487,6 @@ export const runtimeConfigValueSchema = networkConfigValueSchema.extend({
   paykitServerApi: paykitServerApiValue.default(APP_RUNTIME_DEFAULTS.paykitServerApi),
   commerceAdapterMode: commerceAdapterModeValue.default(APP_RUNTIME_DEFAULTS.commerceAdapterMode),
   commercePollIntervalMs: positiveIntValue.default(APP_RUNTIME_DEFAULTS.commercePollIntervalMs),
-  /**
-   * Interim dual-POST ceremony (docs/ecommerce/single-approval.md). `false`
-   * restores the previous two-prompt path: `awaitApproval()` sign-in plus the
-   * empty-capability marketplace connect on first commerce. Runtime-rollback,
-   * never by POSTing empty capabilities to `/session`.
-   */
-  singleApprovalSignIn: z.boolean().default(APP_RUNTIME_DEFAULTS.singleApprovalSignIn),
   marketplaceGrantFlowEnabled: z.boolean().default(APP_RUNTIME_DEFAULTS.marketplaceGrantFlowEnabled),
   marketplaceGrantPollMilliseconds: positiveIntValue
     .min(750)
@@ -618,7 +610,6 @@ export const runtimeEnvInputSchema = z
     paykitServerApi: paykitServerApiValue.optional(),
     commerceAdapterMode: commerceAdapterModeValue.optional(),
     commercePollIntervalMs: optionalPositiveIntFromString,
-    singleApprovalSignIn: optionalBooleanFromString,
     marketplaceGrantFlowEnabled: optionalBooleanFromString,
     marketplaceGrantPollMilliseconds: optionalPositiveIntFromString,
     passportSignIn: optionalBooleanFromString,
@@ -717,7 +708,6 @@ export const runtimeEnvInputSchemaWithDefaults = z
     paykitServerApi: paykitServerApiValue.optional(),
     commerceAdapterMode: commerceAdapterModeValue.optional(),
     commercePollIntervalMs: optionalPositiveIntFromString,
-    singleApprovalSignIn: optionalBooleanFromString,
     marketplaceGrantFlowEnabled: optionalBooleanFromString,
     marketplaceGrantPollMilliseconds: optionalPositiveIntFromString,
     passportSignIn: optionalBooleanFromString,
@@ -808,7 +798,6 @@ export const PUBKY_RUNTIME_ENV_NAMES: Record<keyof RuntimeConfig, string> = {
   paykitServerApi: 'PUBKY_RUNTIME_PAYKIT_SERVER_API',
   commerceAdapterMode: 'PUBKY_RUNTIME_COMMERCE_ADAPTER_MODE',
   commercePollIntervalMs: 'PUBKY_RUNTIME_COMMERCE_POLL_INTERVAL_MS',
-  singleApprovalSignIn: 'PUBKY_RUNTIME_SINGLE_APPROVAL_SIGN_IN',
   marketplaceGrantFlowEnabled: 'PUBKY_RUNTIME_MARKETPLACE_GRANT_FLOW_ENABLED',
   marketplaceGrantPollMilliseconds: 'PUBKY_RUNTIME_MARKETPLACE_GRANT_POLL_MILLISECONDS',
   passportSignIn: 'PUBKY_RUNTIME_PASSPORT_SIGN_IN',

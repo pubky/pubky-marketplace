@@ -41,25 +41,26 @@ describe('capabilitiesMatchFullGrant', () => {
     expect(capabilitiesMatchFullGrant([...full, '/extra/:rw'])).toBe(true);
   });
 
-  it('accepts broader App scope coverage', () => {
-    expect(capabilitiesMatchFullGrant(RING_COOKIE_CAPABILITIES.split(','))).toBe(true);
+  it('requires both chat trees when reusing an older App or Shop grant', () => {
+    const previousShopGrant = ['/pub/pubky.app/:rw', '/pub/paykit/:rw', '/priv/pubky.app/:rw'];
+    expect(capabilitiesMatchFullGrant(previousShopGrant)).toBe(false);
+    expect(capabilitiesMatchFullGrant([...previousShopGrant, '/pub/chat/:rw', '/priv/chat/:r'])).toBe(false);
+    expect(capabilitiesMatchFullGrant([...previousShopGrant, '/pub/chat/:rw', '/priv/chat/:rw'])).toBe(true);
+    expect(capabilitiesMatchFullGrant(RING_COOKIE_CAPABILITIES.split(','))).toBe(false);
   });
 });
 
 describe('RING_COOKIE_CAPABILITIES', () => {
   const entries = (capabilities: string) => capabilities.split(',');
 
-  it("is exactly the union of the Shop grant and pubky.app's sign-in set", () => {
-    const union = new Set([...entries(CAPABILITIES), ...entries(ringCookie.pubky_app_signin)]);
+  it("preserves the legacy verifier's scopes independently of new grant permissions", () => {
+    const legacyShop = '/pub/pubky.app/:rw,/pub/paykit/:rw,/priv/pubky.app/:rw';
+    const union = new Set([...entries(legacyShop), ...entries(ringCookie.pubky_app_signin)]);
     expect(new Set(entries(RING_COOKIE_CAPABILITIES))).toEqual(union);
     expect(entries(RING_COOKIE_CAPABILITIES)).toHaveLength(union.size);
   });
 
-  it('keeps the Shop grant first, in its own order', () => {
-    expect(RING_COOKIE_CAPABILITIES.startsWith(`${CAPABILITIES},`)).toBe(true);
-  });
-
-  it('is what the signer is asked for and what the marketplace service stores after normalizing', () => {
+  it('matches the historical token fixture consumed by the legacy verifier', () => {
     expect(RING_COOKIE_CAPABILITIES).toBe(ringCookie.requested);
     expect(RING_COOKIE_CAPABILITIES).toBe(ringCookie.service_normalized);
   });

@@ -33,6 +33,7 @@ import { httpResponseToError } from '@/libs/error/error.http';
 import { ErrorCategory, ErrorService } from '@/libs/error/error.types';
 import { isAppError, isAuthError } from '@/libs/error/error.utils';
 import { HttpMethod, HttpStatusCode } from '@/libs/http/http.types';
+import { AUTH_IO_TIMEOUT_MS, withIoDeadline } from '@/libs/http/io-deadline';
 import { signRootAuthToken } from '@/libs/identity/auth-token';
 import { Identity } from '@/libs/identity/identity';
 import { Logger } from '@/libs/logger/logger';
@@ -105,6 +106,10 @@ const LIST_DEFAULT_LIMIT = 500;
 const SIGNUP_SESSION_RESTORE_ATTEMPTS = 3;
 /** Base delay between signup session restore attempts (multiplied by attempt number). */
 const SIGNUP_SESSION_RESTORE_DELAY_MS = 1500;
+
+function boundedHomeserverIo<T>(work: () => Promise<T>, operation: string): Promise<T> {
+  return withIoDeadline(work, { service: ErrorService.Homeserver, operation, timeoutMs: AUTH_IO_TIMEOUT_MS });
+}
 
 type HomeserverSdkUserEvent = THomeserverUserEvent & {
   free(): void;
@@ -279,7 +284,17 @@ export class HomeserverService {
     try {
       const homeserverPublicKey = PublicKey.from(getHomeserver());
       const signer = this.getSigner(keypair);
-      await signer.signup(homeserverPublicKey, signupToken);
+      try {
+        await signer.signup(homeserverPublicKey, signupToken);
+      } catch (signupError) {
+        // A previous attempt may have consumed the invite before grant storage
+        // completed. The same recovery key can resume that existing account.
+        try {
+          return { session: await signer.signin(SHOP_GRANT_CLIENT_ID) };
+        } catch {
+          throw signupError;
+        }
+      }
       const session = await signer.signin(SHOP_GRANT_CLIENT_ID);
 
       Logger.debug('Signup successful', { publicKey: keypair.publicKey.z32() });
@@ -767,7 +782,8 @@ export class HomeserverService {
       forgetOwnedGrant('record', recordId);
       return;
     }
-    const info = await session.grant?.sessionInfo();
+    const grant = session.grant;
+    const info = grant ? await boundedHomeserverIo(() => grant.sessionInfo(), 'retireGrantSession') : undefined;
     if (!info || info.clientId !== SHOP_GRANT_CLIENT_ID || `${info.publicKey.z32()}:${info.grantId}` !== recordId) {
       throw Err.validation(ValidationErrorCode.INVALID_INPUT, 'Only an owned Shop grant may be retired.', {
         service: ErrorService.Homeserver,
@@ -776,7 +792,7 @@ export class HomeserverService {
     }
     // Unlike an explicit user logout, automatic retirement keeps its key if
     // remote revocation cannot be confirmed, so a later retry can finish it.
-    await session.signout();
+    await boundedHomeserverIo(() => session.signout(), 'signout');
     await this.removeGrantSession(recordId);
     forgetOwnedGrant('retirement', recordId);
     forgetOwnedGrant('record', recordId);
@@ -785,7 +801,10 @@ export class HomeserverService {
   /** Restores a grant session saved by {@link saveGrantSession}. Never saves. */
   static async restoreGrantSession(recordId: string): Promise<Session> {
     try {
-      return await this.getPubkySdk().browserSessionStore.restore(recordId);
+      return await boundedHomeserverIo(
+        () => this.getPubkySdk().browserSessionStore.restore(recordId),
+        'restoreGrantSession',
+      );
     } catch (error) {
       if (
         error instanceof Error &&
@@ -815,8 +834,9 @@ export class HomeserverService {
     const store = this.getPubkySdk().browserSessionStore;
     let removeError: unknown;
     try {
-      if (!(await store.isAvailable())) throw grantKeyRemovalFailed('removeGrantSession', undefined);
-      await store.remove(recordId);
+      if (!(await boundedHomeserverIo(() => store.isAvailable(), 'removeGrantSession')))
+        throw grantKeyRemovalFailed('removeGrantSession', undefined);
+      await boundedHomeserverIo(() => store.remove(recordId), 'removeGrantSession');
     } catch (error) {
       removeError = error;
     }
@@ -824,9 +844,10 @@ export class HomeserverService {
     try {
       // remove() may silently no-op and list() may return [] when IndexedDB
       // is unavailable. Keep the reference unless availability is confirmed.
-      if (!(await store.isAvailable())) throw removeError;
-      remaining = (await store.list()).map((record) => record.id);
-      if (!(await store.isAvailable())) throw grantKeyRemovalFailed('removeGrantSession', undefined);
+      if (!(await boundedHomeserverIo(() => store.isAvailable(), 'removeGrantSession'))) throw removeError;
+      remaining = (await boundedHomeserverIo(() => store.list(), 'removeGrantSession')).map((record) => record.id);
+      if (!(await boundedHomeserverIo(() => store.isAvailable(), 'removeGrantSession')))
+        throw grantKeyRemovalFailed('removeGrantSession', undefined);
     } catch (error) {
       throw grantKeyRemovalFailed('removeGrantSession', error);
     }
@@ -902,7 +923,7 @@ export class HomeserverService {
    */
   static async logout({ session }: THomeserverSessionResult) {
     try {
-      await session.signout();
+      await boundedHomeserverIo(() => session.signout(), 'signout');
     } catch (error) {
       return handleError({ error, additionalContext: { url: 'signout' } });
     } finally {
@@ -973,20 +994,30 @@ export class HomeserverService {
 
       switch (method) {
         case HttpMethod.GET: {
-          const response = await getOwnedResponse({ session, path, url: contextUrl });
-          return (await parseResponseOrUndefined<T>({ response })) as T;
+          return await boundedHomeserverIo(async () => {
+            const response = await getOwnedResponse({ session, path, url: contextUrl });
+            return (await parseResponseOrUndefined<T>({ response })) as T;
+          }, 'request');
         }
         case HttpMethod.PUT:
-          await retryHomeserverWrite(HttpMethod.PUT, () => session.storage.putJson(toSdkPath(path), ownedBody), {
-            beforeAttempt,
-            ...attempts,
-          }).catch((error) => handleError({ error, additionalContext: { url: contextUrl, method } }));
+          await retryHomeserverWrite(
+            HttpMethod.PUT,
+            () => boundedHomeserverIo(() => session.storage.putJson(toSdkPath(path), ownedBody), 'request'),
+            {
+              beforeAttempt,
+              ...attempts,
+            },
+          ).catch((error) => handleError({ error, additionalContext: { url: contextUrl, method } }));
           return undefined as T;
         case HttpMethod.DELETE:
-          await retryHomeserverWrite(HttpMethod.DELETE, () => session.storage.delete(toSdkPath(path)), {
-            beforeAttempt,
-            ...attempts,
-          }).catch((error) => handleError({ error, additionalContext: { url: contextUrl, method } }));
+          await retryHomeserverWrite(
+            HttpMethod.DELETE,
+            () => boundedHomeserverIo(() => session.storage.delete(toSdkPath(path)), 'request'),
+            {
+              beforeAttempt,
+              ...attempts,
+            },
+          ).catch((error) => handleError({ error, additionalContext: { url: contextUrl, method } }));
           return undefined as T;
       }
     }
@@ -1007,11 +1038,15 @@ export class HomeserverService {
     // Handle public requests
     const pubkySdk = this.getPubkySdk();
     const fetchRequest = () =>
-      method === HttpMethod.GET
-        ? isHttpUrl(url)
-          ? pubkySdk.client.fetch(url)
-          : pubkySdk.publicStorage.get(url as Address)
-        : this.fetch({ url, logUrl, options: { method, body: serializedBody } });
+      boundedHomeserverIo(
+        () =>
+          method === HttpMethod.GET
+            ? isHttpUrl(url)
+              ? pubkySdk.client.fetch(url)
+              : pubkySdk.publicStorage.get(url as Address)
+            : this.fetch({ url, logUrl, options: { method, body: serializedBody } }),
+        'request',
+      );
 
     const response =
       method === HttpMethod.PUT || method === HttpMethod.DELETE
@@ -1022,7 +1057,9 @@ export class HomeserverService {
 
     await assertOk({ response, url: contextUrl, operation: 'request' });
 
-    return method === HttpMethod.GET ? ((await parseResponseOrUndefined<T>({ response })) as T) : (undefined as T);
+    return method === HttpMethod.GET
+      ? ((await boundedHomeserverIo(() => parseResponseOrUndefined<T>({ response }), 'requestBody')) as T)
+      : (undefined as T);
   }
 
   /**
@@ -1136,12 +1173,18 @@ export class HomeserverService {
       const owned = this.resolveOwnedSessionPath(baseDirectory);
       if (owned) {
         const dirPath = owned.path.endsWith('/') ? owned.path : (`${owned.path}/` as TOwnedSessionPath['path']);
-        const files = await owned.session.storage.list(toSdkPath(dirPath), cursor ?? null, reverse, limit, false);
+        const files = await boundedHomeserverIo(
+          () => owned.session.storage.list(toSdkPath(dirPath), cursor ?? null, reverse, limit, false),
+          'list',
+        );
         Logger.debug('List successful', { baseDirectory: contextUrl, filesCount: files.length });
         return files;
       }
 
-      const files = await pubkySdk.publicStorage.list(baseDirectory as Address, cursor ?? null, reverse, limit, false);
+      const files = await boundedHomeserverIo(
+        () => pubkySdk.publicStorage.list(baseDirectory as Address, cursor ?? null, reverse, limit, false),
+        'list',
+      );
       Logger.debug('List successful', { baseDirectory: contextUrl, filesCount: files.length });
       return files;
     } catch (error) {

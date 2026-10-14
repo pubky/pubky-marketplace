@@ -51,6 +51,9 @@ function sameCapabilitySet(capabilities: string, expected: string): boolean {
   return raw.length === wanted.length && wanted.every((part) => raw.includes(part));
 }
 
+/** Historical purchase-session set, retained only for restore and session labels. */
+export const LEGACY_SHOP_SIGN_IN_GRANT = '/pub/pubky.app/:rw,/pub/paykit/:rw,/priv/pubky.app/:rw';
+
 /** The grants a claimed (Bitkit or Ring grant-flow) session may carry. */
 export const MARKETPLACE_CLAIMABLE_GRANTS = [MARKETPLACE_SESSION_GRANT, MARKETPLACE_PREVIOUS_SESSION_GRANT] as const;
 

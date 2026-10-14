@@ -47,8 +47,6 @@ import {
   writeAppliedHostCleanupEpoch,
 } from '@/libs/shop-session/cleanup';
 import { sleep } from '@/libs/utils/utils';
-import { suppressVibeSessionAutoRestore } from '@/libs/vibe-session/auto-restore';
-import { isVibeSessionConsumerEnabled } from '@/libs/vibe-session/config';
 import type { Pubky } from '@/models/models.types';
 import { NotificationNormalizer } from '@/pipes/notification/notification.normalizer';
 import { PubkySpecsSingleton } from '@/pipes/pipes.builder';
@@ -72,9 +70,8 @@ import { useMessagingStore } from '@/stores/messaging/messaging.store';
 import { useMigrationStore } from '@/stores/migration/migration.store';
 import { useNotificationStore } from '@/stores/notification/notification.store';
 import { useOnboardingStore } from '@/stores/onboarding/onboarding.store';
-import { ONBOARDING_PERSIST_KEY } from '@/stores/persistedKeys';
+import { AUTH_PERSIST_KEY, ONBOARDING_PERSIST_KEY } from '@/stores/persistedKeys';
 import { useSearchStore } from '@/stores/search/search.store';
-import { useSessionHandoffStore } from '@/stores/sessionHandoff/sessionHandoff.store';
 import { useSettingsStore } from '@/stores/settings/settings.store';
 import type { SettingsState } from '@/stores/settings/settings.types';
 import { useSignInStore } from '@/stores/signIn/signIn.store';
@@ -248,7 +245,9 @@ export class AuthController {
               const inventorySession = CommerceApplication.restoreInventorySession(pubky);
               if (inventorySession) CommerceController.writeInventorySessionStore(inventorySession);
               const ownsBoundary = () => current() && isCurrentHostCleanupSnapshot(snapshot);
-              if (hasProfile) await this.hydrateMeImAlive({ pubky, isCurrent: ownsBoundary });
+              // The App owns social feeds and notifications. Re-running their Nexus
+              // bootstrap in the Shop's separate cache must not hold the shared
+              // cleanup lock or turn a valid App grant into an auth failure.
               if (!ownsBoundary()) {
                 store.setSession(null);
                 this.hostSnapshotKey = null;
@@ -328,25 +327,6 @@ export class AuthController {
   private static sessionFlowGeneration = new WeakMap<Session, number>();
   /** The signer whose grant ceremony produced a session, saved with its grant record. */
   private static grantSignerBySession = new WeakMap<Session, GrantSigner>();
-
-  /** Resolver of the `#s=` hand-off prompt the user has not answered yet. */
-  private static pendingSessionHandoff: ((accepted: boolean) => void) | null = null;
-
-  private static async confirmSessionHandoff(pubky: Pubky): Promise<boolean> {
-    this.pendingSessionHandoff?.(false);
-    return await new Promise<boolean>((resolve) => {
-      this.pendingSessionHandoff = resolve;
-      useSessionHandoffStore.getState().setPendingPubky(pubky);
-    });
-  }
-
-  /** The user's answer to the `#s=` hand-off prompt. Only `true` signs the tab in. */
-  static answerSessionHandoff(accepted: boolean): void {
-    const resolve = this.pendingSessionHandoff;
-    this.pendingSessionHandoff = null;
-    useSessionHandoffStore.getState().setPendingPubky(null);
-    resolve?.(accepted);
-  }
 
   /**
    * Single-run guard for cleanupLocalState: concurrent Controller invocations
@@ -463,19 +443,12 @@ export class AuthController {
       readAuthEpoch() === epochAtStart &&
       !this.hostMode &&
       (!readPersistedGrantSessionRecordId() || readPersistedGrantSessionRecordId() === restoredGrantRecordId);
-    // The Controller owns the restore loading flag for the whole flow: set once
-    // before restore begins, cleared once after finalization. With a fresh-vibe
-    // bridge restore (sessionExport === null) the isSessionRestorePending
-    // backstop in useAuthStatus does not apply, so no intermediate owner may
-    // leave a window where the flag reads false between restore start and init.
+    // Hold the loading flag through SDK restore, profile discovery and finalization.
     authStore.setIsRestoringSession(true);
     let cleanedUp = false;
     let restoredSession: Session | null = null;
     try {
-      const result = await AuthApplication.restorePersistedSession({
-        authStore,
-        confirmSessionHandoff: (pubky) => this.confirmSessionHandoff(pubky),
-      });
+      const result = await AuthApplication.restorePersistedSession({ authStore });
       if (!ownsRestore()) return { status: 'signed-out' };
       if (result.status === 'restored') {
         const { session } = result;
@@ -484,7 +457,7 @@ export class AuthController {
         const persistedPubky = authStore.currentUserPubky;
         const sameIdentity = persistedPubky != null && persistedPubky === pubky;
 
-        // Fresh vibe (no persisted identity) or a different pubky must not inherit
+        // A new or different pubky must not inherit
         // the previous account's hasProfile flag or IndexedDB/store snapshot.
         // isRestoringSession is already held by this method and survives the
         // auth-store reset inside cleanup, so useAuthStatus keeps loading.
@@ -763,7 +736,7 @@ export class AuthController {
    * Session initialization shared by all sign-in flows; assumes the environment
    * guard already passed for this session.
    */
-  private static async completeAuthenticatedSession({ session }: THomeserverSessionResult) {
+  private static async completeAuthenticatedSession({ session }: THomeserverSessionResult, knownProfile?: boolean) {
     // Checked and claimed with no await in between: of two approvals that both
     // reach here, the first bumps the generation (cancelAllAuthFlows below)
     // and the second is discarded before it can touch any store.
@@ -875,7 +848,7 @@ export class AuthController {
       // the new grant. Its active reference is protected throughout retries.
       await this.settlePendingGrantKeyCleanup();
       if (!isCurrent()) throw createCanceledError();
-      const isSignedUp = await AuthApplication.userIsSignedUp({ pubky });
+      const isSignedUp = knownProfile ?? (await AuthApplication.userIsSignedUp({ pubky }));
       if (!isCurrent()) throw createCanceledError();
       signInStore.setProfileChecked(true); // Step 2 complete (40%)
 
@@ -915,7 +888,9 @@ export class AuthController {
     this.sessionFlowGeneration.set(result.session, generationAtStart);
     this.grantEpochAtStart.set(result.session, epochAtStart);
     this.grantSignerBySession.set(result.session, 'local-key');
-    await this.completeAuthenticatedSession(result);
+    // A newly created account has no profile yet. Do not make retaining its
+    // recovery key depend on a second profile lookup or social bootstrap.
+    await this.completeAuthenticatedSession(result, false);
   }
 
   /**
@@ -965,16 +940,18 @@ export class AuthController {
     captured,
     preservePublicCache,
     capturedRecordId,
+    capturedRecordIds = capturedRecordId ? [capturedRecordId] : [],
   }: {
     captured: CapturedAuthIdentity;
     preservePublicCache: boolean;
     capturedRecordId?: string | null;
+    capturedRecordIds?: string[];
   }): Promise<void> {
     await withAuthFinalizationLock(async () => {
       const currentRecordIds = [useAuthStore.getState().grantSessionRecordId, readPersistedGrantSessionRecordId()];
       if (
         shouldSkipDestructiveCleanup(captured, useAuthStore.getState(), readPersistedAuthIdentity()) ||
-        (capturedRecordId !== undefined && currentRecordIds.some((id) => id && id !== capturedRecordId))
+        (capturedRecordId !== undefined && currentRecordIds.some((id) => id && !capturedRecordIds.includes(id)))
       ) {
         // A skipped logout must not pin the winning identity in the
         // logging-out state: `init` preserves `isLoggingOut`, and skip
@@ -1030,6 +1007,8 @@ export class AuthController {
           useHomeStore.getState().reset();
           useHotStore.getState().reset();
           useLocalFilesStore.getState().reset();
+          useCommerceStore.getState().reset();
+          useMessagingStore.getState().clearMessagingEnabled();
         }
         // Identity replacement is committed only after the new grant is saved.
         if (persistedPubky && persistedPubky !== newPubky) clearPersistedAuthIdentity();
@@ -1398,10 +1377,6 @@ export class AuthController {
     // singleton promise) can tell its restored-branch result is stale.
     this.logoutGeneration += 1;
     this.cancelAllAuthFlows();
-    // An unanswered `#s=` prompt holds the shared restore this logout joins.
-    this.answerSessionHandoff(false);
-    // Set before any await so RouteGuard cannot re-bridge between cleanup and this flag.
-    suppressVibeSessionAutoRestore();
     BootstrapApplication.cancelModerationFollow();
     // Captured before any await: a concurrent different-account sign-in must
     // be compared again inside the finalization lock so this logout cannot
@@ -1409,6 +1384,7 @@ export class AuthController {
     const captured = this.captureAuthIdentity();
     let authStore = useAuthStore.getState();
     const capturedRecordId = authStore.grantSessionRecordId;
+    const capturedRecordIds = this.captureLogoutRecords(captured.pubky, capturedRecordId);
 
     // Set logging out flag immediately to prevent flash of weird states in UI
     authStore.setIsLoggingOut(true);
@@ -1420,16 +1396,16 @@ export class AuthController {
 
     // Keep remote revocation retryable independently of the local auth pointer.
     // The pointer is cleared on logout even when IndexedDB or the network fails.
-    if (capturedRecordId) {
+    for (const recordId of capturedRecordIds) {
       try {
-        AuthApplication.queueGrantRetirement(capturedRecordId);
+        AuthApplication.queueGrantRetirement(recordId);
       } catch (error) {
         Logger.warn('Could not save the logout cleanup obligation; attempting cleanup now', { error });
       }
     }
     let remoteSignedOut = false;
     try {
-      if (!session && (authStore.sessionExport || capturedRecordId || isVibeSessionConsumerEnabled())) {
+      if (!session && (authStore.sessionExport || capturedRecordId)) {
         try {
           await this.restorePersistedSession();
           authStore = useAuthStore.getState();
@@ -1448,27 +1424,35 @@ export class AuthController {
         }
       }
       try {
-        await this.removeSignedOutSessionsUnderLock(captured.pubky, capturedRecordId, remoteSignedOut);
+        await this.removeSignedOutSessionsUnderLock(
+          captured.pubky,
+          capturedRecordId,
+          remoteSignedOut,
+          capturedRecordIds,
+        );
       } catch (error) {
         Logger.warn('Grant cleanup is pending; clearing local account and service access', { error });
       }
-      await this.finalizeSignedOutUnderLock({ captured, capturedRecordId, preservePublicCache: false });
+      await this.finalizeSignedOutUnderLock({
+        captured,
+        capturedRecordId,
+        capturedRecordIds,
+        preservePublicCache: false,
+      });
       signedOut = true;
     } finally {
-      if (signedOut && !this.activeShopGrantRecordIds().some((id) => id !== capturedRecordId)) {
+      if (signedOut && !this.activeShopGrantRecordIds().some((id) => !capturedRecordIds.includes(id))) {
         broadcastSignedOut();
       } else {
         useAuthStore.getState().setIsLoggingOut(false);
       }
-      // The internal restore's init() clears the auto-restore suppression
-      // set above. If the homeserver sign-out then failed, the marker must
-      // not stay cleared: a later reload in consumer mode would
-      // bridge-restore the session the user just logged out of. Guarded so
-      // it is a no-op when consumer mode is off (no bridge leg exists).
-      if (isVibeSessionConsumerEnabled()) {
-        suppressVibeSessionAutoRestore();
-      }
     }
+  }
+
+  /** Records present when logout starts belong to that logout, even in a stale tab. */
+  private static captureLogoutRecords(pubky: string | null, recordId: string | null): string[] {
+    const persisted = readPersistedAuthIdentity().pubky === pubky ? readPersistedGrantSessionRecordId() : null;
+    return [...new Set([recordId, persisted].filter((id): id is string => Boolean(id)))];
   }
 
   /** Retire exact Shop records under the same lock as session finalization. */
@@ -1476,9 +1460,10 @@ export class AuthController {
     pubky: string | null,
     capturedRecordId: string | null,
     remoteSignedOut = true,
+    capturedRecordIds = capturedRecordId ? [capturedRecordId] : [],
   ): Promise<void> {
     await withAuthFinalizationLock(async () => {
-      const protectedRecordIds = this.activeShopGrantRecordIds().filter((id) => id !== capturedRecordId);
+      const protectedRecordIds = this.activeShopGrantRecordIds().filter((id) => !capturedRecordIds.includes(id));
       // A newer grant already won while remote logout was in flight. Retire
       // only the captured record; do not invalidate that winner's callbacks.
       if (protectedRecordIds.length === 0) bumpAuthEpoch();
@@ -1496,7 +1481,7 @@ export class AuthController {
       if (
         pubky &&
         readPersistedAuthIdentity().pubky === pubky &&
-        readPersistedGrantSessionRecordId() === capturedRecordId
+        capturedRecordIds.includes(readPersistedGrantSessionRecordId() ?? '')
       )
         clearPersistedAuthIdentity();
     });
@@ -1543,7 +1528,40 @@ export class AuthController {
    * signs it out and drops local state; cookie sessions are left alone.
    */
   static subscribeCrossTabSignOut(): () => void {
-    return subscribeSignedOut(() => void this.handleCrossTabSignOut());
+    const unsubscribe = subscribeSignedOut(() => void this.handleCrossTabSignOut());
+    const onStorage = (event: StorageEvent) => {
+      if (event.key !== AUTH_PERSIST_KEY) return;
+      void this.refreshCrossTabSession().catch((error) => {
+        Logger.warn('Could not restore the session renewed in another tab', { error });
+      });
+    };
+    window.addEventListener('storage', onStorage);
+    return () => {
+      unsubscribe();
+      window.removeEventListener('storage', onStorage);
+    };
+  }
+
+  /** Adopt the persisted renewal, never continue using its retired predecessor. */
+  private static async refreshCrossTabSession(): Promise<void> {
+    if (this.hostMode || useAuthStore.getState().isLoggingOut) return;
+    const live = useAuthStore.getState();
+    const recordId = readPersistedGrantSessionRecordId();
+    if (
+      !recordId ||
+      recordId === live.grantSessionRecordId ||
+      readPersistedAuthIdentity().pubky !== live.currentUserPubky
+    )
+      return;
+    this.logoutGeneration++;
+    this.cancelAllAuthFlows();
+    BootstrapApplication.cancelModerationFollow();
+    // The owner-guarded storage rejects this stale pointer's write. Rehydrate
+    // then adopts the winning pointer before any SDK restore or request runs.
+    live.setSession(null);
+    await useAuthStore.persist.rehydrate();
+    if (this.hostMode || useAuthStore.getState().isLoggingOut) return;
+    await this.restorePersistedSession();
   }
 
   static async handleCrossTabSignOut(): Promise<void> {
@@ -1555,10 +1573,11 @@ export class AuthController {
     if (session && !AuthApplication.isGrantSession(session)) return;
     if (!session && !grantSessionRecordId && !useAuthStore.getState().currentUserPubky) return;
     const captured = this.captureAuthIdentity();
+    const capturedRecordIds = this.captureLogoutRecords(captured.pubky, grantSessionRecordId);
     useAuthStore.getState().setSession(null);
-    if (grantSessionRecordId) {
+    for (const recordId of capturedRecordIds) {
       try {
-        AuthApplication.queueGrantRetirement(grantSessionRecordId);
+        AuthApplication.queueGrantRetirement(recordId);
       } catch (error) {
         Logger.warn('Could not save the cross-tab cleanup obligation; attempting cleanup now', { error });
       }
@@ -1573,13 +1592,19 @@ export class AuthController {
       Logger.warn('Cross-tab grant sign-out will retry its remote revocation', { error });
     }
     try {
-      await this.removeSignedOutSessionsUnderLock(captured.pubky, grantSessionRecordId, remoteSignedOut);
+      await this.removeSignedOutSessionsUnderLock(
+        captured.pubky,
+        grantSessionRecordId,
+        remoteSignedOut,
+        capturedRecordIds,
+      );
     } catch (error) {
       Logger.warn('Cross-tab cleanup is pending; clearing local account and service access', { error });
     }
     await this.finalizeSignedOutUnderLock({
       captured,
       capturedRecordId: grantSessionRecordId,
+      capturedRecordIds,
       preservePublicCache: false,
     });
   }

@@ -26,6 +26,7 @@ import {
 } from './marketplace-grant-client';
 import { resetMarketplaceNotificationDiagnostics } from './marketplace-notification-diagnostics';
 import {
+  LEGACY_SHOP_SIGN_IN_GRANT,
   MARKETPLACE_CLAIMABLE_GRANTS,
   MARKETPLACE_PREVIOUS_SESSION_GRANT,
   MARKETPLACE_SESSION_GRANT,
@@ -39,6 +40,7 @@ const MARKETPLACE_RESTORABLE_GRANTS = [
   MARKETPLACE_SESSION_GRANT,
   MARKETPLACE_PREVIOUS_SESSION_GRANT,
   RING_COOKIE_CAPABILITIES,
+  LEGACY_SHOP_SIGN_IN_GRANT,
   CAPABILITIES,
 ] as const;
 

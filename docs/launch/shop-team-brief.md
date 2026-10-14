@@ -10,7 +10,7 @@ A peer-to-peer marketplace on Pubky:
 - **A small Rust service enforces the rules a browser can't.** It owns single-winner inventory, auctions, orders and receipts.
 - **Payments go straight to the seller.** Bitcoin runs over Paykit and Locks; PayPal is seller-direct. Card payments are paused.
 - **No custody.** The Shop never holds funds.
-- **Messaging transition.** The vendored Paykit Encrypted Links transport remains cookie-backed; fresh grant sessions cannot enroll. Existing compatible history remains readable. Matthew is replacing the legacy transport with Inbox in parallel; [current compatibility requirements](grant-auth-session.md#commerce-remains-a-separate-approval) govern this auth/embed work.
+- **Messaging transition.** [Chat #209](https://github.com/pubky/pubky-marketplace/pull/209) replaces Paykit Encrypted Links with grant-capable homeserver chat and Inbox pings. Until it lands, fresh grant sessions cannot enroll in the legacy transport. [Messaging cutover](grant-auth-session.md#messaging-cutover) covers merge order and shared-session checks.
 
 The web client is a fork of the Pubky social app ([pubky/pubky-app](https://github.com/pubky/pubky-app)). It supports standalone Shop and the opt-in same-origin App `/shop` wrapper around `/shop-embed`. The [embedding guide](shop-embedding.md) covers deployment; [grant authentication](grant-auth-session.md) covers session ownership and migration. The historical launch-plan snapshot below describes earlier decisions.
 

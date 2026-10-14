@@ -17,7 +17,7 @@ const SIGN_UP_RETRY_MAX_DELAY_MS = 5000;
  * during the pubky step). The auth store is updated only when AuthController.signUp succeeds.
  *
  * On success the keys in the onboarding store become the user's real keys.
- * On non-retryable failure clears onboarding secrets; on retryable failure keeps secrets so users can retry safely.
+ * Keep onboarding secrets on every failure: the invite may already have created the account.
  * In both failure paths it shows a toast and throws so the caller can keep the user on the form.
  *
  * @example
@@ -63,10 +63,9 @@ export function useInviteCodeSignUp(): UseInviteCodeSignUpResult {
           continue;
         }
 
-        // Keep secrets for retryable failures to avoid losing a paid signup when transport fails.
-        if (!(isAppError(error) && isRetryable(error))) {
-          useOnboardingStore.getState().clearSecrets();
-        }
+        // Even a non-retryable completion error can arrive after account creation.
+        // Keep the recovery key until the user has backed it up or explicitly
+        // abandons onboarding; an invalid invite can be retried with the same key.
 
         if (isAppError(error)) {
           if (isAuthError(error)) {

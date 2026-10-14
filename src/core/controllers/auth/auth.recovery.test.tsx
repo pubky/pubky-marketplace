@@ -15,6 +15,8 @@ import { HomeserverService } from '@/services/homeserver/homeserver';
 import { pendingOwnedGrants } from '@/services/homeserver/owned-grant-storage';
 import { clearPersistedAuthIdentity } from '@/stores/auth/auth.persisted';
 import { useAuthStore } from '@/stores/auth/auth.store';
+import { useCommerceStore } from '@/stores/commerce/commerce.store';
+import { useMessagingStore } from '@/stores/messaging/messaging.store';
 import { useOnboardingStore } from '@/stores/onboarding/onboarding.store';
 import { AUTH_PERSIST_KEY } from '@/stores/persistedKeys';
 import { useSearchStore } from '@/stores/search/search.store';
@@ -423,4 +425,58 @@ it('does not let a record-removal marker erase the key of an unresolved retireme
   expect(await AuthController.settlePendingGrantKeyCleanup()).toBe(true);
   expect(records.size).toBe(0);
   expect(pendingOwnedGrants()).toEqual([]);
+});
+
+it('signs out a newer same-account grant that was already persisted before the stale tab logout', async () => {
+  const old = grantSession('alice', 'shop.pubky.app', 'old');
+  await approve(old);
+  await AuthController.initializeAuthenticatedSession({ session: old });
+  const next = grantSession('alice', 'shop.pubky.app', 'next');
+  records.set('alice:next', next);
+  const raw = JSON.parse(localStorage.getItem(AUTH_PERSIST_KEY)!);
+  raw.state.grantSessionRecordId = 'alice:next';
+  localStorage.setItem(AUTH_PERSIST_KEY, JSON.stringify(raw));
+  await AuthController.logout();
+  expect(useAuthStore.getState().currentUserPubky).toBeNull();
+  expect(localStorage.getItem(AUTH_PERSIST_KEY)).not.toContain('alice:next');
+  expect(records.size).toBe(0);
+  expect(next.signout).toHaveBeenCalledOnce();
+});
+
+it('clears commerce and messaging view state when another account signs in', async () => {
+  const old = grantSession();
+  await approve(old);
+  await AuthController.initializeAuthenticatedSession({ session: old });
+  useCommerceStore.getState().setUsdtRefusal('seller', 'usdt_unavailable');
+  useMessagingStore.getState().setMessagingEnabled('alice');
+  useMessagingStore.getState().setUnreadConversations(7);
+  const next = grantSession('bob', 'shop.pubky.app', 'next');
+  await approve(next);
+  await AuthController.initializeAuthenticatedSession({ session: next });
+  expect(useCommerceStore.getState().usdtRefusals).toEqual({});
+  expect(useMessagingStore.getState().enabledPubky).toBeNull();
+  expect(useMessagingStore.getState().unreadConversations).toBe(0);
+});
+
+it('adopts a renewed same-account grant in another tab before using the retired grant again', async () => {
+  const old = grantSession('alice', 'shop.pubky.app', 'old');
+  await approve(old);
+  await AuthController.initializeAuthenticatedSession({ session: old });
+  const next = grantSession('alice', 'shop.pubky.app', 'next');
+  records.set('alice:next', next);
+  const persisted = JSON.parse(localStorage.getItem(AUTH_PERSIST_KEY)!);
+  persisted.state.grantSessionRecordId = 'alice:next';
+  persisted.state.hasProfile = false;
+  localStorage.setItem(AUTH_PERSIST_KEY, JSON.stringify(persisted));
+
+  const unsubscribe = AuthController.subscribeCrossTabSignOut();
+  try {
+    window.dispatchEvent(new StorageEvent('storage', { key: AUTH_PERSIST_KEY }));
+    await vi.waitFor(() => expect(useAuthStore.getState().session).toBe(next));
+    expect(useAuthStore.getState().grantSessionRecordId).toBe('alice:next');
+    expect(next.signout).not.toHaveBeenCalled();
+    expect(clearDatabase).not.toHaveBeenCalled();
+  } finally {
+    unsubscribe();
+  }
 });

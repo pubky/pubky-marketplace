@@ -1,5 +1,4 @@
 import { Keypair, type Session } from '@synonymdev/pubky';
-import type { Pubky } from '@/models/models.types';
 import type { AuthStore } from '@/stores/auth/auth.types';
 
 export type TKeypairParams = {
@@ -14,11 +13,6 @@ export type THomeserverAuthenticateParams = TKeypairParams & TSecretKey;
 
 export interface TRestoreSessionParams {
   authStore: AuthStore;
-  /**
-   * Asks the user whether a `#s=` hand-off may sign this tab in as `pubky`.
-   * Resolves true only on an explicit yes. Absent, every hand-off is declined.
-   */
-  confirmSessionHandoff?: (pubky: Pubky) => Promise<boolean>;
 }
 
 export type TRestoreSessionOutcome =

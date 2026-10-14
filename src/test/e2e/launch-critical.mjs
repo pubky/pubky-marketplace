@@ -25,6 +25,7 @@ import { readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
+import { seedListingCacheRows } from './launch-critical.cache.mjs';
 import { installSyntheticLaunchFixture } from './launch-critical.synthetic.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
@@ -43,7 +44,7 @@ const SERVICE_URL =
 const NEXUS_URL = (process.env.LAUNCH_E2E_NEXUS_URL ?? '').replace(/\/$/, '');
 const ALLOW_LIVE_NEXUS = process.env.LAUNCH_E2E_ALLOW_LIVE_NEXUS === '1';
 const REQUIRE_SELLER_BOARD = process.env.LAUNCH_E2E_REQUIRE_SELLER_BOARD !== '0';
-const SHOP_GRANT = '/pub/pubky.app/:rw,/pub/paykit/:rw,/priv/pubky.app/:rw';
+const SHOP_GRANT = '/pub/pubky.app/:rw,/pub/paykit/:rw,/priv/pubky.app/:rw,/pub/chat/:rw,/priv/chat/:rw';
 const MARKETPLACE_GRANT = '/pub/pubky.app/marketplace-service/v1/:rw,/priv/pubky.app/:rw';
 const PREVIOUS_MARKETPLACE_GRANT = '/pub/pubky.app/marketplace-service/v1/:rw';
 let syntheticFixture;
@@ -881,41 +882,10 @@ function shopCacheRow(shop) {
 }
 
 async function seedCanonicalListingCache(page, canonicalListing, shop) {
-  await page.waitForFunction(
-    () => indexedDB.databases().then((dbs) => dbs.some((entry) => entry.name === 'shop-franky')),
-    undefined,
-    {
-      timeout: 15_000,
-    },
-  );
-  const seeded = await page.evaluate(
-    async ({ listing, shopRecord }) => {
-      const put = (storeName, value) =>
-        new Promise((resolve, reject) => {
-          const open = indexedDB.open('shop-franky');
-          open.onerror = () => reject(open.error);
-          open.onsuccess = () => {
-            const db = open.result;
-            if (![...db.objectStoreNames].includes(storeName)) {
-              db.close();
-              reject(new Error(`missing store ${storeName}`));
-              return;
-            }
-            const tx = db.transaction(storeName, 'readwrite');
-            tx.objectStore(storeName).put(value);
-            tx.oncomplete = () => {
-              db.close();
-              resolve(true);
-            };
-            tx.onerror = () => reject(tx.error);
-          };
-        });
-      await put('commerce_listings', listing);
-      await put('commerce_shops', shopRecord);
-      return true;
-    },
-    { listing: listingCacheRow(canonicalListing), shopRecord: shopCacheRow(shop) },
-  );
+  const seeded = await page.evaluate(seedListingCacheRows, {
+    listing: listingCacheRow(canonicalListing),
+    shopRecord: shopCacheRow(shop),
+  });
   assert('listing:fixture-cache', seeded === true, 'canonical listing+shop in Dexie shop-franky');
 }
 

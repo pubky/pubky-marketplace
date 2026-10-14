@@ -131,23 +131,19 @@ describe('App-owned grant consumer', () => {
     expect(useAuthStore.getState().currentUserPubky).toBeNull();
     expect(BootstrapApplication.initialize).not.toHaveBeenCalled();
   });
-  it('invalidates the live session immediately during an account switch and waits for old bootstrap before cleaning', async () => {
+  it('invalidates the live session immediately during an account switch without social bootstrap', async () => {
     vi.mocked(AuthApplication.userIsSignedUp).mockResolvedValue(true);
-    const bootstrap = deferred<Awaited<ReturnType<typeof BootstrapApplication.initialize>>>();
-    vi.mocked(BootstrapApplication.initialize).mockReturnValueOnce(bootstrap.promise);
     vi.spyOn(AuthApplication, 'restoreHostSession')
       .mockResolvedValueOnce(grantSession('alice', 'pubky.app'))
       .mockResolvedValueOnce(grantSession('bob', 'pubky.app'));
-    const first = AuthController.applyHostSession(ready());
-    await vi.waitFor(() => expect(BootstrapApplication.initialize).toHaveBeenCalledOnce());
+    await expect(AuthController.applyHostSession(ready())).resolves.toBe('ready');
     expect(useAuthStore.getState().currentUserPubky).toBe('alice');
     const second = AuthController.applyHostSession(ready('bob', '2'));
     expect(useAuthStore.getState().session).toBeNull();
-    bootstrap.resolve({} as Awaited<ReturnType<typeof BootstrapApplication.initialize>>);
-    await first;
-    await second;
+    await expect(second).resolves.toBe('ready');
     expect(useAuthStore.getState()).toMatchObject({ currentUserPubky: 'bob', hasProfile: true });
     expect(clearPrivateData).toHaveBeenCalledTimes(2);
+    expect(BootstrapApplication.initialize).not.toHaveBeenCalled();
   });
   it.each(['restoring', 'temporary-error', 'reauth-required', 'signed-out'] as const)(
     'handles host %s without touching SDK credentials',
@@ -249,20 +245,19 @@ describe('App-owned grant consumer', () => {
     expect(clearOtherServices).toHaveBeenCalledWith('bob');
     expect(useAuthStore.getState().currentUserPubky).toBe('bob');
   });
-  it('keeps mutating host bootstrap under the same cross-frame cleanup lock', async () => {
-    vi.mocked(AuthApplication.userIsSignedUp).mockResolvedValue(true);
-    const bootstrap = deferred<Awaited<ReturnType<typeof BootstrapApplication.initialize>>>();
-    vi.mocked(BootstrapApplication.initialize).mockReturnValueOnce(bootstrap.promise);
+  it('holds account cleanup under the same cross-frame cleanup lock', async () => {
+    const clearing = deferred<void>();
+    vi.mocked(clearPrivateData).mockReturnValueOnce(clearing.promise);
     vi.spyOn(AuthApplication, 'restoreHostSession').mockResolvedValue(grantSession('alice', 'pubky.app'));
     const restore = AuthController.applyHostSession(ready());
-    await vi.waitFor(() => expect(BootstrapApplication.initialize).toHaveBeenCalled());
+    await vi.waitFor(() => expect(clearPrivateData).toHaveBeenCalled());
     const cleanup = vi.fn();
     const otherFrame = withAuthFinalizationLock(async () => {
       cleanup();
     });
     await Promise.resolve();
     expect(cleanup).not.toHaveBeenCalled();
-    bootstrap.resolve({} as Awaited<ReturnType<typeof BootstrapApplication.initialize>>);
+    clearing.resolve();
     await restore;
     await otherFrame;
     expect(cleanup).toHaveBeenCalledOnce();
@@ -476,4 +471,14 @@ it('drains a pending BFF deletion before a failed private cleanup releases the h
   }
   expect(await signedOut).toBe('signed-out');
   expect(clear).toHaveBeenCalledTimes(2);
+});
+
+it('keeps a valid hosted grant usable without depending on the social Nexus bootstrap', async () => {
+  const session = grantSession('alice', 'pubky.app', 'grant-alice');
+  vi.spyOn(AuthApplication, 'restoreHostSession').mockResolvedValue(session);
+  vi.mocked(AuthApplication.userIsSignedUp).mockResolvedValue(true);
+  vi.mocked(BootstrapApplication.initialize).mockRejectedValue(new Error('Nexus unavailable'));
+  await expect(AuthController.applyHostSession(ready())).resolves.toBe('ready');
+  expect(useAuthStore.getState()).toMatchObject({ session, hasProfile: true });
+  expect(BootstrapApplication.initialize).not.toHaveBeenCalled();
 });

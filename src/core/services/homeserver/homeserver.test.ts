@@ -45,6 +45,7 @@ const mockState = vi.hoisted(() => ({
   sessionRestore: vi.fn(),
   grantStartDelegated: vi.fn(),
   grantStoreRemove: vi.fn(),
+  grantStoreRestore: vi.fn(),
   grantStoreClearAll: vi.fn(),
   grantStoreList: vi.fn(),
   grantStoreIsAvailable: vi.fn(),
@@ -104,6 +105,7 @@ vi.mock('@synonymdev/pubky', () => {
       fetch: (...args: unknown[]) => mockState.clientFetch(...args),
     },
     browserSessionStore: {
+      restore: (...args: unknown[]) => mockState.grantStoreRestore(...args),
       remove: (...args: unknown[]) => mockState.grantStoreRemove(...args),
       clearAll: (...args: unknown[]) => mockState.grantStoreClearAll(...args),
       list: (...args: unknown[]) => mockState.grantStoreList(...args),
@@ -343,6 +345,7 @@ describe('HomeserverService', () => {
         const signupToken = 'invalid-token';
 
         mockState.signup.mockRejectedValue(new Error('Invalid token'));
+        mockState.signin.mockRejectedValue(new Error('Account does not exist'));
 
         await expect(HomeserverService.signUp({ keypair, signupToken })).rejects.toMatchObject({
           category: ErrorCategory.Server,
@@ -355,6 +358,7 @@ describe('HomeserverService', () => {
         const signupToken = 'bad-token';
 
         mockState.signup.mockRejectedValue('string error');
+        mockState.signin.mockRejectedValue(new Error('Account does not exist'));
 
         await expect(HomeserverService.signUp({ keypair, signupToken })).rejects.toMatchObject({
           category: ErrorCategory.Server,
@@ -368,6 +372,7 @@ describe('HomeserverService', () => {
         const originalMessage = 'Token expired';
 
         mockState.signup.mockRejectedValue(new Error(originalMessage));
+        mockState.signin.mockRejectedValue(new Error('Account does not exist'));
 
         try {
           await HomeserverService.signUp({ keypair, signupToken });
@@ -379,6 +384,16 @@ describe('HomeserverService', () => {
           expect((error as AppError).message).toBe(originalMessage);
         }
       });
+    });
+
+    it('recovers an account after a production invite was consumed before grant completion', async () => {
+      const session = createMockSession();
+      mockState.signup.mockRejectedValue(new Error('Invite already consumed'));
+      mockState.signin.mockResolvedValue(session);
+      await expect(HomeserverService.signUp({ keypair: createMockKeypair(), signupToken: 'spent' })).resolves.toEqual({
+        session,
+      });
+      expect(mockState.signin).toHaveBeenCalledWith('shop.pubky.app');
     });
 
     describe('signUp (staging: direct URL, grant session)', () => {
@@ -782,7 +797,7 @@ describe('HomeserverService', () => {
         ['a cookie session holding only the Shop grant', cookieSession(CAPABILITIES), false],
         ['a root cookie session', cookieSession('/:rw'), false],
         ['a grant session holding the Shop grant', grantSession(CAPABILITIES), true],
-        ['a grant session holding the Ring set', grantSession(RING_COOKIE_CAPABILITIES), true],
+        ['an older grant missing chat permissions', grantSession(RING_COOKIE_CAPABILITIES), false],
       ])('%s → %s', (_label, session, full) => {
         mockState.currentSession = session;
 
@@ -810,6 +825,101 @@ describe('HomeserverService', () => {
   });
 
   describe('Data Operations', () => {
+    describe('bounded auth IO', () => {
+      afterEach(() => vi.useRealTimers());
+
+      it('keeps a timed-out retirement retryable and ignores late remote success', async () => {
+        vi.useFakeTimers();
+        let finishSignout!: () => void;
+        const pendingSignout = new Promise<void>((resolve) => {
+          finishSignout = resolve;
+        });
+        const session = asOpaque<Session>({
+          grant: {
+            sessionInfo: vi.fn().mockResolvedValue({
+              clientId: 'shop.pubky.app',
+              publicKey: { z32: () => 'user' },
+              grantId: 'old',
+            }),
+          },
+          signout: vi.fn().mockReturnValueOnce(pendingSignout).mockResolvedValue(undefined),
+        });
+        mockState.grantStoreRestore.mockResolvedValue(session);
+        mockState.grantStoreRemove.mockReset().mockResolvedValue(undefined);
+        mockState.grantStoreList.mockReset().mockResolvedValue([]);
+        HomeserverService.queueGrantRetirement('user:old');
+        const marker = 'shop-owned-grant-v1:retirement:user:old';
+        let failure: unknown;
+        void HomeserverService.clearGrantSessions().catch((error: unknown) => {
+          failure = error;
+        });
+        await vi.advanceTimersByTimeAsync(15_001);
+        expect(failure).toMatchObject({ category: ErrorCategory.Timeout });
+        expect(localStorage.getItem(marker)).not.toBeNull();
+        expect(mockState.grantStoreRemove).not.toHaveBeenCalled();
+        finishSignout();
+        await vi.advanceTimersByTimeAsync(1);
+        expect(localStorage.getItem(marker)).not.toBeNull();
+        expect(mockState.grantStoreRemove).not.toHaveBeenCalled();
+        await HomeserverService.clearGrantSessions();
+        expect(mockState.grantStoreRemove).toHaveBeenCalledExactlyOnceWith('user:old');
+        expect(localStorage.getItem(marker)).toBeNull();
+      });
+
+      it('cannot deliver a late read result to the bootstrap continuation after timeout', async () => {
+        vi.useFakeTimers();
+        let finishRead!: (response: Response) => void;
+        mockState.currentSession = createMockSession();
+        mockState.sessionStorageGet.mockReturnValue(
+          new Promise<Response>((resolve) => {
+            finishRead = resolve;
+          }),
+        );
+        const persist = vi.fn();
+        const result = HomeserverService.request({ method: HttpMethod.GET, url: 'pubky://user/pub/last_read' })
+          .then(persist)
+          .catch((error: unknown) => error);
+        await vi.advanceTimersByTimeAsync(15_001);
+        expect(await result).toMatchObject({ category: ErrorCategory.Timeout });
+        finishRead(new Response('{"timestamp":123}'));
+        await vi.advanceTimersByTimeAsync(1);
+        expect(persist).not.toHaveBeenCalled();
+      });
+
+      it.each(['request', 'body', 'list', 'logout'] as const)(
+        'settles a stalled %s instead of holding auth forever',
+        async (operation) => {
+          vi.useFakeTimers();
+          const stalled = new Promise<never>(() => {});
+          mockState.currentSession = createMockSession();
+          let call: Promise<unknown>;
+          if (operation === 'list') {
+            mockState.sessionStorageList.mockReturnValue(stalled);
+            call = HomeserverService.list({ baseDirectory: 'pubky://user/pub/feeds/' });
+          } else if (operation === 'logout') {
+            mockState.sessionSignout.mockReturnValue(stalled);
+            call = HomeserverService.logout({ session: mockState.currentSession });
+          } else {
+            mockState.sessionStorageGet.mockReturnValue(
+              operation === 'request'
+                ? stalled
+                : Promise.resolve({
+                    ok: true,
+                    text: () => stalled,
+                  }),
+            );
+            call = HomeserverService.request({ method: HttpMethod.GET, url: 'pubky://user/pub/last_read' });
+          }
+          let result: unknown;
+          void call.catch((error: unknown) => {
+            result = error;
+          });
+          await vi.advanceTimersByTimeAsync(15_001);
+          expect(result).toMatchObject({ category: ErrorCategory.Timeout, code: 'REQUEST_TIMEOUT' });
+        },
+      );
+    });
+
     describe('request', () => {
       describe('GET requests', () => {
         it('should return parsed JSON for successful GET', async () => {
@@ -1568,6 +1678,7 @@ describe('HomeserverService', () => {
           operation: 'test',
         });
         mockState.signup.mockRejectedValue(appError);
+        mockState.signin.mockRejectedValue(new Error('Account does not exist'));
 
         try {
           await HomeserverService.signUp({
@@ -1589,6 +1700,7 @@ describe('HomeserverService', () => {
       it('pkarr error maps to retryable network error', async () => {
         const pkarrError = { name: 'PkarrError', message: 'PKARR lookup failed: relay timeout' };
         mockState.signup.mockRejectedValue(pkarrError);
+        mockState.signin.mockRejectedValue(new Error('Account does not exist'));
 
         const error = await HomeserverService.signUp({ keypair: createMockKeypair(), signupToken: 'token' }).catch(
           (caught: unknown) => caught,

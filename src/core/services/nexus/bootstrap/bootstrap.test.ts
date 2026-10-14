@@ -1,4 +1,5 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { focusManager, onlineManager } from '@tanstack/react-query';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ClientErrorCode, ServerErrorCode } from '@/libs/error/error.codes';
 import { ErrorCategory } from '@/libs/error/error.types';
 import { NexusBootstrapService } from '@/services/nexus/bootstrap/bootstrap';
@@ -148,6 +149,45 @@ describe('NexusBootstrapService', () => {
   });
 
   describe('read', () => {
+    afterEach(() => vi.useRealTimers());
+
+    it.each(['request', 'body', 'offline', 'hidden'])(
+      'bounds a stalled bootstrap %s including the existing retries',
+      async (phase) => {
+        vi.useFakeTimers();
+        if (phase === 'offline') onlineManager.setOnline(false);
+        if (phase === 'hidden') focusManager.setFocused(false);
+        const signals: AbortSignal[] = [];
+        mockFetch.mockImplementation((_url: string, options: RequestInit) => {
+          if (options.signal) signals.push(options.signal);
+          const stalled = new Promise<never>((_resolve, reject) => {
+            options.signal?.addEventListener('abort', () => reject(options.signal?.reason), { once: true });
+          });
+          return phase === 'request' ? stalled : Promise.resolve({ ok: true, text: () => stalled });
+        });
+        let result: unknown;
+        void NexusBootstrapService.fetch(`stalled-${phase}`).catch((error: unknown) => {
+          result = error;
+        });
+        const { nexusQueryClient } = await import('../nexus.query-client');
+        try {
+          await vi.advanceTimersByTimeAsync(75_001);
+          expect(result).toMatchObject({ category: ErrorCategory.Timeout, code: 'REQUEST_TIMEOUT' });
+          if (phase !== 'offline') expect(signals.length).toBeGreaterThan(0);
+          expect(signals.every((signal) => signal.aborted)).toBe(true);
+          const attempts = mockFetch.mock.calls.length;
+          onlineManager.setOnline(true);
+          focusManager.setFocused(true);
+          await vi.advanceTimersByTimeAsync(10_000);
+          expect(mockFetch).toHaveBeenCalledTimes(attempts);
+        } finally {
+          nexusQueryClient.clear();
+          onlineManager.setOnline(true);
+          focusManager.setFocused(true);
+        }
+      },
+    );
+
     it('should fetch and return bootstrap data successfully', async () => {
       const mockResponse = generateMockResponse(pubky, '');
 
@@ -163,6 +203,7 @@ describe('NexusBootstrapService', () => {
 
       expect(mockFetch).toHaveBeenCalledWith(bootstrapApi.get(pubky), {
         method: 'GET',
+        signal: expect.any(AbortSignal),
         headers: {
           'Content-Type': 'application/json',
         },

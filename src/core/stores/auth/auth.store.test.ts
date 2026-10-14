@@ -1,6 +1,4 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import * as vibeSessionAutoRestore from '@/libs/vibe-session/auto-restore';
-import * as vibeSessionConfig from '@/libs/vibe-session/config';
 import type { THomeserverSessionResult } from '@/services/homeserver/homeserver.types';
 import { asOpaque } from '@/test-utils/type-assertions';
 import { AUTH_PERSIST_KEY } from '../persistedKeys';
@@ -20,7 +18,6 @@ describe('AuthStore', () => {
   beforeEach(() => {
     // Reset the real store to initial state before each test
     useAuthStore.getState().reset();
-    vibeSessionAutoRestore.clearVibeSessionAutoRestoreSuppressed();
     vi.clearAllMocks();
   });
 
@@ -79,35 +76,14 @@ describe('AuthStore', () => {
       }
     });
 
-    it('sets isRestoringSession on rehydrate when consumer mode is on and no sessionExport', async () => {
-      const consumerSpy = vi.spyOn(vibeSessionConfig, 'isVibeSessionConsumerEnabled').mockReturnValue(true);
+    it('does not schedule restore without persisted credentials', async () => {
       useAuthStore.getState().setHasHydrated(false);
       useAuthStore.getState().setIsRestoringSession(false);
 
-      try {
-        await useAuthStore.persist.rehydrate();
-        expect(useAuthStore.getState().hasHydrated).toBe(true);
-        expect(useAuthStore.getState().isRestoringSession).toBe(true);
-        expect(useAuthStore.getState().sessionExport).toBeNull();
-      } finally {
-        consumerSpy.mockRestore();
-      }
-    });
-
-    it('does not set isRestoringSession on rehydrate when logout suppression is set and nothing is persisted', async () => {
-      const consumerSpy = vi.spyOn(vibeSessionConfig, 'isVibeSessionConsumerEnabled').mockReturnValue(true);
-      vibeSessionAutoRestore.suppressVibeSessionAutoRestore();
-      useAuthStore.getState().setHasHydrated(false);
-      useAuthStore.getState().setIsRestoringSession(false);
-
-      try {
-        await useAuthStore.persist.rehydrate();
-        expect(useAuthStore.getState().hasHydrated).toBe(true);
-        expect(useAuthStore.getState().isRestoringSession).toBe(false);
-        expect(useAuthStore.getState().sessionExport).toBeNull();
-      } finally {
-        consumerSpy.mockRestore();
-      }
+      await useAuthStore.persist.rehydrate();
+      expect(useAuthStore.getState().hasHydrated).toBe(true);
+      expect(useAuthStore.getState().isRestoringSession).toBe(false);
+      expect(useAuthStore.getState().sessionExport).toBeNull();
     });
   });
 
@@ -260,8 +236,7 @@ describe('AuthStore', () => {
   });
 
   describe('Init and deferred restore', () => {
-    it('clears vibe auto-restore suppression and sessionRestoreDeferred on init', () => {
-      vibeSessionAutoRestore.suppressVibeSessionAutoRestore();
+    it('clears sessionRestoreDeferred on init', () => {
       useAuthStore.getState().setSessionRestoreDeferred(true);
       const mockSession = {} as THomeserverSessionResult['session'];
 
@@ -271,7 +246,6 @@ describe('AuthStore', () => {
         hasProfile: true,
       });
 
-      expect(vibeSessionAutoRestore.isVibeSessionAutoRestoreSuppressed()).toBe(false);
       expect(useAuthStore.getState().sessionRestoreDeferred).toBe(false);
       expect(useAuthStore.getState().session).toBe(mockSession);
     });

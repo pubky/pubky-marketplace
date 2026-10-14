@@ -1,5 +1,4 @@
 import { Session } from '@synonymdev/pubky';
-import { clearVibeSessionAutoRestoreSuppressed } from '@/libs/vibe-session/auto-restore';
 import type { Pubky } from '@/models/models.types';
 import { ZustandSet } from '../stores.types';
 import { AuthActions, AuthActionTypes, authInitialState, AuthInitParams, AuthStore } from './auth.types';
@@ -30,7 +29,6 @@ export const createAuthActions = (set: ZustandSet<AuthStore>): AuthActions => ({
     sessionOwner = 'shop',
     hostGeneration = null,
   }: AuthInitParams) => {
-    clearVibeSessionAutoRestoreSuppressed();
     set(
       (state) => ({
         ...state,
