@@ -35,7 +35,7 @@ async function establishSession(): Promise<void> {
     jsonResponse(201, {
       token: 'A'.repeat(43),
       pubky: ACTOR,
-      capabilities: '/pub/pubky.app/:rw,/pub/paykit/:rw,/priv/pubky.app/:rw,/pub/chat/:rw,/priv/chat/:rw',
+      capabilities: '/pub/pubky.app/:rw,/pub/paykit/:rw,/priv/pubky.app/:rw,/pub/chat/v0/:rw,/priv/chat/v0/:rw',
       expires_at: new Date(Date.now() + 86_400_000).toISOString(),
     }),
   );

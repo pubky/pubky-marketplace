@@ -62,7 +62,8 @@ for first contact. Full description: [`docs/chat/README.md`](../chat/README.md).
    ends in the same idempotent sync.
 3. **Inbox-first.** A stranger's first message is noticed through the inbox; without an inbox session
    (deployment without `PUBKY_RUNTIME_INBOX_URL`) chat still works through streams and reconciliation, and the gap is documented rather than papered over.
-4. **Scopes.** The sign-in grant gains `/pub/chat/:rw` and `/priv/chat/:rw`. Sessions
+4. **Scopes.** The sign-in grant gains `/pub/chat/v0/:rw` and `/priv/chat/v0/:rw` (optional for opening the Shop:
+   a session without them sees a re-approval notice in Messages). Sessions
    approved before that see a re-approval notice; the `/pub/paykit/:rw` enrollment flow is gone.
 5. **Layering.** `ChatSyncCoordinator` → `ChatController` → `ChatApplication` → `ChatHomeserverService`,
    `InboxService`, `LocalChatService`, per [ADR 0004](./0004-layering-and-dependency-rules.md). One leader
@@ -79,8 +80,9 @@ for first contact. Full description: [`docs/chat/README.md`](../chat/README.md).
   sender's homeserver (and in the sender's queue while the peer has no key) and is delivered later.
 - Multi-device by construction: keys and conversations live on the homeserver; a fresh browser rebuilds the
   inbox, including the read state.
-- No Shop-operated relay holds messages; the transaction service has no message tables. Operators and the
-  inbox see ciphertext and metadata only.
+- No Shop-operated relay holds messages; the transaction service has no message tables. The inbox and
+  the network see ciphertext and metadata only (homeserver operators can read the unsealed v0 key; see
+  Negative).
 - Small, auditable crypto surface (`@noble` X25519, HKDF, XChaCha20-Poly1305) in `src/libs/chat/crypto.ts`
   instead of a vendored WASM fork; no handshake state machine to persist.
 - Live delivery under a second on the stream path and about a second on the ping path, proven by the two-account e2e.
@@ -89,7 +91,7 @@ for first contact. Full description: [`docs/chat/README.md`](../chat/README.md).
 
 - No forward secrecy: static keys; a leaked private key opens every message with every peer.
 - The private key sits unsealed under `/priv` (owner-only, but readable by the homeserver operator and by any
-  session holding `/priv/chat/:rw`), and as plain bytes in IndexedDB. Hardening is deferred.
+  session holding `/priv/chat/v0/:rw`), and as plain bytes in IndexedDB. Hardening is deferred.
 - Key authenticity is trust-on-first-use from the peer's homeserver; there is no fingerprint check.
 - First contact from a stranger depends on the inbox, which needs a deployed, CORS-enabled inbox service;
   without it a stranger is reachable only once the recipient opens the thread or discovery finds the files.

@@ -1098,7 +1098,7 @@ describe('HomeserverService', () => {
 
         expect(mockState.startAuthFlow).toHaveBeenCalledWith(
           // The Shop's scopes plus pubky.app's, so the shared cookie keeps both sites working.
-          '/pub/pubky.app/:rw,/pub/paykit/:rw,/priv/pubky.app/:rw,/pub/chat/:rw,/priv/chat/:rw,/priv/social/:rw,/priv/app.locks/content/:r',
+          '/pub/pubky.app/:rw,/pub/paykit/:rw,/priv/pubky.app/:rw,/pub/chat/v0/:rw,/priv/chat/v0/:rw,/priv/social/:rw,/priv/app.locks/content/:r',
           'signin-kind', // AuthFlowKind.signin()
           expect.stringContaining('/inbox'), // HTTP relay (Pubky 0.7+ inbox endpoint)
         );
@@ -1344,7 +1344,11 @@ describe('HomeserverService', () => {
         ['a cookie session holding only the Shop grant', cookieSession(CAPABILITIES), false],
         ['a root cookie session', cookieSession('/:rw'), false],
         ['a grant session holding the Shop grant', grantSession(CAPABILITIES), true],
-        ['a grant session holding the Ring set', grantSession(RING_COOKIE_CAPABILITIES), false],
+        [
+          'a grant session holding the Ring set, a superset of the core scopes',
+          grantSession(RING_COOKIE_CAPABILITIES),
+          true,
+        ],
       ])('%s → %s', (_label, session, full) => {
         mockState.currentSession = session;
 

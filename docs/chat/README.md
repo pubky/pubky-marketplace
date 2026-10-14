@@ -31,7 +31,7 @@ background loops and every tab renders through Dexie live queries.
   `?listing=` / `?order=` set the context of the next message). Entry points: **Message seller** on a
   listing, **Message about this order** on an order, **Message** on a profile, and the Messages item in the
   header, mobile footer and marketplace section nav with an unread badge.
-- Works with every grant sign-in that holds the chat scopes (`/pub/chat/:rw`, `/priv/chat/:rw`): Bitkit,
+- Works with every grant sign-in that holds the chat scopes (`/pub/chat/v0/:rw`, `/priv/chat/v0/:rw`): Bitkit,
   Ring and Passport. The inbox signs its session with the grant (see [Inbox](#inbox-pings)).
 
 ## Code map
@@ -400,7 +400,7 @@ These are project-wide hard limits; do not tune them per component.
 | `PUBKY_RUNTIME_INBOX_AUDIENCE` | the inbox URL | Audience string the inbox expects in session proofs (`INBOX_AUTH__AUDIENCE` on the service).                                                              |
 | `NEXT_PUBLIC_DB_VERSION`       | `9`           | Must be 9 or higher: the chat tables arrive at Dexie version 9.                                                                                           |
 
-The sign-in grant (`CAPABILITIES`) now includes `/pub/chat/:rw,/priv/chat/:rw`. A session approved before
+The sign-in grant (`CAPABILITIES`) now includes `/pub/chat/v0/:rw,/priv/chat/v0/:rw`. A session approved before
 this change lacks them and gets the `needs_reauth` notice until the user signs in again. The inbox deployment must allow the Shop's origin in `INBOX_SERVER__CORS_ALLOWED_ORIGINS`.
 
 Errors: expected conditions (a peer without a key, an undecryptable file, an inbox that is down) are return
@@ -472,9 +472,12 @@ What each layer proves, so a reverification after a change runs the same list.
 What the design protects, and what it does not. Threat IDs refer to
 [`../ecommerce/threat-model.md`](../ecommerce/threat-model.md).
 
-- **Confidentiality.** Bodies and context are encrypted end to end under the pairwise key. Homeserver
-  operators, the Shop's services, the inbox and the network see ciphertext only (checked by the live proof:
-  `homeserver:messages-are-ciphertext`).
+- **Confidentiality.** Bodies and context are encrypted end to end under the pairwise key. The Shop's
+  services, the inbox and the network see ciphertext only (checked by the live proof:
+  `homeserver:messages-are-ciphertext`). In v0 the private key sits unsealed under `/priv/chat/v0/`, so
+  the operator of either party's homeserver, and any app holding that account's `/priv/chat/v0/:rw`, can
+  read the key and with it every message of that account; `key.json` is unsigned, so such an operator could
+  also swap a key unnoticed. Sealing the key and signing `key.json` are the listed follow-ups.
 - **Integrity and authorship.** The AEAD tag under the pairwise key plus the AAD (sender, recipient, path)
   reject tampering and relocation. Authorship rests on the homeserver's write authorization: only the
   sender's session can write under `pubky://<sender>/pub/chat/v0/`. There is no separate signature; either
@@ -491,7 +494,7 @@ What the design protects, and what it does not. Threat IDs refer to
 - **Private key at rest.** The thread shows a one-line note ("Messages are encrypted but stored on your
   homeserver. Keep payment details, passwords and ID numbers out of chat."), dismissable once per account, so
   users do not mistake v0 for a vault. `/priv/chat/v0/key.json` is plain JSON under the homeserver's owner-only tree. The
-  homeserver enforces access, so the account's sessions (any app holding `/priv/chat/:rw`) and the homeserver
+  homeserver enforces access, so the account's sessions (any app holding `/priv/chat/v0/:rw`) and the homeserver
   operator can read it. Sealing it (for example under the marketplace data key used for `/priv` records, or a
   user-held secret) is deferred hardening. The key is also in Dexie (`chat_identity`) as plain bytes; XSS on
   the Shop origin reads it (WEB-02), as with every other local credential.

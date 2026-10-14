@@ -4,6 +4,8 @@ import {
   CAPABILITIES,
   capabilitiesMatchFullGrant,
   capabilitiesMatchRingCookieGrant,
+  CHAT_CAPABILITIES,
+  CORE_CAPABILITIES,
   getShopGrantClientId,
   RING_COOKIE_CAPABILITIES,
   SHOP_GRANT_CLIENT_ID,
@@ -34,6 +36,7 @@ describe('getShopGrantClientId', () => {
 
 describe('capabilitiesMatchFullGrant', () => {
   const full = CAPABILITIES.split(',');
+  const core = CORE_CAPABILITIES.split(',');
 
   it('accepts the exact CAPABILITIES set', () => {
     expect(capabilitiesMatchFullGrant(full)).toBe(true);
@@ -43,17 +46,27 @@ describe('capabilitiesMatchFullGrant', () => {
     expect(capabilitiesMatchFullGrant([...full].reverse())).toBe(true);
   });
 
+  it('accepts the core set alone: chat scopes are optional for opening the Shop', () => {
+    expect(capabilitiesMatchFullGrant(core)).toBe(true);
+  });
+
+  it('accepts extra entries, such as the App session scopes under /shop-embed', () => {
+    expect(capabilitiesMatchFullGrant([...full, '/priv/social/:rw'])).toBe(true);
+    expect(capabilitiesMatchFullGrant(RING_COOKIE_CAPABILITIES.split(','))).toBe(true);
+  });
+
   it('refuses empty capabilities', () => {
     expect(capabilitiesMatchFullGrant([])).toBe(false);
   });
 
-  it('refuses a missing or extra entry', () => {
-    expect(capabilitiesMatchFullGrant(full.slice(0, 2))).toBe(false);
-    expect(capabilitiesMatchFullGrant([...full, '/extra/:rw'])).toBe(false);
+  it('refuses a grant missing a core entry', () => {
+    expect(capabilitiesMatchFullGrant(core.slice(0, 2))).toBe(false);
+    expect(capabilitiesMatchFullGrant(CHAT_CAPABILITIES.split(','))).toBe(false);
   });
 
-  it('refuses the Ring cookie set, so grant sessions keep the exact Shop grant', () => {
-    expect(capabilitiesMatchFullGrant(RING_COOKIE_CAPABILITIES.split(','))).toBe(false);
+  it('keeps the chat scopes versioned and inside the requested grant', () => {
+    expect(CHAT_CAPABILITIES).toBe('/pub/chat/v0/:rw,/priv/chat/v0/:rw');
+    expect(full).toEqual([...core, ...CHAT_CAPABILITIES.split(',')]);
   });
 });
 
