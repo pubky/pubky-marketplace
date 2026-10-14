@@ -206,10 +206,10 @@ const reviewResultSchema = z
   })
   .passthrough();
 
-export interface TEnsureDefaultShopParams {
+export interface TCommitCreateDefaultShopParams {
   ownerPubky: string;
-  /** Reads the seller's published profile; only called when a shop is about to be written. */
-  loadProfile: () => Promise<{ name: string; bio: string } | null>;
+  /** The seller's published profile, if any. */
+  profile: { name: string; bio: string } | null;
   /** Where the triggering listing ships from; otherwise a cached listing of the seller's, then the default. */
   location?: CommerceShopRecord['location'];
 }
@@ -404,8 +404,8 @@ export class CommerceApplication {
   private constructor() {}
 
   private static sellerListingsRefreshInFlight = new Map<string, Promise<void>>();
-  /** Sellers whose default storefront check ran (or runs) in this session. */
-  private static defaultShopSession = new Map<string, Promise<void>>();
+  /** Tail of each seller's queued shop writes in this tab (owner → settled promise). */
+  private static shopWrites = new Map<string, Promise<void>>();
   /** Listings (composite id → count) with a `commitUpsertListing` running in this tab. */
   private static listingPublishesInFlight = new Map<string, number>();
 
@@ -3561,50 +3561,56 @@ export class CommerceApplication {
   }
 
   /**
-   * Publishes a default storefront (`shop.json`) for a seller who has none, so
-   * apps that only trust sellers with a storefront (Bitkit's Shop contacts)
-   * see them. Never replaces a shop: any local row (saved or mid-save) or
-   * published record wins, and an unreadable homeserver is not taken as
-   * "no shop". Runs once per seller per session; a failure allows a retry.
+   * Whether a seller has no storefront (`shop.json`) yet: no local row (saved
+   * or mid-save) and no published record. An unreadable homeserver throws
+   * rather than being taken as "no shop".
    */
-  static async ensureDefaultShop({ ownerPubky, loadProfile, location }: TEnsureDefaultShopParams): Promise<void> {
-    const inSession = this.defaultShopSession.get(ownerPubky);
-    if (inSession) return await inSession;
-
-    const attempt = this.runEnsureDefaultShop({ ownerPubky, loadProfile, location });
-    this.defaultShopSession.set(ownerPubky, attempt);
-    try {
-      await attempt;
-    } catch (error) {
-      this.defaultShopSession.delete(ownerPubky);
-      throw error;
-    }
+  static async needsDefaultShop(ownerPubky: string): Promise<boolean> {
+    if (await LocalCommerceService.getShop(ownerPubky)) return false;
+    const published = await CommerceHomeserverService.fetchJsonIfFound(CommerceRecordNormalizer.shopUri(ownerPubky));
+    return !published.found;
   }
 
-  private static async runEnsureDefaultShop({
+  /**
+   * Publishes a default storefront for a seller who has none, so apps that
+   * only trust sellers with a storefront (Bitkit's Shop contacts) see them.
+   * The final absence check and the write run in the seller's shop-write
+   * queue, so a settings save queued first wins and one queued after
+   * replaces the default.
+   */
+  static async commitCreateDefaultShop({
     ownerPubky,
-    loadProfile,
+    profile,
     location,
-  }: TEnsureDefaultShopParams): Promise<void> {
-    if (await LocalCommerceService.getShop(ownerPubky)) return;
-    const published = await CommerceHomeserverService.fetchJsonIfFound(CommerceRecordNormalizer.shopUri(ownerPubky));
-    if (published.found) return;
-
+  }: TCommitCreateDefaultShopParams): Promise<void> {
     const shipsFrom =
       location ??
       (await LocalCommerceService.getListingsBySeller(ownerPubky)).find((row) => row.record.location)?.record.location;
-    const record = buildDefaultShopRecord({
-      ownerPubky,
-      profile: await loadProfile(),
-      location: shipsFrom,
-      now: new Date(),
+    const record = buildDefaultShopRecord({ ownerPubky, profile, location: shipsFrom, now: new Date() });
+    await this.queueShopWrite(ownerPubky, async () => {
+      if (await LocalCommerceService.getShop(ownerPubky)) return;
+      await this.writeShop(record);
     });
-    // A settings save may have started while the profile loaded; it wins.
-    if (await LocalCommerceService.getShop(ownerPubky)) return;
-    await this.commitUpsertShop(record);
   }
 
   static async commitUpsertShop(record: CommerceShopRecord): Promise<void> {
+    await this.queueShopWrite(record.ownerPubky, () => this.writeShop(record));
+  }
+
+  /** Runs a seller's shop writes in this tab one at a time, in call order. */
+  private static async queueShopWrite(ownerPubky: string, write: () => Promise<void>): Promise<void> {
+    const previous = this.shopWrites.get(ownerPubky) ?? Promise.resolve();
+    const current = previous.then(write);
+    const tail = current.catch(() => undefined);
+    this.shopWrites.set(ownerPubky, tail);
+    try {
+      await current;
+    } finally {
+      if (this.shopWrites.get(ownerPubky) === tail) this.shopWrites.delete(ownerPubky);
+    }
+  }
+
+  private static async writeShop(record: CommerceShopRecord): Promise<void> {
     const now = Date.now();
     const url = CommerceRecordNormalizer.shopUri(record.ownerPubky);
     const job = this.createSyncJob({

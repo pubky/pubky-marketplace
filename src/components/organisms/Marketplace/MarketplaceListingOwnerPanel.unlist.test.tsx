@@ -53,7 +53,7 @@ describe('MarketplaceListingOwnerPanel unlist through the real commit', () => {
     useCommerceStore.setState({ marketplaceSession: {} as never });
     vi.spyOn(commerceConfig, 'getCommerceAdapterMode').mockReturnValue('transaction-service');
     vi.spyOn(CommerceApplication, 'hasActiveMarketplaceSession').mockReturnValue(true);
-    vi.spyOn(CommerceApplication, 'ensureDefaultShop').mockResolvedValue(undefined);
+    vi.spyOn(CommerceApplication, 'needsDefaultShop').mockResolvedValue(false);
     vi.spyOn(CommerceHomeserverService, 'fetchJson').mockImplementation(async () => {
       await new Promise((resolve) => setTimeout(resolve, 5));
       if (!homeserverRecord) {

@@ -64,6 +64,9 @@ export type ShippingRatesResult =
 export class CommerceController {
   private constructor() {}
 
+  /** Sellers whose default storefront check ran (or runs) in this session. */
+  private static defaultShopSession = new Map<string, Promise<void>>();
+
   private static sessionEndedUnbind: (() => void) | null = null;
   private static inventorySessionEndedUnbind: (() => void) | null = null;
 
@@ -654,9 +657,10 @@ export class CommerceController {
 
   /** The current user's own stored payment configuration, or null. */
   static async getMyPaymentConfig() {
-    const config = await CommerceApplication.getMyPaymentConfig(this.getCurrentUserPubky());
+    const ownerPubky = this.getCurrentUserPubky();
+    const config = await CommerceApplication.getMyPaymentConfig(ownerPubky);
     // Sellers who turned bitcoin on before the Shop published storefronts get one here.
-    if (config?.bitcoinEnabled) this.ensureStorefront();
+    if (config?.bitcoinEnabled) this.ensureStorefront(ownerPubky);
     return config;
   }
 
@@ -666,8 +670,9 @@ export class CommerceController {
     paypalMerchantEmail: string | null;
     usdtEnabled?: boolean;
   }) {
-    const saved = await CommerceApplication.putMyPaymentConfig(this.getCurrentUserPubky(), input);
-    if (saved.bitcoinEnabled) this.ensureStorefront();
+    const ownerPubky = this.getCurrentUserPubky();
+    const saved = await CommerceApplication.putMyPaymentConfig(ownerPubky, input);
+    if (saved.bitcoinEnabled) this.ensureStorefront(ownerPubky);
     return saved;
   }
 
@@ -675,19 +680,37 @@ export class CommerceController {
    * A seller who can be paid in bitcoin (Accept bitcoin on, or a published
    * listing) gets a default storefront when they have none, because Bitkit
    * only makes a seller the buyer's contact when the seller publishes
-   * `shop.json`. Runs behind the seller's action and never blocks or fails it;
-   * see `CommerceApplication.ensureDefaultShop` for the never-overwrite rules.
+   * `shop.json`. Runs behind the seller's action and never blocks or fails it.
+   * Checks once per seller per session; a failure or an account switch allows
+   * a retry. See `CommerceApplication.commitCreateDefaultShop` for the
+   * never-overwrite rules.
    */
-  private static ensureStorefront(location?: CommerceShopRecord['location']): void {
-    const ownerPubky = this.getCurrentUserPubky();
-    void CommerceApplication.ensureDefaultShop({
-      ownerPubky,
-      location,
-      loadProfile: () => ProfileApplication.readProfileSeed({ pubky: ownerPubky as Pubky }),
-    }).catch((error: unknown) => {
-      // AppError factories already report at their origin.
-      if (!isAppError(error)) Logger.warn('Could not publish a default storefront for the seller', { error });
-    });
+  private static ensureStorefront(ownerPubky: string, location?: CommerceShopRecord['location']): void {
+    if (this.defaultShopSession.has(ownerPubky)) return;
+    const attempt = this.ensureDefaultShop(ownerPubky, location)
+      .then((settled) => {
+        if (!settled) this.defaultShopSession.delete(ownerPubky);
+      })
+      .catch((error: unknown) => {
+        this.defaultShopSession.delete(ownerPubky);
+        // AppError factories already report at their origin.
+        if (!isAppError(error)) Logger.warn('Could not publish a default storefront for the seller', { error });
+      });
+    this.defaultShopSession.set(ownerPubky, attempt);
+  }
+
+  /** False when the seller signed out or switched accounts before the check finished. */
+  private static async ensureDefaultShop(
+    ownerPubky: string,
+    location?: CommerceShopRecord['location'],
+  ): Promise<boolean> {
+    const isOwnerSignedIn = () => this.getCurrentUserPubky() === ownerPubky;
+    if (!isOwnerSignedIn()) return false;
+    if (!(await CommerceApplication.needsDefaultShop(ownerPubky))) return true;
+    const profile = await ProfileApplication.readProfileSeed({ pubky: ownerPubky as Pubky });
+    if (!isOwnerSignedIn()) return false;
+    await CommerceApplication.commitCreateDefaultShop({ ownerPubky, profile, location });
+    return true;
   }
 
   /** Buyer's one-shot payment-method binding for an order. */
@@ -1893,7 +1916,7 @@ export class CommerceController {
     const result = await this.withPending(`${record.ownerPubky}:${record.listingId}`, () =>
       CommerceApplication.commitUpsertListing(record, reserve),
     );
-    this.ensureStorefront(record.location);
+    this.ensureStorefront(record.ownerPubky, record.location);
     return result;
   }
 

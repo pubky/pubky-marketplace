@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, type MockInstance, vi } from 'vitest';
+import type { CommerceShopRecord } from '@/libs/commerce/marketplace-records';
 import { CommerceRecordNormalizer } from '@/pipes/commerce/commerce.normalizer';
 import { CommerceHomeserverService } from '@/services/homeserver/commerce/commerce';
 import { LocalCommerceService } from '@/services/local/commerce/commerce';
@@ -15,105 +16,142 @@ const PROFILE = { name: 'Satoshi', bio: 'Bitcoin goods.' };
 type ShopRow = NonNullable<Awaited<ReturnType<typeof LocalCommerceService.getShop>>>;
 const shopRow = asOpaque<ShopRow>({ record: createCommerceShopFixture(), sync_status: 'synced' });
 
-describe('CommerceApplication.ensureDefaultShop', () => {
+describe('CommerceApplication default storefront', () => {
   let localShop: MockInstance<typeof LocalCommerceService.getShop>;
   let published: MockInstance<typeof CommerceHomeserverService.fetchJsonIfFound>;
-  let upsert: MockInstance<typeof CommerceApplication.commitUpsertShop>;
-  let loadProfile: ReturnType<typeof vi.fn<() => Promise<typeof PROFILE | null>>>;
+  let put: MockInstance<typeof CommerceHomeserverService.putJson>;
 
   beforeEach(() => {
     vi.restoreAllMocks();
-    CommerceApplication['defaultShopSession'].clear();
+    CommerceApplication['shopWrites'].clear();
     localShop = vi.spyOn(LocalCommerceService, 'getShop').mockResolvedValue(null);
     vi.spyOn(LocalCommerceService, 'getListingsBySeller').mockResolvedValue([]);
+    vi.spyOn(LocalCommerceService, 'stageShopSync').mockResolvedValue(undefined);
+    vi.spyOn(LocalCommerceService, 'upsertShop').mockResolvedValue(undefined);
+    vi.spyOn(LocalCommerceService, 'completeSyncJob').mockResolvedValue(undefined);
     published = vi.spyOn(CommerceHomeserverService, 'fetchJsonIfFound').mockResolvedValue({ found: false });
-    upsert = vi.spyOn(CommerceApplication, 'commitUpsertShop').mockResolvedValue(undefined);
-    loadProfile = vi.fn<() => Promise<typeof PROFILE | null>>().mockResolvedValue(PROFILE);
+    put = vi.spyOn(CommerceHomeserverService, 'putJson').mockResolvedValue(undefined);
   });
 
   afterEach(() => {
     vi.restoreAllMocks();
   });
 
-  it('publishes a storefront from the profile when the seller has none', async () => {
-    await CommerceApplication.ensureDefaultShop({
-      ownerPubky: SELLER,
-      loadProfile,
-      location: { countryCode: 'DE' },
+  const written = () => put.mock.calls.map(([, record]) => record as CommerceShopRecord);
+
+  describe('needsDefaultShop', () => {
+    it('is true when the seller has no local or published shop', async () => {
+      await expect(CommerceApplication.needsDefaultShop(SELLER)).resolves.toBe(true);
+      expect(published).toHaveBeenCalledWith(CommerceRecordNormalizer.shopUri(SELLER));
     });
 
-    expect(published).toHaveBeenCalledWith(CommerceRecordNormalizer.shopUri(SELLER));
-    expect(upsert).toHaveBeenCalledOnce();
-    const record = upsert.mock.calls[0][0];
-    expect(record).toMatchObject({
-      ownerPubky: SELLER,
-      recordType: 'shop',
-      revision: 1,
-      name: 'Satoshi',
-      bio: 'Bitcoin goods.',
-      location: { countryCode: 'DE' },
+    it('is false for a local shop, saved or mid-save', async () => {
+      localShop.mockResolvedValue(asOpaque<ShopRow>({ ...shopRow, sync_status: 'pending' }));
+
+      await expect(CommerceApplication.needsDefaultShop(SELLER)).resolves.toBe(false);
+      expect(published).not.toHaveBeenCalled();
     });
-    expect(() => CommerceRecordNormalizer.shop(record)).not.toThrow();
+
+    it('is false for a published shop', async () => {
+      published.mockResolvedValue({ found: true, json: createCommerceShopFixture() });
+
+      await expect(CommerceApplication.needsDefaultShop(SELLER)).resolves.toBe(false);
+    });
+
+    it('throws when the homeserver cannot be read', async () => {
+      published.mockRejectedValue(new Error('homeserver down'));
+
+      await expect(CommerceApplication.needsDefaultShop(SELLER)).rejects.toThrow('homeserver down');
+    });
   });
 
-  it('takes the country from a cached listing when the trigger has none', async () => {
-    vi.mocked(LocalCommerceService.getListingsBySeller).mockResolvedValue([
-      { record: createCommerceListingFixture({ location: { countryCode: 'CA' } }) },
-    ] as Awaited<ReturnType<typeof LocalCommerceService.getListingsBySeller>>);
+  describe('commitCreateDefaultShop', () => {
+    it('publishes a storefront from the profile', async () => {
+      await CommerceApplication.commitCreateDefaultShop({
+        ownerPubky: SELLER,
+        profile: PROFILE,
+        location: { countryCode: 'DE' },
+      });
 
-    await CommerceApplication.ensureDefaultShop({ ownerPubky: SELLER, loadProfile });
+      expect(put).toHaveBeenCalledOnce();
+      expect(put.mock.calls[0][0]).toBe(CommerceRecordNormalizer.shopUri(SELLER));
+      const [record] = written();
+      expect(record).toMatchObject({
+        ownerPubky: SELLER,
+        recordType: 'shop',
+        revision: 1,
+        name: 'Satoshi',
+        bio: 'Bitcoin goods.',
+        location: { countryCode: 'DE' },
+      });
+      expect(() => CommerceRecordNormalizer.shop(record)).not.toThrow();
+    });
 
-    expect(upsert.mock.calls[0][0].location).toEqual({ countryCode: 'CA' });
-  });
+    it('takes the country from a cached listing when the trigger has none', async () => {
+      vi.mocked(LocalCommerceService.getListingsBySeller).mockResolvedValue([
+        { record: createCommerceListingFixture({ location: { countryCode: 'CA' } }) },
+      ] as Awaited<ReturnType<typeof LocalCommerceService.getListingsBySeller>>);
 
-  it('never overwrites a published shop', async () => {
-    published.mockResolvedValue({ found: true, json: createCommerceShopFixture() });
+      await CommerceApplication.commitCreateDefaultShop({ ownerPubky: SELLER, profile: PROFILE });
 
-    await CommerceApplication.ensureDefaultShop({ ownerPubky: SELLER, loadProfile });
+      expect(written()[0].location).toEqual({ countryCode: 'CA' });
+    });
 
-    expect(loadProfile).not.toHaveBeenCalled();
-    expect(upsert).not.toHaveBeenCalled();
-  });
+    it('never overwrites a local shop that appeared before the write', async () => {
+      localShop.mockResolvedValue(shopRow);
 
-  it('never overwrites a local shop, saved or mid-save', async () => {
-    localShop.mockResolvedValue(asOpaque<ShopRow>({ ...shopRow, sync_status: 'pending' }));
+      await CommerceApplication.commitCreateDefaultShop({ ownerPubky: SELLER, profile: PROFILE });
 
-    await CommerceApplication.ensureDefaultShop({ ownerPubky: SELLER, loadProfile });
+      expect(put).not.toHaveBeenCalled();
+    });
 
-    expect(published).not.toHaveBeenCalled();
-    expect(upsert).not.toHaveBeenCalled();
-  });
+    describe('racing a settings save', () => {
+      const saved = createCommerceShopFixture({ ownerPubky: SELLER, name: 'My own shop' });
 
-  it('yields to a settings save that started while the profile loaded', async () => {
-    localShop.mockResolvedValueOnce(null).mockResolvedValue(shopRow);
+      beforeEach(() => {
+        // A local shop table: a staged write is visible to later reads.
+        let row: ShopRow | null = null;
+        localShop.mockImplementation(async () => row);
+        vi.mocked(LocalCommerceService.stageShopSync).mockImplementation(async (record) => {
+          row = asOpaque<ShopRow>({ record, sync_status: 'pending' });
+        });
+      });
 
-    await CommerceApplication.ensureDefaultShop({ ownerPubky: SELLER, loadProfile });
+      it('yields to a settings save that started first', async () => {
+        await Promise.all([
+          CommerceApplication.commitUpsertShop(saved),
+          CommerceApplication.commitCreateDefaultShop({ ownerPubky: SELLER, profile: PROFILE }),
+        ]);
 
-    expect(upsert).not.toHaveBeenCalled();
-  });
+        expect(written().map((record) => record.name)).toEqual(['My own shop']);
+      });
 
-  it('does not write when the homeserver cannot be read', async () => {
-    published.mockRejectedValue(new Error('homeserver down'));
+      it('lets a settings save that starts during the default write land last', async () => {
+        let releaseDefault!: () => void;
+        put.mockImplementationOnce(() => new Promise((resolve) => (releaseDefault = () => resolve(undefined))));
 
-    await expect(CommerceApplication.ensureDefaultShop({ ownerPubky: SELLER, loadProfile })).rejects.toThrow(
-      'homeserver down',
-    );
-    expect(upsert).not.toHaveBeenCalled();
-  });
+        const createDefault = CommerceApplication.commitCreateDefaultShop({ ownerPubky: SELLER, profile: PROFILE });
+        await vi.waitFor(() => expect(put).toHaveBeenCalledOnce());
+        const save = CommerceApplication.commitUpsertShop(saved);
+        await Promise.resolve();
+        expect(put).toHaveBeenCalledOnce();
+        releaseDefault();
+        await Promise.all([createDefault, save]);
 
-  it('checks once per seller per session and retries after a failure', async () => {
-    upsert.mockRejectedValueOnce(new Error('write failed'));
+        expect(written().map((record) => record.name)).toEqual(['Satoshi', 'My own shop']);
+      });
+    });
 
-    await expect(CommerceApplication.ensureDefaultShop({ ownerPubky: SELLER, loadProfile })).rejects.toThrow(
-      'write failed',
-    );
-    await CommerceApplication.ensureDefaultShop({ ownerPubky: SELLER, loadProfile });
-    await Promise.all([
-      CommerceApplication.ensureDefaultShop({ ownerPubky: SELLER, loadProfile }),
-      CommerceApplication.ensureDefaultShop({ ownerPubky: SELLER, loadProfile }),
-    ]);
+    it('keeps the queue moving after a failed write', async () => {
+      put.mockRejectedValueOnce(new Error('write failed'));
 
-    expect(upsert).toHaveBeenCalledTimes(2);
-    expect(published).toHaveBeenCalledTimes(2);
+      await expect(
+        CommerceApplication.commitCreateDefaultShop({ ownerPubky: SELLER, profile: PROFILE }),
+      ).rejects.toThrow('write failed');
+      await CommerceApplication.commitUpsertShop(createCommerceShopFixture({ ownerPubky: SELLER }));
+
+      expect(put).toHaveBeenCalledTimes(2);
+      expect(CommerceApplication['shopWrites'].size).toBe(0);
+    });
   });
 });
