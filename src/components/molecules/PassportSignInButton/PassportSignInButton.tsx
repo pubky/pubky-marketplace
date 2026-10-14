@@ -6,8 +6,6 @@ import { Button } from '@/atoms/Button/Button';
 import { Typography } from '@/atoms/Typography/Typography';
 import { usePassportSignIn } from '@/hooks/usePassportSignIn/usePassportSignIn';
 
-export const PASSPORT_SIGN_IN_HINT = 'Creates your Pubky identity if you have none.';
-
 /**
  * "Continue with Google" through Pubky Passport. Renders nothing where the
  * grant key cannot be held (no secure context, IndexedDB or WebCrypto
@@ -41,9 +39,6 @@ export function PassportSignInButton() {
           </>
         )}
       </Button>
-      <Typography as="p" className="text-center text-sm text-muted-foreground">
-        {PASSPORT_SIGN_IN_HINT}
-      </Typography>
     </div>
   );
 }
