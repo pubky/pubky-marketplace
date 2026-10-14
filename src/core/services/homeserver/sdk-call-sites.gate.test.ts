@@ -44,8 +44,18 @@ describe('@synonymdev/pubky 0.16 call sites', () => {
       dependencies: Record<string, string>;
       overrides: Record<string, Record<string, string>>;
     };
+    // The SDK is pinned in exactly one place: the root dependency. The override
+    // makes @bitcoinerrorlog/pubky-shop resolve the same copy, so moving the
+    // pin is one edit.
     expect(pkg.dependencies['@synonymdev/pubky']).toBe('0.16.0');
     expect(pkg.overrides['@bitcoinerrorlog/pubky-shop']['@synonymdev/pubky']).toBe('$@synonymdev/pubky');
+  });
+
+  it('the pinned SDK carries scoped encryption keys (the e action and EncryptionKeys)', () => {
+    const declarations = readFileSync(join(ROOT, 'node_modules/@synonymdev/pubky/pubky.d.ts'), 'utf8');
+    expect(declarations).toContain('export class EncryptionKeys');
+    expect(declarations).toContain('approvalFormat?: GrantApprovalFormat');
+    expect(declarations).toMatch(/export type CapabilityAction = [^;]*"rwe"/);
   });
 
   it('routes every direct session-storage write through HomeserverService retry policy', () => {
