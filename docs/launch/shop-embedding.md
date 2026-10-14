@@ -39,7 +39,7 @@ In the App-owned shape every URL has one of two homes:
 | Share links (listing, drop, post, profile), report links | `/shop` (public path) | People open them top-level; a `/shop-embed` link loads the Shop without the App around it. |
 | Canonical, Open Graph and structured-data URLs | `/shop` (public path) | Search engines and link previews should index the App's page. |
 
-Code uses `withBasePath` for the first group and `withPublicPath` (`@/config/base-path`) for the rest. [Install verification](install-verification.md) checks it from outside with `SHOP_EMBED_PATH=/shop-embed` and `SERVICE_PUBLIC_APP_ORIGIN`; the launch-critical suite takes the build's path on its URL (`LAUNCH_E2E_BASE_URL=http://127.0.0.1:3000/shop-embed`).
+Code uses `withBasePath` for the first group and `withPublicPath` (`@/config/base-path`) for the rest. [Install verification](install-verification.md) checks it from outside with `SHOP_EMBED_PATH=/shop-embed` and `SERVICE_PUBLIC_APP_ORIGIN`; the launch-critical suite takes the build's path on its URL (`LAUNCH_E2E_BASE_URL=http://127.0.0.1:3000/shop-embed`), and needs the Shop under test started with `PUBKY_RUNTIME_EMBEDDED=false`: the embedded layout hides the header the suite clicks (framing can stay on, a top-level page is not embedded).
 
 ## The reverse proxy
 

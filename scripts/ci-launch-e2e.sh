@@ -7,6 +7,7 @@
 # with /shop-embed), export the same value for `npm run start` and put it on the URL:
 #   NEXT_PUBLIC_BASE_PATH=/shop-embed LAUNCH_E2E_BASE_URL=http://127.0.0.1:3000/shop-embed \
 #     bash scripts/ci-launch-e2e.sh
+# The suite needs the standard layout, so do not start that Shop with PUBKY_RUNTIME_EMBEDDED=true (it hides the header).
 # Without a path the suite targets a standalone build, as before.
 set -euo pipefail
 
