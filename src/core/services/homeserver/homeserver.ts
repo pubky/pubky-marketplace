@@ -18,8 +18,8 @@ import {
   CAPABILITIES,
   capabilitiesMatchFullGrant,
   capabilitiesMatchRingCookieGrant,
+  getShopGrantClientId,
   RING_COOKIE_CAPABILITIES,
-  SHOP_GRANT_CLIENT_ID,
 } from '@/config/app';
 import {
   getDefaultHttpRelay,
@@ -757,7 +757,7 @@ export class HomeserverService {
         });
       }
       const flow = await GrantAuthFlow.startDelegated(CAPABILITIES, kind(), {
-        clientId: SHOP_GRANT_CLIENT_ID,
+        clientId: getShopGrantClientId(),
         relay: getDefaultHttpRelay(),
         ...(xCallback ? { xCallback } : {}),
       });

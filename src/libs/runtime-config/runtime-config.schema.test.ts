@@ -536,3 +536,39 @@ describe('shop public path runtime value', () => {
     expect(() => runtimeConfigValueSchema.parse({ ...base, shopPublicPath: '/shop/' })).toThrow();
   });
 });
+
+describe('shop grant client id runtime value', () => {
+  it('is unset by default, so the built-in client id applies', () => {
+    expect(runtimeEnvInputSchema.parse(VALID_ENV_INPUT).shopGrantClientId).toBeUndefined();
+    expect(runtimeEnvInputSchemaWithDefaults.parse({}).shopGrantClientId).toBeUndefined();
+    expect(
+      runtimeEnvInputSchema.parse({ ...VALID_ENV_INPUT, shopGrantClientId: '  ' }).shopGrantClientId,
+    ).toBeUndefined();
+  });
+
+  it.each(['pubky.app', 'staging.pubky.app', 'shop.pubky.app'])('accepts the host name %s', (value) => {
+    expect(runtimeEnvInputSchema.parse({ ...VALID_ENV_INPUT, shopGrantClientId: value }).shopGrantClientId).toBe(value);
+    expect(runtimeEnvInputSchemaWithDefaults.parse({ shopGrantClientId: value }).shopGrantClientId).toBe(value);
+  });
+
+  it.each([
+    ['a scheme', 'https://pubky.app'],
+    ['a path', 'pubky.app/shop'],
+    ['a port', 'pubky.app:443'],
+    ['upper case', 'Pubky.app'],
+    ['no dot', 'pubky'],
+    ['a leading dot', '.pubky.app'],
+    ['a trailing dot', 'pubky.app.'],
+  ])('rejects %s', (_label, value) => {
+    expect(() => runtimeEnvInputSchema.parse({ ...VALID_ENV_INPUT, shopGrantClientId: value })).toThrow();
+    expect(() => runtimeEnvInputSchemaWithDefaults.parse({ shopGrantClientId: value })).toThrow();
+  });
+
+  it('validates the parsed value schema too', () => {
+    const base = runtimeEnvInputSchema.parse(VALID_ENV_INPUT);
+    expect(runtimeConfigValueSchema.parse({ ...base, shopGrantClientId: 'pubky.app' }).shopGrantClientId).toBe(
+      'pubky.app',
+    );
+    expect(() => runtimeConfigValueSchema.parse({ ...base, shopGrantClientId: 'https://pubky.app' })).toThrow();
+  });
+});
