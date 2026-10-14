@@ -505,3 +505,34 @@ describe('embedding runtime values', () => {
     expect(() => runtimeConfigValueSchema.parse({ ...base, frameAncestors: ['https://*.pubky.app'] })).toThrow();
   });
 });
+
+describe('shop public path runtime value', () => {
+  it('is unset by default, so the mount path serves people too', () => {
+    expect(runtimeEnvInputSchema.parse(VALID_ENV_INPUT).shopPublicPath).toBeUndefined();
+    expect(runtimeEnvInputSchemaWithDefaults.parse({}).shopPublicPath).toBeUndefined();
+    expect(runtimeEnvInputSchema.parse({ ...VALID_ENV_INPUT, shopPublicPath: '  ' }).shopPublicPath).toBeUndefined();
+  });
+
+  it('parses a path the host app serves the Shop at', () => {
+    expect(runtimeEnvInputSchema.parse({ ...VALID_ENV_INPUT, shopPublicPath: '/shop' }).shopPublicPath).toBe('/shop');
+    expect(runtimeEnvInputSchemaWithDefaults.parse({ shopPublicPath: '/shop' }).shopPublicPath).toBe('/shop');
+  });
+
+  it.each([
+    ['no leading slash', 'shop'],
+    ['a trailing slash', '/shop/'],
+    ['a dot segment', '/shop/../x'],
+    ['an origin', 'https://pubky.app/shop'],
+    ['a query', '/shop?x=1'],
+  ])('rejects %s', (_label, value) => {
+    expect(() => runtimeEnvInputSchema.parse({ ...VALID_ENV_INPUT, shopPublicPath: value })).toThrow();
+    expect(() => runtimeEnvInputSchemaWithDefaults.parse({ shopPublicPath: value })).toThrow();
+  });
+
+  it('validates the parsed value schema too', () => {
+    const base = runtimeEnvInputSchema.parse(VALID_ENV_INPUT);
+    expect(runtimeConfigValueSchema.parse({ ...base, shopPublicPath: '/shop' }).shopPublicPath).toBe('/shop');
+    expect(() => runtimeConfigValueSchema.parse({ ...base, shopPublicPath: '' })).toThrow();
+    expect(() => runtimeConfigValueSchema.parse({ ...base, shopPublicPath: '/shop/' })).toThrow();
+  });
+});
