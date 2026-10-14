@@ -25,6 +25,8 @@ import { MarketplaceGatewayService } from '@/services/marketplace/marketplace';
 import { MarketplaceSessionService } from '@/services/marketplace/marketplace-session';
 
 const MAX_KEY_SET_RETRIES = 2;
+const MAX_STALE_RETRIES = 2;
+const STALE = Symbol('stale priv keyring read');
 
 function sameBytes(left: Uint8Array, right: Uint8Array): boolean {
   if (left.length !== right.length) return false;
@@ -69,8 +71,9 @@ export class CommercePrivKeyringApplication {
 
   /** Every keyring `get` hands out is the one held here, so clear() revokes all of them. */
   private static ready = new Map<string, PrivKeyring>();
-  private static inFlight = new Map<string, Promise<MarketplacePrivKeysResult>>();
+  private static inFlight = new Map<string, Promise<MarketplacePrivKeysResult | typeof STALE>>();
   private static generation = 0;
+  private static lastClearWasReplacement = false;
   private static unsubscribe: (() => void)[] | null = null;
 
   /**
@@ -78,6 +81,18 @@ export class CommercePrivKeyringApplication {
    * marketplace session can hold one.
    */
   static async get(ownerPubky: string): Promise<MarketplacePrivKeysResult> {
+    for (let attempt = 0; ; attempt += 1) {
+      const result = await this.getOnce(ownerPubky);
+      if (result !== STALE) return result;
+      // The read finished after the purchase session was replaced. The owner
+      // may have taken custody of the keys meanwhile, so the service can no
+      // longer hand them out again: read once more, now from the wrapped
+      // copies, while the same owner is still signed in.
+      if (attempt >= MAX_STALE_RETRIES) return { kind: 'needs_reauth' };
+    }
+  }
+
+  private static async getOnce(ownerPubky: string): Promise<MarketplacePrivKeysResult | typeof STALE> {
     if (!isDurableCommerceMode(getCommerceAdapterMode())) return { kind: 'unavailable' };
     this.subscribeToSessionEnd();
     const session = MarketplaceSessionService.getActiveSession();
@@ -92,14 +107,14 @@ export class CommercePrivKeyringApplication {
     if (pending) return await pending;
 
     const generation = this.generation;
-    const run = this.load(ownerPubky)
+    const run: Promise<MarketplacePrivKeysResult | typeof STALE> = this.load(ownerPubky)
       .then((result) => {
         if (result.kind !== 'keys') return result;
         // Signed out, or another account took over, while the read was in flight.
         const stillOwner = MarketplaceSessionService.getActiveSession()?.pubky === ownerPubky;
         if (generation !== this.generation || !stillOwner) {
           revokePrivKeyring(result.keyring);
-          return { kind: 'needs_reauth' } as const;
+          return stillOwner && this.lastClearWasReplacement ? STALE : ({ kind: 'needs_reauth' } as const);
         }
         this.ready.set(ownerPubky, result.keyring);
         return result;
@@ -148,6 +163,11 @@ export class CommercePrivKeyringApplication {
 
   /** Drops and zeroes every held key. Part of sign-out and session teardown. */
   static clear(): void {
+    this.lastClearWasReplacement = false;
+    this.discard();
+  }
+
+  private static discard(): void {
     this.generation += 1;
     for (const keyring of this.ready.values()) revokePrivKeyring(keyring);
     this.ready.clear();
@@ -294,7 +314,10 @@ export class CommercePrivKeyringApplication {
     if (this.unsubscribe) return;
     this.unsubscribe = [
       MarketplaceSessionService.onSessionEnded(() => this.clear()),
-      MarketplaceSessionService.onSessionReplaced(() => this.clear()),
+      MarketplaceSessionService.onSessionReplaced(() => {
+        this.discard();
+        this.lastClearWasReplacement = true;
+      }),
     ];
   }
 }

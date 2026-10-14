@@ -228,9 +228,9 @@ describe('CommercePrivKeyringApplication', () => {
       if (staleOutcome === 'keys') fetches[0].resolve({ kind: 'keys', keyring: stale });
       if (staleOutcome === 'refused') fetches[0].resolve({ kind: 'needs_reauth' });
       if (staleOutcome === 'fails') fetches[0].reject(new Error('network'));
+      fetches[1].resolve({ kind: 'keys', keyring: handedOut });
       await fetchA.catch(() => undefined);
       const fetchC = CommercePrivKeyringApplication.get(OWNER);
-      fetches[1].resolve({ kind: 'keys', keyring: handedOut });
       expect(await fetchB).toEqual({ kind: 'keys', keyring: handedOut });
       for (const extra of fetches.slice(2)) extra.resolve({ kind: 'keys', keyring: keyring() });
       await fetchC;
