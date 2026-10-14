@@ -74,6 +74,25 @@ export class CommercePrivKeyringApplication {
   private static inFlight = new Map<string, Promise<MarketplacePrivKeysResult | typeof STALE>>();
   private static generation = 0;
   private static lastClearWasReplacement = false;
+  private static readyEpoch = 0;
+  private static readyListeners = new Set<(ownerPubky: string) => void>();
+
+  /**
+   * Counts the keyrings that became available. A caller that started work
+   * while there was none can tell, by comparing it with the value it saw,
+   * that keys arrived while it was running.
+   */
+  static getReadyEpoch(): number {
+    return this.readyEpoch;
+  }
+
+  /** Calls `listener` with the owner each time a keyring becomes available, whoever asked for it. */
+  static subscribeReady(listener: (ownerPubky: string) => void): () => void {
+    this.readyListeners.add(listener);
+    return () => {
+      this.readyListeners.delete(listener);
+    };
+  }
   private static unsubscribe: (() => void)[] | null = null;
 
   /**
@@ -117,6 +136,8 @@ export class CommercePrivKeyringApplication {
           return stillOwner && this.lastClearWasReplacement ? STALE : ({ kind: 'needs_reauth' } as const);
         }
         this.ready.set(ownerPubky, result.keyring);
+        this.readyEpoch += 1;
+        for (const listener of [...this.readyListeners]) listener(ownerPubky);
         return result;
       })
       .finally(() => {

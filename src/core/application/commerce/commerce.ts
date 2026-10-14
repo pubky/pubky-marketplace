@@ -1955,7 +1955,7 @@ export class CommerceApplication {
   /** In-flight sync per owner, so overlapping triggers share one round-trip. */
   private static watchlistSyncInFlight = new Map<
     string,
-    { run: Promise<CommerceWatchlistSyncStatus>; purchaseSession: string }
+    { run: Promise<CommerceWatchlistSyncStatus>; purchaseSession: string; keysEpoch: number }
   >();
 
   /** Which purchase session a round started under: the private data key is released to it, and only to it. */
@@ -2035,9 +2035,13 @@ export class CommerceApplication {
     if (inFlight) {
       const outcome = await inFlight.run;
       // A round that started before the purchase session changed asked the
-      // marketplace for the key without it (or with the old one); its outcome
-      // says nothing about the new session, so read the document again.
-      if (inFlight.purchaseSession !== this.watchlistPurchaseSessionId()) return await this.syncWatchlist(ownerPubky);
+      // marketplace for the key without it (or with the old one), and one that
+      // ended without the document while keys became available meanwhile
+      // (another reader took custody of them) never read it. Its outcome says
+      // nothing about the new state, so read the document again.
+      const sessionChanged = inFlight.purchaseSession !== this.watchlistPurchaseSessionId();
+      const keysArrived = outcome !== 'synced' && inFlight.keysEpoch !== CommercePrivKeyringApplication.getReadyEpoch();
+      if (sessionChanged || keysArrived) return await this.syncWatchlist(ownerPubky);
       return outcome;
     }
 
@@ -2057,7 +2061,11 @@ export class CommerceApplication {
         this.watchlistSyncInFlight.delete(ownerPubky);
       }
     })();
-    this.watchlistSyncInFlight.set(ownerPubky, { run, purchaseSession: this.watchlistPurchaseSessionId() });
+    this.watchlistSyncInFlight.set(ownerPubky, {
+      run,
+      purchaseSession: this.watchlistPurchaseSessionId(),
+      keysEpoch: CommercePrivKeyringApplication.getReadyEpoch(),
+    });
     return await run;
   }
 

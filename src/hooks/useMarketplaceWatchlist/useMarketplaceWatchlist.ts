@@ -56,6 +56,15 @@ export function useMarketplaceWatchlist() {
     void CommerceController.syncWatchlist();
   }, [currentUserPubky, marketplaceSessionId]);
 
+  // Keys can become available to another surface (the badge checkpoints, a
+  // receipt publish) after this round ran without them.
+  useEffect(() => {
+    if (!currentUserPubky) return;
+    return CommerceController.subscribePrivKeysReady(() => {
+      void CommerceController.syncWatchlist();
+    });
+  }, [currentUserPubky]);
+
   /** Re-runs the sync round on demand — e.g. after a step-up re-approval widened the grant. */
   const syncWatchlist = () => CommerceController.syncWatchlist();
 

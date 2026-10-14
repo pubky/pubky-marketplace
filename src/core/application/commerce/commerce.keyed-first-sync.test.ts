@@ -3,7 +3,7 @@ import { createHmac } from 'node:crypto';
 import type { EncryptionKeys, Session } from '@synonymdev/pubky';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CAPABILITIES } from '@/config/app';
-import { encryptPrivRecord, privEntryName, privEntryUrl } from '@/libs/commerce/priv-envelope';
+import { encryptPrivRecord, privEntryName, privEntryUrl, privFamilyUrl } from '@/libs/commerce/priv-envelope';
 import { privKeyringFromResponse } from '@/libs/commerce/priv-keys';
 import { HttpMethod } from '@/libs/http/http.types';
 import { resetRuntimeConfigForTests } from '@/libs/runtime-config/runtime-config';
@@ -166,6 +166,17 @@ describe('the first keyed sync after the owner takes custody of the data keys', 
     expect(requests).toContain('POST /v1/me/priv-keys/release');
     expect(homeserver.log.some((entry) => entry.startsWith('GET ') && entry.includes('/priv/'))).toBe(true);
     expect(status).toBe('synced');
+
+    // The directory the first keyed pass reads is the one the Ring session wrote.
+    const ringDirectory = privFamilyUrl(serviceKeyring(), 'watchlist');
+    const firstPass = await CommercePrivKeyringApplication.get(OWNER);
+    if (firstPass.kind !== 'keys') throw new Error('no keys after the release');
+    expect(privFamilyUrl(firstPass.keyring, 'watchlist')).toBe(ringDirectory);
+    expect(homeserver.log.filter((entry) => entry.startsWith('GET ') && entry.includes(ringDirectory))).not.toEqual([]);
+    CommercePrivKeyringApplication.clear();
+    const reload = await CommercePrivKeyringApplication.get(OWNER);
+    if (reload.kind !== 'keys') throw new Error('no keys after a reload');
+    expect(privFamilyUrl(reload.keyring, 'watchlist')).toBe(ringDirectory);
     const favorites = await LocalCommerceService.getFavorites(OWNER);
     expect(favorites.map((favorite) => favorite.listing_id)).toEqual([`${SELLER}:boots_01`]);
   });
@@ -225,5 +236,28 @@ describe('the first keyed sync after the owner takes custody of the data keys', 
     expect(await joined).toBe('synced');
     const favorites = await LocalCommerceService.getFavorites(OWNER);
     expect(favorites.map((favorite) => favorite.listing_id)).toEqual([`${SELLER}:boots_01`]);
+  });
+
+  it('runs the round again for a caller that joined one that ended while another reader took custody of the keys', async () => {
+    sealWatchlistUnderServiceKey();
+    let proceed: () => void = () => undefined;
+    const gate = new Promise<void>((resolve) => {
+      proceed = resolve;
+    });
+    const realGet = CommercePrivKeyringApplication.get.bind(CommercePrivKeyringApplication);
+    vi.spyOn(CommercePrivKeyringApplication, 'get').mockImplementationOnce(async () => {
+      await gate;
+      return { kind: 'needs_reauth' };
+    });
+
+    const early = CommerceApplication.syncWatchlist(OWNER);
+    const joined = CommerceApplication.syncWatchlist(OWNER);
+    const otherReader = realGet(OWNER);
+    await otherReader;
+    proceed();
+
+    expect(await early).toBe('needs_marketplace_approval');
+    expect(await joined).toBe('synced');
+    expect(requests).toContain('POST /v1/me/priv-keys/release');
   });
 });

@@ -236,4 +236,24 @@ describe('first watchlist visit after the owner took custody of the data keys (S
 
     expect(await screen.findByText(/1 watched item/, undefined, { timeout: 5000 })).toBeInTheDocument();
   });
+
+  it('shows the entry when another surface takes custody of the keys after the watchlist round ran without them', async () => {
+    ringWroteWatchlist();
+    renderWatchlist();
+    expect(await screen.findByText(/0 watched items/)).toBeInTheDocument();
+    expect(useCommerceStore.getState().watchlistSyncStatus).toBe('needs_marketplace_approval');
+
+    // The purchase session reaches the service without the store copy changing,
+    // then the badge checkpoints ask for the keys first.
+    await act(async () => {
+      MarketplaceSessionService.establishClaimedGrantSession(
+        { token: 'C'.repeat(43), pubky: OWNER, capabilities: MARKETPLACE_SESSION_GRANT, expiresAt: FUTURE },
+        OWNER,
+      );
+      await CommerceController.syncAttentionSeen();
+    });
+
+    expect(await screen.findByText(/1 watched item/, undefined, { timeout: 5000 })).toBeInTheDocument();
+    expect(requests).toContain('POST /v1/me/priv-keys/release');
+  });
 });
