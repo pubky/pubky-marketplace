@@ -32,7 +32,9 @@ const HEADLESS = process.env.HEADED !== '1';
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const sdk = await import('@synonymdev/pubky');
-const pubky = sdk.Pubky.testnet();
+// The Node signer talks to the same network as the Shop: the local testnet by
+// default, the public pkarr relays with CHAT_E2E_NETWORK=mainnet (staging).
+const pubky = process.env.CHAT_E2E_NETWORK === 'mainnet' ? new sdk.Pubky() : sdk.Pubky.testnet();
 mkdirSync(SCREENSHOT_DIR, { recursive: true });
 
 const results = [];
