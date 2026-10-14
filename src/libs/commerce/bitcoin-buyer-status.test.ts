@@ -6,6 +6,7 @@ import { toCamelCaseWire } from '@/libs/commerce/wire-casing';
 import {
   BITCOIN_BUYER_STATUS_TABLE,
   BITCOIN_WALLET_SENT_COPY,
+  BITCOIN_WALLET_WAITING_COPY,
   bitcoinConfirmationExists,
   bitcoinPaidConfirmation,
   bitcoinPaymentHasBeenSeen,
@@ -147,8 +148,19 @@ describe('bitcoin buyer status', () => {
     const unpaid = { ...seenOrder, paykitRequestState: 'pending' as const };
     const wallet = buyerBitcoinWalletCopy(unpaid, { state: 'awaiting_entitlement' });
     expect(wallet.text).toMatch(/^Sent to your wallet\. Open Bitkit to pay\./);
-    expect(wallet.text).toMatch(/check that the seller is one of your Bitkit contacts/);
     expect(wallet.text).not.toMatch(/[Dd]elivered/);
+  });
+
+  it('asks about the Bitkit contact only while the request is still waiting for the wallet', () => {
+    const delivered = { ...seenOrder, paykitRequestState: 'pending' as const, paykitDeliveryState: 'delivered' };
+    const sent = buyerBitcoinWalletCopy(delivered, { state: 'awaiting_entitlement' });
+    expect(sent.text).not.toMatch(/contact/);
+
+    for (const paykitDeliveryState of ['pending', null]) {
+      const waiting = buyerBitcoinWalletCopy({ ...delivered, paykitDeliveryState }, { state: 'awaiting_entitlement' });
+      expect(waiting).toEqual({ kind: 'pay', text: BITCOIN_WALLET_WAITING_COPY });
+      expect(waiting.text).toMatch(/if the seller isn't one yet, add them in Bitkit\.$/);
+    }
   });
 
   it('ends the sent copy by asking the buyer to settle a pending payment before ordering again', () => {
