@@ -45,12 +45,12 @@ export function ChatMessageBubble({
         {message.body}
       </div>
       <div className="flex items-center gap-1.5 px-1">
-        <Typography as="span" size="xs" className="text-muted-foreground" overrideDefaults>
+        <Typography as="span" size="xs" className="text-muted-foreground">
           {timeLabel(shownAt)}
         </Typography>
         {mine && message.status === 'queued' ? (
           message.last_error === 'peer_not_enabled' ? (
-            <Typography as="span" size="xs" className="flex items-center gap-1 text-muted-foreground" overrideDefaults>
+            <Typography as="span" size="xs" className="flex items-center gap-1 text-muted-foreground">
               <Clock className="size-3" aria-hidden="true" />
               Waiting for them to set up messages
             </Typography>
@@ -63,7 +63,7 @@ export function ChatMessageBubble({
         ) : null}
         {mine && message.status === 'failed' ? (
           <>
-            <Typography as="span" size="xs" className="flex items-center gap-1 text-destructive" overrideDefaults>
+            <Typography as="span" size="xs" className="flex items-center gap-1 text-destructive">
               <AlertCircle className="size-3" aria-hidden="true" />
               Not sent
             </Typography>
@@ -72,7 +72,7 @@ export function ChatMessageBubble({
                 type="button"
                 variant="link"
                 size="sm"
-                className="h-auto p-0 text-xs"
+                className="h-auto rounded-none border-0 p-0 text-xs font-medium text-foreground underline shadow-none"
                 onClick={() => onRetry(message.id)}
               >
                 Retry

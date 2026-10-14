@@ -46,7 +46,7 @@ export function ChatConversation({ peerPubky }: { peerPubky: string }) {
       : undefined;
   const emptyHint = peerNotEnabled
     ? `${name} hasn't set up messages yet. You can write now; it's delivered once they sign in.`
-    : `Say hello to ${name}. Messages are encrypted for the two of you.`;
+    : `Say hello to ${name}.`;
 
   return (
     <ContentLayout

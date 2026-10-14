@@ -118,7 +118,7 @@ export function ChatThread({
               {separator ? (
                 <div className="flex items-center gap-3 py-1">
                   <div className="h-px flex-1 bg-border" />
-                  <Typography as="span" size="xs" className="text-muted-foreground" overrideDefaults>
+                  <Typography as="span" size="xs" className="text-muted-foreground">
                     {day}
                   </Typography>
                   <div className="h-px flex-1 bg-border" />

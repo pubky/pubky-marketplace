@@ -9,7 +9,7 @@ export const CHAT_COPY = {
   profileCta: 'Message',
   assumedDelivery: "Marked delivered automatically after the delivery window; tell the seller if it hasn't arrived.",
   inboxTitle: 'Messages',
-  inboxSubtitle: 'Encrypted conversations with buyers and sellers.',
+  inboxSubtitle: 'Your conversations with buyers and sellers.',
   inboxSignedOutTitle: 'Sign in to see your messages.',
   inboxSignedOutBody: 'Messages belong to the account signed in on this device.',
   inboxEmptyTitle: 'No messages yet.',
