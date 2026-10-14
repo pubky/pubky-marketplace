@@ -867,12 +867,15 @@ describe('MarketplacePaymentStatusCard', () => {
       );
     for (const state of [null, 'pending']) {
       const { unmount } = renderBound(state);
-      expect(screen.getByTestId('paykit-delivery-status')).toHaveTextContent('Waiting for your wallet');
+      expect(screen.getByTestId('paykit-delivery-status')).toHaveTextContent(
+        "Waiting for your wallet. Keep Bitkit open so it can receive the payment request. Bitkit only receives requests from your contacts, so if the seller isn't one yet, add them in Bitkit.",
+      );
       expect(screen.queryByText(/delivered privately/)).not.toBeInTheDocument();
       unmount();
     }
     const { unmount } = renderBound('delivered');
     expect(screen.getByTestId('paykit-delivery-status')).toHaveTextContent('Sent to your wallet');
+    expect(screen.getByTestId('paykit-delivery-status')).not.toHaveTextContent(/contact/);
     expect(screen.queryByText(/Delivered/)).not.toBeInTheDocument();
     unmount();
   });
@@ -1026,7 +1029,7 @@ describe('MarketplacePaymentStatusCard', () => {
       expect(screen.getByText('Awaiting payment')).toBeInTheDocument();
       expect(screen.queryByText('Payment seen')).not.toBeInTheDocument();
       expect(screen.getByTestId('paykit-delivery-status')).toHaveTextContent(
-        "Sent to your wallet. Open Bitkit to pay. If the request isn't there, check that the seller is one of your Bitkit contacts. If you have already sent the payment, this page updates as soon as the marketplace sees the transaction. If a payment is still pending in Bitkit, another wallet or another device, let it finish or resolve it before you order again.",
+        'Sent to your wallet. Open Bitkit to pay. If you have already sent the payment, this page updates as soon as the marketplace sees the transaction. If a payment is still pending in Bitkit, another wallet or another device, let it finish or resolve it before you order again.',
       );
     });
 
