@@ -707,6 +707,106 @@ describe('useMarketplaceCheckout', () => {
     );
   });
 
+  describe('per-size listings', () => {
+    const sizedItem = (variantId: string): MarketplaceCartItem => ({
+      ...item,
+      variantId,
+      listing: {
+        ...item.listing,
+        record: {
+          ...item.listing.record,
+          variants: [
+            { id: 'size_s', options: { size: 'S' }, quantity: 3, mediaIds: [], enabled: true },
+            { id: 'size_m', options: { size: 'M' }, quantity: 4, mediaIds: [], enabled: true },
+          ],
+        },
+      },
+    });
+
+    const fillAddress = (result: { current: ReturnType<typeof useMarketplaceCheckout> }) => {
+      act(() => {
+        result.current.form.setValue('name', 'Alice Buyer');
+        result.current.form.setValue('line1', '1 Market Street');
+        result.current.form.setValue('city', 'New York');
+        result.current.form.setValue('region', 'NY');
+        result.current.form.setValue('postalCode', '10001');
+      });
+    };
+
+    it('sends the chosen size on the line of a per-size listing', async () => {
+      const { result } = renderHook(() =>
+        useMarketplaceCheckout(
+          [sizedItem('size_m')],
+          vi.fn(async () => {}),
+        ),
+      );
+      fillAddress(result);
+
+      await act(async () => {
+        await result.current.submit();
+      });
+
+      expect(CommerceController.commitCreateMarketplaceCheckout).toHaveBeenCalledWith(
+        expect.objectContaining({
+          lines: [expect.objectContaining({ variantId: 'size_m', variantOptions: [{ name: 'size', value: 'M' }] })],
+        }),
+      );
+    });
+
+    it('stops a line whose size left the record instead of sending it without a size', async () => {
+      const { result } = renderHook(() =>
+        useMarketplaceCheckout(
+          [sizedItem('size_gone')],
+          vi.fn(async () => {}),
+        ),
+      );
+      fillAddress(result);
+
+      let succeeded = true;
+      await act(async () => {
+        succeeded = await result.current.submit();
+      });
+
+      expect(succeeded).toBe(false);
+      expect(CommerceController.commitCreateMarketplaceCheckout).not.toHaveBeenCalled();
+      expect(vi.mocked(toast)).toHaveBeenCalledWith(
+        expect.objectContaining({
+          description: 'A listing changed while you were checking out. Review your cart and try again.',
+        }),
+      );
+    });
+
+    it.each([
+      ['variant_required', 'Choose an option for this item.'],
+      ['unknown_variant', 'That option is no longer listed. Reload the item and choose again.'],
+      ['variant_unavailable', 'The seller turned off that option. Choose another.'],
+      ['variant_sold_out', 'That option is sold out. Choose another.'],
+    ])('shows plain copy for the %s refusal', async (reason, copy) => {
+      vi.mocked(CommerceController.commitCreateMarketplaceCheckout).mockResolvedValue({
+        ok: false,
+        error: { code: 'INVALID_STATE', message: 'Wire text that must never render.', reason },
+      } as never);
+      const { result } = renderHook(() =>
+        useMarketplaceCheckout(
+          [sizedItem('size_m')],
+          vi.fn(async () => {}),
+        ),
+      );
+      fillAddress(result);
+
+      let succeeded = true;
+      await act(async () => {
+        succeeded = await result.current.submit();
+      });
+
+      expect(succeeded).toBe(false);
+      expect(vi.mocked(toast)).toHaveBeenCalledWith(expect.objectContaining({ description: copy }));
+      expect(vi.mocked(toast)).not.toHaveBeenCalledWith(
+        expect.objectContaining({ description: expect.stringContaining('Wire text') }),
+      );
+    });
+  });
+
   it('shows own-listing copy without setting needsSession', async () => {
     authMock.currentUserPubky = listing.ownerPubky;
     vi.mocked(CommerceController.commitCreateMarketplaceCheckout).mockResolvedValue({

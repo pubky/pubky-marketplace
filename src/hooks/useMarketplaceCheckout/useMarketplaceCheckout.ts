@@ -35,6 +35,7 @@ import {
   marketplaceFailureMessage,
   marketplaceListingNotActiveMessage,
 } from '@/libs/commerce/failure-messages';
+import { tracksVariantStock } from '@/libs/commerce/listing-variants';
 import { LOCKS_MIXED_CHECKOUT_COPY, locksCheckoutRoute } from '@/libs/commerce/locks-payment';
 import {
   commerceListingFulfillmentMethods,
@@ -54,6 +55,7 @@ import {
   isListingDeletedResponse,
   isMarketplaceRevisionConflict,
 } from '@/libs/commerce/transaction-commands';
+import { variantRefusalMessage } from '@/libs/commerce/variant-refusals';
 import { AppError } from '@/libs/error/error';
 import { isMarketplaceSessionRequiredError } from '@/libs/error/error.utils';
 import { Logger } from '@/libs/logger/logger';
@@ -645,6 +647,15 @@ export function useMarketplaceCheckout(
         const digital = goesDigital(item);
         if (digital && !isLocksItem(item)) freshKinds.push(projection.digitalDelivery?.kind ?? null);
         const variant = record.variants.find(({ id }) => id === item.variantId);
+        // A listing the service tracks per size needs the size on every line. A cart row whose size left
+        // the record is a changed listing, not a line to send blind.
+        if (!variant && tracksVariantStock(record.variants)) {
+          sawChangedListing = true;
+          await CommerceController.refreshListing(record.ownerPubky, record.listingId).catch((error: unknown) => {
+            Logger.warn('Checkout could not refresh a changed listing', { error });
+          });
+          return null;
+        }
         const variantOptions = variant ? Object.entries(variant.options) : [];
         return {
           listingAggregateId: projection.aggregateId,
@@ -734,6 +745,11 @@ export function useMarketplaceCheckout(
       if (digitalRefusal) {
         if (digitalRefusal !== 'invalid_email') setDigitalKindsAttempt((attempt) => attempt + 1);
         toast({ variant: 'error', description: DIGITAL_CHECKOUT_REFUSAL_COPY[digitalRefusal] });
+        return { ok: false };
+      }
+      const variantRefusal = variantRefusalMessage(response.error);
+      if (variantRefusal) {
+        toast({ variant: 'error', description: variantRefusal });
         return { ok: false };
       }
       const pickupRefusal = classifyMarketplacePickupCommandRefusal(response);
