@@ -1,3 +1,4 @@
+import type { GrantAuthFlow } from '@synonymdev/pubky';
 import { DatabaseErrorCode } from '@/libs/error/error.codes';
 import { Err } from '@/libs/error/error.factories';
 import { ErrorService } from '@/libs/error/error.types';
@@ -171,6 +172,57 @@ export async function removeOwnedDelegatedKey(id: string): Promise<void> {
     });
   } finally {
     db.close();
+  }
+}
+
+/**
+ * Where the SDK holds a Shop flow's proof-of-possession key. `delegated`: a
+ * non-extractable WebCrypto key under `keyId` in IndexedDB. `localSecret`: the
+ * SDK's own key for browsers without WebCrypto Ed25519, held only by the flow
+ * and, once saved, inside its stored session record (bearer-equivalent).
+ */
+export type OwnedGrantKey = { storage: 'delegated'; keyId: string } | { storage: 'localSecret' };
+export type OwnedGrantFlow = OwnedGrantKey & { saved: string };
+
+const NOT_DELEGATED_FLOW = 'This grant auth flow is not delegated.';
+
+/** Saved state to resume a pending Shop flow, tagged with how its key is held. */
+export function saveOwnedGrantFlow(flow: Pick<GrantAuthFlow, 'saveDelegated' | 'saveLocal'>): OwnedGrantFlow {
+  let saved: string;
+  try {
+    saved = flow.saveDelegated();
+  } catch (error) {
+    if (!(error instanceof Error && error.name === 'ClientStateError' && error.message === NOT_DELEGATED_FLOW))
+      throw error;
+    saved = flow.saveLocal();
+    assertLocalSecretFlowState(saved);
+    return { storage: 'localSecret', saved };
+  }
+  return { storage: 'delegated', keyId: delegatedKeyId(saved), saved };
+}
+
+/**
+ * Removes the browser-held key of one Shop flow. A localSecret flow has no
+ * separate key entry: its key goes with the stored session record, which
+ * `removeGrantSession` deletes.
+ */
+export async function removeOwnedGrantKey(key: OwnedGrantKey): Promise<void> {
+  if (key.storage === 'localSecret') return;
+  await removeOwnedDelegatedKey(key.keyId);
+}
+
+function assertLocalSecretFlowState(saved: string): void {
+  const state: unknown = JSON.parse(saved);
+  if (!state || typeof state !== 'object') throw storageFailure();
+  const value = state as { key_id?: unknown; client_key_secret?: unknown; authorization_url?: unknown };
+  // Pinned SDK 0.16 local pending-flow schema.
+  if (
+    value.key_id !== undefined ||
+    typeof value.authorization_url !== 'string' ||
+    !value.client_key_secret ||
+    typeof value.client_key_secret !== 'object'
+  ) {
+    throw storageFailure();
   }
 }
 
