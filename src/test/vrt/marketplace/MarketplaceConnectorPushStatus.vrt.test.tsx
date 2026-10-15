@@ -68,6 +68,13 @@ describe('Order push status — visual regression', () => {
         connectionId: 'c1',
         kind: 'merchant_cancelled',
         pubkyOrderId: '0f3a9c12-6d52-4b7e-9d3a-aaaaaaaaaaaa',
+        orderState: 'cancel_requested',
+        action: {
+          kind: 'approve_cancellation',
+          command: 'order.cancel_approve',
+          orderId: '0f3a9c12-6d52-4b7e-9d3a-aaaaaaaaaaaa',
+          label: 'Approve the buyer’s cancellation request',
+        },
         createdAt: '2026-10-15T12:00:00.000Z',
       }),
     ];

@@ -27,6 +27,9 @@ vi.mock('@/hooks/useStoreConnections/useStoreConnections', () => ({
     workingId: null,
     refresh: async () => {},
     disconnect: async () => true,
+    setVariantMode: async () => true,
+    lostAlerts: [],
+    dismissLostAlert: async () => {},
   }),
 }));
 
@@ -58,7 +61,10 @@ const MIXED = [
     id: 'c2',
     provider: 'shopify',
     domain: 'john-staging.myshopify.com',
+    status: 'needs_attention',
     scopes: ['read_products', 'read_inventory', 'read_locations'],
+    missingScopes: ['read_fulfillments', 'write_orders'],
+    variantMode: 'split',
     mappingCount: 3,
     pushes: { pending: 0, sending: 0, created: 4, quarantined: 2 },
   }),
