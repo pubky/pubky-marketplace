@@ -260,6 +260,59 @@ describe('useMarketplaceShopSettings', () => {
     expect(parsed.error?.issues[0]?.message).toContain('1 to 60');
   });
 
+  it('publishes no shipsToCountries for a seller who leaves it empty, so the shop keeps shipping anywhere', async () => {
+    vi.mocked(CommerceController.refreshShop).mockResolvedValue(publishedShop);
+    const { result } = renderHook(() => useMarketplaceShopSettings());
+    await waitFor(() => expect(result.current.hasShop).toBe(true));
+    expect(result.current.form.getValues('shipsToCountries')).toBe('');
+
+    await act(() => result.current.submit());
+
+    const published = vi.mocked(CommerceController.commitUpsertShop).mock.calls[0]?.[0] as CommerceShopRecord;
+    expect(published.shipsToCountries).toBeUndefined();
+    expect(JSON.parse(JSON.stringify(published))).not.toHaveProperty('shipsToCountries');
+  });
+
+  it('publishes the destination countries as normalized codes and hydrates them back', async () => {
+    vi.mocked(CommerceController.refreshShop).mockResolvedValue({ ...publishedShop, shipsToCountries: ['CH'] });
+    const { result } = renderHook(() => useMarketplaceShopSettings());
+    await waitFor(() => expect(result.current.hasShop).toBe(true));
+    expect(result.current.form.getValues('shipsToCountries')).toBe('CH');
+
+    act(() => result.current.form.setValue('shipsToCountries', ' ch, li li '));
+    await act(() => result.current.submit());
+
+    expect(CommerceController.commitUpsertShop).toHaveBeenCalledWith(
+      expect.objectContaining({ shipsToCountries: ['CH', 'LI'], shippingPolicy: publishedShop.shippingPolicy }),
+    );
+  });
+
+  it('publishes a cleared destination list as absent', async () => {
+    vi.mocked(CommerceController.refreshShop).mockResolvedValue({ ...publishedShop, shipsToCountries: ['CH'] });
+    const { result } = renderHook(() => useMarketplaceShopSettings());
+    await waitFor(() => expect(result.current.hasShop).toBe(true));
+
+    act(() => result.current.form.setValue('shipsToCountries', ''));
+    await act(() => result.current.submit());
+
+    const published = vi.mocked(CommerceController.commitUpsertShop).mock.calls[0]?.[0] as CommerceShopRecord;
+    expect(published.shipsToCountries).toBeUndefined();
+  });
+
+  it('refuses unknown country codes and does not publish', async () => {
+    vi.mocked(CommerceController.refreshShop).mockResolvedValue(publishedShop);
+    const { result } = renderHook(() => useMarketplaceShopSettings());
+    await waitFor(() => expect(result.current.hasShop).toBe(true));
+
+    act(() => result.current.form.setValue('shipsToCountries', 'CH, Switzerland'));
+    await act(async () => expect(await result.current.submit()).toBe(false));
+
+    expect(result.current.form.getFieldState('shipsToCountries').error?.message).toBe(
+      'Not a two-letter country code: SWITZERLAND.',
+    );
+    expect(CommerceController.commitUpsertShop).not.toHaveBeenCalled();
+  });
+
   it('preserves cached settings but blocks saving when the homeserver is unreachable', async () => {
     vi.mocked(CommerceController.refreshShop).mockRejectedValue(new Error('offline'));
     vi.mocked(CommerceController.getShop).mockResolvedValue({ record: publishedShop } as never);

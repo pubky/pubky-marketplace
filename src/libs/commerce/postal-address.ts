@@ -172,7 +172,7 @@ export function normalizeCountryCode(countryCode: string): string {
 export const DEFAULT_ADDRESS_COUNTRY = 'US';
 
 // ISO 3166-1 user-assigned codes and CLDR macro-regions: two letters, but no country.
-const NON_COUNTRY_REGION = /^(AA|Q[M-Z]|X[A-Z]|ZZ|EU|EZ|UN)$/;
+export const NON_COUNTRY_REGION = /^(AA|Q[M-Z]|X[A-Z]|ZZ|EU|EZ|UN)$/;
 
 /**
  * The country a new address starts with: the region of the first locale

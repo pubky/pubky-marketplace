@@ -21,6 +21,7 @@ import {
   type MarketplaceShopSettingsData,
   marketplaceShopSettingsDefaults,
   marketplaceShopSettingsSchema,
+  shipsToCountriesFromField,
   termDaysFromField,
 } from './useMarketplaceShopSettings.types';
 
@@ -198,6 +199,7 @@ export function useMarketplaceShopSettings() {
         countryCode: record.location.countryCode,
         region: record.location.region ?? '',
         shippingPolicy: record.shippingPolicy,
+        shipsToCountries: record.shipsToCountries?.join(', ') ?? '',
         returnPolicy: record.returnPolicy,
         vacationMode: record.vacationMode,
         deliveryAssumeDays: record.deliveryAssumeDays?.toString() ?? '',
@@ -271,6 +273,8 @@ export function useMarketplaceShopSettings() {
           // Cleared fields are published absent, which restores the service defaults.
           deliveryAssumeDays: termDaysFromField(data.deliveryAssumeDays),
           autoCompleteDays: termDaysFromField(data.autoCompleteDays),
+          // Cleared is published absent: the shop ships anywhere again.
+          shipsToCountries: shipsToCountriesFromField(data.shipsToCountries),
         });
         setRevision((current) => current + 1);
         setCreatedAt((current) => current ?? now);

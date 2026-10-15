@@ -16,6 +16,7 @@ import {
   COMMERCE_SHOP_BIO_MAX_CHARS,
   COMMERCE_SHOP_NAME_MAX_CHARS,
   COMMERCE_SHOP_POLICY_MAX_CHARS,
+  COMMERCE_SHOP_SHIPS_TO_MAX_COUNTRIES,
   COMMERCE_SHOP_TERM_DAYS_MAX,
   COMMERCE_SHOP_TERM_DAYS_MIN,
   COMMERCE_TAXONOMY_VERSION_MAX,
@@ -397,6 +398,12 @@ const commerceTransactionServiceSchema = z
 /** Whole days, `COMMERCE_SHOP_TERM_DAYS_MIN` to `COMMERCE_SHOP_TERM_DAYS_MAX`. */
 const commerceShopTermDaysSchema = z.number().int().min(COMMERCE_SHOP_TERM_DAYS_MIN).max(COMMERCE_SHOP_TERM_DAYS_MAX);
 
+/** Destination countries as uppercase ISO 3166-1 alpha-2 codes, each listed once. */
+const commerceShipsToCountriesSchema = z
+  .array(z.string().regex(/^[A-Z]{2}$/, 'Expected an uppercase two-letter country code'))
+  .max(COMMERCE_SHOP_SHIPS_TO_MAX_COUNTRIES)
+  .refine((codes) => new Set(codes).size === codes.length, 'Country codes must be unique');
+
 const commerceShopRecordSchemaInner = commercePublicRecordBaseSchema
   .extend({
     recordType: z.literal('shop'),
@@ -415,6 +422,10 @@ const commerceShopRecordSchemaInner = commercePublicRecordBaseSchema
     // service's configured defaults apply. See docs/ecommerce/seller-delivery-terms.md.
     deliveryAssumeDays: commerceShopTermDaysSchema.optional(),
     autoCompleteDays: commerceShopTermDaysSchema.optional(),
+    // Where shipped orders may go. Absent or empty means anywhere. Checkout
+    // enforces it client-side only: the buyer's address is sealed to the
+    // seller, so the transaction service never sees the destination country.
+    shipsToCountries: commerceShipsToCountriesSchema.optional(),
     createdAt: commerceTimestampSchema,
     updatedAt: commerceTimestampSchema,
   })

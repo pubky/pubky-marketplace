@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { COMMERCE_CONTRACT_VERSION, COMMERCE_TAXONOMY_VERSION } from '@/config/commerce';
-import { createCommerceListingFixture } from '@/test/fixtures/commerce/commerce';
+import { createCommerceListingFixture, createCommerceShopFixture } from '@/test/fixtures/commerce/commerce';
 import receiptAttestationV1 from '@/test/fixtures/commerce/receipt-attestation-v1.json';
 import receiptAttestationV2Bitcoin from '@/test/fixtures/commerce/receipt-attestation-v2-bitcoin.json';
 import receiptAttestationV2SameCurrency from '@/test/fixtures/commerce/receipt-attestation-v2-same-currency.json';
@@ -592,6 +592,24 @@ describe('other public marketplace records', () => {
       expect(commerceShopRecordSchema.safeParse({ ...shop, autoCompleteDays: invalid }).success, `${invalid}`).toBe(
         expected,
       );
+    }
+  });
+
+  it('keeps shipsToCountries optional and accepts only unique uppercase two-letter codes', () => {
+    const shop = createCommerceShopFixture();
+    expect(commerceShopRecordSchema.safeParse(shop).success).toBe(true);
+    expect(commerceShopRecordSchema.parse(shop)).not.toHaveProperty('shipsToCountries');
+    expect(commerceShopRecordSchema.parse({ ...shop, shipsToCountries: ['CH', 'LI'] }).shipsToCountries).toEqual([
+      'CH',
+      'LI',
+    ]);
+    expect(commerceShopRecordSchema.safeParse({ ...shop, shipsToCountries: [] }).success).toBe(true);
+    expect(commerceShopRecordSchema.safeParse({ ...shop, shipsToCountries: null }).success).toBe(true);
+    for (const invalid of [['ch'], ['CHE'], ['CH', 'CH'], 'CH', [1]]) {
+      expect(
+        commerceShopRecordSchema.safeParse({ ...shop, shipsToCountries: invalid }).success,
+        JSON.stringify(invalid),
+      ).toBe(false);
     }
   });
 
