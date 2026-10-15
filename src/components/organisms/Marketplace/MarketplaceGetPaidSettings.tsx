@@ -55,8 +55,11 @@ type PaykitSetupStatus = 'idle' | 'error' | 'mismatch' | 'unconfirmed' | 'verify
 /** What stays under the Bitkit step after the setup dialog closes without a connection. */
 type PaykitSetupProblem = 'mismatch' | 'unconfirmed' | 'error';
 
-/** `setup` opens `/setup` (Bitcoin account, optional USDT address); `reconnect` adds a USDT address to an existing account. */
-type PaykitSetupMode = 'setup' | 'reconnect';
+/**
+ * `setup` opens `/setup` (Bitcoin account, optional USDT address); `reconnect` adds a USDT address to an existing
+ * account; `bitcoin-reconnect` re-approves an account Paykit already holds, which upstream `/setup` refuses.
+ */
+type PaykitSetupMode = 'setup' | 'reconnect' | 'bitcoin-reconnect';
 
 const PAYKIT_SETUP_TIMEOUT_MS = 6 * 60 * 1_000;
 
@@ -90,6 +93,12 @@ const UNSAVED_SELLER_PAYMENT_CONFIG: SellerPaymentConfigOwnView = {
 const PAYPAL_EMAIL_INVALID_COPY = 'Enter a valid email address.';
 const PAYKIT_RECONNECT_EXPLANATION =
   'Scan the code with Bitkit, or open this page on your phone and tap Open in Bitkit, to share a USDT address. Your Bitkit account and Bitcoin setup stay the same.';
+const PAYKIT_BITCOIN_RECONNECT_EXPLANATION =
+  'Paykit already has a Bitkit setup for this pubky. Approve it again in Bitkit to reconnect; your Bitkit account and Bitcoin addresses stay the same.';
+/** Upstream `/setup` refuses an account Paykit already holds (for example one set up for Locks); reconnect re-approves it. */
+const PAYKIT_SETUP_FAILED_COPY =
+  'Bitkit setup failed. If this pubky already has a Paykit setup, for example from Locks or another Shop, reconnect it instead.';
+const PAYKIT_RECONNECT_FAILED_COPY = 'Reconnecting Bitkit failed. Try again.';
 
 function createPaykitSetupState(): string {
   const bytes = new Uint8Array(16);
@@ -250,7 +259,7 @@ export function MarketplaceGetPaidSettings({ onSaved }: MarketplaceGetPaidSettin
           commitAccountClaimed(true);
           setPaykitSetupProblem(null);
           closePaykitSetup();
-          toast({ title: 'Bitkit setup connected' });
+          toast({ title: paykitSetupMode === 'bitcoin-reconnect' ? 'Bitkit reconnected' : 'Bitkit setup connected' });
           return;
         }
         // `false` is a definite answer: Bitkit finished, but not for this key.
@@ -289,9 +298,9 @@ export function MarketplaceGetPaidSettings({ onSaved }: MarketplaceGetPaidSettin
     if (!marketplaceSession || !currentUserPubky) return;
     const state = createPaykitSetupState();
     const url =
-      mode === 'reconnect'
-        ? CommerceController.getPaykitReconnectUrl(window.location.href, state, currentUserPubky)
-        : CommerceController.getPaykitSetupUrl(window.location.href, state, currentUserPubky);
+      mode === 'setup'
+        ? CommerceController.getPaykitSetupUrl(window.location.href, state, currentUserPubky)
+        : CommerceController.getPaykitReconnectUrl(window.location.href, state, currentUserPubky);
     paykitSetupGenerationRef.current = state;
     setPaykitSetupMode(mode);
     setPaykitSetupState(state);
@@ -346,6 +355,11 @@ export function MarketplaceGetPaidSettings({ onSaved }: MarketplaceGetPaidSettin
       ? paykitSetupProblemState.problem
       : null;
   const paykitCodeExpired = paykitSetupStatus === 'error' || paykitSetupStatus === 'timeout';
+  const upstreamPaykit = getPaykitServerApi() === 'upstream';
+  // Upstream Paykit refuses a second initial setup for an account it holds, so a connected wallet reconnects.
+  const step2Mode: PaykitSetupMode = upstreamPaykit && payments.accountClaimed === true ? 'bitcoin-reconnect' : 'setup';
+  const offerBitcoinReconnect = upstreamPaykit && paykitSetupProblem === 'error' && payments.accountClaimed !== true;
+  const failedSetupInDialog = upstreamPaykit && paykitSetupStatus === 'error' && paykitSetupMode === 'setup';
   // Only the missing-step reason is explained here; without a session the
   // card's "Enable selling" prompt already says why the switch is off.
   const bitcoinToggleBlocker =
@@ -475,19 +489,38 @@ export function MarketplaceGetPaidSettings({ onSaved }: MarketplaceGetPaidSettin
                   ? paykitMismatchMessage(currentUserPubky)
                   : paykitSetupProblem === 'unconfirmed'
                     ? PAYKIT_UNCONFIRMED_COPY
-                    : 'Bitkit setup failed. Try again.'}
+                    : offerBitcoinReconnect
+                      ? PAYKIT_SETUP_FAILED_COPY
+                      : 'Bitkit setup failed. Try again.'}
               </Typography>
             )}
           </div>
-          <Button
-            variant="secondary"
-            className="w-fit"
-            disabled={!marketplaceSession || !currentUserPubky}
-            onClick={() => openPaykitSetup('setup')}
-          >
-            {paykitSetupProblem && payments.accountClaimed !== true ? 'Try again' : 'Connect Bitkit'}
-            <ExternalLink className="size-4" />
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            {offerBitcoinReconnect && (
+              <Button
+                variant="secondary"
+                className="w-fit"
+                disabled={!marketplaceSession || !currentUserPubky}
+                onClick={() => openPaykitSetup('bitcoin-reconnect')}
+              >
+                Reconnect Bitkit
+                <ExternalLink className="size-4" />
+              </Button>
+            )}
+            <Button
+              variant="secondary"
+              className="w-fit"
+              disabled={!marketplaceSession || !currentUserPubky}
+              onClick={() => openPaykitSetup(step2Mode)}
+            >
+              {step2Mode === 'bitcoin-reconnect'
+                ? 'Reconnect Bitkit'
+                : paykitSetupProblem && payments.accountClaimed !== true
+                  ? 'Try again'
+                  : 'Connect Bitkit'}
+              <ExternalLink className="size-4" />
+            </Button>
+          </div>
         </div>
 
         <div className="grid gap-6 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
@@ -603,13 +636,23 @@ export function MarketplaceGetPaidSettings({ onSaved }: MarketplaceGetPaidSettin
       <Dialog open={paykitSetupOpen} onOpenChange={(open) => (open ? setPaykitSetupOpen(true) : closePaykitSetup())}>
         <DialogContent className="w-full max-w-lg" centered>
           <DialogHeader>
-            <DialogTitle>{paykitSetupMode === 'reconnect' ? 'Add USDT in Bitkit' : 'Connect Bitkit'}</DialogTitle>
+            <DialogTitle>
+              {paykitSetupMode === 'reconnect'
+                ? 'Add USDT in Bitkit'
+                : paykitSetupMode === 'bitcoin-reconnect'
+                  ? 'Reconnect Bitkit'
+                  : 'Connect Bitkit'}
+            </DialogTitle>
           </DialogHeader>
           {paykitSetupStatus !== 'idle' && (
             <div role="alert" className="grid gap-3 rounded-md border border-amber-500/40 p-3 text-sm">
               <Typography as="p">
                 {paykitSetupStatus === 'error'
-                  ? 'Bitkit setup failed. Try again.'
+                  ? failedSetupInDialog
+                    ? PAYKIT_SETUP_FAILED_COPY
+                    : paykitSetupMode === 'bitcoin-reconnect'
+                      ? PAYKIT_RECONNECT_FAILED_COPY
+                      : 'Bitkit setup failed. Try again.'
                   : paykitSetupStatus === 'mismatch'
                     ? paykitMismatchMessage(currentUserPubky)
                     : paykitSetupStatus === 'unconfirmed'
@@ -622,19 +665,33 @@ export function MarketplaceGetPaidSettings({ onSaved }: MarketplaceGetPaidSettin
                           ? 'Bitkit did not confirm a USDT address. Try again.'
                           : paykitTimeoutMessage(currentUserPubky)}
               </Typography>
-              <Button
-                variant="secondary"
-                className="w-fit rounded-full"
-                onClick={() => openPaykitSetup(paykitSetupMode)}
-              >
-                <RefreshCw className="size-4" />
-                Retry
-              </Button>
+              <div className="flex flex-wrap gap-2">
+                {failedSetupInDialog && (
+                  <Button
+                    variant="secondary"
+                    className="w-fit rounded-full"
+                    onClick={() => openPaykitSetup('bitcoin-reconnect')}
+                  >
+                    <RefreshCw className="size-4" />
+                    Reconnect Bitkit
+                  </Button>
+                )}
+                <Button
+                  variant="secondary"
+                  className="w-fit rounded-full"
+                  onClick={() => openPaykitSetup(paykitSetupMode)}
+                >
+                  <RefreshCw className="size-4" />
+                  Retry
+                </Button>
+              </div>
             </div>
           )}
           <Typography as="p" className="text-sm text-muted-foreground">
             {paykitSetupMode === 'reconnect' ? (
               PAYKIT_RECONNECT_EXPLANATION
+            ) : paykitSetupMode === 'bitcoin-reconnect' ? (
+              PAYKIT_BITCOIN_RECONNECT_EXPLANATION
             ) : (
               <>
                 <span className="[@media(hover:none)_and_(pointer:coarse)]:hidden">Scan the code with Bitkit</span>
@@ -655,7 +712,13 @@ export function MarketplaceGetPaidSettings({ onSaved }: MarketplaceGetPaidSettin
                 ref={paykitIframeRef}
                 key={paykitSetupUrl}
                 src={`${paykitSetupUrl}#embed`}
-                title={paykitSetupMode === 'reconnect' ? 'Add USDT in Bitkit' : 'Connect Bitkit'}
+                title={
+                  paykitSetupMode === 'reconnect'
+                    ? 'Add USDT in Bitkit'
+                    : paykitSetupMode === 'bitcoin-reconnect'
+                      ? 'Reconnect Bitkit'
+                      : 'Connect Bitkit'
+                }
                 sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-top-navigation-to-custom-protocols"
                 referrerPolicy="no-referrer"
                 className="h-[40rem] w-full rounded-lg border bg-popover"

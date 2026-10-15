@@ -80,7 +80,7 @@ import {
   paykitAppRegistryUrl,
   paykitReaderAuthorizationUrl,
 } from '@/libs/commerce/paykit-wallet';
-import type { BindDeliveryAddress, PaymentMethodKind } from '@/libs/commerce/payment-methods';
+import type { BindDeliveryAddress, PaymentMethodKind, SellerPaymentConfig } from '@/libs/commerce/payment-methods';
 import {
   type MarketplaceCheckoutFulfillmentLine,
   type MarketplaceFulfillmentMethod,
@@ -1469,8 +1469,18 @@ export class CommerceApplication {
 
   // --- Seller-configurable payment methods (durable service only) ----------
 
-  static async getSellerPaymentConfig(sellerPubky: string) {
-    return await MarketplaceGatewayService.getSellerPaymentConfig(sellerPubky);
+  /**
+   * The seller's public payment config. While Bitcoin is not offered, the
+   * service's `/health` is read too, so a Paykit outage is reported as such
+   * (`paykitUnreachable`) instead of reading as a seller with no setup. A
+   * failed health read says nothing, so it leaves the config as the service
+   * returned it.
+   */
+  static async getSellerPaymentConfig(sellerPubky: string): Promise<SellerPaymentConfig> {
+    const config = await MarketplaceGatewayService.getSellerPaymentConfig(sellerPubky);
+    if (config.bitcoinAvailable && config.bitcoinOfferAvailable) return config;
+    const rail = await MarketplaceGatewayService.getPaykitRailStatus().catch(() => 'unknown' as const);
+    return rail === 'unreachable' ? { ...config, paykitUnreachable: true } : config;
   }
 
   /**

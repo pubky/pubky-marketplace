@@ -110,8 +110,9 @@ export function MarketplaceSessionConnectDialog({
       toast({
         title: copy.success,
       });
-      setOpen(false);
+      // Before the close: a parent that treats `onOpenChange(false)` as a dismissal must see the session first.
       void onConnected?.();
+      setOpen(false);
     },
   });
 
