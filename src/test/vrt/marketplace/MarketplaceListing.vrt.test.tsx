@@ -280,6 +280,7 @@ vi.mock('@/controllers/commerce/commerce', () => ({
     ...createMarketplaceVrtCommerceController(),
     getListing: () => view.listing,
     getShop: () => view.shop,
+    getOrFetchShop: () => Promise.resolve(null),
     getPublicListingAvailability: () =>
       Promise.resolve(
         view.publicStock
