@@ -13,7 +13,12 @@ function createRequest(
 ) {
   return new NextRequest('http://localhost:3000/api/import-image', {
     method: 'POST',
-    headers: { 'content-type': 'application/json', host: 'localhost:3000', ...headers },
+    headers: {
+      'content-type': 'application/json',
+      host: 'localhost:3000',
+      'sec-fetch-site': 'same-origin',
+      ...headers,
+    },
     body: rawBody ?? JSON.stringify(body),
   });
 }
@@ -63,23 +68,46 @@ describe('API Route: /api/import-image', () => {
     expect(response.headers.get('retry-after')).toBe('42');
   });
 
-  it('refuses cross-site requests', async () => {
-    const byFetchMetadata = await POST(
-      createRequest({ url: 'https://cdn.example.com/a.png' }, { headers: { 'sec-fetch-site': 'cross-site' } }),
-    );
-    const byOrigin = await POST(
-      createRequest({ url: 'https://cdn.example.com/a.png' }, { headers: { origin: 'https://evil.example' } }),
-    );
-    expect(byFetchMetadata.status).toBe(HttpStatusCode.FORBIDDEN);
-    expect(byOrigin.status).toBe(HttpStatusCode.FORBIDDEN);
-    expect(fetchSpy).not.toHaveBeenCalled();
-  });
+  describe('same-origin guard', () => {
+    const body = { url: 'https://cdn.example.com/a.png' };
+    const withoutFetchSite = (headers: Record<string, string> = {}) => {
+      const request = createRequest(body, { headers });
+      request.headers.delete('sec-fetch-site');
+      return request;
+    };
 
-  it('allows a same-origin Origin header', async () => {
-    const response = await POST(
-      createRequest({ url: 'https://cdn.example.com/a.png' }, { headers: { origin: 'http://localhost:3000' } }),
-    );
-    expect(response.status).toBe(HttpStatusCode.OK);
+    it.each(['cross-site', 'same-site', 'none'])('refuses Sec-Fetch-Site: %s', async (site) => {
+      const response = await POST(createRequest(body, { headers: { 'sec-fetch-site': site } }));
+      expect(response.status).toBe(HttpStatusCode.FORBIDDEN);
+      expect(fetchSpy).not.toHaveBeenCalled();
+    });
+
+    it('refuses a request with neither Sec-Fetch-Site nor Origin (curl-style, form post)', async () => {
+      const response = await POST(withoutFetchSite());
+      expect(response.status).toBe(HttpStatusCode.FORBIDDEN);
+      expect(fetchSpy).not.toHaveBeenCalled();
+    });
+
+    it('refuses a foreign Origin even when Host and X-Forwarded-Host are forged to match it', async () => {
+      const response = await POST(
+        withoutFetchSite({ origin: 'https://evil.example', host: 'evil.example', 'x-forwarded-host': 'evil.example' }),
+      );
+      expect(response.status).toBe(HttpStatusCode.FORBIDDEN);
+      expect(fetchSpy).not.toHaveBeenCalled();
+    });
+
+    it('refuses an unparseable Origin', async () => {
+      expect((await POST(withoutFetchSite({ origin: 'not a url' }))).status).toBe(HttpStatusCode.FORBIDDEN);
+    });
+
+    it('allows Sec-Fetch-Site: same-origin', async () => {
+      expect((await POST(createRequest(body))).status).toBe(HttpStatusCode.OK);
+    });
+
+    it('allows a browser without Sec-Fetch-Site when Origin matches the request host', async () => {
+      const response = await POST(withoutFetchSite({ origin: 'http://localhost:3000' }));
+      expect(response.status).toBe(HttpStatusCode.OK);
+    });
   });
 
   it('requires a JSON content type', async () => {

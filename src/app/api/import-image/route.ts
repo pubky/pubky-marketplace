@@ -106,20 +106,24 @@ async function readBody(request: NextRequest): Promise<{ ok: true; value: TBody 
   }
 }
 
+/**
+ * Browser CSRF guard, not authentication. `Sec-Fetch-Site` is set by the browser and
+ * cannot be forged by a web page; older browsers without it must send an Origin that
+ * matches this request's own host. Forwarded-host headers are never trusted.
+ * A non-browser client can set any header, so it passes; it is bounded by the
+ * per-IP and global limits, not by this check.
+ */
 function isSameOrigin(request: NextRequest): boolean {
-  if (request.headers.get('sec-fetch-site') === 'cross-site') return false;
+  const fetchSite = request.headers.get('sec-fetch-site');
+  if (fetchSite) return fetchSite === 'same-origin';
 
   const origin = request.headers.get('origin');
-  if (!origin) return true;
-
-  let originHost: string;
+  if (!origin) return false;
   try {
-    originHost = new URL(origin).host;
+    return new URL(origin).host.toLowerCase() === request.nextUrl.host.toLowerCase();
   } catch {
     return false;
   }
-  const hosts = [request.headers.get('host'), request.headers.get('x-forwarded-host'), request.nextUrl.host];
-  return hosts.some((host) => host?.toLowerCase() === originHost.toLowerCase());
 }
 
 /**

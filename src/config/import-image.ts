@@ -29,6 +29,12 @@ export const IMPORT_IMAGE_RATE_LIMIT_BYTES = 150 * 1024 * 1024;
 export const IMPORT_IMAGE_RATE_LIMIT_BYTES_WINDOW_MS = 10 * 60_000;
 
 /**
+ * Distinct limiter keys (IPs and session digests) tracked per counter. When all
+ * slots hold live windows, new keys are refused until a window expires.
+ */
+export const IMPORT_IMAGE_RATE_LIMIT_MAX_KEYS = 5_000;
+
+/**
  * Caps across all callers together: the ceiling on what this route can do as an
  * open fetch relay, whoever is calling and however many identities they forge.
  * Held per server process, so the effective cap is this times the instance count.

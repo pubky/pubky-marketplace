@@ -6,9 +6,10 @@ import {
 } from '@/config/import-image';
 import { importImageSafeLookup, NextJsImportImageService } from './import-image';
 
-const { mockFetch, mockResolve4, mockResolve6, agentOptions } = vi.hoisted(() => ({
+const { mockFetch, mockResolve4, mockResolve6, agentOptions, agentInstances } = vi.hoisted(() => ({
   mockFetch: vi.fn(),
   agentOptions: [] as Array<{ connect?: { lookup?: unknown } }>,
+  agentInstances: [] as unknown[],
   mockResolve4: vi.fn<(hostname: string) => Promise<string[]>>(),
   mockResolve6: vi.fn<(hostname: string) => Promise<string[]>>(),
 }));
@@ -24,6 +25,7 @@ vi.mock('undici', async (importOriginal) => {
   class RecordingAgent {
     constructor(options: { connect?: { lookup?: unknown } }) {
       agentOptions.push(options);
+      agentInstances.push(this);
     }
   }
   return { ...actual, fetch: mockFetch, Agent: RecordingAgent };
@@ -186,6 +188,20 @@ describe('NextJsImportImageService', () => {
       expect(String(mockFetch.mock.calls[1][0])).toBe('https://img.example.net/final.png');
     });
 
+    it('releases the body of every redirect response before following it', async () => {
+      const cancel = vi.fn();
+      mockFetch
+        .mockResolvedValueOnce(
+          new Response(streamOf([new Uint8Array(8)], cancel), {
+            status: 302,
+            headers: { location: 'https://img.example.net/final.png' },
+          }),
+        )
+        .mockResolvedValueOnce(imageResponse(PNG));
+      await fetchImage('https://cdn.example.com/a.png');
+      expect(cancel).toHaveBeenCalledTimes(1);
+    });
+
     it('resolves relative Location headers against the current URL', async () => {
       mockFetch.mockResolvedValueOnce(redirectTo('/moved/a.png', 301)).mockResolvedValueOnce(imageResponse(PNG));
       await fetchImage('https://cdn.example.com/a.png');
@@ -249,7 +265,7 @@ describe('NextJsImportImageService', () => {
       expect(agentOptions[0].connect?.lookup).toBe(importImageSafeLookup);
       const dispatchers = mockFetch.mock.calls.map(([, init]) => (init as { dispatcher: unknown }).dispatcher);
       expect(dispatchers).toHaveLength(3);
-      expect(dispatchers.every((dispatcher) => dispatcher === dispatchers[0] && dispatcher !== undefined)).toBe(true);
+      expect(dispatchers.every((dispatcher) => dispatcher === agentInstances[0])).toBe(true);
     });
 
     it('re-resolves DNS for every hop instead of reusing an earlier answer', async () => {
