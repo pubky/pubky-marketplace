@@ -17,9 +17,6 @@ import { toast } from '@/molecules/Toaster/use-toast';
 import { AUTH_FLOW_CANCELED_ERROR_NAME } from '@/services/homeserver/error.utils';
 import type { UseAuthUrlOptions, UseAuthUrlReturn } from './useAuthUrl.types';
 
-export const GRANT_URL_FAILED_MESSAGE =
-  'Could not start Bitkit sign-in. Click the Bitkit QR code to try again, or sign in with Pubky Ring.';
-
 /** Returns true if the error indicates the auth flow has expired (timeout or SESSION_EXPIRED). */
 const isAuthFlowExpiredError = (error: unknown): boolean => {
   if (!isAppError(error)) return false;
@@ -78,7 +75,11 @@ export function useAuthUrl(options: UseAuthUrlOptions = {}): UseAuthUrlReturn {
             }
             toast({
               variant: 'error',
-              description: isWrongEnvironment ? getWrongEnvironmentHomeserverMessage() : 'Sign in failed. Try again.',
+              description: isWrongEnvironment
+                ? getWrongEnvironmentHomeserverMessage()
+                : isAppError(error)
+                  ? error.message
+                  : 'Sign in failed. Try again.',
             });
             if (isMountedRef.current) {
               setUrl('');
@@ -107,16 +108,12 @@ export function useAuthUrl(options: UseAuthUrlOptions = {}): UseAuthUrlReturn {
       if (!isMountedRef.current) return;
       setUrl(authorizationUrl ?? '');
     } catch (error) {
-      Logger.error('Failed to generate auth URL:', error);
+      if (!isAppError(error)) Logger.error('Failed to generate auth URL:', error);
       if (!isMountedRef.current) return;
-      if (type === 'grant') {
-        setIsExpired(true);
-        toast({ variant: 'error', description: GRANT_URL_FAILED_MESSAGE });
-        return;
-      }
+      setIsExpired(true);
       toast({
         variant: 'error',
-        description: 'Could not generate QR. Refresh and try again.',
+        description: isAppError(error) ? error.message : 'Could not generate QR. Refresh and try again.',
       });
     } finally {
       if (isMountedRef.current) {

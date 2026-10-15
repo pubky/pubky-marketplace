@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AuthApplication } from '@/application/auth/auth';
 import { BootstrapApplication } from '@/application/bootstrap/bootstrap';
 import { AuthController } from '@/controllers/auth/auth';
+import { resetGrantTest } from '@/controllers/auth/auth.grant-test-utils';
 import { resetAuthFinalizationLockForTests } from '@/controllers/auth/auth-finalization-lock';
 import { useAuthStatus } from '@/hooks/useAuthStatus/useAuthStatus';
 import { AuthStatus } from '@/hooks/useAuthStatus/useAuthStatus.types';
@@ -38,7 +39,7 @@ const RESTORED_PUBKY = '5a1diz4pghi47ywdfyfzpit5f3bdomzt4pugpbmq4rngdd4iub4y' as
 
 describe('AuthController restore finalization — real useAuthStatus', () => {
   beforeEach(() => {
-    vi.clearAllMocks();
+    resetGrantTest();
     AuthController.resetCleanupLocalStateGuard();
     resetAuthFinalizationLockForTests();
     useAuthStore.getState().reset();
@@ -46,7 +47,8 @@ describe('AuthController restore finalization — real useAuthStatus', () => {
     useOnboardingStore.getState().setHydrated(true);
     useAuthStore.setState({
       session: null,
-      sessionExport: 'old-session-export',
+      sessionExport: null,
+      grantSessionRecordId: 'shop-record',
       currentUserPubky: PREVIOUS_PUBKY,
       hasProfile: true,
       hasHydrated: true,
@@ -162,7 +164,7 @@ describe('AuthController restore finalization — real useAuthStatus', () => {
       expect(AuthApplication.userIsSignedUp).toHaveBeenCalled();
     });
 
-    // Mid-finalization (cleanup done, profile fetch pending, init not yet run):
+    // Mid-finalization (credential initialized, profile completion pending):
     // the flag must not have read false at any point since restore start.
     expect(useAuthStore.getState().isRestoringSession).toBe(true);
     expect(result.current.isLoading).toBe(true);

@@ -32,8 +32,6 @@ const mocks = vi.hoisted(() => {
     mockSetShowSignInDialog,
     restorePersistedSession,
     settlePendingGrantKeyCleanup,
-    consumerEnabled: false,
-    autoRestoreSuppressed: false,
     // Auth store state defaults
     hasHydrated: true,
     session: {} as unknown,
@@ -137,21 +135,6 @@ vi.mock('@/stores/migration/migration.store', () => ({
     },
   ),
 }));
-vi.mock('@/libs/vibe-session/config', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@/libs/vibe-session/config')>();
-  return {
-    ...actual,
-    isVibeSessionConsumerEnabled: () => mocks.consumerEnabled,
-  };
-});
-vi.mock('@/libs/vibe-session/auto-restore', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@/libs/vibe-session/auto-restore')>();
-  return {
-    ...actual,
-    isVibeSessionAutoRestoreSuppressed: () => mocks.autoRestoreSuppressed,
-    isVibeSessionBridgeLegSkipped: () => mocks.autoRestoreSuppressed,
-  };
-});
 vi.mock('@/controllers/auth/auth', () => ({
   AuthController: {
     restorePersistedSession: mocks.restorePersistedSession,
@@ -189,8 +172,6 @@ describe('RouteGuardProvider — migration resync', () => {
     mocks.mockSetShowSignInDialog.mockReset();
     mocks.restorePersistedSession.mockReset();
     mocks.restorePersistedSession.mockResolvedValue({ status: 'restored' });
-    mocks.consumerEnabled = false;
-    mocks.autoRestoreSuppressed = false;
   });
 
   afterEach(() => {
@@ -563,8 +544,6 @@ describe('RouteGuardProvider — return path', () => {
     mocks.status = 'UNAUTHENTICATED';
     mocks.isLoading = false;
     mocks.pathname = '/marketplace/orders';
-    mocks.consumerEnabled = false;
-    mocks.autoRestoreSuppressed = false;
   });
 
   it('redirects an unauthenticated marketplace deep link then returns there after sign-in', () => {
@@ -749,42 +728,6 @@ describe('RouteGuardProvider — session restore', () => {
     mocks.mockToast.mockReset();
     mocks.restorePersistedSession.mockReset();
     mocks.restorePersistedSession.mockResolvedValue({ status: 'restored' });
-    mocks.consumerEnabled = false;
-    mocks.autoRestoreSuppressed = false;
-  });
-
-  it('restores when consumer mode is on even without a persisted sessionExport', async () => {
-    mocks.sessionExport = null;
-    mocks.consumerEnabled = true;
-
-    render(
-      <RouteGuardProvider>
-        <div>Protected Content</div>
-      </RouteGuardProvider>,
-    );
-
-    await act(async () => {
-      await Promise.resolve();
-    });
-
-    expect(mocks.restorePersistedSession).toHaveBeenCalledOnce();
-  });
-
-  it('does not restore when consumer mode is off and sessionExport is missing', async () => {
-    mocks.sessionExport = null;
-    mocks.consumerEnabled = false;
-
-    render(
-      <RouteGuardProvider>
-        <div>Protected Content</div>
-      </RouteGuardProvider>,
-    );
-
-    await act(async () => {
-      await Promise.resolve();
-    });
-
-    expect(mocks.restorePersistedSession).not.toHaveBeenCalled();
   });
 
   it('toasts when persisted session restore fails for wrong-environment homeserver', async () => {
@@ -820,7 +763,6 @@ describe('RouteGuardProvider — session restore', () => {
       }),
     );
     mocks.sessionExport = 'session-export';
-    mocks.consumerEnabled = true;
 
     const { rerender } = render(
       <RouteGuardProvider>
@@ -852,10 +794,8 @@ describe('RouteGuardProvider — session restore', () => {
     });
   });
 
-  it('does not restore after logout when consumer auto-restore is suppressed and nothing is persisted', async () => {
+  it('does not restore after logout when no credentials are persisted', async () => {
     mocks.sessionExport = null;
-    mocks.consumerEnabled = true;
-    mocks.autoRestoreSuppressed = true;
 
     render(
       <RouteGuardProvider>
@@ -872,10 +812,8 @@ describe('RouteGuardProvider — session restore', () => {
     expect(mocks.mockRouterPush).not.toHaveBeenCalled();
   });
 
-  it('restores a pending fragment hand-off after logout even when auto-restore is suppressed', async () => {
+  it('does not restore a retired cookie fragment after logout', async () => {
     mocks.sessionExport = null;
-    mocks.consumerEnabled = true;
-    mocks.autoRestoreSuppressed = true;
     window.history.replaceState(null, '', '/#s=pending-session-export');
 
     render(
@@ -888,13 +826,12 @@ describe('RouteGuardProvider — session restore', () => {
       await Promise.resolve();
     });
 
-    expect(mocks.restorePersistedSession).toHaveBeenCalledOnce();
+    expect(mocks.restorePersistedSession).not.toHaveBeenCalled();
   });
 
   it('reaches terminal unauthenticated UI after a deferred persist restore without looping', async () => {
     mocks.session = null;
     mocks.sessionExport = 'session-export';
-    mocks.consumerEnabled = true;
     mocks.status = 'UNAUTHENTICATED';
     mocks.isLoading = false;
     mocks.pathname = '/home';
@@ -924,44 +861,6 @@ describe('RouteGuardProvider — session restore', () => {
       await Promise.resolve();
     });
 
-    expect(mocks.restorePersistedSession).toHaveBeenCalledOnce();
-    expect(screen.getByText('Explore Content')).toBeInTheDocument();
-  });
-
-  it('reaches terminal unauthenticated UI after a deferred persist restore with consumer mode off', async () => {
-    mocks.session = null;
-    mocks.sessionExport = 'session-export';
-    mocks.consumerEnabled = false;
-    mocks.status = 'UNAUTHENTICATED';
-    mocks.isLoading = false;
-    mocks.pathname = '/home';
-    mocks.restorePersistedSession.mockResolvedValue({ status: 'deferred' });
-
-    const { rerender } = render(
-      <RouteGuardProvider>
-        <div>Explore Content</div>
-      </RouteGuardProvider>,
-    );
-
-    await act(async () => {
-      await Promise.resolve();
-    });
-
-    expect(mocks.restorePersistedSession).toHaveBeenCalledOnce();
-    expect(screen.getByText('Explore Content')).toBeInTheDocument();
-    expect(mocks.mockRouterPush).not.toHaveBeenCalled();
-
-    rerender(
-      <RouteGuardProvider>
-        <div>Explore Content</div>
-      </RouteGuardProvider>,
-    );
-
-    await act(async () => {
-      await Promise.resolve();
-    });
-
-    // No restore loop: the deferred export is preserved for the next load, not wiped.
     expect(mocks.restorePersistedSession).toHaveBeenCalledOnce();
     expect(screen.getByText('Explore Content')).toBeInTheDocument();
   });
@@ -969,7 +868,6 @@ describe('RouteGuardProvider — session restore', () => {
   it('redirects a deferred unauthenticated user off a protected route without a restore loop', async () => {
     mocks.session = null;
     mocks.sessionExport = 'session-export';
-    mocks.consumerEnabled = true;
     mocks.status = 'UNAUTHENTICATED';
     mocks.isLoading = false;
     mocks.pathname = '/feed';

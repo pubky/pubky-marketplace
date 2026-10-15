@@ -1,4 +1,4 @@
-import { type AuthFlow } from '@synonymdev/pubky';
+import { type AuthFlow, type Session } from '@synonymdev/pubky';
 import { AppError } from '@/libs/error/error';
 import { AuthErrorCode, ClientErrorCode, ServerErrorCode, TimeoutErrorCode } from '@/libs/error/error.codes';
 import { Err } from '@/libs/error/error.factories';
@@ -224,7 +224,8 @@ export const createCancelableAuthApproval = (
   options?: {
     pollIntervalMs?: number;
     maxPollAttempts?: number;
-    resume?: () => Pick<AuthFlow, 'tryPollOnce' | 'free'>;
+    resume?: () => Pick<AuthFlow, 'tryPollOnce' | 'free'> | Promise<Pick<AuthFlow, 'tryPollOnce' | 'free'>>;
+    onCanceledSession?: (session: Session) => Promise<void>;
   },
 ): CancelableAuthApproval => {
   let flow = initialFlow;
@@ -266,7 +267,13 @@ export const createCancelableAuthApproval = (
 
       try {
         const maybeSession = await flow.tryPollOnce();
-        if (maybeSession) return maybeSession;
+        if (maybeSession) {
+          if (canceled) {
+            await options?.onCanceledSession?.(maybeSession);
+            throw createCanceledError();
+          }
+          return maybeSession;
+        }
       } catch (error) {
         if (canceled) throw createCanceledError();
         // A mobile browser cuts the page's network once it goes to the background (the user is approving in
@@ -283,7 +290,7 @@ export const createCancelableAuthApproval = (
               // Ignore double-free or already-finalized WASM objects.
             }
             try {
-              flow = options.resume();
+              flow = await options.resume();
               continue;
             } catch (resumeFailure) {
               // The channel cannot be resumed: fall through to the dead-flow error below.

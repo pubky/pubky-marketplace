@@ -6,7 +6,7 @@ import {
   MarketplaceInventorySessionService,
 } from '@/services/marketplace/marketplace-inventory-session';
 import { MarketplaceSessionService } from '@/services/marketplace/marketplace-session';
-import { MARKETPLACE_SESSION_GRANT } from '@/services/marketplace/marketplace-session-grant';
+import { LEGACY_SHOP_SIGN_IN_GRANT, MARKETPLACE_SESSION_GRANT } from '@/services/marketplace/marketplace-session-grant';
 import {
   MarketplaceShopClientService,
   PubkyShopError,
@@ -137,7 +137,12 @@ export function isPublicHttpsWebhookUrl(value: string): boolean {
   return true;
 }
 
-const PURCHASE_GRANTS: readonly string[] = [MARKETPLACE_SESSION_GRANT, RING_COOKIE_CAPABILITIES, CAPABILITIES];
+const PURCHASE_GRANTS: readonly string[] = [
+  MARKETPLACE_SESSION_GRANT,
+  RING_COOKIE_CAPABILITIES,
+  LEGACY_SHOP_SIGN_IN_GRANT,
+  CAPABILITIES,
+];
 
 /**
  * Purchase: empty caps (bridged or legacy identity session), the marketplace

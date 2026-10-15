@@ -5,7 +5,7 @@ import { AppError } from '@/libs/error/error';
 import { AuthErrorCode, ServerErrorCode, TimeoutErrorCode } from '@/libs/error/error.codes';
 import { ErrorCategory, ErrorService } from '@/libs/error/error.types';
 import { mockSession } from '@/test-utils/pubky';
-import { GRANT_URL_FAILED_MESSAGE, useAuthUrl } from './useAuthUrl';
+import { useAuthUrl } from './useAuthUrl';
 
 // Mock dependencies
 const mockToast = vi.fn();
@@ -302,7 +302,7 @@ describe('useAuthUrl', () => {
     await waitFor(() => {
       expect(mockToast).toHaveBeenCalledWith({
         variant: 'error',
-        description: 'Sign in failed. Try again.',
+        description: 'PKARR relay unavailable',
       });
       expect(result.current.url).toBe('');
       expect(result.current.isExpired).toBe(true);
@@ -383,14 +383,16 @@ describe('useAuthUrl', () => {
     });
   });
 
-  it('tells the user how to continue when the Bitkit grant option cannot start', async () => {
-    mockGetGrantAuthUrl.mockRejectedValue(new Error('This browser cannot securely save a grant sign-in.'));
+  it('reports a grant creation failure instead of silently hiding it', async () => {
+    mockGetGrantAuthUrl.mockRejectedValue(new Error('Unrecognized algorithm name'));
 
     const { result } = renderHook(() => useAuthUrl({ type: 'grant' }));
 
     await waitFor(() => expect(result.current.isExpired).toBe(true));
-    expect(mockToast).toHaveBeenCalledTimes(1);
-    expect(mockToast).toHaveBeenCalledWith({ variant: 'error', description: GRANT_URL_FAILED_MESSAGE });
+    expect(mockToast).toHaveBeenCalledWith({
+      variant: 'error',
+      description: 'Could not generate QR. Refresh and try again.',
+    });
   });
 
   it('does not cancel active auth flow on unmount', async () => {

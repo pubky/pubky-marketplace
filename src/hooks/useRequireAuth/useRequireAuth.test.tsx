@@ -2,15 +2,23 @@ import { act, renderHook } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useRequireAuth } from './useRequireAuth';
 
-const mockCurrentUserPubky = vi.hoisted(() => ({ value: null as string | null }));
+const host = vi.hoisted(() => ({ request: vi.fn(() => false) }));
+vi.mock('@/libs/shop-session/bridge', () => ({ requestShopHostAction: host.request }));
+const mockCurrentUserPubky = vi.hoisted(() => ({
+  value: null as string | null,
+  session: { grant: {} } as { grant: object } | null,
+  hasProfile: true,
+  isRestoringSession: false,
+}));
 const mockSetShowSignInDialog = vi.hoisted(() => vi.fn());
 
 vi.mock('@/stores/auth/auth.store', () => ({
   useAuthStore: Object.assign(
     (selector: (state: { currentUserPubky: string | null }) => unknown) =>
-      selector({ currentUserPubky: mockCurrentUserPubky.value }),
+      selector({ ...mockCurrentUserPubky, currentUserPubky: mockCurrentUserPubky.value }),
     {
       getState: () => ({
+        ...mockCurrentUserPubky,
         currentUserPubky: mockCurrentUserPubky.value,
         setShowSignInDialog: mockSetShowSignInDialog,
       }),
@@ -18,12 +26,16 @@ vi.mock('@/stores/auth/auth.store', () => ({
   ),
 }));
 
-describe('useRequireAuth', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    mockCurrentUserPubky.value = null;
-  });
+beforeEach(() => {
+  vi.clearAllMocks();
+  mockCurrentUserPubky.value = null;
+  mockCurrentUserPubky.session = { grant: {} };
+  mockCurrentUserPubky.hasProfile = true;
+  mockCurrentUserPubky.isRestoringSession = false;
+  host.request.mockReturnValue(false);
+});
 
+describe('useRequireAuth', () => {
   describe('isAuthenticated', () => {
     it('should return false when user is not authenticated', () => {
       mockCurrentUserPubky.value = null;
@@ -86,4 +98,26 @@ describe('useRequireAuth', () => {
       expect(result.current.requireAuth).toBe(firstRequireAuth);
     });
   });
+});
+
+it('does not treat a retained legacy identity as authority', () => {
+  mockCurrentUserPubky.value = 'retained-pubky';
+  mockCurrentUserPubky.session = null;
+  const action = vi.fn();
+  const { result } = renderHook(() => useRequireAuth());
+  act(() => result.current.requireAuth(action));
+  expect(action).not.toHaveBeenCalled();
+  expect(result.current.isAuthenticated).toBe(false);
+  expect(mockSetShowSignInDialog).toHaveBeenCalledWith(true);
+});
+
+it('requests App-owned sign-in for a hosted action without authority', () => {
+  mockCurrentUserPubky.value = 'retained-pubky';
+  mockCurrentUserPubky.session = null;
+  host.request.mockReturnValue(true);
+  mockSetShowSignInDialog.mockClear();
+  const { result } = renderHook(() => useRequireAuth());
+  act(() => result.current.requireAuth(vi.fn()));
+  expect(host.request).toHaveBeenCalledWith('request-login');
+  expect(mockSetShowSignInDialog).not.toHaveBeenCalled();
 });
