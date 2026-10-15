@@ -804,53 +804,52 @@ function shopCacheRow(shop) {
 }
 
 async function seedCanonicalListingCache(page, canonicalListing, shop) {
-  // The database appears before Dexie's upgrade has created its stores, so
-  // wait for the stores themselves, not only the database name.
-  await page.waitForFunction(
-    () =>
-      indexedDB.databases().then((dbs) => {
-        if (!dbs.some((entry) => entry.name === 'shop-franky')) return false;
-        return new Promise((resolve) => {
-          const open = indexedDB.open('shop-franky');
-          open.onerror = () => resolve(false);
-          open.onsuccess = () => {
-            const names = [...open.result.objectStoreNames];
-            open.result.close();
-            resolve(names.includes('commerce_listings') && names.includes('commerce_shops'));
-          };
-        });
-      }),
-    undefined,
-    {
-      timeout: 15_000,
-      polling: 250,
-    },
-  );
+  // indexedDB.open() without a version creates an empty database when none
+  // exists. At boot the app's Dexie briefly probes, deletes and recreates
+  // shop-franky, so an open in that window would create a store-less database
+  // the app then wipes again. Every open here aborts instead of creating or
+  // upgrading, and the seed retries until it lands in Dexie's database.
   const seeded = await page.evaluate(
     async ({ listing, shopRecord }) => {
-      const put = (storeName, value) =>
-        new Promise((resolve, reject) => {
+      const openExisting = () =>
+        new Promise((resolve) => {
           const open = indexedDB.open('shop-franky');
-          open.onerror = () => reject(open.error);
-          open.onsuccess = () => {
-            const db = open.result;
-            if (![...db.objectStoreNames].includes(storeName)) {
-              db.close();
-              reject(new Error(`missing store ${storeName}`));
-              return;
-            }
-            const tx = db.transaction(storeName, 'readwrite');
-            tx.objectStore(storeName).put(value);
-            tx.oncomplete = () => {
-              db.close();
-              resolve(true);
-            };
-            tx.onerror = () => reject(tx.error);
-          };
+          open.onupgradeneeded = () => open.transaction.abort();
+          open.onerror = () => resolve(null);
+          open.onblocked = () => resolve(null);
+          open.onsuccess = () => resolve(open.result);
         });
-      await put('commerce_listings', listing);
-      await put('commerce_shops', shopRecord);
-      return true;
+      const putBoth = (db) =>
+        new Promise((resolve, reject) => {
+          const tx = db.transaction(['commerce_listings', 'commerce_shops'], 'readwrite');
+          tx.objectStore('commerce_listings').put(listing);
+          tx.objectStore('commerce_shops').put(shopRecord);
+          tx.oncomplete = () => resolve(true);
+          tx.onerror = () => reject(tx.error);
+          tx.onabort = () => reject(tx.error ?? new Error('seed transaction aborted'));
+        });
+      const deadline = Date.now() + 15_000;
+      let lastError = 'shop-franky never had both stores';
+      while (Date.now() < deadline) {
+        const db = await openExisting();
+        if (db) {
+          const names = [...db.objectStoreNames];
+          if (names.includes('commerce_listings') && names.includes('commerce_shops')) {
+            try {
+              await putBoth(db);
+              db.close();
+              return true;
+            } catch (error) {
+              lastError = String(error);
+            }
+          } else {
+            lastError = `missing stores (have ${names.length})`;
+          }
+          db.close();
+        }
+        await new Promise((resolve) => setTimeout(resolve, 250));
+      }
+      throw new Error(lastError);
     },
     { listing: listingCacheRow(canonicalListing), shopRecord: shopCacheRow(shop) },
   );
