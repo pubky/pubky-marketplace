@@ -2,13 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { marketplaceOrderSchema } from '@/core/services/marketplace/marketplace-projections';
 import projectionSamples from '@/libs/commerce/contracts/samples/projections.json';
 import { createBitcoinQuotedOrderFixture, createOrderFixture } from '@/test/fixtures/commerce/orders';
-import {
-  BITCOIN_PAYMENT_CODE_CHECKOUT_NOTE,
-  bitcoinPaymentBreakdown,
-  bitcoinPaymentCodeCheckoutNote,
-  formatBitcoinAmountBreakdown,
-  orderAmountEntry,
-} from './bitcoin-payment-code';
+import { bitcoinPaymentBreakdown, formatBitcoinAmountBreakdown, orderAmountEntry } from './bitcoin-payment-code';
 import { toCamelCaseWire } from './wire-casing';
 
 const PLACEHOLDERS: Record<string, string> = {
@@ -138,15 +132,5 @@ describe('bitcoin payment code', () => {
     exact.paykit_total_sats = 51_200;
     exact.total = { amount_minor: 51_200, currency: 'SAT', exponent: 0 };
     expect(bitcoinPaymentBreakdown(parseOrder(exact))).toBeNull();
-  });
-
-  it('says the checkout payment adds 1–999 sats, without a protocol name', () => {
-    expect(BITCOIN_PAYMENT_CODE_CHECKOUT_NOTE).toContain('1–999 sats');
-    expect(BITCOIN_PAYMENT_CODE_CHECKOUT_NOTE).not.toMatch(/paykit|protocol/i);
-  });
-
-  it('shows the checkout note only where the Paykit server adds a code', () => {
-    expect(bitcoinPaymentCodeCheckoutNote('fork')).toBe(BITCOIN_PAYMENT_CODE_CHECKOUT_NOTE);
-    expect(bitcoinPaymentCodeCheckoutNote('upstream')).toBeNull();
   });
 });

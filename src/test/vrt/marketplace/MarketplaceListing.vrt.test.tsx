@@ -143,6 +143,7 @@ const fixtures = vi.hoisted(async () => {
     ),
     pausedListing: toCommerceListingModel(createCommerceListingFixture({ state: 'paused' })),
     vacationShop: toCommerceShopModel(createCommerceShopFixture({ vacationMode: true })),
+    swissOnlyShop: toCommerceShopModel(createCommerceShopFixture({ shipsToCountries: ['CH'] })),
     fixedPriceProjection: createListingProjectionFixture(),
     auctionProjection: createAuctionProjectionFixture(),
     // Marketplace-held digital delivery (digital delivery design §3): a
@@ -280,6 +281,7 @@ vi.mock('@/controllers/commerce/commerce', () => ({
     ...createMarketplaceVrtCommerceController(),
     getListing: () => view.listing,
     getShop: () => view.shop,
+    getOrFetchShop: () => Promise.resolve(null),
     getPublicListingAvailability: () =>
       Promise.resolve(
         view.publicStock
@@ -649,6 +651,26 @@ describe('Marketplace listing detail — visual regression', () => {
     await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('listing-owner-panel-desktop');
   });
 
+  it("renders the owner's ended auction as ended at desktop viewport", async () => {
+    const { seller, endedAuctionListing, auctionProjection } = await fixtures;
+    await setView({
+      listing: endedAuctionListing,
+      projection: {
+        ...auctionProjection,
+        auction: auctionProjection.auction
+          ? { ...auctionProjection.auction, endsAt: '2026-08-29T20:00:00.000Z', status: 'ended' }
+          : null,
+      },
+      currentUserPubky: seller,
+    });
+
+    const screen = await renderForVRT(<MarketplaceListing sellerPubky={seller} listingId="ended_rangefinder" />, {
+      viewport: VRT_VIEWPORT_DESKTOP,
+    });
+    await expect.element(screen.getByTestId('listing-owner-state')).toHaveTextContent('ended');
+    await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('listing-owner-auction-ended-desktop');
+  });
+
   it('renders the owner set-up-your-shop prompt when no shop record exists at desktop viewport', async () => {
     const { seller, fixedPriceListing, fixedPriceProjection } = await fixtures;
     await setView({
@@ -682,6 +704,17 @@ describe('Marketplace listing detail — visual regression', () => {
       viewport: VRT_VIEWPORT_DESKTOP,
     });
     await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('listing-vacation-desktop');
+  });
+
+  it('renders the seller’s destination countries at desktop viewport', async () => {
+    const { seller, fixedPriceListing, swissOnlyShop, fixedPriceProjection } = await fixtures;
+    await setView({ listing: fixedPriceListing, projection: fixedPriceProjection, shop: swissOnlyShop });
+
+    const screen = await renderForVRT(<MarketplaceListing sellerPubky={seller} listingId="boots_01" />, {
+      viewport: VRT_VIEWPORT_DESKTOP,
+    });
+    await expect.element(screen.getByTestId('marketplace-listing-ships-to')).toHaveTextContent('Ships to: Switzerland');
+    await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('listing-ships-to-desktop');
   });
 
   it('renders the unavailable state at desktop viewport', async () => {

@@ -74,6 +74,7 @@ vi.mock('@/controllers/commerce/commerce', () => ({
   CommerceController: {
     getListing: () => view.listing,
     getShop: () => view.shop,
+    getOrFetchShop: () => Promise.resolve(null),
     getOrFetchListing: () => (view.fetchFailure === null ? Promise.resolve(null) : Promise.reject(view.fetchFailure)),
     isListingConfirmedRemoved: (_seller: string, _listing: string, fetchError: unknown) => {
       confirmRemovedCalls(fetchError);
@@ -367,6 +368,25 @@ describe('MarketplaceListing', () => {
       purchase.compareDocumentPosition(screen.getByRole('heading', { name: 'Item specifics' })) &
         Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
+  });
+
+  it('shows where a shipped listing ships to when the seller limits destinations', () => {
+    view.shop = toCommerceShopModel(createCommerceShopFixture({ shipsToCountries: ['CH', 'LI'] }));
+    renderListing();
+    expect(screen.getByTestId('marketplace-listing-ships-to')).toHaveTextContent(
+      'Ships to: Switzerland and Liechtenstein',
+    );
+  });
+
+  it('says nothing about destinations for a seller who ships anywhere, or for pickup only', () => {
+    renderListing();
+    expect(screen.queryByTestId('marketplace-listing-ships-to')).not.toBeInTheDocument();
+    cleanup();
+
+    view.shop = toCommerceShopModel(createCommerceShopFixture({ shipsToCountries: ['CH'] }));
+    view.listing = toCommerceListingModel(createCommerceListingFixture({ fulfillmentMethods: ['pickup'] }));
+    renderListing();
+    expect(screen.queryByTestId('marketplace-listing-ships-to')).not.toBeInTheDocument();
   });
 
   // Digital delivery design §3 and §6 B7, B8.

@@ -56,6 +56,7 @@ import {
   type CommerceShippingOption,
 } from '@/libs/commerce/marketplace-records';
 import type { MarketplaceFulfillmentMethod } from '@/libs/commerce/pickup';
+import { formatShipsToCountries, shopShipsToCountries } from '@/libs/commerce/ships-to';
 import { buildMarketplaceListingAggregateId } from '@/libs/commerce/transaction-commands';
 import { formatPackageDimensions, formatWeight } from '@/libs/commerce/units';
 import { formatStockQuantity, UNLIMITED_STOCK_LABEL } from '@/libs/commerce/unlimited-stock';
@@ -123,6 +124,9 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
     }
     let active = true;
     setIsFetchSettled(false);
+    // Best-effort: a direct visit may not have the seller's shop cached, and
+    // it carries the shop name, vacation notice and destination countries.
+    void CommerceController.getOrFetchShop(sellerPubky).catch(() => undefined);
     CommerceController.getOrFetchListing(sellerPubky, listingId)
       .catch(async (fetchError: unknown) => {
         let confirmedRemoved = false;
@@ -252,6 +256,7 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
         ? `Shipping: ${formatCommerceMoney(flatShipping.price)}`
         : null;
   const sellerDisplayName = shop?.record.name ?? `${sellerPubky.slice(0, 10)}…`;
+  const shipsToCountries = shopShipsToCountries(shop?.record);
   const recordQuantity = record.variants.reduce(
     (total, variant) => total + (variant.enabled ? variant.quantity : 0),
     0,
@@ -361,7 +366,11 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
 
           <div className="flex min-w-0 flex-col gap-5 lg:col-start-2 lg:row-span-2 lg:row-start-1">
             {isOwner && (
-              <MarketplaceListingOwnerPanel record={record} registrationStatus={listing.registration_status} />
+              <MarketplaceListingOwnerPanel
+                record={record}
+                registrationStatus={listing.registration_status}
+                auctionPhase={auctionPhase ?? undefined}
+              />
             )}
             {stateNotice && (
               <div
@@ -416,6 +425,15 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
               {!shippingBadge && (
                 <Typography as="p" className="mt-1 text-sm text-muted-foreground">
                   {shippingCopy}
+                </Typography>
+              )}
+              {shipsItem && shipsToCountries && (
+                <Typography
+                  as="p"
+                  className="mt-1 text-sm text-muted-foreground"
+                  data-testid="marketplace-listing-ships-to"
+                >
+                  Ships to: {formatShipsToCountries(shipsToCountries)}
                 </Typography>
               )}
               {negotiation.projection?.auction && (

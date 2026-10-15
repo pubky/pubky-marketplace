@@ -11,7 +11,7 @@ describe('MarketplaceSellerEntry', () => {
   it('replaces the bare shop route not-found with seller setup links', () => {
     render(<MarketplaceSellerEntry />);
 
-    expect(screen.getByRole('heading', { name: 'Set up your seller account to start listing' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Set up your shop to start listing' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /Payment settings/i })).toHaveAttribute(
       'href',
       MARKETPLACE_ROUTES.SETTINGS,

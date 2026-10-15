@@ -1,10 +1,12 @@
 // Intentional import order — browser-mode mock factories rely on stable aliases.
 /* eslint-disable simple-import-sort/imports */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { createMarketplaceVrtAuthStore } from '@/test/mocks/marketplace-vrt';
 import { expectVrtSurface, parkVrtHover, renderForVRT, VRT_DENSE_CHROME_SCREENSHOT } from '@/test-utils/vrt';
 import { VRT_VIEWPORT_DESKTOP, VRT_VIEWPORT_MOBILE } from '@/test-utils/vrt.viewports';
 import { MarketplaceCheckout } from '@/templates/Marketplace/MarketplaceCheckout';
 import { useCommerceStore } from '@/stores/commerce/commerce.store';
+import type { BuyerPaykitWalletState } from '@/hooks/useBuyerPaykitWallet/useBuyerPaykitWallet';
 
 const VRT_VIEWPORT_LAPTOP = { width: 1280, height: 800 };
 
@@ -140,13 +142,16 @@ const view = vi.hoisted(() => ({
   items: [] as unknown[],
   isLoading: false,
   adapterMode: 'sandbox' as string,
+  paykitServerApi: 'fork' as 'fork' | 'upstream',
   deployEnv: 'staging' as 'production' | 'staging' | undefined,
   hasMarketplaceSession: false,
+  currentUserPubky: null as string | null,
   addresses: [] as unknown[],
   selectedAddressId: null as string | null,
   fulfillmentOptions: {} as Record<string, Array<'shipping' | 'pickup'>>,
   fulfillmentEffective: {} as Record<string, 'shipping' | 'pickup'>,
   requiresDeliveryAddress: true,
+  allowedDestinationCountries: null as string[] | null,
   orderCount: 1,
   fulfillmentByItem: {} as Record<string, 'shipping' | 'pickup' | 'digital'>,
   digitalKinds: {} as Record<string, 'file' | 'link' | 'text' | 'email' | 'message' | null>,
@@ -158,6 +163,20 @@ const view = vi.hoisted(() => ({
   usdtOnly: false,
   usdtSellers: null as string[] | null,
   orders: [] as unknown[],
+  buyerWalletState: 'payable' as BuyerPaykitWalletState,
+}));
+
+vi.mock('@/hooks/useBuyerPaykitWallet/useBuyerPaykitWallet', () => ({
+  useBuyerPaykitWallet: (_pubky: string | null, enabled: boolean) => ({
+    state: enabled ? view.buyerWalletState : 'idle',
+    recheck: vi.fn(),
+  }),
+}));
+
+vi.mock('@/stores/auth/auth.store', () => ({
+  useAuthStore: createMarketplaceVrtAuthStore({
+    getCurrentUserPubky: () => view.currentUserPubky,
+  }),
 }));
 
 const savedAddresses = vi.hoisted(() => {
@@ -206,7 +225,7 @@ vi.mock('next/navigation', () => ({
 
 vi.mock('@/config/commerce', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/config/commerce')>();
-  return { ...actual, getCommerceAdapterMode: () => view.adapterMode };
+  return { ...actual, getCommerceAdapterMode: () => view.adapterMode, getPaykitServerApi: () => view.paykitServerApi };
 });
 
 vi.mock('@/libs/runtime-config/runtime-config', async (importOriginal) => {
@@ -251,7 +270,13 @@ vi.mock('@/hooks/useMarketplaceCheckout/useMarketplaceCheckout', async () => {
   const { marketplaceCheckoutDefaults } = await import('@/hooks/useMarketplaceCheckout/useMarketplaceCheckout.types');
   return {
     useMarketplaceCheckout: () => ({
-      form: useForm({ defaultValues: marketplaceCheckoutDefaults }),
+      // The real hook starts a new address in the first allowed country.
+      form: useForm({
+        defaultValues: {
+          ...marketplaceCheckoutDefaults,
+          ...(view.allowedDestinationCountries ? { countryCode: view.allowedDestinationCountries[0] } : {}),
+        },
+      }),
       submit: vi.fn(async () => false),
       pay: vi.fn(async () => ({ ok: false, orderIds: [], boundOrders: [] })),
       isPaying: false,
@@ -265,6 +290,7 @@ vi.mock('@/hooks/useMarketplaceCheckout/useMarketplaceCheckout', async () => {
       fulfillmentForSeller: (sellerPubky: string) => view.fulfillmentEffective[sellerPubky] ?? 'shipping',
       setFulfillmentChoice: vi.fn(),
       requiresDeliveryAddress: view.requiresDeliveryAddress,
+      allowedDestinationCountries: view.allowedDestinationCountries,
       hasFulfillmentConflict: false,
       isPickupCapabilityLoadingForSeller: () => false,
       orderCount: view.orderCount,
@@ -375,13 +401,16 @@ beforeEach(async () => {
   view.items = [];
   view.isLoading = false;
   view.hasMarketplaceSession = false;
+  view.currentUserPubky = null;
   view.adapterMode = 'sandbox';
+  view.paykitServerApi = 'fork';
   view.deployEnv = 'staging';
   view.addresses = [];
   view.selectedAddressId = null;
   view.fulfillmentOptions = {};
   view.fulfillmentEffective = {};
   view.requiresDeliveryAddress = true;
+  view.allowedDestinationCountries = null;
   view.orderCount = 1;
   view.fulfillmentByItem = {};
   view.digitalKinds = {};
@@ -393,6 +422,7 @@ beforeEach(async () => {
   view.usdtOnly = false;
   view.usdtSellers = null;
   view.orders = [];
+  view.buyerWalletState = 'payable';
   useCommerceStore.getState().reset();
   window.history.replaceState(null, '', '/marketplace/checkout');
 });
@@ -468,6 +498,70 @@ describe('Marketplace checkout — visual regression', () => {
     await captureCheckout('checkout-single-seller-desktop');
   });
 
+  for (const [name, viewport] of [
+    ['desktop', VRT_VIEWPORT_DESKTOP],
+    ['mobile', VRT_VIEWPORT_MOBILE],
+  ] as const) {
+    it(`shows the missing-wallet guide on ${name}`, async () => {
+      const { singleSeller } = await fixtures;
+      view.items = singleSeller;
+      view.adapterMode = 'transaction-service';
+      view.deployEnv = 'production';
+      view.hasMarketplaceSession = true;
+      view.currentUserPubky = 'b'.repeat(52);
+      view.buyerWalletState = 'not_payable';
+      view.paykitServerApi = 'upstream';
+
+      const screen = await renderForVRT(<MarketplaceCheckout />, { viewport });
+      await expect.element(screen.getByTestId('marketplace-checkout-bitkit-required')).toBeVisible();
+      await expect.element(screen.getByTestId('marketplace-checkout-bitkit-connect')).toBeEnabled();
+      await expect.element(screen.getByTestId('marketplace-checkout-pay')).toBeDisabled();
+      const earlyNotice = screen.getByTestId('marketplace-checkout-bitkit-notice');
+      if (name === 'mobile') {
+        await expect.element(earlyNotice).toBeVisible();
+      } else {
+        await expect.element(earlyNotice).not.toBeVisible();
+      }
+      await captureCheckout(`checkout-bitkit-required-${name}`);
+    });
+
+    it(`keeps fork checkout free of incompatible downloads on ${name}`, async () => {
+      view.items = (await fixtures).singleSeller;
+      view.adapterMode = 'transaction-service';
+      view.deployEnv = 'production';
+      view.hasMarketplaceSession = true;
+      view.currentUserPubky = 'b'.repeat(52);
+      view.buyerWalletState = 'not_payable';
+      const screen = await renderForVRT(<MarketplaceCheckout />, { viewport });
+      await expect.element(screen.getByText('A compatible Bitkit wallet is required', { exact: true })).toBeVisible();
+      await expect.element(screen.getByRole('button', { name: 'Connect Bitkit', exact: true })).not.toBeInTheDocument();
+      await expect.element(screen.getByTestId('bitcoin-payment-code-note')).toBeVisible();
+      await captureCheckout(`checkout-bitkit-fork-${name}`);
+    });
+
+    it(`opens and closes the shared connection dialog on ${name}`, async () => {
+      const { singleSeller } = await fixtures;
+      view.items = singleSeller;
+      view.adapterMode = 'transaction-service';
+      view.deployEnv = 'production';
+      view.hasMarketplaceSession = true;
+      view.currentUserPubky = 'b'.repeat(52);
+      view.buyerWalletState = 'not_payable';
+      view.paykitServerApi = 'upstream';
+
+      const screen = await renderForVRT(<MarketplaceCheckout />, { viewport });
+      await expect.element(screen.getByTestId('marketplace-checkout-bitkit-required')).toBeVisible();
+      await expect.element(screen.getByTestId('marketplace-checkout-bitkit-connect')).toBeEnabled();
+      await screen.getByTestId('marketplace-checkout-bitkit-connect').click();
+      const dialog = screen.getByRole('dialog', { name: 'Connect Bitkit', exact: true });
+      await expect.element(dialog).toBeVisible();
+      await expect.element(screen.getByTestId('buyer-bitkit-account')).toHaveTextContent(view.currentUserPubky);
+      await expect(dialog).toMatchScreenshot(`checkout-bitkit-connect-dialog-${name}`);
+      await screen.getByRole('button', { name: 'Close', exact: true }).click();
+      await expect.element(dialog).not.toBeInTheDocument();
+    });
+  }
+
   // Issue #50: a cancelled checkout carries no "Awaiting payment · Item reserved" header.
   it('renders a cancelled PayPal checkout without the reserved header at desktop viewport', async () => {
     const { createOrderFixture, createPaymentFixture } = await import('@/test/fixtures/commerce/orders');
@@ -490,6 +584,24 @@ describe('Marketplace checkout — visual regression', () => {
     expect(document.body.textContent).toContain('Order cancelled');
     expect(document.body.textContent).not.toContain('Item reserved');
     await captureCheckout('checkout-cancelled-paypal-desktop', false);
+  });
+
+  it('limits the address country to the seller’s destination countries at desktop viewport', async () => {
+    const { singleSeller } = await fixtures;
+    view.items = singleSeller;
+    view.allowedDestinationCountries = ['CH', 'LI'];
+
+    await renderForVRT(<MarketplaceCheckout />, { viewport: VRT_VIEWPORT_DESKTOP });
+    await vi.waitFor(() => {
+      if (
+        !document
+          .querySelector('[data-testid="marketplace-address-country-select"]')
+          ?.textContent?.includes('Switzerland')
+      ) {
+        throw new Error('The destination country picker has not rendered yet.');
+      }
+    });
+    await captureCheckout('checkout-ships-to-desktop');
   });
 
   it('renders a single-seller checkout at mobile viewport', async () => {

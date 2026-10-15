@@ -11,7 +11,7 @@ export const CHAT_COPY = {
   inboxTitle: 'Messages',
   inboxSubtitle: 'Your conversations with buyers and sellers.',
   inboxSignedOutTitle: 'Sign in to see your messages.',
-  inboxSignedOutBody: 'Messages belong to the account signed in on this device.',
+  inboxSignedOutBody: 'Messages belong to the pubky signed in on this device.',
   inboxEmptyTitle: 'No messages yet.',
   inboxEmptyBody: 'Open a listing or an order and message the other party to begin.',
   inboxRetry: 'Try again',

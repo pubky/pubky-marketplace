@@ -2,8 +2,10 @@ import { describe, expect, it } from 'vitest';
 import type { SellerPaymentConfigOwnView } from '@/libs/commerce/payment-methods';
 import {
   atLeastOneMethodSentence,
+  BITCOIN_TOGGLE_BLOCKER_COPY,
   countReadyPaymentMethods,
   deriveBitcoinStatus,
+  deriveBitcoinToggleBlocker,
   derivePaypalStatus,
   isReadyPaymentMethodStatus,
   type PaymentMethodStatus,
@@ -188,6 +190,31 @@ describe('MarketplaceGetPaidSettings status derivation', () => {
           claimError: null,
         }),
       ).toBe('needs_attention');
+    });
+  });
+
+  describe('deriveBitcoinToggleBlocker', () => {
+    it.each([
+      { lockServerConnected: false, locksError: null, accountClaimed: null, expected: 'lock-server' },
+      { lockServerConnected: true, locksError: 'rejected', accountClaimed: null, expected: 'lock-server' },
+      { lockServerConnected: false, locksError: null, accountClaimed: false, expected: 'both' },
+      { lockServerConnected: false, locksError: null, accountClaimed: true, expected: 'lock-server' },
+      { lockServerConnected: true, locksError: 'rejected', accountClaimed: true, expected: 'lock-server' },
+      { lockServerConnected: true, locksError: 'rejected', accountClaimed: false, expected: 'both' },
+      { lockServerConnected: true, locksError: null, accountClaimed: false, expected: 'bitkit' },
+      { lockServerConnected: true, locksError: null, accountClaimed: null, expected: 'bitkit-unknown' },
+      { lockServerConnected: true, locksError: null, accountClaimed: true, expected: null },
+    ] as const)(
+      'lockServer=$lockServerConnected locksError=$locksError claimed=$accountClaimed → $expected',
+      ({ expected, ...args }) => {
+        expect(deriveBitcoinToggleBlocker(args)).toBe(expected);
+      },
+    );
+
+    it('names only the missing step in its copy', () => {
+      expect(BITCOIN_TOGGLE_BLOCKER_COPY['lock-server']).toBe('Connect the Lock Server first.');
+      expect(BITCOIN_TOGGLE_BLOCKER_COPY.bitkit).toBe('Connect Bitkit first.');
+      expect(BITCOIN_TOGGLE_BLOCKER_COPY.both).toBe('Connect the Lock Server and Bitkit first.');
     });
   });
 

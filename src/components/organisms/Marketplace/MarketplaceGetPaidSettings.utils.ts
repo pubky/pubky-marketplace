@@ -46,6 +46,34 @@ export function deriveBitcoinStatus(args: {
   return 'needs_attention';
 }
 
+/** The bitcoin step that still keeps "Accept bitcoin" switched off, or null when nothing is missing. */
+export type BitcoinToggleBlocker = 'lock-server' | 'bitkit' | 'both' | 'bitkit-unknown';
+
+export const BITCOIN_TOGGLE_BLOCKER_COPY: Record<BitcoinToggleBlocker, string> = {
+  'lock-server': 'Connect the Lock Server first.',
+  bitkit: 'Connect Bitkit first.',
+  both: 'Connect the Lock Server and Bitkit first.',
+  'bitkit-unknown': "We can't check Bitkit right now.",
+};
+
+/**
+ * Names the missing step behind a disabled "Accept bitcoin" switch. A Lock
+ * Server error counts as step 1 missing. An unknown claim (`null`) is never
+ * reported as missing: the read failed, so Bitkit may already be connected.
+ * Bitkit is named only when the claim read answered `false`.
+ */
+export function deriveBitcoinToggleBlocker(args: {
+  lockServerConnected: boolean;
+  locksError: string | null;
+  accountClaimed: boolean | null;
+}): BitcoinToggleBlocker | null {
+  const lockServerMissing = !args.lockServerConnected || Boolean(args.locksError);
+  if (lockServerMissing) return args.accountClaimed === false ? 'both' : 'lock-server';
+  if (args.accountClaimed === false) return 'bitkit';
+  if (args.accountClaimed === null) return 'bitkit-unknown';
+  return null;
+}
+
 /** USDT is Connected only when the service reports it ready; a lookup it cannot make needs attention. */
 export function deriveUsdtStatus(readiness: UsdtSellerReadiness): PaymentMethodStatus {
   if (readiness === 'ready') return 'connected';

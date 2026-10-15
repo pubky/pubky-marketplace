@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { COMMERCE_CONTRACT_VERSION, COMMERCE_TAXONOMY_VERSION } from '@/config/commerce';
-import { createCommerceListingFixture } from '@/test/fixtures/commerce/commerce';
+import {
+  COMMERCE_CONTRACT_VERSION,
+  COMMERCE_SHOP_SHIPS_TO_MAX_COUNTRIES,
+  COMMERCE_TAXONOMY_VERSION,
+} from '@/config/commerce';
+import { createCommerceListingFixture, createCommerceShopFixture } from '@/test/fixtures/commerce/commerce';
 import receiptAttestationV1 from '@/test/fixtures/commerce/receipt-attestation-v1.json';
 import receiptAttestationV2Bitcoin from '@/test/fixtures/commerce/receipt-attestation-v2-bitcoin.json';
 import receiptAttestationV2SameCurrency from '@/test/fixtures/commerce/receipt-attestation-v2-same-currency.json';
@@ -593,6 +597,31 @@ describe('other public marketplace records', () => {
         expected,
       );
     }
+  });
+
+  it('keeps shipsToCountries optional and reads it leniently without failing the record or failing open', () => {
+    const shop = createCommerceShopFixture();
+    const read = (shipsToCountries: unknown) => {
+      const parsed = commerceShopRecordSchema.safeParse({ ...shop, shipsToCountries });
+      expect(parsed.success, JSON.stringify(shipsToCountries)).toBe(true);
+      return parsed.success ? parsed.data.shipsToCountries : 'unparsed';
+    };
+    expect(commerceShopRecordSchema.parse(shop).shipsToCountries).toBeUndefined();
+    expect(read(['CH', 'LI'])).toEqual(['CH', 'LI']);
+    // Lowercase, aliases and duplicates normalize; malformed entries beside a usable code are dropped.
+    expect(read([' ch ', 'uk', 'EL', 'GB', 'CHE', 1, null, 'li'])).toEqual(['CH', 'GB', 'GR', 'LI']);
+    expect(read('ch')).toEqual(['CH']);
+    // Only absent or empty means anywhere.
+    expect(read([])).toBeUndefined();
+    expect(read(null)).toBeUndefined();
+    // A present list with no usable code keeps its entries, so it is never read (or re-saved) as anywhere.
+    expect(read(['che', 'CHE'])).toEqual(['CHE']);
+    expect(read([1])).toEqual(['1']);
+    expect(read([''])).toEqual(['[""]']);
+    expect(read({ CH: true })).toEqual(['{"CH":true}']);
+    const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+    const everyPair = [...letters].flatMap((first) => [...letters].map((second) => first + second));
+    expect(read(everyPair)).toHaveLength(COMMERCE_SHOP_SHIPS_TO_MAX_COUNTRIES);
   });
 
   it('accepts a valid drop record and rejects every cross-field violation', () => {

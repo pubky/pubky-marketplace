@@ -17,8 +17,15 @@ vi.mock('@/config/commerce', async () => {
   return { ...actual, getCommerceAdapterMode: () => config.mode };
 });
 
+const shopShipsTo = vi.hoisted(() => new Map<string, string[]>());
+
 vi.mock('@/controllers/commerce/commerce', () => ({
   CommerceController: {
+    refreshShop: vi.fn(async (sellerPubky: string) => ({
+      ownerPubky: sellerPubky,
+      shipsToCountries: shopShipsTo.get(sellerPubky),
+    })),
+    getShop: vi.fn(async () => null),
     getMarketplaceListingProjection: vi.fn(),
     getMarketplaceOrders: vi.fn(async () => []),
     syncListingRegistration: vi.fn(),
@@ -66,6 +73,7 @@ const savedAddress = {
 describe('useMarketplaceDropClaim', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    shopShipsTo.clear();
     config.mode = 'transaction-service';
     vi.spyOn(globalThis.crypto, 'randomUUID').mockReturnValue('00000000-0000-4000-8000-000000002200');
     vi.mocked(CommerceController.getDeliveryAddresses).mockResolvedValue([savedAddress] as never);
@@ -148,6 +156,23 @@ describe('useMarketplaceDropClaim', () => {
     expect(ok).toBe(false);
     expect(CommerceController.executeMarketplaceCommand).not.toHaveBeenCalled();
     expect(result.current.failure).toBe(DELIVERY_KEY_COPY.noKey);
+  });
+
+  it('does not claim to an address outside the seller’s destination countries', async () => {
+    shopShipsTo.set(SELLER, ['CH']);
+    const { result } = renderHook(() => useMarketplaceDropClaim());
+    await waitFor(() => expect(result.current.claimAddress).not.toBeNull());
+
+    let ok = true;
+    await act(async () => {
+      ok = await result.current.claim(SELLER, 'listing1', 1);
+    });
+
+    expect(ok).toBe(false);
+    expect(result.current.failure).toBe('This seller ships only to Switzerland. Choose pickup if offered.');
+    expect(CommerceController.resolveDeliveryKeysForCheckout).not.toHaveBeenCalled();
+    expect(CommerceController.sealDeliveryAddressForCheckout).not.toHaveBeenCalled();
+    expect(CommerceController.executeMarketplaceCommand).not.toHaveBeenCalled();
   });
 
   it('keeps the payment deadline from the claimed order for the confirmation surface', async () => {

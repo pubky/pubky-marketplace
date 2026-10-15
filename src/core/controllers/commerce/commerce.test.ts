@@ -42,6 +42,7 @@ describe('CommerceController', () => {
     vi.restoreAllMocks();
     commerceConfig.mode = 'sandbox';
     vi.spyOn(UserApplication, 'ensureSellerFollow').mockResolvedValue(undefined);
+    vi.spyOn(CommerceApplication, 'needsDefaultShop').mockResolvedValue(false);
     useAuthStore.setState({ currentUserPubky: COMMERCE_FIXTURE_SELLER });
     useCommerceStore.getState().reset();
     useNotificationStore.getState().reset();

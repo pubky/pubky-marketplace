@@ -69,7 +69,7 @@ export function DeliveryPrivacyCard({ status, isWorking, loadFailed, onCreate, o
         {local ? (
           <div className="grid gap-1 text-sm">
             <Typography as="p" className="font-medium">
-              Key fingerprint
+              Key fingerprint (public, safe to share)
             </Typography>
             <Typography as="p" className="font-mono break-all" data-testid="delivery-key-fingerprint">
               {formatDeliveryKeyFingerprint(local.keyId)}
@@ -85,8 +85,8 @@ export function DeliveryPrivacyCard({ status, isWorking, loadFailed, onCreate, o
           </div>
         ) : status?.publication === 'different' ? (
           <Typography as="p" className="text-sm text-muted-foreground">
-            A delivery key is published for your account, but this device does not hold it. Orders sealed to it cannot
-            be opened here. Creating a new key replaces the published one for new orders.
+            A delivery key is published for your pubky, but this device does not hold it. Orders sealed to it cannot be
+            opened here. Creating a new key replaces the published one for new orders.
           </Typography>
         ) : null}
 

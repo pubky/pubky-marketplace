@@ -479,6 +479,31 @@ export class LocalCommerceService {
     }
   }
 
+  /**
+   * Undoes {@link stageShopSync} after its homeserver write failed: drops the
+   * job, and drops the shop row only while it still holds exactly that record,
+   * so a shop saved since is kept.
+   */
+  static async discardStagedShopSync(record: CommerceShopRecord, jobId: string): Promise<void> {
+    try {
+      await db.transaction('rw', CommerceShopModel.table, CommerceSyncJobModel.table, async () => {
+        const current = await CommerceShopModel.findById(record.ownerPubky);
+        if (current?.sync_status === 'pending' && JSON.stringify(current.record) === JSON.stringify(record)) {
+          await CommerceShopModel.deleteById(record.ownerPubky);
+        }
+        await CommerceSyncJobModel.deleteById(jobId);
+      });
+    } catch (error) {
+      if (isAppError(error)) throw error;
+      throw Err.database(DatabaseErrorCode.WRITE_FAILED, 'Failed to discard a staged shop synchronization', {
+        service: ErrorService.Local,
+        operation: 'discardStagedShopSync',
+        context: { tables: [CommerceShopModel.table.name, CommerceSyncJobModel.table.name] },
+        cause: error,
+      });
+    }
+  }
+
   static async stageShopSync(record: CommerceShopRecord, job: CommerceSyncJobModelSchema): Promise<void> {
     this.assertSyncJobIdentity(job, record.ownerPubky, record.ownerPubky, 'shop');
     const shop = {

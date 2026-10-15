@@ -101,6 +101,33 @@ export const sellerPaymentConfigOwnViewSchema = z.object({
 
 export type SellerPaymentConfigOwnView = z.infer<typeof sellerPaymentConfigOwnViewSchema>;
 
+const PAYPAL_EMAIL_MAX_BYTES = 254;
+const WHITESPACE_OR_CONTROL = /[\p{White_Space}\p{Cc}]/u;
+const paypalEmailReadBackSchema = z.email();
+
+/**
+ * Whether the service accepts this PayPal email, mirroring its
+ * `validate_paypal_email` (refused with `invalid_paypal_email`): at most 254
+ * UTF-8 bytes, no whitespace or control characters, a non-empty local part,
+ * and a dotted domain with no leading, trailing or doubled dot. The address
+ * must also pass `z.email()`, which `sellerPaymentConfigOwnViewSchema` applies
+ * when it reads the saved value back. Empty input clears PayPal and is valid.
+ * This checks the shape only, not that a PayPal account exists.
+ */
+export function isValidPaypalMerchantEmail(value: string): boolean {
+  const email = value.trim();
+  if (email === '') return true;
+  if (new TextEncoder().encode(email).length > PAYPAL_EMAIL_MAX_BYTES) return false;
+  if (WHITESPACE_OR_CONTROL.test(email)) return false;
+  const at = email.indexOf('@');
+  if (at === -1) return false;
+  const local = email.slice(0, at);
+  const domain = email.slice(at + 1);
+  if (local === '' || domain === '' || !domain.includes('.')) return false;
+  if (domain.startsWith('.') || domain.endsWith('.') || domain.includes('..')) return false;
+  return paypalEmailReadBackSchema.safeParse(email).success;
+}
+
 /**
  * Client-side sanity check for a pasted BIP84 account key before it is sent
  * to the claim endpoint (which performs the authoritative parse). Accepts

@@ -53,6 +53,7 @@ import {
   newDigitalDeliverableId,
   openDigitalDeliverable,
 } from '@/libs/commerce/digital-file';
+import { listingPublishNeedsMarketplaceSession } from '@/libs/commerce/listing-publish-guards';
 import { locksAdmissionView } from '@/libs/commerce/locks-lifecycle';
 import { lockPolicyCreator, toBareLockResource } from '@/libs/commerce/locks-payment';
 import {
@@ -149,6 +150,7 @@ import {
   watchlistStatesEqual,
   watchlistStateToRecordBody,
 } from '@/pipes/commerce/commerce.watchlist';
+import { buildDefaultShopRecord } from '@/pipes/commerce/default-shop';
 import {
   detectWatchAlerts,
   type WatchIndexObservation,
@@ -204,6 +206,14 @@ const reviewResultSchema = z
     updatedAt: z.string().min(1),
   })
   .passthrough();
+
+export interface TCommitCreateDefaultShopParams {
+  ownerPubky: string;
+  /** The seller's published profile, if any. */
+  profile: { name: string; bio: string } | null;
+  /** Where the triggering listing ships from; otherwise a cached listing of the seller's, then the default. */
+  location?: CommerceShopRecord['location'];
+}
 
 export interface CommerceCatalogStreamFilters {
   saleFormat?: NexusListingSaleFormat;
@@ -395,6 +405,8 @@ export class CommerceApplication {
   private constructor() {}
 
   private static sellerListingsRefreshInFlight = new Map<string, Promise<void>>();
+  /** Tail of each seller's queued shop writes in this tab (owner → settled promise). */
+  private static shopWrites = new Map<string, Promise<void>>();
   /** Listings (composite id → count) with a `commitUpsertListing` running in this tab. */
   private static listingPublishesInFlight = new Map<string, number>();
 
@@ -3549,7 +3561,61 @@ export class CommerceApplication {
     return published;
   }
 
+  /**
+   * Whether a seller has no storefront (`shop.json`) yet: no local row (saved
+   * or mid-save) and no published record. An unreadable homeserver throws
+   * rather than being taken as "no shop".
+   */
+  static async needsDefaultShop(ownerPubky: string): Promise<boolean> {
+    if (await LocalCommerceService.getShop(ownerPubky)) return false;
+    const published = await CommerceHomeserverService.fetchJsonIfFound(CommerceRecordNormalizer.shopUri(ownerPubky));
+    return !published.found;
+  }
+
+  /**
+   * Publishes a default storefront for a seller who has none, so apps that
+   * only trust sellers with a storefront (Bitkit's Shop contacts) see them.
+   * The final absence check and the write run in the seller's shop-write
+   * queue, so a settings save queued first wins and one queued after
+   * replaces the default.
+   */
+  static async commitCreateDefaultShop({
+    ownerPubky,
+    profile,
+    location,
+  }: TCommitCreateDefaultShopParams): Promise<void> {
+    const shipsFrom =
+      location ??
+      (await LocalCommerceService.getListingsBySeller(ownerPubky)).find((row) => row.record.location)?.record.location;
+    const record = buildDefaultShopRecord({ ownerPubky, profile, location: shipsFrom, now: new Date() });
+    await this.queueShopWrite(ownerPubky, async () => {
+      if (await LocalCommerceService.getShop(ownerPubky)) return;
+      // A failed default leaves no pending row, which would read as a settings save and block every retry.
+      await this.writeShop(record, { discardOnFailure: true });
+    });
+  }
+
   static async commitUpsertShop(record: CommerceShopRecord): Promise<void> {
+    await this.queueShopWrite(record.ownerPubky, () => this.writeShop(record));
+  }
+
+  /** Runs a seller's shop writes in this tab one at a time, in call order. */
+  private static async queueShopWrite(ownerPubky: string, write: () => Promise<void>): Promise<void> {
+    const previous = this.shopWrites.get(ownerPubky) ?? Promise.resolve();
+    const current = previous.then(write);
+    const tail = current.catch(() => undefined);
+    this.shopWrites.set(ownerPubky, tail);
+    try {
+      await current;
+    } finally {
+      if (this.shopWrites.get(ownerPubky) === tail) this.shopWrites.delete(ownerPubky);
+    }
+  }
+
+  private static async writeShop(
+    record: CommerceShopRecord,
+    { discardOnFailure = false }: { discardOnFailure?: boolean } = {},
+  ): Promise<void> {
     const now = Date.now();
     const url = CommerceRecordNormalizer.shopUri(record.ownerPubky);
     const job = this.createSyncJob({
@@ -3562,7 +3628,13 @@ export class CommerceApplication {
     });
 
     await LocalCommerceService.stageShopSync(record, job);
-    await CommerceHomeserverService.putJson(url, { ...record });
+    try {
+      await CommerceHomeserverService.putJson(url, { ...record });
+    } catch (error) {
+      // The write error is the one to surface; a failed discard reports itself at its origin.
+      if (discardOnFailure) await LocalCommerceService.discardStagedShopSync(record, job.id).catch(() => undefined);
+      throw error;
+    }
     await LocalCommerceService.upsertShop(record, 'synced');
     await LocalCommerceService.completeSyncJob(job.id);
   }
@@ -3595,7 +3667,17 @@ export class CommerceApplication {
     record: CommerceListingRecord,
     reservePrice?: CommerceMoney | null,
   ): Promise<{ registered: boolean; verified: boolean }> {
-    if (isDurableCommerceMode(getCommerceAdapterMode()) && !this.hasActiveMarketplaceSession()) {
+    // A pause without a session keeps the row's registration status; the next publish or heal with a
+    // session registers it.
+    const missingDurableSession =
+      isDurableCommerceMode(getCommerceAdapterMode()) && !this.hasActiveMarketplaceSession();
+    const pausingWithoutSession =
+      missingDurableSession &&
+      !listingPublishNeedsMarketplaceSession(
+        (await LocalCommerceService.getListing(`${record.ownerPubky}:${record.listingId}`))?.record,
+        record,
+      );
+    if (missingDurableSession && !pausingWithoutSession) {
       throw Err.auth(AuthErrorCode.SESSION_EXPIRED, 'Connect a marketplace session to publish a listing.', {
         service: ErrorService.Marketplace,
         operation: 'commitUpsertListing',
@@ -3617,7 +3699,8 @@ export class CommerceApplication {
     const mode = getCommerceAdapterMode();
     const attempt = this.beginListingRegistration(record.ownerPubky, record.listingId);
     const registering = mode !== 'unavailable' && this.canCoordinateListingRegistration();
-    const registrationStatus = mode === 'unavailable' ? 'unavailable' : 'unregistered';
+    const registrationStatus =
+      mode === 'unavailable' ? 'unavailable' : pausingWithoutSession ? undefined : 'unregistered';
     this.assertListingRegistrationFence(attempt);
     attempt.observed = await LocalCommerceService.stageListingSync(record, publishJob, registrationStatus);
     if (registering && record.sale.format === 'auction' && isDurableCommerceMode(mode)) {
@@ -3651,7 +3734,7 @@ export class CommerceApplication {
     // truths (published / verified / registered) are returned separately; an
     // unregistered listing self-heals through ensureListingRegistered /
     // listing.sync once a marketplace session exists.
-    if (mode === 'unavailable') {
+    if (mode === 'unavailable' || pausingWithoutSession) {
       await LocalCommerceService.completeSyncJob(publishJob.id);
       return { registered: false, verified };
     }

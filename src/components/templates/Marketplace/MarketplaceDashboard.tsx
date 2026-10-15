@@ -42,6 +42,7 @@ import { useNowMs } from '@/hooks/useNowMs/useNowMs';
 import { useSellerPaymentMethodGate } from '@/hooks/useSellerPaymentMethodGate/useSellerPaymentMethodGate';
 import { listingDisplayState } from '@/libs/commerce/auction-phase';
 import { formatCommerceMoney } from '@/libs/commerce/format';
+import { listingPublishNeedsMarketplaceSession } from '@/libs/commerce/listing-publish-guards';
 import { formatListingStock } from '@/libs/commerce/unlimited-stock';
 import { isListingRegistrationPending } from '@/models/commerce/commerce.schema';
 import { SettingsSectionContent } from '@/molecules/Settings/SettingsSectionContent/SettingsSectionContent';
@@ -79,6 +80,13 @@ export function MarketplaceDashboard() {
     [currentUserPubky],
   );
   const [shopFetchSettled, setShopFetchSettled] = useState(false);
+  // No shop yet, or an untouched default storefront (both policies empty).
+  const shopSetup =
+    shop === null
+      ? 'create'
+      : shop && !shop.record.shippingPolicy?.trim() && !shop.record.returnPolicy?.trim()
+        ? 'policies'
+        : null;
 
   useEffect(() => {
     if (showSellingApproval && !needsSellingApproval) {
@@ -112,7 +120,12 @@ export function MarketplaceDashboard() {
   };
 
   const updateListingState = (listingIds: string[], state: 'active' | 'paused') => {
-    if (isDurableCommerceMode(getCommerceAdapterMode()) && !marketplaceSession) {
+    const needsSession = dashboard.listings.some(
+      (listing) =>
+        listingIds.includes(listing.id) &&
+        listingPublishNeedsMarketplaceSession(listing.record, { ...listing.record, state }),
+    );
+    if (needsSession && isDurableCommerceMode(getCommerceAdapterMode()) && !marketplaceSession) {
       setPendingStateChange({ listingIds, state });
       return;
     }
@@ -196,23 +209,28 @@ export function MarketplaceDashboard() {
         ) : (
           <>
             {/* A seller with published listings but no shop record dead-ends
-                every buyer who taps "View shop" — surface that here, where
+                every buyer who taps "View shop", and the storefront the Shop
+                publishes by default has no policies. Surface both here, where
                 sellers actually work. */}
-            {shopFetchSettled && shop === null && dashboard.listings.length > 0 && (
+            {shopFetchSettled && shopSetup && dashboard.listings.length > 0 && (
               <Card className="rounded-md bg-card p-0">
                 <CardContent className="flex flex-col gap-3 p-6 sm:flex-row sm:items-center sm:justify-between">
                   <div>
                     <Typography as="h2" className="font-semibold">
-                      Your storefront is not set up
+                      {shopSetup === 'create'
+                        ? 'Your storefront is not set up'
+                        : 'Add your shipping and return policies'}
                     </Typography>
                     <Typography as="p" className="text-sm text-muted-foreground">
-                      Add a shop name, bio, and policies.
+                      {shopSetup === 'create'
+                        ? 'Add a shop name, bio, and policies.'
+                        : 'Tell buyers how you ship and handle returns.'}
                     </Typography>
                   </div>
                   <Button asChild className="shrink-0 rounded-full">
                     <Link href={MARKETPLACE_ROUTES.MY_SHOP} overrideDefaults>
                       <Store className="size-4" />
-                      Set up your storefront
+                      {shopSetup === 'create' ? 'Set up your storefront' : 'Add policies'}
                     </Link>
                   </Button>
                 </CardContent>

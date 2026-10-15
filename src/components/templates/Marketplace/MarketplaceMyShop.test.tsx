@@ -81,6 +81,22 @@ describe('MarketplaceMyShop', () => {
     expect(preview).toHaveTextContent('NY, US');
   });
 
+  it('explains the destination countries field and previews what buyers will see', async () => {
+    const user = userEvent.setup();
+    render(<MarketplaceMyShop />);
+
+    const hint = screen.getByTestId('shop-settings-ships-to-hint');
+    expect(hint).toHaveTextContent('Leave empty to ship anywhere.');
+
+    await user.type(screen.getByLabelText('Ships to (country codes)'), 'ch, li');
+
+    await waitFor(() =>
+      expect(hint).toHaveTextContent(
+        'Buyers see “Ships to: Switzerland and Liechtenstein”, and checkout only accepts delivery addresses there. Pickup is not affected.',
+      ),
+    );
+  });
+
   it('offers a retry instead of an editable replacement shop when loading fails', async () => {
     load.error = true;
     render(<MarketplaceMyShop />);

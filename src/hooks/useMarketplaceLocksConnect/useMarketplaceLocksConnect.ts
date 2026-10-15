@@ -25,7 +25,7 @@ export const LOCKS_CONNECT_USER_ERROR = 'This Lock Server connection did not fin
 
 /** Shown when the Lock Server names a creator that is not the signed-in Shop account. */
 export const LOCKS_CONNECT_IDENTITY_ERROR =
-  "This Bitcoin connection belongs to a different account. Connect with the account you're signed in with.";
+  'This Bitcoin connection belongs to a different pubky. Connect with your current pubky.';
 
 /**
  * Shown under Step 1 when this browser holds no live Lock Server sign-in and the

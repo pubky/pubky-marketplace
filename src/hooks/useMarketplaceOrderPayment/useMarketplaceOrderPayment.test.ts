@@ -12,6 +12,8 @@ import { useMarketplaceOrderPayment } from './useMarketplaceOrderPayment';
 
 vi.mock('@/controllers/commerce/commerce', () => ({
   CommerceController: {
+    refreshShop: vi.fn(async (sellerPubky: string) => ({ ownerPubky: sellerPubky })),
+    getShop: vi.fn(async () => null),
     fetchUsdtPaymentsAvailable: vi.fn(async () => false),
     getDeliveryAddresses: vi.fn(async () => []),
     commitMarkDeliveryAddressUsed: vi.fn(async () => undefined),
