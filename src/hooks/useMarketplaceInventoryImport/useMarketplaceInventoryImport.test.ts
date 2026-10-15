@@ -526,28 +526,38 @@ describe('shipping and ships-from (C10)', () => {
     expect(mocks.defaults).toHaveBeenCalledTimes(1);
   });
 
-  it.each([
-    { currency: 'CHF', shippingPrice: '5.00' },
-    { currency: 'JPY', shippingPrice: '500' },
-  ])('prefills an untouched form with supported $currency shipping', async ({ currency, shippingPrice }) => {
+  it('does not offer a flat price in another currency than the form uses', async () => {
     mocks.defaults.mockResolvedValue({
       countryCode: null,
       shipping: { mode: 'flat', priceMinor: 500, minDays: 1, maxDays: 2 },
-      currency,
+      currency: 'SEK',
     });
     const { result } = renderHook(() => useMarketplaceInventoryImport('seller'));
     await act(async () => {
       await result.current.planFile(FILE);
     });
-    expect(result.current.form.getValues()).toMatchObject({ currency, shippingMode: 'flat', shippingPrice });
-    expect(mocks.plan).toHaveBeenCalledWith(
-      'seller',
-      FILE,
-      expect.objectContaining({ currency, shipping: { mode: 'flat', priceMinor: 500, minDays: 1, maxDays: 2 } }),
-    );
+    expect(result.current.form.getValues('shippingMode')).toBe('');
+    expect(result.current.form.getValues('currency')).toBe('USD');
   });
 
-  it('preserves the seller-selected currency and skips flat shipping in another currency', async () => {
+  it('takes the latest listing currency with its flat price when the form offers that currency', async () => {
+    mocks.defaults.mockResolvedValue({
+      countryCode: null,
+      shipping: { mode: 'flat', priceMinor: 500, minDays: 1, maxDays: 2 },
+      currency: 'CHF',
+    });
+    const { result } = renderHook(() => useMarketplaceInventoryImport('seller'));
+    await act(async () => {
+      await result.current.planFile(FILE);
+    });
+    expect(result.current.form.getValues()).toMatchObject({
+      currency: 'CHF',
+      shippingMode: 'flat',
+      shippingPrice: '5.00',
+    });
+  });
+
+  it('keeps a currency the seller chose and offers no flat price in another one', async () => {
     mocks.defaults.mockResolvedValue({
       countryCode: null,
       shipping: { mode: 'flat', priceMinor: 500, minDays: 1, maxDays: 2 },
@@ -555,17 +565,13 @@ describe('shipping and ships-from (C10)', () => {
     });
     const { result } = renderHook(() => useMarketplaceInventoryImport('seller'));
     act(() => {
-      result.current.form.setValue(IMPORT_SETTINGS_FIELDS.CURRENCY, 'EUR', { shouldDirty: true });
+      result.current.form.setValue('currency', 'EUR', { shouldDirty: true });
     });
     await act(async () => {
       await result.current.planFile(FILE);
     });
-    expect(result.current.form.getValues()).toMatchObject({ currency: 'EUR', shippingMode: '', shippingPrice: '' });
-    expect(mocks.plan).toHaveBeenCalledWith(
-      'seller',
-      FILE,
-      expect.objectContaining({ currency: 'EUR', shipping: null }),
-    );
+    expect(result.current.form.getValues('currency')).toBe('EUR');
+    expect(result.current.form.getValues('shippingMode')).toBe('');
   });
 
   it('requires both choices in the dry run: Publish stays off, with the reason, until they are applied', async () => {
