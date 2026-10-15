@@ -19,8 +19,9 @@ import { Link } from '@/atoms/Link/Link';
 import { Typography } from '@/atoms/Typography/Typography';
 import { withPublicPath } from '@/config/base-path';
 import { CommerceController } from '@/controllers/commerce/commerce';
+import { evaluateListingActivationGuards } from '@/hooks/useCreateMarketplaceListing/useCreateMarketplaceListing';
 import type { AuctionPhase } from '@/libs/commerce/auction-phase';
-import { LISTING_PUBLISH_BLOCK_COPY } from '@/libs/commerce/listing-publish-guards';
+import { LISTING_PUBLISH_BLOCK_COPY, listingPublishBlockToast } from '@/libs/commerce/listing-publish-guards';
 import type { CommerceListingRecord } from '@/libs/commerce/marketplace-records';
 import { AuthErrorCode } from '@/libs/error/error.codes';
 import { isAppError } from '@/libs/error/error.utils';
@@ -95,6 +96,17 @@ export function MarketplaceListingOwnerPanel({
   const setListingState = async (state: 'active' | 'paused') => {
     setIsMutating(true);
     try {
+      if (state === 'active') {
+        const blocked = await evaluateListingActivationGuards({
+          ownerPubky: record.ownerPubky,
+          hasMarketplaceSession: Boolean(marketplaceSession),
+          records: [record],
+        });
+        if (blocked) {
+          toast(listingPublishBlockToast(blocked));
+          return;
+        }
+      }
       await CommerceController.commitUpsertListing({
         ...record,
         revision: record.revision + 1,
