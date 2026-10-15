@@ -274,7 +274,9 @@ export class ChatController {
     await ChatApplication.clearSession(pubky);
   }
 
+  /** Account switch or a cleanup that keeps one account: this tab's view state is stale either way. */
   static clearSessionsOfOtherAccounts(keepPubky: string): void {
+    useChatStore.getState().reset();
     ChatApplication.clearSessionsOfOtherAccounts(keepPubky);
   }
 }

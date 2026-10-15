@@ -6,7 +6,6 @@ export const APP_VERSION = Env.NEXT_PUBLIC_APP_VERSION;
 /** Minimum storage permissions needed to open Shop with an existing grant. */
 export const CORE_CAPABILITIES = '/pub/pubky.app/:rw,/pub/paykit/:rw,/priv/pubky.app/:rw';
 
-/** New approvals also cover Chat v0; no signer-derived encryption keys are requested. */
 /**
  * The chat trees, versioned so the Shop neither writes the shared chat
  * library's planned `/pub/chat/v1/` nor exposes its key to apps holding it.
@@ -14,6 +13,7 @@ export const CORE_CAPABILITIES = '/pub/pubky.app/:rw,/pub/paykit/:rw,/priv/pubky
  */
 export const CHAT_CAPABILITIES = '/pub/chat/v0/:rw,/priv/chat/v0/:rw';
 
+/** What a new approval requests: the core Shop scopes plus Chat v0; no signer-derived encryption keys. */
 export const CAPABILITIES = '/pub/pubky.app/:rw,/pub/paykit/:rw,/priv/pubky.app/:rw,/pub/chat/v0/:rw,/priv/chat/v0/:rw';
 
 /** Default client id signers show on their approval screen for the Shop's grant sign-in. */

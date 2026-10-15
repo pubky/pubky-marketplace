@@ -268,7 +268,13 @@ export async function installSyntheticLaunchFixture({ context, baseUrl, serviceU
             : await reply({ json: stored });
         }
         if (chatRecord && method === 'PUT' && ownedSession?.client_id === SHOP_CLIENT_ID) {
-          chatRecords.set(url.pathname, request.postDataJSON());
+          let record;
+          try {
+            record = request.postDataJSON();
+          } catch {
+            return await reject('unexpected_homeserver_operation');
+          }
+          chatRecords.set(url.pathname, record);
           return await reply({ status: 204 });
         }
         if (method === 'GET') {

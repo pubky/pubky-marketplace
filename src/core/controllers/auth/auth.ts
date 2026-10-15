@@ -1111,9 +1111,11 @@ export class AuthController {
       } else CommerceController.clearMarketplaceSessionForSignOut();
     }
     try {
-      // Chat: keep the newly active account's inbox session on another frame's
-      // repeat cleanup; otherwise end this account's session and wipe its cache.
+      // Chat: keep the inbox session of the account that stays (another frame's
+      // repeat cleanup, or a same-identity restore that keeps service sessions);
+      // otherwise end this account's session and wipe its cache.
       if (keepServicePubky) ChatController.clearSessionsOfOtherAccounts(keepServicePubky);
+      else if (preserveServiceSessions && pubky) ChatController.clearSessionsOfOtherAccounts(pubky);
       else {
         await ChatController.clearForSignOut(pubky ?? null).catch((error: unknown) => {
           Logger.warn('Chat sign-out cleanup failed', { error });
