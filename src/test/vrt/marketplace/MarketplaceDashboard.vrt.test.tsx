@@ -54,6 +54,7 @@ const fixtures = vi.hoisted(async () => {
   return {
     seller: COMMERCE_FIXTURE_SELLER,
     shop: toCommerceShopModel(createCommerceShopFixture()),
+    defaultShop: toCommerceShopModel(createCommerceShopFixture({ shippingPolicy: '', returnPolicy: '' })),
     listings,
     populatedMetrics: {
       activeListings: 3,
@@ -221,6 +222,28 @@ describe('Marketplace seller dashboard — visual regression', () => {
     });
     await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot(
       'dashboard-no-shop-prompt-desktop',
+      VRT_DENSE_CHROME_SCREENSHOT,
+    );
+  });
+
+  // The storefront the Shop publishes by default has no policies; the
+  // dashboard keeps asking for them until the seller writes one.
+  it('renders the add-policies prompt for a default storefront at desktop viewport', async () => {
+    const { listings, populatedMetrics, populatedActionNeeded, defaultShop } = await fixtures;
+    view.listings = listings;
+    view.metrics = populatedMetrics;
+    view.actionNeeded = populatedActionNeeded;
+    view.isLoading = false;
+    view.shop = defaultShop;
+
+    const screen = await renderForVRT(<MarketplaceDashboard />, { viewport: VRT_VIEWPORT_DESKTOP });
+    await vi.waitFor(() => {
+      if (!screen.container.textContent?.includes('Add your shipping and return policies')) {
+        throw new Error('The policies prompt has not rendered yet.');
+      }
+    });
+    await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot(
+      'dashboard-policies-prompt-desktop',
       VRT_DENSE_CHROME_SCREENSHOT,
     );
   });

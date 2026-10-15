@@ -17,6 +17,12 @@ import {
   USDT_SELLER_CONFIG_UNAVAILABLE_WIRE,
 } from '@/test/fixtures/commerce/seller-payment-config-usdt.wire';
 
+const runtime = vi.hoisted(() => ({ api: 'fork' as 'fork' | 'upstream' }));
+vi.mock('@/config/commerce', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/config/commerce')>();
+  return { ...actual, getPaykitServerApi: () => runtime.api };
+});
+
 const PUBKY = 'gy1wnkhfwezwdnawnur1bc3kw1x3jf5ggjj3cm37e31i5ntq3pco';
 
 vi.mock('@/controllers/commerce/commerce', () => ({
@@ -83,6 +89,7 @@ function sendCallback(iframe: HTMLIFrameElement, data: Record<string, unknown> =
 }
 
 beforeEach(() => {
+  runtime.api = 'fork';
   mockedToast.mockReset();
   mocked.getPaykitSetupUrl.mockReset().mockImplementation(paykitUrl('/setup'));
   mocked.getPaykitReconnectUrl.mockReset().mockImplementation(paykitUrl('/setup/reconnect'));
@@ -115,13 +122,24 @@ function methodTitles() {
 }
 
 describe('MarketplaceGetPaidSettings USDT', () => {
+  it.each(['fork', 'upstream'] as const)(
+    'offers new wallet downloads only with a compatible backend (%s)',
+    async (api) => {
+      runtime.api = api;
+      await renderSettings();
+      const download = screen.queryByRole('link', { name: 'Download Bitkit on the App Store' });
+      if (api === 'upstream') expect(download).toBeVisible();
+      else expect(download).not.toBeInTheDocument();
+    },
+  );
+
   describe('gate', () => {
     it('renders nothing USDT-shaped and sends no USDT field while the gate is off', async () => {
       mocked.fetchUsdtPaymentsAvailable.mockResolvedValue(false);
       mocked.getMyPaymentConfig.mockResolvedValue(fromWire(USDT_SELLER_CONFIG_FLAG_OFF_WIRE));
       await renderSettings();
 
-      expect(methodTitles()).toEqual(['PayPal', 'Bitcoin wallet']);
+      expect(methodTitles()).toEqual(['PayPal', 'Bitcoin']);
       expect(screen.queryByText(/USDT/)).not.toBeInTheDocument();
       expect(screen.queryByTestId('usdt-seller-setup')).not.toBeInTheDocument();
 
@@ -137,7 +155,7 @@ describe('MarketplaceGetPaidSettings USDT', () => {
       mocked.fetchUsdtPaymentsAvailable.mockResolvedValue(false);
       mocked.getMyPaymentConfig.mockResolvedValue(fromWire(USDT_SELLER_CONFIG_FLAG_OFF_WIRE));
       await renderSettings();
-      expect(methodTitles()).toEqual(['PayPal', 'Bitcoin wallet']);
+      expect(methodTitles()).toEqual(['PayPal', 'Bitcoin']);
       expect(screen.queryByText(/USDT/)).not.toBeInTheDocument();
     });
 
@@ -147,7 +165,7 @@ describe('MarketplaceGetPaidSettings USDT', () => {
       await renderSettings();
 
       const panel = await screen.findByTestId('usdt-readiness-unavailable');
-      expect(methodTitles()).toEqual(['PayPal', 'Bitcoin wallet', 'USDT']);
+      expect(methodTitles()).toEqual(['PayPal', 'Bitcoin', 'USDT']);
       expect(panel).toHaveTextContent("USDT can't be checked right now");
       expect(screen.getByRole('switch', { name: 'Accept USDT' })).toBeDisabled();
       expect(screen.queryByRole('button', { name: /Add USDT in Bitkit/ })).not.toBeInTheDocument();
@@ -177,7 +195,7 @@ describe('MarketplaceGetPaidSettings USDT', () => {
     it('adds a USDT card after Bitcoin when the gate is on', async () => {
       await renderSettings();
       await screen.findByTestId('usdt-seller-setup');
-      expect(methodTitles()).toEqual(['PayPal', 'Bitcoin wallet', 'USDT']);
+      expect(methodTitles()).toEqual(['PayPal', 'Bitcoin', 'USDT']);
     });
 
     it('keeps the stored consent when the Shop flag is off but the service still reports it', async () => {
@@ -389,10 +407,13 @@ describe('MarketplaceGetPaidSettings USDT', () => {
     }
 
     it('opens the reconnect URL in the same embedded Paykit iframe, not the setup URL', async () => {
+      runtime.api = 'upstream';
       const iframe = await openReconnect();
 
       expect(mocked.getPaykitReconnectUrl).toHaveBeenCalledTimes(1);
       expect(mocked.getPaykitSetupUrl).not.toHaveBeenCalled();
+      expect(iframe).not.toHaveAttribute('scrolling', 'no');
+      expect(iframe).toHaveClass('h-[40rem]', 'w-full');
       const url = new URL(iframe.getAttribute('src')!);
       expect(url.origin + url.pathname).toBe('https://paykit.example/setup/reconnect');
       expect(url.searchParams.get('creator')).toBe(PUBKY);
@@ -440,7 +461,7 @@ describe('MarketplaceGetPaidSettings USDT', () => {
     it('reports a different Bitkit identity', async () => {
       const iframe = await openReconnect();
       sendCallback(iframe, { error: 'identity-mismatch' });
-      expect(screen.getByRole('alert')).toHaveTextContent('Bitkit approved a different Pubky key');
+      expect(screen.getByRole('alert')).toHaveTextContent('Bitkit approved a different pubky');
     });
 
     it('ignores a late callback from a closed reconnect dialog', async () => {

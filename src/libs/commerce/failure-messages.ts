@@ -140,7 +140,7 @@ export const MARKETPLACE_BOOTSTRAP_CODE_MESSAGES: ReadonlyMap<string, string> = 
   ['flow_expired', BOOTSTRAP_APPROVAL_EXPIRED],
   ['flow_cancelled', 'Approval cancelled.'],
   ['result_denied', 'This approval could not be completed. Start again.'],
-  ['identity_mismatch', "This approval came from a different account. Approve with the account you're signed in with."],
+  ['identity_mismatch', 'This approval came from a different pubky. Approve with your current pubky.'],
   ['flow_binding_missing', BOOTSTRAP_OTHER_TAB],
   ['flow_binding_denied', BOOTSTRAP_OTHER_TAB],
   ['flow_not_found', BOOTSTRAP_APPROVAL_EXPIRED],
@@ -258,7 +258,7 @@ export const MARKETPLACE_PAYMENT_METHOD_REASON_MESSAGES: ReadonlyMap<string, str
   [BUYER_PAYKIT_WALLET_SETUP_NEEDED, `${READER_WALLET_SETUP_COPY.title}. ${READER_WALLET_SETUP_COPY.description}`],
   [
     'buyer_paykit_wallet_required',
-    'Connect Bitkit to pay with Bitcoin: this account has no Paykit wallet that can receive a payment request.',
+    'Connect Bitkit to pay with Bitcoin: this pubky has no Paykit wallet that can receive a payment request.',
   ],
   ['capability_required', 'This payment needs a marketplace grant. Approve access on your signer and try again.'],
   ['currency_unsupported', 'This payment method does not support the checkout currency.'],
@@ -277,7 +277,7 @@ export const MARKETPLACE_PAYMENT_METHOD_REASON_MESSAGES: ReadonlyMap<string, str
   ['invalid_method', 'That payment method is not valid for this checkout.'],
   ['invalid_paypal_email', 'The PayPal merchant email is not valid.'],
   ['invalid_pubky', 'The seller identity on this payment configuration is not valid.'],
-  ['invalid_sats', 'The Bitcoin amount must be a positive satoshi amount.'],
+  ['invalid_sats', 'Enter a whole-number amount greater than ₿0.'],
   ['invalid_transaction_ref', 'The payment reference is not valid.'],
   ['INVALID_RESPONSE', MARKETPLACE_FAILURE_MESSAGES.unavailable],
   ['locks_managed', 'A Locks-correlated payment advances only by server-side verification.'],
@@ -299,7 +299,7 @@ export const MARKETPLACE_PAYMENT_METHOD_REASON_MESSAGES: ReadonlyMap<string, str
   ],
   [
     'paykit_unavailable',
-    'Bitcoin payment requests are unavailable right now. If you haven’t set up Bitkit for this Pubky account yet, do that first. Then try again shortly.',
+    'Bitcoin payment requests are unavailable right now. If you haven’t set up Bitkit for this pubky yet, do that first. Then try again shortly.',
   ],
   ['payment_method_already_bound', 'A payment method is already bound to this checkout.'],
   ['payment_not_awaiting', 'The payment is no longer awaiting a method.'],
@@ -326,7 +326,7 @@ export const MARKETPLACE_PAYMENT_METHOD_REASON_MESSAGES: ReadonlyMap<string, str
 export const USDT_PAYMENT_METHOD_REASON_MESSAGES: ReadonlyMap<string, string> = new Map([
   [
     'buyer_paykit_wallet_required',
-    'Connect Bitkit to pay with USDT: this account has no Paykit wallet that can receive a payment request.',
+    'Connect Bitkit to pay with USDT: this pubky has no Paykit wallet that can receive a payment request.',
   ],
   [
     'paykit_expiry_inconsistent',
@@ -339,7 +339,7 @@ export const USDT_PAYMENT_METHOD_REASON_MESSAGES: ReadonlyMap<string, string> = 
   ],
   [
     'paykit_unavailable',
-    'USDT payment requests are unavailable right now. If you haven’t set up Bitkit for this Pubky account yet, do that first. Then try again shortly.',
+    'USDT payment requests are unavailable right now. If you haven’t set up Bitkit for this pubky yet, do that first. Then try again shortly.',
   ],
   ['seller_account_unclaimed', USDT_SELLER_NOT_READY_COPY],
 ]);
