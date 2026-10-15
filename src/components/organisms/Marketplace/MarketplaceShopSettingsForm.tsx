@@ -102,7 +102,7 @@ export function MarketplaceShopSettingsFormView({ settings, onSaved }: Marketpla
           </div>
 
           <ControlledTextareaField name="shippingPolicy" control={settings.form.control} label="Shipping policy" />
-          <div className="grid gap-2">
+          <div className="grid gap-2" data-testid="shop-settings-ships-to">
             <ControlledInputField
               name="shipsToCountries"
               control={settings.form.control}
