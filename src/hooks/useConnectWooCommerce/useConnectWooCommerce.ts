@@ -96,6 +96,7 @@ export function useConnectWooCommerce({
         saved = true;
         await onKeysSaved?.(connection.id);
       } catch (error) {
+        keysForm.setValue('consumerKey', '');
         keysForm.setValue('consumerSecret', '');
         toast({
           variant: 'error',

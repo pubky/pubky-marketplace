@@ -22,8 +22,12 @@ export type StoreConnectionRow = {
   health: ConnectionHealth;
 };
 
-/** Alerts that say a connection is gone or its keys no longer work; the service omits such a connection from its list. */
-const CONNECTION_LOST_ALERTS: ReadonlySet<string> = new Set(['store_uninstalled', 'credentials_rejected']);
+/**
+ * Alerts that say a connection is gone; the service omits such a connection from
+ * its list. A connection whose keys were rejected stays listed with status
+ * `error`, so its card already says it needs attention.
+ */
+const CONNECTION_LOST_ALERTS: ReadonlySet<string> = new Set(['store_uninstalled']);
 
 const LOAD_FAILED_COPY = 'Your store connections could not be loaded. Try again in a moment.';
 

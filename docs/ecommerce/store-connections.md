@@ -29,8 +29,10 @@ copy and the pure helpers are in `src/libs/commerce/connectors.ts`.
 ## Credentials
 
 A Shopify Client ID and secret and a WooCommerce key and secret are typed into
-password fields, sent once over TLS to `PUT /v1/connectors/{id}/credentials`, and
-cleared from the form as soon as the call returns. They are not kept in React
+password fields, sent once over TLS to `PUT /v1/connectors/{id}/credentials`
+(`{client_id, client_secret}` for Shopify, `{consumer_key, consumer_secret}` for
+WooCommerce), and both fields are cleared from the form as soon as the call
+returns, whether it worked or not. They are not kept in React
 state beyond the form, Dexie, localStorage, sessionStorage or a store, and no
 request body is put in an error context or a log line. The service never returns
 them.
@@ -105,8 +107,11 @@ relies on: `status` (`draft`, `connected`, `needs_attention`, `error`),
 `app_kind`, `variant_mode` (stage 2), `scopes`, `missing_scopes`,
 `credentials_saved`, `urls` (`launch` for Shopify, `oauth_callback`, `webhooks`),
 `last_error`, `mapping_count`, `pushes`. A store that uninstalled the app or was
-disconnected is not listed; the page shows the `store_uninstalled` and
-`credentials_rejected` alerts instead.
+disconnected is not listed; the page shows the `store_uninstalled` alert instead.
+A store whose keys were rejected stays listed with status `error`, and its card
+says it needs attention. The push status card on the orders page appears for
+every listed store that is not a draft, because pushes keep running while a store
+needs attention.
 
 Stage 2: `PUT /settings` (`variant_mode`), `GET /check` (store name, granted
 scopes, locations) and the `action` on store-side cancel and refund alerts. An
@@ -116,16 +121,24 @@ cancels or refunds for the seller.
 
 Where the Shop still differs from the service, and what it does:
 
-- **Pasted WooCommerce keys.** `PUT /credentials` answers
-  `422 credentials_not_supported` for WooCommerce. The Shop still sends
-  `{consumer_key, consumer_secret}` (the fallback of plan section 10) and says
-  so in plain words; it works as soon as the WooCommerce stage accepts them.
+- **Pasted WooCommerce keys.** The contract is `PUT /v1/connectors/{id}/credentials`
+  with `{consumer_key, consumer_secret}` for WooCommerce and
+  `{client_id, client_secret}` for Shopify, and the Shop sends exactly that. The
+  WooCommerce service branch (service PR #135, head `8f8f77d` when this was
+  written) has not landed it yet: there `PUT /credentials` still answers
+  `422 credentials_not_supported` for WooCommerce, and only
+  `PUT /woocommerce/keys` takes the pair. Until its head accepts it, the Shop
+  keeps saying in plain words that this store type cannot take pasted keys here
+  yet; remove that copy (`credentials_not_supported` in
+  `src/libs/commerce/connectors.ts`) when it does. A refused attempt does not
+  leave a draft behind: the Shop deletes the draft it just created, and the
+  service deletes drafts whose connect fails.
 - **Install from the Shop.** The launch URL needs Shopify's own signature, so the
   Shop cannot start the install. The guide's Install button opens the Dev
   Dashboard, and the step says to use the app's Home, Install app.
 - **Privacy webhooks.** Shopify's three privacy topics can only be set in the
-  app, so step 4 shows the webhooks URL for them (new text, not in the approved
-  copy).
+  app, so step 4 shows the webhooks URL for them. The wording of this note is
+  approved (C21/SH2) as written.
 - **WooCommerce.** The connect domain is sent as `host[/path]`, the returned
   approval link must be on that host, and the return is `?success=1|0`; the
   service contract does not state these.

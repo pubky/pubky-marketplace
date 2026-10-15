@@ -25,8 +25,9 @@ const RETRY_REFUSALS: Readonly<Record<string, string>> = {
 
 /**
  * Which orders reached the seller's connected stores, which did not, and the
- * unresolved alerts. Hidden (`visible` false) when the seller has no connected
- * store or the service has store connections switched off, so the orders page
+ * unresolved alerts. Pushes keep running while a store needs attention, so every
+ * listed connection that is not a draft counts. Hidden (`visible` false) when
+ * the seller has no such store, no alert, or the service has store connections switched off, so the orders page
  * is unchanged for everyone else.
  */
 export function useConnectorPushStatus() {
@@ -124,10 +125,8 @@ export function useConnectorPushStatus() {
     }
   };
 
-  const connected = overview?.connections.filter((connection) => connection.status === 'connected') ?? [];
-
   return {
-    visible: connected.length > 0 || (overview?.alerts.length ?? 0) > 0,
+    visible: (overview?.connections.length ?? 0) > 0 || (overview?.alerts.length ?? 0) > 0,
     connections: overview?.connections ?? [],
     pushes: overview?.pushes ?? [],
     needsAttention,

@@ -73,11 +73,19 @@ describe('useConnectorPushStatus', () => {
     mode.value = 'transaction-service';
   });
 
-  it('is hidden for a seller with no connected store and no alerts', async () => {
+  it('is hidden for a seller with no store and no alerts', async () => {
     vi.mocked(ConnectorsController.fetchPushOverview).mockResolvedValue(overview({ connections: [] }));
     const { result } = renderHook(() => useConnectorPushStatus());
     await waitFor(() => expect(ConnectorsController.fetchPushOverview).toHaveBeenCalled());
     expect(result.current.visible).toBe(false);
+  });
+
+  it.each(['needs_attention', 'error'] as const)('is shown for a store that is in %s status', async (status) => {
+    vi.mocked(ConnectorsController.fetchPushOverview).mockResolvedValue(
+      overview({ connections: [connectionFixture({ ...connection, status })] }),
+    );
+    const { result } = renderHook(() => useConnectorPushStatus());
+    await waitFor(() => expect(result.current.visible).toBe(true));
   });
 
   it('is hidden when the service cannot be read, such as connectors switched off', async () => {

@@ -104,6 +104,65 @@ describe('ConnectorsApplication', () => {
       expect(result.status).toBe('connected');
     });
 
+    it('deletes the draft it created when the service refuses the keys, and reports the refusal', async () => {
+      vi.spyOn(MarketplaceConnectorsService, 'connect').mockResolvedValue({
+        kind: 'connector_connect',
+        connection: connection({ status: 'draft' }),
+        authorizeUrl: null,
+      });
+      vi.spyOn(MarketplaceConnectorsService, 'putCredentials').mockRejectedValue(
+        connectorRefusal('credentials_not_supported', 422),
+      );
+      const disconnect = vi.spyOn(MarketplaceConnectorsService, 'disconnect').mockResolvedValue();
+
+      const error = await ConnectorsApplication.connectWooCommerceWithKeys(ACTOR, {
+        address: 'dezentralshop.ch',
+        consumerKey: 'ck_abc12345',
+        consumerSecret: 'cs_abc12345',
+      }).catch((caught: unknown) => caught);
+
+      expect(disconnect).toHaveBeenCalledWith(ACTOR, ID);
+      expect((error as AppError).context).toMatchObject({ reason: 'credentials_not_supported' });
+    });
+
+    it('reports the refusal even when the draft cannot be deleted', async () => {
+      vi.spyOn(MarketplaceConnectorsService, 'connect').mockResolvedValue({
+        kind: 'connector_connect',
+        connection: connection({ status: 'draft' }),
+        authorizeUrl: null,
+      });
+      vi.spyOn(MarketplaceConnectorsService, 'putCredentials').mockRejectedValue(
+        connectorRefusal('credentials_rejected', 422),
+      );
+      vi.spyOn(MarketplaceConnectorsService, 'disconnect').mockRejectedValue(
+        connectorRefusal('connection_not_found', 404),
+      );
+
+      const error = await ConnectorsApplication.connectWooCommerceWithKeys(ACTOR, {
+        address: 'dezentralshop.ch',
+        consumerKey: 'ck_abc12345',
+        consumerSecret: 'cs_abc12345',
+      }).catch((caught: unknown) => caught);
+
+      expect((error as AppError).context).toMatchObject({ reason: 'credentials_rejected' });
+    });
+
+    it('does not delete anything when the keys are saved', async () => {
+      vi.spyOn(MarketplaceConnectorsService, 'connect').mockResolvedValue({
+        kind: 'connector_connect',
+        connection: connection({ status: 'draft' }),
+        authorizeUrl: null,
+      });
+      vi.spyOn(MarketplaceConnectorsService, 'putCredentials').mockResolvedValue(connection());
+      const disconnect = vi.spyOn(MarketplaceConnectorsService, 'disconnect').mockResolvedValue();
+      await ConnectorsApplication.connectWooCommerceWithKeys(ACTOR, {
+        address: 'dezentralshop.ch',
+        consumerKey: 'ck_abc12345',
+        consumerSecret: 'cs_abc12345',
+      });
+      expect(disconnect).not.toHaveBeenCalled();
+    });
+
     it('does not create anything when a key is empty', async () => {
       const connect = vi.spyOn(MarketplaceConnectorsService, 'connect');
       await expect(

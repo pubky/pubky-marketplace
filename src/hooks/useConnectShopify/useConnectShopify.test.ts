@@ -138,7 +138,7 @@ describe('useConnectShopify', () => {
     expect(ConnectorsController.commitShopifyCredentials).not.toHaveBeenCalled();
   });
 
-  it('keeps the Client ID but clears the secret when the keys are refused', async () => {
+  it('clears the Client ID and the secret when the keys are refused', async () => {
     const { result } = renderShopify();
     await createDraft(result);
     vi.mocked(ConnectorsController.commitShopifyCredentials).mockRejectedValue(
@@ -147,6 +147,7 @@ describe('useConnectShopify', () => {
 
     await saveKeys(result);
 
+    expect(result.current.keysForm.getValues('clientId')).toBe('');
     expect(result.current.keysForm.getValues('clientSecret')).toBe('');
     expect(result.current.credentialsSaved).toBe(false);
   });

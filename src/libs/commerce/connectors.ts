@@ -472,7 +472,7 @@ const CONNECT_REFUSAL_COPY: Readonly<Record<string, string>> = {
   provider_rate_limited: 'The store is busy. Wait a minute, then try again.',
   invalid_credentials: 'The store did not accept those keys. Check them and try again.',
   credentials_not_supported:
-    'This store type cannot take pasted keys here yet. Disconnect it, then connect again through the store approval screen.',
+    'This store type cannot take pasted keys here yet. Connect it through the store approval screen instead.',
   connection_not_available: 'This connection expired or was disconnected. Start again.',
   invalid_variant_mode: 'That setting was not accepted.',
   mappings_conflict:
@@ -527,13 +527,9 @@ export function connectorRefusalReason(error: unknown): string | null {
 }
 
 export type ConnectionReturn =
-  | { kind: 'connected'; connectionId: string | null; provider: ConnectorProvider | null; needsAttention: boolean }
-  | { kind: 'error'; connectionId: string | null; provider: ConnectorProvider | null; code: string | null }
+  | { kind: 'connected'; connectionId: string | null; needsAttention: boolean }
+  | { kind: 'error'; connectionId: string | null; code: string | null }
   | { kind: 'woo_returned'; approved: boolean };
-
-function providerParam(value: string | null): ConnectorProvider | null {
-  return value === 'shopify' || value === 'woocommerce' ? value : null;
-}
 
 /**
  * What the store connections page was opened for. The service redirects here
@@ -545,12 +541,11 @@ function providerParam(value: string | null): ConnectorProvider | null {
  */
 export function parseConnectionReturn(params: URLSearchParams): ConnectionReturn | null {
   const status = params.get('status');
-  const provider = providerParam(params.get('provider'));
   const connectionId = params.get('connector');
   if (status === 'connected' || status === 'needs_attention') {
-    return { kind: 'connected', connectionId, provider, needsAttention: status === 'needs_attention' };
+    return { kind: 'connected', connectionId, needsAttention: status === 'needs_attention' };
   }
-  if (status === 'error') return { kind: 'error', connectionId, provider, code: params.get('code') };
+  if (status === 'error') return { kind: 'error', connectionId, code: params.get('code') };
   const success = params.get('success');
   if (success === '1' || success === '0') return { kind: 'woo_returned', approved: success === '1' };
   return null;
