@@ -620,12 +620,12 @@ describe('the photo journal', () => {
     ).toEqual([{ hash: 'good', media: { id: 'm' } }]);
   });
 
-  it('goes with the final write of a listing and stays through a partial one', () => {
+  it('stays through a partial write and through the final write: it is the list of files the import wrote', () => {
     const journaled = withPhotoJournalEntry({}, { hash: sourceUrlHash(A), media: media('m1') });
     const target: ImportImageTarget = { listingId: 'one', images: [{ url: A, alt: 'One' }] };
     const partial = partialOutcome(target, [uploaded(A)])!;
     expect(extraFieldsWithImages(journaled, partial)[PHOTO_JOURNAL_FIELD]).toBeDefined();
     const final = outcomesFromResults([target], [uploaded(A)])[0]!;
-    expect(extraFieldsWithImages(journaled, final)[PHOTO_JOURNAL_FIELD]).toBeUndefined();
+    expect(extraFieldsWithImages(journaled, final)[PHOTO_JOURNAL_FIELD]).toBe(journaled[PHOTO_JOURNAL_FIELD]);
   });
 });

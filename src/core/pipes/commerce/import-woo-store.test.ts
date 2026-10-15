@@ -229,14 +229,17 @@ describe('the real Dezentralshop catalogue (279 products, 10 variable)', () => {
     expect(codes(result, 'weight')[0]?.count).toBe(279);
   });
 
-  it('says when the catalogue has more photos than one import loads, and how many are over', () => {
-    const codeOf = codes(result, 'photos_over_import_limit');
-    expect(codeOf).toHaveLength(1);
-    expect(codeOf[0]).toMatchObject({ severity: 'changed', count: 225 });
-    expect(codeOf[0]?.detail).toContain('725 photos');
-    expect(codeOf[0]?.detail).toContain('at most 500');
-    const small = map(catalogOf(REAL_PRODUCTS.slice(0, 20)));
-    expect(codes(small, 'photos_over_import_limit')).toHaveLength(0);
+  it('does not warn about the number of photos: 725 photos load in batches, which the dry run states, so no loss says otherwise', () => {
+    const photos = new Set(
+      [...REAL_PRODUCTS, ...Object.values(REAL_VARIATIONS)].flatMap((entry) => entry.images.map((image) => image.src)),
+    );
+    expect(photos.size).toBe(725);
+    const text = result.report.losses.map((entry) => `${entry.code} ${entry.detail}`).join('\n');
+    expect(text).not.toMatch(/photos_over|at most 500|photo required|import the store again|one import loads/i);
+    expect(result.report.losses.some((entry) => entry.source === 'Images' && entry.code !== 'image_overflow')).toBe(
+      false,
+    );
+    expect(result.rows.filter((row) => row.extraFields[SOURCE_IMAGE_URLS_FIELD] !== undefined)).toHaveLength(299);
   });
 
   it('gives no listing a shipping option or a country the seller did not choose', () => {

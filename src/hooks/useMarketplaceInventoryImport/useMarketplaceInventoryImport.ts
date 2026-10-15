@@ -304,6 +304,12 @@ export function useMarketplaceInventoryImport(sellerPubky: string | null) {
     setMessage(result.status === 'error' ? result.message : PARSE_FAIL_COPY);
   };
 
+  /** An import that ended, whatever way, is looked for again, so the banner never shows one that is finished or misses one that stopped. */
+  const applyPublishOutcome = (result: Awaited<ReturnType<typeof CommerceController.publishInventoryImport>>) => {
+    applyPublishResult(result);
+    void loadUnfinished();
+  };
+
   /**
    * Fetches the photos the preset kept as source URLs and stores them as the
    * seller's own media, in batches, then writes each finished listing's media
@@ -377,13 +383,14 @@ export function useMarketplaceInventoryImport(sellerPubky: string | null) {
       setBusy(false);
       setScene('mixed');
       setStep(6);
+      void loadUnfinished();
       return;
     }
     setProgressPhase('listings');
     if (listingsTotal !== undefined) setProgress({ done: 0, total: listingsTotal });
     const result = await publishStep();
     setBusy(false);
-    applyPublishResult(result);
+    applyPublishOutcome(result);
   };
 
   const publish = async () => {
@@ -445,12 +452,29 @@ export function useMarketplaceInventoryImport(sellerPubky: string | null) {
     );
   };
 
-  /** Clears an unfinished import. What it already published stays published. */
+  /**
+   * Clears an unfinished import, after the seller has confirmed. What it already
+   * published stays published; the photo files it uploaded that no published
+   * listing refers to are deleted from the seller's homeserver. If a file cannot
+   * be deleted the import is kept, and the seller is told, so Discard can be tried again.
+   */
   const discardUnfinished = async () => {
-    if (!sellerPubky || !unfinished) return;
+    if (!sellerPubky || !unfinished || busy) return;
     const found = unfinished;
-    setUnfinished(undefined);
-    await CommerceController.discardInventoryImport(sellerPubky, found.manifestId);
+    setBusy(true);
+    try {
+      const result = await CommerceController.discardInventoryImport(sellerPubky, found.manifestId);
+      if (!result.cleared) {
+        toast({
+          variant: 'error',
+          description: `${result.failedFiles} photo ${result.failedFiles === 1 ? 'file' : 'files'} could not be removed from your homeserver, so the import was kept. Try Discard again.`,
+        });
+      }
+    } catch {
+      toast({ variant: 'error', description: 'The import could not be discarded. Try again.' });
+    } finally {
+      setBusy(false);
+    }
     await loadUnfinished();
   };
 
@@ -464,7 +488,7 @@ export function useMarketplaceInventoryImport(sellerPubky: string | null) {
       setStep(result.counts.conflict > 0 ? 5 : 4);
       return;
     }
-    applyPublishResult(result);
+    applyPublishOutcome(result);
   };
 
   const confirmConflict = async () => {

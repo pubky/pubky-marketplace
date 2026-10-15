@@ -3,6 +3,7 @@ import {
   IMPORT_STORE_FETCH_TIMEOUT_MS,
   IMPORT_STORE_MAX_PAGE_BYTES,
   IMPORT_STORE_MAX_PRODUCT_BYTES,
+  IMPORT_STORE_MAX_REDIRECTS,
 } from '@/config/import-store';
 import { Logger } from '@/libs/logger/logger';
 import type { TImportStoreFailureReason, TImportStoreRequest } from '@/pipes/import-store/import-store.types';
@@ -56,7 +57,7 @@ export class NextJsImportStoreService {
     else signal?.addEventListener('abort', onExternalAbort, { once: true });
 
     try {
-      const hop = await followRedirects(url, controller.signal, FETCH_HEADERS);
+      const hop = await followRedirects(url, controller.signal, FETCH_HEADERS, IMPORT_STORE_MAX_REDIRECTS);
       if (!hop.ok) return failure(storeReason(hop.reason), url, hop.status);
 
       const response = hop.value;

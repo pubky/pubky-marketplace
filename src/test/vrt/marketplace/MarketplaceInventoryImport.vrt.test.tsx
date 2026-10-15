@@ -1,6 +1,7 @@
 // Intentional import order — browser-mode mock factories rely on stable aliases.
 /* eslint-disable simple-import-sort/imports */
 import { describe, expect, it } from 'vitest';
+import { userEvent } from 'vitest/browser';
 import { renderForVRT, VRT_DENSE_CHROME_SCREENSHOT, VRT_ROOT_TESTID } from '@/test-utils/vrt';
 import { VRT_VIEWPORT_DESKTOP, VRT_VIEWPORT_MOBILE } from '@/test-utils/vrt.viewports';
 import { MarketplaceInventoryImport } from '@/organisms/Marketplace/MarketplaceInventoryImport';
@@ -704,6 +705,30 @@ describe('MarketplaceInventoryImport VRT', () => {
     });
     await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot(
       'inventory-import-unfinished-mobile',
+      VRT_DENSE_CHROME_SCREENSHOT,
+    );
+  });
+
+  it('renders the confirmation before an unfinished import is discarded at desktop viewport', async () => {
+    const screen = await renderForVRT(<VrtStoreUpload withUnfinished />, {
+      viewport: VRT_VIEWPORT_DESKTOP,
+      disableHover: true,
+    });
+    await userEvent.click(screen.getByRole('button', { name: 'Discard' }));
+    await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot(
+      'inventory-import-discard-confirm-desktop',
+      VRT_DENSE_CHROME_SCREENSHOT,
+    );
+  });
+
+  it('renders the confirmation before an unfinished import is discarded at mobile viewport', async () => {
+    const screen = await renderForVRT(<VrtStoreUpload narrow withUnfinished />, {
+      viewport: VRT_VIEWPORT_MOBILE,
+      disableHover: true,
+    });
+    await userEvent.click(screen.getByRole('button', { name: 'Discard' }));
+    await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot(
+      'inventory-import-discard-confirm-mobile',
       VRT_DENSE_CHROME_SCREENSHOT,
     );
   });

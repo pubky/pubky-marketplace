@@ -5,7 +5,6 @@ import {
   COMMERCE_LISTING_MAX_QUANTITY,
   COMMERCE_LISTING_MAX_VARIANTS,
 } from '@/config/commerce';
-import { IMPORT_IMAGE_MAX_COUNT } from '@/config/import-image';
 import type { StoreApiProduct } from '@/pipes/import-store/import-store.product';
 import { htmlToPlainText } from './import-html-text';
 import type { ImportLoss, ImportLossReport } from './import-loss-report';
@@ -13,7 +12,6 @@ import {
   entityIdFrom,
   finalizePresetRows,
   type PresetRow,
-  SOURCE_IMAGE_URLS_FIELD,
   type SourceImage,
   VARIANT_PRICE_MINOR_FIELD,
   withSourceImages,
@@ -510,23 +508,6 @@ export function mapWooStoreCatalog(input: WooStoreMapInput): WooStoreMapResult {
         `The store lists ${catalog.total} products. This import reads the first ${readCount}; import again with a smaller catalogue or from a file for the rest.`,
         undefined,
         unlisted,
-      ),
-    );
-  }
-  const photoUrls = new Set<string>();
-  for (const row of finalized.rows) {
-    const images = JSON.parse(row.extraFields[SOURCE_IMAGE_URLS_FIELD] ?? '[]') as { url: string }[];
-    for (const image of images) photoUrls.add(image.url);
-  }
-  if (photoUrls.size > IMPORT_IMAGE_MAX_COUNT) {
-    losses.push(
-      loss(
-        'photos_over_import_limit',
-        'changed',
-        'Images',
-        `This catalogue has ${photoUrls.size} photos. One import loads at most ${IMPORT_IMAGE_MAX_COUNT}, in listing order, so the listings after that fail with "photo required". Import the store again to load the rest; listings already published keep their photos.`,
-        undefined,
-        photoUrls.size - IMPORT_IMAGE_MAX_COUNT,
       ),
     );
   }

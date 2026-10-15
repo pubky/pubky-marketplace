@@ -134,6 +134,14 @@ export type InventoryImportUnfinished = {
   readonly photosLeft: number;
 };
 
+/** What Discard did: photo files removed from the seller's homeserver, and whether the import is cleared. */
+export type InventoryImportDiscardResult = {
+  readonly removedFiles: number;
+  readonly failedFiles: number;
+  /** False when some file could not be removed: the import is kept, so Discard can be tried again. */
+  readonly cleared: boolean;
+};
+
 /** Written onto the first planned row when the seller presses Publish, so a plan that was only looked at is never offered for resume. */
 const IMPORT_STARTED_FIELD = 'import_started_at';
 
@@ -211,6 +219,8 @@ export type InventoryImportHost = {
   loadShop: (sellerPubky: string) => Promise<CommerceShopRecord | null>;
   /** Whether a media file is on the seller's homeserver at this path. */
   mediaExists: (url: string) => Promise<boolean>;
+  /** Deletes a media file from the seller's homeserver. */
+  deleteMedia: (url: string) => Promise<void>;
 };
 
 function csvCell(value: string): string {
@@ -321,6 +331,7 @@ export class CommerceInventoryImportApplication {
           }
         }),
       mediaExists: overrides.mediaExists ?? ((url) => CommerceHomeserverService.exists(url)),
+      deleteMedia: overrides.deleteMedia ?? ((url) => CommerceHomeserverService.delete(url)),
       currentItems:
         overrides.currentItems ??
         (async () =>
@@ -705,9 +716,64 @@ export class CommerceInventoryImportApplication {
     return null;
   }
 
-  /** Clears an import the seller does not want to finish. What it already published stays published. */
-  async discard(manifestId: string): Promise<void> {
+  /**
+   * Clears an import the seller does not want to finish. Listings already
+   * published stay published. The photo files this import wrote (its journal
+   * records) that no published listing refers to are deleted from the seller's
+   * homeserver first, so Discard leaves nothing behind; if one cannot be
+   * deleted the import is kept, so Discard can be tried again.
+   */
+  async discard(manifestId: string): Promise<InventoryImportDiscardResult> {
+    let removedFiles = 0;
+    let failedFiles = 0;
+    for (const url of await this.unreferencedUploads(manifestId)) {
+      try {
+        if (!(await this.host.mediaExists(url))) continue;
+        await this.host.deleteMedia(url);
+        removedFiles += 1;
+      } catch {
+        failedFiles += 1;
+      }
+    }
+    if (failedFiles > 0) return { removedFiles, failedFiles, cleared: false };
     await this.host.store.deleteManifest(manifestId);
+    return { removedFiles, failedFiles, cleared: true };
+  }
+
+  /**
+   * Files this import wrote that nothing published refers to: the journal's
+   * records on its rows, less every media that a possibly published listing of
+   * the import holds (a listing past `planned` is treated as published) or that
+   * a stored listing of the seller has, and only paths under the seller's own
+   * media folder.
+   */
+  private async unreferencedUploads(manifestId: string): Promise<string[]> {
+    const manifest = await this.host.store.load(manifestId);
+    if (!manifest) return [];
+    const referenced = new Set<string>();
+    for (const record of await this.host.localRecords()) for (const media of record.media) referenced.add(media.url);
+    const written = new Map<string, string>();
+    for (const group of this.groups(manifest.rows).values()) {
+      const maybePublished = group.some(
+        (row) =>
+          row.checkpoint === 'publishing' || row.checkpoint === 'published_unsynced' || row.checkpoint === 'complete',
+      );
+      for (const row of group) {
+        const payload = await this.rowPayload(manifestId, row.rowIdentity);
+        const held = mediaOf(payload);
+        const journaled = readPhotoJournal(payload).map((entry) => entry.media);
+        if (maybePublished) for (const media of [...held, ...journaled]) addUrl(referenced, media);
+        for (const media of journaled) {
+          const { id, url } = media as Record<string, unknown>;
+          if (typeof id === 'string' && typeof url === 'string') written.set(url, id);
+        }
+      }
+    }
+    return [...written]
+      .filter(
+        ([url, id]) => !referenced.has(url) && url === CommerceRecordNormalizer.mediaUri(this.host.sellerPubky, id),
+      )
+      .map(([url]) => url);
   }
 
   /**
@@ -1159,6 +1225,11 @@ const CHECKPOINT_HOPS: Readonly<Record<HostImportCheckpoint, readonly HostImport
   conflict: [],
   failed: ['publishing', 'conflict'],
 };
+
+function addUrl(into: Set<string>, media: unknown): void {
+  const url = typeof media === 'object' && media !== null ? (media as Record<string, unknown>).url : undefined;
+  if (typeof url === 'string') into.add(url);
+}
 
 function isConflictRow(row: HostPlannedImportRow): boolean {
   return row.checkpoint === 'conflict' || row.intendedAction === 'conflict';

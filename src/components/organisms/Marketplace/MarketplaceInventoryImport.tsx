@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import type { Control } from 'react-hook-form';
 import { Button } from '@/atoms/Button/Button';
 import { Input } from '@/atoms/Input/Input';
@@ -138,6 +139,7 @@ export function MarketplaceInventoryImport({
   onExportListings,
   onExportOrders,
 }: MarketplaceInventoryImportProps) {
+  const [confirmingDiscard, setConfirmingDiscard] = useState(false);
   const currentStep = step || SCENE_STEP[scene];
 
   return (
@@ -161,14 +163,49 @@ export function MarketplaceInventoryImport({
               <Typography as="p" className="text-sm text-muted-foreground">
                 It carries on where it stopped. Photos already loaded are not loaded again.
               </Typography>
-              <div className="flex flex-wrap gap-2">
-                <Button className="rounded-full" disabled={busy} onClick={onResumeUnfinished}>
-                  Resume
-                </Button>
-                <Button variant="secondary" className="rounded-full" disabled={busy} onClick={onDiscardUnfinished}>
-                  Discard
-                </Button>
-              </div>
+              {confirmingDiscard ? (
+                <>
+                  <Typography as="p" className="text-sm font-medium" data-testid="inventory-import-discard-confirm">
+                    Discard the unfinished import? Listings already published stay. Photos uploaded for the rest are
+                    deleted from your homeserver.
+                  </Typography>
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      variant="destructive"
+                      className="rounded-full"
+                      disabled={busy}
+                      onClick={() => {
+                        setConfirmingDiscard(false);
+                        onDiscardUnfinished?.();
+                      }}
+                    >
+                      Discard import
+                    </Button>
+                    <Button
+                      variant="secondary"
+                      className="rounded-full"
+                      disabled={busy}
+                      onClick={() => setConfirmingDiscard(false)}
+                    >
+                      Keep it
+                    </Button>
+                  </div>
+                </>
+              ) : (
+                <div className="flex flex-wrap gap-2">
+                  <Button className="rounded-full" disabled={busy} onClick={onResumeUnfinished}>
+                    Resume
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    className="rounded-full"
+                    disabled={busy}
+                    onClick={() => setConfirmingDiscard(true)}
+                  >
+                    Discard
+                  </Button>
+                </div>
+              )}
             </div>
           )}
           <Typography as="p" className="text-sm text-muted-foreground">

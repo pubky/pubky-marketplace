@@ -1113,7 +1113,7 @@ describe('useMarketplaceInventoryImport, an unfinished import', () => {
     vi.clearAllMocks();
     mocks.findUnfinished.mockResolvedValue(FOUND);
     mocks.markStarted.mockResolvedValue(undefined);
-    mocks.discard.mockResolvedValue(undefined);
+    mocks.discard.mockResolvedValue({ removedFiles: 3, failedFiles: 0, cleared: true });
     mocks.plan.mockResolvedValue(planned());
     mocks.targets.mockResolvedValue(TARGETS);
     mocks.attach.mockResolvedValue(undefined);
@@ -1161,6 +1161,8 @@ describe('useMarketplaceInventoryImport, an unfinished import', () => {
   it('resumes the photo batches that are left and then the publish, on the stored import, without planning again', async () => {
     const { result } = renderHook(() => useMarketplaceInventoryImport('seller'));
     await waitFor(() => expect(result.current.unfinished).toEqual(FOUND));
+    // Once it finishes, the stored import is gone, so the look at the end finds nothing.
+    mocks.findUnfinished.mockResolvedValue(null);
     await act(async () => {
       await result.current.resumeUnfinished();
     });
@@ -1222,6 +1224,127 @@ describe('useMarketplaceInventoryImport, an unfinished import', () => {
     });
     expect(mocks.discard).toHaveBeenLastCalledWith('seller', 'manifest_older');
     expect(result.current.unfinished).toBeUndefined();
+  });
+
+  it('keeps the import and says so when a photo file could not be deleted from the homeserver, and Discard can be tried again', async () => {
+    const { result } = renderHook(() => useMarketplaceInventoryImport('seller'));
+    await waitFor(() => expect(result.current.unfinished).toEqual(FOUND));
+    mocks.discard.mockResolvedValueOnce({ removedFiles: 4, failedFiles: 2, cleared: false });
+    await act(async () => {
+      await result.current.discardUnfinished();
+    });
+    expect(mocks.toast).toHaveBeenCalledWith(
+      expect.objectContaining({
+        variant: 'error',
+        description: expect.stringContaining('2 photo files could not be removed from your homeserver'),
+      }),
+    );
+    await waitFor(() => expect(result.current.unfinished).toEqual(FOUND));
+    expect(result.current.busy).toBe(false);
+
+    mocks.findUnfinished.mockResolvedValue(null);
+    await act(async () => {
+      await result.current.discardUnfinished();
+    });
+    expect(mocks.discard).toHaveBeenCalledTimes(2);
+    expect(result.current.unfinished).toBeUndefined();
+  });
+
+  it('says one photo file in the singular, and tells the seller when Discard fails outright', async () => {
+    const { result } = renderHook(() => useMarketplaceInventoryImport('seller'));
+    await waitFor(() => expect(result.current.unfinished).toEqual(FOUND));
+    mocks.discard.mockResolvedValueOnce({ removedFiles: 0, failedFiles: 1, cleared: false });
+    await act(async () => {
+      await result.current.discardUnfinished();
+    });
+    expect(mocks.toast).toHaveBeenLastCalledWith(
+      expect.objectContaining({ description: expect.stringContaining('1 photo file could not be removed') }),
+    );
+    mocks.discard.mockRejectedValueOnce(new Error('storage unavailable'));
+    await act(async () => {
+      await result.current.discardUnfinished();
+    });
+    expect(mocks.toast).toHaveBeenLastCalledWith(
+      expect.objectContaining({ description: 'The import could not be discarded. Try again.' }),
+    );
+    expect(result.current.busy).toBe(false);
+  });
+
+  describe('looking again when an import ends in this session', () => {
+    it('after a finish with some listings failed (mixed), so the banner shows the import that is left', async () => {
+      mocks.findUnfinished.mockResolvedValue(null);
+      mocks.publish.mockResolvedValue({ status: 'complete', published: 3, synced: 3, failed: 1, mixed: true });
+      const { result } = renderHook(() => useMarketplaceInventoryImport('seller'));
+      await waitFor(() => expect(mocks.findUnfinished).toHaveBeenCalledTimes(1));
+      await act(async () => {
+        await result.current.planFile(new File(['x'], 'p.csv'));
+      });
+      mocks.findUnfinished.mockResolvedValue(FOUND);
+      await act(async () => {
+        await result.current.publish();
+      });
+      expect(result.current.scene).toBe('mixed');
+      await waitFor(() => expect(result.current.unfinished).toEqual(FOUND));
+    });
+
+    it('after a clean finish, so a banner for the import that just finished goes away', async () => {
+      mocks.publish.mockResolvedValue(COMPLETE);
+      const { result } = renderHook(() => useMarketplaceInventoryImport('seller'));
+      await waitFor(() => expect(result.current.unfinished).toEqual(FOUND));
+      mocks.findUnfinished.mockResolvedValue(null);
+      await act(async () => {
+        await result.current.planFile(new File(['x'], 'p.csv'));
+      });
+      await act(async () => {
+        await result.current.publish();
+      });
+      expect(result.current.scene).toBe('result');
+      await waitFor(() => expect(result.current.unfinished).toBeUndefined());
+    });
+
+    it('after the route asked to wait too long to carry on (rate limited) and after the photos were paused', async () => {
+      mocks.findUnfinished.mockResolvedValue(null);
+      mocks.publish.mockResolvedValue({ status: 'rate-limited', message: 'Too many inventory requests.' });
+      const { result } = renderHook(() => useMarketplaceInventoryImport('seller'));
+      await waitFor(() => expect(mocks.findUnfinished).toHaveBeenCalledTimes(1));
+      await act(async () => {
+        await result.current.planFile(new File(['x'], 'p.csv'));
+      });
+      mocks.findUnfinished.mockResolvedValue(FOUND);
+      await act(async () => {
+        await result.current.publish();
+      });
+      expect(result.current.scene).toBe('mixed');
+      await waitFor(() => expect(result.current.unfinished).toEqual(FOUND));
+
+      mocks.findUnfinished.mockResolvedValue(null);
+      mocks.upload.mockImplementation(async (params: { urls: string[] }) => ({
+        fetchedBytes: 0,
+        results: params.urls.map((url) => ({ url, status: 'failed', reason: 'rate_limited' })),
+      }));
+      await act(async () => {
+        await result.current.resume();
+      });
+      mocks.findUnfinished.mockResolvedValue(OLDER);
+      await act(async () => {
+        await result.current.resume();
+      });
+      expect(result.current.scene).toBe('mixed');
+      await waitFor(() => expect(result.current.unfinished).toEqual(OLDER));
+    });
+
+    it('after an answered conflict', async () => {
+      mocks.publish.mockResolvedValue({ status: 'conflict', listingId: 'boots_01', message: 'changed' });
+      const { result } = renderHook(() => useMarketplaceInventoryImport('seller'));
+      await waitFor(() => expect(mocks.findUnfinished).toHaveBeenCalled());
+      await act(async () => {
+        await result.current.planFile(new File(['x'], 'p.csv'));
+      });
+      await act(async () => {
+        await result.current.publish();
+      });
+      expect(result.current.scene).toBe('conflict');
+    });
   });
 
   it('marks an import as started when Publish is pressed, before the first photo, so closing at once still leaves it to resume', async () => {

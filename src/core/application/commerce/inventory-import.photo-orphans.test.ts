@@ -314,7 +314,7 @@ describe('a page lost in the middle of a listing leaves no photo file nothing re
   });
 
   describe('a normal import', () => {
-    it('uploads every photo exactly once, writes every file once, and leaves no record behind on its rows', async () => {
+    it('uploads every photo exactly once and writes every file once, and the rows keep a record of each file written', async () => {
       const manifestId = await startImport(10, 3);
       const importer = app();
       expect((await photoPhase(importer, manifestId)).status).toBe('complete');
@@ -324,10 +324,13 @@ describe('a page lost in the middle of a listing leaves no photo file nothing re
       expect(new Set(fetched).size).toBe(30);
       expect(files.size).toBe(30);
       expect(orphans()).toEqual([]);
-      for (const key of store.payloads.keys()) {
-        const payload = JSON.parse(store.payloads.get(key) ?? '{}') as { extraFields?: Record<string, string> };
-        expect(payload.extraFields?.[PHOTO_JOURNAL_FIELD]).toBeUndefined();
+      const recorded = new Set<string>();
+      for (const value of store.payloads.values()) {
+        const payload = JSON.parse(value) as { extraFields?: Record<string, string> };
+        const entries = JSON.parse(payload.extraFields?.[PHOTO_JOURNAL_FIELD] ?? '[]') as { media: { url: string } }[];
+        for (const entry of entries) recorded.add(entry.media.url);
       }
+      expect(recorded).toEqual(files);
     });
 
     it('records each photo on the first row of its listing before its file is written', async () => {

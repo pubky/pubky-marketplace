@@ -28,9 +28,11 @@ export const PHOTOS_PARTIAL_FIELD = 'photos_partial';
 /**
  * The photo uploads under way for a listing, written before each file is: the
  * media record (id, path, hash, size) a photo is about to be stored under, keyed
- * by the hash of its source URL. It lives on the listing's first row. If the page
- * is lost between writing a file and recording it, the next run finds the record
- * and the file at its planned path and reuses both, so no file is left behind.
+ * by the hash of its source URL. It lives on the listing's first row and stays
+ * after the listing is finished: it is the list of files this import wrote. If the
+ * page is lost between writing a file and recording it, the next run finds the
+ * record and the file at its planned path and reuses both, so no file is left
+ * behind; and Discard uses it to delete the files no published listing refers to.
  */
 export const PHOTO_JOURNAL_FIELD = 'photo_journal_json';
 
@@ -388,10 +390,7 @@ export function extraFieldsWithImages(
   next[IMAGE_RESULTS_JSON_FIELD] = JSON.stringify(outcome.results);
   if (outcome.sync) next[IMAGE_SYNC_JSON_FIELD] = JSON.stringify(outcome.sync);
   if (outcome.partial) next[PHOTOS_PARTIAL_FIELD] = '1';
-  else {
-    delete next[PHOTOS_PARTIAL_FIELD];
-    delete next[PHOTO_JOURNAL_FIELD];
-  }
+  else delete next[PHOTOS_PARTIAL_FIELD];
   return next;
 }
 

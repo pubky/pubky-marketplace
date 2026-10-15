@@ -162,10 +162,11 @@ export async function followRedirects(
   startUrl: URL,
   signal: AbortSignal,
   headers: Record<string, string> = FETCH_HEADERS,
+  maxRedirects: number = IMPORT_IMAGE_MAX_REDIRECTS,
 ): Promise<TOutcome<Response>> {
   let current = startUrl;
 
-  for (let hop = 0; hop <= IMPORT_IMAGE_MAX_REDIRECTS; hop += 1) {
+  for (let hop = 0; hop <= maxRedirects; hop += 1) {
     const validation = ImportImageValidators.validateParsed(current);
     if (!validation.ok) return { ok: false, reason: hop === 0 ? 'invalid_url' : 'blocked_address' };
 
