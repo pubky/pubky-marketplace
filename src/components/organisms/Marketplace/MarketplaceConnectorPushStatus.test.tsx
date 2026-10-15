@@ -4,13 +4,14 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { MARKETPLACE_ROUTES } from '@/app/routes';
 import type { OrderPushRow } from '@/application/connectors/connectors';
 import { useConnectorPushStatus } from '@/hooks/useConnectorPushStatus/useConnectorPushStatus';
-import { connectorAlertSchema, connectorConnectionSchema, connectorPushSchema } from '@/libs/commerce/connectors';
+import { connectorAlertSchema, connectorPushSchema } from '@/libs/commerce/connectors';
+import { connectionFixture } from '@/test-utils/connector-fixtures';
 import { asOpaque } from '@/test-utils/type-assertions';
 import { MarketplaceConnectorPushStatus } from './MarketplaceConnectorPushStatus';
 
 vi.mock('@/hooks/useConnectorPushStatus/useConnectorPushStatus', () => ({ useConnectorPushStatus: vi.fn() }));
 
-const connection = connectorConnectionSchema.parse({
+const connection = connectionFixture({
   id: 'c1',
   provider: 'woocommerce',
   domain: 'dezentralshop.ch',
@@ -142,5 +143,67 @@ describe('MarketplaceConnectorPushStatus', () => {
     );
     await userEvent.setup().click(within(item).getByRole('button', { name: 'Dismiss' }));
     expect(value.dismissAlert).toHaveBeenCalledWith('a1');
+  });
+
+  it('offers a one-click entry into the order for a store-side cancel the buyer asked for', () => {
+    const alert = connectorAlertSchema.parse({
+      id: 'a3',
+      connectionId: 'c1',
+      kind: 'merchant_cancelled',
+      pubkyOrderId: 'order-5',
+      orderState: 'cancel_requested',
+      action: {
+        kind: 'approve_cancellation',
+        command: 'order.cancel_approve',
+        orderId: 'order-5',
+        label: 'Approve the buyer’s cancellation request',
+      },
+      createdAt: '2026-10-15T12:00:00.000Z',
+    });
+    status({ alerts: [alert] });
+    render(<MarketplaceConnectorPushStatus />);
+
+    const action = screen.getByTestId('store-push-alert-action');
+    expect(action).toHaveTextContent("Approve the buyer's cancellation request");
+    expect(action).toHaveAttribute('href', '#order-order-5');
+  });
+
+  it('offers recording the refund for a store-side refund of a cancelled order', () => {
+    const alert = connectorAlertSchema.parse({
+      id: 'a4',
+      connectionId: 'c1',
+      kind: 'merchant_refunded',
+      pubkyOrderId: 'order-6',
+      orderState: 'cancelled',
+      action: { kind: 'record_refund', command: 'refund.record_external', orderId: 'order-6', label: 'x' },
+      createdAt: '2026-10-15T12:00:00.000Z',
+    });
+    status({ alerts: [alert] });
+    render(<MarketplaceConnectorPushStatus />);
+    expect(screen.getByTestId('store-push-alert-action')).toHaveTextContent('Record the refund you sent the buyer');
+  });
+
+  it('shows no entry when no Pubky flow applies, and none for a command the Shop does not know', () => {
+    const informs = connectorAlertSchema.parse({
+      id: 'a5',
+      connectionId: 'c1',
+      kind: 'merchant_cancelled',
+      pubkyOrderId: 'order-7',
+      orderState: 'paid',
+      action: null,
+      createdAt: '2026-10-15T12:00:00.000Z',
+    });
+    const unknown = connectorAlertSchema.parse({
+      id: 'a6',
+      connectionId: 'c1',
+      kind: 'merchant_cancelled',
+      pubkyOrderId: 'order-8',
+      action: { kind: 'cancel_it_all', command: 'order.cancel', orderId: 'order-8', label: 'Cancel everything' },
+      createdAt: '2026-10-15T12:00:00.000Z',
+    });
+    status({ alerts: [informs, unknown] });
+    render(<MarketplaceConnectorPushStatus />);
+    expect(screen.queryByTestId('store-push-alert-action')).not.toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: 'Dismiss' })).toHaveLength(2);
   });
 });

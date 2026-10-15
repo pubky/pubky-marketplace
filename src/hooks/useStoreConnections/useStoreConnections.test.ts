@@ -1,9 +1,10 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ConnectorsController } from '@/controllers/connectors/connectors';
-import { connectorConnectionSchema } from '@/libs/commerce/connectors';
+import { connectorAlertSchema } from '@/libs/commerce/connectors';
 import { toast } from '@/molecules/Toaster/use-toast';
 import { connectorRefusal } from '@/test-utils/connector-errors';
+import { connectionFixture } from '@/test-utils/connector-fixtures';
 import { useStoreConnections } from './useStoreConnections';
 
 const mode = vi.hoisted(() => ({ value: 'transaction-service' as string }));
@@ -19,13 +20,19 @@ vi.mock('@/stores/auth/auth.store', () => ({
 }));
 
 vi.mock('@/controllers/connectors/connectors', () => ({
-  ConnectorsController: { fetchConnections: vi.fn(), commitDisconnect: vi.fn() },
+  ConnectorsController: {
+    fetchConnections: vi.fn(),
+    fetchAlerts: vi.fn(async () => []),
+    commitDisconnect: vi.fn(),
+    commitResolveAlert: vi.fn(),
+    commitVariantMode: vi.fn(),
+  },
 }));
 
 vi.mock('@/molecules/Toaster/use-toast', () => ({ toast: vi.fn() }));
 
 function connection(id: string, overrides: Record<string, unknown> = {}) {
-  return connectorConnectionSchema.parse({
+  return connectionFixture({
     id,
     provider: 'woocommerce',
     domain: `${id}.example.com`,
@@ -117,5 +124,67 @@ describe('useStoreConnections', () => {
 
     expect(result.current.rows.map((row) => row.health.state)).toEqual(['connected']);
     expect(toast).toHaveBeenCalledWith(expect.objectContaining({ variant: 'error', title: 'Could not disconnect' }));
+  });
+
+  it('keeps the alerts that say a connection is gone, and dismisses one', async () => {
+    const lost = connectorAlertSchema.parse({
+      id: 'a1',
+      connectionId: 'gone',
+      kind: 'store_uninstalled',
+      createdAt: '2026-10-15T12:00:00.000Z',
+    });
+    const other = connectorAlertSchema.parse({
+      id: 'a2',
+      connectionId: 'a',
+      kind: 'push_quarantined',
+      createdAt: '2026-10-15T12:00:00.000Z',
+    });
+    vi.mocked(ConnectorsController.fetchConnections).mockResolvedValue([]);
+    vi.mocked(ConnectorsController.fetchAlerts).mockResolvedValue([lost, other]);
+    vi.mocked(ConnectorsController.commitResolveAlert).mockResolvedValue();
+    const { result } = renderHook(() => useStoreConnections());
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    expect(result.current.lostAlerts.map((alert) => alert.id)).toEqual(['a1']);
+    await act(async () => {
+      await result.current.dismissLostAlert('a1');
+    });
+    expect(ConnectorsController.commitResolveAlert).toHaveBeenCalledWith('a1');
+    expect(result.current.lostAlerts).toEqual([]);
+  });
+
+  it('saves the variant mode and shows the connection the service answered with', async () => {
+    const first = connection('a');
+    vi.mocked(ConnectorsController.fetchConnections).mockResolvedValue([first]);
+    vi.mocked(ConnectorsController.commitVariantMode).mockResolvedValue(connection('a', { variantMode: 'split' }));
+    const { result } = renderHook(() => useStoreConnections());
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    await act(async () => {
+      expect(await result.current.setVariantMode(first, 'split')).toBe(true);
+    });
+
+    expect(ConnectorsController.commitVariantMode).toHaveBeenCalledWith('a', 'split');
+    expect(result.current.connections[0]?.variantMode).toBe('split');
+  });
+
+  it('keeps the setting and says why when the service refuses a switch to split', async () => {
+    const first = connection('a');
+    vi.mocked(ConnectorsController.fetchConnections).mockResolvedValue([first]);
+    vi.mocked(ConnectorsController.commitVariantMode).mockRejectedValue(connectorRefusal('mappings_conflict'));
+    const { result } = renderHook(() => useStoreConnections());
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    await act(async () => {
+      expect(await result.current.setVariantMode(first, 'split')).toBe(false);
+    });
+
+    expect(result.current.connections[0]?.variantMode).toBe('native');
+    expect(toast).toHaveBeenCalledWith(
+      expect.objectContaining({
+        variant: 'error',
+        description: expect.stringContaining('combine several variants'),
+      }),
+    );
   });
 });

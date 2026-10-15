@@ -3,21 +3,27 @@ import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { getStoreConnectionCatalogRoute } from '@/app/routes';
 import type { ConnectionCheck } from '@/application/connectors/connectors';
-import { connectionHealth, connectorConnectionSchema } from '@/libs/commerce/connectors';
+import { connectionHealth } from '@/libs/commerce/connectors';
+import { connectionFixture } from '@/test-utils/connector-fixtures';
 import { MarketplaceConnectionStatusCheck } from './MarketplaceConnectionStatusCheck';
 
 function result(overrides: Record<string, unknown> = {}, check: Partial<ConnectionCheck> = {}): ConnectionCheck {
-  const connection = connectorConnectionSchema.parse({
+  const connection = connectionFixture({
     id: 'c1',
     provider: 'shopify',
     domain: 'your-store.myshopify.com',
     status: 'connected',
     scopes: ['read_products', 'read_inventory', 'read_locations', 'read_fulfillments', 'write_orders'],
-    shopName: 'Your Store',
-    locationCount: 2,
     ...overrides,
   });
-  return { connection, health: connectionHealth(connection), productCount: 12, catalogReadable: true, ...check };
+  return {
+    connection,
+    health: connectionHealth(connection),
+    productCount: 12,
+    catalogReadable: true,
+    store: { shopName: 'Your Store', locationCount: 2, grantedScopes: connection.scopes },
+    ...check,
+  };
 }
 
 describe('MarketplaceConnectionStatusCheck', () => {
@@ -53,7 +59,7 @@ describe('MarketplaceConnectionStatusCheck', () => {
     render(
       <MarketplaceConnectionStatusCheck
         phase="connected"
-        result={result({ shopName: null, locationCount: null }, { productCount: 0 })}
+        result={result({}, { productCount: 0, store: null })}
         onCheck={vi.fn()}
         storeLabel="Shopify"
       />,
@@ -68,7 +74,11 @@ describe('MarketplaceConnectionStatusCheck', () => {
     render(
       <MarketplaceConnectionStatusCheck
         phase="attention"
-        result={result({ scopes: ['read_products'] })}
+        result={result({
+          status: 'needs_attention',
+          scopes: ['read_products'],
+          missingScopes: ['read_inventory', 'read_locations', 'read_fulfillments', 'write_orders'],
+        })}
         onCheck={onCheck}
         storeLabel="Shopify"
       />,

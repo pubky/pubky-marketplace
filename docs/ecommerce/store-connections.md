@@ -55,22 +55,38 @@ name, permissions granted, locations, a test catalog read). A missing scope show
 as Needs attention with the scope names. Steps have a picture slot each: drawn
 illustrations now, screenshots as soon as `config/shopify-guide.ts` has entries.
 
-## Fields the service has not documented yet (built against C7)
+## Against the service contract
 
-These are optional in the Shop's schemas, so a service that omits them still
-works:
+The Shop reads `internal/integrations/connector-contract.md` as written against
+`pubky-marketplace-service` `connectors/routes.rs` (framework branch #132, plus
+the Shopify stage 2 branch for the items marked stage 2). Connection fields it
+relies on: `status` (`draft`, `connected`, `needs_attention`, `error`),
+`app_kind`, `variant_mode` (stage 2), `scopes`, `missing_scopes`,
+`credentials_saved`, `urls` (`launch` for Shopify, `oauth_callback`, `webhooks`),
+`last_error`, `mapping_count`, `pushes`. A store that uninstalled the app or was
+disconnected is not listed; the page shows the `store_uninstalled` and
+`credentials_rejected` alerts instead.
 
-- `status: "draft"` on a Shopify draft connection (besides `pending`).
-- `urls: { app_url, allowed_redirection_url, webhook_url }` on the connect
-  response or the connection. Without it the Shop shows the fixed C7 paths
-  (`/v1/connectors/shopify/c/{id}/launch`, `/oauth/callback`, `/webhooks`) on its
-  service origin.
-- `credentials_set`, `shop_name` and `location_count` on a connection.
-- `PUT /v1/connectors/{id}/credentials` with `{client_id, client_secret}`
-  (Shopify) or `{consumer_key, consumer_secret}` (WooCommerce, also used for the
-  pasted-key fallback), answering 200 or 204, optionally with `authorize_url`
-  (the install link). Without a link the guide tells the merchant to install from
-  the Dev Dashboard Home.
-- A store that uninstalled the app reads as Disconnected when
-  `last_error.message` is `app_uninstalled`, `store_uninstalled` or
-  `disconnected`.
+Stage 2: `PUT /settings` (`variant_mode`), `GET /check` (store name, granted
+scopes, locations) and the `action` on store-side cancel and refund alerts. An
+alert action is a link into the order (`/marketplace/orders#order-<id>`), where
+the existing approve-cancellation or record-refund step is; the Shop never
+cancels or refunds for the seller.
+
+Where the Shop still differs from the service, and what it does:
+
+- **Pasted WooCommerce keys.** `PUT /credentials` answers
+  `422 credentials_not_supported` for WooCommerce. The Shop still sends
+  `{consumer_key, consumer_secret}` (the fallback of plan section 10) and says
+  so in plain words; it works as soon as the WooCommerce stage accepts them.
+- **Install from the Shop.** The launch URL needs Shopify's own signature, so the
+  Shop cannot start the install. The guide's Install button opens the Dev
+  Dashboard, and the step says to use the app's Home, Install app.
+- **Privacy webhooks.** Shopify's three privacy topics can only be set in the
+  app, so step 4 shows the webhooks URL for them (new text, not in the approved
+  copy).
+- **WooCommerce.** The connect domain is sent as `host[/path]`, the returned
+  approval link must be on that host, and the return is `?success=1|0`; the
+  service contract does not state these.
+- **Catalog.** Every product has at least one variant, and `provider_variant_id`
+  is the id the store's webhooks and orders use.

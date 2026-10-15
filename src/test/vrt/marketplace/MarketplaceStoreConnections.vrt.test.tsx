@@ -1,10 +1,11 @@
 // Intentional import order — browser-mode mock factories rely on stable aliases.
 /* eslint-disable simple-import-sort/imports */
 import { describe, expect, it, vi } from 'vitest';
+import { connectionFixture } from '@/test-utils/connector-fixtures';
 import { expectVrtSurface, renderForVRT } from '@/test-utils/vrt';
 import { VRT_VIEWPORT_DESKTOP, VRT_VIEWPORT_MOBILE } from '@/test-utils/vrt.viewports';
 import { MarketplaceStoreConnections } from '@/templates/Marketplace/MarketplaceStoreConnections';
-import { connectionHealth, connectorConnectionSchema } from '@/libs/commerce/connectors';
+import { connectionHealth } from '@/libs/commerce/connectors';
 
 const view = vi.hoisted(() => ({ rows: [] as unknown[] }));
 
@@ -36,7 +37,7 @@ vi.mock('@/organisms/ContentLayout/ContentLayout', () => ({
 vi.mock('@/organisms/Marketplace/MarketplaceSectionNav', () => ({ MarketplaceSectionNav: () => null }));
 
 function row(overrides: Record<string, unknown>, options: { disconnectedLocally?: boolean } = {}) {
-  const connection = connectorConnectionSchema.parse({
+  const connection = connectionFixture({
     status: 'connected',
     scopes: ['read_write'],
     connectedAt: '2026-10-15T10:00:00.000Z',

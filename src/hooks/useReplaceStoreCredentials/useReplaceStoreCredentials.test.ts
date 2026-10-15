@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ConnectorsController } from '@/controllers/connectors/connectors';
 import { toast } from '@/molecules/Toaster/use-toast';
 import { connectorRefusal } from '@/test-utils/connector-errors';
+import { connectionFixture } from '@/test-utils/connector-fixtures';
 import { useReplaceStoreCredentials } from './useReplaceStoreCredentials';
 import { replaceCredentialsFormDefaults } from './useReplaceStoreCredentials.types';
 
@@ -21,7 +22,7 @@ describe('useReplaceStoreCredentials', () => {
   });
 
   it('overwrites the pair once, clears the form and tells the page', async () => {
-    vi.mocked(ConnectorsController.commitReplaceCredentials).mockResolvedValue({ authorizeUrl: null });
+    vi.mocked(ConnectorsController.commitReplaceCredentials).mockResolvedValue(connectionFixture());
     const onReplaced = vi.fn();
     const { result } = renderHook(() => useReplaceStoreCredentials(CONNECTION, onReplaced));
 

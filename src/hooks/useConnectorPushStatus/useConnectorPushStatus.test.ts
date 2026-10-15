@@ -2,9 +2,10 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { OrderPushRow, StorePushOverview } from '@/application/connectors/connectors';
 import { ConnectorsController } from '@/controllers/connectors/connectors';
-import { connectorAlertSchema, connectorConnectionSchema, connectorPushSchema } from '@/libs/commerce/connectors';
+import { connectorAlertSchema, connectorPushSchema } from '@/libs/commerce/connectors';
 import { toast } from '@/molecules/Toaster/use-toast';
 import { connectorRefusal } from '@/test-utils/connector-errors';
+import { connectionFixture } from '@/test-utils/connector-fixtures';
 import { useConnectorPushStatus } from './useConnectorPushStatus';
 
 const mode = vi.hoisted(() => ({ value: 'transaction-service' as string }));
@@ -25,7 +26,7 @@ vi.mock('@/controllers/connectors/connectors', () => ({
 
 vi.mock('@/molecules/Toaster/use-toast', () => ({ toast: vi.fn() }));
 
-const connection = connectorConnectionSchema.parse({
+const connection = connectionFixture({
   id: 'c1',
   provider: 'woocommerce',
   domain: 'dezentralshop.ch',

@@ -51,7 +51,7 @@ export function useConnectionStatusCheck() {
           const check = await ConnectorsController.fetchConnectionCheck(connectionId);
           setResult(check);
           const status = check.connection?.status;
-          if (status === 'connected' || status === 'error') {
+          if (status === 'connected' || status === 'needs_attention' || status === 'error') {
             const next: StatusCheckPhase =
               status === 'connected' && check.health?.state === 'connected' && check.catalogReadable
                 ? 'connected'

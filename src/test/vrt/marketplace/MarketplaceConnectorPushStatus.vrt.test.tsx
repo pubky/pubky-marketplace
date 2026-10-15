@@ -1,15 +1,11 @@
 // Intentional import order — browser-mode mock factories rely on stable aliases.
 /* eslint-disable simple-import-sort/imports */
 import { describe, expect, it, vi } from 'vitest';
+import { connectionFixture } from '@/test-utils/connector-fixtures';
 import { expectVrtSurface, renderForVRT } from '@/test-utils/vrt';
 import { VRT_VIEWPORT_DESKTOP, VRT_VIEWPORT_MOBILE } from '@/test-utils/vrt.viewports';
 import { MarketplaceConnectorPushStatus } from '@/organisms/Marketplace/MarketplaceConnectorPushStatus';
-import {
-  connectorAlertSchema,
-  connectorConnectionSchema,
-  connectorPushSchema,
-  pushNeedsAction,
-} from '@/libs/commerce/connectors';
+import { connectorAlertSchema, connectorPushSchema, pushNeedsAction } from '@/libs/commerce/connectors';
 
 const view = vi.hoisted(() => ({ pushes: [] as unknown[], alerts: [] as unknown[] }));
 
@@ -29,7 +25,7 @@ vi.mock('@/hooks/useConnectorPushStatus/useConnectorPushStatus', () => ({
   }),
 }));
 
-const connection = connectorConnectionSchema.parse({
+const connection = connectionFixture({
   id: 'c1',
   provider: 'woocommerce',
   domain: 'dezentralshop.ch',

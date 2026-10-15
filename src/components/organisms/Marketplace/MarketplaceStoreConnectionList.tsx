@@ -16,6 +16,7 @@ import {
 } from '@/atoms/Dialog/Dialog';
 import { Heading } from '@/atoms/Heading/Heading';
 import { Link } from '@/atoms/Link/Link';
+import { Switch } from '@/atoms/Switch/Switch';
 import { Typography } from '@/atoms/Typography/Typography';
 import { useReplaceStoreCredentials } from '@/hooks/useReplaceStoreCredentials/useReplaceStoreCredentials';
 import type { StoreConnectionRow } from '@/hooks/useStoreConnections/useStoreConnections';
@@ -24,13 +25,16 @@ import {
   type ConnectionState,
   CONNECTOR_PROVIDER_LABELS,
   type ConnectorConnection,
+  type VariantMode,
 } from '@/libs/commerce/connectors';
 import { ControlledInputField } from '@/molecules/ControlledInputField/ControlledInputField';
+import { SHOPIFY_DISCONNECT_DETAIL } from './MarketplaceStoreAccessNotes';
 
 type MarketplaceStoreConnectionListProps = {
   rows: readonly StoreConnectionRow[];
   workingId: string | null;
   onDisconnect: (connection: ConnectorConnection) => Promise<boolean>;
+  onVariantMode: (connection: ConnectorConnection, mode: VariantMode) => Promise<boolean>;
   /** Runs after keys were replaced, so the page can check the connection again. */
   onReplaced: (connection: ConnectorConnection) => void | Promise<void>;
 };
@@ -152,6 +156,11 @@ function DisconnectDialog({
             Pubky deletes its keys for this store straight away and stops sending orders to it. Your Pubky listings stay
             as they are, but their stock no longer follows your store. {REVOKE_REMINDER[connection.provider]}
           </DialogDescription>
+          {connection.provider === 'shopify' && (
+            <Typography as="p" className="text-sm text-muted-foreground" data-testid="disconnect-dialog-detail">
+              {SHOPIFY_DISCONNECT_DETAIL}
+            </Typography>
+          )}
         </DialogHeader>
         <DialogFooter>
           <Button type="button" variant="secondary" className="rounded-full" onClick={() => onOpenChange(false)}>
@@ -178,11 +187,13 @@ function ConnectionCard({
   working,
   onDisconnect,
   onReplaced,
+  onVariantMode,
 }: {
   row: StoreConnectionRow;
   working: boolean;
   onDisconnect: MarketplaceStoreConnectionListProps['onDisconnect'];
   onReplaced: MarketplaceStoreConnectionListProps['onReplaced'];
+  onVariantMode: MarketplaceStoreConnectionListProps['onVariantMode'];
 }) {
   const { connection, health } = row;
   const [replacing, setReplacing] = useState(false);
@@ -249,6 +260,31 @@ function ConnectionCard({
           </Typography>
         )}
 
+        {(health.state === 'connected' || health.state === 'needs_attention') && (
+          <div
+            className="flex items-start justify-between gap-4 rounded-md border border-dashed border-border p-3"
+            data-testid="store-connection-settings"
+          >
+            <div className="grid gap-1">
+              <Typography as="label" htmlFor={`variant-mode-${connection.id}`} className="text-sm font-semibold">
+                One listing per size or variant
+              </Typography>
+              <Typography as="p" className="text-xs text-muted-foreground">
+                Off: a product&apos;s sizes and variants stay together as one Pubky listing. On: every size or variant
+                of your store becomes its own Pubky listing, and stock follows each one. It applies to products you
+                publish from now on.
+              </Typography>
+            </div>
+            <Switch
+              id={`variant-mode-${connection.id}`}
+              checked={connection.variantMode === 'split'}
+              disabled={working}
+              onCheckedChange={(checked) => void onVariantMode(connection, checked ? 'split' : 'native')}
+              aria-label="One listing per size or variant"
+            />
+          </div>
+        )}
+
         {health.state !== 'disconnected' && (
           <div className="flex flex-wrap gap-2">
             {canBrowse && (
@@ -309,6 +345,7 @@ export function MarketplaceStoreConnectionList({
   workingId,
   onDisconnect,
   onReplaced,
+  onVariantMode,
 }: MarketplaceStoreConnectionListProps) {
   return (
     <div className="grid gap-4" data-surface="store-connections" data-testid="store-connection-list">
@@ -319,6 +356,7 @@ export function MarketplaceStoreConnectionList({
           working={workingId === row.connection.id}
           onDisconnect={onDisconnect}
           onReplaced={onReplaced}
+          onVariantMode={onVariantMode}
         />
       ))}
     </div>

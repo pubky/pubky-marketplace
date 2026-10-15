@@ -1,12 +1,13 @@
 // Intentional import order — browser-mode mock factories rely on stable aliases.
 /* eslint-disable simple-import-sort/imports */
 import { describe, expect, it, vi } from 'vitest';
+import { connectionFixture } from '@/test-utils/connector-fixtures';
 import { expectVrtSurface, renderForVRT } from '@/test-utils/vrt';
 import { VRT_VIEWPORT_DESKTOP, VRT_VIEWPORT_MOBILE } from '@/test-utils/vrt.viewports';
 import { MarketplaceConnectShopify } from '@/organisms/Marketplace/MarketplaceConnectShopify';
 import { useConnectShopify } from '@/hooks/useConnectShopify/useConnectShopify';
 import type { StatusCheckPhase } from '@/hooks/useConnectionStatusCheck/useConnectionStatusCheck';
-import { connectionHealth, connectorConnectionSchema, SHOPIFY_REQUIRED_SCOPES } from '@/libs/commerce/connectors';
+import { connectionHealth, SHOPIFY_REQUIRED_SCOPES } from '@/libs/commerce/connectors';
 
 const ID = '3f2b8a52-6c1e-4d0a-9a53-7d5d2f0b61aa';
 vi.mock('@/controllers/connectors/connectors', () => ({
@@ -21,22 +22,23 @@ vi.mock('@/controllers/connectors/connectors', () => ({
   },
 }));
 
-const draft = connectorConnectionSchema.parse({
+const draft = connectionFixture({
   id: ID,
   provider: 'shopify',
   domain: 'john-staging.myshopify.com',
   status: 'draft',
+  credentialsSaved: false,
 });
 
-const connected = connectorConnectionSchema.parse({
+const connected = connectionFixture({
   id: ID,
   provider: 'shopify',
   domain: 'john-staging.myshopify.com',
   status: 'connected',
   scopes: [...SHOPIFY_REQUIRED_SCOPES],
-  shopName: 'John Staging',
-  locationCount: 1,
 });
+
+const store = { shopName: 'John Staging', grantedScopes: [...SHOPIFY_REQUIRED_SCOPES], locationCount: 1 };
 
 function Guide({
   resume,
@@ -55,7 +57,13 @@ function Guide({
         statusCheck={{
           phase,
           result: withResult
-            ? { connection: connected, health: connectionHealth(connected), productCount: 18, catalogReadable: true }
+            ? {
+                connection: connected,
+                health: connectionHealth(connected),
+                productCount: 18,
+                catalogReadable: true,
+                store,
+              }
             : null,
           run: async () => phase,
           reset: () => {},
@@ -83,13 +91,13 @@ describe('Connect Shopify guide — visual regression', () => {
   });
 
   it('renders the saved keys and the install step at desktop viewport', async () => {
-    const saved = connectorConnectionSchema.parse({ ...draft, credentialsSet: true });
+    const saved = connectionFixture({ ...draft, credentialsSaved: true });
     await renderForVRT(<Guide resume={saved} />, { viewport: VRT_VIEWPORT_DESKTOP, disableHover: true });
     await expect(await expectVrtSurface('store-connect-shopify')).toMatchScreenshot('connect-shopify-install-desktop');
   });
 
   it('renders the connected status check at desktop viewport', async () => {
-    const saved = connectorConnectionSchema.parse({ ...draft, credentialsSet: true });
+    const saved = connectionFixture({ ...draft, credentialsSaved: true });
     await renderForVRT(<Guide resume={saved} phase="connected" withResult />, {
       viewport: VRT_VIEWPORT_DESKTOP,
       disableHover: true,
@@ -98,10 +106,12 @@ describe('Connect Shopify guide — visual regression', () => {
   });
 
   it('renders the connection that needs attention at desktop viewport', async () => {
-    const saved = connectorConnectionSchema.parse({ ...draft, credentialsSet: true });
-    const partial = connectorConnectionSchema.parse({
+    const saved = connectionFixture({ ...draft, credentialsSaved: true });
+    const partial = connectionFixture({
       ...connected,
+      status: 'needs_attention',
       scopes: ['read_products', 'read_inventory'],
+      missingScopes: ['read_locations', 'read_fulfillments', 'write_orders'],
     });
     function Attention() {
       const shopify = useConnectShopify({ resume: saved });
@@ -116,6 +126,7 @@ describe('Connect Shopify guide — visual regression', () => {
                 health: connectionHealth(partial),
                 productCount: null,
                 catalogReadable: true,
+                store: null,
               },
               run: async () => 'attention',
               reset: () => {},

@@ -2,8 +2,9 @@ import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ConnectorsController } from '@/controllers/connectors/connectors';
-import { connectorConnectionSchema, SHOPIFY_REQUIRED_SCOPES } from '@/libs/commerce/connectors';
+import { connectorAlertSchema, SHOPIFY_REQUIRED_SCOPES } from '@/libs/commerce/connectors';
 import { connectorRefusal } from '@/test-utils/connector-errors';
+import { connectionFixture } from '@/test-utils/connector-fixtures';
 import { MarketplaceStoreConnections } from './MarketplaceStoreConnections';
 
 const nav = vi.hoisted(() => ({ query: '', replace: vi.fn() }));
@@ -38,6 +39,9 @@ vi.mock('@/organisms/Marketplace/MarketplaceSessionRequiredCard', () => ({
 vi.mock('@/controllers/connectors/connectors', () => ({
   ConnectorsController: {
     fetchConnections: vi.fn(),
+    fetchAlerts: vi.fn(async () => []),
+    commitResolveAlert: vi.fn(),
+    commitVariantMode: vi.fn(),
     fetchConnectionCheck: vi.fn(),
     commitDisconnect: vi.fn(),
     commitConnectWooCommerce: vi.fn(),
@@ -45,14 +49,13 @@ vi.mock('@/controllers/connectors/connectors', () => ({
     commitCreateShopifyDraft: vi.fn(),
     commitShopifyCredentials: vi.fn(),
     commitReplaceCredentials: vi.fn(),
-    draftUrls: vi.fn(() => ({ appUrl: 'https://api.example/launch', allowedRedirectionUrl: 'https://api.example/cb' })),
   },
 }));
 
 vi.mock('@/molecules/Toaster/use-toast', () => ({ toast: vi.fn() }));
 
 function connection(id: string, overrides: Record<string, unknown> = {}) {
-  return connectorConnectionSchema.parse({
+  return connectionFixture({
     id,
     provider: 'woocommerce',
     domain: `${id}.example.com`,
@@ -116,6 +119,40 @@ describe('MarketplaceStoreConnections', () => {
     expect(within(screen.getByTestId('shopify-step-1')).getByText('d.myshopify.com')).toBeInTheDocument();
   });
 
+  it('says a store that uninstalled the app is gone, and dismisses the alert', async () => {
+    const alert = connectorAlertSchema.parse({
+      id: 'a1',
+      connectionId: 'gone',
+      kind: 'store_uninstalled',
+      createdAt: '2026-10-15T12:00:00.000Z',
+    });
+    vi.mocked(ConnectorsController.fetchAlerts).mockResolvedValue([alert]);
+    vi.mocked(ConnectorsController.commitResolveAlert).mockResolvedValue();
+    const user = userEvent.setup();
+    render(<MarketplaceStoreConnections />);
+
+    const notice = await screen.findByTestId('store-connections-lost');
+    expect(notice).toHaveTextContent('The app was removed from your store, so the connection is closed.');
+    await user.click(within(notice).getByRole('button', { name: 'Dismiss' }));
+
+    expect(ConnectorsController.commitResolveAlert).toHaveBeenCalledWith('a1');
+    await waitFor(() => expect(screen.queryByTestId('store-connections-lost')).not.toBeInTheDocument());
+  });
+
+  it('switches a connection to one listing per variant and shows the saved setting', async () => {
+    vi.mocked(ConnectorsController.fetchConnections).mockResolvedValue([connection('a')]);
+    vi.mocked(ConnectorsController.commitVariantMode).mockResolvedValue(connection('a', { variantMode: 'split' }));
+    const user = userEvent.setup();
+    render(<MarketplaceStoreConnections />);
+
+    const toggle = await screen.findByRole('switch', { name: 'One listing per size or variant' });
+    expect(toggle).not.toBeChecked();
+    await user.click(toggle);
+
+    expect(ConnectorsController.commitVariantMode).toHaveBeenCalledWith('a', 'split');
+    await waitFor(() => expect(screen.getByRole('switch', { name: 'One listing per size or variant' })).toBeChecked());
+  });
+
   it('asks for a marketplace session when the service wants one', async () => {
     const expired = connectorRefusal('x', 401);
     Object.assign(expired, { code: 'SESSION_EXPIRED' });
@@ -150,7 +187,6 @@ describe('MarketplaceStoreConnections', () => {
         provider: 'shopify',
         domain: 's1.myshopify.com',
         scopes: [...SHOPIFY_REQUIRED_SCOPES],
-        shopName: 'S One',
       });
       vi.mocked(ConnectorsController.fetchConnections).mockResolvedValue([shop]);
       vi.mocked(ConnectorsController.fetchConnectionCheck).mockResolvedValue({
@@ -158,6 +194,7 @@ describe('MarketplaceStoreConnections', () => {
         health: { state: 'connected', reasons: [], missingScopes: [] },
         productCount: 9,
         catalogReadable: true,
+        store: { shopName: 'S One', grantedScopes: [...SHOPIFY_REQUIRED_SCOPES], locationCount: 1 },
       });
       render(<MarketplaceStoreConnections />);
 
@@ -178,11 +215,39 @@ describe('MarketplaceStoreConnections', () => {
       expect(screen.getByTestId('connect-shopify')).toBeInTheDocument();
     });
 
-    it('explains an install nobody was waiting for', async () => {
-      nav.query = 'status=install_unclaimed&provider=shopify&domain=x.myshopify.com';
+    it('checks an install that finished with a permission missing and names it', async () => {
+      nav.query = 'status=needs_attention&connector=s2';
+      const shop = connection('s2', {
+        provider: 'shopify',
+        domain: 's2.myshopify.com',
+        status: 'needs_attention',
+        scopes: ['read_products'],
+        missingScopes: ['write_orders'],
+      });
+      vi.mocked(ConnectorsController.fetchConnections).mockResolvedValue([shop]);
+      vi.mocked(ConnectorsController.fetchConnectionCheck).mockResolvedValue({
+        connection: shop,
+        health: {
+          state: 'needs_attention',
+          reasons: ['Missing permissions: write_orders. Add them.'],
+          missingScopes: ['write_orders'],
+        },
+        productCount: null,
+        catalogReadable: true,
+        store: null,
+      });
+      render(<MarketplaceStoreConnections />);
+
+      const card = await screen.findByTestId('store-connections-return-check');
+      await waitFor(() => expect(within(card).getByTestId('status-check')).toHaveAttribute('data-phase', 'attention'));
+      expect(card).toHaveTextContent('Missing permissions: write_orders');
+    });
+
+    it('explains the launch errors the service sends back', async () => {
+      nav.query = 'status=error&code=invalid_launch&connector=s3';
       render(<MarketplaceStoreConnections />);
       expect(await screen.findByTestId('store-connections-notice')).toHaveTextContent(
-        'no connection was waiting for x.myshopify.com',
+        "Shopify's install request could not be verified",
       );
     });
 
@@ -195,6 +260,7 @@ describe('MarketplaceStoreConnections', () => {
         health: { state: 'connected', reasons: [], missingScopes: [] },
         productCount: 3,
         catalogReadable: true,
+        store: null,
       });
       render(<MarketplaceStoreConnections />);
 

@@ -8,6 +8,9 @@ type MarketplaceStoreAccessNotesProps = {
   provider: ConnectorProvider;
 };
 
+export const SHOPIFY_DISCONNECT_DETAIL =
+  "We delete your store access and buyer-address key at once. Your app's secret stays encrypted for up to 30 days, only so we can verify Shopify's privacy requests about your store, and is deleted sooner if Shopify asks us to erase your shop's data.";
+
 const DISCONNECT_REVOKE: Readonly<Record<ConnectorProvider, string>> = {
   shopify: 'Also uninstall the app in Shopify to revoke it there.',
   woocommerce: 'Also delete the key in WooCommerce under Settings, Advanced, REST API to revoke it there.',
@@ -79,6 +82,11 @@ export function MarketplaceStoreAccessNotes({ provider }: MarketplaceStoreAccess
           <Typography as="p" className="pl-9 text-sm text-muted-foreground">
             Disconnect removes Pubky&apos;s access straight away. {DISCONNECT_REVOKE[provider]}
           </Typography>
+          {provider === 'shopify' && (
+            <Typography as="p" className="pl-9 text-sm text-muted-foreground" data-testid="disconnect-detail-line">
+              {SHOPIFY_DISCONNECT_DETAIL}
+            </Typography>
+          )}
         </section>
       </CardContent>
     </Card>

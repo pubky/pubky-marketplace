@@ -5,10 +5,11 @@ import {
   connectorAlertsSchema,
   type ConnectorCatalogPage,
   connectorCatalogSchema,
+  type ConnectorCheck,
+  connectorCheckSchema,
   type ConnectorConnection,
   type ConnectorConnectResult,
   connectorConnectSchema,
-  type ConnectorCredentialsResult,
   connectorCredentialsResultSchema,
   connectorListSchema,
   type ConnectorMapping,
@@ -19,6 +20,8 @@ import {
   connectorPushRetrySchema,
   type ConnectorPushState,
   connectorSelectionSchema,
+  connectorSettingsResultSchema,
+  type VariantMode,
 } from '@/libs/commerce/connectors';
 import { toCamelCaseWire, toSnakeCaseWire } from '@/libs/commerce/wire-casing';
 import { AuthErrorCode, ClientErrorCode, ServerErrorCode } from '@/libs/error/error.codes';
@@ -66,19 +69,40 @@ export class MarketplaceConnectorsService {
 
   /**
    * `PUT /v1/connectors/{id}/credentials`. A Shopify connection takes
-   * `clientId` and `clientSecret`; a WooCommerce key pair takes `consumerKey`
-   * and `consumerSecret` (sent snake_case on the wire).
+   * `clientId` and `clientSecret` (sent snake_case on the wire); the service
+   * answers with the connection (`credentials_saved` true) and never returns
+   * the values. A provider with no app of its own (WooCommerce) answers
+   * `422 credentials_not_supported`.
    */
   static async putCredentials(
     actor: string,
     connectionId: string,
     credentials: Readonly<Record<string, string>>,
-  ): Promise<ConnectorCredentialsResult> {
+  ): Promise<ConnectorConnection> {
     const raw = await this.request('putConnectorCredentials', actor, `${this.path(connectionId)}/credentials`, {
       method: 'PUT',
       body: credentials,
     });
-    return this.parse('putConnectorCredentials', connectorCredentialsResultSchema, raw ?? {});
+    return this.parse('putConnectorCredentials', connectorCredentialsResultSchema, raw).connection;
+  }
+
+  /** `PUT /v1/connectors/{id}/settings` (stage 2): how store variants relate to Pubky listings. */
+  static async putSettings(
+    actor: string,
+    connectionId: string,
+    settings: { variantMode: VariantMode },
+  ): Promise<ConnectorConnection> {
+    const raw = await this.request('putConnectorSettings', actor, `${this.path(connectionId)}/settings`, {
+      method: 'PUT',
+      body: settings,
+    });
+    return this.parse('putConnectorSettings', connectorSettingsResultSchema, raw).connection;
+  }
+
+  /** `GET /v1/connectors/{id}/check` (stage 2): the store's name, granted scopes, locations and a catalog read. */
+  static async check(actor: string, connectionId: string): Promise<ConnectorCheck> {
+    const raw = await this.request('checkConnector', actor, `${this.path(connectionId)}/check`);
+    return this.parse('checkConnector', connectorCheckSchema, raw);
   }
 
   static async disconnect(actor: string, connectionId: string): Promise<void> {
@@ -174,11 +198,6 @@ export class MarketplaceConnectorsService {
     await this.request('resolveConnectorAlert', actor, `/v1/connectors/alerts/${encodeURIComponent(alertId)}/resolve`, {
       method: 'POST',
     });
-  }
-
-  /** The service origin the per-connection Shopify URLs hang off when the response omits them. */
-  static serviceBaseUrl(): string {
-    return getMarketplaceUrl();
   }
 
   private static path(connectionId: string): string {

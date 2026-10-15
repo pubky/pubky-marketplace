@@ -38,20 +38,21 @@ export function MarketplaceConnectionStatusCheck({
   }
 
   if (phase === 'connected' && connection) {
-    const permissions = connection.scopes;
+    const permissions = result?.store?.grantedScopes ?? connection.scopes;
+    const store = result?.store ?? null;
     return (
       <div className="grid gap-3" role="status" data-testid="status-check" data-phase="connected">
         <div className="flex items-center gap-2">
           <CheckCircle2 className="size-5 shrink-0 text-brand" aria-hidden="true" />
           <Typography as="p" className="font-semibold">
-            Connected to {connection.shopName ?? connection.domain}
+            Connected to {store?.shopName ?? connection.domain}
           </Typography>
         </div>
         <ul className="grid list-disc gap-1 pl-7 text-sm text-muted-foreground">
           {permissions.length > 0 && <li>Permissions granted: {permissions.join(', ')}</li>}
-          {typeof connection.locationCount === 'number' && (
+          {typeof store?.locationCount === 'number' && (
             <li>
-              {connection.locationCount} {connection.locationCount === 1 ? 'location' : 'locations'}
+              {store.locationCount} {store.locationCount === 1 ? 'location' : 'locations'}
             </li>
           )}
           <li>
