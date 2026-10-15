@@ -7,6 +7,7 @@ import { HttpMethod } from '@/libs/http/http.types';
 import { HomeserverService } from '@/services/homeserver/homeserver';
 import { asOpaque } from '@/test-utils/type-assertions';
 import {
+  GRANT_SESSION_CHALLENGE_PURPOSE,
   GRANT_SESSION_PROOF_DOMAIN,
   GRANT_SESSION_PROOF_PURPOSE,
   MarketplaceGrantSessionService,
@@ -36,8 +37,15 @@ const MINTED = {
   expires_at: '2099-01-01T00:00:00.000Z',
 };
 
+const CHALLENGE_URL = 'https://svc.example/api/v1/auth/grant-session-challenges';
+const MINT_URL = 'https://svc.example/api/v1/auth/grant-sessions';
+const ISSUED = { challenge_id: CHALLENGE_ID, expires_at: '2099-01-01T00:00:00.000Z' };
+
 function grant() {
-  const createCustomPop = vi.fn(async () => ({ grant: 'grant.jws.sig', pop: 'pop.jws.sig' }));
+  const createCustomPop = vi.fn(async (data: { purpose: string }) => ({
+    grant: 'grant.jws.sig',
+    pop: data.purpose === GRANT_SESSION_CHALLENGE_PURPOSE ? 'challenge-pop.jws.sig' : 'mint-pop.jws.sig',
+  }));
   return { grant: asOpaque<GrantSession>({ createCustomPop }), createCustomPop };
 }
 
@@ -47,10 +55,19 @@ function respond(status: number, body: unknown) {
 
 const fetchMock = vi.fn<typeof fetch>();
 
+/** Routes the two service calls; each entry answers its path. */
+function service(answers: { challenge?: () => Promise<Response>; mint?: () => Promise<Response> }) {
+  fetchMock.mockImplementation(async (input) => {
+    const url = String(input);
+    if (url === CHALLENGE_URL) return await (answers.challenge ?? (async () => respond(201, ISSUED)))();
+    if (url === MINT_URL) return await (answers.mint ?? (async () => respond(201, MINTED)))();
+    throw new Error(`unexpected ${url}`);
+  });
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   vi.stubGlobal('fetch', fetchMock);
-  vi.spyOn(crypto, 'randomUUID').mockReturnValue(CHALLENGE_ID);
   vi.mocked(HomeserverService.request).mockResolvedValue(asOpaque(undefined));
   vi.mocked(HomeserverService.delete).mockResolvedValue(asOpaque(undefined));
 });
@@ -60,12 +77,21 @@ afterEach(() => {
 });
 
 describe('MarketplaceGrantSessionService.mint', () => {
-  it('writes the proof document, signs the same challenge and returns the minted session', async () => {
-    fetchMock.mockResolvedValue(respond(201, MINTED));
+  it('requests a challenge, writes its proof document, signs it and returns the minted session', async () => {
+    service({});
     const { grant: session, createCustomPop } = grant();
 
     const minted = await MarketplaceGrantSessionService.mint({ grant: session, pubky: PUBKY });
 
+    expect(createCustomPop).toHaveBeenNthCalledWith(1, {
+      aud: 'https://svc.example',
+      purpose: GRANT_SESSION_CHALLENGE_PURPOSE,
+    });
+    expect(createCustomPop).toHaveBeenNthCalledWith(2, {
+      aud: 'https://svc.example',
+      challenge_id: CHALLENGE_ID,
+      purpose: GRANT_SESSION_PROOF_PURPOSE,
+    });
     expect(HomeserverService.request).toHaveBeenCalledWith({
       method: HttpMethod.PUT,
       url: PROOF_URI,
@@ -76,18 +102,20 @@ describe('MarketplaceGrantSessionService.mint', () => {
         pubky: PUBKY,
       },
     });
-    expect(createCustomPop).toHaveBeenCalledWith({
-      aud: 'https://svc.example',
-      challenge_id: CHALLENGE_ID,
-      purpose: GRANT_SESSION_PROOF_PURPOSE,
-    });
-    expect(vi.mocked(HomeserverService.request).mock.invocationCallOrder[0]).toBeLessThan(
-      createCustomPop.mock.invocationCallOrder[0],
+    // Challenge, then document, then the mint proof over it.
+    expect(fetchMock.mock.invocationCallOrder[0]).toBeLessThan(
+      vi.mocked(HomeserverService.request).mock.invocationCallOrder[0],
     );
-    const [url, init] = fetchMock.mock.calls[0];
-    expect(url).toBe('https://svc.example/api/v1/auth/grant-sessions');
-    expect(init?.method).toBe('POST');
-    expect(JSON.parse(String(init?.body))).toEqual({ grant: 'grant.jws.sig', pop: 'pop.jws.sig' });
+    expect(vi.mocked(HomeserverService.request).mock.invocationCallOrder[0]).toBeLessThan(
+      createCustomPop.mock.invocationCallOrder[1],
+    );
+    const [challengeUrl, challengeInit] = fetchMock.mock.calls[0];
+    expect(challengeUrl).toBe(CHALLENGE_URL);
+    expect(JSON.parse(String(challengeInit?.body))).toEqual({ grant: 'grant.jws.sig', pop: 'challenge-pop.jws.sig' });
+    const [mintUrl, mintInit] = fetchMock.mock.calls[1];
+    expect(mintUrl).toBe(MINT_URL);
+    expect(mintInit?.method).toBe('POST');
+    expect(JSON.parse(String(mintInit?.body))).toEqual({ grant: 'grant.jws.sig', pop: 'mint-pop.jws.sig' });
     expect(minted).toEqual({
       token: MINTED.token,
       sessionId: SESSION_ID,
@@ -98,17 +126,64 @@ describe('MarketplaceGrantSessionService.mint', () => {
     expect(HomeserverService.delete).toHaveBeenCalledWith(PROOF_URI);
   });
 
-  it('surfaces the service refusal code and still deletes the proof document', async () => {
-    fetchMock.mockResolvedValue(respond(401, { error: 'homeserver_proof_invalid' }));
+  it('writes nothing when the service refuses the challenge request', async () => {
+    service({ challenge: async () => respond(429, { error: 'too_many_challenges' }) });
+    const { grant: session, createCustomPop } = grant();
+
+    await expect(MarketplaceGrantSessionService.mint({ grant: session, pubky: PUBKY })).rejects.toMatchObject({
+      message: 'too_many_challenges',
+      context: { statusCode: 429 },
+    });
+    expect(createCustomPop).toHaveBeenCalledTimes(1);
+    expect(HomeserverService.request).not.toHaveBeenCalled();
+    expect(HomeserverService.delete).not.toHaveBeenCalled();
+  });
+
+  it('refuses a malformed challenge answer before writing anything', async () => {
+    service({ challenge: async () => respond(201, { challenge_id: 'not-a-uuid', expires_at: ISSUED.expires_at }) });
 
     await expect(MarketplaceGrantSessionService.mint({ grant: grant().grant, pubky: PUBKY })).rejects.toMatchObject({
-      message: 'homeserver_proof_invalid',
+      message: 'grant_invalid_response',
+    });
+    expect(HomeserverService.request).not.toHaveBeenCalled();
+  });
+
+  it('surfaces the mint refusal code and still deletes the proof document', async () => {
+    service({ mint: async () => respond(401, { error: 'grant_session_challenge_invalid' }) });
+
+    await expect(MarketplaceGrantSessionService.mint({ grant: grant().grant, pubky: PUBKY })).rejects.toMatchObject({
+      message: 'grant_session_challenge_invalid',
       context: { statusCode: 401 },
     });
     expect(HomeserverService.delete).toHaveBeenCalledWith(PROOF_URI);
   });
 
+  it('deletes the proof document when signing the mint proof throws', async () => {
+    service({});
+    const { grant: session, createCustomPop } = grant();
+    createCustomPop.mockResolvedValueOnce({ grant: 'grant.jws.sig', pop: 'challenge-pop.jws.sig' });
+    createCustomPop.mockRejectedValueOnce(new Error('signing key unavailable'));
+
+    await expect(MarketplaceGrantSessionService.mint({ grant: session, pubky: PUBKY })).rejects.toThrow(
+      'signing key unavailable',
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(HomeserverService.delete).toHaveBeenCalledWith(PROOF_URI);
+  });
+
+  it('deletes the proof document when the mint request fails on the network', async () => {
+    service({
+      mint: async () => {
+        throw new TypeError('Failed to fetch');
+      },
+    });
+
+    await expect(MarketplaceGrantSessionService.mint({ grant: grant().grant, pubky: PUBKY })).rejects.toBeDefined();
+    expect(HomeserverService.delete).toHaveBeenCalledWith(PROOF_URI);
+  });
+
   it('reports an expired sign-in when the grant session cannot write its homeserver', async () => {
+    service({});
     vi.mocked(HomeserverService.request).mockRejectedValue(
       new AppError({
         category: ErrorCategory.Auth,
@@ -124,24 +199,24 @@ describe('MarketplaceGrantSessionService.mint', () => {
       message: 'shop_session_expired',
       category: ErrorCategory.Auth,
     });
-    expect(createCustomPop).not.toHaveBeenCalled();
-    expect(fetchMock).not.toHaveBeenCalled();
+    expect(createCustomPop).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(HomeserverService.delete).toHaveBeenCalledWith(PROOF_URI);
   });
 
   it('refuses a session minted for another account or with a malformed body', async () => {
-    fetchMock.mockResolvedValueOnce(respond(201, { ...MINTED, pubky: 'z'.repeat(52) }));
+    service({ mint: async () => respond(201, { ...MINTED, pubky: 'z'.repeat(52) }) });
     await expect(MarketplaceGrantSessionService.mint({ grant: grant().grant, pubky: PUBKY })).rejects.toMatchObject({
       message: 'grant_invalid_response',
     });
-    fetchMock.mockResolvedValueOnce(respond(201, { ...MINTED, session_id: 'not-a-session' }));
+    service({ mint: async () => respond(201, { ...MINTED, session_id: 'not-a-session' }) });
     await expect(MarketplaceGrantSessionService.mint({ grant: grant().grant, pubky: PUBKY })).rejects.toMatchObject({
       message: 'grant_invalid_response',
     });
   });
 
   it('does not echo an unexpected error string from the service', async () => {
-    fetchMock.mockResolvedValue(respond(400, { error: '<script>' }));
+    service({ mint: async () => respond(400, { error: '<script>' }) });
     await expect(MarketplaceGrantSessionService.mint({ grant: grant().grant, pubky: PUBKY })).rejects.toMatchObject({
       message: 'grant_session_unavailable',
     });

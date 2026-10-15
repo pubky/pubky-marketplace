@@ -10,14 +10,21 @@ import { HomeserverService } from '@/services/homeserver/homeserver';
 import { marketplaceApprovalFailure } from './marketplace-approval-failure';
 import { marketplaceSessionIdSchema } from './marketplace-session-id';
 
-/** Signed `data.purpose` the service requires (marketplace-service `grant_session.rs`). */
+/** Signed `data.purpose` of the mint proof (marketplace-service `grant_session.rs`). */
 export const GRANT_SESSION_PROOF_PURPOSE = 'marketplace-service/grant-session/v1';
+/** Signed `data.purpose` of the challenge request. */
+export const GRANT_SESSION_CHALLENGE_PURPOSE = 'marketplace-service/grant-session-challenge/v1';
 /** `domain` of the homeserver proof document. */
 export const GRANT_SESSION_PROOF_DOMAIN = 'marketplace-service/grant-session-proof/v1';
 /** The proof document lives here, followed by the challenge id. */
 export const GRANT_SESSION_PROOFS_PATH = '/pub/pubky.app/marketplace/v1/session-proofs/';
 
 const OPERATION = 'marketplaceGrantSession';
+
+const challengeSchema = z.object({
+  challenge_id: z.uuid(),
+  expires_at: z.iso.datetime({ offset: true }),
+});
 
 const responseSchema = z.object({
   token: z.string(),
@@ -50,11 +57,12 @@ async function errorCode(response: Response): Promise<string> {
 
 /**
  * Mints a marketplace session from the Shop's own sign-in grant, with no
- * signer approval. The grant session writes a single-use proof document to
- * its homeserver (only a live, unrevoked session can), signs a custom proof
- * over the same challenge with the grant's client key, and the service
- * verifies both before issuing a bearer narrowed to the marketplace scopes.
- * The proof document is deleted whatever the outcome.
+ * signer approval. The grant's client key signs a challenge request; for the
+ * service-issued challenge the grant session writes a single-use proof
+ * document to its homeserver (only a live, unrevoked session can) and signs a
+ * custom proof over it; the service verifies both before issuing a bearer
+ * narrowed to the marketplace scopes. The proof document is deleted whatever
+ * the outcome.
  */
 export class MarketplaceGrantSessionService {
   private constructor() {}
@@ -62,7 +70,31 @@ export class MarketplaceGrantSessionService {
   static async mint({ grant, pubky }: { grant: GrantSession; pubky: string }): Promise<MintedGrantSession> {
     const serviceUrl = getMarketplaceUrl();
     const audience = new URL(serviceUrl).origin;
-    const challengeId = crypto.randomUUID();
+    const post = async (path: string, proof: { grant: string; pop: string }) => {
+      const response = await safeFetch(
+        `${serviceUrl}${path}`,
+        {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ grant: proof.grant, pop: proof.pop }),
+          cache: 'no-store',
+        },
+        ErrorService.Marketplace,
+        OPERATION,
+      );
+      if (!response.ok) throw failure(await errorCode(response), response.status);
+      return { status: response.status, body: (await response.json().catch(() => null)) as unknown };
+    };
+
+    // The challenge exists only from now on, so a proof document for it cannot
+    // have been staged earlier (for example before the grant was revoked).
+    const issued = await post(
+      '/v1/auth/grant-session-challenges',
+      await grant.createCustomPop({ aud: audience, purpose: GRANT_SESSION_CHALLENGE_PURPOSE }),
+    );
+    const challenge = challengeSchema.safeParse(issued.body);
+    if (!challenge.success) throw failure('grant_invalid_response', issued.status);
+    const challengeId = challenge.data.challenge_id;
     const proofUri = `pubky://${pubky}${GRANT_SESSION_PROOFS_PATH}${challengeId}`;
     try {
       try {
@@ -76,25 +108,16 @@ export class MarketplaceGrantSessionService {
         if (isAppError(error) && error.category === ErrorCategory.Auth) throw failure('shop_session_expired');
         throw error;
       }
-      const proof = await grant.createCustomPop({
-        aud: audience,
-        challenge_id: challengeId,
-        purpose: GRANT_SESSION_PROOF_PURPOSE,
-      });
-      const response = await safeFetch(
-        `${serviceUrl}/v1/auth/grant-sessions`,
-        {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ grant: proof.grant, pop: proof.pop }),
-          cache: 'no-store',
-        },
-        ErrorService.Marketplace,
-        OPERATION,
+      const minted = await post(
+        '/v1/auth/grant-sessions',
+        await grant.createCustomPop({
+          aud: audience,
+          challenge_id: challengeId,
+          purpose: GRANT_SESSION_PROOF_PURPOSE,
+        }),
       );
-      if (!response.ok) throw failure(await errorCode(response), response.status);
-      const parsed = responseSchema.safeParse(await response.json().catch(() => null));
-      if (!parsed.success || parsed.data.pubky !== pubky) throw failure('grant_invalid_response', response.status);
+      const parsed = responseSchema.safeParse(minted.body);
+      if (!parsed.success || parsed.data.pubky !== pubky) throw failure('grant_invalid_response', minted.status);
       return {
         token: parsed.data.token,
         sessionId: parsed.data.session_id,
