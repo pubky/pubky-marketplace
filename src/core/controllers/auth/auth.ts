@@ -1207,17 +1207,15 @@ export class AuthController {
    * Bitkit, approved in the Passport popup. `xCallback` names the Shop's
    * Passport return page. Completion is the Bitkit grant ceremony; the
    * session is recorded as Passport-approved so its purchase grant is
-   * requested from Passport too.
+   * requested from Passport too. Scoped encryption keys follow the
+   * Passport default unless `options.withPrivKeys` says otherwise.
    */
   static async getPassportGrantAuthUrl(
     xCallback?: XCallbackParams,
     options?: { withPrivKeys?: boolean },
   ): Promise<TGenerateAuthUrlResult> {
     return await this.beginGrantCeremony(
-      () =>
-        options === undefined
-          ? AuthApplication.generateGrantAuthUrl(xCallback)
-          : AuthApplication.generateGrantAuthUrl(xCallback, options),
+      () => AuthApplication.generateGrantAuthUrl(xCallback, { ...options, signer: 'passport' }),
       'passport',
     );
   }
@@ -1285,7 +1283,13 @@ export class AuthController {
     xCallback,
   }: { signer?: 'ring' | 'bitkit' | 'passport'; xCallback?: XCallbackParams } = {}): Promise<TGenerateAuthUrlResult> {
     this.assertStandaloneMode();
-    return this.beginGrantCeremony(() => AuthApplication.generateGrantAuthUrl(xCallback), signer);
+    return this.beginGrantCeremony(
+      () =>
+        signer === 'passport'
+          ? AuthApplication.generateGrantAuthUrl(xCallback, { signer })
+          : AuthApplication.generateGrantAuthUrl(xCallback),
+      signer,
+    );
   }
 
   /**

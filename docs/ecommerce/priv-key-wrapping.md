@@ -36,9 +36,15 @@ as a full Shop session when its grant covers the core Shop scopes
 
 The request for `e` is off by default and is made only when both hold:
 
-- `PUBKY_RUNTIME_PRIV_ENCRYPTION_KEYS=true`, and
+- `PUBKY_RUNTIME_PRIV_ENCRYPTION_KEYS=true` (every grant sign-in), or
+  `PUBKY_RUNTIME_PASSPORT_PRIV_ENCRYPTION_KEYS=true` (the Pubky Passport
+  sign-in and Passport step-up only), and
 - the deploy's homeserver (`PUBKY_RUNTIME_HOMESERVER`) is listed in
   `PUBKY_RUNTIME_PRIV_ENCRYPTION_KEYS_HOMESERVERS` (a JSON array).
+
+Pubky Passport 1.2.0 answers `e` with selective approval (the user can approve
+storage and decline `e`), so the Passport switch can open the gate for Passport
+alone while Ring and Bitkit, which cannot answer `e` yet, keep the bare grant.
 
 A homeserver without scoped-key support rejects any grant containing `e` after
 the user approved it, and `/info` does not advertise the capability, so the

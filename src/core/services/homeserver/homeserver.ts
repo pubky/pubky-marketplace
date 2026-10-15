@@ -42,6 +42,7 @@ import type { Pubky as TPubkyModel } from '@/models/models.types';
 import type {
   TGenerateAuthTokenFlowResult,
   TGenerateAuthUrlResult,
+  TGrantAuthUrlOptions,
   THomeserverRestoreSessionParams,
   THomeserverSessionResult,
   THomeserverSignUpParams,
@@ -636,18 +637,19 @@ export class HomeserverService {
    * still arrives through the encrypted relay.
    * @param options.withPrivKeys Whether to also ask for the `e` action on the
    * Shop's private tree (a signed approval that can carry scoped encryption
-   * keys). Defaults to {@link isPrivKeysRequested}; `false` is the separate
-   * sign-in without keys that signers or homeservers without `e` need.
+   * keys). Defaults to {@link isPrivKeysRequested} for `options.signer`;
+   * `false` is the separate sign-in without keys that signers or homeservers
+   * without `e` need.
    */
   static async generateGrantAuthUrl(
     xCallback?: XCallbackParams,
-    options: { withPrivKeys?: boolean } = {},
+    options: TGrantAuthUrlOptions = {},
   ): Promise<TGenerateAuthUrlResult> {
     return await this.startGrantAuthFlow(
       () => AuthFlowKind.signin(),
       'generateGrantAuthUrl',
       xCallback,
-      options.withPrivKeys ?? isPrivKeysRequested(),
+      options.withPrivKeys ?? isPrivKeysRequested(options.signer),
     );
   }
 

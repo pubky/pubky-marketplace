@@ -1,6 +1,7 @@
 import { getHomeserver } from '@/config/network';
 import { Env } from '@/libs/env/env';
 import {
+  getPassportPrivEncryptionKeysEnabled,
   getPrivEncryptionKeysEnabled,
   getPrivEncryptionKeysHomeservers,
   getShopGrantClientIdOverride,
@@ -32,13 +33,16 @@ export const PRIV_KEYS_SCOPE_DECLINED = '/priv/pubky.app/marketplace/:rw';
 export const KEYED_CAPABILITIES = `${CAPABILITIES},${PRIV_KEYS_SCOPE}`;
 
 /**
- * Whether the grant sign-in asks the signer for `e`: the runtime switch is on
- * and the deploy's homeserver is listed as running scoped keys. The
- * homeserver does not advertise the capability, and one that predates it
- * rejects the whole grant after the user approved, so both must hold.
+ * Whether the grant sign-in asks the signer for `e`. The deploy's homeserver
+ * must be listed as running scoped keys: the homeserver does not advertise
+ * the capability, and one that predates it rejects the whole grant after the
+ * user approved. Then either the switch for every signer is on, or, for a
+ * Pubky Passport sign-in, the Passport-only switch is (Passport answers `e`
+ * with selective approval; other signers may not answer it at all).
  */
-export function isPrivKeysRequested(): boolean {
-  return getPrivEncryptionKeysEnabled() && getPrivEncryptionKeysHomeservers().includes(getHomeserver());
+export function isPrivKeysRequested(signer?: 'passport'): boolean {
+  if (!getPrivEncryptionKeysHomeservers().includes(getHomeserver())) return false;
+  return getPrivEncryptionKeysEnabled() || (signer === 'passport' && getPassportPrivEncryptionKeysEnabled());
 }
 
 /** Default client id signers show on their approval screen for the Shop's grant sign-in. */

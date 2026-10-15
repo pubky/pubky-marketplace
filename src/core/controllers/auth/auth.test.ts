@@ -250,7 +250,7 @@ describe('grant-only authentication lifecycle', () => {
     const callback = { xSuccess: 'https://shop.test/return' };
     const flow = await AuthController.getStepUpAuthUrl({ signer: 'passport', xCallback: callback });
     await AuthController.completeStepUpReauth({ session: await flow.awaitApproval });
-    expect(AuthApplication.generateGrantAuthUrl).toHaveBeenCalledWith(callback);
+    expect(AuthApplication.generateGrantAuthUrl).toHaveBeenCalledWith(callback, { signer: 'passport' });
     expect(useAuthStore.getState()).toMatchObject({ session, grantSigner: 'passport' });
     expect(AuthApplication.clearGrantSessions).toHaveBeenCalledWith({ protectedRecordIds: ['alice:grant-1'] });
   });
@@ -265,8 +265,12 @@ describe('grant-only authentication lifecycle', () => {
     expect(generate).toHaveBeenLastCalledWith();
     await AuthController.getGrantAuthUrl({ withPrivKeys: false });
     expect(generate).toHaveBeenLastCalledWith(undefined, { withPrivKeys: false });
+    await AuthController.getPassportGrantAuthUrl({ xSource: 'Pubky Shop' });
+    expect(generate).toHaveBeenLastCalledWith({ xSource: 'Pubky Shop' }, { signer: 'passport' });
     await AuthController.getPassportGrantAuthUrl({ xSource: 'Pubky Shop' }, { withPrivKeys: false });
-    expect(generate).toHaveBeenLastCalledWith({ xSource: 'Pubky Shop' }, { withPrivKeys: false });
+    expect(generate).toHaveBeenLastCalledWith({ xSource: 'Pubky Shop' }, { withPrivKeys: false, signer: 'passport' });
+    await AuthController.getStepUpAuthUrl({ signer: 'bitkit' });
+    expect(generate).toHaveBeenLastCalledWith(undefined);
   });
 
   it('rejects a wrong-identity step-up before saving its record', async () => {

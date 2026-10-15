@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CAPABILITIES, KEYED_CAPABILITIES, SHOP_GRANT_CLIENT_ID } from '@/config/app';
 import { getHomeserver } from '@/config/network';
 import { resetRuntimeConfigForTests } from '@/libs/runtime-config/runtime-config';
-import type { TGenerateAuthUrlResult } from '@/services/homeserver/homeserver.types';
+import type { TGenerateAuthUrlResult, TGrantAuthUrlOptions } from '@/services/homeserver/homeserver.types';
 import { installWebLocks, removeWebLocks } from '@/test-utils/web-locks';
 import { HomeserverService } from './homeserver';
 import { pendingOwnedGrants } from './owned-grant-storage';
@@ -50,7 +50,7 @@ function configure(env: Record<string, string>): void {
 
 const listed = () => JSON.stringify([getHomeserver()]);
 
-async function grantUrl(options?: { withPrivKeys?: boolean }): Promise<URL> {
+async function grantUrl(options?: TGrantAuthUrlOptions): Promise<URL> {
   const flow: TGenerateAuthUrlResult =
     options === undefined
       ? await HomeserverService.generateGrantAuthUrl()
@@ -79,26 +79,40 @@ const expectBare = (url: URL) => {
 };
 
 describe('SDK 0.16 scoped encryption keys in the grant sign-in link', () => {
-  it('requests a bare grant by default', async () => {
+  it('requests a bare grant by default, for every signer', async () => {
     expectBare(await grantUrl());
+    expectBare(await grantUrl({ signer: 'passport' }));
   });
 
-  it('asks for e with a signed approval when the deploy enabled it', async () => {
+  it('asks every signer for e with a signed approval when the deploy enabled it', async () => {
     configure({ PUBKY_RUNTIME_PRIV_ENCRYPTION_KEYS: 'true', PUBKY_RUNTIME_PRIV_ENCRYPTION_KEYS_HOMESERVERS: listed() });
     expectKeyed(await grantUrl());
+    expectKeyed(await grantUrl({ signer: 'passport' }));
   });
 
   it('makes the sign-in without keys when asked, even while the deploy requests keys', async () => {
     configure({ PUBKY_RUNTIME_PRIV_ENCRYPTION_KEYS: 'true', PUBKY_RUNTIME_PRIV_ENCRYPTION_KEYS_HOMESERVERS: listed() });
     expectBare(await grantUrl({ withPrivKeys: false }));
+    expectBare(await grantUrl({ withPrivKeys: false, signer: 'passport' }));
+  });
+
+  it('opens e for the Passport sign-in alone with the Passport switch', async () => {
+    configure({
+      PUBKY_RUNTIME_PASSPORT_PRIV_ENCRYPTION_KEYS: 'true',
+      PUBKY_RUNTIME_PRIV_ENCRYPTION_KEYS_HOMESERVERS: listed(),
+    });
+    expectKeyed(await grantUrl({ signer: 'passport' }));
+    expectBare(await grantUrl());
   });
 
   it('never asks for e while the deploy homeserver is not listed', async () => {
     configure({
       PUBKY_RUNTIME_PRIV_ENCRYPTION_KEYS: 'true',
+      PUBKY_RUNTIME_PASSPORT_PRIV_ENCRYPTION_KEYS: 'true',
       PUBKY_RUNTIME_PRIV_ENCRYPTION_KEYS_HOMESERVERS: JSON.stringify([Keypair.random().publicKey.z32()]),
     });
     expectBare(await grantUrl());
+    expectBare(await grantUrl({ signer: 'passport' }));
   });
 
   it('keeps the runtime client id on a keyed request', async () => {

@@ -164,6 +164,7 @@ describe('scoped encryption keys in the grant request', () => {
     beforeEach(() => resetRuntimeConfigForTests());
     afterEach(() => {
       delete process.env[PUBKY_RUNTIME_ENV_NAMES.privEncryptionKeys];
+      delete process.env[PUBKY_RUNTIME_ENV_NAMES.passportPrivEncryptionKeys];
       delete process.env[PUBKY_RUNTIME_ENV_NAMES.privEncryptionKeysHomeservers];
       resetRuntimeConfigForTests();
     });
@@ -174,6 +175,7 @@ describe('scoped encryption keys in the grant request', () => {
 
     it('is off by default', () => {
       expect(isPrivKeysRequested()).toBe(false);
+      expect(isPrivKeysRequested('passport')).toBe(false);
     });
 
     it('needs the switch and the deploy homeserver on the list', () => {
@@ -199,6 +201,29 @@ describe('scoped encryption keys in the grant request', () => {
       process.env[PUBKY_RUNTIME_ENV_NAMES.privEncryptionKeys] = 'false';
       process.env[PUBKY_RUNTIME_ENV_NAMES.privEncryptionKeysHomeservers] = listed();
       expect(isPrivKeysRequested()).toBe(false);
+    });
+
+    it('applies the switch for every signer to the Passport sign-in too', () => {
+      process.env[PUBKY_RUNTIME_ENV_NAMES.privEncryptionKeys] = 'true';
+      process.env[PUBKY_RUNTIME_ENV_NAMES.privEncryptionKeysHomeservers] = listed();
+      expect(isPrivKeysRequested('passport')).toBe(true);
+    });
+
+    it('opens e for the Passport sign-in alone with the Passport switch', () => {
+      process.env[PUBKY_RUNTIME_ENV_NAMES.passportPrivEncryptionKeys] = 'true';
+      process.env[PUBKY_RUNTIME_ENV_NAMES.privEncryptionKeysHomeservers] = listed();
+      expect(isPrivKeysRequested('passport')).toBe(true);
+      expect(isPrivKeysRequested()).toBe(false);
+    });
+
+    it('keeps the Passport switch behind the homeserver list', () => {
+      process.env[PUBKY_RUNTIME_ENV_NAMES.passportPrivEncryptionKeys] = 'true';
+      expect(isPrivKeysRequested('passport')).toBe(false);
+
+      resetRuntimeConfigForTests();
+      process.env[PUBKY_RUNTIME_ENV_NAMES.passportPrivEncryptionKeys] = 'true';
+      process.env[PUBKY_RUNTIME_ENV_NAMES.privEncryptionKeysHomeservers] = unlisted();
+      expect(isPrivKeysRequested('passport')).toBe(false);
     });
   });
 });
