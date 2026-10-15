@@ -31,6 +31,8 @@ const listing = {
   record: {
     ownerPubky: BUYER,
     listingId: 'boots',
+    revision: 1,
+    shippingOptions: [],
     title: 'Vintage boots',
     media: [],
     variants: [{ id: 'variant_42', options: { size: '42' }, quantity: 3 }],

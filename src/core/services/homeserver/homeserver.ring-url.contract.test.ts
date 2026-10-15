@@ -113,8 +113,6 @@ describe('SDK 0.16 bare-grant and owned-key compatibility contract', () => {
     await removeOwnedDelegatedKey(delegatedKeyId(theirsSaved));
   });
   it('keeps an active SDK flow resumable when another tab cleans keys after the relay retention window', async () => {
-    // The Shop starts grant flows on the facade client (it reuses the configured
-    // relays), so the capture wraps the facade method rather than the static.
     const start = Pubky.prototype.startGrantAuthFlow;
     let saved = '';
     const spy = vi.spyOn(Pubky.prototype, 'startGrantAuthFlow').mockImplementation(async function (

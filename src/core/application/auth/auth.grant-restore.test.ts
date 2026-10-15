@@ -1,5 +1,6 @@
 import type { Session } from '@synonymdev/pubky';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { CAPABILITIES, KEYED_CAPABILITIES, PRIV_KEYS_SCOPE_DECLINED } from '@/config/app';
 import { AuthErrorCode } from '@/libs/error/error.codes';
 import { Err } from '@/libs/error/error.factories';
 import { ErrorService } from '@/libs/error/error.types';
@@ -93,6 +94,41 @@ describe('grant restore failure and ownership rules', () => {
       }),
     ).toEqual({ status: 'restored', session: restored });
     expect(HomeserverService.removeGrantSession).not.toHaveBeenCalled();
+    expect(HomeserverService.logout).not.toHaveBeenCalled();
+  });
+  it.each([
+    ['with scoped keys', KEYED_CAPABILITIES],
+    ['with e declined', `${CAPABILITIES},${PRIV_KEYS_SCOPE_DECLINED}`],
+  ])('restores a Shop grant approved %s', async (_label, capabilities) => {
+    const restored = asOpaque<Session>({
+      info: { publicKey: { z32: () => ref.pubky }, capabilities: capabilities.split(',') },
+      grant: {
+        sessionInfo: vi.fn().mockResolvedValue({
+          publicKey: { z32: () => ref.pubky },
+          capabilities: capabilities.split(','),
+          clientId: 'shop.pubky.app',
+          grantId: ref.grantId,
+        }),
+      },
+    });
+    vi.spyOn(HomeserverService, 'restoreGrantSession').mockResolvedValue(restored);
+    expect(
+      await AuthApplication.restorePersistedSession({
+        authStore: mockAuthStore({ currentUserPubky: 'alice', grantSessionRecordId: 'shop-record' }),
+      }),
+    ).toEqual({ status: 'restored', session: restored });
+    expect(HomeserverService.removeGrantSession).not.toHaveBeenCalled();
+    expect(HomeserverService.logout).not.toHaveBeenCalled();
+  });
+  it.each([
+    ['with scoped keys', KEYED_CAPABILITIES],
+    ['with e declined', `${CAPABILITIES},${PRIV_KEYS_SCOPE_DECLINED}`],
+  ])('accepts a new approval %s as the full Shop grant', async (_label, capabilities) => {
+    const approved = asOpaque<Session>({
+      info: { publicKey: { z32: () => ref.pubky }, capabilities: capabilities.split(',') },
+      grant: {},
+    });
+    await expect(AuthApplication.assertFullGrantSession(approved)).resolves.toBeUndefined();
     expect(HomeserverService.logout).not.toHaveBeenCalled();
   });
   it('accepts a root grant owned by App without saving it again', async () => {

@@ -21,6 +21,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/ato
 import { Container } from '@/atoms/Container/Container';
 import { Heading } from '@/atoms/Heading/Heading';
 import { Typography } from '@/atoms/Typography/Typography';
+import { withBasePath } from '@/config/base-path';
 import { ValidationErrorCode } from '@/libs/error/error.codes';
 import { Err } from '@/libs/error/error.factories';
 import { ErrorService } from '@/libs/error/error.types';
@@ -175,7 +176,7 @@ export function SentryTestHarness() {
   const callServer = useCallback(async (type: ServerTriggerType) => {
     setServerStatus((prev) => ({ ...prev, [type]: { state: 'loading' } }));
     try {
-      const response = await fetch(`/api/sentry-test?type=${type}`, { cache: 'no-store' });
+      const response = await fetch(withBasePath(`/api/sentry-test?type=${type}`), { cache: 'no-store' });
       // For the unhandled trigger a 500 IS the success case (the error propagated out of the
       // handler and was captured by onRequestError).
       const ok = type === 'unhandled' ? response.status === 500 : response.ok;

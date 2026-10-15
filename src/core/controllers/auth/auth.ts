@@ -1186,8 +1186,14 @@ export class AuthController {
    * Bitkit has its own grant QR slot beside Ring. The approved homeserver
    * grant is saved to BrowserSessionStore before it becomes active.
    */
-  static async getGrantAuthUrl(): Promise<TGenerateAuthUrlResult> {
-    return await this.beginGrantCeremony(() => AuthApplication.generateGrantAuthUrl(), 'bitkit');
+  static async getGrantAuthUrl(options?: { withPrivKeys?: boolean }): Promise<TGenerateAuthUrlResult> {
+    return await this.beginGrantCeremony(
+      () =>
+        options === undefined
+          ? AuthApplication.generateGrantAuthUrl()
+          : AuthApplication.generateGrantAuthUrl(undefined, options),
+      'bitkit',
+    );
   }
 
   /**
@@ -1195,10 +1201,17 @@ export class AuthController {
    * Bitkit, approved in the Passport popup. `xCallback` names the Shop's
    * Passport return page. Completion is the Bitkit grant ceremony; the
    * session is recorded as Passport-approved so its purchase grant is
-   * requested from Passport too.
+   * requested from Passport too. Scoped encryption keys follow the
+   * Passport default unless `options.withPrivKeys` says otherwise.
    */
-  static async getPassportGrantAuthUrl(xCallback?: XCallbackParams): Promise<TGenerateAuthUrlResult> {
-    return await this.beginGrantCeremony(() => AuthApplication.generateGrantAuthUrl(xCallback), 'passport');
+  static async getPassportGrantAuthUrl(
+    xCallback?: XCallbackParams,
+    options?: { withPrivKeys?: boolean },
+  ): Promise<TGenerateAuthUrlResult> {
+    return await this.beginGrantCeremony(
+      () => AuthApplication.generateGrantAuthUrl(xCallback, { ...options, signer: 'passport' }),
+      'passport',
+    );
   }
 
   private static async beginGrantCeremony(
@@ -1264,7 +1277,13 @@ export class AuthController {
     xCallback,
   }: { signer?: 'ring' | 'bitkit' | 'passport'; xCallback?: XCallbackParams } = {}): Promise<TGenerateAuthUrlResult> {
     this.assertStandaloneMode();
-    return this.beginGrantCeremony(() => AuthApplication.generateGrantAuthUrl(xCallback), signer);
+    return this.beginGrantCeremony(
+      () =>
+        signer === 'passport'
+          ? AuthApplication.generateGrantAuthUrl(xCallback, { signer })
+          : AuthApplication.generateGrantAuthUrl(xCallback),
+      signer,
+    );
   }
 
   /**

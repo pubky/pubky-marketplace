@@ -28,6 +28,13 @@ export type TGenerateAuthUrlResult = {
   cancelAuthFlow: () => void;
 };
 
+export type TGrantAuthUrlOptions = {
+  /** Ask for scoped encryption keys. Omitted: the deploy default for {@link TGrantAuthUrlOptions.signer}. */
+  withPrivKeys?: boolean;
+  /** The Pubky Passport sign-in, whose scoped-key default has its own runtime switch. */
+  signer?: 'passport';
+};
+
 export type TGenerateAuthTokenFlowResult = {
   authorizationUrl: string;
   awaitToken: () => Promise<AuthToken>;
