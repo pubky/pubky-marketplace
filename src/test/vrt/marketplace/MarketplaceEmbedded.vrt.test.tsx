@@ -46,8 +46,8 @@ vi.mock('@/hooks/useMarketplaceOrdersAttention/useMarketplaceOrdersAttention', (
 vi.mock('@/hooks/useMarketplaceNavAttention/useMarketplaceNavAttention', () => ({
   useMarketplaceNavAttention: () => 0,
 }));
-vi.mock('@/hooks/useMessagesUnread/useMessagesUnread', () => ({
-  useMessagesUnread: () => 0,
+vi.mock('@/hooks/useChatUnread/useChatUnread', () => ({
+  useChatUnread: () => 0,
 }));
 vi.mock('@/hooks/useCurrentUserProfile/useCurrentUserProfile', () => ({
   useCurrentUserProfile: () => ({

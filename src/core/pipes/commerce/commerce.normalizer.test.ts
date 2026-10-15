@@ -212,4 +212,20 @@ describe('CommerceRecordNormalizer', () => {
       );
     });
   });
+  describe('shippingPresetInput', () => {
+    const valid = { label: 'Tracked', priceMinor: 990, currency: 'USD', estimatedMinDays: 2, estimatedMaxDays: 6 };
+
+    it.each(['USD', 'EUR', 'CHF', 'GBP', 'JPY', 'CAD', 'AUD', 'BTC'])('accepts a preset priced in %s', (currency) => {
+      expect(CommerceRecordNormalizer.shippingPresetInput({ ...valid, currency })).toMatchObject({ currency });
+    });
+
+    it.each(['SEK', 'usd', 'SATS', '', 'USDT'])('refuses a preset priced in %j', (currency) => {
+      expect(() => CommerceRecordNormalizer.shippingPresetInput({ ...valid, currency })).toThrow();
+    });
+
+    it('still refuses a zero or fractional price in minor units', () => {
+      expect(() => CommerceRecordNormalizer.shippingPresetInput({ ...valid, priceMinor: 0 })).toThrow();
+      expect(() => CommerceRecordNormalizer.shippingPresetInput({ ...valid, priceMinor: 9.9 })).toThrow();
+    });
+  });
 });

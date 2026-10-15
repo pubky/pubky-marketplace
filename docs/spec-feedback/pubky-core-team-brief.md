@@ -1,5 +1,7 @@
 # Pubky SDK / homeserver / Homegate / pkarr as used by the marketplace
 
+> **Note (2026-10-12):** the Shop's encrypted messaging over Paykit Encrypted Links described in this brief was retired; chat now runs on homeserver files ([`../chat/README.md`](../chat/README.md)). The vendored binding serves only receiver-marker reads for payments. The rest is kept as written.
+
 **To:** maintainers of the Pubky SDK (`pubky` crate), `pubky-homeserver`,
 Homegate, and pkarr
 **From:** the Pubky Marketplace integration (forks under `BitcoinErrorLog`)

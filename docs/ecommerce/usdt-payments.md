@@ -27,7 +27,7 @@ The flag does not cover the Locks path. Once locks#75 and a `[usdt]` Paykit conf
 
 The order projection accepts the optional, display-only `paymentAsset`, `paymentNetwork`, `paymentAmountMinor`, `paymentExponent` and `paymentQuoteBasis`. A value the Shop does not recognise is dropped for that order; it never fails the order parse. `formatUsdt` renders USDT millionths with six decimals. Receipts and summaries group the digits ("$1,250.00, paid as 1,250.000000 USDT", and the amount in a recorded refund line; UX audit P12) with `formatUsdt(millionths, { grouped: true })`; every amount the buyer must pay or the seller must send ("Pay exactly", the checkout quote, "Amount to send", "Refund to send") stays ungrouped so it can be read back and copied digit for digit.
 
-Listings stay priced in `USD/2` or `BTC/8`; USDT is a payment method, never a price currency. The same rule applies to Locks and Paykit requests: the lock or request asset is the price denomination, and a USD-priced listing may be paid in quoted BTC or USDT.
+Listings are priced in the studio's listing currencies (USD, EUR, CHF, GBP, JPY, CAD, AUD or BTC); USDT is a payment method, never a price currency. The same rule applies to Locks and Paykit requests: the lock or request asset is the price denomination, and a USD-priced listing may be paid in quoted BTC or USDT. A non-USD fiat price is converted to USD cents by the service at bind, so USDT stays at parity with those cents.
 
 ## Gated surfaces
 

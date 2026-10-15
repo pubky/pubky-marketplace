@@ -25,7 +25,7 @@ import {
   marketplaceDigitalDeliveryChannelSchema,
   type MarketplaceDigitalDeliveryInput,
 } from '@/libs/commerce/digital';
-import { parseListingAggregateId } from '@/libs/commerce/marketplace-conversation-query';
+import { parseListingAggregateId } from '@/libs/commerce/listing-aggregate';
 import type { CommerceDigitalLock, CommerceShopRecord } from '@/libs/commerce/marketplace-records';
 import type { BindDeliveryAddress, PaymentMethodKind } from '@/libs/commerce/payment-methods';
 import { resolveCheckoutFulfillment } from '@/libs/commerce/pickup';

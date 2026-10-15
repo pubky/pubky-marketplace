@@ -2,6 +2,8 @@ DESIGN STATUS: DECIDED (r5, 12 Oct 2026: owner approved the recommendations; J1-
 
 # Encrypted buyer delivery address to seller
 
+> **Note (2026-10-12):** the messaging precedents this design cites (`docs/ecommerce/messaging/README.md`, the `/pub/paykit/:rw` enable approval, the device-keyring wrap of receiver Noise material, `paykit-wasm-provenance.md:128-133`) belong to the retired Paykit Encrypted Links transport. Chat now runs on homeserver files with a per-user X25519 key ([`../chat/README.md`](../chat/README.md)); the decisions in this design are unchanged.
+
 **Scope.** Shop at `master` and marketplace-service at `main` as of 12 Oct 2026. It follows the owner decision on pubky/pubky-marketplace#12: encrypt the address in the buyer client, store only ciphertext the service cannot open, and decrypt in the seller client. The owner approved the recommendations on 12 Oct 2026 (11:42 Lisbon) with one instruction: use existing, audited options; do not roll our own or add complexity.
 
 r5 changes against r4: the sealing primitive is RFC 9180 HPKE (§D1) instead of a hand-assembled X25519 + HKDF + XChaCha20 construction; the envelope, AAD and padding are simplified; the key record is published by the Shop itself under the grant it already holds (§C); offer checkout and drop claims are in scope; Shippo moves to the seller's browser (§E, §F); legacy plaintext is purged (§F); J1-J8 are closed (§J).

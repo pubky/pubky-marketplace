@@ -7,6 +7,7 @@ import { SettingsApplication } from '@/application/settings/settings';
 import { AuthController } from '@/controllers/auth/auth';
 import { approve, deferred, grantSession, resetGrantTest } from '@/controllers/auth/auth.grant-test-utils';
 import { bumpAuthEpoch } from '@/controllers/auth/auth-epoch';
+import { ChatController } from '@/controllers/chat/chat';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import { clearDatabase } from '@/database/franky/franky.helpers';
 import { useAuthStatus } from '@/hooks/useAuthStatus/useAuthStatus';
@@ -16,7 +17,6 @@ import { pendingOwnedGrants } from '@/services/homeserver/owned-grant-storage';
 import { clearPersistedAuthIdentity } from '@/stores/auth/auth.persisted';
 import { useAuthStore } from '@/stores/auth/auth.store';
 import { useCommerceStore } from '@/stores/commerce/commerce.store';
-import { useMessagingStore } from '@/stores/messaging/messaging.store';
 import { useOnboardingStore } from '@/stores/onboarding/onboarding.store';
 import { AUTH_PERSIST_KEY } from '@/stores/persistedKeys';
 import { useSearchStore } from '@/stores/search/search.store';
@@ -443,19 +443,31 @@ it('signs out a newer same-account grant that was already persisted before the s
   expect(next.signout).toHaveBeenCalledOnce();
 });
 
-it('clears commerce and messaging view state when another account signs in', async () => {
+it("clears commerce view state and the other account's chat sessions when another account signs in", async () => {
   const old = grantSession();
   await approve(old);
   await AuthController.initializeAuthenticatedSession({ session: old });
   useCommerceStore.getState().setQuery('boots');
-  useMessagingStore.getState().setMessagingEnabled('alice');
-  useMessagingStore.getState().setUnreadConversations(7);
+  const keepOnly = vi.spyOn(ChatController, 'clearSessionsOfOtherAccounts').mockImplementation(() => {});
   const next = grantSession('bob', 'shop.pubky.app', 'next');
   await approve(next);
   await AuthController.initializeAuthenticatedSession({ session: next });
   expect(useCommerceStore.getState().query).toBe('');
-  expect(useMessagingStore.getState().enabledPubky).toBeNull();
-  expect(useMessagingStore.getState().unreadConversations).toBe(0);
+  expect(keepOnly).toHaveBeenCalledWith('bob');
+  keepOnly.mockRestore();
+});
+
+it('ends the chat session and wipes its cache on sign-out, before the database clear', async () => {
+  const session = grantSession();
+  await approve(session);
+  await AuthController.initializeAuthenticatedSession({ session });
+  const wipe = vi.spyOn(ChatController, 'clearForSignOut').mockResolvedValue();
+  await AuthController.logout();
+  expect(wipe).toHaveBeenCalledWith('alice');
+  const dbClear = vi.mocked(clearDatabase);
+  expect(dbClear).toHaveBeenCalled();
+  expect(wipe.mock.invocationCallOrder[0]).toBeLessThan(dbClear.mock.invocationCallOrder.at(-1) ?? Infinity);
+  wipe.mockRestore();
 });
 
 it('adopts a renewed same-account grant in another tab before using the retired grant again', async () => {

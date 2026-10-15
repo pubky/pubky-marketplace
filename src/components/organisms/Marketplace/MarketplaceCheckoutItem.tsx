@@ -7,7 +7,7 @@ import { Link } from '@/atoms/Link/Link';
 import { Typography } from '@/atoms/Typography/Typography';
 import { useMarketplaceOrderItemMedia } from '@/hooks/useMarketplaceOrderItemMedia/useMarketplaceOrderItemMedia';
 import { formatCommerceMoney } from '@/libs/commerce/format';
-import { parseListingAggregateId } from '@/libs/commerce/marketplace-conversation-query';
+import { parseListingAggregateId } from '@/libs/commerce/listing-aggregate';
 import type { MarketplaceOrder } from '@/services/marketplace/marketplace';
 
 export function MarketplaceCheckoutItem({ line }: { line: MarketplaceOrder['lines'][number] }) {
