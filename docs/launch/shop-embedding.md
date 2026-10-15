@@ -163,7 +163,7 @@ Responses carry `Cache-Control: no-store, private`. The probe checks the embedde
 
 This confirms local Shop BFF readiness, not upstream marketplace signing-key trust, signer behavior, or payment completion. Validate those separately against the paired staging deployment. Database availability is deliberately not a startup requirement: an otherwise configured BFF returns 503 during an outage and can recover without a deployment change.
 
-App checks this endpoint in the background while `/shop` is open. A real BFF outage shows the unavailable state, and a healthy response restores the frame automatically. Saved grants and user sessions are not cleared by a readiness failure. Login, permission and expired-session states remain part of the existing auth UI rather than being treated as a BFF outage.
+App checks this endpoint in the background while `/shop` is open. Before the frame loads, a failed check can show unavailable immediately. A loaded frame is preserved until three consecutive online checks fail, at least 10 seconds apart; offline and hidden tabs pause checks and reset that count. A healthy response restores an unavailable frame automatically. Saved grants and user sessions are not cleared by a readiness failure. Login, permission and expired-session states remain part of the existing auth UI rather than being treated as a BFF outage.
 
 ## Leaving the frame
 
@@ -218,7 +218,7 @@ A deployment that sets `PUBKY_RUNTIME_EMBEDDED=true` renders this from the first
 
 ## Service worker
 
-The Serwist build plugin no longer registers the worker by itself. `ServiceWorkerRegistration` registers it only when the Shop is **not** embedded and **not** mounted under a base path. Shop therefore registers no worker under `/shop-embed`; App owns the origin's worker. App's updated worker handles document navigations beneath `/shop-embed` as network-only, including navigation-preload responses, and excludes those navigations from its offline fallback. This does not add a worker cache rule for Shop APIs or assets. `/shop` remains an App shell route. Activate the updated App worker before testing the mount.
+The Serwist build plugin no longer registers the worker by itself. `ServiceWorkerRegistration` registers it only when the Shop is **not** embedded and **not** mounted under a base path. Shop therefore registers no worker under `/shop-embed`; App owns the origin's worker. That build also disables Serwist's automatic reload on reconnect, which otherwise runs even with registration disabled and discards checkout or seller form state. App owns outage recovery; standalone builds retain their existing reconnect behavior. App's updated worker handles document navigations beneath `/shop-embed` as network-only, including navigation-preload responses, and excludes those navigations from its offline fallback. This does not add a worker cache rule for Shop APIs or assets. `/shop` remains an App shell route. Activate the updated App worker before testing the mount.
 
 ## Browser storage
 
