@@ -29,6 +29,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Skeleton } from '@/atoms/Skeleton/Skeleton';
 import { Typography } from '@/atoms/Typography/Typography';
 import { getAuctionDurationsMinutes } from '@/config/commerce';
+import { LISTING_CURRENCY_CODES, LISTING_CURRENCY_REGISTRY } from '@/config/currencies';
 import { FORM_LABEL_CLASSES } from '@/config/forms';
 import { commerceAttributeFieldsFor, resolveCommerceCategory } from '@/config/taxonomy/taxonomy';
 import { CommerceController } from '@/controllers/commerce/commerce';
@@ -65,7 +66,13 @@ import {
   type ListingPublishBlockReason,
 } from '@/libs/commerce/listing-publish-guards';
 import { PICKUP_NOTHING_PUBLISHED_TOAST, PICKUP_REVERT_FAILED_TOAST } from '@/libs/commerce/pickup';
-import { amountInputSchemaForAsset, amountInputUnitLabel, assetForListingCurrency } from '@/libs/commerce/pricing';
+import {
+  AMOUNT_EXAMPLES,
+  amountInputExample,
+  amountInputSchemaForAsset,
+  amountInputUnitLabel,
+  assetForListingCurrency,
+} from '@/libs/commerce/pricing';
 import {
   dimensionInputFromMillimeters,
   dimensionUnitLabel,
@@ -299,7 +306,7 @@ export function MarketplaceListingForm({
   }, [fulfillment, form]);
   const delivery = fulfillmentFlags(fulfillment);
   const priceUnit = amountInputUnitLabel(assetForListingCurrency(currency));
-  const pricePlaceholder = currency === 'BTC' ? '150000' : '125.00';
+  const pricePlaceholder = amountInputExample(assetForListingCurrency(currency), AMOUNT_EXAMPLES.price);
   const isImperial = measurementSystem === 'imperial';
   const formValues = createMarketplaceListingValuesFromWatch(watchedListingFields, () => {
     void form.formState.isValidating;
@@ -619,10 +626,10 @@ export function MarketplaceListingForm({
               name={CREATE_MARKETPLACE_LISTING_FIELDS.CURRENCY}
               label="Pricing currency"
               disabled={isPublishing || saleTermsLocked}
-              options={[
-                { value: 'USD', label: 'US dollars (USD)' },
-                { value: 'BTC', label: 'Bitcoin (₿)' },
-              ]}
+              options={LISTING_CURRENCY_CODES.map((code) => ({
+                value: code,
+                label: LISTING_CURRENCY_REGISTRY[code].pickerLabel,
+              }))}
             />
             <ControlledInputField
               name={CREATE_MARKETPLACE_LISTING_FIELDS.PRICE}
@@ -886,7 +893,11 @@ export function MarketplaceListingForm({
 
           {delivery.ship && (
             <>
-              <ListingShippingPresetRow form={form} isPublishing={isPublishing} presets={presets} />
+              <ListingShippingPresetRow
+                form={form}
+                isPublishing={isPublishing}
+                presets={currency === 'USD' ? presets : []}
+              />
               <div className="grid gap-5 sm:grid-cols-2">
                 <ControlledInputField
                   name={CREATE_MARKETPLACE_LISTING_FIELDS.SHIPPING_LABEL}
@@ -900,7 +911,7 @@ export function MarketplaceListingForm({
                     name={CREATE_MARKETPLACE_LISTING_FIELDS.SHIPPING_PRICE}
                     control={form.control}
                     label={`Flat shipping (${priceUnit})`}
-                    placeholder={currency === 'BTC' ? '15000' : '12.00'}
+                    placeholder={amountInputExample(assetForListingCurrency(currency), AMOUNT_EXAMPLES.shipping)}
                     disabled={isPublishing || freeShipping}
                   />
                   <div className="flex items-center gap-2">

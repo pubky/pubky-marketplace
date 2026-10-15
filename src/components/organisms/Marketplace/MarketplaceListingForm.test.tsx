@@ -1006,13 +1006,85 @@ describe('MarketplaceListingForm free shipping', () => {
     },
   );
 
-  it.each([{ freeShipping: true }, { currency: 'BTC' as const }])(
-    'does not offer incompatible shipping presets (%j)',
-    (values) => {
-      render(<FormHarness defaultValues={values} />);
-      expect(screen.getByRole('checkbox', { name: 'Save delivery details as preset' })).toBeDisabled();
-    },
-  );
+  it('offers every listing currency in the pricing currency picker', async () => {
+    const user = userEvent.setup();
+    render(<FormHarness />);
+
+    await user.click(screen.getByRole('combobox', { name: 'Pricing currency' }));
+
+    for (const name of [
+      'US dollars (USD)',
+      'Euros (EUR)',
+      'Swiss francs (CHF)',
+      'British pounds (GBP)',
+      'Japanese yen (JPY)',
+      'Canadian dollars (CAD)',
+      'Australian dollars (AUD)',
+      'Bitcoin (₿)',
+    ]) {
+      expect(screen.getByRole('option', { name })).toBeInTheDocument();
+    }
+    expect(screen.getAllByRole('option')).toHaveLength(8);
+  });
+
+  it.each([
+    { currency: 'EUR', unit: 'EUR', price: '125.00', shipping: '12.00' },
+    { currency: 'CHF', unit: 'CHF', price: '125.00', shipping: '12.00' },
+    { currency: 'JPY', unit: 'JPY', price: '12500', shipping: '1200' },
+    { currency: 'BTC', unit: '₿', price: '150000', shipping: '15000' },
+  ] as const)('labels and exemplifies price inputs in $currency', ({ currency, unit, price, shipping }) => {
+    render(<FormHarness defaultValues={{ currency }} />);
+
+    expect(screen.getByLabelText(`Price (${unit})`)).toHaveAttribute('placeholder', price);
+    expect(screen.getByLabelText(`Flat shipping (${unit})`)).toHaveAttribute('placeholder', shipping);
+  });
+
+  it('switches the price input unit when the seller picks another currency', async () => {
+    const user = userEvent.setup();
+    render(<FormHarness />);
+    expect(screen.getByLabelText('Price (USD)')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('combobox', { name: 'Pricing currency' }));
+    await user.click(screen.getByRole('option', { name: 'Japanese yen (JPY)' }));
+
+    expect(screen.getByLabelText('Price (JPY)')).toHaveAttribute('placeholder', '12500');
+    expect(screen.queryByText(/Bitcoin prices are entered in whole base units/)).not.toBeInTheDocument();
+  });
+
+  it('keeps the bitcoin base-unit hint for bitcoin only', () => {
+    render(<FormHarness defaultValues={{ currency: 'BTC' }} />);
+
+    expect(screen.getByText(/Bitcoin prices are entered in whole base units/)).toBeInTheDocument();
+  });
+
+  it.each(['EUR', 'JPY'] as const)('does not offer the USD shipping presets on a %s listing', (currency) => {
+    shippingPresetsMock.presets = [
+      {
+        id: 'preset_1',
+        owner_id: 'y'.repeat(52),
+        label: 'Standard shipping',
+        price_minor: 1200,
+        currency: 'USD',
+        estimated_min_days: 3,
+        estimated_max_days: 7,
+        created_at: 1,
+        updated_at: 1,
+      },
+    ];
+    render(<FormHarness defaultValues={{ currency }} />);
+
+    expect(screen.queryByRole('combobox', { name: /shipping preset/i })).not.toBeInTheDocument();
+  });
+
+  it.each([
+    { freeShipping: true },
+    { currency: 'BTC' as const },
+    { currency: 'EUR' as const },
+    { currency: 'JPY' as const },
+  ])('does not offer incompatible shipping presets (%j)', (values) => {
+    render(<FormHarness defaultValues={values} />);
+    expect(screen.getByRole('checkbox', { name: 'Save delivery details as preset' })).toBeDisabled();
+  });
 });
 
 describe('MarketplaceListingForm publish gate vs schema', () => {

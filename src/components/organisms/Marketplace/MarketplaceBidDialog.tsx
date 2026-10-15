@@ -10,7 +10,7 @@ import { marketplaceBidMinimum } from '@/hooks/useMarketplaceBid/useMarketplaceB
 import { useRequireAuth } from '@/hooks/useRequireAuth/useRequireAuth';
 import type { AuctionPhase } from '@/libs/commerce/auction-phase';
 import { formatCommerceMoney } from '@/libs/commerce/format';
-import { amountInputUnitLabel, type CommerceAsset, isBitcoinAsset } from '@/libs/commerce/pricing';
+import { AMOUNT_EXAMPLES, amountInputExample, amountInputUnitLabel, type CommerceAsset } from '@/libs/commerce/pricing';
 import { ControlledInputField } from '@/molecules/ControlledInputField/ControlledInputField';
 import type { MarketplaceListingProjection } from '@/services/marketplace/marketplace';
 
@@ -128,7 +128,7 @@ export function MarketplaceBidDialog({
           name="maximumAmount"
           control={bid.form.control}
           label={`Maximum bid (${amountInputUnitLabel(priceAsset)})`}
-          placeholder={isBitcoinAsset(priceAsset) ? '100000' : '100.00'}
+          placeholder={amountInputExample(priceAsset, AMOUNT_EXAMPLES.offer)}
         />
         <Typography as="p" className="text-sm text-muted-foreground">
           We bid only what&apos;s needed to keep you ahead, up to your maximum.
