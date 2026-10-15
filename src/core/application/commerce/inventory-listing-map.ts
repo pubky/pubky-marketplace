@@ -10,6 +10,7 @@ import {
 } from '@/libs/commerce/marketplace-records';
 import { listingStockRefusal } from '@/libs/commerce/unlimited-stock';
 import { CommerceRecordNormalizer } from '@/pipes/commerce/commerce.normalizer';
+import { PHOTO_REQUIRED_MESSAGE } from '@/pipes/commerce/import-publish-failure';
 
 type ImportJsonPrimitive = string | number | boolean | null;
 export type ImportJsonValue = ImportJsonPrimitive | ImportJsonValue[] | { [key: string]: ImportJsonValue };
@@ -94,20 +95,37 @@ function mapReturnPolicy(value: unknown): CommerceListingRecord['returnPolicy'] 
 function mapMedia(row: CanonicalImportRow): CommerceListingRecord['media'] {
   const fromExtra = parseJsonField(row.extraFields.media_json);
   const candidate = fromExtra ?? row.media;
+  if (Array.isArray(candidate) && candidate.length === 0) throw new Error(PHOTO_REQUIRED_MESSAGE);
   return commerceMediaSchema.array().min(1).parse(candidate);
 }
 
+/**
+ * A shop-system preset carries a variant price that differs from the listing
+ * price in `variant_price_minor` (in the row's currency and exponent).
+ */
+function variantPriceOverride(
+  row: CanonicalImportRow,
+): { amountMinor: number; currency: string; exponent: number } | null {
+  const raw = row.extraFields.variant_price_minor;
+  if (raw === undefined || !/^[1-9]\d*$/.test(raw)) return null;
+  const amountMinor = Number(raw);
+  if (!Number.isSafeInteger(amountMinor) || amountMinor === row.amountMinor) return null;
+  return { amountMinor, currency: row.currency, exponent: row.exponent };
+}
+
 function mapVariants(rows: readonly CanonicalImportRow[]): CommerceListingRecord['variants'] {
-  return rows.map((row) =>
-    commerceVariantSchema.parse({
+  return rows.map((row) => {
+    const priceOverride = variantPriceOverride(row);
+    return commerceVariantSchema.parse({
       id: row.variantId,
       ...(row.sku.length > 0 ? { sku: row.sku } : {}),
       options: asObject(row.options) ?? { option: 'default' },
+      ...(priceOverride ? { priceOverride } : {}),
       quantity: row.variantQuantity,
       mediaIds: [],
       enabled: row.variantEnabled,
-    }),
-  );
+    });
+  });
 }
 
 function mapSale(row: CanonicalImportRow): CommerceListingRecord['sale'] {

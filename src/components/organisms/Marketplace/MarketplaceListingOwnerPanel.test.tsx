@@ -20,9 +20,10 @@ vi.mock('@/controllers/commerce/commerce', () => ({
   CommerceController: controller,
 }));
 
+const marketplaceSession = vi.hoisted(() => ({}));
+
 vi.mock('@/stores/commerce/commerce.store', () => ({
-  useCommerceStore: (selector: (state: { marketplaceSession: object }) => unknown) =>
-    selector({ marketplaceSession: {} }),
+  useCommerceStore: (selector: (state: { marketplaceSession: object }) => unknown) => selector({ marketplaceSession }),
 }));
 
 describe('MarketplaceListingOwnerPanel registration self-heal', () => {
@@ -49,6 +50,81 @@ describe('MarketplaceListingOwnerPanel registration self-heal', () => {
       expect(screen.queryByRole('button', { name: 'Register for checkout' })).not.toBeInTheDocument();
     },
   );
+
+  describe('a registered listing', () => {
+    const record = createCommerceListingFixture();
+    const projection = {
+      aggregateId: `listing:${record.ownerPubky}_${record.listingId}`,
+      sellerPubky: record.ownerPubky,
+      listingId: record.listingId,
+      listingRevision: record.revision,
+      contentHash: record.media[0].contentHash,
+      serverRevision: 3,
+      state: 'available' as const,
+      availableQuantity: 1,
+      reservedQuantity: 0,
+      unitPrice: { amountMinor: 12_500, currency: 'USD', exponent: 2 },
+      shipping: { amountMinor: 1_200, currency: 'USD', exponent: 2 },
+      saleFormat: 'fixed_price' as const,
+      fulfillmentMethods: ['shipping' as const],
+      auction: null,
+    };
+
+    it('re-syncs a lagging projection once per server revision, even as the row is rewritten', () => {
+      const stale = { ...projection, fulfillmentMethods: ['pickup' as const] };
+      const { rerender } = render(
+        <MarketplaceListingOwnerPanel record={record} registrationStatus="registered" projection={stale} />,
+      );
+      // Every heal rewrites the local row, so the page hands the panel a new record object.
+      rerender(
+        <MarketplaceListingOwnerPanel
+          record={{ ...record }}
+          registrationStatus="registered"
+          projection={{ ...stale }}
+        />,
+      );
+      rerender(
+        <MarketplaceListingOwnerPanel
+          record={{ ...record }}
+          registrationStatus="registered"
+          projection={{ ...stale }}
+        />,
+      );
+
+      expect(controller.ensureListingRegistered).toHaveBeenCalledOnce();
+      expect(controller.ensureListingRegistered).toHaveBeenCalledWith(record);
+      expect(screen.queryByRole('button', { name: 'Register for checkout' })).not.toBeInTheDocument();
+
+      rerender(
+        <MarketplaceListingOwnerPanel
+          record={{ ...record }}
+          registrationStatus="registered"
+          projection={{ ...stale, serverRevision: 4 }}
+        />,
+      );
+
+      expect(controller.ensureListingRegistered).toHaveBeenCalledTimes(2);
+    });
+
+    it('re-syncs once when only the projected unit price differs from the record', () => {
+      render(
+        <MarketplaceListingOwnerPanel
+          record={record}
+          registrationStatus="registered"
+          projection={{ ...projection, unitPrice: { ...projection.unitPrice, amountMinor: 9_900 } }}
+        />,
+      );
+
+      expect(controller.ensureListingRegistered).toHaveBeenCalledOnce();
+      expect(controller.ensureListingRegistered).toHaveBeenCalledWith(record);
+    });
+
+    it('leaves a projection that matches the record alone', () => {
+      render(<MarketplaceListingOwnerPanel record={record} registrationStatus="registered" projection={projection} />);
+
+      expect(controller.ensureListingRegistered).not.toHaveBeenCalled();
+    });
+  });
 
   it('shows static copy instead of the button, and never retries, in a browser without Web Locks', () => {
     controller.canRegisterListings.mockReturnValue(false);

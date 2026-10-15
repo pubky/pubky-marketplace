@@ -177,6 +177,21 @@ const optionalPositiveIntArrayFromString = (label: string) =>
     })
     .pipe(z.array(positiveIntValue).min(1).optional());
 
+const optionalHomeserverArrayFromString = (label: string) =>
+  z
+    .string()
+    .optional()
+    .transform((val, ctx) => {
+      if (val === undefined || val.trim() === '') return undefined;
+      try {
+        return parseJsonStringArray(val, label);
+      } catch (error) {
+        ctx.addIssue({ code: 'custom', message: `Invalid ${label} value: ${(error as Error).message}` });
+        return z.NEVER;
+      }
+    })
+    .pipe(z.array(homeserverValue).optional());
+
 /**
  * Optional-tier env strings: a missing OR empty/whitespace value means "unset".
  * The outer `.optional()` keeps the key optional in the OUTPUT type too, so the env-input
@@ -410,6 +425,9 @@ export const APP_RUNTIME_DEFAULTS = {
   usdtPaymentsEnabled: false,
   frameAncestors: [] as string[],
   embedded: false,
+  privEncryptionKeys: false,
+  passportPrivEncryptionKeys: false,
+  privEncryptionKeysHomeservers: [] as string[],
   preludeSdkTimeoutMs: 5_000,
   previewImage: '/preview.webp',
   siteName: 'Pubky App',
@@ -568,6 +586,32 @@ export const runtimeConfigValueSchema = networkConfigValueSchema.extend({
    * (see `getShopPublicPath`).
    */
   shopPublicPath: shopPublicPathValue.optional(),
+  /**
+   * Whether the Shop's grant sign-in asks the signer for the `e` action on
+   * `/priv/pubky.app/marketplace/` (priv-encryption Phase 4), so the user's
+   * data key is wrapped under a key only the signer can derive. Off by
+   * default: a homeserver without scoped-key support rejects the grant after
+   * the user has approved it. Also requires the deploy's homeserver to be
+   * listed in `privEncryptionKeysHomeservers`.
+   */
+  privEncryptionKeys: z.boolean().default(APP_RUNTIME_DEFAULTS.privEncryptionKeys),
+  /**
+   * Like `privEncryptionKeys`, for the Pubky Passport sign-in only. Passport
+   * (v1.2.0 and later) answers `e` with selective approval, so it can ask for
+   * scoped keys while signers that cannot answer `e` keep the plain grant.
+   * Off by default; also requires the deploy's homeserver to be listed in
+   * `privEncryptionKeysHomeservers`.
+   */
+  passportPrivEncryptionKeys: z.boolean().default(APP_RUNTIME_DEFAULTS.passportPrivEncryptionKeys),
+  /**
+   * Public keys (in the form of `homeserver`) of the homeservers known to run a release with
+   * scoped encryption keys. The homeserver does not advertise the capability
+   * in `/info`, so the operator lists it here once it is deployed. The `e`
+   * request is made only while the deploy's configured homeserver is listed.
+   */
+  privEncryptionKeysHomeservers: z
+    .array(homeserverValue)
+    .default([...APP_RUNTIME_DEFAULTS.privEncryptionKeysHomeservers]),
   /** Client id of the Shop's grant sign-in. Absent means `SHOP_GRANT_CLIENT_ID` in `src/config/app.ts`. */
   shopGrantClientId: shopGrantClientIdValue.optional(),
   preludeSdkKey: nonEmptyStringValue.optional(),
@@ -661,6 +705,9 @@ export const runtimeEnvInputSchema = z
     embedded: optionalBooleanFromString,
     storageAdoptLegacy: optionalBooleanFromString,
     shopPublicPath: optionalShopPublicPathFromString,
+    privEncryptionKeys: optionalBooleanFromString,
+    passportPrivEncryptionKeys: optionalBooleanFromString,
+    privEncryptionKeysHomeservers: optionalHomeserverArrayFromString('PRIV_ENCRYPTION_KEYS_HOMESERVERS'),
     shopGrantClientId: optionalShopGrantClientIdFromString,
     preludeSdkKey: optionalTrimmedString,
     preludeSdkTimeoutMs: optionalPositiveIntFromString,
@@ -762,6 +809,9 @@ export const runtimeEnvInputSchemaWithDefaults = z
     embedded: optionalBooleanFromString,
     storageAdoptLegacy: optionalBooleanFromString,
     shopPublicPath: optionalShopPublicPathFromString,
+    privEncryptionKeys: optionalBooleanFromString,
+    passportPrivEncryptionKeys: optionalBooleanFromString,
+    privEncryptionKeysHomeservers: optionalHomeserverArrayFromString('PRIV_ENCRYPTION_KEYS_HOMESERVERS'),
     shopGrantClientId: optionalShopGrantClientIdFromString,
     preludeSdkKey: optionalTrimmedString,
     preludeSdkTimeoutMs: optionalPositiveIntFromString,
@@ -855,6 +905,9 @@ export const PUBKY_RUNTIME_ENV_NAMES: Record<keyof RuntimeConfig, string> = {
   embedded: 'PUBKY_RUNTIME_EMBEDDED',
   storageAdoptLegacy: 'PUBKY_RUNTIME_STORAGE_ADOPT_LEGACY',
   shopPublicPath: 'PUBKY_RUNTIME_SHOP_PUBLIC_PATH',
+  privEncryptionKeys: 'PUBKY_RUNTIME_PRIV_ENCRYPTION_KEYS',
+  passportPrivEncryptionKeys: 'PUBKY_RUNTIME_PASSPORT_PRIV_ENCRYPTION_KEYS',
+  privEncryptionKeysHomeservers: 'PUBKY_RUNTIME_PRIV_ENCRYPTION_KEYS_HOMESERVERS',
   shopGrantClientId: 'PUBKY_RUNTIME_SHOP_GRANT_CLIENT_ID',
   preludeSdkKey: 'PUBKY_RUNTIME_PRELUDE_SDK_KEY',
   preludeSdkTimeoutMs: 'PUBKY_RUNTIME_PRELUDE_SDK_TIMEOUT_MS',

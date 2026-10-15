@@ -239,6 +239,10 @@ export const getMarketplaceGrantSessionEnabled = (): boolean => getRuntimeConfig
 export const getMarketplaceGrantPollMilliseconds = (): number => getRuntimeConfig().marketplaceGrantPollMilliseconds;
 export const getPassportSignInEnabled = (): boolean => getRuntimeConfig().passportSignIn;
 export const getUsdtPaymentsEnabled = (): boolean => getRuntimeConfig().usdtPaymentsEnabled;
+export const getPrivEncryptionKeysEnabled = (): boolean => getRuntimeConfig().privEncryptionKeys;
+export const getPassportPrivEncryptionKeysEnabled = (): boolean => getRuntimeConfig().passportPrivEncryptionKeys;
+export const getPrivEncryptionKeysHomeservers = (): readonly string[] =>
+  getRuntimeConfig().privEncryptionKeysHomeservers;
 
 /** The Passport deployment whose Google sign-up lands on each deploy's homeserver. */
 const PASSPORT_ORIGIN_BY_DEPLOY_ENV: Record<DeployEnv, string> = {
