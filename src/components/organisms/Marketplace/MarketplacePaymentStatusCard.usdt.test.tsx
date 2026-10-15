@@ -212,6 +212,34 @@ describe('MarketplacePaymentStatusCard — USDT orders', () => {
     expect(screen.queryByRole('button', { name: 'Cancel checkout' })).not.toBeInTheDocument();
   });
 
+  it.each([
+    ['awaiting', 'pending', true],
+    ['awaiting', null, true],
+    ['awaiting', 'delivered', true],
+    ['awaiting', 'failed', false],
+    ['received', 'failed', true],
+    ['final', 'failed', true],
+    ['rechecking', 'failed', true],
+  ] as const)(
+    'offers no checkout action beside a %s USDT order whose delivery reads %s (buyer: %s), even when one is passed',
+    (phase, paykitDeliveryState, isBuyer) => {
+      const { order, payment } = createUsdtOrderFixture(phase, { paykitDeliveryState });
+      render(
+        <MarketplacePaymentStatusCard
+          order={order}
+          payment={payment}
+          isBuyer={isBuyer}
+          adapterMode="transaction-service"
+          advancePayment={async () => false}
+          onPaymentChanged={() => {}}
+          checkoutActions={<button type="button">Cancel checkout</button>}
+        />,
+      );
+
+      expect(screen.queryByRole('button', { name: 'Cancel checkout' })).not.toBeInTheDocument();
+    },
+  );
+
   it('shows the seller of an unpaid USDT order neither the accept-by nor the buyer finality note', () => {
     renderPhase('awaiting', false);
 

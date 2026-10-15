@@ -1462,6 +1462,47 @@ describe('MarketplacePaymentStatusCard', () => {
     }
   });
 
+  it.each([
+    ['a seen payment (detected)', 'pending_payment', { paykitRequestState: 'detected' }, 'awaiting_entitlement', true],
+    [
+      'a seen payment (awaiting the seller)',
+      'pending_payment',
+      { paykitRequestState: 'awaiting_seller_confirmation' },
+      'awaiting_entitlement',
+      true,
+    ],
+    ['a payment in review', 'pending_payment', { paykitRequestState: 'pending' }, 'manual_review', true],
+    ['an elapsed checkout', 'cancelled', { cancellationReason: 'payment window elapsed' }, 'expired', true],
+    ['a seller viewing the order', 'pending_payment', { paykitRequestState: 'pending' }, 'awaiting_entitlement', false],
+    ['a paid order', 'paid', { paykitRequestState: 'confirmed' }, 'confirmed', true],
+  ] as const)(
+    'offers no checkout action beside the unconfirmed-delivery copy for %s, even when one is passed',
+    (_label, orderState, overrides, paymentState, isBuyer) => {
+      const payment = createPaymentFixture(paymentState, { adapter: 'paykit' });
+      render(
+        <MarketplacePaymentStatusCard
+          order={createOrderFixture(orderState, {
+            paymentId: payment.id,
+            holdExpiresAt: '2026-08-20T21:15:00.000Z',
+            holdSource: 'bind',
+            paymentMethod: 'bitcoin',
+            paykitDeliveryState: 'failed',
+            paykitSellerConfirmationDeadline: '2026-08-20T21:15:00.000Z',
+            ...overrides,
+          })}
+          payment={payment}
+          isBuyer={isBuyer}
+          adapterMode="transaction-service"
+          advancePayment={async () => false}
+          onPaymentChanged={() => {}}
+          checkoutActions={<button type="button">Cancel checkout</button>}
+        />,
+      );
+
+      expect(screen.queryByRole('button', { name: 'Cancel checkout' })).not.toBeInTheDocument();
+    },
+  );
+
   it.each(['awaiting_seller_confirmation', 'detected'] as const)(
     'still shows a seen payment when the delivery state reads failed (%s), since detection never depends on delivery',
     (paykitRequestState) => {

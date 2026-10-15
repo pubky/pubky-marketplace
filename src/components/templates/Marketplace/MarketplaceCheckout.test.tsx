@@ -1086,15 +1086,23 @@ describe('MarketplaceCheckout', () => {
     });
 
     it.each([
-      ['bitcoin', 'failed', true],
-      ['usdt', 'failed', true],
-      ['bitcoin', 'delivered', false],
-      ['bitcoin', 'pending', false],
+      ['bitcoin', 'failed', 'pending_payment', true],
+      ['usdt', 'failed', 'pending_payment', true],
+      ['paypal', null, 'pending_payment', true],
+      ['bitcoin', 'delivered', 'pending_payment', false],
+      ['bitcoin', 'pending', 'pending_payment', false],
+      ['bitcoin', null, 'pending_payment', false],
+      ['usdt', 'pending', 'pending_payment', false],
+      ['usdt', null, 'pending_payment', false],
+      ['usdt', 'delivered', 'pending_payment', false],
+      ['bitcoin', 'failed', 'paid', false],
+      ['bitcoin', 'failed', 'cancelled', false],
+      ['usdt', 'failed', 'cancelled', false],
     ] as const)(
-      'offers cancelling a pending %s checkout beside the card only when delivery reads %s (%s)',
-      (paymentMethod, paykitDeliveryState, offered) => {
+      'offers cancelling a %s checkout whose delivery reads %s and order is %s beside the card: %s',
+      (paymentMethod, paykitDeliveryState, orderState, offered) => {
         const payment = createPaymentFixture('awaiting_entitlement', { adapter: 'paykit' });
-        const order = createOrderFixture('pending_payment', {
+        const order = createOrderFixture(orderState, {
           paymentId: payment.id,
           paymentMethod,
           paykitDeliveryState,
@@ -1107,6 +1115,33 @@ describe('MarketplaceCheckout', () => {
         expect(screen.queryByRole('button', { name: 'Cancel checkout' }) !== null).toBe(offered);
       },
     );
+
+    it('confirms cancellation of a pending Bitcoin checkout with an unconfirmed delivery through the existing order action', async () => {
+      const user = userEvent.setup();
+      checkoutActions.actOnOrder.mockClear();
+      const payment = createPaymentFixture('awaiting_entitlement', { adapter: 'paykit' });
+      const order = createOrderFixture('pending_payment', {
+        paymentId: payment.id,
+        paymentMethod: 'bitcoin',
+        paykitRequestState: 'pending',
+        paykitDeliveryState: 'failed',
+      });
+      view.orders = [{ order, payment }];
+      window.location.hash = `#${order.id}`;
+      render(<MarketplaceCheckout />);
+
+      expect(screen.getByTestId('payment-status-panel')).toBeInTheDocument();
+      await user.click(screen.getByRole('button', { name: 'Cancel checkout' }));
+      expect(screen.getByRole('dialog')).toHaveTextContent('Cancel checkout');
+      expect(checkoutActions.actOnOrder).not.toHaveBeenCalled();
+      await user.type(screen.getByRole('textbox', { name: 'Reason' }), 'Wallet never showed the request');
+      await user.click(screen.getByRole('button', { name: 'Confirm' }));
+      await waitFor(() =>
+        expect(checkoutActions.actOnOrder).toHaveBeenCalledWith(order, 'order.cancel_request', {
+          reason: 'Wallet never showed the request',
+        }),
+      );
+    });
 
     it('shows the reserved header for a pending PayPal checkout that is not yet awaiting entitlement', () => {
       const order = createOrderFixture('pending_payment', { paymentMethod: 'paypal' });
