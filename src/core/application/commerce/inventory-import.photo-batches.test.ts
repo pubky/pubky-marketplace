@@ -190,7 +190,8 @@ describe('photos in batches, through plan, photo phase and publish', () => {
     });
   });
 
-  describe('the real catalogue', () => {
+  // The full 725-photo catalogue takes 6-14 s on CI runners, over Vitest's 5 s default.
+  describe('the real catalogue', { timeout: 60_000 }, () => {
     it('loads all 725 photos in two batches without a second import, and publishes every listing with photos', async () => {
       const importer = app();
       const planned = await importer.planStoreCatalog(realCatalog(), CHF, OFFERED);
