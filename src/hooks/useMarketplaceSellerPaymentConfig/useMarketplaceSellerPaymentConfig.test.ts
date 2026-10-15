@@ -1,6 +1,7 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { CommerceController } from '@/controllers/commerce/commerce';
+import type { SellerPaymentConfigOwnView } from '@/libs/commerce/payment-methods';
 import { AppError } from '@/libs/error/error';
 import { AuthErrorCode, ClientErrorCode } from '@/libs/error/error.codes';
 import { ErrorCategory, ErrorService } from '@/libs/error/error.types';
@@ -11,7 +12,6 @@ import { useMarketplaceSellerPaymentConfig } from './useMarketplaceSellerPayment
 vi.mock('@/controllers/commerce/commerce', () => ({
   CommerceController: {
     getMyPaymentConfig: vi.fn(),
-    isOwnPaykitAccountClaimed: vi.fn(),
     putMyPaymentConfig: vi.fn(),
   },
 }));
@@ -29,6 +29,7 @@ const error = (operation: string) =>
 
 const config = {
   bitcoinEnabled: true,
+  bitcoinSetup: 'ready' as const,
   paypalMerchantEmail: null,
   updatedAt: '2026-09-09T00:00:00.000Z',
 };
@@ -36,7 +37,6 @@ const config = {
 describe('useMarketplaceSellerPaymentConfig', () => {
   it('uses static copy for configuration load and save failures', async () => {
     vi.mocked(CommerceController.getMyPaymentConfig).mockRejectedValueOnce(error('load'));
-    vi.mocked(CommerceController.isOwnPaykitAccountClaimed).mockResolvedValueOnce(false);
     const { result } = renderHook(() => useMarketplaceSellerPaymentConfig());
     await waitFor(() => expect(result.current.isLoading).toBe(false));
     expect(result.current.loadError).toBeTruthy();
@@ -64,9 +64,6 @@ describe('useMarketplaceSellerPaymentConfig', () => {
     });
     useCommerceStore.setState({ marketplaceSession: null });
     vi.mocked(CommerceController.getMyPaymentConfig).mockRejectedValueOnce(sessionError).mockResolvedValueOnce(config);
-    vi.mocked(CommerceController.isOwnPaykitAccountClaimed)
-      .mockRejectedValueOnce(sessionError)
-      .mockResolvedValueOnce(true);
 
     const { result } = renderHook(() => useMarketplaceSellerPaymentConfig());
     await waitFor(() => expect(result.current.isLoading).toBe(false));
@@ -88,13 +85,11 @@ describe('useMarketplaceSellerPaymentConfig', () => {
       expect(result.current.isLoading).toBe(false);
     });
     expect(CommerceController.getMyPaymentConfig).toHaveBeenCalledTimes(2);
-    expect(CommerceController.isOwnPaykitAccountClaimed).toHaveBeenCalledTimes(2);
     useCommerceStore.getState().reset();
   });
 
   it('sends only the Bitcoin and PayPal rails when saving', async () => {
     vi.mocked(CommerceController.getMyPaymentConfig).mockResolvedValue(config);
-    vi.mocked(CommerceController.isOwnPaykitAccountClaimed).mockResolvedValue(false);
     vi.mocked(CommerceController.putMyPaymentConfig).mockReset().mockResolvedValue(config);
     const { result } = renderHook(() => useMarketplaceSellerPaymentConfig());
     await waitFor(() => expect(result.current.config).not.toBeNull());
@@ -121,7 +116,6 @@ describe('useMarketplaceSellerPaymentConfig', () => {
 
     it('sends usdtEnabled only when the caller supplies it', async () => {
       vi.mocked(CommerceController.getMyPaymentConfig).mockResolvedValue(config);
-      vi.mocked(CommerceController.isOwnPaykitAccountClaimed).mockResolvedValue(true);
       vi.mocked(CommerceController.putMyPaymentConfig).mockReset().mockResolvedValue(config);
       const { result } = renderHook(() => useMarketplaceSellerPaymentConfig());
       await waitFor(() => expect(result.current.isLoading).toBe(false));
@@ -138,8 +132,7 @@ describe('useMarketplaceSellerPaymentConfig', () => {
       expect(vi.mocked(CommerceController.putMyPaymentConfig).mock.calls[1]?.[0]).toMatchObject({ usdtEnabled: false });
     });
 
-    it('refreshOwnConfig re-reads only the stored configuration, without a loading state or a claim lookup', async () => {
-      vi.mocked(CommerceController.isOwnPaykitAccountClaimed).mockReset().mockResolvedValue(true);
+    it('refreshOwnConfig re-reads only the stored configuration, without a loading state', async () => {
       vi.mocked(CommerceController.getMyPaymentConfig)
         .mockReset()
         .mockResolvedValueOnce(config)
@@ -154,11 +147,10 @@ describe('useMarketplaceSellerPaymentConfig', () => {
       expect(refreshed).toEqual(usdtConfig);
       expect(result.current.config).toEqual(usdtConfig);
       expect(result.current.isLoading).toBe(false);
-      expect(CommerceController.isOwnPaykitAccountClaimed).toHaveBeenCalledTimes(1);
+      expect(CommerceController.getMyPaymentConfig).toHaveBeenCalledTimes(2);
     });
 
     it('refreshOwnConfig resolves null and keeps the last configuration when the read fails', async () => {
-      vi.mocked(CommerceController.isOwnPaykitAccountClaimed).mockReset().mockResolvedValue(true);
       vi.mocked(CommerceController.getMyPaymentConfig)
         .mockReset()
         .mockResolvedValueOnce(usdtConfig)
@@ -176,7 +168,6 @@ describe('useMarketplaceSellerPaymentConfig', () => {
     });
 
     it('lets only the latest overlapping refreshOwnConfig update the configuration', async () => {
-      vi.mocked(CommerceController.isOwnPaykitAccountClaimed).mockReset().mockResolvedValue(true);
       let releaseStale: (value: typeof config) => void = () => {};
       vi.mocked(CommerceController.getMyPaymentConfig)
         .mockReset()
@@ -198,6 +189,87 @@ describe('useMarketplaceSellerPaymentConfig', () => {
         await stale;
       });
       expect(result.current.config).toEqual(usdtConfig);
+    });
+  });
+
+  describe('Bitkit setup from bitcoin_setup', () => {
+    it.each([
+      ['ready', true],
+      ['setup_required', false],
+      ['unavailable', null],
+      [undefined, null],
+    ] as const)('reads bitcoinSetup=%s as accountClaimed=%s', async (bitcoinSetup, expected) => {
+      vi.mocked(CommerceController.getMyPaymentConfig)
+        .mockReset()
+        .mockResolvedValue({ ...config, bitcoinSetup });
+      const { result } = renderHook(() => useMarketplaceSellerPaymentConfig());
+      await waitFor(() => expect(result.current.isLoading).toBe(false));
+      expect(result.current.accountClaimed).toBe(expected);
+    });
+
+    it('returns the fresh answer from refresh, as the Bitkit callback expects', async () => {
+      vi.mocked(CommerceController.getMyPaymentConfig)
+        .mockReset()
+        .mockResolvedValueOnce({ ...config, bitcoinSetup: 'setup_required' })
+        .mockResolvedValueOnce(config);
+      const { result } = renderHook(() => useMarketplaceSellerPaymentConfig());
+      await waitFor(() => expect(result.current.accountClaimed).toBe(false));
+
+      let claimed: unknown;
+      await act(async () => {
+        claimed = await result.current.refresh();
+      });
+      expect(claimed).toBe(true);
+      expect(result.current.accountClaimed).toBe(true);
+    });
+
+    it('adopts a definite answer from a save or a config-only refresh, and keeps it on unavailable', async () => {
+      vi.mocked(CommerceController.getMyPaymentConfig)
+        .mockReset()
+        .mockResolvedValueOnce({ ...config, bitcoinSetup: 'setup_required' })
+        .mockResolvedValueOnce({ ...config, bitcoinSetup: 'unavailable' });
+      vi.mocked(CommerceController.putMyPaymentConfig).mockReset().mockResolvedValue(config);
+      const { result } = renderHook(() => useMarketplaceSellerPaymentConfig());
+      await waitFor(() => expect(result.current.accountClaimed).toBe(false));
+
+      await act(async () => {
+        await result.current.save({ bitcoinEnabled: true, paypalMerchantEmail: '' });
+      });
+      expect(result.current.accountClaimed).toBe(true);
+
+      await act(async () => {
+        await result.current.refreshOwnConfig();
+      });
+      expect(result.current.accountClaimed).toBe(true);
+    });
+
+    it('never lets an older config refresh replace a newer Bitkit confirmation', async () => {
+      let releaseStale: (value: SellerPaymentConfigOwnView) => void = () => {};
+      vi.mocked(CommerceController.getMyPaymentConfig)
+        .mockReset()
+        .mockResolvedValueOnce({ ...config, bitcoinSetup: 'setup_required' })
+        .mockImplementationOnce(() => new Promise((resolve) => (releaseStale = resolve)))
+        .mockResolvedValueOnce(config);
+      const { result } = renderHook(() => useMarketplaceSellerPaymentConfig());
+      await waitFor(() => expect(result.current.accountClaimed).toBe(false));
+
+      let stale: Promise<unknown> = Promise.resolve();
+      act(() => {
+        stale = result.current.refreshOwnConfig();
+      });
+      await act(async () => {
+        await result.current.refresh();
+      });
+      expect(result.current.accountClaimed).toBe(true);
+
+      let staleResult: unknown;
+      await act(async () => {
+        releaseStale({ ...config, bitcoinSetup: 'setup_required', bitcoinEnabled: false });
+        staleResult = await stale;
+      });
+      expect(staleResult).toMatchObject({ bitcoinSetup: 'setup_required' });
+      expect(result.current.accountClaimed).toBe(true);
+      expect(result.current.config).toEqual(config);
     });
   });
 });

@@ -106,14 +106,7 @@ describe('CommerceController marketplace session-ended binding', () => {
     render(
       <>
         <DropSessionProbe />
-        <MarketplaceGetPaidSettings
-          locksConnect={{
-            connectedCreator: null,
-            isExchanging: false,
-            error: null,
-            openConnect: () => {},
-          }}
-        />
+        <MarketplaceGetPaidSettings />
       </>,
     );
     expect(screen.getByText('drop-has-session')).toBeInTheDocument();

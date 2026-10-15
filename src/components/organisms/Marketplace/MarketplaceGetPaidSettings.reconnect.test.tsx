@@ -21,7 +21,6 @@ vi.mock('@/controllers/commerce/commerce', () => ({
     getPaykitReconnectUrl: vi.fn(),
     fetchUsdtPaymentsAvailable: vi.fn(),
     getMyPaymentConfig: vi.fn(),
-    isOwnPaykitAccountClaimed: vi.fn(),
     putMyPaymentConfig: vi.fn(),
     beginMarketplaceSessionConnect: vi.fn(),
     hasFullHomeserverGrant: vi.fn(() => false),
@@ -35,14 +34,10 @@ vi.mock('@/molecules/Toaster/use-toast', () => ({
 const mocked = vi.mocked(CommerceController);
 const mockedToast = vi.mocked(toast);
 
-const locksConnect = {
-  connectedCreator: PUBKY,
-  isExchanging: false,
-  error: null,
-  connectOpen: false,
-  connectUrl: null,
-  openConnect: vi.fn(),
-};
+/** The seller's own config with the service's uncached `bitcoin_setup`. */
+function ownConfig(bitcoinSetup: 'ready' | 'setup_required' | 'unavailable') {
+  return { bitcoinEnabled: false, bitcoinSetup, paypalMerchantEmail: null, updatedAt: '1970-01-01T00:00:00.000Z' };
+}
 
 function paykitUrl(path: string) {
   return (returnTo: unknown, state: unknown, creator: unknown) => {
@@ -55,7 +50,7 @@ function paykitUrl(path: string) {
 }
 
 async function renderSettings() {
-  render(<MarketplaceGetPaidSettings locksConnect={locksConnect} />);
+  render(<MarketplaceGetPaidSettings />);
   await screen.findByLabelText('PayPal merchant email');
 }
 
@@ -89,8 +84,7 @@ beforeEach(() => {
   mocked.getPaykitSetupUrl.mockReset().mockImplementation(paykitUrl('/setup'));
   mocked.getPaykitReconnectUrl.mockReset().mockImplementation(paykitUrl('/setup/reconnect'));
   mocked.fetchUsdtPaymentsAvailable.mockReset().mockResolvedValue(false);
-  mocked.getMyPaymentConfig.mockReset().mockResolvedValue(null);
-  mocked.isOwnPaykitAccountClaimed.mockReset().mockResolvedValue(false);
+  mocked.getMyPaymentConfig.mockReset().mockResolvedValue(ownConfig('setup_required'));
   mocked.putMyPaymentConfig.mockReset();
   useCommerceStore.setState({
     marketplaceSession: {
@@ -105,7 +99,7 @@ beforeEach(() => {
 
 describe('MarketplaceGetPaidSettings Bitkit reconnect (upstream Paykit)', () => {
   it('reconnects, never re-runs initial setup, when Paykit already holds the wallet', async () => {
-    mocked.isOwnPaykitAccountClaimed.mockResolvedValue(true);
+    mocked.getMyPaymentConfig.mockResolvedValue(ownConfig('ready'));
     await renderSettings();
     expect(await screen.findByText('Wallet connected.')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Connect Bitkit/ })).not.toBeInTheDocument();
@@ -134,7 +128,7 @@ describe('MarketplaceGetPaidSettings Bitkit reconnect (upstream Paykit)', () => 
     const dialog = screen.getByRole('dialog', { name: 'Connect Bitkit' });
     expect(within(dialog).getByRole('button', { name: /Retry/ })).toBeInTheDocument();
 
-    mocked.isOwnPaykitAccountClaimed.mockResolvedValue(true);
+    mocked.getMyPaymentConfig.mockResolvedValue(ownConfig('ready'));
     await userEvent.click(within(dialog).getByRole('button', { name: /Reconnect Bitkit/ }));
     const reconnectFrame = paykitFrame('Reconnect Bitkit');
     expect(framePath(reconnectFrame)).toBe('https://paykit.example/setup/reconnect');
@@ -158,7 +152,7 @@ describe('MarketplaceGetPaidSettings Bitkit reconnect (upstream Paykit)', () => 
   });
 
   it('says reconnecting failed, not setup, when a reconnect fails', async () => {
-    mocked.isOwnPaykitAccountClaimed.mockResolvedValue(true);
+    mocked.getMyPaymentConfig.mockResolvedValue(ownConfig('ready'));
     await renderSettings();
     await userEvent.click(await screen.findByRole('button', { name: /Reconnect Bitkit/ }));
     sendCallback(paykitFrame('Reconnect Bitkit'), { error: 'setup-failed' });
@@ -170,7 +164,7 @@ describe('MarketplaceGetPaidSettings Bitkit reconnect (upstream Paykit)', () => 
   });
 
   it('starts initial setup when the wallet state is unknown, and still offers reconnect if Paykit refuses it', async () => {
-    mocked.isOwnPaykitAccountClaimed.mockRejectedValue(new Error('Lock Server not connected'));
+    mocked.getMyPaymentConfig.mockResolvedValue(ownConfig('unavailable'));
     await renderSettings();
     expect(screen.queryByText('Wallet connected.')).not.toBeInTheDocument();
 
@@ -187,7 +181,7 @@ describe('MarketplaceGetPaidSettings Bitkit reconnect (upstream Paykit)', () => 
 
   it('keeps the fork Paykit on its initial setup route', async () => {
     runtime.api = 'fork';
-    mocked.isOwnPaykitAccountClaimed.mockResolvedValue(true);
+    mocked.getMyPaymentConfig.mockResolvedValue(ownConfig('ready'));
     await renderSettings();
     await userEvent.click(await screen.findByRole('button', { name: /Connect Bitkit/ }));
 
