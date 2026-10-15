@@ -140,6 +140,32 @@ describe('MarketplaceInventory VRT', () => {
     );
   });
 
+  it('renders a paused listing with Relist at desktop viewport', async () => {
+    view.isLoading = false;
+    view.load = {
+      status: 'ready',
+      rows: [
+        row(),
+        row({
+          listingId: 'lamp',
+          aggregateId: `listing:${SELLER}_lamp`,
+          title: 'Brass desk lamp',
+          listingState: 'paused',
+          reserved: 0,
+          available: 3,
+          sold: 0,
+          total: 3,
+        }),
+      ],
+    };
+    view.conflictListingId = null;
+    const screen = await renderForVRT(<MarketplaceInventory />, { viewport: VRT_VIEWPORT_DESKTOP, disableHover: true });
+    await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot(
+      'inventory-paused-relist-desktop',
+      VRT_DENSE_CHROME_SCREENSHOT,
+    );
+  });
+
   it('renders the grant-needed banner at desktop viewport', async () => {
     view.isLoading = false;
     view.load = { status: 'grant-needed' };
