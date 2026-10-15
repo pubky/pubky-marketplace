@@ -24,6 +24,8 @@ export function ControlledInputField<T extends FieldValues>({
   onPaste,
   className,
   inputClassName,
+  type,
+  autoComplete,
   dataCy,
 }: ControlledInputFieldProps<T>) {
   const field = (
@@ -49,6 +51,8 @@ export function ControlledInputField<T extends FieldValues>({
           onPaste={onPaste}
           className={className ?? 'mb-0'}
           inputClassName={inputClassName}
+          type={type}
+          autoComplete={autoComplete}
           dataCy={dataCy}
           status={fieldState.error ? 'error' : 'default'}
           message={fieldState.error?.message}
