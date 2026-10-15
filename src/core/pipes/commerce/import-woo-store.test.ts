@@ -283,6 +283,19 @@ describe('currency', () => {
     expect(result.rows[0]).toMatchObject({ currency: 'CHF', amountMinor: 2_500 });
   });
 
+  it('writes the flat shipping option in the store currency too, whatever the settings currency says', () => {
+    const flat: ImportSettings = {
+      ...CHF,
+      currency: 'USD',
+      shipping: { mode: 'flat', priceMinor: 790, minDays: 2, maxDays: 5 },
+    };
+    const result = map(catalogOf([product()]), flat);
+    expect(result.rows[0]?.shippingOptions[0]).toMatchObject({
+      pricing: 'flat',
+      price: { amountMinor: 790, currency: 'CHF', exponent: 2 },
+    });
+  });
+
   it('skips a product priced in another currency than the store and says so', () => {
     const odd = product({
       id: 2,

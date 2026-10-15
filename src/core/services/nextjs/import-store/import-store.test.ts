@@ -255,6 +255,15 @@ describe('NextJsImportStoreService', () => {
       }
     });
 
+    it('refuses a body that parses as JSON when it is not served as JSON', async () => {
+      for (const type of ['text/html', 'text/plain', 'application/octet-stream', '']) {
+        mockFetch.mockResolvedValueOnce(
+          new Response(JSON.stringify(PRODUCTS), { status: 200, headers: { 'content-type': type } }),
+        );
+        expect(await fetchPage()).toMatchObject({ ok: false, reason: 'not_json' });
+      }
+    });
+
     it('refuses JSON content type with a body that is not JSON, not UTF-8 or empty', async () => {
       mockFetch.mockResolvedValueOnce(jsonResponse('{"half":'));
       expect(await fetchPage()).toMatchObject({ ok: false, reason: 'not_json' });
