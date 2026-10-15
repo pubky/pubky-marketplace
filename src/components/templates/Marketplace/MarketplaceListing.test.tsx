@@ -7,6 +7,7 @@ import { COMMERCE_LISTING_MAX_QUANTITY } from '@/config/commerce';
 import { CHECKOUT_HOLD_COPY } from '@/libs/commerce/checkout-hold';
 import { getMarketplaceOfferCheckoutRoute } from '@/libs/commerce/checkout-phase';
 import type { MarketplaceOffer } from '@/services/marketplace/marketplace';
+import type { GrantSigner } from '@/stores/auth/auth.types';
 import {
   COMMERCE_FIXTURE_SELLER,
   createCommerceListingFixture,
@@ -29,6 +30,11 @@ const sellerReputation = vi.hoisted((): { value: CommerceSellerReputationOvervie
 }));
 const authState = vi.hoisted(() => ({
   currentUserPubky: 'b'.repeat(52) as string | null,
+  session: { grant: {} },
+  hasProfile: true,
+  isRestoringSession: false,
+  isLoggingOut: false,
+  grantSigner: 'ring' as GrantSigner,
   setShowSignInDialog: vi.fn(),
 }));
 const sessionState = vi.hoisted(() => ({
@@ -46,7 +52,7 @@ const view = vi.hoisted(() => ({
   needsSession: false,
   publicStock: null as 'available' | 'reserved' | 'sold' | null,
   publicStockFailure: false,
-  hasFullHomeserverGrant: false,
+  hasFullHomeserverGrant: true,
   orders: [] as Array<{ order: ReturnType<typeof createOrderFixture> }>,
   offers: [] as MarketplaceOffer[],
 }));
@@ -66,6 +72,11 @@ vi.mock('@/config/commerce', async (importOriginal) => {
   return { ...actual, getCommerceAdapterMode: () => 'transaction-service' };
 });
 
+vi.mock('@/libs/runtime-config/runtime-config', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/libs/runtime-config/runtime-config')>()),
+  getMarketplaceGrantFlowEnabled: () => true,
+}));
+
 vi.mock('dexie-react-hooks', () => ({
   useLiveQuery: (querier: () => unknown) => querier(),
 }));
@@ -74,6 +85,7 @@ vi.mock('@/controllers/commerce/commerce', () => ({
   CommerceController: {
     getListing: () => view.listing,
     getShop: () => view.shop,
+    getOrFetchShop: () => Promise.resolve(null),
     getOrFetchListing: () => (view.fetchFailure === null ? Promise.resolve(null) : Promise.reject(view.fetchFailure)),
     isListingConfirmedRemoved: (_seller: string, _listing: string, fetchError: unknown) => {
       confirmRemovedCalls(fetchError);
@@ -91,12 +103,13 @@ vi.mock('@/controllers/commerce/commerce', () => ({
 vi.mock('@/hooks/useMarketplaceSessionConnect/useMarketplaceSessionConnect', () => ({
   useMarketplaceSessionConnect: () => ({
     status: 'awaiting',
-    authorizationUrl: '',
+    authorizationUrl: 'pubkyauth://signin_grant?caps=%2Fpub%2Fpubky.app%2Fmarketplace-service%2Fv1%2F%3Arw',
     errorMessage: null,
-    // Mirrors the hook's single decision: full grant iff the homeserver
-    // grant is narrow (the flag defaults on under tests).
-    requestsFullGrant: !view.hasFullHomeserverGrant,
+    requestsFullGrant: false,
     requestsGrantReconnect: false,
+    requestsGrantBootstrap: true,
+    requestsPassport: false,
+    approvalSigner: authState.grantSigner === 'ring' ? 'Pubky Ring' : 'your signer',
     start: vi.fn(),
     cancel: vi.fn(),
     copyAuthUrl: vi.fn(async () => {}),
@@ -222,7 +235,7 @@ describe('MarketplaceListing', () => {
           ? { aggregateId: 'listing:x', state: view.publicStock, serverTime: '2026-10-13T07:45:00.000Z' }
           : null,
     );
-    view.hasFullHomeserverGrant = false;
+    view.hasFullHomeserverGrant = true;
     view.orders = [];
     view.offers = [];
     sessionState.pubky = null;
@@ -230,6 +243,7 @@ describe('MarketplaceListing', () => {
     cartAdd.mockClear();
     projectionRefresh.mockClear();
     authState.currentUserPubky = 'b'.repeat(52);
+    authState.grantSigner = 'ring';
     authState.setShowSignInDialog.mockClear();
   });
 
@@ -367,6 +381,25 @@ describe('MarketplaceListing', () => {
       purchase.compareDocumentPosition(screen.getByRole('heading', { name: 'Item specifics' })) &
         Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
+  });
+
+  it('shows where a shipped listing ships to when the seller limits destinations', () => {
+    view.shop = toCommerceShopModel(createCommerceShopFixture({ shipsToCountries: ['CH', 'LI'] }));
+    renderListing();
+    expect(screen.getByTestId('marketplace-listing-ships-to')).toHaveTextContent(
+      'Ships to: Switzerland and Liechtenstein',
+    );
+  });
+
+  it('says nothing about destinations for a seller who ships anywhere, or for pickup only', () => {
+    renderListing();
+    expect(screen.queryByTestId('marketplace-listing-ships-to')).not.toBeInTheDocument();
+    cleanup();
+
+    view.shop = toCommerceShopModel(createCommerceShopFixture({ shipsToCountries: ['CH'] }));
+    view.listing = toCommerceListingModel(createCommerceListingFixture({ fulfillmentMethods: ['pickup'] }));
+    renderListing();
+    expect(screen.queryByTestId('marketplace-listing-ships-to')).not.toBeInTheDocument();
   });
 
   // Digital delivery design §3 and §6 B7, B8.
@@ -1015,14 +1048,17 @@ describe('MarketplaceListing', () => {
     expect(screen.getByRole('button', { name: 'Place a bid' })).toBeEnabled();
   });
 
-  it('reveals the full-grant approval card when a bridged buyer with a narrow grant places a bid', async () => {
-    view.hasFullHomeserverGrant = false;
+  it('requires an explicit signer choice when a hosted buyer places a bid without a marketplace session', async () => {
+    authState.grantSigner = 'host';
     const user = userEvent.setup();
 
     renderAuctionListingNeedingSession();
     await user.click(screen.getByRole('button', { name: 'Place a bid' }));
 
     expect(screen.getByRole('heading', { name: 'Enable purchases' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Authorize with Pubky Ring' })).not.toBeInTheDocument();
+    expect(screen.getByText(/Choose the signer that holds the same pubky/)).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Pubky Ring' }));
     expect(screen.getByRole('button', { name: 'Authorize with Pubky Ring' })).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Authorize with Pubky Ring' }));
@@ -1101,7 +1137,7 @@ describe('MarketplaceListing', () => {
     expect(variant).not.toHaveTextContent(String(COMMERCE_LISTING_MAX_QUANTITY));
   });
 
-  it('reveals the empty-caps reconnect card when a full-grant buyer places a bid without a marketplace session', async () => {
+  it('reveals the service-grant approval card when a Ring buyer places a bid without a marketplace session', async () => {
     view.hasFullHomeserverGrant = true;
     const user = userEvent.setup();
 
@@ -1109,6 +1145,9 @@ describe('MarketplaceListing', () => {
     await user.click(screen.getByRole('button', { name: 'Place a bid' }));
 
     expect(screen.getByRole('heading', { name: 'Enable purchases' })).toBeInTheDocument();
+    expect(
+      screen.getByText(/Approve with Pubky Ring to connect the marketplace for the identity signed in to Shop/),
+    ).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Authorize with Pubky Ring' })).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Authorize with Pubky Ring' }));

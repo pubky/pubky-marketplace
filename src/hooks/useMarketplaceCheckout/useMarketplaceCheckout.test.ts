@@ -4,6 +4,7 @@ import { CommerceController } from '@/controllers/commerce/commerce';
 import type { MarketplaceCartItem } from '@/hooks/useMarketplaceCart/useMarketplaceCart';
 import { DELIVERY_KEY_COPY } from '@/libs/commerce/delivery-key-copy';
 import { createCommerceSandboxCatalog } from '@/libs/commerce/sandbox-catalog';
+import { SHIPS_TO_UNAVAILABLE_MESSAGE } from '@/libs/commerce/ships-to';
 import { AppError } from '@/libs/error/error';
 import { ClientErrorCode } from '@/libs/error/error.codes';
 import { ErrorCategory, ErrorService } from '@/libs/error/error.types';
@@ -49,8 +50,15 @@ vi.mock('@/config/commerce', async () => {
   };
 });
 
+const shopState = vi.hoisted(() => ({ shipsTo: new Map<string, string[]>(), unreadable: new Set<string>() }));
+
 vi.mock('@/controllers/commerce/commerce', () => ({
   CommerceController: {
+    refreshShop: vi.fn(async (sellerPubky: string) => {
+      if (shopState.unreadable.has(sellerPubky)) throw new Error('offline');
+      return { ownerPubky: sellerPubky, shipsToCountries: shopState.shipsTo.get(sellerPubky) };
+    }),
+    getShop: vi.fn(async () => null),
     getMarketplaceListingProjection: vi.fn(),
     syncListingRegistration: vi.fn(),
     executeMarketplaceCommand: vi.fn(),
@@ -110,6 +118,8 @@ const savedAddress = {
 describe('useMarketplaceCheckout', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    shopState.shipsTo.clear();
+    shopState.unreadable.clear();
     config.mode = 'sandbox';
     config.paykitServerApi = 'fork';
     authMock.currentUserPubky = null;
@@ -362,6 +372,42 @@ describe('useMarketplaceCheckout', () => {
     expect(vi.mocked(toast)).toHaveBeenCalledWith(
       expect.objectContaining({ description: expect.stringContaining('try again') }),
     );
+  });
+
+  it.each([
+    [
+      {
+        code: 'LISTING_NOT_ACTIVE',
+        message: 'The seller is not selling this listing right now.',
+        reason: 'listing_paused',
+      },
+      'The seller paused this listing. Check back later.',
+    ],
+    [
+      { code: 'UPSTREAM_UNAVAILABLE', message: "The seller's homeserver could not be reached. Try again shortly." },
+      "We couldn't reach the seller's shop. Try again in a moment.",
+    ],
+  ])('keeps the cart and shows static copy for a %o checkout refusal', async (error, expected) => {
+    vi.mocked(CommerceController.commitCreateMarketplaceCheckout).mockResolvedValue({ ok: false, error } as never);
+    const clear = vi.fn(async () => {});
+    const { result } = renderHook(() => useMarketplaceCheckout([item], clear));
+    act(() => {
+      result.current.form.setValue('name', 'Alice Buyer');
+      result.current.form.setValue('line1', '1 Market Street');
+      result.current.form.setValue('city', 'New York');
+      result.current.form.setValue('region', 'NY');
+      result.current.form.setValue('postalCode', '10001');
+    });
+
+    let succeeded = true;
+    await act(async () => {
+      succeeded = await result.current.submit();
+    });
+
+    expect(succeeded).toBe(false);
+    expect(clear).not.toHaveBeenCalled();
+    const { toast } = await import('@/molecules/Toaster/use-toast');
+    expect(vi.mocked(toast)).toHaveBeenCalledWith(expect.objectContaining({ description: expected }));
   });
 
   it('shows listing-specific copy and returns false for a sold-out checkout refusal', async () => {
@@ -874,6 +920,154 @@ describe('useMarketplaceCheckout', () => {
     expect(CommerceController.bindPaymentMethod).not.toHaveBeenCalled();
     expect(clear).toHaveBeenCalled();
   });
+
+  describe('seller destination countries (shop shipsToCountries)', () => {
+    const SWISS_ONLY = 'This seller ships only to Switzerland. Choose pickup if offered.';
+
+    function fillAddress(
+      result: { current: ReturnType<typeof useMarketplaceCheckout> },
+      address: { line1: string; city: string; postalCode: string; countryCode: string },
+    ) {
+      act(() => {
+        result.current.form.setValue('name', 'Alice Buyer');
+        result.current.form.setValue('line1', address.line1);
+        result.current.form.setValue('city', address.city);
+        result.current.form.setValue('region', '');
+        result.current.form.setValue('postalCode', address.postalCode);
+        result.current.form.setValue('countryCode', address.countryCode, { shouldDirty: true });
+      });
+    }
+
+    it('offers only the seller’s countries and starts a new address in the only one', async () => {
+      shopState.shipsTo.set(listing.ownerPubky, ['CH']);
+      const { result } = renderHook(() =>
+        useMarketplaceCheckout(
+          [item],
+          vi.fn(async () => {}),
+        ),
+      );
+
+      await waitFor(() => expect(result.current.allowedDestinationCountries).toEqual(['CH']));
+      expect(result.current.form.getValues('countryCode')).toBe('CH');
+      expect(CommerceController.refreshShop).toHaveBeenCalledWith(listing.ownerPubky);
+    });
+
+    it('checks out an address in an allowed country', async () => {
+      shopState.shipsTo.set(listing.ownerPubky, ['CH', 'LI']);
+      const { result } = renderHook(() =>
+        useMarketplaceCheckout(
+          [item],
+          vi.fn(async () => {}),
+        ),
+      );
+      await waitFor(() => expect(result.current.allowedDestinationCountries).toEqual(['CH', 'LI']));
+      fillAddress(result, { line1: 'Via Nassa 1', city: 'Lugano', postalCode: '6900', countryCode: 'CH' });
+
+      let succeeded = false;
+      await act(async () => {
+        succeeded = await result.current.submit();
+      });
+
+      expect(succeeded).toBe(true);
+      expect(CommerceController.commitCreateMarketplaceCheckout).toHaveBeenCalledWith(
+        expect.objectContaining({ deliveryAddress: expect.objectContaining({ countryCode: 'CH', city: 'Lugano' }) }),
+      );
+    });
+
+    it('marks a disallowed country invalid and never resolves keys or seals', async () => {
+      shopState.shipsTo.set(listing.ownerPubky, ['CH']);
+      const { result } = renderHook(() =>
+        useMarketplaceCheckout(
+          [item],
+          vi.fn(async () => {}),
+        ),
+      );
+      await waitFor(() => expect(result.current.allowedDestinationCountries).toEqual(['CH']));
+      fillAddress(result, { line1: 'Unter den Linden 1', city: 'Berlin', postalCode: '10117', countryCode: 'DE' });
+
+      let succeeded = true;
+      await act(async () => {
+        succeeded = await result.current.submit();
+      });
+
+      expect(succeeded).toBe(false);
+      expect(result.current.form.getFieldState('countryCode').error?.message).toBe(SWISS_ONLY);
+      expect(CommerceController.resolveDeliveryKeysForCheckout).not.toHaveBeenCalled();
+      expect(CommerceController.commitCreateMarketplaceCheckout).not.toHaveBeenCalled();
+    });
+
+    it('re-reads the shop before sealing and refuses a country the seller removed since the page loaded', async () => {
+      const { result } = renderHook(() =>
+        useMarketplaceCheckout(
+          [item],
+          vi.fn(async () => {}),
+        ),
+      );
+      await waitFor(() => expect(CommerceController.refreshShop).toHaveBeenCalled());
+      expect(result.current.allowedDestinationCountries).toBeNull();
+      shopState.shipsTo.set(listing.ownerPubky, ['CH']);
+      fillAddress(result, { line1: 'Unter den Linden 1', city: 'Berlin', postalCode: '10117', countryCode: 'DE' });
+
+      let succeeded = true;
+      await act(async () => {
+        succeeded = await result.current.submit();
+      });
+
+      expect(succeeded).toBe(false);
+      expect(toast).toHaveBeenCalledWith({ variant: 'error', description: SWISS_ONLY });
+      expect(CommerceController.resolveDeliveryKeysForCheckout).not.toHaveBeenCalled();
+      expect(CommerceController.commitCreateMarketplaceCheckout).not.toHaveBeenCalled();
+    });
+
+    it('refuses to ship when the seller’s shop cannot be read at all', async () => {
+      shopState.unreadable.add(listing.ownerPubky);
+      const { result } = renderHook(() =>
+        useMarketplaceCheckout(
+          [item],
+          vi.fn(async () => {}),
+        ),
+      );
+      fillAddress(result, { line1: 'Via Nassa 1', city: 'Lugano', postalCode: '6900', countryCode: 'CH' });
+
+      await waitFor(() =>
+        expect(result.current.form.getFieldState('countryCode').error?.message).toBe(SHIPS_TO_UNAVAILABLE_MESSAGE),
+      );
+      let succeeded = true;
+      await act(async () => {
+        succeeded = await result.current.submit();
+      });
+      expect(succeeded).toBe(false);
+      expect(CommerceController.commitCreateMarketplaceCheckout).not.toHaveBeenCalled();
+    });
+
+    it('leaves pickup alone: a Swiss-only seller’s pickup order sends no address and is not checked', async () => {
+      shopState.shipsTo.set(listing.ownerPubky, ['CH']);
+      vi.mocked(CommerceController.getShippedSellers).mockReturnValue([]);
+      const pickupItem: MarketplaceCartItem = {
+        ...item,
+        listing: { ...item.listing, record: { ...item.listing.record, fulfillmentMethods: ['pickup'] } },
+      };
+      const { result } = renderHook(() =>
+        useMarketplaceCheckout(
+          [pickupItem],
+          vi.fn(async () => {}),
+        ),
+      );
+      await waitFor(() => expect(result.current.requiresDeliveryAddress).toBe(false));
+
+      let succeeded = false;
+      await act(async () => {
+        succeeded = await result.current.submit();
+      });
+
+      expect(succeeded).toBe(true);
+      expect(result.current.allowedDestinationCountries).toBeNull();
+      expect(CommerceController.refreshShop).not.toHaveBeenCalled();
+      expect(vi.mocked(CommerceController.commitCreateMarketplaceCheckout).mock.calls[0][0]).not.toHaveProperty(
+        'deliveryAddress',
+      );
+    });
+  });
 });
 
 describe('useMarketplaceCheckout Locks checkout on upstream Paykit', () => {
@@ -1036,6 +1230,8 @@ describe('useMarketplaceCheckout local pickup (§A2)', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    shopState.shipsTo.clear();
+    shopState.unreadable.clear();
     config.mode = 'sandbox';
     authMock.currentUserPubky = null;
     useCommerceStore.setState({ marketplaceSession: null });
@@ -1330,6 +1526,8 @@ describe('useMarketplaceCheckout digital delivery (digital delivery design §3 "
 
   beforeEach(() => {
     vi.clearAllMocks();
+    shopState.shipsTo.clear();
+    shopState.unreadable.clear();
     config.mode = 'sandbox';
     authMock.currentUserPubky = null;
     useCommerceStore.setState({ marketplaceSession: null });

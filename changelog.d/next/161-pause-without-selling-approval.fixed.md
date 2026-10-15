@@ -1,0 +1,1 @@
+Pausing a fixed-price listing, from its page or from My shop, no longer asks a seller signed in with Bitkit or Pubky Passport to enable selling first. A pause only changes the listing record on the seller's homeserver, which the sign-in already covers; relisting and auctions still ask for the selling approval.

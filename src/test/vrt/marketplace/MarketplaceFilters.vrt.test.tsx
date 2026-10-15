@@ -13,8 +13,7 @@ const auth = vi.hoisted(() => ({ currentUserPubky: null as string | null }));
 
 vi.mock('@/stores/auth/auth.store', () => ({
   useAuthStore: createMarketplaceVrtAuthStore({
-    currentUserPubky: auth.currentUserPubky,
-    selectCurrentUserPubky: () => auth.currentUserPubky,
+    getCurrentUserPubky: () => auth.currentUserPubky,
   }),
 }));
 

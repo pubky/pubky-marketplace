@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { CommerceApplication } from '@/application/commerce/commerce';
+import { UserApplication } from '@/application/user/user';
 import type { CommerceAdapterMode } from '@/config/commerce';
 import { useAuthStore } from '@/stores/auth/auth.store';
 import { useCommerceStore } from '@/stores/commerce/commerce.store';
@@ -40,6 +41,8 @@ describe('CommerceController', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
     commerceConfig.mode = 'sandbox';
+    vi.spyOn(UserApplication, 'ensureSellerFollow').mockResolvedValue(undefined);
+    vi.spyOn(CommerceApplication, 'needsDefaultShop').mockResolvedValue(false);
     useAuthStore.setState({ currentUserPubky: COMMERCE_FIXTURE_SELLER });
     useCommerceStore.getState().reset();
     useNotificationStore.getState().reset();

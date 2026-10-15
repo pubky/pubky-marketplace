@@ -25,13 +25,13 @@ const GRANT_KEY_REMOVAL_OPERATION = 'removeGrantKeyMaterial';
 
 /**
  * A stored grant session record (and its delegated key) is still on this
- * device after a delete. Callers keep their record pointer and must not
- * report signed-out.
+ * device after a delete. Callers retain an exact cleanup obligation; explicit
+ * logout still removes local account and service authority.
  */
 export function grantKeyRemovalFailed(step: 'removeGrantSession' | 'clearGrantSessions', cause: unknown): AppError {
   return Err.database(
     DatabaseErrorCode.DELETE_FAILED,
-    'This device still holds a Bitkit or Pubky Passport sign-in key that could not be removed.',
+    'This device still holds a sign-in key that could not be removed.',
     { service: ErrorService.Homeserver, operation: GRANT_KEY_REMOVAL_OPERATION, cause, context: { step } },
   );
 }

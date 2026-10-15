@@ -1,24 +1,10 @@
-import type { MarketplaceApprovalSigner } from '@/hooks/useMarketplaceApprovalSigner/useMarketplaceApprovalSigner';
+import type {
+  MarketplaceApprovalSigner,
+  MarketplaceSignerChoice,
+} from '@/hooks/useMarketplaceApprovalSigner/useMarketplaceApprovalSigner';
 import type { CommerceMarketplaceSession } from '@/stores/commerce/commerce.types';
 
-/**
- * Lifecycle of one interactive session-connect attempt:
- *
- * - `idle`      — no flow in progress (initial, after cancel).
- * - `creating`  — the BFF is creating a signer-bound flow.
- * - `awaiting`  — an authorization URL exists and the flow is waiting for the
- *                 user to approve on their signer.
- * - `joined`    — the flow JOINED an approval ceremony another surface already
- *                 owns (e.g. a sign-in in progress). That surface holds the
- *                 only scannable URL, so there is no QR here — just the honest
- *                 "already in progress" state while the join awaits the same
- *                 settlement.
- * - `connected` — the signer approved and the AuthToken was exchanged for a
- *                 bearer session; the store now carries the session facts.
- * - `error`     — the flow failed (relay timeout, rejected token, service
- *                 unreachable). The URL is cleared because AuthToken flows are
- *                 single-use: retrying always starts a FRESH flow.
- */
+/** One scoped marketplace service approval; each retry creates a fresh flow. */
 export type MarketplaceSessionConnectStatus =
   | 'idle'
   | 'creating'
@@ -33,6 +19,8 @@ export type MarketplaceSessionConnectStatus =
   | 'error';
 
 export interface UseMarketplaceSessionConnectOptions {
+  /** Explicit approval signer for imported-key and host-owned sessions. */
+  signer?: MarketplaceSignerChoice | null;
   /** Called once per successful connect, after the store has been updated. */
   onConnected?: (session: CommerceMarketplaceSession) => void;
 }
@@ -43,19 +31,9 @@ export interface UseMarketplaceSessionConnectReturn {
   authorizationUrl: string;
   /** The real failure message when `status === 'error'`, never a placeholder. */
   errorMessage: string | null;
-  /**
-   * Which consent `start()` will request: `true` = the full Shop grant
-   * (bridged first-commerce prompt), `false` = the empty-capability
-   * marketplace-only approval. Computed here ONCE so rendered copy and the
-   * flow that actually starts can never diverge.
-   */
+  /** Always false: browser sign-in and service approval are separate grants. */
   requestsFullGrant: boolean;
-  /**
-   * True only while `start()` is running (or about to run) the reconnect
-   * grant. False for AuthToken bootstrap, including the BFF
-   * `shop_session_missing` / `shop_session_expired` fallback. The dialog
-   * must render this instead of re-reading the grant flag.
-   */
+  /** Reconnects an existing marketplace bearer through the Shop BFF. */
   requestsGrantReconnect: boolean;
   /**
    * True while `start()` is running (or about to run) the browser bootstrap:
@@ -71,12 +49,11 @@ export interface UseMarketplaceSessionConnectReturn {
    * never a QR or a deeplink.
    */
   requestsPassport: boolean;
-  /**
-   * Who approves the grant link: the grant signer for a Bitkit or Pubky
-   * Passport sign-in, `'Pubky Ring or Bitkit'` for a Ring sign-in, whose pubky
-   * either phone signer may hold. The dialog names this signer.
-   */
+  /** The recorded or explicitly selected signer for this service approval. */
   approvalSigner: MarketplaceApprovalSigner;
+  requiresSignerChoice: boolean;
+  /** A remembered identity alone cannot authorize the bootstrap proof. */
+  requiresSignIn: boolean;
   /** Begins a fresh flow, cancelling any in-flight one. */
   start: () => void;
   /** Opens the armed Passport approval. Call it from the click handler itself. */

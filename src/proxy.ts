@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getFrameAncestors } from '@/libs/runtime-config/runtime-config';
+import { getEmbeddedFlag, getFrameAncestors } from '@/libs/runtime-config/runtime-config';
 import { buildFramingHeaders } from '@/libs/security/headers';
 
 /**
@@ -12,7 +12,7 @@ import { buildFramingHeaders } from '@/libs/security/headers';
  */
 export function proxy() {
   const response = NextResponse.next();
-  for (const { key, value } of buildFramingHeaders(getFrameAncestors())) {
+  for (const { key, value } of buildFramingHeaders(getFrameAncestors(), getEmbeddedFlag())) {
     response.headers.set(key, value);
   }
   return response;

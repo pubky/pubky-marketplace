@@ -1,8 +1,10 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { COMMERCE_LISTING_MAX_QUANTITY } from '@/config/commerce';
 import { CommerceController } from '@/controllers/commerce/commerce';
+import { LISTING_PUBLISH_BLOCK_COPY } from '@/libs/commerce/listing-publish-guards';
 import { toast } from '@/molecules/Toaster/use-toast';
+import { useCommerceStore } from '@/stores/commerce/commerce.store';
 import { createCommerceListingFixture } from '@/test/fixtures/commerce/commerce';
 import { useMarketplaceSellerDashboard } from './useMarketplaceSellerDashboard';
 
@@ -10,13 +12,21 @@ const OWNER = 'y'.repeat(52);
 const OTHER_OWNER = 'z'.repeat(52);
 let currentUserPubky = OWNER;
 let localListings: Array<{
-  state: 'active';
+  id?: string;
+  state: 'active' | 'paused';
   record: ReturnType<typeof createCommerceListingFixture>;
   listing_id?: string;
   format?: string;
   price_minor?: number;
   currency?: string;
 }> = [];
+const adapter = vi.hoisted(() => ({ durable: false }));
+
+vi.mock('@/config/commerce', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/config/commerce')>()),
+  getCommerceAdapterMode: () => (adapter.durable ? 'transaction-service' : 'unavailable'),
+}));
+
 const ordersState = vi.hoisted(() => ({
   orders: [] as Array<{
     order: {
@@ -66,6 +76,8 @@ vi.mock('@/controllers/commerce/commerce', () => ({
     getListingDrafts: vi.fn(async () => []),
     commitDeleteListingDraft: vi.fn(),
     exportInventoryListingsCsv: vi.fn(async () => new Uint8Array()),
+    getSellerPaymentConfig: vi.fn(),
+    getMyDeliveryKeyStatus: vi.fn(),
   },
 }));
 
@@ -586,6 +598,114 @@ describe('useMarketplaceSellerDashboard duplicateListing', () => {
     const { result } = renderHook(() => useMarketplaceSellerDashboard());
     act(() => result.current.resumeListingDraft('draft_1'));
     expect(sessionStorage.getItem('pubky.marketplace.listingDraft.resumeId')).toBe('draft_1');
+  });
+});
+
+describe('useMarketplaceSellerDashboard bulk activate', () => {
+  const SESSION = {
+    pubky: OWNER,
+    capabilities: '/pub/pubky.app/:rw',
+    issuedAt: '2026-10-15T00:00:00.000Z',
+    expiresAt: '2026-11-15T00:00:00.000Z',
+  };
+  const paused = createCommerceListingFixture({ listingId: 'boots_01', state: 'paused', revision: 2 });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    adapter.durable = true;
+    currentUserPubky = OWNER;
+    listingDraftRows = [];
+    ordersState.orders = [];
+    localListings = [{ id: `${OWNER}:boots_01`, state: 'paused', record: paused }];
+    useCommerceStore.setState({ marketplaceSession: SESSION });
+    vi.mocked(CommerceController.commitUpsertListing).mockResolvedValue({ registered: true, verified: true });
+    vi.mocked(CommerceController.getSellerPaymentConfig).mockResolvedValue({
+      bitcoinAvailable: true,
+      bitcoinOfferAvailable: true,
+      paypalAvailable: false,
+    });
+    vi.mocked(CommerceController.getMyDeliveryKeyStatus).mockResolvedValue({
+      local: null,
+      publication: 'matches',
+      publishedKeyId: 'key',
+    });
+  });
+
+  afterEach(() => {
+    adapter.durable = false;
+    useCommerceStore.setState({ marketplaceSession: null });
+  });
+
+  async function update(state: 'active' | 'paused') {
+    const { result } = renderHook(() => useMarketplaceSellerDashboard());
+    let updated: boolean | undefined;
+    await act(async () => {
+      updated = await result.current.updateListingState([`${OWNER}:boots_01`], state);
+    });
+    return updated;
+  }
+
+  it('keeps listings paused when the seller has no payment method', async () => {
+    vi.mocked(CommerceController.getSellerPaymentConfig).mockResolvedValue({
+      bitcoinAvailable: false,
+      bitcoinOfferAvailable: true,
+      paypalAvailable: false,
+    });
+
+    expect(await update('active')).toBe(false);
+    expect(CommerceController.commitUpsertListing).not.toHaveBeenCalled();
+    expect(toast).toHaveBeenCalledWith({
+      variant: 'error',
+      description: LISTING_PUBLISH_BLOCK_COPY['no-method'].title,
+    });
+  });
+
+  it('reads the session at call time, as after the dashboard session dialog connects', async () => {
+    useCommerceStore.setState({ marketplaceSession: null });
+    const { result } = renderHook(() => useMarketplaceSellerDashboard());
+    useCommerceStore.setState({ marketplaceSession: SESSION });
+
+    await act(async () => {
+      await result.current.updateListingState([`${OWNER}:boots_01`], 'active');
+    });
+
+    expect(CommerceController.commitUpsertListing).toHaveBeenCalledWith(
+      expect.objectContaining({ listingId: 'boots_01', state: 'active', revision: 3 }),
+    );
+  });
+
+  it('blocks activation of a shipped listing without a published delivery key', async () => {
+    vi.mocked(CommerceController.getMyDeliveryKeyStatus).mockResolvedValue({
+      local: null,
+      publication: 'missing',
+      publishedKeyId: null,
+    });
+
+    expect(await update('active')).toBe(false);
+    expect(CommerceController.commitUpsertListing).not.toHaveBeenCalled();
+    expect(toast).toHaveBeenCalledWith({
+      variant: 'error',
+      description: LISTING_PUBLISH_BLOCK_COPY['no-delivery-key'].title,
+    });
+  });
+
+  it('pauses without running the publish guards', async () => {
+    localListings = [{ id: `${OWNER}:boots_01`, state: 'active', record: { ...paused, state: 'active' } }];
+    vi.mocked(CommerceController.getSellerPaymentConfig).mockResolvedValue({
+      bitcoinAvailable: false,
+      bitcoinOfferAvailable: true,
+      paypalAvailable: false,
+    });
+
+    expect(await update('paused')).toBe(true);
+    expect(CommerceController.getSellerPaymentConfig).not.toHaveBeenCalled();
+    expect(CommerceController.commitUpsertListing).toHaveBeenCalledWith(expect.objectContaining({ state: 'paused' }));
+  });
+
+  it('activates once every guard passes', async () => {
+    expect(await update('active')).toBe(true);
+    expect(CommerceController.commitUpsertListing).toHaveBeenCalledWith(expect.objectContaining({ state: 'active' }));
+    expect(toast).toHaveBeenCalledWith({ title: 'Listings activated' });
   });
 });
 

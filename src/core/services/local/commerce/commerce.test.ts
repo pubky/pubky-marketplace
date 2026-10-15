@@ -155,6 +155,40 @@ describe('LocalCommerceService', () => {
     expect(await CommerceSyncJobModel.findById(listingJob.id)).toMatchObject({ entity_type: 'listing' });
   });
 
+  it('discards a staged shop and its job after a failed write', async () => {
+    const shop = createCommerceShopFixture();
+    const job = createCommerceSyncJobFixture({
+      id: '018f47d2-6a27-7c23-a49d-6b21bb770126',
+      entity_type: 'shop',
+      entity_id: COMMERCE_FIXTURE_SELLER,
+      operation: 'publish',
+    });
+    await LocalCommerceService.stageShopSync(shop, job);
+
+    await LocalCommerceService.discardStagedShopSync(shop, job.id);
+
+    expect(await LocalCommerceService.getShop(COMMERCE_FIXTURE_SELLER)).toBeNull();
+    expect(await CommerceSyncJobModel.findById(job.id)).toBeNull();
+  });
+
+  it('keeps a shop saved since the failed write was staged', async () => {
+    const staged = createCommerceShopFixture();
+    const saved = { ...staged, name: 'Saved meanwhile', revision: staged.revision + 1 };
+    const job = createCommerceSyncJobFixture({
+      id: '018f47d2-6a27-7c23-a49d-6b21bb770127',
+      entity_type: 'shop',
+      entity_id: COMMERCE_FIXTURE_SELLER,
+      operation: 'publish',
+    });
+    await LocalCommerceService.stageShopSync(staged, job);
+    await LocalCommerceService.upsertShop(saved, 'synced');
+
+    await LocalCommerceService.discardStagedShopSync(staged, job.id);
+
+    expect(await LocalCommerceService.getShop(COMMERCE_FIXTURE_SELLER)).toMatchObject({ record: saved });
+    expect(await CommerceSyncJobModel.findById(job.id)).toBeNull();
+  });
+
   it('preserves a pending registration marker during seller catalog refresh', async () => {
     const listing = createCommerceListingFixture();
     const listingId = `${listing.ownerPubky}:${listing.listingId}`;

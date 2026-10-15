@@ -60,7 +60,8 @@ function row(overrides: Partial<InventoryBoardRow> = {}): InventoryBoardRow {
     aggregateId: `listing:${PUBKY}_boots`,
     title: 'Boots',
     thumbUrl: null,
-    state: 'active',
+    state: 'available',
+    listingState: 'active',
     format: 'fixed_price',
     dropId: null,
     available: 4,
@@ -220,6 +221,7 @@ describe('CommerceInventoryApplication', () => {
           title: 'Vintage work boots',
           thumbUrl: null,
           state: 'active',
+          listingState: null,
           format: 'fixed_price',
           dropId: null,
           available: 4,
@@ -235,6 +237,70 @@ describe('CommerceInventoryApplication', () => {
       expect.anything(),
       `listing:${PUBKY}_boots`,
     );
+  });
+
+  it("reads the record's lifecycle state beside the service's stock state", async () => {
+    vi.mocked(MarketplaceShopClientService.listSellerListings).mockResolvedValue({
+      ok: true,
+      value: {
+        kind: 'seller_listing_export',
+        listings: [
+          {
+            projection: { listing_id: 'boots', title: 'Boots', state: 'available', sale_format: 'fixed_price' },
+            record: { listingId: 'boots', title: 'Boots', state: 'paused', sale: { format: 'fixed_price' } },
+          },
+          {
+            projection: { listing_id: 'lamp', title: 'Lamp', state: 'available', sale_format: 'auction' },
+            record: {
+              listingId: 'lamp',
+              title: 'Lamp',
+              state: 'active',
+              sale: { format: 'auction', startsAt: '2026-09-01T00:00:00.000Z', endsAt: '2026-09-17T00:00:00.000Z' },
+            },
+          },
+          {
+            projection: { listing_id: 'kite', title: 'Kite', state: 'available', sale_format: 'auction' },
+            record: {
+              listingId: 'kite',
+              title: 'Kite',
+              state: 'active',
+              sale: { format: 'auction', startsAt: '2026-09-01T00:00:00.000Z', endsAt: '2099-01-01T00:00:00.000Z' },
+            },
+          },
+        ],
+      },
+    });
+    vi.mocked(MarketplaceShopClientService.getInventoryProjection).mockImplementation(
+      async (_client, aggregateId) =>
+        ({
+          ok: true,
+          value: {
+            schema_version: BigInt(1),
+            kind: 'inventory_projection',
+            aggregate_id: aggregateId,
+            seller_pubky: PUBKY,
+            listing_id: aggregateId.split('_').at(-1),
+            server_revision: BigInt(1),
+            stock: {
+              authority: 'listing_total',
+              available: BigInt(1),
+              reserved: BigInt(0),
+              sold: BigInt(0),
+              total: BigInt(1),
+            },
+          },
+        }) as Awaited<ReturnType<typeof MarketplaceShopClientService.getInventoryProjection>>,
+    );
+
+    const board = await CommerceInventoryApplication.loadBoard(PUBKY);
+
+    expect(board.status).toBe('ready');
+    const rows = board.status === 'ready' ? board.rows : [];
+    expect(rows.map(({ listingId, state, listingState }) => ({ listingId, state, listingState }))).toEqual([
+      { listingId: 'boots', state: 'available', listingState: 'paused' },
+      { listingId: 'lamp', state: 'available', listingState: 'ended' },
+      { listingId: 'kite', state: 'available', listingState: 'active' },
+    ]);
   });
 
   it('renders an unavailable export row from projection without a homeserver record', async () => {
@@ -278,6 +344,7 @@ describe('CommerceInventoryApplication', () => {
           title: 'Cutover test — do not buy — Locks 1A proof',
           thumbUrl: null,
           state: 'available',
+          listingState: null,
           format: 'fixed_price',
           dropId: null,
           available: 1,

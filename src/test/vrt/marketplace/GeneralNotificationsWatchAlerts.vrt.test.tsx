@@ -45,7 +45,7 @@ vi.mock('next/navigation', () => ({
 }));
 
 vi.mock('@/stores/auth/auth.store', () => ({
-  useAuthStore: createMarketplaceVrtAuthStore({ currentUserPubky: 'v'.repeat(52), session: {} }),
+  useAuthStore: createMarketplaceVrtAuthStore({ currentUserPubky: 'v'.repeat(52) }),
 }));
 
 vi.mock('@/hooks/useNotifications/useNotifications', () => ({

@@ -285,6 +285,15 @@ const shopPublicPathValue = z.string().refine((value) => value !== '' && isValid
 });
 const optionalShopPublicPathFromString = optionalTrimmedString.pipe(shopPublicPathValue.optional());
 
+/**
+ * The client id signers show on their approval screen for the Shop's grant sign-in: a bare host name
+ * (`pubky.app`), no scheme, port or path.
+ */
+const shopGrantClientIdValue = z.string().regex(/^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/, {
+  message: 'Expected a lowercase host name like pubky.app: no scheme, port or path',
+});
+const optionalShopGrantClientIdFromString = optionalTrimmedString.pipe(shopGrantClientIdValue.optional());
+
 /** Rates validate eagerly (bad number/range throws here); the default applies in the value schema. */
 const sampleRateFromString = z
   .string()
@@ -409,7 +418,6 @@ export const APP_RUNTIME_DEFAULTS = {
   paykitServerApi: 'fork' as PaykitServerApi,
   commerceAdapterMode: 'unavailable' as CommerceAdapterMode,
   commercePollIntervalMs: 2_000,
-  singleApprovalSignIn: true,
   marketplaceGrantFlowEnabled: false,
   marketplaceGrantPollMilliseconds: 1_000,
   passportSignIn: true,
@@ -520,13 +528,6 @@ export const runtimeConfigValueSchema = networkConfigValueSchema.extend({
   paykitServerApi: paykitServerApiValue.default(APP_RUNTIME_DEFAULTS.paykitServerApi),
   commerceAdapterMode: commerceAdapterModeValue.default(APP_RUNTIME_DEFAULTS.commerceAdapterMode),
   commercePollIntervalMs: positiveIntValue.default(APP_RUNTIME_DEFAULTS.commercePollIntervalMs),
-  /**
-   * Interim dual-POST ceremony (docs/ecommerce/single-approval.md). `false`
-   * restores the previous two-prompt path: `awaitApproval()` sign-in plus the
-   * empty-capability marketplace connect on first commerce. Runtime-rollback,
-   * never by POSTing empty capabilities to `/session`.
-   */
-  singleApprovalSignIn: z.boolean().default(APP_RUNTIME_DEFAULTS.singleApprovalSignIn),
   marketplaceGrantFlowEnabled: z.boolean().default(APP_RUNTIME_DEFAULTS.marketplaceGrantFlowEnabled),
   marketplaceGrantPollMilliseconds: positiveIntValue
     .min(750)
@@ -595,6 +596,8 @@ export const runtimeConfigValueSchema = networkConfigValueSchema.extend({
   privEncryptionKeysHomeservers: z
     .array(homeserverValue)
     .default([...APP_RUNTIME_DEFAULTS.privEncryptionKeysHomeservers]),
+  /** Client id of the Shop's grant sign-in. Absent means `SHOP_GRANT_CLIENT_ID` in `src/config/app.ts`. */
+  shopGrantClientId: shopGrantClientIdValue.optional(),
   preludeSdkKey: nonEmptyStringValue.optional(),
   preludeSdkTimeoutMs: positiveIntValue.default(APP_RUNTIME_DEFAULTS.preludeSdkTimeoutMs),
   plausibleDomain: nonEmptyStringValue.optional(),
@@ -676,7 +679,6 @@ export const runtimeEnvInputSchema = z
     paykitServerApi: paykitServerApiValue.optional(),
     commerceAdapterMode: commerceAdapterModeValue.optional(),
     commercePollIntervalMs: optionalPositiveIntFromString,
-    singleApprovalSignIn: optionalBooleanFromString,
     marketplaceGrantFlowEnabled: optionalBooleanFromString,
     marketplaceGrantPollMilliseconds: optionalPositiveIntFromString,
     passportSignIn: optionalBooleanFromString,
@@ -688,6 +690,7 @@ export const runtimeEnvInputSchema = z
     shopPublicPath: optionalShopPublicPathFromString,
     privEncryptionKeys: optionalBooleanFromString,
     privEncryptionKeysHomeservers: optionalHomeserverArrayFromString('PRIV_ENCRYPTION_KEYS_HOMESERVERS'),
+    shopGrantClientId: optionalShopGrantClientIdFromString,
     preludeSdkKey: optionalTrimmedString,
     preludeSdkTimeoutMs: optionalPositiveIntFromString,
     plausibleDomain: optionalTrimmedString,
@@ -778,7 +781,6 @@ export const runtimeEnvInputSchemaWithDefaults = z
     paykitServerApi: paykitServerApiValue.optional(),
     commerceAdapterMode: commerceAdapterModeValue.optional(),
     commercePollIntervalMs: optionalPositiveIntFromString,
-    singleApprovalSignIn: optionalBooleanFromString,
     marketplaceGrantFlowEnabled: optionalBooleanFromString,
     marketplaceGrantPollMilliseconds: optionalPositiveIntFromString,
     passportSignIn: optionalBooleanFromString,
@@ -790,6 +792,7 @@ export const runtimeEnvInputSchemaWithDefaults = z
     shopPublicPath: optionalShopPublicPathFromString,
     privEncryptionKeys: optionalBooleanFromString,
     privEncryptionKeysHomeservers: optionalHomeserverArrayFromString('PRIV_ENCRYPTION_KEYS_HOMESERVERS'),
+    shopGrantClientId: optionalShopGrantClientIdFromString,
     preludeSdkKey: optionalTrimmedString,
     preludeSdkTimeoutMs: optionalPositiveIntFromString,
     plausibleDomain: optionalTrimmedString,
@@ -872,7 +875,6 @@ export const PUBKY_RUNTIME_ENV_NAMES: Record<keyof RuntimeConfig, string> = {
   paykitServerApi: 'PUBKY_RUNTIME_PAYKIT_SERVER_API',
   commerceAdapterMode: 'PUBKY_RUNTIME_COMMERCE_ADAPTER_MODE',
   commercePollIntervalMs: 'PUBKY_RUNTIME_COMMERCE_POLL_INTERVAL_MS',
-  singleApprovalSignIn: 'PUBKY_RUNTIME_SINGLE_APPROVAL_SIGN_IN',
   marketplaceGrantFlowEnabled: 'PUBKY_RUNTIME_MARKETPLACE_GRANT_FLOW_ENABLED',
   marketplaceGrantPollMilliseconds: 'PUBKY_RUNTIME_MARKETPLACE_GRANT_POLL_MILLISECONDS',
   passportSignIn: 'PUBKY_RUNTIME_PASSPORT_SIGN_IN',
@@ -884,6 +886,7 @@ export const PUBKY_RUNTIME_ENV_NAMES: Record<keyof RuntimeConfig, string> = {
   shopPublicPath: 'PUBKY_RUNTIME_SHOP_PUBLIC_PATH',
   privEncryptionKeys: 'PUBKY_RUNTIME_PRIV_ENCRYPTION_KEYS',
   privEncryptionKeysHomeservers: 'PUBKY_RUNTIME_PRIV_ENCRYPTION_KEYS_HOMESERVERS',
+  shopGrantClientId: 'PUBKY_RUNTIME_SHOP_GRANT_CLIENT_ID',
   preludeSdkKey: 'PUBKY_RUNTIME_PRELUDE_SDK_KEY',
   preludeSdkTimeoutMs: 'PUBKY_RUNTIME_PRELUDE_SDK_TIMEOUT_MS',
   plausibleDomain: 'PUBKY_RUNTIME_PLAUSIBLE_DOMAIN',

@@ -1,6 +1,7 @@
 import { baseUriBuilder, followUriBuilder } from 'pubky-app-specs';
 import type {
   TEnsureModerationFollowParams,
+  TEnsureSellerFollowParams,
   TUserApplicationFollowParams,
   TUserCountsOrFetchResult,
 } from '@/application/user/user.types';
@@ -12,6 +13,7 @@ import { Err } from '@/libs/error/error.factories';
 import { ErrorService } from '@/libs/error/error.types';
 import { HttpMethod } from '@/libs/http/http.types';
 import { Logger } from '@/libs/logger/logger';
+import { stripPubkyPrefix } from '@/libs/utils/utils';
 import type { Pubky } from '@/models/models.types';
 import type { UserCountsModel } from '@/models/user/counts/userCounts';
 import type { UserRelationshipsModelSchema } from '@/models/user/relationships/userRelationships.schema';
@@ -34,6 +36,13 @@ import { NexusUserService } from '@/services/nexus/user/user';
 import type { TUserTaggersParams, TUserTagsParams } from '@/services/nexus/user/user.types';
 
 export class UserApplication {
+  /** Per account and seller, settled or in-flight auto-follows of this session; failures are dropped to allow a retry. */
+  private static sellerAutoFollowSession = new Map<string, Promise<void>>();
+
+  private static sellerAutoFollowMarkerUrl(follower: Pubky, seller: Pubky): string {
+    return `${baseUriBuilder(follower)}migrations/seller-auto-follow/v1/${seller}.json`;
+  }
+
   private static moderationFollowMarkerUrl(follower: Pubky, moderationId: Pubky): string {
     return `${baseUriBuilder(follower)}migrations/moderation-follow/v1/${moderationId}.json`;
   }
@@ -336,6 +345,63 @@ export class UserApplication {
 
     if (signal?.aborted) return;
     await this.writeModerationFollowMarker(follower, moderationId);
+  }
+
+  /**
+   * Makes the buyer follow a seller the Shop dealt with (cart, checkout, watchlist, shop follow, offer, bid) so
+   * the two accounts know each other. Quiet and at most once per buyer and seller: a marker on the buyer's
+   * homeserver records that the Shop already handled this seller, so a later unfollow is never undone, and an
+   * existing follow is left as it is. Never follows the buyer themselves. Callers decide how to report failures.
+   */
+  static async ensureSellerFollow({ follower, seller, signal }: TEnsureSellerFollowParams): Promise<void> {
+    const followee = stripPubkyPrefix(seller) as Pubky;
+    if (follower === followee || signal?.aborted) return;
+
+    const sessionKey = `${follower}:${followee}`;
+    const inSession = this.sellerAutoFollowSession.get(sessionKey);
+    if (inSession) return await inSession;
+
+    const attempt = this.runEnsureSellerFollow({ follower, seller: followee, signal });
+    this.sellerAutoFollowSession.set(sessionKey, attempt);
+    try {
+      await attempt;
+    } catch (error) {
+      this.sellerAutoFollowSession.delete(sessionKey);
+      throw error;
+    }
+  }
+
+  /** Writes the marker that stops the Shop from ever following this seller again for the buyer. */
+  static async recordSellerAutoFollow(follower: Pubky, seller: Pubky): Promise<void> {
+    await HomeserverService.request({
+      method: HttpMethod.PUT,
+      url: this.sellerAutoFollowMarkerUrl(follower, seller),
+      bodyJson: { seller, completedAt: Date.now() },
+    });
+  }
+
+  private static async runEnsureSellerFollow({ follower, seller, signal }: TEnsureSellerFollowParams): Promise<void> {
+    const markerExists = await HomeserverService.exists(this.sellerAutoFollowMarkerUrl(follower, seller));
+    if (signal?.aborted || markerExists) return;
+
+    const { meta, follow } = FollowNormalizer.to({ follower, followee: seller });
+    const followExists = await HomeserverService.exists(meta.url);
+    if (signal?.aborted) return;
+
+    if (!followExists) {
+      await this.commitFollow({
+        eventType: HttpMethod.PUT,
+        followUrl: meta.url,
+        followJson: follow.toJson(),
+        follower,
+        followee: seller,
+        activeStreamId: null,
+        signal,
+      });
+    }
+
+    if (signal?.aborted) return;
+    await this.recordSellerAutoFollow(follower, seller);
   }
 
   /**

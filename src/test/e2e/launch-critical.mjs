@@ -10,6 +10,10 @@
  * (LAUNCH_E2E_REQUIRE_SELLER_BOARD defaults on). Guest Join remains the
  * fallback when that flag is explicitly 0.
  *
+ * LAUNCH_E2E_MODE=synthetic drives genuine SDK grant ceremonies and browser
+ * persistence with fixture PKARR, homeserver, BFF and marketplace responses.
+ * It cannot prove live staging integration; the optional live mode below can.
+ *
  * The page origin is 127.0.0.1. staging-api.pubky.app does not send CORS
  * headers for that origin, so the session mint retries for 60s and the board
  * never mounts. The gate forwards that one host through Node after the page
@@ -26,6 +30,8 @@ import { readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
+import { seedListingCacheRows } from './launch-critical.cache.mjs';
+import { installSyntheticLaunchFixture } from './launch-critical.synthetic.mjs';
 import { launchTarget } from './launch-target.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
@@ -37,10 +43,19 @@ const DEFAULT_IDENTITIES_FILE = '/Users/johncarvalho/work/.staging-drop-identiti
 const TARGET = launchTarget(process.env.LAUNCH_E2E_BASE_URL);
 const BASE_URL = TARGET.baseUrl;
 const routeOf = (url) => TARGET.routeOf(new URL(url).pathname);
-const SERVICE_URL = process.env.LAUNCH_E2E_SERVICE_URL ?? 'https://staging-api.pubky.app';
+const MODE = process.env.LAUNCH_E2E_MODE ?? 'live';
+if (!['synthetic', 'live'].includes(MODE)) throw new Error('LAUNCH_E2E_MODE must be synthetic or live');
+const SYNTHETIC = MODE === 'synthetic';
+const SERVICE_URL =
+  process.env.LAUNCH_E2E_SERVICE_URL ??
+  (SYNTHETIC ? 'https://launch-marketplace.test' : 'https://staging-api.pubky.app');
 const NEXUS_URL = (process.env.LAUNCH_E2E_NEXUS_URL ?? '').replace(/\/$/, '');
 const ALLOW_LIVE_NEXUS = process.env.LAUNCH_E2E_ALLOW_LIVE_NEXUS === '1';
 const REQUIRE_SELLER_BOARD = process.env.LAUNCH_E2E_REQUIRE_SELLER_BOARD !== '0';
+const SHOP_GRANT = '/pub/pubky.app/:rw,/pub/paykit/:rw,/priv/pubky.app/:rw,/pub/chat/v0/:rw,/priv/chat/v0/:rw';
+const MARKETPLACE_GRANT = '/pub/pubky.app/marketplace-service/v1/:rw,/priv/pubky.app/:rw';
+const PREVIOUS_MARKETPLACE_GRANT = '/pub/pubky.app/marketplace-service/v1/:rw';
+let syntheticFixture;
 const STUB_LISTING_ID = '2b81df4f390b40e5b0aedabb89e76fa0';
 
 const failures = [];
@@ -207,11 +222,11 @@ async function exerciseListingCheckout(page) {
 }
 
 /**
- * Ring cookie QR only. `qr-auth-url` stays the slot id. The URL is not read
+ * Ring grant QR only. `qr-auth-url` stays the slot id. The URL is not read
  * from the DOM: the copy button is what a person uses, and the slot must not
  * carry the relay secret in an attribute. Side-by-side sign-in puts the
  * Bitkit QR in the same card, so this prefers `sign-in-ring-option` and
- * rejects `pubkyauth://signin_grant`. Inventory grants are copied from the
+ * validates the Shop's `pubkyauth://signin_grant`. Service grants are copied from the
  * open dialog, not from this locator.
  */
 async function ringSignInAuthSlot(page, timeout) {
@@ -247,8 +262,15 @@ async function readCopiedAuthUrl(page, slot) {
 async function waitForAuthUrl(page, timeout = 25_000) {
   const slot = await ringSignInAuthSlot(page, timeout);
   const url = await readCopiedAuthUrl(page, slot);
-  if (!url.startsWith('pubkyauth://signin') || url.startsWith('pubkyauth://signin_grant')) {
-    throw new Error('missing Ring cookie pubkyauth URL from the QR copy button');
+  const parsed = new URL(url);
+  const caps = parsed.searchParams.getAll('caps').join(',').split(',').sort().join(',');
+  if (
+    parsed.protocol !== 'pubkyauth:' ||
+    parsed.hostname !== 'signin_grant' ||
+    parsed.searchParams.get('cid') !== 'shop.pubky.app' ||
+    caps !== SHOP_GRANT.split(',').sort().join(',')
+  ) {
+    throw new Error('Ring QR did not request the Shop client grant and exact required scopes');
   }
   return url;
 }
@@ -265,6 +287,7 @@ async function waitForStableAuthUrl(page) {
 }
 
 async function approveAuthRequest(secretHex, authorizationUrl) {
+  if (syntheticFixture) return syntheticFixture.approveAuthRequest(secretHex, authorizationUrl);
   const sdk = await import('@synonymdev/pubky');
   const keypair = sdk.Keypair.fromSecret(hexToBytes(secretHex));
   await new sdk.Pubky().signer(keypair).approveAuthRequest(authorizationUrl);
@@ -277,13 +300,14 @@ async function waitForAuthStore(page, timeout = 90_000) {
         const raw = localStorage.getItem('shop-auth-store');
         if (!raw) return false;
         const state = JSON.parse(raw)?.state ?? {};
-        // A reload without sessionExport is unauthenticated and the inventory
-        // route redirects to the catalog. hasProfile must be true or the
-        // guard sends the seller to profile creation instead of the board.
+        // Grant identity and completed profile/bootstrap must survive reload;
+        // private credential material stays solely in the SDK browser store.
         return Boolean(
           state.currentUserPubky &&
-          typeof state.sessionExport === 'string' &&
-          state.sessionExport.length > 0 &&
+          typeof state.grantSessionRecordId === 'string' &&
+          state.grantSessionRecordId.length > 0 &&
+          state.grantSigner === 'ring' &&
+          state.sessionExport === null &&
           state.hasProfile === true,
         );
       } catch {
@@ -297,8 +321,8 @@ async function waitForAuthStore(page, timeout = 90_000) {
 
 /**
  * /sign-in is a public route, so a finished session stays on that URL.
- * The persisted session export is the signed-in predicate. "Verifying account"
- * appears before that export is written, so it is not enough.
+ * The persisted public reference, completed profile and matching SDK record
+ * establish success. "Verifying account" alone does not prove persistence.
  */
 async function signInSeller(page, secretHex) {
   try {
@@ -319,7 +343,48 @@ async function signInSeller(page, secretHex) {
       await approveAuthRequest(secretHex, retryUrl);
       await waitForAuthStore(page, 45_000);
     }
-    record('inventory:seller-signin', true, `headless approve /sign-in, shop-auth-store set (${page.url()})`);
+    const metadata = await page.evaluate(async () => {
+      const state = JSON.parse(localStorage.getItem('shop-auth-store')).state;
+      const { default: sdk } = await import('/__launch_sdk.js');
+      const records = await new sdk.Pubky().browserSessionStore.list();
+      const record = records.find((entry) => entry.id === state.grantSessionRecordId);
+      return record
+        ? {
+            id: record.id,
+            pubky: record.publicKey,
+            clientId: record.clientId,
+            caps: record.capabilities,
+            storageMode: record.storageMode,
+            signer: state.grantSigner,
+            identity: state.currentUserPubky,
+          }
+        : null;
+    });
+    if (
+      !metadata ||
+      metadata.pubky !== metadata.identity ||
+      metadata.clientId !== 'shop.pubky.app' ||
+      metadata.storageMode !== 'delegated' ||
+      metadata.caps.slice().sort().join(',') !== SHOP_GRANT.split(',').sort().join(',')
+    ) {
+      throw new Error('Shop public reference has no matching saved SDK grant');
+    }
+    record(
+      'inventory:seller-signin',
+      true,
+      'actual SDK Ring grant saved with matching public identity/client/scopes and completed profile',
+    );
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await waitForAuthStore(page, 30_000);
+    const restoredId = await page.evaluate(
+      () => JSON.parse(localStorage.getItem('shop-auth-store')).state.grantSessionRecordId,
+    );
+    if (restoredId !== metadata.id) throw new Error('reload changed the saved Shop grant reference');
+    record(
+      'inventory:seller-grant-reload',
+      true,
+      'same saved SDK grant reference retained across a full reload; protected board verifies restore below',
+    );
     return true;
   } catch (error) {
     const snippet = (
@@ -439,8 +504,10 @@ async function readDialogAuthUrl(page, dialog) {
     if (await slot.count()) {
       try {
         const url = await readCopiedAuthUrl(page, slot.first());
-        if (url.startsWith('pubkyauth://signin_grant')) {
-          return { url: '', snap: 'inventory dialog copied a Bitkit grant URL' };
+        const parsed = new URL(url);
+        const caps = parsed.searchParams.getAll('caps').join(',');
+        if (parsed.hostname !== 'signin_grant' || ![MARKETPLACE_GRANT, PREVIOUS_MARKETPLACE_GRANT].includes(caps)) {
+          return { url: '', snap: 'marketplace dialog did not request its allowed service grant' };
         }
         return { url, snap: '' };
       } catch (error) {
@@ -462,7 +529,7 @@ async function approveVisibleGrant(page, secretHex, label) {
     .getByRole('button', { name: /Approve in your Pubky signer/i });
   // data-load-status flips to grant-needed while the skeleton still replaces the banner.
   await grantTrigger.waitFor({ state: 'visible', timeout: 15_000 }).catch(() => undefined);
-  const sessionTrigger = page.getByRole('button', { name: /Approve in Pubky Ring/i }).first();
+  const sessionTrigger = page.getByRole('button', { name: 'Authorize', exact: true }).first();
   const useGrant = (await grantTrigger.count()) > 0;
   const trigger = useGrant ? grantTrigger : sessionTrigger;
   if (!(await trigger.count())) return { opened: false, ok: false, detail: 'no approve button' };
@@ -477,8 +544,8 @@ async function approveVisibleGrant(page, secretHex, label) {
 
   await closeTopDialog(page);
   const dialog = useGrant
-    ? page.getByRole('dialog', { name: /Approve inventory access/ })
-    : page.getByRole('dialog', { name: /Approve purchases/ });
+    ? page.getByRole('dialog', { name: /Enable selling/ })
+    : page.getByRole('dialog', { name: /Enable purchases/ });
   const opened = await openNamedDialog(page, trigger, dialog);
   if (!opened) return { opened: true, ok: false, detail: `${label} dialog did not stay open` };
 
@@ -488,6 +555,14 @@ async function approveVisibleGrant(page, secretHex, label) {
     return { opened: true, ok: false, detail: `${label} qr missing :: ${snap}` };
   }
 
+  if (!useGrant) {
+    const hasBearer = await page.evaluate(() => Boolean(localStorage.getItem('pubky.marketplace.session.v1')));
+    assert(
+      'inventory:no-bearer-before-approval',
+      !hasBearer,
+      'fresh seller must approve marketplace access separately',
+    );
+  }
   try {
     await approveAuthRequest(secretHex, url);
   } catch (error) {
@@ -495,7 +570,7 @@ async function approveVisibleGrant(page, secretHex, label) {
     return { opened: true, ok: false, detail: `${label} approveAuthRequest: ${String(error).slice(0, 180)}` };
   }
 
-  const storageKey = useGrant ? 'pubky.marketplace.inventory-session.v1' : 'pubky.marketplace.session.v1';
+  const storageKey = 'pubky.marketplace.session.v1';
   try {
     await page.waitForFunction((key) => Boolean(localStorage.getItem(key)), storageKey, { timeout: 90_000 });
   } catch (error) {
@@ -508,6 +583,17 @@ async function approveVisibleGrant(page, secretHex, label) {
     };
   }
 
+  const claimed = await page.evaluate(() => {
+    const service = JSON.parse(localStorage.getItem('pubky.marketplace.session.v1'));
+    const auth = JSON.parse(localStorage.getItem('shop-auth-store')).state;
+    return { pubky: service.pubky, identity: auth.currentUserPubky, capabilities: service.capabilities };
+  });
+  assert(
+    'inventory:claimed-grant-identity',
+    claimed.pubky === claimed.identity &&
+      [MARKETPLACE_GRANT, PREVIOUS_MARKETPLACE_GRANT].includes(claimed.capabilities),
+    'marketplace bearer belongs to the signed-in seller and its approved service scopes',
+  );
   const after = await waitForBoardStatus(page, ['ready', 'empty', 'error'], 45_000);
   const ok = after === 'ready' || after === 'empty';
   return {
@@ -542,7 +628,7 @@ async function collectBoardSignals(page, pageErrors, errorOffset) {
   )
     .replace(/\s+/g, ' ')
     .slice(0, 400);
-  const status = (await studio.getAttribute('data-load-status').catch(() => null)) ?? '';
+  const status = (await studio.count()) ? ((await studio.getAttribute('data-load-status')) ?? '') : '';
   const transport = /illegal invocation|transport_error|transport error/i.test(bodyText);
   const nextCrash = (await page.locator('nextjs-portal, [data-nextjs-dialog]').count()) > 0;
   const applicationError = /application error|this page could not be rendered/i.test(bodyText);
@@ -804,41 +890,10 @@ function shopCacheRow(shop) {
 }
 
 async function seedCanonicalListingCache(page, canonicalListing, shop) {
-  await page.waitForFunction(
-    () => indexedDB.databases().then((dbs) => dbs.some((entry) => entry.name === 'shop-franky')),
-    undefined,
-    {
-      timeout: 15_000,
-    },
-  );
-  const seeded = await page.evaluate(
-    async ({ listing, shopRecord }) => {
-      const put = (storeName, value) =>
-        new Promise((resolve, reject) => {
-          const open = indexedDB.open('shop-franky');
-          open.onerror = () => reject(open.error);
-          open.onsuccess = () => {
-            const db = open.result;
-            if (![...db.objectStoreNames].includes(storeName)) {
-              db.close();
-              reject(new Error(`missing store ${storeName}`));
-              return;
-            }
-            const tx = db.transaction(storeName, 'readwrite');
-            tx.objectStore(storeName).put(value);
-            tx.oncomplete = () => {
-              db.close();
-              resolve(true);
-            };
-            tx.onerror = () => reject(tx.error);
-          };
-        });
-      await put('commerce_listings', listing);
-      await put('commerce_shops', shopRecord);
-      return true;
-    },
-    { listing: listingCacheRow(canonicalListing), shopRecord: shopCacheRow(shop) },
-  );
+  const seeded = await page.evaluate(seedListingCacheRows, {
+    listing: listingCacheRow(canonicalListing),
+    shopRecord: shopCacheRow(shop),
+  });
   assert('listing:fixture-cache', seeded === true, 'canonical listing+shop in Dexie shop-franky');
 }
 
@@ -869,7 +924,24 @@ async function main() {
     pageErrors.push(String(error));
     console.error('pageerror', error);
   });
-  await installStagingServiceProxy(page);
+  if (SYNTHETIC) {
+    syntheticFixture = await installSyntheticLaunchFixture({
+      context,
+      baseUrl: BASE_URL,
+      serviceUrl: SERVICE_URL,
+      nexusUrl: NEXUS_URL,
+      root: ROOT,
+    });
+  } else {
+    await installStagingServiceProxy(page);
+  }
+  // Inspect only the SDK's public stored-session metadata, never raw IndexedDB credentials.
+  await context.route(`${BASE_URL}/__launch_sdk.js`, (route) =>
+    route.fulfill({
+      path: path.join(ROOT, 'node_modules/@synonymdev/pubky/index.js'),
+      contentType: 'application/javascript',
+    }),
+  );
 
   try {
     const catalog = await gotoAndSettle(page, fixture.pages[0].path);
@@ -935,7 +1007,7 @@ async function main() {
     await closeJoinDialog(page);
 
     if (REQUIRE_SELLER_BOARD) {
-      const secretHex = await loadSellerSecretHex();
+      const secretHex = syntheticFixture?.sellerSecretHex ?? (await loadSellerSecretHex());
       if (!secretHex) {
         record(
           'inventory:board-route',
@@ -962,7 +1034,24 @@ async function main() {
     const swMime = pageErrors.filter((message) => /sw\.js/.test(message) && /unsupported MIME type/i.test(message));
     assert('launch:service-worker', swMime.length === 0, swMime[0] ?? 'sw.js did not fail registration');
   } finally {
+    const synthetic = syntheticFixture?.summary();
+    if (synthetic) {
+      for (const [name, passed] of Object.entries(synthetic.checks)) {
+        assert(`fixture:${name}`, passed, 'real SDK protocol with stubbed external services');
+      }
+    }
     const summary = {
+      mode: SYNTHETIC ? 'synthetic-sdk-protocol' : 'live-staging',
+      boundaries: SYNTHETIC
+        ? [
+            'fixture PKARR',
+            'fixture homeserver HTTP',
+            'fixture Shop BFF',
+            'fixture marketplace service',
+            'real SDK, browser storage, production UI',
+          ]
+        : ['live staging auth and marketplace', 'fixture public Nexus catalog'],
+      synthetic,
       baseUrl: BASE_URL,
       basePath: TARGET.basePath,
       serviceUrl: SERVICE_URL,
@@ -977,6 +1066,7 @@ async function main() {
     console.log(JSON.stringify(summary, null, 2));
     const resultsPath = process.env.LAUNCH_E2E_RESULTS ?? path.join(ROOT, 'launch-e2e-results.json');
     await writeFile(resultsPath, `${JSON.stringify(summary, null, 2)}\n`);
+    await syntheticFixture?.close();
     await context.close();
     await browser.close();
   }

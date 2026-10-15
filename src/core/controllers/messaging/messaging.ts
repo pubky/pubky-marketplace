@@ -301,7 +301,10 @@ export class MessagingController {
     sellerPubky: string,
   ): Promise<'already' | 'followed' | 'failed'> {
     try {
-      if (await FirstContactApplication.isFollowing(buyerPubky, sellerPubky)) return 'already';
+      if (await FirstContactApplication.isFollowing(buyerPubky, sellerPubky)) {
+        this.markSellerHandledByShop(buyerPubky, sellerPubky);
+        return 'already';
+      }
       const { meta, follow } = FollowNormalizer.to({ follower: buyerPubky as Pubky, followee: sellerPubky as Pubky });
       await UserApplication.commitFollow({
         eventType: HttpMethod.PUT,
@@ -311,11 +314,23 @@ export class MessagingController {
         followee: sellerPubky as Pubky,
         activeStreamId: null,
       });
+      this.markSellerHandledByShop(buyerPubky, sellerPubky);
       return 'followed';
     } catch {
       Logger.warn('Could not follow the seller for a first message', { reason: 'first_contact_follow_failed' });
       return 'failed';
     }
+  }
+
+  /**
+   * Tells the Shop's seller auto-follow that this seller is settled, so an
+   * unfollow after the first message is not undone by a later cart, offer or
+   * checkout. Best effort: the first message never waits on it.
+   */
+  private static markSellerHandledByShop(buyerPubky: string, sellerPubky: string): void {
+    void UserApplication.recordSellerAutoFollow(buyerPubky as Pubky, sellerPubky as Pubky).catch(() => {
+      Logger.warn('Could not record the seller follow marker', { reason: 'seller_follow_marker_failed' });
+    });
   }
 
   /** Opens (or resumes) the general DM conversation with a counterparty. */

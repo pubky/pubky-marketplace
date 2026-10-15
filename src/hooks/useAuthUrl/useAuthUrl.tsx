@@ -78,7 +78,11 @@ export function useAuthUrl(options: UseAuthUrlOptions = {}): UseAuthUrlReturn {
             }
             toast({
               variant: 'error',
-              description: isWrongEnvironment ? getWrongEnvironmentHomeserverMessage() : 'Sign in failed. Try again.',
+              description: isWrongEnvironment
+                ? getWrongEnvironmentHomeserverMessage()
+                : isAppError(error)
+                  ? error.message
+                  : 'Sign in failed. Try again.',
             });
             if (isMountedRef.current) {
               setUrl('');
@@ -107,17 +111,12 @@ export function useAuthUrl(options: UseAuthUrlOptions = {}): UseAuthUrlReturn {
       if (!isMountedRef.current) return;
       setUrl(authorizationUrl ?? '');
     } catch (error) {
-      Logger.error('Failed to generate auth URL:', error);
+      if (!isAppError(error)) Logger.error('Failed to generate auth URL:', error);
       if (!isMountedRef.current) return;
-      // The Bitkit grant sign-in needs WebCrypto algorithms older browsers lack; it sits beside a
-      // Pubky Ring option, so fail it quietly into its reload state instead of an error toast.
-      if (type === 'grant') {
-        setIsExpired(true);
-        return;
-      }
+      setIsExpired(true);
       toast({
         variant: 'error',
-        description: 'Could not generate QR. Refresh and try again.',
+        description: isAppError(error) ? error.message : 'Could not generate QR. Refresh and try again.',
       });
     } finally {
       if (isMountedRef.current) {

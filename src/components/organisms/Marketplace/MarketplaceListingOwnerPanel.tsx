@@ -19,7 +19,9 @@ import { Link } from '@/atoms/Link/Link';
 import { Typography } from '@/atoms/Typography/Typography';
 import { withPublicPath } from '@/config/base-path';
 import { CommerceController } from '@/controllers/commerce/commerce';
-import { LISTING_PUBLISH_BLOCK_COPY } from '@/libs/commerce/listing-publish-guards';
+import { evaluateListingActivationGuards } from '@/hooks/useCreateMarketplaceListing/useCreateMarketplaceListing';
+import type { AuctionPhase } from '@/libs/commerce/auction-phase';
+import { LISTING_PUBLISH_BLOCK_COPY, listingPublishBlockToast } from '@/libs/commerce/listing-publish-guards';
 import type { CommerceListingRecord } from '@/libs/commerce/marketplace-records';
 import { AuthErrorCode } from '@/libs/error/error.codes';
 import { isAppError } from '@/libs/error/error.utils';
@@ -35,6 +37,8 @@ import { useCommerceStore } from '@/stores/commerce/commerce.store';
 export interface MarketplaceListingOwnerPanelProps {
   record: CommerceListingRecord;
   registrationStatus?: CommerceListingRegistrationStatus;
+  /** The page's auction phase, which also counts the service's close and anti-sniping extensions. */
+  auctionPhase?: AuctionPhase;
 }
 
 /**
@@ -44,7 +48,11 @@ export interface MarketplaceListingOwnerPanelProps {
  * would pull terms bidders already acted on, so only fixed-price listings
  * offer the pause/relist toggle.
  */
-export function MarketplaceListingOwnerPanel({ record, registrationStatus }: MarketplaceListingOwnerPanelProps) {
+export function MarketplaceListingOwnerPanel({
+  record,
+  registrationStatus,
+  auctionPhase,
+}: MarketplaceListingOwnerPanelProps) {
   // Self-heal: listings published before durable-mode registration existed
   // (or while it failed) have no aggregate on the transaction service, which
   // makes them un-buyable. Registration is idempotent, so re-run it whenever
@@ -83,10 +91,22 @@ export function MarketplaceListingOwnerPanel({ record, registrationStatus }: Mar
   const hasHomeserverSession = useAuthStore((state) => state.session !== null);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const canToggleVisibility = record.sale.format === 'fixed_price' && ['active', 'paused'].includes(record.state);
+  const displayState = record.state === 'active' && auctionPhase === 'ended' ? 'ended' : record.state;
 
   const setListingState = async (state: 'active' | 'paused') => {
     setIsMutating(true);
     try {
+      if (state === 'active') {
+        const blocked = await evaluateListingActivationGuards({
+          ownerPubky: record.ownerPubky,
+          hasMarketplaceSession: Boolean(marketplaceSession),
+          records: [record],
+        });
+        if (blocked) {
+          toast(listingPublishBlockToast(blocked));
+          return;
+        }
+      }
       await CommerceController.commitUpsertListing({
         ...record,
         revision: record.revision + 1,
@@ -165,8 +185,12 @@ export function MarketplaceListingOwnerPanel({ record, registrationStatus }: Mar
             <Typography as="p" className="text-sm leading-5 font-semibold">
               Your listing
             </Typography>
-            <Badge variant="secondary" className={record.state === 'active' ? 'bg-brand/24 text-brand' : undefined}>
-              {record.state}
+            <Badge
+              variant="secondary"
+              className={displayState === 'active' ? 'bg-brand/24 text-brand' : undefined}
+              data-testid="listing-owner-state"
+            >
+              {displayState}
             </Badge>
           </div>
           {registrationPending && !canRegister && (

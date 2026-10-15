@@ -14,20 +14,23 @@ change, so no record is re-encrypted and no record path moves.
 
 ## What the Shop asks the signer for
 
-The grant sign-in (Bitkit, Pubky Passport) adds one scope:
+The grant sign-in (Ring, Bitkit, Pubky Passport) adds one scope to the Shop
+grant:
 
 ```
-/pub/pubky.app/:rw,/pub/paykit/:rw,/priv/pubky.app/:rw,/priv/pubky.app/marketplace/:rwe
+/pub/pubky.app/:rw,/pub/paykit/:rw,/priv/pubky.app/:rw,/pub/chat/v0/:rw,/priv/chat/v0/:rw,/priv/pubky.app/marketplace/:rwe
 ```
 
-with `approvalFormat: "signedApprovalV1"`. `e` is on that one scope and no other.
-It grants no storage access of its own and delivers keys for the Shop's own
-private tree only. The Ring cookie sign-in and every other request are
-unchanged: a cookie session cannot carry keys.
+with `approvalFormat: "signedApprovalV1"` instead of `bareGrant`. `e` is on that
+one scope and no other. It grants no storage access of its own and delivers keys
+for the Shop's own private tree only. Sign-up and every other request are
+unchanged.
 
 A signer may approve storage and decline `e` (the scope then comes back as
 `/priv/pubky.app/marketplace/:rw`, or without it). That session is a full Shop
-session, holds no keys, and keeps using the service-held key.
+session, holds no keys, and keeps using the service-held key. A session counts
+as a full Shop session when its grant covers the core Shop scopes
+(`CORE_CAPABILITIES`), so a keyed, declined or older session all qualify.
 
 ## Gate
 
@@ -57,8 +60,8 @@ but unreleased homeserver work, such as selective approval
 
 ## SDK
 
-The Shop pins `@synonymdev/pubky` **0.16.0** from npm, the first release that
-carries scoped encryption keys (`e`, `EncryptionKeys`) and HPKE-sealed
+The Shop pins `@synonymdev/pubky` **0.16.1** from npm. 0.16.0 was the first
+release that carries scoped encryption keys (`e`, `EncryptionKeys`) and HPKE-sealed
 approvals (`epk` in an `af=v1` link). `@bitcoinerrorlog/pubky-shop` follows the
 root dependency through the `overrides` entry, so the SDK is pinned in one
 place. `sdk-call-sites.gate.test.ts` asserts one registry copy in the lockfile,

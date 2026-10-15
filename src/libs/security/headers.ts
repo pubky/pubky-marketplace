@@ -15,7 +15,8 @@
  * Opener isolation: `same-origin-allow-popups` cuts the link to any
  * cross-origin page that opened Shop, while popups Shop opens itself keep
  * their opener. Pubky Passport needs that opener to post its outcome message
- * back; plain `same-origin` would sever the Passport popup.
+ * back; plain `same-origin` would sever the Passport popup. Embedded builds
+ * omit this header because the App owns the top-level opener policy.
  *
  * Keeping the policy in a pure builder lets the unit test assert the exact
  * header set without booting Next (same pattern as upstream's
@@ -25,7 +26,7 @@ export type RouteHeader = { key: string; value: string };
 
 const SELF_SOURCE = "'self'";
 
-export function buildFramingHeaders(frameAncestors: readonly string[]): RouteHeader[] {
+export function buildFramingHeaders(frameAncestors: readonly string[], embedded = false): RouteHeader[] {
   const sources = [...new Set(frameAncestors)];
   const csp = sources.length === 0 ? "frame-ancestors 'none'" : `frame-ancestors ${sources.join(' ')}`;
   const headers: RouteHeader[] = [{ key: 'Content-Security-Policy', value: csp }];
@@ -34,6 +35,8 @@ export function buildFramingHeaders(frameAncestors: readonly string[]): RouteHea
   } else if (sources.length === 1 && sources[0] === SELF_SOURCE) {
     headers.push({ key: 'X-Frame-Options', value: 'SAMEORIGIN' });
   }
-  headers.push({ key: 'Cross-Origin-Opener-Policy', value: 'same-origin-allow-popups' });
+  // The App owns opener policy when embedded. A different policy on the
+  // top-level Passport return would sever its link back to the framed Shop.
+  if (!embedded) headers.push({ key: 'Cross-Origin-Opener-Policy', value: 'same-origin-allow-popups' });
   return headers;
 }

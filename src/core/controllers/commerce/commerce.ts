@@ -9,7 +9,9 @@ import { CommerceInventoryAutomationsApplication } from '@/application/commerce/
 import { CommerceInventoryImportApplication } from '@/application/commerce/inventory-import';
 import { CommercePrivKeyringApplication } from '@/application/commerce/priv-keyring';
 import { CommerceShippingApplication } from '@/application/commerce/shipping';
+import { ProfileApplication } from '@/application/profile/profile';
 import { TagKind } from '@/application/tag/tag.types';
+import { UserApplication } from '@/application/user/user';
 import {
   COMMERCE_SAVED_SEARCH_NAME_MAX_CHARS,
   getCommerceAdapterMode,
@@ -23,7 +25,8 @@ import {
   marketplaceDigitalDeliveryChannelSchema,
   type MarketplaceDigitalDeliveryInput,
 } from '@/libs/commerce/digital';
-import type { CommerceDigitalLock } from '@/libs/commerce/marketplace-records';
+import { parseListingAggregateId } from '@/libs/commerce/marketplace-conversation-query';
+import type { CommerceDigitalLock, CommerceShopRecord } from '@/libs/commerce/marketplace-records';
 import type { BindDeliveryAddress, PaymentMethodKind } from '@/libs/commerce/payment-methods';
 import { resolveCheckoutFulfillment } from '@/libs/commerce/pickup';
 import type { CommerceDeliveryAddressValue } from '@/libs/commerce/postal-address';
@@ -31,10 +34,13 @@ import type { PrivRecoveryKeyExport } from '@/libs/commerce/priv-recovery-key';
 import type { ShipFromAddress, ShippingParcel, ShippoRate } from '@/libs/commerce/shipping';
 import { buildMarketplaceListingAggregateId } from '@/libs/commerce/transaction-commands';
 import { commercePositiveMoneySchema, commercePubkySchema } from '@/libs/commerce/transaction-contracts';
+import { isAppError } from '@/libs/error/error';
 import { ValidationErrorCode } from '@/libs/error/error.codes';
 import { Err } from '@/libs/error/error.factories';
 import { ErrorService } from '@/libs/error/error.types';
+import { Logger } from '@/libs/logger/logger';
 import type { CommerceIndexedReview, CommerceListingProjectionModelSchema } from '@/models/commerce/commerce.schema';
+import type { Pubky } from '@/models/models.types';
 import { CommerceRecordNormalizer } from '@/pipes/commerce/commerce.normalizer';
 import { MarketplaceNotificationNormalizer } from '@/pipes/marketplaceNotification/marketplaceNotification.normalizer';
 import type { MarketplaceOrder, MarketplacePayment } from '@/services/marketplace/marketplace';
@@ -57,6 +63,9 @@ export type ShippingRatesResult =
 
 export class CommerceController {
   private constructor() {}
+
+  /** Sellers whose default storefront check ran (or runs) in this session. */
+  private static defaultShopSession = new Map<string, Promise<void>>();
 
   private static sessionEndedUnbind: (() => void) | null = null;
   private static inventorySessionEndedUnbind: (() => void) | null = null;
@@ -318,11 +327,12 @@ export class CommerceController {
   }
 
   /** Sign-out and account switch (`AuthController` local-state cleanup). */
-  static clearMarketplaceSessionForSignOut(): void {
-    CommerceApplication.clearMarketplaceSessionForSignOut();
+  static clearMarketplaceSessionForSignOut(options?: { confirmBff?: boolean }): void | Promise<void> {
+    const cleanup = CommerceApplication.clearMarketplaceSessionForSignOut(options);
     this.clearMarketplaceSessionStore();
     CommerceApplication.clearInventorySessionForSignOut();
     this.clearInventorySessionStore();
+    return cleanup;
   }
 
   /**
@@ -451,17 +461,42 @@ export class CommerceController {
   }
 
   static async executeMarketplaceCommand(input: unknown) {
-    return await CommerceApplication.executeMarketplaceCommand(
-      this.getCurrentUserPubky(),
-      CommerceRecordNormalizer.marketplaceCommand(input),
-    );
+    const command = CommerceRecordNormalizer.marketplaceCommand(input);
+    const response = await CommerceApplication.executeMarketplaceCommand(this.getCurrentUserPubky(), command);
+    if (response.ok && (command.kind === 'offer.create' || command.kind === 'auction.place_bid')) {
+      this.autoFollowSellers([parseListingAggregateId(command.aggregateId)?.sellerPubky]);
+    }
+    return response;
   }
 
   static async commitOfferCheckout(input: unknown) {
-    return await CommerceApplication.commitOfferCheckout(
-      this.getCurrentUserPubky(),
-      CommerceRecordNormalizer.marketplaceCommand(input),
-    );
+    const command = CommerceRecordNormalizer.marketplaceCommand(input);
+    const response = await CommerceApplication.commitOfferCheckout(this.getCurrentUserPubky(), command);
+    if (response.ok && command.kind === 'offer.checkout') {
+      this.autoFollowSellers([parseListingAggregateId(command.payload.listingAggregateId)?.sellerPubky]);
+    }
+    return response;
+  }
+
+  /**
+   * The Shop follows the seller on the buyer's behalf once the buyer shows
+   * intent (cart, checkout, watchlist, shop follow, offer, bid), so the two
+   * accounts know each other. Runs behind the buyer's action and never
+   * blocks or fails it; see `UserApplication.ensureSellerFollow` for the
+   * once-only and unfollow rules.
+   */
+  private static autoFollowSellers(sellers: Iterable<string | undefined>): void {
+    const follower = this.getCurrentUserPubky();
+    for (const seller of new Set([...sellers].filter((value): value is string => Boolean(value)))) {
+      void UserApplication.ensureSellerFollow({ follower, seller }).catch((error: unknown) => {
+        // AppError factories already report at their origin.
+        if (!isAppError(error)) Logger.warn('Could not follow the seller for this action', { error });
+      });
+    }
+  }
+
+  private static sellerOfListingCompositeId(listingCompositeId: string): string {
+    return listingCompositeId.slice(0, listingCompositeId.indexOf(':'));
   }
 
   /**
@@ -623,7 +658,11 @@ export class CommerceController {
 
   /** The current user's own stored payment configuration, or null. */
   static async getMyPaymentConfig() {
-    return await CommerceApplication.getMyPaymentConfig(this.getCurrentUserPubky());
+    const ownerPubky = this.getCurrentUserPubky();
+    const config = await CommerceApplication.getMyPaymentConfig(ownerPubky);
+    // Sellers who turned bitcoin on before the Shop published storefronts get one here.
+    if (config?.bitcoinEnabled) this.ensureStorefront(ownerPubky);
+    return config;
   }
 
   /** Saves the current user's own payment configuration. */
@@ -632,7 +671,47 @@ export class CommerceController {
     paypalMerchantEmail: string | null;
     usdtEnabled?: boolean;
   }) {
-    return await CommerceApplication.putMyPaymentConfig(this.getCurrentUserPubky(), input);
+    const ownerPubky = this.getCurrentUserPubky();
+    const saved = await CommerceApplication.putMyPaymentConfig(ownerPubky, input);
+    if (saved.bitcoinEnabled) this.ensureStorefront(ownerPubky);
+    return saved;
+  }
+
+  /**
+   * A seller who can be paid in bitcoin (Accept bitcoin on, or a published
+   * listing) gets a default storefront when they have none, because Bitkit
+   * only makes a seller the buyer's contact when the seller publishes
+   * `shop.json`. Runs behind the seller's action and never blocks or fails it.
+   * Checks once per seller per session; a failure or an account switch allows
+   * a retry. See `CommerceApplication.commitCreateDefaultShop` for the
+   * never-overwrite rules.
+   */
+  private static ensureStorefront(ownerPubky: string, location?: CommerceShopRecord['location']): void {
+    if (this.defaultShopSession.has(ownerPubky)) return;
+    const attempt = this.ensureDefaultShop(ownerPubky, location)
+      .then((settled) => {
+        if (!settled) this.defaultShopSession.delete(ownerPubky);
+      })
+      .catch((error: unknown) => {
+        this.defaultShopSession.delete(ownerPubky);
+        // AppError factories already report at their origin.
+        if (!isAppError(error)) Logger.warn('Could not publish a default storefront for the seller', { error });
+      });
+    this.defaultShopSession.set(ownerPubky, attempt);
+  }
+
+  /** False when the seller signed out or switched accounts before the check finished. */
+  private static async ensureDefaultShop(
+    ownerPubky: string,
+    location?: CommerceShopRecord['location'],
+  ): Promise<boolean> {
+    const isOwnerSignedIn = () => this.getCurrentUserPubky() === ownerPubky;
+    if (!isOwnerSignedIn()) return false;
+    if (!(await CommerceApplication.needsDefaultShop(ownerPubky))) return true;
+    const profile = await ProfileApplication.readProfileSeed({ pubky: ownerPubky as Pubky });
+    if (!isOwnerSignedIn()) return false;
+    await CommerceApplication.commitCreateDefaultShop({ ownerPubky, profile, location });
+    return true;
   }
 
   /** Buyer's one-shot payment-method binding for an order. */
@@ -1246,7 +1325,11 @@ export class CommerceController {
    * address.
    */
   static async commitCreateMarketplaceCheckout(input: CommerceCheckoutFulfillmentInput) {
-    return await CommerceApplication.commitCreateMarketplaceCheckout(this.getCurrentUserPubky(), input);
+    const response = await CommerceApplication.commitCreateMarketplaceCheckout(this.getCurrentUserPubky(), input);
+    if (response.ok) {
+      this.autoFollowSellers(input.lines.map((line) => parseListingAggregateId(line.listingAggregateId)?.sellerPubky));
+    }
+    return response;
   }
 
   /** The pickup-details CAS version: a non-negative safe integer (0 when no details exist yet). */
@@ -1512,12 +1595,14 @@ export class CommerceController {
   static async commitUpsertCartItem(listingCompositeId: unknown, variantId: unknown, quantity: unknown): Promise<void> {
     const parsedQuantity =
       typeof quantity === 'number' && Number.isSafeInteger(quantity) && quantity > 0 ? quantity : Number.NaN;
+    const listing = CommerceRecordNormalizer.listingCompositeId(listingCompositeId);
     await CommerceApplication.commitUpsertCartItem(
       this.getCurrentUserPubky(),
-      CommerceRecordNormalizer.listingCompositeId(listingCompositeId),
+      listing,
       CommerceRecordNormalizer.entityId(variantId),
       parsedQuantity,
     );
+    this.autoFollowSellers([this.sellerOfListingCompositeId(listing)]);
   }
 
   static async commitUpsertAwardCartItem(
@@ -1533,14 +1618,16 @@ export class CommerceController {
       typeof offerRevision === 'number' && Number.isSafeInteger(offerRevision) && offerRevision > 0
         ? offerRevision
         : Number.NaN;
+    const listing = CommerceRecordNormalizer.listingCompositeId(listingCompositeId);
     await CommerceApplication.commitUpsertAwardCartItem(
       this.getCurrentUserPubky(),
-      CommerceRecordNormalizer.listingCompositeId(listingCompositeId),
+      listing,
       CommerceRecordNormalizer.entityId(variantId),
       parsedQuantity,
       CommerceRecordNormalizer.entityId(awardId),
       parsedRevision,
     );
+    this.autoFollowSellers([this.sellerOfListingCompositeId(listing)]);
   }
 
   static async commitDeleteCartItem(listingCompositeId: unknown, variantId: unknown, awardId?: unknown): Promise<void> {
@@ -1613,10 +1700,9 @@ export class CommerceController {
   }
 
   static async commitCreateFavorite(listingCompositeId: unknown): Promise<void> {
-    await CommerceApplication.commitCreateFavorite(
-      this.getCurrentUserPubky(),
-      CommerceRecordNormalizer.listingCompositeId(listingCompositeId),
-    );
+    const listing = CommerceRecordNormalizer.listingCompositeId(listingCompositeId);
+    await CommerceApplication.commitCreateFavorite(this.getCurrentUserPubky(), listing);
+    this.autoFollowSellers([this.sellerOfListingCompositeId(listing)]);
     // Local write already landed (local-first); the private-document push
     // runs behind it and reports its outcome through the sync status store.
     void this.syncWatchlist();
@@ -1817,6 +1903,7 @@ export class CommerceController {
       });
     }
     await CommerceApplication.commitCreateShopFollow(ownerPubky, seller);
+    this.autoFollowSellers([seller]);
   }
 
   static async commitDeleteShopFollow(sellerPubky: unknown): Promise<void> {
@@ -1839,9 +1926,11 @@ export class CommerceController {
     const record = CommerceRecordNormalizer.listing(input);
     const reserve = reservePrice === undefined ? undefined : commercePositiveMoneySchema.nullable().parse(reservePrice);
     this.assertCurrentUserOwns(record.ownerPubky);
-    return await this.withPending(`${record.ownerPubky}:${record.listingId}`, () =>
+    const result = await this.withPending(`${record.ownerPubky}:${record.listingId}`, () =>
       CommerceApplication.commitUpsertListing(record, reserve),
     );
+    this.ensureStorefront(record.ownerPubky, record.location);
+    return result;
   }
 
   static async commitDeleteListing(ownerPubky: unknown, listingId: unknown): Promise<void> {

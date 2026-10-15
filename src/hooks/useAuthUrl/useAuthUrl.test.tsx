@@ -302,7 +302,7 @@ describe('useAuthUrl', () => {
     await waitFor(() => {
       expect(mockToast).toHaveBeenCalledWith({
         variant: 'error',
-        description: 'Sign in failed. Try again.',
+        description: 'PKARR relay unavailable',
       });
       expect(result.current.url).toBe('');
       expect(result.current.isExpired).toBe(true);
@@ -383,13 +383,16 @@ describe('useAuthUrl', () => {
     });
   });
 
-  it('fails the Bitkit grant option quietly when the browser cannot generate its keys', async () => {
+  it('reports a grant creation failure instead of silently hiding it', async () => {
     mockGetGrantAuthUrl.mockRejectedValue(new Error('Unrecognized algorithm name'));
 
     const { result } = renderHook(() => useAuthUrl({ type: 'grant' }));
 
     await waitFor(() => expect(result.current.isExpired).toBe(true));
-    expect(mockToast).not.toHaveBeenCalled();
+    expect(mockToast).toHaveBeenCalledWith({
+      variant: 'error',
+      description: 'Could not generate QR. Refresh and try again.',
+    });
   });
 
   it('asks the controller for the grant with the deploy default, or without scoped keys when told to', async () => {

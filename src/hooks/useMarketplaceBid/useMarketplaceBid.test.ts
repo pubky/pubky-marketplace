@@ -226,4 +226,26 @@ describe('useMarketplaceBid', () => {
 
     expect(vi.mocked(toast).mock.calls.at(-1)?.[0]?.description).toContain(expected);
   });
+
+  it('names a paused auction from the LISTING_NOT_ACTIVE reason', async () => {
+    const { toast } = await import('@/molecules/Toaster/use-toast');
+    const { result } = renderHook(() => useMarketplaceBid('listing:seller_item', 3, vi.fn(), USD_ASSET));
+    act(() => result.current.form.setValue('maximumAmount', '150.00'));
+    vi.mocked(CommerceController.executeMarketplaceCommand).mockResolvedValueOnce({
+      ok: false,
+      error: {
+        code: 'LISTING_NOT_ACTIVE',
+        message: 'The seller is not selling this listing right now.',
+        reason: 'listing_paused',
+      },
+    });
+
+    await act(async () => {
+      await result.current.submit();
+    });
+
+    expect(vi.mocked(toast).mock.calls.at(-1)?.[0]?.description).toBe(
+      'The seller paused this listing. Check back later.',
+    );
+  });
 });

@@ -70,12 +70,20 @@ export class BootstrapApplication {
 
     try {
       const pubky = params.pubky;
-      const [bootstrapData, userLastRead] = await Promise.all([
+      const [bootstrapResult, lastReadResult, ...syncResults] = await Promise.allSettled([
         NexusBootstrapService.fetch(pubky),
         this.fetchOrPutLastRead(params),
         MuteApplication.fetchMutedUsers(pubky), // fetches and persists MUTED stream internally
         FeedApplication.fetchFeeds(pubky),
       ]);
+      // Keep account ownership until every started sync has finished writing.
+      if (bootstrapResult.status === 'rejected') throw bootstrapResult.reason;
+      if (lastReadResult.status === 'rejected') throw lastReadResult.reason;
+      for (const result of syncResults) {
+        if (result.status === 'rejected') throw result.reason;
+      }
+      const bootstrapData = bootstrapResult.value;
+      const userLastRead = lastReadResult.value;
       onProgress?.('bootstrapFetched'); // Step 3 complete (60%)
 
       if (!bootstrapData.indexed) {
@@ -95,7 +103,7 @@ export class BootstrapApplication {
         TtlCoordinator.getInstance().subscribeUser({ pubky });
       }
 
-      const [{ unread, nextPollCursor }] = await Promise.all([
+      const [notificationResult, ...persistenceResults] = await Promise.allSettled([
         NotificationApplication.persistAndSummarize({
           notifications: bootstrapData.notifications,
           lastRead: userLastRead,
@@ -120,6 +128,11 @@ export class BootstrapApplication {
         LocalHotService.upsert(buildHotTagsId(UserStreamTimeframe.TODAY, 'all'), bootstrapData.ids.hot_tags),
         LocalStreamTagsService.upsert(TagStreamTypes.TODAY_ALL, bootstrapData.ids.hot_tags),
       ]);
+      if (notificationResult.status === 'rejected') throw notificationResult.reason;
+      for (const result of persistenceResults) {
+        if (result.status === 'rejected') throw result.reason;
+      }
+      const { unread, nextPollCursor } = notificationResult.value;
       onProgress?.('dataPersisted'); // Step 4 complete (80%)
       void this.ensureModerationFollow(pubky, moderationFollowController);
       // TODO: We will not have that step, but we will add HomeserverSignIn step before step 1 to catch errors

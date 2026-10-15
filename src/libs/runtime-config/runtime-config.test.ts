@@ -117,6 +117,22 @@ describe('runtime-config resolver', () => {
   }
 
   describe('server', () => {
+    it.each(['', '/shop'])('refuses forced embedding at the incompatible mount %s', (basePath) => {
+      vi.stubEnv('NEXT_PUBLIC_BASE_PATH', basePath);
+      vi.stubEnv('PUBKY_RUNTIME_EMBEDDED', 'true');
+      expect(() => readServerConfig()).toThrow('NEXT_PUBLIC_BASE_PATH=/shop-embed');
+    });
+    it('rejects injected embedding config that disagrees with the client build mount', () => {
+      vi.stubEnv('NEXT_PUBLIC_BASE_PATH', '/shop');
+      window[RUNTIME_CONFIG_WINDOW_KEY] = { ...readServerConfig(), embedded: true };
+      expect(() => readClientConfig()).toThrow('NEXT_PUBLIC_BASE_PATH=/shop-embed');
+    });
+    it('accepts the supported forced-embedded mount', () => {
+      vi.stubEnv('NEXT_PUBLIC_BASE_PATH', '/shop-embed');
+      vi.stubEnv('PUBKY_RUNTIME_EMBEDDED', 'true');
+      expect(readServerConfig().embedded).toBe(true);
+    });
+
     it('parses PUBKY_RUNTIME_* when present', () => {
       setAllRuntimeEnv();
       const config = readServerConfig();

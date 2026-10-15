@@ -1,3 +1,4 @@
+import type { CommerceListingRecord } from '@/libs/commerce/marketplace-records';
 import { availablePaymentMethods, type SellerPaymentConfig } from '@/libs/commerce/payment-methods';
 
 /**
@@ -6,9 +7,9 @@ import { availablePaymentMethods, type SellerPaymentConfig } from '@/libs/commer
  * edit (`useEditMarketplaceListing.submit`) share this taxonomy so the Review
  * step cannot read Complete while a handler would still early-return.
  *
- * Payment-method setup is also an entrance gate on Create listing. The
- * no-method reason still exists here as defence in depth for a method removed
- * while a draft or published listing is open.
+ * Create listing only shows a banner while no payment method is set up, so
+ * sellers can prepare drafts first. The no-method reason here is what keeps
+ * such a draft, or a listing whose method was later removed, from publishing.
  */
 export const LISTING_PUBLISH_BLOCK_REASONS = [
   'unsigned',
@@ -24,8 +25,8 @@ export type ListingPublishBlockReason = (typeof LISTING_PUBLISH_BLOCK_REASONS)[n
 export const LISTING_PUBLISH_GUARD_CHECKING = 'Checking payment settings…';
 
 export const LISTING_COMPOSER_PAYMENT_COPY = {
-  title: 'Set up how you get paid first',
-  body: 'Buyers cannot pay you otherwise. Add at least one payment method.',
+  title: 'Add a payment method to publish',
+  body: 'You can prepare and save drafts now.',
 } as const;
 
 export const LISTING_COMPOSER_RETURN_INTENT_KEY = 'pubky.marketplace.listingComposerReturnTo';
@@ -112,6 +113,39 @@ export async function evaluateDeliveryKeyGate(
   } catch {
     return 'delivery-key-unverified';
   }
+}
+
+const PAUSE_TRANSITION_FIELDS = new Set(['state', 'revision', 'updatedAt']);
+
+function sameJsonValue(left: unknown, right: unknown): boolean {
+  if (Object.is(left, right)) return true;
+  if (typeof left !== 'object' || typeof right !== 'object' || left === null || right === null) return false;
+  if (Array.isArray(left) !== Array.isArray(right)) return false;
+  const leftKeys = Object.keys(left).filter((key) => (left as Record<string, unknown>)[key] !== undefined);
+  const rightKeys = Object.keys(right).filter((key) => (right as Record<string, unknown>)[key] !== undefined);
+  if (leftKeys.length !== rightKeys.length) return false;
+  return leftKeys.every((key) =>
+    sameJsonValue((left as Record<string, unknown>)[key], (right as Record<string, unknown>)[key]),
+  );
+}
+
+/**
+ * Whether publishing `next` over `previous` needs a marketplace session in durable mode. The service tracks
+ * stock, not the record's lifecycle state, so pausing an active fixed-price listing is only a homeserver
+ * write, which the sign-in grant already covers. A Bitkit or Passport sign-in holds no marketplace session
+ * until the seller enables selling, and that session expires on its own TTL; neither may block a pause.
+ * Only a pure pause qualifies: any other field change may need registering, and auctions prepare a service
+ * command on publish.
+ */
+export function listingPublishNeedsMarketplaceSession(
+  previous: CommerceListingRecord | null | undefined,
+  next: CommerceListingRecord,
+): boolean {
+  if (!previous || previous.state !== 'active' || next.state !== 'paused') return true;
+  if (next.sale.format !== 'fixed_price') return true;
+  const unchanged = (record: CommerceListingRecord) =>
+    Object.fromEntries(Object.entries(record).filter(([key]) => !PAUSE_TRANSITION_FIELDS.has(key)));
+  return !sameJsonValue(unchanged(previous), unchanged(next));
 }
 
 export async function evaluateDurableListingPublishGuards(input: {

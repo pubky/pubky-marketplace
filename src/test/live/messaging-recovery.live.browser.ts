@@ -33,7 +33,6 @@ vi.mock('@/config/commerce', () => ({
 
 vi.mock('@/libs/runtime-config/runtime-config', () => ({
   getTestnet: () => true,
-  getSingleApprovalSignIn: () => true,
   getSentryDsn: () => undefined,
   getSentryEnvironment: () => undefined,
   getSentryTracesSampleRate: () => 0,

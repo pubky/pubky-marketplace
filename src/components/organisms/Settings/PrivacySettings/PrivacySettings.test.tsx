@@ -2,6 +2,7 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { defaultPrivacyPreferences } from '@/stores/settings/settings.types';
 import { PrivacySettings } from './PrivacySettings';
+import { SELLER_FOLLOW_NOTICE } from './PrivacySettings.constants';
 
 // Mock settings store and hook
 const mockSetShowConfirm = vi.fn();
@@ -50,6 +51,13 @@ describe('PrivacySettings', () => {
     expect(screen.getByText("Hide your profile in 'Active Friends'")).toBeInTheDocument();
     expect(screen.getByText('Hide your profile in search results')).toBeInTheDocument();
     expect(screen.getByText("Never show posts from people you don't follow")).toBeInTheDocument();
+  });
+
+  it('tells the user the Shop follows sellers they buy from', () => {
+    render(<PrivacySettings />);
+
+    expect(screen.getByText(SELLER_FOLLOW_NOTICE)).toBeInTheDocument();
+    expect(SELLER_FOLLOW_NOTICE).toMatch(/follows sellers you buy from/);
   });
 
   it('calls setShowConfirm when toggling confirmation switch', () => {

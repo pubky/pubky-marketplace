@@ -109,3 +109,38 @@ describe('MarketplaceListingOwnerPanel delete before the homeserver session is r
     expect(controller.commitDeleteListing).not.toHaveBeenCalled();
   });
 });
+
+describe('MarketplaceListingOwnerPanel state badge', () => {
+  const auction = () => {
+    const record = createCommerceListingFixture();
+    record.sale = {
+      format: 'auction',
+      startingPrice: { amountMinor: 4_500, currency: 'USD', exponent: 2 },
+      minimumIncrement: { amountMinor: 500, currency: 'USD', exponent: 2 },
+      startsAt: '2026-09-01T00:00:00.000Z',
+      endsAt: '2026-09-17T00:00:00.000Z',
+      antiSnipingWindowSeconds: 120,
+      antiSnipingExtensionSeconds: 120,
+    };
+    return record;
+  };
+
+  it('reads ended, not active, once the auction has ended', () => {
+    render(<MarketplaceListingOwnerPanel record={auction()} registrationStatus="registered" auctionPhase="ended" />);
+
+    expect(screen.getByTestId('listing-owner-state')).toHaveTextContent('ended');
+  });
+
+  it('reads active while the auction is live', () => {
+    render(<MarketplaceListingOwnerPanel record={auction()} registrationStatus="registered" auctionPhase="live" />);
+
+    expect(screen.getByTestId('listing-owner-state')).toHaveTextContent('active');
+  });
+
+  it("keeps a paused listing's state whatever the phase", () => {
+    const record = { ...createCommerceListingFixture(), state: 'paused' as const };
+    render(<MarketplaceListingOwnerPanel record={record} registrationStatus="registered" />);
+
+    expect(screen.getByTestId('listing-owner-state')).toHaveTextContent('paused');
+  });
+});

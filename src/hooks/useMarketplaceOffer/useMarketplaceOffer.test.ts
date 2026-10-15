@@ -129,6 +129,29 @@ describe('useMarketplaceOffer', () => {
     expect(JSON.stringify(vi.mocked(toast).mock.calls)).not.toContain(sentinel);
   });
 
+  it('names an ended listing from the LISTING_NOT_ACTIVE reason', async () => {
+    const { toast } = await import('@/molecules/Toaster/use-toast');
+    const { result } = renderHook(() => useMarketplaceOffer('listing:seller_item', 3, vi.fn(), USD_ASSET));
+    act(() => {
+      result.current.form.setValue('amount', '100.00');
+      result.current.form.setValue('quantity', '1');
+    });
+    vi.mocked(CommerceController.executeMarketplaceCommand).mockResolvedValueOnce({
+      ok: false,
+      error: {
+        code: 'LISTING_NOT_ACTIVE',
+        message: 'The seller is not selling this listing right now.',
+        reason: 'listing_ended',
+      },
+    });
+
+    await act(async () => {
+      await result.current.submit();
+    });
+
+    expect(vi.mocked(toast).mock.calls.at(-1)?.[0]?.description).toBe('This listing has ended.');
+  });
+
   it('maps listing inventory refusals to listing copy, never drop sold-out copy', async () => {
     const { toast } = await import('@/molecules/Toaster/use-toast');
     const { result } = renderHook(() => useMarketplaceOffer('listing:seller_item', 3, vi.fn(), USD_ASSET));

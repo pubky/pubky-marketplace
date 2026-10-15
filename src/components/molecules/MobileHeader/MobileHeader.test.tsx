@@ -4,6 +4,7 @@ import { setEmbedded } from '@/test-utils/embedded';
 import { MobileHeader } from './MobileHeader';
 
 let mockCurrentUserPubky: string | null = 'pk:test-user-pubky';
+let mockHasSession = true;
 let mockIsCoreExploreRoute = false;
 let mockIsPublicExploreRoute = false;
 const mockSetShowSignInDialog = vi.fn();
@@ -24,6 +25,7 @@ vi.mock('@/stores/auth/auth.store', () => ({
   useAuthStore: vi.fn((selector) => {
     const state = {
       currentUserPubky: mockCurrentUserPubky,
+      session: mockHasSession && mockCurrentUserPubky ? {} : null,
       setShowSignInDialog: mockSetShowSignInDialog,
     };
     return selector(state);
@@ -275,4 +277,18 @@ describe('MobileHeader - Snapshots', () => {
     const logo = screen.getByTestId('logo');
     expect(logo).toMatchSnapshot();
   });
+});
+
+it('requests sign-in for a retained legacy identity with no grant session', () => {
+  mockCurrentUserPubky = 'legacy-pubky';
+  mockHasSession = false;
+  const onActivity = vi.fn();
+  try {
+    render(<MobileHeader onRightIconClick={onActivity} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Join Pubky' }));
+    expect(mockSetShowSignInDialog).toHaveBeenCalledWith(true);
+    expect(onActivity).not.toHaveBeenCalled();
+  } finally {
+    mockHasSession = true;
+  }
 });
