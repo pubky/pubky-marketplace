@@ -14,13 +14,13 @@ import { ServiceWorkerRegistration } from '@/molecules/ServiceWorkerRegistration
 import { StructuredData } from '@/molecules/StructuredData/StructuredData';
 import { Toaster } from '@/molecules/Toaster/Toaster';
 import { CoordinatorsManager } from '@/organisms/CoordinatorsManager/CoordinatorsManager';
-import { DialogSessionHandoff } from '@/organisms/DialogSessionHandoff/DialogSessionHandoff';
 import { DialogSignIn } from '@/organisms/DialogSignIn/DialogSignIn';
 import { Header } from '@/organisms/Header/Header';
 import { DatabaseProvider } from '@/providers/DatabaseProvider/DatabaseProvider';
 import { ErrorBoundaryProvider } from '@/providers/ErrorBoundaryProvider/ErrorBoundaryProvider';
 import { GlobalErrorHandlerProvider } from '@/providers/GlobalErrorHandlerProvider/GlobalErrorHandlerProvider';
 import { RouteGuardProvider } from '@/providers/RouteGuardProvider/RouteGuardProvider';
+import { ShopHostSessionProvider } from '@/providers/ShopHostSessionProvider/ShopHostSessionProvider';
 
 export const viewport: Viewport = {
   width: 'device-width',
@@ -58,20 +58,21 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         <GlobalErrorHandlerProvider>
           <ErrorBoundaryProvider>
             <DatabaseProvider>
-              <RouteGuardProvider>
-                <CoordinatorsManager />
-                <ServiceWorkerRegistration />
-                <EmbeddedDocumentFlag />
-                <EmbeddedExternalLinks />
-                <Header />
-                {children}
-                <EmbeddedLegalFooter />
-                <Fab />
-                <Toaster />
-                <DialogSignIn />
-              </RouteGuardProvider>
-              {/* Outside RouteGuardProvider: it waits on the restore this dialog answers. */}
-              <DialogSessionHandoff />
+              <ShopHostSessionProvider>
+                <RouteGuardProvider>
+                  <CoordinatorsManager />
+                  <ServiceWorkerRegistration />
+                  <EmbeddedDocumentFlag />
+                  <EmbeddedExternalLinks />
+                  <Header />
+                  {children}
+                  <EmbeddedLegalFooter />
+                  <Fab />
+                  <Toaster />
+                  <DialogSignIn />
+                </RouteGuardProvider>
+                {/* Outside RouteGuardProvider: it waits on the restore this dialog answers. */}
+              </ShopHostSessionProvider>
             </DatabaseProvider>
           </ErrorBoundaryProvider>
         </GlobalErrorHandlerProvider>

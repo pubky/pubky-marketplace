@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { CAPABILITIES } from '@/config/app';
 import { INVENTORY_GRANT } from '@/services/marketplace/marketplace-inventory-grant';
 import { MarketplaceInventorySessionService } from '@/services/marketplace/marketplace-inventory-session';
 import { MarketplaceSessionService } from '@/services/marketplace/marketplace-session';
@@ -73,6 +74,8 @@ describe('classifySessionKind', () => {
 
   it('labels the marketplace session grant and the Shop sign-in grant Purchase in any order', () => {
     const captured = bitkitParityCapture.parity_request.homeserver_verified;
+    expect(classifySessionKind(CAPABILITIES)).toBe('purchase');
+    expect(classifySessionKind(CAPABILITIES.split(',').reverse().join(','))).toBe('purchase');
     expect(classifySessionKind(captured)).toBe('purchase');
     expect(classifySessionKind(captured.split(',').reverse().join(','))).toBe('purchase');
     expect(classifySessionKind('/pub/pubky.app/:rw,/pub/paykit/:rw,/priv/pubky.app/:rw')).toBe('purchase');

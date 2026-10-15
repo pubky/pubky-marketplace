@@ -1,7 +1,11 @@
 import { getPathMatch } from 'next/dist/shared/lib/router/utils/path-match';
 import { prepareDestination } from 'next/dist/shared/lib/router/utils/prepare-destination';
+import withSerwistInit from '@serwist/next';
+import type { NextConfig } from 'next';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { redirects, resolveMountConfig } from './next.config';
+
+vi.mock('@serwist/next', () => ({ default: vi.fn(() => (config: NextConfig) => config) }));
 
 type ConfiguredRedirect = Awaited<ReturnType<typeof redirects>>[number];
 
@@ -218,5 +222,25 @@ describe('resolveMountConfig', () => {
     expect(() => resolveMountConfig({ NEXT_PUBLIC_ASSET_PREFIX: 'cdn.example.com' })).toThrow(
       /NEXT_PUBLIC_ASSET_PREFIX/,
     );
+  });
+});
+
+describe('Shop reconnect behavior', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.resetModules();
+  });
+
+  it.each([
+    { basePath: '/shop-embed', reloadOnOnline: false },
+    { basePath: '', reloadOnOnline: true },
+    { basePath: '/shop', reloadOnOnline: true },
+  ])('sets reloadOnOnline=$reloadOnOnline for basePath="$basePath"', async ({ basePath, reloadOnOnline }) => {
+    vi.stubEnv('NEXT_PUBLIC_BASE_PATH', basePath);
+    vi.resetModules();
+    vi.mocked(withSerwistInit).mockClear();
+    await import('./next.config');
+    // register:false alone still installs Serwist's online => location.reload listener.
+    expect(withSerwistInit).toHaveBeenCalledWith(expect.objectContaining({ register: false, reloadOnOnline }));
   });
 });

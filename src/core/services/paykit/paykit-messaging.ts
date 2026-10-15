@@ -219,21 +219,14 @@ export const MESSAGING_SESSION_STORAGE_KEY = 'pubky.messaging.session.v1';
  *
  * Key facts the rest of the app relies on:
  *
- * - The homeserver session normally comes from the app's OWN sign-in: the
- *   Ring cookie sign-in set (`RING_COOKIE_CAPABILITIES`, which includes
- *   `/pub/paykit/:rw`) already covers the Paykit tree, and the credential is the HTTP-only
- *   homeserver cookie the BROWSER holds from that sign-in. The binding's
- *   `resumeSessionFromCookie` rebuilds a session handle from that cookie
- *   with ZERO additional signer approvals ({@link restorePersistedSession}
- *   resume order: in-memory session → persisted `exportSession` metadata →
- *   cookie resume → only then the interactive flow). The Pubky identity
- *   secret never enters this runtime, and this code persists only
- *   secret-free session metadata to `localStorage`
- *   ({@link MESSAGING_SESSION_STORAGE_KEY}) so later loads take the fast
- *   path. The interactive Ring approval ({@link beginEnableFlow}) remains
- *   ONLY for legacy sessions whose sign-in predates the combined grant
- *   (cookie resume rejects with `SessionResumeScopeMissing`) or whose
- *   cookie the homeserver no longer accepts.
+ * - This legacy transport requires an HTTP-only homeserver cookie with
+ *   `/pub/paykit/:rw`. It can resume a previously approved cookie via
+ *   in-memory handles, persisted public session metadata, or cookie resume.
+ *   Current SDK grant sign-ins create no cookie, and the binding exposes no
+ *   grant/session adapter. The UI refuses new enable flows for grant users
+ *   while preserving existing cookie resume and local encrypted history.
+ *   Matthew's Inbox integration replaces this transport; do not turn the
+ *   legacy Ring approval into an implicit grant-to-cookie fallback.
  * - Link crypto uses a receiver-scoped Noise key generated here and persisted
  *   in account-scoped IndexedDB (`commerce_messaging_receivers`); the secret
  *   and every link snapshot are encrypted at rest by `LocalMessagingService`
@@ -315,10 +308,9 @@ export class PaykitMessagingService {
    * provisions (or reuses) the receiver Noise key, and publishes the receiver
    * marker that makes this user discoverable for encrypted messaging.
    *
-   * This flow is the LAST resort in the resume order: it is only reached for
-   * sign-ins that predate the combined grant (no `/pub/paykit/` scope in the
-   * session cookie) or whose cookie the homeserver no longer accepts —
-   * current sign-ins resume silently via {@link restorePersistedSession}.
+   * Legacy cookie authentication only; current grant sign-ins cannot invoke
+   * it. It is not an SDK grant adapter and must not be used as a silent
+   * fallback from grant authentication.
    *
    * `cancel` detaches the flow: the binding exposes no abort for a pending
    * approval, so a later approval on a detached flow is dropped (its session
@@ -371,18 +363,14 @@ export class PaykitMessagingService {
    * 2. persisted `exportSession` metadata + the browser's HTTP-only cookie
    *    via the binding's `restoreSession` (revalidates against the
    *    homeserver),
-   * 3. cookie-ONLY resume via the binding's `resumeSessionFromCookie` — the
-   *    zero-approval path: the app's sign-in grant already covers
-   *    `/pub/paykit/:rw`, so the sign-in cookie alone is sufficient. On
-   *    success the session is persisted via `exportSession` exactly like
-   *    the approval path, so subsequent loads take path 2.
+   * 3. an existing cookie via `resumeSessionFromCookie`, validated for this
+   *    identity and `/pub/paykit/:rw`. Current SDK grant sign-ins create no
+   *    cookie, so fresh users cannot use this compatibility path.
    *
-   * Only when ALL of these fail does the UI show the interactive enable
-   * flow — which is now reachable ONLY by legacy sessions without the
-   * paykit scope or cookies the homeserver rejects. Every successful resume
-   * also ensures the receiver key + marker are provisioned, so messaging
-   * surfaces go straight to ready after sign-in. Never throws for "no
-   * session"; concurrent callers share one in-flight resume.
+   * A successful resume also provisions the receiver key and marker. If
+   * none succeeds, grant users see the supported limitation while saved
+   * encrypted history remains available. Never throws for "no session";
+   * concurrent callers share one in-flight resume.
    *
    * `provision: false` resumes the session only: whenever it settles, it
    * never creates, replaces or publishes a receiver key. A caller that
@@ -422,17 +410,10 @@ export class PaykitMessagingService {
   }
 
   /**
-   * The zero-approval resume: rebuilds the session handle purely from the
-   * browser's existing homeserver cookie (set by the app's sign-in, whose
-   * grant covers `/pub/paykit/:rw`). The binding revalidates against the
-   * homeserver and verifies both the identity and the paykit scope, so a
-   * `true` here is a fully working messaging session with no signer
-   * involvement. Typed failures are deliberate no-session outcomes:
-   * `SessionResumeScopeMissing` means the sign-in predates the combined
-   * grant (the ONLY population that still sees the enable dialog);
-   * `SessionResumeUnauthorized` means the homeserver holds no valid session
-   * behind the browser's cookies. Both fall through to the honest
-   * reconnect/enable state.
+   * Restores an existing cookie session only. The binding validates its
+   * identity and Paykit scope; it cannot import an SDK grant. Missing,
+   * expired, revoked or narrowly scoped cookies fall through to the UI's
+   * unavailable/reconnect state without changing existing local history.
    */
   private static async resumeSessionFromCookie(expectedPubky: string): Promise<boolean> {
     try {
@@ -453,7 +434,7 @@ export class PaykitMessagingService {
       return true;
     } catch (error) {
       if (isErrorNamed(error, 'SessionResumeScopeMissing')) {
-        Logger.info('The sign-in session predates the combined paykit grant; messaging needs a one-time approval', {
+        Logger.info('The existing cookie does not cover Paykit; grant messaging needs an adapter', {
           pubky: expectedPubky,
         });
       } else {

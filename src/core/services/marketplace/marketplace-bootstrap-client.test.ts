@@ -6,6 +6,7 @@ import { HttpMethod } from '@/libs/http/http.types';
 import { HomeserverService } from '@/services/homeserver/homeserver';
 import captured from '@/test/fixtures/auth/marketplace-bootstrap-url.staging.json';
 import parityCapture from '@/test/fixtures/auth/marketplace-grant-priv-parity.staging.json';
+import { setBasePath } from '@/test-utils/base-path';
 import { beginMarketplaceBootstrapFlow } from './marketplace-bootstrap-client';
 import {
   MARKETPLACE_DISCLOSURE_INVENTORY,
@@ -72,7 +73,26 @@ describe('marketplace purchase bootstrap client', () => {
   });
 
   afterEach(() => {
+    setBasePath('');
     vi.unstubAllGlobals();
+  });
+
+  it('uses the mount prefix for the full bootstrap lifecycle', async () => {
+    setBasePath('/shop-embed');
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse(challenge(), 201))
+      .mockResolvedValueOnce(jsonResponse(verified))
+      .mockResolvedValueOnce(jsonResponse({ status: 'cancelled' }))
+      .mockResolvedValueOnce(jsonResponse({}));
+    const flow = await beginMarketplaceBootstrapFlow({ pubky: PUBKY });
+    await flow.awaitResult();
+    await flow.cancel();
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      '/shop-embed/api/marketplace/bootstrap-challenges',
+      `/shop-embed/api/marketplace/bootstrap-challenges/${CHALLENGE_ID}/verify`,
+      `/shop-embed/api/marketplace/bootstrap-flows/${STATE_ID}/status`,
+      `/shop-embed/api/marketplace/bootstrap-flows/${STATE_ID}/cancel`,
+    ]);
   });
 
   it('grant session writes proof document', async () => {

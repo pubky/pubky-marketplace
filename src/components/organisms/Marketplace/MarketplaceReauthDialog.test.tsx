@@ -3,15 +3,16 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { CAPABILITIES, RING_COOKIE_CAPABILITIES } from '@/config/app';
 import type { UseStepUpReauthReturn } from '@/hooks/useStepUpReauth/useStepUpReauth.types';
-import {
-  MARKETPLACE_DISCLOSURE_PRIVATE_DATA,
-  MARKETPLACE_DISCLOSURE_RING_SIGN_IN,
-} from '@/services/marketplace/marketplace-session-grant';
+import { MARKETPLACE_DISCLOSURE_PRIVATE_DATA } from '@/services/marketplace/marketplace-session-grant';
 import ringCapture from '@/test/fixtures/auth/ring-signin-url.sdk-0.8.0.json';
 import { MarketplaceReauthDialog } from './MarketplaceReauthDialog';
 
 const reauth: UseStepUpReauthReturn = {
   status: 'idle',
+  requestsPassport: false,
+  requiresSignerChoice: false,
+  signerName: 'Pubky Ring',
+  startPassport: vi.fn(),
   authorizationUrl: '',
   errorMessage: null,
   start: vi.fn(),
@@ -25,16 +26,19 @@ vi.mock('@/hooks/useStepUpReauth/useStepUpReauth', () => ({
   useStepUpReauth: () => reauth,
 }));
 
+vi.mock('@/hooks/useMarketplaceApprovalSigner/useMarketplaceApprovalSigner', () => ({
+  useMarketplaceApprovalSigner: () => 'Bitkit',
+}));
+
 const signIn = vi.hoisted(() => ({ isGrantSession: false }));
 vi.mock('@/hooks/useIsGrantSession/useIsGrantSession', () => ({
   useIsGrantSession: () => signIn.isGrantSession,
 }));
 
-const config = vi.hoisted(() => ({ singleApproval: true, mode: 'transaction-service' as string }));
+const config = vi.hoisted(() => ({ mode: 'transaction-service' as string }));
 vi.mock('@/libs/runtime-config/runtime-config', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/libs/runtime-config/runtime-config')>()),
   getMarketplaceGrantFlowEnabled: () => true,
-  getSingleApprovalSignIn: () => config.singleApproval,
   getCommerceAdapterMode: () => config.mode,
 }));
 
@@ -74,28 +78,26 @@ describe('MarketplaceReauthDialog', () => {
     connect.bootstrap = false;
     connect.approvalSigner = 'Bitkit';
     signIn.isGrantSession = false;
-    config.singleApproval = true;
     config.mode = 'transaction-service';
     reauth.status = 'idle';
     reauth.authorizationUrl = '';
   });
 
-  it('the Ring step-up QR discloses the marketplace access its single approval also grants', async () => {
+  it('the Ring step-up makes no claim to authorize the marketplace', async () => {
     reauth.status = 'awaiting';
     reauth.authorizationUrl = RING_STEP_UP_URL;
     render(<MarketplaceReauthDialog refusal="homeserver" triggerLabel="Sign in again" />);
 
     await userEvent.setup().click(screen.getByRole('button', { name: 'Sign in again' }));
 
-    expect(screen.getByTestId('session-approval-disclosure')).toHaveTextContent(MARKETPLACE_DISCLOSURE_RING_SIGN_IN);
+    expect(screen.queryByTestId('session-approval-disclosure')).toBeNull();
     expect(screen.queryByText(RING_COOKIE_CAPABILITIES)).not.toBeInTheDocument();
   });
 
   it.each([
-    ['single approval is off', false, 'transaction-service'],
-    ['no durable commerce backend', true, 'unavailable'],
-  ])('the Ring step-up QR makes no marketplace claim when %s', async (_label, singleApproval, mode) => {
-    config.singleApproval = singleApproval;
+    ['a durable commerce backend is configured', 'transaction-service'],
+    ['no durable commerce backend is configured', 'unavailable'],
+  ])('the Ring step-up QR makes no marketplace claim when %s', async (_label, mode) => {
     config.mode = mode;
     reauth.status = 'awaiting';
     reauth.authorizationUrl = RING_STEP_UP_URL;
@@ -128,35 +130,20 @@ describe('MarketplaceReauthDialog', () => {
     expect(screen.queryByText(/permission list/i)).not.toBeInTheDocument();
   });
 
-  it('re-approves a Bitkit sign-in through the marketplace grant any Pubky signer can approve', async () => {
+  it('repairs homeserver permissions with homeserver approval for a grant session', async () => {
     signIn.isGrantSession = true;
     render(<MarketplaceReauthDialog refusal="homeserver" triggerLabel="Sign in again" />);
-
     await userEvent.setup().click(screen.getByRole('button', { name: 'Sign in again' }));
-
-    expect(reauth.start).not.toHaveBeenCalled();
-    expect(connect.start).toHaveBeenCalledOnce();
-    expect(screen.queryByTestId('grant-session-refusal')).not.toBeInTheDocument();
-    expect(screen.queryByText(/coming soon/i)).not.toBeInTheDocument();
-    expect(
-      screen.getByText(
-        'Approve with Bitkit to reconnect the marketplace session for the identity already signed in to Shop. Nothing is charged until you pay.',
-      ),
-    ).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Authorize with Bitkit' })).toBeEnabled();
-    expect(screen.queryByRole('button', { name: /authorize with pubky ring/i })).not.toBeInTheDocument();
+    expect(reauth.start).toHaveBeenCalledOnce();
+    expect(connect.start).not.toHaveBeenCalled();
   });
 
-  it('offers Bitkit to a Bitkit sign-in that has no marketplace session yet', async () => {
-    signIn.isGrantSession = true;
-    connect.bootstrap = true;
+  it('shows the host permission request without a Shop QR', async () => {
+    reauth.status = 'awaiting-host';
     render(<MarketplaceReauthDialog refusal="homeserver" triggerLabel="Sign in again" />);
-
     await userEvent.setup().click(screen.getByRole('button', { name: 'Sign in again' }));
-
-    expect(reauth.start).not.toHaveBeenCalled();
-    expect(screen.getByRole('button', { name: 'Authorize with Bitkit' })).toBeEnabled();
-    expect(screen.getByTestId('session-approval-disclosure')).toHaveTextContent(MARKETPLACE_DISCLOSURE_PRIVATE_DATA);
+    expect(screen.getByText('Continue in Pubky App to approve the permissions Shop needs.')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Copy authorization link')).toBeNull();
   });
 
   it.each([

@@ -9,11 +9,18 @@ const mockSetShowSignInDialog = vi.hoisted(() => vi.fn());
 
 vi.mock('@/stores/auth/auth.store', () => ({
   useAuthStore: Object.assign(
-    (selector: (state: { currentUserPubky: string | null }) => unknown) =>
-      selector({ currentUserPubky: mockCurrentUserPubky.value }),
+    (
+      selector: (state: {
+        currentUserPubky: string | null;
+        session: { grant: object };
+        hasProfile: boolean;
+      }) => unknown,
+    ) => selector({ currentUserPubky: mockCurrentUserPubky.value, session: { grant: {} }, hasProfile: true }),
     {
       getState: () => ({
         currentUserPubky: mockCurrentUserPubky.value,
+        session: { grant: {} },
+        hasProfile: true,
         setShowSignInDialog: mockSetShowSignInDialog,
       }),
     },

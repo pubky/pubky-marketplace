@@ -21,12 +21,15 @@ import { Card } from '@/atoms/Card/Card';
 import { Container } from '@/atoms/Container/Container';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/atoms/Dialog/Dialog';
 import { Typography } from '@/atoms/Typography/Typography';
+import { useIsShopHosted } from '@/providers/ShopHostSessionProvider/ShopHostSessionProvider';
 import { useAuthStore } from '@/stores/auth/auth.store';
 
 export function DialogSignIn() {
+  const hosted = useIsShopHosted();
   const showSignInDialog = useAuthStore((state) => state.showSignInDialog);
   const setShowSignInDialog = useAuthStore((state) => state.setShowSignInDialog);
   const handleClose = () => setShowSignInDialog(false);
+  if (hosted) return null;
   return (
     <Dialog open={showSignInDialog} onOpenChange={setShowSignInDialog}>
       <DialogContent className="w-[576px] gap-6">

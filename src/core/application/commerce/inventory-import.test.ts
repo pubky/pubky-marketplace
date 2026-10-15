@@ -21,6 +21,7 @@ import {
   type SyncManyEnvelope,
 } from '@/services/marketplace/marketplace-shop-client';
 import { createCommerceListingFixture } from '@/test/fixtures/commerce/commerce';
+import { IMPORT_GATES_PASSING } from '@/test-utils/import-settings';
 import { BytesFile, MemoryImportStore } from '@/test-utils/inventory-import-harness';
 import { asOpaque } from '@/test-utils/type-assertions';
 
@@ -157,6 +158,7 @@ describe('CommerceInventoryImportApplication', () => {
   function app(syncResults: Array<{ listing_id: string; status: number }>[] = []) {
     let syncIndex = 0;
     return CommerceInventoryImportApplication.forSeller(PUBKY, {
+      ...IMPORT_GATES_PASSING,
       store,
       currentItems: async () => ({}),
       putListing: async (record) => {
@@ -253,9 +255,11 @@ describe('CommerceInventoryImportApplication', () => {
 
       const published = await importer.publish(planned.manifestId);
 
-      expect(published).toEqual({ status: 'error', message: UNLIMITED_STOCK_RESERVED_MESSAGE });
+      expect(published).toMatchObject({ status: 'complete', published: 0, synced: 0, failed: 1, mixed: false });
       expect(puts).toEqual([]);
       expect(syncCalls).toEqual([]);
+      const result = await importer.resultCsv(planned.manifestId);
+      expect(result).toContain(`"invalid_listing: ${UNLIMITED_STOCK_RESERVED_MESSAGE}"`);
     },
   );
 
@@ -280,6 +284,7 @@ describe('CommerceInventoryImportApplication', () => {
 
   it('checkpoints conflict on CAS 409 and does not overwrite', async () => {
     const importer = CommerceInventoryImportApplication.forSeller(PUBKY, {
+      ...IMPORT_GATES_PASSING,
       store,
       currentItems: async () => ({}),
       putListing: async () => {
@@ -302,6 +307,7 @@ describe('CommerceInventoryImportApplication', () => {
 
   it('confirm on a CAS 409 skips overwrite and publishes remaining rows', async () => {
     const importer = CommerceInventoryImportApplication.forSeller(PUBKY, {
+      ...IMPORT_GATES_PASSING,
       store,
       currentItems: async () => ({}),
       putListing: async (record) => {
@@ -343,6 +349,7 @@ describe('CommerceInventoryImportApplication', () => {
 
   it('discard on a CAS 409 does not PUT that listing again', async () => {
     const importer = CommerceInventoryImportApplication.forSeller(PUBKY, {
+      ...IMPORT_GATES_PASSING,
       store,
       currentItems: async () => ({}),
       putListing: async () => {

@@ -21,7 +21,7 @@ import { pathToStepConfig } from './Header.constants';
 
 export function Header() {
   const pathname = usePathname();
-  const isAuthenticated = useAuthStore((state) => Boolean(state.currentUserPubky));
+  const isAuthenticated = useAuthStore((state) => Boolean(state.session));
   const { isCoreExploreRoute, isDynamicPublicRoute } = usePublicRoute();
   const isEmbedded = useIsEmbedded();
 

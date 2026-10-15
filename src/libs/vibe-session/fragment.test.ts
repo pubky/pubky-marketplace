@@ -1,10 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
-  clearVibeSessionAutoRestoreSuppressed,
-  isVibeSessionAutoRestoreSuppressed,
-  suppressVibeSessionAutoRestore,
-} from './auto-restore';
-import {
   clearFragmentSessionExport,
   consumeFragmentSessionExport,
   discardFragmentSessionExport,
@@ -20,7 +15,6 @@ const EXPORT = 'session-export-value';
 afterEach(() => {
   window.history.replaceState(null, '', '/');
   resetFragmentSessionExportCache();
-  clearVibeSessionAutoRestoreSuppressed();
   vi.useRealTimers();
 });
 
@@ -77,13 +71,6 @@ describe('fragment session export', () => {
     window.history.replaceState(null, '', `/#s=${encodeURIComponent(EXPORT)}`);
     expect(consumeFragmentSessionExport(window)).toBeNull();
     expect(window.location.hash).not.toContain('s=');
-  });
-
-  it('does not clear auto-restore suppression when a #s= fragment is consumed', () => {
-    suppressVibeSessionAutoRestore();
-    window.history.replaceState(null, '', `/#s=${encodeURIComponent(EXPORT)}`);
-    expect(consumeFragmentSessionExport(window)).toBe(EXPORT);
-    expect(isVibeSessionAutoRestoreSuppressed()).toBe(true);
   });
 
   it('hasPendingFragmentSessionExport is true when #s= is present', () => {

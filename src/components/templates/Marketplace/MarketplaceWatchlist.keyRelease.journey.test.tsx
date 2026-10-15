@@ -9,7 +9,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CommerceApplication } from '@/application/commerce/commerce';
 import { CommercePrivKeyringApplication } from '@/application/commerce/priv-keyring';
-import { CAPABILITIES, RING_COOKIE_CAPABILITIES } from '@/config/app';
+import { CAPABILITIES } from '@/config/app';
 import { decryptPrivRecord, privEntryName, privEntryUrl } from '@/libs/commerce/priv-envelope';
 import { privKeyringFromResponse } from '@/libs/commerce/priv-keys';
 import { resetRuntimeConfigForTests } from '@/libs/runtime-config/runtime-config';
@@ -37,7 +37,7 @@ import { MarketplaceWatchlist } from './MarketplaceWatchlist';
  * (`GET /v1/me/priv-keys` 403 `needs_reauth`) to a Bitkit sign-in's purchase
  * session, the watchlist offers the marketplace approval as a grant link, the
  * signer approves, and the next sync gets the key and seals the watchlist. A
- * Pubky Ring cookie sign-in gets the same grant link, never the Ring AuthToken
+ * Pubky Ring grant sign-in gets the same grant link, never the Ring AuthToken
  * connect that Bitkit rejects.
  *
  * Nothing in the Shop is mocked: the watchlist template and every hook it
@@ -126,20 +126,24 @@ function installNetwork(signer: { approved: boolean; bffPaired?: boolean }) {
 
 function signInWithBitkit() {
   useAuthStore.setState({
+    grantSigner: 'bitkit',
     currentUserPubky: asOpaque(OWNER),
     session: asOpaque({
-      grant: {},
+      // A bare grant: no signed approval, so no scoped encryption keys.
+      grant: { encryptionKeys: undefined, free: () => undefined },
       info: { publicKey: { z32: () => OWNER }, capabilities: CAPABILITIES.split(',') },
     }),
   });
 }
 
-/** A Pubky Ring cookie sign-in, also what Bitkit gets by scanning the Ring create QR. */
-function signInWithRingCookie() {
+/** A Pubky Ring grant sign-in, also what Bitkit gets by scanning the Ring create QR. */
+function signInWithRingGrant() {
   useAuthStore.setState({
+    grantSigner: 'ring',
     currentUserPubky: asOpaque(OWNER),
     session: asOpaque({
-      info: { publicKey: { z32: () => OWNER }, capabilities: RING_COOKIE_CAPABILITIES.split(',') },
+      grant: { encryptionKeys: undefined, free: () => undefined },
+      info: { publicKey: { z32: () => OWNER }, capabilities: CAPABILITIES.split(',') },
     }),
   });
 }
@@ -228,9 +232,9 @@ describe('#49 key-release refusal → marketplace approval → grant link (watch
   it.each([
     ['a Bitkit', 'an inventory-only purchase session', 'reconnect', true, 'Authorize with Bitkit'],
     ['a Bitkit', 'no purchase session', 'bootstrap', true, 'Authorize with Bitkit'],
-    ['a Pubky Ring (cookie)', 'no purchase session', 'bootstrap', true, 'Authorize with Pubky Ring'],
+    ['a Pubky Ring (grant)', 'no purchase session', 'bootstrap', true, 'Authorize with Pubky Ring'],
     [
-      'a Pubky Ring (cookie)',
+      'a Pubky Ring (grant)',
       'an inventory-only purchase session the BFF has not paired',
       'reconnect',
       false,
@@ -244,7 +248,7 @@ describe('#49 key-release refusal → marketplace approval → grant link (watch
       const stepUp = vi.spyOn(HomeserverService, 'generateAuthUrl');
       const ringConnect = vi.spyOn(HomeserverService, 'generateAuthTokenFlow');
       if (signIn === 'a Bitkit') signInWithBitkit();
-      else signInWithRingCookie();
+      else signInWithRingGrant();
       if (flow === 'reconnect') {
         useCommerceStore.getState().setMarketplaceSession(
           MarketplaceSessionService.establishClaimedGrantSession(

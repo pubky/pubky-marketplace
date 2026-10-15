@@ -1,8 +1,7 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { RING_COOKIE_CAPABILITIES } from '@/config/app';
+import { CAPABILITIES } from '@/config/app';
 import grantCapture from '@/test/fixtures/auth/marketplace-grant-priv-parity.staging.json';
-import ringCapture from '@/test/fixtures/auth/ring-signin-url.sdk-0.8.0.json';
 import { SignInContent } from './SignIn';
 
 type Shape = { scheme: string; host: string; params: string[]; caps: string };
@@ -13,19 +12,11 @@ function urlFrom(shape: Shape): string {
     .join('&')}`;
 }
 
-const RING_SIGN_IN_URL = urlFrom({ ...ringCapture, caps: RING_COOKIE_CAPABILITIES });
+const RING_SIGN_IN_URL = urlFrom({ ...grantCapture.shop_signin_request, caps: CAPABILITIES });
 const BITKIT_SIGN_IN_URL = urlFrom(grantCapture.shop_signin_request);
 
 const view = vi.hoisted(() => ({
-  singleApproval: true,
-  mode: 'transaction-service' as string,
   grantSignIn: false,
-}));
-
-vi.mock('@/libs/runtime-config/runtime-config', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@/libs/runtime-config/runtime-config')>()),
-  getSingleApprovalSignIn: () => view.singleApproval,
-  getCommerceAdapterMode: () => view.mode,
 }));
 
 vi.mock('@/hooks/useGrantSignInAvailable/useGrantSignInAvailable', () => ({
@@ -51,8 +42,6 @@ vi.mock('@/hooks/useMobileAuth/useMobileAuth', () => ({
 
 describe('Sign-in page copy', () => {
   beforeEach(() => {
-    view.singleApproval = true;
-    view.mode = 'transaction-service';
     view.grantSignIn = false;
   });
 
@@ -78,7 +67,7 @@ describe('Sign-in page copy', () => {
   it('never prints the capability string', () => {
     view.grantSignIn = true;
     render(<SignInContent />);
-    expect(document.body.textContent).not.toContain(RING_COOKIE_CAPABILITIES);
+    expect(document.body.textContent).not.toContain(CAPABILITIES);
     expect(document.body.textContent).not.toMatch(/\/priv\/|\/pub\/|:rw/);
   });
 });
