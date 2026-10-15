@@ -1,4 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
+import type { CommerceListingRecord } from '@/libs/commerce/marketplace-records';
+import { createCommerceListingFixture } from '@/test/fixtures/commerce/commerce';
 import {
   consumeListingComposerReturnTo,
   evaluateDeliveryKeyGate,
@@ -8,6 +10,7 @@ import {
   LISTING_PUBLISH_BLOCK_COPY,
   LISTING_PUBLISH_BLOCK_REASONS,
   listingPublishBlockToast,
+  listingPublishNeedsMarketplaceSession,
   rememberListingComposerReturnTo,
 } from './listing-publish-guards';
 
@@ -22,6 +25,57 @@ const paidConfig = {
   bitcoinOfferAvailable: true,
   paypalAvailable: false,
 };
+
+describe('listingPublishNeedsMarketplaceSession', () => {
+  const active = createCommerceListingFixture();
+  const pause = (
+    record: CommerceListingRecord,
+    changes: Partial<CommerceListingRecord> = {},
+  ): CommerceListingRecord => ({
+    ...record,
+    revision: record.revision + 1,
+    state: 'paused',
+    updatedAt: '2026-10-15T08:00:00.000Z',
+    ...changes,
+  });
+
+  it('lets a pure pause of an active fixed-price listing through on the sign-in grant alone', () => {
+    expect(listingPublishNeedsMarketplaceSession(active, pause(active))).toBe(false);
+  });
+
+  it('needs the session when a pause also edits the listing', () => {
+    expect(listingPublishNeedsMarketplaceSession(active, pause(active, { title: 'Renamed boots' }))).toBe(true);
+  });
+
+  it('needs the session to edit a listing that is already paused', () => {
+    const paused = pause(active);
+    expect(listingPublishNeedsMarketplaceSession(paused, pause(paused, { title: 'Renamed boots' }))).toBe(true);
+  });
+
+  it('needs the session without a local record to compare', () => {
+    expect(listingPublishNeedsMarketplaceSession(undefined, pause(active))).toBe(true);
+  });
+
+  it.each(['active', 'ended', 'removed'] as const)('needs the session to publish a listing as %s', (state) => {
+    expect(listingPublishNeedsMarketplaceSession(active, { ...pause(active), state })).toBe(true);
+  });
+
+  it('needs the session to pause an auction', () => {
+    const auction: CommerceListingRecord = {
+      ...active,
+      sale: {
+        format: 'auction',
+        startingPrice: { amountMinor: 4_500, currency: 'USD', exponent: 2 },
+        minimumIncrement: { amountMinor: 500, currency: 'USD', exponent: 2 },
+        startsAt: '2026-09-01T00:00:00.000Z',
+        endsAt: '2026-09-17T00:00:00.000Z',
+        antiSnipingWindowSeconds: 120,
+        antiSnipingExtensionSeconds: 120,
+      },
+    };
+    expect(listingPublishNeedsMarketplaceSession(auction, pause(auction))).toBe(true);
+  });
+});
 
 describe('evaluateDurableListingPublishGuards', () => {
   it('blocks unsigned sellers before any payment lookup', async () => {

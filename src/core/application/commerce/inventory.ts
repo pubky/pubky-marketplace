@@ -1,5 +1,6 @@
 import type { InventoryAdjustRequest } from '@bitcoinerrorlog/pubky-shop';
 import { getCommerceAdapterMode, isDurableCommerceMode } from '@/config/commerce';
+import { effectiveListingState } from '@/libs/commerce/auction-phase';
 import type { CommerceListingRecord } from '@/libs/commerce/marketplace-records';
 import { buildMarketplaceListingAggregateId } from '@/libs/commerce/transaction-commands';
 import { isUnlimitedStock } from '@/libs/commerce/unlimited-stock';
@@ -19,7 +20,13 @@ export type InventoryBoardRow = {
   aggregateId: string;
   title: string;
   thumbUrl: string | null;
+  /** The service's stock state (`available`, `reserved`, `sold`), not whether buyers can see the listing. */
   state: string;
+  /**
+   * The owner-signed record's lifecycle state (`active`, `paused`, `ended`, `removed`), the state My shop
+   * shows. An active auction past its end time reads `ended`. Null when the export carries no record.
+   */
+  listingState: string | null;
   format: string;
   dropId: string | null;
   available: number;
@@ -91,6 +98,14 @@ function thumbUrl(record: Record<string, unknown> | null): string | null {
 function dropIdFromRecord(record: Record<string, unknown> | null): string | null {
   const edition = asObject(record?.edition);
   return asString(edition?.dropId) ?? asString(record?.dropId);
+}
+
+function listingStateFromRecord(record: Record<string, unknown> | null, nowMs: number): string | null {
+  const state = asString(record?.state);
+  if (!state) return null;
+  const sale = asObject(record?.sale);
+  const auctionEndsAt = asString(sale?.format) === 'auction' ? asString(sale?.endsAt) : null;
+  return effectiveListingState(state, auctionEndsAt, nowMs);
 }
 
 function recordStatusFromExport(entry: Record<string, unknown>): 'unavailable' | undefined {
@@ -227,6 +242,7 @@ export class CommerceInventoryApplication {
 
     const client = MarketplaceShopClientService.createInventoryClient(inventory.token);
     const rows: InventoryBoardRow[] = [];
+    const nowMs = Date.now();
     let cursor: string | undefined;
     for (;;) {
       const page = await MarketplaceShopClientService.listSellerListings(client, sellerPubky, {
@@ -266,6 +282,7 @@ export class CommerceInventoryApplication {
             title: asString(projection?.title) ?? asString(record?.title) ?? listingId,
             thumbUrl: thumbUrl(record),
             state: asString(projection?.state) ?? 'unknown',
+            listingState: listingStateFromRecord(record, nowMs),
             format: asString(projection?.sale_format) ?? asString(asObject(record?.sale)?.format) ?? 'fixed_price',
             dropId: dropIdFromRecord(record),
             available: asInt(projection?.available_quantity) ?? 0,
@@ -287,6 +304,7 @@ export class CommerceInventoryApplication {
           title: asString(projection?.title) ?? asString(record?.title) ?? listingId,
           thumbUrl: thumbUrl(record),
           state: asString(projection?.state) ?? 'unknown',
+          listingState: listingStateFromRecord(record, nowMs),
           format: asString(projection?.sale_format) ?? asString(asObject(record?.sale)?.format) ?? 'fixed_price',
           dropId: dropIdFromRecord(record),
           available: Number(stock.available),

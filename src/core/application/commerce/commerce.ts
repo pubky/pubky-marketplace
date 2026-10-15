@@ -53,6 +53,7 @@ import {
   newDigitalDeliverableId,
   openDigitalDeliverable,
 } from '@/libs/commerce/digital-file';
+import { listingPublishNeedsMarketplaceSession } from '@/libs/commerce/listing-publish-guards';
 import { locksAdmissionView } from '@/libs/commerce/locks-lifecycle';
 import { lockPolicyCreator, toBareLockResource } from '@/libs/commerce/locks-payment';
 import {
@@ -3666,7 +3667,17 @@ export class CommerceApplication {
     record: CommerceListingRecord,
     reservePrice?: CommerceMoney | null,
   ): Promise<{ registered: boolean; verified: boolean }> {
-    if (isDurableCommerceMode(getCommerceAdapterMode()) && !this.hasActiveMarketplaceSession()) {
+    // A pause without a session keeps the row's registration status; the next publish or heal with a
+    // session registers it.
+    const missingDurableSession =
+      isDurableCommerceMode(getCommerceAdapterMode()) && !this.hasActiveMarketplaceSession();
+    const pausingWithoutSession =
+      missingDurableSession &&
+      !listingPublishNeedsMarketplaceSession(
+        (await LocalCommerceService.getListing(`${record.ownerPubky}:${record.listingId}`))?.record,
+        record,
+      );
+    if (missingDurableSession && !pausingWithoutSession) {
       throw Err.auth(AuthErrorCode.SESSION_EXPIRED, 'Connect a marketplace session to publish a listing.', {
         service: ErrorService.Marketplace,
         operation: 'commitUpsertListing',
@@ -3688,7 +3699,8 @@ export class CommerceApplication {
     const mode = getCommerceAdapterMode();
     const attempt = this.beginListingRegistration(record.ownerPubky, record.listingId);
     const registering = mode !== 'unavailable' && this.canCoordinateListingRegistration();
-    const registrationStatus = mode === 'unavailable' ? 'unavailable' : 'unregistered';
+    const registrationStatus =
+      mode === 'unavailable' ? 'unavailable' : pausingWithoutSession ? undefined : 'unregistered';
     this.assertListingRegistrationFence(attempt);
     attempt.observed = await LocalCommerceService.stageListingSync(record, publishJob, registrationStatus);
     if (registering && record.sale.format === 'auction' && isDurableCommerceMode(mode)) {
@@ -3722,7 +3734,7 @@ export class CommerceApplication {
     // truths (published / verified / registered) are returned separately; an
     // unregistered listing self-heals through ensureListingRegistered /
     // listing.sync once a marketplace session exists.
-    if (mode === 'unavailable') {
+    if (mode === 'unavailable' || pausingWithoutSession) {
       await LocalCommerceService.completeSyncJob(publishJob.id);
       return { registered: false, verified };
     }
