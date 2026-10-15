@@ -3929,6 +3929,14 @@ export class CommerceApplication {
       this.assertListingRegistrationFence(attempt);
       return stillObserved;
     };
+    // A heal of a listing the service already holds (re-syncing a stale projection) leaves its row as it
+    // is: a failure must not offer registration again, and an unchanged success need not rewrite it.
+    const healsRegisteredRow = async (): Promise<boolean> => {
+      if (owner !== 'heal') return false;
+      const { registrationStatus } = await LocalCommerceService.getListingRegistrationState(attempt.compositeListingId);
+      this.assertListingRegistrationFence(attempt);
+      return registrationStatus === 'registered';
+    };
     try {
       assertPublishableListingStock(record, 'registerListing');
       if (isDurableCommerceMode(getCommerceAdapterMode())) {
@@ -3953,7 +3961,7 @@ export class CommerceApplication {
             await this.settleUnregistrableListing(attempt, outcome);
             return false;
           }
-          await settle({ status: 'registered' });
+          if (!(await healsRegisteredRow())) await settle({ status: 'registered' });
           if (publishJobId) {
             this.assertListingRegistrationFence(attempt);
             await LocalCommerceService.completeSyncJob(publishJobId);
@@ -3961,7 +3969,7 @@ export class CommerceApplication {
           return true;
         } catch (error) {
           if (!this.listingRegistrationFenceHolds(attempt)) return false;
-          await settle({ status: 'unregistered' });
+          if (!(await healsRegisteredRow())) await settle({ status: 'unregistered' });
           Logger.warn('Listing registration failed; it stays pending for the next attempt', { error });
           return false;
         }
@@ -3971,7 +3979,9 @@ export class CommerceApplication {
       if (!this.listingRegistrationFenceHolds(attempt)) return false;
       // Best effort: a refused lock or a sign-out here leaves the row as it is, which is already pending.
       await this.withListingRegistrationLock(attempt, 'heal', async () => {
-        if (await this.listingRowStillObserved(attempt)) await settle({ status: 'unregistered' });
+        if ((await this.listingRowStillObserved(attempt)) && !(await healsRegisteredRow())) {
+          await settle({ status: 'unregistered' });
+        }
       }).catch(() => null);
       Logger.warn('Listing registration failed before it reached the service; it stays pending', { error });
       return false;
@@ -4648,7 +4658,10 @@ export class CommerceApplication {
       signal: attempt.signal,
     });
     this.assertListingRegistrationFence(attempt);
-    if (existing?.serverRevision) {
+    // `listing.register` carries no Locks lock, so a Locks listing registered with it would sell as a
+    // digital item without its lock. `listing.sync` derives the lock from the seller-signed record.
+    const locksListing = durable && listing.digitalLock !== undefined;
+    if (existing?.serverRevision || locksListing) {
       // Already registered: EDITS must still reach the authority. `listing.sync`
       // is convergent — the service re-reads the seller-signed record and
       // updates the aggregate's terms when the record revision advanced, or
@@ -4659,7 +4672,14 @@ export class CommerceApplication {
         const command = this.createListingSyncCommand(listing.ownerPubky, listing.listingId);
         const response = await send(command);
         if (isListingRecordNotFoundResponse(response, aggregateId, command.commandId)) return 'service_not_found';
-        if (!isSuccessfulListingRegistrationResponse(response, aggregateId, command.commandId, true)) {
+        if (
+          !isSuccessfulListingRegistrationResponse(
+            response,
+            aggregateId,
+            command.commandId,
+            Boolean(existing?.serverRevision),
+          )
+        ) {
           throw Err.client(ClientErrorCode.BAD_REQUEST, 'Marketplace listing registration was refused.', {
             service: ErrorService.Marketplace,
             operation: 'registerListing',
