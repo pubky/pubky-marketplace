@@ -58,6 +58,7 @@ import {
 } from '@/pipes/commerce/import-publish-gate';
 import { DEFAULT_IMPORT_SETTINGS, type ImportSettings, type ImportShipping } from '@/pipes/commerce/import-settings';
 import { shippingDefaultFromListings, shopCountryForImport } from '@/pipes/commerce/import-settings-defaults';
+import type { WooStoreCatalog } from '@/pipes/commerce/import-woo-store';
 import { CommerceHomeserverService } from '@/services/homeserver/commerce/commerce';
 import { LocalCommerceService } from '@/services/local/commerce/commerce';
 import {
@@ -76,8 +77,10 @@ import {
   type ImportManifest,
   MarketplaceShopClientService,
   type PlannedBrowserFile,
+  type PlannedStoreCatalog,
   PubkyShopError,
   type SdkResult,
+  type StoreImportConfig,
   type SyncManyEnvelope,
   type SyncManyListing,
 } from '@/services/marketplace/marketplace-shop-client';
@@ -155,6 +158,12 @@ export type InventoryImportHost = {
     currentItems: Readonly<Record<string, CurrentImportItem>>,
     settings: ImportSettings,
   ) => Promise<SdkResult<PlannedBrowserFile>>;
+  planStoreCatalog: (
+    catalog: WooStoreCatalog,
+    store: InventoryManifestStore,
+    currentItems: Readonly<Record<string, CurrentImportItem>>,
+    config: StoreImportConfig,
+  ) => Promise<PlannedStoreCatalog>;
   putListing: (record: CommerceListingRecord) => Promise<void>;
   listingExists: (url: string) => Promise<boolean>;
   syncMany: (listings: readonly SyncManyListing[]) => Promise<SdkResult<SyncManyEnvelope>>;
@@ -239,6 +248,10 @@ export class CommerceInventoryImportApplication {
         overrides.planFile ??
         ((file, manifestStore, currentItems, settings) =>
           MarketplaceShopClientService.planBrowserFile(file, manifestStore, currentItems, { sellerPubky, settings })),
+      planStoreCatalog:
+        overrides.planStoreCatalog ??
+        ((catalog, manifestStore, currentItems, config) =>
+          MarketplaceShopClientService.planStoreCatalog(catalog, manifestStore, currentItems, config)),
       putListing: overrides.putListing ?? CommerceApplication.putPublicListingForImport.bind(CommerceApplication),
       listingExists: overrides.listingExists ?? ((url) => CommerceHomeserverService.exists(url)),
       syncMany:
@@ -291,13 +304,40 @@ export class CommerceInventoryImportApplication {
     await this.host.store.pruneExpired();
     const currentItems = await this.host.currentItems();
     const planned = await this.host.planFile(file, this.host.store, currentItems, settings);
-    if (!planned.ok) {
-      return {
-        status: 'parse-failed',
-        message: MarketplaceShopClientService.formatPlanFailure(planned.error),
-        puts: 0,
-      };
-    }
+    return this.planResult(
+      planned.ok
+        ? { ok: true, value: planned.value }
+        : { ok: false, message: MarketplaceShopClientService.formatPlanFailure(planned.error) },
+    );
+  }
+
+  /**
+   * Plans a WooCommerce store's public catalogue, already read through the
+   * Store API, with the same dry run as a file. `offeredCurrencies` are the
+   * currencies a listing can be priced in; a store in another one is refused.
+   */
+  async planStoreCatalog(
+    catalog: WooStoreCatalog,
+    settings: ImportSettings,
+    offeredCurrencies: readonly string[],
+  ): Promise<InventoryImportPlanResult> {
+    const auth = CommerceInventoryImportApplication.authStatus(this.host.sellerPubky);
+    if (auth.status !== 'ready') return auth;
+    await this.host.store.pruneExpired();
+    const currentItems = await this.host.currentItems();
+    return this.planResult(
+      await this.host.planStoreCatalog(catalog, this.host.store, currentItems, {
+        sellerPubky: this.host.sellerPubky,
+        settings,
+        offeredCurrencies,
+      }),
+    );
+  }
+
+  private async planResult(
+    planned: { ok: true; value: PlannedBrowserFile } | { ok: false; message: string },
+  ): Promise<InventoryImportPlanResult> {
+    if (!planned.ok) return { status: 'parse-failed', message: planned.message, puts: 0 };
     const manifest = await this.host.store.load(planned.value.manifestId);
     if (!manifest) {
       return { status: 'parse-failed', message: IMPORT_PARSE_FAIL_COPY, puts: 0 };

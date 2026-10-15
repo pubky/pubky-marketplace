@@ -103,6 +103,7 @@ const LOSS_LABELS: Readonly<Record<string, string>> = {
   image_not_loaded: 'Photos not loaded',
   image_url_invalid: 'Photo link invalid',
   image_overflow: 'Too many photos',
+  photos_over_import_limit: 'More photos than one import loads',
   downloadable_files: 'Downloadable files',
   condition_defaulted: 'Condition defaulted',
   condition_mapped: 'Condition mapped',

@@ -220,6 +220,16 @@ describe('the real Dezentralshop catalogue (279 products, 10 variable)', () => {
     expect(codes(result, 'weight')[0]?.count).toBe(279);
   });
 
+  it('says when the catalogue has more photos than one import loads, and how many are over', () => {
+    const codeOf = codes(result, 'photos_over_import_limit');
+    expect(codeOf).toHaveLength(1);
+    expect(codeOf[0]).toMatchObject({ severity: 'changed', count: 225 });
+    expect(codeOf[0]?.detail).toContain('725 photos');
+    expect(codeOf[0]?.detail).toContain('at most 500');
+    const small = map(catalogOf(REAL_PRODUCTS.slice(0, 20)));
+    expect(codes(small, 'photos_over_import_limit')).toHaveLength(0);
+  });
+
   it('gives no listing a shipping option or a country the seller did not choose', () => {
     const none = mapWooStoreCatalog({
       catalog: catalogOf(REAL_PRODUCTS.slice(0, 3)),

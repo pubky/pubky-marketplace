@@ -400,6 +400,19 @@ export class CommerceController {
     return await CommerceInventoryImportApplication.forSeller(sellerPubky).planFile(file, settings);
   }
 
+  static async planInventoryStoreImport(
+    sellerPubky: string,
+    catalog: Parameters<CommerceInventoryImportApplication['planStoreCatalog']>[0],
+    settings: Parameters<CommerceInventoryImportApplication['planStoreCatalog']>[1],
+    offeredCurrencies: Parameters<CommerceInventoryImportApplication['planStoreCatalog']>[2],
+  ) {
+    return await CommerceInventoryImportApplication.forSeller(sellerPubky).planStoreCatalog(
+      catalog,
+      settings,
+      offeredCurrencies,
+    );
+  }
+
   static async inventoryImportImageTargets(sellerPubky: string, manifestId: string) {
     return await CommerceInventoryImportApplication.forSeller(sellerPubky).imageTargets(manifestId);
   }

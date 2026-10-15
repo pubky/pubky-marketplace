@@ -50,6 +50,7 @@ import { type ImportSettings, shopifyWorkExponent } from '@/pipes/commerce/impor
 import { buildShopifyPresetRows } from '@/pipes/commerce/import-shopify-csv';
 import { isWooProductCsv, mapWooProductCsv } from '@/pipes/commerce/import-woo-csv';
 import { looksLikeUnknownLanguageWooExport, WOO_UNKNOWN_LANGUAGE_MESSAGE } from '@/pipes/commerce/import-woo-headers';
+import { mapWooStoreCatalog, type WooStoreCatalog } from '@/pipes/commerce/import-woo-store';
 import type { InventoryManifestStore } from '@/services/marketplace/marketplace-import-store';
 
 /**
@@ -64,6 +65,13 @@ export type PresetImportConfig = {
   readonly sellerPubky: string;
   readonly settings: ImportSettings;
 };
+
+/** What a store import needs beyond the preset config: the currencies a listing can be priced in. */
+export type StoreImportConfig = PresetImportConfig & { readonly offeredCurrencies: readonly string[] };
+
+export type PlannedStoreCatalog =
+  | { readonly ok: true; readonly value: PlannedBrowserFile }
+  | { readonly ok: false; readonly message: string };
 
 export type ShopBrowserFile = {
   readonly size: number;
@@ -341,6 +349,39 @@ export class MarketplaceShopClientService {
       return `This file exceeds ${limit} (${observed}).`;
     }
     return 'This file could not be planned. Nothing was published.';
+  }
+
+  /**
+   * Plans a WooCommerce store's public catalogue (read through the Store API)
+   * as preset rows, the same way a CSV preset's rows are planned. A refusal
+   * that is not an SDK error (a store currency the listing form does not
+   * offer) comes back as a message, with nothing planned.
+   */
+  static async planStoreCatalog(
+    catalog: WooStoreCatalog,
+    store: InventoryManifestStore,
+    currentItems: Readonly<Record<string, CurrentImportItem>>,
+    config: StoreImportConfig,
+  ): Promise<PlannedStoreCatalog> {
+    const mapped = mapWooStoreCatalog({
+      catalog,
+      sellerPubky: config.sellerPubky,
+      settings: config.settings,
+      offeredCurrencies: config.offeredCurrencies,
+    });
+    if (!mapped.ok) return { ok: false, message: mapped.message };
+    try {
+      const planned = await planPresetRows(
+        mapped.rows,
+        mapped.report,
+        store as unknown as ManifestStore,
+        store,
+        currentItems,
+      );
+      return planned.ok ? planned : { ok: false, message: this.formatPlanFailure(planned.error) };
+    } catch {
+      return { ok: false, message: 'This catalogue could not be planned. Nothing was published.' };
+    }
   }
 
   static formatRateLimitCopy(error: PubkyShopError): string {
