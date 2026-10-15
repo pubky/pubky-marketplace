@@ -7,8 +7,15 @@ import { useMarketplaceOfferCheckout } from './useMarketplaceOfferCheckout';
 
 const errorState = vi.hoisted(() => ({ sessionRequired: false }));
 
+const shopShipsTo = vi.hoisted(() => new Map<string, string[]>());
+
 vi.mock('@/controllers/commerce/commerce', () => ({
   CommerceController: {
+    refreshShop: vi.fn(async (sellerPubky: string) => ({
+      ownerPubky: sellerPubky,
+      shipsToCountries: shopShipsTo.get(sellerPubky),
+    })),
+    getShop: vi.fn(async () => null),
     getMarketplaceOffers: vi.fn(),
     commitOfferCheckout: vi.fn(),
     bindPaymentMethod: vi.fn(),
@@ -85,6 +92,7 @@ function committedPayload(): Record<string, unknown> | undefined {
 describe('useMarketplaceOfferCheckout', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    shopShipsTo.clear();
     errorState.sessionRequired = false;
     vi.mocked(CommerceController.getMarketplaceOffers).mockResolvedValue([offer]);
     vi.mocked(CommerceController.commitOfferCheckout).mockResolvedValue({
@@ -161,6 +169,35 @@ describe('useMarketplaceOfferCheckout', () => {
       sellerPubky: 's'.repeat(52),
       message: DELIVERY_KEY_COPY.noKey,
     });
+  });
+
+  it('refuses a shipped award to a country the seller does not ship to, before sealing', async () => {
+    shopShipsTo.set('s'.repeat(52), ['CH']);
+    const { result } = renderHook(() => useMarketplaceOfferCheckout());
+    await act(async () => {
+      await expect(result.current.submit(offer, address)).resolves.toEqual({
+        ok: false,
+        code: 'DESTINATION_COUNTRY',
+      });
+    });
+    const { toast } = await import('@/molecules/Toaster/use-toast');
+    expect(vi.mocked(toast)).toHaveBeenCalledWith({
+      variant: 'error',
+      description: 'This seller ships only to Switzerland. Choose pickup if offered.',
+    });
+    expect(CommerceController.resolveDeliveryKeysForCheckout).not.toHaveBeenCalled();
+    expect(CommerceController.sealDeliveryAddressForCheckout).not.toHaveBeenCalled();
+    expect(CommerceController.commitOfferCheckout).not.toHaveBeenCalled();
+  });
+
+  it('settles a pickup award from a Swiss-only seller without checking a destination', async () => {
+    shopShipsTo.set('s'.repeat(52), ['CH']);
+    const { result } = renderHook(() => useMarketplaceOfferCheckout());
+    await act(async () => {
+      await result.current.submit(offer, null);
+    });
+    expect(CommerceController.refreshShop).not.toHaveBeenCalled();
+    expect(committedPayload()).toMatchObject({ fulfillment: 'pickup' });
   });
 
   it('settles a pickup award with fulfillment pickup and no delivery address', async () => {

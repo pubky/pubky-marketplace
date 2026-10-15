@@ -1,9 +1,11 @@
 import { z } from 'zod';
+import { withBasePath } from '@/config/base-path';
 import { ServerErrorCode } from '@/libs/error/error.codes';
 import { Err } from '@/libs/error/error.factories';
 import { ErrorService } from '@/libs/error/error.types';
 import { getMarketplaceGrantPollMilliseconds } from '@/libs/runtime-config/runtime-config';
 import { sleep } from '@/libs/utils/utils';
+import { marketplaceApprovalFailure } from './marketplace-approval-failure';
 import { isMarketplaceSessionGrantUrl } from './marketplace-session-grant';
 
 const createSchema = z.object({
@@ -27,6 +29,10 @@ export type MarketplaceGrantFlow = {
   cancel: () => Promise<void>;
 };
 
+function grantFailure(code: string, status?: number) {
+  return marketplaceApprovalFailure(code, 'marketplaceGrantReconnect', status);
+}
+
 async function json(response: Response): Promise<unknown> {
   const body = (await response.json().catch(() => null)) as unknown;
   if (!response.ok) {
@@ -34,7 +40,7 @@ async function json(response: Response): Promise<unknown> {
       typeof body === 'object' && body !== null && typeof (body as { error?: unknown }).error === 'string'
         ? (body as { error: string }).error
         : 'grant_unavailable';
-    throw new Error(code);
+    throw grantFailure(/^[a-z_]{1,64}$/.test(code) ? code : 'grant_unavailable', response.status);
   }
   return body;
 }
@@ -44,7 +50,7 @@ export async function pairMarketplaceBffSession(session: {
   pubky: string;
   sessionId: string;
 }): Promise<void> {
-  const response = await fetch('/api/marketplace/session', {
+  const response = await fetch(withBasePath('/api/marketplace/session'), {
     method: 'POST',
     credentials: 'same-origin',
     headers: {
@@ -53,7 +59,7 @@ export async function pairMarketplaceBffSession(session: {
     },
     body: JSON.stringify({ pubky: session.pubky, session_id: session.sessionId }),
   });
-  if (!response.ok) throw new Error('marketplace_session_pair_failed');
+  if (!response.ok) throw grantFailure('marketplace_session_pair_failed');
 }
 
 /**
@@ -64,16 +70,38 @@ export async function pairMarketplaceBffSession(session: {
  */
 export async function clearMarketplaceBffSession(ownedSessionId?: string): Promise<void> {
   const query = ownedSessionId === undefined ? '' : `?session_id=${encodeURIComponent(ownedSessionId)}`;
-  await fetch(`/api/marketplace/session${query}`, {
+  await fetch(withBasePath(`/api/marketplace/session${query}`), {
     method: 'DELETE',
     credentials: 'same-origin',
   }).catch(() => undefined);
 }
 
+/** Host identity boundaries cannot acknowledge cleanup until the BFF has cleared its shared cookie. */
+export async function clearMarketplaceBffSessionConfirmed(): Promise<void> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 4_000);
+  try {
+    const response = await fetch(withBasePath('/api/marketplace/session'), {
+      method: 'DELETE',
+      credentials: 'same-origin',
+      signal: controller.signal,
+    });
+    if (response.ok) return;
+  } catch {
+    // A network failure or timeout leaves the durable cleanup marker pending for retry.
+  } finally {
+    clearTimeout(timeout);
+  }
+  throw Err.server(ServerErrorCode.SERVICE_UNAVAILABLE, 'marketplace_session_clear_failed', {
+    service: ErrorService.Marketplace,
+    operation: 'clearMarketplaceBffSession',
+  });
+}
+
 export async function beginMarketplaceGrantFlow(): Promise<MarketplaceGrantFlow> {
   const created = createSchema.parse(
     await json(
-      await fetch('/api/marketplace/grant-flows', {
+      await fetch(withBasePath('/api/marketplace/grant-flows'), {
         method: 'POST',
         credentials: 'same-origin',
         headers: { 'content-type': 'application/json' },
@@ -85,7 +113,7 @@ export async function beginMarketplaceGrantFlow(): Promise<MarketplaceGrantFlow>
   const cancel = async () => {
     if (cancelled) return;
     cancelled = true;
-    await fetch(`/api/marketplace/grant-flows/${created.state_id}/cancel`, {
+    await fetch(withBasePath(`/api/marketplace/grant-flows/${created.state_id}/cancel`), {
       method: 'POST',
       credentials: 'same-origin',
       headers: { 'content-type': 'application/json' },
@@ -106,7 +134,7 @@ export async function beginMarketplaceGrantFlow(): Promise<MarketplaceGrantFlow>
       while (!cancelled && Date.now() < Date.parse(created.expires_at)) {
         const result = statusSchema.parse(
           await json(
-            await fetch(`/api/marketplace/grant-flows/${created.state_id}/status`, {
+            await fetch(withBasePath(`/api/marketplace/grant-flows/${created.state_id}/status`), {
               method: 'POST',
               credentials: 'same-origin',
               headers: { 'content-type': 'application/json' },
@@ -117,7 +145,7 @@ export async function beginMarketplaceGrantFlow(): Promise<MarketplaceGrantFlow>
         if (!['awaiting', 'verifying'].includes(result.status)) return result;
         await sleep(getMarketplaceGrantPollMilliseconds());
       }
-      throw new Error(cancelled ? 'flow_cancelled' : 'flow_expired');
+      throw grantFailure(cancelled ? 'flow_cancelled' : 'flow_expired');
     },
     cancel,
   };

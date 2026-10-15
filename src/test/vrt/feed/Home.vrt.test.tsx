@@ -88,14 +88,25 @@ vi.mock('@/stores/home/home.store', async () => {
 
 vi.mock('@/stores/auth/auth.store', async () => {
   const f = await fixtures;
+  const { mockSession } = await import('@/test-utils/pubky');
+  const { asOpaque } = await import('@/test-utils/type-assertions');
+  // QuickReply exercises the real auth gate: a saved identity alone cannot authorize writes.
+  const session = mockSession({
+    grant: asOpaque({}),
+    info: asOpaque({ publicKey: { z32: () => f.viewerPubky }, capabilities: ['/:rw'] }),
+  });
   return {
     useAuthStore: createZustandLikeHook({
       currentUserPubky: f.viewerPubky,
+      session,
       sessionExport: null,
       hasProfile: true,
       hasHydrated: true,
       isRestoringSession: false,
+      isLoggingOut: false,
+      setShowSignInDialog: vi.fn(),
       selectCurrentUserPubky: () => f.viewerPubky,
+      selectSession: () => session,
     }),
   };
 });

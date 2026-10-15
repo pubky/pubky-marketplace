@@ -172,6 +172,42 @@ describe('purchase-session persistence: a tab only removes the record it owns', 
     expect(bffDeletes()).toEqual(['/api/marketplace/session']);
   });
 
+  it('confirmed sign-out clears local state immediately and waits for one BFF acknowledgement', async () => {
+    thisTabHolds(HOUR);
+    let complete!: (response: Response) => void;
+    fetchSpy.mockClear();
+    fetchSpy.mockImplementation(
+      () =>
+        new Promise<Response>((resolve) => {
+          complete = resolve;
+        }),
+    );
+    let finished = false;
+    const cleanup = MarketplaceSessionService.clearForSignOut({ confirmBff: true });
+    const done = Promise.resolve(cleanup).then(() => {
+      finished = true;
+    });
+    await Promise.resolve();
+
+    expect(stored()).toBeNull();
+    expect(MarketplaceSessionService.getActiveSession()).toBeNull();
+    expect(bffDeletes()).toEqual(['/api/marketplace/session']);
+    expect(finished).toBe(false);
+    complete(new Response(null, { status: 204 }));
+    await done;
+    expect(finished).toBe(true);
+  });
+
+  it('confirmed sign-out rejects a failed BFF cleanup instead of acknowledging it', async () => {
+    thisTabHolds(HOUR);
+    fetchSpy.mockResolvedValue(new Response(null, { status: 503 }));
+
+    await expect(MarketplaceSessionService.clearForSignOut({ confirmBff: true })).rejects.toMatchObject({
+      message: 'marketplace_session_clear_failed',
+    });
+    expect(stored()).toBeNull();
+  });
+
   it('old memory at its expiry margin with a newer valid record: restore adopts it and it survives the next reload', async () => {
     vi.useFakeTimers({ toFake: ['Date'] });
     thisTabHolds(HOUR);

@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { AUTH_ROUTES } from '@/app/routes';
 import { AuthController } from '@/controllers/auth/auth';
 import { Logger } from '@/libs/logger/logger';
+import { requestShopHostAction } from '@/libs/shop-session/bridge';
 import { useToast } from '@/molecules/Toaster/use-toast';
 import type { UseSignOutResult } from './useSignOut.types';
 
@@ -14,6 +15,7 @@ export function useSignOut(): UseSignOutResult {
   const [isLoading, setIsLoading] = useState(false);
 
   const handleSignOut = async () => {
+    if (requestShopHostAction('request-logout')) return;
     setIsLoading(true);
     try {
       await AuthController.logout();

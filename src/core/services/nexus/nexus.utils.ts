@@ -2,6 +2,7 @@ import { getCdnUrl, getNexusUrl } from '@/config/nexus';
 import { httpResponseToError, safeFetch } from '@/libs/error/error.http';
 import { ErrorService } from '@/libs/error/error.types';
 import { HttpMethod, JSON_HEADERS } from '@/libs/http/http.types';
+import { withIoDeadline } from '@/libs/http/io-deadline';
 import { PARSE_JSON_WITH_BODY_EXCERPT, parseResponseOrThrow } from '@/libs/http/response.utils';
 import { nexusQueryClient } from './nexus.query-client';
 import type {
@@ -78,23 +79,33 @@ export function createFetchOptions({ method = HttpMethod.GET, body }: TCreateFet
  * @returns Parsed response data
  * @throws {NexusError} When response is not ok or JSON parsing fails
  */
-export async function fetchNexus<T>({ url, method = HttpMethod.GET, body = null }: TFetchNexusParams): Promise<T> {
-  const response = await safeFetch(
-    url,
-    createFetchOptions({ method, body }),
-    ErrorService.Nexus,
-    FETCH_NEXUS_OPERATION,
-  );
-  if (!response.ok) {
-    throw httpResponseToError(response, ErrorService.Nexus, FETCH_NEXUS_OPERATION, url);
-  }
-  return parseResponseOrThrow<T>(
-    response,
-    ErrorService.Nexus,
-    FETCH_NEXUS_OPERATION,
-    url,
-    PARSE_JSON_WITH_BODY_EXCERPT,
-  );
+export async function fetchNexus<T>({
+  url,
+  method = HttpMethod.GET,
+  body = null,
+  timeoutMs,
+}: TFetchNexusParams): Promise<T> {
+  const fetchAndRead = async (signal?: AbortSignal): Promise<T> => {
+    const response = await safeFetch(
+      url,
+      { ...createFetchOptions({ method, body }), ...(signal ? { signal } : {}) },
+      ErrorService.Nexus,
+      FETCH_NEXUS_OPERATION,
+    );
+    if (!response.ok) {
+      throw httpResponseToError(response, ErrorService.Nexus, FETCH_NEXUS_OPERATION, url);
+    }
+    return parseResponseOrThrow<T>(
+      response,
+      ErrorService.Nexus,
+      FETCH_NEXUS_OPERATION,
+      url,
+      PARSE_JSON_WITH_BODY_EXCERPT,
+    );
+  };
+  return timeoutMs === undefined
+    ? fetchAndRead()
+    : withIoDeadline(fetchAndRead, { service: ErrorService.Nexus, operation: FETCH_NEXUS_OPERATION, timeoutMs });
 }
 
 /** Like fetchNexus but for endpoints that return no body (e.g. PUT v0/ingest); throws on non-ok. */
@@ -115,9 +126,34 @@ export async function fetchNexusNoContent({ url, method }: Pick<TFetchNexusParam
  * @returns Parsed response data
  * @throws {NexusError} When response is not ok after all retries
  */
-export async function queryNexus<T>({ url, method = HttpMethod.GET, body = null }: TQueryNexusParams): Promise<T> {
-  return nexusQueryClient.fetchQuery({
-    queryKey: ['nexus', url, method, body],
-    queryFn: () => fetchNexus<T>({ url, method, body }),
-  });
+export async function queryNexus<T>({
+  url,
+  method = HttpMethod.GET,
+  body = null,
+  timeoutMs,
+  totalTimeoutMs,
+}: TQueryNexusParams): Promise<T> {
+  const queryKey = ['nexus', url, method, body];
+  const query = () =>
+    nexusQueryClient.fetchQuery({
+      queryKey,
+      queryFn: () => fetchNexus<T>({ url, method, body, timeoutMs }),
+    });
+  if (totalTimeoutMs === undefined) return query();
+  // TanStack pauses retries when offline or hidden. Bound that pure query too,
+  // so it cannot hold the auth lock or restart after the caller has timed out.
+  return withIoDeadline(
+    async (signal) => {
+      const cancel = () => {
+        void nexusQueryClient.cancelQueries({ queryKey, exact: true });
+      };
+      signal.addEventListener('abort', cancel, { once: true });
+      try {
+        return await query();
+      } finally {
+        signal.removeEventListener('abort', cancel);
+      }
+    },
+    { service: ErrorService.Nexus, operation: 'queryNexus', timeoutMs: totalTimeoutMs },
+  );
 }

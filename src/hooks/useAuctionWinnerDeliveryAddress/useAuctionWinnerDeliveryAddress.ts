@@ -10,6 +10,7 @@ import {
   type PendingDeliveryKeyChange,
   useDeliveryKeyGate,
 } from '@/hooks/useDeliveryKeyGate/useDeliveryKeyGate';
+import { checkDestinationCountry } from '@/hooks/useMarketplaceSellerShipsTo/useMarketplaceSellerShipsTo';
 import type { BindDeliveryAddress } from '@/libs/commerce/payment-methods';
 import { browserAddressCountry, commerceDeliveryAddressValueSchema } from '@/libs/commerce/postal-address';
 import type { CommerceDeliveryAddressModelSchema } from '@/models/commerce/commerce.schema';
@@ -149,6 +150,11 @@ export function useAuctionWinnerDeliveryAddress({
     const parsed = commerceDeliveryAddressValueSchema.safeParse(form.getValues());
     if (!parsed.success) return { ok: false };
     const address = parsed.data;
+    const destinationError = await checkDestinationCountry(address.countryCode, [sellerPubky]);
+    if (destinationError) {
+      form.setError('countryCode', { type: 'custom', message: destinationError }, { shouldFocus: true });
+      return { ok: false };
+    }
     const gate = await resolveKeys([sellerPubky]);
     if (!gate.ok) return { ok: false };
     const key = gate.keys.get(sellerPubky);

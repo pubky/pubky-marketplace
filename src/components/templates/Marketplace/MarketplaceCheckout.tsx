@@ -946,7 +946,11 @@ function MarketplaceCartCheckout() {
                       </div>
                     )}
                     <ControlledInputField name="name" control={checkout.form.control} label="Full name" />
-                    <MarketplaceAddressFields control={checkout.form.control} setValue={checkout.form.setValue} />
+                    <MarketplaceAddressFields
+                      control={checkout.form.control}
+                      setValue={checkout.form.setValue}
+                      allowedCountries={checkout.allowedDestinationCountries}
+                    />
                     <div className="grid gap-4">
                       <Typography as="p" className="text-sm text-muted-foreground">
                         {MARKETPLACE_DELIVERY_ADDRESS_DISCLOSURE}

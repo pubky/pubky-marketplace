@@ -140,6 +140,21 @@ describe('marketplaceCheckoutRefusalMessage', () => {
 });
 
 describe('marketplacePaymentMethodFailureMessage', () => {
+  it('names a removed listing on a bind refused with LISTING_NOT_ACTIVE', () => {
+    const removedCopy = marketplaceListingNotActiveMessage({ code: 'LISTING_NOT_ACTIVE', reason: 'listing_removed' });
+    const error = new AppError({
+      category: ErrorCategory.Client,
+      code: ClientErrorCode.CONFLICT,
+      message: 'SENTINEL_PAYMENT_METHOD_WIRE',
+      service: ErrorService.Marketplace,
+      operation: 'bindPaymentMethod',
+      context: { statusCode: 409, serviceCode: 'LISTING_NOT_ACTIVE', reason: 'listing_removed' },
+    });
+    expect(removedCopy).toBe('The seller removed this listing.');
+    expect(marketplacePaymentMethodFailureMessage(error, 'fallback')).toBe(removedCopy);
+    expect(marketplacePaymentMethodReasonMessage('listing_removed')).toBe(removedCopy);
+  });
+
   it('maps a capability_required family from the service code', () => {
     const error = new AppError({
       category: ErrorCategory.Client,

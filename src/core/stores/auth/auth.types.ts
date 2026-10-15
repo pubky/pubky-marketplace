@@ -2,9 +2,11 @@ import { Session } from '@synonymdev/pubky';
 import type { Pubky } from '@/models/models.types';
 
 /** The signer that approved a grant-backed session. */
-export type GrantSigner = 'bitkit' | 'passport';
+export type GrantSigner = 'bitkit' | 'passport' | 'ring' | 'local-key' | 'host';
 
 export interface AuthInitParams {
+  sessionOwner?: 'shop' | 'host' | null;
+  hostGeneration?: string | null;
   currentUserPubky: Pubky | null;
   session: Session | null;
   /** null = unknown/undetermined, false = no profile, true = has profile */
@@ -24,6 +26,8 @@ export interface AuthInitParams {
 }
 
 export interface AuthState extends AuthInitParams {
+  sessionOwner: 'shop' | 'host' | null;
+  hostGeneration: string | null;
   sessionExport: string | null;
   grantSessionRecordId: string | null;
   grantSigner: GrantSigner | null;
@@ -66,6 +70,8 @@ export type AuthStore = AuthState & AuthActions & AuthSelectors;
 
 export const authInitialState: AuthState = {
   currentUserPubky: null,
+  sessionOwner: null,
+  hostGeneration: null,
   session: null,
   sessionExport: null,
   grantSessionRecordId: null,

@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { capabilitiesMatchFullGrant } from '@/libs/auth/capabilities';
 import ringCookie from '@/test/fixtures/auth/ring-cookie-signin.pubky-common-0.11.json';
 import {
   CAPABILITIES,
-  capabilitiesMatchFullGrant,
   capabilitiesMatchRingCookieGrant,
   getShopGrantClientId,
   RING_COOKIE_CAPABILITIES,
@@ -43,34 +43,60 @@ describe('capabilitiesMatchFullGrant', () => {
     expect(capabilitiesMatchFullGrant([...full].reverse())).toBe(true);
   });
 
+  it('accepts root and broader subtree permissions, including separate action grants', () => {
+    expect(capabilitiesMatchFullGrant(['/:rw'])).toBe(true);
+    expect(capabilitiesMatchFullGrant(['/pub/:r', '/pub/:w', '/priv/:rw'])).toBe(true);
+    expect(capabilitiesMatchFullGrant(['/pub/:r', '/priv/:rw'])).toBe(false);
+    expect(capabilitiesMatchFullGrant(['/pub/pubky.app/foo:rw', '/pub/paykit/:rw', '/priv/pubky.app/:rw'])).toBe(false);
+  });
+
   it('refuses empty capabilities', () => {
     expect(capabilitiesMatchFullGrant([])).toBe(false);
   });
 
-  it('refuses a missing or extra entry', () => {
-    expect(capabilitiesMatchFullGrant(full.slice(0, 2))).toBe(false);
-    expect(capabilitiesMatchFullGrant([...full, '/extra/:rw'])).toBe(false);
+  it('does not treat file paths as subtree permissions', () => {
+    expect(capabilitiesMatchFullGrant(['/pub:rw', '/priv:rw'])).toBe(false);
+    expect(capabilitiesMatchFullGrant(['/pub/pubky.app:rw', '/pub/paykit/:rw', '/priv/pubky.app/:rw'])).toBe(false);
   });
 
-  it('refuses the Ring cookie set, so grant sessions keep the exact Shop grant', () => {
-    expect(capabilitiesMatchFullGrant(RING_COOKIE_CAPABILITIES.split(','))).toBe(false);
+  it('rejects an entire malformed capability list using the SDK parser', () => {
+    expect(capabilitiesMatchFullGrant(['/:rw', 'malformed'])).toBe(false);
+    expect(capabilitiesMatchFullGrant(['/:rw', '/pub/:invalid'])).toBe(false);
+    expect(capabilitiesMatchFullGrant(['/:wr'])).toBe(true);
+  });
+
+  it('refuses missing permissions but accepts additional scopes', () => {
+    expect(capabilitiesMatchFullGrant(full.slice(0, 2))).toBe(false);
+    expect(capabilitiesMatchFullGrant([...full, '/extra/:rw'])).toBe(true);
+  });
+
+  it('reuses existing core Shop grants without requiring optional Chat permissions', () => {
+    const coreGrant = ['/pub/pubky.app/:rw', '/pub/paykit/:rw', '/priv/pubky.app/:rw'];
+    expect(capabilitiesMatchFullGrant(coreGrant)).toBe(true);
+    expect(capabilitiesMatchFullGrant([...coreGrant, '/pub/chat/v0/:rw'])).toBe(true);
+    expect(capabilitiesMatchFullGrant([...coreGrant, '/priv/chat/v0/:r'])).toBe(true);
+    expect(capabilitiesMatchFullGrant(RING_COOKIE_CAPABILITIES.split(','))).toBe(true);
+    expect(capabilitiesMatchFullGrant(['/pub/pubky.app/:rw', '/pub/chat/v0/:rw', '/priv/chat/v0/:rw'])).toBe(false);
+  });
+
+  it('requests exactly the agreed Shop and Chat v0 permissions for new approvals', () => {
+    expect(CAPABILITIES).toBe(
+      '/pub/pubky.app/:rw,/pub/paykit/:rw,/priv/pubky.app/:rw,/pub/chat/v0/:rw,/priv/chat/v0/:rw',
+    );
   });
 });
 
 describe('RING_COOKIE_CAPABILITIES', () => {
   const entries = (capabilities: string) => capabilities.split(',');
 
-  it("is exactly the union of the Shop grant and pubky.app's sign-in set", () => {
-    const union = new Set([...entries(CAPABILITIES), ...entries(ringCookie.pubky_app_signin)]);
+  it("preserves the legacy verifier's scopes independently of new grant permissions", () => {
+    const legacyShop = '/pub/pubky.app/:rw,/pub/paykit/:rw,/priv/pubky.app/:rw';
+    const union = new Set([...entries(legacyShop), ...entries(ringCookie.pubky_app_signin)]);
     expect(new Set(entries(RING_COOKIE_CAPABILITIES))).toEqual(union);
     expect(entries(RING_COOKIE_CAPABILITIES)).toHaveLength(union.size);
   });
 
-  it('keeps the Shop grant first, in its own order', () => {
-    expect(RING_COOKIE_CAPABILITIES.startsWith(`${CAPABILITIES},`)).toBe(true);
-  });
-
-  it('is what the signer is asked for and what the marketplace service stores after normalizing', () => {
+  it('matches the historical token fixture consumed by the legacy verifier', () => {
     expect(RING_COOKIE_CAPABILITIES).toBe(ringCookie.requested);
     expect(RING_COOKIE_CAPABILITIES).toBe(ringCookie.service_normalized);
   });

@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Decide whether the launch-e2e job runs.
 #
-# Fork pull requests do not receive repo secrets, so LAUNCH_E2E_SELLER_SECRET_HEX
-# is empty there and the suite can never pass. Skip those with a notice.
-# A same-repo pull request with the secret missing fails. It must not skip.
+# The explicit synthetic SDK protocol gate uses only public test keys and
+# runs for every pull request. Optional live staging runs require the seller
+# secret; same-repo live runs must fail rather than silently skip if missing.
 set -euo pipefail
 
 secret="${LAUNCH_E2E_SELLER_SECRET_HEX:-}"
@@ -15,6 +15,16 @@ emit() {
     printf '%s\n' "$1" >>"$GITHUB_OUTPUT"
   fi
 }
+
+mode="${LAUNCH_E2E_MODE:-live}"
+if [[ "$mode" == "synthetic" ]]; then
+  emit "run=true"
+  exit 0
+fi
+if [[ "$mode" != "live" ]]; then
+  echo "::error title=launch-e2e::LAUNCH_E2E_MODE must be synthetic or live."
+  exit 1
+fi
 
 if [[ -n "$secret" ]]; then
   emit "run=true"

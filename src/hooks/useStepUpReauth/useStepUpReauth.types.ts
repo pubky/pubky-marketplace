@@ -1,3 +1,8 @@
+import type {
+  MarketplaceApprovalSigner,
+  MarketplaceSignerChoice,
+} from '@/hooks/useMarketplaceApprovalSigner/useMarketplaceApprovalSigner';
+
 /**
  * Lifecycle of one explicit step-up re-approval attempt:
  *
@@ -12,14 +17,19 @@
  *                      because auth flows are single-use: retrying always
  *                      starts a FRESH flow.
  */
-export type StepUpReauthStatus = 'idle' | 'starting' | 'awaiting' | 'reauthenticated' | 'error';
+export type StepUpReauthStatus = 'idle' | 'starting' | 'awaiting' | 'awaiting-host' | 'reauthenticated' | 'error';
 
 export interface UseStepUpReauthOptions {
+  signer?: MarketplaceSignerChoice | null;
   /** Called once per successful re-approval, after the auth-store session update. */
   onReauthenticated?: () => void | Promise<void>;
 }
 
 export interface UseStepUpReauthReturn {
+  requestsPassport: boolean;
+  requiresSignerChoice: boolean;
+  signerName: MarketplaceApprovalSigner;
+  startPassport: () => void;
   status: StepUpReauthStatus;
   /** The `pubkyauth://` URL to render as a QR or open as a Ring deeplink. Empty outside `awaiting`. */
   authorizationUrl: string;

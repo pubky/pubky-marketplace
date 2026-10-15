@@ -151,6 +151,7 @@ const view = vi.hoisted(() => ({
   fulfillmentOptions: {} as Record<string, Array<'shipping' | 'pickup'>>,
   fulfillmentEffective: {} as Record<string, 'shipping' | 'pickup'>,
   requiresDeliveryAddress: true,
+  allowedDestinationCountries: null as string[] | null,
   orderCount: 1,
   fulfillmentByItem: {} as Record<string, 'shipping' | 'pickup' | 'digital'>,
   digitalKinds: {} as Record<string, 'file' | 'link' | 'text' | 'email' | 'message' | null>,
@@ -268,7 +269,13 @@ vi.mock('@/hooks/useMarketplaceCheckout/useMarketplaceCheckout', async () => {
   const { marketplaceCheckoutDefaults } = await import('@/hooks/useMarketplaceCheckout/useMarketplaceCheckout.types');
   return {
     useMarketplaceCheckout: () => ({
-      form: useForm({ defaultValues: marketplaceCheckoutDefaults }),
+      // The real hook starts a new address in the first allowed country.
+      form: useForm({
+        defaultValues: {
+          ...marketplaceCheckoutDefaults,
+          ...(view.allowedDestinationCountries ? { countryCode: view.allowedDestinationCountries[0] } : {}),
+        },
+      }),
       submit: vi.fn(async () => false),
       pay: vi.fn(async () => ({ ok: false, orderIds: [], boundOrders: [] })),
       isPaying: false,
@@ -282,6 +289,7 @@ vi.mock('@/hooks/useMarketplaceCheckout/useMarketplaceCheckout', async () => {
       fulfillmentForSeller: (sellerPubky: string) => view.fulfillmentEffective[sellerPubky] ?? 'shipping',
       setFulfillmentChoice: vi.fn(),
       requiresDeliveryAddress: view.requiresDeliveryAddress,
+      allowedDestinationCountries: view.allowedDestinationCountries,
       hasFulfillmentConflict: false,
       isPickupCapabilityLoadingForSeller: () => false,
       orderCount: view.orderCount,
@@ -401,6 +409,7 @@ beforeEach(async () => {
   view.fulfillmentOptions = {};
   view.fulfillmentEffective = {};
   view.requiresDeliveryAddress = true;
+  view.allowedDestinationCountries = null;
   view.orderCount = 1;
   view.fulfillmentByItem = {};
   view.digitalKinds = {};
@@ -573,6 +582,24 @@ describe('Marketplace checkout — visual regression', () => {
     expect(document.body.textContent).toContain('Order cancelled');
     expect(document.body.textContent).not.toContain('Item reserved');
     await captureCheckout('checkout-cancelled-paypal-desktop', false);
+  });
+
+  it('limits the address country to the seller’s destination countries at desktop viewport', async () => {
+    const { singleSeller } = await fixtures;
+    view.items = singleSeller;
+    view.allowedDestinationCountries = ['CH', 'LI'];
+
+    await renderForVRT(<MarketplaceCheckout />, { viewport: VRT_VIEWPORT_DESKTOP });
+    await vi.waitFor(() => {
+      if (
+        !document
+          .querySelector('[data-testid="marketplace-address-country-select"]')
+          ?.textContent?.includes('Switzerland')
+      ) {
+        throw new Error('The destination country picker has not rendered yet.');
+      }
+    });
+    await captureCheckout('checkout-ships-to-desktop');
   });
 
   it('renders a single-seller checkout at mobile viewport', async () => {
