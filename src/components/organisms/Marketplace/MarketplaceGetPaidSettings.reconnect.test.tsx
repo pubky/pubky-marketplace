@@ -157,6 +157,34 @@ describe('MarketplaceGetPaidSettings Bitkit reconnect (upstream Paykit)', () => 
     expect(framePath(paykitFrame('Reconnect Bitkit'))).toBe('https://paykit.example/setup/reconnect');
   });
 
+  it('says reconnecting failed, not setup, when a reconnect fails', async () => {
+    mocked.isOwnPaykitAccountClaimed.mockResolvedValue(true);
+    await renderSettings();
+    await userEvent.click(await screen.findByRole('button', { name: /Reconnect Bitkit/ }));
+    sendCallback(paykitFrame('Reconnect Bitkit'), { error: 'setup-failed' });
+
+    const dialog = screen.getByRole('dialog', { name: 'Reconnect Bitkit' });
+    expect(await within(dialog).findByText('Reconnecting Bitkit failed. Try again.')).toBeInTheDocument();
+    expect(within(dialog).queryByText(/setup failed/i)).not.toBeInTheDocument();
+    expect(within(dialog).getByRole('button', { name: /Retry/ })).toBeInTheDocument();
+  });
+
+  it('starts initial setup when the wallet state is unknown, and still offers reconnect if Paykit refuses it', async () => {
+    mocked.isOwnPaykitAccountClaimed.mockRejectedValue(new Error('Lock Server not connected'));
+    await renderSettings();
+    expect(screen.queryByText('Wallet connected.')).not.toBeInTheDocument();
+
+    await userEvent.click(await screen.findByRole('button', { name: /Connect Bitkit/ }));
+    const setupFrame = paykitFrame('Connect Bitkit');
+    expect(framePath(setupFrame)).toBe('https://paykit.example/setup');
+    sendCallback(setupFrame, { error: 'setup-failed' });
+
+    const dialog = screen.getByRole('dialog', { name: 'Connect Bitkit' });
+    expect(await within(dialog).findByText(/reconnect it instead/)).toBeInTheDocument();
+    await userEvent.click(within(dialog).getByRole('button', { name: /Reconnect Bitkit/ }));
+    expect(framePath(paykitFrame('Reconnect Bitkit'))).toBe('https://paykit.example/setup/reconnect');
+  });
+
   it('keeps the fork Paykit on its initial setup route', async () => {
     runtime.api = 'fork';
     mocked.isOwnPaykitAccountClaimed.mockResolvedValue(true);

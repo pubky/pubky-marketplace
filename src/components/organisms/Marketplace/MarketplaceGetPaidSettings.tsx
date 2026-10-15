@@ -122,6 +122,7 @@ const PAYKIT_BITCOIN_RECONNECT_EXPLANATION =
 /** Upstream `/setup` refuses an account Paykit already holds (for example one set up for Locks); reconnect re-approves it. */
 const PAYKIT_SETUP_FAILED_COPY =
   'Bitkit setup failed. If this pubky already has a Paykit setup, for example from Locks or another Shop, reconnect it instead.';
+const PAYKIT_RECONNECT_FAILED_COPY = 'Reconnecting Bitkit failed. Try again.';
 
 function createPaykitSetupState(): string {
   const bytes = new Uint8Array(16);
@@ -778,7 +779,9 @@ export function MarketplaceGetPaidSettings({ locksConnect, onSaved }: Marketplac
                 {paykitSetupStatus === 'error'
                   ? failedSetupInDialog
                     ? PAYKIT_SETUP_FAILED_COPY
-                    : 'Bitkit setup failed. Try again.'
+                    : paykitSetupMode === 'bitcoin-reconnect'
+                      ? PAYKIT_RECONNECT_FAILED_COPY
+                      : 'Bitkit setup failed. Try again.'
                   : paykitSetupStatus === 'mismatch'
                     ? paykitMismatchMessage(currentUserPubky)
                     : paykitSetupStatus === 'unconfirmed'
