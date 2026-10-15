@@ -106,6 +106,19 @@ describe('MarketplaceListingOwnerPanel registration self-heal', () => {
       expect(controller.ensureListingRegistered).toHaveBeenCalledTimes(2);
     });
 
+    it('re-syncs once when only the projected unit price differs from the record', () => {
+      render(
+        <MarketplaceListingOwnerPanel
+          record={record}
+          registrationStatus="registered"
+          projection={{ ...projection, unitPrice: { ...projection.unitPrice, amountMinor: 9_900 } }}
+        />,
+      );
+
+      expect(controller.ensureListingRegistered).toHaveBeenCalledOnce();
+      expect(controller.ensureListingRegistered).toHaveBeenCalledWith(record);
+    });
+
     it('leaves a projection that matches the record alone', () => {
       render(<MarketplaceListingOwnerPanel record={record} registrationStatus="registered" projection={projection} />);
 

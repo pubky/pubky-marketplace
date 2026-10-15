@@ -531,24 +531,39 @@ describe('useMarketplaceCheckout', () => {
     );
 
     it.each([
-      ['the sync cannot heal it', { ok: true, revision: 5 }],
-      ['the sync fails', { ok: false, error: { code: 'UPSTREAM_UNAVAILABLE', message: 'unreachable' } }],
-    ])('stops before ordering when the unit price differs at the same revision and %s', async (_label, answer) => {
-      const divergent = { ...projection, unitPrice: { ...price, amountMinor: price.amountMinor + 100 } };
-      vi.mocked(CommerceController.getMarketplaceListingProjection).mockResolvedValue(divergent);
-      vi.mocked(CommerceController.syncListingRegistration).mockResolvedValue(answer as never);
+      ['amount', 'the sync cannot heal it', { amountMinor: price.amountMinor + 100 }, { ok: true, revision: 5 }],
+      [
+        'amount',
+        'the sync fails',
+        { amountMinor: price.amountMinor + 100 },
+        { ok: false, error: { code: 'UPSTREAM_UNAVAILABLE', message: 'unreachable' } },
+      ],
+      [
+        'currency',
+        'the sync cannot heal it',
+        { currency: price.currency === 'EUR' ? 'USD' : 'EUR' },
+        { ok: true, revision: 5 },
+      ],
+      ['exponent', 'the sync cannot heal it', { exponent: price.exponent + 1 }, { ok: true, revision: 5 }],
+    ])(
+      'stops before ordering when the unit price %s differs at the same revision and %s',
+      async (_field, _label, drift, answer) => {
+        const divergent = { ...projection, unitPrice: { ...price, ...drift } };
+        vi.mocked(CommerceController.getMarketplaceListingProjection).mockResolvedValue(divergent);
+        vi.mocked(CommerceController.syncListingRegistration).mockResolvedValue(answer as never);
 
-      await expect(pay(item)).resolves.toBe(false);
+        await expect(pay(item)).resolves.toBe(false);
 
-      expect(CommerceController.syncListingRegistration).toHaveBeenCalledOnce();
-      expect(CommerceController.commitCreateMarketplaceCheckout).not.toHaveBeenCalled();
-      expect(vi.mocked(toast)).toHaveBeenCalledWith(
-        expect.objectContaining({
-          description: 'A listing changed while you were checking out. Review your cart and try again.',
-        }),
-      );
-      expect(CommerceController.refreshListing).toHaveBeenCalledWith(listing.ownerPubky, listing.listingId);
-    });
+        expect(CommerceController.syncListingRegistration).toHaveBeenCalledOnce();
+        expect(CommerceController.commitCreateMarketplaceCheckout).not.toHaveBeenCalled();
+        expect(vi.mocked(toast)).toHaveBeenCalledWith(
+          expect.objectContaining({
+            description: 'A listing changed while you were checking out. Review your cart and try again.',
+          }),
+        );
+        expect(CommerceController.refreshListing).toHaveBeenCalledWith(listing.ownerPubky, listing.listingId);
+      },
+    );
 
     it('checks an auction line out against a newer projection, since it is paid at its bid', async () => {
       const auctionListing = createCommerceSandboxCatalog().listings.find(({ sale }) => sale.format === 'auction')!;
