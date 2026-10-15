@@ -15,17 +15,18 @@ import { hasHttpStatus } from '@/libs/error/error.utils';
 
 /**
  * One seller's destination countries from their live shop record, falling
- * back to the cached copy when the network read fails. Null means anywhere
- * (no list, or no shop record at all); undefined means neither copy could be
- * read, so the destination cannot be confirmed.
+ * back to the cached copy when the network read fails, including a 404.
+ * Null means anywhere (no list, or no shop record anywhere); undefined means
+ * neither copy could be read, so the destination cannot be confirmed.
  */
 export async function resolveSellerShipsTo(sellerPubky: string): Promise<readonly string[] | null | undefined> {
   let record: CommerceShopRecord;
   try {
     record = await CommerceController.refreshShop(sellerPubky);
   } catch (error) {
-    if (hasHttpStatus(error, 404)) return null;
     const cached = await CommerceController.getShop(sellerPubky).catch(() => null);
+    // A 404 may be transient, so it never drops a restriction this device already knows.
+    if (hasHttpStatus(error, 404)) return cached ? shopShipsToCountries(cached.record) : null;
     if (!cached) return undefined;
     record = cached.record;
   }

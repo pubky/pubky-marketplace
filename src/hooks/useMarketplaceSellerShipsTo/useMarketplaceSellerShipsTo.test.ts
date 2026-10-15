@@ -60,6 +60,14 @@ describe('resolveSellerShipsTo', () => {
     await expect(resolveSellerShipsTo(SELLER_A)).resolves.toBeNull();
   });
 
+  it('keeps a cached restriction through a 404 instead of dropping it', async () => {
+    refreshShop.mockRejectedValue(notFound);
+    getShop.mockResolvedValue(cached(['CH']));
+    await expect(resolveSellerShipsTo(SELLER_A)).resolves.toEqual(['CH']);
+    getShop.mockResolvedValue(cached(undefined));
+    await expect(resolveSellerShipsTo(SELLER_A)).resolves.toBeNull();
+  });
+
   it('falls back to the cached record when the network read fails', async () => {
     refreshShop.mockRejectedValue(new Error('offline'));
     getShop.mockResolvedValue(cached(['CH', 'LI']));
