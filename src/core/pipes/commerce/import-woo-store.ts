@@ -119,11 +119,18 @@ function isHttps(value: string): boolean {
   }
 }
 
-type Stock = { readonly quantity: number; readonly note: 'unknown' | 'backorder' | null };
+type Stock = { readonly quantity: number; readonly note: 'unknown' | 'backorder' | 'cart_limit' | null };
+
+/** WooCommerce's cart maximum when stock is not managed. */
+const UNMANAGED_CART_MAXIMUM = 9_999;
 
 function resolveStock(product: StoreApiProduct, unmanagedStock: number): Stock {
   if (!product.is_in_stock) return { quantity: 0, note: null };
   if (product.is_on_backorder) return { quantity: 0, note: 'backorder' };
+  const cartMaximum = product.add_to_cart.maximum;
+  if (cartMaximum !== null && cartMaximum < UNMANAGED_CART_MAXIMUM && !product.sold_individually) {
+    return { quantity: cartMaximum, note: 'cart_limit' };
+  }
   if (product.low_stock_remaining !== null) return { quantity: product.low_stock_remaining, note: null };
   return { quantity: Math.min(unmanagedStock, COMMERCE_LISTING_MAX_QUANTITY - 1), note: 'unknown' };
 }
@@ -304,6 +311,10 @@ export function mapWooStoreCatalog(input: WooStoreMapInput): WooStoreMapResult {
       if (stock.note === 'unknown') {
         unknownStock += 1;
         losses.push(loss('stock_unmanaged', 'changed', 'Stock', `Stock unknown, set to ${stock.quantity}.`, label));
+      } else if (stock.note === 'cart_limit') {
+        losses.push(
+          loss('stock_from_cart_limit', 'changed', 'Stock', "Stock from the store's cart limit, check it.", label),
+        );
       } else if (stock.note === 'backorder') {
         losses.push(
           loss('backorder_stock', 'changed', 'Stock', 'The product is on backorder, so its stock is 0.', label),
@@ -525,7 +536,7 @@ export function mapWooStoreCatalog(input: WooStoreMapInput): WooStoreMapResult {
         'stock_not_public',
         'changed',
         'Stock',
-        `Exact stock isn't public. A store shares a count only when stock is low (${unknownStock} item${unknownStock === 1 ? ' has' : 's have'} no count here). Connect the store for live stock.`,
+        `Exact stock isn't public. Counts here come from the store's cart limit or low-stock count where it shows one; ${unknownStock} item${unknownStock === 1 ? ' has' : 's have'} neither and get the default quantity. Connect the store for live stock.`,
         undefined,
         imported.size,
       ),

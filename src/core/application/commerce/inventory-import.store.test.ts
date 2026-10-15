@@ -214,7 +214,7 @@ describe('importing a WooCommerce store catalogue through plan, photos and publi
       });
       expect(planned.lossReport?.listingsImported).toBe(5);
       expect(planned.lossReport?.losses.map((loss) => loss.code)).toEqual(
-        expect.arrayContaining(['stock_not_public', 'stock_unmanaged', 'compare_at_price', 'no_stock_paused']),
+        expect.arrayContaining(['stock_not_public', 'stock_from_cart_limit', 'compare_at_price', 'no_stock_paused']),
       );
       expect(puts).toEqual([]);
     });
@@ -232,7 +232,7 @@ describe('importing a WooCommerce store catalogue through plan, photos and publi
         currency: 'CHF',
         exponent: 2,
       });
-      expect(fan?.variants[0]?.quantity).toBe(1);
+      expect(fan?.variants[0]?.quantity).toBe(12);
       expect(fan?.media).toHaveLength(1);
 
       expect(record(COUNTED.id)?.variants[0]?.quantity).toBe(2);
@@ -308,7 +308,7 @@ describe('importing a WooCommerce store catalogue through plan, photos and publi
       const changedFan: StoreApiProduct = {
         ...FAN,
         prices: { ...FAN.prices!, price: '1500', regular_price: '1500', sale_price: '1500' },
-        low_stock_remaining: 7,
+        add_to_cart: { maximum: 7 },
       };
       const brandNew = { ...COUNTED, id: 999_001, name: 'A product that was just added' };
       const next = [changedFan, ...sample().filter((entry) => entry.id !== FAN.id), brandNew];

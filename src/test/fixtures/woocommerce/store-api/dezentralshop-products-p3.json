@@ -120,6 +120,9 @@
     "is_on_backorder": false,
     "low_stock_remaining": null,
     "sold_individually": false,
+    "add_to_cart": {
+      "maximum": 5
+    },
     "is_password_protected": false,
     "weight": "2500",
     "has_dimensions": true
@@ -213,6 +216,9 @@
     "is_on_backorder": false,
     "low_stock_remaining": null,
     "sold_individually": false,
+    "add_to_cart": {
+      "maximum": 4
+    },
     "is_password_protected": false,
     "weight": "20",
     "has_dimensions": true
@@ -300,6 +306,9 @@
     "is_on_backorder": false,
     "low_stock_remaining": null,
     "sold_individually": false,
+    "add_to_cart": {
+      "maximum": 4
+    },
     "is_password_protected": false,
     "weight": "20",
     "has_dimensions": true
@@ -397,6 +406,9 @@
     "is_on_backorder": false,
     "low_stock_remaining": null,
     "sold_individually": false,
+    "add_to_cart": {
+      "maximum": 5
+    },
     "is_password_protected": false,
     "weight": "20",
     "has_dimensions": true
@@ -494,6 +506,9 @@
     "is_on_backorder": false,
     "low_stock_remaining": null,
     "sold_individually": false,
+    "add_to_cart": {
+      "maximum": 4
+    },
     "is_password_protected": false,
     "weight": "20",
     "has_dimensions": true
@@ -591,6 +606,9 @@
     "is_on_backorder": false,
     "low_stock_remaining": null,
     "sold_individually": false,
+    "add_to_cart": {
+      "maximum": 5
+    },
     "is_password_protected": false,
     "weight": "20",
     "has_dimensions": true
@@ -684,6 +702,9 @@
     "is_on_backorder": false,
     "low_stock_remaining": 2,
     "sold_individually": false,
+    "add_to_cart": {
+      "maximum": 2
+    },
     "is_password_protected": false,
     "weight": "1000",
     "has_dimensions": true
@@ -777,6 +798,9 @@
     "is_on_backorder": false,
     "low_stock_remaining": null,
     "sold_individually": false,
+    "add_to_cart": {
+      "maximum": 9
+    },
     "is_password_protected": false,
     "weight": "10",
     "has_dimensions": true
@@ -870,6 +894,9 @@
     "is_on_backorder": false,
     "low_stock_remaining": null,
     "sold_individually": false,
+    "add_to_cart": {
+      "maximum": 7
+    },
     "is_password_protected": false,
     "weight": "10",
     "has_dimensions": true
@@ -960,6 +987,9 @@
     "is_on_backorder": false,
     "low_stock_remaining": 1,
     "sold_individually": false,
+    "add_to_cart": {
+      "maximum": 1
+    },
     "is_password_protected": false,
     "weight": "10",
     "has_dimensions": true
@@ -1056,6 +1086,9 @@
     "is_on_backorder": false,
     "low_stock_remaining": null,
     "sold_individually": false,
+    "add_to_cart": {
+      "maximum": 6
+    },
     "is_password_protected": false,
     "weight": "10",
     "has_dimensions": true
@@ -1143,6 +1176,9 @@
     "is_on_backorder": false,
     "low_stock_remaining": null,
     "sold_individually": false,
+    "add_to_cart": {
+      "maximum": 16
+    },
     "is_password_protected": false,
     "weight": "7",
     "has_dimensions": true
@@ -1236,6 +1272,9 @@
     "is_on_backorder": false,
     "low_stock_remaining": 0,
     "sold_individually": false,
+    "add_to_cart": {
+      "maximum": 9999
+    },
     "is_password_protected": false,
     "weight": "10",
     "has_dimensions": true
@@ -1339,6 +1378,9 @@
     "is_on_backorder": false,
     "low_stock_remaining": 0,
     "sold_individually": false,
+    "add_to_cart": {
+      "maximum": 9999
+    },
     "is_password_protected": false,
     "weight": "10",
     "has_dimensions": true
@@ -1436,6 +1478,9 @@
     "is_on_backorder": false,
     "low_stock_remaining": null,
     "sold_individually": false,
+    "add_to_cart": {
+      "maximum": 5
+    },
     "is_password_protected": false,
     "weight": "30",
     "has_dimensions": true
@@ -1556,6 +1601,9 @@
     "is_on_backorder": false,
     "low_stock_remaining": 2,
     "sold_individually": false,
+    "add_to_cart": {
+      "maximum": 2
+    },
     "is_password_protected": false,
     "weight": "36",
     "has_dimensions": true
@@ -1672,6 +1720,9 @@
     "is_on_backorder": false,
     "low_stock_remaining": null,
     "sold_individually": false,
+    "add_to_cart": {
+      "maximum": 72
+    },
     "is_password_protected": false,
     "weight": "12",
     "has_dimensions": true
@@ -1790,6 +1841,9 @@
     "is_on_backorder": false,
     "low_stock_remaining": null,
     "sold_individually": false,
+    "add_to_cart": {
+      "maximum": 29
+    },
     "is_password_protected": false,
     "weight": "300",
     "has_dimensions": true
@@ -1918,6 +1972,9 @@
     "is_on_backorder": false,
     "low_stock_remaining": null,
     "sold_individually": false,
+    "add_to_cart": {
+      "maximum": 46
+    },
     "is_password_protected": false,
     "weight": "730",
     "has_dimensions": true
@@ -2038,6 +2095,9 @@
     "is_on_backorder": false,
     "low_stock_remaining": null,
     "sold_individually": false,
+    "add_to_cart": {
+      "maximum": 4
+    },
     "is_password_protected": false,
     "weight": "350",
     "has_dimensions": true
@@ -2174,6 +2234,9 @@
     "is_on_backorder": false,
     "low_stock_remaining": null,
     "sold_individually": false,
+    "add_to_cart": {
+      "maximum": 5
+    },
     "is_password_protected": false,
     "weight": "600",
     "has_dimensions": true
@@ -2278,6 +2341,9 @@
     "is_on_backorder": false,
     "low_stock_remaining": 1,
     "sold_individually": false,
+    "add_to_cart": {
+      "maximum": 1
+    },
     "is_password_protected": false,
     "weight": "500",
     "has_dimensions": false
@@ -2378,6 +2444,9 @@
     "is_on_backorder": false,
     "low_stock_remaining": null,
     "sold_individually": false,
+    "add_to_cart": {
+      "maximum": 44
+    },
     "is_password_protected": false,
     "weight": "10",
     "has_dimensions": true
@@ -2502,6 +2571,9 @@
     "is_on_backorder": false,
     "low_stock_remaining": null,
     "sold_individually": false,
+    "add_to_cart": {
+      "maximum": 3
+    },
     "is_password_protected": false,
     "weight": "350",
     "has_dimensions": true
@@ -2598,6 +2670,9 @@
     "is_on_backorder": false,
     "low_stock_remaining": null,
     "sold_individually": false,
+    "add_to_cart": {
+      "maximum": 44
+    },
     "is_password_protected": false,
     "weight": "15",
     "has_dimensions": true
@@ -2685,6 +2760,9 @@
     "is_on_backorder": false,
     "low_stock_remaining": null,
     "sold_individually": false,
+    "add_to_cart": {
+      "maximum": 35
+    },
     "is_password_protected": false,
     "weight": "300",
     "has_dimensions": true
@@ -2785,6 +2863,9 @@
     "is_on_backorder": false,
     "low_stock_remaining": null,
     "sold_individually": false,
+    "add_to_cart": {
+      "maximum": 13
+    },
     "is_password_protected": false,
     "weight": "200",
     "has_dimensions": true
@@ -2898,6 +2979,9 @@
     "is_on_backorder": false,
     "low_stock_remaining": 2,
     "sold_individually": false,
+    "add_to_cart": {
+      "maximum": 2
+    },
     "is_password_protected": false,
     "weight": "1000",
     "has_dimensions": true
@@ -3011,6 +3095,9 @@
     "is_on_backorder": false,
     "low_stock_remaining": null,
     "sold_individually": false,
+    "add_to_cart": {
+      "maximum": 3
+    },
     "is_password_protected": false,
     "weight": "110",
     "has_dimensions": true
@@ -3151,6 +3238,9 @@
     "is_on_backorder": false,
     "low_stock_remaining": 0,
     "sold_individually": false,
+    "add_to_cart": {
+      "maximum": 9999
+    },
     "is_password_protected": false,
     "weight": "390",
     "has_dimensions": true
@@ -3256,6 +3346,9 @@
     "is_on_backorder": false,
     "low_stock_remaining": null,
     "sold_individually": false,
+    "add_to_cart": {
+      "maximum": 3
+    },
     "is_password_protected": false,
     "weight": "100",
     "has_dimensions": true
@@ -3362,6 +3455,9 @@
     "is_on_backorder": false,
     "low_stock_remaining": null,
     "sold_individually": false,
+    "add_to_cart": {
+      "maximum": 3
+    },
     "is_password_protected": false,
     "weight": "200",
     "has_dimensions": true
@@ -3483,6 +3579,9 @@
     "is_on_backorder": false,
     "low_stock_remaining": null,
     "sold_individually": false,
+    "add_to_cart": {
+      "maximum": 4
+    },
     "is_password_protected": false,
     "weight": "2500",
     "has_dimensions": true
@@ -3609,6 +3708,9 @@
     "is_on_backorder": false,
     "low_stock_remaining": null,
     "sold_individually": false,
+    "add_to_cart": {
+      "maximum": 7
+    },
     "is_password_protected": false,
     "weight": "220",
     "has_dimensions": true
@@ -3728,6 +3830,9 @@
     "is_on_backorder": false,
     "low_stock_remaining": 1,
     "sold_individually": false,
+    "add_to_cart": {
+      "maximum": 1
+    },
     "is_password_protected": false,
     "weight": "490",
     "has_dimensions": true
@@ -3847,6 +3952,9 @@
     "is_on_backorder": false,
     "low_stock_remaining": null,
     "sold_individually": false,
+    "add_to_cart": {
+      "maximum": 15
+    },
     "is_password_protected": false,
     "weight": "300",
     "has_dimensions": true
@@ -3973,6 +4081,9 @@
     "is_on_backorder": false,
     "low_stock_remaining": null,
     "sold_individually": false,
+    "add_to_cart": {
+      "maximum": 3
+    },
     "is_password_protected": false,
     "weight": "900",
     "has_dimensions": true
@@ -4083,6 +4194,9 @@
     "is_on_backorder": false,
     "low_stock_remaining": 2,
     "sold_individually": false,
+    "add_to_cart": {
+      "maximum": 2
+    },
     "is_password_protected": false,
     "weight": "690",
     "has_dimensions": true
@@ -4190,6 +4304,9 @@
     "is_on_backorder": false,
     "low_stock_remaining": 2,
     "sold_individually": false,
+    "add_to_cart": {
+      "maximum": 2
+    },
     "is_password_protected": false,
     "weight": "82",
     "has_dimensions": true
@@ -4309,6 +4426,9 @@
     "is_on_backorder": false,
     "low_stock_remaining": null,
     "sold_individually": false,
+    "add_to_cart": {
+      "maximum": 9
+    },
     "is_password_protected": false,
     "weight": "200",
     "has_dimensions": true
@@ -4422,6 +4542,9 @@
     "is_on_backorder": false,
     "low_stock_remaining": null,
     "sold_individually": false,
+    "add_to_cart": {
+      "maximum": 9
+    },
     "is_password_protected": false,
     "weight": "240",
     "has_dimensions": true
@@ -4529,6 +4652,9 @@
     "is_on_backorder": false,
     "low_stock_remaining": 2,
     "sold_individually": false,
+    "add_to_cart": {
+      "maximum": 2
+    },
     "is_password_protected": false,
     "weight": "500",
     "has_dimensions": true
@@ -4662,6 +4788,9 @@
     "is_on_backorder": false,
     "low_stock_remaining": null,
     "sold_individually": false,
+    "add_to_cart": {
+      "maximum": 4
+    },
     "is_password_protected": false,
     "weight": "400",
     "has_dimensions": true
@@ -4764,6 +4893,9 @@
     "is_on_backorder": false,
     "low_stock_remaining": null,
     "sold_individually": false,
+    "add_to_cart": {
+      "maximum": 6
+    },
     "is_password_protected": false,
     "weight": "10",
     "has_dimensions": true
@@ -4852,6 +4984,9 @@
     "is_on_backorder": false,
     "low_stock_remaining": null,
     "sold_individually": false,
+    "add_to_cart": {
+      "maximum": 62
+    },
     "is_password_protected": false,
     "weight": "300",
     "has_dimensions": true
@@ -4973,6 +5108,9 @@
     "is_on_backorder": false,
     "low_stock_remaining": null,
     "sold_individually": false,
+    "add_to_cart": {
+      "maximum": 4
+    },
     "is_password_protected": false,
     "weight": "101",
     "has_dimensions": true
@@ -5075,6 +5213,9 @@
     "is_on_backorder": false,
     "low_stock_remaining": 1,
     "sold_individually": false,
+    "add_to_cart": {
+      "maximum": 1
+    },
     "is_password_protected": false,
     "weight": "400",
     "has_dimensions": true
@@ -5175,6 +5316,9 @@
     "is_on_backorder": false,
     "low_stock_remaining": null,
     "sold_individually": false,
+    "add_to_cart": {
+      "maximum": 34
+    },
     "is_password_protected": false,
     "weight": "10",
     "has_dimensions": true
@@ -5302,6 +5446,9 @@
     "is_on_backorder": false,
     "low_stock_remaining": null,
     "sold_individually": false,
+    "add_to_cart": {
+      "maximum": 14
+    },
     "is_password_protected": false,
     "weight": "300",
     "has_dimensions": true
@@ -5426,6 +5573,9 @@
     "is_on_backorder": false,
     "low_stock_remaining": null,
     "sold_individually": false,
+    "add_to_cart": {
+      "maximum": 3
+    },
     "is_password_protected": false,
     "weight": "200",
     "has_dimensions": true
@@ -5550,6 +5700,9 @@
     "is_on_backorder": false,
     "low_stock_remaining": null,
     "sold_individually": false,
+    "add_to_cart": {
+      "maximum": 5
+    },
     "is_password_protected": false,
     "weight": "600",
     "has_dimensions": true
@@ -5658,6 +5811,9 @@
     "is_on_backorder": false,
     "low_stock_remaining": 2,
     "sold_individually": false,
+    "add_to_cart": {
+      "maximum": 2
+    },
     "is_password_protected": false,
     "weight": "6",
     "has_dimensions": true
@@ -5763,6 +5919,9 @@
     "is_on_backorder": false,
     "low_stock_remaining": null,
     "sold_individually": false,
+    "add_to_cart": {
+      "maximum": 25
+    },
     "is_password_protected": false,
     "weight": "21",
     "has_dimensions": true
@@ -5865,6 +6024,9 @@
     "is_on_backorder": false,
     "low_stock_remaining": null,
     "sold_individually": false,
+    "add_to_cart": {
+      "maximum": 49
+    },
     "is_password_protected": false,
     "weight": "21",
     "has_dimensions": true
@@ -5970,6 +6132,9 @@
     "is_on_backorder": false,
     "low_stock_remaining": 0,
     "sold_individually": false,
+    "add_to_cart": {
+      "maximum": 9999
+    },
     "is_password_protected": false,
     "weight": "21",
     "has_dimensions": true
@@ -6076,6 +6241,9 @@
     "is_on_backorder": false,
     "low_stock_remaining": null,
     "sold_individually": false,
+    "add_to_cart": {
+      "maximum": 11
+    },
     "is_password_protected": false,
     "weight": "21",
     "has_dimensions": true
@@ -6175,6 +6343,9 @@
     "is_on_backorder": false,
     "low_stock_remaining": null,
     "sold_individually": false,
+    "add_to_cart": {
+      "maximum": 31
+    },
     "is_password_protected": false,
     "weight": "2",
     "has_dimensions": true
@@ -6274,6 +6445,9 @@
     "is_on_backorder": false,
     "low_stock_remaining": null,
     "sold_individually": false,
+    "add_to_cart": {
+      "maximum": 192
+    },
     "is_password_protected": false,
     "weight": "15",
     "has_dimensions": true
@@ -6377,6 +6551,9 @@
     "is_on_backorder": false,
     "low_stock_remaining": null,
     "sold_individually": false,
+    "add_to_cart": {
+      "maximum": 124
+    },
     "is_password_protected": false,
     "weight": "15",
     "has_dimensions": true
@@ -6480,6 +6657,9 @@
     "is_on_backorder": false,
     "low_stock_remaining": null,
     "sold_individually": false,
+    "add_to_cart": {
+      "maximum": 193
+    },
     "is_password_protected": false,
     "weight": "5",
     "has_dimensions": true
@@ -6583,6 +6763,9 @@
     "is_on_backorder": false,
     "low_stock_remaining": null,
     "sold_individually": false,
+    "add_to_cart": {
+      "maximum": 198
+    },
     "is_password_protected": false,
     "weight": "8",
     "has_dimensions": true
@@ -6686,6 +6869,9 @@
     "is_on_backorder": false,
     "low_stock_remaining": null,
     "sold_individually": false,
+    "add_to_cart": {
+      "maximum": 196
+    },
     "is_password_protected": false,
     "weight": "8",
     "has_dimensions": true
@@ -6785,6 +6971,9 @@
     "is_on_backorder": false,
     "low_stock_remaining": null,
     "sold_individually": false,
+    "add_to_cart": {
+      "maximum": 186
+    },
     "is_password_protected": false,
     "weight": "2",
     "has_dimensions": true
@@ -6881,6 +7070,9 @@
     "is_on_backorder": false,
     "low_stock_remaining": null,
     "sold_individually": false,
+    "add_to_cart": {
+      "maximum": 196
+    },
     "is_password_protected": false,
     "weight": "2",
     "has_dimensions": true
@@ -6984,6 +7176,9 @@
     "is_on_backorder": false,
     "low_stock_remaining": null,
     "sold_individually": false,
+    "add_to_cart": {
+      "maximum": 69
+    },
     "is_password_protected": false,
     "weight": "10",
     "has_dimensions": true
@@ -7084,6 +7279,9 @@
     "is_on_backorder": false,
     "low_stock_remaining": null,
     "sold_individually": false,
+    "add_to_cart": {
+      "maximum": 184
+    },
     "is_password_protected": false,
     "weight": "2",
     "has_dimensions": true
@@ -7180,6 +7378,9 @@
     "is_on_backorder": false,
     "low_stock_remaining": null,
     "sold_individually": false,
+    "add_to_cart": {
+      "maximum": 184
+    },
     "is_password_protected": false,
     "weight": "2",
     "has_dimensions": true
@@ -7276,6 +7477,9 @@
     "is_on_backorder": false,
     "low_stock_remaining": null,
     "sold_individually": false,
+    "add_to_cart": {
+      "maximum": 192
+    },
     "is_password_protected": false,
     "weight": "2",
     "has_dimensions": true
@@ -7375,6 +7579,9 @@
     "is_on_backorder": false,
     "low_stock_remaining": null,
     "sold_individually": false,
+    "add_to_cart": {
+      "maximum": 172
+    },
     "is_password_protected": false,
     "weight": "2",
     "has_dimensions": true
@@ -7477,6 +7684,9 @@
     "is_on_backorder": false,
     "low_stock_remaining": null,
     "sold_individually": false,
+    "add_to_cart": {
+      "maximum": 180
+    },
     "is_password_protected": false,
     "weight": "2",
     "has_dimensions": true
@@ -7602,6 +7812,9 @@
     "is_on_backorder": false,
     "low_stock_remaining": null,
     "sold_individually": false,
+    "add_to_cart": {
+      "maximum": 9
+    },
     "is_password_protected": false,
     "weight": "280",
     "has_dimensions": true
@@ -7711,6 +7924,9 @@
     "is_on_backorder": false,
     "low_stock_remaining": null,
     "sold_individually": false,
+    "add_to_cart": {
+      "maximum": 5
+    },
     "is_password_protected": false,
     "weight": "230",
     "has_dimensions": true
@@ -7829,6 +8045,9 @@
     "is_on_backorder": false,
     "low_stock_remaining": null,
     "sold_individually": false,
+    "add_to_cart": {
+      "maximum": 9
+    },
     "is_password_protected": false,
     "weight": "200",
     "has_dimensions": true
@@ -7944,6 +8163,9 @@
     "is_on_backorder": false,
     "low_stock_remaining": null,
     "sold_individually": false,
+    "add_to_cart": {
+      "maximum": 3
+    },
     "is_password_protected": false,
     "weight": "300",
     "has_dimensions": true
@@ -8059,6 +8281,9 @@
     "is_on_backorder": false,
     "low_stock_remaining": null,
     "sold_individually": false,
+    "add_to_cart": {
+      "maximum": 3
+    },
     "is_password_protected": false,
     "weight": "200",
     "has_dimensions": true
@@ -8183,6 +8408,9 @@
     "is_on_backorder": false,
     "low_stock_remaining": null,
     "sold_individually": false,
+    "add_to_cart": {
+      "maximum": 3
+    },
     "is_password_protected": false,
     "weight": "300",
     "has_dimensions": true
@@ -8307,6 +8535,9 @@
     "is_on_backorder": false,
     "low_stock_remaining": null,
     "sold_individually": false,
+    "add_to_cart": {
+      "maximum": 6
+    },
     "is_password_protected": false,
     "weight": "720",
     "has_dimensions": true
@@ -8440,6 +8671,9 @@
     "is_on_backorder": false,
     "low_stock_remaining": null,
     "sold_individually": false,
+    "add_to_cart": {
+      "maximum": 5
+    },
     "is_password_protected": false,
     "weight": "560",
     "has_dimensions": true
@@ -8564,6 +8798,9 @@
     "is_on_backorder": false,
     "low_stock_remaining": null,
     "sold_individually": false,
+    "add_to_cart": {
+      "maximum": 3
+    },
     "is_password_protected": false,
     "weight": "280",
     "has_dimensions": true

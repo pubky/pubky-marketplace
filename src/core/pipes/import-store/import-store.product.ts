@@ -50,6 +50,12 @@ export type StoreApiProduct = {
   /** Set by WooCommerce only when stock is at or under the store's low-stock threshold. */
   readonly low_stock_remaining: number | null;
   readonly sold_individually: boolean;
+  /**
+   * The most a buyer can add to the cart. For a product with managed stock that
+   * is its stock; 9999 is WooCommerce's "no limit" for unmanaged stock. Plugins
+   * and the one-per-order setting can lower it, so it is a stock hint, not a count.
+   */
+  readonly add_to_cart: { readonly maximum: number | null };
   readonly is_password_protected: boolean;
   readonly weight: string;
   readonly has_dimensions: boolean;
@@ -147,6 +153,11 @@ function images(value: unknown): StoreApiImage[] {
   return out;
 }
 
+function cartMaximum(value: unknown): number | null {
+  const maximum = integer(asRecord(value)?.maximum);
+  return maximum !== null && maximum >= 0 ? maximum : null;
+}
+
 function hasDimensions(value: unknown): boolean {
   const record = asRecord(value);
   if (!record) return false;
@@ -181,6 +192,7 @@ export function readStoreApiProduct(raw: unknown): StoreApiProduct | null {
     is_on_backorder: record.is_on_backorder === true,
     low_stock_remaining: low !== null && low >= 0 ? low : null,
     sold_individually: record.sold_individually === true,
+    add_to_cart: { maximum: cartMaximum(record.add_to_cart) },
     is_password_protected: record.is_password_protected === true,
     weight: text(record.weight, 40).trim(),
     has_dimensions: record.has_dimensions === true || hasDimensions(record.dimensions),

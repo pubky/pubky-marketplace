@@ -75,6 +75,7 @@ function product(overrides: Partial<StoreApiProduct> = {}): StoreApiProduct {
     is_on_backorder: false,
     low_stock_remaining: 4,
     sold_individually: false,
+    add_to_cart: { maximum: null },
     is_password_protected: false,
     weight: '',
     has_dimensions: false,
@@ -114,7 +115,7 @@ describe('the real Dezentralshop catalogue (279 products, 10 variable)', () => {
       variantId: 'v6820',
       category: 'Mining',
       state: 'active',
-      variantQuantity: 1,
+      variantQuantity: 12,
       options: {},
     });
     expect(JSON.parse(row?.extraFields[SOURCE_IMAGE_URLS_FIELD] ?? '[]')).toEqual([
@@ -150,19 +151,27 @@ describe('the real Dezentralshop catalogue (279 products, 10 variable)', () => {
     expect(codes(result, 'sku_dropped')[0]?.detail).toContain('share their product');
   });
 
-  it('uses low_stock_remaining when the store gives it, and the default quantity with a flag when not', () => {
-    const counted = REAL_PRODUCTS.find(
-      (entry) => entry.type === 'simple' && entry.is_in_stock && entry.low_stock_remaining === 2,
-    );
-    expect(counted).toBeDefined();
-    expect(byId(result, counted!.id)[0]?.variantQuantity).toBe(2);
-    expect(codes(result, 'stock_unmanaged').map((loss) => loss.listing)).not.toContain(
-      counted!.name.replace('&#8211;', '–'),
-    );
+  it("takes the store's cart limit as stock for every in-stock product that has one, and flags each", () => {
     const candidates = [...REAL_PRODUCTS.filter((entry) => entry.type === 'simple'), ...Object.values(REAL_VARIATIONS)];
-    const unknown = candidates.filter((entry) => entry.is_in_stock && entry.low_stock_remaining === null).length;
-    expect(codes(result, 'stock_unmanaged').filter((loss) => loss.detail === 'Stock unknown, set to 1.')).toHaveLength(
-      unknown,
+    const limited = candidates.filter(
+      (entry) =>
+        entry.is_in_stock &&
+        !entry.sold_individually &&
+        entry.add_to_cart.maximum !== null &&
+        entry.add_to_cart.maximum < 9_999,
+    );
+    expect(limited.length).toBeGreaterThan(250);
+    for (const entry of limited) {
+      const row = result.rows.find((candidate) => candidate.variantId === `v${entry.id}`);
+      expect(row?.variantQuantity).toBe(entry.add_to_cart.maximum);
+    }
+    expect(codes(result, 'stock_from_cart_limit')).toHaveLength(limited.length);
+    expect(codes(result, 'stock_from_cart_limit')[0]).toMatchObject({
+      severity: 'changed',
+      detail: "Stock from the store's cart limit, check it.",
+    });
+    expect(codes(result, 'stock_unmanaged')).toHaveLength(
+      candidates.filter((entry) => entry.is_in_stock && !limited.includes(entry)).length,
     );
   });
 
@@ -358,10 +367,90 @@ describe('stock', () => {
     });
   });
 
-  it('uses low_stock_remaining as the count, without a flag', () => {
+  it('uses low_stock_remaining as the count, without a flag, when there is no cart limit', () => {
     const result = map(catalogOf([product({ low_stock_remaining: 3 })]), { ...CHF, unmanagedStock: 7 });
     expect(result.rows[0]?.variantQuantity).toBe(3);
     expect(codes(result, 'stock_unmanaged')).toHaveLength(0);
+    expect(codes(result, 'stock_from_cart_limit')).toHaveLength(0);
+  });
+
+  describe('the cart limit (add_to_cart.maximum)', () => {
+    const real = (id: number) => REAL_PRODUCTS.find((entry) => entry.id === id)!;
+    const COUNTED_REAL = REAL_PRODUCTS.find(
+      (entry) => entry.type === 'simple' && entry.is_in_stock && entry.add_to_cart.maximum === 5,
+    )!;
+
+    it('is the stock when it is below 9999, and says so for that item', () => {
+      const result = map(catalogOf([COUNTED_REAL]), { ...CHF, unmanagedStock: 1 });
+      expect(result.rows[0]?.variantQuantity).toBe(5);
+      expect(codes(result, 'stock_from_cart_limit')).toEqual([
+        expect.objectContaining({
+          code: 'stock_from_cart_limit',
+          severity: 'changed',
+          listing: expect.stringContaining(COUNTED_REAL.name.slice(0, 10)),
+          detail: "Stock from the store's cart limit, check it.",
+        }),
+      ]);
+      expect(codes(result, 'stock_unmanaged')).toHaveLength(0);
+    });
+
+    it('wins over the low-stock count, and the file-wide note counts only items with neither', () => {
+      const result = map(
+        catalogOf([
+          product({ id: 1, low_stock_remaining: 2, add_to_cart: { maximum: 4 } }),
+          product({ id: 2, name: 'Mug two', low_stock_remaining: null, add_to_cart: { maximum: null } }),
+        ]),
+      );
+      expect(result.rows.map((row) => row.variantQuantity)).toEqual([4, 1]);
+      expect(codes(result, 'stock_not_public')[0]?.detail).toContain('1 item has neither');
+      expect(codes(result, 'stock_not_public')[0]?.detail).toContain('Connect the store for live stock.');
+    });
+
+    it('is not stock at 9999, which WooCommerce sends for unmanaged stock: the default quantity applies', () => {
+      const unmanaged = { ...COUNTED_REAL, add_to_cart: { maximum: 9_999 }, low_stock_remaining: null };
+      const result = map(catalogOf([unmanaged]), { ...CHF, unmanagedStock: 6 });
+      expect(result.rows[0]?.variantQuantity).toBe(6);
+      expect(codes(result, 'stock_unmanaged')[0]?.detail).toBe('Stock unknown, set to 6.');
+      expect(codes(result, 'stock_from_cart_limit')).toHaveLength(0);
+    });
+
+    it('is not stock for a one-per-order product, where the limit is the rule and not the count', () => {
+      const single = {
+        ...COUNTED_REAL,
+        sold_individually: true,
+        add_to_cart: { maximum: 1 },
+        low_stock_remaining: null,
+      };
+      const result = map(catalogOf([single]), { ...CHF, unmanagedStock: 6 });
+      expect(result.rows[0]?.variantQuantity).toBe(6);
+      expect(codes(result, 'stock_from_cart_limit')).toHaveLength(0);
+      expect(codes(result, 'stock_unmanaged')).toHaveLength(1);
+      const withCount = { ...single, low_stock_remaining: 2 };
+      expect(map(catalogOf([withCount])).rows[0]?.variantQuantity).toBe(2);
+    });
+
+    it('never makes an out-of-stock or backorder product available, whatever the limit says', () => {
+      const out = real(REAL_PRODUCTS.find((entry) => entry.type === 'simple' && !entry.is_in_stock)!.id);
+      const odd = REAL_PRODUCTS.find(
+        (entry) => entry.type === 'simple' && !entry.is_in_stock && entry.add_to_cart.maximum !== 9_999,
+      );
+      for (const entry of [out, odd ?? out, { ...COUNTED_REAL, is_in_stock: false }]) {
+        const result = map(catalogOf([entry]));
+        expect(result.rows[0]).toMatchObject({ variantQuantity: 0, state: 'paused' });
+        expect(codes(result, 'stock_from_cart_limit')).toHaveLength(0);
+      }
+      const backorder = map(catalogOf([{ ...COUNTED_REAL, is_on_backorder: true }]));
+      expect(backorder.rows[0]?.variantQuantity).toBe(0);
+      expect(codes(backorder, 'backorder_stock')).toHaveLength(1);
+    });
+
+    it('applies to a variation read as it does to a product, and not to the variable parent', () => {
+      const result = map(catalogOf([real(5398)]));
+      expect(result.rows.map((row) => row.variantQuantity)).toEqual(
+        [5524, 5525, 5526].map((id) => REAL_VARIATIONS[id]!.add_to_cart.maximum),
+      );
+      expect(real(5398).add_to_cart.maximum).not.toBeNull();
+    });
   });
 
   it('gives an out-of-stock product 0 whatever count it shows, and pauses the listing', () => {
@@ -384,7 +473,7 @@ describe('stock', () => {
       ]),
     );
     expect(codes(result, 'stock_not_public')).toHaveLength(1);
-    expect(codes(result, 'stock_not_public')[0]?.detail).toContain('1 item has no count here');
+    expect(codes(result, 'stock_not_public')[0]?.detail).toContain('1 item has neither');
   });
 });
 
