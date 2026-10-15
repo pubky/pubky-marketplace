@@ -226,6 +226,39 @@ describe('shop-system CSV presets through plan, dry-run and publish', () => {
       expect(store.manifests.size).toBe(0);
     });
 
+    it('plans the real Dezentralshop export in CHF and publishes the listings that get photos', async () => {
+      const importer = app();
+      const planned = await importer.planFile(
+        new BytesFile(bytesOf('woocommerce/dezentralshop-woo-export-2026-10-15.csv'), 'export.csv', 'text/csv'),
+        { ...DEFAULT_IMPORT_SETTINGS, currency: 'CHF', countryCode: 'CH' },
+      );
+      expect(planned.status).toBe('planned');
+      if (planned.status !== 'planned') return;
+      expect(planned.format).toBe('woocommerce');
+      expect(planned.rowCount).toBe(20);
+      expect(planned.lossReport).toMatchObject({ listingsRead: 12, listingsImported: 7, listingsSkipped: 5 });
+      expect(payloads().every((row) => row.currency === 'CHF' && row.exponent === 2)).toBe(true);
+
+      attachPhotos(['7718', '10507']);
+      const published = await importer.publish(planned.manifestId);
+      expect(published).toMatchObject({ status: 'complete', published: 2, synced: 3 });
+      expect(puts.map((record) => record.listingId).sort()).toEqual(['10507', '7718']);
+      expect(puts.find((record) => record.listingId === '7718')?.variants.map((variant) => variant.quantity)).toEqual([
+        7, 12,
+      ]);
+      expect(puts.find((record) => record.listingId === '7718')?.location.countryCode).toBe('CH');
+    });
+
+    it('refuses a Woo-looking export in an unknown language with a clear message and plans nothing', async () => {
+      const header = ['ID', 'Tipo', 'SKU', 'Nombre', ...Array.from({ length: 20 }, (_, index) => `Columna ${index}`)];
+      const result = await app().planFile(
+        new BytesFile(utf8(`${header.join(',')}\n1,simple,a,Algo\n`), 'es.csv', 'text/csv'),
+      );
+      expect(result).toMatchObject({ status: 'parse-failed', puts: 0 });
+      expect(result.status === 'parse-failed' && result.message).toMatch(/English, German, French and Italian/);
+      expect(store.manifests.size).toBe(0);
+    });
+
     it('needs the preset configuration to plan a shop-system file at all', async () => {
       const planned = await MarketplaceShopClientService.planBrowserFile(
         new BytesFile(bytesOf('woocommerce/sample_products.csv'), 'a.csv', 'text/csv'),

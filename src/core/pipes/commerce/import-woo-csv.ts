@@ -11,6 +11,7 @@ import {
   withSourceImages,
 } from './import-preset-rows';
 import { currencyExponent, type ImportSettings, majorToMinor } from './import-settings';
+import { localizeWooHeaders } from './import-woo-headers';
 
 /**
  * WooCommerce product CSV (the exporter's standard columns) to canonical
@@ -31,9 +32,9 @@ export type WooMapResult = {
   readonly report: ImportLossReport;
 };
 
+/** A Woo product export in English, German, French or Italian: Type, SKU and Regular price are present. */
 export function isWooProductCsv(headers: readonly string[]): boolean {
-  const keys = new Set(headers.map((header) => header.trim().toLowerCase()));
-  return keys.has('type') && keys.has('sku') && keys.has('regular price');
+  return localizeWooHeaders(headers) !== null;
 }
 
 const MAPPED_COLUMNS = new Set([
@@ -66,7 +67,7 @@ type ColumnRule = {
 
 const COLUMN_RULES: readonly ColumnRule[] = [
   { match: /^attribute \d+ (name|value\(s\))$/, code: 'attribute', detail: '', quiet: true },
-  { match: /^attribute \d+ (visible|global)$/, code: 'attribute', detail: '', quiet: true },
+  { match: /^attribute \d+ (visible|global|default)$/, code: 'attribute', detail: '', quiet: true },
   { match: /^(position|allow customer reviews\?|tax class|is featured\?)$/, code: 'ignored', detail: '', quiet: true },
   {
     match: /^visibility in catalog$/,
@@ -96,6 +97,11 @@ const COLUMN_RULES: readonly ColumnRule[] = [
     code: 'inventory_policy',
     detail: 'The one-per-order limit is not imported.',
     meaningful: (value) => value === '1' || value.toLowerCase() === 'yes',
+  },
+  {
+    match: /^low stock amount$/,
+    code: 'inventory_policy',
+    detail: 'The low-stock threshold is not imported.',
   },
   { match: /^purchase note$/, code: 'purchase_note', detail: 'Purchase notes are not imported.' },
   {
@@ -170,7 +176,7 @@ function readRecord(columns: CsvColumns, record: CsvRecord): WooRecord {
     types,
     base: types[0] ?? '',
     sku: columns.read(record, 'SKU'),
-    name: columns.read(record, 'Name'),
+    name: htmlToPlainText(columns.read(record, 'Name')).replace(/\s+/g, ' '),
     parent: columns.read(record, 'Parent'),
   };
 }
@@ -180,7 +186,16 @@ function label(record: WooRecord): string {
 }
 
 type PriceResult =
-  | { ok: true; minor: number; saleApplied: boolean; scheduleNote: 'none' | 'applied' | 'out_of_window' }
+  | {
+      ok: true;
+      minor: number;
+      saleApplied: boolean;
+      scheduleNote: 'none' | 'applied' | 'out_of_window';
+      regular: string;
+      sale: string;
+      from: string;
+      to: string;
+    }
   | { ok: false; code: string; detail: string };
 
 function parseDate(value: string): number | null {
@@ -231,6 +246,10 @@ function resolvePrice(
     minor,
     saleApplied: useSale && regularRaw !== '',
     scheduleNote: !scheduled ? 'none' : useSale ? 'applied' : 'out_of_window',
+    regular: regularRaw,
+    sale: saleRaw,
+    from: columns.read(record, 'Date sale price starts'),
+    to: columns.read(record, 'Date sale price ends'),
   };
 }
 
@@ -308,9 +327,49 @@ type Candidate = {
   readonly options: Record<string, string>;
 };
 
+/**
+ * A variation's Parent holds the parent's SKU (Woo's own export does this, and
+ * a numeric-looking SKU such as 7718 is common), or `id:N`, or a bare ID. Try
+ * them in that order; only a variable product can be a parent.
+ */
+function resolveParent(
+  reference: string,
+  bySku: ReadonlyMap<string, WooRecord>,
+  byId: ReadonlyMap<string, WooRecord>,
+): WooRecord | undefined {
+  if (reference === '') return undefined;
+  const candidates: (WooRecord | undefined)[] = [bySku.get(reference) ?? bySku.get(reference.toLowerCase())];
+  const idReference = /^id:\s*(\d+)$/i.exec(reference);
+  if (idReference) candidates.push(byId.get(idReference[1] as string));
+  if (/^\d+$/.test(reference)) candidates.push(byId.get(reference));
+  return candidates.find((candidate) => candidate?.base === 'variable');
+}
+
 export function mapWooProductCsv(input: WooMapInput): WooMapResult {
   const { table, sellerPubky, settings, now } = input;
-  const columns = csvColumns(table.headers);
+  const localized = localizeWooHeaders(table.headers);
+  if (!localized) {
+    return {
+      rows: [],
+      report: {
+        format: 'woocommerce',
+        listingsRead: 0,
+        listingsImported: 0,
+        listingsSkipped: 0,
+        losses: [
+          loss(
+            'unknown_language',
+            'skipped',
+            'Header',
+            'The column headers are not in English, German, French or Italian, so no column could be read.',
+            undefined,
+            1,
+          ),
+        ],
+      },
+    };
+  }
+  const columns = csvColumns(localized.headers);
   const exponent = currencyExponent(settings.currency);
   const losses: ImportLoss[] = [];
   const records = table.records.map((record) => readRecord(columns, record));
@@ -329,12 +388,8 @@ export function mapWooProductCsv(input: WooMapInput): WooMapResult {
   const childrenOf = new Map<WooRecord, WooRecord[]>();
   const orphans: WooRecord[] = [];
   for (const variation of variations) {
-    const reference = variation.parent;
-    const idMatch = /^id:\s*(\d+)$/i.exec(reference);
-    const parent = idMatch
-      ? byId.get(idMatch[1] as string)
-      : (bySku.get(reference) ?? bySku.get(reference.toLowerCase()));
-    if (!parent || parent.base !== 'variable') {
+    const parent = resolveParent(variation.parent, bySku, byId);
+    if (!parent) {
       orphans.push(variation);
       continue;
     }
@@ -424,7 +479,7 @@ export function mapWooProductCsv(input: WooMapInput): WooMapResult {
             'compare_at_price',
             'dropped',
             'Regular price',
-            'The regular price is dropped; the sale price is used.',
+            `Regular price ${price.regular} dropped; sale price ${price.sale} used.`,
             label(source),
             source.record.line,
           ),
@@ -437,8 +492,8 @@ export function mapWooProductCsv(input: WooMapInput): WooMapResult {
             price.scheduleNote === 'applied' ? 'dropped' : 'changed',
             'Date sale price starts',
             price.scheduleNote === 'applied'
-              ? 'The sale price is used without its schedule.'
-              : 'The sale is outside its dates, so the regular price is used.',
+              ? `Sale price ${price.sale} applied while active (${price.from || 'any time'} to ${price.to || 'no end'}). The schedule itself is not imported.`
+              : `Regular price ${price.regular} applied. Sale price ${price.sale} is not active (${price.from || 'any time'} to ${price.to || 'no end'}).`,
             label(source),
             source.record.line,
           ),
@@ -622,7 +677,7 @@ export function mapWooProductCsv(input: WooMapInput): WooMapResult {
 
   const imported = new Set(finalized.rows.map((row) => row.listingId));
   const importedRecords = [...listingOfSource].filter(([, id]) => imported.has(id)).map(([source]) => source);
-  losses.push(...columnLosses(table, columns, importedRecords));
+  losses.push(...columnLosses(localized.headers, table.headers, columns, importedRecords));
   if (imported.size > 0) {
     losses.push(
       loss(
@@ -670,10 +725,16 @@ export function mapWooProductCsv(input: WooMapInput): WooMapResult {
   };
 }
 
-function columnLosses(table: CsvTable, columns: CsvColumns, sources: readonly WooRecord[]): ImportLoss[] {
+function columnLosses(
+  headers: readonly string[],
+  originalHeaders: readonly string[],
+  columns: CsvColumns,
+  sources: readonly WooRecord[],
+): ImportLoss[] {
   const out: ImportLoss[] = [];
   const grouped = new Map<string, { rule: ColumnRule; headers: string[]; rows: Set<WooRecord> }>();
-  for (const header of table.headers) {
+  for (const [position, header] of headers.entries()) {
+    const shown = originalHeaders[position] ?? header;
     const key = header.toLowerCase();
     if (MAPPED_COLUMNS.has(key) || key === '') continue;
     const rule = COLUMN_RULES.find((candidate) => candidate.match.test(key));
@@ -686,7 +747,7 @@ function columnLosses(table: CsvTable, columns: CsvColumns, sources: readonly Wo
         loss(
           'unmapped_header',
           'dropped',
-          header,
+          shown,
           `The column has no Pubky field and was not imported. ${rows.length} row${rows.length === 1 ? ' has' : 's have'} a value.`,
           undefined,
           undefined,
@@ -695,7 +756,7 @@ function columnLosses(table: CsvTable, columns: CsvColumns, sources: readonly Wo
       continue;
     }
     const entry = grouped.get(rule.code) ?? { rule, headers: [], rows: new Set<WooRecord>() };
-    entry.headers.push(header);
+    entry.headers.push(shown);
     for (const row of rows) entry.rows.add(row);
     grouped.set(rule.code, entry);
   }

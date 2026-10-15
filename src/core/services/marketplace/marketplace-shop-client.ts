@@ -49,6 +49,7 @@ import type { PresetRow } from '@/pipes/commerce/import-preset-rows';
 import { type ImportSettings, shopifyWorkExponent } from '@/pipes/commerce/import-settings';
 import { buildShopifyPresetRows } from '@/pipes/commerce/import-shopify-csv';
 import { isWooProductCsv, mapWooProductCsv } from '@/pipes/commerce/import-woo-csv';
+import { looksLikeUnknownLanguageWooExport, WOO_UNKNOWN_LANGUAGE_MESSAGE } from '@/pipes/commerce/import-woo-headers';
 import type { InventoryManifestStore } from '@/services/marketplace/marketplace-import-store';
 
 /**
@@ -331,6 +332,9 @@ export class MarketplaceShopClientService {
   }
 
   static formatPlanFailure(error: PubkyShopError): string {
+    if (error.code === 'invalid_csv_header' && error.details.field === 'woo_language') {
+      return WOO_UNKNOWN_LANGUAGE_MESSAGE;
+    }
     if (error.code === 'limit_exceeded') {
       const limit = error.details.limit ?? 0;
       const observed = error.details.observed ?? 0;
@@ -526,6 +530,9 @@ export class MarketplaceShopClientService {
         const headerBytes = new Uint8Array(await file.slice(0, headerEnd).arrayBuffer());
         const header = headerCellsOf(headerBytes);
         const shopify = isShopifyProductCsv(header);
+        if (!shopify && looksLikeUnknownLanguageWooExport(header)) {
+          return { ok: false, error: new PubkyShopError('invalid_csv_header', { field: 'woo_language' }) };
+        }
         if (shopify || isWooProductCsv(header)) {
           if (!preset) {
             return { ok: false, error: new PubkyShopError('invalid_configuration', { field: 'sellerPubky' }) };

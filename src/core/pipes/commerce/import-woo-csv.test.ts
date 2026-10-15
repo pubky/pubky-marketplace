@@ -366,4 +366,114 @@ describe('WooCommerce mapping rules', () => {
     });
     expect(codes(result, 'encoding_fallback')).toHaveLength(1);
   });
+
+  it('resolves a variation parent as SKU first, then id:N, then a bare ID, and only to a variable product', () => {
+    const result = map(
+      csv(
+        '7718,variable,other,Decoy by id,1,,Text,,,1,,,,,,,,Size,"S, M",,',
+        '1,variable,7718,Real parent,1,,Text,,,1,,,,,,,,Size,"S, M",,',
+        '2,variation,,Child by sku,1,,,,,1,3,,10,,,,7718,Size,S,,',
+        '3,variable,sku-b,Parent B,1,,Text,,,1,,,,,,,,Size,"S, M",,',
+        '4,variation,,Child by id colon,1,,,,,1,4,,10,,,,id:3,Size,S,,',
+        '5,variable,sku-c,Parent C,1,,Text,,,1,,,,,,,,Size,"S, M",,',
+        '6,variation,,Child by bare id,1,,,,,1,5,,10,,,,5,Size,S,,',
+        '7,simple,not-variable,Simple,1,,Text,,,1,2,,10,,,,,,,,',
+        '8,variation,,Child of a simple,1,,,,,1,2,,10,,,,not-variable,Size,S,,',
+      ),
+    );
+    const byListing = (id: string) =>
+      result.rows.filter((row) => row.listingId === id).map((row) => row.variantQuantity);
+    expect(byListing('7718')).toEqual([3]);
+    expect(byListing('sku-b')).toEqual([4]);
+    expect(byListing('sku-c')).toEqual([5]);
+    expect(byListing('other')).toEqual([]);
+    expect(codes(result, 'variation_orphan').map((loss) => loss.listing)).toEqual(['Child of a simple']);
+    expect(codes(result, 'no_variations').map((loss) => loss.listing)).toEqual(['Decoy by id']);
+  });
+
+  it('strips HTML from variation names and entities from product names', () => {
+    const result = map(
+      csv(
+        '1,variable,shirt,Shirt &amp; Co,1,,Text,,,1,,,,,,,,Size,"S, M",,',
+        '2,variation,,Shirt &amp; Co<span> - </span>M,1,,,,,1,3,,,,,,shirt,Size,M,,',
+      ),
+    );
+    expect(result.rows).toHaveLength(0);
+    expect(codes(result, 'price_missing')[0]?.listing).toBe('Shirt & Co - M');
+  });
+
+  it('gives a variation with no Images the parent images, and keeps variation-only images', () => {
+    const result = map(
+      csv(
+        '1,variable,shirt,Shirt,1,,Text,,,1,,,,,,"https://cdn.example.com/p.jpg",,Size,"S, M",,',
+        '2,variation,,Shirt S,1,,,,,1,3,,10,,,,shirt,Size,S,,',
+        '3,variation,,Shirt M,1,,,,,1,3,,10,,,"https://cdn.example.com/m.jpg",shirt,Size,M,,',
+      ),
+    );
+    const urls = (row: (typeof result.rows)[number]) =>
+      (JSON.parse(row.extraFields[SOURCE_IMAGE_URLS_FIELD] ?? '[]') as { url: string }[]).map((image) => image.url);
+    expect(urls(result.rows[0]!)).toEqual(['https://cdn.example.com/p.jpg', 'https://cdn.example.com/m.jpg']);
+    expect(urls(result.rows[1]!)).toEqual(urls(result.rows[0]!));
+  });
+
+  it('says which price applied, with the dates, for an active, an ended and a future sale', () => {
+    const result = map(
+      csv(
+        '1,simple,live,Live sale,1,,Text,2026-10-01,2026-10-31,1,2,8,10,,,,,,,,',
+        '2,simple,over,Expired sale,1,,Text,2026-01-01,2026-02-01,1,2,8,10,,,,,,,,',
+        '3,simple,soon,Future sale,1,,Text,2027-01-01,,1,2,8,10,,,,,,,,',
+      ),
+    );
+    const detail = (listing: string) => codes(result, 'sale_schedule').find((loss) => loss.listing === listing);
+    expect(detail('Live sale')).toMatchObject({
+      severity: 'dropped',
+      detail: expect.stringContaining('Sale price 8 applied while active (2026-10-01 to 2026-10-31)'),
+    });
+    expect(detail('Expired sale')).toMatchObject({
+      severity: 'changed',
+      detail: 'Regular price 10 applied. Sale price 8 is not active (2026-01-01 to 2026-02-01).',
+    });
+    expect(detail('Future sale')?.detail).toBe(
+      'Regular price 10 applied. Sale price 8 is not active (2027-01-01 to no end).',
+    );
+  });
+
+  it('keeps the whole sale window through its last day', () => {
+    const result = map(csv('1,simple,last,Last day,1,,Text,2026-10-01,2026-10-15,1,2,8,10,,,,,,,,'));
+    expect(result.rows[0]?.amountMinor).toBe(800);
+  });
+
+  it('reports a file whose headers no table knows instead of reading it', () => {
+    const parsed = parseCsvTable('ID,Tipo,SKU,Nombre,Precio normal\n1,simple,a,Algo,5\n');
+    if (!parsed.ok) throw new Error('parse');
+    const result = mapWooProductCsv({
+      table: parsed.table,
+      sellerPubky: SELLER,
+      settings: DEFAULT_IMPORT_SETTINGS,
+      now: NOW,
+    });
+    expect(result.rows).toEqual([]);
+    expect(codes(result, 'unknown_language')).toHaveLength(1);
+    expect(result.report.losses[0]?.detail).toMatch(/English, German, French or Italian/);
+  });
+
+  it('reads a French and an Italian export the same way as the English one', () => {
+    const english = map(csv('1,simple,a,Item,1,,Text,,,1,4,,9.5,Cat,,,,,,,'));
+    const fr = parseCsvTable(
+      'ID;Type;UGS;Nom;Publié;Description;En stock\u00a0?;Stock;Tarif promo;Tarif régulier;Catégories\n1;simple;a;Item;1;Text;1;4;;9.5;Cat\n',
+    );
+    const it = parseCsvTable(
+      'ID;Tipo;SKU;Nome;Pubblicato;Descrizione;In stock?;Magazzino;Prezzo in offerta;Prezzo di listino;Categorie\n1;simple;a;Item;1;Text;1;4;;9.5;Cat\n',
+    );
+    for (const parsed of [fr, it]) {
+      if (!parsed.ok) throw new Error('parse');
+      const result = mapWooProductCsv({
+        table: parsed.table,
+        sellerPubky: SELLER,
+        settings: DEFAULT_IMPORT_SETTINGS,
+        now: NOW,
+      });
+      expect(result.rows).toEqual(english.rows);
+    }
+  });
 });
