@@ -3028,7 +3028,22 @@ export class CommerceApplication {
 
   static async fetchListing(ownerPubky: string, listingId: string): Promise<CommerceListingRecord> {
     const url = CommerceRecordNormalizer.listingUri(ownerPubky, listingId);
-    const record = CommerceRecordNormalizer.listing(await CommerceHomeserverService.fetchJson(url));
+    return this.canonicalListing(await CommerceHomeserverService.fetchJson(url), ownerPubky, listingId);
+  }
+
+  /** {@link fetchListing}, with a missing record answered as `null` instead of a reported 404. */
+  private static async fetchListingIfFound(
+    ownerPubky: string,
+    listingId: string,
+  ): Promise<CommerceListingRecord | null> {
+    const stored = await CommerceHomeserverService.fetchJsonIfFound(
+      CommerceRecordNormalizer.listingUri(ownerPubky, listingId),
+    );
+    return stored.found ? this.canonicalListing(stored.json, ownerPubky, listingId) : null;
+  }
+
+  private static canonicalListing(raw: unknown, ownerPubky: string, listingId: string): CommerceListingRecord {
+    const record = CommerceRecordNormalizer.listing(raw);
     if (record.ownerPubky !== ownerPubky || record.listingId !== listingId) {
       throw Err.validation(
         ValidationErrorCode.INVALID_INPUT,
@@ -4065,16 +4080,11 @@ export class CommerceApplication {
 
   /**
    * Whether the seller's homeserver still holds the listing record. Only a
-   * 404 answers false; any other failure throws, so the caller stays pending.
+   * 404 answers false, without reporting it; any other failure throws, so the
+   * caller stays pending.
    */
   private static async hasPublishedListingRecord(listing: CommerceListingRecord): Promise<boolean> {
-    try {
-      await this.fetchListing(listing.ownerPubky, listing.listingId);
-      return true;
-    } catch (error) {
-      if (isAppError(error) && isNotFound(error)) return false;
-      throw error;
-    }
+    return (await this.fetchListingIfFound(listing.ownerPubky, listing.listingId)) !== null;
   }
 
   /**
@@ -4350,18 +4360,23 @@ export class CommerceApplication {
     assertPublishableListingStock(record, 'putVerifiedPublicListing');
     let current: Record<string, unknown> = {};
     let exists = false;
-    try {
-      const fetched = await CommerceHomeserverService.fetchJson(url);
-      if (!isPlainRecord(fetched)) {
+    const published = await CommerceHomeserverService.fetchJsonIfFound(url);
+    if (published.found) {
+      if (!isPlainRecord(published.json)) {
         throw Err.validation(ValidationErrorCode.INVALID_INPUT, 'The published listing is not a JSON object.', {
           service: ErrorService.Homeserver,
           operation: 'putVerifiedPublicListing',
         });
       }
-      current = fetched;
+      current = published.json;
       exists = true;
-    } catch (error) {
-      if (!(isAppError(error) && isNotFound(error) && record.revision === 1)) throw error;
+    } else if (record.revision !== 1) {
+      // Only a first publish may find nothing: an edit whose base record is gone is a real failure.
+      throw Err.client(ClientErrorCode.NOT_FOUND, 'The published listing is missing. Reload and try again.', {
+        service: ErrorService.Homeserver,
+        operation: 'putVerifiedPublicListing',
+        context: { statusCode: HttpStatusCode.NOT_FOUND },
+      });
     }
 
     const scrubbed = stripForbiddenPublicReserveKeys(current);
@@ -4402,16 +4417,11 @@ export class CommerceApplication {
             operation: 'putVerifiedPublicListing',
           });
         }
-      } else {
-        try {
-          await CommerceHomeserverService.fetchJson(url);
-          throw Err.client(ClientErrorCode.CONFLICT, 'The published listing changed. Reload and try again.', {
-            service: ErrorService.Homeserver,
-            operation: 'putVerifiedPublicListing',
-          });
-        } catch (error) {
-          if (!(isAppError(error) && isNotFound(error))) throw error;
-        }
+      } else if ((await CommerceHomeserverService.fetchJsonIfFound(url)).found) {
+        throw Err.client(ClientErrorCode.CONFLICT, 'The published listing changed. Reload and try again.', {
+          service: ErrorService.Homeserver,
+          operation: 'putVerifiedPublicListing',
+        });
       }
       await retryHomeserverWrite(HttpMethod.PUT, () =>
         this.withListingWriteLock(attempt, async () => {
@@ -4476,17 +4486,13 @@ export class CommerceApplication {
     record: CommerceListingRecord,
   ): Promise<{ record: unknown } | undefined> {
     for (let attempt = 0; ; attempt += 1) {
-      try {
-        const fetched = await CommerceHomeserverService.fetchJson(url);
-        const staleLag = isPlainRecord(fetched) && fetched.revision === record.revision - 1;
-        if (!staleLag || attempt >= LISTING_READ_BACK_RETRY_DELAYS_MS.length)
-          return staleLag ? undefined : { record: fetched };
-      } catch (error) {
-        const missing = isAppError(error) && isNotFound(error);
-        if (!missing || attempt >= LISTING_READ_BACK_RETRY_DELAYS_MS.length) {
-          if (missing) return undefined;
-          throw error;
-        }
+      const lastAttempt = attempt >= LISTING_READ_BACK_RETRY_DELAYS_MS.length;
+      const read = await CommerceHomeserverService.fetchJsonIfFound(url);
+      if (read.found) {
+        const staleLag = isPlainRecord(read.json) && read.json.revision === record.revision - 1;
+        if (!staleLag || lastAttempt) return staleLag ? undefined : { record: read.json };
+      } else if (lastAttempt) {
+        return undefined;
       }
       await new Promise<void>((resolve) => {
         setTimeout(resolve, LISTING_READ_BACK_RETRY_DELAYS_MS[attempt]);
