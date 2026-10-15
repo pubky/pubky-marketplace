@@ -301,7 +301,7 @@ export function MarketplaceInventory() {
           if (!open) importer.reset();
         }}
       >
-        <DialogContent className="border-border bg-popover">
+        <DialogContent className="max-h-[90vh] overflow-y-auto border-border bg-popover">
           <DialogHeader>
             <DialogTitle>Import listings</DialogTitle>
           </DialogHeader>
@@ -312,6 +312,24 @@ export function MarketplaceInventory() {
             message={importer.message}
             counts={importer.counts}
             progress={importer.progress}
+            progressPhase={importer.progressPhase}
+            busy={importer.busy}
+            publishDisabledReason={importer.publishDisabledReason}
+            publishNotice={importer.publishNotice}
+            lossSummary={importer.lossSummary}
+            settings={
+              importer.format
+                ? {
+                    control: importer.form.control,
+                    currencyOptions: importer.currencyOptions,
+                    conditionOptions: importer.conditionOptions,
+                    format: importer.format,
+                    onApply: () => void importer.applySettings(),
+                    onChooseFreeShipping: () => void importer.chooseFreeShipping(),
+                  }
+                : undefined
+            }
+            onDownloadLossReport={importer.downloadLossReport}
             onFile={(file) => void importer.planFile(file)}
             onPublish={() => void importer.publish()}
             onResume={() => void importer.resume()}

@@ -195,7 +195,8 @@ describe('MarketplaceGetPaidSettings status derivation', () => {
 
   describe('deriveBitcoinToggleBlocker', () => {
     it.each([
-      { lockServerConnected: false, locksError: null, accountClaimed: null, expected: 'both' },
+      { lockServerConnected: false, locksError: null, accountClaimed: null, expected: 'lock-server' },
+      { lockServerConnected: true, locksError: 'rejected', accountClaimed: null, expected: 'lock-server' },
       { lockServerConnected: false, locksError: null, accountClaimed: false, expected: 'both' },
       { lockServerConnected: false, locksError: null, accountClaimed: true, expected: 'lock-server' },
       { lockServerConnected: true, locksError: 'rejected', accountClaimed: true, expected: 'lock-server' },

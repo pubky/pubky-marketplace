@@ -1,4 +1,5 @@
 import { HttpMethod } from '@/libs/http/http.types';
+import { AUTH_IO_TIMEOUT_MS } from '@/libs/http/io-deadline';
 import { Logger } from '@/libs/logger/logger';
 import type { Pubky } from '@/models/models.types';
 import { bootstrapApi } from '@/services/nexus/bootstrap/bootstrap.api';
@@ -19,7 +20,11 @@ export class NexusBootstrapService {
    */
   static async fetch(pubky: Pubky): Promise<NexusBootstrapResponse> {
     const url = bootstrapApi.get(pubky);
-    const data = await queryNexus<NexusBootstrapResponse>({ url });
+    const data = await queryNexus<NexusBootstrapResponse>({
+      url,
+      timeoutMs: AUTH_IO_TIMEOUT_MS,
+      totalTimeoutMs: 75_000,
+    });
     Logger.debug('Bootstrap data fetched successfully', { data });
     return data;
   }

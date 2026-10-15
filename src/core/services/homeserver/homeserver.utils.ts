@@ -1,4 +1,4 @@
-import { type AuthFlow } from '@synonymdev/pubky';
+import { type AuthFlow, type Session } from '@synonymdev/pubky';
 import { AppError } from '@/libs/error/error';
 import { AuthErrorCode, ClientErrorCode, ServerErrorCode, TimeoutErrorCode } from '@/libs/error/error.codes';
 import { Err } from '@/libs/error/error.factories';
@@ -224,7 +224,8 @@ export const createCancelableAuthApproval = (
   options?: {
     pollIntervalMs?: number;
     maxPollAttempts?: number;
-    resume?: () => Pick<AuthFlow, 'tryPollOnce' | 'free'>;
+    resume?: () => Pick<AuthFlow, 'tryPollOnce' | 'free'> | Promise<Pick<AuthFlow, 'tryPollOnce' | 'free'>>;
+    onCanceledSession?: (session: Session) => Promise<void>;
   },
 ): CancelableAuthApproval => {
   let flow = initialFlow;
@@ -266,7 +267,13 @@ export const createCancelableAuthApproval = (
 
       try {
         const maybeSession = await flow.tryPollOnce();
-        if (maybeSession) return maybeSession;
+        if (maybeSession) {
+          if (canceled) {
+            await options?.onCanceledSession?.(maybeSession);
+            throw createCanceledError();
+          }
+          return maybeSession;
+        }
       } catch (error) {
         if (canceled) throw createCanceledError();
         // A mobile browser cuts the page's network once it goes to the background (the user is approving in
@@ -283,9 +290,20 @@ export const createCancelableAuthApproval = (
               // Ignore double-free or already-finalized WASM objects.
             }
             try {
-              flow = options.resume();
+              const resumed = await options.resume();
+              if (canceled) {
+                // cancel() freed the previous flow while this one was being resumed.
+                try {
+                  resumed.free();
+                } catch {
+                  // Ignore double-free or already-finalized WASM objects.
+                }
+                throw createCanceledError();
+              }
+              flow = resumed;
               continue;
             } catch (resumeFailure) {
+              if (canceled) throw createCanceledError();
               // The channel cannot be resumed: fall through to the dead-flow error below.
               resumeError = resumeFailure;
             }

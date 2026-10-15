@@ -449,6 +449,7 @@ describe('LocalCommerceService', () => {
         generation: stored,
         auctionRegistration: command,
         readBackPending: false,
+        registrationStatus: undefined,
       });
     });
 
@@ -979,6 +980,33 @@ describe('LocalCommerceService', () => {
       await LocalCommerceService.deleteShippingPreset(COMMERCE_FIXTURE_SELLER, 'p1');
       await LocalCommerceService.deleteShippingPreset(COMMERCE_FIXTURE_SELLER, 'p2');
       expect(await LocalCommerceService.getShippingPresets(COMMERCE_FIXTURE_SELLER)).toEqual([]);
+    });
+
+    it('stores a preset in its own currency and leaves an existing US dollar preset untouched', async () => {
+      await CommerceShippingPresetModel.table.put({
+        id: `${COMMERCE_FIXTURE_SELLER}:legacy`,
+        owner_id: COMMERCE_FIXTURE_SELLER,
+        label: 'Saved before currencies',
+        price_minor: 1_200,
+        currency: 'USD',
+        estimated_min_days: 2,
+        estimated_max_days: 6,
+        created_at: 10,
+        updated_at: 10,
+      });
+      await LocalCommerceService.upsertShippingPreset(
+        COMMERCE_FIXTURE_SELLER,
+        'chf',
+        { ...presetInput('Swiss post', 990), currency: 'CHF' },
+        200,
+      );
+
+      const presets = await LocalCommerceService.getShippingPresets(COMMERCE_FIXTURE_SELLER);
+
+      expect(presets.map(({ label, currency, price_minor }) => ({ label, currency, price_minor }))).toEqual([
+        { label: 'Swiss post', currency: 'CHF', price_minor: 990 },
+        { label: 'Saved before currencies', currency: 'USD', price_minor: 1_200 },
+      ]);
     });
 
     it('keeps presets account-scoped', async () => {

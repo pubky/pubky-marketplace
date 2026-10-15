@@ -11,6 +11,7 @@ import {
   marketplaceCheckoutRefusalMessage,
   marketplaceDropRefusalMessage,
   marketplaceFailureMessage,
+  marketplaceListingNotActiveMessage,
   marketplaceOfferCheckoutFailureMessage,
   marketplaceOfferFailureMessage,
   marketplacePaymentMethodFailureMessage,
@@ -115,6 +116,11 @@ describe('marketplaceCheckoutRefusalMessage', () => {
       'Only available fixed-price listings can enter checkout.',
       'This listing is not available for checkout.',
     ],
+    [
+      'UPSTREAM_UNAVAILABLE',
+      "The seller's homeserver could not be reached. Try again shortly.",
+      "We couldn't reach the seller's shop. Try again in a moment.",
+    ],
   ] as const;
 
   it.each(mappedRefusals)('maps %s refusal %s to static copy', (code, message, expected) => {
@@ -136,6 +142,21 @@ describe('marketplaceCheckoutRefusalMessage', () => {
 });
 
 describe('marketplacePaymentMethodFailureMessage', () => {
+  it('names a removed listing on a bind refused with LISTING_NOT_ACTIVE', () => {
+    const removedCopy = marketplaceListingNotActiveMessage({ code: 'LISTING_NOT_ACTIVE', reason: 'listing_removed' });
+    const error = new AppError({
+      category: ErrorCategory.Client,
+      code: ClientErrorCode.CONFLICT,
+      message: 'SENTINEL_PAYMENT_METHOD_WIRE',
+      service: ErrorService.Marketplace,
+      operation: 'bindPaymentMethod',
+      context: { statusCode: 409, serviceCode: 'LISTING_NOT_ACTIVE', reason: 'listing_removed' },
+    });
+    expect(removedCopy).toBe('The seller removed this listing.');
+    expect(marketplacePaymentMethodFailureMessage(error, 'fallback')).toBe(removedCopy);
+    expect(marketplacePaymentMethodReasonMessage('listing_removed')).toBe(removedCopy);
+  });
+
   it('maps a capability_required family from the service code', () => {
     const error = new AppError({
       category: ErrorCategory.Client,
@@ -587,5 +608,36 @@ describe('Bitkit purchase bootstrap reason codes', () => {
 
   it('an unknown bootstrap code falls back to static copy, never the code', () => {
     expect(marketplaceBootstrapFailureMessage('something_new')).toBe(MARKETPLACE_FAILURE_MESSAGES.sessionStart);
+  });
+});
+
+describe('marketplaceListingNotActiveMessage', () => {
+  it.each([
+    ['listing_paused', 'The seller paused this listing. Check back later.'],
+    ['listing_ended', 'This listing has ended.'],
+    ['listing_removed', 'The seller removed this listing.'],
+    ['listing_not_active', "This item isn't for sale right now."],
+  ] as const)('maps reason %s to static copy', (reason, expected) => {
+    expect(
+      marketplaceListingNotActiveMessage({
+        code: 'LISTING_NOT_ACTIVE',
+        message: 'The seller is not selling this listing right now.',
+        reason,
+      } as { code: string; reason: string }),
+    ).toBe(expected);
+  });
+
+  it('falls back to not-for-sale copy for a missing or unknown reason', () => {
+    expect(marketplaceListingNotActiveMessage({ code: 'LISTING_NOT_ACTIVE' })).toBe(
+      "This item isn't for sale right now.",
+    );
+    expect(marketplaceListingNotActiveMessage({ code: 'LISTING_NOT_ACTIVE', reason: 'listing_archived' })).toBe(
+      "This item isn't for sale right now.",
+    );
+  });
+
+  it('returns null for any other code', () => {
+    expect(marketplaceListingNotActiveMessage({ code: 'INVALID_STATE', reason: 'listing_paused' })).toBeNull();
+    expect(marketplaceListingNotActiveMessage({ code: 'UPSTREAM_UNAVAILABLE' })).toBeNull();
   });
 });

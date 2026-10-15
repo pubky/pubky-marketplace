@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { PASSPORT_CALLBACK_HTML, PASSPORT_CALLBACK_SCRIPT } from './passport-callback';
+import { PASSPORT_CALLBACK_HTML, PASSPORT_CALLBACK_SCRIPT, passportCallbackHtml } from './passport-callback';
 import { PASSPORT_CALLBACK_MESSAGE } from './passport-popup';
 
 type Opener = { closed: boolean; postMessage: ReturnType<typeof vi.fn> };
@@ -66,4 +66,8 @@ describe('Passport return page', () => {
     expect(PASSPORT_CALLBACK_SCRIPT).not.toContain('innerHTML');
     expect(PASSPORT_CALLBACK_SCRIPT).not.toContain("'*'");
   });
+});
+
+it('keeps the no-opener fallback within the configured Shop mount', () => {
+  expect(passportCallbackHtml('/shop-embed')).toContain('href="/shop-embed/marketplace"');
 });

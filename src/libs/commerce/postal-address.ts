@@ -172,7 +172,29 @@ export function normalizeCountryCode(countryCode: string): string {
 export const DEFAULT_ADDRESS_COUNTRY = 'US';
 
 // ISO 3166-1 user-assigned codes and CLDR macro-regions: two letters, but no country.
-const NON_COUNTRY_REGION = /^(AA|Q[M-Z]|X[A-Z]|ZZ|EU|EZ|UN)$/;
+export const NON_COUNTRY_REGION = /^(AA|Q[M-Z]|X[A-Z]|ZZ|EU|EZ|UN)$/;
+
+// EU institutions write Greece and the United Kingdom as EL and UK. CLDR
+// knows UK as an alias but not EL, so both are mapped here for every runtime.
+const COUNTRY_CODE_ALIASES: Readonly<Record<string, string>> = { UK: 'GB', EL: 'GR' };
+
+/**
+ * The ISO 3166-1 code for a two-letter region, with aliases and retired codes
+ * replaced (UK and EL become GB and GR, FX becomes FR, YU becomes RS). Anything
+ * that is not two letters comes back normalized but otherwise unchanged.
+ */
+export function canonicalCountryCode(countryCode: string): string {
+  const code = normalizeCountryCode(countryCode);
+  if (!/^[A-Z]{2}$/.test(code)) return code;
+  const aliased = COUNTRY_CODE_ALIASES[code];
+  if (aliased) return aliased;
+  try {
+    const region = new Intl.Locale(Intl.getCanonicalLocales(`und-${code}`)[0]).region;
+    return region && /^[A-Z]{2}$/.test(region) ? region : code;
+  } catch {
+    return code;
+  }
+}
 
 /**
  * The country a new address starts with: the region of the first locale

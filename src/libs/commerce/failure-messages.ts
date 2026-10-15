@@ -118,6 +118,10 @@ const CHECKOUT_REFUSAL_MESSAGES: ReadonlyMap<string, string> = new Map([
     'INVALID_STATE:Only available fixed-price listings can enter checkout.',
     'This listing is not available for checkout.',
   ],
+  [
+    "UPSTREAM_UNAVAILABLE:The seller's homeserver could not be reached. Try again shortly.",
+    "We couldn't reach the seller's shop. Try again in a moment.",
+  ],
 ]);
 
 /**
@@ -152,7 +156,7 @@ export const MARKETPLACE_BOOTSTRAP_CODE_MESSAGES: ReadonlyMap<string, string> = 
  * The signer a bootstrap message names: whichever approved the Shop sign-in,
  * or either phone signer for a Pubky Ring (cookie) sign-in.
  */
-export type BootstrapSignerName = 'Bitkit' | 'Pubky Passport' | 'Pubky Ring or Bitkit';
+export type BootstrapSignerName = 'Bitkit' | 'Pubky Passport' | 'Pubky Ring' | 'Pubky Ring or Bitkit' | 'your signer';
 
 function signerBootstrapMessage(code: string, signer: BootstrapSignerName): string | undefined {
   switch (code) {
@@ -280,6 +284,7 @@ export const MARKETPLACE_PAYMENT_METHOD_REASON_MESSAGES: ReadonlyMap<string, str
   ['invalid_sats', 'Enter a whole-number amount greater than ₿0.'],
   ['invalid_transaction_ref', 'The payment reference is not valid.'],
   ['INVALID_RESPONSE', MARKETPLACE_FAILURE_MESSAGES.unavailable],
+  ['listing_removed', 'The seller removed this listing.'],
   ['locks_managed', 'A Locks-correlated payment advances only by server-side verification.'],
   ['method_mismatch', 'The payment method does not match this checkout.'],
   ['method_unavailable', 'The seller has not configured this payment method.'],
@@ -458,4 +463,26 @@ export function shippingFailureMessage(error: unknown, fallback: string): string
     if (mapped) return mapped;
   }
   return marketplaceFailureMessage(marketplaceErrorCode(error), fallback, error);
+}
+
+/**
+ * Copy for the service's `LISTING_NOT_ACTIVE` refusal (checkout, offers and
+ * bids), keyed by `error.reason`: the seller's listing record is not `active`.
+ */
+const LISTING_NOT_FOR_SALE = "This item isn't for sale right now.";
+
+const LISTING_NOT_ACTIVE_REASON_MESSAGES: ReadonlyMap<string, string> = new Map([
+  ['listing_paused', 'The seller paused this listing. Check back later.'],
+  ['listing_ended', 'This listing has ended.'],
+  ['listing_removed', 'The seller removed this listing.'],
+  ['listing_not_active', LISTING_NOT_FOR_SALE],
+]);
+
+/** Copy for a `LISTING_NOT_ACTIVE` refusal, or null for any other failure. */
+export function marketplaceListingNotActiveMessage(error: { code?: unknown; reason?: unknown }): string | null {
+  if (error.code !== 'LISTING_NOT_ACTIVE') return null;
+  return (
+    (typeof error.reason === 'string' ? LISTING_NOT_ACTIVE_REASON_MESSAGES.get(error.reason) : undefined) ??
+    LISTING_NOT_FOR_SALE
+  );
 }

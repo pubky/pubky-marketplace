@@ -54,13 +54,20 @@ vi.mock('@/molecules/Toaster/use-toast', () => ({
   toast: vi.fn(),
 }));
 
-vi.mock('@/stores/auth/auth.store', () => ({
-  useAuthStore: createZustandLikeHook({
-    currentUserPubky: 'vrt000000000000000000000000000000000000000000alice01',
-    selectCurrentUserPubky: () => 'vrt000000000000000000000000000000000000000000alice01',
-    hasHydrated: true,
-  }),
-}));
+vi.mock('@/stores/auth/auth.store', async () => {
+  const { mockGrantSession } = await import('@/test-utils/pubky');
+  const pubky = 'vrt000000000000000000000000000000000000000000alice01';
+  const session = mockGrantSession(pubky);
+  return {
+    useAuthStore: createZustandLikeHook({
+      currentUserPubky: pubky,
+      session,
+      selectCurrentUserPubky: () => pubky,
+      selectSession: () => session,
+      hasHydrated: true,
+    }),
+  };
+});
 
 vi.mock('@/stores/onboarding/onboarding.store', () => ({
   useOnboardingStore: createZustandLikeHook({

@@ -98,7 +98,6 @@ vi.mock('next/navigation', () => ({
 vi.mock('@/stores/auth/auth.store', () => ({
   useAuthStore: createMarketplaceVrtAuthStore({
     currentUserPubky: ids.seller,
-    session: { pubky: ids.seller },
   }),
 }));
 

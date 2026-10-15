@@ -49,6 +49,7 @@ const view = vi.hoisted(() => ({
   payResult: { ok: false, orderIds: [] as string[], boundOrders: [] as unknown[] },
   awardItems: [] as Array<{ awardId: string; listingId: string; variantId: string }>,
   shops: {} as Record<string, { name: string; deliveryAssumeDays?: number; autoCompleteDays?: number }>,
+  allowedDestinationCountries: null as string[] | null,
 }));
 
 const checkoutActions = vi.hoisted(() => ({
@@ -213,6 +214,7 @@ vi.mock('@/hooks/useMarketplaceCheckout/useMarketplaceCheckout', async () => {
         fulfillmentForSeller: (sellerPubky: string) => view.fulfillmentEffective[sellerPubky] ?? 'shipping',
         setFulfillmentChoice: checkoutActions.setFulfillmentChoice,
         requiresDeliveryAddress: view.requiresDeliveryAddress,
+        allowedDestinationCountries: view.allowedDestinationCountries,
         hasFulfillmentConflict: view.hasFulfillmentConflict,
         isPickupCapabilityLoadingForSeller: () => view.isPickupCapabilityLoading,
         orderCount: view.orderCount,
@@ -376,6 +378,7 @@ function resetCheckoutView() {
   navigation.navigateTop.mockReset();
   view.awardItems = [];
   view.shops = {};
+  view.allowedDestinationCountries = null;
   offerState.offers = [];
   offerState.isLoading = false;
   offerState.refresh.mockClear();
@@ -483,6 +486,16 @@ describe('MarketplaceCheckout', () => {
     const terms = await screen.findByTestId('marketplace-delivery-terms');
     await waitFor(() => expect(terms).toHaveTextContent('Film Camera Supply: Delivery is assumed after 30 days'));
     expect(terms).toHaveTextContent('Satoshi Vintage: Delivery is assumed after 3 days');
+  });
+
+  it('offers only the seller’s destination countries in the address country picker', async () => {
+    seededCart();
+    view.allowedDestinationCountries = ['CH'];
+
+    render(<MarketplaceCheckout />);
+
+    expect(await screen.findByTestId('marketplace-address-country-select')).toBeInTheDocument();
+    expect(document.querySelector('input[name="countryCode"]')).toBeNull();
   });
 
   it('shows no periods when the seller shop cannot be read, rather than guessing', async () => {

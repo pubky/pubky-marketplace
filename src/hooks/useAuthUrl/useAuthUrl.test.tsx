@@ -1,8 +1,20 @@
 import type { Session } from '@synonymdev/pubky';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  BROWSER_STORAGE_BLOCKED_MESSAGE,
+  FULL_GRANT_REQUIRED_MESSAGE,
+  SIGN_IN_FAILED_MESSAGE,
+  SIGN_IN_LINK_FAILED_MESSAGE,
+} from '@/libs/auth/sign-in-error-copy';
 import { AppError } from '@/libs/error/error';
-import { AuthErrorCode, ServerErrorCode, TimeoutErrorCode } from '@/libs/error/error.codes';
+import {
+  AuthErrorCode,
+  DatabaseErrorCode,
+  ServerErrorCode,
+  TimeoutErrorCode,
+  ValidationErrorCode,
+} from '@/libs/error/error.codes';
 import { ErrorCategory, ErrorService } from '@/libs/error/error.types';
 import { mockSession } from '@/test-utils/pubky';
 import { useAuthUrl } from './useAuthUrl';
@@ -267,7 +279,7 @@ describe('useAuthUrl', () => {
     expect(mockToast).not.toHaveBeenCalled();
   });
 
-  it('shows toast when session initialization fails', async () => {
+  it('shows plain copy, not the raw message, when session initialization fails', async () => {
     const session = mockSession();
 
     let resolveApproval: (session: Session) => void;
@@ -300,14 +312,37 @@ describe('useAuthUrl', () => {
     resolveApproval!(session);
 
     await waitFor(() => {
-      expect(mockToast).toHaveBeenCalledWith({
-        variant: 'error',
-        description: 'Sign in failed. Try again.',
-      });
+      // handleError keeps raw homeserver/SDK text on the AppError; the user gets plain copy.
+      expect(mockToast).toHaveBeenCalledWith({ variant: 'error', description: SIGN_IN_FAILED_MESSAGE });
       expect(result.current.url).toBe('');
       expect(result.current.isExpired).toBe(true);
     });
     expect(mockLoggerError).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['permission', FULL_GRANT_REQUIRED_MESSAGE],
+    ['storage', BROWSER_STORAGE_BLOCKED_MESSAGE],
+  ])("keeps the Shop's own %s remedy when session initialization fails", async (_case, message) => {
+    mockGetGrantAuthUrl.mockResolvedValue({
+      authorizationUrl: 'pubkyauth://signin_grant?remedy',
+      awaitApproval: Promise.resolve(mockSession()),
+      cancelAuthFlow: createCancelAuthFlow(),
+    });
+    mockInitializeAuthenticatedSession.mockRejectedValue(
+      new AppError({
+        category: ErrorCategory.Validation,
+        code: ValidationErrorCode.INVALID_INPUT,
+        message,
+        service: ErrorService.Homeserver,
+        operation: 'assertFullGrantSession',
+      }),
+    );
+
+    const { result } = renderHook(() => useAuthUrl({ type: 'grant' }));
+
+    await waitFor(() => expect(result.current.isExpired).toBe(true));
+    expect(mockToast).toHaveBeenCalledWith({ variant: 'error', description: message });
   });
 
   it('stays silent when the approval lost to another sign-in', async () => {
@@ -376,20 +411,84 @@ describe('useAuthUrl', () => {
     renderHook(() => useAuthUrl());
 
     await waitFor(() => {
-      expect(mockToast).toHaveBeenCalledWith({
-        variant: 'error',
-        description: 'Could not generate QR. Refresh and try again.',
-      });
+      expect(mockToast).toHaveBeenCalledWith({ variant: 'error', description: SIGN_IN_LINK_FAILED_MESSAGE });
     });
   });
 
-  it('fails the Bitkit grant option quietly when the browser cannot generate its keys', async () => {
+  it('reports a grant creation failure instead of silently hiding it', async () => {
     mockGetGrantAuthUrl.mockRejectedValue(new Error('Unrecognized algorithm name'));
 
     const { result } = renderHook(() => useAuthUrl({ type: 'grant' }));
 
     await waitFor(() => expect(result.current.isExpired).toBe(true));
+    expect(mockToast).toHaveBeenCalledWith({ variant: 'error', description: SIGN_IN_LINK_FAILED_MESSAGE });
+  });
+
+  it.each([
+    ['sign-in', { type: 'grant' } as const, () => mockGetGrantAuthUrl],
+    ['sign-up', { type: 'signup', inviteCode: 'INVITE' } as const, () => mockGetSignupAuthUrl],
+  ])('never shows a raw SDK message when the %s link cannot be made', async (_flow, options, mock) => {
+    // handleError keeps the SDK's own message on the AppError it throws.
+    mock().mockRejectedValue(
+      new AppError({
+        category: ErrorCategory.Validation,
+        code: ValidationErrorCode.INVALID_INPUT,
+        message: 'Invalid PublicKey encoding',
+        service: ErrorService.Homeserver,
+        operation: 'generateGrantAuthUrl',
+      }),
+    );
+
+    const { result } = renderHook(() => useAuthUrl(options));
+
+    await waitFor(() => expect(result.current.isExpired).toBe(true));
+    expect(mockToast).toHaveBeenCalledTimes(1);
+    expect(mockToast).toHaveBeenCalledWith({ variant: 'error', description: SIGN_IN_LINK_FAILED_MESSAGE });
+  });
+
+  it('offers a reload without an error toast when another sign-in canceled link creation', async () => {
+    mockGetGrantAuthUrl.mockRejectedValue(Object.assign(new Error('Auth flow canceled'), { name: 'AuthFlowCanceled' }));
+
+    const { result } = renderHook(() => useAuthUrl({ type: 'grant' }));
+
+    await waitFor(() => expect(result.current.isExpired).toBe(true));
     expect(mockToast).not.toHaveBeenCalled();
+  });
+
+  it("keeps the Shop's own browser-storage remedy when the link cannot be made", async () => {
+    const message = BROWSER_STORAGE_BLOCKED_MESSAGE;
+    mockGetGrantAuthUrl.mockRejectedValue(
+      new AppError({
+        category: ErrorCategory.Database,
+        code: DatabaseErrorCode.INIT_FAILED,
+        message,
+        service: ErrorService.Homeserver,
+        operation: 'ownedGrantStorage',
+      }),
+    );
+
+    const { result } = renderHook(() => useAuthUrl({ type: 'grant' }));
+
+    await waitFor(() => expect(result.current.isExpired).toBe(true));
+    expect(mockToast).toHaveBeenCalledWith({ variant: 'error', description: message });
+  });
+
+  it('asks the controller for the grant with the deploy default, or without scoped keys when told to', async () => {
+    mockGetGrantAuthUrl.mockResolvedValue({
+      authorizationUrl: 'pubkyauth://signin_grant?x',
+      awaitApproval: new Promise<Session>(() => {}),
+      cancelAuthFlow: createCancelAuthFlow(),
+    });
+
+    const { result, rerender } = renderHook((props: { withPrivKeys?: boolean }) =>
+      useAuthUrl({ type: 'grant', ...props }),
+    );
+    await waitFor(() => expect(result.current.url).toBe('pubkyauth://signin_grant?x'));
+    expect(mockGetGrantAuthUrl).toHaveBeenLastCalledWith();
+
+    rerender({ withPrivKeys: false });
+    await waitFor(() => expect(mockGetGrantAuthUrl).toHaveBeenCalledTimes(2));
+    expect(mockGetGrantAuthUrl).toHaveBeenLastCalledWith({ withPrivKeys: false });
   });
 
   it('does not cancel active auth flow on unmount', async () => {

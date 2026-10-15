@@ -3,9 +3,8 @@
 import { useAuthStore } from '@/stores/auth/auth.store';
 
 /**
- * Whether the signed-in session is grant-backed (Bitkit or Pubky Passport sign-in). Such a
- * session carries no AuthToken and no homeserver cookie, so the Shop's
- * classic Pubky Ring approvals cannot run for it.
+ * Whether an active SDK grant session is present. All supported Shop sign-in
+ * methods use grants; the session is absent before authentication or during cleanup.
  */
 export function useIsGrantSession(): boolean {
   return useAuthStore((state) => state.session != null && state.session.grant !== undefined);

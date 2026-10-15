@@ -20,29 +20,6 @@ import { isValidSocialHost } from '@/libs/social-host/social-host';
 
 const emptyToUndefined = (val: unknown) => (typeof val === 'string' && val.length === 0 ? undefined : val);
 
-/**
- * Exact `https://` origin, or `http://localhost:<port>` when `nodeEnv !== 'production'`.
- * Paths, bare hosts, and non-loopback `http://` fail.
- */
-export function isValidVibeSessionBridgeOrigin(value: string, nodeEnv: string): boolean {
-  let url: URL;
-  try {
-    url = new URL(value);
-  } catch {
-    return false;
-  }
-  if (url.origin !== value) {
-    return false;
-  }
-  if (url.protocol === 'https:') {
-    return true;
-  }
-  if (nodeEnv !== 'production' && url.protocol === 'http:' && url.hostname === 'localhost') {
-    return true;
-  }
-  return false;
-}
-
 // Schema for environment variables
 export const envSchema = z
   .object({
@@ -67,10 +44,6 @@ export const envSchema = z
 
     // Build-intrinsic release value (package version locally; Git SHA in Docker CI).
     NEXT_PUBLIC_APP_VERSION: z.string(),
-
-    // Vibe-fork consumer mode (baked per artifact). Unset = consumer off.
-    NEXT_PUBLIC_VIBE_SESSION_BRIDGE_ORIGIN: z.preprocess(emptyToUndefined, z.string().optional()),
-    NEXT_PUBLIC_VIBE_ID: z.preprocess(emptyToUndefined, z.string().optional()),
 
     // Social link-out origin (baked per artifact). Unset = link-out off. The
     // self-origin check runs in next.config.ts (see @/libs/social-host/social-host).
@@ -106,14 +79,6 @@ export const envSchema = z
     SUPPORT_ACCOUNT_ID: z.string().min(1).optional(),
   })
   .superRefine((data, ctx) => {
-    const origin = data.NEXT_PUBLIC_VIBE_SESSION_BRIDGE_ORIGIN;
-    if (origin !== undefined && !isValidVibeSessionBridgeOrigin(origin, data.NODE_ENV)) {
-      ctx.addIssue({
-        code: 'custom',
-        path: ['NEXT_PUBLIC_VIBE_SESSION_BRIDGE_ORIGIN'],
-        message: 'Must be an exact https:// origin, or http://localhost:<port> when NODE_ENV is not production',
-      });
-    }
     if (!isValidBasePath(data.NEXT_PUBLIC_BASE_PATH)) {
       ctx.addIssue({
         code: 'custom',
@@ -222,8 +187,6 @@ function parseEnv(): z.infer<typeof envSchema> {
     NEXT_PUBLIC_DB_VERSION: process.env.NEXT_PUBLIC_DB_VERSION,
     NEXT_PUBLIC_DEBUG_MODE: process.env.NEXT_PUBLIC_DEBUG_MODE,
     NEXT_PUBLIC_APP_VERSION: process.env.NEXT_PUBLIC_APP_VERSION,
-    NEXT_PUBLIC_VIBE_SESSION_BRIDGE_ORIGIN: process.env.NEXT_PUBLIC_VIBE_SESSION_BRIDGE_ORIGIN,
-    NEXT_PUBLIC_VIBE_ID: process.env.NEXT_PUBLIC_VIBE_ID,
     NEXT_PUBLIC_SOCIAL_HOST: process.env.NEXT_PUBLIC_SOCIAL_HOST,
     NEXT_PUBLIC_BASE_PATH: process.env.NEXT_PUBLIC_BASE_PATH,
     NEXT_PUBLIC_ASSET_PREFIX: process.env.NEXT_PUBLIC_ASSET_PREFIX,

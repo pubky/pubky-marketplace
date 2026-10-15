@@ -5,47 +5,45 @@ import { Copy, KeyRound, Loader2, type LucideIcon, RefreshCw, Smartphone, Triang
 import { Button } from '@/atoms/Button/Button';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/atoms/Dialog/Dialog';
 import { Typography } from '@/atoms/Typography/Typography';
-import { isPassportApprovalRefused } from '@/hooks/useGrantSigner/useGrantSigner';
-import { useIsGrantSession } from '@/hooks/useIsGrantSession/useIsGrantSession';
-import { useMarketplaceApprovalSigner } from '@/hooks/useMarketplaceApprovalSigner/useMarketplaceApprovalSigner';
+import {
+  type MarketplaceSignerChoice,
+  useMarketplaceApprovalSigner,
+} from '@/hooks/useMarketplaceApprovalSigner/useMarketplaceApprovalSigner';
 import { useMarketplaceSessionConnect } from '@/hooks/useMarketplaceSessionConnect/useMarketplaceSessionConnect';
 import type { MarketplaceSessionConnectStatus } from '@/hooks/useMarketplaceSessionConnect/useMarketplaceSessionConnect.types';
 import { BOOTSTRAP_APPROVAL_EXPIRED, MARKETPLACE_FAILURE_MESSAGES } from '@/libs/commerce/failure-messages';
 import { Logger } from '@/libs/logger/logger';
-import { getMarketplaceGrantFlowEnabled } from '@/libs/runtime-config/runtime-config';
+import { getMarketplaceGrantFlowEnabled, getPassportSignInEnabled } from '@/libs/runtime-config/runtime-config';
+import { requestShopHostAction } from '@/libs/shop-session/bridge';
 import { GrantSessionRefusal } from '@/molecules/GrantSessionRefusal/GrantSessionRefusal';
 import { MarketplaceApprovalDisclosure } from '@/molecules/MarketplaceApprovalDisclosure/MarketplaceApprovalDisclosure';
 import { QrCodeSlot } from '@/molecules/QrCodeSlot/QrCodeSlot';
 import { type SignerOption, SignerToggle } from '@/molecules/SignerToggle/SignerToggle';
 import { toast } from '@/molecules/Toaster/use-toast';
+import { useIsShopHosted } from '@/providers/ShopHostSessionProvider/ShopHostSessionProvider';
 import { marketplaceApprovalDisclosure } from '@/services/marketplace/marketplace-session-grant';
-
-const BITKIT_UNAVAILABLE = 'Bitkit cannot approve this request. Use Pubky Ring.';
+import { useAuthStore } from '@/stores/auth/auth.store';
 
 const APPROVAL_COPY = {
   buy: {
     title: 'Enable purchases',
     success: 'Purchases approved',
     description: 'Authorize with your keychain to let the marketplace handle your purchases and marketplace data.',
-    ringUnavailable: 'Use Bitkit to approve purchases for this sign-in.',
   },
   sell: {
     title: 'Enable selling',
     success: 'Selling enabled',
     description: 'Authorize with your keychain to let the marketplace handle your sales and marketplace data.',
-    ringUnavailable: 'Use Bitkit to enable selling for this sign-in.',
   },
   sync: {
     title: 'Enable device sync',
     success: 'Device sync approved',
     description: 'Authorize with your keychain to sync your watchlist across devices and enable selling and buying.',
-    ringUnavailable: 'Use Bitkit to enable device sync for this sign-in.',
   },
   messages: {
     title: 'Enable messages',
     success: 'Messaging preferences approved',
     description: 'Authorize with your keychain to access your messaging preferences and marketplace data.',
-    ringUnavailable: 'Use Bitkit to enable messages for this sign-in.',
   },
 } as const;
 
@@ -63,7 +61,7 @@ export const GRANT_APPROVAL_SIGNER_HINT =
  * authorization URL renders as a QR for a cross-device Pubky Ring scan, and
  * as a deeplink/copy affordance for same-device Ring.
  *
- * Every open starts a FRESH flow and closing cancels it — AuthTokens are
+ * Every open starts a fresh flow and closing cancels it — approvals are
  * single-use, so a failed or abandoned flow's QR is never shown again. On
  * approval the controller mirrors the session facts into the commerce store,
  * which is what makes the dependent durable-mode surfaces refetch.
@@ -98,12 +96,16 @@ export function MarketplaceSessionConnectDialog({
   };
   const grantFlowEnabled = getMarketplaceGrantFlowEnabled();
   const approvalSigner = useMarketplaceApprovalSigner();
-  const isGrantSession = useIsGrantSession();
-  const [signerChoice, setSignerChoice] = useState<SignerOption | null>(null);
+  const hosted = useIsShopHosted();
+  const currentPubky = useAuthStore((state) => state.currentUserPubky);
+  const [signerChoice, setSignerChoice] = useState<MarketplaceSignerChoice | null>(null);
+  useEffect(() => setSignerChoice(null), [currentPubky]);
+  const passportDisabled = approvalSigner === 'Pubky Passport' && !getPassportSignInEnabled();
+  const needsSignerChoice = approvalSigner === 'your signer' || passportDisabled;
   const signer: SignerOption =
-    signerChoice ??
-    (approvalSigner === 'Bitkit' || (isGrantSession && approvalSigner !== 'Pubky Passport') ? 'bitkit' : 'ring');
+    signerChoice === 'bitkit' || (!signerChoice && approvalSigner === 'Bitkit') ? 'bitkit' : 'ring';
   const session = useMarketplaceSessionConnect({
+    signer: signerChoice,
     onConnected: () => {
       toast({
         title: copy.success,
@@ -120,17 +122,15 @@ export function MarketplaceSessionConnectDialog({
     if (autoOpen) setInternalOpen(true);
   }, [autoOpen]);
 
-  // A grant (Bitkit or Pubky Passport) sign-in has no AuthToken to redeem; it
-  // connects through the grant bootstrap, so it is refused where that flow is
-  // off, and a Passport sign-in also while the deploy switched Passport off.
-  const refusesGrantSession = isGrantSession && (!grantFlowEnabled || isPassportApprovalRefused());
+  // Every signer uses the same grant service. A disabled deployment fails closed.
+  const refusesGrantSession = !grantFlowEnabled;
   useEffect(() => {
     if (open) {
-      if (!refusesGrantSession) start();
+      if (!refusesGrantSession && !session.requiresSignIn) start();
       return;
     }
     cancel();
-  }, [open, start, cancel, refusesGrantSession]);
+  }, [open, start, cancel, refusesGrantSession, session.requiresSignIn]);
 
   const copyUrl = async () => {
     try {
@@ -149,9 +149,7 @@ export function MarketplaceSessionConnectDialog({
   const requestsGrantBootstrap = session.requestsGrantBootstrap;
   const requestsPassport = session.requestsPassport;
   const sessionApprovalSigner = session.approvalSigner;
-  // A Ring (cookie) sign-in's grant link can be approved by either phone
-  // signer, so its copy names no single app.
-  const bootstrapSigner = sessionApprovalSigner === 'Pubky Ring or Bitkit' ? null : sessionApprovalSigner;
+  const bootstrapSigner = sessionApprovalSigner === 'your signer' ? null : sessionApprovalSigner;
   const approvalLapsed =
     session.status === 'expired' ||
     (session.status === 'error' &&
@@ -160,23 +158,24 @@ export function MarketplaceSessionConnectDialog({
   const showsGrantSignerHint =
     approvalLapsed && !requestsPassport && (requestsGrantBootstrap || requestsGrantReconnect);
   const selectedSignerName = signer === 'ring' ? 'Pubky Ring' : 'Bitkit';
-  // The grant link is one link either phone signer can approve; the toggle only
-  // says which app to use. A Bitkit sign-in has no Ring identity to approve it,
-  // and the AuthToken connect (grant flow off) is a Pubky Ring link Bitkit rejects.
-  const approvesWithGrantLink = requestsGrantBootstrap || requestsGrantReconnect;
-  const ringUnavailable = isGrantSession ? copy.ringUnavailable : undefined;
-  const bitkitUnavailable = approvesWithGrantLink ? undefined : BITKIT_UNAVAILABLE;
-  const introCopy = requestsGrantBootstrap
-    ? bootstrapSigner
-      ? `Approve with ${bootstrapSigner} to connect the marketplace for the identity signed in to Shop. Nothing is charged until you pay.`
-      : 'Approve with Pubky Ring or Bitkit, whichever holds the pubky signed in to Shop. Nothing is charged until you pay.'
-    : requestsGrantReconnect
-      ? requestsPassport
-        ? 'Approve with Pubky Passport to reconnect the marketplace session for the identity already signed in to Shop. Nothing is charged until you pay.'
-        : `Approve with ${selectedSignerName} to reconnect the marketplace session for the identity already signed in to Shop. Nothing is charged until you pay.`
-      : ['awaiting', 'creating'].includes(session.status)
-        ? copy.description
-        : null;
+
+  const introCopy = session.requiresSignIn
+    ? null
+    : passportDisabled && !signerChoice
+      ? 'Pubky Passport is disabled on this deployment. Choose Pubky Ring or Bitkit with the same pubky to approve marketplace access.'
+      : needsSignerChoice && !signerChoice
+        ? 'Choose the signer that holds the same pubky as this Shop session. A recovery file must first be imported into a compatible signer to approve marketplace access.'
+        : requestsGrantBootstrap
+          ? bootstrapSigner
+            ? `Approve with ${bootstrapSigner} to connect the marketplace for the identity signed in to Shop. Nothing is charged until you pay.`
+            : 'Choose the signer that holds the pubky signed in to Shop. Nothing is charged until you pay.'
+          : requestsGrantReconnect
+            ? requestsPassport
+              ? 'Approve with Pubky Passport to reconnect the marketplace session for the identity already signed in to Shop. Nothing is charged until you pay.'
+              : `Approve with ${selectedSignerName} to reconnect the marketplace session for the identity already signed in to Shop. Nothing is charged until you pay.`
+            : ['awaiting', 'creating'].includes(session.status)
+              ? copy.description
+              : null;
   const retry = () => {
     session.start();
     if (requestsPassport) session.startPassport();
@@ -184,7 +183,9 @@ export function MarketplaceSessionConnectDialog({
   const approvalDisclosure = session.authorizationUrl ? marketplaceApprovalDisclosure(session.authorizationUrl) : null;
   const showCopyLink =
     !refusesGrantSession &&
+    !session.requiresSignIn &&
     !requestsPassport &&
+    !(needsSignerChoice && !signerChoice) &&
     !['error', 'mismatch', 'expired', 'cancelled', 'joined'].includes(session.status);
 
   return (
@@ -208,24 +209,56 @@ export function MarketplaceSessionConnectDialog({
           </Typography>
         )}
 
-        {!refusesGrantSession && !requestsPassport && session.status !== 'joined' && (
-          <div className="mx-auto grid w-full max-w-xs gap-2">
-            <SignerToggle
-              value={signer}
-              onValueChange={setSignerChoice}
-              disabledReasons={{ ring: ringUnavailable, bitkit: bitkitUnavailable }}
-            />
-            {(ringUnavailable ?? bitkitUnavailable) && (
-              <Typography as="p" className="text-center text-sm text-muted-foreground">
-                {ringUnavailable ?? bitkitUnavailable}
-              </Typography>
+        {!refusesGrantSession && !session.requiresSignIn && needsSignerChoice && (
+          <div className="grid gap-2" aria-label="Marketplace approval signer">
+            <Button variant={signerChoice === 'ring' ? 'default' : 'outline'} onClick={() => setSignerChoice('ring')}>
+              Pubky Ring
+            </Button>
+            <Button
+              variant={signerChoice === 'bitkit' ? 'default' : 'outline'}
+              onClick={() => setSignerChoice('bitkit')}
+            >
+              Bitkit
+            </Button>
+            {getPassportSignInEnabled() && (
+              <Button
+                variant={signerChoice === 'passport' ? 'default' : 'outline'}
+                onClick={() => setSignerChoice('passport')}
+              >
+                Pubky Passport
+              </Button>
             )}
           </div>
         )}
+        {!refusesGrantSession &&
+          !session.requiresSignIn &&
+          !needsSignerChoice &&
+          !requestsPassport &&
+          session.status !== 'joined' && (
+            <div className="mx-auto grid w-full max-w-xs gap-2">
+              <SignerToggle value={signer} onValueChange={setSignerChoice} />
+            </div>
+          )}
 
         {refusesGrantSession ? (
           <GrantSessionRefusal />
-        ) : ['error', 'mismatch', 'expired', 'cancelled'].includes(session.status) ? (
+        ) : session.requiresSignIn ? (
+          <div className="grid gap-3">
+            <Typography as="p" className="text-sm text-muted-foreground">
+              Sign in again to connect the marketplace.
+            </Typography>
+            <Button
+              onClick={() => {
+                setOpen(false);
+                if (!requestShopHostAction('request-login')) useAuthStore.getState().setShowSignInDialog(true);
+              }}
+            >
+              {hosted ? 'Continue in Pubky App' : 'Sign in'}
+            </Button>
+          </div>
+        ) : needsSignerChoice && !signerChoice ? null : ['error', 'mismatch', 'expired', 'cancelled'].includes(
+            session.status,
+          ) ? (
           <div className="grid gap-3">
             <div role="alert" className="flex items-center gap-3 rounded-md bg-destructive/60 px-6 py-3">
               <TriangleAlert className="size-4 shrink-0 text-destructive-foreground" aria-hidden="true" />

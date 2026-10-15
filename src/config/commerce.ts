@@ -90,6 +90,8 @@ export const COMMERCE_SHOP_TERM_DAYS_MAX = 60;
  */
 export const COMMERCE_DEFAULT_DELIVERY_ASSUME_DAYS = 14;
 export const COMMERCE_DEFAULT_AUTO_COMPLETE_DAYS = 14;
+/** Upper bound for the shop record's `shipsToCountries` list (ISO 3166-1 has 249 assigned codes). */
+export const COMMERCE_SHOP_SHIPS_TO_MAX_COUNTRIES = 250;
 
 export const COMMERCE_LISTING_TITLE_MIN_CHARS = 3;
 export const COMMERCE_LISTING_TITLE_MAX_CHARS = 80;

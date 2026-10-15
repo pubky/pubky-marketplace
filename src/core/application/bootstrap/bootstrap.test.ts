@@ -449,7 +449,7 @@ describe('BootstrapApplication', () => {
       expect(homeserverRequestSpy).toHaveBeenCalledTimes(1);
       expect(homeserverRequestSpy).toHaveBeenCalledWith({ method: HttpMethod.GET, url: MOCK_LAST_READ_URL });
 
-      // fetchOrPutLastRead fails in the first Promise.all, so persistence is never reached
+      // fetchOrPutLastRead fails in the initial sync stage, so persistence is never reached
       expect(mocks.persistUsers).not.toHaveBeenCalled();
     });
 
@@ -476,8 +476,43 @@ describe('BootstrapApplication', () => {
       expect(homeserverRequestSpy).toHaveBeenCalledTimes(1);
       expect(homeserverRequestSpy).toHaveBeenCalledWith({ method: HttpMethod.GET, url: MOCK_LAST_READ_URL });
 
-      // fetchOrPutLastRead fails in the first Promise.all, so persistence is never reached
+      // fetchOrPutLastRead fails in the initial sync stage, so persistence is never reached
       expect(mocks.persistUsers).not.toHaveBeenCalled();
+    });
+
+    it('waits for started account sync writes before surfacing a bootstrap failure', async () => {
+      setupMocks({ bootstrapError: new Error('Bootstrap unavailable') });
+      const pendingFeeds = Promise.withResolvers<Awaited<ReturnType<typeof FeedApplication.fetchFeeds>>>();
+      vi.spyOn(FeedApplication, 'fetchFeeds').mockReturnValue(pendingFeeds.promise);
+      let settled = false;
+      const result = BootstrapApplication.initialize(getBootstrapParams(TEST_PUBKY)).catch((error: unknown) => {
+        settled = true;
+        return error;
+      });
+
+      // A failed read must not release account ownership while another branch can still write.
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(settled).toBe(false);
+      pendingFeeds.resolve([]);
+      await expect(result).resolves.toMatchObject({ message: 'Bootstrap unavailable' });
+      expect(settled).toBe(true);
+    });
+
+    it('waits for sibling cache writes before surfacing a persistence failure', async () => {
+      setupMocks({ persistPostsError: new Error('Posts persistence error') });
+      const pendingUsers = Promise.withResolvers<Awaited<ReturnType<typeof LocalStreamUsersService.persistUsers>>>();
+      vi.spyOn(LocalStreamUsersService, 'persistUsers').mockReturnValue(pendingUsers.promise);
+      let settled = false;
+      const result = BootstrapApplication.initialize(getBootstrapParams(TEST_PUBKY)).catch((error: unknown) => {
+        settled = true;
+        return error;
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(settled).toBe(false);
+      pendingUsers.resolve([]);
+      await expect(result).resolves.toMatchObject({ message: 'Posts persistence error' });
+      expect(settled).toBe(true);
     });
 
     it('should throw error when persistPosts fails', async () => {
@@ -732,7 +767,7 @@ describe('BootstrapApplication', () => {
       await expect(BootstrapApplication.initialize(getBootstrapParams(TEST_PUBKY))).rejects.toThrow('Mute fetch error');
 
       expect(mocks.fetchMutedUsers).toHaveBeenCalledWith(TEST_PUBKY);
-      // fetchMutedUsers fails in the first Promise.all, so persistence is never reached
+      // fetchMutedUsers fails in the initial sync stage, so persistence is never reached
       expect(mocks.persistUsers).not.toHaveBeenCalled();
     });
   });

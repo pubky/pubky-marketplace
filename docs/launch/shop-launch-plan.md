@@ -1,5 +1,7 @@
 # Pubky Shop: beta launch and handoff plan
 
+> Authentication update: the Ring 1.19/cookie rollout details below are historical. The current release uses [grant authentication](grant-auth-session.md) and the [embedding guide](shop-embedding.md).
+
 Scope: [shop.pubky.app](https://shop.pubky.app), built from this repository, [pubky/pubky-marketplace](https://github.com/pubky/pubky-marketplace) (branch `master`; the code and its history came from the fork `BitcoinErrorLog/pubky-app`, branch `release/shop-v0.6.8`, which is frozen for Shop work from 6 Oct), handed to a dev team for about two weeks, ending in a beta for real users. Facts were checked on 1 Oct 2026 against the repos, the live sites and GitHub (status, blockers, timeline and decisions refreshed 5 Oct), and reviewed against the code as it stood that day and the 1 Oct issue triage of the [pubky-marketplace tracker](https://github.com/pubky/pubky-marketplace/issues). Sizes are for one developer and include tests and review: **XS** under half a day, **S** half a day to 2 days, **M** 3 to 5 days, **L** more than a week.
 
 ## Status, deadlines and freeze (5 Oct)
