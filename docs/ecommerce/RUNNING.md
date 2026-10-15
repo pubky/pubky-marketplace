@@ -84,6 +84,10 @@ Because a dedicated marketplace-indexing Nexus is deployed separately from the m
 
 The consumer code remains (ADR 0029): the two variables are **build-time** values, baked into the artifact at `npm run build` — not `PUBKY_RUNTIME_*` values — and consumer mode turns on only when the bridge origin is set (an exact origin such as `https://pubky.app`; `http://localhost:<port>` is accepted only outside production builds). A bridged restore never auto-triggers a re-approval, and the staging homeserver guard still runs on every restore when `PUBKY_RUNTIME_ENV=staging`.
 
+## Dev server hygiene
+
+Turbopack's persistent cache under `.next` grows with every rebuild and, after a large merge or a long session, can leave the dev server pegging every core or serving a stale module graph (pages stuck on the app loader, `Module … was instantiated` errors in the console, IndexedDB "object store not found" in a fresh browser context). Stop the server, delete `.next`, and start it again; a cold compile takes a minute or two. Do this after any merge of `master` before trusting a browser or e2e run.
+
 ## Running the tests
 
 ```bash
