@@ -54,6 +54,7 @@ import {
   openDigitalDeliverable,
 } from '@/libs/commerce/digital-file';
 import { listingPublishNeedsMarketplaceSession } from '@/libs/commerce/listing-publish-guards';
+import { buildRegisterVariants, type RegisterListingVariant } from '@/libs/commerce/listing-variants';
 import { locksAdmissionView } from '@/libs/commerce/locks-lifecycle';
 import { lockPolicyCreator, toBareLockResource } from '@/libs/commerce/locks-payment';
 import {
@@ -115,6 +116,7 @@ import {
 } from '@/libs/commerce/transaction-commands';
 import type { CommerceJsonValue, CommerceMoney } from '@/libs/commerce/transaction-contracts';
 import { assertPublishableListingStock } from '@/libs/commerce/unlimited-stock';
+import { variantRefusalMessage } from '@/libs/commerce/variant-refusals';
 import { AuthErrorCode, ClientErrorCode, ServerErrorCode, ValidationErrorCode } from '@/libs/error/error.codes';
 import { Err } from '@/libs/error/error.factories';
 import { ErrorService } from '@/libs/error/error.types';
@@ -4597,6 +4599,7 @@ export class CommerceApplication {
         listingRevision: listing.revision,
         contentHash: listing.media[0].contentHash,
         quantity: listing.variants.reduce((total, variant) => total + variant.quantity, 0),
+        ...registerVariantsField(listing),
         unitPrice,
         shippingMinor: commerceListingShippingMinor(listing.shippingOptions),
         saleFormat: 'auction',
@@ -4646,10 +4649,7 @@ export class CommerceApplication {
       const response = await send(command);
       if (isListingRecordNotFoundResponse(response, aggregateId, command.commandId)) return 'service_not_found';
       if (!isSuccessfulListingRegistrationResponse(response, aggregateId, command.commandId)) {
-        throw Err.client(ClientErrorCode.BAD_REQUEST, 'Marketplace listing registration was refused.', {
-          service: ErrorService.Marketplace,
-          operation: 'registerListing',
-        });
+        throw listingRegistrationRefusal(response);
       }
       return 'registered';
     }
@@ -4680,10 +4680,7 @@ export class CommerceApplication {
             Boolean(existing?.serverRevision),
           )
         ) {
-          throw Err.client(ClientErrorCode.BAD_REQUEST, 'Marketplace listing registration was refused.', {
-            service: ErrorService.Marketplace,
-            operation: 'registerListing',
-          });
+          throw listingRegistrationRefusal(response);
         }
       }
       return 'registered';
@@ -4703,6 +4700,7 @@ export class CommerceApplication {
         listingRevision: listing.revision,
         contentHash: listing.media[0].contentHash,
         quantity: listing.variants.reduce((total, variant) => total + variant.quantity, 0),
+        ...registerVariantsField(listing),
         unitPrice,
         shippingMinor: commerceListingShippingMinor(listing.shippingOptions),
         saleFormat: listing.sale.format,
@@ -4733,10 +4731,7 @@ export class CommerceApplication {
     if (isListingRecordNotFoundResponse(response, aggregateId, command.commandId)) return 'service_not_found';
     if (!isSuccessfulListingRegistrationResponse(response, aggregateId, command.commandId)) {
       if (!isCorrelatedBenignListingRegistrationResponse(response, aggregateId, command.commandId)) {
-        throw Err.client(ClientErrorCode.BAD_REQUEST, 'Marketplace listing registration was refused.', {
-          service: ErrorService.Marketplace,
-          operation: 'registerListing',
-        });
+        throw listingRegistrationRefusal(response);
       }
       const confirmed = await MarketplaceGatewayService.getListing(listing.ownerPubky, aggregateId, {
         signal: attempt.signal,
@@ -4750,10 +4745,7 @@ export class CommerceApplication {
           Boolean(confirmed?.serverRevision),
         )
       ) {
-        throw Err.client(ClientErrorCode.BAD_REQUEST, 'Marketplace listing registration was refused.', {
-          service: ErrorService.Marketplace,
-          operation: 'registerListing',
-        });
+        throw listingRegistrationRefusal(response);
       }
     }
     return 'registered';
@@ -4801,6 +4793,19 @@ export class CommerceApplication {
       payload: { sellerPubky, listingId },
     });
   }
+}
+
+function listingRegistrationRefusal(response: MarketplaceCommandResponse) {
+  const variantCopy = response.ok ? null : variantRefusalMessage(response.error);
+  return Err.client(ClientErrorCode.BAD_REQUEST, variantCopy ?? 'Marketplace listing registration was refused.', {
+    service: ErrorService.Marketplace,
+    operation: 'registerListing',
+  });
+}
+
+function registerVariantsField(listing: CommerceListingRecord): { variants?: RegisterListingVariant[] } {
+  const variants = buildRegisterVariants(listing.variants);
+  return variants ? { variants } : {};
 }
 
 function isPlainRecord(value: unknown): value is Record<string, unknown> {

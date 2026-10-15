@@ -14,6 +14,7 @@ import {
   isListingDeletedResponse,
   isMarketplaceRevisionConflict,
 } from '@/libs/commerce/transaction-commands';
+import { variantRefusalMessage } from '@/libs/commerce/variant-refusals';
 import { isMarketplaceSessionRequiredError } from '@/libs/error/error.utils';
 import type { CommerceDeliveryAddressModelSchema } from '@/models/commerce/commerce.schema';
 import { toast } from '@/molecules/Toaster/use-toast';
@@ -171,7 +172,8 @@ export function useMarketplaceDropClaim(onClaimed?: () => void | Promise<void>):
         setFailure(
           isMarketplaceRevisionConflict(response)
             ? 'The listing changed while you were claiming. Refresh and try again.'
-            : (marketplaceDropRefusalMessage(response.error.code, response.error.message) ??
+            : (variantRefusalMessage(response.error) ??
+                marketplaceDropRefusalMessage(response.error.code, response.error.message) ??
                 MARKETPLACE_FAILURE_MESSAGES.claimRefusal),
         );
         return false;

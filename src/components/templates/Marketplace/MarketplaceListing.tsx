@@ -24,7 +24,6 @@ import { Card, CardContent } from '@/atoms/Card/Card';
 import { Container } from '@/atoms/Container/Container';
 import { Heading } from '@/atoms/Heading/Heading';
 import { Link } from '@/atoms/Link/Link';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/atoms/Select/Select';
 import { Typography } from '@/atoms/Typography/Typography';
 import { getCommerceAdapterMode, isDurableCommerceMode, isTransactionalCommerceMode } from '@/config/commerce';
 import { CommerceController } from '@/controllers/commerce/commerce';
@@ -49,6 +48,12 @@ import { DIGITAL_DELIVERY_COPY, digitalDeliveryBadgeLabel } from '@/libs/commerc
 import { MARKETPLACE_FAILURE_MESSAGES } from '@/libs/commerce/failure-messages';
 import { formatCommerceCondition, formatCommerceMoney } from '@/libs/commerce/format';
 import {
+  firstAvailableVariantId,
+  isVariantSoldOut,
+  projectionReadsSoldOut,
+  soldOutVariantIds,
+} from '@/libs/commerce/listing-variants';
+import {
   commerceListingFulfillmentMethods,
   type CommerceListingRecord,
   commerceListingTakesOffers,
@@ -58,7 +63,6 @@ import type { MarketplaceFulfillmentMethod } from '@/libs/commerce/pickup';
 import { formatShipsToCountries, shopShipsToCountries } from '@/libs/commerce/ships-to';
 import { buildMarketplaceListingAggregateId } from '@/libs/commerce/transaction-commands';
 import { formatPackageDimensions, formatWeight } from '@/libs/commerce/units';
-import { formatStockQuantity, UNLIMITED_STOCK_LABEL } from '@/libs/commerce/unlimited-stock';
 import { MarketplaceFulfillmentBadge } from '@/molecules/MarketplaceFulfillmentBadge/MarketplaceFulfillmentBadge';
 import { MarketplaceSellerIdentity } from '@/molecules/MarketplaceSellerIdentity/MarketplaceSellerIdentity';
 import { ContentLayout } from '@/organisms/ContentLayout/ContentLayout';
@@ -78,6 +82,7 @@ import { MarketplaceReviewsSection } from '@/organisms/Marketplace/MarketplaceRe
 import { MarketplaceSectionNav } from '@/organisms/Marketplace/MarketplaceSectionNav';
 import { MarketplaceSessionConnectDialog } from '@/organisms/Marketplace/MarketplaceSessionConnectDialog';
 import { MarketplaceSimilarItems } from '@/organisms/Marketplace/MarketplaceSimilarItems';
+import { MarketplaceVariantPicker } from '@/organisms/Marketplace/MarketplaceVariantPicker';
 import { MarketplaceSessionService } from '@/services/marketplace/marketplace-session';
 import { useAuthStore } from '@/stores/auth/auth.store';
 import { MarketplaceListingDetailSkeleton } from './Marketplace.skeleton';
@@ -107,7 +112,8 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
   const isOwner = currentUserPubky === sellerPubky;
   const favorite = useCommerceFavorite(`${sellerPubky}:${listingId}`);
   const negotiation = useMarketplaceProjection(sellerPubky, listingId);
-  const publicStockState = useMarketplacePublicAvailability(sellerPubky, listingId, negotiation.needsSession);
+  const publicStock = useMarketplacePublicAvailability(sellerPubky, listingId, negotiation.needsSession);
+  const soldOutVariants = soldOutVariantIds(negotiation.projection?.variants ?? publicStock?.variants);
   const sellerReputation = useSellerReputation(sellerPubky);
   const cart = useMarketplaceCart();
   const orders = useMarketplaceOrders();
@@ -162,11 +168,13 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
   const shopAvatarUrl = useMarketplaceMediaUrl(shop?.record.avatarUrl);
 
   useEffect(() => {
-    const firstVariant = listing?.record.variants[0]?.id;
-    if (firstVariant && !listing?.record.variants.some(({ id }) => id === selectedVariantId)) {
-      setSelectedVariantId(firstVariant);
-    }
-  }, [listing, selectedVariantId]);
+    const variants = listing?.record.variants;
+    if (!variants) return;
+    const selected = variants.find(({ id }) => id === selectedVariantId);
+    if (selected?.enabled && !isVariantSoldOut(selected, soldOutVariants)) return;
+    const next = firstAvailableVariantId(variants, soldOutVariants) ?? selected?.id ?? variants[0]?.id;
+    if (next && next !== selectedVariantId) setSelectedVariantId(next);
+  }, [listing, selectedVariantId, soldOutVariants]);
 
   useEffect(() => {
     pendingPurchaseRef.current = null;
@@ -269,17 +277,18 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
     projectionIsReserved && !viewerHoldOrder
       ? findViewerAcceptedOfferHold(offers.offers, aggregateId, sessionPubky)
       : null;
-  const projectionIsSoldOut =
-    negotiation.projection !== null &&
-    (negotiation.projection.state === 'sold' ||
-      (negotiation.projection.state === 'available' && negotiation.projection.availableQuantity === 0));
-  const isSoldOut = isDurable ? projectionIsSoldOut : (listing.purchasableQuantity ?? recordQuantity) <= 0;
+  const projectionIsSoldOut = negotiation.projection !== null && projectionReadsSoldOut(negotiation.projection);
+  const publicStockIsSoldOut =
+    negotiation.projection === null && publicStock !== null && projectionReadsSoldOut(publicStock);
+  const isSoldOut = isDurable
+    ? projectionIsSoldOut || publicStockIsSoldOut
+    : (listing.purchasableQuantity ?? recordQuantity) <= 0;
   const isPurchasable = record.state === 'active';
   const availabilityPending = isDurable && negotiation.isLoading;
   const availabilityNeedsSession = isDurable && negotiation.needsSession;
   // Without a session the projection is unreadable, so another buyer's hold
   // comes from the public availability read instead.
-  const publicHold = availabilityNeedsSession && publicStockState === 'reserved';
+  const publicHold = availabilityNeedsSession && publicStock?.state === 'reserved';
   const availabilityReady =
     !isDurable || (!availabilityPending && !availabilityNeedsSession && negotiation.projection !== null);
   const stateNotice =
@@ -445,31 +454,12 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
             </div>
 
             {record.variants.length > 1 && (
-              <div>
-                <Typography as="p" className="mb-2 text-sm font-semibold">
-                  Variant
-                </Typography>
-                <Select value={selectedVariant?.id} onValueChange={setSelectedVariantId}>
-                  <SelectTrigger theme="secondary" className="w-full" aria-label="Choose listing variant">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {record.variants.map((variant) => {
-                      const stock = formatStockQuantity(record, variant.quantity);
-                      return (
-                        <SelectItem
-                          key={variant.id}
-                          value={variant.id}
-                          disabled={!variant.enabled || variant.quantity === 0}
-                        >
-                          {Object.values(variant.options).join(' · ') || variant.sku || 'Default'} ·{' '}
-                          {stock === UNLIMITED_STOCK_LABEL ? stock : `${stock} left`}
-                        </SelectItem>
-                      );
-                    })}
-                  </SelectContent>
-                </Select>
-              </div>
+              <MarketplaceVariantPicker
+                record={record}
+                selectedVariantId={selectedVariant?.id}
+                onSelect={setSelectedVariantId}
+                soldOutVariantIds={soldOutVariants}
+              />
             )}
 
             {record.digitalLock && <MarketplaceDigitalDeliveryNotice adapterMode={adapterMode} />}
@@ -527,7 +517,11 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
                       className="w-fit rounded-full"
                       disabled={
                         availabilityNeedsSession
-                          ? isOwner || adapterMode === 'unavailable' || publicHold
+                          ? isOwner ||
+                            adapterMode === 'unavailable' ||
+                            publicHold ||
+                            isSoldOut ||
+                            (selectedVariant !== undefined && soldOutVariants.has(selectedVariant.id))
                           : isOwner ||
                             adapterMode === 'unavailable' ||
                             !isPurchasable ||
@@ -535,7 +529,7 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
                             isSoldOut ||
                             projectionIsReserved ||
                             !selectedVariant ||
-                            selectedVariant.quantity === 0
+                            isVariantSoldOut(selectedVariant, soldOutVariants)
                       }
                       onClick={availabilityNeedsSession ? beginPurchase : addSelectedVariantToCart}
                     >
