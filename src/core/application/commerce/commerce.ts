@@ -190,7 +190,7 @@ import type {
   NexusListingSaleFormat,
 } from '@/services/nexus/marketplace/marketplace.types';
 import type { NexusTag } from '@/services/nexus/nexus.types';
-import { PaykitMessagingService } from '@/services/paykit/paykit-messaging';
+import { PaykitReceiverService } from '@/services/paykit/paykit-receiver';
 import { useAuthStore } from '@/stores/auth/auth.store';
 
 /**
@@ -1510,7 +1510,7 @@ export class CommerceApplication {
       }
     }
     if (registry.found && foundAppRegistryShowsNewWallet(registry.json)) return 'unsupported';
-    return (await PaykitMessagingService.hasPaymentRequestReceiver(buyerPubky)) ? 'payable' : 'not_payable';
+    return (await PaykitReceiverService.hasPaymentRequestReceiver(buyerPubky)) ? 'payable' : 'not_payable';
   }
 
   static async getMyPaymentConfig(actorPubky: string) {

@@ -88,6 +88,8 @@ export async function installSyntheticLaunchFixture({ context, baseUrl, serviceU
   const violations = [];
   const relayPackets = new Map();
   const relayWaiters = new Map();
+  /** Chat key and conversation records the fixture stores so a read-back after PUT succeeds. */
+  const chatRecords = new Map();
   const homeserverSessions = new Map();
   const challenges = new Map();
   const serviceFlows = new Map();
@@ -254,6 +256,26 @@ export async function installSyntheticLaunchFixture({ context, baseUrl, serviceU
             counters.proofDeletes += 1;
             return await reply({ status: 204 });
           }
+        }
+        // Chat identity provisioning after sign-in: the private and public key
+        // records are written, read back and listed like any homeserver file.
+        const chatRecord = /^\/(priv|pub)\/chat\/v0\//.test(url.pathname);
+        if (chatRecord && method === 'GET') {
+          if (url.pathname.endsWith('/')) return await reply({ body: '' });
+          const stored = chatRecords.get(url.pathname);
+          return stored === undefined
+            ? await reply({ status: 404, body: 'Synthetic record not found' })
+            : await reply({ json: stored });
+        }
+        if (chatRecord && method === 'PUT' && ownedSession?.client_id === SHOP_CLIENT_ID) {
+          let record;
+          try {
+            record = request.postDataJSON();
+          } catch {
+            return await reject('unexpected_homeserver_operation');
+          }
+          chatRecords.set(url.pathname, record);
+          return await reply({ status: 204 });
         }
         if (method === 'GET') {
           if (url.pathname.endsWith('/profile.json'))

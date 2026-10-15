@@ -1,5 +1,7 @@
 # Paykit surface as used by the Pubky Marketplace
 
+> **Note (2026-10-12):** the Shop's encrypted messaging over Paykit Encrypted Links described in this brief was retired; chat now runs on homeserver files ([`../chat/README.md`](../chat/README.md)). The vendored binding serves only receiver-marker reads for payments. The rest is kept as written.
+
 **To:** maintainers of `pubky/paykit-rs` and `pubky/paykit-server`
 **From:** the Pubky Marketplace integration (forks under `BitcoinErrorLog`)
 **Date:** 2026-09-01

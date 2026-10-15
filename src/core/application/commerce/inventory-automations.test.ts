@@ -78,8 +78,12 @@ describe('classifySessionKind', () => {
     expect(classifySessionKind(CAPABILITIES.split(',').reverse().join(','))).toBe('purchase');
     expect(classifySessionKind(captured)).toBe('purchase');
     expect(classifySessionKind(captured.split(',').reverse().join(','))).toBe('purchase');
-    expect(classifySessionKind('/pub/pubky.app/:rw,/pub/paykit/:rw,/priv/pubky.app/:rw')).toBe('purchase');
-    expect(classifySessionKind('/priv/pubky.app/:rw,/pub/paykit/:rw,/pub/pubky.app/:rw')).toBe('purchase');
+    expect(
+      classifySessionKind('/pub/pubky.app/:rw,/pub/paykit/:rw,/priv/pubky.app/:rw,/pub/chat/v0/:rw,/priv/chat/v0/:rw'),
+    ).toBe('purchase');
+    expect(
+      classifySessionKind('/priv/chat/v0/:rw,/priv/pubky.app/:rw,/pub/paykit/:rw,/pub/chat/v0/:rw,/pub/pubky.app/:rw'),
+    ).toBe('purchase');
     expect(classifySessionKind(`${captured},/pub/paykit/:rw`)).toBe('cli');
     expect(classifySessionKind('/priv/pubky.app/:rw')).toBe('cli');
   });

@@ -56,11 +56,13 @@ import type {
   TGetBlobParams,
   THomeserverFetchParams,
   THomeserverGetJsonIfFoundParams,
+  THomeserverInboxCredentials,
   THomeserverJsonIfFound,
   THomeserverListAllParams,
   THomeserverListParams,
   THomeserverPublicKeyParams,
   THomeserverRequestParams,
+  THomeserverResourceEvent,
   THomeserverUserEvent,
   TOwnedSessionPath,
   TPutBlobParams,
@@ -118,7 +120,13 @@ function boundedHomeserverIo<T>(work: () => Promise<T>, operation: string): Prom
 }
 
 type HomeserverSdkUserEvent = THomeserverUserEvent & {
+  resource?: { owner: { z32(): string }; path: string };
   free(): void;
+};
+
+/** What a grant session exposes for custom proofs from SDK 0.16 on; absent on older SDKs and cookie sessions. */
+type GrantSessionWithCustomPop = {
+  createCustomPop?: (data: unknown) => Promise<{ grant: string; pop: string }>;
 };
 
 export class HomeserverService {
@@ -1140,7 +1148,12 @@ export class HomeserverService {
    * 404 resolves `{ found: false }` and is neither logged nor reported as an
    * error. Every other failure throws as it does there.
    */
-  static async getJsonIfFound<T>({ url, logUrl }: THomeserverGetJsonIfFoundParams): Promise<THomeserverJsonIfFound<T>> {
+  static async getJsonIfFound<T>({
+    url,
+    logUrl,
+    tolerateUnreachable = false,
+    maxBytes,
+  }: THomeserverGetJsonIfFoundParams): Promise<THomeserverJsonIfFound<T>> {
     const contextUrl = logUrl ?? url;
     const owned = this.resolveOwnedSessionPath(url);
     const load = owned
@@ -1149,9 +1162,28 @@ export class HomeserverService {
           const pubkySdk = this.getPubkySdk();
           return isHttpUrl(url) ? pubkySdk.client.fetch(url) : pubkySdk.publicStorage.get(url as Address);
         };
-    const response = await getResponseOrNullWhenMissing(load, contextUrl, 'getJsonIfFound');
+    let response: Response | null;
+    if (tolerateUnreachable) {
+      try {
+        response = await getResponseOrNullWhenMissing(load, contextUrl, 'getJsonIfFound');
+      } catch (error) {
+        Logger.warn('Homeserver record unreachable; treating it as absent for now', { url: contextUrl, error });
+        return { found: false, unreachable: true };
+      }
+    } else {
+      response = await getResponseOrNullWhenMissing(load, contextUrl, 'getJsonIfFound');
+    }
     if (response === null) return { found: false };
-    return { found: true, json: await parseResponseOrUndefined<T>({ response }) };
+    if (maxBytes === undefined) return { found: true, json: await parseResponseOrUndefined<T>({ response }) };
+    // Another user's file: refuse anything over the cap before reading it, so a
+    // peer cannot make this browser download and parse an arbitrarily large body.
+    const declared = Number(response.headers.get('content-length') ?? Number.NaN);
+    if (Number.isFinite(declared) && declared > maxBytes) {
+      Logger.warn('Homeserver record larger than the cap; skipped', { url: contextUrl, declared, maxBytes });
+      return { found: false, tooLarge: true };
+    }
+    const bytes = await readResponseBytes(response, maxBytes, contextUrl);
+    return { found: true, json: JSON.parse(new TextDecoder().decode(bytes)) as T };
   }
 
   /**
@@ -1440,12 +1472,61 @@ export class HomeserverService {
     }
   }
 
+  /**
+   * Subscribe to one homeserver's `/events-stream` for several of its users at
+   * once (max 50), filtered to the given path prefixes (a trailing `/` means a
+   * subtree). Public paths need no session. Callers own the reader lifecycle.
+   */
+  static async subscribeHomeserverEventStream(params: {
+    homeserver: TPubkyModel;
+    users: Array<[TPubkyModel, string | null]>;
+    pathPrefixes: string[];
+  }): Promise<ReadableStream<THomeserverResourceEvent>> {
+    try {
+      const pubkySdk = this.getPubkySdk();
+      let builder = pubkySdk.eventStreamFor(PublicKey.from(params.homeserver)).addUsers(params.users);
+      for (const prefix of params.pathPrefixes) {
+        builder = builder.path(prefix);
+      }
+      const stream = (await builder.live().subscribe()) as ReadableStream<HomeserverSdkUserEvent>;
+      return this.normalizeUserEventStream(stream);
+    } catch (error) {
+      return handleError({
+        error,
+        additionalContext: { homeserver: params.homeserver, users: params.users.length },
+      });
+    }
+  }
+
+  /** The homeserver that hosts `pubky`, from its PKARR record; `null` when there is none. */
+  static async resolveHomeserverOf(pubky: TPubkyModel): Promise<TPubkyModel | null> {
+    const homeserver = await this.resolveHomeserverRecord({ publicKey: PublicKey.from(pubky) });
+    return homeserver ? homeserver.z32() : null;
+  }
+
+  /**
+   * Credentials for an external service that verifies grant proofs offline
+   * (the inbox): the session's grant plus a custom proof over `data`.
+   * `null` for cookie sessions and SDKs without custom proofs, which the
+   * caller reports as "needs a grant sign-in".
+   */
+  static async createInboxCredentials(data: unknown): Promise<THomeserverInboxCredentials | null> {
+    const session = useAuthStore.getState().selectSession();
+    const grant = (session?.grant ?? undefined) as GrantSessionWithCustomPop | undefined;
+    if (!grant || typeof grant.createCustomPop !== 'function') return null;
+    try {
+      return await grant.createCustomPop(data);
+    } catch (error) {
+      return handleError({ error, additionalContext: { operation: 'createInboxCredentials' } });
+    }
+  }
+
   private static normalizeUserEventStream(
     stream: ReadableStream<HomeserverSdkUserEvent>,
-  ): ReadableStream<THomeserverUserEvent> {
+  ): ReadableStream<THomeserverResourceEvent> {
     const reader = stream.getReader();
 
-    return new ReadableStream<THomeserverUserEvent>({
+    return new ReadableStream<THomeserverResourceEvent>({
       async pull(controller) {
         const { done, value } = await reader.read();
 
@@ -1455,9 +1536,14 @@ export class HomeserverService {
         }
 
         try {
+          // Read the resource before `free()`: the WASM object is gone afterwards.
+          const owner = value.resource?.owner.z32() ?? '';
+          const path = value.resource?.path ?? '';
           controller.enqueue({
             cursor: value.cursor,
             eventType: value.eventType,
+            owner,
+            path,
           });
         } finally {
           try {

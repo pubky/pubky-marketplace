@@ -10,31 +10,20 @@ vi.mock('@/hooks/useGrantSigner/useGrantSigner', async (importOriginal) => ({
 }));
 
 describe('grantSessionRefusalCopy', () => {
-  it('explains deployment unavailability without sending users to a cookie login', () => {
-    expect(grantSessionRefusalCopy('default', 'bitkit')).toBe(
+  it('explains deployment unavailability without naming a signer or a cookie login', () => {
+    expect(grantSessionRefusalCopy()).toBe(
       'Marketplace approvals are unavailable on this deployment. Try again when access is enabled.',
     );
-    expect(grantSessionRefusalCopy('default', 'passport')).toBe(
-      'Marketplace approvals are unavailable on this deployment. Try again when access is enabled.',
-    );
-  });
-
-  it('says messages are not available yet without sending the user to another signer', () => {
-    for (const signer of ['bitkit', 'passport'] as const) {
-      const copy = grantSessionRefusalCopy('messaging', signer);
-      expect(copy).toMatch(/^New messages cannot be enabled with this (Bitkit|Pubky Passport) sign-in yet\./);
-      expect(copy).not.toMatch(/Pubky Ring/);
-    }
   });
 });
 
 describe('GrantSessionRefusal', () => {
-  it('renders the copy for the signed-in grant signer', () => {
+  it('renders the deployment copy whatever the signer', () => {
     view.signer = 'passport';
-    render(<GrantSessionRefusal reason="messaging" />);
+    render(<GrantSessionRefusal />);
 
     expect(screen.getByTestId('grant-session-refusal')).toHaveTextContent(
-      'New messages cannot be enabled with this Pubky Passport sign-in yet. You can still read saved conversations on this device.',
+      'Marketplace approvals are unavailable on this deployment. Try again when access is enabled.',
     );
   });
 

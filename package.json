@@ -34,9 +34,6 @@
     "test:marketplace": "vitest run --project unit services/marketplace",
     "test:marketplace:service": "vitest run --config vitest.integration.config.ts",
     "test:marketplace:locks": "vitest run --config vitest.locks.config.ts",
-    "test:marketplace:messaging": "vitest run --config vitest.messaging.config.ts",
-    "test:marketplace:messaging:staging": "vitest run --config vitest.messaging.staging.config.ts",
-    "test:marketplace:messaging:wave-a": "vitest run --config vitest.messaging.wave-a.config.ts",
     "test:marketplace:cross-account": "vitest run --config vitest.cross-account.staging.config.ts",
     "test:marketplace:reviews": "vitest run --config vitest.reviews.config.ts",
     "test:marketplace:drops": "vitest run --config vitest.drops.config.ts",
@@ -44,7 +41,7 @@
     "test:marketplace:drop-status": "vitest run --config vitest.drop-status-studio.config.ts",
     "test:marketplace:inventory": "vitest run --config vitest.inventory.config.ts",
     "vrt:gallery": "node scripts/vrt-gallery.mjs",
-    "test:marketplace:dm": "vitest run --config vitest.dm.config.ts"
+    "test:e2e:chat": "node src/test/e2e/chat-two-accounts.mjs"
   },
   "lint-staged": {
     "*.{ts,tsx,js,jsx}": [

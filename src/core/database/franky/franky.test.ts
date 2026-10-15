@@ -518,56 +518,6 @@ describe('Database Initialization', () => {
       versionSpy.mockRestore();
     }
   });
-
-  it('reports a failed versions-match wrap sweep as messagingAtRestDegraded instead of failing boot', async () => {
-    const testDbName = `${DB_NAME}-wrap-sweep-degraded`;
-    const testDb = new AppDatabase(testDbName);
-
-    await waitForDatabaseDeletion(testDbName, () => testDb.close());
-
-    // First boot creates the database; the second boot hits the versions-match sweep.
-    const firstResult = await testDb.initialize();
-    expect(firstResult).toEqual({ wasDbReset: true, messagingAtRestDegraded: false });
-
-    // A legacy plaintext receiver row (pre-wrap format) gives the sweep work
-    // to do; without WebCrypto the wrap fails closed, so the sweep fails.
-    await testDb.commerce_messaging_receivers.put({
-      id: 'a'.repeat(52),
-      noise_secret: new Uint8Array(32).fill(7),
-      noise_public_key: 'n'.repeat(52),
-      receiver_path: 'marketplace/wallet',
-      marker_published: true,
-      created_at: 1,
-      updated_at: 1,
-    });
-    testDb.close();
-
-    const loggerWarnSpy = vi.spyOn(Logger, 'warn');
-    const { subtle: _subtle, ...cryptoWithoutSubtle } = globalThis.crypto;
-    vi.stubGlobal('crypto', cryptoWithoutSubtle);
-
-    try {
-      const degraded = await testDb.initialize();
-      // The sweep failure must NOT block app boot, but must be reported.
-      expect(degraded).toEqual({ wasDbReset: false, messagingAtRestDegraded: true });
-      expect(loggerWarnSpy).toHaveBeenCalledWith(
-        'Messaging at-rest wrap sweep failed; legacy rows stay plaintext at rest until a later boot succeeds, and messaging is marked degraded',
-        { error: expect.anything() },
-      );
-    } finally {
-      vi.unstubAllGlobals();
-      loggerWarnSpy.mockRestore();
-    }
-
-    // A later boot whose sweep succeeds wraps the row and clears the flag.
-    testDb.close();
-    const healed = await testDb.initialize();
-    expect(healed).toEqual({ wasDbReset: false, messagingAtRestDegraded: false });
-    const row = await testDb.commerce_messaging_receivers.get('a'.repeat(52));
-    expect(row?.wrap_version).toBe(1);
-
-    await testDb.delete();
-  });
 });
 
 describe('isTransientIndexedDbError', () => {

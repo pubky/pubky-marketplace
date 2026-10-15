@@ -84,6 +84,10 @@ The supported integration is the same-origin App `/shop` wrapper around Shop `/s
 
 The old vibe session consumer and `#s=` cookie handoff are removed. Keep `NEXT_PUBLIC_VIBE_SESSION_BRIDGE_ORIGIN` and `NEXT_PUBLIC_VIBE_ID` unset; they do not enable a supported authentication path. [ADR 0029](../adr/0029-vibe-session-consumer.md) records the earlier design. Follow [Shop embedding](../launch/shop-embedding.md) for the current build path, runtime environment and BFF requirements.
 
+## Dev server hygiene
+
+Turbopack's persistent cache under `.next` grows with every rebuild and, after a large merge or a long session, can leave the dev server pegging every core or serving a stale module graph (pages stuck on the app loader, `Module … was instantiated` errors in the console, IndexedDB "object store not found" in a fresh browser context). Stop the server, delete `.next`, and start it again; a cold compile takes a minute or two. Do this after any merge of `master` before trusting a browser or e2e run.
+
 ## Running the tests
 
 ```bash
@@ -171,7 +175,7 @@ The client selects a wholly different transport in this mode (`MarketplaceTransa
 
 - **Auth is real.** The active homeserver grant writes a bootstrap proof; the Shop BFF verifies it and starts a separate marketplace grant approval. The resulting service bearer authorizes commands through `Authorization: Bearer`; the forgeable `x-pubky-actor` header does not exist on this path. The client keeps the bearer in memory and a `localStorage` mirror, bounded by expiry and identity. The BFF separately holds an encrypted server-side pairing referenced by an HttpOnly cookie. Sign-out/account changes clear service credentials; a hosted cleanup boundary is not acknowledged until the BFF confirms cookie removal. [`service-auth.md`](service-auth.md) also documents older AuthToken compatibility paths, which the current UI does not use.
 - **Wire casing is snake_case** per ADR 0019 §3; the client converts its camelCase contracts at the transport boundary in both directions.
-- **The ported command set is accepted** — listings, offers, bids, checkout, order cancellation, fulfillment, returns, external-refund evidence, and reviews. Kinds the durable service does not implement (`payment.sandbox_advance`, messaging, notification read state/preferences) are rejected client-side before any bytes are sent, and the UI withholds those affordances in this mode.
+- **The ported command set is accepted** — listings, offers, bids, checkout, order cancellation, fulfillment, returns, external-refund evidence, and reviews. Kinds the durable service does not implement (`payment.sandbox_advance`, the sandbox's plaintext `message.send`, notification read state/preferences) are rejected client-side before any bytes are sent, and the UI withholds those affordances in this mode.
 - **Reads come from the service's role-scoped projections** (listings, offers, orders with embedded payment/shipment/return/refund/review sub-objects, payments, receipts, and notifications). The interactive shopping UI sources every `expected_revision` from a fresh projection read and treats `REVISION_CONFLICT` as refetch-and-retry.
 
 ### Connecting the session from the UI
@@ -195,32 +199,34 @@ This older transport integration suite exercises the service AuthToken compatibi
 
 The client's state tables are held in lockstep with the service's canonical contract: `contracts/state-machines.json` from the service repo is vendored at `src/libs/commerce/contracts/state-machines.json`, and `src/libs/commerce/state-machines.contract.test.ts` fails CI on any drift. When the service contract changes, re-vendor the file and reconcile the TypeScript — the service is canonical.
 
-### Enabling encrypted messaging (durable modes)
+### Chat (every mode)
 
-The vendored Paykit Encrypted Links transport remains cookie-backed. Every current Shop sign-in method uses grants, so a fresh grant session cannot enroll through that legacy transport; changing from Bitkit to Ring does not help. The UI reports this limitation instead of starting a cookie approval. Existing valid messaging cookies can resume and stored encrypted history remains readable.
+Buyer↔seller chat does not depend on the commerce adapter mode: it needs a signed-in session holding the chat scopes (`/pub/chat/v0/:rw`, `/priv/chat/v0/:rw`, part of the sign-in grant) and the homeserver. Each message is an end-to-end encrypted file on the sender's own homeserver; delivery runs on the peer homeserver's event stream, optional `pubky/inbox` pings and reconciliation. Design and threat model: [`../chat/README.md`](../chat/README.md); decision: [ADR 0030](../adr/0030-chat-transport.md).
 
-Matthew's Inbox/chat replacement is assumed to land in parallel. This branch neither implements that replacement nor requests an `e` capability. See [the messaging compatibility and migration requirements](../launch/grant-auth-session.md#commerce-remains-a-separate-approval) and [`paykit-wasm-provenance.md`](paykit-wasm-provenance.md).
+Facts to know: a session approved before the chat scopes existed shows "Messages need a newer sign-in approval" until the user signs in again; a message to someone who has not set up messages yet stays queued ("Waiting for them to set up messages") and goes out once their key is published; the inbox (`PUBKY_RUNTIME_INBOX_URL`) is what makes a stranger's first message arrive at once, and it needs a grant session (Bitkit, Ring grant, Passport) because a Ring cookie session cannot sign the inbox proof; without it chat still works through streams and reconciliation. History and read state follow the account to other devices. One message is at most 4,096 bytes; no attachments.
 
-The following commands test the **legacy cookie transport**, not fresh grant-user enrollment in the current Shop UI. Its history and key material are device-local in `shop-franky` and its messaging keyring. Sign-out/account cleanup removes private messaging data; preserving or migrating it into the replacement transport needs explicit verification.
-
-To prove the encrypted transport live — two parties, real crypto, real homeserver — against a local Pubky testnet:
+To run chat against a local Pubky testnet with an inbox, start the stack from [pubky-docker](https://github.com/pubky/pubky-docker) and an inbox container built from the `pubky/inbox` Dockerfile (full recipe in [`../chat/README.md`](../chat/README.md), "Local development"):
 
 ```bash
-pubky-testnet   # stock ports: pkarr relay 15411, homeserver HTTP 6286, admin 6288
-npm run test:marketplace:messaging
+docker run -d --name pubky-inbox-dev --network pubky-docker_pubky -p 8088:8080 \
+  -e INBOX_DATABASE__URL=postgres://test_user:test_pass@postgres:5432/inbox -e INBOX_AUTH__AUDIENCE=http://localhost:8088 \
+  -e 'INBOX_SERVER__CORS_ALLOWED_ORIGINS=["http://localhost:3000"]' -v pubky-inbox-dev-data:/data pubky-inbox:dev
+
+PUBKY_RUNTIME_TESTNET=true PUBKY_RUNTIME_HOMESERVER=8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo \
+PUBKY_RUNTIME_HOMESERVER_URL=http://localhost:6286 PUBKY_RUNTIME_NEXUS_URL=http://localhost:8080 \
+PUBKY_RUNTIME_CDN_URL=http://localhost:8080/static PUBKY_RUNTIME_DEFAULT_HTTP_RELAY=http://localhost:15412/inbox/ \
+PUBKY_RUNTIME_INBOX_URL=http://localhost:8088 PUBKY_RUNTIME_INBOX_AUDIENCE=http://localhost:8088 npm run dev
 ```
 
-This live suite runs the vendored WASM binding in a real Chromium page with no mocks: enrollment and marker publish through the app's own messaging service, the not-enrolled honest dead end, the Noise XX handshake over live homeserver outbox slots, bidirectional `marketplace.chat_message.v0` delivery, IndexedDB persistence, and snapshot/restore across a simulated reload. Sessions come from the binding's dev signup helper — the interactive Ring approval is the one leg a machine cannot honestly perform. It is intentionally not part of the unit gates.
+The dev signup-token route needs `HOMESERVER_ADMIN_URL=http://localhost:6288/generate_signup_token` and `HOMESERVER_ADMIN_PASSWORD=admin`.
 
-The same proof also exists against the REAL staging network — the staging homeserver reached through the public pkarr relays, the exact topology of the staging deployment (`PUBKY_RUNTIME_TESTNET=false`). It passed on 2026-08-21. The staging homeserver requires single-use signup tokens, so this is a run-on-demand suite, never a standing gate:
+To prove chat live — two accounts, real crypto, real homeserver — against that stack (dev server, homeserver and inbox container running):
 
 ```bash
-PAYKIT_STAGING_SIGNUP_TOKEN_A=XXXX-XXXX-XXXX \
-PAYKIT_STAGING_SIGNUP_TOKEN_B=YYYY-YYYY-YYYY \
-npm run test:marketplace:messaging:staging
+npm run test:e2e:chat
 ```
 
-The harness prints the throwaway identity secrets it generates; if a run fails after signup (tokens consumed), re-run with `PAYKIT_STAGING_SECRET_A`/`PAYKIT_STAGING_SECRET_B` instead of tokens to sign back in.
+The script (`src/test/e2e/chat-two-accounts.mjs`) drives two Playwright browser contexts signed in through the grant sign-in link with a Node-side signer, and checks: keys published, a message reaches the other thread, a reply reaches the open thread live, thread order, the unread badge appears and clears on read, both tabs hold an inbox session, a ping-only delivery with the event stream blocked, history survives a reload, a fresh browser context rebuilds the conversation from the homeservers, the published key file carries no secret, and the message files on the homeserver are ciphertext. Where Playwright cannot install its own browser, set `CHROMIUM_PATH` to an existing `chrome-headless-shell`. It is intentionally not part of the unit gates.
 
 ## Cross-account live proof (stranger reads a published listing)
 
