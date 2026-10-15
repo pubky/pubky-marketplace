@@ -172,6 +172,12 @@ The other `needs_reauth` trigger is a 401/403 on the private document. For a gra
 
 `AuthController.getStepUpAuthUrl` still refuses a grant session before any Ring flow starts, so a path that reaches the homeserver step-up with a grant session gets an error in the dialog, not a Ring step-up that would replace the grant session with a cookie session while its grant record stays stored.
 
+### Session from the sign-in grant
+
+With `marketplaceGrantSessionEnabled` on, a grant-backed sign-in needs no purchase approval at all. `MarketplaceGrantSessionCoordinator` calls `CommerceController.ensureMarketplaceSessionFromGrant()` after sign-in or restore and again when the purchase session ends; `useMarketplaceSessionConnect.start()` makes the same call before it opens any approval. The controller adopts a persisted bearer when one is on the device; otherwise `MarketplaceGrantSessionService.mint` writes a single-use proof document to `/pub/pubky.app/marketplace/v1/session-proofs/{challenge_id}` with the grant session, signs `{aud, challenge_id, purpose}` with `session.grant.createCustomPop`, and posts `{grant, pop}` to the service's `POST /v1/auth/grant-sessions`. The service verifies the custom proof offline, requires the proof document (so a grant revoked at the homeserver cannot mint), burns the challenge id and returns a bearer narrowed to `MARKETPLACE_SESSION_GRANT`. The proof document is deleted whatever the outcome.
+
+A refused mint falls back to the approval flows above and is not retried for the same sign-in, except when the user opens the dialog. A session minted after the account changed is revoked at the service and never installed. With the flag on, sign-out also revokes the purchase session at the service (`DELETE /v1/auth/sessions/{id}`). Ring cookie sign-ins have no grant and keep the approval.
+
 ## Verification that differed from the brief
 
 1. **`signinWithAuthToken` does not exist.** `pubky.d.ts` has no AuthToken→Session API (only `AuthFlow.awaitApproval` line 188, `awaitToken` line 198, `Pubky.restoreSession` line 831, `Signer.signin` line 1294). Option A's "same bytes sign in to the homeserver" requires re-implementing protocol internals, not an SDK call.
