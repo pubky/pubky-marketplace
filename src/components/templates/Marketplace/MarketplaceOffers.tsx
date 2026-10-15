@@ -21,7 +21,7 @@ import { useMarketplaceOffers } from '@/hooks/useMarketplaceOffers/useMarketplac
 import { getMarketplaceOfferCheckoutRoute } from '@/libs/commerce/checkout-phase';
 import { formatCommerceMoney } from '@/libs/commerce/format';
 import type { CommerceListingRecord } from '@/libs/commerce/marketplace-records';
-import { amountInputUnitLabel, isBitcoinAsset } from '@/libs/commerce/pricing';
+import { AMOUNT_EXAMPLES, amountInputExample, amountInputUnitLabel } from '@/libs/commerce/pricing';
 import { ControlledInputField } from '@/molecules/ControlledInputField/ControlledInputField';
 import { ControlledTextareaField } from '@/molecules/ControlledTextareaField/ControlledTextareaField';
 import { MarketplaceEmptyState } from '@/molecules/Marketplace/MarketplaceEmptyState';
@@ -298,7 +298,7 @@ export function MarketplaceOffers() {
             name="amount"
             control={offers.form.control}
             label={`Counter amount (${countering ? amountInputUnitLabel(countering.amount) : 'USD'})`}
-            placeholder={countering && isBitcoinAsset(countering.amount) ? '110000' : '110.00'}
+            placeholder={countering ? amountInputExample(countering.amount, AMOUNT_EXAMPLES.counterOffer) : '110.00'}
           />
           <ControlledInputField name="quantity" control={offers.form.control} label="Quantity" placeholder="1" />
           <ControlledTextareaField

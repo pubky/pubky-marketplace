@@ -1,0 +1,1 @@
+Shipping presets now have their own currency (existing presets stay US dollars), and the preset picker appears on listings in every currency. Applying a preset priced in another currency converts its flat price into the listing's currency with the current rate and says so before you save. Presets can be saved in any listing currency.

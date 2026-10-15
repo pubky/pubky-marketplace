@@ -4,7 +4,6 @@
 import { z } from 'zod';
 import { getLocksUrl, getPaykitSetupCreatorParam, getPaykitSetupUrl } from '@/config/commerce';
 import { LOCKS_SUBMIT_REFUSAL_CODES, type LocksSubmitRefusalCode } from '@/libs/commerce/locks-submit-refusal';
-import type { ListingCurrencyChoice } from '@/libs/commerce/pricing';
 import { isAppError } from '@/libs/error/error';
 import { ServerErrorCode, ValidationErrorCode } from '@/libs/error/error.codes';
 import { Err } from '@/libs/error/error.factories';
@@ -311,7 +310,7 @@ export class LocksGatewayService {
    */
   static async getCreatorPaykitSetupStatus(
     sessionToken: string,
-    asset: ListingCurrencyChoice,
+    asset: 'BTC' | 'USD',
   ): Promise<LocksCreatorPaykitSetupStatus> {
     const url = `${getLocksUrl()}/creator/paykit/setup-status?asset=${asset}`;
     const response = await safeFetch(
