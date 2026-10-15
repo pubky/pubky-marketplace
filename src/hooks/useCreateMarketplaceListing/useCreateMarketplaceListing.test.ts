@@ -457,6 +457,37 @@ describe('useCreateMarketplaceListing', () => {
     },
   );
 
+  // The service refuses a Locks-gated listing (`digitalLock`) outside USD, BTC and SAT
+  // (`locks_currency_unsupported`). The studio never authors a lock, in any currency,
+  // so that refusal cannot come from a listing published here.
+  it.each(['USD', 'EUR', 'CHF', 'GBP', 'JPY', 'CAD', 'AUD', 'BTC'] as const)(
+    'publishes a digital %s listing without a Locks gate',
+    async (currency) => {
+      const { result } = renderHook(() => useCreateMarketplaceListing());
+      act(() => {
+        result.current.form.setValue('title', 'Printable field guide');
+        result.current.form.setValue('description', 'A printable guide for the trail.');
+        result.current.form.setValue('categoryId', 'fashion-men-footwear-boots');
+        result.current.form.setValue('attrSize', 'US 9');
+        result.current.form.setValue('currency', currency);
+        result.current.form.setValue('price', '1500');
+        result.current.form.setValue('fulfillment', 'digital');
+        result.current.form.setValue('countryCode', 'US');
+      });
+
+      await act(async () => {
+        await result.current.submit();
+      });
+
+      const listing = commerceListingRecordSchema.parse(
+        vi.mocked(CommerceController.commitUpsertListing).mock.calls[0][0],
+      );
+      expect(listing.fulfillmentMethods).toEqual(['digital']);
+      expect(listing).not.toHaveProperty('digitalLock');
+      expect(listing.sale).toMatchObject({ unitPrice: { currency } });
+    },
+  );
+
   function fillAuction(result: { current: ReturnType<typeof useCreateMarketplaceListing> }, duration?: string) {
     act(() => {
       result.current.form.setValue('title', 'Vintage leather boots');
