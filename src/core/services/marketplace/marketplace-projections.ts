@@ -300,6 +300,7 @@ export const marketplaceNotificationSchema = z
       'bitcoin_prepare_voided',
       'order_cancelled',
       'order_shipped',
+      'tracking_updated',
       'order_delivery_assumed',
       'order_delivered',
       'order_completed',

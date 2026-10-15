@@ -105,6 +105,7 @@ export class MarketplaceNotificationNormalizer {
       case 'order_cancelled':
       case 'order_cancelled_terms_change':
       case 'order_shipped':
+      case 'tracking_updated':
       case 'order_delivery_assumed':
       case 'order_delivered':
       case 'order_completed':
