@@ -7,6 +7,7 @@ import {
   type ImportShipping,
   majorToMinor,
 } from '@/pipes/commerce/import-settings';
+import { ImportStoreValidators } from '@/pipes/import-store/import-store.validators';
 
 export const IMPORT_SETTINGS_FIELDS = {
   CURRENCY: 'currency',
@@ -138,3 +139,20 @@ export function toImportSettings(data: ImportSettingsFormData): ImportSettings {
     unmanagedStock,
   };
 }
+
+export const IMPORT_STORE_FIELDS = { STORE_URL: 'storeUrl' } as const;
+
+export const importStoreUrlFormSchema = z.object({
+  [IMPORT_STORE_FIELDS.STORE_URL]: z
+    .string()
+    .trim()
+    .min(1, 'Enter the address of your shop.')
+    .refine(
+      (value) => ImportStoreValidators.validateStoreUrl(value).ok,
+      'Use the https address of your shop, like https://myshop.com.',
+    ),
+});
+
+export type ImportStoreUrlFormData = z.infer<typeof importStoreUrlFormSchema>;
+
+export const importStoreUrlFormDefaults: ImportStoreUrlFormData = { [IMPORT_STORE_FIELDS.STORE_URL]: '' };

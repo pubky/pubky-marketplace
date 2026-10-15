@@ -41,6 +41,17 @@ export class MemoryImportStore implements InventoryManifestStore {
 
   async pruneExpired(): Promise<void> {}
 
+  async listManifests() {
+    return [...this.manifests.values()]
+      .map((manifest) => ({ manifestId: manifest.manifestId, createdAt: Date.parse(manifest.createdAt) || 0 }))
+      .sort((left, right) => right.createdAt - left.createdAt);
+  }
+
+  async deleteManifest(manifestId: string): Promise<void> {
+    this.manifests.delete(manifestId);
+    for (const key of [...this.payloads.keys()]) if (key.startsWith(`${manifestId}:`)) this.payloads.delete(key);
+  }
+
   async getMapping(): Promise<Record<string, string> | null> {
     return null;
   }

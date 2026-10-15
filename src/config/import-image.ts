@@ -47,5 +47,21 @@ export const IMPORT_IMAGE_MAX_REQUEST_BODY_BYTES = 8 * 1024;
 
 export const IMPORT_IMAGE_MAX_URL_LENGTH = 2048;
 
-/** Longest a client waits out a `rate_limited` answer before giving the image up. */
-export const IMPORT_IMAGE_MAX_RETRY_WAIT_SECONDS = 60;
+/**
+ * The photo phase loads photos in batches, each with its own count and byte
+ * budget (`IMPORT_IMAGE_MAX_COUNT`, `IMPORT_IMAGE_MAX_TOTAL_BYTES`), one after
+ * another, so an import of any size finishes without a second import.
+ * When the route says to wait, the client waits that long, up to this many
+ * seconds for one wait. The route's longest window is the 10-minute byte window.
+ */
+export const IMPORT_IMAGE_BATCH_MAX_WAIT_SECONDS = 660;
+
+/** Most seconds one batch spends waiting on the route in all; past it the photos are left for a resume. */
+export const IMPORT_IMAGE_MAX_TOTAL_WAIT_SECONDS = 30 * 60;
+
+/**
+ * A typical photo from a shop, for the dry run's estimate of how long the photo
+ * service's byte allowance will make an import wait. The one real store we have
+ * sizes for averages 313 KB (32 KB to 1.1 MB), so this is a guide, not a promise.
+ */
+export const IMPORT_IMAGE_TYPICAL_BYTES = 300 * 1024;

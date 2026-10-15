@@ -395,8 +395,52 @@ export class CommerceController {
     return await CommerceInventoryImportApplication.forSeller(sellerPubky).planFile(file, settings);
   }
 
+  static async planInventoryStoreImport(
+    sellerPubky: string,
+    catalog: Parameters<CommerceInventoryImportApplication['planStoreCatalog']>[0],
+    settings: Parameters<CommerceInventoryImportApplication['planStoreCatalog']>[1],
+    offeredCurrencies: Parameters<CommerceInventoryImportApplication['planStoreCatalog']>[2],
+  ) {
+    return await CommerceInventoryImportApplication.forSeller(sellerPubky).planStoreCatalog(
+      catalog,
+      settings,
+      offeredCurrencies,
+    );
+  }
+
   static async inventoryImportImageTargets(sellerPubky: string, manifestId: string) {
     return await CommerceInventoryImportApplication.forSeller(sellerPubky).imageTargets(manifestId);
+  }
+
+  static async markInventoryImportStarted(sellerPubky: string, manifestId: string) {
+    return await CommerceInventoryImportApplication.forSeller(sellerPubky).markStarted(manifestId);
+  }
+
+  static async findUnfinishedInventoryImport(sellerPubky: string) {
+    return await CommerceInventoryImportApplication.forSeller(sellerPubky).findUnfinished();
+  }
+
+  static async discardInventoryImport(sellerPubky: string, manifestId: string) {
+    return await CommerceInventoryImportApplication.forSeller(sellerPubky).discard(manifestId);
+  }
+
+  static async inventoryImportKnownMedia(sellerPubky: string, manifestId: string, urls: readonly string[]) {
+    return await CommerceInventoryImportApplication.forSeller(sellerPubky).knownMedia(manifestId, urls);
+  }
+
+  static async journalInventoryImportPhoto(
+    sellerPubky: string,
+    manifestId: string,
+    rowIdentity: string,
+    url: string,
+    media: Parameters<CommerceInventoryImportApplication['journalPhoto']>[3],
+  ) {
+    return await CommerceInventoryImportApplication.forSeller(sellerPubky).journalPhoto(
+      manifestId,
+      rowIdentity,
+      url,
+      media,
+    );
   }
 
   static async attachInventoryImportImages(
