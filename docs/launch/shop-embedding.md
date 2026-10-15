@@ -1,8 +1,8 @@
 # Serving the Shop inside pubky.app
 
-The implemented integration keeps the App shell at `https://pubky.app/shop` and proxies the separately deployed Shop under `https://pubky.app/shop-embed`. The App owns the shared homeserver grant; Shop restores its exact SDK record on that origin. This guide describes the mount and rollout requirements. See [Grant authentication and App-owned sessions](grant-auth-session.md) for sign-in, migration, ownership and commerce behavior.
+The integration keeps the App shell at `https://pubky.app/shop` and proxies the separately deployed Shop under `https://pubky.app/shop-embed`. The App owns the shared homeserver grant; Shop restores its exact SDK record on that origin. This guide describes configuration and verification. See [Grant authentication and App-owned sessions](grant-auth-session.md) for sign-in, migration, ownership and commerce behavior.
 
-Embedding is off by default. Standalone Shop still uses the new grant-only authentication and namespaced browser storage. The App integration is enabled separately after both frontends and the reverse proxy are ready.
+App Shop navigation always opens `/shop`. `PUBKY_RUNTIME_SHOP_EMBED_ENABLED` defaults to false, which shows an unavailable screen without an iframe. Enable it only after compatible App and Shop builds, the reverse proxy, and Shop's BFF are available; the deployments can be updated independently. Standalone Shop remains supported with grant authentication and namespaced browser storage.
 
 ## Environment keys this change adds
 
@@ -15,7 +15,7 @@ Embedding is off by default. Standalone Shop still uses the new grant-only authe
 | `PUBKY_RUNTIME_EMBEDDED` | runtime | `false` | Force the embedded layout and behaviour even when the page is not detected as framed. Use it on a deployment that exists only to be embedded, so server-rendered HTML is already the embedded layout. |
 | `PUBKY_RUNTIME_STORAGE_ADOPT_LEGACY` | runtime | derived | Whether this origin's old storage names (`franky`, `auth-store`, ...) are the Shop's, so they are migrated. Unset means yes when `NEXT_PUBLIC_BASE_PATH` is empty and no when it is set. |
 | `PUBKY_RUNTIME_SHOP_PUBLIC_PATH` | runtime | unset | The path people use to reach the Shop when it is not the mount path: `/shop` when the App owns `/shop` and frames this build at `/shop-embed`. Share links, canonical and Open Graph URLs and structured data use it. Unset means the mount path. See [Who owns `/shop`](#who-owns-shop). |
-| `PUBKY_RUNTIME_SHOP_GRANT_CLIENT_ID` | runtime | `shop.pubky.app` | The client id Bitkit and other signers show on their approval screen for the Shop's grant sign-in (`cid=` in the `signin_grant` link): a bare host name, no scheme, port or path. On pubky.app set `pubky.app` (staging: `staging.pubky.app`). |
+| `PUBKY_RUNTIME_SHOP_GRANT_CLIENT_ID` | runtime | `shop.pubky.app` | The client ID shown by signers for standalone Shop grant sign-in (`cid=` in the `signin_grant` link): a bare host name, no scheme, port or path. Hosted Shop restores the client ID supplied by App; this setting does not relabel App grants. |
 
 `PUBKY_RUNTIME_DEFAULT_URL` stays the site **origin** (`https://pubky.app`). The public path (or mount path when no override is set) is appended where a public URL is built (canonical links, structured data, share links).
 
@@ -25,8 +25,8 @@ Invalid values fail the build (build keys) or startup (runtime keys), not silent
 
 There are two shapes. The rest of this page applies to both unless it says otherwise.
 
-- **Direct.** The Shop build is mounted at `/shop` (`NEXT_PUBLIC_BASE_PATH=/shop`) and the proxy sends `/shop` to it. The mount path and the public path are the same. A standalone Shop (no base path, for example a Vercel test instance or `shop.pubky.app`) is the same shape with an empty path.
-- **App-owned (the pubky.app launch).** The App owns `/shop`: it renders its own chrome around a same-origin iframe, and the Shop build runs at `/shop-embed` (`NEXT_PUBLIC_BASE_PATH=/shop-embed`, `PUBKY_RUNTIME_EMBEDDED=true`, `PUBKY_RUNTIME_STORAGE_ADOPT_LEGACY=false`, `PUBKY_RUNTIME_FRAME_ANCESTORS='self'`), proxied with the prefix kept. Set `PUBKY_RUNTIME_SHOP_PUBLIC_PATH=/shop`. The App's own guide is [`docs/shop-embedding.md` in pubky-app](https://github.com/pubky/pubky-app/blob/89db97edecfbf73536c8670f6192b65e3c6cdce3/docs/shop-embedding.md).
+- **Direct.** A separate deployment can serve Shop at `/shop` (`NEXT_PUBLIC_BASE_PATH=/shop`, `PUBKY_RUNTIME_EMBEDDED=false`), with its proxy sending `/shop` to Shop. The mount path and public path are the same. A standalone Shop at its origin root uses an empty base path.
+- **App-owned (the pubky.app integration).** The App owns `/shop`: when enabled, it renders its own chrome around a same-origin iframe, and the Shop build runs at `/shop-embed` (`NEXT_PUBLIC_BASE_PATH=/shop-embed`, `PUBKY_RUNTIME_EMBEDDED=true`, `PUBKY_RUNTIME_STORAGE_ADOPT_LEGACY=false`, `PUBKY_RUNTIME_FRAME_ANCESTORS=self`), proxied with the prefix kept. Set `PUBKY_RUNTIME_SHOP_PUBLIC_PATH=/shop`. The App guide is [`docs/shop-embedding.md` in pubky-app](https://github.com/pubky/pubky-app/blob/823d20e736592a2ddf81ec961682b590a1c0ff0d/docs/shop-embedding.md).
 
 In the App-owned shape every URL has one of two homes:
 
@@ -41,11 +41,11 @@ In the App-owned shape every URL has one of two homes:
 
 Code uses `withBasePath` for the first group and `withPublicPath` (`@/config/base-path`) for the rest. [Install verification](install-verification.md) checks it from outside with `SHOP_EMBED_PATH=/shop-embed` and `SERVICE_PUBLIC_APP_ORIGIN`; the launch-critical suite takes the build's path on its URL (`LAUNCH_E2E_BASE_URL=http://127.0.0.1:3000/shop-embed`), and needs the Shop under test started with `PUBKY_RUNTIME_EMBEDDED=false`: the embedded layout hides the header the suite clicks (framing can stay on, a top-level page is not embedded).
 
-For the App pair, build Shop with `NEXT_PUBLIC_BASE_PATH=/shop-embed`, set `PUBKY_RUNTIME_SHOP_PUBLIC_PATH=/shop`, `PUBKY_RUNTIME_EMBEDDED=true`, `PUBKY_RUNTIME_FRAME_ANCESTORS='self'`, `PUBKY_RUNTIME_STORAGE_ADOPT_LEGACY=false`, and `PUBKY_RUNTIME_DEFAULT_URL` to the App origin. App sets `PUBKY_RUNTIME_SHOP_EMBED_ENABLED=true` and retains `PUBKY_RUNTIME_SHOP_URL` as its external fallback. Both deployments must use the same homeserver network. Do not change the App's auth client ID to the Shop client ID.
+For the App pair, build Shop with `NEXT_PUBLIC_BASE_PATH=/shop-embed`, set `PUBKY_RUNTIME_SHOP_PUBLIC_PATH=/shop`, `PUBKY_RUNTIME_EMBEDDED=true`, `PUBKY_RUNTIME_FRAME_ANCESTORS=self`, `PUBKY_RUNTIME_STORAGE_ADOPT_LEGACY=false`, and `PUBKY_RUNTIME_DEFAULT_URL` to the App origin. Both deployments must use the same homeserver network. Keep the App's auth client ID stable and enable `PUBKY_RUNTIME_SHOP_EMBED_ENABLED` after the pair, proxy and BFF are ready. Disabling the flag keeps App navigation at `/shop` and shows the unavailable screen.
 
 ## Running with next start without Docker
 
-The public build-time values must be present for `next build`. Keep the same values in the `next start` environment because Next also loads its configuration at startup. This example uses the database version in `.env.example`; preserve the deployed schema version when upgrading an existing installation:
+The public build-time values must be present for `next build`. Keep the same values in the `next start` environment because Next also loads its configuration at startup. This example uses the database version in `.env.example`; use the version selected by the Shop release. The supported 4 → 5 → 6 → 7 → 8 schema chain migrates in place; other version mismatches can recreate the database.
 
 ```bash
 NEXT_PUBLIC_BASE_PATH=/shop-embed \
@@ -60,7 +60,7 @@ NEXT_PUBLIC_DB_NAME=shop-franky \
 NEXT_PUBLIC_DB_VERSION=8 \
 PUBKY_RUNTIME_EMBEDDED=true \
 PUBKY_RUNTIME_SHOP_PUBLIC_PATH=/shop \
-PUBKY_RUNTIME_FRAME_ANCESTORS="'self'" \
+PUBKY_RUNTIME_FRAME_ANCESTORS=self \
 PUBKY_RUNTIME_STORAGE_ADOPT_LEGACY=false \
 PUBKY_RUNTIME_DEFAULT_URL=https://staging.pubky.app \
 npm run start
@@ -77,7 +77,7 @@ Route `/shop` and `/shop/*` to **App**. Route `/shop-embed` and `/shop-embed/*` 
 - **Static assets.** `/shop-embed/_next/static/*` can be cached according to its immutable response headers. If `NEXT_PUBLIC_ASSET_PREFIX` is set to a path, route that path too.
 - **HTML and API.** Do not cache Shop HTML or `/shop-embed/api/*`. Preserve request bodies, query strings, `Set-Cookie` and backend cache headers.
 - **Headers.** Pass `Host` and `X-Forwarded-Proto: https` through. The Shop's grant bridge checks the browser `Origin` against its allow-list, so `Origin` must arrive unmodified.
-- **Cookies.** The Shop's bridge cookies are `__Host-`prefixed, `Secure`, `HttpOnly`, `SameSite=Strict`, `Path=/`. On `pubky.app` they are sent to App routes too. They do not clash by name. App asks the mounted Shop BFF to clear these cookies at logout; it does not rewrite them directly.
+- **Cookies.** The Shop's bridge cookies, `__Host-shop-bff-session` and `__Host-shop-marketplace-grant`, use `Secure`, `HttpOnly`, `SameSite=Strict` and `Path=/`. On `pubky.app` they are sent to App routes too; reserve those names for Shop. App asks the mounted Shop BFF to clear them at logout.
 - **Entry.** App `/shop` opens `/shop-embed/marketplace` in its iframe. The Shop root redirect stays within its configured mount.
 - **Vercel cron.** If the embedded build runs on Vercel, the cron in `vercel.json` (`/api/marketplace/grant-cleanup`) must point at `/shop-embed/api/marketplace/grant-cleanup` in that deployment's config.
 - **Socials.** Leave `NEXT_PUBLIC_SOCIAL_HOST` unset in the embedded build. With it set, `/shop-embed/home` and the other social routes answer a 307 to the App and would load the App inside the frame.
@@ -95,7 +95,7 @@ X-Frame-Options: DENY            (only when no ancestor is allowed)
 X-Frame-Options: SAMEORIGIN      (only when the list is exactly 'self')
 ```
 
-For the same-origin iframe, set `PUBKY_RUNTIME_FRAME_ANCESTORS='self'`. Additional exact origins can be allowed for layout embedding, but do not enable session sharing with those origins. Wildcards, paths and `'none'` are rejected.
+For the same-origin iframe, set `PUBKY_RUNTIME_FRAME_ANCESTORS=self`; the parser also accepts the quoted CSP keyword `'self'`. Additional exact origins can be allowed for layout embedding, but do not enable session sharing with those origins. Wildcards, paths and `'none'` are rejected.
 
 On the App's side:
 
@@ -110,7 +110,7 @@ On the App's side:
 
 At launch the Shop is served at `https://pubky.app/shop` (staging: `https://staging.pubky.app/shop`). Every allow-list below holds **origins only**: scheme and host, no path, no trailing slash. `https://pubky.app/shop` is rejected by Locks and by the Shop's own config, and Paykit and the service compare the origin of the URL they are given. The outer `/shop` route is used for buyer-facing returns. The inner `/shop-embed` base path is used for Shop APIs, assets and Passport popup callbacks.
 
-At cutover, configure `shop.pubky.app` to permanently redirect (301) to `pubky.app/shop`, keeping path and query. Keep its allow-list entries while the standalone site is still served; remove them after the redirect is live. This frontend change does not deploy that redirect. Development instances keep their own hosted URLs (for example `https://pubky-marketplace-staging.vercel.app`) and stay in the lists of the stack they talk to, so the same Shop build can be tried from them.
+Standalone Shop deployments keep their own origins in the backing services' allow-lists for as long as they are served. Any redirect from a standalone hostname to App `/shop` is a separate deployment change; browser storage remains on its original origin. Development instances likewise retain their own permitted origins.
 
 | Service | Setting | Production | Staging |
 |---|---|---|---|
@@ -132,11 +132,11 @@ Notes:
 - **Passport.** Embedded Shop responses omit COOP so the App owns the top-level opener policy, including the popup return. The fallback link carries the Shop base path. The Passport return page is `{origin}/shop-embed/auth/passport/return`; it needs no allow-list entry on our side. Passport itself accepts any HTTPS callback.
 - **Development instances.** A development Shop on its own host (Vercel or Railway) lists its own origin in `SHOP_ALLOWED_ORIGINS`, `SHOP_PUBLIC_ORIGIN` and `SHOP_GRANT_ASSERTION_ISSUER`. The development services it talks to list that host in `ALLOWED_ORIGINS`, Paykit `[setup] allowed_origins`, Locks `allowed_return_origins` and the Nexus and fiat verifier CORS lists, next to `https://staging.pubky.app` when both are in use.
 
-Apply on staging first, then re-run [install verification](install-verification.md) against `https://staging.pubky.app` with `SHOP_PATH=/shop/marketplace`, `SHOP_EMBED_PATH=/shop-embed` and `SERVICE_PUBLIC_APP_ORIGIN=https://staging.pubky.app/shop`: the `service.cors.*`, `wiring.*-origins`, `flow.paykit-setup.*` and `flow.locks-connect.*` checks cover these settings. Verify the shared-session journeys in the embedded browser as well, not just a standalone Shop tab.
+Run [install verification](install-verification.md) against the configured App origin. For staging, use `https://staging.pubky.app` with `SHOP_PATH=/shop/marketplace`, `SHOP_EMBED_PATH=/shop-embed` and `SERVICE_PUBLIC_APP_ORIGIN=https://staging.pubky.app/shop`: the `service.cors.*`, `wiring.*-origins`, `flow.paykit-setup.*` and `flow.locks-connect.*` checks cover these settings. Also verify the shared-session journeys in the embedded browser.
 
 ## Shop BFF prerequisites
 
-The embedded browser flow needs both `PUBKY_RUNTIME_MARKETPLACE_GRANT_FLOW_ENABLED=true` (client) and `SHOP_BFF_GRANT_FLOW_ENABLED=true` (server), plus the marketplace service's matching grant configuration. Enable App's `PUBKY_RUNTIME_SHOP_EMBED_ENABLED` only after the compatible pair and BFF are available. The browser flow does not require `SHOP_BFF_CLI_GRANT_ENABLED`.
+The BFF (backend for frontend) is the Shop deployment's existing Next.js server route layer. It manages marketplace approval and its HttpOnly session/flow cookies. The embedded browser flow needs both `PUBKY_RUNTIME_MARKETPLACE_GRANT_FLOW_ENABLED=true` (client) and `SHOP_BFF_GRANT_FLOW_ENABLED=true` (server), plus the marketplace service's matching grant configuration. Enable App's `PUBKY_RUNTIME_SHOP_EMBED_ENABLED` only after the compatible pair, proxy and BFF are available. The browser flow does not require `SHOP_BFF_CLI_GRANT_ENABLED`.
 
 VV owns deployment values and secrets. The Shop server validates these required settings in [the BFF configuration schema](../../src/server/marketplace-grant/config.ts):
 
@@ -206,7 +206,7 @@ The Serwist build plugin no longer registers the worker by itself. `ServiceWorke
 
 ## Browser storage
 
-The Shop is a fork of the App and shares its storage names. On one origin they collide: the same Dexie database at two schema versions (the Shop's recreate-on-mismatch would wipe the App's, and the reverse), one app's sign-out sweep clearing the other's keys, and the App reading the Shop's `auth-store` as its own legacy identity and deleting it.
+App and Shop use separate application storage namespaces on a shared origin. Reusing a Dexie name can expose either app's database to the other's schema upgrade/reset policy, while shared localStorage names can mix account state and cleanup.
 
 Names the App also defines now carry a `shop-` prefix:
 
@@ -218,20 +218,20 @@ Names the App also defines now carry a `shop-` prefix:
 | `pubky-feature-discovery:*` | `shop-pubky-feature-discovery:*` |
 | session keys `pubky:force-feed-scroll-top`, `pubky-app:mute-sync-cursor:*` | `shop-` prefixed (not migrated; per-tab) |
 
-Names only the Shop uses (`marketplace:*`, `pubky.marketplace.*`, the Web Lock names, the messaging-keys teardown flag) are unchanged, because nothing else can collide with them.
+Shop service keys such as `marketplace:*` and `pubky.marketplace.*` retain their names. App and Shop intentionally share coordination names, including `pubky-shop-host-cleanup`, `pubky-messaging-keys` and the messaging-key teardown flag. Reserve the documented keys and locks for this integration.
 
 ### Migration of existing users
 
 Runs on the first load of the new build, in two parts:
 
-- **localStorage, synchronous.** Runs while the persisted stores are imported, before any store reads its key. Each legacy key is copied to its namespaced name, read back, then deleted.
-- **IndexedDB, before the database opens.** Under one exclusive Web Lock: the messaging keyring is copied first (the encrypted rows are useless without its key), then every table of `franky`, then each table's row count is checked, and only then are the legacy databases deleted.
+- **localStorage, synchronous.** Runs while the persisted stores are imported, before they read their keys. Each missing namespaced value is copied and read back before its legacy key is deleted; an existing namespaced value wins.
+- **IndexedDB, before the main database opens.** Uses an exclusive Web Lock when available. The messaging keyring is copied first, then both databases are initialized under the release's schema policy, matching tables are copied, and row counts are checked before legacy database deletion.
 
 Guarantees:
 
-- **No data loss.** Nothing is deleted before everything is copied and verified. Any failure leaves the legacy data untouched, records no outcome and retries on the next load. A failed database migration shows the existing recovery screen instead of opening an empty database.
+- **Copy before deletion.** The namespace copy verifies destination values/row counts before removing the corresponding legacy data. A partial localStorage failure keeps uncopied entries for retry. Database initialization can still apply the release's schema reset policy before copying; namespace migration is not a backup. A failed database migration shows the existing recovery screen instead of opening an empty database.
 - **Safe to run twice.** Copies are add-if-absent: an existing namespaced row or key always wins over the legacy one. A recorded outcome (`shop-storage-migration:local-v1`, `shop-storage-migration:database-v1` in localStorage) ends every later run at once, so a stale tab on the old build, or an App that later writes `auth-store` or `franky` on the same origin, is never read.
-- **Only the Shop's data moves.** The legacy database must contain Shop-only tables (`commerce_shops`); a database that does not is left alone and recorded as foreign. On an origin where those names are the App's (`NEXT_PUBLIC_BASE_PATH` set, or `PUBKY_RUNTIME_STORAGE_ADOPT_LEGACY=false`) nothing is read or moved, and the decision is recorded so flipping the setting later cannot start adopting the App's data.
+- **Legacy ownership.** The legacy database must contain Shop-only tables (`commerce_shops`); a database that does not is left alone and recorded as foreign. With legacy adoption disabled (the default under a base path, and always while embedded), legacy data is not read or moved. The decision is recorded so flipping the setting later cannot start adopting App data.
 - **Quota.** The copy briefly holds the data twice. A device too full to copy keeps the legacy data and retries.
 
 Known edges:
@@ -244,15 +244,15 @@ Known edges:
 
 On iOS Safari (verified on 26.1 and 26.2), `indexedDB.deleteDatabase` called from inside the frame wipes the top page's record of that database too. Whatever the embedded Shop deletes or clears is therefore gone for the host app as well, so the Shop deletes and clears only names inside its namespace:
 
-- Sign-out and identity-switch wipes clear tables of `shop-franky` and delete `shop-franky-messaging-keyring`, and remove only `shop-` keys and the Shop-only messaging teardown flag. A version change recreates `shop-franky`, never `franky`.
-- The one-time migration is the only code that deletes an un-namespaced database or key, and only the Shop's own legacy data: it never runs while the Shop is embedded, never on an origin where the legacy names are the host app's, and never on a `franky` that lacks the Shop-only tables.
+- Sign-out and identity-switch cleanup clears Shop tables, tears down its messaging keyring, and removes the documented Shop account/service keys. Schema upgrades 4 → 5 → 6 → 7 → 8 migrate `shop-franky` in place; a reset required by another version mismatch targets that configured Shop database.
+- The namespace migration can delete legacy database/localStorage names only when adoption is enabled; it also requires Shop-only tables before moving `franky`. Adoption is disabled while embedded and must stay disabled on any origin where those names belong to App.
 - `src/core/database/franky/franky.namespace-isolation.test.ts` seeds a host app's `franky`, `franky-messaging-keyring`, `pubky-auth` and localStorage keys, runs the migration, sign-out wipes and a schema-change recreate, and fails if any deleted database or removed key is outside the namespace or any host data changed.
 
 The SDK's `pubky-auth` store is intentionally shared. Shop no longer clears it wholesale: standalone cleanup removes exact Shop-owned records and pending flow keys. An embedded Shop never removes the App-owned record. The SDK 0.16 pending-key compatibility adapter and its upgrade constraints are described in [Grant authentication and App-owned sessions](grant-auth-session.md#ownership-and-cleanup).
 
-### Sequencing
+### Standalone origins
 
-Ship the namespaced build to `shop.pubky.app` first and let users load it before the App ever shares an origin with Shop data. The embedded deployment on `pubky.app` has no Shop data of its own to migrate. Existing `shop.pubky.app` data stays on that origin (browser storage does not follow users to another origin); keep the standalone site serving through the transition.
+A standalone Shop can run and migrate its own legacy storage independently. The embedded deployment disables legacy adoption to protect App storage. Existing `shop.pubky.app` data stays on that origin; enabling the App integration does not move it.
 
 ## Mounted-path details
 
@@ -263,6 +263,7 @@ Prefixed with the mount path: same-origin API calls (including marketplace grant
 The outer/inner route scheme, App-owned sign-in, targeted SDK cleanup and mounted BFF/Passport paths are implemented. The work still requiring deployment or live verification is:
 
 - Deploy both compatible frontends, the prefix-preserving proxy and updated App worker before enabling `PUBKY_RUNTIME_SHOP_EMBED_ENABLED`.
+- With the flag disabled, verify desktop/mobile Shop navigation and direct `/shop` links show the unavailable screen and make no iframe request.
 - Enable/configure marketplace grant bootstrap, origin allow-lists, assertion issuer/key trust and service callback origins. Grant-only homeserver login does not remove Shop BFF cookies or replace marketplace/Locks service approval. An unavailable grant backend must remain an explicit unavailable state.
 - Exercise real Ring, Bitkit, Passport, recovery-file and signup journeys, migrated cookie users, narrow grants, rejected approvals, account switches, two tabs, revoked records and sign-out while approval is pending.
 - Verify Safari/mobile IndexedDB persistence across restart, Web Locks, cross-tab lifecycle, synchronous signer/popup gestures, and nested Paykit/Locks frames with the deployed origin.
