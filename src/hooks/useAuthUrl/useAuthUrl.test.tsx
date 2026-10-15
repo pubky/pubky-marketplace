@@ -5,7 +5,7 @@ import { AppError } from '@/libs/error/error';
 import { AuthErrorCode, ServerErrorCode, TimeoutErrorCode } from '@/libs/error/error.codes';
 import { ErrorCategory, ErrorService } from '@/libs/error/error.types';
 import { mockSession } from '@/test-utils/pubky';
-import { useAuthUrl } from './useAuthUrl';
+import { GRANT_URL_FAILED_MESSAGE, useAuthUrl } from './useAuthUrl';
 
 // Mock dependencies
 const mockToast = vi.fn();
@@ -383,13 +383,14 @@ describe('useAuthUrl', () => {
     });
   });
 
-  it('fails the Bitkit grant option quietly when the browser cannot generate its keys', async () => {
-    mockGetGrantAuthUrl.mockRejectedValue(new Error('Unrecognized algorithm name'));
+  it('tells the user how to continue when the Bitkit grant option cannot start', async () => {
+    mockGetGrantAuthUrl.mockRejectedValue(new Error('This browser cannot securely save a grant sign-in.'));
 
     const { result } = renderHook(() => useAuthUrl({ type: 'grant' }));
 
     await waitFor(() => expect(result.current.isExpired).toBe(true));
-    expect(mockToast).not.toHaveBeenCalled();
+    expect(mockToast).toHaveBeenCalledTimes(1);
+    expect(mockToast).toHaveBeenCalledWith({ variant: 'error', description: GRANT_URL_FAILED_MESSAGE });
   });
 
   it('does not cancel active auth flow on unmount', async () => {

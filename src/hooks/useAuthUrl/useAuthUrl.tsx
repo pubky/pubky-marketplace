@@ -17,6 +17,9 @@ import { toast } from '@/molecules/Toaster/use-toast';
 import { AUTH_FLOW_CANCELED_ERROR_NAME } from '@/services/homeserver/error.utils';
 import type { UseAuthUrlOptions, UseAuthUrlReturn } from './useAuthUrl.types';
 
+export const GRANT_URL_FAILED_MESSAGE =
+  'Could not start Bitkit sign-in. Click the Bitkit QR code to try again, or sign in with Pubky Ring.';
+
 /** Returns true if the error indicates the auth flow has expired (timeout or SESSION_EXPIRED). */
 const isAuthFlowExpiredError = (error: unknown): boolean => {
   if (!isAppError(error)) return false;
@@ -106,10 +109,9 @@ export function useAuthUrl(options: UseAuthUrlOptions = {}): UseAuthUrlReturn {
     } catch (error) {
       Logger.error('Failed to generate auth URL:', error);
       if (!isMountedRef.current) return;
-      // The Bitkit grant sign-in needs WebCrypto algorithms older browsers lack; it sits beside a
-      // Pubky Ring option, so fail it quietly into its reload state instead of an error toast.
       if (type === 'grant') {
         setIsExpired(true);
+        toast({ variant: 'error', description: GRANT_URL_FAILED_MESSAGE });
         return;
       }
       toast({

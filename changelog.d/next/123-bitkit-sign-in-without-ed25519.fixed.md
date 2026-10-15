@@ -1,0 +1,1 @@
+The Bitkit sign-in tab now works in browsers without Ed25519 in WebCrypto, such as Chrome 124, instead of showing only "Click to reload"; if the Bitkit link still cannot be made, an error says to retry or sign in with Pubky Ring.
