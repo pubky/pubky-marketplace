@@ -28,6 +28,7 @@ import {
   type MarketplaceDigitalDeliveryKind,
 } from '@/libs/commerce/digital';
 import {
+  isPaykitUnavailableRefusal,
   MARKETPLACE_FAILURE_MESSAGES,
   marketplaceCheckoutRefusalMessage,
   marketplaceErrorCode,
@@ -135,6 +136,8 @@ export type MarketplacePayResult = {
   ok: boolean;
   orderIds: string[];
   boundOrders: MarketplaceOrder[];
+  /** The bind failed because the service could not reach Paykit. */
+  paykitUnavailable?: boolean;
 };
 
 /**
@@ -863,6 +866,7 @@ export function useMarketplaceCheckout(
             );
           }
           showPaymentMethodRefusalToast({ error: bindError, fallback: MARKETPLACE_FAILURE_MESSAGES.checkout, onRetry });
+          if (isPaykitUnavailableRefusal(bindError)) outcome = { ...empty, paykitUnavailable: true };
           return;
         }
         await finishCreatedCheckout(data);

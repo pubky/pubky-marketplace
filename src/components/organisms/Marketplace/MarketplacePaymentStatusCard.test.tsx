@@ -65,6 +65,7 @@ vi.mock('@/hooks/useMarketplaceOrderPayment/useMarketplaceOrderPayment', () => (
   useMarketplaceOrderPayment: vi.fn(() => ({
     availableMethods: null,
     bitcoinOfferUnavailable: false,
+    paykitOutage: false,
     configError: null,
     deliveryAddress: null,
     pendingAction: null,
@@ -99,6 +100,7 @@ describe('MarketplacePaymentStatusCard', () => {
     vi.mocked(useMarketplaceOrderPayment).mockReturnValue({
       availableMethods: null,
       bitcoinOfferUnavailable: false,
+      paykitOutage: false,
       configError: null,
       deliveryAddress: null,
       pendingAction: null,
@@ -358,6 +360,7 @@ describe('MarketplacePaymentStatusCard', () => {
     vi.mocked(useMarketplaceOrderPayment).mockReturnValue({
       availableMethods: ['paypal'],
       bitcoinOfferUnavailable: true,
+      paykitOutage: false,
       configError: null,
       deliveryAddress: null,
       pendingAction: null,
@@ -382,6 +385,63 @@ describe('MarketplacePaymentStatusCard', () => {
     ).toBeInTheDocument();
     expect(screen.getByText('The item is held for you once a payment starts.', { exact: false })).toBeInTheDocument();
     expect(screen.queryByText(/never holds funds/i)).not.toBeInTheDocument();
+  });
+
+  it('says Paykit is unreachable instead of "the seller has not set up any payment methods"', () => {
+    vi.mocked(useMarketplaceOrderPayment).mockReturnValue({
+      availableMethods: [],
+      bitcoinOfferUnavailable: true,
+      paykitOutage: true,
+      configError: null,
+      deliveryAddress: null,
+      pendingAction: null,
+      bind: vi.fn(),
+      markPaid: vi.fn(),
+      confirmReceived: vi.fn(),
+    });
+
+    render(
+      <MarketplacePaymentStatusCard
+        order={createOrderFixture('pending_payment')}
+        payment={createPaymentFixture('awaiting_entitlement')}
+        isBuyer
+        adapterMode="transaction-service"
+        advancePayment={async () => false}
+        onPaymentChanged={() => {}}
+      />,
+    );
+
+    expect(screen.getByText('Paykit is temporarily unreachable, retrying…')).toBeInTheDocument();
+    expect(screen.queryByText(/The seller has not set up any payment methods yet/)).not.toBeInTheDocument();
+  });
+
+  it('disables Bitcoin while Paykit is down and keeps PayPal usable', () => {
+    vi.mocked(useMarketplaceOrderPayment).mockReturnValue({
+      availableMethods: ['bitcoin', 'paypal'],
+      bitcoinOfferUnavailable: true,
+      paykitOutage: true,
+      configError: null,
+      deliveryAddress: null,
+      pendingAction: null,
+      bind: vi.fn(),
+      markPaid: vi.fn(),
+      confirmReceived: vi.fn(),
+    });
+
+    render(
+      <MarketplacePaymentStatusCard
+        order={createOrderFixture('pending_payment')}
+        payment={createPaymentFixture('awaiting_entitlement')}
+        isBuyer
+        adapterMode="transaction-service"
+        advancePayment={async () => false}
+        onPaymentChanged={() => {}}
+      />,
+    );
+
+    expect(screen.getByRole('button', { name: 'Continue with Bitcoin' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Continue with PayPal' })).toBeEnabled();
+    expect(screen.getByText(/Paykit is temporarily unreachable, retrying…/)).toBeInTheDocument();
   });
 
   it.each(['cancelled', 'refunded_external', 'closed', 'completed'] as const)(
@@ -598,6 +658,7 @@ describe('MarketplacePaymentStatusCard', () => {
     vi.mocked(useMarketplaceOrderPayment).mockReturnValue({
       availableMethods: ['bitcoin', 'paypal'],
       bitcoinOfferUnavailable: false,
+      paykitOutage: false,
       configError: null,
       deliveryAddress: null,
       pendingAction: null,
@@ -648,6 +709,7 @@ describe('MarketplacePaymentStatusCard', () => {
         return {
           availableMethods: ['bitcoin', 'paypal'],
           bitcoinOfferUnavailable: false,
+          paykitOutage: false,
           configError: null,
           deliveryAddress: needsAddress ? winner : null,
           pendingAction: null,
@@ -731,6 +793,7 @@ describe('MarketplacePaymentStatusCard', () => {
     vi.mocked(useMarketplaceOrderPayment).mockReturnValue({
       availableMethods: ['bitcoin', 'paypal'],
       bitcoinOfferUnavailable: false,
+      paykitOutage: false,
       configError: null,
       deliveryAddress: null,
       pendingAction: null,
@@ -763,6 +826,7 @@ describe('MarketplacePaymentStatusCard', () => {
     vi.mocked(useMarketplaceOrderPayment).mockReturnValue({
       availableMethods: ['bitcoin', 'paypal'],
       bitcoinOfferUnavailable: false,
+      paykitOutage: false,
       configError: null,
       deliveryAddress: null,
       pendingAction: null,
@@ -794,6 +858,7 @@ describe('MarketplacePaymentStatusCard', () => {
     vi.mocked(useMarketplaceOrderPayment).mockReturnValue({
       availableMethods: ['bitcoin', 'paypal'],
       bitcoinOfferUnavailable: false,
+      paykitOutage: false,
       configError: null,
       deliveryAddress: null,
       pendingAction: null,
@@ -841,6 +906,7 @@ describe('MarketplacePaymentStatusCard', () => {
       vi.mocked(useMarketplaceOrderPayment).mockReturnValue({
         availableMethods: ['bitcoin', 'paypal'],
         bitcoinOfferUnavailable: false,
+        paykitOutage: false,
         configError: null,
         deliveryAddress: null,
         pendingAction: null,
