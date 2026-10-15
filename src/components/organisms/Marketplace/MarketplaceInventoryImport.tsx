@@ -48,7 +48,12 @@ export type MarketplaceInventoryImportProps = {
   /** Why Publish is off (settings still to choose or to apply). */
   publishDisabledReason?: string;
   /** Why listings will be saved as paused: a publish gate blocks. */
-  publishNotice?: { title: string; body: string };
+  publishNotice?: {
+    title: string;
+    body: string;
+    /** Listings that are live and stay live, with the line that says what to fix. */
+    keptLive?: { line: string; titles: readonly string[]; total: number };
+  };
   onFile?: (file: File) => void;
   onPublish?: () => void;
   onResume?: () => void;
@@ -173,6 +178,24 @@ export function MarketplaceInventoryImport({
               <Typography as="p" className="text-sm text-muted-foreground">
                 {publishNotice.body}
               </Typography>
+              {publishNotice.keptLive && (
+                <div className="flex flex-col gap-1" data-testid="inventory-import-kept-live">
+                  <Typography as="p" className="text-sm font-medium">
+                    {publishNotice.keptLive.total === 1
+                      ? '1 listing is live'
+                      : `${publishNotice.keptLive.total} listings are live`}
+                    : {publishNotice.keptLive.line}
+                  </Typography>
+                  <ul className="list-inside list-disc text-sm text-muted-foreground">
+                    {publishNotice.keptLive.titles.map((title) => (
+                      <li key={title}>{title}</li>
+                    ))}
+                    {publishNotice.keptLive.total > publishNotice.keptLive.titles.length && (
+                      <li>and {publishNotice.keptLive.total - publishNotice.keptLive.titles.length} more</li>
+                    )}
+                  </ul>
+                </div>
+              )}
             </div>
           )}
           {publishDisabledReason && (

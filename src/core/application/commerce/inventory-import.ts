@@ -16,6 +16,12 @@ import type { SellerPaymentConfig } from '@/libs/commerce/payment-methods';
 import { ClientErrorCode } from '@/libs/error/error.codes';
 import { isAppError, isNotFound } from '@/libs/error/error.utils';
 import { CommerceRecordNormalizer } from '@/pipes/commerce/commerce.normalizer';
+import {
+  continueRevision,
+  keepLiveRecord,
+  type KeptLiveSkip,
+  keptLiveSkipText,
+} from '@/pipes/commerce/import-keep-live';
 import type { ImportLossReport, ImportSourceFormat } from '@/pipes/commerce/import-loss-report';
 import {
   classifyListingPublishFailure,
@@ -25,6 +31,11 @@ import {
 import {
   gateBlocksListing,
   type ImportPublishGate,
+  keptLiveFailureCode,
+  keptLiveLine,
+  keptLiveOf,
+  keptLiveSummary,
+  NO_PUBLISH_GATE,
   pausedFailureCode,
   pausedReasonOf,
   pausedResultText,
@@ -60,6 +71,7 @@ import {
 export const IMPORT_PARSE_FAIL_COPY = 'This file could not be planned. Nothing was published.';
 export const IMPORT_CONFLICT_COPY =
   'This listing changed since the plan. Confirm or discard; it will not be overwritten.';
+export const KEPT_LIVE_UNSAFE_MESSAGE = 'The live listing could not be updated safely, so it stays as it was.';
 export const IMPORT_MIXED_COPY = 'Some listings synced; some did not. Resume publishes only the unfinished rows.';
 export const CONFLICT_CONFIRMED = 'conflict_confirmed';
 export const CONFLICT_DISCARDED = 'conflict_discarded';
@@ -104,9 +116,12 @@ export type InventoryImportPublishResult =
       failed: number;
       mixed: boolean;
       message?: string;
-      /** Listings saved as paused because a publish gate blocked them. */
+      /** Listings saved as paused because a publish gate blocked them (new ones, and ones that were paused). */
       paused?: number;
       pausedReason?: ListingPublishBlockReason;
+      /** Listings that were live and stay live while a gate blocks; only their safe content was updated. */
+      keptLive?: number;
+      keptLiveReason?: ListingPublishBlockReason;
     }
   | { status: 'conflict'; listingId: string; message: string }
   | { status: 'rate-limited'; message: string }
@@ -277,10 +292,7 @@ export class CommerceInventoryImportApplication {
       status: 'planned',
       manifestId: planned.value.manifestId,
       rowCount: planned.value.rowCount,
-      publishGate:
-        planned.value.rowCount === 0
-          ? { reason: null, ships: false }
-          : await this.publishGate(planned.value.manifestId),
+      publishGate: planned.value.rowCount === 0 ? NO_PUBLISH_GATE : await this.publishGate(planned.value.manifestId),
       counts: MarketplaceShopClientService.dryRunCounts(manifest as ImportManifest),
       ...(planned.value.format ? { format: planned.value.format } : {}),
       ...(planned.value.lossReport ? { lossReport: planned.value.lossReport } : {}),
@@ -311,7 +323,7 @@ export class CommerceInventoryImportApplication {
     let conflictListingId: string | null = null;
     const invalid: ListingPublishFailure[] = [];
     let gate: InventoryImportPublishGate | null = null;
-    let paused = 0;
+    let existing: ReadonlyMap<string, CommerceListingRecord> | null = null;
 
     for (const [listingId, group] of groups) {
       const actionable = group.filter((row) => resumeNext(row.checkpoint) !== 'none');
@@ -331,18 +343,21 @@ export class CommerceInventoryImportApplication {
 
       if (needsPut) {
         gate ??= await this.publishGate(manifestId);
-        const put = await this.publishGroup(manifestId, listingId, group, gate.reason);
+        existing ??= await this.existingRecords();
+        const put = await this.publishGroup(manifestId, listingId, group, gate.reason, existing.get(listingId));
         if (put.status === 'invalid') {
           invalid.push(put.failure);
           continue;
         }
         if (put.status === 'conflict' || put.status === 'error') return put;
         published += 1;
-        if (put.pausedBy) {
-          paused += 1;
-          for (const row of group) {
-            await this.annotateRowFailure(manifestId, row.rowIdentity, pausedFailureCode(put.pausedBy));
-          }
+        const note = put.pausedBy
+          ? pausedFailureCode(put.pausedBy)
+          : put.keptLive
+            ? keptLiveFailureCode(put.keptLive.reason, put.keptLive.skipped)
+            : null;
+        if (note) {
+          for (const row of group) await this.annotateRowFailure(manifestId, row.rowIdentity, note);
         }
       }
       if (needsSync) {
@@ -369,8 +384,12 @@ export class CommerceInventoryImportApplication {
         : mixed
           ? IMPORT_MIXED_COPY
           : undefined;
-    const pausedReason = paused > 0 ? (gate?.reason ?? null) : null;
-    const message = [mainMessage, pausedReason ? pausedSummary(paused, pausedReason) : undefined]
+    const gated = this.gatedListings(rows);
+    const message = [
+      mainMessage,
+      gated.pausedReason ? pausedSummary(gated.paused, gated.pausedReason) : undefined,
+      gated.keptLiveReason ? keptLiveSummary(gated.keptLive, gated.keptLiveReason, gated.skippedChanges) : undefined,
+    ]
       .filter(Boolean)
       .join(' ');
     return {
@@ -380,8 +399,37 @@ export class CommerceInventoryImportApplication {
       failed,
       mixed: mixed || conflictListingId !== null,
       ...(message ? { message } : {}),
-      ...(pausedReason ? { paused, pausedReason } : {}),
+      ...(gated.pausedReason ? { paused: gated.paused, pausedReason: gated.pausedReason } : {}),
+      ...(gated.keptLiveReason ? { keptLive: gated.keptLive, keptLiveReason: gated.keptLiveReason } : {}),
     };
+  }
+
+  /** The listings a publish gate paused or kept live, counted from the manifest so a resume adds to the first run. */
+  private gatedListings(rows: readonly HostPlannedImportRow[]) {
+    const paused = new Map<string, ListingPublishBlockReason>();
+    const kept = new Map<string, { reason: ListingPublishBlockReason; skipped: string[] }>();
+    for (const row of rows) {
+      const pausedReason = pausedReasonOf(row.failureCode);
+      if (pausedReason) paused.set(row.listingId, pausedReason);
+      const keptLive = keptLiveOf(row.failureCode);
+      if (keptLive) kept.set(row.listingId, keptLive);
+    }
+    return {
+      paused: paused.size,
+      pausedReason: [...paused.values()][0] ?? null,
+      keptLive: kept.size,
+      keptLiveReason: [...kept.values()][0]?.reason ?? null,
+      skippedChanges: [...kept.values()].reduce((sum, entry) => sum + entry.skipped.length, 0),
+    };
+  }
+
+  /** The seller's listings as stored now, by listing id: what a re-import updates. */
+  private async existingRecords(): Promise<ReadonlyMap<string, CommerceListingRecord>> {
+    try {
+      return new Map((await this.host.localRecords()).map((record) => [record.listingId, record]));
+    } catch {
+      return new Map();
+    }
   }
 
   async confirmConflict(manifestId: string, listingId: string): Promise<InventoryImportConflictAckResult> {
@@ -465,7 +513,8 @@ export class CommerceInventoryImportApplication {
    * save listings as paused while a gate blocks.
    */
   async publishGate(manifestId: string): Promise<InventoryImportPublishGate> {
-    const ships = await this.plannedListingsShip(manifestId);
+    const planned = await this.plannedListings(manifestId);
+    const ships = planned.some((listing) => listing.ships);
     const reason = await evaluateDurableListingPublishGuards({
       ownerPubky: this.host.sellerPubky,
       hasMarketplaceSession: Boolean(MarketplaceSessionService.getActiveSession()),
@@ -475,24 +524,41 @@ export class CommerceInventoryImportApplication {
         loadPublication: () => this.host.loadDeliveryKeyPublication(this.host.sellerPubky),
       },
     });
-    return { reason, ships };
+    if (!reason) return { ...NO_PUBLISH_GATE, ships };
+    const existing = await this.existingRecords();
+    let pausing = 0;
+    const keptLive: { listingId: string; title: string }[] = [];
+    for (const listing of planned) {
+      if (!listing.active || !gateBlocksListing(reason, listing.ships)) continue;
+      const stored = existing.get(listing.listingId);
+      if (stored?.state === 'active') keptLive.push({ listingId: listing.listingId, title: stored.title });
+      else pausing += 1;
+    }
+    return { reason, ships, pausing, keptLive };
   }
 
-  private async plannedListingsShip(manifestId: string): Promise<boolean> {
+  /** Each listing still to publish: whether it ships, and whether the row would save it active. */
+  private async plannedListings(manifestId: string): Promise<{ listingId: string; ships: boolean; active: boolean }[]> {
     const manifest = await this.host.store.load(manifestId);
-    if (!manifest) return false;
-    for (const group of this.groups(manifest.rows).values()) {
+    if (!manifest) return [];
+    const listings: { listingId: string; ships: boolean; active: boolean }[] = [];
+    for (const [listingId, group] of this.groups(manifest.rows)) {
       const actionable = group.some(
         (row) => resumeNext(row.checkpoint) !== 'none' && row.intendedAction !== 'unchanged',
       );
       if (!actionable) continue;
+      let ships = false;
+      let active = false;
       for (const row of group) {
         const json = await this.host.store.getPayloadJson(manifestId, row.rowIdentity);
         const payload = json ? payloadRow(json) : null;
-        if (payload && payloadShips(payload)) return true;
+        if (!payload) continue;
+        if (payloadShips(payload)) ships = true;
+        if (payload.state === 'active') active = true;
       }
+      listings.push({ listingId, ships, active });
     }
-    return false;
+    return listings;
   }
 
   /**
@@ -515,9 +581,17 @@ export class CommerceInventoryImportApplication {
     const lines = ['listing_id,row_identity,checkpoint,result'];
     for (const row of manifest?.rows ?? []) {
       const pausedReason = pausedReasonOf(row.failureCode);
+      const keptLive = keptLiveOf(row.failureCode);
+      const noted = pausedReason !== null || keptLive !== null;
       const base =
-        row.checkpoint === 'complete' ? 'synced' : pausedReason ? row.checkpoint : (row.failureCode ?? row.checkpoint);
-      const result = pausedReason ? `${base}, ${pausedResultText(pausedReason)}` : base;
+        row.checkpoint === 'complete' ? 'synced' : noted ? row.checkpoint : (row.failureCode ?? row.checkpoint);
+      let result = base;
+      if (pausedReason) result = `${base}, ${pausedResultText(pausedReason)}`;
+      if (keptLive) {
+        const skipped =
+          keptLive.skipped.length > 0 ? `; skipped: ${keptLiveSkipText(keptLive.skipped as KeptLiveSkip[])}` : '';
+        result = `${base}, ${keptLiveLine(keptLive.reason)}${skipped}`;
+      }
       lines.push([row.listingId, row.rowIdentity, row.checkpoint, result].map(csvCell).join(','));
     }
     return `${lines.join('\n')}\n`;
@@ -619,8 +693,13 @@ export class CommerceInventoryImportApplication {
     listingId: string,
     group: readonly HostPlannedImportRow[],
     blocked: ListingPublishBlockReason | null,
+    existing: CommerceListingRecord | undefined,
   ): Promise<
-    | { status: 'ok'; pausedBy?: ListingPublishBlockReason }
+    | {
+        status: 'ok';
+        pausedBy?: ListingPublishBlockReason;
+        keptLive?: { reason: ListingPublishBlockReason; skipped: KeptLiveSkip[] };
+      }
     | { status: 'invalid'; failure: ListingPublishFailure }
     | { status: 'conflict'; listingId: string; message: string }
     | { status: 'error'; message: string }
@@ -657,9 +736,29 @@ export class CommerceInventoryImportApplication {
 
     let record = mapped.record;
     let pausedBy: ListingPublishBlockReason | undefined;
-    if (blocked && record.state === 'active' && gateBlocksListing(blocked, payloads.some(payloadShips))) {
-      record = { ...record, state: 'paused' };
-      pausedBy = blocked;
+    let keptLive: { reason: ListingPublishBlockReason; skipped: KeptLiveSkip[] } | undefined;
+    const gatedBy =
+      blocked !== null && record.state === 'active' && gateBlocksListing(blocked, payloads.some(payloadShips))
+        ? blocked
+        : null;
+    if (gatedBy && existing?.state === 'active') {
+      // Already live: it stays live. Only safe content changes; a change the gate guards is skipped.
+      const kept = keepLiveRecord(existing, record, new Date().toISOString());
+      if (!kept) {
+        const failure = classifyListingPublishFailure(KEPT_LIVE_UNSAFE_MESSAGE);
+        await this.checkpointGroup(manifestId, listingId, 'failed');
+        const failureCode = `${failure.code}: ${failure.message}`;
+        for (const row of group) await this.annotateRowFailure(manifestId, row.rowIdentity, failureCode);
+        return { status: 'invalid', failure };
+      }
+      record = kept.record;
+      keptLive = { reason: gatedBy, skipped: [...kept.skipped] };
+    } else {
+      if (existing) record = continueRevision(existing, record);
+      if (gatedBy) {
+        record = { ...record, state: 'paused' };
+        pausedBy = gatedBy;
+      }
     }
 
     await this.checkpointGroup(manifestId, listingId, 'publishing');
@@ -678,7 +777,7 @@ export class CommerceInventoryImportApplication {
       return { status: 'error', message: error instanceof Error ? error.message : IMPORT_PARSE_FAIL_COPY };
     }
     await this.checkpointGroup(manifestId, listingId, 'published_unsynced');
-    return { status: 'ok', ...(pausedBy ? { pausedBy } : {}) };
+    return { status: 'ok', ...(pausedBy ? { pausedBy } : {}), ...(keptLive ? { keptLive } : {}) };
   }
 
   private async syncPending(

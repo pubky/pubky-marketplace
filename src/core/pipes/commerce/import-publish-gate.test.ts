@@ -2,6 +2,10 @@ import { describe, expect, it } from 'vitest';
 import {
   gateBlocksListing,
   gateNotice,
+  keptLiveFailureCode,
+  keptLiveLine,
+  keptLiveOf,
+  keptLiveSummary,
   pausedFailureCode,
   pausedReasonOf,
   pausedResultText,
@@ -54,5 +58,36 @@ describe('paused copy', () => {
     expect(pausedSummary(3, 'no-delivery-key')).toBe('3 listings were saved as paused: no delivery key published.');
     expect(gateNotice('no-method').title).toMatch(/^Listings will be saved as paused\. Configure a payment method/);
     expect(gateNotice('no-delivery-key').body).toMatch(/delivery key/);
+  });
+});
+
+describe('kept-live copy', () => {
+  it("says what to fix in the gate's own words, and round-trips the failure code with the skipped changes", () => {
+    expect(keptLiveLine('no-method')).toBe('kept live; fix payment method to keep publishing');
+    expect(keptLiveLine('no-delivery-key')).toBe('kept live; fix delivery key to keep publishing');
+    expect(keptLiveLine('unverified')).toBe('kept live; fix payment settings to keep publishing');
+    expect(keptLiveOf(keptLiveFailureCode('no-method', []))).toEqual({ reason: 'no-method', skipped: [] });
+    expect(keptLiveOf(keptLiveFailureCode('no-delivery-key', ['fulfillment', 'sale']))).toEqual({
+      reason: 'no-delivery-key',
+      skipped: ['fulfillment', 'sale'],
+    });
+    expect(keptLiveOf('paused:no-method')).toBeNull();
+    expect(keptLiveOf('kept_live:nonsense')).toBeNull();
+    expect(keptLiveOf(undefined)).toBeNull();
+  });
+
+  it('summarises how many stayed live and how many changes were skipped', () => {
+    expect(keptLiveSummary(1, 'no-method', 0)).toBe('1 listing was kept live; fix payment method to keep publishing.');
+    expect(keptLiveSummary(3, 'no-delivery-key', 1)).toBe(
+      '3 listings were kept live; fix delivery key to keep publishing. 1 change was skipped.',
+    );
+  });
+
+  it('tells the dry run what happens to each kind of listing', () => {
+    expect(gateNotice('no-method', { pausing: 2, keptLive: 0 }).title).toMatch(/^Listings will be saved as paused\./);
+    expect(gateNotice('no-method', { pausing: 2, keptLive: 1 }).title).toMatch(
+      /^New and paused listings will be saved as paused\./,
+    );
+    expect(gateNotice('no-method', { pausing: 0, keptLive: 3 }).title).toMatch(/^Listings that are live stay live\./);
   });
 });

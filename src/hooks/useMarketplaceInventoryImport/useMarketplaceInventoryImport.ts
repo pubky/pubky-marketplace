@@ -15,7 +15,7 @@ import {
   lossReportToCsv,
   summarizeLossReport,
 } from '@/pipes/commerce/import-loss-report';
-import { gateNotice, type ImportPublishGate } from '@/pipes/commerce/import-publish-gate';
+import { gateNotice, type ImportPublishGate, keptLiveLine } from '@/pipes/commerce/import-publish-gate';
 import { type ImportSettings, missingImportChoices } from '@/pipes/commerce/import-settings';
 import {
   IMPORT_CONDITION_OPTIONS,
@@ -319,7 +319,20 @@ export function useMarketplaceInventoryImport(sellerPubky: string | null) {
     applySettings,
     chooseFreeShipping,
     publishDisabledReason,
-    publishNotice: publishGate?.reason ? gateNotice(publishGate.reason) : undefined,
+    publishNotice: publishGate?.reason
+      ? {
+          ...gateNotice(publishGate.reason, { pausing: publishGate.pausing, keptLive: publishGate.keptLive.length }),
+          ...(publishGate.keptLive.length > 0
+            ? {
+                keptLive: {
+                  line: keptLiveLine(publishGate.reason),
+                  titles: publishGate.keptLive.slice(0, 5).map((listing) => listing.title),
+                  total: publishGate.keptLive.length,
+                },
+              }
+            : {}),
+        }
+      : undefined,
     publish,
     resume,
     confirmConflict,
