@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+  IMPORT_IMAGE_GLOBAL_RATE_LIMIT_BYTES,
+  IMPORT_IMAGE_GLOBAL_RATE_LIMIT_REQUESTS,
   IMPORT_IMAGE_RATE_LIMIT_BYTES,
   IMPORT_IMAGE_RATE_LIMIT_REQUESTS,
   IMPORT_IMAGE_RATE_LIMIT_WINDOW_MS,
@@ -41,5 +43,25 @@ describe('ImportImageRateLimiter', () => {
     ImportImageRateLimiter.recordBytes('ip:1', IMPORT_IMAGE_RATE_LIMIT_BYTES);
     expect(ImportImageRateLimiter.admit('ip:1').ok).toBe(false);
     expect(ImportImageRateLimiter.admit('ip:2').ok).toBe(true);
+  });
+
+  describe('global allowance', () => {
+    it('refuses every caller once the global request allowance is spent, then recovers', () => {
+      for (let i = 0; i < IMPORT_IMAGE_GLOBAL_RATE_LIMIT_REQUESTS; i += 1) {
+        expect(ImportImageRateLimiter.admitGlobal().ok).toBe(true);
+      }
+      const refused = ImportImageRateLimiter.admitGlobal();
+      expect(refused.ok).toBe(false);
+      if (!refused.ok) expect(refused.retryAfterSeconds).toBeGreaterThan(0);
+
+      vi.advanceTimersByTime(IMPORT_IMAGE_RATE_LIMIT_WINDOW_MS + 1);
+      expect(ImportImageRateLimiter.admitGlobal().ok).toBe(true);
+    });
+
+    it('refuses once the global byte allowance is spent', () => {
+      expect(ImportImageRateLimiter.admitGlobal().ok).toBe(true);
+      ImportImageRateLimiter.recordGlobalBytes(IMPORT_IMAGE_GLOBAL_RATE_LIMIT_BYTES);
+      expect(ImportImageRateLimiter.admitGlobal().ok).toBe(false);
+    });
   });
 });

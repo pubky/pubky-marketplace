@@ -28,6 +28,14 @@ export const IMPORT_IMAGE_RATE_LIMIT_WINDOW_MS = 60_000;
 export const IMPORT_IMAGE_RATE_LIMIT_BYTES = 150 * 1024 * 1024;
 export const IMPORT_IMAGE_RATE_LIMIT_BYTES_WINDOW_MS = 10 * 60_000;
 
+/**
+ * Caps across all callers together: the ceiling on what this route can do as an
+ * open fetch relay, whoever is calling and however many identities they forge.
+ * Held per server process, so the effective cap is this times the instance count.
+ */
+export const IMPORT_IMAGE_GLOBAL_RATE_LIMIT_REQUESTS = 600;
+export const IMPORT_IMAGE_GLOBAL_RATE_LIMIT_BYTES = 1024 * 1024 * 1024;
+
 /** Request body ceiling for the route; a body is `{ url, remainingBytes }`. */
 export const IMPORT_IMAGE_MAX_REQUEST_BODY_BYTES = 8 * 1024;
 

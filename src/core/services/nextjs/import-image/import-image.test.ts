@@ -6,8 +6,9 @@ import {
 } from '@/config/import-image';
 import { importImageSafeLookup, NextJsImportImageService } from './import-image';
 
-const { mockFetch, mockResolve4, mockResolve6 } = vi.hoisted(() => ({
+const { mockFetch, mockResolve4, mockResolve6, agentOptions } = vi.hoisted(() => ({
   mockFetch: vi.fn(),
+  agentOptions: [] as Array<{ connect?: { lookup?: unknown } }>,
   mockResolve4: vi.fn<(hostname: string) => Promise<string[]>>(),
   mockResolve6: vi.fn<(hostname: string) => Promise<string[]>>(),
 }));
@@ -20,7 +21,12 @@ vi.mock('dns/promises', () => ({
 
 vi.mock('undici', async (importOriginal) => {
   const actual = await importOriginal<typeof import('undici')>();
-  return { ...actual, fetch: mockFetch };
+  class RecordingAgent {
+    constructor(options: { connect?: { lookup?: unknown } }) {
+      agentOptions.push(options);
+    }
+  }
+  return { ...actual, fetch: mockFetch, Agent: RecordingAgent };
 });
 
 const PNG = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0, 1, 2, 3, 4];
@@ -228,6 +234,47 @@ describe('NextJsImportImageService', () => {
     it('treats a redirect without Location as an http error', async () => {
       mockFetch.mockResolvedValueOnce(new Response(null, { status: 302 }));
       expect(await fetchImage('https://cdn.example.com/a.png')).toMatchObject({ reason: 'http_error', status: 302 });
+    });
+  });
+
+  describe('address pinning on every hop', () => {
+    it('sends every hop through the dispatcher whose connect lookup is the vetted lookup', async () => {
+      mockFetch
+        .mockResolvedValueOnce(redirectTo('https://b.example.net/1.png'))
+        .mockResolvedValueOnce(redirectTo('https://c.example.org/2.png'))
+        .mockResolvedValueOnce(imageResponse(PNG));
+      await fetchImage('https://a.example.com/0.png');
+
+      expect(agentOptions).toHaveLength(1);
+      expect(agentOptions[0].connect?.lookup).toBe(importImageSafeLookup);
+      const dispatchers = mockFetch.mock.calls.map(([, init]) => (init as { dispatcher: unknown }).dispatcher);
+      expect(dispatchers).toHaveLength(3);
+      expect(dispatchers.every((dispatcher) => dispatcher === dispatchers[0] && dispatcher !== undefined)).toBe(true);
+    });
+
+    it('re-resolves DNS for every hop instead of reusing an earlier answer', async () => {
+      mockFetch
+        .mockResolvedValueOnce(redirectTo('https://b.example.net/1.png'))
+        .mockResolvedValueOnce(redirectTo('https://a.example.com/again.png'))
+        .mockResolvedValueOnce(imageResponse(PNG));
+      await fetchImage('https://a.example.com/0.png');
+
+      expect(mockResolve4.mock.calls.map(([hostname]) => hostname)).toEqual([
+        'a.example.com',
+        'b.example.net',
+        'a.example.com',
+      ]);
+    });
+
+    it('refuses a hop whose hostname re-resolves to a private address after an earlier public answer (rebinding)', async () => {
+      mockResolve4.mockResolvedValueOnce([PUBLIC_IP]).mockResolvedValueOnce(['169.254.169.254']);
+      mockFetch.mockResolvedValueOnce(redirectTo('https://a.example.com/second.png'));
+
+      expect(await fetchImage('https://a.example.com/first.png')).toMatchObject({
+        ok: false,
+        reason: 'blocked_address',
+      });
+      expect(mockFetch).toHaveBeenCalledTimes(1);
     });
   });
 

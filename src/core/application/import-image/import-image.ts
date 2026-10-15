@@ -15,6 +15,9 @@ export class ImportImageApplication {
     remainingBytes,
     signal,
   }: TImportImageFetchParams): Promise<TImportImageFetchResult> {
+    const global = ImportImageRateLimiter.admitGlobal();
+    if (!global.ok) return { ok: false, reason: 'rate_limited', retryAfterSeconds: global.retryAfterSeconds };
+
     for (const key of rateLimitKeys) {
       const decision = ImportImageRateLimiter.admit(key);
       if (!decision.ok) return { ok: false, reason: 'rate_limited', retryAfterSeconds: decision.retryAfterSeconds };
@@ -22,6 +25,7 @@ export class ImportImageApplication {
 
     const result = await NextJsImportImageService.fetch({ url, remainingBytes, signal });
     if (result.ok) {
+      ImportImageRateLimiter.recordGlobalBytes(result.bytes.byteLength);
       for (const key of rateLimitKeys) ImportImageRateLimiter.recordBytes(key, result.bytes.byteLength);
     }
     return result;
