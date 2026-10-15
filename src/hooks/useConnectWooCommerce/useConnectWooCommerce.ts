@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm, type UseFormReturn } from 'react-hook-form';
 import { ConnectorsController } from '@/controllers/connectors/connectors';
-import { connectorFailureCopy, connectorRefusalReason } from '@/libs/commerce/connectors';
+import { connectorErrorMessage } from '@/libs/commerce/connectors';
 import { toast } from '@/molecules/Toaster/use-toast';
 import {
   type WooKeysFormData,
@@ -73,7 +73,7 @@ export function useConnectWooCommerce({
         toast({
           variant: 'error',
           title: 'Could not connect',
-          description: connectorFailureCopy(connectorRefusalReason(error), START_FAILED),
+          description: connectorErrorMessage(error, START_FAILED),
         });
       } finally {
         setIsWorking(false);
@@ -88,7 +88,7 @@ export function useConnectWooCommerce({
       setIsWorking(true);
       try {
         const connection = await ConnectorsController.commitConnectWooCommerceWithKeys({
-          address: data.storeUrl,
+          address: data.keysStoreUrl,
           consumerKey: data.consumerKey,
           consumerSecret: data.consumerSecret,
         });
@@ -96,11 +96,11 @@ export function useConnectWooCommerce({
         saved = true;
         await onKeysSaved?.(connection.id);
       } catch (error) {
-        keysForm.resetField('consumerSecret');
+        keysForm.setValue('consumerSecret', '');
         toast({
           variant: 'error',
           title: 'Could not save the keys',
-          description: connectorFailureCopy(connectorRefusalReason(error), KEYS_FAILED),
+          description: connectorErrorMessage(error, KEYS_FAILED),
         });
       } finally {
         setIsWorking(false);

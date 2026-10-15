@@ -5,7 +5,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm, type UseFormReturn } from 'react-hook-form';
 import type { ShopifyDraft } from '@/application/connectors/connectors';
 import { ConnectorsController } from '@/controllers/connectors/connectors';
-import { type ConnectorConnection, connectorFailureCopy, connectorRefusalReason } from '@/libs/commerce/connectors';
+import { type ConnectorConnection, connectorErrorMessage } from '@/libs/commerce/connectors';
 import { toast } from '@/molecules/Toaster/use-toast';
 import {
   type ShopifyDomainFormData,
@@ -92,7 +92,7 @@ export function useConnectShopify({
         toast({
           variant: 'error',
           title: 'Could not prepare the links',
-          description: connectorFailureCopy(connectorRefusalReason(error), DRAFT_FAILED),
+          description: connectorErrorMessage(error, DRAFT_FAILED),
         });
       } finally {
         setIsWorking(false);
@@ -117,11 +117,11 @@ export function useConnectShopify({
         ok = true;
         toast({ description: 'Keys saved. Pubky stores them encrypted and will not show them again.' });
       } catch (error) {
-        keysForm.resetField('clientSecret');
+        keysForm.setValue('clientSecret', '');
         toast({
           variant: 'error',
           title: 'Could not save the keys',
-          description: connectorFailureCopy(connectorRefusalReason(error), KEYS_FAILED),
+          description: connectorErrorMessage(error, KEYS_FAILED),
         });
       } finally {
         setIsWorking(false);

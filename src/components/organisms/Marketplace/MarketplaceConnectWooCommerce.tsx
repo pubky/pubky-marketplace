@@ -124,7 +124,7 @@ export function MarketplaceConnectWooCommerce({
               }}
             >
               <ControlledInputField
-                name="storeUrl"
+                name="keysStoreUrl"
                 control={keysForm.control}
                 label="Store address"
                 placeholder="shop.example.com"

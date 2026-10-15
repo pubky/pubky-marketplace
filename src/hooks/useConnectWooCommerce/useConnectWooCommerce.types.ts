@@ -3,6 +3,7 @@ import { normalizeWooStoreAddress } from '@/libs/commerce/connectors';
 
 export const WOO_CONNECT_FIELDS = {
   STORE_URL: 'storeUrl',
+  KEYS_STORE_URL: 'keysStoreUrl',
   CONSUMER_KEY: 'consumerKey',
   CONSUMER_SECRET: 'consumerSecret',
 } as const;
@@ -36,7 +37,7 @@ export const wooOneClickFormDefaults: WooOneClickFormData = {
 
 /** The fallback form: the store address plus a REST key pair. */
 export const wooKeysFormSchema = z.object({
-  [WOO_CONNECT_FIELDS.STORE_URL]: storeUrl,
+  [WOO_CONNECT_FIELDS.KEYS_STORE_URL]: storeUrl,
   [WOO_CONNECT_FIELDS.CONSUMER_KEY]: z
     .string()
     .trim()
@@ -50,7 +51,7 @@ export const wooKeysFormSchema = z.object({
 export type WooKeysFormData = z.infer<typeof wooKeysFormSchema>;
 
 export const wooKeysFormDefaults: WooKeysFormData = {
-  [WOO_CONNECT_FIELDS.STORE_URL]: '',
+  [WOO_CONNECT_FIELDS.KEYS_STORE_URL]: '',
   [WOO_CONNECT_FIELDS.CONSUMER_KEY]: '',
   [WOO_CONNECT_FIELDS.CONSUMER_SECRET]: '',
 };

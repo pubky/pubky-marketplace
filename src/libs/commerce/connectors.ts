@@ -442,7 +442,6 @@ export function connectorAlertCopy(kind: string): string {
 /** Service refusal codes the connection screens explain; anything else gets generic copy. */
 const CONNECT_REFUSAL_COPY: Readonly<Record<string, string>> = {
   connectors_disabled: 'Store connections are not switched on for this shop yet.',
-  provider_unavailable: 'This store type is not available yet. Try again later.',
   invalid_domain: 'That store address was not accepted. Check it and try again.',
   invalid_provider: 'That store type is not supported.',
   already_connected: 'That store is already connected.',
@@ -459,6 +458,19 @@ const CONNECT_REFUSAL_COPY: Readonly<Record<string, string>> = {
 export function connectorFailureCopy(reason: string | null | undefined, fallback: string): string {
   if (reason && CONNECT_REFUSAL_COPY[reason]) return CONNECT_REFUSAL_COPY[reason];
   return fallback;
+}
+
+/**
+ * Seller copy for a failed connector call. `provider_unavailable` is a 404 when
+ * the store type is not built into the service and a 502 when the store itself
+ * cannot be reached, so the status decides which one it means.
+ */
+export function connectorErrorMessage(error: unknown, fallback: string): string {
+  const reason = connectorRefusalReason(error);
+  if (reason === 'provider_unavailable' && isAppError(error) && error.context?.statusCode === 404) {
+    return 'This store type is not available yet. Try again later.';
+  }
+  return connectorFailureCopy(reason, fallback);
 }
 
 export const SHOPIFY_RETURN_ERROR_COPY: Readonly<Record<string, string>> = {

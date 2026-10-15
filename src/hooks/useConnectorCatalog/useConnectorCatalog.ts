@@ -5,8 +5,7 @@ import { ConnectorsController } from '@/controllers/connectors/connectors';
 import {
   type ConnectorCatalogProduct,
   type ConnectorConnection,
-  connectorFailureCopy,
-  connectorRefusalReason,
+  connectorErrorMessage,
 } from '@/libs/commerce/connectors';
 import { isMarketplaceSessionRequiredError } from '@/libs/error/error.utils';
 import { toast } from '@/molecules/Toaster/use-toast';
@@ -36,7 +35,8 @@ export function useConnectorCatalog(connection: Pick<ConnectorConnection, 'id'> 
   const [saved, setSaved] = useState<ReadonlySet<string>>(new Set());
   const [chosen, setChosen] = useState<ReadonlySet<string>>(new Set());
   const [mapped, setMapped] = useState<ReadonlySet<string>>(new Set());
-  const [isLoading, setIsLoading] = useState(Boolean(connectionId));
+  const [isLoadingFirstPage, setIsLoading] = useState(true);
+  const isLoading = connectionId !== null && isLoadingFirstPage;
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -74,7 +74,7 @@ export function useConnectorCatalog(connection: Pick<ConnectorConnection, 'id'> 
     } catch (loadError) {
       if (!isCurrent()) return;
       setNeedsSession(isMarketplaceSessionRequiredError(loadError));
-      setError(connectorFailureCopy(connectorRefusalReason(loadError), LOAD_FAILED));
+      setError(connectorErrorMessage(loadError, LOAD_FAILED));
     } finally {
       if (isCurrent()) {
         setIsLoading(false);
@@ -131,7 +131,7 @@ export function useConnectorCatalog(connection: Pick<ConnectorConnection, 'id'> 
       toast({
         variant: 'error',
         title: 'Could not save your choice',
-        description: connectorFailureCopy(connectorRefusalReason(saveError), 'Try again in a moment.'),
+        description: connectorErrorMessage(saveError, 'Try again in a moment.'),
       });
       return false;
     } finally {

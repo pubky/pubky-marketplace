@@ -1,0 +1,121 @@
+import { act, renderHook, waitFor } from '@testing-library/react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { ConnectorsController } from '@/controllers/connectors/connectors';
+import { connectorConnectionSchema } from '@/libs/commerce/connectors';
+import { toast } from '@/molecules/Toaster/use-toast';
+import { connectorRefusal } from '@/test-utils/connector-errors';
+import { useStoreConnections } from './useStoreConnections';
+
+const mode = vi.hoisted(() => ({ value: 'transaction-service' as string }));
+
+vi.mock('@/config/commerce', async () => {
+  const actual = await vi.importActual<typeof import('@/config/commerce')>('@/config/commerce');
+  return { ...actual, getCommerceAdapterMode: () => mode.value };
+});
+
+vi.mock('@/stores/auth/auth.store', () => ({
+  useAuthStore: (selector: (state: { currentUserPubky: string }) => unknown) =>
+    selector({ currentUserPubky: 'y'.repeat(52) }),
+}));
+
+vi.mock('@/controllers/connectors/connectors', () => ({
+  ConnectorsController: { fetchConnections: vi.fn(), commitDisconnect: vi.fn() },
+}));
+
+vi.mock('@/molecules/Toaster/use-toast', () => ({ toast: vi.fn() }));
+
+function connection(id: string, overrides: Record<string, unknown> = {}) {
+  return connectorConnectionSchema.parse({
+    id,
+    provider: 'woocommerce',
+    domain: `${id}.example.com`,
+    status: 'connected',
+    scopes: ['read_write'],
+    ...overrides,
+  });
+}
+
+describe('useStoreConnections', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mode.value = 'transaction-service';
+  });
+
+  it('lists the connections with their health', async () => {
+    vi.mocked(ConnectorsController.fetchConnections).mockResolvedValue([
+      connection('a'),
+      connection('b', { status: 'error', lastError: { message: 'credentials_rejected' } }),
+    ]);
+    const { result } = renderHook(() => useStoreConnections());
+
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    expect(result.current.rows.map((row) => row.health.state)).toEqual(['connected', 'needs_attention']);
+    expect(result.current.error).toBeNull();
+  });
+
+  it('asks for a session when the service wants one', async () => {
+    const expired = connectorRefusal('x', 401);
+    Object.assign(expired, { code: 'SESSION_EXPIRED' });
+    vi.mocked(ConnectorsController.fetchConnections).mockRejectedValue(expired);
+    const { result } = renderHook(() => useStoreConnections());
+
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    expect(result.current.needsSession).toBe(true);
+  });
+
+  it('says store connections are off when the service has them switched off', async () => {
+    vi.mocked(ConnectorsController.fetchConnections).mockRejectedValue(connectorRefusal('connectors_disabled', 404));
+    const { result } = renderHook(() => useStoreConnections());
+
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    expect(result.current.unavailable).toBe(true);
+    expect(result.current.error).toBe('Store connections are not switched on for this shop yet.');
+  });
+
+  it('does not call the service outside the durable mode', async () => {
+    mode.value = 'sandbox';
+    const { result } = renderHook(() => useStoreConnections());
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(result.current.enabled).toBe(false);
+    expect(ConnectorsController.fetchConnections).not.toHaveBeenCalled();
+  });
+
+  it('keeps a disconnected store in the list as Disconnected until the page is reloaded', async () => {
+    const first = connection('a');
+    vi.mocked(ConnectorsController.fetchConnections).mockResolvedValue([first, connection('b')]);
+    vi.mocked(ConnectorsController.commitDisconnect).mockResolvedValue();
+    const { result } = renderHook(() => useStoreConnections());
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    let ok = false;
+    await act(async () => {
+      ok = await result.current.disconnect(first);
+    });
+
+    expect(ok).toBe(true);
+    expect(ConnectorsController.commitDisconnect).toHaveBeenCalledWith('a');
+    expect(result.current.rows.map((row) => [row.connection.id, row.health.state])).toEqual([
+      ['b', 'connected'],
+      ['a', 'disconnected'],
+    ]);
+    expect(toast).toHaveBeenCalledWith({ description: 'Disconnected. Pubky deleted its keys for this store.' });
+  });
+
+  it('leaves the connection in place and says so when Disconnect fails', async () => {
+    const first = connection('a');
+    vi.mocked(ConnectorsController.fetchConnections).mockResolvedValue([first]);
+    vi.mocked(ConnectorsController.commitDisconnect).mockRejectedValue(connectorRefusal('provider_unavailable', 502));
+    const { result } = renderHook(() => useStoreConnections());
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    await act(async () => {
+      expect(await result.current.disconnect(first)).toBe(false);
+    });
+
+    expect(result.current.rows.map((row) => row.health.state)).toEqual(['connected']);
+    expect(toast).toHaveBeenCalledWith(expect.objectContaining({ variant: 'error', title: 'Could not disconnect' }));
+  });
+});

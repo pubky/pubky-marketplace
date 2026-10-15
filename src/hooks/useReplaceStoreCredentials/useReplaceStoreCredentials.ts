@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm, type UseFormReturn } from 'react-hook-form';
 import { ConnectorsController } from '@/controllers/connectors/connectors';
-import { type ConnectorConnection, connectorFailureCopy, connectorRefusalReason } from '@/libs/commerce/connectors';
+import { type ConnectorConnection, connectorErrorMessage } from '@/libs/commerce/connectors';
 import { toast } from '@/molecules/Toaster/use-toast';
 import {
   type ReplaceCredentialsFormData,
@@ -51,8 +51,8 @@ export function useReplaceStoreCredentials(
         toast({
           variant: 'error',
           title: 'Could not replace the keys',
-          description: connectorFailureCopy(
-            connectorRefusalReason(error),
+          description: connectorErrorMessage(
+            error,
             'The old keys are still in place. Check the new ones and try again.',
           ),
         });

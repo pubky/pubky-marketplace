@@ -6,7 +6,7 @@ import { getCommerceAdapterMode, isDurableCommerceMode } from '@/config/commerce
 import { ConnectorsController } from '@/controllers/connectors/connectors';
 import {
   type ConnectorAlert,
-  connectorFailureCopy,
+  connectorErrorMessage,
   connectorRefusalReason,
   pushNeedsAction,
 } from '@/libs/commerce/connectors';
@@ -99,7 +99,7 @@ export function useConnectorPushStatus() {
         title: 'Could not retry',
         description:
           (reason && RETRY_REFUSALS[reason]) ??
-          connectorFailureCopy(reason, 'The order was not sent again. Try again in a moment.'),
+          connectorErrorMessage(error, 'The order was not sent again. Try again in a moment.'),
       });
       return false;
     } finally {
@@ -118,7 +118,7 @@ export function useConnectorPushStatus() {
       toast({
         variant: 'error',
         title: 'Could not dismiss',
-        description: connectorFailureCopy(connectorRefusalReason(error), 'Try again in a moment.'),
+        description: connectorErrorMessage(error, 'Try again in a moment.'),
       });
       return false;
     }

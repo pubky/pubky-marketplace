@@ -7,7 +7,7 @@ import {
   type ConnectionHealth,
   connectionHealth,
   type ConnectorConnection,
-  connectorFailureCopy,
+  connectorErrorMessage,
   connectorRefusalReason,
 } from '@/libs/commerce/connectors';
 import { isMarketplaceSessionRequiredError } from '@/libs/error/error.utils';
@@ -57,7 +57,7 @@ export function useStoreConnections() {
       const reason = connectorRefusalReason(loadError);
       setNeedsSession(isMarketplaceSessionRequiredError(loadError));
       setUnavailable(reason === 'connectors_disabled');
-      setError(connectorFailureCopy(reason, LOAD_FAILED_COPY));
+      setError(connectorErrorMessage(loadError, LOAD_FAILED_COPY));
     } finally {
       if (isCurrent()) setIsLoading(false);
     }
@@ -88,10 +88,7 @@ export function useStoreConnections() {
       toast({
         variant: 'error',
         title: 'Could not disconnect',
-        description: connectorFailureCopy(
-          connectorRefusalReason(disconnectError),
-          'The connection is still active. Try again in a moment.',
-        ),
+        description: connectorErrorMessage(disconnectError, 'The connection is still active. Try again in a moment.'),
       });
       return false;
     } finally {
