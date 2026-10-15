@@ -1,0 +1,1 @@
+Pressing Buy, Save or any other account action right after a page reload no longer shows the Join Pubky dialog to a signed-in user: the click waits for the saved sign-in to restore and then goes through.
