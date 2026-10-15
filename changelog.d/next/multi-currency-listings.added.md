@@ -1,0 +1,1 @@
+Sellers can price a listing in USD, EUR, CHF, GBP, JPY, CAD, AUD or bitcoin (₿). Prices show in the listing's own currency on cards, the listing page, the cart and orders; yen has no decimals, bitcoin is entered in whole base units. Existing USD and bitcoin listings and drafts, including drafts saved with the old "SATS" choice, keep working.

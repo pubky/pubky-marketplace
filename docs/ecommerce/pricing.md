@@ -13,12 +13,25 @@ record schema additionally forces one asset per listing: the primary price, ever
 price override, and the flat shipping price must share the same `{currency, exponent}`
 (`src/libs/commerce/marketplace-records.ts`).
 
-The sell studio deliberately authors exactly two of the assets that schema permits:
+The sell studio authors eight of the assets that schema permits, defined once in the currency
+registry (`src/config/currencies.ts`):
 
-| Studio choice | Stored money                     | Input unit                                                          |
-| ------------- | -------------------------------- | ------------------------------------------------------------------- |
-| US dollars    | `{currency: "USD", exponent: 2}` | dollars with at most two decimals (`125.00` → `amountMinor: 12500`) |
-| Bitcoin (₿)   | `{currency: "BTC", exponent: 8}` | whole bitcoin base units (`15000` → `amountMinor: 15000`)           |
+| Studio choice      | Stored money                     | Input unit                                                          |
+| ------------------ | -------------------------------- | ------------------------------------------------------------------- |
+| US dollars         | `{currency: "USD", exponent: 2}` | dollars with at most two decimals (`125.00` → `amountMinor: 12500`) |
+| Euros              | `{currency: "EUR", exponent: 2}` | euros with at most two decimals                                     |
+| Swiss francs       | `{currency: "CHF", exponent: 2}` | francs with at most two decimals                                    |
+| British pounds     | `{currency: "GBP", exponent: 2}` | pounds with at most two decimals                                    |
+| Japanese yen       | `{currency: "JPY", exponent: 0}` | whole yen, no decimal point (`1500` → `amountMinor: 1500`)          |
+| Canadian dollars   | `{currency: "CAD", exponent: 2}` | dollars with at most two decimals                                   |
+| Australian dollars | `{currency: "AUD", exponent: 2}` | dollars with at most two decimals                                   |
+| Bitcoin (₿)        | `{currency: "BTC", exponent: 8}` | whole bitcoin base units (`15000` → `amountMinor: 15000`)           |
+
+Exponents are the ISO 4217 minor units. Fiat input is parsed exactly, as a decimal string and
+never through floating point, and a fraction the currency cannot hold is refused rather than
+rounded (`src/core/pipes/money/money.parse.ts`). The studio's `currency` enum is the
+registry's code list, so adding a currency means adding one registry entry. Drafts saved
+with the legacy `SATS` choice still restore, as `BTC`.
 
 Bitcoin base units ARE the minor unit of BTC at exponent 8 — no conversion happens on
 input, ever.
@@ -27,35 +40,45 @@ This is the exact shape the live regtest purchase paid
 criterion of `{amount: "15000", asset: "BTC"}` — see `src/test/live/locks-payment.live.ts`).
 Offers, counteroffers, and auction bids are always made in the listing's own asset; the
 record schema and the transaction service both reject cross-asset amounts. A listing
-priced in any other asset (a foreign record, e.g. EUR) still renders, but the studio
+priced in any other asset (a foreign record, e.g. SEK) still renders, but the studio
 refuses to edit it (`unsupported`) rather than silently rewriting its price into an asset
-it did not have.
+it did not have. Saved shipping presets are USD-only, so the studio offers them on USD
+listings only.
 
 BTC-at-exponent-8 money displays per BIP-177 everywhere: the bitcoin symbol followed by
 grouped integer base units (`₿15,000`), which is the same exact amount as
 `BTC 0.00015000` stated in its own minor unit. The words "sats"/"satoshis" appear
 nowhere in the UI.
 
-## What the "≈" estimates are (indicative display only)
+## What the "≈" hints are (indicative display only)
 
-Wherever a listing price renders (cards, detail, cart lines and subtotals, order totals),
-an approximate converted counterpart can appear beside it: fiat-priced money shows
-"≈ ₿N", bitcoin-priced money shows "≈ $X". Honest treatment, enforced in code
-(`src/libs/commerce/pricing.ts`, `MarketplaceIndicativePrice`):
+Prices always show in the listing's own currency (`€112.50` for a euro listing, never
+silently re-expressed). Wherever a listing price renders (cards, detail, cart lines and
+subtotals, order totals), an approximate converted hint can appear beside it, in the buyer's
+display currency: `≈ CHF 100.00` beside a euro price for a buyer who displays in Swiss
+francs. When the buyer's display currency is the price's own, the hint is the other side of
+the fiat and bitcoin pair instead (`≈ ₿N` beside a fiat price, `≈ $X` beside a bitcoin
+price). Honest treatment, enforced in code (`src/core/pipes/money/money.convert.ts`,
+`MarketplaceIndicativePrice`):
 
 - **Marked approximate.** Always prefixed "≈", with a tooltip: "At current rate,
   indicative only".
-- **Rate source.** The BlockTank BTCUSD ticker at the runtime config's
-  `exchangeRateApi` (default `https://api1.blocktank.to/api/fx/rates/btc`) — the same
-  source the app's Homegate onboarding already uses — cached in memory and refetched
-  when older than five minutes.
-- **Rendered only when the rate fetch succeeds.** No rate → no estimate. Never a stale
-  fallback, never an error state beside a price.
-- **USD and BTC only.** Any other asset has no rate source here, so it gets no estimate.
-- **User-controlled.** Marketplace settings → Display preferences → "Approximate price
-  conversions" toggles the secondary display off; the preference persists on the device.
-- **Display-only.** Nothing transactional reads the estimate. It cannot change what a
-  buyer pays or a seller receives.
+- **Rate source.** Blocktank's bitcoin rate feed at the runtime config's `exchangeRateApi`
+  (default `https://api1.blocktank.to/api/fx/rates/btc`), the feed Bitkit shows, through the
+  same-origin `/api/fx-rate` route (the upstream sends no CORS headers). It carries a
+  `BTC<CCY>` ticker for every listing currency. One response is one snapshot: fiat-to-fiat
+  hints are two tickers of the same snapshot (EUR→BTC→CHF), never rates from different
+  moments. The snapshot is cached in memory and refetched when older than five minutes.
+- **Exact arithmetic.** Conversion uses integer ratios and rounds half up to the target's
+  minor unit; an estimate that rounds to zero shows nothing.
+- **Rendered only when the rates are there.** No rate for either currency → no hint. Never a
+  stale fallback, never an error state beside a price.
+- **User-controlled.** The display currency is a device preference in the marketplace filter
+  bar (all eight currencies). Marketplace settings → Display preferences → "Approximate
+  price conversions" toggles the hint off; both persist on the device.
+- **Display-only.** Nothing transactional reads the hint. It cannot change what a buyer pays
+  or a seller receives. Checkout states the amount actually charged, which the marketplace
+  service computes from a fresh rate at order time and records on the order.
 
 ## What the payment rails do today
 
