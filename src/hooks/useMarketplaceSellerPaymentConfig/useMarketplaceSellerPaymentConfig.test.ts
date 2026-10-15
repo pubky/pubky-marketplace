@@ -1,6 +1,7 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { CommerceController } from '@/controllers/commerce/commerce';
+import type { SellerPaymentConfigOwnView } from '@/libs/commerce/payment-methods';
 import { AppError } from '@/libs/error/error';
 import { AuthErrorCode, ClientErrorCode } from '@/libs/error/error.codes';
 import { ErrorCategory, ErrorService } from '@/libs/error/error.types';
@@ -243,7 +244,7 @@ describe('useMarketplaceSellerPaymentConfig', () => {
     });
 
     it('never lets an older config refresh replace a newer Bitkit confirmation', async () => {
-      let releaseStale: (value: typeof config) => void = () => {};
+      let releaseStale: (value: SellerPaymentConfigOwnView) => void = () => {};
       vi.mocked(CommerceController.getMyPaymentConfig)
         .mockReset()
         .mockResolvedValueOnce({ ...config, bitcoinSetup: 'setup_required' })
