@@ -295,8 +295,11 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
     requireAuth(revealSessionRequired);
   };
   const onSessionConnected = () => {
+    const pendingPurchase = pendingPurchaseRef.current;
+    pendingPurchaseRef.current = null;
     setShowSessionRequired(false);
     void negotiation.refresh();
+    pendingPurchase?.();
   };
   const addSelectedVariantToCart = () => {
     if (!selectedVariant) return;
@@ -616,7 +619,9 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
               <MarketplaceSessionConnectDialog
                 open={showSessionRequired}
                 onOpenChange={(open) => {
-                  if (!open) pendingPurchaseRef.current = null;
+                  // The dialog closes itself just before `onConnected`, so only a
+                  // close without a session is a dismissal that drops the Buy.
+                  if (!open && !MarketplaceSessionService.getActiveSession()) pendingPurchaseRef.current = null;
                   setShowSessionRequired(open);
                 }}
                 hideTrigger
