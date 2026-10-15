@@ -2128,12 +2128,11 @@ export class CommerceApplication {
       }
       let legacy: CommerceWatchlistRecord | null = null;
       try {
-        legacy = CommerceRecordNormalizer.watchlistRecord(
-          await CommerceHomeserverService.fetchJson(legacyUrl, PRIV_V1_LOG_PATH),
-        );
+        const stored = await CommerceHomeserverService.fetchJsonIfFound(legacyUrl, PRIV_V1_LOG_PATH);
+        if (stored.found) legacy = CommerceRecordNormalizer.watchlistRecord(stored.json);
       } catch (error) {
         if (this.isPrivateAccessDenied(error)) return 'needs_reauth';
-        if (!(isAppError(error) && isNotFound(error))) throw error;
+        throw error;
       }
 
       const [favorites, tombstoneRows] = await Promise.all([
@@ -3239,7 +3238,12 @@ export class CommerceApplication {
         role,
       });
       const url = CommerceRecordNormalizer.reviewUri(actorPubky, reviewId);
-      const record = CommerceRecordNormalizer.review(await CommerceHomeserverService.fetchJson(url));
+      const stored = await CommerceHomeserverService.fetchJsonIfFound(url);
+      if (!stored.found) {
+        this.ownReviewHomeserverMisses.add(this.ownReviewMissKey(actorPubky, order.id));
+        return null;
+      }
+      const record = CommerceRecordNormalizer.review(stored.json);
       if (
         record.ownerPubky !== actorPubky ||
         record.listingId !== listingId ||
