@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   availablePaymentMethods,
   isPlausibleAccountXpub,
+  isValidPaypalMerchantEmail,
   sellerPaykitAssets,
   sellerPaymentConfigOwnViewSchema,
   sellerPaymentConfigSchema,
@@ -280,5 +281,42 @@ describe('payment-methods', () => {
       expect(ready).toMatchObject({ usdtEnabled: true, usdtSetup: 'ready', usdtSetupAction: null });
       expect(sellerPaymentConfigOwnViewSchema.parse(ownView)).not.toHaveProperty('usdtSetup');
     });
+  });
+});
+
+describe('isValidPaypalMerchantEmail', () => {
+  it.each(['merchant@example.com', 'a.b+c@sub.example.co', '  seller@example.com  '])('accepts %j', (email) => {
+    expect(isValidPaypalMerchantEmail(email)).toBe(true);
+  });
+
+  it('treats empty input as clearing PayPal', () => {
+    expect(isValidPaypalMerchantEmail('')).toBe(true);
+    expect(isValidPaypalMerchantEmail('   ')).toBe(true);
+  });
+
+  it.each([
+    'test',
+    'no-at-sign',
+    '@example.com',
+    'user@',
+    'user@nodot',
+    'user@ex..ample.com',
+    'user name@example.com',
+    'user@.example.com',
+    'user@example.com.',
+    'user\u0007@example.com',
+    'user\u00a0name@example.com',
+  ])('refuses %j like the service', (email) => {
+    expect(isValidPaypalMerchantEmail(email)).toBe(false);
+  });
+
+  it('refuses an address over 254 UTF-8 bytes', () => {
+    const domain = '@example.com';
+    expect(isValidPaypalMerchantEmail(`${'a'.repeat(254 - domain.length)}${domain}`)).toBe(true);
+    expect(isValidPaypalMerchantEmail(`${'a'.repeat(255 - domain.length)}${domain}`)).toBe(false);
+  });
+
+  it('refuses an address the saved-config schema could not read back', () => {
+    expect(isValidPaypalMerchantEmail('a@b@example.com')).toBe(false);
   });
 });

@@ -1,0 +1,1 @@
+Let sellers prepare and save listing drafts before they set up a payment method: Create listing now shows a payment banner above the composer instead of replacing it, and publishing stays blocked until a method is added.

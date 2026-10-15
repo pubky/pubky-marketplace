@@ -118,6 +118,10 @@ const CHECKOUT_REFUSAL_MESSAGES: ReadonlyMap<string, string> = new Map([
     'INVALID_STATE:Only available fixed-price listings can enter checkout.',
     'This listing is not available for checkout.',
   ],
+  [
+    "UPSTREAM_UNAVAILABLE:The seller's homeserver could not be reached. Try again shortly.",
+    "We couldn't reach the seller's shop. Try again in a moment.",
+  ],
 ]);
 
 /**
@@ -447,4 +451,26 @@ export function shippingFailureMessage(error: unknown, fallback: string): string
     if (mapped) return mapped;
   }
   return marketplaceFailureMessage(marketplaceErrorCode(error), fallback, error);
+}
+
+/**
+ * Copy for the service's `LISTING_NOT_ACTIVE` refusal (checkout, offers and
+ * bids), keyed by `error.reason`: the seller's listing record is not `active`.
+ */
+const LISTING_NOT_FOR_SALE = "This item isn't for sale right now.";
+
+const LISTING_NOT_ACTIVE_REASON_MESSAGES: ReadonlyMap<string, string> = new Map([
+  ['listing_paused', 'The seller paused this listing. Check back later.'],
+  ['listing_ended', 'This listing has ended.'],
+  ['listing_removed', 'The seller removed this listing.'],
+  ['listing_not_active', LISTING_NOT_FOR_SALE],
+]);
+
+/** Copy for a `LISTING_NOT_ACTIVE` refusal, or null for any other failure. */
+export function marketplaceListingNotActiveMessage(error: { code?: unknown; reason?: unknown }): string | null {
+  if (error.code !== 'LISTING_NOT_ACTIVE') return null;
+  return (
+    (typeof error.reason === 'string' ? LISTING_NOT_ACTIVE_REASON_MESSAGES.get(error.reason) : undefined) ??
+    LISTING_NOT_FOR_SALE
+  );
 }

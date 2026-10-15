@@ -69,7 +69,7 @@ export function DeliveryPrivacyCard({ status, isWorking, loadFailed, onCreate, o
         {local ? (
           <div className="grid gap-1 text-sm">
             <Typography as="p" className="font-medium">
-              Key fingerprint
+              Key fingerprint (public, safe to share)
             </Typography>
             <Typography as="p" className="font-mono break-all" data-testid="delivery-key-fingerprint">
               {formatDeliveryKeyFingerprint(local.keyId)}

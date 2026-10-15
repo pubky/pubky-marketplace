@@ -28,6 +28,7 @@ import {
   marketplaceCheckoutRefusalMessage,
   marketplaceErrorCode,
   marketplaceFailureMessage,
+  marketplaceListingNotActiveMessage,
 } from '@/libs/commerce/failure-messages';
 import { LOCKS_MIXED_CHECKOUT_COPY, locksCheckoutRoute } from '@/libs/commerce/locks-payment';
 import { commerceListingFulfillmentMethods } from '@/libs/commerce/marketplace-records';
@@ -649,7 +650,8 @@ export function useMarketplaceCheckout(
         variant: 'error',
         description: pickupRefusal
           ? pickupRefusalFailureMessage(pickupRefusal)
-          : (marketplaceCheckoutRefusalMessage(response.error.code, response.error.message) ??
+          : (marketplaceListingNotActiveMessage(response.error) ??
+            marketplaceCheckoutRefusalMessage(response.error.code, response.error.message) ??
             marketplaceFailureMessage(response.error.code, MARKETPLACE_FAILURE_MESSAGES.checkout)),
       });
       return { ok: false };

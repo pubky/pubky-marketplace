@@ -11,6 +11,7 @@ import {
   marketplaceCheckoutRefusalMessage,
   marketplaceDropRefusalMessage,
   marketplaceFailureMessage,
+  marketplaceListingNotActiveMessage,
   marketplaceOfferCheckoutFailureMessage,
   marketplaceOfferFailureMessage,
   marketplacePaymentMethodFailureMessage,
@@ -112,6 +113,11 @@ describe('marketplaceCheckoutRefusalMessage', () => {
       'INVALID_STATE',
       'Only available fixed-price listings can enter checkout.',
       'This listing is not available for checkout.',
+    ],
+    [
+      'UPSTREAM_UNAVAILABLE',
+      "The seller's homeserver could not be reached. Try again shortly.",
+      "We couldn't reach the seller's shop. Try again in a moment.",
     ],
   ] as const;
 
@@ -556,5 +562,36 @@ describe('Bitkit purchase bootstrap reason codes', () => {
 
   it('an unknown bootstrap code falls back to static copy, never the code', () => {
     expect(marketplaceBootstrapFailureMessage('something_new')).toBe(MARKETPLACE_FAILURE_MESSAGES.sessionStart);
+  });
+});
+
+describe('marketplaceListingNotActiveMessage', () => {
+  it.each([
+    ['listing_paused', 'The seller paused this listing. Check back later.'],
+    ['listing_ended', 'This listing has ended.'],
+    ['listing_removed', 'The seller removed this listing.'],
+    ['listing_not_active', "This item isn't for sale right now."],
+  ] as const)('maps reason %s to static copy', (reason, expected) => {
+    expect(
+      marketplaceListingNotActiveMessage({
+        code: 'LISTING_NOT_ACTIVE',
+        message: 'The seller is not selling this listing right now.',
+        reason,
+      } as { code: string; reason: string }),
+    ).toBe(expected);
+  });
+
+  it('falls back to not-for-sale copy for a missing or unknown reason', () => {
+    expect(marketplaceListingNotActiveMessage({ code: 'LISTING_NOT_ACTIVE' })).toBe(
+      "This item isn't for sale right now.",
+    );
+    expect(marketplaceListingNotActiveMessage({ code: 'LISTING_NOT_ACTIVE', reason: 'listing_archived' })).toBe(
+      "This item isn't for sale right now.",
+    );
+  });
+
+  it('returns null for any other code', () => {
+    expect(marketplaceListingNotActiveMessage({ code: 'INVALID_STATE', reason: 'listing_paused' })).toBeNull();
+    expect(marketplaceListingNotActiveMessage({ code: 'UPSTREAM_UNAVAILABLE' })).toBeNull();
   });
 });

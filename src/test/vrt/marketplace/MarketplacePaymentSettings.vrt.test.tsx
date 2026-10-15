@@ -2,6 +2,7 @@
 /* eslint-disable simple-import-sort/imports */
 import { createMarketplaceVrtCommerceController } from '@/test/mocks/marketplace-vrt';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { userEvent } from 'vitest/browser';
 import { renderForVRT, VRT_ROOT_TESTID } from '@/test-utils/vrt';
 import { VRT_VIEWPORT_DESKTOP, VRT_VIEWPORT_MOBILE } from '@/test-utils/vrt.viewports';
 import { MarketplacePaymentSettings } from '@/templates/Marketplace/MarketplacePaymentSettings';
@@ -28,6 +29,9 @@ const view = vi.hoisted(() => ({
   },
   // USDT stays off (and the seller's own view carries no USDT keys) unless a scene opts in.
   usdt: { available: false, unreadable: false, ownView: null as Record<string, unknown> | null },
+  // Stored-rail overrides for scenes that need Accept bitcoin off or Bitkit not yet connected.
+  ownConfig: {} as Record<string, unknown>,
+  accountClaimed: true,
 }));
 
 function setLocksConnect(partial: Partial<(typeof view)['locksConnect']> = {}) {
@@ -67,8 +71,9 @@ vi.mock('@/controllers/commerce/commerce', () => ({
       paypalMerchantEmail: 'seller@example.com',
       updatedAt: '2026-08-22T12:00:00.000Z',
       ...view.usdt.ownView,
+      ...view.ownConfig,
     })),
-    isOwnPaykitAccountClaimed: vi.fn(async () => true),
+    isOwnPaykitAccountClaimed: vi.fn(async () => view.accountClaimed),
     putMyPaymentConfig: vi.fn(),
     beginMarketplaceSessionConnect: vi.fn(),
   },
@@ -112,7 +117,11 @@ function setUsdt(wire: { payment_config: object } | null, { unreadable = false }
 }
 
 describe('Marketplace payment settings — visual regression', () => {
-  afterEach(() => setUsdt(null));
+  afterEach(() => {
+    setUsdt(null);
+    view.ownConfig = {};
+    view.accountClaimed = true;
+  });
 
   beforeEach(async () => {
     // The Get paid section requires a marketplace session; a fixture session
@@ -192,6 +201,32 @@ describe('Marketplace payment settings — visual regression', () => {
     } finally {
       setSocialHost(undefined);
     }
+  });
+
+  // Pav's state: the Lock Server is connected, Bitkit is not, so Accept bitcoin is off and says why.
+  it('renders the Accept bitcoin missing-step reason at desktop viewport', async () => {
+    setLocksConnect({ connectedCreator: 'gy1wnkhfwezwdnawnur1bc3kw1x3jf5ggjj3cm37e31i5ntq3pco' });
+    view.ownConfig = { bitcoinEnabled: false };
+    view.accountClaimed = false;
+
+    const screen = await renderForVRT(<MarketplacePaymentSettings />, { viewport: { width: 1440, height: 1100 } });
+    await expect.element(screen.getByTestId('bitcoin-toggle-blocker')).toHaveTextContent('Connect Bitkit first.');
+    await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot(
+      'payment-settings-bitcoin-missing-step-desktop',
+    );
+    setLocksConnect();
+  });
+
+  it('renders the inline PayPal email error at desktop viewport', async () => {
+    setLocksConnect();
+    view.ownConfig = { paypalMerchantEmail: null };
+
+    const screen = await renderForVRT(<MarketplacePaymentSettings />, { viewport: VRT_VIEWPORT_DESKTOP });
+    const email = screen.getByLabelText('PayPal merchant email');
+    await userEvent.fill(email, 'test');
+    (document.activeElement as HTMLElement | null)?.blur();
+    await expect.element(screen.getByText('Enter a valid email address.')).toBeVisible();
+    await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('payment-settings-paypal-invalid-desktop');
   });
 
   it('renders the Bitkit setup dialog', async () => {

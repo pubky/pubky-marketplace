@@ -363,6 +363,42 @@ describe('useMarketplaceCheckout', () => {
     );
   });
 
+  it.each([
+    [
+      {
+        code: 'LISTING_NOT_ACTIVE',
+        message: 'The seller is not selling this listing right now.',
+        reason: 'listing_paused',
+      },
+      'The seller paused this listing. Check back later.',
+    ],
+    [
+      { code: 'UPSTREAM_UNAVAILABLE', message: "The seller's homeserver could not be reached. Try again shortly." },
+      "We couldn't reach the seller's shop. Try again in a moment.",
+    ],
+  ])('keeps the cart and shows static copy for a %o checkout refusal', async (error, expected) => {
+    vi.mocked(CommerceController.commitCreateMarketplaceCheckout).mockResolvedValue({ ok: false, error } as never);
+    const clear = vi.fn(async () => {});
+    const { result } = renderHook(() => useMarketplaceCheckout([item], clear));
+    act(() => {
+      result.current.form.setValue('name', 'Alice Buyer');
+      result.current.form.setValue('line1', '1 Market Street');
+      result.current.form.setValue('city', 'New York');
+      result.current.form.setValue('region', 'NY');
+      result.current.form.setValue('postalCode', '10001');
+    });
+
+    let succeeded = true;
+    await act(async () => {
+      succeeded = await result.current.submit();
+    });
+
+    expect(succeeded).toBe(false);
+    expect(clear).not.toHaveBeenCalled();
+    const { toast } = await import('@/molecules/Toaster/use-toast');
+    expect(vi.mocked(toast)).toHaveBeenCalledWith(expect.objectContaining({ description: expected }));
+  });
+
   it('shows listing-specific copy and returns false for a sold-out checkout refusal', async () => {
     vi.mocked(CommerceController.commitCreateMarketplaceCheckout).mockResolvedValue({
       ok: false,
