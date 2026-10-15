@@ -55,7 +55,11 @@ export function MarketplaceConnectorImport({ flow, connection, onBack }: Marketp
 
   if (stage === 'review') {
     return (
-      <Card className="rounded-md p-0 shadow-lg" data-testid="connector-import-review">
+      <Card
+        className="rounded-md p-0 shadow-lg"
+        data-surface="store-import-review"
+        data-testid="connector-import-review"
+      >
         <CardContent className="grid gap-4 p-6">
           {flow.nothingToImport ? (
             <>
