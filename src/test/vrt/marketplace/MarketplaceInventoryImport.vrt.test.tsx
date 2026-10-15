@@ -413,8 +413,13 @@ describe('MarketplaceInventoryImport VRT', () => {
           fileName="sample_products.csv"
           counts={{ create: 21, update: 0, end: 0, unchanged: 0, conflict: 0 }}
           publishNotice={{
-            title: 'Listings will be saved as paused. Configure a payment method before publishing',
+            title: 'New and paused listings will be saved as paused. Configure a payment method before publishing',
             body: 'Buyers cannot pay for a published listing until you add at least one payment method.',
+            keptLive: {
+              line: 'kept live; fix payment method to keep publishing',
+              titles: ['Vintage leather boots', 'Wool hat'],
+              total: 3,
+            },
           }}
           publishDisabledReason="Choose a shipping option and where your listings ship from, then apply the settings."
         />
@@ -436,8 +441,13 @@ describe('MarketplaceInventoryImport VRT', () => {
           fileName="sample_products.csv"
           counts={{ create: 21, update: 0, end: 0, unchanged: 0, conflict: 0 }}
           publishNotice={{
-            title: 'Listings will be saved as paused. Configure a payment method before publishing',
+            title: 'New and paused listings will be saved as paused. Configure a payment method before publishing',
             body: 'Buyers cannot pay for a published listing until you add at least one payment method.',
+            keptLive: {
+              line: 'kept live; fix payment method to keep publishing',
+              titles: ['Vintage leather boots', 'Wool hat'],
+              total: 3,
+            },
           }}
           publishDisabledReason="Choose a shipping option and where your listings ship from, then apply the settings."
         />
