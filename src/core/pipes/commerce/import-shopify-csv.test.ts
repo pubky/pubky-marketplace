@@ -89,6 +89,15 @@ describe('buildShopifyPresetRows', () => {
     expect(result.report.losses.map((loss) => loss.code)).toContain('condition_mapped');
   });
 
+  it('carries no revision, so a re-import is an update and never a conflict', () => {
+    const result = buildShopifyPresetRows({
+      ...base,
+      rows: [sdkRow({ recordRevision: 1 })],
+      settings: { ...IMPORT_SETTINGS_COMPLETE, useCsvQuantities: true },
+    });
+    expect(result.rows[0]?.recordRevision).toBeNull();
+  });
+
   it('uses the default condition where the SDK had to default it', () => {
     const result = buildShopifyPresetRows({
       ...base,

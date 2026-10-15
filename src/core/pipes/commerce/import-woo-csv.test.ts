@@ -71,6 +71,10 @@ describe('WooCommerce official sample_products.csv', () => {
     expect(tee[0]?.sku).toBe('woo-vneck-tee-red');
   });
 
+  it('carries no revision, so a re-import is an update and never a conflict', () => {
+    expect(result.rows.every((row) => row.recordRevision === null)).toBe(true);
+  });
+
   it('prices the listing at its lowest variation and overrides the dearer variants', () => {
     const tee = result.rows.filter((row) => row.listingId === 'woo-vneck-tee');
     expect(tee.map((row) => row.amountMinor)).toEqual([1_500, 1_500, 1_500]);
@@ -238,6 +242,24 @@ describe('WooCommerce mapping rules', () => {
     expect(result.rows.find((row) => row.listingId === 'b-out')?.state).toBe('paused');
     expect(codes(result, 'no_stock_paused').map((loss) => loss.listing)).toEqual(['Out of stock', 'Backorder count']);
     expect(codes(result, 'stock_capped')).toHaveLength(1);
+  });
+
+  it('reports a fractional or negative stock instead of adjusting it silently', () => {
+    const result = map(
+      csv(
+        '1,simple,a-frac,Fractional,1,,Text,,,1,2.5,,5,,,,,,,,',
+        '2,simple,b-whole,Whole decimal,1,,Text,,,1,4.0,,5,,,,,,,,',
+        '3,simple,c-neg,Negative,1,,Text,,,1,-3,,5,,,,,,,,',
+        '4,simple,d-plain,Plain,1,,Text,,,1,6,,5,,,,,,,,',
+      ),
+    );
+    const quantity = (id: string) => result.rows.find((row) => row.listingId === id)?.variantQuantity;
+    expect([quantity('a-frac'), quantity('b-whole'), quantity('c-neg'), quantity('d-plain')]).toEqual([2, 4, 0, 6]);
+    expect(codes(result, 'stock_adjusted').map((loss) => [loss.listing, loss.severity, loss.detail])).toEqual([
+      ['Fractional', 'changed', 'Stock 2.5 is not a whole number; rounded down to 2.'],
+      ['Negative', 'changed', 'Stock -3 is below zero (backorders); set to 0.'],
+    ]);
+    expect(result.report.losses.find((loss) => loss.code === 'stock_adjusted')?.line).toBeDefined();
   });
 
   it('honours a sale schedule against the import date', () => {
@@ -437,6 +459,60 @@ describe('WooCommerce mapping rules', () => {
     expect(detail('Future sale')?.detail).toBe(
       'Regular price 10 applied. Sale price 8 is not active (2027-01-01 to no end).',
     );
+  });
+
+  describe('a variation with no price of its own under a parent that has a sale', () => {
+    const variationPrice = (result: WooMapResult, option: string) => {
+      const row = result.rows.find((candidate) => Object.values(candidate.options).includes(option));
+      return Number(row?.extraFields[VARIANT_PRICE_MINOR_FIELD] ?? row?.amountMinor);
+    };
+
+    it('inherits the parent sale price while its window is active, and says so', () => {
+      const result = map(
+        csv(
+          '1,variable,shirt,Shirt,1,,Text,2026-10-01,2026-10-31,1,,15,20,,,,,Size,"S, M, L",,',
+          '2,variation,,Shirt S,1,,,,,1,3,,,,,,shirt,Size,S,,',
+          '3,variation,,Shirt M,1,,,,,1,3,,18,,,,shirt,Size,M,,',
+          '4,variation,,Shirt L,1,,,,,1,3,12,,,,,shirt,Size,L,,',
+        ),
+      );
+      expect(variationPrice(result, 'S')).toBe(1_500);
+      expect(variationPrice(result, 'M')).toBe(1_800);
+      expect(variationPrice(result, 'L')).toBe(1_200);
+      expect(codes(result, 'compare_at_price').map((loss) => [loss.listing, loss.detail])).toEqual([
+        ['Shirt S', 'Regular price 20 dropped; sale price 15 used.'],
+        ['Shirt L', 'Regular price 20 dropped; sale price 12 used.'],
+      ]);
+      expect(codes(result, 'sale_schedule').map((loss) => loss.listing)).toEqual(['Shirt S']);
+      expect(codes(result, 'sale_schedule')[0]?.detail).toContain('(2026-10-01 to 2026-10-31)');
+    });
+
+    it('uses the regular price once the inherited window has ended or not begun', () => {
+      const ended = map(
+        csv(
+          '1,variable,shirt,Shirt,1,,Text,2026-01-01,2026-02-01,1,,15,20,,,,,Size,"S, M",,',
+          '2,variation,,Shirt S,1,,,,,1,3,,,,,,shirt,Size,S,,',
+          '3,variation,,Shirt M,1,,,,,1,3,,,,,,shirt,Size,M,,',
+        ),
+      );
+      expect(variationPrice(ended, 'S')).toBe(2_000);
+      expect(codes(ended, 'sale_schedule').map((loss) => loss.detail)).toEqual([
+        'Regular price 20 applied. Sale price 15 is not active (2026-01-01 to 2026-02-01).',
+        'Regular price 20 applied. Sale price 15 is not active (2026-01-01 to 2026-02-01).',
+      ]);
+    });
+
+    it('takes the variation own dates over the parent dates when it names dates but no price', () => {
+      const result = map(
+        csv(
+          '1,variable,shirt,Shirt,1,,Text,2026-10-01,2026-10-31,1,,15,20,,,,,Size,"S, M",,',
+          '2,variation,,Shirt S,1,,,2027-01-01,,1,3,,,,,,shirt,Size,S,,',
+          '3,variation,,Shirt M,1,,,,,1,3,,,,,,shirt,Size,M,,',
+        ),
+      );
+      expect(variationPrice(result, 'S')).toBe(2_000);
+      expect(variationPrice(result, 'M')).toBe(1_500);
+    });
   });
 
   it('keeps the whole sale window through its last day', () => {

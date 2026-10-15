@@ -399,6 +399,18 @@ export class CommerceController {
     return await CommerceInventoryImportApplication.forSeller(sellerPubky).planFile(file, settings);
   }
 
+  static async inventoryImportImageTargets(sellerPubky: string, manifestId: string) {
+    return await CommerceInventoryImportApplication.forSeller(sellerPubky).imageTargets(manifestId);
+  }
+
+  static async attachInventoryImportImages(
+    sellerPubky: string,
+    manifestId: string,
+    outcomes: Parameters<CommerceInventoryImportApplication['attachImages']>[1],
+  ) {
+    await CommerceInventoryImportApplication.forSeller(sellerPubky).attachImages(manifestId, outcomes);
+  }
+
   static async inventoryImportDefaults(sellerPubky: string) {
     return await CommerceInventoryImportApplication.forSeller(sellerPubky).importDefaults();
   }

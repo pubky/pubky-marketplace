@@ -203,6 +203,17 @@ describe('MarketplaceInventoryImport dry run with a canonical file', () => {
   });
 });
 
+describe('MarketplaceInventoryImport progress', () => {
+  it('names the photo phase and the listing phase', () => {
+    const { rerender } = render(
+      <MarketplaceInventoryImport step={5} scene="progress" progressPhase="photos" progress={{ done: 3, total: 20 }} />,
+    );
+    expect(screen.getByTestId('inventory-import-progress')).toHaveTextContent('Loading photos… 3 of 20.');
+    rerender(<MarketplaceInventoryImport step={5} scene="progress" progress={{ done: 2, total: 10 }} />);
+    expect(screen.getByTestId('inventory-import-progress')).toHaveTextContent('Saving your listings… 2 of 10.');
+  });
+});
+
 describe('MarketplaceInventoryImport required choices and publish gates', () => {
   it('asks for shipping with a one-click free option, and says why Publish is off', async () => {
     const user = userEvent.setup();

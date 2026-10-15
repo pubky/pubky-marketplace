@@ -459,4 +459,40 @@ describe('MarketplaceInventoryImport VRT', () => {
       VRT_DENSE_CHROME_SCREENSHOT,
     );
   });
+
+  it('renders the photo loading step at desktop viewport', async () => {
+    const screen = await renderForVRT(
+      <main className="w-full max-w-lg py-6">
+        <MarketplaceInventoryImport
+          step={5}
+          scene="progress"
+          progressPhase="photos"
+          progress={{ done: 7, total: 20 }}
+        />
+      </main>,
+      { viewport: VRT_VIEWPORT_DESKTOP, disableHover: true },
+    );
+    await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot(
+      'inventory-import-photos-progress-desktop',
+      VRT_DENSE_CHROME_SCREENSHOT,
+    );
+  });
+
+  it('renders the photo loading step at mobile viewport', async () => {
+    const screen = await renderForVRT(
+      <main className="w-full max-w-lg py-6">
+        <MarketplaceInventoryImport
+          step={5}
+          scene="progress"
+          progressPhase="photos"
+          progress={{ done: 7, total: 20 }}
+        />
+      </main>,
+      { viewport: VRT_VIEWPORT_MOBILE, disableHover: true },
+    );
+    await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot(
+      'inventory-import-photos-progress-mobile',
+      VRT_DENSE_CHROME_SCREENSHOT,
+    );
+  });
 });

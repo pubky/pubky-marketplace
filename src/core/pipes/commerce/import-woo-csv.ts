@@ -210,23 +210,32 @@ function decimalCell(value: string, delimiter: string): string {
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
+type InheritedPrice = { regular: string; sale: string; from: string; to: string };
+
+/**
+ * A variation that names no price of its own takes its parent's regular price,
+ * sale price and sale window together. One that names a regular price, or only
+ * a sale price, keeps what it names and inherits no sale: its own prices are
+ * the whole answer, so a parent's sale never attaches to a different price.
+ */
 function resolvePrice(
   columns: CsvColumns,
   record: CsvRecord,
-  fallback: { regular: string; sale: string } | null,
+  fallback: InheritedPrice | null,
   exponent: number,
   delimiter: string,
   now: Date,
 ): PriceResult {
-  const regularRaw = decimalCell(columns.read(record, 'Regular price') || fallback?.regular || '', delimiter);
-  const saleRaw = decimalCell(
-    columns.read(record, 'Sale price') || (regularRaw ? '' : (fallback?.sale ?? '')),
-    delimiter,
-  );
-  const starts = parseDate(columns.read(record, 'Date sale price starts'));
-  const ends = parseDate(columns.read(record, 'Date sale price ends'));
-  const scheduled =
-    columns.read(record, 'Date sale price starts') !== '' || columns.read(record, 'Date sale price ends') !== '';
+  const ownRegular = columns.read(record, 'Regular price');
+  const ownSale = columns.read(record, 'Sale price');
+  const inheritsPair = fallback !== null && ownRegular === '' && ownSale === '';
+  const regularRaw = decimalCell(ownRegular || fallback?.regular || '', delimiter);
+  const saleRaw = decimalCell(ownSale || (inheritsPair ? fallback.sale : ''), delimiter);
+  const fromRaw = columns.read(record, 'Date sale price starts') || (inheritsPair ? fallback.from : '');
+  const toRaw = columns.read(record, 'Date sale price ends') || (inheritsPair ? fallback.to : '');
+  const starts = parseDate(fromRaw);
+  const ends = parseDate(toRaw);
+  const scheduled = fromRaw !== '' || toRaw !== '';
   const nowMs = now.getTime();
   const inWindow = (starts === null || starts <= nowMs) && (ends === null || nowMs <= ends + DAY_MS - 1);
   const useSale = saleRaw !== '' && inWindow;
@@ -248,23 +257,34 @@ function resolvePrice(
     scheduleNote: !scheduled ? 'none' : useSale ? 'applied' : 'out_of_window',
     regular: regularRaw,
     sale: saleRaw,
-    from: columns.read(record, 'Date sale price starts'),
-    to: columns.read(record, 'Date sale price ends'),
+    from: fromRaw,
+    to: toRaw,
   };
 }
 
-type StockResult = { quantity: number; unmanaged: boolean };
+type StockResult = { quantity: number; unmanaged: boolean; adjusted: string | null };
 
 function resolveStock(columns: CsvColumns, record: CsvRecord, unmanagedStock: number): StockResult {
   const stock = columns.read(record, 'Stock');
   const inStock = columns.read(record, 'In stock?').toLowerCase();
   if (/^-?\d+(?:\.\d+)?$/.test(stock)) {
-    return { quantity: Math.max(0, Math.floor(Number(stock))), unmanaged: false };
+    const count = Number(stock);
+    const quantity = Math.max(0, Math.floor(count));
+    return {
+      quantity,
+      unmanaged: false,
+      adjusted:
+        quantity === count
+          ? null
+          : count < 0
+            ? `Stock ${stock} is below zero (backorders); set to 0.`
+            : `Stock ${stock} is not a whole number; rounded down to ${quantity}.`,
+    };
   }
   if (inStock === '0' || inStock === 'no' || inStock === 'false' || inStock === 'outofstock') {
-    return { quantity: 0, unmanaged: false };
+    return { quantity: 0, unmanaged: false, adjusted: null };
   }
-  return { quantity: Math.min(unmanagedStock, COMMERCE_LISTING_MAX_QUANTITY - 1), unmanaged: true };
+  return { quantity: Math.min(unmanagedStock, COMMERCE_LISTING_MAX_QUANTITY - 1), unmanaged: true, adjusted: null };
 }
 
 function optionsFor(
@@ -454,9 +474,11 @@ export function mapWooProductCsv(input: WooMapInput): WooMapResult {
       losses.push(loss('no_variations', 'skipped', 'Type', 'The variable product has no variation rows.', name, line));
       return;
     }
-    const inherited = {
+    const inherited: InheritedPrice = {
       regular: columns.read(parent.record, 'Regular price'),
       sale: columns.read(parent.record, 'Sale price'),
+      from: columns.read(parent.record, 'Date sale price starts'),
+      to: columns.read(parent.record, 'Date sale price ends'),
     };
     let listingFailed = false;
     for (const source of sources) {
@@ -511,6 +533,9 @@ export function mapWooProductCsv(input: WooMapInput): WooMapResult {
             source.record.line,
           ),
         );
+      }
+      if (stock.adjusted !== null) {
+        losses.push(loss('stock_adjusted', 'changed', 'Stock', stock.adjusted, label(source), source.record.line));
       }
       const attributes = optionsFor(columns, source.record, parent.base === 'variable');
       if (attributes.droppedMulti > 0) {
@@ -637,7 +662,8 @@ export function mapWooProductCsv(input: WooMapInput): WooMapResult {
         sellerPubky,
         listingId: id,
         sourceListingKey: `woo:${parent.sku || parent.id || id}`,
-        recordRevision: 1,
+        // A shop-system file has no revision to compare, so a re-import is never a conflict with the listing's own edits.
+        recordRevision: null,
         variantId,
         sku: candidate.source.sku,
         state,
