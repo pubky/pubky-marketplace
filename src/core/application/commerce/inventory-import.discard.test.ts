@@ -202,6 +202,35 @@ describe('discarding an unfinished import deletes the photo files nothing publis
     for (const url of publishedUrls) expect(files.has(url)).toBe(true);
   });
 
+  it("does not rely on the local copy of the seller's listings: a listing the import published is kept even if that copy lacks it", async () => {
+    const { importer, manifestId } = await plan(wooCsv(products(3, 2)));
+    await photoPhase(importer, manifestId);
+    await importer.resume(manifestId);
+    stored = [];
+
+    const result = await app().discard(manifestId);
+
+    expect(result).toEqual({ removedFiles: 0, failedFiles: 0, cleared: true });
+    expect(files.size).toBe(6);
+  });
+
+  it('treats a listing whose publish was under way as published, since its record may have been written', async () => {
+    const { importer, manifestId } = await plan(wooCsv(products(2, 2)));
+    await photoPhase(importer, manifestId);
+    const manifest = (await store.load(manifestId))!;
+    store.manifests.set(manifestId, {
+      ...manifest,
+      rows: manifest.rows.map((row) =>
+        row.listingId === 'sku-0' ? { ...row, checkpoint: 'publishing' as const } : row,
+      ),
+    });
+
+    const result = await app().discard(manifestId);
+
+    expect(result).toMatchObject({ removedFiles: 2, cleared: true });
+    expect(files.size).toBe(2);
+  });
+
   it('never deletes a photo that a published listing also uses', async () => {
     const shared = 'https://shop.example.com/shared.jpg';
     const { importer, manifestId } = await plan(
