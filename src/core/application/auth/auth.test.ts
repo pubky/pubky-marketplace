@@ -263,6 +263,12 @@ describe('AuthApplication', () => {
       expect(readSpy).toHaveBeenCalledWith({ url: `pubky://${testPubky}/pub/pubky.app/profile.json` });
     });
 
+    it('should return true when profile.json exists but is empty or not JSON', async () => {
+      vi.spyOn(HomeserverService, 'getJsonIfFound').mockResolvedValue({ found: true, json: undefined });
+
+      await expect(AuthApplication.userIsSignedUp({ pubky: testPubky })).resolves.toBe(true);
+    });
+
     it('should return false without a request error when profile.json is missing', async () => {
       const requestSpy = vi.spyOn(HomeserverService, 'request');
       vi.spyOn(HomeserverService, 'getJsonIfFound').mockResolvedValue({ found: false });

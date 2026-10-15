@@ -1250,6 +1250,20 @@ describe('HomeserverService', () => {
         });
       });
 
+      it('answers found with no JSON for a stored empty or non-JSON body', async () => {
+        mockState.currentSession = createMockSession();
+        mockState.sessionStorageGet
+          .mockResolvedValueOnce(new Response('', { status: 200 }))
+          .mockResolvedValueOnce(new Response('not json', { status: 200 }));
+
+        await expect(
+          HomeserverService.getJsonIfFound({ url: 'pubky://user/pub/pubky.app/profile.json' }),
+        ).resolves.toEqual({ found: true, json: undefined });
+        await expect(
+          HomeserverService.getJsonIfFound({ url: 'pubky://user/pub/pubky.app/profile.json' }),
+        ).resolves.toEqual({ found: true, json: undefined });
+      });
+
       it('throws every other failure like a GET', async () => {
         mockState.currentSession = createMockSession();
         mockState.sessionStorageGet
