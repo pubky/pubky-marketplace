@@ -375,6 +375,7 @@ export class CommerceController {
     row: InventoryBoardRow;
     targetAvailable: number;
     idempotencyKey: string;
+    variantId?: string;
   }) {
     return await CommerceInventoryApplication.setAvailable(input);
   }
