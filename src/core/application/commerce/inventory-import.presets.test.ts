@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { CommerceInventoryImportApplication } from '@/application/commerce/inventory-import';
+import { listingToCanonicalRows } from '@/application/commerce/inventory-listing-map';
 import type { CommerceListingRecord } from '@/libs/commerce/marketplace-records';
 import { SOURCE_IMAGE_URLS_FIELD } from '@/pipes/commerce/import-preset-rows';
 import { type ImportSettings } from '@/pipes/commerce/import-settings';
@@ -434,6 +435,73 @@ describe('shop-system CSV presets through plan, dry-run and publish', () => {
       });
       expect(puts[0]?.variants.map((variant) => variant.quantity).sort((a, b) => a - b)).toEqual([7, 12]);
       expect(puts[0]?.shippingOptions?.[0]).toMatchObject({ pricing: 'free' });
+    });
+  });
+  describe('re-importing the same shop file', () => {
+    let stored: CommerceListingRecord[];
+
+    beforeEach(() => {
+      stored = [];
+    });
+
+    function sellerApp() {
+      return CommerceInventoryImportApplication.forSeller(PUBKY, {
+        ...IMPORT_GATES_PASSING,
+        store,
+        currentItems: async () =>
+          MarketplaceShopClientService.currentItemsFromRows(stored.flatMap(listingToCanonicalRows)),
+        localRecords: async () => stored,
+        putListing: async (record) => {
+          puts.push(record);
+          stored = [...stored.filter((entry) => entry.listingId !== record.listingId), record];
+        },
+        listingExists: async () => false,
+        syncMany: async (listings) => syncAll(listings),
+      });
+    }
+
+    const wooFile = (price: string) =>
+      new BytesFile(
+        utf8(
+          [
+            'ID,Type,SKU,Name,Published,Description,In stock?,Stock,Regular price',
+            `1,simple,sock-1,Socks,1,Warm socks,1,5,${price}`,
+          ].join('\n'),
+        ),
+        'socks.csv',
+        'text/csv',
+      );
+
+    async function importOnce(price: string) {
+      const importer = sellerApp();
+      const planned = await importer.planFile(wooFile(price), IMPORT_SETTINGS_COMPLETE);
+      if (planned.status !== 'planned') throw new Error('plan');
+      attachPhotos(['sock-1']);
+      await importer.publish(planned.manifestId);
+      return planned;
+    }
+
+    it('plans an update each time, never a conflict, however often the file is imported', async () => {
+      const first = await importOnce('25');
+      expect(first.counts).toMatchObject({ create: 1, update: 0, conflict: 0 });
+      expect(stored[0]?.revision).toBe(1);
+
+      const second = await importOnce('26');
+      expect(second.counts).toMatchObject({ create: 0, update: 1, conflict: 0 });
+      expect(stored[0]?.revision).toBe(2);
+
+      const third = await importOnce('27');
+      expect(third.counts).toMatchObject({ create: 0, update: 1, conflict: 0 });
+      expect(stored[0]?.revision).toBe(3);
+      const sale = stored[0]?.sale;
+      expect(sale?.format === 'fixed_price' && sale.unitPrice.amountMinor).toBe(2_700);
+    });
+
+    it('still plans no change when nothing in the file changed since the stored listing was written from it', async () => {
+      await importOnce('25');
+      const again = await sellerApp().planFile(wooFile('25'), IMPORT_SETTINGS_COMPLETE);
+      expect(again.status).toBe('planned');
+      expect(again.status === 'planned' && again.counts.conflict).toBe(0);
     });
   });
 });
