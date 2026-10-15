@@ -15,7 +15,9 @@ import {
   commerceCollectionRecordSchema,
   commerceDropRecordSchema,
   commerceListingFulfillmentMethods,
+  commerceListingProjectionChargesRecordTerms,
   commerceListingProjectionIsStale,
+  commerceListingProjectionMatchesRecord,
   type CommerceListingRecord,
   commerceListingRecordSchema,
   commerceListingShippingMinor,
@@ -902,8 +904,10 @@ describe('commerceListingFulfillmentMethods (mirrors the service homeserver deri
 
 describe('commerceListingProjectionIsStale (a listing.sync would change the service terms)', () => {
   const record = createCommerceListingFixture({ revision: 3 });
+  const unitPrice = { amountMinor: 12_500, currency: 'USD', exponent: 2 };
   const current = {
     listingRevision: 3,
+    unitPrice,
     fulfillmentMethods: ['shipping'] as const,
     shipping: { amountMinor: 1_200 },
   };
@@ -923,6 +927,7 @@ describe('commerceListingProjectionIsStale (a listing.sync would change the serv
     expect(
       commerceListingProjectionIsStale(free, {
         listingRevision: 3,
+        unitPrice,
         fulfillmentMethods: ['digital'],
         shipping: undefined,
       }),
@@ -937,6 +942,7 @@ describe('commerceListingProjectionIsStale (a listing.sync would change the serv
     expect(
       commerceListingProjectionIsStale(record, {
         listingRevision: 4,
+        unitPrice,
         fulfillmentMethods: ['pickup'],
         shipping: undefined,
       }),
@@ -953,6 +959,7 @@ describe('commerceListingProjectionIsStale (a listing.sync would change the serv
     expect(
       commerceListingProjectionIsStale(locks, {
         listingRevision: 3,
+        unitPrice,
         fulfillmentMethods: ['shipping'],
         shipping: { amountMinor: 0 },
       }),
@@ -960,6 +967,7 @@ describe('commerceListingProjectionIsStale (a listing.sync would change the serv
     expect(
       commerceListingProjectionIsStale(locks, {
         listingRevision: 3,
+        unitPrice,
         fulfillmentMethods: ['digital'],
         shipping: { amountMinor: 0 },
       }),
@@ -980,6 +988,14 @@ describe('commerceListingProjectionIsStale (a listing.sync would change the serv
     expect(commerceListingProjectionIsStale(record, { ...current, shipping: { amountMinor: 0 } })).toBe(true);
   });
 
+  it.each([
+    ['amount', { ...unitPrice, amountMinor: 13_000 }],
+    ['currency', { ...unitPrice, currency: 'EUR' }],
+    ['exponent', { ...unitPrice, exponent: 0 }],
+  ])('is stale when the projected unit price differs in %s at the same revision', (_label, price) => {
+    expect(commerceListingProjectionIsStale(record, { ...current, unitPrice: price })).toBe(true);
+  });
+
   it('never flags an auction, whose terms listing.sync does not rewrite', () => {
     const auction = createCommerceListingFixture({
       revision: 3,
@@ -996,6 +1012,54 @@ describe('commerceListingProjectionIsStale (a listing.sync would change the serv
     expect(commerceListingProjectionIsStale(auction, { ...current, listingRevision: 1, shipping: undefined })).toBe(
       false,
     );
+  });
+});
+
+describe('commerceListingProjectionMatchesRecord and commerceListingProjectionChargesRecordTerms', () => {
+  const record = createCommerceListingFixture({ revision: 3 });
+  const unitPrice = { amountMinor: 12_500, currency: 'USD', exponent: 2 };
+  const current = {
+    listingRevision: 3,
+    unitPrice,
+    fulfillmentMethods: ['shipping'] as const,
+    shipping: { amountMinor: 1_200 },
+  };
+
+  it('matches only the same revision with the same terms', () => {
+    expect(commerceListingProjectionMatchesRecord(record, current)).toBe(true);
+    expect(commerceListingProjectionMatchesRecord(record, { ...current, listingRevision: 4 })).toBe(false);
+    expect(commerceListingProjectionMatchesRecord(record, { ...current, listingRevision: 2 })).toBe(false);
+    expect(
+      commerceListingProjectionMatchesRecord(record, { ...current, unitPrice: { ...unitPrice, amountMinor: 13_000 } }),
+    ).toBe(false);
+  });
+
+  it('separates money terms from fulfillment methods', () => {
+    expect(commerceListingProjectionChargesRecordTerms(record, { ...current, fulfillmentMethods: ['pickup'] })).toBe(
+      true,
+    );
+    expect(commerceListingProjectionChargesRecordTerms(record, { ...current, shipping: undefined })).toBe(false);
+    expect(
+      commerceListingProjectionChargesRecordTerms(record, { ...current, unitPrice: { ...unitPrice, currency: 'EUR' } }),
+    ).toBe(false);
+  });
+
+  it('always matches an auction, which is paid at its bid', () => {
+    const auction = createCommerceListingFixture({
+      revision: 3,
+      sale: {
+        format: 'auction',
+        startingPrice: { amountMinor: 4_500, currency: 'USD', exponent: 2 },
+        minimumIncrement: { amountMinor: 500, currency: 'USD', exponent: 2 },
+        startsAt: '2026-08-19T20:00:00.000Z',
+        endsAt: '2026-08-29T20:00:00.000Z',
+        antiSnipingWindowSeconds: 120,
+        antiSnipingExtensionSeconds: 120,
+      },
+    });
+    const divergent = { ...current, listingRevision: 5, unitPrice: { ...unitPrice, amountMinor: 9_999 } };
+    expect(commerceListingProjectionMatchesRecord(auction, divergent)).toBe(true);
+    expect(commerceListingProjectionChargesRecordTerms(auction, divergent)).toBe(true);
   });
 });
 

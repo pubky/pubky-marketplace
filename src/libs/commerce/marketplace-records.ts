@@ -298,22 +298,50 @@ export function commerceListingFulfillmentMethods(
   return derived.length > 0 ? derived : ['shipping'];
 }
 
+type CommerceListingTermsRecord = Pick<
+  CommerceListingRecord,
+  'revision' | 'sale' | 'fulfillmentMethods' | 'shippingOptions'
+>;
+
+interface CommerceListingTermsProjection {
+  listingRevision: number;
+  unitPrice: { amountMinor: number; currency: string; exponent: number };
+  fulfillmentMethods: readonly MarketplaceFulfillmentMethod[];
+  shipping?: { amountMinor: number };
+}
+
+/**
+ * Whether the projection charges what the record prices: the same unit price
+ * (amount, currency and exponent) and the same shipping, a projection without
+ * shipping charging none. An auction always does: it is paid at its bid.
+ */
+export function commerceListingProjectionChargesRecordTerms(
+  record: CommerceListingTermsRecord,
+  projection: CommerceListingTermsProjection,
+): boolean {
+  if (record.sale.format !== 'fixed_price') return true;
+  const { unitPrice } = record.sale;
+  return (
+    projection.unitPrice.amountMinor === unitPrice.amountMinor &&
+    projection.unitPrice.currency === unitPrice.currency &&
+    projection.unitPrice.exponent === unitPrice.exponent &&
+    (projection.shipping?.amountMinor ?? 0) === commerceListingShippingMinor(record.shippingOptions)
+  );
+}
+
 /**
  * Whether the transaction service's projection of a registered fixed-price
  * listing no longer reflects the seller-signed record, so a `listing.sync`
  * would change what checkout charges or accepts: the record's revision moved
- * past the projection (an edit whose sync never landed), or the fulfillment
- * methods or shipping the service derives from the same record revision
- * differ (rows registered before the service's derivation changed). Auctions
- * are excluded: `listing.sync` never rewrites a registered auction's terms.
+ * past the projection (an edit whose sync never landed), or at the same
+ * revision the unit price, shipping or fulfillment methods differ (rows
+ * registered before the service's derivation changed, or a record rewritten
+ * without a new revision). Auctions are excluded: `listing.sync` never
+ * rewrites a registered auction's terms.
  */
 export function commerceListingProjectionIsStale(
-  record: Pick<CommerceListingRecord, 'revision' | 'sale' | 'fulfillmentMethods' | 'shippingOptions'>,
-  projection: {
-    listingRevision: number;
-    fulfillmentMethods: readonly MarketplaceFulfillmentMethod[];
-    shipping?: { amountMinor: number };
-  },
+  record: CommerceListingTermsRecord,
+  projection: CommerceListingTermsProjection,
 ): boolean {
   if (record.sale.format !== 'fixed_price') return false;
   if (projection.listingRevision < record.revision) return true;
@@ -325,26 +353,22 @@ export function commerceListingProjectionIsStale(
   ) {
     return true;
   }
-  return (projection.shipping?.amountMinor ?? 0) !== commerceListingShippingMinor(record.shippingOptions);
+  return !commerceListingProjectionChargesRecordTerms(record, projection);
 }
 
 /**
- * Whether a freshly synced projection of a fixed-price listing carries
- * exactly the terms of the record the buyer is checking out: the same
- * revision, unit price, fulfillment methods and shipping. A seller edit that
- * lands while the sync runs fails this, so the buyer is never charged terms
- * they did not see. An auction always matches: it is paid at its bid.
+ * Whether a projection of a fixed-price listing carries exactly the terms of
+ * the record the buyer is checking out: the same revision, unit price,
+ * fulfillment methods and shipping. A seller edit the buyer has not seen
+ * fails this, so the buyer is never charged terms they did not see. An
+ * auction always matches: it is paid at its bid.
  */
 export function commerceListingProjectionMatchesRecord(
-  record: Pick<CommerceListingRecord, 'revision' | 'sale' | 'fulfillmentMethods' | 'shippingOptions'>,
-  projection: Parameters<typeof commerceListingProjectionIsStale>[1] & { unitPrice: { amountMinor: number } },
+  record: CommerceListingTermsRecord,
+  projection: CommerceListingTermsProjection,
 ): boolean {
   if (record.sale.format !== 'fixed_price') return true;
-  return (
-    projection.listingRevision === record.revision &&
-    projection.unitPrice.amountMinor === record.sale.unitPrice.amountMinor &&
-    !commerceListingProjectionIsStale(record, projection)
-  );
+  return projection.listingRevision === record.revision && !commerceListingProjectionIsStale(record, projection);
 }
 
 /**

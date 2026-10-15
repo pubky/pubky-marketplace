@@ -63,7 +63,7 @@ describe('MarketplaceListingOwnerPanel registration self-heal', () => {
       state: 'available' as const,
       availableQuantity: 1,
       reservedQuantity: 0,
-      unitPrice: { amountMinor: 1_000, currency: 'USD', exponent: 2 },
+      unitPrice: { amountMinor: 12_500, currency: 'USD', exponent: 2 },
       shipping: { amountMinor: 1_200, currency: 'USD', exponent: 2 },
       saleFormat: 'fixed_price' as const,
       fulfillmentMethods: ['shipping' as const],

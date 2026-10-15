@@ -530,6 +530,57 @@ describe('useMarketplaceCheckout', () => {
       },
     );
 
+    it.each([
+      ['the sync cannot heal it', { ok: true, revision: 5 }],
+      ['the sync fails', { ok: false, error: { code: 'UPSTREAM_UNAVAILABLE', message: 'unreachable' } }],
+    ])('stops before ordering when the unit price differs at the same revision and %s', async (_label, answer) => {
+      const divergent = { ...projection, unitPrice: { ...price, amountMinor: price.amountMinor + 100 } };
+      vi.mocked(CommerceController.getMarketplaceListingProjection).mockResolvedValue(divergent);
+      vi.mocked(CommerceController.syncListingRegistration).mockResolvedValue(answer as never);
+
+      await expect(pay(item)).resolves.toBe(false);
+
+      expect(CommerceController.syncListingRegistration).toHaveBeenCalledOnce();
+      expect(CommerceController.commitCreateMarketplaceCheckout).not.toHaveBeenCalled();
+      expect(vi.mocked(toast)).toHaveBeenCalledWith(
+        expect.objectContaining({
+          description: 'A listing changed while you were checking out. Review your cart and try again.',
+        }),
+      );
+      expect(CommerceController.refreshListing).toHaveBeenCalledWith(listing.ownerPubky, listing.listingId);
+    });
+
+    it('checks an auction line out against a newer projection, since it is paid at its bid', async () => {
+      const auctionListing = createCommerceSandboxCatalog().listings.find(({ sale }) => sale.format === 'auction')!;
+      const auctionItem: MarketplaceCartItem = {
+        ...item,
+        id: 'auction-item',
+        listingId: `${auctionListing.ownerPubky}:${auctionListing.listingId}`,
+        variantId: auctionListing.variants[0].id,
+        listing: {
+          ...item.listing,
+          id: `${auctionListing.ownerPubky}:${auctionListing.listingId}`,
+          listing_id: auctionListing.listingId,
+          record: auctionListing,
+          format: 'auction',
+        },
+      };
+      vi.mocked(CommerceController.getMarketplaceListingProjection).mockResolvedValue({
+        ...projection,
+        aggregateId: `listing:${auctionListing.ownerPubky}_${auctionListing.listingId}`,
+        listingId: auctionListing.listingId,
+        listingRevision: auctionListing.revision + 1,
+        unitPrice: { ...price, amountMinor: price.amountMinor + 100 },
+        saleFormat: 'auction',
+      });
+
+      await expect(pay(auctionItem)).resolves.toBe(true);
+
+      expect(CommerceController.syncListingRegistration).not.toHaveBeenCalled();
+      expect(CommerceController.refreshListing).not.toHaveBeenCalled();
+      expect(CommerceController.commitCreateMarketplaceCheckout).toHaveBeenCalledOnce();
+    });
+
     it('still stops, and logs, when the changed listing cannot be refreshed', async () => {
       vi.mocked(CommerceController.getMarketplaceListingProjection).mockResolvedValue({
         ...projection,

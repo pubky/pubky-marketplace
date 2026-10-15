@@ -39,6 +39,7 @@ import {
 import { LOCKS_MIXED_CHECKOUT_COPY, locksCheckoutRoute } from '@/libs/commerce/locks-payment';
 import {
   commerceListingFulfillmentMethods,
+  commerceListingProjectionChargesRecordTerms,
   commerceListingProjectionIsStale,
   commerceListingProjectionMatchesRecord,
 } from '@/libs/commerce/marketplace-records';
@@ -624,10 +625,14 @@ export function useMarketplaceCheckout(
         if (!projection) return null;
         // The service charges its projection's terms. A projection of a newer record than the cart holds, or
         // a fresh sync that does not reproduce the cart's record, means the seller changed the listing since
-        // the buyer saw it: the cart's record is refreshed and the buyer reviews the new terms.
+        // the buyer saw it: the cart's record is refreshed and the buyer reviews the new terms. A projection
+        // whose price or shipping differs stops checkout even when its sync failed. Any other unsynced
+        // mismatch charges what the buyer saw, and the service refuses an unpublished method itself.
         if (
           durable &&
-          (synced || projection.listingRevision > record.revision) &&
+          (synced ||
+            projection.listingRevision > record.revision ||
+            !commerceListingProjectionChargesRecordTerms(record, projection)) &&
           !commerceListingProjectionMatchesRecord(record, projection)
         ) {
           sawChangedListing = true;
