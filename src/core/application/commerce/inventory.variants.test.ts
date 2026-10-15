@@ -3,11 +3,7 @@ import { INVENTORY_GRANT } from '@/services/marketplace/marketplace-inventory-gr
 import { MarketplaceInventorySessionService } from '@/services/marketplace/marketplace-inventory-session';
 import { MarketplaceSessionService } from '@/services/marketplace/marketplace-session';
 import { MarketplaceShopClientService, PubkyShopError } from '@/services/marketplace/marketplace-shop-client';
-import {
-  CommerceInventoryApplication,
-  type InventoryBoardRow,
-  planInventoryAdjust,
-} from './inventory';
+import { CommerceInventoryApplication, type InventoryBoardRow, planInventoryAdjust } from './inventory';
 
 const PUBKY = 'y'.repeat(52);
 const TOKEN = 'A'.repeat(43);
