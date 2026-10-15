@@ -540,7 +540,7 @@ describe('shipping and ships-from (C10)', () => {
     mocks.defaults.mockResolvedValue({
       countryCode: null,
       shipping: { mode: 'flat', priceMinor: 500, minDays: 1, maxDays: 2 },
-      currency: 'CHF',
+      currency: 'NOK',
     });
     const { result } = renderHook(() => useMarketplaceInventoryImport('seller'));
     await act(async () => {
@@ -770,6 +770,22 @@ describe('useMarketplaceInventoryImport, from a WooCommerce store URL', () => {
     expect(result.current.publishDisabledReason).toContain('shipping option and where your listings ship from');
   });
 
+  it('takes a store currency the listing form offers, such as Swiss francs, and plans in it', async () => {
+    mocks.fetchCatalog.mockResolvedValueOnce({ ok: true, catalog: catalog('CHF') });
+    const { result } = renderHook(() => useMarketplaceInventoryImport('seller'));
+    type(result, 'dezentralshop.ch');
+    await act(async () => {
+      expect(await result.current.submitStoreUrl()).toBe(true);
+    });
+    expect(result.current.form.getValues('currency')).toBe('CHF');
+    expect(mocks.storePlan).toHaveBeenCalledWith(
+      'seller',
+      expect.anything(),
+      expect.objectContaining({ currency: 'CHF' }),
+      IMPORT_CURRENCY_OPTIONS,
+    );
+  });
+
   it('shows how far the reading has got, pages first and then each product option', async () => {
     let finish: (value: unknown) => void = () => {};
     mocks.fetchCatalog.mockImplementationOnce(
@@ -820,17 +836,17 @@ describe('useMarketplaceInventoryImport, from a WooCommerce store URL', () => {
     mocks.storePlan.mockResolvedValueOnce({
       status: 'parse-failed',
       message:
-        'This store sells in CHF. Pubky listings can be priced in USD, BTC, and prices are never converted. Nothing was imported.',
+        'This store sells in NOK. Pubky listings can be priced in USD, CHF, and prices are never converted. Nothing was imported.',
       puts: 0,
     });
-    mocks.fetchCatalog.mockResolvedValueOnce({ ok: true, catalog: catalog('CHF') });
+    mocks.fetchCatalog.mockResolvedValueOnce({ ok: true, catalog: catalog('NOK') });
     const { result } = renderHook(() => useMarketplaceInventoryImport('seller'));
     type(result, 'shop.example.com');
     await act(async () => {
       expect(await result.current.submitStoreUrl()).toBe(false);
     });
     expect(result.current.scene).toBe('parse-fail');
-    expect(result.current.message).toContain('This store sells in CHF');
+    expect(result.current.message).toContain('This store sells in NOK');
     expect(result.current.form.getValues('currency')).toBe('USD');
   });
 
