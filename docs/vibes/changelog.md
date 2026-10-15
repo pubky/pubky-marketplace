@@ -1,5 +1,7 @@
 # Shop Changelog
 
+> **Note (2026-10-12):** messaging rows and proofs here (Noise XX over Paykit Encrypted Links, the backup-key decision, the messaging VRT) describe a transport since retired; chat now runs on homeserver files ([`../chat/README.md`](../chat/README.md)). Kept as a record.
+
 Public changelog for Shop, the Pubky marketplace vibe. Newest changes first.
 
 ## 2026-09-09

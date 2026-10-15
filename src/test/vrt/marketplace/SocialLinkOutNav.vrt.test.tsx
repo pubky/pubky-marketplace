@@ -53,8 +53,8 @@ vi.mock('@/hooks/useMarketplaceCartCount/useMarketplaceCartCount', () => ({
 vi.mock('@/hooks/useMarketplaceNavAttention/useMarketplaceNavAttention', () => ({
   useMarketplaceNavAttention: () => 0,
 }));
-vi.mock('@/hooks/useMessagesUnread/useMessagesUnread', () => ({
-  useMessagesUnread: ({ enabled = true } = {}) => (enabled ? 1 : 0),
+vi.mock('@/hooks/useChatUnread/useChatUnread', () => ({
+  useChatUnread: ({ enabled = true } = {}) => (enabled ? 1 : 0),
 }));
 
 const NAV_FRAME_TESTID = 'social-linkout-nav-frame';

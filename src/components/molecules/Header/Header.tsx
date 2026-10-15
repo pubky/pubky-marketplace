@@ -13,10 +13,10 @@ import { Typography } from '@/atoms/Typography/Typography';
 import { getCommerceAdapterMode } from '@/config/commerce';
 import { getGithubLink, getTelegramLink, getTwitterGetpubkyLink } from '@/config/externalLinks';
 import { getSocialHostUrl, isSocialLinkOutEnabled } from '@/config/social';
+import { useChatUnread } from '@/hooks/useChatUnread/useChatUnread';
 import { useCollectionsNavDiscovery } from '@/hooks/useCollectionsNavDiscovery/useCollectionsNavDiscovery';
 import { useMarketplaceCartCount } from '@/hooks/useMarketplaceCartCount/useMarketplaceCartCount';
 import { useMarketplaceNavAttention } from '@/hooks/useMarketplaceNavAttention/useMarketplaceNavAttention';
-import { useMessagesUnread } from '@/hooks/useMessagesUnread/useMessagesUnread';
 import { useRequireAuth } from '@/hooks/useRequireAuth/useRequireAuth';
 import { Github2, Telegram, XTwitter } from '@/icons';
 import { marketplaceNavAccessibleName } from '@/libs/commerce/marketplace-attention';
@@ -291,7 +291,7 @@ export function HeaderNavigationButtons({
   const { markCollectionsNavSeen } = useCollectionsNavDiscovery();
   // Honest badge: conversations on THIS device whose last received message
   // postdates the local read checkpoint — never a server-claimed count.
-  const unreadMessages = useMessagesUnread({ enabled: !isSocialLinkOutEnabled() });
+  const unreadMessages = useChatUnread({ enabled: !isSocialLinkOutEnabled() });
   const marketplaceCartCount = useMarketplaceCartCount();
   const marketplaceAttention = useMarketplaceNavAttention();
   const counterString = counter > 21 ? '21+' : counter.toString();

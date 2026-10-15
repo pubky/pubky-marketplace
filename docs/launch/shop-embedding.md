@@ -229,19 +229,19 @@ Names the App also defines now carry a `shop-` prefix:
 | Before | After |
 |---|---|
 | Dexie `franky` | `shop-franky` |
-| Messaging keyring `franky-messaging-keyring` | `shop-franky-messaging-keyring` |
+| Messaging keyring `franky-messaging-keyring` (retired with the old messaging transport; the Shop deletes it, see below) | `shop-franky-messaging-keyring` |
 | `auth-store`, `onboarding-storage`, `notification-store`, `search-store`, `home-store`, `hot-store`, `settings-storage`, `marketplace-display-storage` | the same names with `shop-` |
 | `pubky-feature-discovery:*` | `shop-pubky-feature-discovery:*` |
 | session keys `pubky:force-feed-scroll-top`, `pubky-app:mute-sync-cursor:*` | `shop-` prefixed (not migrated; per-tab) |
 
-Shop service keys such as `marketplace:*` and `pubky.marketplace.*` retain their names. App and Shop intentionally share coordination names, including `pubky-shop-host-cleanup`, `pubky-messaging-keys` and the messaging-key teardown flag. Reserve the documented keys and locks for this integration.
+Names only the Shop uses (`marketplace:*`, `pubky.marketplace.*`, the Web Lock names) are unchanged, because nothing else can collide with them.
 
 ### Migration of existing users
 
 Runs on the first load of the new build, in two parts:
 
-- **localStorage, synchronous.** Runs while the persisted stores are imported, before they read their keys. Each missing namespaced value is copied and read back before its legacy key is deleted; an existing namespaced value wins.
-- **IndexedDB, before the main database opens.** Uses an exclusive Web Lock when available. The messaging keyring is copied first, then both databases are initialized under the release's schema policy, matching tables are copied, and row counts are checked before legacy database deletion.
+- **localStorage, synchronous.** Runs while the persisted stores are imported, before any store reads its key. Each legacy key is copied to its namespaced name, read back, then deleted.
+- **IndexedDB, before the database opens.** Under one exclusive Web Lock: every table of `franky` is copied, then each table's row count is checked, and only then are the legacy databases deleted. The retired messaging keyring that sat next to the legacy database (`franky-messaging-keyring`) is deleted, not carried over; the chat that replaced that transport keeps no key material in a separate database ([`../chat/README.md`](../chat/README.md)).
 
 Guarantees:
 
@@ -260,8 +260,8 @@ Known edges:
 
 On iOS Safari (verified on 26.1 and 26.2), `indexedDB.deleteDatabase` called from inside the frame wipes the top page's record of that database too. Whatever the embedded Shop deletes or clears is therefore gone for the host app as well, so the Shop deletes and clears only names inside its namespace:
 
-- Sign-out and identity-switch cleanup clears Shop tables, tears down its messaging keyring, and removes the documented Shop account/service keys. Schema upgrades 4 → 5 → 6 → 7 → 8 migrate `shop-franky` in place; a reset required by another version mismatch targets that configured Shop database.
-- The namespace migration can delete legacy database/localStorage names only when adoption is enabled; it also requires Shop-only tables before moving `franky`. Adoption is disabled while embedded and must stay disabled on any origin where those names belong to App.
+- Sign-out and identity-switch wipes clear tables of `shop-franky` and remove only `shop-` keys; the retired `shop-franky-messaging-keyring` database is deleted once at boot (`DatabaseProvider`), never a host app's database. A version change recreates `shop-franky`, never `franky`.
+- The one-time migration is the only code that deletes an un-namespaced database or key, and only the Shop's own legacy data: it never runs while the Shop is embedded, never on an origin where the legacy names are the host app's, and never on a `franky` that lacks the Shop-only tables.
 - `src/core/database/franky/franky.namespace-isolation.test.ts` seeds a host app's `franky`, `franky-messaging-keyring`, `pubky-auth` and localStorage keys, runs the migration, sign-out wipes and a schema-change recreate, and fails if any deleted database or removed key is outside the namespace or any host data changed.
 
 The SDK's `pubky-auth` store is intentionally shared. Shop no longer clears it wholesale: standalone cleanup removes exact Shop-owned records and pending flow keys. An embedded Shop never removes the App-owned record. The SDK 0.16 pending-key compatibility adapter and its upgrade constraints are described in [Grant authentication and App-owned sessions](grant-auth-session.md#ownership-and-cleanup).

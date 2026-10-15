@@ -158,7 +158,7 @@ describe('MarketplaceNotifications', () => {
     expect(link).not.toHaveAttribute('tabindex', '-1');
   });
 
-  it('links an order event to that order and a message to its thread', () => {
+  it('links an order event to that order and a message to the inbox', () => {
     const orderId = '018f47d2-6a27-7c23-a62f-000000000001';
     const seller = 's'.repeat(52);
     const buyer = 'b'.repeat(52);
@@ -190,10 +190,7 @@ describe('MarketplaceNotifications', () => {
       'href',
       `/marketplace/orders#order-${orderId}`,
     );
-    expect(screen.getByRole('link', { name: 'New marketplace message' })).toHaveAttribute(
-      'href',
-      `/marketplace/messages?conversation=${encodeURIComponent(conversation)}`,
-    );
+    expect(screen.getByRole('link', { name: 'New marketplace message' })).toHaveAttribute('href', '/messages');
   });
 
   it('titles a digital delivery as a purchase, and a shipped one as before', () => {

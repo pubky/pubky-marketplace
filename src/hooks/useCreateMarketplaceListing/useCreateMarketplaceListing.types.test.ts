@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { COMMERCE_LISTING_MAX_QUANTITY } from '@/config/commerce';
+import { LISTING_CURRENCY_CODES } from '@/config/currencies';
 import { UNLIMITED_STOCK_RESERVED_MESSAGE } from '@/libs/commerce/unlimited-stock';
 import {
   CREATE_MARKETPLACE_LISTING_SCHEMA_KEYS,
@@ -99,6 +100,63 @@ describe('createMarketplaceListingSchema', () => {
     expect(createMarketplaceListingSchema.safeParse({ ...base, price: '150000' }).success).toBe(true);
     expect(createMarketplaceListingSchema.safeParse({ ...base, price: '150000.5' }).success).toBe(false);
     expect(createMarketplaceListingSchema.safeParse({ ...base, price: '0' }).success).toBe(false);
+  });
+
+  it('keeps the listing currency enum identical to the registry', () => {
+    expect(createMarketplaceListingSchema.shape.currency.options).toEqual([...LISTING_CURRENCY_CODES]);
+  });
+
+  it.each([
+    ['USD', '125.00', '12.00'],
+    ['EUR', '119.90', '9.90'],
+    ['CHF', '99.95', '8.50'],
+    ['GBP', '89.00', '7.25'],
+    ['JPY', '15000', '1200'],
+    ['CAD', '149.99', '14.00'],
+    ['AUD', '159.50', '15.00'],
+    ['BTC', '150000', '15000'],
+  ] as const)('accepts a %s price and flat shipping in its own unit', (currency, price, shippingPrice) => {
+    const result = createMarketplaceListingSchema.safeParse({
+      ...formDefaults,
+      fulfillment: 'shipping',
+      title: 'Vintage leather boots',
+      description: 'Well cared for boots with light wear.',
+      currency,
+      price,
+      shippingPrice,
+      packageWeight: '1200',
+      packageLength: '35.0',
+      packageWidth: '25.0',
+      packageHeight: '15.0',
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects a fraction in yen and a third decimal in two-decimal currencies', () => {
+    const base = {
+      ...formDefaults,
+      title: 'Vintage leather boots',
+      description: 'Well cared for boots with light wear.',
+      fulfillment: 'pickup' as const,
+    };
+    expect(createMarketplaceListingSchema.safeParse({ ...base, currency: 'JPY', price: '1500.50' }).success).toBe(
+      false,
+    );
+    expect(createMarketplaceListingSchema.safeParse({ ...base, currency: 'EUR', price: '19.999' }).success).toBe(false);
+    expect(createMarketplaceListingSchema.safeParse({ ...base, currency: 'EUR', price: '19.99' }).success).toBe(true);
+  });
+
+  it('refuses currencies outside the registry, including the legacy SATS draft value', () => {
+    const base = {
+      ...formDefaults,
+      title: 'Vintage leather boots',
+      description: 'Well cared for boots with light wear.',
+      fulfillment: 'pickup' as const,
+      price: '125.00',
+    };
+    expect(createMarketplaceListingSchema.safeParse({ ...base, currency: 'SATS' }).success).toBe(false);
+    expect(createMarketplaceListingSchema.safeParse({ ...base, currency: 'SEK' }).success).toBe(false);
+    expect(createMarketplaceListingSchema.safeParse({ ...base, currency: 'usd' }).success).toBe(false);
   });
 
   it('validates variant price overrides and shipping in the chosen currency', () => {
@@ -511,6 +569,14 @@ describe('delivery options record encoding (digital delivery design §2)', () =>
     });
     expect(flagged.success).toBe(true);
     if (flagged.success) expect(flagged.data.variants?.[0].unlimited).toBe(true);
+  });
+
+  it.each([...LISTING_CURRENCY_CODES, 'SATS'])('accepts the stored draft currency %s', (currency) => {
+    expect(createMarketplaceListingDraftSchema.safeParse({ currency }).success).toBe(true);
+  });
+
+  it('refuses a draft currency that is neither listed nor the legacy SATS value', () => {
+    expect(createMarketplaceListingDraftSchema.safeParse({ currency: 'SEK' }).success).toBe(false);
   });
 
   it('a digital-only listing needs no shipping or package fields', () => {

@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, type MockInstance, vi } from 'vitest';
 import * as commerceConfig from '@/config/commerce';
-import { PaykitMessagingService } from '@/services/paykit/paykit-messaging';
+import { PaykitReceiverService } from '@/services/paykit/paykit-receiver';
 import { CommerceApplication } from './commerce';
 
 const sdk = vi.hoisted(() => ({ publicStorageGet: vi.fn<(address: string) => Promise<Response>>() }));
@@ -45,11 +45,11 @@ function registry(paymentRequests: boolean) {
 const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200 });
 
 describe('CommerceApplication.fetchBuyerPaykitWallet', () => {
-  let receiverMarker: MockInstance<typeof PaykitMessagingService.hasPaymentRequestReceiver>;
+  let receiverMarker: MockInstance<typeof PaykitReceiverService.hasPaymentRequestReceiver>;
 
   beforeEach(() => {
     sdk.publicStorageGet.mockReset();
-    receiverMarker = vi.spyOn(PaykitMessagingService, 'hasPaymentRequestReceiver');
+    receiverMarker = vi.spyOn(PaykitReceiverService, 'hasPaymentRequestReceiver');
   });
 
   afterEach(() => {
