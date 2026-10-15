@@ -1226,6 +1226,32 @@ describe('useMarketplaceInventoryImport, an unfinished import', () => {
     expect(result.current.unfinished).toBeUndefined();
   });
 
+  it('asks first: pressing Discard only asks, Keep it withdraws the question, and the dialog closing clears it', async () => {
+    const { result } = renderHook(() => useMarketplaceInventoryImport('seller'));
+    await waitFor(() => expect(result.current.unfinished).toEqual(FOUND));
+    expect(result.current.confirmingDiscard).toBe(false);
+    act(() => result.current.askDiscardUnfinished());
+    expect(result.current.confirmingDiscard).toBe(true);
+    expect(mocks.discard).not.toHaveBeenCalled();
+    act(() => result.current.keepUnfinished());
+    expect(result.current.confirmingDiscard).toBe(false);
+    act(() => result.current.askDiscardUnfinished());
+    act(() => result.current.reset());
+    expect(result.current.confirmingDiscard).toBe(false);
+    expect(mocks.discard).not.toHaveBeenCalled();
+  });
+
+  it('closes the question when the seller confirms, and deletes only then', async () => {
+    const { result } = renderHook(() => useMarketplaceInventoryImport('seller'));
+    await waitFor(() => expect(result.current.unfinished).toEqual(FOUND));
+    act(() => result.current.askDiscardUnfinished());
+    await act(async () => {
+      await result.current.discardUnfinished();
+    });
+    expect(mocks.discard).toHaveBeenCalledWith('seller', 'manifest_old');
+    expect(result.current.confirmingDiscard).toBe(false);
+  });
+
   it('keeps the import and says so when a photo file could not be deleted from the homeserver, and Discard can be tried again', async () => {
     const { result } = renderHook(() => useMarketplaceInventoryImport('seller'));
     await waitFor(() => expect(result.current.unfinished).toEqual(FOUND));

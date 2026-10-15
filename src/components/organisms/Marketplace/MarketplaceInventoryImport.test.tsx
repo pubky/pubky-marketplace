@@ -338,56 +338,67 @@ describe('MarketplaceInventoryImport resuming an unfinished import', () => {
     expect(screen.getByLabelText('Import file')).toBeInTheDocument();
   });
 
-  it('asks before it discards, says what Discard does, and only discards when confirmed', async () => {
+  it('asks for confirmation when Discard is pressed, without discarding', async () => {
     const user = userEvent.setup();
-    const onResume = vi.fn();
+    const onAsk = vi.fn();
     const onDiscard = vi.fn();
     render(
       <MarketplaceInventoryImport
         step={1}
         scene="upload"
         unfinished={unfinished}
+        onAskDiscardUnfinished={onAsk}
+        onDiscardUnfinished={onDiscard}
+      />,
+    );
+    await user.click(
+      within(screen.getByTestId('inventory-import-unfinished')).getByRole('button', { name: 'Discard' }),
+    );
+    expect(onAsk).toHaveBeenCalledTimes(1);
+    expect(onDiscard).not.toHaveBeenCalled();
+  });
+
+  it('says what Discard does, and only discards on the confirming button', async () => {
+    const user = userEvent.setup();
+    const onResume = vi.fn();
+    const onKeep = vi.fn();
+    const onDiscard = vi.fn();
+    render(
+      <MarketplaceInventoryImport
+        step={1}
+        scene="upload"
+        unfinished={unfinished}
+        confirmingDiscard
         onResumeUnfinished={onResume}
+        onKeepUnfinished={onKeep}
         onDiscardUnfinished={onDiscard}
       />,
     );
     const banner = screen.getByTestId('inventory-import-unfinished');
-    await user.click(within(banner).getByRole('button', { name: 'Discard' }));
-
-    expect(onDiscard).not.toHaveBeenCalled();
     expect(screen.getByTestId('inventory-import-discard-confirm')).toHaveTextContent(
       'Discard the unfinished import? Listings already published stay. Photos uploaded for the rest are deleted from your homeserver.',
     );
     expect(within(banner).queryByRole('button', { name: 'Resume' })).not.toBeInTheDocument();
+    expect(within(banner).queryByRole('button', { name: 'Discard' })).not.toBeInTheDocument();
 
+    await user.click(within(banner).getByRole('button', { name: 'Keep it' }));
+    expect(onKeep).toHaveBeenCalledTimes(1);
+    expect(onDiscard).not.toHaveBeenCalled();
     await user.click(within(banner).getByRole('button', { name: 'Discard import' }));
     expect(onDiscard).toHaveBeenCalledTimes(1);
     expect(onResume).not.toHaveBeenCalled();
-    expect(screen.queryByTestId('inventory-import-discard-confirm')).not.toBeInTheDocument();
   });
 
-  it('goes back to Resume and Discard, discarding nothing, when the seller keeps the import', async () => {
-    const user = userEvent.setup();
-    const onDiscard = vi.fn();
-    render(
-      <MarketplaceInventoryImport step={1} scene="upload" unfinished={unfinished} onDiscardUnfinished={onDiscard} />,
-    );
+  it('shows Resume and Discard, and no question, until Discard is pressed', () => {
+    render(<MarketplaceInventoryImport step={1} scene="upload" unfinished={unfinished} />);
     const banner = screen.getByTestId('inventory-import-unfinished');
-    await user.click(within(banner).getByRole('button', { name: 'Discard' }));
-    await user.click(within(banner).getByRole('button', { name: 'Keep it' }));
-    expect(onDiscard).not.toHaveBeenCalled();
     expect(within(banner).getByRole('button', { name: 'Resume' })).toBeInTheDocument();
     expect(within(banner).getByRole('button', { name: 'Discard' })).toBeInTheDocument();
     expect(screen.queryByTestId('inventory-import-discard-confirm')).not.toBeInTheDocument();
   });
 
-  it('cannot confirm or keep while something is running', async () => {
-    const user = userEvent.setup();
-    const { rerender } = render(<MarketplaceInventoryImport step={1} scene="upload" unfinished={unfinished} />);
-    await user.click(
-      within(screen.getByTestId('inventory-import-unfinished')).getByRole('button', { name: 'Discard' }),
-    );
-    rerender(<MarketplaceInventoryImport step={1} scene="upload" unfinished={unfinished} busy />);
+  it('cannot confirm or keep while something is running', () => {
+    render(<MarketplaceInventoryImport step={1} scene="upload" unfinished={unfinished} confirmingDiscard busy />);
     const banner = screen.getByTestId('inventory-import-unfinished');
     expect(within(banner).getByRole('button', { name: 'Discard import' })).toBeDisabled();
     expect(within(banner).getByRole('button', { name: 'Keep it' })).toBeDisabled();

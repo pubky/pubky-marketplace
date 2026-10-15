@@ -60,6 +60,7 @@ export function useMarketplaceInventoryImport(sellerPubky: string | null) {
   const [format, setFormat] = useState<ImportSourceFormat | undefined>();
   const [lossReport, setLossReport] = useState<ImportLossReport | undefined>();
   const [progressPhase, setProgressPhase] = useState<'photos' | 'listings'>('listings');
+  const [confirmingDiscard, setConfirmingDiscard] = useState(false);
   const [unfinished, setUnfinished] = useState<InventoryImportUnfinished | undefined>();
   const [photoPlan, setPhotoPlan] = useState<{ count: number; batches: number; pauses: number } | undefined>();
   const [batchInfo, setBatchInfo] = useState<{ batch: number; batches: number } | undefined>();
@@ -119,6 +120,7 @@ export function useMarketplaceInventoryImport(sellerPubky: string | null) {
     setPhotoPlan(undefined);
     setBatchInfo(undefined);
     setWaitSeconds(null);
+    setConfirmingDiscard(false);
     form.reset(importSettingsFormDefaults);
     void loadUnfinished();
   };
@@ -452,6 +454,11 @@ export function useMarketplaceInventoryImport(sellerPubky: string | null) {
     );
   };
 
+  /** Discard was pressed: ask first. Nothing is deleted until the seller confirms. */
+  const askDiscardUnfinished = () => setConfirmingDiscard(true);
+
+  const keepUnfinished = () => setConfirmingDiscard(false);
+
   /**
    * Clears an unfinished import, after the seller has confirmed. What it already
    * published stays published; the photo files it uploaded that no published
@@ -461,6 +468,7 @@ export function useMarketplaceInventoryImport(sellerPubky: string | null) {
   const discardUnfinished = async () => {
     if (!sellerPubky || !unfinished || busy) return;
     const found = unfinished;
+    setConfirmingDiscard(false);
     setBusy(true);
     try {
       const result = await CommerceController.discardInventoryImport(sellerPubky, found.manifestId);
@@ -569,7 +577,10 @@ export function useMarketplaceInventoryImport(sellerPubky: string | null) {
     waitSeconds,
     photoPlan,
     unfinished,
+    confirmingDiscard,
     resumeUnfinished,
+    askDiscardUnfinished,
+    keepUnfinished,
     discardUnfinished,
     fetchPhase,
     busy,

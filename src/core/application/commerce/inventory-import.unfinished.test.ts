@@ -419,7 +419,7 @@ describe('an unfinished import, after the dialog was closed or the page reloaded
     });
 
     it('is harmless for an import that is already gone', async () => {
-      await expect(app().discard('never-existed')).resolves.toBeUndefined();
+      await expect(app().discard('never-existed')).resolves.toEqual({ removedFiles: 0, failedFiles: 0, cleared: true });
     });
   });
 

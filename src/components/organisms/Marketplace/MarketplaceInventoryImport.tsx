@@ -1,6 +1,5 @@
 'use client';
 
-import { useState } from 'react';
 import type { Control } from 'react-hook-form';
 import { Button } from '@/atoms/Button/Button';
 import { Input } from '@/atoms/Input/Input';
@@ -58,6 +57,8 @@ export type MarketplaceInventoryImportProps = {
   waitSeconds?: number | null;
   /** An import that was started and not finished, offered for resume or discard on the upload step. */
   unfinished?: { listings: { done: number; total: number }; photosLeft: number };
+  /** The seller pressed Discard and is being asked to confirm. */
+  confirmingDiscard?: boolean;
   /** What publishing will load: photos and batches, shown in the dry run. */
   photoPlan?: { count: number; batches: number; pauses?: number };
   /** `pages` while a store's product list is read, then `variations` while each variable product's options are. */
@@ -82,6 +83,8 @@ export type MarketplaceInventoryImportProps = {
   };
   onFile?: (file: File) => void;
   onResumeUnfinished?: () => void;
+  onAskDiscardUnfinished?: () => void;
+  onKeepUnfinished?: () => void;
   onDiscardUnfinished?: () => void;
   onPublish?: () => void;
   onResume?: () => void;
@@ -119,6 +122,7 @@ export function MarketplaceInventoryImport({
   waitSeconds = null,
   photoPlan,
   unfinished,
+  confirmingDiscard = false,
   fetchPhase = 'pages',
   store,
   mappingHeaders = [],
@@ -129,6 +133,8 @@ export function MarketplaceInventoryImport({
   publishNotice,
   onFile,
   onResumeUnfinished,
+  onAskDiscardUnfinished,
+  onKeepUnfinished,
   onDiscardUnfinished,
   onPublish,
   onResume,
@@ -139,7 +145,6 @@ export function MarketplaceInventoryImport({
   onExportListings,
   onExportOrders,
 }: MarketplaceInventoryImportProps) {
-  const [confirmingDiscard, setConfirmingDiscard] = useState(false);
   const currentStep = step || SCENE_STEP[scene];
 
   return (
@@ -174,19 +179,11 @@ export function MarketplaceInventoryImport({
                       variant="destructive"
                       className="rounded-full"
                       disabled={busy}
-                      onClick={() => {
-                        setConfirmingDiscard(false);
-                        onDiscardUnfinished?.();
-                      }}
+                      onClick={onDiscardUnfinished}
                     >
                       Discard import
                     </Button>
-                    <Button
-                      variant="secondary"
-                      className="rounded-full"
-                      disabled={busy}
-                      onClick={() => setConfirmingDiscard(false)}
-                    >
+                    <Button variant="secondary" className="rounded-full" disabled={busy} onClick={onKeepUnfinished}>
                       Keep it
                     </Button>
                   </div>
@@ -196,12 +193,7 @@ export function MarketplaceInventoryImport({
                   <Button className="rounded-full" disabled={busy} onClick={onResumeUnfinished}>
                     Resume
                   </Button>
-                  <Button
-                    variant="secondary"
-                    className="rounded-full"
-                    disabled={busy}
-                    onClick={() => setConfirmingDiscard(true)}
-                  >
+                  <Button variant="secondary" className="rounded-full" disabled={busy} onClick={onAskDiscardUnfinished}>
                     Discard
                   </Button>
                 </div>
