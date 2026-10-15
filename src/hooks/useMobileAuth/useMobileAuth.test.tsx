@@ -1,5 +1,5 @@
 import { act, renderHook } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { navigatesWithinGesture } from '@/test-utils/user-gesture';
 import { useMobileAuth } from './useMobileAuth';
 
@@ -107,5 +107,61 @@ describe('useMobileAuth', () => {
     renderHook(() => useMobileAuth({ type: 'signup', inviteCode: 'ABC-123' }));
 
     expect(mockUseAuthUrl).toHaveBeenCalledWith({ type: 'signup', inviteCode: 'ABC-123' });
+  });
+  describe('grant sign-in (Bitkit)', () => {
+    const GRANT_URL = 'pubkyauth://signin_grant?caps=x&relay=r&secret=s&cid=shop.pubky.app&cpk=k';
+    const BITKIT_IOS_URL = 'bitkit://pubky-auth/signin?caps=x&relay=r&secret=s&cid=shop.pubky.app&cpk=k';
+    const IPHONE = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15';
+    const MAC = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15';
+    const ANDROID = 'Mozilla/5.0 (Linux; Android 15; Pixel 9) AppleWebKit/537.36 Chrome/140.0 Mobile';
+
+    const stubDevice = (userAgent: string, maxTouchPoints: number) => {
+      vi.stubGlobal('navigator', { userAgent, maxTouchPoints });
+    };
+
+    afterEach(() => {
+      vi.unstubAllGlobals();
+    });
+
+    it.each([
+      ['iPhone', IPHONE, 5],
+      ['iPadOS reporting Macintosh with touch', MAC, 5],
+    ])('opens the bitkit:// link on %s and keeps url and copy on pubkyauth://', (_, userAgent, touchPoints) => {
+      stubDevice(userAgent, touchPoints);
+      mockUseAuthUrl.mockReturnValue({ ...defaultAuthUrlReturn, url: GRANT_URL });
+
+      const { result } = renderHook(() => useMobileAuth({ type: 'grant' }));
+
+      expect(
+        navigatesWithinGesture(navigation.navigateTop, BITKIT_IOS_URL, () => result.current.onAuthorizeClick()),
+      ).toBe(true);
+      expect(result.current.url).toBe(GRANT_URL);
+    });
+
+    it.each([
+      ['Android', ANDROID, 5],
+      ['desktop Mac', MAC, 0],
+    ])('keeps the pubkyauth:// link on %s', (_, userAgent, touchPoints) => {
+      stubDevice(userAgent, touchPoints);
+      mockUseAuthUrl.mockReturnValue({ ...defaultAuthUrlReturn, url: GRANT_URL });
+
+      const { result } = renderHook(() => useMobileAuth({ type: 'grant' }));
+      act(() => {
+        result.current.onAuthorizeClick();
+      });
+
+      expect(navigation.navigateTop).toHaveBeenCalledWith(GRANT_URL);
+    });
+
+    it('keeps the Pubky Ring link on iPhone', () => {
+      stubDevice(IPHONE, 5);
+
+      const { result } = renderHook(() => useMobileAuth());
+      act(() => {
+        result.current.onAuthorizeClick();
+      });
+
+      expect(navigation.navigateTop).toHaveBeenCalledWith('pubkyauth://signin?token=test123');
+    });
   });
 });
