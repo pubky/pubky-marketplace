@@ -15,9 +15,19 @@ vi.mock('@/stores/auth/auth.store', () => ({
     selector({ currentUserPubky: COMMERCE_FIXTURE_SELLER }),
 }));
 
+const commerce = vi.hoisted(() => ({
+  durable: false,
+  marketplaceSession: null as object | null,
+}));
+
+vi.mock('@/config/commerce', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/config/commerce')>()),
+  getCommerceAdapterMode: () => (commerce.durable ? 'transaction-service' : 'unavailable'),
+}));
+
 vi.mock('@/stores/commerce/commerce.store', () => ({
-  useCommerceStore: (selector: (store: { marketplaceSession: null; inventorySession: null }) => unknown) =>
-    selector({ marketplaceSession: null, inventorySession: null }),
+  useCommerceStore: (selector: (store: { marketplaceSession: object | null; inventorySession: null }) => unknown) =>
+    selector({ marketplaceSession: commerce.marketplaceSession, inventorySession: null }),
 }));
 
 vi.mock('@/controllers/commerce/commerce', () => ({
@@ -25,6 +35,8 @@ vi.mock('@/controllers/commerce/commerce', () => ({
     loadInventoryBoard: vi.fn(),
     getOrFetchListing: vi.fn(),
     commitUpsertListing: vi.fn(),
+    getSellerPaymentConfig: vi.fn(),
+    getMyDeliveryKeyStatus: vi.fn(),
   },
 }));
 
@@ -56,6 +68,8 @@ function row(overrides: Partial<InventoryBoardRow> = {}): InventoryBoardRow {
 describe('useMarketplaceInventory relist', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    commerce.durable = false;
+    commerce.marketplaceSession = null;
     vi.mocked(CommerceController.loadInventoryBoard).mockResolvedValue({ status: 'ready', rows: [row()] });
   });
 
@@ -105,5 +119,93 @@ describe('useMarketplaceInventory relist', () => {
     expect(relisted).toBe(false);
     expect(result.current.load).toMatchObject({ status: 'ready', rows: [{ listingState: 'paused' }] });
     expect(toast).toHaveBeenCalledWith({ variant: 'error', description: LISTING_PUBLISH_BLOCK_COPY.session.title });
+  });
+
+  describe('durable publish guards', () => {
+    const SESSION = { pubky: COMMERCE_FIXTURE_SELLER, capabilities: '/pub/pubky.app/:rw' };
+
+    beforeEach(() => {
+      commerce.durable = true;
+      commerce.marketplaceSession = SESSION;
+      vi.mocked(CommerceController.getOrFetchListing).mockResolvedValue(
+        createCommerceListingFixture({ state: 'paused' }),
+      );
+      vi.mocked(CommerceController.commitUpsertListing).mockResolvedValue({ registered: true, verified: true });
+      vi.mocked(CommerceController.getSellerPaymentConfig).mockResolvedValue({
+        bitcoinAvailable: true,
+        bitcoinOfferAvailable: true,
+        paypalAvailable: false,
+      });
+      vi.mocked(CommerceController.getMyDeliveryKeyStatus).mockResolvedValue({
+        local: null,
+        publication: 'matches',
+        publishedKeyId: 'key',
+      });
+    });
+
+    async function relist() {
+      const { result } = renderHook(() => useMarketplaceInventory());
+      await waitFor(() => expect(result.current.load.status).toBe('ready'));
+      let relisted = true;
+      await act(async () => {
+        relisted = await result.current.relist(row());
+      });
+      return { result, relisted };
+    }
+
+    it('keeps the listing paused when the seller has no payment method', async () => {
+      vi.mocked(CommerceController.getSellerPaymentConfig).mockResolvedValue({
+        bitcoinAvailable: false,
+        bitcoinOfferAvailable: true,
+        paypalAvailable: false,
+      });
+
+      const { result, relisted } = await relist();
+
+      expect(relisted).toBe(false);
+      expect(CommerceController.commitUpsertListing).not.toHaveBeenCalled();
+      expect(CommerceController.getSellerPaymentConfig).toHaveBeenCalledWith(COMMERCE_FIXTURE_SELLER);
+      expect(result.current.load).toMatchObject({ status: 'ready', rows: [{ listingState: 'paused' }] });
+      expect(toast).toHaveBeenCalledWith({
+        variant: 'error',
+        description: LISTING_PUBLISH_BLOCK_COPY['no-method'].title,
+      });
+    });
+
+    it('asks to enable selling before checking payment settings when there is no session', async () => {
+      commerce.marketplaceSession = null;
+
+      const { relisted } = await relist();
+
+      expect(relisted).toBe(false);
+      expect(CommerceController.getSellerPaymentConfig).not.toHaveBeenCalled();
+      expect(CommerceController.commitUpsertListing).not.toHaveBeenCalled();
+      expect(toast).toHaveBeenCalledWith({ variant: 'error', description: LISTING_PUBLISH_BLOCK_COPY.session.title });
+    });
+
+    it('requires a published delivery key for a listing that ships', async () => {
+      vi.mocked(CommerceController.getMyDeliveryKeyStatus).mockResolvedValue({
+        local: null,
+        publication: 'missing',
+        publishedKeyId: null,
+      });
+
+      const { relisted } = await relist();
+
+      expect(relisted).toBe(false);
+      expect(CommerceController.commitUpsertListing).not.toHaveBeenCalled();
+      expect(toast).toHaveBeenCalledWith({
+        variant: 'error',
+        description: LISTING_PUBLISH_BLOCK_COPY['no-delivery-key'].title,
+      });
+    });
+
+    it('relists once every guard passes', async () => {
+      const { result, relisted } = await relist();
+
+      expect(relisted).toBe(true);
+      expect(CommerceController.commitUpsertListing).toHaveBeenCalledWith(expect.objectContaining({ state: 'active' }));
+      expect(result.current.load).toMatchObject({ status: 'ready', rows: [{ listingState: 'active' }] });
+    });
   });
 });
