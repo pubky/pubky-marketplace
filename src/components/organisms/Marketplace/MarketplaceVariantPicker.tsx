@@ -14,6 +14,11 @@ export interface MarketplaceVariantPickerProps {
   onSelect: (variantId: string) => void;
   /** Sizes the service reports sold out. Every one stays listed, disabled. */
   soldOutVariantIds: ReadonlySet<string>;
+  /** Shown while no size is chosen. A caller that wants no default size passes no `selectedVariantId`. */
+  placeholder?: string;
+  /** False when the surrounding row already says what is being chosen. */
+  showHeading?: boolean;
+  className?: string;
 }
 
 /** The size picker. A sold-out size stays visible, disabled and labelled. */
@@ -22,15 +27,20 @@ export function MarketplaceVariantPicker({
   selectedVariantId,
   onSelect,
   soldOutVariantIds,
+  placeholder,
+  showHeading = true,
+  className,
 }: MarketplaceVariantPickerProps) {
   return (
-    <div data-surface="marketplace-variant-picker">
-      <Typography as="p" className="mb-2 text-sm font-semibold">
-        Variant
-      </Typography>
+    <div data-surface="marketplace-variant-picker" className={className}>
+      {showHeading && (
+        <Typography as="p" className="mb-2 text-sm font-semibold">
+          Variant
+        </Typography>
+      )}
       <Select value={selectedVariantId} onValueChange={onSelect}>
         <SelectTrigger theme="secondary" className="w-full" aria-label="Choose listing variant">
-          <SelectValue />
+          <SelectValue placeholder={placeholder} />
         </SelectTrigger>
         <SelectContent>
           {record.variants.map((variant) => {
