@@ -71,6 +71,10 @@ describe('WooCommerce official sample_products.csv', () => {
     expect(tee[0]?.sku).toBe('woo-vneck-tee-red');
   });
 
+  it('carries no revision, so a re-import is an update and never a conflict', () => {
+    expect(result.rows.every((row) => row.recordRevision === null)).toBe(true);
+  });
+
   it('prices the listing at its lowest variation and overrides the dearer variants', () => {
     const tee = result.rows.filter((row) => row.listingId === 'woo-vneck-tee');
     expect(tee.map((row) => row.amountMinor)).toEqual([1_500, 1_500, 1_500]);

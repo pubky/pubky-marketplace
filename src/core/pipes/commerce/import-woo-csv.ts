@@ -637,7 +637,8 @@ export function mapWooProductCsv(input: WooMapInput): WooMapResult {
         sellerPubky,
         listingId: id,
         sourceListingKey: `woo:${parent.sku || parent.id || id}`,
-        recordRevision: 1,
+        // A shop-system file has no revision to compare, so a re-import is never a conflict with the listing's own edits.
+        recordRevision: null,
         variantId,
         sku: candidate.source.sku,
         state,

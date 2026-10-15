@@ -224,6 +224,8 @@ export function buildShopifyPresetRows(input: ShopifyPresetInput): ShopifyPreset
     }));
     rows.push({
       ...row,
+      // The file carries no revision; a re-import updates the stored listing instead of conflicting with it.
+      recordRevision: null,
       amountMinor: amount,
       currency: settings.currency,
       exponent: targetExponent,
