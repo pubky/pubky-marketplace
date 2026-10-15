@@ -649,10 +649,14 @@ export class HomeserverService {
   ): Promise<TGenerateAuthUrlResult> {
     try {
       if (!this.isGrantSignInAvailable() || !(await this.getPubkySdk().browserSessionStore.isAvailable())) {
-        throw Err.database(DatabaseErrorCode.INIT_FAILED, 'This browser cannot securely save a grant sign-in.', {
-          service: ErrorService.Homeserver,
-          operation,
-        });
+        throw Err.database(
+          DatabaseErrorCode.INIT_FAILED,
+          "This browser can't save a secure sign-in. Leave private browsing or allow this site to store data, then try again.",
+          {
+            service: ErrorService.Homeserver,
+            operation,
+          },
+        );
       }
       assertOwnedGrantStorageAvailable();
       const pubkySdk = this.getPubkySdk();

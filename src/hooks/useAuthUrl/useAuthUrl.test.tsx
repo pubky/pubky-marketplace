@@ -2,10 +2,16 @@ import type { Session } from '@synonymdev/pubky';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AppError } from '@/libs/error/error';
-import { AuthErrorCode, ServerErrorCode, TimeoutErrorCode } from '@/libs/error/error.codes';
+import {
+  AuthErrorCode,
+  DatabaseErrorCode,
+  ServerErrorCode,
+  TimeoutErrorCode,
+  ValidationErrorCode,
+} from '@/libs/error/error.codes';
 import { ErrorCategory, ErrorService } from '@/libs/error/error.types';
 import { mockSession } from '@/test-utils/pubky';
-import { useAuthUrl } from './useAuthUrl';
+import { AUTH_URL_FAILED_MESSAGE, useAuthUrl } from './useAuthUrl';
 
 // Mock dependencies
 const mockToast = vi.fn();
@@ -376,10 +382,7 @@ describe('useAuthUrl', () => {
     renderHook(() => useAuthUrl());
 
     await waitFor(() => {
-      expect(mockToast).toHaveBeenCalledWith({
-        variant: 'error',
-        description: 'Could not generate QR. Refresh and try again.',
-      });
+      expect(mockToast).toHaveBeenCalledWith({ variant: 'error', description: AUTH_URL_FAILED_MESSAGE });
     });
   });
 
@@ -389,10 +392,56 @@ describe('useAuthUrl', () => {
     const { result } = renderHook(() => useAuthUrl({ type: 'grant' }));
 
     await waitFor(() => expect(result.current.isExpired).toBe(true));
-    expect(mockToast).toHaveBeenCalledWith({
-      variant: 'error',
-      description: 'Could not generate QR. Refresh and try again.',
-    });
+    expect(mockToast).toHaveBeenCalledWith({ variant: 'error', description: AUTH_URL_FAILED_MESSAGE });
+  });
+
+  it.each([
+    ['sign-in', { type: 'grant' } as const, () => mockGetGrantAuthUrl],
+    ['sign-up', { type: 'signup', inviteCode: 'INVITE' } as const, () => mockGetSignupAuthUrl],
+  ])('never shows a raw SDK message when the %s link cannot be made', async (_flow, options, mock) => {
+    // handleError keeps the SDK's own message on the AppError it throws.
+    mock().mockRejectedValue(
+      new AppError({
+        category: ErrorCategory.Validation,
+        code: ValidationErrorCode.INVALID_INPUT,
+        message: 'Invalid PublicKey encoding',
+        service: ErrorService.Homeserver,
+        operation: 'generateGrantAuthUrl',
+      }),
+    );
+
+    const { result } = renderHook(() => useAuthUrl(options));
+
+    await waitFor(() => expect(result.current.isExpired).toBe(true));
+    expect(mockToast).toHaveBeenCalledTimes(1);
+    expect(mockToast).toHaveBeenCalledWith({ variant: 'error', description: AUTH_URL_FAILED_MESSAGE });
+  });
+
+  it('offers a reload without an error toast when another sign-in canceled link creation', async () => {
+    mockGetGrantAuthUrl.mockRejectedValue(Object.assign(new Error('Auth flow canceled'), { name: 'AuthFlowCanceled' }));
+
+    const { result } = renderHook(() => useAuthUrl({ type: 'grant' }));
+
+    await waitFor(() => expect(result.current.isExpired).toBe(true));
+    expect(mockToast).not.toHaveBeenCalled();
+  });
+
+  it("keeps the Shop's own browser-storage remedy when the link cannot be made", async () => {
+    const message = 'Browser storage is blocked. Enable storage to sign in securely.';
+    mockGetGrantAuthUrl.mockRejectedValue(
+      new AppError({
+        category: ErrorCategory.Database,
+        code: DatabaseErrorCode.INIT_FAILED,
+        message,
+        service: ErrorService.Homeserver,
+        operation: 'ownedGrantStorage',
+      }),
+    );
+
+    const { result } = renderHook(() => useAuthUrl({ type: 'grant' }));
+
+    await waitFor(() => expect(result.current.isExpired).toBe(true));
+    expect(mockToast).toHaveBeenCalledWith({ variant: 'error', description: message });
   });
 
   it('does not cancel active auth flow on unmount', async () => {

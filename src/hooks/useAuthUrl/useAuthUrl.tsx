@@ -3,7 +3,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Session } from '@synonymdev/pubky';
 import { AuthController } from '@/controllers/auth/auth';
-import { AuthErrorCode } from '@/libs/error/error.codes';
+import type { AppError } from '@/libs/error/error';
+import { AuthErrorCode, DatabaseErrorCode } from '@/libs/error/error.codes';
+import { ErrorCategory } from '@/libs/error/error.types';
 import {
   getWrongEnvironmentHomeserverMessage,
   isAppError,
@@ -16,6 +18,16 @@ import { copyToClipboard } from '@/libs/utils/utils';
 import { toast } from '@/molecules/Toaster/use-toast';
 import { AUTH_FLOW_CANCELED_ERROR_NAME } from '@/services/homeserver/error.utils';
 import type { UseAuthUrlOptions, UseAuthUrlReturn } from './useAuthUrl.types';
+
+export const AUTH_URL_FAILED_MESSAGE =
+  'Could not create the sign-in code. Check your internet connection, then select "Click to reload" to try again.';
+
+/**
+ * The Shop's own browser-storage refusals carry their remedy in the message. Any other
+ * error that reaches URL creation may hold a raw SDK string, so it gets the generic copy.
+ */
+const isBrowserStorageError = (error: unknown): error is AppError =>
+  isAppError(error) && error.category === ErrorCategory.Database && error.code === DatabaseErrorCode.INIT_FAILED;
 
 /** Returns true if the error indicates the auth flow has expired (timeout or SESSION_EXPIRED). */
 const isAuthFlowExpiredError = (error: unknown): boolean => {
@@ -111,9 +123,11 @@ export function useAuthUrl(options: UseAuthUrlOptions = {}): UseAuthUrlReturn {
       if (!isAppError(error)) Logger.error('Failed to generate auth URL:', error);
       if (!isMountedRef.current) return;
       setIsExpired(true);
+      // Another sign-in took over while this link was being made; it owns the page.
+      if (isAuthFlowCanceled(error)) return;
       toast({
         variant: 'error',
-        description: isAppError(error) ? error.message : 'Could not generate QR. Refresh and try again.',
+        description: isBrowserStorageError(error) ? error.message : AUTH_URL_FAILED_MESSAGE,
       });
     } finally {
       if (isMountedRef.current) {
