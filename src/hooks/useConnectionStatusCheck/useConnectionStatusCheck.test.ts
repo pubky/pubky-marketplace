@@ -2,7 +2,8 @@ import { act, renderHook } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ConnectionCheck } from '@/application/connectors/connectors';
 import { ConnectorsController } from '@/controllers/connectors/connectors';
-import { connectionHealth, connectorConnectionSchema } from '@/libs/commerce/connectors';
+import { connectionHealth } from '@/libs/commerce/connectors';
+import { connectionFixture } from '@/test-utils/connector-fixtures';
 import { useConnectionStatusCheck } from './useConnectionStatusCheck';
 
 vi.mock('@/controllers/connectors/connectors', () => ({
@@ -10,7 +11,7 @@ vi.mock('@/controllers/connectors/connectors', () => ({
 }));
 
 function connection(overrides: Record<string, unknown> = {}) {
-  return connectorConnectionSchema.parse({
+  return connectionFixture({
     id: 'c1',
     provider: 'woocommerce',
     domain: 'dezentralshop.ch',
@@ -28,6 +29,7 @@ function check(overrides: Partial<ConnectionCheck> = {}): ConnectionCheck {
     health: found ? connectionHealth(found) : null,
     productCount: 3,
     catalogReadable: true,
+    store: null,
     ...overrides,
   };
 }
@@ -70,7 +72,7 @@ describe('useConnectionStatusCheck', () => {
   });
 
   it('keeps looking while the connection is pending, then settles when it connects', async () => {
-    const pending = connection({ status: 'pending' });
+    const pending = connection({ status: 'draft' });
     vi.mocked(ConnectorsController.fetchConnectionCheck)
       .mockResolvedValueOnce(check({ connection: pending, catalogReadable: false, productCount: null }))
       .mockResolvedValueOnce(check());
@@ -85,7 +87,7 @@ describe('useConnectionStatusCheck', () => {
 
   it('says it is still waiting when the store never confirms', async () => {
     vi.mocked(ConnectorsController.fetchConnectionCheck).mockResolvedValue(
-      check({ connection: connection({ status: 'pending' }), catalogReadable: false }),
+      check({ connection: connection({ status: 'draft' }), catalogReadable: false }),
     );
     const { result } = renderHook(() => useConnectionStatusCheck());
     await act(async () => {

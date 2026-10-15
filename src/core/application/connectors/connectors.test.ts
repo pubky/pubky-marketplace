@@ -1,7 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   type ConnectorConnection,
-  connectorConnectionSchema,
   type ConnectorMapping,
   connectorPushSchema,
   SHOPIFY_REQUIRED_SCOPES,
@@ -10,13 +9,14 @@ import { AppError } from '@/libs/error/error';
 import { Logger } from '@/libs/logger/logger';
 import { MarketplaceConnectorsService } from '@/services/marketplace/marketplace-connectors';
 import { connectorRefusal } from '@/test-utils/connector-errors';
+import { connectionFixture } from '@/test-utils/connector-fixtures';
 import { ConnectorsApplication } from './connectors';
 
 const ACTOR = 'y'.repeat(52);
 const ID = '11111111-1111-4111-8111-111111111111';
 
 function connection(overrides: Record<string, unknown> = {}): ConnectorConnection {
-  return connectorConnectionSchema.parse({
+  return connectionFixture({
     id: ID,
     provider: 'woocommerce',
     domain: 'dezentralshop.ch',
@@ -41,7 +41,6 @@ function push(overrides: Record<string, unknown> = {}) {
 describe('ConnectorsApplication', () => {
   beforeEach(() => {
     vi.spyOn(Logger, 'error').mockImplementation(() => {});
-    vi.spyOn(MarketplaceConnectorsService, 'serviceBaseUrl').mockReturnValue('https://staging-api.pubky.app');
   });
   afterEach(() => vi.restoreAllMocks());
 
@@ -50,7 +49,7 @@ describe('ConnectorsApplication', () => {
       const url = 'https://dezentralshop.ch/wc-auth/v1/authorize?scope=read_write&user_id=nonce';
       const connect = vi.spyOn(MarketplaceConnectorsService, 'connect').mockResolvedValue({
         kind: 'connector_connect',
-        connection: connection({ status: 'pending' }),
+        connection: connection({ status: 'draft' }),
         authorizeUrl: url,
       });
 
@@ -70,7 +69,7 @@ describe('ConnectorsApplication', () => {
     it('refuses an approval link that leads to another site', async () => {
       vi.spyOn(MarketplaceConnectorsService, 'connect').mockResolvedValue({
         kind: 'connector_connect',
-        connection: connection({ status: 'pending' }),
+        connection: connection({ status: 'draft' }),
         authorizeUrl: 'https://evil.example/wc-auth/v1/authorize',
       });
       await expect(ConnectorsApplication.startWooCommerce(ACTOR, 'dezentralshop.ch')).rejects.toBeInstanceOf(AppError);
@@ -79,7 +78,7 @@ describe('ConnectorsApplication', () => {
     it('refuses a missing approval link', async () => {
       vi.spyOn(MarketplaceConnectorsService, 'connect').mockResolvedValue({
         kind: 'connector_connect',
-        connection: connection({ status: 'pending' }),
+        connection: connection({ status: 'draft' }),
         authorizeUrl: null,
       });
       await expect(ConnectorsApplication.startWooCommerce(ACTOR, 'dezentralshop.ch')).rejects.toBeInstanceOf(AppError);
@@ -90,11 +89,10 @@ describe('ConnectorsApplication', () => {
     it('creates the connection, then sends the key pair', async () => {
       vi.spyOn(MarketplaceConnectorsService, 'connect').mockResolvedValue({
         kind: 'connector_connect',
-        connection: connection({ status: 'pending' }),
+        connection: connection({ status: 'draft' }),
+        authorizeUrl: null,
       });
-      const put = vi.spyOn(MarketplaceConnectorsService, 'putCredentials').mockResolvedValue({
-        connection: connection(),
-      });
+      const put = vi.spyOn(MarketplaceConnectorsService, 'putCredentials').mockResolvedValue(connection());
 
       const result = await ConnectorsApplication.connectWooCommerceWithKeys(ACTOR, {
         address: 'dezentralshop.ch',
@@ -120,36 +118,19 @@ describe('ConnectorsApplication', () => {
   });
 
   describe('Shopify draft', () => {
-    it('creates a draft for the canonical domain and shows the service URLs', async () => {
-      const urls = {
-        appUrl: 'https://api.example/v1/connectors/shopify/c/x/launch',
-        allowedRedirectionUrl: 'https://api.example/v1/connectors/shopify/c/x/oauth/callback',
-        webhookUrl: null,
-      };
+    it('creates a draft for the canonical domain and returns the connection with the URLs the service built', async () => {
+      const draft = connection({ provider: 'shopify', domain: 'your-store.myshopify.com', status: 'draft' });
       const connect = vi.spyOn(MarketplaceConnectorsService, 'connect').mockResolvedValue({
         kind: 'connector_connect',
-        connection: connection({ provider: 'shopify', domain: 'your-store.myshopify.com', status: 'draft' }),
-        urls,
+        connection: draft,
+        authorizeUrl: null,
       });
 
-      const draft = await ConnectorsApplication.startShopify(ACTOR, 'Your-Store');
+      const created = await ConnectorsApplication.startShopify(ACTOR, 'Your-Store');
 
       expect(connect).toHaveBeenCalledWith(ACTOR, { provider: 'shopify', domain: 'your-store.myshopify.com' });
-      expect(draft.urls).toEqual(urls);
-    });
-
-    it('falls back to the fixed per-connection paths when the service sends no URLs', async () => {
-      vi.spyOn(MarketplaceConnectorsService, 'connect').mockResolvedValue({
-        kind: 'connector_connect',
-        connection: connection({ provider: 'shopify', domain: 'a.myshopify.com', status: 'draft' }),
-      });
-
-      const draft = await ConnectorsApplication.startShopify(ACTOR, 'a.myshopify.com');
-
-      expect(draft.urls.appUrl).toBe(`https://staging-api.pubky.app/v1/connectors/shopify/c/${ID}/launch`);
-      expect(draft.urls.allowedRedirectionUrl).toBe(
-        `https://staging-api.pubky.app/v1/connectors/shopify/c/${ID}/oauth/callback`,
-      );
+      expect(created.urls.launch).toContain('/v1/connectors/shopify/c/');
+      expect(created.urls).toEqual(draft.urls);
     });
 
     it('refuses a store address that is not a myshopify.com domain', async () => {
@@ -158,27 +139,23 @@ describe('ConnectorsApplication', () => {
       );
     });
 
-    it('seals the keys and keeps only an https install link', async () => {
-      const put = vi
-        .spyOn(MarketplaceConnectorsService, 'putCredentials')
-        .mockResolvedValue({ authorizeUrl: 'https://a.myshopify.com/admin/oauth/authorize?client_id=1' });
+    it('seals the keys and returns the connection with credentials saved', async () => {
+      const saved = connection({ provider: 'shopify', status: 'draft', credentialsSaved: true });
+      const put = vi.spyOn(MarketplaceConnectorsService, 'putCredentials').mockResolvedValue(saved);
       const result = await ConnectorsApplication.saveShopifyCredentials(ACTOR, ID, {
-        clientId: 'client-id-1',
+        clientId: ' client-id-1 ',
         clientSecret: 'client-secret-1',
       });
       expect(put).toHaveBeenCalledWith(ACTOR, ID, { clientId: 'client-id-1', clientSecret: 'client-secret-1' });
-      expect(result.authorizeUrl).toContain('/admin/oauth/authorize');
+      expect(result.credentialsSaved).toBe(true);
+    });
 
-      put.mockResolvedValue({ authorizeUrl: 'http://a.myshopify.com/admin/oauth/authorize' });
-      expect(
-        (await ConnectorsApplication.saveShopifyCredentials(ACTOR, ID, { clientId: 'a', clientSecret: 'b' }))
-          .authorizeUrl,
-      ).toBeNull();
-      put.mockResolvedValue({});
-      expect(
-        (await ConnectorsApplication.saveShopifyCredentials(ACTOR, ID, { clientId: 'a', clientSecret: 'b' }))
-          .authorizeUrl,
-      ).toBeNull();
+    it('does not send an empty key', async () => {
+      const put = vi.spyOn(MarketplaceConnectorsService, 'putCredentials');
+      await expect(
+        ConnectorsApplication.saveShopifyCredentials(ACTOR, ID, { clientId: 'a', clientSecret: '  ' }),
+      ).rejects.toThrow('Both keys are required.');
+      expect(put).not.toHaveBeenCalled();
     });
   });
 
@@ -187,7 +164,7 @@ describe('ConnectorsApplication', () => {
       ['shopify', { clientId: 'one-value', clientSecret: 'two-value' }],
       ['woocommerce', { consumerKey: 'one-value', consumerSecret: 'two-value' }],
     ] as const)('names the %s fields', async (provider, expected) => {
-      const put = vi.spyOn(MarketplaceConnectorsService, 'putCredentials').mockResolvedValue({});
+      const put = vi.spyOn(MarketplaceConnectorsService, 'putCredentials').mockResolvedValue(connection());
       await ConnectorsApplication.replaceCredentials(
         ACTOR,
         { id: ID, provider },
@@ -197,50 +174,129 @@ describe('ConnectorsApplication', () => {
     });
   });
 
+  describe('saveVariantMode', () => {
+    it('sends the setting and returns the updated connection', async () => {
+      const put = vi
+        .spyOn(MarketplaceConnectorsService, 'putSettings')
+        .mockResolvedValue(connection({ variantMode: 'split' }));
+      const updated = await ConnectorsApplication.saveVariantMode(ACTOR, ID, 'split');
+      expect(put).toHaveBeenCalledWith(ACTOR, ID, { variantMode: 'split' });
+      expect(updated.variantMode).toBe('split');
+    });
+  });
+
   describe('checkConnection', () => {
-    it('reports a healthy store with its first catalog page', async () => {
-      vi.spyOn(MarketplaceConnectorsService, 'list').mockResolvedValue([connection()]);
-      vi.spyOn(MarketplaceConnectorsService, 'catalog').mockResolvedValue({
-        kind: 'connector_catalog',
-        connectionId: ID,
-        products: [{ providerProductId: '1', title: 'A', options: [], imageUrls: [], variants: [], selected: false }],
-        nextPage: null,
-      });
+    const page = {
+      kind: 'connector_catalog' as const,
+      connectionId: ID,
+      products: [{ providerProductId: '1', title: 'A', options: [], imageUrls: [], variants: [], selected: false }],
+      nextPage: null,
+    };
+    const shopCheck = {
+      kind: 'connector_check' as const,
+      connectionId: ID,
+      shopName: 'Your Store',
+      grantedScopes: [...SHOPIFY_REQUIRED_SCOPES],
+      missingScopes: [],
+      locationCount: 2,
+      catalogReadable: true,
+    };
+
+    it('asks the store for its name, scopes and locations, and reads the first catalog page', async () => {
+      vi.spyOn(MarketplaceConnectorsService, 'list').mockResolvedValue([connection({ provider: 'shopify' })]);
+      vi.spyOn(MarketplaceConnectorsService, 'check').mockResolvedValue(shopCheck);
+      vi.spyOn(MarketplaceConnectorsService, 'catalog').mockResolvedValue(page);
 
       const check = await ConnectorsApplication.checkConnection(ACTOR, ID);
 
       expect(check.health?.state).toBe('connected');
-      expect(check).toMatchObject({ catalogReadable: true, productCount: 1 });
+      expect(check).toMatchObject({
+        catalogReadable: true,
+        productCount: 1,
+        store: { shopName: 'Your Store', locationCount: 2 },
+      });
     });
 
-    it('does not read the catalog of a connection that is not finished', async () => {
-      vi.spyOn(MarketplaceConnectorsService, 'list').mockResolvedValue([connection({ status: 'pending' })]);
+    it('still reads the catalog for a store type that has no check yet', async () => {
+      vi.spyOn(MarketplaceConnectorsService, 'list').mockResolvedValue([connection()]);
+      vi.spyOn(MarketplaceConnectorsService, 'check').mockRejectedValue(connectorRefusal('invalid_request', 422));
+      vi.spyOn(MarketplaceConnectorsService, 'catalog').mockResolvedValue(page);
+
+      const check = await ConnectorsApplication.checkConnection(ACTOR, ID);
+
+      expect(check).toMatchObject({ catalogReadable: true, productCount: 1, store: null });
+      expect(check.health?.state).toBe('connected');
+    });
+
+    it('does not look at the store while the connection is a draft', async () => {
+      vi.spyOn(MarketplaceConnectorsService, 'list').mockResolvedValue([connection({ status: 'draft' })]);
+      const checkRoute = vi.spyOn(MarketplaceConnectorsService, 'check');
       const catalog = vi.spyOn(MarketplaceConnectorsService, 'catalog');
       const check = await ConnectorsApplication.checkConnection(ACTOR, ID);
       expect(check.health?.state).toBe('connecting');
+      expect(checkRoute).not.toHaveBeenCalled();
       expect(catalog).not.toHaveBeenCalled();
     });
 
-    it('re-reads the connection when the store rejects the key during the test read', async () => {
+    it('names a missing permission the store reports even when the list still says connected', async () => {
+      vi.spyOn(MarketplaceConnectorsService, 'list').mockResolvedValue([connection({ provider: 'shopify' })]);
+      vi.spyOn(MarketplaceConnectorsService, 'check').mockResolvedValue({
+        ...shopCheck,
+        grantedScopes: ['read_products'],
+        missingScopes: ['write_orders'],
+      });
+      vi.spyOn(MarketplaceConnectorsService, 'catalog').mockResolvedValue(page);
+
+      const check = await ConnectorsApplication.checkConnection(ACTOR, ID);
+
+      expect(check.health).toMatchObject({ state: 'needs_attention', missingScopes: ['write_orders'] });
+      expect(check.health?.reasons[0]).toContain('Missing permissions: write_orders');
+    });
+
+    it('shows a connection that needs attention as the service lists it', async () => {
+      vi.spyOn(MarketplaceConnectorsService, 'list').mockResolvedValue([
+        connection({
+          provider: 'shopify',
+          status: 'needs_attention',
+          scopes: ['read_products'],
+          missingScopes: ['read_inventory', 'write_orders'],
+        }),
+      ]);
+      vi.spyOn(MarketplaceConnectorsService, 'check').mockResolvedValue({
+        ...shopCheck,
+        missingScopes: ['read_inventory', 'write_orders'],
+      });
+      vi.spyOn(MarketplaceConnectorsService, 'catalog').mockResolvedValue(page);
+
+      const check = await ConnectorsApplication.checkConnection(ACTOR, ID);
+
+      expect(check.health?.missingScopes).toEqual(['read_inventory', 'write_orders']);
+    });
+
+    it('re-reads the connection when the store rejects the key during the check', async () => {
       const rejected = connection({ status: 'error', lastError: { message: 'credentials_rejected' } });
       vi.spyOn(MarketplaceConnectorsService, 'list')
-        .mockResolvedValueOnce([connection()])
+        .mockResolvedValueOnce([connection({ provider: 'shopify' })])
         .mockResolvedValueOnce([rejected]);
-      vi.spyOn(MarketplaceConnectorsService, 'catalog').mockRejectedValue(
-        new AppError({
-          category: 'client',
-          code: 'CONFLICT',
-          message: 'x',
-          service: 'marketplace',
-          operation: 'getConnectorCatalog',
-          context: { reason: 'credentials_rejected' },
-        } as never),
-      );
+      vi.spyOn(MarketplaceConnectorsService, 'check').mockRejectedValue(connectorRefusal('credentials_rejected'));
 
       const check = await ConnectorsApplication.checkConnection(ACTOR, ID);
 
       expect(check.health?.state).toBe('needs_attention');
       expect(check.catalogReadable).toBe(false);
+    });
+
+    it('re-reads the connection when only the catalog read is rejected', async () => {
+      const rejected = connection({ status: 'error', lastError: { message: 'credentials_rejected' } });
+      vi.spyOn(MarketplaceConnectorsService, 'list')
+        .mockResolvedValueOnce([connection()])
+        .mockResolvedValueOnce([rejected]);
+      vi.spyOn(MarketplaceConnectorsService, 'check').mockRejectedValue(connectorRefusal('invalid_request', 422));
+      vi.spyOn(MarketplaceConnectorsService, 'catalog').mockRejectedValue(connectorRefusal('credentials_rejected'));
+
+      const check = await ConnectorsApplication.checkConnection(ACTOR, ID);
+
+      expect(check.health?.state).toBe('needs_attention');
     });
 
     it('says nothing when the connection is gone', async () => {
@@ -250,21 +306,8 @@ describe('ConnectorsApplication', () => {
         health: null,
         productCount: null,
         catalogReadable: false,
+        store: null,
       });
-    });
-
-    it('requires every Shopify scope for a healthy Shopify store', async () => {
-      vi.spyOn(MarketplaceConnectorsService, 'list').mockResolvedValue([
-        connection({ provider: 'shopify', scopes: [...SHOPIFY_REQUIRED_SCOPES].slice(0, 3) }),
-      ]);
-      vi.spyOn(MarketplaceConnectorsService, 'catalog').mockResolvedValue({
-        kind: 'connector_catalog',
-        connectionId: ID,
-        products: [],
-        nextPage: null,
-      });
-      const check = await ConnectorsApplication.checkConnection(ACTOR, ID);
-      expect(check.health?.missingScopes).toEqual(['read_fulfillments', 'write_orders']);
     });
   });
 

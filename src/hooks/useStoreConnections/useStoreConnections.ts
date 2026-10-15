@@ -6,9 +6,11 @@ import { ConnectorsController } from '@/controllers/connectors/connectors';
 import {
   type ConnectionHealth,
   connectionHealth,
+  type ConnectorAlert,
   type ConnectorConnection,
   connectorErrorMessage,
   connectorRefusalReason,
+  type VariantMode,
 } from '@/libs/commerce/connectors';
 import { isMarketplaceSessionRequiredError } from '@/libs/error/error.utils';
 import { toast } from '@/molecules/Toaster/use-toast';
@@ -19,6 +21,9 @@ export type StoreConnectionRow = {
   connection: ConnectorConnection;
   health: ConnectionHealth;
 };
+
+/** Alerts that say a connection is gone or its keys no longer work; the service omits such a connection from its list. */
+const CONNECTION_LOST_ALERTS: ReadonlySet<string> = new Set(['store_uninstalled', 'credentials_rejected']);
 
 const LOAD_FAILED_COPY = 'Your store connections could not be loaded. Try again in a moment.';
 
@@ -39,6 +44,7 @@ export function useStoreConnections() {
   const [needsSession, setNeedsSession] = useState(false);
   const [unavailable, setUnavailable] = useState(false);
   const [workingId, setWorkingId] = useState<string | null>(null);
+  const [lostAlerts, setLostAlerts] = useState<ConnectorAlert[]>([]);
 
   const load = async (isCurrent: () => boolean = () => true) => {
     if (!enabled) {
@@ -49,6 +55,9 @@ export function useStoreConnections() {
       const next = await ConnectorsController.fetchConnections();
       if (!isCurrent()) return;
       setConnections(next);
+      const alerts = await ConnectorsController.fetchAlerts().catch(() => []);
+      if (!isCurrent()) return;
+      setLostAlerts(alerts.filter((alert) => CONNECTION_LOST_ALERTS.has(alert.kind)));
       setError(null);
       setNeedsSession(false);
       setUnavailable(false);
@@ -96,6 +105,38 @@ export function useStoreConnections() {
     }
   };
 
+  const dismissLostAlert = async (alertId: string): Promise<void> => {
+    try {
+      await ConnectorsController.commitResolveAlert(alertId);
+      setLostAlerts((current) => current.filter((alert) => alert.id !== alertId));
+    } catch (dismissError) {
+      toast({
+        variant: 'error',
+        title: 'Could not dismiss',
+        description: connectorErrorMessage(dismissError, 'Try again in a moment.'),
+      });
+    }
+  };
+
+  const setVariantMode = async (connection: ConnectorConnection, variantMode: VariantMode): Promise<boolean> => {
+    setWorkingId(connection.id);
+    try {
+      const updated = await ConnectorsController.commitVariantMode(connection.id, variantMode);
+      setConnections((current) => current.map((entry) => (entry.id === updated.id ? updated : entry)));
+      toast({ description: 'Setting saved. It applies to products you publish from now on.' });
+      return true;
+    } catch (modeError) {
+      toast({
+        variant: 'error',
+        title: 'Could not change the setting',
+        description: connectorErrorMessage(modeError, 'The setting is unchanged. Try again in a moment.'),
+      });
+      return false;
+    } finally {
+      setWorkingId(null);
+    }
+  };
+
   const rows: StoreConnectionRow[] = [
     ...connections.map((connection) => ({ connection, health: connectionHealth(connection) })),
     ...disconnected.map((connection) => ({
@@ -104,5 +145,19 @@ export function useStoreConnections() {
     })),
   ];
 
-  return { enabled, rows, connections, isLoading, error, needsSession, unavailable, workingId, refresh, disconnect };
+  return {
+    enabled,
+    rows,
+    connections,
+    lostAlerts,
+    isLoading,
+    error,
+    needsSession,
+    unavailable,
+    workingId,
+    refresh,
+    disconnect,
+    setVariantMode,
+    dismissLostAlert,
+  };
 }

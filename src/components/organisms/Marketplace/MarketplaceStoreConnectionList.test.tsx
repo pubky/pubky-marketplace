@@ -4,7 +4,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { getStoreConnectionCatalogRoute } from '@/app/routes';
 import { ConnectorsController } from '@/controllers/connectors/connectors';
 import type { StoreConnectionRow } from '@/hooks/useStoreConnections/useStoreConnections';
-import { connectionHealth, connectorConnectionSchema } from '@/libs/commerce/connectors';
+import { connectionHealth } from '@/libs/commerce/connectors';
+import { connectionFixture } from '@/test-utils/connector-fixtures';
 import { MarketplaceStoreConnectionList } from './MarketplaceStoreConnectionList';
 
 vi.mock('@/controllers/connectors/connectors', () => ({
@@ -17,7 +18,7 @@ function row(
   overrides: Record<string, unknown> = {},
   options: { disconnectedLocally?: boolean } = {},
 ): StoreConnectionRow {
-  const connection = connectorConnectionSchema.parse({
+  const connection = connectionFixture({
     id: 'c1',
     provider: 'woocommerce',
     domain: 'dezentralshop.ch',
@@ -40,6 +41,7 @@ function renderList(
     workingId: null,
     onDisconnect: vi.fn().mockResolvedValue(true),
     onReplaced: vi.fn(),
+    onVariantMode: vi.fn().mockResolvedValue(true),
     ...handlers,
   };
   render(<MarketplaceStoreConnectionList {...props} />);
@@ -70,7 +72,9 @@ describe('MarketplaceStoreConnectionList', () => {
       row({
         provider: 'shopify',
         domain: 'a.myshopify.com',
+        status: 'needs_attention',
         scopes: ['read_products'],
+        missingScopes: ['read_inventory', 'read_locations', 'read_fulfillments', 'write_orders'],
         pushes: { pending: 0, sending: 0, created: 0, quarantined: 2 },
       }),
     ]);
@@ -142,7 +146,7 @@ describe('MarketplaceStoreConnectionList', () => {
 
   it('replaces credentials with password fields named for the store type, and clears them', async () => {
     const user = userEvent.setup();
-    vi.mocked(ConnectorsController.commitReplaceCredentials).mockResolvedValue({ authorizeUrl: null });
+    vi.mocked(ConnectorsController.commitReplaceCredentials).mockResolvedValue(connectionFixture());
     const { onReplaced } = renderList([row()]);
 
     await user.click(screen.getByRole('button', { name: 'Replace credentials' }));
@@ -173,5 +177,56 @@ describe('MarketplaceStoreConnectionList', () => {
     const dialog = await screen.findByRole('dialog');
     expect(within(dialog).getByLabelText('Client ID')).toBeInTheDocument();
     expect(within(dialog).getByLabelText('Client secret')).toBeInTheDocument();
+  });
+
+  it('puts the setting One listing per size or variant in a connected store, off by default, with its explanation', async () => {
+    const user = userEvent.setup();
+    const { onVariantMode } = renderList([row()]);
+
+    const settings = screen.getByTestId('store-connection-settings');
+    expect(settings).toHaveTextContent('One listing per size or variant');
+    expect(settings).toHaveTextContent('every size or variant of your store becomes its own Pubky listing');
+    const toggle = within(settings).getByRole('switch', { name: 'One listing per size or variant' });
+    expect(toggle).not.toBeChecked();
+
+    await user.click(toggle);
+    expect(onVariantMode).toHaveBeenCalledWith(expect.objectContaining({ id: expect.any(String) }), 'split');
+  });
+
+  it('shows the setting on and switches it back to native', async () => {
+    const user = userEvent.setup();
+    const { onVariantMode } = renderList([row({ variantMode: 'split' })]);
+    const toggle = screen.getByRole('switch', { name: 'One listing per size or variant' });
+    expect(toggle).toBeChecked();
+    await user.click(toggle);
+    expect(onVariantMode).toHaveBeenCalledWith(expect.anything(), 'native');
+  });
+
+  it('shows no settings for a draft or a disconnected store', () => {
+    renderList([row({ provider: 'shopify', status: 'draft' }), row({ id: 'x' }, { disconnectedLocally: true })]);
+    expect(screen.queryByTestId('store-connection-settings')).not.toBeInTheDocument();
+  });
+
+  it('adds the Shopify detail line about the app secret to the disconnect dialog, and not for WooCommerce', async () => {
+    const user = userEvent.setup();
+    const { unmount } = render(
+      <MarketplaceStoreConnectionList
+        rows={[row({ provider: 'shopify', domain: 'a.myshopify.com' })]}
+        workingId={null}
+        onDisconnect={vi.fn()}
+        onReplaced={vi.fn()}
+        onVariantMode={vi.fn()}
+      />,
+    );
+    await user.click(screen.getByRole('button', { name: 'Disconnect' }));
+    expect(await screen.findByTestId('disconnect-dialog-detail')).toHaveTextContent(
+      "Your app's secret stays encrypted for up to 30 days, only so we can verify Shopify's privacy requests about your store",
+    );
+    unmount();
+
+    renderList([row()]);
+    await user.click(screen.getByRole('button', { name: 'Disconnect' }));
+    await screen.findByRole('dialog');
+    expect(screen.queryByTestId('disconnect-dialog-detail')).not.toBeInTheDocument();
   });
 });

@@ -13,6 +13,7 @@ import { useConnectorPushStatus } from '@/hooks/useConnectorPushStatus/useConnec
 import { orderAnchorId } from '@/libs/commerce/activity-links';
 import {
   CONNECTOR_PROVIDER_LABELS,
+  connectorAlertAction,
   connectorAlertCopy,
   pushNeedsAction,
   pushStateLabel,
@@ -130,15 +131,24 @@ export function MarketplaceConnectorPushStatus() {
                     {connectorAlertCopy(alert.kind)}
                   </Typography>
                 </div>
-                <Button
-                  type="button"
-                  variant="secondary"
-                  size="sm"
-                  className="shrink-0 rounded-full"
-                  onClick={() => void status.dismissAlert(alert.id)}
-                >
-                  Dismiss
-                </Button>
+                <div className="flex shrink-0 flex-wrap gap-2">
+                  {connectorAlertAction(alert) && (
+                    <Button asChild size="sm" className="rounded-full" data-testid="store-push-alert-action">
+                      <a href={`#${orderAnchorId(connectorAlertAction(alert)?.orderId ?? '')}`}>
+                        {connectorAlertAction(alert)?.label}
+                      </a>
+                    </Button>
+                  )}
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    className="rounded-full"
+                    onClick={() => void status.dismissAlert(alert.id)}
+                  >
+                    Dismiss
+                  </Button>
+                </div>
               </li>
             ))}
           </ul>

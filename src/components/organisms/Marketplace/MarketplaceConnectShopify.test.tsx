@@ -4,7 +4,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ConnectorsController } from '@/controllers/connectors/connectors';
 import { useConnectionStatusCheck } from '@/hooks/useConnectionStatusCheck/useConnectionStatusCheck';
 import { useConnectShopify } from '@/hooks/useConnectShopify/useConnectShopify';
-import { connectorConnectionSchema, SHOPIFY_REQUIRED_SCOPES } from '@/libs/commerce/connectors';
+import { SHOPIFY_REQUIRED_SCOPES } from '@/libs/commerce/connectors';
+import { connectionFixture } from '@/test-utils/connector-fixtures';
 import { MarketplaceConnectShopify } from './MarketplaceConnectShopify';
 
 vi.mock('@/controllers/connectors/connectors', () => ({
@@ -13,7 +14,6 @@ vi.mock('@/controllers/connectors/connectors', () => ({
     commitShopifyCredentials: vi.fn(),
     fetchConnectionCheck: vi.fn(),
     fetchConnections: vi.fn(),
-    draftUrls: vi.fn(),
   },
 }));
 
@@ -21,29 +21,24 @@ vi.mock('@/molecules/Toaster/use-toast', () => ({ toast: vi.fn() }));
 
 const ID = '11111111-1111-4111-8111-111111111111';
 const URLS = {
-  appUrl: `https://staging-api.pubky.app/v1/connectors/shopify/c/${ID}/launch`,
-  allowedRedirectionUrl: `https://staging-api.pubky.app/v1/connectors/shopify/c/${ID}/oauth/callback`,
-  webhookUrl: `https://staging-api.pubky.app/v1/connectors/shopify/c/${ID}/webhooks`,
+  launch: `https://staging-api.pubky.app/v1/connectors/shopify/c/${ID}/launch`,
+  oauthCallback: `https://staging-api.pubky.app/v1/connectors/shopify/c/${ID}/oauth/callback`,
+  webhooks: `https://staging-api.pubky.app/v1/connectors/shopify/c/${ID}/webhooks`,
 };
 
 function connection(overrides: Record<string, unknown> = {}) {
-  return connectorConnectionSchema.parse({
+  return connectionFixture({
     id: ID,
     provider: 'shopify',
     domain: 'your-store.myshopify.com',
     status: 'draft',
+    credentialsSaved: false,
     ...overrides,
   });
 }
 
-function Guide({
-  resume = null,
-  navigate,
-}: {
-  resume?: ReturnType<typeof connection> | null;
-  navigate?: (url: string) => void;
-}) {
-  const shopify = useConnectShopify({ resume, ...(navigate ? { navigate } : {}) });
+function Guide({ resume = null }: { resume?: ReturnType<typeof connection> | null }) {
+  const shopify = useConnectShopify({ resume });
   const statusCheck = useConnectionStatusCheck();
   return (
     <MarketplaceConnectShopify
@@ -58,11 +53,7 @@ describe('MarketplaceConnectShopify', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     localStorage.clear();
-    vi.mocked(ConnectorsController.draftUrls).mockReturnValue(URLS);
-    vi.mocked(ConnectorsController.commitCreateShopifyDraft).mockResolvedValue({
-      connection: connection(),
-      urls: URLS,
-    });
+    vi.mocked(ConnectorsController.commitCreateShopifyDraft).mockResolvedValue(connection());
   });
 
   it('uses the approved steps and the why-extra-steps line', () => {
@@ -116,7 +107,7 @@ describe('MarketplaceConnectShopify', () => {
     }
   });
 
-  it('prepares the links, then shows the three values with copy buttons and the exact scopes', async () => {
+  it('prepares the links, then shows the URLs with copy buttons and the exact scopes', async () => {
     const user = userEvent.setup();
     render(<Guide />);
 
@@ -128,7 +119,7 @@ describe('MarketplaceConnectShopify', () => {
     const values = within(step4)
       .getAllByTestId('copy-field-value')
       .map((node) => node.textContent);
-    expect(values).toEqual([URLS.appUrl, URLS.allowedRedirectionUrl, SHOPIFY_REQUIRED_SCOPES.join(', ')]);
+    expect(values).toEqual([URLS.launch, URLS.oauthCallback, SHOPIFY_REQUIRED_SCOPES.join(', '), URLS.webhooks]);
     expect(within(step4).getByRole('button', { name: 'Copy App URL' })).toBeInTheDocument();
     expect(within(step4).getByRole('button', { name: 'Copy Allowed redirection URL' })).toBeInTheDocument();
     expect(within(step4).getByRole('button', { name: 'Copy all Scopes' })).toBeInTheDocument();
@@ -156,7 +147,7 @@ describe('MarketplaceConnectShopify', () => {
 
   it('takes the keys in password fields, sends them once and clears them', async () => {
     const user = userEvent.setup();
-    vi.mocked(ConnectorsController.commitShopifyCredentials).mockResolvedValue({ authorizeUrl: null });
+    vi.mocked(ConnectorsController.commitShopifyCredentials).mockResolvedValue(connection({ credentialsSaved: true }));
     render(<Guide resume={connection()} />);
 
     const clientId = screen.getByLabelText('Client ID');
@@ -174,57 +165,51 @@ describe('MarketplaceConnectShopify', () => {
       clientSecret: 'client-secret-value',
     });
     await waitFor(() => expect(screen.getByText('Keys saved and stored encrypted.')).toBeInTheDocument());
-    expect(screen.getByRole('button', { name: 'Install in Shopify' })).toBeEnabled();
+    expect(screen.getByRole('link', { name: 'Install in Shopify' })).toBeInTheDocument();
     expect(document.body.innerHTML).not.toContain('client-secret-value');
     expect(localStorage.length).toBe(0);
     expect(sessionStorage.length).toBe(0);
   });
 
-  it('installs through the link from the service', async () => {
+  it('sends the merchant to the Dev Dashboard to install, and says how, once the keys are saved', async () => {
     const user = userEvent.setup();
-    const navigate = vi.fn();
-    vi.mocked(ConnectorsController.commitShopifyCredentials).mockResolvedValue({
-      authorizeUrl: 'https://your-store.myshopify.com/admin/oauth/authorize?client_id=abc',
-    });
-    render(<Guide resume={connection()} navigate={navigate} />);
+    vi.mocked(ConnectorsController.commitShopifyCredentials).mockResolvedValue(connection({ credentialsSaved: true }));
+    render(<Guide resume={connection()} />);
+    expect(screen.getByRole('button', { name: 'Install in Shopify' })).toBeDisabled();
+    expect(screen.queryByTestId('shopify-install-path')).not.toBeInTheDocument();
+
     await user.type(screen.getByLabelText('Client ID'), 'client-id-value');
     await user.type(screen.getByLabelText('Client secret'), 'client-secret-value');
     await user.click(screen.getByRole('button', { name: 'Save' }));
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Install in Shopify' })).toBeEnabled());
 
-    await user.click(screen.getByRole('button', { name: 'Install in Shopify' }));
-
-    expect(navigate).toHaveBeenCalledWith('https://your-store.myshopify.com/admin/oauth/authorize?client_id=abc');
+    const install = await screen.findByRole('link', { name: 'Install in Shopify' });
+    expect(install).toHaveAttribute('href', 'https://dev.shopify.com/dashboard');
+    expect(install).toHaveAttribute('rel', 'noopener noreferrer');
+    expect(screen.getByTestId('shopify-install-path')).toHaveTextContent('Home → Install app');
   });
 
-  it('shows the Dev Dashboard install path when the service sent no link', async () => {
-    const user = userEvent.setup();
-    vi.mocked(ConnectorsController.commitShopifyCredentials).mockResolvedValue({ authorizeUrl: null });
-    render(<Guide resume={connection()} navigate={vi.fn()} />);
-    await user.type(screen.getByLabelText('Client ID'), 'client-id-value');
-    await user.type(screen.getByLabelText('Client secret'), 'client-secret-value');
-    await user.click(screen.getByRole('button', { name: 'Save' }));
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Install in Shopify' })).toBeEnabled());
-
-    await user.click(screen.getByRole('button', { name: 'Install in Shopify' }));
-
-    expect(screen.getByTestId('shopify-install-manual')).toHaveTextContent('Home → Install app');
+  it('shows the three URLs the service built, the privacy webhooks note and the exact scopes in step 4', () => {
+    render(<Guide resume={connection()} />);
+    const step = screen.getByTestId('shopify-step-4');
+    expect(within(step).getByRole('button', { name: 'Copy App URL' })).toBeInTheDocument();
+    expect(step).toHaveTextContent(`/v1/connectors/shopify/c/${ID}/launch`);
+    expect(step).toHaveTextContent(`/v1/connectors/shopify/c/${ID}/oauth/callback`);
+    expect(step).toHaveTextContent(`/v1/connectors/shopify/c/${ID}/webhooks`);
+    expect(screen.getByTestId('shopify-compliance-note')).toHaveTextContent('customers/data_request');
+    expect(screen.getByTestId('shopify-compliance-note')).toHaveTextContent('shop/redact');
   });
 
   it('runs the status check and shows the connected store', async () => {
     const user = userEvent.setup();
-    const connected = connection({
-      status: 'connected',
-      scopes: [...SHOPIFY_REQUIRED_SCOPES],
-      shopName: 'Your Store',
-    });
+    const connected = connection({ status: 'connected', scopes: [...SHOPIFY_REQUIRED_SCOPES] });
     vi.mocked(ConnectorsController.fetchConnectionCheck).mockResolvedValue({
       connection: connected,
       health: { state: 'connected', reasons: [], missingScopes: [] },
       productCount: 5,
       catalogReadable: true,
+      store: { shopName: 'Your Store', grantedScopes: [...SHOPIFY_REQUIRED_SCOPES], locationCount: 1 },
     });
-    render(<Guide resume={connection({ credentialsSet: true })} />);
+    render(<Guide resume={connection({ credentialsSaved: true })} />);
 
     await user.click(screen.getByRole('button', { name: 'Check connection' }));
 

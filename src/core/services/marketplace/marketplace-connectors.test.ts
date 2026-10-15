@@ -29,9 +29,16 @@ const connectionWire = {
   id: CONNECTION_ID,
   provider: 'woocommerce',
   domain: 'dezentralshop.ch',
-  app_key: null,
-  status: 'pending',
+  app_kind: 'none',
+  variant_mode: 'native',
+  status: 'draft',
   scopes: [],
+  missing_scopes: [],
+  credentials_saved: false,
+  urls: {
+    oauth_callback: 'https://api.example/v1/connectors/woocommerce/oauth/callback',
+    webhooks: 'https://api.example/v1/connectors/webhooks/woocommerce',
+  },
   expires_at: '2026-10-15T12:30:00.000Z',
   connected_at: null,
   created_at: '2026-10-15T12:00:00.000Z',
@@ -105,15 +112,32 @@ describe('MarketplaceConnectorsService', () => {
     expect(JSON.parse(String(init.body))).toEqual({ provider: 'woocommerce', domain: 'dezentralshop.ch' });
   });
 
-  it('sends credentials once, snake_case, and accepts an empty 204 answer', async () => {
-    fetchMock.mockResolvedValue(new Response(null, { status: 204 }));
+  it('sends credentials once, snake_case, and reads the connection back with credentials saved', async () => {
+    fetchMock.mockResolvedValue(
+      json({
+        kind: 'connector_credentials',
+        schema_version: 1,
+        connection: {
+          ...connectionWire,
+          provider: 'shopify',
+          app_kind: 'custom',
+          credentials_saved: true,
+          urls: {
+            launch: 'https://api.example/v1/connectors/shopify/c/x/launch',
+            oauth_callback: 'https://api.example/v1/connectors/shopify/c/x/oauth/callback',
+            webhooks: 'https://api.example/v1/connectors/shopify/c/x/webhooks',
+          },
+        },
+      }),
+    );
 
     const result = await MarketplaceConnectorsService.putCredentials(ACTOR, CONNECTION_ID, {
       clientId: 'client-id-value',
       clientSecret: 'client-secret-value',
     });
 
-    expect(result).toEqual({});
+    expect(result).toMatchObject({ credentialsSaved: true, appKind: 'custom' });
+    expect(result.urls.launch).toBe('https://api.example/v1/connectors/shopify/c/x/launch');
     const { url, init } = lastCall();
     expect(url).toBe(`${BASE}/v1/connectors/${CONNECTION_ID}/credentials`);
     expect(init.method).toBe('PUT');
@@ -123,24 +147,63 @@ describe('MarketplaceConnectorsService', () => {
     });
   });
 
-  it('accepts an empty 200 answer and a body with the install link', async () => {
-    fetchMock.mockResolvedValueOnce(new Response('', { status: 200 }));
-    expect(
-      await MarketplaceConnectorsService.putCredentials(ACTOR, CONNECTION_ID, { clientId: 'a', clientSecret: 'b' }),
-    ).toEqual({});
+  it('refuses an answer to the credentials call that is not the connection', async () => {
+    fetchMock.mockResolvedValue(new Response(null, { status: 204 }));
+    await expect(
+      MarketplaceConnectorsService.putCredentials(ACTOR, CONNECTION_ID, { clientId: 'a', clientSecret: 'b' }),
+    ).rejects.toMatchObject({ message: 'The marketplace service returned an unexpected response.' });
+  });
 
-    fetchMock.mockResolvedValueOnce(
+  it('says a store type with no pasted keys refuses them', async () => {
+    fetchMock.mockResolvedValue(json({ error: { code: 'credentials_not_supported', message: 'x' } }, 422));
+    const error = await MarketplaceConnectorsService.putCredentials(ACTOR, CONNECTION_ID, {
+      consumerKey: 'ck_x',
+      consumerSecret: 'cs_x',
+    }).catch((caught: unknown) => caught);
+    expect((error as AppError).context).toMatchObject({ reason: 'credentials_not_supported', statusCode: 422 });
+  });
+
+  it('saves the variant mode with PUT settings', async () => {
+    fetchMock.mockResolvedValue(
+      json({ kind: 'connector_settings', schema_version: 1, connection: { ...connectionWire, variant_mode: 'split' } }),
+    );
+    const result = await MarketplaceConnectorsService.putSettings(ACTOR, CONNECTION_ID, { variantMode: 'split' });
+    expect(result.variantMode).toBe('split');
+    const { url, init } = lastCall();
+    expect(url).toBe(`${BASE}/v1/connectors/${CONNECTION_ID}/settings`);
+    expect(init.method).toBe('PUT');
+    expect(JSON.parse(String(init.body))).toEqual({ variant_mode: 'split' });
+  });
+
+  it('refuses a switch to split while a listing combines variants', async () => {
+    fetchMock.mockResolvedValue(json({ error: { code: 'mappings_conflict', message: 'x', listing_id: 'woo-1' } }, 409));
+    const error = await MarketplaceConnectorsService.putSettings(ACTOR, CONNECTION_ID, {
+      variantMode: 'split',
+    }).catch((caught: unknown) => caught);
+    expect((error as AppError).context).toMatchObject({ reason: 'mappings_conflict', statusCode: 409 });
+  });
+
+  it('reads the live check of a store', async () => {
+    fetchMock.mockResolvedValue(
       json({
-        connection: { ...connectionWire, provider: 'shopify', status: 'draft' },
-        authorize_url: 'https://x.myshopify.com/admin/oauth/authorize?a=1',
+        kind: 'connector_check',
+        schema_version: 1,
+        connection_id: CONNECTION_ID,
+        shop_name: 'Your Store',
+        granted_scopes: ['read_products'],
+        missing_scopes: ['write_orders'],
+        location_count: 2,
+        catalog_readable: true,
+        checked_at: '2026-10-15T12:00:00.000Z',
       }),
     );
-    const result = await MarketplaceConnectorsService.putCredentials(ACTOR, CONNECTION_ID, {
-      clientId: 'a',
-      clientSecret: 'b',
+    expect(await MarketplaceConnectorsService.check(ACTOR, CONNECTION_ID)).toMatchObject({
+      shopName: 'Your Store',
+      missingScopes: ['write_orders'],
+      locationCount: 2,
+      catalogReadable: true,
     });
-    expect(result.authorizeUrl).toBe('https://x.myshopify.com/admin/oauth/authorize?a=1');
-    expect(result.connection?.status).toBe('draft');
+    expect(lastCall().url).toBe(`${BASE}/v1/connectors/${CONNECTION_ID}/check`);
   });
 
   it('never puts a credential in an error, a log line or an error context', async () => {

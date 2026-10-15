@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ConnectorsApplication } from '@/application/connectors/connectors';
 import { useAuthStore } from '@/stores/auth/auth.store';
+import { connectionFixture } from '@/test-utils/connector-fixtures';
 import { asOpaque } from '@/test-utils/type-assertions';
 import { ConnectorsController } from './connectors';
 
@@ -32,8 +33,8 @@ describe('ConnectorsController', () => {
   });
 
   it('hands credentials to the application call that carries them, and nowhere else', async () => {
-    const keys = vi.spyOn(ConnectorsApplication, 'saveShopifyCredentials').mockResolvedValue({ authorizeUrl: null });
-    const replace = vi.spyOn(ConnectorsApplication, 'replaceCredentials').mockResolvedValue({ authorizeUrl: null });
+    const keys = vi.spyOn(ConnectorsApplication, 'saveShopifyCredentials').mockResolvedValue(connectionFixture());
+    const replace = vi.spyOn(ConnectorsApplication, 'replaceCredentials').mockResolvedValue(connectionFixture());
 
     await ConnectorsController.commitShopifyCredentials('c1', { clientId: 'id-value', clientSecret: 'secret-value' });
     await ConnectorsController.commitReplaceCredentials(

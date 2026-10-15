@@ -1,10 +1,9 @@
 import { act, renderHook } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ConnectorsController } from '@/controllers/connectors/connectors';
-import { connectorConnectionSchema } from '@/libs/commerce/connectors';
 import { toast } from '@/molecules/Toaster/use-toast';
 import { connectorRefusal } from '@/test-utils/connector-errors';
-import { asOpaque } from '@/test-utils/type-assertions';
+import { connectionFixture } from '@/test-utils/connector-fixtures';
 import { useConnectShopify } from './useConnectShopify';
 import { shopifyKeysFormDefaults } from './useConnectShopify.types';
 
@@ -12,25 +11,20 @@ vi.mock('@/controllers/connectors/connectors', () => ({
   ConnectorsController: {
     commitCreateShopifyDraft: vi.fn(),
     commitShopifyCredentials: vi.fn(),
-    draftUrls: vi.fn(),
   },
 }));
 
 vi.mock('@/molecules/Toaster/use-toast', () => ({ toast: vi.fn() }));
 
 const ID = '11111111-1111-4111-8111-111111111111';
-const URLS = {
-  appUrl: `https://api.example/v1/connectors/shopify/c/${ID}/launch`,
-  allowedRedirectionUrl: `https://api.example/v1/connectors/shopify/c/${ID}/oauth/callback`,
-  webhookUrl: null,
-};
 
 function draftConnection(overrides: Record<string, unknown> = {}) {
-  return connectorConnectionSchema.parse({
+  return connectionFixture({
     id: ID,
     provider: 'shopify',
     domain: 'your-store.myshopify.com',
     status: 'draft',
+    credentialsSaved: false,
     ...overrides,
   });
 }
@@ -45,13 +39,20 @@ function renderShopify(options?: Parameters<typeof useConnectShopify>[0]) {
 }
 
 async function createDraft(result: { current: ReturnType<typeof useConnectShopify> }) {
-  vi.mocked(ConnectorsController.commitCreateShopifyDraft).mockResolvedValue({
-    connection: draftConnection(),
-    urls: URLS,
-  });
+  vi.mocked(ConnectorsController.commitCreateShopifyDraft).mockResolvedValue(draftConnection());
   act(() => result.current.domainForm.setValue('domain', 'Your-Store'));
   await act(async () => {
     expect(await result.current.createDraft()).toBe(true);
+  });
+}
+
+async function saveKeys(result: { current: ReturnType<typeof useConnectShopify> }) {
+  act(() => {
+    result.current.keysForm.setValue('clientId', 'client-id-value');
+    result.current.keysForm.setValue('clientSecret', 'client-secret-value');
+  });
+  await act(async () => {
+    await result.current.saveCredentials();
   });
 }
 
@@ -60,23 +61,25 @@ describe('useConnectShopify', () => {
     vi.clearAllMocks();
     localStorage.clear();
     sessionStorage.clear();
-    vi.mocked(ConnectorsController.draftUrls).mockReturnValue(URLS);
   });
 
   it('starts with no draft and every later step locked', () => {
     const { result } = renderShopify();
     expect(result.current.draft).toBeNull();
     expect(result.current.credentialsSaved).toBe(false);
-    expect(result.current.installOutcome).toBeNull();
   });
 
-  it('creates the draft from the store address and exposes its URLs', async () => {
+  it('creates the draft from the store address and exposes the URLs the service built', async () => {
     const { result } = renderShopify();
     await createDraft(result);
 
     expect(ConnectorsController.commitCreateShopifyDraft).toHaveBeenCalledWith('Your-Store');
-    expect(result.current.draft?.urls).toEqual(URLS);
-    expect(result.current.draft?.connection.domain).toBe('your-store.myshopify.com');
+    expect(result.current.draft?.urls).toEqual({
+      launch: `https://staging-api.pubky.app/v1/connectors/shopify/c/${ID}/launch`,
+      oauthCallback: `https://staging-api.pubky.app/v1/connectors/shopify/c/${ID}/oauth/callback`,
+      webhooks: `https://staging-api.pubky.app/v1/connectors/shopify/c/${ID}/webhooks`,
+    });
+    expect(result.current.draft?.domain).toBe('your-store.myshopify.com');
   });
 
   it('refuses an address that is not a Shopify store', async () => {
@@ -105,17 +108,11 @@ describe('useConnectShopify', () => {
   it('sends the Client ID and secret once, clears the fields, and keeps nothing in the browser', async () => {
     const { result } = renderShopify();
     await createDraft(result);
-    vi.mocked(ConnectorsController.commitShopifyCredentials).mockResolvedValue({
-      authorizeUrl: 'https://your-store.myshopify.com/admin/oauth/authorize?client_id=abc',
-    });
+    vi.mocked(ConnectorsController.commitShopifyCredentials).mockResolvedValue(
+      draftConnection({ credentialsSaved: true }),
+    );
 
-    act(() => {
-      result.current.keysForm.setValue('clientId', 'client-id-value');
-      result.current.keysForm.setValue('clientSecret', 'client-secret-value');
-    });
-    await act(async () => {
-      expect(await result.current.saveCredentials()).toBe(true);
-    });
+    await saveKeys(result);
 
     expect(ConnectorsController.commitShopifyCredentials).toHaveBeenCalledTimes(1);
     expect(ConnectorsController.commitShopifyCredentials).toHaveBeenCalledWith(ID, {
@@ -148,70 +145,24 @@ describe('useConnectShopify', () => {
       connectorRefusal('invalid_credentials', 422),
     );
 
-    act(() => {
-      result.current.keysForm.setValue('clientId', 'client-id-value');
-      result.current.keysForm.setValue('clientSecret', 'client-secret-value');
-    });
-    await act(async () => {
-      expect(await result.current.saveCredentials()).toBe(false);
-    });
+    await saveKeys(result);
 
     expect(result.current.keysForm.getValues('clientSecret')).toBe('');
     expect(result.current.credentialsSaved).toBe(false);
   });
 
-  it('installs through the link the service sent, or tells the seller to install from the Dev Dashboard', async () => {
-    const navigate = vi.fn();
-    const { result } = renderShopify({ navigate });
-    await createDraft(result);
-    vi.mocked(ConnectorsController.commitShopifyCredentials).mockResolvedValueOnce({
-      authorizeUrl: 'https://your-store.myshopify.com/admin/oauth/authorize?client_id=abc',
-    });
-    act(() => {
-      result.current.keysForm.setValue('clientId', 'client-id-value');
-      result.current.keysForm.setValue('clientSecret', 'client-secret-value');
-    });
-    await act(async () => {
-      await result.current.saveCredentials();
-    });
-
-    act(() => {
-      expect(result.current.install()).toBe('redirected');
-    });
-    expect(navigate).toHaveBeenCalledWith('https://your-store.myshopify.com/admin/oauth/authorize?client_id=abc');
-  });
-
-  it('falls back to the manual install path when the service sent no link', async () => {
-    const navigate = vi.fn();
-    const { result } = renderShopify({ navigate });
-    await createDraft(result);
-    vi.mocked(ConnectorsController.commitShopifyCredentials).mockResolvedValueOnce({ authorizeUrl: null });
-    act(() => {
-      result.current.keysForm.setValue('clientId', 'client-id-value');
-      result.current.keysForm.setValue('clientSecret', 'client-secret-value');
-    });
-    await act(async () => {
-      await result.current.saveCredentials();
-    });
-
-    act(() => {
-      expect(result.current.install()).toBe('manual');
-    });
-    expect(navigate).not.toHaveBeenCalled();
-    expect(result.current.installOutcome).toBe('manual');
-  });
-
-  it('picks up an unfinished draft after a reload', () => {
-    const { result } = renderShopify({ resume: asOpaque(draftConnection({ credentialsSet: true })) });
-    expect(result.current.draft?.connection.id).toBe(ID);
-    expect(result.current.draft?.urls).toEqual(URLS);
+  it('picks up an unfinished draft after a reload, with the keys the service already holds', () => {
+    const { result } = renderShopify({ resume: draftConnection({ credentialsSaved: true }) });
+    expect(result.current.draft?.id).toBe(ID);
     expect(result.current.credentialsSaved).toBe(true);
   });
 
-  it('does not resume a connected store or another provider', () => {
-    const connected = renderShopify({ resume: asOpaque(draftConnection({ status: 'connected' })) });
+  it('does not resume an installed store or another provider', () => {
+    const connected = renderShopify({ resume: draftConnection({ status: 'connected' }) });
     expect(connected.result.current.draft).toBeNull();
-    const woo = renderShopify({ resume: asOpaque(draftConnection({ provider: 'woocommerce' })) });
+    const needsAttention = renderShopify({ resume: draftConnection({ status: 'needs_attention' }) });
+    expect(needsAttention.result.current.draft).toBeNull();
+    const woo = renderShopify({ resume: draftConnection({ provider: 'woocommerce' }) });
     expect(woo.result.current.draft).toBeNull();
   });
 

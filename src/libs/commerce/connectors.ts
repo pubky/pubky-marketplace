@@ -3,13 +3,11 @@ import { isAppError } from '@/libs/error/error';
 
 /**
  * Store connections (WooCommerce, Shopify). Shapes follow the service's
- * connector contract (`/v1/connectors`), read after `toCamelCaseWire`.
- *
- * Fields the contract does not name yet are `.optional()` here and listed in
- * the lane report: `urls` and `credentialsSet` on a Shopify draft connection
- * (per-connection app, C7), `authorizeUrl` on the credentials response, and
- * `shopName` / `locationCount` on a connection. A service that omits them still
- * parses, and the UI falls back to the fixed C7 paths.
+ * connector contract (`/v1/connectors`, `internal/integrations/connector-contract.md`
+ * read against `pubky-marketplace-service` `connectors/routes.rs`), after
+ * `toCamelCaseWire`. `variantMode`, the settings route, the check route and the
+ * alert `action` are stage 2 (the Shopify provider branch); everything else is
+ * on the framework branch (#132).
  */
 
 export const CONNECTOR_PROVIDERS = ['shopify', 'woocommerce'] as const;
@@ -30,8 +28,7 @@ export const SHOPIFY_REQUIRED_SCOPES = [
 ] as const;
 
 export const SHOPIFY_API_VERSION = '2026-10';
-export const WOOCOMMERCE_REQUIRED_SCOPE = 'read_write';
-
+export const SHOPIFY_DEV_DASHBOARD_URL = 'https://dev.shopify.com/dashboard';
 export const CONNECTOR_MAX_CONNECTIONS = 5;
 
 const isoTimestamp = z.string().min(1);
@@ -45,32 +42,38 @@ const connectionPushCountsSchema = z.object({
 
 export type ConnectorPushCounts = z.infer<typeof connectionPushCountsSchema>;
 
+/** The URLs a merchant configures their store with; `launch` is Shopify's App URL and absent for WooCommerce. */
 export const connectorUrlsSchema = z.object({
-  appUrl: z.string().min(1),
-  allowedRedirectionUrl: z.string().min(1),
-  webhookUrl: z.string().min(1).nullable().optional(),
+  launch: z.string().min(1).optional(),
+  oauthCallback: z.string().min(1),
+  webhooks: z.string().min(1),
 });
 
 export type ConnectorUrls = z.infer<typeof connectorUrlsSchema>;
+
+export const CONNECTOR_STATUSES = ['draft', 'connected', 'needs_attention', 'error'] as const;
+export const VARIANT_MODES = ['native', 'split'] as const;
+export type VariantMode = (typeof VARIANT_MODES)[number];
 
 export const connectorConnectionSchema = z.object({
   id: z.string().min(1),
   provider: z.enum(CONNECTOR_PROVIDERS),
   domain: z.string().min(1),
-  appKey: z.string().nullable().optional(),
-  status: z.enum(['draft', 'pending', 'connected', 'error']),
+  appKind: z.enum(['none', 'custom', 'public']),
+  /** Stage 2. `native` is the documented default when the service has no setting yet. */
+  variantMode: z.enum(VARIANT_MODES).default('native'),
+  status: z.enum(CONNECTOR_STATUSES),
   scopes: z.array(z.string()).default([]),
+  missingScopes: z.array(z.string()).default([]),
+  credentialsSaved: z.boolean(),
+  urls: connectorUrlsSchema,
   expiresAt: isoTimestamp.nullable().optional(),
   connectedAt: isoTimestamp.nullable().optional(),
   createdAt: isoTimestamp.optional(),
   updatedAt: isoTimestamp.optional(),
-  lastError: z.object({ message: z.string(), at: isoTimestamp.optional() }).nullable().optional(),
+  lastError: z.object({ message: z.string(), at: isoTimestamp.nullable().optional() }).nullable().optional(),
   mappingCount: z.number().int().nonnegative().default(0),
   pushes: connectionPushCountsSchema.default({ pending: 0, sending: 0, created: 0, quarantined: 0 }),
-  credentialsSet: z.boolean().optional(),
-  shopName: z.string().nullable().optional(),
-  locationCount: z.number().int().nonnegative().nullable().optional(),
-  urls: connectorUrlsSchema.nullable().optional(),
 });
 
 export type ConnectorConnection = z.infer<typeof connectorConnectionSchema>;
@@ -83,20 +86,33 @@ export const connectorListSchema = z.object({
 export const connectorConnectSchema = z.object({
   kind: z.literal('connector_connect'),
   connection: connectorConnectionSchema,
-  authorizeUrl: z.string().nullable().optional(),
-  urls: connectorUrlsSchema.nullable().optional(),
+  authorizeUrl: z.string().nullable(),
 });
 
 export type ConnectorConnectResult = z.infer<typeof connectorConnectSchema>;
 
-export const connectorCredentialsResultSchema = z
-  .object({
-    connection: connectorConnectionSchema.optional(),
-    authorizeUrl: z.string().nullable().optional(),
-  })
-  .default({});
+/** `PUT /credentials` and `PUT /settings` answer with the updated connection. */
+export const connectorCredentialsResultSchema = z.object({
+  kind: z.literal('connector_credentials'),
+  connection: connectorConnectionSchema,
+});
 
-export type ConnectorCredentialsResult = z.infer<typeof connectorCredentialsResultSchema>;
+export const connectorSettingsResultSchema = z.object({
+  kind: z.literal('connector_settings'),
+  connection: connectorConnectionSchema,
+});
+
+export const connectorCheckSchema = z.object({
+  kind: z.literal('connector_check'),
+  connectionId: z.string().min(1),
+  shopName: z.string().nullable(),
+  grantedScopes: z.array(z.string()).default([]),
+  missingScopes: z.array(z.string()).default([]),
+  locationCount: z.number().int().nonnegative().nullable(),
+  catalogReadable: z.boolean(),
+});
+
+export type ConnectorCheck = z.infer<typeof connectorCheckSchema>;
 
 const catalogVariantSchema = z.object({
   providerVariantId: z.string().min(1),
@@ -213,11 +229,23 @@ export const CONNECTOR_ALERT_KINDS = [
   'inbound_failed',
 ] as const;
 
+/** The existing Pubky flow a store-side cancel or refund alert leads to (C13); `null` when none applies. */
+export const connectorAlertActionSchema = z.object({
+  kind: z.string().min(1),
+  command: z.string().min(1),
+  orderId: z.string().min(1),
+  label: z.string().min(1),
+});
+
+export type ConnectorAlertAction = z.infer<typeof connectorAlertActionSchema>;
+
 export const connectorAlertSchema = z.object({
   id: z.string().min(1),
   connectionId: z.string().min(1),
   kind: z.string().min(1),
   pubkyOrderId: z.string().nullable().optional(),
+  orderState: z.string().nullable().optional(),
+  action: connectorAlertActionSchema.nullable().optional(),
   detail: z.string().nullable().optional(),
   createdAt: isoTimestamp,
   resolvedAt: isoTimestamp.nullable().optional(),
@@ -239,54 +267,39 @@ export type ConnectionHealth = {
   missingScopes: string[];
 };
 
-const STORE_GONE_ERRORS: ReadonlySet<string> = new Set(['app_uninstalled', 'store_uninstalled', 'disconnected']);
-
-export function missingScopesFor(provider: ConnectorProvider, granted: readonly string[]): string[] {
-  if (provider === 'shopify') {
-    const have = new Set(granted);
-    return SHOPIFY_REQUIRED_SCOPES.filter((scope) => !have.has(scope));
-  }
-  if (granted.length === 0) return [];
-  const have = new Set(granted);
-  return have.has(WOOCOMMERCE_REQUIRED_SCOPE) || (have.has('read') && have.has('write'))
-    ? []
-    : [WOOCOMMERCE_REQUIRED_SCOPE];
-}
-
+/** `last_error.message` values the service sets (`webhook_registration_failed` and `credentials_rejected`). */
 export function connectorErrorCopy(message: string | null | undefined, provider: ConnectorProvider): string {
   const store = CONNECTOR_PROVIDER_LABELS[provider];
   if (message === 'credentials_rejected') {
-    return `${store} rejected the saved keys. Replace them below, then check the connection again.`;
+    return `${store} rejected the saved keys. Replace them below, then install again and check the connection.`;
   }
-  return `${store} reported a problem with this connection. Replace the keys or reconnect.`;
+  if (message === 'webhook_registration_failed') {
+    return `Pubky could not register its updates with ${store}, so stock and tracking from the store may not arrive. Install the app again to retry.`;
+  }
+  return `${store} reported a problem with this connection. Install again or replace the keys.`;
 }
 
 /**
- * The health a seller sees for a connection. Disconnected connections are not
- * listed by the service, so `disconnected` only arises for a store that
- * uninstalled the app or removed the key (`lastError`), or when the caller
- * passes `disconnectedLocally` for one disconnected in this session.
+ * The health a seller sees for a connection, from the service's own status
+ * (`draft`, `connected`, `needs_attention`, `error`) and its `missing_scopes`.
+ * The service omits disconnected connections, so `disconnected` only arises for
+ * one disconnected in this visit (`disconnectedLocally`).
  */
 export function connectionHealth(
   connection: ConnectorConnection,
   options: { disconnectedLocally?: boolean } = {},
 ): ConnectionHealth {
   if (options.disconnectedLocally) return { state: 'disconnected', reasons: [], missingScopes: [] };
-  const message = connection.lastError?.message;
-  if (message && STORE_GONE_ERRORS.has(message)) {
-    return { state: 'disconnected', reasons: [], missingScopes: [] };
-  }
-  if (connection.status === 'draft' || connection.status === 'pending') {
-    return { state: 'connecting', reasons: [], missingScopes: [] };
-  }
+  if (connection.status === 'draft') return { state: 'connecting', reasons: [], missingScopes: [] };
   const reasons: string[] = [];
-  let missingScopes: string[] = [];
+  const missingScopes = connection.missingScopes;
   if (connection.status === 'error') {
-    reasons.push(connectorErrorCopy(message, connection.provider));
-  } else {
-    missingScopes = missingScopesFor(connection.provider, connection.scopes);
+    reasons.push(connectorErrorCopy(connection.lastError?.message, connection.provider));
+  } else if (connection.status === 'needs_attention') {
     if (missingScopes.length > 0) {
       reasons.push(`Missing permissions: ${missingScopes.join(', ')}. Add them to the app and install it again.`);
+    } else {
+      reasons.push(connectorErrorCopy(connection.lastError?.message, connection.provider));
     }
   }
   if (connection.pushes.quarantined > 0) {
@@ -377,16 +390,6 @@ export function shopifyAdminUrl(domain: string): string {
   return `https://admin.shopify.com/store/${handle}`;
 }
 
-/** The fixed C7 paths, used when the service omits `urls` on a draft connection. */
-export function shopifyConnectionUrls(serviceBaseUrl: string, connectionId: string): ConnectorUrls {
-  const base = `${serviceBaseUrl.replace(/\/+$/, '')}/v1/connectors/shopify/c/${encodeURIComponent(connectionId)}`;
-  return {
-    appUrl: `${base}/launch`,
-    allowedRedirectionUrl: `${base}/oauth/callback`,
-    webhookUrl: `${base}/webhooks`,
-  };
-}
-
 const PUSH_STATE_LABELS: Readonly<Record<ConnectorPushState, string>> = {
   pending: 'Waiting to send',
   sending: 'Sending',
@@ -435,6 +438,25 @@ const ALERT_KIND_COPY: Readonly<Record<string, string>> = {
   inbound_failed: 'An update from your store could not be applied.',
 };
 
+/**
+ * The one-click entry a store-side cancel or refund alert offers into the
+ * existing Pubky flow (C13). Only the two commands the service names are
+ * honoured; the seller still takes the step in the order itself, and nothing
+ * here cancels or refunds.
+ */
+const ALERT_ACTION_LABELS: Readonly<Record<string, { command: string; label: string }>> = {
+  approve_cancellation: { command: 'order.cancel_approve', label: "Approve the buyer's cancellation request" },
+  record_refund: { command: 'refund.record_external', label: 'Record the refund you sent the buyer' },
+};
+
+export function connectorAlertAction(alert: Pick<ConnectorAlert, 'action'>): { label: string; orderId: string } | null {
+  const action = alert.action;
+  if (!action) return null;
+  const known = ALERT_ACTION_LABELS[action.kind];
+  if (!known || known.command !== action.command || !/^[A-Za-z0-9_-]{1,128}$/.test(action.orderId)) return null;
+  return { label: known.label, orderId: action.orderId };
+}
+
 export function connectorAlertCopy(kind: string): string {
   return ALERT_KIND_COPY[kind] ?? 'Something needs your attention in your store connection.';
 }
@@ -449,6 +471,12 @@ const CONNECT_REFUSAL_COPY: Readonly<Record<string, string>> = {
   provider_rejected: 'The store refused the request. Check the address and that the store is online.',
   provider_rate_limited: 'The store is busy. Wait a minute, then try again.',
   invalid_credentials: 'The store did not accept those keys. Check them and try again.',
+  credentials_not_supported:
+    'This store type cannot take pasted keys here yet. Disconnect it, then connect again through the store approval screen.',
+  connection_not_available: 'This connection expired or was disconnected. Start again.',
+  invalid_variant_mode: 'That setting was not accepted.',
+  mappings_conflict:
+    'Some of your listings combine several variants of one product, so this cannot be switched yet. End those listings, then switch.',
   credentials_rejected: 'The store did not accept those keys. Check them and try again.',
   connection_not_found: 'This connection no longer exists. Start again.',
   connection_not_connected: 'This connection is not finished yet.',
@@ -474,14 +502,21 @@ export function connectorErrorMessage(error: unknown, fallback: string): string 
 }
 
 export const SHOPIFY_RETURN_ERROR_COPY: Readonly<Record<string, string>> = {
-  invalid_state: 'That install link expired or was already used. Click Install in Shopify again.',
+  invalid_state: 'That install link expired or was already used. Install the app again from the Dev Dashboard.',
   connect_rejected: 'Shopify did not approve the install. Check the Client ID and secret, then install again.',
+  credentials_missing: "Save the app's Client ID and secret here first, then install the app.",
+  credentials_unreadable: 'The saved keys could not be read. Replace them here, then install again.',
   provider_unavailable: 'Shopify could not be reached. Try again in a moment.',
   shop_in_use: 'That store is already connected to another Pubky shop.',
+  invalid_launch:
+    "Shopify's install request could not be verified. Check that the Client secret saved here is the app's current one, then install again.",
+  shop_mismatch:
+    'The app was opened for a different store than the one you entered. Use the same store address in both places.',
+  draft_expired: 'This connection expired or was disconnected. Start again from step 1.',
 };
 
 export function shopifyReturnErrorCopy(code: string | null): string {
-  return (code && SHOPIFY_RETURN_ERROR_COPY[code]) || 'The install did not finish. Start the install again.';
+  return (code && SHOPIFY_RETURN_ERROR_COPY[code]) || 'The install did not finish. Install the app again.';
 }
 
 /** The service's refusal code on an error thrown by the connector calls, when it sent one. */
@@ -492,9 +527,8 @@ export function connectorRefusalReason(error: unknown): string | null {
 }
 
 export type ConnectionReturn =
-  | { kind: 'connected'; connectionId: string | null; provider: ConnectorProvider | null }
-  | { kind: 'error'; provider: ConnectorProvider | null; code: string | null }
-  | { kind: 'unclaimed'; domain: string | null }
+  | { kind: 'connected'; connectionId: string | null; provider: ConnectorProvider | null; needsAttention: boolean }
+  | { kind: 'error'; connectionId: string | null; provider: ConnectorProvider | null; code: string | null }
   | { kind: 'woo_returned'; approved: boolean };
 
 function providerParam(value: string | null): ConnectorProvider | null {
@@ -503,19 +537,20 @@ function providerParam(value: string | null): ConnectorProvider | null {
 
 /**
  * What the store connections page was opened for. The service redirects here
- * after a Shopify install (`status`, `connector`, `code`), and WooCommerce
- * sends the seller back with `success` and `user_id` after the approval screen.
- * Only the status words are read; the ids in the query are never trusted for
- * anything but picking a connection from the seller's own list.
+ * after a Shopify install (`status` is `connected`, `needs_attention` or
+ * `error`, with `connector`, and `code` on an error), and WooCommerce sends the
+ * seller back with `success` and `user_id` after the approval screen. Only the
+ * status words are read; the ids in the query are never trusted for anything
+ * but picking a connection from the seller's own list.
  */
 export function parseConnectionReturn(params: URLSearchParams): ConnectionReturn | null {
   const status = params.get('status');
   const provider = providerParam(params.get('provider'));
-  if (status === 'connected') {
-    return { kind: 'connected', connectionId: params.get('connector'), provider };
+  const connectionId = params.get('connector');
+  if (status === 'connected' || status === 'needs_attention') {
+    return { kind: 'connected', connectionId, provider, needsAttention: status === 'needs_attention' };
   }
-  if (status === 'error') return { kind: 'error', provider, code: params.get('code') };
-  if (status === 'install_unclaimed') return { kind: 'unclaimed', domain: params.get('domain') };
+  if (status === 'error') return { kind: 'error', connectionId, provider, code: params.get('code') };
   const success = params.get('success');
   if (success === '1' || success === '0') return { kind: 'woo_returned', approved: success === '1' };
   return null;

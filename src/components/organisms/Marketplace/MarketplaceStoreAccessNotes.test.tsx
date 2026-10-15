@@ -44,4 +44,14 @@ describe('MarketplaceStoreAccessNotes', () => {
       expect(screen.getByRole('heading', { name: heading })).toBeInTheDocument();
     }
   });
+
+  it('adds the approved disconnect detail line for Shopify only', () => {
+    const { unmount } = render(<MarketplaceStoreAccessNotes provider="shopify" />);
+    expect(screen.getByTestId('disconnect-detail-line')).toHaveTextContent(
+      "We delete your store access and buyer-address key at once. Your app's secret stays encrypted for up to 30 days, only so we can verify Shopify's privacy requests about your store, and is deleted sooner if Shopify asks us to erase your shop's data.",
+    );
+    unmount();
+    render(<MarketplaceStoreAccessNotes provider="woocommerce" />);
+    expect(screen.queryByTestId('disconnect-detail-line')).not.toBeInTheDocument();
+  });
 });

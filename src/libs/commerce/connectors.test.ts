@@ -1,14 +1,15 @@
 import { describe, expect, it } from 'vitest';
+import { connectionFixture } from '@/test-utils/connector-fixtures';
 import {
   connectionHealth,
+  connectorAlertAction,
   connectorAlertCopy,
+  connectorAlertSchema,
   connectorCatalogSchema,
   type ConnectorConnection,
-  connectorConnectionSchema,
   connectorFailureCopy,
   connectorListSchema,
   isWooAuthorizeUrlFor,
-  missingScopesFor,
   normalizeShopifyDomain,
   normalizeWooStoreAddress,
   parseConnectionReturn,
@@ -17,13 +18,12 @@ import {
   quarantineReasonCopy,
   SHOPIFY_REQUIRED_SCOPES,
   shopifyAdminUrl,
-  shopifyConnectionUrls,
   shopifyReturnErrorCopy,
 } from './connectors';
 import { toCamelCaseWire } from './wire-casing';
 
-function connection(overrides: Partial<ConnectorConnection> = {}): ConnectorConnection {
-  return connectorConnectionSchema.parse({
+function connection(overrides: Record<string, unknown> = {}): ConnectorConnection {
+  return connectionFixture({
     id: '11111111-1111-4111-8111-111111111111',
     provider: 'shopify',
     domain: 'shop.myshopify.com',
@@ -97,15 +97,7 @@ describe('isWooAuthorizeUrlFor', () => {
   });
 });
 
-describe('Shopify guide URLs', () => {
-  it('derives the fixed per-connection paths', () => {
-    expect(shopifyConnectionUrls('https://staging-api.pubky.app/', 'abc')).toEqual({
-      appUrl: 'https://staging-api.pubky.app/v1/connectors/shopify/c/abc/launch',
-      allowedRedirectionUrl: 'https://staging-api.pubky.app/v1/connectors/shopify/c/abc/oauth/callback',
-      webhookUrl: 'https://staging-api.pubky.app/v1/connectors/shopify/c/abc/webhooks',
-    });
-  });
-
+describe('Shopify guide', () => {
   it('opens the store admin by handle', () => {
     expect(shopifyAdminUrl('your-store.myshopify.com')).toBe('https://admin.shopify.com/store/your-store');
   });
@@ -117,34 +109,30 @@ describe('Shopify guide URLs', () => {
   });
 });
 
-describe('missingScopesFor', () => {
-  it('names each Shopify scope that was not granted', () => {
-    expect(missingScopesFor('shopify', ['read_products', 'write_orders'])).toEqual([
-      'read_inventory',
-      'read_locations',
-      'read_fulfillments',
-    ]);
-    expect(missingScopesFor('shopify', [...SHOPIFY_REQUIRED_SCOPES])).toEqual([]);
-  });
-
-  it('needs read_write on WooCommerce, but does not flag keys whose scope is unknown', () => {
-    expect(missingScopesFor('woocommerce', [])).toEqual([]);
-    expect(missingScopesFor('woocommerce', ['read'])).toEqual(['read_write']);
-    expect(missingScopesFor('woocommerce', ['read_write'])).toEqual([]);
-    expect(missingScopesFor('woocommerce', ['read', 'write'])).toEqual([]);
-  });
-});
-
 describe('connectionHealth', () => {
-  it('is connected when scopes are complete and nothing is stuck', () => {
+  it('is connected when the service says so and nothing is stuck', () => {
     expect(connectionHealth(connection())).toEqual({ state: 'connected', reasons: [], missingScopes: [] });
   });
 
-  it('needs attention with the missing permissions named', () => {
-    const health = connectionHealth(connection({ scopes: ['read_products'] }));
+  it('needs attention with the permissions the service says are missing', () => {
+    const health = connectionHealth(
+      connection({
+        status: 'needs_attention',
+        scopes: ['read_products'],
+        missingScopes: ['read_inventory', 'read_locations', 'read_fulfillments', 'write_orders'],
+      }),
+    );
     expect(health.state).toBe('needs_attention');
     expect(health.missingScopes).toEqual(['read_inventory', 'read_locations', 'read_fulfillments', 'write_orders']);
     expect(health.reasons[0]).toContain('Missing permissions: read_inventory');
+  });
+
+  it('says the webhooks could not be registered when no scope is missing', () => {
+    const health = connectionHealth(
+      connection({ status: 'needs_attention', lastError: { message: 'webhook_registration_failed', at: null } }),
+    );
+    expect(health.state).toBe('needs_attention');
+    expect(health.reasons[0]).toContain('could not register its updates with Shopify');
   });
 
   it('needs attention when the store rejected the keys', () => {
@@ -153,7 +141,7 @@ describe('connectionHealth', () => {
     );
     expect(health.state).toBe('needs_attention');
     expect(health.reasons[0]).toBe(
-      'Shopify rejected the saved keys. Replace them below, then check the connection again.',
+      'Shopify rejected the saved keys. Replace them below, then install again and check the connection.',
     );
   });
 
@@ -168,16 +156,17 @@ describe('connectionHealth', () => {
     expect(health.reasons).toEqual(['1 order needs your attention in Orders.']);
   });
 
-  it('is not finished while draft or pending', () => {
+  it('is not finished while a draft', () => {
     expect(connectionHealth(connection({ status: 'draft' })).state).toBe('connecting');
-    expect(connectionHealth(connection({ status: 'pending' })).state).toBe('connecting');
   });
 
-  it('is disconnected after an uninstall or a local disconnect', () => {
-    expect(connectionHealth(connection({ status: 'error', lastError: { message: 'app_uninstalled' } })).state).toBe(
-      'disconnected',
-    );
+  it('is disconnected only for a connection disconnected in this visit', () => {
     expect(connectionHealth(connection(), { disconnectedLocally: true }).state).toBe('disconnected');
+  });
+
+  it('does not read a status the service does not send', () => {
+    expect(() => connection({ status: 'pending' })).toThrow();
+    expect(() => connection({ status: 'disconnected' })).toThrow();
   });
 });
 
@@ -185,12 +174,25 @@ describe('parseConnectionReturn', () => {
   const parse = (query: string) => parseConnectionReturn(new URLSearchParams(query));
 
   it('reads the Shopify redirects', () => {
-    expect(parse('status=connected&connector=abc')).toEqual({ kind: 'connected', connectionId: 'abc', provider: null });
-    expect(parse('status=error&code=invalid_state')).toEqual({ kind: 'error', provider: null, code: 'invalid_state' });
-    expect(parse('status=install_unclaimed&provider=shopify&domain=a.myshopify.com')).toEqual({
-      kind: 'unclaimed',
-      domain: 'a.myshopify.com',
+    expect(parse('status=connected&connector=abc')).toEqual({
+      kind: 'connected',
+      connectionId: 'abc',
+      provider: null,
+      needsAttention: false,
     });
+    expect(parse('status=needs_attention&connector=abc')).toEqual({
+      kind: 'connected',
+      connectionId: 'abc',
+      provider: null,
+      needsAttention: true,
+    });
+    expect(parse('status=error&code=invalid_state')).toEqual({
+      kind: 'error',
+      connectionId: null,
+      provider: null,
+      code: 'invalid_state',
+    });
+    expect(parse('status=error&code=draft_expired&connector=abc')).toMatchObject({ connectionId: 'abc' });
   });
 
   it('reads the WooCommerce return', () => {
@@ -201,6 +203,7 @@ describe('parseConnectionReturn', () => {
   it('ignores anything else', () => {
     expect(parse('')).toBeNull();
     expect(parse('status=whatever')).toBeNull();
+    expect(parse('status=install_unclaimed&provider=shopify')).toBeNull();
     expect(parse('success=maybe')).toBeNull();
   });
 });
@@ -220,6 +223,40 @@ describe('copy', () => {
     expect(quarantineReasonCopy(null)).toContain('did not take this order');
   });
 
+  it('offers a one-click entry only for the two commands the service names, to an order id', () => {
+    const alert = (action: { kind: string; command: string; orderId: string }) =>
+      connectorAlertSchema.parse({
+        id: 'a',
+        connectionId: 'c',
+        kind: 'merchant_cancelled',
+        createdAt: '2026-10-15T12:00:00.000Z',
+        action: { label: 'service text', ...action },
+      });
+    expect(
+      connectorAlertAction(alert({ kind: 'approve_cancellation', command: 'order.cancel_approve', orderId: 'o-1' })),
+    ).toEqual({
+      label: "Approve the buyer's cancellation request",
+      orderId: 'o-1',
+    });
+    expect(
+      connectorAlertAction(alert({ kind: 'record_refund', command: 'refund.record_external', orderId: 'o-1' })),
+    ).toEqual({
+      label: 'Record the refund you sent the buyer',
+      orderId: 'o-1',
+    });
+    expect(
+      connectorAlertAction(alert({ kind: 'record_refund', command: 'order.cancel_approve', orderId: 'o-1' })),
+    ).toBeNull();
+    expect(
+      connectorAlertAction(alert({ kind: 'cancel_everything', command: 'order.cancel', orderId: 'o-1' })),
+    ).toBeNull();
+    expect(
+      connectorAlertAction(alert({ kind: 'record_refund', command: 'refund.record_external', orderId: '../x' })),
+    ).toBeNull();
+    expect(connectorAlertAction({ action: null })).toBeNull();
+    expect(connectorAlertAction({})).toBeNull();
+  });
+
   it('says the seller must cancel and refund in Pubky after a store-side cancel', () => {
     expect(connectorAlertCopy('merchant_cancelled')).toContain('nothing is refunded automatically');
   });
@@ -235,7 +272,7 @@ describe('copy', () => {
 });
 
 describe('contract shapes', () => {
-  it('parses the documented list, with and without the optional fields', () => {
+  it('parses the documented list', () => {
     const wire = {
       kind: 'connector_list',
       schema_version: 1,
@@ -244,9 +281,16 @@ describe('contract shapes', () => {
           id: '11111111-1111-4111-8111-111111111111',
           provider: 'woocommerce',
           domain: 'dezentralshop.ch',
-          app_key: null,
+          app_kind: 'none',
+          variant_mode: 'split',
           status: 'connected',
           scopes: ['read_write'],
+          missing_scopes: [],
+          credentials_saved: false,
+          urls: {
+            oauth_callback: 'https://api.example/v1/connectors/woocommerce/oauth/callback',
+            webhooks: 'https://api.example/v1/connectors/webhooks/woocommerce',
+          },
           expires_at: null,
           connected_at: '2026-10-15T10:00:00.000Z',
           created_at: '2026-10-15T09:00:00.000Z',
@@ -258,7 +302,14 @@ describe('contract shapes', () => {
       ],
     };
     const parsed = connectorListSchema.parse(toCamelCaseWire(wire));
-    expect(parsed.connections[0]).toMatchObject({ mappingCount: 7, pushes: { created: 3, quarantined: 1 } });
+    expect(parsed.connections[0]).toMatchObject({
+      mappingCount: 7,
+      variantMode: 'split',
+      appKind: 'none',
+      credentialsSaved: false,
+      pushes: { created: 3, quarantined: 1 },
+    });
+    expect(parsed.connections[0]?.urls.launch).toBeUndefined();
   });
 
   it('parses a catalog page in the documented shape', () => {

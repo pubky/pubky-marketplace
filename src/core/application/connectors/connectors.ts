@@ -4,16 +4,16 @@ import {
   type ConnectorAlert,
   type ConnectorCatalogPage,
   type ConnectorCatalogProduct,
+  type ConnectorCheck,
   type ConnectorConnection,
   type ConnectorMapping,
   type ConnectorProvider,
   type ConnectorPush,
   connectorRefusalReason,
-  type ConnectorUrls,
   isWooAuthorizeUrlFor,
   normalizeShopifyDomain,
   normalizeWooStoreAddress,
-  shopifyConnectionUrls,
+  type VariantMode,
 } from '@/libs/commerce/connectors';
 import { isAppError } from '@/libs/error/error';
 import { ServerErrorCode, ValidationErrorCode } from '@/libs/error/error.codes';
@@ -23,17 +23,14 @@ import { MarketplaceConnectorsService } from '@/services/marketplace/marketplace
 
 export type WooConnectStart = { connection: ConnectorConnection; authorizeUrl: string };
 
-export type ShopifyDraft = {
-  connection: ConnectorConnection;
-  urls: ConnectorUrls;
-};
-
 export type ConnectionCheck = {
   connection: ConnectorConnection | null;
   health: ConnectionHealth | null;
   /** Products on the first catalog page; `null` when the test read could not run or failed. */
   productCount: number | null;
   catalogReadable: boolean;
+  /** The store's own answer (`GET /check`); `null` for a store type with no check (WooCommerce today). */
+  store: Pick<ConnectorCheck, 'shopName' | 'grantedScopes' | 'locationCount'> | null;
 };
 
 export type OrderPushRow = { connection: ConnectorConnection; push: ConnectorPush };
@@ -59,15 +56,6 @@ function secretFields(operation: string, fields: Record<string, string>): Record
     trimmed[name] = next;
   }
   return trimmed;
-}
-
-function httpsOrNull(url: string | null | undefined): string | null {
-  if (!url) return null;
-  try {
-    return new URL(url).protocol === 'https:' ? url : null;
-  } catch {
-    return null;
-  }
 }
 
 /**
@@ -133,38 +121,30 @@ export class ConnectorsApplication {
       provider: 'woocommerce',
       domain: normalized.domain,
     });
-    const result = await MarketplaceConnectorsService.putCredentials(actor, started.connection.id, keys);
-    return result.connection ?? started.connection;
+    return await MarketplaceConnectorsService.putCredentials(actor, started.connection.id, keys);
   }
 
-  static async startShopify(actor: string, domainInput: string): Promise<ShopifyDraft> {
+  /** The draft connection for a store; its `urls` are the ones the merchant pastes into their app. */
+  static async startShopify(actor: string, domainInput: string): Promise<ConnectorConnection> {
     const domain = normalizeShopifyDomain(domainInput);
     if (!domain) {
       invalidInput('startShopify', 'Enter your store address, for example your-store.myshopify.com.');
     }
     const started = await MarketplaceConnectorsService.connect(actor, { provider: 'shopify', domain });
-    return { connection: started.connection, urls: this.draftUrls(started.connection, started.urls) };
+    return started.connection;
   }
 
-  /** The URLs to show for a draft: the service's own, else the fixed per-connection paths. */
-  static draftUrls(connection: ConnectorConnection, urls?: ConnectorUrls | null): ConnectorUrls {
-    return (
-      urls ?? connection.urls ?? shopifyConnectionUrls(MarketplaceConnectorsService.serviceBaseUrl(), connection.id)
-    );
-  }
-
-  /** Seals the Client ID and secret on the service. Returns the install link when the service sends one. */
+  /** Seals the Client ID and secret on the service; the answer is the connection with `credentialsSaved`. */
   static async saveShopifyCredentials(
     actor: string,
     connectionId: string,
     input: { clientId: string; clientSecret: string },
-  ): Promise<{ authorizeUrl: string | null }> {
+  ): Promise<ConnectorConnection> {
     const fields = secretFields('saveShopifyCredentials', {
       clientId: input.clientId,
       clientSecret: input.clientSecret,
     });
-    const result = await MarketplaceConnectorsService.putCredentials(actor, connectionId, fields);
-    return { authorizeUrl: httpsOrNull(result.authorizeUrl) };
+    return await MarketplaceConnectorsService.putCredentials(actor, connectionId, fields);
   }
 
   /** Overwrites the sealed pair of a live connection. */
@@ -172,15 +152,23 @@ export class ConnectorsApplication {
     actor: string,
     connection: Pick<ConnectorConnection, 'id' | 'provider'>,
     input: { first: string; second: string },
-  ): Promise<{ authorizeUrl: string | null }> {
+  ): Promise<ConnectorConnection> {
     const names: Record<ConnectorProvider, [string, string]> = {
       shopify: ['clientId', 'clientSecret'],
       woocommerce: ['consumerKey', 'consumerSecret'],
     };
     const [firstName, secondName] = names[connection.provider];
     const fields = secretFields('replaceCredentials', { [firstName]: input.first, [secondName]: input.second });
-    const result = await MarketplaceConnectorsService.putCredentials(actor, connection.id, fields);
-    return { authorizeUrl: httpsOrNull(result.authorizeUrl) };
+    return await MarketplaceConnectorsService.putCredentials(actor, connection.id, fields);
+  }
+
+  /** `native` keeps a product's variants together as one listing; `split` makes each variant its own listing. */
+  static async saveVariantMode(
+    actor: string,
+    connectionId: string,
+    variantMode: VariantMode,
+  ): Promise<ConnectorConnection> {
+    return await MarketplaceConnectorsService.putSettings(actor, connectionId, { variantMode });
   }
 
   static async disconnect(actor: string, connectionId: string): Promise<void> {
@@ -188,28 +176,70 @@ export class ConnectorsApplication {
   }
 
   /**
-   * The status check after connecting: re-reads the connection and does a test
-   * read of the store catalog, so a bad key shows now and not at the first sale.
+   * The status check after connecting: re-reads the connection, asks the
+   * service to look at the store (`GET /check`: its name, granted scopes,
+   * locations) and does a test read of the catalog, so a bad key shows now and
+   * not at the first sale. A store type with no check answers
+   * `422 invalid_request`; the catalog read still runs.
    */
   static async checkConnection(actor: string, connectionId: string): Promise<ConnectionCheck> {
     const connections = await MarketplaceConnectorsService.list(actor);
     const connection = connections.find((entry) => entry.id === connectionId) ?? null;
-    if (!connection) return { connection: null, health: null, productCount: null, catalogReadable: false };
+    if (!connection) {
+      return { connection: null, health: null, productCount: null, catalogReadable: false, store: null };
+    }
+    if (connection.status === 'draft') {
+      return {
+        connection,
+        health: connectionHealth(connection),
+        productCount: null,
+        catalogReadable: false,
+        store: null,
+      };
+    }
+    const rejected = async (): Promise<ConnectionCheck> => {
+      const refreshed = (await MarketplaceConnectorsService.list(actor)).find((entry) => entry.id === connectionId);
+      const next = refreshed ?? connection;
+      return {
+        connection: next,
+        health: connectionHealth(next),
+        productCount: null,
+        catalogReadable: false,
+        store: null,
+      };
+    };
+    let store: ConnectionCheck['store'] = null;
+    let fresh: ConnectorCheck | null = null;
+    try {
+      fresh = await MarketplaceConnectorsService.check(actor, connectionId);
+      store = { shopName: fresh.shopName, grantedScopes: fresh.grantedScopes, locationCount: fresh.locationCount };
+    } catch (error) {
+      const reason = connectorRefusalReason(error);
+      if (reason === 'credentials_rejected') return await rejected();
+      if (reason !== 'invalid_request' && reason !== 'connection_not_connected') {
+        return {
+          connection,
+          health: connectionHealth(connection),
+          productCount: null,
+          catalogReadable: false,
+          store: null,
+        };
+      }
+    }
     const health = connectionHealth(connection);
-    if (connection.status !== 'connected') {
-      return { connection, health, productCount: null, catalogReadable: false };
+    if (fresh && fresh.missingScopes.length > 0 && health.state !== 'needs_attention') {
+      health.state = 'needs_attention';
+      health.missingScopes = fresh.missingScopes;
+      health.reasons.unshift(
+        `Missing permissions: ${fresh.missingScopes.join(', ')}. Add them to the app and install it again.`,
+      );
     }
     try {
       const page = await MarketplaceConnectorsService.catalog(actor, connectionId);
-      return { connection, health, productCount: page.products.length, catalogReadable: true };
+      return { connection, health, productCount: page.products.length, catalogReadable: true, store };
     } catch (error) {
-      const reason = connectorRefusalReason(error);
-      if (reason === 'credentials_rejected') {
-        const refreshed = (await MarketplaceConnectorsService.list(actor)).find((entry) => entry.id === connectionId);
-        const next = refreshed ?? connection;
-        return { connection: next, health: connectionHealth(next), productCount: null, catalogReadable: false };
-      }
-      return { connection, health, productCount: null, catalogReadable: false };
+      if (connectorRefusalReason(error) === 'credentials_rejected') return await rejected();
+      return { connection, health, productCount: null, catalogReadable: false, store };
     }
   }
 
@@ -288,7 +318,7 @@ export class ConnectorsApplication {
   /** Push state across the seller's connected stores, newest first, plus unresolved alerts. */
   static async pushOverview(actor: string): Promise<StorePushOverview> {
     const connections = (await MarketplaceConnectorsService.list(actor)).filter(
-      (connection) => connection.status !== 'draft' && connection.status !== 'pending',
+      (connection) => connection.status !== 'draft',
     );
     const [alerts, perConnection] = await Promise.all([
       MarketplaceConnectorsService.alerts(actor, { unresolved: true }),
@@ -307,6 +337,11 @@ export class ConnectorsApplication {
 
   static async retryPush(actor: string, connectionId: string, orderId: string): Promise<ConnectorPush> {
     return await MarketplaceConnectorsService.retryPush(actor, connectionId, orderId);
+  }
+
+  /** Unresolved alerts across the seller's connections. */
+  static async alerts(actor: string): Promise<ConnectorAlert[]> {
+    return await MarketplaceConnectorsService.alerts(actor, { unresolved: true });
   }
 
   static async resolveAlert(actor: string, alertId: string): Promise<void> {

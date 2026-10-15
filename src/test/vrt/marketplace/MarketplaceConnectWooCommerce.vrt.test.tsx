@@ -1,19 +1,20 @@
 // Intentional import order — browser-mode mock factories rely on stable aliases.
 /* eslint-disable simple-import-sort/imports */
 import { describe, expect, it, vi } from 'vitest';
+import { connectionFixture } from '@/test-utils/connector-fixtures';
 import { userEvent } from 'vitest/browser';
 import { expectVrtSurface, renderForVRT } from '@/test-utils/vrt';
 import { VRT_VIEWPORT_DESKTOP, VRT_VIEWPORT_MOBILE } from '@/test-utils/vrt.viewports';
 import { MarketplaceConnectWooCommerce } from '@/organisms/Marketplace/MarketplaceConnectWooCommerce';
 import { useConnectWooCommerce } from '@/hooks/useConnectWooCommerce/useConnectWooCommerce';
 import type { StatusCheckPhase } from '@/hooks/useConnectionStatusCheck/useConnectionStatusCheck';
-import { connectionHealth, connectorConnectionSchema } from '@/libs/commerce/connectors';
+import { connectionHealth } from '@/libs/commerce/connectors';
 
 vi.mock('@/controllers/connectors/connectors', () => ({
   ConnectorsController: { commitConnectWooCommerce: vi.fn(), commitConnectWooCommerceWithKeys: vi.fn() },
 }));
 
-const connected = connectorConnectionSchema.parse({
+const connected = connectionFixture({
   id: 'c1',
   provider: 'woocommerce',
   domain: 'dezentralshop.ch',
@@ -38,7 +39,13 @@ function Flow({
         statusCheck={{
           phase,
           result: withResult
-            ? { connection: connected, health: connectionHealth(connected), productCount: 279, catalogReadable: true }
+            ? {
+                connection: connected,
+                health: connectionHealth(connected),
+                productCount: 279,
+                catalogReadable: true,
+                store: null,
+              }
             : null,
           run: async () => phase,
           reset: () => {},

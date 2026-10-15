@@ -16,6 +16,7 @@ import { useStoreConnections } from '@/hooks/useStoreConnections/useStoreConnect
 import {
   type ConnectionReturn,
   CONNECTOR_MAX_CONNECTIONS,
+  connectorAlertCopy,
   type ConnectorProvider,
   parseConnectionReturn,
   shopifyReturnErrorCopy,
@@ -38,9 +39,6 @@ const PROVIDER_TABS: readonly { id: ConnectorProvider; label: string }[] = [
 function returnNoticeCopy(returned: ConnectionReturn | null): string | null {
   if (!returned) return null;
   if (returned.kind === 'error') return shopifyReturnErrorCopy(returned.code);
-  if (returned.kind === 'unclaimed') {
-    return `Shopify reached Pubky, but no connection was waiting for ${returned.domain ?? 'that store'}. Start from step 1 and install again.`;
-  }
   return null;
 }
 
@@ -54,7 +52,7 @@ export function MarketplaceStoreConnections() {
   const [returned] = useState<ConnectionReturn | null>(() => parseConnectionReturn(searchParams));
   const [provider, setProvider] = useState<ConnectorProvider>(() => {
     if (returned && 'provider' in returned && returned.provider) return returned.provider;
-    if (returned?.kind === 'error' || returned?.kind === 'unclaimed') return 'shopify';
+    if (returned?.kind === 'error') return 'shopify';
     return 'woocommerce';
   });
   const handledReturn = useRef(false);
@@ -68,10 +66,8 @@ export function MarketplaceStoreConnections() {
     onKeysSaved: (connectionId) => checkAndRefresh({ connectionId, provider: 'woocommerce', attempts: 1 }),
   });
   const unfinishedShopify =
-    connections.connections.find(
-      (connection) =>
-        connection.provider === 'shopify' && (connection.status === 'draft' || connection.status === 'pending'),
-    ) ?? null;
+    connections.connections.find((connection) => connection.provider === 'shopify' && connection.status === 'draft') ??
+    null;
   const shopify = useConnectShopify({ resume: unfinishedShopify });
 
   useEffect(() => {
@@ -95,7 +91,7 @@ export function MarketplaceStoreConnections() {
   const notice = returnNoticeCopy(returned);
 
   const onCheckShopify = () => {
-    const id = shopify.draft?.connection.id;
+    const id = shopify.draft?.id;
     void checkAndRefresh({ connectionId: id ?? null, provider: 'shopify', attempts: 3, delayMs: 1_500 });
   };
   const onCheckWoo = () => void checkAndRefresh({ provider: 'woocommerce', attempts: 3, delayMs: 1_500 });
@@ -146,6 +142,29 @@ export function MarketplaceStoreConnections() {
           </Card>
         )}
 
+        {connections.lostAlerts.map((alert) => (
+          <div
+            key={alert.id}
+            role="alert"
+            className="flex flex-col gap-3 rounded-md border border-destructive/40 p-4 text-sm sm:flex-row sm:items-center sm:justify-between"
+            data-testid="store-connections-lost"
+          >
+            <div className="flex items-start gap-2">
+              <AlertTriangle className="mt-0.5 size-4 shrink-0 text-destructive" aria-hidden="true" />
+              {connectorAlertCopy(alert.kind)} Connect the store again below to resume.
+            </div>
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              className="shrink-0 rounded-full"
+              onClick={() => void connections.dismissLostAlert(alert.id)}
+            >
+              Dismiss
+            </Button>
+          </div>
+        ))}
+
         {connections.isLoading ? (
           <Skeleton className="h-48 w-full" />
         ) : connections.needsSession ? (
@@ -176,6 +195,7 @@ export function MarketplaceStoreConnections() {
                 rows={connections.rows}
                 workingId={connections.workingId}
                 onDisconnect={connections.disconnect}
+                onVariantMode={connections.setVariantMode}
                 onReplaced={(connection) =>
                   checkAndRefresh({ connectionId: connection.id, provider: connection.provider, attempts: 1 })
                 }

@@ -9,7 +9,12 @@ import { Typography } from '@/atoms/Typography/Typography';
 import type { ShopifyGuideScreen } from '@/config/shopify-guide';
 import type { useConnectionStatusCheck } from '@/hooks/useConnectionStatusCheck/useConnectionStatusCheck';
 import type { UseConnectShopifyResult } from '@/hooks/useConnectShopify/useConnectShopify';
-import { SHOPIFY_API_VERSION, SHOPIFY_REQUIRED_SCOPES, shopifyAdminUrl } from '@/libs/commerce/connectors';
+import {
+  SHOPIFY_API_VERSION,
+  SHOPIFY_DEV_DASHBOARD_URL,
+  SHOPIFY_REQUIRED_SCOPES,
+  shopifyAdminUrl,
+} from '@/libs/commerce/connectors';
 import { ControlledInputField } from '@/molecules/ControlledInputField/ControlledInputField';
 import { CopyField } from '@/molecules/Marketplace/CopyField';
 import { MarketplaceConnectionStatusCheck } from './MarketplaceConnectionStatusCheck';
@@ -62,8 +67,8 @@ const LOCKED_NOTE = 'Finish step 1 first.';
  * of the Dev Dashboard replace them (`config/shopify-guide.ts`).
  */
 export function MarketplaceConnectShopify({ shopify, statusCheck, onCheck }: MarketplaceConnectShopifyProps) {
-  const { draft, domainForm, keysForm, credentialsSaved, installOutcome, isWorking } = shopify;
-  const domain = draft?.connection.domain ?? null;
+  const { draft, domainForm, keysForm, credentialsSaved, isWorking } = shopify;
+  const domain = draft?.domain ?? null;
   const ready = draft !== null;
   const scopes = SHOPIFY_REQUIRED_SCOPES.join(', ');
 
@@ -179,19 +184,31 @@ export function MarketplaceConnectShopify({ shopify, statusCheck, onCheck }: Mar
           >
             {draft ? (
               <div className="grid gap-3">
-                <CopyField label="App URL" value={draft.urls.appUrl} copiedMessage="App URL copied." />
+                {draft.urls.launch && (
+                  <CopyField label="App URL" value={draft.urls.launch} copiedMessage="App URL copied." />
+                )}
                 <Typography as="p">
                   <strong className="text-foreground">Embed app in Shopify admin:</strong> off
                 </Typography>
                 <CopyField
                   label="Allowed redirection URL"
-                  value={draft.urls.allowedRedirectionUrl}
+                  value={draft.urls.oauthCallback}
                   copiedMessage="Redirection URL copied."
                 />
                 <Typography as="p">
                   <strong className="text-foreground">Webhooks API version:</strong> <code>{SHOPIFY_API_VERSION}</code>
                 </Typography>
                 <CopyField label="Scopes" value={scopes} copyLabel="Copy all" copiedMessage="Scopes copied." />
+                <CopyField
+                  label="Webhooks URL for privacy requests"
+                  value={draft.urls.webhooks}
+                  copiedMessage="Webhooks URL copied."
+                />
+                <Typography as="p" data-testid="shopify-compliance-note">
+                  Pubky sets up its other store updates itself after the install. Shopify&apos;s three privacy webhooks
+                  (<code>customers/data_request</code>, <code>customers/redact</code>, <code>shop/redact</code>) can
+                  only be set in the app, so add them to this URL in the same version.
+                </Typography>
                 <Typography as="p">
                   Then click <strong className="text-foreground">Release</strong>.
                 </Typography>
@@ -268,20 +285,24 @@ export function MarketplaceConnectShopify({ shopify, statusCheck, onCheck }: Mar
               </>
             }
           >
-            <Button
-              type="button"
-              className="w-fit rounded-full"
-              disabled={!credentialsSaved}
-              onClick={() => {
-                shopify.install();
-              }}
-            >
-              <ExternalLink className="size-4" aria-hidden="true" />
-              Install in Shopify
-            </Button>
-            {installOutcome === 'manual' && (
-              <Typography as="p" role="status" data-testid="shopify-install-manual">
-                Open the app in the Dev Dashboard, go to <strong className="text-foreground">Home</strong> →{' '}
+            {credentialsSaved ? (
+              <Button asChild className="w-fit rounded-full">
+                <a href={SHOPIFY_DEV_DASHBOARD_URL} target="_blank" rel="noopener noreferrer">
+                  <ExternalLink className="size-4" aria-hidden="true" />
+                  Install in Shopify
+                </a>
+              </Button>
+            ) : (
+              <Button type="button" className="w-fit rounded-full" disabled>
+                <ExternalLink className="size-4" aria-hidden="true" />
+                Install in Shopify
+              </Button>
+            )}
+            {credentialsSaved && (
+              <Typography as="p" data-testid="shopify-install-path">
+                Shopify starts the install from your app, so this opens the Dev Dashboard: open{' '}
+                <strong className="text-foreground">Pubky Shop</strong>, go to{' '}
+                <strong className="text-foreground">Home</strong> →{' '}
                 <strong className="text-foreground">Install app</strong>, and approve the permissions. Then check the
                 connection below.
               </Typography>

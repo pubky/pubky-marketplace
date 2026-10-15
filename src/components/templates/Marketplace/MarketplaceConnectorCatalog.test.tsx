@@ -4,8 +4,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { MARKETPLACE_ROUTES } from '@/app/routes';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import { ConnectorsController } from '@/controllers/connectors/connectors';
-import { connectorCatalogProductSchema, connectorConnectionSchema } from '@/libs/commerce/connectors';
+import { connectorCatalogProductSchema } from '@/libs/commerce/connectors';
 import { connectorRefusal } from '@/test-utils/connector-errors';
+import { connectionFixture } from '@/test-utils/connector-fixtures';
 import { MarketplaceConnectorCatalog } from './MarketplaceConnectorCatalog';
 
 const mode = vi.hoisted(() => ({ value: 'transaction-service' as string }));
@@ -38,6 +39,7 @@ vi.mock('@/controllers/connectors/connectors', () => ({
   ConnectorsController: {
     fetchConnections: vi.fn(),
     fetchSelectedProducts: vi.fn(),
+    fetchAlerts: vi.fn(async () => []),
     fetchSelection: vi.fn(),
     fetchMappings: vi.fn(),
     fetchCatalogPage: vi.fn(),
@@ -47,7 +49,7 @@ vi.mock('@/controllers/connectors/connectors', () => ({
 
 vi.mock('@/molecules/Toaster/use-toast', () => ({ toast: vi.fn() }));
 
-const CONNECTION = connectorConnectionSchema.parse({
+const CONNECTION = connectionFixture({
   id: 'c1',
   provider: 'woocommerce',
   domain: 'dezentralshop.ch',
