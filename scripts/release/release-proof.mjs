@@ -24,7 +24,7 @@
 // Output: 8-char pubky prefixes only; auth URLs, exports and bearers never print.
 import { appendFileSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { inspectGrantLink, MARKETPLACE_GRANTS } from './grant-links.mjs';
+import { inspectGrantLink } from './grant-links.mjs';
 import {
   evidenceDir,
   loadBuyerSeat,
@@ -35,6 +35,7 @@ import {
   seatSource,
   shopCapabilities,
 } from './seats.mjs';
+import { approveMarketplaceAccess, copyQrUrl, showSigner, signedInWithGrant } from './shop-grant-ui.mjs';
 
 const { chromium } = repoRequire('playwright');
 const { AuthFlowKind, Pubky } = repoRequire('@synonymdev/pubky');
@@ -49,7 +50,6 @@ const RELAY = process.env.PROOF_RELAY ?? 'https://httprelay.pubky.app/inbox';
 const CAPABILITIES = shopCapabilities();
 const CLIENT_ID = process.env.PROOF_CLIENT_ID ?? 'shop.pubky.app';
 const MARKETPLACE_CLIENT_ID = process.env.PROOF_MARKETPLACE_CLIENT_ID ?? null;
-const MARKETPLACE_SESSION_KEY = 'pubky.marketplace.session.v1';
 const FORBIDDEN_COPY = /hasn't set up a payment method|do not share a payment method/i;
 const RUN_START = Date.now();
 mkdirSync(EVIDENCE, { recursive: true });
@@ -77,6 +77,12 @@ function note(step, name, ok, detail = '') {
   notes.push({ step, name, ok: Boolean(ok), detail: redact(detail) });
   log(`${ok ? 'OK  ' : 'KNOWN'} [${step}] ${name}${detail ? ` — ${detail}` : ''}`);
 }
+const approveMarketplace = (page, keypair) =>
+  approveMarketplaceAccess(page, keypair, {
+    clientId: MARKETPLACE_CLIENT_ID,
+    log,
+    onApproved: (approval) => (summary.marketplaceApprovals ??= []).push(approval),
+  });
 const shot = async (page, name) => page.screenshot({ path: join(EVIDENCE, name) });
 
 // Staging runs use staging-homeserver seats: the staging Shop signs out accounts that live on the
@@ -138,45 +144,6 @@ const waitForAppReady = async (page, timeout = 180_000) =>
     null,
     { timeout },
   );
-// A grant sign-in is complete when the auth store holds the saved grant's record id and no cookie export.
-const signedInWithGrant = (page, expected = pubky, timeout = 180_000) =>
-  page.waitForFunction(
-    (wanted) => {
-      const raw = localStorage.getItem('shop-auth-store') ?? localStorage.getItem('auth-store');
-      const state = raw ? (JSON.parse(raw).state ?? {}) : {};
-      return (
-        state.currentUserPubky === wanted &&
-        typeof state.grantSessionRecordId === 'string' &&
-        state.grantSessionRecordId.length > 0 &&
-        (state.sessionExport ?? null) === null
-      );
-    },
-    expected,
-    { timeout },
-  );
-
-const QR_LABELS = { ring: 'Copy authentication link', bitkit: 'Copy Bitkit authentication link' };
-
-// The sign-in card shows one signer's QR at a time; both flows are live from page load.
-async function showSigner(page, signer) {
-  const toggle = page.getByRole('radio', { name: signer === 'ring' ? 'Pubky Ring' : 'Bitkit' });
-  await toggle.waitFor({ state: 'visible', timeout: 180_000 });
-  // A click before the page hydrates does nothing, so click again until the signer is selected.
-  for (let attempt = 0; attempt < 12 && (await toggle.getAttribute('aria-checked')) !== 'true'; attempt += 1) {
-    await toggle.click();
-    await page.waitForTimeout(1000);
-  }
-  await page.waitForFunction(
-    (label) => {
-      const el = document.querySelector(`[aria-label="${label}"]`);
-      return Boolean(el && !el.disabled && el.querySelector('[data-testid="qr-auth-url"]'));
-    },
-    QR_LABELS[signer],
-    { timeout: 180_000 },
-  );
-  return await page.getByRole('button', { name: QR_LABELS[signer] }).first().isVisible();
-}
-
 async function bothQrsLive(page) {
   await page.goto(at('/sign-in'), { waitUntil: 'domcontentloaded', timeout: 180_000 });
   await waitForAppReady(page);
@@ -184,20 +151,6 @@ async function bothQrsLive(page) {
   const bitkitLive = await showSigner(page, 'bitkit');
   const ringStillLive = await showSigner(page, 'ring');
   return ringLive && bitkitLive && ringStillLive;
-}
-
-async function copyQrUrl(page, label) {
-  await page.evaluate(() => navigator.clipboard.writeText(''));
-  await page.getByRole('button', { name: label }).first().click();
-  const handle = await page.waitForFunction(
-    async () => {
-      const text = await navigator.clipboard.readText();
-      return text.startsWith('pubkyauth://') ? text : null;
-    },
-    null,
-    { timeout: 10_000 },
-  );
-  return await handle.jsonValue();
 }
 
 async function qrDomLeak(page, authUrl) {
@@ -209,73 +162,6 @@ async function qrDomLeak(page, authUrl) {
     }),
     secret,
   );
-}
-
-const marketplaceSessionFor = (page, owner) =>
-  page.evaluate(
-    ([key, wanted]) => {
-      try {
-        return JSON.parse(localStorage.getItem(key) ?? 'null')?.pubky === wanted;
-      } catch {
-        return false;
-      }
-    },
-    [MARKETPLACE_SESSION_KEY, owner],
-  );
-
-// Signing in does not mint a marketplace session: the Shop asks for it when a signed-in user buys, opens Orders or
-// sells, with an "Enable purchases" or "Enable selling" approval. This plays the signer for that approval, after
-// its link is checked to ask for the marketplace grant and nothing more. It returns false when no approval was
-// asked for (the seat already has its marketplace session, or the page needs none).
-async function approveMarketplaceAccess(page, keypair, { settleMs = 6000 } = {}) {
-  const owner = keypair.publicKey.z32();
-  const dialog = page.getByRole('dialog', { name: /Enable (purchases|selling|device sync|messages)/ });
-  const card = page.getByRole('alert').getByRole('button', { name: 'Authorize', exact: true }).first();
-  const deadline = Date.now() + settleMs;
-  while (Date.now() < deadline) {
-    if (await marketplaceSessionFor(page, owner)) return false;
-    if (await dialog.isVisible().catch(() => false)) break;
-    if (await card.isVisible().catch(() => false)) {
-      await card.click();
-      await dialog.waitFor({ state: 'visible', timeout: 15_000 });
-      break;
-    }
-    await page.waitForTimeout(250);
-  }
-  if (!(await dialog.isVisible().catch(() => false))) return false;
-  const title = (
-    (await dialog
-      .getByRole('heading')
-      .first()
-      .innerText()
-      .catch(() => '')) || 'marketplace approval'
-  )
-    .replace(/\s+/g, ' ')
-    .trim();
-  await dialog.locator('[data-testid="qr-auth-url"]').first().waitFor({ state: 'attached', timeout: 120_000 });
-  const url = await copyQrUrl(page, 'Copy authorization link');
-  const inspected = inspectGrantLink(url, { clientId: MARKETPLACE_CLIENT_ID, capabilitySets: MARKETPLACE_GRANTS });
-  if (inspected.problems.length > 0) {
-    throw new Error(`"${title}" link is not the marketplace grant: ${inspected.problems.join('; ')}`);
-  }
-  await new Pubky().signer(keypair).approveAuthRequest(url);
-  log(
-    `marketplace: approved "${title}" as ${prefix(owner)} (client ${inspected.clientId}, ${inspected.capabilities.length} caps)`,
-  );
-  await page.waitForFunction(
-    ([key, wanted]) => {
-      try {
-        return JSON.parse(localStorage.getItem(key) ?? 'null')?.pubky === wanted;
-      } catch {
-        return false;
-      }
-    },
-    [MARKETPLACE_SESSION_KEY, owner],
-    { timeout: 180_000 },
-  );
-  await dialog.waitFor({ state: 'hidden', timeout: 60_000 }).catch(() => {});
-  (summary.marketplaceApprovals ??= []).push({ title, seat: prefix(owner), clientId: inspected.clientId });
-  return true;
 }
 
 async function signOutThroughSettings(page) {
@@ -372,7 +258,7 @@ async function paypalCheckout(page, commands, href, buyer) {
       return { sellerHasPaypal, error: `fixture listing "${title}" has no enabled Buy for the buyer` };
     }
     await add.click();
-    await approveMarketplaceAccess(page, buyer);
+    await approveMarketplace(page, buyer);
     await page.waitForTimeout(1200);
     await page.goto(at('/marketplace/cart'), { waitUntil: 'domcontentloaded' });
     await waitForAppReady(page);
@@ -452,7 +338,7 @@ async function paypalCheckout(page, commands, href, buyer) {
 async function renderedOrderCards(page, keypair) {
   await page.goto(at('/marketplace/orders'), { waitUntil: 'domcontentloaded' });
   await waitForAppReady(page);
-  await approveMarketplaceAccess(page, keypair);
+  await approveMarketplace(page, keypair);
   await page.locator('[data-surface="marketplace-orders"]').waitFor({ state: 'visible', timeout: 60_000 });
   await page
     .waitForFunction(
@@ -481,7 +367,7 @@ async function activityAndOrder(page, tag, keypair) {
   const rendered = new Set(await renderedOrderCards(page, keypair));
   await page.goto(at('/marketplace/notifications'), { waitUntil: 'domcontentloaded' });
   await waitForAppReady(page);
-  await approveMarketplaceAccess(page, keypair);
+  await approveMarketplace(page, keypair);
   await page
     .locator('a[href*="#order-"]')
     .first()
@@ -675,7 +561,7 @@ try {
       check('1', 'the QR slot does not carry the authorization URL in the DOM', !leak.attr && !leak.html);
       await new Pubky().signer(seat).approveAuthRequest(ringUrl);
       log('ring: approved');
-      await signedInWithGrant(page);
+      await signedInWithGrant(page, pubky);
       await page.waitForFunction((path) => window.location.pathname !== path, signInPath, { timeout: 180_000 });
       await page.waitForTimeout(4000);
       await shot(page, '02-ring-signed-in.png');
@@ -771,7 +657,7 @@ try {
       await shot(page, '03-bitkit-qr.png');
       await new Pubky().signer(seat).approveAuthRequest(grantUrl);
       log('bitkit grant: approved');
-      await signedInWithGrant(page);
+      await signedInWithGrant(page, pubky);
       await page.waitForTimeout(4000);
       const state = await authState(page);
       const grantPosts = net.filter((e) => e.tag === 'grant' && e.method === 'POST');

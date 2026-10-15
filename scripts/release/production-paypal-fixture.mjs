@@ -15,16 +15,19 @@
 //   node production-paypal-fixture.mjs teardown   delete listing, restore PayPal, revoke run sessions, then verify
 //   node production-paypal-fixture.mjs verify     verification only
 //
+// Both seats sign in through the Shop's grant QR and approve its marketplace dialogs as the signer (shop-grant-ui.mjs).
 // Env: PROOF_EVIDENCE (required; state and results are written there), seats (see seats.mjs),
 // PAYPAL_TEST_EMAIL (required for setup and proof, and for a teardown that restores it; never logged or
 // written to disk), EXPECTED_DPL (optional,
-// checked before checkout), PROOF_ORIGIN (with the mount path when embedded), PROOF_SERVICE, PROOF_NEXUS, PROOF_RELAY, PROOF_FIXTURE_PHOTO.
+// checked before checkout), PROOF_ORIGIN (with the mount path when embedded), PROOF_SERVICE, PROOF_NEXUS, PROOF_RELAY, PROOF_FIXTURE_PHOTO,
+// PROOF_CLIENT_ID and PROOF_MARKETPLACE_CLIENT_ID (see release-proof.mjs).
 // Exit 0 only when every check passed; teardown and verify exit 1 while anything is left behind.
 import { spawnSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { chmodSync, existsSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { inspectGrantLink } from './grant-links.mjs';
 import {
   evidenceDir,
   loadBuyerSeat,
@@ -34,6 +37,7 @@ import {
   repoRequire,
   shopCapabilities,
 } from './seats.mjs';
+import { approveMarketplaceAccess, copyQrUrl, showSigner, signedInWithGrant } from './shop-grant-ui.mjs';
 
 const { chromium } = repoRequire('playwright');
 const { AuthFlowKind, Pubky } = repoRequire('@synonymdev/pubky');
@@ -43,6 +47,8 @@ const SERVICE = process.env.PROOF_SERVICE ?? 'https://marketplace-service-produc
 const NEXUS = process.env.PROOF_NEXUS ?? 'https://nexusd-production-7108.up.railway.app';
 const RELAY = process.env.PROOF_RELAY ?? 'https://httprelay.pubky.app/inbox';
 const CAPABILITIES = shopCapabilities();
+const CLIENT_ID = process.env.PROOF_CLIENT_ID ?? 'shop.pubky.app';
+const MARKETPLACE_CLIENT_ID = process.env.PROOF_MARKETPLACE_CLIENT_ID ?? null;
 const PHOTO = process.env.PROOF_FIXTURE_PHOTO ?? join(dirname(fileURLToPath(import.meta.url)), 'fixture-photo.png');
 const TITLE_BASE = 'TEST, do not buy';
 
@@ -111,54 +117,21 @@ async function waitForAppReady(page) {
   );
 }
 
-async function copyAuthUrl(page, label) {
-  await page.evaluate(() => navigator.clipboard.writeText(''));
-  await page.getByRole('button', { name: label }).first().click();
-  const handle = await page.waitForFunction(
-    async () => {
-      const text = await navigator.clipboard.readText();
-      return text.startsWith('pubkyauth://') ? text : null;
-    },
-    null,
-    { timeout: 20_000 },
-  );
-  return handle.jsonValue();
-}
-
 async function ringSignIn(page, seat) {
   await page.goto(at('/sign-in'), { waitUntil: 'domcontentloaded', timeout: 180_000 });
   await waitForAppReady(page);
-  await new Pubky().signer(seat).approveAuthRequest(await copyAuthUrl(page, 'Copy authentication link'));
-  await page.waitForFunction(
-    (expected) => {
-      const raw = localStorage.getItem('shop-auth-store') ?? localStorage.getItem('auth-store');
-      const state = raw ? (JSON.parse(raw).state ?? {}) : {};
-      return state.currentUserPubky === expected && typeof state.sessionExport === 'string';
-    },
-    seat.publicKey.z32(),
-    { timeout: 180_000 },
-  );
+  await showSigner(page, 'ring');
+  const url = await copyQrUrl(page, 'Copy authentication link');
+  const inspected = inspectGrantLink(url, { clientId: CLIENT_ID, capabilitySets: [CAPABILITIES] });
+  if (inspected.problems.length > 0) throw new Error(`Ring QR is not the Shop grant: ${inspected.problems.join('; ')}`);
+  await new Pubky().signer(seat).approveAuthRequest(url);
+  await signedInWithGrant(page, seat.publicKey.z32());
   await page.waitForTimeout(2500);
 }
 
-async function approveMarketplaceSession(page, seat) {
-  for (let i = 0; i < 4; i += 1) {
-    if (
-      !(await page
-        .getByRole('dialog')
-        .isVisible()
-        .catch(() => false))
-    )
-      break;
-    const copy = page.getByRole('button', { name: /Copy (authentication|authorization) link/i }).first();
-    if (!(await copy.isVisible().catch(() => false))) break;
-    const label = ((await copy.innerText()).match(/Copy (?:authentication|authorization) link/i) || [
-      'Copy authorization link',
-    ])[0];
-    await new Pubky().signer(seat).approveAuthRequest(await copyAuthUrl(page, label));
-    await page.waitForTimeout(5000);
-  }
-}
+// Signing in does not mint a marketplace session; the Shop asks for one when the seat first sells or buys.
+const approveMarketplaceSession = (page, seat) =>
+  approveMarketplaceAccess(page, seat, { settleMs: 12_000, clientId: MARKETPLACE_CLIENT_ID, log });
 
 async function signOut(page) {
   await page.goto(at('/settings/account'), { waitUntil: 'domcontentloaded' });
@@ -186,8 +159,12 @@ const readPaypal = async (page) => (await openPaypalField(page)).inputValue();
 
 async function savePaypal(page, value) {
   await (await openPaypalField(page)).fill(value);
-  await page.getByRole('button', { name: 'Save payment settings' }).first().click();
-  await page.waitForTimeout(4000);
+  const save = page.getByRole('button', { name: 'Save changes' }).first();
+  // The button stays disabled while the field already holds the stored value, so there is nothing to save.
+  if (await save.isEnabled()) {
+    await save.click();
+    await page.waitForTimeout(4000);
+  }
 }
 
 // The prior rail is restored exactly at teardown. When it equals PAYPAL_TEST_EMAIL only a marker is stored,
@@ -227,7 +204,10 @@ async function fillShippingListing(page, title) {
   await approveMarketplaceSession(page, seller);
   await page.locator('[data-surface="seller-studio"] input[type="file"]').first().setInputFiles(PHOTO);
   await page.getByRole('button', { name: /Add photos \(1\/8\)/ }).waitFor({ state: 'visible', timeout: 120_000 });
-  await page.getByLabel(/^Photo 1 description$/i).fill('Release proof fixture cover photo');
+  await page
+    .getByLabel(/^Photo description$/i)
+    .first()
+    .fill('Release proof fixture cover photo');
   await page.getByLabel(/^Title$/i).fill(title);
   await page.getByLabel(/^Description$/i).fill('Release proof fixture. Do not purchase.');
   await pickCategoryLeaf(page);
@@ -392,15 +372,14 @@ async function checkout() {
     await emptyCart(page);
     await page.goto(at(listingPath(state.listingId)), { waitUntil: 'domcontentloaded', timeout: 180_000 });
     await waitForAppReady(page);
-    const add = page.getByRole('button', { name: 'Add to cart', exact: true }).first();
+    const add = page.getByRole('button', { name: 'Buy', exact: true }).first();
     const addVisible = await add.waitFor({ state: 'visible', timeout: 60_000 }).then(
       () => true,
       () => false,
     );
-    if (
-      check('checkout: fixture listing has an enabled Add to cart for the buyer', addVisible && (await add.isEnabled()))
-    ) {
+    if (check('checkout: fixture listing has an enabled Buy for the buyer', addVisible && (await add.isEnabled()))) {
       await add.click();
+      await approveMarketplaceSession(page, buyer);
       await page.waitForTimeout(1200);
       await page.goto(at('/marketplace/cart'), { waitUntil: 'domcontentloaded' });
       await waitForAppReady(page);
@@ -467,6 +446,7 @@ async function teardown() {
       if (await openDelete.isVisible().catch(() => false)) {
         await openDelete.click();
         await page.getByRole('button', { name: 'Delete listing', exact: true }).click();
+        await approveMarketplaceSession(page, seller);
         await page.waitForTimeout(5000);
         log(`teardown: deleted listing ${id.slice(0, 8)}`);
       } else log(`teardown: no Delete control on ${id.slice(0, 8)} (already gone or not owned)`);
@@ -537,17 +517,11 @@ async function verify() {
         const shop = await page.evaluate(
           (title) => ({
             title: [...document.querySelectorAll('h1')].some((node) => node.textContent?.trim() === title),
-            addToCart: [...document.querySelectorAll('button')].some(
-              (node) => node.textContent?.trim() === 'Add to cart',
-            ),
+            buy: [...document.querySelectorAll('button')].some((node) => node.textContent?.trim() === 'Buy'),
           }),
           state.listingTitle,
         );
-        check(
-          `verify: Shop page no longer shows ${id.slice(0, 8)}`,
-          !shop.title && !shop.addToCart,
-          JSON.stringify(shop),
-        );
+        check(`verify: Shop page no longer shows ${id.slice(0, 8)}`, !shop.title && !shop.buy, JSON.stringify(shop));
       }
     } finally {
       await browser.close();
