@@ -205,6 +205,27 @@ describe('one form of every source URL', () => {
     ]);
   });
 
+  it('reports a repeated over-limit URL once, and never again when it was already reported', () => {
+    const B = 'https://a.example.com/b.jpg';
+    const targets: ImportImageTarget[] = [
+      {
+        listingId: 'one',
+        images: [{ url: A, alt: '' }],
+        skipped: [
+          { url: B, alt: '' },
+          { url: ` ${B} `, alt: '' },
+          { url: ` ${A}`, alt: '' },
+        ],
+        keptMedia: [],
+      },
+    ];
+    const outcome = outcomesFromResults(targets, [uploaded(A)])[0];
+    expect(outcome?.results).toEqual([
+      { url: A, status: 'uploaded' },
+      { url: B, status: 'failed', reason: 'limit_reached' },
+    ]);
+  });
+
   it('reports a repeated URL once when it fails', () => {
     const targets: ImportImageTarget[] = [
       {

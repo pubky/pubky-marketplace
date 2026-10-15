@@ -230,7 +230,9 @@ export function outcomesFromResults(
     }
     for (const image of target.skipped ?? []) {
       const url = normalizeImageUrl(image.url);
-      if (!seen.has(url)) rows.push({ url, status: 'failed', reason: 'limit_reached' });
+      if (seen.has(url)) continue;
+      seen.add(url);
+      rows.push({ url, status: 'failed', reason: 'limit_reached' });
     }
     const sync: ImageSync | undefined =
       target.keptMedia === undefined
