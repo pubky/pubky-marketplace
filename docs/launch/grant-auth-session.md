@@ -41,7 +41,7 @@ Host cleanup also awaits a confirmed BFF session-cookie deletion before acknowle
 
 ## Same-origin session bridge
 
-The supported pair is App `/shop` around Shop `/shop-embed`, on the same scheme, hostname and port. App Shop navigation always opens `/shop`. `PUBKY_RUNTIME_SHOP_EMBED_ENABLED` defaults to false, which shows an unavailable screen with no iframe. Enable it only after compatible App and Shop builds, the proxy, and Shop's BFF are available; App navigation then remains visible around a persistent Shop iframe.
+The supported pair is App `/shop` around Shop `/shop-embed`, on the same scheme, hostname and port. App Shop navigation always opens the embedded Shop at `/shop`, with App navigation visible around a persistent iframe. The compatible App/Shop pair, proxy and BFF deploy together; there is no App enable flag. Invalid embedded configuration fails Shop startup. App monitors the mounted BFF readiness endpoint and automatically restores the frame after an outage; see [deployment preflight](shop-embedding.md#deployment-preflight-and-outage-recovery).
 
 The versioned `pubky-shop-session` bridge sends only public metadata:
 

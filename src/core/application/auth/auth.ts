@@ -171,9 +171,9 @@ export class AuthApplication {
   }
 
   /**
-   * A grant session holds exactly the Shop grant (`CAPABILITIES`), so it never
-   * needs a step-up re-approval. An approval for anything narrower is signed
-   * out and refused, the way the Ring token path refuses it.
+   * Require the three Shop core capabilities; optional Chat scopes do not gate Shop entry.
+   * Chat checks its own versioned scopes and requests re-approval when needed.
+   * Standalone approvals missing a core capability are signed out and refused.
    */
   static async assertFullGrantSession(session: Session): Promise<void> {
     if (session.grant && capabilitiesMatchFullGrant(session.info.capabilities)) return;

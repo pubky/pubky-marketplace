@@ -2,7 +2,7 @@
 
 The integration keeps the App shell at `https://pubky.app/shop` and proxies the separately deployed Shop under `https://pubky.app/shop-embed`. The App owns the shared homeserver grant; Shop restores its exact SDK record on that origin. This guide describes configuration and verification. See [Grant authentication and App-owned sessions](grant-auth-session.md) for sign-in, migration, ownership and commerce behavior.
 
-App Shop navigation always opens `/shop`. `PUBKY_RUNTIME_SHOP_EMBED_ENABLED` defaults to false, which shows an unavailable screen without an iframe. Enable it only after compatible App and Shop builds, the reverse proxy, and Shop's BFF are available; the deployments can be updated independently. Standalone Shop remains supported with grant authentication and namespaced browser storage.
+App Shop navigation always opens the embedded Shop at `/shop`; there is no App enable flag or external fallback. Deploy compatible App and Shop builds together with the reverse proxy and configured BFF. App checks the mounted BFF's readiness and automatically recovers from an outage without asking the user to reload. Standalone Shop remains supported with grant authentication and namespaced browser storage.
 
 ## Environment keys this change adds
 
@@ -26,7 +26,7 @@ Invalid values fail the build (build keys) or startup (runtime keys), not silent
 There are two shapes. The rest of this page applies to both unless it says otherwise.
 
 - **Direct.** A separate deployment can serve Shop at `/shop` (`NEXT_PUBLIC_BASE_PATH=/shop`, `PUBKY_RUNTIME_EMBEDDED=false`), with its proxy sending `/shop` to Shop. The mount path and public path are the same. A standalone Shop at its origin root uses an empty base path.
-- **App-owned (the pubky.app integration).** The App owns `/shop`: when enabled, it renders its own chrome around a same-origin iframe, and the Shop build runs at `/shop-embed` (`NEXT_PUBLIC_BASE_PATH=/shop-embed`, `PUBKY_RUNTIME_EMBEDDED=true`, `PUBKY_RUNTIME_STORAGE_ADOPT_LEGACY=false`, `PUBKY_RUNTIME_FRAME_ANCESTORS=self`), proxied with the prefix kept. Set `PUBKY_RUNTIME_SHOP_PUBLIC_PATH=/shop`. The App guide is [`docs/shop-embedding.md` in pubky-app](https://github.com/pubky/pubky-app/blob/823d20e736592a2ddf81ec961682b590a1c0ff0d/docs/shop-embedding.md).
+- **App-owned (the pubky.app integration).** The App owns `/shop`: it renders its own chrome around a same-origin iframe, and the Shop build runs at `/shop-embed` (`NEXT_PUBLIC_BASE_PATH=/shop-embed`, `PUBKY_RUNTIME_EMBEDDED=true`, `PUBKY_RUNTIME_STORAGE_ADOPT_LEGACY=false`, `PUBKY_RUNTIME_FRAME_ANCESTORS=self`), proxied with the prefix kept. Set `PUBKY_RUNTIME_SHOP_PUBLIC_PATH=/shop`. The App guide is [`docs/shop-embedding.md` in pubky-app](https://github.com/pubky/pubky-app/blob/feat/shop-embedded-session/docs/shop-embedding.md).
 
 In the App-owned shape every URL has one of two homes:
 
@@ -39,9 +39,9 @@ In the App-owned shape every URL has one of two homes:
 | Share links (listing, drop, post, profile), report links | `/shop` (public path) | Public links target the wrapper directly, avoiding the mount-to-wrapper redirect. |
 | Canonical, Open Graph and structured-data URLs | `/shop` (public path) | Search engines and link previews should index the App's page. |
 
-Code uses `withBasePath` for the first group and `withPublicPath` (`@/config/base-path`) for the rest. [Install verification](install-verification.md) checks it from outside with `SHOP_EMBED_PATH=/shop-embed` and `SERVICE_PUBLIC_APP_ORIGIN`; the launch-critical suite takes the build's path on its URL (`LAUNCH_E2E_BASE_URL=http://127.0.0.1:3000/shop-embed`), and needs the Shop under test started with `PUBKY_RUNTIME_EMBEDDED=false`: the embedded layout hides the header the suite clicks (framing can stay on, a top-level page is not embedded).
+Code uses `withBasePath` for the first group and `withPublicPath` (`@/config/base-path`) for the rest. [Install verification](install-verification.md) checks it from outside with `SHOP_EMBED_PATH=/shop-embed` and `SERVICE_PUBLIC_APP_ORIGIN`; the standalone launch-critical suite needs a root or direct-mount build started with `PUBKY_RUNTIME_EMBEDDED=false`, because it clicks the standalone header. An image built at `/shop-embed` must start in embedded mode; use the paired App/Shop tests for that deployment.
 
-For the App pair, build Shop with `NEXT_PUBLIC_BASE_PATH=/shop-embed`, set `PUBKY_RUNTIME_SHOP_PUBLIC_PATH=/shop`, `PUBKY_RUNTIME_EMBEDDED=true`, `PUBKY_RUNTIME_FRAME_ANCESTORS=self`, `PUBKY_RUNTIME_STORAGE_ADOPT_LEGACY=false`, and `PUBKY_RUNTIME_DEFAULT_URL` to the App origin. Both deployments must use the same homeserver network. Keep the App's auth client ID stable and enable `PUBKY_RUNTIME_SHOP_EMBED_ENABLED` after the pair, proxy and BFF are ready. Disabling the flag keeps App navigation at `/shop` and shows the unavailable screen.
+For the App pair, build Shop with `NEXT_PUBLIC_BASE_PATH=/shop-embed`, set `PUBKY_RUNTIME_SHOP_PUBLIC_PATH=/shop`, `PUBKY_RUNTIME_EMBEDDED=true`, `PUBKY_RUNTIME_FRAME_ANCESTORS=self`, `PUBKY_RUNTIME_STORAGE_ADOPT_LEGACY=false`, and `PUBKY_RUNTIME_DEFAULT_URL` to the App origin. Both deployments must use the same homeserver network. Keep the App's auth client ID stable. Verify the mounted BFF readiness endpoint before routing users to the paired deployment; there is no App flag to turn on afterward.
 
 ## Running with next start without Docker
 
@@ -136,7 +136,7 @@ Run [install verification](install-verification.md) against the configured App o
 
 ## Shop BFF prerequisites
 
-The BFF (backend for frontend) is the Shop deployment's existing Next.js server route layer. It manages marketplace approval and its HttpOnly session/flow cookies. The embedded browser flow needs both `PUBKY_RUNTIME_MARKETPLACE_GRANT_FLOW_ENABLED=true` (client) and `SHOP_BFF_GRANT_FLOW_ENABLED=true` (server), plus the marketplace service's matching grant configuration. Enable App's `PUBKY_RUNTIME_SHOP_EMBED_ENABLED` only after the compatible pair, proxy and BFF are available. The browser flow does not require `SHOP_BFF_CLI_GRANT_ENABLED`.
+The BFF (backend for frontend) is the Shop deployment's existing Next.js server route layer. It manages marketplace approval and its HttpOnly session/flow cookies. The embedded browser flow needs both `PUBKY_RUNTIME_MARKETPLACE_GRANT_FLOW_ENABLED=true` (client) and `SHOP_BFF_GRANT_FLOW_ENABLED=true` (server), plus the marketplace service's matching grant configuration. The App and Shop deploy together after the proxy and BFF are ready. The browser flow does not require `SHOP_BFF_CLI_GRANT_ENABLED`.
 
 VV owns deployment values and secrets. The Shop server validates these required settings in [the BFF configuration schema](../../src/server/marketplace-grant/config.ts):
 
@@ -148,6 +148,21 @@ VV owns deployment values and secrets. The Shop server validates these required 
 - `CRON_SECRET`: at least 32 characters, used for the grant cleanup endpoint. Keep the mounted cleanup schedule configured as described above.
 
 These are server-side secrets/configuration, not `NEXT_PUBLIC_*` build values. Existing working keys can be retained; embedding changes origin/trust requirements and does not itself require a key rotation. Optional rotation keys and timeout settings are defined in the linked schema.
+
+## Deployment preflight and outage recovery
+
+A build mounted at `/shop-embed`, or a server with `PUBKY_RUNTIME_EMBEDDED=true`, must have the complete embedded configuration at startup: matching mount and `/shop` public path, the `shop-franky` database namespace, no social-host redirect, same-origin framing, both marketplace grant flags, and valid BFF origins and secrets. Missing or invalid configuration terminates Node startup with a sanitized error. A standalone build is unaffected. Next.js invokes this check when a server instance starts, not during image compilation. Deployment preflight must start the configured instance and verify readiness before promoting it; this also applies to serverless deployments.
+
+Use `GET /shop-embed/api/marketplace/health` through the real App origin for the deployment readiness check. It requires no identity, changes no session or cookies, creates no auth challenge, and returns:
+
+- HTTP 200: `{"service":"pubky-shop-bff","status":"ready"}`.
+- HTTP 503: `{"service":"pubky-shop-bff","status":"unavailable"}`.
+
+Responses carry `Cache-Control: no-store, private`. The probe checks the embedded/BFF configuration and reads the PostgreSQL schema-version row, requiring version 2. Reads are bounded to at most four seconds, shared by concurrent callers, and briefly cached for one second inside each server process. The probe uses its own single-connection pool with a PostgreSQL statement timeout. A timed-out connection is closed and its query remains fenced until the database driver settles; repeated browser retries cannot queue more probes behind it. No secret, database diagnostic or user data is returned.
+
+This confirms local Shop BFF readiness, not upstream marketplace signing-key trust, signer behavior, or payment completion. Validate those separately against the paired staging deployment. Database availability is deliberately not a startup requirement: an otherwise configured BFF returns 503 during an outage and can recover without a deployment change.
+
+App checks this endpoint in the background while `/shop` is open. A real BFF outage shows the unavailable state, and a healthy response restores the frame automatically. Saved grants and user sessions are not cleared by a readiness failure. Login, permission and expired-session states remain part of the existing auth UI rather than being treated as a BFF outage.
 
 ## Leaving the frame
 
@@ -262,8 +277,8 @@ Prefixed with the mount path: same-origin API calls (including marketplace grant
 
 The outer/inner route scheme, App-owned sign-in, targeted SDK cleanup and mounted BFF/Passport paths are implemented. The work still requiring deployment or live verification is:
 
-- Deploy both compatible frontends, the prefix-preserving proxy and updated App worker before enabling `PUBKY_RUNTIME_SHOP_EMBED_ENABLED`.
-- With the flag disabled, verify desktop/mobile Shop navigation and direct `/shop` links show the unavailable screen and make no iframe request.
+- Deploy both compatible frontends, the prefix-preserving proxy and updated App worker together. Require the mounted BFF readiness check to pass before sending users to the new deployment.
+- Verify desktop/mobile Shop navigation and direct `/shop` links load the embedded Shop without an enable flag. Simulate a BFF outage, restore it, and verify the unavailable state recovers automatically at the same Shop URL.
 - Enable/configure marketplace grant bootstrap, origin allow-lists, assertion issuer/key trust and service callback origins. Grant-only homeserver login does not remove Shop BFF cookies or replace marketplace/Locks service approval. An unavailable grant backend must remain an explicit unavailable state.
 - Exercise real Ring, Bitkit, Passport, recovery-file and signup journeys, migrated cookie users, narrow grants, rejected approvals, account switches, two tabs, revoked records and sign-out while approval is pending.
 - Verify Safari/mobile IndexedDB persistence across restart, Web Locks, cross-tab lifecycle, synchronous signer/popup gestures, and nested Paykit/Locks frames with the deployed origin.
