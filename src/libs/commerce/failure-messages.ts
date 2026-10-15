@@ -284,6 +284,7 @@ export const MARKETPLACE_PAYMENT_METHOD_REASON_MESSAGES: ReadonlyMap<string, str
   ['invalid_sats', 'Enter a whole-number amount greater than ₿0.'],
   ['invalid_transaction_ref', 'The payment reference is not valid.'],
   ['INVALID_RESPONSE', MARKETPLACE_FAILURE_MESSAGES.unavailable],
+  ['listing_removed', 'The seller removed this listing.'],
   ['locks_managed', 'A Locks-correlated payment advances only by server-side verification.'],
   ['method_mismatch', 'The payment method does not match this checkout.'],
   ['method_unavailable', 'The seller has not configured this payment method.'],
