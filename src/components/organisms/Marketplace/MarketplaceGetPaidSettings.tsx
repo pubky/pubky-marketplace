@@ -28,7 +28,7 @@ import { CommerceController } from '@/controllers/commerce/commerce';
 import { useMarketplaceSellerPaymentConfig } from '@/hooks/useMarketplaceSellerPaymentConfig/useMarketplaceSellerPaymentConfig';
 import { useUsdtPaymentsCapability } from '@/hooks/useUsdtPaymentsCapability/useUsdtPaymentsCapability';
 import { Tether } from '@/icons';
-import { type SellerPaymentConfigOwnView } from '@/libs/commerce/payment-methods';
+import { isValidPaypalMerchantEmail, type SellerPaymentConfigOwnView } from '@/libs/commerce/payment-methods';
 import { deriveUsdtSellerReadiness } from '@/libs/commerce/usdt-seller-setup';
 import { truncateMiddle } from '@/libs/utils/utils';
 import { BitkitDownloads } from '@/molecules/BitkitDownloads/BitkitDownloads';
@@ -40,7 +40,9 @@ import { locksCreatorMatchesShopPubky } from '@/services/locks/locks-frontend-se
 import { useAuthStore } from '@/stores/auth/auth.store';
 import { useCommerceStore } from '@/stores/commerce/commerce.store';
 import {
+  BITCOIN_TOGGLE_BLOCKER_COPY,
   deriveBitcoinStatus,
+  deriveBitcoinToggleBlocker,
   derivePaypalStatus,
   deriveUsdtStatus,
   PAYMENT_METHOD_STATUS_LABELS,
@@ -109,6 +111,7 @@ const UNSAVED_SELLER_PAYMENT_CONFIG: SellerPaymentConfigOwnView = {
   paypalMerchantEmail: null,
   updatedAt: '',
 };
+const PAYPAL_EMAIL_INVALID_COPY = 'Enter a valid email address.';
 const PAYKIT_RECONNECT_EXPLANATION =
   'Scan the code with Bitkit, or open this page on your phone and tap Open in Bitkit, to share a USDT address. Your Bitkit account and Bitcoin setup stay the same.';
 
@@ -212,6 +215,7 @@ export function MarketplaceGetPaidSettings({ locksConnect, onSaved }: Marketplac
     pubky: string | null;
   } | null>(null);
   const [isRetryingUsdt, setIsRetryingUsdt] = useState(false);
+  const [paypalTouched, setPaypalTouched] = useState(false);
 
   const [railDraft, setRailDraft] = useState<{
     bitcoin: boolean | null;
@@ -348,9 +352,15 @@ export function MarketplaceGetPaidSettings({ locksConnect, onSaved }: Marketplac
     if (saved) onSaved?.(saved);
   };
 
-  const saveReady =
-    Boolean(serverConfig) && !payments.isLoading && !payments.loadError && serverBaseline === draftBaseline;
   const paypalValue = railDraft.paypal ?? serverConfig?.paypalMerchantEmail ?? '';
+  const paypalInvalid = !isValidPaypalMerchantEmail(paypalValue);
+  const showPaypalError = paypalInvalid && paypalTouched;
+  const saveReady =
+    Boolean(serverConfig) &&
+    !payments.isLoading &&
+    !payments.loadError &&
+    serverBaseline === draftBaseline &&
+    !paypalInvalid;
 
   const saveButton = (
     <Button className="w-fit rounded-full" disabled={payments.isSaving || !saveReady} onClick={() => void onSave()}>
@@ -378,6 +388,16 @@ export function MarketplaceGetPaidSettings({ locksConnect, onSaved }: Marketplac
       ? paykitSetupProblemState.problem
       : null;
   const paykitCodeExpired = paykitSetupStatus === 'error' || paykitSetupStatus === 'timeout';
+  // Only the missing-step reason is explained here; without a session the
+  // card's "Enable selling" prompt already says why the switch is off.
+  const bitcoinToggleBlocker =
+    marketplaceSession && !payments.isLoading && !payments.loadError && !bitcoinValue && bitcoinStatus !== 'connected'
+      ? deriveBitcoinToggleBlocker({
+          lockServerConnected: step1Connected,
+          locksError,
+          accountClaimed: payments.accountClaimed,
+        })
+      : null;
 
   // Stored rails need the marketplace session and the loaded config; the
   // bitcoin connect steps above them do not, so they render unconditionally.
@@ -437,7 +457,15 @@ export function MarketplaceGetPaidSettings({ locksConnect, onSaved }: Marketplac
                 autoComplete="off"
                 className="max-w-md"
                 aria-label="PayPal merchant email"
+                onBlur={() => setPaypalTouched(true)}
+                aria-invalid={showPaypalError || undefined}
+                aria-describedby={showPaypalError ? 'get-paid-paypal-error' : undefined}
               />
+              {showPaypalError && (
+                <Typography as="p" id="get-paid-paypal-error" role="alert" className="text-sm text-amber-300">
+                  {PAYPAL_EMAIL_INVALID_COPY}
+                </Typography>
+              )}
             </div>
             {saveButton}
           </>,
@@ -538,9 +566,38 @@ export function MarketplaceGetPaidSettings({ locksConnect, onSaved }: Marketplac
             <Typography as="p" className="text-sm text-muted-foreground">
               Offer bitcoin payment option at checkout.
             </Typography>
+            {bitcoinToggleBlocker && (
+              <Typography
+                as="p"
+                id="get-paid-bitcoin-blocker"
+                className="mt-2 text-sm text-muted-foreground"
+                data-testid="bitcoin-toggle-blocker"
+              >
+                {BITCOIN_TOGGLE_BLOCKER_COPY[bitcoinToggleBlocker]}{' '}
+                {bitcoinToggleBlocker === 'bitkit-unknown' ? (
+                  <Button variant="link" className="h-auto p-0" onClick={() => void refreshPaymentConfig()}>
+                    Check again
+                  </Button>
+                ) : bitcoinToggleBlocker === 'bitkit' ? (
+                  <Button
+                    variant="link"
+                    className="h-auto p-0"
+                    disabled={!currentUserPubky}
+                    onClick={() => openPaykitSetup('setup')}
+                  >
+                    Connect now
+                  </Button>
+                ) : (
+                  <Button variant="link" className="h-auto p-0" disabled={isExchanging} onClick={openConnect}>
+                    Connect now
+                  </Button>
+                )}
+              </Typography>
+            )}
           </div>
           <Switch
             id="get-paid-bitcoin"
+            aria-describedby={bitcoinToggleBlocker ? 'get-paid-bitcoin-blocker' : undefined}
             checked={bitcoinValue}
             onCheckedChange={(enabled) => {
               if (enabled && bitcoinStatus !== 'connected') return;
