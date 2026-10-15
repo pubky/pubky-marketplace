@@ -1,6 +1,6 @@
 'use client';
 
-import { CheckCircle2, LoaderCircle, Save, Search } from 'lucide-react';
+import { CheckCircle2, LoaderCircle, Package, Save, Search } from 'lucide-react';
 import { Badge } from '@/atoms/Badge/Badge';
 import { Button } from '@/atoms/Button/Button';
 import { Card, CardContent } from '@/atoms/Card/Card';
@@ -55,7 +55,11 @@ function ProductRow({ product, catalog }: { product: ConnectorCatalogProduct; ca
         {image ? (
           // eslint-disable-next-line @next/next/no-img-element -- store photos come from the seller's own shop host
           <img src={image} alt="" className="size-full object-cover" loading="lazy" referrerPolicy="no-referrer" />
-        ) : null}
+        ) : (
+          <div className="flex size-full items-center justify-center text-muted-foreground">
+            <Package className="size-6" aria-hidden="true" />
+          </div>
+        )}
       </div>
       <div className="grid min-w-0 flex-1 gap-1">
         <label htmlFor={checkboxId} className="text-sm leading-snug font-semibold break-words">

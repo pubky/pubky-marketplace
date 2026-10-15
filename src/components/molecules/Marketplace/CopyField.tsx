@@ -38,7 +38,7 @@ export function CopyField({ label, value, copyLabel = 'Copy', copiedMessage }: C
       <Typography as="span" className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
         {label}
       </Typography>
-      <div className="flex items-center gap-2 rounded-md border border-dashed border-border bg-background px-3 py-2">
+      <div className="flex flex-col gap-2 rounded-md border border-dashed border-border bg-background px-3 py-2 sm:flex-row sm:items-center">
         <code className="min-w-0 flex-1 text-sm break-all" data-testid="copy-field-value">
           {value}
         </code>
@@ -46,7 +46,7 @@ export function CopyField({ label, value, copyLabel = 'Copy', copiedMessage }: C
           type="button"
           variant="secondary"
           size="sm"
-          className="shrink-0 rounded-full"
+          className="shrink-0 self-end rounded-full sm:self-auto"
           onClick={() => void copy()}
           aria-label={`${copyLabel} ${label}`}
         >

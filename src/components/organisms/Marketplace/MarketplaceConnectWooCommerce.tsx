@@ -108,7 +108,7 @@ export function MarketplaceConnectWooCommerce({
             Paste REST keys instead
           </CollapsibleTrigger>
           <CollapsibleContent className="grid gap-3 pt-4 text-sm text-muted-foreground data-[state=closed]:hidden">
-            <Typography as="p">
+            <Typography as="p" className="text-sm text-muted-foreground">
               Use this if your store blocks the approval screen. In WordPress, open{' '}
               <strong className="text-foreground">WooCommerce → Settings → Advanced → REST API</strong>, click{' '}
               <strong className="text-foreground">Add key</strong>, choose{' '}

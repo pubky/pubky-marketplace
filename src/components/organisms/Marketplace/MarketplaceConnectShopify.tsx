@@ -46,7 +46,7 @@ function GuideStep({ number, title, locked = false, screen, children }: GuideSte
             {title}
           </Typography>
         </div>
-        <div className="grid gap-3 pl-10 text-sm text-muted-foreground">{children}</div>
+        <div className="grid gap-3 text-sm text-muted-foreground md:pl-10">{children}</div>
       </div>
       {screen && <ShopifyGuideFigure screen={screen} />}
     </li>
