@@ -118,7 +118,13 @@ export class ConnectorsApplication {
       provider: 'woocommerce',
       domain: normalized.domain,
     });
-    return await MarketplaceConnectorsService.putCredentials(actor, started.connection.id, keys);
+    try {
+      return await MarketplaceConnectorsService.putCredentials(actor, started.connection.id, keys);
+    } catch (error) {
+      // A refused attempt must not leave a draft taking one of the seller's connection slots.
+      await MarketplaceConnectorsService.disconnect(actor, started.connection.id).catch(() => undefined);
+      throw error;
+    }
   }
 
   /** The draft connection for a store; its `urls` are the ones the merchant pastes into their app. */

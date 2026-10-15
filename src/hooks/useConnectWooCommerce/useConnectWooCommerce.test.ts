@@ -134,7 +134,7 @@ describe('useConnectWooCommerce', () => {
     expect(ConnectorsController.commitConnectWooCommerceWithKeys).not.toHaveBeenCalled();
   });
 
-  it('clears the secret when the service refuses the keys', async () => {
+  it('clears the key and the secret, and keeps the store address, when the service refuses the keys', async () => {
     vi.mocked(ConnectorsController.commitConnectWooCommerceWithKeys).mockRejectedValue(refusal('invalid_credentials'));
     const { result } = renderConnect();
 
@@ -147,7 +147,9 @@ describe('useConnectWooCommerce', () => {
       expect(await result.current.submitKeys()).toBe(false);
     });
 
+    expect(result.current.keysForm.getValues('consumerKey')).toBe('');
     expect(result.current.keysForm.getValues('consumerSecret')).toBe('');
+    expect(result.current.keysForm.getValues('keysStoreUrl')).toBe('dezentralshop.ch');
     expect(toast).toHaveBeenCalledWith(
       expect.objectContaining({ description: 'The store did not accept those keys. Check them and try again.' }),
     );

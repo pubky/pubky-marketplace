@@ -139,8 +139,14 @@ describe('useStoreConnections', () => {
       kind: 'push_quarantined',
       createdAt: '2026-10-15T12:00:00.000Z',
     });
+    const rejected = connectorAlertSchema.parse({
+      id: 'a3',
+      connectionId: 'b',
+      kind: 'credentials_rejected',
+      createdAt: '2026-10-15T12:00:00.000Z',
+    });
     vi.mocked(ConnectorsController.fetchConnections).mockResolvedValue([]);
-    vi.mocked(ConnectorsController.fetchAlerts).mockResolvedValue([lost, other]);
+    vi.mocked(ConnectorsController.fetchAlerts).mockResolvedValue([lost, other, rejected]);
     vi.mocked(ConnectorsController.commitResolveAlert).mockResolvedValue();
     const { result } = renderHook(() => useStoreConnections());
     await waitFor(() => expect(result.current.isLoading).toBe(false));

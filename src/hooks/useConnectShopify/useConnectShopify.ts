@@ -93,7 +93,7 @@ export function useConnectShopify({ resume = null }: UseConnectShopifyOptions = 
         ok = true;
         toast({ description: 'Keys saved. Pubky stores them encrypted and will not show them again.' });
       } catch (error) {
-        keysForm.setValue('clientSecret', '');
+        keysForm.reset(shopifyKeysFormDefaults);
         toast({
           variant: 'error',
           title: 'Could not save the keys',

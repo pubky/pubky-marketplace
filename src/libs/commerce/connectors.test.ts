@@ -177,22 +177,27 @@ describe('parseConnectionReturn', () => {
     expect(parse('status=connected&connector=abc')).toEqual({
       kind: 'connected',
       connectionId: 'abc',
-      provider: null,
       needsAttention: false,
     });
     expect(parse('status=needs_attention&connector=abc')).toEqual({
       kind: 'connected',
       connectionId: 'abc',
-      provider: null,
       needsAttention: true,
     });
     expect(parse('status=error&code=invalid_state')).toEqual({
       kind: 'error',
       connectionId: null,
-      provider: null,
       code: 'invalid_state',
     });
     expect(parse('status=error&code=draft_expired&connector=abc')).toMatchObject({ connectionId: 'abc' });
+  });
+
+  it('does not read a provider from the query, which the service never sends', () => {
+    expect(parse('status=connected&connector=abc&provider=woocommerce')).toEqual({
+      kind: 'connected',
+      connectionId: 'abc',
+      needsAttention: false,
+    });
   });
 
   it('reads the WooCommerce return', () => {

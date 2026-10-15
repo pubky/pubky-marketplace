@@ -51,8 +51,7 @@ export function MarketplaceStoreConnections() {
   const statusCheck = useConnectionStatusCheck();
   const [returned] = useState<ConnectionReturn | null>(() => parseConnectionReturn(searchParams));
   const [provider, setProvider] = useState<ConnectorProvider>(() => {
-    if (returned && 'provider' in returned && returned.provider) return returned.provider;
-    if (returned?.kind === 'error') return 'shopify';
+    if (returned?.kind === 'connected' || returned?.kind === 'error') return 'shopify';
     return 'woocommerce';
   });
   const handledReturn = useRef(false);
@@ -77,7 +76,7 @@ export function MarketplaceStoreConnections() {
     if (returned.kind === 'connected') {
       void checkAndRefresh({
         connectionId: returned.connectionId,
-        provider: returned.provider ?? (returned.connectionId ? null : 'shopify'),
+        provider: returned.connectionId ? null : 'shopify',
         attempts: 3,
       });
     } else if (returned.kind === 'woo_returned' && returned.approved) {
@@ -134,9 +133,12 @@ export function MarketplaceStoreConnections() {
                 phase={statusCheck.phase}
                 result={statusCheck.result}
                 onCheck={() =>
-                  void checkAndRefresh({ connectionId: returned.connectionId, provider: returned.provider })
+                  void checkAndRefresh({
+                    connectionId: returned.connectionId,
+                    provider: returned.connectionId ? null : 'shopify',
+                  })
                 }
-                storeLabel={returned.provider === 'woocommerce' ? 'WooCommerce' : 'Shopify'}
+                storeLabel={statusCheck.result?.connection?.provider === 'woocommerce' ? 'WooCommerce' : 'Shopify'}
               />
             </CardContent>
           </Card>
