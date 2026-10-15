@@ -10,9 +10,8 @@ describe('ImportStoreValidators.validateStoreUrl', () => {
   it('takes a bare host, an https address or a link into the shop, and keeps only the shop base', () => {
     expect(base('dezentralshop.ch')).toBe('https://dezentralshop.ch');
     expect(base('  https://DezentralShop.ch/  ')).toBe('https://dezentralshop.ch');
-    expect(base('https://dezentralshop.ch/product/avalon-mini-3/?utm=1#reviews')).toBe(
-      'https://dezentralshop.ch/product/avalon-mini-3',
-    );
+    expect(base('https://dezentralshop.ch/product/avalon-mini-3/?utm=1#reviews')).toBe('https://dezentralshop.ch');
+    expect(base('https://example.com/shop/')).toBe('https://example.com');
     expect(base('https://example.com/shop/wp-json/wc/store/v1/products?page=2')).toBe('https://example.com/shop');
     expect(base('https://example.com/wp-json')).toBe('https://example.com');
   });
@@ -25,8 +24,8 @@ describe('ImportStoreValidators.validateStoreUrl', () => {
     expect(base('https://example.com:8443')).toBe('Only the default https port is allowed.');
     expect(base('https://localhost')).toBe('This hostname is not allowed.');
     expect(base('https://printer.local')).toBe('This hostname is not allowed.');
-    expect(base('https://example.com/a b')).toBe('Unsupported store address.');
-    expect(base('https://example.com/a/b/c/d/e')).toBe('Unsupported store address.');
+    expect(base('https://example.com/a b/wp-json')).toBe('Unsupported store address.');
+    expect(base('https://example.com/a/b/c/d/e/wp-json')).toBe('Unsupported store address.');
     expect(base('')).toBe('Invalid URL');
     expect(base(42)).toBe('Invalid URL');
     expect(base(`https://example.com/${'a'.repeat(3000)}`)).toBe('Invalid URL');
@@ -34,7 +33,7 @@ describe('ImportStoreValidators.validateStoreUrl', () => {
 });
 
 describe('ImportStoreValidators URL building', () => {
-  const store = ImportStoreValidators.validateStoreUrl('https://example.com/shop');
+  const store = ImportStoreValidators.validateStoreUrl('https://example.com/shop/wp-json');
   if (!store.ok) throw new Error('fixture');
 
   it('builds only the fixed catalogue path under the base, with a number as the only variable part', () => {

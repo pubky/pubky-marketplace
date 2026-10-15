@@ -22,8 +22,9 @@ export class ImportStoreValidators {
 
   /**
    * A store's base address from what a seller pastes: `myshop.com`, a full
-   * https address, or a link into the shop. Anything after the shop's own path
-   * (`/wp-json`, a product page, a query) is dropped. https only.
+   * https address, or a link into the shop. A link to a page of the shop gives
+   * the shop's host; a link that contains `/wp-json` keeps the path before it
+   * (a shop in a sub-folder). Queries and fragments are dropped. https only.
    */
   static validateStoreUrl(raw: unknown): TImportStoreUrlValidation {
     if (typeof raw !== 'string') return { ok: false, message: 'Invalid URL' };
@@ -43,8 +44,10 @@ export class ImportStoreValidators {
     const checked = ImportImageValidators.validateParsed(url);
     if (!checked.ok) return checked;
 
+    // A shop in a sub-folder is read from its own `/wp-json` address; any other path (a product page, a category)
+    // says nothing about where WordPress lives, so only the host is used.
     const cut = url.pathname.search(/\/wp-json(?:\/|$)/);
-    const path = (cut === -1 ? url.pathname : url.pathname.slice(0, cut)).replace(/\/+$/, '');
+    const path = cut === -1 ? '' : url.pathname.slice(0, cut).replace(/\/+$/, '');
     if (!BASE_PATH.test(path)) return { ok: false, message: 'Unsupported store address.' };
 
     return { ok: true, base: new URL(`https://${url.host.toLowerCase()}${path}`) };
