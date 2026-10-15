@@ -23,11 +23,12 @@ import {
   marketplaceCommandResponseSchema,
 } from '@/libs/commerce/transaction-commands';
 import { commercePubkySchema } from '@/libs/commerce/transaction-contracts';
-import { AuthErrorCode, ClientErrorCode, ServerErrorCode } from '@/libs/error/error.codes';
+import { ClientErrorCode, ServerErrorCode } from '@/libs/error/error.codes';
 import { Err } from '@/libs/error/error.factories';
 import { safeFetch } from '@/libs/error/error.http';
 import { ErrorService } from '@/libs/error/error.types';
 import { PARSE_JSON_WITH_BODY_EXCERPT, parseResponseOrThrow } from '@/libs/http/response.utils';
+import { marketplaceSessionRequired } from './marketplace-approval-failure';
 import { reportMarketplaceNotificationInvalidTypes } from './marketplace-notification-diagnostics';
 import {
   type MarketplaceBidHistory,
@@ -704,10 +705,9 @@ export class MarketplaceGatewayService {
    */
   private static requireActor(operation: string, actor: string | null): string {
     if (actor) return actor;
-    throw Err.auth(
-      AuthErrorCode.SESSION_EXPIRED,
+    throw marketplaceSessionRequired(
       'A marketplace session is required. Sign in and approve the marketplace connection on your signer.',
-      { service: ErrorService.Marketplace, operation },
+      operation,
     );
   }
 

@@ -62,6 +62,7 @@ import { httpResponseToError, safeFetch } from '@/libs/error/error.http';
 import { ErrorService } from '@/libs/error/error.types';
 import { HttpStatusCode } from '@/libs/http/http.types';
 import { PARSE_JSON_WITH_BODY_EXCERPT, parseResponseOrThrow } from '@/libs/http/response.utils';
+import { marketplaceSessionRequired } from './marketplace-approval-failure';
 import { reportMarketplaceNotificationInvalidTypes } from './marketplace-notification-diagnostics';
 import {
   listingHasSellerReserveAuthority,
@@ -1389,10 +1390,9 @@ export class MarketplaceTransactionService {
   private static requireSession(operation: string, actor: string): { token: string; pubky: string } {
     const session = MarketplaceSessionService.getActiveSession();
     if (!session) {
-      throw Err.auth(
-        AuthErrorCode.SESSION_EXPIRED,
+      throw marketplaceSessionRequired(
         'A marketplace session is required. Approve the marketplace connection on your signer and try again.',
-        { service: ErrorService.Marketplace, operation },
+        operation,
       );
     }
     if (session.pubky !== actor) {
