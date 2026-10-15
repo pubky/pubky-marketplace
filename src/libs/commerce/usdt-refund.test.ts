@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { formatCommerceMoney } from './format';
 import {
   REFUND_FIXTURE_ADDRESS,
   REFUND_FIXTURE_OTHER_ADDRESS,
@@ -349,4 +350,25 @@ describe('a USDT refund on an order priced in another currency', () => {
       }),
     ).toContain('a refund of 10.000000 USDT (10.000000 USDT of 41.250000 USDT) to ');
   });
+});
+
+describe('a USDT refund on a non-USD fiat order', () => {
+  it.each([
+    ['EUR', 2],
+    ['CHF', 2],
+    ['GBP', 2],
+    ['JPY', 0],
+    ['CAD', 2],
+    ['AUD', 2],
+  ] as const)(
+    'records a %s order in USDT millionths up to the amount paid and keeps its own price display',
+    (currency, exponent) => {
+      const total = { amountMinor: 1_500 * 10 ** exponent, currency, exponent };
+      const paid = order({ total, paymentAmountMinor: 1_650_000_000 });
+      expect(usdtRefundCap(paid)).toEqual({ amountMinor: 1_650_000_000, currency: 'USDT', exponent: 6 });
+      expect(formatUsdtRefundAmount(paid, 100_000_000)).toBe('100.000000 USDT');
+      expect(formatCommerceMoney(total)).toContain(currency === 'JPY' ? '¥' : '');
+      expect(formatCommerceMoney(total)).not.toContain('USDT');
+    },
+  );
 });

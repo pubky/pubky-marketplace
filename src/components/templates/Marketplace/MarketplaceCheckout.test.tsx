@@ -4,6 +4,8 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite
 import { MARKETPLACE_DELIVERY_ADDRESS_DISCLOSURE } from '@/config/commerce-copy';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import { DELIVERY_KEY_COPY } from '@/libs/commerce/delivery-key-copy';
+import { LISTING_CURRENCY_REGISTRY, LISTING_FIAT_CURRENCY_CODES } from '@/config/currencies';
+import { formatCommerceMoney } from '@/libs/commerce/format';
 import { createOrderFixture, createPaymentFixture } from '@/test/fixtures/commerce/orders';
 import { createPaykitOrderFixture } from '@/test/fixtures/commerce/paykit-orders';
 import { setHeavySuiteBudgets } from '@/test-utils/load-budget';
@@ -1847,6 +1849,31 @@ describe('MarketplaceCheckout Paykit option (Bitcoin or USDT)', () => {
     );
     expect(screen.queryByText('≈ ₿137,000')).not.toBeInTheDocument();
   });
+
+  it.each(LISTING_FIAT_CURRENCY_CODES.filter((code) => code !== 'USD'))(
+    'shows a %s cart in its own currency and still offers the one Paykit entry',
+    async (currency) => {
+      const exponent = LISTING_CURRENCY_REGISTRY[currency].exponent;
+      const price = { amountMinor: 12 * 10 ** exponent, currency, exponent };
+      const priced = {
+        ...listing,
+        record: { ...listing.record, sale: { format: 'fixed_price', unitPrice: price } },
+      };
+      view.items = [
+        { id: 'seller:boots:variant_42', listingId: priced.id, variantId: 'variant_42', quantity: 1, listing: priced },
+      ];
+
+      render(<MarketplaceCheckout />);
+
+      const shown = formatCommerceMoney(price).replace(/\s/g, ' ');
+      expect((await screen.findAllByText((text) => text.replace(/\s/g, ' ') === shown)).length).toBeGreaterThan(0);
+      expect(await screen.findByTestId('marketplace-checkout-method-paykit')).toHaveTextContent('Pay with Paykit');
+      expect(screen.queryByTestId('marketplace-checkout-method-bitcoin')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('marketplace-checkout-method-usdt')).not.toBeInTheDocument();
+      expect(screen.getByTestId('marketplace-checkout-paykit-requirement')).toHaveTextContent('Bitcoin or USDT');
+      expect(screen.queryByTestId('marketplace-checkout-usdt-amount')).not.toBeInTheDocument();
+    },
+  );
 
   it('binds the single paykit method for real checkout', async () => {
     const user = userEvent.setup();
