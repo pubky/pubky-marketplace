@@ -360,7 +360,11 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
 
           <div className="flex min-w-0 flex-col gap-5 lg:col-start-2 lg:row-span-2 lg:row-start-1">
             {isOwner && (
-              <MarketplaceListingOwnerPanel record={record} registrationStatus={listing.registration_status} />
+              <MarketplaceListingOwnerPanel
+                record={record}
+                registrationStatus={listing.registration_status}
+                auctionPhase={auctionPhase ?? undefined}
+              />
             )}
             {stateNotice && (
               <div
