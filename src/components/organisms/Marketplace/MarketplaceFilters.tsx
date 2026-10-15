@@ -49,6 +49,7 @@ import {
   commerceCategoryChildren,
   resolveCommerceCategory,
 } from '@/config/taxonomy/taxonomy';
+import { useDisplayCurrency } from '@/hooks/useDisplayCurrency/useDisplayCurrency';
 import type { MarketplaceCatalogItem } from '@/hooks/useMarketplaceCatalog/useMarketplaceCatalog.utils';
 import { collectMarketplaceAttributeFacets } from '@/hooks/useMarketplaceCatalog/useMarketplaceCatalog.utils';
 import { cn } from '@/libs/utils/utils';
@@ -145,7 +146,7 @@ export function MarketplaceFilters({
   const saleFormat = useCommerceStore((state) => state.saleFormat);
   const countryCode = useCommerceStore((state) => state.countryCode);
   const sort = useCommerceStore((state) => state.sort);
-  const displayCurrency = useMarketplaceDisplayStore((state) => state.displayCurrency);
+  const displayCurrency = useDisplayCurrency();
   const setDisplayCurrency = useMarketplaceDisplayStore((state) => state.setDisplayCurrency);
   const layout = useCommerceStore((state) => state.layout);
   const setCategoryId = useCommerceStore((state) => state.setCategoryId);

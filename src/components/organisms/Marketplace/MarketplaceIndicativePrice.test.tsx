@@ -68,6 +68,16 @@ describe('MarketplaceIndicativePrice', () => {
     expect(await screen.findByText('≈ €112.50')).toBeInTheDocument();
   });
 
+  it('converts into the currency the browser language suggests until the buyer chooses', async () => {
+    vi.spyOn(window.navigator, 'languages', 'get').mockReturnValue(['de-CH']);
+    useMarketplaceDisplayStore.setState({ displayCurrency: null });
+    vi.mocked(CommerceController.getIndicativeBtcRate).mockResolvedValue(RATES);
+    renderPrice(USD_PRICE);
+
+    expect(await screen.findByText('≈ CHF 100.00')).toBeInTheDocument();
+    vi.restoreAllMocks();
+  });
+
   it('converts a zero-exponent price such as yen', async () => {
     vi.mocked(CommerceController.getIndicativeBtcRate).mockResolvedValue(RATES);
     renderPrice(JPY_PRICE);

@@ -57,6 +57,26 @@ describe('MarketplaceFilters', () => {
     expect(useMarketplaceDisplayStore.getState().displayCurrency).toBe('BTC');
   });
 
+  it('starts on the currency the browser language suggests when the buyer has not chosen', () => {
+    vi.spyOn(window.navigator, 'languages', 'get').mockReturnValue(['de-CH', 'de']);
+    useMarketplaceDisplayStore.setState({ displayCurrency: null });
+
+    render(<MarketplaceFilters resultCount={8} />);
+
+    expect(screen.getByRole('combobox', { name: 'Display currency: Swiss francs' })).toHaveTextContent('CHF');
+    vi.restoreAllMocks();
+  });
+
+  it('keeps an explicit choice over the browser language', () => {
+    vi.spyOn(window.navigator, 'languages', 'get').mockReturnValue(['de-CH']);
+    useMarketplaceDisplayStore.setState({ displayCurrency: 'USD' });
+
+    render(<MarketplaceFilters resultCount={8} />);
+
+    expect(screen.getByRole('combobox', { name: 'Display currency: US dollars' })).toBeInTheDocument();
+    vi.restoreAllMocks();
+  });
+
   it('offers every listing currency as a display currency and shows the chosen code', async () => {
     const user = userEvent.setup();
     render(<MarketplaceFilters resultCount={8} />);

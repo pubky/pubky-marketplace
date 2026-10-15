@@ -3,6 +3,7 @@
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/atoms/Tooltip/Tooltip';
 import { Typography } from '@/atoms/Typography/Typography';
 import { resolveListingCurrency } from '@/config/currencies';
+import { useDisplayCurrency } from '@/hooks/useDisplayCurrency/useDisplayCurrency';
 import { useIndicativeBtcRate } from '@/hooks/useIndicativeBtcRate/useIndicativeBtcRate';
 import type { CommerceMoney } from '@/libs/commerce/transaction-contracts';
 import { cn } from '@/libs/utils/utils';
@@ -34,7 +35,7 @@ export function MarketplaceIndicativePrice({
   showApproximation?: boolean;
 }) {
   const showFxEstimate = useMarketplaceDisplayStore((state) => state.showFxEstimate);
-  const displayCurrency = useMarketplaceDisplayStore((state) => state.displayCurrency);
+  const displayCurrency = useDisplayCurrency();
   const isConvertible = resolveListingCurrency(money) !== null;
   const rates = useIndicativeBtcRate(showFxEstimate && isConvertible);
   if (rates === null) return null;
