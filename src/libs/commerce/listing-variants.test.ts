@@ -6,6 +6,7 @@ import {
   isVariantSoldOut,
   projectionReadsSoldOut,
   soldOutVariantIds,
+  tracksVariantStock,
 } from './listing-variants';
 
 const variant = (id: string, quantity: number, extra: { enabled?: boolean; sku?: string } = {}) => ({
@@ -40,6 +41,14 @@ describe('buildRegisterVariants', () => {
       { id: 'size_s', quantity: 0 },
       { id: 'size_m', quantity: 4 },
     ]);
+  });
+});
+
+describe('tracksVariantStock', () => {
+  it('needs two enabled variants', () => {
+    expect(tracksVariantStock([variant('size_s', 1), variant('size_m', 1)])).toBe(true);
+    expect(tracksVariantStock([variant('size_s', 1), variant('size_m', 1, { enabled: false })])).toBe(false);
+    expect(tracksVariantStock([])).toBe(false);
   });
 });
 

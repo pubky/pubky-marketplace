@@ -24,6 +24,11 @@ export interface ProjectedVariantAvailability {
 /** The smallest number of enabled variants the service tracks per size. */
 export const VARIANT_TRACKING_MIN_ENABLED = 2;
 
+/** True when the record offers two or more enabled variants, which the service tracks per size. */
+export function tracksVariantStock(variants: readonly ListingVariantStockInput[]): boolean {
+  return variants.filter((variant) => variant.enabled).length >= VARIANT_TRACKING_MIN_ENABLED;
+}
+
 /**
  * The `variants` a `listing.register` carries: the enabled variants in record
  * order, only when the record offers two or more. Fewer than two registers
@@ -33,13 +38,14 @@ export const VARIANT_TRACKING_MIN_ENABLED = 2;
 export function buildRegisterVariants(
   variants: readonly ListingVariantStockInput[],
 ): RegisterListingVariant[] | undefined {
-  const enabled = variants.filter((variant) => variant.enabled);
-  if (enabled.length < VARIANT_TRACKING_MIN_ENABLED) return undefined;
-  return enabled.map((variant) => ({
-    id: variant.id,
-    quantity: Math.min(variant.quantity, COMMERCE_LISTING_MAX_QUANTITY),
-    ...(variant.sku ? { sku: variant.sku } : {}),
-  }));
+  if (!tracksVariantStock(variants)) return undefined;
+  return variants
+    .filter((variant) => variant.enabled)
+    .map((variant) => ({
+      id: variant.id,
+      quantity: Math.min(variant.quantity, COMMERCE_LISTING_MAX_QUANTITY),
+      ...(variant.sku ? { sku: variant.sku } : {}),
+    }));
 }
 
 /** The ids the service reports sold out; empty when it reports no per-size rows. */
