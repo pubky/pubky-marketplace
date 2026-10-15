@@ -33,7 +33,7 @@ import type { CommerceDeliveryAddressValue } from '@/libs/commerce/postal-addres
 import type { PrivRecoveryKeyExport } from '@/libs/commerce/priv-recovery-key';
 import type { ShipFromAddress, ShippingParcel, ShippoRate } from '@/libs/commerce/shipping';
 import { buildMarketplaceListingAggregateId } from '@/libs/commerce/transaction-commands';
-import { commercePositiveMoneySchema, commercePubkySchema } from '@/libs/commerce/transaction-contracts';
+import { commercePositiveMoneySchema } from '@/libs/commerce/transaction-contracts';
 import { isAppError } from '@/libs/error/error';
 import { ValidationErrorCode } from '@/libs/error/error.codes';
 import { Err } from '@/libs/error/error.factories';
@@ -823,11 +823,6 @@ export class CommerceController {
     return await CommerceApplication.confirmFiatReceived(this.getCurrentUserPubky(), orderId);
   }
 
-  /** Whether the current user already has a claimed watch-only account. */
-  static async isOwnPaykitAccountClaimed() {
-    return await CommerceApplication.isPaykitAccountClaimed(this.getCurrentUserPubky());
-  }
-
   /**
    * A seller's public reputation overview (`rated` / `new_seller` /
    * `unavailable`) for rating headers. Network-only: reputation is index
@@ -1440,54 +1435,6 @@ export class CommerceController {
       this.getCurrentUserPubky(),
       CommerceRecordNormalizer.entityId(paymentId),
     );
-  }
-
-  static async createLocksFrontendSession(code: unknown, state: unknown, accountPubky?: unknown) {
-    if (
-      typeof code !== 'string' ||
-      code.length === 0 ||
-      code.length > 4_096 ||
-      typeof state !== 'string' ||
-      state.length === 0 ||
-      state.length > 256
-    ) {
-      throw Err.validation(ValidationErrorCode.INVALID_INPUT, 'Locks connect completion is invalid.', {
-        service: ErrorService.Local,
-        operation: 'createLocksFrontendSession',
-      });
-    }
-    const pubky = typeof accountPubky === 'string' && accountPubky.length > 0 ? accountPubky : undefined;
-    return await CommerceApplication.createLocksFrontendSession(code, state, pubky);
-  }
-
-  static async getLocksCreatorAuthorityStatus(sessionToken: unknown) {
-    if (typeof sessionToken !== 'string' || sessionToken.length === 0 || sessionToken.length > 4_096) {
-      throw Err.validation(ValidationErrorCode.INVALID_INPUT, 'Lock Server session is invalid.', {
-        service: ErrorService.Local,
-        operation: 'getLocksCreatorAuthorityStatus',
-      });
-    }
-    return await CommerceApplication.getLocksCreatorAuthorityStatus(sessionToken);
-  }
-
-  static async getLocksPublicCreatorAuthorityStatus(accountPubky: unknown) {
-    const parsed = commercePubkySchema.safeParse(accountPubky);
-    if (!parsed.success) {
-      throw Err.validation(ValidationErrorCode.INVALID_INPUT, 'Shop account is invalid.', {
-        service: ErrorService.Local,
-        operation: 'getLocksPublicCreatorAuthorityStatus',
-      });
-    }
-    return await CommerceApplication.getLocksPublicCreatorAuthorityStatus(parsed.data);
-  }
-
-  static restoreLocksFrontendSession(accountPubky: string) {
-    return CommerceApplication.restoreLocksFrontendSession(accountPubky);
-  }
-
-  /** Removes the persisted Lock Server session only while it still carries `token`. */
-  static clearLocksFrontendSession(token: string): void {
-    CommerceApplication.clearLocksFrontendSession(token);
   }
 
   static async lookupLocksVerification(creatorPubky: unknown, bundleId: unknown) {

@@ -4,7 +4,6 @@
 import { z } from 'zod';
 import { getLocksUrl, getPaykitSetupCreatorParam, getPaykitSetupUrl } from '@/config/commerce';
 import { LOCKS_SUBMIT_REFUSAL_CODES, type LocksSubmitRefusalCode } from '@/libs/commerce/locks-submit-refusal';
-import type { ListingCurrencyChoice } from '@/libs/commerce/pricing';
 import { isAppError } from '@/libs/error/error';
 import { ServerErrorCode, ValidationErrorCode } from '@/libs/error/error.codes';
 import { Err } from '@/libs/error/error.factories';
@@ -68,26 +67,15 @@ const frontendSessionSchema = z.object({
   creator: z.string().min(1),
 });
 
-const creatorAuthorityStatusSchema = z.object({
-  creator: z.string().min(1),
-  authorized: z.boolean(),
-});
-
-const creatorPaykitSetupStatusSchema = z
-  .object({ status: z.enum(['ready', 'setup_required', 'unavailable']) })
-  .strict();
-
 export type LocksVerificationLifecycle = z.infer<typeof lifecycleSchema>;
 export type LocksAccessCredential = z.infer<typeof accessCredentialSchema>;
 
 /**
  * A Lock Server creator frontend session, exchanged from the one-time `code`
  * the hosted legacy-connect flow posts back. The token is creator bearer
- * material — persist only through `LocksFrontendSessionStore`, never log it.
+ * material: never persist or log it.
  */
 export type LocksFrontendSession = z.infer<typeof frontendSessionSchema>;
-export type LocksCreatorAuthorityStatus = z.infer<typeof creatorAuthorityStatusSchema>;
-export type LocksCreatorPaykitSetupStatus = z.infer<typeof creatorPaykitSetupStatusSchema>['status'];
 
 let sdkModulePromise: Promise<LocksSdkModule> | null = null;
 
@@ -247,8 +235,9 @@ export class LocksGatewayService {
    * Exchanges the hosted legacy-connect completion (`code` + the caller's own
    * `state`, delivered to `return_to`) for a creator frontend session. This is
    * the client's proof that the Lock Server actually holds creator authority
-   * for the signed-in seller. The setup UI claims "connected" only from the
-   * Lock Server's own answer: this exchange, or an authority-status read.
+   * for the seller. The Shop's seller setup no longer asks for it; the live
+   * Locks payment suite (`npm run test:marketplace:locks`) uses it to connect
+   * its seller.
    */
   static async createFrontendSession(code: string, state: string): Promise<LocksFrontendSession> {
     const url = `${getLocksUrl()}/frontend-sessions`;
@@ -274,109 +263,6 @@ export class LocksGatewayService {
       });
     }
     return parsed.data;
-  }
-
-  /**
-   * Revalidates a persisted creator frontend session. The token is bearer
-   * material — callers must not log it, and parse failure must not excerpt
-   * the response body.
-   */
-  static async getCreatorAuthorityStatus(sessionToken: string): Promise<LocksCreatorAuthorityStatus> {
-    const url = `${getLocksUrl()}/creator/authority-status`;
-    const response = await safeFetch(
-      url,
-      { method: 'GET', headers: { authorization: `Bearer ${sessionToken}` } },
-      ErrorService.Locks,
-      'getCreatorAuthorityStatus',
-    );
-    if (!response.ok) throw httpResponseToError(response, ErrorService.Locks, 'getCreatorAuthorityStatus', url);
-    const raw = await parseResponseOrThrow<unknown>(response, ErrorService.Locks, 'getCreatorAuthorityStatus', url);
-    const parsed = creatorAuthorityStatusSchema.safeParse(raw);
-    if (!parsed.success) {
-      throw Err.server(ServerErrorCode.INVALID_RESPONSE, 'Locks returned an invalid authority-status response.', {
-        service: ErrorService.Locks,
-        operation: 'getCreatorAuthorityStatus',
-        context: { statusCode: response.status },
-      });
-    }
-    return parsed.data;
-  }
-
-  /**
-   * Whether upstream Paykit Server holds the creator's watch-only setup
-   * (`GET /creator/paykit/setup-status?asset=...`) for the price denomination,
-   * asked by the Lock Server for the creator its frontend session names.
-   * `unavailable` means the Lock Server could not ask Paykit; it is not a setup
-   * verdict. The token is bearer material — callers must not log it.
-   */
-  static async getCreatorPaykitSetupStatus(
-    sessionToken: string,
-    asset: ListingCurrencyChoice,
-  ): Promise<LocksCreatorPaykitSetupStatus> {
-    const url = `${getLocksUrl()}/creator/paykit/setup-status?asset=${asset}`;
-    const response = await safeFetch(
-      url,
-      { method: 'GET', headers: { authorization: `Bearer ${sessionToken}` } },
-      ErrorService.Locks,
-      'getCreatorPaykitSetupStatus',
-    );
-    if (!response.ok) throw httpResponseToError(response, ErrorService.Locks, 'getCreatorPaykitSetupStatus', url);
-    const raw = await parseResponseOrThrow<unknown>(response, ErrorService.Locks, 'getCreatorPaykitSetupStatus', url);
-    const parsed = creatorPaykitSetupStatusSchema.safeParse(raw);
-    if (!parsed.success) {
-      throw Err.server(ServerErrorCode.INVALID_RESPONSE, 'Locks returned an invalid Paykit setup-status response.', {
-        service: ErrorService.Locks,
-        operation: 'getCreatorPaykitSetupStatus',
-        context: { statusCode: response.status },
-      });
-    }
-    return parsed.data.status;
-  }
-
-  /**
-   * Creator-keyed status (`GET /creators/{creator}/authority-status`): whether
-   * the Lock Server holds creator authority for `creatorPubky`, with no
-   * frontend session. It reads the same stored authority record as
-   * {@link getCreatorAuthorityStatus}, so Step 1 stays Connected after the
-   * 24-hour frontend session expires or sign-out wipes it. Resolves `null`
-   * when the Lock Server does not serve the route (404), so callers can fall
-   * back to asking for a fresh approval.
-   */
-  static async getPublicCreatorAuthorityStatus(creatorPubky: string): Promise<LocksCreatorAuthorityStatus | null> {
-    const creator = `pubky${creatorPubky.replace(/^pubky/i, '')}`;
-    const url = `${getLocksUrl()}/creators/${encodeURIComponent(creator)}/authority-status`;
-    const response = await safeFetch(url, { method: 'GET' }, ErrorService.Locks, 'getPublicCreatorAuthorityStatus');
-    if (response.status === 404) return null;
-    if (!response.ok) throw httpResponseToError(response, ErrorService.Locks, 'getPublicCreatorAuthorityStatus', url);
-    const raw = await parseResponseOrThrow<unknown>(
-      response,
-      ErrorService.Locks,
-      'getPublicCreatorAuthorityStatus',
-      url,
-    );
-    const parsed = creatorAuthorityStatusSchema.safeParse(raw);
-    if (!parsed.success) {
-      throw Err.server(ServerErrorCode.INVALID_RESPONSE, 'Locks returned an invalid authority-status response.', {
-        service: ErrorService.Locks,
-        operation: 'getPublicCreatorAuthorityStatus',
-        context: { statusCode: response.status },
-      });
-    }
-    return parsed.data;
-  }
-
-  /**
-   * Hosted legacy-connect URL for the seller Bitcoin Step 1 iframe.
-   * `delivery=postmessage` starts the Lock Server poller immediately and posts
-   * `{ type: "locks-auth-callback", state, code }` to this origin instead of
-   * navigating the seller onto a Lock Server JSON error page.
-   */
-  static buildLegacyConnectUrl(returnTo: string, state: string): string {
-    const url = new URL('/connect', getLocksUrl());
-    url.searchParams.set('return_to', returnTo);
-    url.searchParams.set('state', state);
-    url.searchParams.set('delivery', 'postmessage');
-    return url.toString();
   }
 
   static buildPaykitSetupUrl(returnTo: string, state: string, creator: string): string {
