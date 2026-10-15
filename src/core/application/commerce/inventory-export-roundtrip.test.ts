@@ -8,6 +8,7 @@ import {
 import type { CommerceListingRecord } from '@/libs/commerce/marketplace-records';
 import { MarketplaceShopClientService, type SyncManyEnvelope } from '@/services/marketplace/marketplace-shop-client';
 import { createRoundTripListings } from '@/test/fixtures/commerce/roundtrip-listings';
+import { IMPORT_GATES_PASSING } from '@/test-utils/import-settings';
 import { BytesFile, MemoryImportStore } from '@/test-utils/inventory-import-harness';
 import { asOpaque } from '@/test-utils/type-assertions';
 
@@ -73,6 +74,7 @@ describe('dashboard export CSV round-trips through the importer', () => {
 
   function importer() {
     return CommerceInventoryImportApplication.forSeller(PUBKY, {
+      ...IMPORT_GATES_PASSING,
       store,
       localRecords: async () => listings,
       putListing: async (record) => {
@@ -150,6 +152,7 @@ describe('dashboard export CSV round-trips through the importer', () => {
 
   it('exports from the local catalog for a seller without an Inventory grant', async () => {
     const local = CommerceInventoryImportApplication.forSeller(NO_BEARER_SELLER, {
+      ...IMPORT_GATES_PASSING,
       localRecords: async () => listings,
     });
     const csv = new TextDecoder().decode(await local.exportListingsCsv());

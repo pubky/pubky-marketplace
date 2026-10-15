@@ -394,8 +394,13 @@ export class CommerceController {
   static async planInventoryImport(
     sellerPubky: string,
     file: Parameters<CommerceInventoryImportApplication['planFile']>[0],
+    settings?: Parameters<CommerceInventoryImportApplication['planFile']>[1],
   ) {
-    return await CommerceInventoryImportApplication.forSeller(sellerPubky).planFile(file);
+    return await CommerceInventoryImportApplication.forSeller(sellerPubky).planFile(file, settings);
+  }
+
+  static async inventoryImportDefaults(sellerPubky: string) {
+    return await CommerceInventoryImportApplication.forSeller(sellerPubky).importDefaults();
   }
 
   static async dryRunInventoryImport(sellerPubky: string, manifestId: string) {

@@ -43,6 +43,13 @@ import {
   SHOPIFY_PRODUCT_CSV_HEADERS,
 } from '@bitcoinerrorlog/pubky-shop/connectors/shopify/map';
 import { getMarketplaceUrl } from '@/config/commerce';
+import { csvHeaderCells, parseCsvTable } from '@/pipes/commerce/import-csv-table';
+import type { ImportLossReport, ImportSourceFormat } from '@/pipes/commerce/import-loss-report';
+import type { PresetRow } from '@/pipes/commerce/import-preset-rows';
+import { type ImportSettings, shopifyWorkExponent } from '@/pipes/commerce/import-settings';
+import { buildShopifyPresetRows } from '@/pipes/commerce/import-shopify-csv';
+import { isWooProductCsv, mapWooProductCsv } from '@/pipes/commerce/import-woo-csv';
+import { looksLikeUnknownLanguageWooExport, WOO_UNKNOWN_LANGUAGE_MESSAGE } from '@/pipes/commerce/import-woo-headers';
 import type { InventoryManifestStore } from '@/services/marketplace/marketplace-import-store';
 
 /**
@@ -52,14 +59,12 @@ import type { InventoryManifestStore } from '@/services/marketplace/marketplace-
  * so the bridge's node modules stay out of this graph.
  */
 
-/** Shopify product CSV prices are major units on the listing form's USD scale. */
-export const SHOPIFY_CSV_PRICE = { currency: 'USD', exponent: 2 } as const;
-
-export type ShopifyCsvImportConfig = {
+/** What a shop-system CSV preset needs: whose listings these are and the dry-run import settings. */
+export type PresetImportConfig = {
   readonly sellerPubky: string;
-  readonly currency: string;
-  readonly exponent: number;
+  readonly settings: ImportSettings;
 };
+
 export type ShopBrowserFile = {
   readonly size: number;
   readonly name?: string;
@@ -72,20 +77,15 @@ export type ShopBrowserFile = {
 export type PlannedBrowserFile = {
   readonly manifestId: string;
   readonly rowCount: number;
+  /** Set when the file was a shop-system export mapped by a preset. */
+  readonly format?: ImportSourceFormat;
+  readonly lossReport?: ImportLossReport;
 };
 
 const SHOPIFY_HEADER_SET = new Set<string>(SHOPIFY_PRODUCT_CSV_HEADERS);
 
-function csvHeaderCells(bytes: Uint8Array): readonly string[] | undefined {
-  let text: string;
-  try {
-    text = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
-  } catch {
-    return undefined;
-  }
-  const line = text.replace(/^\uFEFF/, '').split(/\r?\n/, 1)[0] ?? '';
-  if (!line.includes(',')) return undefined;
-  return line.split(',').map((cell) => cell.trim().replace(/^"|"$/g, ''));
+function headerCellsOf(bytes: Uint8Array): readonly string[] {
+  return csvHeaderCells(new TextDecoder('utf-8').decode(bytes));
 }
 
 function isShopifyProductCsv(cells: readonly string[]): boolean {
@@ -94,54 +94,39 @@ function isShopifyProductCsv(cells: readonly string[]): boolean {
   return hits.includes('URL handle') || hits.includes('Handle');
 }
 
-async function planShopifyProductCsv(
-  file: ShopBrowserFile,
-  manifestStore: ManifestStore,
-  store: InventoryManifestStore,
-  currentItems: Readonly<Record<string, CurrentImportItem>>,
-  config: ShopifyCsvImportConfig | undefined,
-): Promise<SdkResult<PlannedBrowserFile>> {
-  if (!config) {
-    return { ok: false, error: new PubkyShopError('invalid_configuration', { field: 'sellerPubky' }) };
-  }
+function limitError(field: string, limit: number, observed: number): PubkyShopError {
+  return new PubkyShopError('limit_exceeded', { field, limit, observed: Math.min(observed, limit + 1) });
+}
+
+async function readCsvBytes(file: ShopBrowserFile): Promise<SdkResult<Uint8Array>> {
   if (!Number.isSafeInteger(file.size) || file.size < 0) {
     return { ok: false, error: new PubkyShopError('invalid_configuration', { field: 'file.size' }) };
   }
   if (file.size > DEFAULT_CSV_LIMITS.maxBytes) {
-    return {
-      ok: false,
-      error: new PubkyShopError('limit_exceeded', {
-        field: 'csv_bytes',
-        limit: DEFAULT_CSV_LIMITS.maxBytes,
-        observed: Math.min(file.size, DEFAULT_CSV_LIMITS.maxBytes + 1),
-      }),
-    };
+    return { ok: false, error: limitError('csv_bytes', DEFAULT_CSV_LIMITS.maxBytes, file.size) };
   }
   const bytes = new Uint8Array(await file.arrayBuffer());
   if (bytes.byteLength > DEFAULT_CSV_LIMITS.maxBytes) {
-    return {
-      ok: false,
-      error: new PubkyShopError('limit_exceeded', {
-        field: 'csv_bytes',
-        limit: DEFAULT_CSV_LIMITS.maxBytes,
-        observed: Math.min(bytes.byteLength, DEFAULT_CSV_LIMITS.maxBytes + 1),
-      }),
-    };
+    return { ok: false, error: limitError('csv_bytes', DEFAULT_CSV_LIMITS.maxBytes, bytes.byteLength) };
   }
-  const mapped = mapShopifyProductCsv(bytes, config);
-  const rows = mapped.products.flatMap((product) => canonicalRowsFor(product, [], { includeZeroQuantity: true }));
-  // Plan the mapped rows as JSON. The CSV stream parser rejects Uint8Array
-  // chunks from another realm, which this app's bundler produces.
+  return { ok: true, value: bytes };
+}
+
+/**
+ * Plans mapped preset rows as JSON. The CSV stream parser rejects Uint8Array
+ * chunks from another realm, which this app's bundler produces, so presets
+ * hand the planner the same JSON a canonical JSON import would.
+ */
+async function planPresetRows(
+  rows: readonly PresetRow[],
+  report: ImportLossReport,
+  manifestStore: ManifestStore,
+  store: InventoryManifestStore,
+  currentItems: Readonly<Record<string, CurrentImportItem>>,
+): Promise<SdkResult<PlannedBrowserFile>> {
   const json = new TextEncoder().encode(JSON.stringify(rows));
   if (json.byteLength > DEFAULT_JSON_LIMITS.maxBytes) {
-    return {
-      ok: false,
-      error: new PubkyShopError('limit_exceeded', {
-        field: 'json_bytes',
-        limit: DEFAULT_JSON_LIMITS.maxBytes,
-        observed: Math.min(json.byteLength, DEFAULT_JSON_LIMITS.maxBytes + 1),
-      }),
-    };
+    return { ok: false, error: limitError('json_bytes', DEFAULT_JSON_LIMITS.maxBytes, json.byteLength) };
   }
   const planned = await planImport(json, {
     store: manifestStore,
@@ -153,8 +138,82 @@ async function planShopifyProductCsv(
   await store.persistPayloads(planned.value.manifestId, payloads);
   return {
     ok: true,
-    value: { manifestId: planned.value.manifestId, rowCount: planned.value.rowCount },
+    value: {
+      manifestId: planned.value.manifestId,
+      rowCount: planned.value.rowCount,
+      format: report.format,
+      lossReport: report,
+    },
   };
+}
+
+function presetRowsFrom(rows: unknown): PresetRow[] {
+  return JSON.parse(JSON.stringify(rows)) as PresetRow[];
+}
+
+async function planShopifyProductCsv(
+  file: ShopBrowserFile,
+  manifestStore: ManifestStore,
+  store: InventoryManifestStore,
+  currentItems: Readonly<Record<string, CurrentImportItem>>,
+  config: PresetImportConfig,
+): Promise<SdkResult<PlannedBrowserFile>> {
+  const read = await readCsvBytes(file);
+  if (!read.ok) return read;
+  const workExponent = shopifyWorkExponent(config.settings.currency);
+  const mapped = mapShopifyProductCsv(read.value, {
+    sellerPubky: config.sellerPubky,
+    currency: config.settings.currency,
+    exponent: workExponent,
+  });
+  const sdkRows = mapped.products.flatMap((product) => canonicalRowsFor(product, [], { includeZeroQuantity: true }));
+  const result = buildShopifyPresetRows({
+    text: new TextDecoder('utf-8').decode(read.value),
+    products: mapped.products,
+    skipped: mapped.skipped,
+    headerLosses: mapped.headerLosses,
+    rows: presetRowsFrom(sdkRows),
+    workExponent,
+    settings: config.settings,
+  });
+  return planPresetRows(result.rows, result.report, manifestStore, store, currentItems);
+}
+
+function decodeWooCsv(bytes: Uint8Array): { text: string; encodingFallback: boolean } {
+  try {
+    return { text: new TextDecoder('utf-8', { fatal: true }).decode(bytes), encodingFallback: false };
+  } catch {
+    return { text: new TextDecoder('windows-1252').decode(bytes), encodingFallback: true };
+  }
+}
+
+async function planWooProductCsv(
+  file: ShopBrowserFile,
+  manifestStore: ManifestStore,
+  store: InventoryManifestStore,
+  currentItems: Readonly<Record<string, CurrentImportItem>>,
+  config: PresetImportConfig,
+): Promise<SdkResult<PlannedBrowserFile>> {
+  const read = await readCsvBytes(file);
+  if (!read.ok) return read;
+  const decoded = decodeWooCsv(read.value);
+  const parsed = parseCsvTable(decoded.text);
+  if (!parsed.ok) return { ok: false, error: new PubkyShopError('malformed_csv') };
+  const { table } = parsed;
+  if (table.headers.length > DEFAULT_CSV_LIMITS.maxColumns) {
+    return { ok: false, error: limitError('csv_columns', DEFAULT_CSV_LIMITS.maxColumns, table.headers.length) };
+  }
+  if (table.records.length > DEFAULT_CSV_LIMITS.maxRows) {
+    return { ok: false, error: limitError('csv_rows', DEFAULT_CSV_LIMITS.maxRows, table.records.length) };
+  }
+  const result = mapWooProductCsv({
+    table,
+    sellerPubky: config.sellerPubky,
+    settings: config.settings,
+    now: new Date(),
+    encodingFallback: decoded.encodingFallback,
+  });
+  return planPresetRows(result.rows, result.report, manifestStore, store, currentItems);
 }
 
 const JSON_LEAD = new Set([0x7b, 0x5b]);
@@ -273,6 +332,9 @@ export class MarketplaceShopClientService {
   }
 
   static formatPlanFailure(error: PubkyShopError): string {
+    if (error.code === 'invalid_csv_header' && error.details.field === 'woo_language') {
+      return WOO_UNKNOWN_LANGUAGE_MESSAGE;
+    }
     if (error.code === 'limit_exceeded') {
       const limit = error.details.limit ?? 0;
       const observed = error.details.observed ?? 0;
@@ -411,7 +473,8 @@ export class MarketplaceShopClientService {
 
   /**
    * Browser planner. JSON is size-checked then bounded `arrayBuffer` (16 MiB).
-   * A Shopify product CSV is mapped to canonical rows and planned as that JSON.
+   * A Shopify or WooCommerce product CSV is mapped to canonical rows by its
+   * preset and planned as that JSON, with a loss report.
    * Other CSV streams via `browserFileSource` (64 MiB) and never calls unbounded
    * `File.arrayBuffer()`. D6.19: parse failure never reaches `store.create`.
    */
@@ -419,7 +482,7 @@ export class MarketplaceShopClientService {
     file: ShopBrowserFile,
     store: InventoryManifestStore,
     currentItems: Readonly<Record<string, CurrentImportItem>> = {},
-    shopify: ShopifyCsvImportConfig | undefined = undefined,
+    preset: PresetImportConfig | undefined = undefined,
   ): Promise<SdkResult<PlannedBrowserFile>> {
     const manifestStore = store as unknown as ManifestStore;
     try {
@@ -465,9 +528,18 @@ export class MarketplaceShopClientService {
       const headerEnd = Number.isSafeInteger(file.size) && file.size > 0 ? Math.min(file.size, 8192) : 0;
       if (headerEnd > 0) {
         const headerBytes = new Uint8Array(await file.slice(0, headerEnd).arrayBuffer());
-        const header = csvHeaderCells(headerBytes);
-        if (header && isShopifyProductCsv(header)) {
-          return await planShopifyProductCsv(file, manifestStore, store, currentItems, shopify);
+        const header = headerCellsOf(headerBytes);
+        const shopify = isShopifyProductCsv(header);
+        if (!shopify && looksLikeUnknownLanguageWooExport(header)) {
+          return { ok: false, error: new PubkyShopError('invalid_csv_header', { field: 'woo_language' }) };
+        }
+        if (shopify || isWooProductCsv(header)) {
+          if (!preset) {
+            return { ok: false, error: new PubkyShopError('invalid_configuration', { field: 'sellerPubky' }) };
+          }
+          return shopify
+            ? await planShopifyProductCsv(file, manifestStore, store, currentItems, preset)
+            : await planWooProductCsv(file, manifestStore, store, currentItems, preset);
         }
       }
 
