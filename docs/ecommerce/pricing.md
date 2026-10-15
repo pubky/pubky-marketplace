@@ -42,8 +42,11 @@ Offers, counteroffers, and auction bids are always made in the listing's own ass
 record schema and the transaction service both reject cross-asset amounts. A listing
 priced in any other asset (a foreign record, e.g. SEK) still renders, but the studio
 refuses to edit it (`unsupported`) rather than silently rewriting its price into an asset
-it did not have. Saved shipping presets are USD-only, so the studio offers them on USD
-listings only.
+it did not have. Saved shipping presets carry their own currency (existing ones are US
+dollars). The studio offers them on every listing and, when a preset's currency differs
+from the listing's, converts its flat price into the listing currency with the current
+rate snapshot and says so before the seller saves, because the record's shipping price
+must be in the listing currency.
 
 BTC-at-exponent-8 money displays per BIP-177 everywhere: the bitcoin symbol followed by
 grouped integer base units (`₿15,000`), which is the same exact amount as
@@ -88,19 +91,21 @@ price). Honest treatment, enforced in code (`src/core/pipes/money/money.convert.
   `paykit-server/src/domain/invoice.rs`). A bitcoin-priced listing whose lock says
   `{amount: "<base units>", asset: "BTC"}` is payable end to end — that is the verified
   live flow.
-- **Fiat-priced listings cannot take the BTC rail.** A USD-priced listing has no defined
-  Bitcoin payment amount: no fiat↔BTC conversion code exists anywhere in this client,
-  the marketplace service, or the verifier chain, and the criterion's asset must match
-  what the verifier accepts. This is a fact about the rails, not an oversight in the
-  display layer.
+- **Fiat-priced Locks listings cannot take the BTC rail.** A lock's criterion fixes its
+  asset and amount at lock creation, and the verifier attests against exactly that, so a
+  fiat-denominated lock has no defined Bitcoin amount. The marketplace service therefore
+  accepts a Locks-gated listing only in USD, BTC or SAT (`locks_currency_unsupported`
+  otherwise). This does not describe ordinary marketplace orders: for those the service
+  fixes a fresh Blocktank quote at bind (see the service's multi-currency notes), which is
+  what checkout shows. This client converts nothing for payment.
 - **This app never authors content locks.** The listing studio cannot create a
   `digitalLock`; locks are created by external tooling against the Lock Server's
   creator-publishing API. So the studio's pricing choice does not by itself make a
   listing payable — the lock (where one exists) fixes the payable amount and asset.
 
-## The conversion policy gap (deliberately not invented here)
+## The conversion policy gap for content locks (deliberately not invented here)
 
-For a fiat-priced listing to be paid over the BTC rail, someone must decide **when the
+For a fiat-priced Locks listing to be paid over the BTC rail, someone must decide **when the
 exchange rate is sampled and who bears the drift**: rate at lock creation, rate at
 invoice creation, a bounded quote window, or something else. That decision belongs to
 the payment rails — the Lock criterion fixes the amount at lock creation, and the
