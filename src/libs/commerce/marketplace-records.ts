@@ -325,9 +325,25 @@ export function commerceListingProjectionIsStale(
   ) {
     return true;
   }
+  return (projection.shipping?.amountMinor ?? 0) !== commerceListingShippingMinor(record.shippingOptions);
+}
+
+/**
+ * Whether a freshly synced projection of a fixed-price listing carries
+ * exactly the terms of the record the buyer is checking out: the same
+ * revision, unit price, fulfillment methods and shipping. A seller edit that
+ * lands while the sync runs fails this, so the buyer is never charged terms
+ * they did not see. An auction always matches: it is paid at its bid.
+ */
+export function commerceListingProjectionMatchesRecord(
+  record: Pick<CommerceListingRecord, 'revision' | 'sale' | 'fulfillmentMethods' | 'shippingOptions'>,
+  projection: Parameters<typeof commerceListingProjectionIsStale>[1] & { unitPrice: { amountMinor: number } },
+): boolean {
+  if (record.sale.format !== 'fixed_price') return true;
   return (
-    projection.shipping !== undefined &&
-    projection.shipping.amountMinor !== commerceListingShippingMinor(record.shippingOptions)
+    projection.listingRevision === record.revision &&
+    projection.unitPrice.amountMinor === record.sale.unitPrice.amountMinor &&
+    !commerceListingProjectionIsStale(record, projection)
   );
 }
 
@@ -682,6 +698,15 @@ const commerceListingRecordSchemaInner = commercePublicRecordBaseSchema
         code: 'custom',
         message: 'A Locks listing must be digital-only',
         path: ['fulfillmentMethods'],
+      });
+    }
+    // Auctions register through the seller's private reserve authority, which carries no lock, and they
+    // ship; the service would hold a Locks auction without its lock.
+    if (listing.digitalLock !== undefined && listing.sale.format === 'auction') {
+      context.addIssue({
+        code: 'custom',
+        message: 'A Locks listing must be sold at a fixed price',
+        path: ['digitalLock'],
       });
     }
 

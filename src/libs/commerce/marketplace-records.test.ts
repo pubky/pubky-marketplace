@@ -407,6 +407,39 @@ describe('commerceListingRecordSchema', () => {
     expect(commerceListingRecordSchema.safeParse(listing).success).toBe(true);
   });
 
+  it('rejects a Locks auction', () => {
+    const listing = makeFixedListing();
+    const auction = {
+      ...listing,
+      fulfillmentMethods: ['digital' as const],
+      package: undefined,
+      shippingOptions: [],
+      sale: {
+        format: 'auction' as const,
+        startingPrice: { amountMinor: 4_500, currency: 'USD', exponent: 2 },
+        minimumIncrement: { amountMinor: 500, currency: 'USD', exponent: 2 },
+        startsAt: '2026-08-19T20:00:00.000Z',
+        endsAt: '2026-08-29T20:00:00.000Z',
+        antiSnipingWindowSeconds: 120,
+        antiSnipingExtensionSeconds: 120,
+      },
+      digitalLock: {
+        policyUri: LOCK_URL,
+        criterionId: 'criterion-1',
+        contentPath: 'premium.txt',
+        resourceHash: 'b'.repeat(64),
+        minimumConfirmations: 6,
+      },
+    };
+
+    const result = commerceListingRecordSchema.safeParse(auction);
+
+    expect(result.success).toBe(false);
+    expect(result.error?.issues.map(({ message }) => message)).toContain(
+      'A Locks listing must be sold at a fixed price',
+    );
+  });
+
   it('a Locks listing must be digital-only: any physical or pickup method beside digital is rejected', () => {
     const shipped = makeFixedListing();
     const lock = {
@@ -877,7 +910,23 @@ describe('commerceListingProjectionIsStale (a listing.sync would change the serv
 
   it('is current when the projection derives the same terms from the same record revision', () => {
     expect(commerceListingProjectionIsStale(record, current)).toBe(false);
-    expect(commerceListingProjectionIsStale(record, { ...current, shipping: undefined })).toBe(false);
+  });
+
+  it('treats a projection without shipping as charging none', () => {
+    expect(commerceListingProjectionIsStale(record, { ...current, shipping: undefined })).toBe(true);
+    const free = createCommerceListingFixture({
+      revision: 3,
+      fulfillmentMethods: ['digital'],
+      package: undefined,
+      shippingOptions: [],
+    });
+    expect(
+      commerceListingProjectionIsStale(free, {
+        listingRevision: 3,
+        fulfillmentMethods: ['digital'],
+        shipping: undefined,
+      }),
+    ).toBe(false);
   });
 
   it('is stale when the record revision moved past the projection', () => {
