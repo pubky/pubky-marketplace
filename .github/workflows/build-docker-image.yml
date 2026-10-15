@@ -142,6 +142,7 @@ jobs:
             NEXT_PUBLIC_DB_NAME=shop-franky
             NEXT_PUBLIC_DEBUG_MODE=false
             NEXT_PUBLIC_APP_VERSION=${{ github.sha }}
+            GIT_COMMIT=${{ inputs.commit_sha || github.sha }}
             SENTRY_AUTH_TOKEN=${{ secrets.SENTRY_AUTH_TOKEN }}
             SENTRY_ORG=synonym-52
             SENTRY_PROJECT=pubky-app
