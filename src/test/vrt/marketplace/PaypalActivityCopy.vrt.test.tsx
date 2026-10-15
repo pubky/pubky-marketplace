@@ -229,10 +229,11 @@ describe('PayPal sale activity copy', () => {
   it('wraps the PayPal-verified explanation and hides the receipt hash', async () => {
     await renderForVRT(<MarketplaceOrders />, { viewport: { width: 1100, height: 1400 } });
     const orders = document.querySelector('[data-surface="marketplace-orders"]');
-    const card = document.querySelector('[data-surface="marketplace-payment-status-card"]');
+    const paymentDetails = orders?.querySelector('[data-surface="marketplace-payment-details"]');
     expect(orders).toBeTruthy();
-    expect(card).toBeTruthy();
-    const explanation = document.querySelector('[data-testid="paypal-verified-explanation"]');
+    expect(paymentDetails).toBeTruthy();
+    expect(orders?.textContent).toContain('Payment confirmed');
+    const explanation = paymentDetails?.querySelector('[data-testid="paypal-verified-explanation"]');
     if (!(explanation instanceof HTMLElement)) throw new Error('missing paypal explanation');
     expect(explanation.textContent).toContain('exact order total');
     expect(explanation.scrollWidth).toBeLessThanOrEqual(explanation.clientWidth + 1);
