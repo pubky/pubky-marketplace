@@ -329,7 +329,13 @@ export class CommerceController {
           await CommerceApplication.revokeGrantMarketplaceSession(minted);
           return null;
         }
-        const installed = CommerceApplication.installGrantMarketplaceSession(minted, pubky);
+        let installed: MarketplaceSessionInfo;
+        try {
+          installed = CommerceApplication.installGrantMarketplaceSession(minted, pubky);
+        } catch (error) {
+          await CommerceApplication.revokeGrantMarketplaceSession(minted);
+          throw error;
+        }
         this.writeMarketplaceSessionStore(installed);
         this.grantSessionFailures.delete(session);
         return installed;

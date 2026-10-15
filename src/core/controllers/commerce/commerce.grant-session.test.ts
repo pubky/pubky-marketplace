@@ -127,6 +127,16 @@ describe('CommerceController.ensureMarketplaceSessionFromGrant', () => {
     expect(useCommerceStore.getState().marketplaceSession).toBeNull();
   });
 
+  it('revokes a minted session the replacement guard refuses', async () => {
+    signIn();
+    install.mockImplementation(() => {
+      throw new Error('narrower_than_current');
+    });
+    await expect(CommerceController.ensureMarketplaceSessionFromGrant()).resolves.toBeNull();
+    expect(revoke).toHaveBeenCalledWith(MINTED);
+    expect(useCommerceStore.getState().marketplaceSession).toBeNull();
+  });
+
   it('does not retry a refused mint for the same sign-in unless asked', async () => {
     signIn();
     mint.mockRejectedValueOnce(new Error('homeserver_proof_invalid'));
