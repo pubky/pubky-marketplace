@@ -169,6 +169,69 @@ describe('useConnectorCatalogImport', () => {
     expect(importerFns.planFile.mock.calls.at(-1)?.[0]).toBeInstanceOf(File);
   });
 
+  it('plans one listing per store variant when the connection is set to one listing per variant', async () => {
+    vi.mocked(ConnectorsController.fetchSelectedProducts).mockResolvedValue([
+      connectorCatalogProductSchema.parse({
+        providerProductId: '7',
+        title: 'Socks',
+        variants: [
+          {
+            providerVariantId: '71',
+            optionValues: [{ name: 'Size', value: 'S' }],
+            price: { amountMinor: 2500, currency: 'USD', exponent: 2 },
+            stock: 3,
+          },
+          {
+            providerVariantId: '72',
+            optionValues: [{ name: 'Size', value: 'M' }],
+            price: { amountMinor: 2500, currency: 'USD', exponent: 2 },
+            stock: 2,
+          },
+        ],
+      }),
+    ]);
+    const { result } = renderHook(() => useConnectorCatalogImport({ ...CONNECTION, variantMode: 'split' }));
+    await act(async () => {
+      await result.current.start();
+    });
+    await act(async () => {
+      await result.current.review();
+    });
+
+    const rows = await planned();
+    expect(rows.map((row) => row.listingId)).toEqual(['woo-7-71', 'woo-7-72']);
+
+    vi.mocked(ConnectorsController.commitMappings).mockResolvedValue({ mappings: [], skippedListingIds: [] });
+    await act(async () => {
+      await result.current.publish();
+    });
+    expect(ConnectorsController.commitMappings).toHaveBeenCalledWith('c1', [
+      { listingId: 'woo-7-71', variantId: 'v71', providerProductId: '7', providerVariantId: '71' },
+      { listingId: 'woo-7-72', variantId: 'v72', providerProductId: '7', providerVariantId: '72' },
+    ]);
+  });
+
+  it('keeps one listing per product when the connection is not split', async () => {
+    vi.mocked(ConnectorsController.fetchSelectedProducts).mockResolvedValue([
+      connectorCatalogProductSchema.parse({
+        providerProductId: '7',
+        title: 'Socks',
+        variants: [
+          { providerVariantId: '71', price: { amountMinor: 2500, currency: 'USD', exponent: 2 }, stock: 3 },
+          { providerVariantId: '72', price: { amountMinor: 2500, currency: 'USD', exponent: 2 }, stock: 2 },
+        ],
+      }),
+    ]);
+    const { result } = renderHook(() => useConnectorCatalogImport({ ...CONNECTION, variantMode: 'native' }));
+    await act(async () => {
+      await result.current.start();
+    });
+    await act(async () => {
+      await result.current.review();
+    });
+    expect(new Set((await planned()).map((row) => row.listingId))).toEqual(new Set(['woo-7']));
+  });
+
   it('uses free shipping in one click', async () => {
     vi.mocked(CommerceController.inventoryImportDefaults).mockResolvedValue({
       countryCode: 'CH',

@@ -61,9 +61,11 @@ const SUMMARY = summarizeLossReport({
 function Harness({
   flow,
   values = {},
+  variantMode = 'native',
 }: {
   flow: Partial<Record<string, unknown>>;
   values?: Partial<ImportSettingsFormData>;
+  variantMode?: 'native' | 'split';
 }) {
   const form = useForm<ImportSettingsFormData>({
     resolver: zodResolver(importSettingsFormSchema),
@@ -107,7 +109,7 @@ function Harness({
     <main className="w-full py-6">
       <MarketplaceConnectorImport
         flow={value}
-        connection={{ provider: 'woocommerce', domain: 'dezentralshop.ch' }}
+        connection={{ provider: 'woocommerce', domain: 'dezentralshop.ch', variantMode }}
         onBack={() => {}}
       />
     </main>
@@ -139,6 +141,26 @@ describe('Publish store products — visual regression', () => {
     );
     await expect(await expectVrtSurface('store-import-settings')).toMatchScreenshot(
       'connector-import-settings-prefilled-desktop',
+    );
+  });
+
+  it('renders the settings of a store set to one listing per variant at desktop viewport', async () => {
+    await renderForVRT(
+      <Harness
+        flow={{}}
+        variantMode="split"
+        values={{
+          currency: 'USD',
+          countryCode: 'CH',
+          shippingMode: 'free',
+          shippingMinDays: '3',
+          shippingMaxDays: '10',
+        }}
+      />,
+      { viewport: VRT_VIEWPORT_DESKTOP, disableHover: true },
+    );
+    await expect(await expectVrtSurface('store-import-settings')).toMatchScreenshot(
+      'connector-import-settings-split-desktop',
     );
   });
 

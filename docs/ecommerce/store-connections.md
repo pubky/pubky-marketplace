@@ -72,6 +72,17 @@ dry-run, photos, publish gates and result file. Rules:
   reported.
 - A variant whose stock the store does not track gets the seller's default
   quantity and the note "Stock unknown, set to N".
+- **One listing per size or variant** (the connection's `variant_mode`, shown in
+  its settings). `native` keeps a product's variants together as one listing.
+  `split` makes each store variant its own listing with a single variant, titled
+  with its choice ("Socks bundle, Size M"), and links each to its own store
+  variant. Listing ids are `woo-<product>-<variant>`, so changing the mode later
+  publishes new listings; it applies to products published from then on.
+- A re-import of a listing that is already live is never paused by a publish
+  gate (C16): it stays live, its content is updated and the dry run and the
+  result file say "kept live". New listings and listings already paused save
+  paused. This is lane A's import behaviour, and `inventory-import.connector.test.ts`
+  proves it for connector rows, native and split.
 - Listing ids are stable (`woo-<store id>`, `shopify-<store id>`), so importing a
   product again is an update, not a second listing.
 - After the publish the listings are linked to their store variants

@@ -13,7 +13,7 @@ import {
   IMPORT_SETTINGS_FIELDS,
   type ImportSettingsFormData,
 } from '@/hooks/useMarketplaceInventoryImport/useMarketplaceInventoryImport.types';
-import { CONNECTOR_PROVIDER_LABELS, type ConnectorProvider } from '@/libs/commerce/connectors';
+import { CONNECTOR_PROVIDER_LABELS, type ConnectorProvider, type VariantMode } from '@/libs/commerce/connectors';
 
 type MarketplaceConnectorImportSettingsProps = {
   control: Control<ImportSettingsFormData>;
@@ -25,6 +25,8 @@ type MarketplaceConnectorImportSettingsProps = {
   /** Variants whose stock the store does not track. */
   untrackedVariants: number;
   conditionOptions: readonly string[];
+  /** `split`: every size or variant becomes its own listing. */
+  variantMode: VariantMode;
   busy: boolean;
   onReview: () => void;
   onChooseFreeShipping: () => void;
@@ -60,6 +62,7 @@ export function MarketplaceConnectorImportSettings({
   productCount,
   untrackedVariants,
   conditionOptions,
+  variantMode,
   busy,
   onReview,
   onChooseFreeShipping,
@@ -86,6 +89,11 @@ export function MarketplaceConnectorImportSettings({
             to every one of them. Prices stay in {currency}: nothing is converted. Nothing is published until you
             confirm the dry-run.
           </Typography>
+          {variantMode === 'split' && (
+            <Typography as="p" className="text-sm text-muted-foreground" data-testid="connector-import-split-note">
+              Every size or variant becomes its own listing, as set for this store in Store connections.
+            </Typography>
+          )}
         </div>
 
         <form

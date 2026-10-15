@@ -14,12 +14,14 @@ import { MarketplaceConnectorImportSettings } from './MarketplaceConnectorImport
 function Harness({
   values = {},
   untrackedVariants = 0,
+  variantMode = 'native',
   onReview = vi.fn(),
   onChooseFreeShipping = vi.fn(),
   onBack = vi.fn(),
 }: {
   values?: Partial<ImportSettingsFormData>;
   untrackedVariants?: number;
+  variantMode?: 'native' | 'split';
   onReview?: () => void;
   onChooseFreeShipping?: () => void;
   onBack?: () => void;
@@ -38,6 +40,7 @@ function Harness({
       productCount={3}
       untrackedVariants={untrackedVariants}
       conditionOptions={IMPORT_CONDITION_OPTIONS}
+      variantMode={variantMode}
       busy={false}
       onReview={onReview}
       onChooseFreeShipping={onChooseFreeShipping}
@@ -109,5 +112,14 @@ describe('MarketplaceConnectorImportSettings', () => {
     expect(onReview).toHaveBeenCalledTimes(1);
     await user.click(screen.getByRole('button', { name: 'Back to products' }));
     expect(onBack).toHaveBeenCalledTimes(1);
+  });
+
+  it('says each size or variant becomes its own listing only when the store is set that way', () => {
+    const { rerender } = render(<Harness variantMode="native" />);
+    expect(screen.queryByTestId('connector-import-split-note')).not.toBeInTheDocument();
+    rerender(<Harness variantMode="split" />);
+    expect(screen.getByTestId('connector-import-split-note')).toHaveTextContent(
+      'Every size or variant becomes its own listing',
+    );
   });
 });

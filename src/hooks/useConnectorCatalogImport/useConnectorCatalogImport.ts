@@ -15,6 +15,7 @@ import {
   type ConnectorCatalogProduct,
   type ConnectorConnection,
   connectorErrorMessage,
+  type VariantMode,
 } from '@/libs/commerce/connectors';
 import { toast } from '@/molecules/Toaster/use-toast';
 import {
@@ -33,7 +34,7 @@ export type ConnectorLinkState =
   | { status: 'linked'; products: number; skipped: number }
   | { status: 'failed'; message: string };
 
-type ImportConnection = Pick<ConnectorConnection, 'id' | 'provider' | 'domain'>;
+type ImportConnection = Pick<ConnectorConnection, 'id' | 'provider' | 'domain'> & { variantMode?: VariantMode };
 
 const NO_SELECTION = 'Choose at least one product and save your choice first.';
 const LOAD_FAILED = 'The chosen products could not be read from your store. Check the connection and try again.';
@@ -132,7 +133,13 @@ export function useConnectorCatalogImport(connection: ImportConnection | null) {
     if (!connection || !sellerPubky) return false;
     if (!(await form.trigger())) return false;
     const settings = toImportSettings(form.getValues());
-    const mapped = mapConnectorCatalog({ products, provider: connection.provider, sellerPubky, settings });
+    const mapped = mapConnectorCatalog({
+      products,
+      provider: connection.provider,
+      sellerPubky,
+      settings,
+      variantMode: connection.variantMode ?? 'native',
+    });
     setReport(mapped.report);
     setLinks(mapped.links);
     setNothingToImport(mapped.rows.length === 0);

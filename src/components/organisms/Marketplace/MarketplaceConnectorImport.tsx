@@ -12,7 +12,7 @@ import { MarketplaceInventoryImportLossReport } from './MarketplaceInventoryImpo
 
 type MarketplaceConnectorImportProps = {
   flow: ReturnType<typeof useConnectorCatalogImport>;
-  connection: Pick<ConnectorConnection, 'provider' | 'domain'>;
+  connection: Pick<ConnectorConnection, 'provider' | 'domain'> & { variantMode?: ConnectorConnection['variantMode'] };
   /** Back to the product list. */
   onBack: () => void;
 };
@@ -45,6 +45,7 @@ export function MarketplaceConnectorImport({ flow, connection, onBack }: Marketp
         productCount={flow.productCount}
         untrackedVariants={flow.untrackedVariants}
         conditionOptions={importer.conditionOptions}
+        variantMode={connection.variantMode ?? 'native'}
         busy={importer.busy}
         onReview={() => void flow.review()}
         onChooseFreeShipping={() => void flow.chooseFreeShipping()}

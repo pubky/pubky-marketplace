@@ -2,12 +2,15 @@ import {
   COMMERCE_LISTING_MAX_IMAGES,
   COMMERCE_LISTING_MAX_QUANTITY,
   COMMERCE_LISTING_MAX_VARIANTS,
+  COMMERCE_LISTING_TITLE_MAX_CHARS,
+  COMMERCE_LISTING_TITLE_MIN_CHARS,
 } from '@/config/commerce';
 import type {
   ConnectorCatalogProduct,
   ConnectorCatalogVariant,
   ConnectorMapping,
   ConnectorProvider,
+  VariantMode,
 } from '@/libs/commerce/connectors';
 import { htmlToPlainText } from './import-html-text';
 import type { ImportLoss, ImportLossReport } from './import-loss-report';
@@ -52,6 +55,12 @@ export type ConnectorCatalogRowsInput = {
    * the seller chooses.
    */
   readonly settings: ImportSettings;
+  /**
+   * `native` (default) keeps a product's variants together as one listing.
+   * `split` makes each store variant its own listing (the connection's
+   * "One listing per size or variant"), each with a single variant.
+   */
+  readonly variantMode?: VariantMode;
 };
 
 export type ConnectorCatalogRows = {
@@ -81,6 +90,15 @@ export function connectorListingId(provider: ConnectorProvider, providerProductI
   return `${ID_PREFIX[provider]}-${idTail(providerProductId)}`.slice(0, 128);
 }
 
+/** The listing of one store variant in split mode; stable across imports. */
+export function connectorSplitListingId(
+  provider: ConnectorProvider,
+  providerProductId: string,
+  providerVariantId: string,
+): string {
+  return `${ID_PREFIX[provider]}-${idTail(providerProductId)}-${idTail(providerVariantId)}`.slice(0, 128);
+}
+
 export function connectorVariantId(providerVariantId: string): string {
   return `v${idTail(providerVariantId)}`.slice(0, 128);
 }
@@ -108,11 +126,11 @@ function optionsOf(product: ConnectorCatalogProduct, variant: ConnectorCatalogVa
   return options;
 }
 
-function imagesOf(product: ConnectorCatalogProduct, label: string, losses: ImportLoss[]): readonly SourceImage[] {
+function imagesOf(urls: readonly string[], label: string, losses: ImportLoss[]): readonly SourceImage[] {
   const seen = new Set<string>();
   const valid: string[] = [];
   let invalid = 0;
-  for (const url of product.imageUrls) {
+  for (const url of urls) {
     let parsed: URL | null = null;
     try {
       parsed = new URL(url);
@@ -168,8 +186,27 @@ function imagesOf(product: ConnectorCatalogProduct, label: string, losses: Impor
   return kept.map((url) => ({ url, alt: label }));
 }
 
+/** The title of a split listing: the product and the variant's own choice ("Socks bundle, Size M"), kept inside the title limit. */
+function splitTitle(product: ConnectorCatalogProduct, variant: ConnectorCatalogVariant): string {
+  const choice =
+    variant.optionValues
+      .map(({ value }) => value.trim())
+      .filter(Boolean)
+      .join(' / ') ||
+    variant.title?.trim() ||
+    '';
+  const isDefault = choice === 'Default Title' || choice === '';
+  if (isDefault) return product.title;
+  const suffix = `, ${choice}`;
+  const room = COMMERCE_LISTING_TITLE_MAX_CHARS - suffix.length;
+  return room >= COMMERCE_LISTING_TITLE_MIN_CHARS
+    ? `${product.title.length > room ? `${product.title.slice(0, room - 1).trimEnd()}…` : product.title}${suffix}`
+    : product.title;
+}
+
 export function mapConnectorCatalog(input: ConnectorCatalogRowsInput): ConnectorCatalogRows {
   const { products, provider, sellerPubky, settings } = input;
+  const split = input.variantMode === 'split';
   const exponent = currencyExponent(settings.currency);
   const rows: PresetRow[] = [];
   const links: ConnectorImportLink[] = [];
@@ -177,26 +214,19 @@ export function mapConnectorCatalog(input: ConnectorCatalogRowsInput): Connector
   const labels = new Map<string, string>();
   const usedListingIds = new Set<string>();
   const linksOfListing = new Map<string, ConnectorImportLink[]>();
+  let listingsRead = 0;
 
-  for (const product of products) {
-    const label = product.title.trim() || product.providerProductId;
-    if (product.variants.length === 0) {
-      losses.push(loss('no_variants', 'skipped', 'Variants', 'The store lists no variant to sell.', label));
-      continue;
-    }
-    if (product.variants.length > COMMERCE_LISTING_MAX_VARIANTS) {
-      losses.push(
-        loss(
-          'variants_overflow',
-          'skipped',
-          'Variants',
-          `A listing holds at most ${COMMERCE_LISTING_MAX_VARIANTS} variants; this product has ${product.variants.length}.`,
-          label,
-        ),
-      );
-      continue;
-    }
-    const wrongCurrency = product.variants.find((variant) => variant.price.currency !== settings.currency);
+  /** One Pubky listing from the given variants of a store product. */
+  const addListing = (
+    product: ConnectorCatalogProduct,
+    variants: readonly ConnectorCatalogVariant[],
+    listingId: string,
+    title: string,
+    imageUrls: readonly string[],
+  ) => {
+    listingsRead += 1;
+    const label = title.trim() || product.providerProductId;
+    const wrongCurrency = variants.find((variant) => variant.price.currency !== settings.currency);
     if (wrongCurrency) {
       losses.push(
         loss(
@@ -207,12 +237,12 @@ export function mapConnectorCatalog(input: ConnectorCatalogRowsInput): Connector
           label,
         ),
       );
-      continue;
+      return;
     }
 
     const prices: number[] = [];
     let unpriced: 'price_zero' | 'price_scale' | null = null;
-    for (const variant of product.variants) {
+    for (const variant of variants) {
       const minor = rescaleMinor(variant.price.amountMinor, variant.price.exponent, exponent);
       if (minor === null) {
         unpriced = 'price_scale';
@@ -236,10 +266,9 @@ export function mapConnectorCatalog(input: ConnectorCatalogRowsInput): Connector
           label,
         ),
       );
-      continue;
+      return;
     }
 
-    const listingId = connectorListingId(provider, product.providerProductId);
     if (usedListingIds.has(listingId)) {
       losses.push(
         loss(
@@ -250,12 +279,12 @@ export function mapConnectorCatalog(input: ConnectorCatalogRowsInput): Connector
           label,
         ),
       );
-      continue;
+      return;
     }
     usedListingIds.add(listingId);
     labels.set(listingId, label);
     const listingPrice = Math.min(...prices);
-    const images = imagesOf(product, label, losses);
+    const images = imagesOf(imageUrls, label, losses);
     const description = htmlToPlainText(product.description ?? '');
     const recordUri = `pubky://${sellerPubky}/pub/pubky.app/marketplace/v1/listings/${listingId}`;
     const usedVariantIds = new Set<string>();
@@ -263,7 +292,7 @@ export function mapConnectorCatalog(input: ConnectorCatalogRowsInput): Connector
     let unknownStockQuantity = 0;
     const productLinks: ConnectorImportLink[] = [];
 
-    product.variants.forEach((variant, index) => {
+    variants.forEach((variant, index) => {
       let variantId = connectorVariantId(variant.providerVariantId);
       if (usedVariantIds.has(variantId)) variantId = `${variantId}-${index + 1}`;
       usedVariantIds.add(variantId);
@@ -285,12 +314,15 @@ export function mapConnectorCatalog(input: ConnectorCatalogRowsInput): Connector
         recordUri,
         sellerPubky,
         listingId,
-        sourceListingKey: `${provider}:${product.providerProductId}`,
-        recordRevision: 1,
+        sourceListingKey: split
+          ? `${provider}:${product.providerProductId}:${variant.providerVariantId}`
+          : `${provider}:${product.providerProductId}`,
+        // A store has no revision to compare, so a re-import updates instead of conflicting with the listing's own edits.
+        recordRevision: null,
         variantId,
         sku,
         state: 'active',
-        title: product.title,
+        title,
         description,
         taxonomy: {},
         category: '',
@@ -333,6 +365,47 @@ export function mapConnectorCatalog(input: ConnectorCatalogRowsInput): Connector
       );
     }
     linksOfListing.set(listingId, productLinks);
+  };
+
+  for (const product of products) {
+    const label = product.title.trim() || product.providerProductId;
+    if (product.variants.length === 0) {
+      listingsRead += 1;
+      losses.push(loss('no_variants', 'skipped', 'Variants', 'The store lists no variant to sell.', label));
+      continue;
+    }
+    if (split) {
+      for (const variant of product.variants) {
+        addListing(
+          product,
+          [variant],
+          connectorSplitListingId(provider, product.providerProductId, variant.providerVariantId),
+          splitTitle(product, variant),
+          [...(variant.imageUrl ? [variant.imageUrl] : []), ...product.imageUrls],
+        );
+      }
+      continue;
+    }
+    if (product.variants.length > COMMERCE_LISTING_MAX_VARIANTS) {
+      listingsRead += 1;
+      losses.push(
+        loss(
+          'variants_overflow',
+          'skipped',
+          'Variants',
+          `A listing holds at most ${COMMERCE_LISTING_MAX_VARIANTS} variants; this product has ${product.variants.length}.`,
+          label,
+        ),
+      );
+      continue;
+    }
+    addListing(
+      product,
+      product.variants,
+      connectorListingId(provider, product.providerProductId),
+      product.title,
+      product.imageUrls,
+    );
   }
 
   const finalized = finalizePresetRows({
@@ -387,9 +460,9 @@ export function mapConnectorCatalog(input: ConnectorCatalogRowsInput): Connector
     links,
     report: {
       format: provider,
-      listingsRead: products.length,
+      listingsRead,
       listingsImported: imported,
-      listingsSkipped: products.length - imported,
+      listingsSkipped: listingsRead - imported,
       losses,
     },
   };

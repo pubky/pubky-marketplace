@@ -3,6 +3,7 @@ import { type ConnectorCatalogProduct, connectorCatalogProductSchema } from '@/l
 import {
   connectorListingId,
   connectorMappingsFor,
+  connectorSplitListingId,
   connectorStoreCurrency,
   connectorVariantId,
   mapConnectorCatalog,
@@ -66,8 +67,9 @@ function mapped(
   products: ConnectorCatalogProduct[],
   settings = CHOSEN,
   provider: 'woocommerce' | 'shopify' = 'woocommerce',
+  variantMode: 'native' | 'split' = 'native',
 ) {
-  return mapConnectorCatalog({ products, provider, sellerPubky: SELLER, settings });
+  return mapConnectorCatalog({ products, provider, sellerPubky: SELLER, settings, variantMode });
 }
 
 describe('ids', () => {
@@ -352,6 +354,129 @@ describe('mapConnectorCatalog', () => {
 
   it('is deterministic', () => {
     expect(mapped([product(), simple('2')])).toEqual(mapped([product(), simple('2')]));
+  });
+});
+
+describe('split mode: one listing per store variant', () => {
+  const split = (products: ConnectorCatalogProduct[], settings = CHOSEN) =>
+    mapped(products, settings, 'woocommerce', 'split');
+
+  it('derives a stable listing id from the product and the variant', () => {
+    expect(connectorSplitListingId('woocommerce', '7718', '7719')).toBe('woo-7718-7719');
+    expect(connectorSplitListingId('shopify', 'gid://shopify/Product/42', 'gid://shopify/ProductVariant/99')).toBe(
+      'shopify-42-99',
+    );
+  });
+
+  it('makes each variant its own listing with a single variant, titled with its choice', () => {
+    const { rows, links, report } = split([product()]);
+
+    expect(rows.map((row) => row.listingId)).toEqual(['woo-7718-7719', 'woo-7718-7720']);
+    expect(rows.map((row) => row.title)).toEqual([
+      'The Little Hodler Socks Bundle, S',
+      'The Little Hodler Socks Bundle, M',
+    ]);
+    expect(rows.map((row) => row.variantId)).toEqual(['v7719', 'v7720']);
+    expect(rows.map((row) => row.amountMinor)).toEqual([2500, 3000]);
+    expect(rows.every((row) => row.extraFields.variant_price_minor === undefined)).toBe(true);
+    expect(rows[0]?.sourceListingKey).toBe('woocommerce:7718:7719');
+    expect(rows[0]?.recordUri).toBe(`pubky://${SELLER}/pub/pubky.app/marketplace/v1/listings/woo-7718-7719`);
+    expect(links).toEqual([
+      {
+        listingId: 'woo-7718-7719',
+        variantId: 'v7719',
+        providerProductId: '7718',
+        providerVariantId: '7719',
+        sku: 'SOCK-S',
+      },
+      {
+        listingId: 'woo-7718-7720',
+        variantId: 'v7720',
+        providerProductId: '7718',
+        providerVariantId: '7720',
+        sku: 'SOCK-M',
+      },
+    ]);
+    expect(report).toMatchObject({ listingsRead: 2, listingsImported: 2, listingsSkipped: 0 });
+  });
+
+  it('gives every listing one mapping, so the service can map the store variant 1:1', () => {
+    const { links } = split([product(), simple('2')]);
+    const perListing = new Map<string, number>();
+    for (const link of links) perListing.set(link.listingId, (perListing.get(link.listingId) ?? 0) + 1);
+    expect([...perListing.values()].every((count) => count === 1)).toBe(true);
+    expect(links).toHaveLength(3);
+  });
+
+  it('keeps a plain single-variant product as one listing with its own title', () => {
+    const { rows } = split([simple('2')]);
+    expect(rows.map((row) => [row.listingId, row.title])).toEqual([['woo-2-21', 'Simple product 2']]);
+  });
+
+  it('puts the variant photo first, then the product photos', () => {
+    const withImage = product({
+      variants: [
+        {
+          providerVariantId: '1',
+          optionValues: [{ name: 'Color', value: 'Black' }],
+          price: { amountMinor: 100, currency: 'CHF', exponent: 2 },
+          stock: 1,
+          imageUrl: 'https://shop.example/black.jpg',
+        },
+      ],
+      imageUrls: ['https://shop.example/a.jpg'],
+    });
+    const { rows } = split([withImage]);
+    expect(
+      JSON.parse(rows[0]?.extraFields.source_image_urls ?? '[]').map((image: { url: string }) => image.url),
+    ).toEqual(['https://shop.example/black.jpg', 'https://shop.example/a.jpg']);
+  });
+
+  it('keeps the variant choice when the title is long, and skips only the variant that cannot be priced', () => {
+    const long = product({
+      title: 'A'.repeat(90),
+      variants: [
+        {
+          providerVariantId: '1',
+          optionValues: [{ name: 'Size', value: 'Large' }],
+          price: { amountMinor: 100, currency: 'CHF', exponent: 2 },
+          stock: 1,
+        },
+        {
+          providerVariantId: '2',
+          optionValues: [{ name: 'Size', value: 'Small' }],
+          price: { amountMinor: 0, currency: 'CHF', exponent: 2 },
+          stock: 1,
+        },
+      ],
+    });
+    const { rows, report } = split([long]);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.title.endsWith(', Large')).toBe(true);
+    expect(rows[0]?.title.length).toBeLessThanOrEqual(80);
+    expect(report.losses.find((entry) => entry.code === 'price_zero')).toMatchObject({ severity: 'skipped' });
+    expect(report).toMatchObject({ listingsRead: 2, listingsImported: 1, listingsSkipped: 1 });
+  });
+
+  it('does not cap a product at the variants a listing holds, since each variant is its own listing', () => {
+    const many = simple('10', {
+      variants: Array.from({ length: 101 }, (_, index) => ({
+        providerVariantId: `v${index}`,
+        price: { amountMinor: 100, currency: 'CHF', exponent: 2 },
+        stock: 1,
+      })),
+    });
+    expect(split([many]).rows).toHaveLength(101);
+  });
+
+  it('uses the same default quantity and shipping rules as native mode', () => {
+    const untracked = simple('1', {
+      variants: [{ providerVariantId: '11', price: { amountMinor: 100, currency: 'CHF', exponent: 2 }, stock: null }],
+    });
+    const { rows, report } = split([untracked], { ...CHOSEN, unmanagedStock: 4 });
+    expect(rows[0]?.variantQuantity).toBe(4);
+    expect(rows[0]?.shippingOptions).toHaveLength(1);
+    expect(report.losses.find((entry) => entry.code === 'stock_unmanaged')?.detail).toBe('Stock unknown, set to 4.');
   });
 });
 
