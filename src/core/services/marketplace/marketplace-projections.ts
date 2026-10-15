@@ -487,7 +487,8 @@ export const marketplaceBitcoinQuoteSchema = z
 export const marketplaceFxConversionSchema = z
   .object({
     pair: z.string(),
-    rate: z.union([z.string(), z.number().finite()]),
+    // Informational (12 places); the service sends null when it cannot render it.
+    rate: z.union([z.string(), z.number().finite()]).nullable(),
     usdRate: z.union([z.string(), z.number().finite()]),
     currencyRate: z.union([z.string(), z.number().finite()]),
     source: z.string(),

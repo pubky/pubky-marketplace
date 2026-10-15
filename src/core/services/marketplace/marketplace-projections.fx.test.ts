@@ -38,6 +38,33 @@ describe('order projection: fx_conversion (provisional service wire)', () => {
     }
   });
 
+  it('parses the example in the service docs', () => {
+    const parsed = marketplaceFxConversionSchema.safeParse(
+      toCamelCaseWire({
+        pair: 'EURUSD',
+        rate: '1.161188911117',
+        usd_rate: '77197',
+        currency_rate: '66481',
+        source: 'blocktank',
+        fetched_at: '2026-10-15T10:00:00.000Z',
+        from: { amount_minor: 13_700, currency: 'EUR', exponent: 2 },
+        to: { amount_minor: 15_909, currency: 'USD', exponent: 2 },
+      }),
+    );
+
+    expect(parsed.success).toBe(true);
+  });
+
+  it('keeps the conversion when the informational cross rate is null', () => {
+    const parsed = marketplaceFxConversionSchema.safeParse({
+      ...(toCamelCaseWire(FX_CONVERSION_WIRE) as object),
+      rate: null,
+    });
+
+    expect(parsed.success).toBe(true);
+    if (parsed.success) expect(parsed.data.to.amountMinor).toBe(15_154);
+  });
+
   it('carries fxConversion and the bitcoin quote pair on the order', () => {
     const parsed = marketplaceOrderSchema.safeParse(createFxConvertedOrderFixture());
 
