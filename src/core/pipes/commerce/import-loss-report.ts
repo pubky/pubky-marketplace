@@ -83,6 +83,7 @@ const LOSS_LABELS: Readonly<Record<string, string>> = {
   related_products: 'Related products',
   stock_unmanaged: 'Stock unknown',
   stock_capped: 'Stock capped',
+  stock_adjusted: 'Stock adjusted',
   csv_quantity_unscoped: 'Stock quantity not used',
   quantity_missing: 'Stock quantity missing',
   quantity_invalid: 'Stock quantity invalid',
