@@ -16,7 +16,7 @@ import { AuthErrorCode, ClientErrorCode, ServerErrorCode } from '@/libs/error/er
 import { Err } from '@/libs/error/error.factories';
 import { httpStatusCodeToError } from '@/libs/error/error.http';
 import { ErrorCategory, ErrorService } from '@/libs/error/error.types';
-import { isAppError, isNotFound } from '@/libs/error/error.utils';
+import { isAppError } from '@/libs/error/error.utils';
 import { Logger } from '@/libs/logger/logger';
 import {
   CommerceCatalogEntryModel,
@@ -145,7 +145,7 @@ describe('CommerceApplication', () => {
       });
     });
     // Tests state the homeserver through the fetchJson mock. The if-found read sees the same records,
-    // with fetchJsonIfFound's contract: a homeserver 404 is { found: false }, anything else is thrown.
+    // with fetchJsonIfFound's contract: only a homeserver HTTP 404 is { found: false }, anything else is thrown.
     vi.spyOn(CommerceHomeserverService, 'fetchJsonIfFound').mockImplementation(async (url, logUrl) => {
       try {
         const json =
@@ -154,7 +154,7 @@ describe('CommerceApplication', () => {
             : await CommerceHomeserverService.fetchJson(url, logUrl);
         return { found: true, json };
       } catch (error) {
-        if (isAppError(error) && error.service === ErrorService.Homeserver && isNotFound(error)) {
+        if (isAppError(error) && error.service === ErrorService.Homeserver && error.context?.statusCode === 404) {
           return { found: false };
         }
         throw error;
@@ -689,6 +689,7 @@ describe('CommerceApplication', () => {
         throw Err.client(ClientErrorCode.NOT_FOUND, 'Not found', {
           service: ErrorService.Homeserver,
           operation: 'fetchJson',
+          context: { statusCode: 404 },
         });
       });
       const execute = vi.spyOn(MarketplaceGatewayService, 'execute');
@@ -809,6 +810,7 @@ describe('CommerceApplication', () => {
         throw Err.client(ClientErrorCode.NOT_FOUND, 'Not found', {
           service: ErrorService.Homeserver,
           operation: 'fetchJson',
+          context: { statusCode: 404 },
         });
       }
       return {
@@ -907,6 +909,7 @@ describe('CommerceApplication', () => {
       Err.client(ClientErrorCode.NOT_FOUND, 'Not found', {
         service: ErrorService.Homeserver,
         operation: 'fetchJson',
+        context: { statusCode: 404 },
       });
     const publishableSession = () => {
       vi.spyOn(commerceConfig, 'getCommerceAdapterMode').mockReturnValue('transaction-service');
@@ -1675,6 +1678,7 @@ describe('CommerceApplication', () => {
         Err.client(ClientErrorCode.NOT_FOUND, 'Not found', {
           service: ErrorService.Homeserver,
           operation: 'fetchJson',
+          context: { statusCode: 404 },
         });
 
       /** Homeserver whose listing reads return the latest PUT, else the original record. */
@@ -1921,6 +1925,7 @@ describe('CommerceApplication', () => {
         Err.client(ClientErrorCode.NOT_FOUND, 'Not found', {
           service: ErrorService.Homeserver,
           operation: 'fetchJson',
+          context: { statusCode: 404 },
         }),
       );
       await expect(CommerceApplication.ensureListingRegistered(record)).resolves.toBe(false);
@@ -2250,6 +2255,7 @@ describe('CommerceApplication', () => {
         Err.client(ClientErrorCode.NOT_FOUND, 'Not found', {
           service: ErrorService.Homeserver,
           operation: 'fetchJson',
+          context: { statusCode: 404 },
         });
       /** One listing record on the seller's homeserver, changed only by the PUT and DELETE spies. */
       const homeserver = (record: ReturnType<typeof createCommerceListingFixture>) => {
@@ -2478,6 +2484,7 @@ describe('CommerceApplication', () => {
         Err.client(ClientErrorCode.NOT_FOUND, 'Not found', {
           service: ErrorService.Homeserver,
           operation: 'fetchJson',
+          context: { statusCode: 404 },
         }),
       );
 
@@ -2651,6 +2658,7 @@ describe('CommerceApplication', () => {
         throw Err.client(ClientErrorCode.NOT_FOUND, 'Not found', {
           service: ErrorService.Homeserver,
           operation: 'fetchJson',
+          context: { statusCode: 404 },
         });
       });
 
