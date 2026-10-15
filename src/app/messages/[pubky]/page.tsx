@@ -1,12 +1,17 @@
+import { Suspense } from 'react';
 import { stripPubkyPrefix } from '@/libs/utils/utils';
-import { MessagesConversation } from '@/templates/Messages/MessagesConversation';
+import { ChatConversation } from '@/templates/Chat/ChatConversation';
 
-interface DmConversationPageProps {
+interface ChatConversationPageProps {
   params: Promise<{ pubky: string }>;
 }
 
-export default async function DmConversationPage({ params }: DmConversationPageProps) {
+export default async function ChatConversationPage({ params }: ChatConversationPageProps) {
   const { pubky } = await params;
-  const counterpartyPubky = stripPubkyPrefix(decodeURIComponent(pubky));
-  return <MessagesConversation counterpartyPubky={counterpartyPubky} />;
+  const peerPubky = stripPubkyPrefix(decodeURIComponent(pubky));
+  return (
+    <Suspense>
+      <ChatConversation peerPubky={peerPubky} />
+    </Suspense>
+  );
 }

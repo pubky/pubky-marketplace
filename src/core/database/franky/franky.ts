@@ -1,14 +1,21 @@
 import Dexie from 'dexie';
 import { DB_INIT_MAX_ATTEMPTS, DB_INIT_RETRY_BASE_DELAY_MS, DB_NAME, DB_VERSION } from '@/config/database';
-import {
-  migrateMessagingHistoryToWrappedStorage,
-  migrateMessagingSecretsToWrappedStorage,
-} from '@/database/franky/franky.migrations';
+import { LEGACY_MESSAGING_STORES } from '@/database/franky/franky.legacy-stores';
 import { DatabaseErrorCode } from '@/libs/error/error.codes';
 import { Err } from '@/libs/error/error.factories';
 import { ErrorService } from '@/libs/error/error.types';
 import { Logger } from '@/libs/logger/logger';
 import { type BookmarkModelSchema, bookmarkTableSchema } from '@/models/bookmark/bookmark.schema';
+import {
+  type ChatConversationModelSchema,
+  chatConversationTableSchema,
+  type ChatIdentityModelSchema,
+  chatIdentityTableSchema,
+  type ChatMessageModelSchema,
+  chatMessageTableSchema,
+  type ChatSyncStateModelSchema,
+  chatSyncStateTableSchema,
+} from '@/models/chat/chat.schema';
 import {
   type CommerceActivityCheckpointModelSchema,
   commerceActivityCheckpointTableSchema,
@@ -59,19 +66,6 @@ import {
 import { type FeedModelSchema, feedTableSchema } from '@/models/feed/feed.schema';
 import { type FileDetailsModelSchema, fileDetailsTableSchema } from '@/models/file/fileDetails.schema';
 import { type HotTagsModelSchema, hotTagsTableSchema } from '@/models/hot/hot.schema';
-import {
-  type CommerceMessagingConversationModelSchema,
-  commerceMessagingConversationTableSchema,
-  type CommerceMessagingLinkModelSchema,
-  commerceMessagingLinkTableSchema,
-  type CommerceMessagingMessageModelSchema,
-  commerceMessagingMessageTableSchema,
-  type CommerceMessagingOutboxModelSchema,
-  commerceMessagingOutboxTableSchema,
-  type CommerceMessagingReceiverModelSchema,
-  commerceMessagingReceiverTableSchema,
-  commerceMessagingUnprocessedTableSchema,
-} from '@/models/messaging/messaging.schema';
 import type { Pubky } from '@/models/models.types';
 import { type ModerationModelSchema, moderationTableSchema } from '@/models/moderation/moderation.schema';
 import { notificationTableSchema } from '@/models/notification/notification.schema';
@@ -143,25 +137,15 @@ export function isTransientIndexedDbError(error: unknown): boolean {
 }
 
 /**
- * The last DB version that stored messaging key material (receiver Noise
- * secrets, link snapshots) as PLAINTEXT. Versions above it run the in-place
- * at-rest wrap migration (`franky.migrations.ts`) instead of the
- * delete-and-recreate fallback — the wrapped rows ARE the user's messaging
- * identity, so wiping them would orphan every Encrypted Link.
+ * The first DB version that upgrades IN PLACE instead of delete-and-recreate.
+ * Every version from here on adds or drops tables through Dexie's version
+ * chain, so seller-local inventory, import and webhook rows survive a bump.
  */
-export const MESSAGING_WRAP_BASE_DB_VERSION = 4;
+export const IN_PLACE_UPGRADE_BASE_DB_VERSION = 4;
 
-/**
- * Outcome of {@link AppDatabase.initialize}. `messagingAtRestDegraded` is
- * true when the best-effort versions-match wrap sweep failed: legacy
- * plaintext messaging key material may still sit at rest (and be served on
- * read) until a later boot's sweep succeeds. The messaging enable UI reads
- * this (via the messaging store) and pauses with "storage protection
- * unavailable" instead of silently continuing.
- */
+/** Outcome of {@link AppDatabase.initialize}. */
 export interface DatabaseInitResult {
   wasDbReset: boolean;
-  messagingAtRestDegraded: boolean;
 }
 
 export class AppDatabase extends Dexie {
@@ -225,14 +209,11 @@ export class AppDatabase extends Dexie {
   commerce_import_mappings!: Dexie.Table<CommerceImportMappingModelSchema>;
   // Inventory Studio webhooks (W3). Device-local {id,url} only; wiped on sign-out.
   commerce_webhooks!: Dexie.Table<CommerceWebhookModelSchema>;
-  // Encrypted messaging (Paykit Encrypted Links) — rows carry key material
-  // and device-local plaintext history; see messaging.schema.ts header.
-  commerce_messaging_receivers!: Dexie.Table<CommerceMessagingReceiverModelSchema>;
-  commerce_messaging_links!: Dexie.Table<CommerceMessagingLinkModelSchema>;
-  commerce_messaging_conversations!: Dexie.Table<CommerceMessagingConversationModelSchema>;
-  commerce_messaging_messages!: Dexie.Table<CommerceMessagingMessageModelSchema>;
-  // Device-local queued outbound messages awaiting a ready Encrypted Link
-  commerce_messaging_outbox!: Dexie.Table<CommerceMessagingOutboxModelSchema>;
+  // Chat (buyer↔seller messaging) cache of homeserver state; see chat.schema.ts.
+  chat_identity!: Dexie.Table<ChatIdentityModelSchema>;
+  chat_conversations!: Dexie.Table<ChatConversationModelSchema>;
+  chat_messages!: Dexie.Table<ChatMessageModelSchema>;
+  chat_sync_state!: Dexie.Table<ChatSyncStateModelSchema>;
   // Marketplace community tags (listing/shop targets), kind-prefixed row ids
   marketplace_tags!: Dexie.Table<TagCollectionModelSchema<string>>;
   // Hot tags
@@ -306,18 +287,6 @@ export class AppDatabase extends Dexie {
         // has never shipped, so there is no upgrade path to preserve.
         commerce_delivery_addresses: commerceDeliveryAddressTableSchema,
         commerce_shipping_presets: commerceShippingPresetTableSchema,
-        commerce_messaging_receivers: commerceMessagingReceiverTableSchema,
-        commerce_messaging_links: commerceMessagingLinkTableSchema,
-        commerce_messaging_conversations: commerceMessagingConversationTableSchema,
-        commerce_messaging_messages: commerceMessagingMessageTableSchema,
-        // Queued-message outbox. Adding this table REQUIRED bumping
-        // NEXT_PUBLIC_DB_VERSION (3 → 4): version 3 HAD shipped, and a
-        // schema change under a shipped version leaves existing browsers
-        // with a mismatched store set that breaks every local write. The
-        // app's upgrade path is mismatch → delete-and-recreate the local
-        // cache (device-local state resets; homeserver-synced state
-        // rehydrates).
-        commerce_messaging_outbox: commerceMessagingOutboxTableSchema,
         // Marketplace community tags — folded into the current (unreleased)
         // DB version rather than bumping it: version 3 has never shipped, so
         // there is no upgrade path to preserve.
@@ -338,22 +307,31 @@ export class AppDatabase extends Dexie {
       const webhookStores = {
         commerce_webhooks: commerceWebhookTableSchema,
       };
-      const unprocessedStores = {
-        // Inbound events this build cannot interpret, kept unprocessed so
-        // the link never reads past them. Added at version 8 (7 shipped).
-        commerce_messaging_unprocessed: commerceMessagingUnprocessedTableSchema,
+      const chatStores = {
+        // Chat cache of homeserver state. Added at version 9 together with
+        // the removal of the retired encrypted-messaging tables.
+        chat_identity: chatIdentityTableSchema,
+        chat_conversations: chatConversationTableSchema,
+        chat_messages: chatMessageTableSchema,
+        chat_sync_state: chatSyncStateTableSchema,
       };
-      const storesWithoutImport = stores;
+      // Versions 4–8 declared the retired messaging tables; the chain needs
+      // their schema strings so Dexie can open those databases and drop them.
+      const storesWithoutImport = { ...stores, ...LEGACY_MESSAGING_STORES.base };
       const storesAt6 = { ...storesWithoutImport, ...importStores };
       const storesAt7 = { ...storesAt6, ...webhookStores };
-      const storesAtDeclared = { ...storesAt7, ...unprocessedStores };
+      const storesAt8 = { ...storesAt7, ...LEGACY_MESSAGING_STORES.unprocessed };
+      const storesAt9 = { ...storesAt7, ...LEGACY_MESSAGING_STORES.dropped, ...chatStores };
+      // A fresh single-version database (tests force DB_VERSION=1) must not
+      // declare dropped tables: Dexie only accepts `null` in an upgrade step.
+      const storesFresh = { ...stores, ...importStores, ...webhookStores, ...chatStores };
 
-      if (this.declaredVersion > MESSAGING_WRAP_BASE_DB_VERSION) {
-        // Version chain for 4 → 5 → 6 → 7 → 8: 4 and 5 share the wrap-era
-        // schema (no import tables). 6 adds Inventory Studio import stores in
-        // place. 7 adds commerce_webhooks ({id,url} only) in place. 8 adds
-        // commerce_messaging_unprocessed in place.
-        this.version(MESSAGING_WRAP_BASE_DB_VERSION).stores(storesWithoutImport);
+      if (this.declaredVersion > IN_PLACE_UPGRADE_BASE_DB_VERSION) {
+        // Version chain 4 → 5 → 6 → 7 → 8 → 9: 4 and 5 share one schema. 6
+        // adds Inventory Studio import stores. 7 adds commerce_webhooks. 8
+        // added the retired messaging unprocessed table. 9 drops every
+        // retired messaging table and adds the chat tables, all in place.
+        this.version(IN_PLACE_UPGRADE_BASE_DB_VERSION).stores(storesWithoutImport);
         if (this.declaredVersion >= 5) {
           this.version(5).stores(storesWithoutImport);
         }
@@ -364,15 +342,18 @@ export class AppDatabase extends Dexie {
           this.version(7).stores(storesAt7);
         }
         if (this.declaredVersion >= 8) {
-          this.version(8).stores(storesAtDeclared);
+          this.version(8).stores(storesAt8);
         }
-        if (this.declaredVersion > 8) {
-          this.version(this.declaredVersion).stores(storesAtDeclared);
+        if (this.declaredVersion >= 9) {
+          this.version(9).stores(storesAt9);
+        }
+        if (this.declaredVersion > 9) {
+          this.version(this.declaredVersion).stores(storesFresh);
         }
       } else {
-        // Tests force DB_VERSION=1: fold import and webhook tables into the
-        // single version so wipe-enumerate tests see them without a 4→7 chain.
-        this.version(this.declaredVersion).stores(storesAtDeclared);
+        // Tests force DB_VERSION=1: fold every live table into the single
+        // version so wipe-enumerate tests see them without a 4→9 chain.
+        this.version(this.declaredVersion).stores(storesFresh);
       }
     } catch (error) {
       throw Err.database(DatabaseErrorCode.SCHEMA_ERROR, 'Failed to initialize database schema of indexedDB', {
@@ -494,7 +475,7 @@ export class AppDatabase extends Dexie {
   async initialize(): Promise<DatabaseInitResult> {
     if (typeof indexedDB === 'undefined') {
       Logger.warn('IndexedDB is not available in this environment. Skipping database initialization.');
-      return { wasDbReset: false, messagingAtRestDegraded: false };
+      return { wasDbReset: false };
     }
 
     for (let attempt = 1; ; attempt++) {
@@ -543,7 +524,7 @@ export class AppDatabase extends Dexie {
     if (!dbExists) {
       Logger.info('Creating new database...');
       await this.open();
-      return { wasDbReset: true, messagingAtRestDegraded: false };
+      return { wasDbReset: true };
     }
 
     let rawVersion: number | null = null;
@@ -566,23 +547,19 @@ export class AppDatabase extends Dexie {
     if (currentVersion === null) {
       Logger.warn('Unable to determine current database version. Recreating database...');
       await this.recreateDatabase(currentVersion, rawVersion);
-      return { wasDbReset: true, messagingAtRestDegraded: false };
+      return { wasDbReset: true };
     }
 
     if (currentVersion !== this.declaredVersion) {
-      if (currentVersion >= MESSAGING_WRAP_BASE_DB_VERSION && this.declaredVersion > currentVersion) {
-        // 4 → N: wrap messaging secrets when leaving v4. 5 → 6 adds import
-        // tables in place via Dexie; 6 → 7 adds webhook {id,url} rows. Do not
+      if (currentVersion >= IN_PLACE_UPGRADE_BASE_DB_VERSION && this.declaredVersion > currentVersion) {
+        // 4 → N upgrades in place through the Dexie version chain. Do not
         // delete-and-recreate, that would wipe seller-local inventory state.
         Logger.info(`Database upgrade ${currentVersion} → ${this.declaredVersion}: in-place Dexie schema`, {
           rawVersion,
           expectedVersion: this.declaredVersion,
         });
         await this.open();
-        if (currentVersion === MESSAGING_WRAP_BASE_DB_VERSION) {
-          await migrateMessagingSecretsToWrappedStorage(this);
-        }
-        return { wasDbReset: false, messagingAtRestDegraded: await this.wrapMessageHistory() };
+        return { wasDbReset: false };
       }
       Logger.info(`Database version mismatch. Current: ${currentVersion}, Expected: ${this.declaredVersion}`, {
         rawVersion,
@@ -591,56 +568,15 @@ export class AppDatabase extends Dexie {
         expectedInternalVersion: this.declaredVersion * AppDatabase.DEXIE_VERSION_MULTIPLIER,
       });
       await this.recreateDatabase(currentVersion, rawVersion);
-      return { wasDbReset: true, messagingAtRestDegraded: false };
+      return { wasDbReset: true };
     }
 
-    // Versions match: idempotent wrap sweep — heals a crash that interrupted
-    // the 4 → 5 upgrade between the native version bump and the data pass.
-    // Best-effort here: a failure fails the messaging layer closed at
-    // operation time (writes refuse plaintext; unreadable rows read as lost)
-    // rather than blocking app boot, and leftover rows retry on the next boot.
-    // But it is NOT silent: a failed sweep leaves legacy plaintext key
-    // material at rest AND still served on read, so the failure is reported
-    // to the caller as `messagingAtRestDegraded` — the messaging enable UI
-    // surfaces it ("messaging paused: storage protection unavailable") until
-    // a later boot's sweep succeeds.
-    let messagingAtRestDegraded = false;
-    try {
-      if (!this.isOpen()) {
-        await this.open();
-      }
-      await migrateMessagingSecretsToWrappedStorage(this);
-    } catch (error) {
-      messagingAtRestDegraded = true;
-      Logger.warn(
-        'Messaging at-rest wrap sweep failed; legacy rows stay plaintext at rest until a later boot succeeds, and messaging is marked degraded',
-        { error },
-      );
+    if (!this.isOpen()) {
+      await this.open();
     }
-    if (await this.wrapMessageHistory()) messagingAtRestDegraded = true;
 
     Logger.debug('Database version is current');
-    return { wasDbReset: false, messagingAtRestDegraded };
-  }
-
-  /**
-   * Best-effort in-place wrap of message bodies left in plaintext by builds
-   * before history was encrypted at rest. Runs on every boot of an existing
-   * database (it is idempotent) and resolves `true` when it failed: those
-   * bodies then stay plaintext at rest, readable, until a later boot
-   * succeeds, and messaging is reported degraded meanwhile.
-   */
-  private async wrapMessageHistory(): Promise<boolean> {
-    try {
-      await migrateMessagingHistoryToWrappedStorage(this);
-      return false;
-    } catch (error) {
-      Logger.warn(
-        'Message history wrap sweep failed; legacy bodies stay plaintext at rest until a later boot succeeds, and messaging is marked degraded',
-        { error },
-      );
-      return true;
-    }
+    return { wasDbReset: false };
   }
 }
 

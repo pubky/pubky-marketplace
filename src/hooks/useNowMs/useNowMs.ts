@@ -2,16 +2,16 @@
 
 import { useEffect, useState } from 'react';
 
-/** Wall-clock milliseconds, refreshed every second while `active`. */
-export function useNowMs(active: boolean): number {
+/** Wall-clock milliseconds, refreshed every `intervalMs` (default one second) while `active`. */
+export function useNowMs(active: boolean, intervalMs = 1000): number {
   const [nowMs, setNowMs] = useState(() => Date.now());
 
   useEffect(() => {
     if (!active) return;
     setNowMs(Date.now());
-    const timer = window.setInterval(() => setNowMs(Date.now()), 1000);
+    const timer = window.setInterval(() => setNowMs(Date.now()), intervalMs);
     return () => window.clearInterval(timer);
-  }, [active]);
+  }, [active, intervalMs]);
 
   return nowMs;
 }

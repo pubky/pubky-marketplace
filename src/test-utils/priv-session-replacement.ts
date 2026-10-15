@@ -6,13 +6,7 @@ import { MarketplaceSessionService } from '@/services/marketplace/marketplace-se
 import { MARKETPLACE_SESSION_GRANT } from '@/services/marketplace/marketplace-session-grant';
 import type { FakeHomeserver } from '@/test-utils/fake-homeserver';
 
-const FAMILIES: PrivFamily[] = [
-  'watchlist',
-  'order_receipt',
-  'attention_seen/activity',
-  'attention_seen/orders',
-  'messaging_mutes',
-];
+const FAMILIES: PrivFamily[] = ['watchlist', 'order_receipt', 'attention_seen/activity', 'attention_seen/orders'];
 
 /** A fresh copy of the owner's keyring: the application revokes and zeroes the copy it holds. */
 export function releasedKeyring(ownerPubky: string): PrivKeyring {
