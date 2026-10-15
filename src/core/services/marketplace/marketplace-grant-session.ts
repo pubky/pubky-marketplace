@@ -21,6 +21,11 @@ export const GRANT_SESSION_PROOFS_PATH = '/pub/pubky.app/marketplace/v1/session-
 
 const OPERATION = 'marketplaceGrantSession';
 
+/**
+ * `expires_at` is validated as part of the answer's shape only. Expiry is the
+ * service's call (it refuses an expired challenge at mint); a client-side
+ * clock check would only add skew failures.
+ */
 const challengeSchema = z.object({
   challenge_id: z.uuid(),
   expires_at: z.iso.datetime({ offset: true }),
