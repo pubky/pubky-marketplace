@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import type { OrderPushRow, StorePushOverview } from '@/application/connectors/connectors';
-import { getCommerceAdapterMode, isDurableCommerceMode } from '@/config/commerce';
+import { getCommerceAdapterMode, getStoreConnectionsEnabled, isDurableCommerceMode } from '@/config/commerce';
 import { ConnectorsController } from '@/controllers/connectors/connectors';
 import {
   type ConnectorAlert,
@@ -33,7 +33,8 @@ const RETRY_REFUSALS: Readonly<Record<string, string>> = {
 export function useConnectorPushStatus() {
   const currentUserPubky = useAuthStore((state) => state.currentUserPubky);
   const marketplaceSession = useCommerceStore((state) => state.marketplaceSession);
-  const enabled = isDurableCommerceMode(getCommerceAdapterMode()) && Boolean(currentUserPubky);
+  const enabled =
+    getStoreConnectionsEnabled() && isDurableCommerceMode(getCommerceAdapterMode()) && Boolean(currentUserPubky);
   const [overview, setOverview] = useState<StorePushOverview | null>(null);
   const [retryingOrderId, setRetryingOrderId] = useState<string | null>(null);
 

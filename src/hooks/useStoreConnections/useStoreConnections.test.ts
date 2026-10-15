@@ -7,11 +7,11 @@ import { connectorRefusal } from '@/test-utils/connector-errors';
 import { connectionFixture } from '@/test-utils/connector-fixtures';
 import { useStoreConnections } from './useStoreConnections';
 
-const mode = vi.hoisted(() => ({ value: 'transaction-service' as string }));
+const mode = vi.hoisted(() => ({ value: 'transaction-service' as string, enabled: true }));
 
 vi.mock('@/config/commerce', async () => {
   const actual = await vi.importActual<typeof import('@/config/commerce')>('@/config/commerce');
-  return { ...actual, getCommerceAdapterMode: () => mode.value };
+  return { ...actual, getCommerceAdapterMode: () => mode.value, getStoreConnectionsEnabled: () => mode.enabled };
 });
 
 vi.mock('@/stores/auth/auth.store', () => ({
@@ -46,6 +46,7 @@ describe('useStoreConnections', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mode.value = 'transaction-service';
+    mode.enabled = true;
   });
 
   it('lists the connections with their health', async () => {
@@ -88,6 +89,16 @@ describe('useStoreConnections', () => {
     await waitFor(() => expect(result.current.isLoading).toBe(false));
     expect(result.current.enabled).toBe(false);
     expect(ConnectorsController.fetchConnections).not.toHaveBeenCalled();
+  });
+
+  it('does not call the service while the store connections switch is off', async () => {
+    mode.enabled = false;
+    const { result } = renderHook(() => useStoreConnections());
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(result.current.enabled).toBe(false);
+    expect(result.current.lostAlerts).toEqual([]);
+    expect(ConnectorsController.fetchConnections).not.toHaveBeenCalled();
+    expect(ConnectorsController.fetchAlerts).not.toHaveBeenCalled();
   });
 
   it('keeps a disconnected store in the list as Disconnected until the page is reloaded', async () => {

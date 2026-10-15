@@ -8,11 +8,11 @@ import { connectorRefusal } from '@/test-utils/connector-errors';
 import { connectionFixture } from '@/test-utils/connector-fixtures';
 import { useConnectorPushStatus } from './useConnectorPushStatus';
 
-const mode = vi.hoisted(() => ({ value: 'transaction-service' as string }));
+const mode = vi.hoisted(() => ({ value: 'transaction-service' as string, enabled: true }));
 
 vi.mock('@/config/commerce', async () => {
   const actual = await vi.importActual<typeof import('@/config/commerce')>('@/config/commerce');
-  return { ...actual, getCommerceAdapterMode: () => mode.value };
+  return { ...actual, getCommerceAdapterMode: () => mode.value, getStoreConnectionsEnabled: () => mode.enabled };
 });
 
 vi.mock('@/stores/auth/auth.store', () => ({
@@ -71,6 +71,7 @@ describe('useConnectorPushStatus', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mode.value = 'transaction-service';
+    mode.enabled = true;
   });
 
   it('is hidden for a seller with no store and no alerts', async () => {
@@ -99,6 +100,18 @@ describe('useConnectorPushStatus', () => {
     mode.value = 'sandbox';
     renderHook(() => useConnectorPushStatus());
     expect(ConnectorsController.fetchPushOverview).not.toHaveBeenCalled();
+  });
+
+  it('stays hidden, with its alerts, and reads nothing while the store connections switch is off', async () => {
+    mode.enabled = false;
+    vi.mocked(ConnectorsController.fetchPushOverview).mockResolvedValue(
+      overview({ pushes: [{ connection, push: quarantined }], alerts: [alert('a1', 'push_quarantined', 'order-2')] }),
+    );
+    const { result } = renderHook(() => useConnectorPushStatus());
+    expect(ConnectorsController.fetchPushOverview).not.toHaveBeenCalled();
+    expect(result.current.visible).toBe(false);
+    expect(result.current.alerts).toEqual([]);
+    expect(result.current.pushes).toEqual([]);
   });
 
   it('separates orders that need action from the ones in the store', async () => {

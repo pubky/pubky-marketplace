@@ -5,6 +5,15 @@ products to also publish on Pubky, and sees whether Pubky orders reached the
 store. The service side is the connector worker in `pubky-marketplace-service`
 (`/v1/connectors`); this page is the Shop side.
 
+## Switch
+
+Everything here is behind `PUBKY_RUNTIME_STORE_CONNECTIONS_ENABLED` (default
+`false`), so the Shop can deploy before the service connectors are deployed with
+`CONNECTORS_ENABLED`. Off: the dashboard has no Store connections button, both
+routes below answer like an unknown page, the orders page shows no push status
+card or store alert, and the Shop sends no `/v1/connectors` request. Turn it on
+after the service side is live.
+
 ## Pages
 
 - `/marketplace/settings/store-connections` lists the connections (Connected,
