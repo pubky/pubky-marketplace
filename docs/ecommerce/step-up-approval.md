@@ -1,6 +1,6 @@
 # Step-up approval for bridged sessions (Shop ↔ pubky.app)
 
-> Historical design: the cookie sign-in and dual-AuthToken flow described here have been superseded. See [grant authentication](../launch/grant-auth-session.md) for the current sign-in, service approval and migration contract.
+> Historical design: the cookie sign-in and dual-AuthToken flow described here have been superseded. See [grant authentication](../launch/grant-auth-session.md) for the current sign-in, service approval and migration contract. File references below are as of September 2026: `marketplace-paykit-claim.ts` and the seller Lock Server step have since been removed, and seller Bitcoin readiness now comes from the service's `bitcoin_setup` on the own payment config.
 
 **Status:** implemented (Option C) on `marketplace/pr25-ux`, 2026-09-05; reviewed and audited to SHIP. Scope: the single signer moment a user arriving via the pubky.app session bridge hits at their first commerce action. No secret, cookie, or key material appears in this document.
 
