@@ -18,6 +18,7 @@ import { useSellerPaymentMethodGate } from '@/hooks/useSellerPaymentMethodGate/u
 import { listingDraftResumePrompt, listingDraftTitleLabel } from '@/libs/commerce/listing-drafts';
 import { BackToMyShop } from '@/molecules/Marketplace/BackToMyShop';
 import { ListingComposerPaymentBanner } from '@/molecules/Marketplace/ListingComposerPaymentBanner';
+import { PaykitOutageNotice } from '@/molecules/Marketplace/PaykitOutageNotice';
 import { ContentLayout } from '@/organisms/ContentLayout/ContentLayout';
 import { MarketplaceListingForm } from '@/organisms/Marketplace/MarketplaceListingForm';
 import { MarketplaceSectionNav } from '@/organisms/Marketplace/MarketplaceSectionNav';
@@ -79,6 +80,7 @@ function MarketplaceSellComposer() {
   const [isPublishing, setIsPublishing] = useState(false);
   const [publishAfterSession, setPublishAfterSession] = useState(false);
   const showPaymentBanner = paymentGate.isDurable && paymentGate.ready && paymentGate.reason === 'no-method';
+  const showPaykitOutage = paymentGate.isDurable && paymentGate.ready && paymentGate.reason === 'paykit-unreachable';
 
   const publish = async () => {
     setIsPublishing(true);
@@ -141,6 +143,7 @@ function MarketplaceSellComposer() {
         </div>
 
         {showPaymentBanner && <ListingComposerPaymentBanner />}
+        {showPaykitOutage && <PaykitOutageNotice audience="seller" surface="listing-paykit-outage" />}
 
         {listing.pendingRestore && (
           <div

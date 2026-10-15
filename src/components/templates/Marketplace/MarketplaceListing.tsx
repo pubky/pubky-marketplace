@@ -296,8 +296,11 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
     requireAuth(revealSessionRequired);
   };
   const onSessionConnected = () => {
+    const pendingPurchase = pendingPurchaseRef.current;
+    pendingPurchaseRef.current = null;
     setShowSessionRequired(false);
     void negotiation.refresh();
+    pendingPurchase?.();
   };
   const addSelectedVariantToCart = () => {
     if (!selectedVariant) return;

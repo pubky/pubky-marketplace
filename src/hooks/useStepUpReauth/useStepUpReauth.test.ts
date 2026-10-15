@@ -109,6 +109,50 @@ describe('useStepUpReauth', () => {
     expect(result.current.isOpeningRing).toBe(true);
   });
 
+  describe('Bitkit on iOS', () => {
+    const GRANT_URL = 'pubkyauth://signin_grant?caps=x&relay=r&secret=s&cid=shop.pubky.app&cpk=k';
+    const BITKIT_IOS_URL = 'bitkit://pubky-auth/signin?caps=x&relay=r&secret=s&cid=shop.pubky.app&cpk=k';
+    const IPHONE = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15';
+    const MAC = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15';
+    const ANDROID = 'Mozilla/5.0 (Linux; Android 15; Pixel 9) AppleWebKit/537.36 Chrome/140.0 Mobile';
+
+    async function awaitingWith(userAgent: string, maxTouchPoints: number, signer: 'ring' | 'bitkit') {
+      vi.stubGlobal('navigator', { userAgent, maxTouchPoints });
+      vi.mocked(AuthController.getStepUpAuthUrl).mockResolvedValue(createDeferredFlow(GRANT_URL).flow);
+      const { result } = renderHook(() => useStepUpReauth({ signer }));
+      act(() => result.current.start());
+      await waitFor(() => expect(result.current.status).toBe('awaiting'));
+      return result;
+    }
+
+    afterEach(() => {
+      vi.unstubAllGlobals();
+    });
+
+    it.each([
+      ['iPhone', IPHONE, 5],
+      ['iPadOS reporting Macintosh with touch', MAC, 5],
+    ])('opens the bitkit:// link on %s and keeps the QR and copy on pubkyauth://', async (_, userAgent, touch) => {
+      const result = await awaitingWith(userAgent, touch, 'bitkit');
+
+      expect(navigatesWithinGesture(navigation.navigateTop, BITKIT_IOS_URL, () => result.current.openInRing())).toBe(
+        true,
+      );
+      expect(result.current.authorizationUrl).toBe(GRANT_URL);
+    });
+
+    it.each([
+      ['Android', ANDROID, 5, 'bitkit'],
+      ['desktop Mac', MAC, 0, 'bitkit'],
+      ['iPhone with Pubky Ring', IPHONE, 5, 'ring'],
+    ] as const)('keeps the pubkyauth:// link on %s', async (_, userAgent, touch, signer) => {
+      const result = await awaitingWith(userAgent, touch, signer);
+
+      act(() => result.current.openInRing());
+      expect(navigation.navigateTop).toHaveBeenCalledWith(GRANT_URL);
+    });
+  });
+
   it('never auto-starts: mounting the hook requests no auth URL (only the explicit CTA may)', () => {
     const { result } = renderHook(() => useStepUpReauth());
 
