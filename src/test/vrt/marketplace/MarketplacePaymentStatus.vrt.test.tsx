@@ -226,6 +226,24 @@ describe('Marketplace payment status card — visual regression', () => {
       await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot(`payment-status-waiting-contact-${name}`);
     });
 
+    it(`asks the buyer to check Bitkit, never claiming non-delivery, when the request reads failed on ${name}`, async () => {
+      const screen = await renderCard('awaiting_entitlement', 'transaction-service', {
+        viewport,
+        orderOverrides: {
+          paymentMethod: 'bitcoin',
+          paykitRequestState: 'pending',
+          paykitDeliveryState: 'failed',
+          holdExpiresAt: HOLD_DEADLINE,
+        },
+      });
+      await expect
+        .element(screen.getByTestId('paykit-delivery-failed'))
+        .toHaveTextContent("We couldn't confirm your wallet got the payment request.");
+      await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot(
+        `payment-status-delivery-unconfirmed-${name}`,
+      );
+    });
+
     it(`keeps request help below the payment card on ${name}`, async () => {
       const screen = await renderCard('awaiting_entitlement', 'transaction-service', {
         viewport,
@@ -735,6 +753,23 @@ describe('Marketplace payment status card — visual regression', () => {
     await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot(
       'payment-status-refund-required-seller-bitcoin-desktop',
     );
+    view.locks.enabled = true;
+  });
+
+  it('tells an elapsed buyer not to pay a request it could not confirm at desktop viewport', async () => {
+    view.locks = { ...view.locks, enabled: false, correlation: null, delivery: null, error: null };
+    const screen = await renderCard('expired', 'transaction-service', {
+      adapter: 'paykit',
+      deployEnv: 'staging',
+      orderState: 'cancelled',
+      orderOverrides: {
+        cancellationReason: 'payment window elapsed',
+        paymentMethod: 'bitcoin',
+        paykitDeliveryState: 'failed',
+      },
+    });
+    await expect.element(screen.getByTestId('paykit-delivery-failed')).toHaveTextContent("don't pay it");
+    await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('payment-status-elapsed-unconfirmed-desktop');
     view.locks.enabled = true;
   });
 

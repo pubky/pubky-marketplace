@@ -116,9 +116,15 @@ const GENERIC_MANUAL_REVIEW_COPY =
   'A verified event arrived outside the normal flow (for example after the payment window expired), so the seller must resolve this order manually. No funds are held by this marketplace.';
 
 // A failed delivery state can be wrong when the service crashed near the deadline after the
-// request reached the wallet, so this copy never asserts that it was not received.
+// request reached the wallet, so this copy never asserts that it was not received. paykit-server
+// marks a failed delivery permanently and never re-sends it, so the next step is a new checkout.
 const PAYKIT_DELIVERY_FAILED_COPY =
-  "We couldn't confirm your wallet got the payment request. Check Bitkit for it; if it's not there, add the seller as a contact and try again.";
+  "We couldn't confirm your wallet got the payment request. Check Bitkit for it; if it's not there, add the seller as a contact in Bitkit, then check out again.";
+
+// The same request can still sit unpaid in Bitkit after the window ended, and paying it then needs
+// a manual reconciliation or a refund, so the elapsed state says not to (as the Locks rail does).
+const PAYKIT_DELIVERY_ELAPSED_COPY =
+  "We couldn't confirm your wallet got the payment request before the payment window ended. If you find it in Bitkit, don't pay it. This checkout has ended; check out again.";
 
 function parseListingAggregateId(aggregateId: string): { sellerPubky: string; listingId: string } | null {
   if (!aggregateId.startsWith('listing:')) return null;
@@ -402,7 +408,7 @@ export function MarketplacePaymentStatusCard({
       )}
       {visibleStatus === 'expired' && isBuyer && isPaykitRail && order.paykitDeliveryState !== 'delivered' && (
         <Typography as="p" role="alert" className="text-sm text-amber-300" data-testid="paykit-delivery-failed">
-          {PAYKIT_DELIVERY_FAILED_COPY}
+          {PAYKIT_DELIVERY_ELAPSED_COPY}
         </Typography>
       )}
       {visibleStatus === 'manual_review' && !refundRequired && (

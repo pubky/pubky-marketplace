@@ -15,7 +15,7 @@ import {
   USDT_WALLET_HINT,
 } from '@/libs/commerce/usdt-buyer-status';
 import { createOrderFixture, createPaymentFixture } from '@/test/fixtures/commerce/orders';
-import { createUsdtOrderFixture, type UsdtOrderPhase } from '@/test/fixtures/commerce/usdt-orders';
+import { createUsdtOrderFixture, USDT_ORDER_FIELDS, type UsdtOrderPhase } from '@/test/fixtures/commerce/usdt-orders';
 import { MarketplacePaymentStatusCard } from './MarketplacePaymentStatusCard';
 
 const auth = vi.hoisted(() => ({ currentUserPubky: 'b'.repeat(52) }));
@@ -141,9 +141,42 @@ describe('MarketplacePaymentStatusCard — USDT orders', () => {
     renderCard(order, payment, true);
 
     expect(screen.getByTestId('paykit-delivery-failed')).toHaveTextContent(
-      "We couldn't confirm your wallet got the payment request. Check Bitkit for it; if it's not there, add the seller as a contact and try again.",
+      "We couldn't confirm your wallet got the payment request. Check Bitkit for it; if it's not there, add the seller as a contact in Bitkit, then check out again.",
     );
     expect(screen.queryByTestId('usdt-accept-by')).not.toBeInTheDocument();
+  });
+
+  it.each(['received', 'final', 'rechecking'] as const)(
+    'shows no unconfirmed-delivery copy once the USDT payment is seen (%s), even when delivery reads failed',
+    (phase) => {
+      const { order, payment } = createUsdtOrderFixture(phase, { paykitDeliveryState: 'failed' });
+      renderCard(order, payment, true);
+
+      expect(screen.queryByTestId('paykit-delivery-failed')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('usdt-payment-awaiting')).not.toBeInTheDocument();
+    },
+  );
+
+  it('shows no unconfirmed-delivery copy to the seller of an unpaid USDT order', () => {
+    const { order, payment } = createUsdtOrderFixture('awaiting', { paykitDeliveryState: 'failed' });
+    renderCard(order, payment, false);
+
+    expect(screen.queryByTestId('paykit-delivery-failed')).not.toBeInTheDocument();
+  });
+
+  it('tells the buyer of an elapsed USDT checkout not to pay a request it could not confirm', () => {
+    const payment = createPaymentFixture('expired', { adapter: 'paykit' });
+    const order = createOrderFixture('cancelled', {
+      paymentId: payment.id,
+      cancellationReason: 'payment window elapsed',
+      ...USDT_ORDER_FIELDS,
+      paykitDeliveryState: 'failed',
+    });
+    renderCard(order, payment, true);
+
+    expect(screen.getByTestId('paykit-delivery-failed')).toHaveTextContent(
+      "We couldn't confirm your wallet got the payment request before the payment window ended. If you find it in Bitkit, don't pay it. This checkout has ended; check out again.",
+    );
   });
 
   it('shows the seller of an unpaid USDT order neither the accept-by nor the buyer finality note', () => {
