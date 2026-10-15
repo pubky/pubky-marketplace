@@ -241,5 +241,34 @@ describe('useMarketplaceSellerPaymentConfig', () => {
       });
       expect(result.current.accountClaimed).toBe(true);
     });
+
+    it('never lets an older config refresh replace a newer Bitkit confirmation', async () => {
+      let releaseStale: (value: typeof config) => void = () => {};
+      vi.mocked(CommerceController.getMyPaymentConfig)
+        .mockReset()
+        .mockResolvedValueOnce({ ...config, bitcoinSetup: 'setup_required' })
+        .mockImplementationOnce(() => new Promise((resolve) => (releaseStale = resolve)))
+        .mockResolvedValueOnce(config);
+      const { result } = renderHook(() => useMarketplaceSellerPaymentConfig());
+      await waitFor(() => expect(result.current.accountClaimed).toBe(false));
+
+      let stale: Promise<unknown> = Promise.resolve();
+      act(() => {
+        stale = result.current.refreshOwnConfig();
+      });
+      await act(async () => {
+        await result.current.refresh();
+      });
+      expect(result.current.accountClaimed).toBe(true);
+
+      let staleResult: unknown;
+      await act(async () => {
+        releaseStale({ ...config, bitcoinSetup: 'setup_required', bitcoinEnabled: false });
+        staleResult = await stale;
+      });
+      expect(staleResult).toMatchObject({ bitcoinSetup: 'setup_required' });
+      expect(result.current.accountClaimed).toBe(true);
+      expect(result.current.config).toEqual(config);
+    });
   });
 });

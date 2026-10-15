@@ -74,13 +74,17 @@ export function useMarketplaceSellerPaymentConfig() {
    * Re-reads only the stored configuration (no loading state), so a USDT
    * reconnect or a "can't be checked" retry can see the service's fresh
    * readiness without blanking the page. Resolves null when the read fails or
-   * a newer config-only read superseded it.
+   * a newer config-only read superseded it. When a full load, a save or a
+   * Bitkit confirmation started after it, it resolves its read without
+   * applying it, so an older answer never replaces a newer one.
    */
   const refreshOwnConfig = useCallback(async (): Promise<SellerPaymentConfigOwnView | null> => {
     const generation = ++ownConfigGeneration.current;
+    const loadAtStart = loadGeneration.current;
     try {
       const next = await CommerceController.getMyPaymentConfig();
       if (generation !== ownConfigGeneration.current) return null;
+      if (loadAtStart !== loadGeneration.current) return next;
       setConfig(next);
       adoptBitcoinSetup(next, loadGeneration, setAccountClaimed);
       return next;
@@ -120,6 +124,7 @@ export function useMarketplaceSellerPaymentConfig() {
           paypalMerchantEmail: paypalMerchantEmail || null,
           ...(input.usdtEnabled === undefined ? {} : { usdtEnabled: input.usdtEnabled }),
         });
+        loadGeneration.current += 1;
         setConfig(saved);
         adoptBitcoinSetup(saved, loadGeneration, setAccountClaimed);
         toast({ title: 'Payment settings saved' });
