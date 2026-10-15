@@ -75,6 +75,28 @@ export function sellerDeliveryKeyRequirement(required: boolean): SellerDeliveryK
   };
 }
 
+/**
+ * The publish guards Create and Edit run, for putting published listings back
+ * on sale without the composer (Inventory relist, dashboard bulk activate).
+ * The delivery key is required when any of the listings ships.
+ */
+export async function evaluateListingActivationGuards(input: {
+  ownerPubky: string | null;
+  hasMarketplaceSession: boolean;
+  records: readonly CommerceListingRecord[];
+}): Promise<ListingPublishBlockReason | null> {
+  if (!isDurableCommerceMode(getCommerceAdapterMode())) return null;
+  const ships = input.records.some((record) =>
+    fulfillmentRequiresShipping(fulfillmentFormValueFromRecord(record.fulfillmentMethods)),
+  );
+  return evaluateDurableListingPublishGuards({
+    ownerPubky: input.ownerPubky,
+    hasMarketplaceSession: input.hasMarketplaceSession,
+    loadPaymentConfig: (pubky) => CommerceController.getSellerPaymentConfig(pubky),
+    deliveryKey: sellerDeliveryKeyRequirement(ships),
+  });
+}
+
 export interface ListingDraftRestorePrompt {
   listingId: string;
   updatedAt: number;

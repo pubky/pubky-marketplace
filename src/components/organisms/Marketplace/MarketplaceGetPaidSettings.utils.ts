@@ -58,8 +58,9 @@ export const BITCOIN_TOGGLE_BLOCKER_COPY: Record<BitcoinToggleBlocker, string> =
 
 /**
  * Names the missing step behind a disabled "Accept bitcoin" switch. A Lock
- * Server error counts as step 1 missing. An unknown claim (`null`) is not
+ * Server error counts as step 1 missing. An unknown claim (`null`) is never
  * reported as missing: the read failed, so Bitkit may already be connected.
+ * Bitkit is named only when the claim read answered `false`.
  */
 export function deriveBitcoinToggleBlocker(args: {
   lockServerConnected: boolean;
@@ -67,7 +68,7 @@ export function deriveBitcoinToggleBlocker(args: {
   accountClaimed: boolean | null;
 }): BitcoinToggleBlocker | null {
   const lockServerMissing = !args.lockServerConnected || Boolean(args.locksError);
-  if (lockServerMissing) return args.accountClaimed === true ? 'lock-server' : 'both';
+  if (lockServerMissing) return args.accountClaimed === false ? 'both' : 'lock-server';
   if (args.accountClaimed === false) return 'bitkit';
   if (args.accountClaimed === null) return 'bitkit-unknown';
   return null;

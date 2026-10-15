@@ -28,6 +28,7 @@ const view = vi.hoisted(() => ({
   isLoading: false,
   withImages: false,
   loadError: false,
+  shipsToCountries: '',
 }));
 
 // Deterministic solid-color previews for the images-set editor state.
@@ -65,7 +66,11 @@ vi.mock('@/hooks/useMarketplaceShopSettings/useMarketplaceShopSettings', async (
     await import('@/hooks/useMarketplaceShopSettings/useMarketplaceShopSettings.types');
   return {
     useMarketplaceShopSettings: () => ({
-      form: useForm({ defaultValues: view.configured ? configuredShop : marketplaceShopSettingsDefaults }),
+      form: useForm({
+        defaultValues: view.configured
+          ? { ...configuredShop, shipsToCountries: view.shipsToCountries }
+          : marketplaceShopSettingsDefaults,
+      }),
       revision: view.configured ? 3 : 0,
       isLoading: view.isLoading,
       loadError: view.loadError,
@@ -86,6 +91,7 @@ vi.mock('@/organisms/ContentLayout/ContentLayout', () => ({
 describe('Marketplace my shop — visual regression', () => {
   beforeEach(() => {
     view.loadError = false;
+    view.shipsToCountries = '';
   });
   it('renders the create-shop state for a seller without a shop at desktop viewport', async () => {
     view.configured = false;
@@ -122,6 +128,22 @@ describe('Marketplace my shop — visual regression', () => {
     const screen = await renderForVRT(<MarketplaceMyShop />, { viewport: VRT_VIEWPORT_DESKTOP, disableHover: true });
     await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('my-shop-edit-images-desktop');
   });
+
+  it.each([
+    ['anywhere', ''],
+    ['switzerland', 'CH'],
+  ] as const)(
+    'renders the ships-to field for a shop shipping %s at desktop viewport',
+    async (name, shipsToCountries) => {
+      view.configured = true;
+      view.isLoading = false;
+      view.withImages = false;
+      view.shipsToCountries = shipsToCountries;
+
+      const screen = await renderForVRT(<MarketplaceMyShop />, { viewport: VRT_VIEWPORT_DESKTOP, disableHover: true });
+      await expect(screen.getByTestId('shop-settings-ships-to')).toMatchScreenshot(`my-shop-ships-to-${name}-desktop`);
+    },
+  );
 
   it('renders the loading skeleton at desktop viewport', async () => {
     view.configured = false;

@@ -73,6 +73,9 @@ const fixtures = vi.hoisted(async () => {
       }),
     ),
     vacationShop: toCommerceShopModel(createCommerceShopFixture({ vacationMode: true })),
+    swissOnlyShop: toCommerceShopModel(
+      createCommerceShopFixture({ location: { countryCode: 'CH', region: 'TI' }, shipsToCountries: ['CH'] }),
+    ),
     listings: [
       listingEntry('leather_boots', 'Vintage leather boots', 'fashion-shoes-boots', 12_500, 'a'),
       listingEntry('selvedge_jacket', 'Selvedge denim jacket', 'fashion-jackets', 8_900, 'b'),
@@ -308,6 +311,20 @@ describe('Marketplace shop — visual regression', () => {
       disableHover: true,
     });
     await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('shop-vacation-mode-desktop');
+  });
+
+  it('renders a shop that ships only to Switzerland at desktop viewport', async () => {
+    const { seller, swissOnlyShop, listings } = await fixtures;
+    view.shop = swissOnlyShop;
+    view.listings = listings;
+    view.catalogEntries = [];
+
+    const screen = await renderForVRT(<MarketplaceShop sellerPubky={seller} />, {
+      viewport: VRT_VIEWPORT_DESKTOP,
+      disableHover: true,
+    });
+    await expect.element(screen.getByTestId('marketplace-shop-ships-to')).toHaveTextContent('Ships to: Switzerland');
+    await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('shop-ships-to-desktop');
   });
 
   it('renders a shop with no listings at desktop viewport', async () => {

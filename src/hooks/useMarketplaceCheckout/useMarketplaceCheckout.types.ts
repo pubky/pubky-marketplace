@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { DIGITAL_CHECKOUT_REFUSAL_COPY, isWellFormedDeliveryEmail } from '@/libs/commerce/digital';
 import { refinePostalAddressFields } from '@/libs/commerce/postal-address';
+import { destinationCountryError, SHIPS_TO_ANYWHERE, type ShipsToDestinations } from '@/libs/commerce/ships-to';
 
 /**
  * The checkout form (local pickup design §A2): the delivery address is
@@ -13,6 +14,11 @@ import { refinePostalAddressFields } from '@/libs/commerce/postal-address';
  * `requiresDeliveryEmail` does the same for the email an email-kind digital
  * line needs (digital delivery design §4.3): required then, and never sent
  * otherwise.
+ *
+ * `shipsTo` is another hidden value: the destination countries the shipped
+ * sellers' shop records allow. An address elsewhere is invalid. Every path
+ * that seals an address re-reads those records first, which also covers the
+ * moment before they have loaded here.
  */
 export const marketplaceCheckoutSchema = z
   .object({
@@ -27,6 +33,8 @@ export const marketplaceCheckoutSchema = z
       .trim()
       .refine((value) => value === '' || /^[A-Za-z]{2}$/.test(value), 'Use a two-letter country code.'),
     requiresDeliveryAddress: z.boolean(),
+    // Absent reads as anywhere, for values built outside the form.
+    shipsTo: z.custom<ShipsToDestinations>().optional(),
     deliveryEmail: z.string().trim(),
     requiresDeliveryEmail: z.boolean(),
     // Client-only address book controls; never part of the checkout command.
@@ -47,6 +55,9 @@ export const marketplaceCheckoutSchema = z
       refinePostalAddressFields(data, context);
       if (!/^[A-Za-z]{2}$/.test(data.countryCode)) {
         context.addIssue({ code: 'custom', path: ['countryCode'], message: 'Use a two-letter country code.' });
+      } else {
+        const destinationError = destinationCountryError(data.countryCode, data.shipsTo ?? SHIPS_TO_ANYWHERE);
+        if (destinationError) context.addIssue({ code: 'custom', path: ['countryCode'], message: destinationError });
       }
     }
     if (data.requiresDeliveryEmail) {
@@ -80,6 +91,7 @@ export const marketplaceCheckoutDefaults: MarketplaceCheckoutData = {
   postalCode: '',
   countryCode: 'US',
   requiresDeliveryAddress: true,
+  shipsTo: SHIPS_TO_ANYWHERE,
   deliveryEmail: '',
   requiresDeliveryEmail: false,
   saveAddress: false,
