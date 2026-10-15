@@ -402,18 +402,21 @@ const commerceShopTermDaysSchema = z.number().int().min(COMMERCE_SHOP_TERM_DAYS_
 /**
  * Destination countries, read leniently: a malformed list from another
  * writer must not make the whole shop record unreadable. Entries are
- * uppercased and canonicalized (UK becomes GB), anything that is not then a
- * two-letter code is dropped, duplicates are kept once and the list is capped.
- * A list with no usable entry reads as absent.
+ * uppercased and canonicalized (UK becomes GB) and kept once. When any entry
+ * is then a two-letter code, only those codes are kept, capped. A present
+ * list with no such entry (["CHE"], "CH", [1]) keeps its normalized entries
+ * instead, so the seller's restriction survives a re-save and readers can
+ * refuse it rather than read it as anywhere. Only absent or empty is anywhere.
  */
 const commerceShipsToCountriesSchema = z.unknown().transform((value): string[] | undefined => {
-  if (!Array.isArray(value)) return undefined;
-  const codes = value
-    .filter((entry): entry is string => typeof entry === 'string')
-    .map(canonicalCountryCode)
-    .filter((code) => /^[A-Z]{2}$/.test(code));
-  const unique = [...new Set(codes)].slice(0, COMMERCE_SHOP_SHIPS_TO_MAX_COUNTRIES);
-  return unique.length > 0 ? unique : undefined;
+  if (value === undefined || value === null) return undefined;
+  const entries = (Array.isArray(value) ? value : [value]).map((entry) =>
+    typeof entry === 'string' ? canonicalCountryCode(entry) : JSON.stringify(entry),
+  );
+  const unique = [...new Set(entries)].filter((entry) => entry !== '');
+  if (unique.length === 0) return Array.isArray(value) && value.length === 0 ? undefined : [JSON.stringify(value)];
+  const codes = unique.filter((entry) => /^[A-Z]{2}$/.test(entry));
+  return (codes.length > 0 ? codes : unique).slice(0, COMMERCE_SHOP_SHIPS_TO_MAX_COUNTRIES);
 });
 
 const commerceShopRecordSchemaInner = commercePublicRecordBaseSchema

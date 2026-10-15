@@ -9,7 +9,7 @@ import {
   SHIPS_TO_LOADING,
   type ShipsToDestinations,
   shipsToDestinations,
-  shopShipsToCountries,
+  shopShipsToRestriction,
 } from '@/libs/commerce/ships-to';
 import { hasHttpStatus } from '@/libs/error/error.utils';
 
@@ -17,7 +17,8 @@ import { hasHttpStatus } from '@/libs/error/error.utils';
  * One seller's destination countries from their live shop record, falling
  * back to the cached copy when the network read fails, including a 404.
  * Null means anywhere (no list, or no shop record anywhere); undefined means
- * neither copy could be read, so the destination cannot be confirmed.
+ * the destination cannot be confirmed: neither copy could be read, or the
+ * record lists countries none of which is a usable code.
  */
 export async function resolveSellerShipsTo(sellerPubky: string): Promise<readonly string[] | null | undefined> {
   let record: CommerceShopRecord;
@@ -26,11 +27,11 @@ export async function resolveSellerShipsTo(sellerPubky: string): Promise<readonl
   } catch (error) {
     const cached = await CommerceController.getShop(sellerPubky).catch(() => null);
     // A 404 may be transient, so it never drops a restriction this device already knows.
-    if (hasHttpStatus(error, 404)) return cached ? shopShipsToCountries(cached.record) : null;
+    if (hasHttpStatus(error, 404)) return cached ? shopShipsToRestriction(cached.record) : null;
     if (!cached) return undefined;
     record = cached.record;
   }
-  return shopShipsToCountries(record);
+  return shopShipsToRestriction(record);
 }
 
 /** {@link resolveSellerShipsTo} for every seller, combined into one checkout's destinations. */

@@ -599,7 +599,7 @@ describe('other public marketplace records', () => {
     }
   });
 
-  it('keeps shipsToCountries optional and reads it leniently, never failing the record', () => {
+  it('keeps shipsToCountries optional and reads it leniently without failing the record or failing open', () => {
     const shop = createCommerceShopFixture();
     const read = (shipsToCountries: unknown) => {
       const parsed = commerceShopRecordSchema.safeParse({ ...shop, shipsToCountries });
@@ -608,12 +608,17 @@ describe('other public marketplace records', () => {
     };
     expect(commerceShopRecordSchema.parse(shop).shipsToCountries).toBeUndefined();
     expect(read(['CH', 'LI'])).toEqual(['CH', 'LI']);
-    // Lowercase, aliases and duplicates normalize; malformed entries are dropped.
+    // Lowercase, aliases and duplicates normalize; malformed entries beside a usable code are dropped.
     expect(read([' ch ', 'uk', 'EL', 'GB', 'CHE', 1, null, 'li'])).toEqual(['CH', 'GB', 'GR', 'LI']);
-    // Nothing usable reads as absent: the shop ships anywhere.
-    for (const unusable of [[], ['CHE'], 'CH', { CH: true }, null]) {
-      expect(read(unusable)).toBeUndefined();
-    }
+    expect(read('ch')).toEqual(['CH']);
+    // Only absent or empty means anywhere.
+    expect(read([])).toBeUndefined();
+    expect(read(null)).toBeUndefined();
+    // A present list with no usable code keeps its entries, so it is never read (or re-saved) as anywhere.
+    expect(read(['che', 'CHE'])).toEqual(['CHE']);
+    expect(read([1])).toEqual(['1']);
+    expect(read([''])).toEqual(['[""]']);
+    expect(read({ CH: true })).toEqual(['{"CH":true}']);
     const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
     const everyPair = [...letters].flatMap((first) => [...letters].map((second) => first + second));
     expect(read(everyPair)).toHaveLength(COMMERCE_SHOP_SHIPS_TO_MAX_COUNTRIES);

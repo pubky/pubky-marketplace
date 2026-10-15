@@ -205,6 +205,9 @@ export function useMarketplaceShopSettings() {
         deliveryAssumeDays: record.deliveryAssumeDays?.toString() ?? '',
         autoCompleteDays: record.autoCompleteDays?.toString() ?? '',
       });
+      // A list another writer left unusable (["CHE"]) blocks checkout, so the
+      // seller sees why straight away instead of on the next save.
+      if (record.shipsToCountries?.length) void form.trigger('shipsToCountries');
       setIsLoading(false);
     }
 

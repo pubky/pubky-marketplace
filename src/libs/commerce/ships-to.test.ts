@@ -15,7 +15,29 @@ import {
   shipsToDestinations,
   shipsToFieldError,
   shopShipsToCountries,
+  shopShipsToRestriction,
 } from './ships-to';
+
+describe('shopShipsToRestriction', () => {
+  it('is anywhere only for an absent or empty list', () => {
+    expect(shopShipsToRestriction(null)).toBeNull();
+    expect(shopShipsToRestriction({})).toBeNull();
+    expect(shopShipsToRestriction({ shipsToCountries: [] })).toBeNull();
+  });
+
+  it('restricts to the listed codes', () => {
+    expect(shopShipsToRestriction({ shipsToCountries: ['CH', 'LI'] })).toEqual(['CH', 'LI']);
+  });
+
+  it('cannot be resolved when the list names no usable code, and shows nothing to buyers', () => {
+    expect(shopShipsToRestriction({ shipsToCountries: ['CHE'] })).toBeUndefined();
+    expect(shopShipsToCountries({ shipsToCountries: ['CHE'] })).toBeNull();
+    expect(shipsToDestinations([shopShipsToRestriction({ shipsToCountries: ['CHE'] })])).toEqual({
+      status: 'unavailable',
+    });
+    expect(destinationCountryError('CH', { status: 'unavailable' })).toBe(SHIPS_TO_UNAVAILABLE_MESSAGE);
+  });
+});
 
 describe('shopShipsToCountries', () => {
   it('reads an absent, empty or missing list as anywhere', () => {

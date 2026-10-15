@@ -99,6 +99,11 @@ describe('checkDestinationCountry', () => {
     await expect(checkDestinationCountry('CH', [SELLER_A])).resolves.toBe(SHIPS_TO_UNAVAILABLE_MESSAGE);
   });
 
+  it('refuses like an unreadable shop when the seller’s list names no usable code', async () => {
+    refreshShop.mockResolvedValue(createCommerceShopFixture({ ownerPubky: SELLER_A, shipsToCountries: ['CHE'] }));
+    await expect(checkDestinationCountry('CH', [SELLER_A])).resolves.toBe(SHIPS_TO_UNAVAILABLE_MESSAGE);
+  });
+
   it('allows anything for no sellers without reading any shop', async () => {
     await expect(checkDestinationCountry('DE', [])).resolves.toBeNull();
     expect(refreshShop).not.toHaveBeenCalled();

@@ -2,14 +2,25 @@ import { COMMERCE_SHOP_SHIPS_TO_MAX_COUNTRIES } from '@/config/commerce';
 import { canonicalCountryCode, NON_COUNTRY_REGION } from '@/libs/commerce/postal-address';
 
 /**
- * A shop's destination countries: absent or empty `shipsToCountries` means
- * the seller ships anywhere (null), otherwise the listed codes.
+ * A shop's destination restriction: null when `shipsToCountries` is absent or
+ * empty (ships anywhere), the two-letter codes when it lists any, and
+ * undefined when it is present but lists none (["CHE"]). Undefined is a
+ * restriction that cannot be resolved, refused like an unreadable shop.
  */
+export function shopShipsToRestriction(
+  shop: { shipsToCountries?: readonly string[] } | null | undefined,
+): readonly string[] | null | undefined {
+  const entries = shop?.shipsToCountries;
+  if (!entries || entries.length === 0) return null;
+  const codes = entries.filter((entry) => /^[A-Z]{2}$/.test(entry));
+  return codes.length > 0 ? codes : undefined;
+}
+
+/** The countries to show buyers as "Ships to": null when the shop ships anywhere or its list is unusable. */
 export function shopShipsToCountries(
   shop: { shipsToCountries?: readonly string[] } | null | undefined,
 ): readonly string[] | null {
-  const countries = shop?.shipsToCountries;
-  return countries && countries.length > 0 ? countries : null;
+  return shopShipsToRestriction(shop) ?? null;
 }
 
 /**

@@ -300,6 +300,21 @@ describe('useMarketplaceShopSettings', () => {
     );
   });
 
+  it('flags an unusable published list as soon as it loads, so the seller can fix it', async () => {
+    vi.mocked(CommerceController.refreshShop).mockResolvedValue({ ...publishedShop, shipsToCountries: ['CHE'] });
+    const { result } = renderHook(() => useMarketplaceShopSettings());
+    await waitFor(() => expect(result.current.hasShop).toBe(true));
+
+    expect(result.current.form.getValues('shipsToCountries')).toBe('CHE');
+    await waitFor(() =>
+      expect(result.current.form.getFieldState('shipsToCountries').error?.message).toBe(
+        'Not a two-letter country code: CHE.',
+      ),
+    );
+    await act(async () => expect(await result.current.submit()).toBe(false));
+    expect(CommerceController.commitUpsertShop).not.toHaveBeenCalled();
+  });
+
   it('publishes a cleared destination list as absent', async () => {
     vi.mocked(CommerceController.refreshShop).mockResolvedValue({ ...publishedShop, shipsToCountries: ['CH'] });
     const { result } = renderHook(() => useMarketplaceShopSettings());
