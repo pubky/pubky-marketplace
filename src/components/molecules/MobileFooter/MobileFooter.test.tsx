@@ -4,11 +4,11 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import * as commerceConfig from '@/config/commerce';
 import { FORCE_FEED_SCROLL_TOP_KEY } from '@/config/feed';
 import { FileController } from '@/controllers/file/file';
+import { useChatUnread } from '@/hooks/useChatUnread/useChatUnread';
 import { useCurrentUserProfile } from '@/hooks/useCurrentUserProfile/useCurrentUserProfile';
 import { useKeyboardOffset } from '@/hooks/useKeyboardOffset/useKeyboardOffset';
 import { useMarketplaceCartCount } from '@/hooks/useMarketplaceCartCount/useMarketplaceCartCount';
 import { useMarketplaceNavAttention } from '@/hooks/useMarketplaceNavAttention/useMarketplaceNavAttention';
-import { useMessagesUnread } from '@/hooks/useMessagesUnread/useMessagesUnread';
 import { setEmbedded } from '@/test-utils/embedded';
 import { setSocialHost } from '@/test-utils/social-host';
 import { MobileFooter } from './MobileFooter';
@@ -119,8 +119,8 @@ vi.mock('@/hooks/usePublicRoute/usePublicRoute', () => ({
 vi.mock('@/hooks/useKeyboardOffset/useKeyboardOffset', () => ({
   useKeyboardOffset: vi.fn(() => ({ isKeyboardVisible: false, keyboardOffset: 0 })),
 }));
-vi.mock('@/hooks/useMessagesUnread/useMessagesUnread', () => ({
-  useMessagesUnread: vi.fn(() => 0),
+vi.mock('@/hooks/useChatUnread/useChatUnread', () => ({
+  useChatUnread: vi.fn(() => 0),
 }));
 vi.mock('@/hooks/useMarketplaceCartCount/useMarketplaceCartCount', () => ({
   useMarketplaceCartCount: vi.fn(() => 0),
@@ -643,7 +643,7 @@ describe('MobileFooter', () => {
 
       expect(screen.queryByRole('link', { name: 'Pubky' })).not.toBeInTheDocument();
       expect(screen.getByRole('link', { name: 'Home' })).toHaveAttribute('href', '/home');
-      expect(useMessagesUnread).toHaveBeenCalledWith({ enabled: true });
+      expect(useChatUnread).toHaveBeenCalledWith({ enabled: true });
     });
 
     it('shows global App links and local Shop, with the App profile in the same tab', () => {
@@ -665,7 +665,7 @@ describe('MobileFooter', () => {
         expect(screen.getByRole('link', { name: 'Search' })).not.toHaveAttribute('target');
         expect(screen.getByRole('link', { name: 'Profile' })).not.toHaveAttribute('target');
         expect(screen.queryByRole('button', { name: 'Account menu' })).not.toBeInTheDocument();
-        expect(useMessagesUnread).toHaveBeenCalledWith({ enabled: false });
+        expect(useChatUnread).toHaveBeenCalledWith({ enabled: false });
       } finally {
         adapterMode.mockRestore();
       }

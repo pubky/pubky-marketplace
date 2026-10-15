@@ -50,7 +50,6 @@ export enum MARKETPLACE_ROUTES {
   CHECKOUT = '/marketplace/checkout',
   AWARD_CHECKOUT = '/marketplace/award-checkout',
   ORDERS = '/marketplace/orders',
-  MESSAGES = '/marketplace/messages',
   OFFERS = '/marketplace/offers',
   NOTIFICATIONS = '/marketplace/notifications',
   WATCHLIST = '/marketplace/watchlist',
@@ -405,9 +404,16 @@ export function matchSingleCollectionRoute(pathname: string): { userId: string; 
 // Messages Route Helpers
 // ============================================================================
 
-/** The direct-message conversation with one counterparty: `/messages/{pubky}`. */
-export function getDmConversationRoute(counterpartyPubky: string): string {
-  return `${APP_ROUTES.MESSAGES}/${counterpartyPubky}`;
+/** What a conversation is opened about; attached to the first message sent from that entry point. */
+export type ChatRouteContext = { listingId?: string; orderId?: string };
+
+/** The 1:1 conversation with `peerPubky`: `/messages/{pubky}`, optionally `?listing=` / `?order=`. */
+export function getChatRoute(peerPubky: string, context?: ChatRouteContext): string {
+  const params = new URLSearchParams();
+  if (context?.listingId) params.set('listing', context.listingId);
+  if (context?.orderId) params.set('order', context.orderId);
+  const query = params.toString();
+  return `${APP_ROUTES.MESSAGES}/${peerPubky}${query ? `?${query}` : ''}`;
 }
 
 /**
@@ -415,12 +421,12 @@ export function getDmConversationRoute(counterpartyPubky: string): string {
  * path. Shape-only matching — identifier validation is the caller's concern
  * (mirrors `matchPostRoute`).
  */
-export function matchDmConversationRoute(pathname: string): { counterpartyPubky: string } | null {
+export function matchChatRoute(pathname: string): { peerPubky: string } | null {
   const segments = pathname.split('/').filter(Boolean);
   if (segments[0] !== 'messages' || segments.length !== 2) {
     return null;
   }
-  return { counterpartyPubky: segments[1] };
+  return { peerPubky: segments[1] };
 }
 
 export function getMarketplaceListingRoute(sellerPubky: string, listingId: string): string {

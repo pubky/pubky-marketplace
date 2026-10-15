@@ -118,9 +118,15 @@ export function installFakeHomeserver(): FakeHomeserver {
     const entry = `${HttpMethod.GET} ${params.url}`;
     notify(entry, 'before');
     try {
-      return { found: true, json: (await perform({ method: HttpMethod.GET, ...params })) as never };
+      const json = await perform({ method: HttpMethod.GET, ...params });
+      if (params.maxBytes !== undefined && JSON.stringify(json).length > params.maxBytes) {
+        return { found: false, tooLarge: true };
+      }
+      return { found: true, json: json as never };
     } catch (error) {
       if (error instanceof AppError && error.context?.statusCode === 404) return { found: false };
+      // Mirror the real service: a tolerant probe reports an unreachable record instead of throwing.
+      if (params.tolerateUnreachable) return { found: false, unreachable: true };
       throw error;
     } finally {
       notify(entry, 'after');
@@ -137,7 +143,7 @@ export function installFakeHomeserver(): FakeHomeserver {
   });
 
   const performList = async (params: THomeserverListParams): Promise<string[]> => {
-    const { baseDirectory, limit, logUrl, cursor } = params;
+    const { baseDirectory, limit, logUrl, cursor, reverse } = params;
     log.push(`LIST ${baseDirectory}`);
     if (baseDirectory.includes('/priv/') && logUrl === undefined) unredacted.push(`LIST ${baseDirectory}`);
     const failure = failures.findIndex((entry) => entry.method === HttpMethod.GET && matches(entry.url, baseDirectory));
@@ -145,10 +151,12 @@ export function installFakeHomeserver(): FakeHomeserver {
       const [{ statusCode }] = failures.splice(failure, 1);
       throw homeserverHttpError(statusCode, baseDirectory, logUrl);
     }
-    // Like the homeserver: sorted, and a cursor starts after that URL.
-    const result = [...files.keys()]
-      .filter((url) => url.startsWith(baseDirectory) && (cursor === undefined || url > cursor))
-      .sort()
+    // Like the homeserver: sorted, and a cursor starts after that URL
+    // (before it when listing in reverse).
+    const sorted = [...files.keys()].filter((url) => url.startsWith(baseDirectory)).sort();
+    const ordered = reverse ? sorted.reverse() : sorted;
+    const result = ordered
+      .filter((url) => cursor === undefined || (reverse ? url < cursor : url > cursor))
       .slice(0, limit);
     if (held) await new Promise<void>((release) => held?.push(release));
     return result;

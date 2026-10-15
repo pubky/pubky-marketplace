@@ -3,6 +3,8 @@ import { shopStorageKey } from '@/libs/storage-namespace/storage-namespace';
 export const COLLECTIONS_NAV_NEW_BADGE_ENABLED = true;
 export const COLLECTIONS_NAV_NEW_BADGE_STORAGE_ID = 'collections-nav-v1';
 export const MARKETPLACE_PROMO_STORAGE_ID = 'marketplace-promo-v1';
+/** The chat privacy note: shown until the account dismisses it once. */
+export const CHAT_PRIVACY_NOTE_STORAGE_ID = 'chat-privacy-note-v1';
 /** Namespaced: the App defines the same prefix and its own flag ids. */
 export const FEATURE_DISCOVERY_STORAGE_PREFIX = shopStorageKey('pubky-feature-discovery');
 /** The prefix before it was namespaced; read only by the one-time storage migration. */
