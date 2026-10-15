@@ -9,6 +9,7 @@ import type {
   MarketplaceOrderDigitalEvidence,
   MarketplaceSellerDigitalDelivery,
 } from '@/libs/commerce/digital';
+import { type PaykitRailStatus, paykitRailStatusFromHealth } from '@/libs/commerce/paykit-rail';
 import type {
   BindDeliveryAddress,
   PaymentMethodKind,
@@ -579,6 +580,12 @@ export class MarketplaceGatewayService {
     if (!isDurableCommerceMode(getCommerceAdapterMode())) return false;
     const health = await MarketplaceTransactionService.getHealth();
     return health.usdtPayments?.available === true;
+  }
+
+  /** The Paykit rail's state from the service's `/health`; unknown outside the durable service. */
+  static async getPaykitRailStatus(): Promise<PaykitRailStatus> {
+    if (!isDurableCommerceMode(getCommerceAdapterMode())) return 'unknown';
+    return paykitRailStatusFromHealth(await MarketplaceTransactionService.getHealth());
   }
 
   /**
