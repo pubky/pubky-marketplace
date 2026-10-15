@@ -348,14 +348,14 @@ export function MarketplaceDashboard() {
             )}
             {isMobile ? (
               <div
-                className="-mx-4 flex gap-6 overflow-x-auto px-4 pb-1"
+                className="-mx-4 flex gap-3 overflow-x-auto px-4 pb-1"
                 data-testid="marketplace-dashboard-kpi-chips"
                 tabIndex={0}
                 role="region"
                 aria-label="Dashboard metrics"
               >
                 {dashboardKpis(dashboard.metrics).map(({ label, value }) => (
-                  <div key={label} className="shrink-0 rounded-full bg-card p-6">
+                  <div key={label} className="shrink-0 rounded-md bg-card p-6">
                     <Typography as="p" className="text-sm font-semibold">
                       {value}
                     </Typography>
@@ -406,11 +406,11 @@ export function MarketplaceDashboard() {
                         {dashboard.metrics.openOffers} open offers need attention.
                       </Typography>
                     </div>
-                    <div className="flex flex-wrap gap-2">
+                    <div className="flex flex-nowrap gap-1.5 sm:gap-2" data-testid="marketplace-listing-actions">
                       <Button
                         size="sm"
                         variant="secondary"
-                        className="rounded-full"
+                        className="rounded-full max-sm:has-[>svg]:px-3"
                         disabled={!selected.length}
                         onClick={() => updateListingState(selected, 'paused')}
                       >
@@ -420,16 +420,21 @@ export function MarketplaceDashboard() {
                       <Button
                         size="sm"
                         variant="secondary"
-                        className="rounded-full"
+                        className="rounded-full max-sm:has-[>svg]:px-3"
                         disabled={!selected.length}
                         onClick={() => updateListingState(selected, 'active')}
                       >
                         <Play className="size-4" />
                         Activate
                       </Button>
-                      <Button size="sm" variant="secondary" className="rounded-full" onClick={exportCsv}>
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        className="rounded-full max-sm:has-[>svg]:px-3"
+                        onClick={exportCsv}
+                      >
                         <Download className="size-4" />
-                        Export CSV
+                        Export
                       </Button>
                     </div>
                   </div>
@@ -441,7 +446,7 @@ export function MarketplaceDashboard() {
                       <div className="flex min-h-48 flex-col items-center justify-center rounded-md bg-card/40 p-6 text-center">
                         <ShoppingBag className="mb-4 size-10 text-muted-foreground" />
                         <Heading level={3} size="md">
-                          You have no listings yet
+                          No listings yet
                         </Heading>
                         <Typography as="p" className="mt-2 text-muted-foreground">
                           Let&apos;s create a listing to sell your first item.

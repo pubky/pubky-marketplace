@@ -553,6 +553,40 @@ describe('Marketplace checkout — visual regression', () => {
     });
   }
 
+  for (const state of ['awaiting_entitlement', 'confirmed'] as const) {
+    for (const [name, viewport] of [
+      ['desktop', VRT_VIEWPORT_DESKTOP],
+      ['mobile', VRT_VIEWPORT_MOBILE],
+    ] as const) {
+      it(`renders ${state} checkout labels above products on ${name}`, async () => {
+        const { createOrderFixture, createPaymentFixture } = await import('@/test/fixtures/commerce/orders');
+        const payment = createPaymentFixture(state, { adapter: 'paypal' });
+        const order = createOrderFixture(state === 'confirmed' ? 'paid' : 'pending_payment', {
+          paymentId: payment.id,
+          paymentMethod: 'paypal',
+        });
+        view.adapterMode = 'transaction-service';
+        view.orders = [{ order, payment }];
+        window.history.replaceState(null, '', `/marketplace/checkout#${order.id}`);
+
+        await renderForVRT(<MarketplaceCheckout />, { viewport });
+        const label = state === 'confirmed' ? 'Payment confirmed' : 'Awaiting payment';
+        await vi.waitFor(() => {
+          const labels = document.querySelector('[data-testid="marketplace-checkout-status-labels"]');
+          expect(labels?.textContent).toContain(label);
+        });
+        const labels = document.querySelector('[data-testid="marketplace-checkout-status-labels"]')!;
+        const product = document.querySelector('[data-slot="settings-section-content"]')!;
+        expect(labels.getBoundingClientRect().bottom).toBeLessThan(product.getBoundingClientRect().top);
+        expect(document.querySelector('[data-testid="order-reference"]')?.textContent).not.toContain(label);
+        expect(
+          document.querySelector('[data-surface="marketplace-payment-status-card"]')?.textContent ?? '',
+        ).not.toContain(label);
+        await captureCheckout(`checkout-${state}-labels-${name}`, false);
+      });
+    }
+  }
+
   // Issue #50: a cancelled checkout carries no "Awaiting payment · Item reserved" header.
   it('renders a cancelled PayPal checkout without the reserved header at desktop viewport', async () => {
     const { createOrderFixture, createPaymentFixture } = await import('@/test/fixtures/commerce/orders');
@@ -582,6 +616,10 @@ describe('Marketplace checkout — visual regression', () => {
     view.items = singleSeller;
 
     await renderForVRT(<MarketplaceCheckout />, { viewport: VRT_VIEWPORT_MOBILE });
+    const progress = document.querySelector<HTMLElement>('[aria-label="Checkout progress: step 2 of 3, Checkout"]')!;
+    const header = progress.parentElement!.parentElement!;
+    const bar = progress.querySelector<HTMLElement>('.lg\\:hidden')!;
+    expect(bar.getBoundingClientRect().width).toBeCloseTo(header.getBoundingClientRect().width, 0);
     await captureCheckout('checkout-single-seller-mobile');
   });
 

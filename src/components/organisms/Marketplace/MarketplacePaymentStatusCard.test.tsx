@@ -14,6 +14,7 @@ import {
   LOCKS_TERMINAL_REASON_COPY,
   LOCKS_TERMINAL_REASONS,
 } from '@/libs/commerce/locks-lifecycle';
+import { formatDateTime } from '@/libs/utils/dateTime';
 import { createOrderFixture, createPaymentFixture } from '@/test/fixtures/commerce/orders';
 import { MarketplacePaymentStatusCard } from './MarketplacePaymentStatusCard';
 
@@ -404,6 +405,45 @@ describe('MarketplacePaymentStatusCard', () => {
       expect(screen.queryByText(/seller has not set up any payment methods/i)).not.toBeInTheDocument();
     },
   );
+
+  it('removes the confirmed status box when its labels are in the order row', () => {
+    const payment = createPaymentFixture('confirmed');
+    const { container } = render(
+      <MarketplacePaymentStatusCard
+        order={createOrderFixture('paid', { paymentId: payment.id })}
+        payment={payment}
+        isBuyer
+        adapterMode="transaction-service"
+        advancePayment={async () => false}
+        onPaymentChanged={() => {}}
+        confirmedStatusInOrderLabels
+      />,
+    );
+    expect(screen.queryByText('Payment confirmed')).not.toBeInTheDocument();
+    expect(container.querySelector('[data-surface="marketplace-payment-status-card"]')).toBeNull();
+    expect(container.querySelector('[data-surface="marketplace-payment-details"]')).toBeEmptyDOMElement();
+  });
+
+  it('keeps seller-confirmed payment warnings when the confirmed labels move out', () => {
+    const payment = createPaymentFixture('confirmed', { adapter: 'paykit', confirmations: 0 });
+    const { container } = render(
+      <MarketplacePaymentStatusCard
+        order={createOrderFixture('paid', {
+          paymentId: payment.id,
+          paymentMethod: 'bitcoin',
+          paykitRequestState: 'confirmed',
+        })}
+        payment={payment}
+        isBuyer
+        adapterMode="transaction-service"
+        advancePayment={async () => false}
+        onPaymentChanged={() => {}}
+        confirmedStatusInOrderLabels
+      />,
+    );
+    expect(screen.getByTestId('bitcoin-seller-confirmed-before-chain')).toBeInTheDocument();
+    expect(container.querySelector('[data-surface="marketplace-payment-status-card"]')).toBeNull();
+  });
 
   it('keeps confirmed Locks delivery visible after order completion', () => {
     const payment = createPaymentFixture('confirmed', { adapter: 'locks' });
@@ -1027,7 +1067,7 @@ describe('MarketplacePaymentStatusCard', () => {
     }
     const { unmount } = renderBound('delivered');
     expect(screen.getByTestId('paykit-delivery-status')).toHaveTextContent(
-      'Payment request sent. Open Bitkit to approve and pay by Aug 20, 2026, 9:15 PM UTC.',
+      `Payment request sent. Open Bitkit to approve and pay by ${formatDateTime(new Date('2026-08-20T21:15:00.000Z'))}.`,
     );
     expect(screen.getByTestId('paykit-delivery-status')).not.toHaveTextContent(/contact/);
     fireEvent.click(screen.getByRole('button', { name: 'Need help?' }));
@@ -1062,20 +1102,26 @@ describe('MarketplacePaymentStatusCard', () => {
     it('shows the activated Paykit request deadline, the wallet deadline', () => {
       renderAuction({ paykitRequestState: 'pending', paykitExpiresAt: REQUEST });
 
-      expect(screen.getByText(/pay by Aug 20, 2026, 9:07 PM UTC\./i)).toBeInTheDocument();
-      expect(screen.queryByText(/9:15 PM UTC/)).not.toBeInTheDocument();
+      expect(screen.getByTestId('paykit-delivery-status')).toHaveTextContent(
+        `pay by ${formatDateTime(new Date(REQUEST))}.`,
+      );
+      expect(screen.getByTestId('paykit-delivery-status')).not.toHaveTextContent(formatDateTime(new Date(HOLD)));
     });
 
     it('shows the reservation-based deadline before the request activates', () => {
       renderAuction({ paykitRequestState: 'preparing', paykitExpiresAt: null });
 
-      expect(screen.getByText(/pay by Aug 20, 2026, 9:15 PM UTC\./i)).toBeInTheDocument();
+      expect(screen.getByTestId('paykit-delivery-status')).toHaveTextContent(
+        `pay by ${formatDateTime(new Date(HOLD))}.`,
+      );
     });
 
     it('keeps the hold deadline on an ordinary bitcoin order', () => {
       renderAuction({ auctionAggregateId: null, paykitRequestState: 'pending', paykitExpiresAt: REQUEST });
 
-      expect(screen.getByText(/pay by Aug 20, 2026, 9:15 PM UTC\./i)).toBeInTheDocument();
+      expect(screen.getByTestId('paykit-delivery-status')).toHaveTextContent(
+        `pay by ${formatDateTime(new Date(HOLD))}.`,
+      );
     });
   });
 
@@ -1109,7 +1155,7 @@ describe('MarketplacePaymentStatusCard', () => {
       "Payment seen — waiting for confirmation. You don't need to do anything else.",
     );
     expect(screen.getByTestId('bitcoin-seller-confirms-by')).toHaveTextContent(
-      'Seller confirms by Sep 29, 2026, 10:56 AM UTC.',
+      `Seller confirms by ${formatDateTime(new Date('2026-09-29T10:56:41.980Z'))}.`,
     );
     expect(screen.queryByText(/Open Bitkit to (?:approve and )?pay/)).not.toBeInTheDocument();
     expect(screen.queryByText(/Pay exactly/)).not.toBeInTheDocument();
@@ -1187,7 +1233,7 @@ describe('MarketplacePaymentStatusCard', () => {
       expect(screen.getByText('Awaiting payment')).toBeInTheDocument();
       expect(screen.queryByText('Payment seen')).not.toBeInTheDocument();
       expect(screen.getByTestId('paykit-delivery-status')).toHaveTextContent(
-        'Payment request sent. Open Bitkit to approve and pay by Sep 29, 2026, 10:56 AM UTC.',
+        `Payment request sent. Open Bitkit to approve and pay by ${formatDateTime(new Date('2026-09-29T10:56:41.980Z'))}.`,
       );
       const help = screen.getByRole('button', { name: 'Need help?' });
       expect(help).toHaveAttribute('aria-expanded', 'false');
@@ -1210,7 +1256,7 @@ describe('MarketplacePaymentStatusCard', () => {
         'Your payment was seen, so the item is held for you for up to 24 hours while the seller confirms it.',
       );
       expect(screen.getByTestId('bitcoin-seller-confirms-by')).toHaveTextContent(
-        'Seller confirms by Sep 29, 2026, 10:56 AM UTC.',
+        `Seller confirms by ${formatDateTime(new Date('2026-09-29T10:56:41.980Z'))}.`,
       );
       expect(screen.getByTestId('bitcoin-hold-countdown')).toHaveTextContent('23:56:41 left');
 
@@ -1236,7 +1282,7 @@ describe('MarketplacePaymentStatusCard', () => {
       renderBitcoin({ requestState: 'awaiting_seller_confirmation' });
       expect(screen.queryByTestId('bitcoin-hold-countdown')).not.toBeInTheDocument();
       expect(screen.getByTestId('bitcoin-seller-confirms-by')).toHaveTextContent(
-        'Seller confirms by Sep 29, 2026, 10:56 AM UTC.',
+        `Seller confirms by ${formatDateTime(new Date('2026-09-29T10:56:41.980Z'))}.`,
       );
     });
 
@@ -1687,8 +1733,8 @@ describe('MarketplacePaymentStatusCard', () => {
       renderSellerReview();
       const deadline = screen.getByTestId('seller-bitcoin-confirm-deadline');
       expect(deadline).toHaveTextContent('Confirm by');
-      expect(deadline).toHaveTextContent('Oct 2, 2026, 9:28 AM UTC · 23:59:40 left');
-      expect(screen.getByText('Oct 1, 2026, 9:28 AM UTC')).toBeInTheDocument();
+      expect(deadline).toHaveTextContent(`${formatDateTime(new Date(DEADLINE))} · 23:59:40 left`);
+      expect(screen.getByText(`${formatDateTime(new Date('2026-10-01T09:28:54.000Z'))}`)).toBeInTheDocument();
       expect(screen.queryByText(/2026-10-0\dT/)).not.toBeInTheDocument();
 
       act(() => {
@@ -1701,7 +1747,7 @@ describe('MarketplacePaymentStatusCard', () => {
       vi.setSystemTime(new Date('2026-10-02T10:00:00.000Z'));
       renderSellerReview();
       const deadline = screen.getByTestId('seller-bitcoin-confirm-deadline');
-      expect(deadline).toHaveTextContent('Oct 2, 2026, 9:28 AM UTC');
+      expect(deadline).toHaveTextContent(`${formatDateTime(new Date(DEADLINE))}`);
       expect(deadline).not.toHaveTextContent('left');
     });
   });

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { MARKETPLACE_ROUTES } from '@/app/routes';
+import { formatDateTime } from '@/libs/utils/dateTime';
 import {
   buyerCheckoutStateLabel,
   extractCheckoutOrderIds,
@@ -163,7 +164,7 @@ describe('checkout-phase', () => {
     expect(formatRemainingHMmSs('2026-09-29T10:53:06.000Z', Date.parse('2026-09-28T11:00:00.000Z'))).toBe('23:53:06');
     expect(formatRemainingHMmSs('2026-09-28T10:00:00.000Z', Date.parse('2026-09-28T11:00:00.000Z'))).toBe('0:00:00');
     expect(sellerReservationCopy('2026-10-02T09:10:00.000Z')).toBe(
-      'Held for a buyer · restocks Oct 2, 2026, 9:10 AM UTC',
+      `Held for a buyer · restocks ${formatDateTime(new Date('2026-10-02T09:10:00.000Z'))}`,
     );
     expect(sellerReservationCopy(null)).toBe('Held for a buyer.');
     expect(sellerReservationCopy('not a date')).toBe('Held for a buyer.');

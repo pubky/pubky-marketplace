@@ -3,6 +3,7 @@
 import type { ReactNode } from 'react';
 import { Tooltip, TooltipContent, TooltipPortal, TooltipTrigger } from '@/atoms/Tooltip/Tooltip';
 import { Typography } from '@/atoms/Typography/Typography';
+import { formatDateTime } from '@/libs/utils/dateTime';
 
 interface RelativeTimestampProps {
   timeAgo: string;
@@ -41,10 +42,7 @@ export function RelativeTimestamp({
     return label;
   }
 
-  const exactTimeLabel = date.toLocaleString(undefined, {
-    dateStyle: 'medium',
-    timeStyle: 'medium',
-  });
+  const exactTimeLabel = formatDateTime(date, { includeSeconds: true });
 
   return (
     <Tooltip>

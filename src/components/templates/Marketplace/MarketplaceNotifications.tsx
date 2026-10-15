@@ -22,6 +22,7 @@ import { formatBitcoinAwareMoney } from '@/libs/commerce/bitcoin-payment-code';
 import { isBuyerCheckoutInProgress } from '@/libs/commerce/checkout-phase';
 import { returnActivityTitles } from '@/libs/commerce/return-activity-titles';
 import { Logger } from '@/libs/logger/logger';
+import { formatDateTime } from '@/libs/utils/dateTime';
 import { MarketplaceEmptyState } from '@/molecules/Marketplace/MarketplaceEmptyState';
 import { ContentLayout } from '@/organisms/ContentLayout/ContentLayout';
 import { MarketplaceSectionNav } from '@/organisms/Marketplace/MarketplaceSectionNav';
@@ -124,7 +125,7 @@ export function MarketplaceNotifications() {
               Transaction history
             </Heading>
             <Typography as="p" className="mt-2 text-muted-foreground">
-              Updates on your orders, payments, offers, and bids.
+              Updates on orders, payments, offers, and bids.
             </Typography>
           </div>
           {canMarkRead ? (
@@ -261,9 +262,9 @@ function KnownOrGapActivityRow({ type, createdAt }: { type: string; createdAt: s
   const href = activityRowHref(type as MarketplaceNotification['type'], null);
   return (
     <ActivityRowLink href={href} label={label}>
-      <Card className="rounded-md p-0">
-        <CardContent className="flex items-center gap-4 p-6">
-          <div className="rounded-full bg-brand/15 p-3 text-brand">
+      <Card className="rounded-md p-0 transition-colors hover:bg-muted">
+        <CardContent className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-4 gap-y-1 p-6 sm:flex sm:gap-4">
+          <div className="row-span-2 rounded-full bg-brand/15 p-3 text-brand">
             <HandCoins className="size-5" />
           </div>
           <div className="min-w-0 flex-1">
@@ -271,8 +272,8 @@ function KnownOrGapActivityRow({ type, createdAt }: { type: string; createdAt: s
               {label}
             </Typography>
           </div>
-          <time dateTime={createdAt} className="text-xs text-muted-foreground">
-            {new Date(createdAt).toLocaleDateString('en-US')}
+          <time dateTime={createdAt} className="col-start-2 text-xs text-muted-foreground sm:shrink-0">
+            {formatDateTime(new Date(createdAt))}
           </time>
         </CardContent>
       </Card>
@@ -307,9 +308,9 @@ function NotificationCard({
   const href = activityRowHref(notification.type, notification.aggregateId, { canCheckout });
   return (
     <ActivityRowLink href={href} label={label}>
-      <Card className="rounded-md p-0">
-        <CardContent className="flex items-center gap-4 p-6">
-          <div className="rounded-full bg-brand/15 p-3 text-brand">
+      <Card className="rounded-md p-0 transition-colors hover:bg-muted">
+        <CardContent className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-4 gap-y-1 p-6 sm:flex sm:gap-4">
+          <div className="row-span-2 rounded-full bg-brand/15 p-3 text-brand">
             <NotificationIcon type={notification.type} />
           </div>
           <div className="min-w-0 flex-1">
@@ -323,8 +324,8 @@ function NotificationCard({
               From {notificationActorLabel(notification.actorPubky)}
             </Typography>
           </div>
-          <time dateTime={notification.createdAt} className="text-xs text-muted-foreground">
-            {new Date(notification.createdAt).toLocaleDateString('en-US')}
+          <time dateTime={notification.createdAt} className="col-start-2 text-xs text-muted-foreground sm:shrink-0">
+            {formatDateTime(new Date(notification.createdAt))}
           </time>
         </CardContent>
       </Card>
@@ -338,7 +339,7 @@ function ActivityRowLink({ href, label, children }: { href: string; label: strin
       href={href}
       overrideDefaults
       aria-label={label}
-      className="block rounded-md outline-none hover:ring-1 hover:ring-brand/40 focus-visible:ring-2 focus-visible:ring-brand"
+      className="block rounded-md outline-none focus-visible:ring-2 focus-visible:ring-brand"
     >
       {children}
     </Link>

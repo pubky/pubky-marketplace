@@ -116,6 +116,14 @@ async function setView(overrides: Partial<typeof view>) {
 }
 
 describe('Marketplace notifications — visual regression', () => {
+  it('uses the message-row hover treatment on activity cards', async () => {
+    const { readPair } = await fixtures;
+    await setView({ notifications: readPair });
+    const screen = await renderForVRT(<MarketplaceNotifications />, { viewport: VRT_VIEWPORT_DESKTOP });
+    await screen.getByRole('link', { name: 'New offer received', exact: true }).hover();
+    await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('notifications-row-hover-desktop');
+  });
+
   it('renders the first third of every notification kind at desktop viewport', async () => {
     const { kindsFirstThird } = await fixtures;
     await setView({ notifications: kindsFirstThird });

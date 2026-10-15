@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import { MESSAGING_COPY } from '@/libs/commerce/messaging-copy';
 import { REFUND_ORDER_NOTICES } from '@/libs/commerce/refund-copy';
+import { formatDateTime } from '@/libs/utils/dateTime';
 import { useMarketplaceDisplayStore } from '@/stores/marketplace-display/marketplace-display.store';
 import {
   createOrderFixture,
@@ -486,7 +487,7 @@ describe('MarketplaceOrders tabs', () => {
     expect(screen.getByText(/Sold bitcoin awaiting/)).toBeInTheDocument();
     expect(screen.getByText(/Sold bitcoin confirm/)).toBeInTheDocument();
     expect(screen.getByText(/Sold bitcoin review/)).toBeInTheDocument();
-    expect(screen.getAllByText('You sold').length).toBe(3);
+    expect(screen.getAllByText('Sold').length).toBe(3);
     expect(screen.getAllByTestId('payment-status')).toHaveLength(3);
   });
 
@@ -520,6 +521,14 @@ describe('MarketplaceOrders tabs', () => {
     expect(screen.getByRole('link', { name: 'Continue checkout' })).toBeInTheDocument();
     expect(screen.getByText(/Awaiting payment · Item reserved · 5:00/)).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Bought deadline boots' })).toBeInTheDocument();
+    const labels = screen.getByTestId('marketplace-checkout-status-labels');
+    expect(labels).toHaveTextContent('Checkout in progress');
+    expect(labels).toHaveTextContent('Awaiting payment');
+    expect(labels).not.toHaveTextContent('Payment confirmed');
+    expect(
+      labels.compareDocumentPosition(screen.getByRole('link', { name: 'Bought deadline boots' })) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
     expect(screen.getByText('Quantity 1')).toBeInTheDocument();
     expect(screen.queryByText(/Open Bitkit to pay/)).not.toBeInTheDocument();
     expect(screen.queryByText(/Complete payment by/)).not.toBeInTheDocument();
@@ -568,7 +577,9 @@ describe('MarketplaceOrders tabs', () => {
       ),
     ];
     render(<MarketplaceOrders />);
-    expect(screen.getByText('Seller confirms by Sep 29, 2026, 10:56 AM UTC. 23:56:41 left')).toBeInTheDocument();
+    expect(
+      screen.getByText(`Seller confirms by ${formatDateTime(new Date('2026-09-29T10:56:41.980Z'))}. 23:56:41 left`),
+    ).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'View payment' })).toBeInTheDocument();
     expect(screen.queryByText(/Awaiting payment · Item reserved/)).not.toBeInTheDocument();
     expect(screen.queryByText(/Pay by/)).not.toBeInTheDocument();
@@ -592,7 +603,9 @@ describe('MarketplaceOrders tabs', () => {
       ),
     ];
     render(<MarketplaceOrders />);
-    expect(screen.getByText('Seller confirms by Sep 29, 2026, 10:56 AM UTC.')).toBeInTheDocument();
+    expect(
+      screen.getByText(`Seller confirms by ${formatDateTime(new Date('2026-09-29T10:56:41.980Z'))}.`),
+    ).toBeInTheDocument();
   });
 
   it('does not tell a buyer in unconfirmed manual review to pay again', () => {
@@ -644,7 +657,7 @@ describe('MarketplaceOrders tabs', () => {
     render(<MarketplaceOrders />);
     expect(screen.queryByRole('heading', { name: 'Reservations' })).not.toBeInTheDocument();
     expect(screen.getByText(/Sold seen boots/)).toBeInTheDocument();
-    expect(screen.getByText('You sold')).toBeInTheDocument();
+    expect(screen.getByText('Sold')).toBeInTheDocument();
     expect(screen.getByTestId('payment-status')).toBeInTheDocument();
     expect(screen.queryByText(/restocks/)).not.toBeInTheDocument();
     expect(screen.queryByText(/Pay by/)).not.toBeInTheDocument();
@@ -669,7 +682,7 @@ describe('MarketplaceOrders tabs', () => {
 
       expect(screen.queryByRole('heading', { name: 'Reservations' })).not.toBeInTheDocument();
       expect(screen.getByText(/Sold review boots/)).toBeInTheDocument();
-      expect(screen.getByText('You sold')).toBeInTheDocument();
+      expect(screen.getByText('Sold')).toBeInTheDocument();
       expect(screen.getByTestId('payment-status')).toBeInTheDocument();
       expect(screen.queryByText(/restocks/)).not.toBeInTheDocument();
     });
@@ -684,7 +697,7 @@ describe('MarketplaceOrders tabs', () => {
       expect(screen.getByRole('heading', { name: 'Reservations' })).toBeInTheDocument();
       expect(screen.getByText(/Sold unpaid usdt bag/)).toBeInTheDocument();
       expect(screen.getByText(/Sold plain review bag/)).toBeInTheDocument();
-      expect(screen.queryByText('You sold')).not.toBeInTheDocument();
+      expect(screen.queryByText('Sold')).not.toBeInTheDocument();
     });
   });
 
@@ -706,7 +719,7 @@ describe('MarketplaceOrders tabs', () => {
     expect(screen.getByText(/Sold paid cancel scarf/)).toBeInTheDocument();
   });
 
-  it('does not label an elapsed unpaid order as Your move', () => {
+  it('does not label an elapsed unpaid order as Needs action', () => {
     ordersState.orders = [
       orderView(
         'cancelled',
@@ -718,7 +731,7 @@ describe('MarketplaceOrders tabs', () => {
     ];
     render(<MarketplaceOrders />);
     expect(screen.getByText('Checkout ended before payment.')).toBeInTheDocument();
-    expect(screen.queryByText('Your move')).not.toBeInTheDocument();
+    expect(screen.queryByText('Needs action')).not.toBeInTheDocument();
   });
 
   it('puts buyer pending payment under Continue checkout, not Needs my action', async () => {
@@ -758,7 +771,7 @@ describe('MarketplaceOrders tabs', () => {
     ];
 
     render(<MarketplaceOrders />);
-    await user.click(screen.getByRole('tab', { name: /Waiting on the other side 0/i }));
+    await user.click(screen.getByRole('tab', { name: /Waiting on seller 0/i }));
 
     expect(screen.getAllByRole('link', { name: 'Continue checkout' }).length).toBeGreaterThan(0);
     expect(screen.getByRole('heading', { name: 'Reservations' })).toBeInTheDocument();
@@ -865,10 +878,29 @@ describe('MarketplaceOrders tabs', () => {
 
     const boughtCard = screen.getByText(/Bought paid coat/).closest('[data-slot="card"]');
     const soldCard = screen.getByText(/Sold paid boots/).closest('[data-slot="card"]');
-    expect(within(boughtCard as HTMLElement).getByText('You bought')).toBeInTheDocument();
-    expect(within(soldCard as HTMLElement).getByText('You sold')).toBeInTheDocument();
+    expect(within(boughtCard as HTMLElement).getByText('Bought')).toBeInTheDocument();
+    expect(within(soldCard as HTMLElement).getByText('Sold')).toBeInTheDocument();
     expect(within(boughtCard as HTMLElement).getByTestId('order-reference-label')).toHaveTextContent('Order test-bou');
     expect(within(soldCard as HTMLElement).getByTestId('order-reference-label')).toHaveTextContent('Order test-sol');
+  });
+
+  it('places payment and action labels first, above the order products', () => {
+    ordersState.orders = [
+      orderView('ready_for_pickup', 'Pickup table', 'buyer', { fulfillment: 'pickup', nextActor: 'buyer' }),
+    ];
+
+    render(<MarketplaceOrders />);
+
+    const labels = screen.getByTestId('marketplace-order-status-labels');
+    expect(
+      Array.from(labels.children)
+        .slice(0, 2)
+        .map((label) => label.textContent),
+    ).toEqual(['Payment confirmed', 'Needs action']);
+    expect(
+      labels.compareDocumentPosition(screen.getByRole('link', { name: 'Pickup table' })) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
   });
 
   it('shows when each order was placed, and the day a held item restocks', async () => {
@@ -899,12 +931,18 @@ describe('MarketplaceOrders tabs', () => {
       const card = screen.getAllByText(title)[0].closest('[data-slot="card"]') as HTMLElement;
       return within(card).getByTestId('order-placed-at');
     };
-    expect(placedAt(/Bought dated coat/)).toHaveTextContent('Placed Sep 30, 2026, 6:45 PM UTC');
+    expect(placedAt(/Bought dated coat/)).toHaveTextContent(
+      `Placed ${formatDateTime(new Date('2026-09-30T18:45:00.000Z'))}`,
+    );
     expect(placedAt(/Bought dated coat/)).toHaveAttribute('dateTime', '2026-09-30T18:45:00.000Z');
-    expect(placedAt(/Sold held boots/)).toHaveTextContent('Placed Oct 1, 2026, 8:10 AM UTC');
-    expect(placedAt(/Bought checkout scarf/)).toHaveTextContent('Placed Oct 1, 2026, 8:55 AM UTC');
+    expect(placedAt(/Sold held boots/)).toHaveTextContent(
+      `Placed ${formatDateTime(new Date('2026-10-01T08:10:00.000Z'))}`,
+    );
+    expect(placedAt(/Bought checkout scarf/)).toHaveTextContent(
+      `Placed ${formatDateTime(new Date('2026-10-01T08:55:00.000Z'))}`,
+    );
     expect(within(screen.getByTestId('marketplace-reservations')).getByText(/restocks/)).toHaveTextContent(
-      'Held for a buyer · restocks Oct 2, 2026, 8:10 AM UTC',
+      `Held for a buyer · restocks ${formatDateTime(new Date('2026-10-02T08:10:00.000Z'))}`,
     );
   });
 
@@ -943,17 +981,17 @@ describe('MarketplaceOrders tabs', () => {
 
     const soldCard = screen.getByText(/Sold paid boots/).closest('[data-slot="card"]');
     const boughtCard = screen.getByText(/Bought paid coat/).closest('[data-slot="card"]');
-    expect(within(soldCard as HTMLElement).getByText('Your move')).toBeInTheDocument();
+    expect(within(soldCard as HTMLElement).getByText('Needs action')).toBeInTheDocument();
     expect(within(boughtCard as HTMLElement).getByText('Waiting on seller')).toBeInTheDocument();
   });
 
-  it('renders a neutral hint when the service reports no pending actor', async () => {
+  it('omits the action hint when the service reports no pending actor', async () => {
     ordersState.orders = [orderView('completed', 'Completed order', 'buyer', { nextActor: 'none' })];
 
     render(<MarketplaceOrders />);
     await userEvent.setup().click(screen.getByRole('tab', { name: /All 1/i }));
 
-    expect(screen.getByText('No action pending')).toBeInTheDocument();
+    expect(screen.queryByText('No action pending')).not.toBeInTheDocument();
   });
 
   it('renders each service actor variant without inventing an actor', async () => {
@@ -966,9 +1004,9 @@ describe('MarketplaceOrders tabs', () => {
     render(<MarketplaceOrders />);
     await userEvent.setup().click(screen.getByRole('tab', { name: /All 3/i }));
 
-    expect(screen.getByText('Waiting on seller')).toBeInTheDocument();
-    expect(screen.getAllByText('Your move')).toHaveLength(1);
-    expect(screen.getByText('No action pending')).toBeInTheDocument();
+    expect(screen.getByText('Waiting on seller', { selector: '[data-slot="badge"]' })).toBeInTheDocument();
+    expect(screen.getAllByText('Needs action')).toHaveLength(1);
+    expect(screen.queryByText('No action pending')).not.toBeInTheDocument();
   });
 
   it('uses next_actor to place buyer and seller work in Needs my action', async () => {
@@ -1002,7 +1040,7 @@ describe('MarketplaceOrders tabs', () => {
     const assumedCard = screen.getByText(/Bought assumed boots/).closest('[data-slot="card"]');
     const confirmedCard = screen.getByText(/Bought confirmed coat/).closest('[data-slot="card"]');
     expect(within(assumedCard as HTMLElement).getByText(MESSAGING_COPY.assumedDelivery)).toBeInTheDocument();
-    expect(within(assumedCard as HTMLElement).getByRole('link', { name: MESSAGING_COPY.orderCta })).toHaveAttribute(
+    expect(within(assumedCard as HTMLElement).getByRole('link', { name: 'Message seller' })).toHaveAttribute(
       'href',
       expect.stringMatching(/^\/marketplace\/messages\?conversation=/),
     );
@@ -1010,9 +1048,7 @@ describe('MarketplaceOrders tabs', () => {
       within(assumedCard as HTMLElement).getByText(/Completes automatically after the return window/),
     ).toBeInTheDocument();
     expect(within(confirmedCard as HTMLElement).queryByText(MESSAGING_COPY.assumedDelivery)).not.toBeInTheDocument();
-    expect(
-      within(confirmedCard as HTMLElement).getByRole('link', { name: MESSAGING_COPY.orderCta }),
-    ).toBeInTheDocument();
+    expect(within(confirmedCard as HTMLElement).getByRole('link', { name: 'Message seller' })).toBeInTheDocument();
   });
 
   it('opens the listing conversation dialog from a durable order card', async () => {
@@ -1024,9 +1060,9 @@ describe('MarketplaceOrders tabs', () => {
     await user.click(screen.getByRole('tab', { name: /All 1/i }));
 
     const card = screen.getByText(/Bought paid boots/).closest('[data-slot="card"]');
-    expect(within(card as HTMLElement).queryByRole('link', { name: MESSAGING_COPY.orderCta })).not.toBeInTheDocument();
+    expect(within(card as HTMLElement).queryByRole('link', { name: 'Message seller' })).not.toBeInTheDocument();
     expect((card as HTMLElement).querySelector('[data-surface="marketplace-order-message-cta"]')).toBeTruthy();
-    await user.click(within(card as HTMLElement).getByRole('button', { name: MESSAGING_COPY.orderCta }));
+    await user.click(within(card as HTMLElement).getByRole('button', { name: 'Message seller' }));
     expect(await screen.findByRole('dialog')).toBeInTheDocument();
     expect(document.querySelector('[data-surface="marketplace-encrypted-conversation"]')).toBeTruthy();
   });
@@ -1146,7 +1182,7 @@ describe('MarketplaceOrders tabs', () => {
     render(<MarketplaceOrders />);
     await userEvent.setup().click(screen.getByRole('tab', { name: /All 1/i }));
 
-    expect(await screen.findByText('≈ ₿137,000')).toBeInTheDocument();
+    expect(await screen.findAllByText('≈ ₿137,000')).toHaveLength(2);
     expect(screen.queryByText(/Locked Bitcoin amount/)).not.toBeInTheDocument();
   });
 });
@@ -1167,7 +1203,7 @@ describe('MarketplaceOrders local pickup cards (Wave 7, §A3/§A6)', () => {
     const card = screen.getByText(/Bought pickup boots/).closest('[data-slot="card"]') as HTMLElement;
     expect(within(card).getByText('Local pickup')).toBeInTheDocument();
     expect(within(card).getByText('Ready for pickup')).toBeInTheDocument();
-    expect(within(card).getByRole('button', { name: 'Show meeting point' })).toBeInTheDocument();
+    expect(within(card).getByRole('button', { name: 'Meeting point' })).toBeInTheDocument();
     expect(within(card).getByRole('button', { name: 'Confirm handover' })).toBeInTheDocument();
   });
 
@@ -1285,13 +1321,13 @@ describe('MarketplaceOrders digital cards (digital delivery design §3 "After pa
     expect(within(card).getByRole('button', { name: 'Mark emailed' })).toBeInTheDocument();
   });
 
-  it('keeps Your move on a paid shipped order', () => {
+  it('keeps Needs action on a paid shipped order', () => {
     ordersState.orders = [orderView('paid', 'Shipped lamp', 'seller', { nextActor: 'seller' })];
 
     render(<MarketplaceOrders />);
 
     const card = screen.getByText(/Shipped lamp/).closest('[data-slot="card"]') as HTMLElement;
-    expect(within(card).getByText('Your move')).toBeInTheDocument();
+    expect(within(card).getByText('Needs action')).toBeInTheDocument();
     expect(within(card).queryByText('To deliver')).not.toBeInTheDocument();
   });
 
@@ -1356,7 +1392,8 @@ describe('MarketplaceOrders Activity link to an order no section lists', () => {
     expect(within(section).getByRole('heading', { name: 'From Activity' })).toBeInTheDocument();
     expect(within(section).getByText('Your sale')).toBeInTheDocument();
     expect(within(section).getByTestId('marketplace-linked-order-state')).toHaveTextContent('Cancelled before payment');
-    expect(within(section).getByText('Unpaid sold lamp × 1')).toBeInTheDocument();
+    expect(within(section).getByText('Unpaid sold lamp')).toBeInTheDocument();
+    expect(within(section).getByText('Quantity 1')).toBeInTheDocument();
     expect(within(section).getByTestId('order-reference-label')).toHaveTextContent('Order test-unp');
     const card = section.querySelector('[id="order-test-unpaid-sold-lamp"]');
     expect(card).not.toBeNull();
@@ -1376,9 +1413,9 @@ describe('MarketplaceOrders Activity link to an order no section lists', () => {
 
     render(<MarketplaceOrders />);
 
-    await waitFor(() => expect(screen.getByText('Sold paid boots × 1')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('Sold paid boots')).toBeInTheDocument());
     expect(screen.queryByTestId('marketplace-linked-order')).toBeNull();
-    expect(screen.getAllByText('Sold paid boots × 1')).toHaveLength(1);
+    expect(screen.getAllByText('Sold paid boots')).toHaveLength(1);
   });
 
   it('shows nothing for a linked order the signed-in account is not part of', async () => {
@@ -1392,7 +1429,7 @@ describe('MarketplaceOrders Activity link to an order no section lists', () => {
 
     render(<MarketplaceOrders />);
 
-    await waitFor(() => expect(screen.getByText('Sold paid boots × 1')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('Sold paid boots')).toBeInTheDocument());
     expect(screen.queryByTestId('marketplace-linked-order')).toBeNull();
     expect(screen.queryByText(/Foreign unpaid lamp/)).toBeNull();
     expect(document.getElementById(`order-${foreign.order.id}`)).toBeNull();
@@ -1434,7 +1471,7 @@ describe('MarketplaceOrders USDT orders', () => {
     render(<MarketplaceOrders />);
     await userEvent.setup().click(screen.getByRole('tab', { name: /All 1/i }));
 
-    expect(await screen.findByText('USDT boots × 1')).toBeInTheDocument();
+    expect(await screen.findByText('USDT boots')).toBeInTheDocument();
     expect(screen.queryByText('≈ ₿137,000')).not.toBeInTheDocument();
   });
 
@@ -1572,7 +1609,7 @@ describe('MarketplaceOrders USDT orders', () => {
     const { container } = render(<MarketplaceOrders />);
     await userEvent.setup().click(screen.getByRole('tab', { name: /All 3/i }));
 
-    expect(await screen.findByText('Bitcoin boots × 1')).toBeInTheDocument();
+    expect(await screen.findByText('Bitcoin boots')).toBeInTheDocument();
     expect(container).not.toHaveTextContent(/USDT|Arbitrum/);
   });
 });
@@ -1598,10 +1635,10 @@ describe('MarketplaceOrders USDT refund address', () => {
     render(<MarketplaceOrders />);
     await userEvent.setup().click(await screen.findByRole('tab', { name: /^All/ }));
 
-    await waitFor(() => expect(screen.getByText('Bought USDT boots × 1')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('Bought USDT boots')).toBeInTheDocument());
     expect(screen.getAllByTestId('usdt-refund-buyer')).toHaveLength(1);
     expect(screen.getAllByTestId('usdt-refund-seller')).toHaveLength(1);
-    expect(screen.getByText('Bought Bitcoin boots × 1')).toBeInTheDocument();
-    expect(screen.getByText('Bought PayPal boots × 1')).toBeInTheDocument();
+    expect(screen.getByText('Bought Bitcoin boots')).toBeInTheDocument();
+    expect(screen.getByText('Bought PayPal boots')).toBeInTheDocument();
   });
 });

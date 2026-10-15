@@ -1,4 +1,5 @@
 import { formatCommerceMoney } from '@/libs/commerce/format';
+import { formatDateTime } from '@/libs/utils/dateTime';
 import type { MarketplaceWatchAlertFeedItem } from '@/pipes/marketplaceWatch/marketplaceWatchAlert.types';
 
 /**
@@ -68,12 +69,5 @@ function stateChangeHeadline(item: MarketplaceWatchAlertFeedItem): string {
 }
 
 function formatWatchAlertDate(isoDate: string): string {
-  return new Intl.DateTimeFormat('en-US', {
-    month: 'short',
-    day: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-    timeZone: 'UTC',
-    timeZoneName: 'short',
-  }).format(new Date(isoDate));
+  return formatDateTime(new Date(isoDate));
 }

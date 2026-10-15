@@ -9,6 +9,7 @@ import type { AuctionPhase } from '@/libs/commerce/auction-phase';
 import { dropClockOffsetMs, formatDropCountdown } from '@/libs/commerce/drop-clock';
 import { formatCommerceMoney } from '@/libs/commerce/format';
 import { Logger } from '@/libs/logger/logger';
+import { formatDateTime } from '@/libs/utils/dateTime';
 import type { MarketplaceBidHistory, MarketplaceListingProjection } from '@/services/marketplace/marketplace';
 
 /**
@@ -106,7 +107,7 @@ export function MarketplaceAuctionPanel({
                 {auctionPhase !== 'ended' ? (
                   <Typography as="p" className="text-sm leading-5 font-semibold">
                     Ends in <span className="font-semibold tabular-nums">{formatDropCountdown(remainingMs)}</span>
-                    <span className="text-muted-foreground"> · {new Date(endsAt).toLocaleString()}</span>
+                    <span className="text-muted-foreground"> · {formatDateTime(new Date(endsAt))}</span>
                   </Typography>
                 ) : (
                   <Typography as="p" className="text-sm leading-5 font-semibold">
@@ -117,9 +118,7 @@ export function MarketplaceAuctionPanel({
             )}
             {auctionPhase === 'ended' && endsAt && (
               <Typography as="p" className="text-sm leading-5 font-medium text-muted-foreground">
-                {new Date(endsAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
-                {' · '}
-                {new Date(endsAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
+                {formatDateTime(new Date(endsAt))}
               </Typography>
             )}
             {auctionPhase === 'ended' && (
@@ -172,7 +171,7 @@ export function MarketplaceAuctionPanel({
                     {bid.visibleAmount ? formatCommerceMoney(bid.visibleAmount) : 'amount not recorded'}
                     <span className="text-sm leading-5 font-medium text-muted-foreground">
                       {' '}
-                      · {new Date(bid.createdAt).toLocaleString()}
+                      · {formatDateTime(new Date(bid.createdAt), { includeSeconds: true })}
                     </span>
                   </span>
                 </li>

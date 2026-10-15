@@ -22,10 +22,13 @@ import { getMarketplaceOfferCheckoutRoute } from '@/libs/commerce/checkout-phase
 import { formatCommerceMoney } from '@/libs/commerce/format';
 import type { CommerceListingRecord } from '@/libs/commerce/marketplace-records';
 import { amountInputUnitLabel, isBitcoinAsset } from '@/libs/commerce/pricing';
+import { formatDateTime } from '@/libs/utils/dateTime';
 import { ControlledInputField } from '@/molecules/ControlledInputField/ControlledInputField';
 import { ControlledTextareaField } from '@/molecules/ControlledTextareaField/ControlledTextareaField';
 import { MarketplaceEmptyState } from '@/molecules/Marketplace/MarketplaceEmptyState';
+import { MarketplaceProductSummary } from '@/molecules/Marketplace/MarketplaceProductSummary';
 import { ContentLayout } from '@/organisms/ContentLayout/ContentLayout';
+import { MarketplaceIndicativePrice } from '@/organisms/Marketplace/MarketplaceIndicativePrice';
 import { MarketplaceSectionNav } from '@/organisms/Marketplace/MarketplaceSectionNav';
 import type { MarketplaceOffer, MarketplaceOrder } from '@/services/marketplace/marketplace';
 import { useAuthStore } from '@/stores/auth/auth.store';
@@ -94,7 +97,7 @@ export function MarketplaceOffers() {
             Offers
           </Heading>
           <Typography as="p" className="mt-2 text-muted-foreground">
-            Private, expiring terms with immutable counteroffer history.
+            Manage offers you’ve sent and received.
           </Typography>
         </div>
 
@@ -125,30 +128,26 @@ export function MarketplaceOffers() {
                 : undefined;
               return (
                 <Card key={offer.id} id={`offer-${offer.id}`} className="rounded-md p-0">
-                  <CardContent className="grid gap-4 p-6 sm:grid-cols-[1fr_auto] sm:items-center">
+                  <CardContent className="grid min-w-0 gap-4 p-6">
                     <div>
-                      <div className="mb-2 flex flex-wrap items-center gap-2">
-                        <Badge>{incoming ? 'Incoming' : 'Sent'}</Badge>
-                        <Badge variant="secondary">{offerStateLabel(offer.state, offer.expiresAt)}</Badge>
-                      </div>
-                      <Typography as="p" className="text-2xl font-bold text-brand">
-                        {formatCommerceMoney(offer.amount)}
-                      </Typography>
                       <OfferListingSummary
                         offer={offer}
                         listing={listings.get(listingCompositeId(offer))}
                         isHydrating={isHydrating}
                       />
-                      <Typography as="p" className="text-sm text-muted-foreground">
-                        Quantity {offer.quantity}
-                        {offerIsOpen(offer.state)
-                          ? ` · Expires ${new Date(offer.expiresAt).toLocaleString('en-US')}`
-                          : ''}
-                      </Typography>
+                      <div className="mt-4 flex flex-wrap items-center gap-2">
+                        <Badge variant="outline">{incoming ? 'Incoming' : 'Sent'}</Badge>
+                        <Badge variant="outline">{offerStateLabel(offer.state, offer.expiresAt)}</Badge>
+                      </div>
+                      {offerIsOpen(offer.state) && (
+                        <Typography as="p" className="mt-4 text-sm text-muted-foreground">
+                          Offer expires {formatDateTime(new Date(offer.expiresAt))}
+                        </Typography>
+                      )}
                       {offer.award && offer.state === 'accepted' && offer.buyerPubky === currentUserPubky && (
                         <Typography as="p" className="mt-2 text-sm text-brand">
                           Accepted offer · {formatCommerceMoney(offer.award.unitPrice)} each · Quantity{' '}
-                          {offer.award.quantity} · Buy by {new Date(offer.award.convertBy).toLocaleString('en-US')}
+                          {offer.award.quantity} · Buy by {formatDateTime(new Date(offer.award.convertBy))}
                         </Typography>
                       )}
                       {offer.state === 'accepted' &&
@@ -165,7 +164,7 @@ export function MarketplaceOffers() {
                         offer.award?.state === 'active' &&
                         offer.award.convertBy && (
                           <Typography as="p" className="text-sm text-muted-foreground">
-                            Buyer checkout window closes {new Date(offer.award.convertBy).toLocaleString()}
+                            Buyer checkout window closes {formatDateTime(new Date(offer.award.convertBy))}
                           </Typography>
                         )}
                       {convertedAward && (
@@ -214,7 +213,7 @@ export function MarketplaceOffers() {
                     offer.buyerPubky === currentUserPubky ? (
                       <div className="flex flex-col items-start gap-2">
                         <Button
-                          size="sm"
+                          size="default"
                           className="rounded-full"
                           onClick={async () => {
                             const award = offer.award;
@@ -240,22 +239,22 @@ export function MarketplaceOffers() {
                         {incoming ? (
                           <>
                             <Button
-                              size="sm"
+                              size="default"
                               className="rounded-full"
                               onClick={() => void offers.act(offer, 'offer.accept')}
                             >
                               Accept
                             </Button>
                             <Button
-                              size="sm"
-                              variant="secondary"
+                              size="default"
+                              variant="outline"
                               className="rounded-full"
                               onClick={() => setCountering(offer)}
                             >
                               Counter
                             </Button>
                             <Button
-                              size="sm"
+                              size="default"
                               variant="ghost"
                               className="rounded-full"
                               onClick={() => void offers.act(offer, 'offer.reject')}
@@ -265,8 +264,8 @@ export function MarketplaceOffers() {
                           </>
                         ) : (
                           <Button
-                            size="sm"
-                            variant="secondary"
+                            size="default"
+                            variant="outline"
                             className="rounded-full"
                             onClick={() => void offers.act(offer, 'offer.withdraw')}
                           >
@@ -308,7 +307,7 @@ export function MarketplaceOffers() {
             placeholder="Explain your terms"
           />
           <DialogFooter>
-            <Button variant="secondary" className="rounded-full" onClick={() => setCountering(null)}>
+            <Button variant="outline" className="rounded-full" onClick={() => setCountering(null)}>
               Cancel
             </Button>
             <Button className="rounded-full" onClick={submitCounter}>
@@ -328,7 +327,8 @@ export function offerIsOpen(state: MarketplaceOffer['state']): boolean {
 
 export function offerStateLabel(state: MarketplaceOffer['state'], expiresAt: string, nowMs = Date.now()): string {
   if (state === 'rejected') return 'Declined';
-  return state === 'accepted' && Date.parse(expiresAt) <= nowMs ? 'Expired' : state;
+  if (state === 'accepted' && Date.parse(expiresAt) <= nowMs) return 'Expired';
+  return state.charAt(0).toUpperCase() + state.slice(1);
 }
 
 const LISTING_HYDRATION_CONCURRENCY = 4;
@@ -423,40 +423,25 @@ export function OfferListingSummary({
 }) {
   const listingRef = parseListingAggregateId(offer.listingAggregateId);
 
-  if (!listingRef || !listing) {
-    return (
-      <Typography as="p" className="text-sm text-muted-foreground">
-        {isHydrating ? 'Loading listing…' : 'Listing details unavailable'}
-      </Typography>
-    );
-  }
-
-  const imageUri = listing.media.find(({ type }) => type === 'image')?.url ?? null;
+  const imageUri = listing?.media.find(({ type }) => type === 'image')?.url ?? null;
+  const mediaUrl = useMarketplaceFirstMediaUrl(imageUri ? [imageUri] : []);
   return (
-    <Link
-      href={getMarketplaceListingRoute(listingRef.sellerPubky, listingRef.listingId)}
-      overrideDefaults
-      className="flex items-center gap-3 rounded-lg py-1 hover:text-brand"
-    >
-      <OfferThumbnail uri={imageUri} title={listing.title} />
-      <Typography as="p" className="font-semibold hover:underline">
-        {listing.title}
-      </Typography>
-    </Link>
-  );
-}
-
-function OfferThumbnail({ uri, title }: { uri: string | null; title: string }) {
-  const mediaUrl = useMarketplaceFirstMediaUrl(uri ? [uri] : []);
-  return (
-    <div className="flex size-12 shrink-0 items-center justify-center overflow-hidden rounded-lg border bg-muted">
-      {mediaUrl ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img src={mediaUrl} alt={`${title} thumbnail`} className="size-full object-cover object-center" />
-      ) : (
-        <HandCoins className="size-5 text-muted-foreground" aria-hidden="true" />
-      )}
-    </div>
+    <MarketplaceProductSummary
+      inset
+      title={listing?.title ?? (isHydrating ? 'Loading listing…' : 'Listing details unavailable')}
+      href={
+        listingRef && listing ? getMarketplaceListingRoute(listingRef.sellerPubky, listingRef.listingId) : undefined
+      }
+      imageUrl={mediaUrl}
+      titleDetails={offer.award?.variant.options.map(({ value }) => value).filter(Boolean)}
+      quantity={offer.quantity}
+      price={
+        <>
+          {formatCommerceMoney(offer.amount)}
+          <MarketplaceIndicativePrice money={offer.amount} className="font-normal" />
+        </>
+      }
+    />
   );
 }
 

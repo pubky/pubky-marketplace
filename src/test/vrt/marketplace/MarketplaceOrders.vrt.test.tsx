@@ -14,6 +14,7 @@ import {
   ORDER_FIXTURE_BUYER as USDT_SCENE_ME,
 } from '@/test/fixtures/commerce/orders';
 import { USDT_ORDER_FIELDS } from '@/test/fixtures/commerce/usdt-orders';
+import { formatDateTime } from '@/libs/utils/dateTime';
 
 // Deterministic BTC/USD rate for the capture (1 BTC = $100,000): the "≈"
 // estimates render from this fixed value, never from the network.
@@ -586,6 +587,11 @@ describe('Marketplace orders — visual regression', () => {
     ordersState.error = null;
 
     const screen = await renderForVRT(<MarketplaceOrders />, { viewport: VRT_VIEWPORT_MOBILE });
+    const placedDates = screen.container.querySelectorAll<HTMLElement>('[data-testid="order-placed-at"]');
+    expect(placedDates.length).toBeGreaterThan(0);
+    for (const date of placedDates) {
+      expect(date.getBoundingClientRect().left).toBeCloseTo(date.parentElement!.getBoundingClientRect().left, 0);
+    }
     const tabList = screen.container.querySelector('[role="tablist"]') as HTMLElement;
     tabList.scrollLeft = 0;
     await new Promise<void>((resolve) => {
@@ -884,8 +890,12 @@ describe('Marketplace orders — visual regression', () => {
     const screen = await renderForVRT(<MarketplaceOrders />, { viewport: VRT_VIEWPORT_DESKTOP });
     await expect.element(screen.getByRole('heading', { name: 'Reservations' })).toBeVisible();
     await expect.element(screen.getByText('Seller pending-payment zine')).toBeVisible();
-    await expect.element(screen.getByText('Held for a buyer · restocks Jan 1, 2026, 2:00 PM UTC')).toBeVisible();
-    await expect.element(screen.getByTestId('order-placed-at')).toHaveTextContent('Placed Dec 31, 2025, 2:00 PM UTC');
+    await expect
+      .element(screen.getByText(`Held for a buyer · restocks ${formatDateTime(new Date('2026-01-01T14:00:00Z'))}`))
+      .toBeVisible();
+    await expect
+      .element(screen.getByTestId('order-placed-at'))
+      .toHaveTextContent(`Placed ${formatDateTime(new Date('2025-12-31T14:00:00Z'))}`);
     await expect(await expectVrtSurface('marketplace-orders')).toMatchScreenshot(
       'orders-pending-payment-seller-desktop',
     );
@@ -1086,7 +1096,7 @@ describe('Marketplace orders — USDT orders', () => {
     ordersState.error = null;
 
     const screen = await renderForVRT(<MarketplaceOrders />, { viewport: VRT_VIEWPORT_DESKTOP });
-    await expect.element(screen.getByText('USDT sale waiting for finality × 1')).toBeVisible();
+    await expect.element(screen.getByText('USDT sale waiting for finality')).toBeVisible();
     await expect(await expectVrtSurface('marketplace-orders')).toMatchScreenshot('orders-usdt-seller-finality-desktop');
   });
 

@@ -49,7 +49,6 @@ export function MarketplaceInventory() {
         <MarketplaceSectionNav />
         <BackToMyShop />
         <div>
-          <Badge className="mb-4">Seller studio · Inventory</Badge>
           <Heading level={1} size="xl" className="text-4xl sm:text-6xl">
             Inventory
           </Heading>

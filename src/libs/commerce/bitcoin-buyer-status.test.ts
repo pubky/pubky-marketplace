@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { marketplaceOrderSchema } from '@/core/services/marketplace/marketplace-projections';
 import projectionSamples from '@/libs/commerce/contracts/samples/projections.json';
 import { toCamelCaseWire } from '@/libs/commerce/wire-casing';
+import { formatDateTime } from '@/libs/utils/dateTime';
 import {
   BITCOIN_BUYER_STATUS_TABLE,
   BITCOIN_WALLET_CONTACT_COPY,
@@ -63,7 +64,13 @@ describe('bitcoin buyer status', () => {
     expect(bitcoinConfirmationExists(order, payment)).toBe(row.confirmationExists);
     const progress = buyerCheckoutProgressCopy(order, payment, NOW);
     const wallet = buyerBitcoinWalletCopy(order, payment);
-    expect(progress).toBe(row.progress.includes('Seller confirms by') ? `${row.progress} ${COUNTDOWN}` : row.progress);
+    const expectedProgress = row.progress.replace(
+      'Sep 29, 2026, 10:56 AM UTC',
+      formatDateTime(new Date(SELLER_DEADLINE)),
+    );
+    expect(progress).toBe(
+      expectedProgress.includes('Seller confirms by') ? `${expectedProgress} ${COUNTDOWN}` : expectedProgress,
+    );
     expect(wallet.text).toBe(row.wallet);
     expect(buyerCheckoutBadgeLabel(order, payment)).toBe(
       row.forbidsPayLabels ? PAYMENT_SEEN_LABEL : 'Awaiting payment · Item reserved',
@@ -96,7 +103,7 @@ describe('bitcoin buyer status', () => {
 
   it('names the seller confirm-by time once a payment is seen', () => {
     expect(buyerCheckoutProgressCopy(seenOrder, { state: 'awaiting_entitlement' }, NOW)).toBe(
-      `Seller confirms by Sep 29, 2026, 10:56 AM UTC. ${COUNTDOWN}`,
+      `Seller confirms by ${formatDateTime(new Date('2026-09-29T10:56:41.980Z'))}. ${COUNTDOWN}`,
     );
     expect(sellerBitcoinConfirmPrompt(seenOrder)).toBe('Confirm you received ₿1,303');
     expect(sellerBitcoinDecision(seenOrder, { state: 'awaiting_entitlement' })).toBe('confirm');
@@ -120,7 +127,7 @@ describe('bitcoin buyer status', () => {
     expect(holdCountdownCopy('not a date', NOW)).toBeNull();
     expect(
       buyerCheckoutProgressCopy(seenOrder, { state: 'awaiting_entitlement' }, Date.parse('2026-09-30T00:00:00Z')),
-    ).toBe('Seller confirms by Sep 29, 2026, 10:56 AM UTC.');
+    ).toBe(`Seller confirms by ${formatDateTime(new Date('2026-09-29T10:56:41.980Z'))}.`);
   });
 
   it('labels the badge Payment seen once the payment is seen and Confirmed on-chain after a confirmation', () => {

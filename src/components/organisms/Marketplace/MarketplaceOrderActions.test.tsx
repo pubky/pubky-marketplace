@@ -499,26 +499,31 @@ describe('MarketplaceOrderActions local pickup (Wave 7, §A6)', () => {
     expect(onChanged).toHaveBeenCalled();
   });
 
-  it('offers the buyer Show meeting point and Confirm handover from ready_for_pickup', () => {
+  it('offers the buyer Meeting point and Confirm handover from ready_for_pickup', () => {
     renderPickupActions({ state: 'ready_for_pickup', isBuyer: true });
 
-    expect(screen.getByRole('button', { name: 'Show meeting point' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Meeting point' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Confirm handover' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Cancel order' })).toBeInTheDocument();
+    expect(screen.getAllByRole('button').map((button) => button.textContent)).toEqual([
+      'Meeting point',
+      'Confirm handover',
+      'Cancel order',
+    ]);
   });
 
   it('withholds the meeting-point reveal once the order is terminal (§A3)', () => {
     // A delivered pickup order is NOT terminal — the buyer may still need the
     // pinned meeting point (a return is still possible).
     renderPickupActions({ state: 'delivered', isBuyer: true });
-    expect(screen.getByRole('button', { name: 'Show meeting point' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Meeting point' })).toBeInTheDocument();
   });
 
   it('hides the reveal on a cancelled pickup order — the entitlement ended at the cancel (§A3)', () => {
     // The order keeps its payment receipt — the gate is the terminal state,
     // not the receipt, per the reveal cutoff.
     renderPickupActions({ state: 'delivered', isBuyer: true, overrides: { state: 'cancelled' } });
-    expect(screen.queryByRole('button', { name: 'Show meeting point' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Meeting point' })).not.toBeInTheDocument();
   });
 
   it('warns the buyer before confirm — only once the item is in their hands', async () => {

@@ -14,7 +14,6 @@ import { Typography } from '@/atoms/Typography/Typography';
 import { isDurableCommerceMode } from '@/config/commerce';
 import { buildFeatureDiscoveryDeviceStorageKey, MARKETPLACE_PROMO_STORAGE_ID } from '@/config/featureDiscovery';
 import { SEARCH_CLOSED_STYLE } from '@/config/search';
-import { useIsMobile } from '@/hooks/useIsMobile/useIsMobile';
 import { useMarketplaceCatalog } from '@/hooks/useMarketplaceCatalog/useMarketplaceCatalog';
 import type { MarketplaceCatalogItem } from '@/hooks/useMarketplaceCatalog/useMarketplaceCatalog.utils';
 import { useMarketplaceDrops } from '@/hooks/useMarketplaceDrops/useMarketplaceDrops';
@@ -46,7 +45,6 @@ export function Marketplace({
   initialShops?: CommerceShopRecord[];
 }) {
   const router = useRouter();
-  const isMobile = useIsMobile({ breakpoint: 'sm' });
   const { requireAuth } = useRequireAuth();
   const sellingAccess = useMarketplaceSellingAccess();
   const [showSellingApproval, setShowSellingApproval] = useState(false);
@@ -232,7 +230,7 @@ export function Marketplace({
                   aria-label="Filter marketplace"
                   value={query}
                   onChange={(event) => setQuery(event.target.value)}
-                  placeholder={isMobile ? 'Search' : 'Filter items, styles, or sellers'}
+                  placeholder="Search"
                   className="h-auto min-w-0 flex-1 border-none bg-transparent p-0 text-xs font-medium text-foreground md:text-xs"
                 />
                 <span
@@ -286,7 +284,9 @@ export function Marketplace({
           ) : resultCount > 0 ? (
             <div
               className={cn(
-                layout === 'grid' ? 'grid grid-cols-2 gap-6 sm:grid-cols-3 lg:grid-cols-4' : 'grid grid-cols-1 gap-6',
+                layout === 'grid'
+                  ? 'grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-6 lg:grid-cols-4'
+                  : 'grid grid-cols-1 gap-3 sm:gap-6',
               )}
             >
               {catalogCards.map((card, index) =>

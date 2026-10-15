@@ -137,7 +137,7 @@ export function MarketplaceShippingLabelDialog({
 
   return (
     <>
-      <Button size="sm" variant="secondary" className="rounded-full" onClick={() => void openDialog()}>
+      <Button size="default" variant="secondary" className="rounded-full" onClick={() => void openDialog()}>
         <Ship className="size-4" />
         Shipping label
       </Button>

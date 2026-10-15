@@ -8,6 +8,7 @@ import { HOUR_MS, MINUTE_MS, VRT_FROZEN_NOW_MS } from '@/test-utils/vrt.clock';
 import projectionSamples from '@/libs/commerce/contracts/samples/projections.json';
 import { marketplaceOrderSchema } from '@/core/services/marketplace/marketplace-projections';
 import { toCamelCaseWire } from '@/libs/commerce/wire-casing';
+import { formatDateTime } from '@/libs/utils/dateTime';
 import { MarketplacePaymentStatusCard } from '@/organisms/Marketplace/MarketplacePaymentStatusCard';
 import { USDT_ORDER_FIELDS } from '@/test/fixtures/commerce/usdt-orders';
 import { USDT_RESOLVE_TX_HASH } from '@/test/fixtures/commerce/usdt-payment-review.wire';
@@ -421,7 +422,9 @@ describe('Marketplace payment status card — visual regression', () => {
         auctionAggregateId: 'listing:seller_boots',
       },
     });
-    await expect.element(screen.getByText(/pay by Aug 20, 2026, 9:15 PM UTC\./i)).toBeInTheDocument();
+    await expect
+      .element(screen.getByText(`pay by ${formatDateTime(new Date(HOLD_DEADLINE))}.`, { exact: false }))
+      .toBeInTheDocument();
     await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot(
       'payment-status-auction-bitcoin-before-activation-desktop',
     );
@@ -442,8 +445,12 @@ describe('Marketplace payment status card — visual regression', () => {
         auctionAggregateId: 'listing:seller_boots',
       },
     });
-    await expect.element(screen.getByText(/pay by Aug 20, 2026, 9:07 PM UTC\./i)).toBeInTheDocument();
-    await expect.element(screen.getByText(/pay by Aug 20, 2026, 9:15 PM UTC/i)).not.toBeInTheDocument();
+    await expect
+      .element(screen.getByText(`pay by ${formatDateTime(new Date(ACTIVATED_REQUEST_DEADLINE))}.`, { exact: false }))
+      .toBeInTheDocument();
+    await expect
+      .element(screen.getByText(`pay by ${formatDateTime(new Date(HOLD_DEADLINE))}`, { exact: false }))
+      .not.toBeInTheDocument();
     await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot(
       'payment-status-auction-bitcoin-activated-desktop',
     );

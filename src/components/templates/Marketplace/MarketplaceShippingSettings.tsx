@@ -292,14 +292,11 @@ export function MarketplaceShippingSettings() {
         <BackToMyShop />
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
-            <Badge className="mb-4">Seller studio</Badge>
             <Heading level={1} size="xl" className="text-4xl sm:text-6xl">
               Shipping
             </Heading>
             <Typography as="p" className="mt-2 max-w-xl text-muted-foreground">
-              Your Shippo label integration, plus reusable presets for the sell studio&apos;s shipping fields (label,
-              flat price, delivery estimate). Presets are stored on this device only — applying one just pre-fills the
-              form, and listings publish exactly as before.
+              Manage shipping labels and presets for your listings. Presets are saved on this device.
             </Typography>
           </div>
           {editingId === null && (

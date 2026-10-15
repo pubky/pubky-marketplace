@@ -200,6 +200,27 @@ describe('Marketplace', () => {
     expect(html).toContain('My shop');
   });
 
+  it('hydrates the server search field at phone width without a placeholder mismatch', () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const container = document.createElement('div');
+    document.body.append(container);
+    let view: { unmount: () => void } | undefined;
+    try {
+      vi.stubGlobal('innerWidth', 1024);
+      container.innerHTML = renderToString(<Marketplace />);
+      vi.stubGlobal('innerWidth', 390);
+      view = render(<Marketplace />, { container, hydrate: true });
+
+      expect(screen.getByRole('textbox', { name: 'Filter marketplace' })).toHaveAttribute('placeholder', 'Search');
+      expect(consoleError.mock.calls.flat().join(' ')).not.toMatch(/hydrat|didn't match/i);
+    } finally {
+      view?.unmount();
+      container.remove();
+      vi.unstubAllGlobals();
+      consoleError.mockRestore();
+    }
+  });
+
   it('does not repeat the logo environment label as a catalog banner', () => {
     const { rerender } = render(<Marketplace />);
 

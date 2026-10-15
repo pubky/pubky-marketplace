@@ -193,7 +193,13 @@ function ShopImageField({
       <Typography as="p" className="mt-1 text-sm text-muted-foreground">
         {description}
       </Typography>
-      <div className="mt-3 flex items-center gap-4">
+      <div
+        className={
+          shape === 'banner'
+            ? 'mt-3 flex flex-col items-start gap-4 sm:flex-row sm:items-center'
+            : 'mt-3 flex items-center gap-4'
+        }
+      >
         <div
           className={
             shape === 'avatar'

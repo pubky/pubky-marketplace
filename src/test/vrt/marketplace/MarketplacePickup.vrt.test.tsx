@@ -168,6 +168,7 @@ vi.mock('@/controllers/commerce/commerce', async () => {
       fetchPickupAvailable: vi.fn(async () => true),
       fetchSellerPickupDetails: vi.fn(async () => (await fixtures).ownerRead),
       fetchPickupReveal: vi.fn(async () => (await fixtures).reveal),
+      getOrFetchListing: vi.fn(async () => (await fixtures).pickupCartItems[0].listing.record),
       // The badge-cards scene renders real listing cards: their favorite
       // toggle reads through the controller seam.
       isFavorite: vi.fn(async () => false),
@@ -354,7 +355,7 @@ describe('Marketplace local pickup — visual regression', () => {
     view.orders = pickupOrderView;
 
     const screen = await renderForVRT(<MarketplaceOrders />, { viewport: VRT_VIEWPORT_DESKTOP });
-    await screen.getByRole('button', { name: 'Show meeting point' }).click();
+    await screen.getByRole('button', { name: 'Meeting point' }).click();
     await vi.waitFor(() => {
       if (!document.querySelector('[data-surface="pickup-reveal-dialog"]')) {
         throw new Error('The reveal dialog has not opened yet.');

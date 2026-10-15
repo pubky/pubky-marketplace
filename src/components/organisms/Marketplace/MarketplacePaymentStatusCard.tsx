@@ -15,7 +15,6 @@ import {
   X,
 } from 'lucide-react';
 import { Controller, type UseFormReturn } from 'react-hook-form';
-import { Badge } from '@/atoms/Badge/Badge';
 import { Button, buttonVariants } from '@/atoms/Button/Button';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/atoms/Collapsible/Collapsible';
 import { Input } from '@/atoms/Input/Input';
@@ -48,7 +47,6 @@ import {
   buyerBitcoinReviewCopy,
   buyerBitcoinWalletCopy,
   holdCountdownCopy,
-  PAYMENT_CONFIRMED_ON_CHAIN_LABEL,
   PAYMENT_SEEN_HOLD_COPY,
   SELLER_CONFIRMED_BEFORE_CHAIN_BUYER_COPY,
   SELLER_CONFIRMED_BEFORE_CHAIN_SELLER_COPY,
@@ -100,7 +98,7 @@ import { paymentReviewRail } from '@/libs/commerce/usdt-payment-review';
 import { getDeployEnv } from '@/libs/runtime-config/runtime-config';
 import { cn } from '@/libs/utils/utils';
 import { BitkitDownloads } from '@/molecules/BitkitDownloads/BitkitDownloads';
-import { MarketplacePaymentStatusBadge } from '@/molecules/Marketplace/MarketplacePaymentStatusBadge';
+import { MarketplacePaymentStatusLabels } from '@/molecules/Marketplace/MarketplacePaymentStatusBadge';
 import { SETTINGS_SECTION_CONTENT_CLASSNAME } from '@/molecules/Settings/SettingsSectionContent/SettingsSectionContent';
 import type { MarketplaceOrder, MarketplacePayment } from '@/services/marketplace/marketplace';
 import { useAuthStore } from '@/stores/auth/auth.store';
@@ -139,7 +137,10 @@ export function MarketplacePaymentStatusCard({
   advancePayment,
   onPaymentChanged,
   showStagingNotice = true,
+  showStatusLabels = true,
   checkoutActions,
+  confirmedStatusInOrderLabels = false,
+  className,
 }: {
   order: MarketplaceOrder;
   payment: MarketplacePayment | null;
@@ -152,7 +153,12 @@ export function MarketplacePaymentStatusCard({
   ) => Promise<boolean>;
   onPaymentChanged: () => void | Promise<void>;
   showStagingNotice?: boolean;
+  /** Hide when the parent already renders the shared payment labels. */
+  showStatusLabels?: boolean;
   checkoutActions?: ReactNode;
+  /** The order renders the confirmed labels above; keep any payment details unboxed. */
+  confirmedStatusInOrderLabels?: boolean;
+  className?: string;
 }) {
   const currentUserPubky = useAuthStore((state) => state.currentUserPubky);
   const isSandbox = adapterMode === 'sandbox';
@@ -290,8 +296,17 @@ export function MarketplacePaymentStatusCard({
   const isPaykitRail = order.paymentMethod === 'bitcoin' || order.paymentMethod === 'usdt';
   const hasBuyerBitcoinProgress = usesMethodFlow && isBuyer && order.paymentMethod === 'bitcoin';
 
+  const statusInLabels = confirmedStatusInOrderLabels && visibleStatus === 'confirmed';
+
   const statusCard = (
-    <div className={cn(SETTINGS_SECTION_CONTENT_CLASSNAME, 'gap-4')} data-surface="marketplace-payment-status-card">
+    <div
+      className={cn(
+        statusInLabels ? 'grid min-w-0 gap-4 empty:hidden' : [SETTINGS_SECTION_CONTENT_CLASSNAME, 'gap-4'],
+        !showStatusLabels && 'empty:hidden',
+        statusInLabels && className,
+      )}
+      data-surface={statusInLabels ? 'marketplace-payment-details' : 'marketplace-payment-status-card'}
+    >
       {buyerConnectionOpen && currentUserPubky && (
         <MarketplaceBuyerBitkitConnectDialog
           open
@@ -302,31 +317,11 @@ export function MarketplacePaymentStatusCard({
           onRecheck={buyerWallet.recheck}
         />
       )}
-      <div className="flex flex-wrap items-center gap-2">
-        <MarketplacePaymentStatusBadge order={order} payment={payment} />
-        {paidBitcoin?.sellerConfirmed && paidBitcoin.onChain && (
-          <Badge variant="secondary" data-testid="bitcoin-on-chain-badge">
-            {PAYMENT_CONFIRMED_ON_CHAIN_LABEL}
-          </Badge>
-        )}
-        {payment.adapter === 'locks' && <Badge variant="secondary">Locks/Paykit</Badge>}
-        {order.paymentMethod === 'bitcoin' && <Badge variant="secondary">₿ Bitcoin</Badge>}
-        {order.paymentMethod === 'usdt' && <Badge variant="secondary">USDT</Badge>}
-        {isBuyer && isAwaiting && order.state === 'pending_payment' && order.paymentMethod === 'paypal' && (
-          <Badge variant="outline">Item reserved</Badge>
-        )}
-        {order.paymentMethod === 'paypal' && <Badge variant="outline">PayPal</Badge>}
-        {/* How a fiat rail is verified stays on the order: a gateway-notified
-            PayPal payment was confirmed by PayPal's own notification;
-            seller-attested is the seller saying so. */}
-        {order.fiatVerification === 'gateway-notified' && (!isBuyer || visibleStatus === 'confirmed') && (
-          <Badge variant="secondary">{isBuyer ? 'Confirmed by PayPal' : 'PayPal-verified'}</Badge>
-        )}
-        {order.fiatVerification === 'seller-attested' && (!isBuyer || visibleStatus === 'confirmed') && (
-          <Badge variant="outline">{isBuyer ? 'Confirmed by seller' : 'Seller-attested'}</Badge>
-        )}
-        {isSandbox && <Badge variant="secondary">Sandbox · simulated payment · no real funds</Badge>}
-      </div>
+      {showStatusLabels && !statusInLabels && (
+        <div className="flex flex-wrap items-center gap-2">
+          <MarketplacePaymentStatusLabels order={order} payment={payment} isBuyer={isBuyer} isSandbox={isSandbox} />
+        </div>
+      )}
       <MarketplaceBitcoinAmountBreakdown
         order={order}
         showExact={isBuyer && isAwaiting && buyerBitcoinWalletCopy(order, payment).kind === 'pay'}
@@ -941,8 +936,10 @@ export function MarketplacePaymentStatusCard({
     </div>
   );
 
+  if (statusInLabels) return statusCard;
+
   return (
-    <div className="grid min-w-0 gap-4">
+    <div className={cn('grid min-w-0 gap-4', !showStatusLabels && '[&:has(>_:only-child:empty)]:hidden', className)}>
       {statusCard}
       {hasBuyerBitcoinProgress &&
         order.paykitDeliveryState !== 'failed' &&

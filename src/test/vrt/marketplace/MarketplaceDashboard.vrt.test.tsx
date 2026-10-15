@@ -248,7 +248,11 @@ describe('Marketplace seller dashboard — visual regression', () => {
     );
   });
 
-  it('renders the new-seller empty state at desktop viewport', async () => {
+  it.each([
+    { name: 'desktop', viewport: VRT_VIEWPORT_DESKTOP },
+    { name: 'mobile', viewport: VRT_VIEWPORT_MOBILE },
+    { name: 'small-mobile', viewport: { width: 375, height: 812 } },
+  ])('renders the new-seller empty state with one action row at $name viewport', async ({ name, viewport }) => {
     const { emptyMetrics, emptyActionNeeded, shop } = await fixtures;
     view.listings = [];
     view.metrics = emptyMetrics;
@@ -256,9 +260,14 @@ describe('Marketplace seller dashboard — visual regression', () => {
     view.isLoading = false;
     view.shop = shop;
 
-    const screen = await renderForVRT(<MarketplaceDashboard />, { viewport: VRT_VIEWPORT_DESKTOP });
+    const screen = await renderForVRT(<MarketplaceDashboard />, { viewport });
+    const actions = screen.getByTestId('marketplace-listing-actions').element();
+    const buttons = Array.from(actions.querySelectorAll('button'));
+    expect(new Set(buttons.map((button) => button.getBoundingClientRect().top)).size).toBe(1);
+    expect(actions.scrollWidth).toBeLessThanOrEqual(actions.clientWidth);
+    expect(buttons.at(-1)!.getBoundingClientRect().right).toBeLessThanOrEqual(viewport.width);
     await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot(
-      'dashboard-empty-desktop',
+      `dashboard-empty-${name}`,
       VRT_DENSE_CHROME_SCREENSHOT,
     );
   });

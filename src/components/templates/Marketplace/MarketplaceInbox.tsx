@@ -24,6 +24,7 @@ import {
 import { parseConversationAggregateId } from '@/libs/commerce/messaging-contracts';
 import { marketplaceCounterpartyLabel, MESSAGING_COPY } from '@/libs/commerce/messaging-copy';
 import { buildMarketplaceConversationAggregateId } from '@/libs/commerce/transaction-commands';
+import { formatDateTime } from '@/libs/utils/dateTime';
 import { GrantSessionMessagingNotice } from '@/molecules/GrantSessionRefusal/GrantSessionRefusal';
 import { MarketplaceEmptyState } from '@/molecules/Marketplace/MarketplaceEmptyState';
 import { ContentLayout } from '@/organisms/ContentLayout/ContentLayout';
@@ -156,7 +157,7 @@ function EncryptedInbox() {
       )}
 
       {inboxRows.length || requestRows.length ? (
-        <div className="flex flex-col gap-6">
+        <div className="flex flex-col gap-3">
           {inboxRows.map((conversation) => (
             <EncryptedConversationRow
               key={conversation.id}
@@ -208,12 +209,13 @@ function EncryptedConversationRow({
   const { userDetails } = useUserDetails(conversation.counterparty_pubky);
   if (!parsed) return null;
   const { lastMessage, lastQueued } = conversation;
-  const preview =
-    lastQueued && (!lastMessage || lastQueued.queued_at > lastMessage.recorded_at)
-      ? `${MESSAGING_COPY.queued}: ${lastQueued.body}`
-      : lastMessage
-        ? `${lastMessage.direction === 'sent' ? 'You: ' : ''}${lastMessage.body}`
-        : '';
+  const showQueued = lastQueued && (!lastMessage || lastQueued.queued_at > lastMessage.recorded_at);
+  const preview = showQueued
+    ? `${MESSAGING_COPY.queued}: ${lastQueued.body}`
+    : lastMessage
+      ? `${lastMessage.direction === 'sent' ? 'You: ' : ''}${lastMessage.body}`
+      : '';
+  const timestamp = showQueued ? lastQueued.queued_at : lastMessage?.sent_at;
   const unread = Boolean(
     lastMessage && lastMessage.direction === 'received' && lastMessage.recorded_at > (conversation.last_read_at ?? 0),
   );
@@ -232,8 +234,8 @@ function EncryptedConversationRow({
       trigger={
         <button type="button" className="w-full text-left" aria-label={`Open conversation with ${counterpartyLabel}`}>
           <Card className="rounded-md p-0 transition-colors hover:bg-muted">
-            <CardContent className="flex items-center gap-4 p-6">
-              <div className="rounded-full bg-brand/15 p-3 text-brand">
+            <CardContent className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-4 gap-y-1 p-6 sm:flex sm:gap-4">
+              <div className="row-span-2 rounded-full bg-brand/15 p-3 text-brand">
                 <LockKeyhole className="size-5" />
               </div>
               <div className="min-w-0 flex-1">
@@ -249,14 +251,7 @@ function EncryptedConversationRow({
               {unread ? (
                 <span aria-label="Unread messages" className="size-2.5 shrink-0 rounded-full bg-brand" />
               ) : null}
-              {conversation.lastMessage && (
-                <time
-                  dateTime={new Date(conversation.lastMessage.sent_at).toISOString()}
-                  className="text-xs font-medium text-muted-foreground"
-                >
-                  {new Date(conversation.lastMessage.sent_at).toLocaleDateString('en-US')}
-                </time>
-              )}
+              <ConversationTimestamp timestamp={timestamp} />
             </CardContent>
           </Card>
         </button>
@@ -301,7 +296,7 @@ function SandboxInbox() {
   }
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-3">
       {query.status === 'invalid' && (
         <div role="alert" className="rounded-md border border-destructive/40 p-4">
           {MESSAGING_COPY.deepLinkInvalid}
@@ -359,8 +354,8 @@ function SandboxConversationRow({
   return (
     <Link href={href} overrideDefaults>
       <Card className="rounded-md p-0 transition-colors hover:bg-muted">
-        <CardContent className="flex items-center gap-4 p-6">
-          <div className="rounded-full bg-brand/15 p-3 text-brand">
+        <CardContent className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-4 gap-y-1 p-6 sm:flex sm:gap-4">
+          <div className="row-span-2 rounded-full bg-brand/15 p-3 text-brand">
             <MessageCircle className="size-5" />
           </div>
           <div className="min-w-0 flex-1">
@@ -373,12 +368,23 @@ function SandboxConversationRow({
               </Typography>
             ) : null}
           </div>
-          <time dateTime={timestamp} className="text-xs font-medium text-muted-foreground">
-            {timestamp ? new Date(timestamp).toLocaleDateString('en-US') : ''}
-          </time>
+          <ConversationTimestamp timestamp={timestamp} />
         </CardContent>
       </Card>
     </Link>
+  );
+}
+
+function ConversationTimestamp({ timestamp }: { timestamp?: string | number }) {
+  if (timestamp === undefined) return null;
+  const date = new Date(timestamp);
+  return (
+    <time
+      dateTime={date.toISOString()}
+      className="col-start-2 col-end-[-1] row-start-2 text-xs font-medium text-muted-foreground sm:shrink-0 sm:text-right"
+    >
+      {formatDateTime(date)}
+    </time>
   );
 }
 

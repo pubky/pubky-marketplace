@@ -1,52 +1,38 @@
 'use client';
 
-import { Package } from 'lucide-react';
 import { getMarketplaceListingRoute } from '@/app/routes';
-import { Image } from '@/atoms/Image/Image';
-import { Link } from '@/atoms/Link/Link';
-import { Typography } from '@/atoms/Typography/Typography';
 import { useMarketplaceOrderItemMedia } from '@/hooks/useMarketplaceOrderItemMedia/useMarketplaceOrderItemMedia';
 import { formatCommerceMoney } from '@/libs/commerce/format';
 import { parseListingAggregateId } from '@/libs/commerce/marketplace-conversation-query';
+import { MarketplaceProductSummary } from '@/molecules/Marketplace/MarketplaceProductSummary';
+import { MarketplaceIndicativePrice } from '@/organisms/Marketplace/MarketplaceIndicativePrice';
 import type { MarketplaceOrder } from '@/services/marketplace/marketplace';
 
-export function MarketplaceCheckoutItem({ line }: { line: MarketplaceOrder['lines'][number] }) {
+export function MarketplaceCheckoutItem({
+  line,
+  showEstimate = false,
+}: {
+  line: MarketplaceOrder['lines'][number];
+  showEstimate?: boolean;
+}) {
   const coverUrl = useMarketplaceOrderItemMedia(line.listingAggregateId);
   const listing = parseListingAggregateId(line.listingAggregateId);
-  const variantLabel = line.variantOptions?.map(({ name, value }) => `${name}: ${value}`).join(' · ');
+  const variantDetails = line.variantOptions?.map(({ name, value }) => `${name}: ${value}`);
 
   return (
-    <div className="flex items-center gap-4 rounded-md bg-background p-4">
-      <div className="relative flex size-20 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-brand/15">
-        <Package className="size-7 text-brand" aria-hidden="true" />
-        {coverUrl && <Image src={coverUrl} alt="" fill sizes="80px" className="object-cover object-center" />}
-      </div>
-      <div className="grid min-w-0 flex-1 gap-1">
-        <Typography as="p" className="font-semibold break-words">
-          {listing ? (
-            <Link
-              href={getMarketplaceListingRoute(listing.sellerPubky, listing.listingId)}
-              overrideDefaults
-              className="hover:text-brand"
-            >
-              {line.title}
-            </Link>
-          ) : (
-            line.title
-          )}
-        </Typography>
-        {variantLabel && (
-          <Typography as="p" className="text-sm text-muted-foreground">
-            {variantLabel}
-          </Typography>
-        )}
-        <Typography as="p" className="text-sm text-muted-foreground">
-          Quantity {line.quantity}
-        </Typography>
-        <Typography as="p" className="font-semibold text-brand">
+    <MarketplaceProductSummary
+      inset
+      title={line.title}
+      href={listing ? getMarketplaceListingRoute(listing.sellerPubky, listing.listingId) : undefined}
+      imageUrl={coverUrl}
+      titleDetails={variantDetails}
+      quantity={line.quantity}
+      price={
+        <>
           {formatCommerceMoney(line.subtotal)}
-        </Typography>
-      </div>
-    </div>
+          {showEstimate && <MarketplaceIndicativePrice money={line.subtotal} className="font-normal" />}
+        </>
+      }
+    />
   );
 }
