@@ -22,6 +22,7 @@ import type { Pubky } from '@/models/models.types';
 import { HomeserverService } from '@/services/homeserver/homeserver';
 import type {
   TGenerateAuthUrlResult,
+  TGrantAuthUrlOptions,
   THomeserverPublicKeyParams,
   THomeserverSessionResult,
   THomeserverSignUpParams,
@@ -158,8 +159,13 @@ export class AuthApplication {
   }
 
   /** Grant sign-in URL (`pubkyauth://signin_grant`) for signers such as Bitkit and Pubky Passport. */
-  static async generateGrantAuthUrl(xCallback?: XCallbackParams): Promise<TGenerateAuthUrlResult> {
-    return await HomeserverService.generateGrantAuthUrl(xCallback);
+  static async generateGrantAuthUrl(
+    xCallback?: XCallbackParams,
+    options?: TGrantAuthUrlOptions,
+  ): Promise<TGenerateAuthUrlResult> {
+    return options === undefined
+      ? await HomeserverService.generateGrantAuthUrl(xCallback)
+      : await HomeserverService.generateGrantAuthUrl(xCallback, options);
   }
 
   static isGrantSignInAvailable(): boolean {

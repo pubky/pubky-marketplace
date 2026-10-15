@@ -1750,6 +1750,18 @@ export class CommerceController {
   }
 
   /**
+   * Calls `listener` whenever the signed-in user's private data keys become
+   * available, whichever surface asked for them first. A surface that ran
+   * before they were available (the watchlist sync, for one) uses it to run
+   * again. Returns the unsubscribe function.
+   */
+  static subscribePrivKeysReady(listener: () => void): () => void {
+    return CommercePrivKeyringApplication.subscribeReady((ownerPubky) => {
+      if (useAuthStore.getState().currentUserPubky === ownerPubky) listener();
+    });
+  }
+
+  /**
    * The signed-in user's recovery key file for "Export recovery key", or why
    * the marketplace will not release the key.
    */
