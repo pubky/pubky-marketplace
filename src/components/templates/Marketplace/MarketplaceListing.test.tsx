@@ -106,19 +106,19 @@ vi.mock('@/hooks/useMarketplaceSessionConnect/useMarketplaceSessionConnect', () 
   useMarketplaceSessionConnect: (options: { onConnected?: () => void }) => {
     sessionConnect.onConnected = options.onConnected;
     return {
-    status: 'awaiting',
-    authorizationUrl: 'pubkyauth://signin_grant?caps=%2Fpub%2Fpubky.app%2Fmarketplace-service%2Fv1%2F%3Arw',
-    errorMessage: null,
-    requestsFullGrant: false,
-    requestsGrantReconnect: false,
-    requestsGrantBootstrap: true,
-    requestsPassport: false,
-    approvalSigner: authState.grantSigner === 'ring' ? 'Pubky Ring' : 'your signer',
-    start: vi.fn(),
-    cancel: vi.fn(),
-    copyAuthUrl: vi.fn(async () => {}),
-    openInRing: vi.fn(),
-    isOpeningRing: false,
+      status: 'awaiting',
+      authorizationUrl: 'pubkyauth://signin_grant?caps=%2Fpub%2Fpubky.app%2Fmarketplace-service%2Fv1%2F%3Arw',
+      errorMessage: null,
+      requestsFullGrant: false,
+      requestsGrantReconnect: false,
+      requestsGrantBootstrap: true,
+      requestsPassport: false,
+      approvalSigner: authState.grantSigner === 'ring' ? 'Pubky Ring' : 'your signer',
+      start: vi.fn(),
+      cancel: vi.fn(),
+      copyAuthUrl: vi.fn(async () => {}),
+      openInRing: vi.fn(),
+      isOpeningRing: false,
     };
   },
 }));
