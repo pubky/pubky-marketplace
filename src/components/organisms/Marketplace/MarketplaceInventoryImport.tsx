@@ -47,6 +47,12 @@ export type MarketplaceInventoryImportProps = {
   /** `photos` while product photos are fetched and saved, then `listings` while they are published. */
   progressPhase?: 'photos' | 'listings';
   mappingHeaders?: readonly string[];
+  /** While photos load in more than one batch: the batch under way and how many there are. */
+  batchInfo?: { batch: number; batches: number };
+  /** Seconds left while the photo service asks us to wait before loading more; null or absent when not waiting. */
+  waitSeconds?: number | null;
+  /** What publishing will load: photos and batches, shown in the dry run. */
+  photoPlan?: { count: number; batches: number };
   /** `pages` while a store's product list is read, then `variations` while each variable product's options are. */
   fetchPhase?: 'pages' | 'variations';
   /** Reading a WooCommerce store by its address, next to the file upload. */
@@ -100,6 +106,9 @@ export function MarketplaceInventoryImport({
   counts,
   progress,
   progressPhase = 'listings',
+  batchInfo,
+  waitSeconds = null,
+  photoPlan,
   fetchPhase = 'pages',
   store,
   mappingHeaders = [],
@@ -218,6 +227,14 @@ export function MarketplaceInventoryImport({
             <li>Unchanged {counts.unchanged}</li>
             <li>Conflict {counts.conflict}</li>
           </ul>
+          {photoPlan && (
+            <Typography as="p" className="text-sm text-muted-foreground" data-testid="inventory-import-photo-plan">
+              {photoPlan.count === 1 ? '1 photo' : `${photoPlan.count} photos`} will be loaded when you publish
+              {photoPlan.batches > 1
+                ? `, in ${photoPlan.batches} batches. They load one after another and the import carries on by itself, waiting when the photo service asks. Keep this window open.`
+                : '.'}
+            </Typography>
+          )}
           {settings && <MarketplaceInventoryImportSettings {...settings} busy={busy} />}
           {lossSummary && (
             <MarketplaceInventoryImportLossReport summary={lossSummary} onDownload={onDownloadLossReport} />
@@ -274,10 +291,23 @@ export function MarketplaceInventoryImport({
         </>
       )}
       {scene === 'progress' && (
-        <Typography as="p" className="text-sm text-muted-foreground" data-testid="inventory-import-progress">
-          {progressPhase === 'photos' ? 'Loading photos…' : 'Saving your listings…'} {progress?.done ?? 0} of{' '}
-          {progress?.total ?? 0}.
-        </Typography>
+        <div className="flex flex-col gap-1">
+          <Typography as="p" className="text-sm text-muted-foreground" data-testid="inventory-import-progress">
+            {progressPhase === 'photos' ? 'Loading photos…' : 'Saving your listings…'} {progress?.done ?? 0} of{' '}
+            {progress?.total ?? 0}
+            {progressPhase === 'photos' && batchInfo ? `, batch ${batchInfo.batch} of ${batchInfo.batches}` : ''}.
+          </Typography>
+          {progressPhase === 'photos' && waitSeconds !== null && (
+            <Typography
+              as="p"
+              className="text-sm text-muted-foreground"
+              role="status"
+              data-testid="inventory-import-photo-wait"
+            >
+              Waiting {waitSeconds} s for the photo service to allow more. Loading continues by itself.
+            </Typography>
+          )}
+        </div>
       )}
       {scene === 'result' && (
         <>

@@ -312,6 +312,86 @@ describe('MarketplaceInventoryImport progress', () => {
   });
 });
 
+describe('MarketplaceInventoryImport photos in batches', () => {
+  const counts = { create: 145, update: 0, end: 0, unchanged: 0, conflict: 0 };
+
+  it('says in the dry run how many photos there are and how many batches they take', () => {
+    const { rerender } = render(
+      <MarketplaceInventoryImport step={4} scene="dry-run" counts={counts} photoPlan={{ count: 725, batches: 2 }} />,
+    );
+    const plan = screen.getByTestId('inventory-import-photo-plan');
+    expect(plan).toHaveTextContent('725 photos will be loaded when you publish, in 2 batches.');
+    expect(plan).toHaveTextContent('carries on by itself');
+    expect(plan).toHaveTextContent('Keep this window open.');
+    rerender(
+      <MarketplaceInventoryImport step={4} scene="dry-run" counts={counts} photoPlan={{ count: 40, batches: 1 }} />,
+    );
+    expect(screen.getByTestId('inventory-import-photo-plan')).toHaveTextContent(
+      '40 photos will be loaded when you publish.',
+    );
+    expect(screen.getByTestId('inventory-import-photo-plan')).not.toHaveTextContent('batches');
+    rerender(
+      <MarketplaceInventoryImport step={4} scene="dry-run" counts={counts} photoPlan={{ count: 1, batches: 1 }} />,
+    );
+    expect(screen.getByTestId('inventory-import-photo-plan')).toHaveTextContent('1 photo will be loaded');
+  });
+
+  it('says nothing about photos when there are none to load', () => {
+    render(<MarketplaceInventoryImport step={4} scene="dry-run" counts={counts} />);
+    expect(screen.queryByTestId('inventory-import-photo-plan')).not.toBeInTheDocument();
+  });
+
+  it('shows photos loaded out of all, and the batch, while loading in more than one batch', () => {
+    render(
+      <MarketplaceInventoryImport
+        step={5}
+        scene="progress"
+        progressPhase="photos"
+        progress={{ done: 512, total: 725 }}
+        batchInfo={{ batch: 2, batches: 2 }}
+      />,
+    );
+    expect(screen.getByTestId('inventory-import-progress')).toHaveTextContent(
+      'Loading photos… 512 of 725, batch 2 of 2.',
+    );
+    expect(screen.queryByTestId('inventory-import-photo-wait')).not.toBeInTheDocument();
+  });
+
+  it('shows that it is waiting for the photo service, with the seconds left, and that loading continues by itself', () => {
+    const { rerender } = render(
+      <MarketplaceInventoryImport
+        step={5}
+        scene="progress"
+        progressPhase="photos"
+        progress={{ done: 500, total: 725 }}
+        batchInfo={{ batch: 1, batches: 2 }}
+        waitSeconds={45}
+      />,
+    );
+    expect(screen.getByTestId('inventory-import-photo-wait')).toHaveTextContent(
+      'Waiting 45 s for the photo service to allow more. Loading continues by itself.',
+    );
+    expect(screen.getByRole('status')).toBeInTheDocument();
+    rerender(
+      <MarketplaceInventoryImport
+        step={5}
+        scene="progress"
+        progressPhase="photos"
+        progress={{ done: 500, total: 725 }}
+        waitSeconds={null}
+      />,
+    );
+    expect(screen.queryByTestId('inventory-import-photo-wait')).not.toBeInTheDocument();
+  });
+
+  it('keeps the plain progress line when there is a single batch, and never shows a wait while saving listings', () => {
+    render(
+      <MarketplaceInventoryImport step={5} scene="progress" progressPhase="photos" progress={{ done: 3, total: 20 }} />,
+    );
+    expect(screen.getByTestId('inventory-import-progress')).toHaveTextContent(/^Loading photos… 3 of 20\.$/);
+  });
+});
+
 describe('MarketplaceInventoryImport required choices and publish gates', () => {
   it('asks for shipping with a one-click free option, and says why Publish is off', async () => {
     const user = userEvent.setup();

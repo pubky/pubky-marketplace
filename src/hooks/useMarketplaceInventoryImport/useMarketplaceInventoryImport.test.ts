@@ -34,6 +34,7 @@ vi.mock('@/controllers/commerce/commerce', () => ({
     publishInventoryImport: (...args: unknown[]) => mocks.publish(...args),
     resumeInventoryImport: (...args: unknown[]) => mocks.resume(...args),
     inventoryImportImageTargets: (...args: unknown[]) => mocks.targets(...args),
+    inventoryImportKnownMedia: async () => new Map(),
     attachInventoryImportImages: (...args: unknown[]) => mocks.attach(...args),
     inventoryImportDefaults: (...args: unknown[]) => mocks.defaults(...args),
     confirmInventoryImportConflict: vi.fn(),
@@ -436,10 +437,10 @@ describe('useMarketplaceInventoryImport', () => {
       expect(mocks.resume).toHaveBeenCalledTimes(1);
     });
 
-    it('still publishes, and says so, when the photos cannot be saved', async () => {
+    it('pauses with Resume, publishing nothing, when the photos cannot be saved, and a resume carries on', async () => {
       mocks.targets.mockResolvedValue(TARGETS);
-      mocks.upload.mockRejectedValue(new Error('disk'));
-      mocks.publish.mockResolvedValue(COMPLETE);
+      mocks.upload.mockRejectedValueOnce(new Error('disk'));
+      mocks.resume.mockResolvedValue(COMPLETE);
       const { result } = renderHook(() => useMarketplaceInventoryImport('seller'));
       await act(async () => {
         await result.current.planFile(FILE);
@@ -448,7 +449,141 @@ describe('useMarketplaceInventoryImport', () => {
         await result.current.publish();
       });
       expect(mocks.toast).toHaveBeenCalledWith(expect.objectContaining({ variant: 'error' }));
-      expect(mocks.publish).toHaveBeenCalledTimes(1);
+      expect(mocks.publish).not.toHaveBeenCalled();
+      expect(result.current.scene).toBe('mixed');
+      expect(result.current.busy).toBe(false);
+      expect(result.current.message).toContain('Photos are paused');
+
+      mocks.upload.mockImplementation(async (params: { urls: string[] }) => uploadResults(params.urls));
+      await act(async () => {
+        await result.current.resume();
+      });
+      expect(mocks.resume).toHaveBeenCalledTimes(1);
+      expect(mocks.publish).not.toHaveBeenCalled();
+      expect(result.current.scene).toBe('result');
+    });
+
+    describe('in batches', () => {
+      const MANY = Array.from({ length: 600 }, (_, index) => ({
+        listingId: `listing-${index}`,
+        images: [{ url: `https://shop.example.com/p/${index}.jpg`, alt: 'Photo' }],
+      }));
+      const okResults = (urls: string[]) => ({
+        fetchedBytes: 10,
+        results: urls.map((url, index) => ({ url, status: 'uploaded', media: { id: `m${index}`, altText: 'x' } })),
+      });
+
+      function gate() {
+        let open: () => void = () => {};
+        const promise = new Promise<void>((resolve) => {
+          open = resolve;
+        });
+        return { promise, open };
+      }
+
+      it('runs every batch before publishing, with progress across batches and the media attached after each', async () => {
+        const order: string[] = [];
+        const first = gate();
+        const second = gate();
+        mocks.targets.mockResolvedValue(MANY);
+        mocks.upload.mockImplementation(
+          async (params: { urls: string[]; onProgress: (p: { done: number; total: number }) => void }) => {
+            order.push(`upload ${params.urls.length}`);
+            params.onProgress({ done: params.urls.length, total: params.urls.length });
+            await (params.urls.length === 500 ? first : second).promise;
+            return okResults(params.urls);
+          },
+        );
+        mocks.attach.mockImplementation(async (_s: string, _m: string, outcomes: unknown[]) => {
+          order.push(`attach ${outcomes.length}`);
+        });
+        mocks.publish.mockImplementation(async () => {
+          order.push('publish');
+          return COMPLETE;
+        });
+        const { result } = renderHook(() => useMarketplaceInventoryImport('seller'));
+        await act(async () => {
+          await result.current.planFile(FILE);
+        });
+        let pending: Promise<void> = Promise.resolve();
+        act(() => {
+          pending = result.current.publish();
+        });
+        await waitFor(() => expect(result.current.batchInfo).toEqual({ batch: 1, batches: 2 }));
+        expect(result.current.progressPhase).toBe('photos');
+        expect(result.current.progress).toEqual({ done: 500, total: 600 });
+        first.open();
+        await waitFor(() => expect(result.current.batchInfo).toEqual({ batch: 2, batches: 2 }));
+        expect(result.current.progress).toEqual({ done: 600, total: 600 });
+        second.open();
+        await act(async () => {
+          await pending;
+        });
+        expect(order).toEqual(['upload 500', 'attach 500', 'upload 100', 'attach 100', 'publish']);
+        expect(result.current.batchInfo).toBeUndefined();
+      });
+
+      it('shows the wait the photo service asked for, and clears it when the wait is over', async () => {
+        mocks.targets.mockResolvedValue(TARGETS);
+        mocks.publish.mockResolvedValue(COMPLETE);
+        const waiting = gate();
+        mocks.upload.mockImplementation(
+          async (params: { urls: string[]; onWait: (seconds: number | null) => void }) => {
+            params.onWait(42);
+            await waiting.promise;
+            params.onWait(null);
+            return uploadResults(params.urls);
+          },
+        );
+        const { result } = renderHook(() => useMarketplaceInventoryImport('seller'));
+        await act(async () => {
+          await result.current.planFile(FILE);
+        });
+        let pending: Promise<void> = Promise.resolve();
+        act(() => {
+          pending = result.current.publish();
+        });
+        await waitFor(() => expect(result.current.waitSeconds).toBe(42));
+        expect(mocks.publish).not.toHaveBeenCalled();
+        waiting.open();
+        await act(async () => {
+          await pending;
+        });
+        expect(result.current.waitSeconds).toBeNull();
+        expect(mocks.publish).toHaveBeenCalledTimes(1);
+      });
+
+      it('stops with Resume, publishing nothing, when the photo service will not serve more', async () => {
+        mocks.targets.mockResolvedValue(TARGETS);
+        mocks.upload.mockImplementation(async (params: { urls: string[] }) => ({
+          fetchedBytes: 0,
+          results: params.urls.map((url) => ({ url, status: 'failed', reason: 'rate_limited' })),
+        }));
+        const { result } = renderHook(() => useMarketplaceInventoryImport('seller'));
+        await act(async () => {
+          await result.current.planFile(FILE);
+        });
+        await act(async () => {
+          await result.current.publish();
+        });
+        expect(mocks.attach).not.toHaveBeenCalled();
+        expect(mocks.publish).not.toHaveBeenCalled();
+        expect(result.current.scene).toBe('mixed');
+        expect(result.current.message).toBe(
+          'Photos are paused: 0 of 3 loaded. The photo service needs a rest. Resume to load the rest; nothing is published for those listings yet.',
+        );
+      });
+
+      it('says in the dry run how many photos and batches publishing will take', async () => {
+        mocks.plan.mockResolvedValueOnce(planned({ photos: { count: 725, batches: 2 } }));
+        const { result } = renderHook(() => useMarketplaceInventoryImport('seller'));
+        await act(async () => {
+          await result.current.planFile(FILE);
+        });
+        expect(result.current.photoPlan).toEqual({ count: 725, batches: 2 });
+        act(() => result.current.reset());
+        expect(result.current.photoPlan).toBeUndefined();
+      });
     });
 
     it('stops without publishing when the dialog closes during the photo phase', async () => {

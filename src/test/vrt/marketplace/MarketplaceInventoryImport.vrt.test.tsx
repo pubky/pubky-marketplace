@@ -606,4 +606,82 @@ describe('MarketplaceInventoryImport VRT', () => {
       VRT_DENSE_CHROME_SCREENSHOT,
     );
   });
+
+  it('renders photos loading in batches, and waiting for the photo service, at desktop viewport', async () => {
+    const screen = await renderForVRT(
+      <main className="w-full max-w-lg py-6">
+        <MarketplaceInventoryImport
+          step={5}
+          scene="progress"
+          progressPhase="photos"
+          progress={{ done: 512, total: 725 }}
+          batchInfo={{ batch: 2, batches: 2 }}
+          waitSeconds={45}
+        />
+      </main>,
+      { viewport: VRT_VIEWPORT_DESKTOP, disableHover: true },
+    );
+    await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot(
+      'inventory-import-photo-batches-desktop',
+      VRT_DENSE_CHROME_SCREENSHOT,
+    );
+  });
+
+  it('renders photos loading in batches, and waiting for the photo service, at mobile viewport', async () => {
+    const screen = await renderForVRT(
+      <main className="w-full py-6">
+        <MarketplaceInventoryImport
+          step={5}
+          scene="progress"
+          progressPhase="photos"
+          progress={{ done: 512, total: 725 }}
+          batchInfo={{ batch: 2, batches: 2 }}
+          waitSeconds={45}
+        />
+      </main>,
+      { viewport: VRT_VIEWPORT_MOBILE, disableHover: true },
+    );
+    await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot(
+      'inventory-import-photo-batches-mobile',
+      VRT_DENSE_CHROME_SCREENSHOT,
+    );
+  });
+
+  it('renders the dry run with its photo and batch count at desktop viewport', async () => {
+    const screen = await renderForVRT(
+      <main className="w-full max-w-lg py-6">
+        <MarketplaceInventoryImport
+          step={4}
+          scene="dry-run"
+          fileName="dezentralshop.ch"
+          counts={{ create: 299, update: 0, end: 0, unchanged: 0, conflict: 0 }}
+          photoPlan={{ count: 725, batches: 2 }}
+        />
+      </main>,
+      { viewport: VRT_VIEWPORT_DESKTOP, disableHover: true },
+    );
+    await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot(
+      'inventory-import-photo-plan-desktop',
+      VRT_DENSE_CHROME_SCREENSHOT,
+    );
+  });
+
+  it('renders the dry run with its photo and batch count at mobile viewport', async () => {
+    const screen = await renderForVRT(
+      <main className="w-full py-6">
+        <MarketplaceInventoryImport
+          step={4}
+          scene="dry-run"
+          fileName="dezentralshop.ch"
+          counts={{ create: 299, update: 0, end: 0, unchanged: 0, conflict: 0 }}
+          photoPlan={{ count: 725, batches: 2 }}
+        />
+      </main>,
+      { viewport: VRT_VIEWPORT_MOBILE, disableHover: true },
+    );
+    await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot(
+      'inventory-import-photo-plan-mobile',
+      VRT_DENSE_CHROME_SCREENSHOT,
+    );
+  });
 });
