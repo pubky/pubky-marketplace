@@ -271,6 +271,10 @@ export const USDT_REFUND_COPY = {
   notChecked: "The Shop hasn't checked it on Arbitrum.",
   referenceLabel: 'Arbitrum transaction hash',
   referenceRequired: 'Enter the Arbitrum transaction hash (0x followed by 64 characters).',
+  railUnknown:
+    'The buyer paid on both rails and the Shop cannot tell which one this refund returns. Resolve the order as paid or abandoned first.',
+  amountUnrecordable:
+    'This USDT amount cannot be recorded as a refund because it is not a whole number of cents. Contact the marketplace operator.',
   recordHint: 'Send the refund from Bitkit to this address first, then record its Arbitrum transaction hash here.',
 } as const;
 
@@ -278,6 +282,8 @@ export const USDT_REFUND_REFUSAL_COPY: ReadonlyMap<string, string> = new Map([
   ['refund_destination_required', USDT_REFUND_COPY.sellerWaiting],
   ['invalid_refund_destination', USDT_REFUND_COPY.addressInvalid],
   ['invalid_refund_reference', USDT_REFUND_COPY.referenceRequired],
+  ['refund_rail_unknown', USDT_REFUND_COPY.railUnknown],
+  ['refund_amount_unrecordable', USDT_REFUND_COPY.amountUnrecordable],
 ]);
 
 /**

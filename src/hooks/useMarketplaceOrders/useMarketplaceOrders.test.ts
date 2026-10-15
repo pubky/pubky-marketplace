@@ -467,6 +467,16 @@ describe('useMarketplaceOrders', () => {
       "Ask the buyer to confirm a refund address first. It's on their order page.",
     ],
     [
+      'refund.record_external',
+      'refund_rail_unknown',
+      'The buyer paid on both rails and the Shop cannot tell which one this refund returns. Resolve the order as paid or abandoned first.',
+    ],
+    [
+      'refund.record_external',
+      'refund_amount_unrecordable',
+      'This USDT amount cannot be recorded as a refund because it is not a whole number of cents. Contact the marketplace operator.',
+    ],
+    [
       'refund.confirm_destination',
       'invalid_refund_destination',
       "That isn't a valid Arbitrum address. Check it and try again.",

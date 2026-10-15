@@ -307,6 +307,16 @@ describe('marketplacePaymentMethodFailureMessage', () => {
         'seller_setup_pending',
         'This seller’s Paykit setup isn’t finished, so they can’t take a payment yet. Choose another payment method, or contact the seller.',
       ],
+      ['bitcoin_unavailable', 'Paykit payments are not available for this seller.'],
+      [
+        'buyer_usdt_wallet_required',
+        'Your Bitkit does not support the asset this seller offers yet. Update Bitkit, or choose another payment method.',
+      ],
+      [
+        'usdt_seller_not_ready',
+        'This seller can’t take Paykit payments right now. Choose another payment method, or contact the seller.',
+      ],
+      ['usdt_unavailable', 'Paykit payments aren’t available right now. Choose another payment method.'],
     ])('maps the %s refusal to Paykit copy that names neither Bitcoin nor USDT', (reason, copy) => {
       const message = marketplacePaymentMethodFailureMessage(paykitRefusal(reason), 'fallback');
       expect(message).toBe(copy);
@@ -345,7 +355,21 @@ describe('marketplacePaymentMethodFailureMessage', () => {
       );
     });
 
-    it('overrides only reasons the main table words for Bitcoin', () => {
+    it('overrides every reason whose main-table copy names one rail, so the neutral entry never names one', () => {
+      for (const [reason, copy] of MARKETPLACE_PAYMENT_METHOD_REASON_MESSAGES) {
+        if (/Bitcoin|USDT/.test(copy)) {
+          expect(PAYKIT_PAYMENT_METHOD_REASON_MESSAGES.has(reason), reason).toBe(true);
+        }
+      }
+    });
+
+    it('keeps the legacy Bitcoin copy for a bitcoin bind of a rail-naming reason', () => {
+      expect(marketplacePaymentMethodReasonMessage('bitcoin_unavailable', 'bitcoin')).toBe(
+        'Bitcoin payments are not available for this seller.',
+      );
+    });
+
+    it('overrides only reasons the main table words for a rail', () => {
       for (const reason of PAYKIT_PAYMENT_METHOD_REASON_MESSAGES.keys()) {
         if (reason === 'seller_setup_pending') continue;
         expect(MARKETPLACE_PAYMENT_METHOD_REASON_MESSAGES.has(reason)).toBe(true);

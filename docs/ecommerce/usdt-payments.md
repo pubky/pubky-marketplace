@@ -9,7 +9,7 @@ The Shop can carry USDT (USDT0 on Arbitrum One) as an asset a buyer can pay with
 | Shop runtime config           | `PUBKY_RUNTIME_USDT_PAYMENTS_ENABLED` (`usdtPaymentsEnabled`) | `false` | The Shop may offer USDT                                                     |
 | Marketplace service `/health` | `usdt_payments: { available: true }`                          | absent  | The service has USDT on; absent when its own `USDT_PAYMENTS_ENABLED` is off |
 
-The service is authoritative. A new USDT offer needs both: the Shop flag on AND `/health` reporting `usdt_payments.available`. `useUsdtPaymentsAvailable()` (via `CommerceController.fetchUsdtPaymentsAvailable`) is the one gate. It is false while loading and after a failed read, and with the Shop flag off it never calls `/health`.
+The service is authoritative. A new USDT offer needs both: the Shop flag on AND `/health` reporting `usdt_payments.available`. `useUsdtPaymentsCapability()` (via `CommerceController.fetchUsdtPaymentsAvailable`) is the one gate; USDT is offered only when its status is `available`. It is not available while loading and after a failed read, and with the Shop flag off it never calls `/health`.
 
 The gate covers new offers only. An order that already carries `payment_asset: "USDT"` (or the legacy `payment_method: "usdt"`) is always parsed and displayed, so it never shows as Bitcoin and never strands money after a flag flip.
 

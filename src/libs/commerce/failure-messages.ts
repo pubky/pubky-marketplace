@@ -324,10 +324,15 @@ export const MARKETPLACE_PAYMENT_METHOD_REASON_MESSAGES: ReadonlyMap<string, str
 /**
  * The same service reasons when the buyer chose the single Paykit entry: the
  * request may carry Bitcoin or USDT, so the Bitcoin strings above, which name
- * Bitcoin, never show for a `paykit` bind. Only reasons that name a rail need
- * an entry here.
+ * Bitcoin, and the USDT ones, which name USDT, never show for a `paykit` bind.
+ * Every reason in the main table that names one rail needs an entry here.
  */
 export const PAYKIT_PAYMENT_METHOD_REASON_MESSAGES: ReadonlyMap<string, string> = new Map([
+  ['bitcoin_unavailable', 'Paykit payments are not available for this seller.'],
+  [
+    'buyer_usdt_wallet_required',
+    'Your Bitkit does not support the asset this seller offers yet. Update Bitkit, or choose another payment method.',
+  ],
   [
     'auction_payment_window_too_short',
     'Too little time is left on this auction win to pay with Paykit. Choose another payment method, or message the seller.',
@@ -353,6 +358,11 @@ export const PAYKIT_PAYMENT_METHOD_REASON_MESSAGES: ReadonlyMap<string, string> 
     'seller_account_unclaimed',
     'This seller can’t take Paykit payments right now. Choose another payment method, or contact the seller.',
   ],
+  [
+    'usdt_seller_not_ready',
+    'This seller can’t take Paykit payments right now. Choose another payment method, or contact the seller.',
+  ],
+  ['usdt_unavailable', 'Paykit payments aren’t available right now. Choose another payment method.'],
   [
     'seller_setup_pending',
     'This seller’s Paykit setup isn’t finished, so they can’t take a payment yet. Choose another payment method, or contact the seller.',

@@ -16,7 +16,9 @@ export const sellerPaymentReviewReasonSchema = z.enum([
   'invalid_refund_reference',
   'missing_pin',
   'not_in_manual_review',
+  'refund_amount_unrecordable',
   'refund_destination_required',
+  'refund_rail_unknown',
   'resolution_not_applicable',
   'stock_unavailable',
 ]);
@@ -119,7 +121,9 @@ export const sellerPaymentReviewReasonCopy: Readonly<Record<SellerPaymentReviewR
   invalid_refund_reference: 'The external refund reference is not valid.',
   missing_pin: 'This payment resolution requires the seller confirmation step first.',
   not_in_manual_review: 'This payment is no longer awaiting manual resolution.',
+  refund_amount_unrecordable: USDT_REFUND_COPY.amountUnrecordable,
   refund_destination_required: USDT_REFUND_COPY.sellerWaiting,
+  refund_rail_unknown: USDT_REFUND_COPY.railUnknown,
   resolution_not_applicable: 'This payment cannot be resolved from its current state.',
   stock_unavailable: 'Stock is no longer available. Choose refunded or abandoned.',
 };

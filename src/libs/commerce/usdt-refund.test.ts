@@ -218,6 +218,18 @@ describe('refusal copy', () => {
     expect(usdtRefundRefusalMessage({ reason: 'invalid_refund_reference' })).toBe(
       'Enter the Arbitrum transaction hash (0x followed by 64 characters).',
     );
+    expect(usdtRefundRefusalMessage({ reason: 'refund_rail_unknown' })).toBe(USDT_REFUND_COPY.railUnknown);
+    expect(usdtRefundRefusalMessage({ reason: 'refund_amount_unrecordable' })).toBe(
+      USDT_REFUND_COPY.amountUnrecordable,
+    );
+  });
+
+  it('tells the seller what to do about the two rail and amount refusals, never the raw token', () => {
+    expect(USDT_REFUND_COPY.railUnknown).toContain('Resolve the order as paid or abandoned first');
+    expect(USDT_REFUND_COPY.amountUnrecordable).toContain('Contact the marketplace operator');
+    for (const reason of ['refund_rail_unknown', 'refund_amount_unrecordable']) {
+      expect(usdtRefundRefusalMessage({ reason })).not.toContain(reason);
+    }
   });
 
   it('also reads a message that is exactly the reason token, and never echoes other service text', () => {

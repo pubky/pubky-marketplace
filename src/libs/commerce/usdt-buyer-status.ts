@@ -196,7 +196,3 @@ export function usdtParityMillionths(totals: readonly CommerceMoney[]): number |
   const millionths = cents * USDT_MILLIONTHS_PER_CENT;
   return Number.isSafeInteger(millionths) ? millionths : null;
 }
-
-export function isUsdPricedTotals(totals: readonly CommerceMoney[]): boolean {
-  return totals.length > 0 && totals.every((money) => money.currency === 'USD' && money.exponent === 2);
-}
