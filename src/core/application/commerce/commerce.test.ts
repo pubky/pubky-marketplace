@@ -1891,6 +1891,42 @@ describe('CommerceApplication', () => {
       return { gate, run };
     };
 
+    it.each([
+      [
+        'fails',
+        async () => {
+          throw new TypeError('sync unavailable');
+        },
+        false,
+      ],
+      [
+        'succeeds',
+        async (_actor: string, command: Parameters<typeof listingRegisteredResponse>[0]) =>
+          listingRegisteredResponse(command),
+        true,
+      ],
+    ] as const)(
+      'a heal of a registered listing whose sync %s leaves the registered row untouched',
+      async (_label, answer, healed) => {
+        const record = createCommerceListingFixture();
+        const listingId = await durableSeller(record);
+        const generation = await LocalCommerceService.getListingRowGeneration(listingId);
+        await LocalCommerceService.settleListingRegistration(listingId, generation, { status: 'registered' });
+        const before = await LocalCommerceService.getListing(listingId);
+        vi.spyOn(MarketplaceGatewayService, 'getListing').mockResolvedValue({ serverRevision: 4 } as never);
+        const execute = vi.spyOn(MarketplaceGatewayService, 'execute').mockImplementation(answer as never);
+
+        await expect(CommerceApplication.ensureListingRegistered(record)).resolves.toBe(healed);
+
+        expect(execute).toHaveBeenCalledOnce();
+        expect(execute.mock.calls[0][1]).toMatchObject({ kind: 'listing.sync' });
+        await expect(LocalCommerceService.getListing(listingId)).resolves.toMatchObject({
+          registration_status: 'registered',
+          write_id: before?.write_id,
+        });
+      },
+    );
+
     it('a second tab gives up while the first holds the listing, so one command is sent', async () => {
       const record = createCommerceListingFixture();
       await durableSeller(record);

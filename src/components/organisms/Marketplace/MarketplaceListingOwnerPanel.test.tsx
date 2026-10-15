@@ -70,25 +70,40 @@ describe('MarketplaceListingOwnerPanel registration self-heal', () => {
       auction: null,
     };
 
-    it('re-syncs once when the projection lags the record, without offering registration', () => {
+    it('re-syncs a lagging projection once per server revision, even as the row is rewritten', () => {
+      const stale = { ...projection, fulfillmentMethods: ['pickup' as const] };
       const { rerender } = render(
+        <MarketplaceListingOwnerPanel record={record} registrationStatus="registered" projection={stale} />,
+      );
+      // Every heal rewrites the local row, so the page hands the panel a new record object.
+      rerender(
         <MarketplaceListingOwnerPanel
-          record={record}
+          record={{ ...record }}
           registrationStatus="registered"
-          projection={{ ...projection, fulfillmentMethods: ['pickup'] }}
+          projection={{ ...stale }}
         />,
       );
       rerender(
         <MarketplaceListingOwnerPanel
-          record={record}
+          record={{ ...record }}
           registrationStatus="registered"
-          projection={{ ...projection, fulfillmentMethods: ['pickup'], serverRevision: 4 }}
+          projection={{ ...stale }}
         />,
       );
 
       expect(controller.ensureListingRegistered).toHaveBeenCalledOnce();
       expect(controller.ensureListingRegistered).toHaveBeenCalledWith(record);
       expect(screen.queryByRole('button', { name: 'Register for checkout' })).not.toBeInTheDocument();
+
+      rerender(
+        <MarketplaceListingOwnerPanel
+          record={{ ...record }}
+          registrationStatus="registered"
+          projection={{ ...stale, serverRevision: 4 }}
+        />,
+      );
+
+      expect(controller.ensureListingRegistered).toHaveBeenCalledTimes(2);
     });
 
     it('leaves a projection that matches the record alone', () => {

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { EyeOff, LinkIcon, PencilLine, Play, Star, Trash2 } from 'lucide-react';
 import { getMarketplaceListingEditRoute, getMarketplaceListingRoute, MARKETPLACE_ROUTES } from '@/app/routes';
@@ -82,15 +82,27 @@ export function MarketplaceListingOwnerPanel({
   const canRegister = CommerceController.canRegisterListings();
   const registrationPending = isListingRegistrationPending({ registration_status: registrationStatus });
   // A registered listing whose projection lags its record heals the same way: for a registered aggregate the
-  // registration sends `listing.sync`, which re-derives the service's terms from the record.
-  const projectionStale = projection ? commerceListingProjectionIsStale(record, projection) : false;
+  // registration sends `listing.sync`, which re-derives the service's terms from the record. Each staleness
+  // (record revision against server revision) is healed once, because every attempt can rewrite the local
+  // row and so hand this panel a new record.
+  const staleKey =
+    projection && commerceListingProjectionIsStale(record, projection)
+      ? `${record.revision}:${projection.serverRevision}`
+      : null;
+  const healedStaleKey = useRef<string | null>(null);
   // Not while this panel is committing: Unlist and Relist stage the row as pending registration before they
   // write, and a heal started from that staged row races the publish for it. The effect runs again when the
   // commit ends, so a registration the commit left pending is still retried.
   useEffect(() => {
-    if ((!registrationPending && !projectionStale) || !marketplaceSession || !canRegister || isMutating) return;
+    if (!marketplaceSession || !canRegister || isMutating) return;
+    if (registrationPending) {
+      void CommerceController.ensureListingRegistered(record);
+      return;
+    }
+    if (staleKey === null || healedStaleKey.current === staleKey) return;
+    healedStaleKey.current = staleKey;
     void CommerceController.ensureListingRegistered(record);
-  }, [record, registrationPending, projectionStale, marketplaceSession, canRegister, isMutating]);
+  }, [record, registrationPending, staleKey, marketplaceSession, canRegister, isMutating]);
 
   const router = useRouter();
   // A page opened in a fresh tab renders from the persisted pubky before the homeserver session is restored;
