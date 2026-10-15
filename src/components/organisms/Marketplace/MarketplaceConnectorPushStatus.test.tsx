@@ -168,12 +168,38 @@ describe('MarketplaceConnectorPushStatus', () => {
       expect(item).not.toHaveTextContent('Something needs your attention');
       expect(screen.queryByTestId('store-push-alert-action')).not.toBeInTheDocument();
       expect(screen.queryByRole('button', { name: 'Retry' })).not.toBeInTheDocument();
-      if (orderId) expect(within(item).getByRole('link')).toBeInTheDocument();
-      else expect(within(item).queryByRole('link')).not.toBeInTheDocument();
+      expect(within(item).queryAllByRole('link', { name: /^Order / })).toHaveLength(orderId ? 1 : 0);
       await userEvent.setup().click(within(item).getByRole('button', { name: 'Dismiss' }));
       expect(value.dismissAlert).toHaveBeenCalledWith('n1');
     },
   );
+
+  it.each([
+    ['variant_mapping_error', 'Re-link the product to keep its stock in sync', true],
+    ['listings_unmapped', 'Import each variant again', true],
+    ['push_total_mismatch', 'different total than the buyer paid', false],
+  ])('%s: the catalog link is there only when the catalog is the fix', (kind, phrase, linked) => {
+    const alert = connectorAlertSchema.parse({
+      id: 'v1',
+      connectionId: 'c1',
+      kind,
+      createdAt: '2026-10-15T12:00:00.000Z',
+    });
+    status({ alerts: [alert] });
+    render(<MarketplaceConnectorPushStatus />);
+
+    const item = screen.getByTestId('store-push-alert');
+    expect(item).toHaveTextContent(phrase);
+    if (linked) {
+      expect(within(item).getByTestId('store-push-alert-catalog')).toHaveAttribute(
+        'href',
+        '/marketplace/settings/store-connections/c1',
+      );
+    } else {
+      expect(within(item).queryByTestId('store-push-alert-catalog')).not.toBeInTheDocument();
+    }
+    expect(within(item).queryByRole('button', { name: 'Retry' })).not.toBeInTheDocument();
+  });
 
   it('offers a one-click entry into the order for a store-side cancel the buyer asked for', () => {
     const alert = connectorAlertSchema.parse({

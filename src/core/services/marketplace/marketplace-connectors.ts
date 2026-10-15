@@ -25,6 +25,7 @@ import {
   connectorPushRetrySchema,
   type ConnectorPushState,
   connectorSelectionSchema,
+  type ConnectorSettingsResult,
   connectorSettingsResultSchema,
   type VariantMode,
 } from '@/libs/commerce/connectors';
@@ -92,17 +93,21 @@ export class MarketplaceConnectorsService {
     return this.parse('putConnectorCredentials', connectorCredentialsResultSchema, raw).connection;
   }
 
-  /** `PUT /v1/connectors/{id}/settings` (stage 2): how store variants relate to Pubky listings. */
+  /**
+   * `PUT /v1/connectors/{id}/settings` (stage 2): how store variants relate to
+   * Pubky listings. Switching to `split` unlinks every listing that combined
+   * several store variants and names them in `unmappedListings`.
+   */
   static async putSettings(
     actor: string,
     connectionId: string,
     settings: { variantMode: VariantMode },
-  ): Promise<ConnectorConnection> {
+  ): Promise<ConnectorSettingsResult> {
     const raw = await this.request('putConnectorSettings', actor, `${this.path(connectionId)}/settings`, {
       method: 'PUT',
       body: settings,
     });
-    return this.parse('putConnectorSettings', connectorSettingsResultSchema, raw).connection;
+    return this.parse('putConnectorSettings', connectorSettingsResultSchema, raw);
   }
 
   /** `GET /v1/connectors/{id}/check` (stage 2): the store's name, granted scopes, locations and a catalog read. */

@@ -131,7 +131,21 @@ alert action is a link into the order (`/marketplace/orders#order-<id>`), where
 the existing approve-cancellation or record-refund step is; the Shop never
 cancels or refunds for the seller.
 
-Three alert kinds carry no action and no retry, only plain copy and Dismiss:
+Switching a connection to "One listing per size or variant" (`split`) answers
+`PUT /settings` with `unmapped_listings` (`[{listing_id, mappings_removed}]`):
+the listings that combined several store variants and were unlinked in the same
+step. The page shows them at once ("These listings were combined, so they're no
+longer linked. Re-import them from the catalog or end them."), each as a link to
+the listing, with a link to the catalog; the service does not refuse the switch
+any more (`409 mappings_conflict` is gone), and the same listings also arrive as
+a `listings_unmapped` alert. `variant_mapping_error` (a store stock change named
+a variant Pubky cannot address) shows "A size in your store no longer matches a
+Pubky listing. Re-link the product to keep its stock in sync." with a link to
+that connection's catalog; its detail names the listing only as free text, so
+the Shop does not parse it.
+
+These alert kinds carry no action and no retry, only plain copy and Dismiss
+(`listings_unmapped` and `variant_mapping_error` also link to the catalog):
 `refund_reversed_after_mirror` (a refund Pubky mirrored to the store was later
 reversed or reduced; the seller corrects it in the store), `push_total_mismatch`
 (the store created the order with a different total than the buyer paid) and

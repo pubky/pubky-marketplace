@@ -10,12 +10,20 @@ import {
   type ConnectorConnection,
   connectorErrorMessage,
   connectorRefusalReason,
+  type ConnectorUnmappedListing,
   type VariantMode,
 } from '@/libs/commerce/connectors';
 import { isMarketplaceSessionRequiredError } from '@/libs/error/error.utils';
 import { toast } from '@/molecules/Toaster/use-toast';
 import { useAuthStore } from '@/stores/auth/auth.store';
 import { useCommerceStore } from '@/stores/commerce/commerce.store';
+
+/** Listings a switch to one listing per variant unlinked, kept until the seller dismisses them. */
+export type UnmappedListingsNotice = {
+  connectionId: string;
+  domain: string;
+  listings: ConnectorUnmappedListing[];
+};
 
 export type StoreConnectionRow = {
   connection: ConnectorConnection;
@@ -50,6 +58,7 @@ export function useStoreConnections() {
   const [unavailable, setUnavailable] = useState(false);
   const [workingId, setWorkingId] = useState<string | null>(null);
   const [lostAlerts, setLostAlerts] = useState<ConnectorAlert[]>([]);
+  const [unmapped, setUnmapped] = useState<UnmappedListingsNotice | null>(null);
 
   const load = async (isCurrent: () => boolean = () => true) => {
     if (!enabled) {
@@ -126,8 +135,16 @@ export function useStoreConnections() {
   const setVariantMode = async (connection: ConnectorConnection, variantMode: VariantMode): Promise<boolean> => {
     setWorkingId(connection.id);
     try {
-      const updated = await ConnectorsController.commitVariantMode(connection.id, variantMode);
+      const { connection: updated, unmappedListings } = await ConnectorsController.commitVariantMode(
+        connection.id,
+        variantMode,
+      );
       setConnections((current) => current.map((entry) => (entry.id === updated.id ? updated : entry)));
+      setUnmapped(
+        unmappedListings.length > 0
+          ? { connectionId: updated.id, domain: updated.domain, listings: unmappedListings }
+          : null,
+      );
       toast({ description: 'Setting saved. It applies to products you publish from now on.' });
       return true;
     } catch (modeError) {
@@ -155,6 +172,8 @@ export function useStoreConnections() {
     rows,
     connections,
     lostAlerts,
+    unmapped,
+    dismissUnmapped: () => setUnmapped(null),
     isLoading,
     error,
     needsSession,

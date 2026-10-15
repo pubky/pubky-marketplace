@@ -138,13 +138,15 @@ describe('useConnectorPushStatus', () => {
     expect(result.current.pushes).toHaveLength(3);
   });
 
-  it.each(['refund_reversed_after_mirror', 'push_total_mismatch', 'listings_unmapped'])(
+  it.each(['variant_mapping_error', 'refund_reversed_after_mirror', 'push_total_mismatch', 'listings_unmapped'])(
     'keeps a %s alert in the list, because it has no push row to fold into',
     async (kind) => {
       vi.mocked(ConnectorsController.fetchPushOverview).mockResolvedValue(
         overview({
           pushes: [{ connection, push: push('1') }],
-          alerts: [alert('n1', kind, kind === 'listings_unmapped' ? null : 'order-1')],
+          alerts: [
+            alert('n1', kind, kind === 'listings_unmapped' || kind === 'variant_mapping_error' ? null : 'order-1'),
+          ],
         }),
       );
       const { result } = renderHook(() => useConnectorPushStatus());

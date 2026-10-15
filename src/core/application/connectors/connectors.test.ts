@@ -235,12 +235,15 @@ describe('ConnectorsApplication', () => {
 
   describe('saveVariantMode', () => {
     it('sends the setting and returns the updated connection', async () => {
-      const put = vi
-        .spyOn(MarketplaceConnectorsService, 'putSettings')
-        .mockResolvedValue(connection({ variantMode: 'split' }));
+      const put = vi.spyOn(MarketplaceConnectorsService, 'putSettings').mockResolvedValue({
+        kind: 'connector_settings',
+        connection: connection({ variantMode: 'split' }),
+        unmappedListings: [{ listingId: 'boots_01', mappingsRemoved: 2 }],
+      });
       const updated = await ConnectorsApplication.saveVariantMode(ACTOR, ID, 'split');
       expect(put).toHaveBeenCalledWith(ACTOR, ID, { variantMode: 'split' });
-      expect(updated.variantMode).toBe('split');
+      expect(updated.connection.variantMode).toBe('split');
+      expect(updated.unmappedListings).toEqual([{ listingId: 'boots_01', mappingsRemoved: 2 }]);
     });
   });
 

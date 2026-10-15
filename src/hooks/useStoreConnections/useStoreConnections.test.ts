@@ -173,7 +173,10 @@ describe('useStoreConnections', () => {
   it('saves the variant mode and shows the connection the service answered with', async () => {
     const first = connection('a');
     vi.mocked(ConnectorsController.fetchConnections).mockResolvedValue([first]);
-    vi.mocked(ConnectorsController.commitVariantMode).mockResolvedValue(connection('a', { variantMode: 'split' }));
+    vi.mocked(ConnectorsController.commitVariantMode).mockResolvedValue({
+      connection: connection('a', { variantMode: 'split' }),
+      unmappedListings: [],
+    });
     const { result } = renderHook(() => useStoreConnections());
     await waitFor(() => expect(result.current.isLoading).toBe(false));
 
@@ -185,10 +188,57 @@ describe('useStoreConnections', () => {
     expect(result.current.connections[0]?.variantMode).toBe('split');
   });
 
-  it('keeps the setting and says why when the service refuses a switch to split', async () => {
+  it('keeps the listings a switch to split unlinked, and clears them when dismissed', async () => {
     const first = connection('a');
     vi.mocked(ConnectorsController.fetchConnections).mockResolvedValue([first]);
-    vi.mocked(ConnectorsController.commitVariantMode).mockRejectedValue(connectorRefusal('mappings_conflict'));
+    vi.mocked(ConnectorsController.commitVariantMode).mockResolvedValue({
+      connection: connection('a', { variantMode: 'split' }),
+      unmappedListings: [
+        { listingId: 'boots_01', mappingsRemoved: 2 },
+        { listingId: 'woo-9', mappingsRemoved: 3 },
+      ],
+    });
+    const { result } = renderHook(() => useStoreConnections());
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(result.current.unmapped).toBeNull();
+
+    await act(async () => {
+      expect(await result.current.setVariantMode(first, 'split')).toBe(true);
+    });
+
+    expect(result.current.unmapped).toEqual({
+      connectionId: 'a',
+      domain: first.domain,
+      listings: [
+        { listingId: 'boots_01', mappingsRemoved: 2 },
+        { listingId: 'woo-9', mappingsRemoved: 3 },
+      ],
+    });
+    act(() => result.current.dismissUnmapped());
+    expect(result.current.unmapped).toBeNull();
+  });
+
+  it('shows no unlinked listings when the switch unlinked none', async () => {
+    const first = connection('a');
+    vi.mocked(ConnectorsController.fetchConnections).mockResolvedValue([first]);
+    vi.mocked(ConnectorsController.commitVariantMode).mockResolvedValue({
+      connection: connection('a', { variantMode: 'split' }),
+      unmappedListings: [],
+    });
+    const { result } = renderHook(() => useStoreConnections());
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    await act(async () => {
+      await result.current.setVariantMode(first, 'split');
+    });
+
+    expect(result.current.unmapped).toBeNull();
+  });
+
+  it('keeps the setting and says so when the service refuses the change', async () => {
+    const first = connection('a');
+    vi.mocked(ConnectorsController.fetchConnections).mockResolvedValue([first]);
+    vi.mocked(ConnectorsController.commitVariantMode).mockRejectedValue(connectorRefusal('invalid_variant_mode', 422));
     const { result } = renderHook(() => useStoreConnections());
     await waitFor(() => expect(result.current.isLoading).toBe(false));
 
@@ -197,11 +247,9 @@ describe('useStoreConnections', () => {
     });
 
     expect(result.current.connections[0]?.variantMode).toBe('native');
+    expect(result.current.unmapped).toBeNull();
     expect(toast).toHaveBeenCalledWith(
-      expect.objectContaining({
-        variant: 'error',
-        description: expect.stringContaining('combine several variants'),
-      }),
+      expect.objectContaining({ variant: 'error', description: 'That setting was not accepted.' }),
     );
   });
 });

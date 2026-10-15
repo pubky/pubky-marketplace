@@ -206,19 +206,45 @@ describe('MarketplaceConnectorsService', () => {
       json({ kind: 'connector_settings', schema_version: 1, connection: { ...connectionWire, variant_mode: 'split' } }),
     );
     const result = await MarketplaceConnectorsService.putSettings(ACTOR, CONNECTION_ID, { variantMode: 'split' });
-    expect(result.variantMode).toBe('split');
+    expect(result.connection.variantMode).toBe('split');
+    expect(result.unmappedListings).toEqual([]);
     const { url, init } = lastCall();
     expect(url).toBe(`${BASE}/v1/connectors/${CONNECTION_ID}/settings`);
     expect(init.method).toBe('PUT');
     expect(JSON.parse(String(init.body))).toEqual({ variant_mode: 'split' });
   });
 
-  it('refuses a switch to split while a listing combines variants', async () => {
-    fetchMock.mockResolvedValue(json({ error: { code: 'mappings_conflict', message: 'x', listing_id: 'woo-1' } }, 409));
-    const error = await MarketplaceConnectorsService.putSettings(ACTOR, CONNECTION_ID, {
-      variantMode: 'split',
-    }).catch((caught: unknown) => caught);
-    expect((error as AppError).context).toMatchObject({ reason: 'mappings_conflict', statusCode: 409 });
+  it('names the listings a switch to split unlinked', async () => {
+    fetchMock.mockResolvedValue(
+      json({
+        kind: 'connector_settings',
+        schema_version: 1,
+        connection: { ...connectionWire, variant_mode: 'split' },
+        unmapped_listings: [
+          { listing_id: 'boots_01', mappings_removed: 2 },
+          { listing_id: 'woo-9', mappings_removed: 3 },
+        ],
+      }),
+    );
+    const result = await MarketplaceConnectorsService.putSettings(ACTOR, CONNECTION_ID, { variantMode: 'split' });
+    expect(result.unmappedListings).toEqual([
+      { listingId: 'boots_01', mappingsRemoved: 2 },
+      { listingId: 'woo-9', mappingsRemoved: 3 },
+    ]);
+  });
+
+  it('refuses a settings answer whose unlinked listings are not the documented shape', async () => {
+    fetchMock.mockResolvedValue(
+      json({
+        kind: 'connector_settings',
+        schema_version: 1,
+        connection: { ...connectionWire, variant_mode: 'split' },
+        unmapped_listings: [{ listing: 'boots_01' }],
+      }),
+    );
+    await expect(
+      MarketplaceConnectorsService.putSettings(ACTOR, CONNECTION_ID, { variantMode: 'split' }),
+    ).rejects.toMatchObject({ message: 'The marketplace service returned an unexpected response.' });
   });
 
   it('reads the live check of a store', async () => {
