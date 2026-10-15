@@ -506,7 +506,7 @@ export function mapWooProductCsv(input: WooMapInput): WooMapResult {
             'stock_unmanaged',
             'changed',
             'Stock',
-            `In stock without a count, so stock is set to ${stock.quantity}.`,
+            `Stock unknown, set to ${stock.quantity}.`,
             label(source),
             source.record.line,
           ),

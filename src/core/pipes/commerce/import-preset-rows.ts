@@ -134,7 +134,7 @@ export function finalizePresetRows(input: FinalizeInput): FinalizeResult {
   const skipped = new Set<string>();
   const kept: PresetRow[] = [];
   const skuOwner = new Map<string, string>();
-  const shipping = [shippingOptionRow(settings) as PresetJson];
+  const shipping = settings.shipping ? [shippingOptionRow(settings.shipping, settings.currency) as PresetJson] : [];
 
   for (const [listingId, group] of groups) {
     const label = labelFor(listingId);
@@ -318,7 +318,9 @@ export function finalizePresetRows(input: FinalizeInput): FinalizeResult {
         options,
         variantQuantity: quantities[index] ?? 0,
         shippingOptions: shipping,
-        extraFields: { ...row.extraFields, [COUNTRY_CODE_FIELD]: settings.countryCode },
+        extraFields: settings.countryCode
+          ? { ...row.extraFields, [COUNTRY_CODE_FIELD]: settings.countryCode }
+          : { ...row.extraFields },
       });
     });
     losses.push(...rowLosses);

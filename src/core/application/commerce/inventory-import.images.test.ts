@@ -17,14 +17,14 @@ import {
   uniqueImageUrls,
 } from '@/pipes/commerce/import-image-phase';
 import type { PresetJson } from '@/pipes/commerce/import-preset-rows';
-import { DEFAULT_IMPORT_SETTINGS } from '@/pipes/commerce/import-settings';
 import type { SyncManyEnvelope } from '@/services/marketplace/marketplace-shop-client';
+import { IMPORT_GATES_PASSING, IMPORT_SETTINGS_COMPLETE } from '@/test-utils/import-settings';
 import { BytesFile, MemoryImportStore } from '@/test-utils/inventory-import-harness';
 import { asOpaque } from '@/test-utils/type-assertions';
 
 const PUBKY = 'y'.repeat(52);
 const FIXTURES = resolve(__dirname, '../../../test/fixtures/woocommerce');
-const CHF = { ...DEFAULT_IMPORT_SETTINGS, currency: 'CHF', countryCode: 'CH' };
+const CHF = { ...IMPORT_SETTINGS_COMPLETE, currency: 'CHF', countryCode: 'CH' };
 
 vi.mock('@/config/commerce', async () => {
   const actual = await vi.importActual<typeof import('@/config/commerce')>('@/config/commerce');
@@ -122,6 +122,7 @@ describe('the photo phase over the real Dezentralshop export (recorded responses
 
   function app() {
     return CommerceInventoryImportApplication.forSeller(PUBKY, {
+      ...IMPORT_GATES_PASSING,
       store,
       currentItems: async () => ({}),
       putListing: async (record) => {

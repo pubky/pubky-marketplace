@@ -1,11 +1,18 @@
 import { CommerceApplication } from '@/application/commerce/commerce';
+import { CommerceDeliveryKeysApplication } from '@/application/commerce/delivery-keys';
 import {
   type CanonicalImportRow,
   listingToCanonicalRows,
   mapCanonicalRowsToListing,
 } from '@/application/commerce/inventory-listing-map';
 import { getCommerceAdapterMode, isDurableCommerceMode } from '@/config/commerce';
-import type { CommerceListingRecord } from '@/libs/commerce/marketplace-records';
+import {
+  evaluateDurableListingPublishGuards,
+  type ListingPublishBlockReason,
+  type SellerDeliveryKeyPublication,
+} from '@/libs/commerce/listing-publish-guards';
+import type { CommerceListingRecord, CommerceShopRecord } from '@/libs/commerce/marketplace-records';
+import type { SellerPaymentConfig } from '@/libs/commerce/payment-methods';
 import { ClientErrorCode } from '@/libs/error/error.codes';
 import { isAppError, isNotFound } from '@/libs/error/error.utils';
 import { CommerceRecordNormalizer } from '@/pipes/commerce/commerce.normalizer';
@@ -25,7 +32,17 @@ import {
   invalidListingsCopy,
   type ListingPublishFailure,
 } from '@/pipes/commerce/import-publish-failure';
-import { DEFAULT_IMPORT_SETTINGS, type ImportSettings } from '@/pipes/commerce/import-settings';
+import {
+  gateBlocksListing,
+  type ImportPublishGate,
+  pausedFailureCode,
+  pausedReasonOf,
+  pausedResultText,
+  pausedSummary,
+  payloadShips,
+} from '@/pipes/commerce/import-publish-gate';
+import { DEFAULT_IMPORT_SETTINGS, type ImportSettings, type ImportShipping } from '@/pipes/commerce/import-settings';
+import { shippingDefaultFromListings, shopCountryForImport } from '@/pipes/commerce/import-settings-defaults';
 import { CommerceHomeserverService } from '@/services/homeserver/commerce/commerce';
 import { LocalCommerceService } from '@/services/local/commerce/commerce';
 import {
@@ -64,6 +81,16 @@ export type InventoryImportAuth =
   | { status: 'grant-needed' }
   | { status: 'ready' };
 
+export type InventoryImportPublishGate = ImportPublishGate;
+
+/** What the dry run can prefill from the seller's Shop data. */
+export type InventoryImportDefaults = {
+  countryCode: string | null;
+  shipping: ImportShipping | null;
+  /** The currency of the listing the shipping option came from. */
+  currency: string | null;
+};
+
 export type InventoryImportPlanResult =
   | {
       status: 'planned';
@@ -73,6 +100,7 @@ export type InventoryImportPlanResult =
       /** Set when the file was a WooCommerce or Shopify export mapped by a preset. */
       format?: ImportSourceFormat;
       lossReport?: ImportLossReport;
+      publishGate: InventoryImportPublishGate;
     }
   | { status: 'parse-failed'; message: string; puts: 0 }
   | Exclude<InventoryImportAuth, { status: 'ready' }>
@@ -86,6 +114,9 @@ export type InventoryImportPublishResult =
       failed: number;
       mixed: boolean;
       message?: string;
+      /** Listings saved as paused because a publish gate blocked them. */
+      paused?: number;
+      pausedReason?: ListingPublishBlockReason;
     }
   | { status: 'conflict'; listingId: string; message: string }
   | { status: 'rate-limited'; message: string }
@@ -110,6 +141,9 @@ export type InventoryImportHost = {
   syncMany: (listings: readonly SyncManyListing[]) => Promise<SdkResult<SyncManyEnvelope>>;
   currentItems: () => Promise<Readonly<Record<string, CurrentImportItem>>>;
   localRecords: () => Promise<readonly CommerceListingRecord[]>;
+  loadPaymentConfig: (sellerPubky: string) => Promise<SellerPaymentConfig>;
+  loadDeliveryKeyPublication: (sellerPubky: string) => Promise<SellerDeliveryKeyPublication>;
+  loadShop: (sellerPubky: string) => Promise<CommerceShopRecord | null>;
 };
 
 function csvCell(value: string): string {
@@ -202,6 +236,19 @@ export class CommerceInventoryImportApplication {
           return MarketplaceShopClientService.syncMany(client, listings);
         }),
       localRecords,
+      loadPaymentConfig: overrides.loadPaymentConfig ?? ((pubky) => CommerceApplication.getSellerPaymentConfig(pubky)),
+      loadDeliveryKeyPublication:
+        overrides.loadDeliveryKeyPublication ??
+        (async (pubky) => (await CommerceDeliveryKeysApplication.getSellerKeyStatus(pubky)).publication),
+      loadShop:
+        overrides.loadShop ??
+        (async (pubky) => {
+          try {
+            return (await CommerceApplication.getShop(pubky))?.record ?? null;
+          } catch {
+            return null;
+          }
+        }),
       currentItems:
         overrides.currentItems ??
         (async () =>
@@ -240,6 +287,10 @@ export class CommerceInventoryImportApplication {
       status: 'planned',
       manifestId: planned.value.manifestId,
       rowCount: planned.value.rowCount,
+      publishGate:
+        planned.value.rowCount === 0
+          ? { reason: null, ships: false }
+          : await this.publishGate(planned.value.manifestId),
       counts: MarketplaceShopClientService.dryRunCounts(manifest as ImportManifest),
       ...(planned.value.format ? { format: planned.value.format } : {}),
       ...(planned.value.lossReport ? { lossReport: planned.value.lossReport } : {}),
@@ -269,6 +320,8 @@ export class CommerceInventoryImportApplication {
     const groups = this.groups(loaded.rows);
     let conflictListingId: string | null = null;
     const invalid: ListingPublishFailure[] = [];
+    let gate: InventoryImportPublishGate | null = null;
+    let paused = 0;
 
     for (const [listingId, group] of groups) {
       const actionable = group.filter((row) => resumeNext(row.checkpoint) !== 'none');
@@ -287,13 +340,20 @@ export class CommerceInventoryImportApplication {
       const needsSync = actionable.some((row) => resumeNext(row.checkpoint) === 'sync_service') || needsPut;
 
       if (needsPut) {
-        const put = await this.publishGroup(manifestId, listingId, group);
+        gate ??= await this.publishGate(manifestId);
+        const put = await this.publishGroup(manifestId, listingId, group, gate.reason);
         if (put.status === 'invalid') {
           invalid.push(put.failure);
           continue;
         }
         if (put.status === 'conflict' || put.status === 'error') return put;
         published += 1;
+        if (put.pausedBy) {
+          paused += 1;
+          for (const row of group) {
+            await this.annotateRowFailure(manifestId, row.rowIdentity, pausedFailureCode(put.pausedBy));
+          }
+        }
       }
       if (needsSync) {
         pendingSync.push({ seller_pubky: this.host.sellerPubky, listing_id: listingId });
@@ -312,13 +372,17 @@ export class CommerceInventoryImportApplication {
     if (conflictListingId && published === 0 && synced === 0 && invalid.length === 0) {
       return { status: 'conflict', listingId: conflictListingId, message: IMPORT_CONFLICT_COPY };
     }
-    const message = conflictListingId
+    const mainMessage = conflictListingId
       ? IMPORT_CONFLICT_COPY
       : invalid.length > 0
         ? invalidListingsCopy(invalid)
         : mixed
           ? IMPORT_MIXED_COPY
           : undefined;
+    const pausedReason = paused > 0 ? (gate?.reason ?? null) : null;
+    const message = [mainMessage, pausedReason ? pausedSummary(paused, pausedReason) : undefined]
+      .filter(Boolean)
+      .join(' ');
     return {
       status: 'complete',
       published,
@@ -326,6 +390,7 @@ export class CommerceInventoryImportApplication {
       failed,
       mixed: mixed || conflictListingId !== null,
       ...(message ? { message } : {}),
+      ...(pausedReason ? { paused, pausedReason } : {}),
     };
   }
 
@@ -465,6 +530,58 @@ export class CommerceInventoryImportApplication {
     return asObject(parsed) as { media?: unknown; extraFields?: Record<string, string> } | null;
   }
 
+  /**
+   * The sell composer's own publish gates (`evaluateDurableListingPublishGuards`),
+   * answered once for this seller: the payment-method gate for every listing,
+   * and the delivery-key gate when any planned listing ships. Import publishes
+   * save listings as paused while a gate blocks.
+   */
+  async publishGate(manifestId: string): Promise<InventoryImportPublishGate> {
+    const ships = await this.plannedListingsShip(manifestId);
+    const reason = await evaluateDurableListingPublishGuards({
+      ownerPubky: this.host.sellerPubky,
+      hasMarketplaceSession: Boolean(MarketplaceSessionService.getActiveSession()),
+      loadPaymentConfig: (pubky) => this.host.loadPaymentConfig(pubky),
+      deliveryKey: {
+        required: ships,
+        loadPublication: () => this.host.loadDeliveryKeyPublication(this.host.sellerPubky),
+      },
+    });
+    return { reason, ships };
+  }
+
+  private async plannedListingsShip(manifestId: string): Promise<boolean> {
+    const manifest = await this.host.store.load(manifestId);
+    if (!manifest) return false;
+    for (const group of this.groups(manifest.rows).values()) {
+      const actionable = group.some(
+        (row) => resumeNext(row.checkpoint) !== 'none' && row.intendedAction !== 'unchanged',
+      );
+      if (!actionable) continue;
+      for (const row of group) {
+        const json = await this.host.store.getPayloadJson(manifestId, row.rowIdentity);
+        const payload = json ? payloadRow(json) : null;
+        if (payload && payloadShips(payload)) return true;
+      }
+    }
+    return false;
+  }
+
+  /**
+   * What the dry run prefills from the seller's own data: the country of their
+   * shop (never the Shop's fallback) and the shipping option of their latest
+   * listing that has one.
+   */
+  async importDefaults(): Promise<InventoryImportDefaults> {
+    const shop = await this.host.loadShop(this.host.sellerPubky);
+    const fromListings = shippingDefaultFromListings(await this.host.localRecords());
+    return {
+      countryCode: shopCountryForImport(shop),
+      shipping: fromListings?.shipping ?? null,
+      currency: fromListings?.currency ?? null,
+    };
+  }
+
   async resultCsv(manifestId: string): Promise<string> {
     const manifest = await this.host.store.load(manifestId);
     const rows = manifest?.rows ?? [];
@@ -483,7 +600,10 @@ export class CommerceInventoryImportApplication {
       `listing_id,row_identity,checkpoint,result${withImages ? `,${RESULT_CSV_IMAGE_COLUMNS.join(',')}` : ''}`,
     ];
     for (const row of rows) {
-      const result = row.checkpoint === 'complete' ? 'synced' : (row.failureCode ?? row.checkpoint);
+      const pausedReason = pausedReasonOf(row.failureCode);
+      const base =
+        row.checkpoint === 'complete' ? 'synced' : pausedReason ? row.checkpoint : (row.failureCode ?? row.checkpoint);
+      const result = pausedReason ? `${base}, ${pausedResultText(pausedReason)}` : base;
       const cells = [row.listingId, row.rowIdentity, row.checkpoint, result, ...(withImages ? ['', '', ''] : [])];
       lines.push(cells.map(csvCell).join(','));
     }
@@ -586,8 +706,9 @@ export class CommerceInventoryImportApplication {
     manifestId: string,
     listingId: string,
     group: readonly HostPlannedImportRow[],
+    blocked: ListingPublishBlockReason | null,
   ): Promise<
-    | { status: 'ok' }
+    | { status: 'ok'; pausedBy?: ListingPublishBlockReason }
     | { status: 'invalid'; failure: ListingPublishFailure }
     | { status: 'conflict'; listingId: string; message: string }
     | { status: 'error'; message: string }
@@ -622,9 +743,16 @@ export class CommerceInventoryImportApplication {
       return { status: 'invalid', failure };
     }
 
+    let record = mapped.record;
+    let pausedBy: ListingPublishBlockReason | undefined;
+    if (blocked && record.state === 'active' && gateBlocksListing(blocked, payloads.some(payloadShips))) {
+      record = { ...record, state: 'paused' };
+      pausedBy = blocked;
+    }
+
     await this.checkpointGroup(manifestId, listingId, 'publishing');
     try {
-      await this.host.putListing(mapped.record);
+      await this.host.putListing(record);
     } catch (error) {
       if (isAppError(error) && error.code === ClientErrorCode.CONFLICT) {
         await this.checkpointGroup(manifestId, listingId, 'conflict');
@@ -638,7 +766,7 @@ export class CommerceInventoryImportApplication {
       return { status: 'error', message: error instanceof Error ? error.message : IMPORT_PARSE_FAIL_COPY };
     }
     await this.checkpointGroup(manifestId, listingId, 'published_unsynced');
-    return { status: 'ok' };
+    return { status: 'ok', ...(pausedBy ? { pausedBy } : {}) };
   }
 
   private async syncPending(

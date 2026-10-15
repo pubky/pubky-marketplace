@@ -20,6 +20,8 @@ export type InventoryImportSettingsProps = {
   format: ImportSourceFormat;
   busy?: boolean;
   onApply?: () => void;
+  /** One click on "Use free shipping": chooses it and applies the settings. */
+  onChooseFreeShipping?: () => void;
 };
 
 export const IMPORT_FORMAT_LABEL: Record<ImportSourceFormat, string> = {
@@ -48,9 +50,12 @@ export function MarketplaceInventoryImportSettings({
   format,
   busy = false,
   onApply,
+  onChooseFreeShipping,
 }: InventoryImportSettingsProps) {
   const shippingMode = useWatch({ control, name: IMPORT_SETTINGS_FIELDS.SHIPPING_MODE });
   const currency = useWatch({ control, name: IMPORT_SETTINGS_FIELDS.CURRENCY });
+  const minDays = useWatch({ control, name: IMPORT_SETTINGS_FIELDS.SHIPPING_MIN_DAYS });
+  const maxDays = useWatch({ control, name: IMPORT_SETTINGS_FIELDS.SHIPPING_MAX_DAYS });
 
   return (
     <section className="flex flex-col gap-3" aria-label="Import settings" data-testid="inventory-import-settings">
@@ -127,6 +132,9 @@ export function MarketplaceInventoryImportSettings({
                 autoCapitalize="characters"
                 aria-invalid={fieldState.error ? true : undefined}
               />
+              <Typography as="p" className="text-xs text-muted-foreground">
+                Required. Filled in from your shop settings when they have a country.
+              </Typography>
               <FieldError message={fieldState.error?.message} />
             </div>
           )}
@@ -140,13 +148,25 @@ export function MarketplaceInventoryImportSettings({
               <Label htmlFor="import-shipping">Default shipping</Label>
               <Select value={field.value} onValueChange={field.onChange}>
                 <SelectTrigger theme="secondary" id="import-shipping" className="w-full" aria-label="Default shipping">
-                  <SelectValue />
+                  <SelectValue placeholder="Choose shipping" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="free">Free shipping</SelectItem>
                   <SelectItem value="flat">Flat rate</SelectItem>
                 </SelectContent>
               </Select>
+              {field.value === '' && (
+                <Typography as="p" className="text-xs text-muted-foreground">
+                  Required. Every imported listing needs a shipping option.
+                </Typography>
+              )}
+              {field.value === '' && onChooseFreeShipping && (
+                <div>
+                  <Button variant="secondary" className="rounded-full" onClick={onChooseFreeShipping}>
+                    Use free shipping ({minDays}–{maxDays} days)
+                  </Button>
+                </div>
+              )}
               <FieldError message={fieldState.error?.message} />
             </div>
           )}
@@ -214,7 +234,7 @@ export function MarketplaceInventoryImportSettings({
             control={control}
             render={({ field, fieldState }) => (
               <div className="flex flex-col gap-1.5">
-                <Label htmlFor="import-unmanaged-stock">Stock when the CSV has no count</Label>
+                <Label htmlFor="import-unmanaged-stock">Default quantity</Label>
                 <Input
                   {...field}
                   id="import-unmanaged-stock"
@@ -222,6 +242,9 @@ export function MarketplaceInventoryImportSettings({
                   inputMode="numeric"
                   aria-invalid={fieldState.error ? true : undefined}
                 />
+                <Typography as="p" className="text-xs text-muted-foreground">
+                  For products that are in stock without a count. Each one is listed in the loss report.
+                </Typography>
                 <FieldError message={fieldState.error?.message} />
               </div>
             )}

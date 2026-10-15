@@ -3,6 +3,7 @@ import {
   currencyExponent,
   DEFAULT_IMPORT_SETTINGS,
   majorToMinor,
+  missingImportChoices,
   rescaleMinor,
   shippingOptionRow,
   shopifyWorkExponent,
@@ -65,20 +66,14 @@ describe('rescaleMinor', () => {
 
 describe('shippingOptionRow', () => {
   it('builds a free option and a flat option in the listing currency', () => {
-    expect(shippingOptionRow(DEFAULT_IMPORT_SETTINGS)).toEqual({
+    expect(shippingOptionRow({ mode: 'free', minDays: 3, maxDays: 10 }, 'USD')).toEqual({
       id: 'standard',
       pricing: 'free',
       label: 'Free shipping',
       estimatedMinDays: 3,
       estimatedMaxDays: 10,
     });
-    expect(
-      shippingOptionRow({
-        ...DEFAULT_IMPORT_SETTINGS,
-        currency: 'JPY',
-        shipping: { mode: 'flat', priceMinor: 800, minDays: 2, maxDays: 5 },
-      }),
-    ).toEqual({
+    expect(shippingOptionRow({ mode: 'flat', priceMinor: 800, minDays: 2, maxDays: 5 }, 'JPY')).toEqual({
       id: 'standard',
       pricing: 'flat',
       label: 'Standard shipping',
@@ -86,5 +81,24 @@ describe('shippingOptionRow', () => {
       estimatedMinDays: 2,
       estimatedMaxDays: 5,
     });
+  });
+});
+
+describe('missingImportChoices', () => {
+  it('has no default: shipping and ships-from are both missing until chosen', () => {
+    expect(DEFAULT_IMPORT_SETTINGS.shipping).toBeNull();
+    expect(DEFAULT_IMPORT_SETTINGS.countryCode).toBeNull();
+    expect(missingImportChoices(DEFAULT_IMPORT_SETTINGS)).toEqual(['shipping', 'countryCode']);
+    expect(
+      missingImportChoices({ ...DEFAULT_IMPORT_SETTINGS, shipping: { mode: 'free', minDays: 1, maxDays: 2 } }),
+    ).toEqual(['countryCode']);
+    expect(missingImportChoices({ ...DEFAULT_IMPORT_SETTINGS, countryCode: 'CH' })).toEqual(['shipping']);
+    expect(
+      missingImportChoices({
+        ...DEFAULT_IMPORT_SETTINGS,
+        countryCode: 'CH',
+        shipping: { mode: 'free', minDays: 1, maxDays: 2 },
+      }),
+    ).toEqual([]);
   });
 });

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
+import { IMPORT_SETTINGS_COMPLETE } from '@/test-utils/import-settings';
 import type { PresetRow } from './import-preset-rows';
-import { DEFAULT_IMPORT_SETTINGS } from './import-settings';
 import { buildShopifyPresetRows, shopifyCsvQuantities } from './import-shopify-csv';
 
 const CURRENT = [
@@ -83,7 +83,7 @@ describe('buildShopifyPresetRows', () => {
     const result = buildShopifyPresetRows({
       ...base,
       rows: [sdkRow({ condition: 'used' })],
-      settings: { ...DEFAULT_IMPORT_SETTINGS, useCsvQuantities: true },
+      settings: { ...IMPORT_SETTINGS_COMPLETE, useCsvQuantities: true },
     });
     expect(result.rows[0]?.condition).toBe('good');
     expect(result.report.losses.map((loss) => loss.code)).toContain('condition_mapped');
@@ -94,7 +94,7 @@ describe('buildShopifyPresetRows', () => {
       ...base,
       products: [{ ...base.products[0]!, losses: [{ code: 'condition_defaulted', source: 'x', detail: 'x' }] }],
       rows: [sdkRow()],
-      settings: { ...DEFAULT_IMPORT_SETTINGS, condition: 'fair', useCsvQuantities: true },
+      settings: { ...IMPORT_SETTINGS_COMPLETE, condition: 'fair', useCsvQuantities: true },
     });
     expect(result.rows[0]?.condition).toBe('fair');
     expect(result.report.losses.find((loss) => loss.code === 'condition_defaulted')?.detail).toContain('fair');
@@ -105,7 +105,7 @@ describe('buildShopifyPresetRows', () => {
       ...base,
       text: 'Title,URL handle,SKU,Price,Inventory quantity\nHat,hat,,40.00,abc',
       rows: [sdkRow()],
-      settings: { ...DEFAULT_IMPORT_SETTINGS, useCsvQuantities: true },
+      settings: { ...IMPORT_SETTINGS_COMPLETE, useCsvQuantities: true },
     });
     expect(result.rows[0]?.variantQuantity).toBe(0);
     expect(result.rows[0]?.state).toBe('paused');
@@ -123,7 +123,7 @@ describe('buildShopifyPresetRows', () => {
         { code: 'barcode', source: 'Barcode', detail: 'x' },
         { code: 'cost', source: 'Cost per item', detail: 'x' },
       ],
-      settings: DEFAULT_IMPORT_SETTINGS,
+      settings: IMPORT_SETTINGS_COMPLETE,
     });
     expect(result.report.losses.map((loss) => loss.code)).toContain('barcode');
     expect(result.report.losses.map((loss) => loss.code)).not.toContain('cost');

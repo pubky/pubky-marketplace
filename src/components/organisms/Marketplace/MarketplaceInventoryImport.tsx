@@ -47,6 +47,10 @@ export type MarketplaceInventoryImportProps = {
   settings?: InventoryImportSettingsProps;
   lossSummary?: ImportLossSummary;
   busy?: boolean;
+  /** Why Publish is off (settings still to choose or to apply). */
+  publishDisabledReason?: string;
+  /** Why listings will be saved as paused: a publish gate blocks. */
+  publishNotice?: { title: string; body: string };
   onFile?: (file: File) => void;
   onPublish?: () => void;
   onResume?: () => void;
@@ -83,6 +87,8 @@ export function MarketplaceInventoryImport({
   settings,
   lossSummary,
   busy = false,
+  publishDisabledReason,
+  publishNotice,
   onFile,
   onPublish,
   onResume,
@@ -158,9 +164,33 @@ export function MarketplaceInventoryImport({
           {lossSummary && (
             <MarketplaceInventoryImportLossReport summary={lossSummary} onDownload={onDownloadLossReport} />
           )}
+          {publishNotice && (
+            <div
+              className="flex flex-col gap-1 rounded-md border border-input p-3"
+              role="status"
+              data-testid="inventory-import-gate-notice"
+            >
+              <Typography as="p" className="text-sm font-medium">
+                {publishNotice.title}
+              </Typography>
+              <Typography as="p" className="text-sm text-muted-foreground">
+                {publishNotice.body}
+              </Typography>
+            </div>
+          )}
+          {publishDisabledReason && (
+            <Typography
+              as="p"
+              className="text-sm text-muted-foreground"
+              role="status"
+              data-testid="inventory-import-publish-hint"
+            >
+              {publishDisabledReason}
+            </Typography>
+          )}
           <Button
             className="rounded-full"
-            disabled={busy || counts.create + counts.update + counts.end === 0}
+            disabled={busy || publishDisabledReason !== undefined || counts.create + counts.update + counts.end === 0}
             onClick={onPublish}
           >
             Publish

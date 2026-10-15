@@ -1,10 +1,11 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { IMPORT_SETTINGS_COMPLETE } from '@/test-utils/import-settings';
 import { csvHeaderCells, parseCsvTable } from './import-csv-table';
 import { summarizeLossReport } from './import-loss-report';
 import { SOURCE_IMAGE_URLS_FIELD, VARIANT_PRICE_MINOR_FIELD } from './import-preset-rows';
-import { DEFAULT_IMPORT_SETTINGS, type ImportSettings } from './import-settings';
+import { type ImportSettings } from './import-settings';
 import { isWooProductCsv, mapWooProductCsv, type WooMapResult } from './import-woo-csv';
 
 const SELLER = 'y'.repeat(52);
@@ -15,7 +16,7 @@ function fixture(name: string): string {
   return readFileSync(resolve(FIXTURES, name), 'utf8');
 }
 
-function map(text: string, settings: ImportSettings = DEFAULT_IMPORT_SETTINGS): WooMapResult {
+function map(text: string, settings: ImportSettings = IMPORT_SETTINGS_COMPLETE): WooMapResult {
   const parsed = parseCsvTable(text);
   if (!parsed.ok) throw new Error(`fixture did not parse: ${parsed.reason}`);
   return mapWooProductCsv({ table: parsed.table, sellerPubky: SELLER, settings, now: NOW });
@@ -98,7 +99,7 @@ describe('WooCommerce official sample_products.csv', () => {
   it('reads In stock? without a count as the unmanaged default and reports it', () => {
     expect(result.rows.every((row) => row.variantQuantity === 1)).toBe(true);
     expect(codes(result, 'stock_unmanaged')).toHaveLength(21);
-    const more = map(fixture('sample_products.csv'), { ...DEFAULT_IMPORT_SETTINGS, unmanagedStock: 5 });
+    const more = map(fixture('sample_products.csv'), { ...IMPORT_SETTINGS_COMPLETE, unmanagedStock: 5 });
     expect(more.rows.every((row) => row.variantQuantity === 5)).toBe(true);
   });
 
@@ -228,7 +229,7 @@ describe('WooCommerce mapping rules', () => {
         '4,simple,d-neg,Backorder count,1,,Text,,,1,-3,,5,,,,,,,,',
         '5,simple,e-big,Huge count,1,,Text,,,1,5000000,,5,,,,,,,,',
       ),
-      { ...DEFAULT_IMPORT_SETTINGS, unmanagedStock: 7 },
+      { ...IMPORT_SETTINGS_COMPLETE, unmanagedStock: 7 },
     );
     const quantity = (id: string) => result.rows.find((row) => row.listingId === id)?.variantQuantity;
     expect([quantity('a-stock'), quantity('b-out'), quantity('c-flag'), quantity('d-neg'), quantity('e-big')]).toEqual([
@@ -274,7 +275,7 @@ describe('WooCommerce mapping rules', () => {
   });
 
   it('keeps JPY prices in whole yen and refuses fractions of a yen', () => {
-    const settings = { ...DEFAULT_IMPORT_SETTINGS, currency: 'JPY' };
+    const settings = { ...IMPORT_SETTINGS_COMPLETE, currency: 'JPY' };
     const result = map(
       csv('1,simple,a,Yen item,1,,Text,,,1,2,,1500,,,,,,,,', '2,simple,b,Half yen,1,,Text,,,1,2,,1500.50,,,,,,,,'),
       settings,
@@ -286,7 +287,7 @@ describe('WooCommerce mapping rules', () => {
 
   it('reads comma decimals only in a semicolon file', () => {
     const text = `${HEADER.replaceAll(',', ';')}\n1;simple;a;Euro item;1;;Text;;;1;3;;12,50;;;;;;;;\n`;
-    const result = map(text, { ...DEFAULT_IMPORT_SETTINGS, currency: 'EUR' });
+    const result = map(text, { ...IMPORT_SETTINGS_COMPLETE, currency: 'EUR' });
     expect(result.rows[0]).toMatchObject({ amountMinor: 1_250, currency: 'EUR', exponent: 2 });
   });
 
@@ -360,7 +361,7 @@ describe('WooCommerce mapping rules', () => {
     const result = mapWooProductCsv({
       table: parsed.table,
       sellerPubky: SELLER,
-      settings: DEFAULT_IMPORT_SETTINGS,
+      settings: IMPORT_SETTINGS_COMPLETE,
       now: NOW,
       encodingFallback: true,
     });
@@ -449,7 +450,7 @@ describe('WooCommerce mapping rules', () => {
     const result = mapWooProductCsv({
       table: parsed.table,
       sellerPubky: SELLER,
-      settings: DEFAULT_IMPORT_SETTINGS,
+      settings: IMPORT_SETTINGS_COMPLETE,
       now: NOW,
     });
     expect(result.rows).toEqual([]);
@@ -470,7 +471,7 @@ describe('WooCommerce mapping rules', () => {
       const result = mapWooProductCsv({
         table: parsed.table,
         sellerPubky: SELLER,
-        settings: DEFAULT_IMPORT_SETTINGS,
+        settings: IMPORT_SETTINGS_COMPLETE,
         now: NOW,
       });
       expect(result.rows).toEqual(english.rows);

@@ -1,5 +1,3 @@
-import { DEFAULT_SHOP_COUNTRY_CODE } from './default-shop';
-
 /**
  * Import settings, applied to every row of a shop-system CSV. The listing
  * currency list is not defined here: the dry-run form reads it from the
@@ -16,20 +14,23 @@ export type ImportShipping =
 
 export type ImportSettings = {
   readonly currency: string;
-  readonly countryCode: string;
+  /** Where the listings ship from. `null` until the seller chooses or the shop provides it; never defaulted. */
+  readonly countryCode: string | null;
   readonly condition: ImportCondition;
-  readonly shipping: ImportShipping;
+  /** The one shipping option every listing gets. `null` until the seller chooses or has one already; never defaulted. */
+  readonly shipping: ImportShipping | null;
   /** Shopify: take the CSV "Inventory quantity" as each variant's total stock. */
   readonly useCsvQuantities: boolean;
-  /** WooCommerce: stock for a product that is in stock but has no count. */
+  /** WooCommerce: the default quantity for a product that is in stock but has no count. */
   readonly unmanagedStock: number;
 };
 
+/** Nothing chosen: shipping and ships-from stay empty until the dry run sets them. */
 export const DEFAULT_IMPORT_SETTINGS: ImportSettings = {
   currency: 'USD',
-  countryCode: DEFAULT_SHOP_COUNTRY_CODE,
+  countryCode: null,
   condition: 'new',
-  shipping: { mode: 'free', minDays: 3, maxDays: 10 },
+  shipping: null,
   useCsvQuantities: false,
   unmanagedStock: 1,
 };
@@ -80,9 +81,17 @@ export function shopifyWorkExponent(currency: string): number {
   return Math.max(currencyExponent(currency), 2);
 }
 
-export function shippingOptionRow(settings: ImportSettings): Record<string, unknown> {
-  const estimate = { estimatedMinDays: settings.shipping.minDays, estimatedMaxDays: settings.shipping.maxDays };
-  if (settings.shipping.mode === 'free') {
+/** Both choices the listing record needs before a physical listing can publish. */
+export function missingImportChoices(settings: ImportSettings): ('shipping' | 'countryCode')[] {
+  const missing: ('shipping' | 'countryCode')[] = [];
+  if (settings.shipping === null) missing.push('shipping');
+  if (settings.countryCode === null) missing.push('countryCode');
+  return missing;
+}
+
+export function shippingOptionRow(shipping: ImportShipping, currency: string): Record<string, unknown> {
+  const estimate = { estimatedMinDays: shipping.minDays, estimatedMaxDays: shipping.maxDays };
+  if (shipping.mode === 'free') {
     return { id: 'standard', pricing: 'free', label: 'Free shipping', ...estimate };
   }
   return {
@@ -90,9 +99,9 @@ export function shippingOptionRow(settings: ImportSettings): Record<string, unkn
     pricing: 'flat',
     label: 'Standard shipping',
     price: {
-      amountMinor: settings.shipping.priceMinor,
-      currency: settings.currency,
-      exponent: currencyExponent(settings.currency),
+      amountMinor: shipping.priceMinor,
+      currency,
+      exponent: currencyExponent(currency),
     },
     ...estimate,
   };

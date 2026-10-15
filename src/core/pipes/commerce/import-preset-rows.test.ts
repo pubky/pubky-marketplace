@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { IMPORT_SETTINGS_COMPLETE } from '@/test-utils/import-settings';
 import { entityIdFrom, finalizePresetRows, isEntityId, type PresetRow } from './import-preset-rows';
 import { DEFAULT_IMPORT_SETTINGS } from './import-settings';
 
@@ -37,7 +38,7 @@ function row(overrides: Partial<PresetRow> = {}): PresetRow {
 function finalize(rows: PresetRow[]) {
   return finalizePresetRows({
     rows,
-    settings: DEFAULT_IMPORT_SETTINGS,
+    settings: IMPORT_SETTINGS_COMPLETE,
     labelFor: (id) => `label ${id}`,
     lineFor: () => 4,
   });
@@ -114,5 +115,17 @@ describe('finalizePresetRows', () => {
 
   it('falls back to a valid condition from the settings', () => {
     expect(finalize([row({ condition: 'bogus' })]).rows[0]?.condition).toBe('new');
+  });
+
+  it('carries no shipping option and no country when none was chosen, and never invents them', () => {
+    const result = finalizePresetRows({
+      rows: [row()],
+      settings: DEFAULT_IMPORT_SETTINGS,
+      labelFor: () => 'x',
+      lineFor: () => 1,
+    });
+    expect(result.rows[0]?.shippingOptions).toEqual([]);
+    expect(result.rows[0]?.extraFields.country_code).toBeUndefined();
+    expect(result.rows[0]?.state).toBe('active');
   });
 });

@@ -1,16 +1,16 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { IMPORT_SETTINGS_COMPLETE } from '@/test-utils/import-settings';
 import { parseCsvTable } from './import-csv-table';
 import { summarizeLossReport } from './import-loss-report';
 import { type PresetRow, SOURCE_IMAGE_URLS_FIELD, VARIANT_PRICE_MINOR_FIELD } from './import-preset-rows';
-import { DEFAULT_IMPORT_SETTINGS } from './import-settings';
 import { mapWooProductCsv } from './import-woo-csv';
 
 const FILE = resolve(__dirname, '../../../test/fixtures/woocommerce/dezentralshop-woo-export-2026-10-15.csv');
 const SELLER = 'y'.repeat(52);
 const NOW = new Date('2026-10-15T12:00:00.000Z');
-const CHF = { ...DEFAULT_IMPORT_SETTINGS, currency: 'CHF', countryCode: 'CH' };
+const CHF = { ...IMPORT_SETTINGS_COMPLETE, currency: 'CHF', countryCode: 'CH' };
 
 function map(settings = CHF) {
   const text = readFileSync(FILE, 'utf8');
@@ -156,7 +156,7 @@ describe('real Dezentralshop export (German headers, CHF)', () => {
     ]);
     const unmanaged = result.report.losses.filter((loss) => loss.code === 'stock_unmanaged');
     expect(unmanaged.map((loss) => loss.listing)).toEqual(['TEST']);
-    expect(unmanaged[0]?.detail).toBe('In stock without a count, so stock is set to 1.');
+    expect(unmanaged[0]?.detail).toBe('Stock unknown, set to 1.');
     const more = map({ ...CHF, unmanagedStock: 6 });
     expect(more.rows.find((row) => row.listingId === 'woo-3799')?.variantQuantity).toBe(6);
     expect(more.rows.find((row) => row.listingId === '10507')?.variantQuantity).toBe(8);
