@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Session } from '@synonymdev/pubky';
 import { AuthController } from '@/controllers/auth/auth';
+import { SIGN_IN_FAILED_MESSAGE, SIGN_IN_LINK_FAILED_MESSAGE, signInErrorCopy } from '@/libs/auth/sign-in-error-copy';
 import { AuthErrorCode } from '@/libs/error/error.codes';
 import {
   getWrongEnvironmentHomeserverMessage,
@@ -80,9 +81,7 @@ export function useAuthUrl(options: UseAuthUrlOptions = {}): UseAuthUrlReturn {
               variant: 'error',
               description: isWrongEnvironment
                 ? getWrongEnvironmentHomeserverMessage()
-                : isAppError(error)
-                  ? error.message
-                  : 'Sign in failed. Try again.',
+                : signInErrorCopy(error, SIGN_IN_FAILED_MESSAGE),
             });
             if (isMountedRef.current) {
               setUrl('');
@@ -114,9 +113,11 @@ export function useAuthUrl(options: UseAuthUrlOptions = {}): UseAuthUrlReturn {
       if (!isAppError(error)) Logger.error('Failed to generate auth URL:', error);
       if (!isMountedRef.current) return;
       setIsExpired(true);
+      // Another sign-in took over while this link was being made; it owns the page.
+      if (isAuthFlowCanceled(error)) return;
       toast({
         variant: 'error',
-        description: isAppError(error) ? error.message : 'Could not generate QR. Refresh and try again.',
+        description: signInErrorCopy(error, SIGN_IN_LINK_FAILED_MESSAGE),
       });
     } finally {
       if (isMountedRef.current) {

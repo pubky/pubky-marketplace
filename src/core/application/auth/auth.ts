@@ -3,6 +3,7 @@ import { userUriBuilder } from 'pubky-app-specs';
 import type { TKeypairParams, TRestoreSessionParams, TRestoreSessionResult } from '@/application/auth/auth.types';
 import { getShopGrantClientId } from '@/config/app';
 import { capabilitiesMatchFullGrant } from '@/libs/auth/capabilities';
+import { FULL_GRANT_REQUIRED_MESSAGE } from '@/libs/auth/sign-in-error-copy';
 import { ValidationErrorCode } from '@/libs/error/error.codes';
 import { Err } from '@/libs/error/error.factories';
 import { ErrorService } from '@/libs/error/error.types';
@@ -186,11 +187,10 @@ export class AuthApplication {
     await HomeserverService.logout({ session }).catch((logoutError) => {
       Logger.warn('Failed to sign out a narrow grant session', { logoutError });
     });
-    throw Err.validation(
-      ValidationErrorCode.INVALID_INPUT,
-      'This approval does not include the full Shop permission list. Approve again from Shop.',
-      { service: ErrorService.Homeserver, operation: 'assertFullGrantSession' },
-    );
+    throw Err.validation(ValidationErrorCode.INVALID_INPUT, FULL_GRANT_REQUIRED_MESSAGE, {
+      service: ErrorService.Homeserver,
+      operation: 'assertFullGrantSession',
+    });
   }
 
   static async saveGrantSession(session: Session): Promise<string> {
