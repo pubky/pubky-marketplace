@@ -361,6 +361,59 @@ describe('MarketplacePaymentSettings', () => {
     });
   });
 
+  describe('PayPal email validation', () => {
+    it('refuses an invalid email inline and keeps Save disabled until it is fixed', async () => {
+      const user = userEvent.setup();
+      await renderSettings();
+      const save = screen.getAllByRole('button', { name: 'Save changes' })[0];
+      await waitFor(() => expect(save).toBeEnabled());
+
+      const email = screen.getByLabelText('PayPal merchant email');
+      await user.type(email, 'test');
+      expect(save).toBeDisabled();
+      expect(screen.queryByText('Enter a valid email address.')).not.toBeInTheDocument();
+
+      await user.tab();
+      expect(screen.getByRole('alert')).toHaveTextContent('Enter a valid email address.');
+      expect(email).toHaveAttribute('aria-invalid', 'true');
+      expect(email).toHaveAccessibleDescription('Enter a valid email address.');
+      for (const button of screen.getAllByRole('button', { name: 'Save changes' })) {
+        expect(button).toBeDisabled();
+      }
+
+      await user.type(email, '@example.com');
+      expect(screen.queryByText('Enter a valid email address.')).not.toBeInTheDocument();
+      expect(email).not.toHaveAttribute('aria-invalid');
+      await user.click(save);
+
+      await waitFor(() => expect(mockedController.putMyPaymentConfig).toHaveBeenCalledTimes(1));
+      expect(mockedController.putMyPaymentConfig).toHaveBeenLastCalledWith({
+        bitcoinEnabled: false,
+        paypalMerchantEmail: 'test@example.com',
+      });
+    });
+
+    it('lets the seller clear a saved email', async () => {
+      const user = userEvent.setup();
+      mockedController.getMyPaymentConfig.mockResolvedValue({
+        ...EMPTY_CONFIG,
+        paypalMerchantEmail: 'old@example.com',
+      });
+      await renderSettings();
+      const save = screen.getAllByRole('button', { name: 'Save changes' })[0];
+      await waitFor(() => expect(save).toBeEnabled());
+
+      await user.clear(screen.getByLabelText('PayPal merchant email'));
+      await user.click(save);
+
+      await waitFor(() => expect(mockedController.putMyPaymentConfig).toHaveBeenCalledTimes(1));
+      expect(mockedController.putMyPaymentConfig).toHaveBeenLastCalledWith({
+        bitcoinEnabled: false,
+        paypalMerchantEmail: null,
+      });
+    });
+  });
+
   it('saves PayPal for a seller whose stored payment config is null', async () => {
     const user = userEvent.setup();
     mockedController.getMyPaymentConfig.mockResolvedValue(null);

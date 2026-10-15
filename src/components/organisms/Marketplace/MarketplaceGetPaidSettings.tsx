@@ -28,7 +28,7 @@ import { CommerceController } from '@/controllers/commerce/commerce';
 import { useMarketplaceSellerPaymentConfig } from '@/hooks/useMarketplaceSellerPaymentConfig/useMarketplaceSellerPaymentConfig';
 import { useUsdtPaymentsCapability } from '@/hooks/useUsdtPaymentsCapability/useUsdtPaymentsCapability';
 import { Tether } from '@/icons';
-import { type SellerPaymentConfigOwnView } from '@/libs/commerce/payment-methods';
+import { isValidPaypalMerchantEmail, type SellerPaymentConfigOwnView } from '@/libs/commerce/payment-methods';
 import { deriveUsdtSellerReadiness } from '@/libs/commerce/usdt-seller-setup';
 import { truncateMiddle } from '@/libs/utils/utils';
 import { BitkitDownloads } from '@/molecules/BitkitDownloads/BitkitDownloads';
@@ -111,6 +111,7 @@ const UNSAVED_SELLER_PAYMENT_CONFIG: SellerPaymentConfigOwnView = {
   paypalMerchantEmail: null,
   updatedAt: '',
 };
+const PAYPAL_EMAIL_INVALID_COPY = 'Enter a valid email address.';
 const PAYKIT_RECONNECT_EXPLANATION =
   'Scan the code with Bitkit, or open this page on your phone and tap Open in Bitkit, to share a USDT address. Your Bitkit account and Bitcoin setup stay the same.';
 
@@ -214,6 +215,7 @@ export function MarketplaceGetPaidSettings({ locksConnect, onSaved }: Marketplac
     pubky: string | null;
   } | null>(null);
   const [isRetryingUsdt, setIsRetryingUsdt] = useState(false);
+  const [paypalTouched, setPaypalTouched] = useState(false);
 
   const [railDraft, setRailDraft] = useState<{
     bitcoin: boolean | null;
@@ -350,9 +352,15 @@ export function MarketplaceGetPaidSettings({ locksConnect, onSaved }: Marketplac
     if (saved) onSaved?.(saved);
   };
 
-  const saveReady =
-    Boolean(serverConfig) && !payments.isLoading && !payments.loadError && serverBaseline === draftBaseline;
   const paypalValue = railDraft.paypal ?? serverConfig?.paypalMerchantEmail ?? '';
+  const paypalInvalid = !isValidPaypalMerchantEmail(paypalValue);
+  const showPaypalError = paypalInvalid && paypalTouched;
+  const saveReady =
+    Boolean(serverConfig) &&
+    !payments.isLoading &&
+    !payments.loadError &&
+    serverBaseline === draftBaseline &&
+    !paypalInvalid;
 
   const saveButton = (
     <Button className="w-fit rounded-full" disabled={payments.isSaving || !saveReady} onClick={() => void onSave()}>
@@ -449,7 +457,15 @@ export function MarketplaceGetPaidSettings({ locksConnect, onSaved }: Marketplac
                 autoComplete="off"
                 className="max-w-md"
                 aria-label="PayPal merchant email"
+                onBlur={() => setPaypalTouched(true)}
+                aria-invalid={showPaypalError || undefined}
+                aria-describedby={showPaypalError ? 'get-paid-paypal-error' : undefined}
               />
+              {showPaypalError && (
+                <Typography as="p" id="get-paid-paypal-error" role="alert" className="text-sm text-amber-300">
+                  {PAYPAL_EMAIL_INVALID_COPY}
+                </Typography>
+              )}
             </div>
             {saveButton}
           </>,
