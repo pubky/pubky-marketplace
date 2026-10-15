@@ -20,7 +20,7 @@ export type ImportLoss = {
   readonly count: number;
 };
 
-export type ImportSourceFormat = 'woocommerce' | 'shopify';
+export type ImportSourceFormat = 'woocommerce' | 'woocommerce_store' | 'shopify';
 
 export type ImportLossReport = {
   readonly format: ImportSourceFormat;
@@ -83,6 +83,17 @@ const LOSS_LABELS: Readonly<Record<string, string>> = {
   related_products: 'Related products',
   stock_unmanaged: 'Stock unknown',
   stock_capped: 'Stock capped',
+  stock_not_public: 'Exact stock not public',
+  tax_display: 'Tax',
+  backorder_stock: 'On backorder',
+  password_protected: 'Password-protected products',
+  currency_mismatch: 'Other currency',
+  variation_unread: 'Variations not read',
+  variant_duplicate: 'Duplicate variation',
+  variants_truncated: 'Too many variations',
+  attribute_in_description: 'Attributes added to the description',
+  catalog_truncated: 'Catalogue larger than one import',
+  product_unreadable: 'Products not readable',
   stock_adjusted: 'Stock adjusted',
   csv_quantity_unscoped: 'Stock quantity not used',
   quantity_missing: 'Stock quantity missing',
@@ -117,7 +128,13 @@ export function lossLabel(code: string): string {
 const SEVERITY_ORDER: readonly ImportLossSeverity[] = ['skipped', 'changed', 'dropped'];
 const EXAMPLES_PER_GROUP = 3;
 /** File-wide notes whose "source" is not a useful example. */
-const NO_EXAMPLE_CODES = new Set(['condition_defaulted', 'return_policy_absent', 'encoding_fallback']);
+const NO_EXAMPLE_CODES = new Set([
+  'condition_defaulted',
+  'return_policy_absent',
+  'encoding_fallback',
+  'stock_not_public',
+  'tax_display',
+]);
 
 export function summarizeLossReport(report: ImportLossReport): ImportLossSummary {
   const groups = new Map<
