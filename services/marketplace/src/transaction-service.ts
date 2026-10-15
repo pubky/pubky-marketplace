@@ -42,6 +42,7 @@ import {
   type SetPickupDetailsCommand as SharedSetPickupDetailsCommand,
   type ShipOrderCommand,
   type UpdateMarketplaceNotificationPreferencesCommand,
+  type UpdateOrderTrackingCommand,
   type WithdrawOfferCommand,
 } from './contracts';
 
@@ -615,6 +616,7 @@ export interface MarketplaceEvent {
     | 'order.completed'
     | 'fulfillment.ready_for_pickup'
     | 'fulfillment.shipped'
+    | 'fulfillment.tracking_updated'
     | 'fulfillment.delivered'
     | 'pickup_details.updated'
     | 'pickup_details.cleared'
@@ -1206,6 +1208,8 @@ export class MarketplaceTransactionService {
         return this.approveCancellation(actorPubky, command);
       case 'fulfillment.ship':
         return this.shipOrder(actorPubky, command);
+      case 'fulfillment.update_tracking':
+        return this.updateTracking(actorPubky, command);
       case 'fulfillment.confirm_delivery':
         return this.confirmDelivery(actorPubky, command);
       case 'return.request':
@@ -2437,7 +2441,7 @@ export class MarketplaceTransactionService {
       state: 'shipped',
       shipment: {
         carrier: command.payload.carrier,
-        trackingNumber: command.payload.trackingNumber,
+        trackingNumber: command.payload.trackingNumber ?? '',
         state: 'shipped',
         shippedAt: occurredAt,
         deliveredAt: null,
@@ -2449,6 +2453,36 @@ export class MarketplaceTransactionService {
       command,
       updated,
       'fulfillment.shipped',
+      order.buyerPubky,
+      'order_shipped',
+      occurredAt,
+    );
+  }
+
+  private updateTracking(actorPubky: string, command: UpdateOrderTrackingCommand): MarketplaceCommandResult {
+    const resolved = this.getOrderAction(actorPubky, command.payload.orderId, command);
+    if (!resolved.ok) return resolved.failure;
+    const order = resolved.order;
+    if (order.sellerPubky !== actorPubky) return failure('UNAUTHORIZED', 'Only the seller may update tracking.');
+    if (order.state !== 'shipped' || order.shipment?.state !== 'shipped') {
+      return failure('INVALID_STATE', 'Tracking can only change while the order is shipped and not yet delivered.');
+    }
+    const occurredAt = this.now().toISOString();
+    const updated: MarketplaceOrder = {
+      ...order,
+      revision: order.revision + 1,
+      shipment: {
+        ...order.shipment,
+        carrier: command.payload.carrier,
+        trackingNumber: command.payload.trackingNumber,
+      },
+      updatedAt: occurredAt,
+    };
+    return this.persistOrderAction(
+      actorPubky,
+      command,
+      updated,
+      'fulfillment.tracking_updated',
       order.buyerPubky,
       'order_shipped',
       occurredAt,

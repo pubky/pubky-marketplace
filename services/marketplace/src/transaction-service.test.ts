@@ -2263,3 +2263,67 @@ describe('MarketplaceTransactionService digital delivery (digital delivery desig
     expect(checkout).toMatchObject({ ok: false, error: { code: 'INVALID_COMMAND' } });
   });
 });
+
+describe('MarketplaceTransactionService shipment tracking', () => {
+  async function shipWithoutTracking(service: MarketplaceTransactionService) {
+    const order = await createPaidOrder(service);
+    const shipped = await service.execute(
+      SELLER,
+      orderCommand('fulfillment.ship', order.id, 2, { carrier: 'Other' }, 7_001),
+    );
+    return { order, shipped };
+  }
+
+  it('ships without a tracking number and lets the seller add it later', async () => {
+    const { service } = createService();
+    const { order, shipped } = await shipWithoutTracking(service);
+    expect(shipped).toMatchObject({
+      ok: true,
+      result: { order: { state: 'shipped', shipment: { carrier: 'Other', trackingNumber: '' } } },
+    });
+
+    await expect(
+      service.execute(
+        SELLER,
+        orderCommand(
+          'fulfillment.update_tracking',
+          order.id,
+          3,
+          { carrier: 'UPS', trackingNumber: '1Z999AA10123456784' },
+          7_002,
+        ),
+      ),
+    ).resolves.toMatchObject({
+      ok: true,
+      result: {
+        order: {
+          state: 'shipped',
+          revision: 4,
+          shipment: { carrier: 'UPS', trackingNumber: '1Z999AA10123456784', state: 'shipped' },
+        },
+      },
+    });
+  });
+
+  it('refuses a tracking change from the buyer, on an unshipped order, and after delivery', async () => {
+    const { service } = createService();
+    const paid = await createPaidOrder(service);
+    const update = (actor: string, revision: number, commandNumber: number) =>
+      service.execute(
+        actor,
+        orderCommand(
+          'fulfillment.update_tracking',
+          paid.id,
+          revision,
+          { carrier: 'UPS', trackingNumber: 'TRACK-9' },
+          commandNumber,
+        ),
+      );
+
+    await expect(update(SELLER, 2, 7_010)).resolves.toMatchObject({ ok: false, error: { code: 'INVALID_STATE' } });
+    await service.execute(SELLER, orderCommand('fulfillment.ship', paid.id, 2, { carrier: 'UPS' }, 7_011));
+    await expect(update(BUYER, 3, 7_012)).resolves.toMatchObject({ ok: false, error: { code: 'UNAUTHORIZED' } });
+    await service.execute(BUYER, orderCommand('fulfillment.confirm_delivery', paid.id, 3, {}, 7_013));
+    await expect(update(SELLER, 4, 7_014)).resolves.toMatchObject({ ok: false, error: { code: 'INVALID_STATE' } });
+  });
+});

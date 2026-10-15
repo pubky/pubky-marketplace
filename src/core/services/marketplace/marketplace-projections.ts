@@ -602,7 +602,12 @@ export const marketplaceOrderProjectionSchema = z
     shipment: z
       .object({
         carrier: z.string(),
-        trackingNumber: z.string(),
+        // Absent on the wire until the seller adds one; read as an empty
+        // string so every consumer tests one shape (`hasTrackingNumber`).
+        trackingNumber: z
+          .string()
+          .nullish()
+          .transform((value) => value ?? ''),
         state: z.enum(['shipped', 'delivered']),
         shippedAt: z.string(),
         deliveredAt: z.string().nullable(),
