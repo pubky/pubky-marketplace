@@ -1129,6 +1129,75 @@ describe('HomeserverService', () => {
     });
 
     describe('getJsonIfFound', () => {
+      describe('one IO budget', () => {
+        afterEach(() => {
+          vi.useRealTimers();
+        });
+
+        const settle = (call: Promise<unknown>) => {
+          const outcome: { value?: unknown; error?: unknown } = {};
+          void call.then(
+            (value) => {
+              outcome.value = value;
+            },
+            (error: unknown) => {
+              outcome.error = error;
+            },
+          );
+          return outcome;
+        };
+
+        it('times out a slow load plus a slow body within 15 s in total', async () => {
+          vi.useFakeTimers();
+          mockState.currentSession = createMockSession();
+          mockState.sessionStorageGet.mockReturnValue(
+            new Promise((resolve) =>
+              setTimeout(() => resolve({ ok: true, status: 200, text: () => new Promise<never>(() => {}) }), 10_000),
+            ),
+          );
+
+          const outcome = settle(HomeserverService.getJsonIfFound({ url: 'pubky://user/pub/last_read' }));
+          await vi.advanceTimersByTimeAsync(15_001);
+
+          expect(outcome.error).toMatchObject({ category: ErrorCategory.Timeout, code: 'REQUEST_TIMEOUT' });
+        });
+
+        it('answers unreachable when a tolerated load hangs or fails', async () => {
+          vi.useFakeTimers();
+          mockState.currentSession = createMockSession();
+          mockState.sessionStorageGet
+            .mockReturnValueOnce(new Promise<never>(() => {}))
+            .mockRejectedValueOnce(new Error('Network error'));
+
+          const hung = settle(
+            HomeserverService.getJsonIfFound({ url: 'pubky://user/pub/a.json', tolerateUnreachable: true }),
+          );
+          await vi.advanceTimersByTimeAsync(15_001);
+          expect(hung.value).toEqual({ found: false, unreachable: true });
+
+          await expect(
+            HomeserverService.getJsonIfFound({ url: 'pubky://user/pub/a.json', tolerateUnreachable: true }),
+          ).resolves.toEqual({ found: false, unreachable: true });
+        });
+
+        it('still throws a tolerated read whose body stalls after the load', async () => {
+          vi.useFakeTimers();
+          mockState.currentSession = createMockSession();
+          mockState.sessionStorageGet.mockResolvedValue({
+            ok: true,
+            status: 200,
+            text: () => new Promise<never>(() => {}),
+          });
+
+          const outcome = settle(
+            HomeserverService.getJsonIfFound({ url: 'pubky://user/pub/a.json', tolerateUnreachable: true }),
+          );
+          await vi.advanceTimersByTimeAsync(15_001);
+
+          expect(outcome.error).toMatchObject({ category: ErrorCategory.Timeout, code: 'REQUEST_TIMEOUT' });
+        });
+      });
+
       it('answers not found for a 404 response, logging and reporting nothing', async () => {
         mockState.currentSession = createMockSession();
         mockState.sessionStorageGet.mockResolvedValue(new Response('Not Found', { status: 404 }));
