@@ -1,15 +1,18 @@
 import { webcrypto } from 'node:crypto';
 import { AuthFlowKind, GrantAuthFlow, Keypair, Pubky, PublicKey } from '@synonymdev/pubky';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
-import { CAPABILITIES, getShopGrantClientId } from '@/config/app';
-import { getDefaultHttpRelay } from '@/config/network';
+import { CAPABILITIES, getShopGrantClientId, KEYED_CAPABILITIES } from '@/config/app';
+import { getDefaultHttpRelay, getHomeserver } from '@/config/network';
+import { resetRuntimeConfigForTests } from '@/libs/runtime-config/runtime-config';
 import { installWebLocks, removeWebLocks } from '@/test-utils/web-locks';
 import { HomeserverService } from './homeserver';
 import { pendingOwnedGrants } from './owned-grant-storage';
 
+const deploy = vi.hoisted(() => ({ homeserver: '' }));
+
 vi.mock('@/config/network', async (original) => ({
   ...(await original<object>()),
-  getHomeserver: () => Keypair.random().publicKey.z32(),
+  getHomeserver: () => (deploy.homeserver ||= Keypair.random().publicKey.z32()),
 }));
 
 const isEd25519 = (algorithm: unknown): boolean => {
@@ -137,5 +140,29 @@ describe('Shop grant sign-in without WebCrypto Ed25519 (real SDK)', () => {
       resumeDelegated.mockRestore();
     }
     expect(shopMarkers()).toEqual([]);
+  });
+
+  it('a keyed sign-in (e scope, signed approval) also runs on the fallback and resumes', async () => {
+    vi.stubEnv('PUBKY_RUNTIME_PRIV_ENCRYPTION_KEYS', 'true');
+    vi.stubEnv('PUBKY_RUNTIME_PRIV_ENCRYPTION_KEYS_HOMESERVERS', JSON.stringify([getHomeserver()]));
+    resetRuntimeConfigForTests();
+    const resume = vi.spyOn(Pubky.prototype, 'resumeGrantAuthFlow');
+    relayOnline = false;
+    const flow = await HomeserverService.generateGrantAuthUrl();
+    flow.awaitApproval.catch(() => {});
+    try {
+      const url = new URL(flow.authorizationUrl);
+      expect(url.searchParams.get('caps')).toBe(KEYED_CAPABILITIES);
+      expect(url.searchParams.get('af')).toBe('v1');
+      expect(shopMarkers()).toEqual([]);
+      await vi.waitFor(() => expect(resume).toHaveBeenCalled(), { timeout: 5000 });
+      expect((resume.mock.results[0].value as GrantAuthFlow).authorizationUrl).toBe(flow.authorizationUrl);
+    } finally {
+      relayOnline = true;
+      flow.cancelAuthFlow();
+      resume.mockRestore();
+      vi.unstubAllEnvs();
+      resetRuntimeConfigForTests();
+    }
   });
 });
