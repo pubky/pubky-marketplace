@@ -115,8 +115,10 @@ import { MarketplaceUsdtPaymentSummary } from './MarketplaceUsdtPaymentSummary';
 const GENERIC_MANUAL_REVIEW_COPY =
   'A verified event arrived outside the normal flow (for example after the payment window expired), so the seller must resolve this order manually. No funds are held by this marketplace.';
 
+// A failed delivery state can be wrong when the service crashed near the deadline after the
+// request reached the wallet, so this copy never asserts that it was not received.
 const PAYKIT_DELIVERY_FAILED_COPY =
-  "Your wallet didn't receive the request. In Bitkit, add the seller as a contact, then try again.";
+  "We couldn't confirm your wallet got the payment request. Check Bitkit for it; if it's not there, add the seller as a contact and try again.";
 
 function parseListingAggregateId(aggregateId: string): { sellerPubky: string; listingId: string } | null {
   if (!aggregateId.startsWith('listing:')) return null;

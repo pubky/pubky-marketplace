@@ -136,11 +136,13 @@ describe('MarketplacePaymentStatusCard — USDT orders', () => {
     expect(screen.getByTestId('usdt-accept-by')).toBeInTheDocument();
   });
 
-  it('drops the accept-by line when the request never reached the buyer wallet', () => {
+  it('drops the accept-by line and does not claim non-delivery when the request could not be confirmed', () => {
     const { order, payment } = createUsdtOrderFixture('awaiting', { paykitDeliveryState: 'failed' });
     renderCard(order, payment, true);
 
-    expect(screen.getByTestId('paykit-delivery-failed')).toBeInTheDocument();
+    expect(screen.getByTestId('paykit-delivery-failed')).toHaveTextContent(
+      "We couldn't confirm your wallet got the payment request. Check Bitkit for it; if it's not there, add the seller as a contact and try again.",
+    );
     expect(screen.queryByTestId('usdt-accept-by')).not.toBeInTheDocument();
   });
 
