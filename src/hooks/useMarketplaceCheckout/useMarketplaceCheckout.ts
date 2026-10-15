@@ -608,21 +608,34 @@ export function useMarketplaceCheckout(
         // The service charges and validates from its projection, so one that lags the record is synced
         // first. A Locks lock is not projected, so a Locks line is always synced (a no-op when current) and
         // cannot check out unsynced: the service may not hold its lock.
+        const durable = isDurableCommerceMode(getCommerceAdapterMode());
         const needsSync = !projection || isLocksItem(item) || commerceListingProjectionIsStale(record, projection);
-        if (needsSync && isDurableCommerceMode(getCommerceAdapterMode())) {
+        let synced = false;
+        if (needsSync && durable) {
           const healed = await syncLineProjection(record.ownerPubky, record.listingId);
           if (healed.removed) sawRemovedListing = true;
-          if (healed.projection && !commerceListingProjectionMatchesRecord(record, healed.projection)) {
-            sawChangedListing = true;
-            return null;
-          }
           if (!healed.projection && !healed.removed && isLocksItem(item)) {
             sawUnsyncedLocksLine = true;
             return null;
           }
+          synced = healed.projection !== null;
           projection = healed.removed ? null : (healed.projection ?? projection);
         }
         if (!projection) return null;
+        // The service charges its projection's terms. A projection of a newer record than the cart holds, or
+        // a fresh sync that does not reproduce the cart's record, means the seller changed the listing since
+        // the buyer saw it: the cart's record is refreshed and the buyer reviews the new terms.
+        if (
+          durable &&
+          (synced || projection.listingRevision > record.revision) &&
+          !commerceListingProjectionMatchesRecord(record, projection)
+        ) {
+          sawChangedListing = true;
+          await CommerceController.refreshListing(record.ownerPubky, record.listingId).catch((error: unknown) => {
+            Logger.warn('Checkout could not refresh a changed listing', { error });
+          });
+          return null;
+        }
         const digital = goesDigital(item);
         if (digital && !isLocksItem(item)) freshKinds.push(projection.digitalDelivery?.kind ?? null);
         const variant = record.variants.find(({ id }) => id === item.variantId);

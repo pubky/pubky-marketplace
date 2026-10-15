@@ -63,6 +63,7 @@ vi.mock('@/controllers/commerce/commerce', () => ({
     getShop: vi.fn(async () => null),
     getMarketplaceListingProjection: vi.fn(),
     syncListingRegistration: vi.fn(),
+    refreshListing: vi.fn(async () => undefined),
     executeMarketplaceCommand: vi.fn(),
     fetchPickupAvailable: vi.fn(async () => true),
     fetchDigitalDeliveryCapability: vi.fn(async () => ({ available: true, maxBytes: null })),
@@ -499,6 +500,50 @@ describe('useMarketplaceCheckout', () => {
           description: 'A listing changed while you were checking out. Review your cart and try again.',
         }),
       );
+      expect(CommerceController.refreshListing).toHaveBeenCalledWith(listing.ownerPubky, listing.listingId);
+    });
+
+    it.each([
+      ['a higher unit price', { unitPrice: { ...price, amountMinor: price.amountMinor + 100 } }],
+      ['different shipping', { shipping: { ...shipping, amountMinor: shipping.amountMinor + 500 } }],
+      ['different fulfillment methods', { fulfillmentMethods: ['pickup' as const] }],
+      ['only a newer revision', {}],
+    ])(
+      'stops before ordering, without a sync, when the projection is of a newer record with %s',
+      async (_label, edit) => {
+        vi.mocked(CommerceController.getMarketplaceListingProjection).mockResolvedValue({
+          ...projection,
+          ...edit,
+          listingRevision: listing.revision + 1,
+        });
+
+        await expect(pay(item)).resolves.toBe(false);
+
+        expect(CommerceController.syncListingRegistration).not.toHaveBeenCalled();
+        expect(CommerceController.commitCreateMarketplaceCheckout).not.toHaveBeenCalled();
+        expect(vi.mocked(toast)).toHaveBeenCalledWith(
+          expect.objectContaining({
+            description: 'A listing changed while you were checking out. Review your cart and try again.',
+          }),
+        );
+        expect(CommerceController.refreshListing).toHaveBeenCalledWith(listing.ownerPubky, listing.listingId);
+      },
+    );
+
+    it('still stops, and logs, when the changed listing cannot be refreshed', async () => {
+      vi.mocked(CommerceController.getMarketplaceListingProjection).mockResolvedValue({
+        ...projection,
+        listingRevision: listing.revision + 1,
+      });
+      vi.mocked(CommerceController.refreshListing).mockRejectedValueOnce(new TypeError('offline'));
+
+      await expect(pay(item)).resolves.toBe(false);
+
+      expect(CommerceController.commitCreateMarketplaceCheckout).not.toHaveBeenCalled();
+      const { Logger } = await import('@/libs/logger/logger');
+      expect(vi.mocked(Logger.warn)).toHaveBeenCalledWith('Checkout could not refresh a changed listing', {
+        error: expect.any(TypeError),
+      });
     });
   });
 
