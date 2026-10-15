@@ -1406,31 +1406,32 @@ describe('MarketplaceTransactionService read projections', () => {
       expect(fetch).toHaveBeenCalledTimes(1);
     });
 
-    it('sends usdt as the bind method and reads each USDT refusal in USDT copy, tagged with the rail', async () => {
+    it('sends paykit as the bind method and reads each refusal in Paykit copy, tagged with the method', async () => {
       await establishSession();
       vi.mocked(fetch).mockClear();
       vi.mocked(fetch).mockResolvedValueOnce(
-        jsonResponse(409, {
+        jsonResponse(503, {
           ok: false,
           error: {
-            code: 'INVALID_STATE',
+            code: 'UPSTREAM_UNAVAILABLE',
             message: 'SENTINEL_SERVER_TEXT',
-            reason: 'usdt_seller_not_ready',
+            reason: 'seller_setup_pending',
           },
         }),
       );
 
-      await expect(MarketplaceTransactionService.bindPaymentMethod(ACTOR, ORDER_ID, 'usdt')).rejects.toMatchObject({
-        message: "This seller can't take USDT right now. Choose another payment method, or contact the seller.",
+      await expect(MarketplaceTransactionService.bindPaymentMethod(ACTOR, ORDER_ID, 'paykit')).rejects.toMatchObject({
+        message:
+          'This seller’s Paykit setup isn’t finished, so they can’t take a payment yet. Choose another payment method, or contact the seller.',
         context: {
-          statusCode: 409,
-          reason: 'usdt_seller_not_ready',
-          serviceCode: 'INVALID_STATE',
-          paymentMethod: 'usdt',
+          statusCode: 503,
+          reason: 'seller_setup_pending',
+          serviceCode: 'UPSTREAM_UNAVAILABLE',
+          paymentMethod: 'paykit',
         },
       });
       const [, init] = vi.mocked(fetch).mock.calls[0] as [string, RequestInit];
-      expect(JSON.parse(init.body as string)).toEqual({ method: 'usdt' });
+      expect(JSON.parse(init.body as string)).toEqual({ method: 'paykit' });
 
       vi.mocked(fetch).mockResolvedValueOnce(
         jsonResponse(409, {
@@ -1438,9 +1439,9 @@ describe('MarketplaceTransactionService read projections', () => {
           error: { code: 'INVALID_STATE', message: 'SENTINEL', reason: 'buyer_paykit_wallet_required' },
         }),
       );
-      await expect(MarketplaceTransactionService.bindPaymentMethod(ACTOR, ORDER_ID, 'usdt')).rejects.toMatchObject({
+      await expect(MarketplaceTransactionService.bindPaymentMethod(ACTOR, ORDER_ID, 'paykit')).rejects.toMatchObject({
         message:
-          'Connect Bitkit to pay with USDT: this account has no Paykit wallet that can receive a payment request.',
+          'Connect Bitkit to pay with Paykit: this account has no Paykit wallet that can receive a payment request.',
       });
     });
 
