@@ -57,6 +57,12 @@ export enum MARKETPLACE_ROUTES {
   SETTINGS = '/marketplace/settings',
   SETTINGS_ADDRESSES = '/marketplace/settings/addresses',
   SETTINGS_SHIPPING = '/marketplace/settings/shipping',
+  SETTINGS_STORE_CONNECTIONS = '/marketplace/settings/store-connections',
+}
+
+/** The catalog of one connected store, where the seller picks what to also publish on Pubky. */
+export function getStoreConnectionCatalogRoute(connectionId: string): string {
+  return `${MARKETPLACE_ROUTES.SETTINGS_STORE_CONNECTIONS}/${encodeURIComponent(connectionId)}`;
 }
 
 export function getMarketplaceAddressSettingsRoute(returnTo?: string): string {

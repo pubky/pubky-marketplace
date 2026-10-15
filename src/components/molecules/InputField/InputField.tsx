@@ -37,6 +37,8 @@ interface InputFieldProps {
   dataCy?: string;
   inputClassName?: React.HTMLAttributes<HTMLInputElement>['className'];
   autoComplete?: string;
+  /** Defaults to `text`; `password` masks a secret (such as a store key) as it is typed. */
+  type?: 'text' | 'password';
   role?: React.AriaRole;
   'aria-expanded'?: boolean;
   'aria-controls'?: string;
@@ -73,6 +75,7 @@ export function InputField({
   dataCy,
   inputClassName,
   autoComplete,
+  type = 'text',
   role,
   'aria-expanded': ariaExpanded,
   'aria-controls': ariaControls,
@@ -127,7 +130,7 @@ export function InputField({
         <Input
           id={id}
           name={name}
-          type="text"
+          type={type}
           className={cn('w-full border-none !bg-transparent', inputClassName)}
           value={loading ? resolvedLoadingText : value}
           placeholder={placeholder}
