@@ -1,6 +1,48 @@
 # Sentry (Observability)
 
-How errors and performance data flow into Sentry from Pubky App.
+How errors and performance data flow into Sentry from Pubky Marketplace (Shop).
+
+The Shop already includes the Sentry Next.js SDK and browser, Node and Edge initialization.
+Use the existing **`synonym-52 / pubky-marketplace`** project; do not run the setup wizard or add a
+second SDK. The embedded Shop has its own runtime config and SDK inside the iframe, so its events
+go to the Shop DSN even when Pubky App serves the parent page on the same origin.
+
+## Deployment checklist
+
+Set these on the **Shop container**, keeping the existing network and embedded configuration:
+
+```dotenv
+PUBKY_RUNTIME_SENTRY_DSN=<DSN from synonym-52 / pubky-marketplace>
+PUBKY_RUNTIME_SENTRY_ENVIRONMENT=staging
+PUBKY_RUNTIME_SENTRY_TRACES_SAMPLE_RATE=0.1
+PUBKY_RUNTIME_SENTRY_REPLAYS_SESSION_SAMPLE_RATE=0.0
+PUBKY_RUNTIME_SENTRY_REPLAYS_ON_ERROR_SAMPLE_RATE=1.0
+```
+
+The DSN is a public client key, available in the project's **Settings → Client Keys (DSN)**.
+It is not the upload auth token. Set the environment to `production` for the production deployment.
+Staging uses `PUBKY_RUNTIME_TESTNET=false`; the testnet switch is for test networks and disables
+Sentry. Do not change the homeserver/network settings to enable telemetry.
+
+For readable production stack traces, the **Shop image build** also needs:
+
+- `SENTRY_ORG=synonym-52`
+- `SENTRY_PROJECT=pubky-marketplace`
+- `SENTRY_AUTH_TOKEN` from the CI secret store, authorized to upload source maps to that project
+- `NEXT_PUBLIC_APP_VERSION` identifying the Shop commit being built
+
+The Dockerfile already supports these inputs and uploads the maps for that exact build. Without
+upload credentials, errors still arrive but browser stack traces may remain minified. Never expose
+the auth token in `PUBKY_RUNTIME_*` or `NEXT_PUBLIC_*` variables. Runtime DSN changes require a
+container restart/redeploy, not a new frontend build; uploading maps requires the build artifacts.
+
+The staging image is built through **`pubky/shop-migration`**. Its maintainer must wire the runtime
+values and build credentials there. The copied `build-docker-image.yml` in this repo is gated to
+`pubky/pubky-app` and does not configure Marketplace deployments.
+
+After deployment, verify capture with the mounted harness described below. This config covers the
+Shop's Next.js server/BFF as well as its browser; it does not instrument the separate marketplace
+service, Locks or Paykit processes.
 
 ## What is captured
 
@@ -10,6 +52,7 @@ How errors and performance data flow into Sentry from Pubky App.
 | Unhandled browser JS exceptions                      | Sentry `globalHandlers` integration (auto)                                                                                                                                        |
 | Unhandled promise rejections                         | Sentry `globalHandlers` integration (auto)                                                                                                                                        |
 | Server Component / Route Handler / middleware errors | `onRequestError = Sentry.captureRequestError` exported from `src/instrumentation.ts` (Next.js 15+)                                                                                |
+| Caught Shop grant BFF server failures                | Browser/CLI handlers report mapped 5xx through `Err.server` with static operation and HTTP status only. Expected 4xx are not reported.                                            |
 | Route segment render errors                          | `Sentry.captureException(error)` in the `useEffect` of `src/app/error.tsx`                                                                                                        |
 | Root layout render errors                            | `Sentry.captureException(error)` in the `useEffect` of `src/app/global-error.tsx`                                                                                                 |
 | Replay (masked)                                      | `replayIntegration({ maskAllText, blockAllMedia, maskAllInputs })` on errored sessions                                                                                            |
@@ -85,9 +128,9 @@ Third-party deployers get unsymbolicated events unless they obtain the maps for 
 
 ## Privacy
 
-Pubky App is decentralized social — strict defaults:
+Shop retains the App's privacy defaults:
 
-- `sendDefaultPii: false` (no IP, no headers)
+- `sendDefaultPii: false`; the scrubber below also removes sensitive fields from captured payloads
 - Replay: `maskAllText: true`, `maskAllInputs: true`, `blockAllMedia: true`, `networkCaptureBodies: false`
 - `beforeSend` defensively redacts user identifiers and user-provided data from app-controlled payloads:
   `email`, `phone` / `phoneNumber`, `name`, `firstName`, `lastName`, `displayName`, `username`, `bio`, `file`,
@@ -127,12 +170,16 @@ would be redundant and risks double-scrubbing.
 
 ## Verification
 
-To verify a deployment, open the `/sentry-test` harness (reachable everywhere except real
-production) and trigger each capture path. The diagnostics card shows the resolved runtime
+To verify a deployment, open the `/sentry-test` harness on standalone Shop, or
+`/shop/sentry-test` through the App wrapper when Shop is mounted at `/shop-embed`. The iframe
+document is `/shop-embed/sentry-test`, and its server triggers must call
+`/shop-embed/api/sentry-test`, not Pubky App's root `/api/sentry-test`. The harness is reachable
+outside the `production` Sentry environment; set the explicit `staging` environment above.
+Trigger each capture path. The diagnostics card shows the resolved runtime
 settings, including **Client SDK initialized** (`Sentry.getClient()`), which catches the
 silent-failure mode where Sentry is enabled but the browser SDK never initialized because
 `window.__PUBKY_CONFIG__` was not injected before `instrumentation-client.ts` evaluated.
 
-Then inspect recent Sentry events for the configured environment and confirm the
+Then inspect recent events in **`pubky-marketplace`** for the configured environment and confirm the
 **source maps** resolve (original `.tsx`/`.ts` frames, not minified bundle names) and the **`release`**
 tag matches `NEXT_PUBLIC_APP_VERSION` for the build under test.
