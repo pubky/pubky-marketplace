@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ImportLossReport } from '@/pipes/commerce/import-loss-report';
 import type { WooStoreCatalog } from '@/pipes/commerce/import-woo-store';
 import type { StoreApiProduct } from '@/pipes/import-store/import-store.product';
+import { asOpaque } from '@/test-utils/type-assertions';
 import { useMarketplaceInventoryImport } from './useMarketplaceInventoryImport';
 import {
   IMPORT_CONDITION_OPTIONS,
@@ -710,7 +711,7 @@ describe('publish gates (C11)', () => {
 
 describe('useMarketplaceInventoryImport, from a WooCommerce store URL', () => {
   const priced = (currency: string) =>
-    ({
+    asOpaque<StoreApiProduct>({
       id: 1,
       type: 'simple',
       name: 'Mug',
@@ -721,7 +722,7 @@ describe('useMarketplaceInventoryImport, from a WooCommerce store URL', () => {
         currency_code: currency,
         currency_minor_unit: 2,
       },
-    }) as unknown as StoreApiProduct;
+    });
   const catalog = (currency = 'BTC'): WooStoreCatalog => ({
     storeUrl: 'https://shop.example.com',
     products: [priced(currency)],

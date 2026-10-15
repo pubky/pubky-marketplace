@@ -127,7 +127,7 @@ function VrtStoreUpload({ narrow = false }: { narrow?: boolean }) {
 
 function VrtStoreSettings({ narrow = false }: { narrow?: boolean }) {
   const form = useForm<ImportSettingsFormData>({
-    defaultValues: { ...importSettingsFormDefaults, currency: 'CHF', countryCode: 'CH', shippingMode: 'free' },
+    defaultValues: { ...importSettingsFormDefaults, currency: 'USD', countryCode: 'CH', shippingMode: 'free' },
   });
   return (
     <main className={narrow ? 'w-full py-6' : 'w-full max-w-lg py-6'}>
