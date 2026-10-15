@@ -4,12 +4,15 @@ import {
   connectionHealth,
   CONNECTOR_ALERT_KINDS,
   connectorAlertAction,
+  connectorAlertCatalogRoute,
   connectorAlertCopy,
   connectorAlertSchema,
   connectorCatalogSchema,
   type ConnectorConnection,
   connectorFailureCopy,
+  connectorListingRouteId,
   connectorListSchema,
+  connectorSettingsResultSchema,
   isWooAuthorizeUrlFor,
   normalizeShopifyDomain,
   normalizeWooStoreAddress,
@@ -268,6 +271,7 @@ describe('copy', () => {
   });
 
   it.each([
+    ['variant_mapping_error', 'Re-link the product to keep its stock in sync'],
     ['refund_reversed_after_mirror', 'Correct it in your store'],
     ['push_total_mismatch', 'different total than the buyer paid'],
     ['listings_unmapped', 'Import each variant again'],
@@ -275,6 +279,40 @@ describe('copy', () => {
     expect(CONNECTOR_ALERT_KINDS).toContain(kind);
     expect(connectorAlertCopy(kind)).toContain(phrase);
     expect(connectorAlertCopy(kind)).not.toBe(connectorAlertCopy('something_new'));
+  });
+
+  it('links the alerts that need the catalog to the picker of their own connection, and no others', () => {
+    expect(connectorAlertCatalogRoute({ kind: 'variant_mapping_error', connectionId: 'c1' })).toBe(
+      '/marketplace/settings/store-connections/c1',
+    );
+    expect(connectorAlertCatalogRoute({ kind: 'listings_unmapped', connectionId: 'c 2' })).toBe(
+      '/marketplace/settings/store-connections/c%202',
+    );
+    expect(connectorAlertCatalogRoute({ kind: 'push_total_mismatch', connectionId: 'c1' })).toBeNull();
+    expect(connectorAlertCatalogRoute({ kind: 'merchant_cancelled', connectionId: 'c1' })).toBeNull();
+  });
+
+  it('only puts a listing id the service named into a route when it is a plain id', () => {
+    expect(connectorListingRouteId('boots_01')).toBe('boots_01');
+    expect(connectorListingRouteId('woo-9-71')).toBe('woo-9-71');
+    expect(connectorListingRouteId('../x')).toBeNull();
+    expect(connectorListingRouteId('a/b')).toBeNull();
+    expect(connectorListingRouteId('')).toBeNull();
+  });
+
+  it('reads the settings answer with and without unlinked listings, and has no conflict copy left', () => {
+    const connection = connectionFixture({ variantMode: 'split' });
+    const base = { kind: 'connector_settings', connection };
+    expect(connectorSettingsResultSchema.parse(base).unmappedListings).toEqual([]);
+    expect(
+      connectorSettingsResultSchema.parse({ ...base, unmappedListings: [{ listingId: 'a', mappingsRemoved: 2 }] })
+        .unmappedListings,
+    ).toEqual([{ listingId: 'a', mappingsRemoved: 2 }]);
+    expect(
+      connectorSettingsResultSchema.safeParse({ ...base, unmappedListings: [{ listingId: 'a', mappingsRemoved: -1 }] })
+        .success,
+    ).toBe(false);
+    expect(connectorFailureCopy('mappings_conflict', 'fallback')).toBe('fallback');
   });
 
   it('labels push states and treats info quarantines as nothing to do', () => {

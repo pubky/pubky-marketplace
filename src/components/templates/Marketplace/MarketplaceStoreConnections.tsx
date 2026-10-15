@@ -30,6 +30,8 @@ import { MarketplaceSectionNav } from '@/organisms/Marketplace/MarketplaceSectio
 import { MarketplaceSessionRequiredCard } from '@/organisms/Marketplace/MarketplaceSessionRequiredCard';
 import { MarketplaceStoreAccessNotes } from '@/organisms/Marketplace/MarketplaceStoreAccessNotes';
 import { MarketplaceStoreConnectionList } from '@/organisms/Marketplace/MarketplaceStoreConnectionList';
+import { MarketplaceUnmappedListingsNotice } from '@/organisms/Marketplace/MarketplaceUnmappedListingsNotice';
+import { useAuthStore } from '@/stores/auth/auth.store';
 
 const PROVIDER_TABS: readonly { id: ConnectorProvider; label: string }[] = [
   { id: 'woocommerce', label: 'WooCommerce' },
@@ -48,6 +50,7 @@ export function MarketplaceStoreConnections() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const connections = useStoreConnections();
+  const currentUserPubky = useAuthStore((state) => state.currentUserPubky);
   const statusCheck = useConnectionStatusCheck();
   const [returned] = useState<ConnectionReturn | null>(() => parseConnectionReturn(searchParams));
   const [provider, setProvider] = useState<ConnectorProvider>(() => {
@@ -166,6 +169,14 @@ export function MarketplaceStoreConnections() {
             </Button>
           </div>
         ))}
+
+        {connections.unmapped && (
+          <MarketplaceUnmappedListingsNotice
+            notice={connections.unmapped}
+            sellerPubky={currentUserPubky}
+            onDismiss={connections.dismissUnmapped}
+          />
+        )}
 
         {connections.isLoading ? (
           <Skeleton className="h-48 w-full" />

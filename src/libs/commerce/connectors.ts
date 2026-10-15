@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { getStoreConnectionCatalogRoute } from '@/app/routes';
 import { isAppError } from '@/libs/error/error';
 
 /**
@@ -101,10 +102,22 @@ export const connectorCredentialsResultSchema = z.object({
   connection: connectorConnectionSchema,
 });
 
+/** A listing that combined several store variants and was unlinked when the seller switched to `split`. */
+export const connectorUnmappedListingSchema = z.object({
+  listingId: z.string().min(1),
+  mappingsRemoved: z.number().int().nonnegative(),
+});
+
+export type ConnectorUnmappedListing = z.infer<typeof connectorUnmappedListingSchema>;
+
+/** `PUT /settings`: the connection, and the listings a switch to `split` unlinked (none otherwise). */
 export const connectorSettingsResultSchema = z.object({
   kind: z.literal('connector_settings'),
   connection: connectorConnectionSchema,
+  unmappedListings: z.array(connectorUnmappedListingSchema).default([]),
 });
+
+export type ConnectorSettingsResult = z.infer<typeof connectorSettingsResultSchema>;
 
 export const connectorCheckSchema = z.object({
   kind: z.literal('connector_check'),
@@ -231,6 +244,7 @@ export const CONNECTOR_ALERT_KINDS = [
   'store_uninstalled',
   'credentials_rejected',
   'inbound_failed',
+  'variant_mapping_error',
   'refund_reversed_after_mirror',
   'push_total_mismatch',
   'listings_unmapped',
@@ -443,6 +457,8 @@ const ALERT_KIND_COPY: Readonly<Record<string, string>> = {
   store_uninstalled: 'The app was removed from your store, so the connection is closed.',
   credentials_rejected: 'Your store rejected the saved keys. Replace them in Store connections.',
   inbound_failed: 'An update from your store could not be applied.',
+  variant_mapping_error:
+    'A size in your store no longer matches a Pubky listing. Re-link the product to keep its stock in sync.',
   refund_reversed_after_mirror:
     'A refund recorded in your store was reversed or reduced in Pubky. Correct it in your store: Pubky cannot change it there.',
   push_total_mismatch:
@@ -470,6 +486,18 @@ export function connectorAlertAction(alert: Pick<ConnectorAlert, 'action'>): { l
   return { label: known.label, orderId: action.orderId };
 }
 
+/** Alerts whose fix is to choose the store's products again, in the catalog picker for that connection. */
+const CATALOG_LINK_ALERTS: ReadonlySet<string> = new Set(['variant_mapping_error', 'listings_unmapped']);
+
+export function connectorAlertCatalogRoute(alert: Pick<ConnectorAlert, 'kind' | 'connectionId'>): string | null {
+  return CATALOG_LINK_ALERTS.has(alert.kind) ? getStoreConnectionCatalogRoute(alert.connectionId) : null;
+}
+
+/** A listing id the service named, safe to put in a route; anything else is shown as text. */
+export function connectorListingRouteId(listingId: string): string | null {
+  return /^[A-Za-z0-9_-]{1,128}$/.test(listingId) ? listingId : null;
+}
+
 export function connectorAlertCopy(kind: string): string {
   return ALERT_KIND_COPY[kind] ?? 'Something needs your attention in your store connection.';
 }
@@ -492,8 +520,6 @@ const CONNECT_REFUSAL_COPY: Readonly<Record<string, string>> = {
   shop_in_use: 'That store is already connected to another Pubky shop.',
   connection_not_available: 'This connection expired or was disconnected. Start again.',
   invalid_variant_mode: 'That setting was not accepted.',
-  mappings_conflict:
-    'Some of your listings combine several variants of one product, so this cannot be switched yet. End those listings, then switch.',
   credentials_rejected: 'The store did not accept those keys. Check them and try again.',
   connection_not_found: 'This connection no longer exists. Start again.',
   connection_not_connected: 'This connection is not finished yet.',

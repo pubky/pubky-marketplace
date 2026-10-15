@@ -9,6 +9,7 @@ import {
   type ConnectorProvider,
   type ConnectorPush,
   connectorRefusalReason,
+  type ConnectorUnmappedListing,
   isWooAuthorizeUrlFor,
   normalizeShopifyDomain,
   normalizeWooStoreAddress,
@@ -165,13 +166,19 @@ export class ConnectorsApplication {
     return await MarketplaceConnectorsService.putCredentials(actor, connection.id, fields);
   }
 
-  /** `native` keeps a product's variants together as one listing; `split` makes each variant its own listing. */
+  /**
+   * `native` keeps a product's variants together as one listing; `split` makes
+   * each variant its own listing and unlinks the listings that combined several.
+   */
   static async saveVariantMode(
     actor: string,
     connectionId: string,
     variantMode: VariantMode,
-  ): Promise<ConnectorConnection> {
-    return await MarketplaceConnectorsService.putSettings(actor, connectionId, { variantMode });
+  ): Promise<{ connection: ConnectorConnection; unmappedListings: ConnectorUnmappedListing[] }> {
+    const { connection, unmappedListings } = await MarketplaceConnectorsService.putSettings(actor, connectionId, {
+      variantMode,
+    });
+    return { connection, unmappedListings };
   }
 
   static async disconnect(actor: string, connectionId: string): Promise<void> {

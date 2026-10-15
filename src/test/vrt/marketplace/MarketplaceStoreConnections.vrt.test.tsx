@@ -1,13 +1,13 @@
 // Intentional import order — browser-mode mock factories rely on stable aliases.
 /* eslint-disable simple-import-sort/imports */
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { connectionFixture } from '@/test-utils/connector-fixtures';
 import { expectVrtSurface, renderForVRT } from '@/test-utils/vrt';
 import { VRT_VIEWPORT_DESKTOP, VRT_VIEWPORT_MOBILE } from '@/test-utils/vrt.viewports';
 import { MarketplaceStoreConnections } from '@/templates/Marketplace/MarketplaceStoreConnections';
 import { connectionHealth } from '@/libs/commerce/connectors';
 
-const view = vi.hoisted(() => ({ rows: [] as unknown[] }));
+const view = vi.hoisted(() => ({ rows: [] as unknown[], unmapped: null as unknown }));
 
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn() }),
@@ -29,6 +29,8 @@ vi.mock('@/hooks/useStoreConnections/useStoreConnections', () => ({
     disconnect: async () => true,
     setVariantMode: async () => true,
     lostAlerts: [],
+    unmapped: view.unmapped,
+    dismissUnmapped: () => {},
     dismissLostAlert: async () => {},
   }),
 }));
@@ -75,6 +77,10 @@ const MIXED = [
 ];
 
 describe('Settings store connections — visual regression', () => {
+  beforeEach(() => {
+    view.unmapped = null;
+  });
+
   it('renders connected, needs attention and disconnected stores at desktop viewport', async () => {
     view.rows = MIXED;
     await renderForVRT(<MarketplaceStoreConnections />, { viewport: VRT_VIEWPORT_DESKTOP, disableHover: true });
@@ -85,6 +91,22 @@ describe('Settings store connections — visual regression', () => {
     view.rows = MIXED;
     await renderForVRT(<MarketplaceStoreConnections />, { viewport: VRT_VIEWPORT_MOBILE, disableHover: true });
     await expect(await expectVrtSurface('store-connections')).toMatchScreenshot('store-connections-list-mobile');
+  });
+
+  it('renders the listings a switch to one listing per variant unlinked at desktop viewport', async () => {
+    view.rows = MIXED;
+    view.unmapped = {
+      connectionId: 'c2',
+      domain: 'john-staging.myshopify.com',
+      listings: [
+        { listingId: 'boots_01', mappingsRemoved: 2 },
+        { listingId: 'shopify-1042', mappingsRemoved: 3 },
+      ],
+    };
+    await renderForVRT(<MarketplaceStoreConnections />, { viewport: VRT_VIEWPORT_DESKTOP, disableHover: true });
+    await expect(await expectVrtSurface('store-connections-unmapped')).toMatchScreenshot(
+      'store-connections-unmapped-desktop',
+    );
   });
 
   it('renders the first-time page with the WooCommerce connect flow at desktop viewport', async () => {

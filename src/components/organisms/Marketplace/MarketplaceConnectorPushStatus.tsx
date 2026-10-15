@@ -14,6 +14,7 @@ import { orderAnchorId } from '@/libs/commerce/activity-links';
 import {
   CONNECTOR_PROVIDER_LABELS,
   connectorAlertAction,
+  connectorAlertCatalogRoute,
   connectorAlertCopy,
   pushNeedsAction,
   pushStateLabel,
@@ -137,6 +138,13 @@ export function MarketplaceConnectorPushStatus() {
                       <a href={`#${orderAnchorId(connectorAlertAction(alert)?.orderId ?? '')}`}>
                         {connectorAlertAction(alert)?.label}
                       </a>
+                    </Button>
+                  )}
+                  {connectorAlertCatalogRoute(alert) && (
+                    <Button asChild size="sm" className="rounded-full" data-testid="store-push-alert-catalog">
+                      <Link href={connectorAlertCatalogRoute(alert) ?? ''} overrideDefaults>
+                        Open the catalog
+                      </Link>
                     </Button>
                   )}
                   <Button

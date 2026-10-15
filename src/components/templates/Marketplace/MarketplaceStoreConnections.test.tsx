@@ -142,7 +142,10 @@ describe('MarketplaceStoreConnections', () => {
 
   it('switches a connection to one listing per variant and shows the saved setting', async () => {
     vi.mocked(ConnectorsController.fetchConnections).mockResolvedValue([connection('a')]);
-    vi.mocked(ConnectorsController.commitVariantMode).mockResolvedValue(connection('a', { variantMode: 'split' }));
+    vi.mocked(ConnectorsController.commitVariantMode).mockResolvedValue({
+      connection: connection('a', { variantMode: 'split' }),
+      unmappedListings: [],
+    });
     const user = userEvent.setup();
     render(<MarketplaceStoreConnections />);
 
@@ -152,6 +155,42 @@ describe('MarketplaceStoreConnections', () => {
 
     expect(ConnectorsController.commitVariantMode).toHaveBeenCalledWith('a', 'split');
     await waitFor(() => expect(screen.getByRole('switch', { name: 'One listing per size or variant' })).toBeChecked());
+    expect(screen.queryByTestId('store-connections-unmapped')).not.toBeInTheDocument();
+  });
+
+  it('shows the listings the switch to split unlinked, each as a link, with the catalog and Dismiss', async () => {
+    vi.mocked(ConnectorsController.fetchConnections).mockResolvedValue([connection('a')]);
+    vi.mocked(ConnectorsController.commitVariantMode).mockResolvedValue({
+      connection: connection('a', { variantMode: 'split' }),
+      unmappedListings: [
+        { listingId: 'boots_01', mappingsRemoved: 2 },
+        { listingId: 'woo-9', mappingsRemoved: 3 },
+      ],
+    });
+    const user = userEvent.setup();
+    render(<MarketplaceStoreConnections />);
+
+    await user.click(await screen.findByRole('switch', { name: 'One listing per size or variant' }));
+
+    const notice = await screen.findByTestId('store-connections-unmapped');
+    expect(notice).toHaveTextContent(
+      "These listings were combined, so they're no longer linked. Re-import them from the catalog or end them.",
+    );
+    const seller = 'y'.repeat(52);
+    expect(within(notice).getByRole('link', { name: 'boots_01' })).toHaveAttribute(
+      'href',
+      `/marketplace/listing/${seller}/boots_01`,
+    );
+    expect(within(notice).getByRole('link', { name: 'woo-9' })).toHaveAttribute(
+      'href',
+      `/marketplace/listing/${seller}/woo-9`,
+    );
+    expect(within(notice).getByRole('link', { name: 'Open the catalog' })).toHaveAttribute(
+      'href',
+      '/marketplace/settings/store-connections/a',
+    );
+    await user.click(within(notice).getByRole('button', { name: 'Dismiss' }));
+    expect(screen.queryByTestId('store-connections-unmapped')).not.toBeInTheDocument();
   });
 
   it('asks for a marketplace session when the service wants one', async () => {
