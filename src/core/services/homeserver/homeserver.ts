@@ -3,6 +3,7 @@ import {
   AuthFlowKind,
   Capabilities,
   Client,
+  type EncryptionKeys,
   GrantAuthFlow,
   Keypair,
   Pubky,
@@ -13,7 +14,7 @@ import {
   type XCallbackParams,
 } from '@synonymdev/pubky';
 import type { TKeypairParams } from '@/application/auth/auth.types';
-import { CAPABILITIES, getShopGrantClientId } from '@/config/app';
+import { CAPABILITIES, getShopGrantClientId, isPrivKeysRequested, KEYED_CAPABILITIES } from '@/config/app';
 import { withBasePath } from '@/config/base-path';
 import {
   getDefaultHttpRelay,
@@ -42,6 +43,7 @@ import type { Pubky as TPubkyModel } from '@/models/models.types';
 import type {
   TGenerateAuthTokenFlowResult,
   TGenerateAuthUrlResult,
+  TGrantAuthUrlOptions,
   THomeserverRestoreSessionParams,
   THomeserverSessionResult,
   THomeserverSignUpParams,
@@ -638,15 +640,29 @@ export class HomeserverService {
    * @param xCallback Optional return destinations carried in the URL (Pubky
    * Passport's callback page). They are navigation hints only: the session
    * still arrives through the encrypted relay.
+   * @param options.withPrivKeys Whether to also ask for the `e` action on the
+   * Shop's private tree (a signed approval that can carry scoped encryption
+   * keys). Defaults to {@link isPrivKeysRequested} for `options.signer`;
+   * `false` is the separate sign-in without keys that signers or homeservers
+   * without `e` need.
    */
-  static async generateGrantAuthUrl(xCallback?: XCallbackParams): Promise<TGenerateAuthUrlResult> {
-    return await this.startGrantAuthFlow(() => AuthFlowKind.signin(), 'generateGrantAuthUrl', xCallback);
+  static async generateGrantAuthUrl(
+    xCallback?: XCallbackParams,
+    options: TGrantAuthUrlOptions = {},
+  ): Promise<TGenerateAuthUrlResult> {
+    return await this.startGrantAuthFlow(
+      () => AuthFlowKind.signin(),
+      'generateGrantAuthUrl',
+      xCallback,
+      options.withPrivKeys ?? isPrivKeysRequested(options.signer),
+    );
   }
 
   private static async startGrantAuthFlow(
     kind: () => AuthFlowKind,
     operation: string,
-    xCallback?: XCallbackParams,
+    xCallback: XCallbackParams | undefined,
+    withPrivKeys: boolean,
   ): Promise<TGenerateAuthUrlResult> {
     try {
       if (!this.isGrantSignInAvailable() || !(await this.getPubkySdk().browserSessionStore.isAvailable())) {
@@ -659,9 +675,9 @@ export class HomeserverService {
       const pubkySdk = this.getPubkySdk();
       // Keeps a non-extractable WebCrypto key where WebCrypto has Ed25519; elsewhere
       // (e.g. Chrome < 137) the SDK falls back to its own key.
-      const flow = await pubkySdk.startGrantAuthFlow(CAPABILITIES, kind(), {
+      const flow = await pubkySdk.startGrantAuthFlow(withPrivKeys ? KEYED_CAPABILITIES : CAPABILITIES, kind(), {
         clientId: getShopGrantClientId(),
-        approvalFormat: 'bareGrant',
+        approvalFormat: withPrivKeys ? 'signedApprovalV1' : 'bareGrant',
         relay: getDefaultHttpRelay(),
         ...(xCallback ? { xCallback } : {}),
       });
@@ -725,6 +741,38 @@ export class HomeserverService {
     } catch (error) {
       return handleError({ error, additionalContext: { operation } });
     }
+  }
+
+  /**
+   * The scoped encryption keys a grant session was approved with, or null for
+   * a cookie session, a bare grant, and an approval whose signer declined
+   * `e`. The caller owns the copy and must `free()` it. They exist only for a
+   * session approved through a signed approval (see {@link generateGrantAuthUrl}).
+   */
+  static getSessionEncryptionKeys(session: Session | null | undefined): EncryptionKeys | null {
+    const grant = session?.grant;
+    if (!grant) return null;
+    try {
+      const keys = grant.encryptionKeys;
+      if (!keys) return null;
+      if (keys.scopes.length === 0) {
+        keys.free();
+        return null;
+      }
+      return keys;
+    } finally {
+      grant.free();
+    }
+  }
+
+  /**
+   * {@link getSessionEncryptionKeys} for the signed-in session, and only when
+   * that session belongs to `ownerPubky`. The caller must `free()` the copy.
+   */
+  static getCurrentSessionEncryptionKeys(ownerPubky: string): EncryptionKeys | null {
+    const session = useAuthStore.getState().selectSession();
+    if (!session || session.info.publicKey.z32() !== ownerPubky) return null;
+    return this.getSessionEncryptionKeys(session);
   }
 
   /** Whether a session carries a homeserver grant. */
@@ -936,6 +984,8 @@ export class HomeserverService {
     return this.startGrantAuthFlow(
       () => AuthFlowKind.signup(PublicKey.from(getHomeserver()), inviteCode),
       'generateSignupAuthUrl',
+      undefined,
+      false,
     );
   }
 

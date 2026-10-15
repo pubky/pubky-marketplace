@@ -298,6 +298,79 @@ export function commerceListingFulfillmentMethods(
   return derived.length > 0 ? derived : ['shipping'];
 }
 
+type CommerceListingTermsRecord = Pick<
+  CommerceListingRecord,
+  'revision' | 'sale' | 'fulfillmentMethods' | 'shippingOptions'
+>;
+
+interface CommerceListingTermsProjection {
+  listingRevision: number;
+  unitPrice: { amountMinor: number; currency: string; exponent: number };
+  fulfillmentMethods: readonly MarketplaceFulfillmentMethod[];
+  shipping?: { amountMinor: number };
+}
+
+/**
+ * Whether the projection charges what the record prices: the same unit price
+ * (amount, currency and exponent) and the same shipping, a projection without
+ * shipping charging none. An auction always does: it is paid at its bid.
+ */
+export function commerceListingProjectionChargesRecordTerms(
+  record: CommerceListingTermsRecord,
+  projection: CommerceListingTermsProjection,
+): boolean {
+  if (record.sale.format !== 'fixed_price') return true;
+  const { unitPrice } = record.sale;
+  return (
+    projection.unitPrice.amountMinor === unitPrice.amountMinor &&
+    projection.unitPrice.currency === unitPrice.currency &&
+    projection.unitPrice.exponent === unitPrice.exponent &&
+    (projection.shipping?.amountMinor ?? 0) === commerceListingShippingMinor(record.shippingOptions)
+  );
+}
+
+/**
+ * Whether the transaction service's projection of a registered fixed-price
+ * listing no longer reflects the seller-signed record, so a `listing.sync`
+ * would change what checkout charges or accepts: the record's revision moved
+ * past the projection (an edit whose sync never landed), or at the same
+ * revision the unit price, shipping or fulfillment methods differ (rows
+ * registered before the service's derivation changed, or a record rewritten
+ * without a new revision). Auctions are excluded: `listing.sync` never
+ * rewrites a registered auction's terms.
+ */
+export function commerceListingProjectionIsStale(
+  record: CommerceListingTermsRecord,
+  projection: CommerceListingTermsProjection,
+): boolean {
+  if (record.sale.format !== 'fixed_price') return false;
+  if (projection.listingRevision < record.revision) return true;
+  if (projection.listingRevision > record.revision) return false;
+  const methods = commerceListingFulfillmentMethods(record.fulfillmentMethods);
+  if (
+    methods.length !== projection.fulfillmentMethods.length ||
+    methods.some((method, index) => projection.fulfillmentMethods[index] !== method)
+  ) {
+    return true;
+  }
+  return !commerceListingProjectionChargesRecordTerms(record, projection);
+}
+
+/**
+ * Whether a projection of a fixed-price listing carries exactly the terms of
+ * the record the buyer is checking out: the same revision, unit price,
+ * fulfillment methods and shipping. A seller edit the buyer has not seen
+ * fails this, so the buyer is never charged terms they did not see. An
+ * auction always matches: it is paid at its bid.
+ */
+export function commerceListingProjectionMatchesRecord(
+  record: CommerceListingTermsRecord,
+  projection: CommerceListingTermsProjection,
+): boolean {
+  if (record.sale.format !== 'fixed_price') return true;
+  return projection.listingRevision === record.revision && !commerceListingProjectionIsStale(record, projection);
+}
+
 /**
  * Whether the listing offers **Make offer**: a fixed-price sale that accepts
  * offers and publishes a physical fulfillment (shipping or pickup). Digital
@@ -649,6 +722,15 @@ const commerceListingRecordSchemaInner = commercePublicRecordBaseSchema
         code: 'custom',
         message: 'A Locks listing must be digital-only',
         path: ['fulfillmentMethods'],
+      });
+    }
+    // Auctions register through the seller's private reserve authority, which carries no lock, and they
+    // ship; the service would hold a Locks auction without its lock.
+    if (listing.digitalLock !== undefined && listing.sale.format === 'auction') {
+      context.addIssue({
+        code: 'custom',
+        message: 'A Locks listing must be sold at a fixed price',
+        path: ['digitalLock'],
       });
     }
 

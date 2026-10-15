@@ -1,0 +1,383 @@
+{
+  "about": "Extract of WooCommerce translations: only the msgid/msgstr pairs that import-woo-headers.ts maps. msgid is the exporter's own string.",
+  "exporter": {
+    "repository": "https://github.com/woocommerce/woocommerce",
+    "tag": "11.2.1",
+    "file": "plugins/woocommerce/includes/export/class-wc-product-csv-exporter.php",
+    "fileLastCommit": "5938a201befb81662baa4913614d32758bd25027 (2026-09-11)",
+    "rawUrl": "https://raw.githubusercontent.com/woocommerce/woocommerce/11.2.1/plugins/woocommerce/includes/export/class-wc-product-csv-exporter.php",
+    "note": "Each msgid is passed through __( msgid, 'woocommerce' ) at exporterLine; the numbered download, attribute and Meta columns go through sprintf( __(...), $i )."
+  },
+  "locales": {
+    "de": {
+      "url": "https://translate.wordpress.org/projects/wp-plugins/woocommerce/stable/de/default/export-translations/?format=po",
+      "project": "Plugins - WooCommerce - Stable (latest release)",
+      "poRevisionDate": "2026-10-14 19:02:42+0000",
+      "sha256": "67dff03d4861b4409f106d51f9ee208b4ad336d3fd0d84a97b4296580c58bb7e"
+    },
+    "fr": {
+      "url": "https://translate.wordpress.org/projects/wp-plugins/woocommerce/stable/fr/default/export-translations/?format=po",
+      "project": "Plugins - WooCommerce - Stable (latest release)",
+      "poRevisionDate": "2026-10-07 19:07:09+0000",
+      "sha256": "c1a95cfd13719a04a8bd4a1cb1b302441dd4cce3ee2b7588d2c5f48b7f78c0db"
+    },
+    "it": {
+      "url": "https://translate.wordpress.org/projects/wp-plugins/woocommerce/stable/it/default/export-translations/?format=po",
+      "project": "Plugins - WooCommerce - Stable (latest release)",
+      "poRevisionDate": "2026-10-07 19:08:14+0000",
+      "sha256": "b3f431e68f8f3fde9d7bfc5bcfddb1f31fb231244fa8ccce945ddaa218fb971b"
+    }
+  },
+  "entries": [
+    {
+      "msgid": "ID",
+      "exporterLine": 129,
+      "de": "ID",
+      "fr": "ID",
+      "it": "ID"
+    },
+    {
+      "msgid": "Type",
+      "exporterLine": 130,
+      "de": "Typ",
+      "fr": "Type",
+      "it": "Tipo"
+    },
+    {
+      "msgid": "SKU",
+      "exporterLine": 131,
+      "de": "Artikelnummer",
+      "fr": "UGS",
+      "it": "SKU"
+    },
+    {
+      "msgid": "GTIN, UPC, EAN, or ISBN",
+      "exporterLine": 132,
+      "de": "GTIN, UPC, EAN oder ISBN",
+      "fr": "GTIN, UPC, EAN ou ISBN",
+      "it": "GTIN, UPC, EAN, o ISBN"
+    },
+    {
+      "msgid": "Name",
+      "exporterLine": 133,
+      "de": "Name",
+      "fr": "Nom",
+      "it": "Nome"
+    },
+    {
+      "msgid": "Published",
+      "exporterLine": 134,
+      "de": "Veröffentlicht",
+      "fr": "Publié",
+      "it": "Pubblicato"
+    },
+    {
+      "msgid": "Is featured?",
+      "exporterLine": 135,
+      "de": "Ist hervorgehoben?",
+      "fr": "Mis en avant ?",
+      "it": "In primo piano?"
+    },
+    {
+      "msgid": "Visibility in catalog",
+      "exporterLine": 136,
+      "de": "Sichtbarkeit im Katalog",
+      "fr": "Visibilité dans le catalogue",
+      "it": "Visibilità nel catalogo"
+    },
+    {
+      "msgid": "Short description",
+      "exporterLine": 137,
+      "de": "Kurzbeschreibung",
+      "fr": "Description courte",
+      "it": "Breve descrizione"
+    },
+    {
+      "msgid": "Description",
+      "exporterLine": 138,
+      "de": "Beschreibung",
+      "fr": "Description",
+      "it": "Descrizione"
+    },
+    {
+      "msgid": "Date sale price starts",
+      "exporterLine": 139,
+      "de": "Datum, an dem der Angebotspreis beginnt",
+      "fr": "Date de début de promo",
+      "it": "Data di partenza del prezzo in saldo"
+    },
+    {
+      "msgid": "Date sale price ends",
+      "exporterLine": 140,
+      "de": "Datum, an dem der Angebotspreis endet",
+      "fr": "Date de fin de promo",
+      "it": "Data in cui termina l'offerta"
+    },
+    {
+      "msgid": "Tax status",
+      "exporterLine": 141,
+      "de": "Steuerstatus",
+      "fr": "État de la TVA",
+      "it": "Stato delle imposte"
+    },
+    {
+      "msgid": "Tax class",
+      "exporterLine": 142,
+      "de": "Steuerklasse",
+      "fr": "Classe de TVA",
+      "it": "Aliquota di imposta"
+    },
+    {
+      "msgid": "In stock?",
+      "exporterLine": 143,
+      "de": "Vorrätig?",
+      "fr": "En stock ?",
+      "it": "In stock?"
+    },
+    {
+      "msgid": "Stock",
+      "exporterLine": 144,
+      "de": "Bestand",
+      "fr": "Stock",
+      "it": "Magazzino"
+    },
+    {
+      "msgid": "Low stock amount",
+      "exporterLine": 145,
+      "de": "Menge für geringen Bestand",
+      "fr": "Montant de stock faible",
+      "it": "Quantità in magazzino bassa"
+    },
+    {
+      "msgid": "Backorders allowed?",
+      "exporterLine": 146,
+      "de": "Lieferrückstände erlaubt?",
+      "fr": "Autoriser les commandes de produits en rupture ?",
+      "it": "Abilita gli ordini arretrati?"
+    },
+    {
+      "msgid": "Sold individually?",
+      "exporterLine": 147,
+      "de": "Nur einzeln verkaufen?",
+      "fr": "Vendre individuellement ?",
+      "it": "Venduto singolarmente? "
+    },
+    {
+      "msgid": "Weight (%s)",
+      "exporterLine": 149,
+      "de": "Gewicht (%s)",
+      "fr": "Poids (%s)",
+      "it": "Peso (%s)"
+    },
+    {
+      "msgid": "Length (%s)",
+      "exporterLine": 151,
+      "de": "Länge (%s)",
+      "fr": "Longueur (%s)",
+      "it": "Lunghezza (%s)"
+    },
+    {
+      "msgid": "Width (%s)",
+      "exporterLine": 153,
+      "de": "Breite (%s)",
+      "fr": "Largeur (%s)",
+      "it": "Larghezza (%s)"
+    },
+    {
+      "msgid": "Height (%s)",
+      "exporterLine": 155,
+      "de": "Höhe (%s)",
+      "fr": "Hauteur (%s)",
+      "it": "Altezza (%s)"
+    },
+    {
+      "msgid": "Allow customer reviews?",
+      "exporterLine": 156,
+      "de": "Kundenrezensionen erlauben?",
+      "fr": "Autoriser les avis clients ?",
+      "it": "Permetti le recensioni clienti?"
+    },
+    {
+      "msgid": "Purchase note",
+      "exporterLine": 157,
+      "de": "Hinweis zum Kauf",
+      "fr": "Note de commande",
+      "it": "Nota di acquisto"
+    },
+    {
+      "msgid": "Sale price",
+      "exporterLine": 158,
+      "de": "Angebotspreis",
+      "fr": "Tarif promo",
+      "it": "Prezzo in offerta"
+    },
+    {
+      "msgid": "Regular price",
+      "exporterLine": 159,
+      "de": "Regulärer Preis",
+      "fr": "Tarif régulier",
+      "it": "Prezzo di listino"
+    },
+    {
+      "msgid": "Categories",
+      "exporterLine": 160,
+      "de": "Kategorien",
+      "fr": "Catégories",
+      "it": "Categorie"
+    },
+    {
+      "msgid": "Tags",
+      "exporterLine": 161,
+      "de": "Schlagwörter",
+      "fr": "Étiquettes",
+      "it": "Tag"
+    },
+    {
+      "msgid": "Shipping class",
+      "exporterLine": 162,
+      "de": "Versandklasse",
+      "fr": "Classe d’expédition",
+      "it": "Classe di spedizione"
+    },
+    {
+      "msgid": "Images",
+      "exporterLine": 163,
+      "de": "Bilder",
+      "fr": "Images",
+      "it": "Immagine"
+    },
+    {
+      "msgid": "Download limit",
+      "exporterLine": 164,
+      "de": "Downloadlimit",
+      "fr": "Limite de téléchargement",
+      "it": "Limite di download"
+    },
+    {
+      "msgid": "Download expiry days",
+      "exporterLine": 165,
+      "de": "Ablauftage des Downloads",
+      "fr": "Jours d’expiration du téléchargement",
+      "it": "Scarica i giorni di scadenza"
+    },
+    {
+      "msgid": "Parent",
+      "exporterLine": 166,
+      "de": "Übergeordnetes Produkt",
+      "fr": "Parent",
+      "it": "Genitore"
+    },
+    {
+      "msgid": "Grouped products",
+      "exporterLine": 167,
+      "de": "Gruppierte Produkte",
+      "fr": "Groupes de produits",
+      "it": "Prodotti raggruppati"
+    },
+    {
+      "msgid": "Upsells",
+      "exporterLine": 168,
+      "de": "Zusatzverkäufe",
+      "fr": "Produits suggérés",
+      "it": "Up-sell"
+    },
+    {
+      "msgid": "Cross-sells",
+      "exporterLine": 169,
+      "de": "Cross-Sells (Querverkäufe)",
+      "fr": "Ventes croisées",
+      "it": "Cross-sell"
+    },
+    {
+      "msgid": "External URL",
+      "exporterLine": 170,
+      "de": "Externe URL",
+      "fr": "URL externe",
+      "it": "URL esterno"
+    },
+    {
+      "msgid": "Button text",
+      "exporterLine": 171,
+      "de": "Button-Text",
+      "fr": "Libellé du bouton",
+      "it": "Testo del pulsante"
+    },
+    {
+      "msgid": "Position",
+      "exporterLine": 172,
+      "de": "Position",
+      "fr": "Position",
+      "it": "Posizione"
+    },
+    {
+      "msgid": "Cost of goods",
+      "exporterLine": 176,
+      "de": "Wareneinsatz",
+      "fr": "Coût des marchandises vendues",
+      "it": "Costo dei beni"
+    },
+    {
+      "msgid": "Download %d ID",
+      "exporterLine": 674,
+      "de": "Download-%d-ID",
+      "fr": "ID de téléchargement %d",
+      "it": "Scarica ID %d"
+    },
+    {
+      "msgid": "Download %d name",
+      "exporterLine": 676,
+      "de": "Download-%d-Name",
+      "fr": "Nom de téléchargement %d",
+      "it": "Nome %d download"
+    },
+    {
+      "msgid": "Download %d URL",
+      "exporterLine": 678,
+      "de": "Download-%d-URL",
+      "fr": "URL de téléchargement %d",
+      "it": "Download %d URL"
+    },
+    {
+      "msgid": "Attribute %d name",
+      "exporterLine": 705,
+      "de": "Attribut %d Name",
+      "fr": "Nom de l’attribut %d",
+      "it": "Nome dell'attributo %d"
+    },
+    {
+      "msgid": "Attribute %d value(s)",
+      "exporterLine": 707,
+      "de": "Attribut %d Wert(e)",
+      "fr": "Valeur(s) de l’attribut %d ",
+      "it": "Valore dell'attributo %d"
+    },
+    {
+      "msgid": "Attribute %d visible",
+      "exporterLine": 709,
+      "de": "Attribut %d sichtbar",
+      "fr": "Attribut %d visible",
+      "it": "Attributo %d visibile"
+    },
+    {
+      "msgid": "Attribute %d global",
+      "exporterLine": 711,
+      "de": "Attribut %d global",
+      "fr": "Attribut %d global",
+      "it": "Attributo %d globale"
+    },
+    {
+      "msgid": "Attribute %d default",
+      "exporterLine": 749,
+      "de": "Attribut %d Standard",
+      "fr": "Attribut %d par défaut",
+      "it": "Attributo %d predefinito"
+    },
+    {
+      "msgid": "Meta: %s",
+      "exporterLine": 795,
+      "de": "Meta: %s",
+      "fr": "Méta : %s",
+      "it": "Meta: %s"
+    }
+  ]
+}

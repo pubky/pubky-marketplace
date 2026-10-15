@@ -54,6 +54,7 @@ const marketplaceListingProjectionBaseSchema = z
     availableQuantity: z.number().int().nonnegative(),
     reservedQuantity: z.number().int().nonnegative(),
     unitPrice: marketplaceMoneySchema,
+    shipping: marketplaceMoneySchema.optional(),
     saleFormat: z.enum(['fixed_price', 'auction']),
     // The fulfillment methods the listing publishes (local pickup design
     // §A1), served by both backends. Defaults to shipping-only for rows

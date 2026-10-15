@@ -7,8 +7,11 @@ import {
   getMarketplaceNexusUrl,
   getMarketplaceUrl,
   getPassportOrigin,
+  getPassportPrivEncryptionKeysEnabled,
   getPassportSignInEnabled,
   getPaykitSetupUrl,
+  getPrivEncryptionKeysEnabled,
+  getPrivEncryptionKeysHomeservers,
   getRuntimeConfig,
   getSentryDsn,
   getSentryEnvironment,
@@ -24,6 +27,7 @@ import {
   warnIfModerationDisabled,
 } from './runtime-config';
 import {
+  APP_RUNTIME_DEFAULTS,
   NETWORK_RUNTIME_DEFAULTS,
   PUBKY_RUNTIME_ENV_NAMES,
   type RuntimeConfig,
@@ -256,6 +260,66 @@ describe('runtime-config resolver', () => {
       simulateDeployedEnv();
       setAllRuntimeEnv();
       expect(readServerConfig().usdtPaymentsEnabled).toBe(false);
+    });
+
+    it('does not request scoped encryption keys unless the deploy opts in', () => {
+      expect(getPrivEncryptionKeysEnabled()).toBe(false);
+      expect(getPassportPrivEncryptionKeysEnabled()).toBe(false);
+      expect(getPrivEncryptionKeysHomeservers()).toEqual([]);
+
+      resetRuntimeConfigForTests();
+      process.env[PUBKY_RUNTIME_ENV_NAMES.privEncryptionKeys] = 'true';
+      process.env[PUBKY_RUNTIME_ENV_NAMES.privEncryptionKeysHomeservers] = JSON.stringify(['y'.repeat(52)]);
+      expect(getPrivEncryptionKeysEnabled()).toBe(true);
+      expect(getPassportPrivEncryptionKeysEnabled()).toBe(false);
+      expect(getPrivEncryptionKeysHomeservers()).toEqual(['y'.repeat(52)]);
+
+      resetRuntimeConfigForTests();
+      delete process.env[PUBKY_RUNTIME_ENV_NAMES.privEncryptionKeys];
+      process.env[PUBKY_RUNTIME_ENV_NAMES.passportPrivEncryptionKeys] = 'true';
+      expect(getPrivEncryptionKeysEnabled()).toBe(false);
+      expect(getPassportPrivEncryptionKeysEnabled()).toBe(true);
+    });
+
+    it('rejects a scoped-keys homeserver list that is not a JSON array of non-empty strings', () => {
+      for (const value of ['not json', '{"a":1}', '[1]', '[""]']) {
+        resetRuntimeConfigForTests();
+        process.env[PUBKY_RUNTIME_ENV_NAMES.privEncryptionKeysHomeservers] = value;
+        expect(() => readServerConfig(), value).toThrow();
+      }
+    });
+
+    it('strict deployed parse succeeds with the scoped-keys values unset', () => {
+      simulateDeployedEnv();
+      setAllRuntimeEnv();
+      const config = readServerConfig();
+      expect(config.privEncryptionKeys).toBe(false);
+      expect(config.passportPrivEncryptionKeys).toBe(false);
+      expect(config.privEncryptionKeysHomeservers).toEqual([]);
+    });
+
+    it('ships the scoped-keys gate closed: the shipped defaults, dev and every deployed environment', () => {
+      expect(APP_RUNTIME_DEFAULTS.privEncryptionKeys).toBe(false);
+      expect(APP_RUNTIME_DEFAULTS.passportPrivEncryptionKeys).toBe(false);
+      expect(APP_RUNTIME_DEFAULTS.privEncryptionKeysHomeservers).toEqual([]);
+
+      expect(readServerConfig().privEncryptionKeys).toBe(false);
+      expect(readServerConfig().passportPrivEncryptionKeys).toBe(false);
+      expect(readServerConfig().privEncryptionKeysHomeservers).toEqual([]);
+      expect(getPrivEncryptionKeysEnabled()).toBe(false);
+      expect(getPrivEncryptionKeysHomeservers()).toEqual([]);
+
+      for (const deployEnv of ['production', 'staging']) {
+        resetRuntimeConfigForTests();
+        clearAllRuntimeEnv();
+        simulateDeployedEnv();
+        setAllRuntimeEnv();
+        process.env[PUBKY_RUNTIME_ENV_NAMES.deployEnv] = deployEnv;
+        const config = readServerConfig();
+        expect(config.privEncryptionKeys, deployEnv).toBe(false);
+        expect(config.passportPrivEncryptionKeys, deployEnv).toBe(false);
+        expect(config.privEncryptionKeysHomeservers, deployEnv).toEqual([]);
+      }
     });
 
     it('a deployed container takes only an https:// Passport override', () => {

@@ -638,12 +638,14 @@ export class LocalCommerceService {
     generation: CommerceListingRowGeneration;
     auctionRegistration: CommerceAuctionRegistrationCommand | null;
     readBackPending: boolean;
+    registrationStatus: CommerceListingRegistrationStatus | undefined;
   }> {
     const listing = await CommerceListingModel.table.get(compositeListingId);
     return {
       generation: listing ? { writeId: listing.write_id } : null,
       auctionRegistration: listing?.auction_registration ?? null,
       readBackPending: listing ? isListingReadBackPending(listing) : false,
+      registrationStatus: listing?.registration_status,
     };
   }
 
