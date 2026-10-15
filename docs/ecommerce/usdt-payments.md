@@ -82,6 +82,8 @@ The address check is `0x` + 40 hex; a mixed-case address must carry a valid EIP-
 
 Both parties get a "Look up address on Arbiscan" link beside the confirmed address (the panels, the seller's resolve panel and the Record refund dialog), and the order card's recorded-refund line adds "Look up transaction on Arbiscan" for the recorded hash (UX audit P6). They are plain links to `https://arbiscan.io/tx/<hash>` and `/address/<address>`, worded as a lookup: the Shop never checks the transfer and never calls it verified. A recorded reference that is not exactly `0x` plus 64 hex characters gets no link, because it comes from the seller and never becomes part of a URL (`src/libs/commerce/arbiscan.ts`).
 
+A USDT payment on an order priced in satoshis or BTC (one Paykit request carries USDT for every currency the service converts, with the rate fixed at prepare) is refunded in USDT0, not in the order's currency: the refund form starts at the whole amount paid (`payment_amount_minor`), accepts up to six decimals, and the service records `external_refund.amount_minor` in millionths, capped at the amount paid (`usdtRefundCap`, `formatUsdtRefundAmount`). A USD order keeps cents at parity. A return request in order units has no exact USDT figure, so the seller is asked to send the whole amount paid.
+
 The "send it back to the address I paid from" choice appears only when the order projection carries an optional `payment_address`. The service does not send it today (paykit-server's status exposes no payer address), so the buyer enters an address.
 
 ## Resolving a USDT payment in manual review (W5)
@@ -101,6 +103,10 @@ The panel renders for any order whose projection carries `paymentAsset: "USDT"` 
 The panel shows the order total beside its parity USDT amount ("$137.00 · 137.000000 USDT"), the buyer's refund address and the amount to send, and says the refund is recorded by the seller and not checked on Arbitrum. Like the refund-address flow it never says "verified" or "confirmed on Arbitrum"; the Paykit `resolved: refunded` outcome the service sends afterwards is an annotation only.
 
 The contract is pinned in `src/libs/commerce/usdt-payment-review.ts`, with wire fixtures in `src/test/fixtures/commerce/usdt-payment-review.wire.ts`. Until S6 merges they are hand-written from its PR; replace them with captures then.
+
+## Sellers who accept USDT but not Bitcoin
+
+One Paykit request pays such a seller too, so the default storefront (`shop.json`, which Bitkit needs to make a seller the buyer's contact) is published when the payment configuration has `bitcoinEnabled` or `usdtEnabled`, on save and on load (`CommerceController.putMyPaymentConfig` and `getMyPaymentConfig`).
 
 ## Deploy order
 
