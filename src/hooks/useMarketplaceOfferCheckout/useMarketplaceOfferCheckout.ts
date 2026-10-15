@@ -6,7 +6,11 @@ import { isMarketplaceAwardCheckoutEligible } from '@/core/services/marketplace/
 import { useDeliveryKeyGate } from '@/hooks/useDeliveryKeyGate/useDeliveryKeyGate';
 import { checkDestinationCountry } from '@/hooks/useMarketplaceSellerShipsTo/useMarketplaceSellerShipsTo';
 import { BIND_FAIL_CANCEL_REASON, extractCheckoutOrderIds } from '@/libs/commerce/checkout-phase';
-import { MARKETPLACE_FAILURE_MESSAGES, marketplaceOfferCheckoutFailureMessage } from '@/libs/commerce/failure-messages';
+import {
+  isPaykitUnavailableRefusal,
+  MARKETPLACE_FAILURE_MESSAGES,
+  marketplaceOfferCheckoutFailureMessage,
+} from '@/libs/commerce/failure-messages';
 import type { PaymentMethodKind } from '@/libs/commerce/payment-methods';
 import { buildMarketplaceOrderAggregateId } from '@/libs/commerce/transaction-commands';
 import { isMarketplaceSessionRequiredError } from '@/libs/error/error.utils';
@@ -26,7 +30,7 @@ type DeliveryAddress = {
 
 export type MarketplaceOfferCheckoutResult =
   | { ok: true; orderId: string | null; boundOrder: MarketplaceOrder | null }
-  | { ok: false; code: string | null };
+  | { ok: false; code: string | null; paykitUnavailable?: boolean };
 
 export function useMarketplaceOfferCheckout(onCompleted?: () => Promise<void> | void) {
   const submittingRef = useRef(false);
@@ -154,7 +158,11 @@ export function useMarketplaceOfferCheckout(onCompleted?: () => Promise<void> | 
               fallback: MARKETPLACE_FAILURE_MESSAGES.checkout,
               onRetry,
             });
-            return { ok: false, code: 'BIND_FAILED' };
+            return {
+              ok: false,
+              code: 'BIND_FAILED',
+              ...(isPaykitUnavailableRefusal(bindError) ? { paykitUnavailable: true } : {}),
+            };
           }
         }
         await onCompleted?.();

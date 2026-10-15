@@ -84,6 +84,7 @@ beforeEach(() => {
     availableMethods: null,
     paykitAssets: [],
     bitcoinOfferUnavailable: false,
+    paykitOutage: false,
     configError: null,
     deliveryAddress: null,
     pendingAction: null,

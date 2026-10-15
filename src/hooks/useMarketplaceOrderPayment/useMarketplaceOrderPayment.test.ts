@@ -54,7 +54,7 @@ describe('useMarketplaceOrderPayment', () => {
   });
 
   it('uses static copy when a payment action fails', async () => {
-    vi.mocked(CommerceController.getSellerPaymentConfig).mockResolvedValueOnce({
+    vi.mocked(CommerceController.getSellerPaymentConfig).mockResolvedValue({
       bitcoinAvailable: true,
       bitcoinOfferAvailable: true,
       paypalAvailable: false,
@@ -74,7 +74,7 @@ describe('useMarketplaceOrderPayment', () => {
   });
 
   it('surfaces the service refusal reason on an error toast', async () => {
-    vi.mocked(CommerceController.getSellerPaymentConfig).mockResolvedValueOnce({
+    vi.mocked(CommerceController.getSellerPaymentConfig).mockResolvedValue({
       bitcoinAvailable: false,
       bitcoinOfferAvailable: true,
       paypalAvailable: true,
@@ -97,7 +97,7 @@ describe('useMarketplaceOrderPayment', () => {
 
   it('asks the buyer to finish reader wallet setup and binds again only when they choose Try again', async () => {
     const order = createOrderFixture('paid');
-    vi.mocked(CommerceController.getSellerPaymentConfig).mockResolvedValueOnce({
+    vi.mocked(CommerceController.getSellerPaymentConfig).mockResolvedValue({
       bitcoinAvailable: true,
       bitcoinOfferAvailable: true,
       paypalAvailable: false,
@@ -130,6 +130,228 @@ describe('useMarketplaceOrderPayment', () => {
     await waitFor(() => expect(CommerceController.bindPaymentMethod).toHaveBeenCalledTimes(2));
     expect(CommerceController.bindPaymentMethod).toHaveBeenLastCalledWith(order.id, 'paykit', undefined);
     await waitFor(() => expect(onPaymentChanged).toHaveBeenCalledTimes(1));
+  });
+
+  describe('a Paykit outage', () => {
+    const outage = {
+      bitcoinAvailable: false,
+      bitcoinOfferAvailable: false,
+      paypalAvailable: false,
+      paykitUnreachable: true,
+    };
+    const healthy = { bitcoinAvailable: true, bitcoinOfferAvailable: true, paypalAvailable: false };
+    const paykitDown = () =>
+      new AppError({
+        category: ErrorCategory.Client,
+        code: ClientErrorCode.BAD_REQUEST,
+        message: 'SENTINEL_PAYKIT_503',
+        service: ErrorService.Marketplace,
+        operation: 'bindPaymentMethod',
+        context: { statusCode: 503, reason: 'paykit_unavailable', paymentMethod: 'paykit' },
+      });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('flags the outage, keeps checking and offers the Paykit entry again when Paykit is back', async () => {
+      vi.useFakeTimers();
+      vi.mocked(CommerceController.getSellerPaymentConfig).mockReset();
+      vi.mocked(CommerceController.getSellerPaymentConfig).mockResolvedValueOnce(outage).mockResolvedValue(healthy);
+      const { result } = renderHook(() =>
+        useMarketplaceOrderPayment({
+          order: createOrderFixture('pending_payment'),
+          enabled: true,
+          onPaymentChanged: vi.fn(),
+        }),
+      );
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      expect(result.current.paykitOutage).toBe(true);
+      expect(result.current.availableMethods).toEqual([]);
+      expect(result.current.bitcoinOfferUnavailable).toBe(true);
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(5_000);
+      });
+      expect(result.current.paykitOutage).toBe(false);
+      expect(result.current.availableMethods).toEqual(['paykit']);
+      expect(result.current.bitcoinOfferUnavailable).toBe(false);
+    });
+
+    it('keeps the one Paykit entry in the list but flags the outage when the seller takes only USDT', async () => {
+      vi.useFakeTimers();
+      vi.mocked(CommerceController.fetchUsdtPaymentsAvailable).mockResolvedValue(true);
+      vi.mocked(CommerceController.getSellerPaymentConfig).mockReset();
+      vi.mocked(CommerceController.getSellerPaymentConfig).mockResolvedValue({
+        ...outage,
+        usdtAvailable: true,
+        paypalAvailable: true,
+      });
+      const { result } = renderHook(() =>
+        useMarketplaceOrderPayment({
+          order: createOrderFixture('pending_payment'),
+          enabled: true,
+          onPaymentChanged: vi.fn(),
+        }),
+      );
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+
+      expect(result.current.availableMethods).toEqual(['paykit', 'paypal']);
+      expect(result.current.paykitAssets).toEqual(['USDT']);
+      expect(result.current.paykitOutage).toBe(true);
+      vi.mocked(CommerceController.fetchUsdtPaymentsAvailable).mockResolvedValue(false);
+    });
+
+    it('treats a refused bind as an outage even when the health read looked fine, then re-enables on its own', async () => {
+      vi.useFakeTimers();
+      vi.mocked(CommerceController.getSellerPaymentConfig).mockReset();
+      vi.mocked(CommerceController.getSellerPaymentConfig).mockResolvedValue(healthy);
+      vi.mocked(CommerceController.bindPaymentMethod).mockReset();
+      vi.mocked(CommerceController.bindPaymentMethod).mockRejectedValueOnce(paykitDown());
+      const { result } = renderHook(() =>
+        useMarketplaceOrderPayment({
+          order: createOrderFixture('pending_payment'),
+          enabled: true,
+          onPaymentChanged: vi.fn(),
+        }),
+      );
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      expect(result.current.paykitOutage).toBe(false);
+
+      await act(async () => {
+        await result.current.bind('paykit');
+      });
+      const toastCall = vi.mocked(toast).mock.calls.at(-1)?.[0];
+      expect(toastCall?.description).toBe('Paykit is temporarily unreachable, retrying…');
+      expect(JSON.stringify(toastCall)).not.toContain('SENTINEL');
+      expect(result.current.paykitOutage).toBe(true);
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(5_000);
+      });
+      expect(result.current.paykitOutage).toBe(false);
+    });
+
+    it('keeps the refused-bind outage while the recheck is in flight, so the Paykit entry stays disabled until it finds Paykit reachable', async () => {
+      vi.useFakeTimers();
+      vi.mocked(CommerceController.getSellerPaymentConfig).mockReset();
+      vi.mocked(CommerceController.getSellerPaymentConfig).mockResolvedValue(healthy);
+      vi.mocked(CommerceController.bindPaymentMethod).mockReset();
+      vi.mocked(CommerceController.bindPaymentMethod).mockRejectedValueOnce(paykitDown());
+      const { result } = renderHook(() =>
+        useMarketplaceOrderPayment({
+          order: createOrderFixture('pending_payment'),
+          enabled: true,
+          onPaymentChanged: vi.fn(),
+        }),
+      );
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      await act(async () => {
+        await result.current.bind('paykit');
+      });
+      expect(result.current.paykitOutage).toBe(true);
+
+      let finishRead: (config: typeof healthy) => void = () => {};
+      vi.mocked(CommerceController.getSellerPaymentConfig).mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            finishRead = resolve as typeof finishRead;
+          }),
+      );
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(5_000);
+      });
+      expect(result.current.paykitOutage).toBe(true);
+      expect(result.current.availableMethods).toEqual(['paykit']);
+
+      await act(async () => {
+        finishRead(healthy);
+      });
+      expect(result.current.paykitOutage).toBe(false);
+    });
+
+    it('keeps retrying after the first config read fails, and loads the methods on its own', async () => {
+      vi.useFakeTimers();
+      vi.mocked(CommerceController.getSellerPaymentConfig).mockReset();
+      vi.mocked(CommerceController.getSellerPaymentConfig)
+        .mockRejectedValueOnce(appError('SENTINEL_ORDER_PAYMENT_CONFIG'))
+        .mockResolvedValue(healthy);
+      const { result } = renderHook(() =>
+        useMarketplaceOrderPayment({
+          order: createOrderFixture('pending_payment'),
+          enabled: true,
+          onPaymentChanged: vi.fn(),
+        }),
+      );
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      expect(result.current.configError).toBeTypeOf('string');
+      expect(result.current.availableMethods).toBeNull();
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(5_000);
+      });
+      expect(result.current.configError).toBeNull();
+      expect(result.current.availableMethods).toEqual(['paykit']);
+    });
+
+    it('stops rechecking once the order no longer needs a payment method, even after a failed read', async () => {
+      vi.useFakeTimers();
+      vi.mocked(CommerceController.getSellerPaymentConfig).mockReset();
+      vi.mocked(CommerceController.getSellerPaymentConfig).mockRejectedValue(appError('SENTINEL_ORDER_PAYMENT_CONFIG'));
+      const { result, rerender } = renderHook(
+        ({ order }) => useMarketplaceOrderPayment({ order, enabled: true, onPaymentChanged: vi.fn() }),
+        { initialProps: { order: createOrderFixture('pending_payment') } },
+      );
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      expect(result.current.configError).toBeTypeOf('string');
+
+      rerender({ order: createOrderFixture('paid', { paymentMethod: 'bitcoin' }) });
+      vi.mocked(CommerceController.getSellerPaymentConfig).mockClear();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(120_000);
+      });
+
+      expect(CommerceController.getSellerPaymentConfig).not.toHaveBeenCalled();
+      expect(vi.getTimerCount()).toBe(0);
+    });
+
+    it('stays in the outage when the recheck still finds Paykit unreachable, and backs off', async () => {
+      vi.useFakeTimers();
+      vi.mocked(CommerceController.getSellerPaymentConfig).mockReset();
+      vi.mocked(CommerceController.getSellerPaymentConfig).mockResolvedValue(outage);
+      const { result } = renderHook(() =>
+        useMarketplaceOrderPayment({
+          order: createOrderFixture('pending_payment'),
+          enabled: true,
+          onPaymentChanged: vi.fn(),
+        }),
+      );
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      vi.mocked(CommerceController.getSellerPaymentConfig).mockClear();
+
+      for (const delay of [5_000, 10_000, 20_000, 30_000]) {
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(delay);
+        });
+      }
+
+      expect(result.current.paykitOutage).toBe(true);
+      expect(CommerceController.getSellerPaymentConfig).toHaveBeenCalledTimes(4);
+    });
   });
 
   describe('an auction winner order that still needs its delivery address', () => {

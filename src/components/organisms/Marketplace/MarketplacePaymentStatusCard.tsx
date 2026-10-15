@@ -75,6 +75,7 @@ import {
 } from '@/libs/commerce/locks-lifecycle';
 import { buyerVisiblePaymentStatus } from '@/libs/commerce/locks-payment';
 import type { CommerceDigitalLock } from '@/libs/commerce/marketplace-records';
+import { PAYKIT_OUTAGE_COPY } from '@/libs/commerce/paykit-rail';
 import {
   followsBitcoinFlow,
   isPaykitOrder,
@@ -114,6 +115,7 @@ import { getDeployEnv } from '@/libs/runtime-config/runtime-config';
 import { cn } from '@/libs/utils/utils';
 import { BitkitDownloads } from '@/molecules/BitkitDownloads/BitkitDownloads';
 import { MarketplacePaymentStatusBadge } from '@/molecules/Marketplace/MarketplacePaymentStatusBadge';
+import { PaykitOutageNotice } from '@/molecules/Marketplace/PaykitOutageNotice';
 import { SETTINGS_SECTION_CONTENT_CLASSNAME } from '@/molecules/Settings/SettingsSectionContent/SettingsSectionContent';
 import type { MarketplaceOrder, MarketplacePayment } from '@/services/marketplace/marketplace';
 import { useAuthStore } from '@/stores/auth/auth.store';
@@ -516,10 +518,14 @@ export function MarketplacePaymentStatusCard({
             </div>
           ) : methodPayment.availableMethods.length === 0 ? (
             <>
-              <Typography as="p" className="text-sm text-muted-foreground">
-                The seller has not set up any payment methods yet, so this checkout cannot be paid right now. Message
-                the seller — once they configure a method in their payment settings, it appears here.
-              </Typography>
+              {methodPayment.paykitOutage ? (
+                <PaykitOutageNotice audience="buyer" surface="order-paykit-outage" />
+              ) : (
+                <Typography as="p" className="text-sm text-muted-foreground">
+                  The seller has not set up any payment methods yet, so this checkout cannot be paid right now. Message
+                  the seller — once they configure a method in their payment settings, it appears here.
+                </Typography>
+              )}
               <Button
                 size="sm"
                 variant="ghost"
@@ -534,8 +540,10 @@ export function MarketplacePaymentStatusCard({
           ) : (
             <>
               {methodPayment.bitcoinOfferUnavailable && (
-                <Typography as="p" className="text-sm text-muted-foreground">
-                  {MARKETPLACE_FAILURE_MESSAGES.bitcoinOfferUnavailable}
+                <Typography as="p" aria-live="polite" className="text-sm text-muted-foreground">
+                  {methodPayment.paykitOutage
+                    ? `${PAYKIT_OUTAGE_COPY.title} ${PAYKIT_OUTAGE_COPY.buyerOthers}`
+                    : MARKETPLACE_FAILURE_MESSAGES.bitcoinOfferUnavailable}
                 </Typography>
               )}
               {paykitBindOffered && paymentCodeNote && (
@@ -559,6 +567,7 @@ export function MarketplacePaymentStatusCard({
                     className="rounded-full"
                     disabled={
                       methodPayment.pendingAction !== null ||
+                      methodPayment.paykitOutage ||
                       buyerWallet.state === 'idle' ||
                       bitcoinWalletMissing ||
                       buyerConnectionRequired ||

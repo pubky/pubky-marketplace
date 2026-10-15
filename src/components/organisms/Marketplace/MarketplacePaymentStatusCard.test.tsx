@@ -66,6 +66,7 @@ vi.mock('@/hooks/useMarketplaceOrderPayment/useMarketplaceOrderPayment', () => (
     availableMethods: null,
     paykitAssets: [],
     bitcoinOfferUnavailable: false,
+    paykitOutage: false,
     configError: null,
     deliveryAddress: null,
     pendingAction: null,
@@ -101,6 +102,7 @@ describe('MarketplacePaymentStatusCard', () => {
       availableMethods: null,
       paykitAssets: [],
       bitcoinOfferUnavailable: false,
+      paykitOutage: false,
       configError: null,
       deliveryAddress: null,
       pendingAction: null,
@@ -361,6 +363,7 @@ describe('MarketplacePaymentStatusCard', () => {
       availableMethods: ['paypal'],
       paykitAssets: ['BTC'],
       bitcoinOfferUnavailable: true,
+      paykitOutage: false,
       configError: null,
       deliveryAddress: null,
       pendingAction: null,
@@ -385,6 +388,102 @@ describe('MarketplacePaymentStatusCard', () => {
     ).toBeInTheDocument();
     expect(screen.getByText('The item is held for you once a payment starts.', { exact: false })).toBeInTheDocument();
     expect(screen.queryByText(/never holds funds/i)).not.toBeInTheDocument();
+  });
+
+  it('says Paykit is unreachable instead of "the seller has not set up any payment methods"', () => {
+    vi.mocked(useMarketplaceOrderPayment).mockReturnValue({
+      availableMethods: [],
+      paykitAssets: [],
+      bitcoinOfferUnavailable: true,
+      paykitOutage: true,
+      configError: null,
+      deliveryAddress: null,
+      pendingAction: null,
+      bind: vi.fn(),
+      markPaid: vi.fn(),
+      confirmReceived: vi.fn(),
+    });
+
+    render(
+      <MarketplacePaymentStatusCard
+        order={createOrderFixture('pending_payment')}
+        payment={createPaymentFixture('awaiting_entitlement')}
+        isBuyer
+        adapterMode="transaction-service"
+        advancePayment={async () => false}
+        onPaymentChanged={() => {}}
+      />,
+    );
+
+    expect(screen.getByText('Paykit is temporarily unreachable, retrying…')).toBeInTheDocument();
+    expect(screen.queryByText(/The seller has not set up any payment methods yet/)).not.toBeInTheDocument();
+  });
+
+  it('disables the Paykit entry while Paykit is down, with rail-free copy, and keeps PayPal usable', () => {
+    vi.mocked(useMarketplaceOrderPayment).mockReturnValue({
+      availableMethods: ['paykit', 'paypal'],
+      paykitAssets: ['BTC', 'USDT'],
+      bitcoinOfferUnavailable: true,
+      paykitOutage: true,
+      configError: null,
+      deliveryAddress: null,
+      pendingAction: null,
+      bind: vi.fn(),
+      markPaid: vi.fn(),
+      confirmReceived: vi.fn(),
+    });
+
+    render(
+      <MarketplacePaymentStatusCard
+        order={createOrderFixture('pending_payment')}
+        payment={createPaymentFixture('awaiting_entitlement')}
+        isBuyer
+        adapterMode="transaction-service"
+        advancePayment={async () => false}
+        onPaymentChanged={() => {}}
+      />,
+    );
+
+    expect(screen.getByTestId('order-payment-method-paykit')).toBeDisabled();
+    expect(screen.getByTestId('order-payment-method-paykit')).toHaveTextContent('Continue with Paykit');
+    expect(screen.queryByTestId('order-payment-method-bitcoin')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('order-payment-method-usdt')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Continue with PayPal' })).toBeEnabled();
+    expect(
+      screen.getByText('Paykit is temporarily unreachable, retrying… Paykit returns on its own; PayPal is unaffected.'),
+    ).toBeInTheDocument();
+  });
+
+  it('shows the neutral retrying notice, with no rail named, when Paykit is down and nothing else is offered', () => {
+    vi.mocked(useMarketplaceOrderPayment).mockReturnValue({
+      availableMethods: [],
+      paykitAssets: [],
+      bitcoinOfferUnavailable: true,
+      paykitOutage: true,
+      configError: null,
+      deliveryAddress: null,
+      pendingAction: null,
+      bind: vi.fn(),
+      markPaid: vi.fn(),
+      confirmReceived: vi.fn(),
+    });
+
+    render(
+      <MarketplacePaymentStatusCard
+        order={createOrderFixture('pending_payment')}
+        payment={createPaymentFixture('awaiting_entitlement')}
+        isBuyer
+        adapterMode="transaction-service"
+        advancePayment={async () => false}
+        onPaymentChanged={() => {}}
+      />,
+    );
+
+    const notice = screen.getByRole('status');
+    expect(notice).toHaveAttribute('data-surface', 'order-paykit-outage');
+    expect(notice).toHaveTextContent('Paykit is temporarily unreachable, retrying…');
+    expect(notice).toHaveTextContent('Paying with Paykit will unlock on its own as soon as Paykit is back.');
+    expect(notice).not.toHaveTextContent(/bitcoin|usdt/i);
   });
 
   it.each(['cancelled', 'refunded_external', 'closed', 'completed'] as const)(
@@ -602,6 +701,7 @@ describe('MarketplacePaymentStatusCard', () => {
       availableMethods: ['paykit', 'paypal'],
       paykitAssets: ['BTC'],
       bitcoinOfferUnavailable: false,
+      paykitOutage: false,
       configError: null,
       deliveryAddress: null,
       pendingAction: null,
@@ -653,6 +753,7 @@ describe('MarketplacePaymentStatusCard', () => {
           availableMethods: ['paykit', 'paypal'],
           paykitAssets: ['BTC'],
           bitcoinOfferUnavailable: false,
+          paykitOutage: false,
           configError: null,
           deliveryAddress: needsAddress ? winner : null,
           pendingAction: null,
@@ -737,6 +838,7 @@ describe('MarketplacePaymentStatusCard', () => {
       availableMethods: ['paykit', 'paypal'],
       paykitAssets: ['BTC'],
       bitcoinOfferUnavailable: false,
+      paykitOutage: false,
       configError: null,
       deliveryAddress: null,
       pendingAction: null,
@@ -770,6 +872,7 @@ describe('MarketplacePaymentStatusCard', () => {
       availableMethods: ['paykit', 'paypal'],
       paykitAssets: ['BTC'],
       bitcoinOfferUnavailable: false,
+      paykitOutage: false,
       configError: null,
       deliveryAddress: null,
       pendingAction: null,
@@ -802,6 +905,7 @@ describe('MarketplacePaymentStatusCard', () => {
       availableMethods: ['paykit', 'paypal'],
       paykitAssets: ['BTC'],
       bitcoinOfferUnavailable: false,
+      paykitOutage: false,
       configError: null,
       deliveryAddress: null,
       pendingAction: null,
@@ -850,6 +954,7 @@ describe('MarketplacePaymentStatusCard', () => {
         availableMethods: ['paykit', 'paypal'],
         paykitAssets: ['BTC'],
         bitcoinOfferUnavailable: false,
+        paykitOutage: false,
         configError: null,
         deliveryAddress: null,
         pendingAction: null,

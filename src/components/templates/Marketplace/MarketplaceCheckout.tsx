@@ -40,6 +40,7 @@ import { useMarketplaceOfferCheckout } from '@/hooks/useMarketplaceOfferCheckout
 import { useMarketplaceOffers } from '@/hooks/useMarketplaceOffers/useMarketplaceOffers';
 import { useMarketplaceOrders } from '@/hooks/useMarketplaceOrders/useMarketplaceOrders';
 import { useMarketplaceSellerDeliveryTerms } from '@/hooks/useMarketplaceSellerDeliveryTerms/useMarketplaceSellerDeliveryTerms';
+import { usePaykitOutage } from '@/hooks/usePaykitOutage/usePaykitOutage';
 import { useUsdtPaymentsCapability } from '@/hooks/useUsdtPaymentsCapability/useUsdtPaymentsCapability';
 import { buyerCheckoutProgressCopy } from '@/libs/commerce/bitcoin-buyer-status';
 import { bitcoinPaymentCodeCheckoutNote } from '@/libs/commerce/bitcoin-payment-code';
@@ -53,6 +54,7 @@ import { DELIVERY_EMAIL_MAX_CHARS, DIGITAL_CHECKOUT_COPY, digitalCheckoutLineLab
 import { marketplaceOfferCheckoutFailureMessage } from '@/libs/commerce/failure-messages';
 import { formatCommerceMoney } from '@/libs/commerce/format';
 import { LOCKS_MIXED_CHECKOUT_COPY, locksCheckoutRoute } from '@/libs/commerce/locks-payment';
+import { PAYKIT_OUTAGE_COPY } from '@/libs/commerce/paykit-rail';
 import {
   observedPaymentRail,
   PAYKIT_PICKER_LABEL,
@@ -89,6 +91,7 @@ import { DeliveryKeyBlockedNotice } from '@/molecules/Marketplace/DeliveryKeyBlo
 import { MarketplaceCheckoutSteps } from '@/molecules/Marketplace/MarketplaceCheckoutSteps';
 import { MarketplacePaymentStatusBadge } from '@/molecules/Marketplace/MarketplacePaymentStatusBadge';
 import { MarketplaceSellerLink } from '@/molecules/Marketplace/MarketplaceSellerLink';
+import { PaykitOutageNotice } from '@/molecules/Marketplace/PaykitOutageNotice';
 import { MarketplaceAddressFields } from '@/molecules/MarketplaceAddressFields/MarketplaceAddressFields';
 import { SettingsSectionContent } from '@/molecules/Settings/SettingsSectionContent/SettingsSectionContent';
 import { ContentLayout } from '@/organisms/ContentLayout/ContentLayout';
@@ -282,13 +285,27 @@ function MarketplaceCartCheckout() {
     methods: PaymentMethodKind[] | null;
     sharedAssets: PaymentAsset[];
     sellerAcceptsUsdt: Map<string, boolean> | null;
+    paykitUnreachable: boolean;
   } | null>(null);
   const [railAttempt, setRailAttempt] = useState(0);
+  // Re-reads the rails without blanking them: after a refused payment, and while Paykit is down.
+  const [railRefresh, setRailRefresh] = useState(0);
   const [nowMs, setNowMs] = useState(() => Date.now());
   const sellerKey =
     isOfferCheckout && award
       ? award.listing.sellerPubky
       : [...new Set(checkoutItems.map((item) => item.listing.record.ownerPubky))].join('|');
+  // Only a read for this cart's sellers can show an outage or keep the recheck going.
+  const loadedIsCurrent = sellerKey.length > 0 && loadedMethods?.sellerKey === sellerKey;
+  const {
+    refused: paykitRefused,
+    recheck: paykitRecheck,
+    markRefused: markPaykitRefused,
+    settleRead: settlePaykitRead,
+  } = usePaykitOutage(
+    loadedIsCurrent && (loadedMethods?.paykitUnreachable === true || loadedMethods?.methods === null),
+    sellerKey.length > 0,
+  );
   // Rails loaded for an earlier seller set (or before the cart hydrated) are
   // still loading for this one, never "no payment method".
   const loadedForCart =
@@ -307,6 +324,9 @@ function MarketplaceCartCheckout() {
       ? null
       : (loadedForCart.methods ?? []);
   const availableCheckoutMethods = checkoutRails(isSandbox ? SANDBOX_CHECKOUT_RAILS : (sharedMethods ?? []));
+  // Paykit being down must never read as "this seller has no payment method".
+  const paykitOutageForCart =
+    (loadedForCart?.paykitUnreachable === true || paykitRefused) && !isSandbox && !isLocksCheckout;
   // The one Paykit entry names the assets every seller in the cart accepts; the buyer picks one in Bitkit.
   const paykitAssets =
     isSandbox || isLocksCheckout ? BITCOIN_ONLY_ASSETS : (loadedForCart?.sharedAssets ?? BITCOIN_ONLY_ASSETS);
@@ -320,6 +340,7 @@ function MarketplaceCartCheckout() {
     preferredMethod && availableCheckoutMethods.includes(preferredMethod)
       ? preferredMethod
       : (availableCheckoutMethods[0] ?? null);
+  const paykitBlocksPay = (paykitRefused || paykitOutageForCart) && selectedMethod === 'paykit';
   const isMultiSeller = sellerKey.includes('|');
   const isPaying = isOfferCheckout ? offerPay.isSubmitting : checkout.isPaying;
   const listingRoute = award && getMarketplaceListingRoute(award.listing.sellerPubky, award.listing.listingId);
@@ -350,17 +371,20 @@ function MarketplaceCartCheckout() {
       if (!active) return;
       const configs = results.filter((config): config is NonNullable<typeof config> => config !== null);
       if (configs.length !== results.length) {
-        setLoadedMethods({
+        // A failed read says nothing about Paykit, so the outage it may have been showing carries over.
+        setLoadedMethods((previous) => ({
           sellerKey,
           attempt: railAttempt,
           methods: null,
           sharedAssets: BITCOIN_ONLY_ASSETS,
           sellerAcceptsUsdt: null,
-        });
+          paykitUnreachable: previous?.sellerKey === sellerKey && previous.paykitUnreachable,
+        }));
         return;
       }
       const options = { usdtPaymentsAvailable };
       const assetSets = configs.map((config) => sellerPaykitAssets(config, options));
+      const paykitUnreachable = configs.some((config) => config.paykitUnreachable === true);
       setLoadedMethods({
         sellerKey,
         attempt: railAttempt,
@@ -369,12 +393,22 @@ function MarketplaceCartCheckout() {
         sellerAcceptsUsdt: new Map(
           sellers.map((sellerPubky, index) => [sellerPubky, assetSets[index].includes('USDT')]),
         ),
+        paykitUnreachable,
       });
+      settlePaykitRead(paykitRecheck, !paykitUnreachable);
     });
     return () => {
       active = false;
     };
-  }, [sellerKey, railAttempt, usdtPaymentsAvailable, usdtCapabilityChecking]);
+  }, [
+    sellerKey,
+    railAttempt,
+    railRefresh,
+    paykitRecheck,
+    usdtPaymentsAvailable,
+    usdtCapabilityChecking,
+    settlePaykitRead,
+  ]);
 
   const targetPayingIds = [...new Set([...payingOrderIds, ...(hashOrderId ? [hashOrderId] : [])])];
   const focusedPaying = orders.orders.filter((view) => targetPayingIds.includes(view.order.id));
@@ -441,6 +475,7 @@ function MarketplaceCartCheckout() {
     !buyerWalletChecking &&
     !buyerConnectionRequired &&
     (!isOfferCheckout || offerEligible) &&
+    !paykitBlocksPay &&
     (isSandbox || (sharedMethods !== null && sharedMethods.length > 0 && selectedMethod !== null));
 
   const paymentCodeNote = paykitSelected ? bitcoinPaymentCodeCheckoutNote(getPaykitServerApi()) : null;
@@ -464,15 +499,17 @@ function MarketplaceCartCheckout() {
                   ? 'Pay unlocks once your Bitkit wallet is checked.'
                   : railsFailed
                     ? 'Pay unlocks once payment options load.'
-                    : sharedMethods && sharedMethods.length === 0 && !isSandbox
-                      ? isMultiSeller
-                        ? 'Choose sellers that share a payment method.'
-                        : 'Pay unlocks once this seller sets up a payment method.'
-                      : buyerConnectionRequired
-                        ? 'Check your Bitkit connection to pay with Paykit.'
-                        : isOfferCheckout && !offerEligible
-                          ? 'This offer is not available for checkout.'
-                          : 'Fill in delivery details and choose a payment method to pay.';
+                    : paykitBlocksPay || (paykitOutageForCart && sharedMethods?.length === 0)
+                      ? PAYKIT_OUTAGE_COPY.title
+                      : sharedMethods && sharedMethods.length === 0 && !isSandbox
+                        ? isMultiSeller
+                          ? 'Choose sellers that share a payment method.'
+                          : 'Pay unlocks once this seller sets up a payment method.'
+                        : buyerConnectionRequired
+                          ? 'Check your Bitkit connection to pay with Paykit.'
+                          : isOfferCheckout && !offerEligible
+                            ? 'This offer is not available for checkout.'
+                            : 'Fill in delivery details and choose a payment method to pay.';
   const payDisabledReason = locksRoute === 'mixed' ? LOCKS_MIXED_CHECKOUT_COPY : checkoutPayDisabledReason;
 
   const removeAwardLine = async () => {
@@ -519,6 +556,8 @@ function MarketplaceCartCheckout() {
       setAwardOutcome('success');
       return;
     }
+    if (result.paykitUnavailable) markPaykitRefused();
+    setRailRefresh((refresh) => refresh + 1);
     if (result.code === 'AWARD_UNAVAILABLE') {
       await removeAwardLine();
       await offers.refresh();
@@ -548,7 +587,11 @@ function MarketplaceCartCheckout() {
     // real rail. A Locks checkout binds none either (`locksCheckoutRoute`).
     const method = isSandbox || isLocksCheckout ? null : selectedMethod;
     const result = await checkout.pay(method, () => void pay());
-    if (!result.ok) return;
+    if (!result.ok) {
+      if (result.paykitUnavailable) markPaykitRefused();
+      setRailRefresh((refresh) => refresh + 1);
+      return;
+    }
     setPayingOrderIds(result.orderIds);
     if (result.orderIds[0]) {
       window.history.replaceState(null, '', withBasePath(getMarketplaceCheckoutRoute(result.orderIds[0])));
@@ -1122,6 +1165,8 @@ function MarketplaceCartCheckout() {
                         </div>
                       ) : sharedMethods === null ? (
                         <Skeleton className="h-11 w-full" aria-label="Loading payment methods" />
+                      ) : paykitOutageForCart && sharedMethods.length === 0 ? (
+                        <PaykitOutageNotice audience="buyer" surface="checkout-paykit-outage" />
                       ) : sharedMethods.length === 0 && !isSandbox ? (
                         <Typography as="p" role="alert" className="text-sm text-muted-foreground">
                           {isMultiSeller
@@ -1146,6 +1191,11 @@ function MarketplaceCartCheckout() {
                             </Button>
                           ))}
                         </div>
+                      )}
+                      {paykitOutageForCart && sharedMethods !== null && sharedMethods.length > 0 && (
+                        <Typography as="p" aria-live="polite" className="text-sm text-muted-foreground">
+                          {PAYKIT_OUTAGE_COPY.title} {PAYKIT_OUTAGE_COPY.buyerOthers}
+                        </Typography>
                       )}
                       {paykitChosen && (
                         <Typography

@@ -81,7 +81,12 @@ export const sellerPaymentConfigSchema = z
     }),
   );
 
-export type SellerPaymentConfig = z.infer<typeof sellerPaymentConfigSchema>;
+/**
+ * `paykitUnreachable` is not on the wire: the client adds it when Bitcoin is
+ * not offered and the service's `/health` says the Paykit rail is down, so
+ * "Paykit is down" never reads as "the seller has no payment method".
+ */
+export type SellerPaymentConfig = z.infer<typeof sellerPaymentConfigSchema> & { paykitUnreachable?: boolean };
 
 /**
  * The assets one Paykit request from this seller offers, Bitcoin first. USDT

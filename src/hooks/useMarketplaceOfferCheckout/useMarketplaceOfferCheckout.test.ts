@@ -2,6 +2,9 @@ import { act, renderHook } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import { DELIVERY_KEY_COPY } from '@/libs/commerce/delivery-key-copy';
+import { AppError } from '@/libs/error/error';
+import { ClientErrorCode } from '@/libs/error/error.codes';
+import { ErrorCategory, ErrorService } from '@/libs/error/error.types';
 import type { MarketplaceOffer } from '@/services/marketplace/marketplace';
 import { useMarketplaceOfferCheckout } from './useMarketplaceOfferCheckout';
 
@@ -106,6 +109,39 @@ describe('useMarketplaceOfferCheckout', () => {
     vi.mocked(CommerceController.sealDeliveryAddressForCheckout).mockResolvedValue([SEALED]);
     vi.spyOn(globalThis.crypto, 'randomUUID').mockReturnValue('00000000-0000-4000-8000-000000000704');
   });
+
+  it.each(['paykit', 'bitcoin'] as const)(
+    'reports a %s bind refused because Paykit is unreachable, and only that refusal',
+    async (method) => {
+      const refusal = (reason: string) =>
+        new AppError({
+          category: ErrorCategory.Client,
+          code: ClientErrorCode.BAD_REQUEST,
+          message: 'SENTINEL',
+          service: ErrorService.Marketplace,
+          operation: 'bindPaymentMethod',
+          context: { statusCode: reason === 'paykit_unavailable' ? 503 : 409, reason, paymentMethod: method },
+        });
+      vi.mocked(CommerceController.bindPaymentMethod)
+        .mockRejectedValueOnce(refusal('paykit_unavailable'))
+        .mockRejectedValueOnce(refusal('paykit_rejected'));
+      const { result } = renderHook(() => useMarketplaceOfferCheckout());
+
+      await act(async () => {
+        await expect(result.current.submit(offer, address, method)).resolves.toEqual({
+          ok: false,
+          code: 'BIND_FAILED',
+          paykitUnavailable: true,
+        });
+      });
+      await act(async () => {
+        await expect(result.current.submit(offer, address, method)).resolves.toEqual({
+          ok: false,
+          code: 'BIND_FAILED',
+        });
+      });
+    },
+  );
 
   it('re-reads the accepted projection and submits its locked award terms', async () => {
     const completed = vi.fn();

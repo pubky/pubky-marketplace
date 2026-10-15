@@ -1047,6 +1047,25 @@ describe('useMarketplaceCheckout', () => {
       }),
     );
 
+    // A refused bind because Paykit is down is reported on the result so the page can retry on its own.
+    vi.mocked(CommerceController.bindPaymentMethod).mockRejectedValueOnce(
+      new AppError({
+        category: ErrorCategory.Client,
+        code: ClientErrorCode.BAD_REQUEST,
+        message: 'SENTINEL',
+        service: ErrorService.Marketplace,
+        operation: 'bindPaymentMethod',
+        context: { statusCode: 503, reason: 'paykit_unavailable' },
+      }),
+    );
+    const paykitDown = await act(async () => result.current.pay('bitcoin'));
+    expect(paykitDown).toMatchObject({ ok: false, paykitUnavailable: true });
+    expect(vi.mocked(toast).mock.calls.at(-1)?.[0]).toMatchObject({
+      variant: 'error',
+      description: 'Paykit is temporarily unreachable, retrying…',
+    });
+    expect(paidAfterFail.paykitUnavailable).toBeUndefined();
+
     // service#84: an unfinished Paykit wallet refuses the bind. The toast names it and offers
     // Try again, which runs only the caller's step on click; the hook never retries by itself.
     const onRetry = vi.fn();

@@ -220,7 +220,7 @@ describe('marketplacePaymentMethodFailureMessage', () => {
       context: { statusCode: 503, reason: 'paykit_unavailable' },
     });
     expect(marketplacePaymentMethodFailureMessage(unavailable, 'fallback')).toBe(
-      'Bitcoin payment requests are unavailable right now. If you haven’t set up Bitkit for this pubky yet, do that first. Then try again shortly.',
+      'Paykit is temporarily unreachable, retrying…',
     );
   });
 
@@ -258,10 +258,7 @@ describe('marketplacePaymentMethodFailureMessage', () => {
         'paykit_expiry_inconsistent',
         'The Bitcoin payment window didn’t match this checkout, so Bitcoin wasn’t started. Try again, or choose another payment method.',
       ],
-      [
-        'paykit_unavailable',
-        'Bitcoin payment requests are unavailable right now. If you haven’t set up Bitkit for this pubky yet, do that first. Then try again shortly.',
-      ],
+      ['paykit_unavailable', 'Paykit is temporarily unreachable, retrying…'],
     ])('maps the %s refusal to static buyer copy', (reason, copy) => {
       const message = marketplacePaymentMethodFailureMessage(bindRefusal(reason), 'fallback');
       expect(message).toBe(copy);
@@ -310,10 +307,7 @@ describe('marketplacePaymentMethodFailureMessage', () => {
         'paykit_total_inconsistent',
         'The amount didn’t match this checkout, so Paykit wasn’t started. Try again, or choose another payment method.',
       ],
-      [
-        'paykit_unavailable',
-        'Paykit payment requests are unavailable right now. If you haven’t set up Bitkit for this pubky yet, do that first. Then try again shortly.',
-      ],
+      ['paykit_unavailable', 'Paykit is temporarily unreachable, retrying…'],
       [
         'seller_account_unclaimed',
         'This seller can’t take Paykit payments right now. Choose another payment method, or contact the seller.',

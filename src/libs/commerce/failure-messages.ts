@@ -1,4 +1,5 @@
 import { CHECKOUT_HOLD_COPY } from '@/libs/commerce/checkout-hold';
+import { PAYKIT_OUTAGE_COPY } from '@/libs/commerce/paykit-rail';
 import { SHIPPO_FAILURE_REASONS } from '@/libs/commerce/shipping';
 import { isAppError } from '@/libs/error/error';
 import { ValidationErrorCode } from '@/libs/error/error.codes';
@@ -302,10 +303,7 @@ export const MARKETPLACE_PAYMENT_METHOD_REASON_MESSAGES: ReadonlyMap<string, str
     'paykit_total_inconsistent',
     'The Bitcoin amount didn’t match this checkout, so Bitcoin wasn’t started. Try again, or choose another payment method.',
   ],
-  [
-    'paykit_unavailable',
-    'Bitcoin payment requests are unavailable right now. If you haven’t set up Bitkit for this pubky yet, do that first. Then try again shortly.',
-  ],
+  ['paykit_unavailable', PAYKIT_OUTAGE_COPY.title],
   ['payment_method_already_bound', 'A payment method is already bound to this checkout.'],
   ['payment_not_awaiting', 'The payment is no longer awaiting a method.'],
   ['payments_disabled', 'Payments are disabled on this marketplace.'],
@@ -352,10 +350,7 @@ export const PAYKIT_PAYMENT_METHOD_REASON_MESSAGES: ReadonlyMap<string, string> 
     'paykit_total_inconsistent',
     'The amount didn’t match this checkout, so Paykit wasn’t started. Try again, or choose another payment method.',
   ],
-  [
-    'paykit_unavailable',
-    'Paykit payment requests are unavailable right now. If you haven’t set up Bitkit for this pubky yet, do that first. Then try again shortly.',
-  ],
+  ['paykit_unavailable', PAYKIT_OUTAGE_COPY.title],
   [
     'seller_account_unclaimed',
     'This seller can’t take Paykit payments right now. Choose another payment method, or contact the seller.',
@@ -395,6 +390,11 @@ export function marketplacePaymentMethodReasonMessage(
     MARKETPLACE_PAYMENT_METHOD_REASON_MESSAGES.get('unavailable') ??
     'The payment method request was refused.'
   );
+}
+
+/** True when the service could not reach Paykit to start the payment request. */
+export function isPaykitUnavailableRefusal(error: unknown): boolean {
+  return paymentMethodRefusalLookupKeys(error).includes('paykit_unavailable');
 }
 
 /** True for the bind refusal that asks the buyer to finish Paykit wallet setup. */

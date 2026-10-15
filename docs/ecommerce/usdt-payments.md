@@ -63,6 +63,8 @@ The toggle stays disabled until `ready` (it can always be switched off), and the
 
 **Reconnect.** `CommerceController.getPaykitReconnectUrl` builds `GET <setup origin>/setup/reconnect?creator&return_to&state` beside the setup URL builder. Reconnect requires `creator` and upstream `/setup` rejects it, so reconnect always sends it. It runs in the same embedded iframe and `paykit-setup-callback` listener as setup. On completion the Shop re-reads the own configuration and closes the dialog only when the service now reports `ready`; otherwise it says Bitkit did not confirm a USDT address and offers Retry. The Shop never receives or displays the USDT address: it lives in Bitkit and paykit-server.
 
+**Bitcoin reconnect.** Upstream `/setup` refuses a creator paykit-server already holds (`422 setup_failed` after the Bitkit approval), for example a seller set up for Locks or from another Shop, so with `paykitServerApi=upstream` the Bitcoin card's Step 2 opens the same `/setup/reconnect` route once the wallet reads as connected ("Reconnect Bitkit"). When an initial setup fails, the dialog and the card offer "Reconnect Bitkit" next to Retry, because the setup status cannot tell a missing creator from one whose authority needs re-approval.
+
 ## Refund address (W4)
 
 The marketplace never holds funds, so a USDT refund is two human steps the Shop only records: the buyer confirms an Arbitrum One USDT address on the order page, and the seller sends the refund with an ordinary USDT send in Bitkit and records the Arbitrum transaction hash with "Record refund". Nothing is detected or checked on-chain; the Shop never calls a recorded refund "verified" or "confirmed on Arbitrum", and the Paykit `resolved: refunded` outcome is an annotation, never a verified refund.
