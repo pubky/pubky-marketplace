@@ -4,7 +4,7 @@ How a Shop release goes from merged pull requests to a proven deployment on <htt
 operations (kill switch, rollback, Railway restarts, domain moves) are in [`runbook-production.md`](runbook-production.md).
 Local setup is in [`onboarding.md`](onboarding.md) and [`RUNNING.md`](RUNNING.md).
 
-"Live" means the deployed grant sign-in, shared-session lifecycle and service-approval journeys have passed against the release revisions. A green build or synthetic network fixture is not that proof. The older cookie-based production script below cannot certify the current grant-only release.
+"Live" means the deployed grant sign-in, shared-session lifecycle and service-approval journeys have passed against the release revisions. A green build or synthetic network fixture is not that proof. `scripts/release/release-proof.mjs` drives the grant sign-in and the marketplace approvals; see [Signed-in production proof](#signed-in-production-proof) for what it does not cover yet.
 
 ## Branches and targets
 
@@ -201,7 +201,7 @@ current one. The commands are in [`runbook-production.md`](runbook-production.md
 
 ## Signed-in production proof
 
-**Legacy harness, not a grant-release gate.** The scripts in this section still require Ring cookie sign-in, an exported cookie session and the old AuthToken exchange. Their assertions deliberately do not match the current grant-only UI. Preserve this recipe for historical deployments; do not run it against this release or report its old 34/39-check counts as grant coverage. Migrating that harness is separate work. Until it is migrated, use the [grant release requirements above](#grant-sdk-and-embedded-release-requirements) and record the deployed manual results; the synthetic launch gate alone cannot establish live signer/payment completion.
+**Grant sign-in.** `release-proof.mjs` signs in through the Shop's `signin_grant` QR links, as Pubky Ring and Bitkit do, and plays the signer for the marketplace "Enable purchases" and "Enable selling" approvals. It does not use the retired cookie sign-in. `production-paypal-fixture.mjs`, the wrapper that publishes the PayPal test listing for step 4, has not been ported: it still signs the seller in with the cookie flow and looks for the old "Add to cart" button, so it cannot run against this release. Until it is ported, publish the fixture listing another way and pass its path as `PROOF_PAYPAL_LISTING_URL`; without it step 4 fails. The synthetic launch gate alone cannot establish live signer or payment completion, so keep the deployed results with the [grant release requirements above](#grant-sdk-and-embedded-release-requirements).
 
 `scripts/release/release-proof.mjs` drives the deployed Shop in headless Chromium with two test seats and the same
 `approveAuthRequest` call Pubky Ring and Bitkit's Paykit make. `scripts/release/production-paypal-fixture.mjs` wraps
@@ -224,6 +224,7 @@ command line, or the evidence folder.
 | `PROOF_EVIDENCE`                                              | Evidence folder for this release, outside the repository (the scripts refuse a path inside it)                                                                                                                                                                                                                                                                                                                                        |
 | `EXPECTED_DPL`                                                | The `dpl_…` id now aliased to the origin. The proof fails if production serves anything else                                                                                                                                                                                                                                                                                                                                          |
 | `PROOF_ORIGIN`, `PROOF_SERVICE`, `PROOF_NEXUS`, `PROOF_RELAY` | Optional overrides. Defaults: `https://shop.pubky.app`, the production marketplace service, Nexus `-7108`, `https://httprelay.pubky.app/inbox`. When the Shop is served under a mount path, `PROOF_ORIGIN` carries it (`https://pubky.app/shop`, or `https://pubky.app/shop-embed` when the App owns `/shop` and frames the build, because the proof drives the build itself); every route the scripts open is joined under that path |
+| `PROOF_CLIENT_ID`, `PROOF_MARKETPLACE_CLIENT_ID`              | Optional. The Shop's grant client id when the deployment overrides `shop.pubky.app` (`PUBKY_RUNTIME_SHOP_GRANT_CLIENT_ID`), and the client id the marketplace approval links must carry; unset, any non-empty marketplace client id passes and its capabilities are still checked                                                                                                                                                     |
 
 The production seats belong to the product owner, who passes seat backups, the passphrase and the PayPal address out
 of band. The seller seat owns the long-lived "Cutover test — do not buy" listings and must not buy its own listing;
@@ -245,22 +246,22 @@ EXPECTED_DPL=dpl_<new> node scripts/release/production-paypal-fixture.mjs proof 
   node scripts/release/release-proof.mjs | tee "$PROOF_EVIDENCE/run.log"
 ```
 
-The legacy harness reports success when `release-proof.mjs` prints `RESULT PASS` and the fixture prints
-`PAYPAL_FIXTURE proof OK`. That result does not replace the grant-session release requirements above.
+The proof reports success when `release-proof.mjs` prints `RESULT PASS` (and, when the fixture wrapper is used, the
+fixture prints `PAYPAL_FIXTURE proof OK`). That result does not replace the grant-session release requirements above.
 
 ### What it checks
 
-These are the cookie-era script assertions, not the current authentication contract. Step 3 is unused.
+Step 3 is unused. The marketplace approval dialogs are handled wherever they appear; each approval link is checked to request the marketplace grant and nothing more before the signer approves it.
 
-| Step    | Checks                                                                                                                                                                                                                                                         |
-| ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 0       | Production serves `EXPECTED_DPL`                                                                                                                                                                                                                               |
-| 1       | Ring and Bitkit QRs are both live on `/sign-in`; the Ring QR is the cookie sign-in URL for the Shop's capabilities and is not in the DOM; one approval gives exactly one homeserver `POST /session` and one marketplace `POST /v1/auth/sessions`, and no grant |
-| 2       | The Bitkit QR is a `signin_grant` for the Shop's capabilities and client id `shop.pubky.app`; approval signs in with a grant record; reload restores it; sign-out from Settings clears it and holds across a reload                                            |
-| 4       | The buyer seat reaches checkout on the fixture listing; `payment-config` loads; PayPal is offered; no "no payment method" copy; nothing is paid and no order command is sent; the cart is emptied; the buyer signs out                                         |
-| 5       | Activity is in the marketplace nav, has no unrecognized events, lists order rows, and a row opens its order card on the Orders page. If the seller's rows only point at orders its Orders page hides, the buyer seat is used                                   |
-| 6       | Sign-out of the Ring session from Settings clears the Shop state, ends the homeserver session (`DELETE /session` 2xx), and holds across a reload                                                                                                               |
-| cleanup | Every marketplace session either seat gained during the run is revoked, the audit bearer last, and none remain                                                                                                                                                 |
+| Step    | Checks                                                                                                                                                                                                                                                                                                                                      |
+| ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 0       | Production serves `EXPECTED_DPL`                                                                                                                                                                                                                                                                                                            |
+| 1       | Ring and Bitkit QRs are both live on `/sign-in`; the Ring QR is a `signin_grant` for client id `shop.pubky.app` and the Shop's five capabilities and is not in the DOM; the approval is exchanged for a grant session, leaves a grant record with signer `ring` and no cookie export, mints no homeserver cookie and no marketplace session |
+| 2       | The Bitkit QR is a `signin_grant` for the Shop's five capabilities and client id `shop.pubky.app`; approval signs in with a grant record (signer `bitkit`) and no cookie export; reload restores it; sign-out from Settings clears it and holds across a reload                                                                             |
+| 4       | The buyer seat presses Buy on the fixture listing and approves "Enable purchases" as the signer; it reaches checkout; `payment-config` loads; PayPal is offered; no "no payment method" copy; nothing is paid and no order command is sent; the cart is emptied; the buyer signs out                                                        |
+| 5       | Activity is in the marketplace nav, has no unrecognized events, lists order rows, and a row opens its order card on the Orders page. If the seller's rows only point at orders its Orders page hides, the buyer seat is used                                                                                                                |
+| 6       | Sign-out of the Ring grant from Settings clears the Shop state, revokes the grant on the homeserver (`DELETE /auth/grant` 2xx), and holds across a reload                                                                                                                                                                                   |
+| cleanup | Every marketplace session either seat gained during the run is revoked, the audit bearer last, and none remain                                                                                                                                                                                                                              |
 
 A full pass is 34 checks, or 39 when step 5 falls back to the buyer seat. Rows reported as `KNOWN` are informational
 defects outside the release and never gate it.

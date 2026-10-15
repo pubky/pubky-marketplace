@@ -1,22 +1,30 @@
 #!/usr/bin/env node
-// Signed-in Shop release proof in real Chromium against production.
-//   1. Ring sign-in with the Ring and Bitkit QRs both live; exactly one session.
-//   2. Bitkit grant sign-in (Signer.approveAuthRequest, the binding Bitkit's Paykit calls), reload, sign-out.
+// Signed-in Shop release proof in real Chromium against production (SDK 0.16 grant sign-in).
+//   1. Ring grant sign-in with the Ring and Bitkit QRs both live: the QR is a signin_grant link for the Shop client
+//      id and its five capabilities, approved with Signer.approveAuthRequest; the Shop auth store ends with a grant
+//      record and no cookie export.
+//   2. Bitkit grant sign-in (the same call Bitkit's Paykit makes), reload restores the grant, sign-out.
 //   (Step ids are stable across releases; 3 is unused.)
 //   4. Buyer seat checkout on the PayPal fixture listing (PROOF_PAYPAL_LISTING_URL, set by
-//      production-paypal-fixture.mjs proof): payment-config loads, PayPal is offered. Pay is never clicked.
+//      production-paypal-fixture.mjs proof): the "Enable purchases" approval is played as the signer,
+//      payment-config loads, PayPal is offered. Pay is never clicked.
 //   5. Activity opens an order; the order page shows it (buyer seat when the seller's rows only
 //      point at orders its Orders page hides — recorded as a known defect).
-//   6. Sign-out of the Ring session through Settings, held across reload.
+//   6. Sign-out of the Ring grant through Settings, held across reload.
+// Marketplace approval dialogs ("Enable purchases" and "Enable selling") are approved as the signer, after their
+// link is checked to ask for the marketplace grant and nothing more.
 // Afterwards every marketplace session the seat gained during the run is revoked and the
 // revocation is verified. Nothing else is written: the cart is local (Dexie) and is emptied.
 // Env: PROOF_EVIDENCE and EXPECTED_DPL (required), seats (see seats.mjs), PROOF_ORIGIN (with the mount path when
 // the Shop is embedded, e.g. https://pubky.app/shop), PROOF_SERVICE,
-// PROOF_RELAY, PROOF_PAYPAL_LISTING_URL (fixture listing path for step 4, set by production-paypal-fixture.mjs).
+// PROOF_RELAY, PROOF_CLIENT_ID (the Shop's grant client id when the deployment overrides shop.pubky.app),
+// PROOF_MARKETPLACE_CLIENT_ID (checked on marketplace approval links when set),
+// PROOF_PAYPAL_LISTING_URL (fixture listing path for step 4, set by production-paypal-fixture.mjs).
 // Runbook: docs/ecommerce/release.md.
 // Output: 8-char pubky prefixes only; auth URLs, exports and bearers never print.
 import { appendFileSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { inspectGrantLink, MARKETPLACE_GRANTS } from './grant-links.mjs';
 import {
   evidenceDir,
   loadBuyerSeat,
@@ -29,7 +37,7 @@ import {
 } from './seats.mjs';
 
 const { chromium } = repoRequire('playwright');
-const { AuthFlowKind, Pubky, SigninGrantDeepLink } = repoRequire('@synonymdev/pubky');
+const { AuthFlowKind, Pubky } = repoRequire('@synonymdev/pubky');
 
 const { origin: ORIGIN, basePath: BASE_PATH, at } = proofTarget();
 const signInPath = `${BASE_PATH}/sign-in`;
@@ -39,7 +47,9 @@ if (!EXPECTED_DPL) throw new Error('set EXPECTED_DPL to the dpl_… id now alias
 const SERVICE = process.env.PROOF_SERVICE ?? 'https://marketplace-service-production-ce23.up.railway.app';
 const RELAY = process.env.PROOF_RELAY ?? 'https://httprelay.pubky.app/inbox';
 const CAPABILITIES = shopCapabilities();
-const CLIENT_ID = 'shop.pubky.app';
+const CLIENT_ID = process.env.PROOF_CLIENT_ID ?? 'shop.pubky.app';
+const MARKETPLACE_CLIENT_ID = process.env.PROOF_MARKETPLACE_CLIENT_ID ?? null;
+const MARKETPLACE_SESSION_KEY = 'pubky.marketplace.session.v1';
 const FORBIDDEN_COPY = /hasn't set up a payment method|do not share a payment method/i;
 const RUN_START = Date.now();
 mkdirSync(EVIDENCE, { recursive: true });
@@ -117,6 +127,7 @@ async function authState(page) {
       currentUserPubky: state.currentUserPubky ?? null,
       sessionExport: state.sessionExport ?? null,
       grantSessionRecordId: state.grantSessionRecordId ?? null,
+      grantSigner: state.grantSigner ?? null,
     };
   });
 }
@@ -127,37 +138,52 @@ const waitForAppReady = async (page, timeout = 180_000) =>
     null,
     { timeout },
   );
-const signedInAs = (page, key, timeout = 180_000) =>
+// A grant sign-in is complete when the auth store holds the saved grant's record id and no cookie export.
+const signedInWithGrant = (page, expected = pubky, timeout = 180_000) =>
   page.waitForFunction(
-    ([expected, field]) => {
+    (wanted) => {
       const raw = localStorage.getItem('shop-auth-store') ?? localStorage.getItem('auth-store');
       const state = raw ? (JSON.parse(raw).state ?? {}) : {};
-      return state.currentUserPubky === expected && typeof state[field] === 'string';
+      return (
+        state.currentUserPubky === wanted &&
+        typeof state.grantSessionRecordId === 'string' &&
+        state.grantSessionRecordId.length > 0 &&
+        (state.sessionExport ?? null) === null
+      );
     },
-    [pubky, key],
+    expected,
     { timeout },
   );
+
+const QR_LABELS = { ring: 'Copy authentication link', bitkit: 'Copy Bitkit authentication link' };
+
+// The sign-in card shows one signer's QR at a time; both flows are live from page load.
+async function showSigner(page, signer) {
+  const toggle = page.getByRole('radio', { name: signer === 'ring' ? 'Pubky Ring' : 'Bitkit' });
+  await toggle.waitFor({ state: 'visible', timeout: 180_000 });
+  // A click before the page hydrates does nothing, so click again until the signer is selected.
+  for (let attempt = 0; attempt < 12 && (await toggle.getAttribute('aria-checked')) !== 'true'; attempt += 1) {
+    await toggle.click();
+    await page.waitForTimeout(1000);
+  }
+  await page.waitForFunction(
+    (label) => {
+      const el = document.querySelector(`[aria-label="${label}"]`);
+      return Boolean(el && !el.disabled && el.querySelector('[data-testid="qr-auth-url"]'));
+    },
+    QR_LABELS[signer],
+    { timeout: 180_000 },
+  );
+  return await page.getByRole('button', { name: QR_LABELS[signer] }).first().isVisible();
+}
 
 async function bothQrsLive(page) {
   await page.goto(at('/sign-in'), { waitUntil: 'domcontentloaded', timeout: 180_000 });
   await waitForAppReady(page);
-  await page
-    .getByRole('button', { name: 'Copy authentication link' })
-    .first()
-    .waitFor({ state: 'visible', timeout: 180_000 });
-  await page.waitForFunction(
-    () =>
-      ['Copy authentication link', 'Copy Bitkit authentication link'].every((label) => {
-        const el = document.querySelector(`[aria-label="${label}"]`);
-        return Boolean(el && !el.disabled && el.querySelector('[data-testid="qr-auth-url"]'));
-      }),
-    null,
-    { timeout: 180_000 },
-  );
-  return (
-    (await page.getByRole('button', { name: 'Copy authentication link' }).first().isVisible()) &&
-    (await page.getByRole('button', { name: 'Copy Bitkit authentication link' }).first().isVisible())
-  );
+  const ringLive = await showSigner(page, 'ring');
+  const bitkitLive = await showSigner(page, 'bitkit');
+  const ringStillLive = await showSigner(page, 'ring');
+  return ringLive && bitkitLive && ringStillLive;
 }
 
 async function copyQrUrl(page, label) {
@@ -183,6 +209,73 @@ async function qrDomLeak(page, authUrl) {
     }),
     secret,
   );
+}
+
+const marketplaceSessionFor = (page, owner) =>
+  page.evaluate(
+    ([key, wanted]) => {
+      try {
+        return JSON.parse(localStorage.getItem(key) ?? 'null')?.pubky === wanted;
+      } catch {
+        return false;
+      }
+    },
+    [MARKETPLACE_SESSION_KEY, owner],
+  );
+
+// Signing in does not mint a marketplace session: the Shop asks for it when a signed-in user buys, opens Orders or
+// sells, with an "Enable purchases" or "Enable selling" approval. This plays the signer for that approval, after
+// its link is checked to ask for the marketplace grant and nothing more. It returns false when no approval was
+// asked for (the seat already has its marketplace session, or the page needs none).
+async function approveMarketplaceAccess(page, keypair, { settleMs = 6000 } = {}) {
+  const owner = keypair.publicKey.z32();
+  const dialog = page.getByRole('dialog', { name: /Enable (purchases|selling|device sync|messages)/ });
+  const card = page.getByRole('alert').getByRole('button', { name: 'Authorize', exact: true }).first();
+  const deadline = Date.now() + settleMs;
+  while (Date.now() < deadline) {
+    if (await marketplaceSessionFor(page, owner)) return false;
+    if (await dialog.isVisible().catch(() => false)) break;
+    if (await card.isVisible().catch(() => false)) {
+      await card.click();
+      await dialog.waitFor({ state: 'visible', timeout: 15_000 });
+      break;
+    }
+    await page.waitForTimeout(250);
+  }
+  if (!(await dialog.isVisible().catch(() => false))) return false;
+  const title = (
+    (await dialog
+      .getByRole('heading')
+      .first()
+      .innerText()
+      .catch(() => '')) || 'marketplace approval'
+  )
+    .replace(/\s+/g, ' ')
+    .trim();
+  await dialog.locator('[data-testid="qr-auth-url"]').first().waitFor({ state: 'attached', timeout: 120_000 });
+  const url = await copyQrUrl(page, 'Copy authorization link');
+  const inspected = inspectGrantLink(url, { clientId: MARKETPLACE_CLIENT_ID, capabilitySets: MARKETPLACE_GRANTS });
+  if (inspected.problems.length > 0) {
+    throw new Error(`"${title}" link is not the marketplace grant: ${inspected.problems.join('; ')}`);
+  }
+  await new Pubky().signer(keypair).approveAuthRequest(url);
+  log(
+    `marketplace: approved "${title}" as ${prefix(owner)} (client ${inspected.clientId}, ${inspected.capabilities.length} caps)`,
+  );
+  await page.waitForFunction(
+    ([key, wanted]) => {
+      try {
+        return JSON.parse(localStorage.getItem(key) ?? 'null')?.pubky === wanted;
+      } catch {
+        return false;
+      }
+    },
+    [MARKETPLACE_SESSION_KEY, owner],
+    { timeout: 180_000 },
+  );
+  await dialog.waitFor({ state: 'hidden', timeout: 60_000 }).catch(() => {});
+  (summary.marketplaceApprovals ??= []).push({ title, seat: prefix(owner), clientId: inspected.clientId });
+  return true;
 }
 
 async function signOutThroughSettings(page) {
@@ -233,7 +326,7 @@ async function emptyCart(page) {
 
 // Step 4 runs as the buyer seat on the seller-seat fixture listing that
 // production-paypal-fixture.mjs publishes (staging: staging-fixture.mjs); a seller cannot buy its own listing.
-async function paypalCheckout(page, commands, href) {
+async function paypalCheckout(page, commands, href, buyer) {
   const sellerOf = (value) => {
     const parts = value.split('/');
     const index = parts.indexOf('listing');
@@ -261,10 +354,10 @@ async function paypalCheckout(page, commands, href) {
     await page
       .waitForFunction(
         () => {
-          const button = [...document.querySelectorAll('button')].find((el) =>
-            /Add to cart|Approve to buy|Sold out|Held|Unavailable|cannot buy|Checking availability/.test(
-              el.textContent || '',
-            ),
+          const button = [...document.querySelectorAll('button')].find(
+            (el) =>
+              /^Buy$/.test((el.textContent || '').trim()) ||
+              /Sold out|Held|Unavailable|cannot buy|Checking availability/.test(el.textContent || ''),
           );
           return Boolean(button && !/Checking availability/.test(button.textContent || ''));
         },
@@ -272,13 +365,14 @@ async function paypalCheckout(page, commands, href) {
         { timeout: 30_000 },
       )
       .catch(() => {});
-    const add = page.getByRole('button', { name: 'Add to cart', exact: true }).first();
+    const add = page.getByRole('button', { name: 'Buy', exact: true }).first();
     if (
       !((await add.count()) && (await add.isVisible().catch(() => false)) && (await add.isEnabled().catch(() => false)))
     ) {
-      return { sellerHasPaypal, error: `fixture listing "${title}" has no enabled Add to cart for the buyer` };
+      return { sellerHasPaypal, error: `fixture listing "${title}" has no enabled Buy for the buyer` };
     }
     await add.click();
+    await approveMarketplaceAccess(page, buyer);
     await page.waitForTimeout(1200);
     await page.goto(at('/marketplace/cart'), { waitUntil: 'domcontentloaded' });
     await waitForAppReady(page);
@@ -355,9 +449,10 @@ async function paypalCheckout(page, commands, href) {
   }
 }
 
-async function renderedOrderCards(page) {
+async function renderedOrderCards(page, keypair) {
   await page.goto(at('/marketplace/orders'), { waitUntil: 'domcontentloaded' });
   await waitForAppReady(page);
+  await approveMarketplaceAccess(page, keypair);
   await page.locator('[data-surface="marketplace-orders"]').waitFor({ state: 'visible', timeout: 60_000 });
   await page
     .waitForFunction(
@@ -382,10 +477,11 @@ async function renderedOrderCards(page) {
 
 // Activity rows link to /marketplace/orders#order-<id>; the Orders page renders only a
 // card per order that belongs in its history (paid/receipted, or held reservations).
-async function activityAndOrder(page, tag) {
-  const rendered = new Set(await renderedOrderCards(page));
+async function activityAndOrder(page, tag, keypair) {
+  const rendered = new Set(await renderedOrderCards(page, keypair));
   await page.goto(at('/marketplace/notifications'), { waitUntil: 'domcontentloaded' });
   await waitForAppReady(page);
+  await approveMarketplaceAccess(page, keypair);
   await page
     .locator('a[href*="#order-"]')
     .first()
@@ -475,16 +571,11 @@ function checkActivity(act, tag) {
 
 async function ringSignIn(page, keypair) {
   await bothQrsLive(page);
-  await new Pubky().signer(keypair).approveAuthRequest(await copyQrUrl(page, 'Copy authentication link'));
-  await page.waitForFunction(
-    (expected) => {
-      const raw = localStorage.getItem('shop-auth-store') ?? localStorage.getItem('auth-store');
-      const state = raw ? (JSON.parse(raw).state ?? {}) : {};
-      return state.currentUserPubky === expected && typeof state.sessionExport === 'string';
-    },
-    keypair.publicKey.z32(),
-    { timeout: 180_000 },
-  );
+  const url = await copyQrUrl(page, 'Copy authentication link');
+  const inspected = inspectGrantLink(url, { clientId: CLIENT_ID, capabilitySets: [CAPABILITIES] });
+  if (inspected.problems.length > 0) throw new Error(`Ring QR is not the Shop grant: ${inspected.problems.join('; ')}`);
+  await new Pubky().signer(keypair).approveAuthRequest(url);
+  await signedInWithGrant(page, keypair.publicKey.z32());
   await page.waitForTimeout(3000);
 }
 
@@ -573,48 +664,47 @@ try {
       check('1', 'Ring and Bitkit QRs are both live on /sign-in', await bothQrsLive(page));
       await shot(page, '01-sign-in-both-qrs.png');
       const ringUrl = await copyQrUrl(page, 'Copy authentication link');
-      const parsed = new URL(ringUrl);
+      const ringLink = inspectGrantLink(ringUrl, { clientId: CLIENT_ID, capabilitySets: [CAPABILITIES] });
       check(
         '1',
-        'Ring QR is the cookie sign-in URL for the Shop caps',
-        parsed.host === 'signin' &&
-          [...parsed.searchParams.keys()].sort().join(',') === 'caps,relay,secret' &&
-          parsed.searchParams.get('caps') === CAPABILITIES,
-        `host=${parsed.host}`,
+        'Ring QR is a signin_grant for the Shop client id and its five capabilities',
+        ringLink.problems.length === 0 && ringLink.capabilities.length === 5,
+        ringLink.problems.join('; ') || `cid=${ringLink.clientId} caps=${ringLink.capabilities.length}`,
       );
       const leak = await qrDomLeak(page, ringUrl);
       check('1', 'the QR slot does not carry the authorization URL in the DOM', !leak.attr && !leak.html);
       await new Pubky().signer(seat).approveAuthRequest(ringUrl);
       log('ring: approved');
-      await signedInAs(page, 'sessionExport');
+      await signedInWithGrant(page);
       await page.waitForFunction((path) => window.location.pathname !== path, signInPath, { timeout: 180_000 });
       await page.waitForTimeout(4000);
       await shot(page, '02-ring-signed-in.png');
       const state = await authState(page);
       check(
         '1',
-        'signed in as the seat with a cookie export and no grant record',
-        state.currentUserPubky === pubky && !state.grantSessionRecordId,
+        'signed in as the seat with a grant record, signer ring and no cookie export',
+        state.currentUserPubky === pubky &&
+          Boolean(state.grantSessionRecordId) &&
+          state.sessionExport === null &&
+          state.grantSigner === 'ring',
         prefix(state.currentUserPubky),
       );
-      const hsPosts = net.filter((e) => e.tag === 'homeserver-session' && e.method === 'POST');
-      const mpPosts = net.filter((e) => e.tag === 'marketplace-session' && e.method === 'POST');
+      const grantPosts = net.filter((e) => e.tag === 'grant' && e.method === 'POST');
       check(
         '1',
-        'one approval → one homeserver POST /session',
-        hsPosts.length === 1 && hsPosts[0].status < 300,
-        hsPosts.map((e) => e.status).join(','),
+        'the approval was exchanged for a grant session (POST /auth/grant 2xx)',
+        grantPosts.some((e) => e.status < 300),
+        grantPosts.map((e) => e.status).join(','),
       );
       check(
         '1',
-        'one approval → one marketplace POST /v1/auth/sessions',
-        mpPosts.length === 1 && mpPosts[0].status < 300,
-        mpPosts.map((e) => e.status).join(','),
+        'no homeserver cookie session was minted for the Ring approval',
+        !net.some((e) => e.tag === 'homeserver-session' && e.method === 'POST'),
       );
       check(
         '1',
-        'no grant session was exchanged for the Ring approval',
-        !net.some((e) => e.tag === 'grant' && e.method === 'POST'),
+        'signing in did not mint a marketplace session',
+        !net.some((e) => e.tag === 'marketplace-session' && e.method === 'POST'),
       );
       check(
         '1',
@@ -624,14 +714,14 @@ try {
           .count()) === 0,
       );
 
-      const act = await activityAndOrder(page, 'seller');
+      const act = await activityAndOrder(page, 'seller', seat);
       summary.activity = { seller: act };
       checkActivity(act, 'seller');
 
-      const deletesBefore = net.filter((e) => e.tag === 'homeserver-session' && e.method === 'DELETE').length;
+      const deletesBefore = net.filter((e) => e.tag === 'grant' && e.method === 'DELETE').length;
       const viaSettings = await signOutThroughSettings(page);
       await shot(page, '11-signed-out.png');
-      const deletes = net.filter((e) => e.tag === 'homeserver-session' && e.method === 'DELETE').slice(deletesBefore);
+      const deletes = net.filter((e) => e.tag === 'grant' && e.method === 'DELETE').slice(deletesBefore);
       check(
         '6',
         'sign-out from Settings → Account clears the Shop state',
@@ -640,14 +730,15 @@ try {
       );
       check(
         '6',
-        'sign-out ends the homeserver session (DELETE /session 2xx)',
+        'sign-out revokes the Shop grant on the homeserver (DELETE /auth/grant 2xx)',
         deletes.some((e) => e.status >= 200 && e.status < 300),
         deletes.map((e) => e.status).join(','),
       );
       await page.reload({ waitUntil: 'domcontentloaded', timeout: 180_000 });
       await waitForAppReady(page);
       await page.waitForTimeout(5000);
-      check('6', 'signed out holds across a reload', !(await authState(page)).currentUserPubky);
+      const signedOut = await authState(page);
+      check('6', 'signed out holds across a reload', !signedOut.currentUserPubky && !signedOut.grantSessionRecordId);
     } catch (error) {
       await shot(page, 'ring-journey-error.png').catch(() => {});
       check('A', 'Ring journey ran to completion', false, String(error?.message ?? error).slice(0, 240));
@@ -666,31 +757,31 @@ try {
     instrument(page, net, commands);
     try {
       check('2', 'Bitkit QR is live next to the Ring QR without a click', await bothQrsLive(page));
+      await showSigner(page, 'bitkit');
       const grantUrl = await copyQrUrl(page, 'Copy Bitkit authentication link');
-      const parsed = new URL(grantUrl);
-      const link = SigninGrantDeepLink.parse(grantUrl);
+      const bitkitLink = inspectGrantLink(grantUrl, { clientId: CLIENT_ID, capabilitySets: [CAPABILITIES] });
       check(
         '2',
         'Bitkit QR is a signin_grant for the Shop caps and client id (the checks Paykit applies)',
-        parsed.host === 'signin_grant' &&
-          ['caps', 'relay', 'secret', 'cid', 'cpk'].every((k) => parsed.searchParams.getAll(k).length === 1) &&
-          link.capabilities === CAPABILITIES &&
-          parsed.searchParams.get('cid') === CLIENT_ID,
-        `host=${parsed.host} cid=${parsed.searchParams.get('cid')}`,
+        bitkitLink.problems.length === 0 && bitkitLink.capabilities.length === 5,
+        bitkitLink.problems.join('; ') || `cid=${bitkitLink.clientId} caps=${bitkitLink.capabilities.length}`,
       );
       const leak = await qrDomLeak(page, grantUrl);
       check('2', 'the Bitkit QR slot does not carry the authorization URL in the DOM', !leak.attr && !leak.html);
       await shot(page, '03-bitkit-qr.png');
       await new Pubky().signer(seat).approveAuthRequest(grantUrl);
       log('bitkit grant: approved');
-      await signedInAs(page, 'grantSessionRecordId');
+      await signedInWithGrant(page);
       await page.waitForTimeout(4000);
       const state = await authState(page);
       const grantPosts = net.filter((e) => e.tag === 'grant' && e.method === 'POST');
       check(
         '2',
         'grant approval signs in with a grant record and no cookie export',
-        state.currentUserPubky === pubky && state.grantSessionRecordId && state.sessionExport === null,
+        state.currentUserPubky === pubky &&
+          Boolean(state.grantSessionRecordId) &&
+          state.sessionExport === null &&
+          state.grantSigner === 'bitkit',
         `grant POST=${grantPosts.map((e) => e.status).join(',')}`,
       );
       await shot(page, '04-bitkit-signed-in.png');
@@ -748,7 +839,7 @@ try {
       if (fixture) {
         await ringSignIn(page, buyerSeat);
         log(`buyer ${prefix(buyerSeat.publicKey.z32())} signed in with Ring for checkout`);
-        const co = await paypalCheckout(page, commands, fixture);
+        const co = await paypalCheckout(page, commands, fixture, buyerSeat);
         summary.checkout = co;
         check('4', 'the fixture seller offers PayPal', co.sellerHasPaypal);
         check(
@@ -775,10 +866,10 @@ try {
           check('4', 'cart emptied afterwards', co.cartLeft === 0);
         }
         await signOutThroughSettings(page);
-        const deletes = net.filter((e) => e.tag === 'homeserver-session' && e.method === 'DELETE');
+        const deletes = net.filter((e) => e.tag === 'grant' && e.method === 'DELETE');
         check(
           '4',
-          'buyer seat signed out after checkout (DELETE /session 2xx)',
+          'buyer seat signed out after checkout (DELETE /auth/grant 2xx)',
           deletes.some((e) => e.status >= 200 && e.status < 300),
           deletes.map((e) => e.status).join(','),
         );
@@ -804,16 +895,16 @@ try {
     try {
       await ringSignIn(page, buyerSeat);
       log(`buyer ${prefix(buyerSeat.publicKey.z32())} signed in with Ring`);
-      const act = await activityAndOrder(page, 'buyer');
+      const act = await activityAndOrder(page, 'buyer', buyerSeat);
       summary.activity.buyer = act;
       checkActivity(act, 'buyer');
       opened = act.opened;
       openedBy = 'buyer';
       await signOutThroughSettings(page);
-      const deletes = net.filter((e) => e.tag === 'homeserver-session' && e.method === 'DELETE');
+      const deletes = net.filter((e) => e.tag === 'grant' && e.method === 'DELETE');
       check(
         '5',
-        'buyer seat signed out (DELETE /session 2xx)',
+        'buyer seat signed out (DELETE /auth/grant 2xx)',
         deletes.some((e) => e.status >= 200 && e.status < 300),
         deletes.map((e) => e.status).join(','),
       );

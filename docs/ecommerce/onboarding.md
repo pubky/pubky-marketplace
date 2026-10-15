@@ -100,7 +100,7 @@ Live suites that need a running service, a local Pubky testnet, or staging signu
 
 ## Release
 
-Follow [`release.md`](release.md) for source gates, deployed grant-session verification, tags and notes. Its Vercel recipe is for the historical standalone deployment; use VV’s current deployment configuration for the embedded pair. The older `scripts/release/release-proof.mjs` still asserts Ring cookie sign-in and cannot certify this grant-only release. Production operations, the kill switch and rollback are
+Follow [`release.md`](release.md) for source gates, deployed grant-session verification, tags and notes. Its Vercel recipe is for the historical standalone deployment; use VV’s current deployment configuration for the embedded pair. `scripts/release/release-proof.mjs` drives the grant sign-in; its PayPal fixture wrapper is not ported yet (see the release runbook). Production operations, the kill switch and rollback are
 in [`runbook-production.md`](runbook-production.md).
 
 ## Known limits

@@ -74,7 +74,7 @@ NEXT_PUBLIC_DB_NAME=franky-marketplace-sandbox npm run dev   # terminal 2
   - deploy with `vercel --prod --yes --force`, linked to the Shop's production project;
   - tag `shop-vX.Y.Z`;
   - publish a GitHub release whose notes come from `changelog.d/next` fragments.
-- **"Live" needs deployed grant-session verification.** The older `scripts/release/release-proof.mjs` still asserts Ring cookie sign-in and cannot certify this grant-only release. Follow the [current grant release requirements](../ecommerce/release.md#grant-sdk-and-embedded-release-requirements); local SDK/network fixtures do not prove live signer or payment completion. The team supplies its own test seats out of band.
+- **"Live" needs deployed grant-session verification.** `scripts/release/release-proof.mjs` drives the grant sign-in and the marketplace approvals; its PayPal fixture wrapper is not ported yet. Follow the [current grant release requirements](../ecommerce/release.md#grant-sdk-and-embedded-release-requirements); local SDK/network fixtures do not prove live signer or payment completion. The team supplies its own test seats out of band.
 - **Service and Nexus releases** follow each repo's README and `.railway/README.md`: GHCR image, digest pin in IaC, a `railway config plan` that shows no changes, then deploy and health checks.
 - **Pre-launch policy:** fix forward. Roll back only on data loss or money moving wrongly.
 
