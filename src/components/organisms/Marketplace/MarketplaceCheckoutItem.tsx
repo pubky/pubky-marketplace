@@ -3,7 +3,7 @@
 import { getMarketplaceListingRoute } from '@/app/routes';
 import { useMarketplaceOrderItemMedia } from '@/hooks/useMarketplaceOrderItemMedia/useMarketplaceOrderItemMedia';
 import { formatCommerceMoney } from '@/libs/commerce/format';
-import { parseListingAggregateId } from '@/libs/commerce/marketplace-conversation-query';
+import { parseListingAggregateId } from '@/libs/commerce/listing-aggregate';
 import { MarketplaceProductSummary } from '@/molecules/Marketplace/MarketplaceProductSummary';
 import { MarketplaceIndicativePrice } from '@/organisms/Marketplace/MarketplaceIndicativePrice';
 import type { MarketplaceOrder } from '@/services/marketplace/marketplace';

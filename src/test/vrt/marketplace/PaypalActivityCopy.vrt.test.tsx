@@ -135,24 +135,6 @@ vi.mock('@/hooks/useUserDetails/useUserDetails', () => ({
   useUserDetails: () => ({ userDetails: null, isLoading: false }),
 }));
 
-vi.mock('@/hooks/useEncryptedConversation/useEncryptedConversation', () => ({
-  useEncryptedConversation: () => ({
-    status: 'ready',
-    errorMessage: null,
-    thread: [],
-    receiverProvisioned: false,
-    draft: '',
-    setDraft: vi.fn(),
-    bodyBudgetBytes: 620,
-    draftBytes: 0,
-    isSending: false,
-    sendError: null,
-    send: vi.fn(async () => 'queued'),
-    cancelQueued: vi.fn(async () => {}),
-    refresh: vi.fn(),
-  }),
-}));
-
 vi.mock('@/hooks/useMarketplaceOrders/useMarketplaceOrders', () => ({
   useMarketplaceOrders: () => ({
     orders: ordersState.orders,

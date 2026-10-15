@@ -18,11 +18,11 @@ import { Badge } from '@/atoms/Badge/Badge';
 import { Link } from '@/atoms/Link/Link';
 import { Typography } from '@/atoms/Typography/Typography';
 import { isSocialLinkOutEnabled } from '@/config/social';
+import { useChatUnread } from '@/hooks/useChatUnread/useChatUnread';
 import { useMarketplaceActivityUnread } from '@/hooks/useMarketplaceActivityUnread/useMarketplaceActivityUnread';
 import { useMarketplaceCartCount } from '@/hooks/useMarketplaceCartCount/useMarketplaceCartCount';
 import { useMarketplaceNavSwipeHint } from '@/hooks/useMarketplaceNavSwipeHint/useMarketplaceNavSwipeHint';
 import { useMarketplaceOrdersAttention } from '@/hooks/useMarketplaceOrdersAttention/useMarketplaceOrdersAttention';
-import { useMessagesUnread } from '@/hooks/useMessagesUnread/useMessagesUnread';
 import { cn } from '@/libs/utils/utils';
 
 type MarketplaceSectionItem = {
@@ -45,7 +45,7 @@ const getItems = (socialLinkOut: boolean): readonly MarketplaceSectionItem[] => 
       MARKETPLACE_ROUTES.DROPS,
     ],
   },
-  { label: 'Messages', href: MARKETPLACE_ROUTES.MESSAGES, icon: MessageCircle, badge: 'messages' },
+  { label: 'Messages', href: APP_ROUTES.MESSAGES, icon: MessageCircle, badge: 'messages' },
   { label: 'Watchlist', href: MARKETPLACE_ROUTES.WATCHLIST, icon: Heart },
   {
     label: 'Cart',
@@ -81,7 +81,7 @@ export function MarketplaceSectionNav({
   const pathname = usePathname();
   const socialLinkOut = isSocialLinkOutEnabled();
   const cartCount = useMarketplaceCartCount();
-  const messagesCount = useMessagesUnread({ enabled: socialLinkOut });
+  const messagesCount = useChatUnread({ enabled: socialLinkOut });
   const activityUnreadCount = useMarketplaceActivityUnread();
   const ordersAttentionCount = useMarketplaceOrdersAttention();
   const { scrollRef, onScroll, onInteract, showSwipeHint } = useMarketplaceNavSwipeHint(pathname);

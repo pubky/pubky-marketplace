@@ -1,9 +1,11 @@
 /**
- * At-rest secret wrapping for device-local messaging key material
- * (commerce messaging receiver Noise secrets and Encrypted Link snapshots).
+ * At-rest secret wrapping for device-local key material (today the seller
+ * delivery keys and buyer pins in `./delivery-key-store`; originally written
+ * for the retired messaging keyring, whose AAD prefix it keeps so stored
+ * payloads stay readable).
  *
- * Pure AEAD helpers: given a wrapping CryptoKey (custody lives in
- * `./messaging-keyring`), `wrapPayload` encrypts arbitrary bytes with
+ * Pure AEAD helpers: given a wrapping CryptoKey (custody lives with the
+ * caller), `wrapPayload` encrypts arbitrary bytes with
  * AES-GCM-256 under a FRESH 96-bit IV per call, and `unwrapPayload`
  * reverses it. Every payload carries AAD binding the ciphertext to the
  * Dexie table AND row id it is stored under, so a ciphertext transplanted
@@ -29,7 +31,8 @@ export const WRAP_IV_BYTES = 12;
 const WRAP_AAD_PREFIX = 'pubky-app.messaging-wrap.v1';
 
 /**
- * Builds the AAD that binds a wrapped payload to exactly one table row:
+ * Builds the AAD that binds a wrapped payload to exactly one table row (the
+ * prefix is historical; see the module comment):
  * `pubky-app.messaging-wrap.v1|<table>|<rowId>`. Unwrapping with any other
  * table or row id (a transplanted ciphertext) fails GCM authentication.
  */

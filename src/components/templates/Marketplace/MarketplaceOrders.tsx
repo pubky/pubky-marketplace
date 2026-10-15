@@ -11,10 +11,11 @@ import { Heading } from '@/atoms/Heading/Heading';
 import { Link } from '@/atoms/Link/Link';
 import { Skeleton } from '@/atoms/Skeleton/Skeleton';
 import { Typography } from '@/atoms/Typography/Typography';
-import { type CommerceAdapterMode, isDurableCommerceMode, isTransactionalCommerceMode } from '@/config/commerce';
+import { isTransactionalCommerceMode } from '@/config/commerce';
 import { type MarketplaceOrderView, useMarketplaceOrders } from '@/hooks/useMarketplaceOrders/useMarketplaceOrders';
 import { useMarkMarketplaceOrdersSeen } from '@/hooks/useMarkMarketplaceOrdersSeen/useMarkMarketplaceOrdersSeen';
 import { useNowMs } from '@/hooks/useNowMs/useNowMs';
+import { CHAT_COPY } from '@/libs/chat/copy';
 import { orderAnchorId, readOrderAnchorId } from '@/libs/commerce/activity-links';
 import {
   bitcoinPaymentHasBeenSeen,
@@ -46,8 +47,8 @@ import {
   isInstantDigitalDeliveryKind,
 } from '@/libs/commerce/digital';
 import { formatCommerceMoney } from '@/libs/commerce/format';
+import { listingIdFromOrder } from '@/libs/commerce/listing-aggregate';
 import { buyerVisiblePaymentStatus } from '@/libs/commerce/locks-payment';
-import { listingIdFromOrder, marketplaceConversationHref } from '@/libs/commerce/marketplace-conversation-query';
 import { formatBitcoinAmount } from '@/libs/commerce/pricing';
 import {
   REFUND_ORDER_NOTICES,
@@ -55,18 +56,17 @@ import {
   refundRecordLine,
   refundStateLabel,
 } from '@/libs/commerce/refund-copy';
-import { buildMarketplaceConversationAggregateId } from '@/libs/commerce/transaction-commands';
 import { usdtPaidAsLine } from '@/libs/commerce/usdt-buyer-status';
 import { isUsdtRefundOrder } from '@/libs/commerce/usdt-refund';
 import { ArbiscanLookupLink } from '@/molecules/Marketplace/ArbiscanLookupLink';
 import { MarketplaceCheckoutStatusLabels } from '@/molecules/Marketplace/MarketplaceCheckoutStatusLabels';
 import { MarketplaceEmptyState } from '@/molecules/Marketplace/MarketplaceEmptyState';
 import { MarketplacePaymentStatusLabels } from '@/molecules/Marketplace/MarketplacePaymentStatusBadge';
+import { ChatEntryButton } from '@/organisms/Chat/ChatEntryButton';
 import { ContentLayout } from '@/organisms/ContentLayout/ContentLayout';
 import { DropEditionBadge, DropEditionReceiptLine } from '@/organisms/Marketplace/DropEditionBadge';
 import { MarketplaceBitcoinAmountBreakdown } from '@/organisms/Marketplace/MarketplaceBitcoinAmountBreakdown';
 import { MarketplaceCheckoutItem } from '@/organisms/Marketplace/MarketplaceCheckoutItem';
-import { MarketplaceEncryptedConversationDialog } from '@/organisms/Marketplace/MarketplaceEncryptedConversationDialog';
 import { MarketplaceIndicativePrice } from '@/organisms/Marketplace/MarketplaceIndicativePrice';
 import { MarketplaceMyReviews } from '@/organisms/Marketplace/MarketplaceMyReviews';
 import { MarketplaceOrderActions } from '@/organisms/Marketplace/MarketplaceOrderActions';
@@ -477,7 +477,7 @@ export function MarketplaceOrders() {
                                 canEditReview={adapterMode === 'transaction-service'}
                                 actOnOrder={actOnOrder}
                                 onChanged={refresh}
-                                messageAction={<MarketplaceOrderMessageCta order={order} adapterMode={adapterMode} />}
+                                messageAction={<MarketplaceOrderMessageCta order={order} />}
                               />
                             </div>
                           </div>
@@ -699,47 +699,19 @@ export function MarketplaceOrders() {
   );
 }
 
-function MarketplaceOrderMessageCta({
-  order,
-  adapterMode,
-}: {
-  order: MarketplaceOrder;
-  adapterMode: CommerceAdapterMode;
-}) {
+function MarketplaceOrderMessageCta({ order }: { order: MarketplaceOrder }) {
   const currentUserPubky = useAuthStore((state) => state.currentUserPubky);
-  const listingId = listingIdFromOrder(order);
-  if (!listingId) return null;
-
-  const conversationId = buildMarketplaceConversationAggregateId(order.sellerPubky, order.buyerPubky, listingId);
-  const label = currentUserPubky === order.sellerPubky ? 'Message buyer' : 'Message seller';
-  const trigger = (
-    <Button variant="secondary" size="default" className="w-full rounded-full sm:w-auto">
-      {label}
-    </Button>
-  );
-
-  if (isDurableCommerceMode(adapterMode) && currentUserPubky) {
-    const counterpartyPubky = currentUserPubky === order.sellerPubky ? order.buyerPubky : order.sellerPubky;
-    return (
-      <div data-surface="marketplace-order-message-cta">
-        <MarketplaceEncryptedConversationDialog
-          sellerPubky={order.sellerPubky}
-          buyerPubky={order.buyerPubky}
-          listingId={listingId}
-          counterpartyPubky={counterpartyPubky}
-          trigger={trigger}
-        />
-      </div>
-    );
-  }
-
+  if (!currentUserPubky) return null;
+  const peerPubky = currentUserPubky === order.sellerPubky ? order.buyerPubky : order.sellerPubky;
   return (
     <div data-surface="marketplace-order-message-cta">
-      <Button asChild variant="secondary" size="default" className="w-full rounded-full sm:w-auto">
-        <Link href={marketplaceConversationHref(conversationId)} overrideDefaults>
-          {label}
-        </Link>
-      </Button>
+      <ChatEntryButton
+        peerPubky={peerPubky}
+        context={{ orderId: order.id, listingId: listingIdFromOrder(order) ?? undefined }}
+        label={CHAT_COPY.orderCta}
+        size="default"
+        className="w-full rounded-full sm:w-auto"
+      />
     </div>
   );
 }
