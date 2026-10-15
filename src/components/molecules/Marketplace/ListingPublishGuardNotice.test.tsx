@@ -33,6 +33,15 @@ describe('ListingPublishGuardNotice', () => {
     },
   );
 
+  it.each([
+    ['action', 'p-3'],
+    ['banner', 'p-4'],
+  ] as const)('sizes the Paykit outage like the %s density', (density, padding) => {
+    render(<ListingPublishGuardNotice reason="paykit-unreachable" surface="listing-publish-guard" density={density} />);
+
+    expect(screen.getByRole('status')).toHaveClass(padding);
+  });
+
   it('shows a Paykit outage as a calm status with no action', () => {
     render(
       <ListingPublishGuardNotice

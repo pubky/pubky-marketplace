@@ -216,6 +216,95 @@ describe('useCreateMarketplaceListing', () => {
     expect(CommerceController.commitUpsertListing).not.toHaveBeenCalled();
   });
 
+  describe('a Paykit outage', () => {
+    const outage = {
+      bitcoinAvailable: false,
+      bitcoinOfferAvailable: false,
+      paypalAvailable: false,
+      paykitUnreachable: true,
+    };
+    const healthy = { bitcoinAvailable: true, bitcoinOfferAvailable: true, paypalAvailable: false };
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('says Paykit is unreachable, not "add a payment method", and clears itself when Paykit is back', async () => {
+      vi.useFakeTimers();
+      vi.mocked(CommerceController.getSellerPaymentConfig).mockResolvedValue(outage);
+      const { result } = renderHook(() => useCreateMarketplaceListing());
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      expect(result.current.publishBlocked).toBe('paykit-unreachable');
+      expect(result.current.publishGuardReady).toBe(true);
+
+      await act(async () => {
+        await result.current.submit();
+      });
+      expect(toast).toHaveBeenCalledWith({
+        variant: 'error',
+        description: 'Paykit is temporarily unreachable. Try again in a moment.',
+      });
+      expect(CommerceController.commitUpsertListing).not.toHaveBeenCalled();
+
+      vi.mocked(CommerceController.getSellerPaymentConfig).mockResolvedValue(healthy);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(5_000);
+      });
+      expect(result.current.publishBlocked).toBeNull();
+    });
+
+    it('keeps showing the outage during a recheck, and blanks the guard again when its inputs change', async () => {
+      vi.useFakeTimers();
+      vi.mocked(CommerceController.getSellerPaymentConfig).mockResolvedValue(outage);
+      const { result } = renderHook(() => useCreateMarketplaceListing());
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      expect(result.current.publishBlocked).toBe('paykit-unreachable');
+
+      let finishRead: (config: typeof healthy | typeof outage) => void = () => {};
+      vi.mocked(CommerceController.getSellerPaymentConfig).mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            finishRead = resolve as typeof finishRead;
+          }),
+      );
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(5_000);
+      });
+      expect(result.current.publishGuardReady).toBe(true);
+      expect(result.current.publishBlocked).toBe('paykit-unreachable');
+
+      await act(async () => {
+        finishRead(healthy);
+      });
+      expect(result.current.publishBlocked).toBeNull();
+
+      vi.mocked(CommerceController.getSellerPaymentConfig).mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            finishRead = resolve as typeof finishRead;
+          }),
+      );
+      vi.mocked(CommerceController.getMyDeliveryKeyStatus).mockResolvedValue(PUBLISHED_KEY_STATUS);
+      act(() =>
+        result.current.form.setValue(
+          'fulfillment',
+          result.current.form.getValues('fulfillment') === 'shipping' ? 'pickup' : 'shipping',
+        ),
+      );
+      expect(result.current.publishGuardReady).toBe(false);
+
+      await act(async () => {
+        finishRead(outage);
+      });
+      expect(result.current.publishBlocked).toBe('paykit-unreachable');
+      expect(result.current.publishGuardReady).toBe(true);
+    });
+  });
+
   it('blocks publishing a listing that ships until the seller has a published delivery key', async () => {
     vi.mocked(CommerceController.getMyDeliveryKeyStatus).mockResolvedValue(NO_KEY_STATUS);
     const { result } = renderHook(() => useCreateMarketplaceListing());

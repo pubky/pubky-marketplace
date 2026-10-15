@@ -41,7 +41,7 @@ import { useMarketplaceOfferCheckout } from '@/hooks/useMarketplaceOfferCheckout
 import { useMarketplaceOffers } from '@/hooks/useMarketplaceOffers/useMarketplaceOffers';
 import { useMarketplaceOrders } from '@/hooks/useMarketplaceOrders/useMarketplaceOrders';
 import { useMarketplaceSellerDeliveryTerms } from '@/hooks/useMarketplaceSellerDeliveryTerms/useMarketplaceSellerDeliveryTerms';
-import { usePaykitRecovery } from '@/hooks/usePaykitRecovery/usePaykitRecovery';
+import { usePaykitOutage } from '@/hooks/usePaykitOutage/usePaykitOutage';
 import { useUsdtPaymentsAvailable } from '@/hooks/useUsdtPaymentsAvailable/useUsdtPaymentsAvailable';
 import { Tether } from '@/icons';
 import { buyerCheckoutProgressCopy } from '@/libs/commerce/bitcoin-buyer-status';
@@ -290,10 +290,12 @@ function MarketplaceCartCheckout() {
   const [railAttempt, setRailAttempt] = useState(0);
   // Re-reads the rails without blanking them: after a refused payment, and while Paykit is down.
   const [railRefresh, setRailRefresh] = useState(0);
-  // The service refused a Bitcoin or USDT bind because it could not reach Paykit, whatever its health read says.
-  const [paykitRefused, setPaykitRefused] = useState(false);
-  const paykitRecheck = usePaykitRecovery(loadedMethods?.paykitUnreachable === true || paykitRefused);
-  useEffect(() => setPaykitRefused(false), [paykitRecheck]);
+  const {
+    refused: paykitRefused,
+    recheck: paykitRecheck,
+    markRefused: markPaykitRefused,
+    settleRead: settlePaykitRead,
+  } = usePaykitOutage(loadedMethods?.paykitUnreachable === true);
   const [nowMs, setNowMs] = useState(() => Date.now());
   const sellerKey =
     isOfferCheckout && award
@@ -353,7 +355,8 @@ function MarketplaceCartCheckout() {
     preferredMethod && availableCheckoutMethods.includes(preferredMethod)
       ? preferredMethod
       : (availableCheckoutMethods[0] ?? null);
-  const paykitBlocksPay = paykitRefused && (selectedMethod === 'bitcoin' || selectedMethod === 'usdt');
+  const paykitBlocksPay =
+    (paykitRefused || paykitOutageForCart) && (selectedMethod === 'bitcoin' || selectedMethod === 'usdt');
   const isMultiSeller = sellerKey.includes('|');
   const isPaying = isOfferCheckout ? offerPay.isSubmitting : checkout.isPaying;
   const listingRoute = award && getMarketplaceListingRoute(award.listing.sellerPubky, award.listing.listingId);
@@ -407,11 +410,12 @@ function MarketplaceCartCheckout() {
         ),
         paykitUnreachable: reads.some((read) => read.paykitUnreachable),
       });
+      settlePaykitRead(paykitRecheck, !reads.some((read) => read.paykitUnreachable));
     });
     return () => {
       active = false;
     };
-  }, [sellerKey, railAttempt, railRefresh, paykitRecheck, usdtPaymentsAvailable]);
+  }, [sellerKey, railAttempt, railRefresh, paykitRecheck, usdtPaymentsAvailable, settlePaykitRead]);
 
   const targetPayingIds = [...new Set([...payingOrderIds, ...(hashOrderId ? [hashOrderId] : [])])];
   const focusedPaying = orders.orders.filter((view) => targetPayingIds.includes(view.order.id));
@@ -559,6 +563,7 @@ function MarketplaceCartCheckout() {
       setAwardOutcome('success');
       return;
     }
+    if (result.paykitUnavailable) markPaykitRefused();
     setRailRefresh((refresh) => refresh + 1);
     if (result.code === 'AWARD_UNAVAILABLE') {
       await removeAwardLine();
@@ -590,7 +595,7 @@ function MarketplaceCartCheckout() {
     const method = isSandbox || isLocksCheckout ? null : selectedMethod;
     const result = await checkout.pay(method, () => void pay());
     if (!result.ok) {
-      if (result.paykitUnavailable) setPaykitRefused(true);
+      if (result.paykitUnavailable) markPaykitRefused();
       setRailRefresh((refresh) => refresh + 1);
       return;
     }
@@ -1199,7 +1204,7 @@ function MarketplaceCartCheckout() {
                       )}
                       {paykitOutageForCart && sharedMethods !== null && sharedMethods.length > 0 && (
                         <Typography as="p" aria-live="polite" className="text-sm text-muted-foreground">
-                          {PAYKIT_OUTAGE_COPY.title} Bitcoin returns on its own; other payment methods are unaffected.
+                          {PAYKIT_OUTAGE_COPY.title} Bitcoin and USDT return on their own; PayPal is unaffected.
                         </Typography>
                       )}
                       {selectedMethod === 'bitcoin' && (

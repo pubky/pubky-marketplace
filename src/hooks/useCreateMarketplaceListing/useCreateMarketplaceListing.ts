@@ -142,6 +142,7 @@ export function useCreateMarketplaceListing(): UseCreateMarketplaceListingResult
   const durablePublish = isDurableCommerceMode(getCommerceAdapterMode());
   const [publishBlocked, setPublishBlocked] = useState<ListingPublishBlockReason | null>(null);
   const paykitRecheck = usePaykitRecovery(publishBlocked === 'paykit-unreachable');
+  const guardInputsRef = useRef<string | null>(null);
   const [publishGuardReady, setPublishGuardReady] = useState(!durablePublish);
   const draftReadyRef = useRef(false);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -314,7 +315,10 @@ export function useCreateMarketplaceListing(): UseCreateMarketplaceListingResult
       return;
     }
     let active = true;
-    if (paykitRecheck === 0) setPublishGuardReady(false);
+    // A recheck during an outage keeps the guard showing; changed inputs blank it again.
+    const guardInputs = `${currentUserPubky}|${Boolean(marketplaceSession)}|${shipsListing}`;
+    if (guardInputsRef.current !== guardInputs) setPublishGuardReady(false);
+    guardInputsRef.current = guardInputs;
     void evaluateDurableListingPublishGuards({
       ownerPubky: currentUserPubky,
       hasMarketplaceSession: Boolean(marketplaceSession),

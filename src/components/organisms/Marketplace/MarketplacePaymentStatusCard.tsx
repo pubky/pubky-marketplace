@@ -527,7 +527,7 @@ export function MarketplacePaymentStatusCard({
               {methodPayment.bitcoinOfferUnavailable && (
                 <Typography as="p" aria-live="polite" className="text-sm text-muted-foreground">
                   {methodPayment.paykitOutage
-                    ? `${PAYKIT_OUTAGE_COPY.title} Bitcoin returns on its own; other payment methods are unaffected.`
+                    ? `${PAYKIT_OUTAGE_COPY.title} Bitcoin and USDT return on their own; PayPal is unaffected.`
                     : MARKETPLACE_FAILURE_MESSAGES.bitcoinOfferUnavailable}
                 </Typography>
               )}

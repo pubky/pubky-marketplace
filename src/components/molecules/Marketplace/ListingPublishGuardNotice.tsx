@@ -33,7 +33,7 @@ export function ListingPublishGuardNotice({
         audience="seller"
         surface={surface}
         id={id}
-        className="flex items-start gap-3 rounded-md bg-brand/5 p-4"
+        className={`flex items-start gap-3 rounded-md bg-brand/5 ${density === 'action' ? 'p-3' : 'p-4'}`}
       />
     );
   }

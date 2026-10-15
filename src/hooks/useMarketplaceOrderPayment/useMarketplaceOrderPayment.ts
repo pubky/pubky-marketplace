@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import { useAuctionWinnerDeliveryAddress } from '@/hooks/useAuctionWinnerDeliveryAddress/useAuctionWinnerDeliveryAddress';
-import { usePaykitRecovery } from '@/hooks/usePaykitRecovery/usePaykitRecovery';
+import { usePaykitOutage } from '@/hooks/usePaykitOutage/usePaykitOutage';
 import { useUsdtPaymentsAvailable } from '@/hooks/useUsdtPaymentsAvailable/useUsdtPaymentsAvailable';
 import {
   isPaykitUnavailableRefusal,
@@ -46,11 +46,12 @@ export function useMarketplaceOrderPayment({
   const [pendingAction, setPendingAction] = useState<'bind' | 'verify' | 'mark-paid' | 'confirm' | null>(null);
   // Re-reads the rails without blanking them: after a refused bind, and while Paykit is down.
   const [railRefresh, setRailRefresh] = useState(0);
-  // The service refused a bind because it could not reach Paykit, whatever its health read says.
-  const [paykitRefused, setPaykitRefused] = useState(false);
-  const paykitOutage = sellerConfig?.paykitUnreachable === true || paykitRefused;
-  const paykitRecheck = usePaykitRecovery(paykitOutage);
-  useEffect(() => setPaykitRefused(false), [paykitRecheck]);
+  const {
+    outage: paykitOutage,
+    recheck: paykitRecheck,
+    markRefused: markPaykitRefused,
+    settleRead: settlePaykitRead,
+  } = usePaykitOutage(sellerConfig?.paykitUnreachable === true);
 
   const needsConfig = enabled && !order.paymentMethod;
   const shippingAddressRequired = needsConfig && order.shippingAddressRequired === true;
@@ -70,7 +71,10 @@ export function useMarketplaceOrderPayment({
       setConfigError(null);
       try {
         const config = await CommerceController.getSellerPaymentConfig(order.sellerPubky);
-        if (active) setSellerConfig(config);
+        if (active) {
+          setSellerConfig(config);
+          settlePaykitRead(paykitRecheck, config.paykitUnreachable !== true);
+        }
       } catch (error) {
         Logger.error('Failed to load the seller payment configuration', { error });
         if (active)
@@ -83,7 +87,7 @@ export function useMarketplaceOrderPayment({
     return () => {
       active = false;
     };
-  }, [needsConfig, order.sellerPubky, railRefresh, paykitRecheck]);
+  }, [needsConfig, order.sellerPubky, railRefresh, paykitRecheck, settlePaykitRead]);
 
   const runAction = useCallback(
     async (action: 'bind' | 'verify' | 'mark-paid' | 'confirm', run: () => Promise<void>, onRetry?: () => void) => {
@@ -94,7 +98,7 @@ export function useMarketplaceOrderPayment({
       } catch (error) {
         Logger.error(`Marketplace payment action '${action}' failed`, { error });
         if (action === 'bind') {
-          if (isPaykitUnavailableRefusal(error)) setPaykitRefused(true);
+          if (isPaykitUnavailableRefusal(error)) markPaykitRefused();
           setRailRefresh((refresh) => refresh + 1);
         }
         const usdtRefusal = usdtOfferRefusalReason(error);
@@ -109,7 +113,7 @@ export function useMarketplaceOrderPayment({
         setPendingAction(null);
       }
     },
-    [onPaymentChanged, sellerKey],
+    [onPaymentChanged, sellerKey, markPaykitRefused],
   );
 
   const bind = async (method: PaymentMethodKind) => {

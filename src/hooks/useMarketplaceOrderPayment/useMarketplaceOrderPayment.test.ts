@@ -215,6 +215,72 @@ describe('useMarketplaceOrderPayment', () => {
       });
       expect(result.current.paykitOutage).toBe(false);
     });
+
+    it('keeps the refused-bind outage while the recheck is in flight, so Bitcoin stays disabled until it finds Paykit reachable', async () => {
+      vi.useFakeTimers();
+      vi.mocked(CommerceController.getSellerPaymentConfig).mockReset();
+      vi.mocked(CommerceController.getSellerPaymentConfig).mockResolvedValue(healthy);
+      vi.mocked(CommerceController.bindPaymentMethod).mockReset();
+      vi.mocked(CommerceController.bindPaymentMethod).mockRejectedValueOnce(paykitDown());
+      const { result } = renderHook(() =>
+        useMarketplaceOrderPayment({
+          order: createOrderFixture('pending_payment'),
+          enabled: true,
+          onPaymentChanged: vi.fn(),
+        }),
+      );
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      await act(async () => {
+        await result.current.bind('bitcoin');
+      });
+      expect(result.current.paykitOutage).toBe(true);
+
+      let finishRead: (config: typeof healthy) => void = () => {};
+      vi.mocked(CommerceController.getSellerPaymentConfig).mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            finishRead = resolve as typeof finishRead;
+          }),
+      );
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(5_000);
+      });
+      expect(result.current.paykitOutage).toBe(true);
+      expect(result.current.availableMethods).toEqual(['bitcoin']);
+
+      await act(async () => {
+        finishRead(healthy);
+      });
+      expect(result.current.paykitOutage).toBe(false);
+    });
+
+    it('stays in the outage when the recheck still finds Paykit unreachable, and backs off', async () => {
+      vi.useFakeTimers();
+      vi.mocked(CommerceController.getSellerPaymentConfig).mockReset();
+      vi.mocked(CommerceController.getSellerPaymentConfig).mockResolvedValue(outage);
+      const { result } = renderHook(() =>
+        useMarketplaceOrderPayment({
+          order: createOrderFixture('pending_payment'),
+          enabled: true,
+          onPaymentChanged: vi.fn(),
+        }),
+      );
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      vi.mocked(CommerceController.getSellerPaymentConfig).mockClear();
+
+      for (const delay of [5_000, 10_000, 20_000, 30_000]) {
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(delay);
+        });
+      }
+
+      expect(result.current.paykitOutage).toBe(true);
+      expect(CommerceController.getSellerPaymentConfig).toHaveBeenCalledTimes(4);
+    });
   });
 
   describe('an auction winner order that still needs its delivery address', () => {
