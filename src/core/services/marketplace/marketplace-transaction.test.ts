@@ -339,6 +339,7 @@ describe('MarketplaceTransactionService.execute', () => {
 
   it.each([
     'fulfillment.ship',
+    'fulfillment.update_tracking',
     'fulfillment.confirm_delivery',
     'order.cancel_request',
     'order.cancel_approve',
@@ -368,6 +369,43 @@ describe('MarketplaceTransactionService.execute', () => {
     expect(response).toMatchObject({ ok: true, result: { kind: 'order' } });
     const [, init] = vi.mocked(fetch).mock.calls[0] as [string, RequestInit];
     expect(JSON.parse(init.body as string)).toMatchObject({ kind });
+  });
+
+  it('sends fulfillment.update_tracking in snake_case, and fulfillment.ship without a tracking number', async () => {
+    await establishSession();
+    const accepted = () =>
+      jsonResponse(200, {
+        ok: true,
+        version: 1,
+        command_id: COMMAND_ID,
+        aggregate_id: 'order:00000000-0000-4000-8000-000000000720',
+        revision: 4,
+        event_ids: ['00000000-0000-4000-8000-000000000721'],
+        result: { kind: 'order' },
+      });
+    const orderId = '00000000-0000-4000-8000-000000000720';
+    vi.mocked(fetch).mockResolvedValueOnce(accepted()).mockResolvedValueOnce(accepted());
+
+    await MarketplaceTransactionService.execute(ACTOR, {
+      ...bidCommand(),
+      aggregateId: `order:${orderId}`,
+      kind: 'fulfillment.update_tracking',
+      payload: { orderId, carrier: 'UPS', trackingNumber: '1Z999AA10123456784' },
+    } as never);
+    await MarketplaceTransactionService.execute(ACTOR, {
+      ...bidCommand(),
+      aggregateId: `order:${orderId}`,
+      kind: 'fulfillment.ship',
+      payload: { orderId, carrier: 'Other' },
+    } as never);
+
+    const bodies = vi.mocked(fetch).mock.calls.map(([, init]) => JSON.parse((init as RequestInit).body as string));
+    expect(bodies[0]).toMatchObject({
+      kind: 'fulfillment.update_tracking',
+      payload: { order_id: orderId, carrier: 'UPS', tracking_number: '1Z999AA10123456784' },
+    });
+    expect(bodies[1].kind).toBe('fulfillment.ship');
+    expect(bodies[1].payload).toEqual({ order_id: orderId, carrier: 'Other' });
   });
 
   it('sends refund.confirm_destination in the pinned snake_case wire shape', async () => {

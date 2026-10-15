@@ -130,6 +130,7 @@ const TRANSACTION_SERVICE_COMMAND_KINDS: ReadonlySet<MarketplaceCommand['kind']>
   'payment.prepare_locks',
   'payment.register_locks',
   'fulfillment.ship',
+  'fulfillment.update_tracking',
   'fulfillment.confirm_delivery',
   // Local pickup (Wave 7 safe subset, §A7): the sealed-details commands and
   // the pickup handover path. The service refuses them on sandbox-payments

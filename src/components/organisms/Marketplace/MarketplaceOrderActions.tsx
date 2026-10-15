@@ -34,6 +34,7 @@ import { MarketplaceBitcoinAmountBreakdown } from '@/organisms/Marketplace/Marke
 import { MarketplacePackingSlipDialog } from '@/organisms/Marketplace/MarketplacePackingSlipDialog';
 import { MarketplacePickupRevealDialog } from '@/organisms/Marketplace/MarketplacePickupRevealDialog';
 import { MarketplaceShippingLabelDialog } from '@/organisms/Marketplace/MarketplaceShippingLabelDialog';
+import { MarketplaceTrackingDialog } from '@/organisms/Marketplace/MarketplaceTrackingDialog';
 import type { MarketplaceOrder } from '@/services/marketplace/marketplace';
 
 export function MarketplaceOrderActions({
@@ -274,7 +275,7 @@ export function MarketplaceOrderActions({
         {!isBuyer && !isPickup && !isDigital && ['paid', 'processing'].includes(order.state) && (
           <>
             <Button size="sm" className="rounded-full" disabled={fulfilmentBlocked} onClick={() => begin('ship')}>
-              Add tracking
+              Mark shipped
             </Button>
             <MarketplaceShippingLabelDialog order={order} actOnOrder={actOnOrder} />
           </>
@@ -289,6 +290,7 @@ export function MarketplaceOrderActions({
           ['paid', 'processing', 'shipped', 'delivered', 'completed'].includes(order.state) && (
             <MarketplacePackingSlipDialog order={order} />
           )}
+        <MarketplaceTrackingDialog order={order} isBuyer={isBuyer} onChanged={reloadOrders} />
         {isBuyer && !isDigital && order.state === 'shipped' && (
           <Button
             size="sm"
@@ -449,7 +451,11 @@ export function MarketplaceOrderActions({
               {carrierChoice === OTHER_CARRIER_ID && (
                 <ControlledInputField name="carrier" control={action.form.control} label="Carrier name" />
               )}
-              <ControlledInputField name="trackingNumber" control={action.form.control} label="Tracking number" />
+              <ControlledInputField
+                name="trackingNumber"
+                control={action.form.control}
+                label="Tracking number (optional)"
+              />
             </>
           )}
           {actionType === 'refund' && isPaypal && refundedMinor > 0 && (
@@ -645,7 +651,7 @@ function actionTitle(action: MarketplaceOrderActionData['action'], orderState?: 
     case 'cancel':
       return orderState === 'pending_payment' ? 'Cancel checkout' : 'Cancel order';
     case 'ship':
-      return 'Add shipment tracking';
+      return 'Mark as shipped';
     case 'return':
       return 'Request a return';
     case 'refund':

@@ -48,18 +48,35 @@ describe('useMarketplaceOrderAction ship action', () => {
     });
   });
 
-  it('refuses to ship without a tracking number or an unnamed Other carrier', async () => {
+  it('ships without a tracking number and leaves the field out of the command', async () => {
     const order = createOrderFixture('paid');
     const actOnOrder = vi.fn(async () => true);
     const { result } = renderHook(() => useMarketplaceOrderAction(order, actOnOrder));
 
     act(() => {
-      result.current.setAction('ship', { carrierChoice: 'usps', trackingNumber: '' });
+      result.current.setAction('ship', { carrierChoice: 'usps', trackingNumber: '   ' });
+    });
+    let succeeded = false;
+    await act(async () => {
+      succeeded = await result.current.submit();
+    });
+
+    expect(succeeded).toBe(true);
+    expect(actOnOrder).toHaveBeenCalledWith(order, 'fulfillment.ship', { carrier: 'USPS' });
+  });
+
+  it('records the carrier as Other when the seller names none', async () => {
+    const order = createOrderFixture('paid');
+    const actOnOrder = vi.fn(async () => true);
+    const { result } = renderHook(() => useMarketplaceOrderAction(order, actOnOrder));
+
+    act(() => {
+      result.current.setAction('ship', { carrierChoice: 'other', carrier: '', trackingNumber: '' });
     });
     await act(async () => {
       await result.current.submit();
     });
-    expect(actOnOrder).not.toHaveBeenCalled();
+    expect(actOnOrder).toHaveBeenCalledWith(order, 'fulfillment.ship', { carrier: 'Other' });
 
     act(() => {
       result.current.setAction('ship', { carrierChoice: 'other', carrier: '', trackingNumber: 'X-1' });
@@ -67,7 +84,7 @@ describe('useMarketplaceOrderAction ship action', () => {
     await act(async () => {
       await result.current.submit();
     });
-    expect(actOnOrder).not.toHaveBeenCalled();
+    expect(actOnOrder).toHaveBeenLastCalledWith(order, 'fulfillment.ship', { carrier: 'Other', trackingNumber: 'X-1' });
   });
 });
 
