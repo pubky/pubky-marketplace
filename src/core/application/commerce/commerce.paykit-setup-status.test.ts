@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as commerceConfig from '@/config/commerce';
+import { Err } from '@/libs/error/error.factories';
+import { Logger } from '@/libs/logger/logger';
 import { LocksGatewayService } from '@/services/locks/locks';
 import { LocksFrontendSessionStore } from '@/services/locks/locks-frontend-session';
 import { MarketplaceGatewayService } from '@/services/marketplace/marketplace';
@@ -69,18 +71,24 @@ describe('CommerceApplication.isPaykitAccountClaimed', () => {
     it('rejects when the Lock Server cannot reach Paykit', async () => {
       vi.spyOn(LocksFrontendSessionStore, 'restore').mockReturnValue(SESSION);
       vi.spyOn(LocksGatewayService, 'getCreatorPaykitSetupStatus').mockResolvedValue('unavailable');
+      const report = vi.spyOn(Err, 'server');
 
       await expect(CommerceApplication.isPaykitAccountClaimed(SELLER)).rejects.toMatchObject({
         code: 'SERVICE_UNAVAILABLE',
       });
+      expect(report).toHaveBeenCalledOnce();
     });
 
     it('rejects without a Locks session instead of reporting a state', async () => {
       vi.spyOn(LocksFrontendSessionStore, 'restore').mockReturnValue(null);
       const setupStatus = vi.spyOn(LocksGatewayService, 'getCreatorPaykitSetupStatus');
+      const report = vi.spyOn(Err, 'auth');
+      const log = vi.spyOn(Logger, 'error');
 
       await expect(CommerceApplication.isPaykitAccountClaimed(SELLER)).rejects.toMatchObject({ code: 'UNAUTHORIZED' });
       expect(setupStatus).not.toHaveBeenCalled();
+      expect(report).not.toHaveBeenCalled();
+      expect(log).not.toHaveBeenCalled();
     });
   });
 });

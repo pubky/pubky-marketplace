@@ -116,9 +116,10 @@ import {
 } from '@/libs/commerce/transaction-commands';
 import type { CommerceJsonValue, CommerceMoney } from '@/libs/commerce/transaction-contracts';
 import { assertPublishableListingStock } from '@/libs/commerce/unlimited-stock';
+import { AppError } from '@/libs/error/error';
 import { AuthErrorCode, ClientErrorCode, ServerErrorCode, ValidationErrorCode } from '@/libs/error/error.codes';
 import { Err } from '@/libs/error/error.factories';
-import { ErrorService } from '@/libs/error/error.types';
+import { ErrorCategory, ErrorService } from '@/libs/error/error.types';
 import { hasHttpStatus, isAppError, isNotFound } from '@/libs/error/error.utils';
 import { HttpMethod, HttpStatusCode } from '@/libs/http/http.types';
 import { Logger } from '@/libs/logger/logger';
@@ -1564,7 +1565,11 @@ export class CommerceApplication {
     }
     const session = LocksFrontendSessionStore.restore(pubky);
     if (!session) {
-      throw Err.auth(AuthErrorCode.UNAUTHORIZED, 'Connect the Lock Server to read the Paykit setup state.', {
+      // Step 1 of Get paid is not done yet: the page shows that step, so this is not reported.
+      throw new AppError({
+        category: ErrorCategory.Auth,
+        code: AuthErrorCode.UNAUTHORIZED,
+        message: 'Connect the Lock Server to read the Paykit setup state.',
         service: ErrorService.Locks,
         operation: 'isPaykitAccountClaimed',
       });
