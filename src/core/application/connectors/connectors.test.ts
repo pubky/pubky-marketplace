@@ -9,6 +9,7 @@ import {
 import { AppError } from '@/libs/error/error';
 import { Logger } from '@/libs/logger/logger';
 import { MarketplaceConnectorsService } from '@/services/marketplace/marketplace-connectors';
+import { connectorRefusal } from '@/test-utils/connector-errors';
 import { ConnectorsApplication } from './connectors';
 
 const ACTOR = 'y'.repeat(52);
@@ -283,7 +284,7 @@ describe('ConnectorsApplication', () => {
       vi.spyOn(MarketplaceConnectorsService, 'mappings').mockResolvedValue(current);
       const put = vi.spyOn(MarketplaceConnectorsService, 'putMappings').mockResolvedValue([]);
 
-      await ConnectorsApplication.addMappings(ACTOR, ID, [
+      const result = await ConnectorsApplication.addMappings(ACTOR, ID, [
         { listingId: 'woo-1', variantId: 'a', providerProductId: '1', providerVariantId: '11' },
         { listingId: 'woo-3', variantId: 'q', providerProductId: '2', providerVariantId: '20' },
       ]);
@@ -293,6 +294,68 @@ describe('ConnectorsApplication', () => {
         { listingId: 'woo-1', variantId: 'a', providerProductId: '1', providerVariantId: '11' },
         { listingId: 'woo-3', variantId: 'q', providerProductId: '2', providerVariantId: '20' },
       ]);
+      expect(result.skippedListingIds).toEqual([]);
+    });
+
+    it('leaves out a listing the service does not hold and writes the rest', async () => {
+      const kept: ConnectorMapping = {
+        listingId: 'woo-9',
+        variantId: 'z',
+        providerProductId: '9',
+        providerVariantId: '90',
+      };
+      vi.spyOn(MarketplaceConnectorsService, 'mappings').mockResolvedValue([kept]);
+      const put = vi
+        .spyOn(MarketplaceConnectorsService, 'putMappings')
+        .mockRejectedValueOnce(connectorRefusal('listing_not_found', 422, { listingId: 'woo-2' }))
+        .mockResolvedValueOnce([]);
+
+      const result = await ConnectorsApplication.addMappings(ACTOR, ID, [
+        { listingId: 'woo-1', variantId: 'a', providerProductId: '1', providerVariantId: '10' },
+        { listingId: 'woo-2', variantId: 'a', providerProductId: '2', providerVariantId: '20' },
+        { listingId: 'woo-2', variantId: 'b', providerProductId: '2', providerVariantId: '21' },
+      ]);
+
+      expect(result.skippedListingIds).toEqual(['woo-2']);
+      expect(put).toHaveBeenCalledTimes(2);
+      expect(put).toHaveBeenLastCalledWith(ACTOR, ID, [
+        kept,
+        { listingId: 'woo-1', variantId: 'a', providerProductId: '1', providerVariantId: '10' },
+      ]);
+    });
+
+    it('passes on any other refusal', async () => {
+      vi.spyOn(MarketplaceConnectorsService, 'mappings').mockResolvedValue([]);
+      vi.spyOn(MarketplaceConnectorsService, 'putMappings').mockRejectedValue(
+        connectorRefusal('mapping_conflict', 409),
+      );
+      await expect(
+        ConnectorsApplication.addMappings(ACTOR, ID, [
+          { listingId: 'woo-1', variantId: 'a', providerProductId: '1', providerVariantId: '10' },
+        ]),
+      ).rejects.toMatchObject({ context: { reason: 'mapping_conflict' } });
+    });
+
+    it('reads every page of the chosen products', async () => {
+      const page = (id: string, nextPage: string | null) => ({
+        kind: 'connector_catalog' as const,
+        connectionId: ID,
+        products: [
+          { providerProductId: id, title: id, options: [], imageUrls: [], variants: [], selected: true },
+          { providerProductId: `${id}-other`, title: 'x', options: [], imageUrls: [], variants: [], selected: false },
+        ],
+        nextPage,
+      });
+      const catalog = vi
+        .spyOn(MarketplaceConnectorsService, 'catalog')
+        .mockResolvedValueOnce(page('1', 'p2'))
+        .mockResolvedValueOnce(page('2', null));
+
+      const products = await ConnectorsApplication.selectedProducts(ACTOR, ID);
+
+      expect(products.map((product) => product.providerProductId)).toEqual(['1', '2']);
+      expect(catalog).toHaveBeenNthCalledWith(1, ACTOR, ID, { page: null, selected: true });
+      expect(catalog).toHaveBeenNthCalledWith(2, ACTOR, ID, { page: 'p2', selected: true });
     });
   });
 

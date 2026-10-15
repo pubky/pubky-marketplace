@@ -3,6 +3,7 @@ import {
   connectionHealth,
   type ConnectorAlert,
   type ConnectorCatalogPage,
+  type ConnectorCatalogProduct,
   type ConnectorConnection,
   type ConnectorMapping,
   type ConnectorProvider,
@@ -14,6 +15,7 @@ import {
   normalizeWooStoreAddress,
   shopifyConnectionUrls,
 } from '@/libs/commerce/connectors';
+import { isAppError } from '@/libs/error/error';
 import { ServerErrorCode, ValidationErrorCode } from '@/libs/error/error.codes';
 import { Err } from '@/libs/error/error.factories';
 import { ErrorService } from '@/libs/error/error.types';
@@ -43,6 +45,7 @@ export type StorePushOverview = {
 };
 
 const RECENT_PUSHES_PER_CONNECTION = 50;
+const MAX_CATALOG_PAGES = 100;
 
 function invalidInput(operation: string, message: string): never {
   throw Err.validation(ValidationErrorCode.INVALID_INPUT, message, { service: ErrorService.Marketplace, operation });
@@ -218,6 +221,19 @@ export class ConnectorsApplication {
     return await MarketplaceConnectorsService.catalog(actor, connectionId, options);
   }
 
+  /** Every product the seller chose to also publish, all pages, as the store describes it now. */
+  static async selectedProducts(actor: string, connectionId: string): Promise<ConnectorCatalogProduct[]> {
+    const products: ConnectorCatalogProduct[] = [];
+    let page: string | null = null;
+    for (let index = 0; index < MAX_CATALOG_PAGES; index += 1) {
+      const next = await MarketplaceConnectorsService.catalog(actor, connectionId, { page, selected: true });
+      products.push(...next.products.filter((product) => product.selected));
+      if (!next.nextPage) return products;
+      page = next.nextPage;
+    }
+    return products;
+  }
+
   static async selection(actor: string, connectionId: string): Promise<string[]> {
     return await MarketplaceConnectorsService.selection(actor, connectionId);
   }
@@ -233,23 +249,40 @@ export class ConnectorsApplication {
   /**
    * Links published listings to store variants. The service replaces the whole
    * set, so this reads the current set and writes it back with the additions
-   * (an addition for the same listing variant replaces the old link).
+   * (an addition for the same listing variant or store variant replaces the old
+   * link). A listing the service does not hold (one whose publish did not
+   * finish) is named in its refusal; it is left out and the rest is written, so
+   * one unfinished listing never blocks the others.
    */
   static async addMappings(
     actor: string,
     connectionId: string,
     additions: readonly ConnectorMapping[],
-  ): Promise<ConnectorMapping[]> {
+  ): Promise<{ mappings: ConnectorMapping[]; skippedListingIds: string[] }> {
     const current = await MarketplaceConnectorsService.mappings(actor, connectionId);
     const key = (mapping: ConnectorMapping) => `${mapping.listingId}\u0000${mapping.variantId ?? ''}`;
     const providerKey = (mapping: ConnectorMapping) =>
       `${mapping.providerProductId}\u0000${mapping.providerVariantId ?? ''}`;
-    const replacedListings = new Set(additions.map(key));
-    const replacedProvider = new Set(additions.map(providerKey));
-    const kept = current.filter(
-      (mapping) => !replacedListings.has(key(mapping)) && !replacedProvider.has(providerKey(mapping)),
-    );
-    return await MarketplaceConnectorsService.putMappings(actor, connectionId, [...kept, ...additions]);
+    let pending = [...additions];
+    const skippedListingIds: string[] = [];
+    for (let attempt = 0; attempt <= additions.length; attempt += 1) {
+      const replacedListings = new Set(pending.map(key));
+      const replacedProvider = new Set(pending.map(providerKey));
+      const kept = current.filter(
+        (mapping) => !replacedListings.has(key(mapping)) && !replacedProvider.has(providerKey(mapping)),
+      );
+      try {
+        const mappings = await MarketplaceConnectorsService.putMappings(actor, connectionId, [...kept, ...pending]);
+        return { mappings, skippedListingIds };
+      } catch (error) {
+        const listingId = isAppError(error) ? error.context?.listingId : undefined;
+        if (connectorRefusalReason(error) !== 'listing_not_found' || typeof listingId !== 'string') throw error;
+        if (!pending.some((mapping) => mapping.listingId === listingId)) throw error;
+        skippedListingIds.push(listingId);
+        pending = pending.filter((mapping) => mapping.listingId !== listingId);
+      }
+    }
+    return { mappings: current, skippedListingIds };
   }
 
   /** Push state across the seller's connected stores, newest first, plus unresolved alerts. */

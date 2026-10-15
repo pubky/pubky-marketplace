@@ -224,8 +224,10 @@ export class MarketplaceConnectorsService {
       );
     }
     if (!response.ok) {
+      const refusal = await this.refusal(response);
       throw httpResponseToError(response, ErrorService.Marketplace, operation, path, {
-        reason: await this.refusalCode(response),
+        reason: refusal.code,
+        ...(refusal.listingId ? { listingId: refusal.listingId } : {}),
       });
     }
     if (response.status === HttpStatusCode.NO_CONTENT) return null;
@@ -235,14 +237,22 @@ export class MarketplaceConnectorsService {
     return toCamelCaseWire(raw);
   }
 
-  /** The service's own error code (`credentials_rejected`, `already_connected`, ...); never the message or body. */
-  private static async refusalCode(response: Response): Promise<string | undefined> {
+  /**
+   * The service's own error code (`credentials_rejected`, `already_connected`,
+   * ...) and, for `listing_not_found`, the listing it names. Never the message
+   * or the rest of the body.
+   */
+  private static async refusal(response: Response): Promise<{ code?: string; listingId?: string }> {
     try {
-      const body = (await response.clone().json()) as { error?: { code?: unknown } };
+      const body = (await response.clone().json()) as { error?: { code?: unknown; listing_id?: unknown } };
       const code = body.error?.code;
-      return typeof code === 'string' && /^[a-z0-9_]{1,64}$/.test(code) ? code : undefined;
+      const listingId = body.error?.listing_id;
+      return {
+        ...(typeof code === 'string' && /^[a-z0-9_]{1,64}$/.test(code) ? { code } : {}),
+        ...(typeof listingId === 'string' && /^[A-Za-z0-9_-]{1,128}$/.test(listingId) ? { listingId } : {}),
+      };
     } catch {
-      return undefined;
+      return {};
     }
   }
 
