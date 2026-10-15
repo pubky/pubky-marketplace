@@ -4,6 +4,12 @@ import { Button } from '@/atoms/Button/Button';
 import { Input } from '@/atoms/Input/Input';
 import { Typography } from '@/atoms/Typography/Typography';
 import { ProgressSteps } from '@/molecules/ProgressSteps/ProgressSteps';
+import type { ImportLossSummary } from '@/pipes/commerce/import-loss-report';
+import { MarketplaceInventoryImportLossReport } from './MarketplaceInventoryImportLossReport';
+import {
+  type InventoryImportSettingsProps,
+  MarketplaceInventoryImportSettings,
+} from './MarketplaceInventoryImportSettings';
 
 export const IMPORT_WIZARD_STEPS = 6;
 
@@ -35,12 +41,26 @@ export type MarketplaceInventoryImportProps = {
   counts?: InventoryImportDryRunCounts;
   progress?: { done: number; total: number };
   mappingHeaders?: readonly string[];
+  /** Import settings for a WooCommerce or Shopify export; omitted for canonical files. */
+  settings?: InventoryImportSettingsProps;
+  lossSummary?: ImportLossSummary;
+  busy?: boolean;
+  /** Why Publish is off (settings still to choose or to apply). */
+  publishDisabledReason?: string;
+  /** Why listings will be saved as paused: a publish gate blocks. */
+  publishNotice?: {
+    title: string;
+    body: string;
+    /** Listings that are live and stay live, with the line that says what to fix. */
+    keptLive?: { line: string; titles: readonly string[]; total: number };
+  };
   onFile?: (file: File) => void;
   onPublish?: () => void;
   onResume?: () => void;
   onConfirmConflict?: () => void;
   onDiscardConflict?: () => void;
   onDownloadResult?: () => void;
+  onDownloadLossReport?: () => void;
   onExportListings?: () => void;
   onExportOrders?: () => void;
 };
@@ -66,12 +86,18 @@ export function MarketplaceInventoryImport({
   counts,
   progress,
   mappingHeaders = [],
+  settings,
+  lossSummary,
+  busy = false,
+  publishDisabledReason,
+  publishNotice,
   onFile,
   onPublish,
   onResume,
   onConfirmConflict,
   onDiscardConflict,
   onDownloadResult,
+  onDownloadLossReport,
   onExportListings,
   onExportOrders,
 }: MarketplaceInventoryImportProps) {
@@ -83,7 +109,8 @@ export function MarketplaceInventoryImport({
       {scene === 'upload' && (
         <>
           <Typography as="p" className="text-sm text-muted-foreground">
-            Upload a canonical CSV or JSON listing file. Nothing is published until you confirm the dry-run.
+            Upload a WooCommerce or Shopify product export, or a canonical CSV or JSON listing file. Nothing is
+            published until you confirm the dry-run.
           </Typography>
           <Input
             type="file"
@@ -135,7 +162,57 @@ export function MarketplaceInventoryImport({
             <li>Unchanged {counts.unchanged}</li>
             <li>Conflict {counts.conflict}</li>
           </ul>
-          <Button className="rounded-full" onClick={onPublish}>
+          {settings && <MarketplaceInventoryImportSettings {...settings} busy={busy} />}
+          {lossSummary && (
+            <MarketplaceInventoryImportLossReport summary={lossSummary} onDownload={onDownloadLossReport} />
+          )}
+          {publishNotice && (
+            <div
+              className="flex flex-col gap-1 rounded-md border border-input p-3"
+              role="status"
+              data-testid="inventory-import-gate-notice"
+            >
+              <Typography as="p" className="text-sm font-medium">
+                {publishNotice.title}
+              </Typography>
+              <Typography as="p" className="text-sm text-muted-foreground">
+                {publishNotice.body}
+              </Typography>
+              {publishNotice.keptLive && (
+                <div className="flex flex-col gap-1" data-testid="inventory-import-kept-live">
+                  <Typography as="p" className="text-sm font-medium">
+                    {publishNotice.keptLive.total === 1
+                      ? '1 listing is live'
+                      : `${publishNotice.keptLive.total} listings are live`}
+                    : {publishNotice.keptLive.line}
+                  </Typography>
+                  <ul className="list-inside list-disc text-sm text-muted-foreground">
+                    {publishNotice.keptLive.titles.map((title) => (
+                      <li key={title}>{title}</li>
+                    ))}
+                    {publishNotice.keptLive.total > publishNotice.keptLive.titles.length && (
+                      <li>and {publishNotice.keptLive.total - publishNotice.keptLive.titles.length} more</li>
+                    )}
+                  </ul>
+                </div>
+              )}
+            </div>
+          )}
+          {publishDisabledReason && (
+            <Typography
+              as="p"
+              className="text-sm text-muted-foreground"
+              role="status"
+              data-testid="inventory-import-publish-hint"
+            >
+              {publishDisabledReason}
+            </Typography>
+          )}
+          <Button
+            className="rounded-full"
+            disabled={busy || publishDisabledReason !== undefined || counts.create + counts.update + counts.end === 0}
+            onClick={onPublish}
+          >
             Publish
           </Button>
         </>
