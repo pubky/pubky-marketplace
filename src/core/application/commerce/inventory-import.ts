@@ -9,6 +9,13 @@ import type { CommerceListingRecord } from '@/libs/commerce/marketplace-records'
 import { ClientErrorCode } from '@/libs/error/error.codes';
 import { isAppError, isNotFound } from '@/libs/error/error.utils';
 import { CommerceRecordNormalizer } from '@/pipes/commerce/commerce.normalizer';
+import type { ImportLossReport, ImportSourceFormat } from '@/pipes/commerce/import-loss-report';
+import {
+  classifyListingPublishFailure,
+  invalidListingsCopy,
+  type ListingPublishFailure,
+} from '@/pipes/commerce/import-publish-failure';
+import { DEFAULT_IMPORT_SETTINGS, type ImportSettings } from '@/pipes/commerce/import-settings';
 import { CommerceHomeserverService } from '@/services/homeserver/commerce/commerce';
 import { LocalCommerceService } from '@/services/local/commerce/commerce';
 import {
@@ -26,9 +33,9 @@ import {
   type DryRunCounts,
   type ImportManifest,
   MarketplaceShopClientService,
+  type PlannedBrowserFile,
   PubkyShopError,
   type SdkResult,
-  SHOPIFY_CSV_PRICE,
   type SyncManyEnvelope,
   type SyncManyListing,
 } from '@/services/marketplace/marketplace-shop-client';
@@ -48,7 +55,15 @@ export type InventoryImportAuth =
   | { status: 'ready' };
 
 export type InventoryImportPlanResult =
-  | { status: 'planned'; manifestId: string; rowCount: number; counts: DryRunCounts }
+  | {
+      status: 'planned';
+      manifestId: string;
+      rowCount: number;
+      counts: DryRunCounts;
+      /** Set when the file was a WooCommerce or Shopify export mapped by a preset. */
+      format?: ImportSourceFormat;
+      lossReport?: ImportLossReport;
+    }
   | { status: 'parse-failed'; message: string; puts: 0 }
   | Exclude<InventoryImportAuth, { status: 'ready' }>
   | { status: 'error'; message: string };
@@ -78,7 +93,8 @@ export type InventoryImportHost = {
     file: Parameters<typeof MarketplaceShopClientService.planBrowserFile>[0],
     store: InventoryManifestStore,
     currentItems: Readonly<Record<string, CurrentImportItem>>,
-  ) => Promise<SdkResult<{ manifestId: string; rowCount: number }>>;
+    settings: ImportSettings,
+  ) => Promise<SdkResult<PlannedBrowserFile>>;
   putListing: (record: CommerceListingRecord) => Promise<void>;
   listingExists: (url: string) => Promise<boolean>;
   syncMany: (listings: readonly SyncManyListing[]) => Promise<SdkResult<SyncManyEnvelope>>;
@@ -158,12 +174,8 @@ export class CommerceInventoryImportApplication {
       store,
       planFile:
         overrides.planFile ??
-        ((file, manifestStore, currentItems) =>
-          MarketplaceShopClientService.planBrowserFile(file, manifestStore, currentItems, {
-            sellerPubky,
-            currency: SHOPIFY_CSV_PRICE.currency,
-            exponent: SHOPIFY_CSV_PRICE.exponent,
-          })),
+        ((file, manifestStore, currentItems, settings) =>
+          MarketplaceShopClientService.planBrowserFile(file, manifestStore, currentItems, { sellerPubky, settings })),
       putListing: overrides.putListing ?? CommerceApplication.putPublicListingForImport.bind(CommerceApplication),
       listingExists: overrides.listingExists ?? ((url) => CommerceHomeserverService.exists(url)),
       syncMany:
@@ -196,12 +208,13 @@ export class CommerceInventoryImportApplication {
 
   async planFile(
     file: Parameters<typeof MarketplaceShopClientService.planBrowserFile>[0],
+    settings: ImportSettings = DEFAULT_IMPORT_SETTINGS,
   ): Promise<InventoryImportPlanResult> {
     const auth = CommerceInventoryImportApplication.authStatus(this.host.sellerPubky);
     if (auth.status !== 'ready') return auth;
     await this.host.store.pruneExpired();
     const currentItems = await this.host.currentItems();
-    const planned = await this.host.planFile(file, this.host.store, currentItems);
+    const planned = await this.host.planFile(file, this.host.store, currentItems, settings);
     if (!planned.ok) {
       return {
         status: 'parse-failed',
@@ -218,6 +231,8 @@ export class CommerceInventoryImportApplication {
       manifestId: planned.value.manifestId,
       rowCount: planned.value.rowCount,
       counts: MarketplaceShopClientService.dryRunCounts(manifest as ImportManifest),
+      ...(planned.value.format ? { format: planned.value.format } : {}),
+      ...(planned.value.lossReport ? { lossReport: planned.value.lossReport } : {}),
     };
   }
 
@@ -243,6 +258,7 @@ export class CommerceInventoryImportApplication {
     const pendingSync: SyncManyListing[] = [];
     const groups = this.groups(loaded.rows);
     let conflictListingId: string | null = null;
+    const invalid: ListingPublishFailure[] = [];
 
     for (const [listingId, group] of groups) {
       const actionable = group.filter((row) => resumeNext(row.checkpoint) !== 'none');
@@ -262,6 +278,10 @@ export class CommerceInventoryImportApplication {
 
       if (needsPut) {
         const put = await this.publishGroup(manifestId, listingId, group);
+        if (put.status === 'invalid') {
+          invalid.push(put.failure);
+          continue;
+        }
         if (put.status === 'conflict' || put.status === 'error') return put;
         published += 1;
       }
@@ -279,16 +299,23 @@ export class CommerceInventoryImportApplication {
     const failed = rows.filter((row) => row.checkpoint === 'failed').length;
     const unfinished = rows.some((row) => resumeNext(row.checkpoint) !== 'none' && row.checkpoint !== 'conflict');
     const mixed = (synced > 0 && failed > 0) || unfinished;
-    if (conflictListingId && published === 0 && synced === 0) {
+    if (conflictListingId && published === 0 && synced === 0 && invalid.length === 0) {
       return { status: 'conflict', listingId: conflictListingId, message: IMPORT_CONFLICT_COPY };
     }
+    const message = conflictListingId
+      ? IMPORT_CONFLICT_COPY
+      : invalid.length > 0
+        ? invalidListingsCopy(invalid)
+        : mixed
+          ? IMPORT_MIXED_COPY
+          : undefined;
     return {
       status: 'complete',
       published,
       synced,
       failed,
       mixed: mixed || conflictListingId !== null,
-      ...(mixed || conflictListingId ? { message: conflictListingId ? IMPORT_CONFLICT_COPY : IMPORT_MIXED_COPY } : {}),
+      ...(message ? { message } : {}),
     };
   }
 
@@ -472,7 +499,10 @@ export class CommerceInventoryImportApplication {
     listingId: string,
     group: readonly HostPlannedImportRow[],
   ): Promise<
-    { status: 'ok' } | { status: 'conflict'; listingId: string; message: string } | { status: 'error'; message: string }
+    | { status: 'ok' }
+    | { status: 'invalid'; failure: ListingPublishFailure }
+    | { status: 'conflict'; listingId: string; message: string }
+    | { status: 'error'; message: string }
   > {
     const reconcile = group.some((row) => resumeNext(row.checkpoint) === 'reconcile_publish');
     const url = CommerceRecordNormalizer.listingUri(this.host.sellerPubky, listingId);
@@ -496,8 +526,12 @@ export class CommerceInventoryImportApplication {
     }
     const mapped = mapCanonicalRowsToListing(payloads, this.host.sellerPubky);
     if (!mapped.ok) {
+      const failure = classifyListingPublishFailure(mapped.message);
+      const failureCode =
+        failure.code === 'invalid_listing' ? `${failure.code}: ${failure.message.slice(0, 200)}` : failure.code;
       await this.checkpointGroup(manifestId, listingId, 'failed');
-      return { status: 'error', message: mapped.message };
+      for (const row of group) await this.annotateRowFailure(manifestId, row.rowIdentity, failureCode);
+      return { status: 'invalid', failure };
     }
 
     await this.checkpointGroup(manifestId, listingId, 'publishing');

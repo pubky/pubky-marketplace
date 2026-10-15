@@ -253,9 +253,11 @@ describe('CommerceInventoryImportApplication', () => {
 
       const published = await importer.publish(planned.manifestId);
 
-      expect(published).toEqual({ status: 'error', message: UNLIMITED_STOCK_RESERVED_MESSAGE });
+      expect(published).toMatchObject({ status: 'complete', published: 0, synced: 0, failed: 1, mixed: false });
       expect(puts).toEqual([]);
       expect(syncCalls).toEqual([]);
+      const result = await importer.resultCsv(planned.manifestId);
+      expect(result).toContain(`"invalid_listing: ${UNLIMITED_STOCK_RESERVED_MESSAGE}"`);
     },
   );
 
