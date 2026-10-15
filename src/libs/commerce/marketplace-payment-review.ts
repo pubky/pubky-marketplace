@@ -31,6 +31,14 @@ export const sellerPaymentObservationSchema = z
     amountMatched: z.boolean().nullable().optional(),
     disappeared: z.boolean().nullable().optional(),
     observedAt: z.string().nullable().optional(),
+    // Single-bind Paykit orders (`payment_method: "paykit"`): the rail observed and, when the
+    // buyer also paid on the other rail, what was seen there. Tolerant scalars so a newer
+    // service never fails the seller's order parse.
+    asset: z.string().nullish().catch(undefined),
+    observedUnits: z.union([z.string(), z.number()]).nullish().catch(undefined),
+    otherRailAsset: z.string().nullish().catch(undefined),
+    otherRailAmount: z.union([z.string(), z.number()]).nullish().catch(undefined),
+    otherRailReference: z.string().nullish().catch(undefined),
   })
   .strict();
 

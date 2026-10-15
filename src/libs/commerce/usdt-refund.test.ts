@@ -7,6 +7,7 @@ import {
 } from '@/test/fixtures/commerce/usdt-refund.wire';
 import {
   formatUsdtParity,
+  formatUsdtRefundAmount,
   isArbitrumTxHash,
   isUsdtRefundOrder,
   isValidArbitrumAddress,
@@ -16,6 +17,7 @@ import {
   USDT_REFUND_COPY,
   USDT_REFUND_REFUSAL_COPY,
   usdtParityMillionths,
+  usdtRefundCap,
   usdtRefundDueMoney,
   type UsdtRefundOrder,
   usdtRefundRecordLine,
@@ -279,5 +281,44 @@ describe('recorded refund copy', () => {
       expect(copy.toLowerCase()).not.toMatch(/verified|verifies|proven|(?:confirmed|settled) on arbitrum/);
     }
     expect(USDT_REFUND_COPY.recordedBySeller).toBe('Recorded by the seller');
+  });
+});
+
+describe('a USDT refund on an order priced in another currency', () => {
+  const sats = { amountMinor: 150_000, currency: 'SAT', exponent: 0 };
+  const paid = order({
+    state: 'refunded_external',
+    total: sats,
+    paymentAmountMinor: 41_250_000,
+    refundDestination: destination,
+    externalRefund: { amountMinor: 41_250_000, transactionId: REFUND_FIXTURE_TX_HASH },
+  });
+
+  it('is recorded in USDT millionths, capped at the amount paid', () => {
+    expect(usdtRefundCap(paid)).toEqual({ amountMinor: 41_250_000, currency: 'USDT', exponent: 6 });
+    expect(usdtRefundCap({ ...paid, paymentAmountMinor: null })).toBeNull();
+    expect(usdtRefundCap({ ...paid, paymentAsset: null })).toBeNull();
+    expect(usdtRefundDueMoney(paid)).toEqual({ amountMinor: 41_250_000, currency: 'USDT', exponent: 6 });
+  });
+
+  it('keeps cents at parity for a USD order, whatever was paid', () => {
+    const usdOrder = order({ total: usd(2_500), paymentAmountMinor: 25_000_000 });
+    expect(usdtRefundCap(usdOrder)).toBeNull();
+    expect(formatUsdtRefundAmount(usdOrder, 2_500)).toBe('25.000000 USDT');
+  });
+
+  it('names the USDT amount of a refund, never the satoshi price as parity', () => {
+    expect(formatUsdtRefundAmount(paid, 41_250_000)).toBe('41.250000 USDT');
+    expect(formatUsdtRefundAmount(paid, 41_250_000, { grouped: true })).toBe('41.250000 USDT');
+    expect(usdtRefundRecordLine(paid)).toContain('a refund of 41.250000 USDT to ');
+  });
+
+  it('names a partial refund in USDT of the amount paid', () => {
+    expect(
+      usdtRefundRecordLine({
+        ...paid,
+        externalRefund: { amountMinor: 10_000_000, transactionId: REFUND_FIXTURE_TX_HASH },
+      }),
+    ).toContain('a refund of 10.000000 USDT (10.000000 USDT of 41.250000 USDT) to ');
   });
 });

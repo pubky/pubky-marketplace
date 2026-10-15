@@ -139,8 +139,8 @@ export function MarketplaceWatchlist() {
                 Sign in to keep a watchlist
               </Heading>
               <Typography as="p" className="max-w-md text-muted-foreground">
-                Watched items are stored with your account on this device and synced privately across your devices
-                through your homeserver. Alerts come from checks the app runs while you browse.
+                Watched items are stored for your pubky on this device and synced privately across your devices through
+                your homeserver. Alerts come from checks the app runs while you browse.
               </Typography>
             </CardContent>
           </Card>

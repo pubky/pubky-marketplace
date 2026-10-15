@@ -1441,7 +1441,7 @@ describe('MarketplaceTransactionService read projections', () => {
       );
       await expect(MarketplaceTransactionService.bindPaymentMethod(ACTOR, ORDER_ID, 'paykit')).rejects.toMatchObject({
         message:
-          'Connect Bitkit to pay with Paykit: this account has no Paykit wallet that can receive a payment request.',
+          'Connect Bitkit to pay with Paykit: this pubky has no Paykit wallet that can receive a payment request.',
       });
     });
 

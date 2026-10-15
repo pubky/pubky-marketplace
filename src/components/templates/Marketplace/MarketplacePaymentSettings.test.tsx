@@ -147,7 +147,7 @@ async function renderSettings() {
 }
 
 const MISMATCH_MESSAGE =
-  "Bitkit approved a different Pubky key than the one you're signed in with here (gy1wnkh...tq3pco). In Bitkit, switch to that key, then try again.";
+  "Bitkit approved a different pubky than the one you're signed in with here (gy1wnkh...tq3pco). In Bitkit, switch to that pubky, then try again.";
 
 function setPaykitIframeSource(iframe: HTMLIFrameElement): WindowProxy {
   const source = {} as WindowProxy;
@@ -191,7 +191,7 @@ describe('MarketplacePaymentSettings', () => {
     const titles = within(methodsSection)
       .getAllByRole('heading', { level: 2 })
       .map((heading) => heading.textContent);
-    expect(titles).toEqual(['PayPal', 'Bitcoin wallet']);
+    expect(titles).toEqual(['PayPal', 'Bitcoin']);
     expect(screen.queryByText(/Stripe/)).not.toBeInTheDocument();
     expect(screen.queryByLabelText('Stripe payment link')).not.toBeInTheDocument();
   });
@@ -528,16 +528,31 @@ describe('MarketplacePaymentSettings', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /Connect Bitkit/ }));
     expect(screen.getAllByText(helper)).toHaveLength(1);
-    expect(
-      screen.getByText('Scan the code with Bitkit, or open this page on your phone and tap Open in Bitkit.'),
-    ).toBeInTheDocument();
+    expect(screen.getByText('Scan the code with Bitkit')).toBeInTheDocument();
+    expect(screen.getByText('Tap Open in Bitkit')).toBeInTheDocument();
     expect(screen.queryByText(/Bitkit 2\.5 or newer is required/)).not.toBeInTheDocument();
     const iframe = screen.getByTitle('Connect Bitkit');
     const dialog = iframe.closest('[data-testid="dialog-content"]');
     expect(dialog?.className).toMatch(/overflow-y-auto/);
     expect(dialog?.className).not.toMatch(/overflow-hidden/);
     expect(iframe.className).not.toMatch(/overflow-y-auto|overflow-auto|h-\[min\(22rem/);
-    expect(iframe).toHaveAttribute('scrolling', 'no');
+    expect(iframe).not.toHaveAttribute('scrolling', 'no');
+    expect(iframe).toHaveClass('h-[40rem]', 'w-full');
+  });
+
+  it('keeps Accept bitcoin as step 3 and hides the separate selling prompt once enabled', async () => {
+    const session = useCommerceStore.getState().marketplaceSession;
+    useCommerceStore.setState({ marketplaceSession: null });
+    render(<MarketplacePaymentSettings />);
+    expect(screen.getByText('3. Accept bitcoin')).toBeInTheDocument();
+    expect(screen.getByRole('switch', { name: 'Accept bitcoin' })).toBeDisabled();
+    expect(screen.queryByText('3. Enable selling')).not.toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: 'Enable selling' })).toHaveLength(2);
+
+    act(() => useCommerceStore.setState({ marketplaceSession: session }));
+    await screen.findByRole('switch', { name: 'Accept bitcoin' });
+    expect(screen.getByText('3. Accept bitcoin')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Enable selling' })).not.toBeInTheDocument();
   });
 
   it('validates the Bitkit setup callback', async () => {
@@ -645,7 +660,7 @@ describe('MarketplacePaymentSettings', () => {
       await vi.advanceTimersByTimeAsync(6 * 60 * 1_000);
     });
     expect(screen.getByRole('alert')).toHaveTextContent(
-      "No approval received. If you approved in Bitkit, check that Bitkit holds the key you're signed in with here (gy1wnkh...tq3pco)",
+      "No approval received. If you approved in Bitkit, check that Bitkit holds the pubky you're signed in with here (gy1wnkh...tq3pco)",
     );
     expect(screen.queryByTitle('Connect Bitkit')).not.toBeInTheDocument();
     expect(screen.getByTestId('paykit-setup-qr-expired')).toBeInTheDocument();
@@ -752,7 +767,7 @@ describe('MarketplacePaymentSettings', () => {
         }),
       ),
     );
-    expect(screen.getByRole('alert')).toHaveTextContent('Bitkit approved a different Pubky key');
+    expect(screen.getByRole('alert')).toHaveTextContent('Bitkit approved a different pubky');
 
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
     const secondIframe = screen.getByTitle('Connect Bitkit') as HTMLIFrameElement;

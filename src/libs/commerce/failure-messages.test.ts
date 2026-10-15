@@ -199,7 +199,7 @@ describe('marketplacePaymentMethodFailureMessage', () => {
       context: { statusCode: 503, reason: 'paykit_unavailable' },
     });
     expect(marketplacePaymentMethodFailureMessage(unavailable, 'fallback')).toBe(
-      'Bitcoin payment requests are unavailable right now. If you haven’t set up Bitkit for this Pubky account yet, do that first. Then try again shortly.',
+      'Bitcoin payment requests are unavailable right now. If you haven’t set up Bitkit for this pubky yet, do that first. Then try again shortly.',
     );
   });
 
@@ -222,7 +222,7 @@ describe('marketplacePaymentMethodFailureMessage', () => {
       ],
       [
         'buyer_paykit_wallet_required',
-        'Connect Bitkit to pay with Bitcoin: this account has no Paykit wallet that can receive a payment request.',
+        'Connect Bitkit to pay with Bitcoin: this pubky has no Paykit wallet that can receive a payment request.',
       ],
       [
         'buyer_paykit_wallet_setup_needed',
@@ -239,7 +239,7 @@ describe('marketplacePaymentMethodFailureMessage', () => {
       ],
       [
         'paykit_unavailable',
-        'Bitcoin payment requests are unavailable right now. If you haven’t set up Bitkit for this Pubky account yet, do that first. Then try again shortly.',
+        'Bitcoin payment requests are unavailable right now. If you haven’t set up Bitkit for this pubky yet, do that first. Then try again shortly.',
       ],
     ])('maps the %s refusal to static buyer copy', (reason, copy) => {
       const message = marketplacePaymentMethodFailureMessage(bindRefusal(reason), 'fallback');
@@ -278,7 +278,7 @@ describe('marketplacePaymentMethodFailureMessage', () => {
       ],
       [
         'buyer_paykit_wallet_required',
-        'Connect Bitkit to pay with Paykit: this account has no Paykit wallet that can receive a payment request.',
+        'Connect Bitkit to pay with Paykit: this pubky has no Paykit wallet that can receive a payment request.',
       ],
       [
         'paykit_expiry_inconsistent',
@@ -291,7 +291,7 @@ describe('marketplacePaymentMethodFailureMessage', () => {
       ],
       [
         'paykit_unavailable',
-        'Paykit payment requests are unavailable right now. If you haven’t set up Bitkit for this Pubky account yet, do that first. Then try again shortly.',
+        'Paykit payment requests are unavailable right now. If you haven’t set up Bitkit for this pubky yet, do that first. Then try again shortly.',
       ],
       [
         'seller_account_unclaimed',
@@ -317,7 +317,7 @@ describe('marketplacePaymentMethodFailureMessage', () => {
         context: { statusCode: 409, reason: 'buyer_paykit_wallet_required' },
       });
       expect(marketplacePaymentMethodFailureMessage(bitcoinBind, 'fallback')).toBe(
-        'Connect Bitkit to pay with Bitcoin: this account has no Paykit wallet that can receive a payment request.',
+        'Connect Bitkit to pay with Bitcoin: this pubky has no Paykit wallet that can receive a payment request.',
       );
     });
 
@@ -383,7 +383,7 @@ describe('marketplacePaymentMethodFailureMessage', () => {
       context: { statusCode: 409, reason: 'buyer_paykit_wallet_required' },
     });
     expect(marketplacePaymentMethodFailureMessage(error, 'fallback')).toBe(
-      'Connect Bitkit to pay with Bitcoin: this account has no Paykit wallet that can receive a payment request.',
+      'Connect Bitkit to pay with Bitcoin: this pubky has no Paykit wallet that can receive a payment request.',
     );
   });
 
@@ -527,10 +527,7 @@ describe('Bitkit purchase bootstrap reason codes', () => {
     ['flow_expired', 'This approval expired. Start again.'],
     ['flow_cancelled', 'Approval cancelled.'],
     ['result_denied', 'This approval could not be completed. Start again.'],
-    [
-      'identity_mismatch',
-      "This approval came from a different account. Approve with the account you're signed in with.",
-    ],
+    ['identity_mismatch', 'This approval came from a different pubky. Approve with your current pubky.'],
     ['fresh_approval_required', 'Approve again in Bitkit.'],
     ['flow_binding_missing', 'This approval belongs to another tab. Start again here.'],
     ['flow_binding_denied', 'This approval belongs to another tab. Start again here.'],

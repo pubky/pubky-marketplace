@@ -93,6 +93,25 @@ describe('payment-methods', () => {
         expect(sellerPaykitAssets(config, { usdtPaymentsAvailable: true })).toEqual(['BTC', 'USDT']);
       });
 
+      it('offers no Paykit at all when the service says paykit_available is false', () => {
+        const config = sellerPaymentConfigSchema.parse({
+          ...base,
+          usdtAvailable: true,
+          paykitAvailable: false,
+          acceptedAssets: ['BTC', 'USDT'],
+        });
+        expect(config.paykitAvailable).toBe(false);
+        expect(sellerPaykitAssets(config, { usdtPaymentsAvailable: true })).toEqual([]);
+        expect(availablePaymentMethods(config, { usdtPaymentsAvailable: true })).toEqual(['paypal']);
+      });
+
+      it('keeps reading the readiness flags when paykit_available is true or absent', () => {
+        const available = sellerPaymentConfigSchema.parse({ ...base, usdtAvailable: true, paykitAvailable: true });
+        expect(sellerPaykitAssets(available, { usdtPaymentsAvailable: true })).toEqual(['BTC', 'USDT']);
+        const malformed = sellerPaymentConfigSchema.parse({ ...base, paykitAvailable: 'yes' });
+        expect('paykitAvailable' in malformed).toBe(false);
+      });
+
       it('removes Bitcoin when the rail-wide offer gate is off, whatever the list says', () => {
         const config = sellerPaymentConfigSchema.parse({
           ...base,

@@ -43,6 +43,9 @@ export const sellerPaymentConfigSchema = z
     // Present only when the service's USDT flag is on. A malformed value is
     // dropped, which reads as "not available".
     usdtAvailable: z.boolean().optional().catch(undefined),
+    // Present only while the service's USDT flag is on: whether this seller can
+    // take a Paykit request at all, on any asset.
+    paykitAvailable: z.boolean().optional().catch(undefined),
     // The assets one Paykit request offers for this seller. Unknown assets are
     // dropped; an absent or unreadable list falls back to `bitcoinAvailable` /
     // `usdtAvailable` in `sellerPaykitAssets`.
@@ -59,18 +62,21 @@ export const sellerPaymentConfigSchema = z
       paypalAvailable,
       paypalMerchantEmail,
       usdtAvailable,
+      paykitAvailable,
       acceptedAssets,
     }): {
       bitcoinAvailable: boolean;
       bitcoinOfferAvailable: boolean;
       paypalAvailable: boolean;
       usdtAvailable?: boolean;
+      paykitAvailable?: boolean;
       acceptedAssets?: PaymentAsset[];
     } => ({
       bitcoinAvailable,
       bitcoinOfferAvailable,
       paypalAvailable: paypalAvailable ?? Boolean(paypalMerchantEmail),
       ...(usdtAvailable === undefined ? {} : { usdtAvailable }),
+      ...(paykitAvailable === undefined ? {} : { paykitAvailable }),
       ...(acceptedAssets === undefined ? {} : { acceptedAssets }),
     }),
   );
@@ -82,13 +88,15 @@ export type SellerPaymentConfig = z.infer<typeof sellerPaymentConfigSchema>;
  * is counted only when the caller's gate (`usdtPaymentsAvailable`: Shop flag
  * AND service capability) is on, so a deployment with USDT off never says
  * "USDT". The service's `acceptedAssets` list wins when it sends one; older
- * services are read from `bitcoinAvailable` and `usdtAvailable`. The
+ * services are read from `bitcoinAvailable` and `usdtAvailable`, and a
+ * service that says `paykitAvailable: false` offers none. The
  * rail-wide Bitcoin offer gate removes Bitcoin either way.
  */
 export function sellerPaykitAssets(
   config: SellerPaymentConfig,
   { usdtPaymentsAvailable = false }: { usdtPaymentsAvailable?: boolean } = {},
 ): PaymentAsset[] {
+  if (config.paykitAvailable === false) return [];
   const bitcoin =
     (config.acceptedAssets ? config.acceptedAssets.includes('BTC') : config.bitcoinAvailable) &&
     config.bitcoinOfferAvailable;

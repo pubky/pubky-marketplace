@@ -193,6 +193,48 @@ describe('MarketplacePaymentStatusCard — one Paykit order after payment', () =
   });
 });
 
+describe('MarketplacePaymentStatusCard — a payment on both rails', () => {
+  const heldForReview = (observation: Record<string, unknown> | null) => {
+    const { order } = createPaykitOrderFixture('unpaid', {
+      state: 'pending_payment',
+      paykitObservation: observation as never,
+    });
+    return {
+      order,
+      payment: createPaymentFixture('manual_review', {
+        adapter: 'paykit',
+        manualReviewEnteredAt: '2026-08-20T21:00:00.000Z',
+      }),
+    };
+  };
+
+  it('lets the seller resolve it with the neutral title and names the other rail', () => {
+    renderCard(
+      heldForReview({ asset: 'BTC', observedUnits: 6173, otherRailAsset: 'USDT', otherRailAmount: '5000000' }),
+      false,
+    );
+
+    expect(screen.getByTestId('seller-bitcoin-resolve-prompt')).toHaveTextContent('Resolve payment review');
+    expect(screen.getByText('Also paid in')).toBeInTheDocument();
+    expect(screen.getByText('USDT')).toBeInTheDocument();
+    expect(screen.getByText('5000000')).toBeInTheDocument();
+  });
+
+  it('names no other rail when the service reports none', () => {
+    renderCard(heldForReview({ asset: 'BTC' }), false);
+
+    expect(screen.getByTestId('seller-bitcoin-resolve-prompt')).toBeInTheDocument();
+    expect(screen.queryByText('Also paid in')).not.toBeInTheDocument();
+  });
+
+  it('shows the buyer the generic review line, in no rail terms', () => {
+    renderCard(heldForReview({ asset: 'BTC', otherRailAsset: 'USDT' }), true);
+
+    expect(screen.getByTestId('payment-manual-review-copy')).toBeInTheDocument();
+    expect(screen.queryByTestId('seller-bitcoin-resolve-prompt')).not.toBeInTheDocument();
+  });
+});
+
 describe('MarketplacePaymentStatusCard — legacy orders', () => {
   it.each([
     ['bitcoin', PAYMENT_RAIL_BADGE.bitcoin],

@@ -100,6 +100,19 @@ export function sharedPaykitAssets(assetSets: readonly (readonly PaymentAsset[])
 
 export const PAYKIT_PICKER_LABEL = 'Pay with Paykit';
 
+/**
+ * Why checkout says Bitkit is needed. A Bitcoin-only entry keeps the existing
+ * on-chain wording; an entry that also offers USDT says the buyer chooses the
+ * asset in Bitkit.
+ */
+export function paykitRequirementCopy(assets: readonly PaymentAsset[]): string {
+  if (assets.includes('USDT') && assets.includes('BTC')) {
+    return 'Paykit payments require Bitkit. You choose Bitcoin or USDT there.';
+  }
+  if (assets.includes('USDT')) return 'Paykit payments require Bitkit. You pay in USDT there.';
+  return 'Bitcoin payments require Bitkit. Marketplace currently supports on-chain bitcoin payments only.';
+}
+
 /** The neutral status before any payment is seen: the buyer has not chosen an asset yet. */
 export function paykitAwaitingTitle(assets: readonly PaymentAsset[]): string {
   return `Pay in Bitkit (${paykitAssetsLabel(assets)})`;

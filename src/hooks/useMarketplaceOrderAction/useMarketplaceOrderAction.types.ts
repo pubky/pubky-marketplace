@@ -36,7 +36,8 @@ export const marketplaceOrderActionSchema = z
       }
     }
     if (data.action === 'refund') {
-      if (!/^\d+(?:\.\d{1,2})?$/.test(data.amount)) {
+      // Up to six decimals here (USDT millionths); `marketplaceOrderActionSchemaFor` caps them at the order's units.
+      if (!/^\d+(?:\.\d{1,6})?$/.test(data.amount)) {
         context.addIssue({ code: 'custom', path: ['amount'], message: 'Enter a valid refund amount.' });
       }
     }
@@ -84,7 +85,11 @@ export function marketplaceOrderActionSchemaFor(
     } else if (data.transactionId.length < 8) {
       context.addIssue({ code: 'custom', path: ['transactionId'], message: 'Transaction evidence is required.' });
     }
-    if (!/^\d+(?:\.\d{1,2})?$/.test(data.amount)) return;
+    if (!/^\d+(?:\.\d{1,6})?$/.test(data.amount)) return;
+    if (!new RegExp(`^\\d+(?:\\.\\d{1,${Math.max(total.exponent, 2)}})?$`).test(data.amount)) {
+      context.addIssue({ code: 'custom', path: ['amount'], message: 'Enter a valid refund amount.' });
+      return;
+    }
     if (total.exponent === 0 && !/^\d+$/.test(data.amount)) {
       context.addIssue({ code: 'custom', path: ['amount'], message: 'Enter a whole number.' });
       return;

@@ -114,6 +114,12 @@ describe('asset-bearing order fields', () => {
     expect(schema.parse({}).acceptedAssets).toBeUndefined();
   });
 
+  it('reads every quote basis the service names for the observed rail', () => {
+    for (const basis of ['parity', 'native', 'fixed_rate']) {
+      expect(schema.parse({ paymentQuoteBasis: basis }).paymentQuoteBasis).toBe(basis);
+    }
+  });
+
   it('drops a value the Shop does not recognise instead of failing', () => {
     expect(
       schema.parse({

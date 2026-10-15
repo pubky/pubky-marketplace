@@ -104,6 +104,7 @@ export type UsdtRefundOrder = {
   state: string;
   total: { amountMinor: number; currency: string; exponent: number };
   paymentAsset?: string | null;
+  paymentAmountMinor?: number | null;
   receiptId?: string | null;
   refundDestination?: RefundDestination | null;
   paymentAddress?: string | null;
@@ -201,6 +202,32 @@ export function usdtParityMillionths(money: {
   return Number.isSafeInteger(millionths) && millionths >= 0 ? millionths : null;
 }
 
+/**
+ * A USDT order priced in anything but USD/2 (a Bitcoin or satoshi price: Paykit
+ * fixes the rate at prepare) records its refund in USDT0 millionths, capped at
+ * the amount paid (`external_refund.amount_minor`). A USD order keeps cents at
+ * parity. Null when the order's own USDT amount is unknown.
+ */
+export function usdtRefundCap(
+  order: Pick<UsdtRefundOrder, 'total' | 'paymentAsset' | 'paymentAmountMinor'>,
+): { amountMinor: number; currency: 'USDT'; exponent: number } | null {
+  if (!isUsdtRefundOrder(order)) return null;
+  if (usdtParityMillionths(order.total) !== null) return null;
+  const paid = order.paymentAmountMinor;
+  if (typeof paid !== 'number' || !Number.isSafeInteger(paid) || paid < 0) return null;
+  return { amountMinor: paid, currency: 'USDT', exponent: USDT_EXPONENT };
+}
+
+/** The USDT figure for an amount in the order's refund units: parity cents, or millionths when recorded in USDT. */
+export function formatUsdtRefundAmount(
+  order: Pick<UsdtRefundOrder, 'total' | 'paymentAsset' | 'paymentAmountMinor'>,
+  amountMinor: number,
+  options: { grouped?: boolean } = {},
+): string | null {
+  if (usdtRefundCap(order)) return Number.isSafeInteger(amountMinor) ? formatUsdt(amountMinor, options) : null;
+  return formatUsdtParity({ ...order.total, amountMinor }, options);
+}
+
 export function formatUsdtParity(
   money: { amountMinor: number; currency: string; exponent: number },
   options: { grouped?: boolean } = {},
@@ -211,6 +238,9 @@ export function formatUsdtParity(
 
 /** The amount the seller is asked to send: the requested return amount, else the whole order. */
 export function usdtRefundDueMoney(order: UsdtRefundOrder): UsdtRefundOrder['total'] {
+  // Recorded in USDT, a partial request in order units has no exact USDT figure, so the whole amount paid is due.
+  const cap = usdtRefundCap(order);
+  if (cap) return cap;
   const requested = order.returnRequest && order.returnRequest.state !== 'refunded' ? order.returnRequest : null;
   return requested ? { ...order.total, amountMinor: requested.requestedAmountMinor } : order.total;
 }
@@ -273,11 +303,15 @@ export function usdtRefundRefusalMessage(error: { reason?: unknown; message?: un
 export function usdtRefundRecordLine(order: UsdtRefundOrder): string | null {
   const refund = order.externalRefund;
   if (!refund || !isUsdtRefundOrder(order)) return null;
-  const amount = formatUsdtParity({ ...order.total, amountMinor: refund.amountMinor }, { grouped: true });
+  const cap = usdtRefundCap(order);
+  const amount = formatUsdtRefundAmount(order, refund.amountMinor, { grouped: true });
   const destination = order.refundDestination ? ` to ${order.refundDestination.address}` : '';
-  const isPartial = order.state === 'refunded_partial' || refund.amountMinor < order.total.amountMinor;
+  const capMinor = cap ? cap.amountMinor : order.total.amountMinor;
+  const isPartial = order.state === 'refunded_partial' || refund.amountMinor < capMinor;
   const scope = isPartial
-    ? ` (${formatCommerceMoney({ ...order.total, amountMinor: refund.amountMinor })} of ${formatCommerceMoney(order.total)})`
+    ? cap
+      ? ` (${formatUsdt(refund.amountMinor, { grouped: true })} of ${formatUsdt(cap.amountMinor, { grouped: true })})`
+      : ` (${formatCommerceMoney({ ...order.total, amountMinor: refund.amountMinor })} of ${formatCommerceMoney(order.total)})`
     : '';
   const what = amount ? `a refund of ${amount}${scope}` : `a refund${scope}`;
   return `The seller recorded ${what}${destination} (transaction ${refund.transactionId}). ${USDT_REFUND_COPY.notChecked}`;

@@ -2,13 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { marketplaceOrderSchema } from '@/core/services/marketplace/marketplace-projections';
 import projectionSamples from '@/libs/commerce/contracts/samples/projections.json';
 import { createBitcoinQuotedOrderFixture, createOrderFixture } from '@/test/fixtures/commerce/orders';
-import {
-  BITCOIN_PAYMENT_CODE_CHECKOUT_NOTE,
-  bitcoinPaymentBreakdown,
-  bitcoinPaymentCodeCheckoutNote,
-  formatBitcoinAmountBreakdown,
-  orderAmountEntry,
-} from './bitcoin-payment-code';
+import { bitcoinPaymentBreakdown, formatBitcoinAmountBreakdown, orderAmountEntry } from './bitcoin-payment-code';
 import { toCamelCaseWire } from './wire-casing';
 
 const PLACEHOLDERS: Record<string, string> = {
@@ -139,14 +133,37 @@ describe('bitcoin payment code', () => {
     exact.total = { amount_minor: 51_200, currency: 'SAT', exponent: 0 };
     expect(bitcoinPaymentBreakdown(parseOrder(exact))).toBeNull();
   });
+});
 
-  it('says the checkout payment adds 1–999 sats, without a protocol name', () => {
-    expect(BITCOIN_PAYMENT_CODE_CHECKOUT_NOTE).toContain('1–999 sats');
-    expect(BITCOIN_PAYMENT_CODE_CHECKOUT_NOTE).not.toMatch(/paykit|protocol/i);
+describe('refund amount entry for a USDT payment', () => {
+  const sats = { amountMinor: 150_000, currency: 'SAT', exponent: 0 };
+
+  it('is recorded in USDT millionths, capped at the amount paid, on an order priced in satoshis', () => {
+    const order = createOrderFixture('return_received', {
+      total: sats,
+      paymentMethod: 'paykit',
+      paymentAsset: 'USDT',
+      paymentAmountMinor: 41_250_000,
+    });
+    expect(orderAmountEntry(order)).toEqual({ amountMinor: 41_250_000, exponent: 6, unitLabel: 'USDT' });
   });
 
-  it('shows the checkout note only where the Paykit server adds a code', () => {
-    expect(bitcoinPaymentCodeCheckoutNote('fork')).toBe(BITCOIN_PAYMENT_CODE_CHECKOUT_NOTE);
-    expect(bitcoinPaymentCodeCheckoutNote('upstream')).toBeNull();
+  it('keeps cents on a USD order paid in USDT and satoshis on one paid in Bitcoin', () => {
+    const usd = createOrderFixture('return_received', {
+      paymentMethod: 'paykit',
+      paymentAsset: 'USDT',
+      paymentAmountMinor: 13_700_000,
+    });
+    expect(orderAmountEntry(usd)).toEqual({
+      amountMinor: usd.total.amountMinor,
+      exponent: usd.total.exponent,
+      unitLabel: usd.total.currency,
+    });
+    const bitcoin = createOrderFixture('return_received', {
+      total: sats,
+      paymentMethod: 'paykit',
+      paymentAsset: 'BTC',
+    });
+    expect(orderAmountEntry(bitcoin)).toEqual({ amountMinor: 150_000, exponent: 0, unitLabel: '₿' });
   });
 });

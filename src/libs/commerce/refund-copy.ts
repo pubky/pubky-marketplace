@@ -7,13 +7,19 @@ import {
 import { MARKETPLACE_FAILURE_MESSAGES } from '@/libs/commerce/failure-messages';
 import { partialRefundLabel } from '@/libs/commerce/partial-refund';
 import type { CommerceMoney } from '@/libs/commerce/transaction-contracts';
-import { isUsdtRefundOrder, type RefundDestination, usdtRefundRecordLine } from '@/libs/commerce/usdt-refund';
+import {
+  isUsdtRefundOrder,
+  type RefundDestination,
+  usdtRefundCap,
+  usdtRefundRecordLine,
+} from '@/libs/commerce/usdt-refund';
 
 type RefundCopyOrder = {
   state: string;
   total: CommerceMoney;
   paymentMethod?: BitcoinPaymentOrder['paymentMethod'];
   paymentAsset?: string | null;
+  paymentAmountMinor?: number | null;
   refundDestination?: RefundDestination | null;
   subtotal?: CommerceMoney;
   shipping?: CommerceMoney;
@@ -42,7 +48,7 @@ export type RefundOrderNotice = keyof typeof REFUND_ORDER_NOTICES;
 
 /** The order-card state pill for refunded orders. Null when the state is not refund-specific. */
 export function refundStateLabel(order: RefundCopyOrder): string | null {
-  const partial = partialRefundLabel(order);
+  const partial = usdtRefundCap(order) ? null : partialRefundLabel(order);
   if (partial) return partial;
   if (order.state !== 'refunded_external') return null;
   if (isUsdtRefundOrder(order)) return 'Refund recorded';

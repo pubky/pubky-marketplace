@@ -109,7 +109,7 @@ export const paymentAssetFieldsShape = {
   paymentNetwork: z.enum(PAYMENT_NETWORKS).nullish().catch(undefined),
   paymentAmountMinor: z.number().int().nonnegative().nullish().catch(undefined),
   paymentExponent: z.number().int().nonnegative().nullish().catch(undefined),
-  paymentQuoteBasis: z.enum(['parity']).nullish().catch(undefined),
+  paymentQuoteBasis: z.enum(['parity', 'native', 'fixed_rate']).nullish().catch(undefined),
   // The assets a `paykit` order offered the buyer. Unknown assets are dropped
   // so a newer service never hides the ones the Shop knows.
   acceptedAssets: z

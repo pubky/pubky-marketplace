@@ -20,9 +20,10 @@ import { OTHER_CARRIER_ID, SHIPPING_CARRIERS } from '@/libs/commerce/carriers';
 import { DIGITAL_ORDER_COPY, DIGITAL_SELLER_COPY, isInstantDigitalDeliveryKind } from '@/libs/commerce/digital';
 import { formatCommerceMoney } from '@/libs/commerce/format';
 import { observedPaymentRail } from '@/libs/commerce/paykit-rail';
+import { formatUsdt } from '@/libs/commerce/payment-options';
 import { formatBitcoinAmount } from '@/libs/commerce/pricing';
 import { isUsdtFulfilmentBlocked, PAYMENT_NOT_FINAL_COPY } from '@/libs/commerce/usdt-buyer-status';
-import { formatUsdtParity, isUsdtRefundOrder, USDT_REFUND_COPY } from '@/libs/commerce/usdt-refund';
+import { formatUsdtRefundAmount, isUsdtRefundOrder, USDT_REFUND_COPY } from '@/libs/commerce/usdt-refund';
 import type { CommerceReviewModelSchema } from '@/models/commerce/commerce.schema';
 import { ControlledInputField } from '@/molecules/ControlledInputField/ControlledInputField';
 import { ControlledTextareaField } from '@/molecules/ControlledTextareaField/ControlledTextareaField';
@@ -157,16 +158,24 @@ export function MarketplaceOrderActions({
   const awaitingUsdtRefundAddress = isUsdt && canRecordRefund && usdtRefundAddress === null;
   const refundAmountValue = useWatch({ control: action.form.control, name: 'amount' });
   const usdtRefundAmount =
-    isUsdt && actionType === 'refund' && /^\d+(?:\.\d{1,2})?$/.test(refundAmountValue)
-      ? formatUsdtParity({ ...order.total, amountMinor: majorToMinor(refundAmountValue, order.total.exponent) })
+    isUsdt &&
+    actionType === 'refund' &&
+    new RegExp(`^\\d+(?:\\.\\d{1,${Math.max(amountEntry.exponent, 1)}})?$`).test(refundAmountValue)
+      ? formatUsdtRefundAmount(order, majorToMinor(refundAmountValue, amountEntry.exponent))
       : null;
   const amountLabel = amountEntry.unitLabel === 'USD' ? 'Amount (USD)' : `Amount (${amountEntry.unitLabel})`;
   const refundedMoney =
     amountEntry.unitLabel === '₿'
       ? formatBitcoinAmount(refundedMinor)
-      : formatCommerceMoney({ ...order.total, amountMinor: refundedMinor });
+      : amountEntry.unitLabel === 'USDT'
+        ? formatUsdt(refundedMinor)
+        : formatCommerceMoney({ ...order.total, amountMinor: refundedMinor });
   const refundCapMoney =
-    amountEntry.unitLabel === '₿' ? formatBitcoinAmount(amountEntry.amountMinor) : formatCommerceMoney(order.total);
+    amountEntry.unitLabel === '₿'
+      ? formatBitcoinAmount(amountEntry.amountMinor)
+      : amountEntry.unitLabel === 'USDT'
+        ? formatUsdt(amountEntry.amountMinor)
+        : formatCommerceMoney(order.total);
   const canReveal =
     isBuyer &&
     isPickup &&
