@@ -124,6 +124,7 @@ describe('a connector re-import of a live listing, with a publish gate blocking 
   }
 
   const stateOf = (listingId: string) => stored.find((entry) => entry.listingId === listingId)?.state;
+  const putsFor = (listingId: string) => puts.filter((entry) => entry.listingId === listingId);
 
   it('publishes a first import live when the gates pass', async () => {
     const { planned } = await run([storeProduct('1', 'Socks', 2500)], false);
@@ -143,6 +144,8 @@ describe('a connector re-import of a live listing, with a publish gate blocking 
       pausing: 0,
       keptLive: [{ listingId: 'woo-1', title: 'Socks' }],
     });
+    expect(putsFor('woo-1')).toHaveLength(2);
+    expect(putsFor('woo-1').map((entry) => entry.state)).toEqual(['active', 'active']);
     const latest = puts.at(-1);
     expect(latest).toMatchObject({ listingId: 'woo-1', state: 'active', title: 'Socks, warm edition' });
     expect(latest?.sale.format === 'fixed_price' && latest.sale.unitPrice.amountMinor).toBe(3000);
@@ -165,6 +168,7 @@ describe('a connector re-import of a live listing, with a publish gate blocking 
     expect(planned.publishGate).toMatchObject({ reason: 'no-method', pausing: 1 });
     expect(stateOf('woo-1')).toBe('active');
     expect(stateOf('woo-2')).toBe('paused');
+    expect(putsFor('woo-1').every((entry) => entry.state === 'active')).toBe(true);
   });
 
   it('keeps a split-mode listing live the same way', async () => {
@@ -206,6 +210,8 @@ describe('a connector re-import of a live listing, with a publish gate blocking 
     await blocked.publish(second.manifestId);
 
     expect(stateOf('woo-7-71')).toBe('active');
+    expect(putsFor('woo-7-71')).toHaveLength(2);
+    expect(putsFor('woo-7-71').every((entry) => entry.state === 'active')).toBe(true);
     expect(puts.at(-1)?.title).toBe('Socks, S');
   });
 });

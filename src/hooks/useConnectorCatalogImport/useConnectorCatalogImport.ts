@@ -184,14 +184,21 @@ export function useConnectorCatalogImport(connection: ImportConnection | null) {
     }
   };
 
+  // A publish or resume that stops part-way has still synced some listings; they get linked either way.
   const publish = async () => {
-    await importer.publish();
-    await link();
+    try {
+      await importer.publish();
+    } finally {
+      await link();
+    }
   };
 
   const resume = async () => {
-    await importer.resume();
-    await link();
+    try {
+      await importer.resume();
+    } finally {
+      await link();
+    }
   };
 
   const downloadReport = () => {

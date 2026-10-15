@@ -345,6 +345,30 @@ describe('useConnectorCatalogImport', () => {
       expect(result.current.linkState).toEqual({ status: 'linked', products: 2, skipped: 0 });
     });
 
+    it('still links the listings that were synced when the publish stops with an error', async () => {
+      const { result } = await reviewed();
+      importerFns.publish.mockRejectedValueOnce(new Error('publish stopped'));
+
+      await act(async () => {
+        await expect(result.current.publish()).rejects.toThrow('publish stopped');
+      });
+
+      expect(ConnectorsController.commitMappings).toHaveBeenCalledTimes(1);
+      expect(result.current.linkState).toEqual({ status: 'linked', products: 2, skipped: 0 });
+    });
+
+    it('still links the listings that were synced when a resume stops with an error', async () => {
+      const { result } = await reviewed();
+      importerFns.resume.mockRejectedValueOnce(new Error('resume stopped'));
+
+      await act(async () => {
+        await expect(result.current.resume()).rejects.toThrow('resume stopped');
+      });
+
+      expect(ConnectorsController.commitMappings).toHaveBeenCalledTimes(1);
+      expect(result.current.linkState).toEqual({ status: 'linked', products: 2, skipped: 0 });
+    });
+
     it('links again after resume', async () => {
       const { result } = await reviewed();
       await act(async () => {

@@ -92,7 +92,10 @@ dry-run, photos, publish gates and result file. Rules:
   holds only listings whose publish finished, so a listing it names as missing
   (`listing_not_found`) is left out and the rest is written. Without the link,
   stock does not follow the store and a Pubky order for the listing is held back
-  as `unmapped_variant`.
+  as `unmapped_variant`. The link runs after a publish or a resume even when that
+  stops with an error, so listings that were already synced are still linked; if
+  the link itself fails the page says the listings are published but not linked
+  and offers "Link again".
 
 Currencies other than USD and BTC can be listed only after the multi-currency
 listing form (PR #235) is in; until then a CHF store stops at the settings step
