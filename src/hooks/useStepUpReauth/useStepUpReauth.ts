@@ -9,6 +9,7 @@ import {
 } from '@/hooks/useMarketplaceApprovalSigner/useMarketplaceApprovalSigner';
 import { getErrorMessage } from '@/libs/error/error.utils';
 import { Logger } from '@/libs/logger/logger';
+import { isIosUserAgent, toBitkitIosSignInUrl } from '@/libs/navigation/bitkit-ios-url';
 import { navigateTop } from '@/libs/navigation/navigate-top';
 import {
   isPassportAttemptError,
@@ -205,8 +206,9 @@ export function useStepUpReauth(options: UseStepUpReauthOptions = {}): UseStepUp
     };
     visibilityHandlerRef.current = onVisibilityChange;
     document.addEventListener('visibilitychange', onVisibilityChange, { once: true });
-    navigateTop(authorizationUrl);
-  }, [authorizationUrl, removeVisibilityHandler]);
+    // Bitkit iOS leaves `pubkyauth://` to Pubky Ring; the QR and copied link stay `pubkyauth://`.
+    navigateTop(signer === 'bitkit' && isIosUserAgent() ? toBitkitIosSignInUrl(authorizationUrl) : authorizationUrl);
+  }, [authorizationUrl, removeVisibilityHandler, signer]);
 
   useEffect(() => {
     return () => {

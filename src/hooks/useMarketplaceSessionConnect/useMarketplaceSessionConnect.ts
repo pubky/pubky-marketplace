@@ -17,6 +17,7 @@ import { ServerErrorCode } from '@/libs/error/error.codes';
 import { Err } from '@/libs/error/error.factories';
 import { ErrorCategory, ErrorService } from '@/libs/error/error.types';
 import { Logger } from '@/libs/logger/logger';
+import { isIosUserAgent, toBitkitIosSignInUrl } from '@/libs/navigation/bitkit-ios-url';
 import { navigateTop } from '@/libs/navigation/navigate-top';
 import {
   isPassportAttemptError,
@@ -392,8 +393,11 @@ export function useMarketplaceSessionConnect(
     };
     visibilityHandlerRef.current = onVisibilityChange;
     document.addEventListener('visibilitychange', onVisibilityChange, { once: true });
-    navigateTop(authorizationUrl);
-  }, [authorizationUrl, removeVisibilityHandler]);
+    // Bitkit iOS leaves `pubkyauth://` to Pubky Ring; the QR and copied link stay `pubkyauth://`.
+    navigateTop(
+      selectedSigner === 'bitkit' && isIosUserAgent() ? toBitkitIosSignInUrl(authorizationUrl) : authorizationUrl,
+    );
+  }, [authorizationUrl, removeVisibilityHandler, selectedSigner]);
 
   useEffect(() => {
     // Account switches and replacement sessions retire pending service approvals.

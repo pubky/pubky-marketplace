@@ -1,4 +1,5 @@
 import type { CommerceListingRecord } from '@/libs/commerce/marketplace-records';
+import { PAYKIT_OUTAGE_COPY } from '@/libs/commerce/paykit-rail';
 import { availablePaymentMethods, type SellerPaymentConfig } from '@/libs/commerce/payment-methods';
 
 /**
@@ -15,6 +16,7 @@ export const LISTING_PUBLISH_BLOCK_REASONS = [
   'unsigned',
   'session',
   'no-method',
+  'paykit-unreachable',
   'unverified',
   'no-delivery-key',
   'delivery-key-unverified',
@@ -50,6 +52,11 @@ export const LISTING_PUBLISH_BLOCK_COPY: Record<
     body: 'Buyers cannot pay for a published listing until you add at least one payment method.',
     checklist: 'Payment method',
   },
+  'paykit-unreachable': {
+    title: PAYKIT_OUTAGE_COPY.title,
+    body: PAYKIT_OUTAGE_COPY.sellerBody,
+    checklist: 'Paykit',
+  },
   unverified: {
     title: 'We could not verify your payment settings. Reconnect your session and try again.',
     body: 'Your payment settings could not be checked against the marketplace service.',
@@ -67,13 +74,17 @@ export const LISTING_PUBLISH_BLOCK_COPY: Record<
   },
 };
 
-export type SellerPaymentMethodGateReason = 'unsigned' | 'no-method' | 'unverified';
+export type SellerPaymentMethodGateReason = 'unsigned' | 'no-method' | 'paykit-unreachable' | 'unverified';
 
 export function listingPublishBlockToast(reason: ListingPublishBlockReason): {
   variant: 'error';
   description: string;
 } {
-  return { variant: 'error', description: LISTING_PUBLISH_BLOCK_COPY[reason].title };
+  return {
+    variant: 'error',
+    description:
+      reason === 'paykit-unreachable' ? PAYKIT_OUTAGE_COPY.tryAgain : LISTING_PUBLISH_BLOCK_COPY[reason].title,
+  };
 }
 
 export async function evaluateSellerPaymentMethodGate(input: {
@@ -83,7 +94,8 @@ export async function evaluateSellerPaymentMethodGate(input: {
   if (!input.ownerPubky) return 'unsigned';
   try {
     const config = await input.loadPaymentConfig(input.ownerPubky);
-    return availablePaymentMethods(config).length === 0 ? 'no-method' : null;
+    if (availablePaymentMethods(config).length > 0) return null;
+    return config.paykitUnreachable ? 'paykit-unreachable' : 'no-method';
   } catch {
     return 'unverified';
   }

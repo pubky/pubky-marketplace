@@ -156,6 +156,36 @@ describe('useMarketplaceOfferCheckout', () => {
     });
   });
 
+  it('reports a bind refused because Paykit is unreachable, and only that refusal', async () => {
+    const refusal = (reason: string) =>
+      new AppError({
+        category: ErrorCategory.Client,
+        code: ClientErrorCode.BAD_REQUEST,
+        message: 'SENTINEL',
+        service: ErrorService.Marketplace,
+        operation: 'bindPaymentMethod',
+        context: { statusCode: reason === 'paykit_unavailable' ? 503 : 409, reason },
+      });
+    vi.mocked(CommerceController.bindPaymentMethod)
+      .mockRejectedValueOnce(refusal('paykit_unavailable'))
+      .mockRejectedValueOnce(refusal('paykit_rejected'));
+    const { result } = renderHook(() => useMarketplaceOfferCheckout());
+
+    await act(async () => {
+      await expect(result.current.submit(offer, address, 'bitcoin')).resolves.toEqual({
+        ok: false,
+        code: 'BIND_FAILED',
+        paykitUnavailable: true,
+      });
+    });
+    await act(async () => {
+      await expect(result.current.submit(offer, address, 'bitcoin')).resolves.toEqual({
+        ok: false,
+        code: 'BIND_FAILED',
+      });
+    });
+  });
+
   it('re-reads the accepted projection and submits its locked award terms', async () => {
     const completed = vi.fn();
     const { result } = renderHook(() => useMarketplaceOfferCheckout(completed));
