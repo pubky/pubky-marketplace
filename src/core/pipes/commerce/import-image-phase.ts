@@ -167,6 +167,16 @@ export function sourceImagesOf(row: PayloadRow): SourceImage[] {
   return images;
 }
 
+/** The media records a row already holds, from `media_json` or `media`. */
+export function mediaOf(row: PayloadRow | null): PresetJson[] {
+  if (!row) return [];
+  const fromExtra = parseJson(row.extraFields?.[MEDIA_JSON_FIELD]);
+  const list = Array.isArray(fromExtra) && fromExtra.length > 0 ? fromExtra : row.media;
+  return Array.isArray(list)
+    ? list.filter((entry): entry is PresetJson => typeof entry === 'object' && entry !== null && !Array.isArray(entry))
+    : [];
+}
+
 /** A row already holding media records (uploaded earlier, or supplied by the file) is not fetched again. */
 export function rowHoldsMedia(row: PayloadRow): boolean {
   const fromExtra = parseJson(row.extraFields?.[MEDIA_JSON_FIELD]);
@@ -179,6 +189,48 @@ export function uniqueImageUrls(targets: readonly ImportImageTarget[]): string[]
   const seen = new Set<string>();
   for (const target of targets) for (const image of target.images) seen.add(normalizeImageUrl(image.url));
   return [...seen];
+}
+
+/** How many distinct photos the targets need fetched. */
+export function distinctImageCount(targets: readonly ImportImageTarget[]): number {
+  return uniqueImageUrls(targets).length;
+}
+
+/**
+ * Splits the targets, in listing order, into batches that each need at most
+ * `maxPhotos` distinct photos fetched, so every batch fits one run's count
+ * budget. A listing is never split across batches; a photo shared by listings
+ * in one batch is counted once. Targets that need no fetch (unchanged photos)
+ * ride along in the batch they fall in.
+ */
+export function planImageBatches(targets: readonly ImportImageTarget[], maxPhotos: number): ImportImageTarget[][] {
+  const batches: ImportImageTarget[][] = [];
+  let current: ImportImageTarget[] = [];
+  let urls = new Set<string>();
+  for (const target of targets) {
+    const own = new Set(target.images.map((image) => normalizeImageUrl(image.url)));
+    const added = [...own].filter((url) => !urls.has(url)).length;
+    if (current.length > 0 && urls.size + added > maxPhotos) {
+      batches.push(current);
+      current = [];
+      urls = new Set();
+    }
+    current.push(target);
+    for (const url of own) urls.add(url);
+  }
+  if (current.length > 0) batches.push(current);
+  return batches;
+}
+
+/**
+ * Failures that say nothing about the photo itself: the run's own count or
+ * byte budget ran out, or the route asked the client to slow down. Such a photo
+ * is tried again in a later batch; any other failure is the photo's own.
+ */
+const DEFERRED_IMAGE_REASONS: ReadonlySet<string> = new Set(['budget_exceeded', 'limit_reached', 'rate_limited']);
+
+export function isDeferredImageResult(result: Pick<TImportImageResultRow, 'status' | 'reason'>): boolean {
+  return result.status === 'failed' && result.reason !== undefined && DEFERRED_IMAGE_REASONS.has(result.reason);
 }
 
 /** The alt text for an image URL: the first listing title that used it, within the record limit. */

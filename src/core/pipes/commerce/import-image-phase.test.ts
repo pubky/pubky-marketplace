@@ -5,6 +5,7 @@ import { COMMERCE_MEDIA_ALT_TEXT_MAX_CHARS } from '@/config/commerce';
 import { parseCsvTable } from './import-csv-table';
 import {
   altTextForUrl,
+  distinctImageCount,
   extraFieldsWithImages,
   IMAGE_RESULTS_JSON_FIELD,
   IMAGE_SYNC_JSON_FIELD,
@@ -14,9 +15,11 @@ import {
   IMPORT_SOURCE_HASH_KEY,
   type ImportImageResult,
   type ImportImageTarget,
+  isDeferredImageResult,
   MEDIA_JSON_FIELD,
   normalizeImageUrl,
   outcomesFromResults,
+  planImageBatches,
   planImageSync,
   rowHoldsMedia,
   sourceImagesOf,
@@ -415,5 +418,79 @@ describe('re-import outcomes', () => {
       'photos unchanged, 2 kept (added in the Shop)',
     );
     expect(imageSyncOf({ extraFields: { [IMAGE_SYNC_JSON_FIELD]: '{"added":"x"}' } })).toBeNull();
+  });
+});
+
+describe('photo batches', () => {
+  const target = (listingId: string, urls: string[]): ImportImageTarget => ({
+    listingId,
+    images: urls.map((url) => ({ url, alt: listingId })),
+  });
+  const MAX = 500;
+  /** `count` listings of `perListing` distinct photos each, 5 by default: 145 listings are 725 photos. */
+  const listings = (count: number, perListing = 5) =>
+    Array.from({ length: count }, (_, index) =>
+      target(
+        `l${index}`,
+        Array.from({ length: perListing }, (_, photo) => `https://shop.example.com/${index}/${photo}.jpg`),
+      ),
+    );
+
+  it('puts 725 photos in two batches, in listing order, the first full and the second the rest', () => {
+    const targets = listings(145);
+    expect(distinctImageCount(targets)).toBe(725);
+    const batches = planImageBatches(targets, MAX);
+    expect(batches.map((batch) => distinctImageCount(batch))).toEqual([500, 225]);
+    expect(batches.flat().map((entry) => entry.listingId)).toEqual(targets.map((entry) => entry.listingId));
+  });
+
+  it('is one batch up to the cap, and none for nothing', () => {
+    expect(planImageBatches(listings(100), MAX)).toHaveLength(1);
+    expect(planImageBatches(listings(101), MAX)).toHaveLength(2);
+    expect(planImageBatches([], MAX)).toEqual([]);
+  });
+
+  it('never splits a listing across batches', () => {
+    const batches = planImageBatches([target('a', ['u1', 'u2', 'u3']), target('b', ['u4', 'u5', 'u6'])], 4);
+    expect(batches.map((batch) => batch.map((entry) => entry.listingId))).toEqual([['a'], ['b']]);
+  });
+
+  it('counts a photo shared by listings once, within a batch', () => {
+    const shared = [target('a', ['u1', 'u2']), target('b', ['u2', 'u3']), target('c', ['u3', 'u1'])];
+    expect(distinctImageCount(shared)).toBe(3);
+    expect(planImageBatches(shared, 3)).toHaveLength(1);
+  });
+
+  it('takes listings that need no fetch along in whatever batch they fall in', () => {
+    const unchanged: ImportImageTarget = { listingId: 'kept', images: [], keptMedia: [] };
+    const batches = planImageBatches([unchanged, target('a', ['u1', 'u2']), unchanged, target('b', ['u3'])], 2);
+    expect(batches.map((batch) => batch.map((entry) => entry.listingId))).toEqual([['kept', 'a', 'kept'], ['b']]);
+  });
+
+  it('compares photos on the normalised URL, so spaces do not make two batches', () => {
+    const batches = planImageBatches([target('a', ['u1', ' u1 ']), target('b', [' u1'])], 1);
+    expect(batches).toHaveLength(1);
+  });
+
+  it('tells a failure of the run (its budget, the route asking to slow down) from a failure of the photo', () => {
+    for (const reason of ['budget_exceeded', 'limit_reached', 'rate_limited'] as const) {
+      expect(isDeferredImageResult({ status: 'failed', reason })).toBe(true);
+    }
+    for (const reason of [
+      'not_image',
+      'too_large',
+      'http_error',
+      'blocked_address',
+      'decode_failed',
+      'upload_failed',
+      'invalid_url',
+      'timeout',
+      'network',
+      'cancelled',
+    ] as const) {
+      expect(isDeferredImageResult({ status: 'failed', reason })).toBe(false);
+    }
+    expect(isDeferredImageResult({ status: 'uploaded' })).toBe(false);
+    expect(isDeferredImageResult({ status: 'failed' })).toBe(false);
   });
 });

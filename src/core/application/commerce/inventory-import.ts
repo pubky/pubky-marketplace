@@ -6,6 +6,7 @@ import {
   mapCanonicalRowsToListing,
 } from '@/application/commerce/inventory-listing-map';
 import { COMMERCE_LISTING_MAX_MEDIA, getCommerceAdapterMode, isDurableCommerceMode } from '@/config/commerce';
+import { IMPORT_IMAGE_MAX_COUNT } from '@/config/import-image';
 import {
   evaluateDurableListingPublishGuards,
   type ListingPublishBlockReason,
@@ -17,17 +18,22 @@ import { ClientErrorCode } from '@/libs/error/error.codes';
 import { isAppError, isNotFound } from '@/libs/error/error.utils';
 import { CommerceRecordNormalizer } from '@/pipes/commerce/commerce.normalizer';
 import {
+  distinctImageCount,
   extraFieldsWithImages,
   imageResultCells,
   imageResultsOf,
   imageSyncOf,
   imageSyncText,
+  IMPORT_SOURCE_HASH_KEY,
   type ImportImageTarget,
   type ListingImageOutcome,
+  mediaOf,
+  planImageBatches,
   planImageSync,
   RESULT_CSV_IMAGE_COLUMNS,
   rowHoldsMedia,
   sourceImagesOf,
+  sourceUrlHash,
 } from '@/pipes/commerce/import-image-phase';
 import {
   continueRevision,
@@ -37,6 +43,7 @@ import {
   rowsSupplyPackage,
 } from '@/pipes/commerce/import-keep-live';
 import type { ImportLossReport, ImportSourceFormat } from '@/pipes/commerce/import-loss-report';
+import type { PresetJson } from '@/pipes/commerce/import-preset-rows';
 import {
   classifyListingPublishFailure,
   invalidListingsCopy,
@@ -102,6 +109,8 @@ export type InventoryImportAuth =
 
 export type InventoryImportPublishGate = ImportPublishGate;
 
+export type InventoryImportPhotoPlan = { readonly count: number; readonly batches: number };
+
 /** What the dry run can prefill from the seller's Shop data. */
 export type InventoryImportDefaults = {
   countryCode: string | null;
@@ -120,6 +129,8 @@ export type InventoryImportPlanResult =
       format?: ImportSourceFormat;
       lossReport?: ImportLossReport;
       publishGate: InventoryImportPublishGate;
+      /** Photos the publish will load and how many batches that takes; absent when there are none. */
+      photos?: InventoryImportPhotoPlan;
     }
   | { status: 'parse-failed'; message: string; puts: 0 }
   | Exclude<InventoryImportAuth, { status: 'ready' }>
@@ -342,12 +353,17 @@ export class CommerceInventoryImportApplication {
     if (!manifest) {
       return { status: 'parse-failed', message: IMPORT_PARSE_FAIL_COPY, puts: 0 };
     }
+    const targets = planned.value.rowCount === 0 ? [] : await this.imageTargets(planned.value.manifestId);
+    const photoCount = distinctImageCount(targets);
     return {
       status: 'planned',
       manifestId: planned.value.manifestId,
       rowCount: planned.value.rowCount,
       publishGate: planned.value.rowCount === 0 ? NO_PUBLISH_GATE : await this.publishGate(planned.value.manifestId),
       counts: MarketplaceShopClientService.dryRunCounts(manifest as ImportManifest),
+      ...(photoCount > 0
+        ? { photos: { count: photoCount, batches: planImageBatches(targets, IMPORT_IMAGE_MAX_COUNT).length } }
+        : {}),
       ...(planned.value.format ? { format: planned.value.format } : {}),
       ...(planned.value.lossReport ? { lossReport: planned.value.lossReport } : {}),
     };
@@ -600,6 +616,32 @@ export class CommerceInventoryImportApplication {
       });
     }
     return targets;
+  }
+
+  /**
+   * Photos of this import that are already stored on some listing's planned
+   * rows, by source URL. A photo shared by listings that fell in different
+   * batches, or on either side of an interruption, is then reused instead of
+   * being loaded and uploaded a second time. The rows hold the hash of the source
+   * URL on each media record, never the URL.
+   */
+  async knownMedia(manifestId: string, urls: readonly string[]): Promise<Map<string, PresetJson>> {
+    const manifest = await this.host.store.load(manifestId);
+    const known = new Map<string, PresetJson>();
+    if (!manifest || urls.length === 0) return known;
+    const byHash = new Map<string, PresetJson>();
+    for (const row of manifest.rows) {
+      const payload = await this.rowPayload(manifestId, row.rowIdentity);
+      for (const entry of mediaOf(payload)) {
+        const hash = (entry as Record<string, unknown>)[IMPORT_SOURCE_HASH_KEY];
+        if (typeof hash === 'string' && !byHash.has(hash)) byHash.set(hash, entry);
+      }
+    }
+    for (const url of urls) {
+      const found = byHash.get(sourceUrlHash(url));
+      if (found) known.set(url, found);
+    }
+    return known;
   }
 
   /** Writes each listing's uploaded media and per-image results onto its planned rows. */
