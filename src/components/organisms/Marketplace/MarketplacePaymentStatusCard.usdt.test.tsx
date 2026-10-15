@@ -141,7 +141,7 @@ describe('MarketplacePaymentStatusCard — USDT orders', () => {
     renderCard(order, payment, true);
 
     expect(screen.getByTestId('paykit-delivery-failed')).toHaveTextContent(
-      "We couldn't confirm your wallet got the payment request. Check Bitkit for it; if it's not there, add the seller as a contact in Bitkit, then check out again.",
+      "We couldn't confirm your wallet got the payment request. Check Bitkit for it; if it's not there, add the seller as a contact in Bitkit, cancel this checkout, then check out again.",
     );
     expect(screen.queryByTestId('usdt-accept-by')).not.toBeInTheDocument();
   });
@@ -177,6 +177,39 @@ describe('MarketplacePaymentStatusCard — USDT orders', () => {
     expect(screen.getByTestId('paykit-delivery-failed')).toHaveTextContent(
       "We couldn't confirm your wallet got the payment request before the payment window ended. If you find it in Bitkit, don't pay it. This checkout has ended; check out again.",
     );
+  });
+
+  it('puts the checkout action next to the unconfirmed-delivery copy of an unpaid USDT order only', () => {
+    const failed = createUsdtOrderFixture('awaiting', { paykitDeliveryState: 'failed' });
+    const { unmount } = render(
+      <MarketplacePaymentStatusCard
+        order={failed.order}
+        payment={failed.payment}
+        isBuyer
+        adapterMode="transaction-service"
+        advancePayment={async () => false}
+        onPaymentChanged={() => {}}
+        checkoutActions={<button type="button">Cancel checkout</button>}
+      />,
+    );
+    expect(screen.getByTestId('paykit-delivery-failed').parentElement).toContainElement(
+      screen.getByRole('button', { name: 'Cancel checkout' }),
+    );
+    unmount();
+
+    const delivered = createUsdtOrderFixture('awaiting', { paykitDeliveryState: 'delivered' });
+    render(
+      <MarketplacePaymentStatusCard
+        order={delivered.order}
+        payment={delivered.payment}
+        isBuyer
+        adapterMode="transaction-service"
+        advancePayment={async () => false}
+        onPaymentChanged={() => {}}
+        checkoutActions={<button type="button">Cancel checkout</button>}
+      />,
+    );
+    expect(screen.queryByRole('button', { name: 'Cancel checkout' })).not.toBeInTheDocument();
   });
 
   it('shows the seller of an unpaid USDT order neither the accept-by nor the buyer finality note', () => {

@@ -1085,6 +1085,29 @@ describe('MarketplaceCheckout', () => {
       );
     });
 
+    it.each([
+      ['bitcoin', 'failed', true],
+      ['usdt', 'failed', true],
+      ['bitcoin', 'delivered', false],
+      ['bitcoin', 'pending', false],
+    ] as const)(
+      'offers cancelling a pending %s checkout beside the card only when delivery reads %s (%s)',
+      (paymentMethod, paykitDeliveryState, offered) => {
+        const payment = createPaymentFixture('awaiting_entitlement', { adapter: 'paykit' });
+        const order = createOrderFixture('pending_payment', {
+          paymentId: payment.id,
+          paymentMethod,
+          paykitDeliveryState,
+        });
+        view.orders = [{ order, payment }];
+        window.location.hash = `#${order.id}`;
+        render(<MarketplaceCheckout />);
+
+        expect(screen.getByTestId('payment-status-panel')).toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: 'Cancel checkout' }) !== null).toBe(offered);
+      },
+    );
+
     it('shows the reserved header for a pending PayPal checkout that is not yet awaiting entitlement', () => {
       const order = createOrderFixture('pending_payment', { paymentMethod: 'paypal' });
       view.orders = [{ order, payment: null }];

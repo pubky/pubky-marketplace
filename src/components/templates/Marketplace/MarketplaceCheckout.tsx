@@ -729,7 +729,8 @@ function MarketplaceCartCheckout() {
                         onPaymentChanged={orders.refresh}
                         showStagingNotice={false}
                         checkoutActions={
-                          order.state === 'pending_payment' && order.paymentMethod === 'paypal' ? (
+                          order.state === 'pending_payment' &&
+                          (order.paymentMethod === 'paypal' || order.paykitDeliveryState === 'failed') ? (
                             <MarketplaceOrderActions
                               order={order}
                               isBuyer

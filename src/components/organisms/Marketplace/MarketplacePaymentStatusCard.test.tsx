@@ -1420,13 +1420,46 @@ describe('MarketplacePaymentStatusCard', () => {
       />,
     );
     expect(screen.getByTestId('paykit-delivery-failed')).toHaveTextContent(
-      "We couldn't confirm your wallet got the payment request. Check Bitkit for it; if it's not there, add the seller as a contact in Bitkit, then check out again.",
+      "We couldn't confirm your wallet got the payment request. Check Bitkit for it; if it's not there, add the seller as a contact in Bitkit, cancel this checkout, then check out again.",
     );
     expect(screen.getByTestId('paykit-delivery-failed')).not.toHaveTextContent(
       /didn.t receive|did not receive|never (reached|arrived|delivered)/i,
     );
     expect(screen.queryByText(/Payment request sent/)).not.toBeInTheDocument();
     expect(screen.queryByTestId('paykit-delivery-status')).not.toBeInTheDocument();
+  });
+
+  it('puts the checkout action right next to the unconfirmed-delivery copy, and only there', () => {
+    const renderBound = (paykitDeliveryState: string) =>
+      render(
+        <MarketplacePaymentStatusCard
+          order={createOrderFixture('pending_payment', {
+            holdExpiresAt: '2026-08-20T21:15:00.000Z',
+            holdSource: 'bind',
+            paymentMethod: 'bitcoin',
+            paykitRequestState: 'pending',
+            paykitDeliveryState,
+          })}
+          payment={createPaymentFixture('awaiting_entitlement', { adapter: 'paykit' })}
+          isBuyer
+          adapterMode="transaction-service"
+          advancePayment={async () => false}
+          onPaymentChanged={() => {}}
+          checkoutActions={<button type="button">Cancel checkout</button>}
+        />,
+      );
+
+    const { unmount } = renderBound('failed');
+    const failed = screen.getByTestId('paykit-delivery-failed');
+    expect(failed).toHaveTextContent('cancel this checkout, then check out again.');
+    expect(failed.parentElement).toContainElement(screen.getByRole('button', { name: 'Cancel checkout' }));
+    unmount();
+
+    for (const state of ['pending', 'delivered']) {
+      const { unmount: next } = renderBound(state);
+      expect(screen.queryByRole('button', { name: 'Cancel checkout' })).not.toBeInTheDocument();
+      next();
+    }
   });
 
   it.each(['awaiting_seller_confirmation', 'detected'] as const)(
