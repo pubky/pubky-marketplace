@@ -3,6 +3,7 @@ import {
   AuthFlowKind,
   Capabilities,
   Client,
+  type EncryptionKeys,
   GrantAuthFlow,
   Keypair,
   Pubky,
@@ -13,7 +14,7 @@ import {
   type XCallbackParams,
 } from '@synonymdev/pubky';
 import type { TKeypairParams } from '@/application/auth/auth.types';
-import { CAPABILITIES, getShopGrantClientId } from '@/config/app';
+import { CAPABILITIES, getShopGrantClientId, isPrivKeysRequested, KEYED_CAPABILITIES } from '@/config/app';
 import { withBasePath } from '@/config/base-path';
 import {
   getDefaultHttpRelay,
@@ -26,6 +27,7 @@ import {
 } from '@/config/network';
 import { readAuthEpoch } from '@/controllers/auth/auth-epoch';
 import { capabilitiesMatchFullGrant } from '@/libs/auth/capabilities';
+import { GRANT_STORAGE_UNAVAILABLE_MESSAGE } from '@/libs/auth/sign-in-error-copy';
 import { AppError } from '@/libs/error/error';
 import { AuthErrorCode, DatabaseErrorCode, ServerErrorCode, ValidationErrorCode } from '@/libs/error/error.codes';
 import { Err } from '@/libs/error/error.factories';
@@ -41,6 +43,7 @@ import type { Pubky as TPubkyModel } from '@/models/models.types';
 import type {
   TGenerateAuthTokenFlowResult,
   TGenerateAuthUrlResult,
+  TGrantAuthUrlOptions,
   THomeserverRestoreSessionParams,
   THomeserverSessionResult,
   THomeserverSignUpParams,
@@ -81,14 +84,17 @@ import {
 } from './homeserver.utils';
 import {
   assertOwnedGrantStorageAvailable,
-  delegatedKeyId,
   forgetOwnedGrant,
   holdOwnedGrant,
+  type OwnedGrantFlow,
+  type OwnedGrantKey,
   pendingOwnedGrants,
   releaseOwnedGrantLease,
   rememberOwnedGrant,
   removeOwnedDelegatedKey,
+  removeOwnedGrantKey,
   retireOwnedGrant,
+  saveOwnedGrantFlow,
   withAbandonedOwnedGrant,
 } from './owned-grant-storage';
 import { retryHomeserverWrite } from './write-retry';
@@ -119,8 +125,8 @@ export class HomeserverService {
   private constructor() {}
 
   private static pubkySdk: Pubky | null = null;
-  private static pendingGrantKeys = new WeakMap<Session, string>();
-  private static savedGrantKeys = new Map<string, string>();
+  private static pendingGrantKeys = new WeakMap<Session, OwnedGrantKey>();
+  private static savedGrantKeys = new Map<string, OwnedGrantKey>();
   private static pendingRecordBySession = new WeakMap<Session, string>();
   private static savedSessions = new Map<string, Session>();
 
@@ -612,9 +618,9 @@ export class HomeserverService {
   }
 
   /**
-   * Whether this browser can hold a grant key that JavaScript cannot read
-   * (secure context, IndexedDB, WebCrypto Ed25519 and Web Locks). Without it the Shop does
-   * cannot safely complete an external signer flow.
+   * Whether this browser can persist a grant sign-in (secure context, WebCrypto, IndexedDB and
+   * Web Locks). Without it the Shop cannot safely complete an external signer flow. WebCrypto
+   * Ed25519 is not required: {@link startGrantAuthFlow} falls back to an SDK-held key.
    */
   static isGrantSignInAvailable(): boolean {
     try {
@@ -626,56 +632,89 @@ export class HomeserverService {
 
   /**
    * Starts a grant sign-in (`pubkyauth://signin_grant`) for Ring, Bitkit or Passport. The
-   * proof-of-possession key is a non-extractable WebCrypto key in IndexedDB;
-   * the approved session is grant-backed and never exported to JS-readable
-   * storage.
+   * proof-of-possession key is a non-extractable WebCrypto key in IndexedDB.
+   * Browsers without WebCrypto Ed25519 (e.g. Chrome < 137) get an SDK-held key
+   * instead, which `browserSessionStore` saves in IndexedDB as bearer-equivalent
+   * material.
    *
    * @param xCallback Optional return destinations carried in the URL (Pubky
    * Passport's callback page). They are navigation hints only: the session
    * still arrives through the encrypted relay.
+   * @param options.withPrivKeys Whether to also ask for the `e` action on the
+   * Shop's private tree (a signed approval that can carry scoped encryption
+   * keys). Defaults to {@link isPrivKeysRequested} for `options.signer`;
+   * `false` is the separate sign-in without keys that signers or homeservers
+   * without `e` need.
    */
-  static async generateGrantAuthUrl(xCallback?: XCallbackParams): Promise<TGenerateAuthUrlResult> {
-    return await this.startGrantAuthFlow(() => AuthFlowKind.signin(), 'generateGrantAuthUrl', xCallback);
+  static async generateGrantAuthUrl(
+    xCallback?: XCallbackParams,
+    options: TGrantAuthUrlOptions = {},
+  ): Promise<TGenerateAuthUrlResult> {
+    return await this.startGrantAuthFlow(
+      () => AuthFlowKind.signin(),
+      'generateGrantAuthUrl',
+      xCallback,
+      options.withPrivKeys ?? isPrivKeysRequested(options.signer),
+    );
   }
 
   private static async startGrantAuthFlow(
     kind: () => AuthFlowKind,
     operation: string,
-    xCallback?: XCallbackParams,
+    xCallback: XCallbackParams | undefined,
+    withPrivKeys: boolean,
   ): Promise<TGenerateAuthUrlResult> {
     try {
       if (!this.isGrantSignInAvailable() || !(await this.getPubkySdk().browserSessionStore.isAvailable())) {
-        throw Err.database(DatabaseErrorCode.INIT_FAILED, 'This browser cannot securely save a grant sign-in.', {
+        throw Err.database(DatabaseErrorCode.INIT_FAILED, GRANT_STORAGE_UNAVAILABLE_MESSAGE, {
           service: ErrorService.Homeserver,
           operation,
         });
       }
       assertOwnedGrantStorageAvailable();
-      const flow = await GrantAuthFlow.startDelegated(CAPABILITIES, kind(), {
+      const pubkySdk = this.getPubkySdk();
+      // Keeps a non-extractable WebCrypto key where WebCrypto has Ed25519; elsewhere
+      // (e.g. Chrome < 137) the SDK falls back to its own key.
+      const flow = await pubkySdk.startGrantAuthFlow(withPrivKeys ? KEYED_CAPABILITIES : CAPABILITIES, kind(), {
         clientId: getShopGrantClientId(),
-        approvalFormat: 'bareGrant',
+        approvalFormat: withPrivKeys ? 'signedApprovalV1' : 'bareGrant',
         relay: getDefaultHttpRelay(),
         ...(xCallback ? { xCallback } : {}),
       });
-      const savedFlow = flow.saveDelegated();
-      const keyId = delegatedKeyId(savedFlow);
+      let owned: OwnedGrantFlow;
       try {
-        await holdOwnedGrant('key', keyId);
-        rememberOwnedGrant('key', keyId, Date.now() + AUTH_RELAY_RETENTION_MS);
+        owned = saveOwnedGrantFlow(flow);
       } catch (error) {
         flow.free();
-        await removeOwnedDelegatedKey(keyId).catch(() => {});
-        releaseOwnedGrantLease('key', keyId);
         throw error;
+      }
+      const key: OwnedGrantKey =
+        owned.storage === 'delegated' ? { storage: 'delegated', keyId: owned.keyId } : { storage: 'localSecret' };
+      // Only a delegated key outlives the tab on its own; a localSecret key is
+      // persisted solely through its session record, tracked by saveGrantSession.
+      if (key.storage === 'delegated') {
+        try {
+          await holdOwnedGrant('key', key.keyId);
+          rememberOwnedGrant('key', key.keyId, Date.now() + AUTH_RELAY_RETENTION_MS);
+        } catch (error) {
+          flow.free();
+          await removeOwnedGrantKey(key).catch(() => {});
+          releaseOwnedGrantLease('key', key.keyId);
+          throw error;
+        }
       }
       let approved = false;
       const cleanupKey = async () => {
-        retireOwnedGrant('key', keyId);
-        await removeOwnedDelegatedKey(keyId);
-        forgetOwnedGrant('key', keyId);
+        if (key.storage !== 'delegated') return;
+        retireOwnedGrant('key', key.keyId);
+        await removeOwnedGrantKey(key);
+        forgetOwnedGrant('key', key.keyId);
       };
       const approval = createCancelableAuthApproval(flow, {
-        resume: () => GrantAuthFlow.resumeDelegated(savedFlow),
+        resume: () =>
+          owned.storage === 'delegated'
+            ? GrantAuthFlow.resumeDelegated(owned.saved)
+            : pubkySdk.resumeGrantAuthFlow(owned.saved),
         onCanceledSession: async (session) => {
           await session.signout().catch(() => {});
           await cleanupKey();
@@ -683,7 +722,7 @@ export class HomeserverService {
       });
       const awaitApproval = approval.awaitApproval.then((session) => {
         approved = true;
-        this.pendingGrantKeys.set(session, keyId);
+        this.pendingGrantKeys.set(session, key);
         return session;
       });
       // The controller attaches after the URL is returned; early cancellation is handled here too.
@@ -702,6 +741,38 @@ export class HomeserverService {
     } catch (error) {
       return handleError({ error, additionalContext: { operation } });
     }
+  }
+
+  /**
+   * The scoped encryption keys a grant session was approved with, or null for
+   * a cookie session, a bare grant, and an approval whose signer declined
+   * `e`. The caller owns the copy and must `free()` it. They exist only for a
+   * session approved through a signed approval (see {@link generateGrantAuthUrl}).
+   */
+  static getSessionEncryptionKeys(session: Session | null | undefined): EncryptionKeys | null {
+    const grant = session?.grant;
+    if (!grant) return null;
+    try {
+      const keys = grant.encryptionKeys;
+      if (!keys) return null;
+      if (keys.scopes.length === 0) {
+        keys.free();
+        return null;
+      }
+      return keys;
+    } finally {
+      grant.free();
+    }
+  }
+
+  /**
+   * {@link getSessionEncryptionKeys} for the signed-in session, and only when
+   * that session belongs to `ownerPubky`. The caller must `free()` the copy.
+   */
+  static getCurrentSessionEncryptionKeys(ownerPubky: string): EncryptionKeys | null {
+    const session = useAuthStore.getState().selectSession();
+    if (!session || session.info.publicKey.z32() !== ownerPubky) return null;
+    return this.getSessionEncryptionKeys(session);
   }
 
   /** Whether a session carries a homeserver grant. */
@@ -738,8 +809,8 @@ export class HomeserverService {
           operation: 'saveGrantSession',
         });
       this.savedSessions.set(id, session);
-      const keyId = this.pendingGrantKeys.get(session);
-      if (keyId) this.savedGrantKeys.set(id, keyId);
+      const key = this.pendingGrantKeys.get(session);
+      if (key) this.savedGrantKeys.set(id, key);
       return stored.id;
     } catch (error) {
       retireOwnedGrant('record', id);
@@ -749,9 +820,9 @@ export class HomeserverService {
 
   /** Acknowledge only after the controller has committed its restorable pointer. */
   static commitGrantSession(recordId: string): void {
-    const keyId = this.savedGrantKeys.get(recordId);
-    if (keyId) {
-      forgetOwnedGrant('key', keyId);
+    const key = this.savedGrantKeys.get(recordId);
+    if (key) {
+      if (key.storage === 'delegated') forgetOwnedGrant('key', key.keyId);
       this.savedGrantKeys.delete(recordId);
     }
     forgetOwnedGrant('record', recordId);
@@ -913,6 +984,8 @@ export class HomeserverService {
     return this.startGrantAuthFlow(
       () => AuthFlowKind.signup(PublicKey.from(getHomeserver()), inviteCode),
       'generateSignupAuthUrl',
+      undefined,
+      false,
     );
   }
 
@@ -936,11 +1009,11 @@ export class HomeserverService {
         this.savedGrantKeys.delete(recordId);
         this.savedSessions.delete(recordId);
       }
-      const keyId = this.pendingGrantKeys.get(session);
-      if (keyId) {
-        retireOwnedGrant('key', keyId);
-        await removeOwnedDelegatedKey(keyId);
-        forgetOwnedGrant('key', keyId);
+      const key = this.pendingGrantKeys.get(session);
+      if (key) {
+        if (key.storage === 'delegated') retireOwnedGrant('key', key.keyId);
+        await removeOwnedGrantKey(key);
+        if (key.storage === 'delegated') forgetOwnedGrant('key', key.keyId);
         this.pendingGrantKeys.delete(session);
       }
     }

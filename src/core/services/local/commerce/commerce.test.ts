@@ -449,6 +449,7 @@ describe('LocalCommerceService', () => {
         generation: stored,
         auctionRegistration: command,
         readBackPending: false,
+        registrationStatus: undefined,
       });
     });
 

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { PHOTO_REQUIRED_MESSAGE } from '@/pipes/commerce/import-publish-failure';
 import { createCommerceListingFixture } from '@/test/fixtures/commerce/commerce';
 import { listingToCanonicalRows, mapCanonicalRowsToListing } from './inventory-listing-map';
 
@@ -27,5 +28,58 @@ describe('mapCanonicalRowsToListing', () => {
       expect(mapped.record.returnPolicy.acceptsReturns).toBe(true);
       expect(mapped.record.location.countryCode).toBe('US');
     }
+  });
+
+  it('refuses a row-built listing with no photo using the photo message', () => {
+    const record = createCommerceListingFixture();
+    const [row] = listingToCanonicalRows(record);
+    const mapped = mapCanonicalRowsToListing(
+      [{ ...row!, media: [], extraFields: { country_code: 'US' } }],
+      record.ownerPubky,
+    );
+    expect(mapped).toEqual({ ok: false, message: PHOTO_REQUIRED_MESSAGE });
+  });
+
+  it('turns a variant_price_minor extra field into a variant price override', () => {
+    const record = createCommerceListingFixture();
+    const [row] = listingToCanonicalRows(record);
+    const base = { ...row!, extraFields: { country_code: 'US', media_json: JSON.stringify(record.media) } };
+    const cheap = { ...base, variantId: 'cheap', sku: 'CHEAP' };
+    const dear = {
+      ...base,
+      variantId: 'dear',
+      sku: 'DEAR',
+      extraFields: { ...base.extraFields, variant_price_minor: String(base.amountMinor + 500) },
+    };
+    const same = {
+      ...base,
+      variantId: 'same',
+      sku: 'SAME',
+      extraFields: { ...base.extraFields, variant_price_minor: String(base.amountMinor) },
+    };
+    const mapped = mapCanonicalRowsToListing([cheap, dear, same], record.ownerPubky);
+    expect(mapped.ok).toBe(true);
+    if (!mapped.ok) return;
+    expect(mapped.record.variants.map((variant) => variant.priceOverride)).toEqual([
+      undefined,
+      { amountMinor: base.amountMinor + 500, currency: base.currency, exponent: base.exponent },
+      undefined,
+    ]);
+  });
+
+  it('ignores a malformed variant_price_minor instead of failing the listing', () => {
+    const record = createCommerceListingFixture();
+    const [row] = listingToCanonicalRows(record);
+    const mapped = mapCanonicalRowsToListing(
+      [
+        {
+          ...row!,
+          extraFields: { country_code: 'US', media_json: JSON.stringify(record.media), variant_price_minor: '12.5' },
+        },
+      ],
+      record.ownerPubky,
+    );
+    expect(mapped.ok).toBe(true);
+    if (mapped.ok) expect(mapped.record.variants[0]?.priceOverride).toBeUndefined();
   });
 });

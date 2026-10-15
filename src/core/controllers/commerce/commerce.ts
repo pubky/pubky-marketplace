@@ -390,8 +390,25 @@ export class CommerceController {
   static async planInventoryImport(
     sellerPubky: string,
     file: Parameters<CommerceInventoryImportApplication['planFile']>[0],
+    settings?: Parameters<CommerceInventoryImportApplication['planFile']>[1],
   ) {
-    return await CommerceInventoryImportApplication.forSeller(sellerPubky).planFile(file);
+    return await CommerceInventoryImportApplication.forSeller(sellerPubky).planFile(file, settings);
+  }
+
+  static async inventoryImportImageTargets(sellerPubky: string, manifestId: string) {
+    return await CommerceInventoryImportApplication.forSeller(sellerPubky).imageTargets(manifestId);
+  }
+
+  static async attachInventoryImportImages(
+    sellerPubky: string,
+    manifestId: string,
+    outcomes: Parameters<CommerceInventoryImportApplication['attachImages']>[1],
+  ) {
+    await CommerceInventoryImportApplication.forSeller(sellerPubky).attachImages(manifestId, outcomes);
+  }
+
+  static async inventoryImportDefaults(sellerPubky: string) {
+    return await CommerceInventoryImportApplication.forSeller(sellerPubky).importDefaults();
   }
 
   static async dryRunInventoryImport(sellerPubky: string, manifestId: string) {
@@ -1716,6 +1733,18 @@ export class CommerceController {
     }
     const status = await CommerceApplication.syncWatchlist(currentUserPubky);
     useCommerceStore.getState().setWatchlistSyncStatus(status === 'skipped' ? 'idle' : status);
+  }
+
+  /**
+   * Calls `listener` whenever the signed-in user's private data keys become
+   * available, whichever surface asked for them first. A surface that ran
+   * before they were available (the watchlist sync, for one) uses it to run
+   * again. Returns the unsubscribe function.
+   */
+  static subscribePrivKeysReady(listener: () => void): () => void {
+    return CommercePrivKeyringApplication.subscribeReady((ownerPubky) => {
+      if (useAuthStore.getState().currentUserPubky === ownerPubky) listener();
+    });
   }
 
   /**
