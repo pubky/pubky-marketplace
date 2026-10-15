@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { usePaykitRecovery } from '@/hooks/usePaykitRecovery/usePaykitRecovery';
 
 /**
@@ -24,12 +24,14 @@ export function usePaykitOutage(unreachable: boolean) {
     latestRecheck.current = recheck;
   }, [recheck]);
 
-  // Stable identities: callers list them in the dependencies of their config read.
-  const markRefused = useCallback(() => setRefusedAt(latestRecheck.current), []);
-  const settleRead = useCallback((readAt: number, reachable: boolean) => {
-    if (!reachable) return;
-    setRefusedAt((current) => (current !== null && readAt > current ? null : current));
-  }, []);
+  // Created once, so the identities stay stable for callers that list them in effect dependencies.
+  const [actions] = useState(() => ({
+    markRefused: () => setRefusedAt(latestRecheck.current),
+    settleRead: (readAt: number, reachable: boolean) => {
+      if (!reachable) return;
+      setRefusedAt((current) => (current !== null && readAt > current ? null : current));
+    },
+  }));
 
-  return { outage, refused: refusedAt !== null, recheck, markRefused, settleRead };
+  return { outage, refused: refusedAt !== null, recheck, ...actions };
 }
