@@ -103,7 +103,7 @@ describe('useInviteCodeSignUp', () => {
     expect(mockToast).not.toHaveBeenCalled();
   });
 
-  it('clears onboarding secrets on signUp failure (does not touch auth store)', async () => {
+  it('preserves onboarding secrets on signUp failure (does not touch auth store)', async () => {
     mockSignUp.mockRejectedValue(new Error('Invalid token'));
 
     const { result } = renderHook(() => useInviteCodeSignUp());
@@ -114,7 +114,7 @@ describe('useInviteCodeSignUp', () => {
       }),
     ).rejects.toThrow('Invalid token');
 
-    expect(mockClearSecrets).toHaveBeenCalled();
+    expect(mockClearSecrets).not.toHaveBeenCalled();
     expect(mockSetCurrentUserPubky).not.toHaveBeenCalled();
   });
 
@@ -203,4 +203,15 @@ describe('useInviteCodeSignUp', () => {
       description: 'Network down',
     });
   });
+});
+
+it('keeps the recovery secret when signup completion rejects after consuming the invite', async () => {
+  mockSelectSecretKey.mockReturnValue('new-account-secret');
+  mockOnboardingGetState.mockReturnValue({ selectSecretKey: mockSelectSecretKey, clearSecrets: mockClearSecrets });
+  mockIsAppError.mockReturnValue(false);
+  mockSignUp.mockRejectedValue(new Error('Account created but grant save failed'));
+  mockClearSecrets.mockClear();
+  const { result } = renderHook(() => useInviteCodeSignUp());
+  await expect(result.current.validateAndSignUp('consumed-invite')).rejects.toThrow('grant save failed');
+  expect(mockClearSecrets).not.toHaveBeenCalled();
 });

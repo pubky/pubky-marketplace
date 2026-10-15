@@ -111,7 +111,7 @@ describe('ConnectorsApplication', () => {
         authorizeUrl: null,
       });
       vi.spyOn(MarketplaceConnectorsService, 'putCredentials').mockRejectedValue(
-        connectorRefusal('credentials_not_supported', 422),
+        connectorRefusal('credentials_rejected', 422),
       );
       const disconnect = vi.spyOn(MarketplaceConnectorsService, 'disconnect').mockResolvedValue();
 
@@ -122,7 +122,7 @@ describe('ConnectorsApplication', () => {
       }).catch((caught: unknown) => caught);
 
       expect(disconnect).toHaveBeenCalledWith(ACTOR, ID);
-      expect((error as AppError).context).toMatchObject({ reason: 'credentials_not_supported' });
+      expect((error as AppError).context).toMatchObject({ reason: 'credentials_rejected' });
     });
 
     it('reports the refusal even when the draft cannot be deleted', async () => {

@@ -74,10 +74,11 @@ export class MarketplaceConnectorsService {
 
   /**
    * `PUT /v1/connectors/{id}/credentials`. A Shopify connection takes
-   * `clientId` and `clientSecret` (sent snake_case on the wire); the service
-   * answers with the connection (`credentials_saved` true) and never returns
-   * the values. A provider with no app of its own (WooCommerce) answers
-   * `422 credentials_not_supported`.
+   * `clientId` and `clientSecret` (sent snake_case on the wire); a WooCommerce
+   * draft takes `consumerKey` and `consumerSecret`, checks them against the
+   * store and connects. The service answers with the connection and never
+   * returns the values; a refusal carries a code such as `invalid_keys`,
+   * `credentials_rejected`, `keys_read_only` or `not_pending`.
    */
   static async putCredentials(
     actor: string,

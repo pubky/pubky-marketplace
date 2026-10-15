@@ -69,9 +69,19 @@ type PayloadRow = {
   extraFields?: Record<string, string>;
 };
 
+/**
+ * The one form of a source image URL the photo phase works with. A shop file
+ * can carry surrounding spaces (Shopify's `Image Src`), and the upload results,
+ * the hash on the media record and the de-duplication must all agree on the
+ * same text, so every key below is this value.
+ */
+export function normalizeImageUrl(url: string): string {
+  return url.trim();
+}
+
 /** The hash that identifies a source image URL on a media record. */
 export function sourceUrlHash(url: string): string {
-  return bytesToHex(blake3(utf8ToBytes(url.trim())));
+  return bytesToHex(blake3(utf8ToBytes(normalizeImageUrl(url))));
 }
 
 function mediaSourceHash(media: unknown): string | undefined {
@@ -134,15 +144,25 @@ function parseJson(value: string | undefined): unknown {
   }
 }
 
-/** The source image URLs a preset kept on a row, in source order; malformed entries are ignored. */
+/**
+ * The source image URLs a preset kept on a row, in source order, normalised
+ * and without repeats (the first occurrence wins); malformed entries are
+ * ignored. This is where the photo phase reads a row's URLs, so everything
+ * downstream sees each URL once, in its normalised form.
+ */
 export function sourceImagesOf(row: PayloadRow): SourceImage[] {
   const parsed = parseJson(row.extraFields?.[SOURCE_IMAGE_URLS_FIELD]);
   if (!Array.isArray(parsed)) return [];
   const images: SourceImage[] = [];
+  const seen = new Set<string>();
   for (const entry of parsed) {
     if (typeof entry !== 'object' || entry === null) continue;
     const { url, alt } = entry as { url?: unknown; alt?: unknown };
-    if (typeof url === 'string' && url !== '') images.push({ url, alt: typeof alt === 'string' ? alt : '' });
+    if (typeof url !== 'string') continue;
+    const normalized = normalizeImageUrl(url);
+    if (normalized === '' || seen.has(normalized)) continue;
+    seen.add(normalized);
+    images.push({ url: normalized, alt: typeof alt === 'string' ? alt : '' });
   }
   return images;
 }
@@ -157,14 +177,14 @@ export function rowHoldsMedia(row: PayloadRow): boolean {
 /** Every distinct URL across the targets, in first-seen order. */
 export function uniqueImageUrls(targets: readonly ImportImageTarget[]): string[] {
   const seen = new Set<string>();
-  for (const target of targets) for (const image of target.images) seen.add(image.url);
+  for (const target of targets) for (const image of target.images) seen.add(normalizeImageUrl(image.url));
   return [...seen];
 }
 
 /** The alt text for an image URL: the first listing title that used it, within the record limit. */
 export function altTextForUrl(targets: readonly ImportImageTarget[], url: string): string {
   for (const target of targets) {
-    const image = target.images.find((candidate) => candidate.url === url);
+    const image = target.images.find((candidate) => normalizeImageUrl(candidate.url) === normalizeImageUrl(url));
     const alt = image?.alt.trim();
     if (alt)
       return alt.length <= COMMERCE_MEDIA_ALT_TEXT_MAX_CHARS ? alt : alt.slice(0, COMMERCE_MEDIA_ALT_TEXT_MAX_CHARS);
@@ -181,27 +201,39 @@ export function outcomesFromResults(
   results: readonly ImportImageResult[],
 ): ListingImageOutcome[] {
   const byUrl = new Map<string, ImportImageResult>();
-  for (const result of results) if (!byUrl.has(result.url)) byUrl.set(result.url, result);
+  for (const result of results) {
+    const key = normalizeImageUrl(result.url);
+    if (!byUrl.has(key)) byUrl.set(key, result);
+  }
   return targets.map((target) => {
     const media: PresetJson[] = [...(target.keptMedia ?? [])];
     const rows: TImportImageResultRow[] = [];
     let added = 0;
+    const seen = new Set<string>();
     for (const image of target.images) {
-      const result = byUrl.get(image.url);
+      const url = normalizeImageUrl(image.url);
+      if (seen.has(url)) continue;
+      seen.add(url);
+      const result = byUrl.get(url);
       if (result?.status === 'uploaded' && result.media !== undefined) {
         const record = result.media as Record<string, PresetJson>;
-        media.push({ ...record, [IMPORT_SOURCE_HASH_KEY]: sourceUrlHash(image.url) });
-        rows.push({ url: image.url, status: 'uploaded' });
+        media.push({ ...record, [IMPORT_SOURCE_HASH_KEY]: sourceUrlHash(url) });
+        rows.push({ url, status: 'uploaded' });
         added += 1;
       } else {
         rows.push({
-          url: image.url,
+          url,
           status: 'failed',
           reason: result?.reason ?? 'cancelled',
         });
       }
     }
-    for (const image of target.skipped ?? []) rows.push({ url: image.url, status: 'failed', reason: 'limit_reached' });
+    for (const image of target.skipped ?? []) {
+      const url = normalizeImageUrl(image.url);
+      if (seen.has(url)) continue;
+      seen.add(url);
+      rows.push({ url, status: 'failed', reason: 'limit_reached' });
+    }
     const sync: ImageSync | undefined =
       target.keptMedia === undefined
         ? undefined

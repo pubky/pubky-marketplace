@@ -20,12 +20,11 @@ import { toast } from '@/molecules/Toaster/use-toast';
  * affordance for same-device Ring. Every mount starts a FRESH flow and
  * unmount cancels it.
  *
- * This panel is the LAST resort: sign-ins made with the combined grant
- * (`/pub/pubky.app/:rw,/pub/paykit/:rw,/priv/pubky.app/:rw`) resume
- * messaging silently from the sign-in cookie and NEVER see it. It renders
- * only when the cookie resume failed — a sign-in that predates the combined
- * grant (no paykit scope in its session) or a cookie the homeserver no
- * longer accepts.
+ * The vendored binding accepts cookie sessions only. Current Shop sign-ins
+ * use SDK grants and cannot start this legacy enable flow. Existing valid
+ * messaging cookies can still resume, and saved history stays readable.
+ * Grant support requires a Paykit session/transport adapter; changing signers
+ * or removing this guard would only start a separate cookie approval.
  *
  * `reconnect` switches the copy for the returning case: the receiver key
  * already exists on this device, but no resume path produced a working

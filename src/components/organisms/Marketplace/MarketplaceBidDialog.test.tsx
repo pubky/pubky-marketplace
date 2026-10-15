@@ -8,6 +8,7 @@ import {
   createAuctionProjectionFixture,
   createViewerBidAuctionProjectionFixture,
 } from '@/test/fixtures/commerce/projections';
+import { asOpaque } from '@/test-utils/type-assertions';
 import { MarketplaceBidDialog } from './MarketplaceBidDialog';
 
 vi.mock('@/controllers/commerce/commerce', () => ({
@@ -20,7 +21,13 @@ const SIGNED_IN_PUBKY = 'y'.repeat(52);
 
 describe('MarketplaceBidDialog', () => {
   beforeEach(() => {
-    useAuthStore.setState({ currentUserPubky: SIGNED_IN_PUBKY });
+    useAuthStore.setState({
+      currentUserPubky: SIGNED_IN_PUBKY,
+      session: asOpaque({ grant: {}, info: { publicKey: { z32: () => SIGNED_IN_PUBKY } } }),
+      hasProfile: true,
+      isRestoringSession: false,
+      isLoggingOut: false,
+    });
   });
 
   it('disables the trigger while the auction has no projection to bid against', () => {

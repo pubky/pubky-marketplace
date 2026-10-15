@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { getBasePath } from '@/config/base-path';
 import { AuthController } from '@/controllers/auth/auth';
+import { SIGN_IN_FAILED_RETRY_MESSAGE, signInErrorCopy } from '@/libs/auth/sign-in-error-copy';
 import { getWrongEnvironmentHomeserverMessage, isWrongEnvironmentHomeserverError } from '@/libs/error/error.utils';
 import { Logger } from '@/libs/logger/logger';
 import {
@@ -80,7 +81,7 @@ export function usePassportSignIn() {
           return;
         }
         Logger.error('Pubky Passport sign-in failed', { error });
-        toast({ variant: 'error', description: 'Sign in failed. Try again.' });
+        toast({ variant: 'error', description: signInErrorCopy(error, SIGN_IN_FAILED_RETRY_MESSAGE) });
       })
       .finally(() => {
         isPendingRef.current = false;

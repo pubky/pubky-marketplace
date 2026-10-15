@@ -193,13 +193,13 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # Fork PRs never receive LAUNCH_E2E_SELLER_SECRET_HEX, so the suite cannot
-      # pass there. Skip with a notice. A same-repo PR with the secret missing
-      # fails this step and the job stays required.
+      # This required browser gate uses the real SDK with synthetic identities
+      # and network fixtures. Live signer/backend QA is a separate opt-in run;
+      # neither same-repo nor fork PRs need a staging seller secret here.
       - name: Decide whether launch-e2e can run
         id: gate
         env:
-          LAUNCH_E2E_SELLER_SECRET_HEX: ${{ secrets.LAUNCH_E2E_SELLER_SECRET_HEX }}
+          LAUNCH_E2E_MODE: synthetic
           LAUNCH_E2E_HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
           LAUNCH_E2E_BASE_REPO: ${{ github.repository }}
         run: bash scripts/ci-launch-e2e-gate.sh
@@ -249,13 +249,13 @@ jobs:
             exit 1
           fi
 
-      - name: Run launch-critical Chromium suite
+      - name: Run synthetic launch-critical Chromium suite
         if: steps.gate.outputs.run == 'true'
         env:
           PLAYWRIGHT_BROWSERS_PATH: /ms-playwright
           LAUNCH_E2E_BASE_URL: http://127.0.0.1:3000
-          LAUNCH_E2E_SERVICE_URL: https://staging-api.pubky.app
-          LAUNCH_E2E_SELLER_SECRET_HEX: ${{ secrets.LAUNCH_E2E_SELLER_SECRET_HEX }}
+          LAUNCH_E2E_SERVICE_URL: https://launch-marketplace.test
+          LAUNCH_E2E_MODE: synthetic
           LAUNCH_E2E_REQUIRE_SELLER_BOARD: '1'
         run: bash scripts/ci-launch-e2e.sh
 

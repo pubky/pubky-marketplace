@@ -5,6 +5,9 @@ import { useAuthStore } from '@/stores/auth/auth.store';
 import { asOpaque } from '@/test-utils/type-assertions';
 import { MarketplaceSignOutCard } from './MarketplaceSignOutCard';
 
+const hosted = vi.hoisted(() => ({ value: false }));
+vi.mock('@/providers/ShopHostSessionProvider/ShopHostSessionProvider', () => ({ useIsShopHosted: () => hosted.value }));
+
 const signOut = vi.hoisted(() => ({ handleSignOut: vi.fn(), isLoading: false }));
 
 vi.mock('@/hooks/useSignOut/useSignOut', () => ({
@@ -18,6 +21,7 @@ describe('MarketplaceSignOutCard', () => {
   });
 
   afterEach(() => {
+    hosted.value = false;
     act(() => {
       useAuthStore.setState({ session: null });
     });
@@ -39,12 +43,13 @@ describe('MarketplaceSignOutCard', () => {
     expect(screen.getByRole('button', { name: 'Signing out...' })).toBeDisabled();
   });
 
-  it('says a Pubky Ring sign-out also signs pubky.app out in this browser', () => {
+  it('says a hosted sign-out signs out both App and Shop', () => {
+    hosted.value = true;
     useAuthStore.setState({ session: asOpaque({ info: {} }) });
     render(<MarketplaceSignOutCard />);
 
     const card = screen.getByTestId('marketplace-sign-out-card');
-    expect(card).toHaveTextContent(SIGN_OUT_COPY.cookie);
+    expect(card).toHaveTextContent(SIGN_OUT_COPY.host);
     expect(card).not.toHaveTextContent(SIGN_OUT_COPY.grant);
     expect(card).not.toHaveTextContent('Sign out from Pubky');
   });
@@ -55,6 +60,6 @@ describe('MarketplaceSignOutCard', () => {
 
     const card = screen.getByTestId('marketplace-sign-out-card');
     expect(card).toHaveTextContent(SIGN_OUT_COPY.grant);
-    expect(card).not.toHaveTextContent(SIGN_OUT_COPY.cookie);
+    expect(card).not.toHaveTextContent(SIGN_OUT_COPY.host);
   });
 });

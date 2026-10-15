@@ -1,20 +1,21 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { isSingleApprovalSignInEnabled } from '@/config/app';
-import { AuthController } from '@/controllers/auth/auth';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import { readGrantSigner } from '@/hooks/useGrantSigner/useGrantSigner';
-import { marketplaceApprovalSigner } from '@/hooks/useMarketplaceApprovalSigner/useMarketplaceApprovalSigner';
 import {
-  type BootstrapSignerName,
+  marketplaceApprovalSigner,
+  marketplaceSignerChoice,
+} from '@/hooks/useMarketplaceApprovalSigner/useMarketplaceApprovalSigner';
+import {
   MARKETPLACE_FAILURE_MESSAGES,
   marketplaceBootstrapFailureMessage,
-  marketplaceErrorCode,
   marketplaceFailureMessage,
 } from '@/libs/commerce/failure-messages';
 import { isAppError } from '@/libs/error/error';
-import { ErrorCategory } from '@/libs/error/error.types';
+import { ServerErrorCode } from '@/libs/error/error.codes';
+import { Err } from '@/libs/error/error.factories';
+import { ErrorCategory, ErrorService } from '@/libs/error/error.types';
 import { Logger } from '@/libs/logger/logger';
 import { navigateTop } from '@/libs/navigation/navigate-top';
 import {
@@ -29,7 +30,6 @@ import {
   getPassportSignInEnabled,
 } from '@/libs/runtime-config/runtime-config';
 import { copyToClipboard } from '@/libs/utils/utils';
-import { AUTH_FLOW_CANCELED_ERROR_NAME } from '@/services/homeserver/error.utils';
 import { beginMarketplaceBootstrapFlow } from '@/services/marketplace/marketplace-bootstrap-client';
 import { beginMarketplaceGrantFlow, type MarketplaceGrantFlow } from '@/services/marketplace/marketplace-grant-client';
 import { MarketplaceSessionService } from '@/services/marketplace/marketplace-session';
@@ -40,42 +40,11 @@ import type {
   UseMarketplaceSessionConnectReturn,
 } from './useMarketplaceSessionConnect.types';
 
-type ActiveFlow =
-  | ReturnType<typeof CommerceController.beginMarketplaceSessionConnect>
-  | ReturnType<typeof AuthController.beginBridgedCommerceSessionFlow>;
-
-/**
- * Drives the interactive marketplace session-connect flow (durable modes
- * only): a fresh `pubkyauth://` URL for the user's signer, a pending
- * approval, cancellation, and retry. AuthToken flows are single-use, so
- * `start()` always begins a NEW flow — after an error or cancellation the
- * previous URL is dead and is never re-shown.
- *
- * Cancellation is detected by identity, not by error shape: `cancel()` and
- * `start()` first detach the current flow, so a rejection arriving from a
- * detached flow is dropped silently instead of being surfaced as a failure.
- */
-/**
- * The pubky of the Shop session, grant-backed (Bitkit or Pubky Passport) or a
- * Pubky Ring cookie session. Either can write the bootstrap's homeserver proof.
- */
+/** The signed-in grant supplies only the bootstrap proof, never a homeserver cookie. */
 function signedInPubky(): string | null {
   const session = useAuthStore.getState().session;
-  if (!session) return null;
+  if (!session?.grant) return null;
   return session.info.publicKey.z32();
-}
-
-/** True when Pubky Passport approved the Shop sign-in, so it approves the purchase grant too. */
-function isPassportGrantSignIn(): boolean {
-  return readGrantSigner(useAuthStore.getState()) === 'passport';
-}
-
-/** Who approves the bootstrap's grant link, named in its failure copy. */
-function bootstrapSignerName(): BootstrapSignerName {
-  const signer = readGrantSigner(useAuthStore.getState());
-  if (signer === 'passport') return 'Pubky Passport';
-  if (signer === 'bitkit') return 'Bitkit';
-  return 'Pubky Ring or Bitkit';
 }
 
 /** Copy for a Passport purchase approval that ended without a result. Null returns to idle silently. */
@@ -91,12 +60,13 @@ export const PASSPORT_GRANT_FAILURE_COPY: Record<PassportAttemptFailure, string 
 export function useMarketplaceSessionConnect(
   options: UseMarketplaceSessionConnectOptions = {},
 ): UseMarketplaceSessionConnectReturn {
+  const authSession = useAuthStore((state) => state.session);
   const [status, setStatus] = useState<MarketplaceSessionConnectStatus>('idle');
   const [authorizationUrl, setAuthorizationUrl] = useState('');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isOpeningRing, setIsOpeningRing] = useState(false);
   // First-paint copy must match the flow `start()` will pick: grant reconnect
-  // only when a marketplace bearer already exists. AuthToken fallback clears it.
+  // only when a marketplace bearer already exists.
   const [requestsGrantReconnect, setRequestsGrantReconnect] = useState(
     () => getMarketplaceGrantFlowEnabled() && Boolean(MarketplaceSessionService.getActiveSession()),
   );
@@ -105,9 +75,13 @@ export function useMarketplaceSessionConnect(
   );
   // A Passport approval opens a popup, which needs a click: `start()` only
   // arms it and `startPassport()` runs it.
-  const requestsPassport = getMarketplaceGrantFlowEnabled() && isPassportGrantSignIn() && getPassportSignInEnabled();
-  const approvalSigner = marketplaceApprovalSigner(readGrantSigner(useAuthStore.getState()));
-  const activeFlowRef = useRef<ActiveFlow | null>(null);
+  const preferredSigner = options.signer ?? marketplaceSignerChoice(readGrantSigner(useAuthStore.getState()));
+  const selectedSigner = preferredSigner === 'passport' && !getPassportSignInEnabled() ? null : preferredSigner;
+  const requiresSignIn = !authSession?.grant;
+  const requestsPassport =
+    getMarketplaceGrantFlowEnabled() && selectedSigner === 'passport' && getPassportSignInEnabled();
+  const approvalSigner = marketplaceApprovalSigner(selectedSigner);
+  const requiresSignerChoice = selectedSigner === null;
   /** The Passport approval `start()` prepared, waiting for the user's click. */
   const passportRunRef = useRef<(() => void) | null>(null);
   const activeGrantFlowRef = useRef<MarketplaceGrantFlow | null>(null);
@@ -130,16 +104,8 @@ export function useMarketplaceSessionConnect(
   const detachActiveFlow = useCallback(() => {
     generationRef.current += 1;
     passportRunRef.current = null;
-    const flow = activeFlowRef.current;
-    activeFlowRef.current = null;
     const grantFlow = activeGrantFlowRef.current;
     activeGrantFlowRef.current = null;
-    // Route through the controller: when this flow is still the tracked
-    // active flow, the ceremony guard is torn down with it, so a retry mints
-    // a FRESH single-use URL instead of joining the cancelled ceremony and
-    // re-showing its dead QR. Untracked (empty-capability) flows degrade to
-    // the plain cancel.
-    if (flow) AuthController.releaseAuthFlow(flow.cancel);
     if (grantFlow) void grantFlow.cancel();
   }, []);
 
@@ -150,14 +116,8 @@ export function useMarketplaceSessionConnect(
     setStatus('idle');
   }, []);
 
-  /**
-   * The ONE decision of which consent this dialog asks for, computed here so
-   * the rendered copy and the flow `start()` actually begins can never
-   * diverge (the dialog renders this value; it must not re-evaluate it).
-   */
   const grantFlowEnabled = getMarketplaceGrantFlowEnabled();
-  const requestsFullGrant =
-    !grantFlowEnabled && isSingleApprovalSignInEnabled() && !CommerceController.hasFullHomeserverGrant();
+  const requestsFullGrant = false;
 
   const start = useCallback(() => {
     detachActiveFlow();
@@ -167,75 +127,27 @@ export function useMarketplaceSessionConnect(
 
     const generation = generationRef.current;
 
-    const startAuthTokenConnect = () => {
+    const expectedSession = authSession;
+    const expectedPubky = signedInPubky();
+    const isCurrentIdentity = () =>
+      useAuthStore.getState().session === expectedSession && signedInPubky() === expectedPubky;
+    if (!grantFlowEnabled || !expectedPubky) {
+      setAuthorizationUrl('');
       setRequestsGrantReconnect(false);
       setRequestsGrantBootstrap(false);
-      let flow: ActiveFlow;
-      try {
-        flow = requestsFullGrant
-          ? AuthController.beginBridgedCommerceSessionFlow()
-          : CommerceController.beginMarketplaceSessionConnect();
-      } catch (error) {
-        Logger.error('Failed to start the marketplace session flow', { error });
-        setAuthorizationUrl('');
-        setErrorMessage(
-          marketplaceFailureMessage(marketplaceErrorCode(error), MARKETPLACE_FAILURE_MESSAGES.sessionStart),
-        );
-        setStatus('error');
-        return;
-      }
-
-      activeFlowRef.current = flow;
-      // A JOINED flow's approval lives on another surface (e.g. a sign-in in
-      // progress): that surface holds the only scannable URL, so this hook
-      // exposes the honest `joined` state — never `awaiting` with an empty URL
-      // (a blank, un-scannable QR with Copy/Open dead). The join still settles
-      // through the same awaitSession below.
-      if ('joined' in flow && flow.joined) {
-        setAuthorizationUrl('');
-        setStatus('joined');
-      } else {
-        setAuthorizationUrl(flow.authorizationUrl);
-        setStatus('awaiting');
-      }
-
-      flow
-        .awaitSession()
-        .then((session) => {
-          if (activeFlowRef.current !== flow) return;
-          activeFlowRef.current = null;
-          setAuthorizationUrl('');
-          setStatus('connected');
-          onConnectedRef.current?.(session);
-        })
-        .catch((error: unknown) => {
-          // A detached flow (cancelled or superseded) rejects as a side effect
-          // of being freed — that is control flow, not a failure to report.
-          if (activeFlowRef.current !== flow) return;
-          activeFlowRef.current = null;
-          // The CONTROLLER can also free this flow out from under the hook: a
-          // sign-in ceremony or a second start() anywhere supersedes it via
-          // `AuthController.cancelActiveAuthFlow`. The SDK canceled error that
-          // rejection carries is control flow too — the superseded flow ends
-          // idle, never error, and surfaces no toast.
-          if (
-            typeof error === 'object' &&
-            error !== null &&
-            'name' in error &&
-            (error as { name?: unknown }).name === AUTH_FLOW_CANCELED_ERROR_NAME
-          ) {
-            setAuthorizationUrl('');
-            setStatus('idle');
-            return;
-          }
-          Logger.error('Marketplace session flow failed', { error });
-          setAuthorizationUrl('');
-          setErrorMessage(
-            marketplaceFailureMessage(marketplaceErrorCode(error), MARKETPLACE_FAILURE_MESSAGES.sessionTimeout, error),
-          );
-          setStatus('error');
-        });
-    };
+      setErrorMessage(
+        !expectedPubky
+          ? 'Sign in again to connect the marketplace.'
+          : 'Marketplace approvals are unavailable on this deployment.',
+      );
+      setStatus('error');
+      return;
+    }
+    if (!selectedSigner) {
+      setAuthorizationUrl('');
+      setStatus('idle');
+      return;
+    }
 
     const runGrantFlow = (
       begin: () => Promise<MarketplaceGrantFlow>,
@@ -248,7 +160,7 @@ export function useMarketplaceSessionConnect(
       let grantFlow: MarketplaceGrantFlow | null = null;
       const attach = async () => {
         const flow = await begin();
-        if (generationRef.current !== generation) {
+        if (generationRef.current !== generation || !isCurrentIdentity()) {
           await flow.cancel();
           throw new PassportAttemptError('cancelled');
         }
@@ -269,16 +181,22 @@ export function useMarketplaceSessionConnect(
         : attach().then((flow) => flow.awaitResult());
       void settled
         .then(async (result) => {
-          if (generationRef.current !== generation || activeGrantFlowRef.current !== grantFlow) return;
+          if (generationRef.current !== generation || !isCurrentIdentity() || activeGrantFlowRef.current !== grantFlow)
+            return;
           activeGrantFlowRef.current = null;
           setAuthorizationUrl('');
           if (result.status === 'connected') {
             if (!result.token || !result.pubky || result.capabilities === undefined || !result.expires_at) {
-              throw new Error('grant_invalid_response');
+              throw Err.server(ServerErrorCode.INVALID_RESPONSE, 'grant_invalid_response', {
+                service: ErrorService.Marketplace,
+                operation: 'marketplaceApproval',
+              });
             }
-            const expectedPubky = useAuthStore.getState().currentUserPubky;
             if (!expectedPubky) {
-              throw new Error('grant_invalid_response');
+              throw Err.server(ServerErrorCode.INVALID_RESPONSE, 'grant_invalid_response', {
+                service: ErrorService.Marketplace,
+                operation: 'marketplaceApproval',
+              });
             }
             if (result.pubky !== expectedPubky) {
               setStatus('mismatch');
@@ -315,7 +233,7 @@ export function useMarketplaceSessionConnect(
           }
         })
         .catch((error: unknown) => {
-          if (generationRef.current !== generation) return;
+          if (generationRef.current !== generation || !isCurrentIdentity()) return;
           activeGrantFlowRef.current = null;
           setAuthorizationUrl('');
           if (isPassportAttemptError(error)) {
@@ -338,13 +256,13 @@ export function useMarketplaceSessionConnect(
             onSessionMissing();
             return;
           }
-          Logger.error('Marketplace grant flow failed', { error });
+          if (!isAppError(error)) Logger.error('Marketplace grant flow failed', { error });
           setErrorMessage(failureMessage(code));
           setStatus('error');
         });
     };
 
-    const viaPassport = isPassportGrantSignIn();
+    const viaPassport = selectedSigner === 'passport';
     if (viaPassport && !getPassportSignInEnabled()) {
       // Passport is switched off: no approval of any kind starts for this sign-in.
       setAuthorizationUrl('');
@@ -354,16 +272,14 @@ export function useMarketplaceSessionConnect(
 
     // With the grant flow on, every signed-in purchase approval is a
     // `signin_grant` link, which Bitkit and Pubky Ring 2.0+ both approve.
-    // Bitkit rejects the Ring AuthToken link, so no Shop session falls back to
-    // it. The browser bootstrap needs only a session that can write its own
-    // homeserver (the proof document), so it serves Ring cookie sessions too.
+    // The browser writes a single-use proof using its active grant.
     const bootstrapPubky = signedInPubky();
     const runBootstrap = (pubky: string) => {
       setRequestsGrantReconnect(false);
       setRequestsGrantBootstrap(true);
       runGrantFlow(
         () => beginMarketplaceBootstrapFlow({ pubky }),
-        (code) => marketplaceBootstrapFailureMessage(code, bootstrapSignerName()),
+        (code) => marketplaceBootstrapFailureMessage(code, marketplaceApprovalSigner(selectedSigner)),
         undefined,
         viaPassport,
       );
@@ -391,7 +307,7 @@ export function useMarketplaceSessionConnect(
         ? undefined
         : bootstrapPubky
           ? () => runBootstrap(bootstrapPubky)
-          : startAuthTokenConnect;
+          : undefined;
       const runReconnect = () =>
         runGrantFlow(
           beginMarketplaceGrantFlow,
@@ -407,8 +323,9 @@ export function useMarketplaceSessionConnect(
       return;
     }
 
-    startAuthTokenConnect();
-  }, [armPassport, detachActiveFlow, grantFlowEnabled, removeVisibilityHandler, requestsFullGrant]);
+    setStatus('error');
+    setErrorMessage('Sign in again to connect the marketplace.');
+  }, [armPassport, authSession, detachActiveFlow, grantFlowEnabled, removeVisibilityHandler, selectedSigner]);
 
   /**
    * Runs the armed Pubky Passport approval. Call it from the click handler
@@ -452,6 +369,11 @@ export function useMarketplaceSessionConnect(
   }, [authorizationUrl, removeVisibilityHandler]);
 
   useEffect(() => {
+    // Account switches and replacement sessions retire pending service approvals.
+    cancel();
+  }, [authSession, cancel]);
+
+  useEffect(() => {
     return () => {
       // Unmount cancels outright: unlike sign-in, nothing global consumes the
       // approval — without a mounted dialog the session would connect
@@ -470,6 +392,8 @@ export function useMarketplaceSessionConnect(
     requestsGrantBootstrap,
     requestsPassport,
     approvalSigner,
+    requiresSignerChoice,
+    requiresSignIn,
     start,
     startPassport,
     cancel,

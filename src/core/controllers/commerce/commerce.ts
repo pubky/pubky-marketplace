@@ -327,11 +327,12 @@ export class CommerceController {
   }
 
   /** Sign-out and account switch (`AuthController` local-state cleanup). */
-  static clearMarketplaceSessionForSignOut(): void {
-    CommerceApplication.clearMarketplaceSessionForSignOut();
+  static clearMarketplaceSessionForSignOut(options?: { confirmBff?: boolean }): void | Promise<void> {
+    const cleanup = CommerceApplication.clearMarketplaceSessionForSignOut(options);
     this.clearMarketplaceSessionStore();
     CommerceApplication.clearInventorySessionForSignOut();
     this.clearInventorySessionStore();
+    return cleanup;
   }
 
   /**
@@ -1746,6 +1747,18 @@ export class CommerceController {
     }
     const status = await CommerceApplication.syncWatchlist(currentUserPubky);
     useCommerceStore.getState().setWatchlistSyncStatus(status === 'skipped' ? 'idle' : status);
+  }
+
+  /**
+   * Calls `listener` whenever the signed-in user's private data keys become
+   * available, whichever surface asked for them first. A surface that ran
+   * before they were available (the watchlist sync, for one) uses it to run
+   * again. Returns the unsubscribe function.
+   */
+  static subscribePrivKeysReady(listener: () => void): () => void {
+    return CommercePrivKeyringApplication.subscribeReady((ownerPubky) => {
+      if (useAuthStore.getState().currentUserPubky === ownerPubky) listener();
+    });
   }
 
   /**

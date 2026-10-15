@@ -133,18 +133,19 @@ cancels or refunds for the seller.
 
 Where the Shop still differs from the service, and what it does:
 
-- **Pasted WooCommerce keys.** The contract is `PUT /v1/connectors/{id}/credentials`
-  with `{consumer_key, consumer_secret}` for WooCommerce and
-  `{client_id, client_secret}` for Shopify, and the Shop sends exactly that. The
-  WooCommerce service branch (service PR #135, head `8f8f77d` when this was
-  written) has not landed it yet: there `PUT /credentials` still answers
-  `422 credentials_not_supported` for WooCommerce, and only
-  `PUT /woocommerce/keys` takes the pair. Until its head accepts it, the Shop
-  keeps saying in plain words that this store type cannot take pasted keys here
-  yet; remove that copy (`credentials_not_supported` in
-  `src/libs/commerce/connectors.ts`) when it does. A refused attempt does not
-  leave a draft behind: the Shop deletes the draft it just created, and the
-  service deletes drafts whose connect fails.
+- **Pasted WooCommerce keys** work. `PUT /v1/connectors/{id}/credentials` takes
+  `{consumer_key, consumer_secret}` for a WooCommerce draft (service PR #135,
+  confirmed at head `c32fd03`), checks the pair against the store, connects it
+  and answers `connector_connected` with the connection; the Shop reads that
+  answer like the `connector_credentials` one a Shopify save returns. Refusals
+  are explained by code: `invalid_keys`, `credentials_rejected`,
+  `keys_read_only`, `not_pending` (the draft expired, or the store is already
+  connected) and `shop_in_use`. A refused attempt does not leave a draft
+  behind: the Shop deletes the draft it just created, and the service deletes
+  drafts whose connect fails. The service takes keys only for a draft, so
+  Replace credentials on a store that is already connected answers
+  `not_pending`; the message tells the seller to disconnect it and connect
+  again.
 - **Install from the Shop.** The launch URL needs Shopify's own signature, so the
   Shop cannot start the install. The guide's Install button opens the Dev
   Dashboard, and the step says to use the app's Home, Install app.

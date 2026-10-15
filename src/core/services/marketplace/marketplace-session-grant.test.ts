@@ -67,7 +67,11 @@ describe('marketplace session grant', () => {
   it('discloses each captured grant in one plain sentence', () => {
     expect(marketplaceApprovalDisclosure(urlFor(captured.parity_request))).toBe(MARKETPLACE_DISCLOSURE_PRIVATE_DATA);
     expect(marketplaceApprovalDisclosure(urlFor(captured.previous_request))).toBe(MARKETPLACE_DISCLOSURE_INVENTORY);
-    expect(marketplaceApprovalDisclosure(urlFor(captured.shop_signin_request))).toBe(MARKETPLACE_DISCLOSURE_SIGN_IN);
+    // Historical captures must not be rewritten when the current sign-in scope changes.
+    expect(marketplaceApprovalDisclosure(urlFor(captured.shop_signin_request))).toBeNull();
+    expect(marketplaceApprovalDisclosure(urlFor(captured.shop_signin_request, { caps: CAPABILITIES }))).toBe(
+      MARKETPLACE_DISCLOSURE_SIGN_IN,
+    );
   });
 
   it('discloses the Ring connect QR and the Ring sign-in QR from their captured shapes', () => {
@@ -76,7 +80,8 @@ describe('marketplace session grant', () => {
         .map((name) => `${name}=${encodeURIComponent(name === 'caps' ? caps : 'x')}`)
         .join('&')}`;
     expect(marketplaceApprovalDisclosure(ringUrl(MARKETPLACE_SESSION_GRANT))).toBe(MARKETPLACE_DISCLOSURE_PRIVATE_DATA);
-    expect(marketplaceApprovalDisclosure(ringUrl(ringCapture.caps))).toBe(MARKETPLACE_DISCLOSURE_SIGN_IN);
+    expect(marketplaceApprovalDisclosure(ringUrl(ringCapture.caps))).toBeNull();
+    expect(marketplaceApprovalDisclosure(ringUrl(CAPABILITIES))).toBe(MARKETPLACE_DISCLOSURE_SIGN_IN);
     expect(marketplaceApprovalDisclosure(ringUrl(RING_COOKIE_CAPABILITIES))).toBe(MARKETPLACE_DISCLOSURE_RING_SIGN_IN);
     expect(marketplaceApprovalDisclosure(ringUrl(RING_COOKIE_CAPABILITIES.split(',').reverse().join(',')))).toBe(
       MARKETPLACE_DISCLOSURE_RING_SIGN_IN,
@@ -135,7 +140,7 @@ describe('sessionReplacementRejection', () => {
   const PUBKY = 'y'.repeat(52);
   const parity = captured.parity_request.homeserver_verified;
   const previous = captured.previous_request.homeserver_verified;
-  const signIn = captured.shop_signin_request.caps;
+  const signIn = CAPABILITIES;
   const claimedGrantRejection = (
     capabilities: string,
     current: { pubky: string; capabilities: string } | null,
@@ -143,7 +148,9 @@ describe('sessionReplacementRejection', () => {
   ) => sessionReplacementRejection(capabilities, MARKETPLACE_CLAIMABLE_GRANTS, current, pubky);
 
   it('pins the Ring connect QR to the parity grant and the sign-in redeem to the Shop sign-in grant', () => {
-    expect(signIn.split(',').sort()).toEqual(CAPABILITIES.split(',').sort());
+    expect(sessionReplacementRejection(captured.shop_signin_request.caps, [CAPABILITIES], null, PUBKY)).toBe(
+      'unexpected_capabilities',
+    );
     expect(sessionReplacementRejection(parity, [MARKETPLACE_SESSION_GRANT], null, PUBKY)).toBeNull();
     expect(sessionReplacementRejection(previous, [MARKETPLACE_SESSION_GRANT], null, PUBKY)).toBe(
       'unexpected_capabilities',

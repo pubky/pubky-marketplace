@@ -18,7 +18,7 @@ import {
   sourceUrlHash,
   uniqueImageUrls,
 } from '@/pipes/commerce/import-image-phase';
-import type { PresetJson } from '@/pipes/commerce/import-preset-rows';
+import { type PresetJson, SOURCE_IMAGE_URLS_FIELD } from '@/pipes/commerce/import-preset-rows';
 import { MarketplaceShopClientService, type SyncManyEnvelope } from '@/services/marketplace/marketplace-shop-client';
 import { IMPORT_SETTINGS_COMPLETE } from '@/test-utils/import-settings';
 import { BytesFile, MemoryImportStore } from '@/test-utils/inventory-import-harness';
@@ -157,10 +157,11 @@ describe('re-importing photos for a listing that already exists', () => {
   }
 
   /** The same sequence the import hook runs: plan, photo phase, publish. */
-  async function runImport(file: BytesFile) {
+  async function runImport(file: BytesFile, afterPlan?: (manifestId: string) => void) {
     const importer = app();
     const planned = await importer.planFile(file, CHF);
     if (planned.status !== 'planned') throw new Error('plan');
+    afterPlan?.(planned.manifestId);
     fetched = [];
     const targets = await importer.imageTargets(planned.manifestId);
     const urls = uniqueImageUrls(targets);
@@ -368,6 +369,70 @@ describe('re-importing photos for a listing that already exists', () => {
       expect(record()?.state).toBe('active');
       expect(record()?.media.map((media) => media.id)).toContain('hand_03');
       expect(record()?.media).toHaveLength(2);
+    });
+  });
+
+  describe('URLs the file spells with surrounding spaces or more than once', () => {
+    /** Rewrites the source URLs a preset kept on every row, the way a parser that does not trim would. */
+    const respell = (urls: string[]) => (manifestId: string) => {
+      void manifestId;
+      for (const [key, value] of store.payloads) {
+        const row = JSON.parse(value) as { extraFields: Record<string, string> };
+        const images = urls.map((url) => ({ url, alt: 'Socks' }));
+        store.payloads.set(
+          key,
+          JSON.stringify({
+            ...row,
+            extraFields: { ...row.extraFields, [SOURCE_IMAGE_URLS_FIELD]: JSON.stringify(images) },
+          }),
+        );
+      }
+    };
+
+    it('uploads a URL with spaces around it once, attaches it, and reports it uploaded', async () => {
+      const { importer, planned, targets } = await runImport(csvFor({ urls: [A] }), respell([` ${A} `]));
+      expect(targets[0]?.images).toEqual([{ url: A, alt: 'Socks' }]);
+      expect(fetched).toEqual([A]);
+      expect(record()?.media).toHaveLength(1);
+      expect(hashesOf(record())).toEqual([sourceUrlHash(A)]);
+      const csv = await importer.resultCsv(planned.manifestId);
+      expect(csv).toContain(`"${A}","uploaded"`);
+      expect(csv).not.toContain('"failed"');
+    });
+
+    it('fetches the same URL once and attaches it once when it appears with and without spaces', async () => {
+      await runImport(csvFor({ urls: [A] }), respell([` ${A}`, A, `${A}  `]));
+      expect(fetched).toEqual([A]);
+      expect(record()?.media).toHaveLength(1);
+    });
+
+    it('treats a re-import whose URLs only gained spaces as unchanged', async () => {
+      await firstImport();
+      const before = record()?.media;
+      const { importer, planned } = await runImport(
+        csvFor({ urls: [A, B, C], title: 'Socks, spaced URLs' }),
+        respell([` ${A} `, B, ` ${C}`]),
+      );
+      expect(fetched).toEqual([]);
+      expect(record()?.media).toEqual(before);
+      expect(await importer.resultCsv(planned.manifestId)).toContain('"summary","photos unchanged"');
+    });
+
+    it('reads a Shopify row whose Image Src has spaces, uploads it once and attaches it', async () => {
+      const shopify = new BytesFile(
+        new TextEncoder().encode(
+          [
+            'Title,URL handle,Description,SKU,Option1 name,Option1 value,Price,Inventory quantity,Product image URL',
+            `Little Hodler Socks,sock-1,Warm socks,sock-1,,,25.00,5,"  ${A}  "`,
+          ].join('\n'),
+        ),
+        'shopify.csv',
+        'text/csv',
+      );
+      await runImport(shopify);
+      expect(fetched).toEqual([A]);
+      expect(record()?.media).toHaveLength(1);
+      expect(hashesOf(record())).toEqual([sourceUrlHash(A)]);
     });
   });
 
