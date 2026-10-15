@@ -89,9 +89,20 @@ function VrtImportDryRun({
         fileName={format === 'woocommerce' ? 'sample_products.csv' : 'products_export.csv'}
         counts={{ create: format === 'woocommerce' ? 21 : 2, update: 0, end: 0, unchanged: 0, conflict: 0 }}
         lossSummary={part === 'report' ? summarizeLossReport(VRT_WOO_REPORT) : undefined}
+        publishDisabledReason={
+          part === 'settings' && !defaults?.shippingMode
+            ? 'Choose a shipping option and where your listings ship from, then apply the settings.'
+            : undefined
+        }
         settings={
           part === 'settings'
-            ? { control: form.control, currencyOptions: VRT_CURRENCIES, conditionOptions: VRT_CONDITIONS, format }
+            ? {
+                control: form.control,
+                currencyOptions: VRT_CURRENCIES,
+                conditionOptions: VRT_CONDITIONS,
+                format,
+                onChooseFreeShipping: () => undefined,
+              }
             : undefined
         }
       />
@@ -310,7 +321,13 @@ describe('MarketplaceInventoryImport VRT', () => {
       <VrtImportDryRun
         format="shopify"
         part="settings"
-        defaults={{ currency: 'USD', shippingMode: 'flat', shippingPrice: '7.90', useCsvQuantities: true }}
+        defaults={{
+          currency: 'USD',
+          countryCode: 'CH',
+          shippingMode: 'flat',
+          shippingPrice: '7.90',
+          useCsvQuantities: true,
+        }}
       />,
       {
         viewport: VRT_VIEWPORT_DESKTOP,
@@ -329,7 +346,13 @@ describe('MarketplaceInventoryImport VRT', () => {
         format="shopify"
         part="settings"
         narrow
-        defaults={{ currency: 'USD', shippingMode: 'flat', shippingPrice: '7.90', useCsvQuantities: true }}
+        defaults={{
+          currency: 'USD',
+          countryCode: 'CH',
+          shippingMode: 'flat',
+          shippingPrice: '7.90',
+          useCsvQuantities: true,
+        }}
       />,
       {
         viewport: VRT_VIEWPORT_MOBILE,
@@ -377,6 +400,52 @@ describe('MarketplaceInventoryImport VRT', () => {
     );
     await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot(
       'inventory-import-photos-needed-desktop',
+      VRT_DENSE_CHROME_SCREENSHOT,
+    );
+  });
+
+  it('renders the paused-listings notice and the required settings hint at desktop viewport', async () => {
+    const screen = await renderForVRT(
+      <main className="w-full max-w-lg py-6">
+        <MarketplaceInventoryImport
+          step={4}
+          scene="dry-run"
+          fileName="sample_products.csv"
+          counts={{ create: 21, update: 0, end: 0, unchanged: 0, conflict: 0 }}
+          publishNotice={{
+            title: 'Listings will be saved as paused. Configure a payment method before publishing',
+            body: 'Buyers cannot pay for a published listing until you add at least one payment method.',
+          }}
+          publishDisabledReason="Choose a shipping option and where your listings ship from, then apply the settings."
+        />
+      </main>,
+      { viewport: VRT_VIEWPORT_DESKTOP, disableHover: true },
+    );
+    await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot(
+      'inventory-import-gate-notice-desktop',
+      VRT_DENSE_CHROME_SCREENSHOT,
+    );
+  });
+
+  it('renders the paused-listings notice and the required settings hint at mobile viewport', async () => {
+    const screen = await renderForVRT(
+      <main className="w-full py-6">
+        <MarketplaceInventoryImport
+          step={4}
+          scene="dry-run"
+          fileName="sample_products.csv"
+          counts={{ create: 21, update: 0, end: 0, unchanged: 0, conflict: 0 }}
+          publishNotice={{
+            title: 'Listings will be saved as paused. Configure a payment method before publishing',
+            body: 'Buyers cannot pay for a published listing until you add at least one payment method.',
+          }}
+          publishDisabledReason="Choose a shipping option and where your listings ship from, then apply the settings."
+        />
+      </main>,
+      { viewport: VRT_VIEWPORT_MOBILE, disableHover: true },
+    );
+    await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot(
+      'inventory-import-gate-notice-mobile',
       VRT_DENSE_CHROME_SCREENSHOT,
     );
   });
