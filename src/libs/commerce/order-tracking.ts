@@ -10,6 +10,7 @@ export const UNKNOWN_CARRIER_NAME = 'Other';
 
 export const ORDER_TRACKING_COPY = {
   shippedNoTracking: 'Shipped, no tracking yet',
+  deliveredNoTracking: 'Delivered, no tracking',
   add: 'Add tracking',
   edit: 'Edit tracking',
   title: 'Tracking',
@@ -68,7 +69,15 @@ export type BuyerShipmentTracking =
 
 /** What the buyer sees on a shipment: no number yet, or the number with a link when the carrier is known. */
 export function buyerShipmentTracking(shipment: ShipmentLike): BuyerShipmentTracking {
-  if (!hasTrackingNumber(shipment)) return { kind: 'pending', label: ORDER_TRACKING_COPY.shippedNoTracking };
+  if (!hasTrackingNumber(shipment)) {
+    return {
+      kind: 'pending',
+      label:
+        shipment.state === 'delivered'
+          ? ORDER_TRACKING_COPY.deliveredNoTracking
+          : ORDER_TRACKING_COPY.shippedNoTracking,
+    };
+  }
   return {
     kind: 'tracked',
     carrier: shipment.carrier,

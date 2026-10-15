@@ -66,6 +66,13 @@ describe('buyerShipmentTracking', () => {
     });
   });
 
+  it('says delivered, no tracking once a shipment without a number is delivered', () => {
+    expect(buyerShipmentTracking(shipment('Other', '', 'delivered'))).toEqual({
+      kind: 'pending',
+      label: 'Delivered, no tracking',
+    });
+  });
+
   it('links a known carrier and leaves an unknown one as plain text', () => {
     expect(buyerShipmentTracking(shipment('UPS', '1Z999AA10123456784'))).toEqual({
       kind: 'tracked',
