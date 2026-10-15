@@ -677,6 +677,18 @@ describe('MarketplaceListing', () => {
       expect(cartAdd).toHaveBeenCalledWith(`${listing.seller_id}:${listing.listing_id}`, 'variant_01', 1);
     });
 
+    it('does not add to the cart after a cancel, even when a session arrived from another tab meanwhile', async () => {
+      const user = userEvent.setup();
+      const { sessionRestores } = renderNeedingSession();
+
+      await user.click(screen.getByRole('button', { name: 'Buy' }));
+      sessionState.pubky = 'b'.repeat(52);
+      await user.click(screen.getByRole('button', { name: 'Cancel' }));
+      sessionRestores();
+
+      expect(cartAdd).not.toHaveBeenCalled();
+    });
+
     it('does not add to the cart after the buyer cancelled the approval', async () => {
       const user = userEvent.setup();
       const { sessionRestores } = renderNeedingSession();

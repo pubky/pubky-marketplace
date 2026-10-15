@@ -619,9 +619,7 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
               <MarketplaceSessionConnectDialog
                 open={showSessionRequired}
                 onOpenChange={(open) => {
-                  // The dialog closes itself just before `onConnected`, so only a
-                  // close without a session is a dismissal that drops the Buy.
-                  if (!open && !MarketplaceSessionService.getActiveSession()) pendingPurchaseRef.current = null;
+                  if (!open) pendingPurchaseRef.current = null;
                   setShowSessionRequired(open);
                 }}
                 hideTrigger
