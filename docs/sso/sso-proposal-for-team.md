@@ -1,5 +1,7 @@
 # Single sign-on across Pubky apps: proposal
 
+> **Note (2026-10-12):** the Shop's messaging has since moved off Paykit Encrypted Links to chat on homeserver files under the grant's own `/pub/chat/:rw` and `/priv/chat/:rw` scopes ([`../chat/README.md`](../chat/README.md), [ADR 0030](../adr/0030-chat-transport.md)). "Messaging only works with cookie sessions" and the Shop's `/pub/paykit` receiver-marker exposure no longer apply; E1 (pubky-chat on MLS) remains the long-term target. The rest is kept as written.
+
 **For:** Pubky core, Ring, Bitkit, Passport, Paykit and pubky.app developers.
 
 **Scope:** sign-in, sessions and authorization for [pubky.app](https://pubky.app), [shop.pubky.app](https://shop.pubky.app) (the Shop), and any future first-party or third-party Pubky app.

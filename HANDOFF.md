@@ -114,17 +114,14 @@ Health checks: `marketplace-service` answers `200` on `/health`; `/` returns `40
 | --- | --- |
 | `npm run test:marketplace:service` from `mp-ux` | Client transport, AuthToken session exchange, and durable service command/read contract against the running service. |
 | `npm run test:marketplace:locks` / `src/test/live/locks-payment.live.ts` | Regtest Locks + Paykit payment path: proof bundle, payment request, on-chain payment, worker confirmation, receipt, guarded content. |
-| `npm run test:marketplace:messaging` / `src/test/live/messaging.live.browser.ts` | Real Paykit encrypted-link messaging over a local Pubky testnet in a browser. |
-| `npm run test:marketplace:messaging:staging` / `src/test/live/messaging-staging.live.browser.ts` | Same messaging path against the real staging homeserver/public relays, except the interactive Ring approval leg. |
+| `npm run test:e2e:chat` / `src/test/e2e/chat-two-accounts.mjs` | Buyer↔seller chat between two grant sign-ins on the local testnet and inbox: delivery both ways, badges, ping-only and offline paths, second tab, reload and new-device rebuild, ciphertext-only storage (`docs/chat/README.md`). |
 | `npm run test:marketplace:watchlist` / `src/test/live/marketplace-watchlist-sync.live.browser.ts` | Cross-device private watchlist sync and homeserver `/priv` enforcement. |
 | `npm run test:marketplace:cross-account` / `src/test/live/marketplace-cross-account.live.browser.ts` | Cross-account marketplace auth isolation on staging identities. |
 | `npm run test:marketplace:reviews` / `src/test/live/reviews-index.live.ts` | Review publishing, attestation verification, Nexus indexing, and reputation path. |
 | `npm run test:marketplace:drops` / `src/test/live/drops-race.live.ts` | FCFS drop race on deployed stack: exactly one winner, sold-out refusal, edition attestation, private receipt. |
 | `src/test/live/priv-durability-probe.live.ts` | `/priv/pubky.app` write/read durability over elapsed windows. |
-| `npx vitest run --config vitest.dm.config.ts` / `src/test/live/dm-to-user.live.browser.ts` | Real app UI receives an encrypted DM from a throwaway identity. |
 | `node scripts/probe-listing-registration.mjs <seller> <listingId>` | `listing.sync` can heal an unregistered listing into the transaction service. Requires `STAGING_ADMIN_PASSWORD` (name only). The script defaults `STAGING_HOMESERVER_PUBKY` to `5eh8kjqfx4o7comfbtnqqxxi6oz3axeqfotpi7oiepwmoym1i16o`, which differs from the official staging homeserver `ufibwbmed6jeq9k4p583go95wofakh9fwpp4k734trq79pd9u1uy`; override with `STAGING_HOMESERVER_PUBKY=<pubky>`. |
 | `node scripts/probe-nexus-listing-ingest.mjs` | Dedicated marketplace Nexus sees and serves listing ingest. |
-| `node scripts/probe-media-write.mjs` | Media write path under the configured homeserver/session. |
 | `node pubky-payment-rails/verify/driver.mjs checkout <bundle> paypal` | Hosted PayPal sandbox purchase through deployed rails. The driver has no `--help`; document this checkout invocation only. |
 | `node mp-probe/scripts/probe-production-writes.mjs` | Production path-family PUT/GET/DELETE probe with Ring sign-in and `/priv` durability seed. Lives on the unmerged branch `marketplace/prod-probe` (worktree `mp-probe`, off `pr25-ux`); merges into `pr25-ux` once the owner has run it. |
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { MARKETPLACE_ROUTES } from '@/app/routes';
+import { APP_ROUTES, MARKETPLACE_ROUTES } from '@/app/routes';
 import { activityRowHref, readOrderAnchorId } from './activity-links';
 
 const SELLER = 's'.repeat(52);
@@ -15,9 +15,7 @@ describe('activityRowHref', () => {
 
   it('anchors an offer and opens a message thread', () => {
     expect(activityRowHref('offer_received', 'offer:offer-1')).toBe(`${MARKETPLACE_ROUTES.OFFERS}#offer-offer-1`);
-    expect(activityRowHref('message_received', CONVERSATION)).toBe(
-      `${MARKETPLACE_ROUTES.MESSAGES}?conversation=${encodeURIComponent(CONVERSATION)}`,
-    );
+    expect(activityRowHref('message_received', CONVERSATION)).toBe(APP_ROUTES.MESSAGES);
   });
 
   it('sends an auction row to the listing', () => {

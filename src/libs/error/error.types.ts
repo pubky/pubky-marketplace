@@ -31,6 +31,7 @@ export enum ErrorService {
   Shippo = 'shippo',
   Locks = 'locks',
   Paykit = 'paykit',
+  Inbox = 'inbox',
   PubkyAppSpecs = 'pubky-app-specs',
   Local = 'local', // Client-side operations
   NextJsServer = 'nextjs-server', // Server-side operations

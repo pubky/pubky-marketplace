@@ -12,6 +12,13 @@ export const APP_VERSION = Env.NEXT_PUBLIC_APP_VERSION;
 /** Minimum storage permissions needed to open Shop with an existing grant. */
 export const CORE_CAPABILITIES = '/pub/pubky.app/:rw,/pub/paykit/:rw,/priv/pubky.app/:rw';
 
+/**
+ * The chat trees, versioned so the Shop neither writes the shared chat
+ * library's planned `/pub/chat/v1/` nor exposes its key to apps holding it.
+ * Requested at sign-in; optional for opening the Shop (docs/chat).
+ */
+export const CHAT_CAPABILITIES = '/pub/chat/v0/:rw,/priv/chat/v0/:rw';
+
 /** New approvals also cover Chat v0; signer-derived encryption keys are requested only by {@link KEYED_CAPABILITIES}. */
 export const CAPABILITIES = '/pub/pubky.app/:rw,/pub/paykit/:rw,/priv/pubky.app/:rw,/pub/chat/v0/:rw,/priv/chat/v0/:rw';
 

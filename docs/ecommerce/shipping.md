@@ -114,6 +114,12 @@ and presets template them:
 - **Save as preset** in the sell studio's shipping section stores the current
   four fields; **Apply a saved preset** fills them while composing or
   editing.
+- Each preset has its own currency (one of the listing currencies; existing
+  presets are US dollars). Applying one to a listing in another currency
+  converts the flat price into the listing currency with the current rate
+  snapshot and shows "Converted from…" before saving; with no rate it fills
+  nothing. The listing record's shipping price is always in the listing's
+  currency.
 - Presets are managed at `/marketplace/settings/shipping` (linked from My
   shop).
 - The published record shape is **unchanged**: one flat-rate

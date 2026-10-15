@@ -1,13 +1,18 @@
 import { describe, expect, it } from 'vitest';
 import {
+  AMOUNT_EXAMPLES,
+  amountInputExample,
   amountInputFromMoney,
   amountInputSchemaForAsset,
   amountInputToMoney,
   amountInputUnitLabel,
+  assetForListingCurrency,
   BTC_ASSET,
-  indicativeCounterpartLabel,
+  hasSameAsset,
   isBitcoinAsset,
+  listingCurrencyChoiceForAsset,
   sumMoneyByAsset,
+  tryAmountInputToMoney,
   USD_ASSET,
 } from './pricing';
 
@@ -25,6 +30,62 @@ describe('asset identification', () => {
   });
 });
 
+describe('listing currency choice', () => {
+  it.each([
+    ['USD', 2],
+    ['EUR', 2],
+    ['CHF', 2],
+    ['GBP', 2],
+    ['JPY', 0],
+    ['CAD', 2],
+    ['AUD', 2],
+    ['BTC', 8],
+  ] as const)('maps %s to its asset at exponent %i and back', (code, exponent) => {
+    const asset = assetForListingCurrency(code);
+    expect(asset).toEqual({ currency: code, exponent });
+    expect(listingCurrencyChoiceForAsset(asset)).toBe(code);
+  });
+
+  it('does not map assets the studio cannot author back to a choice', () => {
+    expect(listingCurrencyChoiceForAsset({ currency: 'SAT', exponent: 0 })).toBeNull();
+    expect(listingCurrencyChoiceForAsset({ currency: 'EUR', exponent: 3 })).toBeNull();
+    expect(listingCurrencyChoiceForAsset({ currency: 'SEK', exponent: 2 })).toBeNull();
+    expect(listingCurrencyChoiceForAsset({ currency: 'USDT', exponent: 6 })).toBeNull();
+  });
+
+  it('compares assets by currency and exponent', () => {
+    expect(hasSameAsset(USD_ASSET, assetForListingCurrency('USD'))).toBe(true);
+    expect(hasSameAsset(USD_ASSET, assetForListingCurrency('EUR'))).toBe(false);
+  });
+});
+
+describe('input examples', () => {
+  it('shows an example valid in each currency own unit', () => {
+    expect(amountInputExample(USD_ASSET, AMOUNT_EXAMPLES.price)).toBe('125.00');
+    expect(amountInputExample(assetForListingCurrency('CHF'), AMOUNT_EXAMPLES.price)).toBe('125.00');
+    expect(amountInputExample(assetForListingCurrency('JPY'), AMOUNT_EXAMPLES.price)).toBe('12500');
+    expect(amountInputExample(BTC_ASSET, AMOUNT_EXAMPLES.price)).toBe('150000');
+    expect(amountInputExample(USD_ASSET, AMOUNT_EXAMPLES.shipping)).toBe('12.00');
+    expect(amountInputExample(assetForListingCurrency('JPY'), AMOUNT_EXAMPLES.shipping)).toBe('1200');
+    expect(amountInputExample(BTC_ASSET, AMOUNT_EXAMPLES.shipping)).toBe('15000');
+    expect(amountInputExample(USD_ASSET, AMOUNT_EXAMPLES.offer)).toBe('100.00');
+    expect(amountInputExample(BTC_ASSET, AMOUNT_EXAMPLES.offer)).toBe('100000');
+    expect(amountInputExample(USD_ASSET, AMOUNT_EXAMPLES.counterOffer)).toBe('110.00');
+    expect(amountInputExample(BTC_ASSET, AMOUNT_EXAMPLES.counterOffer)).toBe('110000');
+  });
+
+  it.each(['USD', 'EUR', 'CHF', 'GBP', 'JPY', 'CAD', 'AUD', 'BTC'] as const)(
+    'gives %s examples that pass its own validation',
+    (code) => {
+      const asset = assetForListingCurrency(code);
+      const schema = amountInputSchemaForAsset(asset);
+      for (const example of Object.values(AMOUNT_EXAMPLES)) {
+        expect(schema.safeParse(amountInputExample(asset, example)).success).toBe(true);
+      }
+    },
+  );
+});
+
 describe('amount input validation', () => {
   it('accepts USD amounts with at most two decimals', () => {
     const schema = amountInputSchemaForAsset(USD_ASSET);
@@ -33,6 +94,21 @@ describe('amount input validation', () => {
     expect(schema.safeParse('125.001').success).toBe(false);
     expect(schema.safeParse('0').success).toBe(false);
     expect(schema.safeParse('-5').success).toBe(false);
+  });
+
+  it('accepts whole yen only', () => {
+    const schema = amountInputSchemaForAsset(assetForListingCurrency('JPY'));
+    expect(schema.safeParse('1500').success).toBe(true);
+    expect(schema.safeParse('1500.5').success).toBe(false);
+    expect(schema.safeParse('0').success).toBe(false);
+  });
+
+  it('accepts euro, franc, pound, and dollar variants with at most two decimals', () => {
+    for (const code of ['EUR', 'CHF', 'GBP', 'CAD', 'AUD'] as const) {
+      const schema = amountInputSchemaForAsset(assetForListingCurrency(code));
+      expect(schema.safeParse('9.99').success).toBe(true);
+      expect(schema.safeParse('9.999').success).toBe(false);
+    }
   });
 
   it('accepts only whole positive base units within the total supply', () => {
@@ -51,6 +127,30 @@ describe('amount input to money and back', () => {
     expect(amountInputToMoney('0.10', USD_ASSET)).toEqual({ amountMinor: 10, currency: 'USD', exponent: 2 });
   });
 
+  it('converts yen input without a fraction and euro input to cents', () => {
+    expect(amountInputToMoney('1500', assetForListingCurrency('JPY'))).toEqual({
+      amountMinor: 1_500,
+      currency: 'JPY',
+      exponent: 0,
+    });
+    expect(amountInputToMoney('19.99', assetForListingCurrency('EUR'))).toEqual({
+      amountMinor: 1_999,
+      currency: 'EUR',
+      exponent: 2,
+    });
+  });
+
+  it('returns null instead of throwing for half-typed input', () => {
+    expect(tryAmountInputToMoney('100.', USD_ASSET)).toBeNull();
+    expect(tryAmountInputToMoney('', USD_ASSET)).toBeNull();
+    expect(tryAmountInputToMoney('1.005', USD_ASSET)).toBeNull();
+    expect(tryAmountInputToMoney('100.5', USD_ASSET)).toEqual({ amountMinor: 10_050, currency: 'USD', exponent: 2 });
+  });
+
+  it('throws a validation error for text that skipped validation', () => {
+    expect(() => amountInputToMoney('1.005', USD_ASSET)).toThrow('Not a valid USD amount');
+  });
+
   it('treats a bitcoin input as the minor unit itself', () => {
     expect(amountInputToMoney('15000', BTC_ASSET)).toEqual({ amountMinor: 15_000, currency: 'BTC', exponent: 8 });
   });
@@ -58,38 +158,8 @@ describe('amount input to money and back', () => {
   it('round-trips money back to its input string', () => {
     expect(amountInputFromMoney({ amountMinor: 12_500, currency: 'USD', exponent: 2 })).toBe('125.00');
     expect(amountInputFromMoney({ amountMinor: 15_000, currency: 'BTC', exponent: 8 })).toBe('15000');
-  });
-});
-
-describe('indicativeCounterpartLabel', () => {
-  const RATE = 100_000; // 1 BTC = $100,000 → 1 base unit = $0.001
-
-  it('shows a bitcoin estimate for USD-priced money', () => {
-    expect(indicativeCounterpartLabel({ amountMinor: 12_500, currency: 'USD', exponent: 2 }, RATE)).toBe('≈ ₿125,000');
-  });
-
-  it('shows a USD estimate for BTC-priced money', () => {
-    expect(indicativeCounterpartLabel({ amountMinor: 15_000, currency: 'BTC', exponent: 8 }, RATE)).toBe('≈ $15.00');
-  });
-
-  it('returns null without a positive finite rate — no rate, no estimate', () => {
-    const money = { amountMinor: 12_500, currency: 'USD', exponent: 2 };
-    expect(indicativeCounterpartLabel(money, 0)).toBeNull();
-    expect(indicativeCounterpartLabel(money, -1)).toBeNull();
-    expect(indicativeCounterpartLabel(money, Number.NaN)).toBeNull();
-    expect(indicativeCounterpartLabel(money, Number.POSITIVE_INFINITY)).toBeNull();
-  });
-
-  it('returns null for assets with no rate source', () => {
-    expect(indicativeCounterpartLabel({ amountMinor: 12_500, currency: 'EUR', exponent: 2 }, RATE)).toBeNull();
-  });
-
-  it('returns null when the estimate rounds to zero in the counterpart unit', () => {
-    // $0.0000004 at $100k/BTC rounds to 0 base units — amountMinor can't
-    // express this for USD/2, so use a high-exponent USD to prove the guard.
-    expect(indicativeCounterpartLabel({ amountMinor: 4, currency: 'USD', exponent: 7 }, RATE)).toBeNull();
-    // 1 base unit at $100k/BTC is $0.001 → rounds below one cent.
-    expect(indicativeCounterpartLabel({ amountMinor: 1, currency: 'BTC', exponent: 8 }, RATE)).toBeNull();
+    expect(amountInputFromMoney({ amountMinor: 1_500, currency: 'JPY', exponent: 0 })).toBe('1500');
+    expect(amountInputFromMoney({ amountMinor: 1_999, currency: 'EUR', exponent: 2 })).toBe('19.99');
   });
 });
 
