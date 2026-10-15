@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { getPaykitServerApi } from '@/config/commerce';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import {
   MARKETPLACE_FAILURE_MESSAGES,
@@ -8,6 +9,7 @@ import {
   marketplaceFailureMessage,
 } from '@/libs/commerce/failure-messages';
 import type { SellerPaymentConfigOwnView } from '@/libs/commerce/payment-methods';
+import { deriveUsdtSellerReadiness, paykitAccountFromUsdtReadiness } from '@/libs/commerce/usdt-seller-setup';
 import { Logger } from '@/libs/logger/logger';
 import { toast } from '@/molecules/Toaster/use-toast';
 import { useCommerceStore } from '@/stores/commerce/commerce.store';
@@ -15,8 +17,9 @@ import { useCommerceStore } from '@/stores/commerce/commerce.store';
 /**
  * The seller's "Get paid" configuration: stored rails (loaded from the
  * durable service) and the save action. Watch-only registration is the
- * Bitkit setup grant; `accountClaimed` is read from the fork paykit-server,
- * or from the Lock Server with `paykitServerApi=upstream`.
+ * Bitkit setup grant; `accountClaimed` comes from the service's own-config
+ * Paykit lookups when they answer, otherwise from the fork paykit-server, or
+ * from the Lock Server with `paykitServerApi=upstream`.
  */
 export function useMarketplaceSellerPaymentConfig() {
   const marketplaceSession = useCommerceStore((state) => state.marketplaceSession);
@@ -38,7 +41,14 @@ export function useMarketplaceSellerPaymentConfig() {
       CommerceController.getMyPaymentConfig(),
       CommerceController.isOwnPaykitAccountClaimed(),
     ]);
-    const claimed = claimedResult.status === 'fulfilled' ? claimedResult.value : null;
+    const looked = claimedResult.status === 'fulfilled' ? claimedResult.value : null;
+    // The own config's uncached Paykit lookups answer without a Lock Server
+    // session; when they cannot say, the claim read above decides.
+    const ownAccount =
+      getPaykitServerApi() === 'upstream' && configResult.status === 'fulfilled' && configResult.value
+        ? paykitAccountFromUsdtReadiness(deriveUsdtSellerReadiness(configResult.value))
+        : null;
+    const claimed = ownAccount ?? looked;
     if (generation !== loadGeneration.current) return claimed;
     if (configResult.status === 'fulfilled') {
       setConfig(configResult.value);

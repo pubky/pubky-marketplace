@@ -7,6 +7,7 @@ import {
   deriveBitcoinStatus,
   deriveBitcoinToggleBlocker,
   derivePaypalStatus,
+  isLockServerStepRequired,
   isReadyPaymentMethodStatus,
   type PaymentMethodStatus,
 } from './MarketplaceGetPaidSettings.utils';
@@ -175,7 +176,7 @@ describe('MarketplaceGetPaidSettings status derivation', () => {
     ] as const)(
       'creator=$connectedCreator claimed=$accountClaimed locksError=$locksError claimError=$claimError → $expected',
       ({ expected, ...args }) => {
-        expect(deriveBitcoinStatus({ accountPubky: C, ...args })).toBe(expected);
+        expect(deriveBitcoinStatus({ accountPubky: C, lockServerRequired: true, ...args })).toBe(expected);
       },
     );
 
@@ -188,8 +189,61 @@ describe('MarketplaceGetPaidSettings status derivation', () => {
           accountClaimed: true,
           locksError: null,
           claimError: null,
+          lockServerRequired: true,
         }),
       ).toBe('needs_attention');
+    });
+
+    it.each([
+      { accountClaimed: true, claimError: null, expected: 'connected' },
+      { accountClaimed: false, claimError: null, expected: 'not_set_up' },
+      { accountClaimed: null, claimError: null, expected: 'not_set_up' },
+      { accountClaimed: true, claimError: 'failed', expected: 'needs_attention' },
+    ] as const)(
+      'without the Lock Server step: claimed=$accountClaimed claimError=$claimError → $expected',
+      ({ expected, ...args }) => {
+        expect(
+          deriveBitcoinStatus({
+            connectedCreator: null,
+            accountPubky: C,
+            locksError: 'rejected',
+            lockServerRequired: false,
+            ...args,
+          }),
+        ).toBe(expected);
+      },
+    );
+  });
+
+  describe('isLockServerStepRequired', () => {
+    const base = {
+      paykitServerApi: 'upstream',
+      hasMarketplaceSession: true,
+      configLoaded: true,
+      paykitAccountKnown: false,
+      accountClaimed: null,
+    } as const;
+
+    it('always keeps the step on fork Paykit', () => {
+      expect(isLockServerStepRequired({ ...base, paykitServerApi: 'fork', paykitAccountKnown: true })).toBe(true);
+    });
+
+    it('drops the step upstream once the service reports the Paykit account', () => {
+      expect(isLockServerStepRequired({ ...base, paykitAccountKnown: true })).toBe(false);
+    });
+
+    it('drops the step upstream once Bitkit setup is confirmed another way', () => {
+      expect(isLockServerStepRequired({ ...base, accountClaimed: true })).toBe(false);
+    });
+
+    it('keeps the step upstream when nothing else can confirm Bitkit setup', () => {
+      expect(isLockServerStepRequired(base)).toBe(true);
+      expect(isLockServerStepRequired({ ...base, accountClaimed: false })).toBe(true);
+    });
+
+    it('hides the step upstream until the session and config are loaded', () => {
+      expect(isLockServerStepRequired({ ...base, hasMarketplaceSession: false })).toBe(false);
+      expect(isLockServerStepRequired({ ...base, configLoaded: false })).toBe(false);
     });
   });
 
@@ -207,9 +261,24 @@ describe('MarketplaceGetPaidSettings status derivation', () => {
     ] as const)(
       'lockServer=$lockServerConnected locksError=$locksError claimed=$accountClaimed → $expected',
       ({ expected, ...args }) => {
-        expect(deriveBitcoinToggleBlocker(args)).toBe(expected);
+        expect(deriveBitcoinToggleBlocker({ lockServerRequired: true, ...args })).toBe(expected);
       },
     );
+
+    it.each([
+      { accountClaimed: false, expected: 'bitkit' },
+      { accountClaimed: null, expected: 'bitkit-unknown' },
+      { accountClaimed: true, expected: null },
+    ] as const)('names only Bitkit without the Lock Server step: claimed=$accountClaimed', ({ expected, ...args }) => {
+      expect(
+        deriveBitcoinToggleBlocker({
+          lockServerConnected: false,
+          locksError: 'rejected',
+          lockServerRequired: false,
+          ...args,
+        }),
+      ).toBe(expected);
+    });
 
     it('names only the missing step in its copy', () => {
       expect(BITCOIN_TOGGLE_BLOCKER_COPY['lock-server']).toBe('Connect the Lock Server first.');

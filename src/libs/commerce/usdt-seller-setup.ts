@@ -52,5 +52,21 @@ export function deriveUsdtSellerReadiness(input: {
   return 'unavailable';
 }
 
+/**
+ * Whether the seller has a Paykit account on the service's paykit-server,
+ * read from the same signed lookups as {@link deriveUsdtSellerReadiness}:
+ * `true` when USDT is ready or only the USDT address is missing (`reconnect`),
+ * `false` when there is no account yet (`setup`), and `null` when the service
+ * cannot say (flag off, fork Paykit, or `unavailable`). paykit-server's
+ * `/setup` always asks Bitkit for the watch-only Bitcoin account
+ * (`setup_claim_selection`); buyers are still offered bitcoin only when the
+ * service's own Bitcoin status check passes.
+ */
+export function paykitAccountFromUsdtReadiness(readiness: UsdtSellerReadiness): boolean | null {
+  if (readiness === 'ready' || readiness === 'reconnect') return true;
+  if (readiness === 'setup') return false;
+  return null;
+}
+
 /** Shown for every not-ready state (plan section 2.3). */
 export const USDT_NEEDS_BITKIT_COPY = "USDT needs Bitkit. Pubky Ring can't share a USDT address.";

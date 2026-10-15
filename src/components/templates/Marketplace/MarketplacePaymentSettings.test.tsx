@@ -676,14 +676,15 @@ describe('MarketplacePaymentSettings', () => {
     expect(iframe).toHaveClass('h-[40rem]', 'w-full');
   });
 
-  it('keeps Accept bitcoin as step 3 and hides the separate selling prompt once enabled', async () => {
+  it('keeps Accept bitcoin as step 3 and shows one Enable selling prompt above the methods until enabled', async () => {
     const session = useCommerceStore.getState().marketplaceSession;
     useCommerceStore.setState({ marketplaceSession: null });
     render(<MarketplacePaymentSettings />);
     expect(screen.getByText('3. Accept bitcoin')).toBeInTheDocument();
     expect(screen.getByRole('switch', { name: 'Accept bitcoin' })).toBeDisabled();
     expect(screen.queryByText('3. Enable selling')).not.toBeInTheDocument();
-    expect(screen.getAllByRole('button', { name: 'Enable selling' })).toHaveLength(2);
+    expect(screen.getAllByRole('button', { name: 'Enable selling' })).toHaveLength(1);
+    expect(screen.getByTestId('enable-selling-card')).toBeInTheDocument();
 
     act(() => useCommerceStore.setState({ marketplaceSession: session }));
     await screen.findByRole('switch', { name: 'Accept bitcoin' });

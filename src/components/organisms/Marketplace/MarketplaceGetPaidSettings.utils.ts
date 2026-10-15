@@ -26,10 +26,30 @@ export function derivePaypalStatus(config: SellerPaymentConfigOwnView | null): P
 }
 
 /**
- * Bitcoin is connected only when both live signals are present:
- * - Lock Server authorization: `connectedCreator` from `useMarketplaceLocksConnect`
- *   (restored from localStorage and revalidated with the Lock Server after reload)
- * - Paykit claim: `accountClaimed === true` from `useMarketplaceSellerPaymentConfig`
+ * Whether bitcoin setup still shows the Lock Server step. Only an upstream
+ * deployment needs it, and only to confirm Bitkit setup when the service's own
+ * Paykit lookups cannot (`paykitAccountKnown` false) and nothing else has
+ * confirmed it. Without a marketplace session or loaded config the answer is
+ * not known yet, so the step stays hidden instead of flashing.
+ */
+export function isLockServerStepRequired(args: {
+  paykitServerApi: 'fork' | 'upstream';
+  hasMarketplaceSession: boolean;
+  configLoaded: boolean;
+  paykitAccountKnown: boolean;
+  accountClaimed: boolean | null;
+}): boolean {
+  if (args.paykitServerApi !== 'upstream') return true;
+  if (!args.hasMarketplaceSession || !args.configLoaded) return false;
+  return !args.paykitAccountKnown && args.accountClaimed !== true;
+}
+
+/**
+ * Bitcoin is connected when the Paykit claim is present (`accountClaimed ===
+ * true` from `useMarketplaceSellerPaymentConfig`) and, while the Lock Server
+ * step is required, its authorization too: `connectedCreator` from
+ * `useMarketplaceLocksConnect` (restored from localStorage and revalidated with
+ * the Lock Server after reload).
  */
 export function deriveBitcoinStatus(args: {
   connectedCreator: string | null;
@@ -37,10 +57,15 @@ export function deriveBitcoinStatus(args: {
   accountClaimed: boolean | null;
   locksError: string | null;
   claimError: string | null;
+  lockServerRequired: boolean;
 }): PaymentMethodStatus {
+  const paykitClaimed = args.accountClaimed === true;
+  if (!args.lockServerRequired) {
+    if (args.claimError) return 'needs_attention';
+    return paykitClaimed ? 'connected' : 'not_set_up';
+  }
   if (args.locksError || args.claimError) return 'needs_attention';
   const locksAuthorized = locksCreatorMatchesShopPubky(args.connectedCreator, args.accountPubky);
-  const paykitClaimed = args.accountClaimed === true;
   if (locksAuthorized && paykitClaimed) return 'connected';
   if (!locksAuthorized && !paykitClaimed) return 'not_set_up';
   return 'needs_attention';
@@ -66,8 +91,9 @@ export function deriveBitcoinToggleBlocker(args: {
   lockServerConnected: boolean;
   locksError: string | null;
   accountClaimed: boolean | null;
+  lockServerRequired: boolean;
 }): BitcoinToggleBlocker | null {
-  const lockServerMissing = !args.lockServerConnected || Boolean(args.locksError);
+  const lockServerMissing = args.lockServerRequired && (!args.lockServerConnected || Boolean(args.locksError));
   if (lockServerMissing) return args.accountClaimed === false ? 'both' : 'lock-server';
   if (args.accountClaimed === false) return 'bitkit';
   if (args.accountClaimed === null) return 'bitkit-unknown';
