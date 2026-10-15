@@ -4,9 +4,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { CommerceInventoryImportApplication } from '@/application/commerce/inventory-import';
 import type { CommerceListingRecord } from '@/libs/commerce/marketplace-records';
 import { SOURCE_IMAGE_URLS_FIELD } from '@/pipes/commerce/import-preset-rows';
-import { DEFAULT_IMPORT_SETTINGS, type ImportSettings } from '@/pipes/commerce/import-settings';
+import { type ImportSettings } from '@/pipes/commerce/import-settings';
 import { MarketplaceShopClientService, type SyncManyEnvelope } from '@/services/marketplace/marketplace-shop-client';
 import { createCommerceListingFixture } from '@/test/fixtures/commerce/commerce';
+import { IMPORT_SETTINGS_COMPLETE } from '@/test-utils/import-settings';
+import { IMPORT_GATES_PASSING } from '@/test-utils/import-settings';
 import { BytesFile, MemoryImportStore } from '@/test-utils/inventory-import-harness';
 import { asOpaque } from '@/test-utils/type-assertions';
 
@@ -81,6 +83,7 @@ describe('shop-system CSV presets through plan, dry-run and publish', () => {
 
   function app() {
     return CommerceInventoryImportApplication.forSeller(PUBKY, {
+      ...IMPORT_GATES_PASSING,
       store,
       currentItems: async () => ({}),
       putListing: async (record) => {
@@ -151,7 +154,7 @@ describe('shop-system CSV presets through plan, dry-run and publish', () => {
 
     it('applies the import settings to every row', async () => {
       const settings: ImportSettings = {
-        ...DEFAULT_IMPORT_SETTINGS,
+        ...IMPORT_SETTINGS_COMPLETE,
         currency: 'CHF',
         countryCode: 'CH',
         condition: 'good',
@@ -209,7 +212,7 @@ describe('shop-system CSV presets through plan, dry-run and publish', () => {
         ),
       );
       const result = await app().planFile(new BytesFile(latin1, 'excel.csv', 'text/csv'), {
-        ...DEFAULT_IMPORT_SETTINGS,
+        ...IMPORT_SETTINGS_COMPLETE,
         currency: 'EUR',
       });
       expect(result.status).toBe('planned');
@@ -230,7 +233,7 @@ describe('shop-system CSV presets through plan, dry-run and publish', () => {
       const importer = app();
       const planned = await importer.planFile(
         new BytesFile(bytesOf('woocommerce/dezentralshop-woo-export-2026-10-15.csv'), 'export.csv', 'text/csv'),
-        { ...DEFAULT_IMPORT_SETTINGS, currency: 'CHF', countryCode: 'CH' },
+        { ...IMPORT_SETTINGS_COMPLETE, currency: 'CHF', countryCode: 'CH' },
       );
       expect(planned.status).toBe('planned');
       if (planned.status !== 'planned') return;
@@ -272,6 +275,7 @@ describe('shop-system CSV presets through plan, dry-run and publish', () => {
       const importer = app();
       const planned = await importer.planFile(
         new BytesFile(bytesOf('woocommerce/sample_products.csv'), 'sample_products.csv', 'text/csv'),
+        IMPORT_SETTINGS_COMPLETE,
       );
       expect(planned.status).toBe('planned');
       if (planned.status !== 'planned') return;
@@ -339,7 +343,7 @@ describe('shop-system CSV presets through plan, dry-run and publish', () => {
     });
 
     it('applies the CSV quantities as total stock when the toggle is on', async () => {
-      const result = await app().planFile(shopify(), { ...DEFAULT_IMPORT_SETTINGS, useCsvQuantities: true });
+      const result = await app().planFile(shopify(), { ...IMPORT_SETTINGS_COMPLETE, useCsvQuantities: true });
       expect(result.status).toBe('planned');
       if (result.status !== 'planned') return;
       const rows = payloads();
@@ -354,13 +358,13 @@ describe('shop-system CSV presets through plan, dry-run and publish', () => {
     });
 
     it('stops forcing USD: the listing currency, exponent and whole-yen prices follow the settings', async () => {
-      await app().planFile(shopify(), { ...DEFAULT_IMPORT_SETTINGS, currency: 'EUR', useCsvQuantities: true });
+      await app().planFile(shopify(), { ...IMPORT_SETTINGS_COMPLETE, currency: 'EUR', useCsvQuantities: true });
       expect(
         payloads().every((row) => row.currency === 'EUR' && row.exponent === 2 && row.amountMinor === 12_500),
       ).toBe(true);
 
       store = new MemoryImportStore();
-      await app().planFile(shopify(), { ...DEFAULT_IMPORT_SETTINGS, currency: 'JPY', useCsvQuantities: true });
+      await app().planFile(shopify(), { ...IMPORT_SETTINGS_COMPLETE, currency: 'JPY', useCsvQuantities: true });
       expect(payloads().every((row) => row.currency === 'JPY' && row.exponent === 0 && row.amountMinor === 125)).toBe(
         true,
       );
@@ -373,7 +377,7 @@ describe('shop-system CSV presets through plan, dry-run and publish', () => {
         'Odd hat,odd-hat,Warm,Acme,Hats,Hats,,true,active,HAT-2,Size,M,150.50,5',
       ].join('\n');
       const result = await app().planFile(new BytesFile(utf8(text), 'hats.csv', 'text/csv'), {
-        ...DEFAULT_IMPORT_SETTINGS,
+        ...IMPORT_SETTINGS_COMPLETE,
         currency: 'JPY',
         useCsvQuantities: true,
       });
@@ -388,7 +392,7 @@ describe('shop-system CSV presets through plan, dry-run and publish', () => {
     });
 
     it('keeps the source image URLs in the row and reports them as not loaded', async () => {
-      const result = await app().planFile(shopify(), { ...DEFAULT_IMPORT_SETTINGS, useCsvQuantities: true });
+      const result = await app().planFile(shopify(), { ...IMPORT_SETTINGS_COMPLETE, useCsvQuantities: true });
       if (result.status !== 'planned') throw new Error('plan');
       const first = payloads()[0];
       expect(JSON.parse(first?.extraFields[SOURCE_IMAGE_URLS_FIELD] ?? '[]')).toEqual([
@@ -400,7 +404,7 @@ describe('shop-system CSV presets through plan, dry-run and publish', () => {
     });
 
     it('surfaces the SDK loss codes, and drops the two that no longer apply', async () => {
-      const result = await app().planFile(shopify(), { ...DEFAULT_IMPORT_SETTINGS, useCsvQuantities: true });
+      const result = await app().planFile(shopify(), { ...IMPORT_SETTINGS_COMPLETE, useCsvQuantities: true });
       if (result.status !== 'planned') throw new Error('plan');
       const codes = new Set(result.lossReport?.losses.map((loss) => loss.code));
       for (const code of ['html_body', 'compare_at_price', 'cost', 'barcode', 'seo', 'weight', 'tax', 'collection']) {
@@ -413,7 +417,7 @@ describe('shop-system CSV presets through plan, dry-run and publish', () => {
     it('applies the default shipping option and country, and publishes once a photo is attached', async () => {
       const importer = app();
       const planned = await importer.planFile(shopify(), {
-        ...DEFAULT_IMPORT_SETTINGS,
+        ...IMPORT_SETTINGS_COMPLETE,
         useCsvQuantities: true,
         countryCode: 'CH',
         condition: 'excellent',

@@ -110,7 +110,7 @@ describe('MarketplaceInventoryImport dry run with a shop-system export', () => {
     expect(within(settings).getByLabelText('Listing currency')).toBeInTheDocument();
     expect(within(settings).getByLabelText('Condition')).toBeInTheDocument();
     expect(within(settings).getByLabelText('Default shipping')).toBeInTheDocument();
-    expect(within(settings).getByLabelText('Stock when the CSV has no count')).toBeInTheDocument();
+    expect(within(settings).getByLabelText('Default quantity')).toBeInTheDocument();
     expect(within(settings).queryByLabelText('Use CSV quantities as total stock')).not.toBeInTheDocument();
 
     expect(screen.getByTestId('inventory-import-loss-headline')).toHaveTextContent(
@@ -120,7 +120,7 @@ describe('MarketplaceInventoryImport dry run with a shop-system export', () => {
     expect(within(report).getByText('Not imported')).toBeInTheDocument();
     expect(within(report).getByText('Product type not supported')).toBeInTheDocument();
     expect(within(report).getByText('e.g. Logo Collection')).toBeInTheDocument();
-    expect(within(report).getByText('Stock count missing')).toBeInTheDocument();
+    expect(within(report).getByText('Stock unknown')).toBeInTheDocument();
     expect(within(report).getByText('Tax settings')).toBeInTheDocument();
   });
 
@@ -128,7 +128,7 @@ describe('MarketplaceInventoryImport dry run with a shop-system export', () => {
     render(<Harness format="shopify" />);
     const settings = screen.getByTestId('inventory-import-settings');
     expect(within(settings).getByRole('switch', { name: 'Use CSV quantities as total stock' })).toBeInTheDocument();
-    expect(within(settings).queryByLabelText('Stock when the CSV has no count')).not.toBeInTheDocument();
+    expect(within(settings).queryByLabelText('Default quantity')).not.toBeInTheDocument();
     expect(within(settings).getByText(/Shopify export detected/)).toBeInTheDocument();
   });
 
@@ -200,5 +200,68 @@ describe('MarketplaceInventoryImport dry run with a canonical file', () => {
     expect(screen.queryByTestId('inventory-import-loss-report')).not.toBeInTheDocument();
     expect(screen.getByTestId('inventory-import-dry-run')).toHaveTextContent('Create 3');
     expect(screen.getByRole('button', { name: 'Publish' })).toBeEnabled();
+  });
+});
+
+describe('MarketplaceInventoryImport required choices and publish gates', () => {
+  it('asks for shipping with a one-click free option, and says why Publish is off', async () => {
+    const user = userEvent.setup();
+    const onChooseFreeShipping = vi.fn();
+    const onPublish = vi.fn();
+    function Required() {
+      const form = useForm<ImportSettingsFormData>({ defaultValues: importSettingsFormDefaults });
+      return (
+        <MarketplaceInventoryImport
+          step={4}
+          scene="dry-run"
+          counts={{ create: 3, update: 0, end: 0, unchanged: 0, conflict: 0 }}
+          publishDisabledReason="Choose a shipping option and where your listings ship from, then apply the settings."
+          onPublish={onPublish}
+          settings={{
+            control: form.control,
+            currencyOptions: ['USD'],
+            conditionOptions: ['new'],
+            format: 'woocommerce',
+            onChooseFreeShipping,
+          }}
+        />
+      );
+    }
+    render(<Required />);
+    expect(screen.getByText('Required. Every imported listing needs a shipping option.')).toBeInTheDocument();
+    expect(screen.getByLabelText('Ships from (country code)')).toHaveValue('');
+    expect(screen.getByTestId('inventory-import-publish-hint')).toHaveTextContent(/Choose a shipping option and where/);
+    expect(screen.getByRole('button', { name: 'Publish' })).toBeDisabled();
+    await user.click(screen.getByRole('button', { name: 'Use free shipping (3–10 days)' }));
+    expect(onChooseFreeShipping).toHaveBeenCalledTimes(1);
+    expect(onPublish).not.toHaveBeenCalled();
+  });
+
+  it('hides the free-shipping shortcut once a shipping option is chosen', () => {
+    render(<Harness format="woocommerce" defaults={{ shippingMode: 'free', countryCode: 'CH' }} />);
+    expect(screen.queryByRole('button', { name: /Use free shipping/ })).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Ships from (country code)')).toHaveValue('CH');
+  });
+
+  it('shows why listings will be saved paused, and still lets the seller publish', async () => {
+    const user = userEvent.setup();
+    const onPublish = vi.fn();
+    render(
+      <MarketplaceInventoryImport
+        step={4}
+        scene="dry-run"
+        counts={{ create: 2, update: 0, end: 0, unchanged: 0, conflict: 0 }}
+        publishNotice={{
+          title: 'Listings will be saved as paused. Configure a payment method before publishing',
+          body: 'Buyers cannot pay for a published listing until you add at least one payment method.',
+        }}
+        onPublish={onPublish}
+      />,
+    );
+    const notice = screen.getByTestId('inventory-import-gate-notice');
+    expect(notice).toHaveTextContent('Listings will be saved as paused.');
+    expect(notice).toHaveTextContent('Buyers cannot pay');
+    await user.click(screen.getByRole('button', { name: 'Publish' }));
+    expect(onPublish).toHaveBeenCalledTimes(1);
   });
 });

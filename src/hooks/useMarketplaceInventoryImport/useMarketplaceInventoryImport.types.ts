@@ -1,8 +1,12 @@
 import { z } from 'zod';
 import { COMMERCE_LISTING_MAX_QUANTITY } from '@/config/commerce';
 import { createMarketplaceListingSchema } from '@/hooks/useCreateMarketplaceListing/useCreateMarketplaceListing.types';
-import { DEFAULT_SHOP_COUNTRY_CODE } from '@/pipes/commerce/default-shop';
-import { currencyExponent, type ImportSettings, majorToMinor } from '@/pipes/commerce/import-settings';
+import {
+  currencyExponent,
+  type ImportSettings,
+  type ImportShipping,
+  majorToMinor,
+} from '@/pipes/commerce/import-settings';
 
 export const IMPORT_SETTINGS_FIELDS = {
   CURRENCY: 'currency',
@@ -38,9 +42,12 @@ export const importSettingsFormSchema = z
     [IMPORT_SETTINGS_FIELDS.COUNTRY_CODE]: z
       .string()
       .trim()
+      .min(1, 'Choose where your listings ship from.')
       .regex(/^[A-Za-z]{2}$/, 'Enter a two-letter country code.'),
     [IMPORT_SETTINGS_FIELDS.CONDITION]: listingShape.condition,
-    [IMPORT_SETTINGS_FIELDS.SHIPPING_MODE]: z.enum(['free', 'flat']),
+    [IMPORT_SETTINGS_FIELDS.SHIPPING_MODE]: z
+      .enum(['', 'free', 'flat'])
+      .refine((mode): boolean => mode !== '', 'Choose a shipping option.'),
     [IMPORT_SETTINGS_FIELDS.SHIPPING_PRICE]: z.string().trim(),
     [IMPORT_SETTINGS_FIELDS.SHIPPING_MIN_DAYS]: dayCount('Minimum delivery'),
     [IMPORT_SETTINGS_FIELDS.SHIPPING_MAX_DAYS]: dayCount('Maximum delivery'),
@@ -78,9 +85,9 @@ export type ImportSettingsFormData = z.infer<typeof importSettingsFormSchema>;
 
 export const importSettingsFormDefaults: ImportSettingsFormData = {
   [IMPORT_SETTINGS_FIELDS.CURRENCY]: 'USD',
-  [IMPORT_SETTINGS_FIELDS.COUNTRY_CODE]: DEFAULT_SHOP_COUNTRY_CODE,
+  [IMPORT_SETTINGS_FIELDS.COUNTRY_CODE]: '',
   [IMPORT_SETTINGS_FIELDS.CONDITION]: 'new',
-  [IMPORT_SETTINGS_FIELDS.SHIPPING_MODE]: 'free',
+  [IMPORT_SETTINGS_FIELDS.SHIPPING_MODE]: '',
   [IMPORT_SETTINGS_FIELDS.SHIPPING_PRICE]: '',
   [IMPORT_SETTINGS_FIELDS.SHIPPING_MIN_DAYS]: '3',
   [IMPORT_SETTINGS_FIELDS.SHIPPING_MAX_DAYS]: '10',
@@ -88,20 +95,46 @@ export const importSettingsFormDefaults: ImportSettingsFormData = {
   [IMPORT_SETTINGS_FIELDS.UNMANAGED_STOCK]: '1',
 };
 
-/** Validated form values as the settings the importer applies to every row. */
+/** Form values for a shipping option the seller already has. */
+export function shippingFormValues(
+  shipping: ImportShipping,
+  currency: string,
+): Pick<ImportSettingsFormData, 'shippingMode' | 'shippingPrice' | 'shippingMinDays' | 'shippingMaxDays'> {
+  const price =
+    shipping.mode === 'flat'
+      ? (shipping.priceMinor / 10 ** currencyExponent(currency)).toFixed(currencyExponent(currency))
+      : '';
+  return {
+    shippingMode: shipping.mode,
+    shippingPrice: price,
+    shippingMinDays: String(shipping.minDays),
+    shippingMaxDays: String(shipping.maxDays),
+  };
+}
+
+/**
+ * The importer's settings for the form as it stands. Shipping and ships-from
+ * are `null` until the seller (or their shop) has given a valid answer: there
+ * is no silent default, so a plan made before they choose carries neither.
+ */
 export function toImportSettings(data: ImportSettingsFormData): ImportSettings {
-  const minDays = Number(data.shippingMinDays);
-  const maxDays = Number(data.shippingMaxDays);
-  const priceMinor = majorToMinor(data.shippingPrice, currencyExponent(data.currency)) ?? 0;
+  const dayNumber = (value: string, fallback: number) => (/^\d{1,3}$/.test(value.trim()) ? Number(value) : fallback);
+  const minDays = dayNumber(data.shippingMinDays, 3);
+  const maxDays = Math.max(minDays, dayNumber(data.shippingMaxDays, 10));
+  const priceMinor = majorToMinor(data.shippingPrice, currencyExponent(data.currency));
+  let shipping: ImportShipping | null = null;
+  if (data.shippingMode === 'free') shipping = { mode: 'free', minDays, maxDays };
+  else if (data.shippingMode === 'flat' && priceMinor !== null && priceMinor > 0) {
+    shipping = { mode: 'flat', priceMinor, minDays, maxDays };
+  }
+  const country = data.countryCode.trim();
+  const unmanagedStock = /^[1-9]\d*$/.test(data.unmanagedStock.trim()) ? Number(data.unmanagedStock) : 1;
   return {
     currency: data.currency,
-    countryCode: data.countryCode.toUpperCase(),
+    countryCode: /^[A-Za-z]{2}$/.test(country) ? country.toUpperCase() : null,
     condition: data.condition,
-    shipping:
-      data.shippingMode === 'flat'
-        ? { mode: 'flat', priceMinor, minDays, maxDays }
-        : { mode: 'free', minDays, maxDays },
+    shipping,
     useCsvQuantities: data.useCsvQuantities,
-    unmanagedStock: Number(data.unmanagedStock),
+    unmanagedStock,
   };
 }

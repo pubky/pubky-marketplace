@@ -314,6 +314,8 @@ export function MarketplaceInventory() {
             counts={importer.counts}
             progress={importer.progress}
             busy={importer.busy}
+            publishDisabledReason={importer.publishDisabledReason}
+            publishNotice={importer.publishNotice}
             lossSummary={importer.lossSummary}
             settings={
               importer.format
@@ -323,6 +325,7 @@ export function MarketplaceInventory() {
                     conditionOptions: importer.conditionOptions,
                     format: importer.format,
                     onApply: () => void importer.applySettings(),
+                    onChooseFreeShipping: () => void importer.chooseFreeShipping(),
                   }
                 : undefined
             }

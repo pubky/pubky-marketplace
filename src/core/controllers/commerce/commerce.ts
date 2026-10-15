@@ -399,6 +399,10 @@ export class CommerceController {
     return await CommerceInventoryImportApplication.forSeller(sellerPubky).planFile(file, settings);
   }
 
+  static async inventoryImportDefaults(sellerPubky: string) {
+    return await CommerceInventoryImportApplication.forSeller(sellerPubky).importDefaults();
+  }
+
   static async dryRunInventoryImport(sellerPubky: string, manifestId: string) {
     return await CommerceInventoryImportApplication.forSeller(sellerPubky).dryRun(manifestId);
   }

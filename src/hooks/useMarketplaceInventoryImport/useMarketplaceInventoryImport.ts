@@ -2,7 +2,7 @@
 
 import { useRef, useState } from 'react';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useForm } from 'react-hook-form';
+import { useForm, useWatch } from 'react-hook-form';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import { toast } from '@/molecules/Toaster/use-toast';
 import type {
@@ -15,12 +15,16 @@ import {
   lossReportToCsv,
   summarizeLossReport,
 } from '@/pipes/commerce/import-loss-report';
+import { gateNotice, type ImportPublishGate } from '@/pipes/commerce/import-publish-gate';
+import { type ImportSettings, missingImportChoices } from '@/pipes/commerce/import-settings';
 import {
   IMPORT_CONDITION_OPTIONS,
   IMPORT_CURRENCY_OPTIONS,
+  IMPORT_SETTINGS_FIELDS,
   type ImportSettingsFormData,
   importSettingsFormDefaults,
   importSettingsFormSchema,
+  shippingFormValues,
   toImportSettings,
 } from './useMarketplaceInventoryImport.types';
 
@@ -48,12 +52,17 @@ export function useMarketplaceInventoryImport(sellerPubky: string | null) {
   const [format, setFormat] = useState<ImportSourceFormat | undefined>();
   const [lossReport, setLossReport] = useState<ImportLossReport | undefined>();
   const sourceFile = useRef<File | null>(null);
+  const defaultsLoaded = useRef(false);
+  const [appliedSettings, setAppliedSettings] = useState<ImportSettings | undefined>();
+  const [publishGate, setPublishGate] = useState<ImportPublishGate | undefined>();
 
   const form = useForm<ImportSettingsFormData>({
     resolver: zodResolver(importSettingsFormSchema),
     defaultValues: importSettingsFormDefaults,
     mode: 'onChange',
   });
+
+  const watched = useWatch({ control: form.control });
 
   const reset = () => {
     setScene('upload');
@@ -68,6 +77,9 @@ export function useMarketplaceInventoryImport(sellerPubky: string | null) {
     setFormat(undefined);
     setLossReport(undefined);
     sourceFile.current = null;
+    defaultsLoaded.current = false;
+    setAppliedSettings(undefined);
+    setPublishGate(undefined);
     form.reset(importSettingsFormDefaults);
   };
 
@@ -77,7 +89,8 @@ export function useMarketplaceInventoryImport(sellerPubky: string | null) {
     setFileName(file.name);
     setScene('validation');
     setStep(2);
-    const result = await CommerceController.planInventoryImport(sellerPubky, file, toImportSettings(form.getValues()));
+    const settings = toImportSettings(form.getValues());
+    const result = await CommerceController.planInventoryImport(sellerPubky, file, settings);
     setBusy(false);
     if (result.status === 'parse-failed') {
       setScene(result.message.startsWith('This file exceeds') ? 'limit' : 'parse-fail');
@@ -93,16 +106,57 @@ export function useMarketplaceInventoryImport(sellerPubky: string | null) {
     setCounts(result.counts);
     setFormat(result.format);
     setLossReport(result.lossReport);
+    setAppliedSettings(settings);
+    setPublishGate(result.publishGate);
     setConflictListingId(null);
     setScene(result.counts.conflict > 0 ? 'conflict' : 'dry-run');
     setStep(result.counts.conflict > 0 ? 5 : 4);
     return true;
   };
 
+  /**
+   * Prefills the ships-from country from the seller's shop and the shipping
+   * option from their latest listing, once per import, into fields the seller
+   * has not touched. Anything the seller has no answer for stays empty and is
+   * required in the dry run.
+   */
+  const prefillFromShop = async () => {
+    if (!sellerPubky || defaultsLoaded.current) return;
+    defaultsLoaded.current = true;
+    try {
+      const defaults = await CommerceController.inventoryImportDefaults(sellerPubky);
+      const pristine = (name: keyof ImportSettingsFormData) => !form.getFieldState(name).isDirty;
+      if (defaults.countryCode && pristine(IMPORT_SETTINGS_FIELDS.COUNTRY_CODE)) {
+        form.setValue(IMPORT_SETTINGS_FIELDS.COUNTRY_CODE, defaults.countryCode);
+      }
+      const shippingFields = [
+        IMPORT_SETTINGS_FIELDS.SHIPPING_MODE,
+        IMPORT_SETTINGS_FIELDS.SHIPPING_PRICE,
+        IMPORT_SETTINGS_FIELDS.SHIPPING_MIN_DAYS,
+        IMPORT_SETTINGS_FIELDS.SHIPPING_MAX_DAYS,
+      ] as const;
+      if (defaults.shipping && shippingFields.every(pristine)) {
+        const offered = defaults.currency !== null && IMPORT_CURRENCY_OPTIONS.includes(defaults.currency);
+        const currency = offered && pristine('currency') ? (defaults.currency as string) : form.getValues('currency');
+        if (defaults.shipping.mode === 'free' || defaults.currency === currency) {
+          form.setValue('currency', currency as ImportSettingsFormData['currency']);
+          const values = shippingFormValues(defaults.shipping, currency);
+          form.setValue(IMPORT_SETTINGS_FIELDS.SHIPPING_MODE, values.shippingMode);
+          form.setValue(IMPORT_SETTINGS_FIELDS.SHIPPING_PRICE, values.shippingPrice);
+          form.setValue(IMPORT_SETTINGS_FIELDS.SHIPPING_MIN_DAYS, values.shippingMinDays);
+          form.setValue(IMPORT_SETTINGS_FIELDS.SHIPPING_MAX_DAYS, values.shippingMaxDays);
+        }
+      }
+    } catch {
+      // Nothing to prefill: the dry run asks for both.
+    }
+  };
+
   const planFile = async (file: File) => {
     sourceFile.current = file;
     setFormat(undefined);
     setLossReport(undefined);
+    await prefillFromShop();
     await plan(file);
   };
 
@@ -116,6 +170,12 @@ export function useMarketplaceInventoryImport(sellerPubky: string | null) {
       toast({ variant: 'error', description: 'The file could not be planned with these settings.' });
     }
     return planned;
+  };
+
+  /** One click on "Use free shipping": picks it and re-plans, when the rest of the settings are valid. */
+  const chooseFreeShipping = async (): Promise<boolean> => {
+    form.setValue(IMPORT_SETTINGS_FIELDS.SHIPPING_MODE, 'free', { shouldDirty: true, shouldValidate: true });
+    return applySettings();
   };
 
   const applyPublishResult = (result: Awaited<ReturnType<typeof CommerceController.publishInventoryImport>>) => {
@@ -224,6 +284,23 @@ export function useMarketplaceInventoryImport(sellerPubky: string | null) {
     downloadText(await CommerceController.exportInventoryOrdersJson(sellerPubky), 'application/json', 'orders.json');
   };
 
+  const formSettings = toImportSettings({ ...importSettingsFormDefaults, ...watched });
+  const missing = appliedSettings ? missingImportChoices(formSettings) : [];
+  const settingsChanged =
+    appliedSettings !== undefined && JSON.stringify(appliedSettings) !== JSON.stringify(formSettings);
+  let publishDisabledReason: string | undefined;
+  if (format) {
+    if (missing.length === 2) {
+      publishDisabledReason = 'Choose a shipping option and where your listings ship from, then apply the settings.';
+    } else if (missing[0] === 'shipping') {
+      publishDisabledReason = 'Choose a shipping option, then apply the settings.';
+    } else if (missing[0] === 'countryCode') {
+      publishDisabledReason = 'Choose where your listings ship from, then apply the settings.';
+    } else if (settingsChanged) {
+      publishDisabledReason = 'Apply your changed settings before publishing.';
+    }
+  }
+
   return {
     scene,
     step,
@@ -240,6 +317,9 @@ export function useMarketplaceInventoryImport(sellerPubky: string | null) {
     reset,
     planFile,
     applySettings,
+    chooseFreeShipping,
+    publishDisabledReason,
+    publishNotice: publishGate?.reason ? gateNotice(publishGate.reason) : undefined,
     publish,
     resume,
     confirmConflict,
