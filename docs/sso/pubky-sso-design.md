@@ -1,5 +1,7 @@
 # Pubky single sign-on
 
+> **Note (2026-10-12):** the Shop's messaging has since moved off Paykit Encrypted Links to chat on homeserver files under the grant's own `/pub/chat/:rw` and `/priv/chat/:rw` scopes ([`../chat/README.md`](../chat/README.md), [ADR 0030](../adr/0030-chat-transport.md)). "Messaging only works with cookie sessions" and the Shop's `/pub/paykit` receiver-marker exposure no longer apply; E1 (pubky-chat on MLS) remains the long-term target. The rest is kept as written.
+
 Sources, read on 1 Oct 2026: [pubky/pubky-core](https://github.com/pubky/pubky-core) `23cf059` (v0.14.0: homeserver, SDK, `docs/AUTH.md`, `docs/v0.10-migration/grant-auth.md`), [pubky/pubky-ring](https://github.com/pubky/pubky-ring) `83834e7`, [pubky/pubky-passport](https://github.com/pubky/pubky-passport) `fb10f45`, [pubky/paykit-rs](https://github.com/pubky/paykit-rs) `eed63f3`, [BitcoinErrorLog/paykit-rs-official](https://github.com/BitcoinErrorLog/paykit-rs-official) `4096f76`, [pubky/pubky-app](https://github.com/pubky/pubky-app) `b761c43`, and the Shop fork [BitcoinErrorLog/pubky-app](https://github.com/BitcoinErrorLog/pubky-app/tree/release/shop-v0.6.8) `release/shop-v0.6.8` `0942682`. No `pubky-social-specs` repository exists under `pubky` or `BitcoinErrorLog`.
 
 ## Answer

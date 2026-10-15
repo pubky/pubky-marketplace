@@ -62,6 +62,7 @@ Modules are imported directly through the path aliases in `tsconfig.json`. Keep 
 - **NEVER** call application directly
 - **NEVER** call services directly
 - **Mute list (homeserver events stream)**: `MuteListSyncCoordinator` (`src/core/coordinators/mute-list-sync/`) refreshes the local mute list when another session changes `/pub/pubky.app/mutes/`; see `docs/adr/0014-muting-system.md`.
+- **Chat (homeserver event streams, inbox pings, reconciliation)**: `ChatSyncCoordinator` (`src/core/coordinators/chat-sync/`) elects one leader tab per account with a Web Lock; that tab long-polls the inbox, keeps live event streams on peer homeservers and reconciles every known conversation on a cadence, all through `ChatController`; see `docs/chat/README.md` and `docs/adr/0030-chat-transport.md`.
 
 ### Application (`src/core/application/`)
 
@@ -322,6 +323,7 @@ ADRs capture the _why_ behind key architectural decisions. Stored in `docs/adr/`
 | 0027 | Marketplace record layer on social/v1    |
 | 0028 | Indexer contract                         |
 | 0029 | Vibe session consumer                    |
+| 0030 | Chat transport                           |
 
 ## Quick Checklist
 

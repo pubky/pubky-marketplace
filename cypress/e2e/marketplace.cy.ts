@@ -447,18 +447,13 @@ describe('marketplace journeys', () => {
     });
   });
 
-  it('buyer: messages a seller with sandbox messaging and sees commerce notifications', () => {
+  it('buyer: opens the seller conversation from a listing and sees commerce notifications', () => {
     const boots = SEEDED_LISTINGS.boots;
 
     cy.visit(listingRoute(boots.seller, boots.listingId));
     cy.contains('button', 'Message seller').click();
-    cy.get('#text').type('Is the leather full-grain?');
-    cy.contains('button', 'Send').click();
-    cy.contains('Is the leather full-grain?').should('be.visible');
-    cy.get('[data-testid="dialog-close"]').click();
-
-    cy.visit('/marketplace/messages');
-    cy.contains('Is the leather full-grain?').should('be.visible');
+    cy.location('pathname').should('eq', `/messages/${boots.seller}`);
+    cy.location('search').should('contain', `listing=${boots.listingId}`);
 
     // commerce activity accumulated across the journeys; mark it read
     cy.visit('/marketplace/notifications');

@@ -42,8 +42,8 @@ const APPROVAL_COPY = {
   },
   messages: {
     title: 'Enable messages',
-    success: 'Messaging preferences approved',
-    description: 'Authorize with your keychain to access your messaging preferences and marketplace data.',
+    success: 'Messages enabled',
+    description: 'Approve the chat storage scopes with your keychain to send and receive messages on this device.',
   },
 } as const;
 

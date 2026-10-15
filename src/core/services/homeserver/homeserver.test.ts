@@ -100,6 +100,7 @@ vi.mock('@synonymdev/pubky', () => {
     restoreSession: (...args: unknown[]) => mockState.restoreSession(...args),
     startCookieAuthFlow: (...args: unknown[]) => mockState.startAuthFlow(...args),
     resumeCookieAuthFlow: (...args: unknown[]) => mockState.resumeAuthFlow(...args),
+    startGrantAuthFlow: (...args: unknown[]) => mockState.grantStartDelegated(...args),
     eventStreamForUser: (...args: unknown[]) => mockState.eventStreamForUser(...args),
     client: {
       fetch: (...args: unknown[]) => mockState.clientFetch(...args),
@@ -137,7 +138,6 @@ vi.mock('@synonymdev/pubky', () => {
       restore: (...args: unknown[]) => mockState.sessionRestore(...args),
     },
     GrantAuthFlow: {
-      startDelegated: (...args: unknown[]) => mockState.grantStartDelegated(...args),
       isDelegationAvailable: true,
     },
     PublicKey: {
@@ -1901,7 +1901,7 @@ describe('HomeserverService', () => {
         expect(path).toHaveBeenCalledWith('/pub/pubky.app/mutes/');
         expect(live).toHaveBeenCalled();
         expect(subscribe).toHaveBeenCalled();
-        expect(result.value).toEqual({ cursor: 'cursor-1', eventType: 'PUT' });
+        expect(result.value).toEqual({ cursor: 'cursor-1', eventType: 'PUT', owner: '', path: '' });
         expect(result.value).not.toHaveProperty('free');
         expect(free).toHaveBeenCalledTimes(1);
       });

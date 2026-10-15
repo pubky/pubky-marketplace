@@ -2,16 +2,14 @@
 
 import { createContext, type ReactNode, useEffect, useRef, useState } from 'react';
 import { db } from '@/database/franky/franky';
-import { resumePendingMessagingTeardown } from '@/database/franky/franky.helpers';
+import { deleteLegacyMessagingKeyring } from '@/database/franky/franky.helpers';
 import { migrateLegacyDatabases } from '@/database/franky/franky.namespace-migration';
 import { AppError } from '@/libs/error/error';
 import { DatabaseErrorCode } from '@/libs/error/error.codes';
 import { Err } from '@/libs/error/error.factories';
 import { ErrorService } from '@/libs/error/error.types';
-import { Logger } from '@/libs/logger/logger';
 import { DatabaseErrorScreen } from '@/molecules/DatabaseErrorScreen/DatabaseErrorScreen';
 import { type DatabaseContextType } from '@/providers/DatabaseProvider/DatabaseProvider.types';
-import { useMessagingStore } from '@/stores/messaging/messaging.store';
 import { useMigrationStore } from '@/stores/migration/migration.store';
 
 export const DatabaseContext = createContext<DatabaseContextType>({
@@ -39,19 +37,13 @@ export function DatabaseProvider({ children }: { children: ReactNode }) {
       setError(null);
       // Existing Shop data moves into the Shop namespace before the namespaced database opens.
       await migrateLegacyDatabases();
-      const { wasDbReset, messagingAtRestDegraded } = await db.initialize();
+      const { wasDbReset } = await db.initialize();
       if (wasDbReset) {
         useMigrationStore.getState().setWasDbReset(true);
       }
-      // A failed best-effort wrap sweep must not pass silently: mirror the
-      // degraded fact so the messaging enable UI can pause instead of
-      // enabling on top of unprotected at-rest key material.
-      useMessagingStore.getState().setMessagingAtRestDegraded(messagingAtRestDegraded);
-      // A sign-out whose tab closed before other tabs let it clear the
-      // messaging keys is finished here; messaging refuses to run until then.
-      void resumePendingMessagingTeardown().catch((resumeError: unknown) => {
-        Logger.warn('Could not finish clearing messaging keys from an earlier sign-out', { error: resumeError });
-      });
+      // The retired messaging transport kept a wrapping key in its own
+      // IndexedDB database; remove it once, best-effort.
+      void deleteLegacyMessagingKeyring();
       setIsReady(true);
     } catch (err) {
       setIsReady(false);

@@ -2,7 +2,6 @@ import Dexie from 'dexie';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AppDatabase } from '@/database/franky/franky';
 import { migrateLegacyDatabases } from '@/database/franky/franky.namespace-migration';
-import { KEYRING_STORE_NAME, messagingKeyringDbName } from '@/libs/crypto/messaging-keyring';
 import { DATABASE_MIGRATION_MARKER_KEY } from '@/libs/storage-namespace/storage-namespace';
 import { asOpaque } from '@/test-utils/type-assertions';
 
@@ -10,44 +9,6 @@ const LEGACY = 'franky-legacy-test';
 const TARGET = 'shop-franky-target-test';
 
 type Row = Record<string, unknown>;
-
-async function openRaw(name: string): Promise<IDBDatabase> {
-  return new Promise((resolve, reject) => {
-    const request = indexedDB.open(name, 1);
-    request.onupgradeneeded = () => request.result.createObjectStore(KEYRING_STORE_NAME);
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error);
-  });
-}
-
-async function seedKeyring(dbName: string, records: Record<string, unknown>): Promise<void> {
-  const keyring = await openRaw(messagingKeyringDbName(dbName));
-  await new Promise<void>((resolve, reject) => {
-    const transaction = keyring.transaction(KEYRING_STORE_NAME, 'readwrite');
-    for (const [key, value] of Object.entries(records)) transaction.objectStore(KEYRING_STORE_NAME).put(value, key);
-    transaction.oncomplete = () => resolve();
-    transaction.onerror = () => reject(transaction.error);
-  });
-  keyring.close();
-}
-
-async function readKeyring(dbName: string): Promise<Record<string, unknown> | null> {
-  if (!(await Dexie.exists(messagingKeyringDbName(dbName)))) return null;
-  const keyring = await openRaw(messagingKeyringDbName(dbName));
-  const result: Record<string, unknown> = {};
-  await new Promise<void>((resolve, reject) => {
-    const request = keyring.transaction(KEYRING_STORE_NAME, 'readonly').objectStore(KEYRING_STORE_NAME).openCursor();
-    request.onsuccess = () => {
-      const cursor = request.result;
-      if (!cursor) return resolve();
-      result[String(cursor.key)] = cursor.value;
-      cursor.continue();
-    };
-    request.onerror = () => reject(request.error);
-  });
-  keyring.close();
-  return result;
-}
 
 async function seedLegacy(shops: Row[], cartItems: Row[] = []): Promise<void> {
   const legacy = new AppDatabase(LEGACY);
@@ -104,7 +65,7 @@ const cartItem = (id: string): Row => ({ id, owner_id: 'o', listing_id: 'l', var
 async function deleteAll(): Promise<void> {
   for (const name of [LEGACY, TARGET, 'franky-foreign-test']) {
     await Dexie.delete(name);
-    await Dexie.delete(messagingKeyringDbName(name));
+    await Dexie.delete(`${name}-messaging-keyring`);
   }
 }
 
@@ -119,9 +80,8 @@ describe('migrateLegacyDatabases', () => {
     await deleteAll();
   });
 
-  it('moves every table and the messaging keyring into the namespaced databases and removes the legacy ones', async () => {
+  it('moves every table into the namespaced database and removes the legacy ones', async () => {
     await seedLegacy([shop('s1'), shop('s2')], [cartItem('c1')]);
-    await seedKeyring(LEGACY, { 'wrapping-key': 'KEY', 'wrapping-key-epoch': 'EPOCH' });
 
     const result = await migrateLegacyDatabases({ legacyName: LEGACY, targetName: TARGET, adopt: true });
 
@@ -129,9 +89,7 @@ describe('migrateLegacyDatabases', () => {
     const moved = await readTarget();
     expect(moved.shops.map((row) => row.id).sort()).toEqual(['s1', 's2']);
     expect(moved.cartItems.map((row) => row.id)).toEqual(['c1']);
-    expect(await readKeyring(TARGET)).toEqual({ 'wrapping-key': 'KEY', 'wrapping-key-epoch': 'EPOCH' });
     expect(await Dexie.exists(LEGACY)).toBe(false);
-    expect(await Dexie.exists(messagingKeyringDbName(LEGACY))).toBe(false);
     expect(JSON.parse(window.localStorage.getItem(DATABASE_MIGRATION_MARKER_KEY) ?? '{}')).toMatchObject({
       status: 'migrated',
     });
@@ -175,8 +133,6 @@ describe('migrateLegacyDatabases', () => {
     await target.initialize();
     await target.commerce_shops.put(shop('s1', { revision: 9 }) as never);
     target.close();
-    await seedKeyring(TARGET, { 'wrapping-key': 'KEY' });
-    await seedKeyring(LEGACY, { 'wrapping-key': 'OLD-COPY' });
 
     const result = await migrateLegacyDatabases({ legacyName: LEGACY, targetName: TARGET, adopt: true });
 
@@ -184,13 +140,11 @@ describe('migrateLegacyDatabases', () => {
     const moved = await readTarget();
     expect(moved.shops).toHaveLength(2);
     expect(moved.shops.find((row) => row.id === 's1')).toMatchObject({ revision: 9 });
-    expect(await readKeyring(TARGET)).toEqual({ 'wrapping-key': 'KEY' });
     expect(await Dexie.exists(LEGACY)).toBe(false);
   });
 
   it('keeps the legacy databases and records nothing when a copy fails, then succeeds on retry', async () => {
     await seedLegacy([shop('s1')]);
-    await seedKeyring(LEGACY, { 'wrapping-key': 'KEY' });
     const lookup = overrideTargetTable('commerce_shops', 'bulkAdd', () => Promise.reject(new Error('disk full')));
 
     await expect(migrateLegacyDatabases({ legacyName: LEGACY, targetName: TARGET, adopt: true })).rejects.toThrow(
@@ -200,7 +154,6 @@ describe('migrateLegacyDatabases', () => {
     expect(lookup).toHaveBeenCalled();
     lookup.mockRestore();
     expect(await Dexie.exists(LEGACY)).toBe(true);
-    expect(await Dexie.exists(messagingKeyringDbName(LEGACY))).toBe(true);
     expect(window.localStorage.getItem(DATABASE_MIGRATION_MARKER_KEY)).toBeNull();
 
     const retried = await migrateLegacyDatabases({ legacyName: LEGACY, targetName: TARGET, adopt: true });

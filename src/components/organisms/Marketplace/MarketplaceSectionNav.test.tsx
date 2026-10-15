@@ -1,6 +1,6 @@
 import { render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { useMessagesUnread } from '@/hooks/useMessagesUnread/useMessagesUnread';
+import { useChatUnread } from '@/hooks/useChatUnread/useChatUnread';
 import { setSocialHost } from '@/test-utils/social-host';
 import { MarketplaceSectionNav } from './MarketplaceSectionNav';
 
@@ -26,8 +26,8 @@ vi.mock('@/hooks/useMarketplaceOrdersAttention/useMarketplaceOrdersAttention', (
   useMarketplaceOrdersAttention: () => state.ordersCount,
 }));
 
-vi.mock('@/hooks/useMessagesUnread/useMessagesUnread', () => ({
-  useMessagesUnread: vi.fn(({ enabled = true } = {}) => (enabled ? 4 : 0)),
+vi.mock('@/hooks/useChatUnread/useChatUnread', () => ({
+  useChatUnread: vi.fn(({ enabled = true } = {}) => (enabled ? 4 : 0)),
 }));
 
 describe('MarketplaceSectionNav', () => {
@@ -55,7 +55,7 @@ describe('MarketplaceSectionNav', () => {
     render(<MarketplaceSectionNav />);
     expect(screen.getByTestId('marketplace-section-nav-messages-badge')).toHaveTextContent('4');
     expect(screen.getByLabelText('4 unread messages')).toBeInTheDocument();
-    expect(useMessagesUnread).toHaveBeenCalledWith({ enabled: true });
+    expect(useChatUnread).toHaveBeenCalledWith({ enabled: true });
   });
 
   it('leaves message counts to the global navigation while link-out is off', () => {
@@ -63,7 +63,7 @@ describe('MarketplaceSectionNav', () => {
 
     expect(screen.queryByTestId('marketplace-section-nav-messages-badge')).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Shop settings' })).not.toBeInTheDocument();
-    expect(useMessagesUnread).toHaveBeenCalledWith({ enabled: false });
+    expect(useChatUnread).toHaveBeenCalledWith({ enabled: false });
   });
 
   it('lets a link-out buyer open local Shop settings from the section navigation', () => {

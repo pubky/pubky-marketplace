@@ -4,7 +4,7 @@ import { useState } from 'react';
 import dynamic from 'next/dynamic';
 import { usePathname } from 'next/navigation';
 import { Plus } from 'lucide-react';
-import { MARKETPLACE_ROUTES } from '@/app/routes';
+import { APP_ROUTES, MARKETPLACE_ROUTES } from '@/app/routes';
 import { Button } from '@/atoms/Button/Button';
 import { useAuthStatus } from '@/hooks/useAuthStatus/useAuthStatus';
 import { useFabAction } from '@/hooks/useFabAction/useFabAction';
@@ -73,7 +73,8 @@ export function Fab() {
     !shouldShow ||
     isReorderActive ||
     hideOnCheckout ||
-    pathname?.startsWith(`${MARKETPLACE_ROUTES.LISTING}/`)
+    pathname?.startsWith(`${MARKETPLACE_ROUTES.LISTING}/`) ||
+    pathname?.startsWith(`${APP_ROUTES.MESSAGES}/`)
   ) {
     return null;
   }

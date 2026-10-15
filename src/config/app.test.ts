@@ -6,6 +6,8 @@ import ringCookie from '@/test/fixtures/auth/ring-cookie-signin.pubky-common-0.1
 import {
   CAPABILITIES,
   capabilitiesMatchRingCookieGrant,
+  CHAT_CAPABILITIES,
+  CORE_CAPABILITIES,
   getShopGrantClientId,
   isPrivKeysRequested,
   KEYED_CAPABILITIES,
@@ -130,6 +132,13 @@ describe('capabilitiesMatchRingCookieGrant', () => {
     ['an extra entry', [...ring, '/:rw']],
   ])('refuses %s', (_label, capabilities) => {
     expect(capabilitiesMatchRingCookieGrant(capabilities)).toBe(false);
+  });
+});
+
+describe('CHAT_CAPABILITIES', () => {
+  it('keeps the chat scopes versioned and inside the requested grant', () => {
+    expect(CHAT_CAPABILITIES).toBe('/pub/chat/v0/:rw,/priv/chat/v0/:rw');
+    expect(CAPABILITIES).toBe(`${CORE_CAPABILITIES},${CHAT_CAPABILITIES}`);
   });
 });
 

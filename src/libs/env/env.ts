@@ -32,7 +32,7 @@ export const envSchema = z
     NEXT_PUBLIC_DB_NAME: z.string().default('shop-franky'),
     NEXT_PUBLIC_DB_VERSION: z
       .string()
-      .default('7')
+      .default('9')
       .transform((val) => parseInt(val, 10))
       .pipe(z.number().int().positive()),
 
