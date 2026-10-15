@@ -1,4 +1,5 @@
 import { PHASE_PRODUCTION_BUILD } from 'next/constants';
+import { normalizeBasePath } from '@/libs/base-path/base-path';
 import {
   type CommerceAdapterMode,
   type DeployEnv,
@@ -86,7 +87,17 @@ function readRuntimeEnvInput(): Record<string, string | undefined> {
  * and test overrides are honored (partial values layer over staging defaults).
  */
 function parseLenientConfig(): RuntimeConfig {
-  return runtimeEnvInputSchemaWithDefaults.parse(readRuntimeEnvInput());
+  return validateEmbeddedMount(runtimeEnvInputSchemaWithDefaults.parse(readRuntimeEnvInput()));
+}
+
+/** Keep this leaf module independent of Env/logger; Next inlines this build-time value. */
+function validateEmbeddedMount(config: RuntimeConfig): RuntimeConfig {
+  if (config.embedded && normalizeBasePath(process.env.NEXT_PUBLIC_BASE_PATH) !== '/shop-embed') {
+    throw new Error(
+      'PUBKY_RUNTIME_EMBEDDED=true requires NEXT_PUBLIC_BASE_PATH=/shop-embed. Rebuild with the supported Shop mount.',
+    );
+  }
+  return config;
 }
 
 /** Exported for unit tests; prefer `getRuntimeConfig()` in app code. */
@@ -100,7 +111,7 @@ export function readServerConfig(): RuntimeConfig {
         cause: result.error,
       });
     }
-    return result.data;
+    return validateEmbeddedMount(result.data);
   }
 
   return parseLenientConfig();
@@ -110,7 +121,7 @@ export function readServerConfig(): RuntimeConfig {
 export function readClientConfig(): RuntimeConfig {
   const injected = window[RUNTIME_CONFIG_WINDOW_KEY];
   if (injected !== undefined) {
-    return runtimeConfigValueSchema.parse(injected);
+    return validateEmbeddedMount(runtimeConfigValueSchema.parse(injected));
   }
 
   if (isRuntimeConfigRequired()) {
@@ -223,7 +234,6 @@ export const getPaykitSetupCreatorParam = (): boolean => getRuntimeConfig().payk
 export const getPaykitServerApi = (): PaykitServerApi => getRuntimeConfig().paykitServerApi;
 export const getCommerceAdapterMode = (): CommerceAdapterMode => getRuntimeConfig().commerceAdapterMode;
 export const getCommercePollIntervalMs = (): number => getRuntimeConfig().commercePollIntervalMs;
-export const getSingleApprovalSignIn = (): boolean => getRuntimeConfig().singleApprovalSignIn;
 export const getMarketplaceGrantFlowEnabled = (): boolean => getRuntimeConfig().marketplaceGrantFlowEnabled;
 export const getMarketplaceGrantPollMilliseconds = (): number => getRuntimeConfig().marketplaceGrantPollMilliseconds;
 export const getPassportSignInEnabled = (): boolean => getRuntimeConfig().passportSignIn;

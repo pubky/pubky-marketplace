@@ -1,3 +1,4 @@
+import { isValidBasePath, prefixWithBasePath } from '@/libs/base-path/base-path';
 import { PASSPORT_CALLBACK_MESSAGE } from './passport-popup';
 
 /**
@@ -34,7 +35,9 @@ export const PASSPORT_CALLBACK_SCRIPT = `(function () {
   }
 })();`;
 
-export const PASSPORT_CALLBACK_HTML = `<!doctype html>
+export function passportCallbackHtml(basePath: string): string {
+  const returnPath = prefixWithBasePath(isValidBasePath(basePath) ? basePath : '', '/marketplace');
+  return `<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -50,9 +53,12 @@ a{color:oklch(0.928 0.23 123.978);font-weight:600}
 <body>
 <main>
 <p id="passport-return-status">You can close this window and return to Pubky Shop.</p>
-<p><a href="/marketplace">Return to Pubky Shop</a></p>
+<p><a href="${returnPath}">Return to Pubky Shop</a></p>
 </main>
 <script>${PASSPORT_CALLBACK_SCRIPT}</script>
 </body>
 </html>
 `;
+}
+
+export const PASSPORT_CALLBACK_HTML = passportCallbackHtml('');

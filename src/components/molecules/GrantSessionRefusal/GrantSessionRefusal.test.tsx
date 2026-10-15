@@ -10,19 +10,19 @@ vi.mock('@/hooks/useGrantSigner/useGrantSigner', async (importOriginal) => ({
 }));
 
 describe('grantSessionRefusalCopy', () => {
-  it('names the signer that approved the sign-in', () => {
+  it('explains deployment unavailability without sending users to a cookie login', () => {
     expect(grantSessionRefusalCopy('default', 'bitkit')).toBe(
-      'Bitkit sign-in does not cover this step yet. Sign in with Pubky Ring to continue.',
+      'Marketplace approvals are unavailable on this deployment. Try again when access is enabled.',
     );
     expect(grantSessionRefusalCopy('default', 'passport')).toBe(
-      'Pubky Passport sign-in does not cover this step yet. Sign in with Pubky Ring to continue.',
+      'Marketplace approvals are unavailable on this deployment. Try again when access is enabled.',
     );
   });
 
   it('says messages are not available yet without sending the user to another signer', () => {
     for (const signer of ['bitkit', 'passport'] as const) {
       const copy = grantSessionRefusalCopy('messaging', signer);
-      expect(copy).toMatch(/^Messages are not available for (Bitkit|Pubky Passport) sign-ins yet\./);
+      expect(copy).toMatch(/^New messages cannot be enabled with this (Bitkit|Pubky Passport) sign-in yet\./);
       expect(copy).not.toMatch(/Pubky Ring/);
     }
   });
@@ -34,16 +34,16 @@ describe('GrantSessionRefusal', () => {
     render(<GrantSessionRefusal reason="messaging" />);
 
     expect(screen.getByTestId('grant-session-refusal')).toHaveTextContent(
-      'Messages are not available for Pubky Passport sign-ins yet. Everything else in Shop works with this sign-in.',
+      'New messages cannot be enabled with this Pubky Passport sign-in yet. You can still read saved conversations on this device.',
     );
   });
 
-  it('falls back to Bitkit copy when no grant signer is known', () => {
+  it('does not assume Bitkit when no signer is known', () => {
     view.signer = null;
     render(<GrantSessionRefusal />);
 
     expect(screen.getByTestId('grant-session-refusal')).toHaveTextContent(
-      'Bitkit sign-in does not cover this step yet.',
+      'Marketplace approvals are unavailable on this deployment.',
     );
   });
 });

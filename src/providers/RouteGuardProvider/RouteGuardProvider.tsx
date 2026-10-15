@@ -21,6 +21,7 @@ import {
   isRouteGuardReturnToAllowed,
   storeRouteGuardReturnTo,
 } from '@/providers/RouteGuardProvider/RouteGuardProvider.returnPath';
+import { useIsShopHosted } from '@/providers/ShopHostSessionProvider/ShopHostSessionProvider';
 import { useAuthStore } from '@/stores/auth/auth.store';
 import { useMigrationStore } from '@/stores/migration/migration.store';
 
@@ -47,6 +48,7 @@ interface RouteGuardProviderProps {
  * - NEEDS_PROFILE_CREATION users → profile creation route
  */
 export function RouteGuardProvider({ children }: RouteGuardProviderProps) {
+  const hosted = useIsShopHosted();
   const router = useRouter();
   const pathname = usePathname();
   const { status, isLoading } = useAuthStatus();
@@ -66,17 +68,17 @@ export function RouteGuardProvider({ children }: RouteGuardProviderProps) {
   const isSessionRestoreInFlightRef = useRef(false);
 
   // Another tab signed out: a grant session held in this tab lets go too.
-  useEffect(() => AuthController.subscribeCrossTabSignOut(), []);
+  useEffect(() => (hosted ? undefined : AuthController.subscribeCrossTabSignOut()), [hosted]);
 
   // Grant keys a failed save left behind are removed on the next load.
   useEffect(() => {
-    if (!hasHydrated) return;
+    if (hosted || !hasHydrated) return;
     void AuthController.settlePendingGrantKeyCleanup();
-  }, [hasHydrated]);
+  }, [hasHydrated, hosted]);
 
   // Attempt to restore an existing session snapshot on fresh loads.
   useEffect(() => {
-    if (!hasHydrated) return;
+    if (hosted || !hasHydrated) return;
     if (session) return;
     if (isSessionRestoreInFlightRef.current) return;
     // Shared with auth-store rehydrate so `isRestoringSession` is only set when
@@ -107,7 +109,7 @@ export function RouteGuardProvider({ children }: RouteGuardProviderProps) {
       .finally(() => {
         isSessionRestoreInFlightRef.current = false;
       });
-  }, [hasHydrated, session, sessionExport, grantSessionRecordId, isRestoringSession]);
+  }, [hasHydrated, session, sessionExport, grantSessionRecordId, isRestoringSession, hosted]);
 
   // Post-migration re-sync: fetch critical homeserver data after DB recreation
   // TODO: Consider using BroadcastChannel to notify other browser tabs when DB was recreated / resync completed

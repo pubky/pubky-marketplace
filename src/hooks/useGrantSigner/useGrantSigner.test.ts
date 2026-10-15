@@ -11,8 +11,14 @@ describe('readGrantSigner', () => {
     expect(readGrantSigner({ session: { grant: {} }, grantSigner: 'passport' })).toBe('passport');
   });
 
-  it('treats an unmarked grant session (saved before Passport existed) as Bitkit', () => {
-    expect(readGrantSigner({ session: { grant: {} }, grantSigner: null })).toBe('bitkit');
-    expect(readGrantSigner({ session: { grant: {} }, grantSigner: 'bitkit' })).toBe('bitkit');
+  it('requires a signer choice for an unmarked grant session', () => {
+    expect(readGrantSigner({ session: { grant: {} }, grantSigner: null })).toBe('host');
   });
+
+  it.each(['ring', 'bitkit', 'passport', 'local-key', 'host'] as const)(
+    'preserves the recorded %s signer',
+    (signer) => {
+      expect(readGrantSigner({ session: { grant: {} }, grantSigner: signer })).toBe(signer);
+    },
+  );
 });
