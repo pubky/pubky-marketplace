@@ -15,6 +15,7 @@ import {
   type ImportImageResult,
   type ImportImageTarget,
   MEDIA_JSON_FIELD,
+  normalizeImageUrl,
   outcomesFromResults,
   planImageSync,
   rowHoldsMedia,
@@ -22,6 +23,7 @@ import {
   sourceUrlHash,
   uniqueImageUrls,
 } from './import-image-phase';
+import { SOURCE_IMAGE_URLS_FIELD } from './import-preset-rows';
 import { DEFAULT_IMPORT_SETTINGS } from './import-settings';
 import { mapWooProductCsv } from './import-woo-csv';
 
@@ -140,6 +142,81 @@ describe('outcomesFromResults', () => {
     expect(outcomes[0]?.results.every((result) => result.status === 'failed' && result.reason === 'cancelled')).toBe(
       true,
     );
+  });
+});
+
+describe('one form of every source URL', () => {
+  const A = 'https://a.example.com/a.jpg';
+  const rowWith = (urls: unknown[]) => ({ extraFields: { [SOURCE_IMAGE_URLS_FIELD]: JSON.stringify(urls) } });
+
+  it('trims a URL once, where the row is read, and drops empty and repeated ones keeping the first', () => {
+    const images = sourceImagesOf(
+      rowWith([
+        { url: ` ${A} `, alt: 'first' },
+        { url: A, alt: 'second' },
+        { url: '   ', alt: 'empty' },
+        { url: `${A}\n`, alt: 'third' },
+        { url: ' https://a.example.com/b.jpg', alt: 'b' },
+        { alt: 'no url' },
+        'junk',
+      ]),
+    );
+    expect(images).toEqual([
+      { url: A, alt: 'first' },
+      { url: 'https://a.example.com/b.jpg', alt: 'b' },
+    ]);
+    expect(normalizeImageUrl(`\t${A} `)).toBe(A);
+  });
+
+  it('keys the fetch list, the alt text, the results and the hash on the same text', () => {
+    const targets: ImportImageTarget[] = [{ listingId: 'one', images: [{ url: ` ${A} `, alt: 'Spaced' }] }];
+    expect(uniqueImageUrls(targets)).toEqual([A]);
+    expect(altTextForUrl(targets, A)).toBe('Spaced');
+    expect(sourceUrlHash(` ${A} `)).toBe(sourceUrlHash(A));
+
+    const outcome = outcomesFromResults(targets, [uploaded(A)])[0];
+    expect(outcome?.results).toEqual([{ url: A, status: 'uploaded' }]);
+    expect(outcome?.media).toHaveLength(1);
+    expect((outcome?.media[0] as Record<string, unknown>)[IMPORT_SOURCE_HASH_KEY]).toBe(sourceUrlHash(A));
+  });
+
+  it('attaches one media, in the first occurrence order, when a new listing repeats a URL', () => {
+    const B = 'https://a.example.com/b.jpg';
+    const targets: ImportImageTarget[] = [
+      {
+        listingId: 'one',
+        images: [
+          { url: A, alt: 'A' },
+          { url: B, alt: 'B' },
+          { url: ` ${A}`, alt: 'A again' },
+          { url: B, alt: 'B again' },
+        ],
+      },
+    ];
+    const outcome = outcomesFromResults(targets, [uploaded(A), uploaded(B)])[0];
+    expect(outcome?.media).toHaveLength(2);
+    expect(outcome?.media.map((media) => (media as Record<string, unknown>)[IMPORT_SOURCE_HASH_KEY])).toEqual([
+      sourceUrlHash(A),
+      sourceUrlHash(B),
+    ]);
+    expect(outcome?.results).toEqual([
+      { url: A, status: 'uploaded' },
+      { url: B, status: 'uploaded' },
+    ]);
+  });
+
+  it('reports a repeated URL once when it fails', () => {
+    const targets: ImportImageTarget[] = [
+      {
+        listingId: 'one',
+        images: [
+          { url: A, alt: '' },
+          { url: ` ${A} `, alt: '' },
+        ],
+      },
+    ];
+    const outcome = outcomesFromResults(targets, [{ url: A, status: 'failed', reason: 'not_image' }])[0];
+    expect(outcome?.results).toEqual([{ url: A, status: 'failed', reason: 'not_image' }]);
   });
 });
 
