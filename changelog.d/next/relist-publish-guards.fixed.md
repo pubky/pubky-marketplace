@@ -1,1 +1,1 @@
-Relisting from Inventory and bulk activating from the seller dashboard now run the same publish checks as Create and Edit listing, so a seller without a payment method, selling approval or, for shipped items, a published delivery key cannot put a paused listing back on sale.
+Relisting from Inventory or the listing page, and bulk activating from the seller dashboard, now run the same publish checks as Create and Edit listing, so a seller without a payment method, selling approval or, for shipped items, a published delivery key cannot put a paused listing back on sale.
