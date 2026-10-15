@@ -804,11 +804,26 @@ function shopCacheRow(shop) {
 }
 
 async function seedCanonicalListingCache(page, canonicalListing, shop) {
+  // The database appears before Dexie's upgrade has created its stores, so
+  // wait for the stores themselves, not only the database name.
   await page.waitForFunction(
-    () => indexedDB.databases().then((dbs) => dbs.some((entry) => entry.name === 'shop-franky')),
+    () =>
+      indexedDB.databases().then((dbs) => {
+        if (!dbs.some((entry) => entry.name === 'shop-franky')) return false;
+        return new Promise((resolve) => {
+          const open = indexedDB.open('shop-franky');
+          open.onerror = () => resolve(false);
+          open.onsuccess = () => {
+            const names = [...open.result.objectStoreNames];
+            open.result.close();
+            resolve(names.includes('commerce_listings') && names.includes('commerce_shops'));
+          };
+        });
+      }),
     undefined,
     {
       timeout: 15_000,
+      polling: 250,
     },
   );
   const seeded = await page.evaluate(
