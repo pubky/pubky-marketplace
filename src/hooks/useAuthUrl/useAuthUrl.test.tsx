@@ -1,6 +1,12 @@
 import type { Session } from '@synonymdev/pubky';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  BROWSER_STORAGE_BLOCKED_MESSAGE,
+  FULL_GRANT_REQUIRED_MESSAGE,
+  SIGN_IN_FAILED_MESSAGE,
+  SIGN_IN_LINK_FAILED_MESSAGE,
+} from '@/libs/auth/sign-in-error-copy';
 import { AppError } from '@/libs/error/error';
 import {
   AuthErrorCode,
@@ -11,7 +17,7 @@ import {
 } from '@/libs/error/error.codes';
 import { ErrorCategory, ErrorService } from '@/libs/error/error.types';
 import { mockSession } from '@/test-utils/pubky';
-import { AUTH_URL_FAILED_MESSAGE, useAuthUrl } from './useAuthUrl';
+import { useAuthUrl } from './useAuthUrl';
 
 // Mock dependencies
 const mockToast = vi.fn();
@@ -273,7 +279,7 @@ describe('useAuthUrl', () => {
     expect(mockToast).not.toHaveBeenCalled();
   });
 
-  it('shows toast when session initialization fails', async () => {
+  it('shows plain copy, not the raw message, when session initialization fails', async () => {
     const session = mockSession();
 
     let resolveApproval: (session: Session) => void;
@@ -306,14 +312,37 @@ describe('useAuthUrl', () => {
     resolveApproval!(session);
 
     await waitFor(() => {
-      expect(mockToast).toHaveBeenCalledWith({
-        variant: 'error',
-        description: 'PKARR relay unavailable',
-      });
+      // handleError keeps raw homeserver/SDK text on the AppError; the user gets plain copy.
+      expect(mockToast).toHaveBeenCalledWith({ variant: 'error', description: SIGN_IN_FAILED_MESSAGE });
       expect(result.current.url).toBe('');
       expect(result.current.isExpired).toBe(true);
     });
     expect(mockLoggerError).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['permission', FULL_GRANT_REQUIRED_MESSAGE],
+    ['storage', BROWSER_STORAGE_BLOCKED_MESSAGE],
+  ])("keeps the Shop's own %s remedy when session initialization fails", async (_case, message) => {
+    mockGetGrantAuthUrl.mockResolvedValue({
+      authorizationUrl: 'pubkyauth://signin_grant?remedy',
+      awaitApproval: Promise.resolve(mockSession()),
+      cancelAuthFlow: createCancelAuthFlow(),
+    });
+    mockInitializeAuthenticatedSession.mockRejectedValue(
+      new AppError({
+        category: ErrorCategory.Validation,
+        code: ValidationErrorCode.INVALID_INPUT,
+        message,
+        service: ErrorService.Homeserver,
+        operation: 'assertFullGrantSession',
+      }),
+    );
+
+    const { result } = renderHook(() => useAuthUrl({ type: 'grant' }));
+
+    await waitFor(() => expect(result.current.isExpired).toBe(true));
+    expect(mockToast).toHaveBeenCalledWith({ variant: 'error', description: message });
   });
 
   it('stays silent when the approval lost to another sign-in', async () => {
@@ -382,7 +411,7 @@ describe('useAuthUrl', () => {
     renderHook(() => useAuthUrl());
 
     await waitFor(() => {
-      expect(mockToast).toHaveBeenCalledWith({ variant: 'error', description: AUTH_URL_FAILED_MESSAGE });
+      expect(mockToast).toHaveBeenCalledWith({ variant: 'error', description: SIGN_IN_LINK_FAILED_MESSAGE });
     });
   });
 
@@ -392,7 +421,7 @@ describe('useAuthUrl', () => {
     const { result } = renderHook(() => useAuthUrl({ type: 'grant' }));
 
     await waitFor(() => expect(result.current.isExpired).toBe(true));
-    expect(mockToast).toHaveBeenCalledWith({ variant: 'error', description: AUTH_URL_FAILED_MESSAGE });
+    expect(mockToast).toHaveBeenCalledWith({ variant: 'error', description: SIGN_IN_LINK_FAILED_MESSAGE });
   });
 
   it.each([
@@ -414,7 +443,7 @@ describe('useAuthUrl', () => {
 
     await waitFor(() => expect(result.current.isExpired).toBe(true));
     expect(mockToast).toHaveBeenCalledTimes(1);
-    expect(mockToast).toHaveBeenCalledWith({ variant: 'error', description: AUTH_URL_FAILED_MESSAGE });
+    expect(mockToast).toHaveBeenCalledWith({ variant: 'error', description: SIGN_IN_LINK_FAILED_MESSAGE });
   });
 
   it('offers a reload without an error toast when another sign-in canceled link creation', async () => {
@@ -427,7 +456,7 @@ describe('useAuthUrl', () => {
   });
 
   it("keeps the Shop's own browser-storage remedy when the link cannot be made", async () => {
-    const message = 'Browser storage is blocked. Enable storage to sign in securely.';
+    const message = BROWSER_STORAGE_BLOCKED_MESSAGE;
     mockGetGrantAuthUrl.mockRejectedValue(
       new AppError({
         category: ErrorCategory.Database,

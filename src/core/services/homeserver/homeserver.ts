@@ -26,6 +26,7 @@ import {
 } from '@/config/network';
 import { readAuthEpoch } from '@/controllers/auth/auth-epoch';
 import { capabilitiesMatchFullGrant } from '@/libs/auth/capabilities';
+import { GRANT_STORAGE_UNAVAILABLE_MESSAGE } from '@/libs/auth/sign-in-error-copy';
 import { AppError } from '@/libs/error/error';
 import { AuthErrorCode, DatabaseErrorCode, ServerErrorCode, ValidationErrorCode } from '@/libs/error/error.codes';
 import { Err } from '@/libs/error/error.factories';
@@ -649,14 +650,10 @@ export class HomeserverService {
   ): Promise<TGenerateAuthUrlResult> {
     try {
       if (!this.isGrantSignInAvailable() || !(await this.getPubkySdk().browserSessionStore.isAvailable())) {
-        throw Err.database(
-          DatabaseErrorCode.INIT_FAILED,
-          "This browser can't save a secure sign-in. Leave private browsing or allow this site to store data, then try again.",
-          {
-            service: ErrorService.Homeserver,
-            operation,
-          },
-        );
+        throw Err.database(DatabaseErrorCode.INIT_FAILED, GRANT_STORAGE_UNAVAILABLE_MESSAGE, {
+          service: ErrorService.Homeserver,
+          operation,
+        });
       }
       assertOwnedGrantStorageAvailable();
       const pubkySdk = this.getPubkySdk();

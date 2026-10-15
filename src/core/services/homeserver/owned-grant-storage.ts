@@ -1,4 +1,5 @@
 import type { GrantAuthFlow } from '@synonymdev/pubky';
+import { BROWSER_STORAGE_BLOCKED_MESSAGE } from '@/libs/auth/sign-in-error-copy';
 import { DatabaseErrorCode } from '@/libs/error/error.codes';
 import { Err } from '@/libs/error/error.factories';
 import { ErrorService } from '@/libs/error/error.types';
@@ -12,15 +13,11 @@ const releases = new Map<string, () => void>();
 const key = (kind: Obligation['kind'], id: string) => `${PREFIX}${kind}:${id}`;
 
 function storageFailure(cause?: unknown) {
-  return Err.database(
-    DatabaseErrorCode.INIT_FAILED,
-    'Browser storage is blocked. Enable storage to sign in securely.',
-    {
-      service: ErrorService.Homeserver,
-      operation: 'ownedGrantStorage',
-      cause,
-    },
-  );
+  return Err.database(DatabaseErrorCode.INIT_FAILED, BROWSER_STORAGE_BLOCKED_MESSAGE, {
+    service: ErrorService.Homeserver,
+    operation: 'ownedGrantStorage',
+    cause,
+  });
 }
 
 /** Check before creating a delegated key so blocked storage cannot strand a new key. */

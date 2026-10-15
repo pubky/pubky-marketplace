@@ -3,9 +3,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Session } from '@synonymdev/pubky';
 import { AuthController } from '@/controllers/auth/auth';
-import type { AppError } from '@/libs/error/error';
-import { AuthErrorCode, DatabaseErrorCode } from '@/libs/error/error.codes';
-import { ErrorCategory } from '@/libs/error/error.types';
+import { SIGN_IN_FAILED_MESSAGE, SIGN_IN_LINK_FAILED_MESSAGE, signInErrorCopy } from '@/libs/auth/sign-in-error-copy';
+import { AuthErrorCode } from '@/libs/error/error.codes';
 import {
   getWrongEnvironmentHomeserverMessage,
   isAppError,
@@ -18,16 +17,6 @@ import { copyToClipboard } from '@/libs/utils/utils';
 import { toast } from '@/molecules/Toaster/use-toast';
 import { AUTH_FLOW_CANCELED_ERROR_NAME } from '@/services/homeserver/error.utils';
 import type { UseAuthUrlOptions, UseAuthUrlReturn } from './useAuthUrl.types';
-
-export const AUTH_URL_FAILED_MESSAGE =
-  'Could not create the sign-in code. Check your internet connection, then select "Click to reload" to try again.';
-
-/**
- * The Shop's own browser-storage refusals carry their remedy in the message. Any other
- * error that reaches URL creation may hold a raw SDK string, so it gets the generic copy.
- */
-const isBrowserStorageError = (error: unknown): error is AppError =>
-  isAppError(error) && error.category === ErrorCategory.Database && error.code === DatabaseErrorCode.INIT_FAILED;
 
 /** Returns true if the error indicates the auth flow has expired (timeout or SESSION_EXPIRED). */
 const isAuthFlowExpiredError = (error: unknown): boolean => {
@@ -89,9 +78,7 @@ export function useAuthUrl(options: UseAuthUrlOptions = {}): UseAuthUrlReturn {
               variant: 'error',
               description: isWrongEnvironment
                 ? getWrongEnvironmentHomeserverMessage()
-                : isAppError(error)
-                  ? error.message
-                  : 'Sign in failed. Try again.',
+                : signInErrorCopy(error, SIGN_IN_FAILED_MESSAGE),
             });
             if (isMountedRef.current) {
               setUrl('');
@@ -127,7 +114,7 @@ export function useAuthUrl(options: UseAuthUrlOptions = {}): UseAuthUrlReturn {
       if (isAuthFlowCanceled(error)) return;
       toast({
         variant: 'error',
-        description: isBrowserStorageError(error) ? error.message : AUTH_URL_FAILED_MESSAGE,
+        description: signInErrorCopy(error, SIGN_IN_LINK_FAILED_MESSAGE),
       });
     } finally {
       if (isMountedRef.current) {
