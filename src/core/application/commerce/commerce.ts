@@ -17,6 +17,7 @@ import {
   isTransactionalCommerceMode,
   MARKETPLACE_FOLLOWED_SHELF_MAX_SELLER_FETCHES,
 } from '@/config/commerce';
+import { BASE_UNITS_PER_BITCOIN } from '@/config/currencies';
 import { NEXUS_LISTINGS_PER_PAGE } from '@/config/nexus';
 import { readAuthEpoch } from '@/controllers/auth/auth-epoch';
 import {
@@ -157,8 +158,10 @@ import {
   type WatchObservation,
   type WatchProjectionObservation,
 } from '@/pipes/marketplaceWatch/marketplaceWatch.detector';
+import { buildFxRateSnapshot } from '@/pipes/money/money.rates';
 import { MarketplaceMediaService } from '@/services/commerce/marketplace-media';
 import { ExchangerateService } from '@/services/exchangerate/exchangerate';
+import type { BtcRate } from '@/services/exchangerate/exchangerate.types';
 import { CommerceHomeserverService } from '@/services/homeserver/commerce/commerce';
 import { CommercePrivStoreService } from '@/services/homeserver/commerce/priv-store';
 import { HomeserverService, PRIVATE_APP_DATA_PATH } from '@/services/homeserver/homeserver';
@@ -1845,13 +1848,22 @@ export class CommerceApplication {
   }
 
   /**
-   * BTC/USD rate for the indicative "≈" price estimates shown beside listing
-   * prices. Display-only: nothing transactional consumes this rate, and it
-   * throws when unavailable so the UI shows no estimate instead of a stale
-   * or invented number.
+   * The bitcoin price in every listing currency, from one Blocktank snapshot,
+   * for the indicative "≈" price hints shown beside listing prices.
+   * Display-only: nothing transactional consumes these rates (the service
+   * fixes the amount actually charged at checkout), and it throws when
+   * unavailable so the UI shows no hint instead of a stale or invented number.
    */
-  static async getIndicativeBtcRate() {
-    return await ExchangerateService.getIndicativeBtcRate();
+  static async getIndicativeBtcRate(): Promise<BtcRate> {
+    const { fiatPerBtc } = buildFxRateSnapshot(await ExchangerateService.getIndicativeTickers());
+    const btcUsd = Number(fiatPerBtc.USD);
+    if (!Number.isFinite(btcUsd) || btcUsd <= 0) {
+      throw Err.server(ServerErrorCode.INVALID_RESPONSE, 'BTCUSD ticker not found in API response', {
+        service: ErrorService.Exchangerate,
+        operation: 'getIndicativeBtcRate',
+      });
+    }
+    return { btcUsd, satUsd: btcUsd / BASE_UNITS_PER_BITCOIN, lastUpdatedAt: new Date(), fiatPerBtc };
   }
 
   static async isFavorite(ownerPubky: string, listingId: string): Promise<boolean> {

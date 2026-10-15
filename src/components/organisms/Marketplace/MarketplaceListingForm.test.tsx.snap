@@ -1056,6 +1056,36 @@ exports[`MarketplaceListingForm - Snapshots > matches the physical listing form 
                     US dollars (USD)
                   </option>
                   <option
+                    value="EUR"
+                  >
+                    Euros (EUR)
+                  </option>
+                  <option
+                    value="CHF"
+                  >
+                    Swiss francs (CHF)
+                  </option>
+                  <option
+                    value="GBP"
+                  >
+                    British pounds (GBP)
+                  </option>
+                  <option
+                    value="JPY"
+                  >
+                    Japanese yen (JPY)
+                  </option>
+                  <option
+                    value="CAD"
+                  >
+                    Canadian dollars (CAD)
+                  </option>
+                  <option
+                    value="AUD"
+                  >
+                    Australian dollars (AUD)
+                  </option>
+                  <option
                     value="BTC"
                   >
                     Bitcoin (₿)

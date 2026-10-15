@@ -37,12 +37,19 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/atoms/Select/Select';
 import { Typography } from '@/atoms/Typography/Typography';
 import {
+  isListingCurrencyCode,
+  LISTING_CURRENCY_CODES,
+  LISTING_CURRENCY_REGISTRY,
+  type ListingCurrencyCode,
+} from '@/config/currencies';
+import {
   commerceAttributeLabel,
   commerceAttributeSetKeys,
   commerceAttributeValueLabel,
   commerceCategoryChildren,
   resolveCommerceCategory,
 } from '@/config/taxonomy/taxonomy';
+import { useDisplayCurrency } from '@/hooks/useDisplayCurrency/useDisplayCurrency';
 import type { MarketplaceCatalogItem } from '@/hooks/useMarketplaceCatalog/useMarketplaceCatalog.utils';
 import { collectMarketplaceAttributeFacets } from '@/hooks/useMarketplaceCatalog/useMarketplaceCatalog.utils';
 import { cn } from '@/libs/utils/utils';
@@ -102,6 +109,17 @@ export function collectMarketplaceCountryFacets(items: MarketplaceCatalogItem[])
   return [...counts.entries()].sort(([left], [right]) => left.localeCompare(right));
 }
 
+/** The dollar and bitcoin icons stay as they were; every other currency shows its code. */
+function DisplayCurrencyGlyph({ code }: { code: ListingCurrencyCode }) {
+  if (code === 'USD') return <DollarSign aria-hidden="true" className="size-4" />;
+  if (code === 'BTC') return <Bitcoin aria-hidden="true" className="size-4" />;
+  return (
+    <span aria-hidden="true" className="text-xs font-semibold">
+      {code}
+    </span>
+  );
+}
+
 export function MarketplaceFilters({
   resultCount,
   searchControl,
@@ -128,7 +146,7 @@ export function MarketplaceFilters({
   const saleFormat = useCommerceStore((state) => state.saleFormat);
   const countryCode = useCommerceStore((state) => state.countryCode);
   const sort = useCommerceStore((state) => state.sort);
-  const displayCurrency = useMarketplaceDisplayStore((state) => state.displayCurrency);
+  const displayCurrency = useDisplayCurrency();
   const setDisplayCurrency = useMarketplaceDisplayStore((state) => state.setDisplayCurrency);
   const layout = useCommerceStore((state) => state.layout);
   const setCategoryId = useCommerceStore((state) => state.setCategoryId);
@@ -252,27 +270,23 @@ export function MarketplaceFilters({
           </Select>
           <Select
             value={displayCurrency}
-            onValueChange={(value) => setDisplayCurrency(value === 'BTC' ? 'BTC' : 'USD')}
+            onValueChange={(value) => {
+              if (isListingCurrencyCode(value)) setDisplayCurrency(value);
+            }}
           >
             <SelectTrigger
-              aria-label={`Display currency: ${displayCurrency === 'BTC' ? 'Bitcoin' : 'US dollars'}`}
+              aria-label={`Display currency: ${LISTING_CURRENCY_REGISTRY[displayCurrency].name}`}
               className={FILTER_TRIGGER_CLASS}
             >
-              {displayCurrency === 'BTC' ? (
-                <Bitcoin aria-hidden="true" className="size-4" />
-              ) : (
-                <DollarSign aria-hidden="true" className="size-4" />
-              )}
+              <DisplayCurrencyGlyph code={displayCurrency} />
             </SelectTrigger>
             <SelectContent position="popper" align="end" className={FILTER_MENU_CLASS}>
-              <SelectItem className={FILTER_ITEM_CLASS} value="USD">
-                <DollarSign aria-hidden="true" className="size-4" />
-                US dollars
-              </SelectItem>
-              <SelectItem className={FILTER_ITEM_CLASS} value="BTC">
-                <Bitcoin aria-hidden="true" className="size-4" />
-                Bitcoin
-              </SelectItem>
+              {LISTING_CURRENCY_CODES.map((code) => (
+                <SelectItem key={code} className={FILTER_ITEM_CLASS} value={code}>
+                  <DisplayCurrencyGlyph code={code} />
+                  {LISTING_CURRENCY_REGISTRY[code].name}
+                </SelectItem>
+              ))}
             </SelectContent>
           </Select>
         </div>
