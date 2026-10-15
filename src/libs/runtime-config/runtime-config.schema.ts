@@ -380,6 +380,38 @@ function validatePaykitServerApiEnvInput(
   });
 }
 
+/** Production Pubky HTTP relay host. A staging deploy never hands it to a signer. */
+export const PRODUCTION_HTTP_RELAY_HOST = 'httprelay.pubky.app';
+
+/**
+ * A deployed staging container must name its own relay and FX source: the
+ * relay must not be production's, and the FX source has no default, because
+ * the schema default is production Blocktank. Strict (deployed) parse only;
+ * local dev keeps its staging defaults.
+ */
+function validateStagingEndpointsEnvInput(
+  input: { deployEnv?: DeployEnv; defaultHttpRelay?: string; exchangeRateApi?: string },
+  ctx: z.RefinementCtx,
+): void {
+  if (input.deployEnv !== 'staging') return;
+  if (input.exchangeRateApi === undefined) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['exchangeRateApi'],
+      message: `${PUBKY_RUNTIME_ENV_NAMES.deployEnv}=staging requires ${PUBKY_RUNTIME_ENV_NAMES.exchangeRateApi} to be explicitly set; staging never falls back to the production FX source.`,
+    });
+  }
+  if (input.defaultHttpRelay && URL.canParse(input.defaultHttpRelay)) {
+    if (new URL(input.defaultHttpRelay).hostname === PRODUCTION_HTTP_RELAY_HOST) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['defaultHttpRelay'],
+        message: `${PUBKY_RUNTIME_ENV_NAMES.deployEnv}=staging must not use the production HTTP relay (${PRODUCTION_HTTP_RELAY_HOST}) in ${PUBKY_RUNTIME_ENV_NAMES.defaultHttpRelay}.`,
+      });
+    }
+  }
+}
+
 /**
  * Defaults for the optional Sentry sample rates (applied by `runtimeConfigValueSchema`, which
  * every parse path runs through, so the resolved config always carries concrete numbers even
@@ -727,6 +759,7 @@ export const runtimeEnvInputSchema = z
   .superRefine(validateLocksPaykitEnvInput)
   .superRefine(validatePaykitServerApiEnvInput)
   .superRefine(validateAuctionDurationsEnvInput)
+  .superRefine(validateStagingEndpointsEnvInput)
   .pipe(runtimeConfigValueSchema);
 
 /**
