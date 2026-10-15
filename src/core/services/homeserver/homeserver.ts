@@ -1162,19 +1162,23 @@ export class HomeserverService {
           const pubkySdk = this.getPubkySdk();
           return isHttpUrl(url) ? pubkySdk.client.fetch(url) : pubkySdk.publicStorage.get(url as Address);
         };
+    const boundedLoad = () => boundedHomeserverIo(load, 'getJsonIfFound');
     let response: Response | null;
     if (tolerateUnreachable) {
       try {
-        response = await getResponseOrNullWhenMissing(load, contextUrl, 'getJsonIfFound');
+        response = await getResponseOrNullWhenMissing(boundedLoad, contextUrl, 'getJsonIfFound');
       } catch (error) {
         Logger.warn('Homeserver record unreachable; treating it as absent for now', { url: contextUrl, error });
         return { found: false, unreachable: true };
       }
     } else {
-      response = await getResponseOrNullWhenMissing(load, contextUrl, 'getJsonIfFound');
+      response = await getResponseOrNullWhenMissing(boundedLoad, contextUrl, 'getJsonIfFound');
     }
     if (response === null) return { found: false };
-    if (maxBytes === undefined) return { found: true, json: await parseResponseOrUndefined<T>({ response }) };
+    if (maxBytes === undefined) {
+      const json = await boundedHomeserverIo(() => parseResponseOrUndefined<T>({ response }), 'getJsonIfFoundBody');
+      return { found: true, json };
+    }
     // Another user's file: refuse anything over the cap before reading it, so a
     // peer cannot make this browser download and parse an arbitrarily large body.
     const declared = Number(response.headers.get('content-length') ?? Number.NaN);
@@ -1182,7 +1186,10 @@ export class HomeserverService {
       Logger.warn('Homeserver record larger than the cap; skipped', { url: contextUrl, declared, maxBytes });
       return { found: false, tooLarge: true };
     }
-    const bytes = await readResponseBytes(response, maxBytes, contextUrl);
+    const bytes = await boundedHomeserverIo(
+      () => readResponseBytes(response, maxBytes, contextUrl),
+      'getJsonIfFoundBody',
+    );
     return { found: true, json: JSON.parse(new TextDecoder().decode(bytes)) as T };
   }
 

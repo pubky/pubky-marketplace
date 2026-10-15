@@ -955,7 +955,7 @@ describe('HomeserverService', () => {
         expect(persist).not.toHaveBeenCalled();
       });
 
-      it.each(['request', 'body', 'list', 'logout'] as const)(
+      it.each(['request', 'body', 'getJsonIfFound', 'getJsonIfFoundBody', 'list', 'logout'] as const)(
         'settles a stalled %s instead of holding auth forever',
         async (operation) => {
           vi.useFakeTimers();
@@ -970,14 +970,17 @@ describe('HomeserverService', () => {
             call = HomeserverService.logout({ session: mockState.currentSession });
           } else {
             mockState.sessionStorageGet.mockReturnValue(
-              operation === 'request'
+              operation === 'request' || operation === 'getJsonIfFound'
                 ? stalled
                 : Promise.resolve({
                     ok: true,
                     text: () => stalled,
                   }),
             );
-            call = HomeserverService.request({ method: HttpMethod.GET, url: 'pubky://user/pub/last_read' });
+            call =
+              operation === 'getJsonIfFound' || operation === 'getJsonIfFoundBody'
+                ? HomeserverService.getJsonIfFound({ url: 'pubky://user/pub/last_read' })
+                : HomeserverService.request({ method: HttpMethod.GET, url: 'pubky://user/pub/last_read' });
           }
           let result: unknown;
           void call.catch((error: unknown) => {
