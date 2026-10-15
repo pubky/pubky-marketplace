@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ChatApplication } from '@/application/chat/chat';
 import { CommerceApplication } from '@/application/commerce/commerce';
 import { UserApplication } from '@/application/user/user';
+import { CHAT_PING_MAX_HANDLING_ATTEMPTS } from '@/config/chat';
 import { ChatController } from '@/controllers/chat/chat';
 import { useAuthStore } from '@/stores/auth/auth.store';
 
@@ -60,5 +61,50 @@ describe('ChatController.commitSendMessage follow-on-intent', () => {
     await ChatController.commitSendMessage({ peerPubky: BUYER, body: 'Hello' });
     await settle();
     expect(UserApplication.ensureSellerFollow).not.toHaveBeenCalled();
+  });
+});
+
+describe('ChatController.handleInboxPings', () => {
+  const PEER = 'p'.repeat(52);
+  const folder = 'f'.repeat(32);
+  const payload = JSON.stringify({ v: 0, t: 'chat', folder, file: '1700000000000-aaaaaaaa.json' });
+  const ping = (slot: string, body: string, revision = 'r1') => ({
+    sender: PEER,
+    slot,
+    revision,
+    received_at: '',
+    expires_at: '',
+    payload: body,
+  });
+
+  beforeEach(() => {
+    useAuthStore.setState({ currentUserPubky: 'm'.repeat(52) });
+  });
+
+  afterEach(() => {
+    useAuthStore.setState({ currentUserPubky: null });
+    vi.restoreAllMocks();
+  });
+
+  it("acks handled chat pings, drops unreadable ones, and never touches another app's slot", async () => {
+    const handle = vi.spyOn(ChatApplication, 'handlePing').mockResolvedValue();
+    const ours = ping(`chat-${folder}`, payload);
+    const junk = ping(`chat-${folder}`, 'not json', 'r2');
+    const foreign = ping(`app-${folder}`, payload, 'r3');
+
+    const acked = await ChatController.handleInboxPings([foreign, junk, ours]);
+
+    expect(handle).toHaveBeenCalledTimes(1);
+    expect(acked.map((ref) => ref.revision).sort()).toEqual(['r1', 'r2']);
+  });
+
+  it('leaves a failing chat ping on the inbox, then drops it after repeated failures', async () => {
+    vi.spyOn(ChatApplication, 'handlePing').mockRejectedValue(new Error('peer homeserver down'));
+    const failing = ping(`chat-${folder}`, payload, 'r9');
+    const outcomes: number[] = [];
+    for (let attempt = 1; attempt <= CHAT_PING_MAX_HANDLING_ATTEMPTS; attempt += 1) {
+      outcomes.push((await ChatController.handleInboxPings([failing])).length);
+    }
+    expect(outcomes).toEqual([...Array.from({ length: CHAT_PING_MAX_HANDLING_ATTEMPTS - 1 }, () => 0), 1]);
   });
 });

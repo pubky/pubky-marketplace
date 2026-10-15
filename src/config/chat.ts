@@ -25,6 +25,8 @@ export const CHAT_INBOX_PAGE = 50;
 export const CHAT_INBOX_RETRY_MS = 5 * 60_000;
 /** Pause after a poll that returned only pings we do not handle (another app's, or failed), so we do not spin. */
 export const CHAT_INBOX_FOREIGN_PAUSE_MS = 30_000;
+/** A chat ping whose handling keeps failing is dropped after this many attempts, so it cannot block the poll window. */
+export const CHAT_PING_MAX_HANDLING_ATTEMPTS = 3;
 
 /** Homeserver list page when syncing a conversation folder. */
 export const CHAT_LIST_PAGE = 200;

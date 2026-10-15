@@ -2,6 +2,8 @@ import { ChatApplication } from '@/application/chat/chat';
 import type { ChatOpenResult, ChatSyncOutcome, ChatSyncReason } from '@/application/chat/chat.types';
 import { CommerceApplication } from '@/application/commerce/commerce';
 import { UserApplication } from '@/application/user/user';
+import { CHAT_PING_MAX_HANDLING_ATTEMPTS } from '@/config/chat';
+import { isChatPingSlot } from '@/libs/chat/paths';
 import { isChatPing } from '@/libs/chat/schemas';
 import { isAppError } from '@/libs/error/error';
 import { ValidationErrorCode } from '@/libs/error/error.codes';
@@ -202,23 +204,48 @@ export class ChatController {
     return await ChatApplication.waitForPings(this.me(), signal);
   }
 
+  /** Failed handling attempts per ping (sender, slot, revision), so a ping that keeps failing is dropped. */
+  private static pingFailures = new Map<string, number>();
+
   /**
-   * Handles the pings that are ours and returns those, so the caller acks
-   * only them: an ack applies to the whole account, so a ping in another
-   * app's slot, or one whose handling failed, is left on the inbox.
+   * Handles the pings in our slot family and returns the ones to ack. The
+   * inbox returns the oldest pending pings first and an ack applies to the
+   * whole account, so: another app's slot is never touched; a chat slot with
+   * an unreadable payload is acked (dropped) at once; a chat ping whose
+   * handling throws is left for the next poll and dropped after
+   * CHAT_PING_MAX_HANDLING_ATTEMPTS, so neither can sit at the front of the
+   * poll window forever and hide newer pings.
    */
   static async handleInboxPings(pings: InboxPing[]): Promise<InboxPingRef[]> {
     const me = this.me();
     const handled: InboxPingRef[] = [];
     for (const ping of pings) {
-      if (!isChatPing(ping)) continue;
+      if (!isChatPingSlot(ping.slot)) continue;
+      const ref: InboxPingRef = { sender: ping.sender, slot: ping.slot, revision: ping.revision };
+      if (!isChatPing(ping)) {
+        Logger.warn('Chat ping with an unreadable payload dropped', { slot: ping.slot });
+        handled.push(ref);
+        continue;
+      }
+      const key = `${ping.sender}|${ping.slot}|${ping.revision}`;
       try {
         await ChatApplication.handlePing(me, ping);
-        handled.push({ sender: ping.sender, slot: ping.slot, revision: ping.revision });
+        this.pingFailures.delete(key);
+        handled.push(ref);
       } catch (error) {
-        Logger.warn('Chat ping handling failed; left on the inbox for the next poll', { error });
+        const attempts = (this.pingFailures.get(key) ?? 0) + 1;
+        if (attempts >= CHAT_PING_MAX_HANDLING_ATTEMPTS) {
+          this.pingFailures.delete(key);
+          handled.push(ref);
+          Logger.warn('Chat ping dropped after repeated handling failures', { attempts, error });
+        } else {
+          this.pingFailures.set(key, attempts);
+          Logger.warn('Chat ping handling failed; left on the inbox for the next poll', { attempts, error });
+        }
       }
     }
+    // Bounded: entries leave on success or drop; a flood of distinct failing pings must not grow it forever.
+    if (this.pingFailures.size > 1_000) this.pingFailures.clear();
     return handled;
   }
 

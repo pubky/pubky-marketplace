@@ -339,6 +339,15 @@ has never seen). A ping is never the message.
   every device of the account. Failures back off from 1 s to 60 s; past 30 s the store reports the inbox as
   `unavailable`. When the inbox is `disabled` the loop re-checks every 5 min.
 
+**What is acked.** The inbox returns the oldest pending pings first (up to the page size) and an ack
+applies to the whole account, so the client is careful about what it removes: a ping in another app's
+slot family is never handled or acked; a `chat-` ping whose payload does not parse is acked at once
+(dropped); a `chat-` ping whose handling throws is left for the next poll and dropped after
+`CHAT_PING_MAX_HANDLING_ATTEMPTS`. A poll that returned nothing of ours pauses
+`CHAT_INBOX_FOREIGN_PAUSE_MS` before polling again. Pings the Shop cannot ack (another app's) still
+occupy the front of the poll window, so a deployment shared with another app needs either a separate
+inbox for the Shop or server-side paging past foreign slots; see Known gaps.
+
 ## Tabs, locks and the leader
 
 `src/libs/chat/web-locks.ts`. Lock names are per account:
@@ -518,6 +527,11 @@ What the design protects, and what it does not. Threat IDs refer to
   messages (MSG-02): the listing/order chip is a pointer, not a claim about state.
 
 ## Known gaps
+
+- **Shared inbox with another app.** The client acks only its own pings. If another app's pings stay
+  pending in the same account inbox, they fill the oldest-first poll window and newer chat pings never
+  surface. Until the inbox can page past foreign slots, the Shop needs its own inbox deployment and
+  audience.
 
 - **Stranger first contact needs the inbox.** Without `PUBKY_RUNTIME_INBOX_URL`, a message from someone the recipient has never talked to is found only when the recipient
   opens that thread, when order counterparty discovery runs (transactional commerce modes), or when another
