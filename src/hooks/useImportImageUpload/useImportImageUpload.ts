@@ -29,6 +29,8 @@ export type TImportImageRunParams = {
   onProgress?: (progress: TImportImageProgress) => void;
   /** Called every second with the seconds left while the route asks the client to wait, and with `null` when the wait is over. */
   onWait?: (secondsLeft: number | null) => void;
+  /** Called with each distinct photo's outcome as soon as it is known, before the run ends. */
+  onResult?: (result: TImportImageResult) => void;
 };
 
 export type TImportImageRunResult = {
@@ -56,6 +58,7 @@ export async function uploadImportImages({
   signal,
   onProgress,
   onWait,
+  onResult,
 }: TImportImageRunParams): Promise<TImportImageRunResult> {
   const trimmed = urls.map((url) => url.trim());
   const unique = [...new Set(trimmed)];
@@ -70,6 +73,7 @@ export async function uploadImportImages({
   for (const [index, url] of unique.entries()) {
     const outcome = await uploadOne(url, index);
     outcomes.set(url, outcome);
+    onResult?.(outcome);
     done += 1;
     report(url);
   }

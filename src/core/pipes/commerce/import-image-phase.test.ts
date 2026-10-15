@@ -19,6 +19,8 @@ import {
   MEDIA_JSON_FIELD,
   normalizeImageUrl,
   outcomesFromResults,
+  partialOutcome,
+  PHOTOS_PARTIAL_FIELD,
   planImageBatches,
   planImageSync,
   rowHoldsMedia,
@@ -493,4 +495,65 @@ describe('photo batches', () => {
     expect(isDeferredImageResult({ status: 'uploaded' })).toBe(false);
     expect(isDeferredImageResult({ status: 'failed' })).toBe(false);
   });
+});
+
+describe('photos loaded for a listing that is not finished', () => {
+  const A = 'https://a.example.com/a.jpg';
+  const B = 'https://a.example.com/b.jpg';
+  const C = 'https://a.example.com/c.jpg';
+  const target: ImportImageTarget = {
+    listingId: 'one',
+    images: [A, B, C].map((url) => ({ url, alt: 'One' })),
+  };
+
+  it('is what loaded so far, marked partial, with no summary of changes', () => {
+    const outcome = partialOutcome(target, [
+      uploaded(A),
+      { url: B, status: 'failed', reason: 'budget_exceeded' },
+      uploaded(C),
+    ]);
+    expect(outcome).toMatchObject({ listingId: 'one', partial: true });
+    expect(outcome?.media).toHaveLength(2);
+    expect(outcome?.results.map((entry) => [entry.url, entry.status])).toEqual([
+      [A, 'uploaded'],
+      [C, 'uploaded'],
+    ]);
+    expect(outcome?.sync).toBeUndefined();
+  });
+
+  it('is nothing when no photo of the listing has loaded', () => {
+    expect(partialOutcome(target, [])).toBeNull();
+    expect(partialOutcome(target, [{ url: A, status: 'failed', reason: 'not_image' }])).toBeNull();
+  });
+
+  it('keeps the media a stored listing already has, ahead of the new ones', () => {
+    const stored = { id: 'stored-1', importSourceHash: sourceUrlHash('https://old.example.com/x.jpg') };
+    const outcome = partialOutcome({ ...target, keptMedia: [stored] }, [uploaded(A)]);
+    expect(outcome?.media).toHaveLength(2);
+    expect(outcome?.media[0]).toEqual(stored);
+  });
+
+  it('writes a flag a resume can read: the row holds media to reuse but is not taken for finished', () => {
+    const partial = partialOutcome(target, [uploaded(A)])!;
+    const written = extraFieldsWithImages({}, partial);
+    expect(written[PHOTOS_PARTIAL_FIELD]).toBe('1');
+    expect(written[MEDIA_JSON_FIELD]).toBeDefined();
+    expect(rowHoldsMedia({ extraFields: written })).toBe(false);
+    expect(sourceHashesOf(written)).toEqual([sourceUrlHash(A)]);
+  });
+
+  it('is replaced by the final outcome, which clears the flag and makes the row finished', () => {
+    const partial = extraFieldsWithImages({}, partialOutcome(target, [uploaded(A)])!);
+    const final = outcomesFromResults([target], [uploaded(A), uploaded(B), uploaded(C)])[0]!;
+    const written = extraFieldsWithImages(partial, final);
+    expect(written[PHOTOS_PARTIAL_FIELD]).toBeUndefined();
+    expect(rowHoldsMedia({ extraFields: written })).toBe(true);
+    expect(sourceHashesOf(written)).toHaveLength(3);
+  });
+
+  function sourceHashesOf(fields: Record<string, string>): unknown[] {
+    return (JSON.parse(fields[MEDIA_JSON_FIELD] ?? '[]') as Record<string, unknown>[]).map(
+      (media) => media[IMPORT_SOURCE_HASH_KEY],
+    );
+  }
 });

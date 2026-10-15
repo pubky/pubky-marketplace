@@ -80,6 +80,8 @@ type ImportDatabase = Pick<
   'commerce_import_manifests' | 'commerce_import_rows' | 'commerce_import_mappings' | 'transaction'
 >;
 
+export type StoredImportSummary = { readonly manifestId: string; readonly createdAt: number };
+
 /** Host-side ManifestStore plus payload persistence. No SDK types. */
 export type InventoryManifestStore = {
   create(manifest: HostImportManifest): Promise<void>;
@@ -93,6 +95,10 @@ export type InventoryManifestStore = {
   getPayloadJson(manifestId: string, rowIdentity: string): Promise<string | null>;
   listProgress(manifestId: string): Promise<readonly CommerceImportRowModelSchema[]>;
   pruneExpired(now?: number): Promise<void>;
+  /** The seller's stored imports, newest first: what a resume can offer after the dialog was closed or the page reloaded. */
+  listManifests(): Promise<readonly StoredImportSummary[]>;
+  /** Removes an import and its rows, for a seller who discards an unfinished import. */
+  deleteManifest(manifestId: string): Promise<void>;
   getMapping(): Promise<Record<string, string> | null>;
   putMapping(mapping: Record<string, string>): Promise<void>;
 };
@@ -236,6 +242,27 @@ export class DexieManifestStore implements InventoryManifestStore {
           await this.database.commerce_import_rows.where('manifestId').equals(header.id).delete();
           await this.database.commerce_import_manifests.delete(header.id);
         }
+      },
+    );
+  }
+
+  async listManifests(): Promise<readonly StoredImportSummary[]> {
+    const headers = await this.database.commerce_import_manifests.where('seller_id').equals(this.sellerId).toArray();
+    return headers
+      .map((header) => ({ manifestId: header.id, createdAt: header.created_at }))
+      .sort((left, right) => right.createdAt - left.createdAt);
+  }
+
+  async deleteManifest(manifestId: string): Promise<void> {
+    await this.database.transaction(
+      'rw',
+      this.database.commerce_import_manifests,
+      this.database.commerce_import_rows,
+      async () => {
+        const header = await this.database.commerce_import_manifests.get(manifestId);
+        if (!header || header.seller_id !== this.sellerId) return;
+        await this.database.commerce_import_rows.where('manifestId').equals(manifestId).delete();
+        await this.database.commerce_import_manifests.delete(manifestId);
       },
     );
   }

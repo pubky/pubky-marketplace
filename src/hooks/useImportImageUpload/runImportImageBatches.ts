@@ -8,11 +8,21 @@ import {
   type ListingImageOutcome,
   normalizeImageUrl,
   outcomesFromResults,
+  partialOutcome,
   planImageBatches,
   uniqueImageUrls,
 } from '@/pipes/commerce/import-image-phase';
 import type { PresetJson } from '@/pipes/commerce/import-preset-rows';
-import { uploadImportImages } from './useImportImageUpload';
+import { type TImportImageResult, uploadImportImages } from './useImportImageUpload';
+
+/**
+ * Finished listings are written to their rows in groups of this many as a batch
+ * goes, and when a batch ends or the run is cancelled the photos already loaded for
+ * a listing that is not finished are written too (as partial), so closing the
+ * dialog loses nothing and losing the page costs only the photos of the one
+ * listing under way.
+ */
+const ATTACH_EVERY_LISTINGS = 1;
 
 export type TImageBatchProgress = {
   /** Distinct photos finished (loaded, or failed for their own reason) so far. */
@@ -92,6 +102,7 @@ export async function runImportImageBatches({
   let leftOver: ImportImageTarget[] = [];
   let passSettled = 0;
   let listingsDone = 0;
+  const partialWritten = new Map<string, number>();
 
   const report = (extra = 0) =>
     onProgress?.({ done: Math.min(total, settled.size + extra), total, batch: batchNumber, batches });
@@ -109,6 +120,45 @@ export async function runImportImageBatches({
     report();
 
     const urls = uniqueImageUrls(batch).filter((url) => !settled.has(url));
+    const queued = new Set<ImportImageTarget>();
+    const ready: ImportImageTarget[] = [];
+    const markReady = () => {
+      for (const target of batch) {
+        if (queued.has(target)) continue;
+        if (target.images.every((image) => settled.has(normalizeImageUrl(image.url)))) {
+          queued.add(target);
+          ready.push(target);
+        }
+      }
+    };
+    const flush = async () => {
+      const group = ready.splice(0);
+      if (group.length === 0) return;
+      await attach(outcomesFromResults(group, [...settled.values()]));
+      listingsDone += group.length;
+      passSettled += group.length;
+    };
+    let flushing: Promise<void> = Promise.resolve();
+    let flushError: unknown;
+    const flushLater = () => {
+      flushing = flushing.then(flush).catch((error: unknown) => {
+        flushError ??= error;
+      });
+    };
+    const settle = (entry: TImportImageResult) => {
+      const url = normalizeImageUrl(entry.url);
+      const mapped: ImportImageResult = {
+        url,
+        status: entry.status,
+        ...(entry.reason ? { reason: entry.reason } : {}),
+        ...(entry.media ? { media: JSON.parse(JSON.stringify(entry.media)) as PresetJson } : {}),
+      };
+      if (mapped.reason === 'cancelled' || isDeferredImageResult(mapped) || settled.has(url)) return;
+      settled.set(url, mapped);
+      passSettled += 1;
+    };
+
+    markReady();
     if (urls.length > 0) {
       const outcome = await upload({
         ownerPubky,
@@ -117,33 +167,30 @@ export async function runImportImageBatches({
         signal,
         onWait,
         onProgress: ({ done }) => report(done),
+        onResult: (entry) => {
+          settle(entry);
+          markReady();
+          if (ready.length >= ATTACH_EVERY_LISTINGS) flushLater();
+        },
       });
-      if (signal?.aborted) return result('cancelled');
-      for (const entry of outcome.results) {
-        const url = normalizeImageUrl(entry.url);
-        const mapped: ImportImageResult = {
-          url,
-          status: entry.status,
-          ...(entry.reason ? { reason: entry.reason } : {}),
-          ...(entry.media ? { media: JSON.parse(JSON.stringify(entry.media)) as PresetJson } : {}),
-        };
-        if (isDeferredImageResult(mapped) || settled.has(url)) continue;
-        settled.set(url, mapped);
-        passSettled += 1;
+      for (const entry of outcome.results) settle(entry);
+    }
+    markReady();
+    flushLater();
+    await flushing;
+    if (flushError) throw flushError;
+    const partial: ListingImageOutcome[] = [];
+    for (const target of batch) {
+      if (queued.has(target)) continue;
+      leftOver.push(target);
+      const outcome = partialOutcome(target, [...settled.values()]);
+      if (outcome && partialWritten.get(target.listingId) !== outcome.media.length) {
+        partialWritten.set(target.listingId, outcome.media.length);
+        partial.push(outcome);
       }
     }
-
-    const ready: ImportImageTarget[] = [];
-    for (const target of batch) {
-      const finished = target.images.every((image) => settled.has(normalizeImageUrl(image.url)));
-      if (finished) ready.push(target);
-      else leftOver.push(target);
-    }
-    if (ready.length > 0) {
-      await attach(outcomesFromResults(ready, [...settled.values()]));
-      listingsDone += ready.length;
-      passSettled += ready.length;
-    }
+    if (partial.length > 0) await attach(partial);
+    if (signal?.aborted) return result('cancelled');
     report();
 
     if (queue.length === 0 && leftOver.length > 0) {

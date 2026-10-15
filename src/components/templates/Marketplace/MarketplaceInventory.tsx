@@ -317,6 +317,9 @@ export function MarketplaceInventory() {
             batchInfo={importer.batchInfo}
             waitSeconds={importer.waitSeconds}
             photoPlan={importer.photoPlan}
+            unfinished={importer.unfinished}
+            onResumeUnfinished={() => void importer.resumeUnfinished()}
+            onDiscardUnfinished={() => void importer.discardUnfinished()}
             fetchPhase={importer.fetchPhase}
             store={{ control: importer.storeForm.control, onSubmit: () => void importer.submitStoreUrl() }}
             busy={importer.busy}

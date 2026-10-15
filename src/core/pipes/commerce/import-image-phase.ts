@@ -18,6 +18,13 @@ export const MEDIA_JSON_FIELD = 'media_json';
 /** Extra field carrying the per-image results, so the result CSV survives a reload. */
 export const IMAGE_RESULTS_JSON_FIELD = 'image_results_json';
 
+/**
+ * Set while a listing has some of its photos loaded and not all: the media it
+ * holds are kept so they are not loaded again, but the listing still needs the
+ * rest, so a resume does not take it for finished.
+ */
+export const PHOTOS_PARTIAL_FIELD = 'photos_partial';
+
 /** Extra field carrying how a re-import changed a stored listing's photos, for the result CSV. */
 export const IMAGE_SYNC_JSON_FIELD = 'image_sync_json';
 /**
@@ -60,6 +67,8 @@ export type ListingImageOutcome = {
   readonly media: readonly PresetJson[];
   readonly results: readonly TImportImageResultRow[];
   readonly sync?: ImageSync;
+  /** Some of the listing's photos are loaded and the rest are still to come. */
+  readonly partial?: boolean;
 };
 
 export type ImportImageResult = TImportImageResultRow & { readonly media?: PresetJson };
@@ -179,6 +188,7 @@ export function mediaOf(row: PayloadRow | null): PresetJson[] {
 
 /** A row already holding media records (uploaded earlier, or supplied by the file) is not fetched again. */
 export function rowHoldsMedia(row: PayloadRow): boolean {
+  if (row.extraFields?.[PHOTOS_PARTIAL_FIELD] === '1') return false;
   const fromExtra = parseJson(row.extraFields?.[MEDIA_JSON_FIELD]);
   if (Array.isArray(fromExtra) && fromExtra.length > 0) return true;
   return Array.isArray(row.media) && row.media.length > 0;
@@ -300,6 +310,26 @@ export function outcomesFromResults(
   });
 }
 
+/**
+ * What a listing has so far when only some of its photos are settled: the
+ * photos that loaded, marked partial, or `null` when none has. Written when a
+ * run stops so the next one reuses them instead of loading them again.
+ */
+export function partialOutcome(
+  target: ImportImageTarget,
+  results: readonly ImportImageResult[],
+): ListingImageOutcome | null {
+  const byUrl = new Set(
+    results.filter((result) => result.status === 'uploaded').map((result) => normalizeImageUrl(result.url)),
+  );
+  const images = target.images.filter((image) => byUrl.has(normalizeImageUrl(image.url)));
+  if (images.length === 0) return null;
+  const outcome = outcomesFromResults([{ ...target, images, skipped: undefined, sync: undefined }], results)[0];
+  if (!outcome) return null;
+  const { sync: _sync, ...rest } = outcome;
+  return { ...rest, partial: true };
+}
+
 /** The row's extra fields after the photo phase: uploaded media in `media_json`, every result in `image_results_json`. */
 export function extraFieldsWithImages(
   extraFields: Readonly<Record<string, string>>,
@@ -310,6 +340,8 @@ export function extraFieldsWithImages(
   else delete next[MEDIA_JSON_FIELD];
   next[IMAGE_RESULTS_JSON_FIELD] = JSON.stringify(outcome.results);
   if (outcome.sync) next[IMAGE_SYNC_JSON_FIELD] = JSON.stringify(outcome.sync);
+  if (outcome.partial) next[PHOTOS_PARTIAL_FIELD] = '1';
+  else delete next[PHOTOS_PARTIAL_FIELD];
   return next;
 }
 

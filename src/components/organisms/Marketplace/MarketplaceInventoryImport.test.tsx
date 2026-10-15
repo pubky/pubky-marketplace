@@ -312,6 +312,66 @@ describe('MarketplaceInventoryImport progress', () => {
   });
 });
 
+describe('MarketplaceInventoryImport resuming an unfinished import', () => {
+  const unfinished = { listings: { done: 120, total: 279 }, photosLeft: 605 };
+
+  it('offers to resume, with the listings done and the photos left, and a way to discard', async () => {
+    const user = userEvent.setup();
+    const onResume = vi.fn();
+    const onDiscard = vi.fn();
+    render(
+      <MarketplaceInventoryImport
+        step={1}
+        scene="upload"
+        unfinished={unfinished}
+        onResumeUnfinished={onResume}
+        onDiscardUnfinished={onDiscard}
+      />,
+    );
+    const banner = screen.getByTestId('inventory-import-unfinished');
+    expect(banner).toHaveTextContent('Resume your unfinished import (120 of 279 listings, 605 photos left)');
+    expect(banner).toHaveTextContent('It carries on where it stopped. Photos already loaded are not loaded again.');
+    await user.click(within(banner).getByRole('button', { name: 'Resume' }));
+    await user.click(within(banner).getByRole('button', { name: 'Discard' }));
+    expect(onResume).toHaveBeenCalledTimes(1);
+    expect(onDiscard).toHaveBeenCalledTimes(1);
+    expect(screen.getByLabelText('Import file')).toBeInTheDocument();
+  });
+
+  it('says one photo in the singular, and leaves the photos out when none are left', () => {
+    const { rerender } = render(
+      <MarketplaceInventoryImport step={1} scene="upload" unfinished={{ ...unfinished, photosLeft: 1 }} />,
+    );
+    expect(screen.getByTestId('inventory-import-unfinished')).toHaveTextContent('(120 of 279 listings, 1 photo left)');
+    rerender(<MarketplaceInventoryImport step={1} scene="upload" unfinished={{ ...unfinished, photosLeft: 0 }} />);
+    expect(screen.getByTestId('inventory-import-unfinished')).toHaveTextContent(
+      'Resume your unfinished import (120 of 279 listings)',
+    );
+    expect(screen.getByTestId('inventory-import-unfinished')).not.toHaveTextContent('left');
+  });
+
+  it('is shown on the upload step only, and not at all when there is nothing to resume', () => {
+    const { rerender } = render(<MarketplaceInventoryImport step={1} scene="upload" />);
+    expect(screen.queryByTestId('inventory-import-unfinished')).not.toBeInTheDocument();
+    rerender(
+      <MarketplaceInventoryImport
+        step={4}
+        scene="dry-run"
+        counts={{ create: 1, update: 0, end: 0, unchanged: 0, conflict: 0 }}
+        unfinished={unfinished}
+      />,
+    );
+    expect(screen.queryByTestId('inventory-import-unfinished')).not.toBeInTheDocument();
+  });
+
+  it('cannot be resumed or discarded twice while something is running', () => {
+    render(<MarketplaceInventoryImport step={1} scene="upload" unfinished={unfinished} busy />);
+    const banner = screen.getByTestId('inventory-import-unfinished');
+    expect(within(banner).getByRole('button', { name: 'Resume' })).toBeDisabled();
+    expect(within(banner).getByRole('button', { name: 'Discard' })).toBeDisabled();
+  });
+});
+
 describe('MarketplaceInventoryImport photos in batches', () => {
   const counts = { create: 145, update: 0, end: 0, unchanged: 0, conflict: 0 };
 
@@ -322,7 +382,10 @@ describe('MarketplaceInventoryImport photos in batches', () => {
     const plan = screen.getByTestId('inventory-import-photo-plan');
     expect(plan).toHaveTextContent('725 photos will be loaded when you publish, in 2 batches.');
     expect(plan).toHaveTextContent('carries on by itself');
-    expect(plan).toHaveTextContent('Keep this window open.');
+    expect(plan).toHaveTextContent(
+      'If its allowance (150 MB every 10 minutes) runs out, it pauses for up to 10 minutes and continues.',
+    );
+    expect(plan).toHaveTextContent('If you close this window, the next time you open the import you can resume it.');
     rerender(
       <MarketplaceInventoryImport step={4} scene="dry-run" counts={counts} photoPlan={{ count: 40, batches: 1 }} />,
     );

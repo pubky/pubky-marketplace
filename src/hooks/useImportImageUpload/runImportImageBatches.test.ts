@@ -266,7 +266,7 @@ describe('runImportImageBatches', () => {
     expect([...run.attached.keys()]).toEqual(['kept', 'l1']);
   });
 
-  it('stops as cancelled without writing the batch in flight when the caller aborts', async () => {
+  it('stops as cancelled, after writing what had loaded, when the caller aborts', async () => {
     const controller = new AbortController();
     const run = host(listings(2, 1));
     const upload: Upload = async (params) => {
@@ -281,7 +281,131 @@ describe('runImportImageBatches', () => {
       signal: controller.signal,
     });
     expect(result.status).toBe('cancelled');
-    expect(run.attached.size).toBe(0);
+    expect([...run.attached.keys()]).toEqual(['l0', 'l1']);
+  });
+});
+
+describe('runImportImageBatches writing as it goes', () => {
+  /** A host whose rows keep what was attached, with a partial listing still counting as not done. */
+  function persisting(all: ImportImageTarget[]) {
+    const rows = new Map<string, ListingImageOutcome>();
+    const log: string[] = [];
+    const uploads: string[][] = [];
+    return {
+      rows,
+      log,
+      uploads,
+      loadTargets: async () => all.filter((entry) => !rows.has(entry.listingId) || rows.get(entry.listingId)?.partial),
+      knownMedia: async (urls: string[]) => {
+        const known = new Map<string, PresetJson>();
+        for (const outcome of rows.values()) {
+          const loaded = outcome.results.filter((entry) => entry.status === 'uploaded');
+          loaded.forEach((entry, index) => {
+            if (urls.includes(entry.url)) known.set(entry.url, outcome.media[index] as PresetJson);
+          });
+        }
+        return known;
+      },
+      attach: async (outcomes: ListingImageOutcome[]) => {
+        for (const outcome of outcomes) {
+          rows.set(outcome.listingId, outcome);
+          log.push(`${outcome.partial ? 'partial' : 'done'} ${outcome.listingId}`);
+        }
+      },
+      /** Answers one photo at a time through onResult, as the real run does. */
+      upload: (stopAfter?: { photos: number; controller: AbortController }): Upload =>
+        vi.fn(async ({ urls, onResult, signal }: TImportImageRunParams) => {
+          uploads.push([...urls]);
+          const results: TImportImageResult[] = [];
+          for (const [index, url] of urls.entries()) {
+            const entry = signal?.aborted ? failed(url, 'cancelled') : uploaded(url);
+            results.push(entry);
+            if (entry.status === 'uploaded') onResult?.(entry);
+            if (stopAfter && index + 1 === stopAfter.photos) stopAfter.controller.abort();
+          }
+          return { results, fetchedBytes: 0 };
+        }),
+    };
+  }
+
+  it('writes each listing as soon as its last photo has loaded, not when the batch ends', async () => {
+    const run = persisting(listings(3, 2));
+    const events: string[] = [];
+    const upload: Upload = vi.fn(async ({ urls, onResult }: TImportImageRunParams) => {
+      for (const url of urls) {
+        onResult?.(uploaded(url));
+        await Promise.resolve();
+        await Promise.resolve();
+        events.push(`loaded ${url.split('.example.com/')[1]} after ${run.log.join(',') || 'nothing written'}`);
+      }
+      return { results: urls.map((url) => uploaded(url)), fetchedBytes: 0 };
+    });
+    await runImportImageBatches({ ownerPubky: OWNER, ...run, upload });
+    expect(events).toEqual([
+      'loaded 0/0.jpg after nothing written',
+      'loaded 0/1.jpg after done l0',
+      'loaded 1/0.jpg after done l0',
+      'loaded 1/1.jpg after done l0,done l1',
+      'loaded 2/0.jpg after done l0,done l1',
+      'loaded 2/1.jpg after done l0,done l1,done l2',
+    ]);
+  });
+
+  it('on a close in the middle of a listing, writes the finished listings and the photos of the one under way as partial', async () => {
+    const all = listings(3, 3);
+    const run = persisting(all);
+    const controller = new AbortController();
+    const result = await runImportImageBatches({
+      ownerPubky: OWNER,
+      ...run,
+      upload: run.upload({ photos: 5, controller }),
+      signal: controller.signal,
+    });
+    expect(result.status).toBe('cancelled');
+    expect(run.log).toEqual(['done l0', 'partial l1']);
+    expect(run.rows.get('l1')?.media).toHaveLength(2);
+    expect(run.rows.get('l1')?.results.map((entry) => entry.status)).toEqual(['uploaded', 'uploaded']);
+    expect(run.rows.has('l2')).toBe(false);
+  });
+
+  it('resumes a listing that was partly loaded by loading only the photos it lacks', async () => {
+    const all = listings(3, 3);
+    const run = persisting(all);
+    const controller = new AbortController();
+    await runImportImageBatches({
+      ownerPubky: OWNER,
+      ...run,
+      upload: run.upload({ photos: 5, controller }),
+      signal: controller.signal,
+    });
+    run.uploads.length = 0;
+
+    const resumed = await runImportImageBatches({ ownerPubky: OWNER, ...run, upload: run.upload() });
+    expect(resumed.status).toBe('complete');
+    expect(run.uploads).toEqual([
+      [
+        'https://shop.example.com/1/2.jpg',
+        'https://shop.example.com/2/0.jpg',
+        'https://shop.example.com/2/1.jpg',
+        'https://shop.example.com/2/2.jpg',
+      ],
+    ]);
+    expect(run.rows.get('l1')?.partial).toBeUndefined();
+    expect(run.rows.get('l1')?.media).toHaveLength(3);
+    expect(run.rows.get('l2')?.media).toHaveLength(3);
+  });
+
+  it('writes a partly loaded listing as partial when a batch ends with some of its photos deferred', async () => {
+    const run = persisting([target(0, 2)]);
+    const upload: Upload = vi.fn(async ({ urls, onResult }: TImportImageRunParams) => {
+      const results = urls.map((url) => (url.endsWith('/1.jpg') ? failed(url, 'budget_exceeded') : uploaded(url)));
+      for (const entry of results) if (entry.status === 'uploaded') onResult?.(entry);
+      return { results, fetchedBytes: 0 };
+    });
+    const result = await runImportImageBatches({ ownerPubky: OWNER, ...run, upload });
+    expect(result.status).toBe('interrupted');
+    expect(run.log).toEqual(['partial l0']);
+    expect(run.rows.get('l0')?.media).toHaveLength(1);
   });
 });
 

@@ -34,6 +34,7 @@ import {
   rowHoldsMedia,
   sourceImagesOf,
   sourceUrlHash,
+  uniqueImageUrls,
 } from '@/pipes/commerce/import-image-phase';
 import {
   continueRevision,
@@ -110,6 +111,19 @@ export type InventoryImportAuth =
 export type InventoryImportPublishGate = ImportPublishGate;
 
 export type InventoryImportPhotoPlan = { readonly count: number; readonly batches: number };
+
+/** An import that was started and not finished, as the Studio offers it for resume or discard. */
+export type InventoryImportUnfinished = {
+  readonly manifestId: string;
+  readonly createdAt: number;
+  /** Listings finished (published, or failed for good) out of the listings the import acts on. */
+  readonly listings: { readonly done: number; readonly total: number };
+  /** Distinct photos still to load. */
+  readonly photosLeft: number;
+};
+
+/** Written onto the first planned row when the seller presses Publish, so a plan that was only looked at is never offered for resume. */
+const IMPORT_STARTED_FIELD = 'import_started_at';
 
 /** What the dry run can prefill from the seller's Shop data. */
 export type InventoryImportDefaults = {
@@ -616,6 +630,62 @@ export class CommerceInventoryImportApplication {
       });
     }
     return targets;
+  }
+
+  /** Records that the seller pressed Publish, so the import can be offered for resume if it does not finish. */
+  async markStarted(manifestId: string): Promise<void> {
+    const manifest = await this.host.store.load(manifestId);
+    const first = manifest?.rows[0];
+    if (!first) return;
+    const payload = await this.rowPayload(manifestId, first.rowIdentity);
+    if (!payload || payload.extraFields?.[IMPORT_STARTED_FIELD]) return;
+    const extraFields = { ...payload.extraFields, [IMPORT_STARTED_FIELD]: new Date().toISOString() };
+    await this.host.store.persistPayloads(
+      manifestId,
+      new Map([[first.rowIdentity, JSON.stringify({ ...payload, extraFields })]]),
+    );
+  }
+
+  /**
+   * The newest import of this seller that was started and has work left: rows
+   * still to publish or sync, or a conflict nobody has answered. A plan that was
+   * only looked at is not one. Everything it needs to carry on is already stored:
+   * rows, payloads, and the media of every finished batch.
+   */
+  async findUnfinished(): Promise<InventoryImportUnfinished | null> {
+    for (const summary of await this.host.store.listManifests()) {
+      const manifest = await this.host.store.load(summary.manifestId);
+      if (!manifest) continue;
+      const acting = manifest.rows.filter((row) => row.intendedAction !== 'unchanged');
+      const open = (row: HostPlannedImportRow) =>
+        resumeNext(row.checkpoint) !== 'none' || (row.checkpoint === 'conflict' && !isAcknowledgedConflict(row));
+      if (!acting.some(open)) continue;
+      const first = manifest.rows[0];
+      const started =
+        manifest.rows.some((row) => row.checkpoint !== 'planned') ||
+        (first !== undefined &&
+          Boolean(
+            (await this.rowPayload(manifest.manifestId, first.rowIdentity))?.extraFields?.[IMPORT_STARTED_FIELD],
+          ));
+      if (!started) continue;
+
+      const groups = this.groups(acting);
+      const done = [...groups.values()].filter((group) => !group.some(open)).length;
+      const urls = uniqueImageUrls(await this.imageTargets(manifest.manifestId));
+      const loaded = await this.knownMedia(manifest.manifestId, urls);
+      return {
+        manifestId: manifest.manifestId,
+        createdAt: summary.createdAt,
+        listings: { done, total: groups.size },
+        photosLeft: urls.length - loaded.size,
+      };
+    }
+    return null;
+  }
+
+  /** Clears an import the seller does not want to finish. What it already published stays published. */
+  async discard(manifestId: string): Promise<void> {
+    await this.host.store.deleteManifest(manifestId);
   }
 
   /**

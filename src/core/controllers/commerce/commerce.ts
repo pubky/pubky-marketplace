@@ -417,6 +417,18 @@ export class CommerceController {
     return await CommerceInventoryImportApplication.forSeller(sellerPubky).imageTargets(manifestId);
   }
 
+  static async markInventoryImportStarted(sellerPubky: string, manifestId: string) {
+    return await CommerceInventoryImportApplication.forSeller(sellerPubky).markStarted(manifestId);
+  }
+
+  static async findUnfinishedInventoryImport(sellerPubky: string) {
+    return await CommerceInventoryImportApplication.forSeller(sellerPubky).findUnfinished();
+  }
+
+  static async discardInventoryImport(sellerPubky: string, manifestId: string) {
+    return await CommerceInventoryImportApplication.forSeller(sellerPubky).discard(manifestId);
+  }
+
   static async inventoryImportKnownMedia(sellerPubky: string, manifestId: string, urls: readonly string[]) {
     return await CommerceInventoryImportApplication.forSeller(sellerPubky).knownMedia(manifestId, urls);
   }

@@ -4,6 +4,7 @@ import type { Control } from 'react-hook-form';
 import { Button } from '@/atoms/Button/Button';
 import { Input } from '@/atoms/Input/Input';
 import { Typography } from '@/atoms/Typography/Typography';
+import { IMPORT_IMAGE_RATE_LIMIT_BYTES, IMPORT_IMAGE_RATE_LIMIT_BYTES_WINDOW_MS } from '@/config/import-image';
 import type { ImportStoreUrlFormData } from '@/hooks/useMarketplaceInventoryImport/useMarketplaceInventoryImport.types';
 import { ControlledInputField } from '@/molecules/ControlledInputField/ControlledInputField';
 import { ProgressSteps } from '@/molecules/ProgressSteps/ProgressSteps';
@@ -51,6 +52,8 @@ export type MarketplaceInventoryImportProps = {
   batchInfo?: { batch: number; batches: number };
   /** Seconds left while the photo service asks us to wait before loading more; null or absent when not waiting. */
   waitSeconds?: number | null;
+  /** An import that was started and not finished, offered for resume or discard on the upload step. */
+  unfinished?: { listings: { done: number; total: number }; photosLeft: number };
   /** What publishing will load: photos and batches, shown in the dry run. */
   photoPlan?: { count: number; batches: number };
   /** `pages` while a store's product list is read, then `variations` while each variable product's options are. */
@@ -74,6 +77,8 @@ export type MarketplaceInventoryImportProps = {
     keptLive?: { line: string; titles: readonly string[]; total: number };
   };
   onFile?: (file: File) => void;
+  onResumeUnfinished?: () => void;
+  onDiscardUnfinished?: () => void;
   onPublish?: () => void;
   onResume?: () => void;
   onConfirmConflict?: () => void;
@@ -109,6 +114,7 @@ export function MarketplaceInventoryImport({
   batchInfo,
   waitSeconds = null,
   photoPlan,
+  unfinished,
   fetchPhase = 'pages',
   store,
   mappingHeaders = [],
@@ -118,6 +124,8 @@ export function MarketplaceInventoryImport({
   publishDisabledReason,
   publishNotice,
   onFile,
+  onResumeUnfinished,
+  onDiscardUnfinished,
   onPublish,
   onResume,
   onConfirmConflict,
@@ -134,6 +142,32 @@ export function MarketplaceInventoryImport({
       <ProgressSteps currentStep={currentStep} totalSteps={IMPORT_WIZARD_STEPS} />
       {scene === 'upload' && (
         <>
+          {unfinished && (
+            <div
+              className="flex flex-col gap-2 rounded-md border border-input p-3"
+              role="status"
+              data-testid="inventory-import-unfinished"
+            >
+              <Typography as="p" className="text-sm font-medium">
+                Resume your unfinished import ({unfinished.listings.done} of {unfinished.listings.total} listings
+                {unfinished.photosLeft > 0
+                  ? `, ${unfinished.photosLeft} ${unfinished.photosLeft === 1 ? 'photo' : 'photos'} left`
+                  : ''}
+                )
+              </Typography>
+              <Typography as="p" className="text-sm text-muted-foreground">
+                It carries on where it stopped. Photos already loaded are not loaded again.
+              </Typography>
+              <div className="flex flex-wrap gap-2">
+                <Button className="rounded-full" disabled={busy} onClick={onResumeUnfinished}>
+                  Resume
+                </Button>
+                <Button variant="secondary" className="rounded-full" disabled={busy} onClick={onDiscardUnfinished}>
+                  Discard
+                </Button>
+              </div>
+            </div>
+          )}
           <Typography as="p" className="text-sm text-muted-foreground">
             Upload a WooCommerce or Shopify product export, or a canonical CSV or JSON listing file. Nothing is
             published until you confirm the dry-run.
@@ -231,7 +265,7 @@ export function MarketplaceInventoryImport({
             <Typography as="p" className="text-sm text-muted-foreground" data-testid="inventory-import-photo-plan">
               {photoPlan.count === 1 ? '1 photo' : `${photoPlan.count} photos`} will be loaded when you publish
               {photoPlan.batches > 1
-                ? `, in ${photoPlan.batches} batches. They load one after another and the import carries on by itself, waiting when the photo service asks. Keep this window open.`
+                ? `, in ${photoPlan.batches} batches. They load one after another and the import carries on by itself, waiting when the photo service asks. If its allowance (${IMPORT_IMAGE_RATE_LIMIT_BYTES / (1024 * 1024)} MB every ${IMPORT_IMAGE_RATE_LIMIT_BYTES_WINDOW_MS / 60_000} minutes) runs out, it pauses for up to ${IMPORT_IMAGE_RATE_LIMIT_BYTES_WINDOW_MS / 60_000} minutes and continues. If you close this window, the next time you open the import you can resume it.`
                 : '.'}
             </Typography>
           )}

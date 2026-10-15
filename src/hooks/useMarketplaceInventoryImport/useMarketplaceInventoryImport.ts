@@ -1,8 +1,9 @@
 'use client';
 
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm, useWatch } from 'react-hook-form';
+import type { InventoryImportUnfinished } from '@/application/commerce/inventory-import';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import { ImportStoreCatalogController } from '@/controllers/import-store/import-store-catalog';
 import { runImportImageBatches } from '@/hooks/useImportImageUpload/runImportImageBatches';
@@ -59,6 +60,7 @@ export function useMarketplaceInventoryImport(sellerPubky: string | null) {
   const [format, setFormat] = useState<ImportSourceFormat | undefined>();
   const [lossReport, setLossReport] = useState<ImportLossReport | undefined>();
   const [progressPhase, setProgressPhase] = useState<'photos' | 'listings'>('listings');
+  const [unfinished, setUnfinished] = useState<InventoryImportUnfinished | undefined>();
   const [photoPlan, setPhotoPlan] = useState<{ count: number; batches: number } | undefined>();
   const [batchInfo, setBatchInfo] = useState<{ batch: number; batches: number } | undefined>();
   const [waitSeconds, setWaitSeconds] = useState<number | null>(null);
@@ -78,6 +80,12 @@ export function useMarketplaceInventoryImport(sellerPubky: string | null) {
   });
 
   const watched = useWatch({ control: form.control });
+
+  useEffect(() => {
+    void loadUnfinished();
+    // loadUnfinished only reads the seller's stored imports; it re-runs when the seller changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sellerPubky]);
 
   const storeForm = useForm<ImportStoreUrlFormData>({
     resolver: zodResolver(importStoreUrlFormSchema),
@@ -112,6 +120,7 @@ export function useMarketplaceInventoryImport(sellerPubky: string | null) {
     setBatchInfo(undefined);
     setWaitSeconds(null);
     form.reset(importSettingsFormDefaults);
+    void loadUnfinished();
   };
 
   /** Plans whatever the seller brought: the file, or the store catalogue already read. Resolves true when the dry run is ready. */
@@ -305,20 +314,20 @@ export function useMarketplaceInventoryImport(sellerPubky: string | null) {
    * `cancelled`: the dialog closed. `interrupted`: photos are left for a resume,
    * so nothing is published yet.
    */
-  const runImagePhase = async (): Promise<'done' | 'interrupted' | 'cancelled'> => {
-    if (!sellerPubky || !manifestId) return 'cancelled';
+  const runImagePhase = async (id: string, photosTotal: number): Promise<'done' | 'interrupted' | 'cancelled'> => {
+    if (!sellerPubky) return 'cancelled';
     const controller = new AbortController();
     imageRun.current = controller;
     setProgressPhase('photos');
-    setProgress({ done: 0, total: photoPlan?.count ?? 0 });
+    setProgress({ done: 0, total: photosTotal });
     setBatchInfo(undefined);
     setWaitSeconds(null);
     try {
       const run = await runImportImageBatches({
         ownerPubky: sellerPubky,
-        loadTargets: () => CommerceController.inventoryImportImageTargets(sellerPubky, manifestId),
-        knownMedia: (urls) => CommerceController.inventoryImportKnownMedia(sellerPubky, manifestId, urls),
-        attach: (outcomes) => CommerceController.attachInventoryImportImages(sellerPubky, manifestId, outcomes),
+        loadTargets: () => CommerceController.inventoryImportImageTargets(sellerPubky, id),
+        knownMedia: (urls) => CommerceController.inventoryImportKnownMedia(sellerPubky, id, urls),
+        attach: (outcomes) => CommerceController.attachInventoryImportImages(sellerPubky, id, outcomes),
         signal: controller.signal,
         onProgress: ({ done, total, batch, batches }) => {
           setProgress({ done, total });
@@ -352,11 +361,16 @@ export function useMarketplaceInventoryImport(sellerPubky: string | null) {
 
   /** Photos, then listings. Stops with the Resume scene when the photos could not all be loaded. */
   const photosThen = async (
+    id: string,
+    photosTotal: number,
     publishStep: () => Promise<Awaited<ReturnType<typeof CommerceController.publishInventoryImport>>>,
     listingsTotal?: number,
   ) => {
-    const photos = await runImagePhase();
-    if (photos === 'cancelled') return;
+    const photos = await runImagePhase(id, photosTotal);
+    if (photos === 'cancelled') {
+      void loadUnfinished();
+      return;
+    }
     if (photos === 'interrupted') {
       setBusy(false);
       setScene('mixed');
@@ -375,7 +389,10 @@ export function useMarketplaceInventoryImport(sellerPubky: string | null) {
     setBusy(true);
     setScene('progress');
     setStep(5);
+    await CommerceController.markInventoryImportStarted(sellerPubky, manifestId);
     await photosThen(
+      manifestId,
+      photoPlan?.count ?? 0,
       () => CommerceController.publishInventoryImport(sellerPubky, manifestId),
       counts ? counts.create + counts.update + counts.end : 0,
     );
@@ -385,7 +402,54 @@ export function useMarketplaceInventoryImport(sellerPubky: string | null) {
     if (!sellerPubky || !manifestId) return;
     setBusy(true);
     setScene('progress');
-    await photosThen(() => CommerceController.resumeInventoryImport(sellerPubky, manifestId));
+    await photosThen(manifestId, photoPlan?.count ?? 0, () =>
+      CommerceController.resumeInventoryImport(sellerPubky, manifestId),
+    );
+  };
+
+  /** Looks for an import the seller started and did not finish, to offer it for resume or discard. */
+  const loadUnfinished = async () => {
+    if (!sellerPubky) {
+      setUnfinished(undefined);
+      return;
+    }
+    try {
+      setUnfinished((await CommerceController.findUnfinishedInventoryImport(sellerPubky)) ?? undefined);
+    } catch {
+      setUnfinished(undefined);
+    }
+  };
+
+  /**
+   * Carries on an unfinished import from the plan stored on this device: the
+   * photo batches that are left, then the publish, exactly where they stopped.
+   * Rows that hold media are skipped and photos already stored are reused, so
+   * nothing is uploaded twice. Works after the dialog was closed or the page reloaded.
+   */
+  const resumeUnfinished = async () => {
+    if (!sellerPubky || !unfinished || busy) return;
+    const found = unfinished;
+    imageRun.current?.abort();
+    setUnfinished(undefined);
+    setManifestId(found.manifestId);
+    setConflictListingId(null);
+    setFileName(undefined);
+    setMessage(undefined);
+    setBusy(true);
+    setScene('progress');
+    setStep(5);
+    await photosThen(found.manifestId, found.photosLeft, () =>
+      CommerceController.resumeInventoryImport(sellerPubky, found.manifestId),
+    );
+  };
+
+  /** Clears an unfinished import. What it already published stays published. */
+  const discardUnfinished = async () => {
+    if (!sellerPubky || !unfinished) return;
+    const found = unfinished;
+    setUnfinished(undefined);
+    await CommerceController.discardInventoryImport(sellerPubky, found.manifestId);
+    await loadUnfinished();
   };
 
   const applyConflictResult = (
@@ -478,6 +542,9 @@ export function useMarketplaceInventoryImport(sellerPubky: string | null) {
     batchInfo,
     waitSeconds,
     photoPlan,
+    unfinished,
+    resumeUnfinished,
+    discardUnfinished,
     fetchPhase,
     busy,
     format,
