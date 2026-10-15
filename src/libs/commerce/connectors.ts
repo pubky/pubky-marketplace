@@ -231,6 +231,9 @@ export const CONNECTOR_ALERT_KINDS = [
   'store_uninstalled',
   'credentials_rejected',
   'inbound_failed',
+  'refund_reversed_after_mirror',
+  'push_total_mismatch',
+  'listings_unmapped',
 ] as const;
 
 /** The existing Pubky flow a store-side cancel or refund alert leads to (C13); `null` when none applies. */
@@ -440,6 +443,12 @@ const ALERT_KIND_COPY: Readonly<Record<string, string>> = {
   store_uninstalled: 'The app was removed from your store, so the connection is closed.',
   credentials_rejected: 'Your store rejected the saved keys. Replace them in Store connections.',
   inbound_failed: 'An update from your store could not be applied.',
+  refund_reversed_after_mirror:
+    'A refund recorded in your store was reversed or reduced in Pubky. Correct it in your store: Pubky cannot change it there.',
+  push_total_mismatch:
+    'An order reached your store with a different total than the buyer paid in Pubky, for example because the store added tax. Check the order in your store.',
+  listings_unmapped:
+    'Some listings that combined several variants were unlinked from your store when you switched to one listing per size or variant. Import each variant again, or end the combined listing.',
 };
 
 /**

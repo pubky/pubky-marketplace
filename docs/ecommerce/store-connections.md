@@ -87,6 +87,14 @@ alert action is a link into the order (`/marketplace/orders#order-<id>`), where
 the existing approve-cancellation or record-refund step is; the Shop never
 cancels or refunds for the seller.
 
+Three alert kinds carry no action and no retry, only plain copy and Dismiss:
+`refund_reversed_after_mirror` (a refund Pubky mirrored to the store was later
+reversed or reduced; the seller corrects it in the store), `push_total_mismatch`
+(the store created the order with a different total than the buyer paid) and
+`listings_unmapped` (switching to one listing per variant unlinked combined
+listings; import each variant again or end the combined listing). An unknown
+alert kind shows generic copy.
+
 Where the Shop still differs from the service, and what it does:
 
 - **Pasted WooCommerce keys** work. `PUT /v1/connectors/{id}/credentials` takes
