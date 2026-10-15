@@ -41,6 +41,7 @@ export function useMarketplaceOrderPayment({
   enabled: boolean;
   onPaymentChanged: () => void | Promise<void>;
 }) {
+  const needsConfig = enabled && !order.paymentMethod;
   const [sellerConfig, setSellerConfig] = useState<SellerPaymentConfig | null>(null);
   const [configError, setConfigError] = useState<string | null>(null);
   const [pendingAction, setPendingAction] = useState<'bind' | 'verify' | 'mark-paid' | 'confirm' | null>(null);
@@ -51,9 +52,8 @@ export function useMarketplaceOrderPayment({
     recheck: paykitRecheck,
     markRefused: markPaykitRefused,
     settleRead: settlePaykitRead,
-  } = usePaykitOutage(sellerConfig?.paykitUnreachable === true || configError !== null);
+  } = usePaykitOutage(sellerConfig?.paykitUnreachable === true || configError !== null, needsConfig);
 
-  const needsConfig = enabled && !order.paymentMethod;
   const shippingAddressRequired = needsConfig && order.shippingAddressRequired === true;
   const winnerDelivery = useAuctionWinnerDeliveryAddress({
     sellerPubky: order.sellerPubky,

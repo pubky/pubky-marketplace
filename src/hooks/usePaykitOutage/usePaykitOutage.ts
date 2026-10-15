@@ -11,16 +11,25 @@ import { usePaykitRecovery } from '@/hooks/usePaykitRecovery/usePaykitRecovery';
  * advances on the recovery backoff; the surface lists it in the dependencies
  * of its config read and reports each result through `settleRead`.
  *
+ * `enabled` is false when there is nothing to pay for; the outage then ends and
+ * the recheck stops. Retries are deliberately uncapped, at the 30s ceiling, so
+ * the surface recovers on its own however long Paykit is away.
+ *
  * A refusal is pinned to the recheck its render committed with, and ends only
  * on evidence: a read that started on a later recheck and found Paykit
  * reachable. The read that follows the refusal itself, and the gap while a
  * recheck is in flight, keep the outage showing.
  */
-export function usePaykitOutage(unreachable: boolean) {
+export function usePaykitOutage(unreachable: boolean, enabled = true) {
   // `null`: no refusal. `'pending'`: refused, not yet pinned to the recheck its render committed with.
   const [refusal, setRefusal] = useState<number | 'pending' | null>(null);
-  const outage = unreachable || refusal !== null;
+  const outage = enabled && (unreachable || refusal !== null);
   const recheck = usePaykitRecovery(outage);
+
+  // Nothing left to pay for (an emptied cart, a settled order): drop a refusal so no recheck keeps ticking.
+  useEffect(() => {
+    if (!enabled) setRefusal(null);
+  }, [enabled]);
 
   // Pinning the refusal in an effect reads the recheck of the committed render, never a stale one.
   useEffect(() => {
@@ -36,5 +45,5 @@ export function usePaykitOutage(unreachable: boolean) {
     },
   }));
 
-  return { outage, refused: refusal !== null, recheck, ...actions };
+  return { outage, refused: enabled && refusal !== null, recheck, ...actions };
 }

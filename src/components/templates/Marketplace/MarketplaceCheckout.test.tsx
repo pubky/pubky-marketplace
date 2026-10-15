@@ -1642,6 +1642,27 @@ describe('MarketplaceCheckout with no usable payment method', () => {
       expect(screen.queryByText("Couldn't load payment options.")).not.toBeInTheDocument();
     });
 
+    it('stops rechecking once the cart is emptied after a failed read', async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      seededCart();
+      vi.mocked(CommerceController.getSellerPaymentConfig).mockRejectedValue(new Error('network down'));
+
+      const { rerender } = render(<MarketplaceCheckout />);
+      expect(await screen.findByRole('alert')).toHaveTextContent("Couldn't load payment options.");
+
+      view.items = [];
+      rerender(<MarketplaceCheckout />);
+      expect(screen.getByText('Nothing to check out')).toBeInTheDocument();
+      vi.mocked(CommerceController.getSellerPaymentConfig).mockClear();
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(120_000);
+      });
+
+      expect(CommerceController.getSellerPaymentConfig).not.toHaveBeenCalled();
+      expect(vi.getTimerCount()).toBe(0);
+    });
+
     it('keeps the Paykit outage retrying through a failed read until Paykit is back', async () => {
       vi.useFakeTimers({ shouldAdvanceTime: true });
       seededCart();

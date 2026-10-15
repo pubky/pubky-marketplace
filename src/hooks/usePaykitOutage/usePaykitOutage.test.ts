@@ -98,4 +98,33 @@ describe('usePaykitOutage', () => {
 
     expect(result.current.refused).toBe(true);
   });
+
+  it('ends the outage and stops rechecking when there is nothing left to pay for, and drops a refusal', () => {
+    const { result, rerender } = renderHook(({ enabled }) => usePaykitOutage(true, enabled), {
+      initialProps: { enabled: true },
+    });
+    act(() => result.current.markRefused());
+    expect(result.current).toMatchObject({ outage: true, refused: true });
+
+    rerender({ enabled: false });
+    expect(result.current).toMatchObject({ outage: false, refused: false });
+    const stopped = result.current.recheck;
+    act(() => vi.advanceTimersByTime(120_000));
+    expect(result.current.recheck).toBe(stopped);
+    expect(vi.getTimerCount()).toBe(0);
+
+    rerender({ enabled: true });
+    expect(result.current).toMatchObject({ outage: true, refused: false });
+  });
+
+  it('keeps retrying with no cap at the 30s ceiling while there is still something to pay for', () => {
+    const { result } = renderHook(() => usePaykitOutage(true));
+
+    act(() => vi.advanceTimersByTime(5_000 + 10_000 + 20_000));
+    const afterBackoff = result.current.recheck;
+    for (let step = 1; step <= 20; step += 1) {
+      act(() => vi.advanceTimersByTime(30_000));
+      expect(result.current.recheck).toBe(afterBackoff + step);
+    }
+  });
 });

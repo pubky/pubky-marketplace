@@ -282,6 +282,29 @@ describe('useMarketplaceOrderPayment', () => {
       expect(result.current.availableMethods).toEqual(['bitcoin']);
     });
 
+    it('stops rechecking once the order no longer needs a payment method, even after a failed read', async () => {
+      vi.useFakeTimers();
+      vi.mocked(CommerceController.getSellerPaymentConfig).mockReset();
+      vi.mocked(CommerceController.getSellerPaymentConfig).mockRejectedValue(appError('SENTINEL_ORDER_PAYMENT_CONFIG'));
+      const { result, rerender } = renderHook(
+        ({ order }) => useMarketplaceOrderPayment({ order, enabled: true, onPaymentChanged: vi.fn() }),
+        { initialProps: { order: createOrderFixture('pending_payment') } },
+      );
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      expect(result.current.configError).toBeTypeOf('string');
+
+      rerender({ order: createOrderFixture('paid', { paymentMethod: 'bitcoin' }) });
+      vi.mocked(CommerceController.getSellerPaymentConfig).mockClear();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(120_000);
+      });
+
+      expect(CommerceController.getSellerPaymentConfig).not.toHaveBeenCalled();
+      expect(vi.getTimerCount()).toBe(0);
+    });
+
     it('stays in the outage when the recheck still finds Paykit unreachable, and backs off', async () => {
       vi.useFakeTimers();
       vi.mocked(CommerceController.getSellerPaymentConfig).mockReset();

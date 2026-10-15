@@ -290,17 +290,22 @@ function MarketplaceCartCheckout() {
   const [railAttempt, setRailAttempt] = useState(0);
   // Re-reads the rails without blanking them: after a refused payment, and while Paykit is down.
   const [railRefresh, setRailRefresh] = useState(0);
-  const {
-    refused: paykitRefused,
-    recheck: paykitRecheck,
-    markRefused: markPaykitRefused,
-    settleRead: settlePaykitRead,
-  } = usePaykitOutage(loadedMethods?.paykitUnreachable === true || loadedMethods?.methods === null);
   const [nowMs, setNowMs] = useState(() => Date.now());
   const sellerKey =
     isOfferCheckout && award
       ? award.listing.sellerPubky
       : [...new Set(checkoutItems.map((item) => item.listing.record.ownerPubky))].join('|');
+  // Only a read for this cart's sellers can show an outage or keep the recheck going.
+  const loadedIsCurrent = sellerKey.length > 0 && loadedMethods?.sellerKey === sellerKey;
+  const {
+    refused: paykitRefused,
+    recheck: paykitRecheck,
+    markRefused: markPaykitRefused,
+    settleRead: settlePaykitRead,
+  } = usePaykitOutage(
+    loadedIsCurrent && (loadedMethods?.paykitUnreachable === true || loadedMethods?.methods === null),
+    sellerKey.length > 0,
+  );
   // Rails loaded for an earlier seller set (or before the cart hydrated) are
   // still loading for this one, never "no payment method".
   const loadedForCart =
