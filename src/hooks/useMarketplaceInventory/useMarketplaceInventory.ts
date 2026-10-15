@@ -12,6 +12,8 @@ import { toast } from '@/molecules/Toaster/use-toast';
 import { useAuthStore } from '@/stores/auth/auth.store';
 import { useCommerceStore } from '@/stores/commerce/commerce.store';
 
+type SetAvailableInput = Parameters<typeof CommerceController.setInventoryAvailable>[0] & { variantId?: string };
+
 export function useMarketplaceInventory() {
   const sellerPubky = useAuthStore((state) => state.currentUserPubky);
   const identitySession = useCommerceStore((state) => state.marketplaceSession);
@@ -38,16 +40,18 @@ export function useMarketplaceInventory() {
   }, [refresh, identitySession, inventorySession]);
 
   const setAvailable = useCallback(
-    async (row: InventoryBoardRow, targetAvailable: number) => {
+    async (row: InventoryBoardRow, targetAvailable: number, variantId?: string) => {
       if (!sellerPubky) return { status: 'error' as const, message: 'unauthenticated' };
       setPendingListingId(row.listingId);
       setConflictListingId(null);
-      const result = await CommerceController.setInventoryAvailable({
+      const input: SetAvailableInput = {
         sellerPubky,
         row,
         targetAvailable,
         idempotencyKey: crypto.randomUUID(),
-      });
+        variantId,
+      };
+      const result = await CommerceController.setInventoryAvailable(input);
       setPendingListingId(null);
       if (result.status === 'revision_conflict') {
         setConflictListingId(row.listingId);
@@ -65,6 +69,9 @@ export function useMarketplaceInventory() {
       }
       if (result.status === 'grant-needed') {
         setLoad({ status: 'grant-needed' });
+      }
+      if (result.status === 'error' && variantId) {
+        toast({ variant: 'error', description: result.message });
       }
       return result;
     },
