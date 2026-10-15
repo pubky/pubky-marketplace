@@ -112,7 +112,7 @@ describe('useMarketplacePublicAvailability', () => {
       window.dispatchEvent(new Event('focus'));
     });
 
-    await waitFor(() => expect(result.current).toBe('available'));
+    await waitFor(() => expect(result.current).toEqual({ state: 'available', variants: [] }));
   });
 
   it("does not show one listing's hold on another listing", async () => {

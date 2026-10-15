@@ -19,6 +19,7 @@ import { MarketplaceListingCard } from './MarketplaceListingCard';
 const liveBid = vi.hoisted(() => ({
   bid: null as MarketplaceLiveBid | null,
   listingState: null as 'available' | 'reserved' | 'sold' | null,
+  soldOut: false,
 }));
 
 vi.mock('next/navigation', () => ({
@@ -26,7 +27,12 @@ vi.mock('next/navigation', () => ({
 }));
 
 vi.mock('@/hooks/useMarketplaceLiveBid/useMarketplaceLiveBid', () => ({
-  useMarketplaceLiveBid: () => ({ ref: () => {}, bid: liveBid.bid, listingState: liveBid.listingState }),
+  useMarketplaceLiveBid: () => ({
+    ref: () => {},
+    bid: liveBid.bid,
+    listingState: liveBid.listingState,
+    soldOut: liveBid.soldOut,
+  }),
 }));
 
 vi.mock('@/hooks/useMarketplaceMediaUrl/useMarketplaceMediaUrl', async () => {
@@ -41,9 +47,29 @@ function catalogItem(index = 0): MarketplaceCatalogItem {
 beforeEach(() => {
   liveBid.bid = null;
   liveBid.listingState = null;
+  liveBid.soldOut = false;
 });
 
 describe('MarketplaceListingCard', () => {
+  it('reads Sold out when the service reports every size sold out', () => {
+    liveBid.listingState = 'available';
+    liveBid.soldOut = true;
+
+    render(<MarketplaceListingCard listing={catalogItem()} shopName="Satoshi Vintage" />);
+
+    expect(screen.getByText('Sold out')).toBeInTheDocument();
+    expect(screen.queryByText('Buy now')).not.toBeInTheDocument();
+  });
+
+  it('keeps Buy now while any size has stock', () => {
+    liveBid.listingState = 'available';
+
+    render(<MarketplaceListingCard listing={catalogItem()} shopName="Satoshi Vintage" />);
+
+    expect(screen.getByText('Buy now')).toBeInTheDocument();
+    expect(screen.queryByText('Sold out')).not.toBeInTheDocument();
+  });
+
   it('renders listing terms and canonical detail link', () => {
     const listing = catalogItem();
     render(<MarketplaceListingCard listing={listing} shopName="Satoshi Vintage" />);
