@@ -64,7 +64,7 @@ function planned(extra: Record<string, unknown> = {}) {
     counts: { create: 1, update: 0, end: 0, unchanged: 0, conflict: 0 },
     format: 'woocommerce',
     lossReport: REPORT,
-    publishGate: { reason: null, ships: true },
+    publishGate: { reason: null, ships: true, pausing: 0, keptLive: [] },
     ...extra,
   };
 }
@@ -581,7 +581,9 @@ describe('publish gates (C11)', () => {
   });
 
   it('shows why listings will be saved paused when a gate blocks, and nothing when they pass', async () => {
-    mocks.plan.mockResolvedValue(planned({ publishGate: { reason: 'no-method', ships: true } }));
+    mocks.plan.mockResolvedValue(
+      planned({ publishGate: { reason: 'no-method', ships: true, pausing: 2, keptLive: [] } }),
+    );
     const { result } = renderHook(() => useMarketplaceInventoryImport('seller'));
     await act(async () => {
       await result.current.planFile(FILE);
@@ -590,7 +592,9 @@ describe('publish gates (C11)', () => {
       /^Listings will be saved as paused\. Configure a payment method/,
     );
 
-    mocks.plan.mockResolvedValue(planned({ publishGate: { reason: 'no-delivery-key', ships: true } }));
+    mocks.plan.mockResolvedValue(
+      planned({ publishGate: { reason: 'no-delivery-key', ships: true, pausing: 2, keptLive: [] } }),
+    );
     await act(async () => {
       await result.current.planFile(FILE);
     });
@@ -603,8 +607,52 @@ describe('publish gates (C11)', () => {
     expect(result.current.publishNotice).toBeUndefined();
   });
 
+  it('says which listings stay live, and what to fix, when some are live and some are new', async () => {
+    mocks.plan.mockResolvedValue(
+      planned({
+        publishGate: {
+          reason: 'no-method',
+          ships: true,
+          pausing: 1,
+          keptLive: [
+            { listingId: 'a', title: 'Vintage leather boots' },
+            { listingId: 'b', title: 'Wool hat' },
+          ],
+        },
+      }),
+    );
+    const { result } = renderHook(() => useMarketplaceInventoryImport('seller'));
+    await act(async () => {
+      await result.current.planFile(FILE);
+    });
+    expect(result.current.publishNotice?.title).toMatch(/^New and paused listings will be saved as paused\./);
+    expect(result.current.publishNotice?.keptLive).toEqual({
+      line: 'kept live; fix payment method to keep publishing',
+      titles: ['Vintage leather boots', 'Wool hat'],
+      total: 2,
+    });
+
+    mocks.plan.mockResolvedValue(
+      planned({
+        publishGate: {
+          reason: 'no-delivery-key',
+          ships: true,
+          pausing: 0,
+          keptLive: [{ listingId: 'a', title: 'Vintage leather boots' }],
+        },
+      }),
+    );
+    await act(async () => {
+      await result.current.planFile(FILE);
+    });
+    expect(result.current.publishNotice?.title).toMatch(/^Listings that are live stay live\./);
+    expect(result.current.publishNotice?.keptLive?.line).toBe('kept live; fix delivery key to keep publishing');
+  });
+
   it('shows the paused count and reason after publishing', async () => {
-    mocks.plan.mockResolvedValue(planned({ publishGate: { reason: 'no-method', ships: true } }));
+    mocks.plan.mockResolvedValue(
+      planned({ publishGate: { reason: 'no-method', ships: true, pausing: 2, keptLive: [] } }),
+    );
     mocks.publish.mockResolvedValue({
       status: 'complete',
       published: 2,

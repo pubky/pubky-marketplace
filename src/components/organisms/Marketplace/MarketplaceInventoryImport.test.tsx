@@ -275,4 +275,27 @@ describe('MarketplaceInventoryImport required choices and publish gates', () => 
     await user.click(screen.getByRole('button', { name: 'Publish' }));
     expect(onPublish).toHaveBeenCalledTimes(1);
   });
+
+  it('lists the listings that stay live with what to fix, and how many more there are', () => {
+    render(
+      <MarketplaceInventoryImport
+        step={4}
+        scene="dry-run"
+        counts={{ create: 2, update: 6, end: 0, unchanged: 0, conflict: 0 }}
+        publishNotice={{
+          title: 'New and paused listings will be saved as paused. Configure a payment method before publishing',
+          body: 'Buyers cannot pay for a published listing until you add at least one payment method.',
+          keptLive: {
+            line: 'kept live; fix payment method to keep publishing',
+            titles: ['Vintage leather boots', 'Wool hat'],
+            total: 4,
+          },
+        }}
+      />,
+    );
+    const live = screen.getByTestId('inventory-import-kept-live');
+    expect(live).toHaveTextContent('4 listings are live: kept live; fix payment method to keep publishing');
+    expect(live).toHaveTextContent('Vintage leather boots');
+    expect(live).toHaveTextContent('and 2 more');
+  });
 });
