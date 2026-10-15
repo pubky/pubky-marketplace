@@ -40,7 +40,9 @@ import { locksCreatorMatchesShopPubky } from '@/services/locks/locks-frontend-se
 import { useAuthStore } from '@/stores/auth/auth.store';
 import { useCommerceStore } from '@/stores/commerce/commerce.store';
 import {
+  BITCOIN_TOGGLE_BLOCKER_COPY,
   deriveBitcoinStatus,
+  deriveBitcoinToggleBlocker,
   derivePaypalStatus,
   deriveUsdtStatus,
   PAYMENT_METHOD_STATUS_LABELS,
@@ -378,6 +380,16 @@ export function MarketplaceGetPaidSettings({ locksConnect, onSaved }: Marketplac
       ? paykitSetupProblemState.problem
       : null;
   const paykitCodeExpired = paykitSetupStatus === 'error' || paykitSetupStatus === 'timeout';
+  // Only the missing-step reason is explained here; without a session the
+  // card's "Enable selling" prompt already says why the switch is off.
+  const bitcoinToggleBlocker =
+    marketplaceSession && !payments.isLoading && !payments.loadError && !bitcoinValue && bitcoinStatus !== 'connected'
+      ? deriveBitcoinToggleBlocker({
+          lockServerConnected: step1Connected,
+          locksError,
+          accountClaimed: payments.accountClaimed,
+        })
+      : null;
 
   // Stored rails need the marketplace session and the loaded config; the
   // bitcoin connect steps above them do not, so they render unconditionally.
@@ -538,9 +550,38 @@ export function MarketplaceGetPaidSettings({ locksConnect, onSaved }: Marketplac
             <Typography as="p" className="text-sm text-muted-foreground">
               Offer bitcoin payment option at checkout.
             </Typography>
+            {bitcoinToggleBlocker && (
+              <Typography
+                as="p"
+                id="get-paid-bitcoin-blocker"
+                className="mt-2 text-sm text-muted-foreground"
+                data-testid="bitcoin-toggle-blocker"
+              >
+                {BITCOIN_TOGGLE_BLOCKER_COPY[bitcoinToggleBlocker]}{' '}
+                {bitcoinToggleBlocker === 'bitkit-unknown' ? (
+                  <Button variant="link" className="h-auto p-0" onClick={() => void refreshPaymentConfig()}>
+                    Check again
+                  </Button>
+                ) : bitcoinToggleBlocker === 'bitkit' ? (
+                  <Button
+                    variant="link"
+                    className="h-auto p-0"
+                    disabled={!currentUserPubky}
+                    onClick={() => openPaykitSetup('setup')}
+                  >
+                    Connect now
+                  </Button>
+                ) : (
+                  <Button variant="link" className="h-auto p-0" disabled={isExchanging} onClick={openConnect}>
+                    Connect now
+                  </Button>
+                )}
+              </Typography>
+            )}
           </div>
           <Switch
             id="get-paid-bitcoin"
+            aria-describedby={bitcoinToggleBlocker ? 'get-paid-bitcoin-blocker' : undefined}
             checked={bitcoinValue}
             onCheckedChange={(enabled) => {
               if (enabled && bitcoinStatus !== 'connected') return;
