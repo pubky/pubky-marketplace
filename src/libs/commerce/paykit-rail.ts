@@ -100,11 +100,6 @@ export function sharedPaykitAssets(assetSets: readonly (readonly PaymentAsset[])
 
 export const PAYKIT_PICKER_LABEL = 'Pay with Paykit';
 
-/** The line under the picker entry: where the buyer pays and with what. */
-export function paykitPickerHint(assets: readonly PaymentAsset[]): string {
-  return `In Bitkit · ${paykitAssetsLabel(assets)}`;
-}
-
 /** The neutral status before any payment is seen: the buyer has not chosen an asset yet. */
 export function paykitAwaitingTitle(assets: readonly PaymentAsset[]): string {
   return `Pay in Bitkit (${paykitAssetsLabel(assets)})`;

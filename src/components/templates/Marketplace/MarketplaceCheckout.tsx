@@ -57,7 +57,6 @@ import {
   observedPaymentRail,
   PAYKIT_PICKER_LABEL,
   paykitAwaitingTitle,
-  paykitPickerHint,
   sharedPaykitAssets,
 } from '@/libs/commerce/paykit-rail';
 import {
@@ -1082,17 +1081,7 @@ function MarketplaceCartCheckout() {
                             >
                               {method === 'paykit' && <WalletCards className="size-6 shrink-0" aria-hidden="true" />}
                               {method === 'paypal' && <HandCoins className="size-6 shrink-0" aria-hidden="true" />}
-                              <span className="flex min-w-0 flex-col items-start text-left">
-                                {METHOD_COPY[method]}
-                                {method === 'paykit' && (
-                                  <span
-                                    className="text-xs font-normal opacity-80"
-                                    data-testid="marketplace-checkout-paykit-hint"
-                                  >
-                                    {paykitPickerHint(paykitAssets)}
-                                  </span>
-                                )}
-                              </span>
+                              {METHOD_COPY[method]}
                             </Button>
                           ))}
                         </div>

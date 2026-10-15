@@ -12,7 +12,6 @@ import {
   paykitAssetsLabel,
   paykitAwaitingBody,
   paykitAwaitingTitle,
-  paykitPickerHint,
   sharedPaykitAssets,
 } from './paykit-rail';
 
@@ -95,10 +94,8 @@ describe('Paykit copy', () => {
     expect(paykitAssetsLabel([])).toBe('Bitkit');
   });
 
-  it('labels the single picker entry and says where and with what the buyer pays', () => {
+  it('labels the single picker entry', () => {
     expect(PAYKIT_PICKER_LABEL).toBe('Pay with Paykit');
-    expect(paykitPickerHint(['BTC', 'USDT'])).toBe('In Bitkit · Bitcoin or USDT');
-    expect(paykitPickerHint(['BTC'])).toBe('In Bitkit · Bitcoin');
   });
 
   it('shows the neutral pay-in-Bitkit state before any rail is seen', () => {
