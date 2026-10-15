@@ -48,12 +48,7 @@ import { isRecognizedMarketplaceNotification } from '@/services/marketplace/mark
 import type { MarketplaceSessionEndedEvent, MarketplaceSessionInfo } from '@/services/marketplace/marketplace-session';
 import { useAuthStore } from '@/stores/auth/auth.store';
 import { useCommerceStore } from '@/stores/commerce/commerce.store';
-import type {
-  CommerceConditionFilter,
-  CommerceSaleFormatFilter,
-  CommerceSort,
-  CommerceUsdtRefusalReason,
-} from '@/stores/commerce/commerce.types';
+import type { CommerceConditionFilter, CommerceSaleFormatFilter, CommerceSort } from '@/stores/commerce/commerce.types';
 import { useNotificationStore } from '@/stores/notification/notification.store';
 
 /** Rates for an order, or why this device could not open the address to quote against. */
@@ -677,8 +672,8 @@ export class CommerceController {
   static async getMyPaymentConfig() {
     const ownerPubky = this.getCurrentUserPubky();
     const config = await CommerceApplication.getMyPaymentConfig(ownerPubky);
-    // Sellers who turned bitcoin on before the Shop published storefronts get one here.
-    if (config?.bitcoinEnabled) this.ensureStorefront(ownerPubky);
+    // Sellers who turned bitcoin or USDT on before the Shop published storefronts get one here.
+    if (config?.bitcoinEnabled || config?.usdtEnabled === true) this.ensureStorefront(ownerPubky);
     return config;
   }
 
@@ -690,13 +685,13 @@ export class CommerceController {
   }) {
     const ownerPubky = this.getCurrentUserPubky();
     const saved = await CommerceApplication.putMyPaymentConfig(ownerPubky, input);
-    if (saved.bitcoinEnabled) this.ensureStorefront(ownerPubky);
+    if (saved.bitcoinEnabled || saved.usdtEnabled === true) this.ensureStorefront(ownerPubky);
     return saved;
   }
 
   /**
-   * A seller who can be paid in bitcoin (Accept bitcoin on, or a published
-   * listing) gets a default storefront when they have none, because Bitkit
+   * A seller who can be paid through Paykit (Accept bitcoin or Accept USDT on,
+   * or a published listing) gets a default storefront when they have none, because Bitkit
    * only makes a seller the buyer's contact when the seller publishes
    * `shop.json`. Runs behind the seller's action and never blocks or fails it.
    * Checks once per seller per session; a failure or an account switch allows
@@ -1124,15 +1119,6 @@ export class CommerceController {
   /** Whether USDT may be offered: the Shop flag AND the service capability. A failed read rejects. */
   static async fetchUsdtPaymentsAvailable(): Promise<boolean> {
     return await CommerceApplication.fetchUsdtPaymentsAvailable();
-  }
-
-  /**
-   * Remembers, for this browser session, that the service refused a USDT bind
-   * for this seller set, so the checkout picker and the order's payment card
-   * stop offering a method that would be refused again.
-   */
-  static rememberUsdtRefusal(sellerKey: string, reason: CommerceUsdtRefusalReason): void {
-    useCommerceStore.getState().setUsdtRefusal(sellerKey, reason);
   }
 
   /**
