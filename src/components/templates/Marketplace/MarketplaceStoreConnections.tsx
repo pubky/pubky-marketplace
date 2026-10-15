@@ -22,6 +22,7 @@ import {
 } from '@/libs/commerce/connectors';
 import { BackToMyShop } from '@/molecules/Marketplace/BackToMyShop';
 import { ContentLayout } from '@/organisms/ContentLayout/ContentLayout';
+import { MarketplaceConnectionStatusCheck } from '@/organisms/Marketplace/MarketplaceConnectionStatusCheck';
 import { MarketplaceConnectShopify } from '@/organisms/Marketplace/MarketplaceConnectShopify';
 import { MarketplaceConnectWooCommerce } from '@/organisms/Marketplace/MarketplaceConnectWooCommerce';
 import { MarketplaceSectionNav } from '@/organisms/Marketplace/MarketplaceSectionNav';
@@ -128,6 +129,21 @@ export function MarketplaceStoreConnections() {
             <AlertTriangle className="mt-0.5 size-4 shrink-0 text-destructive" aria-hidden="true" />
             {notice}
           </div>
+        )}
+
+        {returned?.kind === 'connected' && statusCheck.phase !== 'idle' && !shopify.draft && (
+          <Card className="rounded-md p-0 shadow-lg" data-testid="store-connections-return-check">
+            <CardContent className="p-6">
+              <MarketplaceConnectionStatusCheck
+                phase={statusCheck.phase}
+                result={statusCheck.result}
+                onCheck={() =>
+                  void checkAndRefresh({ connectionId: returned.connectionId, provider: returned.provider })
+                }
+                storeLabel={returned.provider === 'woocommerce' ? 'WooCommerce' : 'Shopify'}
+              />
+            </CardContent>
+          </Card>
         )}
 
         {connections.isLoading ? (

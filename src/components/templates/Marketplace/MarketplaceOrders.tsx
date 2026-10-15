@@ -66,6 +66,7 @@ import { ContentLayout } from '@/organisms/ContentLayout/ContentLayout';
 import { DropEditionBadge, DropEditionReceiptLine } from '@/organisms/Marketplace/DropEditionBadge';
 import { MarketplaceBitcoinAmountBreakdown } from '@/organisms/Marketplace/MarketplaceBitcoinAmountBreakdown';
 import { MarketplaceCheckoutItem } from '@/organisms/Marketplace/MarketplaceCheckoutItem';
+import { MarketplaceConnectorPushStatus } from '@/organisms/Marketplace/MarketplaceConnectorPushStatus';
 import { MarketplaceEncryptedConversationDialog } from '@/organisms/Marketplace/MarketplaceEncryptedConversationDialog';
 import { MarketplaceIndicativePrice } from '@/organisms/Marketplace/MarketplaceIndicativePrice';
 import { MarketplaceMyReviews } from '@/organisms/Marketplace/MarketplaceMyReviews';
@@ -214,6 +215,8 @@ export function MarketplaceOrders() {
               : 'Track your purchases and sales.'}
           </Typography>
         </div>
+
+        {hasTransactionBackend && <MarketplaceConnectorPushStatus />}
 
         {!hasTransactionBackend ? (
           <div className="flex min-h-64 flex-col items-center justify-center rounded-md px-6 text-center">
