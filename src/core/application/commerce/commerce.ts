@@ -4623,7 +4623,10 @@ export class CommerceApplication {
       signal: attempt.signal,
     });
     this.assertListingRegistrationFence(attempt);
-    if (existing?.serverRevision) {
+    // `listing.register` carries no Locks lock, so a Locks listing registered with it would sell as a
+    // digital item without its lock. `listing.sync` derives the lock from the seller-signed record.
+    const locksListing = durable && listing.digitalLock !== undefined;
+    if (existing?.serverRevision || locksListing) {
       // Already registered: EDITS must still reach the authority. `listing.sync`
       // is convergent — the service re-reads the seller-signed record and
       // updates the aggregate's terms when the record revision advanced, or
@@ -4634,7 +4637,14 @@ export class CommerceApplication {
         const command = this.createListingSyncCommand(listing.ownerPubky, listing.listingId);
         const response = await send(command);
         if (isListingRecordNotFoundResponse(response, aggregateId, command.commandId)) return 'service_not_found';
-        if (!isSuccessfulListingRegistrationResponse(response, aggregateId, command.commandId, true)) {
+        if (
+          !isSuccessfulListingRegistrationResponse(
+            response,
+            aggregateId,
+            command.commandId,
+            Boolean(existing?.serverRevision),
+          )
+        ) {
           throw Err.client(ClientErrorCode.BAD_REQUEST, 'Marketplace listing registration was refused.', {
             service: ErrorService.Marketplace,
             operation: 'registerListing',

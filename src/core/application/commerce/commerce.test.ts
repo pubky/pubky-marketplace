@@ -2399,6 +2399,95 @@ describe('CommerceApplication', () => {
     expect(result).toEqual({ registered: true, verified: true });
   });
 
+  describe('first registration of a digital listing (durable)', () => {
+    const digitalListing = (locks: boolean) =>
+      createCommerceListingFixture({
+        fulfillmentMethods: ['digital'],
+        package: undefined,
+        shippingOptions: [],
+        ...(locks
+          ? {
+              digitalLock: {
+                policyUri: `pubky://${COMMERCE_FIXTURE_SELLER}/pub/locks.app/boots_01.json`,
+                criterionId: 'criterion-1',
+                contentPath: 'premium.txt',
+                resourceHash: 'b'.repeat(64),
+                minimumConfirmations: 6,
+              },
+            }
+          : {}),
+      });
+
+    beforeEach(() => {
+      vi.spyOn(commerceConfig, 'getCommerceAdapterMode').mockReturnValue('transaction-service');
+      vi.spyOn(CommerceApplication, 'hasActiveMarketplaceSession').mockReturnValue(true);
+      vi.spyOn(LocalCommerceService, 'stageListingSync');
+      vi.spyOn(CommerceHomeserverService, 'putJson').mockResolvedValue(undefined);
+      vi.spyOn(LocalCommerceService, 'completeSyncJob').mockResolvedValue(undefined);
+      vi.spyOn(MarketplaceGatewayService, 'getListing').mockResolvedValue(null);
+    });
+
+    it('registers a Locks listing through listing.sync, which derives its lock from the record', async () => {
+      const record = digitalListing(true);
+      const execute = vi
+        .spyOn(MarketplaceGatewayService, 'execute')
+        .mockImplementation(async (_actor, command) => listingRegisteredResponse(command));
+
+      await expect(CommerceApplication.commitUpsertListing(record)).resolves.toEqual({
+        registered: true,
+        verified: true,
+      });
+
+      expect(execute).toHaveBeenCalledOnce();
+      expect(execute).toHaveBeenCalledWith(
+        record.ownerPubky,
+        expect.objectContaining({
+          kind: 'listing.sync',
+          expectedRevision: 0,
+          payload: { sellerPubky: record.ownerPubky, listingId: record.listingId },
+        }),
+        { signal: expect.any(AbortSignal) },
+      );
+    });
+
+    it('keeps a new Locks listing pending when its sync is refused', async () => {
+      const record = digitalListing(true);
+      vi.spyOn(MarketplaceGatewayService, 'execute').mockImplementation(async (_actor, command) => ({
+        ok: false as const,
+        version: 1 as const,
+        commandId: command.commandId,
+        aggregateId: command.aggregateId,
+        error: { code: 'INVALID_STATE', message: 'The seller listing record could not be interpreted.' },
+      }));
+
+      await expect(CommerceApplication.commitUpsertListing(record)).resolves.toEqual({
+        registered: false,
+        verified: true,
+      });
+      await expect(LocalCommerceService.getListing(`${record.ownerPubky}:${record.listingId}`)).resolves.toMatchObject({
+        registration_status: 'unregistered',
+      });
+    });
+
+    it('still registers a digital listing without a lock through listing.register', async () => {
+      const record = digitalListing(false);
+      const execute = vi
+        .spyOn(MarketplaceGatewayService, 'execute')
+        .mockImplementation(async (_actor, command) => listingRegisteredResponse(command));
+
+      await CommerceApplication.commitUpsertListing(record);
+
+      expect(execute).toHaveBeenCalledWith(
+        record.ownerPubky,
+        expect.objectContaining({
+          kind: 'listing.register',
+          payload: expect.objectContaining({ fulfillmentMethods: ['digital'] }),
+        }),
+        { signal: expect.any(AbortSignal) },
+      );
+    });
+  });
+
   it.each(['unavailable', 'transaction-service'] as const)(
     'publishes a composer record whose optional fields are undefined, verified against its JSON read-back (%s)',
     async (mode) => {
