@@ -1,3 +1,4 @@
+import type { Session } from '@synonymdev/pubky';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CommerceApplication } from '@/application/commerce/commerce';
 import { MarketplaceGrantSessionCoordinator } from '@/coordinators/marketplace-grant-session/marketplace-grant-session';
@@ -29,7 +30,7 @@ const MINTED: MintedGrantSession = {
 const INFO = { pubky: PUBKY, capabilities: CAPS, expiresAt: MINTED.expiresAt, issuedAt: '2026-10-15T00:00:00.000Z' };
 
 function signIn(pubky = PUBKY, grant: object | null = {}) {
-  const session = asOpaque({ grant: grant ?? undefined, info: { publicKey: { z32: () => pubky } } });
+  const session = asOpaque<Session>({ grant: grant ?? undefined, info: { publicKey: { z32: () => pubky } } });
   useAuthStore.setState({ session, currentUserPubky: pubky, isLoggingOut: false });
   return session;
 }
