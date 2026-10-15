@@ -43,6 +43,11 @@ export type TRunImportImageBatchesParams = {
    * side of an interruption is reused instead of loaded again.
    */
   knownMedia?: (urls: string[]) => Promise<ReadonlyMap<string, PresetJson>>;
+  /**
+   * Records a photo's media record on its listing's row before the file is written (see `knownMedia`), so a page
+   * lost mid-upload leaves no file that nothing refers to.
+   */
+  journal?: (rowIdentity: string, url: string, media: PresetJson) => Promise<void>;
   /** Writes finished listings' media and results onto their planned rows, so a resume skips them. */
   attach: (outcomes: ListingImageOutcome[]) => Promise<void>;
   signal?: AbortSignal;
@@ -83,6 +88,7 @@ export async function runImportImageBatches({
   loadTargets,
   attach,
   knownMedia,
+  journal,
   signal,
   onProgress,
   onWait,
@@ -166,6 +172,13 @@ export async function runImportImageBatches({
         altText: (url) => altTextForUrl(batch, url),
         signal,
         onWait,
+        onPrepared: async (url, media) => {
+          const owner = batch.find((target) =>
+            target.images.some((image) => normalizeImageUrl(image.url) === normalizeImageUrl(url)),
+          );
+          if (owner?.rowIdentity)
+            await journal?.(owner.rowIdentity, normalizeImageUrl(url), JSON.parse(JSON.stringify(media)) as PresetJson);
+        },
         onProgress: ({ done }) => report(done),
         onResult: (entry) => {
           settle(entry);

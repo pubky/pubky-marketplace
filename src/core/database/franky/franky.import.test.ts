@@ -190,5 +190,44 @@ describe('Inventory Studio Dexie import tables', () => {
       await mine.deleteManifest('kept');
       await theirs.deleteManifest('theirs-2');
     });
+
+    it('writes payloads for the rows it is given only, leaving every other row of the import as it was', async () => {
+      await db.open();
+      const store = new DexieManifestStore(seller);
+      const base = manifest('payloads', '2026-10-14T00:00:00.000Z');
+      const row = base.rows[0]!;
+      await store.create({
+        ...base,
+        rowCount: 3,
+        rows: [
+          row,
+          { ...row, sourceRow: 2, rowIdentity: 'payloads-row-2' },
+          { ...row, sourceRow: 3, rowIdentity: 'payloads-row-3' },
+        ],
+      });
+      await store.persistPayloads(
+        'payloads',
+        new Map([
+          ['payloads-row', '{"n":1}'],
+          ['payloads-row-2', '{"n":2}'],
+          ['payloads-row-3', '{"n":3}'],
+        ]),
+      );
+
+      await store.persistPayloads(
+        'payloads',
+        new Map([
+          ['payloads-row-2', '{"n":22}'],
+          ['no-such-row', '{"n":9}'],
+        ]),
+      );
+
+      expect(await store.getPayloadJson('payloads', 'payloads-row')).toBe('{"n":1}');
+      expect(await store.getPayloadJson('payloads', 'payloads-row-2')).toBe('{"n":22}');
+      expect(await store.getPayloadJson('payloads', 'payloads-row-3')).toBe('{"n":3}');
+      expect(await store.getPayloadJson('payloads', 'no-such-row')).toBeNull();
+      expect(await db.commerce_import_rows.where('manifestId').equals('payloads').count()).toBe(3);
+      await store.deleteManifest('payloads');
+    });
   });
 });

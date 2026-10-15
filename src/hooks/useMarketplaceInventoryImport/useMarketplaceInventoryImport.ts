@@ -327,6 +327,8 @@ export function useMarketplaceInventoryImport(sellerPubky: string | null) {
         ownerPubky: sellerPubky,
         loadTargets: () => CommerceController.inventoryImportImageTargets(sellerPubky, id),
         knownMedia: (urls) => CommerceController.inventoryImportKnownMedia(sellerPubky, id, urls),
+        journal: (rowIdentity, url, media) =>
+          CommerceController.journalInventoryImportPhoto(sellerPubky, id, rowIdentity, url, media),
         attach: (outcomes) => CommerceController.attachInventoryImportImages(sellerPubky, id, outcomes),
         signal: controller.signal,
         onProgress: ({ done, total, batch, batches }) => {

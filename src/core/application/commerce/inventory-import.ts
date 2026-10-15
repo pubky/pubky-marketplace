@@ -35,11 +35,13 @@ import {
   mediaOf,
   planImageBatches,
   planImageSync,
+  readPhotoJournal,
   RESULT_CSV_IMAGE_COLUMNS,
   rowHoldsMedia,
   sourceImagesOf,
   sourceUrlHash,
   uniqueImageUrls,
+  withPhotoJournalEntry,
 } from '@/pipes/commerce/import-image-phase';
 import {
   continueRevision,
@@ -207,6 +209,8 @@ export type InventoryImportHost = {
   loadPaymentConfig: (sellerPubky: string) => Promise<SellerPaymentConfig>;
   loadDeliveryKeyPublication: (sellerPubky: string) => Promise<SellerDeliveryKeyPublication>;
   loadShop: (sellerPubky: string) => Promise<CommerceShopRecord | null>;
+  /** Whether a media file is on the seller's homeserver at this path. */
+  mediaExists: (url: string) => Promise<boolean>;
 };
 
 function csvCell(value: string): string {
@@ -316,6 +320,7 @@ export class CommerceInventoryImportApplication {
             return null;
           }
         }),
+      mediaExists: overrides.mediaExists ?? ((url) => CommerceHomeserverService.exists(url)),
       currentItems:
         overrides.currentItems ??
         (async () =>
@@ -632,13 +637,14 @@ export class CommerceInventoryImportApplication {
       if (holdsMedia || images.length === 0) continue;
       const stored = existing.get(listingId);
       if (!stored) {
-        targets.push({ listingId, images });
+        targets.push({ listingId, rowIdentity: group[0]?.rowIdentity, images });
         continue;
       }
       // Already on the seller's record: fetch only URLs it does not have, drop what left the file, keep the rest.
       const plan = planImageSync(stored.media, images, COMMERCE_LISTING_MAX_MEDIA);
       targets.push({
         listingId,
+        rowIdentity: group[0]?.rowIdentity,
         images: plan.toUpload,
         skipped: plan.overflow,
         keptMedia: plan.keptMedia,
@@ -715,19 +721,47 @@ export class CommerceInventoryImportApplication {
     const manifest = await this.host.store.load(manifestId);
     const known = new Map<string, PresetJson>();
     if (!manifest || urls.length === 0) return known;
+    const wanted = new Map(urls.map((url) => [sourceUrlHash(url), url]));
     const byHash = new Map<string, PresetJson>();
+    const journaled = new Map<string, PresetJson>();
     for (const row of manifest.rows) {
       const payload = await this.rowPayload(manifestId, row.rowIdentity);
       for (const entry of mediaOf(payload)) {
         const hash = (entry as Record<string, unknown>)[IMPORT_SOURCE_HASH_KEY];
         if (typeof hash === 'string' && !byHash.has(hash)) byHash.set(hash, entry);
       }
+      for (const entry of readPhotoJournal(payload)) {
+        if (!journaled.has(entry.hash)) journaled.set(entry.hash, entry.media);
+      }
     }
-    for (const url of urls) {
-      const found = byHash.get(sourceUrlHash(url));
+    // An upload that was recorded and not attached: its file is at the recorded path only if the write got that far.
+    for (const [hash, media] of journaled) {
+      if (byHash.has(hash) || !wanted.has(hash)) continue;
+      const path = (media as Record<string, unknown>).url;
+      if (typeof path === 'string' && (await this.host.mediaExists(path))) byHash.set(hash, media);
+    }
+    for (const [hash, url] of wanted) {
+      const found = byHash.get(hash);
       if (found) known.set(url, found);
     }
     return known;
+  }
+
+  /**
+   * Records, before the file is written, the media record a photo is about to be
+   * stored under. The record is stored on the listing's first row and read back
+   * by `knownMedia`, which reuses it if the file is there. So a page lost at any
+   * point leaves either nothing, or a file that the next run finds and attaches;
+   * never a file nothing refers to.
+   */
+  async journalPhoto(manifestId: string, rowIdentity: string, url: string, media: PresetJson): Promise<void> {
+    const payload = await this.rowPayload(manifestId, rowIdentity);
+    if (!payload) return;
+    const extraFields = withPhotoJournalEntry(payload.extraFields ?? {}, { hash: sourceUrlHash(url), media });
+    await this.host.store.persistPayloads(
+      manifestId,
+      new Map([[rowIdentity, JSON.stringify({ ...payload, extraFields })]]),
+    );
   }
 
   /** Writes each listing's uploaded media and per-image results onto its planned rows. */

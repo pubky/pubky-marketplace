@@ -25,6 +25,17 @@ export const IMAGE_RESULTS_JSON_FIELD = 'image_results_json';
  */
 export const PHOTOS_PARTIAL_FIELD = 'photos_partial';
 
+/**
+ * The photo uploads under way for a listing, written before each file is: the
+ * media record (id, path, hash, size) a photo is about to be stored under, keyed
+ * by the hash of its source URL. It lives on the listing's first row. If the page
+ * is lost between writing a file and recording it, the next run finds the record
+ * and the file at its planned path and reuses both, so no file is left behind.
+ */
+export const PHOTO_JOURNAL_FIELD = 'photo_journal_json';
+
+export type PhotoJournalEntry = { readonly hash: string; readonly media: PresetJson };
+
 /** Extra field carrying how a re-import changed a stored listing's photos, for the result CSV. */
 export const IMAGE_SYNC_JSON_FIELD = 'image_sync_json';
 /**
@@ -50,6 +61,8 @@ export type ImageSync = {
 
 export type ImportImageTarget = {
   readonly listingId: string;
+  /** The listing's first planned row: where the photo journal for the listing is kept. */
+  readonly rowIdentity?: string;
   /** Source images to fetch and upload: the URLs the stored listing does not already have. */
   readonly images: readonly SourceImage[];
   /** Source images left out because the listing is full (at most 13 media). */
@@ -341,6 +354,29 @@ export function partialOutcome(
   return { ...rest, partial: true };
 }
 
+/** The journal a row holds; malformed entries are ignored. */
+export function readPhotoJournal(row: PayloadRow | null): PhotoJournalEntry[] {
+  const parsed = parseJson(row?.extraFields?.[PHOTO_JOURNAL_FIELD]);
+  if (!Array.isArray(parsed)) return [];
+  const entries: PhotoJournalEntry[] = [];
+  for (const entry of parsed) {
+    if (typeof entry !== 'object' || entry === null) continue;
+    const { hash, media } = entry as { hash?: unknown; media?: unknown };
+    if (typeof hash !== 'string' || typeof media !== 'object' || media === null || Array.isArray(media)) continue;
+    entries.push({ hash, media: media as PresetJson });
+  }
+  return entries;
+}
+
+/** The row's extra fields with one more upload in its journal (the same photo replaces its earlier entry). */
+export function withPhotoJournalEntry(
+  extraFields: Readonly<Record<string, string>>,
+  entry: PhotoJournalEntry,
+): Record<string, string> {
+  const rest = readPhotoJournal({ extraFields }).filter((existing) => existing.hash !== entry.hash);
+  return { ...extraFields, [PHOTO_JOURNAL_FIELD]: JSON.stringify([...rest, entry]) };
+}
+
 /** The row's extra fields after the photo phase: uploaded media in `media_json`, every result in `image_results_json`. */
 export function extraFieldsWithImages(
   extraFields: Readonly<Record<string, string>>,
@@ -352,7 +388,10 @@ export function extraFieldsWithImages(
   next[IMAGE_RESULTS_JSON_FIELD] = JSON.stringify(outcome.results);
   if (outcome.sync) next[IMAGE_SYNC_JSON_FIELD] = JSON.stringify(outcome.sync);
   if (outcome.partial) next[PHOTOS_PARTIAL_FIELD] = '1';
-  else delete next[PHOTOS_PARTIAL_FIELD];
+  else {
+    delete next[PHOTOS_PARTIAL_FIELD];
+    delete next[PHOTO_JOURNAL_FIELD];
+  }
   return next;
 }
 

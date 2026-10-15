@@ -285,6 +285,96 @@ describe('runImportImageBatches', () => {
   });
 });
 
+describe('runImportImageBatches recording uploads', () => {
+  const withRows = (all: ImportImageTarget[]) =>
+    all.map((entry) => ({ ...entry, rowIdentity: `row-${entry.listingId}` }));
+
+  /** Calls onPrepared for each photo, as the real upload does just before it writes the file. */
+  const recordingUpload =
+    (written: string[]): Upload =>
+    async ({ urls, onPrepared, onResult }: TImportImageRunParams) => {
+      for (const url of urls) {
+        await onPrepared?.(url, media(url));
+        written.push(url);
+        onResult?.(uploaded(url));
+      }
+      return { results: urls.map((url) => uploaded(url)), fetchedBytes: 0 };
+    };
+
+  it('records each photo on the first row of the listing that needs it, before the file is written', async () => {
+    const all = withRows(listings(2, 2));
+    const run = host(all);
+    const events: string[] = [];
+    const written: string[] = [];
+    const upload = recordingUpload(written);
+    await runImportImageBatches({
+      ownerPubky: OWNER,
+      loadTargets: run.loadTargets,
+      attach: run.attach,
+      journal: async (row, url) => {
+        events.push(`record ${row} ${url.split('.example.com/')[1]} (written so far: ${written.length})`);
+      },
+      upload,
+    });
+    expect(events).toEqual([
+      'record row-l0 0/0.jpg (written so far: 0)',
+      'record row-l0 0/1.jpg (written so far: 1)',
+      'record row-l1 1/0.jpg (written so far: 2)',
+      'record row-l1 1/1.jpg (written so far: 3)',
+    ]);
+  });
+
+  it('records a photo shared by two listings once, on the first listing that needs it, and on a normalised URL', async () => {
+    const shared = 'https://shop.example.com/shared.jpg';
+    const all = withRows([
+      { listingId: 'first', images: [{ url: ` ${shared} `, alt: 'a' }] },
+      { listingId: 'second', images: [{ url: shared, alt: 'b' }] },
+    ]);
+    const run = host(all);
+    const journal = vi.fn(async () => undefined);
+    await runImportImageBatches({
+      ownerPubky: OWNER,
+      loadTargets: run.loadTargets,
+      attach: run.attach,
+      journal,
+      upload: recordingUpload([]),
+    });
+    expect(journal).toHaveBeenCalledTimes(1);
+    expect(journal).toHaveBeenCalledWith('row-first', shared, expect.anything());
+  });
+
+  it('records nothing for a listing that has no row to keep the record on, and does not fail', async () => {
+    const run = host(listings(1, 1));
+    const journal = vi.fn(async () => undefined);
+    const result = await runImportImageBatches({
+      ownerPubky: OWNER,
+      loadTargets: run.loadTargets,
+      attach: run.attach,
+      journal,
+      upload: recordingUpload([]),
+    });
+    expect(result.status).toBe('complete');
+    expect(journal).not.toHaveBeenCalled();
+  });
+
+  it('stops the run, before the file is written, when a record cannot be kept', async () => {
+    const written: string[] = [];
+    const run = host(withRows(listings(2, 2)));
+    await expect(
+      runImportImageBatches({
+        ownerPubky: OWNER,
+        loadTargets: run.loadTargets,
+        attach: run.attach,
+        journal: async () => {
+          throw new Error('storage unavailable');
+        },
+        upload: recordingUpload(written),
+      }),
+    ).rejects.toThrow('storage unavailable');
+    expect(written).toEqual([]);
+  });
+});
+
 describe('runImportImageBatches writing as it goes', () => {
   /** A host whose rows keep what was attached, with a partial listing still counting as not done. */
   function persisting(all: ImportImageTarget[]) {

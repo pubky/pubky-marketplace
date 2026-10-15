@@ -196,15 +196,13 @@ export class DexieManifestStore implements InventoryManifestStore {
 
   async persistPayloads(manifestId: string, payloads: ReadonlyMap<string, string>): Promise<void> {
     await this.database.transaction('rw', this.database.commerce_import_rows, async () => {
-      const rows = await this.database.commerce_import_rows.where('manifestId').equals(manifestId).toArray();
+      const keys = [...payloads.keys()].map((rowIdentity): [string, string] => [manifestId, rowIdentity]);
+      const rows = await this.database.commerce_import_rows.bulkGet(keys);
       const now = Date.now();
       const next: CommerceImportRowModelSchema[] = [];
       for (const row of rows) {
-        const payload = payloads.get(row.rowIdentity);
-        if (payload === undefined) {
-          next.push(row);
-          continue;
-        }
+        const payload = row ? payloads.get(row.rowIdentity) : undefined;
+        if (!row || payload === undefined) continue;
         next.push({ ...row, payload_json: payload, updated_at: now });
       }
       if (next.length > 0) {

@@ -31,6 +31,12 @@ export type TImportImageRunParams = {
   onWait?: (secondsLeft: number | null) => void;
   /** Called with each distinct photo's outcome as soon as it is known, before the run ends. */
   onResult?: (result: TImportImageResult) => void;
+  /**
+   * Called with a photo's media record after it is prepared and before its file is written, and awaited. A caller
+   * that records it there can find the file again if the page is lost before the upload is recorded as done.
+   * An error here stops the run before the file is written.
+   */
+  onPrepared?: (url: string, media: TImportImageMedia) => Promise<void>;
 };
 
 export type TImportImageRunResult = {
@@ -59,6 +65,7 @@ export async function uploadImportImages({
   onProgress,
   onWait,
   onResult,
+  onPrepared,
 }: TImportImageRunParams): Promise<TImportImageRunResult> {
   const trimmed = urls.map((url) => url.trim());
   const unique = [...new Set(trimmed)];
@@ -109,6 +116,7 @@ export async function uploadImportImages({
     }
     if (!prepared.ok) return failed(url, prepared.reason);
 
+    await onPrepared?.(url, prepared.media);
     try {
       await CommerceController.commitCreateMedia(prepared.media.id, prepared.bytes);
     } catch {

@@ -156,6 +156,61 @@ describe('uploadImportImages', () => {
   });
 });
 
+describe('uploadImportImages recording an upload before it is written', () => {
+  const prepareSpy = vi.spyOn(ImportImageUploadController, 'fetchAndPrepare');
+  const writeSpy = vi.spyOn(CommerceController, 'commitCreateMedia');
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    let counter = 0;
+    prepareSpy.mockImplementation(async () => prepared(`m${(counter += 1)}`));
+    writeSpy.mockResolvedValue('pubky://ok');
+  });
+
+  it("hands over each photo's media record, and waits for it, before the file is written", async () => {
+    const order: string[] = [];
+    writeSpy.mockImplementation(async (id) => {
+      order.push(`write ${String(id)}`);
+      return 'pubky://ok';
+    });
+    await uploadImportImages({
+      ownerPubky: OWNER,
+      urls: ['https://a.example.com/1.png', 'https://a.example.com/2.png'],
+      onPrepared: async (url, media) => {
+        order.push(`record ${media.id}`);
+        await Promise.resolve();
+        order.push(`recorded ${url.split('/').pop()}`);
+      },
+    });
+    expect(order).toEqual(['record m1', 'recorded 1.png', 'write m1', 'record m2', 'recorded 2.png', 'write m2']);
+  });
+
+  it('writes nothing, and stops the run, when the record cannot be kept', async () => {
+    await expect(
+      uploadImportImages({
+        ownerPubky: OWNER,
+        urls: ['https://a.example.com/1.png', 'https://a.example.com/2.png'],
+        onPrepared: async () => {
+          throw new Error('storage unavailable');
+        },
+      }),
+    ).rejects.toThrow('storage unavailable');
+    expect(writeSpy).not.toHaveBeenCalled();
+  });
+
+  it('is asked once per distinct photo and never for one that could not be prepared', async () => {
+    prepareSpy.mockResolvedValueOnce({ ok: false, reason: 'not_image', fetchedBytes: 0 });
+    const onPrepared = vi.fn(async () => undefined);
+    await uploadImportImages({
+      ownerPubky: OWNER,
+      urls: ['https://a.example.com/1.png', 'https://a.example.com/2.png', 'https://a.example.com/2.png'],
+      onPrepared,
+    });
+    expect(onPrepared).toHaveBeenCalledTimes(1);
+    expect(onPrepared).toHaveBeenCalledWith('https://a.example.com/2.png', expect.objectContaining({ id: 'm1' }));
+  });
+});
+
 describe('uploadImportImages when the route asks to slow down', () => {
   const prepareSpy = vi.spyOn(ImportImageUploadController, 'fetchAndPrepare');
   const writeSpy = vi.spyOn(CommerceController, 'commitCreateMedia');

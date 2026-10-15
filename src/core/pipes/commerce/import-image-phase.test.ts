@@ -21,13 +21,16 @@ import {
   normalizeImageUrl,
   outcomesFromResults,
   partialOutcome,
+  PHOTO_JOURNAL_FIELD,
   PHOTOS_PARTIAL_FIELD,
   planImageBatches,
   planImageSync,
+  readPhotoJournal,
   rowHoldsMedia,
   sourceImagesOf,
   sourceUrlHash,
   uniqueImageUrls,
+  withPhotoJournalEntry,
 } from './import-image-phase';
 import { SOURCE_IMAGE_URLS_FIELD } from './import-preset-rows';
 import { DEFAULT_IMPORT_SETTINGS } from './import-settings';
@@ -579,5 +582,50 @@ describe('estimatePhotoPauses', () => {
     expect(estimatePhotoPauses(-5, 300 * KB, 150 * MB)).toBe(0);
     expect(estimatePhotoPauses(900, 0, 150 * MB)).toBe(0);
     expect(estimatePhotoPauses(900, 300 * KB, 0)).toBe(0);
+  });
+});
+
+describe('the photo journal', () => {
+  const A = 'https://a.example.com/a.jpg';
+  const media = (id: string) => ({ id, url: `pubky://owner/media/${id}`, altText: 'x' });
+
+  it('keeps one entry per photo, newest last, and replaces an earlier entry for the same photo', () => {
+    const one = withPhotoJournalEntry({ keep: 'me' }, { hash: sourceUrlHash(A), media: media('m1') });
+    const two = withPhotoJournalEntry(one, { hash: 'other', media: media('m2') });
+    const again = withPhotoJournalEntry(two, { hash: sourceUrlHash(A), media: media('m3') });
+    expect(again.keep).toBe('me');
+    expect(readPhotoJournal({ extraFields: again })).toEqual([
+      { hash: 'other', media: media('m2') },
+      { hash: sourceUrlHash(A), media: media('m3') },
+    ]);
+  });
+
+  it('reads nothing from a row without a journal, and ignores malformed entries', () => {
+    expect(readPhotoJournal(null)).toEqual([]);
+    expect(readPhotoJournal({ extraFields: {} })).toEqual([]);
+    expect(readPhotoJournal({ extraFields: { [PHOTO_JOURNAL_FIELD]: 'not json' } })).toEqual([]);
+    expect(readPhotoJournal({ extraFields: { [PHOTO_JOURNAL_FIELD]: '{"hash":"x"}' } })).toEqual([]);
+    expect(
+      readPhotoJournal({
+        extraFields: {
+          [PHOTO_JOURNAL_FIELD]: JSON.stringify([
+            { hash: 1, media: {} },
+            { hash: 'ok', media: 'no' },
+            { hash: 'ok', media: [] },
+            null,
+            { hash: 'good', media: { id: 'm' } },
+          ]),
+        },
+      }),
+    ).toEqual([{ hash: 'good', media: { id: 'm' } }]);
+  });
+
+  it('goes with the final write of a listing and stays through a partial one', () => {
+    const journaled = withPhotoJournalEntry({}, { hash: sourceUrlHash(A), media: media('m1') });
+    const target: ImportImageTarget = { listingId: 'one', images: [{ url: A, alt: 'One' }] };
+    const partial = partialOutcome(target, [uploaded(A)])!;
+    expect(extraFieldsWithImages(journaled, partial)[PHOTO_JOURNAL_FIELD]).toBeDefined();
+    const final = outcomesFromResults([target], [uploaded(A)])[0]!;
+    expect(extraFieldsWithImages(journaled, final)[PHOTO_JOURNAL_FIELD]).toBeUndefined();
   });
 });

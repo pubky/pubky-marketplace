@@ -433,6 +433,21 @@ export class CommerceController {
     return await CommerceInventoryImportApplication.forSeller(sellerPubky).knownMedia(manifestId, urls);
   }
 
+  static async journalInventoryImportPhoto(
+    sellerPubky: string,
+    manifestId: string,
+    rowIdentity: string,
+    url: string,
+    media: Parameters<CommerceInventoryImportApplication['journalPhoto']>[3],
+  ) {
+    return await CommerceInventoryImportApplication.forSeller(sellerPubky).journalPhoto(
+      manifestId,
+      rowIdentity,
+      url,
+      media,
+    );
+  }
+
   static async attachInventoryImportImages(
     sellerPubky: string,
     manifestId: string,
