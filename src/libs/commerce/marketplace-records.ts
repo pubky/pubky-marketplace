@@ -30,6 +30,7 @@ import {
   COMMERCE_LISTING_MAX_ATTRIBUTES,
 } from '@/config/taxonomy/taxonomy';
 import type { MarketplaceFulfillmentMethod } from './pickup';
+import { canonicalCountryCode } from './postal-address';
 import {
   commerceEntityIdSchema,
   commerceMoneySchema,
@@ -398,11 +399,22 @@ const commerceTransactionServiceSchema = z
 /** Whole days, `COMMERCE_SHOP_TERM_DAYS_MIN` to `COMMERCE_SHOP_TERM_DAYS_MAX`. */
 const commerceShopTermDaysSchema = z.number().int().min(COMMERCE_SHOP_TERM_DAYS_MIN).max(COMMERCE_SHOP_TERM_DAYS_MAX);
 
-/** Destination countries as uppercase ISO 3166-1 alpha-2 codes, each listed once. */
-const commerceShipsToCountriesSchema = z
-  .array(z.string().regex(/^[A-Z]{2}$/, 'Expected an uppercase two-letter country code'))
-  .max(COMMERCE_SHOP_SHIPS_TO_MAX_COUNTRIES)
-  .refine((codes) => new Set(codes).size === codes.length, 'Country codes must be unique');
+/**
+ * Destination countries, read leniently: a malformed list from another
+ * writer must not make the whole shop record unreadable. Entries are
+ * uppercased and canonicalized (UK becomes GB), anything that is not then a
+ * two-letter code is dropped, duplicates are kept once and the list is capped.
+ * A list with no usable entry reads as absent.
+ */
+const commerceShipsToCountriesSchema = z.unknown().transform((value): string[] | undefined => {
+  if (!Array.isArray(value)) return undefined;
+  const codes = value
+    .filter((entry): entry is string => typeof entry === 'string')
+    .map(canonicalCountryCode)
+    .filter((code) => /^[A-Z]{2}$/.test(code));
+  const unique = [...new Set(codes)].slice(0, COMMERCE_SHOP_SHIPS_TO_MAX_COUNTRIES);
+  return unique.length > 0 ? unique : undefined;
+});
 
 const commerceShopRecordSchemaInner = commercePublicRecordBaseSchema
   .extend({
