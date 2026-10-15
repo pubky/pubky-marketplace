@@ -1,5 +1,10 @@
 import { z } from 'zod';
-import { getCommerceAdapterMode, getMarketplaceUrl, isDurableCommerceMode } from '@/config/commerce';
+import {
+  getCommerceAdapterMode,
+  getMarketplaceUrl,
+  getStoreConnectionsEnabled,
+  isDurableCommerceMode,
+} from '@/config/commerce';
 import {
   type ConnectorAlert,
   connectorAlertsSchema,
@@ -210,7 +215,7 @@ export class MarketplaceConnectorsService {
     path: string,
     options: RequestOptions = {},
   ): Promise<unknown> {
-    if (!isDurableCommerceMode(getCommerceAdapterMode())) {
+    if (!getStoreConnectionsEnabled() || !isDurableCommerceMode(getCommerceAdapterMode())) {
       throw Err.client(ClientErrorCode.BAD_REQUEST, 'Store connections need the marketplace service.', {
         service: ErrorService.Marketplace,
         operation,

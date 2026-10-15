@@ -228,6 +228,7 @@ export const getMarketplaceGrantFlowEnabled = (): boolean => getRuntimeConfig().
 export const getMarketplaceGrantPollMilliseconds = (): number => getRuntimeConfig().marketplaceGrantPollMilliseconds;
 export const getPassportSignInEnabled = (): boolean => getRuntimeConfig().passportSignIn;
 export const getUsdtPaymentsEnabled = (): boolean => getRuntimeConfig().usdtPaymentsEnabled;
+export const getStoreConnectionsEnabled = (): boolean => getRuntimeConfig().storeConnectionsEnabled;
 
 /** The Passport deployment whose Google sign-up lands on each deploy's homeserver. */
 const PASSPORT_ORIGIN_BY_DEPLOY_ENV: Record<DeployEnv, string> = {

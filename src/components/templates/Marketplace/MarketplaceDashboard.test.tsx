@@ -137,6 +137,24 @@ describe('MarketplaceDashboard', () => {
     paymentGate.reason = null;
   });
 
+  describe('store connections entry', () => {
+    it('shows the Store connections button when the switch is on', () => {
+      vi.spyOn(commerceConfig, 'getStoreConnectionsEnabled').mockReturnValue(true);
+      render(<MarketplaceDashboard />);
+      expect(screen.getByRole('link', { name: /Store connections/ })).toHaveAttribute(
+        'href',
+        MARKETPLACE_ROUTES.SETTINGS_STORE_CONNECTIONS,
+      );
+    });
+
+    it('hides the Store connections button when the switch is off', () => {
+      vi.spyOn(commerceConfig, 'getStoreConnectionsEnabled').mockReturnValue(false);
+      render(<MarketplaceDashboard />);
+      expect(screen.queryByRole('link', { name: /Store connections/ })).not.toBeInTheDocument();
+      expect(screen.getByRole('link', { name: /Payment settings/ })).toBeInTheDocument();
+    });
+  });
+
   describe('storefront prompt', () => {
     it('asks a seller with listings and no shop to set up their storefront', async () => {
       shopState.shop = null;

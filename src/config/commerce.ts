@@ -7,6 +7,7 @@ import {
   getPaykitServerApi,
   getPaykitSetupCreatorParam,
   getPaykitSetupUrl,
+  getStoreConnectionsEnabled,
   getUsdtPaymentsEnabled,
 } from '@/libs/runtime-config/runtime-config';
 import type { CommerceAdapterMode, PaykitServerApi } from '@/libs/runtime-config/runtime-config.schema';
@@ -21,6 +22,7 @@ export {
   getPaykitServerApi,
   getPaykitSetupCreatorParam,
   getPaykitSetupUrl,
+  getStoreConnectionsEnabled,
   getUsdtPaymentsEnabled,
   type PaykitServerApi,
 };

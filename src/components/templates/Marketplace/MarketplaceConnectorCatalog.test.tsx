@@ -9,11 +9,11 @@ import { connectorRefusal } from '@/test-utils/connector-errors';
 import { connectionFixture } from '@/test-utils/connector-fixtures';
 import { MarketplaceConnectorCatalog } from './MarketplaceConnectorCatalog';
 
-const mode = vi.hoisted(() => ({ value: 'transaction-service' as string }));
+const mode = vi.hoisted(() => ({ value: 'transaction-service' as string, enabled: true }));
 
 vi.mock('@/config/commerce', async () => {
   const actual = await vi.importActual<typeof import('@/config/commerce')>('@/config/commerce');
-  return { ...actual, getCommerceAdapterMode: () => mode.value };
+  return { ...actual, getCommerceAdapterMode: () => mode.value, getStoreConnectionsEnabled: () => mode.enabled };
 });
 
 vi.mock('@/stores/auth/auth.store', () => ({
@@ -74,6 +74,7 @@ describe('MarketplaceConnectorCatalog', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mode.value = 'transaction-service';
+    mode.enabled = true;
     vi.mocked(ConnectorsController.fetchConnections).mockResolvedValue([CONNECTION]);
     vi.mocked(ConnectorsController.fetchSelection).mockResolvedValue([]);
     vi.mocked(ConnectorsController.fetchMappings).mockResolvedValue([]);

@@ -96,6 +96,11 @@ const view = vi.hoisted(() => ({
   unfinishedDrafts: [] as Array<{ listingId: string; title: string; updatedAt: number; ageLabel: string }>,
 }));
 
+vi.mock('@/config/commerce', async () => {
+  const actual = await vi.importActual<typeof import('@/config/commerce')>('@/config/commerce');
+  return { ...actual, getStoreConnectionsEnabled: () => true };
+});
+
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn() }),
   usePathname: () => '/marketplace/dashboard',

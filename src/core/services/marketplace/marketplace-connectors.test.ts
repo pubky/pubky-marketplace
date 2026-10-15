@@ -10,13 +10,14 @@ const TOKEN = 'T'.repeat(43);
 const CONNECTION_ID = '11111111-1111-4111-8111-111111111111';
 const BASE = 'http://127.0.0.1:8080';
 
-const config = vi.hoisted(() => ({ mode: 'transaction-service' as string }));
+const config = vi.hoisted(() => ({ mode: 'transaction-service' as string, enabled: true }));
 
 vi.mock('@/config/commerce', async () => {
   const actual = await vi.importActual<typeof import('@/config/commerce')>('@/config/commerce');
   return {
     ...actual,
     getCommerceAdapterMode: () => config.mode,
+    getStoreConnectionsEnabled: () => config.enabled,
     getMarketplaceUrl: () => 'http://127.0.0.1:8080',
   };
 });
@@ -53,6 +54,7 @@ describe('MarketplaceConnectorsService', () => {
 
   beforeEach(() => {
     config.mode = 'transaction-service';
+    config.enabled = true;
     fetchMock.mockReset();
     vi.stubGlobal('fetch', fetchMock);
     vi.spyOn(MarketplaceSessionService, 'getActiveSession').mockReturnValue({
@@ -272,6 +274,13 @@ describe('MarketplaceConnectorsService', () => {
   it('does not call the service outside the durable mode', async () => {
     config.mode = 'sandbox';
     await expect(MarketplaceConnectorsService.list(ACTOR)).rejects.toBeInstanceOf(AppError);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('sends nothing while the store connections switch is off', async () => {
+    config.enabled = false;
+    await expect(MarketplaceConnectorsService.list(ACTOR)).rejects.toBeInstanceOf(AppError);
+    await expect(MarketplaceConnectorsService.alerts(ACTOR, { unresolved: true })).rejects.toBeInstanceOf(AppError);
     expect(fetchMock).not.toHaveBeenCalled();
   });
 

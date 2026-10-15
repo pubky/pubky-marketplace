@@ -8,7 +8,7 @@ import { connectionFixture } from '@/test-utils/connector-fixtures';
 import { MarketplaceStoreConnections } from './MarketplaceStoreConnections';
 
 const nav = vi.hoisted(() => ({ query: '', replace: vi.fn() }));
-const mode = vi.hoisted(() => ({ value: 'transaction-service' as string }));
+const mode = vi.hoisted(() => ({ value: 'transaction-service' as string, enabled: true }));
 
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ replace: nav.replace, push: vi.fn() }),
@@ -18,7 +18,7 @@ vi.mock('next/navigation', () => ({
 
 vi.mock('@/config/commerce', async () => {
   const actual = await vi.importActual<typeof import('@/config/commerce')>('@/config/commerce');
-  return { ...actual, getCommerceAdapterMode: () => mode.value };
+  return { ...actual, getCommerceAdapterMode: () => mode.value, getStoreConnectionsEnabled: () => mode.enabled };
 });
 
 vi.mock('@/stores/auth/auth.store', () => ({
@@ -70,6 +70,7 @@ describe('MarketplaceStoreConnections', () => {
     vi.clearAllMocks();
     nav.query = '';
     mode.value = 'transaction-service';
+    mode.enabled = true;
     vi.mocked(ConnectorsController.fetchConnections).mockResolvedValue([]);
   });
 
