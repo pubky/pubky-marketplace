@@ -2,7 +2,6 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CommerceController } from '@/controllers/commerce/commerce';
-import { LOCKS_STATUS_CHECK_ERROR } from '@/hooks/useMarketplaceLocksConnect/useMarketplaceLocksConnect';
 import type { SellerPaymentConfigOwnView } from '@/libs/commerce/payment-methods';
 import { toast } from '@/molecules/Toaster/use-toast';
 import { useAuthStore } from '@/stores/auth/auth.store';
@@ -10,23 +9,6 @@ import { useCommerceStore } from '@/stores/commerce/commerce.store';
 import { setSocialHost } from '@/test-utils/social-host';
 import { MarketplacePaymentSettings } from './MarketplacePaymentSettings';
 
-const view = vi.hoisted(() => ({
-  openConnect: vi.fn(),
-  locksConnect: {
-    connectedCreator: null,
-    isExchanging: false,
-    error: null,
-    connectOpen: false,
-    connectUrl: null,
-  } as {
-    connectedCreator: string | null;
-    isExchanging: boolean;
-    error: string | null;
-    reapproveNotice?: string | null;
-    connectOpen: boolean;
-    connectUrl: string | null;
-  },
-}));
 const navigation = vi.hoisted(() => ({
   push: vi.fn(),
   searchParams: new URLSearchParams(),
@@ -57,11 +39,9 @@ vi.mock('@/controllers/commerce/commerce', () => ({
     }),
     fetchUsdtPaymentsAvailable: vi.fn(),
     getMyPaymentConfig: vi.fn(),
-    isOwnPaykitAccountClaimed: vi.fn(),
     putMyPaymentConfig: vi.fn(),
     beginMarketplaceSessionConnect: vi.fn(),
     hasFullHomeserverGrant: vi.fn(() => false),
-    createLocksFrontendSession: vi.fn(),
   },
 }));
 
@@ -74,18 +54,6 @@ vi.mock('@/molecules/Toaster/use-toast', () => ({
   useToast: () => ({ toast: vi.fn() }),
 }));
 
-vi.mock('@/hooks/useMarketplaceLocksConnect/useMarketplaceLocksConnect', async (importOriginal) => ({
-  LOCKS_STATUS_CHECK_ERROR: (
-    await importOriginal<typeof import('@/hooks/useMarketplaceLocksConnect/useMarketplaceLocksConnect')>()
-  ).LOCKS_STATUS_CHECK_ERROR,
-  useMarketplaceLocksConnect: () => ({
-    ...view.locksConnect,
-    setConnectIframe: vi.fn(),
-    openConnect: view.openConnect,
-    closeConnect: vi.fn(),
-  }),
-}));
-
 vi.mock('@/organisms/ContentLayout/ContentLayout', () => ({
   ContentLayout: ({ children }: { children: React.ReactNode }) => <main>{children}</main>,
 }));
@@ -95,6 +63,7 @@ const mockedToast = vi.mocked(toast);
 
 const EMPTY_CONFIG: SellerPaymentConfigOwnView = {
   bitcoinEnabled: false,
+  bitcoinSetup: 'setup_required',
   paypalMerchantEmail: null,
   updatedAt: '2026-08-22T12:00:00.000Z',
 };
@@ -105,14 +74,6 @@ beforeEach(() => {
   sessionStorage.clear();
   navigation.push.mockReset();
   navigation.searchParams = new URLSearchParams();
-  view.openConnect.mockReset();
-  view.locksConnect = {
-    connectedCreator: null,
-    isExchanging: false,
-    error: null,
-    connectOpen: false,
-    connectUrl: null,
-  };
   mockedController.getSellerPaymentConfig.mockReset().mockResolvedValue({
     bitcoinAvailable: false,
     bitcoinOfferAvailable: true,
@@ -120,7 +81,6 @@ beforeEach(() => {
   });
   mockedController.fetchUsdtPaymentsAvailable.mockReset().mockResolvedValue(false);
   mockedController.getMyPaymentConfig.mockReset().mockResolvedValue(EMPTY_CONFIG);
-  mockedController.isOwnPaykitAccountClaimed.mockReset().mockResolvedValue(false);
   mockedController.putMyPaymentConfig.mockReset().mockImplementation(async (input) => ({
     bitcoinEnabled: input.bitcoinEnabled,
     paypalMerchantEmail: input.paypalMerchantEmail,
@@ -201,40 +161,32 @@ describe('MarketplacePaymentSettings', () => {
   it('derives each status pill from the loaded configuration state', async () => {
     mockedController.getMyPaymentConfig.mockResolvedValue({
       ...EMPTY_CONFIG,
+      bitcoinSetup: 'ready',
       paypalMerchantEmail: 'seller@example.com',
     });
-    mockedController.isOwnPaykitAccountClaimed.mockResolvedValue(true);
-
-    await renderSettings();
-
-    expect(screen.getByTestId('payment-method-status-paypal')).toHaveTextContent('Email saved');
-    expect(screen.queryByTestId('payment-method-status-stripe')).not.toBeInTheDocument();
-    // Claim without Lock Server authorization is not Connected.
-    expect(screen.getByTestId('payment-method-status-bitcoin')).toHaveTextContent('Needs attention');
-    expect(screen.getByRole('button', { name: /Connect Lock Server/ })).toBeInTheDocument();
-    expect(screen.queryByTestId('payment-methods-ready-summary')).not.toBeInTheDocument();
-  });
-
-  it('shows Bitcoin Connected only when Lock Server authorization and the Paykit claim are both present', async () => {
-    view.locksConnect = {
-      connectedCreator: 'gy1wnkhfwezwdnawnur1bc3kw1x3jf5ggjj3cm37e31i5ntq3pco',
-      isExchanging: false,
-      error: null,
-      connectOpen: false,
-      connectUrl: null,
-    };
-    mockedController.getMyPaymentConfig.mockResolvedValue({
-      ...EMPTY_CONFIG,
-      paypalMerchantEmail: 'seller@example.com',
-    });
-    mockedController.isOwnPaykitAccountClaimed.mockResolvedValue(true);
 
     await renderSettings();
 
     expect(screen.getByTestId('payment-method-status-paypal')).toHaveTextContent('Email saved');
     expect(screen.queryByTestId('payment-method-status-stripe')).not.toBeInTheDocument();
     expect(screen.getByTestId('payment-method-status-bitcoin')).toHaveTextContent('Connected');
+    expect(screen.getByText('Wallet connected.')).toBeInTheDocument();
     expect(screen.queryByTestId('payment-methods-ready-summary')).not.toBeInTheDocument();
+  });
+
+  it.each([
+    ['setup_required', 'Not set up'],
+    ['unavailable', 'Not set up'],
+    ['ready', 'Connected'],
+  ] as const)('never shows a Lock Server step (bitcoin_setup %s)', async (bitcoinSetup, pill) => {
+    mockedController.getMyPaymentConfig.mockResolvedValue({ ...EMPTY_CONFIG, bitcoinSetup });
+    await renderSettings();
+
+    expect(screen.getByTestId('payment-method-status-bitcoin')).toHaveTextContent(pill);
+    expect(screen.queryByRole('button', { name: /Connect Lock Server/ })).not.toBeInTheDocument();
+    expect(screen.queryByText(/Lock Server/)).not.toBeInTheDocument();
+    expect(screen.getByText('1. Connect Bitkit')).toBeInTheDocument();
+    expect(screen.getByText('2. Accept bitcoin')).toBeInTheDocument();
   });
 
   it('shows Not set up on every pill for a new seller', async () => {
@@ -244,20 +196,6 @@ describe('MarketplacePaymentSettings', () => {
     expect(screen.queryByTestId('payment-method-status-stripe')).not.toBeInTheDocument();
     expect(screen.getByTestId('payment-method-status-bitcoin')).toHaveTextContent('Not set up');
     expect(screen.queryByTestId('payment-methods-ready-summary')).not.toBeInTheDocument();
-  });
-
-  it('needs attention when the Lock Server connect errored', async () => {
-    view.locksConnect = {
-      connectedCreator: null,
-      isExchanging: false,
-      error: 'connect rejected',
-      connectOpen: false,
-      connectUrl: null,
-    };
-
-    await renderSettings();
-
-    expect(screen.getByTestId('payment-method-status-bitcoin')).toHaveTextContent('Needs attention');
   });
 
   it('keeps the bitcoin protocol details collapsed until asked', async () => {
@@ -276,86 +214,54 @@ describe('MarketplacePaymentSettings', () => {
     expect(screen.getByText(/Connect Bitkit to finish wallet setup/)).toBeInTheDocument();
     expect(screen.queryByLabelText('Account xpub')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Claim with signer' })).not.toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Locks Server' })).toHaveAttribute('target', '_blank');
+    expect(screen.queryByRole('link', { name: 'Locks Server' })).not.toBeInTheDocument();
   });
 
-  it('keeps enabling Bitcoin disabled until both setup steps are Connected', async () => {
-    mockedController.getMyPaymentConfig.mockResolvedValue(EMPTY_CONFIG);
-    mockedController.isOwnPaykitAccountClaimed.mockResolvedValue(true);
-
+  it('keeps enabling Bitcoin disabled until Bitkit is connected', async () => {
     await renderSettings();
 
     const accept = screen.getByRole('switch', { name: 'Accept bitcoin' });
     expect(accept).toBeDisabled();
     expect(accept).not.toBeChecked();
-    expect(screen.getByTestId('payment-method-status-bitcoin')).toHaveTextContent('Needs attention');
+    expect(screen.getByTestId('payment-method-status-bitcoin')).toHaveTextContent('Not set up');
   });
 
   describe('Accept bitcoin reason', () => {
-    const SELLER = 'gy1wnkhfwezwdnawnur1bc3kw1x3jf5ggjj3cm37e31i5ntq3pco';
-
-    function connectLockServer() {
-      view.locksConnect = { ...view.locksConnect, connectedCreator: SELLER };
-    }
-
-    it('names both missing steps for a new seller and starts with the Lock Server', async () => {
-      await renderSettings();
-
-      const reason = screen.getByTestId('bitcoin-toggle-blocker');
-      expect(reason).toHaveTextContent('Connect the Lock Server and Bitkit first.');
-      expect(screen.getByRole('switch', { name: 'Accept bitcoin' })).toHaveAccessibleDescription(
-        'Connect the Lock Server and Bitkit first. Connect now',
-      );
-      fireEvent.click(within(reason).getByRole('button', { name: 'Connect now' }));
-      expect(view.openConnect).toHaveBeenCalledTimes(1);
-    });
-
-    it('names only the Lock Server when Bitkit is already connected', async () => {
-      mockedController.isOwnPaykitAccountClaimed.mockResolvedValue(true);
-      await renderSettings();
-
-      expect(screen.getByTestId('bitcoin-toggle-blocker')).toHaveTextContent(/^Connect the Lock Server first\./);
-    });
-
-    it('names only the Lock Server when the Bitkit status cannot be read without it', async () => {
-      mockedController.isOwnPaykitAccountClaimed.mockRejectedValue(new Error('offline'));
-      await renderSettings();
-
-      const reason = screen.getByTestId('bitcoin-toggle-blocker');
-      expect(reason).toHaveTextContent(/^Connect the Lock Server first\./);
-      expect(reason).not.toHaveTextContent(/Bitkit/);
-      fireEvent.click(within(reason).getByRole('button', { name: 'Connect now' }));
-      expect(view.openConnect).toHaveBeenCalledTimes(1);
-    });
-
-    it('names only Bitkit once the Lock Server is connected, and opens Bitkit setup', async () => {
-      connectLockServer();
+    it('names Bitkit for a new seller and opens Bitkit setup', async () => {
       await renderSettings();
 
       const reason = screen.getByTestId('bitcoin-toggle-blocker');
       expect(reason).toHaveTextContent(/^Connect Bitkit first\./);
+      expect(screen.getByRole('switch', { name: 'Accept bitcoin' })).toHaveAccessibleDescription(
+        'Connect Bitkit first. Connect now',
+      );
       fireEvent.click(within(reason).getByRole('button', { name: 'Connect now' }));
       expect(await screen.findByRole('dialog', { name: 'Connect Bitkit' })).toBeInTheDocument();
-      expect(view.openConnect).not.toHaveBeenCalled();
     });
 
-    it('offers a recheck when the Bitkit status cannot be read', async () => {
-      connectLockServer();
-      mockedController.isOwnPaykitAccountClaimed.mockRejectedValue(new Error('offline'));
+    it('offers a recheck when the service cannot say, without blaming Bitkit', async () => {
+      mockedController.getMyPaymentConfig.mockResolvedValue({ ...EMPTY_CONFIG, bitcoinSetup: 'unavailable' });
       await renderSettings();
 
       const reason = screen.getByTestId('bitcoin-toggle-blocker');
       expect(reason).toHaveTextContent(/^We can't check Bitkit right now\./);
-      mockedController.isOwnPaykitAccountClaimed.mockResolvedValue(true);
+      mockedController.getMyPaymentConfig.mockResolvedValue({ ...EMPTY_CONFIG, bitcoinSetup: 'ready' });
       fireEvent.click(within(reason).getByRole('button', { name: 'Check again' }));
 
       await waitFor(() => expect(screen.getByRole('switch', { name: 'Accept bitcoin' })).toBeEnabled());
       expect(screen.queryByTestId('bitcoin-toggle-blocker')).not.toBeInTheDocument();
     });
 
-    it('shows no reason once both steps are connected', async () => {
-      connectLockServer();
-      mockedController.isOwnPaykitAccountClaimed.mockResolvedValue(true);
+    it('treats a service that predates bitcoin_setup as unknown, never as missing', async () => {
+      const { bitcoinSetup: _omitted, ...withoutSetup } = EMPTY_CONFIG;
+      mockedController.getMyPaymentConfig.mockResolvedValue(withoutSetup);
+      await renderSettings();
+
+      expect(screen.getByTestId('bitcoin-toggle-blocker')).toHaveTextContent(/^We can't check Bitkit right now\./);
+    });
+
+    it('shows no reason once Bitkit is connected', async () => {
+      mockedController.getMyPaymentConfig.mockResolvedValue({ ...EMPTY_CONFIG, bitcoinSetup: 'ready' });
       await renderSettings();
 
       expect(screen.getByRole('switch', { name: 'Accept bitcoin' })).toBeEnabled();
@@ -483,16 +389,9 @@ describe('MarketplacePaymentSettings', () => {
     });
   });
 
-  it('saves Accept bitcoin only after both bitcoin steps are Connected', async () => {
+  it('saves Accept bitcoin once Bitkit is connected', async () => {
     const user = userEvent.setup();
-    view.locksConnect = {
-      connectedCreator: 'gy1wnkhfwezwdnawnur1bc3kw1x3jf5ggjj3cm37e31i5ntq3pco',
-      isExchanging: false,
-      error: null,
-      connectOpen: false,
-      connectUrl: null,
-    };
-    mockedController.isOwnPaykitAccountClaimed.mockResolvedValue(true);
+    mockedController.getMyPaymentConfig.mockResolvedValue({ ...EMPTY_CONFIG, bitcoinSetup: 'ready' });
 
     await renderSettings();
 
@@ -507,129 +406,9 @@ describe('MarketplacePaymentSettings', () => {
     );
   });
 
-  it('tells a Bitkit-only seller that Step 1 needs Pubky Ring unless the Lock Server offers a Bitkit sign-in', async () => {
-    await renderSettings();
-
-    const step1 = screen.getByRole('heading', { name: '1. Connect Lock Server' }).parentElement;
-    expect(step1).toHaveTextContent('Authorize with Pubky Ring to enable secure delivery.');
-    expect(step1).toHaveTextContent('Bitkit works only when this Lock Server offers a Bitkit sign-in.');
-  });
-
-  it('tells a seller why Step 1 asks for a fresh approval, beside Connect Lock Server', async () => {
-    const notice = 'Connected before? Approve once more in Pubky Ring.';
-    view.locksConnect = {
-      connectedCreator: null,
-      isExchanging: false,
-      error: null,
-      reapproveNotice: notice,
-      connectOpen: false,
-      connectUrl: null,
-    };
-
-    await renderSettings();
-
-    expect(screen.getByTestId('locks-reapprove-notice')).toHaveTextContent(notice);
-    expect(screen.getByRole('button', { name: /Connect Lock Server/ })).toBeInTheDocument();
-  });
-
-  it('shows a failed Lock Server status check as Needs attention with the reason, never Not set up', async () => {
-    view.locksConnect = {
-      connectedCreator: null,
-      isExchanging: false,
-      error: LOCKS_STATUS_CHECK_ERROR,
-      connectOpen: false,
-      connectUrl: null,
-    };
-
-    await renderSettings();
-
-    expect(screen.getByRole('alert')).toHaveTextContent(LOCKS_STATUS_CHECK_ERROR);
-    expect(screen.getByTestId('payment-method-status-bitcoin')).toHaveTextContent('Needs attention');
-    expect(screen.getByTestId('payment-method-status-bitcoin')).not.toHaveTextContent('Not set up');
-  });
-
-  it('hides the fresh-approval notice once Step 1 is connected', async () => {
-    view.locksConnect = {
-      connectedCreator: 'gy1wnkhfwezwdnawnur1bc3kw1x3jf5ggjj3cm37e31i5ntq3pco',
-      isExchanging: false,
-      error: null,
-      reapproveNotice: 'Connected before? Approve once more in Pubky Ring.',
-      connectOpen: false,
-      connectUrl: null,
-    };
-
-    await renderSettings();
-
-    expect(screen.queryByTestId('locks-reapprove-notice')).not.toBeInTheDocument();
-  });
-
-  it('preserves server bitcoin when Step 1 names a different Lock Server creator', async () => {
-    const user = userEvent.setup();
-    view.locksConnect = {
-      connectedCreator: 'ybndrfg8ejkmcpqxot1uwisza345h769ybndrfg8ejkmcpqxot1u',
-      isExchanging: false,
-      error: null,
-      connectOpen: false,
-      connectUrl: null,
-    };
-    mockedController.getMyPaymentConfig.mockResolvedValue({ ...EMPTY_CONFIG, bitcoinEnabled: true });
-    mockedController.isOwnPaykitAccountClaimed.mockResolvedValue(true);
-
-    await renderSettings();
-
-    expect(screen.getByTestId('payment-method-status-bitcoin')).toHaveTextContent('Needs attention');
-    expect(screen.getByRole('switch', { name: 'Accept bitcoin' })).toBeEnabled();
-    expect(screen.getByRole('switch', { name: 'Accept bitcoin' })).toBeChecked();
-    expect(screen.queryByText(/Creator authority connected/)).not.toBeInTheDocument();
-
-    await user.click(screen.getAllByRole('button', { name: 'Save changes' })[1]);
-
-    await waitFor(() => expect(mockedController.putMyPaymentConfig).toHaveBeenCalled());
-    expect(mockedController.putMyPaymentConfig).toHaveBeenLastCalledWith(
-      expect.objectContaining({ bitcoinEnabled: true }),
-    );
-  });
-
-  it('renders the Lock Server connect dialog instead of a raw error page', async () => {
-    view.locksConnect = {
-      connectedCreator: null,
-      isExchanging: false,
-      error: 'This Lock Server connection did not finish. Approve it again from this page.',
-      connectOpen: true,
-      connectUrl: 'https://locks.example.com/connect?delivery=postmessage&state=abc',
-    };
-
-    await renderSettings();
-
-    expect(screen.getByTitle('Connect Lock Server')).toBeInTheDocument();
-    expect(screen.getByTitle('Connect Lock Server')).toHaveAttribute(
-      'src',
-      'https://locks.example.com/connect?delivery=postmessage&state=abc',
-    );
-    expect(
-      screen.getAllByRole('alert').some((el) => el.textContent?.includes('Approve it again from this page.')),
-    ).toBe(true);
-    expect(screen.queryByText(/creator_connect_flow_unavailable/)).not.toBeInTheDocument();
-  });
-
   // The pages inside the payout setup iframes hand off to pubkyring:// and pubkyauth:// links;
   // without these sandbox tokens a tap on Android Chrome does nothing.
   const HANDOFF_SANDBOX_TOKENS = ['allow-popups', 'allow-top-navigation-to-custom-protocols'];
-
-  it('lets the Lock Server connect iframe open Pubky Ring', async () => {
-    view.locksConnect = {
-      connectedCreator: null,
-      isExchanging: false,
-      error: null,
-      connectOpen: true,
-      connectUrl: 'https://locks.example.com/connect?delivery=postmessage&state=abc',
-    };
-
-    await renderSettings();
-
-    const sandbox = screen.getByTitle('Connect Lock Server').getAttribute('sandbox')?.split(' ') ?? [];
-    expect(sandbox).toEqual(expect.arrayContaining(HANDOFF_SANDBOX_TOKENS));
-  });
 
   it('lets the Bitkit setup iframe open Bitkit', async () => {
     await renderSettings();
@@ -676,11 +455,11 @@ describe('MarketplacePaymentSettings', () => {
     expect(iframe).toHaveClass('h-[40rem]', 'w-full');
   });
 
-  it('keeps Accept bitcoin as step 3 and shows one Enable selling prompt above the methods until enabled', async () => {
+  it('keeps Accept bitcoin as step 2 and shows one Enable selling prompt above the methods until enabled', async () => {
     const session = useCommerceStore.getState().marketplaceSession;
     useCommerceStore.setState({ marketplaceSession: null });
     render(<MarketplacePaymentSettings />);
-    expect(screen.getByText('3. Accept bitcoin')).toBeInTheDocument();
+    expect(screen.getByText('2. Accept bitcoin')).toBeInTheDocument();
     expect(screen.getByRole('switch', { name: 'Accept bitcoin' })).toBeDisabled();
     expect(screen.queryByText('3. Enable selling')).not.toBeInTheDocument();
     expect(screen.getAllByRole('button', { name: 'Enable selling' })).toHaveLength(1);
@@ -688,7 +467,7 @@ describe('MarketplacePaymentSettings', () => {
 
     act(() => useCommerceStore.setState({ marketplaceSession: session }));
     await screen.findByRole('switch', { name: 'Accept bitcoin' });
-    expect(screen.getByText('3. Accept bitcoin')).toBeInTheDocument();
+    expect(screen.getByText('2. Accept bitcoin')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Enable selling' })).not.toBeInTheDocument();
   });
 
@@ -711,7 +490,7 @@ describe('MarketplacePaymentSettings', () => {
     expect(setupUrl.searchParams.get('creator')).toBe('gy1wnkhfwezwdnawnur1bc3kw1x3jf5ggjj3cm37e31i5ntq3pco');
     expect(state).toHaveLength(22);
     const source = setPaykitIframeSource(iframe);
-    mockedController.isOwnPaykitAccountClaimed.mockResolvedValueOnce(true);
+    mockedController.getMyPaymentConfig.mockResolvedValueOnce({ ...EMPTY_CONFIG, bitcoinSetup: 'ready' });
 
     const message = new MessageEvent('message', {
       origin: 'https://paykit.example',
@@ -725,29 +504,22 @@ describe('MarketplacePaymentSettings', () => {
     await waitFor(() => expect(mockedController.getMyPaymentConfig).toHaveBeenCalledTimes(2));
   });
 
-  it('unlocks Accept bitcoin as soon as Step 2 reports Connected', async () => {
-    view.locksConnect = {
-      connectedCreator: 'gy1wnkhfwezwdnawnur1bc3kw1x3jf5ggjj3cm37e31i5ntq3pco',
-      isExchanging: false,
-      error: null,
-      connectOpen: false,
-      connectUrl: null,
-    };
-    let releaseStaleClaim: (claimed: boolean) => void = () => {};
-    mockedController.isOwnPaykitAccountClaimed.mockReset();
-    mockedController.isOwnPaykitAccountClaimed
-      .mockResolvedValueOnce(false)
+  it('unlocks Accept bitcoin as soon as the Bitkit step reports Connected', async () => {
+    let releaseStaleRead: (config: SellerPaymentConfigOwnView) => void = () => {};
+    mockedController.getMyPaymentConfig
+      .mockReset()
+      .mockResolvedValueOnce(EMPTY_CONFIG)
       .mockImplementationOnce(
         () =>
-          new Promise<boolean>((resolve) => {
-            releaseStaleClaim = resolve;
+          new Promise<SellerPaymentConfigOwnView>((resolve) => {
+            releaseStaleRead = resolve;
           }),
       )
-      .mockResolvedValue(true);
+      .mockResolvedValue({ ...EMPTY_CONFIG, bitcoinSetup: 'ready' });
 
     await renderSettings();
     expect(screen.getByRole('switch', { name: 'Accept bitcoin' })).toBeDisabled();
-    expect(screen.getByTestId('payment-method-status-bitcoin')).toHaveTextContent('Needs attention');
+    expect(screen.getByTestId('payment-method-status-bitcoin')).toHaveTextContent('Not set up');
 
     await act(async () => {
       useCommerceStore.setState({
@@ -779,7 +551,7 @@ describe('MarketplacePaymentSettings', () => {
     expect(mockedToast).toHaveBeenCalledWith({ title: 'Bitkit setup connected' });
 
     await act(async () => {
-      releaseStaleClaim(false);
+      releaseStaleRead(EMPTY_CONFIG);
     });
     expect(screen.getByRole('switch', { name: 'Accept bitcoin' })).toBeEnabled();
     expect(screen.getByTestId('payment-method-status-bitcoin')).toHaveTextContent('Connected');
@@ -816,7 +588,7 @@ describe('MarketplacePaymentSettings', () => {
     const iframe = screen.getByTitle('Connect Bitkit') as HTMLIFrameElement;
     const source = setPaykitIframeSource(iframe);
     const state = new URL(iframe.src).searchParams.get('state');
-    mockedController.isOwnPaykitAccountClaimed.mockResolvedValueOnce(false);
+    mockedController.getMyPaymentConfig.mockResolvedValueOnce(EMPTY_CONFIG);
 
     act(() =>
       window.dispatchEvent(
@@ -833,13 +605,13 @@ describe('MarketplacePaymentSettings', () => {
     expect(screen.getByTitle('Connect Bitkit')).toBeInTheDocument();
   });
 
-  it('keeps the mismatch under Step 2 after the dialog closes and retries with a fresh setup state', async () => {
+  it('keeps the mismatch under the Bitkit step after the dialog closes and retries with a fresh setup state', async () => {
     await renderSettings();
     fireEvent.click(screen.getByRole('button', { name: /Connect Bitkit/ }));
     const iframe = screen.getByTitle('Connect Bitkit') as HTMLIFrameElement;
     const source = setPaykitIframeSource(iframe);
     const firstState = new URL(iframe.src).searchParams.get('state');
-    mockedController.isOwnPaykitAccountClaimed.mockResolvedValueOnce(false);
+    mockedController.getMyPaymentConfig.mockResolvedValueOnce(EMPTY_CONFIG);
     act(() =>
       window.dispatchEvent(
         new MessageEvent('message', {
@@ -864,13 +636,13 @@ describe('MarketplacePaymentSettings', () => {
     expect(screen.queryByTestId('paykit-setup-problem')).not.toBeInTheDocument();
   });
 
-  it('does not blame the key when the claim read could not answer, and points at Step 1 when it is missing', async () => {
+  it('does not blame the key when the service cannot confirm the setup', async () => {
     await renderSettings();
     fireEvent.click(screen.getByRole('button', { name: /Connect Bitkit/ }));
     const iframe = screen.getByTitle('Connect Bitkit') as HTMLIFrameElement;
     const source = setPaykitIframeSource(iframe);
     const state = new URL(iframe.src).searchParams.get('state');
-    mockedController.isOwnPaykitAccountClaimed.mockRejectedValueOnce(new Error('Connect the Lock Server'));
+    mockedController.getMyPaymentConfig.mockResolvedValueOnce({ ...EMPTY_CONFIG, bitcoinSetup: 'unavailable' });
 
     act(() =>
       window.dispatchEvent(
@@ -882,10 +654,12 @@ describe('MarketplacePaymentSettings', () => {
       ),
     );
 
-    await screen.findByText(/can't confirm it until the Lock Server is connected \(step 1\)/);
-    expect(screen.queryByText(/approved a different Pubky key/)).not.toBeInTheDocument();
+    await screen.findByText("We couldn't confirm Bitkit's approval just now. Try again.");
+    expect(screen.queryByText(/approved a different pubky/)).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
-    expect(screen.getByTestId('paykit-setup-problem')).toHaveTextContent('Lock Server is connected (step 1)');
+    expect(screen.getByTestId('paykit-setup-problem')).toHaveTextContent(
+      "We couldn't confirm Bitkit's approval just now.",
+    );
   });
 
   it('maps identity mismatch separately from other setup errors', async () => {
@@ -991,7 +765,7 @@ describe('MarketplacePaymentSettings', () => {
     expect(new URL(secondIframe.src).searchParams.get('state')).not.toBe(firstState);
   });
 
-  it('removes the expired Step 2 QR so nothing is left to scan', async () => {
+  it('removes the expired Bitkit QR so nothing is left to scan', async () => {
     await renderSettings();
     fireEvent.click(screen.getByRole('button', { name: /Connect Bitkit/ }));
     const iframe = screen.getByTitle('Connect Bitkit') as HTMLIFrameElement;
@@ -1068,15 +842,11 @@ describe('MarketplacePaymentSettings', () => {
 
   it('saves an explicit Accept bitcoin off after the seller toggles it', async () => {
     const user = userEvent.setup();
-    view.locksConnect = {
-      connectedCreator: 'gy1wnkhfwezwdnawnur1bc3kw1x3jf5ggjj3cm37e31i5ntq3pco',
-      isExchanging: false,
-      error: null,
-      connectOpen: false,
-      connectUrl: null,
-    };
-    mockedController.getMyPaymentConfig.mockResolvedValue({ ...EMPTY_CONFIG, bitcoinEnabled: true });
-    mockedController.isOwnPaykitAccountClaimed.mockResolvedValue(true);
+    mockedController.getMyPaymentConfig.mockResolvedValue({
+      ...EMPTY_CONFIG,
+      bitcoinEnabled: true,
+      bitcoinSetup: 'ready',
+    });
 
     await renderSettings();
 

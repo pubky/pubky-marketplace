@@ -11,7 +11,6 @@ import {
 } from '@/test/fixtures/commerce/seller-payment-config-usdt.wire';
 import {
   deriveUsdtSellerReadiness,
-  paykitAccountFromUsdtReadiness,
   USDT_NEEDS_BITKIT_COPY,
   USDT_SETUP_ACTIONS,
   USDT_SETUP_STATUSES,
@@ -89,25 +88,5 @@ describe('deriveUsdtSellerReadiness', () => {
 
   it('keeps the fixed Ring copy', () => {
     expect(USDT_NEEDS_BITKIT_COPY).toBe("USDT needs Bitkit. Pubky Ring can't share a USDT address.");
-  });
-});
-
-describe('paykitAccountFromUsdtReadiness', () => {
-  it.each([
-    ['ready', true],
-    ['reconnect', true],
-    ['setup', false],
-    ['unavailable', null],
-  ] as const)('%s means a Paykit account of %s', (readiness, expected) => {
-    expect(paykitAccountFromUsdtReadiness(readiness)).toBe(expected);
-  });
-
-  it('reads the pinned service wire fixtures', () => {
-    const account = (wire: unknown) => paykitAccountFromUsdtReadiness(deriveUsdtSellerReadiness(parseWire(wire)));
-    expect(account(USDT_SELLER_CONFIG_READY_WIRE)).toBe(true);
-    expect(account(USDT_SELLER_CONFIG_RECONNECT_WIRE)).toBe(true);
-    expect(account(USDT_SELLER_CONFIG_SETUP_WIRE)).toBe(false);
-    expect(account(USDT_SELLER_CONFIG_UNAVAILABLE_WIRE)).toBeNull();
-    expect(account(USDT_SELLER_CONFIG_FLAG_OFF_WIRE)).toBeNull();
   });
 });

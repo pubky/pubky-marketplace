@@ -84,12 +84,23 @@ export function availablePaymentMethods(
   return methods;
 }
 
+export const BITCOIN_SETUP_STATUSES = ['ready', 'setup_required', 'unavailable'] as const;
+export type BitcoinSetupStatus = (typeof BITCOIN_SETUP_STATUSES)[number];
+
+/**
+ * The service's uncached Paykit answer for receiving Bitcoin (`bitcoin_setup`),
+ * present whether or not Bitcoin is switched on. An unrecognised value is
+ * dropped, which reads as "readiness unknown".
+ */
+const bitcoinSetupSchema = z.enum(BITCOIN_SETUP_STATUSES).optional().catch(undefined);
+
 /**
  * The seller's own view when editing the configuration. Mirrors the
  * service's `payment_config` response.
  */
 export const sellerPaymentConfigOwnViewSchema = z.object({
   bitcoinEnabled: z.boolean(),
+  bitcoinSetup: bitcoinSetupSchema,
   // Present only when the service's USDT flag is on (the seller's Shop-level consent).
   usdtEnabled: z.boolean().optional().catch(undefined),
   // Readiness from the service's signed Paykit lookup (see usdt-seller-setup.ts).
@@ -100,6 +111,18 @@ export const sellerPaymentConfigOwnViewSchema = z.object({
 });
 
 export type SellerPaymentConfigOwnView = z.infer<typeof sellerPaymentConfigOwnViewSchema>;
+
+/**
+ * Whether the seller's Bitkit setup can receive Bitcoin: `true` for
+ * `ready`, `false` for `setup_required`, and `null` when the service cannot
+ * say (`unavailable`, or a service that predates the field). `null` is never a
+ * reason to tell the seller Bitkit is missing.
+ */
+export function bitcoinSetupClaim(config: Pick<SellerPaymentConfigOwnView, 'bitcoinSetup'> | null): boolean | null {
+  if (config?.bitcoinSetup === 'ready') return true;
+  if (config?.bitcoinSetup === 'setup_required') return false;
+  return null;
+}
 
 const PAYPAL_EMAIL_MAX_BYTES = 254;
 const WHITESPACE_OR_CONTROL = /[\p{White_Space}\p{Cc}]/u;
