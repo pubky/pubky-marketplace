@@ -7,9 +7,9 @@ import { availablePaymentMethods, type SellerPaymentConfig } from '@/libs/commer
  * edit (`useEditMarketplaceListing.submit`) share this taxonomy so the Review
  * step cannot read Complete while a handler would still early-return.
  *
- * Payment-method setup is also an entrance gate on Create listing. The
- * no-method reason still exists here as defence in depth for a method removed
- * while a draft or published listing is open.
+ * Create listing only shows a banner while no payment method is set up, so
+ * sellers can prepare drafts first. The no-method reason here is what keeps
+ * such a draft, or a listing whose method was later removed, from publishing.
  */
 export const LISTING_PUBLISH_BLOCK_REASONS = [
   'unsigned',
@@ -25,8 +25,8 @@ export type ListingPublishBlockReason = (typeof LISTING_PUBLISH_BLOCK_REASONS)[n
 export const LISTING_PUBLISH_GUARD_CHECKING = 'Checking payment settings…';
 
 export const LISTING_COMPOSER_PAYMENT_COPY = {
-  title: 'Set up how you get paid first',
-  body: 'Buyers cannot pay you otherwise. Add at least one payment method.',
+  title: 'Add a payment method to publish',
+  body: 'You can prepare and save drafts now.',
 } as const;
 
 export const LISTING_COMPOSER_RETURN_INTENT_KEY = 'pubky.marketplace.listingComposerReturnTo';
