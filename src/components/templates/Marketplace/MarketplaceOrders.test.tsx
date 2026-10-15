@@ -1120,10 +1120,17 @@ describe('MarketplaceOrders tabs', () => {
     render(<MarketplaceOrders />);
     await user.click(screen.getByRole('tab', { name: /All 1/i }));
 
-    const equation = 'Items ₿1,000 · Shipping ₿0 · Payment code ₿255 = Total ₿1,255';
-    expect(screen.getByText('₿1,255')).toBeInTheDocument();
-    expect(screen.getAllByText(equation)).toHaveLength(2);
-    expect(within(screen.getByTestId('order-receipt-details')).getByText(equation)).toBeInTheDocument();
+    const breakdowns = screen.getAllByRole('table', { name: 'Bitcoin payment breakdown' });
+    expect(breakdowns).toHaveLength(2);
+    for (const breakdown of breakdowns) {
+      expect(within(breakdown).getByRole('row', { name: 'Items ₿1,000' })).toBeInTheDocument();
+      expect(within(breakdown).getByRole('row', { name: 'Shipping ₿0' })).toBeInTheDocument();
+      expect(within(breakdown).getByRole('row', { name: 'Payment code ₿255' })).toBeInTheDocument();
+      expect(within(breakdown).getByRole('row', { name: 'Total ₿1,255' })).toBeInTheDocument();
+    }
+    expect(
+      within(screen.getByTestId('order-receipt-details')).getByRole('table', { name: 'Bitcoin payment breakdown' }),
+    ).toBeInTheDocument();
     expect(screen.queryByText(/Locked Bitcoin amount/)).not.toBeInTheDocument();
   });
 

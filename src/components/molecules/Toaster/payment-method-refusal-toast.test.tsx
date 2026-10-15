@@ -71,7 +71,7 @@ describe('showPaymentMethodRefusalToast', () => {
     expect(screen.getByText('Payment action failed')).toBeInTheDocument();
     expect(
       screen.getByText(
-        'Connect Bitkit to pay with Bitcoin: this account has no Paykit wallet that can receive a payment request.',
+        'Connect Bitkit to pay with Bitcoin: this pubky has no Paykit wallet that can receive a payment request.',
       ),
     ).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Try again' })).not.toBeInTheDocument();

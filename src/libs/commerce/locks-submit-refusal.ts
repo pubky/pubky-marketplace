@@ -14,7 +14,7 @@ import { RateLimitErrorCode } from '@/libs/error/error.codes';
  */
 export const LOCKS_SUBMIT_REFUSAL_COPY = {
   reader_pubky_unresolvable:
-    'Your Pubky account couldn’t be looked up, so no payment request was created. Try again in a moment.',
+    'Your pubky couldn’t be looked up, so no payment request was created. Try again in a moment.',
   paykit_invoice_creation_failed: 'The payment request couldn’t be created right now. Try again in a moment.',
   content_lock_not_found:
     'The seller’s content lock couldn’t be found, so this payment can’t be requested. Contact the seller.',
