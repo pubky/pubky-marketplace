@@ -4,6 +4,12 @@ import { Button } from '@/atoms/Button/Button';
 import { Input } from '@/atoms/Input/Input';
 import { Typography } from '@/atoms/Typography/Typography';
 import { ProgressSteps } from '@/molecules/ProgressSteps/ProgressSteps';
+import type { ImportLossSummary } from '@/pipes/commerce/import-loss-report';
+import { MarketplaceInventoryImportLossReport } from './MarketplaceInventoryImportLossReport';
+import {
+  type InventoryImportSettingsProps,
+  MarketplaceInventoryImportSettings,
+} from './MarketplaceInventoryImportSettings';
 
 export const IMPORT_WIZARD_STEPS = 6;
 
@@ -35,12 +41,17 @@ export type MarketplaceInventoryImportProps = {
   counts?: InventoryImportDryRunCounts;
   progress?: { done: number; total: number };
   mappingHeaders?: readonly string[];
+  /** Import settings for a WooCommerce or Shopify export; omitted for canonical files. */
+  settings?: InventoryImportSettingsProps;
+  lossSummary?: ImportLossSummary;
+  busy?: boolean;
   onFile?: (file: File) => void;
   onPublish?: () => void;
   onResume?: () => void;
   onConfirmConflict?: () => void;
   onDiscardConflict?: () => void;
   onDownloadResult?: () => void;
+  onDownloadLossReport?: () => void;
   onExportListings?: () => void;
   onExportOrders?: () => void;
 };
@@ -66,12 +77,16 @@ export function MarketplaceInventoryImport({
   counts,
   progress,
   mappingHeaders = [],
+  settings,
+  lossSummary,
+  busy = false,
   onFile,
   onPublish,
   onResume,
   onConfirmConflict,
   onDiscardConflict,
   onDownloadResult,
+  onDownloadLossReport,
   onExportListings,
   onExportOrders,
 }: MarketplaceInventoryImportProps) {
@@ -83,7 +98,8 @@ export function MarketplaceInventoryImport({
       {scene === 'upload' && (
         <>
           <Typography as="p" className="text-sm text-muted-foreground">
-            Upload a canonical CSV or JSON listing file. Nothing is published until you confirm the dry-run.
+            Upload a WooCommerce or Shopify product export, or a canonical CSV or JSON listing file. Nothing is
+            published until you confirm the dry-run.
           </Typography>
           <Input
             type="file"
@@ -135,7 +151,15 @@ export function MarketplaceInventoryImport({
             <li>Unchanged {counts.unchanged}</li>
             <li>Conflict {counts.conflict}</li>
           </ul>
-          <Button className="rounded-full" onClick={onPublish}>
+          {settings && <MarketplaceInventoryImportSettings {...settings} busy={busy} />}
+          {lossSummary && (
+            <MarketplaceInventoryImportLossReport summary={lossSummary} onDownload={onDownloadLossReport} />
+          )}
+          <Button
+            className="rounded-full"
+            disabled={busy || counts.create + counts.update + counts.end === 0}
+            onClick={onPublish}
+          >
             Publish
           </Button>
         </>
