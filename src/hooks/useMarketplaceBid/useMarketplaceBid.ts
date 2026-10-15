@@ -5,7 +5,7 @@ import { useForm, type UseFormReturn } from 'react-hook-form';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import type { MarketplaceListingProjection } from '@/core/services/marketplace/marketplace-projections';
 import type { AuctionPhase } from '@/libs/commerce/auction-phase';
-import { marketplaceBidFailureMessage } from '@/libs/commerce/failure-messages';
+import { marketplaceBidFailureMessage, marketplaceListingNotActiveMessage } from '@/libs/commerce/failure-messages';
 import { amountInputSchemaForAsset, amountInputToMoney, type CommerceAsset } from '@/libs/commerce/pricing';
 import { isMarketplaceRevisionConflict } from '@/libs/commerce/transaction-commands';
 import { toast } from '@/molecules/Toaster/use-toast';
@@ -94,7 +94,8 @@ export function useMarketplaceBid(
           }
           toast({
             variant: 'error',
-            description: marketplaceBidFailureMessage(response.error.code),
+            description:
+              marketplaceListingNotActiveMessage(response.error) ?? marketplaceBidFailureMessage(response.error.code),
           });
           return;
         }

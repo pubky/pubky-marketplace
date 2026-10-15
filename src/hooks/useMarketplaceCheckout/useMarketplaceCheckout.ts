@@ -28,6 +28,7 @@ import {
   marketplaceCheckoutRefusalMessage,
   marketplaceErrorCode,
   marketplaceFailureMessage,
+  marketplaceListingNotActiveMessage,
   usdtOfferRefusalReason,
   usdtRefusalKey,
 } from '@/libs/commerce/failure-messages';
@@ -651,7 +652,8 @@ export function useMarketplaceCheckout(
         variant: 'error',
         description: pickupRefusal
           ? pickupRefusalFailureMessage(pickupRefusal)
-          : (marketplaceCheckoutRefusalMessage(response.error.code, response.error.message) ??
+          : (marketplaceListingNotActiveMessage(response.error) ??
+            marketplaceCheckoutRefusalMessage(response.error.code, response.error.message) ??
             marketplaceFailureMessage(response.error.code, MARKETPLACE_FAILURE_MESSAGES.checkout)),
       });
       return { ok: false };
