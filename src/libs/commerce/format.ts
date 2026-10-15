@@ -5,7 +5,7 @@ export function formatCommerceMoney(money: CommerceMoney): string {
   // Bitcoin at exponent 8 renders per BIP-177: the ₿ symbol with grouped
   // integer base units. "₿15,000" is the same exact amount as
   // "BTC 0.00015000", stated in its own minor unit — no conversion.
-  if (isBitcoinAsset(money)) {
+  if (isBitcoinAsset(money) || (money.currency === 'SAT' && money.exponent === 0)) {
     return formatBitcoinAmount(money.amountMinor);
   }
   const value = money.amountMinor / 10 ** money.exponent;

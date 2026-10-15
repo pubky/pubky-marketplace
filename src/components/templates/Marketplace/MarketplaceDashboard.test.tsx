@@ -78,8 +78,13 @@ vi.mock('@/organisms/Marketplace/MarketplaceSessionConnectDialog', () => ({
   ),
 }));
 
+const SHOP_WITH_POLICIES = {
+  record: { name: 'Satoshi Vintage', shippingPolicy: 'Ships within three days.', returnPolicy: '' },
+};
+const shopState = vi.hoisted(() => ({ shop: null as unknown }));
+
 vi.mock('dexie-react-hooks', () => ({
-  useLiveQuery: () => ({ record: { name: 'Satoshi Vintage' } }),
+  useLiveQuery: () => shopState.shop,
 }));
 
 const paymentGate = vi.hoisted(() => ({
@@ -120,6 +125,7 @@ vi.mock('@/organisms/ContentLayout/ContentLayout', () => ({
 
 describe('MarketplaceDashboard', () => {
   beforeEach(() => {
+    shopState.shop = SHOP_WITH_POLICIES;
     dashboardState.unfinishedDrafts = [];
     dashboardState.needsSession = false;
     dashboardState.sessionError = null;
@@ -129,6 +135,43 @@ describe('MarketplaceDashboard', () => {
     paymentGate.isDurable = false;
     paymentGate.ready = true;
     paymentGate.reason = null;
+  });
+
+  describe('storefront prompt', () => {
+    it('asks a seller with listings and no shop to set up their storefront', async () => {
+      shopState.shop = null;
+      dashboardState.listings = [listing()];
+
+      render(<MarketplaceDashboard />);
+
+      expect(await screen.findByRole('heading', { name: 'Your storefront is not set up' })).toBeInTheDocument();
+      expect(screen.getByRole('link', { name: 'Set up your storefront' })).toHaveAttribute(
+        'href',
+        MARKETPLACE_ROUTES.MY_SHOP,
+      );
+    });
+
+    it('asks for policies while the default storefront has neither policy', async () => {
+      shopState.shop = { record: { name: 'Satoshi', shippingPolicy: '', returnPolicy: ' ' } };
+      dashboardState.listings = [listing()];
+
+      render(<MarketplaceDashboard />);
+
+      expect(await screen.findByRole('heading', { name: 'Add your shipping and return policies' })).toBeInTheDocument();
+      expect(screen.getByRole('link', { name: 'Add policies' })).toHaveAttribute('href', MARKETPLACE_ROUTES.MY_SHOP);
+      expect(screen.queryByText('Your storefront is not set up')).not.toBeInTheDocument();
+    });
+
+    it('stays away once the seller wrote a policy', async () => {
+      dashboardState.listings = [listing()];
+
+      render(<MarketplaceDashboard />);
+
+      await waitFor(() => expect(screen.getByRole('heading', { name: 'My shop' })).toBeInTheDocument());
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(screen.queryByText('Add your shipping and return policies')).not.toBeInTheDocument();
+      expect(screen.queryByText('Your storefront is not set up')).not.toBeInTheDocument();
+    });
   });
 
   it('keeps the seller entry point available without an inline approval card', () => {

@@ -14,6 +14,7 @@ import { USDT_RESOLVE_TX_HASH } from '@/test/fixtures/commerce/usdt-payment-revi
 import { REFUND_FIXTURE_ADDRESS } from '@/test/fixtures/commerce/usdt-refund.wire';
 import { userEvent } from 'vitest/browser';
 import { useCommerceStore } from '@/stores/commerce/commerce.store';
+import type { BuyerPaykitWalletState } from '@/hooks/useBuyerPaykitWallet/useBuyerPaykitWallet';
 
 /**
  * Every buyer-visible payment state of the truthful status card (plan task
@@ -37,6 +38,7 @@ const fixtures = vi.hoisted(async () => {
 
 const view = vi.hoisted(() => ({
   deployEnv: 'production' as 'production' | 'staging' | undefined,
+  paykitServerApi: 'fork' as 'fork' | 'upstream',
   currentUserPubky: 's'.repeat(52) as string | null,
   locks: {
     enabled: true,
@@ -54,6 +56,14 @@ const view = vi.hoisted(() => ({
     paypalAvailable: true,
   } as Record<string, boolean>,
   usdtAvailable: false,
+  buyerWalletState: 'payable' as BuyerPaykitWalletState,
+}));
+
+vi.mock('@/hooks/useBuyerPaykitWallet/useBuyerPaykitWallet', () => ({
+  useBuyerPaykitWallet: (_pubky: string | null, enabled: boolean) => ({
+    state: enabled ? view.buyerWalletState : 'idle',
+    recheck: vi.fn(),
+  }),
 }));
 
 vi.mock('@/hooks/useMarketplaceLocksPayment/useMarketplaceLocksPayment', () => ({
@@ -72,7 +82,7 @@ vi.mock('@/hooks/useMarketplaceLocksPayment/useMarketplaceLocksPayment', () => (
 // no real funds move). Sandbox scenes render no notice.
 vi.mock('@/libs/runtime-config/runtime-config', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/libs/runtime-config/runtime-config')>();
-  return { ...actual, getDeployEnv: () => view.deployEnv };
+  return { ...actual, getDeployEnv: () => view.deployEnv, getPaykitServerApi: () => view.paykitServerApi };
 });
 
 vi.mock('@/stores/auth/auth.store', () => ({
@@ -143,11 +153,13 @@ async function renderCard(
     isBuyer?: boolean;
     viewport?: object;
     deployEnv?: 'production' | 'staging';
+    paykitServerApi?: 'fork' | 'upstream';
     currentUserPubky?: string | null;
   } = {},
 ) {
   const { createOrderFixture, createPaymentFixture } = await fixtures;
   view.deployEnv = options.deployEnv ?? 'production';
+  view.paykitServerApi = options.paykitServerApi ?? 'fork';
   view.currentUserPubky = options.currentUserPubky ?? 's'.repeat(52);
   const payment = createPaymentFixture(paymentState, {
     adapter: options.adapter ?? 'sandbox',
@@ -176,7 +188,61 @@ async function renderCard(
 describe('Marketplace payment status card — visual regression', () => {
   afterEach(() => {
     view.locks = { ...view.locks, admission: null };
+    view.buyerWalletState = 'payable';
   });
+
+  for (const [name, viewport] of [
+    ['desktop', VRT_VIEWPORT_DESKTOP],
+    ['mobile', VRT_VIEWPORT_MOBILE],
+  ] as const) {
+    it(`guides a returning buyer with a missing wallet on ${name}`, async () => {
+      view.buyerWalletState = 'not_payable';
+      const screen = await renderCard('awaiting_entitlement', 'transaction-service', {
+        viewport,
+        currentUserPubky: (await fixtures).buyer,
+        paykitServerApi: 'upstream',
+        orderOverrides: { holdExpiresAt: HOLD_DEADLINE },
+      });
+      await expect.element(screen.getByTestId('order-payment-bitkit-required')).toBeVisible();
+      await expect.element(screen.getByRole('button', { name: 'Continue with Bitcoin' })).toBeDisabled();
+      await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot(`payment-status-bitkit-required-${name}`);
+    });
+
+    it(`keeps the contact hint visible while waiting on ${name}`, async () => {
+      const screen = await renderCard('awaiting_entitlement', 'transaction-service', {
+        viewport,
+        orderOverrides: {
+          paymentMethod: 'bitcoin',
+          paykitRequestState: 'pending',
+          paykitDeliveryState: 'pending',
+          holdExpiresAt: HOLD_DEADLINE,
+        },
+      });
+      await expect
+        .element(screen.getByRole('button', { name: 'Need help?' }))
+        .toHaveAttribute('aria-expanded', 'false');
+      await expect.element(screen.getByTestId('bitcoin-wallet-contact-hint')).toBeVisible();
+      await expect.element(screen.getByTestId('paykit-delivery-status')).toHaveTextContent('Waiting for your wallet.');
+      await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot(`payment-status-waiting-contact-${name}`);
+    });
+
+    it(`keeps request help below the payment card on ${name}`, async () => {
+      const screen = await renderCard('awaiting_entitlement', 'transaction-service', {
+        viewport,
+        orderOverrides: {
+          paymentMethod: 'bitcoin',
+          paykitRequestState: 'pending',
+          paykitDeliveryState: 'delivered',
+          holdExpiresAt: HOLD_DEADLINE,
+        },
+      });
+      const help = screen.getByRole('button', { name: 'Need help?' });
+      await expect.element(help).toHaveAttribute('aria-expanded', 'false');
+      await help.click();
+      await expect.element(screen.getByText(/After you pay/)).toBeVisible();
+      await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot(`payment-status-bitkit-help-${name}`);
+    });
+  }
 
   it('renders awaiting entitlement with the wallet payment request action (locks-paykit) at desktop viewport', async () => {
     view.locks = { ...view.locks, correlation: null, delivery: null, error: null, pollExhausted: false };
@@ -355,7 +421,7 @@ describe('Marketplace payment status card — visual regression', () => {
         auctionAggregateId: 'listing:seller_boots',
       },
     });
-    await expect.element(screen.getByText(/Pay by Aug 20, 2026, 9:15 PM UTC\./)).toBeInTheDocument();
+    await expect.element(screen.getByText(/pay by Aug 20, 2026, 9:15 PM UTC\./i)).toBeInTheDocument();
     await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot(
       'payment-status-auction-bitcoin-before-activation-desktop',
     );
@@ -376,8 +442,8 @@ describe('Marketplace payment status card — visual regression', () => {
         auctionAggregateId: 'listing:seller_boots',
       },
     });
-    await expect.element(screen.getByText(/Pay by Aug 20, 2026, 9:07 PM UTC\./)).toBeInTheDocument();
-    await expect.element(screen.getByText(/Pay by Aug 20, 2026, 9:15 PM UTC/)).not.toBeInTheDocument();
+    await expect.element(screen.getByText(/pay by Aug 20, 2026, 9:07 PM UTC\./i)).toBeInTheDocument();
+    await expect.element(screen.getByText(/pay by Aug 20, 2026, 9:15 PM UTC/i)).not.toBeInTheDocument();
     await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot(
       'payment-status-auction-bitcoin-activated-desktop',
     );

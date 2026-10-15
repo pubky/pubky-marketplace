@@ -1,0 +1,1 @@
+On an iPhone, the Bitkit sign-in tab's Authorize button now opens Bitkit, so sign-in works on a phone with only Bitkit installed; the QR code is unchanged and Android, desktop and Pubky Ring are unaffected.
