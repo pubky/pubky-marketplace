@@ -9,13 +9,19 @@ import { usePassportSignIn } from '@/hooks/usePassportSignIn/usePassportSignIn';
 /**
  * "Continue with Google" through Pubky Passport. Renders nothing where the
  * grant key cannot be held (no secure context, IndexedDB or WebCrypto
- * Ed25519) or the deploy turned Passport off.
+ * Ed25519) or the deploy turned Passport off. Passport also signs a new
+ * Google user up, so sign-up surfaces offer it with an `intro` line.
  */
-export function PassportSignInButton() {
+export function PassportSignInButton({ intro }: { intro?: string } = {}) {
   const passport = usePassportSignIn();
   if (!passport.isAvailable) return null;
   return (
     <div className="flex w-full max-w-sm flex-col items-center gap-3" data-testid="sign-in-passport-option">
+      {intro && (
+        <Typography as="p" className="text-center text-sm text-muted-foreground">
+          {intro}
+        </Typography>
+      )}
       <Button
         className="w-full"
         size="lg"
