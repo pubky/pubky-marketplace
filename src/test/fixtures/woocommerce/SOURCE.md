@@ -57,3 +57,15 @@ label is pinned to its English msgid by `import-woo-headers.translations.test.ts
   unrecognised columns and is otherwise read normally.
 - Two German headers in the Dezentralshop file are older wording that today's translation no longer has; they stay as
   aliases (see above) and the test requires that the real file contains them.
+
+## `store-api/` (WooCommerce Store API, dezentralshop.ch)
+
+Public catalogue data of the Dezentralshop, read through the WooCommerce Store API with no keys (`GET /wp-json/wc/store/v1/products`). It is what the store import maps; the tests never reach the network.
+
+- `dezentralshop-products-p1.json`: page 1 of `?per_page=100`, captured 2026-10-15 09:42 UTC (100 products: 93 simple, 7 variable). Response headers: `X-WP-Total: 279`, `X-WP-TotalPages: 3`, `Content-Type: application/json; charset=UTF-8`.
+- `dezentralshop-products-p2.json`, `dezentralshop-products-p3.json`: pages 2 and 3, captured 2026-10-15 15:49 UTC (100 and 79 products). Same headers.
+- `dezentralshop-variations.json`: the 30 variation reads (`GET /wp-json/wc/store/v1/products/{id}`) for the 10 variable products, keyed by variation id, captured 2026-10-15 15:51 UTC, 1.5 s apart.
+- All 279 products and 30 variations are CHF, `currency_minor_unit` 2. 185 products have more than one distinct photo; 725 distinct photo URLs in all.
+- Public product data only (names, descriptions, prices, stock flags, public image URLs on dezentralshop.ch); nothing private, no cookies (the `Set-Cookie` headers were not kept).
+- **Trimmed:** each product is the output of `readStoreApiProduct` (`src/core/pipes/import-store/import-store.product.ts`), the reader the server route applies before anything leaves the server. It keeps only the fields the import reads, with the Store API's own names. Dropped: `srcset`, thumbnails, `price_html`, `add_to_cart`, `extensions`, `_links`, ratings and the theme's localised stock text. `weight` and the presence of `dimensions` are kept as flags only. A test re-reads every product and gets it back unchanged.
+- The raw captures are in the project store (`internal/integrations/fixtures/`), the page-1 raw file there is the original capture; pages 2 and 3 and the variation reads were taken from the live public site for this fixture.
