@@ -313,6 +313,7 @@ export function MarketplaceInventory() {
             message={importer.message}
             counts={importer.counts}
             progress={importer.progress}
+            progressPhase={importer.progressPhase}
             busy={importer.busy}
             lossSummary={importer.lossSummary}
             settings={

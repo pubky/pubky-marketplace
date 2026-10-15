@@ -4,17 +4,25 @@ import { useRef, useState } from 'react';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
 import { CommerceController } from '@/controllers/commerce/commerce';
+import { uploadImportImages } from '@/hooks/useImportImageUpload/useImportImageUpload';
 import { toast } from '@/molecules/Toaster/use-toast';
 import type {
   InventoryImportDryRunCounts,
   InventoryImportScene,
 } from '@/organisms/Marketplace/MarketplaceInventoryImport';
 import {
+  altTextForUrl,
+  type ImportImageResult,
+  outcomesFromResults,
+  uniqueImageUrls,
+} from '@/pipes/commerce/import-image-phase';
+import {
   type ImportLossReport,
   type ImportSourceFormat,
   lossReportToCsv,
   summarizeLossReport,
 } from '@/pipes/commerce/import-loss-report';
+import type { PresetJson } from '@/pipes/commerce/import-preset-rows';
 import {
   IMPORT_CONDITION_OPTIONS,
   IMPORT_CURRENCY_OPTIONS,
@@ -47,7 +55,9 @@ export function useMarketplaceInventoryImport(sellerPubky: string | null) {
   const [busy, setBusy] = useState(false);
   const [format, setFormat] = useState<ImportSourceFormat | undefined>();
   const [lossReport, setLossReport] = useState<ImportLossReport | undefined>();
+  const [progressPhase, setProgressPhase] = useState<'photos' | 'listings'>('listings');
   const sourceFile = useRef<File | null>(null);
+  const imageRun = useRef<AbortController | null>(null);
 
   const form = useForm<ImportSettingsFormData>({
     resolver: zodResolver(importSettingsFormSchema),
@@ -56,6 +66,8 @@ export function useMarketplaceInventoryImport(sellerPubky: string | null) {
   });
 
   const reset = () => {
+    imageRun.current?.abort();
+    setProgressPhase('listings');
     setScene('upload');
     setStep(1);
     setFileName(undefined);
@@ -142,11 +154,59 @@ export function useMarketplaceInventoryImport(sellerPubky: string | null) {
     setMessage(result.status === 'error' ? result.message : PARSE_FAIL_COPY);
   };
 
+  /**
+   * Fetches the photos the preset kept as source URLs and stores them as the
+   * seller's own media, then writes the uploaded records onto the planned rows.
+   * Listings that already hold media are skipped, so a resume never uploads
+   * twice. Resolves false when the run was cancelled (the dialog closed).
+   */
+  const runImagePhase = async (): Promise<boolean> => {
+    if (!sellerPubky || !manifestId) return false;
+    const targets = await CommerceController.inventoryImportImageTargets(sellerPubky, manifestId);
+    if (targets.length === 0) return true;
+    const urls = uniqueImageUrls(targets);
+    const controller = new AbortController();
+    imageRun.current = controller;
+    setProgressPhase('photos');
+    setProgress({ done: 0, total: urls.length });
+    try {
+      const outcome = await uploadImportImages({
+        ownerPubky: sellerPubky,
+        urls,
+        altText: (url) => altTextForUrl(targets, url),
+        signal: controller.signal,
+        onProgress: ({ done, total }) => setProgress({ done, total }),
+      });
+      if (controller.signal.aborted) return false;
+      const results: ImportImageResult[] = outcome.results.map((result) => ({
+        url: result.url,
+        status: result.status,
+        ...(result.reason ? { reason: result.reason } : {}),
+        ...(result.media ? { media: JSON.parse(JSON.stringify(result.media)) as PresetJson } : {}),
+      }));
+      await CommerceController.attachInventoryImportImages(
+        sellerPubky,
+        manifestId,
+        outcomesFromResults(targets, results),
+      );
+    } catch {
+      toast({
+        variant: 'error',
+        description: 'Some photos could not be saved. Listings without photos are not published.',
+      });
+    } finally {
+      if (imageRun.current === controller) imageRun.current = null;
+    }
+    return !controller.signal.aborted;
+  };
+
   const publish = async () => {
     if (!sellerPubky || !manifestId) return;
     setBusy(true);
     setScene('progress');
     setStep(5);
+    if (!(await runImagePhase())) return;
+    setProgressPhase('listings');
     setProgress({ done: 0, total: counts ? counts.create + counts.update + counts.end : 0 });
     const result = await CommerceController.publishInventoryImport(sellerPubky, manifestId);
     setBusy(false);
@@ -157,6 +217,8 @@ export function useMarketplaceInventoryImport(sellerPubky: string | null) {
     if (!sellerPubky || !manifestId) return;
     setBusy(true);
     setScene('progress');
+    if (!(await runImagePhase())) return;
+    setProgressPhase('listings');
     const result = await CommerceController.resumeInventoryImport(sellerPubky, manifestId);
     setBusy(false);
     applyPublishResult(result);
@@ -231,6 +293,7 @@ export function useMarketplaceInventoryImport(sellerPubky: string | null) {
     message,
     counts,
     progress,
+    progressPhase,
     busy,
     format,
     lossSummary: lossReport ? summarizeLossReport(lossReport) : undefined,

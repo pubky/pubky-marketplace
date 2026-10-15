@@ -9,6 +9,16 @@ import type { CommerceListingRecord } from '@/libs/commerce/marketplace-records'
 import { ClientErrorCode } from '@/libs/error/error.codes';
 import { isAppError, isNotFound } from '@/libs/error/error.utils';
 import { CommerceRecordNormalizer } from '@/pipes/commerce/commerce.normalizer';
+import {
+  extraFieldsWithImages,
+  imageResultCells,
+  imageResultsOf,
+  type ImportImageTarget,
+  type ListingImageOutcome,
+  RESULT_CSV_IMAGE_COLUMNS,
+  rowHoldsMedia,
+  sourceImagesOf,
+} from '@/pipes/commerce/import-image-phase';
 import type { ImportLossReport, ImportSourceFormat } from '@/pipes/commerce/import-loss-report';
 import {
   classifyListingPublishFailure,
@@ -393,13 +403,91 @@ export class CommerceInventoryImportApplication {
     return JSON.stringify(collected);
   }
 
+  /**
+   * Listings in the plan that still need their photos fetched: a create or
+   * update that has not been published, has source image URLs, and does not
+   * already hold media (uploaded earlier, so a resume never uploads twice).
+   */
+  async imageTargets(manifestId: string): Promise<ImportImageTarget[]> {
+    const manifest = await this.host.store.load(manifestId);
+    if (!manifest) return [];
+    const targets: ImportImageTarget[] = [];
+    for (const [listingId, group] of this.groups(manifest.rows)) {
+      const pending = group.some(
+        (row) => row.checkpoint === 'planned' && (row.intendedAction === 'create' || row.intendedAction === 'update'),
+      );
+      if (!pending) continue;
+      let images: ReturnType<typeof sourceImagesOf> = [];
+      let holdsMedia = false;
+      for (const row of group) {
+        const payload = await this.rowPayload(manifestId, row.rowIdentity);
+        if (!payload) continue;
+        if (rowHoldsMedia(payload)) holdsMedia = true;
+        if (images.length === 0) images = sourceImagesOf(payload);
+      }
+      if (!holdsMedia && images.length > 0) targets.push({ listingId, images });
+    }
+    return targets;
+  }
+
+  /** Writes each listing's uploaded media and per-image results onto its planned rows. */
+  async attachImages(manifestId: string, outcomes: readonly ListingImageOutcome[]): Promise<void> {
+    const manifest = await this.host.store.load(manifestId);
+    if (!manifest) return;
+    const groups = this.groups(manifest.rows);
+    const updates = new Map<string, string>();
+    for (const outcome of outcomes) {
+      for (const row of groups.get(outcome.listingId) ?? []) {
+        const payload = await this.rowPayload(manifestId, row.rowIdentity);
+        if (!payload) continue;
+        updates.set(
+          row.rowIdentity,
+          JSON.stringify({ ...payload, extraFields: extraFieldsWithImages(payload.extraFields ?? {}, outcome) }),
+        );
+      }
+    }
+    if (updates.size > 0) await this.host.store.persistPayloads(manifestId, updates);
+  }
+
+  private async rowPayload(
+    manifestId: string,
+    rowIdentity: string,
+  ): Promise<{ media?: unknown; extraFields?: Record<string, string> } | null> {
+    const json = await this.host.store.getPayloadJson(manifestId, rowIdentity);
+    if (!json) return null;
+    const parsed: unknown = (() => {
+      try {
+        return JSON.parse(json);
+      } catch {
+        return null;
+      }
+    })();
+    return asObject(parsed) as { media?: unknown; extraFields?: Record<string, string> } | null;
+  }
+
   async resultCsv(manifestId: string): Promise<string> {
     const manifest = await this.host.store.load(manifestId);
-    const lines = ['listing_id,row_identity,checkpoint,result'];
-    for (const row of manifest?.rows ?? []) {
-      const result = row.checkpoint === 'complete' ? 'synced' : (row.failureCode ?? row.checkpoint);
-      lines.push([row.listingId, row.rowIdentity, row.checkpoint, result].map(csvCell).join(','));
+    const rows = manifest?.rows ?? [];
+    const imageLines: string[][] = [];
+    const seenListings = new Set<string>();
+    for (const row of rows) {
+      if (seenListings.has(row.listingId)) continue;
+      const payload = await this.rowPayload(manifestId, row.rowIdentity);
+      const results = payload ? imageResultsOf(payload) : [];
+      if (results.length === 0) continue;
+      seenListings.add(row.listingId);
+      for (const result of results) imageLines.push([row.listingId, '', '', '', ...imageResultCells(result)]);
     }
+    const withImages = imageLines.length > 0;
+    const lines = [
+      `listing_id,row_identity,checkpoint,result${withImages ? `,${RESULT_CSV_IMAGE_COLUMNS.join(',')}` : ''}`,
+    ];
+    for (const row of rows) {
+      const result = row.checkpoint === 'complete' ? 'synced' : (row.failureCode ?? row.checkpoint);
+      const cells = [row.listingId, row.rowIdentity, row.checkpoint, result, ...(withImages ? ['', '', ''] : [])];
+      lines.push(cells.map(csvCell).join(','));
+    }
+    for (const cells of imageLines) lines.push(cells.map(csvCell).join(','));
     return `${lines.join('\n')}\n`;
   }
 

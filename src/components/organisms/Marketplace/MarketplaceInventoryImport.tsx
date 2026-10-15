@@ -40,6 +40,8 @@ export type MarketplaceInventoryImportProps = {
   message?: string;
   counts?: InventoryImportDryRunCounts;
   progress?: { done: number; total: number };
+  /** `photos` while product photos are fetched and saved, then `listings` while they are published. */
+  progressPhase?: 'photos' | 'listings';
   mappingHeaders?: readonly string[];
   /** Import settings for a WooCommerce or Shopify export; omitted for canonical files. */
   settings?: InventoryImportSettingsProps;
@@ -76,6 +78,7 @@ export function MarketplaceInventoryImport({
   message,
   counts,
   progress,
+  progressPhase = 'listings',
   mappingHeaders = [],
   settings,
   lossSummary,
@@ -166,7 +169,8 @@ export function MarketplaceInventoryImport({
       )}
       {scene === 'progress' && (
         <Typography as="p" className="text-sm text-muted-foreground" data-testid="inventory-import-progress">
-          Saving your listings… {progress?.done ?? 0} of {progress?.total ?? 0}.
+          {progressPhase === 'photos' ? 'Loading photos…' : 'Saving your listings…'} {progress?.done ?? 0} of{' '}
+          {progress?.total ?? 0}.
         </Typography>
       )}
       {scene === 'result' && (
