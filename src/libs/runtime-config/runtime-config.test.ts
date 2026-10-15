@@ -50,6 +50,7 @@ const RUNTIME_ENV_VALUES: Partial<Record<keyof RuntimeConfig, string>> = {
   sentryTracesSampleRate: '0.5',
   sentryReplaysSessionSampleRate: '0.25',
   sentryReplaysOnErrorSampleRate: '1',
+  exchangeRateApi: 'https://rates.runtime.example.com/btc',
   marketplaceUrl: 'https://marketplace.runtime.example.com',
   locksUrl: 'https://locks.runtime.example.com',
   paykitSetupUrl: 'https://paykit.runtime.example.com/setup',

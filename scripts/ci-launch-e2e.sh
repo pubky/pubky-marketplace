@@ -39,6 +39,7 @@ export PUBKY_RUNTIME_CDN_URL="${PUBKY_RUNTIME_CDN_URL:-https://nexus.staging.pub
 export PUBKY_RUNTIME_HOMEGATE_URL="${PUBKY_RUNTIME_HOMEGATE_URL:-https://homegate.staging.pubky.app}"
 export PUBKY_RUNTIME_PKARR_RELAYS="${PUBKY_RUNTIME_PKARR_RELAYS:-[\"https://pkarr.pubky.app\",\"https://pkarr.pubky.org\"]}"
 export PUBKY_RUNTIME_DEFAULT_HTTP_RELAY="${PUBKY_RUNTIME_DEFAULT_HTTP_RELAY:-https://httprelay.staging.pubky.app/inbox}"
+export PUBKY_RUNTIME_EXCHANGE_RATE_API="${PUBKY_RUNTIME_EXCHANGE_RATE_API:-https://api1.blocktank.to/api/fx/rates/btc}"
 export PUBKY_RUNTIME_COMMERCE_ADAPTER_MODE="${PUBKY_RUNTIME_COMMERCE_ADAPTER_MODE:-transaction-service}"
 export PUBKY_RUNTIME_MARKETPLACE_URL="${PUBKY_RUNTIME_MARKETPLACE_URL:-https://staging-api.pubky.app}"
 
