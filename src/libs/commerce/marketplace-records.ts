@@ -16,6 +16,7 @@ import {
   COMMERCE_SHOP_BIO_MAX_CHARS,
   COMMERCE_SHOP_NAME_MAX_CHARS,
   COMMERCE_SHOP_POLICY_MAX_CHARS,
+  COMMERCE_SHOP_SHIPS_TO_MAX_COUNTRIES,
   COMMERCE_SHOP_TERM_DAYS_MAX,
   COMMERCE_SHOP_TERM_DAYS_MIN,
   COMMERCE_TAXONOMY_VERSION_MAX,
@@ -29,6 +30,7 @@ import {
   COMMERCE_LISTING_MAX_ATTRIBUTES,
 } from '@/config/taxonomy/taxonomy';
 import type { MarketplaceFulfillmentMethod } from './pickup';
+import { canonicalCountryCode } from './postal-address';
 import {
   commerceEntityIdSchema,
   commerceMoneySchema,
@@ -397,6 +399,26 @@ const commerceTransactionServiceSchema = z
 /** Whole days, `COMMERCE_SHOP_TERM_DAYS_MIN` to `COMMERCE_SHOP_TERM_DAYS_MAX`. */
 const commerceShopTermDaysSchema = z.number().int().min(COMMERCE_SHOP_TERM_DAYS_MIN).max(COMMERCE_SHOP_TERM_DAYS_MAX);
 
+/**
+ * Destination countries, read leniently: a malformed list from another
+ * writer must not make the whole shop record unreadable. Entries are
+ * uppercased and canonicalized (UK becomes GB) and kept once. When any entry
+ * is then a two-letter code, only those codes are kept, capped. A present
+ * list with no such entry (["CHE"], "CH", [1]) keeps its normalized entries
+ * instead, so the seller's restriction survives a re-save and readers can
+ * refuse it rather than read it as anywhere. Only absent or empty is anywhere.
+ */
+const commerceShipsToCountriesSchema = z.unknown().transform((value): string[] | undefined => {
+  if (value === undefined || value === null) return undefined;
+  const entries = (Array.isArray(value) ? value : [value]).map((entry) =>
+    typeof entry === 'string' ? canonicalCountryCode(entry) : JSON.stringify(entry),
+  );
+  const unique = [...new Set(entries)].filter((entry) => entry !== '');
+  if (unique.length === 0) return Array.isArray(value) && value.length === 0 ? undefined : [JSON.stringify(value)];
+  const codes = unique.filter((entry) => /^[A-Z]{2}$/.test(entry));
+  return (codes.length > 0 ? codes : unique).slice(0, COMMERCE_SHOP_SHIPS_TO_MAX_COUNTRIES);
+});
+
 const commerceShopRecordSchemaInner = commercePublicRecordBaseSchema
   .extend({
     recordType: z.literal('shop'),
@@ -415,6 +437,10 @@ const commerceShopRecordSchemaInner = commercePublicRecordBaseSchema
     // service's configured defaults apply. See docs/ecommerce/seller-delivery-terms.md.
     deliveryAssumeDays: commerceShopTermDaysSchema.optional(),
     autoCompleteDays: commerceShopTermDaysSchema.optional(),
+    // Where shipped orders may go. Absent or empty means anywhere. Checkout
+    // enforces it client-side only: the buyer's address is sealed to the
+    // seller, so the transaction service never sees the destination country.
+    shipsToCountries: commerceShipsToCountriesSchema.optional(),
     createdAt: commerceTimestampSchema,
     updatedAt: commerceTimestampSchema,
   })

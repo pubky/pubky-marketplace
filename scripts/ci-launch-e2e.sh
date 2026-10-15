@@ -5,12 +5,10 @@
 # CI explicitly selects LAUNCH_E2E_MODE=synthetic (real SDK, stubbed services).
 # Optional LAUNCH_E2E_MODE=live also needs grant-enabled staging/BFF config.
 #
-# For a build made with NEXT_PUBLIC_BASE_PATH (the Shop the App frames at pubky.app/shop is built
-# with /shop-embed), export the same value for `npm run start` and put it on the URL:
-#   NEXT_PUBLIC_BASE_PATH=/shop-embed LAUNCH_E2E_BASE_URL=http://127.0.0.1:3000/shop-embed \
-#     bash scripts/ci-launch-e2e.sh
-# The suite needs the standard layout, so do not start that Shop with PUBKY_RUNTIME_EMBEDDED=true (it hides the header).
-# Without a path the suite targets a standalone build, as before.
+# This suite exercises standalone navigation and needs a standalone production build.
+# Leave NEXT_PUBLIC_BASE_PATH unset, or use a non-embedded test mount (for example /shop-test)
+# consistently at build/start and in LAUNCH_E2E_BASE_URL. The reserved /shop-embed build
+# requires embedded/BFF configuration at startup and is verified by the paired App/Shop QA.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"

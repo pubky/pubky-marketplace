@@ -4,6 +4,7 @@ import { marketplaceCheckoutSchema } from '@/hooks/useMarketplaceCheckout/useMar
 import {
   addressCountryFromLocales,
   browserAddressCountry,
+  canonicalCountryCode,
   canonicalizeRegion,
   commerceDeliveryAddressValueSchema,
   filterSubdivisions,
@@ -22,6 +23,22 @@ const usBase = {
   postalCode: '02740',
   countryCode: 'US',
 };
+
+describe('canonicalCountryCode', () => {
+  it('replaces aliases and retired codes with the ISO 3166-1 code', () => {
+    expect(canonicalCountryCode('UK')).toBe('GB');
+    expect(canonicalCountryCode(' el ')).toBe('GR');
+    expect(canonicalCountryCode('FX')).toBe('FR');
+    expect(canonicalCountryCode('YU')).toBe('RS');
+  });
+
+  it('keeps canonical codes and anything that is not two letters', () => {
+    expect(canonicalCountryCode('gb')).toBe('GB');
+    expect(canonicalCountryCode('CH')).toBe('CH');
+    expect(canonicalCountryCode('che')).toBe('CHE');
+    expect(canonicalCountryCode('')).toBe('');
+  });
+});
 
 describe('postal country table', () => {
   it('requires a labelled subdivision for US/CA/AU/BR/IN/MX and not for GB/DE/NL/FR/JP', () => {

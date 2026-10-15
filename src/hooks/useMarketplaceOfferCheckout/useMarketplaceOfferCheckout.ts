@@ -4,6 +4,7 @@ import { useRef, useState } from 'react';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import { isMarketplaceAwardCheckoutEligible } from '@/core/services/marketplace/marketplace-projections';
 import { useDeliveryKeyGate } from '@/hooks/useDeliveryKeyGate/useDeliveryKeyGate';
+import { checkDestinationCountry } from '@/hooks/useMarketplaceSellerShipsTo/useMarketplaceSellerShipsTo';
 import { BIND_FAIL_CANCEL_REASON, extractCheckoutOrderIds } from '@/libs/commerce/checkout-phase';
 import {
   MARKETPLACE_FAILURE_MESSAGES,
@@ -82,6 +83,11 @@ export function useMarketplaceOfferCheckout(onCompleted?: () => Promise<void> | 
         | { deliveryAddressEnvelope: { keyId: string; envelope: string } } = { fulfillment: 'pickup' };
       if (deliveryAddress) {
         const sellerPubky = award.listing.sellerPubky;
+        const destinationError = await checkDestinationCountry(deliveryAddress.countryCode, [sellerPubky]);
+        if (destinationError) {
+          toast({ variant: 'error', description: destinationError });
+          return { ok: false, code: 'DESTINATION_COUNTRY' };
+        }
         const gate = await resolveKeys([sellerPubky]);
         if (!gate.ok) return { ok: false, code: 'DELIVERY_KEY' };
         const key = gate.keys.get(sellerPubky);

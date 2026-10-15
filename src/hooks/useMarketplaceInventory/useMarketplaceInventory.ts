@@ -3,7 +3,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { InventoryBoardLoad, InventoryBoardRow } from '@/application/commerce/inventory';
 import { CommerceController } from '@/controllers/commerce/commerce';
-import { LISTING_PUBLISH_BLOCK_COPY } from '@/libs/commerce/listing-publish-guards';
+import { evaluateListingActivationGuards } from '@/hooks/useCreateMarketplaceListing/useCreateMarketplaceListing';
+import { LISTING_PUBLISH_BLOCK_COPY, listingPublishBlockToast } from '@/libs/commerce/listing-publish-guards';
 import { AuthErrorCode } from '@/libs/error/error.codes';
 import { isAppError } from '@/libs/error/error.utils';
 import { Logger } from '@/libs/logger/logger';
@@ -109,6 +110,15 @@ export function useMarketplaceInventory() {
     setPendingListingId(row.listingId);
     try {
       const record = await CommerceController.getOrFetchListing(sellerPubky, row.listingId);
+      const blocked = await evaluateListingActivationGuards({
+        ownerPubky: sellerPubky,
+        hasMarketplaceSession: Boolean(identitySession),
+        records: [record],
+      });
+      if (blocked) {
+        toast(listingPublishBlockToast(blocked));
+        return false;
+      }
       await CommerceController.commitUpsertListing({
         ...record,
         revision: record.revision + 1,
