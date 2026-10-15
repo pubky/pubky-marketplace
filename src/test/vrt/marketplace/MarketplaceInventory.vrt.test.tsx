@@ -15,7 +15,8 @@ const { SELLER, row } = vi.hoisted(() => {
     aggregateId: `listing:${seller}_boots`,
     title: 'Vintage work boots',
     thumbUrl: null,
-    state: 'active',
+    state: 'available',
+    listingState: 'active',
     format: 'fixed_price',
     dropId: null,
     available: 4,
@@ -55,6 +56,7 @@ vi.mock('@/hooks/useMarketplaceInventory/useMarketplaceInventory', () => ({
     refresh: async () => undefined,
     setAvailable: async () => ({ status: 'updated', row: row() }),
     retrySync: async () => undefined,
+    relist: async () => true,
   }),
 }));
 
