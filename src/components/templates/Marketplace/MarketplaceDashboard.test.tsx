@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { MARKETPLACE_ROUTES } from '@/app/routes';
+import * as commerceConfig from '@/config/commerce';
 import { COMMERCE_LISTING_MAX_QUANTITY } from '@/config/commerce';
 import { COMMERCE_FIXTURE_SELLER, createCommerceListingFixture } from '@/test/fixtures/commerce/commerce';
 import { toCommerceListingModel } from '@/test/fixtures/commerce/listing-models';
@@ -13,6 +14,7 @@ const dashboardFns = vi.hoisted(() => ({
   hasUnsavedListingDraft: vi.fn(async (): Promise<string | null> => null),
   discardListingDraft: vi.fn(async () => undefined),
   resumeListingDraft: vi.fn(),
+  updateListingState: vi.fn(async () => true),
 }));
 const dashboardState = vi.hoisted(() => ({
   listings: [] as unknown[],
@@ -60,7 +62,7 @@ vi.mock('@/hooks/useMarketplaceSellerDashboard/useMarketplaceSellerDashboard', (
     sessionError: dashboardState.sessionError,
     metrics: dashboardState.metrics,
     actionNeeded: dashboardState.actionNeeded,
-    updateListingState: vi.fn(async () => true),
+    updateListingState: dashboardFns.updateListingState,
     duplicateListing: dashboardFns.duplicateListing,
     hasUnsavedListingDraft: dashboardFns.hasUnsavedListingDraft,
     unfinishedDrafts: dashboardState.unfinishedDrafts,
@@ -71,7 +73,9 @@ vi.mock('@/hooks/useMarketplaceSellerDashboard/useMarketplaceSellerDashboard', (
 }));
 
 vi.mock('@/organisms/Marketplace/MarketplaceSessionConnectDialog', () => ({
-  MarketplaceSessionConnectDialog: ({ triggerLabel }: { triggerLabel: string }) => <button>{triggerLabel}</button>,
+  MarketplaceSessionConnectDialog: ({ triggerLabel, autoOpen }: { triggerLabel?: string; autoOpen?: boolean }) => (
+    <button data-testid={autoOpen ? 'session-connect-auto-open' : undefined}>{triggerLabel}</button>
+  ),
 }));
 
 const SHOP_WITH_POLICIES = {
@@ -459,6 +463,60 @@ describe('MarketplaceDashboard', () => {
     expect(within(guide).getByText('Unlimited')).toBeInTheDocument();
     expect(within(guide).queryByText(String(COMMERCE_LISTING_MAX_QUANTITY))).not.toBeInTheDocument();
     expect(within(screen.getByRole('row', { name: /Vintage leather boots/ })).getByText('1')).toBeInTheDocument();
+  });
+});
+
+describe('MarketplaceDashboard state changes without a marketplace session', () => {
+  beforeEach(() => {
+    vi.spyOn(commerceConfig, 'getCommerceAdapterMode').mockReturnValue('transaction-service');
+    dashboardFns.updateListingState.mockClear();
+    viewport.isMobile = false;
+  });
+
+  const selectAndClick = (title: string, action: 'Pause' | 'Activate') => {
+    fireEvent.click(screen.getByRole('checkbox', { name: `Select ${title}` }));
+    fireEvent.click(screen.getByRole('button', { name: action }));
+  };
+
+  it('pauses a fixed-price listing without asking to enable selling', () => {
+    const fixedPrice = listing({ title: 'Boots' });
+    dashboardState.listings = [fixedPrice];
+
+    render(<MarketplaceDashboard />);
+    selectAndClick('Boots', 'Pause');
+
+    expect(dashboardFns.updateListingState).toHaveBeenCalledWith([fixedPrice.id], 'paused');
+    expect(screen.queryByTestId('session-connect-auto-open')).not.toBeInTheDocument();
+  });
+
+  it('asks to enable selling before activating', () => {
+    dashboardState.listings = [listing({ title: 'Boots', state: 'paused' })];
+
+    render(<MarketplaceDashboard />);
+    selectAndClick('Boots', 'Activate');
+
+    expect(dashboardFns.updateListingState).not.toHaveBeenCalled();
+    expect(screen.getByTestId('session-connect-auto-open')).toBeInTheDocument();
+  });
+
+  it('asks to enable selling before pausing an auction', () => {
+    const record = createCommerceListingFixture({ title: 'Lamp' });
+    record.sale = {
+      format: 'auction',
+      startingPrice: { amountMinor: 4_500, currency: 'USD', exponent: 2 },
+      minimumIncrement: { amountMinor: 500, currency: 'USD', exponent: 2 },
+      startsAt: '2026-09-20T00:00:00.000Z',
+      endsAt: '2026-09-30T00:00:00.000Z',
+      antiSnipingWindowSeconds: 120,
+      antiSnipingExtensionSeconds: 120,
+    };
+    dashboardState.listings = [toCommerceListingModel(record)];
+
+    render(<MarketplaceDashboard />);
+    selectAndClick('Lamp', 'Pause');
+
+    expect(dashboardFns.updateListingState).not.toHaveBeenCalled();
+    expect(screen.getByTestId('session-connect-auto-open')).toBeInTheDocument();
   });
 });
 
