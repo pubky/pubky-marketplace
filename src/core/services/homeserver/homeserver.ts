@@ -717,9 +717,9 @@ export class HomeserverService {
   }
 
   /**
-   * Whether this browser can hold a grant key that JavaScript cannot read
-   * (secure context, IndexedDB, WebCrypto Ed25519 and Web Locks). Without it the Shop does
-   * not offer the Bitkit or Pubky Passport sign-in.
+   * Whether this browser can persist a grant sign-in (secure context, WebCrypto, IndexedDB and
+   * Web Locks). Without it the Shop does not offer the Bitkit or Pubky Passport sign-in.
+   * WebCrypto Ed25519 is not required: {@link startGrantAuthFlow} falls back to an SDK-held key.
    */
   static isGrantSignInAvailable(): boolean {
     try {
@@ -731,10 +731,11 @@ export class HomeserverService {
 
   /**
    * Starts a grant sign-in (`pubkyauth://signin_grant`) for signers that only
-   * accept grant URLs, such as Bitkit and Pubky Passport. The
-   * proof-of-possession key is a non-extractable WebCrypto key in IndexedDB;
-   * the approved session is grant-backed and never exported to JS-readable
-   * storage.
+   * accept grant URLs, such as Bitkit and Pubky Passport. The SDK keeps the
+   * proof-of-possession key as a non-extractable WebCrypto Ed25519 key in
+   * IndexedDB. Browsers without WebCrypto Ed25519 (e.g. Chrome < 137) get an
+   * SDK-generated key instead, which `browserSessionStore` saves in IndexedDB
+   * as bearer-equivalent material.
    *
    * @param xCallback Optional return destinations carried in the URL (Pubky
    * Passport's callback page). They are navigation hints only: the session
@@ -750,13 +751,14 @@ export class HomeserverService {
     xCallback?: XCallbackParams,
   ): Promise<TGenerateAuthUrlResult> {
     try {
-      if (!this.isGrantSignInAvailable() || !(await this.getPubkySdk().browserSessionStore.isAvailable())) {
+      const pubkySdk = this.getPubkySdk();
+      if (!this.isGrantSignInAvailable() || !(await pubkySdk.browserSessionStore.isAvailable())) {
         throw Err.database(DatabaseErrorCode.INIT_FAILED, 'This browser cannot securely save a grant sign-in.', {
           service: ErrorService.Homeserver,
           operation,
         });
       }
-      const flow = await GrantAuthFlow.startDelegated(CAPABILITIES, kind(), {
+      const flow = await pubkySdk.startGrantAuthFlow(CAPABILITIES, kind(), {
         clientId: getShopGrantClientId(),
         relay: getDefaultHttpRelay(),
         ...(xCallback ? { xCallback } : {}),

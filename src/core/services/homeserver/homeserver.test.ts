@@ -45,7 +45,7 @@ const mockState = vi.hoisted(() => ({
   getHomeserverOf: vi.fn(),
   restoreSession: vi.fn(),
   sessionRestore: vi.fn(),
-  grantStartDelegated: vi.fn(),
+  startGrantAuthFlow: vi.fn(),
   grantStoreRemove: vi.fn(),
   grantStoreClearAll: vi.fn(),
   grantStoreList: vi.fn(),
@@ -101,6 +101,7 @@ vi.mock('@synonymdev/pubky', () => {
     restoreSession: (...args: unknown[]) => mockState.restoreSession(...args),
     startCookieAuthFlow: (...args: unknown[]) => mockState.startAuthFlow(...args),
     resumeCookieAuthFlow: (...args: unknown[]) => mockState.resumeAuthFlow(...args),
+    startGrantAuthFlow: (...args: unknown[]) => mockState.startGrantAuthFlow(...args),
     eventStreamForUser: (...args: unknown[]) => mockState.eventStreamForUser(...args),
     client: {
       fetch: (...args: unknown[]) => mockState.clientFetch(...args),
@@ -135,7 +136,6 @@ vi.mock('@synonymdev/pubky', () => {
       restore: (...args: unknown[]) => mockState.sessionRestore(...args),
     },
     GrantAuthFlow: {
-      startDelegated: (...args: unknown[]) => mockState.grantStartDelegated(...args),
       isDelegationAvailable: true,
     },
     PublicKey: {
@@ -1131,7 +1131,7 @@ describe('HomeserverService', () => {
     describe('generateGrantAuthUrl (Bitkit sign-in)', () => {
       it('bitkit qr is signin_grant with shop caps and cid', async () => {
         const free = vi.fn();
-        mockState.grantStartDelegated.mockResolvedValue({
+        mockState.startGrantAuthFlow.mockResolvedValue({
           authorizationUrl: 'pubkyauth://signin_grant?caps=x&relay=r&secret=s&cid=shop.pubky.app&cpk=k',
           tryPollOnce: vi.fn().mockResolvedValue(undefined),
           free,
@@ -1141,7 +1141,7 @@ describe('HomeserverService', () => {
         awaitApproval.catch(() => undefined);
         cancelAuthFlow();
 
-        expect(mockState.grantStartDelegated).toHaveBeenCalledWith(CAPABILITIES, 'signin-kind', {
+        expect(mockState.startGrantAuthFlow).toHaveBeenCalledWith(CAPABILITIES, 'signin-kind', {
           clientId: 'shop.pubky.app',
           relay: expect.any(String),
         });
@@ -1161,7 +1161,7 @@ describe('HomeserverService', () => {
           category: ErrorCategory.Database,
           code: DatabaseErrorCode.INIT_FAILED,
         });
-        expect(mockState.grantStartDelegated).not.toHaveBeenCalled();
+        expect(mockState.startGrantAuthFlow).not.toHaveBeenCalled();
       });
 
       it('does not create a signer approval when browser persistence is unavailable', async () => {
@@ -1171,7 +1171,7 @@ describe('HomeserverService', () => {
           category: ErrorCategory.Database,
           code: DatabaseErrorCode.INIT_FAILED,
         });
-        expect(mockState.grantStartDelegated).not.toHaveBeenCalled();
+        expect(mockState.startGrantAuthFlow).not.toHaveBeenCalled();
       });
 
       it('waits for persistence availability before creating a grant approval', async () => {
@@ -1183,10 +1183,10 @@ describe('HomeserverService', () => {
         );
         const pending = HomeserverService.generateGrantAuthUrl();
 
-        expect(mockState.grantStartDelegated).not.toHaveBeenCalled();
+        expect(mockState.startGrantAuthFlow).not.toHaveBeenCalled();
         resolveAvailability(false);
         await expect(pending).rejects.toMatchObject({ code: DatabaseErrorCode.INIT_FAILED });
-        expect(mockState.grantStartDelegated).not.toHaveBeenCalled();
+        expect(mockState.startGrantAuthFlow).not.toHaveBeenCalled();
       });
     });
 
