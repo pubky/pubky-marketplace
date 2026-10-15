@@ -11,9 +11,9 @@ import { formatCommerceMoney } from '@/libs/commerce/format';
 import {
   AMOUNT_EXAMPLES,
   amountInputExample,
-  amountInputToMoney,
   amountInputUnitLabel,
   type CommerceAsset,
+  tryAmountInputToMoney,
 } from '@/libs/commerce/pricing';
 import type { CommerceMoney } from '@/libs/commerce/transaction-contracts';
 import { ControlledInputField } from '@/molecules/ControlledInputField/ControlledInputField';
@@ -153,8 +153,8 @@ function formatOfferComparisonLine(
 ): string | null {
   if (!askingPrice || askingPrice.amountMinor <= 0 || amount.trim() === '') return null;
 
-  const offerAmount = amountInputToMoney(amount, priceAsset);
-  if (!Number.isFinite(offerAmount.amountMinor) || offerAmount.amountMinor <= 0) return null;
+  const offerAmount = tryAmountInputToMoney(amount, priceAsset);
+  if (offerAmount === null || offerAmount.amountMinor <= 0) return null;
 
   const difference = offerAmount.amountMinor - askingPrice.amountMinor;
   if (difference === 0) return 'Matches asking';

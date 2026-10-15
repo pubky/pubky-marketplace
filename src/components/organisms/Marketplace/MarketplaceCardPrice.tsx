@@ -11,7 +11,8 @@ import { MarketplaceIndicativePrice } from '@/organisms/Marketplace/MarketplaceI
 export function MarketplaceCardPrice({ money }: { money: CommerceMoney }) {
   return (
     <span>
-      {formatCommerceMoney(money)} <MarketplaceIndicativePrice money={money} className="font-normal" />
+      {formatCommerceMoney(money)}
+      <MarketplaceIndicativePrice money={money} className="ml-2 font-normal" />
     </span>
   );
 }

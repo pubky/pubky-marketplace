@@ -12,6 +12,7 @@ import {
   isBitcoinAsset,
   listingCurrencyChoiceForAsset,
   sumMoneyByAsset,
+  tryAmountInputToMoney,
   USD_ASSET,
 } from './pricing';
 
@@ -137,6 +138,13 @@ describe('amount input to money and back', () => {
       currency: 'EUR',
       exponent: 2,
     });
+  });
+
+  it('returns null instead of throwing for half-typed input', () => {
+    expect(tryAmountInputToMoney('100.', USD_ASSET)).toBeNull();
+    expect(tryAmountInputToMoney('', USD_ASSET)).toBeNull();
+    expect(tryAmountInputToMoney('1.005', USD_ASSET)).toBeNull();
+    expect(tryAmountInputToMoney('100.5', USD_ASSET)).toEqual({ amountMinor: 10_050, currency: 'USD', exponent: 2 });
   });
 
   it('throws a validation error for text that skipped validation', () => {

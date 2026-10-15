@@ -136,13 +136,18 @@ export function amountInputSchemaForAsset(asset: CommerceAsset): z.ZodType<strin
     .refine((value) => (parseAmountInput(value, asset)?.amountMinor ?? 0) > 0, 'Amount must be greater than zero.');
 }
 
+/** Half-typed input ("100.") has no amount yet: exact minor units, or `null` when the text is not a valid amount. */
+export function tryAmountInputToMoney(value: string, asset: CommerceAsset): CommerceMoney | null {
+  return parseAmountInput(value, asset);
+}
+
 /**
  * A validated input string → exact minor units in the given asset. Callers run
  * {@link amountInputSchemaForAsset} first, so a string that does not parse is a
  * programming error rather than user input.
  */
 export function amountInputToMoney(value: string, asset: CommerceAsset): CommerceMoney {
-  const money = parseAmountInput(value, asset);
+  const money = tryAmountInputToMoney(value, asset);
   if (money === null) {
     throw Err.validation(ValidationErrorCode.INVALID_INPUT, `Not a valid ${asset.currency} amount`, {
       service: ErrorService.Local,
