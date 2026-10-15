@@ -1,0 +1,1 @@
+Inventory shows each listing's state as My shop does, so a paused listing reads "paused" instead of its stock state "available". Paused fixed-price listings get a Relist action, the stock editor is now labelled "Set stock", and listing titles link to the listing page.
