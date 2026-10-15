@@ -219,6 +219,8 @@ export class ChatController {
   static async handleInboxPings(pings: InboxPing[]): Promise<InboxPingRef[]> {
     const me = this.me();
     const handled: InboxPingRef[] = [];
+    // Without a ready identity nothing can be handled; acking would discard first contacts.
+    if ((await this.getOrFetchIdentity()) !== 'ready') return handled;
     for (const ping of pings) {
       if (!isChatPingSlot(ping.slot)) continue;
       const ref: InboxPingRef = { sender: ping.sender, slot: ping.slot, revision: ping.revision };

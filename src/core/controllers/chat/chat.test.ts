@@ -79,11 +79,20 @@ describe('ChatController.handleInboxPings', () => {
 
   beforeEach(() => {
     useAuthStore.setState({ currentUserPubky: 'm'.repeat(52) });
+    vi.spyOn(ChatController, 'getOrFetchIdentity').mockResolvedValue('ready');
   });
 
   afterEach(() => {
     useAuthStore.setState({ currentUserPubky: null });
     vi.restoreAllMocks();
+  });
+
+  it('handles nothing, and acks nothing, while the sign-in lacks the chat scopes', async () => {
+    vi.spyOn(ChatController, 'getOrFetchIdentity').mockResolvedValue('needs_reauth');
+    const handle = vi.spyOn(ChatApplication, 'handlePing').mockResolvedValue();
+
+    expect(await ChatController.handleInboxPings([ping(`chat-${folder}`, payload)])).toEqual([]);
+    expect(handle).not.toHaveBeenCalled();
   });
 
   it("acks handled chat pings, drops unreadable ones, and never touches another app's slot", async () => {

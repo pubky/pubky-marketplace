@@ -315,6 +315,13 @@ export class ChatSyncCoordinator {
 
   private async runInboxLoop(owner: string, generation: number): Promise<void> {
     while (generation === this.generation && this.state.isLeader) {
+      // A session without the chat scopes cannot handle a ping, and an ack is
+      // account-wide: leave the pings on the inbox until the identity is ready
+      // (re-approval, or a retry) instead of polling and dropping them.
+      if (!(await this.isIdentityReady())) {
+        await this.waitForIdentity(generation);
+        continue;
+      }
       let availability: InboxAvailability;
       try {
         availability = await ChatController.fetchInboxAvailability();
@@ -463,6 +470,34 @@ export class ChatSyncCoordinator {
         });
       }, CHAT_EVENT_DEBOUNCE_MS),
     );
+  }
+
+  private async isIdentityReady(): Promise<boolean> {
+    if (useChatStore.getState().identityState === 'ready') return true;
+    try {
+      return (await ChatController.getOrFetchIdentity()) === 'ready';
+    } catch {
+      return false;
+    }
+  }
+
+  /** Resolves when the identity becomes ready, the generation ends, or a retry is due. */
+  private waitForIdentity(generation: number): Promise<void> {
+    return new Promise((resolve) => {
+      const finish = () => {
+        unsubscribe();
+        clearInterval(check);
+        clearTimeout(retry);
+        resolve();
+      };
+      const unsubscribe = useChatStore.subscribe((state) => {
+        if (state.identityState === 'ready') finish();
+      });
+      const check = setInterval(() => {
+        if (generation !== this.generation) finish();
+      }, 250);
+      const retry = setTimeout(finish, CHAT_INBOX_RETRY_MS);
+    });
   }
 
   private sleep(ms: number, generation: number): Promise<void> {

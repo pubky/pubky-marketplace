@@ -104,6 +104,23 @@ describe('ChatSyncCoordinator', () => {
     expect(pingsCalls).toBe(2);
   });
 
+  it('does not poll the inbox while the sign-in lacks the chat scopes', async () => {
+    vi.mocked(ChatController.getOrFetchIdentity).mockResolvedValue('needs_reauth');
+    const coordinator = ChatSyncCoordinator.getInstance();
+    coordinator.setRoute('/marketplace');
+    coordinator.start();
+    signIn();
+    await settle();
+    expect(useChatStore.getState().isLeaderTab).toBe(true);
+    expect(pingsCalls).toBe(0);
+    expect(ChatController.commitAckInboxPings).not.toHaveBeenCalled();
+
+    // Re-approval (or a retry from the Messages page) readies the identity: polling starts.
+    useChatStore.getState().setIdentityState('ready');
+    await settle();
+    expect(pingsCalls).toBe(1);
+  });
+
   it('leaves pings it did not handle on the inbox and pauses instead of polling again at once', async () => {
     const coordinator = ChatSyncCoordinator.getInstance();
     coordinator.setRoute('/marketplace');
