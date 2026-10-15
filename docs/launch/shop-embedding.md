@@ -26,7 +26,7 @@ Invalid values fail the build (build keys) or startup (runtime keys), not silent
 There are two shapes. The rest of this page applies to both unless it says otherwise.
 
 - **Direct.** A separate deployment can serve Shop at `/shop` (`NEXT_PUBLIC_BASE_PATH=/shop`, `PUBKY_RUNTIME_EMBEDDED=false`), with its proxy sending `/shop` to Shop. The mount path and public path are the same. A standalone Shop at its origin root uses an empty base path.
-- **App-owned (the pubky.app integration).** The App owns `/shop`: it renders its own chrome around a same-origin iframe, and the Shop build runs at `/shop-embed` (`NEXT_PUBLIC_BASE_PATH=/shop-embed`, `PUBKY_RUNTIME_EMBEDDED=true`, `PUBKY_RUNTIME_STORAGE_ADOPT_LEGACY=false`, `PUBKY_RUNTIME_FRAME_ANCESTORS=self`), proxied with the prefix kept. Set `PUBKY_RUNTIME_SHOP_PUBLIC_PATH=/shop`. The App guide is [`docs/shop-embedding.md` in pubky-app](https://github.com/pubky/pubky-app/blob/feat/shop-embedded-session/docs/shop-embedding.md).
+- **App-owned (the pubky.app integration).** The App owns `/shop`: it renders its own chrome around a same-origin iframe, and the Shop build runs at `/shop-embed` (`NEXT_PUBLIC_BASE_PATH=/shop-embed`, `PUBKY_RUNTIME_EMBEDDED=true`, `PUBKY_RUNTIME_STORAGE_ADOPT_LEGACY=false`, `PUBKY_RUNTIME_FRAME_ANCESTORS=self`), proxied with the prefix kept. Set `PUBKY_RUNTIME_SHOP_PUBLIC_PATH=/shop`. The App guide is [`docs/shop-embedding.md` in pubky-app](https://github.com/pubky/pubky-app/blob/77634e8d32d4103b0e4aad74ea3abd778a7f06f3/docs/shop-embedding.md).
 
 In the App-owned shape every URL has one of two homes:
 
@@ -76,10 +76,11 @@ Route `/shop` and `/shop/*` to **App**. Route `/shop-embed` and `/shop-embed/*` 
 
 - **Static assets.** `/shop-embed/_next/static/*` can be cached according to its immutable response headers. If `NEXT_PUBLIC_ASSET_PREFIX` is set to a path, route that path too.
 - **HTML and API.** Do not cache Shop HTML or `/shop-embed/api/*`. Preserve request bodies, query strings, `Set-Cookie` and backend cache headers.
-- **Headers.** Pass `Host` and `X-Forwarded-Proto: https` through. The Shop's grant bridge checks the browser `Origin` against its allow-list, so `Origin` must arrive unmodified.
+- **Headers.** Pass `Host` and `X-Forwarded-Proto: https` through. The Shop's grant bridge checks the browser `Origin` against its allow-list, so `Origin` must arrive unmodified. Preserve `Sec-Fetch-Site` for the browser request checks. Set `SHOP_BFF_CLI_TRUSTED_PROXY_COUNT` to the actual trusted proxy count and ensure those proxies sanitize/populate `X-Forwarded-For`; browser bootstrap also uses this setting for per-IP rate limits. The default `0` ignores forwarded addresses and groups requests in one fallback bucket.
 - **Cookies.** The Shop's bridge cookies, `__Host-shop-bff-session` and `__Host-shop-marketplace-grant`, use `Secure`, `HttpOnly`, `SameSite=Strict` and `Path=/`. On `pubky.app` they are sent to App routes too; reserve those names for Shop. App asks the mounted Shop BFF to clear them at logout.
 - **Entry.** App `/shop` opens `/shop-embed/marketplace` in its iframe. The Shop root redirect stays within its configured mount.
 - **Vercel cron.** If the embedded build runs on Vercel, the cron in `vercel.json` (`/api/marketplace/grant-cleanup`) must point at `/shop-embed/api/marketplace/grant-cleanup` in that deployment's config.
+- **Docker cleanup.** `vercel.json` does not schedule jobs for Docker. Configure an external scheduler to call `GET /shop-embed/api/marketplace/grant-cleanup` every minute with `Authorization: Bearer <CRON_SECRET>`, through a route that reaches the Shop BFF. Verify HTTP 200 and `{"ok":true}`; account for any staging edge authentication separately.
 - **Socials.** Leave `NEXT_PUBLIC_SOCIAL_HOST` unset in the embedded build. With it set, `/shop-embed/home` and the other social routes answer a 307 to the App and would load the App inside the frame.
 
 The Shop exposes no manifest and registers no service worker under a base path (see [Service worker](#service-worker)), so the App's manifest and worker are the only ones on the origin.

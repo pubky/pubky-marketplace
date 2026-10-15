@@ -49,9 +49,9 @@ npm test -- src/core/services/homeserver src/core/controllers/auth src/core/serv
   src/core/services/shop-embed src/libs/shop-embed src/hooks/useShopEmbed src/components/organisms/ShopEmbed
 ```
 
-Then verify the paired production builds in a browser: restore/reload, two tabs, logout with and without the Shop iframe mounted, same-account return, account switch, failed storage/BFF cleanup and recovery, and preservation of unrelated SDK records. Confirm real signer approvals and commerce against the configured staging services before enabling the deployed pair. Keep exact revision and fixture/live provenance with each result.
+Then verify the paired production builds in a browser: restore/reload, two tabs, logout with and without the Shop iframe mounted, same-account return, account switch, failed storage/BFF cleanup and recovery, and preservation of unrelated SDK records. Confirm real signer approvals and commerce against the configured staging services before promoting the paired deployment. Keep exact revision and fixture/live provenance with each result.
 
-Follow [Shop embedding](../launch/shop-embedding.md) for the fixed `/shop-embed` build path, runtime environment, BFF schema/keys and App activation order. The [grant session guide](../launch/grant-auth-session.md) records migration and compatibility limits, including the parallel Inbox/chat work.
+Follow [Shop embedding](../launch/shop-embedding.md) for the fixed `/shop-embed` build path, runtime environment, BFF schema/keys and coordinated deployment. The [grant session guide](../launch/grant-auth-session.md) records migration and compatibility limits, including the parallel Inbox/chat work.
 
 ## Day-to-day merges
 
