@@ -135,6 +135,26 @@ describe('useMarketplaceOffers', () => {
     );
   });
 
+  it('names a removed listing when accepting is refused with LISTING_NOT_ACTIVE', async () => {
+    const { toast } = await import('@/molecules/Toaster/use-toast');
+    const { result } = renderHook(() => useMarketplaceOffers());
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    vi.mocked(CommerceController.executeMarketplaceCommand).mockResolvedValueOnce({
+      ok: false,
+      error: {
+        code: 'LISTING_NOT_ACTIVE',
+        message: 'The seller is not selling this listing right now.',
+        reason: 'listing_removed',
+      },
+    });
+
+    await act(async () => {
+      await result.current.act(offer, 'offer.accept');
+    });
+
+    expect(vi.mocked(toast).mock.calls.at(-1)?.[0]?.description).toBe('The seller removed this listing.');
+  });
+
   it('maps server and thrown sentinel failures to static copy', async () => {
     const sentinel = 'SENTINEL_SERVER_TEXT_offers';
     const { toast } = await import('@/molecules/Toaster/use-toast');

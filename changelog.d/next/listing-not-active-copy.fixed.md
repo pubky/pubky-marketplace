@@ -1,0 +1,1 @@
+Checkout, offers and bids now say why a listing can't be bought when the seller paused, ended or removed it, instead of a generic failure. A checkout the seller's shop can't confirm right now asks you to try again in a moment.
