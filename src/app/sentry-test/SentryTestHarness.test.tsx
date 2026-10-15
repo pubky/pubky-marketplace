@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { toast } from '@/molecules/Toaster/use-toast';
 import { setBasePath } from '@/test-utils/base-path';
@@ -40,10 +40,11 @@ describe('SentryTestHarness server capture', () => {
     fetchMock.mockResolvedValue(new Response(null, { status }));
     render(<SentryTestHarness />);
 
-    const button =
-      type === 'unhandled'
-        ? screen.getByRole('button', { name: 'Trigger 500' })
-        : screen.getAllByRole('button', { name: 'Capture AppError' })[1];
+    const serverCard = screen.getByText('Server-side (Node)').closest<HTMLElement>('[data-slot="card"]');
+    if (!serverCard) throw new Error('Server capture card is missing');
+    const button = within(serverCard).getByRole('button', {
+      name: type === 'unhandled' ? 'Trigger 500' : 'Capture AppError',
+    });
     fireEvent.click(button);
 
     await waitFor(() => {

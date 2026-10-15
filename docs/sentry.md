@@ -52,12 +52,20 @@ service, Locks or Paykit processes.
 | Unhandled browser JS exceptions                      | Sentry `globalHandlers` integration (auto)                                                                                                                                        |
 | Unhandled promise rejections                         | Sentry `globalHandlers` integration (auto)                                                                                                                                        |
 | Server Component / Route Handler / middleware errors | `onRequestError = Sentry.captureRequestError` exported from `src/instrumentation.ts` (Next.js 15+)                                                                                |
-| Caught Shop grant BFF server failures                | Browser/CLI handlers report mapped 5xx through `Err.server` with static operation and HTTP status only. Expected 4xx are not reported.                                            |
+| Caught Shop grant BFF server failures                | Browser/CLI route handlers report mapped 5xx through `Err.server` with safe metadata only. Mapped 4xx and 429 are not reported by this server path.                               |
 | Route segment render errors                          | `Sentry.captureException(error)` in the `useEffect` of `src/app/error.tsx`                                                                                                        |
 | Root layout render errors                            | `Sentry.captureException(error)` in the `useEffect` of `src/app/global-error.tsx`                                                                                                 |
 | Replay (masked)                                      | `replayIntegration({ maskAllText, blockAllMedia, maskAllInputs })` on errored sessions                                                                                            |
 
 ## Capture rule
+
+BFF events include the operation, mapped HTTP status and a fixed `kind` derived from the error class.
+Marketplace service errors also include their numeric `upstreamStatus`. Original messages, names,
+stacks, causes, upstream error codes and SQL details are never forwarded; unrecognized errors use `unknown`.
+
+A failed BFF request can intentionally produce both a browser event and a server event. The browser
+records the failed operation; the server adds the failure category and also covers CLI requests and
+best-effort cancellation/session cleanup paths that do not report failed responses in the browser.
 
 > Throw via `Err.*` factories. Do **not** call `Sentry.captureException` directly anywhere except `app/error.tsx` and `app/global-error.tsx`, and in those two files only for non-`AppError` instances.
 

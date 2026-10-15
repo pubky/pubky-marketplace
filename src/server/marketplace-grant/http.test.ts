@@ -1,4 +1,5 @@
 /** @vitest-environment node */
+import postgres from 'postgres';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AppError } from '@/libs/error/error';
 import { ServerErrorCode } from '@/libs/error/error.codes';
@@ -9,6 +10,7 @@ import { captureAppError } from '@/libs/observability/sentry';
 import { BffError } from './bff';
 import { cliGrantError, grantError } from './http';
 import { GrantServiceError } from './service';
+import { HomeserverFetchDenied } from './ssrf';
 
 // The global database setup imports the factory before this file's mocks.
 vi.hoisted(() => vi.resetModules());
@@ -52,9 +54,9 @@ describe.each([
       message: 'Marketplace grant request failed',
       service: ErrorService.NextJsServer,
       operation,
-      context: { statusCode: 503 },
+      context: { statusCode: 503, kind: 'unknown' },
     });
-    expect(reported.context).toEqual({ statusCode: 503 });
+    expect(reported.context).toEqual({ statusCode: 503, kind: 'unknown' });
     expect(reported.cause).toBeUndefined();
     expect(reported.stack).not.toContain(privateData);
     expect(JSON.stringify(vi.mocked(captureAppError).mock.calls)).not.toContain('private-');
@@ -70,7 +72,82 @@ describe.each([
     expect(response.status).toBe(503);
     expect(await response.json()).toEqual({ error: 'grant_unavailable' });
     expect(captureAppError).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(captureAppError).mock.calls[0][0].context).toEqual({
+      statusCode: 503,
+      kind: 'grant_service',
+      upstreamStatus: 502,
+    });
     expect(JSON.stringify(vi.mocked(captureAppError).mock.calls)).not.toContain('private-upstream-error-token');
+  });
+
+  it.each([NaN, Infinity, 99, 600, 503.5])('omits invalid upstream status %s', (status) => {
+    respond(new GrantServiceError(status, 'private-upstream-error-token'));
+
+    expect(vi.mocked(captureAppError).mock.calls[0][0].context).toEqual({
+      statusCode: 503,
+      kind: 'grant_service',
+    });
+  });
+
+  it('classifies Postgres errors without recording SQL, parameters or identity', () => {
+    // The driver's declaration inherits Error's constructor signature. Its
+    // runtime constructor copies protocol fields, populated explicitly here.
+    const original = Object.assign(new postgres.PostgresError(''), {
+      message: 'private-db-password',
+      query: 'SELECT private-token FROM private-table',
+      parameters: ['private-pubky-identity'],
+      detail: 'private-row-contents',
+      cause: new Error('private-connection-string'),
+    });
+    original.stack = 'private-original-stack';
+
+    respond(original);
+
+    expect(captureAppError).toHaveBeenCalledTimes(1);
+    const reported = vi.mocked(captureAppError).mock.calls[0][0];
+    expect(reported.context).toEqual({ statusCode: 503, kind: 'postgres' });
+    expect(reported.cause).toBeUndefined();
+    expect(reported.stack).not.toContain('private-original-stack');
+    expect(JSON.stringify(vi.mocked(captureAppError).mock.calls)).not.toContain('private-');
+    expect(JSON.stringify(vi.mocked(Logger.error).mock.calls)).not.toContain('private-');
+    expect(console.warn).not.toHaveBeenCalled();
+  });
+
+  it.each(['GrantServiceError', 'BffError', 'HomeserverFetchDenied', 'PostgresError'])(
+    'does not classify an arbitrary error by its forged %s name',
+    (name) => {
+      const original = Object.assign(new Error('private-token'), { name, status: 502 });
+
+      respond(original);
+
+      expect(vi.mocked(captureAppError).mock.calls[0][0].context).toEqual({ statusCode: 503, kind: 'unknown' });
+    },
+  );
+
+  it('classifies homeserver fetch denial while preserving browser and CLI response mappings', async () => {
+    const original = new HomeserverFetchDenied();
+    original.message = 'private-proof-url';
+    const response = respond(original);
+
+    if (respond === cliGrantError) {
+      expect(response.status).toBe(401);
+      expect(await response.json()).toEqual({ error: 'homeserver_proof_invalid' });
+      expect(captureAppError).not.toHaveBeenCalled();
+      expect(console.warn).toHaveBeenCalledExactlyOnceWith('[marketplace-grant-cli] request failed', {
+        statusCode: 401,
+        kind: 'homeserver_fetch_denied',
+      });
+    } else {
+      expect(response.status).toBe(503);
+      expect(await response.json()).toEqual({ error: 'grant_unavailable' });
+      expect(vi.mocked(captureAppError).mock.calls[0][0].context).toEqual({
+        statusCode: 503,
+        kind: 'homeserver_fetch_denied',
+      });
+    }
+    expect(JSON.stringify(vi.mocked(captureAppError).mock.calls)).not.toContain('private-proof-url');
+    expect(JSON.stringify(vi.mocked(Logger.error).mock.calls)).not.toContain('private-proof-url');
+    expect(JSON.stringify(vi.mocked(console.warn).mock.calls)).not.toContain('private-proof-url');
   });
 
   it('preserves mapped server status and response code', async () => {
@@ -78,7 +155,9 @@ describe.each([
 
     expect(response.status).toBe(500);
     expect(await response.json()).toEqual({ error: 'grant_unavailable' });
-    expect(captureAppError).toHaveBeenCalledWith(expect.objectContaining({ context: { statusCode: 500 } }));
+    expect(captureAppError).toHaveBeenCalledWith(
+      expect.objectContaining({ context: { statusCode: 500, kind: 'bff' } }),
+    );
   });
 
   it.each([400, 401, 403, 404, 409, 410, 422])('does not capture an expected HTTP %i response', async (status) => {
@@ -89,6 +168,7 @@ describe.each([
     expect(response.headers.get('cache-control')).toBe('no-store, private');
     expect(captureAppError).not.toHaveBeenCalled();
     expect(Logger.error).not.toHaveBeenCalled();
+    expect(console.warn).toHaveBeenCalledExactlyOnceWith(expect.any(String), { statusCode: status, kind: 'bff' });
   });
 
   it.each([undefined, 12])('keeps rate limiting silent and preserves Retry-After (%s)', async (retryAfter) => {
@@ -107,6 +187,11 @@ describe.each([
     expect(response.status).toBe(429);
     expect(response.headers.get('retry-after')).toBe('60');
     expect(captureAppError).not.toHaveBeenCalled();
+    expect(console.warn).toHaveBeenCalledExactlyOnceWith(expect.any(String), {
+      statusCode: 429,
+      kind: 'grant_service',
+      upstreamStatus: 429,
+    });
   });
 
   it('does not capture or log an AppError twice', async () => {

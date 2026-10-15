@@ -1,10 +1,13 @@
 import { NextResponse } from 'next/server';
+import postgres from 'postgres';
 import { AppError } from '@/libs/error/error';
 import { ServerErrorCode } from '@/libs/error/error.codes';
 import { Err } from '@/libs/error/error.factories';
 import { ErrorService } from '@/libs/error/error.types';
-import { mapBffError } from './bff';
+import { BffError, mapBffError } from './bff';
 import { mapCliBffError } from './cli-bff';
+import { GrantServiceError } from './service';
+import { HomeserverFetchDenied } from './ssrf';
 
 export function noStoreJson(body: unknown, status = 200): NextResponse {
   const response = NextResponse.json(body, { status });
@@ -25,16 +28,36 @@ function applyMappedError(
   error: unknown,
 ): NextResponse {
   // AppError factories already report once. BFF/SDK/SQL failures can contain
-  // credentials, so only capture static metadata, never the original error.
+  // credentials, so classify by known constructors, never arbitrary error names.
   if (!(error instanceof AppError)) {
+    const kind =
+      error instanceof GrantServiceError
+        ? 'grant_service'
+        : error instanceof BffError
+          ? 'bff'
+          : error instanceof HomeserverFetchDenied
+            ? 'homeserver_fetch_denied'
+            : error instanceof postgres.PostgresError
+              ? 'postgres'
+              : 'unknown';
+    const context = {
+      statusCode: mapped.status,
+      kind,
+      ...(error instanceof GrantServiceError &&
+      Number.isInteger(error.status) &&
+      error.status >= 100 &&
+      error.status <= 599
+        ? { upstreamStatus: error.status }
+        : {}),
+    };
     if (mapped.status >= 500 && mapped.status <= 599) {
       Err.server(ServerErrorCode.INTERNAL_ERROR, 'Marketplace grant request failed', {
         service: ErrorService.NextJsServer,
         operation,
-        context: { statusCode: mapped.status },
+        context,
       });
     } else {
-      console.warn(logLabel, { statusCode: mapped.status });
+      console.warn(logLabel, context);
     }
   }
   const response = noStoreJson({ error: mapped.code }, mapped.status);
