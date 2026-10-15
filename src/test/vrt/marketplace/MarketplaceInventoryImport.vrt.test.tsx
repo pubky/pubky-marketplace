@@ -8,6 +8,8 @@ import { useForm } from 'react-hook-form';
 import {
   importSettingsFormDefaults,
   type ImportSettingsFormData,
+  importStoreUrlFormDefaults,
+  type ImportStoreUrlFormData,
 } from '@/hooks/useMarketplaceInventoryImport/useMarketplaceInventoryImport.types';
 import {
   summarizeLossReport,
@@ -105,6 +107,42 @@ function VrtImportDryRun({
               }
             : undefined
         }
+      />
+    </main>
+  );
+}
+
+function VrtStoreUpload({ narrow = false }: { narrow?: boolean }) {
+  const form = useForm<ImportStoreUrlFormData>({ defaultValues: importStoreUrlFormDefaults });
+  return (
+    <main className={narrow ? 'w-full py-6' : 'w-full max-w-lg py-6'}>
+      <MarketplaceInventoryImport
+        step={1}
+        scene="upload"
+        store={{ control: form.control, onSubmit: () => undefined }}
+      />
+    </main>
+  );
+}
+
+function VrtStoreSettings({ narrow = false }: { narrow?: boolean }) {
+  const form = useForm<ImportSettingsFormData>({
+    defaultValues: { ...importSettingsFormDefaults, currency: 'CHF', countryCode: 'CH', shippingMode: 'free' },
+  });
+  return (
+    <main className={narrow ? 'w-full py-6' : 'w-full max-w-lg py-6'}>
+      <MarketplaceInventoryImport
+        step={4}
+        scene="dry-run"
+        fileName="dezentralshop.ch"
+        counts={{ create: 299, update: 0, end: 0, unchanged: 0, conflict: 0 }}
+        settings={{
+          control: form.control,
+          currencyOptions: VRT_CURRENCIES,
+          conditionOptions: VRT_CONDITIONS,
+          format: 'woocommerce_store',
+          onChooseFreeShipping: () => undefined,
+        }}
       />
     </main>
   );
@@ -492,6 +530,79 @@ describe('MarketplaceInventoryImport VRT', () => {
     );
     await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot(
       'inventory-import-photos-progress-mobile',
+      VRT_DENSE_CHROME_SCREENSHOT,
+    );
+  });
+
+  it('renders the store address option next to the file upload at desktop viewport', async () => {
+    const screen = await renderForVRT(<VrtStoreUpload />, { viewport: VRT_VIEWPORT_DESKTOP, disableHover: true });
+    await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot(
+      'inventory-import-store-upload-desktop',
+      VRT_DENSE_CHROME_SCREENSHOT,
+    );
+  });
+
+  it('renders the store address option next to the file upload at mobile viewport', async () => {
+    const screen = await renderForVRT(<VrtStoreUpload narrow />, { viewport: VRT_VIEWPORT_MOBILE, disableHover: true });
+    await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot(
+      'inventory-import-store-upload-mobile',
+      VRT_DENSE_CHROME_SCREENSHOT,
+    );
+  });
+
+  it('renders the store reading step at desktop viewport', async () => {
+    const screen = await renderForVRT(
+      <main className="w-full max-w-lg py-6">
+        <MarketplaceInventoryImport
+          step={2}
+          scene="fetch"
+          fileName="dezentralshop.ch"
+          fetchPhase="variations"
+          progress={{ done: 12, total: 30 }}
+        />
+      </main>,
+      { viewport: VRT_VIEWPORT_DESKTOP, disableHover: true },
+    );
+    await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot(
+      'inventory-import-store-fetch-desktop',
+      VRT_DENSE_CHROME_SCREENSHOT,
+    );
+  });
+
+  it('renders the store reading step at mobile viewport', async () => {
+    const screen = await renderForVRT(
+      <main className="w-full py-6">
+        <MarketplaceInventoryImport
+          step={2}
+          scene="fetch"
+          fileName="dezentralshop.ch"
+          fetchPhase="variations"
+          progress={{ done: 12, total: 30 }}
+        />
+      </main>,
+      { viewport: VRT_VIEWPORT_MOBILE, disableHover: true },
+    );
+    await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot(
+      'inventory-import-store-fetch-mobile',
+      VRT_DENSE_CHROME_SCREENSHOT,
+    );
+  });
+
+  it('renders the store import settings with the currency set by the store at desktop viewport', async () => {
+    const screen = await renderForVRT(<VrtStoreSettings />, { viewport: VRT_VIEWPORT_DESKTOP, disableHover: true });
+    await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot(
+      'inventory-import-store-settings-desktop',
+      VRT_DENSE_CHROME_SCREENSHOT,
+    );
+  });
+
+  it('renders the store import settings with the currency set by the store at mobile viewport', async () => {
+    const screen = await renderForVRT(<VrtStoreSettings narrow />, {
+      viewport: VRT_VIEWPORT_MOBILE,
+      disableHover: true,
+    });
+    await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot(
+      'inventory-import-store-settings-mobile',
       VRT_DENSE_CHROME_SCREENSHOT,
     );
   });
