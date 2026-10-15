@@ -1,8 +1,11 @@
 'use client';
 
+import type { Control } from 'react-hook-form';
 import { Button } from '@/atoms/Button/Button';
 import { Input } from '@/atoms/Input/Input';
 import { Typography } from '@/atoms/Typography/Typography';
+import type { ImportStoreUrlFormData } from '@/hooks/useMarketplaceInventoryImport/useMarketplaceInventoryImport.types';
+import { ControlledInputField } from '@/molecules/ControlledInputField/ControlledInputField';
 import { ProgressSteps } from '@/molecules/ProgressSteps/ProgressSteps';
 import type { ImportLossSummary } from '@/pipes/commerce/import-loss-report';
 import { MarketplaceInventoryImportLossReport } from './MarketplaceInventoryImportLossReport';
@@ -16,6 +19,7 @@ export const IMPORT_WIZARD_STEPS = 6;
 export type InventoryImportScene =
   | 'upload'
   | 'validation'
+  | 'fetch'
   | 'map'
   | 'dry-run'
   | 'progress'
@@ -43,6 +47,13 @@ export type MarketplaceInventoryImportProps = {
   /** `photos` while product photos are fetched and saved, then `listings` while they are published. */
   progressPhase?: 'photos' | 'listings';
   mappingHeaders?: readonly string[];
+  /** `pages` while a store's product list is read, then `variations` while each variable product's options are. */
+  fetchPhase?: 'pages' | 'variations';
+  /** Reading a WooCommerce store by its address, next to the file upload. */
+  store?: {
+    control: Control<ImportStoreUrlFormData>;
+    onSubmit: () => void;
+  };
   /** Import settings for a WooCommerce or Shopify export; omitted for canonical files. */
   settings?: InventoryImportSettingsProps;
   lossSummary?: ImportLossSummary;
@@ -70,6 +81,7 @@ export type MarketplaceInventoryImportProps = {
 const SCENE_STEP: Record<InventoryImportScene, number> = {
   upload: 1,
   validation: 2,
+  fetch: 2,
   map: 3,
   'dry-run': 4,
   progress: 5,
@@ -88,6 +100,8 @@ export function MarketplaceInventoryImport({
   counts,
   progress,
   progressPhase = 'listings',
+  fetchPhase = 'pages',
+  store,
   mappingHeaders = [],
   settings,
   lossSummary,
@@ -124,6 +138,39 @@ export function MarketplaceInventoryImport({
               if (file) onFile?.(file);
             }}
           />
+          {store && (
+            <form
+              className="flex flex-col gap-2 rounded-md border border-input p-3"
+              aria-label="Read a WooCommerce store"
+              data-testid="inventory-import-store"
+              onSubmit={(event) => {
+                event.preventDefault();
+                store.onSubmit();
+              }}
+            >
+              <Typography as="h3" className="text-base font-semibold">
+                From a WooCommerce store URL
+              </Typography>
+              <Typography as="p" className="text-sm text-muted-foreground">
+                Paste your shop address. We read the public product list, with no keys. Stock counts are not public, so
+                you set a default quantity in the dry run.
+              </Typography>
+              <ControlledInputField
+                name="storeUrl"
+                control={store.control}
+                label="Store address"
+                placeholder="https://myshop.com"
+                variant="default"
+                size="md"
+                disabled={busy}
+              />
+              <div>
+                <Button type="submit" variant="secondary" className="rounded-full" disabled={busy}>
+                  Read my store
+                </Button>
+              </div>
+            </form>
+          )}
           <div className="flex flex-wrap gap-2">
             <Button variant="secondary" className="rounded-full" onClick={onExportListings}>
               Export listings CSV
@@ -137,6 +184,12 @@ export function MarketplaceInventoryImport({
       {scene === 'validation' && (
         <Typography as="p" className="text-sm text-muted-foreground">
           {fileName ? `Validating ${fileName}.` : 'Validating the file.'}
+        </Typography>
+      )}
+      {scene === 'fetch' && (
+        <Typography as="p" className="text-sm text-muted-foreground" data-testid="inventory-import-fetch">
+          {fetchPhase === 'pages' ? 'Reading the product list' : 'Reading product options'}
+          {fileName ? ` of ${fileName}` : ''}… {progress?.done ?? 0} of {progress?.total ?? 0}.
         </Typography>
       )}
       {scene === 'map' && (

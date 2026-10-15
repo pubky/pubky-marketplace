@@ -4,6 +4,7 @@ import { useRef, useState } from 'react';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm, useWatch } from 'react-hook-form';
 import { CommerceController } from '@/controllers/commerce/commerce';
+import { ImportStoreCatalogController } from '@/controllers/import-store/import-store-catalog';
 import { uploadImportImages } from '@/hooks/useImportImageUpload/useImportImageUpload';
 import { toast } from '@/molecules/Toaster/use-toast';
 import type {
@@ -25,6 +26,8 @@ import {
 import type { PresetJson } from '@/pipes/commerce/import-preset-rows';
 import { gateNotice, type ImportPublishGate, keptLiveLine } from '@/pipes/commerce/import-publish-gate';
 import { type ImportSettings, missingImportChoices } from '@/pipes/commerce/import-settings';
+import { storeCurrency, type WooStoreCatalog } from '@/pipes/commerce/import-woo-store';
+import { ImportStoreValidators } from '@/pipes/import-store/import-store.validators';
 import {
   IMPORT_CONDITION_OPTIONS,
   IMPORT_CURRENCY_OPTIONS,
@@ -32,6 +35,9 @@ import {
   type ImportSettingsFormData,
   importSettingsFormDefaults,
   importSettingsFormSchema,
+  type ImportStoreUrlFormData,
+  importStoreUrlFormDefaults,
+  importStoreUrlFormSchema,
   shippingFormValues,
   toImportSettings,
 } from './useMarketplaceInventoryImport.types';
@@ -60,7 +66,10 @@ export function useMarketplaceInventoryImport(sellerPubky: string | null) {
   const [format, setFormat] = useState<ImportSourceFormat | undefined>();
   const [lossReport, setLossReport] = useState<ImportLossReport | undefined>();
   const [progressPhase, setProgressPhase] = useState<'photos' | 'listings'>('listings');
+  const [fetchPhase, setFetchPhase] = useState<'pages' | 'variations'>('pages');
   const sourceFile = useRef<File | null>(null);
+  const sourceStore = useRef<WooStoreCatalog | null>(null);
+  const storeRun = useRef<AbortController | null>(null);
   const imageRun = useRef<AbortController | null>(null);
   const defaultsLoaded = useRef(false);
   const [appliedSettings, setAppliedSettings] = useState<ImportSettings | undefined>();
@@ -74,8 +83,19 @@ export function useMarketplaceInventoryImport(sellerPubky: string | null) {
 
   const watched = useWatch({ control: form.control });
 
+  const storeForm = useForm<ImportStoreUrlFormData>({
+    resolver: zodResolver(importStoreUrlFormSchema),
+    defaultValues: importStoreUrlFormDefaults,
+    mode: 'onSubmit',
+  });
+
   const reset = () => {
     imageRun.current?.abort();
+    storeRun.current?.abort();
+    storeRun.current = null;
+    sourceStore.current = null;
+    setFetchPhase('pages');
+    storeForm.reset(importStoreUrlFormDefaults);
     setProgressPhase('listings');
     setScene('upload');
     setStep(1);
@@ -95,14 +115,20 @@ export function useMarketplaceInventoryImport(sellerPubky: string | null) {
     form.reset(importSettingsFormDefaults);
   };
 
-  const plan = async (file: File): Promise<boolean> => {
+  /** Plans whatever the seller brought: the file, or the store catalogue already read. Resolves true when the dry run is ready. */
+  const plan = async (label: string): Promise<boolean> => {
     if (!sellerPubky) return false;
+    const file = sourceFile.current;
+    const catalog = sourceStore.current;
+    if (!file && !catalog) return false;
     setBusy(true);
-    setFileName(file.name);
+    setFileName(label);
     setScene('validation');
     setStep(2);
     const settings = toImportSettings(form.getValues());
-    const result = await CommerceController.planInventoryImport(sellerPubky, file, settings);
+    const result = catalog
+      ? await CommerceController.planInventoryStoreImport(sellerPubky, catalog, settings, IMPORT_CURRENCY_OPTIONS)
+      : await CommerceController.planInventoryImport(sellerPubky, file as File, settings);
     setBusy(false);
     if (result.status === 'parse-failed') {
       setScene(result.message.startsWith('This file exceeds') ? 'limit' : 'parse-fail');
@@ -166,20 +192,75 @@ export function useMarketplaceInventoryImport(sellerPubky: string | null) {
 
   const planFile = async (file: File) => {
     sourceFile.current = file;
+    sourceStore.current = null;
     setFormat(undefined);
     setLossReport(undefined);
     await prefillFromShop();
-    await plan(file);
+    await plan(file.name);
   };
 
-  /** Re-plans the same file with the settings now in the form; resolves true when the dry-run is ready. */
+  /**
+   * Reads the public catalogue of the WooCommerce store whose address is in
+   * the store form (no keys, through the server route), takes the store's
+   * currency as the listing currency when listings can be priced in it, then
+   * plans the catalogue into the same dry run as a file. Resolves true when
+   * the dry run is ready.
+   */
+  const submitStoreUrl = async (): Promise<boolean> => {
+    if (!sellerPubky || busy) return false;
+    if (!(await storeForm.trigger())) return false;
+    const address = ImportStoreValidators.validateStoreUrl(storeForm.getValues('storeUrl'));
+    if (!address.ok) return false;
+    const label = address.base.host;
+
+    const controller = new AbortController();
+    storeRun.current = controller;
+    sourceFile.current = null;
+    sourceStore.current = null;
+    setFormat(undefined);
+    setLossReport(undefined);
+    setBusy(true);
+    setFileName(label);
+    setScene('fetch');
+    setStep(2);
+    setFetchPhase('pages');
+    setProgress({ done: 0, total: 1 });
+    const fetched = await ImportStoreCatalogController.fetchCatalog({
+      storeUrl: ImportStoreValidators.baseText(address.base),
+      signal: controller.signal,
+      onProgress: ({ phase, done, total }) => {
+        setFetchPhase(phase);
+        setProgress({ done, total });
+      },
+    });
+    if (controller.signal.aborted) return false;
+    if (storeRun.current === controller) storeRun.current = null;
+    if (!fetched.ok) {
+      setBusy(false);
+      setScene('parse-fail');
+      setMessage(fetched.message);
+      return false;
+    }
+
+    sourceStore.current = fetched.catalog;
+    const currency = storeCurrency(fetched.catalog.products);
+    if (currency && IMPORT_CURRENCY_OPTIONS.includes(currency)) {
+      form.setValue(IMPORT_SETTINGS_FIELDS.CURRENCY, currency as ImportSettingsFormData['currency'], {
+        shouldDirty: true,
+      });
+    }
+    await prefillFromShop();
+    setProgress(undefined);
+    return plan(label);
+  };
+
+  /** Re-plans the same file or store catalogue with the settings now in the form; resolves true when the dry-run is ready. */
   const applySettings = async (): Promise<boolean> => {
-    const file = sourceFile.current;
-    if (!file) return false;
+    if (!sourceFile.current && !sourceStore.current) return false;
     if (!(await form.trigger())) return false;
-    const planned = await plan(file);
+    const planned = await plan(fileName ?? '');
     if (!planned) {
-      toast({ variant: 'error', description: 'The file could not be planned with these settings.' });
+      toast({ variant: 'error', description: 'The import could not be planned with these settings.' });
     }
     return planned;
   };
@@ -375,14 +456,17 @@ export function useMarketplaceInventoryImport(sellerPubky: string | null) {
     counts,
     progress,
     progressPhase,
+    fetchPhase,
     busy,
     format,
+    storeForm,
     lossSummary: lossReport ? summarizeLossReport(lossReport) : undefined,
     form,
     currencyOptions: IMPORT_CURRENCY_OPTIONS,
     conditionOptions: IMPORT_CONDITION_OPTIONS,
     reset,
     planFile,
+    submitStoreUrl,
     applySettings,
     chooseFreeShipping,
     publishDisabledReason,

@@ -1,3 +1,4 @@
+import { zodResolver } from '@hookform/resolvers/zod';
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useForm } from 'react-hook-form';
@@ -6,6 +7,9 @@ import {
   IMPORT_SETTINGS_FIELDS,
   type ImportSettingsFormData,
   importSettingsFormDefaults,
+  type ImportStoreUrlFormData,
+  importStoreUrlFormDefaults,
+  importStoreUrlFormSchema,
 } from '@/hooks/useMarketplaceInventoryImport/useMarketplaceInventoryImport.types';
 import {
   type ImportLossReport,
@@ -99,6 +103,100 @@ describe('MarketplaceInventoryImport upload scene', () => {
     render(<MarketplaceInventoryImport step={1} scene="upload" />);
     expect(screen.getByText(/WooCommerce or Shopify product export/)).toBeInTheDocument();
     expect(screen.getByLabelText('Import file')).toHaveAttribute('accept', expect.stringContaining('.csv'));
+  });
+});
+
+function StoreHarness({ onRead }: { onRead: (address: string) => void }) {
+  const form = useForm<ImportStoreUrlFormData>({
+    resolver: zodResolver(importStoreUrlFormSchema),
+    defaultValues: importStoreUrlFormDefaults,
+  });
+  return (
+    <MarketplaceInventoryImport
+      step={1}
+      scene="upload"
+      store={{
+        control: form.control,
+        onSubmit: () => void form.handleSubmit((values) => onRead(values.storeUrl))(),
+      }}
+    />
+  );
+}
+
+describe('MarketplaceInventoryImport reading a WooCommerce store', () => {
+  it('offers a store address next to the file upload, with what it reads and what it cannot', () => {
+    render(<StoreHarness onRead={vi.fn()} />);
+    const section = screen.getByTestId('inventory-import-store');
+    expect(within(section).getByText('From a WooCommerce store URL')).toBeInTheDocument();
+    expect(within(section).getByText(/public product list, with no keys/)).toBeInTheDocument();
+    expect(within(section).getByText(/Stock counts are not public/)).toBeInTheDocument();
+    expect(screen.getByLabelText('Import file')).toBeInTheDocument();
+    expect(within(section).getByLabelText('Store address')).toHaveAttribute('placeholder', 'https://myshop.com');
+  });
+
+  it('is not offered when the host does not provide it', () => {
+    render(<MarketplaceInventoryImport step={1} scene="upload" />);
+    expect(screen.queryByTestId('inventory-import-store')).not.toBeInTheDocument();
+  });
+
+  it('reads the address that was typed, and refuses one that is not a store address with a plain message', async () => {
+    const user = userEvent.setup();
+    const onRead = vi.fn();
+    render(<StoreHarness onRead={onRead} />);
+    await user.click(screen.getByRole('button', { name: 'Read my store' }));
+    expect(await screen.findByText('Enter the address of your shop.')).toBeInTheDocument();
+
+    await user.type(screen.getByLabelText('Store address'), 'http://shop.example.com');
+    await user.click(screen.getByRole('button', { name: 'Read my store' }));
+    expect(await screen.findByText('Use the https address of your shop, like https://myshop.com.')).toBeInTheDocument();
+    expect(onRead).not.toHaveBeenCalled();
+
+    await user.clear(screen.getByLabelText('Store address'));
+    await user.type(screen.getByLabelText('Store address'), 'shop.example.com');
+    await user.click(screen.getByRole('button', { name: 'Read my store' }));
+    await vi.waitFor(() => expect(onRead).toHaveBeenCalledWith('shop.example.com'));
+  });
+
+  it('shows how far the reading has got, for the product list and then for the options', () => {
+    const { rerender } = render(
+      <MarketplaceInventoryImport
+        step={2}
+        scene="fetch"
+        fileName="shop.example.com"
+        progress={{ done: 2, total: 3 }}
+      />,
+    );
+    expect(screen.getByTestId('inventory-import-fetch')).toHaveTextContent(
+      'Reading the product list of shop.example.com… 2 of 3.',
+    );
+    rerender(
+      <MarketplaceInventoryImport
+        step={2}
+        scene="fetch"
+        fileName="shop.example.com"
+        fetchPhase="variations"
+        progress={{ done: 12, total: 30 }}
+      />,
+    );
+    expect(screen.getByTestId('inventory-import-fetch')).toHaveTextContent(
+      'Reading product options of shop.example.com… 12 of 30.',
+    );
+  });
+
+  it('locks the listing currency to the store, and explains the default quantity as the store gives no count', () => {
+    render(<Harness format="woocommerce_store" defaults={{ [IMPORT_SETTINGS_FIELDS.CURRENCY]: 'BTC' }} />);
+    const settings = screen.getByTestId('inventory-import-settings');
+    expect(within(settings).getByText(/WooCommerce store read/)).toBeInTheDocument();
+    expect(within(settings).getByLabelText('Listing currency')).toBeDisabled();
+    expect(within(settings).getByText(/Set by your store/)).toBeInTheDocument();
+    expect(within(settings).getByLabelText('Default quantity')).toBeInTheDocument();
+    expect(within(settings).getByText(/A store shares a count only when stock is low/)).toBeInTheDocument();
+    expect(within(settings).queryByLabelText('Use CSV quantities as total stock')).not.toBeInTheDocument();
+  });
+
+  it('keeps the currency choice open for a file export', () => {
+    render(<Harness format="woocommerce" />);
+    expect(screen.getByLabelText('Listing currency')).not.toBeDisabled();
   });
 });
 

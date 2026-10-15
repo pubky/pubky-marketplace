@@ -1,6 +1,8 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ImportLossReport } from '@/pipes/commerce/import-loss-report';
+import type { WooStoreCatalog } from '@/pipes/commerce/import-woo-store';
+import type { StoreApiProduct } from '@/pipes/import-store/import-store.product';
 import { useMarketplaceInventoryImport } from './useMarketplaceInventoryImport';
 import {
   IMPORT_CONDITION_OPTIONS,
@@ -13,6 +15,8 @@ import {
 
 const mocks = vi.hoisted(() => ({
   plan: vi.fn(),
+  storePlan: vi.fn(),
+  fetchCatalog: vi.fn(),
   publish: vi.fn(),
   resume: vi.fn(),
   targets: vi.fn(),
@@ -25,6 +29,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock('@/controllers/commerce/commerce', () => ({
   CommerceController: {
     planInventoryImport: (...args: unknown[]) => mocks.plan(...args),
+    planInventoryStoreImport: (...args: unknown[]) => mocks.storePlan(...args),
     publishInventoryImport: (...args: unknown[]) => mocks.publish(...args),
     resumeInventoryImport: (...args: unknown[]) => mocks.resume(...args),
     inventoryImportImageTargets: (...args: unknown[]) => mocks.targets(...args),
@@ -36,6 +41,10 @@ vi.mock('@/controllers/commerce/commerce', () => ({
     exportInventoryListingsCsv: vi.fn(),
     exportInventoryOrdersJson: vi.fn(),
   },
+}));
+
+vi.mock('@/controllers/import-store/import-store-catalog', () => ({
+  ImportStoreCatalogController: { fetchCatalog: (...args: unknown[]) => mocks.fetchCatalog(...args) },
 }));
 
 vi.mock('@/hooks/useImportImageUpload/useImportImageUpload', () => ({
@@ -696,5 +705,202 @@ describe('publish gates (C11)', () => {
     });
     expect(result.current.scene).toBe('result');
     expect(result.current.message).toBe('2 listings were saved as paused: no payment method set up.');
+  });
+});
+
+describe('useMarketplaceInventoryImport, from a WooCommerce store URL', () => {
+  const priced = (currency: string) =>
+    ({
+      id: 1,
+      type: 'simple',
+      name: 'Mug',
+      prices: {
+        price: '2500',
+        regular_price: '2500',
+        sale_price: '2500',
+        currency_code: currency,
+        currency_minor_unit: 2,
+      },
+    }) as unknown as StoreApiProduct;
+  const catalog = (currency = 'BTC'): WooStoreCatalog => ({
+    storeUrl: 'https://shop.example.com',
+    products: [priced(currency)],
+    variations: {},
+    unreadProducts: 0,
+    total: 1,
+  });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.fetchCatalog.mockResolvedValue({ ok: true, catalog: catalog() });
+    mocks.storePlan.mockResolvedValue(planned({ format: 'woocommerce_store' }));
+    mocks.plan.mockResolvedValue(planned());
+    mocks.targets.mockResolvedValue([]);
+    mocks.defaults.mockResolvedValue({ countryCode: null, shipping: null, currency: null });
+  });
+
+  function type(result: { current: ReturnType<typeof useMarketplaceInventoryImport> }, address: string) {
+    act(() => {
+      result.current.storeForm.setValue('storeUrl', address);
+    });
+  }
+
+  it('reads the catalogue, takes the store currency, and plans it into the same dry run', async () => {
+    const { result } = renderHook(() => useMarketplaceInventoryImport('seller'));
+    type(result, ' https://shop.example.com/product/mug ');
+    let ready = false;
+    await act(async () => {
+      ready = await result.current.submitStoreUrl();
+    });
+    expect(ready).toBe(true);
+    expect(mocks.fetchCatalog).toHaveBeenCalledWith(
+      expect.objectContaining({ storeUrl: 'https://shop.example.com', signal: expect.any(AbortSignal) }),
+    );
+    expect(mocks.storePlan).toHaveBeenCalledWith(
+      'seller',
+      expect.objectContaining({ storeUrl: 'https://shop.example.com' }),
+      expect.objectContaining({ currency: 'BTC', countryCode: null, shipping: null }),
+      IMPORT_CURRENCY_OPTIONS,
+    );
+    expect(mocks.plan).not.toHaveBeenCalled();
+    expect(result.current.scene).toBe('dry-run');
+    expect(result.current.format).toBe('woocommerce_store');
+    expect(result.current.fileName).toBe('shop.example.com');
+    expect(result.current.publishDisabledReason).toContain('shipping option and where your listings ship from');
+  });
+
+  it('shows how far the reading has got, pages first and then each product option', async () => {
+    let finish: (value: unknown) => void = () => {};
+    mocks.fetchCatalog.mockImplementationOnce(
+      (params: { onProgress?: (progress: { phase: string; done: number; total: number }) => void }) =>
+        new Promise((resolve) => {
+          params.onProgress?.({ phase: 'pages', done: 2, total: 3 });
+          finish = resolve;
+        }),
+    );
+    const { result } = renderHook(() => useMarketplaceInventoryImport('seller'));
+    type(result, 'shop.example.com');
+    let pending: Promise<boolean> = Promise.resolve(false);
+    act(() => {
+      pending = result.current.submitStoreUrl();
+    });
+    await waitFor(() => expect(result.current.scene).toBe('fetch'));
+    expect(result.current.fetchPhase).toBe('pages');
+    expect(result.current.progress).toEqual({ done: 2, total: 3 });
+    expect(result.current.busy).toBe(true);
+    await act(async () => {
+      finish({ ok: true, catalog: catalog() });
+      await pending;
+    });
+    expect(result.current.scene).toBe('dry-run');
+    expect(result.current.progress).toBeUndefined();
+  });
+
+  it('shows the reason in plain words and plans nothing when the store cannot be read', async () => {
+    mocks.fetchCatalog.mockResolvedValueOnce({
+      ok: false,
+      reason: 'not_woocommerce',
+      message: 'That does not look like a WooCommerce store, or its public product list is switched off.',
+    });
+    const { result } = renderHook(() => useMarketplaceInventoryImport('seller'));
+    type(result, 'shop.example.com');
+    await act(async () => {
+      expect(await result.current.submitStoreUrl()).toBe(false);
+    });
+    expect(result.current.scene).toBe('parse-fail');
+    expect(result.current.message).toBe(
+      'That does not look like a WooCommerce store, or its public product list is switched off.',
+    );
+    expect(result.current.busy).toBe(false);
+    expect(mocks.storePlan).not.toHaveBeenCalled();
+  });
+
+  it('shows the planner refusal, such as a currency the listing form does not offer', async () => {
+    mocks.storePlan.mockResolvedValueOnce({
+      status: 'parse-failed',
+      message:
+        'This store sells in CHF. Pubky listings can be priced in USD, BTC, and prices are never converted. Nothing was imported.',
+      puts: 0,
+    });
+    mocks.fetchCatalog.mockResolvedValueOnce({ ok: true, catalog: catalog('CHF') });
+    const { result } = renderHook(() => useMarketplaceInventoryImport('seller'));
+    type(result, 'shop.example.com');
+    await act(async () => {
+      expect(await result.current.submitStoreUrl()).toBe(false);
+    });
+    expect(result.current.scene).toBe('parse-fail');
+    expect(result.current.message).toContain('This store sells in CHF');
+    expect(result.current.form.getValues('currency')).toBe('USD');
+  });
+
+  it('does not read anything for an address that is not a store address', async () => {
+    const { result } = renderHook(() => {
+      const hook = useMarketplaceInventoryImport('seller');
+      void hook.storeForm.formState.errors;
+      return hook;
+    });
+    for (const address of ['', 'http://shop.example.com', 'https://localhost', 'javascript:alert(1)']) {
+      type(result, address);
+      await act(async () => {
+        expect(await result.current.submitStoreUrl()).toBe(false);
+      });
+    }
+    expect(mocks.fetchCatalog).not.toHaveBeenCalled();
+    await waitFor(() => expect(result.current.storeForm.formState.errors.storeUrl).toBeDefined());
+  });
+
+  it('re-plans the catalogue it already read when the settings are applied, without reading the store again', async () => {
+    const { result } = renderHook(() => useMarketplaceInventoryImport('seller'));
+    type(result, 'shop.example.com');
+    await act(async () => {
+      await result.current.submitStoreUrl();
+    });
+    act(() => {
+      result.current.form.setValue(IMPORT_SETTINGS_FIELDS.COUNTRY_CODE, 'CH');
+      result.current.form.setValue(IMPORT_SETTINGS_FIELDS.SHIPPING_MODE, 'free');
+      result.current.form.setValue(IMPORT_SETTINGS_FIELDS.UNMANAGED_STOCK, '4');
+    });
+    await act(async () => {
+      expect(await result.current.applySettings()).toBe(true);
+    });
+    expect(mocks.fetchCatalog).toHaveBeenCalledTimes(1);
+    expect(mocks.storePlan).toHaveBeenCalledTimes(2);
+    expect(mocks.storePlan).toHaveBeenLastCalledWith(
+      'seller',
+      expect.objectContaining({ storeUrl: 'https://shop.example.com' }),
+      expect.objectContaining({ countryCode: 'CH', shipping: expect.anything(), unmanagedStock: 4 }),
+      IMPORT_CURRENCY_OPTIONS,
+    );
+  });
+
+  it('is replaced by a file chosen afterwards, and by a reset, which also cancels a reading in progress', async () => {
+    const { result } = renderHook(() => useMarketplaceInventoryImport('seller'));
+    type(result, 'shop.example.com');
+    await act(async () => {
+      await result.current.submitStoreUrl();
+    });
+    await act(async () => {
+      await result.current.planFile(FILE);
+    });
+    expect(mocks.plan).toHaveBeenCalledWith('seller', FILE, expect.anything());
+    await act(async () => {
+      await result.current.applySettings();
+    });
+    expect(mocks.storePlan).toHaveBeenCalledTimes(1);
+
+    let signal: AbortSignal | undefined;
+    mocks.fetchCatalog.mockImplementationOnce((params: { signal: AbortSignal }) => {
+      signal = params.signal;
+      return new Promise(() => {});
+    });
+    type(result, 'other.example.com');
+    act(() => {
+      void result.current.submitStoreUrl();
+    });
+    await waitFor(() => expect(signal).toBeDefined());
+    act(() => result.current.reset());
+    expect(signal?.aborted).toBe(true);
+    expect(result.current.scene).toBe('upload');
+    expect(result.current.storeForm.getValues('storeUrl')).toBe('');
   });
 });
