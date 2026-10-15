@@ -718,9 +718,9 @@ describe('Marketplace checkout — visual regression', () => {
       }
     });
     expect(document.querySelector('[data-testid="marketplace-checkout-method-usdt"]')).toBeNull();
-    expect(document.querySelector('[data-testid="marketplace-checkout-paykit-title"]')?.textContent).toBe(
-      'Pay in Bitkit (Bitcoin)',
-    );
+    expect(
+      document.querySelector('[data-testid="marketplace-checkout-paykit-requirement"]')?.textContent,
+    ).not.toContain('USDT');
     await captureCheckout('checkout-usdt-missing-seller-desktop');
   });
 
@@ -734,8 +734,8 @@ describe('Marketplace checkout — visual regression', () => {
 
     await renderForVRT(<MarketplaceCheckout />, { viewport: VRT_VIEWPORT_DESKTOP });
     await vi.waitFor(() => {
-      const title = document.querySelector('[data-testid="marketplace-checkout-paykit-title"]');
-      if (!title?.textContent?.includes('Bitcoin or USDT')) throw new Error('The Paykit entry has not loaded yet.');
+      const note = document.querySelector('[data-testid="marketplace-checkout-paykit-requirement"]');
+      if (!note?.textContent?.includes('Bitcoin or USDT')) throw new Error('The Paykit entry has not loaded yet.');
     });
     expect(document.querySelector('[data-testid="marketplace-checkout-method-usdt"]')).toBeNull();
     expect(document.querySelector('[data-testid="marketplace-checkout-method-bitcoin"]')).toBeNull();
@@ -752,8 +752,8 @@ describe('Marketplace checkout — visual regression', () => {
 
     await renderForVRT(<MarketplaceCheckout />, { viewport: VRT_VIEWPORT_DESKTOP });
     await vi.waitFor(() => {
-      const title = document.querySelector('[data-testid="marketplace-checkout-paykit-title"]');
-      if (!title?.textContent?.includes('Bitcoin or USDT')) throw new Error('The Paykit entry has not loaded yet.');
+      const note = document.querySelector('[data-testid="marketplace-checkout-paykit-requirement"]');
+      if (!note?.textContent?.includes('Bitcoin or USDT')) throw new Error('The Paykit entry has not loaded yet.');
     });
     expect(document.querySelector('[data-testid="marketplace-checkout-usdt-amount"]')).toBeNull();
     await captureCheckout('checkout-paykit-bitcoin-priced-desktop');

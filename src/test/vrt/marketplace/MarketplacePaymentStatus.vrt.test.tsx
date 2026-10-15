@@ -203,7 +203,7 @@ describe('Marketplace payment status card — visual regression', () => {
         orderOverrides: { holdExpiresAt: HOLD_DEADLINE },
       });
       await expect.element(screen.getByTestId('order-payment-bitkit-required')).toBeVisible();
-      await expect.element(screen.getByRole('button', { name: 'Continue with Bitcoin' })).toBeDisabled();
+      await expect.element(screen.getByRole('button', { name: 'Continue with Paykit' })).toBeDisabled();
       await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot(`payment-status-bitkit-required-${name}`);
     });
 
