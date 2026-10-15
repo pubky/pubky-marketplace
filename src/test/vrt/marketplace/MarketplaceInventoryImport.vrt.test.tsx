@@ -656,7 +656,7 @@ describe('MarketplaceInventoryImport VRT', () => {
           scene="dry-run"
           fileName="dezentralshop.ch"
           counts={{ create: 299, update: 0, end: 0, unchanged: 0, conflict: 0 }}
-          photoPlan={{ count: 725, batches: 2 }}
+          photoPlan={{ count: 725, batches: 2, pauses: 1 }}
         />
       </main>,
       { viewport: VRT_VIEWPORT_DESKTOP, disableHover: true },
@@ -675,7 +675,7 @@ describe('MarketplaceInventoryImport VRT', () => {
           scene="dry-run"
           fileName="dezentralshop.ch"
           counts={{ create: 299, update: 0, end: 0, unchanged: 0, conflict: 0 }}
-          photoPlan={{ count: 725, batches: 2 }}
+          photoPlan={{ count: 725, batches: 2, pauses: 1 }}
         />
       </main>,
       { viewport: VRT_VIEWPORT_MOBILE, disableHover: true },

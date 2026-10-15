@@ -6,6 +6,7 @@ import { parseCsvTable } from './import-csv-table';
 import {
   altTextForUrl,
   distinctImageCount,
+  estimatePhotoPauses,
   extraFieldsWithImages,
   IMAGE_RESULTS_JSON_FIELD,
   IMAGE_SYNC_JSON_FIELD,
@@ -556,4 +557,27 @@ describe('photos loaded for a listing that is not finished', () => {
       (media) => media[IMPORT_SOURCE_HASH_KEY],
     );
   }
+});
+
+describe('estimatePhotoPauses', () => {
+  const KB = 1024;
+  const MB = 1024 * KB;
+
+  it('counts the times the byte allowance runs out: the photos at a typical size over one window, less the first window', () => {
+    expect(estimatePhotoPauses(100, 300 * KB, 150 * MB)).toBe(0);
+    expect(estimatePhotoPauses(500, 300 * KB, 150 * MB)).toBe(0);
+    expect(estimatePhotoPauses(512, 300 * KB, 150 * MB)).toBe(0);
+    expect(estimatePhotoPauses(513, 300 * KB, 150 * MB)).toBe(1);
+    expect(estimatePhotoPauses(725, 300 * KB, 150 * MB)).toBe(1);
+    expect(estimatePhotoPauses(1_024, 300 * KB, 150 * MB)).toBe(1);
+    expect(estimatePhotoPauses(1_025, 300 * KB, 150 * MB)).toBe(2);
+    expect(estimatePhotoPauses(2_000, 300 * KB, 150 * MB)).toBe(3);
+  });
+
+  it('is zero for nothing to load or a size or allowance that makes no sense', () => {
+    expect(estimatePhotoPauses(0, 300 * KB, 150 * MB)).toBe(0);
+    expect(estimatePhotoPauses(-5, 300 * KB, 150 * MB)).toBe(0);
+    expect(estimatePhotoPauses(900, 0, 150 * MB)).toBe(0);
+    expect(estimatePhotoPauses(900, 300 * KB, 0)).toBe(0);
+  });
 });

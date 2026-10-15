@@ -377,26 +377,68 @@ describe('MarketplaceInventoryImport photos in batches', () => {
 
   it('says in the dry run how many photos there are and how many batches they take', () => {
     const { rerender } = render(
-      <MarketplaceInventoryImport step={4} scene="dry-run" counts={counts} photoPlan={{ count: 725, batches: 2 }} />,
+      <MarketplaceInventoryImport
+        step={4}
+        scene="dry-run"
+        counts={counts}
+        photoPlan={{ count: 650, batches: 2, pauses: 0 }}
+      />,
     );
     const plan = screen.getByTestId('inventory-import-photo-plan');
-    expect(plan).toHaveTextContent('725 photos will be loaded when you publish, in 2 batches.');
+    expect(plan).toHaveTextContent('650 photos will be loaded when you publish, in 2 batches.');
     expect(plan).toHaveTextContent('carries on by itself');
     expect(plan).toHaveTextContent(
       'If its allowance (150 MB every 10 minutes) runs out, it pauses for up to 10 minutes and continues.',
     );
     expect(plan).toHaveTextContent('If you close this window, the next time you open the import you can resume it.');
     rerender(
-      <MarketplaceInventoryImport step={4} scene="dry-run" counts={counts} photoPlan={{ count: 40, batches: 1 }} />,
+      <MarketplaceInventoryImport
+        step={4}
+        scene="dry-run"
+        counts={counts}
+        photoPlan={{ count: 40, batches: 1, pauses: 0 }}
+      />,
     );
     expect(screen.getByTestId('inventory-import-photo-plan')).toHaveTextContent(
       '40 photos will be loaded when you publish.',
     );
     expect(screen.getByTestId('inventory-import-photo-plan')).not.toHaveTextContent('batches');
+    expect(screen.getByTestId('inventory-import-photo-plan')).not.toHaveTextContent('allowance');
     rerender(
-      <MarketplaceInventoryImport step={4} scene="dry-run" counts={counts} photoPlan={{ count: 1, batches: 1 }} />,
+      <MarketplaceInventoryImport
+        step={4}
+        scene="dry-run"
+        counts={counts}
+        photoPlan={{ count: 1, batches: 1, pauses: 0 }}
+      />,
     );
     expect(screen.getByTestId('inventory-import-photo-plan')).toHaveTextContent('1 photo will be loaded');
+  });
+
+  it('says how often the photo service is likely to make the import wait, when the photos will outlast its allowance', () => {
+    const { rerender } = render(
+      <MarketplaceInventoryImport
+        step={4}
+        scene="dry-run"
+        counts={counts}
+        photoPlan={{ count: 725, batches: 2, pauses: 1 }}
+      />,
+    );
+    const plan = screen.getByTestId('inventory-import-photo-plan');
+    expect(plan).toHaveTextContent(
+      "At a typical photo size the photo service's allowance (150 MB every 10 minutes) will run out about once: the import then pauses for up to 10 minutes and continues.",
+    );
+    expect(plan).not.toHaveTextContent('If its allowance');
+    expect(plan).toHaveTextContent('you can resume it');
+    rerender(
+      <MarketplaceInventoryImport
+        step={4}
+        scene="dry-run"
+        counts={counts}
+        photoPlan={{ count: 2_000, batches: 4, pauses: 3 }}
+      />,
+    );
+    expect(screen.getByTestId('inventory-import-photo-plan')).toHaveTextContent('will run out about 3 times');
   });
 
   it('says nothing about photos when there are none to load', () => {

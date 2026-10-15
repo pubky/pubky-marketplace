@@ -6,7 +6,11 @@ import {
   mapCanonicalRowsToListing,
 } from '@/application/commerce/inventory-listing-map';
 import { COMMERCE_LISTING_MAX_MEDIA, getCommerceAdapterMode, isDurableCommerceMode } from '@/config/commerce';
-import { IMPORT_IMAGE_MAX_COUNT } from '@/config/import-image';
+import {
+  IMPORT_IMAGE_MAX_COUNT,
+  IMPORT_IMAGE_RATE_LIMIT_BYTES,
+  IMPORT_IMAGE_TYPICAL_BYTES,
+} from '@/config/import-image';
 import {
   evaluateDurableListingPublishGuards,
   type ListingPublishBlockReason,
@@ -19,6 +23,7 @@ import { isAppError, isNotFound } from '@/libs/error/error.utils';
 import { CommerceRecordNormalizer } from '@/pipes/commerce/commerce.normalizer';
 import {
   distinctImageCount,
+  estimatePhotoPauses,
   extraFieldsWithImages,
   imageResultCells,
   imageResultsOf,
@@ -110,7 +115,12 @@ export type InventoryImportAuth =
 
 export type InventoryImportPublishGate = ImportPublishGate;
 
-export type InventoryImportPhotoPlan = { readonly count: number; readonly batches: number };
+export type InventoryImportPhotoPlan = {
+  readonly count: number;
+  readonly batches: number;
+  /** About how many times the photo service's byte allowance will make the import wait, from a typical photo size. */
+  readonly pauses: number;
+};
 
 /** An import that was started and not finished, as the Studio offers it for resume or discard. */
 export type InventoryImportUnfinished = {
@@ -376,7 +386,13 @@ export class CommerceInventoryImportApplication {
       publishGate: planned.value.rowCount === 0 ? NO_PUBLISH_GATE : await this.publishGate(planned.value.manifestId),
       counts: MarketplaceShopClientService.dryRunCounts(manifest as ImportManifest),
       ...(photoCount > 0
-        ? { photos: { count: photoCount, batches: planImageBatches(targets, IMPORT_IMAGE_MAX_COUNT).length } }
+        ? {
+            photos: {
+              count: photoCount,
+              batches: planImageBatches(targets, IMPORT_IMAGE_MAX_COUNT).length,
+              pauses: estimatePhotoPauses(photoCount, IMPORT_IMAGE_TYPICAL_BYTES, IMPORT_IMAGE_RATE_LIMIT_BYTES),
+            },
+          }
         : {}),
       ...(planned.value.format ? { format: planned.value.format } : {}),
       ...(planned.value.lossReport ? { lossReport: planned.value.lossReport } : {}),

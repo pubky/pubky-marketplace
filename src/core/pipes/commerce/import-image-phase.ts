@@ -207,6 +207,17 @@ export function distinctImageCount(targets: readonly ImportImageTarget[]): numbe
 }
 
 /**
+ * How many times an import of this many photos is likely to wait for the photo
+ * service's byte allowance to renew: the photos at a typical size, over the
+ * allowance of one window, less the first window. An estimate (photo sizes are
+ * not known until they are fetched), so the dry run says "about".
+ */
+export function estimatePhotoPauses(photoCount: number, typicalBytes: number, windowBytes: number): number {
+  if (photoCount <= 0 || typicalBytes <= 0 || windowBytes <= 0) return 0;
+  return Math.max(0, Math.ceil((photoCount * typicalBytes) / windowBytes) - 1);
+}
+
+/**
  * Splits the targets, in listing order, into batches that each need at most
  * `maxPhotos` distinct photos fetched, so every batch fits one run's count
  * budget. A listing is never split across batches; a photo shared by listings

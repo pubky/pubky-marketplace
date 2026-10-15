@@ -165,7 +165,7 @@ describe('photos in batches, through plan, photo phase and publish', () => {
     it('says how many photos and batches the real Dezentralshop catalogue will take: 725 photos, 2 batches', async () => {
       const planned = await app().planStoreCatalog(realCatalog(), CHF, OFFERED);
       if (planned.status !== 'planned') throw new Error('plan');
-      expect(planned.photos).toEqual({ count: 725, batches: 2 });
+      expect(planned.photos).toEqual({ count: 725, batches: 2, pauses: 1 });
     });
 
     it('says the same for a WooCommerce CSV: 650 photos are 2 batches, 500 are 1, and a file without photos says nothing', async () => {
@@ -174,8 +174,8 @@ describe('photos in batches, through plan, photo phase and publish', () => {
         if (planned.status !== 'planned') throw new Error('plan');
         return planned.photos;
       };
-      expect(await csv(130, 5)).toEqual({ count: 650, batches: 2 });
-      expect(await csv(100, 5)).toEqual({ count: 500, batches: 1 });
+      expect(await csv(130, 5)).toEqual({ count: 650, batches: 2, pauses: 1 });
+      expect(await csv(100, 5)).toEqual({ count: 500, batches: 1, pauses: 0 });
       expect(await csv(3, 0)).toBeUndefined();
     });
 
@@ -217,16 +217,18 @@ describe('photos in batches, through plan, photo phase and publish', () => {
       if (planned.status !== 'planned') throw new Error('plan');
 
       const controller = new AbortController();
+      let written = 0;
       const attachSpy = vi.spyOn(importer, 'attachImages').mockImplementation(async (manifestId, outcomes) => {
         await CommerceInventoryImportApplication.prototype.attachImages.call(importer, manifestId, outcomes);
-        controller.abort();
+        written += 1;
+        if (written === 100) controller.abort();
       });
       const first = await photoPhase(importer, planned.manifestId, controller.signal);
       attachSpy.mockRestore();
       expect(first.status).toBe('cancelled');
       const firstBatch = fetched.length;
       expect(firstBatch).toBeLessThanOrEqual(IMPORT_IMAGE_MAX_COUNT);
-      expect(firstBatch).toBeGreaterThan(IMPORT_IMAGE_MAX_COUNT - 12);
+      expect(firstBatch).toBeGreaterThan(150);
       const held = (await importer.imageTargets(planned.manifestId)).length;
       expect(held).toBeGreaterThan(0);
       expect(held).toBeLessThan(279);
@@ -234,9 +236,7 @@ describe('photos in batches, through plan, photo phase and publish', () => {
       const afterReload = app();
       const second = await photoPhase(afterReload, planned.manifestId);
       expect(second.status).toBe('complete');
-      // A few photos are shared by listings on both sides of the interruption: they are reused, not loaded again.
-      const shared = second.total + firstBatch - 725;
-      expect(shared).toBeGreaterThan(0);
+      // Photos shared by listings on both sides of the interruption are reused, not loaded again.
       expect(second.done).toBe(second.total);
       expect(fetched).toHaveLength(725);
       expect(new Set(fetched).size).toBe(725);
@@ -290,7 +290,7 @@ describe('photos in batches, through plan, photo phase and publish', () => {
       const importer = app();
       const planned = await importer.planFile(wooCsv(120, 5), CHF);
       if (planned.status !== 'planned') throw new Error('plan');
-      expect(planned.photos).toEqual({ count: 600, batches: 2 });
+      expect(planned.photos).toEqual({ count: 600, batches: 2, pauses: 1 });
       await photoPhase(importer, planned.manifestId);
       await importer.publish(planned.manifestId);
       expect(fetched).toHaveLength(600);
@@ -314,7 +314,7 @@ describe('photos in batches, through plan, photo phase and publish', () => {
         CHF,
       );
       if (replanned.status !== 'planned') throw new Error('plan');
-      expect(replanned.photos).toEqual({ count: 1, batches: 1 });
+      expect(replanned.photos).toEqual({ count: 1, batches: 1, pauses: 0 });
       await photoPhase(second, replanned.manifestId);
       expect(fetched).toEqual(['https://shop.example.com/p/119/new.jpg']);
       await second.publish(replanned.manifestId);

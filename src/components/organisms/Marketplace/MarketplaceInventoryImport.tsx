@@ -17,6 +17,9 @@ import {
 
 export const IMPORT_WIZARD_STEPS = 6;
 
+const PHOTO_ALLOWANCE_MB = IMPORT_IMAGE_RATE_LIMIT_BYTES / (1024 * 1024);
+const PHOTO_WINDOW_MINUTES = IMPORT_IMAGE_RATE_LIMIT_BYTES_WINDOW_MS / 60_000;
+
 export type InventoryImportScene =
   | 'upload'
   | 'validation'
@@ -55,7 +58,7 @@ export type MarketplaceInventoryImportProps = {
   /** An import that was started and not finished, offered for resume or discard on the upload step. */
   unfinished?: { listings: { done: number; total: number }; photosLeft: number };
   /** What publishing will load: photos and batches, shown in the dry run. */
-  photoPlan?: { count: number; batches: number };
+  photoPlan?: { count: number; batches: number; pauses?: number };
   /** `pages` while a store's product list is read, then `variations` while each variable product's options are. */
   fetchPhase?: 'pages' | 'variations';
   /** Reading a WooCommerce store by its address, next to the file upload. */
@@ -265,8 +268,16 @@ export function MarketplaceInventoryImport({
             <Typography as="p" className="text-sm text-muted-foreground" data-testid="inventory-import-photo-plan">
               {photoPlan.count === 1 ? '1 photo' : `${photoPlan.count} photos`} will be loaded when you publish
               {photoPlan.batches > 1
-                ? `, in ${photoPlan.batches} batches. They load one after another and the import carries on by itself, waiting when the photo service asks. If its allowance (${IMPORT_IMAGE_RATE_LIMIT_BYTES / (1024 * 1024)} MB every ${IMPORT_IMAGE_RATE_LIMIT_BYTES_WINDOW_MS / 60_000} minutes) runs out, it pauses for up to ${IMPORT_IMAGE_RATE_LIMIT_BYTES_WINDOW_MS / 60_000} minutes and continues. If you close this window, the next time you open the import you can resume it.`
+                ? `, in ${photoPlan.batches} batches. They load one after another and the import carries on by itself, waiting when the photo service asks.`
                 : '.'}
+              {photoPlan.pauses
+                ? ` At a typical photo size the photo service's allowance (${PHOTO_ALLOWANCE_MB} MB every ${PHOTO_WINDOW_MINUTES} minutes) will run out about ${photoPlan.pauses === 1 ? 'once' : `${photoPlan.pauses} times`}: the import then pauses for up to ${PHOTO_WINDOW_MINUTES} minutes and continues.`
+                : photoPlan.batches > 1
+                  ? ` If its allowance (${PHOTO_ALLOWANCE_MB} MB every ${PHOTO_WINDOW_MINUTES} minutes) runs out, it pauses for up to ${PHOTO_WINDOW_MINUTES} minutes and continues.`
+                  : ''}
+              {photoPlan.batches > 1 || photoPlan.pauses
+                ? ' If you close this window, the next time you open the import you can resume it.'
+                : ''}
             </Typography>
           )}
           {settings && <MarketplaceInventoryImportSettings {...settings} busy={busy} />}

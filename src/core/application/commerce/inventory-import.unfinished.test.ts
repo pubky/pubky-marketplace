@@ -7,10 +7,10 @@ import type { TImportImagePrepareResult } from '@/application/import-image/impor
 import { CommerceController } from '@/controllers/commerce/commerce';
 import { ImportImageUploadController } from '@/controllers/import-image/import-image-upload';
 import { runImportImageBatches } from '@/hooks/useImportImageUpload/runImportImageBatches';
+import type { CommerceListingRecord } from '@/libs/commerce/marketplace-records';
 import { ClientErrorCode } from '@/libs/error/error.codes';
 import { Err } from '@/libs/error/error.factories';
 import { ErrorService } from '@/libs/error/error.types';
-import type { CommerceListingRecord } from '@/libs/commerce/marketplace-records';
 import { CommerceRecordNormalizer } from '@/pipes/commerce/commerce.normalizer';
 import type { ImportSettings } from '@/pipes/commerce/import-settings';
 import type { WooStoreCatalog } from '@/pipes/commerce/import-woo-store';

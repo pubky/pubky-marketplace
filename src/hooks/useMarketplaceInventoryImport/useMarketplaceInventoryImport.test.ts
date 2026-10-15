@@ -581,12 +581,12 @@ describe('useMarketplaceInventoryImport', () => {
       });
 
       it('says in the dry run how many photos and batches publishing will take', async () => {
-        mocks.plan.mockResolvedValueOnce(planned({ photos: { count: 725, batches: 2 } }));
+        mocks.plan.mockResolvedValueOnce(planned({ photos: { count: 725, batches: 2, pauses: 1 } }));
         const { result } = renderHook(() => useMarketplaceInventoryImport('seller'));
         await act(async () => {
           await result.current.planFile(FILE);
         });
-        expect(result.current.photoPlan).toEqual({ count: 725, batches: 2 });
+        expect(result.current.photoPlan).toEqual({ count: 725, batches: 2, pauses: 1 });
         act(() => result.current.reset());
         expect(result.current.photoPlan).toBeUndefined();
       });
@@ -1266,8 +1266,9 @@ describe('useMarketplaceInventoryImport, an unfinished import', () => {
       publishing = result.current.publish();
     });
     await waitFor(() => expect(mocks.upload).toHaveBeenCalled());
-    mocks.findUnfinished.mockResolvedValue(FOUND);
     act(() => result.current.reset());
+    // What the closed run wrote after the dialog closed shows up in the next look.
+    mocks.findUnfinished.mockResolvedValue(FOUND);
     release();
     await act(async () => {
       await publishing;

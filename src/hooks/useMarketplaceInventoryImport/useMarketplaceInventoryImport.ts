@@ -61,7 +61,7 @@ export function useMarketplaceInventoryImport(sellerPubky: string | null) {
   const [lossReport, setLossReport] = useState<ImportLossReport | undefined>();
   const [progressPhase, setProgressPhase] = useState<'photos' | 'listings'>('listings');
   const [unfinished, setUnfinished] = useState<InventoryImportUnfinished | undefined>();
-  const [photoPlan, setPhotoPlan] = useState<{ count: number; batches: number } | undefined>();
+  const [photoPlan, setPhotoPlan] = useState<{ count: number; batches: number; pauses: number } | undefined>();
   const [batchInfo, setBatchInfo] = useState<{ batch: number; batches: number } | undefined>();
   const [waitSeconds, setWaitSeconds] = useState<number | null>(null);
   const [fetchPhase, setFetchPhase] = useState<'pages' | 'variations'>('pages');
