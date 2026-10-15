@@ -53,6 +53,7 @@ import {
 import { DELIVERY_EMAIL_MAX_CHARS, DIGITAL_CHECKOUT_COPY, digitalCheckoutLineLabel } from '@/libs/commerce/digital';
 import { marketplaceOfferCheckoutFailureMessage } from '@/libs/commerce/failure-messages';
 import { formatCommerceMoney } from '@/libs/commerce/format';
+import { tracksVariantStock } from '@/libs/commerce/listing-variants';
 import { LOCKS_MIXED_CHECKOUT_COPY, locksCheckoutRoute } from '@/libs/commerce/locks-payment';
 import { PAYKIT_OUTAGE_COPY } from '@/libs/commerce/paykit-rail';
 import {
@@ -140,6 +141,7 @@ function MarketplaceCartCheckout() {
   const dropSeller = searchParams.get('seller');
   const dropId = searchParams.get('drop');
   const dropListingId = searchParams.get('listing');
+  const dropVariantId = searchParams.get('variant');
   const isOfferCheckout = Boolean(offerReference);
   const isDropCheckout = Boolean(dropSeller && dropId && dropListingId);
 
@@ -181,8 +183,15 @@ function MarketplaceCartCheckout() {
         }
         const listing = await CommerceController.getListing(dropSeller, dropListingId);
         if (!active) return;
-        const variant =
-          listing?.record.variants.find((candidate) => candidate.enabled !== false) ?? listing?.record.variants[0];
+        // A listing sold by size is claimed in the size the buyer chose on the drop page; none is picked here.
+        const variant = !listing
+          ? undefined
+          : dropVariantId
+            ? listing.record.variants.find((candidate) => candidate.id === dropVariantId && candidate.enabled !== false)
+            : tracksVariantStock(listing.record.variants)
+              ? undefined
+              : (listing.record.variants.find((candidate) => candidate.enabled !== false) ??
+                listing.record.variants[0]);
         if (!listing || !variant) {
           setDropItem(null);
           setDropLoadState('missing');
@@ -199,7 +208,7 @@ function MarketplaceCartCheckout() {
     return () => {
       active = false;
     };
-  }, [dropSeller, dropListingId]);
+  }, [dropSeller, dropListingId, dropVariantId]);
 
   // An accepted offer settles only through the methods its accepted snapshot
   // published (the service authorizes award checkout from the same
