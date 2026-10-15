@@ -5,8 +5,15 @@ import { DELIVERY_KEY_COPY } from '@/libs/commerce/delivery-key-copy';
 import { useAuthStore } from '@/stores/auth/auth.store';
 import { useAuctionWinnerDeliveryAddress } from './useAuctionWinnerDeliveryAddress';
 
+const shopShipsTo = vi.hoisted(() => new Map<string, string[]>());
+
 vi.mock('@/controllers/commerce/commerce', () => ({
   CommerceController: {
+    refreshShop: vi.fn(async (sellerPubky: string) => ({
+      ownerPubky: sellerPubky,
+      shipsToCountries: shopShipsTo.get(sellerPubky),
+    })),
+    getShop: vi.fn(async () => null),
     getDeliveryAddresses: vi.fn(async () => []),
     commitMarkDeliveryAddressUsed: vi.fn(async () => undefined),
     resolveDeliveryKeysForCheckout: vi.fn(),
@@ -44,6 +51,7 @@ function render(enabled = true) {
 describe('useAuctionWinnerDeliveryAddress', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    shopShipsTo.clear();
     useAuthStore.setState({ currentUserPubky: BUYER });
     vi.mocked(CommerceController.getDeliveryAddresses).mockResolvedValue([]);
     vi.mocked(CommerceController.resolveDeliveryKeysForCheckout).mockResolvedValue({
@@ -83,6 +91,24 @@ describe('useAuctionWinnerDeliveryAddress', () => {
     });
 
     expect(vi.mocked(CommerceController.sealDeliveryAddressForCheckout).mock.calls[0][0].address).toEqual(ADDRESS);
+  });
+
+  it('refuses an address outside the seller’s destination countries on the country field, before sealing', async () => {
+    shopShipsTo.set(SELLER, ['CH']);
+    const { result } = render();
+    fill(result);
+
+    let outcome: Awaited<ReturnType<typeof result.current.prepare>> | undefined;
+    await act(async () => {
+      outcome = await result.current.prepare();
+    });
+
+    expect(outcome).toEqual({ ok: false });
+    expect(result.current.form.getFieldState('countryCode').error?.message).toBe(
+      'This seller ships only to Switzerland. Choose pickup if offered.',
+    );
+    expect(CommerceController.resolveDeliveryKeysForCheckout).not.toHaveBeenCalled();
+    expect(CommerceController.sealDeliveryAddressForCheckout).not.toHaveBeenCalled();
   });
 
   it('sends nothing and shows the field errors when the address is incomplete', async () => {

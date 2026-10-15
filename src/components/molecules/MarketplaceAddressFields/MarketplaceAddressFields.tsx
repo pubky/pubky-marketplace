@@ -4,6 +4,8 @@ import { useEffect, useId, useRef, useState } from 'react';
 import { Controller, type FieldValues, type Path, useWatch } from 'react-hook-form';
 import { Container } from '@/atoms/Container/Container';
 import { Label } from '@/atoms/Label/Label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/atoms/Select/Select';
+import { Typography } from '@/atoms/Typography/Typography';
 import { getCommerceAdapterMode, getMarketplaceUrl, isDurableCommerceMode } from '@/config/commerce';
 import { FORM_LABEL_CLASSES } from '@/config/forms';
 import {
@@ -20,6 +22,7 @@ import {
   regionLabelForCountry,
   subdivisionsForCountry,
 } from '@/libs/commerce/postal-address';
+import { countryDisplayName } from '@/libs/commerce/ships-to';
 import { lookupUsZip } from '@/libs/commerce/us-zip-lookup';
 import { cn } from '@/libs/utils/utils';
 import { ControlledInputField } from '@/molecules/ControlledInputField/ControlledInputField';
@@ -95,6 +98,7 @@ export function MarketplaceAddressFields<T extends FieldValues>({
   setValue,
   disabled = false,
   autocompleteProvider,
+  allowedCountries,
 }: MarketplaceAddressFieldsProps<T>) {
   const countryCode = String(useWatch({ control, name: 'countryCode' as Path<T> }) ?? '');
   const line1 = String(useWatch({ control, name: 'line1' as Path<T> }) ?? '');
@@ -198,6 +202,14 @@ export function MarketplaceAddressFields<T extends FieldValues>({
     }
   };
 
+  // A region from the old country's closed list means nothing in the new one.
+  const clearRegionIfForeign = (next: string) => {
+    const nextList = subdivisionsForCountry(next);
+    if (nextList && regionValue && !nextList.some((option) => option.code === canonicalizeRegion(next, regionValue))) {
+      setValue('region' as Path<T>, '' as T[Path<T>], { shouldValidate: true, shouldDirty: true });
+    }
+  };
+
   const commitRegion = (raw: string) => {
     const trimmed = raw.trim();
     if (closedList) {
@@ -227,33 +239,61 @@ export function MarketplaceAddressFields<T extends FieldValues>({
               <Label htmlFor="countryCode" className={FORM_LABEL_CLASSES}>
                 Country
               </Label>
-              <InputField
-                id="countryCode"
-                name={field.name}
-                value={field.value ?? ''}
-                onChange={(event) => {
-                  const next = event.target.value.toUpperCase();
-                  field.onChange(next);
-                  const nextList = subdivisionsForCountry(next);
-                  if (
-                    nextList &&
-                    regionValue &&
-                    !nextList.some((option) => option.code === canonicalizeRegion(next, regionValue))
-                  ) {
-                    setValue('region' as Path<T>, '' as T[Path<T>], { shouldValidate: true, shouldDirty: true });
-                  }
-                }}
-                onBlur={field.onBlur}
-                disabled={disabled}
-                variant="dashed"
-                size="lg"
-                className="mb-0"
-                maxLength={2}
-                autoComplete="country"
-                status={fieldState.error ? 'error' : 'default'}
-                message={fieldState.error?.message}
-                messageType={fieldState.error ? 'error' : 'default'}
-              />
+              {allowedCountries?.length ? (
+                <>
+                  <Select
+                    value={allowedCountries.includes(country) ? country : ''}
+                    onValueChange={(next) => {
+                      field.onChange(next);
+                      field.onBlur();
+                      clearRegionIfForeign(next);
+                    }}
+                    disabled={disabled}
+                  >
+                    <SelectTrigger
+                      id="countryCode"
+                      theme="dashed"
+                      aria-invalid={fieldState.error ? true : undefined}
+                      data-testid="marketplace-address-country-select"
+                    >
+                      <SelectValue placeholder="Choose a country" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {allowedCountries.map((code) => (
+                        <SelectItem key={code} value={code}>
+                          {countryDisplayName(code)}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {fieldState.error ? (
+                    <Typography as="small" size="sm" role="alert" className="ml-1 text-red-500">
+                      {fieldState.error.message}
+                    </Typography>
+                  ) : null}
+                </>
+              ) : (
+                <InputField
+                  id="countryCode"
+                  name={field.name}
+                  value={field.value ?? ''}
+                  onChange={(event) => {
+                    const next = event.target.value.toUpperCase();
+                    field.onChange(next);
+                    clearRegionIfForeign(next);
+                  }}
+                  onBlur={field.onBlur}
+                  disabled={disabled}
+                  variant="dashed"
+                  size="lg"
+                  className="mb-0"
+                  maxLength={2}
+                  autoComplete="country"
+                  status={fieldState.error ? 'error' : 'default'}
+                  message={fieldState.error?.message}
+                  messageType={fieldState.error ? 'error' : 'default'}
+                />
+              )}
             </Container>
           )}
         />

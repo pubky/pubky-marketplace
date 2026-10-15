@@ -140,6 +140,11 @@ vi.mock('@/hooks/useMarketplaceSellerDeliveryTerms/useMarketplaceSellerDeliveryT
   useMarketplaceSellerDeliveryTerms: () => ({ isLoading: false, entries: [] }),
 }));
 
+vi.mock('@/hooks/useMarketplaceSellerShipsTo/useMarketplaceSellerShipsTo', () => ({
+  useMarketplaceSellerShipsTo: () => ({ status: 'ready', countries: null, restrictingSellers: 0 }),
+  checkDestinationCountry: async () => null,
+}));
+
 vi.mock('@/hooks/useMarketplaceCartCount/useMarketplaceCartCount', () => ({
   useMarketplaceCartCount: () => 0,
 }));

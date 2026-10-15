@@ -13,6 +13,10 @@ import {
 } from '@/hooks/useDeliveryKeyGate/useDeliveryKeyGate';
 import type { MarketplaceCartItem } from '@/hooks/useMarketplaceCart/useMarketplaceCart';
 import {
+  checkDestinationCountry,
+  useMarketplaceSellerShipsTo,
+} from '@/hooks/useMarketplaceSellerShipsTo/useMarketplaceSellerShipsTo';
+import {
   BIND_FAIL_CANCEL_REASON,
   listingAggregatesFromCheckoutLines,
   resolveCreatedCheckoutOrderIds,
@@ -37,6 +41,7 @@ import type { PaymentMethodKind } from '@/libs/commerce/payment-methods';
 import type { MarketplaceFulfillmentMethod } from '@/libs/commerce/pickup';
 import { pickupRefusalFailureMessage } from '@/libs/commerce/pickup';
 import { browserAddressCountry } from '@/libs/commerce/postal-address';
+import { isDestinationAllowed } from '@/libs/commerce/ships-to';
 import {
   buildMarketplaceListingAggregateId,
   buildMarketplaceOrderAggregateId,
@@ -157,6 +162,8 @@ export function useMarketplaceCheckout(
   setFulfillmentChoice: (sellerPubky: string, method: MarketplaceFulfillmentMethod) => void;
   /** True only when a line ships — pickup and digital lines send no address (§A2). */
   requiresDeliveryAddress: boolean;
+  /** The countries the shipped sellers deliver to; null when any country is accepted (or still loading). */
+  allowedDestinationCountries: readonly string[] | null;
   /**
    * The line's method: digital for a digital line (digital delivery design
    * §3 "Mixed carts"), else its seller group's choice. Undefined while a
@@ -407,6 +414,13 @@ export function useMarketplaceCheckout(
     (items.length === 0 && award === null) ||
     physicalItems.some((item) => fulfillmentForItem(item.id) !== 'pickup') ||
     (award !== null && fulfillmentForSeller(award.sellerPubky) !== 'pickup');
+  const shippedSellerPubkys = [
+    ...physicalItems
+      .filter((item) => fulfillmentForItem(item.id) === 'shipping')
+      .map((item) => item.listing.record.ownerPubky),
+    ...(award && fulfillmentForSeller(award.sellerPubky) === 'shipping' ? [award.sellerPubky] : []),
+  ];
+  const shipsTo = useMarketplaceSellerShipsTo(shippedSellerPubkys);
   const orderCount = new Set([
     ...items.map((item) => `${item.listing.record.ownerPubky}|${fulfillmentForItem(item.id) ?? ''}`),
     ...(award ? [`${award.sellerPubky}|${fulfillmentForSeller(award.sellerPubky) ?? ''}`] : []),
@@ -464,6 +478,28 @@ export function useMarketplaceCheckout(
   useEffect(() => {
     form.setValue('requiresDeliveryEmail', requiresDeliveryEmail, { shouldValidate: true });
   }, [form, requiresDeliveryEmail]);
+  // A new address starts in a country the sellers ship to; one the buyer
+  // started or picked from the address book is never rewritten, so a
+  // disallowed country shows its error instead.
+  useEffect(() => {
+    form.setValue('shipsTo', shipsTo, { shouldValidate: true });
+    const allowed = shipsTo.status === 'ready' ? shipsTo.countries : null;
+    const values = form.getValues();
+    const addressStarted = MARKETPLACE_CHECKOUT_ADDRESS_FIELDS.some(
+      (field) => field !== 'countryCode' && values[field].trim() !== '',
+    );
+    if (
+      allowed?.length &&
+      !isDestinationAllowed(values.countryCode, allowed) &&
+      !form.getFieldState('countryCode').isDirty &&
+      !addressStarted
+    ) {
+      form.setValue('countryCode', allowed[0]);
+    }
+    if (allowed || shipsTo.status === 'unavailable' || form.getFieldState('countryCode').error) {
+      void form.trigger('countryCode');
+    }
+  }, [form, shipsTo]);
 
   const setFulfillmentChoice = (sellerPubky: string, method: MarketplaceFulfillmentMethod) => {
     setChoiceOverrides((current) => ({ ...current, [sellerPubky]: method }));
@@ -611,6 +647,13 @@ export function useMarketplaceCheckout(
     const shippedSellers = requiresDeliveryAddress
       ? CommerceController.getShippedSellers({ lines: checkoutLines, fulfillmentChoiceBySeller })
       : [];
+    if (shippedSellers.length > 0) {
+      const destinationError = await checkDestinationCountry(data.countryCode, shippedSellers);
+      if (destinationError) {
+        toast({ variant: 'error', description: destinationError });
+        return { ok: false };
+      }
+    }
     const sealedTo = await resolveKeys(shippedSellers);
     if (!sealedTo.ok) return { ok: false };
     const response = await CommerceController.commitCreateMarketplaceCheckout({
@@ -801,6 +844,7 @@ export function useMarketplaceCheckout(
     fulfillmentForSeller,
     setFulfillmentChoice,
     requiresDeliveryAddress,
+    allowedDestinationCountries: shipsTo.status === 'ready' ? shipsTo.countries : null,
     fulfillmentForItem,
     canChooseDigitalForItem: (itemId: string) => {
       const item = itemById.get(itemId);
