@@ -34,6 +34,7 @@ import {
   keepLiveRecord,
   type KeptLiveSkip,
   keptLiveSkipText,
+  rowsSupplyPackage,
 } from '@/pipes/commerce/import-keep-live';
 import type { ImportLossReport, ImportSourceFormat } from '@/pipes/commerce/import-loss-report';
 import {
@@ -842,6 +843,7 @@ export class CommerceInventoryImportApplication {
       return { status: 'invalid', failure };
     }
 
+    const source = { suppliesPackage: rowsSupplyPackage(payloads) };
     let record = mapped.record;
     let pausedBy: ListingPublishBlockReason | undefined;
     let keptLive: { reason: ListingPublishBlockReason; skipped: KeptLiveSkip[] } | undefined;
@@ -851,7 +853,7 @@ export class CommerceInventoryImportApplication {
         : null;
     if (gatedBy && existing?.state === 'active') {
       // Already live: it stays live. Only safe content changes; a change the gate guards is skipped.
-      const kept = keepLiveRecord(existing, record, new Date().toISOString());
+      const kept = keepLiveRecord(existing, record, new Date().toISOString(), source);
       if (!kept) {
         const failure = classifyListingPublishFailure(KEPT_LIVE_UNSAFE_MESSAGE);
         await this.checkpointGroup(manifestId, listingId, 'failed');
@@ -862,7 +864,7 @@ export class CommerceInventoryImportApplication {
       record = kept.record;
       keptLive = { reason: gatedBy, skipped: [...kept.skipped] };
     } else {
-      if (existing) record = continueRevision(existing, record);
+      if (existing) record = continueRevision(existing, record, source);
       if (gatedBy) {
         record = { ...record, state: 'paused' };
         pausedBy = gatedBy;
