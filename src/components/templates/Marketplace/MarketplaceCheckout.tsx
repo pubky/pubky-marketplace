@@ -295,7 +295,7 @@ function MarketplaceCartCheckout() {
     recheck: paykitRecheck,
     markRefused: markPaykitRefused,
     settleRead: settlePaykitRead,
-  } = usePaykitOutage(loadedMethods?.paykitUnreachable === true);
+  } = usePaykitOutage(loadedMethods?.paykitUnreachable === true || loadedMethods?.methods === null);
   const [nowMs, setNowMs] = useState(() => Date.now());
   const sellerKey =
     isOfferCheckout && award
@@ -391,13 +391,14 @@ function MarketplaceCartCheckout() {
       if (!active) return;
       const reads = results.filter((read): read is NonNullable<typeof read> => read !== null);
       if (reads.length !== results.length) {
-        setLoadedMethods({
+        // A failed read says nothing about Paykit, so the outage it may have been showing carries over.
+        setLoadedMethods((previous) => ({
           sellerKey,
           attempt: railAttempt,
           methods: null,
           sellerAcceptsUsdt: null,
-          paykitUnreachable: false,
-        });
+          paykitUnreachable: previous?.sellerKey === sellerKey && previous.paykitUnreachable,
+        }));
         return;
       }
       const next = intersectPaymentMethods(reads.map((read) => read.methods));

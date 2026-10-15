@@ -51,7 +51,7 @@ export function useMarketplaceOrderPayment({
     recheck: paykitRecheck,
     markRefused: markPaykitRefused,
     settleRead: settlePaykitRead,
-  } = usePaykitOutage(sellerConfig?.paykitUnreachable === true);
+  } = usePaykitOutage(sellerConfig?.paykitUnreachable === true || configError !== null);
 
   const needsConfig = enabled && !order.paymentMethod;
   const shippingAddressRequired = needsConfig && order.shippingAddressRequired === true;
@@ -68,10 +68,10 @@ export function useMarketplaceOrderPayment({
     if (!needsConfig) return;
     let active = true;
     const load = async () => {
-      setConfigError(null);
       try {
         const config = await CommerceController.getSellerPaymentConfig(order.sellerPubky);
         if (active) {
+          setConfigError(null);
           setSellerConfig(config);
           settlePaykitRead(paykitRecheck, config.paykitUnreachable !== true);
         }

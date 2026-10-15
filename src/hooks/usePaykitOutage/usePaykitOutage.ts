@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { usePaykitRecovery } from '@/hooks/usePaykitRecovery/usePaykitRecovery';
 
 /**
@@ -11,27 +11,30 @@ import { usePaykitRecovery } from '@/hooks/usePaykitRecovery/usePaykitRecovery';
  * advances on the recovery backoff; the surface lists it in the dependencies
  * of its config read and reports each result through `settleRead`.
  *
- * A refusal ends only on evidence: a read that started on a later recheck than
- * the refusal and found Paykit reachable. The read that follows the refusal
- * itself, and the gap while a recheck is in flight, keep the outage showing.
+ * A refusal is pinned to the recheck its render committed with, and ends only
+ * on evidence: a read that started on a later recheck and found Paykit
+ * reachable. The read that follows the refusal itself, and the gap while a
+ * recheck is in flight, keep the outage showing.
  */
 export function usePaykitOutage(unreachable: boolean) {
-  const [refusedAt, setRefusedAt] = useState<number | null>(null);
-  const outage = unreachable || refusedAt !== null;
+  // `null`: no refusal. `'pending'`: refused, not yet pinned to the recheck its render committed with.
+  const [refusal, setRefusal] = useState<number | 'pending' | null>(null);
+  const outage = unreachable || refusal !== null;
   const recheck = usePaykitRecovery(outage);
-  const latestRecheck = useRef(recheck);
+
+  // Pinning the refusal in an effect reads the recheck of the committed render, never a stale one.
   useEffect(() => {
-    latestRecheck.current = recheck;
-  }, [recheck]);
+    setRefusal((current) => (current === 'pending' ? recheck : current));
+  }, [refusal, recheck]);
 
   // Created once, so the identities stay stable for callers that list them in effect dependencies.
   const [actions] = useState(() => ({
-    markRefused: () => setRefusedAt(latestRecheck.current),
+    markRefused: () => setRefusal((current) => current ?? 'pending'),
     settleRead: (readAt: number, reachable: boolean) => {
       if (!reachable) return;
-      setRefusedAt((current) => (current !== null && readAt > current ? null : current));
+      setRefusal((current) => (typeof current === 'number' && readAt > current ? null : current));
     },
   }));
 
-  return { outage, refused: refusedAt !== null, recheck, ...actions };
+  return { outage, refused: refusal !== null, recheck, ...actions };
 }

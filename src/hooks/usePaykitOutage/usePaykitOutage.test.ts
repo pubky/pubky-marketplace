@@ -70,4 +70,32 @@ describe('usePaykitOutage', () => {
     act(() => result.current.settleRead(2, true));
     expect(result.current.refused).toBe(false);
   });
+
+  it('pins a refusal to the recheck of the render it committed with, even when a tick lands in the same batch', () => {
+    const { result } = renderHook(() => usePaykitOutage(true));
+
+    act(() => {
+      vi.advanceTimersByTime(5_000);
+      result.current.markRefused();
+    });
+    expect(result.current.recheck).toBe(1);
+
+    act(() => result.current.settleRead(1, true));
+    expect(result.current.refused).toBe(true);
+
+    act(() => vi.advanceTimersByTime(10_000));
+    act(() => result.current.settleRead(2, true));
+    expect(result.current.refused).toBe(false);
+  });
+
+  it('does not clear a refusal on a read that resolves before the refusal is pinned', () => {
+    const { result } = renderHook(() => usePaykitOutage(false));
+
+    act(() => {
+      result.current.markRefused();
+      result.current.settleRead(5, true);
+    });
+
+    expect(result.current.refused).toBe(true);
+  });
 });

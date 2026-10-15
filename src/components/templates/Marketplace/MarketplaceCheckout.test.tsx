@@ -1576,7 +1576,7 @@ describe('MarketplaceCheckout with no usable payment method', () => {
       await waitFor(() => expect(pay).toBeEnabled());
     });
 
-    it('backs off past 5s while a refused Pay is still being checked', async () => {
+    it('backs off 5s, 10s, 20s while a refused Pay is still being checked, keeping Pay disabled throughout', async () => {
       vi.useFakeTimers({ shouldAdvanceTime: true });
       const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
       seededCart();
@@ -1587,23 +1587,81 @@ describe('MarketplaceCheckout with no usable payment method', () => {
       render(<MarketplaceCheckout />);
       await user.click(await screen.findByTestId('marketplace-checkout-method-bitcoin'));
       await fillValidDelivery(user);
-      await waitFor(() => expect(screen.getByTestId('marketplace-checkout-pay')).toBeEnabled());
-      await user.click(screen.getByTestId('marketplace-checkout-pay'));
+      const pay = screen.getByTestId('marketplace-checkout-pay');
+      await waitFor(() => expect(pay).toBeEnabled());
+      vi.mocked(CommerceController.getSellerPaymentConfig).mockImplementation(() => new Promise(() => {}));
+      await user.click(pay);
       await act(async () => {
         await vi.advanceTimersByTimeAsync(50);
       });
       vi.mocked(CommerceController.getSellerPaymentConfig).mockClear();
-      vi.mocked(CommerceController.getSellerPaymentConfig).mockImplementation(async () => PAYKIT_DOWN);
 
-      for (const _ of [1, 2, 3, 4]) {
+      const reads = () => vi.mocked(CommerceController.getSellerPaymentConfig).mock.calls.length;
+      // Elapsed since the refusal: re-reads are due near 5s, 15s and 35s, with margins for real-time drift.
+      for (const [delay, expectedReads] of [
+        [4_000, 0],
+        [2_000, 1],
+        [8_000, 1],
+        [3_000, 2],
+        [17_000, 2],
+        [3_000, 3],
+      ] as const) {
         await act(async () => {
-          await vi.advanceTimersByTimeAsync(5_000);
+          await vi.advanceTimersByTimeAsync(delay);
         });
+        expect(reads()).toBe(expectedReads);
+        expect(pay).toBeDisabled();
+        expect(document.getElementById('checkout-pay-reason')).toHaveTextContent(
+          'Paykit is temporarily unreachable, retrying…',
+        );
       }
+    });
 
-      const reads = vi.mocked(CommerceController.getSellerPaymentConfig).mock.calls.length;
-      expect(reads).toBeGreaterThanOrEqual(2);
-      expect(reads).toBeLessThanOrEqual(3);
+    it('keeps retrying after the seller config read fails, and recovers with no click on Retry', async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      seededCart();
+      vi.mocked(CommerceController.getSellerPaymentConfig)
+        .mockRejectedValueOnce(new Error('network down'))
+        .mockRejectedValueOnce(new Error('network down'))
+        .mockImplementation(async () => ALL_RAILS);
+
+      render(<MarketplaceCheckout />);
+
+      expect(await screen.findByRole('alert')).toHaveTextContent("Couldn't load payment options.");
+      expect(screen.queryByTestId('marketplace-checkout-method-bitcoin')).not.toBeInTheDocument();
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(5_000);
+      });
+      expect(screen.getByRole('alert')).toHaveTextContent("Couldn't load payment options.");
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(10_000);
+      });
+      expect(await screen.findByTestId('marketplace-checkout-method-bitcoin')).toBeInTheDocument();
+      expect(screen.queryByText("Couldn't load payment options.")).not.toBeInTheDocument();
+    });
+
+    it('keeps the Paykit outage retrying through a failed read until Paykit is back', async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      seededCart();
+      vi.mocked(CommerceController.getSellerPaymentConfig)
+        .mockImplementationOnce(async () => PAYKIT_DOWN)
+        .mockRejectedValueOnce(new Error('network down'))
+        .mockImplementation(async () => ALL_RAILS);
+
+      render(<MarketplaceCheckout />);
+      expect(await screen.findByRole('status')).toHaveTextContent('Paykit is temporarily unreachable, retrying…');
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(5_000);
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(10_000);
+      });
+
+      expect(await screen.findByTestId('marketplace-checkout-method-bitcoin')).toBeInTheDocument();
+      expect(screen.queryByText(/Paykit is temporarily unreachable/)).not.toBeInTheDocument();
     });
 
     it('keeps the working methods usable and explains that Bitcoin and USDT return on their own', async () => {
