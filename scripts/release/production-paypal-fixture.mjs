@@ -130,8 +130,8 @@ async function ringSignIn(page, seat) {
 }
 
 // Signing in does not mint a marketplace session; the Shop asks for one when the seat first sells or buys.
-const approveMarketplaceSession = (page, seat) =>
-  approveMarketplaceAccess(page, seat, { settleMs: 12_000, clientId: MARKETPLACE_CLIENT_ID, log });
+const approveMarketplaceSession = (page, seat, settleMs = 12_000) =>
+  approveMarketplaceAccess(page, seat, { settleMs, clientId: MARKETPLACE_CLIENT_ID, log });
 
 async function signOut(page) {
   await page.goto(at('/settings/account'), { waitUntil: 'domcontentloaded' });
@@ -193,6 +193,14 @@ async function pickCategoryLeaf(page) {
   }
 }
 
+// First match only: a label can also appear on a neighbouring control, and a strict-mode violation would fail the
+// whole run on a page that is otherwise fine.
+async function fillLabelled(page, label, value) {
+  const field = page.getByLabel(label).first();
+  await field.waitFor({ state: 'visible', timeout: 60_000 });
+  await field.fill(value);
+}
+
 async function fillShippingListing(page, title) {
   await page.goto(at('/marketplace/sell'), { waitUntil: 'domcontentloaded' });
   await waitForAppReady(page);
@@ -203,21 +211,19 @@ async function fillShippingListing(page, title) {
   }
   await approveMarketplaceSession(page, seller);
   await page.locator('[data-surface="seller-studio"] input[type="file"]').first().setInputFiles(PHOTO);
-  await page.getByRole('button', { name: /Add photos \(1\/8\)/ }).waitFor({ state: 'visible', timeout: 120_000 });
-  await page
-    .getByLabel(/^Photo description$/i)
-    .first()
-    .fill('Release proof fixture cover photo');
-  await page.getByLabel(/^Title$/i).fill(title);
-  await page.getByLabel(/^Description$/i).fill('Release proof fixture. Do not purchase.');
+  await page.getByRole('button', { name: /Add photos \(1\/\d+\)/ }).waitFor({ state: 'visible', timeout: 120_000 });
+  await fillLabelled(page, /^Photo description$/i, 'Release proof fixture cover photo');
+  await fillLabelled(page, /^Title$/i, title);
+  await fillLabelled(page, /^Description$/i, 'Release proof fixture. Do not purchase.');
   await pickCategoryLeaf(page);
-  const country = page.getByLabel(/^Country$/i);
+  const country = page.getByLabel(/^Country$/i).first();
   if (await country.count()) await country.fill('US');
   await page.locator('#listing-section-price').scrollIntoViewIfNeeded();
   const priceField = page
     .getByLabel(/^Price \(USD\)$/i)
     .or(page.getByLabel(/^Price \(₿\)$/i))
     .first();
+  await priceField.waitFor({ state: 'visible', timeout: 60_000 });
   await priceField.fill(/₿|BTC/i.test((await priceField.getAttribute('aria-label')) || '') ? '1' : '1.00');
   const qty = page.getByLabel(/^Quantity$/i).first();
   if (await qty.count()) await qty.fill('5');
@@ -230,11 +236,15 @@ async function fillShippingListing(page, title) {
     const box = fieldset.getByRole('checkbox', { name });
     if (await box.isChecked().catch(() => false)) await box.click();
   }
-  await page.getByLabel('Free shipping').click();
-  await page.getByLabel(/^Weight \(/i).fill('500');
-  await page.getByLabel(/^Length \(/i).fill('25');
-  await page.getByLabel(/^Width \(/i).fill('20');
-  await page.getByLabel(/^Height \(/i).fill('10');
+  await page
+    .getByLabel(/^Free shipping$/i)
+    .or(page.getByLabel(/free shipping/i))
+    .first()
+    .click();
+  await fillLabelled(page, /^Weight \(/i, '500');
+  await fillLabelled(page, /^Length \(/i, '25');
+  await fillLabelled(page, /^Width \(/i, '20');
+  await fillLabelled(page, /^Height \(/i, '10');
   await page
     .getByRole('link', { name: /Review & publish/i })
     .first()
@@ -319,7 +329,73 @@ async function revokeRunSessions(seat, runStart) {
   return { listStatus: before.status, statuses };
 }
 
+// ---- seller delivery key -----------------------------------------------------------------------
+
+// A listing that ships cannot be published until the seller's delivery key is published, so setup creates one
+// through Shipping settings when the seat has none, records that it did, and teardown removes exactly that one.
+const DELIVERY_KEY_PATH = '/pub/pubky.app/marketplace/v1/delivery-keys/current';
+const deliveryKeyPublished = () =>
+  new Pubky().publicStorage.exists(`pubky://${sellerPubky}${DELIVERY_KEY_PATH}`).catch(() => null);
+
+async function waitForDeliveryKey(published, timeoutMs) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if ((await deliveryKeyPublished()) === published) return true;
+    await new Promise((resolve) => setTimeout(resolve, 3000));
+  }
+  return false;
+}
+
+async function createDeliveryKey(page) {
+  await page.goto(at('/marketplace/settings/shipping'), { waitUntil: 'domcontentloaded' });
+  await waitForAppReady(page);
+  await approveMarketplaceSession(page, seller);
+  const create = page.getByRole('button', { name: 'Create delivery key' }).first();
+  await create.waitFor({ state: 'visible', timeout: 120_000 });
+  await create.click();
+  await page.getByRole('button', { name: 'Create key', exact: true }).click();
+  if (!(await waitForDeliveryKey(true, 120_000))) throw new Error('the delivery key was not published');
+}
+
+// The seller seat signs in once with its own key for this, because the Shop has no control to remove a delivery key.
+async function removeDeliveryKey() {
+  const session = await new Pubky().signer(seller).signin('release-proof.shop.pubky.app');
+  try {
+    await session.storage.delete(DELIVERY_KEY_PATH);
+  } finally {
+    await session.signout().catch(() => {});
+  }
+}
+
 // ---- modes -------------------------------------------------------------------------------------
+
+// Publishing uploads the photo and registers the listing with the service, then the composer navigates to the
+// listing page. Wait for that, approve the selling dialog if it appears, and fail with the composer's own alert when
+// publishing is blocked instead of waiting out the clock.
+const PUBLISH_BLOCKED = /Create your delivery key|Configure a payment method|We could not (verify|check)/i;
+async function waitForPublished(page, title) {
+  const deadline = Date.now() + 240_000;
+  let blocked = '';
+  while (Date.now() < deadline) {
+    const match = new URL(page.url()).pathname.match(/\/marketplace\/listing\/[^/]+\/([^/]+)\/?$/);
+    if (match) return decodeURIComponent(match[1]);
+    await approveMarketplaceSession(page, seller, 1500);
+    const alerts = (
+      await page
+        .getByRole('alert')
+        .allInnerTexts()
+        .catch(() => [])
+    )
+      .join(' ')
+      .replace(/\s+/g, ' ');
+    blocked = alerts.match(PUBLISH_BLOCKED) ? alerts.slice(0, 200) : '';
+    if (blocked) throw new Error(`publishing is blocked: ${blocked}`);
+    await page.waitForTimeout(1000);
+  }
+  const stream = await nexusListingsByTitle(title);
+  if (stream.ids[0]) return stream.ids[0];
+  throw new Error('the listing was not published within 4 minutes');
+}
 
 async function setup() {
   const runStart = Date.now();
@@ -334,21 +410,18 @@ async function setup() {
     writeState({ ...base, phase: 'paypal' });
     log(`setup: prior PayPal rail recorded (${base.priorPaypal.kind})`);
     await savePaypal(page, email);
+    const hadDeliveryKey = await deliveryKeyPublished();
+    if (hadDeliveryKey === null) throw new Error('could not read the seller delivery key from the homeserver');
+    if (!hadDeliveryKey) {
+      base = { ...base, createdDeliveryKey: true };
+      writeState({ ...base, phase: 'delivery-key' });
+      await createDeliveryKey(page);
+      log('setup: seller had no delivery key; created one for the run');
+    }
     await fillShippingListing(page, title);
     writeState({ ...base, phase: 'publishing' });
     await page.getByRole('button', { name: 'Publish listing' }).click();
-    await approveMarketplaceSession(page, seller);
-    let listingId = null;
-    try {
-      await page.waitForURL(/\/marketplace\/listing\//, { timeout: 180_000 });
-      listingId = new URL(page.url()).pathname.split('/').filter(Boolean).pop();
-    } catch {
-      for (let i = 0; i < 6 && !listingId; i += 1) {
-        await page.waitForTimeout(10_000);
-        listingId = (await nexusListingsByTitle(title)).ids[0] ?? null;
-      }
-    }
-    if (!listingId) throw new Error('published listing not found (state file keeps the title for teardown)');
+    const listingId = await waitForPublished(page, title);
     writeState({ ...base, listingId, phase: 'published' });
     log(`setup ok listing ${listingId.slice(0, 8)}`);
     console.log(`PROOF_PAYPAL_LISTING_URL=${listingPath(listingId)}`);
@@ -378,11 +451,26 @@ async function checkout() {
       () => false,
     );
     if (check('checkout: fixture listing has an enabled Buy for the buyer', addVisible && (await add.isEnabled()))) {
+      const addedToast = page
+        .getByText('Added to cart', { exact: true })
+        .first()
+        .waitFor({ state: 'visible', timeout: 240_000 })
+        .then(
+          () => true,
+          () => false,
+        );
       await add.click();
-      await approveMarketplaceSession(page, buyer);
-      await page.waitForTimeout(1200);
+      const approved = await approveMarketplaceSession(page, buyer);
+      await Promise.race([addedToast, page.waitForTimeout(30_000)]);
       await page.goto(at('/marketplace/cart'), { waitUntil: 'domcontentloaded' });
       await waitForAppReady(page);
+      await page.waitForTimeout(1200);
+      const inCart = await page.getByRole('button', { name: /^Remove / }).count();
+      if (
+        !check('checkout: Buy put the item in the cart', inCart > 0, `approvalPlayed=${approved} cartItems=${inCart}`)
+      ) {
+        throw new Error('the cart is empty after Buy; the pending Buy was not completed');
+      }
       const go = page.getByTestId('marketplace-cart-checkout').first();
       await go.waitFor({ state: 'visible', timeout: 30_000 });
       const configResponse = page.waitForResponse(
@@ -471,6 +559,18 @@ async function teardown() {
   } finally {
     await browser.close();
   }
+  if (state.createdDeliveryKey) {
+    try {
+      await removeDeliveryKey();
+      check('teardown: seller delivery key created by the run removed', await waitForDeliveryKey(false, 60_000));
+    } catch (error) {
+      check(
+        'teardown: seller delivery key created by the run removed',
+        false,
+        String(error?.message ?? error).slice(0, 160),
+      );
+    }
+  }
   if (state.runStart) {
     for (const [name, seat] of [
       ['seller', seller],
@@ -534,14 +634,24 @@ async function verify() {
       .exists(`pubky://${sellerPubky}/pub/pubky.app/marketplace/v1/listings/${id}`)
       .catch(() => null);
     check(`verify: homeserver record gone ${id.slice(0, 8)}`, onHomeserver === false, `exists=${onHomeserver}`);
-    const projection = await fetch(`${SERVICE}/v1/listings/${encodeURIComponent(`listing:${sellerPubky}_${id}`)}`, {
-      headers: { authorization: `Bearer ${bearer.token}` },
-    });
+    // The service projection trails the delete by a few seconds, so give it a minute before calling it left behind.
+    let projection = null;
+    for (let attempt = 0; attempt < 7; attempt += 1) {
+      projection = await fetch(`${SERVICE}/v1/listings/${encodeURIComponent(`listing:${sellerPubky}_${id}`)}`, {
+        headers: { authorization: `Bearer ${bearer.token}` },
+      });
+      if (projection.status === 404) break;
+      await new Promise((resolve) => setTimeout(resolve, 10_000));
+    }
     check(
       `verify: service projection gone ${id.slice(0, 8)}`,
       projection.status === 404,
       `status=${projection.status}`,
     );
+  }
+  if (state.createdDeliveryKey) {
+    const published = await deliveryKeyPublished();
+    check('verify: seller delivery key created by the run is gone', published === false, `exists=${published}`);
   }
   if (state.priorPaypal) {
     const config = await fetch(`${SERVICE}/v0/sellers/${encodeURIComponent(sellerPubky)}/payment-config`);

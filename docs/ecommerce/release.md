@@ -274,6 +274,8 @@ defects outside the release and never gate it.
 - Screenshots `01`–`08` and `11`.
 - Evidence carries 8-character pubky prefixes only. Auth URLs, session exports and bearers are never printed.
 
+A listing that ships needs a published seller delivery key. When the seller seat has none, setup creates one in Shipping settings, records that it did, and teardown removes exactly that key and verifies it is gone; a key the seat already had is never touched. Setup waits for the listing page after Publish and stops with the composer's own message if publishing is blocked. Step 4 presses Buy once and never again after "Enable purchases"; an empty cart afterwards fails the step with a message that names the dropped Buy (screenshots `06a` and `06b`).
+
 The fixture changes the seller seat's PayPal rail only for the run. Setup records the rail's current value in
 `paypal-fixture-state.json` (mode 600) before changing it, and teardown restores exactly that value and reads it back.
 When the prior value is the test address itself, only a marker is stored, so the address never reaches disk. Without

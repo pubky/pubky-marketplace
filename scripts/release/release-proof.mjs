@@ -257,11 +257,33 @@ async function paypalCheckout(page, commands, href, buyer) {
     ) {
       return { sellerHasPaypal, error: `fixture listing "${title}" has no enabled Buy for the buyer` };
     }
+    // The Buy press is the whole add: the script never presses it again after the approval, and it stays on the
+    // listing until the item is in the cart, so a Buy the Shop drops after "Enable purchases" shows up as a failure
+    // here instead of being retried or navigated away from.
+    const addedToast = page
+      .getByText('Added to cart', { exact: true })
+      .first()
+      .waitFor({ state: 'visible', timeout: 240_000 })
+      .then(
+        () => true,
+        () => false,
+      );
     await add.click();
-    await approveMarketplace(page, buyer);
-    await page.waitForTimeout(1200);
+    const approved = await approveMarketplace(page, buyer);
+    const added = await Promise.race([addedToast, page.waitForTimeout(30_000).then(() => false)]);
+    await shot(page, '06a-after-buy.png');
     await page.goto(at('/marketplace/cart'), { waitUntil: 'domcontentloaded' });
     await waitForAppReady(page);
+    await page.waitForTimeout(1200);
+    const inCart = await page.getByRole('button', { name: /^Remove / }).count();
+    log(`buy: approvalPlayed=${approved} addedToast=${added} cartItems=${inCart}`);
+    if (inCart === 0) {
+      await shot(page, '06b-cart-empty-after-buy.png');
+      return {
+        sellerHasPaypal,
+        error: `the cart is empty after Buy${approved ? ' and the Enable purchases approval' : ''}; the pending Buy was not completed`,
+      };
+    }
     const checkout = page.getByTestId('marketplace-cart-checkout');
     await checkout
       .first()
