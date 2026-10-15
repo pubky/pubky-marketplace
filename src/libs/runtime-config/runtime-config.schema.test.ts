@@ -286,10 +286,18 @@ describe('runtimeEnvInputSchema', () => {
     expect(
       runtimeEnvInputSchema.parse({ ...VALID_ENV_INPUT, paykitSetupCreatorParam: '' }).paykitSetupCreatorParam,
     ).toBe(true);
-    expect(
-      runtimeEnvInputSchema.parse({ ...VALID_ENV_INPUT, paykitSetupCreatorParam: 'false' }).paykitSetupCreatorParam,
-    ).toBe(false);
     expect(() => runtimeEnvInputSchema.parse({ ...VALID_ENV_INPUT, paykitSetupCreatorParam: 'no' })).toThrow();
+  });
+
+  it('refuses the creator parameter off unless the Paykit Server API is upstream', () => {
+    for (const paykitServerApi of [undefined, 'fork']) {
+      expect(() =>
+        runtimeEnvInputSchema.parse({ ...VALID_ENV_INPUT, paykitServerApi, paykitSetupCreatorParam: 'false' }),
+      ).toThrow(/PUBKY_RUNTIME_PAYKIT_SETUP_CREATOR_PARAM=false requires PUBKY_RUNTIME_PAYKIT_SERVER_API=upstream/);
+      expect(() =>
+        runtimeEnvInputSchemaWithDefaults.parse({ paykitServerApi, paykitSetupCreatorParam: 'false' }),
+      ).toThrow(/PUBKY_RUNTIME_PAYKIT_SERVER_API=upstream/);
+    }
   });
 
   it('defaults to the fork Paykit Server API and takes upstream only with the creator parameter off', () => {

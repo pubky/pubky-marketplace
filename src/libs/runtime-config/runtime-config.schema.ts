@@ -367,16 +367,29 @@ function validateAuctionDurationsEnvInput(
  * Upstream pubky/paykit-server rejects every `/setup` query parameter except
  * `return_to` and `state`, so `paykitServerApi=upstream` needs the creator
  * parameter explicitly off. Unset counts as on (the fork default) and fails.
+ * The other way round, the creator parameter off only fits upstream: the fork
+ * requires it, and a fork-mode Shop reads seller readiness from a route
+ * upstream Paykit does not serve, so it would offer initial setup to every
+ * seller.
  */
 function validatePaykitServerApiEnvInput(
   input: { paykitServerApi?: PaykitServerApi; paykitSetupCreatorParam?: boolean },
   ctx: z.RefinementCtx,
 ): void {
-  if (input.paykitServerApi !== 'upstream' || input.paykitSetupCreatorParam === false) return;
+  if (input.paykitServerApi === 'upstream') {
+    if (input.paykitSetupCreatorParam === false) return;
+    ctx.addIssue({
+      code: 'custom',
+      path: ['paykitSetupCreatorParam'],
+      message: `paykitServerApi=upstream requires ${PUBKY_RUNTIME_ENV_NAMES.paykitSetupCreatorParam}=false; upstream Paykit rejects the creator parameter.`,
+    });
+    return;
+  }
+  if (input.paykitSetupCreatorParam !== false) return;
   ctx.addIssue({
     code: 'custom',
-    path: ['paykitSetupCreatorParam'],
-    message: `paykitServerApi=upstream requires ${PUBKY_RUNTIME_ENV_NAMES.paykitSetupCreatorParam}=false; upstream Paykit rejects the creator parameter.`,
+    path: ['paykitServerApi'],
+    message: `${PUBKY_RUNTIME_ENV_NAMES.paykitSetupCreatorParam}=false requires ${PUBKY_RUNTIME_ENV_NAMES.paykitServerApi}=upstream; the fork Paykit needs the creator parameter.`,
   });
 }
 
