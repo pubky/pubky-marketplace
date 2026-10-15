@@ -235,6 +235,7 @@ export const getPaykitServerApi = (): PaykitServerApi => getRuntimeConfig().payk
 export const getCommerceAdapterMode = (): CommerceAdapterMode => getRuntimeConfig().commerceAdapterMode;
 export const getCommercePollIntervalMs = (): number => getRuntimeConfig().commercePollIntervalMs;
 export const getMarketplaceGrantFlowEnabled = (): boolean => getRuntimeConfig().marketplaceGrantFlowEnabled;
+export const getMarketplaceGrantSessionEnabled = (): boolean => getRuntimeConfig().marketplaceGrantSessionEnabled;
 export const getMarketplaceGrantPollMilliseconds = (): number => getRuntimeConfig().marketplaceGrantPollMilliseconds;
 export const getPassportSignInEnabled = (): boolean => getRuntimeConfig().passportSignIn;
 export const getUsdtPaymentsEnabled = (): boolean => getRuntimeConfig().usdtPaymentsEnabled;

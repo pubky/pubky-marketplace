@@ -26,6 +26,7 @@ import {
 } from '@/libs/passport/passport-popup';
 import {
   getMarketplaceGrantFlowEnabled,
+  getMarketplaceGrantSessionEnabled,
   getPassportOrigin,
   getPassportSignInEnabled,
 } from '@/libs/runtime-config/runtime-config';
@@ -131,200 +132,224 @@ export function useMarketplaceSessionConnect(
     const expectedPubky = signedInPubky();
     const isCurrentIdentity = () =>
       useAuthStore.getState().session === expectedSession && signedInPubky() === expectedPubky;
-    if (!grantFlowEnabled || !expectedPubky) {
-      setAuthorizationUrl('');
-      setRequestsGrantReconnect(false);
-      setRequestsGrantBootstrap(false);
-      setErrorMessage(
-        !expectedPubky
-          ? 'Sign in again to connect the marketplace.'
-          : 'Marketplace approvals are unavailable on this deployment.',
-      );
-      setStatus('error');
-      return;
-    }
-    if (!selectedSigner) {
-      setAuthorizationUrl('');
-      setStatus('idle');
-      return;
-    }
 
-    const runGrantFlow = (
-      begin: () => Promise<MarketplaceGrantFlow>,
-      failureMessage: (code: string) => string,
-      onSessionMissing?: () => void,
-      viaPassport = false,
-    ) => {
-      setAuthorizationUrl('');
-      setStatus('creating');
-      let grantFlow: MarketplaceGrantFlow | null = null;
-      const attach = async () => {
-        const flow = await begin();
-        if (generationRef.current !== generation || !isCurrentIdentity()) {
-          await flow.cancel();
-          throw new PassportAttemptError('cancelled');
-        }
-        grantFlow = flow;
-        activeGrantFlowRef.current = flow;
-        setAuthorizationUrl(flow.authorizationUrl);
-        setStatus('awaiting');
-        return flow;
-      };
-      const settled = viaPassport
-        ? startPassportAttempt(
-            async () => {
-              const flow = await attach();
-              return { authorizationUrl: flow.authorizationUrl, result: flow.awaitResult(), cancel: flow.cancel };
-            },
-            { passportOrigin: getPassportOrigin() },
-          )
-        : attach().then((flow) => flow.awaitResult());
-      void settled
-        .then(async (result) => {
-          if (generationRef.current !== generation || !isCurrentIdentity() || activeGrantFlowRef.current !== grantFlow)
-            return;
-          activeGrantFlowRef.current = null;
-          setAuthorizationUrl('');
-          if (result.status === 'connected') {
-            if (!result.token || !result.pubky || result.capabilities === undefined || !result.expires_at) {
-              throw Err.server(ServerErrorCode.INVALID_RESPONSE, 'grant_invalid_response', {
-                service: ErrorService.Marketplace,
-                operation: 'marketplaceApproval',
-              });
-            }
-            if (!expectedPubky) {
-              throw Err.server(ServerErrorCode.INVALID_RESPONSE, 'grant_invalid_response', {
-                service: ErrorService.Marketplace,
-                operation: 'marketplaceApproval',
-              });
-            }
-            if (result.pubky !== expectedPubky) {
-              setStatus('mismatch');
+    const startApproval = () => {
+      if (!grantFlowEnabled || !expectedPubky) {
+        setAuthorizationUrl('');
+        setRequestsGrantReconnect(false);
+        setRequestsGrantBootstrap(false);
+        setErrorMessage(
+          !expectedPubky
+            ? 'Sign in again to connect the marketplace.'
+            : 'Marketplace approvals are unavailable on this deployment.',
+        );
+        setStatus('error');
+        return;
+      }
+      if (!selectedSigner) {
+        setAuthorizationUrl('');
+        setStatus('idle');
+        return;
+      }
+
+      const runGrantFlow = (
+        begin: () => Promise<MarketplaceGrantFlow>,
+        failureMessage: (code: string) => string,
+        onSessionMissing?: () => void,
+        viaPassport = false,
+      ) => {
+        setAuthorizationUrl('');
+        setStatus('creating');
+        let grantFlow: MarketplaceGrantFlow | null = null;
+        const attach = async () => {
+          const flow = await begin();
+          if (generationRef.current !== generation || !isCurrentIdentity()) {
+            await flow.cancel();
+            throw new PassportAttemptError('cancelled');
+          }
+          grantFlow = flow;
+          activeGrantFlowRef.current = flow;
+          setAuthorizationUrl(flow.authorizationUrl);
+          setStatus('awaiting');
+          return flow;
+        };
+        const settled = viaPassport
+          ? startPassportAttempt(
+              async () => {
+                const flow = await attach();
+                return { authorizationUrl: flow.authorizationUrl, result: flow.awaitResult(), cancel: flow.cancel };
+              },
+              { passportOrigin: getPassportOrigin() },
+            )
+          : attach().then((flow) => flow.awaitResult());
+        void settled
+          .then(async (result) => {
+            if (
+              generationRef.current !== generation ||
+              !isCurrentIdentity() ||
+              activeGrantFlowRef.current !== grantFlow
+            )
+              return;
+            activeGrantFlowRef.current = null;
+            setAuthorizationUrl('');
+            if (result.status === 'connected') {
+              if (!result.token || !result.pubky || result.capabilities === undefined || !result.expires_at) {
+                throw Err.server(ServerErrorCode.INVALID_RESPONSE, 'grant_invalid_response', {
+                  service: ErrorService.Marketplace,
+                  operation: 'marketplaceApproval',
+                });
+              }
+              if (!expectedPubky) {
+                throw Err.server(ServerErrorCode.INVALID_RESPONSE, 'grant_invalid_response', {
+                  service: ErrorService.Marketplace,
+                  operation: 'marketplaceApproval',
+                });
+              }
+              if (result.pubky !== expectedPubky) {
+                setStatus('mismatch');
+                return;
+              }
+              let session;
+              try {
+                session = MarketplaceSessionService.establishClaimedGrantSession(
+                  {
+                    token: result.token,
+                    pubky: result.pubky,
+                    capabilities: result.capabilities,
+                    expiresAt: result.expires_at,
+                  },
+                  expectedPubky,
+                );
+              } catch (error) {
+                if (!isAppError(error) || error.category !== ErrorCategory.Validation) throw error;
+                setErrorMessage(error.message);
+                setStatus('error');
+                return;
+              }
+              CommerceController.writeMarketplaceSessionStore(session);
+              setStatus('connected');
+              onConnectedRef.current?.(session);
               return;
             }
-            let session;
-            try {
-              session = MarketplaceSessionService.establishClaimedGrantSession(
-                {
-                  token: result.token,
-                  pubky: result.pubky,
-                  capabilities: result.capabilities,
-                  expiresAt: result.expires_at,
-                },
-                expectedPubky,
-              );
-            } catch (error) {
-              if (!isAppError(error) || error.category !== ErrorCategory.Validation) throw error;
-              setErrorMessage(error.message);
+            if (result.status === 'mismatch') setStatus('mismatch');
+            else if (result.status === 'expired') setStatus('expired');
+            else if (result.status === 'cancelled') setStatus('cancelled');
+            else {
+              setErrorMessage(failureMessage('approval_invalid'));
+              setStatus('error');
+            }
+          })
+          .catch((error: unknown) => {
+            if (generationRef.current !== generation || !isCurrentIdentity()) return;
+            activeGrantFlowRef.current = null;
+            setAuthorizationUrl('');
+            if (isPassportAttemptError(error)) {
+              if (error.reason === 'timeout') {
+                setStatus('expired');
+                return;
+              }
+              const message = PASSPORT_GRANT_FAILURE_COPY[error.reason];
+              if (!message) {
+                setStatus(error.reason === 'cancelled' ? 'cancelled' : 'idle');
+                return;
+              }
+              setErrorMessage(message);
               setStatus('error');
               return;
             }
-            CommerceController.writeMarketplaceSessionStore(session);
-            setStatus('connected');
-            onConnectedRef.current?.(session);
-            return;
-          }
-          if (result.status === 'mismatch') setStatus('mismatch');
-          else if (result.status === 'expired') setStatus('expired');
-          else if (result.status === 'cancelled') setStatus('cancelled');
-          else {
-            setErrorMessage(failureMessage('approval_invalid'));
-            setStatus('error');
-          }
-        })
-        .catch((error: unknown) => {
-          if (generationRef.current !== generation || !isCurrentIdentity()) return;
-          activeGrantFlowRef.current = null;
-          setAuthorizationUrl('');
-          if (isPassportAttemptError(error)) {
-            if (error.reason === 'timeout') {
-              setStatus('expired');
+            const code = error instanceof Error ? error.message : '';
+            if ((code === 'shop_session_missing' || code === 'shop_session_expired') && onSessionMissing) {
+              Logger.warn('Marketplace grant reconnect needs a session; starting a new approval', { code });
+              onSessionMissing();
               return;
             }
-            const message = PASSPORT_GRANT_FAILURE_COPY[error.reason];
-            if (!message) {
-              setStatus(error.reason === 'cancelled' ? 'cancelled' : 'idle');
-              return;
-            }
-            setErrorMessage(message);
+            if (!isAppError(error)) Logger.error('Marketplace grant flow failed', { error });
+            setErrorMessage(failureMessage(code));
             setStatus('error');
-            return;
-          }
-          const code = error instanceof Error ? error.message : '';
-          if ((code === 'shop_session_missing' || code === 'shop_session_expired') && onSessionMissing) {
-            Logger.warn('Marketplace grant reconnect needs a session; starting a new approval', { code });
-            onSessionMissing();
-            return;
-          }
-          if (!isAppError(error)) Logger.error('Marketplace grant flow failed', { error });
-          setErrorMessage(failureMessage(code));
-          setStatus('error');
-        });
-    };
+          });
+      };
 
-    const viaPassport = selectedSigner === 'passport';
-    if (viaPassport && !getPassportSignInEnabled()) {
-      // Passport is switched off: no approval of any kind starts for this sign-in.
-      setAuthorizationUrl('');
-      setStatus('idle');
-      return;
-    }
-
-    // With the grant flow on, every signed-in purchase approval is a
-    // `signin_grant` link, which Bitkit and Pubky Ring 2.0+ both approve.
-    // The browser writes a single-use proof using its active grant.
-    const bootstrapPubky = signedInPubky();
-    const runBootstrap = (pubky: string) => {
-      setRequestsGrantReconnect(false);
-      setRequestsGrantBootstrap(true);
-      runGrantFlow(
-        () => beginMarketplaceBootstrapFlow({ pubky }),
-        (code) => marketplaceBootstrapFailureMessage(code, marketplaceApprovalSigner(selectedSigner)),
-        undefined,
-        viaPassport,
-      );
-    };
-    if (grantFlowEnabled && bootstrapPubky && !MarketplaceSessionService.getActiveSession()) {
-      setRequestsGrantReconnect(false);
-      setRequestsGrantBootstrap(true);
-      if (viaPassport) {
-        armPassport(() => runBootstrap(bootstrapPubky));
+      const viaPassport = selectedSigner === 'passport';
+      if (viaPassport && !getPassportSignInEnabled()) {
+        // Passport is switched off: no approval of any kind starts for this sign-in.
+        setAuthorizationUrl('');
+        setStatus('idle');
         return;
       }
-      runBootstrap(bootstrapPubky);
-      return;
-    }
 
-    // Reconnect grant cannot mint a first session: BFF createFlow requires a
-    // paired cookie. When the BFF has none, the bootstrap mints the session
-    // instead of opening a grant that 401s locally as "expired". A Passport
-    // reconnect needs a fresh click for the bootstrap popup, so it ends with
-    // the failure copy instead.
-    if (grantFlowEnabled && MarketplaceSessionService.getActiveSession()) {
-      setRequestsGrantBootstrap(false);
-      setRequestsGrantReconnect(true);
-      const onSessionMissing = viaPassport
-        ? undefined
-        : bootstrapPubky
-          ? () => runBootstrap(bootstrapPubky)
-          : undefined;
-      const runReconnect = () =>
+      // With the grant flow on, every signed-in purchase approval is a
+      // `signin_grant` link, which Bitkit and Pubky Ring 2.0+ both approve.
+      // The browser writes a single-use proof using its active grant.
+      const bootstrapPubky = signedInPubky();
+      const runBootstrap = (pubky: string) => {
+        setRequestsGrantReconnect(false);
+        setRequestsGrantBootstrap(true);
         runGrantFlow(
-          beginMarketplaceGrantFlow,
-          (code) => marketplaceFailureMessage(code, MARKETPLACE_FAILURE_MESSAGES.sessionStart),
-          onSessionMissing,
+          () => beginMarketplaceBootstrapFlow({ pubky }),
+          (code) => marketplaceBootstrapFailureMessage(code, marketplaceApprovalSigner(selectedSigner)),
+          undefined,
           viaPassport,
         );
-      if (viaPassport) {
-        armPassport(runReconnect);
+      };
+      if (grantFlowEnabled && bootstrapPubky && !MarketplaceSessionService.getActiveSession()) {
+        setRequestsGrantReconnect(false);
+        setRequestsGrantBootstrap(true);
+        if (viaPassport) {
+          armPassport(() => runBootstrap(bootstrapPubky));
+          return;
+        }
+        runBootstrap(bootstrapPubky);
         return;
       }
-      runReconnect();
+
+      // Reconnect grant cannot mint a first session: BFF createFlow requires a
+      // paired cookie. When the BFF has none, the bootstrap mints the session
+      // instead of opening a grant that 401s locally as "expired". A Passport
+      // reconnect needs a fresh click for the bootstrap popup, so it ends with
+      // the failure copy instead.
+      if (grantFlowEnabled && MarketplaceSessionService.getActiveSession()) {
+        setRequestsGrantBootstrap(false);
+        setRequestsGrantReconnect(true);
+        const onSessionMissing = viaPassport
+          ? undefined
+          : bootstrapPubky
+            ? () => runBootstrap(bootstrapPubky)
+            : undefined;
+        const runReconnect = () =>
+          runGrantFlow(
+            beginMarketplaceGrantFlow,
+            (code) => marketplaceFailureMessage(code, MARKETPLACE_FAILURE_MESSAGES.sessionStart),
+            onSessionMissing,
+            viaPassport,
+          );
+        if (viaPassport) {
+          armPassport(runReconnect);
+          return;
+        }
+        runReconnect();
+        return;
+      }
+
+      setStatus('error');
+      setErrorMessage('Sign in again to connect the marketplace.');
+    };
+
+    // The sign-in grant can mint the session itself; the approval is only the fallback.
+    if (getMarketplaceGrantSessionEnabled() && expectedPubky && !MarketplaceSessionService.getActiveSession()) {
+      setAuthorizationUrl('');
+      setStatus('creating');
+      void CommerceController.ensureMarketplaceSessionFromGrant({ retryAfterFailure: true }).then((session) => {
+        if (generationRef.current !== generation || !isCurrentIdentity()) return;
+        if (!session) {
+          startApproval();
+          return;
+        }
+        setStatus('connected');
+        onConnectedRef.current?.(session);
+      });
       return;
     }
-
-    setStatus('error');
-    setErrorMessage('Sign in again to connect the marketplace.');
+    startApproval();
   }, [armPassport, authSession, detachActiveFlow, grantFlowEnabled, removeVisibilityHandler, selectedSigner]);
 
   /**

@@ -404,6 +404,7 @@ export const APP_RUNTIME_DEFAULTS = {
   commerceAdapterMode: 'unavailable' as CommerceAdapterMode,
   commercePollIntervalMs: 2_000,
   marketplaceGrantFlowEnabled: false,
+  marketplaceGrantSessionEnabled: false,
   marketplaceGrantPollMilliseconds: 1_000,
   passportSignIn: true,
   usdtPaymentsEnabled: false,
@@ -512,6 +513,12 @@ export const runtimeConfigValueSchema = networkConfigValueSchema.extend({
   commerceAdapterMode: commerceAdapterModeValue.default(APP_RUNTIME_DEFAULTS.commerceAdapterMode),
   commercePollIntervalMs: positiveIntValue.default(APP_RUNTIME_DEFAULTS.commercePollIntervalMs),
   marketplaceGrantFlowEnabled: z.boolean().default(APP_RUNTIME_DEFAULTS.marketplaceGrantFlowEnabled),
+  /**
+   * Mint the marketplace session from the Shop's own sign-in grant (a custom
+   * proof plus a homeserver proof document), so a grant-backed seller never
+   * sees "Enable selling". Needs the service's `MARKETPLACE_GRANT_SESSION_ENABLED`.
+   */
+  marketplaceGrantSessionEnabled: z.boolean().default(APP_RUNTIME_DEFAULTS.marketplaceGrantSessionEnabled),
   marketplaceGrantPollMilliseconds: positiveIntValue
     .min(750)
     .max(5_000)
@@ -645,6 +652,7 @@ export const runtimeEnvInputSchema = z
     commerceAdapterMode: commerceAdapterModeValue.optional(),
     commercePollIntervalMs: optionalPositiveIntFromString,
     marketplaceGrantFlowEnabled: optionalBooleanFromString,
+    marketplaceGrantSessionEnabled: optionalBooleanFromString,
     marketplaceGrantPollMilliseconds: optionalPositiveIntFromString,
     passportSignIn: optionalBooleanFromString,
     usdtPaymentsEnabled: optionalBooleanFromString,
@@ -745,6 +753,7 @@ export const runtimeEnvInputSchemaWithDefaults = z
     commerceAdapterMode: commerceAdapterModeValue.optional(),
     commercePollIntervalMs: optionalPositiveIntFromString,
     marketplaceGrantFlowEnabled: optionalBooleanFromString,
+    marketplaceGrantSessionEnabled: optionalBooleanFromString,
     marketplaceGrantPollMilliseconds: optionalPositiveIntFromString,
     passportSignIn: optionalBooleanFromString,
     usdtPaymentsEnabled: optionalBooleanFromString,
@@ -837,6 +846,7 @@ export const PUBKY_RUNTIME_ENV_NAMES: Record<keyof RuntimeConfig, string> = {
   commerceAdapterMode: 'PUBKY_RUNTIME_COMMERCE_ADAPTER_MODE',
   commercePollIntervalMs: 'PUBKY_RUNTIME_COMMERCE_POLL_INTERVAL_MS',
   marketplaceGrantFlowEnabled: 'PUBKY_RUNTIME_MARKETPLACE_GRANT_FLOW_ENABLED',
+  marketplaceGrantSessionEnabled: 'PUBKY_RUNTIME_MARKETPLACE_GRANT_SESSION_ENABLED',
   marketplaceGrantPollMilliseconds: 'PUBKY_RUNTIME_MARKETPLACE_GRANT_POLL_MILLISECONDS',
   passportSignIn: 'PUBKY_RUNTIME_PASSPORT_SIGN_IN',
   usdtPaymentsEnabled: 'PUBKY_RUNTIME_USDT_PAYMENTS_ENABLED',

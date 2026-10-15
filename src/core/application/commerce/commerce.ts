@@ -1,5 +1,6 @@
 import { blake3 } from '@noble/hashes/blake3.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
+import type { GrantSession } from '@synonymdev/pubky';
 import { z } from 'zod';
 import { CommerceAttentionSeenApplication } from '@/application/commerce/attention-seen';
 import { CommerceInventoryApplication } from '@/application/commerce/inventory';
@@ -176,6 +177,10 @@ import {
   type MarketplaceOrder,
   type MarketplacePayment,
 } from '@/services/marketplace/marketplace';
+import {
+  MarketplaceGrantSessionService,
+  type MintedGrantSession,
+} from '@/services/marketplace/marketplace-grant-session';
 import { MarketplacePaykitClaimService } from '@/services/marketplace/marketplace-paykit-claim';
 import {
   type MarketplaceSessionEndedEvent,
@@ -1308,6 +1313,25 @@ export class CommerceApplication {
    */
   static beginMarketplaceSessionFlow() {
     return MarketplaceSessionService.beginSessionFlow();
+  }
+
+  /**
+   * Mints a marketplace session from the Shop's own sign-in grant, with no
+   * signer approval. Nothing is installed: the caller installs it with
+   * {@link installGrantMarketplaceSession} once it knows the identity is
+   * unchanged. Throws when the service refuses.
+   */
+  static async mintMarketplaceSessionFromGrant({ grant, pubky }: { grant: GrantSession; pubky: string }) {
+    return await MarketplaceGrantSessionService.mint({ grant, pubky });
+  }
+
+  static installGrantMarketplaceSession(minted: MintedGrantSession, expectedPubky: string) {
+    return MarketplaceSessionService.establishClaimedGrantSession(minted, expectedPubky);
+  }
+
+  /** Best-effort revoke of a minted session nobody will use. */
+  static async revokeGrantMarketplaceSession(minted: MintedGrantSession): Promise<void> {
+    await MarketplaceGrantSessionService.revoke({ token: minted.token, sessionId: minted.sessionId });
   }
 
   static currentHomeserverGrantIsFull(): boolean {

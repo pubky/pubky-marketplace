@@ -3,6 +3,7 @@
 import { useEffect } from 'react';
 import { usePathname } from 'next/navigation';
 import { CommerceController } from '@/controllers/commerce/commerce';
+import { MarketplaceGrantSessionCoordinator } from '@/coordinators/marketplace-grant-session/marketplace-grant-session';
 import { MessagingSyncCoordinator } from '@/coordinators/messaging-sync/messaging-sync';
 import { MuteListSyncCoordinator } from '@/coordinators/mute-list-sync/mute-list-sync';
 import { NotificationCoordinator } from '@/coordinators/notifications/notifications';
@@ -30,6 +31,7 @@ function applyRouteToCoordinators(pathname: string): void {
 
 function startAppCoordinators(): void {
   CommerceController.bindMarketplaceSessionStore();
+  MarketplaceGrantSessionCoordinator.getInstance().start();
   const coordinators = getAppCoordinators();
   void coordinators.notification.start();
   void coordinators.stream.start();
@@ -40,6 +42,7 @@ function startAppCoordinators(): void {
 
 function stopAppCoordinators(): void {
   CommerceController.unbindMarketplaceSessionStore();
+  MarketplaceGrantSessionCoordinator.getInstance().stop();
   const coordinators = getAppCoordinators();
   coordinators.notification.stop();
   coordinators.stream.stop();
@@ -56,7 +59,8 @@ function stopAppCoordinators(): void {
  *
  * Responsibilities:
  * - Initialize coordinators on mount (NotificationCoordinator, StreamCoordinator,
- *   MuteListSyncCoordinator, TtlCoordinator, MessagingSyncCoordinator)
+ *   MuteListSyncCoordinator, TtlCoordinator, MessagingSyncCoordinator,
+ *   MarketplaceGrantSessionCoordinator)
  * - Start coordination when the component is mounted
  * - Track route changes and inform coordinators
  * - Stop coordination and cleanup when unmounted

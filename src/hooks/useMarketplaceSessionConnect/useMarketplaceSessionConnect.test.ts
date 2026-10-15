@@ -13,16 +13,17 @@ import { asOpaque } from '@/test-utils/type-assertions';
 import { navigatesWithinGesture } from '@/test-utils/user-gesture';
 import { useMarketplaceSessionConnect } from './useMarketplaceSessionConnect';
 
-const runtime = vi.hoisted(() => ({ grants: true, passport: true }));
+const runtime = vi.hoisted(() => ({ grants: true, passport: true, grantSessions: false }));
 const navigation = vi.hoisted(() => ({ navigateTop: vi.fn() }));
 vi.mock('@/libs/navigation/navigate-top', () => ({ navigateTop: navigation.navigateTop }));
 vi.mock('@/libs/runtime-config/runtime-config', async (original) => ({
   ...(await original<typeof import('@/libs/runtime-config/runtime-config')>()),
   getMarketplaceGrantFlowEnabled: () => runtime.grants,
+  getMarketplaceGrantSessionEnabled: () => runtime.grantSessions,
   getPassportSignInEnabled: () => runtime.passport,
 }));
 vi.mock('@/controllers/commerce/commerce', () => ({
-  CommerceController: { writeMarketplaceSessionStore: vi.fn() },
+  CommerceController: { writeMarketplaceSessionStore: vi.fn(), ensureMarketplaceSessionFromGrant: vi.fn() },
 }));
 vi.mock('@/services/marketplace/marketplace-bootstrap-client', () => ({ beginMarketplaceBootstrapFlow: vi.fn() }));
 vi.mock('@/services/marketplace/marketplace-grant-client', () => ({ beginMarketplaceGrantFlow: vi.fn() }));
@@ -79,6 +80,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   runtime.grants = true;
   runtime.passport = true;
+  runtime.grantSessions = false;
   signIn();
   vi.spyOn(MarketplaceSessionService, 'getActiveSession').mockReturnValue(null);
   vi.spyOn(MarketplaceSessionService, 'establishClaimedGrantSession').mockReturnValue(asOpaque(SESSION));
@@ -86,6 +88,67 @@ beforeEach(() => {
 afterEach(() => {
   vi.restoreAllMocks();
   useAuthStore.setState({ session: null, currentUserPubky: null, grantSigner: null });
+});
+
+describe('marketplace session from the sign-in grant', () => {
+  beforeEach(() => {
+    runtime.grantSessions = true;
+  });
+
+  it('connects without any approval when the sign-in grant mints the session', async () => {
+    vi.mocked(CommerceController.ensureMarketplaceSessionFromGrant).mockResolvedValue(asOpaque(SESSION));
+    const connected = vi.fn();
+    const { result } = renderHook(() => useMarketplaceSessionConnect({ onConnected: connected }));
+    act(() => result.current.start());
+    await waitFor(() => expect(result.current.status).toBe('connected'));
+    expect(CommerceController.ensureMarketplaceSessionFromGrant).toHaveBeenCalledWith({ retryAfterFailure: true });
+    expect(connected).toHaveBeenCalledWith(SESSION);
+    expect(result.current.authorizationUrl).toBe('');
+    expect(beginMarketplaceBootstrapFlow).not.toHaveBeenCalled();
+  });
+
+  it('mints even where a signer choice or the approval flow is unavailable', async () => {
+    runtime.grants = false;
+    signIn('host');
+    vi.mocked(CommerceController.ensureMarketplaceSessionFromGrant).mockResolvedValue(asOpaque(SESSION));
+    const { result } = renderHook(() => useMarketplaceSessionConnect());
+    act(() => result.current.start());
+    await waitFor(() => expect(result.current.status).toBe('connected'));
+  });
+
+  it('falls back to the approval when the service refuses', async () => {
+    vi.mocked(CommerceController.ensureMarketplaceSessionFromGrant).mockResolvedValue(null);
+    vi.mocked(beginMarketplaceBootstrapFlow).mockResolvedValue(pendingFlow().flow);
+    const { result } = renderHook(() => useMarketplaceSessionConnect());
+    act(() => result.current.start());
+    await waitFor(() => expect(result.current.status).toBe('awaiting'));
+    expect(beginMarketplaceBootstrapFlow).toHaveBeenCalledWith({ pubky: PUBKY });
+    expect(result.current.authorizationUrl).toBe(URL);
+  });
+
+  it('ignores a mint that settles after the account switched', async () => {
+    let settle!: (value: unknown) => void;
+    vi.mocked(CommerceController.ensureMarketplaceSessionFromGrant).mockReturnValue(
+      asOpaque(new Promise((resolve) => (settle = resolve))),
+    );
+    const connected = vi.fn();
+    const { result } = renderHook(() => useMarketplaceSessionConnect({ onConnected: connected }));
+    act(() => result.current.start());
+    expect(result.current.status).toBe('creating');
+    act(() => signIn('ring', OTHER_PUBKY));
+    await act(async () => settle(null));
+    expect(connected).not.toHaveBeenCalled();
+    expect(beginMarketplaceBootstrapFlow).not.toHaveBeenCalled();
+  });
+
+  it('keeps the approval flow when a marketplace session already exists', async () => {
+    vi.mocked(MarketplaceSessionService.getActiveSession).mockReturnValue(asOpaque(SESSION));
+    vi.mocked(beginMarketplaceGrantFlow).mockResolvedValue(pendingFlow().flow);
+    const { result } = renderHook(() => useMarketplaceSessionConnect());
+    act(() => result.current.start());
+    await waitFor(() => expect(result.current.status).toBe('awaiting'));
+    expect(CommerceController.ensureMarketplaceSessionFromGrant).not.toHaveBeenCalled();
+  });
 });
 
 describe('grant-only marketplace approval', () => {

@@ -39,6 +39,7 @@ import { ValidationErrorCode } from '@/libs/error/error.codes';
 import { Err } from '@/libs/error/error.factories';
 import { ErrorService } from '@/libs/error/error.types';
 import { Logger } from '@/libs/logger/logger';
+import { getMarketplaceGrantSessionEnabled } from '@/libs/runtime-config/runtime-config';
 import type { CommerceIndexedReview, CommerceListingProjectionModelSchema } from '@/models/commerce/commerce.schema';
 import type { Pubky } from '@/models/models.types';
 import { CommerceRecordNormalizer } from '@/pipes/commerce/commerce.normalizer';
@@ -68,6 +69,8 @@ export class CommerceController {
   private static defaultShopSession = new Map<string, Promise<void>>();
 
   private static sessionEndedUnbind: (() => void) | null = null;
+  private static grantSessionMint: { session: object; promise: Promise<MarketplaceSessionInfo | null> } | null = null;
+  private static grantSessionFailures = new WeakSet<object>();
   private static inventorySessionEndedUnbind: (() => void) | null = null;
 
   /**
@@ -292,6 +295,56 @@ export class CommerceController {
       },
       cancel: flow.cancel,
     };
+  }
+
+  /**
+   * Gives a grant-backed sign-in its marketplace session without a signer
+   * approval: adopts a persisted bearer when one is on the device, otherwise
+   * mints one from the sign-in grant. Concurrent callers share one attempt.
+   * Resolves null when the flag is off, the sign-in is not grant-backed, or
+   * the service refused; the caller then offers the approval flow. A failed
+   * attempt is not repeated for the same sign-in unless `retryAfterFailure`.
+   */
+  static async ensureMarketplaceSessionFromGrant(
+    options: { retryAfterFailure?: boolean } = {},
+  ): Promise<MarketplaceSessionInfo | null> {
+    if (!getMarketplaceGrantSessionEnabled()) return null;
+    const auth = useAuthStore.getState();
+    const session = auth.session;
+    const grant = session?.grant;
+    if (!session || !grant || auth.isLoggingOut) return null;
+    const pubky = session.info.publicKey.z32();
+    const current = useCommerceStore.getState().marketplaceSession;
+    if (CommerceApplication.hasActiveMarketplaceSession() && current?.pubky === pubky) return current;
+    if (this.grantSessionMint?.session === session) return await this.grantSessionMint.promise;
+    if (this.grantSessionFailures.has(session) && !options.retryAfterFailure) return null;
+
+    const isCurrent = () => useAuthStore.getState().session === session && !useAuthStore.getState().isLoggingOut;
+    const attempt = (async (): Promise<MarketplaceSessionInfo | null> => {
+      const restored = this.restorePersistedMarketplaceSession(pubky);
+      if (restored) return restored;
+      try {
+        const minted = await CommerceApplication.mintMarketplaceSessionFromGrant({ grant, pubky });
+        if (!isCurrent()) {
+          await CommerceApplication.revokeGrantMarketplaceSession(minted);
+          return null;
+        }
+        const installed = CommerceApplication.installGrantMarketplaceSession(minted, pubky);
+        this.writeMarketplaceSessionStore(installed);
+        this.grantSessionFailures.delete(session);
+        return installed;
+      } catch (error) {
+        if (isCurrent()) this.grantSessionFailures.add(session);
+        if (!isAppError(error)) Logger.error('Marketplace session from the sign-in grant failed', { error });
+        return null;
+      }
+    })();
+    this.grantSessionMint = { session, promise: attempt };
+    try {
+      return await attempt;
+    } finally {
+      if (this.grantSessionMint?.promise === attempt) this.grantSessionMint = null;
+    }
   }
 
   /**
