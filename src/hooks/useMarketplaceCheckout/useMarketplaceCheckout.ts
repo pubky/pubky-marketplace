@@ -37,7 +37,10 @@ import {
   usdtRefusalKey,
 } from '@/libs/commerce/failure-messages';
 import { LOCKS_MIXED_CHECKOUT_COPY, locksCheckoutRoute } from '@/libs/commerce/locks-payment';
-import { commerceListingFulfillmentMethods } from '@/libs/commerce/marketplace-records';
+import {
+  commerceListingFulfillmentMethods,
+  commerceListingProjectionIsStale,
+} from '@/libs/commerce/marketplace-records';
 import type { PaymentMethodKind } from '@/libs/commerce/payment-methods';
 import type { MarketplaceFulfillmentMethod } from '@/libs/commerce/pickup';
 import { pickupRefusalFailureMessage } from '@/libs/commerce/pickup';
@@ -594,9 +597,12 @@ export function useMarketplaceCheckout(
       items.map(async (item) => {
         const record = item.listing.record;
         let projection = await CommerceController.getMarketplaceListingProjection(record.ownerPubky, record.listingId);
-        if (!projection && isDurableCommerceMode(getCommerceAdapterMode())) {
+        // The service charges and validates from its projection, so one that lags the record is synced
+        // first. A Locks lock is not projected, so a Locks line is always synced (a no-op when current).
+        const needsSync = !projection || isLocksItem(item) || commerceListingProjectionIsStale(record, projection);
+        if (needsSync && isDurableCommerceMode(getCommerceAdapterMode())) {
           const healed = await syncLineProjection(record.ownerPubky, record.listingId);
-          projection = healed.projection;
+          projection = healed.removed ? null : (healed.projection ?? projection);
           if (healed.removed) sawRemovedListing = true;
         }
         if (!projection) return null;

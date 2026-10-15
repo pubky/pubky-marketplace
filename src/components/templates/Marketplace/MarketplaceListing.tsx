@@ -368,6 +368,7 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
               <MarketplaceListingOwnerPanel
                 record={record}
                 registrationStatus={listing.registration_status}
+                projection={negotiation.projection}
                 auctionPhase={auctionPhase ?? undefined}
               />
             )}

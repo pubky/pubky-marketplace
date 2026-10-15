@@ -299,6 +299,39 @@ export function commerceListingFulfillmentMethods(
 }
 
 /**
+ * Whether the transaction service's projection of a registered fixed-price
+ * listing no longer reflects the seller-signed record, so a `listing.sync`
+ * would change what checkout charges or accepts: the record's revision moved
+ * past the projection (an edit whose sync never landed), or the fulfillment
+ * methods or shipping the service derives from the same record revision
+ * differ (rows registered before the service's derivation changed). Auctions
+ * are excluded: `listing.sync` never rewrites a registered auction's terms.
+ */
+export function commerceListingProjectionIsStale(
+  record: Pick<CommerceListingRecord, 'revision' | 'sale' | 'fulfillmentMethods' | 'shippingOptions'>,
+  projection: {
+    listingRevision: number;
+    fulfillmentMethods: readonly MarketplaceFulfillmentMethod[];
+    shipping?: { amountMinor: number };
+  },
+): boolean {
+  if (record.sale.format !== 'fixed_price') return false;
+  if (projection.listingRevision < record.revision) return true;
+  if (projection.listingRevision > record.revision) return false;
+  const methods = commerceListingFulfillmentMethods(record.fulfillmentMethods);
+  if (
+    methods.length !== projection.fulfillmentMethods.length ||
+    methods.some((method, index) => projection.fulfillmentMethods[index] !== method)
+  ) {
+    return true;
+  }
+  return (
+    projection.shipping !== undefined &&
+    projection.shipping.amountMinor !== commerceListingShippingMinor(record.shippingOptions)
+  );
+}
+
+/**
  * Whether the listing offers **Make offer**: a fixed-price sale that accepts
  * offers and publishes a physical fulfillment (shipping or pickup). Digital
  * items, Locks listings included, take no offers; the service refuses them
