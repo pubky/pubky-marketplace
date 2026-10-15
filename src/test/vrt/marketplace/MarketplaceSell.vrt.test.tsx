@@ -311,7 +311,7 @@ describe('Marketplace sell studio — visual regression', () => {
     );
   });
 
-  it('renders the payment-method interstitial at desktop viewport', async () => {
+  it('renders the payment-method banner above the composer at desktop viewport', async () => {
     view.adapterMode = 'transaction-service';
     view.drafts = [];
     view.mediaItems = [];
@@ -319,19 +319,18 @@ describe('Marketplace sell studio — visual regression', () => {
     const screen = await renderForVRT(<MarketplaceSell />, { viewport: VRT_VIEWPORT_DESKTOP });
     await vi.waitFor(() => {
       if (!screen.container.querySelector('[data-surface="listing-payment-setup"]')) {
-        throw new Error('The payment interstitial has not rendered yet.');
+        throw new Error('The payment banner has not rendered yet.');
       }
-      if (!screen.container.textContent?.includes('Buyers cannot pay you otherwise')) {
-        throw new Error('The payment interstitial copy has not rendered yet.');
+      if (!screen.container.textContent?.includes('You can prepare and save drafts now.')) {
+        throw new Error('The payment banner copy has not rendered yet.');
       }
     });
     expect(sellerPaymentConfig).toHaveBeenCalledWith('y'.repeat(52));
-    expect(screen.container.querySelector('#title')).toBeNull();
-    expect(screen.container.querySelector('[name="title"]')).toBeNull();
+    expect(screen.container.querySelector('#title')).not.toBeNull();
     await expect(await expectVrtSurface('listing-payment-setup')).toMatchScreenshot('sell-payment-setup-desktop');
   });
 
-  it('renders the payment-method interstitial at mobile viewport', async () => {
+  it('renders the payment-method banner above the composer at mobile viewport', async () => {
     view.adapterMode = 'transaction-service';
     view.drafts = [];
     view.mediaItems = [];
@@ -339,20 +338,20 @@ describe('Marketplace sell studio — visual regression', () => {
     const screen = await renderForVRT(<MarketplaceSell />, { viewport: VRT_VIEWPORT_MOBILE });
     await vi.waitFor(() => {
       if (!screen.container.querySelector('[data-surface="listing-payment-setup"]')) {
-        throw new Error('The payment interstitial has not rendered yet.');
+        throw new Error('The payment banner has not rendered yet.');
       }
-      if (!screen.container.textContent?.includes('Buyers cannot pay you otherwise')) {
-        throw new Error('The payment interstitial copy has not rendered yet.');
+      if (!screen.container.textContent?.includes('You can prepare and save drafts now.')) {
+        throw new Error('The payment banner copy has not rendered yet.');
       }
     });
-    expect(screen.container.querySelector('#title')).toBeNull();
+    expect(screen.container.querySelector('#title')).not.toBeNull();
     await expect(await expectVrtSurface('listing-payment-setup')).toMatchScreenshot(
       'sell-payment-setup-mobile',
       VRT_DENSE_CHROME_SCREENSHOT,
     );
   });
 
-  it('returns to the listing composer after a payment method is configured', async () => {
+  it('drops the payment banner after a payment method is configured', async () => {
     view.adapterMode = 'transaction-service';
     view.drafts = [];
     view.mediaItems = [];
@@ -360,15 +359,15 @@ describe('Marketplace sell studio — visual regression', () => {
     const blocked = await renderForVRT(<MarketplaceSell />, { viewport: VRT_VIEWPORT_DESKTOP });
     await vi.waitFor(() => {
       if (!blocked.container.querySelector('[data-surface="listing-payment-setup"]')) {
-        throw new Error('The payment interstitial has not rendered yet.');
+        throw new Error('The payment banner has not rendered yet.');
       }
       if (!blocked.container.querySelector('a[href="/marketplace/settings?returnTo=%2Fmarketplace%2Fsell"]')) {
         throw new Error('The Payment settings link has not rendered yet.');
       }
     });
-    expect(blocked.container.querySelector('#title')).toBeNull();
+    expect(blocked.container.querySelector('#title')).not.toBeNull();
     const settingsLink = blocked.container.querySelector<HTMLAnchorElement>(
-      'a[href="/marketplace/settings?returnTo=%2Fmarketplace%2Fsell"]',
+      '[data-surface="listing-payment-setup"] a[href="/marketplace/settings?returnTo=%2Fmarketplace%2Fsell"]',
     );
     expect(settingsLink).not.toBeNull();
     settingsLink!.addEventListener('click', (event) => event.preventDefault(), { capture: true });
@@ -382,6 +381,9 @@ describe('Marketplace sell studio — visual regression', () => {
     await vi.waitFor(() => {
       if (!composer.container.querySelector('#title')) {
         throw new Error('The listing composer has not rendered yet.');
+      }
+      if (!composer.container.textContent?.includes('Open Drops')) {
+        throw new Error('The payment check has not finished yet.');
       }
     });
     expect(composer.container.querySelector('[data-surface="listing-payment-setup"]')).toBeNull();
@@ -732,11 +734,6 @@ describe('Marketplace sell studio — visual regression', () => {
     sellerPaymentConfig.mockImplementation(() => Promise.resolve(paidSellerPaymentConfig));
 
     const screen = await renderForVRT(<MarketplaceSell />, { viewport: VRT_VIEWPORT_DESKTOP });
-    await vi.waitFor(() => {
-      if (screen.container.querySelector('[data-surface="listing-payment-setup"]')) {
-        throw new Error('Payment interstitial is still covering the composer.');
-      }
-    });
     await resumeAutosavedDraft(screen);
     await vi.waitFor(() => {
       if (!screen.container.querySelector('[data-surface="listing-publish-guard"]')) {

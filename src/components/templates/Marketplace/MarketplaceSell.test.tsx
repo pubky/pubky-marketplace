@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useForm } from 'react-hook-form';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -295,34 +295,41 @@ describe('MarketplaceSell payment-method entrance', () => {
     sessionConnect.errorMessage = null;
   });
 
-  it('shows the payment interstitial and no listing fields when unconfigured', () => {
+  it('keeps the composer open under a payment banner when unconfigured, and still blocks publishing', async () => {
     paymentGate.reason = 'no-method';
+    createListing.publishBlocked = 'no-method';
+    createListing.submit.mockClear();
     render(<MarketplaceSell />);
 
-    expect(screen.getByRole('heading', { name: 'Set up how you get paid first' })).toBeInTheDocument();
-    expect(screen.queryByLabelText('Title')).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Publish listing' })).not.toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Payment settings' })).toHaveAttribute(
+    const banner = document.querySelector('[data-surface="listing-payment-setup"]') as HTMLElement;
+    expect(banner).toHaveTextContent('Add a payment method to publish');
+    expect(banner).toHaveTextContent('You can prepare and save drafts now.');
+    expect(within(banner).getByRole('link', { name: 'Payment settings' })).toHaveAttribute(
       'href',
       '/marketplace/settings?returnTo=%2Fmarketplace%2Fsell',
     );
+    expect(screen.getByLabelText('Title')).toBeInTheDocument();
+    expect(screen.getByText('Configure a payment method before publishing')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Publish listing' })).toBeDisabled();
+
+    fireEvent.submit(screen.getByRole('button', { name: 'Publish listing' }).closest('form')!);
+    await waitFor(() => expect(createListing.submit).not.toHaveBeenCalled());
   });
 
-  it('renders the listing composer once a payment method is configured', () => {
+  it('renders the listing composer without the banner once a payment method is configured', () => {
     render(<MarketplaceSell />);
 
-    expect(screen.queryByRole('heading', { name: 'Set up how you get paid first' })).not.toBeInTheDocument();
+    expect(document.querySelector('[data-surface="listing-payment-setup"]')).toBeNull();
     expect(screen.getByLabelText('Title')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Publish listing' })).toBeInTheDocument();
   });
 
-  it('hides listing fields while payment settings are still being checked', () => {
+  it('opens the composer while payment settings are still being checked, without the banner', () => {
     paymentGate.ready = false;
     render(<MarketplaceSell />);
 
-    expect(screen.getByText('Checking payment settings…')).toBeInTheDocument();
-    expect(screen.queryByLabelText('Title')).not.toBeInTheDocument();
-    expect(screen.queryByRole('link', { name: 'Payment settings' })).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Title')).toBeInTheDocument();
+    expect(document.querySelector('[data-surface="listing-payment-setup"]')).toBeNull();
   });
 
   it('bootstraps a marketplace session from the publish guard, not the buyer reconnect card', () => {

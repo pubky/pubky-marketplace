@@ -11,6 +11,7 @@ import { setSocialHost } from '@/test-utils/social-host';
 import { MarketplacePaymentSettings } from './MarketplacePaymentSettings';
 
 const view = vi.hoisted(() => ({
+  openConnect: vi.fn(),
   locksConnect: {
     connectedCreator: null,
     isExchanging: false,
@@ -80,7 +81,7 @@ vi.mock('@/hooks/useMarketplaceLocksConnect/useMarketplaceLocksConnect', async (
   useMarketplaceLocksConnect: () => ({
     ...view.locksConnect,
     setConnectIframe: vi.fn(),
-    openConnect: vi.fn(),
+    openConnect: view.openConnect,
     closeConnect: vi.fn(),
   }),
 }));
@@ -104,6 +105,7 @@ beforeEach(() => {
   sessionStorage.clear();
   navigation.push.mockReset();
   navigation.searchParams = new URLSearchParams();
+  view.openConnect.mockReset();
   view.locksConnect = {
     connectedCreator: null,
     isExchanging: false,
@@ -287,6 +289,129 @@ describe('MarketplacePaymentSettings', () => {
     expect(accept).toBeDisabled();
     expect(accept).not.toBeChecked();
     expect(screen.getByTestId('payment-method-status-bitcoin')).toHaveTextContent('Needs attention');
+  });
+
+  describe('Accept bitcoin reason', () => {
+    const SELLER = 'gy1wnkhfwezwdnawnur1bc3kw1x3jf5ggjj3cm37e31i5ntq3pco';
+
+    function connectLockServer() {
+      view.locksConnect = { ...view.locksConnect, connectedCreator: SELLER };
+    }
+
+    it('names both missing steps for a new seller and starts with the Lock Server', async () => {
+      await renderSettings();
+
+      const reason = screen.getByTestId('bitcoin-toggle-blocker');
+      expect(reason).toHaveTextContent('Connect the Lock Server and Bitkit first.');
+      expect(screen.getByRole('switch', { name: 'Accept bitcoin' })).toHaveAccessibleDescription(
+        'Connect the Lock Server and Bitkit first. Connect now',
+      );
+      fireEvent.click(within(reason).getByRole('button', { name: 'Connect now' }));
+      expect(view.openConnect).toHaveBeenCalledTimes(1);
+    });
+
+    it('names only the Lock Server when Bitkit is already connected', async () => {
+      mockedController.isOwnPaykitAccountClaimed.mockResolvedValue(true);
+      await renderSettings();
+
+      expect(screen.getByTestId('bitcoin-toggle-blocker')).toHaveTextContent(/^Connect the Lock Server first\./);
+    });
+
+    it('names only Bitkit once the Lock Server is connected, and opens Bitkit setup', async () => {
+      connectLockServer();
+      await renderSettings();
+
+      const reason = screen.getByTestId('bitcoin-toggle-blocker');
+      expect(reason).toHaveTextContent(/^Connect Bitkit first\./);
+      fireEvent.click(within(reason).getByRole('button', { name: 'Connect now' }));
+      expect(await screen.findByRole('dialog', { name: 'Connect Bitkit' })).toBeInTheDocument();
+      expect(view.openConnect).not.toHaveBeenCalled();
+    });
+
+    it('offers a recheck when the Bitkit status cannot be read', async () => {
+      connectLockServer();
+      mockedController.isOwnPaykitAccountClaimed.mockRejectedValue(new Error('offline'));
+      await renderSettings();
+
+      const reason = screen.getByTestId('bitcoin-toggle-blocker');
+      expect(reason).toHaveTextContent(/^We can't check Bitkit right now\./);
+      mockedController.isOwnPaykitAccountClaimed.mockResolvedValue(true);
+      fireEvent.click(within(reason).getByRole('button', { name: 'Check again' }));
+
+      await waitFor(() => expect(screen.getByRole('switch', { name: 'Accept bitcoin' })).toBeEnabled());
+      expect(screen.queryByTestId('bitcoin-toggle-blocker')).not.toBeInTheDocument();
+    });
+
+    it('shows no reason once both steps are connected', async () => {
+      connectLockServer();
+      mockedController.isOwnPaykitAccountClaimed.mockResolvedValue(true);
+      await renderSettings();
+
+      expect(screen.getByRole('switch', { name: 'Accept bitcoin' })).toBeEnabled();
+      expect(screen.queryByTestId('bitcoin-toggle-blocker')).not.toBeInTheDocument();
+    });
+
+    it('leaves the reason to the Enable selling prompt without a marketplace session', async () => {
+      useCommerceStore.setState({ marketplaceSession: null });
+      render(<MarketplacePaymentSettings />);
+
+      expect(await screen.findAllByText('Enable selling to save your payment methods.')).not.toHaveLength(0);
+      expect(screen.getByRole('switch', { name: 'Accept bitcoin' })).toBeDisabled();
+      expect(screen.queryByTestId('bitcoin-toggle-blocker')).not.toBeInTheDocument();
+    });
+  });
+
+  describe('PayPal email validation', () => {
+    it('refuses an invalid email inline and keeps Save disabled until it is fixed', async () => {
+      const user = userEvent.setup();
+      await renderSettings();
+      const save = screen.getAllByRole('button', { name: 'Save changes' })[0];
+      await waitFor(() => expect(save).toBeEnabled());
+
+      const email = screen.getByLabelText('PayPal merchant email');
+      await user.type(email, 'test');
+      expect(save).toBeDisabled();
+      expect(screen.queryByText('Enter a valid email address.')).not.toBeInTheDocument();
+
+      await user.tab();
+      expect(screen.getByRole('alert')).toHaveTextContent('Enter a valid email address.');
+      expect(email).toHaveAttribute('aria-invalid', 'true');
+      expect(email).toHaveAccessibleDescription('Enter a valid email address.');
+      for (const button of screen.getAllByRole('button', { name: 'Save changes' })) {
+        expect(button).toBeDisabled();
+      }
+
+      await user.type(email, '@example.com');
+      expect(screen.queryByText('Enter a valid email address.')).not.toBeInTheDocument();
+      expect(email).not.toHaveAttribute('aria-invalid');
+      await user.click(save);
+
+      await waitFor(() => expect(mockedController.putMyPaymentConfig).toHaveBeenCalledTimes(1));
+      expect(mockedController.putMyPaymentConfig).toHaveBeenLastCalledWith({
+        bitcoinEnabled: false,
+        paypalMerchantEmail: 'test@example.com',
+      });
+    });
+
+    it('lets the seller clear a saved email', async () => {
+      const user = userEvent.setup();
+      mockedController.getMyPaymentConfig.mockResolvedValue({
+        ...EMPTY_CONFIG,
+        paypalMerchantEmail: 'old@example.com',
+      });
+      await renderSettings();
+      const save = screen.getAllByRole('button', { name: 'Save changes' })[0];
+      await waitFor(() => expect(save).toBeEnabled());
+
+      await user.clear(screen.getByLabelText('PayPal merchant email'));
+      await user.click(save);
+
+      await waitFor(() => expect(mockedController.putMyPaymentConfig).toHaveBeenCalledTimes(1));
+      expect(mockedController.putMyPaymentConfig).toHaveBeenLastCalledWith({
+        bitcoinEnabled: false,
+        paypalMerchantEmail: null,
+      });
+    });
   });
 
   it('saves PayPal for a seller whose stored payment config is null', async () => {
