@@ -1,6 +1,6 @@
 import type { Keypair, PublicKey, Session } from '@synonymdev/pubky';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { CAPABILITIES, RING_COOKIE_CAPABILITIES } from '@/config/app';
+import { CAPABILITIES, KEYED_CAPABILITIES, RING_COOKIE_CAPABILITIES } from '@/config/app';
 import { AppError } from '@/libs/error/error';
 import {
   AuthErrorCode,
@@ -812,6 +812,7 @@ describe('HomeserverService', () => {
         ['a cookie session holding only the Shop grant', cookieSession(CAPABILITIES), false],
         ['a root cookie session', cookieSession('/:rw'), false],
         ['a grant session holding the Shop grant', grantSession(CAPABILITIES), true],
+        ['a grant session approved with scoped encryption keys', grantSession(KEYED_CAPABILITIES), true],
         ['an older grant missing chat permissions', grantSession(RING_COOKIE_CAPABILITIES), true],
         ['a core-only grant', grantSession('/pub/pubky.app/:rw,/pub/paykit/:rw,/priv/pubky.app/:rw'), true],
         ['a Chat-only grant', grantSession('/pub/chat/v0/:rw,/priv/chat/v0/:rw'), false],
@@ -837,6 +838,57 @@ describe('HomeserverService', () => {
         expect(HomeserverService.canCurrentSessionWrite('/priv/pubky.app/')).toBe(true);
         expect(HomeserverService.canCurrentSessionWrite('/pub/paykit/')).toBe(true);
         expect(HomeserverService.canCurrentSessionWrite('/priv/social/')).toBe(true);
+      });
+    });
+
+    describe('getSessionEncryptionKeys', () => {
+      function sessionWithGrant(grant: unknown): Session {
+        return asOpaque<Session>({ grant, info: { publicKey: { z32: () => 'o'.repeat(52) } } });
+      }
+
+      it('hands out an owned copy of the delivered keys and frees the grant view', () => {
+        const keys = { scopes: ['/priv/pubky.app/marketplace/'], free: vi.fn() };
+        const grant = { encryptionKeys: keys, free: vi.fn() };
+
+        expect(HomeserverService.getSessionEncryptionKeys(sessionWithGrant(grant))).toBe(keys);
+        expect(grant.free).toHaveBeenCalledOnce();
+        expect(keys.free).not.toHaveBeenCalled();
+      });
+
+      it('has none for a cookie session, a bare grant, or a signer that declined e', () => {
+        expect(HomeserverService.getSessionEncryptionKeys(null)).toBeNull();
+        expect(HomeserverService.getSessionEncryptionKeys(sessionWithGrant(undefined))).toBeNull();
+
+        const bare = { encryptionKeys: undefined, free: vi.fn() };
+        expect(HomeserverService.getSessionEncryptionKeys(sessionWithGrant(bare))).toBeNull();
+        expect(bare.free).toHaveBeenCalledOnce();
+
+        const declined = { scopes: [] as string[], free: vi.fn() };
+        const declinedGrant = { encryptionKeys: declined, free: vi.fn() };
+        expect(HomeserverService.getSessionEncryptionKeys(sessionWithGrant(declinedGrant))).toBeNull();
+        expect(declined.free).toHaveBeenCalledOnce();
+        expect(declinedGrant.free).toHaveBeenCalledOnce();
+      });
+
+      it('frees the grant view even when reading the keys throws', () => {
+        const grant = {
+          get encryptionKeys(): never {
+            throw new Error('wasm');
+          },
+          free: vi.fn(),
+        };
+        expect(() => HomeserverService.getSessionEncryptionKeys(sessionWithGrant(grant))).toThrow('wasm');
+        expect(grant.free).toHaveBeenCalledOnce();
+      });
+
+      it('gives the signed-in session keys only to the session owner', () => {
+        const keys = { scopes: ['/priv/pubky.app/marketplace/'], free: vi.fn() };
+        mockState.currentSession = sessionWithGrant({ encryptionKeys: keys, free: vi.fn() });
+
+        expect(HomeserverService.getCurrentSessionEncryptionKeys('o'.repeat(52))).toBe(keys);
+        expect(HomeserverService.getCurrentSessionEncryptionKeys('p'.repeat(52))).toBeNull();
+        mockState.currentSession = null;
+        expect(HomeserverService.getCurrentSessionEncryptionKeys('o'.repeat(52))).toBeNull();
       });
     });
   });

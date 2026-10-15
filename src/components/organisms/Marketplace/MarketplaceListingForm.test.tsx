@@ -44,6 +44,7 @@ const digitalCapability = vi.hoisted(() => ({
   pending: false,
   paypalAvailable: false,
   getSellerPaymentConfig: vi.fn(),
+  getIndicativeBtcRate: vi.fn(),
 }));
 
 // Presets are device-local (Dexie) and not under test here; the row's own
@@ -90,6 +91,7 @@ vi.mock('@/controllers/commerce/commerce', async (importOriginal) => {
           ? new Promise(() => {})
           : Promise.resolve({ available: digitalCapability.available, maxBytes: 52_428_800 }),
       getSellerPaymentConfig: digitalCapability.getSellerPaymentConfig,
+      getIndicativeBtcRate: digitalCapability.getIndicativeBtcRate,
       fetchSellerDigitalDelivery: () =>
         Promise.resolve({ listingAggregateId: 'listing:agg', current: null, lastVersion: 0, pinnedVersions: [] }),
     },
@@ -104,6 +106,21 @@ vi.mock('@/config/commerce', async () => ({
 vi.mock('@/molecules/Toaster/use-toast', () => ({
   toast: vi.fn(),
 }));
+
+const RATE = {
+  satUsd: 0.001,
+  btcUsd: 100_000,
+  lastUpdatedAt: new Date('2026-10-15T09:40:00Z'),
+  fiatPerBtc: {
+    USD: '100000',
+    EUR: '90000',
+    CHF: '80000',
+    GBP: '75000',
+    JPY: '15000000',
+    CAD: '135000',
+    AUD: '150000',
+  },
+};
 
 beforeAll(() => {
   Element.prototype.scrollIntoView = vi.fn();
@@ -122,6 +139,7 @@ beforeEach(() => {
   digitalCapability.available = true;
   digitalCapability.pending = false;
   digitalCapability.paypalAvailable = false;
+  digitalCapability.getIndicativeBtcRate.mockReset().mockResolvedValue(RATE);
   digitalCapability.getSellerPaymentConfig.mockReset();
   digitalCapability.getSellerPaymentConfig.mockImplementation(async () => ({
     bitcoinAvailable: true,
@@ -997,22 +1015,209 @@ describe('MarketplaceListingForm free shipping', () => {
       await waitFor(() => expect(onSubmit).toHaveBeenCalled());
       expect(shippingPresetsMock.saveFromFields).toHaveBeenCalledTimes(expected);
       if (expected)
-        expect(shippingPresetsMock.saveFromFields).toHaveBeenCalledWith(null, {
-          shippingLabel: 'Tracked',
-          shippingPrice: '12.00',
-          shippingMinDays: '3',
-          shippingMaxDays: '7',
-        });
+        expect(shippingPresetsMock.saveFromFields).toHaveBeenCalledWith(
+          null,
+          {
+            shippingLabel: 'Tracked',
+            shippingPrice: '12.00',
+            shippingMinDays: '3',
+            shippingMaxDays: '7',
+          },
+          'USD',
+        );
     },
   );
 
-  it.each([{ freeShipping: true }, { currency: 'BTC' as const }])(
-    'does not offer incompatible shipping presets (%j)',
-    (values) => {
-      render(<FormHarness defaultValues={values} />);
-      expect(screen.getByRole('checkbox', { name: 'Save delivery details as preset' })).toBeDisabled();
-    },
-  );
+  it('offers every listing currency in the pricing currency picker', async () => {
+    const user = userEvent.setup();
+    render(<FormHarness />);
+
+    await user.click(screen.getByRole('combobox', { name: 'Pricing currency' }));
+
+    for (const name of [
+      'US dollars (USD)',
+      'Euros (EUR)',
+      'Swiss francs (CHF)',
+      'British pounds (GBP)',
+      'Japanese yen (JPY)',
+      'Canadian dollars (CAD)',
+      'Australian dollars (AUD)',
+      'Bitcoin (₿)',
+    ]) {
+      expect(screen.getByRole('option', { name })).toBeInTheDocument();
+    }
+    expect(screen.getAllByRole('option')).toHaveLength(8);
+  });
+
+  it.each([
+    { currency: 'EUR', unit: 'EUR', price: '125.00', shipping: '12.00' },
+    { currency: 'CHF', unit: 'CHF', price: '125.00', shipping: '12.00' },
+    { currency: 'JPY', unit: 'JPY', price: '12500', shipping: '1200' },
+    { currency: 'BTC', unit: '₿', price: '150000', shipping: '15000' },
+  ] as const)('labels and exemplifies price inputs in $currency', ({ currency, unit, price, shipping }) => {
+    render(<FormHarness defaultValues={{ currency }} />);
+
+    expect(screen.getByLabelText(`Price (${unit})`)).toHaveAttribute('placeholder', price);
+    expect(screen.getByLabelText(`Flat shipping (${unit})`)).toHaveAttribute('placeholder', shipping);
+  });
+
+  it('switches the price input unit when the seller picks another currency', async () => {
+    const user = userEvent.setup();
+    render(<FormHarness />);
+    expect(screen.getByLabelText('Price (USD)')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('combobox', { name: 'Pricing currency' }));
+    await user.click(screen.getByRole('option', { name: 'Japanese yen (JPY)' }));
+
+    expect(screen.getByLabelText('Price (JPY)')).toHaveAttribute('placeholder', '12500');
+    expect(screen.queryByText(/Bitcoin prices are entered in whole base units/)).not.toBeInTheDocument();
+  });
+
+  it('keeps the bitcoin base-unit hint for bitcoin only', () => {
+    render(<FormHarness defaultValues={{ currency: 'BTC' }} />);
+
+    expect(screen.getByText(/Bitcoin prices are entered in whole base units/)).toBeInTheDocument();
+  });
+
+  function chfPreset(overrides: Partial<(typeof shippingPresetsMock.presets)[number]> = {}) {
+    return {
+      id: 'preset_chf',
+      owner_id: 'y'.repeat(52),
+      label: 'Swiss Post',
+      price_minor: 800,
+      currency: 'CHF',
+      estimated_min_days: 2,
+      estimated_max_days: 4,
+      created_at: 1,
+      updated_at: 1,
+      ...overrides,
+    };
+  }
+
+  it('offers presets on listings in any currency, with each price in its own currency', async () => {
+    shippingPresetsMock.presets = [
+      chfPreset(),
+      chfPreset({ id: 'preset_usd', label: 'UPS', currency: 'USD', price_minor: 1200 }),
+    ];
+    const user = userEvent.setup();
+    render(<FormHarness defaultValues={{ currency: 'EUR' }} />);
+
+    await user.click(screen.getByRole('combobox', { name: /shipping preset/i }));
+
+    expect(await screen.findByRole('option', { name: /Swiss Post · CHF.8\.00/ })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: /UPS · \$12\.00/ })).toBeInTheDocument();
+  });
+
+  it('shows the display-currency hint beside a preset price, like any price', async () => {
+    shippingPresetsMock.presets = [chfPreset()];
+    const user = userEvent.setup();
+    render(<FormHarness defaultValues={{ currency: 'EUR' }} />);
+
+    await user.click(screen.getByRole('combobox', { name: /shipping preset/i }));
+
+    // CHF 8.00 = 0.0001 BTC = $10.00 for a buyer displaying in dollars.
+    expect(await screen.findByRole('option', { name: /Swiss Post · CHF.8\.00 ≈ \$10\.00/ })).toBeInTheDocument();
+  });
+
+  it('converts a preset into the listing currency, fills the field, and says so before saving', async () => {
+    shippingPresetsMock.presets = [chfPreset()];
+    const user = userEvent.setup();
+    render(<FormHarness defaultValues={{ currency: 'EUR', freeShipping: true, shippingPrice: '' }} />);
+    await waitFor(() => expect(digitalCapability.getIndicativeBtcRate).toHaveBeenCalled());
+
+    await user.click(screen.getByRole('combobox', { name: /shipping preset/i }));
+    await user.click(await screen.findByRole('option', { name: /Swiss Post/ }));
+
+    // CHF 8.00 = 0.0001 BTC = EUR 9.00
+    await waitFor(() => expect(screen.getByLabelText(/Flat shipping/)).toHaveValue('9.00'));
+    expect(screen.getByRole('status')).toHaveTextContent('Converted from CHF');
+    expect(screen.getByRole('status')).toHaveTextContent('€9.00');
+    expect(screen.getByRole('status')).toHaveTextContent('Check the amount before you publish');
+  });
+
+  it('converts into a listing currency without decimals', async () => {
+    shippingPresetsMock.presets = [chfPreset({ id: 'preset_usd', currency: 'USD', price_minor: 1000 })];
+    const user = userEvent.setup();
+    render(<FormHarness defaultValues={{ currency: 'JPY', freeShipping: true, shippingPrice: '' }} />);
+    await waitFor(() => expect(digitalCapability.getIndicativeBtcRate).toHaveBeenCalled());
+
+    await user.click(screen.getByRole('combobox', { name: /shipping preset/i }));
+    await user.click(await screen.findByRole('option', { name: /Swiss Post/ }));
+
+    await waitFor(() => expect(screen.getByLabelText(/Flat shipping/)).toHaveValue('1500'));
+  });
+
+  it('applies a preset already in the listing currency without a conversion note', async () => {
+    shippingPresetsMock.presets = [chfPreset()];
+    const user = userEvent.setup();
+    render(<FormHarness defaultValues={{ currency: 'CHF', freeShipping: true, shippingPrice: '' }} />);
+
+    await user.click(screen.getByRole('combobox', { name: /shipping preset/i }));
+    await user.click(await screen.findByRole('option', { name: /Swiss Post/ }));
+
+    await waitFor(() => expect(screen.getByLabelText(/Flat shipping/)).toHaveValue('8.00'));
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+  });
+
+  it('refuses to guess when no rate is available: the field is untouched and the seller is told', async () => {
+    digitalCapability.getIndicativeBtcRate.mockRejectedValue(new Error('rates down'));
+    shippingPresetsMock.presets = [chfPreset()];
+    const user = userEvent.setup();
+    render(<FormHarness defaultValues={{ currency: 'EUR', freeShipping: true, shippingPrice: '' }} />);
+    await waitFor(() => expect(digitalCapability.getIndicativeBtcRate).toHaveBeenCalled());
+
+    await user.click(screen.getByRole('combobox', { name: /shipping preset/i }));
+    await user.click(await screen.findByRole('option', { name: /Swiss Post/ }));
+
+    expect(toast).toHaveBeenCalledWith(
+      expect.objectContaining({
+        variant: 'error',
+        description: expect.stringContaining('could not be converted to EUR'),
+      }),
+    );
+    expect(screen.getByLabelText(/Flat shipping/)).toHaveValue('');
+    expect(screen.getByRole('checkbox', { name: 'Free shipping' })).toBeChecked();
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+  });
+
+  it.each(['EUR', 'CHF', 'JPY', 'BTC'] as const)('saves a preset in the %s listing currency', async (currency) => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn(async () => true);
+    render(
+      <FormHarness
+        onSubmit={onSubmit}
+        media={buildMedia([photoItem('one')])}
+        defaultValues={{
+          title: 'Vintage boots',
+          description: 'Well cared for boots.',
+          categoryId: 'fashion',
+          price: '125',
+          currency,
+          shippingLabel: 'Tracked',
+          shippingPrice: '12',
+          shippingMinDays: '3',
+          shippingMaxDays: '7',
+          packageWeight: '1200',
+          packageLength: '35',
+          packageWidth: '25',
+          packageHeight: '15',
+        }}
+      />,
+    );
+    const checkbox = screen.getByRole('checkbox', { name: 'Save delivery details as preset' });
+    expect(checkbox).toBeEnabled();
+    await user.click(checkbox);
+    await user.click(screen.getByRole('button', { name: 'Publish listing' }));
+
+    await waitFor(() => expect(shippingPresetsMock.saveFromFields).toHaveBeenCalledTimes(1));
+    expect(shippingPresetsMock.saveFromFields).toHaveBeenCalledWith(null, expect.any(Object), currency);
+  });
+
+  it('does not offer to save free shipping as a preset', () => {
+    render(<FormHarness defaultValues={{ freeShipping: true }} />);
+
+    expect(screen.getByRole('checkbox', { name: 'Save delivery details as preset' })).toBeDisabled();
+  });
 });
 
 describe('MarketplaceListingForm publish gate vs schema', () => {

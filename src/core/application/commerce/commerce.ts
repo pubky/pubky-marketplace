@@ -17,6 +17,7 @@ import {
   isTransactionalCommerceMode,
   MARKETPLACE_FOLLOWED_SHELF_MAX_SELLER_FETCHES,
 } from '@/config/commerce';
+import { BASE_UNITS_PER_BITCOIN } from '@/config/currencies';
 import { NEXUS_LISTINGS_PER_PAGE } from '@/config/nexus';
 import { readAuthEpoch } from '@/controllers/auth/auth-epoch';
 import {
@@ -157,8 +158,10 @@ import {
   type WatchObservation,
   type WatchProjectionObservation,
 } from '@/pipes/marketplaceWatch/marketplaceWatch.detector';
+import { buildFxRateSnapshot } from '@/pipes/money/money.rates';
 import { MarketplaceMediaService } from '@/services/commerce/marketplace-media';
 import { ExchangerateService } from '@/services/exchangerate/exchangerate';
+import type { BtcRate } from '@/services/exchangerate/exchangerate.types';
 import { CommerceHomeserverService } from '@/services/homeserver/commerce/commerce';
 import { CommercePrivStoreService } from '@/services/homeserver/commerce/priv-store';
 import { HomeserverService, PRIVATE_APP_DATA_PATH } from '@/services/homeserver/homeserver';
@@ -1776,13 +1779,22 @@ export class CommerceApplication {
   }
 
   /**
-   * BTC/USD rate for the indicative "≈" price estimates shown beside listing
-   * prices. Display-only: nothing transactional consumes this rate, and it
-   * throws when unavailable so the UI shows no estimate instead of a stale
-   * or invented number.
+   * The bitcoin price in every listing currency, from one Blocktank snapshot,
+   * for the indicative "≈" price hints shown beside listing prices.
+   * Display-only: nothing transactional consumes these rates (the service
+   * fixes the amount actually charged at checkout), and it throws when
+   * unavailable so the UI shows no hint instead of a stale or invented number.
    */
-  static async getIndicativeBtcRate() {
-    return await ExchangerateService.getIndicativeBtcRate();
+  static async getIndicativeBtcRate(): Promise<BtcRate> {
+    const { fiatPerBtc } = buildFxRateSnapshot(await ExchangerateService.getIndicativeTickers());
+    const btcUsd = Number(fiatPerBtc.USD);
+    if (!Number.isFinite(btcUsd) || btcUsd <= 0) {
+      throw Err.server(ServerErrorCode.INVALID_RESPONSE, 'BTCUSD ticker not found in API response', {
+        service: ErrorService.Exchangerate,
+        operation: 'getIndicativeBtcRate',
+      });
+    }
+    return { btcUsd, satUsd: btcUsd / BASE_UNITS_PER_BITCOIN, lastUpdatedAt: new Date(), fiatPerBtc };
   }
 
   static async isFavorite(ownerPubky: string, listingId: string): Promise<boolean> {
@@ -1897,7 +1909,16 @@ export class CommerceApplication {
   // ---------------------------------------------------------------------------
 
   /** In-flight sync per owner, so overlapping triggers share one round-trip. */
-  private static watchlistSyncInFlight = new Map<string, Promise<CommerceWatchlistSyncStatus>>();
+  private static watchlistSyncInFlight = new Map<
+    string,
+    { run: Promise<CommerceWatchlistSyncStatus>; purchaseSession: string; keysEpoch: number }
+  >();
+
+  /** Which purchase session a round started under: the private data key is released to it, and only to it. */
+  private static watchlistPurchaseSessionId(): string {
+    const session = MarketplaceSessionService.getActiveSession();
+    return session ? `${session.pubky}:${session.issuedAt}` : '';
+  }
 
   private static watchlistSyncJobId(ownerPubky: string): string {
     return `watchlist|${ownerPubky}`;
@@ -1967,7 +1988,18 @@ export class CommerceApplication {
     if (capability === 'needs_reauth') return 'needs_reauth';
 
     const inFlight = this.watchlistSyncInFlight.get(ownerPubky);
-    if (inFlight) return await inFlight;
+    if (inFlight) {
+      const outcome = await inFlight.run;
+      // A round that started before the purchase session changed asked the
+      // marketplace for the key without it (or with the old one), and one that
+      // ended without the document while keys became available meanwhile
+      // (another reader took custody of them) never read it. Its outcome says
+      // nothing about the new state, so read the document again.
+      const sessionChanged = inFlight.purchaseSession !== this.watchlistPurchaseSessionId();
+      const keysArrived = outcome !== 'synced' && inFlight.keysEpoch !== CommercePrivKeyringApplication.getReadyEpoch();
+      if (sessionChanged || keysArrived) return await this.syncWatchlist(ownerPubky);
+      return outcome;
+    }
 
     // Without a lock every tab shares, two rounds can interleave their
     // read-merge-write and one tab's change is lost. No lock, no remote work:
@@ -1985,7 +2017,11 @@ export class CommerceApplication {
         this.watchlistSyncInFlight.delete(ownerPubky);
       }
     })();
-    this.watchlistSyncInFlight.set(ownerPubky, run);
+    this.watchlistSyncInFlight.set(ownerPubky, {
+      run,
+      purchaseSession: this.watchlistPurchaseSessionId(),
+      keysEpoch: CommercePrivKeyringApplication.getReadyEpoch(),
+    });
     return await run;
   }
 
@@ -3836,6 +3872,14 @@ export class CommerceApplication {
       this.assertListingRegistrationFence(attempt);
       return stillObserved;
     };
+    // A heal of a listing the service already holds (re-syncing a stale projection) leaves its row as it
+    // is: a failure must not offer registration again, and an unchanged success need not rewrite it.
+    const healsRegisteredRow = async (): Promise<boolean> => {
+      if (owner !== 'heal') return false;
+      const { registrationStatus } = await LocalCommerceService.getListingRegistrationState(attempt.compositeListingId);
+      this.assertListingRegistrationFence(attempt);
+      return registrationStatus === 'registered';
+    };
     try {
       assertPublishableListingStock(record, 'registerListing');
       if (isDurableCommerceMode(getCommerceAdapterMode())) {
@@ -3860,7 +3904,7 @@ export class CommerceApplication {
             await this.settleUnregistrableListing(attempt, outcome);
             return false;
           }
-          await settle({ status: 'registered' });
+          if (!(await healsRegisteredRow())) await settle({ status: 'registered' });
           if (publishJobId) {
             this.assertListingRegistrationFence(attempt);
             await LocalCommerceService.completeSyncJob(publishJobId);
@@ -3868,7 +3912,7 @@ export class CommerceApplication {
           return true;
         } catch (error) {
           if (!this.listingRegistrationFenceHolds(attempt)) return false;
-          await settle({ status: 'unregistered' });
+          if (!(await healsRegisteredRow())) await settle({ status: 'unregistered' });
           Logger.warn('Listing registration failed; it stays pending for the next attempt', { error });
           return false;
         }
@@ -3878,7 +3922,9 @@ export class CommerceApplication {
       if (!this.listingRegistrationFenceHolds(attempt)) return false;
       // Best effort: a refused lock or a sign-out here leaves the row as it is, which is already pending.
       await this.withListingRegistrationLock(attempt, 'heal', async () => {
-        if (await this.listingRowStillObserved(attempt)) await settle({ status: 'unregistered' });
+        if ((await this.listingRowStillObserved(attempt)) && !(await healsRegisteredRow())) {
+          await settle({ status: 'unregistered' });
+        }
       }).catch(() => null);
       Logger.warn('Listing registration failed before it reached the service; it stays pending', { error });
       return false;
@@ -4555,7 +4601,10 @@ export class CommerceApplication {
       signal: attempt.signal,
     });
     this.assertListingRegistrationFence(attempt);
-    if (existing?.serverRevision) {
+    // `listing.register` carries no Locks lock, so a Locks listing registered with it would sell as a
+    // digital item without its lock. `listing.sync` derives the lock from the seller-signed record.
+    const locksListing = durable && listing.digitalLock !== undefined;
+    if (existing?.serverRevision || locksListing) {
       // Already registered: EDITS must still reach the authority. `listing.sync`
       // is convergent — the service re-reads the seller-signed record and
       // updates the aggregate's terms when the record revision advanced, or
@@ -4566,7 +4615,14 @@ export class CommerceApplication {
         const command = this.createListingSyncCommand(listing.ownerPubky, listing.listingId);
         const response = await send(command);
         if (isListingRecordNotFoundResponse(response, aggregateId, command.commandId)) return 'service_not_found';
-        if (!isSuccessfulListingRegistrationResponse(response, aggregateId, command.commandId, true)) {
+        if (
+          !isSuccessfulListingRegistrationResponse(
+            response,
+            aggregateId,
+            command.commandId,
+            Boolean(existing?.serverRevision),
+          )
+        ) {
           throw Err.client(ClientErrorCode.BAD_REQUEST, 'Marketplace listing registration was refused.', {
             service: ErrorService.Marketplace,
             operation: 'registerListing',

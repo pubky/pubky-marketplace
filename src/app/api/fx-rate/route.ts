@@ -8,11 +8,14 @@ import { HttpMethod } from '@/libs/http/http.types';
 import { PARSE_JSON_WITH_BODY_EXCERPT, parseResponseOrThrow } from '@/libs/http/response.utils';
 
 /**
- * Same-origin proxy for the BTC/USD indicative-rate source. The upstream
- * (BlockTank) sends no Access-Control-Allow-Origin header, so browsers on
- * shop.pubky.app cannot fetch it directly — the "≈" estimates silently died
- * behind a CORS error. This route fetches server-side and re-serves the
- * body verbatim; the service layer keeps all shape validation.
+ * Same-origin proxy for the Blocktank bitcoin rate feed
+ * (`https://api1.blocktank.to/api/fx/rates/btc`, the feed Bitkit shows). It
+ * carries a `BTC<CCY>` ticker for every listing currency, so one response backs
+ * the converted price hint in any of them. The upstream sends no
+ * Access-Control-Allow-Origin header, so browsers on shop.pubky.app cannot
+ * fetch it directly — the "≈" estimates silently died behind a CORS error.
+ * This route fetches server-side and re-serves the body verbatim; the service
+ * layer keeps all shape validation.
  *
  * Cache mirrors the service's five-minute rate cache so the CDN absorbs
  * repeat lookups; an indicative display estimate does not need to be

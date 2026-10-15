@@ -1,13 +1,20 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { capabilitiesMatchFullGrant } from '@/libs/auth/capabilities';
+import { resetRuntimeConfigForTests } from '@/libs/runtime-config/runtime-config';
+import { PUBKY_RUNTIME_ENV_NAMES } from '@/libs/runtime-config/runtime-config.schema';
 import ringCookie from '@/test/fixtures/auth/ring-cookie-signin.pubky-common-0.11.json';
 import {
   CAPABILITIES,
   capabilitiesMatchRingCookieGrant,
   getShopGrantClientId,
+  isPrivKeysRequested,
+  KEYED_CAPABILITIES,
+  PRIV_KEYS_SCOPE,
+  PRIV_KEYS_SCOPE_DECLINED,
   RING_COOKIE_CAPABILITIES,
   SHOP_GRANT_CLIENT_ID,
 } from './app';
+import { getHomeserver } from './network';
 
 const runtime = vi.hoisted(() => ({ grantClientId: undefined as string | undefined }));
 
@@ -123,5 +130,100 @@ describe('capabilitiesMatchRingCookieGrant', () => {
     ['an extra entry', [...ring, '/:rw']],
   ])('refuses %s', (_label, capabilities) => {
     expect(capabilitiesMatchRingCookieGrant(capabilities)).toBe(false);
+  });
+});
+
+describe('scoped encryption keys in the grant request', () => {
+  it('asks for e on the Shop private tree only, keeping every existing scope', () => {
+    expect(PRIV_KEYS_SCOPE).toBe('/priv/pubky.app/marketplace/:rwe');
+    expect(KEYED_CAPABILITIES).toBe(`${CAPABILITIES},${PRIV_KEYS_SCOPE}`);
+    const withE = KEYED_CAPABILITIES.split(',').filter((entry) => entry.split(':')[1]?.includes('e'));
+    expect(withE).toEqual([PRIV_KEYS_SCOPE]);
+  });
+
+  it('keeps the Ring cookie set free of e: a cookie session cannot carry keys', () => {
+    expect(RING_COOKIE_CAPABILITIES).not.toContain(':rwe');
+    expect(RING_COOKIE_CAPABILITIES.split(',').every((entry) => !entry.split(':')[1]?.includes('e'))).toBe(true);
+  });
+
+  describe('capabilitiesMatchFullGrant', () => {
+    it('accepts a session approved without keys, with keys, and with e declined', () => {
+      expect(capabilitiesMatchFullGrant(CAPABILITIES.split(','))).toBe(true);
+      expect(capabilitiesMatchFullGrant(KEYED_CAPABILITIES.split(','))).toBe(true);
+      expect(capabilitiesMatchFullGrant([...CAPABILITIES.split(','), PRIV_KEYS_SCOPE_DECLINED])).toBe(true);
+      expect(capabilitiesMatchFullGrant([...KEYED_CAPABILITIES.split(',')].reverse())).toBe(true);
+    });
+
+    it('still refuses a grant whose e scope stands in for a missing core Shop scope', () => {
+      expect(capabilitiesMatchFullGrant(KEYED_CAPABILITIES.split(',').slice(1))).toBe(false);
+      expect(capabilitiesMatchFullGrant([PRIV_KEYS_SCOPE, '/pub/pubky.app/:rw', '/pub/paykit/:rw'])).toBe(false);
+    });
+  });
+
+  describe('isPrivKeysRequested', () => {
+    beforeEach(() => resetRuntimeConfigForTests());
+    afterEach(() => {
+      delete process.env[PUBKY_RUNTIME_ENV_NAMES.privEncryptionKeys];
+      delete process.env[PUBKY_RUNTIME_ENV_NAMES.passportPrivEncryptionKeys];
+      delete process.env[PUBKY_RUNTIME_ENV_NAMES.privEncryptionKeysHomeservers];
+      resetRuntimeConfigForTests();
+    });
+
+    const HOMESERVER = getHomeserver();
+    const listed = () => JSON.stringify([HOMESERVER]);
+    const unlisted = () => JSON.stringify(['another-homeserver-key']);
+
+    it('is off by default', () => {
+      expect(isPrivKeysRequested()).toBe(false);
+      expect(isPrivKeysRequested('passport')).toBe(false);
+    });
+
+    it('needs the switch and the deploy homeserver on the list', () => {
+      process.env[PUBKY_RUNTIME_ENV_NAMES.privEncryptionKeys] = 'true';
+      expect(isPrivKeysRequested()).toBe(false);
+
+      resetRuntimeConfigForTests();
+      process.env[PUBKY_RUNTIME_ENV_NAMES.privEncryptionKeys] = 'true';
+      process.env[PUBKY_RUNTIME_ENV_NAMES.privEncryptionKeysHomeservers] = unlisted();
+      expect(isPrivKeysRequested()).toBe(false);
+
+      resetRuntimeConfigForTests();
+      process.env[PUBKY_RUNTIME_ENV_NAMES.privEncryptionKeys] = 'true';
+      process.env[PUBKY_RUNTIME_ENV_NAMES.privEncryptionKeysHomeservers] = listed();
+      expect(isPrivKeysRequested()).toBe(true);
+    });
+
+    it('stays off when the list names the homeserver but the switch is off', () => {
+      process.env[PUBKY_RUNTIME_ENV_NAMES.privEncryptionKeysHomeservers] = listed();
+      expect(isPrivKeysRequested()).toBe(false);
+
+      resetRuntimeConfigForTests();
+      process.env[PUBKY_RUNTIME_ENV_NAMES.privEncryptionKeys] = 'false';
+      process.env[PUBKY_RUNTIME_ENV_NAMES.privEncryptionKeysHomeservers] = listed();
+      expect(isPrivKeysRequested()).toBe(false);
+    });
+
+    it('applies the switch for every signer to the Passport sign-in too', () => {
+      process.env[PUBKY_RUNTIME_ENV_NAMES.privEncryptionKeys] = 'true';
+      process.env[PUBKY_RUNTIME_ENV_NAMES.privEncryptionKeysHomeservers] = listed();
+      expect(isPrivKeysRequested('passport')).toBe(true);
+    });
+
+    it('opens e for the Passport sign-in alone with the Passport switch', () => {
+      process.env[PUBKY_RUNTIME_ENV_NAMES.passportPrivEncryptionKeys] = 'true';
+      process.env[PUBKY_RUNTIME_ENV_NAMES.privEncryptionKeysHomeservers] = listed();
+      expect(isPrivKeysRequested('passport')).toBe(true);
+      expect(isPrivKeysRequested()).toBe(false);
+    });
+
+    it('keeps the Passport switch behind the homeserver list', () => {
+      process.env[PUBKY_RUNTIME_ENV_NAMES.passportPrivEncryptionKeys] = 'true';
+      expect(isPrivKeysRequested('passport')).toBe(false);
+
+      resetRuntimeConfigForTests();
+      process.env[PUBKY_RUNTIME_ENV_NAMES.passportPrivEncryptionKeys] = 'true';
+      process.env[PUBKY_RUNTIME_ENV_NAMES.privEncryptionKeysHomeservers] = unlisted();
+      expect(isPrivKeysRequested('passport')).toBe(false);
+    });
   });
 });

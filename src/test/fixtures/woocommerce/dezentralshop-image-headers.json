@@ -1,0 +1,169 @@
+{
+  "recordedAt": "2026-10-15",
+  "method": "HEAD (curl -I)",
+  "note": "Headers of the image URLs in dezentralshop-woo-export-2026-10-15.csv, recorded once from the public site. Tests stub these; CI never fetches them.",
+  "responses": [
+    {
+      "url": "https://dezentralshop.ch/wp-content/uploads/2025/12/Isch-Okay-e1663795277455.jpeg",
+      "status": 200,
+      "contentType": "image/jpeg",
+      "contentLength": 59710
+    },
+    {
+      "url": "https://dezentralshop.ch/wp-content/uploads/2025/12/Node-Schluessel-e1663796283253.jpeg",
+      "status": 200,
+      "contentType": "image/jpeg",
+      "contentLength": 58254
+    },
+    {
+      "url": "https://dezentralshop.ch/wp-content/uploads/2025/12/PlebRap-e1663797131316.jpeg",
+      "status": 200,
+      "contentType": "image/jpeg",
+      "contentLength": 55320
+    },
+    {
+      "url": "https://dezentralshop.ch/wp-content/uploads/2025/12/Socken-II-scaled-1.jpg",
+      "status": 200,
+      "contentType": "image/jpeg",
+      "contentLength": 607972
+    },
+    {
+      "url": "https://dezentralshop.ch/wp-content/uploads/2025/12/Socken-I-scaled-1.jpg",
+      "status": 200,
+      "contentType": "image/jpeg",
+      "contentLength": 507183
+    },
+    {
+      "url": "https://dezentralshop.ch/wp-content/uploads/2025/12/Socken-Box-II-scaled-2.jpg",
+      "status": 200,
+      "contentType": "image/jpeg",
+      "contentLength": 379922
+    },
+    {
+      "url": "https://dezentralshop.ch/wp-content/uploads/2025/12/Socken-Box-I-scaled-1.jpg",
+      "status": 200,
+      "contentType": "image/jpeg",
+      "contentLength": 300608
+    },
+    {
+      "url": "https://dezentralshop.ch/wp-content/uploads/2025/12/tshirts_weiss_formel_-768x768-1.jpeg",
+      "status": 200,
+      "contentType": "image/jpeg",
+      "contentLength": 33219
+    },
+    {
+      "url": "https://dezentralshop.ch/wp-content/uploads/2025/12/Formel.jpg",
+      "status": 200,
+      "contentType": "image/jpeg",
+      "contentLength": 90175
+    },
+    {
+      "url": "https://dezentralshop.ch/wp-content/uploads/2025/12/Bitcoin-Basecap-1.png",
+      "status": 200,
+      "contentType": "image/png",
+      "contentLength": 225959
+    },
+    {
+      "url": "https://dezentralshop.ch/wp-content/uploads/2025/12/Bascap1.png",
+      "status": 200,
+      "contentType": "image/png",
+      "contentLength": 746343
+    },
+    {
+      "url": "https://dezentralshop.ch/wp-content/uploads/2025/12/Bascap4.png",
+      "status": 200,
+      "contentType": "image/png",
+      "contentLength": 589672
+    },
+    {
+      "url": "https://dezentralshop.ch/wp-content/uploads/2025/12/Bascap2.png",
+      "status": 200,
+      "contentType": "image/png",
+      "contentLength": 599518
+    },
+    {
+      "url": "https://dezentralshop.ch/wp-content/uploads/2025/12/4-1.png",
+      "status": 200,
+      "contentType": "image/png",
+      "contentLength": 205083
+    },
+    {
+      "url": "https://dezentralshop.ch/wp-content/uploads/2025/12/13-1.png",
+      "status": 200,
+      "contentType": "image/png",
+      "contentLength": 580342
+    },
+    {
+      "url": "https://dezentralshop.ch/wp-content/uploads/2025/12/11.png",
+      "status": 200,
+      "contentType": "image/png",
+      "contentLength": 238971
+    },
+    {
+      "url": "https://dezentralshop.ch/wp-content/uploads/2025/12/7.png",
+      "status": 200,
+      "contentType": "image/png",
+      "contentLength": 319115
+    },
+    {
+      "url": "https://dezentralshop.ch/wp-content/uploads/2025/12/6.png",
+      "status": 200,
+      "contentType": "image/png",
+      "contentLength": 426895
+    },
+    {
+      "url": "https://dezentralshop.ch/wp-content/uploads/2025/12/3.png",
+      "status": 200,
+      "contentType": "image/png",
+      "contentLength": 201586
+    },
+    {
+      "url": "https://dezentralshop.ch/wp-content/uploads/2025/12/tshirt_first_transaction-e1747051967469.jpg",
+      "status": 200,
+      "contentType": "image/jpeg",
+      "contentLength": 51195
+    },
+    {
+      "url": "https://dezentralshop.ch/wp-content/uploads/2025/12/model_herren_first_transaction.jpg",
+      "status": 200,
+      "contentType": "image/jpeg",
+      "contentLength": 198821
+    },
+    {
+      "url": "https://dezentralshop.ch/wp-content/uploads/2025/12/tshirt_first_transaction-II.jpg",
+      "status": 200,
+      "contentType": "image/jpeg",
+      "contentLength": 143696
+    },
+    {
+      "url": "https://dezentralshop.ch/wp-content/uploads/2025/12/tshirts_LN-Herren.jpg",
+      "status": 200,
+      "contentType": "image/jpeg",
+      "contentLength": 1102991
+    },
+    {
+      "url": "https://dezentralshop.ch/wp-content/uploads/2025/12/tshirts_LN-Herren-II.jpg",
+      "status": 200,
+      "contentType": "image/jpeg",
+      "contentLength": 164517
+    },
+    {
+      "url": "https://dezentralshop.ch/wp-content/uploads/2025/12/t-shirt_lightning.jpg",
+      "status": 200,
+      "contentType": "image/jpeg",
+      "contentLength": 489536
+    },
+    {
+      "url": "https://dezentralshop.ch/wp-content/uploads/2025/12/Orange-Pill-chill.png",
+      "status": 200,
+      "contentType": "image/png",
+      "contentLength": 161588
+    },
+    {
+      "url": "https://dezentralshop.ch/wp-content/uploads/2025/12/Orange-Pill-Chill-I.png",
+      "status": 200,
+      "contentType": "image/png",
+      "contentLength": 103054
+    }
+  ]
+}

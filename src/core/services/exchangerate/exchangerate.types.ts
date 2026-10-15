@@ -1,7 +1,9 @@
+import type { ListingFiatCurrencyCode } from '@/config/currencies';
+
 /**
  * BlockTank API response types
  */
-interface BlockTankTicker {
+export interface BlockTankTicker {
   symbol: string;
   lastPrice: string;
   base: string;
@@ -30,4 +32,10 @@ export interface BtcRate {
    * The timestamp of the last update
    */
   lastUpdatedAt: Date;
+  /**
+   * The price of one bitcoin in each listing currency the feed quoted (USD
+   * included), as decimal strings. Absent on a rate read for USD alone; USD is
+   * then the only known price.
+   */
+  fiatPerBtc?: Readonly<Partial<Record<ListingFiatCurrencyCode, string>>>;
 }
