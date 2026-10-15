@@ -156,13 +156,49 @@ describe('MarketplaceConnectorsService', () => {
     ).rejects.toMatchObject({ message: 'The marketplace service returned an unexpected response.' });
   });
 
-  it('says a store type with no pasted keys refuses them', async () => {
-    fetchMock.mockResolvedValue(json({ error: { code: 'credentials_not_supported', message: 'x' } }, 422));
+  it('connects a WooCommerce draft with a pasted key pair, snake_case, and reads the connected store back', async () => {
+    fetchMock.mockResolvedValue(
+      json({
+        kind: 'connector_connected',
+        schema_version: 1,
+        connection: {
+          ...connectionWire,
+          status: 'connected',
+          scopes: ['read_write'],
+          connected_at: '2026-10-15T12:05:00.000Z',
+        },
+      }),
+    );
+
+    const connection = await MarketplaceConnectorsService.putCredentials(ACTOR, CONNECTION_ID, {
+      consumerKey: 'ck_0123456789abcdef',
+      consumerSecret: 'cs_0123456789abcdef',
+    });
+
+    expect(connection.status).toBe('connected');
+    const { url, init } = lastCall();
+    expect(url).toBe(`${BASE}/v1/connectors/${CONNECTION_ID}/credentials`);
+    expect(init.method).toBe('PUT');
+    expect(JSON.parse(String(init.body))).toEqual({
+      consumer_key: 'ck_0123456789abcdef',
+      consumer_secret: 'cs_0123456789abcdef',
+    });
+  });
+
+  it.each([
+    ['invalid_keys', 422],
+    ['credentials_rejected', 422],
+    ['keys_read_only', 422],
+    ['not_pending', 409],
+    ['shop_in_use', 409],
+  ])('reports the %s refusal of a pasted key pair by its code', async (code, status) => {
+    fetchMock.mockResolvedValue(json({ error: { code, message: 'x' } }, status));
     const error = await MarketplaceConnectorsService.putCredentials(ACTOR, CONNECTION_ID, {
       consumerKey: 'ck_x',
       consumerSecret: 'cs_x',
     }).catch((caught: unknown) => caught);
-    expect((error as AppError).context).toMatchObject({ reason: 'credentials_not_supported', statusCode: 422 });
+    expect((error as AppError).context).toMatchObject({ reason: code, statusCode: status });
+    expect(JSON.stringify((error as AppError).context)).not.toContain('cs_x');
   });
 
   it('saves the variant mode with PUT settings', async () => {

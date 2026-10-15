@@ -91,9 +91,13 @@ export const connectorConnectSchema = z.object({
 
 export type ConnectorConnectResult = z.infer<typeof connectorConnectSchema>;
 
-/** `PUT /credentials` and `PUT /settings` answer with the updated connection. */
+/**
+ * `PUT /credentials` answers with the updated connection: `connector_credentials`
+ * for a Shopify app's Client ID and secret, `connector_connected` for a pasted
+ * WooCommerce key pair, which completes the connection.
+ */
 export const connectorCredentialsResultSchema = z.object({
-  kind: z.literal('connector_credentials'),
+  kind: z.enum(['connector_credentials', 'connector_connected']),
   connection: connectorConnectionSchema,
 });
 
@@ -471,8 +475,12 @@ const CONNECT_REFUSAL_COPY: Readonly<Record<string, string>> = {
   provider_rejected: 'The store refused the request. Check the address and that the store is online.',
   provider_rate_limited: 'The store is busy. Wait a minute, then try again.',
   invalid_credentials: 'The store did not accept those keys. Check them and try again.',
-  credentials_not_supported:
-    'This store type cannot take pasted keys here yet. Connect it through the store approval screen instead.',
+  invalid_keys: 'Those keys do not look right. Copy the consumer key (ck_...) and secret (cs_...) again.',
+  keys_read_only:
+    'These keys cannot create webhooks or orders. Create a key with Read/Write permissions in WooCommerce and paste it here.',
+  not_pending:
+    'This connection cannot take keys now. If the store is already connected, disconnect it and connect again; otherwise start again.',
+  shop_in_use: 'That store is already connected to another Pubky shop.',
   connection_not_available: 'This connection expired or was disconnected. Start again.',
   invalid_variant_mode: 'That setting was not accepted.',
   mappings_conflict:

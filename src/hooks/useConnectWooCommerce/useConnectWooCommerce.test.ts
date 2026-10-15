@@ -116,6 +116,29 @@ describe('useConnectWooCommerce', () => {
     expect(JSON.stringify(vi.mocked(toast).mock.calls)).not.toContain('cs_0123456789abcdef');
   });
 
+  it('connects with a pasted key pair without showing any error, and leaves the form empty for the next store', async () => {
+    vi.mocked(ConnectorsController.commitConnectWooCommerceWithKeys).mockResolvedValue(
+      asOpaque({ id: 'c2', status: 'connected' }),
+    );
+    const onKeysSaved = vi.fn();
+    const { result } = renderConnect({ onKeysSaved });
+
+    act(() => {
+      result.current.keysForm.setValue('keysStoreUrl', 'https://dezentralshop.ch/');
+      result.current.keysForm.setValue('consumerKey', 'ck_0123456789abcdef');
+      result.current.keysForm.setValue('consumerSecret', 'cs_0123456789abcdef');
+    });
+    await act(async () => {
+      expect(await result.current.submitKeys()).toBe(true);
+    });
+
+    expect(onKeysSaved).toHaveBeenCalledTimes(1);
+    expect(onKeysSaved).toHaveBeenCalledWith('c2');
+    expect(toast).not.toHaveBeenCalled();
+    expect(result.current.isWorking).toBe(false);
+    expect(result.current.keysForm.getValues('keysStoreUrl')).toBe('');
+  });
+
   it('checks the key shape before sending anything', async () => {
     const { result } = renderConnect();
 
