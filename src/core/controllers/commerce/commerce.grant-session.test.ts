@@ -36,6 +36,11 @@ function signIn(pubky = PUBKY, grant: object | null = {}) {
   return session;
 }
 
+/** Lets every already-settled promise chain run; the mocks here never wait on timers. */
+async function flushMicrotasks() {
+  for (let round = 0; round < 20; round += 1) await Promise.resolve();
+}
+
 function deferred<T>() {
   let resolve!: (value: T) => void;
   let reject!: (error: unknown) => void;
@@ -247,7 +252,7 @@ describe('a restored session the service rejects (Kimi #248 delta P3-1)', () => 
 
     // That minted session is rejected too: the sign-in is marked, no loop.
     fire!({ reason: 'rejected', issuedAt: INFO.issuedAt });
-    await new Promise((resolve) => setTimeout(resolve, 20));
+    await flushMicrotasks();
     expect(mint).toHaveBeenCalledTimes(1);
   });
 });
@@ -264,15 +269,24 @@ describe('a restore that throws (Kimi #248 P2)', () => {
 });
 
 describe('MarketplaceGrantSessionCoordinator', () => {
-  it('handles a rejection from the controller instead of leaving it unhandled', async () => {
-    const rejected = Promise.reject(new Error('unexpected'));
-    const handled = vi.spyOn(rejected, 'catch');
-    const ensure = vi.spyOn(CommerceController, 'ensureMarketplaceSessionFromGrant').mockReturnValue(rejected);
-    MarketplaceGrantSessionCoordinator.getInstance().start();
-    signIn();
-    expect(ensure).toHaveBeenCalledTimes(1);
-    expect(handled).toHaveBeenCalledTimes(1);
-    await expect(handled.mock.results[0].value).resolves.toBeUndefined();
+  it('survives a rejecting controller without an unhandled rejection', async () => {
+    // Vitest fails the run on any unhandled rejection, so this pins the
+    // behaviour, not how the coordinator handles it. A plain function, not a
+    // vi spy: spies observe returned promises, which marks them handled.
+    const original = CommerceController.ensureMarketplaceSessionFromGrant;
+    let calls = 0;
+    CommerceController.ensureMarketplaceSessionFromGrant = () => {
+      calls += 1;
+      return Promise.reject(new Error('unexpected'));
+    };
+    try {
+      MarketplaceGrantSessionCoordinator.getInstance().start();
+      signIn();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(calls).toBe(1);
+    } finally {
+      CommerceController.ensureMarketplaceSessionFromGrant = original;
+    }
   });
 
   it('mints after sign-in and again when the session ends', async () => {
