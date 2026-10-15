@@ -43,6 +43,7 @@ vi.mock('@/hooks/useMarketplaceOrderPayment/useMarketplaceOrderPayment', () => (
   useMarketplaceOrderPayment: () => ({
     availableMethods: null,
     bitcoinOfferUnavailable: false,
+    paykitOutage: false,
     configError: null,
     deliveryAddress: null,
     pendingAction: null,
