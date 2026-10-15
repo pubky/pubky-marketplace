@@ -8,8 +8,9 @@ import { useCommerceStore } from '@/stores/commerce/commerce.store';
  * seller and buyer never see the "Enable selling" approval: after sign-in or
  * restore, and again when the session expires or is rejected, it asks
  * {@link CommerceController.ensureMarketplaceSessionFromGrant} to adopt or
- * mint one. Off unless `marketplaceGrantSessionEnabled`. A refused mint is not
- * retried for the same sign-in; the approval flow stays the fallback.
+ * mint one. Off unless `marketplaceGrantSessionEnabled`. A refused mint, or a
+ * minted session the service rejected, is not retried for the same sign-in;
+ * the approval flow stays the fallback.
  */
 export class MarketplaceGrantSessionCoordinator {
   private static instance: MarketplaceGrantSessionCoordinator | null = null;
@@ -56,6 +57,7 @@ export class MarketplaceGrantSessionCoordinator {
     const auth = useAuthStore.getState();
     if (!auth.session?.grant || auth.isLoggingOut) return;
     if (useCommerceStore.getState().marketplaceSession) return;
-    void CommerceController.ensureMarketplaceSessionFromGrant();
+    // The controller resolves null on refusal; nothing here may reject unhandled.
+    void CommerceController.ensureMarketplaceSessionFromGrant().catch(() => undefined);
   }
 }

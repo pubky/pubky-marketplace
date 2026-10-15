@@ -126,6 +126,15 @@ describe('marketplace session from the sign-in grant', () => {
     expect(result.current.authorizationUrl).toBe(URL);
   });
 
+  it('falls back to the approval instead of hanging when the mint rejects', async () => {
+    vi.mocked(CommerceController.ensureMarketplaceSessionFromGrant).mockRejectedValue(new Error('unexpected'));
+    vi.mocked(beginMarketplaceBootstrapFlow).mockResolvedValue(pendingFlow().flow);
+    const { result } = renderHook(() => useMarketplaceSessionConnect());
+    act(() => result.current.start());
+    await waitFor(() => expect(result.current.status).toBe('awaiting'));
+    expect(beginMarketplaceBootstrapFlow).toHaveBeenCalledWith({ pubky: PUBKY });
+  });
+
   it('ignores a mint that settles after the account switched', async () => {
     let settle!: (value: unknown) => void;
     vi.mocked(CommerceController.ensureMarketplaceSessionFromGrant).mockReturnValue(

@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CommerceApplication } from '@/application/commerce/commerce';
 import { MarketplaceGrantSessionCoordinator } from '@/coordinators/marketplace-grant-session/marketplace-grant-session';
 import type { MintedGrantSession } from '@/services/marketplace/marketplace-grant-session';
+import type { MarketplaceSessionEndedEvent } from '@/services/marketplace/marketplace-session';
 import { useAuthStore } from '@/stores/auth/auth.store';
 import { useCommerceStore } from '@/stores/commerce/commerce.store';
 import { asOpaque } from '@/test-utils/type-assertions';
@@ -61,6 +62,7 @@ beforeEach(() => {
   active = vi.spyOn(CommerceApplication, 'hasActiveMarketplaceSession').mockReturnValue(false);
 });
 afterEach(() => {
+  CommerceController.unbindMarketplaceSessionStore();
   MarketplaceGrantSessionCoordinator.resetInstance();
   vi.restoreAllMocks();
   useAuthStore.setState({ session: null, currentUserPubky: null, isLoggingOut: false });
@@ -154,6 +156,82 @@ describe('CommerceController.ensureMarketplaceSessionFromGrant', () => {
     expect(await CommerceController.ensureMarketplaceSessionFromGrant()).toBeNull();
     signIn();
     await expect(CommerceController.ensureMarketplaceSessionFromGrant()).resolves.toEqual(INFO);
+  });
+});
+
+describe('a grant-minted session the service rejects (Kimi #248 P1)', () => {
+  /** Binds the controller's session-ended handler and returns a way to fire it. */
+  function bindSessionEnded() {
+    let fire: ((event: MarketplaceSessionEndedEvent) => void) | null = null;
+    vi.spyOn(CommerceApplication, 'onMarketplaceSessionEnded').mockImplementation((listener) => {
+      fire = listener;
+      return () => undefined;
+    });
+    vi.spyOn(CommerceApplication, 'onInventorySessionEnded').mockReturnValue(() => undefined);
+    CommerceController.bindMarketplaceSessionStore();
+    return (event: MarketplaceSessionEndedEvent) => fire?.(event);
+  }
+
+  it('is not re-minted by the coordinator for the same sign-in', async () => {
+    const end = bindSessionEnded();
+    signIn();
+    MarketplaceGrantSessionCoordinator.getInstance().start();
+    await vi.waitFor(() => expect(useCommerceStore.getState().marketplaceSession).toEqual(INFO));
+    expect(mint).toHaveBeenCalledTimes(1);
+
+    // The service answers 401 for the minted bearer; the store clears.
+    end({ reason: 'rejected', issuedAt: INFO.issuedAt });
+    await Promise.resolve();
+
+    expect(useCommerceStore.getState().marketplaceSession).toBeNull();
+    expect(mint).toHaveBeenCalledTimes(1);
+    expect(await CommerceController.ensureMarketplaceSessionFromGrant()).toBeNull();
+    expect(mint).toHaveBeenCalledTimes(1);
+  });
+
+  it('is minted again after a natural expiry', async () => {
+    const end = bindSessionEnded();
+    signIn();
+    MarketplaceGrantSessionCoordinator.getInstance().start();
+    await vi.waitFor(() => expect(mint).toHaveBeenCalledTimes(1));
+    await vi.waitFor(() => expect(useCommerceStore.getState().marketplaceSession).toEqual(INFO));
+
+    end({ reason: 'expired', issuedAt: INFO.issuedAt });
+
+    await vi.waitFor(() => expect(mint).toHaveBeenCalledTimes(2));
+  });
+
+  it('can still be retried explicitly from the dialog', async () => {
+    const end = bindSessionEnded();
+    signIn();
+    await CommerceController.ensureMarketplaceSessionFromGrant();
+    end({ reason: 'rejected', issuedAt: INFO.issuedAt });
+
+    await expect(CommerceController.ensureMarketplaceSessionFromGrant({ retryAfterFailure: true })).resolves.toEqual(
+      INFO,
+    );
+    expect(mint).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not mark the sign-in for a rejection of some other session', async () => {
+    const end = bindSessionEnded();
+    signIn();
+    await CommerceController.ensureMarketplaceSessionFromGrant();
+    end({ reason: 'rejected', issuedAt: '2000-01-01T00:00:00.000Z' });
+
+    useCommerceStore.getState().setMarketplaceSession(null);
+    await expect(CommerceController.ensureMarketplaceSessionFromGrant()).resolves.toEqual(INFO);
+  });
+});
+
+describe('a restore that throws (Kimi #248 P2)', () => {
+  it('resolves null instead of rejecting the shared attempt', async () => {
+    signIn();
+    restore.mockImplementation(() => {
+      throw new Error('a replaced-session listener threw');
+    });
+    await expect(CommerceController.ensureMarketplaceSessionFromGrant()).resolves.toBeNull();
+    expect(mint).not.toHaveBeenCalled();
   });
 });
 

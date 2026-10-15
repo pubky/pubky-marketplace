@@ -338,15 +338,17 @@ export function useMarketplaceSessionConnect(
     if (getMarketplaceGrantSessionEnabled() && expectedPubky && !MarketplaceSessionService.getActiveSession()) {
       setAuthorizationUrl('');
       setStatus('creating');
-      void CommerceController.ensureMarketplaceSessionFromGrant({ retryAfterFailure: true }).then((session) => {
-        if (generationRef.current !== generation || !isCurrentIdentity()) return;
-        if (!session) {
-          startApproval();
-          return;
-        }
-        setStatus('connected');
-        onConnectedRef.current?.(session);
-      });
+      void CommerceController.ensureMarketplaceSessionFromGrant({ retryAfterFailure: true })
+        .catch(() => null)
+        .then((session) => {
+          if (generationRef.current !== generation || !isCurrentIdentity()) return;
+          if (!session) {
+            startApproval();
+            return;
+          }
+          setStatus('connected');
+          onConnectedRef.current?.(session);
+        });
       return;
     }
     startApproval();
