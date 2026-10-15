@@ -1,16 +1,20 @@
+import type { ListingCurrencyCode } from '@/config/currencies';
 import type { MeasurementSystem } from '@/libs/commerce/units';
 
 export interface MarketplaceDisplayState {
-  /** Preferred device-local currency for catalog display only. */
-  displayCurrency: 'USD' | 'BTC';
-  /** Show the approximate converted secondary price (fiat ↔ bitcoin) beside listing prices. */
+  /**
+   * The buyer's preferred currency for the converted hint beside a listing price.
+   * Indicative only: prices themselves always show in the listing currency.
+   */
+  displayCurrency: ListingCurrencyCode;
+  /** Show the approximate converted hint beside listing prices. */
   showFxEstimate: boolean;
   /** Chosen measurement system; `null` means follow the browser locale (en-US → imperial, else metric). */
   measurementSystem: MeasurementSystem | null;
 }
 
 export interface MarketplaceDisplayActions {
-  setDisplayCurrency: (currency: 'USD' | 'BTC') => void;
+  setDisplayCurrency: (currency: ListingCurrencyCode) => void;
   setShowFxEstimate: (showFxEstimate: boolean) => void;
   setMeasurementSystem: (measurementSystem: MeasurementSystem | null) => void;
 }

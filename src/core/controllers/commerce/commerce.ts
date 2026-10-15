@@ -1556,6 +1556,7 @@ export class CommerceController {
     ];
   }
 
+  /** Bitcoin's price in every listing currency, for indicative price hints only. */
   static async getIndicativeBtcRate() {
     return await CommerceApplication.getIndicativeBtcRate();
   }

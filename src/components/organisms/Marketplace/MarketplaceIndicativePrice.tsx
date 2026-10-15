@@ -2,21 +2,27 @@
 
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/atoms/Tooltip/Tooltip';
 import { Typography } from '@/atoms/Typography/Typography';
+import { resolveListingCurrency } from '@/config/currencies';
 import { useIndicativeBtcRate } from '@/hooks/useIndicativeBtcRate/useIndicativeBtcRate';
-import { indicativeCounterpartLabel } from '@/libs/commerce/pricing';
 import type { CommerceMoney } from '@/libs/commerce/transaction-contracts';
 import { cn } from '@/libs/utils/utils';
+import { indicativeHintLabel } from '@/pipes/money/money.convert';
+import { fxRateSnapshotFromBtcRate } from '@/pipes/money/money.rates';
 import { useMarketplaceDisplayStore } from '@/stores/marketplace-display/marketplace-display.store';
 
 /**
- * The approximate converted counterpart of a listing price: "≈ ₿N" under
- * a fiat price, "≈ $X" under a bitcoin price. Marked approximate and explained
- * in a tooltip because it is display-only — the amount a payment settles is
- * fixed by the payment rail, never by this estimate (docs/ecommerce/pricing.md).
+ * The approximate converted counterpart of a listing price, in the buyer's
+ * display currency: "≈ €11.50" under a dollar price. When the buyer displays
+ * in the price's own currency the hint is the other side of the fiat and
+ * bitcoin pair instead ("≈ ₿N" under a fiat price, "≈ $X" under a bitcoin
+ * price). Marked approximate and explained in a tooltip because it is
+ * display-only: the amount a payment settles is fixed by the service at
+ * checkout, never by this estimate (docs/ecommerce/pricing.md).
  *
  * Renders NOTHING unless all of these hold: the user has the estimate toggle
- * on, the price's asset has a rate source (USD or BTC), and the rate fetch
- * succeeded. No rate, no estimate — never an error state, never a fallback.
+ * on, the price is in a listing currency, and the rate fetch succeeded with a
+ * rate for both currencies. No rate, no estimate — never an error state, never
+ * a fallback.
  */
 export function MarketplaceIndicativePrice({
   money,
@@ -28,11 +34,12 @@ export function MarketplaceIndicativePrice({
   showApproximation?: boolean;
 }) {
   const showFxEstimate = useMarketplaceDisplayStore((state) => state.showFxEstimate);
-  const isConvertible = money.currency === 'USD' || money.currency === 'BTC';
-  const rate = useIndicativeBtcRate(showFxEstimate && isConvertible);
-  if (rate === null) return null;
+  const displayCurrency = useMarketplaceDisplayStore((state) => state.displayCurrency);
+  const isConvertible = resolveListingCurrency(money) !== null;
+  const rates = useIndicativeBtcRate(showFxEstimate && isConvertible);
+  if (rates === null) return null;
 
-  const label = indicativeCounterpartLabel(money, rate.btcUsd);
+  const label = indicativeHintLabel(money, displayCurrency, fxRateSnapshotFromBtcRate(rates));
   if (label === null) return null;
 
   return (
