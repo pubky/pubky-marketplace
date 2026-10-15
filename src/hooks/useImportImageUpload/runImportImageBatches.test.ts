@@ -4,6 +4,7 @@ import { IMPORT_IMAGE_MAX_COUNT } from '@/config/import-image';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import { ImportImageUploadController } from '@/controllers/import-image/import-image-upload';
 import type { ImportImageTarget, ListingImageOutcome } from '@/pipes/commerce/import-image-phase';
+import type { PresetJson } from '@/pipes/commerce/import-preset-rows';
 import { asOpaque } from '@/test-utils/type-assertions';
 import { runImportImageBatches, type TImageBatchProgress } from './runImportImageBatches';
 import type { TImportImageResult, TImportImageRunParams, uploadImportImages } from './useImportImageUpload';
@@ -248,7 +249,8 @@ describe('runImportImageBatches', () => {
     const all = [{ listingId: 'late', images: [{ url: shared, alt: 'x' }, ...target(7, 1).images] }];
     const run = host(all);
     const known = vi.fn(
-      async (urls: string[]) => new Map(urls.filter((url) => url === shared).map((url) => [url, media(url)])),
+      async (urls: string[]): Promise<ReadonlyMap<string, PresetJson>> =>
+        new Map(urls.filter((url) => url === shared).map((url) => [url, { id: 'stored', altText: 'x' }])),
     );
     const result = await runImportImageBatches({ ownerPubky: OWNER, ...run, knownMedia: known });
     expect(known).toHaveBeenCalledWith([shared, 'https://shop.example.com/7/0.jpg']);
