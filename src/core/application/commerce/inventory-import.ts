@@ -5,7 +5,7 @@ import {
   listingToCanonicalRows,
   mapCanonicalRowsToListing,
 } from '@/application/commerce/inventory-listing-map';
-import { getCommerceAdapterMode, isDurableCommerceMode } from '@/config/commerce';
+import { COMMERCE_LISTING_MAX_MEDIA, getCommerceAdapterMode, isDurableCommerceMode } from '@/config/commerce';
 import {
   evaluateDurableListingPublishGuards,
   type ListingPublishBlockReason,
@@ -20,8 +20,11 @@ import {
   extraFieldsWithImages,
   imageResultCells,
   imageResultsOf,
+  imageSyncOf,
+  imageSyncText,
   type ImportImageTarget,
   type ListingImageOutcome,
+  planImageSync,
   RESULT_CSV_IMAGE_COLUMNS,
   rowHoldsMedia,
   sourceImagesOf,
@@ -525,6 +528,7 @@ export class CommerceInventoryImportApplication {
     const manifest = await this.host.store.load(manifestId);
     if (!manifest) return [];
     const targets: ImportImageTarget[] = [];
+    const existing = await this.existingRecords();
     for (const [listingId, group] of this.groups(manifest.rows)) {
       const pending = group.some(
         (row) => row.checkpoint === 'planned' && (row.intendedAction === 'create' || row.intendedAction === 'update'),
@@ -538,7 +542,21 @@ export class CommerceInventoryImportApplication {
         if (rowHoldsMedia(payload)) holdsMedia = true;
         if (images.length === 0) images = sourceImagesOf(payload);
       }
-      if (!holdsMedia && images.length > 0) targets.push({ listingId, images });
+      if (holdsMedia || images.length === 0) continue;
+      const stored = existing.get(listingId);
+      if (!stored) {
+        targets.push({ listingId, images });
+        continue;
+      }
+      // Already on the seller's record: fetch only URLs it does not have, drop what left the file, keep the rest.
+      const plan = planImageSync(stored.media, images, COMMERCE_LISTING_MAX_MEDIA);
+      targets.push({
+        listingId,
+        images: plan.toUpload,
+        skipped: plan.overflow,
+        keptMedia: plan.keptMedia,
+        sync: { removed: plan.removed, handKept: plan.handKept },
+      });
     }
     return targets;
   }
@@ -657,8 +675,10 @@ export class CommerceInventoryImportApplication {
       if (seenListings.has(row.listingId)) continue;
       const payload = await this.rowPayload(manifestId, row.rowIdentity);
       const results = payload ? imageResultsOf(payload) : [];
-      if (results.length === 0) continue;
+      const sync = payload ? imageSyncOf(payload) : null;
+      if (results.length === 0 && !sync) continue;
       seenListings.add(row.listingId);
+      if (sync) imageLines.push([row.listingId, '', '', '', '', 'summary', imageSyncText(sync)]);
       for (const result of results) imageLines.push([row.listingId, '', '', '', ...imageResultCells(result)]);
     }
     const withImages = imageLines.length > 0;

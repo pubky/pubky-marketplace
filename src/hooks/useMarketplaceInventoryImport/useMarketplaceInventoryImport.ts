@@ -230,13 +230,17 @@ export function useMarketplaceInventoryImport(sellerPubky: string | null) {
     setProgressPhase('photos');
     setProgress({ done: 0, total: urls.length });
     try {
-      const outcome = await uploadImportImages({
-        ownerPubky: sellerPubky,
-        urls,
-        altText: (url) => altTextForUrl(targets, url),
-        signal: controller.signal,
-        onProgress: ({ done, total }) => setProgress({ done, total }),
-      });
+      // A listing whose photos are unchanged has nothing to fetch; it only keeps its media.
+      const outcome =
+        urls.length === 0
+          ? { results: [] }
+          : await uploadImportImages({
+              ownerPubky: sellerPubky,
+              urls,
+              altText: (url) => altTextForUrl(targets, url),
+              signal: controller.signal,
+              onProgress: ({ done, total }) => setProgress({ done, total }),
+            });
       if (controller.signal.aborted) return false;
       const results: ImportImageResult[] = outcome.results.map((result) => ({
         url: result.url,
