@@ -1,5 +1,5 @@
 import { COMMERCE_SHOP_SHIPS_TO_MAX_COUNTRIES } from '@/config/commerce';
-import { NON_COUNTRY_REGION, normalizeCountryCode } from '@/libs/commerce/postal-address';
+import { canonicalCountryCode, NON_COUNTRY_REGION } from '@/libs/commerce/postal-address';
 
 /**
  * A shop's destination countries: absent or empty `shipsToCountries` means
@@ -62,8 +62,11 @@ export function intersectShipsToCountries(lists: ReadonlyArray<readonly string[]
   return allowed;
 }
 
+/** Both sides are canonicalized, so a UK address matches a GB list and a GB address a UK list. */
 export function isDestinationAllowed(countryCode: string, allowed: readonly string[] | null): boolean {
-  return allowed === null || allowed.includes(normalizeCountryCode(countryCode));
+  if (allowed === null) return true;
+  const country = canonicalCountryCode(countryCode);
+  return allowed.some((code) => canonicalCountryCode(code) === country);
 }
 
 /** The English name of a country code, or the code itself when the runtime knows no name for it. */
@@ -92,9 +95,13 @@ export function destinationRefusalMessage(allowed: readonly string[], sellerCoun
   return `${who} only to ${formatShipsToCountries(allowed)}. Choose pickup if offered.`;
 }
 
-/** A two-letter code naming a real country or territory (not a user-assigned or macro-region code). */
+/**
+ * A canonical two-letter code naming a real country or territory: not a
+ * user-assigned or macro-region code, and not an alias such as UK (GB).
+ */
 export function isAssignedCountryCode(code: string): boolean {
   if (!/^[A-Z]{2}$/.test(code) || NON_COUNTRY_REGION.test(code)) return false;
+  if (canonicalCountryCode(code) !== code) return false;
   try {
     return new Intl.DisplayNames(['en'], { type: 'region', fallback: 'none' }).of(code) !== undefined;
   } catch {
@@ -102,11 +109,14 @@ export function isAssignedCountryCode(code: string): boolean {
   }
 }
 
-/** Splits the settings field ("CH, LI" or "ch li") into uppercase codes, each kept once in entry order. */
+/**
+ * Splits the settings field ("CH, LI" or "ch li") into canonical uppercase
+ * codes (UK is saved as GB), each kept once in entry order.
+ */
 export function parseShipsToField(value: string): string[] {
   const codes = value
     .split(/[\s,;]+/)
-    .map(normalizeCountryCode)
+    .map(canonicalCountryCode)
     .filter((code) => code !== '');
   return [...new Set(codes)];
 }

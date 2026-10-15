@@ -52,6 +52,13 @@ describe('isDestinationAllowed', () => {
     expect(isDestinationAllowed('DE', ['CH'])).toBe(false);
     expect(isDestinationAllowed('CH', [])).toBe(false);
   });
+
+  it('matches country aliases on both sides', () => {
+    expect(isDestinationAllowed('UK', ['GB'])).toBe(true);
+    expect(isDestinationAllowed('GB', ['UK'])).toBe(true);
+    expect(isDestinationAllowed('el', ['GR'])).toBe(true);
+    expect(isDestinationAllowed('UK', ['IE'])).toBe(false);
+  });
 });
 
 describe('country names', () => {
@@ -110,12 +117,19 @@ describe('settings field', () => {
     expect(parseShipsToField(' ch, li ;CH  at ')).toEqual(['CH', 'LI', 'AT']);
   });
 
+  it('saves aliases as their canonical code, so a UK seller matches GB buyers', () => {
+    expect(parseShipsToField('uk, EL, GB')).toEqual(['GB', 'GR']);
+    expect(shipsToFieldError('UK, EL')).toBeNull();
+  });
+
   it('accepts real country codes and rejects macro-regions, user-assigned and unknown codes', () => {
     expect(isAssignedCountryCode('CH')).toBe(true);
     expect(isAssignedCountryCode('XK')).toBe(false);
     expect(isAssignedCountryCode('EU')).toBe(false);
     expect(isAssignedCountryCode('JJ')).toBe(false);
     expect(isAssignedCountryCode('CHE')).toBe(false);
+    expect(isAssignedCountryCode('UK')).toBe(false);
+    expect(isAssignedCountryCode('GB')).toBe(true);
   });
 
   it('reports the codes it cannot use', () => {

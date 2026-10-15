@@ -287,6 +287,19 @@ describe('useMarketplaceShopSettings', () => {
     );
   });
 
+  it('publishes an alias as its canonical code, so UK buyers (GB) still match', async () => {
+    vi.mocked(CommerceController.refreshShop).mockResolvedValue(publishedShop);
+    const { result } = renderHook(() => useMarketplaceShopSettings());
+    await waitFor(() => expect(result.current.hasShop).toBe(true));
+
+    act(() => result.current.form.setValue('shipsToCountries', 'UK, el'));
+    await act(() => result.current.submit());
+
+    expect(CommerceController.commitUpsertShop).toHaveBeenCalledWith(
+      expect.objectContaining({ shipsToCountries: ['GB', 'GR'] }),
+    );
+  });
+
   it('publishes a cleared destination list as absent', async () => {
     vi.mocked(CommerceController.refreshShop).mockResolvedValue({ ...publishedShop, shipsToCountries: ['CH'] });
     const { result } = renderHook(() => useMarketplaceShopSettings());
