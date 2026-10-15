@@ -136,7 +136,6 @@ vi.mock('next/navigation', () => ({
 vi.mock('@/stores/auth/auth.store', () => ({
   useAuthStore: createMarketplaceVrtAuthStore({
     currentUserPubky: 'y'.repeat(52),
-    session: { grant: {} },
     grantSigner: 'ring',
   }),
 }));

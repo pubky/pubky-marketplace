@@ -244,7 +244,7 @@ vi.mock('@/hooks/useRequireAuth/useRequireAuth', () => ({
 }));
 
 vi.mock('@/stores/auth/auth.store', () => ({
-  useAuthStore: createMarketplaceVrtAuthStore({ getCurrentUserPubky: () => view.currentUserPubky, session: {} }),
+  useAuthStore: createMarketplaceVrtAuthStore({ getCurrentUserPubky: () => view.currentUserPubky }),
 }));
 
 vi.mock('@/config/commerce', async (importOriginal) => {
