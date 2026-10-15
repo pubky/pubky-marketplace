@@ -261,7 +261,7 @@ async function cancelBody(response: Response): Promise<void> {
   await response.body?.cancel().catch(() => {});
 }
 
-function classifyError(error: unknown, timedOut: boolean): TImportImageFailureReason {
+export function classifyError(error: unknown, timedOut: boolean): TImportImageFailureReason {
   if (timedOut) return 'timeout';
 
   const seen = new Set<unknown>();

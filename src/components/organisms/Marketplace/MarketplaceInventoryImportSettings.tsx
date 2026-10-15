@@ -26,6 +26,7 @@ export type InventoryImportSettingsProps = {
 
 export const IMPORT_FORMAT_LABEL: Record<ImportSourceFormat, string> = {
   woocommerce: 'WooCommerce',
+  woocommerce_store: 'WooCommerce store',
   shopify: 'Shopify',
 };
 
