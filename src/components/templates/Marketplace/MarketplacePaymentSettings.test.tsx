@@ -317,6 +317,17 @@ describe('MarketplacePaymentSettings', () => {
       expect(screen.getByTestId('bitcoin-toggle-blocker')).toHaveTextContent(/^Connect the Lock Server first\./);
     });
 
+    it('names only the Lock Server when the Bitkit status cannot be read without it', async () => {
+      mockedController.isOwnPaykitAccountClaimed.mockRejectedValue(new Error('offline'));
+      await renderSettings();
+
+      const reason = screen.getByTestId('bitcoin-toggle-blocker');
+      expect(reason).toHaveTextContent(/^Connect the Lock Server first\./);
+      expect(reason).not.toHaveTextContent(/Bitkit/);
+      fireEvent.click(within(reason).getByRole('button', { name: 'Connect now' }));
+      expect(view.openConnect).toHaveBeenCalledTimes(1);
+    });
+
     it('names only Bitkit once the Lock Server is connected, and opens Bitkit setup', async () => {
       connectLockServer();
       await renderSettings();
