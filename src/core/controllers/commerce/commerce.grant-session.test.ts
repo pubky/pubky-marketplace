@@ -224,6 +224,34 @@ describe('a grant-minted session the service rejects (Kimi #248 P1)', () => {
   });
 });
 
+describe('a restored session the service rejects (Kimi #248 delta P3-1)', () => {
+  it('is re-minted once, and a rejection of that mint stops further mints', async () => {
+    let fire: ((event: MarketplaceSessionEndedEvent) => void) | null = null;
+    vi.spyOn(CommerceApplication, 'onMarketplaceSessionEnded').mockImplementation((listener) => {
+      fire = listener;
+      return () => undefined;
+    });
+    vi.spyOn(CommerceApplication, 'onInventorySessionEnded').mockReturnValue(() => undefined);
+    CommerceController.bindMarketplaceSessionStore();
+    const restoredInfo = { ...INFO, issuedAt: '2026-10-15T00:00:01.000Z' };
+    restore.mockReturnValueOnce(restoredInfo);
+    signIn();
+    MarketplaceGrantSessionCoordinator.getInstance().start();
+    await vi.waitFor(() => expect(useCommerceStore.getState().marketplaceSession).toEqual(restoredInfo));
+    expect(mint).not.toHaveBeenCalled();
+
+    // A stale persisted bearer is rejected: one fresh mint replaces it.
+    fire!({ reason: 'rejected', issuedAt: restoredInfo.issuedAt });
+    await vi.waitFor(() => expect(mint).toHaveBeenCalledTimes(1));
+    await vi.waitFor(() => expect(useCommerceStore.getState().marketplaceSession).toEqual(INFO));
+
+    // That minted session is rejected too: the sign-in is marked, no loop.
+    fire!({ reason: 'rejected', issuedAt: INFO.issuedAt });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(mint).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('a restore that throws (Kimi #248 P2)', () => {
   it('resolves null instead of rejecting the shared attempt', async () => {
     signIn();
@@ -236,6 +264,17 @@ describe('a restore that throws (Kimi #248 P2)', () => {
 });
 
 describe('MarketplaceGrantSessionCoordinator', () => {
+  it('handles a rejection from the controller instead of leaving it unhandled', async () => {
+    const rejected = Promise.reject(new Error('unexpected'));
+    const handled = vi.spyOn(rejected, 'catch');
+    const ensure = vi.spyOn(CommerceController, 'ensureMarketplaceSessionFromGrant').mockReturnValue(rejected);
+    MarketplaceGrantSessionCoordinator.getInstance().start();
+    signIn();
+    expect(ensure).toHaveBeenCalledTimes(1);
+    expect(handled).toHaveBeenCalledTimes(1);
+    await expect(handled.mock.results[0].value).resolves.toBeUndefined();
+  });
+
   it('mints after sign-in and again when the session ends', async () => {
     const ensure = vi.spyOn(CommerceController, 'ensureMarketplaceSessionFromGrant').mockResolvedValue(null);
     MarketplaceGrantSessionCoordinator.getInstance().start();
