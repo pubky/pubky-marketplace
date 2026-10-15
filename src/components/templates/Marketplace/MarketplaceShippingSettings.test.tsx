@@ -20,7 +20,7 @@ const presetsView = vi.hoisted(() => ({
     created_at: number;
     updated_at: number;
   }>,
-  saveFromFields: vi.fn(async () => true),
+  saveFromFields: vi.fn(async (_id: string | null, _fields: { shippingLabel: string }, _currency: string) => true),
   remove: vi.fn(async () => {}),
 }));
 
@@ -167,6 +167,37 @@ describe('MarketplaceShippingSettings presets', () => {
       expect.objectContaining({ shippingLabel: 'Swiss Post', shippingPrice: '8.50' }),
       'CHF',
     );
+  });
+
+  it('starts the next new preset in the currency of the one just saved', async () => {
+    vi.spyOn(window.navigator, 'languages', 'get').mockReturnValue(['ja-JP']);
+    useMarketplaceDisplayStore.setState({ displayCurrency: null });
+    presetsView.saveFromFields.mockImplementation(async (_id, fields, currency) => {
+      presetsView.presets = [preset('chf', fields.shippingLabel, currency, 850)];
+      return true;
+    });
+    const user = userEvent.setup();
+    const { rerender } = renderPage();
+    await user.click(screen.getByRole('button', { name: 'Add preset' }));
+    expect(screen.getByRole('combobox', { name: 'Currency' })).toHaveTextContent('Japanese yen (JPY)');
+    await user.type(screen.getByLabelText('Shipping label'), 'Swiss Post');
+    await user.click(screen.getByRole('combobox', { name: 'Currency' }));
+    await user.click(screen.getByRole('option', { name: 'Swiss francs (CHF)' }));
+    await user.type(screen.getByLabelText('Flat price (CHF)'), '8.50');
+    await user.click(screen.getByRole('button', { name: 'Save preset' }));
+    await waitFor(() => expect(screen.queryByRole('heading', { name: 'New preset' })).not.toBeInTheDocument());
+
+    rerender(
+      <TooltipProvider>
+        <MarketplaceShippingSettings />
+      </TooltipProvider>,
+    );
+    await user.click(screen.getByRole('button', { name: 'Add preset' }));
+
+    expect(screen.getByRole('combobox', { name: 'Currency' })).toHaveTextContent('Swiss francs (CHF)');
+    expect(screen.getByLabelText('Shipping label')).toHaveValue('');
+    expect(screen.getByLabelText('Min days')).toHaveValue('3');
+    vi.restoreAllMocks();
   });
 
   it('validates the price in the chosen currency', async () => {

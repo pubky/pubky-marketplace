@@ -306,7 +306,8 @@ export function MarketplaceShippingSettings() {
   const submit = form.handleSubmit(async (data) => {
     const editing = presets.find(({ id }) => id === editingId);
     if (await saveFromFields(editing ? bareShippingPresetId(editing) : null, data, data.currency)) {
-      form.reset(presetFormDefaults);
+      // The preset just saved is now the latest, so the next new one starts in its currency.
+      form.reset({ ...presetFormDefaults, currency: data.currency });
       setEditingId(null);
     }
   });
