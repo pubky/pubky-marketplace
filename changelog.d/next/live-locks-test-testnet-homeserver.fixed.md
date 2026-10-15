@@ -1,0 +1,1 @@
+The live Locks payment test resolves the seller's homeserver through the payments environment's Pubky testnet, so the listing record write through the app's homeserver path no longer fails the staging sign-in guard.

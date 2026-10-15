@@ -111,7 +111,7 @@ export function catalogItemFromListingModel(listing: CommerceListingModelSchema)
     auction,
     attributes: record.attributes ?? {},
     location: { countryCode: record.location.countryCode, region: record.location.region ?? null },
-    fulfillmentMethods: commerceListingFulfillmentMethods(record.fulfillmentMethods, record.digitalLock !== undefined),
+    fulfillmentMethods: commerceListingFulfillmentMethods(record.fulfillmentMethods),
     mediaUrls: record.media.filter(({ type }) => type === 'image').map(({ url }) => url),
     // Canonical records carry no aggregate; the catalog merge fills this in
     // from the index entry when one exists for the same listing.
@@ -137,8 +137,6 @@ export function catalogItemFromCatalogEntry(entry: CommerceCatalogEntryModelSche
     auction: entry.auction,
     attributes: null,
     location: { countryCode: entry.country_code, region: entry.region },
-    // Index rows carry no lock indicator, so a Locks listing badges as digital
-    // here; the badge is display-only and checkout reads the record.
     fulfillmentMethods: entry.fulfillment_methods ? commerceListingFulfillmentMethods(entry.fulfillment_methods) : null,
     // Nullish fallback: entries cached before the model carried media_urls.
     mediaUrls: entry.media_urls ?? [],

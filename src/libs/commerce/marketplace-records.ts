@@ -274,22 +274,21 @@ export function commerceListingShippingMinor(shippingOptions: readonly CommerceS
  * (`shipping` | `pickup` | `digital`), derived from the record's
  * `fulfillmentMethods` EXACTLY as the durable service derives them from a
  * fetched record (`homeserver.rs::registration_payload_from_record`, digital
- * delivery design §6 A1–A3): `shipping`, `pickup` and `digital` map, except
- * that a Locks listing (one carrying `digitalLock`) skips `digital`;
+ * delivery design §6 A1–A3): `shipping`, `pickup` and `digital` map;
  * first-seen dedup (not just adjacent); an empty result defaults to
- * shipping-only. So records predating pickup, and Locks listings, register
- * as shipping-only, and `['physical', 'digital']` (no explicit `shipping`)
- * registers as digital-only. The register payload validation mirrors the
- * service (non-empty, known values, deduped), so this derivation's output
- * always validates.
+ * shipping-only. So records predating pickup register as shipping-only, and
+ * `['physical', 'digital']` (no explicit `shipping`) registers as
+ * digital-only. A Locks listing (one carrying `digitalLock`) is a digital
+ * listing like any other: it publishes `digital`, so it registers as
+ * digital. The register payload validation mirrors the service (non-empty,
+ * known values, deduped), so this derivation's output always validates.
  */
 export function commerceListingFulfillmentMethods(
   methods: readonly CommerceListingRecord['fulfillmentMethods'][number][],
-  hasDigitalLock = false,
 ): MarketplaceFulfillmentMethod[] {
   const derived: MarketplaceFulfillmentMethod[] = [];
   for (const method of methods) {
-    const maps = method === 'shipping' || method === 'pickup' || (method === 'digital' && !hasDigitalLock);
+    const maps = method === 'shipping' || method === 'pickup' || method === 'digital';
     if (maps && !derived.includes(method)) {
       derived.push(method);
     }
@@ -300,10 +299,8 @@ export function commerceListingFulfillmentMethods(
 /**
  * Whether the listing offers **Make offer**: a fixed-price sale that accepts
  * offers and publishes a physical fulfillment (shipping or pickup). Digital
- * items take no offers; the service refuses them
- * (`offers_unavailable_for_digital`). A Locks listing publishes only
- * `digital`, so it takes none either, although the service registers it as
- * shipping.
+ * items, Locks listings included, take no offers; the service refuses them
+ * (`offers_unavailable_for_digital`).
  */
 export function commerceListingTakesOffers(
   record: Pick<CommerceListingRecord, 'sale' | 'fulfillmentMethods'>,
@@ -616,6 +613,16 @@ const commerceListingRecordSchemaInner = commercePublicRecordBaseSchema
         code: 'custom',
         message: 'digitalLock requires digital fulfillment',
         path: ['digitalLock'],
+      });
+    }
+    // A Locks listing is digital end to end: the service registers it only
+    // as exactly [digital], so a record that also publishes shipping or
+    // pickup would bring the shipping UI and checkout back for it.
+    if (listing.digitalLock !== undefined && hasDigital && !listing.fulfillmentMethods.every((m) => m === 'digital')) {
+      context.addIssue({
+        code: 'custom',
+        message: 'A Locks listing must be digital-only',
+        path: ['fulfillmentMethods'],
       });
     }
 

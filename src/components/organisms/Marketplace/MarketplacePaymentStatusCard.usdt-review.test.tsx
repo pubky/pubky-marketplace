@@ -44,6 +44,7 @@ vi.mock('@/hooks/useMarketplaceOrderPayment/useMarketplaceOrderPayment', () => (
     availableMethods: null,
     bitcoinOfferUnavailable: false,
     configError: null,
+    deliveryAddress: null,
     pendingAction: null,
     bind: vi.fn(),
     markPaid: vi.fn(),

@@ -1,0 +1,1 @@
+The client id shown on the signer's approval screen for the Shop's grant sign-in (`cid=` in the Bitkit link) is now the runtime setting `PUBKY_RUNTIME_SHOP_GRANT_CLIENT_ID`, so a deployment on pubky.app or staging.pubky.app can name its own host. Unset keeps `shop.pubky.app`.

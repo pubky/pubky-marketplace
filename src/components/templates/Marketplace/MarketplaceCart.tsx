@@ -13,7 +13,9 @@ import { useMarketplaceCart } from '@/hooks/useMarketplaceCart/useMarketplaceCar
 import { useMarketplaceFirstMediaUrls } from '@/hooks/useMarketplaceMediaUrl/useMarketplaceMediaUrl';
 import { useMarketplaceOffers } from '@/hooks/useMarketplaceOffers/useMarketplaceOffers';
 import { getMarketplaceCheckoutRoute, getMarketplaceOfferCheckoutRoute } from '@/libs/commerce/checkout-phase';
+import { DIGITAL_CHECKOUT_COPY } from '@/libs/commerce/digital';
 import { formatCommerceMoney } from '@/libs/commerce/format';
+import { commerceListingFulfillmentMethods } from '@/libs/commerce/marketplace-records';
 import { MarketplaceCheckoutSteps } from '@/molecules/Marketplace/MarketplaceCheckoutSteps';
 import { MarketplaceEmptyState } from '@/molecules/Marketplace/MarketplaceEmptyState';
 import { MarketplaceSellerLink } from '@/molecules/Marketplace/MarketplaceSellerLink';
@@ -30,6 +32,11 @@ export function MarketplaceCart() {
   );
   const cartMediaUrls = useMarketplaceFirstMediaUrls(cartMediaUris);
   const ordinaryItems = cart.ordinaryItems ?? cart.items;
+  const digitalOnlyCount = ordinaryItems.filter((item) => {
+    const methods = commerceListingFulfillmentMethods(item.listing.record.fulfillmentMethods);
+    return methods.length === 1 && methods[0] === 'digital';
+  }).length;
+  const allDigital = ordinaryItems.length > 0 && digitalOnlyCount === ordinaryItems.length;
   const awardItems = cart.awardItems ?? [];
   const offers = useMarketplaceOffers();
 
@@ -251,10 +258,14 @@ export function MarketplaceCart() {
                         <hr className="m-0 border-border" />
                         <div className="grid gap-1">
                           <Typography as="p" className="text-foreground">
-                            Shipping
+                            {allDigital ? 'Delivery' : 'Shipping'}
                           </Typography>
                           <Typography as="p" className="text-xs text-muted-foreground">
-                            Shipping is calculated at checkout.
+                            {allDigital
+                              ? DIGITAL_CHECKOUT_COPY.noShippingDigital
+                              : digitalOnlyCount > 0
+                                ? DIGITAL_CHECKOUT_COPY.shippingMixedWithDigital
+                                : 'Shipping is calculated at checkout.'}
                           </Typography>
                         </div>
                       </div>

@@ -22,19 +22,17 @@ export function isUnlimitedStockSentinel(quantity: string): boolean {
 
 type UnlimitedStockRecord = {
   fulfillmentMethods: Parameters<typeof commerceListingFulfillmentMethods>[0];
-  digitalLock?: unknown;
 };
 
 type StockVariant = { quantity: number; enabled?: boolean };
 
 /**
  * Unlimited stock is the domain quantity cap on a listing the service sells
- * as digital-only. A Locks listing carries `digitalLock`, so the service
- * registers it as shipping and it is never unlimited. Holds still reserve
- * units of the cap; this only decides how that cap is shown and counted.
+ * as digital-only, a Locks listing included. Holds still reserve units of the
+ * cap; this only decides how that cap is shown and counted.
  */
 export function isUnlimitedStock(record: UnlimitedStockRecord, quantity: number): boolean {
-  const methods = commerceListingFulfillmentMethods(record.fulfillmentMethods, record.digitalLock !== undefined);
+  const methods = commerceListingFulfillmentMethods(record.fulfillmentMethods);
   return methods.length === 1 && methods[0] === 'digital' && quantity === COMMERCE_LISTING_MAX_QUANTITY;
 }
 
@@ -47,9 +45,7 @@ export const UNLIMITED_STOCK_REFUSAL = 'unlimited_stock_on_physical_listing';
  * carry a variant at the unlimited cap, because the cap is how Unlimited
  * digital stock is stored and would otherwise sell as a million physical
  * units. Digital-only listings may hold it. The published methods decide,
- * as the buyer sees them: a Locks listing that publishes only `digital` is
- * not physical stock, even though the service registers it as shipping.
- * Returns the seller-facing refusal, or null.
+ * as the buyer sees them. Returns the seller-facing refusal, or null.
  */
 export function listingStockRefusal(
   record: UnlimitedStockRecord & { variants: readonly { quantity: number }[] },

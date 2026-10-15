@@ -50,6 +50,7 @@ import {
   sellerConfirmsByCopy,
 } from '@/libs/commerce/bitcoin-buyer-status';
 import {
+  buyerPayByDeadline,
   CHECKOUT_HOLD_COPY,
   formatOrderInstant,
   holderBoundCopy,
@@ -92,6 +93,7 @@ import { MarketplacePaymentStatusBadge } from '@/molecules/Marketplace/Marketpla
 import { SETTINGS_SECTION_CONTENT_CLASSNAME } from '@/molecules/Settings/SettingsSectionContent/SettingsSectionContent';
 import type { MarketplaceOrder, MarketplacePayment } from '@/services/marketplace/marketplace';
 import { useAuthStore } from '@/stores/auth/auth.store';
+import { MarketplaceAuctionDeliveryAddress } from './MarketplaceAuctionDeliveryAddress';
 import { MarketplaceBitcoinAmountBreakdown } from './MarketplaceBitcoinAmountBreakdown';
 import { SellerUsdtResolutionReview } from './MarketplaceUsdtPaymentReview';
 import { MarketplaceUsdtPaymentSummary } from './MarketplaceUsdtPaymentSummary';
@@ -468,6 +470,12 @@ export function MarketplacePaymentStatusCard({
                 <Typography as="p" className="text-sm text-muted-foreground">
                   {MARKETPLACE_FAILURE_MESSAGES.bitcoinOfferUnavailable}
                 </Typography>
+              )}
+              {methodPayment.deliveryAddress && (
+                <MarketplaceAuctionDeliveryAddress
+                  delivery={methodPayment.deliveryAddress}
+                  disabled={methodPayment.pendingAction !== null}
+                />
               )}
               <Typography as="p" className="text-sm text-muted-foreground">
                 Choose a payment method to continue. {holderUnboundCopy(order.holdExpiresAt)}
@@ -881,7 +889,7 @@ function BuyerBitcoinPaymentProgress({ order, payment }: { order: MarketplaceOrd
   return (
     <div className="grid gap-2">
       <Typography as="p" className="text-sm text-muted-foreground">
-        {holderBoundCopy(order.holdExpiresAt)}
+        {holderBoundCopy(buyerPayByDeadline(order))}
       </Typography>
       {order.paykitDeliveryState === 'failed' ? (
         <Typography as="p" role="alert" className="text-sm text-amber-300" data-testid="paykit-delivery-failed">
@@ -901,7 +909,7 @@ function BuyerUsdtPaymentProgress({ order }: { order: MarketplaceOrder }) {
   return (
     <div className="grid gap-2" data-testid="usdt-payment-awaiting">
       <Typography as="p" className="text-sm text-muted-foreground">
-        {holderBoundCopy(order.holdExpiresAt)}
+        {holderBoundCopy(buyerPayByDeadline(order))}
       </Typography>
       {order.paykitDeliveryState !== 'failed' && (
         <Typography as="p" className="text-xs text-muted-foreground" data-testid="usdt-accept-by">

@@ -13,7 +13,7 @@ import {
   type XCallbackParams,
 } from '@synonymdev/pubky';
 import type { TKeypairParams } from '@/application/auth/auth.types';
-import { CAPABILITIES, SHOP_GRANT_CLIENT_ID } from '@/config/app';
+import { CAPABILITIES, getShopGrantClientId } from '@/config/app';
 import { withBasePath } from '@/config/base-path';
 import {
   getDefaultHttpRelay,
@@ -290,12 +290,12 @@ export class HomeserverService {
         // A previous attempt may have consumed the invite before grant storage
         // completed. The same recovery key can resume that existing account.
         try {
-          return { session: await signer.signin(SHOP_GRANT_CLIENT_ID) };
+          return { session: await signer.signin(getShopGrantClientId()) };
         } catch {
           throw signupError;
         }
       }
-      const session = await signer.signin(SHOP_GRANT_CLIENT_ID);
+      const session = await signer.signin(getShopGrantClientId());
 
       Logger.debug('Signup successful', { publicKey: keypair.publicKey.z32() });
 
@@ -372,7 +372,7 @@ export class HomeserverService {
     let lastError: unknown;
     for (let attempt = 1; attempt <= SIGNUP_SESSION_RESTORE_ATTEMPTS; attempt++) {
       try {
-        return await this.getSigner(keypair).signin(SHOP_GRANT_CLIENT_ID);
+        return await this.getSigner(keypair).signin(getShopGrantClientId());
       } catch (error) {
         lastError = error;
         Logger.warn('Signup session restore attempt failed', { attempt, error });
@@ -408,7 +408,7 @@ export class HomeserverService {
     try {
       const signer = this.getSigner(keypair);
       await signer.pkdns.publishHomeserverForce(PublicKey.from(getHomeserver()));
-      const session = await signer.signin(SHOP_GRANT_CLIENT_ID);
+      const session = await signer.signin(getShopGrantClientId());
       return { session };
     } catch (error) {
       Logger.debug('No existing account to recover during signup', { error });
@@ -504,7 +504,7 @@ export class HomeserverService {
     }
 
     try {
-      const session = await signer.signin(SHOP_GRANT_CLIENT_ID);
+      const session = await signer.signin(getShopGrantClientId());
       return { session };
     } catch (signinError) {
       return await this.republishConfiguredHomeserver({ signer, keypair, originalError: signinError });
@@ -652,7 +652,7 @@ export class HomeserverService {
       }
       assertOwnedGrantStorageAvailable();
       const flow = await GrantAuthFlow.startDelegated(CAPABILITIES, kind(), {
-        clientId: SHOP_GRANT_CLIENT_ID,
+        clientId: getShopGrantClientId(),
         approvalFormat: 'bareGrant',
         relay: getDefaultHttpRelay(),
         ...(xCallback ? { xCallback } : {}),
@@ -721,7 +721,7 @@ export class HomeserverService {
         operation: 'saveGrantSession',
       });
     const info = await session.grant.sessionInfo();
-    if (info.clientId !== SHOP_GRANT_CLIENT_ID)
+    if (info.clientId !== getShopGrantClientId())
       throw Err.auth(AuthErrorCode.UNAUTHORIZED, 'This grant belongs to another app.', {
         service: ErrorService.Homeserver,
         operation: 'saveGrantSession',
@@ -784,7 +784,7 @@ export class HomeserverService {
     }
     const grant = session.grant;
     const info = grant ? await boundedHomeserverIo(() => grant.sessionInfo(), 'retireGrantSession') : undefined;
-    if (!info || info.clientId !== SHOP_GRANT_CLIENT_ID || `${info.publicKey.z32()}:${info.grantId}` !== recordId) {
+    if (!info || info.clientId !== getShopGrantClientId() || `${info.publicKey.z32()}:${info.grantId}` !== recordId) {
       throw Err.validation(ValidationErrorCode.INVALID_INPUT, 'Only an owned Shop grant may be retired.', {
         service: ErrorService.Homeserver,
         operation: 'retireGrantSession',

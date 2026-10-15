@@ -1,7 +1,36 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { capabilitiesMatchFullGrant } from '@/libs/auth/capabilities';
 import ringCookie from '@/test/fixtures/auth/ring-cookie-signin.pubky-common-0.11.json';
-import { CAPABILITIES, capabilitiesMatchRingCookieGrant, RING_COOKIE_CAPABILITIES } from './app';
+import {
+  CAPABILITIES,
+  capabilitiesMatchRingCookieGrant,
+  getShopGrantClientId,
+  RING_COOKIE_CAPABILITIES,
+  SHOP_GRANT_CLIENT_ID,
+} from './app';
+
+const runtime = vi.hoisted(() => ({ grantClientId: undefined as string | undefined }));
+
+vi.mock('@/libs/runtime-config/runtime-config', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/libs/runtime-config/runtime-config')>();
+  return { ...actual, getShopGrantClientIdOverride: () => runtime.grantClientId };
+});
+
+describe('getShopGrantClientId', () => {
+  afterEach(() => {
+    runtime.grantClientId = undefined;
+  });
+
+  it('defaults to the built-in client id', () => {
+    expect(SHOP_GRANT_CLIENT_ID).toBe('shop.pubky.app');
+    expect(getShopGrantClientId()).toBe('shop.pubky.app');
+  });
+
+  it('uses the deployer override when one is set', () => {
+    runtime.grantClientId = 'staging.pubky.app';
+    expect(getShopGrantClientId()).toBe('staging.pubky.app');
+  });
+});
 
 describe('capabilitiesMatchFullGrant', () => {
   const full = CAPABILITIES.split(',');

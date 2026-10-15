@@ -78,7 +78,7 @@ import {
   paykitAppRegistryUrl,
   paykitReaderAuthorizationUrl,
 } from '@/libs/commerce/paykit-wallet';
-import type { PaymentMethodKind } from '@/libs/commerce/payment-methods';
+import type { BindDeliveryAddress, PaymentMethodKind } from '@/libs/commerce/payment-methods';
 import {
   type MarketplaceCheckoutFulfillmentLine,
   type MarketplaceFulfillmentMethod,
@@ -1514,8 +1514,13 @@ export class CommerceApplication {
     return await MarketplaceGatewayService.putMyPaymentConfig(actorPubky, input);
   }
 
-  static async bindPaymentMethod(actorPubky: string, orderId: string, method: PaymentMethodKind) {
-    return await MarketplaceGatewayService.bindPaymentMethod(actorPubky, orderId, method);
+  static async bindPaymentMethod(
+    actorPubky: string,
+    orderId: string,
+    method: PaymentMethodKind,
+    delivery?: BindDeliveryAddress,
+  ) {
+    return await MarketplaceGatewayService.bindPaymentMethod(actorPubky, orderId, method, delivery);
   }
 
   static async markFiatPaid(actorPubky: string, orderId: string, transactionRef?: string) {
@@ -4478,10 +4483,7 @@ export class CommerceApplication {
         unitPrice,
         shippingMinor: commerceListingShippingMinor(listing.shippingOptions),
         saleFormat: 'auction',
-        fulfillmentMethods: commerceListingFulfillmentMethods(
-          listing.fulfillmentMethods,
-          listing.digitalLock !== undefined,
-        ),
+        fulfillmentMethods: commerceListingFulfillmentMethods(listing.fulfillmentMethods),
         auctionTerms:
           listing.sale.format === 'auction'
             ? {
@@ -4579,10 +4581,7 @@ export class CommerceApplication {
         saleFormat: listing.sale.format,
         // The service-facing fulfillment methods (§A1), derived from the
         // record exactly as the service's own homeserver derivation would.
-        fulfillmentMethods: commerceListingFulfillmentMethods(
-          listing.fulfillmentMethods,
-          listing.digitalLock !== undefined,
-        ),
+        fulfillmentMethods: commerceListingFulfillmentMethods(listing.fulfillmentMethods),
         auctionTerms:
           listing.sale.format === 'auction'
             ? {

@@ -15,6 +15,7 @@ Embedding is off by default. Standalone Shop still uses the new grant-only authe
 | `PUBKY_RUNTIME_EMBEDDED` | runtime | `false` | Force the embedded layout and behaviour even when the page is not detected as framed. Use it on a deployment that exists only to be embedded, so server-rendered HTML is already the embedded layout. |
 | `PUBKY_RUNTIME_STORAGE_ADOPT_LEGACY` | runtime | derived | Whether this origin's old storage names (`franky`, `auth-store`, ...) are the Shop's, so they are migrated. Unset means yes when `NEXT_PUBLIC_BASE_PATH` is empty and no when it is set. |
 | `PUBKY_RUNTIME_SHOP_PUBLIC_PATH` | runtime | unset | The path people use to reach the Shop when it is not the mount path: `/shop` when the App owns `/shop` and frames this build at `/shop-embed`. Share links, canonical and Open Graph URLs and structured data use it. Unset means the mount path. See [Who owns `/shop`](#who-owns-shop). |
+| `PUBKY_RUNTIME_SHOP_GRANT_CLIENT_ID` | runtime | `shop.pubky.app` | The client id Bitkit and other signers show on their approval screen for the Shop's grant sign-in (`cid=` in the `signin_grant` link): a bare host name, no scheme, port or path. On pubky.app set `pubky.app` (staging: `staging.pubky.app`). |
 
 `PUBKY_RUNTIME_DEFAULT_URL` stays the site **origin** (`https://pubky.app`). The public path (or mount path when no override is set) is appended where a public URL is built (canonical links, structured data, share links).
 

@@ -1,0 +1,1 @@
+Pressing Buy on a listing right after the page loads no longer does nothing when the marketplace session restores in the background: the item is added to the cart, or the approval card stays open until you finish or cancel it.

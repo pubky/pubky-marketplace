@@ -380,6 +380,25 @@ describe('marketplacePaymentMethodFailureMessage', () => {
       }
     });
 
+    it("has static copy for every refusal an auction winner's bind can answer with", () => {
+      for (const reason of [
+        'auction_window_ended',
+        'delivery_address_and_envelope',
+        'delivery_address_not_accepted',
+        'delivery_address_required',
+        'encrypted_delivery_required',
+        'invalid_delivery_address',
+      ]) {
+        expect(marketplacePaymentMethodReasonMessage(reason)).toBe(
+          MARKETPLACE_PAYMENT_METHOD_REASON_MESSAGES.get(reason),
+        );
+        expect(MARKETPLACE_PAYMENT_METHOD_REASON_MESSAGES.get(reason)).toBeTruthy();
+        expect(MARKETPLACE_PAYMENT_METHOD_REASON_MESSAGES.get(reason)).not.toBe(
+          MARKETPLACE_PAYMENT_METHOD_REASON_MESSAGES.get('unavailable'),
+        );
+      }
+    });
+
     it('keeps the reader wallet setup refusal rail-neutral', () => {
       expect(isReaderWalletSetupNeeded(usdtRefusal('buyer_paykit_wallet_setup_needed'))).toBe(true);
     });
