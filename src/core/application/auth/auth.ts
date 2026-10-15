@@ -7,12 +7,7 @@ import { FULL_GRANT_REQUIRED_MESSAGE } from '@/libs/auth/sign-in-error-copy';
 import { ValidationErrorCode } from '@/libs/error/error.codes';
 import { Err } from '@/libs/error/error.factories';
 import { ErrorService } from '@/libs/error/error.types';
-import {
-  isAppError,
-  isAuthError,
-  isWrongEnvironmentHomeserverError,
-  toAppError,
-} from '@/libs/error/error.utils';
+import { isAppError, isAuthError, isWrongEnvironmentHomeserverError, toAppError } from '@/libs/error/error.utils';
 import { Logger } from '@/libs/logger/logger';
 import { sleep } from '@/libs/utils/utils';
 import { isPubkyExpiredError } from '@/libs/vibe-session/expired';

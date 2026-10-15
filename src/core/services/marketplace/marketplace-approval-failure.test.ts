@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { Err } from '@/libs/error/error.factories';
 import { AuthErrorCode } from '@/libs/error/error.codes';
+import { Err } from '@/libs/error/error.factories';
 import { ErrorCategory, ErrorService } from '@/libs/error/error.types';
 import { isMarketplaceSessionRequiredError } from '@/libs/error/error.utils';
 import { Logger } from '@/libs/logger/logger';
