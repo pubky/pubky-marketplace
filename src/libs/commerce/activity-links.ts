@@ -1,7 +1,5 @@
-import { MARKETPLACE_ROUTES } from '@/app/routes';
+import { APP_ROUTES, MARKETPLACE_ROUTES } from '@/app/routes';
 import { getMarketplaceCheckoutRoute } from '@/libs/commerce/checkout-phase';
-import { marketplaceConversationHref } from '@/libs/commerce/marketplace-conversation-query';
-import { parseConversationAggregateId } from '@/libs/commerce/messaging-contracts';
 import { MarketplaceNotificationNormalizer } from '@/pipes/marketplaceNotification/marketplaceNotification.normalizer';
 import type { MarketplaceNotification } from '@/services/marketplace/marketplace';
 
@@ -16,16 +14,16 @@ const OFFER_TYPES = new Set<MarketplaceNotification['type']>([
  * Where an Activity row goes. Order rows land on that order. A checkout-started
  * row lands on checkout while that order is still the buyer's unpaid checkout,
  * and on the order otherwise. Offer rows land on that offer. A message row
- * opens its thread when the aggregate is a conversation id. Everything else
- * uses the same surface as the notification deep link.
+ * opens the messages inbox. Everything else uses the same surface as the
+ * notification deep link.
  */
 export function activityRowHref(
   type: MarketplaceNotification['type'],
   aggregateId: string | null,
   options?: { canCheckout?: boolean },
 ): string {
-  if (type === 'message_received' && aggregateId && parseConversationAggregateId(aggregateId)) {
-    return marketplaceConversationHref(aggregateId);
+  if (type === 'message_received') {
+    return APP_ROUTES.MESSAGES;
   }
   if (OFFER_TYPES.has(type) && aggregateId?.startsWith('offer:')) {
     const offerId = aggregateId.slice('offer:'.length);

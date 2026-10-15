@@ -1,5 +1,7 @@
 # Shop Graduation Dossier
 
+> **Note (2026-10-12):** messaging rows and proofs here (Noise XX over Paykit Encrypted Links, the backup-key decision, the messaging VRT) describe a transport since retired; chat now runs on homeserver files ([`../chat/README.md`](../chat/README.md)). Kept as a record.
+
 Wave 5 per-feature proof table (recommended next state per capability): [`graduation-dossier.md`](graduation-dossier.md).
 
 One row per major feature from the evidence ledger. Proof statuses quote the source wording and date where the ledger gives one.

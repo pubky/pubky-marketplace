@@ -16,7 +16,7 @@ export default defineConfig({
     env: {
       NODE_ENV: 'test',
       NEXT_PUBLIC_APP_VERSION: '0.0.0-live',
-      NEXT_PUBLIC_DB_VERSION: '6',
+      NEXT_PUBLIC_DB_VERSION: '9',
       NEXT_PUBLIC_DEBUG_MODE: 'false',
       PUBKY_RUNTIME_COMMERCE_ADAPTER_MODE: 'transaction-service',
       PUBKY_RUNTIME_MARKETPLACE_URL: process.env.MARKETPLACE_SERVICE_URL ?? 'https://staging-api.pubky.app',

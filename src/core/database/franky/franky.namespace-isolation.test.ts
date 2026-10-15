@@ -3,8 +3,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DB_NAME } from '@/config/database';
 import { AppDatabase } from '@/database/franky/franky';
 import { clearDatabase, clearPrivateData } from '@/database/franky/franky.helpers';
+import { deleteLegacyMessagingKeyring } from '@/database/franky/franky.helpers';
 import { migrateLegacyDatabases } from '@/database/franky/franky.namespace-migration';
-import { deleteWrappingKeyStore } from '@/libs/crypto/messaging-keyring';
 import { migrateLegacyLocalStorage } from '@/libs/storage-namespace/migrate-legacy-local-storage';
 
 /**
@@ -117,7 +117,7 @@ describe('Shop storage never touches names outside its namespace', () => {
   it('only deletes Shop-namespaced databases and keys when signing out and wiping private data', async () => {
     await clearDatabase();
     await clearPrivateData();
-    await deleteWrappingKeyStore();
+    await deleteLegacyMessagingKeyring();
 
     expect(deletedDatabases.length).toBeGreaterThan(0);
     for (const name of deletedDatabases) expect(isShopNamespaced(name), `deleted ${name}`).toBe(true);

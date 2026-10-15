@@ -9,7 +9,8 @@ const MAX_REMAINDER_MONTHS = 11;
  *
  * Uses compact labels for every duration (e.g., "2h", "3w", "6M", "1Y 1M").
  *
- * @returns Object with formatRelativeTime function
+ * @returns Object with formatRelativeTime function. Pass `nowMs` (for example from
+ * `useNowMs`) when the label must keep up with the clock after the first render.
  *
  * @example
  * const { formatRelativeTime } = useRelativeTime();
@@ -17,9 +18,8 @@ const MAX_REMAINDER_MONTHS = 11;
  * // Returns: "4s", "5m", "2h", "3d", "5w", "6M", "1Y 1M", "2Y", etc.
  */
 export function useRelativeTime() {
-  function formatRelativeTime(date: Date): string {
-    const now = new Date();
-    const diffSeconds = Math.max(0, Math.floor((now.getTime() - date.getTime()) / 1000));
+  function formatRelativeTime(date: Date, nowMs: number = Date.now()): string {
+    const diffSeconds = Math.max(0, Math.floor((nowMs - date.getTime()) / 1000));
     const diffMins = Math.floor(diffSeconds / 60);
     const diffHours = Math.floor(diffMins / 60);
     const diffDays = Math.floor(diffHours / 24);

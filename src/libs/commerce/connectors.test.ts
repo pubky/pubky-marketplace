@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { connectionFixture } from '@/test-utils/connector-fixtures';
 import {
   connectionHealth,
+  CONNECTOR_ALERT_KINDS,
   connectorAlertAction,
   connectorAlertCopy,
   connectorAlertSchema,
@@ -264,6 +265,16 @@ describe('copy', () => {
 
   it('says the seller must cancel and refund in Pubky after a store-side cancel', () => {
     expect(connectorAlertCopy('merchant_cancelled')).toContain('nothing is refunded automatically');
+  });
+
+  it.each([
+    ['refund_reversed_after_mirror', 'Correct it in your store'],
+    ['push_total_mismatch', 'different total than the buyer paid'],
+    ['listings_unmapped', 'Import each variant again'],
+  ])('explains the %s alert in plain words, never the generic fallback', (kind, phrase) => {
+    expect(CONNECTOR_ALERT_KINDS).toContain(kind);
+    expect(connectorAlertCopy(kind)).toContain(phrase);
+    expect(connectorAlertCopy(kind)).not.toBe(connectorAlertCopy('something_new'));
   });
 
   it('labels push states and treats info quarantines as nothing to do', () => {

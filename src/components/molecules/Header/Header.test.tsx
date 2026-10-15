@@ -3,9 +3,9 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { describe, expect, it, vi } from 'vitest';
 import * as commerceConfig from '@/config/commerce';
+import { useChatUnread } from '@/hooks/useChatUnread/useChatUnread';
 import { useMarketplaceCartCount } from '@/hooks/useMarketplaceCartCount/useMarketplaceCartCount';
 import { useMarketplaceNavAttention } from '@/hooks/useMarketplaceNavAttention/useMarketplaceNavAttention';
-import { useMessagesUnread } from '@/hooks/useMessagesUnread/useMessagesUnread';
 import { useAuthStore } from '@/stores/auth/auth.store';
 import { useNotificationStore } from '@/stores/notification/notification.store';
 import { setSocialHost } from '@/test-utils/social-host';
@@ -59,8 +59,8 @@ vi.mock('@/hooks/useMarketplaceCartCount/useMarketplaceCartCount', () => ({
 vi.mock('@/hooks/useMarketplaceNavAttention/useMarketplaceNavAttention', () => ({
   useMarketplaceNavAttention: vi.fn(() => 0),
 }));
-vi.mock('@/hooks/useMessagesUnread/useMessagesUnread', () => ({
-  useMessagesUnread: vi.fn(() => 0),
+vi.mock('@/hooks/useChatUnread/useChatUnread', () => ({
+  useChatUnread: vi.fn(() => 0),
 }));
 vi.mock('@/stores/search/search.store', () => ({
   useSearchStore: vi.fn(() => ({
@@ -435,7 +435,7 @@ describe('Header Components', () => {
       render(<HeaderSignIn />);
 
       expect(screen.getByTestId('search-input')).toBeInTheDocument();
-      expect(useMessagesUnread).toHaveBeenCalledWith({ enabled: true });
+      expect(useChatUnread).toHaveBeenCalledWith({ enabled: true });
       // lucide uses 'house' for the home icon
       expect(document.querySelector('.lucide-house')).toBeInTheDocument();
       expect(document.querySelector('.lucide-flame')).toBeInTheDocument();
@@ -703,7 +703,7 @@ describe('Header Components', () => {
         expect(screen.getByRole('button', { name: 'Home' })).toHaveClass('bg-white/5');
         expect(document.querySelector('[data-cy="header-nav-profile-btn"]')).toHaveAttribute('target', '_self');
         expect(document.querySelector('[data-cy="header-notification-counter"]')).toBeNull();
-        expect(useMessagesUnread).toHaveBeenCalledWith({ enabled: false });
+        expect(useChatUnread).toHaveBeenCalledWith({ enabled: false });
       } finally {
         adapterMode.mockRestore();
       }

@@ -145,6 +145,36 @@ describe('MarketplaceConnectorPushStatus', () => {
     expect(value.dismissAlert).toHaveBeenCalledWith('a1');
   });
 
+  it.each([
+    ['refund_reversed_after_mirror', 'order-4-aaaaaaaa', 'Correct it in your store'],
+    ['push_total_mismatch', 'order-5-aaaaaaaa', 'different total than the buyer paid'],
+    ['listings_unmapped', null, 'Import each variant again'],
+  ])(
+    'shows a %s alert in plain words with no action and no retry, and can dismiss it',
+    async (kind, orderId, phrase) => {
+      const alert = connectorAlertSchema.parse({
+        id: 'n1',
+        connectionId: 'c1',
+        kind,
+        pubkyOrderId: orderId,
+        detail: 'Service detail the seller does not need to read.',
+        createdAt: '2026-10-15T12:00:00.000Z',
+      });
+      const value = status({ alerts: [alert] });
+      render(<MarketplaceConnectorPushStatus />);
+
+      const item = screen.getByTestId('store-push-alert');
+      expect(item).toHaveTextContent(phrase);
+      expect(item).not.toHaveTextContent('Something needs your attention');
+      expect(screen.queryByTestId('store-push-alert-action')).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Retry' })).not.toBeInTheDocument();
+      if (orderId) expect(within(item).getByRole('link')).toBeInTheDocument();
+      else expect(within(item).queryByRole('link')).not.toBeInTheDocument();
+      await userEvent.setup().click(within(item).getByRole('button', { name: 'Dismiss' }));
+      expect(value.dismissAlert).toHaveBeenCalledWith('n1');
+    },
+  );
+
   it('offers a one-click entry into the order for a store-side cancel the buyer asked for', () => {
     const alert = connectorAlertSchema.parse({
       id: 'a3',

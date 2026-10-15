@@ -6,29 +6,15 @@ import { renderForVRT, VRT_ROOT_TESTID } from '@/test-utils/vrt';
 import { VRT_VIEWPORT_DESKTOP, VRT_VIEWPORT_MOBILE } from '@/test-utils/vrt.viewports';
 import { USD_ASSET } from '@/libs/commerce/pricing';
 import { MarketplaceBidDialog } from '@/organisms/Marketplace/MarketplaceBidDialog';
-import { MarketplaceMessageDialog } from '@/organisms/Marketplace/MarketplaceMessageDialog';
 import { MarketplaceOfferDialog } from '@/organisms/Marketplace/MarketplaceOfferDialog';
-
-// 8x8 solid-color PNG so the message-attachment scenario shows a real image
-// without any network fetch.
-const ATTACHMENT_DATA_URL =
-  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAAEUlEQVR4nGN4UaKEFTEMLQkAgnNfgXMIh2kAAAAASUVORK5CYII=';
 
 const fixtures = vi.hoisted(async () => {
   const { createAuctionProjectionFixture } = await import('@/test/fixtures/commerce/projections');
-  const { createConversationFixture, CONVERSATION_FIXTURE_BUYER, CONVERSATION_FIXTURE_SELLER } =
-    await import('@/test/fixtures/commerce/conversations');
   return {
-    buyer: CONVERSATION_FIXTURE_BUYER,
-    seller: CONVERSATION_FIXTURE_SELLER,
+    buyer: 'b'.repeat(52),
     auctionProjection: createAuctionProjectionFixture(),
-    conversation: createConversationFixture(),
   };
 });
-
-const view = vi.hoisted(() => ({
-  conversation: null as unknown,
-}));
 
 vi.mock('@/hooks/useRequireAuth/useRequireAuth', () => ({
   useRequireAuth: () => ({ requireAuth: (action: () => void) => action() }),
@@ -61,37 +47,6 @@ vi.mock('@/hooks/useMarketplaceOffer/useMarketplaceOffer', async () => {
     }),
   };
 });
-
-vi.mock('@/hooks/useMarketplaceMessages/useMarketplaceMessages', async () => {
-  const { useForm } = await import('react-hook-form');
-  const { marketplaceMessageDefaults } = await import('@/hooks/useMarketplaceMessages/useMarketplaceMessages.types');
-  return {
-    useMarketplaceMessages: () => ({
-      form: useForm({ defaultValues: marketplaceMessageDefaults }),
-      conversation: view.conversation,
-      isLoading: false,
-      error: null,
-      isSandbox: true,
-      attachment: {
-        file: null,
-        previewUrl: null,
-        error: null,
-        inputRef: { current: null },
-        onInputChange: vi.fn(),
-        choose: vi.fn(),
-        remove: vi.fn(),
-        reset: vi.fn(),
-        upload: vi.fn(),
-      },
-      submit: vi.fn(async () => false),
-      refresh: vi.fn(async () => {}),
-    }),
-  };
-});
-
-vi.mock('@/hooks/useMarketplaceAttachmentUrl/useMarketplaceAttachmentUrl', () => ({
-  useMarketplaceAttachmentUrl: () => ({ url: ATTACHMENT_DATA_URL, error: null }),
-}));
 
 async function openDialog(trigger: { click: () => Promise<void> }) {
   await trigger.click();
@@ -158,37 +113,5 @@ describe('Marketplace dialogs — visual regression', () => {
     );
     await openDialog(screen.getByRole('button', { name: 'Make offer' }));
     await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('dialog-offer-open-desktop');
-  });
-
-  it('renders the open message dialog with an image attachment at desktop viewport', async () => {
-    const { seller, conversation } = await fixtures;
-    view.conversation = conversation;
-
-    const screen = await renderForVRT(
-      <DialogHarness>
-        <MarketplaceMessageDialog sellerPubky={seller} listingId="leather_boots" />
-      </DialogHarness>,
-      { viewport: VRT_VIEWPORT_DESKTOP },
-    );
-    await openDialog(screen.getByRole('button', { name: 'Message seller' }));
-    await vi.waitFor(() => {
-      const image = document.querySelector<HTMLImageElement>('img[alt="Private marketplace message attachment"]');
-      if (!image || !image.complete || image.naturalWidth === 0) throw new Error('Attachment has not loaded yet.');
-    });
-    await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('dialog-message-attachment-open-desktop');
-  });
-
-  it('renders the open message dialog before any messages exist at desktop viewport', async () => {
-    const { seller } = await fixtures;
-    view.conversation = null;
-
-    const screen = await renderForVRT(
-      <DialogHarness>
-        <MarketplaceMessageDialog sellerPubky={seller} listingId="leather_boots" />
-      </DialogHarness>,
-      { viewport: VRT_VIEWPORT_DESKTOP },
-    );
-    await openDialog(screen.getByRole('button', { name: 'Message seller' }));
-    await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('dialog-message-empty-open-desktop');
   });
 });

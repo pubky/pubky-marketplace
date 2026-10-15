@@ -12,7 +12,8 @@ A peer-to-peer marketplace on Pubky:
 - **A small Rust service enforces what a browser can't:** single-winner inventory, auctions, orders and receipts.
 - **Payments go straight to the seller.** Bitcoin runs over Paykit and Locks; PayPal is seller-direct. Card payments
   are paused. The Shop never holds funds.
-- **Legacy messaging is end-to-end encrypted** over Paykit Encrypted Links. Fresh grant sessions cannot enroll in that cookie-only transport; the separate Inbox replacement is being coordinated with Matthew.
+- **Messaging is end-to-end encrypted** between the two parties: each message is an encrypted file on the sender's own
+  homeserver, and it works with every sign-in ([`../chat/README.md`](../chat/README.md)).
 
 This repository holds the Shop web client, built on the Pubky social app
 ([pubky/pubky-app](https://github.com/pubky/pubky-app)), together with the project documents and the tester issue
@@ -56,8 +57,8 @@ NEXT_PUBLIC_DB_NAME=franky-marketplace-sandbox npm run dev   # terminal 2: http:
 ```
 
 Sign in, open `/marketplace/sandbox`, and seed the catalog. [`RUNNING.md`](RUNNING.md) covers every mode: the durable
-Rust service (it needs a local Postgres using scram-sha-256 auth, which its `docker compose` provides), encrypted
-messaging, drops, and real Locks/Paykit payments.
+Rust service (it needs a local Postgres using scram-sha-256 auth, which its `docker compose` provides), chat against
+a local Pubky testnet, drops, and real Locks/Paykit payments.
 
 ## Test
 
@@ -105,7 +106,10 @@ in [`runbook-production.md`](runbook-production.md).
 
 ## Known limits
 
-- **Fresh grant users cannot enroll in the legacy messaging transport.** Its Paykit WASM accepts only cookie sessions. This affects Ring, Bitkit, Passport, recovery and hosted grants alike; Matthew's Inbox replacement is a separate workstream.
+- **A stranger's first message needs the inbox.** Chat works with every sign-in that holds the chat scopes, but a
+  message from someone you have never talked to is noticed through the `pubky/inbox` service, which needs a grant
+  session and a deployed inbox (`PUBKY_RUNTIME_INBOX_URL`).
+  ([`../chat/README.md`](../chat/README.md)).
 - **Shared sign-in requires the same origin.** App owns the grant only in the supported `/shop` + `/shop-embed` pair. A separate `shop.pubky.app` tab establishes a separate grant; this is not cross-origin SSO.
 - **The old vibe consumer is removed.** Keep `NEXT_PUBLIC_VIBE_SESSION_BRIDGE_ORIGIN` and `NEXT_PUBLIC_VIBE_ID` unset. Cookie-only accounts must sign in again.
 - **Commerce needs its own approval and configured backend.** Local-key users must have that same identity in a supported external signer. See [grant authentication](../launch/grant-auth-session.md) for recovery and messaging limits.

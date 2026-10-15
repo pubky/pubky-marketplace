@@ -125,6 +125,46 @@ export function createBitcoinQuotedOrderFixture(): MarketplaceOrder {
 }
 
 /**
+ * A durable-service order for a euro listing bound on the Bitcoin
+ * rail: the price of record stays in euros, the request is denominated in
+ * the USD cents the service converted it to, and both the conversion and the
+ * direct `BTCEUR` guard quote are recorded (service `fx_conversion`).
+ */
+export function createFxConvertedOrderFixture(overrides: Partial<MarketplaceOrder> = {}): MarketplaceOrder {
+  const eur = (amountMinor: number) => ({ amountMinor, currency: 'EUR', exponent: 2 });
+  const base = createOrderFixture('pending_payment');
+  return createOrderFixture('pending_payment', {
+    paymentMethod: 'bitcoin',
+    lines: base.lines.map((line) => ({ ...line, unitPrice: eur(12_500), subtotal: eur(12_500) })),
+    subtotal: eur(12_500),
+    shipping: eur(1_200),
+    total: eur(13_700),
+    bitcoinQuote: {
+      quotedSats: 19_632,
+      currency: 'EUR',
+      exponent: 2,
+      rate: '69789',
+      source: 'blocktank',
+      fetchedAt: '2026-10-15T09:40:00.000Z',
+      expiresAt: '2026-10-15T09:50:00.000Z',
+      spreadBps: 0,
+      pair: 'BTCEUR',
+    },
+    fxConversion: {
+      pair: 'EURUSD',
+      rate: '1.106106',
+      usdRate: '77197',
+      currencyRate: '69789',
+      source: 'blocktank',
+      fetchedAt: '2026-10-15T09:40:00.000Z',
+      from: eur(13_700),
+      to: usd(15_154),
+    },
+    ...overrides,
+  });
+}
+
+/**
  * A durable-service order paid in USDT: the order total is the USD price of
  * record, and the payment attempt carries the exact parity amount in
  * millionths (13,700 cents = 137.000000 USDT).

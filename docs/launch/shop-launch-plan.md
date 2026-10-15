@@ -1,6 +1,7 @@
 # Pubky Shop: beta launch and handoff plan
 
 > Authentication update: the Ring 1.19/cookie rollout details below are historical. The current release uses [grant authentication](grant-auth-session.md) and the [embedding guide](shop-embedding.md).
+> **Note (2026-10-12):** the messaging statements in this document (a frozen beta on Paykit Encrypted Links, Ring cookie sessions only, no messaging for Bitkit and Passport users until SSO-E1) predate the chat rewrite. Shop messaging now runs on homeserver files with every sign-in ([`../chat/README.md`](../chat/README.md), [ADR 0030](../adr/0030-chat-transport.md)); the pubky-chat (MLS) cutover remains the long-term direction. The rest is kept as written.
 
 Scope: [shop.pubky.app](https://shop.pubky.app), built from this repository, [pubky/pubky-marketplace](https://github.com/pubky/pubky-marketplace) (branch `master`; the code and its history came from the fork `BitcoinErrorLog/pubky-app`, branch `release/shop-v0.6.8`, which is frozen for Shop work from 6 Oct), handed to a dev team for about two weeks, ending in a beta for real users. Facts were checked on 1 Oct 2026 against the repos, the live sites and GitHub (status, blockers, timeline and decisions refreshed 5 Oct), and reviewed against the code as it stood that day and the 1 Oct issue triage of the [pubky-marketplace tracker](https://github.com/pubky/pubky-marketplace/issues). Sizes are for one developer and include tests and review: **XS** under half a day, **S** half a day to 2 days, **M** 3 to 5 days, **L** more than a week.
 
