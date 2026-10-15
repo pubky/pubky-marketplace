@@ -7,13 +7,19 @@ import {
   altTextForUrl,
   extraFieldsWithImages,
   IMAGE_RESULTS_JSON_FIELD,
+  IMAGE_SYNC_JSON_FIELD,
   imageResultsOf,
+  imageSyncOf,
+  imageSyncText,
+  IMPORT_SOURCE_HASH_KEY,
   type ImportImageResult,
   type ImportImageTarget,
   MEDIA_JSON_FIELD,
   outcomesFromResults,
+  planImageSync,
   rowHoldsMedia,
   sourceImagesOf,
+  sourceUrlHash,
   uniqueImageUrls,
 } from './import-image-phase';
 import { DEFAULT_IMPORT_SETTINGS } from './import-settings';
@@ -182,5 +188,134 @@ describe('writing the photo phase onto a row', () => {
       sourceImagesOf({ extraFields: { source_image_urls: '[{"url":"https://a.example.com/1.png"},{"alt":"x"},3]' } }),
     ).toEqual([{ url: 'https://a.example.com/1.png', alt: '' }]);
     expect(imageResultsOf({ extraFields: { [IMAGE_RESULTS_JSON_FIELD]: '[{"url":"u","status":"odd"}]' } })).toEqual([]);
+  });
+});
+
+describe('planImageSync', () => {
+  const url = (name: string) => `https://dezentralshop.ch/wp-content/uploads/2025/12/${name}.jpg`;
+  const source = (name: string) => ({ url: url(name), alt: name });
+  const imported = (id: string, name: string) => ({ id, [IMPORT_SOURCE_HASH_KEY]: sourceUrlHash(url(name)) });
+  const hand = (id: string) => ({ id });
+
+  it('hashes the exact URL, so the same URL is always recognised and another never is', () => {
+    expect(sourceUrlHash(url('a'))).toBe(sourceUrlHash(` ${url('a')} `));
+    expect(sourceUrlHash(url('a'))).not.toBe(sourceUrlHash(url('b')));
+    expect(sourceUrlHash(url('a'))).toMatch(/^[0-9a-f]{64}$/);
+  });
+
+  it('keeps everything and uploads nothing when the URLs are the same', () => {
+    const stored = [imported('m1', 'a'), imported('m2', 'b')];
+    const plan = planImageSync(stored, [source('b'), source('a')], 13);
+    expect(plan).toMatchObject({ toUpload: [], overflow: [], removed: 0, handKept: 0 });
+    expect(plan.keptMedia).toEqual(stored);
+  });
+
+  it('uploads only the new URL, once, even if the file repeats it', () => {
+    const plan = planImageSync([imported('m1', 'a')], [source('a'), source('c'), source('c')], 13);
+    expect(plan.toUpload).toEqual([source('c')]);
+    expect(plan.keptMedia).toEqual([imported('m1', 'a')]);
+  });
+
+  it('drops media whose URL left the file and keeps the store order of the rest', () => {
+    const plan = planImageSync(
+      [imported('m1', 'a'), imported('m2', 'b'), imported('m3', 'c')],
+      [source('c'), source('a')],
+      13,
+    );
+    expect(plan.keptMedia).toEqual([imported('m1', 'a'), imported('m3', 'c')]);
+    expect(plan).toMatchObject({ removed: 1, toUpload: [] });
+  });
+
+  it('never drops a photo with no recorded source, wherever it sits, and counts it as kept', () => {
+    const stored = [imported('m1', 'a'), hand('h1'), imported('m2', 'b')];
+    const plan = planImageSync(stored, [source('a')], 13);
+    expect(plan.keptMedia).toEqual([imported('m1', 'a'), hand('h1')]);
+    expect(plan).toMatchObject({ removed: 1, handKept: 1, toUpload: [] });
+    expect(planImageSync([hand('h1')], [], 13)).toMatchObject({ removed: 0, handKept: 1 });
+  });
+
+  it('uploads every source URL for a stored listing that has no recorded sources, beside its hand-added photos', () => {
+    const plan = planImageSync([hand('h1'), hand('h2')], [source('a'), source('b')], 13);
+    expect(plan.toUpload).toEqual([source('a'), source('b')]);
+    expect(plan.handKept).toBe(2);
+  });
+
+  it('adds only what fits under the listing media limit and returns the rest as overflow', () => {
+    const stored = Array.from({ length: 12 }, (_, index) => imported(`m${index}`, `s${index}`));
+    const desired = [...stored.map((_, index) => source(`s${index}`)), source('x'), source('y')];
+    const plan = planImageSync(stored, desired, 13);
+    expect(plan.toUpload).toEqual([source('x')]);
+    expect(plan.overflow).toEqual([source('y')]);
+  });
+});
+
+describe('re-import outcomes', () => {
+  const url = (name: string) => `https://dezentralshop.ch/wp-content/uploads/2025/12/${name}.jpg`;
+  const stored = { id: 'm1', [IMPORT_SOURCE_HASH_KEY]: sourceUrlHash(url('a')) };
+
+  it('puts kept media first, then the new upload tagged with its source hash, and counts the sync', () => {
+    const target: ImportImageTarget = {
+      listingId: 'sock-1',
+      images: [{ url: url('b'), alt: 'Socks' }],
+      keptMedia: [stored],
+      sync: { removed: 1, handKept: 0 },
+    };
+    const [outcome] = outcomesFromResults([target], [uploaded(url('b'))]);
+    expect(outcome?.media).toHaveLength(2);
+    expect(outcome?.media[0]).toEqual(stored);
+    expect(outcome?.media[1]).toMatchObject({ [IMPORT_SOURCE_HASH_KEY]: sourceUrlHash(url('b')) });
+    expect(outcome?.sync).toEqual({ added: 1, removed: 1, handKept: 0, unchanged: false });
+  });
+
+  it('is unchanged when nothing is fetched, nothing removed and nothing skipped', () => {
+    const target: ImportImageTarget = {
+      listingId: 'sock-1',
+      images: [],
+      keptMedia: [stored],
+      sync: { removed: 0, handKept: 2 },
+    };
+    const [outcome] = outcomesFromResults([target], []);
+    expect(outcome?.media).toEqual([stored]);
+    expect(outcome?.sync).toEqual({ added: 0, removed: 0, handKept: 2, unchanged: true });
+  });
+
+  it('reports a failed or overflowing new photo and does not count it as added', () => {
+    const target: ImportImageTarget = {
+      listingId: 'sock-1',
+      images: [{ url: url('b'), alt: 'Socks' }],
+      skipped: [{ url: url('c'), alt: 'Socks' }],
+      keptMedia: [stored],
+      sync: { removed: 0, handKept: 0 },
+    };
+    const [outcome] = outcomesFromResults([target], [{ url: url('b'), status: 'failed', reason: 'http_error' }]);
+    expect(outcome?.results).toEqual([
+      { url: url('b'), status: 'failed', reason: 'http_error' },
+      { url: url('c'), status: 'failed', reason: 'limit_reached' },
+    ]);
+    expect(outcome?.sync).toMatchObject({ added: 0, unchanged: false });
+  });
+
+  it('leaves a new listing without a sync summary, and stores and words the summary for an existing one', () => {
+    const [fresh] = outcomesFromResults([{ listingId: 'new', images: [] }], []);
+    expect(fresh?.sync).toBeUndefined();
+    const fields = extraFieldsWithImages(
+      {},
+      {
+        listingId: 'sock-1',
+        media: [{ id: 'm1' }],
+        results: [],
+        sync: { added: 2, removed: 1, handKept: 1, unchanged: false },
+      },
+    );
+    expect(imageSyncOf({ extraFields: fields })).toEqual({ added: 2, removed: 1, handKept: 1, unchanged: false });
+    expect(IMAGE_SYNC_JSON_FIELD in fields).toBe(true);
+    expect(imageSyncText({ added: 2, removed: 1, handKept: 1, unchanged: false })).toBe(
+      '2 added, 1 removed, 1 kept (added in the Shop)',
+    );
+    expect(imageSyncText({ added: 0, removed: 0, handKept: 0, unchanged: true })).toBe('photos unchanged');
+    expect(imageSyncText({ added: 0, removed: 0, handKept: 2, unchanged: true })).toBe(
+      'photos unchanged, 2 kept (added in the Shop)',
+    );
+    expect(imageSyncOf({ extraFields: { [IMAGE_SYNC_JSON_FIELD]: '{"added":"x"}' } })).toBeNull();
   });
 });

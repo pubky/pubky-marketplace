@@ -368,6 +368,30 @@ describe('useMarketplaceInventoryImport', () => {
       expect(result.current.progressPhase).toBe('listings');
     });
 
+    it('only attaches, and fetches nothing, for a stored listing whose photos are unchanged', async () => {
+      mocks.targets.mockResolvedValue([
+        { listingId: '7718', images: [], keptMedia: [{ id: 'm1' }], sync: { removed: 0, handKept: 0 } },
+      ]);
+      mocks.publish.mockResolvedValue(COMPLETE);
+      const { result } = renderHook(() => useMarketplaceInventoryImport('seller'));
+      await act(async () => {
+        await result.current.planFile(FILE);
+      });
+      await act(async () => {
+        await result.current.publish();
+      });
+      expect(mocks.upload).not.toHaveBeenCalled();
+      expect(mocks.attach).toHaveBeenCalledTimes(1);
+      const [, , outcomes] = mocks.attach.mock.calls[0] as [
+        string,
+        string,
+        { media: unknown[]; sync: { unchanged: boolean } }[],
+      ];
+      expect(outcomes[0]?.media).toEqual([{ id: 'm1' }]);
+      expect(outcomes[0]?.sync.unchanged).toBe(true);
+      expect(mocks.publish).toHaveBeenCalledTimes(1);
+    });
+
     it('skips the photo phase when no listing needs photos', async () => {
       mocks.publish.mockResolvedValue(COMPLETE);
       const { result } = renderHook(() => useMarketplaceInventoryImport('seller'));
