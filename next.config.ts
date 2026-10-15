@@ -128,6 +128,9 @@ const withSerwist = withSerwistInit({
   // Registration is deferred to `ServiceWorkerRegistration`, which skips it when the Shop
   // is framed or mounted under another app's origin (that app owns the worker scope there).
   register: false,
+  // register:false still injects an online reload listener. The App owns iframe
+  // recovery; a reconnect must not discard an embedded checkout or seller form.
+  reloadOnOnline: nextConfig.basePath !== '/shop-embed',
   globPublicPatterns: SW_PRECACHE_PUBLIC_PATTERNS,
   exclude: SW_PRECACHE_EXCLUDE,
 });

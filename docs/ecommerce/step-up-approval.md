@@ -1,5 +1,6 @@
 # Step-up approval for bridged sessions (Shop ↔ pubky.app)
 
+> Historical design: the cookie sign-in and dual-AuthToken flow described here have been superseded. See [grant authentication](../launch/grant-auth-session.md) for the current sign-in, service approval and migration contract.
 > **Note (2026-10-12):** the messaging rows and citations below (`PAYKIT_MESSAGING_CAPABILITY`, `paykit-messaging.ts`, `SessionResumeScopeMissing`, `pubky.messaging.session.v1`) describe the retired Paykit Encrypted Links transport, and `CAPABILITIES` has since gained `/pub/chat/:rw,/priv/chat/:rw`. Chat now uses the sign-in grant's own `/pub/chat/:rw` and `/priv/chat/:rw` scopes and shows a re-approval notice on older sessions ([`../chat/README.md`](../chat/README.md)). The step-up policy itself is unchanged.
 
 **Status:** implemented (Option C) on `marketplace/pr25-ux`, 2026-09-05; reviewed and audited to SHIP. Scope: the single signer moment a user arriving via the pubky.app session bridge hits at their first commerce action. No secret, cookie, or key material appears in this document.

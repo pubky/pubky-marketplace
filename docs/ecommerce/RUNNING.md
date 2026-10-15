@@ -1,6 +1,6 @@
 # Running the Marketplace Locally
 
-How to get the marketplace working on your machine so you can click through it as a user. Every command here was run and verified; nothing in this file is aspirational.
+How to run the marketplace locally. Current grant authentication and embedded deployment requirements are in [Grant authentication and App-owned sessions](../launch/grant-auth-session.md) and [Shop embedding](../launch/shop-embedding.md). Older live transport proofs below are labeled separately; they do not establish compatibility with the current grant-only UI.
 
 Read [`status.md`](status.md) first if you want to know which parts are real and which are simulated before you start. New to the Shop: start with [`onboarding.md`](onboarding.md). Shipping a release: [`release.md`](release.md).
 
@@ -38,7 +38,7 @@ The four modes:
 | ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `unavailable` (default) | Browse-only. No commands. No nav entry. Fails closed.                                                                                                                                                                                                                                                                                                                                    |
 | `sandbox`               | Full click-through against the in-memory service. Everything transactional is simulated and labeled.                                                                                                                                                                                                                                                                                     |
-| `transaction-service`   | Commands and reads go to the durable Rust service with real Pubky AuthToken sessions. Authoritative outcomes and an interactive shopping UI; establishing the session is a signer approval started from the in-app "Connect marketplace session" dialog (QR or Pubky Ring deeplink) — see below.                                                                                         |
+| `transaction-service`   | Commands and reads go to the durable Rust service with a marketplace bearer session. The current UI obtains it through a separate grant approval after homeserver sign-in; client, BFF and service grant support must be configured — see below.                                                                                                                                         |
 | `locks-paykit`          | Everything `transaction-service` does, PLUS the real Locks/Paykit payment rails. The modes compose rather than exclude: the durable service stays the transactional authority (its worker independently verifies the Locks lifecycle and confirms payments); the client additionally submits the buyer's proof bundle and registers the correlation. See "Running a real payment" below. |
 
 ## Verifying the service is up
@@ -78,11 +78,11 @@ The marketplace endpoints are implemented on the `main` branch of [`pubky/market
 
 Because a dedicated marketplace-indexing Nexus is deployed separately from the main social Nexus, the app supports an **optional marketplace-only override**: set `PUBKY_RUNTIME_MARKETPLACE_NEXUS_URL` to route ONLY the commerce/marketplace index reads at that deployment — listing stream and details, listing/shop tags, shop reviews/reputation, and the drops stream — while every social surface (posts, users, tags, files, streams, search) keeps using `PUBKY_RUNTIME_NEXUS_URL`. When the override is unset, marketplace reads fall back to the main `nexusUrl` — the variable is genuinely optional, including under the strict deployed-mode config parse. (Pointing the whole app at a marketplace-indexing Nexus with `PUBKY_RUNTIME_NEXUS_URL` still works for a single-Nexus setup.)
 
-## Shared pubky.app sign-in (vibe session consumer)
+## Shared pubky.app sign-in
 
-**Off in both live Shop builds.** The production and staging deployments are built with `NEXT_PUBLIC_VIBE_SESSION_BRIDGE_ORIGIN` and `NEXT_PUBLIC_VIBE_ID` unset, so the Shop uses only its own sign-in, makes no `/session-bridge` request, and ignores a `#s=` hand-off link. Keep them unset. The cookie bridge shares one homeserver cookie between sites, and cookie sessions are deprecated by the homeserver, so it is not the path to single sign-on with pubky.app.
+The supported integration is the same-origin App `/shop` wrapper around Shop `/shop-embed`. App owns the homeserver grant; Shop restores its exact SDK record and delegates sign-in, capability upgrades and logout to App. Standalone Shop continues to establish its own grant. This is not cross-origin SSO.
 
-The consumer code remains (ADR 0029): the two variables are **build-time** values, baked into the artifact at `npm run build` — not `PUBKY_RUNTIME_*` values — and consumer mode turns on only when the bridge origin is set (an exact origin such as `https://pubky.app`; `http://localhost:<port>` is accepted only outside production builds). A bridged restore never auto-triggers a re-approval, and the staging homeserver guard still runs on every restore when `PUBKY_RUNTIME_ENV=staging`.
+The old vibe session consumer and `#s=` cookie handoff are removed. Keep `NEXT_PUBLIC_VIBE_SESSION_BRIDGE_ORIGIN` and `NEXT_PUBLIC_VIBE_ID` unset; they do not enable a supported authentication path. [ADR 0029](../adr/0029-vibe-session-consumer.md) records the earlier design. Follow [Shop embedding](../launch/shop-embedding.md) for the current build path, runtime environment and BFF requirements.
 
 ## Dev server hygiene
 
@@ -99,9 +99,11 @@ npm run test:marketplace                            # sandbox service
 npm run test:marketplace:service                    # durable Rust service transport, needs it running (see below)
 npm run test:marketplace:locks                      # LIVE real-payment purchase, needs the composed stack (see below)
 npm run test:marketplace:drops                      # LIVE FCFS drop race on the deployed staging stack (see below)
-npm run test:e2e:launch-critical                    # launch-critical browser journey (CI runs it as launch-e2e)
+LAUNCH_E2E_MODE=synthetic bash scripts/ci-launch-e2e.sh # CI browser journey; reuses a standalone production build
 bash scripts/vrt-linux.sh [spec...]                 # Linux visual regression in Docker (npm run test:vrt is the same)
 ```
+
+The synthetic launch gate runs the real SDK and production UI against isolated network fixtures. It requires positive Shop sign-in, exact saved-grant reload, separate marketplace approval, proof upload/verification/removal and an authorized seller inventory read. It does not establish live backend or signer compatibility. For an opt-in live run, use `LAUNCH_E2E_MODE=live` with the seller secret and a correctly configured grant-enabled BFF/service; unsupported live configuration fails rather than silently switching to fixtures.
 
 Run `bash scripts/prepush.sh` before every push; its last line is `PREPUSH OK <sha> <seconds> fast`. Releases use `PREPUSH_FULL=1 bash scripts/prepush.sh`, which adds Linux VRT for every spec that renders a changed file.
 
@@ -148,7 +150,7 @@ The homeserver admin endpoint on port 6288 matches the Cypress defaults (`HOMESE
 
 ## Running against the durable transaction service
 
-`services/marketplace/` is the **sandbox adapter only**. The real, durable transaction service is a separate Rust service with PostgreSQL persistence and real Pubky AuthToken authentication:
+`services/marketplace/` is the **sandbox adapter only**. The real, durable transaction service is a separate Rust service with PostgreSQL persistence and authenticated bearer sessions:
 
 <https://github.com/pubky/pubky-marketplace-service>
 
@@ -161,7 +163,7 @@ cargo test --workspace   # optional but recommended
 cargo run -p marketplace-service   # listens on 127.0.0.1:8080
 ```
 
-Then run the app against it:
+Then run the app against it. These variables select the transport; they do not configure purchase approval. For new sessions, also provision the [grant BFF and matching service configuration](../launch/shop-embedding.md#shop-bff-prerequisites), and set `PUBKY_RUNTIME_MARKETPLACE_GRANT_FLOW_ENABLED=true`. Without that support, the UI reports approval unavailable:
 
 ```bash
 PUBKY_RUNTIME_COMMERCE_ADAPTER_MODE=transaction-service \
@@ -171,21 +173,21 @@ npm run dev
 
 The client selects a wholly different transport in this mode (`MarketplaceTransactionService`):
 
-- **Auth is real.** A session is established by POSTing a Pubky `AuthToken` (obtained through the SDK auth flow after signer approval — see [`service-auth.md`](service-auth.md)) to `/v1/auth/sessions`; commands carry the returned opaque token as `Authorization: Bearer`. The forgeable `x-pubky-actor` header does not exist on this path. The bearer token lives in memory plus a `localStorage` mirror so reloads, new tabs, and browser restarts do not force a fresh signer approval — never in IndexedDB, cookies, or logs — and is dropped on sign-out, account switch, and expiry (see `service-auth.md` for the storage contract and tradeoff).
+- **Auth is real.** The active homeserver grant writes a bootstrap proof; the Shop BFF verifies it and starts a separate marketplace grant approval. The resulting service bearer authorizes commands through `Authorization: Bearer`; the forgeable `x-pubky-actor` header does not exist on this path. The client keeps the bearer in memory and a `localStorage` mirror, bounded by expiry and identity. The BFF separately holds an encrypted server-side pairing referenced by an HttpOnly cookie. Sign-out/account changes clear service credentials; a hosted cleanup boundary is not acknowledged until the BFF confirms cookie removal. [`service-auth.md`](service-auth.md) also documents older AuthToken compatibility paths, which the current UI does not use.
 - **Wire casing is snake_case** per ADR 0019 §3; the client converts its camelCase contracts at the transport boundary in both directions.
 - **The ported command set is accepted** — listings, offers, bids, checkout, order cancellation, fulfillment, returns, external-refund evidence, and reviews. Kinds the durable service does not implement (`payment.sandbox_advance`, the sandbox's plaintext `message.send`, notification read state/preferences) are rejected client-side before any bytes are sent, and the UI withholds those affordances in this mode.
 - **Reads come from the service's role-scoped projections** (listings, offers, orders with embedded payment/shipment/return/refund/review sub-objects, payments, receipts, and notifications). The interactive shopping UI sources every `expected_revision` from a fresh projection read and treats `REVISION_CONFLICT` as refetch-and-retry.
 
 ### Connecting the session from the UI
 
-Durable-mode screens that need a session (orders, offers, notifications, the cart's checkout, listing negotiation state) render a **"Connect marketplace session"** card instead of a dead end. Clicking it opens a dialog that:
+Durable-mode screens that need a session offer a marketplace approval action. If the homeserver grant is missing, the dialog first offers standalone sign-in or **Continue in Pubky App** for a hosted session. Once authority is available:
 
-1. states what approval authorizes (a marketplace session: the app may transact as you against the transaction service until it expires or you sign out),
-2. shows the flow's `pubkyauth://` authorization URL as a QR — scan it with Pubky Ring on another device — plus an "Open in Pubky Ring" deeplink for same-device Ring and a copy affordance,
-3. waits for the approval (cancellable; closing the dialog frees the flow), and
-4. on approval exchanges the AuthToken for the bearer session and refetches the surfaces that were waiting on it.
+1. The active grant writes the single-use bootstrap proof and the BFF verifies it.
+2. Shop opens a separate `pubkyauth://signin_grant` approval for the same identity, using Ring, Bitkit or enabled Passport. Hosted and local-key sessions ask the user to choose an external signer; a recovery key is not retained for later purchases.
+3. Closing the dialog cancels the attempt. Identity/session changes invalidate pending work, and failures offer a fresh attempt.
+4. Successful approval yields the marketplace bearer and refreshes the waiting surfaces.
 
-If the flow fails (relay timeout, rejected token, unreachable service) the dialog shows the transport's actual error and a "Try again" that begins a fresh flow — AuthTokens are single-use, so a failed flow's QR is never reused. A connect attempt that is never approved times out after two minutes with the same visible-error-plus-retry treatment, so the dialog can never sit in "waiting for approval" forever on a dead relay channel; closing and reopening the dialog likewise cancels the old flow and mints a fresh QR (an old QR from a previous open is dead — scanning it approves into a freed flow and connects nothing). Once connected, the session survives page reloads, new tabs, and browser restarts (`localStorage`, bounded by the service-side TTL); another device still needs its own approval. When a session later expires (or the service answers 401 — including for a restored token the service no longer accepts), the same card resurfaces in place; reconnecting requires a fresh signer approval by design (see `service-auth.md`). The signer approval itself needs a device running Pubky Ring; the integration suite below proves the same transport programmatically with a throwaway keypair.
+The flow is bounded by the backend expiry; expired or rejected approvals are not reused. A valid persisted bearer can resume after reload until expiry or refusal. A 401 or expired bearer returns the surface to reconnect. These are separate service credentials: homeserver sign-in alone does not approve a purchase. See [the current grant contract](../launch/grant-auth-session.md#commerce-remains-a-separate-approval).
 
 To prove the transport against the running service (session establishment, snake_case commands, idempotent replay, revision conflicts, report reads):
 
@@ -193,7 +195,7 @@ To prove the transport against the running service (session establishment, snake
 npm run test:marketplace:service
 ```
 
-This integration suite uses no mocks: it runs a genuine Pubky auth flow (acting as the signer with a throwaway keypair), needs the service on `127.0.0.1:8080` (override with `MARKETPLACE_SERVICE_URL`) and network access to the Pubky HTTP relay. It is intentionally not part of the unit gates.
+This older transport integration suite exercises the service AuthToken compatibility path with a throwaway signer; it does not exercise the current browser grant/bootstrap path. It needs the service on `127.0.0.1:8080` (override with `MARKETPLACE_SERVICE_URL`) and relay access. It is not a unit gate or proof of deployed grant sign-in. Use the synthetic launch gate for the current UI/SDK contract and perform deployed grant QA separately.
 
 The client's state tables are held in lockstep with the service's canonical contract: `contracts/state-machines.json` from the service repo is vendored at `src/libs/commerce/contracts/state-machines.json`, and `src/libs/commerce/state-machines.contract.test.ts` fails CI on any drift. When the service contract changes, re-vendor the file and reconcile the TypeScript — the service is canonical.
 

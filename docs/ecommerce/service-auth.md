@@ -1,5 +1,7 @@
 # Authenticating the Browser to the Transaction Service
 
+> Historical design: the cookie sign-in and dual-AuthToken flow described here have been superseded. See [grant authentication](../launch/grant-auth-session.md) for the current sign-in, service approval and migration contract.
+
 How the app proves who it is to the Marketplace Transaction Service, and why the first design was wrong.
 
 ## The problem with challenge–response signing

@@ -12,15 +12,17 @@ A peer-to-peer marketplace on Pubky:
 - **A small Rust service enforces the rules a browser can't.** It owns single-winner inventory, auctions, orders and receipts.
 - **Payments go straight to the seller.** Bitcoin runs over Paykit and Locks; PayPal is seller-direct. Card payments are paused.
 - **No custody.** The Shop never holds funds.
-- **Built-in messaging.** Messages are end-to-end encrypted over Paykit Encrypted Links today. That stack is frozen as beta and moves to the shared pubky-chat library on MLS ([chat plan](https://github.com/pubky/pubky-chat/blob/main/docs/chat-unification-plan.md), item E1).
+- **Messaging transition.** [Chat #209](https://github.com/pubky/pubky-marketplace/pull/209) replaces Paykit Encrypted Links with grant-capable homeserver chat and Inbox pings. Until it lands, fresh grant sessions cannot enroll in the legacy transport. [Messaging cutover](grant-auth-session.md#messaging-cutover) covers merge order and shared-session checks.
 
-The web client is a fork of the Pubky social app ([pubky/pubky-app](https://github.com/pubky/pubky-app)). For the beta it runs as its own site next to pubky.app, and social pages link back there (launch plan §2).
+The web client is a fork of the Pubky social app ([pubky/pubky-app](https://github.com/pubky/pubky-app)). It supports standalone Shop and the opt-in same-origin App `/shop` wrapper around `/shop-embed`. The [embedding guide](shop-embedding.md) covers deployment; [grant authentication](grant-auth-session.md) covers session ownership and migration. The historical launch-plan snapshot below describes earlier decisions.
 
 ## Repos and deploys
 
-| Repo | What | Branch for work | Deploys to |
+The deployment column and backend version descriptions below are a historical handover snapshot from early October, not a verified inventory of current infrastructure. VV owns the current deployment configuration in [pubky/shop-migration](https://github.com/pubky/shop-migration); confirm the target revision and environment there before deploying. The frontend requirements for this PR are in [Shop embedding](shop-embedding.md).
+
+| Repo | What | Branch for work | Deployment snapshot |
 |---|---|---|---|
-| [pubky/pubky-marketplace](https://github.com/pubky/pubky-marketplace) (this repo) | Shop web client (Next.js 16, SDK `@synonymdev/pubky` 0.11), these docs, tester issues | `master`, the release line and repo default. Releases up to `shop-v0.6.46` were cut from `release/shop-v0.6.8` in the fork `BitcoinErrorLog/pubky-app`, which is frozen for Shop work from 6 Oct; its history and tags are here | Vercel production project → shop.pubky.app; Vercel staging project → a generated Vercel staging host |
+| [pubky/pubky-marketplace](https://github.com/pubky/pubky-marketplace) (this repo) | Shop web client (Next.js 16, SDK `@synonymdev/pubky` 0.16.1), these docs, tester issues | `master`, the release line and repo default. Releases up to `shop-v0.6.46` were cut from `release/shop-v0.6.8` in the fork `BitcoinErrorLog/pubky-app`, which is frozen for Shop work from 6 Oct; its history and tags are here | Vercel production project → shop.pubky.app; Vercel staging project → a generated Vercel staging host |
 | [pubky/pubky-marketplace-service](https://github.com/pubky/pubky-marketplace-service) | Transaction service (Rust, sqlx, Postgres) | `main` | Railway, via a GHCR image pinned in `.railway/railway.ts`; staging at `staging-api.pubky.app` |
 | [pubky/marketplace-nexus](https://github.com/pubky/marketplace-nexus) | Marketplace indexer (upstream Nexus plus marketplace indexing; carries the history of the fork `BitcoinErrorLog/pubky-nexus`, frozen since 6 Oct) | `main` | Railway, marketplace Nexus project; see `docs/railway-deploy.md` |
 | [BitcoinErrorLog/paykit-server](https://github.com/BitcoinErrorLog/paykit-server) | Paykit server (fork, rc55). Being ported onto upstream rc9 (Paykit rc71) before the beta (launch plan §5); the port runs as exactly one process | `master` | Railway; production host `paykit-shop.pubky.app` |
@@ -28,7 +30,7 @@ The web client is a fork of the Pubky social app ([pubky/pubky-app](https://gith
 | [pubky/pubky-shop-sdk](https://github.com/pubky/pubky-shop-sdk) | `@bitcoinerrorlog/pubky-shop` SDK (npm) | `main` | npm |
 | [pubky/pubky-marketplace](https://github.com/pubky/pubky-marketplace) | Issue tracker for testers | — | — |
 
-The backend services run today on the current Railway deployment, and the current maintainers run every deploy there until the cutover. Backend PRs merge on GitHub and the current maintainers deploy them, staging then production. Infra is one of two options (launch plan §7, D8):
+The early-October launch plan assigned Railway deployments to the existing maintainers until cutover. Its two infrastructure options were (launch plan §7, D8):
 
 - **R:** the current Railway deployment stays through the beta.
 - **S:** Synonym DevOps builds new instances on Synonym's cloud and cuts over before the beta (recommended).
@@ -42,7 +44,8 @@ git clone https://github.com/pubky/pubky-marketplace.git && cd pubky-marketplace
 HUSKY=0 npm ci           # HUSKY=0 keeps husky from overriding your git hooks
 npm run marketplace:dev  # terminal 1: in-memory sandbox service on :3100
 PUBKY_RUNTIME_COMMERCE_ADAPTER_MODE=sandbox \
-PUBKY_RUNTIME_MARKETPLACE_URL=http://localhost:3100 npm run dev   # terminal 2
+PUBKY_RUNTIME_MARKETPLACE_URL=http://localhost:3100 \
+NEXT_PUBLIC_DB_NAME=franky-marketplace-sandbox npm run dev   # terminal 2
 ```
 
 - **Sandbox walkthrough:** sign in, open `/marketplace/sandbox` and seed the catalog. Details: [RUNNING.md](../../docs/ecommerce/RUNNING.md).
@@ -52,7 +55,7 @@ PUBKY_RUNTIME_MARKETPLACE_URL=http://localhost:3100 npm run dev   # terminal 2
 
 - **Before every push, run `bash scripts/prepush.sh`.** The fast mode (default) runs prettier and eslint on changed files, typecheck, and `vitest related`. Its last line is `PREPUSH OK <sha> <seconds> <mode>`. A passing tree is reused, so pushing the same tree again doesn't rerun it.
 - **Releases run the full gate:** `PREPUSH_FULL=1 bash scripts/prepush.sh`. It adds Linux visual-regression (VRT) tests in the pinned Playwright container (`bash scripts/vrt-linux.sh src/test/vrt/marketplace/`).
-- **CI checks for `master`** (to be marked required in this repo's branch protection; `launch-e2e` runs on PRs into `master` once the repo has its seller secret):
+- **CI checks for `master`** (to be marked required in this repo's branch protection; `launch-e2e` runs on PRs into `master` with real SDK grants and synthetic network fixtures, without a seller secret):
   - Code Quality, NextJS Build;
   - the five test shards, Run Tests, Merge Coverage Reports;
   - `vrt-marketplace`, `vrt-core`, `launch-e2e`.
@@ -69,24 +72,24 @@ PUBKY_RUNTIME_MARKETPLACE_URL=http://localhost:3100 npm run dev   # terminal 2
 
 ## Release
 
-- **The train.** At most 1–2 Shop releases a day. Feature PRs go to `train/shop-<date>-<am|pm>`. At the cut the train merges into the release branch, Linux baselines regenerate once, the full proof runs, then:
+- **The historical standalone train recipe.** At most 1–2 Shop releases a day. Feature PRs go to `train/shop-<date>-<am|pm>`. At the cut the train merges into the release branch, Linux baselines regenerate once, the full proof runs, then:
   - deploy with `vercel --prod --yes --force`, linked to the Shop's production project;
   - tag `shop-vX.Y.Z`;
   - publish a GitHub release whose notes come from `changelog.d/next` fragments.
-- **"Live" needs a signed-in production proof, not a green build.** The proof is `scripts/release/release-proof.mjs`, which signs in two test seats, runs checkout on a temporary PayPal fixture, and cleans up after itself. The team uses its own newly minted test seats (launch plan §9); existing proof seats are not handed over.
+- **"Live" needs deployed grant-session verification.** The older `scripts/release/release-proof.mjs` still asserts Ring cookie sign-in and cannot certify this grant-only release. Follow the [current grant release requirements](../ecommerce/release.md#grant-sdk-and-embedded-release-requirements); local SDK/network fixtures do not prove live signer or payment completion. The team supplies its own test seats out of band.
 - **Service and Nexus releases** follow each repo's README and `.railway/README.md`: GHCR image, digest pin in IaC, a `railway config plan` that shows no changes, then deploy and health checks.
 - **Pre-launch policy:** fix forward. Roll back only on data loss or money moving wrongly.
 
 ### Release, deploy and rollback per service
 
-Until the infra cutover (launch plan §7), the current maintainers run deploys. Each owning team assigns who takes over its row; a team member shadows the next release of each and writes down any step the repo docs don't cover.
+The following release/deploy table preserves the early-October handover plan and its known documentation gaps. Confirm current ownership, images and configuration with VV and `pubky/shop-migration` before using these historical procedures.
 
 | Service | Release and deploy | Rollback | Documentation gap |
 |---|---|---|---|
 | Shop | [`docs/ecommerce/release.md`](../../docs/ecommerce/release.md): train, VRT baselines, Vercel deploy, signed-in proof, tag and notes | [`runbook-production.md`](../../docs/ecommerce/runbook-production.md): kill switch, Vercel rollback or promote, moving the domain | The team has no Shop deploy access yet. `release.md`'s staging section needs a PayPal fixture listing that no repo script creates, so listing-creating staging proofs are paused until a fixture script with a teardown check lands in `scripts/release/`. Its "Backend releases" section says "the owner deploys them"; in practice the current maintainers deploy until the cutover |
 | Marketplace service | [`.railway/README.md`](https://github.com/pubky/pubky-marketplace-service/blob/main/.railway/README.md) (IaC apply); service [README](https://github.com/pubky/pubky-marketplace-service#run) | `runbook-production.md`, "Railway Service Restart And Rollback". After a migration, fix forward only | Not in the repo yet: the image-connect deploy, the environment-targeting guard (staging's only environment is also named `production`), when to run the hold smoke, the production-schema-clone migration rehearsal, and the variables to drop at the next IaC apply. Target: `docs/operations/deploy.md` |
 | Marketplace Nexus | [`docs/railway-deploy.md`](https://github.com/pubky/marketplace-nexus/blob/main/docs/railway-deploy.md), [`docs/production-cutover.md`](https://github.com/pubky/marketplace-nexus/blob/main/docs/production-cutover.md) | Reconnect the previous digest | Check the docs cover waiting for in-flight deployments (one source connect can start two) and the token-redaction smoke |
-| Paykit server | [`docs/operations/production-image.md`](https://github.com/BitcoinErrorLog/paykit-server/blob/master/docs/operations/production-image.md) (image pin); `scripts/rehearse-production-schema-clone.sh` | Reconnect the previous digest; stop the old deployment first | No deploy doc and no IaC. The one-process rule needs stop-then-start; write that order into `docs/operations/deploy.md` |
+| Paykit server | [`docs/operations/production-image.md`](https://github.com/BitcoinErrorLog/paykit-server/blob/master/docs/operations/production-image.md) (image pin); that Paykit repository’s `scripts/rehearse-production-schema-clone.sh` | Reconnect the previous digest; stop the old deployment first | No deploy doc and no IaC. The one-process rule needs stop-then-start; write that order into `docs/operations/deploy.md` |
 | Locks (fork) | [pubky-payment-rails README](https://github.com/pubky/pubky-payment-rails#readme) | Reconnect the previous digest | No deploy doc and no IaC; ownership at cutover is open (launch plan §9) |
 
 Write the backend deploy docs without machine paths or infrastructure IDs, and rewrite them for Synonym's cloud after the cutover.
@@ -98,7 +101,7 @@ Shop docs, all in this repo's `docs/`:
 - [`docs/ecommerce/status.md`](../../docs/ecommerce/status.md): what's real and what's simulated.
 - [`FEATURES.md`](../../docs/ecommerce/FEATURES.md): the feature inventory.
 - [`runbook-production.md`](../../docs/ecommerce/runbook-production.md): production operations.
-- [`single-approval.md`](../../docs/ecommerce/single-approval.md) and [`step-up-approval.md`](../../docs/ecommerce/step-up-approval.md): sign-in.
+- [Grant authentication and App-owned sessions](grant-auth-session.md): current sign-in, lifecycle and compatibility limits. [`single-approval.md`](../ecommerce/single-approval.md) and [`step-up-approval.md`](../ecommerce/step-up-approval.md) include earlier authentication designs.
 - [ADRs 0019–0029](../../docs/adr): the marketplace architecture decisions.
 
 Other repos:
@@ -182,7 +185,7 @@ Launch blockers, deadlines and open decisions are in the launch plan (top sectio
 
 ## First tasks
 
-Each owning team assigns the people behind these roles: the Shop team its Shop lead and Shop devs, the marketplace backend team its backend developer, the Paykit team the port owner, and the operations team the beta-week on-call. Dates and owners are in the launch plan's deadline table.
+These tasks preserve the early-October handover list; dates, backend versions and upstream dependencies need a current status check before assigning work. Each owning team assigns its roles. The current App/Shop auth work is noted under item 9.
 
 1. **Get access.** Accept the GitHub and Railway invites before Thu 8 Oct, 17:07 UTC. Run the Shop and the sandbox locally.
 2. **Paykit team: assign the port owner and choose the base branch (D10)** — a fresh port from upstream rc9 (rc8 when this was written), or the merge-forward in #28. Ben answered the authorizer question on 5 Oct: Bitkit publishes the signed key and delegates, and the server never gets the Pubky secret. Before more code, a protocol design review checks the port, and #28's server-minted Paykit secret, against that model. The port is sensitive work: design review, independent protocol review, security review, and a staging proof with rc6x Bitkit builds on Android and iOS, including request-delivery latency. Deploy it once, on the target infra; a port deployed on Railway and then again on Synonym's cloud costs sellers two Paykit reconnects. Upstream rc9 (7 Oct) already carries Paykit rc71, so the owner ports onto rc9 and relies on the homeserver 0.15 it requires, which production has run since 9 Oct.
@@ -198,7 +201,7 @@ Each owning team assigns the people behind these roles: the Shop team its Shop l
    - **pubky.app:** review [#2614](https://github.com/pubky/pubky-app/issues/2614).
    - **Paykit:** nothing for SSO. The storage interface and WASM package (SSO-Y1, Y2) are withdrawn.
 
-   Moving the Shop's Ring users to grants (SSO-F1) waits on those, plus the Shop's move to pubky-chat (E1).
+   The current App/Shop PRs already implement grant-only Ring sign-in and same-origin session reuse; they do not implement the broader cross-origin Passport-agent SSO proposal. Matthew's Inbox migration remains parallel. Keep App and Shop SDK bumps synchronized and rerun both ownership/persistence contract suites before release, as specified in the [release checklist](../ecommerce/release.md#grant-sdk-and-embedded-release-requirements).
 
 ## Who to ask
 

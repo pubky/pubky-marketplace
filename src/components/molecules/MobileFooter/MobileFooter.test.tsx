@@ -20,6 +20,7 @@ const collectionsDiscoveryMock = vi.hoisted(() => ({
 }));
 
 let mockCurrentUserPubky: string | null = 'pk:test-user-pubky';
+let mockHasSession = true;
 let mockIsPublicRoute = false;
 let mockIsCoreExploreRoute = false;
 
@@ -146,9 +147,16 @@ vi.mock('@/controllers/file/file', () => ({
 }));
 vi.mock('@/stores/auth/auth.store', () => ({
   useAuthStore: vi.fn(
-    (selector: (state: { currentUserPubky: string | null; setShowSignInDialog: (open: boolean) => void }) => unknown) =>
+    (
+      selector: (state: {
+        currentUserPubky: string | null;
+        session: object | null;
+        setShowSignInDialog: (open: boolean) => void;
+      }) => unknown,
+    ) =>
       selector({
         currentUserPubky: mockCurrentUserPubky,
+        session: mockHasSession && mockCurrentUserPubky ? {} : null,
         setShowSignInDialog: collectionsDiscoveryMock.setShowSignInDialog,
       }),
   ),
@@ -717,4 +725,17 @@ describe('MobileFooter - Snapshots', () => {
     const accountMenu = screen.getByTestId('avatar-with-fallback').closest('button');
     expect(accountMenu).toMatchSnapshot();
   });
+});
+
+it('does not expose account navigation for a retained legacy identity with no grant session', () => {
+  mockCurrentUserPubky = 'legacy-pubky';
+  mockHasSession = false;
+  mockIsPublicRoute = false;
+  mockIsCoreExploreRoute = false;
+  try {
+    const { container } = render(<MobileFooter />);
+    expect(container).toBeEmptyDOMElement();
+  } finally {
+    mockHasSession = true;
+  }
 });

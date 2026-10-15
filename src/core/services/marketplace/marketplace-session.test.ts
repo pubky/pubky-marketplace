@@ -216,7 +216,8 @@ describe('MarketplaceSessionService', () => {
 
   it.each([
     ['the Ring cookie sign-in set', ringCookie.service_normalized],
-    ['the Shop grant a Ring sign-in redeemed before it carried pubky.app scopes', CAPABILITIES],
+    ['the current Shop grant', CAPABILITIES],
+    ['the pre-chat Shop sign-in grant', '/pub/pubky.app/:rw,/pub/paykit/:rw,/priv/pubky.app/:rw'],
   ])('restores a persisted sign-in redeem carrying %s', async (_label, capabilities) => {
     vi.mocked(fetch).mockResolvedValueOnce(sessionResponse(inOneDay(), TOKEN, capabilities));
     await MarketplaceSessionService.establishWithAuthToken(new Uint8Array([1]), PUBKY);

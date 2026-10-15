@@ -65,7 +65,7 @@ type FooterNavItem = {
  */
 export function MobileFooter({ className }: MobileFooterProps) {
   const pathname = usePathname();
-  const isAuthenticated = useAuthStore((state) => Boolean(state.currentUserPubky));
+  const isAuthenticated = useAuthStore((state) => Boolean(state.session));
   const setShowSignInDialog = useAuthStore((state) => state.setShowSignInDialog);
   const { isPublicExploreRoute } = usePublicRoute();
   const { userDetails, currentUserPubky } = useCurrentUserProfile();

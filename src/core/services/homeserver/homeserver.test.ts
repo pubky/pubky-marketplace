@@ -5,7 +5,6 @@ import { AppError } from '@/libs/error/error';
 import {
   AuthErrorCode,
   ClientErrorCode,
-  DatabaseErrorCode,
   NetworkErrorCode,
   ServerErrorCode,
   ValidationErrorCode,
@@ -15,7 +14,6 @@ import { HttpMethod } from '@/libs/http/http.types';
 import { Logger } from '@/libs/logger/logger';
 import { asOpaque } from '@/test-utils/type-assertions';
 import { installWebLocks, removeWebLocks } from '@/test-utils/web-locks';
-import { bytesToBase64 } from './homeserver.utils';
 
 // =============================================================================
 // HOISTED MOCKS - Must be hoisted to run before module imports
@@ -47,6 +45,7 @@ const mockState = vi.hoisted(() => ({
   sessionRestore: vi.fn(),
   grantStartDelegated: vi.fn(),
   grantStoreRemove: vi.fn(),
+  grantStoreRestore: vi.fn(),
   grantStoreClearAll: vi.fn(),
   grantStoreList: vi.fn(),
   grantStoreIsAvailable: vi.fn(),
@@ -107,6 +106,7 @@ vi.mock('@synonymdev/pubky', () => {
       fetch: (...args: unknown[]) => mockState.clientFetch(...args),
     },
     browserSessionStore: {
+      restore: (...args: unknown[]) => mockState.grantStoreRestore(...args),
       remove: (...args: unknown[]) => mockState.grantStoreRemove(...args),
       clearAll: (...args: unknown[]) => mockState.grantStoreClearAll(...args),
       list: (...args: unknown[]) => mockState.grantStoreList(...args),
@@ -118,8 +118,8 @@ vi.mock('@synonymdev/pubky', () => {
       list: (...args: unknown[]) => mockState.publicStorageList(...args),
     },
     signer: () => ({
-      signupCookie: (...args: unknown[]) => mockState.signup(...args),
-      signinCookie: (...args: unknown[]) => mockState.signin(...args),
+      signup: (...args: unknown[]) => mockState.signup(...args),
+      signin: (...args: unknown[]) => mockState.signin(...args),
       pkdns: {
         publishHomeserverForce: (...args: unknown[]) => mockState.publishHomeserverForce(...args),
       },
@@ -131,6 +131,8 @@ vi.mock('@synonymdev/pubky', () => {
   MockPubky.testnet = vi.fn().mockImplementation(createMockPubkyInstance);
 
   return {
+    // Parser behavior is covered with the real SDK in config/app.test.ts.
+    validateCapabilities: (value: string) => value,
     Pubky: MockPubky,
     Session: {
       restore: (...args: unknown[]) => mockState.sessionRestore(...args),
@@ -318,7 +320,8 @@ describe('HomeserverService', () => {
         const signupToken = 'valid-signup-token';
         const expectedSession = createMockSession();
 
-        mockState.signup.mockResolvedValue(expectedSession);
+        mockState.signup.mockResolvedValue(undefined);
+        mockState.signin.mockResolvedValue(expectedSession);
 
         const result = await HomeserverService.signUp({ keypair, signupToken });
 
@@ -342,6 +345,7 @@ describe('HomeserverService', () => {
         const signupToken = 'invalid-token';
 
         mockState.signup.mockRejectedValue(new Error('Invalid token'));
+        mockState.signin.mockRejectedValue(new Error('Account does not exist'));
 
         await expect(HomeserverService.signUp({ keypair, signupToken })).rejects.toMatchObject({
           category: ErrorCategory.Server,
@@ -354,6 +358,7 @@ describe('HomeserverService', () => {
         const signupToken = 'bad-token';
 
         mockState.signup.mockRejectedValue('string error');
+        mockState.signin.mockRejectedValue(new Error('Account does not exist'));
 
         await expect(HomeserverService.signUp({ keypair, signupToken })).rejects.toMatchObject({
           category: ErrorCategory.Server,
@@ -367,6 +372,7 @@ describe('HomeserverService', () => {
         const originalMessage = 'Token expired';
 
         mockState.signup.mockRejectedValue(new Error(originalMessage));
+        mockState.signin.mockRejectedValue(new Error('Account does not exist'));
 
         try {
           await HomeserverService.signUp({ keypair, signupToken });
@@ -380,157 +386,74 @@ describe('HomeserverService', () => {
       });
     });
 
-    describe('signUp (staging: direct homeserver URL)', () => {
-      const signupToken = 'AAAA-BBBB-CCCC';
-      const sessionInfoBytes = new Uint8Array([1, 2, 3, 4]);
+    it('recovers an account after a production invite was consumed before grant completion', async () => {
+      const session = createMockSession();
+      mockState.signup.mockRejectedValue(new Error('Invite already consumed'));
+      mockState.signin.mockResolvedValue(session);
+      await expect(HomeserverService.signUp({ keypair: createMockKeypair(), signupToken: 'spent' })).resolves.toEqual({
+        session,
+      });
+      expect(mockState.signin).toHaveBeenCalledWith('shop.pubky.app');
+    });
 
-      it('POSTs a locally signed auth token to the homeserver URL and hydrates the session', async () => {
+    it('uses the runtime client id for recovery-key sign-in and signup', async () => {
+      const { resetRuntimeConfigForTests } = await import('@/libs/runtime-config/runtime-config');
+      vi.stubEnv('PUBKY_RUNTIME_SHOP_GRANT_CLIENT_ID', 'staging.pubky.app');
+      resetRuntimeConfigForTests();
+      try {
+        await HomeserverService.signIn({ keypair: createMockKeypair() });
+        expect(mockState.signin).toHaveBeenLastCalledWith('staging.pubky.app');
+        await HomeserverService.signUp({ keypair: createMockKeypair(), signupToken: 'invite' });
+        expect(mockState.signin).toHaveBeenLastCalledWith('staging.pubky.app');
+      } finally {
+        vi.unstubAllEnvs();
+        resetRuntimeConfigForTests();
+      }
+    });
+
+    describe('signUp (staging: direct URL, grant session)', () => {
+      it('creates the account without a cookie, publishes and signs in with the Shop client', async () => {
         await withStagingHomeserverEnv(async () => {
-          const keypair = createMockKeypair();
-          const expectedSession = createMockSession();
-          mockState.clientFetch.mockResolvedValue(new Response(sessionInfoBytes, { status: 200 }));
-          mockState.sessionRestore.mockResolvedValue(expectedSession);
-
-          const result = await HomeserverService.signUp({ keypair, signupToken });
-
-          expect(result).toEqual({ session: expectedSession });
-          // Never touches the PKARR-dependent SDK signup
-          expect(mockState.signup).not.toHaveBeenCalled();
+          const session = createMockSession();
+          mockState.clientFetch.mockResolvedValue(new Response(new Uint8Array([1]), { status: 200 }));
+          mockState.signin.mockResolvedValue(session);
+          expect(await HomeserverService.signUp({ keypair: createMockKeypair(), signupToken: 'invite' })).toEqual({
+            session,
+          });
           expect(mockState.clientFetch).toHaveBeenCalledWith(
-            expect.stringContaining(`/signup?signup_token=${signupToken}`),
-            expect.objectContaining({ method: HttpMethod.POST, credentials: 'include' }),
+            expect.stringContaining('/signup?'),
+            expect.objectContaining({ credentials: 'omit' }),
           );
-          const [url, init] = mockState.clientFetch.mock.calls[0] as [string, { body: ArrayBuffer }];
-          expect(url.startsWith('https://homeserver.staging.pubky.app')).toBe(true);
-          // Body is a canonical v0 root auth token (120 bytes for "/:rw")
-          expect(new Uint8Array(init.body).length).toBe(120);
-          // Publishes the user's record so the staging guard and Nexus can resolve it
           expect(mockState.publishHomeserverForce).toHaveBeenCalled();
-          // Session is restored from the base64 of the signup response body via
-          // the metadata API; Pubky.restoreSession parses secret tokens instead.
-          expect(mockState.sessionRestore).toHaveBeenCalledWith(
-            btoa(String.fromCharCode(...sessionInfoBytes)),
-            expect.anything(),
-          );
-          expect(mockState.restoreSession).not.toHaveBeenCalled();
-        });
-      });
-
-      it('recovers a consumed invite by signing in when the account already exists', async () => {
-        await withStagingHomeserverEnv(async () => {
-          const keypair = createMockKeypair();
-          const expectedSession = createMockSession();
-          mockState.clientFetch.mockResolvedValue(new Response('token already used', { status: 400 }));
-          mockState.signin.mockResolvedValue(expectedSession);
-
-          const result = await HomeserverService.signUp({ keypair, signupToken });
-
-          expect(result).toEqual({ session: expectedSession });
-          expect(mockState.publishHomeserverForce).toHaveBeenCalled();
-          expect(mockState.signin).toHaveBeenCalled();
-        });
-      });
-
-      it('throws a non-retryable auth error when the invite is rejected and no account exists', async () => {
-        await withStagingHomeserverEnv(async () => {
-          const keypair = createMockKeypair();
-          mockState.clientFetch.mockResolvedValue(new Response('invalid token', { status: 401 }));
-          mockState.signin.mockRejectedValue(new Error('no account'));
-
-          await expect(HomeserverService.signUp({ keypair, signupToken })).rejects.toMatchObject({
-            category: ErrorCategory.Auth,
-            code: AuthErrorCode.INVALID_TOKEN,
-          });
-        });
-      });
-
-      it('throws a retryable server error when the homeserver is unreachable (invite not consumed)', async () => {
-        await withStagingHomeserverEnv(async () => {
-          const keypair = createMockKeypair();
-          mockState.clientFetch.mockRejectedValue(new Error('network down'));
-
-          await expect(HomeserverService.signUp({ keypair, signupToken })).rejects.toMatchObject({
-            category: ErrorCategory.Server,
-            code: ServerErrorCode.SERVICE_UNAVAILABLE,
-          });
-          expect(mockState.publishHomeserverForce).not.toHaveBeenCalled();
-        });
-      });
-
-      it('throws a retryable server error when record publishing fails after a successful POST', async () => {
-        await withStagingHomeserverEnv(async () => {
-          const keypair = createMockKeypair();
-          mockState.clientFetch.mockResolvedValue(new Response(sessionInfoBytes, { status: 200 }));
-          mockState.publishHomeserverForce.mockRejectedValue(new Error('relay 429'));
-
-          await expect(HomeserverService.signUp({ keypair, signupToken })).rejects.toMatchObject({
-            category: ErrorCategory.Server,
-            code: ServerErrorCode.SERVICE_UNAVAILABLE,
-          });
+          expect(mockState.signin).toHaveBeenCalledWith('shop.pubky.app');
           expect(mockState.sessionRestore).not.toHaveBeenCalled();
-          expect(mockState.restoreSession).not.toHaveBeenCalled();
         });
       });
-
-      it('retries session hydration before failing with a retryable error', async () => {
+      it('recovers a consumed invite using a grant without cookie restoration', async () => {
         await withStagingHomeserverEnv(async () => {
-          const keypair = createMockKeypair();
-          const expectedSession = createMockSession();
-          mockState.clientFetch.mockResolvedValue(new Response(sessionInfoBytes, { status: 200 }));
-          mockState.sessionRestore
-            .mockRejectedValueOnce(new Error('record not propagated yet'))
-            .mockResolvedValueOnce(expectedSession);
-
-          const result = await HomeserverService.signUp({ keypair, signupToken });
-
-          expect(result).toEqual({ session: expectedSession });
-          expect(mockState.sessionRestore).toHaveBeenCalledTimes(2);
-          expect(mockState.signin).not.toHaveBeenCalled();
+          const session = createMockSession();
+          mockState.clientFetch.mockResolvedValue(new Response('used', { status: 400 }));
+          mockState.signin.mockResolvedValue(session);
+          expect(await HomeserverService.signUp({ keypair: createMockKeypair(), signupToken: 'invite' })).toEqual({
+            session,
+          });
+          expect(mockState.signin).toHaveBeenCalledWith('shop.pubky.app');
+          expect(mockState.sessionRestore).not.toHaveBeenCalled();
         });
       });
-
-      it('recovers via signinCookie when every restore attempt fails after the invite is spent', async () => {
+      it('keeps the spent invite recoverable after grant creation failures', async () => {
         await withStagingHomeserverEnv(async () => {
           vi.useFakeTimers();
           try {
-            const keypair = createMockKeypair();
-            const recoveredSession = createMockSession();
-            mockState.clientFetch.mockResolvedValue(new Response(sessionInfoBytes, { status: 200 }));
-            mockState.sessionRestore.mockRejectedValue(new Error('restore failed'));
-            mockState.signin.mockResolvedValue(recoveredSession);
-
-            const pending = HomeserverService.signUp({ keypair, signupToken });
+            mockState.clientFetch.mockResolvedValue(new Response(new Uint8Array([1]), { status: 200 }));
+            mockState.signin.mockRejectedValue(new Error('offline'));
+            const result = HomeserverService.signUp({ keypair: createMockKeypair(), signupToken: 'invite' }).catch(
+              (error) => error,
+            );
             await vi.runAllTimersAsync();
-            const result = await pending;
-
-            expect(result).toEqual({ session: recoveredSession });
-            expect(mockState.sessionRestore).toHaveBeenCalledTimes(3);
-            expect(mockState.signin).toHaveBeenCalledTimes(1);
-            expect(mockState.restoreSession).not.toHaveBeenCalled();
-          } finally {
-            vi.useRealTimers();
-          }
-        });
-      });
-
-      it('throws a retryable error only when both restore and signinCookie fail', async () => {
-        await withStagingHomeserverEnv(async () => {
-          vi.useFakeTimers();
-          try {
-            const keypair = createMockKeypair();
-            mockState.clientFetch.mockResolvedValue(new Response(sessionInfoBytes, { status: 200 }));
-            mockState.sessionRestore.mockRejectedValue(new Error('restore failed'));
-            mockState.signin.mockRejectedValue(new Error('signin failed'));
-
-            const pending = HomeserverService.signUp({ keypair, signupToken }).catch((error: unknown) => error);
-            await vi.runAllTimersAsync();
-
-            expect(await pending).toMatchObject({
-              category: ErrorCategory.Server,
-              code: ServerErrorCode.SERVICE_UNAVAILABLE,
-            });
-            expect(mockState.sessionRestore).toHaveBeenCalledTimes(3);
-            expect(mockState.signin).toHaveBeenCalledTimes(1);
+            expect(await result).toMatchObject({ code: ServerErrorCode.SERVICE_UNAVAILABLE });
+            expect(mockState.signin).toHaveBeenCalledTimes(4);
+            expect(mockState.sessionRestore).not.toHaveBeenCalled();
           } finally {
             vi.useRealTimers();
           }
@@ -783,413 +706,6 @@ describe('HomeserverService', () => {
       });
     });
 
-    describe('generateAuthUrl', () => {
-      it('should return authorizationUrl and awaitApproval promise', async () => {
-        const result = await HomeserverService.generateAuthUrl();
-
-        expect(result).toHaveProperty('authorizationUrl');
-        expect(result).toHaveProperty('awaitApproval');
-        expect(result).toHaveProperty('cancelAuthFlow');
-        expect(typeof result.authorizationUrl).toBe('string');
-        expect(result.awaitApproval).toBeInstanceOf(Promise);
-      });
-
-      it('should cancel polling before first poll when cancelAuthFlow is called immediately', async () => {
-        vi.useFakeTimers();
-        try {
-          const tryPollOnce = vi.fn().mockResolvedValue(undefined);
-          const free = vi.fn();
-          mockState.startAuthFlow.mockReturnValue({
-            authorizationUrl: 'https://auth.example.com/authorize',
-            tryPollOnce,
-            free,
-          });
-
-          const result = await HomeserverService.generateAuthUrl();
-          const approvalPromise = result.awaitApproval;
-          const rejection = expect(approvalPromise).rejects.toMatchObject({ name: 'AuthFlowCanceled' });
-
-          result.cancelAuthFlow();
-          await vi.runAllTimersAsync();
-
-          await rejection;
-          expect(tryPollOnce).not.toHaveBeenCalled();
-          expect(free).toHaveBeenCalledTimes(1);
-        } finally {
-          vi.useRealTimers();
-        }
-      });
-
-      it('should reject with SESSION_EXPIRED when tryPollOnce throws (SDK exhausted its retry budget)', async () => {
-        vi.useFakeTimers();
-        try {
-          const relayError = { name: 'RequestError', message: 'Gateway Timeout', data: { statusCode: 504 } };
-          const tryPollOnce = vi.fn().mockRejectedValue(relayError);
-          const free = vi.fn();
-          mockState.startAuthFlow.mockReturnValue({
-            authorizationUrl: 'https://auth.example.com/authorize',
-            tryPollOnce,
-            free,
-          });
-
-          const result = await HomeserverService.generateAuthUrl();
-          const approvalPromise = result.awaitApproval;
-          const rejection = expect(approvalPromise).rejects.toMatchObject({
-            code: AuthErrorCode.SESSION_EXPIRED,
-          });
-
-          await vi.advanceTimersByTimeAsync(0);
-          await rejection;
-
-          // Loop must not retry on a dead flow; one throw is terminal.
-          expect(tryPollOnce).toHaveBeenCalledTimes(1);
-        } finally {
-          vi.useRealTimers();
-        }
-      });
-
-      it('resumes the flow on the same relay channel when the page is visible again after the relay poll dropped', async () => {
-        vi.useFakeTimers();
-        const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden');
-        try {
-          const session = createMockSession();
-          // The SDK gives up on a flow after a few failed relay requests; polling that flow again never recovers it.
-          const transportError = new Error('Request failed: HTTP transport error: error sending request');
-          transportError.name = 'RequestError';
-          const deadFlow = {
-            authorizationUrl: 'https://auth.example.com/authorize',
-            tryPollOnce: vi.fn().mockRejectedValueOnce(transportError).mockResolvedValue(undefined),
-            free: vi.fn(),
-          };
-          const resumedFlow = { tryPollOnce: vi.fn().mockResolvedValue(session), free: vi.fn() };
-          mockState.startAuthFlow.mockReturnValue(deadFlow);
-          mockState.resumeAuthFlow.mockReturnValue(resumedFlow);
-
-          const result = await HomeserverService.generateAuthUrl();
-          await vi.advanceTimersByTimeAsync(0);
-          expect(deadFlow.tryPollOnce).toHaveBeenCalledTimes(1);
-          // Still in the background: nothing resumes yet.
-          await vi.advanceTimersByTimeAsync(5_000);
-          expect(mockState.resumeAuthFlow).not.toHaveBeenCalled();
-
-          // Back from Pubky Ring: the page becomes visible and reconnects to the same channel.
-          visibility.mockReturnValue('visible');
-          document.dispatchEvent(new Event('visibilitychange'));
-          await vi.advanceTimersByTimeAsync(0);
-
-          await expect(result.awaitApproval).resolves.toBe(session);
-          expect(mockState.resumeAuthFlow).toHaveBeenCalledWith('https://auth.example.com/authorize');
-          expect(deadFlow.free).toHaveBeenCalled();
-        } finally {
-          visibility.mockRestore();
-          vi.useRealTimers();
-        }
-      });
-
-      it('resumes the token flow (single-approval Ring sign-in) after the relay poll dropped in the background', async () => {
-        vi.useFakeTimers();
-        const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden');
-        try {
-          const token = { publicKey: 'token-key' };
-          const transportError = new Error('Request failed: HTTP transport error: error sending request');
-          transportError.name = 'RequestError';
-          const deadFlow = {
-            authorizationUrl: 'https://auth.example.com/authorize',
-            awaitToken: vi.fn().mockRejectedValue(transportError),
-            free: vi.fn(),
-          };
-          const resumedFlow = { awaitToken: vi.fn().mockResolvedValue(token), free: vi.fn() };
-          mockState.startAuthFlow.mockReturnValue(deadFlow);
-          mockState.resumeAuthFlow.mockReturnValue(resumedFlow);
-
-          const flow = HomeserverService.generateAuthTokenFlow();
-          const approved = flow.awaitToken();
-          await vi.advanceTimersByTimeAsync(5_000);
-          // Still in the background: nothing resumes yet.
-          expect(mockState.resumeAuthFlow).not.toHaveBeenCalled();
-
-          visibility.mockReturnValue('visible');
-          document.dispatchEvent(new Event('visibilitychange'));
-          await vi.advanceTimersByTimeAsync(0);
-
-          await expect(approved).resolves.toBe(token);
-          expect(mockState.resumeAuthFlow).toHaveBeenCalledWith('https://auth.example.com/authorize');
-          expect(resumedFlow.free).toHaveBeenCalled();
-        } finally {
-          visibility.mockRestore();
-          vi.useRealTimers();
-        }
-      });
-
-      it('settles a cancelled approval at once when the relay poll dropped while the page is hidden', async () => {
-        vi.useFakeTimers();
-        const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden');
-        try {
-          const transportError = new Error('Request failed: HTTP transport error: error sending request');
-          transportError.name = 'RequestError';
-          mockState.startAuthFlow.mockReturnValue({
-            authorizationUrl: 'https://auth.example.com/authorize',
-            tryPollOnce: vi.fn().mockRejectedValue(transportError),
-            free: vi.fn(),
-          });
-
-          const result = await HomeserverService.generateAuthUrl();
-          let settled = false;
-          const outcome = result.awaitApproval.then(
-            () => 'resolved',
-            (error: Error) => {
-              settled = true;
-              return error.name;
-            },
-          );
-          await vi.advanceTimersByTimeAsync(0);
-
-          // The page stays in the background: cancelling must not wait for it to become visible.
-          result.cancelAuthFlow();
-          await vi.advanceTimersByTimeAsync(0);
-
-          expect(settled).toBe(true);
-          await expect(outcome).resolves.toBe('AuthFlowCanceled');
-          expect(mockState.resumeAuthFlow).not.toHaveBeenCalled();
-        } finally {
-          visibility.mockRestore();
-          vi.useRealTimers();
-        }
-      });
-
-      it('settles a cancelled token flow at once when the relay poll dropped while the page is hidden', async () => {
-        vi.useFakeTimers();
-        const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden');
-        try {
-          const transportError = new Error('Request failed: HTTP transport error: error sending request');
-          transportError.name = 'RequestError';
-          mockState.startAuthFlow.mockReturnValue({
-            authorizationUrl: 'https://auth.example.com/authorize',
-            awaitToken: vi.fn().mockRejectedValue(transportError),
-            free: vi.fn(),
-          });
-
-          const flow = HomeserverService.generateAuthTokenFlow();
-          let settled = false;
-          const outcome = flow.awaitToken().catch((error: unknown) => {
-            settled = true;
-            return error;
-          });
-          await vi.advanceTimersByTimeAsync(0);
-
-          flow.cancelAuthFlow();
-          await vi.advanceTimersByTimeAsync(0);
-
-          expect(settled).toBe(true);
-          await expect(outcome).resolves.toBe(transportError);
-          expect(mockState.resumeAuthFlow).not.toHaveBeenCalled();
-        } finally {
-          visibility.mockRestore();
-          vi.useRealTimers();
-        }
-      });
-
-      it('gives up after the resume cap while the page stays visible', async () => {
-        vi.useFakeTimers();
-        try {
-          const transportError = Object.assign(new Error('HTTP transport error'), { name: 'RequestError' });
-          const deadFlow = () => ({ tryPollOnce: vi.fn().mockRejectedValue(transportError), free: vi.fn() });
-          mockState.startAuthFlow.mockReturnValue({
-            authorizationUrl: 'https://auth.example.com/authorize',
-            ...deadFlow(),
-          });
-          mockState.resumeAuthFlow.mockImplementation(deadFlow);
-
-          const result = await HomeserverService.generateAuthUrl();
-          const rejection = expect(result.awaitApproval).rejects.toMatchObject({ code: AuthErrorCode.SESSION_EXPIRED });
-          await vi.advanceTimersByTimeAsync(61_000);
-
-          await rejection;
-          expect(mockState.resumeAuthFlow).toHaveBeenCalledTimes(60);
-        } finally {
-          vi.useRealTimers();
-        }
-      });
-
-      it('rejects with SESSION_EXPIRED when the relay channel cannot be resumed', async () => {
-        vi.useFakeTimers();
-        try {
-          const transportError = Object.assign(new Error('HTTP transport error'), { name: 'RequestError' });
-          const deadFlow = {
-            authorizationUrl: 'https://auth.example.com/authorize',
-            tryPollOnce: vi.fn().mockRejectedValue(transportError),
-            free: vi.fn(),
-          };
-          mockState.startAuthFlow.mockReturnValue(deadFlow);
-          mockState.resumeAuthFlow.mockImplementation(() => {
-            throw Object.assign(new Error('invalid url'), { name: 'AuthenticationError' });
-          });
-
-          const result = await HomeserverService.generateAuthUrl();
-          const rejection = expect(result.awaitApproval).rejects.toMatchObject({
-            code: AuthErrorCode.SESSION_EXPIRED,
-            context: { resumeError: 'invalid url' },
-          });
-          await vi.advanceTimersByTimeAsync(1_000);
-
-          await rejection;
-          expect(mockState.resumeAuthFlow).toHaveBeenCalledTimes(1);
-          expect(deadFlow.free).toHaveBeenCalled();
-        } finally {
-          vi.useRealTimers();
-        }
-      });
-
-      it('does not resume once the relay no longer holds the approval when the page is visible again', async () => {
-        vi.useFakeTimers();
-        const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden');
-        try {
-          const transportError = Object.assign(new Error('HTTP transport error'), { name: 'RequestError' });
-          mockState.startAuthFlow.mockReturnValue({
-            authorizationUrl: 'https://auth.example.com/authorize',
-            tryPollOnce: vi.fn().mockRejectedValue(transportError),
-            free: vi.fn(),
-          });
-
-          const result = await HomeserverService.generateAuthUrl();
-          const rejection = expect(result.awaitApproval).rejects.toMatchObject({ code: AuthErrorCode.SESSION_EXPIRED });
-          // Away for longer than the relay keeps an approval.
-          await vi.advanceTimersByTimeAsync(6 * 60 * 1000);
-          visibility.mockReturnValue('visible');
-          document.dispatchEvent(new Event('visibilitychange'));
-          await vi.advanceTimersByTimeAsync(0);
-
-          await rejection;
-          expect(mockState.resumeAuthFlow).not.toHaveBeenCalled();
-        } finally {
-          visibility.mockRestore();
-          vi.useRealTimers();
-        }
-      });
-
-      it('ends the token flow without resuming once the relay no longer holds the approval', async () => {
-        vi.useFakeTimers();
-        const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden');
-        try {
-          const transportError = Object.assign(new Error('HTTP transport error'), { name: 'RequestError' });
-          mockState.startAuthFlow.mockReturnValue({
-            authorizationUrl: 'https://auth.example.com/authorize',
-            awaitToken: vi.fn().mockRejectedValue(transportError),
-            free: vi.fn(),
-          });
-
-          const flow = HomeserverService.generateAuthTokenFlow();
-          const rejection = expect(flow.awaitToken()).rejects.toBe(transportError);
-          await vi.advanceTimersByTimeAsync(6 * 60 * 1000);
-          visibility.mockReturnValue('visible');
-          document.dispatchEvent(new Event('visibilitychange'));
-          await vi.advanceTimersByTimeAsync(0);
-
-          await rejection;
-          expect(mockState.resumeAuthFlow).not.toHaveBeenCalled();
-        } finally {
-          visibility.mockRestore();
-          vi.useRealTimers();
-        }
-      });
-
-      it('should call startAuthFlow with default capabilities', async () => {
-        await HomeserverService.generateAuthUrl();
-
-        expect(mockState.startAuthFlow).toHaveBeenCalledWith(
-          // The Shop's scopes plus pubky.app's, so the shared cookie keeps both sites working.
-          '/pub/pubky.app/:rw,/pub/paykit/:rw,/priv/pubky.app/:rw,/pub/chat/v0/:rw,/priv/chat/v0/:rw,/priv/social/:rw,/priv/app.locks/content/:r',
-          'signin-kind', // AuthFlowKind.signin()
-          expect.stringContaining('/inbox'), // HTTP relay (Pubky 0.7+ inbox endpoint)
-        );
-      });
-
-      it('should call startAuthFlow with custom capabilities when provided', async () => {
-        const customCaps = '/custom/path/:r';
-
-        await HomeserverService.generateAuthUrl(customCaps);
-
-        expect(mockState.startAuthFlow).toHaveBeenCalledWith(
-          customCaps,
-          'signin-kind',
-          expect.stringContaining('/inbox'),
-        );
-      });
-
-      it('should throw error when flow fails', async () => {
-        mockState.startAuthFlow.mockImplementation(() => {
-          throw new Error('Flow initialization failed');
-        });
-
-        await expect(HomeserverService.generateAuthUrl()).rejects.toMatchObject({
-          category: ErrorCategory.Server,
-          code: ServerErrorCode.INTERNAL_ERROR,
-        });
-      });
-    });
-
-    describe('generateGrantAuthUrl (Bitkit sign-in)', () => {
-      it('bitkit qr is signin_grant with shop caps and cid, started on the configured facade client', async () => {
-        const free = vi.fn();
-        mockState.grantStartDelegated.mockResolvedValue({
-          authorizationUrl: 'pubkyauth://signin_grant?caps=x&relay=r&secret=s&cid=shop.pubky.app&cpk=k',
-          tryPollOnce: vi.fn().mockResolvedValue(undefined),
-          free,
-        });
-
-        const { authorizationUrl, awaitApproval, cancelAuthFlow } = await HomeserverService.generateGrantAuthUrl();
-        awaitApproval.catch(() => undefined);
-        cancelAuthFlow();
-
-        expect(mockState.grantStartDelegated).toHaveBeenCalledWith(CAPABILITIES, 'signin-kind', {
-          clientId: 'shop.pubky.app',
-          relay: expect.any(String),
-        });
-        expect(authorizationUrl.startsWith('pubkyauth://signin_grant')).toBe(true);
-        expect(free).toHaveBeenCalled();
-      });
-
-      it('reports grant sign-in availability from the SDK', () => {
-        expect(HomeserverService.isGrantSignInAvailable()).toBe(true);
-      });
-
-      it('does not offer or create a grant approval without Web Locks', async () => {
-        removeWebLocks();
-
-        expect(HomeserverService.isGrantSignInAvailable()).toBe(false);
-        await expect(HomeserverService.generateGrantAuthUrl()).rejects.toMatchObject({
-          category: ErrorCategory.Database,
-          code: DatabaseErrorCode.INIT_FAILED,
-        });
-        expect(mockState.grantStartDelegated).not.toHaveBeenCalled();
-      });
-
-      it('does not create a signer approval when browser persistence is unavailable', async () => {
-        mockState.grantStoreIsAvailable.mockResolvedValue(false);
-
-        await expect(HomeserverService.generateGrantAuthUrl()).rejects.toMatchObject({
-          category: ErrorCategory.Database,
-          code: DatabaseErrorCode.INIT_FAILED,
-        });
-        expect(mockState.grantStartDelegated).not.toHaveBeenCalled();
-      });
-
-      it('waits for persistence availability before creating a grant approval', async () => {
-        let resolveAvailability!: (available: boolean) => void;
-        mockState.grantStoreIsAvailable.mockReturnValue(
-          new Promise<boolean>((resolve) => {
-            resolveAvailability = resolve;
-          }),
-        );
-        const pending = HomeserverService.generateGrantAuthUrl();
-
-        expect(mockState.grantStartDelegated).not.toHaveBeenCalled();
-        resolveAvailability(false);
-        await expect(pending).rejects.toMatchObject({ code: DatabaseErrorCode.INIT_FAILED });
-        expect(mockState.grantStartDelegated).not.toHaveBeenCalled();
-      });
-    });
-
     describe('grant key removal (sign-out and expiry cleanup)', () => {
       // After the module reset above: the error class must come from the same graph.
       let isGrantKeyRemovalError: typeof import('./error.utils').isGrantKeyRemovalError;
@@ -1236,11 +752,17 @@ describe('HomeserverService', () => {
       });
 
       it('remove rejects an unavailable store even when list silently reports no records', async () => {
-        mockState.grantStoreRemove.mockRejectedValue(new Error('IndexedDB unavailable'));
         mockState.grantStoreIsAvailable.mockResolvedValue(false);
 
         const failure = await HomeserverService.removeGrantSession('rec-1').catch((error: unknown) => error);
 
+        expect(isGrantKeyRemovalError(failure)).toBe(true);
+        expect(mockState.grantStoreRemove).not.toHaveBeenCalled();
+      });
+
+      it('remove rejects when storage becomes unavailable during a silent SDK no-op', async () => {
+        mockState.grantStoreIsAvailable.mockResolvedValueOnce(true).mockResolvedValue(false);
+        const failure = await HomeserverService.removeGrantSession('rec-1').catch((error: unknown) => error);
         expect(isGrantKeyRemovalError(failure)).toBe(true);
       });
 
@@ -1253,77 +775,23 @@ describe('HomeserverService', () => {
         expect(isGrantKeyRemovalError(failure)).toBe(true);
       });
 
-      it('clearAll rejects while any record is still stored', async () => {
-        mockState.grantStoreClearAll.mockRejectedValue(new Error('IndexedDB clear failed'));
-        mockState.grantStoreList.mockResolvedValue([{ id: 'rec-1' }]);
-
-        const failure = await HomeserverService.clearGrantSessions().catch((error: unknown) => error);
-
-        expect(isGrantKeyRemovalError(failure)).toBe(true);
-      });
-
-      it('clearAll resolves when the store reads back empty', async () => {
-        await expect(HomeserverService.clearGrantSessions()).resolves.toBeUndefined();
-        expect(mockState.grantStoreClearAll).toHaveBeenCalledTimes(1);
-        expect(mockState.grantStoreList).toHaveBeenCalledTimes(1);
-      });
-
-      it('clearAll allows cookie-only cleanup when persistence is unavailable and no grant records exist', async () => {
-        mockState.grantStoreIsAvailable.mockResolvedValue(false);
-
-        await expect(HomeserverService.clearGrantSessions()).resolves.toBeUndefined();
+      it('removes only explicit Shop record IDs and never uses clearAll', async () => {
+        mockState.grantStoreList.mockResolvedValue([{ id: 'app-record' }]);
+        await HomeserverService.clearGrantSessions({ recordIds: ['shop-record'] });
+        expect(mockState.grantStoreRemove).toHaveBeenCalledWith('shop-record');
+        expect(mockState.grantStoreRemove).not.toHaveBeenCalledWith('app-record');
         expect(mockState.grantStoreClearAll).not.toHaveBeenCalled();
-        expect(mockState.grantStoreList).toHaveBeenCalled();
-      });
-
-      it('clearAll rejects unavailable persistence when an old grant record still exists', async () => {
-        mockState.grantStoreIsAvailable.mockResolvedValue(false);
-        mockState.grantStoreList.mockResolvedValue([{ id: 'old-sdk-record' }]);
-
-        const failure = await HomeserverService.clearGrantSessions().catch((error: unknown) => error);
-        expect(isGrantKeyRemovalError(failure)).toBe(true);
-        expect(mockState.grantStoreClearAll).not.toHaveBeenCalled();
-      });
-
-      it('clearAll cannot discharge a known grant cleanup while persistence is unavailable', async () => {
-        mockState.grantStoreIsAvailable.mockResolvedValue(false);
-
-        const failure = await HomeserverService.clearGrantSessions({ requireAvailable: true }).catch(
-          (error: unknown) => error,
-        );
-        expect(isGrantKeyRemovalError(failure)).toBe(true);
-        expect(mockState.grantStoreClearAll).not.toHaveBeenCalled();
-      });
-
-      it('clearAll rejects when unavailable persistence cannot be inspected', async () => {
-        mockState.grantStoreIsAvailable.mockResolvedValue(false);
-        mockState.grantStoreList.mockRejectedValue(new Error('IndexedDB is blocked'));
-
-        const failure = await HomeserverService.clearGrantSessions().catch((error: unknown) => error);
-        expect(isGrantKeyRemovalError(failure)).toBe(true);
-      });
-
-      it('a failed clear cannot discharge pending delegated keys merely because session records are empty', async () => {
-        mockState.grantStoreClearAll.mockRejectedValue(new Error('Key deletion failed'));
-
-        const failure = await HomeserverService.clearGrantSessions({ requireAvailable: true }).catch(
-          (error: unknown) => error,
-        );
-        expect(isGrantKeyRemovalError(failure)).toBe(true);
       });
     });
-
-    describe('restoreSession (cookie reload)', () => {
-      it('reload restores cookie session via Session.restore', async () => {
-        const restored = createMockSession();
-        mockState.sessionRestore.mockResolvedValue(restored);
-
-        const result = await HomeserverService.restoreSession({ sessionExport: 'c2Vzc2lvbi1leHBvcnQ=' });
-
-        expect(result).toBe(restored);
-        expect(mockState.sessionRestore).toHaveBeenCalledWith('c2Vzc2lvbi1leHBvcnQ=', expect.anything());
-        expect(mockState.restoreSession).not.toHaveBeenCalled();
+    it('rejects legacy cookie restoration and redemption without fetching', async () => {
+      await expect(HomeserverService.restoreSession({ sessionExport: 'legacy' })).rejects.toMatchObject({
+        code: AuthErrorCode.UNAUTHORIZED,
       });
+      await expect(HomeserverService.signInWithFullGrantAuthToken(new Uint8Array())).rejects.toMatchObject({
+        code: AuthErrorCode.UNAUTHORIZED,
+      });
+      expect(mockState.sessionRestore).not.toHaveBeenCalled();
+      expect(mockState.clientFetch).not.toHaveBeenCalled();
     });
 
     describe('currentSessionHasFullGrant', () => {
@@ -1334,21 +802,19 @@ describe('HomeserverService', () => {
         asOpaque<Session>({ info: { capabilities: capabilities.split(',') }, grant: { id: 'grant-1' } });
 
       it.each([
-        ['a Ring cookie session holding the Ring set', cookieSession(RING_COOKIE_CAPABILITIES), true],
+        ['a Ring cookie session holding the Ring set', cookieSession(RING_COOKIE_CAPABILITIES), false],
         [
           'a Ring cookie session holding the Ring set in another order',
           cookieSession(RING_COOKIE_CAPABILITIES.split(',').reverse().join(',')),
-          true,
+          false,
         ],
         ['a cookie session that pubky.app narrowed to its own set', cookieSession(PUBKY_APP_SIGN_IN), false],
         ['a cookie session holding only the Shop grant', cookieSession(CAPABILITIES), false],
         ['a root cookie session', cookieSession('/:rw'), false],
         ['a grant session holding the Shop grant', grantSession(CAPABILITIES), true],
-        [
-          'a grant session holding the Ring set, a superset of the core scopes',
-          grantSession(RING_COOKIE_CAPABILITIES),
-          true,
-        ],
+        ['an older grant missing chat permissions', grantSession(RING_COOKIE_CAPABILITIES), true],
+        ['a core-only grant', grantSession('/pub/pubky.app/:rw,/pub/paykit/:rw,/priv/pubky.app/:rw'), true],
+        ['a Chat-only grant', grantSession('/pub/chat/v0/:rw,/priv/chat/v0/:rw'), false],
       ])('%s → %s', (_label, session, full) => {
         mockState.currentSession = session;
 
@@ -1373,188 +839,104 @@ describe('HomeserverService', () => {
         expect(HomeserverService.canCurrentSessionWrite('/priv/social/')).toBe(true);
       });
     });
-
-    describe('signInWithFullGrantAuthToken', () => {
-      const z32 = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
-      const fullCaps = RING_COOKIE_CAPABILITIES.split(',');
-      const bytes = new Uint8Array([9, 8, 7]);
-
-      beforeEach(() => {
-        mockState.authTokenFromBytes.mockReturnValue({
-          capabilities: fullCaps,
-          publicKey: { z32: () => z32 },
-        });
-        mockState.sessionRestore.mockResolvedValue(createMockSession());
-      });
-
-      it('POSTs to the session endpoint after a full-grant capability check', async () => {
-        mockState.clientFetch.mockResolvedValueOnce(new Response(new Uint8Array([1, 2, 3]), { status: 200 }));
-
-        await HomeserverService.signInWithFullGrantAuthToken(bytes);
-
-        expect(mockState.authTokenFromBytes).toHaveBeenCalledWith(bytes);
-        expect(mockState.clientFetch).toHaveBeenCalledWith(
-          `https://_pubky.${z32}/session`,
-          expect.objectContaining({ method: 'POST', credentials: 'include', body: bytes }),
-        );
-        expect(mockState.sessionRestore).toHaveBeenCalledWith(expect.any(String), expect.anything());
-        expect(mockState.restoreSession).not.toHaveBeenCalled();
-      });
-
-      it('hydrates with the same standard padded base64 alphabet session.export() uses', async () => {
-        // 0xfb 0xff 0xfe encodes to '+//+' ONLY under the standard base64
-        // alphabet (base64url would be '-__-'); a trailing 0xfb forces '='
-        // padding ('+w=='). Both are what the d.ts means by "base64" — the
-        // alphabet restore accepted on staging (single-approval.md §9 step 0,
-        // recorded as empirical) is pinned here in the helper path.
-        mockState.clientFetch
-          .mockResolvedValueOnce(new Response(new Uint8Array([0xfb, 0xff, 0xfe]), { status: 200 }))
-          .mockResolvedValueOnce(new Response(new Uint8Array([0xfb]), { status: 200 }));
-
-        await HomeserverService.signInWithFullGrantAuthToken(bytes);
-        await HomeserverService.signInWithFullGrantAuthToken(bytes);
-
-        expect(mockState.sessionRestore).toHaveBeenNthCalledWith(1, '+//+', expect.anything());
-        expect(mockState.sessionRestore).toHaveBeenNthCalledWith(2, '+w==', expect.anything());
-      });
-
-      it('accepts a reordered full grant (order-insensitive set equality)', async () => {
-        mockState.authTokenFromBytes.mockReturnValue({
-          capabilities: [...fullCaps].reverse(),
-          publicKey: { z32: () => z32 },
-        });
-        mockState.clientFetch.mockResolvedValueOnce(new Response(new Uint8Array([1]), { status: 200 }));
-
-        await HomeserverService.signInWithFullGrantAuthToken(bytes);
-
-        expect(mockState.clientFetch).toHaveBeenCalled();
-      });
-
-      it('refuses empty-capability bytes before POSTing /session', async () => {
-        mockState.authTokenFromBytes.mockReturnValue({
-          capabilities: [],
-          publicKey: { z32: () => z32 },
-        });
-
-        await expect(HomeserverService.signInWithFullGrantAuthToken(bytes)).rejects.toMatchObject({
-          category: ErrorCategory.Validation,
-          code: ValidationErrorCode.INVALID_INPUT,
-        });
-        expect(mockState.clientFetch).not.toHaveBeenCalled();
-      });
-
-      it.each([
-        ['the Shop grant alone', CAPABILITIES],
-        ["pubky.app's own sign-in set", '/pub/pubky.app/:rw,/priv/social/:rw,/priv/app.locks/content/:r'],
-        ['the Ring set plus root', `${RING_COOKIE_CAPABILITIES},/:rw`],
-      ])('refuses %s before POSTing /session', async (_label, capabilities) => {
-        mockState.authTokenFromBytes.mockReturnValue({
-          capabilities: capabilities.split(','),
-          publicKey: { z32: () => z32 },
-        });
-
-        await expect(HomeserverService.signInWithFullGrantAuthToken(bytes)).rejects.toMatchObject({
-          code: ValidationErrorCode.INVALID_INPUT,
-        });
-        expect(mockState.clientFetch).not.toHaveBeenCalled();
-      });
-
-      it('refuses a missing capability before POSTing /session', async () => {
-        mockState.authTokenFromBytes.mockReturnValue({
-          capabilities: fullCaps.slice(0, 2),
-          publicKey: { z32: () => z32 },
-        });
-
-        await expect(HomeserverService.signInWithFullGrantAuthToken(bytes)).rejects.toMatchObject({
-          code: ValidationErrorCode.INVALID_INPUT,
-        });
-        expect(mockState.clientFetch).not.toHaveBeenCalled();
-      });
-
-      it('treats homeserver AlreadyUsed as GET /session hydrate, not failure', async () => {
-        // STATUS PIN NOTE: 400 is what the Node-side run recorded for a
-        // homeserver replay; the WASM-path status is recorded as UNPROVEN in
-        // single-approval.md §9. The helper must not depend on the exact
-        // number — it probes GET /session after ANY non-ok POST (see the
-        // next test), so this 400 is illustrative, not load-bearing.
-        mockState.clientFetch
-          .mockResolvedValueOnce(new Response('already used', { status: 400 }))
-          .mockResolvedValueOnce(new Response(new Uint8Array([4, 5, 6]), { status: 200 }));
-
-        await HomeserverService.signInWithFullGrantAuthToken(bytes);
-
-        expect(mockState.clientFetch).toHaveBeenNthCalledWith(
-          2,
-          `https://_pubky.${z32}/session`,
-          expect.objectContaining({ method: 'GET', credentials: 'include' }),
-        );
-        expect(mockState.sessionRestore).toHaveBeenCalled();
-      });
-
-      it('probes GET /session after any non-ok POST status, not just the recorded 400', async () => {
-        for (const status of [401, 409, 500]) {
-          mockState.clientFetch.mockReset();
-          mockState.sessionRestore.mockClear();
-          mockState.clientFetch
-            .mockResolvedValueOnce(new Response('nope', { status }))
-            .mockResolvedValueOnce(new Response(new Uint8Array([4, 5, 6]), { status: 200 }));
-
-          await HomeserverService.signInWithFullGrantAuthToken(bytes);
-
-          expect(mockState.clientFetch).toHaveBeenNthCalledWith(
-            2,
-            `https://_pubky.${z32}/session`,
-            expect.objectContaining({ method: 'GET', credentials: 'include' }),
-          );
-          expect(mockState.sessionRestore).toHaveBeenCalled();
-        }
-      });
-
-      it('fails sign-in when restore fails after a 2xx POST, without a fallback GET', async () => {
-        mockState.clientFetch.mockResolvedValueOnce(new Response(new Uint8Array([1]), { status: 200 }));
-        mockState.sessionRestore.mockRejectedValueOnce(new Error('restore failed'));
-
-        await expect(HomeserverService.signInWithFullGrantAuthToken(bytes)).rejects.toMatchObject({
-          message: 'Sign-in failed. Scan again.',
-        });
-        // Exactly one call: the POST. No GET probe follows a restore failure
-        // (the cookie may be missing; a probe would mask that).
-        expect(mockState.clientFetch).toHaveBeenCalledTimes(1);
-      });
-
-      it('never puts the AuthToken bytes into error context or logger arguments', async () => {
-        // Distinctive, recognizable bytes: their base64 form and their
-        // comma-joined decimal form must appear nowhere observable.
-        const sensitive = new Uint8Array([170, 187, 204, 221, 238]);
-        const asBase64 = bytesToBase64(sensitive);
-        const asDecimal = sensitive.join(',');
-        mockState.clientFetch
-          .mockResolvedValueOnce(new Response('already used', { status: 400 }))
-          .mockResolvedValueOnce(new Response('no session', { status: 404 }));
-
-        const error = await HomeserverService.signInWithFullGrantAuthToken(sensitive).catch((caught) => caught);
-
-        expect(error).toMatchObject({ code: AuthErrorCode.UNAUTHORIZED, context: { stage: 'no-session' } });
-        const observable = JSON.stringify({
-          context: (error as AppError).context,
-          loggerCalls: [
-            ...vi.mocked(Logger.error).mock.calls,
-            ...vi.mocked(Logger.warn).mock.calls,
-            ...vi.mocked(Logger.info).mock.calls,
-            ...vi.mocked(Logger.debug).mock.calls,
-          ],
-        });
-        expect(observable).not.toContain(asBase64);
-        expect(observable).not.toContain(asDecimal);
-      });
-    });
   });
 
-  // ===========================================================================
-  // DATA OPERATIONS
-  // ===========================================================================
-
   describe('Data Operations', () => {
+    describe('bounded auth IO', () => {
+      afterEach(() => vi.useRealTimers());
+
+      it('keeps a timed-out retirement retryable and ignores late remote success', async () => {
+        vi.useFakeTimers();
+        let finishSignout!: () => void;
+        const pendingSignout = new Promise<void>((resolve) => {
+          finishSignout = resolve;
+        });
+        const session = asOpaque<Session>({
+          grant: {
+            sessionInfo: vi.fn().mockResolvedValue({
+              clientId: 'shop.pubky.app',
+              publicKey: { z32: () => 'user' },
+              grantId: 'old',
+            }),
+          },
+          signout: vi.fn().mockReturnValueOnce(pendingSignout).mockResolvedValue(undefined),
+        });
+        mockState.grantStoreRestore.mockResolvedValue(session);
+        mockState.grantStoreRemove.mockReset().mockResolvedValue(undefined);
+        mockState.grantStoreList.mockReset().mockResolvedValue([]);
+        HomeserverService.queueGrantRetirement('user:old');
+        const marker = 'shop-owned-grant-v1:retirement:user:old';
+        let failure: unknown;
+        void HomeserverService.clearGrantSessions().catch((error: unknown) => {
+          failure = error;
+        });
+        await vi.advanceTimersByTimeAsync(15_001);
+        expect(failure).toMatchObject({ category: ErrorCategory.Timeout });
+        expect(localStorage.getItem(marker)).not.toBeNull();
+        expect(mockState.grantStoreRemove).not.toHaveBeenCalled();
+        finishSignout();
+        await vi.advanceTimersByTimeAsync(1);
+        expect(localStorage.getItem(marker)).not.toBeNull();
+        expect(mockState.grantStoreRemove).not.toHaveBeenCalled();
+        await HomeserverService.clearGrantSessions();
+        expect(mockState.grantStoreRemove).toHaveBeenCalledExactlyOnceWith('user:old');
+        expect(localStorage.getItem(marker)).toBeNull();
+      });
+
+      it('cannot deliver a late read result to the bootstrap continuation after timeout', async () => {
+        vi.useFakeTimers();
+        let finishRead!: (response: Response) => void;
+        mockState.currentSession = createMockSession();
+        mockState.sessionStorageGet.mockReturnValue(
+          new Promise<Response>((resolve) => {
+            finishRead = resolve;
+          }),
+        );
+        const persist = vi.fn();
+        const result = HomeserverService.request({ method: HttpMethod.GET, url: 'pubky://user/pub/last_read' })
+          .then(persist)
+          .catch((error: unknown) => error);
+        await vi.advanceTimersByTimeAsync(15_001);
+        expect(await result).toMatchObject({ category: ErrorCategory.Timeout });
+        finishRead(new Response('{"timestamp":123}'));
+        await vi.advanceTimersByTimeAsync(1);
+        expect(persist).not.toHaveBeenCalled();
+      });
+
+      it.each(['request', 'body', 'list', 'logout'] as const)(
+        'settles a stalled %s instead of holding auth forever',
+        async (operation) => {
+          vi.useFakeTimers();
+          const stalled = new Promise<never>(() => {});
+          mockState.currentSession = createMockSession();
+          let call: Promise<unknown>;
+          if (operation === 'list') {
+            mockState.sessionStorageList.mockReturnValue(stalled);
+            call = HomeserverService.list({ baseDirectory: 'pubky://user/pub/feeds/' });
+          } else if (operation === 'logout') {
+            mockState.sessionSignout.mockReturnValue(stalled);
+            call = HomeserverService.logout({ session: mockState.currentSession });
+          } else {
+            mockState.sessionStorageGet.mockReturnValue(
+              operation === 'request'
+                ? stalled
+                : Promise.resolve({
+                    ok: true,
+                    text: () => stalled,
+                  }),
+            );
+            call = HomeserverService.request({ method: HttpMethod.GET, url: 'pubky://user/pub/last_read' });
+          }
+          let result: unknown;
+          void call.catch((error: unknown) => {
+            result = error;
+          });
+          await vi.advanceTimersByTimeAsync(15_001);
+          expect(result).toMatchObject({ category: ErrorCategory.Timeout, code: 'REQUEST_TIMEOUT' });
+        },
+      );
+    });
+
     describe('request', () => {
       describe('GET requests', () => {
         it('should return parsed JSON for successful GET', async () => {
@@ -2313,6 +1695,7 @@ describe('HomeserverService', () => {
           operation: 'test',
         });
         mockState.signup.mockRejectedValue(appError);
+        mockState.signin.mockRejectedValue(new Error('Account does not exist'));
 
         try {
           await HomeserverService.signUp({
@@ -2334,6 +1717,7 @@ describe('HomeserverService', () => {
       it('pkarr error maps to retryable network error', async () => {
         const pkarrError = { name: 'PkarrError', message: 'PKARR lookup failed: relay timeout' };
         mockState.signup.mockRejectedValue(pkarrError);
+        mockState.signin.mockRejectedValue(new Error('Account does not exist'));
 
         const error = await HomeserverService.signUp({ keypair: createMockKeypair(), signupToken: 'token' }).catch(
           (caught: unknown) => caught,

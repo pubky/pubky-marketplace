@@ -17,21 +17,23 @@ A peer-to-peer marketplace on Pubky:
 
 This repository holds the Shop web client, built on the Pubky social app
 ([pubky/pubky-app](https://github.com/pubky/pubky-app)), together with the project documents and the tester issue
-tracker. The Shop runs as its own site next to pubky.app.
+tracker. The Shop runs standalone and supports an opt-in same-origin App `/shop` wrapper around `/shop-embed`. See [the embedding guide](../launch/shop-embedding.md).
 
 Read [`status.md`](status.md) for what is real and what is simulated, and [`FEATURES.md`](FEATURES.md) for the
 feature inventory.
 
 ## Repositories
 
-| Repository                                                                            | What                                                                             | Work branch | Deploys to                                                                              |
-| ------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- | ----------- | --------------------------------------------------------------------------------------- |
-| [pubky/pubky-marketplace](https://github.com/pubky/pubky-marketplace)                 | Shop web client (Next.js, `@synonymdev/pubky` 0.11), project docs, tester issues | `master`    | Vercel `pubky-marketplace-production` (shop.pubky.app) and `pubky-marketplace-staging`  |
-| [pubky/pubky-marketplace-service](https://github.com/pubky/pubky-marketplace-service) | Transaction service (Rust, sqlx, Postgres)                                       | `main`      | Railway, GHCR image pinned in `.railway/railway.ts`; staging at `staging-api.pubky.app` |
-| [pubky/marketplace-nexus](https://github.com/pubky/marketplace-nexus)                 | Marketplace indexer (upstream Nexus plus marketplace indexing)                   | `main`      | Railway; see its `docs/railway-deploy.md`                                               |
-| [BitcoinErrorLog/paykit-server](https://github.com/BitcoinErrorLog/paykit-server)     | Paykit server (fork)                                                             | `master`    | Railway; production host `paykit-shop.pubky.app`                                        |
-| [BitcoinErrorLog/pubky-app-specs](https://github.com/BitcoinErrorLog/pubky-app-specs) | Marketplace record types (specs fork)                                            | —           | Vendored into this repository as a tarball                                              |
-| [pubky/pubky-shop-sdk](https://github.com/pubky/pubky-shop-sdk)                       | `@bitcoinerrorlog/pubky-shop` SDK                                                | `main`      | npm                                                                                     |
+The deployment column is an early-October handover snapshot, not a verified current infrastructure inventory. Confirm current images, hosts and environment values with VV in [pubky/shop-migration](https://github.com/pubky/shop-migration).
+
+| Repository                                                                            | What                                                                               | Work branch | Deployment snapshot                                                                     |
+| ------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- | ----------- | --------------------------------------------------------------------------------------- |
+| [pubky/pubky-marketplace](https://github.com/pubky/pubky-marketplace)                 | Shop web client (Next.js, `@synonymdev/pubky` 0.16.1), project docs, tester issues | `master`    | Vercel `pubky-marketplace-production` (shop.pubky.app) and `pubky-marketplace-staging`  |
+| [pubky/pubky-marketplace-service](https://github.com/pubky/pubky-marketplace-service) | Transaction service (Rust, sqlx, Postgres)                                         | `main`      | Railway, GHCR image pinned in `.railway/railway.ts`; staging at `staging-api.pubky.app` |
+| [pubky/marketplace-nexus](https://github.com/pubky/marketplace-nexus)                 | Marketplace indexer (upstream Nexus plus marketplace indexing)                     | `main`      | Railway; see its `docs/railway-deploy.md`                                               |
+| [BitcoinErrorLog/paykit-server](https://github.com/BitcoinErrorLog/paykit-server)     | Paykit server (fork)                                                               | `master`    | Railway; production host `paykit-shop.pubky.app`                                        |
+| [BitcoinErrorLog/pubky-app-specs](https://github.com/BitcoinErrorLog/pubky-app-specs) | Marketplace record types (specs fork)                                              | —           | Vendored into this repository as a tarball                                              |
+| [pubky/pubky-shop-sdk](https://github.com/pubky/pubky-shop-sdk)                       | `@bitcoinerrorlog/pubky-shop` SDK                                                  | `main`      | npm                                                                                     |
 
 In this repository, `master` is the default branch and the Shop release line. Releases up to `shop-v0.6.46` were cut
 from `release/shop-v0.6.8` in `BitcoinErrorLog/pubky-app`; that history and its tags are part of this repository.
@@ -39,7 +41,7 @@ from `release/shop-v0.6.8` in `BitcoinErrorLog/pubky-app`; that history and its 
 ## Access to request on day one
 
 - Write access to the repositories above.
-- Membership of the Vercel team `synonymdev` (both Shop projects live there).
+- Access to the current deployment platform from VV; historical Vercel projects use team `synonymdev`.
 - Sentry, for the Shop's error reports.
 - Test seats for the release proof, passed out of band by the product owner. Never commit them.
 
@@ -50,7 +52,8 @@ git clone https://github.com/pubky/pubky-marketplace.git && cd pubky-marketplace
 HUSKY=0 npm ci           # HUSKY=0 keeps husky from replacing your global git hooks
 npm run marketplace:dev  # terminal 1: in-memory sandbox transaction service on :3100
 PUBKY_RUNTIME_COMMERCE_ADAPTER_MODE=sandbox \
-PUBKY_RUNTIME_MARKETPLACE_URL=http://localhost:3100 npm run dev   # terminal 2: http://localhost:3000
+PUBKY_RUNTIME_MARKETPLACE_URL=http://localhost:3100 \
+NEXT_PUBLIC_DB_NAME=franky-marketplace-sandbox npm run dev   # terminal 2: http://localhost:3000
 ```
 
 Sign in, open `/marketplace/sandbox`, and seed the catalog. [`RUNNING.md`](RUNNING.md) covers every mode: the durable
@@ -67,7 +70,7 @@ a local Pubky testnet, drops, and real Locks/Paykit payments.
 | Unit tests                      | `npm run test`                                                          |
 | Sandbox service tests           | `npm run test:marketplace`                                              |
 | Linux visual regression         | `bash scripts/vrt-linux.sh [spec...]` (Docker; the CI merge gate)       |
-| Launch-critical browser journey | `npm run test:e2e:launch-critical`                                      |
+| Launch-critical browser journey | `LAUNCH_E2E_MODE=synthetic bash scripts/ci-launch-e2e.sh`               |
 
 Live suites that need a running service, a local Pubky testnet, or staging signup tokens are listed in
 [`RUNNING.md`](RUNNING.md#running-the-tests). They are run on demand, not as standing gates.
@@ -98,28 +101,25 @@ Live suites that need a running service, a local Pubky testnet, or staging signu
 
 ## Release
 
-Follow [`release.md`](release.md): train cut, proof on the release head, Vercel deploy, the signed-in production
-proof (`scripts/release/release-proof.mjs`), tag and notes. Production operations, the kill switch and rollback are
+Follow [`release.md`](release.md) for source gates, deployed grant-session verification, tags and notes. Its Vercel recipe is for the historical standalone deployment; use VV’s current deployment configuration for the embedded pair. The older `scripts/release/release-proof.mjs` still asserts Ring cookie sign-in and cannot certify this grant-only release. Production operations, the kill switch and rollback are
 in [`runbook-production.md`](runbook-production.md).
 
 ## Known limits
 
 - **A stranger's first message needs the inbox.** Chat works with every sign-in that holds the chat scopes, but a
   message from someone you have never talked to is noticed through the `pubky/inbox` service, which needs a grant
-  session and a deployed inbox (`PUBKY_RUNTIME_INBOX_URL`). Ring cookie sessions get live delivery through homeserver
-  event streams and reconciliation only ([`../chat/README.md`](../chat/README.md)).
-- **No single sign-on with pubky.app.** Each site has its own sign-in. Both sites' Ring cookie sign-ins share one
-  homeserver cookie, so signing in on one site replaces the permissions the other was granted, and signing out of the
-  Shop with a Ring session also signs pubky.app out in that browser.
-- **The session-bridge consumer is off.** `NEXT_PUBLIC_VIBE_SESSION_BRIDGE_ORIGIN` and `NEXT_PUBLIC_VIBE_ID` are unset
-  in both Shop builds, so the `#s=` hand-off from pubky.app does not run ([ADR 0029](../adr/0029-vibe-session-consumer.md)).
+  session and a deployed inbox (`PUBKY_RUNTIME_INBOX_URL`).
+  ([`../chat/README.md`](../chat/README.md)).
+- **Shared sign-in requires the same origin.** App owns the grant only in the supported `/shop` + `/shop-embed` pair. A separate `shop.pubky.app` tab establishes a separate grant; this is not cross-origin SSO.
+- **The old vibe consumer is removed.** Keep `NEXT_PUBLIC_VIBE_SESSION_BRIDGE_ORIGIN` and `NEXT_PUBLIC_VIBE_ID` unset. Cookie-only accounts must sign in again.
+- **Commerce needs its own approval and configured backend.** Local-key users must have that same identity in a supported external signer. See [grant authentication](../launch/grant-auth-session.md) for recovery and messaging limits.
 
 ## Architecture decisions
 
 ADRs 0019–0029 in [`docs/adr/`](../adr/) record the marketplace architecture: the transaction service, the record
-specs, local-first commerce state, drops, and the session consumer. Sign-in flows are in
-[`single-approval.md`](single-approval.md), [`step-up-approval.md`](step-up-approval.md) and
-[`service-auth.md`](service-auth.md).
+specs, local-first commerce state, drops, and the former session consumer. Current sign-in and lifecycle behavior is in
+[Grant authentication and App-owned sessions](../launch/grant-auth-session.md).
+[`single-approval.md`](single-approval.md) and [`service-auth.md`](service-auth.md) also contain historical cookie/AuthToken contracts; do not use those as the current UI sign-in recipe.
 
 ## Who to ask
 

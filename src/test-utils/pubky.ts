@@ -19,6 +19,13 @@ export const mockSession = (partial: Partial<Session> = {}): Session =>
     ...partial,
   });
 
+/** Authenticated visual fixtures need a live grant session, not just a saved identity. */
+export const mockGrantSession = (pubky: string): Session =>
+  mockSession({
+    grant: asOpaque({}),
+    info: asOpaque({ publicKey: { z32: () => pubky }, capabilities: ['/:rw'] }),
+  });
+
 /**
  * Minimal `@synonymdev/pubky` `Keypair` double.
  *

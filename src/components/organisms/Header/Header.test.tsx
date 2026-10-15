@@ -14,6 +14,7 @@ vi.mock('next/navigation', () => ({
 
 // Mock auth store - use selector pattern (component calls useAuthStore with selector function)
 let mockCurrentUserPubky: string | null = null;
+let mockHasSession = true;
 // Mock dexie-react-hooks
 vi.mock('dexie-react-hooks', () => ({
   useLiveQuery: vi.fn(() => ({ name: 'Test User', image: 'test-image.jpg' })),
@@ -91,8 +92,8 @@ vi.mock('@/app/routes', async (importOriginal) => {
 });
 
 vi.mock('@/stores/auth/auth.store', () => ({
-  useAuthStore: (selector: (state: { currentUserPubky: string | null }) => unknown) =>
-    selector({ currentUserPubky: mockCurrentUserPubky }),
+  useAuthStore: (selector: (state: { currentUserPubky: string | null; session: object | null }) => unknown) =>
+    selector({ currentUserPubky: mockCurrentUserPubky, session: mockHasSession && mockCurrentUserPubky ? {} : null }),
 }));
 vi.mock('@/stores/notification/notification.store', () => ({
   useNotificationStore: () => ({ selectUnread: () => 0 }),
@@ -845,4 +846,19 @@ describe('Header', () => {
       expect(screen.getByTestId('header-title')).toHaveTextContent('Profile');
     });
   });
+});
+
+it('offers sign-in when a legacy identity remains but no session was restored', () => {
+  mockUsePathname.mockReturnValue('/marketplace');
+  mockCurrentUserPubky = 'legacy-pubky';
+  mockIsPublicRoute.mockReturnValue(false);
+  mockIsCoreExploreRoute.mockReturnValue(false);
+  setEmbedded(false);
+  mockHasSession = false;
+  try {
+    render(<Header />);
+    expect(screen.getByRole('button', { name: /sign in/i })).toBeInTheDocument();
+  } finally {
+    mockHasSession = true;
+  }
 });

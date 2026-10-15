@@ -24,13 +24,15 @@ vi.mock('@/config/commerce', async () => {
   return { ...actual, getCommerceAdapterMode: () => commerce.mode };
 });
 
-vi.mock('@/stores/auth/auth.store', () => ({
-  useAuthStore: (selector: (state: Record<string, unknown>) => unknown) =>
-    selector({
-      currentUserPubky: auth.currentUserPubky,
+vi.mock('@/stores/auth/auth.store', async () => {
+  const { createMarketplaceVrtAuthStore } = await import('@/test/mocks/marketplace-vrt');
+  return {
+    useAuthStore: createMarketplaceVrtAuthStore({
+      getCurrentUserPubky: () => auth.currentUserPubky,
       setShowSignInDialog: vi.fn(),
     }),
-}));
+  };
+});
 
 vi.mock('@/hooks/useChatUnread/useChatUnread', () => ({
   useChatUnread: () => unread.count,

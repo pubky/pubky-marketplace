@@ -1,5 +1,7 @@
 # Single Ring approval for direct Shop sign-in
 
+> Historical design: the cookie sign-in and dual-AuthToken flow described here have been superseded. See [grant authentication](../launch/grant-auth-session.md) for the current sign-in, service approval and migration contract.
+
 **Status:** shipped 2026-09-08. The implementation is on `marketplace/one-approval`; feature `c213ae9f`, tests `454828c5`, fixer round `454828c5..3e737732`, cleanup batch `e482e603..8881f90f`, and N-1 follow-up `ac593082`. `singleApprovalSignIn` (`PUBKY_RUNTIME_SINGLE_APPROVAL_SIGN_IN`) defaults to true; disabling it retains the legacy two-step flow. Review record: round 1 Kimi SHIP on the security lens plus Opus FIX-FIRST (5 P1, 4 P2, 3 P3), followed by fixer closure; round 2 Kimi SHIP plus Opus SHIP; cleanup batch Opus SHIP; N-1 fix Opus SHIP. Deployments: staging at 19:33, production at 19:37, and the N-1 fix deployed 2026-09-08 evening. The marketplace capability string is echoed but not stored; see the marketplace-service record.
 
 **Review (round 2, 2026-09-08).** The interim dual-POST is **approved to build**. Residual in-flight capability widening is accepted: exploiting it requires script execution on the Shop origin, which after sign-in already yields the wide cookie and the marketplace bearer. The two-token upstream design (§4.2) remains a follow-up, not a ship blocker. The fork trigger remains a **failed §9 step-0 re-run**.
