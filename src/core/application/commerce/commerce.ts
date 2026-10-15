@@ -3600,7 +3600,12 @@ export class CommerceApplication {
     // session registers it.
     const missingDurableSession =
       isDurableCommerceMode(getCommerceAdapterMode()) && !this.hasActiveMarketplaceSession();
-    const pausingWithoutSession = missingDurableSession && !listingPublishNeedsMarketplaceSession(record);
+    const pausingWithoutSession =
+      missingDurableSession &&
+      !listingPublishNeedsMarketplaceSession(
+        (await LocalCommerceService.getListing(`${record.ownerPubky}:${record.listingId}`))?.record,
+        record,
+      );
     if (missingDurableSession && !pausingWithoutSession) {
       throw Err.auth(AuthErrorCode.SESSION_EXPIRED, 'Connect a marketplace session to publish a listing.', {
         service: ErrorService.Marketplace,

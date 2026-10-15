@@ -115,7 +115,8 @@ export function MarketplaceDashboard() {
   const updateListingState = (listingIds: string[], state: 'active' | 'paused') => {
     const needsSession = dashboard.listings.some(
       (listing) =>
-        listingIds.includes(listing.id) && listingPublishNeedsMarketplaceSession({ state, sale: listing.record.sale }),
+        listingIds.includes(listing.id) &&
+        listingPublishNeedsMarketplaceSession(listing.record, { ...listing.record, state }),
     );
     if (needsSession && isDurableCommerceMode(getCommerceAdapterMode()) && !marketplaceSession) {
       setPendingStateChange({ listingIds, state });

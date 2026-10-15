@@ -701,6 +701,24 @@ describe('CommerceApplication', () => {
       await expect(CommerceSyncJobModel.table.count()).resolves.toBe(0);
     });
 
+    it.each([
+      ['a pause that also edits the listing', 'active', 'Renamed boots'],
+      ['an edit of a paused listing', 'paused', 'Renamed boots'],
+    ] as const)('still asks for the session for %s, before anything is written', async (_case, from, title) => {
+      const record = { ...createCommerceListingFixture(), state: from };
+      const { put, execute } = await sessionless(record);
+
+      await expect(CommerceApplication.commitUpsertListing({ ...next(record, 'paused'), title })).rejects.toMatchObject(
+        { code: AuthErrorCode.SESSION_EXPIRED },
+      );
+      expect(put).not.toHaveBeenCalled();
+      expect(execute).not.toHaveBeenCalled();
+      await expect(LocalCommerceService.getListing(`${record.ownerPubky}:${record.listingId}`)).resolves.toMatchObject({
+        state: from,
+        record: expect.objectContaining({ title: record.title }),
+      });
+    });
+
     it('still asks for the session to relist, before anything is written', async () => {
       const record = { ...createCommerceListingFixture(), state: 'paused' as const };
       const { put } = await sessionless(record);
