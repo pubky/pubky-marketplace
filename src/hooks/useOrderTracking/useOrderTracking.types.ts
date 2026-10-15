@@ -11,9 +11,3 @@ export const orderTrackingFormSchema = z.object({
 });
 
 export type OrderTrackingFormData = z.infer<typeof orderTrackingFormSchema>;
-
-export const orderTrackingFormDefaults: OrderTrackingFormData = {
-  carrierChoice: 'usps',
-  carrier: '',
-  trackingNumber: '',
-};

@@ -1,8 +1,10 @@
 import { act, renderHook } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { CommerceOrderTrackingController } from '@/controllers/commerce/order-tracking';
+import { PAYMENT_NOT_FINAL_COPY } from '@/libs/commerce/usdt-buyer-status';
 import { toast } from '@/molecules/Toaster/use-toast';
 import { createOrderFixture } from '@/test/fixtures/commerce/orders';
+import { USDT_WIRE_PAYMENT_NOT_FINAL_REFUSAL } from '@/test/fixtures/commerce/usdt-orders';
 import { useOrderTracking } from './useOrderTracking';
 
 vi.mock('@/molecules/Toaster/use-toast', () => ({ toast: vi.fn() }));
@@ -133,5 +135,19 @@ describe('useOrderTracking', () => {
       expect(await result.current.submit()).toBe(false);
     });
     expect(toast).toHaveBeenLastCalledWith({ variant: 'error', description: 'Could not save tracking.' });
+  });
+
+  it('shows the payment-not-final copy when a USDT payment stops being final after shipping', async () => {
+    commit.mockResolvedValueOnce(USDT_WIRE_PAYMENT_NOT_FINAL_REFUSAL as never);
+    const { result } = renderHook(() => withErrors(useOrderTracking(shippedWithoutNumber, vi.fn())));
+    await act(async () => {
+      result.current.form.setValue('trackingNumber', 'X-1234');
+    });
+
+    await act(async () => {
+      expect(await result.current.submit()).toBe(false);
+    });
+
+    expect(toast).toHaveBeenLastCalledWith({ variant: 'error', description: PAYMENT_NOT_FINAL_COPY });
   });
 });

@@ -7,6 +7,8 @@ import { CommerceOrderTrackingController } from '@/controllers/commerce/order-tr
 import { MARKETPLACE_FAILURE_MESSAGES } from '@/libs/commerce/failure-messages';
 import { ORDER_TRACKING_COPY, resolveTrackingCarrierName, trackingFormValuesFor } from '@/libs/commerce/order-tracking';
 import { isMarketplaceRevisionConflict } from '@/libs/commerce/transaction-commands';
+import { PAYMENT_NOT_FINAL_COPY } from '@/libs/commerce/usdt-buyer-status';
+import { isPaymentNotFinalRefusal } from '@/libs/commerce/usdt-settlement-contract';
 import { isMarketplaceSessionRequiredError } from '@/libs/error/error.utils';
 import { toast } from '@/molecules/Toaster/use-toast';
 import type { MarketplaceOrder } from '@/services/marketplace/marketplace';
@@ -61,7 +63,12 @@ export function useOrderTracking(
           toast({ variant: 'error', description: ORDER_TRACKING_COPY.changed });
           return;
         }
-        toast({ variant: 'error', description: response.error.message || MARKETPLACE_FAILURE_MESSAGES.order });
+        toast({
+          variant: 'error',
+          description: isPaymentNotFinalRefusal(response)
+            ? PAYMENT_NOT_FINAL_COPY
+            : response.error.message || MARKETPLACE_FAILURE_MESSAGES.order,
+        });
       } catch (error) {
         toast({
           variant: 'error',

@@ -386,6 +386,7 @@ export interface MarketplaceNotification {
     | 'payment_confirmed'
     | 'order_cancelled'
     | 'order_shipped'
+    | 'tracking_updated'
     | 'order_delivered'
     | 'return_updated'
     | 'refund_recorded'
@@ -671,7 +672,7 @@ export type MarketplaceCommandSuccess = {
         order: MarketplaceOrder;
         receipt: MarketplaceReceipt | null;
       }
-    | { kind: 'order'; order: MarketplaceOrder }
+    | { kind: 'order'; order: MarketplaceOrder; changed?: boolean }
     | { kind: 'review'; order: MarketplaceOrder; review: MarketplaceReview }
     | {
         kind: 'pickup_details';
@@ -2467,6 +2468,14 @@ export class MarketplaceTransactionService {
     if (order.state !== 'shipped' || order.shipment?.state !== 'shipped') {
       return failure('INVALID_STATE', 'Tracking can only change while the order is shipped and not yet delivered.');
     }
+    // The same carrier and number change nothing: no revision, event or
+    // notification, so saving an unchanged form never re-notifies the buyer.
+    if (
+      order.shipment.carrier === command.payload.carrier &&
+      order.shipment.trackingNumber === command.payload.trackingNumber
+    ) {
+      return success(command, order.revision, [], { kind: 'order', order, changed: false });
+    }
     const occurredAt = this.now().toISOString();
     const updated: MarketplaceOrder = {
       ...order,
@@ -2484,7 +2493,7 @@ export class MarketplaceTransactionService {
       updated,
       'fulfillment.tracking_updated',
       order.buyerPubky,
-      'order_shipped',
+      'tracking_updated',
       occurredAt,
     );
   }
@@ -3165,6 +3174,7 @@ export class MarketplaceTransactionService {
       'payment_confirmed',
       'order_cancelled',
       'order_shipped',
+      'tracking_updated',
       'order_delivered',
       'return_updated',
       'refund_recorded',
