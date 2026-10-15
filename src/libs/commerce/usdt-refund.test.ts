@@ -16,6 +16,7 @@ import {
   sameArbitrumAddress,
   USDT_REFUND_COPY,
   USDT_REFUND_REFUSAL_COPY,
+  USDT_SELLER_REFUND_REFUSAL_COPY,
   usdtParityMillionths,
   usdtRefundCap,
   usdtRefundDueMoney,
@@ -208,7 +209,9 @@ describe('USDT parity amounts', () => {
 
 describe('refusal copy', () => {
   it('maps every closed S6 reason to plan copy', () => {
-    expect(USDT_REFUND_REFUSAL_COPY.size).toBe(USDT_REFUND_REFUSAL_REASONS.length);
+    expect(USDT_REFUND_REFUSAL_COPY.size + USDT_SELLER_REFUND_REFUSAL_COPY.size).toBe(
+      USDT_REFUND_REFUSAL_REASONS.length,
+    );
     expect(usdtRefundRefusalMessage({ reason: 'refund_destination_required' })).toBe(
       "Ask the buyer to confirm a refund address first. It's on their order page.",
     );
@@ -218,9 +221,22 @@ describe('refusal copy', () => {
     expect(usdtRefundRefusalMessage({ reason: 'invalid_refund_reference' })).toBe(
       'Enter the Arbitrum transaction hash (0x followed by 64 characters).',
     );
-    expect(usdtRefundRefusalMessage({ reason: 'refund_rail_unknown' })).toBe(USDT_REFUND_COPY.railUnknown);
-    expect(usdtRefundRefusalMessage({ reason: 'refund_amount_unrecordable' })).toBe(
+    expect(usdtRefundRefusalMessage({ reason: 'refund_rail_unknown' }, { seller: true })).toBe(
+      USDT_REFUND_COPY.railUnknown,
+    );
+    expect(usdtRefundRefusalMessage({ reason: 'refund_amount_unrecordable' }, { seller: true })).toBe(
       USDT_REFUND_COPY.amountUnrecordable,
+    );
+  });
+
+  it('keeps seller-directed wording off the buyer path', () => {
+    for (const reason of ['refund_rail_unknown', 'refund_amount_unrecordable']) {
+      expect(usdtRefundRefusalMessage({ reason })).toBeNull();
+      expect(usdtRefundRefusalMessage({ reason }, { seller: false })).toBeNull();
+      expect(usdtRefundRefusalMessage({ message: reason })).toBeNull();
+    }
+    expect(usdtRefundRefusalMessage({ reason: 'invalid_refund_destination' }, { seller: true })).toBe(
+      USDT_REFUND_COPY.addressInvalid,
     );
   });
 
@@ -228,7 +244,7 @@ describe('refusal copy', () => {
     expect(USDT_REFUND_COPY.railUnknown).toContain('Resolve the order as paid or abandoned first');
     expect(USDT_REFUND_COPY.amountUnrecordable).toContain('Contact the marketplace operator');
     for (const reason of ['refund_rail_unknown', 'refund_amount_unrecordable']) {
-      expect(usdtRefundRefusalMessage({ reason })).not.toContain(reason);
+      expect(usdtRefundRefusalMessage({ reason }, { seller: true })).not.toContain(reason);
     }
   });
 

@@ -323,6 +323,7 @@ describe('marketplacePaymentMethodFailureMessage', () => {
         'This seller’s Paykit setup isn’t finished, so they can’t take a payment yet. Choose another payment method, or contact the seller.',
       ],
       ['bitcoin_unavailable', 'Paykit payments are not available for this seller.'],
+      ['invalid_sats', 'Enter a whole-number amount greater than zero.'],
       [
         'buyer_usdt_wallet_required',
         'Your Bitkit does not support the asset this seller offers yet. Update Bitkit, or choose another payment method.',
@@ -335,7 +336,7 @@ describe('marketplacePaymentMethodFailureMessage', () => {
     ])('maps the %s refusal to Paykit copy that names neither Bitcoin nor USDT', (reason, copy) => {
       const message = marketplacePaymentMethodFailureMessage(paykitRefusal(reason), 'fallback');
       expect(message).toBe(copy);
-      expect(message).not.toMatch(/Bitcoin|USDT|SENTINEL/);
+      expect(message).not.toMatch(/Bitcoin|USDT|₿|\bsats?\b|SENTINEL/i);
     });
 
     it('keeps the Bitcoin string for the same reason on a legacy Bitcoin bind', () => {
@@ -372,7 +373,7 @@ describe('marketplacePaymentMethodFailureMessage', () => {
 
     it('overrides every reason whose main-table copy names one rail, so the neutral entry never names one', () => {
       for (const [reason, copy] of MARKETPLACE_PAYMENT_METHOD_REASON_MESSAGES) {
-        if (/Bitcoin|USDT/.test(copy)) {
+        if (/Bitcoin|USDT|₿|\bsats?\b/i.test(copy)) {
           expect(PAYKIT_PAYMENT_METHOD_REASON_MESSAGES.has(reason), reason).toBe(true);
         }
       }

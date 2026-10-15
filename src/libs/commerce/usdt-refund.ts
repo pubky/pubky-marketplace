@@ -282,20 +282,35 @@ export const USDT_REFUND_REFUSAL_COPY: ReadonlyMap<string, string> = new Map([
   ['refund_destination_required', USDT_REFUND_COPY.sellerWaiting],
   ['invalid_refund_destination', USDT_REFUND_COPY.addressInvalid],
   ['invalid_refund_reference', USDT_REFUND_COPY.referenceRequired],
+]);
+
+/**
+ * Refusals that only the seller's record or resolve step can meet, worded for
+ * the seller. The buyer's `refund.confirm_destination` never reads this map:
+ * the service raises these two only when a seller resolves a payment
+ * (`POST /v0/orders/{id}/bitcoin/resolve`), and a buyer must not see seller
+ * instructions if it ever raised them elsewhere.
+ */
+export const USDT_SELLER_REFUND_REFUSAL_COPY: ReadonlyMap<string, string> = new Map([
   ['refund_rail_unknown', USDT_REFUND_COPY.railUnknown],
   ['refund_amount_unrecordable', USDT_REFUND_COPY.amountUnrecordable],
 ]);
 
 /**
  * The static copy for a USDT refund refusal from `refund.confirm_destination`
- * or `refund.record_external`. Reads the closed `reason` (or a message that is
+ * or `refund.record_external`; `seller` adds the seller-only refusals. Reads the closed `reason` (or a message that is
  * exactly that token) and never echoes service text, which could carry the
  * rejected address.
  */
-export function usdtRefundRefusalMessage(error: { reason?: unknown; message?: unknown }): string | null {
+export function usdtRefundRefusalMessage(
+  error: { reason?: unknown; message?: unknown },
+  { seller = false }: { seller?: boolean } = {},
+): string | null {
   for (const candidate of [error.reason, error.message]) {
     if (typeof candidate !== 'string') continue;
-    const copy = USDT_REFUND_REFUSAL_COPY.get(candidate.trim());
+    const token = candidate.trim();
+    const copy =
+      USDT_REFUND_REFUSAL_COPY.get(token) ?? (seller ? USDT_SELLER_REFUND_REFUSAL_COPY.get(token) : undefined);
     if (copy) return copy;
   }
   return null;

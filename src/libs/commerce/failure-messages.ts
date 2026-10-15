@@ -329,6 +329,7 @@ export const MARKETPLACE_PAYMENT_METHOD_REASON_MESSAGES: ReadonlyMap<string, str
  * Every reason in the main table that names one rail needs an entry here.
  */
 export const PAYKIT_PAYMENT_METHOD_REASON_MESSAGES: ReadonlyMap<string, string> = new Map([
+  ['invalid_sats', 'Enter a whole-number amount greater than zero.'],
   ['bitcoin_unavailable', 'Paykit payments are not available for this seller.'],
   [
     'buyer_usdt_wallet_required',
