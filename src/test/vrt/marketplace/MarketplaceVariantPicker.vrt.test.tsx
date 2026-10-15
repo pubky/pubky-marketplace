@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
-import { renderForVRT, VRT_ROOT_TESTID } from '@/test-utils/vrt';
-import { VRT_VIEWPORT_DESKTOP, VRT_VIEWPORT_MOBILE } from '@/test-utils/vrt.viewports';
 import { MarketplaceVariantPicker } from '@/organisms/Marketplace/MarketplaceVariantPicker';
 import { createCommerceListingFixture } from '@/test/fixtures/commerce/commerce';
+import { renderForVRT, VRT_ROOT_TESTID } from '@/test-utils/vrt';
+import { VRT_VIEWPORT_DESKTOP, VRT_VIEWPORT_MOBILE } from '@/test-utils/vrt.viewports';
 
 const record = createCommerceListingFixture({
   variants: [

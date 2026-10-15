@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { toCamelCaseWire } from '@/libs/commerce/wire-casing';
 import { PROJECTION_FIXTURE_SELLER } from '@/test/fixtures/commerce/projections';
-import { marketplaceListingProjectionSchema, marketplacePublicListingAvailabilitySchema } from './marketplace-projections';
+import {
+  marketplaceListingProjectionSchema,
+  marketplacePublicListingAvailabilitySchema,
+} from './marketplace-projections';
 
 const AGGREGATE_ID = `listing:${PROJECTION_FIXTURE_SELLER}_boots_01`;
 
