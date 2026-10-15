@@ -4,13 +4,17 @@
  * maps those headers back to the English names the Woo preset reads.
  *
  * Source of every string below: WooCommerce's own translations, exported from
- * translate.wordpress.org on 2026-10-15 ("WooCommerce - Stable (latest
- * release)", locales de, fr, it) for the strings the exporter passes through
- * `__( …, 'woocommerce' )`: `get_default_column_names()` in
- * `includes/export/class-wc-product-csv-exporter.php` (file commit
- * 0a0b4b2cfc40dfdfd7e36966e136729b05c6402d, 2026-10-06) and its numbered
- * attribute and download columns. Export URL pattern:
- * https://translate.wordpress.org/projects/wp-plugins/woocommerce/stable/{de,fr,it}/default/export-translations?format=po
+ * translate.wordpress.org ("Plugins - WooCommerce - Stable (latest release)",
+ * locales de, fr, it) for the strings the exporter passes through
+ * `__( …, 'woocommerce' )`: `get_default_column_names()` and the numbered
+ * download, attribute and Meta columns in
+ * `includes/export/class-wc-product-csv-exporter.php` of WooCommerce 11.2.1,
+ * the stable release (file last changed in commit
+ * 5938a201befb81662baa4913614d32758bd25027). The exact msgid/msgstr pairs, the
+ * PO revision dates and file hashes are committed in
+ * `src/test/fixtures/woocommerce/woocommerce-po-extract.json`, and
+ * `import-woo-headers.translations.test.ts` pins every label below to its
+ * English msgid from that extract.
  *
  * Two German strings are older wording that WooCommerce used when the
  * Dezentralshop file was exported; they are not in today's translation and are
@@ -33,6 +37,7 @@ type HeaderDefinition = {
   readonly it: readonly string[];
 };
 
+export /** The mapped labels per language; exported for the translation proof in the tests. */
 const HEADER_DEFINITIONS: readonly HeaderDefinition[] = [
   { canonical: 'ID', de: ['ID'], fr: ['ID'], it: ['ID'] },
   { canonical: 'Type', de: ['Typ'], fr: ['Type'], it: ['Tipo'] },
