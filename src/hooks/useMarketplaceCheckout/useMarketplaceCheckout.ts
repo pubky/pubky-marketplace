@@ -40,6 +40,7 @@ import { LOCKS_MIXED_CHECKOUT_COPY, locksCheckoutRoute } from '@/libs/commerce/l
 import {
   commerceListingFulfillmentMethods,
   commerceListingProjectionIsStale,
+  commerceListingProjectionMatchesRecord,
 } from '@/libs/commerce/marketplace-records';
 import type { PaymentMethodKind } from '@/libs/commerce/payment-methods';
 import type { MarketplaceFulfillmentMethod } from '@/libs/commerce/pickup';
@@ -55,6 +56,7 @@ import {
 } from '@/libs/commerce/transaction-commands';
 import { AppError } from '@/libs/error/error';
 import { isMarketplaceSessionRequiredError } from '@/libs/error/error.utils';
+import { Logger } from '@/libs/logger/logger';
 import type { CommerceDeliveryAddressModelSchema } from '@/models/commerce/commerce.schema';
 import { showPaymentMethodRefusalToast } from '@/molecules/Toaster/payment-method-refusal-toast';
 import { toast } from '@/molecules/Toaster/use-toast';
@@ -100,7 +102,10 @@ function addressFieldValues(
 async function syncLineProjection(ownerPubky: string, listingId: string) {
   try {
     const response = await CommerceController.syncListingRegistration(ownerPubky, listingId);
-    if (!response.ok) return { projection: null, removed: false };
+    if (!response.ok) {
+      Logger.warn('Checkout line listing sync was refused', { code: response.error.code });
+      return { projection: null, removed: false };
+    }
     if (isListingDeletedResponse(response, buildMarketplaceListingAggregateId(ownerPubky, listingId))) {
       return { projection: null, removed: true };
     }
@@ -108,7 +113,8 @@ async function syncLineProjection(ownerPubky: string, listingId: string) {
       projection: await CommerceController.getMarketplaceListingProjection(ownerPubky, listingId),
       removed: false,
     };
-  } catch {
+  } catch (error) {
+    Logger.warn('Checkout line listing sync failed', { error });
     return { projection: null, removed: false };
   }
 }
@@ -593,17 +599,28 @@ export function useMarketplaceCheckout(
   ): Promise<{ ok: true; result: unknown; lines: CheckoutLine[] } | { ok: false }> => {
     const freshKinds: Array<MarketplaceDigitalDeliveryKind | null> = [];
     let sawRemovedListing = false;
+    let sawChangedListing = false;
+    let sawUnsyncedLocksLine = false;
     const lines = await Promise.all(
       items.map(async (item) => {
         const record = item.listing.record;
         let projection = await CommerceController.getMarketplaceListingProjection(record.ownerPubky, record.listingId);
         // The service charges and validates from its projection, so one that lags the record is synced
-        // first. A Locks lock is not projected, so a Locks line is always synced (a no-op when current).
+        // first. A Locks lock is not projected, so a Locks line is always synced (a no-op when current) and
+        // cannot check out unsynced: the service may not hold its lock.
         const needsSync = !projection || isLocksItem(item) || commerceListingProjectionIsStale(record, projection);
         if (needsSync && isDurableCommerceMode(getCommerceAdapterMode())) {
           const healed = await syncLineProjection(record.ownerPubky, record.listingId);
-          projection = healed.removed ? null : (healed.projection ?? projection);
           if (healed.removed) sawRemovedListing = true;
+          if (healed.projection && !commerceListingProjectionMatchesRecord(record, healed.projection)) {
+            sawChangedListing = true;
+            return null;
+          }
+          if (!healed.projection && !healed.removed && isLocksItem(item)) {
+            sawUnsyncedLocksLine = true;
+            return null;
+          }
+          projection = healed.removed ? null : (healed.projection ?? projection);
         }
         if (!projection) return null;
         const digital = goesDigital(item);
@@ -629,7 +646,11 @@ export function useMarketplaceCheckout(
         variant: 'error',
         description: sawRemovedListing
           ? `${MARKETPLACE_FAILURE_MESSAGES.listingRemoved} Nothing was reserved.`
-          : 'A listing in your cart could not be prepared for checkout. It may have been removed by the seller. Nothing was reserved.',
+          : sawChangedListing
+            ? 'A listing changed while you were checking out. Review your cart and try again.'
+            : sawUnsyncedLocksLine
+              ? 'A Locks item in your cart could not be confirmed with the marketplace. Nothing was reserved. Try again in a moment.'
+              : 'A listing in your cart could not be prepared for checkout. It may have been removed by the seller. Nothing was reserved.',
       });
       return { ok: false };
     }
