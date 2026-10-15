@@ -13,21 +13,44 @@ vi.mock('@/organisms/Marketplace/MarketplaceSessionConnectDialog', () => ({
 }));
 
 describe('ListingPublishGuardNotice', () => {
-  it.each(LISTING_PUBLISH_BLOCK_REASONS)('renders %s copy at the action density', (reason) => {
+  it.each(LISTING_PUBLISH_BLOCK_REASONS.filter((reason) => reason !== 'paykit-unreachable'))(
+    'renders %s copy at the action density',
+    (reason) => {
+      render(
+        <ListingPublishGuardNotice
+          reason={reason}
+          surface="listing-publish-guard"
+          id="listing-publish-guard"
+          density="action"
+        />,
+      );
+
+      const alert = screen.getByRole('alert');
+      expect(alert).toHaveAttribute('data-surface', 'listing-publish-guard');
+      expect(alert).toHaveAttribute('id', 'listing-publish-guard');
+      expect(alert).toHaveTextContent(LISTING_PUBLISH_BLOCK_COPY[reason].title);
+      expect(alert).toHaveTextContent(LISTING_PUBLISH_BLOCK_COPY[reason].body);
+    },
+  );
+
+  it('shows a Paykit outage as a calm status with no action', () => {
     render(
       <ListingPublishGuardNotice
-        reason={reason}
+        reason="paykit-unreachable"
         surface="listing-publish-guard"
         id="listing-publish-guard"
         density="action"
       />,
     );
 
-    const alert = screen.getByRole('alert');
-    expect(alert).toHaveAttribute('data-surface', 'listing-publish-guard');
-    expect(alert).toHaveAttribute('id', 'listing-publish-guard');
-    expect(alert).toHaveTextContent(LISTING_PUBLISH_BLOCK_COPY[reason].title);
-    expect(alert).toHaveTextContent(LISTING_PUBLISH_BLOCK_COPY[reason].body);
+    const status = screen.getByRole('status');
+    expect(status).toHaveAttribute('data-surface', 'listing-publish-guard');
+    expect(status).toHaveAttribute('id', 'listing-publish-guard');
+    expect(status).toHaveTextContent('Paykit is temporarily unreachable, retrying…');
+    expect(status).toHaveTextContent(LISTING_PUBLISH_BLOCK_COPY['paykit-unreachable'].body);
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(screen.queryByRole('link')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button')).not.toBeInTheDocument();
   });
 
   it('links payment settings for the no-method guard', () => {

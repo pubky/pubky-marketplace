@@ -10,6 +10,7 @@ import {
   rememberListingComposerReturnTo,
 } from '@/libs/commerce/listing-publish-guards';
 import { MarketplaceSessionConnectDialog } from '@/organisms/Marketplace/MarketplaceSessionConnectDialog';
+import { PaykitOutageNotice } from './PaykitOutageNotice';
 
 export function ListingPublishGuardNotice({
   reason,
@@ -26,6 +27,16 @@ export function ListingPublishGuardNotice({
   returnTo?: string;
   onSessionConnected?: () => void | Promise<void>;
 }) {
+  if (reason === 'paykit-unreachable') {
+    return (
+      <PaykitOutageNotice
+        audience="seller"
+        surface={surface}
+        id={id}
+        className="flex items-start gap-3 rounded-md bg-brand/5 p-4"
+      />
+    );
+  }
   const copy = LISTING_PUBLISH_BLOCK_COPY[reason];
   const needsSession = reason === 'session' || reason === 'unverified';
 

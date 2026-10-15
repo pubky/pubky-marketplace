@@ -29,6 +29,7 @@ import {
   type UseListingMediaManagerResult,
 } from '@/hooks/useListingMediaManager/useListingMediaManager';
 import { useMeasurementSystem } from '@/hooks/useMeasurementSystem/useMeasurementSystem';
+import { usePaykitRecovery } from '@/hooks/usePaykitRecovery/usePaykitRecovery';
 import {
   evaluateDurableListingPublishGuards,
   type ListingPublishBlockReason,
@@ -88,6 +89,7 @@ export function useEditMarketplaceListing(sellerPubky: string, listingId: string
   const hydratedReservePriceRef = useRef<CommerceMoney | null | undefined>(undefined);
   const durablePublish = isDurableCommerceMode(getCommerceAdapterMode());
   const [publishBlocked, setPublishBlocked] = useState<ListingPublishBlockReason | null>(null);
+  const paykitRecheck = usePaykitRecovery(publishBlocked === 'paykit-unreachable');
   const [publishGuardReady, setPublishGuardReady] = useState(!durablePublish);
   const form = useForm<CreateMarketplaceListingData>({
     resolver: zodResolver(createMarketplaceListingSchema),
@@ -147,7 +149,7 @@ export function useEditMarketplaceListing(sellerPubky: string, listingId: string
       return;
     }
     let active = true;
-    setPublishGuardReady(false);
+    if (paykitRecheck === 0) setPublishGuardReady(false);
     void evaluateDurableListingPublishGuards({
       ownerPubky: currentUserPubky,
       hasMarketplaceSession: Boolean(marketplaceSession),
@@ -161,7 +163,7 @@ export function useEditMarketplaceListing(sellerPubky: string, listingId: string
     return () => {
       active = false;
     };
-  }, [currentUserPubky, durablePublish, marketplaceSession, shipsListing]);
+  }, [currentUserPubky, durablePublish, marketplaceSession, shipsListing, paykitRecheck]);
 
   const submit = async (options?: { silent?: boolean }): Promise<string | null> => {
     if (!currentUserPubky || !record) return null;

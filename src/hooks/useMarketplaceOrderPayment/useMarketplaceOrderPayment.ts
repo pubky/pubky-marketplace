@@ -3,8 +3,10 @@
 import { useCallback, useEffect, useState } from 'react';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import { useAuctionWinnerDeliveryAddress } from '@/hooks/useAuctionWinnerDeliveryAddress/useAuctionWinnerDeliveryAddress';
+import { usePaykitRecovery } from '@/hooks/usePaykitRecovery/usePaykitRecovery';
 import { useUsdtPaymentsAvailable } from '@/hooks/useUsdtPaymentsAvailable/useUsdtPaymentsAvailable';
 import {
+  isPaykitUnavailableRefusal,
   MARKETPLACE_FAILURE_MESSAGES,
   marketplaceErrorCode,
   marketplaceFailureMessage,
@@ -42,6 +44,13 @@ export function useMarketplaceOrderPayment({
   const [sellerConfig, setSellerConfig] = useState<SellerPaymentConfig | null>(null);
   const [configError, setConfigError] = useState<string | null>(null);
   const [pendingAction, setPendingAction] = useState<'bind' | 'verify' | 'mark-paid' | 'confirm' | null>(null);
+  // Re-reads the rails without blanking them: after a refused bind, and while Paykit is down.
+  const [railRefresh, setRailRefresh] = useState(0);
+  // The service refused a bind because it could not reach Paykit, whatever its health read says.
+  const [paykitRefused, setPaykitRefused] = useState(false);
+  const paykitOutage = sellerConfig?.paykitUnreachable === true || paykitRefused;
+  const paykitRecheck = usePaykitRecovery(paykitOutage);
+  useEffect(() => setPaykitRefused(false), [paykitRecheck]);
 
   const needsConfig = enabled && !order.paymentMethod;
   const shippingAddressRequired = needsConfig && order.shippingAddressRequired === true;
@@ -74,7 +83,7 @@ export function useMarketplaceOrderPayment({
     return () => {
       active = false;
     };
-  }, [needsConfig, order.sellerPubky]);
+  }, [needsConfig, order.sellerPubky, railRefresh, paykitRecheck]);
 
   const runAction = useCallback(
     async (action: 'bind' | 'verify' | 'mark-paid' | 'confirm', run: () => Promise<void>, onRetry?: () => void) => {
@@ -84,6 +93,10 @@ export function useMarketplaceOrderPayment({
         await onPaymentChanged();
       } catch (error) {
         Logger.error(`Marketplace payment action '${action}' failed`, { error });
+        if (action === 'bind') {
+          if (isPaykitUnavailableRefusal(error)) setPaykitRefused(true);
+          setRailRefresh((refresh) => refresh + 1);
+        }
         const usdtRefusal = usdtOfferRefusalReason(error);
         if (usdtRefusal) CommerceController.rememberUsdtRefusal(sellerKey, usdtRefusal);
         showPaymentMethodRefusalToast({
@@ -141,7 +154,10 @@ export function useMarketplaceOrderPayment({
           usdtPaymentsAvailable: usdtPaymentsAvailable && !usdtRefused && isUsdPricedTotals([order.total]),
         })
       : null,
-    bitcoinOfferUnavailable: sellerConfig?.bitcoinAvailable === true && sellerConfig.bitcoinOfferAvailable === false,
+    bitcoinOfferUnavailable:
+      paykitOutage || (sellerConfig?.bitcoinAvailable === true && sellerConfig.bitcoinOfferAvailable === false),
+    /** Paykit is down, so Bitcoin is missing for that reason and not because the seller has no setup. */
+    paykitOutage,
     configError,
     /** Set while an auction winner's order still needs the address it ships to. */
     deliveryAddress: shippingAddressRequired ? winnerDelivery : null,

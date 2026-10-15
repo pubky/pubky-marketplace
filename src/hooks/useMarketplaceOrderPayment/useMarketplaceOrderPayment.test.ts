@@ -136,6 +136,87 @@ describe('useMarketplaceOrderPayment', () => {
     await waitFor(() => expect(onPaymentChanged).toHaveBeenCalledTimes(1));
   });
 
+  describe('a Paykit outage', () => {
+    const outage = {
+      bitcoinAvailable: false,
+      bitcoinOfferAvailable: false,
+      paypalAvailable: false,
+      paykitUnreachable: true,
+    };
+    const healthy = { bitcoinAvailable: true, bitcoinOfferAvailable: true, paypalAvailable: false };
+    const paykitDown = () =>
+      new AppError({
+        category: ErrorCategory.Client,
+        code: ClientErrorCode.BAD_REQUEST,
+        message: 'SENTINEL_PAYKIT_503',
+        service: ErrorService.Marketplace,
+        operation: 'bindPaymentMethod',
+        context: { statusCode: 503, reason: 'paykit_unavailable' },
+      });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('flags the outage, keeps checking and offers Bitcoin again when Paykit is back', async () => {
+      vi.useFakeTimers();
+      vi.mocked(CommerceController.getSellerPaymentConfig).mockReset();
+      vi.mocked(CommerceController.getSellerPaymentConfig).mockResolvedValueOnce(outage).mockResolvedValue(healthy);
+      const { result } = renderHook(() =>
+        useMarketplaceOrderPayment({
+          order: createOrderFixture('pending_payment'),
+          enabled: true,
+          onPaymentChanged: vi.fn(),
+        }),
+      );
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      expect(result.current.paykitOutage).toBe(true);
+      expect(result.current.availableMethods).toEqual([]);
+      expect(result.current.bitcoinOfferUnavailable).toBe(true);
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(5_000);
+      });
+      expect(result.current.paykitOutage).toBe(false);
+      expect(result.current.availableMethods).toEqual(['bitcoin']);
+      expect(result.current.bitcoinOfferUnavailable).toBe(false);
+    });
+
+    it('treats a refused bind as an outage even when the health read looked fine, then re-enables on its own', async () => {
+      vi.useFakeTimers();
+      vi.mocked(CommerceController.getSellerPaymentConfig).mockReset();
+      vi.mocked(CommerceController.getSellerPaymentConfig).mockResolvedValue(healthy);
+      vi.mocked(CommerceController.bindPaymentMethod).mockReset();
+      vi.mocked(CommerceController.bindPaymentMethod).mockRejectedValueOnce(paykitDown());
+      const { result } = renderHook(() =>
+        useMarketplaceOrderPayment({
+          order: createOrderFixture('pending_payment'),
+          enabled: true,
+          onPaymentChanged: vi.fn(),
+        }),
+      );
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      expect(result.current.paykitOutage).toBe(false);
+
+      await act(async () => {
+        await result.current.bind('bitcoin');
+      });
+      const toastCall = vi.mocked(toast).mock.calls.at(-1)?.[0];
+      expect(toastCall?.description).toBe('Paykit is temporarily unreachable, retrying…');
+      expect(JSON.stringify(toastCall)).not.toContain('SENTINEL');
+      expect(result.current.paykitOutage).toBe(true);
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(5_000);
+      });
+      expect(result.current.paykitOutage).toBe(false);
+    });
+  });
+
   describe('an auction winner order that still needs its delivery address', () => {
     const SELLER_KEY = { keyId: 'a'.repeat(32), publicKey: new Uint8Array(32) };
     const ADDRESS = {
