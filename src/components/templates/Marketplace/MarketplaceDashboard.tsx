@@ -42,6 +42,7 @@ import { useNowMs } from '@/hooks/useNowMs/useNowMs';
 import { useSellerPaymentMethodGate } from '@/hooks/useSellerPaymentMethodGate/useSellerPaymentMethodGate';
 import { listingDisplayState } from '@/libs/commerce/auction-phase';
 import { formatCommerceMoney } from '@/libs/commerce/format';
+import { listingPublishNeedsMarketplaceSession } from '@/libs/commerce/listing-publish-guards';
 import { formatListingStock } from '@/libs/commerce/unlimited-stock';
 import { isListingRegistrationPending } from '@/models/commerce/commerce.schema';
 import { SettingsSectionContent } from '@/molecules/Settings/SettingsSectionContent/SettingsSectionContent';
@@ -112,7 +113,11 @@ export function MarketplaceDashboard() {
   };
 
   const updateListingState = (listingIds: string[], state: 'active' | 'paused') => {
-    if (isDurableCommerceMode(getCommerceAdapterMode()) && !marketplaceSession) {
+    const needsSession = dashboard.listings.some(
+      (listing) =>
+        listingIds.includes(listing.id) && listingPublishNeedsMarketplaceSession({ state, sale: listing.record.sale }),
+    );
+    if (needsSession && isDurableCommerceMode(getCommerceAdapterMode()) && !marketplaceSession) {
       setPendingStateChange({ listingIds, state });
       return;
     }

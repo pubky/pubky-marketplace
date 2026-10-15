@@ -149,18 +149,37 @@ describe('MarketplaceListingOwnerPanel unlist through the real commit', () => {
     expect(await screen.findByRole('button', { name: /Unlist/ })).toBeEnabled();
   });
 
-  it('asks for the selling approval, and changes nothing, when no marketplace session is connected', async () => {
+  it('unlists on the sign-in grant alone when no marketplace session is connected', async () => {
     const user = userEvent.setup();
     vi.spyOn(CommerceApplication, 'hasActiveMarketplaceSession').mockReturnValue(false);
-    const put = vi.spyOn(CommerceHomeserverService, 'putJson');
     render(<ListingPage listingId={published.listingId} />);
 
     await user.click(await screen.findByRole('button', { name: /Unlist/ }));
+
+    await waitFor(() => expect(toast).toHaveBeenCalledWith(expect.objectContaining({ title: 'Listing unlisted' })));
+    expect(toast).not.toHaveBeenCalledWith(expect.objectContaining({ variant: 'error' }));
+    expect(homeserverRecord).toMatchObject({ state: 'paused', revision: published.revision + 1 });
+    expect(registrations).toEqual([]);
+    await expect(
+      LocalCommerceService.getListing(`${published.ownerPubky}:${published.listingId}`),
+    ).resolves.toMatchObject({ state: 'paused', registration_status: 'registered', sync_status: 'synced' });
+  });
+
+  it('asks for the selling approval, and changes nothing, when relisting without a marketplace session', async () => {
+    const user = userEvent.setup();
+    vi.spyOn(CommerceApplication, 'hasActiveMarketplaceSession').mockReturnValue(false);
+    const paused = createCommerceListingFixture({ state: 'paused', revision: 2 });
+    homeserverRecord = asWire(paused);
+    await LocalCommerceService.upsertListing(paused, 'synced');
+    const put = vi.spyOn(CommerceHomeserverService, 'putJson');
+    render(<ListingPage listingId={published.listingId} />);
+
+    await user.click(await screen.findByRole('button', { name: /Relist/ }));
 
     await waitFor(() =>
       expect(toast).toHaveBeenCalledWith({ variant: 'error', description: 'Enable selling to publish' }),
     );
     expect(put).not.toHaveBeenCalled();
-    expect(screen.getByTestId('state')).toHaveTextContent('active');
+    expect(screen.getByTestId('state')).toHaveTextContent('paused');
   });
 });

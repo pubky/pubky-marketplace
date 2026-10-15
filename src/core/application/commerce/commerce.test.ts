@@ -653,6 +653,84 @@ describe('CommerceApplication', () => {
     });
   });
 
+  describe('a state change without a marketplace session', () => {
+    const sessionless = async (record: ReturnType<typeof createCommerceListingFixture>) => {
+      vi.spyOn(commerceConfig, 'getCommerceAdapterMode').mockReturnValue('transaction-service');
+      vi.spyOn(CommerceApplication, 'hasActiveMarketplaceSession').mockReturnValue(false);
+      await CommerceListingModel.table.put({ ...toCommerceListingModel(record), registration_status: 'registered' });
+      let published: Record<string, unknown> = { ...record };
+      const put = vi.spyOn(CommerceHomeserverService, 'putJson').mockImplementation(async (url, body) => {
+        if (url === LISTING_URL) published = body;
+      });
+      vi.mocked(CommerceHomeserverService.fetchJson).mockImplementation(async (url) => {
+        if (url === LISTING_URL) return published;
+        throw Err.client(ClientErrorCode.NOT_FOUND, 'Not found', {
+          service: ErrorService.Homeserver,
+          operation: 'fetchJson',
+        });
+      });
+      const execute = vi.spyOn(MarketplaceGatewayService, 'execute');
+      return { put, execute };
+    };
+    const next = (
+      record: ReturnType<typeof createCommerceListingFixture>,
+      state: 'active' | 'paused',
+    ): ReturnType<typeof createCommerceListingFixture> => ({
+      ...record,
+      revision: record.revision + 1,
+      state,
+      updatedAt: new Date().toISOString(),
+    });
+
+    it('pauses a fixed-price listing on the homeserver and keeps its registration', async () => {
+      const record = createCommerceListingFixture();
+      const { put, execute } = await sessionless(record);
+
+      await expect(CommerceApplication.commitUpsertListing(next(record, 'paused'))).resolves.toEqual({
+        registered: false,
+        verified: true,
+      });
+
+      expect(put).toHaveBeenCalledWith(LISTING_URL, expect.objectContaining({ state: 'paused' }), expect.anything());
+      expect(execute).not.toHaveBeenCalled();
+      await expect(LocalCommerceService.getListing(`${record.ownerPubky}:${record.listingId}`)).resolves.toMatchObject({
+        state: 'paused',
+        sync_status: 'synced',
+        registration_status: 'registered',
+      });
+      await expect(CommerceSyncJobModel.table.count()).resolves.toBe(0);
+    });
+
+    it('still asks for the session to relist, before anything is written', async () => {
+      const record = { ...createCommerceListingFixture(), state: 'paused' as const };
+      const { put } = await sessionless(record);
+
+      await expect(CommerceApplication.commitUpsertListing(next(record, 'active'))).rejects.toMatchObject({
+        code: AuthErrorCode.SESSION_EXPIRED,
+      });
+      expect(put).not.toHaveBeenCalled();
+    });
+
+    it('still asks for the session to pause an auction', async () => {
+      const record = createCommerceListingFixture();
+      record.sale = {
+        format: 'auction',
+        startingPrice: { amountMinor: 4_500, currency: 'USD', exponent: 2 },
+        minimumIncrement: { amountMinor: 500, currency: 'USD', exponent: 2 },
+        startsAt: '2026-08-19T20:00:00.000Z',
+        endsAt: '2026-08-29T20:00:00.000Z',
+        antiSnipingWindowSeconds: 120,
+        antiSnipingExtensionSeconds: 120,
+      };
+      const { put } = await sessionless(record);
+
+      await expect(CommerceApplication.commitUpsertListing(next(record, 'paused'))).rejects.toMatchObject({
+        code: AuthErrorCode.SESSION_EXPIRED,
+      });
+      expect(put).not.toHaveBeenCalled();
+    });
+  });
+
   it('scrubs nested public reserve keys and reuses the verified private reserve on retry', async () => {
     const listing = createCommerceListingFixture();
     listing.sale = {

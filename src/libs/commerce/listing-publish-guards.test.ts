@@ -8,6 +8,7 @@ import {
   LISTING_PUBLISH_BLOCK_COPY,
   LISTING_PUBLISH_BLOCK_REASONS,
   listingPublishBlockToast,
+  listingPublishNeedsMarketplaceSession,
   rememberListingComposerReturnTo,
 } from './listing-publish-guards';
 
@@ -22,6 +23,26 @@ const paidConfig = {
   bitcoinOfferAvailable: true,
   paypalAvailable: false,
 };
+
+describe('listingPublishNeedsMarketplaceSession', () => {
+  const fixedPrice = { format: 'fixed_price' } as const;
+  const auction = { format: 'auction', startsAt: '2026-09-01T00:00:00.000Z', endsAt: '2026-09-17T00:00:00.000Z' };
+
+  it('lets a fixed-price pause through on the sign-in grant alone', () => {
+    expect(listingPublishNeedsMarketplaceSession({ state: 'paused', sale: fixedPrice as never })).toBe(false);
+  });
+
+  it.each(['active', 'ended', 'removed'] as const)(
+    'needs the session to publish a fixed-price listing as %s',
+    (state) => {
+      expect(listingPublishNeedsMarketplaceSession({ state, sale: fixedPrice as never })).toBe(true);
+    },
+  );
+
+  it.each(['active', 'paused'] as const)('needs the session to publish an auction as %s', (state) => {
+    expect(listingPublishNeedsMarketplaceSession({ state, sale: auction as never })).toBe(true);
+  });
+});
 
 describe('evaluateDurableListingPublishGuards', () => {
   it('blocks unsigned sellers before any payment lookup', async () => {

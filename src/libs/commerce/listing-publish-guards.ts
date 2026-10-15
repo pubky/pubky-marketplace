@@ -1,3 +1,4 @@
+import type { CommerceListingRecord } from '@/libs/commerce/marketplace-records';
 import { availablePaymentMethods, type SellerPaymentConfig } from '@/libs/commerce/payment-methods';
 
 /**
@@ -112,6 +113,17 @@ export async function evaluateDeliveryKeyGate(
   } catch {
     return 'delivery-key-unverified';
   }
+}
+
+/**
+ * Whether publishing `record` needs a marketplace session in durable mode. The service tracks stock, not the
+ * record's lifecycle state, so pausing a fixed-price listing is only a homeserver write, which the sign-in
+ * grant already covers. A Bitkit or Passport sign-in holds no marketplace session until the seller enables
+ * selling, and that session expires on its own TTL; neither may block a pause. Auctions keep the requirement:
+ * their publish prepares a service command.
+ */
+export function listingPublishNeedsMarketplaceSession(record: Pick<CommerceListingRecord, 'state' | 'sale'>): boolean {
+  return !(record.state === 'paused' && record.sale.format === 'fixed_price');
 }
 
 export async function evaluateDurableListingPublishGuards(input: {
