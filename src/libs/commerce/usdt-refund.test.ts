@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { formatCommerceMoney } from './format';
 import {
   REFUND_FIXTURE_ADDRESS,
   REFUND_FIXTURE_OTHER_ADDRESS,
   REFUND_FIXTURE_TX_HASH,
   USDT_REFUND_REFUSAL_REASONS,
 } from '@/test/fixtures/commerce/usdt-refund.wire';
+import { formatCommerceMoney } from './format';
 import {
   formatUsdtParity,
   formatUsdtRefundAmount,
