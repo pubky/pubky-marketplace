@@ -1,7 +1,7 @@
 import type { Session, XCallbackParams } from '@synonymdev/pubky';
 import { userUriBuilder } from 'pubky-app-specs';
 import type { TKeypairParams, TRestoreSessionParams, TRestoreSessionResult } from '@/application/auth/auth.types';
-import { SHOP_GRANT_CLIENT_ID } from '@/config/app';
+import { getShopGrantClientId } from '@/config/app';
 import { capabilitiesMatchFullGrant } from '@/libs/auth/capabilities';
 import { ValidationErrorCode } from '@/libs/error/error.codes';
 import { Err } from '@/libs/error/error.factories';
@@ -57,7 +57,7 @@ export class AuthApplication {
         return { status: 'deferred' };
       }
       const info = await session.grant.sessionInfo();
-      if (info.clientId !== SHOP_GRANT_CLIENT_ID || (expectedPubky && info.publicKey.z32() !== expectedPubky)) {
+      if (info.clientId !== getShopGrantClientId() || (expectedPubky && info.publicKey.z32() !== expectedPubky)) {
         return { status: 'deferred' };
       }
       await HomeserverService.assertUserHomeserverAllowed({ publicKey: session.info.publicKey });

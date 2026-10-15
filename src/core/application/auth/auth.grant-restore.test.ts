@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AuthErrorCode } from '@/libs/error/error.codes';
 import { Err } from '@/libs/error/error.factories';
 import { ErrorService } from '@/libs/error/error.types';
+import { resetRuntimeConfigForTests } from '@/libs/runtime-config/runtime-config';
 import { HomeserverService } from '@/services/homeserver/homeserver';
 import { mockAuthStore } from '@/test-utils/stores';
 import { asOpaque } from '@/test-utils/type-assertions';
@@ -28,7 +29,11 @@ beforeEach(() => {
   vi.spyOn(HomeserverService, 'logout').mockResolvedValue(undefined);
   vi.spyOn(HomeserverService, 'saveGrantSession').mockResolvedValue('unexpected');
 });
-afterEach(() => vi.restoreAllMocks());
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.unstubAllEnvs();
+  resetRuntimeConfigForTests();
+});
 
 describe('grant restore failure and ownership rules', () => {
   it('ignores persisted cookie exports and never tries ambient-cookie or bridge fallback', async () => {
@@ -77,12 +82,33 @@ describe('grant restore failure and ownership rules', () => {
     ).toEqual({ status: 'signed-out' });
     expect(HomeserverService.removeGrantSession).toHaveBeenCalledWith('shop-record');
   });
+  it('restores a standalone grant issued for the runtime Shop client id', async () => {
+    vi.stubEnv('PUBKY_RUNTIME_SHOP_GRANT_CLIENT_ID', 'staging.pubky.app');
+    resetRuntimeConfigForTests();
+    const restored = session({ clientId: 'staging.pubky.app' });
+    vi.spyOn(HomeserverService, 'restoreGrantSession').mockResolvedValue(restored);
+    expect(
+      await AuthApplication.restorePersistedSession({
+        authStore: mockAuthStore({ currentUserPubky: 'alice', grantSessionRecordId: 'shop-record' }),
+      }),
+    ).toEqual({ status: 'restored', session: restored });
+    expect(HomeserverService.removeGrantSession).not.toHaveBeenCalled();
+    expect(HomeserverService.logout).not.toHaveBeenCalled();
+  });
   it('accepts a root grant owned by App without saving it again', async () => {
     const restored = session();
     vi.spyOn(HomeserverService, 'restoreGrantSession').mockResolvedValue(restored);
     expect(await AuthApplication.restoreHostSession(ref)).toBe(restored);
     expect(HomeserverService.restoreGrantSession).toHaveBeenCalledWith('app-record');
     expect(HomeserverService.saveGrantSession).not.toHaveBeenCalled();
+  });
+  it('reuses an App grant with core Shop permissions without forcing a Chat approval', async () => {
+    const restored = session({ capabilities: ['/pub/pubky.app/:rw', '/pub/paykit/:rw', '/priv/pubky.app/:rw'] });
+    vi.spyOn(HomeserverService, 'restoreGrantSession').mockResolvedValue(restored);
+    expect(await AuthApplication.restoreHostSession(ref)).toBe(restored);
+    expect(HomeserverService.saveGrantSession).not.toHaveBeenCalled();
+    expect(HomeserverService.removeGrantSession).not.toHaveBeenCalled();
+    expect(HomeserverService.logout).not.toHaveBeenCalled();
   });
   it.each([
     { clientId: 'shop.pubky.app' },

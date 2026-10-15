@@ -396,6 +396,21 @@ describe('HomeserverService', () => {
       expect(mockState.signin).toHaveBeenCalledWith('shop.pubky.app');
     });
 
+    it('uses the runtime client id for recovery-key sign-in and signup', async () => {
+      const { resetRuntimeConfigForTests } = await import('@/libs/runtime-config/runtime-config');
+      vi.stubEnv('PUBKY_RUNTIME_SHOP_GRANT_CLIENT_ID', 'staging.pubky.app');
+      resetRuntimeConfigForTests();
+      try {
+        await HomeserverService.signIn({ keypair: createMockKeypair() });
+        expect(mockState.signin).toHaveBeenLastCalledWith('staging.pubky.app');
+        await HomeserverService.signUp({ keypair: createMockKeypair(), signupToken: 'invite' });
+        expect(mockState.signin).toHaveBeenLastCalledWith('staging.pubky.app');
+      } finally {
+        vi.unstubAllEnvs();
+        resetRuntimeConfigForTests();
+      }
+    });
+
     describe('signUp (staging: direct URL, grant session)', () => {
       it('creates the account without a cookie, publishes and signs in with the Shop client', async () => {
         await withStagingHomeserverEnv(async () => {
@@ -797,7 +812,9 @@ describe('HomeserverService', () => {
         ['a cookie session holding only the Shop grant', cookieSession(CAPABILITIES), false],
         ['a root cookie session', cookieSession('/:rw'), false],
         ['a grant session holding the Shop grant', grantSession(CAPABILITIES), true],
-        ['an older grant missing chat permissions', grantSession(RING_COOKIE_CAPABILITIES), false],
+        ['an older grant missing chat permissions', grantSession(RING_COOKIE_CAPABILITIES), true],
+        ['a core-only grant', grantSession('/pub/pubky.app/:rw,/pub/paykit/:rw,/priv/pubky.app/:rw'), true],
+        ['a Chat-only grant', grantSession('/pub/chat/v0/:rw,/priv/chat/v0/:rw'), false],
       ])('%s → %s', (_label, session, full) => {
         mockState.currentSession = session;
 

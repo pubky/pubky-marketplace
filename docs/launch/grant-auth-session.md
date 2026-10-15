@@ -13,7 +13,7 @@ Shop homeserver authentication now uses SDK 0.16.1 grant sessions. This applies 
 | Ring signup | SDK `signup_grant`, followed by grant session initialization |
 | Locally generated account signup | Account registration and PKDNS publication, then SDK grant sign-in |
 
-External signer requests use `approvalFormat: 'bareGrant'` and request `/pub/pubky.app/:rw,/pub/paykit/:rw,/priv/pubky.app/:rw,/pub/chat/:rw,/priv/chat/:rw`. The chat trees match the replacement transport in [#209](https://github.com/pubky/pubky-marketplace/pull/209), so shared App approvals cover that integration too. SDK direct key sign-in returns root storage permission `/:rw`, which covers the required paths. Neither path requests encryption-key action `e`. Staging account registration still uses the homeserver's signup protocol, but ignores any returned cookie session and establishes a grant before authenticating the browser.
+External signer requests use `approvalFormat: 'bareGrant'` and request `/pub/pubky.app/:rw,/pub/paykit/:rw,/priv/pubky.app/:rw,/pub/chat/v0/:rw,/priv/chat/v0/:rw`. The chat trees match the replacement transport in [#209](https://github.com/pubky/pubky-marketplace/pull/209), so shared App approvals cover that integration too. Existing grants need only the three core Shop trees (`/pub/pubky.app/:rw,/pub/paykit/:rw,/priv/pubky.app/:rw`) to open Shop; missing Chat scopes must be handled by Chat independently. SDK direct key sign-in returns root storage permission `/:rw`, which covers the required paths. Neither path requests encryption-key action `e`. Staging account registration still uses the homeserver's signup protocol, but ignores any returned cookie session and establishes a grant before authenticating the browser.
 
 A persisted grant restores by its exact SDK `BrowserSessionStore` record ID. If sign-in saved the grant but profile discovery or bootstrap was interrupted, restore retries those steps before completing authentication; a temporary failure keeps the record available for retry. Grant sign-in requires usable secure browser storage, WebCrypto and Web Locks. A missing capability, unsupported browser or blocked storage produces an explicit unavailable/retry state rather than a cookie fallback. Temporary storage or network failures retain the saved reference; definitive missing or invalid credentials require a new approval.
 
@@ -63,7 +63,7 @@ Recovery-file-only commerce remains limited: after local key sign-in, the user m
 
 ## Messaging cutover
 
-[Chat #209](https://github.com/pubky/pubky-marketplace/pull/209) replaces Paykit Encrypted Links with encrypted homeserver messages and optional Inbox pings. It supports grant sessions and uses `/pub/chat/:rw` and `/priv/chat/:rw`; the App and Shop approval scopes include those paths. It does not require the encryption-key action `e`, whose launch gate remains closed.
+[Chat #209](https://github.com/pubky/pubky-marketplace/pull/209) replaces Paykit Encrypted Links with encrypted homeserver messages and optional Inbox pings. It supports grant sessions and uses `/pub/chat/v0/:rw` and `/priv/chat/v0/:rw`; the App and Shop approval scopes include those paths. It does not require the encryption-key action `e`, whose launch gate remains closed.
 
 Until that separate transport lands, this branch retains the legacy messaging guard: fresh grant sessions cannot enroll in the cookie-only Paykit transport. Existing compatible local conversations remain readable. Removing the guard alone would start a separate cookie approval, not enable grant messaging.
 

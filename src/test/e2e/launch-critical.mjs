@@ -52,7 +52,7 @@ const SERVICE_URL =
 const NEXUS_URL = (process.env.LAUNCH_E2E_NEXUS_URL ?? '').replace(/\/$/, '');
 const ALLOW_LIVE_NEXUS = process.env.LAUNCH_E2E_ALLOW_LIVE_NEXUS === '1';
 const REQUIRE_SELLER_BOARD = process.env.LAUNCH_E2E_REQUIRE_SELLER_BOARD !== '0';
-const SHOP_GRANT = '/pub/pubky.app/:rw,/pub/paykit/:rw,/priv/pubky.app/:rw,/pub/chat/:rw,/priv/chat/:rw';
+const SHOP_GRANT = '/pub/pubky.app/:rw,/pub/paykit/:rw,/priv/pubky.app/:rw,/pub/chat/v0/:rw,/priv/chat/v0/:rw';
 const MARKETPLACE_GRANT = '/pub/pubky.app/marketplace-service/v1/:rw,/priv/pubky.app/:rw';
 const PREVIOUS_MARKETPLACE_GRANT = '/pub/pubky.app/marketplace-service/v1/:rw';
 let syntheticFixture;

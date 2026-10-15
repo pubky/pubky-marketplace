@@ -2,6 +2,7 @@ import { webcrypto } from 'node:crypto';
 import { AuthFlowKind, GrantAuthFlow, Keypair, Pubky } from '@synonymdev/pubky';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CAPABILITIES, SHOP_GRANT_CLIENT_ID } from '@/config/app';
+import { resetRuntimeConfigForTests } from '@/libs/runtime-config/runtime-config';
 import { installWebLocks, removeWebLocks } from '@/test-utils/web-locks';
 import { HomeserverService } from './homeserver';
 import {
@@ -43,6 +44,8 @@ afterEach(async () => {
   await new Promise((resolve) => setTimeout(resolve, 0));
   removeWebLocks();
   vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
+  resetRuntimeConfigForTests();
 });
 
 describe('SDK 0.16 bare-grant and owned-key compatibility contract', () => {
@@ -57,6 +60,21 @@ describe('SDK 0.16 bare-grant and owned-key compatibility contract', () => {
     expect(url.searchParams.has('epk')).toBe(false);
     flow.cancelAuthFlow();
     await vi.waitFor(() => expect(pendingOwnedGrants()).toEqual([]));
+  });
+  it('uses the runtime client id for a bare grant approval', async () => {
+    vi.stubEnv('PUBKY_RUNTIME_SHOP_GRANT_CLIENT_ID', 'staging.pubky.app');
+    resetRuntimeConfigForTests();
+    const flow = await HomeserverService.generateAuthUrl();
+    flow.awaitApproval.catch(() => {});
+    try {
+      const url = new URL(flow.authorizationUrl);
+      expect(url.searchParams.get('cid')).toBe('staging.pubky.app');
+      expect(url.searchParams.get('caps')).toBe(CAPABILITIES);
+      expect(url.searchParams.has('af')).toBe(false);
+    } finally {
+      flow.cancelAuthFlow();
+      await vi.waitFor(() => expect(pendingOwnedGrants()).toEqual([]));
+    }
   });
   it('signup uses SDK signup_grant instead of rewriting a cookie URL', async () => {
     const flow = await HomeserverService.generateSignupAuthUrl({ inviteCode: 'test-invite' });

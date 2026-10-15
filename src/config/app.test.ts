@@ -70,12 +70,19 @@ describe('capabilitiesMatchFullGrant', () => {
     expect(capabilitiesMatchFullGrant([...full, '/extra/:rw'])).toBe(true);
   });
 
-  it('requires both chat trees when reusing an older App or Shop grant', () => {
-    const previousShopGrant = ['/pub/pubky.app/:rw', '/pub/paykit/:rw', '/priv/pubky.app/:rw'];
-    expect(capabilitiesMatchFullGrant(previousShopGrant)).toBe(false);
-    expect(capabilitiesMatchFullGrant([...previousShopGrant, '/pub/chat/:rw', '/priv/chat/:r'])).toBe(false);
-    expect(capabilitiesMatchFullGrant([...previousShopGrant, '/pub/chat/:rw', '/priv/chat/:rw'])).toBe(true);
-    expect(capabilitiesMatchFullGrant(RING_COOKIE_CAPABILITIES.split(','))).toBe(false);
+  it('reuses existing core Shop grants without requiring optional Chat permissions', () => {
+    const coreGrant = ['/pub/pubky.app/:rw', '/pub/paykit/:rw', '/priv/pubky.app/:rw'];
+    expect(capabilitiesMatchFullGrant(coreGrant)).toBe(true);
+    expect(capabilitiesMatchFullGrant([...coreGrant, '/pub/chat/v0/:rw'])).toBe(true);
+    expect(capabilitiesMatchFullGrant([...coreGrant, '/priv/chat/v0/:r'])).toBe(true);
+    expect(capabilitiesMatchFullGrant(RING_COOKIE_CAPABILITIES.split(','))).toBe(true);
+    expect(capabilitiesMatchFullGrant(['/pub/pubky.app/:rw', '/pub/chat/v0/:rw', '/priv/chat/v0/:rw'])).toBe(false);
+  });
+
+  it('requests exactly the agreed Shop and Chat v0 permissions for new approvals', () => {
+    expect(CAPABILITIES).toBe(
+      '/pub/pubky.app/:rw,/pub/paykit/:rw,/priv/pubky.app/:rw,/pub/chat/v0/:rw,/priv/chat/v0/:rw',
+    );
   });
 });
 

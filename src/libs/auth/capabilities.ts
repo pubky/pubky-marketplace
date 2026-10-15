@@ -1,5 +1,5 @@
 import { validateCapabilities } from '@synonymdev/pubky';
-import { CAPABILITIES } from '@/config/app';
+import { CORE_CAPABILITIES } from '@/config/app';
 
 /** Effective scope coverage: broader/root prefixes and split actions are accepted. */
 export function capabilitiesCover(capabilities: readonly string[], required: string): boolean {
@@ -27,5 +27,5 @@ export function capabilitiesCover(capabilities: readonly string[], required: str
 }
 
 export function capabilitiesMatchFullGrant(capabilities: readonly string[]): boolean {
-  return capabilitiesCover(capabilities, CAPABILITIES);
+  return capabilitiesCover(capabilities, CORE_CAPABILITIES);
 }
