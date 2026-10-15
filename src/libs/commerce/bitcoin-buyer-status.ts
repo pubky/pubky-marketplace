@@ -11,6 +11,7 @@ import {
   PAYMENT_WINDOW_ELAPSED_REASON,
 } from '@/libs/commerce/checkout-hold';
 import { buyerCheckoutStateLabel, formatRemainingHMmSs, reservedWhileYouPayCopy } from '@/libs/commerce/checkout-phase';
+import { mayPayInBitcoin, observedPaymentRail } from '@/libs/commerce/paykit-rail';
 import type { PaymentMethodKind } from '@/libs/commerce/payment-methods';
 import type { CommerceMoney } from '@/libs/commerce/transaction-contracts';
 
@@ -69,6 +70,7 @@ const SEEN_REQUEST_STATES = new Set(['detected', 'awaiting_seller_confirmation',
 type BitcoinStatusOrder = {
   cancellationReason?: string | null;
   paymentMethod?: PaymentMethodKind | null;
+  paymentAsset?: string | null;
   paykitRequestState?: string | null;
   paykitDeliveryState?: string | null;
   holdExpiresAt?: string | null;
@@ -350,9 +352,10 @@ export const BITCOIN_BUYER_STATUS_TABLE: readonly BitcoinBuyerStatusRow[] = [
 ];
 
 function isBitcoinOrder(order: BitcoinStatusOrder): boolean {
-  // A USDT attempt also rides Paykit and may carry a request state; it is never a Bitcoin order.
-  if (order.paymentMethod === 'usdt') return false;
-  return order.paymentMethod === 'bitcoin' || order.paykitRequestState != null;
+  // A USDT payment also rides Paykit and may carry a request state; it is never a Bitcoin order.
+  const rail = observedPaymentRail(order);
+  if (rail === 'usdt') return false;
+  return rail === 'bitcoin' || order.paykitRequestState != null;
 }
 
 /** A chain confirmation the buyer projection actually records. */
@@ -396,7 +399,7 @@ export function bitcoinPaidConfirmation(
   order: BitcoinStatusOrder,
   payment: BitcoinStatusPayment,
 ): BitcoinPaidConfirmation | null {
-  if (order.paymentMethod !== 'bitcoin' || payment?.state !== 'confirmed') return null;
+  if (observedPaymentRail(order) !== 'bitcoin' || payment?.state !== 'confirmed') return null;
   const resolvedPaid = payment.resolutionOutcome === 'paid';
   const lateCompleted = !resolvedPaid && order.cancellationReason === PAYMENT_WINDOW_ELAPSED_REASON;
   const reviewedChainObservation = resolvedPaid && isChainObservationReviewReason(payment.reviewReason);
@@ -552,7 +555,8 @@ export function sellerBitcoinDecision(
   order: BitcoinStatusOrder,
   payment: BitcoinStatusPayment,
 ): 'confirm' | 'resolve' | null {
-  if (order.paymentMethod !== 'bitcoin') return null;
+  // A single-bind Paykit order in review with no rail observed (a payment on both rails) is resolved here too.
+  if (!mayPayInBitcoin(order)) return null;
   if (payment?.state === 'manual_review') return 'resolve';
   if (order.paykitRequestState === 'awaiting_seller_confirmation') return 'confirm';
   return null;

@@ -43,7 +43,7 @@ describe('usdtSettlementPhase', () => {
 
   it('is null for every order that is not a USDT order', () => {
     for (const method of ['bitcoin', 'paypal', null] as const) {
-      const { order, payment } = createUsdtOrderFixture('final', { paymentMethod: method });
+      const { order, payment } = createUsdtOrderFixture('final', { paymentMethod: method, paymentAsset: null });
       expect(usdtSettlementPhase(order, payment)).toBeNull();
       expect(usdtPhaseCopy(order, payment, true)).toBeNull();
       expect(usdtAmountLabel(order)).toBeNull();

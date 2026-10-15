@@ -1,11 +1,11 @@
-import { act, render, screen, waitFor, within } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MARKETPLACE_DELIVERY_ADDRESS_DISCLOSURE } from '@/config/commerce-copy';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import { DELIVERY_KEY_COPY } from '@/libs/commerce/delivery-key-copy';
-import { useCommerceStore } from '@/stores/commerce/commerce.store';
 import { createOrderFixture, createPaymentFixture } from '@/test/fixtures/commerce/orders';
+import { createPaykitOrderFixture } from '@/test/fixtures/commerce/paykit-orders';
 import { setHeavySuiteBudgets } from '@/test-utils/load-budget';
 import { MarketplaceCheckout } from './MarketplaceCheckout';
 
@@ -498,7 +498,7 @@ describe('MarketplaceCheckout', () => {
 
     render(<MarketplaceCheckout />);
 
-    expect(await screen.findByTestId('marketplace-checkout-method-bitcoin')).toBeInTheDocument();
+    expect(await screen.findByTestId('marketplace-checkout-method-paykit')).toBeInTheDocument();
     expect(screen.getByTestId('marketplace-checkout-method-paypal')).toBeInTheDocument();
     expect(screen.queryByTestId('marketplace-checkout-method-stripe')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Stripe/ })).not.toBeInTheDocument();
@@ -655,12 +655,12 @@ describe('MarketplaceCheckout', () => {
 
     render(<MarketplaceCheckout />);
 
-    await screen.findByTestId('marketplace-checkout-method-bitcoin');
+    await screen.findByTestId('marketplace-checkout-method-paykit');
     expect(screen.queryByTestId('marketplace-checkout-bitcoin-amount-note')).not.toBeInTheDocument();
     expect(screen.queryByText(/unique amount/i)).not.toBeInTheDocument();
   });
 
-  it('asks a buyer without a Paykit wallet to connect Bitkit instead of letting Bitcoin Pay fail', async () => {
+  it('asks a buyer without a Paykit wallet to connect Bitkit instead of letting Paykit Pay fail', async () => {
     const user = userEvent.setup();
     seededCart();
     view.adapterMode = 'transaction-service';
@@ -672,11 +672,11 @@ describe('MarketplaceCheckout', () => {
     const pay = screen.getByTestId('marketplace-checkout-pay');
     await fillValidDelivery(user);
     const notice = await screen.findByTestId('marketplace-checkout-bitkit-required');
-    expect(notice).toHaveTextContent('Connect Bitkit to pay with Bitcoin');
+    expect(notice).toHaveTextContent('Connect Bitkit to pay with Paykit');
     expect(notice).toHaveTextContent('You can also pay with PayPal.');
     expect(pay).toBeDisabled();
     expect(
-      screen.getByText('Connect Bitkit to pay with Bitcoin, or choose another payment method.'),
+      screen.getByText('Connect Bitkit to pay with Paykit, or choose another payment method.'),
     ).toBeInTheDocument();
 
     await user.click(screen.getByTestId('marketplace-checkout-bitkit-recheck'));
@@ -757,7 +757,7 @@ describe('MarketplaceCheckout', () => {
     const { rerender } = render(<MarketplaceCheckout />);
     const pay = screen.getByTestId('marketplace-checkout-pay');
     await fillValidDelivery(user);
-    expect(await screen.findByText('Checking your Bitcoin wallet…')).toBeInTheDocument();
+    expect(await screen.findByText('Checking your Bitkit wallet…')).toBeInTheDocument();
     expect(pay).toBeDisabled();
 
     buyerWallet.state = 'unknown';
@@ -767,13 +767,13 @@ describe('MarketplaceCheckout', () => {
     expect(buyerWallet.enabledCalls).toContain(true);
   });
 
-  it.each(['bitcoin', 'paypal'] as const)('uses simulated sandbox payment with %s selected', async (method) => {
+  it.each(['paykit', 'paypal'] as const)('uses simulated sandbox payment with %s selected', async (method) => {
     const user = userEvent.setup();
     seededCart();
     view.payResult = { ok: true, orderIds: ['018f47d2-6a27-7c23-a49d-000000000001'], boundOrders: [] };
 
     render(<MarketplaceCheckout />);
-    expect(await screen.findByTestId('marketplace-checkout-method-bitcoin')).toHaveAttribute('aria-pressed', 'true');
+    expect(await screen.findByTestId('marketplace-checkout-method-paykit')).toHaveAttribute('aria-pressed', 'true');
     if (method === 'paypal') await user.click(screen.getByTestId('marketplace-checkout-method-paypal'));
     await fillValidDelivery(user);
     await user.click(screen.getByTestId('marketplace-checkout-pay'));
@@ -782,7 +782,7 @@ describe('MarketplaceCheckout', () => {
     await waitFor(() => expect(window.location.hash).toBe('#018f47d2-6a27-7c23-a49d-000000000001'));
   });
 
-  it.each(['bitcoin', 'paypal'] as const)('preserves the selected %s rail for real checkout', async (method) => {
+  it.each(['paykit', 'paypal'] as const)('preserves the selected %s rail for real checkout', async (method) => {
     const user = userEvent.setup();
     seededCart();
     view.adapterMode = 'transaction-service';
@@ -973,6 +973,34 @@ describe('MarketplaceCheckout', () => {
 
       expect(screen.queryByText('Checkout in progress')).not.toBeInTheDocument();
       expect(screen.queryByText(/Awaiting payment/)).not.toBeInTheDocument();
+    });
+
+    it('keeps the reserved header for a single Paykit order nothing has been paid on yet', () => {
+      view.adapterMode = 'transaction-service';
+      const { order, payment } = createPaykitOrderFixture('unpaid');
+      view.orders = [{ order, payment }];
+      window.location.hash = `#${order.id}`;
+      render(<MarketplaceCheckout />);
+
+      expect(screen.getByText(/Awaiting payment · Item reserved/)).toBeInTheDocument();
+      expect(screen.getByTestId('payment-status-panel')).toBeInTheDocument();
+    });
+
+    it('keeps the status card for a single Paykit order paid in USDT, and shows the badge for one paid in Bitcoin', () => {
+      view.adapterMode = 'transaction-service';
+      const usdt = createPaykitOrderFixture('paid-usdt');
+      view.orders = [usdt];
+      window.location.hash = `#${usdt.order.id}`;
+      const first = render(<MarketplaceCheckout />);
+      expect(screen.getByTestId('payment-status-panel')).toBeInTheDocument();
+      first.unmount();
+
+      const bitcoin = createPaykitOrderFixture('paid-bitcoin');
+      view.orders = [bitcoin];
+      window.location.hash = `#${bitcoin.order.id}`;
+      render(<MarketplaceCheckout />);
+      expect(screen.queryByTestId('payment-status-panel')).not.toBeInTheDocument();
+      expect(screen.getByRole('group', { name: 'Checkout complete' })).toBeInTheDocument();
     });
 
     it('omits the duplicate confirmation heading and cancellation for a paid order', () => {
@@ -1317,7 +1345,7 @@ describe('MarketplaceCheckout with no usable payment method', () => {
     render(<MarketplaceCheckout />);
 
     expect(await screen.findByTestId('marketplace-checkout-method-paypal')).toHaveTextContent('PayPal');
-    expect(screen.queryByTestId('marketplace-checkout-method-bitcoin')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('marketplace-checkout-method-paykit')).not.toBeInTheDocument();
     expect(screen.queryByText(/hasn't set up a payment method/)).not.toBeInTheDocument();
   });
 
@@ -1340,6 +1368,7 @@ describe('MarketplaceCheckout with no usable payment method', () => {
     expect(screen.queryByText(/hasn't set up a payment method/)).not.toBeInTheDocument();
     expect(screen.queryByText('Pay unlocks once this seller sets up a payment method.')).not.toBeInTheDocument();
 
+    await waitFor(() => expect(CommerceController.getSellerPaymentConfig).toHaveBeenCalled());
     resolveConfig({ ...NO_RAILS, paypalAvailable: true });
 
     expect(await screen.findByTestId('marketplace-checkout-method-paypal')).toBeInTheDocument();
@@ -1397,13 +1426,32 @@ describe('MarketplaceCheckout with no usable payment method', () => {
   });
 });
 
-describe('MarketplaceCheckout USDT option', () => {
+describe('MarketplaceCheckout Paykit option (Bitcoin or USDT)', () => {
   const RAILS_WITH_USDT = {
     bitcoinAvailable: true,
     bitcoinOfferAvailable: true,
     paypalAvailable: true,
     usdtAvailable: true,
   };
+  const usdSecondSeller = {
+    ...secondSellerListing,
+    record: {
+      ...secondSellerListing.record,
+      sale: { format: 'fixed_price', unitPrice: { amountMinor: 4500, currency: 'USD', exponent: 2 } },
+    },
+  };
+  const twoSellerItems = () => [
+    { id: 'seller:boots:variant_42', listingId: listing.id, variantId: 'variant_42', quantity: 1, listing },
+    {
+      id: 'other:camera:variant_01',
+      listingId: usdSecondSeller.id,
+      variantId: 'variant_01',
+      quantity: 1,
+      listing: usdSecondSeller,
+    },
+  ];
+  const onlyFirstSellerTakesUsdt = async (sellerPubky: unknown) =>
+    sellerPubky === listing.record.ownerPubky ? RAILS_WITH_USDT : { ...RAILS_WITH_USDT, usdtAvailable: false };
 
   beforeEach(() => {
     resetCheckoutView();
@@ -1414,7 +1462,6 @@ describe('MarketplaceCheckout USDT option', () => {
   });
 
   afterEach(() => {
-    useCommerceStore.getState().reset();
     vi.mocked(CommerceController.fetchUsdtPaymentsAvailable).mockResolvedValue(false);
     vi.mocked(CommerceController.getSellerPaymentConfig).mockImplementation(async () => ({
       bitcoinAvailable: true,
@@ -1423,31 +1470,35 @@ describe('MarketplaceCheckout USDT option', () => {
     }));
   });
 
-  it('offers USDT as its own option beside Bitcoin and PayPal, never a merged entry', async () => {
+  it('offers one Pay with Paykit entry beside PayPal, never separate Bitcoin and USDT entries', async () => {
     seededCart();
 
     render(<MarketplaceCheckout />);
 
-    const usdt = await screen.findByTestId('marketplace-checkout-method-usdt');
-    expect(usdt).toHaveTextContent('USDT');
-    expect(screen.getByTestId('marketplace-checkout-method-bitcoin')).toHaveTextContent(/^Bitcoin$/);
+    const paykit = await screen.findByTestId('marketplace-checkout-method-paykit');
+    expect(paykit).toHaveTextContent('Pay with Paykit');
+    expect(screen.getByTestId('marketplace-checkout-paykit-hint')).toHaveTextContent('In Bitkit · Bitcoin or USDT');
+    expect(paykit).toHaveAttribute('aria-pressed', 'true');
     expect(screen.getByTestId('marketplace-checkout-method-paypal')).toBeInTheDocument();
-    expect(screen.queryByText(/Bitcoin or USDT/)).not.toBeInTheDocument();
-    expect(screen.getByTestId('marketplace-checkout-method-bitcoin')).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.queryByTestId('marketplace-checkout-method-bitcoin')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('marketplace-checkout-method-usdt')).not.toBeInTheDocument();
+    expect(screen.getByTestId('marketplace-checkout-paykit-title')).toHaveTextContent(
+      'Pay in Bitkit (Bitcoin or USDT)',
+    );
   });
 
-  it('hides USDT while the gate is off, even when the seller says it is available', async () => {
+  it('says Bitcoin only while the gate is off, even when the seller says USDT is available', async () => {
     seededCart();
     vi.mocked(CommerceController.fetchUsdtPaymentsAvailable).mockResolvedValue(false);
 
     render(<MarketplaceCheckout />);
 
-    expect(await screen.findByTestId('marketplace-checkout-method-bitcoin')).toBeInTheDocument();
-    expect(screen.queryByTestId('marketplace-checkout-method-usdt')).not.toBeInTheDocument();
+    expect(await screen.findByTestId('marketplace-checkout-paykit-hint')).toHaveTextContent('In Bitkit · Bitcoin');
+    expect(screen.getByTestId('marketplace-checkout-paykit-title')).toHaveTextContent('Pay in Bitkit (Bitcoin)');
     expect(screen.queryByText(/USDT/)).not.toBeInTheDocument();
   });
 
-  it('hides USDT when the seller public config does not say usdt_available', async () => {
+  it('says Bitcoin only when the seller public config does not say usdt_available', async () => {
     seededCart();
     vi.mocked(CommerceController.getSellerPaymentConfig).mockImplementation(async () => ({
       ...RAILS_WITH_USDT,
@@ -1456,11 +1507,11 @@ describe('MarketplaceCheckout USDT option', () => {
 
     render(<MarketplaceCheckout />);
 
-    expect(await screen.findByTestId('marketplace-checkout-method-bitcoin')).toBeInTheDocument();
-    expect(screen.queryByTestId('marketplace-checkout-method-usdt')).not.toBeInTheDocument();
+    expect(await screen.findByTestId('marketplace-checkout-paykit-hint')).toHaveTextContent('In Bitkit · Bitcoin');
+    expect(screen.queryByText(/USDT/)).not.toBeInTheDocument();
   });
 
-  it('hides USDT on a Bitcoin-priced cart', async () => {
+  it('names USDT on a Bitcoin-priced cart too: the service fixes the rate', async () => {
     view.items = [
       {
         id: 'other:camera:variant_01',
@@ -1473,177 +1524,123 @@ describe('MarketplaceCheckout USDT option', () => {
 
     render(<MarketplaceCheckout />);
 
-    expect(await screen.findByTestId('marketplace-checkout-method-bitcoin')).toBeInTheDocument();
-    expect(screen.queryByTestId('marketplace-checkout-method-usdt')).not.toBeInTheDocument();
-    expect(await screen.findByTestId('marketplace-checkout-usdt-missing-note')).toHaveTextContent(
-      "USDT isn't available for this cart: Rangefinder camera is priced in bitcoin.",
+    expect(await screen.findByTestId('marketplace-checkout-paykit-hint')).toHaveTextContent(
+      'In Bitkit · Bitcoin or USDT',
     );
+    expect(screen.queryByTestId('marketplace-checkout-usdt-missing-note')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('marketplace-checkout-usdt-amount')).not.toBeInTheDocument();
   });
 
-  it('offers USDT on a multi-seller cart only when every seller offers it', async () => {
-    const secondSellerUsd = {
-      ...secondSellerListing,
-      record: {
-        ...secondSellerListing.record,
-        sale: { format: 'fixed_price', unitPrice: { amountMinor: 4500, currency: 'USD', exponent: 2 } },
-      },
-    };
-    view.items = [
-      { id: 'seller:boots:variant_42', listingId: listing.id, variantId: 'variant_42', quantity: 1, listing },
-      {
-        id: 'other:camera:variant_01',
-        listingId: secondSellerUsd.id,
-        variantId: 'variant_01',
-        quantity: 1,
-        listing: secondSellerUsd,
-      },
-    ];
-    vi.mocked(CommerceController.getSellerPaymentConfig).mockImplementation(async (sellerPubky: unknown) =>
-      sellerPubky === listing.record.ownerPubky ? RAILS_WITH_USDT : { ...RAILS_WITH_USDT, usdtAvailable: false },
-    );
+  it('names USDT on a multi-seller cart only when every seller takes it, and says who does not', async () => {
+    view.items = twoSellerItems();
+    vi.mocked(CommerceController.getSellerPaymentConfig).mockImplementation(onlyFirstSellerTakesUsdt);
 
     render(<MarketplaceCheckout />);
 
-    expect(await screen.findByTestId('marketplace-checkout-method-bitcoin')).toBeInTheDocument();
-    expect(screen.queryByTestId('marketplace-checkout-method-usdt')).not.toBeInTheDocument();
+    expect(await screen.findByTestId('marketplace-checkout-paykit-hint')).toHaveTextContent('In Bitkit · Bitcoin');
     expect(await screen.findByTestId('marketplace-checkout-usdt-missing-note')).toHaveTextContent(
       "USDT isn't available for this cart: Film Camera Supply doesn't accept USDT.",
     );
   });
 
-  it('gives both reasons when a bitcoin-priced line and a seller without USDT both apply', async () => {
-    view.items = [
-      { id: 'seller:boots:variant_42', listingId: listing.id, variantId: 'variant_42', quantity: 1, listing },
-      {
-        id: 'other:camera:variant_01',
-        listingId: secondSellerListing.id,
-        variantId: 'variant_01',
-        quantity: 1,
-        listing: secondSellerListing,
-      },
-    ];
-    vi.mocked(CommerceController.getSellerPaymentConfig).mockImplementation(async (sellerPubky: unknown) =>
-      sellerPubky === listing.record.ownerPubky ? RAILS_WITH_USDT : { ...RAILS_WITH_USDT, usdtAvailable: false },
-    );
-
-    render(<MarketplaceCheckout />);
-
-    expect(await screen.findByTestId('marketplace-checkout-usdt-missing-note')).toHaveTextContent(
-      "USDT isn't available for this cart: Rangefinder camera is priced in bitcoin; Film Camera Supply doesn't accept USDT.",
-    );
-  });
-
-  it('explains nothing when no seller takes USDT, when USDT is offered, or when the gate is off', async () => {
+  it('explains nothing when no seller takes USDT, when USDT is named, or when the gate is off', async () => {
     seededCart();
     vi.mocked(CommerceController.getSellerPaymentConfig).mockImplementation(async () => ({
       ...RAILS_WITH_USDT,
       usdtAvailable: false,
     }));
     const noSeller = render(<MarketplaceCheckout />);
-    expect(await screen.findByTestId('marketplace-checkout-method-bitcoin')).toBeInTheDocument();
+    expect(await screen.findByTestId('marketplace-checkout-paykit-hint')).toBeInTheDocument();
     expect(screen.queryByTestId('marketplace-checkout-usdt-missing-note')).not.toBeInTheDocument();
     noSeller.unmount();
 
     vi.mocked(CommerceController.getSellerPaymentConfig).mockImplementation(async () => RAILS_WITH_USDT);
     const offered = render(<MarketplaceCheckout />);
-    expect(await screen.findByTestId('marketplace-checkout-method-usdt')).toBeInTheDocument();
+    expect(await screen.findByTestId('marketplace-checkout-paykit-hint')).toHaveTextContent('Bitcoin or USDT');
     expect(screen.queryByTestId('marketplace-checkout-usdt-missing-note')).not.toBeInTheDocument();
     offered.unmount();
 
     vi.mocked(CommerceController.fetchUsdtPaymentsAvailable).mockResolvedValue(false);
     render(<MarketplaceCheckout />);
-    expect(await screen.findByTestId('marketplace-checkout-method-bitcoin')).toBeInTheDocument();
+    expect(await screen.findByTestId('marketplace-checkout-paykit-hint')).toBeInTheDocument();
     expect(screen.queryByTestId('marketplace-checkout-usdt-missing-note')).not.toBeInTheDocument();
     expect(screen.queryByText(/USDT/)).not.toBeInTheDocument();
   });
 
-  it('adds no explanation after the service refused USDT, which has its own copy', async () => {
-    seededCart();
-    useCommerceStore.getState().setUsdtRefusal(listing.record.ownerPubky, 'usdt_unavailable');
-
-    render(<MarketplaceCheckout />);
-
-    expect(await screen.findByTestId('marketplace-checkout-method-bitcoin')).toBeInTheDocument();
-    expect(screen.queryByTestId('marketplace-checkout-usdt-missing-note')).not.toBeInTheDocument();
-  });
-
-  it('adds no explanation in the sandbox', async () => {
-    seededCart();
-    view.adapterMode = 'sandbox';
-    vi.mocked(CommerceController.getSellerPaymentConfig).mockImplementation(async () => RAILS_WITH_USDT);
-
-    render(<MarketplaceCheckout />);
-
-    expect(await screen.findByTestId('marketplace-checkout-method-bitcoin')).toBeInTheDocument();
-    expect(screen.queryByTestId('marketplace-checkout-usdt-missing-note')).not.toBeInTheDocument();
-  });
-
-  it('never offers USDT in the sandbox, which binds no real rail', async () => {
+  it('keeps the sandbox on Bitcoin: it binds no real rail and never reads the USDT capability', async () => {
     seededCart();
     view.adapterMode = 'sandbox';
 
     render(<MarketplaceCheckout />);
 
-    expect(await screen.findByTestId('marketplace-checkout-method-bitcoin')).toBeInTheDocument();
-    expect(screen.queryByTestId('marketplace-checkout-method-usdt')).not.toBeInTheDocument();
+    expect(await screen.findByTestId('marketplace-checkout-paykit-hint')).toHaveTextContent('In Bitkit · Bitcoin');
+    expect(screen.queryByTestId('marketplace-checkout-usdt-missing-note')).not.toBeInTheDocument();
+    expect(screen.queryByText(/USDT/)).not.toBeInTheDocument();
     expect(CommerceController.fetchUsdtPaymentsAvailable).not.toHaveBeenCalled();
   });
 
-  it('shows the exact USDT amount, the network and the Bitkit hint once USDT is chosen', async () => {
-    const user = userEvent.setup();
+  it('shows the USDT amount of a USD cart, the network and the Bitkit hint beside the Paykit entry', async () => {
     seededCart();
+    view.paykitServerApi = 'upstream';
 
     render(<MarketplaceCheckout />);
-    await user.click(await screen.findByTestId('marketplace-checkout-method-usdt'));
 
-    expect(screen.getByTestId('marketplace-checkout-usdt-amount')).toHaveTextContent(
-      '12.000000 USDT · USDT0 on Arbitrum One · pay with Bitkit',
+    expect(await screen.findByTestId('marketplace-checkout-usdt-amount')).toHaveTextContent(
+      '12.000000 USDT · USDT0 on Arbitrum One if you pay in USDT',
     );
-    expect(screen.getByTestId('marketplace-checkout-usdt-amount-note')).toHaveTextContent(
+    expect(screen.getByTestId('marketplace-checkout-paykit-note')).toHaveTextContent(
       'Pay with a Bitkit version that supports USDT.',
     );
     expect(screen.queryByTestId('marketplace-checkout-bitcoin-amount-note')).not.toBeInTheDocument();
   });
 
-  it('shows no accept-by line before the request exists: the window starts at activation, on the order page', async () => {
+  it('hides the whole Paykit note when PayPal is chosen', async () => {
     const user = userEvent.setup();
     seededCart();
 
     render(<MarketplaceCheckout />);
-    await user.click(await screen.findByTestId('marketplace-checkout-method-usdt'));
+    await user.click(await screen.findByTestId('marketplace-checkout-method-paypal'));
+
+    expect(screen.queryByTestId('marketplace-checkout-paykit-note')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('marketplace-checkout-usdt-amount')).not.toBeInTheDocument();
+  });
+
+  it('shows no accept-by line before the request exists: the window starts at activation, on the order page', async () => {
+    seededCart();
+
+    render(<MarketplaceCheckout />);
+    await screen.findByTestId('marketplace-checkout-paykit-note');
 
     expect(screen.queryByText(/accept-by|accept by|Approve in Bitkit within/i)).not.toBeInTheDocument();
   });
 
-  it('tells the buyer of a shipped USDT cart that the seller ships once Arbitrum finalizes the payment', async () => {
-    const user = userEvent.setup();
+  it('tells the buyer of a shipped cart that, if they pay in USDT, the seller ships once Arbitrum finalizes it', async () => {
     seededCart();
 
     render(<MarketplaceCheckout />);
-    expect(screen.queryByTestId('marketplace-checkout-usdt-finality-note')).not.toBeInTheDocument();
-    await user.click(await screen.findByTestId('marketplace-checkout-method-usdt'));
 
-    expect(screen.getByTestId('marketplace-checkout-usdt-finality-note')).toHaveTextContent(
-      'The seller ships once Arbitrum finalizes your payment, usually within minutes.',
+    expect(await screen.findByTestId('marketplace-checkout-usdt-finality-note')).toHaveTextContent(
+      'If you pay in USDT, the seller ships once Arbitrum finalizes your payment, usually within minutes.',
     );
-    await user.click(screen.getByTestId('marketplace-checkout-method-bitcoin'));
-    expect(screen.queryByTestId('marketplace-checkout-usdt-finality-note')).not.toBeInTheDocument();
   });
 
-  it('leaves the finality note off a USDT cart that is only digital', async () => {
-    const user = userEvent.setup();
+  it('leaves the finality note off a cart that is only digital, and off a Bitcoin-only entry', async () => {
     seededCart();
     view.fulfillmentByItem = { 'seller:boots:variant_42': 'digital' };
 
-    render(<MarketplaceCheckout />);
-    await user.click(await screen.findByTestId('marketplace-checkout-method-usdt'));
+    const digital = render(<MarketplaceCheckout />);
+    expect(await screen.findByTestId('marketplace-checkout-usdt-amount')).toBeInTheDocument();
+    expect(screen.queryByTestId('marketplace-checkout-usdt-finality-note')).not.toBeInTheDocument();
+    digital.unmount();
 
-    expect(screen.getByTestId('marketplace-checkout-usdt-amount')).toBeInTheDocument();
+    view.fulfillmentByItem = {};
+    vi.mocked(CommerceController.fetchUsdtPaymentsAvailable).mockResolvedValue(false);
+    render(<MarketplaceCheckout />);
+    expect(await screen.findByTestId('marketplace-checkout-paykit-note')).toBeInTheDocument();
     expect(screen.queryByTestId('marketplace-checkout-usdt-finality-note')).not.toBeInTheDocument();
   });
 
   it('keeps the finality note when a digital line rides with a shipped one', async () => {
-    const user = userEvent.setup();
     view.items = [
       { id: 'seller:boots:variant_42', listingId: listing.id, variantId: 'variant_42', quantity: 1, listing },
       { id: 'seller:boots:variant_43', listingId: listing.id, variantId: 'variant_43', quantity: 1, listing },
@@ -1651,137 +1648,63 @@ describe('MarketplaceCheckout USDT option', () => {
     view.fulfillmentByItem = { 'seller:boots:variant_42': 'digital' };
 
     render(<MarketplaceCheckout />);
-    await user.click(await screen.findByTestId('marketplace-checkout-method-usdt'));
 
-    expect(screen.getByTestId('marketplace-checkout-usdt-finality-note')).toBeInTheDocument();
+    expect(await screen.findByTestId('marketplace-checkout-usdt-finality-note')).toBeInTheDocument();
   });
 
-  it('says a multi-seller USDT cart needs one approval per seller, and a single-seller cart does not', async () => {
-    const user = userEvent.setup();
+  it('says a multi-seller cart needs one approval per seller, and a single-seller cart does not', async () => {
     seededCart();
 
     const single = render(<MarketplaceCheckout />);
-    await user.click(await screen.findByTestId('marketplace-checkout-method-usdt'));
+    await screen.findByTestId('marketplace-checkout-paykit-note');
     expect(screen.queryByTestId('marketplace-checkout-usdt-multi-seller-note')).not.toBeInTheDocument();
     single.unmount();
 
-    const secondSellerUsd = {
-      ...secondSellerListing,
-      record: {
-        ...secondSellerListing.record,
-        sale: { format: 'fixed_price', unitPrice: { amountMinor: 4500, currency: 'USD', exponent: 2 } },
-      },
-    };
-    view.items = [
-      { id: 'seller:boots:variant_42', listingId: listing.id, variantId: 'variant_42', quantity: 1, listing },
-      {
-        id: 'other:camera:variant_01',
-        listingId: secondSellerUsd.id,
-        variantId: 'variant_01',
-        quantity: 1,
-        listing: secondSellerUsd,
-      },
-    ];
-
+    view.items = twoSellerItems();
     render(<MarketplaceCheckout />);
-    await user.click(await screen.findByTestId('marketplace-checkout-method-usdt'));
 
-    expect(screen.getByTestId('marketplace-checkout-usdt-multi-seller-note')).toHaveTextContent(
+    expect(await screen.findByTestId('marketplace-checkout-usdt-multi-seller-note')).toHaveTextContent(
       "You'll approve one request per seller in Bitkit.",
     );
   });
 
-  it('hides the indicative bitcoin estimate once USDT is chosen and brings it back for Bitcoin', async () => {
-    const user = userEvent.setup();
+  it('keeps the indicative bitcoin estimate while Bitcoin is on offer', async () => {
     seededCart();
 
     render(<MarketplaceCheckout />);
-    await screen.findByTestId('marketplace-checkout-method-usdt');
-    expect(screen.getAllByText('≈ ₿137,000').length).toBeGreaterThan(0);
+    await screen.findByTestId('marketplace-checkout-method-paykit');
 
-    await user.click(screen.getByTestId('marketplace-checkout-method-usdt'));
+    expect(screen.getAllByText('≈ ₿137,000').length).toBeGreaterThan(0);
+  });
+
+  it('names USDT alone and hides the bitcoin estimate for a seller who takes only USDT', async () => {
+    seededCart();
+    vi.mocked(CommerceController.getSellerPaymentConfig).mockImplementation(async () => ({
+      bitcoinAvailable: false,
+      bitcoinOfferAvailable: true,
+      paypalAvailable: false,
+      usdtAvailable: true,
+    }));
+
+    render(<MarketplaceCheckout />);
+
+    expect(await screen.findByTestId('marketplace-checkout-paykit-hint')).toHaveTextContent('In Bitkit · USDT');
+    expect(screen.getByTestId('marketplace-checkout-paykit-title')).toHaveTextContent('Pay in Bitkit (USDT)');
     expect(screen.queryByText('≈ ₿137,000')).not.toBeInTheDocument();
-
-    await user.click(screen.getByTestId('marketplace-checkout-method-bitcoin'));
-    expect(screen.getAllByText('≈ ₿137,000').length).toBeGreaterThan(0);
   });
 
-  describe('after the service refused a USDT bind', () => {
-    const SELLER = listing.record.ownerPubky;
-
-    it('stops offering USDT and moves to the next rail, keeping Bitcoin and PayPal as before', async () => {
-      const user = userEvent.setup();
-      seededCart();
-      render(<MarketplaceCheckout />);
-      await user.click(await screen.findByTestId('marketplace-checkout-method-usdt'));
-      expect(screen.getByTestId('marketplace-checkout-method-usdt')).toHaveAttribute('aria-pressed', 'true');
-
-      act(() => useCommerceStore.getState().setUsdtRefusal(SELLER, 'usdt_unavailable'));
-
-      await waitFor(() => expect(screen.queryByTestId('marketplace-checkout-method-usdt')).not.toBeInTheDocument());
-      expect(screen.queryByTestId('marketplace-checkout-usdt-amount-note')).not.toBeInTheDocument();
-      expect(screen.getByTestId('marketplace-checkout-method-bitcoin')).toHaveAttribute('aria-pressed', 'true');
-      expect(screen.getByTestId('marketplace-checkout-method-paypal')).toBeInTheDocument();
-    });
-
-    it('never offers USDT on a fresh render of the same sellers, and pays with the remaining rail', async () => {
-      const user = userEvent.setup();
-      seededCart();
-      useCommerceStore.getState().setUsdtRefusal(SELLER, 'usdt_seller_not_ready');
-      render(<MarketplaceCheckout />);
-
-      await screen.findByTestId('marketplace-checkout-method-bitcoin');
-      expect(screen.queryByTestId('marketplace-checkout-method-usdt')).not.toBeInTheDocument();
-      await fillValidDelivery(user);
-      const pay = screen.getByTestId('marketplace-checkout-pay');
-      await waitFor(() => expect(pay).toBeEnabled());
-      await user.click(pay);
-
-      expect(checkoutActions.pay).toHaveBeenCalledWith('bitcoin', expect.any(Function));
-    });
-
-    it('offers USDT again for a different seller set', async () => {
-      seededCart();
-      useCommerceStore.getState().setUsdtRefusal('o'.repeat(52), 'usdt_unavailable');
-      render(<MarketplaceCheckout />);
-
-      expect(await screen.findByTestId('marketplace-checkout-method-usdt')).toBeInTheDocument();
-    });
-
-    it('explains itself instead of blaming the seller when USDT was the only shared method', async () => {
-      seededCart();
-      vi.mocked(CommerceController.getSellerPaymentConfig).mockImplementation(async () => ({
-        bitcoinAvailable: false,
-        bitcoinOfferAvailable: false,
-        paypalAvailable: false,
-        usdtAvailable: true,
-      }));
-      useCommerceStore.getState().setUsdtRefusal(SELLER, 'usdt_seller_not_ready');
-      render(<MarketplaceCheckout />);
-
-      await waitFor(() =>
-        expect(screen.getByRole('alert')).toHaveTextContent(
-          "This seller can't take USDT right now. Choose another payment method, or contact the seller.",
-        ),
-      );
-      expect(screen.queryByText(/hasn't set up a payment method/)).not.toBeInTheDocument();
-      expect(screen.getByTestId('marketplace-checkout-pay')).toBeDisabled();
-      expect(screen.getAllByText(/This seller can't take USDT right now/)).toHaveLength(1);
-    });
-  });
-
-  it('binds usdt for real checkout', async () => {
+  it('binds the single paykit method for real checkout', async () => {
     const user = userEvent.setup();
     seededCart();
 
     render(<MarketplaceCheckout />);
-    await user.click(await screen.findByTestId('marketplace-checkout-method-usdt'));
+    await screen.findByTestId('marketplace-checkout-method-paykit');
     await fillValidDelivery(user);
     const pay = screen.getByTestId('marketplace-checkout-pay');
     await waitFor(() => expect(pay).toBeEnabled());
     await user.click(pay);
 
-    expect(checkoutActions.pay).toHaveBeenCalledWith('usdt', expect.any(Function));
+    expect(checkoutActions.pay).toHaveBeenCalledWith('paykit', expect.any(Function));
   });
 });
 

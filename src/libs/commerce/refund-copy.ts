@@ -65,6 +65,7 @@ function refundEquation(order: RefundCopyOrder): string | null {
   if (!order.subtotal || !order.shipping) return null;
   const breakdown = bitcoinPaymentBreakdown({
     paymentMethod: order.paymentMethod,
+    paymentAsset: order.paymentAsset,
     subtotal: order.subtotal,
     shipping: order.shipping,
     total: order.total,

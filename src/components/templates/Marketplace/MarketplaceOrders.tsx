@@ -50,6 +50,7 @@ import { formatCommerceMoney } from '@/libs/commerce/format';
 import { buyerVisiblePaymentStatus } from '@/libs/commerce/locks-payment';
 import { listingIdFromOrder, marketplaceConversationHref } from '@/libs/commerce/marketplace-conversation-query';
 import { MESSAGING_COPY } from '@/libs/commerce/messaging-copy';
+import { observedPaymentRail } from '@/libs/commerce/paykit-rail';
 import { formatBitcoinAmount } from '@/libs/commerce/pricing';
 import {
   REFUND_ORDER_NOTICES,
@@ -705,9 +706,10 @@ function MarketplaceOrderMessageCta({
 
 function MarketplaceOrderBitcoinAmount({ order }: { order: MarketplaceOrder }): ReactNode {
   if (bitcoinPaymentBreakdown(order)) return null;
-  // A USDT order settles at parity with its USD price; a bitcoin estimate would mislead.
-  if (order.paymentMethod === 'usdt') return null;
-  const quote = order.paymentMethod === 'bitcoin' ? order.bitcoinQuote : null;
+  // A USDT payment settles in USDT; a bitcoin estimate would mislead.
+  const rail = observedPaymentRail(order);
+  if (rail === 'usdt') return null;
+  const quote = rail === 'bitcoin' ? order.bitcoinQuote : null;
   if (quote?.quotedSats !== null && quote?.quotedSats !== undefined) {
     return (
       <Typography as="span" className="text-sm font-normal">

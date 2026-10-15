@@ -3,25 +3,22 @@
 import { useCallback, useEffect, useState } from 'react';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import { useAuctionWinnerDeliveryAddress } from '@/hooks/useAuctionWinnerDeliveryAddress/useAuctionWinnerDeliveryAddress';
-import { useUsdtPaymentsAvailable } from '@/hooks/useUsdtPaymentsAvailable/useUsdtPaymentsAvailable';
+import { useUsdtPaymentsCapability } from '@/hooks/useUsdtPaymentsCapability/useUsdtPaymentsCapability';
 import {
   MARKETPLACE_FAILURE_MESSAGES,
   marketplaceErrorCode,
   marketplaceFailureMessage,
-  usdtOfferRefusalReason,
-  usdtRefusalKey,
 } from '@/libs/commerce/failure-messages';
 import {
   availablePaymentMethods,
   type BindDeliveryAddress,
   type PaymentMethodKind,
+  sellerPaykitAssets,
   type SellerPaymentConfig,
 } from '@/libs/commerce/payment-methods';
-import { isUsdPricedTotals } from '@/libs/commerce/usdt-buyer-status';
 import { Logger } from '@/libs/logger/logger';
 import { showPaymentMethodRefusalToast } from '@/molecules/Toaster/payment-method-refusal-toast';
 import type { MarketplaceOrder } from '@/services/marketplace/marketplace';
-import { useCommerceStore } from '@/stores/commerce/commerce.store';
 
 /**
  * Buyer/seller actions for one order's payment method (durable modes only):
@@ -50,9 +47,8 @@ export function useMarketplaceOrderPayment({
     orderId: order.id,
     enabled: shippingAddressRequired,
   });
-  const usdtPaymentsAvailable = useUsdtPaymentsAvailable(needsConfig);
-  const sellerKey = usdtRefusalKey([order.sellerPubky]);
-  const usdtRefused = useCommerceStore((state) => state.usdtRefusals[sellerKey] !== undefined);
+  const usdtCapability = useUsdtPaymentsCapability(needsConfig).status;
+  const usdtPaymentsAvailable = usdtCapability === 'available';
 
   useEffect(() => {
     if (!needsConfig) return;
@@ -84,8 +80,6 @@ export function useMarketplaceOrderPayment({
         await onPaymentChanged();
       } catch (error) {
         Logger.error(`Marketplace payment action '${action}' failed`, { error });
-        const usdtRefusal = usdtOfferRefusalReason(error);
-        if (usdtRefusal) CommerceController.rememberUsdtRefusal(sellerKey, usdtRefusal);
         showPaymentMethodRefusalToast({
           error,
           fallback: 'The payment action could not be completed.',
@@ -96,7 +90,7 @@ export function useMarketplaceOrderPayment({
         setPendingAction(null);
       }
     },
-    [onPaymentChanged, sellerKey],
+    [onPaymentChanged],
   );
 
   const bind = async (method: PaymentMethodKind) => {
@@ -135,12 +129,12 @@ export function useMarketplaceOrderPayment({
     });
   }, [order.id, runAction]);
 
+  // The picker names its assets from the seller config read with the USDT answer, so it waits for that answer.
+  const ready = sellerConfig !== null && usdtCapability !== 'checking';
+
   return {
-    availableMethods: sellerConfig
-      ? availablePaymentMethods(sellerConfig, {
-          usdtPaymentsAvailable: usdtPaymentsAvailable && !usdtRefused && isUsdPricedTotals([order.total]),
-        })
-      : null,
+    availableMethods: ready ? availablePaymentMethods(sellerConfig, { usdtPaymentsAvailable }) : null,
+    paykitAssets: ready ? sellerPaykitAssets(sellerConfig, { usdtPaymentsAvailable }) : [],
     bitcoinOfferUnavailable: sellerConfig?.bitcoinAvailable === true && sellerConfig.bitcoinOfferAvailable === false,
     configError,
     /** Set while an auction winner's order still needs the address it ships to. */

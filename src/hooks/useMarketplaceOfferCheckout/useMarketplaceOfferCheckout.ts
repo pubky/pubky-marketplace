@@ -5,12 +5,7 @@ import { CommerceController } from '@/controllers/commerce/commerce';
 import { isMarketplaceAwardCheckoutEligible } from '@/core/services/marketplace/marketplace-projections';
 import { useDeliveryKeyGate } from '@/hooks/useDeliveryKeyGate/useDeliveryKeyGate';
 import { BIND_FAIL_CANCEL_REASON, extractCheckoutOrderIds } from '@/libs/commerce/checkout-phase';
-import {
-  MARKETPLACE_FAILURE_MESSAGES,
-  marketplaceOfferCheckoutFailureMessage,
-  usdtOfferRefusalReason,
-  usdtRefusalKey,
-} from '@/libs/commerce/failure-messages';
+import { MARKETPLACE_FAILURE_MESSAGES, marketplaceOfferCheckoutFailureMessage } from '@/libs/commerce/failure-messages';
 import type { PaymentMethodKind } from '@/libs/commerce/payment-methods';
 import { buildMarketplaceOrderAggregateId } from '@/libs/commerce/transaction-commands';
 import { isMarketplaceSessionRequiredError } from '@/libs/error/error.utils';
@@ -147,10 +142,6 @@ export function useMarketplaceOfferCheckout(onCompleted?: () => Promise<void> | 
               });
             } catch {
               // Bind already failed; leftover expires on the hold clock.
-            }
-            const usdtRefusal = usdtOfferRefusalReason(bindError);
-            if (usdtRefusal) {
-              CommerceController.rememberUsdtRefusal(usdtRefusalKey([award.listing.sellerPubky]), usdtRefusal);
             }
             showPaymentMethodRefusalToast({
               error: bindError,

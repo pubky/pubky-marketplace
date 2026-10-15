@@ -2,9 +2,6 @@ import { act, renderHook } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import { DELIVERY_KEY_COPY } from '@/libs/commerce/delivery-key-copy';
-import { AppError } from '@/libs/error/error';
-import { ClientErrorCode } from '@/libs/error/error.codes';
-import { ErrorCategory, ErrorService } from '@/libs/error/error.types';
 import type { MarketplaceOffer } from '@/services/marketplace/marketplace';
 import { useMarketplaceOfferCheckout } from './useMarketplaceOfferCheckout';
 
@@ -16,7 +13,6 @@ vi.mock('@/controllers/commerce/commerce', () => ({
     commitOfferCheckout: vi.fn(),
     bindPaymentMethod: vi.fn(),
     executeMarketplaceCommand: vi.fn(),
-    rememberUsdtRefusal: vi.fn(),
     resolveDeliveryKeysForCheckout: vi.fn(),
     commitAcceptDeliveryKeyChange: vi.fn(),
     sealDeliveryAddressForCheckout: vi.fn(),
@@ -101,51 +97,6 @@ describe('useMarketplaceOfferCheckout', () => {
     });
     vi.mocked(CommerceController.sealDeliveryAddressForCheckout).mockResolvedValue([SEALED]);
     vi.spyOn(globalThis.crypto, 'randomUUID').mockReturnValue('00000000-0000-4000-8000-000000000704');
-  });
-
-  describe('a refused USDT bind', () => {
-    const bindRefusal = (reason: string, paymentMethod?: 'usdt') =>
-      new AppError({
-        category: ErrorCategory.Client,
-        code: ClientErrorCode.BAD_REQUEST,
-        message: 'SENTINEL',
-        service: ErrorService.Marketplace,
-        operation: 'bindPaymentMethod',
-        context: { statusCode: 409, reason, ...(paymentMethod ? { paymentMethod } : {}) },
-      });
-
-    it.each(['usdt_unavailable', 'usdt_seller_not_ready'] as const)(
-      'remembers %s for the award seller',
-      async (reason) => {
-        vi.mocked(CommerceController.bindPaymentMethod).mockRejectedValueOnce(bindRefusal(reason, 'usdt'));
-        const { result } = renderHook(() => useMarketplaceOfferCheckout());
-
-        await act(async () => {
-          await expect(result.current.submit(offer, address, 'usdt')).resolves.toEqual({
-            ok: false,
-            code: 'BIND_FAILED',
-          });
-        });
-
-        expect(CommerceController.rememberUsdtRefusal).toHaveBeenCalledWith('s'.repeat(52), reason);
-      },
-    );
-
-    it('remembers nothing for a refusal the buyer can fix, or on another rail', async () => {
-      vi.mocked(CommerceController.bindPaymentMethod)
-        .mockRejectedValueOnce(bindRefusal('paykit_rejected', 'usdt'))
-        .mockRejectedValueOnce(bindRefusal('usdt_unavailable'));
-      const { result } = renderHook(() => useMarketplaceOfferCheckout());
-
-      await act(async () => {
-        await result.current.submit(offer, address, 'usdt');
-      });
-      await act(async () => {
-        await result.current.submit(offer, address, 'bitcoin');
-      });
-
-      expect(CommerceController.rememberUsdtRefusal).not.toHaveBeenCalled();
-    });
   });
 
   it('re-reads the accepted projection and submits its locked award terms', async () => {

@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { PAYMENT_METHOD_KINDS } from '@/libs/commerce/payment-options';
+import { PAYMENT_ASSETS, type PAYMENT_METHOD_KINDS, type PaymentAsset } from '@/libs/commerce/payment-options';
 import type { CommerceDeliveryAddressValue } from '@/libs/commerce/postal-address';
 import { usdtSetupActionSchema, usdtSetupStatusSchema } from '@/libs/commerce/usdt-seller-setup';
 
@@ -43,6 +43,14 @@ export const sellerPaymentConfigSchema = z
     // Present only when the service's USDT flag is on. A malformed value is
     // dropped, which reads as "not available".
     usdtAvailable: z.boolean().optional().catch(undefined),
+    // The assets one Paykit request offers for this seller. Unknown assets are
+    // dropped; an absent or unreadable list falls back to `bitcoinAvailable` /
+    // `usdtAvailable` in `sellerPaykitAssets`.
+    acceptedAssets: z
+      .array(z.string())
+      .transform((assets) => PAYMENT_ASSETS.filter((asset) => assets.includes(asset)))
+      .optional()
+      .catch(undefined),
   })
   .transform(
     ({
@@ -51,35 +59,54 @@ export const sellerPaymentConfigSchema = z
       paypalAvailable,
       paypalMerchantEmail,
       usdtAvailable,
+      acceptedAssets,
     }): {
       bitcoinAvailable: boolean;
       bitcoinOfferAvailable: boolean;
       paypalAvailable: boolean;
       usdtAvailable?: boolean;
+      acceptedAssets?: PaymentAsset[];
     } => ({
       bitcoinAvailable,
       bitcoinOfferAvailable,
       paypalAvailable: paypalAvailable ?? Boolean(paypalMerchantEmail),
       ...(usdtAvailable === undefined ? {} : { usdtAvailable }),
+      ...(acceptedAssets === undefined ? {} : { acceptedAssets }),
     }),
   );
 
 export type SellerPaymentConfig = z.infer<typeof sellerPaymentConfigSchema>;
 
 /**
+ * The assets one Paykit request from this seller offers, Bitcoin first. USDT
+ * is counted only when the caller's gate (`usdtPaymentsAvailable`: Shop flag
+ * AND service capability) is on, so a deployment with USDT off never says
+ * "USDT". The service's `acceptedAssets` list wins when it sends one; older
+ * services are read from `bitcoinAvailable` and `usdtAvailable`. The
+ * rail-wide Bitcoin offer gate removes Bitcoin either way.
+ */
+export function sellerPaykitAssets(
+  config: SellerPaymentConfig,
+  { usdtPaymentsAvailable = false }: { usdtPaymentsAvailable?: boolean } = {},
+): PaymentAsset[] {
+  const bitcoin =
+    (config.acceptedAssets ? config.acceptedAssets.includes('BTC') : config.bitcoinAvailable) &&
+    config.bitcoinOfferAvailable;
+  const usdt = config.acceptedAssets ? config.acceptedAssets.includes('USDT') : config.usdtAvailable === true;
+  return PAYMENT_ASSETS.filter((asset) => (asset === 'BTC' ? bitcoin : usdtPaymentsAvailable && usdt));
+}
+
+/**
  * Methods the buyer can actually choose, in the order the UI renders them.
- * USDT is offered only when the caller's gate
- * (`usdtPaymentsAvailable`: Shop flag AND service capability) is on AND the
- * seller's public config says `usdtAvailable`; every existing caller omits the
- * gate, so their result is unchanged.
+ * Paykit is one entry whatever the assets: it is offered when the seller takes
+ * Bitcoin or, through the gate, USDT, and the buyer picks the asset in Bitkit.
  */
 export function availablePaymentMethods(
   config: SellerPaymentConfig,
-  { usdtPaymentsAvailable = false }: { usdtPaymentsAvailable?: boolean } = {},
+  options: { usdtPaymentsAvailable?: boolean } = {},
 ): PaymentMethodKind[] {
   const methods: PaymentMethodKind[] = [];
-  if (config.bitcoinAvailable && config.bitcoinOfferAvailable) methods.push('bitcoin');
-  if (usdtPaymentsAvailable && config.usdtAvailable === true) methods.push('usdt');
+  if (sellerPaykitAssets(config, options).length > 0) methods.push('paykit');
   if (config.paypalAvailable) methods.push('paypal');
   return methods;
 }

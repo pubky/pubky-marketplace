@@ -19,6 +19,7 @@ import { orderAmountEntry } from '@/libs/commerce/bitcoin-payment-code';
 import { OTHER_CARRIER_ID, SHIPPING_CARRIERS } from '@/libs/commerce/carriers';
 import { DIGITAL_ORDER_COPY, DIGITAL_SELLER_COPY, isInstantDigitalDeliveryKind } from '@/libs/commerce/digital';
 import { formatCommerceMoney } from '@/libs/commerce/format';
+import { observedPaymentRail } from '@/libs/commerce/paykit-rail';
 import { formatBitcoinAmount } from '@/libs/commerce/pricing';
 import { isUsdtFulfilmentBlocked, PAYMENT_NOT_FINAL_COPY } from '@/libs/commerce/usdt-buyer-status';
 import { formatUsdtParity, isUsdtRefundOrder, USDT_REFUND_COPY } from '@/libs/commerce/usdt-refund';
@@ -479,7 +480,7 @@ export function MarketplaceOrderActions({
             <ControlledInputField
               name="transactionId"
               control={action.form.control}
-              label={externalRefundReferenceLabel(order.paymentMethod)}
+              label={externalRefundReferenceLabel(observedPaymentRail(order) ?? order.paymentMethod)}
               placeholder={isUsdt ? '0x…' : undefined}
             />
           )}
