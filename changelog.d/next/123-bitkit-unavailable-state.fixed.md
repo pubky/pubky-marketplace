@@ -1,0 +1,1 @@
+When the marketplace service can't check Bitkit (Paykit outage or a failed read), Payment settings now say "We can't check Bitkit right now" with Check again, and the Bitcoin pill reads Needs attention. They no longer show Not set up or offer Connect Bitkit, so a seller who is already set up is never sent through Bitkit setup again.
