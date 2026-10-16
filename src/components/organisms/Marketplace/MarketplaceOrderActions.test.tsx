@@ -463,7 +463,7 @@ describe('MarketplaceOrderActions local pickup (Wave 7, §A6)', () => {
     expect(screen.getByRole('button', { name: 'Mark ready for pickup' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Confirm handover' })).toBeInTheDocument();
     // Pickup orders never ship (§A6): no tracking, no label.
-    expect(screen.queryByRole('button', { name: 'Add tracking' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Mark shipped' })).not.toBeInTheDocument();
   });
 
   it('hides the packing-slip print affordance on pickup orders (§A5)', () => {
@@ -676,7 +676,7 @@ describe('MarketplaceOrderActions digital orders (digital delivery design §6 E1
   it('offers the seller no tracking, label or packing slip on a digital order (E1)', () => {
     renderDigital('paid', false);
 
-    expect(screen.queryByRole('button', { name: 'Add tracking' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Mark shipped' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Packing slip' })).not.toBeInTheDocument();
   });
 
@@ -716,6 +716,64 @@ describe('MarketplaceOrderActions digital orders in an inconsistent shipped stat
     );
 
     expect(screen.getByRole('button', { name: 'Confirm delivery' })).toBeInTheDocument();
+  });
+});
+
+describe('MarketplaceOrderActions shipment tracking', () => {
+  const shippedWith = (carrier: string, trackingNumber: string) =>
+    createOrderFixture('shipped', {
+      fulfillment: 'shipping',
+      shipment: { carrier, trackingNumber, state: 'shipped', shippedAt: '2026-08-14T10:00:00.000Z', deliveredAt: null },
+    });
+
+  const renderShipped = (order: MarketplaceOrder, isBuyer: boolean) =>
+    render(
+      <MarketplaceOrderActions
+        order={order}
+        isBuyer={isBuyer}
+        canEditReview={false}
+        actOnOrder={vi.fn(async () => true)}
+        onChanged={vi.fn()}
+      />,
+    );
+
+  it('offers the seller Add tracking on a shipped order with no number', () => {
+    renderShipped(shippedWith('Other', ''), false);
+
+    expect(screen.getByRole('button', { name: 'Add tracking' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Mark shipped' })).not.toBeInTheDocument();
+  });
+
+  it('offers the seller Edit tracking once a number is on the order', () => {
+    renderShipped(shippedWith('UPS', '1Z999AA10123456784'), false);
+
+    expect(screen.getByRole('button', { name: 'Edit tracking' })).toBeInTheDocument();
+  });
+
+  it('offers the buyer no tracking button', () => {
+    renderShipped(shippedWith('Other', ''), true);
+    expect(screen.queryByRole('button', { name: /tracking/i })).not.toBeInTheDocument();
+  });
+
+  it('lets the seller mark an order shipped with the tracking number left empty', async () => {
+    const user = userEvent.setup();
+    const actOnOrder = vi.fn(async () => true);
+    render(
+      <MarketplaceOrderActions
+        order={createOrderFixture('paid', { fulfillment: 'shipping' })}
+        isBuyer={false}
+        canEditReview={false}
+        actOnOrder={actOnOrder}
+      />,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Mark shipped' }));
+    expect(screen.getByLabelText('Tracking number (optional)')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Confirm' }));
+
+    await waitFor(() =>
+      expect(actOnOrder).toHaveBeenCalledWith(expect.anything(), 'fulfillment.ship', { carrier: 'USPS' }),
+    );
   });
 });
 

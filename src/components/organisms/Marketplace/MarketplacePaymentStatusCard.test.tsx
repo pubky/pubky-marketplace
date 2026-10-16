@@ -64,6 +64,7 @@ vi.mock('@/hooks/useBuyerPaykitWallet/useBuyerPaykitWallet', () => ({
 vi.mock('@/hooks/useMarketplaceOrderPayment/useMarketplaceOrderPayment', () => ({
   useMarketplaceOrderPayment: vi.fn(() => ({
     availableMethods: null,
+    paykitAssets: [],
     bitcoinOfferUnavailable: false,
     paykitOutage: false,
     configError: null,
@@ -99,6 +100,7 @@ describe('MarketplacePaymentStatusCard', () => {
     buyerWallet.recheck.mockReset();
     vi.mocked(useMarketplaceOrderPayment).mockReturnValue({
       availableMethods: null,
+      paykitAssets: [],
       bitcoinOfferUnavailable: false,
       paykitOutage: false,
       configError: null,
@@ -359,6 +361,7 @@ describe('MarketplacePaymentStatusCard', () => {
   it('explains when Bitcoin is temporarily unavailable while other methods remain available', () => {
     vi.mocked(useMarketplaceOrderPayment).mockReturnValue({
       availableMethods: ['paypal'],
+      paykitAssets: ['BTC'],
       bitcoinOfferUnavailable: true,
       paykitOutage: false,
       configError: null,
@@ -390,6 +393,7 @@ describe('MarketplacePaymentStatusCard', () => {
   it('says Paykit is unreachable instead of "the seller has not set up any payment methods"', () => {
     vi.mocked(useMarketplaceOrderPayment).mockReturnValue({
       availableMethods: [],
+      paykitAssets: [],
       bitcoinOfferUnavailable: true,
       paykitOutage: true,
       configError: null,
@@ -415,9 +419,10 @@ describe('MarketplacePaymentStatusCard', () => {
     expect(screen.queryByText(/The seller has not set up any payment methods yet/)).not.toBeInTheDocument();
   });
 
-  it('disables Bitcoin while Paykit is down and keeps PayPal usable', () => {
+  it('disables the Paykit entry while Paykit is down, with rail-free copy, and keeps PayPal usable', () => {
     vi.mocked(useMarketplaceOrderPayment).mockReturnValue({
-      availableMethods: ['bitcoin', 'paypal'],
+      availableMethods: ['paykit', 'paypal'],
+      paykitAssets: ['BTC', 'USDT'],
       bitcoinOfferUnavailable: true,
       paykitOutage: true,
       configError: null,
@@ -439,9 +444,46 @@ describe('MarketplacePaymentStatusCard', () => {
       />,
     );
 
-    expect(screen.getByRole('button', { name: 'Continue with Bitcoin' })).toBeDisabled();
+    expect(screen.getByTestId('order-payment-method-paykit')).toBeDisabled();
+    expect(screen.getByTestId('order-payment-method-paykit')).toHaveTextContent('Continue with Paykit');
+    expect(screen.queryByTestId('order-payment-method-bitcoin')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('order-payment-method-usdt')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Continue with PayPal' })).toBeEnabled();
-    expect(screen.getByText(/Paykit is temporarily unreachable, retrying…/)).toBeInTheDocument();
+    expect(
+      screen.getByText('Paykit is temporarily unreachable, retrying… Paykit returns on its own; PayPal is unaffected.'),
+    ).toBeInTheDocument();
+  });
+
+  it('shows the neutral retrying notice, with no rail named, when Paykit is down and nothing else is offered', () => {
+    vi.mocked(useMarketplaceOrderPayment).mockReturnValue({
+      availableMethods: [],
+      paykitAssets: [],
+      bitcoinOfferUnavailable: true,
+      paykitOutage: true,
+      configError: null,
+      deliveryAddress: null,
+      pendingAction: null,
+      bind: vi.fn(),
+      markPaid: vi.fn(),
+      confirmReceived: vi.fn(),
+    });
+
+    render(
+      <MarketplacePaymentStatusCard
+        order={createOrderFixture('pending_payment')}
+        payment={createPaymentFixture('awaiting_entitlement')}
+        isBuyer
+        adapterMode="transaction-service"
+        advancePayment={async () => false}
+        onPaymentChanged={() => {}}
+      />,
+    );
+
+    const notice = screen.getByRole('status');
+    expect(notice).toHaveAttribute('data-surface', 'order-paykit-outage');
+    expect(notice).toHaveTextContent('Paykit is temporarily unreachable, retrying…');
+    expect(notice).toHaveTextContent('Paying with Paykit will unlock on its own as soon as Paykit is back.');
+    expect(notice).not.toHaveTextContent(/bitcoin|usdt/i);
   });
 
   it.each(['cancelled', 'refunded_external', 'closed', 'completed'] as const)(
@@ -656,7 +698,8 @@ describe('MarketplacePaymentStatusCard', () => {
   it('renders unbound hold copy and cancels checkout from the method picker', async () => {
     const onPaymentChanged = vi.fn();
     vi.mocked(useMarketplaceOrderPayment).mockReturnValue({
-      availableMethods: ['bitcoin', 'paypal'],
+      availableMethods: ['paykit', 'paypal'],
+      paykitAssets: ['BTC'],
       bitcoinOfferUnavailable: false,
       paykitOutage: false,
       configError: null,
@@ -707,7 +750,8 @@ describe('MarketplacePaymentStatusCard', () => {
           enabled: needsAddress,
         });
         return {
-          availableMethods: ['bitcoin', 'paypal'],
+          availableMethods: ['paykit', 'paypal'],
+          paykitAssets: ['BTC'],
           bitcoinOfferUnavailable: false,
           paykitOutage: false,
           configError: null,
@@ -753,7 +797,7 @@ describe('MarketplacePaymentStatusCard', () => {
       expect(section).toHaveTextContent('Auctions ship to you.');
       expect(screen.getByLabelText('Full name')).toBeInTheDocument();
       expect(screen.getByText(holderUnboundCopy(reservationEnd), { exact: false })).toBeInTheDocument();
-      expect(section.compareDocumentPosition(screen.getByRole('button', { name: /Bitcoin/ }))).toBe(
+      expect(section.compareDocumentPosition(screen.getByRole('button', { name: /Paykit/ }))).toBe(
         Node.DOCUMENT_POSITION_FOLLOWING,
       );
     });
@@ -782,7 +826,7 @@ describe('MarketplacePaymentStatusCard', () => {
       renderWinner(order);
 
       expect(screen.queryByTestId('auction-delivery-address')).not.toBeInTheDocument();
-      expect(screen.getByRole('button', { name: /Bitcoin/ })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /Paykit/ })).toBeInTheDocument();
     });
   });
 
@@ -791,7 +835,8 @@ describe('MarketplacePaymentStatusCard', () => {
     auth.currentUserPubky = buyer;
     buyerWallet.state = 'unsupported';
     vi.mocked(useMarketplaceOrderPayment).mockReturnValue({
-      availableMethods: ['bitcoin', 'paypal'],
+      availableMethods: ['paykit', 'paypal'],
+      paykitAssets: ['BTC'],
       bitcoinOfferUnavailable: false,
       paykitOutage: false,
       configError: null,
@@ -817,14 +862,15 @@ describe('MarketplacePaymentStatusCard', () => {
     expect(notice).toHaveAttribute('role', 'alert');
     expect(notice).toHaveTextContent('Bitcoin checkout does not support Bitkit 2.6 yet');
     expect(notice).toHaveTextContent('You can pay with PayPal instead.');
-    expect(screen.getByRole('button', { name: /Bitcoin/ })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /Paykit/ })).toBeDisabled();
     expect(screen.getByRole('button', { name: /PayPal/ })).toBeEnabled();
   });
 
   it('holds Bitcoin on the method picker until an unverified wallet is checked again', () => {
     buyerWallet.state = 'unverified';
     vi.mocked(useMarketplaceOrderPayment).mockReturnValue({
-      availableMethods: ['bitcoin', 'paypal'],
+      availableMethods: ['paykit', 'paypal'],
+      paykitAssets: ['BTC'],
       bitcoinOfferUnavailable: false,
       paykitOutage: false,
       configError: null,
@@ -848,7 +894,7 @@ describe('MarketplacePaymentStatusCard', () => {
     const notice = screen.getByTestId('order-payment-bitkit-unverified');
     expect(notice).toHaveAttribute('role', 'alert');
     expect(notice).toHaveTextContent("Couldn't verify your Bitcoin wallet");
-    expect(screen.getByRole('button', { name: /Bitcoin/ })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /Paykit/ })).toBeDisabled();
     expect(screen.getByRole('button', { name: /PayPal/ })).toBeEnabled();
     fireEvent.click(screen.getByTestId('order-payment-bitkit-unverified-recheck'));
     expect(buyerWallet.recheck).toHaveBeenCalledTimes(1);
@@ -856,7 +902,8 @@ describe('MarketplacePaymentStatusCard', () => {
 
   it('holds Bitcoin on the method picker while checking, then leaves it open for a payable or unchecked wallet', () => {
     vi.mocked(useMarketplaceOrderPayment).mockReturnValue({
-      availableMethods: ['bitcoin', 'paypal'],
+      availableMethods: ['paykit', 'paypal'],
+      paykitAssets: ['BTC'],
       bitcoinOfferUnavailable: false,
       paykitOutage: false,
       configError: null,
@@ -875,19 +922,19 @@ describe('MarketplacePaymentStatusCard', () => {
     };
     buyerWallet.state = 'checking';
     const { rerender } = render(<MarketplacePaymentStatusCard {...props} isBuyer />);
-    expect(screen.getByRole('button', { name: /Bitcoin/ })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /Paykit/ })).toBeDisabled();
     expect(screen.getByRole('button', { name: /PayPal/ })).toBeEnabled();
-    expect(screen.getByText('Checking your Bitcoin wallet…')).toBeInTheDocument();
+    expect(screen.getByText('Checking your Bitkit wallet…')).toBeInTheDocument();
 
     buyerWallet.state = 'payable';
     rerender(<MarketplacePaymentStatusCard {...props} isBuyer />);
-    expect(screen.getByRole('button', { name: /Bitcoin/ })).toBeEnabled();
-    expect(screen.queryByText('Checking your Bitcoin wallet…')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Paykit/ })).toBeEnabled();
+    expect(screen.queryByText('Checking your Bitkit wallet…')).not.toBeInTheDocument();
     expect(screen.queryByTestId('order-payment-bitkit-unsupported')).not.toBeInTheDocument();
 
     buyerWallet.state = 'unknown';
     rerender(<MarketplacePaymentStatusCard {...props} isBuyer />);
-    expect(screen.getByRole('button', { name: /Bitcoin/ })).toBeEnabled();
+    expect(screen.getByRole('button', { name: /Paykit/ })).toBeEnabled();
 
     // A seller viewing the order never triggers the buyer wallet read.
     buyerWallet.calls = [];
@@ -897,14 +944,15 @@ describe('MarketplacePaymentStatusCard', () => {
     expect(screen.queryByTestId('order-payment-bitkit-unsupported')).not.toBeInTheDocument();
   });
 
-  describe('resumed Bitcoin connection', () => {
+  describe('resumed Paykit connection', () => {
     const renderResumed = (api: 'fork' | 'upstream' = 'upstream') => {
       runtime.paykitServerApi = api;
       auth.currentUserPubky = 'b'.repeat(52);
       buyerWallet.state = 'not_payable';
       const bind = vi.fn();
       vi.mocked(useMarketplaceOrderPayment).mockReturnValue({
-        availableMethods: ['bitcoin', 'paypal'],
+        availableMethods: ['paykit', 'paypal'],
+        paykitAssets: ['BTC'],
         bitcoinOfferUnavailable: false,
         paykitOutage: false,
         configError: null,
@@ -935,7 +983,7 @@ describe('MarketplacePaymentStatusCard', () => {
       expect(within(notice).queryByRole('link')).not.toBeInTheDocument();
       expect(screen.queryByRole('button', { name: 'Connect Bitkit' })).not.toBeInTheDocument();
       expect(screen.getByTestId('bitcoin-payment-code-note')).toHaveTextContent('₿1–₿999');
-      expect(screen.getByRole('button', { name: 'Continue with Bitcoin' })).toBeDisabled();
+      expect(screen.getByRole('button', { name: 'Continue with Paykit' })).toBeDisabled();
       expect(screen.getByRole('button', { name: 'Continue with PayPal' })).toBeEnabled();
       fireEvent.click(screen.getByRole('button', { name: 'Check connection' }));
       expect(buyerWallet.recheck).toHaveBeenCalledTimes(1);
@@ -945,7 +993,7 @@ describe('MarketplacePaymentStatusCard', () => {
 
     it('verifies the pubky before continuing the same order, without paying from the guide', () => {
       const { rerender, props, bind } = renderResumed();
-      const next = screen.getByRole('button', { name: 'Continue with Bitcoin' });
+      const next = screen.getByRole('button', { name: 'Continue with Paykit' });
       expect(next).toBeDisabled();
       fireEvent.click(next);
       expect(bind).not.toHaveBeenCalled();
@@ -973,7 +1021,7 @@ describe('MarketplacePaymentStatusCard', () => {
       expect(screen.getByText(holderUnboundCopy(props.order.holdExpiresAt), { exact: false })).toBeInTheDocument();
       expect(vi.mocked(useMarketplaceOrderPayment).mock.calls.at(-1)?.[0].order).toBe(props.order);
       fireEvent.click(next);
-      expect(bind).toHaveBeenCalledExactlyOnceWith('bitcoin');
+      expect(bind).toHaveBeenCalledExactlyOnceWith('paykit');
       expect(props.advancePayment).not.toHaveBeenCalled();
     });
 
@@ -983,7 +1031,7 @@ describe('MarketplacePaymentStatusCard', () => {
       buyerWallet.state = 'unknown';
       rerender(<MarketplacePaymentStatusCard {...props} />);
       fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
-      expect(screen.getByRole('button', { name: 'Continue with Bitcoin' })).toBeDisabled();
+      expect(screen.getByRole('button', { name: 'Continue with Paykit' })).toBeDisabled();
       expect(screen.getByTestId('order-payment-bitkit-unverified')).toBeInTheDocument();
       expect(buyerWallet.watchCalls.at(-1)).toBe(false);
       fireEvent.click(screen.getByRole('button', { name: 'Continue with PayPal' }));
@@ -996,7 +1044,7 @@ describe('MarketplacePaymentStatusCard', () => {
       expect(buyerWallet.recheck).toHaveBeenCalledTimes(1);
       buyerWallet.state = 'unknown';
       rerender(<MarketplacePaymentStatusCard {...props} />);
-      expect(screen.getByRole('button', { name: 'Continue with Bitcoin' })).toBeDisabled();
+      expect(screen.getByRole('button', { name: 'Continue with Paykit' })).toBeDisabled();
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
       expect(bind).not.toHaveBeenCalled();
     });

@@ -134,3 +134,36 @@ describe('bitcoin payment code', () => {
     expect(bitcoinPaymentBreakdown(parseOrder(exact))).toBeNull();
   });
 });
+
+describe('refund amount entry for a USDT payment', () => {
+  const sats = { amountMinor: 150_000, currency: 'SAT', exponent: 0 };
+
+  it('is recorded in USDT millionths, capped at the amount paid, on an order priced in satoshis', () => {
+    const order = createOrderFixture('return_received', {
+      total: sats,
+      paymentMethod: 'paykit',
+      paymentAsset: 'USDT',
+      paymentAmountMinor: 41_250_000,
+    });
+    expect(orderAmountEntry(order)).toEqual({ amountMinor: 41_250_000, exponent: 6, unitLabel: 'USDT' });
+  });
+
+  it('keeps cents on a USD order paid in USDT and satoshis on one paid in Bitcoin', () => {
+    const usd = createOrderFixture('return_received', {
+      paymentMethod: 'paykit',
+      paymentAsset: 'USDT',
+      paymentAmountMinor: 13_700_000,
+    });
+    expect(orderAmountEntry(usd)).toEqual({
+      amountMinor: usd.total.amountMinor,
+      exponent: usd.total.exponent,
+      unitLabel: usd.total.currency,
+    });
+    const bitcoin = createOrderFixture('return_received', {
+      total: sats,
+      paymentMethod: 'paykit',
+      paymentAsset: 'BTC',
+    });
+    expect(orderAmountEntry(bitcoin)).toEqual({ amountMinor: 150_000, exponent: 0, unitLabel: '₿' });
+  });
+});

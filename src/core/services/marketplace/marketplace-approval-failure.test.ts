@@ -1,7 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { AuthErrorCode } from '@/libs/error/error.codes';
 import { Err } from '@/libs/error/error.factories';
-import { ErrorCategory } from '@/libs/error/error.types';
-import { marketplaceApprovalFailure } from './marketplace-approval-failure';
+import { ErrorCategory, ErrorService } from '@/libs/error/error.types';
+import { isMarketplaceSessionRequiredError } from '@/libs/error/error.utils';
+import { Logger } from '@/libs/logger/logger';
+import { marketplaceApprovalFailure, marketplaceSessionRequired } from './marketplace-approval-failure';
 
 afterEach(() => vi.restoreAllMocks());
 describe('expected approval states', () => {
@@ -25,5 +28,21 @@ describe('expected approval states', () => {
     const report = vi.spyOn(Err, 'server');
     expect(marketplaceApprovalFailure(code, 'marketplaceBootstrap', status).category).toBe(ErrorCategory.Server);
     expect(report).toHaveBeenCalledOnce();
+  });
+});
+describe('marketplaceSessionRequired', () => {
+  it('builds the session-connect error without logging or reporting it', () => {
+    const report = vi.spyOn(Err, 'auth');
+    const log = vi.spyOn(Logger, 'error');
+    const error = marketplaceSessionRequired('A marketplace session is required.', 'getOrders');
+    expect(error).toMatchObject({
+      category: ErrorCategory.Auth,
+      code: AuthErrorCode.SESSION_EXPIRED,
+      service: ErrorService.Marketplace,
+      operation: 'getOrders',
+    });
+    expect(isMarketplaceSessionRequiredError(error)).toBe(true);
+    expect(report).not.toHaveBeenCalled();
+    expect(log).not.toHaveBeenCalled();
   });
 });

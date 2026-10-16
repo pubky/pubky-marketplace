@@ -2263,3 +2263,116 @@ describe('MarketplaceTransactionService digital delivery (digital delivery desig
     expect(checkout).toMatchObject({ ok: false, error: { code: 'INVALID_COMMAND' } });
   });
 });
+
+describe('MarketplaceTransactionService shipment tracking', () => {
+  async function shipWithoutTracking(service: MarketplaceTransactionService) {
+    const order = await createPaidOrder(service);
+    const shipped = await service.execute(
+      SELLER,
+      orderCommand('fulfillment.ship', order.id, 2, { carrier: 'Other' }, 7_001),
+    );
+    return { order, shipped };
+  }
+
+  it('ships without a tracking number and lets the seller add it later', async () => {
+    const { service } = createService();
+    const { order, shipped } = await shipWithoutTracking(service);
+    expect(shipped).toMatchObject({
+      ok: true,
+      result: { order: { state: 'shipped', shipment: { carrier: 'Other', trackingNumber: '' } } },
+    });
+
+    await expect(
+      service.execute(
+        SELLER,
+        orderCommand(
+          'fulfillment.update_tracking',
+          order.id,
+          3,
+          { carrier: 'UPS', trackingNumber: '1Z999AA10123456784' },
+          7_002,
+        ),
+      ),
+    ).resolves.toMatchObject({
+      ok: true,
+      result: {
+        order: {
+          state: 'shipped',
+          revision: 4,
+          shipment: { carrier: 'UPS', trackingNumber: '1Z999AA10123456784', state: 'shipped' },
+        },
+      },
+    });
+  });
+
+  it('refuses a tracking change from the buyer, on an unshipped order, and after delivery', async () => {
+    const { service } = createService();
+    const paid = await createPaidOrder(service);
+    const update = (actor: string, revision: number, commandNumber: number) =>
+      service.execute(
+        actor,
+        orderCommand(
+          'fulfillment.update_tracking',
+          paid.id,
+          revision,
+          { carrier: 'UPS', trackingNumber: 'TRACK-9' },
+          commandNumber,
+        ),
+      );
+
+    await expect(update(SELLER, 2, 7_010)).resolves.toMatchObject({ ok: false, error: { code: 'INVALID_STATE' } });
+    await service.execute(SELLER, orderCommand('fulfillment.ship', paid.id, 2, { carrier: 'UPS' }, 7_011));
+    await expect(update(BUYER, 3, 7_012)).resolves.toMatchObject({ ok: false, error: { code: 'UNAUTHORIZED' } });
+    await service.execute(BUYER, orderCommand('fulfillment.confirm_delivery', paid.id, 3, {}, 7_013));
+    await expect(update(SELLER, 4, 7_014)).resolves.toMatchObject({ ok: false, error: { code: 'INVALID_STATE' } });
+  });
+
+  it('notifies only the buyer, with tracking_updated and never a second order_shipped', async () => {
+    const { service } = createService();
+    const { order } = await shipWithoutTracking(service);
+    const shippedBefore = service.getNotifications(BUYER).filter(({ type }) => type === 'order_shipped').length;
+
+    await service.execute(
+      SELLER,
+      orderCommand('fulfillment.update_tracking', order.id, 3, { carrier: 'UPS', trackingNumber: 'TRACK-9' }, 7_020),
+    );
+
+    const buyerTypes = service.getNotifications(BUYER).map(({ type }) => type);
+    expect(buyerTypes.filter((type) => type === 'tracking_updated')).toHaveLength(1);
+    expect(buyerTypes.filter((type) => type === 'order_shipped')).toHaveLength(shippedBefore);
+    expect(service.getNotifications(SELLER).map(({ type }) => type)).not.toContain('tracking_updated');
+  });
+
+  it('changes nothing when the carrier and number are already on the order', async () => {
+    const { service } = createService();
+    const { order } = await shipWithoutTracking(service);
+    const update = (revision: number, commandNumber: number) =>
+      service.execute(
+        SELLER,
+        orderCommand(
+          'fulfillment.update_tracking',
+          order.id,
+          revision,
+          { carrier: 'UPS', trackingNumber: 'TRACK-9' },
+          commandNumber,
+        ),
+      );
+    await update(3, 7_030);
+    const notificationsAfterFirst = service.getNotifications(BUYER).length;
+
+    const repeat = await update(4, 7_031);
+
+    expect(repeat).toMatchObject({
+      ok: true,
+      eventIds: [],
+      result: { kind: 'order', changed: false, order: { revision: 4 } },
+    });
+    expect(service.getNotifications(BUYER)).toHaveLength(notificationsAfterFirst);
+    await expect(
+      service.execute(
+        SELLER,
+        orderCommand('fulfillment.update_tracking', order.id, 3, { carrier: 'UPS', trackingNumber: 'TRACK-9' }, 7_032),
+      ),
+    ).resolves.toMatchObject({ ok: false, error: { code: 'REVISION_CONFLICT' } });
+  });
+});

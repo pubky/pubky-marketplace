@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useMarketplaceOrderPayment } from '@/hooks/useMarketplaceOrderPayment/useMarketplaceOrderPayment';
 import { CHECKOUT_HOLD_COPY } from '@/libs/commerce/checkout-hold';
 import type { PaymentMethodKind } from '@/libs/commerce/payment-methods';
+import type { PaymentAsset } from '@/libs/commerce/payment-options';
 import {
   USDT_ACCEPT_BY_COPY,
   USDT_BUYER_PHASE_COPY,
@@ -22,6 +23,7 @@ const auth = vi.hoisted(() => ({ currentUserPubky: 'b'.repeat(52) }));
 const methodPayment = vi.hoisted(() => ({
   bind: vi.fn(),
   availableMethods: null as PaymentMethodKind[] | null,
+  paykitAssets: [] as PaymentAsset[],
 }));
 
 vi.mock('@/libs/runtime-config/runtime-config', async (importOriginal) => {
@@ -91,8 +93,10 @@ function renderPhase(phase: UsdtOrderPhase, isBuyer: boolean) {
 beforeEach(() => {
   methodPayment.bind.mockReset();
   methodPayment.availableMethods = null;
+  methodPayment.paykitAssets = [];
   vi.mocked(useMarketplaceOrderPayment).mockImplementation(() => ({
     availableMethods: methodPayment.availableMethods,
+    paykitAssets: methodPayment.paykitAssets,
     bitcoinOfferUnavailable: false,
     paykitOutage: false,
     configError: null,
@@ -408,26 +412,31 @@ describe('MarketplacePaymentStatusCard — method picker', () => {
     return { order, payment };
   }
 
-  it('offers Continue with USDT beside Bitcoin and binds usdt', async () => {
-    methodPayment.availableMethods = ['bitcoin', 'usdt', 'paypal'];
+  it('offers one Continue with Paykit button, naming Bitcoin or USDT, and binds paykit', async () => {
+    methodPayment.availableMethods = ['paykit', 'paypal'];
+    methodPayment.paykitAssets = ['BTC', 'USDT'];
     const { order, payment } = unboundOrder();
     renderCard(order, payment, true);
 
-    const button = screen.getByRole('button', { name: /Continue with USDT/ });
+    const button = screen.getByRole('button', { name: /Continue with Paykit/ });
     expect(
-      within(button.parentElement as HTMLElement).getByRole('button', { name: /Continue with Bitcoin/ }),
+      within(button.parentElement as HTMLElement).getByRole('button', { name: /Continue with PayPal/ }),
     ).toBeVisible();
+    expect(screen.getByTestId('order-payment-paykit-hint')).toHaveTextContent(
+      'Pay with Paykit: pay in Bitkit with Bitcoin or USDT.',
+    );
     await userEvent.setup().click(button);
 
-    expect(methodPayment.bind).toHaveBeenCalledWith('usdt');
+    expect(methodPayment.bind).toHaveBeenCalledWith('paykit');
   });
 
-  it('shows no USDT button when the order picker does not offer it', () => {
-    methodPayment.availableMethods = ['bitcoin', 'paypal'];
+  it('never offers separate Bitcoin or USDT buttons', () => {
+    methodPayment.availableMethods = ['paykit', 'paypal'];
+    methodPayment.paykitAssets = ['BTC'];
     const { order, payment } = unboundOrder();
     renderCard(order, payment, true);
 
-    expect(screen.queryByRole('button', { name: /USDT/ })).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Continue with Bitcoin/ })).toBeVisible();
+    expect(screen.queryByRole('button', { name: /Continue with (Bitcoin|USDT)/ })).not.toBeInTheDocument();
+    expect(screen.getByTestId('order-payment-paykit-hint')).toHaveTextContent('pay in Bitkit with Bitcoin.');
   });
 });

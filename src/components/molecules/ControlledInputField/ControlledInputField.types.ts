@@ -34,6 +34,10 @@ export interface ControlledInputFieldProps<T extends FieldValues> {
   className?: string;
   /** Optional class applied to the inner input element */
   inputClassName?: string;
+  /** Defaults to `text`; use `password` for a secret that must not be shown as typed */
+  type?: 'text' | 'password';
+  /** Browser autofill hint forwarded to the input */
+  autoComplete?: string;
   /** Cypress selector forwarded to the input */
   dataCy?: string;
 }

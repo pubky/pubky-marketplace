@@ -21,3 +21,12 @@ export function toBitkitIosSignInUrl(url: string): string {
   const query = url.slice(GRANT_SIGN_IN_PREFIX.length);
   return query ? `${BITKIT_IOS_SIGN_IN_PREFIX}${query}` : url;
 }
+
+/**
+ * The link a phone signer's tap opens for an approval URL: Bitkit on iOS gets
+ * its `bitkit://` link, since Bitkit iOS leaves `pubkyauth://` to Pubky Ring.
+ * Every other signer and platform, and the QR and copied link, keep the URL.
+ */
+export function toSignerDeepLink(url: string, signer: 'ring' | 'bitkit' | 'passport' | null | undefined): string {
+  return signer === 'bitkit' && isIosUserAgent() ? toBitkitIosSignInUrl(url) : url;
+}

@@ -10,7 +10,7 @@ import * as vibeSessionFragment from '@/libs/vibe-session/fragment';
 import type { Pubky } from '@/models/models.types';
 import { ROUTE_GUARD_RETURN_TO_STORAGE_KEY } from '@/providers/RouteGuardProvider/RouteGuardProvider.returnPath';
 import { AUTH_FLOW_CANCELED_ERROR_NAME } from '@/services/homeserver/error.utils';
-import { LOCKS_FRONTEND_SESSION_STORAGE_KEY } from '@/services/locks/locks-frontend-session';
+import { RETIRED_LOCKS_SESSION_STORAGE_KEYS } from '@/services/locks/retired-locks-session';
 import { INVENTORY_SESSION_STORAGE_KEY } from '@/services/marketplace/marketplace-inventory-grant';
 import { MARKETPLACE_SESSION_STORAGE_KEY } from '@/services/marketplace/marketplace-session';
 import { readPersistedAuthIdentity, readPersistedAuthPubky } from '@/stores/auth/auth.persisted';
@@ -617,7 +617,10 @@ describe('AuthController legacy restore cleanup with the real database', () => {
     const departed = (extra: Record<string, unknown> = {}) =>
       JSON.stringify({ token: 'A'.repeat(43), pubky: PERSISTED_PUBKY, ...extra });
     window.localStorage.setItem(INVENTORY_SESSION_STORAGE_KEY, departed({ expiresAt: '2099-01-01T00:00:00Z' }));
-    window.localStorage.setItem(LOCKS_FRONTEND_SESSION_STORAGE_KEY, departed({ creator: `pubky${PERSISTED_PUBKY}` }));
+    window.localStorage.setItem(
+      RETIRED_LOCKS_SESSION_STORAGE_KEYS[0],
+      departed({ creator: `pubky${PERSISTED_PUBKY}` }),
+    );
     const kept = JSON.stringify({ token: 'B'.repeat(43), pubky: ACCOUNT_B, expiresAt: '2099-01-01T00:00:00Z' });
     window.localStorage.setItem(MARKETPLACE_SESSION_STORAGE_KEY, kept);
 
@@ -634,7 +637,7 @@ describe('AuthController legacy restore cleanup with the real database', () => {
 
     expect(readPersistedAuthPubky()).toBe(ACCOUNT_B);
     expect(window.localStorage.getItem(INVENTORY_SESSION_STORAGE_KEY)).toBeNull();
-    expect(window.localStorage.getItem(LOCKS_FRONTEND_SESSION_STORAGE_KEY)).toBeNull();
+    expect(window.localStorage.getItem(RETIRED_LOCKS_SESSION_STORAGE_KEYS[0])).toBeNull();
     expect(window.localStorage.getItem(MARKETPLACE_SESSION_STORAGE_KEY)).toBe(kept);
   });
 });

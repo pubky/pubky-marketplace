@@ -18,6 +18,26 @@ export const MEDIA_JSON_FIELD = 'media_json';
 /** Extra field carrying the per-image results, so the result CSV survives a reload. */
 export const IMAGE_RESULTS_JSON_FIELD = 'image_results_json';
 
+/**
+ * Set while a listing has some of its photos loaded and not all: the media it
+ * holds are kept so they are not loaded again, but the listing still needs the
+ * rest, so a resume does not take it for finished.
+ */
+export const PHOTOS_PARTIAL_FIELD = 'photos_partial';
+
+/**
+ * The photo uploads under way for a listing, written before each file is: the
+ * media record (id, path, hash, size) a photo is about to be stored under, keyed
+ * by the hash of its source URL. It lives on the listing's first row and stays
+ * after the listing is finished: it is the list of files this import wrote. If the
+ * page is lost between writing a file and recording it, the next run finds the
+ * record and the file at its planned path and reuses both, so no file is left
+ * behind; and Discard uses it to delete the files no published listing refers to.
+ */
+export const PHOTO_JOURNAL_FIELD = 'photo_journal_json';
+
+export type PhotoJournalEntry = { readonly hash: string; readonly media: PresetJson };
+
 /** Extra field carrying how a re-import changed a stored listing's photos, for the result CSV. */
 export const IMAGE_SYNC_JSON_FIELD = 'image_sync_json';
 /**
@@ -43,6 +63,8 @@ export type ImageSync = {
 
 export type ImportImageTarget = {
   readonly listingId: string;
+  /** The listing's first planned row: where the photo journal for the listing is kept. */
+  readonly rowIdentity?: string;
   /** Source images to fetch and upload: the URLs the stored listing does not already have. */
   readonly images: readonly SourceImage[];
   /** Source images left out because the listing is full (at most 13 media). */
@@ -60,6 +82,8 @@ export type ListingImageOutcome = {
   readonly media: readonly PresetJson[];
   readonly results: readonly TImportImageResultRow[];
   readonly sync?: ImageSync;
+  /** Some of the listing's photos are loaded and the rest are still to come. */
+  readonly partial?: boolean;
 };
 
 export type ImportImageResult = TImportImageResultRow & { readonly media?: PresetJson };
@@ -167,8 +191,19 @@ export function sourceImagesOf(row: PayloadRow): SourceImage[] {
   return images;
 }
 
+/** The media records a row already holds, from `media_json` or `media`. */
+export function mediaOf(row: PayloadRow | null): PresetJson[] {
+  if (!row) return [];
+  const fromExtra = parseJson(row.extraFields?.[MEDIA_JSON_FIELD]);
+  const list = Array.isArray(fromExtra) && fromExtra.length > 0 ? fromExtra : row.media;
+  return Array.isArray(list)
+    ? list.filter((entry): entry is PresetJson => typeof entry === 'object' && entry !== null && !Array.isArray(entry))
+    : [];
+}
+
 /** A row already holding media records (uploaded earlier, or supplied by the file) is not fetched again. */
 export function rowHoldsMedia(row: PayloadRow): boolean {
+  if (row.extraFields?.[PHOTOS_PARTIAL_FIELD] === '1') return false;
   const fromExtra = parseJson(row.extraFields?.[MEDIA_JSON_FIELD]);
   if (Array.isArray(fromExtra) && fromExtra.length > 0) return true;
   return Array.isArray(row.media) && row.media.length > 0;
@@ -179,6 +214,59 @@ export function uniqueImageUrls(targets: readonly ImportImageTarget[]): string[]
   const seen = new Set<string>();
   for (const target of targets) for (const image of target.images) seen.add(normalizeImageUrl(image.url));
   return [...seen];
+}
+
+/** How many distinct photos the targets need fetched. */
+export function distinctImageCount(targets: readonly ImportImageTarget[]): number {
+  return uniqueImageUrls(targets).length;
+}
+
+/**
+ * How many times an import of this many photos is likely to wait for the photo
+ * service's byte allowance to renew: the photos at a typical size, over the
+ * allowance of one window, less the first window. An estimate (photo sizes are
+ * not known until they are fetched), so the dry run says "about".
+ */
+export function estimatePhotoPauses(photoCount: number, typicalBytes: number, windowBytes: number): number {
+  if (photoCount <= 0 || typicalBytes <= 0 || windowBytes <= 0) return 0;
+  return Math.max(0, Math.ceil((photoCount * typicalBytes) / windowBytes) - 1);
+}
+
+/**
+ * Splits the targets, in listing order, into batches that each need at most
+ * `maxPhotos` distinct photos fetched, so every batch fits one run's count
+ * budget. A listing is never split across batches; a photo shared by listings
+ * in one batch is counted once. Targets that need no fetch (unchanged photos)
+ * ride along in the batch they fall in.
+ */
+export function planImageBatches(targets: readonly ImportImageTarget[], maxPhotos: number): ImportImageTarget[][] {
+  const batches: ImportImageTarget[][] = [];
+  let current: ImportImageTarget[] = [];
+  let urls = new Set<string>();
+  for (const target of targets) {
+    const own = new Set(target.images.map((image) => normalizeImageUrl(image.url)));
+    const added = [...own].filter((url) => !urls.has(url)).length;
+    if (current.length > 0 && urls.size + added > maxPhotos) {
+      batches.push(current);
+      current = [];
+      urls = new Set();
+    }
+    current.push(target);
+    for (const url of own) urls.add(url);
+  }
+  if (current.length > 0) batches.push(current);
+  return batches;
+}
+
+/**
+ * Failures that say nothing about the photo itself: the run's own count or
+ * byte budget ran out, or the route asked the client to slow down. Such a photo
+ * is tried again in a later batch; any other failure is the photo's own.
+ */
+const DEFERRED_IMAGE_REASONS: ReadonlySet<string> = new Set(['budget_exceeded', 'limit_reached', 'rate_limited']);
+
+export function isDeferredImageResult(result: Pick<TImportImageResultRow, 'status' | 'reason'>): boolean {
+  return result.status === 'failed' && result.reason !== undefined && DEFERRED_IMAGE_REASONS.has(result.reason);
 }
 
 /** The alt text for an image URL: the first listing title that used it, within the record limit. */
@@ -248,6 +336,49 @@ export function outcomesFromResults(
   });
 }
 
+/**
+ * What a listing has so far when only some of its photos are settled: the
+ * photos that loaded, marked partial, or `null` when none has. Written when a
+ * run stops so the next one reuses them instead of loading them again.
+ */
+export function partialOutcome(
+  target: ImportImageTarget,
+  results: readonly ImportImageResult[],
+): ListingImageOutcome | null {
+  const byUrl = new Set(
+    results.filter((result) => result.status === 'uploaded').map((result) => normalizeImageUrl(result.url)),
+  );
+  const images = target.images.filter((image) => byUrl.has(normalizeImageUrl(image.url)));
+  if (images.length === 0) return null;
+  const outcome = outcomesFromResults([{ ...target, images, skipped: undefined, sync: undefined }], results)[0];
+  if (!outcome) return null;
+  const { sync: _sync, ...rest } = outcome;
+  return { ...rest, partial: true };
+}
+
+/** The journal a row holds; malformed entries are ignored. */
+export function readPhotoJournal(row: PayloadRow | null): PhotoJournalEntry[] {
+  const parsed = parseJson(row?.extraFields?.[PHOTO_JOURNAL_FIELD]);
+  if (!Array.isArray(parsed)) return [];
+  const entries: PhotoJournalEntry[] = [];
+  for (const entry of parsed) {
+    if (typeof entry !== 'object' || entry === null) continue;
+    const { hash, media } = entry as { hash?: unknown; media?: unknown };
+    if (typeof hash !== 'string' || typeof media !== 'object' || media === null || Array.isArray(media)) continue;
+    entries.push({ hash, media: media as PresetJson });
+  }
+  return entries;
+}
+
+/** The row's extra fields with one more upload in its journal (the same photo replaces its earlier entry). */
+export function withPhotoJournalEntry(
+  extraFields: Readonly<Record<string, string>>,
+  entry: PhotoJournalEntry,
+): Record<string, string> {
+  const rest = readPhotoJournal({ extraFields }).filter((existing) => existing.hash !== entry.hash);
+  return { ...extraFields, [PHOTO_JOURNAL_FIELD]: JSON.stringify([...rest, entry]) };
+}
+
 /** The row's extra fields after the photo phase: uploaded media in `media_json`, every result in `image_results_json`. */
 export function extraFieldsWithImages(
   extraFields: Readonly<Record<string, string>>,
@@ -258,6 +389,8 @@ export function extraFieldsWithImages(
   else delete next[MEDIA_JSON_FIELD];
   next[IMAGE_RESULTS_JSON_FIELD] = JSON.stringify(outcome.results);
   if (outcome.sync) next[IMAGE_SYNC_JSON_FIELD] = JSON.stringify(outcome.sync);
+  if (outcome.partial) next[PHOTOS_PARTIAL_FIELD] = '1';
+  else delete next[PHOTOS_PARTIAL_FIELD];
   return next;
 }
 

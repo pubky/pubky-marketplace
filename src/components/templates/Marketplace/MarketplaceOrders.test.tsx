@@ -1195,7 +1195,7 @@ describe('MarketplaceOrders local pickup cards (Wave 7, §A3/§A6)', () => {
 
     const card = screen.getByText(/Sold pickup boots/).closest('[data-slot="card"]') as HTMLElement;
     expect(within(card).getByRole('button', { name: 'Mark ready for pickup' })).toBeInTheDocument();
-    expect(within(card).queryByRole('button', { name: 'Add tracking' })).not.toBeInTheDocument();
+    expect(within(card).queryByRole('button', { name: 'Mark shipped' })).not.toBeInTheDocument();
   });
 });
 
@@ -1250,7 +1250,7 @@ describe('MarketplaceOrders digital cards (digital delivery design §3 "After pa
     for (const card of screen.getAllByText(/Field guide/).map((node) => node.closest('[data-slot="card"]'))) {
       expect(within(card as HTMLElement).queryByText(/Shipping/)).not.toBeInTheDocument();
       expect(within(card as HTMLElement).queryByRole('button', { name: /Packing slip/i })).not.toBeInTheDocument();
-      expect(within(card as HTMLElement).queryByRole('button', { name: 'Add tracking' })).not.toBeInTheDocument();
+      expect(within(card as HTMLElement).queryByRole('button', { name: 'Mark shipped' })).not.toBeInTheDocument();
     }
   });
 
@@ -1518,20 +1518,20 @@ describe('MarketplaceOrders USDT orders', () => {
     expect(screen.getByTestId('order-receipt-details')).not.toHaveTextContent(/Bitcoin|₿/);
   });
 
-  it('holds Add tracking back for the seller until Arbitrum finalizes, then opens it', async () => {
+  it('holds Mark shipped back for the seller until Arbitrum finalizes, then opens it', async () => {
     ordersState.orders = [
       orderView('paid', 'USDT pending boots', 'seller', { ...usdtFields, paymentFinality: 'pending' }),
     ];
     const { unmount } = render(<MarketplaceOrders />);
     await userEvent.setup().click(screen.getByRole('tab', { name: /All 1/i }));
-    expect(await screen.findByRole('button', { name: 'Add tracking' })).toBeDisabled();
+    expect(await screen.findByRole('button', { name: 'Mark shipped' })).toBeDisabled();
     expect(screen.getByTestId('usdt-payment-not-final')).toBeInTheDocument();
     unmount();
 
     ordersState.orders = [orderView('paid', 'USDT final boots', 'seller', { ...usdtFields, paymentFinality: 'final' })];
     render(<MarketplaceOrders />);
     await userEvent.setup().click(screen.getByRole('tab', { name: /All 1/i }));
-    expect(await screen.findByRole('button', { name: 'Add tracking' })).toBeEnabled();
+    expect(await screen.findByRole('button', { name: 'Mark shipped' })).toBeEnabled();
     expect(screen.queryByTestId('usdt-payment-not-final')).not.toBeInTheDocument();
   });
 
@@ -1594,5 +1594,67 @@ describe('MarketplaceOrders USDT refund address', () => {
     expect(screen.getAllByTestId('usdt-refund-seller')).toHaveLength(1);
     expect(screen.getByText('Bought Bitcoin boots × 1')).toBeInTheDocument();
     expect(screen.getByText('Bought PayPal boots × 1')).toBeInTheDocument();
+  });
+});
+
+describe('MarketplaceOrders shipment tracking', () => {
+  beforeEach(() => {
+    ordersState.currentUserPubky = CURRENT_USER;
+    ordersState.adapterMode = 'transaction-service';
+    ordersState.needsSession = false;
+    ordersState.error = null;
+    window.history.replaceState(null, '', '/marketplace/orders');
+  });
+
+  const shipment = (carrier: string, trackingNumber: string) => ({
+    carrier,
+    trackingNumber,
+    state: 'shipped' as const,
+    shippedAt: '2026-08-14T10:00:00.000Z',
+    deliveredAt: null,
+  });
+
+  it('tells the buyer the order shipped with no tracking yet, and shows no link', async () => {
+    ordersState.orders = [orderView('shipped', 'Olive oil', 'buyer', { shipment: shipment('Other', '') })];
+
+    render(<MarketplaceOrders />);
+    await userEvent.setup().click(await screen.findByRole('tab', { name: /^All/ }));
+
+    const card = (await screen.findByText(/Olive oil/)).closest('[data-slot="card"]') as HTMLElement;
+    expect(within(card).getByText('Shipped, no tracking yet')).toBeInTheDocument();
+    expect(within(card).queryByRole('link', { name: /Track package/ })).not.toBeInTheDocument();
+    expect(within(card).queryByRole('button', { name: /tracking/i })).not.toBeInTheDocument();
+  });
+
+  it('shows the buyer the carrier, number and link once the seller adds tracking', async () => {
+    ordersState.orders = [
+      orderView('shipped', 'Olive oil', 'buyer', { shipment: shipment('UPS', '1Z999AA10123456784') }),
+    ];
+
+    render(<MarketplaceOrders />);
+    await userEvent.setup().click(await screen.findByRole('tab', { name: /^All/ }));
+
+    const card = (await screen.findByText(/Olive oil/)).closest('[data-slot="card"]') as HTMLElement;
+    expect(within(card).getByText('UPS · 1Z999AA10123456784 · shipped')).toBeInTheDocument();
+    expect(within(card).getByRole('link', { name: /Track package/ })).toHaveAttribute(
+      'href',
+      'https://www.ups.com/track?tracknum=1Z999AA10123456784',
+    );
+    expect(within(card).queryByText('Shipped, no tracking yet')).not.toBeInTheDocument();
+  });
+
+  it('gives the seller Add tracking on a shipped order with no number, and Edit tracking once there is one', async () => {
+    ordersState.orders = [
+      orderView('shipped', 'Olive oil', 'seller', { shipment: shipment('Other', '') }),
+      orderView('shipped', 'Olive jar', 'seller', { shipment: shipment('UPS', '1Z999AA10123456784') }),
+    ];
+
+    render(<MarketplaceOrders />);
+    await userEvent.setup().click(await screen.findByRole('tab', { name: /^All/ }));
+
+    const oil = (await screen.findByText(/Olive oil/)).closest('[data-slot="card"]') as HTMLElement;
+    const jar = (await screen.findByText(/Olive jar/)).closest('[data-slot="card"]') as HTMLElement;
+    expect(within(oil).getByRole('button', { name: 'Add tracking' })).toBeInTheDocument();
+    expect(within(jar).getByRole('button', { name: 'Edit tracking' })).toBeInTheDocument();
   });
 });

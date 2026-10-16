@@ -336,6 +336,18 @@ const checkoutLineSchema = z.object({
   fulfillment: marketplaceFulfillmentMethodSchema.optional(),
 });
 
+export const connectorShareSchema = z
+  .object({
+    sellerPubky: commercePubkySchema,
+    shopDomain: z.string().min(1).max(255),
+    consentVersion: z.number().int().positive(),
+    keyId: z.string().min(1).max(128),
+    envelope: deliveryEnvelopeFieldsSchema.shape.envelope,
+  })
+  .strict();
+
+export type ConnectorShare = z.infer<typeof connectorShareSchema>;
+
 export const createMarketplaceCheckoutCommandSchema = createCommerceCommandSchema(
   'checkout.create',
   z
@@ -350,6 +362,10 @@ export const createMarketplaceCheckoutCommandSchema = createCommerceCommandSchem
       // adapter and older service releases; the durable path never sets it.
       deliveryAddress: commerceDeliveryAddressValueSchema.optional(),
       deliveryAddressEnvelopes: z.array(sellerDeliveryEnvelopeSchema).min(1).max(50).optional(),
+      // The buyer's opt-in to share the address with a seller's connected
+      // store: the same address sealed to that connection's recipient key, with
+      // the consent recorded on the order. Needs the sealed delivery envelopes.
+      connectorShares: z.array(connectorShareSchema).min(1).max(50).optional(),
       // Where the seller of an email-kind digital line sends the purchase
       // (digital delivery design §4.3). The service requires it exactly when
       // a line is email-kind, which only the listing projection says, so the
@@ -382,6 +398,24 @@ export const createMarketplaceCheckoutCommandSchema = createCommerceCommandSchem
           path: ['deliveryAddress'],
           message: 'A delivery address is required when any checkout line ships.',
         });
+      }
+      if (payload.connectorShares !== undefined) {
+        const shareSellers = payload.connectorShares.map(({ sellerPubky }) => sellerPubky);
+        const sealedSellers = new Set((payload.deliveryAddressEnvelopes ?? []).map(({ sellerPubky }) => sellerPubky));
+        if (new Set(shareSellers).size !== shareSellers.length) {
+          context.addIssue({
+            code: 'custom',
+            path: ['connectorShares'],
+            message: 'A checkout shares the address with at most one store per seller.',
+          });
+        }
+        if (shareSellers.some((sellerPubky) => !sealedSellers.has(sellerPubky))) {
+          context.addIssue({
+            code: 'custom',
+            path: ['connectorShares'],
+            message: 'An address is shared only with the store of a seller that also gets the sealed delivery address.',
+          });
+        }
       }
       if (payload.deliveryAddressEnvelopes !== undefined) {
         const envelopeSellers = payload.deliveryAddressEnvelopes.map(({ sellerPubky }) => sellerPubky);
@@ -487,6 +521,19 @@ export const approveOrderCancellationCommandSchema = createCommerceCommandSchema
 
 export const shipOrderCommandSchema = createCommerceCommandSchema(
   'fulfillment.ship',
+  orderIdPayload
+    .extend({
+      carrier: z.string().trim().min(1).max(100),
+      // Optional: a seller may mark an order shipped before a number exists
+      // (connected stores complete orders without one) and add it later with
+      // `fulfillment.update_tracking`.
+      trackingNumber: z.string().trim().min(1).max(200).optional(),
+    })
+    .strict(),
+);
+
+export const updateOrderTrackingCommandSchema = createCommerceCommandSchema(
+  'fulfillment.update_tracking',
   orderIdPayload
     .extend({
       carrier: z.string().trim().min(1).max(100),
@@ -725,6 +772,7 @@ export const marketplaceCommandSchema = z.union([
   requestOrderCancellationCommandSchema,
   approveOrderCancellationCommandSchema,
   shipOrderCommandSchema,
+  updateOrderTrackingCommandSchema,
   confirmOrderDeliveryCommandSchema,
   setPickupDetailsCommandSchema,
   clearPickupDetailsCommandSchema,
@@ -820,6 +868,7 @@ export type RegisterLocksPaymentCommand = z.infer<typeof registerLocksPaymentCom
 export type RequestOrderCancellationCommand = z.infer<typeof requestOrderCancellationCommandSchema>;
 export type ApproveOrderCancellationCommand = z.infer<typeof approveOrderCancellationCommandSchema>;
 export type ShipOrderCommand = z.infer<typeof shipOrderCommandSchema>;
+export type UpdateOrderTrackingCommand = z.infer<typeof updateOrderTrackingCommandSchema>;
 export type ConfirmOrderDeliveryCommand = z.infer<typeof confirmOrderDeliveryCommandSchema>;
 export type SetPickupDetailsCommand = z.infer<typeof setPickupDetailsCommandSchema>;
 export type ClearPickupDetailsCommand = z.infer<typeof clearPickupDetailsCommandSchema>;

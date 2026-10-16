@@ -301,6 +301,7 @@ export const marketplaceNotificationSchema = z
       'bitcoin_prepare_voided',
       'order_cancelled',
       'order_shipped',
+      'tracking_updated',
       'order_delivery_assumed',
       'order_delivered',
       'order_completed',
@@ -631,7 +632,12 @@ export const marketplaceOrderProjectionSchema = z
     shipment: z
       .object({
         carrier: z.string(),
-        trackingNumber: z.string(),
+        // Absent on the wire until the seller adds one; read as an empty
+        // string so every consumer tests one shape (`hasTrackingNumber`).
+        trackingNumber: z
+          .string()
+          .nullish()
+          .transform((value) => value ?? ''),
         state: z.enum(['shipped', 'delivered']),
         shippedAt: z.string(),
         deliveredAt: z.string().nullable(),

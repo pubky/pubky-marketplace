@@ -1,9 +1,9 @@
 import {
+  ALLOWED_CHECKPOINT_TRANSITIONS,
   browserFileSource,
   type CanonicalCsvRow,
   canonicalCsvRowIdentity,
   type CheckpointImportResult,
-  checkpointImportRow,
   chunkSyncManyListings,
   classifySyncManyItem,
   type CurrentImportItem,
@@ -50,6 +50,7 @@ import { type ImportSettings, shopifyWorkExponent } from '@/pipes/commerce/impor
 import { buildShopifyPresetRows } from '@/pipes/commerce/import-shopify-csv';
 import { isWooProductCsv, mapWooProductCsv } from '@/pipes/commerce/import-woo-csv';
 import { looksLikeUnknownLanguageWooExport, WOO_UNKNOWN_LANGUAGE_MESSAGE } from '@/pipes/commerce/import-woo-headers';
+import { mapWooStoreCatalog, type WooStoreCatalog } from '@/pipes/commerce/import-woo-store';
 import type { InventoryManifestStore } from '@/services/marketplace/marketplace-import-store';
 
 /**
@@ -64,6 +65,13 @@ export type PresetImportConfig = {
   readonly sellerPubky: string;
   readonly settings: ImportSettings;
 };
+
+/** What a store import needs beyond the preset config: the currencies a listing can be priced in. */
+export type StoreImportConfig = PresetImportConfig & { readonly offeredCurrencies: readonly string[] };
+
+export type PlannedStoreCatalog =
+  | { readonly ok: true; readonly value: PlannedBrowserFile }
+  | { readonly ok: false; readonly message: string };
 
 export type ShopBrowserFile = {
   readonly size: number;
@@ -343,6 +351,39 @@ export class MarketplaceShopClientService {
     return 'This file could not be planned. Nothing was published.';
   }
 
+  /**
+   * Plans a WooCommerce store's public catalogue (read through the Store API)
+   * as preset rows, the same way a CSV preset's rows are planned. A refusal
+   * that is not an SDK error (a store currency the listing form does not
+   * offer) comes back as a message, with nothing planned.
+   */
+  static async planStoreCatalog(
+    catalog: WooStoreCatalog,
+    store: InventoryManifestStore,
+    currentItems: Readonly<Record<string, CurrentImportItem>>,
+    config: StoreImportConfig,
+  ): Promise<PlannedStoreCatalog> {
+    const mapped = mapWooStoreCatalog({
+      catalog,
+      sellerPubky: config.sellerPubky,
+      settings: config.settings,
+      offeredCurrencies: config.offeredCurrencies,
+    });
+    if (!mapped.ok) return { ok: false, message: mapped.message };
+    try {
+      const planned = await planPresetRows(
+        mapped.rows,
+        mapped.report,
+        store as unknown as ManifestStore,
+        store,
+        currentItems,
+      );
+      return planned.ok ? planned : { ok: false, message: this.formatPlanFailure(planned.error) };
+    } catch {
+      return { ok: false, message: 'This catalogue could not be planned. Nothing was published.' };
+    }
+  }
+
   static formatRateLimitCopy(error: PubkyShopError): string {
     const retryAfter = (error.details as { retryAfter?: number }).retryAfter;
     const wait = typeof retryAfter === 'number' && Number.isFinite(retryAfter) ? String(retryAfter) : 'a few';
@@ -453,6 +494,14 @@ export class MarketplaceShopClientService {
     return exportCanonicalCsv(rows);
   }
 
+  /**
+   * One checkpoint hop through the store's incremental `patchRow`: one row and
+   * the manifest version are written, never the whole manifest. This is the
+   * SDK's own `checkpointImportRow` step (its transition table, the manifest
+   * version guard and the result check), done here because SDK 0.1.6 only knows
+   * `compareAndSwap`. Once Shop depends on an SDK whose `ManifestStore` has the
+   * optional `patchRow`, this becomes `checkpointImportRow(store, …)` again.
+   */
   static async checkpointRow(
     store: InventoryManifestStore,
     manifestId: string,
@@ -461,14 +510,34 @@ export class MarketplaceShopClientService {
     checkpoint: ImportCheckpoint,
     failureCode?: PlannedImportRow['failureCode'],
   ): Promise<SdkResult<CheckpointImportResult>> {
-    return checkpointImportRow(
-      store as unknown as ManifestStore,
-      manifestId,
-      expectedManifestVersion,
-      rowIdentity,
-      checkpoint,
-      failureCode,
-    );
+    const step = (row: PlannedImportRow): PlannedImportRow => {
+      if (!ALLOWED_CHECKPOINT_TRANSITIONS[row.checkpoint].includes(checkpoint)) {
+        throw new PubkyShopError('manifest_store_error', { manifestId, rowIdentity });
+      }
+      return failureCode === undefined ? { ...row, checkpoint } : { ...row, checkpoint, failureCode };
+    };
+    try {
+      const patched = (await store.patchRow(
+        manifestId,
+        expectedManifestVersion,
+        rowIdentity,
+        step as unknown as Parameters<InventoryManifestStore['patchRow']>[3],
+      )) as unknown as CheckpointImportResult;
+      if (
+        patched.row.rowIdentity !== rowIdentity ||
+        patched.row.checkpoint !== checkpoint ||
+        patched.manifest.manifestId !== manifestId ||
+        patched.manifest.manifestVersion !== expectedManifestVersion + 1
+      ) {
+        throw new PubkyShopError('manifest_store_error', { manifestId, rowIdentity });
+      }
+      return { ok: true, value: patched };
+    } catch (error) {
+      return {
+        ok: false,
+        error: error instanceof PubkyShopError ? error : new PubkyShopError('manifest_store_error', { manifestId }),
+      };
+    }
   }
 
   /**

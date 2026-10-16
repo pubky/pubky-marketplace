@@ -339,6 +339,7 @@ describe('MarketplaceTransactionService.execute', () => {
 
   it.each([
     'fulfillment.ship',
+    'fulfillment.update_tracking',
     'fulfillment.confirm_delivery',
     'order.cancel_request',
     'order.cancel_approve',
@@ -368,6 +369,43 @@ describe('MarketplaceTransactionService.execute', () => {
     expect(response).toMatchObject({ ok: true, result: { kind: 'order' } });
     const [, init] = vi.mocked(fetch).mock.calls[0] as [string, RequestInit];
     expect(JSON.parse(init.body as string)).toMatchObject({ kind });
+  });
+
+  it('sends fulfillment.update_tracking in snake_case, and fulfillment.ship without a tracking number', async () => {
+    await establishSession();
+    const accepted = () =>
+      jsonResponse(200, {
+        ok: true,
+        version: 1,
+        command_id: COMMAND_ID,
+        aggregate_id: 'order:00000000-0000-4000-8000-000000000720',
+        revision: 4,
+        event_ids: ['00000000-0000-4000-8000-000000000721'],
+        result: { kind: 'order' },
+      });
+    const orderId = '00000000-0000-4000-8000-000000000720';
+    vi.mocked(fetch).mockResolvedValueOnce(accepted()).mockResolvedValueOnce(accepted());
+
+    await MarketplaceTransactionService.execute(ACTOR, {
+      ...bidCommand(),
+      aggregateId: `order:${orderId}`,
+      kind: 'fulfillment.update_tracking',
+      payload: { orderId, carrier: 'UPS', trackingNumber: '1Z999AA10123456784' },
+    } as never);
+    await MarketplaceTransactionService.execute(ACTOR, {
+      ...bidCommand(),
+      aggregateId: `order:${orderId}`,
+      kind: 'fulfillment.ship',
+      payload: { orderId, carrier: 'Other' },
+    } as never);
+
+    const bodies = vi.mocked(fetch).mock.calls.map(([, init]) => JSON.parse((init as RequestInit).body as string));
+    expect(bodies[0]).toMatchObject({
+      kind: 'fulfillment.update_tracking',
+      payload: { order_id: orderId, carrier: 'UPS', tracking_number: '1Z999AA10123456784' },
+    });
+    expect(bodies[1].kind).toBe('fulfillment.ship');
+    expect(bodies[1].payload).toEqual({ order_id: orderId, carrier: 'Other' });
   });
 
   it('sends refund.confirm_destination in the pinned snake_case wire shape', async () => {
@@ -1179,6 +1217,7 @@ describe('MarketplaceTransactionService read projections', () => {
   });
 
   it('requires a session for every projection read', async () => {
+    const loggerError = vi.spyOn(Logger, 'error');
     await expect(MarketplaceTransactionService.getListing(ACTOR, AGGREGATE_ID)).rejects.toMatchObject({
       code: 'SESSION_EXPIRED',
     });
@@ -1194,6 +1233,8 @@ describe('MarketplaceTransactionService read projections', () => {
       code: 'SESSION_EXPIRED',
     });
     expect(fetch).not.toHaveBeenCalled();
+    // The connect prompt is the expected state, so the guard is not logged or sent to Sentry.
+    expect(loggerError).not.toHaveBeenCalled();
   });
 
   it('fails closed outside transaction-service mode', async () => {
@@ -1209,8 +1250,11 @@ describe('MarketplaceTransactionService read projections', () => {
       jsonResponse(401, { error: { message: 'The session is invalid or expired.' } }),
     );
 
+    const loggerError = vi.spyOn(Logger, 'error');
+
     await expect(MarketplaceTransactionService.getOrders(ACTOR)).rejects.toMatchObject({ code: 'SESSION_EXPIRED' });
     expect(MarketplaceSessionService.getActiveSession()).toBeNull();
+    expect(loggerError).toHaveBeenCalled();
   });
 
   describe('public listing availability', () => {
@@ -1406,31 +1450,32 @@ describe('MarketplaceTransactionService read projections', () => {
       expect(fetch).toHaveBeenCalledTimes(1);
     });
 
-    it('sends usdt as the bind method and reads each USDT refusal in USDT copy, tagged with the rail', async () => {
+    it('sends paykit as the bind method and reads each refusal in Paykit copy, tagged with the method', async () => {
       await establishSession();
       vi.mocked(fetch).mockClear();
       vi.mocked(fetch).mockResolvedValueOnce(
-        jsonResponse(409, {
+        jsonResponse(503, {
           ok: false,
           error: {
-            code: 'INVALID_STATE',
+            code: 'UPSTREAM_UNAVAILABLE',
             message: 'SENTINEL_SERVER_TEXT',
-            reason: 'usdt_seller_not_ready',
+            reason: 'seller_setup_pending',
           },
         }),
       );
 
-      await expect(MarketplaceTransactionService.bindPaymentMethod(ACTOR, ORDER_ID, 'usdt')).rejects.toMatchObject({
-        message: "This seller can't take USDT right now. Choose another payment method, or contact the seller.",
+      await expect(MarketplaceTransactionService.bindPaymentMethod(ACTOR, ORDER_ID, 'paykit')).rejects.toMatchObject({
+        message:
+          'This seller’s Paykit setup isn’t finished, so they can’t take a payment yet. Choose another payment method, or contact the seller.',
         context: {
-          statusCode: 409,
-          reason: 'usdt_seller_not_ready',
-          serviceCode: 'INVALID_STATE',
-          paymentMethod: 'usdt',
+          statusCode: 503,
+          reason: 'seller_setup_pending',
+          serviceCode: 'UPSTREAM_UNAVAILABLE',
+          paymentMethod: 'paykit',
         },
       });
       const [, init] = vi.mocked(fetch).mock.calls[0] as [string, RequestInit];
-      expect(JSON.parse(init.body as string)).toEqual({ method: 'usdt' });
+      expect(JSON.parse(init.body as string)).toEqual({ method: 'paykit' });
 
       vi.mocked(fetch).mockResolvedValueOnce(
         jsonResponse(409, {
@@ -1438,8 +1483,9 @@ describe('MarketplaceTransactionService read projections', () => {
           error: { code: 'INVALID_STATE', message: 'SENTINEL', reason: 'buyer_paykit_wallet_required' },
         }),
       );
-      await expect(MarketplaceTransactionService.bindPaymentMethod(ACTOR, ORDER_ID, 'usdt')).rejects.toMatchObject({
-        message: 'Connect Bitkit to pay with USDT: this pubky has no Paykit wallet that can receive a payment request.',
+      await expect(MarketplaceTransactionService.bindPaymentMethod(ACTOR, ORDER_ID, 'paykit')).rejects.toMatchObject({
+        message:
+          'Connect Bitkit to pay with Paykit: this pubky has no Paykit wallet that can receive a payment request.',
       });
     });
 

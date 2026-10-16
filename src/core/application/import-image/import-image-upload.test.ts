@@ -1,5 +1,4 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { IMPORT_IMAGE_MAX_RETRY_WAIT_SECONDS } from '@/config/import-image';
 import * as stripModule from '@/libs/image/stripImageMetadata';
 import { ImportImageApiService } from '@/services/import-image/import-image.api';
 import { ImportImageUploadApplication } from './import-image-upload';
@@ -81,33 +80,23 @@ describe('ImportImageUploadApplication.fetchAndPrepare', () => {
     });
   });
 
-  it('waits out a short rate limit once and retries', async () => {
-    vi.useFakeTimers();
+  it('hands back the route Retry-After on a rate limit, without waiting itself', async () => {
     apiSpy.mockResolvedValueOnce({ ok: false, reason: 'rate_limited', retryAfterSeconds: 5 });
-    const pending = ImportImageUploadApplication.fetchAndPrepare(params);
-    await vi.advanceTimersByTimeAsync(5_000);
-    expect((await pending).ok).toBe(true);
-    expect(apiSpy).toHaveBeenCalledTimes(2);
-  });
-
-  it('gives the image up when the rate-limit wait is too long', async () => {
-    apiSpy.mockResolvedValueOnce({
+    expect(await ImportImageUploadApplication.fetchAndPrepare(params)).toEqual({
       ok: false,
       reason: 'rate_limited',
-      retryAfterSeconds: IMPORT_IMAGE_MAX_RETRY_WAIT_SECONDS + 1,
+      fetchedBytes: 0,
+      retryAfterSeconds: 5,
     });
-    expect(await ImportImageUploadApplication.fetchAndPrepare(params)).toMatchObject({ reason: 'rate_limited' });
     expect(apiSpy).toHaveBeenCalledTimes(1);
   });
 
-  it('stops waiting when cancelled', async () => {
-    vi.useFakeTimers();
-    const controller = new AbortController();
-    apiSpy.mockResolvedValueOnce({ ok: false, reason: 'rate_limited', retryAfterSeconds: 30 });
-    const pending = ImportImageUploadApplication.fetchAndPrepare({ ...params, signal: controller.signal });
-    await vi.advanceTimersByTimeAsync(1_000);
-    controller.abort();
-    expect(await pending).toMatchObject({ ok: false, reason: 'cancelled' });
-    expect(apiSpy).toHaveBeenCalledTimes(1);
+  it('carries no wait hint for other failures', async () => {
+    apiSpy.mockResolvedValueOnce({ ok: false, reason: 'not_image' });
+    expect(await ImportImageUploadApplication.fetchAndPrepare(params)).toEqual({
+      ok: false,
+      reason: 'not_image',
+      fetchedBytes: 0,
+    });
   });
 });

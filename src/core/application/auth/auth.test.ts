@@ -3,10 +3,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AuthApplication, isDefinitiveSessionAuthFailure } from '@/application/auth/auth';
 import type { THomeserverAuthenticateParams } from '@/application/auth/auth.types';
 import { AppError } from '@/libs/error/error';
-import { AuthErrorCode, ClientErrorCode, ServerErrorCode } from '@/libs/error/error.codes';
+import { AuthErrorCode, ServerErrorCode } from '@/libs/error/error.codes';
 import { Err } from '@/libs/error/error.factories';
 import { ErrorCategory, ErrorService } from '@/libs/error/error.types';
-import { HttpMethod } from '@/libs/http/http.types';
 import type { Pubky } from '@/models/models.types';
 import { HomeserverService } from '@/services/homeserver/homeserver';
 import type { THomeserverSignUpParams } from '@/services/homeserver/homeserver.types';
@@ -254,35 +253,38 @@ describe('AuthApplication', () => {
     const testPubky = 'test-pubky' as Pubky;
 
     it('should return true when profile.json exists', async () => {
-      const requestSpy = vi.spyOn(HomeserverService, 'request').mockResolvedValue({ name: 'Test' });
+      const readSpy = vi
+        .spyOn(HomeserverService, 'getJsonIfFound')
+        .mockResolvedValue({ found: true, json: { name: 'Test' } });
 
       const result = await AuthApplication.userIsSignedUp({ pubky: testPubky });
 
       expect(result).toBe(true);
-      expect(requestSpy).toHaveBeenCalledWith({
-        method: HttpMethod.GET,
-        url: `pubky://${testPubky}/pub/pubky.app/profile.json`,
-      });
+      expect(readSpy).toHaveBeenCalledWith({ url: `pubky://${testPubky}/pub/pubky.app/profile.json` });
     });
 
-    it('should return false when profile.json is not found (404)', async () => {
-      const notFoundError = Err.client(ClientErrorCode.NOT_FOUND, 'Profile not found', {
-        service: ErrorService.Homeserver,
-        operation: 'userIsSignedUp',
-      });
-      vi.spyOn(HomeserverService, 'request').mockRejectedValue(notFoundError);
+    it('should return true when profile.json exists but is empty or not JSON', async () => {
+      vi.spyOn(HomeserverService, 'getJsonIfFound').mockResolvedValue({ found: true, json: undefined });
+
+      await expect(AuthApplication.userIsSignedUp({ pubky: testPubky })).resolves.toBe(true);
+    });
+
+    it('should return false without a request error when profile.json is missing', async () => {
+      const requestSpy = vi.spyOn(HomeserverService, 'request');
+      vi.spyOn(HomeserverService, 'getJsonIfFound').mockResolvedValue({ found: false });
 
       const result = await AuthApplication.userIsSignedUp({ pubky: testPubky });
 
       expect(result).toBe(false);
+      expect(requestSpy).not.toHaveBeenCalled();
     });
 
-    it('should throw when request fails with non-404 error', async () => {
+    it('should throw when the read fails with a non-404 error', async () => {
       const serverError = Err.server(ServerErrorCode.INTERNAL_ERROR, 'Server error', {
         service: ErrorService.Homeserver,
         operation: 'userIsSignedUp',
       });
-      vi.spyOn(HomeserverService, 'request').mockRejectedValue(serverError);
+      vi.spyOn(HomeserverService, 'getJsonIfFound').mockRejectedValue(serverError);
 
       await expect(AuthApplication.userIsSignedUp({ pubky: testPubky })).rejects.toMatchObject({
         code: ServerErrorCode.INTERNAL_ERROR,

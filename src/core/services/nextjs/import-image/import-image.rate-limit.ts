@@ -8,7 +8,7 @@ import {
   IMPORT_IMAGE_RATE_LIMIT_WINDOW_MS,
 } from '@/config/import-image';
 
-type TRateLimitDecision = { ok: true } | { ok: false; retryAfterSeconds: number };
+export type TRateLimitDecision = { ok: true } | { ok: false; retryAfterSeconds: number };
 
 type TWindow = { startedAt: number; used: number };
 
@@ -17,7 +17,7 @@ type TWindow = { startedAt: number; used: number };
  * (session digest or IP). One instance per server process: a deployment with
  * several instances multiplies the effective limit by the instance count.
  */
-class WindowCounter {
+export class WindowCounter {
   private readonly windows = new Map<string, TWindow>();
 
   constructor(
