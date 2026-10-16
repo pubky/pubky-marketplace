@@ -8,7 +8,7 @@
 # directory, `npm ci` done, and Playwright's Chromium (CHROMIUM_PATH or the
 # Playwright-managed browser). Everything it starts is torn down on exit.
 #
-#   CHAT_E2E_INBOX_IMAGE   inbox image (default synonymsoft/pubky-inbox:v0.4.0)
+#   CHAT_E2E_INBOX_IMAGE   inbox image (default synonymsoft/pubky-inbox:v0.4.1)
 #   CHAT_E2E_STACK_DIR     where pubky-docker is cloned (default .chat-e2e-stack)
 #   CHAT_E2E_STACK_REF     pubky-docker ref to clone (default main)
 #   CHAT_E2E_KEEP_STACK=1  leave the stack running for inspection
@@ -16,7 +16,7 @@
 #                          the e2e's SHOP_URL follow it)
 set -euo pipefail
 
-INBOX_IMAGE="${CHAT_E2E_INBOX_IMAGE:-synonymsoft/pubky-inbox:v0.4.0}"
+INBOX_IMAGE="${CHAT_E2E_INBOX_IMAGE:-synonymsoft/pubky-inbox:v0.4.1}"
 STACK_DIR="${CHAT_E2E_STACK_DIR:-.chat-e2e-stack}"
 STACK_REF="${CHAT_E2E_STACK_REF:-main}"
 SHOP_PORT="${PORT:-3000}"
@@ -115,9 +115,11 @@ for _ in $(seq 1 30); do
   if docker exec postgres pg_isready -U test_user -d pubky_homeserver >/dev/null 2>&1; then break; fi
   sleep 2
 done
-if ! docker exec postgres psql -U test_user -d pubky_homeserver -Atc "SELECT 1 FROM pg_database WHERE datname = 'inbox'" | grep -q 1; then
-  docker exec postgres psql -U test_user -d pubky_homeserver -c 'CREATE DATABASE inbox' >/dev/null
-fi
+# A fresh database every run: the inbox ties its client-IP hashes to a pepper
+# kept in the container's data dir, and a database from an earlier run (a
+# reused STACK_DIR) with a new container refuses to start.
+docker exec postgres psql -U test_user -d pubky_homeserver -c 'DROP DATABASE IF EXISTS inbox' >/dev/null
+docker exec postgres psql -U test_user -d pubky_homeserver -c 'CREATE DATABASE inbox' >/dev/null
 docker rm -f "$INBOX_CONTAINER" >/dev/null 2>&1 || true
 docker run -d --name "$INBOX_CONTAINER" --network "${COMPOSE_PROJECT}_pubky" -p 8088:8080 \
   -e INBOX_DATABASE__URL=postgres://test_user:test_pass@postgres:5432/inbox \
