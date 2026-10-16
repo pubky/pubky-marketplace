@@ -120,6 +120,19 @@ describe('LocksGatewayService', () => {
     expect(vi.mocked(fetch).mock.calls.flatMap((call) => String(call[0]))).not.toContain(BUNDLE_ID);
   });
 
+  // `p`, `u`, `b`, `k` and `y` are z-base-32 characters, so a bare id can start with `pubky`.
+  it('sends the Lock Server the prefixed creator whether it gets the bare or the prefixed id', async () => {
+    const bare = 'pubky3f4khszd4gzg38bsazw88dmcfws36js9ct19s9dikb3a9ht';
+    for (const input of [bare, `pubky${bare}`]) {
+      vi.mocked(fetch).mockResolvedValueOnce(
+        jsonResponse({ credential: 'opaque-secret', expires_at: '2026-08-20T00:00:00.000Z' }),
+      );
+      await LocksGatewayService.issueAccessCredential(input, BUNDLE_ID);
+      const init = vi.mocked(fetch).mock.calls.at(-1)?.[1] as RequestInit;
+      expect(JSON.parse(String(init.body)).creator).toBe(`pubky${bare}`);
+    }
+  });
+
   it('reads the durable-admission lifecycle fields (pubky/locks#72) and stays compatible without them', async () => {
     vi.mocked(fetch)
       .mockResolvedValueOnce(
@@ -384,12 +397,10 @@ describe('LocksGatewayService', () => {
 
     // Upstream `parse_setup_query` -> `parse_creator` accepts only the
     // canonical `pubky<z32>` form; the bare z32 id answers 400 invalid_request.
-    it('sends the seller in the pubky-prefixed form Paykit parses, from either input form', () => {
+    it('sends the bare seller id in the pubky-prefixed form Paykit parses', () => {
       const z32 = '3f4khszd4gzg38bsazw88dmcfws36js9ct19s9dikb3a9ht3r84y';
-      for (const input of [z32, `pubky${z32}`]) {
-        const built = new URL(LocksGatewayService.buildPaykitReconnectUrl(returnTo, 'opaque-state', input));
-        expect(built.searchParams.get('creator')).toBe(`pubky${z32}`);
-      }
+      const built = new URL(LocksGatewayService.buildPaykitReconnectUrl(returnTo, 'opaque-state', z32));
+      expect(built.searchParams.get('creator')).toBe(`pubky${z32}`);
     });
 
     it('prefixes a bare id that itself starts with pubky', () => {
