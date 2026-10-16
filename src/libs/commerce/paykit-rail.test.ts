@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { createPaykitOrderFixture } from '@/test/fixtures/commerce/paykit-orders';
 import { createUsdtOrderFixture } from '@/test/fixtures/commerce/usdt-orders';
 import {
+  CHECKOUT_SUBMIT_LABEL,
   followsBitcoinFlow,
   isPaykitOrder,
   isUnobservedPaykitOrder,
@@ -9,11 +10,11 @@ import {
   observedPaymentRail,
   orderOfferedAssets,
   PAYKIT_OUTAGE_COPY,
-  PAYKIT_PICKER_LABEL,
   PAYKIT_RAIL_STALE_AGE_SECONDS,
   paykitAssetsLabel,
   paykitAwaitingBody,
   paykitAwaitingTitle,
+  paykitPickerLabel,
   paykitRailStatusFromHealth,
   paykitRetryDelayMs,
   sharedPaykitAssets,
@@ -98,8 +99,15 @@ describe('Paykit copy', () => {
     expect(paykitAssetsLabel([])).toBe('Bitkit');
   });
 
-  it('labels the single picker entry', () => {
-    expect(PAYKIT_PICKER_LABEL).toBe('Pay with Paykit');
+  it('labels the single picker entry by asset and wallet, never as a Pay action', () => {
+    expect(paykitPickerLabel(['BTC'])).toEqual({ assets: 'Bitcoin', wallet: 'via Bitkit' });
+    expect(paykitPickerLabel(['USDT', 'BTC'])).toEqual({ assets: 'Bitcoin or USDT', wallet: 'via Bitkit' });
+    expect(paykitPickerLabel(['USDT'])).toEqual({ assets: 'USDT', wallet: 'via Bitkit' });
+    expect(paykitPickerLabel([])).toEqual({ assets: 'Bitcoin', wallet: 'via Bitkit' });
+  });
+
+  it('names the next step on the checkout submit button for each rail', () => {
+    expect(CHECKOUT_SUBMIT_LABEL).toEqual({ paykit: 'Continue to Bitkit', paypal: 'Continue to PayPal' });
   });
 
   it('shows the neutral pay-in-Bitkit state before any rail is seen', () => {
