@@ -12,7 +12,7 @@ import { useConfirmRefundDestination } from '@/hooks/useConfirmRefundDestination
 import { useCopyToClipboard } from '@/hooks/useCopyToClipboard/useCopyToClipboard';
 import { formatOrderInstant } from '@/libs/commerce/checkout-hold';
 import {
-  formatUsdtParity,
+  formatUsdtRefundAmount,
   isUsdtRefundOrder,
   USDT_REFUND_COPY,
   usdtRefundDueMoney,
@@ -217,7 +217,7 @@ function SellerRefundAddress({
   });
   const destination = order.refundDestination ?? null;
   const due = usdtRefundDueMoney(order);
-  const dueUsdt = isUsdtRefundOrder(order) ? formatUsdtParity(due) : null;
+  const dueUsdt = isUsdtRefundOrder(order) ? formatUsdtRefundAmount(order, due.amountMinor) : null;
   const copy =
     phase === 'recorded'
       ? USDT_REFUND_COPY.sellerRecorded

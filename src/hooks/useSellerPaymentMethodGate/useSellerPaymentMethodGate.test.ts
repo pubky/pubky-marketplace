@@ -1,5 +1,5 @@
-import { renderHook, waitFor } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { act, renderHook, waitFor } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import { useSellerPaymentMethodGate } from './useSellerPaymentMethodGate';
 
@@ -64,5 +64,69 @@ describe('useSellerPaymentMethodGate', () => {
 
     await waitFor(() => expect(result.current.ready).toBe(true));
     expect(result.current.reason).toBeNull();
+  });
+
+  describe('a Paykit outage', () => {
+    const outage = {
+      bitcoinAvailable: false,
+      bitcoinOfferAvailable: false,
+      paypalAvailable: false,
+      paykitUnreachable: true,
+    };
+    const healthy = { bitcoinAvailable: true, bitcoinOfferAvailable: true, paypalAvailable: false };
+
+    beforeEach(() => {
+      vi.useFakeTimers();
+    });
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('reports the outage instead of no-method, retries on its own and clears when Paykit is back', async () => {
+      vi.mocked(CommerceController.getSellerPaymentConfig)
+        .mockResolvedValueOnce(outage)
+        .mockResolvedValueOnce(outage)
+        .mockResolvedValue(healthy);
+
+      const { result } = renderHook(() => useSellerPaymentMethodGate());
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      expect(result.current).toEqual({ isDurable: true, ready: true, reason: 'paykit-unreachable' });
+      expect(CommerceController.getSellerPaymentConfig).toHaveBeenCalledTimes(1);
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(5_000);
+      });
+      expect(CommerceController.getSellerPaymentConfig).toHaveBeenCalledTimes(2);
+      expect(result.current.reason).toBe('paykit-unreachable');
+      expect(result.current.ready).toBe(true);
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(10_000);
+      });
+      expect(CommerceController.getSellerPaymentConfig).toHaveBeenCalledTimes(3);
+      expect(result.current).toEqual({ isDurable: true, ready: true, reason: null });
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(120_000);
+      });
+      expect(CommerceController.getSellerPaymentConfig).toHaveBeenCalledTimes(3);
+    });
+
+    it('does not poll for a seller who simply has no method', async () => {
+      vi.mocked(CommerceController.getSellerPaymentConfig).mockResolvedValue({
+        bitcoinAvailable: false,
+        bitcoinOfferAvailable: true,
+        paypalAvailable: false,
+      });
+      const { result } = renderHook(() => useSellerPaymentMethodGate());
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(120_000);
+      });
+
+      expect(result.current.reason).toBe('no-method');
+      expect(CommerceController.getSellerPaymentConfig).toHaveBeenCalledTimes(1);
+    });
   });
 });

@@ -5,8 +5,10 @@ import {
   REFUND_FIXTURE_TX_HASH,
   USDT_REFUND_REFUSAL_REASONS,
 } from '@/test/fixtures/commerce/usdt-refund.wire';
+import { formatCommerceMoney } from './format';
 import {
   formatUsdtParity,
+  formatUsdtRefundAmount,
   isArbitrumTxHash,
   isUsdtRefundOrder,
   isValidArbitrumAddress,
@@ -15,7 +17,9 @@ import {
   sameArbitrumAddress,
   USDT_REFUND_COPY,
   USDT_REFUND_REFUSAL_COPY,
+  USDT_SELLER_REFUND_REFUSAL_COPY,
   usdtParityMillionths,
+  usdtRefundCap,
   usdtRefundDueMoney,
   type UsdtRefundOrder,
   usdtRefundRecordLine,
@@ -206,7 +210,9 @@ describe('USDT parity amounts', () => {
 
 describe('refusal copy', () => {
   it('maps every closed S6 reason to plan copy', () => {
-    expect(USDT_REFUND_REFUSAL_COPY.size).toBe(USDT_REFUND_REFUSAL_REASONS.length);
+    expect(USDT_REFUND_REFUSAL_COPY.size + USDT_SELLER_REFUND_REFUSAL_COPY.size).toBe(
+      USDT_REFUND_REFUSAL_REASONS.length,
+    );
     expect(usdtRefundRefusalMessage({ reason: 'refund_destination_required' })).toBe(
       "Ask the buyer to confirm a refund address first. It's on their order page.",
     );
@@ -216,6 +222,31 @@ describe('refusal copy', () => {
     expect(usdtRefundRefusalMessage({ reason: 'invalid_refund_reference' })).toBe(
       'Enter the Arbitrum transaction hash (0x followed by 64 characters).',
     );
+    expect(usdtRefundRefusalMessage({ reason: 'refund_rail_unknown' }, { seller: true })).toBe(
+      USDT_REFUND_COPY.railUnknown,
+    );
+    expect(usdtRefundRefusalMessage({ reason: 'refund_amount_unrecordable' }, { seller: true })).toBe(
+      USDT_REFUND_COPY.amountUnrecordable,
+    );
+  });
+
+  it('keeps seller-directed wording off the buyer path', () => {
+    for (const reason of ['refund_rail_unknown', 'refund_amount_unrecordable']) {
+      expect(usdtRefundRefusalMessage({ reason })).toBeNull();
+      expect(usdtRefundRefusalMessage({ reason }, { seller: false })).toBeNull();
+      expect(usdtRefundRefusalMessage({ message: reason })).toBeNull();
+    }
+    expect(usdtRefundRefusalMessage({ reason: 'invalid_refund_destination' }, { seller: true })).toBe(
+      USDT_REFUND_COPY.addressInvalid,
+    );
+  });
+
+  it('tells the seller what to do about the two rail and amount refusals, never the raw token', () => {
+    expect(USDT_REFUND_COPY.railUnknown).toContain('Resolve the order as paid or abandoned first');
+    expect(USDT_REFUND_COPY.amountUnrecordable).toContain('Contact the marketplace operator');
+    for (const reason of ['refund_rail_unknown', 'refund_amount_unrecordable']) {
+      expect(usdtRefundRefusalMessage({ reason }, { seller: true })).not.toContain(reason);
+    }
   });
 
   it('also reads a message that is exactly the reason token, and never echoes other service text', () => {
@@ -280,4 +311,64 @@ describe('recorded refund copy', () => {
     }
     expect(USDT_REFUND_COPY.recordedBySeller).toBe('Recorded by the seller');
   });
+});
+
+describe('a USDT refund on an order priced in another currency', () => {
+  const sats = { amountMinor: 150_000, currency: 'SAT', exponent: 0 };
+  const paid = order({
+    state: 'refunded_external',
+    total: sats,
+    paymentAmountMinor: 41_250_000,
+    refundDestination: destination,
+    externalRefund: { amountMinor: 41_250_000, transactionId: REFUND_FIXTURE_TX_HASH },
+  });
+
+  it('is recorded in USDT millionths, capped at the amount paid', () => {
+    expect(usdtRefundCap(paid)).toEqual({ amountMinor: 41_250_000, currency: 'USDT', exponent: 6 });
+    expect(usdtRefundCap({ ...paid, paymentAmountMinor: null })).toBeNull();
+    expect(usdtRefundCap({ ...paid, paymentAsset: null })).toBeNull();
+    expect(usdtRefundDueMoney(paid)).toEqual({ amountMinor: 41_250_000, currency: 'USDT', exponent: 6 });
+  });
+
+  it('keeps cents at parity for a USD order, whatever was paid', () => {
+    const usdOrder = order({ total: usd(2_500), paymentAmountMinor: 25_000_000 });
+    expect(usdtRefundCap(usdOrder)).toBeNull();
+    expect(formatUsdtRefundAmount(usdOrder, 2_500)).toBe('25.000000 USDT');
+  });
+
+  it('names the USDT amount of a refund, never the satoshi price as parity', () => {
+    expect(formatUsdtRefundAmount(paid, 41_250_000)).toBe('41.250000 USDT');
+    expect(formatUsdtRefundAmount(paid, 41_250_000, { grouped: true })).toBe('41.250000 USDT');
+    expect(usdtRefundRecordLine(paid)).toContain('a refund of 41.250000 USDT to ');
+  });
+
+  it('names a partial refund in USDT of the amount paid', () => {
+    expect(
+      usdtRefundRecordLine({
+        ...paid,
+        externalRefund: { amountMinor: 10_000_000, transactionId: REFUND_FIXTURE_TX_HASH },
+      }),
+    ).toContain('a refund of 10.000000 USDT (10.000000 USDT of 41.250000 USDT) to ');
+  });
+});
+
+describe('a USDT refund on a non-USD fiat order', () => {
+  it.each([
+    ['EUR', 2],
+    ['CHF', 2],
+    ['GBP', 2],
+    ['JPY', 0],
+    ['CAD', 2],
+    ['AUD', 2],
+  ] as const)(
+    'records a %s order in USDT millionths up to the amount paid and keeps its own price display',
+    (currency, exponent) => {
+      const total = { amountMinor: 1_500 * 10 ** exponent, currency, exponent };
+      const paid = order({ total, paymentAmountMinor: 1_650_000_000 });
+      expect(usdtRefundCap(paid)).toEqual({ amountMinor: 1_650_000_000, currency: 'USDT', exponent: 6 });
+      expect(formatUsdtRefundAmount(paid, 100_000_000)).toBe('100.000000 USDT');
+      expect(formatCommerceMoney(total)).toContain(currency === 'JPY' ? '¥' : '');
+      expect(formatCommerceMoney(total)).not.toContain('USDT');
+    },
+  );
 });

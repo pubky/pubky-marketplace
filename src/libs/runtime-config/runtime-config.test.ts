@@ -18,6 +18,7 @@ import {
   getSentryReplaysOnErrorSampleRate,
   getSentryReplaysSessionSampleRate,
   getSentryTracesSampleRate,
+  getStoreConnectionsEnabled,
   getUsdtPaymentsEnabled,
   readClientConfig,
   readServerConfig,
@@ -49,6 +50,7 @@ const RUNTIME_ENV_VALUES: Partial<Record<keyof RuntimeConfig, string>> = {
   sentryTracesSampleRate: '0.5',
   sentryReplaysSessionSampleRate: '0.25',
   sentryReplaysOnErrorSampleRate: '1',
+  exchangeRateApi: 'https://rates.runtime.example.com/btc',
   marketplaceUrl: 'https://marketplace.runtime.example.com',
   locksUrl: 'https://locks.runtime.example.com',
   paykitSetupUrl: 'https://paykit.runtime.example.com/setup',
@@ -249,6 +251,30 @@ describe('runtime-config resolver', () => {
       resetRuntimeConfigForTests();
       process.env[PUBKY_RUNTIME_ENV_NAMES.usdtPaymentsEnabled] = 'false';
       expect(getUsdtPaymentsEnabled()).toBe(false);
+    });
+
+    it('keeps store connections off by default and takes the PUBKY_RUNTIME_STORE_CONNECTIONS_ENABLED switch', () => {
+      expect(PUBKY_RUNTIME_ENV_NAMES.storeConnectionsEnabled).toBe('PUBKY_RUNTIME_STORE_CONNECTIONS_ENABLED');
+      expect(getStoreConnectionsEnabled()).toBe(false);
+
+      resetRuntimeConfigForTests();
+      process.env[PUBKY_RUNTIME_ENV_NAMES.storeConnectionsEnabled] = 'true';
+      expect(getStoreConnectionsEnabled()).toBe(true);
+
+      resetRuntimeConfigForTests();
+      process.env[PUBKY_RUNTIME_ENV_NAMES.storeConnectionsEnabled] = 'false';
+      expect(getStoreConnectionsEnabled()).toBe(false);
+    });
+
+    it('fails loudly on a malformed store connections switch', () => {
+      process.env[PUBKY_RUNTIME_ENV_NAMES.storeConnectionsEnabled] = 'sure';
+      expect(() => readServerConfig()).toThrow();
+    });
+
+    it('strict deployed parse succeeds with the store connections switch unset and resolves it off', () => {
+      simulateDeployedEnv();
+      setAllRuntimeEnv();
+      expect(readServerConfig().storeConnectionsEnabled).toBe(false);
     });
 
     it('fails loudly on a malformed USDT payments switch', () => {

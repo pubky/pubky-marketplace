@@ -1,6 +1,5 @@
 import { blake3 } from '@noble/hashes/blake3.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
-import { IMPORT_IMAGE_MAX_RETRY_WAIT_SECONDS } from '@/config/import-image';
 import { type CommerceListingRecord, commerceMediaSchema } from '@/libs/commerce/marketplace-records';
 import { stripImageMetadata } from '@/libs/image/stripImageMetadata';
 import { CommerceRecordNormalizer } from '@/pipes/commerce/commerce.normalizer';
@@ -20,12 +19,14 @@ export type TImportImagePrepareParams = {
 
 export type TImportImagePrepareResult =
   | { ok: true; media: TImportImageMedia; bytes: Uint8Array; fetchedBytes: number }
-  | { ok: false; reason: TImportImageFailureReason; fetchedBytes: number };
+  | { ok: false; reason: TImportImageFailureReason; fetchedBytes: number; retryAfterSeconds?: number };
 
 /**
  * Browser half of the import-image flow: asks the server route for the bytes,
  * re-checks them, then sanitizes and describes them like any listing photo so
  * the existing media write (`CommerceController.commitCreateMedia`) can store them.
+ * A rate-limit answer comes back with the route's `Retry-After`; the photo phase
+ * decides whether to wait for it, and shows the seller that it is waiting.
  */
 export class ImportImageUploadApplication {
   private constructor() {}
@@ -37,19 +38,16 @@ export class ImportImageUploadApplication {
     remainingBytes,
     signal,
   }: TImportImagePrepareParams): Promise<TImportImagePrepareResult> {
-    let fetched = await ImportImageApiService.fetchImage({ url, remainingBytes, signal });
+    const fetched = await ImportImageApiService.fetchImage({ url, remainingBytes, signal });
 
-    if (!fetched.ok && fetched.reason === 'rate_limited' && fetched.retryAfterSeconds !== undefined) {
-      if (fetched.retryAfterSeconds > IMPORT_IMAGE_MAX_RETRY_WAIT_SECONDS) {
-        return { ok: false, reason: 'rate_limited', fetchedBytes: 0 };
-      }
-      if (!(await sleep(fetched.retryAfterSeconds * 1000, signal))) {
-        return { ok: false, reason: 'cancelled', fetchedBytes: 0 };
-      }
-      fetched = await ImportImageApiService.fetchImage({ url, remainingBytes, signal });
+    if (!fetched.ok) {
+      return {
+        ok: false,
+        reason: fetched.reason,
+        fetchedBytes: 0,
+        ...(fetched.retryAfterSeconds === undefined ? {} : { retryAfterSeconds: fetched.retryAfterSeconds }),
+      };
     }
-
-    if (!fetched.ok) return { ok: false, reason: fetched.reason, fetchedBytes: 0 };
 
     const fetchedBytes = fetched.bytes.byteLength;
     if (fetchedBytes > remainingBytes) return { ok: false, reason: 'budget_exceeded', fetchedBytes };
@@ -83,22 +81,4 @@ export class ImportImageUploadApplication {
       return { ok: false, reason: 'decode_failed', fetchedBytes };
     }
   }
-}
-
-function sleep(ms: number, signal?: AbortSignal): Promise<boolean> {
-  return new Promise((resolve) => {
-    if (signal?.aborted) {
-      resolve(false);
-      return;
-    }
-    const onAbort = () => {
-      clearTimeout(timer);
-      resolve(false);
-    };
-    const timer = setTimeout(() => {
-      signal?.removeEventListener('abort', onAbort);
-      resolve(true);
-    }, ms);
-    signal?.addEventListener('abort', onAbort, { once: true });
-  });
 }

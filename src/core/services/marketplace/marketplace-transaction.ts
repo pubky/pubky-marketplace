@@ -1317,7 +1317,6 @@ export class MarketplaceTransactionService {
       // A non-JSON failure body falls through to the generic parse error.
       return;
     }
-    const usdtBind = boundPaymentMethod === 'usdt';
     throw Err.client(
       ClientErrorCode.BAD_REQUEST,
       marketplacePaymentMethodReasonMessage(reason ?? serviceCode, boundPaymentMethod),
@@ -1328,7 +1327,7 @@ export class MarketplaceTransactionService {
           statusCode: response.status,
           ...(reason ? { reason } : {}),
           ...(serviceCode ? { serviceCode } : {}),
-          ...(usdtBind ? { paymentMethod: 'usdt' } : {}),
+          ...(boundPaymentMethod === 'paykit' ? { paymentMethod: boundPaymentMethod } : {}),
         },
       },
     );

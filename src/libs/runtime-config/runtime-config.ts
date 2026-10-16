@@ -242,6 +242,7 @@ export const getMarketplaceGrantFlowEnabled = (): boolean => getRuntimeConfig().
 export const getMarketplaceGrantPollMilliseconds = (): number => getRuntimeConfig().marketplaceGrantPollMilliseconds;
 export const getPassportSignInEnabled = (): boolean => getRuntimeConfig().passportSignIn;
 export const getUsdtPaymentsEnabled = (): boolean => getRuntimeConfig().usdtPaymentsEnabled;
+export const getStoreConnectionsEnabled = (): boolean => getRuntimeConfig().storeConnectionsEnabled;
 export const getPrivEncryptionKeysEnabled = (): boolean => getRuntimeConfig().privEncryptionKeys;
 export const getPassportPrivEncryptionKeysEnabled = (): boolean => getRuntimeConfig().passportPrivEncryptionKeys;
 export const getPrivEncryptionKeysHomeservers = (): readonly string[] =>

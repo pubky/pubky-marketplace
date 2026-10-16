@@ -53,4 +53,6 @@ export const USDT_REFUND_REFUSAL_REASONS = [
   'refund_destination_required',
   'invalid_refund_destination',
   'invalid_refund_reference',
+  'refund_rail_unknown',
+  'refund_amount_unrecordable',
 ] as const;
