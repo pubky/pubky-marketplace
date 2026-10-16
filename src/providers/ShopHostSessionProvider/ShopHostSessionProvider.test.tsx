@@ -1,7 +1,8 @@
 import { useEffect } from 'react';
 import { renderToString } from 'react-dom/server';
-import { act, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { requestShopHostAction } from '@/libs/shop-session/bridge';
 import { ShopHostSessionProvider } from './ShopHostSessionProvider';
 
 const mocks = vi.hoisted(() => ({
@@ -139,10 +140,59 @@ it('retries a duplicate host snapshot after the local restore temporarily failed
       <main>Route content</main>
     </ShopHostSessionProvider>,
   );
-  const snapshot = { status: 'ready', generation: '1' };
+  const snapshot = { status: 'ready', generation: '1', pubky: 'alice' };
   act(() => window.dispatchEvent(new MessageEvent('message', { data: snapshot })));
   await screen.findByText('Your Pubky App session could not be restored. Your saved session has been kept.');
   act(() => window.dispatchEvent(new MessageEvent('message', { data: snapshot })));
   await waitFor(() => expect(mocks.apply).toHaveBeenCalledTimes(2));
   expect(screen.queryByText('Try again')).not.toBeInTheDocument();
+});
+
+it.each(['/marketplace', '/marketplace/cart'])(
+  'explains a guest cleanup outage without claiming to have a saved session at %s',
+  async (path) => {
+    mocks.embedded = true;
+    mocks.hosted = true;
+    mocks.path = path;
+    mocks.apply.mockResolvedValueOnce('ready').mockResolvedValueOnce('temporary-error');
+    render(
+      <ShopHostSessionProvider>
+        <main>Route content</main>
+      </ShopHostSessionProvider>,
+    );
+    act(() =>
+      window.dispatchEvent(new MessageEvent('message', { data: { status: 'ready', generation: '1', pubky: 'alice' } })),
+    );
+    await screen.findByText('Route content');
+    act(() =>
+      window.dispatchEvent(
+        new MessageEvent('message', { data: { status: 'signed-out', generation: '2', pubky: null } }),
+      ),
+    );
+    await screen.findByText('Shop is temporarily unavailable. Please try again.');
+    expect(screen.queryByText(/Your saved session has been kept/)).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Try again' })).toBeEnabled();
+    expect(Boolean(screen.queryByText('Route content'))).toBe(path === '/marketplace');
+  },
+);
+
+it('lets a first-time guest retry a failed cleanup without requesting authentication', async () => {
+  mocks.embedded = true;
+  mocks.hosted = true;
+  mocks.apply.mockResolvedValueOnce('temporary-error').mockResolvedValueOnce('signed-out');
+  render(
+    <ShopHostSessionProvider>
+      <main>Public catalog</main>
+    </ShopHostSessionProvider>,
+  );
+  const snapshot = { status: 'signed-out', generation: 'guest', pubky: null };
+  act(() => window.dispatchEvent(new MessageEvent('message', { data: snapshot })));
+  await screen.findByText('Shop is temporarily unavailable. Please try again.');
+  expect(screen.queryByText(/Your saved session has been kept/)).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+  expect(requestShopHostAction).toHaveBeenLastCalledWith('request-retry');
+  act(() => window.dispatchEvent(new MessageEvent('message', { data: snapshot })));
+  await waitFor(() => expect(screen.queryByText('Try again')).not.toBeInTheDocument());
+  expect(screen.getByText('Public catalog')).toBeInTheDocument();
+  expect(requestShopHostAction).not.toHaveBeenCalledWith('request-login');
 });

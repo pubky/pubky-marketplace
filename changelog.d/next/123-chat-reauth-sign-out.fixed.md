@@ -1,0 +1,1 @@
+The "Messages need a newer sign-in approval" notice in Messages and in a conversation now has a Sign out button, so you no longer have to find Sign out in Settings before signing in again to turn messages on.

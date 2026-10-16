@@ -109,6 +109,10 @@ USER nextjs
 # Expose the default Next.js port
 EXPOSE 3000
 
+# Short SHA reported by GET /api/build. Runtime env, so a new SHA does not invalidate the build cache.
+ARG GIT_COMMIT=unknown
+ENV GIT_COMMIT=${GIT_COMMIT}
+
 ENV PORT=3000
 ENV HOSTNAME="0.0.0.0"
 

@@ -65,6 +65,7 @@ describe('host session lifecycle hook', () => {
     act(() => dispatch(ready));
     await waitFor(() => expect(result.current.status).toBe('ready'));
     expect(mocks.apply).toHaveBeenCalledWith(ready);
+    expect(result.current.hasHostIdentity).toBe(true);
   });
   it('does not send or consume a bridge handshake in standalone mode', () => {
     mocks.hosted = false;
@@ -96,6 +97,7 @@ describe('host session lifecycle hook', () => {
     await waitFor(() => expect(result.current.status).toBe('signed-out'));
     await act(async () => finish('ready'));
     expect(result.current.status).toBe('signed-out');
+    expect(result.current.hasHostIdentity).toBe(false);
   });
   it('keeps logout gated until serialized private cleanup finishes', async () => {
     const { result } = renderHook(useShopHostSession);

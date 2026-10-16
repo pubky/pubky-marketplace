@@ -21,6 +21,7 @@ export function useShopHostSession() {
   const [configured, setConfigured] = useState(() => !getEmbeddedFlag() && getFrameAncestors().length === 0);
   const [hosted, setHosted] = useState(false);
   const [status, setStatus] = useState<ShopHostStatus>('connecting');
+  const [hasHostIdentity, setHasHostIdentity] = useState(false);
   const [attempt, setAttempt] = useState(0);
   const latestMessage = useRef(0);
   const lastSnapshotKey = useRef<string | null>(null);
@@ -45,6 +46,8 @@ export function useShopHostSession() {
     const receive = (event: MessageEvent) => {
       const snapshot = parseShopHostSession(event);
       if (!snapshot) return;
+      // A failed guest cleanup is an availability problem, not a failed saved-session restore.
+      setHasHostIdentity(Boolean(snapshot.pubky));
       received = true;
       clearInterval(retry);
       const key = JSON.stringify(snapshot);
@@ -94,5 +97,5 @@ export function useShopHostSession() {
     requestShopHostAction('request-login');
   }, [hosted, showSignInDialog]);
 
-  return { configured, hosted, status, retry: () => setAttempt((value) => value + 1) };
+  return { configured, hosted, status, hasHostIdentity, retry: () => setAttempt((value) => value + 1) };
 }
