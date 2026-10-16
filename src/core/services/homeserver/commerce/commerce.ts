@@ -10,8 +10,11 @@ export class CommerceHomeserverService {
   }
 
   /** A JSON read where a missing record is an ordinary answer, not an error. */
-  static async fetchJsonIfFound(url: string): Promise<{ found: false } | { found: true; json: unknown }> {
-    return await HomeserverService.getJsonIfFound<unknown>({ url });
+  static async fetchJsonIfFound(
+    url: string,
+    logUrl?: string,
+  ): Promise<{ found: false } | { found: true; json: unknown }> {
+    return await HomeserverService.getJsonIfFound<unknown>(logUrl === undefined ? { url } : { url, logUrl });
   }
 
   static async putJson(

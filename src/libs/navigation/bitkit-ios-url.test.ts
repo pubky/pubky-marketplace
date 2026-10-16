@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest';
-import { isIosUserAgent, toBitkitIosSignInUrl } from './bitkit-ios-url';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { isIosUserAgent, toBitkitIosSignInUrl, toSignerDeepLink } from './bitkit-ios-url';
 
 const GRANT_URL = 'pubkyauth://signin_grant?caps=x&relay=r&secret=s&cid=shop.pubky.app&cpk=k';
 
@@ -33,5 +33,28 @@ describe('isIosUserAgent', () => {
 
   it('is false without a navigator', () => {
     expect(isIosUserAgent(undefined)).toBe(false);
+  });
+});
+
+describe('toSignerDeepLink', () => {
+  const IPHONE = { userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X)', maxTouchPoints: 5 };
+  const ANDROID = { userAgent: 'Mozilla/5.0 (Linux; Android 15; Pixel 9) Chrome/140.0 Mobile', maxTouchPoints: 5 };
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('opens the bitkit link for Bitkit on iOS', () => {
+    vi.stubGlobal('navigator', IPHONE);
+    expect(toSignerDeepLink(GRANT_URL, 'bitkit')).toBe(toBitkitIosSignInUrl(GRANT_URL));
+  });
+
+  it.each([
+    ['Pubky Ring on iOS', IPHONE, 'ring'],
+    ['no signer on iOS', IPHONE, null],
+    ['Bitkit on Android', ANDROID, 'bitkit'],
+  ] as const)('keeps the url for %s', (_, nav, signer) => {
+    vi.stubGlobal('navigator', nav);
+    expect(toSignerDeepLink(GRANT_URL, signer)).toBe(GRANT_URL);
   });
 });

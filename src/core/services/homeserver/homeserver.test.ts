@@ -955,7 +955,7 @@ describe('HomeserverService', () => {
         expect(persist).not.toHaveBeenCalled();
       });
 
-      it.each(['request', 'body', 'list', 'logout'] as const)(
+      it.each(['request', 'body', 'getJsonIfFound', 'getJsonIfFoundBody', 'list', 'logout'] as const)(
         'settles a stalled %s instead of holding auth forever',
         async (operation) => {
           vi.useFakeTimers();
@@ -970,14 +970,17 @@ describe('HomeserverService', () => {
             call = HomeserverService.logout({ session: mockState.currentSession });
           } else {
             mockState.sessionStorageGet.mockReturnValue(
-              operation === 'request'
+              operation === 'request' || operation === 'getJsonIfFound'
                 ? stalled
                 : Promise.resolve({
                     ok: true,
                     text: () => stalled,
                   }),
             );
-            call = HomeserverService.request({ method: HttpMethod.GET, url: 'pubky://user/pub/last_read' });
+            call =
+              operation === 'getJsonIfFound' || operation === 'getJsonIfFoundBody'
+                ? HomeserverService.getJsonIfFound({ url: 'pubky://user/pub/last_read' })
+                : HomeserverService.request({ method: HttpMethod.GET, url: 'pubky://user/pub/last_read' });
           }
           let result: unknown;
           void call.catch((error: unknown) => {
@@ -1126,6 +1129,75 @@ describe('HomeserverService', () => {
     });
 
     describe('getJsonIfFound', () => {
+      describe('one IO budget', () => {
+        afterEach(() => {
+          vi.useRealTimers();
+        });
+
+        const settle = (call: Promise<unknown>) => {
+          const outcome: { value?: unknown; error?: unknown } = {};
+          void call.then(
+            (value) => {
+              outcome.value = value;
+            },
+            (error: unknown) => {
+              outcome.error = error;
+            },
+          );
+          return outcome;
+        };
+
+        it('times out a slow load plus a slow body within 15 s in total', async () => {
+          vi.useFakeTimers();
+          mockState.currentSession = createMockSession();
+          mockState.sessionStorageGet.mockReturnValue(
+            new Promise((resolve) =>
+              setTimeout(() => resolve({ ok: true, status: 200, text: () => new Promise<never>(() => {}) }), 10_000),
+            ),
+          );
+
+          const outcome = settle(HomeserverService.getJsonIfFound({ url: 'pubky://user/pub/last_read' }));
+          await vi.advanceTimersByTimeAsync(15_001);
+
+          expect(outcome.error).toMatchObject({ category: ErrorCategory.Timeout, code: 'REQUEST_TIMEOUT' });
+        });
+
+        it('answers unreachable when a tolerated load hangs or fails', async () => {
+          vi.useFakeTimers();
+          mockState.currentSession = createMockSession();
+          mockState.sessionStorageGet
+            .mockReturnValueOnce(new Promise<never>(() => {}))
+            .mockRejectedValueOnce(new Error('Network error'));
+
+          const hung = settle(
+            HomeserverService.getJsonIfFound({ url: 'pubky://user/pub/a.json', tolerateUnreachable: true }),
+          );
+          await vi.advanceTimersByTimeAsync(15_001);
+          expect(hung.value).toEqual({ found: false, unreachable: true });
+
+          await expect(
+            HomeserverService.getJsonIfFound({ url: 'pubky://user/pub/a.json', tolerateUnreachable: true }),
+          ).resolves.toEqual({ found: false, unreachable: true });
+        });
+
+        it('still throws a tolerated read whose body stalls after the load', async () => {
+          vi.useFakeTimers();
+          mockState.currentSession = createMockSession();
+          mockState.sessionStorageGet.mockResolvedValue({
+            ok: true,
+            status: 200,
+            text: () => new Promise<never>(() => {}),
+          });
+
+          const outcome = settle(
+            HomeserverService.getJsonIfFound({ url: 'pubky://user/pub/a.json', tolerateUnreachable: true }),
+          );
+          await vi.advanceTimersByTimeAsync(15_001);
+
+          expect(outcome.error).toMatchObject({ category: ErrorCategory.Timeout, code: 'REQUEST_TIMEOUT' });
+        });
+      });
+
       it('answers not found for a 404 response, logging and reporting nothing', async () => {
         mockState.currentSession = createMockSession();
         mockState.sessionStorageGet.mockResolvedValue(new Response('Not Found', { status: 404 }));
@@ -1176,6 +1248,20 @@ describe('HomeserverService', () => {
           found: true,
           json: null,
         });
+      });
+
+      it('answers found with no JSON for a stored empty or non-JSON body', async () => {
+        mockState.currentSession = createMockSession();
+        mockState.sessionStorageGet
+          .mockResolvedValueOnce(new Response('', { status: 200 }))
+          .mockResolvedValueOnce(new Response('not json', { status: 200 }));
+
+        await expect(
+          HomeserverService.getJsonIfFound({ url: 'pubky://user/pub/pubky.app/profile.json' }),
+        ).resolves.toEqual({ found: true, json: undefined });
+        await expect(
+          HomeserverService.getJsonIfFound({ url: 'pubky://user/pub/pubky.app/profile.json' }),
+        ).resolves.toEqual({ found: true, json: undefined });
       });
 
       it('throws every other failure like a GET', async () => {

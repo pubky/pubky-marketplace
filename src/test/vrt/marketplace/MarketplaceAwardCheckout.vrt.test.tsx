@@ -100,6 +100,7 @@ vi.mock('@/hooks/useMarketplaceCheckout/useMarketplaceCheckout', async () => {
       fulfillmentForSeller: () => 'shipping',
       setFulfillmentChoice: vi.fn(),
       requiresDeliveryAddress: true,
+      storeShare: { stores: new Map(), chosen: new Set(), selected: [], setShare: () => {} },
       hasFulfillmentConflict: false,
       isPickupCapabilityLoadingForSeller: () => false,
       orderCount: 1,
@@ -158,6 +159,7 @@ vi.mock('@/controllers/commerce/commerce', () => ({
       paypalAvailable: false,
     })),
     getIndicativeBtcRate: vi.fn(async () => null),
+    getConnectorStores: vi.fn(async () => new Map()),
   },
 }));
 vi.mock('@/stores/auth/auth.store', () => ({

@@ -20,3 +20,17 @@ export function marketplaceApprovalFailure(message: string, operation: string, s
   }
   return Err.server(ServerErrorCode.SERVICE_UNAVAILABLE, message, common);
 }
+
+/**
+ * No marketplace session is held on this device yet. Surfaces render the
+ * session-connect affordance for it, so it is control flow, not telemetry.
+ */
+export function marketplaceSessionRequired(message: string, operation: string): AppError {
+  return new AppError({
+    category: ErrorCategory.Auth,
+    code: AuthErrorCode.SESSION_EXPIRED,
+    message,
+    service: ErrorService.Marketplace,
+    operation,
+  });
+}

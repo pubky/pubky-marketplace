@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { isIosUserAgent, toBitkitIosSignInUrl } from '@/libs/navigation/bitkit-ios-url';
+import { toSignerDeepLink } from '@/libs/navigation/bitkit-ios-url';
 import { navigateTop } from '@/libs/navigation/navigate-top';
 import { useAuthUrl } from '../useAuthUrl/useAuthUrl';
 import type { UseAuthUrlOptions } from '../useAuthUrl/useAuthUrl.types';
@@ -68,7 +68,8 @@ export function useMobileAuth(options: UseAuthUrlOptions = {}): UseMobileAuthRet
     visibilityHandlerRef.current = onVisibilityChange;
 
     document.addEventListener('visibilitychange', onVisibilityChange, { once: true });
-    navigateTop(options.type === 'grant' && isIosUserAgent() ? toBitkitIosSignInUrl(url) : url);
+    // A grant sign-in is the Bitkit tab's.
+    navigateTop(toSignerDeepLink(url, options.type === 'grant' ? 'bitkit' : null));
   };
 
   return {

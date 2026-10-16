@@ -44,6 +44,20 @@ export type HostImportManifest = {
   readonly rows: readonly HostPlannedImportRow[];
 };
 
+export type HostImportManifestSummary = Omit<HostImportManifest, 'rows'>;
+
+/** Structural SDK `CheckpointImportResult`: what `patchRow` returns. */
+export type HostRowPatchResult = {
+  readonly manifest: HostImportManifestSummary;
+  readonly row: HostPlannedImportRow;
+};
+
+/** The manifest version and some of its rows, read in one transaction. */
+export type HostRowsSnapshot = {
+  readonly manifestVersion: number;
+  readonly rows: readonly HostPlannedImportRow[];
+};
+
 export const MANIFEST_CONFLICT = 'manifest_conflict';
 
 export function isManifestConflict(error: unknown): boolean {
@@ -54,7 +68,7 @@ function cloneManifest(manifest: HostImportManifest): HostImportManifest {
   return structuredClone(manifest);
 }
 
-function summaryOf(manifest: HostImportManifest): Omit<HostImportManifest, 'rows'> {
+function summaryOf(manifest: HostImportManifest): HostImportManifestSummary {
   return {
     schemaVersion: manifest.schemaVersion,
     kind: manifest.kind,
@@ -91,6 +105,20 @@ export type InventoryManifestStore = {
     expectedVersion: number,
     update: (manifest: HostImportManifest) => HostImportManifest,
   ): Promise<HostImportManifest>;
+  /** The manifest version and only the named rows, in the order asked; unknown rows are left out. */
+  loadRows(manifestId: string, rowIdentities: readonly string[]): Promise<HostRowsSnapshot | null>;
+  /**
+   * Structural SDK `ManifestStore.patchRow`. While the stored version equals
+   * `expectedVersion`, replaces one row with `update(row)` and sets the version
+   * to `expectedVersion + 1`, atomically, without writing any other row. Throws
+   * `Error('manifest_conflict')` on a version mismatch.
+   */
+  patchRow(
+    manifestId: string,
+    expectedVersion: number,
+    rowIdentity: string,
+    update: (row: HostPlannedImportRow) => HostPlannedImportRow,
+  ): Promise<HostRowPatchResult>;
   persistPayloads(manifestId: string, payloads: ReadonlyMap<string, string>): Promise<void>;
   getPayloadJson(manifestId: string, rowIdentity: string): Promise<string | null>;
   listProgress(manifestId: string): Promise<readonly CommerceImportRowModelSchema[]>;
@@ -150,7 +178,7 @@ export class DexieManifestStore implements InventoryManifestStore {
       const rightRow = JSON.parse(right.planned_json) as HostPlannedImportRow;
       return leftRow.sourceRow - rightRow.sourceRow;
     });
-    const summary = JSON.parse(header.summary_json) as Omit<HostImportManifest, 'rows'>;
+    const summary = JSON.parse(header.summary_json) as HostImportManifestSummary;
     return {
       ...summary,
       manifestVersion: header.version,
@@ -190,6 +218,71 @@ export class DexieManifestStore implements InventoryManifestStore {
           next.rows.map((row) => this.toRowRecord(manifestId, row, payloads.get(row.rowIdentity) ?? '', now)),
         );
         return cloneManifest(next);
+      },
+    );
+  }
+
+  async loadRows(manifestId: string, rowIdentities: readonly string[]): Promise<HostRowsSnapshot | null> {
+    return await this.database.transaction(
+      'r',
+      this.database.commerce_import_manifests,
+      this.database.commerce_import_rows,
+      async () => {
+        const header = await this.database.commerce_import_manifests.get(manifestId);
+        if (!header || header.seller_id !== this.sellerId) {
+          return null;
+        }
+        const records = await this.database.commerce_import_rows.bulkGet(
+          rowIdentities.map((rowIdentity): [string, string] => [manifestId, rowIdentity]),
+        );
+        return {
+          manifestVersion: header.version,
+          rows: records.flatMap((record) =>
+            record && record.seller_id === this.sellerId
+              ? [JSON.parse(record.planned_json) as HostPlannedImportRow]
+              : [],
+          ),
+        };
+      },
+    );
+  }
+
+  /** One transaction: the header version compare-and-set plus a put of the one row record. */
+  async patchRow(
+    manifestId: string,
+    expectedVersion: number,
+    rowIdentity: string,
+    update: (row: HostPlannedImportRow) => HostPlannedImportRow,
+  ): Promise<HostRowPatchResult> {
+    return await this.database.transaction(
+      'rw',
+      this.database.commerce_import_manifests,
+      this.database.commerce_import_rows,
+      async () => {
+        const header = await this.database.commerce_import_manifests.get(manifestId);
+        if (!header || header.seller_id !== this.sellerId || header.version !== expectedVersion) {
+          throw new Error(MANIFEST_CONFLICT);
+        }
+        const record = await this.database.commerce_import_rows.get([manifestId, rowIdentity]);
+        if (!record || record.seller_id !== this.sellerId) {
+          throw new Error('manifest_store_error');
+        }
+        const prior = JSON.parse(record.planned_json) as HostPlannedImportRow;
+        const row = update(structuredClone(prior));
+        if (row.rowIdentity !== rowIdentity || row.sourceRow !== prior.sourceRow) {
+          throw new Error('manifest_store_error');
+        }
+        const manifestVersion = expectedVersion + 1;
+        await this.database.commerce_import_manifests.update(manifestId, { version: manifestVersion });
+        await this.database.commerce_import_rows.put({
+          ...record,
+          listingId: row.listingId,
+          planned_json: JSON.stringify(row),
+          checkpoint: row.checkpoint,
+          updated_at: Date.now(),
+        });
+        const summary = JSON.parse(header.summary_json) as HostImportManifestSummary;
+        return { manifest: { ...summary, manifestVersion }, row };
       },
     );
   }
@@ -292,7 +385,7 @@ export class DexieManifestStore implements InventoryManifestStore {
       const rightRow = JSON.parse(right.planned_json) as HostPlannedImportRow;
       return leftRow.sourceRow - rightRow.sourceRow;
     });
-    const summary = JSON.parse(header.summary_json) as Omit<HostImportManifest, 'rows'>;
+    const summary = JSON.parse(header.summary_json) as HostImportManifestSummary;
     return {
       ...summary,
       manifestVersion: header.version,
