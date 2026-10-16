@@ -2,7 +2,7 @@ import { PAYMENT_ASSETS, type PaymentAsset } from '@/libs/commerce/payment-optio
 import type { MarketplaceHealth } from '@/libs/commerce/pickup';
 
 /**
- * One "Pay with Paykit" checkout entry carries every asset the seller accepts;
+ * One Paykit checkout entry ("Bitcoin via Bitkit") carries every asset the seller accepts;
  * the buyer picks Bitcoin or USDT in Bitkit. The order therefore binds the
  * method `paykit`, and the rail is known only from the OBSERVED asset
  * (`paymentAsset`, null until the service sees a payment). Orders placed
@@ -99,7 +99,20 @@ export function sharedPaykitAssets(assetSets: readonly (readonly PaymentAsset[])
   return PAYMENT_ASSETS.filter((asset) => assetSets.every((assets) => assets.includes(asset)));
 }
 
-export const PAYKIT_PICKER_LABEL = 'Pay with Paykit';
+/**
+ * The checkout method tile names what the buyer pays with and where, so it
+ * never reads like the submit button: "Bitcoin via Bitkit", "Bitcoin or USDT
+ * via Bitkit".
+ */
+export function paykitPickerLabel(assets: readonly PaymentAsset[]): string {
+  return `${paykitAssetsLabel(assets.length > 0 ? assets : ['BTC'])} via Bitkit`;
+}
+
+/** The checkout submit button says where the buyer goes next, per selected rail. */
+export const CHECKOUT_SUBMIT_LABEL: Record<'paykit' | 'paypal', string> = {
+  paykit: 'Continue to Bitkit',
+  paypal: 'Continue to PayPal',
+};
 
 /**
  * Why checkout says Bitkit is needed. A Bitcoin-only entry keeps the existing

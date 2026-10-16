@@ -2036,13 +2036,13 @@ describe('MarketplaceCheckout Paykit option (Bitcoin or USDT)', () => {
     }));
   });
 
-  it('offers one Pay with Paykit entry beside PayPal, never separate Bitcoin and USDT entries', async () => {
+  it('offers one Paykit entry beside PayPal, never separate Bitcoin and USDT entries', async () => {
     seededCart();
 
     render(<MarketplaceCheckout />);
 
     const paykit = await screen.findByTestId('marketplace-checkout-method-paykit');
-    expect(paykit).toHaveTextContent('Pay with Paykit');
+    expect(paykit).toHaveTextContent('Bitcoin or USDT via Bitkit');
     expect(paykit).toHaveAttribute('aria-pressed', 'true');
     expect(screen.getByTestId('marketplace-checkout-method-paypal')).toBeInTheDocument();
     expect(screen.queryByTestId('marketplace-checkout-method-bitcoin')).not.toBeInTheDocument();
@@ -2050,6 +2050,21 @@ describe('MarketplaceCheckout Paykit option (Bitcoin or USDT)', () => {
     expect(screen.getByTestId('marketplace-checkout-paykit-requirement')).toHaveTextContent(
       'Paykit payments require Bitkit. You choose Bitcoin or USDT there.',
     );
+  });
+
+  it('labels the submit button with the next step for the selected method, distinct from the method tile', async () => {
+    seededCart();
+    const user = userEvent.setup();
+
+    render(<MarketplaceCheckout />);
+
+    const paykit = await screen.findByTestId('marketplace-checkout-method-paykit');
+    const pay = screen.getByTestId('marketplace-checkout-pay');
+    expect(pay).toHaveTextContent(/^Continue to Bitkit$/);
+    expect(paykit.textContent).not.toBe(pay.textContent);
+
+    await user.click(screen.getByTestId('marketplace-checkout-method-paypal'));
+    expect(screen.getByTestId('marketplace-checkout-pay')).toHaveTextContent(/^Continue to PayPal$/);
   });
 
   it('does not let a USDT-only Paykit entry be paid while Paykit is unreachable, and keeps PayPal usable', async () => {
@@ -2307,7 +2322,9 @@ describe('MarketplaceCheckout Paykit option (Bitcoin or USDT)', () => {
 
       const shown = formatCommerceMoney(price).replace(/\s/g, ' ');
       expect((await screen.findAllByText((text) => text.replace(/\s/g, ' ') === shown)).length).toBeGreaterThan(0);
-      expect(await screen.findByTestId('marketplace-checkout-method-paykit')).toHaveTextContent('Pay with Paykit');
+      expect(await screen.findByTestId('marketplace-checkout-method-paykit')).toHaveTextContent(
+        'Bitcoin or USDT via Bitkit',
+      );
       expect(screen.queryByTestId('marketplace-checkout-method-bitcoin')).not.toBeInTheDocument();
       expect(screen.queryByTestId('marketplace-checkout-method-usdt')).not.toBeInTheDocument();
       expect(screen.getByTestId('marketplace-checkout-paykit-requirement')).toHaveTextContent('Bitcoin or USDT');
