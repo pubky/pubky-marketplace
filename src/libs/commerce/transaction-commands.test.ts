@@ -25,6 +25,8 @@ import {
   setDeliveryEmailCommandSchema,
   setDigitalDeliveryCommandSchema,
   setPickupDetailsCommandSchema,
+  shipOrderCommandSchema,
+  updateOrderTrackingCommandSchema,
   updateReviewCommandSchema,
 } from './transaction-commands';
 import { toCamelCaseWire, toSnakeCaseWire } from './wire-casing';
@@ -995,5 +997,63 @@ describe('sealed delivery address fields', () => {
     expect(wire.payload.delivery_address_envelopes).toEqual([
       { seller_pubky: SELLER, key_id: KEY_ID, envelope: ENVELOPE },
     ]);
+  });
+});
+
+function shipmentCommand(kind: 'fulfillment.ship' | 'fulfillment.update_tracking', payload: Record<string, unknown>) {
+  return {
+    version: 1,
+    commandId: '018f47d2-6a27-7c23-a62f-000000000722',
+    aggregateId: `order:${ORDER_ID}`,
+    expectedRevision: 2,
+    issuedAt: '2026-08-20T12:00:00.000Z',
+    kind,
+    payload: { orderId: ORDER_ID, ...payload },
+  };
+}
+
+describe('fulfillment.ship tracking number', () => {
+  it('accepts a ship with no tracking number and a ship with one', () => {
+    const bare = shipOrderCommandSchema.parse(shipmentCommand('fulfillment.ship', { carrier: 'Other' }));
+    expect(bare.payload).toEqual({ orderId: ORDER_ID, carrier: 'Other' });
+    const tracked = shipOrderCommandSchema.parse(
+      shipmentCommand('fulfillment.ship', { carrier: 'UPS', trackingNumber: ' 1Z999 ' }),
+    );
+    expect(tracked.payload.trackingNumber).toBe('1Z999');
+  });
+
+  it('still refuses a blank tracking number when one is sent', () => {
+    expect(
+      shipOrderCommandSchema.safeParse(shipmentCommand('fulfillment.ship', { carrier: 'UPS', trackingNumber: '  ' }))
+        .success,
+    ).toBe(false);
+  });
+});
+
+describe('fulfillment.update_tracking command contract', () => {
+  const valid = { carrier: 'UPS', trackingNumber: '1Z999AA10123456784' };
+
+  it('is a member of the command union and sends snake_case on the wire', () => {
+    const command = marketplaceCommandSchema.parse(shipmentCommand('fulfillment.update_tracking', valid));
+    expect(command.kind).toBe('fulfillment.update_tracking');
+    expect(toSnakeCaseWire(command)).toMatchObject({
+      kind: 'fulfillment.update_tracking',
+      payload: { order_id: ORDER_ID, carrier: 'UPS', tracking_number: '1Z999AA10123456784' },
+    });
+  });
+
+  it('requires both a carrier and a tracking number', () => {
+    expect(
+      updateOrderTrackingCommandSchema.safeParse(shipmentCommand('fulfillment.update_tracking', valid)).success,
+    ).toBe(true);
+    expect(
+      updateOrderTrackingCommandSchema.safeParse(shipmentCommand('fulfillment.update_tracking', { carrier: 'UPS' }))
+        .success,
+    ).toBe(false);
+    expect(
+      updateOrderTrackingCommandSchema.safeParse(
+        shipmentCommand('fulfillment.update_tracking', { ...valid, carrier: ' ' }),
+      ).success,
+    ).toBe(false);
   });
 });

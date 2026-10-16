@@ -132,7 +132,7 @@ describe('useConnectorPushStatus', () => {
       const second = renderHook(() => useConnectorPushStatus());
 
       await waitFor(() => expect(ConnectorsController.fetchPushOverview).toHaveBeenCalledTimes(2));
-      expect(second.result.current.visible).toBe(true);
+      await waitFor(() => expect(second.result.current.visible).toBe(true));
     } finally {
       vi.useRealTimers();
     }

@@ -1,0 +1,1 @@
+Each store connection has a setting, One listing per size or variant: off keeps a product's variants together as one Pubky listing, on makes every size or variant its own listing and links each to its store variant. A store-side cancel or refund of an order now offers a one-click entry into the order, where the seller approves the buyer's cancellation or records the refund.

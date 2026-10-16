@@ -80,6 +80,7 @@ import {
   DexieManifestStore,
   type HostImportCheckpoint,
   type HostPlannedImportRow,
+  type HostRowsSnapshot,
   type InventoryManifestStore,
   isManifestConflict,
 } from '@/services/marketplace/marketplace-import-store';
@@ -473,7 +474,7 @@ export class CommerceInventoryImportApplication {
             ? keptLiveFailureCode(put.keptLive.reason, put.keptLive.skipped)
             : null;
         if (note) {
-          for (const row of group) await this.annotateRowFailure(manifestId, row.rowIdentity, note);
+          await this.annotateGroup(manifestId, group, note);
         }
       }
       if (needsSync) {
@@ -481,7 +482,7 @@ export class CommerceInventoryImportApplication {
       }
     }
 
-    const sync = await this.syncPending(manifestId, pendingSync);
+    const sync = await this.syncPending(manifestId, pendingSync, groups);
     if (sync.status === 'rate-limited' || sync.status === 'error') return sync;
 
     const finalManifest = await this.host.store.load(manifestId);
@@ -1006,52 +1007,76 @@ export class CommerceInventoryImportApplication {
       if (row.checkpoint !== 'conflict') {
         const hop = nextAllowedCheckpoint(row.checkpoint, preferred);
         if (hop !== null) {
-          await this.checkpointRow(manifestId, row.rowIdentity, hop);
+          await this.checkpointRows(manifestId, [row.rowIdentity], hop);
         }
       }
-      await this.annotateRowFailure(manifestId, row.rowIdentity, failureCode);
+      await this.annotateRows(manifestId, [row.rowIdentity], failureCode);
     }
   }
 
-  private async annotateRowFailure(manifestId: string, rowIdentity: string, failureCode: string): Promise<void> {
-    for (;;) {
-      const manifest = await this.host.store.load(manifestId);
-      if (!manifest) return;
-      const row = manifest.rows.find((entry) => entry.rowIdentity === rowIdentity);
-      if (!row || row.failureCode === failureCode) return;
+  /**
+   * Notes `failureCode` on each of the rows. Each note is one row write under
+   * the manifest version; reads cover these rows only, never the whole manifest.
+   */
+  private async annotateRows(manifestId: string, rowIdentities: readonly string[], failureCode: string): Promise<void> {
+    let snapshot = await this.host.store.loadRows(manifestId, rowIdentities);
+    while (snapshot) {
+      const row = snapshot.rows.find((entry) => entry.failureCode !== failureCode);
+      if (!row) return;
       try {
-        await this.host.store.compareAndSwap(manifestId, manifest.manifestVersion, (current) => ({
-          ...current,
-          manifestVersion: current.manifestVersion + 1,
-          rows: current.rows.map((entry) => (entry.rowIdentity === rowIdentity ? { ...entry, failureCode } : entry)),
-        }));
-        return;
+        const patched = await this.host.store.patchRow(
+          manifestId,
+          snapshot.manifestVersion,
+          row.rowIdentity,
+          (current) => ({
+            ...current,
+            failureCode,
+          }),
+        );
+        snapshot = withRow(patched.manifest.manifestVersion, snapshot.rows, patched.row);
       } catch (error) {
-        if (!isManifestConflict(error)) return;
+        snapshot = isManifestConflict(error)
+          ? await this.host.store.loadRows(manifestId, rowIdentities)
+          : { ...snapshot, rows: snapshot.rows.filter((entry) => entry.rowIdentity !== row.rowIdentity) };
       }
     }
   }
 
-  private async checkpointRow(
+  /**
+   * Moves the rows, in order, one allowed hop at a time toward `checkpoint`.
+   * Every hop is one row write guarded by the manifest version; the version a
+   * write returns guards the next one, so the manifest is read once per call,
+   * not once per hop. A write that lost to another tab is retried on a fresh
+   * read of these rows; a write that failed without the manifest moving is not.
+   */
+  private async checkpointRows(
     manifestId: string,
-    rowIdentity: string,
+    rowIdentities: readonly string[],
     checkpoint: HostImportCheckpoint,
   ): Promise<void> {
-    for (;;) {
-      const manifest = await this.host.store.load(manifestId);
-      if (!manifest) return;
-      const row = manifest.rows.find((entry) => entry.rowIdentity === rowIdentity);
-      if (!row || row.checkpoint === checkpoint) return;
+    let snapshot = await this.host.store.loadRows(manifestId, rowIdentities);
+    while (snapshot) {
+      const row = snapshot.rows.find((entry) => entry.checkpoint !== checkpoint);
+      if (!row) return;
       const hop = nextAllowedCheckpoint(row.checkpoint, checkpoint);
       if (hop === null) return;
       const result = await MarketplaceShopClientService.checkpointRow(
         this.host.store,
         manifestId,
-        manifest.manifestVersion,
+        snapshot.manifestVersion,
         row.rowIdentity,
         hop,
       );
-      if (!result.ok) return;
+      if (result.ok) {
+        snapshot = withRow(
+          result.value.manifest.manifestVersion,
+          snapshot.rows,
+          result.value.row as HostPlannedImportRow,
+        );
+        continue;
+      }
+      const fresh = await this.host.store.loadRows(manifestId, rowIdentities);
+      snapshot = fresh && fresh.manifestVersion !== snapshot.manifestVersion ? fresh : null;
     }
   }
 
@@ -1086,7 +1111,7 @@ export class CommerceInventoryImportApplication {
     if (reconcile) {
       const exists = await this.host.listingExists(url);
       if (exists) {
-        await this.checkpointGroup(manifestId, listingId, 'published_unsynced');
+        await this.checkpointGroup(manifestId, group, 'published_unsynced');
         return { status: 'ok' };
       }
     }
@@ -1106,8 +1131,8 @@ export class CommerceInventoryImportApplication {
       const failure = classifyListingPublishFailure(mapped.message);
       const failureCode =
         failure.code === 'invalid_listing' ? `${failure.code}: ${failure.message.slice(0, 200)}` : failure.code;
-      await this.checkpointGroup(manifestId, listingId, 'failed');
-      for (const row of group) await this.annotateRowFailure(manifestId, row.rowIdentity, failureCode);
+      await this.checkpointGroup(manifestId, group, 'failed');
+      await this.annotateGroup(manifestId, group, failureCode);
       return { status: 'invalid', failure };
     }
 
@@ -1124,9 +1149,9 @@ export class CommerceInventoryImportApplication {
       const kept = keepLiveRecord(existing, record, new Date().toISOString(), source);
       if (!kept) {
         const failure = classifyListingPublishFailure(KEPT_LIVE_UNSAFE_MESSAGE);
-        await this.checkpointGroup(manifestId, listingId, 'failed');
+        await this.checkpointGroup(manifestId, group, 'failed');
         const failureCode = `${failure.code}: ${failure.message}`;
-        for (const row of group) await this.annotateRowFailure(manifestId, row.rowIdentity, failureCode);
+        await this.annotateGroup(manifestId, group, failureCode);
         return { status: 'invalid', failure };
       }
       record = kept.record;
@@ -1139,28 +1164,29 @@ export class CommerceInventoryImportApplication {
       }
     }
 
-    await this.checkpointGroup(manifestId, listingId, 'publishing');
+    await this.checkpointGroup(manifestId, group, 'publishing');
     try {
       await this.host.putListing(record);
     } catch (error) {
       if (isAppError(error) && error.code === ClientErrorCode.CONFLICT) {
-        await this.checkpointGroup(manifestId, listingId, 'conflict');
+        await this.checkpointGroup(manifestId, group, 'conflict');
         return { status: 'conflict', listingId, message: IMPORT_CONFLICT_COPY };
       }
       if (isAppError(error) && isNotFound(error)) {
-        await this.checkpointGroup(manifestId, listingId, 'failed');
+        await this.checkpointGroup(manifestId, group, 'failed');
         return { status: 'error', message: error.message };
       }
-      await this.checkpointGroup(manifestId, listingId, 'failed');
+      await this.checkpointGroup(manifestId, group, 'failed');
       return { status: 'error', message: error instanceof Error ? error.message : IMPORT_PARSE_FAIL_COPY };
     }
-    await this.checkpointGroup(manifestId, listingId, 'published_unsynced');
+    await this.checkpointGroup(manifestId, group, 'published_unsynced');
     return { status: 'ok', ...(pausedBy ? { pausedBy } : {}), ...(keptLive ? { keptLive } : {}) };
   }
 
   private async syncPending(
     manifestId: string,
     listings: readonly SyncManyListing[],
+    groups: ReadonlyMap<string, readonly HostPlannedImportRow[]>,
   ): Promise<
     | { status: 'ok'; synced: number; failed: number }
     | { status: 'rate-limited'; message: string }
@@ -1182,7 +1208,7 @@ export class CommerceInventoryImportApplication {
       for (const listing of chunk) {
         const match = classified.find((item) => item.listingId === listing.listing_id);
         if (match?.ok) {
-          await this.checkpointGroup(manifestId, listing.listing_id, 'complete');
+          await this.checkpointGroup(manifestId, groups.get(listing.listing_id) ?? [], 'complete');
           synced += 1;
         } else {
           // Leave published_unsynced so resume retries sync without a second PUT.
@@ -1195,26 +1221,31 @@ export class CommerceInventoryImportApplication {
 
   private async checkpointGroup(
     manifestId: string,
-    listingId: string,
+    group: readonly HostPlannedImportRow[],
     checkpoint: HostImportCheckpoint,
   ): Promise<void> {
-    for (;;) {
-      const manifest = await this.host.store.load(manifestId);
-      if (!manifest) return;
-      const row = manifest.rows.find((entry) => entry.listingId === listingId && entry.checkpoint !== checkpoint);
-      if (!row) return;
-      const hop = nextAllowedCheckpoint(row.checkpoint, checkpoint);
-      if (hop === null) return;
-      const result = await MarketplaceShopClientService.checkpointRow(
-        this.host.store,
-        manifestId,
-        manifest.manifestVersion,
-        row.rowIdentity,
-        hop,
-      );
-      if (!result.ok) return;
-    }
+    await this.checkpointRows(manifestId, identitiesOf(group), checkpoint);
   }
+
+  private async annotateGroup(
+    manifestId: string,
+    group: readonly HostPlannedImportRow[],
+    failureCode: string,
+  ): Promise<void> {
+    await this.annotateRows(manifestId, identitiesOf(group), failureCode);
+  }
+}
+
+function identitiesOf(rows: readonly HostPlannedImportRow[]): string[] {
+  return rows.map((row) => row.rowIdentity);
+}
+
+function withRow(
+  manifestVersion: number,
+  rows: readonly HostPlannedImportRow[],
+  row: HostPlannedImportRow,
+): HostRowsSnapshot {
+  return { manifestVersion, rows: rows.map((entry) => (entry.rowIdentity === row.rowIdentity ? row : entry)) };
 }
 
 const CHECKPOINT_HOPS: Readonly<Record<HostImportCheckpoint, readonly HostImportCheckpoint[]>> = {

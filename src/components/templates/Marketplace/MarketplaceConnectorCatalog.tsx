@@ -1,17 +1,21 @@
 'use client';
 
-import { ArrowLeft } from 'lucide-react';
+import { useState } from 'react';
+import { ArrowLeft, Upload } from 'lucide-react';
 import { MARKETPLACE_ROUTES } from '@/app/routes';
+import { Button } from '@/atoms/Button/Button';
 import { Container } from '@/atoms/Container/Container';
 import { Heading } from '@/atoms/Heading/Heading';
 import { Link } from '@/atoms/Link/Link';
 import { Skeleton } from '@/atoms/Skeleton/Skeleton';
 import { Typography } from '@/atoms/Typography/Typography';
 import { useConnectorCatalog } from '@/hooks/useConnectorCatalog/useConnectorCatalog';
+import { useConnectorCatalogImport } from '@/hooks/useConnectorCatalogImport/useConnectorCatalogImport';
 import { useStoreConnections } from '@/hooks/useStoreConnections/useStoreConnections';
 import { CONNECTOR_PROVIDER_LABELS } from '@/libs/commerce/connectors';
 import { ContentLayout } from '@/organisms/ContentLayout/ContentLayout';
 import { MarketplaceConnectorCatalogPicker } from '@/organisms/Marketplace/MarketplaceConnectorCatalogPicker';
+import { MarketplaceConnectorImport } from '@/organisms/Marketplace/MarketplaceConnectorImport';
 import { MarketplaceSectionNav } from '@/organisms/Marketplace/MarketplaceSectionNav';
 import { MarketplaceSessionRequiredCard } from '@/organisms/Marketplace/MarketplaceSessionRequiredCard';
 
@@ -20,6 +24,17 @@ export function MarketplaceConnectorCatalog({ connectionId }: { connectionId: st
   const connections = useStoreConnections();
   const connection = connections.connections.find((entry) => entry.id === connectionId) ?? null;
   const catalog = useConnectorCatalog(connection);
+  const importFlow = useConnectorCatalogImport(connection);
+  const [view, setView] = useState<'pick' | 'import'>('pick');
+
+  const openImport = async () => {
+    if (await importFlow.start()) setView('import');
+  };
+  const backToProducts = () => {
+    importFlow.reset();
+    setView('pick');
+    void catalog.reload();
+  };
 
   return (
     <ContentLayout
@@ -67,8 +82,42 @@ export function MarketplaceConnectorCatalog({ connectionId }: { connectionId: st
           <div role="alert" className="rounded-md border border-destructive/40 p-4 text-sm">
             {catalog.error}
           </div>
+        ) : view === 'import' ? (
+          <MarketplaceConnectorImport flow={importFlow} connection={connection} onBack={backToProducts} />
         ) : (
-          <MarketplaceConnectorCatalogPicker catalog={catalog} />
+          <>
+            {importFlow.message && (
+              <div
+                role="alert"
+                className="rounded-md border border-destructive/40 p-4 text-sm"
+                data-testid="connector-import-message"
+              >
+                {importFlow.message}
+              </div>
+            )}
+            <MarketplaceConnectorCatalogPicker
+              catalog={catalog}
+              actions={
+                <>
+                  <Button
+                    type="button"
+                    size="sm"
+                    className="rounded-full"
+                    disabled={catalog.dirty || catalog.saved.size === 0 || importFlow.stage === 'loading'}
+                    onClick={() => void openImport()}
+                  >
+                    <Upload className="size-4" aria-hidden="true" />
+                    Publish chosen products
+                  </Button>
+                  {catalog.dirty && (
+                    <span className="text-xs text-muted-foreground" data-testid="connector-import-save-first">
+                      Save your choice to publish it.
+                    </span>
+                  )}
+                </>
+              }
+            />
+          </>
         )}
       </Container>
     </ContentLayout>

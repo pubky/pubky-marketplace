@@ -42,26 +42,26 @@ const pickupOrder = (phase: UsdtOrderPhase, state: 'paid' | 'ready_for_pickup' =
 
 describe('MarketplaceOrderActions — USDT finality gate (shipping)', () => {
   it.each(['received', 'rechecking'] as const)(
-    'disables Add tracking with the payment_not_final copy while %s',
+    'disables Mark shipped with the payment_not_final copy while %s',
     (phase) => {
       renderActions(shippedOrder(phase), false);
 
-      expect(screen.getByRole('button', { name: 'Add tracking' })).toBeDisabled();
+      expect(screen.getByRole('button', { name: 'Mark shipped' })).toBeDisabled();
       expect(screen.getByTestId('usdt-payment-not-final')).toHaveTextContent(NOT_FINAL);
     },
   );
 
-  it('enables Add tracking once the payment is final', () => {
+  it('enables Mark shipped once the payment is final', () => {
     renderActions(shippedOrder('final'), false);
 
-    expect(screen.getByRole('button', { name: 'Add tracking' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Mark shipped' })).toBeEnabled();
     expect(screen.queryByTestId('usdt-payment-not-final')).not.toBeInTheDocument();
   });
 
   it('fails closed when a paid USDT order reports no finality', () => {
     renderActions({ ...shippedOrder('final'), paymentFinality: undefined }, false);
 
-    expect(screen.getByRole('button', { name: 'Add tracking' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Mark shipped' })).toBeDisabled();
     expect(screen.getByTestId('usdt-payment-not-final')).toBeInTheDocument();
   });
 
@@ -74,7 +74,7 @@ describe('MarketplaceOrderActions — USDT finality gate (shipping)', () => {
   it.each(['bitcoin', 'paypal', null] as const)('leaves a paid %s order shippable with no hint', (method) => {
     renderActions(createOrderFixture('paid', { paymentMethod: method }), false);
 
-    expect(screen.getByRole('button', { name: 'Add tracking' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Mark shipped' })).toBeEnabled();
     expect(screen.queryByTestId('usdt-payment-not-final')).not.toBeInTheDocument();
   });
 });
@@ -109,6 +109,6 @@ describe('MarketplaceOrderActions — USDT digital orders', () => {
     renderActions(order, false);
 
     expect(screen.queryByTestId('usdt-payment-not-final')).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Add tracking' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Mark shipped' })).not.toBeInTheDocument();
   });
 });
