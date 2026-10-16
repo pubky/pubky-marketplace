@@ -502,9 +502,11 @@ export function connectorAlertCopy(kind: string): string {
   return ALERT_KIND_COPY[kind] ?? 'Something needs your attention in your store connection.';
 }
 
+export const CONNECTORS_UNAVAILABLE_COPY = 'Store connections are not available on this server yet.';
+
 /** Service refusal codes the connection screens explain; anything else gets generic copy. */
 const CONNECT_REFUSAL_COPY: Readonly<Record<string, string>> = {
-  connectors_disabled: 'Store connections are not switched on for this shop yet.',
+  connectors_disabled: CONNECTORS_UNAVAILABLE_COPY,
   invalid_domain: 'That store address was not accepted. Check it and try again.',
   invalid_provider: 'That store type is not supported.',
   already_connected: 'That store is already connected.',
@@ -537,6 +539,7 @@ export function connectorFailureCopy(reason: string | null | undefined, fallback
  * cannot be reached, so the status decides which one it means.
  */
 export function connectorErrorMessage(error: unknown, fallback: string): string {
+  if (isConnectorsUnavailableError(error)) return CONNECTORS_UNAVAILABLE_COPY;
   const reason = connectorRefusalReason(error);
   if (reason === 'provider_unavailable' && isAppError(error) && error.context?.statusCode === 404) {
     return 'This store type is not available yet. Try again later.';
@@ -567,6 +570,21 @@ export function connectorRefusalReason(error: unknown): string | null {
   if (!isAppError(error)) return null;
   const reason = error.context?.reason;
   return typeof reason === 'string' ? reason : null;
+}
+
+/**
+ * True when the marketplace service has no store connectors to talk to: a
+ * service with `CONNECTORS_ENABLED` off answers `404 connectors_disabled` on
+ * every `/v1/connectors` route, and a service older than the connectors has no
+ * such route at all (a bare 404 or 405 with no refusal code). A 404 that
+ * carries a code, such as `provider_unavailable`, is something else.
+ */
+export function isConnectorsUnavailableError(error: unknown): boolean {
+  if (!isAppError(error)) return false;
+  const reason = connectorRefusalReason(error);
+  if (reason === 'connectors_disabled') return true;
+  const status = error.context?.statusCode;
+  return reason === null && (status === 404 || status === 405);
 }
 
 export type ConnectionReturn =
