@@ -172,12 +172,15 @@ vercel inspect shop.pubky.app --scope synonymdev    # note the dpl_… id
 Deploy with a fresh build cache. Corrupt caches have stalled builds at `Running TypeScript` for 40 minutes:
 
 ```bash
-vercel --prod --yes --force --scope synonymdev 2>&1 | tee <evidence-folder>/deploy.log
+vercel --prod --yes --force --scope synonymdev --env GIT_COMMIT="$(git rev-parse HEAD)" 2>&1 | tee <evidence-folder>/deploy.log
 ```
 
-The Shop serves no version endpoint, so a deployment is identified from the records we already keep, never from the
-served site. `vercel inspect shop.pubky.app --scope synonymdev` prints the `dpl_…` id and the build for the alias; the
-id is what the proof's `EXPECTED_DPL` pins, and the release notes record it next to the tag and exact commit. For the
+`GET /api/build` (under the base path when the Shop is mounted on one) returns `{"commit":"<12-char SHA>"}` and nothing
+else: no version, build time or host. It reads `GIT_COMMIT`, then Vercel's `VERCEL_GIT_COMMIT_SHA`, and reports
+`unknown` for anything that is not a hex SHA, so `--env GIT_COMMIT` keeps CLI deploys exact. Docker images take the
+`GIT_COMMIT` build arg. Use it to confirm which commit a host runs; the Shop has no version endpoint or build meta tag.
+The deployment itself is still identified from the records we keep: `vercel inspect shop.pubky.app --scope synonymdev`
+prints the `dpl_…` id and the build for the alias; the id is what the proof's `EXPECTED_DPL` pins, and the release notes record it next to the tag and exact commit. For the
 marketplace service, the digest of the running image (Railway, or GCP once the service runs there) is the record; see
 [Backend releases](#backend-releases).
 
@@ -185,7 +188,7 @@ After a deploy, `PROOF_ORIGIN=<origin> EXPECTED_DPL=dpl_<new> node scripts/relea
 serves with plain HTTP: the deployment id, that the Locks SDK wasm is named in a chunk and served as `application/wasm`
 byte-identical to the pinned SDK, USDT off in the served config, and the service's `/health`. The wasm sits in a lazy
 chunk, so the script reads webpack's chunk map (Next.js writes it in more than one shape) and crawls every chunk. It has
-no build-meta or version check, because the Shop publishes neither.
+no build-meta or version check; `/api/build` is for people confirming a deploy.
 
 A build takes about six minutes. Allow ten before treating it as stuck, and do not cancel earlier. On
 `Error: Deployment not found`, run `vercel ls pubky-marketplace-production --scope synonymdev` before redeploying.
