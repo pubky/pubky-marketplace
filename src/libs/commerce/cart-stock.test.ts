@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { cartLineStock, cartLineStockLabel } from './cart-stock';
+import { COMMERCE_CART_STOCK_MIN_INTERVAL_MS, COMMERCE_CART_STOCK_READS_PER_MINUTE } from '@/config/commerce';
+import { cartLineStock, cartLineStockLabel, cartStockPollIntervalMs } from './cart-stock';
 
 const sizes = [
   { id: 'size_s', quantity: 2, enabled: true },
@@ -73,6 +74,20 @@ describe('cartLineStock', () => {
 
   it('is null for a line whose size left the record', () => {
     expect(cartLineStock(sizes, 'size_gone', { state: 'available' })).toBeNull();
+  });
+});
+
+describe('cartStockPollIntervalMs', () => {
+  it('waits the minimum interval for a small cart', () => {
+    expect(cartStockPollIntervalMs(1)).toBe(COMMERCE_CART_STOCK_MIN_INTERVAL_MS);
+  });
+
+  it('keeps any cart within the per-minute read budget', () => {
+    for (const listings of [1, 4, 5, 6, 12, 40]) {
+      expect((listings * 60_000) / cartStockPollIntervalMs(listings)).toBeLessThanOrEqual(
+        COMMERCE_CART_STOCK_READS_PER_MINUTE,
+      );
+    }
   });
 });
 

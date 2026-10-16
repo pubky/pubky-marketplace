@@ -1,10 +1,15 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { getCommerceAdapterMode, getCommercePollIntervalMs, isDurableCommerceMode } from '@/config/commerce';
+import { COMMERCE_CART_STOCK_MIN_INTERVAL_MS, getCommerceAdapterMode, isDurableCommerceMode } from '@/config/commerce';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import type { MarketplaceCartItem } from '@/hooks/useMarketplaceCart/useMarketplaceCart';
-import { type CartLineStock, cartLineStock, type CartListingAvailability } from '@/libs/commerce/cart-stock';
+import {
+  type CartLineStock,
+  cartLineStock,
+  type CartListingAvailability,
+  cartStockPollIntervalMs,
+} from '@/libs/commerce/cart-stock';
 import { Logger } from '@/libs/logger/logger';
 
 type CartStockItem = Pick<MarketplaceCartItem, 'id' | 'variantId'> & {
@@ -18,8 +23,10 @@ function listingKey(item: CartStockItem): string {
 /**
  * Which cart lines are sold out, from the service's public availability read
  * for each listing in the cart (no session needed) and the seller's record.
- * The read repeats on the commerce poll interval, on focus and on `refresh`.
- * A failed read keeps the listing's last answer.
+ * The read repeats on an interval that grows with the number of listings
+ * (`cartStockPollIntervalMs`) while the page is visible, on focus once that
+ * minimum has passed, and on `refresh`. A failed read keeps the listing's
+ * last answer.
  */
 export function useMarketplaceCartStock(items: readonly CartStockItem[]) {
   const active = isDurableCommerceMode(getCommerceAdapterMode());
@@ -31,8 +38,10 @@ export function useMarketplaceCartStock(items: readonly CartStockItem[]) {
   useEffect(() => {
     if (!active || keySet === '') return;
     let current = true;
+    let lastLoadAt = 0;
     const listings = keySet.split('|');
     const load = async () => {
+      lastLoadAt = Date.now();
       const answers = await Promise.all(
         listings.map(async (key): Promise<[string, CartListingAvailability | null] | null> => {
           const separator = key.indexOf(':');
@@ -57,8 +66,12 @@ export function useMarketplaceCartStock(items: readonly CartStockItem[]) {
       });
     };
     void load();
-    const timer = window.setInterval(() => void load(), getCommercePollIntervalMs());
-    const onFocus = () => void load();
+    const timer = window.setInterval(() => {
+      if (document.visibilityState !== 'hidden') void load();
+    }, cartStockPollIntervalMs(listings.length));
+    const onFocus = () => {
+      if (Date.now() - lastLoadAt >= COMMERCE_CART_STOCK_MIN_INTERVAL_MS) void load();
+    };
     window.addEventListener('focus', onFocus);
     return () => {
       current = false;

@@ -1,3 +1,4 @@
+import { COMMERCE_CART_STOCK_MIN_INTERVAL_MS, COMMERCE_CART_STOCK_READS_PER_MINUTE } from '@/config/commerce';
 import {
   everyOfferedVariantSoldOut,
   isVariantSoldOut,
@@ -23,6 +24,14 @@ export const SOLD_OUT_COPY = {
   cartBlocked: 'Remove sold-out items to check out.',
   payBlocked: 'Remove sold-out items from your cart to pay.',
 } as const;
+
+/** How often the cart rereads stock for this many listings, one read per listing a pass. */
+export function cartStockPollIntervalMs(listingCount: number): number {
+  return Math.max(
+    COMMERCE_CART_STOCK_MIN_INTERVAL_MS,
+    Math.ceil((listingCount * 60_000) / COMMERCE_CART_STOCK_READS_PER_MINUTE),
+  );
+}
 
 export function cartLineStockLabel(stock: CartLineStock): string {
   return stock === 'listing_sold_out' ? SOLD_OUT_COPY.listingSoldOut : SOLD_OUT_COPY.variantSoldOut;

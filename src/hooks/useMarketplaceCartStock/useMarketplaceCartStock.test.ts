@@ -1,5 +1,6 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { COMMERCE_CART_STOCK_MIN_INTERVAL_MS, COMMERCE_CART_STOCK_READS_PER_MINUTE } from '@/config/commerce';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import { useMarketplaceCartStock } from './useMarketplaceCartStock';
 
@@ -8,7 +9,7 @@ const config = vi.hoisted(() => ({ mode: 'transaction-service' as string }));
 
 vi.mock('@/config/commerce', async () => {
   const actual = await vi.importActual<typeof import('@/config/commerce')>('@/config/commerce');
-  return { ...actual, getCommerceAdapterMode: () => config.mode, getCommercePollIntervalMs: () => 60_000 };
+  return { ...actual, getCommerceAdapterMode: () => config.mode };
 });
 
 vi.mock('@/controllers/commerce/commerce', () => ({
@@ -100,6 +101,74 @@ describe('useMarketplaceCartStock', () => {
     act(() => result.current.refresh());
 
     await waitFor(() => expect(result.current.hasSoldOut).toBe(false));
+  });
+
+  describe('read budget', () => {
+    const reads = () => vi.mocked(CommerceController.getPublicListingAvailability).mock.calls.length;
+    const advance = (ms: number) => act(async () => void (await vi.advanceTimersByTimeAsync(ms)));
+    let visibility: DocumentVisibilityState;
+
+    beforeEach(() => {
+      vi.useFakeTimers();
+      visibility = 'visible';
+      vi.spyOn(document, 'visibilityState', 'get').mockImplementation(() => visibility);
+      vi.mocked(CommerceController.getPublicListingAvailability).mockResolvedValue(availability('available'));
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+      vi.restoreAllMocks();
+    });
+
+    it('rereads a small cart no more often than the minimum interval', async () => {
+      renderHook(() => useMarketplaceCartStock([line('a', 'boots', 'size_s')]));
+      await advance(0);
+      expect(reads()).toBe(1);
+
+      await advance(COMMERCE_CART_STOCK_MIN_INTERVAL_MS - 1);
+      expect(reads()).toBe(1);
+      await advance(1);
+      expect(reads()).toBe(2);
+    });
+
+    it('spreads a large cart so its passes stay inside the per-minute read budget', async () => {
+      const items = Array.from({ length: 12 }, (_, index) => line(`line_${index}`, `listing_${index}`, 'size_s'));
+      renderHook(() => useMarketplaceCartStock(items));
+      await advance(0);
+      expect(reads()).toBe(12);
+
+      await advance(5 * 60_000);
+      const repeatReadsPerMinute = (reads() - 12) / 5;
+      expect(repeatReadsPerMinute).toBeLessThanOrEqual(COMMERCE_CART_STOCK_READS_PER_MINUTE);
+      expect(repeatReadsPerMinute).toBeGreaterThan(0);
+    });
+
+    it('skips passes while the page is hidden', async () => {
+      renderHook(() => useMarketplaceCartStock([line('a', 'boots', 'size_s')]));
+      await advance(0);
+      visibility = 'hidden';
+
+      await advance(COMMERCE_CART_STOCK_MIN_INTERVAL_MS * 4);
+      expect(reads()).toBe(1);
+
+      visibility = 'visible';
+      await advance(COMMERCE_CART_STOCK_MIN_INTERVAL_MS);
+      expect(reads()).toBe(2);
+    });
+
+    it('rereads on focus only once the minimum interval has passed since the last pass', async () => {
+      renderHook(() => useMarketplaceCartStock([line('a', 'boots', 'size_s')]));
+      await advance(0);
+
+      await act(async () => void window.dispatchEvent(new Event('focus')));
+      expect(reads()).toBe(1);
+
+      visibility = 'hidden';
+      await advance(COMMERCE_CART_STOCK_MIN_INTERVAL_MS);
+      visibility = 'visible';
+      await act(async () => void window.dispatchEvent(new Event('focus')));
+      expect(reads()).toBe(2);
+    });
   });
 
   it('reads nothing outside a durable mode', async () => {
