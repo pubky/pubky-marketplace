@@ -7,7 +7,7 @@ import {
   VRT_PAYKIT_SETUP_AUTHORIZATION_URL,
 } from '@/test/fixtures/commerce/paykit-setup';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { userEvent } from 'vitest/browser';
+import { commands, userEvent } from 'vitest/browser';
 import { renderForVRT, VRT_ROOT_TESTID } from '@/test-utils/vrt';
 import { VRT_VIEWPORT_DESKTOP, VRT_VIEWPORT_MOBILE } from '@/test-utils/vrt.viewports';
 import { MarketplacePaymentSettings } from '@/templates/Marketplace/MarketplacePaymentSettings';
@@ -29,7 +29,15 @@ const view = vi.hoisted(() => ({
   ownConfig: {} as Record<string, unknown>,
   accountClaimed: true,
   paykitServerApi: 'fork' as 'fork' | 'upstream',
+  touch: false,
 }));
+
+// A phone's touch screen, for the page and the Paykit frame: `(hover: none) and (pointer: coarse)`.
+async function setTouch(enabled: boolean) {
+  if (view.touch === enabled) return;
+  await commands.emulateVrtTouch(enabled);
+  view.touch = enabled;
+}
 
 vi.mock('@/config/commerce', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/config/commerce')>();
@@ -95,7 +103,8 @@ function setUsdt(wire: { payment_config: object } | null, { unreadable = false }
 }
 
 describe('Marketplace payment settings — visual regression', () => {
-  afterEach(() => {
+  afterEach(async () => {
+    await setTouch(false);
     setUsdt(null);
     view.ownConfig = {};
     view.accountClaimed = true;
@@ -191,18 +200,25 @@ describe('Marketplace payment settings — visual regression', () => {
     await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('payment-settings-paypal-invalid-desktop');
   });
 
-  // Upstream Paykit frames only its QR panel; a not-yet-connected seller gets the initial setup.
+  // Upstream Paykit frames only its QR panel, or on a phone its Continue with Bitkit button.
+  // A not-yet-connected seller gets the initial setup.
   it.each([
     ['desktop', VRT_VIEWPORT_DESKTOP, 'payment-settings-bitkit-dialog-desktop'],
     ['mobile', VRT_VIEWPORT_MOBILE, 'payment-settings-bitkit-dialog-mobile'],
-  ] as const)('renders the Bitkit setup dialog at %s viewport', async (_size, viewport, baseline) => {
+  ] as const)('renders the Bitkit setup dialog at %s viewport', async (size, viewport, baseline) => {
     view.paykitServerApi = 'upstream';
     view.accountClaimed = false;
+    await setTouch(size === 'mobile');
 
     const screen = await renderForVRT(<MarketplacePaymentSettings />, { viewport });
     await screen.getByRole('button', { name: 'Connect Bitkit' }).click();
-    await expect(screen.getByTitle('Connect Bitkit')).toBeVisible();
-    await waitForPaykitSetupPage('Connect Bitkit');
+    const frame = screen.getByTitle('Connect Bitkit');
+    await expect(frame).toBeVisible();
+    await expect(await waitForPaykitSetupPage('Connect Bitkit')).toBe(view.touch ? 'bitkit-button' : 'qr');
+    await expect.element(frame).toHaveStyle({ height: view.touch ? '60px' : '192px' });
+    await expect
+      .element(screen.getByText(view.touch ? 'Tap Continue with Bitkit' : 'Scan the code with Bitkit'))
+      .toBeVisible();
     await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot(baseline);
   });
 
@@ -242,14 +258,17 @@ describe('Marketplace payment settings — visual regression', () => {
   it.each([
     ['desktop', VRT_VIEWPORT_DESKTOP, 'payment-settings-usdt-reconnect-dialog-desktop'],
     ['mobile', VRT_VIEWPORT_MOBILE, 'payment-settings-usdt-reconnect-dialog-mobile'],
-  ] as const)('renders the USDT reconnect dialog at %s viewport', async (_size, viewport, baseline) => {
+  ] as const)('renders the USDT reconnect dialog at %s viewport', async (size, viewport, baseline) => {
     view.paykitServerApi = 'upstream';
     setUsdt(USDT_SELLER_CONFIG_RECONNECT_WIRE);
+    await setTouch(size === 'mobile');
 
     const screen = await renderForVRT(<MarketplacePaymentSettings />, { viewport });
     await screen.getByRole('button', { name: /Add USDT in Bitkit/ }).click();
-    await expect(screen.getByTitle('Add USDT in Bitkit')).toBeVisible();
-    await waitForPaykitSetupPage('Add USDT in Bitkit');
+    const frame = screen.getByTitle('Add USDT in Bitkit');
+    await expect(frame).toBeVisible();
+    await expect(await waitForPaykitSetupPage('Add USDT in Bitkit')).toBe(view.touch ? 'bitkit-button' : 'qr');
+    await expect.element(frame).toHaveStyle({ height: view.touch ? '60px' : '192px' });
     await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot(baseline);
   });
 });
