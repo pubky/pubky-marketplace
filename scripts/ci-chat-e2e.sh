@@ -10,7 +10,10 @@
 #
 #   CHAT_E2E_INBOX_IMAGE   inbox image (default synonymsoft/pubky-inbox:v0.4.1)
 #   CHAT_E2E_STACK_DIR     where pubky-docker is cloned (default .chat-e2e-stack)
-#   CHAT_E2E_STACK_REF     pubky-docker ref to clone (default main)
+#   CHAT_E2E_STACK_REF     pubky-docker commit, tag or branch (default: the pinned commit below)
+#   HOMESERVER_TAG, PUBKY_NEXUS_TAG, HOMEGATE_TAG
+#                          stack image tags (defaults pinned below; bump them together
+#                          with CHAT_E2E_STACK_REF after a local run passes)
 #   CHAT_E2E_KEEP_STACK=1  leave the stack running for inspection
 #   PORT                   Shop port (default 3000; the inbox CORS list and
 #                          the e2e's SHOP_URL follow it)
@@ -18,7 +21,13 @@ set -euo pipefail
 
 INBOX_IMAGE="${CHAT_E2E_INBOX_IMAGE:-synonymsoft/pubky-inbox:v0.4.1}"
 STACK_DIR="${CHAT_E2E_STACK_DIR:-.chat-e2e-stack}"
-STACK_REF="${CHAT_E2E_STACK_REF:-main}"
+# Pinned so the job only changes when we bump it: a moving `main` and `:latest`
+# images can turn it red with no Shop change (that is how the Nexus config drift
+# below got in). Verified together with a local run on 2026-10-16.
+STACK_REF="${CHAT_E2E_STACK_REF:-bb01419b3c1443ac32b85cc42d78bd801e04e63b}"
+HOMESERVER_TAG="${HOMESERVER_TAG:-v0.16.2}"
+PUBKY_NEXUS_TAG="${PUBKY_NEXUS_TAG:-716b64fc561a06dc3394a12eabe8c57ec6d6b074}"
+HOMEGATE_TAG="${HOMEGATE_TAG:-v0.2.0}"
 SHOP_PORT="${PORT:-3000}"
 SHOP_URL="http://localhost:${SHOP_PORT}"
 INBOX_URL="http://localhost:8088"
@@ -43,9 +52,10 @@ cleanup() {
     docker logs --tail 40 nexusd 2>&1 || true
   fi
   if [[ -n "$SERVER_PID" ]]; then
-    # `npm run start` spawns `next start`: kill the whole process group (setsid
-    # above made npm its leader) so no server outlives the script on the port.
-    kill -- -"$SERVER_PID" 2>/dev/null || kill "$SERVER_PID" 2>/dev/null || true
+    # `next start` is run directly (no npm wrapper), so this is the server; its
+    # children, if any, go with it.
+    pkill -P "$SERVER_PID" 2>/dev/null || true
+    kill "$SERVER_PID" 2>/dev/null || true
     wait "$SERVER_PID" 2>/dev/null || true
   fi
   if [[ "${CHAT_E2E_KEEP_STACK:-}" != "1" ]]; then
@@ -78,19 +88,28 @@ wait_http() {
 
 # 1. The testnet stack (images are public; nothing is built).
 if [[ ! -f "$STACK_DIR/docker-compose.yml" ]]; then
-  log "cloning pubky/pubky-docker@$STACK_REF into $STACK_DIR"
-  git clone --quiet --depth 1 --branch "$STACK_REF" https://github.com/pubky/pubky-docker.git "$STACK_DIR"
+  log "fetching pubky/pubky-docker@$STACK_REF into $STACK_DIR"
+  # init + fetch takes a commit as well as a tag or branch, unlike `clone --branch`.
+  git init --quiet "$STACK_DIR"
+  git -C "$STACK_DIR" remote add origin https://github.com/pubky/pubky-docker.git
+  git -C "$STACK_DIR" fetch --quiet --depth 1 origin "$STACK_REF"
+  git -C "$STACK_DIR" checkout --quiet FETCH_HEAD
 fi
 (
   cd "$STACK_DIR"
   if [[ ! -f .env ]]; then
-    sed 's/^COMPOSE_PROFILES=.*/COMPOSE_PROFILES=backend/' .env-sample > .env
+    {
+      sed 's/^COMPOSE_PROFILES=.*/COMPOSE_PROFILES=backend/' .env-sample
+      printf 'HOMESERVER_TAG=%s\nPUBKY_NEXUS_TAG=%s\nHOMEGATE_TAG=%s\n' "$HOMESERVER_TAG" "$PUBKY_NEXUS_TAG" "$HOMEGATE_TAG"
+    } > .env
   fi
   # The current pubky-nexus image reads `testnet` under [watcher]; the stack's
   # testnet config still only has it under [stack.net], and nexusd exits at
   # start ("missing field `testnet`"). Add the two keys until pubky-docker does.
   if ! awk '/^\[watcher\]/{w=1;next} /^\[/{w=0} w&&/^testnet *=/{f=1} END{exit !f}' pubky-nexus-config-testnet.toml; then
-    sed -i 's/^\[watcher\]$/[watcher]\ntestnet = true\ntestnet_host = "homeserver"/' pubky-nexus-config-testnet.toml
+    awk '{print} /^\[watcher\]$/{print "testnet = true"; print "testnet_host = \"homeserver\""}' \
+      pubky-nexus-config-testnet.toml > pubky-nexus-config-testnet.toml.tmp
+    mv pubky-nexus-config-testnet.toml.tmp pubky-nexus-config-testnet.toml
   fi
   docker compose -p "$COMPOSE_PROJECT" --profile backend up -d --no-build --quiet-pull
 )
@@ -130,7 +149,8 @@ wait_http "$INBOX_URL/v1/health/ready" "inbox" 90
 
 # 3. The Shop, production build, configured for the stack. `next start` requires
 #    the whole runtime set (see scripts/ci-launch-e2e.sh); the sandbox commerce
-#    mode needs no transaction service.
+#    mode needs no transaction service. Run through node directly so the PID is
+#    the server's (portable; no setsid).
 test -f .next/BUILD_ID || { log "no .next production build; run npm run build first"; exit 1; }
 PUBKY_RUNTIME_ENV=production \
 PUBKY_RUNTIME_TESTNET=true \
@@ -146,7 +166,7 @@ PUBKY_RUNTIME_COMMERCE_ADAPTER_MODE=sandbox \
 PUBKY_RUNTIME_MARKETPLACE_URL=https://marketplace.invalid \
 PUBKY_RUNTIME_INBOX_URL="$INBOX_URL" \
 PUBKY_RUNTIME_INBOX_AUDIENCE="$INBOX_URL" \
-PORT="$SHOP_PORT" setsid npm run start >"$SERVER_LOG" 2>&1 &
+PORT="$SHOP_PORT" node node_modules/next/dist/bin/next start >"$SERVER_LOG" 2>&1 &
 SERVER_PID=$!
 wait_http "$SHOP_URL/" "Shop" 120
 

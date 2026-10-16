@@ -52,7 +52,7 @@ jobs:
           while IFS= read -r file; do
             [ -n "$file" ] || continue
             case "$file" in
-              src/*|public/*|vendor/*|*.css|package.json|package-lock.json|next.config.ts|next.config.test.ts|postcss.config.mjs|tsconfig*.json|scripts/locks-sdk-smoke.mjs|scripts/paykit-wasm-smoke.mjs|scripts/ci-launch-e2e.sh|scripts/ci-launch-e2e-gate.sh|.github/workflows/build.yml)
+              src/*|public/*|vendor/*|*.css|package.json|package-lock.json|next.config.ts|next.config.test.ts|postcss.config.mjs|tsconfig*.json|scripts/locks-sdk-smoke.mjs|scripts/paykit-wasm-smoke.mjs|scripts/ci-launch-e2e.sh|scripts/ci-launch-e2e-gate.sh|scripts/ci-chat-e2e.sh|.github/workflows/build.yml)
                 run=true
                 break
                 ;;

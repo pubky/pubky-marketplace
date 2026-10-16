@@ -470,8 +470,10 @@ In CI the same proof runs as the `chat-e2e` job of the Build workflow on every S
 backend (homeserver, relays, Nexus, Homegate), adds a `pubky/inbox` container on the stack's network with its
 own database, serves the production build with `next start`, and runs the proof against it. Everything is
 torn down afterwards; on failure the screenshots and the Shop server log are uploaded as the `chat-e2e-debug`
-artifact. The script runs locally too (it needs a `.next` production build and nothing of the local stack on
-the same ports); `CHAT_E2E_INBOX_IMAGE` picks the inbox image and `CHAT_E2E_KEEP_STACK=1` leaves the stack up.
+artifact. The stack is pinned (a pubky-docker commit and image tags in the script; bump them together after a local
+run). The script runs locally too, on Linux or macOS with Docker, bash and curl (it needs a `.next`
+production build and nothing of the local stack on the same ports); `CHAT_E2E_INBOX_IMAGE` picks the inbox
+image and `CHAT_E2E_KEEP_STACK=1` leaves the stack up.
 
 ## Verification
 
