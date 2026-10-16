@@ -240,10 +240,11 @@ export const createCancelableAuthApproval = (
   let canceled = false;
   let freed = false;
   const waiting = new AbortController();
+  const releasable = Boolean(options?.resume && options.releaseWhileHidden);
+  let polling = false;
+  let released = false;
 
-  const cancel = () => {
-    canceled = true;
-    waiting.abort();
+  const freeFlow = () => {
     if (freed) return;
     freed = true;
     try {
@@ -251,6 +252,27 @@ export const createCancelableAuthApproval = (
     } catch {
       // Ignore double-free or already-finalized WASM objects.
     }
+  };
+
+  // WebKit throttles timers in hidden pages while the SDK listener's long-poll still completes, so the flow is
+  // freed on the hide event rather than on the next poll. A poll in flight still borrows the WASM handle; the
+  // loop frees it as soon as that poll returns.
+  const releaseOnHide = () => {
+    if (canceled || polling || !isPageHidden()) return;
+    released = true;
+    freeFlow();
+  };
+  if (releasable && typeof document !== 'undefined') {
+    document.addEventListener('visibilitychange', releaseOnHide);
+  }
+
+  const cancel = () => {
+    canceled = true;
+    if (releasable && typeof document !== 'undefined') {
+      document.removeEventListener('visibilitychange', releaseOnHide);
+    }
+    waiting.abort();
+    freeFlow();
   };
 
   const awaitApproval = (async () => {
@@ -265,16 +287,9 @@ export const createCancelableAuthApproval = (
       // A live SDK flow takes the approval off the relay as soon as it arrives and the next poll exchanges it.
       // iOS suspends a hidden page mid-exchange and WebKit aborts its IndexedDB and fetch work, losing the
       // approval. Without a live flow the relay keeps the approval for the same channel to collect when visible.
-      if (options?.resume && options.releaseWhileHidden && isPageHidden()) {
-        if (!freed) {
-          freed = true;
-          try {
-            flow.free();
-          } catch {
-            // Ignore double-free or already-finalized WASM objects.
-          }
-        }
-        await waitUntilVisible(waiting.signal);
+      if (options?.resume && releasable && (released || isPageHidden())) {
+        freeFlow();
+        if (isPageHidden()) await waitUntilVisible(waiting.signal);
         if (canceled) throw createCanceledError();
         if (Date.now() - startedAt > AUTH_RELAY_RETENTION_MS) {
           throw Err.timeout(TimeoutErrorCode.REQUEST_TIMEOUT, 'Auth flow expired while the page was hidden', {
@@ -283,6 +298,7 @@ export const createCancelableAuthApproval = (
             context: { retentionMs: AUTH_RELAY_RETENTION_MS, statusCode: HttpStatusCode.REQUEST_TIMEOUT },
           });
         }
+        released = false;
         let resumed: Pick<AuthFlow, 'tryPollOnce' | 'free'>;
         try {
           resumed = await options.resume();
@@ -316,7 +332,13 @@ export const createCancelableAuthApproval = (
       }
 
       try {
-        const maybeSession = await flow.tryPollOnce();
+        polling = true;
+        let maybeSession: Session | undefined;
+        try {
+          maybeSession = await flow.tryPollOnce();
+        } finally {
+          polling = false;
+        }
         if (maybeSession) {
           if (canceled) {
             await options?.onCanceledSession?.(maybeSession);
@@ -334,11 +356,8 @@ export const createCancelableAuthApproval = (
           await waitUntilVisible(waiting.signal);
           if (canceled) throw createCanceledError();
           if (Date.now() - startedAt <= AUTH_RELAY_RETENTION_MS) {
-            try {
-              flow.free();
-            } catch {
-              // Ignore double-free or already-finalized WASM objects.
-            }
+            freeFlow();
+            released = false;
             try {
               const resumed = await options.resume();
               if (canceled) {
@@ -351,6 +370,7 @@ export const createCancelableAuthApproval = (
                 throw createCanceledError();
               }
               flow = resumed;
+              freed = false;
               continue;
             } catch (resumeFailure) {
               if (canceled) throw createCanceledError();
@@ -375,6 +395,7 @@ export const createCancelableAuthApproval = (
         });
       }
 
+      if (releasable && isPageHidden()) continue;
       await sleep(pollIntervalMs);
     }
   })();

@@ -57,6 +57,93 @@ describe('createCancelableAuthApproval with releaseWhileHidden', () => {
     expect(resumed.free).toHaveBeenCalledOnce();
   });
 
+  it('frees the flow when the page hides, without waiting for the poll timer', async () => {
+    const live = pendingFlow();
+    const resumed = { tryPollOnce: vi.fn().mockResolvedValue(session), free: vi.fn() };
+    const resume = vi.fn().mockResolvedValue(resumed);
+    const approval = createCancelableAuthApproval(live, { resume, releaseWhileHidden: true });
+
+    await vi.advanceTimersByTimeAsync(250);
+    const pollsBeforeHide = live.tryPollOnce.mock.calls.length;
+
+    // The loop is sleeping between polls; WebKit may hold that timer back for seconds once hidden.
+    hide();
+    expect(live.free).toHaveBeenCalledOnce();
+
+    // Back before the timer fires: the freed handle is never polled again, the same channel is resumed.
+    show();
+    await vi.advanceTimersByTimeAsync(100);
+
+    await expect(approval.awaitApproval).resolves.toBe(session);
+    expect(live.tryPollOnce).toHaveBeenCalledTimes(pollsBeforeHide);
+    expect(resume).toHaveBeenCalledOnce();
+
+    // The settled approval no longer reacts to visibility changes.
+    hide();
+    show();
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(resume).toHaveBeenCalledOnce();
+    expect(resumed.free).toHaveBeenCalledOnce();
+  });
+
+  it('frees the flow as soon as a poll in flight at hide time returns', async () => {
+    let finishPoll!: (value: undefined) => void;
+    const live = {
+      tryPollOnce: vi.fn(
+        () =>
+          new Promise<undefined>((resolve) => {
+            finishPoll = resolve;
+          }),
+      ),
+      free: vi.fn(),
+    };
+    const resume = vi.fn();
+    const approval = createCancelableAuthApproval(live, { resume, releaseWhileHidden: true });
+    const rejection = expect(approval.awaitApproval).rejects.toMatchObject({ name: 'AuthFlowCanceled' });
+
+    await vi.advanceTimersByTimeAsync(0);
+    expect(live.tryPollOnce).toHaveBeenCalledOnce();
+
+    // The poll still borrows the WASM handle, so it is not freed under it.
+    hide();
+    expect(live.free).not.toHaveBeenCalled();
+
+    // No poll-interval sleep between the poll returning and the release.
+    finishPoll(undefined);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(live.free).toHaveBeenCalledOnce();
+
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(live.tryPollOnce).toHaveBeenCalledOnce();
+    approval.cancel();
+    await rejection;
+    expect(resume).not.toHaveBeenCalled();
+    expect(live.free).toHaveBeenCalledOnce();
+  });
+
+  it('frees a dead flow once when the page hides while waiting to resume after a transport error', async () => {
+    const live = {
+      tryPollOnce: vi.fn().mockRejectedValue(Object.assign(new Error('HTTP transport error'), { name: 'RequestError' })),
+      free: vi.fn(),
+    };
+    const resumed = { tryPollOnce: vi.fn().mockResolvedValue(session), free: vi.fn() };
+    const resume = vi.fn().mockResolvedValue(resumed);
+    const approval = createCancelableAuthApproval(live, { resume, releaseWhileHidden: true });
+
+    await vi.advanceTimersByTimeAsync(0);
+    expect(live.tryPollOnce).toHaveBeenCalledOnce();
+    hide();
+    expect(live.free).toHaveBeenCalledOnce();
+
+    show();
+    await vi.advanceTimersByTimeAsync(1_000);
+
+    await expect(approval.awaitApproval).resolves.toBe(session);
+    expect(live.free).toHaveBeenCalledOnce();
+    expect(resume).toHaveBeenCalledOnce();
+    expect(resumed.free).toHaveBeenCalledOnce();
+  });
+
   it('settles at once when cancelled while parked, without resuming', async () => {
     visibility.mockReturnValue('hidden');
     const live = pendingFlow();
