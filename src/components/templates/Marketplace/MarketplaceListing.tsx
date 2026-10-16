@@ -569,7 +569,7 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
                       {CHECKOUT_HOLD_COPY.holdOwnerCheckPrompt}
                     </Button>
                   )}
-                  {commerceListingTakesOffers(record) && !viewerOfferHold && (
+                  {commerceListingTakesOffers(record) && !viewerOfferHold && !listingSoldOut && (
                     <MarketplaceOfferDialog
                       aggregateId={aggregateId}
                       expectedRevision={negotiation.projection?.serverRevision ?? null}

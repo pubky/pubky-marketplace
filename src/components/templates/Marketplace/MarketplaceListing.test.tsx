@@ -538,7 +538,7 @@ describe('MarketplaceListing', () => {
       }),
     );
     renderListing();
-    expect(screen.queryByRole('button', { name: 'Make offer' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Make offer/ })).not.toBeInTheDocument();
   });
 
   it('shows no Make offer when the listing does not accept offers', () => {
@@ -553,7 +553,7 @@ describe('MarketplaceListing', () => {
       }),
     );
     renderListing();
-    expect(screen.queryByRole('button', { name: 'Make offer' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Make offer/ })).not.toBeInTheDocument();
   });
 
   it('keeps Make offer on a listing that ships as well as offering pickup', () => {
@@ -909,12 +909,13 @@ describe('MarketplaceListing', () => {
     });
   });
 
-  it('shows Sold out instead of Buy when the service reads the listing sold', () => {
+  it('shows Sold out instead of Buy and Make offer when the service reads the listing sold', () => {
     view.projection = createListingProjectionFixture({ state: 'sold', availableQuantity: 0 });
     renderListing();
 
     expect(screen.getByRole('button', { name: 'Sold out' })).toBeDisabled();
     expect(screen.queryByRole('button', { name: 'Buy' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Make offer/ })).not.toBeInTheDocument();
   });
 
   it('shows the holding sentence and disables checkout when the listing is reserved', () => {
@@ -929,7 +930,7 @@ describe('MarketplaceListing', () => {
     ).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Sold out' })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: CHECKOUT_HOLD_COPY.heldWhileAnotherPays })).toBeDisabled();
-    expect(screen.queryByRole('button', { name: 'Make offer' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Make offer/ })).not.toBeInTheDocument();
   });
 
   describe('another buyer holds the item and the viewer has no marketplace session (#50)', () => {
@@ -947,7 +948,7 @@ describe('MarketplaceListing', () => {
       expect(await screen.findByText(CHECKOUT_HOLD_COPY.listingReserved)).toBeInTheDocument();
       expect(screen.getByRole('button', { name: 'Buy' })).toBeDisabled();
       expect(screen.getByRole('button', { name: CHECKOUT_HOLD_COPY.heldWhileAnotherPays })).toBeDisabled();
-      expect(screen.queryByRole('button', { name: 'Make offer' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /Make offer/ })).not.toBeInTheDocument();
       expect(publicAvailabilityRead).toHaveBeenCalledWith(view.listing?.seller_id, view.listing?.listing_id);
     });
 
