@@ -122,9 +122,10 @@ import {
 import type { CommerceJsonValue, CommerceMoney } from '@/libs/commerce/transaction-contracts';
 import { assertPublishableListingStock } from '@/libs/commerce/unlimited-stock';
 import { variantRefusalMessage } from '@/libs/commerce/variant-refusals';
+import { AppError } from '@/libs/error/error';
 import { AuthErrorCode, ClientErrorCode, ServerErrorCode, ValidationErrorCode } from '@/libs/error/error.codes';
 import { Err } from '@/libs/error/error.factories';
-import { ErrorService } from '@/libs/error/error.types';
+import { ErrorCategory, ErrorService } from '@/libs/error/error.types';
 import { hasHttpStatus, isAppError, isNotFound } from '@/libs/error/error.utils';
 import { HttpMethod, HttpStatusCode } from '@/libs/http/http.types';
 import { Logger } from '@/libs/logger/logger';
@@ -444,9 +445,25 @@ export class CommerceApplication {
     return await LocalCommerceService.getAllShops();
   }
 
+  /**
+   * A seller can list before publishing a storefront, so a missing `shop.json`
+   * is an ordinary answer: it rejects with a 404 that callers read as "no shop"
+   * (`hasHttpStatus`), built without the reporting factory.
+   */
   static async fetchShop(ownerPubky: string): Promise<CommerceShopRecord> {
     const url = CommerceRecordNormalizer.shopUri(ownerPubky);
-    return CommerceRecordNormalizer.shop(await CommerceHomeserverService.fetchJson(url));
+    const published = await CommerceHomeserverService.fetchJsonIfFound(url);
+    if (!published.found) {
+      throw new AppError({
+        category: ErrorCategory.Client,
+        code: ClientErrorCode.NOT_FOUND,
+        message: 'This seller has not published a shop yet.',
+        service: ErrorService.Homeserver,
+        operation: 'fetchShop',
+        context: { statusCode: HttpStatusCode.NOT_FOUND },
+      });
+    }
+    return CommerceRecordNormalizer.shop(published.json);
   }
 
   /** Refresh published settings without discarding an unpublished local edit. */

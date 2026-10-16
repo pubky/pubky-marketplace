@@ -74,7 +74,7 @@ The `Err.*` factories already log once and capture once — adding extra `Sentry
 Expected user-flow states are not failures and must not reach the factory:
 
 - A homeserver file that may not exist yet (profile, settings, last read, legacy watchlist, an own review, a
-  listing before its first publish or while its read-back lags) is read with `HomeserverService.getJsonIfFound` / `CommerceHomeserverService.fetchJsonIfFound`, which answer
+  listing before its first publish or while its read-back lags, a seller's `shop.json` before they publish a storefront) is read with `HomeserverService.getJsonIfFound` / `CommerceHomeserverService.fetchJsonIfFound`, which answer
   `{ found: false }` before any error is created. Do not read it with `request` and catch the 404.
 - A state the UI answers with a prompt (no marketplace session yet, approval in progress) is built with `new AppError(...)`, as in `marketplace-approval-failure.ts`. Server answers
   (401, 5xx) for the same flows stay on `Err.*`.
