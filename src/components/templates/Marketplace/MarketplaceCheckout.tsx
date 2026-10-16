@@ -46,7 +46,7 @@ import { usePaykitOutage } from '@/hooks/usePaykitOutage/usePaykitOutage';
 import { useUsdtPaymentsCapability } from '@/hooks/useUsdtPaymentsCapability/useUsdtPaymentsCapability';
 import { buyerCheckoutProgressCopy } from '@/libs/commerce/bitcoin-buyer-status';
 import { bitcoinPaymentCodeCheckoutNote } from '@/libs/commerce/bitcoin-payment-code';
-import { cartLineStockLabel,SOLD_OUT_COPY } from '@/libs/commerce/cart-stock';
+import { cartLineStockLabel, SOLD_OUT_COPY } from '@/libs/commerce/cart-stock';
 import {
   getMarketplaceCheckoutRoute,
   intersectPaymentMethods,

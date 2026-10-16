@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { getCommerceAdapterMode, getCommercePollIntervalMs, isDurableCommerceMode } from '@/config/commerce';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import type { MarketplaceCartItem } from '@/hooks/useMarketplaceCart/useMarketplaceCart';
-import { type CartLineStock, cartLineStock,type CartListingAvailability } from '@/libs/commerce/cart-stock';
+import { type CartLineStock, cartLineStock, type CartListingAvailability } from '@/libs/commerce/cart-stock';
 import { Logger } from '@/libs/logger/logger';
 
 type CartStockItem = Pick<MarketplaceCartItem, 'id' | 'variantId'> & {
