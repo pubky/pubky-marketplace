@@ -281,10 +281,13 @@ export class LocksGatewayService {
    * sent regardless of `paykitSetupCreatorParam`. The configured
    * `paykitSetupUrl` is the full setup URL (it already ends in `/setup`), so
    * the route is built from its origin as exactly `/setup/reconnect`.
+   * Paykit parses `creator` only in its canonical `pubky<z32>` form and
+   * answers 400 invalid_request to the bare z32 id the Shop holds, so the
+   * builder sends the prefixed form whichever form it is given.
    */
   static buildPaykitReconnectUrl(returnTo: string, state: string, creator: string): string {
     const url = new URL('/setup/reconnect', new URL(getPaykitSetupUrl()).origin);
-    url.searchParams.set('creator', creator);
+    url.searchParams.set('creator', withPubkyPrefix(creator));
     url.searchParams.set('return_to', returnTo);
     url.searchParams.set('state', state);
     return url.toString();

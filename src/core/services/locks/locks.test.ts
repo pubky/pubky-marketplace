@@ -363,7 +363,7 @@ describe('LocksGatewayService', () => {
     it('builds the reconnect URL beside the setup URL with creator, return_to and state', () => {
       const built = LocksGatewayService.buildPaykitReconnectUrl(returnTo, 'opaque-state', creator);
       expect(built).toBe(
-        `https://paykit.example.com/setup/reconnect?creator=${creator}&return_to=https%3A%2F%2Fapp.example.com%2Fmarketplace%2Fsettings&state=opaque-state`,
+        `https://paykit.example.com/setup/reconnect?creator=pubky${creator}&return_to=https%3A%2F%2Fapp.example.com%2Fmarketplace%2Fsettings&state=opaque-state`,
       );
       expect([...new URL(built).searchParams.keys()]).toEqual(['creator', 'return_to', 'state']);
     });
@@ -376,9 +376,19 @@ describe('LocksGatewayService', () => {
           new URL(LocksGatewayService.buildPaykitReconnectUrl(returnTo, 'opaque-state', creator)).searchParams.get(
             'creator',
           ),
-        ).toBe(creator);
+        ).toBe(`pubky${creator}`);
       } finally {
         paykitSetupConfig.creatorParam = true;
+      }
+    });
+
+    // Upstream `parse_setup_query` -> `parse_creator` accepts only the
+    // canonical `pubky<z32>` form; the bare z32 id answers 400 invalid_request.
+    it('sends the seller in the pubky-prefixed form Paykit parses, from either input form', () => {
+      const z32 = '3f4khszd4gzg38bsazw88dmcfws36js9ct19s9dikb3a9ht3r84y';
+      for (const input of [z32, `pubky${z32}`]) {
+        const built = new URL(LocksGatewayService.buildPaykitReconnectUrl(returnTo, 'opaque-state', input));
+        expect(built.searchParams.get('creator')).toBe(`pubky${z32}`);
       }
     });
 
