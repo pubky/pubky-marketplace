@@ -11,6 +11,7 @@ import { CommerceController } from '@/controllers/commerce/commerce';
 import { MARKETPLACE_FAILURE_MESSAGES } from '@/libs/commerce/failure-messages';
 import { buildMarketplaceListingAggregateId, isListingDeletedResponse } from '@/libs/commerce/transaction-commands';
 import { isMarketplaceSessionRequiredError } from '@/libs/error/error.utils';
+import { Logger } from '@/libs/logger/logger';
 import type { MarketplaceListingProjection } from '@/services/marketplace/marketplace';
 import { useCommerceStore } from '@/stores/commerce/commerce.store';
 
@@ -192,11 +193,12 @@ async function cacheProjection(projection: MarketplaceListingProjection): Promis
 }
 
 /**
- * One `listing.sync` attempt followed by one projection re-read. Sync
- * failures are deliberately swallowed here: the caller's honest "could not
- * be prepared" copy is the fallback, and the next poll cycle retries. A sync
- * that reports the seller deleted the listing is not a failure: `removed`
- * lets the caller say so.
+ * One `listing.sync` attempt followed by one projection re-read. A failed
+ * sync is logged with its code and falls back to the caller's "not available
+ * for checkout right now" copy; the next poll cycle retries. A refusal is not
+ * proof the listing is gone: the service reads one homeserver, so a seller
+ * hosted elsewhere is refused NOT_FOUND while their record is live. Only a
+ * sync that reports the seller deleted the listing sets `removed`.
  */
 async function syncThenReread(
   sellerPubky: string,
@@ -204,7 +206,10 @@ async function syncThenReread(
 ): Promise<{ projection: MarketplaceListingProjection | null; removed: boolean }> {
   try {
     const response = await CommerceController.syncListingRegistration(sellerPubky, listingId);
-    if (!response.ok) return { projection: null, removed: false };
+    if (!response.ok) {
+      Logger.warn('Listing sync was refused', { code: response.error.code, listingId });
+      return { projection: null, removed: false };
+    }
     if (isListingDeletedResponse(response, buildMarketplaceListingAggregateId(sellerPubky, listingId))) {
       return { projection: null, removed: true };
     }
@@ -212,7 +217,8 @@ async function syncThenReread(
       projection: await CommerceController.getMarketplaceListingProjection(sellerPubky, listingId),
       removed: false,
     };
-  } catch {
+  } catch (error) {
+    Logger.warn('Listing sync failed', { error, listingId });
     return { projection: null, removed: false };
   }
 }

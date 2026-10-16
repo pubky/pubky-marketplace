@@ -684,7 +684,7 @@ export function useMarketplaceCheckout(
             ? 'A listing changed while you were checking out. Review your cart and try again.'
             : sawUnsyncedLocksLine
               ? 'A Locks item in your cart could not be confirmed with the marketplace. Nothing was reserved. Try again in a moment.'
-              : 'A listing in your cart could not be prepared for checkout. It may have been removed by the seller. Nothing was reserved.',
+              : "A listing in your cart isn't available for checkout right now. Nothing was reserved.",
       });
       return { ok: false };
     }

@@ -1,0 +1,1 @@
+A listing the marketplace service cannot prepare for checkout now reads "This listing isn't available for checkout right now." instead of suggesting the seller removed it. "This listing was removed." stays reserved for a listing the seller deleted, and the service's refusal code is logged in the browser console.

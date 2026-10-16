@@ -1,6 +1,7 @@
 import { renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { CommerceController } from '@/controllers/commerce/commerce';
+import { Logger } from '@/libs/logger/logger';
 import { useMarketplaceProjection } from './useMarketplaceProjection';
 
 const config = vi.hoisted(() => ({
@@ -120,7 +121,8 @@ describe('useMarketplaceProjection', () => {
     expect(result.current.error).toBeNull();
   });
 
-  it('shows the honest copy when the sync also fails — the seller is not required for it', async () => {
+  it('says the listing is not available right now, and logs the refusal code, when the sync is refused', async () => {
+    const warn = vi.spyOn(Logger, 'warn');
     config.mode = 'transaction-service';
     vi.mocked(CommerceController.getMarketplaceListingProjection).mockResolvedValue(null);
     vi.mocked(CommerceController.syncListingRegistration).mockResolvedValue({
@@ -133,10 +135,24 @@ describe('useMarketplaceProjection', () => {
     await waitFor(() => expect(result.current.isLoading).toBe(false));
     expect(CommerceController.syncListingRegistration).toHaveBeenCalledTimes(1);
     expect(result.current.projection).toBeNull();
-    expect(result.current.error).toBe(
-      'This listing could not be prepared for checkout. It may have been removed by the seller.',
-    );
+    expect(result.current.error).toBe("This listing isn't available for checkout right now.");
     expect(result.current.listingRemoved).toBe(false);
+    expect(warn).toHaveBeenCalledWith('Listing sync was refused', { code: 'NOT_FOUND', listingId: 'item' });
+  });
+
+  it('logs a sync that throws and keeps the not-available copy', async () => {
+    const warn = vi.spyOn(Logger, 'warn');
+    const failure = new Error('network down');
+    config.mode = 'transaction-service';
+    vi.mocked(CommerceController.getMarketplaceListingProjection).mockResolvedValue(null);
+    vi.mocked(CommerceController.syncListingRegistration).mockRejectedValue(failure);
+
+    const { result } = renderHook(() => useMarketplaceProjection('y'.repeat(52), 'item'));
+
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(result.current.error).toBe("This listing isn't available for checkout right now.");
+    expect(result.current.listingRemoved).toBe(false);
+    expect(warn).toHaveBeenCalledWith('Listing sync failed', { error: failure, listingId: 'item' });
   });
 
   it('says the listing was removed when the sync reports the seller deleted it', async () => {
@@ -171,9 +187,7 @@ describe('useMarketplaceProjection', () => {
 
     await waitFor(() => expect(result.current.isLoading).toBe(false));
     expect(CommerceController.syncListingRegistration).not.toHaveBeenCalled();
-    expect(result.current.error).toBe(
-      'This listing could not be prepared for checkout. It may have been removed by the seller.',
-    );
+    expect(result.current.error).toBe("This listing isn't available for checkout right now.");
   });
 
   it('surfaces the durable session requirement instead of a generic failure', async () => {

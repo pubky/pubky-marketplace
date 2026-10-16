@@ -34,7 +34,7 @@ export const MARKETPLACE_FAILURE_MESSAGES = {
   checkout: 'Checkout could not be completed.',
   claim: 'The claim could not be submitted. Check your connection and try again.',
   claimAddress: 'Save a delivery address first — the claim sends it with the checkout.',
-  claimListingUnavailable: 'This listing could not be prepared for checkout. It may have been removed by the seller.',
+  claimListingUnavailable: "This listing isn't available for checkout right now.",
   listingRemoved: 'This listing was removed.',
   claimRefusal: 'The claim could not be completed.',
   drop: 'The transaction service could not be reached.',
