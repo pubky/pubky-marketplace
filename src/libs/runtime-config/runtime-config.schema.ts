@@ -467,7 +467,6 @@ export const APP_RUNTIME_DEFAULTS = {
   marketplaceGrantPollMilliseconds: 1_000,
   passportSignIn: true,
   usdtPaymentsEnabled: false,
-  storeConnectionsEnabled: false,
   frameAncestors: [] as string[],
   embedded: false,
   privEncryptionKeys: false,
@@ -603,14 +602,6 @@ export const runtimeConfigValueSchema = networkConfigValueSchema.extend({
    * without a service deploy. It never gates the display of an existing USDT order.
    */
   usdtPaymentsEnabled: z.boolean().default(APP_RUNTIME_DEFAULTS.usdtPaymentsEnabled),
-  /**
-   * Whether the Shop offers Store connections (WooCommerce and Shopify). Off by
-   * default so the Shop can deploy before the marketplace service's connectors
-   * are deployed and enabled. Off hides the Settings entry, answers the
-   * Store connections routes like an unknown page, and keeps the order push
-   * status card and connector alerts hidden; no connector request is sent.
-   */
-  storeConnectionsEnabled: z.boolean().default(APP_RUNTIME_DEFAULTS.storeConnectionsEnabled),
   /**
    * Pubky Passport origin override. Absent means the Passport deployment that
    * signs users up on this deploy's homeserver (see `getPassportOrigin`).
@@ -756,7 +747,6 @@ export const runtimeEnvInputSchema = z
     marketplaceGrantPollMilliseconds: optionalPositiveIntFromString,
     passportSignIn: optionalBooleanFromString,
     usdtPaymentsEnabled: optionalBooleanFromString,
-    storeConnectionsEnabled: optionalBooleanFromString,
     passportUrl: optionalPassportUrlFromString,
     frameAncestors: optionalFrameAncestorsFromString(false),
     embedded: optionalBooleanFromString,
@@ -863,7 +853,6 @@ export const runtimeEnvInputSchemaWithDefaults = z
     marketplaceGrantPollMilliseconds: optionalPositiveIntFromString,
     passportSignIn: optionalBooleanFromString,
     usdtPaymentsEnabled: optionalBooleanFromString,
-    storeConnectionsEnabled: optionalBooleanFromString,
     passportUrl: optionalDevPassportUrlFromString,
     frameAncestors: optionalFrameAncestorsFromString(true),
     embedded: optionalBooleanFromString,
@@ -961,7 +950,6 @@ export const PUBKY_RUNTIME_ENV_NAMES: Record<keyof RuntimeConfig, string> = {
   marketplaceGrantPollMilliseconds: 'PUBKY_RUNTIME_MARKETPLACE_GRANT_POLL_MILLISECONDS',
   passportSignIn: 'PUBKY_RUNTIME_PASSPORT_SIGN_IN',
   usdtPaymentsEnabled: 'PUBKY_RUNTIME_USDT_PAYMENTS_ENABLED',
-  storeConnectionsEnabled: 'PUBKY_RUNTIME_STORE_CONNECTIONS_ENABLED',
   passportUrl: 'PUBKY_RUNTIME_PASSPORT_URL',
   frameAncestors: 'PUBKY_RUNTIME_FRAME_ANCESTORS',
   embedded: 'PUBKY_RUNTIME_EMBEDDED',
