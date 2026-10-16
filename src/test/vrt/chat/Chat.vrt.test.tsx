@@ -50,6 +50,10 @@ vi.mock('@/hooks/useChatIdentity/useChatIdentity', () => ({
   useChatIdentity: () => ({ identityState: scene.identityState, inboxStatus: 'ready', retry: async () => {} }),
 }));
 
+vi.mock('@/hooks/useSignOut/useSignOut', () => ({
+  useSignOut: () => ({ handleSignOut: async () => {}, isLoading: false }),
+}));
+
 // Peer names come from the shop (seller) or the profile (buyer); a stranger has neither.
 vi.mock('@/hooks/useUserDetails/useUserDetails', () => ({
   useUserDetails: (pubky: string) => ({
@@ -172,6 +176,7 @@ describe('Chat inbox — visual regression', () => {
 
     const screen = await renderForVRT(<Chat />, { viewport: VRT_VIEWPORT_DESKTOP, disableHover: true });
     await expect.element(screen.getByTestId('chat-identity-notice')).toBeInTheDocument();
+    await expect.element(screen.getByRole('button', { name: 'Sign out' })).toBeInTheDocument();
     await expect.element(screen.getByTestId('chat-inbox-empty')).not.toBeInTheDocument();
     await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('chat-inbox-needs-reauth-desktop');
   });

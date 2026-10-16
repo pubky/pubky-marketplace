@@ -68,6 +68,10 @@ vi.mock('@/hooks/useChatIdentity/useChatIdentity', () => ({
   }),
 }));
 
+vi.mock('@/hooks/useSignOut/useSignOut', () => ({
+  useSignOut: () => ({ handleSignOut: async () => {}, isLoading: false }),
+}));
+
 // Dismissal lives in localStorage per account; the scene decides instead.
 vi.mock('@/hooks/useChatPrivacyNote/useChatPrivacyNote', () => ({
   useChatPrivacyNote: () => ({ showNote: scene.showNote, dismissNote: () => {} }),
@@ -308,6 +312,7 @@ describe('Chat conversation — visual regression', () => {
       disableHover: true,
     });
     await expect.element(screen.getByTestId('chat-identity-notice')).toBeInTheDocument();
+    await expect.element(screen.getByRole('button', { name: 'Sign out' })).toBeInTheDocument();
     await expect.element(screen.getByText('Sign in again to send messages.')).toBeInTheDocument();
     await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('chat-conversation-needs-reauth-desktop');
   });
