@@ -315,7 +315,10 @@ The fixture changes the seller seat's PayPal rail only for the run. Setup record
 When the prior value is the test address itself, only a marker is stored, so the address never reaches disk. Without
 a state file, `teardown` and `verify` change and check nothing. Setup also records whether the seller had a storefront
 (`shop.json`) before it published the listing; teardown deletes one the run caused and verifies it gone from the
-homeserver and Nexus, and keeps one that existed before.
+homeserver and Nexus, and keeps one that existed before. This step needs no browser, so it also runs when the rest of teardown failed. A
+state file written by an earlier version of the script has no record of the storefront before the run, so its
+storefront check always fails: confirm on the homeserver and in Nexus that the seller's `shop.json` predates the run
+(or delete it if the run created it), then remove the state file by hand.
 
 If the run fails or is interrupted, `paypal-fixture-state.json` stays in the evidence folder. Retry the cleanup with
 `node scripts/release/production-paypal-fixture.mjs teardown` (same environment, including `PAYPAL_TEST_EMAIL`) until

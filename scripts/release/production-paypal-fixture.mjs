@@ -498,20 +498,6 @@ async function teardown() {
   } finally {
     await browser.close();
   }
-  if ('storefrontBefore' in state) {
-    const cleanup = await removeRunStorefront({
-      publicStorage: new Pubky().publicStorage,
-      signer: new Pubky().signer(seller),
-      pubky: sellerPubky,
-      existedBefore: state.storefrontBefore,
-      nexus: NEXUS,
-    }).catch((error) => ({ ok: false, error: String(error?.message ?? error) }));
-    check(
-      'teardown: no seller storefront the run published (gone from the homeserver and Nexus, or pre-existing and kept)',
-      cleanup.ok,
-      JSON.stringify(cleanup),
-    );
-  }
   if (state.runStart) {
     for (const [name, seat] of [
       ['seller', seller],
@@ -636,12 +622,32 @@ for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP']) {
   });
 }
 
+// Needs no browser, so it runs even when the browser part of teardown failed. A state file from a version of this
+// script that did not record `storefrontBefore` has no before-state, which fails closed.
+async function removeSellerStorefront() {
+  const state = readState();
+  if (!state?.runStart) return;
+  const cleanup = await removeRunStorefront({
+    publicStorage: new Pubky().publicStorage,
+    signer: new Pubky().signer(seller),
+    pubky: sellerPubky,
+    existedBefore: 'storefrontBefore' in state ? state.storefrontBefore : null,
+    nexus: NEXUS,
+  }).catch((error) => ({ ok: false, error: String(error?.message ?? error) }));
+  check(
+    'teardown: no seller storefront the run published (gone from the homeserver and Nexus, or pre-existing and kept)',
+    cleanup.ok,
+    JSON.stringify(cleanup),
+  );
+}
+
 async function tearDownAndVerify() {
   try {
     await teardown();
   } catch (error) {
     check('teardown completed', false, String(error?.message ?? error).slice(0, 240));
   }
+  await removeSellerStorefront();
   await verify();
 }
 
