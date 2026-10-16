@@ -16,7 +16,10 @@ import { httpResponseToError, safeFetch } from '@/libs/error/error.http';
 import { ErrorService } from '@/libs/error/error.types';
 import { isAppError, isRetryable } from '@/libs/error/error.utils';
 import { Logger } from '@/libs/logger/logger';
-import { getMarketplaceGrantFlowEnabled } from '@/libs/runtime-config/runtime-config';
+import {
+  getMarketplaceGrantFlowEnabled,
+  getMarketplaceGrantSessionEnabled,
+} from '@/libs/runtime-config/runtime-config';
 import { sleep } from '@/libs/utils/utils';
 import { HomeserverService } from '@/services/homeserver/homeserver';
 import {
@@ -24,6 +27,7 @@ import {
   clearMarketplaceBffSessionConfirmed,
   pairMarketplaceBffSession,
 } from './marketplace-grant-client';
+import { MarketplaceGrantSessionService } from './marketplace-grant-session';
 import { resetMarketplaceNotificationDiagnostics } from './marketplace-notification-diagnostics';
 import {
   LEGACY_SHOP_SIGN_IN_GRANT,
@@ -467,6 +471,9 @@ export class MarketplaceSessionService {
     resetMarketplaceNotificationDiagnostics();
     this.removePersistedSession();
     if (ended) this.notifySessionEnded({ reason: 'cleared', issuedAt: ended.issuedAt });
+    if (ended?.sessionId && getMarketplaceGrantSessionEnabled()) {
+      void MarketplaceGrantSessionService.revoke({ token: ended.token, sessionId: ended.sessionId });
+    }
     if (options?.confirmBff) return clearMarketplaceBffSessionConfirmed();
     if (getMarketplaceGrantFlowEnabled()) void clearMarketplaceBffSession();
   }

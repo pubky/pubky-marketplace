@@ -174,6 +174,18 @@ The other `needs_reauth` trigger is a 401/403 on the private document. For a gra
 
 `AuthController.getStepUpAuthUrl` still refuses a grant session before any Ring flow starts, so a path that reaches the homeserver step-up with a grant session gets an error in the dialog, not a Ring step-up that would replace the grant session with a cookie session while its grant record stays stored.
 
+### Session from the sign-in grant
+
+With `marketplaceGrantSessionEnabled` on, a grant-backed sign-in needs no purchase approval at all. `MarketplaceGrantSessionCoordinator` calls `CommerceController.ensureMarketplaceSessionFromGrant()` after sign-in or restore and again when the purchase session ends; `useMarketplaceSessionConnect.start()` makes the same call before it opens any approval. The controller adopts a persisted bearer when one is on the device; otherwise `MarketplaceGrantSessionService.mint`:
+
+1. signs `{aud, purpose: "marketplace-service/grant-session-challenge/v1"}` with `session.grant.createCustomPop` and posts it to the service's `POST /v1/auth/grant-session-challenges`, which returns a short-lived `challenge_id`;
+2. writes the proof document to `/pub/pubky.app/marketplace/v1/session-proofs/{challenge_id}` with the grant session;
+3. signs `{aud, challenge_id, purpose: "marketplace-service/grant-session/v1"}` and posts `{grant, pop}` to `POST /v1/auth/grant-sessions`.
+
+The service verifies the custom proofs offline, requires its own unexpired challenge and the proof document (so a revoked grant cannot mint, and documents cannot be staged ahead of a revocation beyond one challenge lifetime), burns the challenge and returns a bearer narrowed to `MARKETPLACE_SESSION_GRANT`. The proof document is deleted whatever the outcome.
+
+A refused mint falls back to the approval flows above and is not retried for the same sign-in, except when the user opens the dialog. The same holds for a minted session the service later rejects (a 401 for its bearer): the controller marks that sign-in, so the coordinator does not mint again on every rejected request. A natural expiry mints again. A session minted after the account changed is revoked at the service and never installed. If the mint rejects unexpectedly, the dialog falls back to the approval. With the flag on, sign-out also revokes the purchase session at the service (`DELETE /v1/auth/sessions/{id}`). Ring cookie sign-ins have no grant and keep the approval.
+
 ## Verification that differed from the brief
 
 1. **`signinWithAuthToken` does not exist.** `pubky.d.ts` has no AuthToken→Session API (only `AuthFlow.awaitApproval` line 188, `awaitToken` line 198, `Pubky.restoreSession` line 831, `Signer.signin` line 1294). Option A's "same bytes sign in to the homeserver" requires re-implementing protocol internals, not an SDK call.
