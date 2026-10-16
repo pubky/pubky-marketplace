@@ -65,7 +65,7 @@ vi.mock('@/hooks/useMarketplaceOrderPayment/useMarketplaceOrderPayment', () => (
   useMarketplaceOrderPayment: vi.fn(() => ({
     availableMethods: null,
     paykitAssets: [],
-    bitcoinOfferUnavailable: false,
+    paykitOfferUnavailable: false,
     paykitOutage: false,
     configError: null,
     deliveryAddress: null,
@@ -101,7 +101,7 @@ describe('MarketplacePaymentStatusCard', () => {
     vi.mocked(useMarketplaceOrderPayment).mockReturnValue({
       availableMethods: null,
       paykitAssets: [],
-      bitcoinOfferUnavailable: false,
+      paykitOfferUnavailable: false,
       paykitOutage: false,
       configError: null,
       deliveryAddress: null,
@@ -362,7 +362,7 @@ describe('MarketplacePaymentStatusCard', () => {
     vi.mocked(useMarketplaceOrderPayment).mockReturnValue({
       availableMethods: ['paypal'],
       paykitAssets: ['BTC'],
-      bitcoinOfferUnavailable: true,
+      paykitOfferUnavailable: true,
       paykitOutage: false,
       configError: null,
       deliveryAddress: null,
@@ -394,7 +394,7 @@ describe('MarketplacePaymentStatusCard', () => {
     vi.mocked(useMarketplaceOrderPayment).mockReturnValue({
       availableMethods: [],
       paykitAssets: [],
-      bitcoinOfferUnavailable: true,
+      paykitOfferUnavailable: true,
       paykitOutage: true,
       configError: null,
       deliveryAddress: null,
@@ -423,7 +423,7 @@ describe('MarketplacePaymentStatusCard', () => {
     vi.mocked(useMarketplaceOrderPayment).mockReturnValue({
       availableMethods: ['paykit', 'paypal'],
       paykitAssets: ['BTC', 'USDT'],
-      bitcoinOfferUnavailable: true,
+      paykitOfferUnavailable: true,
       paykitOutage: true,
       configError: null,
       deliveryAddress: null,
@@ -458,7 +458,7 @@ describe('MarketplacePaymentStatusCard', () => {
     vi.mocked(useMarketplaceOrderPayment).mockReturnValue({
       availableMethods: [],
       paykitAssets: [],
-      bitcoinOfferUnavailable: true,
+      paykitOfferUnavailable: true,
       paykitOutage: true,
       configError: null,
       deliveryAddress: null,
@@ -700,7 +700,7 @@ describe('MarketplacePaymentStatusCard', () => {
     vi.mocked(useMarketplaceOrderPayment).mockReturnValue({
       availableMethods: ['paykit', 'paypal'],
       paykitAssets: ['BTC'],
-      bitcoinOfferUnavailable: false,
+      paykitOfferUnavailable: false,
       paykitOutage: false,
       configError: null,
       deliveryAddress: null,
@@ -752,7 +752,7 @@ describe('MarketplacePaymentStatusCard', () => {
         return {
           availableMethods: ['paykit', 'paypal'],
           paykitAssets: ['BTC'],
-          bitcoinOfferUnavailable: false,
+          paykitOfferUnavailable: false,
           paykitOutage: false,
           configError: null,
           deliveryAddress: needsAddress ? winner : null,
@@ -837,7 +837,7 @@ describe('MarketplacePaymentStatusCard', () => {
     vi.mocked(useMarketplaceOrderPayment).mockReturnValue({
       availableMethods: ['paykit', 'paypal'],
       paykitAssets: ['BTC'],
-      bitcoinOfferUnavailable: false,
+      paykitOfferUnavailable: false,
       paykitOutage: false,
       configError: null,
       deliveryAddress: null,
@@ -871,7 +871,7 @@ describe('MarketplacePaymentStatusCard', () => {
     vi.mocked(useMarketplaceOrderPayment).mockReturnValue({
       availableMethods: ['paykit', 'paypal'],
       paykitAssets: ['BTC'],
-      bitcoinOfferUnavailable: false,
+      paykitOfferUnavailable: false,
       paykitOutage: false,
       configError: null,
       deliveryAddress: null,
@@ -904,7 +904,7 @@ describe('MarketplacePaymentStatusCard', () => {
     vi.mocked(useMarketplaceOrderPayment).mockReturnValue({
       availableMethods: ['paykit', 'paypal'],
       paykitAssets: ['BTC'],
-      bitcoinOfferUnavailable: false,
+      paykitOfferUnavailable: false,
       paykitOutage: false,
       configError: null,
       deliveryAddress: null,
@@ -953,7 +953,7 @@ describe('MarketplacePaymentStatusCard', () => {
       vi.mocked(useMarketplaceOrderPayment).mockReturnValue({
         availableMethods: ['paykit', 'paypal'],
         paykitAssets: ['BTC'],
-        bitcoinOfferUnavailable: false,
+        paykitOfferUnavailable: false,
         paykitOutage: false,
         configError: null,
         deliveryAddress: null,

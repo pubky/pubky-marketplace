@@ -539,7 +539,7 @@ export function MarketplacePaymentStatusCard({
             </>
           ) : (
             <>
-              {methodPayment.bitcoinOfferUnavailable && (
+              {methodPayment.paykitOfferUnavailable && (
                 <Typography as="p" aria-live="polite" className="text-sm text-muted-foreground">
                   {methodPayment.paykitOutage
                     ? `${PAYKIT_OUTAGE_COPY.title} ${PAYKIT_OUTAGE_COPY.buyerOthers}`

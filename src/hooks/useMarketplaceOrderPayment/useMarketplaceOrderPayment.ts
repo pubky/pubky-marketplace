@@ -152,7 +152,8 @@ export function useMarketplaceOrderPayment({
   return {
     availableMethods: ready ? availablePaymentMethods(sellerConfig, { usdtPaymentsAvailable }) : null,
     paykitAssets: ready ? sellerPaykitAssets(sellerConfig, { usdtPaymentsAvailable }) : [],
-    bitcoinOfferUnavailable:
+    /** The Paykit entry is paused by an outage, or its Bitcoin asset is withdrawn while other assets or methods remain. */
+    paykitOfferUnavailable:
       paykitOutage || (sellerConfig?.bitcoinAvailable === true && sellerConfig.bitcoinOfferAvailable === false),
     /** Paykit is down, so the Paykit entry is missing or paused for that reason and not because the seller has no setup. */
     paykitOutage,

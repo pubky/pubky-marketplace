@@ -83,7 +83,7 @@ beforeEach(() => {
   vi.mocked(useMarketplaceOrderPayment).mockImplementation(() => ({
     availableMethods: null,
     paykitAssets: [],
-    bitcoinOfferUnavailable: false,
+    paykitOfferUnavailable: false,
     paykitOutage: false,
     configError: null,
     deliveryAddress: null,

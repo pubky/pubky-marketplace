@@ -170,14 +170,14 @@ describe('useMarketplaceOrderPayment', () => {
       });
       expect(result.current.paykitOutage).toBe(true);
       expect(result.current.availableMethods).toEqual([]);
-      expect(result.current.bitcoinOfferUnavailable).toBe(true);
+      expect(result.current.paykitOfferUnavailable).toBe(true);
 
       await act(async () => {
         await vi.advanceTimersByTimeAsync(5_000);
       });
       expect(result.current.paykitOutage).toBe(false);
       expect(result.current.availableMethods).toEqual(['paykit']);
-      expect(result.current.bitcoinOfferUnavailable).toBe(false);
+      expect(result.current.paykitOfferUnavailable).toBe(false);
     });
 
     it('keeps the one Paykit entry in the list but flags the outage when the seller takes only USDT', async () => {
