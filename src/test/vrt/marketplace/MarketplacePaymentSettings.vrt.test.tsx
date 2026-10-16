@@ -153,6 +153,21 @@ describe('Marketplace payment settings — visual regression', () => {
     );
   });
 
+  // The service could not ask Paykit: no Not set up, no Connect Bitkit, only Check again.
+  it.each([
+    ['desktop', { width: 1440, height: 1100 }, 'payment-settings-bitkit-unavailable-desktop'],
+    ['mobile', { width: 390, height: 1300 }, 'payment-settings-bitkit-unavailable-mobile'],
+  ] as const)('renders the Bitkit unavailable state at %s viewport', async (_size, viewport, baseline) => {
+    view.ownConfig = { bitcoinEnabled: false, bitcoinSetup: 'unavailable' };
+
+    const screen = await renderForVRT(<MarketplacePaymentSettings />, { viewport });
+    await expect
+      .element(screen.getByTestId('bitkit-setup-unknown'))
+      .toHaveTextContent("We can't check Bitkit right now.");
+    await expect.element(screen.getByTestId('payment-method-status-bitcoin')).toHaveTextContent('Needs attention');
+    await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot(baseline);
+  });
+
   it('renders the inline PayPal email error at desktop viewport', async () => {
     view.ownConfig = { paypalMerchantEmail: null };
 
