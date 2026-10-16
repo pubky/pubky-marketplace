@@ -230,6 +230,8 @@ export const createCancelableAuthApproval = (
     maxPollAttempts?: number;
     resume?: () => Pick<AuthFlow, 'tryPollOnce' | 'free'> | Promise<Pick<AuthFlow, 'tryPollOnce' | 'free'>>;
     releaseWhileHidden?: boolean;
+    /** True once the SDK listener has sent its relay ACK (see `watchRelayAcks`); the flow is then never released. */
+    ackSent?: () => boolean;
     onCanceledSession?: (session: Session) => Promise<void>;
   },
 ): CancelableAuthApproval => {
@@ -268,8 +270,8 @@ export const createCancelableAuthApproval = (
 
   // The SDK listener ACKs an approval on the relay before queuing it for `tryPollOnce`, so freeing the flow drops
   // an approval it has already queued. A hide therefore triggers one more poll at once (WebKit throttles timers in
-  // hidden pages), and the flow is only freed straight after a poll that found nothing. An approval whose ACK is
-  // still in flight is not queued yet and is still lost; closing that needs the SDK to ACK after the exchange.
+  // hidden pages), and the flow is only freed straight after a poll that found nothing and before the listener has
+  // sent its ACK: from then on the relay may no longer hold the approval and only the live flow can deliver it.
   const pollNowIfHidden = () => {
     if (isPageHidden()) endPause?.();
   };
@@ -392,8 +394,9 @@ export const createCancelableAuthApproval = (
 
       // A live SDK flow takes an approval off the relay as soon as it arrives and the next poll exchanges it. iOS
       // suspends a hidden page mid-exchange and WebKit aborts its IndexedDB and fetch work, losing the approval.
-      // This poll found nothing queued, so freeing now leaves any later approval on the relay for the resumed flow.
-      if (releasable && isPageHidden()) {
+      // This poll found nothing queued and no ACK was sent, so freeing now leaves any approval on the relay for the
+      // resumed flow. After an ACK the live flow keeps polling until the approval is queued.
+      if (releasable && isPageHidden() && !options?.ackSent?.()) {
         freeFlow();
         continue;
       }

@@ -170,6 +170,30 @@ describe('createCancelableAuthApproval with releaseWhileHidden', () => {
     expect(live.free).toHaveBeenCalledOnce();
   });
 
+  it('keeps the flow when the page hides after the relay ACK was sent, so the same approval completes', async () => {
+    const live = pendingFlow();
+    const resume = vi.fn();
+    let ackSent = false;
+    const approval = createCancelableAuthApproval(live, { resume, releaseWhileHidden: true, ackSent: () => ackSent });
+
+    await vi.advanceTimersByTimeAsync(250);
+    // The listener has the approval and sent its DELETE; the relay applied it, the response is still pending.
+    ackSent = true;
+    hide();
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(live.free).not.toHaveBeenCalled();
+    expect(resume).not.toHaveBeenCalled();
+
+    // The ACK settles and the listener queues the approval it already holds.
+    live.tryPollOnce.mockResolvedValue(session);
+    show();
+    await vi.advanceTimersByTimeAsync(100);
+
+    await expect(approval.awaitApproval).resolves.toBe(session);
+    expect(resume).not.toHaveBeenCalled();
+    expect(live.free).toHaveBeenCalledOnce();
+  });
+
   it('settles at once when cancelled while parked, without resuming', async () => {
     visibility.mockReturnValue('hidden');
     const live = pendingFlow();

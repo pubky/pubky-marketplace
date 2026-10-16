@@ -100,6 +100,7 @@ import {
   saveOwnedGrantFlow,
   withAbandonedOwnedGrant,
 } from './owned-grant-storage';
+import { watchRelayAcks } from './relay-ack-watch';
 import { retryHomeserverWrite } from './write-retry';
 
 // Every Shop homeserver sign-in uses CAPABILITIES from @/config/app.
@@ -673,6 +674,7 @@ export class HomeserverService {
     xCallback: XCallbackParams | undefined,
     withPrivKeys: boolean,
   ): Promise<TGenerateAuthUrlResult> {
+    let acks: ReturnType<typeof watchRelayAcks> | null = null;
     try {
       if (!this.isGrantSignInAvailable() || !(await this.getPubkySdk().browserSessionStore.isAvailable())) {
         throw Err.database(DatabaseErrorCode.INIT_FAILED, GRANT_STORAGE_UNAVAILABLE_MESSAGE, {
@@ -682,6 +684,11 @@ export class HomeserverService {
       }
       assertOwnedGrantStorageAvailable();
       const pubkySdk = this.getPubkySdk();
+      // WebKit on iOS suspends hidden pages and aborts their in-flight work; other browsers keep polling in the
+      // background so an approval made there completes at once. The relay ACK watch covers the listener from its
+      // first request.
+      const releaseWhileHidden = isIosUserAgent();
+      acks = releaseWhileHidden ? watchRelayAcks(getDefaultHttpRelay()) : null;
       // Keeps a non-extractable WebCrypto key where WebCrypto has Ed25519; elsewhere
       // (e.g. Chrome < 137) the SDK falls back to its own key.
       const flow = await pubkySdk.startGrantAuthFlow(withPrivKeys ? KEYED_CAPABILITIES : CAPABILITIES, kind(), {
@@ -724,19 +731,21 @@ export class HomeserverService {
           owned.storage === 'delegated'
             ? GrantAuthFlow.resumeDelegated(owned.saved)
             : pubkySdk.resumeGrantAuthFlow(owned.saved),
-        // WebKit on iOS suspends hidden pages and aborts their in-flight work; other browsers keep
-        // polling in the background so an approval made there completes at once.
-        releaseWhileHidden: isIosUserAgent(),
+        releaseWhileHidden,
+        ackSent: acks?.sent,
         onCanceledSession: async (session) => {
           await session.signout().catch(() => {});
           await cleanupKey();
         },
       });
-      const awaitApproval = approval.awaitApproval.then((session) => {
-        approved = true;
-        this.pendingGrantKeys.set(session, key);
-        return session;
-      });
+      const stopAcks = acks?.stop;
+      const awaitApproval = approval.awaitApproval
+        .finally(() => stopAcks?.())
+        .then((session) => {
+          approved = true;
+          this.pendingGrantKeys.set(session, key);
+          return session;
+        });
       // The controller attaches after the URL is returned; early cancellation is handled here too.
       awaitApproval.catch(() => {});
       return {
@@ -751,6 +760,7 @@ export class HomeserverService {
         },
       };
     } catch (error) {
+      acks?.stop();
       return handleError({ error, additionalContext: { operation } });
     }
   }
