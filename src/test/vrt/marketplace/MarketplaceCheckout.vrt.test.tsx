@@ -694,6 +694,30 @@ describe('Marketplace checkout — visual regression', () => {
     expectMobileWorkflowGeometry();
   });
 
+  it.each([320, 360])('keeps the checkout page inside a %ipx phone without sideways scroll', async (width) => {
+    const { singleSeller } = await fixtures;
+    view.items = singleSeller;
+
+    await renderForVRT(<MarketplaceCheckout />, { viewport: { width, height: VRT_VIEWPORT_MOBILE.height } });
+    await waitForPaymentMethods();
+
+    expect(document.documentElement.scrollWidth).toBe(width);
+    const surface = document.querySelector('[data-surface="marketplace-checkout"]');
+    if (!(surface instanceof HTMLElement))
+      throw new Error('VRT geometry rejected: production checkout surface is missing');
+    for (const element of surface.querySelectorAll('*')) {
+      expect(element.getBoundingClientRect().right).toBeLessThanOrEqual(width);
+    }
+  });
+
+  it('renders a single-seller checkout on a 360px phone', async () => {
+    const { singleSeller } = await fixtures;
+    view.items = singleSeller;
+
+    await renderForVRT(<MarketplaceCheckout />, { viewport: { width: 360, height: VRT_VIEWPORT_MOBILE.height } });
+    await captureCheckout('checkout-single-seller-phone-360');
+  });
+
   it('renders the checkout with the saved-address picker at desktop viewport', async () => {
     const { singleSeller } = await fixtures;
     view.items = singleSeller;
