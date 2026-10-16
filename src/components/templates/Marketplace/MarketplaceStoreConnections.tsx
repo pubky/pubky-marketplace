@@ -192,9 +192,15 @@ export function MarketplaceStoreConnections() {
           <Card className="rounded-md p-0" data-testid="store-connections-unavailable">
             <CardContent className="flex items-start gap-3 p-6">
               <Plug className="mt-0.5 size-5 shrink-0 text-muted-foreground" aria-hidden="true" />
-              <Typography as="p" className="text-sm text-muted-foreground">
-                {connections.error}
-              </Typography>
+              <div className="grid gap-1">
+                <Heading level={2} size="md">
+                  Not available on this server yet
+                </Heading>
+                <Typography as="p" className="text-sm text-muted-foreground">
+                  {connections.error} Nothing is wrong with your shop. Connecting a store will work here as soon as the
+                  server supports it.
+                </Typography>
+              </div>
             </CardContent>
           </Card>
         ) : connections.error ? (

@@ -189,6 +189,8 @@ describe('an unfinished import, after the dialog was closed or the page reloaded
   }
 
   describe('closing in the middle of a batch, then opening the import again', () => {
+    // Publishing the full 279-listing catalogue checkpoints every row through a whole-manifest
+    // compare-and-swap, so its cost grows with rows x manifest size: about 2 s locally, over 5 s on CI.
     it('offers the store import with its listings done and photos left, and resumes it exactly where it stopped', async () => {
       const first = app();
       const planned = await first.planStoreCatalog(realCatalog(), CHF, OFFERED);
@@ -211,7 +213,7 @@ describe('an unfinished import, after the dialog was closed or the page reloaded
       expect(new Set(fetched).size).toBe(725);
       expect(stored.every((entry) => entry.media.length > 0)).toBe(true);
       expect(await app().findUnfinished()).toBeNull();
-    });
+    }, 60_000);
 
     it('does the same for a CSV import', async () => {
       const first = app();
