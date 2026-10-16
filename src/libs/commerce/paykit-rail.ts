@@ -102,10 +102,10 @@ export function sharedPaykitAssets(assetSets: readonly (readonly PaymentAsset[])
 /**
  * The checkout method tile names what the buyer pays with and where, so it
  * never reads like the submit button: "Bitcoin via Bitkit", "Bitcoin or USDT
- * via Bitkit".
+ * via Bitkit". The two parts render on separate lines to fit a half-width tile.
  */
-export function paykitPickerLabel(assets: readonly PaymentAsset[]): string {
-  return `${paykitAssetsLabel(assets.length > 0 ? assets : ['BTC'])} via Bitkit`;
+export function paykitPickerLabel(assets: readonly PaymentAsset[]): { assets: string; wallet: string } {
+  return { assets: paykitAssetsLabel(assets.length > 0 ? assets : ['BTC']), wallet: 'via Bitkit' };
 }
 
 /** The checkout submit button says where the buyer goes next, per selected rail. */

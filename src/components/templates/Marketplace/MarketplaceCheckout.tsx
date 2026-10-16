@@ -127,8 +127,14 @@ type CheckoutRail = (typeof CHECKOUT_RAILS)[number];
 const SANDBOX_CHECKOUT_RAILS = ['paykit', 'paypal'] as const;
 const BITCOIN_ONLY_ASSETS: PaymentAsset[] = ['BTC'];
 
-function methodCopy(method: CheckoutRail, paykitAssets: readonly PaymentAsset[]): string {
-  return method === 'paykit' ? paykitPickerLabel(paykitAssets) : 'PayPal';
+function MethodLabel({ method, paykitAssets }: { method: CheckoutRail; paykitAssets: readonly PaymentAsset[] }) {
+  if (method === 'paypal') return 'PayPal';
+  const label = paykitPickerLabel(paykitAssets);
+  return (
+    <span className="grid min-w-0 text-left leading-tight">
+      <span>{label.assets}</span> <span className="text-sm font-normal opacity-80">{label.wallet}</span>
+    </span>
+  );
 }
 
 function checkoutRails(methods: readonly PaymentMethodKind[]): CheckoutRail[] {
@@ -1217,14 +1223,14 @@ function MarketplaceCartCheckout() {
                               key={method}
                               type="button"
                               variant={selectedMethod === method ? 'default' : 'secondary'}
-                              className="h-20 w-full gap-3 rounded-md px-4 text-base"
+                              className="h-20 w-full gap-3 rounded-md px-4 text-base whitespace-normal"
                               aria-pressed={selectedMethod === method}
                               data-testid={`marketplace-checkout-method-${method}`}
                               onClick={() => setSelectedMethod(method)}
                             >
                               {method === 'paykit' && <WalletCards className="size-6 shrink-0" aria-hidden="true" />}
                               {method === 'paypal' && <HandCoins className="size-6 shrink-0" aria-hidden="true" />}
-                              {methodCopy(method, paykitAssets)}
+                              <MethodLabel method={method} paykitAssets={paykitAssets} />
                             </Button>
                           ))}
                         </div>

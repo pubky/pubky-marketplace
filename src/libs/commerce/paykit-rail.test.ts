@@ -100,11 +100,10 @@ describe('Paykit copy', () => {
   });
 
   it('labels the single picker entry by asset and wallet, never as a Pay action', () => {
-    expect(paykitPickerLabel(['BTC'])).toBe('Bitcoin via Bitkit');
-    expect(paykitPickerLabel(['USDT', 'BTC'])).toBe('Bitcoin or USDT via Bitkit');
-    expect(paykitPickerLabel(['USDT'])).toBe('USDT via Bitkit');
-    expect(paykitPickerLabel([])).toBe('Bitcoin via Bitkit');
-    expect(paykitPickerLabel(['BTC', 'USDT'])).not.toMatch(/^Pay/);
+    expect(paykitPickerLabel(['BTC'])).toEqual({ assets: 'Bitcoin', wallet: 'via Bitkit' });
+    expect(paykitPickerLabel(['USDT', 'BTC'])).toEqual({ assets: 'Bitcoin or USDT', wallet: 'via Bitkit' });
+    expect(paykitPickerLabel(['USDT'])).toEqual({ assets: 'USDT', wallet: 'via Bitkit' });
+    expect(paykitPickerLabel([])).toEqual({ assets: 'Bitcoin', wallet: 'via Bitkit' });
   });
 
   it('names the next step on the checkout submit button for each rail', () => {
