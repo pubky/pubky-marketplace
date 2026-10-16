@@ -490,6 +490,19 @@ export const shipOrderCommandSchema = createCommerceCommandSchema(
   orderIdPayload
     .extend({
       carrier: z.string().trim().min(1).max(100),
+      // Optional: a seller may mark an order shipped before a number exists
+      // (connected stores complete orders without one) and add it later with
+      // `fulfillment.update_tracking`.
+      trackingNumber: z.string().trim().min(1).max(200).optional(),
+    })
+    .strict(),
+);
+
+export const updateOrderTrackingCommandSchema = createCommerceCommandSchema(
+  'fulfillment.update_tracking',
+  orderIdPayload
+    .extend({
+      carrier: z.string().trim().min(1).max(100),
       trackingNumber: z.string().trim().min(1).max(200),
     })
     .strict(),
@@ -725,6 +738,7 @@ export const marketplaceCommandSchema = z.union([
   requestOrderCancellationCommandSchema,
   approveOrderCancellationCommandSchema,
   shipOrderCommandSchema,
+  updateOrderTrackingCommandSchema,
   confirmOrderDeliveryCommandSchema,
   setPickupDetailsCommandSchema,
   clearPickupDetailsCommandSchema,
@@ -820,6 +834,7 @@ export type RegisterLocksPaymentCommand = z.infer<typeof registerLocksPaymentCom
 export type RequestOrderCancellationCommand = z.infer<typeof requestOrderCancellationCommandSchema>;
 export type ApproveOrderCancellationCommand = z.infer<typeof approveOrderCancellationCommandSchema>;
 export type ShipOrderCommand = z.infer<typeof shipOrderCommandSchema>;
+export type UpdateOrderTrackingCommand = z.infer<typeof updateOrderTrackingCommandSchema>;
 export type ConfirmOrderDeliveryCommand = z.infer<typeof confirmOrderDeliveryCommandSchema>;
 export type SetPickupDetailsCommand = z.infer<typeof setPickupDetailsCommandSchema>;
 export type ClearPickupDetailsCommand = z.infer<typeof clearPickupDetailsCommandSchema>;

@@ -57,6 +57,10 @@ export class ConnectorsController {
     return await ConnectorsApplication.catalogPage(this.actor(), connectionId, options);
   }
 
+  static async fetchSelectedProducts(connectionId: string) {
+    return await ConnectorsApplication.selectedProducts(this.actor(), connectionId);
+  }
+
   static async fetchSelection(connectionId: string) {
     return await ConnectorsApplication.selection(this.actor(), connectionId);
   }

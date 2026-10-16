@@ -92,6 +92,8 @@ function getBaseActionText(type: MarketplaceNotification['type']): string {
       return 'cancelled because the seller changed the pickup terms';
     case 'order_shipped':
       return 'shipped your order';
+    case 'tracking_updated':
+      return 'updated the tracking for your order';
     case 'order_delivery_assumed':
       return 'marked an order delivered automatically';
     case 'order_delivered':

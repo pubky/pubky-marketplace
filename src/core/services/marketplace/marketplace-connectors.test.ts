@@ -294,6 +294,17 @@ describe('MarketplaceConnectorsService', () => {
     expect((error as AppError).context).toMatchObject({ reason: 'already_connected', statusCode: 409 });
   });
 
+  it('names the listing a mapping refusal is about, and nothing else from the body', async () => {
+    fetchMock.mockResolvedValue(
+      json({ error: { code: 'listing_not_found', message: 'secret detail', listing_id: 'woo-7718' } }, 422),
+    );
+    const error = await MarketplaceConnectorsService.putMappings(ACTOR, CONNECTION_ID, [
+      { listingId: 'woo-7718', providerProductId: '1' },
+    ]).catch((caught: unknown) => caught);
+    expect((error as AppError).context).toMatchObject({ reason: 'listing_not_found', listingId: 'woo-7718' });
+    expect(JSON.stringify((error as AppError).context)).not.toContain('secret detail');
+  });
+
   it('keeps only a well-formed refusal code', async () => {
     fetchMock.mockResolvedValue(json({ error: { code: 'Has Spaces <script>', message: 'x' } }, 422));
     const error = await MarketplaceConnectorsService.list(ACTOR).catch((caught: unknown) => caught);

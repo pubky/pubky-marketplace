@@ -70,6 +70,50 @@ name, permissions granted, locations, a test catalog read). A missing scope show
 as Needs attention with the scope names. Steps have a picture slot each: drawn
 illustrations now, screenshots as soon as `config/shopify-guide.ts` has entries.
 
+## Publishing the chosen products
+
+"Publish chosen products" on the catalog page reads the saved choice
+(`GET /v1/connectors/{id}/catalog?selected=true`, every page) and maps those
+products to the same canonical rows the CSV presets produce
+(`src/core/pipes/commerce/connector-catalog-rows.ts`, pure). The rows go through
+the Studio's own import, `useMarketplaceInventoryImport`, unchanged: plan,
+dry-run, photos, publish gates and result file. Rules:
+
+- No silent shipping default: the settings step asks for ships-from and shipping,
+  filled from the shop location and the seller's latest listing when they have
+  them, with one click for free shipping. A listing carries neither until chosen.
+- Prices stay in the store's currency and are never converted; a product in
+  another currency, with a zero price or with too many variants is skipped and
+  reported.
+- A variant whose stock the store does not track gets the seller's default
+  quantity and the note "Stock unknown, set to N".
+- **One listing per size or variant** (the connection's `variant_mode`, shown in
+  its settings). `native` keeps a product's variants together as one listing.
+  `split` makes each store variant its own listing with a single variant, titled
+  with its choice ("Socks bundle, Size M"), and links each to its own store
+  variant. Listing ids are `woo-<product>-<variant>`, so changing the mode later
+  publishes new listings; it applies to products published from then on.
+- A re-import of a listing that is already live is never paused by a publish
+  gate (C16): it stays live, its content is updated and the dry run and the
+  result file say "kept live". New listings and listings already paused save
+  paused. This is lane A's import behaviour, and `inventory-import.connector.test.ts`
+  proves it for connector rows, native and split.
+- Listing ids are stable (`woo-<store id>`, `shopify-<store id>`), so importing a
+  product again is an update, not a second listing.
+- After the publish the listings are linked to their store variants
+  (`PUT /v1/connectors/{id}/mappings`, merged with the existing set). The service
+  holds only listings whose publish finished, so a listing it names as missing
+  (`listing_not_found`) is left out and the rest is written. Without the link,
+  stock does not follow the store and a Pubky order for the listing is held back
+  as `unmapped_variant`. The link runs after a publish or a resume even when that
+  stops with an error, so listings that were already synced are still linked; if
+  the link itself fails the page says the listings are published but not linked
+  and offers "Link again".
+
+Currencies other than USD and BTC can be listed only after the multi-currency
+listing form (PR #235) is in; until then a CHF store stops at the settings step
+with a message.
+
 ## Against the service contract
 
 The Shop reads `internal/integrations/connector-contract.md` as written against
@@ -139,3 +183,5 @@ Where the Shop still differs from the service, and what it does:
   service contract does not state these.
 - **Catalog.** Every product has at least one variant, and `provider_variant_id`
   is the id the store's webhooks and orders use.
+- **Linking.** The Shop relies on `error.listing_id` on `422 listing_not_found`
+  (the contract names it) to leave one unfinished listing out of the link.
