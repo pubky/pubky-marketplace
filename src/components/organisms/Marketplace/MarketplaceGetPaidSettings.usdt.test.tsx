@@ -31,7 +31,6 @@ vi.mock('@/controllers/commerce/commerce', () => ({
     getPaykitReconnectUrl: vi.fn(),
     fetchUsdtPaymentsAvailable: vi.fn(),
     getMyPaymentConfig: vi.fn(),
-    isOwnPaykitAccountClaimed: vi.fn(),
     putMyPaymentConfig: vi.fn(),
     beginMarketplaceSessionConnect: vi.fn(),
     hasFullHomeserverGrant: vi.fn(() => false),
@@ -49,15 +48,6 @@ const ownViewEnvelope = z.object({ paymentConfig: sellerPaymentConfigOwnViewSche
 const fromWire = (wire: unknown): SellerPaymentConfigOwnView =>
   ownViewEnvelope.parse(toCamelCaseWire(wire)).paymentConfig;
 
-const locksConnect = {
-  connectedCreator: PUBKY,
-  isExchanging: false,
-  error: null,
-  connectOpen: false,
-  connectUrl: null,
-  openConnect: vi.fn(),
-};
-
 function paykitUrl(path: string) {
   return (returnTo: unknown, state: unknown, creator: unknown) => {
     const url = new URL(`https://paykit.example${path}`);
@@ -69,7 +59,7 @@ function paykitUrl(path: string) {
 }
 
 async function renderSettings() {
-  render(<MarketplaceGetPaidSettings locksConnect={locksConnect} />);
+  render(<MarketplaceGetPaidSettings />);
   await screen.findByLabelText('PayPal merchant email');
 }
 
@@ -95,7 +85,6 @@ beforeEach(() => {
   mocked.getPaykitReconnectUrl.mockReset().mockImplementation(paykitUrl('/setup/reconnect'));
   mocked.fetchUsdtPaymentsAvailable.mockReset().mockResolvedValue(true);
   mocked.getMyPaymentConfig.mockReset().mockResolvedValue(fromWire(USDT_SELLER_CONFIG_READY_WIRE));
-  mocked.isOwnPaykitAccountClaimed.mockReset().mockResolvedValue(true);
   mocked.putMyPaymentConfig.mockReset().mockImplementation(async (input) => ({
     bitcoinEnabled: input.bitcoinEnabled,
     paypalMerchantEmail: input.paypalMerchantEmail,
@@ -257,7 +246,7 @@ describe('MarketplaceGetPaidSettings USDT', () => {
       expect(screen.getByTestId('payment-method-status-usdt')).toHaveTextContent('Needs attention');
     });
 
-    it('re-reads the stored configuration, never the Paykit claim, when the seller checks again', async () => {
+    it('re-reads the stored configuration when the seller checks again', async () => {
       mocked.getMyPaymentConfig
         .mockResolvedValueOnce(fromWire(USDT_SELLER_CONFIG_UNAVAILABLE_WIRE))
         .mockResolvedValue(fromWire(USDT_SELLER_CONFIG_READY_WIRE));
@@ -266,7 +255,6 @@ describe('MarketplaceGetPaidSettings USDT', () => {
 
       expect(await screen.findByTestId('usdt-readiness-ready')).toBeInTheDocument();
       expect(mocked.getMyPaymentConfig).toHaveBeenCalledTimes(2);
-      expect(mocked.isOwnPaykitAccountClaimed).toHaveBeenCalledTimes(1);
     });
 
     it('never enables USDT while it is not ready, whatever the sign-in', async () => {
@@ -431,7 +419,6 @@ describe('MarketplaceGetPaidSettings USDT', () => {
       await waitFor(() => expect(screen.queryByTitle('Add USDT in Bitkit')).not.toBeInTheDocument());
       expect(mockedToast).toHaveBeenCalledWith({ title: 'USDT is ready' });
       expect(await screen.findByTestId('usdt-readiness-ready')).toBeInTheDocument();
-      expect(mocked.isOwnPaykitAccountClaimed).toHaveBeenCalledTimes(1);
       expect(mocked.getMyPaymentConfig).toHaveBeenCalledTimes(2);
     });
 
@@ -475,9 +462,8 @@ describe('MarketplaceGetPaidSettings USDT', () => {
   });
 
   describe('Bitkit setup from the USDT card', () => {
-    it('opens the setup URL, and the setup callback keeps the existing claim check', async () => {
+    it('opens the setup URL, and the setup callback confirms it from the fresh bitcoin_setup', async () => {
       mocked.getMyPaymentConfig.mockResolvedValue(fromWire(USDT_SELLER_CONFIG_SETUP_WIRE));
-      mocked.isOwnPaykitAccountClaimed.mockResolvedValue(false);
       await renderSettings();
       await userEvent.click(await screen.findByRole('button', { name: /Set up Bitkit payments/ }));
 
@@ -486,7 +472,6 @@ describe('MarketplaceGetPaidSettings USDT', () => {
       expect(mocked.getPaykitReconnectUrl).not.toHaveBeenCalled();
       expect(new URL(iframe.src).pathname).toBe('/setup');
 
-      mocked.isOwnPaykitAccountClaimed.mockResolvedValue(true);
       mocked.getMyPaymentConfig.mockResolvedValue(fromWire(USDT_SELLER_CONFIG_READY_WIRE));
       sendCallback(iframe);
 

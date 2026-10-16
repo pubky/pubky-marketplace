@@ -49,6 +49,7 @@ import {
 import { formatCommerceMoney } from '@/libs/commerce/format';
 import { listingIdFromOrder } from '@/libs/commerce/listing-aggregate';
 import { buyerVisiblePaymentStatus } from '@/libs/commerce/locks-payment';
+import { observedPaymentRail } from '@/libs/commerce/paykit-rail';
 import { formatBitcoinAmount } from '@/libs/commerce/pricing';
 import {
   REFUND_ORDER_NOTICES,
@@ -65,6 +66,7 @@ import { ContentLayout } from '@/organisms/ContentLayout/ContentLayout';
 import { DropEditionBadge, DropEditionReceiptLine } from '@/organisms/Marketplace/DropEditionBadge';
 import { MarketplaceBitcoinAmountBreakdown } from '@/organisms/Marketplace/MarketplaceBitcoinAmountBreakdown';
 import { MarketplaceCheckoutItem } from '@/organisms/Marketplace/MarketplaceCheckoutItem';
+import { MarketplaceConnectorPushStatus } from '@/organisms/Marketplace/MarketplaceConnectorPushStatus';
 import { MarketplaceIndicativePrice } from '@/organisms/Marketplace/MarketplaceIndicativePrice';
 import { MarketplaceMyReviews } from '@/organisms/Marketplace/MarketplaceMyReviews';
 import { MarketplaceOrderActions } from '@/organisms/Marketplace/MarketplaceOrderActions';
@@ -212,6 +214,8 @@ export function MarketplaceOrders() {
               : 'Track your purchases and sales.'}
           </Typography>
         </div>
+
+        {hasTransactionBackend && <MarketplaceConnectorPushStatus />}
 
         {!hasTransactionBackend ? (
           <div className="flex min-h-64 flex-col items-center justify-center rounded-md px-6 text-center">
@@ -678,9 +682,10 @@ function MarketplaceOrderMessageCta({ order }: { order: MarketplaceOrder }) {
 
 function MarketplaceOrderBitcoinAmount({ order }: { order: MarketplaceOrder }): ReactNode {
   if (bitcoinPaymentBreakdown(order)) return null;
-  // A USDT order settles at parity with its USD price; a bitcoin estimate would mislead.
-  if (order.paymentMethod === 'usdt') return null;
-  const quote = order.paymentMethod === 'bitcoin' ? order.bitcoinQuote : null;
+  // A USDT payment settles in USDT; a bitcoin estimate would mislead.
+  const rail = observedPaymentRail(order);
+  if (rail === 'usdt') return null;
+  const quote = rail === 'bitcoin' ? order.bitcoinQuote : null;
   if (quote?.quotedSats !== null && quote?.quotedSats !== undefined) {
     return (
       <Typography as="span" className="text-sm font-normal">

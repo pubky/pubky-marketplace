@@ -1,15 +1,12 @@
-import { createHash } from 'node:crypto';
 import { type NextRequest, NextResponse } from 'next/server';
 import { IMPORT_IMAGE_MAX_REQUEST_BODY_BYTES } from '@/config/import-image';
 import { ImportImageController } from '@/controllers/import-image/import-image';
+import { importRateLimitKeys, isSameOriginRequest } from '@/libs/api/import-route-guards';
 import { handleApiError } from '@/libs/api/route-error-handler';
 import { HttpStatusCode } from '@/libs/http/http.types';
 import type { TImportImageFailureReason } from '@/pipes/import-image/import-image.types';
 
 export const runtime = 'nodejs';
-
-// Mirrors the BFF session cookie name (src/server/marketplace-grant/bff.ts); importing that module would pull the grant database into this route.
-const SESSION_COOKIE = '__Host-shop-bff-session';
 
 const STATUS_BY_REASON: Record<TImportImageFailureReason, number> = {
   invalid_url: HttpStatusCode.BAD_REQUEST,
@@ -41,7 +38,7 @@ const NO_STORE = 'no-store, private';
  */
 export async function POST(request: NextRequest) {
   try {
-    if (!isSameOrigin(request)) return failureResponse('blocked_address', HttpStatusCode.FORBIDDEN);
+    if (!isSameOriginRequest(request)) return failureResponse('blocked_address', HttpStatusCode.FORBIDDEN);
 
     const body = await readBody(request);
     if (!body.ok) return failureResponse('invalid_url', body.status);
@@ -49,7 +46,7 @@ export async function POST(request: NextRequest) {
     const result = await ImportImageController.fetch({
       url: body.value.url,
       remainingBytes: body.value.remainingBytes,
-      rateLimitKeys: rateLimitKeys(request),
+      rateLimitKeys: importRateLimitKeys(request),
       signal: request.signal,
     });
 
@@ -104,60 +101,4 @@ async function readBody(request: NextRequest): Promise<{ ok: true; value: TBody 
   } catch {
     return { ok: false, status: HttpStatusCode.BAD_REQUEST };
   }
-}
-
-/**
- * Browser CSRF guard, not authentication. `Sec-Fetch-Site` is set by the browser and
- * cannot be forged by a web page; older browsers without it must send an Origin that
- * matches this request's own host. Forwarded-host headers are never trusted.
- * A non-browser client can set any header, so it passes; it is bounded by the
- * per-IP and global limits, not by this check.
- */
-function isSameOrigin(request: NextRequest): boolean {
-  const fetchSite = request.headers.get('sec-fetch-site');
-  if (fetchSite) return fetchSite === 'same-origin';
-
-  const origin = request.headers.get('origin');
-  if (!origin) return false;
-  try {
-    return new URL(origin).host.toLowerCase() === request.nextUrl.host.toLowerCase();
-  } catch {
-    return false;
-  }
-}
-
-/**
- * Both buckets always apply: a forged session cookie cannot dodge the IP bucket,
- * and a shared IP (office, NAT) cannot starve one seller past their own bucket.
- */
-function rateLimitKeys(request: NextRequest): string[] {
-  const keys = [`ip:${requestIp(request)}`];
-  const session = request.cookies.get(SESSION_COOKIE)?.value;
-  if (session) keys.push(`session:${createHash('sha256').update(session).digest('hex')}`);
-  return keys;
-}
-
-function requestIp(request: NextRequest): string {
-  if (process.env.VERCEL === '1') {
-    const forwarded = lastHop(request.headers.get('x-vercel-forwarded-for'));
-    if (forwarded) return forwarded;
-  }
-
-  const trustedProxies = Number(process.env.SHOP_BFF_CLI_TRUSTED_PROXY_COUNT ?? 0);
-  const hops = (request.headers.get('x-forwarded-for') ?? '')
-    .split(',')
-    .map((hop) => hop.trim())
-    .filter(Boolean);
-  if (Number.isInteger(trustedProxies) && trustedProxies >= 1 && hops.length >= trustedProxies) {
-    return hops[hops.length - trustedProxies];
-  }
-  return 'unknown';
-}
-
-function lastHop(header: string | null): string {
-  const hops = (header ?? '')
-    .split(',')
-    .map((hop) => hop.trim())
-    .filter(Boolean);
-  return hops[hops.length - 1] ?? '';
 }

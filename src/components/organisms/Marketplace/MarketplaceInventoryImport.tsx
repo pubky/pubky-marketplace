@@ -1,8 +1,12 @@
 'use client';
 
+import type { Control } from 'react-hook-form';
 import { Button } from '@/atoms/Button/Button';
 import { Input } from '@/atoms/Input/Input';
 import { Typography } from '@/atoms/Typography/Typography';
+import { IMPORT_IMAGE_RATE_LIMIT_BYTES, IMPORT_IMAGE_RATE_LIMIT_BYTES_WINDOW_MS } from '@/config/import-image';
+import type { ImportStoreUrlFormData } from '@/hooks/useMarketplaceInventoryImport/useMarketplaceInventoryImport.types';
+import { ControlledInputField } from '@/molecules/ControlledInputField/ControlledInputField';
 import { ProgressSteps } from '@/molecules/ProgressSteps/ProgressSteps';
 import type { ImportLossSummary } from '@/pipes/commerce/import-loss-report';
 import { MarketplaceInventoryImportLossReport } from './MarketplaceInventoryImportLossReport';
@@ -13,9 +17,13 @@ import {
 
 export const IMPORT_WIZARD_STEPS = 6;
 
+const PHOTO_ALLOWANCE_MB = IMPORT_IMAGE_RATE_LIMIT_BYTES / (1024 * 1024);
+const PHOTO_WINDOW_MINUTES = IMPORT_IMAGE_RATE_LIMIT_BYTES_WINDOW_MS / 60_000;
+
 export type InventoryImportScene =
   | 'upload'
   | 'validation'
+  | 'fetch'
   | 'map'
   | 'dry-run'
   | 'progress'
@@ -43,6 +51,23 @@ export type MarketplaceInventoryImportProps = {
   /** `photos` while product photos are fetched and saved, then `listings` while they are published. */
   progressPhase?: 'photos' | 'listings';
   mappingHeaders?: readonly string[];
+  /** While photos load in more than one batch: the batch under way and how many there are. */
+  batchInfo?: { batch: number; batches: number };
+  /** Seconds left while the photo service asks us to wait before loading more; null or absent when not waiting. */
+  waitSeconds?: number | null;
+  /** An import that was started and not finished, offered for resume or discard on the upload step. */
+  unfinished?: { listings: { done: number; total: number }; photosLeft: number };
+  /** The seller pressed Discard and is being asked to confirm. */
+  confirmingDiscard?: boolean;
+  /** What publishing will load: photos and batches, shown in the dry run. */
+  photoPlan?: { count: number; batches: number; pauses?: number };
+  /** `pages` while a store's product list is read, then `variations` while each variable product's options are. */
+  fetchPhase?: 'pages' | 'variations';
+  /** Reading a WooCommerce store by its address, next to the file upload. */
+  store?: {
+    control: Control<ImportStoreUrlFormData>;
+    onSubmit: () => void;
+  };
   /** Import settings for a WooCommerce or Shopify export; omitted for canonical files. */
   settings?: InventoryImportSettingsProps;
   lossSummary?: ImportLossSummary;
@@ -57,6 +82,10 @@ export type MarketplaceInventoryImportProps = {
     keptLive?: { line: string; titles: readonly string[]; total: number };
   };
   onFile?: (file: File) => void;
+  onResumeUnfinished?: () => void;
+  onAskDiscardUnfinished?: () => void;
+  onKeepUnfinished?: () => void;
+  onDiscardUnfinished?: () => void;
   onPublish?: () => void;
   onResume?: () => void;
   onConfirmConflict?: () => void;
@@ -70,6 +99,7 @@ export type MarketplaceInventoryImportProps = {
 const SCENE_STEP: Record<InventoryImportScene, number> = {
   upload: 1,
   validation: 2,
+  fetch: 2,
   map: 3,
   'dry-run': 4,
   progress: 5,
@@ -88,6 +118,13 @@ export function MarketplaceInventoryImport({
   counts,
   progress,
   progressPhase = 'listings',
+  batchInfo,
+  waitSeconds = null,
+  photoPlan,
+  unfinished,
+  confirmingDiscard = false,
+  fetchPhase = 'pages',
+  store,
   mappingHeaders = [],
   settings,
   lossSummary,
@@ -95,6 +132,10 @@ export function MarketplaceInventoryImport({
   publishDisabledReason,
   publishNotice,
   onFile,
+  onResumeUnfinished,
+  onAskDiscardUnfinished,
+  onKeepUnfinished,
+  onDiscardUnfinished,
   onPublish,
   onResume,
   onConfirmConflict,
@@ -111,6 +152,54 @@ export function MarketplaceInventoryImport({
       <ProgressSteps currentStep={currentStep} totalSteps={IMPORT_WIZARD_STEPS} />
       {scene === 'upload' && (
         <>
+          {unfinished && (
+            <div
+              className="flex flex-col gap-2 rounded-md border border-input p-3"
+              role="status"
+              data-testid="inventory-import-unfinished"
+            >
+              <Typography as="p" className="text-sm font-medium">
+                Resume your unfinished import ({unfinished.listings.done} of {unfinished.listings.total} listings
+                {unfinished.photosLeft > 0
+                  ? `, ${unfinished.photosLeft} ${unfinished.photosLeft === 1 ? 'photo' : 'photos'} left`
+                  : ''}
+                )
+              </Typography>
+              <Typography as="p" className="text-sm text-muted-foreground">
+                It carries on where it stopped. Photos already loaded are not loaded again.
+              </Typography>
+              {confirmingDiscard ? (
+                <>
+                  <Typography as="p" className="text-sm font-medium" data-testid="inventory-import-discard-confirm">
+                    Discard the unfinished import? Listings already published stay. Photos uploaded for the rest are
+                    deleted from your homeserver.
+                  </Typography>
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      variant="destructive"
+                      className="rounded-full"
+                      disabled={busy}
+                      onClick={onDiscardUnfinished}
+                    >
+                      Discard import
+                    </Button>
+                    <Button variant="secondary" className="rounded-full" disabled={busy} onClick={onKeepUnfinished}>
+                      Keep it
+                    </Button>
+                  </div>
+                </>
+              ) : (
+                <div className="flex flex-wrap gap-2">
+                  <Button className="rounded-full" disabled={busy} onClick={onResumeUnfinished}>
+                    Resume
+                  </Button>
+                  <Button variant="secondary" className="rounded-full" disabled={busy} onClick={onAskDiscardUnfinished}>
+                    Discard
+                  </Button>
+                </div>
+              )}
+            </div>
+          )}
           <Typography as="p" className="text-sm text-muted-foreground">
             Upload a WooCommerce or Shopify product export, or a canonical CSV or JSON listing file. Nothing is
             published until you confirm the dry-run.
@@ -124,6 +213,39 @@ export function MarketplaceInventoryImport({
               if (file) onFile?.(file);
             }}
           />
+          {store && (
+            <form
+              className="flex flex-col gap-2 rounded-md border border-input p-3"
+              aria-label="Read a WooCommerce store"
+              data-testid="inventory-import-store"
+              onSubmit={(event) => {
+                event.preventDefault();
+                store.onSubmit();
+              }}
+            >
+              <Typography as="h3" className="text-base font-semibold">
+                From a WooCommerce store URL
+              </Typography>
+              <Typography as="p" className="text-sm text-muted-foreground">
+                Paste your shop address. We read the public product list, with no keys. Stock counts are not public, so
+                you set a default quantity in the dry run.
+              </Typography>
+              <ControlledInputField
+                name="storeUrl"
+                control={store.control}
+                label="Store address"
+                placeholder="https://myshop.com"
+                variant="default"
+                size="md"
+                disabled={busy}
+              />
+              <div>
+                <Button type="submit" variant="secondary" className="rounded-full" disabled={busy}>
+                  Read my store
+                </Button>
+              </div>
+            </form>
+          )}
           <div className="flex flex-wrap gap-2">
             <Button variant="secondary" className="rounded-full" onClick={onExportListings}>
               Export listings CSV
@@ -137,6 +259,12 @@ export function MarketplaceInventoryImport({
       {scene === 'validation' && (
         <Typography as="p" className="text-sm text-muted-foreground">
           {fileName ? `Validating ${fileName}.` : 'Validating the file.'}
+        </Typography>
+      )}
+      {scene === 'fetch' && (
+        <Typography as="p" className="text-sm text-muted-foreground" data-testid="inventory-import-fetch">
+          {fetchPhase === 'pages' ? 'Reading the product list' : 'Reading product options'}
+          {fileName ? ` of ${fileName}` : ''}… {progress?.done ?? 0} of {progress?.total ?? 0}.
         </Typography>
       )}
       {scene === 'map' && (
@@ -165,6 +293,22 @@ export function MarketplaceInventoryImport({
             <li>Unchanged {counts.unchanged}</li>
             <li>Conflict {counts.conflict}</li>
           </ul>
+          {photoPlan && (
+            <Typography as="p" className="text-sm text-muted-foreground" data-testid="inventory-import-photo-plan">
+              {photoPlan.count === 1 ? '1 photo' : `${photoPlan.count} photos`} will be loaded when you publish
+              {photoPlan.batches > 1
+                ? `, in ${photoPlan.batches} batches. They load one after another and the import carries on by itself, waiting when the photo service asks.`
+                : '.'}
+              {photoPlan.pauses
+                ? ` At a typical photo size the photo service's allowance (${PHOTO_ALLOWANCE_MB} MB every ${PHOTO_WINDOW_MINUTES} minutes) will run out about ${photoPlan.pauses === 1 ? 'once' : `${photoPlan.pauses} times`}: the import then pauses for up to ${PHOTO_WINDOW_MINUTES} minutes and continues.`
+                : photoPlan.batches > 1
+                  ? ` If its allowance (${PHOTO_ALLOWANCE_MB} MB every ${PHOTO_WINDOW_MINUTES} minutes) runs out, it pauses for up to ${PHOTO_WINDOW_MINUTES} minutes and continues.`
+                  : ''}
+              {photoPlan.batches > 1 || photoPlan.pauses
+                ? ' If you close this window, the next time you open the import you can resume it.'
+                : ''}
+            </Typography>
+          )}
           {settings && <MarketplaceInventoryImportSettings {...settings} busy={busy} />}
           {lossSummary && (
             <MarketplaceInventoryImportLossReport summary={lossSummary} onDownload={onDownloadLossReport} />
@@ -221,10 +365,23 @@ export function MarketplaceInventoryImport({
         </>
       )}
       {scene === 'progress' && (
-        <Typography as="p" className="text-sm text-muted-foreground" data-testid="inventory-import-progress">
-          {progressPhase === 'photos' ? 'Loading photos…' : 'Saving your listings…'} {progress?.done ?? 0} of{' '}
-          {progress?.total ?? 0}.
-        </Typography>
+        <div className="flex flex-col gap-1">
+          <Typography as="p" className="text-sm text-muted-foreground" data-testid="inventory-import-progress">
+            {progressPhase === 'photos' ? 'Loading photos…' : 'Saving your listings…'} {progress?.done ?? 0} of{' '}
+            {progress?.total ?? 0}
+            {progressPhase === 'photos' && batchInfo ? `, batch ${batchInfo.batch} of ${batchInfo.batches}` : ''}.
+          </Typography>
+          {progressPhase === 'photos' && waitSeconds !== null && (
+            <Typography
+              as="p"
+              className="text-sm text-muted-foreground"
+              role="status"
+              data-testid="inventory-import-photo-wait"
+            >
+              Waiting {waitSeconds} s for the photo service to allow more. Loading continues by itself.
+            </Typography>
+          )}
+        </div>
       )}
       {scene === 'result' && (
         <>

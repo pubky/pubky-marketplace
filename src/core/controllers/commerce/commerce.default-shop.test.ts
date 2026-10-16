@@ -12,7 +12,12 @@ const SELLER = COMMERCE_FIXTURE_SELLER;
 const OTHER_ACCOUNT = 'o1gg96ewuojmopcjbz8895478wdtxtzzber7aezq6ror5a91j7dy';
 const PROFILE = { name: 'Satoshi', bio: 'Bitcoin goods.', links: [] };
 type PaymentConfig = Awaited<ReturnType<typeof CommerceApplication.putMyPaymentConfig>>;
-const config = (bitcoinEnabled: boolean) => asOpaque<PaymentConfig>({ bitcoinEnabled, paypalMerchantEmail: null });
+const config = (bitcoinEnabled: boolean, usdtEnabled?: boolean) =>
+  asOpaque<PaymentConfig>({
+    bitcoinEnabled,
+    paypalMerchantEmail: null,
+    ...(usdtEnabled === undefined ? {} : { usdtEnabled }),
+  });
 
 describe('CommerceController default storefront', () => {
   let needs: MockInstance<typeof CommerceApplication.needsDefaultShop>;
@@ -44,6 +49,45 @@ describe('CommerceController default storefront', () => {
     expect(needs).toHaveBeenCalledWith(SELLER);
     expect(seed).toHaveBeenCalledWith({ pubky: SELLER });
     expect(create).toHaveBeenCalledWith({ ownerPubky: SELLER, profile: PROFILE, location: undefined });
+  });
+
+  it('publishes a storefront when the seller saves with Accept USDT on and Bitcoin off', async () => {
+    vi.spyOn(CommerceApplication, 'putMyPaymentConfig').mockResolvedValue(config(false, true));
+
+    await CommerceController.putMyPaymentConfig({
+      bitcoinEnabled: false,
+      paypalMerchantEmail: null,
+      usdtEnabled: true,
+    });
+    await settled();
+
+    expect(needs).toHaveBeenCalledWith(SELLER);
+    expect(create).toHaveBeenCalledWith({ ownerPubky: SELLER, profile: PROFILE, location: undefined });
+  });
+
+  it('publishes a storefront on load for a seller who accepts USDT but not Bitcoin', async () => {
+    vi.spyOn(CommerceApplication, 'getMyPaymentConfig').mockResolvedValue(config(false, true));
+
+    await CommerceController.getMyPaymentConfig();
+    await settled();
+
+    expect(needs).toHaveBeenCalledWith(SELLER);
+    expect(create).toHaveBeenCalledOnce();
+  });
+
+  it('does not publish when both Bitcoin and USDT are off', async () => {
+    vi.spyOn(CommerceApplication, 'putMyPaymentConfig').mockResolvedValue(config(false, false));
+    vi.spyOn(CommerceApplication, 'getMyPaymentConfig').mockResolvedValue(config(false, false));
+
+    await CommerceController.putMyPaymentConfig({
+      bitcoinEnabled: false,
+      paypalMerchantEmail: null,
+      usdtEnabled: false,
+    });
+    await CommerceController.getMyPaymentConfig();
+    await settled();
+
+    expect(needs).not.toHaveBeenCalled();
   });
 
   it('does not read the profile or write when the seller already has a shop', async () => {

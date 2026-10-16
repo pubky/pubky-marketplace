@@ -3,7 +3,8 @@
  * while the marketplace service's USDT flag is on, as docs/ecommerce/usdt-payments.md
  * (plan section 2.3) specifies it. Wire keys are snake_case. The USDT fields are
  * `usdt_enabled`, `usdt_setup` (`ready | setup_required | unavailable`) and
- * `usdt_setup_action` (`setup | reconnect | null`).
+ * `usdt_setup_action` (`setup | reconnect | null`). Every own view also carries
+ * `bitcoin_setup` (`ready | setup_required | unavailable`), flag on or off.
  *
  * These mirror the service's contract; they were not captured from a running
  * service (its readiness slice is built in parallel). Replace them with a
@@ -11,6 +12,7 @@
  */
 const BASE_PAYMENT_CONFIG = {
   bitcoin_enabled: true,
+  bitcoin_setup: 'ready',
   paypal_merchant_email: 'seller@example.com',
   updated_at: '2026-10-09T12:00:00.000Z',
 } as const;
@@ -40,6 +42,7 @@ export const USDT_SELLER_CONFIG_SETUP_WIRE = {
   payment_config: {
     ...BASE_PAYMENT_CONFIG,
     bitcoin_enabled: false,
+    bitcoin_setup: 'setup_required',
     usdt_enabled: false,
     usdt_setup: 'setup_required',
     usdt_setup_action: 'setup',
@@ -50,6 +53,7 @@ export const USDT_SELLER_CONFIG_SETUP_WIRE = {
 export const USDT_SELLER_CONFIG_UNAVAILABLE_WIRE = {
   payment_config: {
     ...BASE_PAYMENT_CONFIG,
+    bitcoin_setup: 'unavailable',
     usdt_enabled: false,
     usdt_setup: 'unavailable',
     usdt_setup_action: null,

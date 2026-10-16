@@ -14,7 +14,6 @@ import { Switch } from '@/atoms/Switch/Switch';
 import { Typography } from '@/atoms/Typography/Typography';
 import { isSocialLinkOutEnabled } from '@/config/social';
 import { CommerceController } from '@/controllers/commerce/commerce';
-import { useMarketplaceLocksConnect } from '@/hooks/useMarketplaceLocksConnect/useMarketplaceLocksConnect';
 import {
   consumeListingComposerReturnTo,
   peekListingComposerReturnTo,
@@ -39,7 +38,6 @@ export function MarketplacePaymentSettings() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const currentUserPubky = useAuthStore((state) => state.currentUserPubky);
-  const locksConnect = useMarketplaceLocksConnect();
   const showFxEstimate = useMarketplaceDisplayStore((state) => state.showFxEstimate);
   const setShowFxEstimate = useMarketplaceDisplayStore((state) => state.setShowFxEstimate);
   const measurementSystem = useMarketplaceDisplayStore((state) => state.measurementSystem);
@@ -124,7 +122,7 @@ export function MarketplacePaymentSettings() {
           )}
         </div>
 
-        <MarketplaceGetPaidSettings locksConnect={locksConnect} onSaved={onPaymentSaved} />
+        <MarketplaceGetPaidSettings onSaved={onPaymentSaved} />
 
         <MarketplaceDeliveryKeyStep />
 

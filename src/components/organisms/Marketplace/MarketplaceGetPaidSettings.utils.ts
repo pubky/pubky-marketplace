@@ -1,6 +1,5 @@
 import type { SellerPaymentConfigOwnView } from '@/libs/commerce/payment-methods';
 import type { UsdtSellerReadiness } from '@/libs/commerce/usdt-seller-setup';
-import { locksCreatorMatchesShopPubky } from '@/services/locks/locks-frontend-session';
 
 /** Plain-language setup state shown as the status pill on each method card. */
 export type PaymentMethodStatus = 'not_set_up' | 'connected' | 'email_saved' | 'needs_attention';
@@ -26,51 +25,32 @@ export function derivePaypalStatus(config: SellerPaymentConfigOwnView | null): P
 }
 
 /**
- * Bitcoin is connected only when both live signals are present:
- * - Lock Server authorization: `connectedCreator` from `useMarketplaceLocksConnect`
- *   (restored from localStorage and revalidated with the Lock Server after reload)
- * - Paykit claim: `accountClaimed === true` from `useMarketplaceSellerPaymentConfig`
+ * Bitcoin is Connected when the service's uncached `bitcoin_setup` says the
+ * seller's Bitkit setup can receive it (`accountClaimed === true` from
+ * `useMarketplaceSellerPaymentConfig`). Anything else is Not set up; an
+ * unknown answer is explained under the Accept bitcoin switch.
  */
-export function deriveBitcoinStatus(args: {
-  connectedCreator: string | null;
-  accountPubky: string | null | undefined;
-  accountClaimed: boolean | null;
-  locksError: string | null;
-  claimError: string | null;
-}): PaymentMethodStatus {
-  if (args.locksError || args.claimError) return 'needs_attention';
-  const locksAuthorized = locksCreatorMatchesShopPubky(args.connectedCreator, args.accountPubky);
-  const paykitClaimed = args.accountClaimed === true;
-  if (locksAuthorized && paykitClaimed) return 'connected';
-  if (!locksAuthorized && !paykitClaimed) return 'not_set_up';
-  return 'needs_attention';
+export function deriveBitcoinStatus(accountClaimed: boolean | null): PaymentMethodStatus {
+  return accountClaimed === true ? 'connected' : 'not_set_up';
 }
 
-/** The bitcoin step that still keeps "Accept bitcoin" switched off, or null when nothing is missing. */
-export type BitcoinToggleBlocker = 'lock-server' | 'bitkit' | 'both' | 'bitkit-unknown';
+/** Why "Accept bitcoin" is still switched off, or null when nothing is missing. */
+export type BitcoinToggleBlocker = 'bitkit' | 'bitkit-unknown';
 
 export const BITCOIN_TOGGLE_BLOCKER_COPY: Record<BitcoinToggleBlocker, string> = {
-  'lock-server': 'Connect the Lock Server first.',
   bitkit: 'Connect Bitkit first.',
-  both: 'Connect the Lock Server and Bitkit first.',
   'bitkit-unknown': "We can't check Bitkit right now.",
 };
 
 /**
- * Names the missing step behind a disabled "Accept bitcoin" switch. A Lock
- * Server error counts as step 1 missing. An unknown claim (`null`) is never
- * reported as missing: the read failed, so Bitkit may already be connected.
- * Bitkit is named only when the claim read answered `false`.
+ * Names the missing step behind a disabled "Accept bitcoin" switch. An
+ * unknown claim (`null`) is never reported as missing: the read failed, so
+ * Bitkit may already be connected. Bitkit is named only when the service
+ * answered `setup_required`.
  */
-export function deriveBitcoinToggleBlocker(args: {
-  lockServerConnected: boolean;
-  locksError: string | null;
-  accountClaimed: boolean | null;
-}): BitcoinToggleBlocker | null {
-  const lockServerMissing = !args.lockServerConnected || Boolean(args.locksError);
-  if (lockServerMissing) return args.accountClaimed === false ? 'both' : 'lock-server';
-  if (args.accountClaimed === false) return 'bitkit';
-  if (args.accountClaimed === null) return 'bitkit-unknown';
+export function deriveBitcoinToggleBlocker(accountClaimed: boolean | null): BitcoinToggleBlocker | null {
+  if (accountClaimed === false) return 'bitkit';
+  if (accountClaimed === null) return 'bitkit-unknown';
   return null;
 }
 
