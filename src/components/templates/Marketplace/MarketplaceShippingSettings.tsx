@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Package, Pencil, Plus, Trash2 } from 'lucide-react';
 import { Controller, useForm, useWatch } from 'react-hook-form';
@@ -303,6 +303,23 @@ export function MarketplaceShippingSettings() {
 
   const presetCurrency = useWatch({ control: form.control, name: 'currency' });
 
+  const presetCardRef = useRef<HTMLDivElement>(null);
+  const addPresetButtonRef = useRef<HTMLButtonElement>(null);
+  const editButtonRefs = useRef(new Map<string, HTMLButtonElement>());
+  const previousEditingId = useRef<string | null>(null);
+
+  // Opening the form moves focus into it; closing it hands focus back to whichever button opened it.
+  useEffect(() => {
+    const closedId = previousEditingId.current;
+    previousEditingId.current = editingId;
+    if (editingId !== null) {
+      presetCardRef.current?.scrollIntoView?.({ block: 'nearest' });
+      presetCardRef.current?.querySelector<HTMLInputElement>('input[name="shippingLabel"]')?.focus();
+    } else if (closedId !== null) {
+      (editButtonRefs.current.get(closedId) ?? addPresetButtonRef.current)?.focus();
+    }
+  }, [editingId]);
+
   const submit = form.handleSubmit(async (data) => {
     const editing = presets.find(({ id }) => id === editingId);
     if (await saveFromFields(editing ? bareShippingPresetId(editing) : null, data, data.currency)) {
@@ -311,6 +328,70 @@ export function MarketplaceShippingSettings() {
       setEditingId(null);
     }
   });
+
+  const presetFormCard = editingId !== null && (
+    <Card
+      ref={presetCardRef}
+      role="region"
+      aria-labelledby="preset-form-heading"
+      className="scroll-mt-24 rounded-md p-0 shadow-lg"
+    >
+      <CardContent className="grid gap-6 p-6">
+        <Typography as="h2" id="preset-form-heading" className="text-xl font-semibold">
+          {editingId === 'new' ? 'New preset' : 'Edit preset'}
+        </Typography>
+        <SettingsSectionContent>
+          <ControlledInputField
+            name="shippingLabel"
+            control={form.control}
+            label="Shipping label"
+            placeholder="Standard shipping"
+          />
+          <div className="grid gap-4 sm:grid-cols-4">
+            <Container className="gap-2">
+              <Label htmlFor="preset-currency" className={FORM_LABEL_CLASSES}>
+                Currency
+              </Label>
+              <Controller
+                name="currency"
+                control={form.control}
+                render={({ field }) => (
+                  <Select value={field.value} onValueChange={field.onChange}>
+                    <SelectTrigger theme="secondary" id="preset-currency" className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {LISTING_CURRENCY_CODES.map((code) => (
+                        <SelectItem key={code} value={code}>
+                          {LISTING_CURRENCY_REGISTRY[code].pickerLabel}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+              />
+            </Container>
+            <ControlledInputField
+              name="shippingPrice"
+              control={form.control}
+              label={`Flat price (${amountInputUnitLabel(assetForListingCurrency(presetCurrency))})`}
+              placeholder={amountInputExample(assetForListingCurrency(presetCurrency), AMOUNT_EXAMPLES.shipping)}
+            />
+            <ControlledInputField name="shippingMinDays" control={form.control} label="Min days" placeholder="3" />
+            <ControlledInputField name="shippingMaxDays" control={form.control} label="Max days" placeholder="7" />
+          </div>
+          <div className="flex gap-2">
+            <Button className="rounded-full" onClick={() => void submit()}>
+              Save preset
+            </Button>
+            <Button variant="secondary" className="rounded-full" onClick={() => setEditingId(null)}>
+              Cancel
+            </Button>
+          </div>
+        </SettingsSectionContent>
+      </CardContent>
+    </Card>
+  );
 
   return (
     <ContentLayout
@@ -335,85 +416,20 @@ export function MarketplaceShippingSettings() {
             </Typography>
           </div>
           {editingId === null && (
-            <Button className="rounded-full" onClick={beginCreate}>
+            <Button ref={addPresetButtonRef} className="rounded-full" onClick={beginCreate}>
               <Plus className="size-4" />
               Add preset
             </Button>
           )}
         </div>
 
+        {editingId === 'new' && presetFormCard}
+
         <DeliveryPrivacySection />
 
         <ShippoIntegrationCard />
 
-        {editingId !== null && (
-          <Card className="rounded-md p-0 shadow-lg">
-            <CardContent className="grid gap-6 p-6">
-              <Typography as="h2" className="text-xl font-semibold">
-                {editingId === 'new' ? 'New preset' : 'Edit preset'}
-              </Typography>
-              <SettingsSectionContent>
-                <ControlledInputField
-                  name="shippingLabel"
-                  control={form.control}
-                  label="Shipping label"
-                  placeholder="Standard shipping"
-                />
-                <div className="grid gap-4 sm:grid-cols-4">
-                  <Container className="gap-2">
-                    <Label htmlFor="preset-currency" className={FORM_LABEL_CLASSES}>
-                      Currency
-                    </Label>
-                    <Controller
-                      name="currency"
-                      control={form.control}
-                      render={({ field }) => (
-                        <Select value={field.value} onValueChange={field.onChange}>
-                          <SelectTrigger theme="secondary" id="preset-currency" className="w-full">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {LISTING_CURRENCY_CODES.map((code) => (
-                              <SelectItem key={code} value={code}>
-                                {LISTING_CURRENCY_REGISTRY[code].pickerLabel}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      )}
-                    />
-                  </Container>
-                  <ControlledInputField
-                    name="shippingPrice"
-                    control={form.control}
-                    label={`Flat price (${amountInputUnitLabel(assetForListingCurrency(presetCurrency))})`}
-                    placeholder={amountInputExample(assetForListingCurrency(presetCurrency), AMOUNT_EXAMPLES.shipping)}
-                  />
-                  <ControlledInputField
-                    name="shippingMinDays"
-                    control={form.control}
-                    label="Min days"
-                    placeholder="3"
-                  />
-                  <ControlledInputField
-                    name="shippingMaxDays"
-                    control={form.control}
-                    label="Max days"
-                    placeholder="7"
-                  />
-                </div>
-                <div className="flex gap-2">
-                  <Button className="rounded-full" onClick={() => void submit()}>
-                    Save preset
-                  </Button>
-                  <Button variant="secondary" className="rounded-full" onClick={() => setEditingId(null)}>
-                    Cancel
-                  </Button>
-                </div>
-              </SettingsSectionContent>
-            </CardContent>
-          </Card>
-        )}
+        {editingId !== 'new' && presetFormCard}
 
         {isLoading ? (
           <Skeleton className="h-32 w-full" />
@@ -438,6 +454,10 @@ export function MarketplaceShippingSettings() {
                       variant="ghost"
                       className="rounded-full"
                       aria-label={`Edit ${preset.label}`}
+                      ref={(button) => {
+                        if (button) editButtonRefs.current.set(preset.id, button);
+                        else editButtonRefs.current.delete(preset.id);
+                      }}
                       onClick={() => beginEdit(preset)}
                     >
                       <Pencil className="size-4" />
