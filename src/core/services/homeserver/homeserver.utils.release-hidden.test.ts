@@ -123,7 +123,9 @@ describe('createCancelableAuthApproval with releaseWhileHidden', () => {
 
   it('frees a dead flow once when the page hides while waiting to resume after a transport error', async () => {
     const live = {
-      tryPollOnce: vi.fn().mockRejectedValue(Object.assign(new Error('HTTP transport error'), { name: 'RequestError' })),
+      tryPollOnce: vi
+        .fn()
+        .mockRejectedValue(Object.assign(new Error('HTTP transport error'), { name: 'RequestError' })),
       free: vi.fn(),
     };
     const resumed = { tryPollOnce: vi.fn().mockResolvedValue(session), free: vi.fn() };
