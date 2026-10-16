@@ -268,7 +268,7 @@ describe('MarketplaceStoreConnections', () => {
       expect(await screen.findByTestId('store-connections-notice')).toHaveTextContent(
         'That store is already connected to another Pubky shop.',
       );
-      expect(screen.getByTestId('connect-shopify')).toBeInTheDocument();
+      expect(await screen.findByTestId('connect-shopify')).toBeInTheDocument();
     });
 
     it('checks an install that finished with a permission missing and names it', async () => {
