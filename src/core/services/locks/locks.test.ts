@@ -392,6 +392,12 @@ describe('LocksGatewayService', () => {
       }
     });
 
+    it('prefixes a bare id that itself starts with pubky', () => {
+      const z32 = 'pubky3f4khszd4gzg38bsazw88dmcfws36js9ct19s9dikb3a9ht';
+      const built = new URL(LocksGatewayService.buildPaykitReconnectUrl(returnTo, 'opaque-state', z32));
+      expect(built.searchParams.get('creator')).toBe(`pubky${z32}`);
+    });
+
     it('builds /setup/reconnect from the configured origin, whatever path or query the setup URL carries', () => {
       for (const configured of [
         'https://paykit.example.com/setup/?stale=1#embed',

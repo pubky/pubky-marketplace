@@ -353,8 +353,12 @@ async function readLocksRefusalCode(response: Response): Promise<LocksSubmitRefu
   }
 }
 
+// `p`, `u`, `b`, `k` and `y` are z-base-32 characters, so a bare 52-character
+// id can itself start with `pubky`; only the 57-character form is prefixed.
+const PREFIXED_PUBKY_LENGTH = 'pubky'.length + 52;
+
 function withPubkyPrefix(pubky: string): string {
-  return pubky.startsWith('pubky') ? pubky : `pubky${pubky}`;
+  return pubky.length === PREFIXED_PUBKY_LENGTH && pubky.startsWith('pubky') ? pubky : `pubky${pubky}`;
 }
 
 function toLocksResource(resource: string): string {
