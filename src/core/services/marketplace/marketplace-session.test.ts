@@ -19,6 +19,12 @@ const TOKEN_C = 'C'.repeat(43);
 
 const config = vi.hoisted(() => ({
   mode: 'transaction-service' as string,
+  grantSessions: false,
+}));
+
+vi.mock('@/libs/runtime-config/runtime-config', async (original) => ({
+  ...(await original<typeof import('@/libs/runtime-config/runtime-config')>()),
+  getMarketplaceGrantSessionEnabled: () => config.grantSessions,
 }));
 
 vi.mock('@/config/commerce', async () => {
@@ -609,6 +615,50 @@ describe('MarketplaceSessionService', () => {
     ).toThrow(expect.objectContaining({ code: 'FORBIDDEN' }));
     expect(MarketplaceSessionService.getActiveSession()).toBeNull();
     expect(window.localStorage.getItem(MARKETPLACE_SESSION_STORAGE_KEY)).toBeNull();
+  });
+});
+
+describe('MarketplaceSessionService sign-out revoke (grant sessions)', () => {
+  const SESSION_ID = '22222222-2222-4222-8222-222222222222';
+
+  afterEach(() => {
+    config.grantSessions = false;
+    vi.unstubAllGlobals();
+  });
+
+  function holdSession() {
+    MarketplaceSessionService.establishClaimedGrantSession(
+      {
+        token: TOKEN,
+        sessionId: SESSION_ID,
+        pubky: PUBKY,
+        capabilities: MARKETPLACE_SESSION_GRANT,
+        expiresAt: inOneDay(),
+      },
+      PUBKY,
+    );
+  }
+
+  it('revokes the session at the service on sign-out when grant sessions are on', () => {
+    config.grantSessions = true;
+    const fetchMock = vi.fn(async () => new Response(null, { status: 204 }));
+    vi.stubGlobal('fetch', fetchMock);
+    holdSession();
+    MarketplaceSessionService.clearForSignOut();
+    expect(fetchMock).toHaveBeenCalledWith(`http://127.0.0.1:8080/v1/auth/sessions/${SESSION_ID}`, {
+      method: 'DELETE',
+      headers: { authorization: `Bearer ${TOKEN}` },
+      cache: 'no-store',
+    });
+    expect(MarketplaceSessionService.getActiveSession()).toBeNull();
+  });
+
+  it('leaves the service session alone with the flag off', () => {
+    const fetchMock = vi.fn(async () => new Response(null, { status: 204 }));
+    vi.stubGlobal('fetch', fetchMock);
+    holdSession();
+    MarketplaceSessionService.clearForSignOut();
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });
 

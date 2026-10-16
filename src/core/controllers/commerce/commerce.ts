@@ -33,12 +33,13 @@ import type { CommerceDeliveryAddressValue } from '@/libs/commerce/postal-addres
 import type { PrivRecoveryKeyExport } from '@/libs/commerce/priv-recovery-key';
 import type { ShipFromAddress, ShippingParcel, ShippoRate } from '@/libs/commerce/shipping';
 import { buildMarketplaceListingAggregateId } from '@/libs/commerce/transaction-commands';
-import { commercePositiveMoneySchema, commercePubkySchema } from '@/libs/commerce/transaction-contracts';
+import { commercePositiveMoneySchema } from '@/libs/commerce/transaction-contracts';
 import { isAppError } from '@/libs/error/error';
 import { ValidationErrorCode } from '@/libs/error/error.codes';
 import { Err } from '@/libs/error/error.factories';
 import { ErrorService } from '@/libs/error/error.types';
 import { Logger } from '@/libs/logger/logger';
+import { getMarketplaceGrantSessionEnabled } from '@/libs/runtime-config/runtime-config';
 import type { CommerceIndexedReview, CommerceListingProjectionModelSchema } from '@/models/commerce/commerce.schema';
 import type { Pubky } from '@/models/models.types';
 import { CommerceRecordNormalizer } from '@/pipes/commerce/commerce.normalizer';
@@ -48,12 +49,7 @@ import { isRecognizedMarketplaceNotification } from '@/services/marketplace/mark
 import type { MarketplaceSessionEndedEvent, MarketplaceSessionInfo } from '@/services/marketplace/marketplace-session';
 import { useAuthStore } from '@/stores/auth/auth.store';
 import { useCommerceStore } from '@/stores/commerce/commerce.store';
-import type {
-  CommerceConditionFilter,
-  CommerceSaleFormatFilter,
-  CommerceSort,
-  CommerceUsdtRefusalReason,
-} from '@/stores/commerce/commerce.types';
+import type { CommerceConditionFilter, CommerceSaleFormatFilter, CommerceSort } from '@/stores/commerce/commerce.types';
 import { useNotificationStore } from '@/stores/notification/notification.store';
 
 /** Rates for an order, or why this device could not open the address to quote against. */
@@ -68,6 +64,10 @@ export class CommerceController {
   private static defaultShopSession = new Map<string, Promise<void>>();
 
   private static sessionEndedUnbind: (() => void) | null = null;
+  private static grantSessionMint: { session: object; promise: Promise<MarketplaceSessionInfo | null> } | null = null;
+  private static grantSessionFailures = new WeakSet<object>();
+  /** The grant-minted session this tab installed, to recognise its rejection. */
+  private static grantSessionInstalled: { authSession: object; issuedAt: string } | null = null;
   private static inventorySessionEndedUnbind: (() => void) | null = null;
 
   /**
@@ -295,6 +295,69 @@ export class CommerceController {
   }
 
   /**
+   * Gives a grant-backed sign-in its marketplace session without a signer
+   * approval: adopts a persisted bearer when one is on the device, otherwise
+   * mints one from the sign-in grant. Concurrent callers share one attempt.
+   * Resolves null when the flag is off, the sign-in is not grant-backed, or
+   * the service refused; the caller then offers the approval flow. A failed
+   * attempt, or a minted session the service later rejected, is not repeated
+   * for the same sign-in unless `retryAfterFailure` (an explicit user retry).
+   */
+  static async ensureMarketplaceSessionFromGrant(
+    options: { retryAfterFailure?: boolean } = {},
+  ): Promise<MarketplaceSessionInfo | null> {
+    if (!getMarketplaceGrantSessionEnabled()) return null;
+    const auth = useAuthStore.getState();
+    const session = auth.session;
+    const grant = session?.grant;
+    if (!session || !grant || auth.isLoggingOut) return null;
+    const pubky = session.info.publicKey.z32();
+    const current = useCommerceStore.getState().marketplaceSession;
+    if (CommerceApplication.hasActiveMarketplaceSession() && current?.pubky === pubky) return current;
+    if (this.grantSessionMint?.session === session) return await this.grantSessionMint.promise;
+    if (this.grantSessionFailures.has(session) && !options.retryAfterFailure) return null;
+
+    const isCurrent = () => useAuthStore.getState().session === session && !useAuthStore.getState().isLoggingOut;
+    const attempt = (async (): Promise<MarketplaceSessionInfo | null> => {
+      try {
+        const restored = this.restorePersistedMarketplaceSession(pubky);
+        if (restored) return restored;
+        const minted = await CommerceApplication.mintMarketplaceSessionFromGrant({ grant, pubky });
+        if (!isCurrent()) {
+          await CommerceApplication.revokeGrantMarketplaceSession(minted);
+          return null;
+        }
+        let installed: MarketplaceSessionInfo;
+        try {
+          installed = CommerceApplication.installGrantMarketplaceSession(minted, pubky);
+        } catch (error) {
+          await CommerceApplication.revokeGrantMarketplaceSession(minted);
+          throw error;
+        }
+        this.grantSessionInstalled = { authSession: session, issuedAt: installed.issuedAt };
+        this.writeMarketplaceSessionStore(installed);
+        this.grantSessionFailures.delete(session);
+        return installed;
+      } catch (error) {
+        if (isCurrent()) this.grantSessionFailures.add(session);
+        // SDK errors may carry proof material in their message; log the kind only.
+        if (!isAppError(error)) {
+          Logger.error('Marketplace session from the sign-in grant failed', {
+            errorName: error instanceof Error ? error.name : typeof error,
+          });
+        }
+        return null;
+      }
+    })();
+    this.grantSessionMint = { session, promise: attempt };
+    try {
+      return await attempt;
+    } finally {
+      if (this.grantSessionMint?.promise === attempt) this.grantSessionMint = null;
+    }
+  }
+
+  /**
    * Loads a still-valid persisted marketplace bearer into memory and the
    * commerce store. Returns the public facts, or null when nothing valid is
    * stored for this account. Seller Studio uses this so a reload does not
@@ -380,6 +443,7 @@ export class CommerceController {
     row: InventoryBoardRow;
     targetAvailable: number;
     idempotencyKey: string;
+    variantId?: string;
   }) {
     return await CommerceInventoryApplication.setAvailable(input);
   }
@@ -400,8 +464,52 @@ export class CommerceController {
     return await CommerceInventoryImportApplication.forSeller(sellerPubky).planFile(file, settings);
   }
 
+  static async planInventoryStoreImport(
+    sellerPubky: string,
+    catalog: Parameters<CommerceInventoryImportApplication['planStoreCatalog']>[0],
+    settings: Parameters<CommerceInventoryImportApplication['planStoreCatalog']>[1],
+    offeredCurrencies: Parameters<CommerceInventoryImportApplication['planStoreCatalog']>[2],
+  ) {
+    return await CommerceInventoryImportApplication.forSeller(sellerPubky).planStoreCatalog(
+      catalog,
+      settings,
+      offeredCurrencies,
+    );
+  }
+
   static async inventoryImportImageTargets(sellerPubky: string, manifestId: string) {
     return await CommerceInventoryImportApplication.forSeller(sellerPubky).imageTargets(manifestId);
+  }
+
+  static async markInventoryImportStarted(sellerPubky: string, manifestId: string) {
+    return await CommerceInventoryImportApplication.forSeller(sellerPubky).markStarted(manifestId);
+  }
+
+  static async findUnfinishedInventoryImport(sellerPubky: string) {
+    return await CommerceInventoryImportApplication.forSeller(sellerPubky).findUnfinished();
+  }
+
+  static async discardInventoryImport(sellerPubky: string, manifestId: string) {
+    return await CommerceInventoryImportApplication.forSeller(sellerPubky).discard(manifestId);
+  }
+
+  static async inventoryImportKnownMedia(sellerPubky: string, manifestId: string, urls: readonly string[]) {
+    return await CommerceInventoryImportApplication.forSeller(sellerPubky).knownMedia(manifestId, urls);
+  }
+
+  static async journalInventoryImportPhoto(
+    sellerPubky: string,
+    manifestId: string,
+    rowIdentity: string,
+    url: string,
+    media: Parameters<CommerceInventoryImportApplication['journalPhoto']>[3],
+  ) {
+    return await CommerceInventoryImportApplication.forSeller(sellerPubky).journalPhoto(
+      manifestId,
+      rowIdentity,
+      url,
+      media,
+    );
   }
 
   static async attachInventoryImportImages(
@@ -677,8 +785,8 @@ export class CommerceController {
   static async getMyPaymentConfig() {
     const ownerPubky = this.getCurrentUserPubky();
     const config = await CommerceApplication.getMyPaymentConfig(ownerPubky);
-    // Sellers who turned bitcoin on before the Shop published storefronts get one here.
-    if (config?.bitcoinEnabled) this.ensureStorefront(ownerPubky);
+    // Sellers who turned bitcoin or USDT on before the Shop published storefronts get one here.
+    if (config?.bitcoinEnabled || config?.usdtEnabled === true) this.ensureStorefront(ownerPubky);
     return config;
   }
 
@@ -690,13 +798,13 @@ export class CommerceController {
   }) {
     const ownerPubky = this.getCurrentUserPubky();
     const saved = await CommerceApplication.putMyPaymentConfig(ownerPubky, input);
-    if (saved.bitcoinEnabled) this.ensureStorefront(ownerPubky);
+    if (saved.bitcoinEnabled || saved.usdtEnabled === true) this.ensureStorefront(ownerPubky);
     return saved;
   }
 
   /**
-   * A seller who can be paid in bitcoin (Accept bitcoin on, or a published
-   * listing) gets a default storefront when they have none, because Bitkit
+   * A seller who can be paid through Paykit (Accept bitcoin or Accept USDT on,
+   * or a published listing) gets a default storefront when they have none, because Bitkit
    * only makes a seller the buyer's contact when the seller publishes
    * `shop.json`. Runs behind the seller's action and never blocks or fails it.
    * Checks once per seller per session; a failure or an account switch allows
@@ -838,11 +946,6 @@ export class CommerceController {
   /** Seller's PayPal receipt confirmation — this is what pays the order. */
   static async confirmFiatReceived(orderId: string) {
     return await CommerceApplication.confirmFiatReceived(this.getCurrentUserPubky(), orderId);
-  }
-
-  /** Whether the current user already has a claimed watch-only account. */
-  static async isOwnPaykitAccountClaimed() {
-    return await CommerceApplication.isPaykitAccountClaimed(this.getCurrentUserPubky());
   }
 
   /**
@@ -1127,15 +1230,6 @@ export class CommerceController {
   }
 
   /**
-   * Remembers, for this browser session, that the service refused a USDT bind
-   * for this seller set, so the checkout picker and the order's payment card
-   * stop offering a method that would be refused again.
-   */
-  static rememberUsdtRefusal(sellerKey: string, reason: CommerceUsdtRefusalReason): void {
-    useCommerceStore.getState().setUsdtRefusal(sellerKey, reason);
-  }
-
-  /**
    * The current buyer's per-line pickup-details reveal for one of their
    * paid orders (§A3). Memory only: re-fetch on each view, never persist.
    */
@@ -1349,6 +1443,11 @@ export class CommerceController {
     return response;
   }
 
+  /** The connected stores of these sellers that a buyer may share the delivery address with (opt-in). */
+  static async getConnectorStores(sellerPubkys: readonly string[]) {
+    return await CommerceApplication.getConnectorStores(sellerPubkys);
+  }
+
   /** The pickup-details CAS version: a non-negative safe integer (0 when no details exist yet). */
   private static pickupDetailsVersion(value: unknown): number {
     if (typeof value !== 'number' || !Number.isInteger(value) || value < 0 || value > Number.MAX_SAFE_INTEGER) {
@@ -1457,54 +1556,6 @@ export class CommerceController {
       this.getCurrentUserPubky(),
       CommerceRecordNormalizer.entityId(paymentId),
     );
-  }
-
-  static async createLocksFrontendSession(code: unknown, state: unknown, accountPubky?: unknown) {
-    if (
-      typeof code !== 'string' ||
-      code.length === 0 ||
-      code.length > 4_096 ||
-      typeof state !== 'string' ||
-      state.length === 0 ||
-      state.length > 256
-    ) {
-      throw Err.validation(ValidationErrorCode.INVALID_INPUT, 'Locks connect completion is invalid.', {
-        service: ErrorService.Local,
-        operation: 'createLocksFrontendSession',
-      });
-    }
-    const pubky = typeof accountPubky === 'string' && accountPubky.length > 0 ? accountPubky : undefined;
-    return await CommerceApplication.createLocksFrontendSession(code, state, pubky);
-  }
-
-  static async getLocksCreatorAuthorityStatus(sessionToken: unknown) {
-    if (typeof sessionToken !== 'string' || sessionToken.length === 0 || sessionToken.length > 4_096) {
-      throw Err.validation(ValidationErrorCode.INVALID_INPUT, 'Lock Server session is invalid.', {
-        service: ErrorService.Local,
-        operation: 'getLocksCreatorAuthorityStatus',
-      });
-    }
-    return await CommerceApplication.getLocksCreatorAuthorityStatus(sessionToken);
-  }
-
-  static async getLocksPublicCreatorAuthorityStatus(accountPubky: unknown) {
-    const parsed = commercePubkySchema.safeParse(accountPubky);
-    if (!parsed.success) {
-      throw Err.validation(ValidationErrorCode.INVALID_INPUT, 'Shop account is invalid.', {
-        service: ErrorService.Local,
-        operation: 'getLocksPublicCreatorAuthorityStatus',
-      });
-    }
-    return await CommerceApplication.getLocksPublicCreatorAuthorityStatus(parsed.data);
-  }
-
-  static restoreLocksFrontendSession(accountPubky: string) {
-    return CommerceApplication.restoreLocksFrontendSession(accountPubky);
-  }
-
-  /** Removes the persisted Lock Server session only while it still carries `token`. */
-  static clearLocksFrontendSession(token: string): void {
-    CommerceApplication.clearLocksFrontendSession(token);
   }
 
   static async lookupLocksVerification(creatorPubky: unknown, bundleId: unknown) {
@@ -1996,6 +2047,14 @@ export class CommerceController {
    * the new session and must never resurrect the cleared one.
    */
   private static onMarketplaceSessionEnded(event: MarketplaceSessionEndedEvent): void {
+    // A grant-minted session the service rejected must not be re-minted at
+    // once: the store clear below wakes the grant-session coordinator, and a
+    // service that keeps rejecting would otherwise see a mint per request.
+    const installed = this.grantSessionInstalled;
+    if (installed && installed.issuedAt === event.issuedAt) {
+      this.grantSessionInstalled = null;
+      if (event.reason === 'rejected') this.grantSessionFailures.add(installed.authSession);
+    }
     const current = useCommerceStore.getState().marketplaceSession;
     if (!current) return;
     if (Date.parse(current.issuedAt) > Date.parse(event.issuedAt)) return;

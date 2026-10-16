@@ -68,6 +68,10 @@ vi.mock('@/hooks/useChatIdentity/useChatIdentity', () => ({
   }),
 }));
 
+vi.mock('@/hooks/useSignOut/useSignOut', () => ({
+  useSignOut: () => ({ handleSignOut: async () => {}, isLoading: false }),
+}));
+
 // Dismissal lives in localStorage per account; the scene decides instead.
 vi.mock('@/hooks/useChatPrivacyNote/useChatPrivacyNote', () => ({
   useChatPrivacyNote: () => ({ showNote: scene.showNote, dismissNote: () => {} }),
@@ -91,9 +95,12 @@ vi.mock('@/controllers/chat/chat', () => ({
   ChatController: { commitSendMessage: async () => 'id' },
 }));
 
+// The real shell renders the app header above the page (96px on phones, 144px
+// from lg); the conversation header sticks at that offset, so the frame keeps
+// the same room above the content.
 vi.mock('@/organisms/ContentLayout/ContentLayout', () => ({
   ContentLayout: ({ children }: { children: React.ReactNode }) => (
-    <main className="h-[900px] w-full py-6">{children}</main>
+    <main className="h-[900px] w-full pt-24 pb-6 lg:pt-36">{children}</main>
   ),
 }));
 
@@ -308,6 +315,7 @@ describe('Chat conversation — visual regression', () => {
       disableHover: true,
     });
     await expect.element(screen.getByTestId('chat-identity-notice')).toBeInTheDocument();
+    await expect.element(screen.getByRole('button', { name: 'Sign out' })).toBeInTheDocument();
     await expect.element(screen.getByText('Sign in again to send messages.')).toBeInTheDocument();
     await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('chat-conversation-needs-reauth-desktop');
   });

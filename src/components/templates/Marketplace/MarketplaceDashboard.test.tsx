@@ -137,6 +137,25 @@ describe('MarketplaceDashboard', () => {
     paymentGate.reason = null;
   });
 
+  describe('store connections entry', () => {
+    const entry = () => screen.getByRole('link', { name: /Store connections/ });
+
+    it('always shows the Store connections button next to Payment settings', () => {
+      render(<MarketplaceDashboard />);
+      expect(entry()).toHaveAttribute('href', MARKETPLACE_ROUTES.SETTINGS_STORE_CONNECTIONS);
+      expect(screen.getByRole('link', { name: /Payment settings/ })).toBeInTheDocument();
+    });
+
+    it.each(['unavailable', 'sandbox', 'transaction-service'] as const)(
+      'shows it in the %s commerce mode too, because it is not hidden behind a setting',
+      (mode) => {
+        vi.spyOn(commerceConfig, 'getCommerceAdapterMode').mockReturnValue(mode);
+        render(<MarketplaceDashboard />);
+        expect(entry()).toBeInTheDocument();
+      },
+    );
+  });
+
   describe('storefront prompt', () => {
     it('asks a seller with listings and no shop to set up their storefront', async () => {
       shopState.shop = null;

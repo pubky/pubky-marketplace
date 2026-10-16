@@ -14,7 +14,9 @@ import {
   ORDER_FIXTURE_BUYER as USDT_SCENE_ME,
 } from '@/test/fixtures/commerce/orders';
 import { USDT_ORDER_FIELDS } from '@/test/fixtures/commerce/usdt-orders';
-import { formatDateTime } from '@/libs/utils/dateTime';
+import { setupFixedDateLocale } from '@/test-utils/date-locale';
+
+setupFixedDateLocale('en-US');
 
 // Deterministic BTC/USD rate for the capture (1 BTC = $100,000): the "≈"
 // estimates render from this fixed value, never from the network.
@@ -569,6 +571,9 @@ describe('Marketplace orders — visual regression', () => {
     ordersState.error = null;
 
     const screen = await renderForVRT(<MarketplaceOrders />, { viewport: VRT_VIEWPORT_MOBILE });
+    const checkoutLabels = screen.container.querySelector('[data-testid="marketplace-checkout-status-labels"]');
+    expect(checkoutLabels).not.toBeNull();
+    expect(checkoutLabels).not.toHaveTextContent('Checkout in progress');
     const placedDates = screen.container.querySelectorAll<HTMLElement>('[data-testid="order-placed-at"]');
     expect(placedDates.length).toBeGreaterThan(0);
     for (const date of placedDates) {
@@ -872,12 +877,8 @@ describe('Marketplace orders — visual regression', () => {
     const screen = await renderForVRT(<MarketplaceOrders />, { viewport: VRT_VIEWPORT_DESKTOP });
     await expect.element(screen.getByRole('heading', { name: 'Reservations' })).toBeVisible();
     await expect.element(screen.getByText('Seller pending-payment zine')).toBeVisible();
-    await expect
-      .element(screen.getByText(`Held for a buyer · restocks ${formatDateTime(new Date('2026-01-01T14:00:00Z'))}`))
-      .toBeVisible();
-    await expect
-      .element(screen.getByTestId('order-placed-at'))
-      .toHaveTextContent(`Placed ${formatDateTime(new Date('2025-12-31T14:00:00Z'))}`);
+    await expect.element(screen.getByText('Held for a buyer · restocks Jan 1, 2026, 2:00 PM')).toBeVisible();
+    await expect.element(screen.getByTestId('order-placed-at')).toHaveTextContent('Placed Dec 31, 2025, 2:00 PM');
     await expect(await expectVrtSurface('marketplace-orders')).toMatchScreenshot(
       'orders-pending-payment-seller-desktop',
     );

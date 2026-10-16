@@ -216,9 +216,8 @@ vi.mock('@/stores/auth/auth.store', async () => {
 });
 
 vi.mock('@/stores/commerce/commerce.store', () => ({
-  useCommerceStore: (
-    selector: (state: { receiptsPublicationStatus: string; usdtRefusals: Record<string, string> }) => unknown,
-  ) => selector({ receiptsPublicationStatus: 'idle', usdtRefusals: {} }),
+  useCommerceStore: (selector: (state: { receiptsPublicationStatus: string }) => unknown) =>
+    selector({ receiptsPublicationStatus: 'idle' }),
 }));
 
 vi.mock('@/hooks/useMarketplaceOrders/useMarketplaceOrders', () => ({

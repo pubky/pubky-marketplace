@@ -42,6 +42,18 @@ export const marketplaceMoneySchema = z.object({
   exponent: z.number().int(),
 });
 
+/**
+ * One size of a variant-tracked listing, as the service projects it. The key
+ * is absent on a listing that sells one variant.
+ */
+const marketplaceProjectedVariantSchema = z
+  .object({
+    variantId: z.string().min(1),
+    availableQuantity: z.number().int().nonnegative().optional(),
+    soldOut: z.boolean(),
+  })
+  .passthrough();
+
 const marketplaceListingProjectionBaseSchema = z
   .object({
     aggregateId: z.string(),
@@ -53,6 +65,7 @@ const marketplaceListingProjectionBaseSchema = z
     state: z.enum(['available', 'reserved', 'sold']),
     availableQuantity: z.number().int().nonnegative(),
     reservedQuantity: z.number().int().nonnegative(),
+    variants: z.array(marketplaceProjectedVariantSchema).optional(),
     unitPrice: marketplaceMoneySchema,
     shipping: marketplaceMoneySchema.optional(),
     saleFormat: z.enum(['fixed_price', 'auction']),
@@ -301,6 +314,7 @@ export const marketplaceNotificationSchema = z
       'bitcoin_prepare_voided',
       'order_cancelled',
       'order_shipped',
+      'tracking_updated',
       'order_delivery_assumed',
       'order_delivered',
       'order_completed',
@@ -631,7 +645,12 @@ export const marketplaceOrderProjectionSchema = z
     shipment: z
       .object({
         carrier: z.string(),
-        trackingNumber: z.string(),
+        // Absent on the wire until the seller adds one; read as an empty
+        // string so every consumer tests one shape (`hasTrackingNumber`).
+        trackingNumber: z
+          .string()
+          .nullish()
+          .transform((value) => value ?? ''),
         state: z.enum(['shipped', 'delivered']),
         shippedAt: z.string(),
         deliveredAt: z.string().nullable(),
@@ -873,13 +892,16 @@ export const marketplaceReceiptSchema = z.object({
 
 /**
  * `GET /v0/listings/{seller}/{listing}/availability` is public and answers
- * the listing's stock state and the service clock, nothing else. It is the
+ * the listing's stock state, the service clock and, for a variant-tracked
+ * listing, which sizes are sold out (never a quantity). It is the
  * only hold signal a viewer without a marketplace session can read.
  */
 export const marketplacePublicListingAvailabilitySchema = z.object({
   aggregateId: z.string(),
   state: listingStateSchema,
   serverTime: z.string(),
+  // Per size, only for a variant-tracked listing, and without quantities by design.
+  variants: z.array(z.object({ variantId: z.string().min(1), soldOut: z.boolean() })).optional(),
 });
 
 export type MarketplacePublicListingAvailability = z.infer<typeof marketplacePublicListingAvailabilitySchema>;

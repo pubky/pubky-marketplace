@@ -84,6 +84,8 @@ vi.mock('@/hooks/useMarketplaceInventoryImport/useMarketplaceInventoryImport', (
     busy: false,
     reset: () => {},
     planFile: async () => undefined,
+    submitStoreUrl: async () => false,
+    storeForm: { control: {} },
     publish: async () => undefined,
     resume: async () => undefined,
     confirmConflict: async () => undefined,
@@ -162,6 +164,68 @@ describe('MarketplaceInventory VRT', () => {
     const screen = await renderForVRT(<MarketplaceInventory />, { viewport: VRT_VIEWPORT_DESKTOP, disableHover: true });
     await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot(
       'inventory-paused-relist-desktop',
+      VRT_DENSE_CHROME_SCREENSHOT,
+    );
+  });
+
+  it('renders a per-size listing with one row per size at desktop viewport', async () => {
+    view.isLoading = false;
+    view.load = {
+      status: 'ready',
+      rows: [
+        row({
+          available: 3,
+          reserved: 2,
+          sold: 4,
+          total: 9,
+          variants: [
+            {
+              variantId: 'size_s',
+              label: 'S',
+              enabled: true,
+              available: 0,
+              reserved: 1,
+              sold: 3,
+              total: 4,
+              soldOut: true,
+            },
+            {
+              variantId: 'size_m',
+              label: 'M',
+              enabled: true,
+              available: 3,
+              reserved: 1,
+              sold: 1,
+              total: 5,
+              soldOut: false,
+            },
+            {
+              variantId: 'size_xl',
+              label: 'XL',
+              enabled: false,
+              available: 0,
+              reserved: 0,
+              sold: 0,
+              total: 0,
+              soldOut: true,
+            },
+          ],
+        }),
+        row({
+          listingId: 'lamp',
+          aggregateId: `listing:${SELLER}_lamp`,
+          title: 'Brass desk lamp',
+          reserved: 0,
+          available: 3,
+          sold: 0,
+          total: 3,
+        }),
+      ],
+    };
+    view.conflictListingId = null;
+    const screen = await renderForVRT(<MarketplaceInventory />, { viewport: VRT_VIEWPORT_DESKTOP, disableHover: true });
+    await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot(
+      'inventory-per-size-desktop',
       VRT_DENSE_CHROME_SCREENSHOT,
     );
   });

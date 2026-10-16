@@ -6,6 +6,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { useForm, type UseFormReturn, useWatch } from 'react-hook-form';
 import { getCommerceAdapterMode, getPaykitServerApi, isDurableCommerceMode } from '@/config/commerce';
 import { CommerceController } from '@/controllers/commerce/commerce';
+import { useConnectorStoreShare } from '@/hooks/useConnectorStoreShare/useConnectorStoreShare';
 import {
   type DeliveryKeyBlock,
   type PendingDeliveryKeyChange,
@@ -34,9 +35,8 @@ import {
   marketplaceErrorCode,
   marketplaceFailureMessage,
   marketplaceListingNotActiveMessage,
-  usdtOfferRefusalReason,
-  usdtRefusalKey,
 } from '@/libs/commerce/failure-messages';
+import { tracksVariantStock } from '@/libs/commerce/listing-variants';
 import { LOCKS_MIXED_CHECKOUT_COPY, locksCheckoutRoute } from '@/libs/commerce/locks-payment';
 import {
   commerceListingFulfillmentMethods,
@@ -56,6 +56,7 @@ import {
   isListingDeletedResponse,
   isMarketplaceRevisionConflict,
 } from '@/libs/commerce/transaction-commands';
+import { classifyVariantRefusal, variantRefusalMessage } from '@/libs/commerce/variant-refusals';
 import { AppError } from '@/libs/error/error';
 import { isMarketplaceSessionRequiredError } from '@/libs/error/error.utils';
 import { Logger } from '@/libs/logger/logger';
@@ -138,6 +139,10 @@ export type MarketplacePayResult = {
   boundOrders: MarketplaceOrder[];
   /** The bind failed because the service could not reach Paykit. */
   paykitUnavailable?: boolean;
+  /** The service refused to create the checkout; the copy the buyer was shown. */
+  refusal?: string;
+  /** The refusal says a listing or size in the cart sold out. */
+  soldOut?: boolean;
 };
 
 /**
@@ -176,6 +181,8 @@ export function useMarketplaceCheckout(
   setFulfillmentChoice: (sellerPubky: string, method: MarketplaceFulfillmentMethod) => void;
   /** True only when a line ships — pickup and digital lines send no address (§A2). */
   requiresDeliveryAddress: boolean;
+  /** The opt-in to share the address with a shipped seller's connected store. */
+  storeShare: ReturnType<typeof useConnectorStoreShare>;
   /** The countries the shipped sellers deliver to; null when any country is accepted (or still loading). */
   allowedDestinationCountries: readonly string[] | null;
   /**
@@ -435,6 +442,7 @@ export function useMarketplaceCheckout(
     ...(award && fulfillmentForSeller(award.sellerPubky) === 'shipping' ? [award.sellerPubky] : []),
   ];
   const shipsTo = useMarketplaceSellerShipsTo(shippedSellerPubkys);
+  const storeShare = useConnectorStoreShare(shippedSellerPubkys);
   const orderCount = new Set([
     ...items.map((item) => `${item.listing.record.ownerPubky}|${fulfillmentForItem(item.id) ?? ''}`),
     ...(award ? [`${award.sellerPubky}|${fulfillmentForSeller(award.sellerPubky) ?? ''}`] : []),
@@ -600,7 +608,9 @@ export function useMarketplaceCheckout(
 
   const createCheckout = async (
     data: MarketplaceCheckoutData,
-  ): Promise<{ ok: true; result: unknown; lines: CheckoutLine[] } | { ok: false }> => {
+  ): Promise<
+    { ok: true; result: unknown; lines: CheckoutLine[] } | { ok: false; refusal?: string; soldOut?: boolean }
+  > => {
     const freshKinds: Array<MarketplaceDigitalDeliveryKind | null> = [];
     let sawRemovedListing = false;
     let sawChangedListing = false;
@@ -647,6 +657,15 @@ export function useMarketplaceCheckout(
         const digital = goesDigital(item);
         if (digital && !isLocksItem(item)) freshKinds.push(projection.digitalDelivery?.kind ?? null);
         const variant = record.variants.find(({ id }) => id === item.variantId);
+        // A listing the service tracks per size needs the size on every line. A cart row whose size left
+        // the record is a changed listing, not a line to send blind.
+        if (!variant && tracksVariantStock(record.variants)) {
+          sawChangedListing = true;
+          await CommerceController.refreshListing(record.ownerPubky, record.listingId).catch((error: unknown) => {
+            Logger.warn('Checkout could not refresh a changed listing', { error });
+          });
+          return null;
+        }
         const variantOptions = variant ? Object.entries(variant.options) : [];
         return {
           listingAggregateId: projection.aggregateId,
@@ -709,6 +728,9 @@ export function useMarketplaceCheckout(
       lines: checkoutLines,
       fulfillmentChoiceBySeller,
       deliveryKeys: sealedTo.keys,
+      ...(storeShare.selected.some((store) => shippedSellers.includes(store.sellerPubky))
+        ? { connectorShares: storeShare.selected.filter((store) => shippedSellers.includes(store.sellerPubky)) }
+        : {}),
       ...(freshKinds.includes('email') ? { deliveryEmail: data.deliveryEmail } : {}),
       ...(requiresDeliveryAddress
         ? {
@@ -725,29 +747,31 @@ export function useMarketplaceCheckout(
         : {}),
     });
     if (!response.ok) {
+      const refuse = (refusal: string, soldOut = false) => {
+        toast({ variant: 'error', description: refusal });
+        return { ok: false as const, refusal, soldOut };
+      };
       if (isMarketplaceRevisionConflict(response)) {
-        toast({
-          variant: 'error',
-          description: 'A listing changed while you were checking out. Review your cart and try again.',
-        });
-        return { ok: false };
+        return refuse('A listing changed while you were checking out. Review your cart and try again.');
       }
       const digitalRefusal = classifyDigitalCheckoutRefusal(response.error);
       if (digitalRefusal) {
         if (digitalRefusal !== 'invalid_email') setDigitalKindsAttempt((attempt) => attempt + 1);
-        toast({ variant: 'error', description: DIGITAL_CHECKOUT_REFUSAL_COPY[digitalRefusal] });
-        return { ok: false };
+        return refuse(DIGITAL_CHECKOUT_REFUSAL_COPY[digitalRefusal]);
+      }
+      const variantRefusal = variantRefusalMessage(response.error);
+      if (variantRefusal) {
+        return refuse(variantRefusal, classifyVariantRefusal(response.error) === 'variant_sold_out');
       }
       const pickupRefusal = classifyMarketplacePickupCommandRefusal(response);
-      toast({
-        variant: 'error',
-        description: pickupRefusal
-          ? pickupRefusalFailureMessage(pickupRefusal)
-          : (marketplaceListingNotActiveMessage(response.error) ??
-            marketplaceCheckoutRefusalMessage(response.error.code, response.error.message) ??
-            marketplaceFailureMessage(response.error.code, MARKETPLACE_FAILURE_MESSAGES.checkout)),
-      });
-      return { ok: false };
+      if (pickupRefusal) return refuse(pickupRefusalFailureMessage(pickupRefusal));
+      const checkoutRefusal = marketplaceCheckoutRefusalMessage(response.error.code, response.error.message);
+      return refuse(
+        marketplaceListingNotActiveMessage(response.error) ??
+          checkoutRefusal ??
+          marketplaceFailureMessage(response.error.code, MARKETPLACE_FAILURE_MESSAGES.checkout),
+        checkoutRefusal === MARKETPLACE_FAILURE_MESSAGES.listingSoldOut,
+      );
     }
     return { ok: true, result: response.result, lines: checkoutLines };
   };
@@ -818,7 +842,10 @@ export function useMarketplaceCheckout(
       let createdIds: string[] = [];
       try {
         const created = await createCheckout(data);
-        if (!created.ok) return;
+        if (!created.ok) {
+          if (created.refusal) outcome = { ...empty, refusal: created.refusal, soldOut: created.soldOut };
+          return;
+        }
         let listed: MarketplaceOrder[] = [];
         try {
           listed = await CommerceController.getMarketplaceOrders();
@@ -858,13 +885,6 @@ export function useMarketplaceCheckout(
           }
         } catch (bindError) {
           await cancelCreatedCheckouts(createdIds);
-          const usdtRefusal = usdtOfferRefusalReason(bindError);
-          if (usdtRefusal) {
-            CommerceController.rememberUsdtRefusal(
-              usdtRefusalKey(items.map((item) => item.listing.record.ownerPubky)),
-              usdtRefusal,
-            );
-          }
           showPaymentMethodRefusalToast({ error: bindError, fallback: MARKETPLACE_FAILURE_MESSAGES.checkout, onRetry });
           if (isPaykitUnavailableRefusal(bindError)) outcome = { ...empty, paykitUnavailable: true };
           return;
@@ -895,6 +915,7 @@ export function useMarketplaceCheckout(
     fulfillmentForSeller,
     setFulfillmentChoice,
     requiresDeliveryAddress,
+    storeShare,
     allowedDestinationCountries: shipsTo.status === 'ready' ? shipsTo.countries : null,
     fulfillmentForItem,
     canChooseDigitalForItem: (itemId: string) => {

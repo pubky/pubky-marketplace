@@ -21,30 +21,17 @@ function joinList(parts: ReactNode[]): ReactNode {
 }
 
 /**
- * Why a checkout has no USDT option when the buyer could expect one (UX audit
- * P5): a line priced in bitcoin, or a seller in the cart who does not take
- * USDT. It only explains; the picker itself is unchanged.
+ * Why the Paykit entry does not say USDT when the buyer could expect it (UX
+ * audit P5): a seller in the cart does not take USDT. It only explains; the
+ * picker itself is unchanged.
  */
 export function MarketplaceUsdtMissingNote({ explanation }: { explanation: UsdtMissingOptionExplanation }) {
-  const { bitcoinPricedTitles, sellersWithoutUsdt } = explanation;
+  const { sellersWithoutUsdt } = explanation;
   return (
     <Typography as="p" className="text-xs text-muted-foreground" data-testid="marketplace-checkout-usdt-missing-note">
       USDT isn&apos;t available for this cart:{' '}
-      {bitcoinPricedTitles.length > 0 && (
-        <>
-          {joinList(bitcoinPricedTitles)} {bitcoinPricedTitles.length === 1 ? 'is' : 'are'} priced in bitcoin
-        </>
-      )}
-      {bitcoinPricedTitles.length > 0 && sellersWithoutUsdt.length > 0 && '; '}
-      {sellersWithoutUsdt.length > 0 && (
-        <>
-          {joinList(
-            sellersWithoutUsdt.map((sellerPubky) => <SellerName key={sellerPubky} sellerPubky={sellerPubky} />),
-          )}{' '}
-          {sellersWithoutUsdt.length === 1 ? "doesn't" : "don't"} accept USDT
-        </>
-      )}
-      .
+      {joinList(sellersWithoutUsdt.map((sellerPubky) => <SellerName key={sellerPubky} sellerPubky={sellerPubky} />))}{' '}
+      {sellersWithoutUsdt.length === 1 ? "doesn't" : "don't"} accept USDT.
     </Typography>
   );
 }

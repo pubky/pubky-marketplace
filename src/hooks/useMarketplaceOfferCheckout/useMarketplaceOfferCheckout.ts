@@ -10,8 +10,6 @@ import {
   isPaykitUnavailableRefusal,
   MARKETPLACE_FAILURE_MESSAGES,
   marketplaceOfferCheckoutFailureMessage,
-  usdtOfferRefusalReason,
-  usdtRefusalKey,
 } from '@/libs/commerce/failure-messages';
 import type { PaymentMethodKind } from '@/libs/commerce/payment-methods';
 import { buildMarketplaceOrderAggregateId } from '@/libs/commerce/transaction-commands';
@@ -154,10 +152,6 @@ export function useMarketplaceOfferCheckout(onCompleted?: () => Promise<void> | 
               });
             } catch {
               // Bind already failed; leftover expires on the hold clock.
-            }
-            const usdtRefusal = usdtOfferRefusalReason(bindError);
-            if (usdtRefusal) {
-              CommerceController.rememberUsdtRefusal(usdtRefusalKey([award.listing.sellerPubky]), usdtRefusal);
             }
             showPaymentMethodRefusalToast({
               error: bindError,

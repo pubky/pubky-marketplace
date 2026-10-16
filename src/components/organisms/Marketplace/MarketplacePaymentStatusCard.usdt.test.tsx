@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useMarketplaceOrderPayment } from '@/hooks/useMarketplaceOrderPayment/useMarketplaceOrderPayment';
 import { CHECKOUT_HOLD_COPY } from '@/libs/commerce/checkout-hold';
 import type { PaymentMethodKind } from '@/libs/commerce/payment-methods';
+import type { PaymentAsset } from '@/libs/commerce/payment-options';
 import {
   USDT_ACCEPT_BY_COPY,
   USDT_BUYER_PHASE_COPY,
@@ -15,13 +16,14 @@ import {
   USDT_WALLET_HINT,
 } from '@/libs/commerce/usdt-buyer-status';
 import { createOrderFixture, createPaymentFixture } from '@/test/fixtures/commerce/orders';
-import { createUsdtOrderFixture, type UsdtOrderPhase } from '@/test/fixtures/commerce/usdt-orders';
+import { createUsdtOrderFixture, USDT_ORDER_FIELDS, type UsdtOrderPhase } from '@/test/fixtures/commerce/usdt-orders';
 import { MarketplacePaymentStatusCard } from './MarketplacePaymentStatusCard';
 
 const auth = vi.hoisted(() => ({ currentUserPubky: 'b'.repeat(52) }));
 const methodPayment = vi.hoisted(() => ({
   bind: vi.fn(),
   availableMethods: null as PaymentMethodKind[] | null,
+  paykitAssets: [] as PaymentAsset[],
 }));
 
 vi.mock('@/libs/runtime-config/runtime-config', async (importOriginal) => {
@@ -91,8 +93,10 @@ function renderPhase(phase: UsdtOrderPhase, isBuyer: boolean) {
 beforeEach(() => {
   methodPayment.bind.mockReset();
   methodPayment.availableMethods = null;
+  methodPayment.paykitAssets = [];
   vi.mocked(useMarketplaceOrderPayment).mockImplementation(() => ({
     availableMethods: methodPayment.availableMethods,
+    paykitAssets: methodPayment.paykitAssets,
     bitcoinOfferUnavailable: false,
     paykitOutage: false,
     configError: null,
@@ -136,13 +140,109 @@ describe('MarketplacePaymentStatusCard — USDT orders', () => {
     expect(screen.getByTestId('usdt-accept-by')).toBeInTheDocument();
   });
 
-  it('drops the accept-by line when the request never reached the buyer wallet', () => {
+  it('drops the accept-by line and does not claim non-delivery when the request could not be confirmed', () => {
     const { order, payment } = createUsdtOrderFixture('awaiting', { paykitDeliveryState: 'failed' });
     renderCard(order, payment, true);
 
-    expect(screen.getByTestId('paykit-delivery-failed')).toBeInTheDocument();
+    expect(screen.getByTestId('paykit-delivery-failed')).toHaveTextContent(
+      "We couldn't confirm your wallet got the payment request. Check Bitkit for it; if it's not there, add the seller as a contact in Bitkit, cancel this checkout, then check out again.",
+    );
     expect(screen.queryByTestId('usdt-accept-by')).not.toBeInTheDocument();
   });
+
+  it.each(['received', 'final', 'rechecking'] as const)(
+    'shows no unconfirmed-delivery copy once the USDT payment is seen (%s), even when delivery reads failed',
+    (phase) => {
+      const { order, payment } = createUsdtOrderFixture(phase, { paykitDeliveryState: 'failed' });
+      renderCard(order, payment, true);
+
+      expect(screen.queryByTestId('paykit-delivery-failed')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('usdt-payment-awaiting')).not.toBeInTheDocument();
+    },
+  );
+
+  it('shows no unconfirmed-delivery copy to the seller of an unpaid USDT order', () => {
+    const { order, payment } = createUsdtOrderFixture('awaiting', { paykitDeliveryState: 'failed' });
+    renderCard(order, payment, false);
+
+    expect(screen.queryByTestId('paykit-delivery-failed')).not.toBeInTheDocument();
+  });
+
+  it('tells the buyer of an elapsed USDT checkout not to pay a request it could not confirm', () => {
+    const payment = createPaymentFixture('expired', { adapter: 'paykit' });
+    const order = createOrderFixture('cancelled', {
+      paymentId: payment.id,
+      cancellationReason: 'payment window elapsed',
+      ...USDT_ORDER_FIELDS,
+      paykitDeliveryState: 'failed',
+    });
+    renderCard(order, payment, true);
+
+    expect(screen.getByTestId('paykit-delivery-failed')).toHaveTextContent(
+      "We couldn't confirm your wallet got the payment request before the payment window ended. If you find it in Bitkit, don't pay it. This checkout has ended; check out again.",
+    );
+  });
+
+  it('puts the checkout action next to the unconfirmed-delivery copy of an unpaid USDT order only', () => {
+    const failed = createUsdtOrderFixture('awaiting', { paykitDeliveryState: 'failed' });
+    const { unmount } = render(
+      <MarketplacePaymentStatusCard
+        order={failed.order}
+        payment={failed.payment}
+        isBuyer
+        adapterMode="transaction-service"
+        advancePayment={async () => false}
+        onPaymentChanged={() => {}}
+        checkoutActions={<button type="button">Cancel checkout</button>}
+      />,
+    );
+    expect(screen.getByTestId('paykit-delivery-failed').parentElement).toContainElement(
+      screen.getByRole('button', { name: 'Cancel checkout' }),
+    );
+    unmount();
+
+    const delivered = createUsdtOrderFixture('awaiting', { paykitDeliveryState: 'delivered' });
+    render(
+      <MarketplacePaymentStatusCard
+        order={delivered.order}
+        payment={delivered.payment}
+        isBuyer
+        adapterMode="transaction-service"
+        advancePayment={async () => false}
+        onPaymentChanged={() => {}}
+        checkoutActions={<button type="button">Cancel checkout</button>}
+      />,
+    );
+    expect(screen.queryByRole('button', { name: 'Cancel checkout' })).not.toBeInTheDocument();
+  });
+
+  it.each([
+    ['awaiting', 'pending', true],
+    ['awaiting', null, true],
+    ['awaiting', 'delivered', true],
+    ['awaiting', 'failed', false],
+    ['received', 'failed', true],
+    ['final', 'failed', true],
+    ['rechecking', 'failed', true],
+  ] as const)(
+    'offers no checkout action beside a %s USDT order whose delivery reads %s (buyer: %s), even when one is passed',
+    (phase, paykitDeliveryState, isBuyer) => {
+      const { order, payment } = createUsdtOrderFixture(phase, { paykitDeliveryState });
+      render(
+        <MarketplacePaymentStatusCard
+          order={order}
+          payment={payment}
+          isBuyer={isBuyer}
+          adapterMode="transaction-service"
+          advancePayment={async () => false}
+          onPaymentChanged={() => {}}
+          checkoutActions={<button type="button">Cancel checkout</button>}
+        />,
+      );
+
+      expect(screen.queryByRole('button', { name: 'Cancel checkout' })).not.toBeInTheDocument();
+    },
+  );
 
   it('shows the seller of an unpaid USDT order neither the accept-by nor the buyer finality note', () => {
     renderPhase('awaiting', false);
@@ -312,26 +412,31 @@ describe('MarketplacePaymentStatusCard — method picker', () => {
     return { order, payment };
   }
 
-  it('offers Continue with USDT beside Bitcoin and binds usdt', async () => {
-    methodPayment.availableMethods = ['bitcoin', 'usdt', 'paypal'];
+  it('offers one Continue with Paykit button, naming Bitcoin or USDT, and binds paykit', async () => {
+    methodPayment.availableMethods = ['paykit', 'paypal'];
+    methodPayment.paykitAssets = ['BTC', 'USDT'];
     const { order, payment } = unboundOrder();
     renderCard(order, payment, true);
 
-    const button = screen.getByRole('button', { name: /Continue with USDT/ });
+    const button = screen.getByRole('button', { name: /Continue with Paykit/ });
     expect(
-      within(button.parentElement as HTMLElement).getByRole('button', { name: /Continue with Bitcoin/ }),
+      within(button.parentElement as HTMLElement).getByRole('button', { name: /Continue with PayPal/ }),
     ).toBeVisible();
+    expect(screen.getByTestId('order-payment-paykit-hint')).toHaveTextContent(
+      'Pay with Paykit: pay in Bitkit with Bitcoin or USDT.',
+    );
     await userEvent.setup().click(button);
 
-    expect(methodPayment.bind).toHaveBeenCalledWith('usdt');
+    expect(methodPayment.bind).toHaveBeenCalledWith('paykit');
   });
 
-  it('shows no USDT button when the order picker does not offer it', () => {
-    methodPayment.availableMethods = ['bitcoin', 'paypal'];
+  it('never offers separate Bitcoin or USDT buttons', () => {
+    methodPayment.availableMethods = ['paykit', 'paypal'];
+    methodPayment.paykitAssets = ['BTC'];
     const { order, payment } = unboundOrder();
     renderCard(order, payment, true);
 
-    expect(screen.queryByRole('button', { name: /USDT/ })).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Continue with Bitcoin/ })).toBeVisible();
+    expect(screen.queryByRole('button', { name: /Continue with (Bitcoin|USDT)/ })).not.toBeInTheDocument();
+    expect(screen.getByTestId('order-payment-paykit-hint')).toHaveTextContent('pay in Bitkit with Bitcoin.');
   });
 });

@@ -30,9 +30,11 @@ import { StreamCoordinator } from '@/coordinators/streams/stream';
 import { TtlCoordinator } from '@/coordinators/ttl/ttl';
 import { clearDatabase, clearPrivateData } from '@/database/franky/franky.helpers';
 import { readHostIdentity, writeHostIdentity } from '@/libs/auth/host-identity';
+import { HOSTED_SIGN_IN_MESSAGE } from '@/libs/auth/sign-in-error-copy';
+import { AppError } from '@/libs/error/error';
 import { AuthErrorCode } from '@/libs/error/error.codes';
 import { Err } from '@/libs/error/error.factories';
-import { ErrorService } from '@/libs/error/error.types';
+import { ErrorCategory, ErrorService } from '@/libs/error/error.types';
 import { isAppError, isWrongEnvironmentHomeserverError, toAppError } from '@/libs/error/error.utils';
 import { Identity } from '@/libs/identity/identity';
 import { Logger } from '@/libs/logger/logger';
@@ -100,9 +102,13 @@ export class AuthController {
     useAuthStore.getState().setSession(null);
   }
 
+  /** Pubky App owns sign-in for the embedded Shop, so this is control flow, not telemetry. */
   private static assertStandaloneMode(): void {
     if (!this.hostMode) return;
-    throw Err.auth(AuthErrorCode.UNAUTHORIZED, 'Continue sign-in in Pubky App.', {
+    throw new AppError({
+      category: ErrorCategory.Auth,
+      code: AuthErrorCode.UNAUTHORIZED,
+      message: HOSTED_SIGN_IN_MESSAGE,
       service: ErrorService.Local,
       operation: 'standaloneSignIn',
     });

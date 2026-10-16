@@ -6,9 +6,11 @@ import { CommerceApplication } from '@/application/commerce/commerce';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import { clearPrivateData } from '@/database/franky/franky.helpers';
 import { writeHostIdentity } from '@/libs/auth/host-identity';
+import { HOSTED_SIGN_IN_MESSAGE } from '@/libs/auth/sign-in-error-copy';
 import { AuthErrorCode } from '@/libs/error/error.codes';
 import { Err } from '@/libs/error/error.factories';
-import { ErrorService } from '@/libs/error/error.types';
+import { ErrorCategory, ErrorService } from '@/libs/error/error.types';
+import { captureAppError } from '@/libs/observability/sentry';
 import { requestShopHostAction } from '@/libs/shop-session/bridge';
 import { writeAppliedHostCleanupEpoch } from '@/libs/shop-session/cleanup';
 import { useAuthStore } from '@/stores/auth/auth.store';
@@ -18,6 +20,9 @@ import { deferred, grantSession, resetGrantTest } from './auth.grant-test-utils'
 import type { HostSessionSnapshot } from './auth.types';
 import { withAuthFinalizationLock } from './auth-finalization-lock';
 
+// The global database setup imports the factory before this file's mocks.
+vi.hoisted(() => vi.resetModules());
+vi.mock('@/libs/observability/sentry', () => ({ captureAppError: vi.fn() }));
 vi.mock('@/database/franky/franky.helpers', () => ({ clearPrivateData: vi.fn(), clearDatabase: vi.fn() }));
 vi.mock('@/libs/query-client/query-client.factory', async (original) => ({
   ...(await original<object>()),
@@ -80,6 +85,21 @@ describe('App-owned grant consumer', () => {
     await expect(AuthController.restorePersistedSession()).resolves.toEqual({ status: 'deferred' });
     expect(restore).not.toHaveBeenCalled();
     await expect(AuthController.getAuthUrl()).rejects.toMatchObject({ code: 'UNAUTHORIZED' });
+  });
+  it.each([
+    ['Ring', () => AuthController.getAuthUrl()],
+    ['Bitkit', () => AuthController.getGrantAuthUrl()],
+    ['Passport', () => AuthController.getPassportGrantAuthUrl()],
+  ])('sends a %s sign-in started in the embedded Shop to App without reporting it', async (_signer, start) => {
+    vi.mocked(captureAppError).mockClear();
+    AuthController.setHostSessionMode(true);
+    await expect(start()).rejects.toMatchObject({
+      category: ErrorCategory.Auth,
+      code: AuthErrorCode.UNAUTHORIZED,
+      message: HOSTED_SIGN_IN_MESSAGE,
+      operation: 'standaloneSignIn',
+    });
+    expect(captureAppError).not.toHaveBeenCalled();
   });
   it('delegates logout to App and leaves the active grant untouched', async () => {
     const session = grantSession('alice', 'pubky.app');

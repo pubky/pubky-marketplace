@@ -37,6 +37,7 @@ vi.mock('@/controllers/commerce/commerce', () => ({
     commitUpsertListing: vi.fn(),
     getSellerPaymentConfig: vi.fn(),
     getMyDeliveryKeyStatus: vi.fn(),
+    setInventoryAvailable: vi.fn(),
   },
 }));
 
@@ -206,6 +207,48 @@ describe('useMarketplaceInventory relist', () => {
       expect(relisted).toBe(true);
       expect(CommerceController.commitUpsertListing).toHaveBeenCalledWith(expect.objectContaining({ state: 'active' }));
       expect(result.current.load).toMatchObject({ status: 'ready', rows: [{ listingState: 'active' }] });
+    });
+  });
+});
+
+describe('useMarketplaceInventory set stock for a size', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    commerce.durable = false;
+    vi.mocked(CommerceController.loadInventoryBoard).mockResolvedValue({ status: 'ready', rows: [row()] });
+  });
+
+  it('passes the size to the service and swaps in the updated row', async () => {
+    const updated = row({ available: 9 });
+    vi.mocked(CommerceController.setInventoryAvailable).mockResolvedValue({ status: 'updated', row: updated });
+    const { result } = renderHook(() => useMarketplaceInventory());
+    await waitFor(() => expect(result.current.load.status).toBe('ready'));
+
+    await act(async () => {
+      await result.current.setAvailable(row(), 9, 'size_m');
+    });
+
+    expect(CommerceController.setInventoryAvailable).toHaveBeenCalledWith(
+      expect.objectContaining({ targetAvailable: 9, variantId: 'size_m' }),
+    );
+    expect(result.current.load).toMatchObject({ status: 'ready', rows: [{ available: 9 }] });
+  });
+
+  it('shows the refusal for a size in a toast', async () => {
+    vi.mocked(CommerceController.setInventoryAvailable).mockResolvedValue({
+      status: 'error',
+      message: 'This listing’s sizes changed. Refresh and try again.',
+    });
+    const { result } = renderHook(() => useMarketplaceInventory());
+    await waitFor(() => expect(result.current.load.status).toBe('ready'));
+
+    await act(async () => {
+      await result.current.setAvailable(row(), 9, 'size_m');
+    });
+
+    expect(toast).toHaveBeenCalledWith({
+      variant: 'error',
+      description: 'This listing’s sizes changed. Refresh and try again.',
     });
   });
 });

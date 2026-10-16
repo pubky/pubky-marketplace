@@ -1,0 +1,1 @@
+At checkout, a buyer ordering from a seller with a connected store can choose to share their shipping address with that store, so the order arrives there with it. It is off unless ticked, applies to that order only, and the address is encrypted to the store's own key; without it, the seller still gets the address from Pubky as before.

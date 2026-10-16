@@ -8,6 +8,7 @@ import {
   PAYMENT_SELLER_CONFIRMED_LABEL,
 } from '@/libs/commerce/bitcoin-buyer-status';
 import { type BuyerVisiblePaymentStatus, buyerVisiblePaymentStatus } from '@/libs/commerce/locks-payment';
+import { isPaykitOrder, observedPaymentRail, PAYMENT_RAIL_BADGE } from '@/libs/commerce/paykit-rail';
 import { USDT_PHASE_BADGE_LABEL, usdtSettlementPhase } from '@/libs/commerce/usdt-buyer-status';
 import type { MarketplaceOrder, MarketplacePayment } from '@/services/marketplace/marketplace';
 
@@ -88,8 +89,9 @@ export function MarketplacePaymentStatusLabels({
         </Badge>
       )}
       {payment.adapter === 'locks' && <Badge variant="outline">Locks/Paykit</Badge>}
-      {order.paymentMethod === 'bitcoin' && <Badge variant="outline">₿ Bitcoin</Badge>}
-      {order.paymentMethod === 'usdt' && <Badge variant="outline">USDT</Badge>}
+      {isPaykitOrder(order) && (
+        <Badge variant="outline">{PAYMENT_RAIL_BADGE[observedPaymentRail(order) ?? 'paykit']}</Badge>
+      )}
       {isBuyer &&
         visibleStatus === 'awaiting_entitlement' &&
         order.state === 'pending_payment' &&

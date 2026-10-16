@@ -5,6 +5,8 @@ import { COMMERCE_MEDIA_ALT_TEXT_MAX_CHARS } from '@/config/commerce';
 import { parseCsvTable } from './import-csv-table';
 import {
   altTextForUrl,
+  distinctImageCount,
+  estimatePhotoPauses,
   extraFieldsWithImages,
   IMAGE_RESULTS_JSON_FIELD,
   IMAGE_SYNC_JSON_FIELD,
@@ -14,14 +16,21 @@ import {
   IMPORT_SOURCE_HASH_KEY,
   type ImportImageResult,
   type ImportImageTarget,
+  isDeferredImageResult,
   MEDIA_JSON_FIELD,
   normalizeImageUrl,
   outcomesFromResults,
+  partialOutcome,
+  PHOTO_JOURNAL_FIELD,
+  PHOTOS_PARTIAL_FIELD,
+  planImageBatches,
   planImageSync,
+  readPhotoJournal,
   rowHoldsMedia,
   sourceImagesOf,
   sourceUrlHash,
   uniqueImageUrls,
+  withPhotoJournalEntry,
 } from './import-image-phase';
 import { SOURCE_IMAGE_URLS_FIELD } from './import-preset-rows';
 import { DEFAULT_IMPORT_SETTINGS } from './import-settings';
@@ -415,5 +424,208 @@ describe('re-import outcomes', () => {
       'photos unchanged, 2 kept (added in the Shop)',
     );
     expect(imageSyncOf({ extraFields: { [IMAGE_SYNC_JSON_FIELD]: '{"added":"x"}' } })).toBeNull();
+  });
+});
+
+describe('photo batches', () => {
+  const target = (listingId: string, urls: string[]): ImportImageTarget => ({
+    listingId,
+    images: urls.map((url) => ({ url, alt: listingId })),
+  });
+  const MAX = 500;
+  /** `count` listings of `perListing` distinct photos each, 5 by default: 145 listings are 725 photos. */
+  const listings = (count: number, perListing = 5) =>
+    Array.from({ length: count }, (_, index) =>
+      target(
+        `l${index}`,
+        Array.from({ length: perListing }, (_, photo) => `https://shop.example.com/${index}/${photo}.jpg`),
+      ),
+    );
+
+  it('puts 725 photos in two batches, in listing order, the first full and the second the rest', () => {
+    const targets = listings(145);
+    expect(distinctImageCount(targets)).toBe(725);
+    const batches = planImageBatches(targets, MAX);
+    expect(batches.map((batch) => distinctImageCount(batch))).toEqual([500, 225]);
+    expect(batches.flat().map((entry) => entry.listingId)).toEqual(targets.map((entry) => entry.listingId));
+  });
+
+  it('is one batch up to the cap, and none for nothing', () => {
+    expect(planImageBatches(listings(100), MAX)).toHaveLength(1);
+    expect(planImageBatches(listings(101), MAX)).toHaveLength(2);
+    expect(planImageBatches([], MAX)).toEqual([]);
+  });
+
+  it('never splits a listing across batches', () => {
+    const batches = planImageBatches([target('a', ['u1', 'u2', 'u3']), target('b', ['u4', 'u5', 'u6'])], 4);
+    expect(batches.map((batch) => batch.map((entry) => entry.listingId))).toEqual([['a'], ['b']]);
+  });
+
+  it('counts a photo shared by listings once, within a batch', () => {
+    const shared = [target('a', ['u1', 'u2']), target('b', ['u2', 'u3']), target('c', ['u3', 'u1'])];
+    expect(distinctImageCount(shared)).toBe(3);
+    expect(planImageBatches(shared, 3)).toHaveLength(1);
+  });
+
+  it('takes listings that need no fetch along in whatever batch they fall in', () => {
+    const unchanged: ImportImageTarget = { listingId: 'kept', images: [], keptMedia: [] };
+    const batches = planImageBatches([unchanged, target('a', ['u1', 'u2']), unchanged, target('b', ['u3'])], 2);
+    expect(batches.map((batch) => batch.map((entry) => entry.listingId))).toEqual([['kept', 'a', 'kept'], ['b']]);
+  });
+
+  it('compares photos on the normalised URL, so spaces do not make two batches', () => {
+    const batches = planImageBatches([target('a', ['u1', ' u1 ']), target('b', [' u1'])], 1);
+    expect(batches).toHaveLength(1);
+  });
+
+  it('tells a failure of the run (its budget, the route asking to slow down) from a failure of the photo', () => {
+    for (const reason of ['budget_exceeded', 'limit_reached', 'rate_limited'] as const) {
+      expect(isDeferredImageResult({ status: 'failed', reason })).toBe(true);
+    }
+    for (const reason of [
+      'not_image',
+      'too_large',
+      'http_error',
+      'blocked_address',
+      'decode_failed',
+      'upload_failed',
+      'invalid_url',
+      'timeout',
+      'network',
+      'cancelled',
+    ] as const) {
+      expect(isDeferredImageResult({ status: 'failed', reason })).toBe(false);
+    }
+    expect(isDeferredImageResult({ status: 'uploaded' })).toBe(false);
+    expect(isDeferredImageResult({ status: 'failed' })).toBe(false);
+  });
+});
+
+describe('photos loaded for a listing that is not finished', () => {
+  const A = 'https://a.example.com/a.jpg';
+  const B = 'https://a.example.com/b.jpg';
+  const C = 'https://a.example.com/c.jpg';
+  const target: ImportImageTarget = {
+    listingId: 'one',
+    images: [A, B, C].map((url) => ({ url, alt: 'One' })),
+  };
+
+  it('is what loaded so far, marked partial, with no summary of changes', () => {
+    const outcome = partialOutcome(target, [
+      uploaded(A),
+      { url: B, status: 'failed', reason: 'budget_exceeded' },
+      uploaded(C),
+    ]);
+    expect(outcome).toMatchObject({ listingId: 'one', partial: true });
+    expect(outcome?.media).toHaveLength(2);
+    expect(outcome?.results.map((entry) => [entry.url, entry.status])).toEqual([
+      [A, 'uploaded'],
+      [C, 'uploaded'],
+    ]);
+    expect(outcome?.sync).toBeUndefined();
+  });
+
+  it('is nothing when no photo of the listing has loaded', () => {
+    expect(partialOutcome(target, [])).toBeNull();
+    expect(partialOutcome(target, [{ url: A, status: 'failed', reason: 'not_image' }])).toBeNull();
+  });
+
+  it('keeps the media a stored listing already has, ahead of the new ones', () => {
+    const stored = { id: 'stored-1', importSourceHash: sourceUrlHash('https://old.example.com/x.jpg') };
+    const outcome = partialOutcome({ ...target, keptMedia: [stored] }, [uploaded(A)]);
+    expect(outcome?.media).toHaveLength(2);
+    expect(outcome?.media[0]).toEqual(stored);
+  });
+
+  it('writes a flag a resume can read: the row holds media to reuse but is not taken for finished', () => {
+    const partial = partialOutcome(target, [uploaded(A)])!;
+    const written = extraFieldsWithImages({}, partial);
+    expect(written[PHOTOS_PARTIAL_FIELD]).toBe('1');
+    expect(written[MEDIA_JSON_FIELD]).toBeDefined();
+    expect(rowHoldsMedia({ extraFields: written })).toBe(false);
+    expect(sourceHashesOf(written)).toEqual([sourceUrlHash(A)]);
+  });
+
+  it('is replaced by the final outcome, which clears the flag and makes the row finished', () => {
+    const partial = extraFieldsWithImages({}, partialOutcome(target, [uploaded(A)])!);
+    const final = outcomesFromResults([target], [uploaded(A), uploaded(B), uploaded(C)])[0]!;
+    const written = extraFieldsWithImages(partial, final);
+    expect(written[PHOTOS_PARTIAL_FIELD]).toBeUndefined();
+    expect(rowHoldsMedia({ extraFields: written })).toBe(true);
+    expect(sourceHashesOf(written)).toHaveLength(3);
+  });
+
+  function sourceHashesOf(fields: Record<string, string>): unknown[] {
+    return (JSON.parse(fields[MEDIA_JSON_FIELD] ?? '[]') as Record<string, unknown>[]).map(
+      (media) => media[IMPORT_SOURCE_HASH_KEY],
+    );
+  }
+});
+
+describe('estimatePhotoPauses', () => {
+  const KB = 1024;
+  const MB = 1024 * KB;
+
+  it('counts the times the byte allowance runs out: the photos at a typical size over one window, less the first window', () => {
+    expect(estimatePhotoPauses(100, 300 * KB, 150 * MB)).toBe(0);
+    expect(estimatePhotoPauses(500, 300 * KB, 150 * MB)).toBe(0);
+    expect(estimatePhotoPauses(512, 300 * KB, 150 * MB)).toBe(0);
+    expect(estimatePhotoPauses(513, 300 * KB, 150 * MB)).toBe(1);
+    expect(estimatePhotoPauses(725, 300 * KB, 150 * MB)).toBe(1);
+    expect(estimatePhotoPauses(1_024, 300 * KB, 150 * MB)).toBe(1);
+    expect(estimatePhotoPauses(1_025, 300 * KB, 150 * MB)).toBe(2);
+    expect(estimatePhotoPauses(2_000, 300 * KB, 150 * MB)).toBe(3);
+  });
+
+  it('is zero for nothing to load or a size or allowance that makes no sense', () => {
+    expect(estimatePhotoPauses(0, 300 * KB, 150 * MB)).toBe(0);
+    expect(estimatePhotoPauses(-5, 300 * KB, 150 * MB)).toBe(0);
+    expect(estimatePhotoPauses(900, 0, 150 * MB)).toBe(0);
+    expect(estimatePhotoPauses(900, 300 * KB, 0)).toBe(0);
+  });
+});
+
+describe('the photo journal', () => {
+  const A = 'https://a.example.com/a.jpg';
+  const media = (id: string) => ({ id, url: `pubky://owner/media/${id}`, altText: 'x' });
+
+  it('keeps one entry per photo, newest last, and replaces an earlier entry for the same photo', () => {
+    const one = withPhotoJournalEntry({ keep: 'me' }, { hash: sourceUrlHash(A), media: media('m1') });
+    const two = withPhotoJournalEntry(one, { hash: 'other', media: media('m2') });
+    const again = withPhotoJournalEntry(two, { hash: sourceUrlHash(A), media: media('m3') });
+    expect(again.keep).toBe('me');
+    expect(readPhotoJournal({ extraFields: again })).toEqual([
+      { hash: 'other', media: media('m2') },
+      { hash: sourceUrlHash(A), media: media('m3') },
+    ]);
+  });
+
+  it('reads nothing from a row without a journal, and ignores malformed entries', () => {
+    expect(readPhotoJournal(null)).toEqual([]);
+    expect(readPhotoJournal({ extraFields: {} })).toEqual([]);
+    expect(readPhotoJournal({ extraFields: { [PHOTO_JOURNAL_FIELD]: 'not json' } })).toEqual([]);
+    expect(readPhotoJournal({ extraFields: { [PHOTO_JOURNAL_FIELD]: '{"hash":"x"}' } })).toEqual([]);
+    expect(
+      readPhotoJournal({
+        extraFields: {
+          [PHOTO_JOURNAL_FIELD]: JSON.stringify([
+            { hash: 1, media: {} },
+            { hash: 'ok', media: 'no' },
+            { hash: 'ok', media: [] },
+            null,
+            { hash: 'good', media: { id: 'm' } },
+          ]),
+        },
+      }),
+    ).toEqual([{ hash: 'good', media: { id: 'm' } }]);
+  });
+
+  it('stays through a partial write and through the final write: it is the list of files the import wrote', () => {
+    const journaled = withPhotoJournalEntry({}, { hash: sourceUrlHash(A), media: media('m1') });
+    const target: ImportImageTarget = { listingId: 'one', images: [{ url: A, alt: 'One' }] };
+    const partial = partialOutcome(target, [uploaded(A)])!;
+    expect(extraFieldsWithImages(journaled, partial)[PHOTO_JOURNAL_FIELD]).toBeDefined();
+    const final = outcomesFromResults([target], [uploaded(A)])[0]!;
+    expect(extraFieldsWithImages(journaled, final)[PHOTO_JOURNAL_FIELD]).toBe(journaled[PHOTO_JOURNAL_FIELD]);
   });
 });

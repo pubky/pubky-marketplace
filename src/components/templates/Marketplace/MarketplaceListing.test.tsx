@@ -1,6 +1,6 @@
 import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CommerceSellerReputationOverview } from '@/application/commerce/commerce';
 import { CAPABILITIES } from '@/config/app';
 import { COMMERCE_LISTING_MAX_QUANTITY } from '@/config/commerce';
@@ -52,6 +52,7 @@ const view = vi.hoisted(() => ({
   needsSession: false,
   publicStock: null as 'available' | 'reserved' | 'sold' | null,
   publicStockFailure: false,
+  publicStockVariants: undefined as { variantId: string; soldOut: boolean }[] | undefined,
   hasFullHomeserverGrant: true,
   orders: [] as Array<{ order: ReturnType<typeof createOrderFixture> }>,
   offers: [] as MarketplaceOffer[],
@@ -219,6 +220,13 @@ vi.mock('@/organisms/Marketplace/MarketplaceReviewsSection', () => ({
   MarketplaceReviewsSection: () => <section aria-label="Reviews" />,
 }));
 
+beforeAll(() => {
+  Element.prototype.scrollIntoView = vi.fn();
+  Element.prototype.hasPointerCapture = vi.fn();
+  Element.prototype.releasePointerCapture = vi.fn();
+  Element.prototype.setPointerCapture = vi.fn();
+});
+
 describe('MarketplaceListing', () => {
   beforeEach(() => {
     view.listing = toCommerceListingModel(createCommerceListingFixture());
@@ -232,12 +240,18 @@ describe('MarketplaceListing', () => {
     view.needsSession = false;
     view.publicStock = null;
     view.publicStockFailure = false;
+    view.publicStockVariants = undefined;
     publicAvailabilityRead.mockReset();
     publicAvailabilityRead.mockImplementation(async () =>
       view.publicStockFailure
         ? Promise.reject(new Error('offline'))
         : view.publicStock
-          ? { aggregateId: 'listing:x', state: view.publicStock, serverTime: '2026-10-13T07:45:00.000Z' }
+          ? {
+              aggregateId: 'listing:x',
+              state: view.publicStock,
+              serverTime: '2026-10-13T07:45:00.000Z',
+              ...(view.publicStockVariants ? { variants: view.publicStockVariants } : {}),
+            }
           : null,
     );
     view.hasFullHomeserverGrant = true;
@@ -524,7 +538,7 @@ describe('MarketplaceListing', () => {
       }),
     );
     renderListing();
-    expect(screen.queryByRole('button', { name: 'Make offer' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Make offer/ })).not.toBeInTheDocument();
   });
 
   it('shows no Make offer when the listing does not accept offers', () => {
@@ -539,7 +553,7 @@ describe('MarketplaceListing', () => {
       }),
     );
     renderListing();
-    expect(screen.queryByRole('button', { name: 'Make offer' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Make offer/ })).not.toBeInTheDocument();
   });
 
   it('keeps Make offer on a listing that ships as well as offering pickup', () => {
@@ -792,6 +806,156 @@ describe('MarketplaceListing', () => {
     expect(screen.queryByRole('button', { name: 'Authorize with Pubky Ring' })).not.toBeInTheDocument();
   });
 
+  describe('per-size stock', () => {
+    const sizes = (...ids: string[]) =>
+      toCommerceListingModel(
+        createCommerceListingFixture({
+          variants: ids.map((id) => ({
+            id,
+            options: { size: id.toUpperCase() },
+            quantity: 3,
+            mediaIds: [],
+            enabled: true,
+          })),
+        }),
+      );
+
+    it('selects the first size that has stock and adds that size', async () => {
+      view.listing = sizes('size_s', 'size_m');
+      view.projection = createListingProjectionFixture({
+        availableQuantity: 3,
+        variants: [
+          { variantId: 'size_s', availableQuantity: 0, soldOut: true },
+          { variantId: 'size_m', availableQuantity: 3, soldOut: false },
+        ],
+      });
+      const user = userEvent.setup();
+
+      const listing = renderListing();
+      await waitFor(() =>
+        expect(screen.getByRole('combobox', { name: 'Choose listing variant' })).toHaveTextContent('SIZE_M'),
+      );
+      await user.click(screen.getByRole('button', { name: 'Buy' }));
+
+      expect(cartAdd).toHaveBeenCalledWith(`${listing.seller_id}:${listing.listing_id}`, 'size_m', 1);
+    });
+
+    it('lists a sold-out size as unavailable in the picker', async () => {
+      view.listing = sizes('size_s', 'size_m');
+      view.projection = createListingProjectionFixture({
+        variants: [
+          { variantId: 'size_s', availableQuantity: 0, soldOut: true },
+          { variantId: 'size_m', availableQuantity: 3, soldOut: false },
+        ],
+      });
+      const user = userEvent.setup();
+
+      renderListing();
+      await user.click(screen.getByRole('combobox', { name: 'Choose listing variant' }));
+
+      expect(await screen.findByRole('option', { name: 'SIZE_S · Sold out' })).toHaveAttribute('aria-disabled', 'true');
+    });
+
+    it('shows Sold out instead of Buy when every size is sold out', () => {
+      view.listing = sizes('size_s', 'size_m');
+      view.projection = createListingProjectionFixture({
+        availableQuantity: 3,
+        variants: [
+          { variantId: 'size_s', availableQuantity: 0, soldOut: true },
+          { variantId: 'size_m', availableQuantity: 0, soldOut: true },
+        ],
+      });
+
+      renderListing();
+
+      expect(screen.getByRole('button', { name: 'Sold out' })).toBeDisabled();
+      expect(screen.queryByRole('button', { name: 'Buy' })).not.toBeInTheDocument();
+    });
+
+    it('takes the sold-out sizes from the public read when the viewer has no session', async () => {
+      view.listing = sizes('size_s', 'size_m');
+      view.projection = null;
+      view.projectionError = 'A marketplace session is required.';
+      view.needsSession = true;
+      view.publicStock = 'available';
+      view.publicStockVariants = [
+        { variantId: 'size_s', soldOut: true },
+        { variantId: 'size_m', soldOut: false },
+      ];
+
+      renderListing();
+
+      await waitFor(() =>
+        expect(screen.getByRole('combobox', { name: 'Choose listing variant' })).toHaveTextContent('SIZE_M'),
+      );
+      expect(screen.getByRole('button', { name: 'Buy' })).toBeEnabled();
+    });
+
+    it('shows Sold out instead of Buy from the public read when every size is sold out', async () => {
+      view.listing = sizes('size_s', 'size_m');
+      view.projection = null;
+      view.projectionError = 'A marketplace session is required.';
+      view.needsSession = true;
+      view.publicStock = 'available';
+      view.publicStockVariants = [
+        { variantId: 'size_s', soldOut: true },
+        { variantId: 'size_m', soldOut: true },
+      ];
+
+      renderListing();
+
+      expect(await screen.findByRole('button', { name: 'Sold out' })).toBeDisabled();
+      expect(screen.queryByRole('button', { name: 'Buy' })).not.toBeInTheDocument();
+    });
+
+    it('reads a held listing as held, not sold out, when the service flags every held size', () => {
+      view.listing = sizes('size_s', 'size_m');
+      view.projection = createListingProjectionFixture({
+        state: 'reserved',
+        availableQuantity: 0,
+        reservedQuantity: 2,
+        variants: [
+          { variantId: 'size_s', availableQuantity: 0, soldOut: true },
+          { variantId: 'size_m', availableQuantity: 0, soldOut: true },
+        ],
+      });
+
+      renderListing();
+
+      expect(screen.getByText(CHECKOUT_HOLD_COPY.listingReserved)).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Buy' })).toBeDisabled();
+      expect(screen.getByRole('button', { name: CHECKOUT_HOLD_COPY.heldWhileAnotherPays })).toBeDisabled();
+      expect(screen.queryByRole('button', { name: 'Sold out' })).not.toBeInTheDocument();
+    });
+
+    it('reads a held listing as held from the public read when the viewer has no session', async () => {
+      view.listing = sizes('size_s', 'size_m');
+      view.projection = null;
+      view.projectionError = 'A marketplace session is required.';
+      view.needsSession = true;
+      view.publicStock = 'reserved';
+      view.publicStockVariants = [
+        { variantId: 'size_s', soldOut: true },
+        { variantId: 'size_m', soldOut: true },
+      ];
+
+      renderListing();
+
+      expect(await screen.findByText(CHECKOUT_HOLD_COPY.listingReserved)).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Buy' })).toBeDisabled();
+      expect(screen.queryByRole('button', { name: 'Sold out' })).not.toBeInTheDocument();
+    });
+  });
+
+  it('shows Sold out instead of Buy and Make offer when the service reads the listing sold', () => {
+    view.projection = createListingProjectionFixture({ state: 'sold', availableQuantity: 0 });
+    renderListing();
+
+    expect(screen.getByRole('button', { name: 'Sold out' })).toBeDisabled();
+    expect(screen.queryByRole('button', { name: 'Buy' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Make offer/ })).not.toBeInTheDocument();
+  });
+
   it('shows the holding sentence and disables checkout when the listing is reserved', () => {
     view.projection = createListingProjectionFixture({ state: 'reserved', availableQuantity: 0, reservedQuantity: 1 });
     renderListing();
@@ -804,7 +968,7 @@ describe('MarketplaceListing', () => {
     ).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Sold out' })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: CHECKOUT_HOLD_COPY.heldWhileAnotherPays })).toBeDisabled();
-    expect(screen.queryByRole('button', { name: 'Make offer' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Make offer/ })).not.toBeInTheDocument();
   });
 
   describe('another buyer holds the item and the viewer has no marketplace session (#50)', () => {
@@ -822,7 +986,7 @@ describe('MarketplaceListing', () => {
       expect(await screen.findByText(CHECKOUT_HOLD_COPY.listingReserved)).toBeInTheDocument();
       expect(screen.getByRole('button', { name: 'Buy' })).toBeDisabled();
       expect(screen.getByRole('button', { name: CHECKOUT_HOLD_COPY.heldWhileAnotherPays })).toBeDisabled();
-      expect(screen.queryByRole('button', { name: 'Make offer' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /Make offer/ })).not.toBeInTheDocument();
       expect(publicAvailabilityRead).toHaveBeenCalledWith(view.listing?.seller_id, view.listing?.listing_id);
     });
 

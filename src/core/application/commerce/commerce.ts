@@ -1,5 +1,6 @@
 import { blake3 } from '@noble/hashes/blake3.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
+import type { GrantSession } from '@synonymdev/pubky';
 import { z } from 'zod';
 import { CommerceAttentionSeenApplication } from '@/application/commerce/attention-seen';
 import { CommerceInventoryApplication } from '@/application/commerce/inventory';
@@ -17,6 +18,7 @@ import {
   isTransactionalCommerceMode,
   MARKETPLACE_FOLLOWED_SHELF_MAX_SELLER_FETCHES,
 } from '@/config/commerce';
+import { CONNECTOR_SHARE_CONSENT_VERSION } from '@/config/commerce-copy';
 import { BASE_UNITS_PER_BITCOIN } from '@/config/currencies';
 import { NEXUS_LISTINGS_PER_PAGE } from '@/config/nexus';
 import { readAuthEpoch } from '@/controllers/auth/auth-epoch';
@@ -27,6 +29,7 @@ import {
   verifyOwnOrderReceipt,
   verifyOwnReviewAttestation,
 } from '@/libs/commerce/attestation';
+import { decodeConnectorRecipientKey, sealConnectorAddress } from '@/libs/commerce/connector-address-envelope';
 import {
   sealDeliveryAddressForSellers,
   type SellerDeliveryEnvelope,
@@ -55,6 +58,7 @@ import {
   openDigitalDeliverable,
 } from '@/libs/commerce/digital-file';
 import { listingPublishNeedsMarketplaceSession } from '@/libs/commerce/listing-publish-guards';
+import { buildRegisterVariants, type RegisterListingVariant } from '@/libs/commerce/listing-variants';
 import { locksAdmissionView } from '@/libs/commerce/locks-lifecycle';
 import { lockPolicyCreator, toBareLockResource } from '@/libs/commerce/locks-payment';
 import {
@@ -107,6 +111,7 @@ import {
   buildMarketplaceOrderAggregateId,
   buildMarketplacePaymentAggregateId,
   classifyMarketplacePickupCommandRefusal,
+  type ConnectorShare,
   type CreateMarketplaceCheckoutCommand,
   isCorrelatedBenignListingRegistrationResponse,
   isListingRecordNotFoundResponse,
@@ -116,9 +121,11 @@ import {
 } from '@/libs/commerce/transaction-commands';
 import type { CommerceJsonValue, CommerceMoney } from '@/libs/commerce/transaction-contracts';
 import { assertPublishableListingStock } from '@/libs/commerce/unlimited-stock';
+import { variantRefusalMessage } from '@/libs/commerce/variant-refusals';
+import { AppError } from '@/libs/error/error';
 import { AuthErrorCode, ClientErrorCode, ServerErrorCode, ValidationErrorCode } from '@/libs/error/error.codes';
 import { Err } from '@/libs/error/error.factories';
-import { ErrorService } from '@/libs/error/error.types';
+import { ErrorCategory, ErrorService } from '@/libs/error/error.types';
 import { hasHttpStatus, isAppError, isNotFound } from '@/libs/error/error.utils';
 import { HttpMethod, HttpStatusCode } from '@/libs/http/http.types';
 import { Logger } from '@/libs/logger/logger';
@@ -173,13 +180,17 @@ import {
   type MarketplaceTagKind,
 } from '@/services/local/tag/marketplace/tag.marketplace';
 import { LocksGatewayService } from '@/services/locks/locks';
-import { locksCreatorMatchesShopPubky, LocksFrontendSessionStore } from '@/services/locks/locks-frontend-session';
+import { RetiredLocksSessionStorage } from '@/services/locks/retired-locks-session';
 import {
   MarketplaceGatewayService,
   type MarketplaceOrder,
   type MarketplacePayment,
 } from '@/services/marketplace/marketplace';
-import { MarketplacePaykitClaimService } from '@/services/marketplace/marketplace-paykit-claim';
+import { MarketplaceConnectorStatusService } from '@/services/marketplace/marketplace-connector-status';
+import {
+  MarketplaceGrantSessionService,
+  type MintedGrantSession,
+} from '@/services/marketplace/marketplace-grant-session';
 import {
   type MarketplaceSessionEndedEvent,
   MarketplaceSessionService,
@@ -374,7 +385,20 @@ export type CommerceCheckoutFulfillmentInput = {
    * address is sealed to these keys and only ciphertext leaves the device.
    */
   deliveryKeys?: ReadonlyMap<string, SellerDeliveryKey>;
+  /**
+   * Sellers whose connected store the buyer chose to share the address with,
+   * each with the connection's recipient key as the service published it.
+   * Only a seller that ships and gets a sealed delivery address can be in it.
+   */
+  connectorShares?: readonly ConnectorShareChoice[];
   deliveryEmail?: string;
+};
+
+export type ConnectorShareChoice = {
+  sellerPubky: string;
+  shopDomain: string;
+  keyId: string;
+  publicKey: Uint8Array;
 };
 
 /** A review-list page, or the honest signal that no review index serves this deployment. */
@@ -421,9 +445,25 @@ export class CommerceApplication {
     return await LocalCommerceService.getAllShops();
   }
 
+  /**
+   * A seller can list before publishing a storefront, so a missing `shop.json`
+   * is an ordinary answer: it rejects with a 404 that callers read as "no shop"
+   * (`hasHttpStatus`), built without the reporting factory.
+   */
   static async fetchShop(ownerPubky: string): Promise<CommerceShopRecord> {
     const url = CommerceRecordNormalizer.shopUri(ownerPubky);
-    return CommerceRecordNormalizer.shop(await CommerceHomeserverService.fetchJson(url));
+    const published = await CommerceHomeserverService.fetchJsonIfFound(url);
+    if (!published.found) {
+      throw new AppError({
+        category: ErrorCategory.Client,
+        code: ClientErrorCode.NOT_FOUND,
+        message: 'This seller has not published a shop yet.',
+        service: ErrorService.Homeserver,
+        operation: 'fetchShop',
+        context: { statusCode: HttpStatusCode.NOT_FOUND },
+      });
+    }
+    return CommerceRecordNormalizer.shop(published.json);
   }
 
   /** Refresh published settings without discarding an unpublished local edit. */
@@ -1188,10 +1228,88 @@ export class CommerceApplication {
           fulfillment: plan.lineFulfillments[index],
         })),
         ...sealedAddress,
+        ...(await this.sealConnectorShares(actorPubky, commandId, input, sealedAddress)),
         ...(input.deliveryEmail !== undefined ? { deliveryEmail: input.deliveryEmail } : {}),
       },
     });
     return await this.executeMarketplaceCommand(actorPubky, command);
+  }
+
+  /**
+   * The buyer's opt-in copies of the address, one per chosen seller, sealed to
+   * the store connection's recipient key and bound to this checkout. The seller
+   * must also get the sealed delivery address: sharing with a store is never the
+   * only copy, and a seller who does not ship has nothing to share.
+   */
+  private static async sealConnectorShares(
+    actorPubky: string,
+    commandId: string,
+    input: CommerceCheckoutFulfillmentInput,
+    sealedAddress: { deliveryAddress?: unknown; deliveryAddressEnvelopes?: SellerDeliveryEnvelope[] },
+  ): Promise<{ connectorShares?: ConnectorShare[] }> {
+    const choices = input.connectorShares ?? [];
+    if (choices.length === 0 || !input.deliveryAddress) return {};
+    const sealedSellers = new Set((sealedAddress.deliveryAddressEnvelopes ?? []).map(({ sellerPubky }) => sellerPubky));
+    const address = input.deliveryAddress;
+    const shares = await Promise.all(
+      choices.map(async (choice) => {
+        if (!sealedSellers.has(choice.sellerPubky)) {
+          throw Err.validation(
+            ValidationErrorCode.INVALID_INPUT,
+            'An address can be shared only with the store of a seller that ships this checkout.',
+            {
+              service: ErrorService.Marketplace,
+              operation: 'commitCreateMarketplaceCheckout',
+              context: { sellerPubky: choice.sellerPubky },
+            },
+          );
+        }
+        return {
+          sellerPubky: choice.sellerPubky,
+          shopDomain: choice.shopDomain,
+          consentVersion: CONNECTOR_SHARE_CONSENT_VERSION,
+          keyId: choice.keyId,
+          envelope: await sealConnectorAddress({
+            address,
+            recipientPublicKey: choice.publicKey,
+            binding: {
+              checkoutCommandId: commandId,
+              buyerPubky: actorPubky,
+              sellerPubky: choice.sellerPubky,
+              keyId: choice.keyId,
+            },
+          }),
+        };
+      }),
+    );
+    return { connectorShares: shares };
+  }
+
+  /**
+   * The connected stores a buyer may share the address with, for the shipped
+   * sellers of a checkout. A seller whose status cannot be read is simply
+   * offered no choice: sharing is optional and never blocks a checkout.
+   */
+  static async getConnectorStores(sellerPubkys: readonly string[]): Promise<Map<string, ConnectorShareChoice>> {
+    const stores = new Map<string, ConnectorShareChoice>();
+    await Promise.all(
+      sellerPubkys.map(async (sellerPubky) => {
+        try {
+          const [store] = await MarketplaceConnectorStatusService.getStores(sellerPubky);
+          if (!store) return;
+          const key = store.addressSharing.recipientKey;
+          stores.set(sellerPubky, {
+            sellerPubky,
+            shopDomain: store.domain,
+            keyId: key.keyId,
+            publicKey: decodeConnectorRecipientKey(key.publicKey),
+          });
+        } catch {
+          // No store, or its status could not be read: no opt-in is offered.
+        }
+      }),
+    );
+    return stores;
   }
 
   /**
@@ -1313,6 +1431,25 @@ export class CommerceApplication {
     return MarketplaceSessionService.beginSessionFlow();
   }
 
+  /**
+   * Mints a marketplace session from the Shop's own sign-in grant, with no
+   * signer approval. Nothing is installed: the caller installs it with
+   * {@link installGrantMarketplaceSession} once it knows the identity is
+   * unchanged. Throws when the service refuses.
+   */
+  static async mintMarketplaceSessionFromGrant({ grant, pubky }: { grant: GrantSession; pubky: string }) {
+    return await MarketplaceGrantSessionService.mint({ grant, pubky });
+  }
+
+  static installGrantMarketplaceSession(minted: MintedGrantSession, expectedPubky: string) {
+    return MarketplaceSessionService.establishClaimedGrantSession(minted, expectedPubky);
+  }
+
+  /** Best-effort revoke of a minted session nobody will use. */
+  static async revokeGrantMarketplaceSession(minted: MintedGrantSession): Promise<void> {
+    await MarketplaceGrantSessionService.revoke({ token: minted.token, sessionId: minted.sessionId });
+  }
+
   static currentHomeserverGrantIsFull(): boolean {
     return HomeserverService.currentSessionHasFullGrant();
   }
@@ -1351,7 +1488,7 @@ export class CommerceApplication {
    */
   static clearMarketplaceSessionForSignOut(options?: { confirmBff?: boolean }): void | Promise<void> {
     const cleanup = MarketplaceSessionService.clearForSignOut(options);
-    LocksFrontendSessionStore.clearForSignOut();
+    RetiredLocksSessionStorage.clear();
     this.clearSessionScopedState();
     return cleanup;
   }
@@ -1364,7 +1501,7 @@ export class CommerceApplication {
   static clearMarketplaceSessionsOfOtherAccounts(keepPubky: string): void {
     MarketplaceSessionService.clearOtherAccounts(keepPubky);
     CommerceInventoryApplication.clearInventorySessionsOfOtherAccounts(keepPubky);
-    LocksFrontendSessionStore.clearOtherAccounts(keepPubky);
+    RetiredLocksSessionStorage.clear();
     this.clearSessionScopedState();
   }
 
@@ -1554,39 +1691,6 @@ export class CommerceApplication {
 
   static async confirmFiatReceived(actorPubky: string, orderId: string) {
     return await MarketplaceGatewayService.confirmFiatReceived(actorPubky, orderId);
-  }
-
-  /**
-   * Whether Paykit holds the seller's watch-only setup. The fork answers on
-   * its public `GET /v0/accounts/{creator}`. Upstream Paykit has no such
-   * route, so `paykitServerApi=upstream` first takes the service's
-   * `bitcoinAvailable` (Bitcoin on and Paykit's signed setup status ready),
-   * then asks the Lock Server with the seller's own Locks frontend session.
-   * With neither, or when the Lock Server cannot reach Paykit, the state is
-   * unknown and this rejects rather than report a setup it has not seen.
-   */
-  static async isPaykitAccountClaimed(pubky: string) {
-    if (getPaykitServerApi() !== 'upstream') return await MarketplacePaykitClaimService.isAccountClaimed(pubky);
-    try {
-      if ((await MarketplaceGatewayService.getSellerPaymentConfig(pubky)).bitcoinAvailable) return true;
-    } catch {
-      // The Lock Server read below still decides.
-    }
-    const session = LocksFrontendSessionStore.restore(pubky);
-    if (!session) {
-      throw Err.auth(AuthErrorCode.UNAUTHORIZED, 'Connect the Lock Server to read the Paykit setup state.', {
-        service: ErrorService.Locks,
-        operation: 'isPaykitAccountClaimed',
-      });
-    }
-    const status = await LocksGatewayService.getCreatorPaykitSetupStatus(session.token, 'BTC');
-    if (status === 'unavailable') {
-      throw Err.server(ServerErrorCode.SERVICE_UNAVAILABLE, 'The Lock Server could not read the Paykit setup state.', {
-        service: ErrorService.Locks,
-        operation: 'isPaykitAccountClaimed',
-      });
-    }
-    return status === 'ready';
   }
 
   static async getMarketplaceReceipt(actorPubky: string, receiptId: string) {
@@ -1788,41 +1892,6 @@ export class CommerceApplication {
       });
     }
     return { bytes, contentPath: correlation.content_path };
-  }
-
-  /**
-   * Exchanges a Lock Server legacy-connect completion (`code`/`state`) for a
-   * creator frontend session — the seller-setup "connected" proof. When
-   * `accountPubky` is the signed-in Shop identity the bearer is persisted so
-   * Step 1 survives reload; sign-out still wipes it via {@link clearMarketplaceSession}.
-   */
-  static async createLocksFrontendSession(code: string, state: string, accountPubky?: string) {
-    const session = await LocksGatewayService.createFrontendSession(code, state);
-    if (!accountPubky || !locksCreatorMatchesShopPubky(session.creator, accountPubky)) {
-      return session;
-    }
-    LocksFrontendSessionStore.save({
-      token: session.session_token,
-      creator: session.creator,
-      pubky: accountPubky,
-    });
-    return session;
-  }
-
-  static async getLocksCreatorAuthorityStatus(sessionToken: string) {
-    return await LocksGatewayService.getCreatorAuthorityStatus(sessionToken);
-  }
-
-  static async getLocksPublicCreatorAuthorityStatus(accountPubky: string) {
-    return await LocksGatewayService.getPublicCreatorAuthorityStatus(accountPubky);
-  }
-
-  static restoreLocksFrontendSession(accountPubky: string) {
-    return LocksFrontendSessionStore.restore(accountPubky);
-  }
-
-  static clearLocksFrontendSession(token: string): void {
-    LocksFrontendSessionStore.clear(token);
   }
 
   static async lookupLocksVerification(creatorPubky: string, bundleId: string) {
@@ -2138,12 +2207,11 @@ export class CommerceApplication {
       }
       let legacy: CommerceWatchlistRecord | null = null;
       try {
-        legacy = CommerceRecordNormalizer.watchlistRecord(
-          await CommerceHomeserverService.fetchJson(legacyUrl, PRIV_V1_LOG_PATH),
-        );
+        const stored = await CommerceHomeserverService.fetchJsonIfFound(legacyUrl, PRIV_V1_LOG_PATH);
+        if (stored.found) legacy = CommerceRecordNormalizer.watchlistRecord(stored.json);
       } catch (error) {
         if (this.isPrivateAccessDenied(error)) return 'needs_reauth';
-        if (!(isAppError(error) && isNotFound(error))) throw error;
+        throw error;
       }
 
       const [favorites, tombstoneRows] = await Promise.all([
@@ -3034,7 +3102,22 @@ export class CommerceApplication {
 
   static async fetchListing(ownerPubky: string, listingId: string): Promise<CommerceListingRecord> {
     const url = CommerceRecordNormalizer.listingUri(ownerPubky, listingId);
-    const record = CommerceRecordNormalizer.listing(await CommerceHomeserverService.fetchJson(url));
+    return this.canonicalListing(await CommerceHomeserverService.fetchJson(url), ownerPubky, listingId);
+  }
+
+  /** {@link fetchListing}, with a missing record answered as `null` instead of a reported 404. */
+  private static async fetchListingIfFound(
+    ownerPubky: string,
+    listingId: string,
+  ): Promise<CommerceListingRecord | null> {
+    const stored = await CommerceHomeserverService.fetchJsonIfFound(
+      CommerceRecordNormalizer.listingUri(ownerPubky, listingId),
+    );
+    return stored.found ? this.canonicalListing(stored.json, ownerPubky, listingId) : null;
+  }
+
+  private static canonicalListing(raw: unknown, ownerPubky: string, listingId: string): CommerceListingRecord {
+    const record = CommerceRecordNormalizer.listing(raw);
     if (record.ownerPubky !== ownerPubky || record.listingId !== listingId) {
       throw Err.validation(
         ValidationErrorCode.INVALID_INPUT,
@@ -3249,7 +3332,12 @@ export class CommerceApplication {
         role,
       });
       const url = CommerceRecordNormalizer.reviewUri(actorPubky, reviewId);
-      const record = CommerceRecordNormalizer.review(await CommerceHomeserverService.fetchJson(url));
+      const stored = await CommerceHomeserverService.fetchJsonIfFound(url);
+      if (!stored.found) {
+        this.ownReviewHomeserverMisses.add(this.ownReviewMissKey(actorPubky, order.id));
+        return null;
+      }
+      const record = CommerceRecordNormalizer.review(stored.json);
       if (
         record.ownerPubky !== actorPubky ||
         record.listingId !== listingId ||
@@ -4066,16 +4154,11 @@ export class CommerceApplication {
 
   /**
    * Whether the seller's homeserver still holds the listing record. Only a
-   * 404 answers false; any other failure throws, so the caller stays pending.
+   * 404 answers false, without reporting it; any other failure throws, so the
+   * caller stays pending.
    */
   private static async hasPublishedListingRecord(listing: CommerceListingRecord): Promise<boolean> {
-    try {
-      await this.fetchListing(listing.ownerPubky, listing.listingId);
-      return true;
-    } catch (error) {
-      if (isAppError(error) && isNotFound(error)) return false;
-      throw error;
-    }
+    return (await this.fetchListingIfFound(listing.ownerPubky, listing.listingId)) !== null;
   }
 
   /**
@@ -4351,18 +4434,23 @@ export class CommerceApplication {
     assertPublishableListingStock(record, 'putVerifiedPublicListing');
     let current: Record<string, unknown> = {};
     let exists = false;
-    try {
-      const fetched = await CommerceHomeserverService.fetchJson(url);
-      if (!isPlainRecord(fetched)) {
+    const published = await CommerceHomeserverService.fetchJsonIfFound(url);
+    if (published.found) {
+      if (!isPlainRecord(published.json)) {
         throw Err.validation(ValidationErrorCode.INVALID_INPUT, 'The published listing is not a JSON object.', {
           service: ErrorService.Homeserver,
           operation: 'putVerifiedPublicListing',
         });
       }
-      current = fetched;
+      current = published.json;
       exists = true;
-    } catch (error) {
-      if (!(isAppError(error) && isNotFound(error) && record.revision === 1)) throw error;
+    } else if (record.revision !== 1) {
+      // Only a first publish may find nothing: an edit whose base record is gone is a real failure.
+      throw Err.client(ClientErrorCode.NOT_FOUND, 'The published listing is missing. Reload and try again.', {
+        service: ErrorService.Homeserver,
+        operation: 'putVerifiedPublicListing',
+        context: { statusCode: HttpStatusCode.NOT_FOUND },
+      });
     }
 
     const scrubbed = stripForbiddenPublicReserveKeys(current);
@@ -4403,16 +4491,11 @@ export class CommerceApplication {
             operation: 'putVerifiedPublicListing',
           });
         }
-      } else {
-        try {
-          await CommerceHomeserverService.fetchJson(url);
-          throw Err.client(ClientErrorCode.CONFLICT, 'The published listing changed. Reload and try again.', {
-            service: ErrorService.Homeserver,
-            operation: 'putVerifiedPublicListing',
-          });
-        } catch (error) {
-          if (!(isAppError(error) && isNotFound(error))) throw error;
-        }
+      } else if ((await CommerceHomeserverService.fetchJsonIfFound(url)).found) {
+        throw Err.client(ClientErrorCode.CONFLICT, 'The published listing changed. Reload and try again.', {
+          service: ErrorService.Homeserver,
+          operation: 'putVerifiedPublicListing',
+        });
       }
       await retryHomeserverWrite(HttpMethod.PUT, () =>
         this.withListingWriteLock(attempt, async () => {
@@ -4477,17 +4560,13 @@ export class CommerceApplication {
     record: CommerceListingRecord,
   ): Promise<{ record: unknown } | undefined> {
     for (let attempt = 0; ; attempt += 1) {
-      try {
-        const fetched = await CommerceHomeserverService.fetchJson(url);
-        const staleLag = isPlainRecord(fetched) && fetched.revision === record.revision - 1;
-        if (!staleLag || attempt >= LISTING_READ_BACK_RETRY_DELAYS_MS.length)
-          return staleLag ? undefined : { record: fetched };
-      } catch (error) {
-        const missing = isAppError(error) && isNotFound(error);
-        if (!missing || attempt >= LISTING_READ_BACK_RETRY_DELAYS_MS.length) {
-          if (missing) return undefined;
-          throw error;
-        }
+      const lastAttempt = attempt >= LISTING_READ_BACK_RETRY_DELAYS_MS.length;
+      const read = await CommerceHomeserverService.fetchJsonIfFound(url);
+      if (read.found) {
+        const staleLag = isPlainRecord(read.json) && read.json.revision === record.revision - 1;
+        if (!staleLag || lastAttempt) return staleLag ? undefined : { record: read.json };
+      } else if (lastAttempt) {
+        return undefined;
       }
       await new Promise<void>((resolve) => {
         setTimeout(resolve, LISTING_READ_BACK_RETRY_DELAYS_MS[attempt]);
@@ -4619,6 +4698,7 @@ export class CommerceApplication {
         listingRevision: listing.revision,
         contentHash: listing.media[0].contentHash,
         quantity: listing.variants.reduce((total, variant) => total + variant.quantity, 0),
+        ...registerVariantsField(listing),
         unitPrice,
         shippingMinor: commerceListingShippingMinor(listing.shippingOptions),
         saleFormat: 'auction',
@@ -4668,10 +4748,7 @@ export class CommerceApplication {
       const response = await send(command);
       if (isListingRecordNotFoundResponse(response, aggregateId, command.commandId)) return 'service_not_found';
       if (!isSuccessfulListingRegistrationResponse(response, aggregateId, command.commandId)) {
-        throw Err.client(ClientErrorCode.BAD_REQUEST, 'Marketplace listing registration was refused.', {
-          service: ErrorService.Marketplace,
-          operation: 'registerListing',
-        });
+        throw listingRegistrationRefusal(response);
       }
       return 'registered';
     }
@@ -4702,10 +4779,7 @@ export class CommerceApplication {
             Boolean(existing?.serverRevision),
           )
         ) {
-          throw Err.client(ClientErrorCode.BAD_REQUEST, 'Marketplace listing registration was refused.', {
-            service: ErrorService.Marketplace,
-            operation: 'registerListing',
-          });
+          throw listingRegistrationRefusal(response);
         }
       }
       return 'registered';
@@ -4725,6 +4799,7 @@ export class CommerceApplication {
         listingRevision: listing.revision,
         contentHash: listing.media[0].contentHash,
         quantity: listing.variants.reduce((total, variant) => total + variant.quantity, 0),
+        ...registerVariantsField(listing),
         unitPrice,
         shippingMinor: commerceListingShippingMinor(listing.shippingOptions),
         saleFormat: listing.sale.format,
@@ -4755,10 +4830,7 @@ export class CommerceApplication {
     if (isListingRecordNotFoundResponse(response, aggregateId, command.commandId)) return 'service_not_found';
     if (!isSuccessfulListingRegistrationResponse(response, aggregateId, command.commandId)) {
       if (!isCorrelatedBenignListingRegistrationResponse(response, aggregateId, command.commandId)) {
-        throw Err.client(ClientErrorCode.BAD_REQUEST, 'Marketplace listing registration was refused.', {
-          service: ErrorService.Marketplace,
-          operation: 'registerListing',
-        });
+        throw listingRegistrationRefusal(response);
       }
       const confirmed = await MarketplaceGatewayService.getListing(listing.ownerPubky, aggregateId, {
         signal: attempt.signal,
@@ -4772,10 +4844,7 @@ export class CommerceApplication {
           Boolean(confirmed?.serverRevision),
         )
       ) {
-        throw Err.client(ClientErrorCode.BAD_REQUEST, 'Marketplace listing registration was refused.', {
-          service: ErrorService.Marketplace,
-          operation: 'registerListing',
-        });
+        throw listingRegistrationRefusal(response);
       }
     }
     return 'registered';
@@ -4823,6 +4892,19 @@ export class CommerceApplication {
       payload: { sellerPubky, listingId },
     });
   }
+}
+
+function listingRegistrationRefusal(response: MarketplaceCommandResponse) {
+  const variantCopy = response.ok ? null : variantRefusalMessage(response.error);
+  return Err.client(ClientErrorCode.BAD_REQUEST, variantCopy ?? 'Marketplace listing registration was refused.', {
+    service: ErrorService.Marketplace,
+    operation: 'registerListing',
+  });
+}
+
+function registerVariantsField(listing: CommerceListingRecord): { variants?: RegisterListingVariant[] } {
+  const variants = buildRegisterVariants(listing.variants);
+  return variants ? { variants } : {};
 }
 
 function isPlainRecord(value: unknown): value is Record<string, unknown> {

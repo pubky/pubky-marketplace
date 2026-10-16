@@ -1,7 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ServerErrorCode } from '@/libs/error/error.codes';
 import { Err } from '@/libs/error/error.factories';
-import { httpStatusCodeToError } from '@/libs/error/error.http';
 import { ErrorService } from '@/libs/error/error.types';
 import { HttpMethod } from '@/libs/http/http.types';
 import { Logger } from '@/libs/logger/logger';
@@ -19,6 +18,7 @@ import { SettingsApplication } from './settings';
 vi.mock('@/services/homeserver/homeserver', () => ({
   HomeserverService: {
     request: vi.fn(),
+    getJsonIfFound: vi.fn(),
   },
 }));
 
@@ -66,6 +66,7 @@ describe('SettingsApplication', () => {
 
     return {
       requestSpy: vi.spyOn(HomeserverService, 'request'),
+      readSpy: vi.spyOn(HomeserverService, 'getJsonIfFound'),
       normalizerToSpy: vi.spyOn(SettingsNormalizer, 'to'),
       normalizerFromSpy: vi.spyOn(SettingsNormalizer, 'from'),
       normalizerBuildUrlSpy: vi.spyOn(SettingsNormalizer, 'buildUrl'),
@@ -110,66 +111,60 @@ describe('SettingsApplication', () => {
   describe('fetchFromHomeserver', () => {
     it('should fetch and return settings from homeserver', async () => {
       const remoteSettings = createMockSettingsState({ version: 2 });
-      const { requestSpy, normalizerBuildUrlSpy, normalizerFromSpy } = setupMocks();
+      const { readSpy, normalizerBuildUrlSpy, normalizerFromSpy } = setupMocks();
 
       normalizerBuildUrlSpy.mockReturnValue(`pubky://${testPubky}/pub/pubky.app/settings.json`);
-      requestSpy.mockResolvedValue({
-        notifications: remoteSettings.notifications,
-        privacy: remoteSettings.privacy,
-        updatedAt: remoteSettings.updatedAt,
-        version: remoteSettings.version,
+      readSpy.mockResolvedValue({
+        found: true,
+        json: {
+          notifications: remoteSettings.notifications,
+          privacy: remoteSettings.privacy,
+          updatedAt: remoteSettings.updatedAt,
+          version: remoteSettings.version,
+        },
       });
       normalizerFromSpy.mockReturnValue(remoteSettings);
 
       const result = await SettingsApplication.fetchFromHomeserver(testPubky);
 
       expect(normalizerBuildUrlSpy).toHaveBeenCalledWith(testPubky);
-      expect(requestSpy).toHaveBeenCalledWith({
-        method: HttpMethod.GET,
-        url: `pubky://${testPubky}/pub/pubky.app/settings.json`,
-      });
+      expect(readSpy).toHaveBeenCalledWith({ url: `pubky://${testPubky}/pub/pubky.app/settings.json` });
       expect(result).toEqual(remoteSettings);
     });
 
     it('should return null when homeserver returns empty response', async () => {
-      const { requestSpy, normalizerBuildUrlSpy } = setupMocks();
+      const { readSpy, normalizerBuildUrlSpy } = setupMocks();
 
       normalizerBuildUrlSpy.mockReturnValue(`pubky://${testPubky}/pub/pubky.app/settings.json`);
-      requestSpy.mockResolvedValue(undefined);
+      readSpy.mockResolvedValue({ found: true, json: undefined });
 
       const result = await SettingsApplication.fetchFromHomeserver(testPubky);
 
       expect(result).toBeNull();
     });
 
-    it('should return null on 404 error', async () => {
-      const { requestSpy, normalizerBuildUrlSpy } = setupMocks();
+    it('should return null without an error when the settings file is missing', async () => {
+      const { readSpy, normalizerBuildUrlSpy } = setupMocks();
 
       normalizerBuildUrlSpy.mockReturnValue(`pubky://${testPubky}/pub/pubky.app/settings.json`);
-      const notFoundError = httpStatusCodeToError(
-        404,
-        'Not found',
-        ErrorService.Homeserver,
-        'request',
-        `pubky://${testPubky}/pub/pubky.app/settings.json`,
-      );
-      requestSpy.mockRejectedValue(notFoundError);
+      readSpy.mockResolvedValue({ found: false });
 
       const result = await SettingsApplication.fetchFromHomeserver(testPubky);
 
       expect(result).toBeNull();
+      expect(Logger.error).not.toHaveBeenCalled();
     });
 
     it('should throw on non-404 errors', async () => {
-      const { requestSpy, normalizerBuildUrlSpy } = setupMocks();
+      const { readSpy, normalizerBuildUrlSpy } = setupMocks();
       const serverError = Err.server(ServerErrorCode.INTERNAL_ERROR, 'Server error', {
         service: ErrorService.Homeserver,
-        operation: 'request',
+        operation: 'getJsonIfFound',
         context: { statusCode: 500 },
       });
 
       normalizerBuildUrlSpy.mockReturnValue(`pubky://${testPubky}/pub/pubky.app/settings.json`);
-      requestSpy.mockRejectedValue(serverError);
+      readSpy.mockRejectedValue(serverError);
 
       await expect(SettingsApplication.fetchFromHomeserver(testPubky)).rejects.toThrow('Server error');
     });
@@ -178,10 +173,10 @@ describe('SettingsApplication', () => {
   describe('initializeSettings', () => {
     it('should create settings on homeserver when none exist remotely and return timestamped settings', async () => {
       const localSettings = createMockSettingsState({ updatedAt: 0 });
-      const { requestSpy, normalizerBuildUrlSpy, normalizerToSpy } = setupMocks();
+      const { readSpy, requestSpy, normalizerBuildUrlSpy, normalizerToSpy } = setupMocks();
 
       normalizerBuildUrlSpy.mockReturnValue(`pubky://${testPubky}/pub/pubky.app/settings.json`);
-      requestSpy.mockResolvedValueOnce(undefined); // fetchFromHomeserver returns null
+      readSpy.mockResolvedValueOnce({ found: false });
       normalizerToSpy.mockReturnValue(createMockNormalizerResult(localSettings));
       requestSpy.mockResolvedValueOnce(undefined); // commitUpdate succeeds
 
@@ -203,10 +198,10 @@ describe('SettingsApplication', () => {
     it('should return remote settings when they are newer (higher version)', async () => {
       const localSettings = createMockSettingsState({ version: 1, updatedAt: 1700000000000 });
       const remoteSettings = createMockSettingsState({ version: 2, updatedAt: 1700000000000 });
-      const { requestSpy, normalizerBuildUrlSpy, normalizerFromSpy } = setupMocks();
+      const { readSpy, normalizerBuildUrlSpy, normalizerFromSpy } = setupMocks();
 
       normalizerBuildUrlSpy.mockReturnValue(`pubky://${testPubky}/pub/pubky.app/settings.json`);
-      requestSpy.mockResolvedValue(remoteSettings);
+      readSpy.mockResolvedValue({ found: true, json: remoteSettings });
       normalizerFromSpy.mockReturnValue(remoteSettings);
 
       const result = await SettingsApplication.initializeSettings(testPubky, localSettings);
@@ -217,10 +212,10 @@ describe('SettingsApplication', () => {
     it('should return remote settings when they are newer (same version, newer timestamp)', async () => {
       const localSettings = createMockSettingsState({ version: 1, updatedAt: 1700000000000 });
       const remoteSettings = createMockSettingsState({ version: 1, updatedAt: 1800000000000 });
-      const { requestSpy, normalizerBuildUrlSpy, normalizerFromSpy } = setupMocks();
+      const { readSpy, normalizerBuildUrlSpy, normalizerFromSpy } = setupMocks();
 
       normalizerBuildUrlSpy.mockReturnValue(`pubky://${testPubky}/pub/pubky.app/settings.json`);
-      requestSpy.mockResolvedValue(remoteSettings);
+      readSpy.mockResolvedValue({ found: true, json: remoteSettings });
       normalizerFromSpy.mockReturnValue(remoteSettings);
 
       const result = await SettingsApplication.initializeSettings(testPubky, localSettings);
@@ -232,10 +227,10 @@ describe('SettingsApplication', () => {
       const localSettings = createMockSettingsState({ version: 2, updatedAt: 1800000000000 });
       const remoteSettings = createMockSettingsState({ version: 1, updatedAt: 1700000000000 });
       const normalizerResult = createMockNormalizerResult(localSettings);
-      const { requestSpy, normalizerBuildUrlSpy, normalizerFromSpy, normalizerToSpy } = setupMocks();
+      const { readSpy, requestSpy, normalizerBuildUrlSpy, normalizerFromSpy, normalizerToSpy } = setupMocks();
 
       normalizerBuildUrlSpy.mockReturnValue(`pubky://${testPubky}/pub/pubky.app/settings.json`);
-      requestSpy.mockResolvedValueOnce(remoteSettings); // fetchFromHomeserver
+      readSpy.mockResolvedValueOnce({ found: true, json: remoteSettings });
       normalizerFromSpy.mockReturnValue(remoteSettings);
       normalizerToSpy.mockReturnValue(normalizerResult);
       requestSpy.mockResolvedValueOnce(undefined); // commitUpdate
@@ -248,10 +243,10 @@ describe('SettingsApplication', () => {
 
     it('should throw on error', async () => {
       const localSettings = createMockSettingsState();
-      const { normalizerBuildUrlSpy, requestSpy } = setupMocks();
+      const { normalizerBuildUrlSpy, readSpy } = setupMocks();
 
       normalizerBuildUrlSpy.mockReturnValue(`pubky://${testPubky}/pub/pubky.app/settings.json`);
-      requestSpy.mockRejectedValue(new Error('Network error'));
+      readSpy.mockRejectedValue(new Error('Network error'));
 
       await expect(SettingsApplication.initializeSettings(testPubky, localSettings)).rejects.toThrow('Network error');
     });

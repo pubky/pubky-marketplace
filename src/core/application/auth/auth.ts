@@ -7,14 +7,7 @@ import { FULL_GRANT_REQUIRED_MESSAGE } from '@/libs/auth/sign-in-error-copy';
 import { ValidationErrorCode } from '@/libs/error/error.codes';
 import { Err } from '@/libs/error/error.factories';
 import { ErrorService } from '@/libs/error/error.types';
-import {
-  isAppError,
-  isAuthError,
-  isNotFound,
-  isWrongEnvironmentHomeserverError,
-  toAppError,
-} from '@/libs/error/error.utils';
-import { HttpMethod } from '@/libs/http/http.types';
+import { isAppError, isAuthError, isWrongEnvironmentHomeserverError, toAppError } from '@/libs/error/error.utils';
 import { Logger } from '@/libs/logger/logger';
 import { sleep } from '@/libs/utils/utils';
 import { isPubkyExpiredError } from '@/libs/vibe-session/expired';
@@ -284,12 +277,10 @@ export class AuthApplication {
    */
   static async userIsSignedUp({ pubky }: { pubky: Pubky }): Promise<boolean> {
     try {
-      await HomeserverService.request({ method: HttpMethod.GET, url: userUriBuilder(pubky) });
-      return true;
+      const profile = await HomeserverService.getJsonIfFound({ url: userUriBuilder(pubky) });
+      return profile.found;
     } catch (error) {
-      const appError = isAppError(error) ? error : toAppError(error, ErrorService.Homeserver, 'userIsSignedUp');
-      if (isNotFound(appError)) return false;
-      throw appError;
+      throw isAppError(error) ? error : toAppError(error, ErrorService.Homeserver, 'userIsSignedUp');
     }
   }
 }

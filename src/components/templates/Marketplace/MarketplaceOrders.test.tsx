@@ -4,7 +4,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import { CHAT_COPY } from '@/libs/chat/copy';
 import { REFUND_ORDER_NOTICES } from '@/libs/commerce/refund-copy';
-import { formatDateTime } from '@/libs/utils/dateTime';
 import { useMarketplaceDisplayStore } from '@/stores/marketplace-display/marketplace-display.store';
 import {
   createOrderFixture,
@@ -14,8 +13,11 @@ import {
   ORDER_FIXTURE_SELLER,
 } from '@/test/fixtures/commerce/orders';
 import { REFUND_FIXTURE_ADDRESS, REFUND_FIXTURE_TX_HASH } from '@/test/fixtures/commerce/usdt-refund.wire';
+import { setupFixedDateLocale } from '@/test-utils/date-locale';
 import { setHeavySuiteBudgets } from '@/test-utils/load-budget';
 import { MarketplaceOrders } from './MarketplaceOrders';
+
+setupFixedDateLocale();
 
 setHeavySuiteBudgets();
 
@@ -506,7 +508,7 @@ describe('MarketplaceOrders tabs', () => {
     expect(screen.getByText(/Awaiting payment · Item reserved · 5:00/)).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Bought deadline boots' })).toBeInTheDocument();
     const labels = screen.getByTestId('marketplace-checkout-status-labels');
-    expect(labels).toHaveTextContent('Checkout in progress');
+    expect(labels).not.toHaveTextContent('Checkout in progress');
     expect(labels).toHaveTextContent('Awaiting payment');
     expect(labels).not.toHaveTextContent('Payment confirmed');
     expect(
@@ -561,9 +563,7 @@ describe('MarketplaceOrders tabs', () => {
       ),
     ];
     render(<MarketplaceOrders />);
-    expect(
-      screen.getByText(`Seller confirms by ${formatDateTime(new Date('2026-09-29T10:56:41.980Z'))}. 23:56:41 left`),
-    ).toBeInTheDocument();
+    expect(screen.getByText(`Seller confirms by 29 Sept 2026, 10:56. 23:56:41 left`)).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'View payment' })).toBeInTheDocument();
     expect(screen.queryByText(/Awaiting payment · Item reserved/)).not.toBeInTheDocument();
     expect(screen.queryByText(/Pay by/)).not.toBeInTheDocument();
@@ -587,9 +587,7 @@ describe('MarketplaceOrders tabs', () => {
       ),
     ];
     render(<MarketplaceOrders />);
-    expect(
-      screen.getByText(`Seller confirms by ${formatDateTime(new Date('2026-09-29T10:56:41.980Z'))}.`),
-    ).toBeInTheDocument();
+    expect(screen.getByText(`Seller confirms by 29 Sept 2026, 10:56.`)).toBeInTheDocument();
   });
 
   it('does not tell a buyer in unconfirmed manual review to pay again', () => {
@@ -915,18 +913,12 @@ describe('MarketplaceOrders tabs', () => {
       const card = screen.getAllByText(title)[0].closest('[data-slot="card"]') as HTMLElement;
       return within(card).getByTestId('order-placed-at');
     };
-    expect(placedAt(/Bought dated coat/)).toHaveTextContent(
-      `Placed ${formatDateTime(new Date('2026-09-30T18:45:00.000Z'))}`,
-    );
+    expect(placedAt(/Bought dated coat/)).toHaveTextContent(`Placed 30 Sept 2026, 18:45`);
     expect(placedAt(/Bought dated coat/)).toHaveAttribute('dateTime', '2026-09-30T18:45:00.000Z');
-    expect(placedAt(/Sold held boots/)).toHaveTextContent(
-      `Placed ${formatDateTime(new Date('2026-10-01T08:10:00.000Z'))}`,
-    );
-    expect(placedAt(/Bought checkout scarf/)).toHaveTextContent(
-      `Placed ${formatDateTime(new Date('2026-10-01T08:55:00.000Z'))}`,
-    );
+    expect(placedAt(/Sold held boots/)).toHaveTextContent(`Placed 1 Oct 2026, 08:10`);
+    expect(placedAt(/Bought checkout scarf/)).toHaveTextContent(`Placed 1 Oct 2026, 08:55`);
     expect(within(screen.getByTestId('marketplace-reservations')).getByText(/restocks/)).toHaveTextContent(
-      `Held for a buyer · restocks ${formatDateTime(new Date('2026-10-02T08:10:00.000Z'))}`,
+      `Held for a buyer · restocks 2 Oct 2026, 08:10`,
     );
   });
 
@@ -1224,7 +1216,7 @@ describe('MarketplaceOrders local pickup cards (Wave 7, §A3/§A6)', () => {
 
     const card = screen.getByText(/Sold pickup boots/).closest('[data-slot="card"]') as HTMLElement;
     expect(within(card).getByRole('button', { name: 'Mark ready for pickup' })).toBeInTheDocument();
-    expect(within(card).queryByRole('button', { name: 'Add tracking' })).not.toBeInTheDocument();
+    expect(within(card).queryByRole('button', { name: 'Mark shipped' })).not.toBeInTheDocument();
   });
 });
 
@@ -1279,7 +1271,7 @@ describe('MarketplaceOrders digital cards (digital delivery design §3 "After pa
     for (const card of screen.getAllByText(/Field guide/).map((node) => node.closest('[data-slot="card"]'))) {
       expect(within(card as HTMLElement).queryByText(/Shipping/)).not.toBeInTheDocument();
       expect(within(card as HTMLElement).queryByRole('button', { name: /Packing slip/i })).not.toBeInTheDocument();
-      expect(within(card as HTMLElement).queryByRole('button', { name: 'Add tracking' })).not.toBeInTheDocument();
+      expect(within(card as HTMLElement).queryByRole('button', { name: 'Mark shipped' })).not.toBeInTheDocument();
     }
   });
 
@@ -1449,15 +1441,20 @@ describe('MarketplaceOrders USDT orders', () => {
     useMarketplaceDisplayStore.setState({ showFxEstimate: true, measurementSystem: null });
   });
 
-  it('never shows the indicative bitcoin estimate on a USDT-paid USD order', async () => {
-    ordersState.orders = [orderView('paid', 'USDT boots', 'buyer', { ...usdtFields, paymentFinality: 'final' })];
+  it.each(['usdt', 'paykit'] as const)(
+    'never shows a Bitcoin estimate on a USD order paid in USDT through %s',
+    async (paymentMethod) => {
+      ordersState.orders = [
+        orderView('paid', 'USDT boots', 'buyer', { ...usdtFields, paymentMethod, paymentFinality: 'final' }),
+      ];
 
-    render(<MarketplaceOrders />);
-    await userEvent.setup().click(screen.getByRole('tab', { name: /All 1/i }));
+      render(<MarketplaceOrders />);
+      await userEvent.setup().click(screen.getByRole('tab', { name: /All 1/i }));
 
-    expect(await screen.findByText('USDT boots')).toBeInTheDocument();
-    expect(screen.queryByText('≈ ₿137,000')).not.toBeInTheDocument();
-  });
+      expect(await screen.findByText('USDT boots')).toBeInTheDocument();
+      expect(screen.queryByText(/≈ ₿/)).not.toBeInTheDocument();
+    },
+  );
 
   it('links the recorded refund hash and address to Arbiscan as lookups, and never calls them verified', async () => {
     ordersState.orders = [
@@ -1548,20 +1545,20 @@ describe('MarketplaceOrders USDT orders', () => {
     expect(screen.getByTestId('order-receipt-details')).not.toHaveTextContent(/Bitcoin|₿/);
   });
 
-  it('holds Add tracking back for the seller until Arbitrum finalizes, then opens it', async () => {
+  it('holds Mark shipped back for the seller until Arbitrum finalizes, then opens it', async () => {
     ordersState.orders = [
       orderView('paid', 'USDT pending boots', 'seller', { ...usdtFields, paymentFinality: 'pending' }),
     ];
     const { unmount } = render(<MarketplaceOrders />);
     await userEvent.setup().click(screen.getByRole('tab', { name: /All 1/i }));
-    expect(await screen.findByRole('button', { name: 'Add tracking' })).toBeDisabled();
+    expect(await screen.findByRole('button', { name: 'Mark shipped' })).toBeDisabled();
     expect(screen.getByTestId('usdt-payment-not-final')).toBeInTheDocument();
     unmount();
 
     ordersState.orders = [orderView('paid', 'USDT final boots', 'seller', { ...usdtFields, paymentFinality: 'final' })];
     render(<MarketplaceOrders />);
     await userEvent.setup().click(screen.getByRole('tab', { name: /All 1/i }));
-    expect(await screen.findByRole('button', { name: 'Add tracking' })).toBeEnabled();
+    expect(await screen.findByRole('button', { name: 'Mark shipped' })).toBeEnabled();
     expect(screen.queryByTestId('usdt-payment-not-final')).not.toBeInTheDocument();
   });
 
@@ -1624,5 +1621,67 @@ describe('MarketplaceOrders USDT refund address', () => {
     expect(screen.getAllByTestId('usdt-refund-seller')).toHaveLength(1);
     expect(screen.getByText('Bought Bitcoin boots')).toBeInTheDocument();
     expect(screen.getByText('Bought PayPal boots')).toBeInTheDocument();
+  });
+});
+
+describe('MarketplaceOrders shipment tracking', () => {
+  beforeEach(() => {
+    ordersState.currentUserPubky = CURRENT_USER;
+    ordersState.adapterMode = 'transaction-service';
+    ordersState.needsSession = false;
+    ordersState.error = null;
+    window.history.replaceState(null, '', '/marketplace/orders');
+  });
+
+  const shipment = (carrier: string, trackingNumber: string) => ({
+    carrier,
+    trackingNumber,
+    state: 'shipped' as const,
+    shippedAt: '2026-08-14T10:00:00.000Z',
+    deliveredAt: null,
+  });
+
+  it('tells the buyer the order shipped with no tracking yet, and shows no link', async () => {
+    ordersState.orders = [orderView('shipped', 'Olive oil', 'buyer', { shipment: shipment('Other', '') })];
+
+    render(<MarketplaceOrders />);
+    await userEvent.setup().click(await screen.findByRole('tab', { name: /^All/ }));
+
+    const card = (await screen.findByText(/Olive oil/)).closest('[data-slot="card"]') as HTMLElement;
+    expect(within(card).getByText('Shipped, no tracking yet')).toBeInTheDocument();
+    expect(within(card).queryByRole('link', { name: /Track package/ })).not.toBeInTheDocument();
+    expect(within(card).queryByRole('button', { name: /tracking/i })).not.toBeInTheDocument();
+  });
+
+  it('shows the buyer the carrier, number and link once the seller adds tracking', async () => {
+    ordersState.orders = [
+      orderView('shipped', 'Olive oil', 'buyer', { shipment: shipment('UPS', '1Z999AA10123456784') }),
+    ];
+
+    render(<MarketplaceOrders />);
+    await userEvent.setup().click(await screen.findByRole('tab', { name: /^All/ }));
+
+    const card = (await screen.findByText(/Olive oil/)).closest('[data-slot="card"]') as HTMLElement;
+    expect(within(card).getByText('UPS · 1Z999AA10123456784 · shipped')).toBeInTheDocument();
+    expect(within(card).getByRole('link', { name: /Track package/ })).toHaveAttribute(
+      'href',
+      'https://www.ups.com/track?tracknum=1Z999AA10123456784',
+    );
+    expect(within(card).queryByText('Shipped, no tracking yet')).not.toBeInTheDocument();
+  });
+
+  it('gives the seller Add tracking on a shipped order with no number, and Edit tracking once there is one', async () => {
+    ordersState.orders = [
+      orderView('shipped', 'Olive oil', 'seller', { shipment: shipment('Other', '') }),
+      orderView('shipped', 'Olive jar', 'seller', { shipment: shipment('UPS', '1Z999AA10123456784') }),
+    ];
+
+    render(<MarketplaceOrders />);
+    await userEvent.setup().click(await screen.findByRole('tab', { name: /^All/ }));
+
+    const oil = (await screen.findByText(/Olive oil/)).closest('[data-slot="card"]') as HTMLElement;
+    const jar = (await screen.findByText(/Olive jar/)).closest('[data-slot="card"]') as HTMLElement;
+    expect(within(oil).getByRole('button', { name: 'Add tracking' })).toBeInTheDocument();
+    expect(within(jar).getByRole('button', { name: 'Edit tracking' })).toBeInTheDocument();
   });
 });

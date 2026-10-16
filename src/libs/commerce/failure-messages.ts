@@ -82,6 +82,9 @@ export const MARKETPLACE_FAILURE_MESSAGES = {
 
 type MarketplaceFailureCode = string | null | undefined;
 
+/** The browser's flow cookie binds a different approval, so this one can only be restarted. */
+export const APPROVAL_OTHER_TAB = 'This approval belongs to another tab. Start again here.';
+
 const CODE_MESSAGES: ReadonlyMap<string, string> = new Map([
   ['INVALID_RESPONSE', MARKETPLACE_FAILURE_MESSAGES.unavailable],
   ['SESSION_EXPIRED', MARKETPLACE_FAILURE_MESSAGES.session],
@@ -89,6 +92,8 @@ const CODE_MESSAGES: ReadonlyMap<string, string> = new Map([
   ['shop_session_missing', MARKETPLACE_FAILURE_MESSAGES.sessionMissing],
   ['shop_session_expired', MARKETPLACE_FAILURE_MESSAGES.sessionCookieExpired],
   ['flow_expired', MARKETPLACE_FAILURE_MESSAGES.sessionTimeout],
+  ['flow_binding_missing', APPROVAL_OTHER_TAB],
+  ['flow_binding_denied', APPROVAL_OTHER_TAB],
 ]);
 
 const DROP_REFUSAL_MESSAGES: ReadonlyMap<string, string> = new Map([
@@ -133,7 +138,6 @@ const CHECKOUT_REFUSAL_MESSAGES: ReadonlyMap<string, string> = new Map([
  * (see {@link marketplaceBootstrapFailureMessage}).
  */
 export const BOOTSTRAP_APPROVAL_EXPIRED = 'This approval expired. Start again.';
-const BOOTSTRAP_OTHER_TAB = 'This approval belongs to another tab. Start again here.';
 
 export const MARKETPLACE_BOOTSTRAP_CODE_MESSAGES: ReadonlyMap<string, string> = new Map([
   ['origin_denied', 'This request did not come from the Shop. Reload and try again.'],
@@ -146,8 +150,8 @@ export const MARKETPLACE_BOOTSTRAP_CODE_MESSAGES: ReadonlyMap<string, string> = 
   ['flow_cancelled', 'Approval cancelled.'],
   ['result_denied', 'This approval could not be completed. Start again.'],
   ['identity_mismatch', 'This approval came from a different pubky. Approve with your current pubky.'],
-  ['flow_binding_missing', BOOTSTRAP_OTHER_TAB],
-  ['flow_binding_denied', BOOTSTRAP_OTHER_TAB],
+  ['flow_binding_missing', APPROVAL_OTHER_TAB],
+  ['flow_binding_denied', APPROVAL_OTHER_TAB],
   ['flow_not_found', BOOTSTRAP_APPROVAL_EXPIRED],
   ['claim_in_progress', 'Finishing your approval…'],
   ['shop_session_expired', 'Your Shop session ended. Sign in again.'],
@@ -321,27 +325,49 @@ export const MARKETPLACE_PAYMENT_METHOD_REASON_MESSAGES: ReadonlyMap<string, str
 ]);
 
 /**
- * The same service reasons read differently when the buyer chose USDT: the
- * Bitcoin strings above name Bitcoin, so a USDT bind never shows them. Only
- * reasons that exist for both rails need an entry; USDT-only reasons live in
- * the main table.
+ * The same service reasons when the buyer chose the single Paykit entry: the
+ * request may carry Bitcoin or USDT, so the Bitcoin strings above, which name
+ * Bitcoin, and the USDT ones, which name USDT, never show for a `paykit` bind.
+ * Every reason in the main table that names one rail needs an entry here.
  */
-export const USDT_PAYMENT_METHOD_REASON_MESSAGES: ReadonlyMap<string, string> = new Map([
+export const PAYKIT_PAYMENT_METHOD_REASON_MESSAGES: ReadonlyMap<string, string> = new Map([
+  ['invalid_sats', 'Enter a whole-number amount greater than zero.'],
+  ['bitcoin_unavailable', 'Paykit payments are not available for this seller.'],
+  [
+    'buyer_usdt_wallet_required',
+    'Your Bitkit does not support the asset this seller offers yet. Update Bitkit, or choose another payment method.',
+  ],
+  [
+    'auction_payment_window_too_short',
+    'Too little time is left on this auction win to pay with Paykit. Choose another payment method, or message the seller.',
+  ],
   [
     'buyer_paykit_wallet_required',
-    'Connect Bitkit to pay with USDT: this pubky has no Paykit wallet that can receive a payment request.',
+    'Connect Bitkit to pay with Paykit: this pubky has no Paykit wallet that can receive a payment request.',
   ],
   [
     'paykit_expiry_inconsistent',
-    'The USDT payment window didn’t match this checkout, so USDT wasn’t started. Try again, or choose another payment method.',
+    'The payment window didn’t match this checkout, so Paykit wasn’t started. Try again, or choose another payment method.',
   ],
-  ['paykit_rejected', 'The USDT payment request was refused. Try again, or choose another payment method.'],
+  ['paykit_rejected', 'The Paykit payment request was refused. Try again, or choose another payment method.'],
   [
     'paykit_total_inconsistent',
-    'The USDT amount didn’t match this checkout, so USDT wasn’t started. Try again, or choose another payment method.',
+    'The amount didn’t match this checkout, so Paykit wasn’t started. Try again, or choose another payment method.',
   ],
   ['paykit_unavailable', PAYKIT_OUTAGE_COPY.title],
-  ['seller_account_unclaimed', USDT_SELLER_NOT_READY_COPY],
+  [
+    'seller_account_unclaimed',
+    'This seller can’t take Paykit payments right now. Choose another payment method, or contact the seller.',
+  ],
+  [
+    'usdt_seller_not_ready',
+    'This seller can’t take Paykit payments right now. Choose another payment method, or contact the seller.',
+  ],
+  ['usdt_unavailable', 'Paykit payments aren’t available right now. Choose another payment method.'],
+  [
+    'seller_setup_pending',
+    'This seller’s Paykit setup isn’t finished, so they can’t take a payment yet. Choose another payment method, or contact the seller.',
+  ],
 ]);
 
 function paymentMethodRefusalLookupKeys(error: unknown): string[] {
@@ -363,34 +389,11 @@ export function marketplacePaymentMethodReasonMessage(
     return MARKETPLACE_PAYMENT_METHOD_REASON_MESSAGES.get('unavailable') ?? 'The payment method request was refused.';
   }
   return (
-    (method === 'usdt' ? USDT_PAYMENT_METHOD_REASON_MESSAGES.get(reason) : undefined) ??
+    (method === 'paykit' ? PAYKIT_PAYMENT_METHOD_REASON_MESSAGES.get(reason) : undefined) ??
     MARKETPLACE_PAYMENT_METHOD_REASON_MESSAGES.get(reason) ??
     MARKETPLACE_PAYMENT_METHOD_REASON_MESSAGES.get('unavailable') ??
     'The payment method request was refused.'
   );
-}
-
-/**
- * The refusals after which the same USDT bind would be refused again: the
- * deployment cannot take USDT (`usdt_unavailable`) or this seller cannot
- * (`usdt_seller_not_ready`). The picker stops offering USDT after either.
- */
-export const USDT_OFFER_REFUSAL_REASONS = ['usdt_unavailable', 'usdt_seller_not_ready'] as const;
-export type UsdtOfferRefusalReason = (typeof USDT_OFFER_REFUSAL_REASONS)[number];
-
-/** The key a USDT refusal is remembered under: the seller pubky, or the distinct pubkys joined with `|`. */
-export function usdtRefusalKey(sellerPubkys: readonly string[]): string {
-  return [...new Set(sellerPubkys)].join('|');
-}
-
-/** The USDT offer refusal a failed bind carries, or null for any other failure or rail. */
-export function usdtOfferRefusalReason(error: unknown): UsdtOfferRefusalReason | null {
-  if (!isAppError(error) || error.context?.paymentMethod !== 'usdt') return null;
-  for (const key of paymentMethodRefusalLookupKeys(error)) {
-    const refusal = USDT_OFFER_REFUSAL_REASONS.find((reason) => reason === key);
-    if (refusal) return refusal;
-  }
-  return null;
 }
 
 /** True when the service could not reach Paykit to start the payment request. */
@@ -405,10 +408,11 @@ export function isReaderWalletSetupNeeded(error: unknown): boolean {
 
 /** Buyer/seller payment-action toast: map reason or family code, never a wire message. */
 export function marketplacePaymentMethodFailureMessage(error: unknown, fallback: string): string {
-  const usdtBind = isAppError(error) && error.context?.paymentMethod === 'usdt';
+  const bindMethod = isAppError(error) ? error.context?.paymentMethod : undefined;
+  const paykitBind = bindMethod === 'paykit';
   for (const key of paymentMethodRefusalLookupKeys(error)) {
     const mapped =
-      (usdtBind ? USDT_PAYMENT_METHOD_REASON_MESSAGES.get(key) : undefined) ??
+      (paykitBind ? PAYKIT_PAYMENT_METHOD_REASON_MESSAGES.get(key) : undefined) ??
       MARKETPLACE_PAYMENT_METHOD_REASON_MESSAGES.get(key);
     if (mapped) return mapped;
   }

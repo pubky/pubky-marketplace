@@ -18,5 +18,26 @@ export function marketplaceApprovalFailure(message: string, operation: string, s
   if ((status === undefined || status === 410) && (message === 'flow_expired' || message === 'flow_cancelled')) {
     return new AppError({ ...common, category: ErrorCategory.Client, code: ClientErrorCode.GONE });
   }
+  // This browser's one flow cookie now binds a newer approval (another tab) or none (expired).
+  if (
+    ((status === undefined || status === 401) && message === 'flow_binding_missing') ||
+    ((status === undefined || status === 403) && message === 'flow_binding_denied')
+  ) {
+    return new AppError({ ...common, category: ErrorCategory.Client, code: ClientErrorCode.CONFLICT });
+  }
   return Err.server(ServerErrorCode.SERVICE_UNAVAILABLE, message, common);
+}
+
+/**
+ * No marketplace session is held on this device yet. Surfaces render the
+ * session-connect affordance for it, so it is control flow, not telemetry.
+ */
+export function marketplaceSessionRequired(message: string, operation: string): AppError {
+  return new AppError({
+    category: ErrorCategory.Auth,
+    code: AuthErrorCode.SESSION_EXPIRED,
+    message,
+    service: ErrorService.Marketplace,
+    operation,
+  });
 }

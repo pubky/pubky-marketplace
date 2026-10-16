@@ -2,6 +2,7 @@ import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { MARKETPLACE_ROUTES } from '@/app/routes';
+import { CommerceController } from '@/controllers/commerce/commerce';
 import { parseContractFaithfulOffer } from '@/test/fixtures/commerce/offer-award';
 import { MarketplaceCart } from './MarketplaceCart';
 
@@ -10,6 +11,19 @@ const view = vi.hoisted(() => ({
   offers: [] as unknown[],
   isLoading: false,
 }));
+
+const stock = vi.hoisted(() => ({
+  durable: false,
+  availability: new Map<string, { aggregateId: string; state: string; serverTime: string; variants?: unknown[] }>(),
+}));
+
+vi.mock('@/config/commerce', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/config/commerce')>();
+  return {
+    ...actual,
+    getCommerceAdapterMode: () => (stock.durable ? 'transaction-service' : actual.getCommerceAdapterMode()),
+  };
+});
 
 const cartActions = vi.hoisted(() => ({
   update: vi.fn(),
@@ -133,6 +147,11 @@ describe('MarketplaceCart', () => {
     view.items = [];
     view.offers = [];
     view.isLoading = false;
+    stock.durable = false;
+    stock.availability.clear();
+    vi.spyOn(CommerceController, 'getPublicListingAvailability').mockImplementation(async (seller, listingId) =>
+      Promise.resolve((stock.availability.get(`${String(seller)}:${String(listingId)}`) ?? null) as never),
+    );
   });
 
   it('links Checkout to the checkout screen without placing an order', () => {
@@ -332,5 +351,83 @@ describe('MarketplaceCart', () => {
     const ordinaryGroup = screen.getByRole('region', { name: `Cart items from ${listing.record.ownerPubky}` });
     await user.click(within(ordinaryGroup).getByRole('button', { name: 'Remove Vintage boots' }));
     expect(cartActions.remove).toHaveBeenCalledWith(listing.id, 'variant_42');
+  });
+
+  describe('sold-out items', () => {
+    const sizedListing = {
+      ...listing,
+      record: {
+        ...listing.record,
+        variants: [
+          { id: 'variant_42', options: { size: '42' }, quantity: 3, enabled: true },
+          { id: 'variant_43', options: { size: '43' }, quantity: 2, enabled: true },
+        ],
+      },
+    };
+
+    function availability(state: string, variants?: { variantId: string; soldOut: boolean }[]) {
+      return {
+        aggregateId: `listing:${listing.record.ownerPubky}_boots`,
+        state,
+        serverTime: '2026-10-16T09:00:00.000Z',
+        ...(variants ? { variants } : {}),
+      };
+    }
+
+    it('marks a listing the service reads sold and blocks Checkout', async () => {
+      stock.durable = true;
+      stock.availability.set(`${listing.record.ownerPubky}:boots`, availability('sold'));
+      seededCart();
+
+      render(<MarketplaceCart />);
+
+      expect(await screen.findByTestId('marketplace-cart-line-sold-out')).toHaveTextContent('Sold out');
+      expect(screen.getByRole('button', { name: 'Checkout' })).toBeDisabled();
+      expect(screen.queryByRole('link', { name: 'Checkout' })).not.toBeInTheDocument();
+      expect(screen.getByText('Remove sold-out items to check out.')).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /Increase Vintage boots quantity/ })).not.toBeInTheDocument();
+    });
+
+    it('marks only the size that sold out', async () => {
+      stock.durable = true;
+      stock.availability.set(
+        `${listing.record.ownerPubky}:boots`,
+        availability('available', [
+          { variantId: 'variant_42', soldOut: true },
+          { variantId: 'variant_43', soldOut: false },
+        ]),
+      );
+      view.items = [
+        {
+          id: 'seller:boots:variant_42',
+          listingId: listing.id,
+          variantId: 'variant_42',
+          quantity: 1,
+          listing: sizedListing,
+        },
+      ];
+
+      render(<MarketplaceCart />);
+
+      expect(await screen.findByTestId('marketplace-cart-line-sold-out')).toHaveTextContent('This size is sold out');
+      expect(screen.getByRole('button', { name: 'Checkout' })).toBeDisabled();
+    });
+
+    it('keeps Checkout open while every item is in stock', async () => {
+      stock.durable = true;
+      stock.availability.set(`${listing.record.ownerPubky}:boots`, availability('available'));
+      seededCart();
+
+      render(<MarketplaceCart />);
+
+      await vi.waitFor(() =>
+        expect(vi.mocked(CommerceController.getPublicListingAvailability)).toHaveBeenCalledWith(
+          listing.record.ownerPubky,
+          'boots',
+        ),
+      );
+      expect(screen.getByRole('link', { name: 'Checkout' })).toBeInTheDocument();
+      expect(screen.queryByTestId('marketplace-cart-line-sold-out')).not.toBeInTheDocument();
+    });
   });
 });

@@ -1,8 +1,9 @@
 'use client';
 
-import { KeyRound } from 'lucide-react';
+import { KeyRound, LogOut } from 'lucide-react';
 import { Button } from '@/atoms/Button/Button';
 import { Typography } from '@/atoms/Typography/Typography';
+import { useSignOut } from '@/hooks/useSignOut/useSignOut';
 import type { ChatStore } from '@/stores/chat/chat.types';
 
 /**
@@ -16,6 +17,7 @@ export function ChatIdentityNotice({
   identityState: ChatStore['identityState'];
   onRetry: () => void | Promise<void>;
 }) {
+  const { handleSignOut, isLoading: isSigningOut } = useSignOut();
   if (identityState === 'ready' || identityState === 'unknown') return null;
   const needsReauth = identityState === 'needs_reauth';
   return (
@@ -32,11 +34,23 @@ export function ChatIdentityNotice({
             : 'Messages could not be set up. Check your connection and try again.'}
         </Typography>
       </div>
-      {!needsReauth ? (
+      {needsReauth ? (
+        <Button
+          type="button"
+          variant="secondary"
+          size="sm"
+          className="w-fit shrink-0 rounded-full"
+          disabled={isSigningOut}
+          onClick={() => void handleSignOut()}
+        >
+          <LogOut className="size-4" aria-hidden="true" />
+          {isSigningOut ? 'Signing out...' : 'Sign out'}
+        </Button>
+      ) : (
         <Button type="button" variant="secondary" size="sm" className="rounded-full" onClick={() => void onRetry()}>
           Try again
         </Button>
-      ) : null}
+      )}
     </div>
   );
 }

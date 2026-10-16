@@ -62,6 +62,7 @@ vi.mock('@/controllers/commerce/commerce', () => ({
       listingId,
       title: listingId === 'listing-a' ? 'Field Recordings Vol. 1 — Vinyl' : 'Field Recordings Vol. 1 — Tape',
       media: [],
+      variants: [{ id: 'default', options: {}, quantity: 5, enabled: true }],
       sale: {
         format: 'fixed_price',
         unitPrice: { amountMinor: 4_500, currency: 'USD', exponent: 2 },

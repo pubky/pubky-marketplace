@@ -1,7 +1,7 @@
 'use client';
 
 import { type CSSProperties, useState } from 'react';
-import { Bell, Clock3, Gavel, Heart, Star } from 'lucide-react';
+import { Bell, Clock3, Gavel, Heart, PackageX, Star } from 'lucide-react';
 import { getMarketplaceListingRoute } from '@/app/routes';
 import { Badge } from '@/atoms/Badge/Badge';
 import { Card, CardContent } from '@/atoms/Card/Card';
@@ -57,8 +57,14 @@ export interface MarketplaceListingCardProps {
 export function MarketplaceListingCard({ listing, shopName, layout = 'grid', index = 0 }: MarketplaceListingCardProps) {
   const background = MEDIA_BACKGROUNDS[colorIndex(listing.listingId)];
   const isAuction = listing.saleFormat === 'auction';
-  const { ref: liveBidRef, bid, listingState } = useMarketplaceLiveBid(listing.sellerId, listing.listingId, true);
-  const isReserved = !isAuction && listingState === 'reserved';
+  const {
+    ref: liveBidRef,
+    bid,
+    listingState,
+    soldOut,
+  } = useMarketplaceLiveBid(listing.sellerId, listing.listingId, true);
+  const isSoldOut = !isAuction && soldOut;
+  const isReserved = !isAuction && !isSoldOut && listingState === 'reserved';
   const hasLiveBid = isAuction && bid !== null && bid.bidCount > 0;
   // The card's watch toggle IS the favorite — one concept, presented as the
   // watchlist (favorites are the account-scoped store the watchlist reads).
@@ -117,12 +123,14 @@ export function MarketplaceListingCard({ listing, shopName, layout = 'grid', ind
           <Badge className="absolute top-3 left-3 gap-1 bg-background/85 text-foreground shadow-sm backdrop-blur-md">
             {isAuction ? (
               <Gavel aria-hidden="true" className="size-3" />
+            ) : isSoldOut ? (
+              <PackageX aria-hidden="true" className="size-3" />
             ) : isReserved ? (
               <Clock3 aria-hidden="true" className="size-3" />
             ) : (
               <Star aria-hidden="true" className="size-3" />
             )}
-            {isAuction ? 'Auction' : isReserved ? 'Held' : 'Buy now'}
+            {isAuction ? 'Auction' : isSoldOut ? 'Sold out' : isReserved ? 'Held' : 'Buy now'}
           </Badge>
           <button
             type="button"

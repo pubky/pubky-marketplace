@@ -120,6 +120,19 @@ describe('LocksGatewayService', () => {
     expect(vi.mocked(fetch).mock.calls.flatMap((call) => String(call[0]))).not.toContain(BUNDLE_ID);
   });
 
+  // `p`, `u`, `b`, `k` and `y` are z-base-32 characters, so a bare id can start with `pubky`.
+  it('sends the Lock Server the prefixed creator whether it gets the bare or the prefixed id', async () => {
+    const bare = 'pubky3f4khszd4gzg38bsazw88dmcfws36js9ct19s9dikb3a9ht';
+    for (const input of [bare, `pubky${bare}`]) {
+      vi.mocked(fetch).mockResolvedValueOnce(
+        jsonResponse({ credential: 'opaque-secret', expires_at: '2026-08-20T00:00:00.000Z' }),
+      );
+      await LocksGatewayService.issueAccessCredential(input, BUNDLE_ID);
+      const init = vi.mocked(fetch).mock.calls.at(-1)?.[1] as RequestInit;
+      expect(JSON.parse(String(init.body)).creator).toBe(`pubky${bare}`);
+    }
+  });
+
   it('reads the durable-admission lifecycle fields (pubky/locks#72) and stays compatible without them', async () => {
     vi.mocked(fetch)
       .mockResolvedValueOnce(
@@ -321,114 +334,6 @@ describe('LocksGatewayService', () => {
     loggerError.mockRestore();
   });
 
-  it('revalidates a creator frontend session without excerpting the bearer', async () => {
-    vi.mocked(fetch).mockResolvedValueOnce(
-      jsonResponse({
-        creator: `pubky${CREATOR}`,
-        authorized: true,
-        auth_kind: 'legacy-cookie',
-        granted_scopes: ['/pub/locks.app/:rw'],
-        session_expires_at: null,
-      }),
-    );
-
-    await expect(LocksGatewayService.getCreatorAuthorityStatus('session-token')).resolves.toEqual({
-      creator: `pubky${CREATOR}`,
-      authorized: true,
-    });
-    expect(fetch).toHaveBeenCalledWith(
-      'https://locks.example.com/creator/authority-status',
-      expect.objectContaining({
-        method: 'GET',
-        headers: { authorization: 'Bearer session-token' },
-      }),
-    );
-  });
-
-  it('does not put a truncated authority-status body into error context', async () => {
-    const sentinel = 'locks-authority-status-sentinel';
-    vi.mocked(fetch).mockResolvedValueOnce(
-      new Response(`{"creator":"${sentinel}","authorized":tru`, {
-        status: 200,
-        headers: { 'content-type': 'application/json' },
-      }),
-    );
-    const loggerError = vi.spyOn(Logger, 'error');
-
-    const error = (await LocksGatewayService.getCreatorAuthorityStatus('session-token').catch(
-      (caught: unknown) => caught,
-    )) as AppError;
-
-    expect(error).toMatchObject({ code: 'INVALID_RESPONSE' });
-    expect(JSON.stringify(error.context)).not.toContain(sentinel);
-    expect(error.context).not.toHaveProperty('responseText');
-    expect(JSON.stringify(loggerError.mock.calls)).not.toContain(sentinel);
-    loggerError.mockRestore();
-  });
-
-  it.each(['BTC', 'USD'] as const)(
-    'reads the creator Paykit setup status for %s with the frontend session bearer',
-    async (asset) => {
-      vi.mocked(fetch).mockResolvedValueOnce(jsonResponse({ status: 'setup_required' }));
-
-      await expect(LocksGatewayService.getCreatorPaykitSetupStatus('session-token', asset)).resolves.toBe(
-        'setup_required',
-      );
-      expect(fetch).toHaveBeenCalledWith(
-        `https://locks.example.com/creator/paykit/setup-status?asset=${asset}`,
-        expect.objectContaining({ method: 'GET', headers: { authorization: 'Bearer session-token' } }),
-      );
-    },
-  );
-
-  it('rejects a Paykit setup status outside the closed set', async () => {
-    vi.mocked(fetch).mockResolvedValueOnce(jsonResponse({ status: 'claimed' }));
-
-    await expect(LocksGatewayService.getCreatorPaykitSetupStatus('session-token', 'BTC')).rejects.toMatchObject({
-      code: 'INVALID_RESPONSE',
-    });
-  });
-
-  it('reads the creator-keyed authority status without a bearer', async () => {
-    vi.mocked(fetch).mockResolvedValueOnce(jsonResponse({ creator: `pubky${CREATOR}`, authorized: true }));
-
-    await expect(LocksGatewayService.getPublicCreatorAuthorityStatus(CREATOR)).resolves.toEqual({
-      creator: `pubky${CREATOR}`,
-      authorized: true,
-    });
-    expect(fetch).toHaveBeenCalledWith(
-      `https://locks.example.com/creators/pubky${CREATOR}/authority-status`,
-      expect.objectContaining({ method: 'GET' }),
-    );
-    const init = vi.mocked(fetch).mock.calls[0]?.[1] as RequestInit;
-    expect(init.headers).toBeUndefined();
-  });
-
-  it('resolves null when the Lock Server does not serve the creator-keyed status', async () => {
-    vi.mocked(fetch).mockResolvedValueOnce(new Response(null, { status: 404 }));
-
-    await expect(LocksGatewayService.getPublicCreatorAuthorityStatus(CREATOR)).resolves.toBeNull();
-  });
-
-  it('rejects a creator-keyed status error instead of reading it as not connected', async () => {
-    vi.mocked(fetch).mockResolvedValueOnce(
-      new Response(JSON.stringify({ error: { code: 'internal_error', message: 'internal error' } }), {
-        status: 500,
-        headers: { 'content-type': 'application/json' },
-      }),
-    );
-
-    await expect(LocksGatewayService.getPublicCreatorAuthorityStatus(CREATOR)).rejects.toBeTruthy();
-  });
-
-  it('builds the legacy connect URL with postmessage delivery', () => {
-    expect(
-      LocksGatewayService.buildLegacyConnectUrl('https://shop.pubky.app/marketplace/settings', 'opaque-state'),
-    ).toBe(
-      'https://locks.example.com/connect?return_to=https%3A%2F%2Fshop.pubky.app%2Fmarketplace%2Fsettings&state=opaque-state&delivery=postmessage',
-    );
-  });
-
   it('builds exact-origin Paykit setup callbacks with the creator the paykit-server fork requires', () => {
     paykitSetupConfig.creatorParam = true;
     expect(
@@ -471,7 +376,7 @@ describe('LocksGatewayService', () => {
     it('builds the reconnect URL beside the setup URL with creator, return_to and state', () => {
       const built = LocksGatewayService.buildPaykitReconnectUrl(returnTo, 'opaque-state', creator);
       expect(built).toBe(
-        `https://paykit.example.com/setup/reconnect?creator=${creator}&return_to=https%3A%2F%2Fapp.example.com%2Fmarketplace%2Fsettings&state=opaque-state`,
+        `https://paykit.example.com/setup/reconnect?creator=pubky${creator}&return_to=https%3A%2F%2Fapp.example.com%2Fmarketplace%2Fsettings&state=opaque-state`,
       );
       expect([...new URL(built).searchParams.keys()]).toEqual(['creator', 'return_to', 'state']);
     });
@@ -484,10 +389,24 @@ describe('LocksGatewayService', () => {
           new URL(LocksGatewayService.buildPaykitReconnectUrl(returnTo, 'opaque-state', creator)).searchParams.get(
             'creator',
           ),
-        ).toBe(creator);
+        ).toBe(`pubky${creator}`);
       } finally {
         paykitSetupConfig.creatorParam = true;
       }
+    });
+
+    // Upstream `parse_setup_query` -> `parse_creator` accepts only the
+    // canonical `pubky<z32>` form; the bare z32 id answers 400 invalid_request.
+    it('sends the bare seller id in the pubky-prefixed form Paykit parses', () => {
+      const z32 = '3f4khszd4gzg38bsazw88dmcfws36js9ct19s9dikb3a9ht3r84y';
+      const built = new URL(LocksGatewayService.buildPaykitReconnectUrl(returnTo, 'opaque-state', z32));
+      expect(built.searchParams.get('creator')).toBe(`pubky${z32}`);
+    });
+
+    it('prefixes a bare id that itself starts with pubky', () => {
+      const z32 = 'pubky3f4khszd4gzg38bsazw88dmcfws36js9ct19s9dikb3a9ht';
+      const built = new URL(LocksGatewayService.buildPaykitReconnectUrl(returnTo, 'opaque-state', z32));
+      expect(built.searchParams.get('creator')).toBe(`pubky${z32}`);
     });
 
     it('builds /setup/reconnect from the configured origin, whatever path or query the setup URL carries', () => {

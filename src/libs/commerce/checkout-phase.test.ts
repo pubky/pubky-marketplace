@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { MARKETPLACE_ROUTES } from '@/app/routes';
-import { formatDateTime } from '@/libs/utils/dateTime';
+import { setupFixedDateLocale } from '@/test-utils/date-locale';
 import {
   buyerCheckoutStateLabel,
   extractCheckoutOrderIds,
@@ -24,6 +24,8 @@ import {
   sellerReservationCopy,
   unlistedOrderStateLabel,
 } from './checkout-phase';
+
+setupFixedDateLocale();
 
 const BUYER = 'b'.repeat(52);
 const SELLER = 's'.repeat(52);
@@ -163,9 +165,7 @@ describe('checkout-phase', () => {
     expect(formatRemainingHMmSs('2026-09-28T12:00:00.000Z', Date.parse('2026-09-28T11:00:00.000Z'))).toBe('1:00:00');
     expect(formatRemainingHMmSs('2026-09-29T10:53:06.000Z', Date.parse('2026-09-28T11:00:00.000Z'))).toBe('23:53:06');
     expect(formatRemainingHMmSs('2026-09-28T10:00:00.000Z', Date.parse('2026-09-28T11:00:00.000Z'))).toBe('0:00:00');
-    expect(sellerReservationCopy('2026-10-02T09:10:00.000Z')).toBe(
-      `Held for a buyer · restocks ${formatDateTime(new Date('2026-10-02T09:10:00.000Z'))}`,
-    );
+    expect(sellerReservationCopy('2026-10-02T09:10:00.000Z')).toBe(`Held for a buyer · restocks 2 Oct 2026, 09:10`);
     expect(sellerReservationCopy(null)).toBe('Held for a buyer.');
     expect(sellerReservationCopy('not a date')).toBe('Held for a buyer.');
   });

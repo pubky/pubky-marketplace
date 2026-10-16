@@ -26,7 +26,7 @@ function ShopHostNavigation() {
 }
 
 export function ShopHostSessionProvider({ children }: { children: ReactNode }) {
-  const { configured, hosted, status, retry } = useShopHostSession();
+  const { configured, hosted, status, hasHostIdentity, retry } = useShopHostSession();
   const pathname = usePathname();
   const publicRoute = PUBLIC_ROUTES.includes(pathname) || isDynamicPublicRoute(pathname);
   const pending = !configured || (hosted && (status === 'connecting' || status === 'restoring'));
@@ -49,7 +49,9 @@ export function ShopHostSessionProvider({ children }: { children: ReactNode }) {
               ? 'Approve Shop access in Pubky App to continue.'
               : status === 'reauth-required'
                 ? 'Sign in to Pubky App again to continue.'
-                : 'Your Pubky App session could not be restored. Your saved session has been kept.'}
+                : hasHostIdentity
+                  ? 'Your Pubky App session could not be restored. Your saved session has been kept.'
+                  : 'Shop is temporarily unavailable. Please try again.'}
           </p>
           <Button
             onClick={

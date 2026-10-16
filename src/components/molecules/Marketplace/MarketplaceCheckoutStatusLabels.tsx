@@ -8,14 +8,18 @@ export function MarketplaceCheckoutStatusLabels({
   order,
   payment,
   isSandbox = false,
+  showCheckoutPhase = true,
 }: {
   order: MarketplaceOrder;
   payment: MarketplacePayment | null;
   isSandbox?: boolean;
+  showCheckoutPhase?: boolean;
 }) {
   return (
     <div className="flex flex-wrap items-center gap-2 empty:hidden" data-testid="marketplace-checkout-status-labels">
-      {order.state === 'pending_payment' && <Badge variant="outline">{CHECKOUT_IN_PROGRESS_LABEL}</Badge>}
+      {showCheckoutPhase && order.state === 'pending_payment' && (
+        <Badge variant="outline">{CHECKOUT_IN_PROGRESS_LABEL}</Badge>
+      )}
       {payment && <MarketplacePaymentStatusLabels order={order} payment={payment} isBuyer isSandbox={isSandbox} />}
       {order.fulfillment === 'pickup' && <Badge variant="outline">Local pickup</Badge>}
       {order.fulfillment === 'digital' && <Badge variant="outline">Digital delivery</Badge>}

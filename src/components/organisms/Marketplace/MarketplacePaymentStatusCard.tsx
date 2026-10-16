@@ -38,7 +38,6 @@ import {
   useMarketplaceSellerPaymentReviewForm,
 } from '@/hooks/useMarketplaceSellerPaymentReview/useMarketplaceSellerPaymentReviewForm';
 import { useNowMs } from '@/hooks/useNowMs/useNowMs';
-import { Tether } from '@/icons';
 import {
   BITCOIN_PAYMENT_EXPIRY_COPY,
   BITCOIN_WALLET_CONTACT_COPY,
@@ -76,6 +75,18 @@ import { buyerVisiblePaymentStatus } from '@/libs/commerce/locks-payment';
 import type { CommerceDigitalLock } from '@/libs/commerce/marketplace-records';
 import { PAYKIT_OUTAGE_COPY } from '@/libs/commerce/paykit-rail';
 import {
+  followsBitcoinFlow,
+  isPaykitOrder,
+  isUnobservedPaykitOrder,
+  mayPayInBitcoin,
+  observedPaymentRail,
+  orderOfferedAssets,
+  PAYKIT_PICKER_LABEL,
+  paykitAssetsLabel,
+  paykitAwaitingBody,
+  paykitAwaitingTitle,
+} from '@/libs/commerce/paykit-rail';
+import {
   BITCOIN_WALLET_FORK_REQUIRED_COPY,
   BITCOIN_WALLET_FORK_REQUIRED_TITLE,
   BITCOIN_WALLET_UNSUPPORTED_TITLE,
@@ -86,6 +97,7 @@ import {
 import { formatBitcoinAmount } from '@/libs/commerce/pricing';
 import { buildMarketplaceOrderAggregateId } from '@/libs/commerce/transaction-commands';
 import {
+  PAYKIT_USDT_FINALITY_EXPECTATION_COPY,
   USDT_ACCEPT_BY_COPY,
   USDT_BUYER_PHASE_COPY,
   USDT_FINALITY_EXPECTATION_COPY,
@@ -113,8 +125,17 @@ import { MarketplaceUsdtPaymentSummary } from './MarketplaceUsdtPaymentSummary';
 const GENERIC_MANUAL_REVIEW_COPY =
   'A verified event arrived outside the normal flow (for example after the payment window expired), so the seller must resolve this order manually. No funds are held by this marketplace.';
 
+// A failed delivery state can be wrong when the service crashed near the deadline after the
+// request reached the wallet, so this copy never asserts that it was not received. paykit-server
+// marks a failed delivery permanently and never re-sends it, so the next step is a new checkout. The buyer's own
+// hold keeps the item until the checkout is cancelled or the window ends, hence "cancel this checkout" first.
 const PAYKIT_DELIVERY_FAILED_COPY =
-  "Your wallet didn't receive the request. In Bitkit, add the seller as a contact, then try again.";
+  "We couldn't confirm your wallet got the payment request. Check Bitkit for it; if it's not there, add the seller as a contact in Bitkit, cancel this checkout, then check out again.";
+
+// The same request can still sit unpaid in Bitkit after the window ended, and paying it then needs
+// a manual reconciliation or a refund, so the elapsed state says not to (as the Locks rail does).
+const PAYKIT_DELIVERY_ELAPSED_COPY =
+  "We couldn't confirm your wallet got the payment request before the payment window ended. If you find it in Bitkit, don't pay it. This checkout has ended; check out again.";
 
 function parseListingAggregateId(aggregateId: string): { sellerPubky: string; listingId: string } | null {
   if (!aggregateId.startsWith('listing:')) return null;
@@ -224,33 +245,33 @@ export function MarketplacePaymentStatusCard({
     enabled: usesMethodFlow && isBuyer,
     onPaymentChanged,
   });
-  const bitcoinBindOffered =
-    usesMethodFlow && isBuyer && !order.paymentMethod && (methodPayment.availableMethods?.includes('bitcoin') ?? false);
+  const paykitBindOffered =
+    usesMethodFlow && isBuyer && !order.paymentMethod && (methodPayment.availableMethods?.includes('paykit') ?? false);
   const buyerConnectionRequested =
-    bitcoinBindOffered && buyerConnection?.owner === currentUserPubky && buyerConnection?.orderId === order.id;
+    paykitBindOffered && buyerConnection?.owner === currentUserPubky && buyerConnection?.orderId === order.id;
   const supportsBuyerConnectionGuide = getPaykitServerApi() === 'upstream';
   const paymentCodeNote = bitcoinPaymentCodeCheckoutNote(getPaykitServerApi());
   const buyerConnectionOpen =
     supportsBuyerConnectionGuide && buyerConnectionRequested && Boolean(buyerConnection?.open);
-  const buyerWallet = useBuyerPaykitWallet(currentUserPubky, bitcoinBindOffered, buyerConnectionOpen);
+  const buyerWallet = useBuyerPaykitWallet(currentUserPubky, paykitBindOffered, buyerConnectionOpen);
   const buyerConnectionRequired = buyerConnectionRequested && buyerWallet.state !== 'payable';
-  const bitcoinWalletMissing = bitcoinBindOffered && buyerWallet.state === 'not_payable';
-  const bitcoinWalletUnsupported = bitcoinBindOffered && buyerWallet.state === 'unsupported';
+  const bitcoinWalletMissing = paykitBindOffered && buyerWallet.state === 'not_payable';
+  const bitcoinWalletUnsupported = paykitBindOffered && buyerWallet.state === 'unsupported';
   const bitcoinWalletUnverified =
-    bitcoinBindOffered &&
+    paykitBindOffered &&
     (buyerWallet.state === 'unverified' || (buyerConnectionRequested && buyerWallet.state === 'unknown'));
-  const bitcoinWalletChecking = bitcoinBindOffered && buyerWallet.state === 'checking';
+  const bitcoinWalletChecking = paykitBindOffered && buyerWallet.state === 'checking';
 
   useEffect(() => {
     setBuyerConnection((connection) => {
       if (!connection || connection.owner !== currentUserPubky || connection.orderId !== order.id) return null;
-      if (!bitcoinBindOffered && connection.open) return { ...connection, open: false };
+      if (!paykitBindOffered && connection.open) return { ...connection, open: false };
       return connection;
     });
-  }, [bitcoinBindOffered, currentUserPubky, order.id]);
+  }, [paykitBindOffered, currentUserPubky, order.id]);
 
   const checkBuyerConnection = (open: boolean) => {
-    if (!currentUserPubky || !bitcoinBindOffered) return;
+    if (!currentUserPubky || !paykitBindOffered) return;
     setBuyerConnection({ owner: currentUserPubky, orderId: order.id, open });
     buyerWallet.recheck();
   };
@@ -295,8 +316,10 @@ export function MarketplacePaymentStatusCard({
   if (!payment || visibleStatus === null) return null;
 
   const paidBitcoin = bitcoinPaidConfirmation(order, payment);
-  const isPaykitRail = order.paymentMethod === 'bitcoin' || order.paymentMethod === 'usdt';
-  const hasBuyerBitcoinProgress = usesMethodFlow && isBuyer && order.paymentMethod === 'bitcoin';
+  const paykitOffersUsdt = isUnobservedPaykitOrder(order) && orderOfferedAssets(order).includes('USDT');
+  const isPaykitRail = isPaykitOrder(order);
+  const rail = observedPaymentRail(order);
+  const hasBuyerBitcoinProgress = usesMethodFlow && isBuyer && (rail === 'bitcoin' || followsBitcoinFlow(order));
 
   const statusInLabels = confirmedStatusInOrderLabels && visibleStatus === 'confirmed';
 
@@ -326,7 +349,7 @@ export function MarketplacePaymentStatusCard({
       )}
       <MarketplaceBitcoinAmountBreakdown
         order={order}
-        showExact={isBuyer && isAwaiting && buyerBitcoinWalletCopy(order, payment).kind === 'pay'}
+        showExact={isBuyer && isAwaiting && buyerBitcoinWalletCopy(order, payment).kind === 'pay' && !paykitOffersUsdt}
         explainCode={isBuyer}
       />
       <MarketplaceUsdtPaymentSummary order={order} payment={payment} isBuyer={isBuyer} />
@@ -372,7 +395,7 @@ export function MarketplacePaymentStatusCard({
       )}
       {refundRequired && (
         <Typography as="p" className="text-sm text-muted-foreground">
-          {refundRequiredCopyForRole(isBuyer, order.paymentMethod)}
+          {refundRequiredCopyForRole(isBuyer, rail ?? order.paymentMethod)}
         </Typography>
       )}
 
@@ -395,23 +418,22 @@ export function MarketplacePaymentStatusCard({
       )}
       {visibleStatus === 'expired' && isBuyer && isPaykitRail && order.paykitDeliveryState !== 'delivered' && (
         <Typography as="p" role="alert" className="text-sm text-amber-300" data-testid="paykit-delivery-failed">
-          {PAYKIT_DELIVERY_FAILED_COPY}
+          {PAYKIT_DELIVERY_ELAPSED_COPY}
         </Typography>
       )}
       {visibleStatus === 'manual_review' && !refundRequired && (
         <Typography as="p" className="text-sm text-muted-foreground" data-testid="payment-manual-review-copy">
-          {isBuyer && order.paymentMethod === 'bitcoin'
+          {isBuyer && rail === 'bitcoin'
             ? buyerBitcoinReviewCopy(order, payment)
-            : isBuyer && order.paymentMethod === 'usdt'
+            : isBuyer && rail === 'usdt'
               ? usdtPhaseCopy(order, payment, true)
-              : ((!isBuyer && order.paymentMethod === 'usdt' ? usdtSellerReviewCopy(payment) : null) ??
-                GENERIC_MANUAL_REVIEW_COPY)}
+              : ((!isBuyer && rail === 'usdt' ? usdtSellerReviewCopy(payment) : null) ?? GENERIC_MANUAL_REVIEW_COPY)}
         </Typography>
       )}
 
       {isDurable &&
         isSeller &&
-        order.paymentMethod === 'bitcoin' &&
+        mayPayInBitcoin(order) &&
         payment.adapter === 'paykit' &&
         order.paykitRequestState === 'awaiting_seller_confirmation' && (
           <SellerBitcoinConfirmationReview
@@ -427,10 +449,12 @@ export function MarketplacePaymentStatusCard({
 
       {isDurable &&
         isSeller &&
-        order.paymentMethod === 'bitcoin' &&
+        mayPayInBitcoin(order) &&
         payment.adapter === 'paykit' &&
         payment.state === 'manual_review' && (
           <SellerBitcoinResolutionReview
+            title={rail === null ? 'Resolve payment review' : undefined}
+            observation={order.paykitObservation ?? null}
             enteredAt={payment.manualReviewEnteredAt}
             form={sellerReview.resolveForm}
             isSubmitting={sellerReview.isSubmitting}
@@ -522,11 +546,11 @@ export function MarketplacePaymentStatusCard({
               {methodPayment.bitcoinOfferUnavailable && (
                 <Typography as="p" aria-live="polite" className="text-sm text-muted-foreground">
                   {methodPayment.paykitOutage
-                    ? `${PAYKIT_OUTAGE_COPY.title} Bitcoin and USDT return on their own; PayPal is unaffected.`
+                    ? `${PAYKIT_OUTAGE_COPY.title} ${PAYKIT_OUTAGE_COPY.buyerOthers}`
                     : MARKETPLACE_FAILURE_MESSAGES.bitcoinOfferUnavailable}
                 </Typography>
               )}
-              {bitcoinBindOffered && paymentCodeNote && (
+              {paykitBindOffered && paymentCodeNote && (
                 <Typography as="p" className="text-xs text-muted-foreground" data-testid="bitcoin-payment-code-note">
                   {paymentCodeNote}
                 </Typography>
@@ -541,7 +565,7 @@ export function MarketplacePaymentStatusCard({
                 Choose a payment method to continue. {holderUnboundCopy(order.holdExpiresAt)}
               </Typography>
               <div className="flex flex-wrap gap-2">
-                {methodPayment.availableMethods.includes('bitcoin') && (
+                {methodPayment.availableMethods.includes('paykit') && (
                   <Button
                     size="sm"
                     className="rounded-full"
@@ -555,23 +579,11 @@ export function MarketplacePaymentStatusCard({
                       bitcoinWalletUnsupported ||
                       bitcoinWalletUnverified
                     }
-                    onClick={() => void methodPayment.bind('bitcoin')}
+                    data-testid="order-payment-method-paykit"
+                    onClick={() => void methodPayment.bind('paykit')}
                   >
                     <WalletCards className="size-4" />
-                    Continue with Bitcoin
-                  </Button>
-                )}
-                {methodPayment.availableMethods.includes('usdt') && (
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    className="rounded-full"
-                    disabled={methodPayment.pendingAction !== null || methodPayment.paykitOutage}
-                    data-testid="order-payment-method-usdt"
-                    onClick={() => void methodPayment.bind('usdt')}
-                  >
-                    <Tether className="size-4" aria-hidden="true" />
-                    Continue with USDT
+                    Continue with Paykit
                   </Button>
                 )}
                 {methodPayment.availableMethods.includes('paypal') && (
@@ -587,9 +599,14 @@ export function MarketplacePaymentStatusCard({
                   </Button>
                 )}
               </div>
+              {methodPayment.availableMethods.includes('paykit') && (
+                <Typography as="p" className="text-xs text-muted-foreground" data-testid="order-payment-paykit-hint">
+                  {PAYKIT_PICKER_LABEL}: pay in Bitkit with {paykitAssetsLabel(methodPayment.paykitAssets)}.
+                </Typography>
+              )}
               {bitcoinWalletChecking && (
                 <Typography as="p" aria-live="polite" className="text-xs text-muted-foreground">
-                  Checking your Bitcoin wallet…
+                  Checking your Bitkit wallet…
                 </Typography>
               )}
               {bitcoinWalletMissing && (
@@ -600,7 +617,7 @@ export function MarketplacePaymentStatusCard({
                 >
                   <Typography as="p" className="text-sm font-medium">
                     {supportsBuyerConnectionGuide
-                      ? 'Connect Bitkit to pay with Bitcoin'
+                      ? 'Connect Bitkit to pay with Paykit'
                       : BITCOIN_WALLET_FORK_REQUIRED_TITLE}
                   </Typography>
                   {supportsBuyerConnectionGuide && <BitkitDownloads compact />}
@@ -689,11 +706,20 @@ export function MarketplacePaymentStatusCard({
         </div>
       )}
 
+      {/* Bound Paykit: neutral until a rail is seen, since the buyer picks Bitcoin or USDT in Bitkit. */}
+      {usesMethodFlow && isBuyer && isUnobservedPaykitOrder(order) && !followsBitcoinFlow(order) && (
+        <BuyerPaykitPaymentProgress order={order} checkoutActions={checkoutActions} />
+      )}
+
       {/* Bound bitcoin: the wallet instructions stay up only until the payment is seen. */}
-      {hasBuyerBitcoinProgress && <BuyerBitcoinPaymentProgress order={order} payment={payment} />}
+      {hasBuyerBitcoinProgress && (
+        <BuyerBitcoinPaymentProgress order={order} payment={payment} checkoutActions={checkoutActions} />
+      )}
 
       {/* Bound USDT: the request waits in the buyer's Paykit wallet until it is paid. */}
-      {usesMethodFlow && isBuyer && order.paymentMethod === 'usdt' && <BuyerUsdtPaymentProgress order={order} />}
+      {usesMethodFlow && isBuyer && rail === 'usdt' && (
+        <BuyerUsdtPaymentProgress order={order} checkoutActions={checkoutActions} />
+      )}
 
       {/* Bound paypal: hosted checkout; PayPal's verified notification pays
           the order automatically. The buyer report + seller confirmation
@@ -972,7 +998,15 @@ export function MarketplacePaymentStatusCard({
   );
 }
 
-function BuyerBitcoinPaymentProgress({ order, payment }: { order: MarketplaceOrder; payment: MarketplacePayment }) {
+function BuyerBitcoinPaymentProgress({
+  order,
+  payment,
+  checkoutActions,
+}: {
+  order: MarketplaceOrder;
+  payment: MarketplacePayment;
+  checkoutActions?: ReactNode;
+}) {
   const progress = buyerBitcoinWalletCopy(order, payment);
   const paymentDeadline = formatOrderInstant(buyerPayByDeadline(order));
   const requestSent = order.paykitDeliveryState === 'delivered';
@@ -1013,9 +1047,12 @@ function BuyerBitcoinPaymentProgress({ order, payment }: { order: MarketplaceOrd
   return (
     <div className="grid gap-2">
       {order.paykitDeliveryState === 'failed' ? (
-        <Typography as="p" role="alert" className="text-sm text-amber-300" data-testid="paykit-delivery-failed">
-          {PAYKIT_DELIVERY_FAILED_COPY}
-        </Typography>
+        <div className="grid justify-items-start gap-2">
+          <Typography as="p" role="alert" className="text-sm text-amber-300" data-testid="paykit-delivery-failed">
+            {PAYKIT_DELIVERY_FAILED_COPY}
+          </Typography>
+          {checkoutActions}
+        </div>
       ) : (
         <div className="flex items-center gap-2 text-sm text-foreground" data-testid="paykit-delivery-status">
           <LoaderCircle className="size-4 animate-spin" />
@@ -1043,7 +1080,62 @@ function BuyerBitcoinPaymentProgress({ order, payment }: { order: MarketplaceOrd
   );
 }
 
-function BuyerUsdtPaymentProgress({ order }: { order: MarketplaceOrder }) {
+function BuyerPaykitPaymentProgress({
+  order,
+  checkoutActions,
+}: {
+  order: MarketplaceOrder;
+  checkoutActions?: ReactNode;
+}) {
+  const assets = orderOfferedAssets(order);
+  const offersUsdt = assets.includes('USDT');
+  return (
+    <div className="grid gap-2" data-testid="paykit-payment-awaiting">
+      <Typography as="p" className="text-sm text-muted-foreground">
+        {holderBoundCopy(buyerPayByDeadline(order))}
+      </Typography>
+      {order.paykitDeliveryState === 'failed' ? (
+        <div className="grid justify-items-start gap-2">
+          <Typography as="p" role="alert" className="text-sm text-amber-300" data-testid="paykit-delivery-failed">
+            {PAYKIT_DELIVERY_FAILED_COPY}
+          </Typography>
+          {checkoutActions}
+        </div>
+      ) : (
+        <div className="grid gap-1" data-testid="paykit-awaiting-status">
+          <div className="flex items-center gap-2 text-sm font-medium">
+            <LoaderCircle className="size-4 animate-spin" />
+            {paykitAwaitingTitle(assets)}
+          </div>
+          <Typography as="p" className="text-sm text-muted-foreground">
+            {paykitAwaitingBody(assets)}
+          </Typography>
+          <Typography as="p" className="text-xs text-muted-foreground" data-testid="paykit-accept-by">
+            {USDT_ACCEPT_BY_COPY}
+          </Typography>
+        </div>
+      )}
+      {offersUsdt && (
+        <Typography as="p" className="text-xs text-muted-foreground" data-testid="paykit-usdt-wallet-hint">
+          {USDT_WALLET_HINT} {USDT_FUNDS_HINT}
+        </Typography>
+      )}
+      {offersUsdt && usdtFulfilmentWaitsForFinality([order.fulfillment]) && (
+        <Typography as="p" className="text-xs text-muted-foreground" data-testid="paykit-usdt-finality-note">
+          {PAYKIT_USDT_FINALITY_EXPECTATION_COPY}
+        </Typography>
+      )}
+    </div>
+  );
+}
+
+function BuyerUsdtPaymentProgress({
+  order,
+  checkoutActions,
+}: {
+  order: MarketplaceOrder;
+  checkoutActions?: ReactNode;
+}) {
   return (
     <div className="grid gap-2" data-testid="usdt-payment-awaiting">
       <Typography as="p" className="text-sm text-muted-foreground">
@@ -1055,9 +1147,12 @@ function BuyerUsdtPaymentProgress({ order }: { order: MarketplaceOrder }) {
         </Typography>
       )}
       {order.paykitDeliveryState === 'failed' ? (
-        <Typography as="p" role="alert" className="text-sm text-amber-300" data-testid="paykit-delivery-failed">
-          {PAYKIT_DELIVERY_FAILED_COPY}
-        </Typography>
+        <div className="grid justify-items-start gap-2">
+          <Typography as="p" role="alert" className="text-sm text-amber-300" data-testid="paykit-delivery-failed">
+            {PAYKIT_DELIVERY_FAILED_COPY}
+          </Typography>
+          {checkoutActions}
+        </div>
       ) : (
         <div className="flex items-center gap-2 text-sm text-muted-foreground" data-testid="usdt-awaiting-status">
           <LoaderCircle className="size-4 animate-spin" />
@@ -1164,6 +1259,8 @@ function SellerBitcoinConfirmationReview({
 }
 
 function SellerBitcoinResolutionReview({
+  title = 'Resolve Bitcoin payment review',
+  observation = null,
   enteredAt,
   form,
   isSubmitting,
@@ -1171,6 +1268,10 @@ function SellerBitcoinResolutionReview({
   onResolve,
   allowPaid = true,
 }: {
+  /** Neutral when no rail was observed on the order (a payment on both rails). */
+  title?: string;
+  /** Names the other rail when the buyer paid on both. */
+  observation?: MarketplaceOrder['paykitObservation'] | null;
   enteredAt?: string | null;
   form: UseFormReturn<SellerPaymentResolutionForm, unknown, SellerPaymentResolutionSubmission>;
   isSubmitting: boolean;
@@ -1191,7 +1292,7 @@ function SellerBitcoinResolutionReview({
         className="font-semibold"
         data-testid="seller-bitcoin-resolve-prompt"
       >
-        Resolve Bitcoin payment review
+        {title}
       </Typography>
       <Typography as="p" className="text-sm text-muted-foreground">
         This payment is held for manual review. Choose the server-validated outcome; the marketplace remains the
@@ -1199,6 +1300,13 @@ function SellerBitcoinResolutionReview({
       </Typography>
       <dl className="grid gap-2 text-sm sm:grid-cols-2">
         <ReviewFact label="Manual review entered" value={enteredAt ?? 'Not provided'} />
+        {observation?.otherRailAsset ? (
+          <>
+            <ReviewFact label="Also paid in" value={observation.otherRailAsset} />
+            <ReviewFact label="Amount paid there" value={observation.otherRailAmount} />
+            <ReviewFact label="Reference there" value={observation.otherRailReference} />
+          </>
+        ) : null}
       </dl>
       <label className="grid gap-1 text-sm" htmlFor="bitcoin-resolution-outcome">
         Outcome

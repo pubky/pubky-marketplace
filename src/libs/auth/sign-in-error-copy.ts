@@ -8,6 +8,8 @@ export const GRANT_STORAGE_UNAVAILABLE_MESSAGE =
 export const FULL_GRANT_REQUIRED_MESSAGE =
   'This approval does not include the full Shop permission list. Approve again from Shop.';
 
+export const HOSTED_SIGN_IN_MESSAGE = 'Continue sign-in in Pubky App.';
+
 export const SIGN_IN_LINK_FAILED_MESSAGE =
   'Could not create the sign-in code. Check your internet connection, then select "Click to reload" to try again.';
 
@@ -22,6 +24,7 @@ const ACTIONABLE_SIGN_IN_MESSAGES: ReadonlySet<string> = new Set([
   BROWSER_STORAGE_BLOCKED_MESSAGE,
   GRANT_STORAGE_UNAVAILABLE_MESSAGE,
   FULL_GRANT_REQUIRED_MESSAGE,
+  HOSTED_SIGN_IN_MESSAGE,
 ]);
 
 /**

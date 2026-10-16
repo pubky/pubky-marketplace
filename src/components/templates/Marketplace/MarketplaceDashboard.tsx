@@ -14,6 +14,7 @@ import {
   Pause,
   PencilLine,
   Play,
+  Plug,
   Plus,
   ShoppingBag,
   Store,
@@ -200,6 +201,12 @@ export function MarketplaceDashboard() {
             <Link href={MARKETPLACE_ROUTES.SETTINGS} overrideDefaults>
               <Wallet className="size-4" aria-hidden="true" />
               Payment settings
+            </Link>
+          </Button>
+          <Button asChild variant="secondary" size="sm" className="rounded-full text-xs font-bold">
+            <Link href={MARKETPLACE_ROUTES.SETTINGS_STORE_CONNECTIONS} overrideDefaults>
+              <Plug className="size-4" aria-hidden="true" />
+              Store connections
             </Link>
           </Button>
         </nav>
