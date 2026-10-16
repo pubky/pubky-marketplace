@@ -1,7 +1,7 @@
 'use client';
 
 import { KeyRound } from 'lucide-react';
-import { MARKETPLACE_ROUTES } from '@/app/routes';
+import { getMarketplaceShippingSettingsRoute } from '@/app/routes';
 import { Badge } from '@/atoms/Badge/Badge';
 import { Button } from '@/atoms/Button/Button';
 import { Card, CardContent } from '@/atoms/Card/Card';
@@ -17,7 +17,7 @@ import { useMyDeliveryKey } from '@/hooks/useMyDeliveryKey/useMyDeliveryKey';
  * the private half is the one that opens addresses); this card only says
  * whether buyers can check out shipped items yet and sends the seller there.
  */
-export function MarketplaceDeliveryKeyStep() {
+export function MarketplaceDeliveryKeyStep({ returnTo }: { returnTo?: string | null }) {
   const deliveryKey = useMyDeliveryKey();
   if (!deliveryKey.enabled) return null;
 
@@ -60,7 +60,7 @@ export function MarketplaceDeliveryKeyStep() {
         ) : (
           <div className="flex flex-wrap items-center gap-3">
             <Button asChild className="rounded-full" variant={published ? 'secondary' : 'default'}>
-              <Link href={MARKETPLACE_ROUTES.SETTINGS_SHIPPING} overrideDefaults>
+              <Link href={getMarketplaceShippingSettingsRoute(returnTo)} overrideDefaults>
                 <KeyRound className="size-4" />
                 {published ? 'Manage in Shipping settings' : 'Create delivery key'}
               </Link>

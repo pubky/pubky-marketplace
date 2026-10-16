@@ -1,6 +1,10 @@
 'use client';
 
-import { getMarketplacePaymentSettingsRoute, MARKETPLACE_ROUTES } from '@/app/routes';
+import {
+  getMarketplacePaymentSettingsRoute,
+  getMarketplaceShippingSettingsRoute,
+  MARKETPLACE_ROUTES,
+} from '@/app/routes';
 import { Button } from '@/atoms/Button/Button';
 import { Link } from '@/atoms/Link/Link';
 import { Typography } from '@/atoms/Typography/Typography';
@@ -19,6 +23,7 @@ export function ListingPublishGuardNotice({
   density = 'banner',
   returnTo,
   onSessionConnected,
+  onLeaveForSetup,
 }: {
   reason: ListingPublishBlockReason;
   surface: string;
@@ -26,6 +31,8 @@ export function ListingPublishGuardNotice({
   density?: 'banner' | 'action';
   returnTo?: string;
   onSessionConnected?: () => void | Promise<void>;
+  /** Runs as the seller follows a setup link away from the composer, before the page unmounts. */
+  onLeaveForSetup?: () => void;
 }) {
   if (reason === 'paykit-unreachable') {
     return (
@@ -63,14 +70,17 @@ export function ListingPublishGuardNotice({
           <Link
             href={getMarketplacePaymentSettingsRoute(returnTo ?? MARKETPLACE_ROUTES.SELL)}
             overrideDefaults
-            onClick={() => rememberListingComposerReturnTo(returnTo ?? MARKETPLACE_ROUTES.SELL)}
+            onClick={() => {
+              rememberListingComposerReturnTo(returnTo ?? MARKETPLACE_ROUTES.SELL);
+              onLeaveForSetup?.();
+            }}
           >
             Payment settings
           </Link>
         </Button>
       ) : reason === 'no-delivery-key' ? (
         <Button asChild variant="link" className="mt-2 h-auto p-0">
-          <Link href={MARKETPLACE_ROUTES.SETTINGS_SHIPPING} overrideDefaults>
+          <Link href={getMarketplaceShippingSettingsRoute(returnTo)} overrideDefaults onClick={onLeaveForSetup}>
             Create delivery key
           </Link>
         </Button>

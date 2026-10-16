@@ -17,6 +17,7 @@ import { Typography } from '@/atoms/Typography/Typography';
 import { isListingCurrencyCode, LISTING_CURRENCY_CODES, LISTING_CURRENCY_REGISTRY } from '@/config/currencies';
 import { FORM_LABEL_CLASSES } from '@/config/forms';
 import { useDisplayCurrency } from '@/hooks/useDisplayCurrency/useDisplayCurrency';
+import { useListingComposerReturnTo } from '@/hooks/useListingComposerReturnTo/useListingComposerReturnTo';
 import { useMarketplaceShippingIntegration } from '@/hooks/useMarketplaceShippingIntegration/useMarketplaceShippingIntegration';
 import {
   bareShippingPresetId,
@@ -206,6 +207,7 @@ function ShippoIntegrationCard() {
 
 function DeliveryPrivacySection() {
   const deliveryKey = useMyDeliveryKey();
+  const returnTo = useListingComposerReturnTo();
   if (!deliveryKey.enabled || deliveryKey.isLoading) return null;
   return (
     <DeliveryPrivacyCard
@@ -214,6 +216,7 @@ function DeliveryPrivacySection() {
       loadFailed={deliveryKey.loadFailed}
       onCreate={deliveryKey.create}
       onPublish={deliveryKey.publish}
+      returnTo={returnTo}
     />
   );
 }

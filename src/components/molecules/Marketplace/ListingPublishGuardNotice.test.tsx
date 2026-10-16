@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { MARKETPLACE_ROUTES } from '@/app/routes';
 import { LISTING_PUBLISH_BLOCK_COPY, LISTING_PUBLISH_BLOCK_REASONS } from '@/libs/commerce/listing-publish-guards';
@@ -80,6 +80,58 @@ describe('ListingPublishGuardNotice', () => {
       MARKETPLACE_ROUTES.SETTINGS_SHIPPING,
     );
     expect(screen.queryByRole('button', { name: 'Enable selling' })).not.toBeInTheDocument();
+  });
+
+  it('tells Shipping settings which listing to return to, and lets the composer save first', () => {
+    const onLeaveForSetup = vi.fn();
+    render(
+      <ListingPublishGuardNotice
+        reason="no-delivery-key"
+        surface="listing-publish-guard"
+        density="action"
+        returnTo={MARKETPLACE_ROUTES.SELL}
+        onLeaveForSetup={onLeaveForSetup}
+      />,
+    );
+
+    const link = screen.getByRole('link', { name: 'Create delivery key' });
+    expect(link).toHaveAttribute(
+      'href',
+      `${MARKETPLACE_ROUTES.SETTINGS_SHIPPING}?returnTo=${encodeURIComponent(MARKETPLACE_ROUTES.SELL)}`,
+    );
+    fireEvent.click(link);
+    expect(onLeaveForSetup).toHaveBeenCalledOnce();
+  });
+
+  it('lets the composer save before leaving for Payment settings too', () => {
+    const onLeaveForSetup = vi.fn();
+    render(
+      <ListingPublishGuardNotice
+        reason="no-method"
+        surface="listing-publish-guard"
+        density="action"
+        onLeaveForSetup={onLeaveForSetup}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('link', { name: 'Payment settings' }));
+    expect(onLeaveForSetup).toHaveBeenCalledOnce();
+  });
+
+  it('drops an unsafe return target from the Shipping settings link', () => {
+    render(
+      <ListingPublishGuardNotice
+        reason="no-delivery-key"
+        surface="listing-publish-guard"
+        density="action"
+        returnTo="//evil.example/marketplace/sell"
+      />,
+    );
+
+    expect(screen.getByRole('link', { name: 'Create delivery key' })).toHaveAttribute(
+      'href',
+      MARKETPLACE_ROUTES.SETTINGS_SHIPPING,
+    );
   });
 
   it('offers no action for an unreadable delivery key, which a reload resolves', () => {

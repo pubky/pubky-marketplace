@@ -3,6 +3,7 @@ import type { CommerceListingRecord } from '@/libs/commerce/marketplace-records'
 import { createCommerceListingFixture } from '@/test/fixtures/commerce/commerce';
 import {
   consumeListingComposerReturnTo,
+  deliveryKeyPublicationAllowsShipping,
   evaluateDeliveryKeyGate,
   evaluateDurableListingPublishGuards,
   evaluateSellerPaymentMethodGate,
@@ -150,6 +151,15 @@ describe('delivery key guard', () => {
 
   it.each(['matches', 'different'] as const)('lets a shipped listing publish when a key is %s', async (state) => {
     await expect(evaluateDeliveryKeyGate({ required: true, loadPublication: async () => state })).resolves.toBeNull();
+  });
+
+  it.each([
+    ['matches', true],
+    ['different', true],
+    ['missing', false],
+    ['invalid', false],
+  ] as const)('reads a %s publication the same way for the way back to the listing', (state, allows) => {
+    expect(deliveryKeyPublicationAllowsShipping(state)).toBe(allows);
   });
 
   it('says the key could not be checked when the homeserver read fails', async () => {

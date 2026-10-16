@@ -242,6 +242,7 @@ function MarketplaceSellComposer() {
           publishBlocked={listing.publishBlocked}
           publishGuardReady={listing.publishGuardReady}
           returnTo={MARKETPLACE_ROUTES.SELL}
+          onLeaveForSetup={() => void listing.keepDraftForReturn()}
           onSessionConnected={async () => {
             setPublishAfterSession(false);
             await publish();

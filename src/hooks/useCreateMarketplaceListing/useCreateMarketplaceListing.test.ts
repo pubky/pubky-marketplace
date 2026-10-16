@@ -797,6 +797,54 @@ describe('useCreateMarketplaceListing', () => {
     expect(CommerceController.commitDeleteListingDraft).not.toHaveBeenCalledWith('018f47d26a277c23a49d6b21bb770121');
   });
 
+  it('saves the draft right away and reopens it on return when the seller leaves to create a delivery key', async () => {
+    vi.useFakeTimers();
+    vi.mocked(CommerceController.getMyDeliveryKeyStatus).mockResolvedValue(NO_KEY_STATUS);
+    const first = renderHook(() => useCreateMarketplaceListing());
+    await act(async () => {
+      await Promise.resolve();
+    });
+    act(() => {
+      first.result.current.form.setValue('title', 'Hand-thrown mug');
+      first.result.current.form.setValue('price', '24.00');
+      first.result.current.setActiveSectionId('listing-section-review');
+    });
+
+    await act(async () => {
+      await first.result.current.keepDraftForReturn();
+    });
+    first.unmount();
+    vi.advanceTimersByTime(LISTING_DRAFT_AUTOSAVE_MS * 4);
+
+    expect(CommerceController.commitUpdateListingDraft).toHaveBeenCalledOnce();
+    const [savedId, savedForm] = vi.mocked(CommerceController.commitUpdateListingDraft).mock.calls[0] as [
+      string,
+      Record<string, unknown>,
+    ];
+    expect(savedId).toBe('018f47d26a277c23a49d6b21bb770121');
+    expect(savedForm).toMatchObject({
+      title: 'Hand-thrown mug',
+      price: '24.00',
+      activeSectionId: 'listing-section-review',
+    });
+    expect(sessionStorage.getItem(LISTING_DRAFT_RESUME_STORAGE_KEY)).toBe(savedId);
+
+    vi.useRealTimers();
+    vi.mocked(CommerceController.getListingDrafts).mockResolvedValue([
+      listingDraftRow('draftlisting00', { title: 'Older draft' }, { updated_at: 3_000 }),
+      listingDraftRow(savedId, savedForm),
+    ]);
+    const second = renderHook(() => useCreateMarketplaceListing());
+
+    await waitFor(() => expect(second.result.current.restoredDraft).toBe(true));
+    expect(second.result.current.pendingRestore).toBeNull();
+    expect(second.result.current.draftId).toBe(savedId);
+    expect(second.result.current.form.getValues('title')).toBe('Hand-thrown mug');
+    expect(second.result.current.form.getValues('price')).toBe('24.00');
+    expect(second.result.current.activeSectionId).toBe('listing-section-review');
+    expect(sessionStorage.getItem(LISTING_DRAFT_RESUME_STORAGE_KEY)).toBeNull();
+  });
+
   it("migrates a legacy draft's 'SATS' currency to the canonical 'BTC' on targeted resume", async () => {
     markListingDraftResumeId('draftlisting02');
     vi.mocked(CommerceController.getListingDrafts).mockResolvedValue([

@@ -1,0 +1,1 @@
+Sellers who leave Create a listing to make their delivery key can now get straight back to their draft. The top-left link on Shipping (and Payment settings) reads "Back to your listing" when you came from a listing, Shipping offers "Back to your listing" as soon as the key is ready, and the draft reopens with everything you entered, instead of asking whether to resume it.

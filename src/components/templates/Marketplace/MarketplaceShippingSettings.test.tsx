@@ -1,6 +1,8 @@
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { MARKETPLACE_ROUTES } from '@/app/routes';
+import type { SellerDeliveryKeyStatus } from '@/application/commerce/delivery-keys';
 import { TooltipProvider } from '@/atoms/Tooltip/Tooltip';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import { useMarketplaceDisplayStore } from '@/stores/marketplace-display/marketplace-display.store';
@@ -24,10 +26,50 @@ const presetsView = vi.hoisted(() => ({
   remove: vi.fn(async () => {}),
 }));
 
+const navigation = vi.hoisted(() => ({ searchParams: new URLSearchParams() }));
+
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn() }),
   usePathname: () => '/marketplace/settings/shipping',
+  useSearchParams: () => navigation.searchParams,
 }));
+
+const deliveryKey = vi.hoisted(() => ({ enabled: false }));
+
+vi.mock('@/hooks/useMyDeliveryKey/useMyDeliveryKey', async () => {
+  const { useState } = await import('react');
+  return {
+    useMyDeliveryKey: () => {
+      const [status, setStatus] = useState<SellerDeliveryKeyStatus>({
+        local: null,
+        publication: 'missing',
+        publishedKeyId: null,
+      });
+      const published = async () => {
+        setStatus({
+          local: {
+            keyId: 'a'.repeat(32),
+            publicKey: new Uint8Array(32),
+            createdAt: '2026-10-16T10:00:00.000Z',
+            current: true,
+          },
+          publication: 'matches',
+          publishedKeyId: 'a'.repeat(32),
+        });
+        return true;
+      };
+      return {
+        enabled: deliveryKey.enabled,
+        status,
+        isLoading: false,
+        isWorking: false,
+        loadFailed: false,
+        create: published,
+        publish: published,
+      };
+    },
+  };
+});
 
 vi.mock('@/hooks/useMarketplaceShippingPresets/useMarketplaceShippingPresets', async (importOriginal) => {
   const actual =
@@ -93,6 +135,8 @@ beforeAll(() => {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  navigation.searchParams = new URLSearchParams();
+  deliveryKey.enabled = false;
   presetsView.presets = [];
   useMarketplaceDisplayStore.setState({ displayCurrency: 'USD', showFxEstimate: true });
   vi.mocked(CommerceController.getIndicativeBtcRate).mockResolvedValue(RATE);
@@ -237,5 +281,55 @@ describe('MarketplaceShippingSettings presets', () => {
     expect(screen.getByLabelText('Flat price (USD)')).toHaveValue('12.50');
     const card = screen.getByRole('heading', { name: 'Edit preset' }).closest('div');
     expect(within(card as HTMLElement).getByRole('button', { name: 'Save preset' })).toBeInTheDocument();
+  });
+});
+
+describe('MarketplaceShippingSettings opened from a listing', () => {
+  it('keeps My shop as the way back when not opened from a listing', () => {
+    deliveryKey.enabled = true;
+    renderPage();
+
+    expect(screen.getByRole('link', { name: 'My shop' })).toHaveAttribute('href', MARKETPLACE_ROUTES.DASHBOARD);
+    expect(screen.queryByRole('link', { name: 'Back to your listing' })).not.toBeInTheDocument();
+  });
+
+  it('points the top-left link at the listing draft the seller came from', () => {
+    navigation.searchParams = new URLSearchParams({ returnTo: MARKETPLACE_ROUTES.SELL });
+    deliveryKey.enabled = true;
+    renderPage();
+
+    expect(screen.getByRole('link', { name: 'Back to your listing' })).toHaveAttribute('href', MARKETPLACE_ROUTES.SELL);
+    expect(screen.queryByRole('link', { name: 'My shop' })).not.toBeInTheDocument();
+  });
+
+  it('offers Back to your listing beside the key once it is created', async () => {
+    navigation.searchParams = new URLSearchParams({ returnTo: MARKETPLACE_ROUTES.SELL });
+    deliveryKey.enabled = true;
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(screen.getByRole('button', { name: 'Create delivery key' }));
+    await user.click(await screen.findByRole('button', { name: 'Create key' }));
+
+    const notice = (await screen.findByText('Your delivery key is ready')).closest('[role="status"]') as HTMLElement;
+    expect(within(notice).getByRole('link', { name: 'Back to your listing' })).toHaveAttribute(
+      'href',
+      MARKETPLACE_ROUTES.SELL,
+    );
+  });
+
+  it('ignores an external return target everywhere on the page', async () => {
+    navigation.searchParams = new URLSearchParams({ returnTo: 'https://evil.example/marketplace/sell' });
+    deliveryKey.enabled = true;
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(screen.getByRole('button', { name: 'Create delivery key' }));
+    await user.click(await screen.findByRole('button', { name: 'Create key' }));
+
+    expect(await screen.findByText('Published')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'My shop' })).toHaveAttribute('href', MARKETPLACE_ROUTES.DASHBOARD);
+    expect(screen.queryByRole('link', { name: 'Back to your listing' })).not.toBeInTheDocument();
+    expect(document.querySelector('a[href*="evil.example"]')).toBeNull();
   });
 });

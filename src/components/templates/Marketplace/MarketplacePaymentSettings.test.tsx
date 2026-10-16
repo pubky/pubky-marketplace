@@ -1017,6 +1017,18 @@ describe('MarketplacePaymentSettings', () => {
     expect(screen.getByTestId('listing-composer-return')).toHaveTextContent('Back to listing');
   });
 
+  it('points the top-left link at the listing it remembered across a Paykit redirect', async () => {
+    sessionStorage.setItem('pubky.marketplace.listingComposerReturnTo', '/marketplace/sell');
+    try {
+      await renderSettings();
+
+      expect(screen.getByRole('link', { name: 'Back to your listing' })).toHaveAttribute('href', '/marketplace/sell');
+      expect(screen.queryByRole('link', { name: 'My shop' })).not.toBeInTheDocument();
+    } finally {
+      sessionStorage.removeItem('pubky.marketplace.listingComposerReturnTo');
+    }
+  });
+
   it('returns to the listing composer after a payment method is saved', async () => {
     navigation.searchParams = new URLSearchParams('returnTo=/marketplace/sell');
     const user = userEvent.setup();

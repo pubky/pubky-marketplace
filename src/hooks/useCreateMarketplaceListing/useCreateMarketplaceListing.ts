@@ -26,6 +26,7 @@ import {
   listingDraftHasUserContent,
   type ListingDraftMediaInput,
   type ListingDraftSectionId,
+  markListingDraftResumeId,
   parseListingDraftMediaRefs,
   serializeListingDraftMedia,
   takeListingDraftResumeId,
@@ -124,6 +125,12 @@ export interface UseCreateMarketplaceListingResult {
   reset: () => void;
   resumeDraft: () => void;
   flushDraft: () => Promise<void>;
+  /**
+   * Saves the draft now and reopens it on the next visit to Create listing, for
+   * when the seller leaves to finish setup. Client navigation fires no
+   * `pagehide` and unmounting cancels the pending autosave.
+   */
+  keepDraftForReturn: () => Promise<void>;
   publishBlocked: ListingPublishBlockReason | null;
   publishGuardReady: boolean;
 }
@@ -431,6 +438,11 @@ export function useCreateMarketplaceListing(): UseCreateMarketplaceListingResult
 
   const flushDraft = () => persistDraftRef.current();
 
+  const keepDraftForReturn = () => {
+    markListingDraftResumeId(draftIdRef.current);
+    return persistDraftRef.current();
+  };
+
   return {
     form,
     media,
@@ -445,6 +457,7 @@ export function useCreateMarketplaceListing(): UseCreateMarketplaceListingResult
     reset,
     resumeDraft,
     flushDraft,
+    keepDraftForReturn,
     publishBlocked,
     publishGuardReady,
   };

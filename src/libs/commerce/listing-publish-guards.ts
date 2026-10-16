@@ -33,6 +33,8 @@ export const LISTING_COMPOSER_PAYMENT_COPY = {
 
 export const LISTING_COMPOSER_RETURN_INTENT_KEY = 'pubky.marketplace.listingComposerReturnTo';
 
+export const LISTING_COMPOSER_RETURN_LABEL = 'Back to your listing';
+
 export const LISTING_PUBLISH_BLOCK_COPY: Record<
   ListingPublishBlockReason,
   { title: string; body: string; checklist: string }
@@ -104,6 +106,11 @@ export async function evaluateSellerPaymentMethodGate(input: {
 /** What the seller's homeserver publishes, compared with the key this device holds. */
 export type SellerDeliveryKeyPublication = 'matches' | 'missing' | 'different' | 'invalid';
 
+/** Whether the publication lets listings that ship publish, as `evaluateDeliveryKeyGate` decides. */
+export function deliveryKeyPublicationAllowsShipping(publication: SellerDeliveryKeyPublication): boolean {
+  return publication !== 'missing' && publication !== 'invalid';
+}
+
 export type SellerDeliveryKeyRequirement = {
   required: boolean;
   loadPublication: () => Promise<SellerDeliveryKeyPublication>;
@@ -120,8 +127,7 @@ export async function evaluateDeliveryKeyGate(
 ): Promise<'no-delivery-key' | 'delivery-key-unverified' | null> {
   if (!requirement.required) return null;
   try {
-    const publication = await requirement.loadPublication();
-    return publication === 'missing' || publication === 'invalid' ? 'no-delivery-key' : null;
+    return deliveryKeyPublicationAllowsShipping(await requirement.loadPublication()) ? null : 'no-delivery-key';
   } catch {
     return 'delivery-key-unverified';
   }

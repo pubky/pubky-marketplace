@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { KeyRound } from 'lucide-react';
+import { ArrowLeft, CircleCheck, KeyRound } from 'lucide-react';
 import type { SellerDeliveryKeyStatus } from '@/application/commerce/delivery-keys';
 import { Badge } from '@/atoms/Badge/Badge';
 import { Button } from '@/atoms/Button/Button';
@@ -14,8 +14,13 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/atoms/Dialog/Dialog';
+import { Link } from '@/atoms/Link/Link';
 import { Typography } from '@/atoms/Typography/Typography';
 import { formatDeliveryKeyFingerprint } from '@/libs/commerce/delivery-envelope';
+import {
+  deliveryKeyPublicationAllowsShipping,
+  LISTING_COMPOSER_RETURN_LABEL,
+} from '@/libs/commerce/listing-publish-guards';
 
 export type DeliveryPrivacyCardProps = {
   status: SellerDeliveryKeyStatus | null;
@@ -23,6 +28,8 @@ export type DeliveryPrivacyCardProps = {
   loadFailed: boolean;
   onCreate: () => Promise<boolean>;
   onPublish: () => Promise<boolean>;
+  /** The validated listing the seller left to create the key; offered once the key lets it publish. */
+  returnTo?: string | null;
 };
 
 const CUSTODY_COPY =
@@ -32,11 +39,19 @@ const CUSTODY_COPY =
   'send it again.';
 
 /** Get Paid, Delivery privacy: create, publish and rotate the seller's delivery key. */
-export function DeliveryPrivacyCard({ status, isWorking, loadFailed, onCreate, onPublish }: DeliveryPrivacyCardProps) {
+export function DeliveryPrivacyCard({
+  status,
+  isWorking,
+  loadFailed,
+  onCreate,
+  onPublish,
+  returnTo,
+}: DeliveryPrivacyCardProps) {
   const [confirming, setConfirming] = useState(false);
   const local = status?.local ?? null;
   const published = status?.publication === 'matches';
   const rotating = local !== null;
+  const listingPath = status && deliveryKeyPublicationAllowsShipping(status.publication) ? returnTo : null;
 
   const confirm = async () => {
     const created = await onCreate();
@@ -106,6 +121,32 @@ export function DeliveryPrivacyCard({ status, isWorking, loadFailed, onCreate, o
             {rotating ? 'Rotate key' : 'Create delivery key'}
           </Button>
         </div>
+
+        {listingPath && (
+          <div
+            role="status"
+            data-surface="delivery-key-return-to-listing"
+            className="flex flex-col gap-3 rounded-md bg-brand/5 p-4 sm:flex-row sm:items-center sm:justify-between"
+          >
+            <div className="flex items-start gap-3">
+              <CircleCheck className="mt-0.5 size-5 shrink-0 text-brand" aria-hidden="true" />
+              <div>
+                <Typography as="p" className="font-semibold">
+                  Your delivery key is ready
+                </Typography>
+                <Typography as="p" className="text-sm text-muted-foreground">
+                  Listings that ship can now be published. Pick up where you left off.
+                </Typography>
+              </div>
+            </div>
+            <Button asChild className="w-fit shrink-0 rounded-full">
+              <Link href={listingPath} overrideDefaults>
+                <ArrowLeft className="size-4" aria-hidden="true" />
+                {LISTING_COMPOSER_RETURN_LABEL}
+              </Link>
+            </Button>
+          </div>
+        )}
       </CardContent>
 
       <Dialog open={confirming} onOpenChange={(open) => !isWorking && setConfirming(open)}>

@@ -54,6 +54,7 @@ const imageSlot = vi.hoisted(() => (previewUrl: string | null) => ({
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn() }),
   usePathname: () => '/marketplace/my-shop',
+  useSearchParams: () => new URLSearchParams(),
 }));
 
 vi.mock('@/stores/auth/auth.store', () => ({

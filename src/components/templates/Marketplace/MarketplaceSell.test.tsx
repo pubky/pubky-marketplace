@@ -108,9 +108,17 @@ const createListing = vi.hoisted(() => ({
   restoredDraft: false,
   submit: vi.fn(async () => createListing.submitResult),
   flushDraft: vi.fn(async () => undefined),
+  keepDraftForReturn: vi.fn(async () => undefined),
   resumeDraft: vi.fn(),
   reset: vi.fn(),
-  publishBlocked: null as 'unsigned' | 'session' | 'no-method' | 'paykit-unreachable' | 'unverified' | null,
+  publishBlocked: null as
+    | 'unsigned'
+    | 'session'
+    | 'no-method'
+    | 'paykit-unreachable'
+    | 'unverified'
+    | 'no-delivery-key'
+    | null,
 }));
 
 const paymentGate = vi.hoisted(() => ({
@@ -177,6 +185,7 @@ vi.mock('@/hooks/useCreateMarketplaceListing/useCreateMarketplaceListing', async
         reset: createListing.reset,
         resumeDraft: createListing.resumeDraft,
         flushDraft: createListing.flushDraft,
+        keepDraftForReturn: createListing.keepDraftForReturn,
         publishBlocked: createListing.publishBlocked,
         publishGuardReady: true,
       };
@@ -360,6 +369,18 @@ describe('MarketplaceSell payment-method entrance', () => {
     expect(connectButtons.length).toBeGreaterThanOrEqual(1);
     expect(screen.queryByRole('heading', { name: 'Approve purchases in Pubky Ring' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Approve in Pubky Ring' })).not.toBeInTheDocument();
+  });
+
+  it('sends a seller without a delivery key to Shipping with the way back, saving the draft first', () => {
+    createListing.publishBlocked = 'no-delivery-key';
+    createListing.keepDraftForReturn.mockClear();
+    render(<MarketplaceSell />);
+
+    const link = screen.getByRole('link', { name: 'Create delivery key' });
+    expect(link).toHaveAttribute('href', '/marketplace/settings/shipping?returnTo=%2Fmarketplace%2Fsell');
+
+    fireEvent.click(link);
+    expect(createListing.keepDraftForReturn).toHaveBeenCalledOnce();
   });
 });
 

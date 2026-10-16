@@ -8,7 +8,11 @@ const state = vi.hoisted(() => ({ allowed: false, ready: true, pubky: 'seller' }
 const push = vi.hoisted(() => vi.fn());
 const createListing = vi.hoisted(() => vi.fn(() => ({ form: {}, media: {}, publishBlocked: null })));
 
-vi.mock('next/navigation', () => ({ useRouter: () => ({ push }) }));
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({ push }),
+  usePathname: () => '/marketplace/sell',
+  useSearchParams: () => new URLSearchParams(),
+}));
 vi.mock('@/hooks/useMarketplaceSellingAccess/useMarketplaceSellingAccess', () => ({
   useMarketplaceSellingAccess: () => ({ ...state, checkAccess: () => state.allowed }),
 }));

@@ -131,6 +131,7 @@ const presetFixtures = vi.hoisted(() => {
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn() }),
   usePathname: () => '/marketplace/sell',
+  useSearchParams: () => new URLSearchParams(),
 }));
 
 vi.mock('@/stores/auth/auth.store', () => ({

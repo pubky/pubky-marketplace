@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
@@ -56,5 +57,73 @@ describe('DeliveryPrivacyCard', () => {
     renderCard(null, { loadFailed: true });
     expect(screen.getByRole('alert')).toHaveTextContent('Could not read your delivery key status');
     expect(screen.getByRole('button', { name: 'Create delivery key' })).toBeDisabled();
+  });
+
+  describe('the way back to the listing', () => {
+    function CardAfterCreate({ returnTo }: { returnTo: string | null }) {
+      const [status, setStatus] = useState<SellerDeliveryKeyStatus>({
+        local: null,
+        publication: 'missing',
+        publishedKeyId: null,
+      });
+      return (
+        <DeliveryPrivacyCard
+          status={status}
+          isWorking={false}
+          loadFailed={false}
+          onCreate={async () => {
+            setStatus({ local, publication: 'matches', publishedKeyId: KEY_ID });
+            return true;
+          }}
+          onPublish={vi.fn(async () => true)}
+          returnTo={returnTo}
+        />
+      );
+    }
+
+    it('offers Back to your listing once the new key is published', async () => {
+      render(<CardAfterCreate returnTo="/marketplace/sell" />);
+      expect(screen.queryByRole('link', { name: 'Back to your listing' })).not.toBeInTheDocument();
+
+      await userEvent.click(screen.getByRole('button', { name: 'Create delivery key' }));
+      await userEvent.click(await screen.findByRole('button', { name: 'Create key' }));
+
+      const notice = await screen.findByText('Your delivery key is ready');
+      expect(notice.closest('[role="status"]')).toHaveAttribute('data-surface', 'delivery-key-return-to-listing');
+      expect(screen.getByRole('link', { name: 'Back to your listing' })).toHaveAttribute('href', '/marketplace/sell');
+    });
+
+    it('stays hidden after creating a key when the seller did not come from a listing', async () => {
+      render(<CardAfterCreate returnTo={null} />);
+
+      await userEvent.click(screen.getByRole('button', { name: 'Create delivery key' }));
+      await userEvent.click(await screen.findByRole('button', { name: 'Create key' }));
+
+      expect(await screen.findByText('Published')).toBeInTheDocument();
+      expect(screen.queryByText('Your delivery key is ready')).not.toBeInTheDocument();
+      expect(screen.queryByRole('link', { name: 'Back to your listing' })).not.toBeInTheDocument();
+    });
+
+    it.each([
+      ['missing', { local: null, publication: 'missing', publishedKeyId: null }],
+      ['invalid', { local: null, publication: 'invalid', publishedKeyId: null }],
+      ['unpublished on this device', { local, publication: 'missing', publishedKeyId: null }],
+    ] as const)('stays hidden while the key is %s, since the listing still cannot publish', (_label, status) => {
+      renderCard(status, { returnTo: '/marketplace/sell' });
+
+      expect(screen.queryByRole('link', { name: 'Back to your listing' })).not.toBeInTheDocument();
+    });
+
+    it('is offered when a key published from another device already lets the listing publish', () => {
+      renderCard({ local: null, publication: 'different', publishedKeyId: KEY_ID }, { returnTo: '/marketplace/sell' });
+
+      expect(screen.getByRole('link', { name: 'Back to your listing' })).toHaveAttribute('href', '/marketplace/sell');
+    });
+
+    it('stays hidden while the status is still unknown', () => {
+      renderCard(null, { returnTo: '/marketplace/sell' });
+
+      expect(screen.queryByRole('link', { name: 'Back to your listing' })).not.toBeInTheDocument();
+    });
   });
 });

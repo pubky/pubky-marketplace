@@ -9,6 +9,7 @@ import {
   getMarketplaceListingEditRoute,
   getMarketplaceListingRoute,
   getMarketplacePaymentSettingsRoute,
+  getMarketplaceShippingSettingsRoute,
   getMarketplaceShopRoute,
   getProfileRoute,
   getShopHomeRoute,
@@ -240,6 +241,38 @@ describe('getMarketplacePaymentSettingsRoute', () => {
     '/marketplace/drop/x',
   ])('rejects unsafe return target %s', (returnTo) => {
     expect(getMarketplacePaymentSettingsRoute(returnTo)).toBe('/marketplace/settings');
+  });
+});
+
+describe('getMarketplaceShippingSettingsRoute', () => {
+  const seller = 'y'.repeat(52);
+  const editPath = getMarketplaceListingEditRoute(seller, 'boots_01');
+
+  it('attaches the listing composer return path', () => {
+    expect(getMarketplaceShippingSettingsRoute(MARKETPLACE_ROUTES.SELL)).toBe(
+      '/marketplace/settings/shipping?returnTo=%2Fmarketplace%2Fsell',
+    );
+    expect(getMarketplaceShippingSettingsRoute(editPath)).toBe(
+      `/marketplace/settings/shipping?returnTo=${encodeURIComponent(editPath)}`,
+    );
+  });
+
+  it.each([undefined, null, ''])('links plain Shipping settings without a return target (%s)', (returnTo) => {
+    expect(getMarketplaceShippingSettingsRoute(returnTo)).toBe('/marketplace/settings/shipping');
+  });
+
+  it.each([
+    'https://evil.example/marketplace/sell',
+    '//evil.example/marketplace/sell',
+    '/\\evil.example',
+    'javascript:alert(1)',
+    '%2F%2Fevil.example',
+    '/%2F/evil.example',
+    '/marketplace/sell?next=https://evil.example',
+    '/marketplace/settings',
+    '/marketplace/listing/%2e%2e/edit',
+  ])('rejects unsafe return target %s', (returnTo) => {
+    expect(getMarketplaceShippingSettingsRoute(returnTo)).toBe('/marketplace/settings/shipping');
   });
 });
 

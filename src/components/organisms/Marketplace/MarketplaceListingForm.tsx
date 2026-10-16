@@ -151,8 +151,10 @@ export interface MarketplaceListingFormProps {
   /** False while the durable publish guards are still being evaluated. */
   publishGuardReady?: boolean;
   onSessionConnected?: () => void | Promise<void>;
-  /** Composer path to resume after configuring a payment method. */
+  /** Composer path to resume after configuring a payment method or delivery key. */
   returnTo?: string;
+  /** Runs as the seller follows a publish-guard setup link away from the composer. */
+  onLeaveForSetup?: () => void;
   sidebarFooter?: ReactNode;
 }
 
@@ -170,6 +172,7 @@ export function MarketplaceListingForm({
   publishBlocked = null,
   publishGuardReady = true,
   returnTo,
+  onLeaveForSetup,
   onSessionConnected,
   sidebarFooter,
 }: MarketplaceListingFormProps) {
@@ -1067,6 +1070,7 @@ export function MarketplaceListingForm({
               id="listing-publish-guard"
               density="action"
               returnTo={returnTo}
+              onLeaveForSetup={onLeaveForSetup}
               onSessionConnected={onSessionConnected}
             />
           ) : null}

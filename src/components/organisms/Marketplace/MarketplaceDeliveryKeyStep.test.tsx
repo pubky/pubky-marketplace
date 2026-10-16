@@ -45,6 +45,15 @@ describe('MarketplaceDeliveryKeyStep', () => {
     expect(screen.queryByText(/cannot be published/)).not.toBeInTheDocument();
   });
 
+  it('keeps the way back to the listing when Payment settings was opened from one', () => {
+    render(<MarketplaceDeliveryKeyStep returnTo={MARKETPLACE_ROUTES.SELL} />);
+
+    expect(screen.getByRole('link', { name: 'Create delivery key' })).toHaveAttribute(
+      'href',
+      `${MARKETPLACE_ROUTES.SETTINGS_SHIPPING}?returnTo=${encodeURIComponent(MARKETPLACE_ROUTES.SELL)}`,
+    );
+  });
+
   it('shows no verdict while the key is being checked', () => {
     keyState.isLoading = true;
     keyState.status = null;

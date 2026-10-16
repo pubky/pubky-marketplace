@@ -38,6 +38,7 @@ const view = vi.hoisted(() => ({
 vi.mock('next/navigation', () => ({
   usePathname: () => '/marketplace/inventory',
   useRouter: () => ({ push: vi.fn() }),
+  useSearchParams: () => new URLSearchParams(),
 }));
 
 vi.mock('@/organisms/ContentLayout/ContentLayout', () => ({

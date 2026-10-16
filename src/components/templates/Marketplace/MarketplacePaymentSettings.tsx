@@ -93,7 +93,7 @@ export function MarketplacePaymentSettings() {
     >
       <Container overrideDefaults className="flex w-full flex-col gap-6">
         <MarketplaceSectionNav />
-        <BackToMyShop />
+        <BackToMyShop returnTo={returnPath} />
         <div className="flex flex-col gap-6 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <Heading level={1} size="xl" className="text-4xl sm:text-6xl">
@@ -124,7 +124,7 @@ export function MarketplacePaymentSettings() {
 
         <MarketplaceGetPaidSettings onSaved={onPaymentSaved} />
 
-        <MarketplaceDeliveryKeyStep />
+        <MarketplaceDeliveryKeyStep returnTo={returnPath} />
 
         <Card className="rounded-md p-0 shadow-lg">
           <CardContent className="grid gap-6 p-6">

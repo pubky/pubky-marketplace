@@ -40,6 +40,7 @@ const view = vi.hoisted(() => ({
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn() }),
   usePathname: () => '/marketplace/dashboard/inventory',
+  useSearchParams: () => new URLSearchParams(),
 }));
 
 vi.mock('@/stores/auth/auth.store', () => ({
