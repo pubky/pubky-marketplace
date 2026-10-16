@@ -65,6 +65,21 @@ describe('models.utils (composite id)', () => {
     expect(composite).toBeNull();
   });
 
+  it('buildCompositeIdFromPubkyUri accepts a mixed-case scheme', () => {
+    const uri = `PUBKY://${author}/pub/pubky.app/posts/${postId}`;
+    expect(buildCompositeIdFromPubkyUri({ uri, domain: CompositeIdDomain.POSTS })).toBe(
+      `${author}${COMPOSITE_ID_DELIMITER}${postId}`,
+    );
+  });
+
+  it.each([`${author}:abc`, `${author}:8080`, `user@${author}`])(
+    'buildCompositeIdFromPubkyUri returns null for the malformed authority %s',
+    (authority) => {
+      const uri = `pubky://${authority}/pub/pubky.app/posts/${postId}`;
+      expect(buildCompositeIdFromPubkyUri({ uri, domain: CompositeIdDomain.POSTS })).toBeNull();
+    },
+  );
+
   it('round-trip is stable', () => {
     const c1 = buildCompositeId({ pubky: author, id: postId });
     const parts = parseCompositeId(c1);
