@@ -3,12 +3,13 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ConnectorsController } from '@/controllers/connectors/connectors';
 import { connectorAlertSchema, SHOPIFY_REQUIRED_SCOPES } from '@/libs/commerce/connectors';
-import { connectorRefusal } from '@/test-utils/connector-errors';
+import { toast } from '@/molecules/Toaster/use-toast';
+import { bareHttpFailure, connectorRefusal } from '@/test-utils/connector-errors';
 import { connectionFixture } from '@/test-utils/connector-fixtures';
 import { MarketplaceStoreConnections } from './MarketplaceStoreConnections';
 
 const nav = vi.hoisted(() => ({ query: '', replace: vi.fn() }));
-const mode = vi.hoisted(() => ({ value: 'transaction-service' as string, enabled: true }));
+const mode = vi.hoisted(() => ({ value: 'transaction-service' as string }));
 
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ replace: nav.replace, push: vi.fn() }),
@@ -18,7 +19,7 @@ vi.mock('next/navigation', () => ({
 
 vi.mock('@/config/commerce', async () => {
   const actual = await vi.importActual<typeof import('@/config/commerce')>('@/config/commerce');
-  return { ...actual, getCommerceAdapterMode: () => mode.value, getStoreConnectionsEnabled: () => mode.enabled };
+  return { ...actual, getCommerceAdapterMode: () => mode.value };
 });
 
 vi.mock('@/stores/auth/auth.store', () => ({
@@ -70,7 +71,6 @@ describe('MarketplaceStoreConnections', () => {
     vi.clearAllMocks();
     nav.query = '';
     mode.value = 'transaction-service';
-    mode.enabled = true;
     vi.mocked(ConnectorsController.fetchConnections).mockResolvedValue([]);
   });
 
@@ -201,13 +201,29 @@ describe('MarketplaceStoreConnections', () => {
     expect(await screen.findByTestId('session-required')).toBeInTheDocument();
   });
 
-  it('says store connections are not switched on when the service has them off', async () => {
-    vi.mocked(ConnectorsController.fetchConnections).mockRejectedValue(connectorRefusal('connectors_disabled', 404));
+  it.each([
+    ['a service with connectors switched off (404 connectors_disabled)', connectorRefusal('connectors_disabled', 404)],
+    ['a service that has no connector routes (bare 404)', bareHttpFailure(404)],
+  ])('shows a clear not-available state for %s, with no error toast and no connect forms', async (_label, failure) => {
+    vi.mocked(ConnectorsController.fetchConnections).mockRejectedValue(failure);
     render(<MarketplaceStoreConnections />);
-    expect(await screen.findByTestId('store-connections-unavailable')).toHaveTextContent(
-      'Store connections are not switched on for this shop yet.',
-    );
+
+    const state = await screen.findByTestId('store-connections-unavailable');
+    expect(state).toHaveTextContent('Not available on this server yet');
+    expect(state).toHaveTextContent('Store connections are not available on this server yet.');
+    expect(state).toHaveTextContent('Nothing is wrong with your shop');
+    expect(screen.getByRole('heading', { name: 'Store connections' })).toBeInTheDocument();
     expect(screen.queryByTestId('connect-woocommerce')).not.toBeInTheDocument();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(toast).not.toHaveBeenCalled();
+  });
+
+  it('shows a retryable load error, not the not-available state, when the service is down (503)', async () => {
+    vi.mocked(ConnectorsController.fetchConnections).mockRejectedValue(bareHttpFailure(503));
+    render(<MarketplaceStoreConnections />);
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('could not be loaded');
+    expect(screen.queryByTestId('store-connections-unavailable')).not.toBeInTheDocument();
   });
 
   it('stops offering new connections at the limit of five', async () => {
@@ -252,7 +268,7 @@ describe('MarketplaceStoreConnections', () => {
       expect(await screen.findByTestId('store-connections-notice')).toHaveTextContent(
         'That store is already connected to another Pubky shop.',
       );
-      expect(screen.getByTestId('connect-shopify')).toBeInTheDocument();
+      expect(await screen.findByTestId('connect-shopify')).toBeInTheDocument();
     });
 
     it('checks an install that finished with a permission missing and names it', async () => {

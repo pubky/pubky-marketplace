@@ -10,14 +10,13 @@ const TOKEN = 'T'.repeat(43);
 const CONNECTION_ID = '11111111-1111-4111-8111-111111111111';
 const BASE = 'http://127.0.0.1:8080';
 
-const config = vi.hoisted(() => ({ mode: 'transaction-service' as string, enabled: true }));
+const config = vi.hoisted(() => ({ mode: 'transaction-service' as string }));
 
 vi.mock('@/config/commerce', async () => {
   const actual = await vi.importActual<typeof import('@/config/commerce')>('@/config/commerce');
   return {
     ...actual,
     getCommerceAdapterMode: () => config.mode,
-    getStoreConnectionsEnabled: () => config.enabled,
     getMarketplaceUrl: () => 'http://127.0.0.1:8080',
   };
 });
@@ -54,7 +53,6 @@ describe('MarketplaceConnectorsService', () => {
 
   beforeEach(() => {
     config.mode = 'transaction-service';
-    config.enabled = true;
     fetchMock.mockReset();
     vi.stubGlobal('fetch', fetchMock);
     vi.spyOn(MarketplaceSessionService, 'getActiveSession').mockReturnValue({
@@ -328,11 +326,22 @@ describe('MarketplaceConnectorsService', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it('sends nothing while the store connections switch is off', async () => {
-    config.enabled = false;
-    await expect(MarketplaceConnectorsService.list(ACTOR)).rejects.toBeInstanceOf(AppError);
-    await expect(MarketplaceConnectorsService.alerts(ACTOR, { unresolved: true })).rejects.toBeInstanceOf(AppError);
-    expect(fetchMock).not.toHaveBeenCalled();
+  it('reads a service with connectors switched off as its refusal code, with no connection data', async () => {
+    fetchMock.mockResolvedValue(
+      json(
+        { error: { code: 'connectors_disabled', message: 'Store connectors are not enabled on this deployment.' } },
+        404,
+      ),
+    );
+    const error = await MarketplaceConnectorsService.list(ACTOR).catch((caught: unknown) => caught);
+    expect((error as AppError).context).toMatchObject({ reason: 'connectors_disabled', statusCode: 404 });
+  });
+
+  it('reads a service that has no connector routes as a failure with no refusal code', async () => {
+    fetchMock.mockResolvedValue(new Response('Not Found', { status: 404 }));
+    const error = await MarketplaceConnectorsService.list(ACTOR).catch((caught: unknown) => caught);
+    expect((error as AppError).context?.statusCode).toBe(404);
+    expect((error as AppError).context?.reason).toBeUndefined();
   });
 
   it('refuses an answer that is not the documented shape', async () => {
