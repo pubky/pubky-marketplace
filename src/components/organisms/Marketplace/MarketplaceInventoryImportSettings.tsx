@@ -24,8 +24,15 @@ export type InventoryImportSettingsProps = {
   onChooseFreeShipping?: () => void;
 };
 
+const IMPORT_FORMAT_INTRO: Record<ImportSourceFormat, string> = {
+  woocommerce: 'WooCommerce export detected. These apply to every listing in this file.',
+  woocommerce_store: 'WooCommerce store read. These apply to every listing from this store.',
+  shopify: 'Shopify export detected. These apply to every listing in this file.',
+};
+
 export const IMPORT_FORMAT_LABEL: Record<ImportSourceFormat, string> = {
   woocommerce: 'WooCommerce',
+  woocommerce_store: 'WooCommerce store',
   shopify: 'Shopify',
 };
 
@@ -64,7 +71,7 @@ export function MarketplaceInventoryImportSettings({
           Import settings
         </Typography>
         <Typography as="p" className="text-sm text-muted-foreground">
-          {IMPORT_FORMAT_LABEL[format]} export detected. These apply to every listing in this file.
+          {IMPORT_FORMAT_INTRO[format]}
         </Typography>
       </div>
 
@@ -75,7 +82,7 @@ export function MarketplaceInventoryImportSettings({
           render={({ field, fieldState }) => (
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="import-currency">Listing currency</Label>
-              <Select value={field.value} onValueChange={field.onChange}>
+              <Select value={field.value} onValueChange={field.onChange} disabled={format === 'woocommerce_store'}>
                 <SelectTrigger theme="secondary" id="import-currency" className="w-full" aria-label="Listing currency">
                   <SelectValue />
                 </SelectTrigger>
@@ -88,7 +95,9 @@ export function MarketplaceInventoryImportSettings({
                 </SelectContent>
               </Select>
               <Typography as="p" className="text-xs text-muted-foreground">
-                Prices are read as-is in this currency. Nothing is converted.
+                {format === 'woocommerce_store'
+                  ? 'Set by your store. Prices are read as-is. Nothing is converted.'
+                  : 'Prices are read as-is in this currency. Nothing is converted.'}
               </Typography>
               <FieldError message={fieldState.error?.message} />
             </div>
@@ -228,7 +237,7 @@ export function MarketplaceInventoryImportSettings({
           )}
         />
 
-        {format === 'woocommerce' && (
+        {(format === 'woocommerce' || format === 'woocommerce_store') && (
           <Controller
             name={IMPORT_SETTINGS_FIELDS.UNMANAGED_STOCK}
             control={control}
@@ -243,7 +252,9 @@ export function MarketplaceInventoryImportSettings({
                   aria-invalid={fieldState.error ? true : undefined}
                 />
                 <Typography as="p" className="text-xs text-muted-foreground">
-                  For products that are in stock without a count. Each one is listed in the loss report.
+                  {format === 'woocommerce_store'
+                    ? 'A store shares a count only when stock is low. Every other product in stock gets this many. Each one is listed in the loss report.'
+                    : 'For products that are in stock without a count. Each one is listed in the loss report.'}
                 </Typography>
                 <FieldError message={fieldState.error?.message} />
               </div>

@@ -25,7 +25,6 @@ import {
   sellerBitcoinDecision,
 } from '@/libs/commerce/bitcoin-buyer-status';
 import { bitcoinPaymentBreakdown, formatBitcoinAwareMoney } from '@/libs/commerce/bitcoin-payment-code';
-import { buildCarrierTrackingUrl } from '@/libs/commerce/carriers';
 import { CHECKOUT_HOLD_COPY, isHoldExpiredNoLateMoney } from '@/libs/commerce/checkout-hold';
 import {
   getMarketplaceCheckoutRoute,
@@ -49,6 +48,8 @@ import {
 import { formatCommerceMoney } from '@/libs/commerce/format';
 import { listingIdFromOrder } from '@/libs/commerce/listing-aggregate';
 import { buyerVisiblePaymentStatus } from '@/libs/commerce/locks-payment';
+import { buyerShipmentTracking } from '@/libs/commerce/order-tracking';
+import { observedPaymentRail } from '@/libs/commerce/paykit-rail';
 import { formatBitcoinAmount } from '@/libs/commerce/pricing';
 import {
   REFUND_ORDER_NOTICES,
@@ -65,6 +66,7 @@ import { ContentLayout } from '@/organisms/ContentLayout/ContentLayout';
 import { DropEditionBadge, DropEditionReceiptLine } from '@/organisms/Marketplace/DropEditionBadge';
 import { MarketplaceBitcoinAmountBreakdown } from '@/organisms/Marketplace/MarketplaceBitcoinAmountBreakdown';
 import { MarketplaceCheckoutItem } from '@/organisms/Marketplace/MarketplaceCheckoutItem';
+import { MarketplaceConnectorPushStatus } from '@/organisms/Marketplace/MarketplaceConnectorPushStatus';
 import { MarketplaceIndicativePrice } from '@/organisms/Marketplace/MarketplaceIndicativePrice';
 import { MarketplaceMyReviews } from '@/organisms/Marketplace/MarketplaceMyReviews';
 import { MarketplaceOrderActions } from '@/organisms/Marketplace/MarketplaceOrderActions';
@@ -212,6 +214,8 @@ export function MarketplaceOrders() {
               : 'Track your purchases and sales.'}
           </Typography>
         </div>
+
+        {hasTransactionBackend && <MarketplaceConnectorPushStatus />}
 
         {!hasTransactionBackend ? (
           <div className="flex min-h-64 flex-col items-center justify-center rounded-md px-6 text-center">
@@ -502,29 +506,33 @@ export function MarketplaceOrders() {
                             )}
                             {order.shipment && order.fulfillment !== 'digital' && (
                               <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
-                                <Typography as="p">
-                                  {order.shipment.carrier} · {order.shipment.trackingNumber} · {order.shipment.state}
-                                </Typography>
-                                {/* Only carriers the curated registry can resolve get a
-                              link — an unrecognized carrier stays plain text
-                              instead of risking a dead tracking URL. */}
                                 {(() => {
-                                  const trackingUrl = buildCarrierTrackingUrl(
-                                    order.shipment.carrier,
-                                    order.shipment.trackingNumber,
+                                  const tracking = buyerShipmentTracking(order.shipment);
+                                  if (tracking.kind === 'pending') {
+                                    return <Typography as="p">{tracking.label}</Typography>;
+                                  }
+                                  return (
+                                    <>
+                                      <Typography as="p">
+                                        {tracking.carrier} · {tracking.trackingNumber} · {order.shipment.state}
+                                      </Typography>
+                                      {/* Only carriers the curated registry can resolve get a
+                                    link — an unrecognized carrier stays plain text
+                                    instead of risking a dead tracking URL. */}
+                                      {tracking.url && (
+                                        <Link
+                                          href={tracking.url}
+                                          target="_blank"
+                                          rel="noopener noreferrer"
+                                          overrideDefaults
+                                          className="inline-flex items-center gap-1 font-medium text-brand hover:underline"
+                                        >
+                                          Track package
+                                          <ExternalLink className="size-3.5" />
+                                        </Link>
+                                      )}
+                                    </>
                                   );
-                                  return trackingUrl ? (
-                                    <Link
-                                      href={trackingUrl}
-                                      target="_blank"
-                                      rel="noopener noreferrer"
-                                      overrideDefaults
-                                      className="inline-flex items-center gap-1 font-medium text-brand hover:underline"
-                                    >
-                                      Track package
-                                      <ExternalLink className="size-3.5" />
-                                    </Link>
-                                  ) : null;
                                 })()}
                               </div>
                             )}
@@ -678,9 +686,10 @@ function MarketplaceOrderMessageCta({ order }: { order: MarketplaceOrder }) {
 
 function MarketplaceOrderBitcoinAmount({ order }: { order: MarketplaceOrder }): ReactNode {
   if (bitcoinPaymentBreakdown(order)) return null;
-  // A USDT order settles at parity with its USD price; a bitcoin estimate would mislead.
-  if (order.paymentMethod === 'usdt') return null;
-  const quote = order.paymentMethod === 'bitcoin' ? order.bitcoinQuote : null;
+  // A USDT payment settles in USDT; a bitcoin estimate would mislead.
+  const rail = observedPaymentRail(order);
+  if (rail === 'usdt') return null;
+  const quote = rail === 'bitcoin' ? order.bitcoinQuote : null;
   if (quote?.quotedSats !== null && quote?.quotedSats !== undefined) {
     return (
       <Typography as="span" className="text-sm font-normal">

@@ -78,8 +78,8 @@ vi.mock('@/controllers/commerce/commerce', () => ({
     clearMarketplaceSession: vi.fn(),
     clearIdentitySession: vi.fn(),
     bindPaymentMethod: vi.fn(),
-    rememberUsdtRefusal: vi.fn(),
     getMarketplaceOrders: vi.fn(async () => []),
+    getConnectorStores: vi.fn(async () => new Map()),
   },
 }));
 
@@ -195,6 +195,47 @@ describe('useMarketplaceCheckout', () => {
       sellerPubky: listing.ownerPubky,
       message: DELIVERY_KEY_COPY.noKey,
     });
+  });
+
+  it('shares the address with the store only when the buyer ticks it, and only for a shipped seller', async () => {
+    const choice = {
+      sellerPubky: listing.ownerPubky,
+      shopDomain: 'dezentralshop.ch',
+      keyId: 'connector-key-1',
+      publicKey: new Uint8Array(32),
+    };
+    vi.mocked(CommerceController.getConnectorStores).mockResolvedValue(new Map([[listing.ownerPubky, choice]]));
+    const { result } = renderHook(() =>
+      useMarketplaceCheckout(
+        [item],
+        vi.fn(async () => {}),
+      ),
+    );
+    await waitFor(() => expect(result.current.storeShare.stores.size).toBe(1));
+    expect(result.current.storeShare.selected).toEqual([]);
+    act(() => {
+      result.current.form.setValue('name', 'Alice Buyer');
+      result.current.form.setValue('line1', '1 Market Street');
+      result.current.form.setValue('city', 'New York');
+      result.current.form.setValue('region', 'NY');
+      result.current.form.setValue('postalCode', '10001');
+    });
+
+    await act(async () => {
+      await result.current.submit();
+    });
+    expect(vi.mocked(CommerceController.commitCreateMarketplaceCheckout).mock.calls[0]?.[0]).not.toHaveProperty(
+      'connectorShares',
+    );
+
+    vi.mocked(CommerceController.commitCreateMarketplaceCheckout).mockClear();
+    act(() => result.current.storeShare.setShare(listing.ownerPubky, true));
+    await act(async () => {
+      await result.current.submit();
+    });
+    expect(CommerceController.commitCreateMarketplaceCheckout).toHaveBeenCalledWith(
+      expect.objectContaining({ connectorShares: [choice] }),
+    );
   });
 
   it('refreshes terms and creates a guarantee-versioned checkout', async () => {
@@ -1096,21 +1137,12 @@ describe('useMarketplaceCheckout', () => {
     expect(vi.mocked(CommerceController.bindPaymentMethod).mock.calls.length).toBe(bindsBefore + 1);
   });
 
-  describe('after a refused USDT bind', () => {
+  describe('after a refused Paykit bind', () => {
     const orderId = '018f47d2-6a27-7c23-a49d-000000001210';
 
-    const usdtBindRefusal = (reason: string) =>
-      new AppError({
-        category: ErrorCategory.Client,
-        code: ClientErrorCode.BAD_REQUEST,
-        message: 'SENTINEL',
-        service: ErrorService.Marketplace,
-        operation: 'bindPaymentMethod',
-        context: { statusCode: 409, reason, paymentMethod: 'usdt' },
-      });
-
-    async function payRefused(method: 'usdt' | 'bitcoin', error: unknown) {
+    it('still cancels the order and shows the refusal once', async () => {
       config.mode = 'locks-paykit';
+      vi.mocked(toast).mockClear();
       vi.mocked(CommerceController.commitCreateMarketplaceCheckout).mockResolvedValue({
         ok: true,
         version: 1,
@@ -1120,7 +1152,16 @@ describe('useMarketplaceCheckout', () => {
         eventIds: [],
         result: { kind: 'checkout', orders: [{ id: orderId }] },
       });
-      vi.mocked(CommerceController.bindPaymentMethod).mockRejectedValueOnce(error);
+      vi.mocked(CommerceController.bindPaymentMethod).mockRejectedValueOnce(
+        new AppError({
+          category: ErrorCategory.Client,
+          code: ClientErrorCode.BAD_REQUEST,
+          message: 'SENTINEL',
+          service: ErrorService.Marketplace,
+          operation: 'bindPaymentMethod',
+          context: { statusCode: 409, reason: 'seller_setup_pending', paymentMethod: 'paykit' },
+        }),
+      );
       const { result } = renderHook(() =>
         useMarketplaceCheckout(
           [item],
@@ -1134,44 +1175,15 @@ describe('useMarketplaceCheckout', () => {
         result.current.form.setValue('region', 'NY');
         result.current.form.setValue('postalCode', '10001');
       });
-      return await act(async () => result.current.pay(method));
-    }
 
-    it.each(['usdt_unavailable', 'usdt_seller_not_ready'] as const)(
-      'remembers %s for this seller and still cancels the order and shows the refusal once',
-      async (reason) => {
-        vi.mocked(CommerceController.rememberUsdtRefusal).mockClear();
-        vi.mocked(toast).mockClear();
+      const paid = await act(async () => result.current.pay('paykit'));
 
-        const paid = await payRefused('usdt', usdtBindRefusal(reason));
-
-        expect(paid.ok).toBe(false);
-        expect(CommerceController.rememberUsdtRefusal).toHaveBeenCalledTimes(1);
-        expect(CommerceController.rememberUsdtRefusal).toHaveBeenCalledWith(item.listing.record.ownerPubky, reason);
-        expect(CommerceController.executeMarketplaceCommand).toHaveBeenCalledWith(
-          expect.objectContaining({ kind: 'order.cancel_request', payload: expect.objectContaining({ orderId }) }),
-        );
-        expect(vi.mocked(toast)).toHaveBeenCalledTimes(1);
-      },
-    );
-
-    it.each(['buyer_usdt_wallet_required', 'paykit_rejected'])(
-      'does not remember %s, which another try or the buyer can fix',
-      async (reason) => {
-        vi.mocked(CommerceController.rememberUsdtRefusal).mockClear();
-
-        await payRefused('usdt', usdtBindRefusal(reason));
-
-        expect(CommerceController.rememberUsdtRefusal).not.toHaveBeenCalled();
-      },
-    );
-
-    it('does not remember a refusal of another rail', async () => {
-      vi.mocked(CommerceController.rememberUsdtRefusal).mockClear();
-
-      await payRefused('bitcoin', new Error('bind failed'));
-
-      expect(CommerceController.rememberUsdtRefusal).not.toHaveBeenCalled();
+      expect(paid.ok).toBe(false);
+      expect(CommerceController.bindPaymentMethod).toHaveBeenLastCalledWith(orderId, 'paykit');
+      expect(CommerceController.executeMarketplaceCommand).toHaveBeenCalledWith(
+        expect.objectContaining({ kind: 'order.cancel_request', payload: expect.objectContaining({ orderId }) }),
+      );
+      expect(vi.mocked(toast)).toHaveBeenCalledTimes(1);
     });
   });
 

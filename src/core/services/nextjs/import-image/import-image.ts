@@ -41,7 +41,7 @@ class ImportImageTransportError extends Error {
   }
 }
 
-type TOutcome<T> = { ok: true; value: T } | { ok: false; reason: TImportImageFailureReason; status?: number };
+export type TOutcome<T> = { ok: true; value: T } | { ok: false; reason: TImportImageFailureReason; status?: number };
 
 /**
  * Connection-time lookup: resolves every answer, refuses the connection if any
@@ -153,10 +153,20 @@ export class NextJsImportImageService {
   }
 }
 
-async function followRedirects(startUrl: URL, signal: AbortSignal): Promise<TOutcome<Response>> {
+/**
+ * Follows redirects by hand so every hop is validated again (https, allowed
+ * host, DNS safety) and connected through the pinned lookup. Shared with the
+ * store import, which needs the same guarantees for a different `Accept`.
+ */
+export async function followRedirects(
+  startUrl: URL,
+  signal: AbortSignal,
+  headers: Record<string, string> = FETCH_HEADERS,
+  maxRedirects: number = IMPORT_IMAGE_MAX_REDIRECTS,
+): Promise<TOutcome<Response>> {
   let current = startUrl;
 
-  for (let hop = 0; hop <= IMPORT_IMAGE_MAX_REDIRECTS; hop += 1) {
+  for (let hop = 0; hop <= maxRedirects; hop += 1) {
     const validation = ImportImageValidators.validateParsed(current);
     if (!validation.ok) return { ok: false, reason: hop === 0 ? 'invalid_url' : 'blocked_address' };
 
@@ -165,7 +175,7 @@ async function followRedirects(startUrl: URL, signal: AbortSignal): Promise<TOut
 
     const response = (await undiciFetch(current, {
       method: 'GET',
-      headers: FETCH_HEADERS,
+      headers,
       redirect: 'manual',
       credentials: 'omit',
       referrerPolicy: 'no-referrer',
@@ -252,7 +262,7 @@ async function cancelBody(response: Response): Promise<void> {
   await response.body?.cancel().catch(() => {});
 }
 
-function classifyError(error: unknown, timedOut: boolean): TImportImageFailureReason {
+export function classifyError(error: unknown, timedOut: boolean): TImportImageFailureReason {
   if (timedOut) return 'timeout';
 
   const seen = new Set<unknown>();

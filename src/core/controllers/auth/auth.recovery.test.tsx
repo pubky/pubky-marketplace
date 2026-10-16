@@ -447,12 +447,12 @@ it("clears commerce view state and the other account's chat sessions when anothe
   const old = grantSession();
   await approve(old);
   await AuthController.initializeAuthenticatedSession({ session: old });
-  useCommerceStore.getState().setUsdtRefusal('seller', 'usdt_unavailable');
+  useCommerceStore.getState().setQuery('boots');
   const keepOnly = vi.spyOn(ChatController, 'clearSessionsOfOtherAccounts').mockImplementation(() => {});
   const next = grantSession('bob', 'shop.pubky.app', 'next');
   await approve(next);
   await AuthController.initializeAuthenticatedSession({ session: next });
-  expect(useCommerceStore.getState().usdtRefusals).toEqual({});
+  expect(useCommerceStore.getState().query).toBe('');
   expect(keepOnly).toHaveBeenCalledWith('bob');
   keepOnly.mockRestore();
 });

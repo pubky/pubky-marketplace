@@ -4,7 +4,7 @@ import {
   IMPORT_IMAGE_MAX_BYTES,
   IMPORT_IMAGE_MAX_REDIRECTS,
 } from '@/config/import-image';
-import { importImageSafeLookup, NextJsImportImageService } from './import-image';
+import { followRedirects, importImageSafeLookup, NextJsImportImageService } from './import-image';
 
 const { mockFetch, mockResolve4, mockResolve6, agentOptions, agentInstances } = vi.hoisted(() => ({
   mockFetch: vi.fn(),
@@ -245,6 +245,13 @@ describe('NextJsImportImageService', () => {
       const result = await fetchImage('https://cdn.example.com/a.png');
       expect(result).toMatchObject({ ok: false, reason: 'too_many_redirects' });
       expect(mockFetch).toHaveBeenCalledTimes(IMPORT_IMAGE_MAX_REDIRECTS + 1);
+    });
+
+    it('follows as many redirects as the caller allows, and no more, when the caller sets its own cap', async () => {
+      mockFetch.mockImplementation(async () => redirectTo('https://a.example.com/again'));
+      const result = await followRedirects(new URL('https://a.example.com/0'), new AbortController().signal, {}, 1);
+      expect(result).toMatchObject({ ok: false, reason: 'too_many_redirects' });
+      expect(mockFetch).toHaveBeenCalledTimes(2);
     });
 
     it('treats a redirect without Location as an http error', async () => {

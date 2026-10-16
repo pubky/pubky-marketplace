@@ -45,6 +45,8 @@ export function createMarketplaceVrtCommerceController() {
     syncAttentionSeen: async () => {},
     // The deployment reports no digital delivery unless a scene opts in.
     fetchDigitalDeliveryCapability: async () => ({ available: false, maxBytes: null }),
+    // No seller has a connected store unless a scene opts in.
+    getConnectorStores: async () => new Map(),
     // USDT stays off unless a scene opts in.
     fetchUsdtPaymentsAvailable: async () => false,
     getSellerPaymentConfig: async () => ({

@@ -62,6 +62,7 @@ import { httpResponseToError, safeFetch } from '@/libs/error/error.http';
 import { ErrorService } from '@/libs/error/error.types';
 import { HttpStatusCode } from '@/libs/http/http.types';
 import { PARSE_JSON_WITH_BODY_EXCERPT, parseResponseOrThrow } from '@/libs/http/response.utils';
+import { marketplaceSessionRequired } from './marketplace-approval-failure';
 import { reportMarketplaceNotificationInvalidTypes } from './marketplace-notification-diagnostics';
 import {
   listingHasSellerReserveAuthority,
@@ -130,6 +131,7 @@ const TRANSACTION_SERVICE_COMMAND_KINDS: ReadonlySet<MarketplaceCommand['kind']>
   'payment.prepare_locks',
   'payment.register_locks',
   'fulfillment.ship',
+  'fulfillment.update_tracking',
   'fulfillment.confirm_delivery',
   // Local pickup (Wave 7 safe subset, §A7): the sealed-details commands and
   // the pickup handover path. The service refuses them on sandbox-payments
@@ -1316,7 +1318,6 @@ export class MarketplaceTransactionService {
       // A non-JSON failure body falls through to the generic parse error.
       return;
     }
-    const usdtBind = boundPaymentMethod === 'usdt';
     throw Err.client(
       ClientErrorCode.BAD_REQUEST,
       marketplacePaymentMethodReasonMessage(reason ?? serviceCode, boundPaymentMethod),
@@ -1327,7 +1328,7 @@ export class MarketplaceTransactionService {
           statusCode: response.status,
           ...(reason ? { reason } : {}),
           ...(serviceCode ? { serviceCode } : {}),
-          ...(usdtBind ? { paymentMethod: 'usdt' } : {}),
+          ...(boundPaymentMethod === 'paykit' ? { paymentMethod: boundPaymentMethod } : {}),
         },
       },
     );
@@ -1389,10 +1390,9 @@ export class MarketplaceTransactionService {
   private static requireSession(operation: string, actor: string): { token: string; pubky: string } {
     const session = MarketplaceSessionService.getActiveSession();
     if (!session) {
-      throw Err.auth(
-        AuthErrorCode.SESSION_EXPIRED,
+      throw marketplaceSessionRequired(
         'A marketplace session is required. Approve the marketplace connection on your signer and try again.',
-        { service: ErrorService.Marketplace, operation },
+        operation,
       );
     }
     if (session.pubky !== actor) {
