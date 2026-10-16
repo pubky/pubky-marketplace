@@ -128,8 +128,17 @@ import { MarketplaceUsdtPaymentSummary } from './MarketplaceUsdtPaymentSummary';
 const GENERIC_MANUAL_REVIEW_COPY =
   'A verified event arrived outside the normal flow (for example after the payment window expired), so the seller must resolve this order manually. No funds are held by this marketplace.';
 
+// A failed delivery state can be wrong when the service crashed near the deadline after the
+// request reached the wallet, so this copy never asserts that it was not received. paykit-server
+// marks a failed delivery permanently and never re-sends it, so the next step is a new checkout. The buyer's own
+// hold keeps the item until the checkout is cancelled or the window ends, hence "cancel this checkout" first.
 const PAYKIT_DELIVERY_FAILED_COPY =
-  "Your wallet didn't receive the request. In Bitkit, add the seller as a contact, then try again.";
+  "We couldn't confirm your wallet got the payment request. Check Bitkit for it; if it's not there, add the seller as a contact in Bitkit, cancel this checkout, then check out again.";
+
+// The same request can still sit unpaid in Bitkit after the window ended, and paying it then needs
+// a manual reconciliation or a refund, so the elapsed state says not to (as the Locks rail does).
+const PAYKIT_DELIVERY_ELAPSED_COPY =
+  "We couldn't confirm your wallet got the payment request before the payment window ended. If you find it in Bitkit, don't pay it. This checkout has ended; check out again.";
 
 function parseListingAggregateId(aggregateId: string): { sellerPubky: string; listingId: string } | null {
   if (!aggregateId.startsWith('listing:')) return null;
@@ -414,7 +423,7 @@ export function MarketplacePaymentStatusCard({
       )}
       {visibleStatus === 'expired' && isBuyer && isPaykitRail && order.paykitDeliveryState !== 'delivered' && (
         <Typography as="p" role="alert" className="text-sm text-amber-300" data-testid="paykit-delivery-failed">
-          {PAYKIT_DELIVERY_FAILED_COPY}
+          {PAYKIT_DELIVERY_ELAPSED_COPY}
         </Typography>
       )}
       {visibleStatus === 'manual_review' && !refundRequired && (
@@ -704,14 +713,18 @@ export function MarketplacePaymentStatusCard({
 
       {/* Bound Paykit: neutral until a rail is seen, since the buyer picks Bitcoin or USDT in Bitkit. */}
       {usesMethodFlow && isBuyer && isUnobservedPaykitOrder(order) && !followsBitcoinFlow(order) && (
-        <BuyerPaykitPaymentProgress order={order} />
+        <BuyerPaykitPaymentProgress order={order} checkoutActions={checkoutActions} />
       )}
 
       {/* Bound bitcoin: the wallet instructions stay up only until the payment is seen. */}
-      {hasBuyerBitcoinProgress && <BuyerBitcoinPaymentProgress order={order} payment={payment} />}
+      {hasBuyerBitcoinProgress && (
+        <BuyerBitcoinPaymentProgress order={order} payment={payment} checkoutActions={checkoutActions} />
+      )}
 
       {/* Bound USDT: the request waits in the buyer's Paykit wallet until it is paid. */}
-      {usesMethodFlow && isBuyer && rail === 'usdt' && <BuyerUsdtPaymentProgress order={order} />}
+      {usesMethodFlow && isBuyer && rail === 'usdt' && (
+        <BuyerUsdtPaymentProgress order={order} checkoutActions={checkoutActions} />
+      )}
 
       {/* Bound paypal: hosted checkout; PayPal's verified notification pays
           the order automatically. The buyer report + seller confirmation
@@ -988,7 +1001,15 @@ export function MarketplacePaymentStatusCard({
   );
 }
 
-function BuyerBitcoinPaymentProgress({ order, payment }: { order: MarketplaceOrder; payment: MarketplacePayment }) {
+function BuyerBitcoinPaymentProgress({
+  order,
+  payment,
+  checkoutActions,
+}: {
+  order: MarketplaceOrder;
+  payment: MarketplacePayment;
+  checkoutActions?: ReactNode;
+}) {
   const progress = buyerBitcoinWalletCopy(order, payment);
   const paymentDeadline = formatOrderInstant(buyerPayByDeadline(order));
   const requestSent = order.paykitDeliveryState === 'delivered';
@@ -1029,9 +1050,12 @@ function BuyerBitcoinPaymentProgress({ order, payment }: { order: MarketplaceOrd
   return (
     <div className="grid gap-2">
       {order.paykitDeliveryState === 'failed' ? (
-        <Typography as="p" role="alert" className="text-sm text-amber-300" data-testid="paykit-delivery-failed">
-          {PAYKIT_DELIVERY_FAILED_COPY}
-        </Typography>
+        <div className="grid justify-items-start gap-2">
+          <Typography as="p" role="alert" className="text-sm text-amber-300" data-testid="paykit-delivery-failed">
+            {PAYKIT_DELIVERY_FAILED_COPY}
+          </Typography>
+          {checkoutActions}
+        </div>
       ) : (
         <div className="flex items-center gap-2 text-sm text-foreground" data-testid="paykit-delivery-status">
           <LoaderCircle className="size-4 animate-spin" />
@@ -1059,7 +1083,13 @@ function BuyerBitcoinPaymentProgress({ order, payment }: { order: MarketplaceOrd
   );
 }
 
-function BuyerPaykitPaymentProgress({ order }: { order: MarketplaceOrder }) {
+function BuyerPaykitPaymentProgress({
+  order,
+  checkoutActions,
+}: {
+  order: MarketplaceOrder;
+  checkoutActions?: ReactNode;
+}) {
   const assets = orderOfferedAssets(order);
   const offersUsdt = assets.includes('USDT');
   return (
@@ -1068,9 +1098,12 @@ function BuyerPaykitPaymentProgress({ order }: { order: MarketplaceOrder }) {
         {holderBoundCopy(buyerPayByDeadline(order))}
       </Typography>
       {order.paykitDeliveryState === 'failed' ? (
-        <Typography as="p" role="alert" className="text-sm text-amber-300" data-testid="paykit-delivery-failed">
-          {PAYKIT_DELIVERY_FAILED_COPY}
-        </Typography>
+        <div className="grid justify-items-start gap-2">
+          <Typography as="p" role="alert" className="text-sm text-amber-300" data-testid="paykit-delivery-failed">
+            {PAYKIT_DELIVERY_FAILED_COPY}
+          </Typography>
+          {checkoutActions}
+        </div>
       ) : (
         <div className="grid gap-1" data-testid="paykit-awaiting-status">
           <div className="flex items-center gap-2 text-sm font-medium">
@@ -1099,7 +1132,13 @@ function BuyerPaykitPaymentProgress({ order }: { order: MarketplaceOrder }) {
   );
 }
 
-function BuyerUsdtPaymentProgress({ order }: { order: MarketplaceOrder }) {
+function BuyerUsdtPaymentProgress({
+  order,
+  checkoutActions,
+}: {
+  order: MarketplaceOrder;
+  checkoutActions?: ReactNode;
+}) {
   return (
     <div className="grid gap-2" data-testid="usdt-payment-awaiting">
       <Typography as="p" className="text-sm text-muted-foreground">
@@ -1111,9 +1150,12 @@ function BuyerUsdtPaymentProgress({ order }: { order: MarketplaceOrder }) {
         </Typography>
       )}
       {order.paykitDeliveryState === 'failed' ? (
-        <Typography as="p" role="alert" className="text-sm text-amber-300" data-testid="paykit-delivery-failed">
-          {PAYKIT_DELIVERY_FAILED_COPY}
-        </Typography>
+        <div className="grid justify-items-start gap-2">
+          <Typography as="p" role="alert" className="text-sm text-amber-300" data-testid="paykit-delivery-failed">
+            {PAYKIT_DELIVERY_FAILED_COPY}
+          </Typography>
+          {checkoutActions}
+        </div>
       ) : (
         <div className="flex items-center gap-2 text-sm text-muted-foreground" data-testid="usdt-awaiting-status">
           <LoaderCircle className="size-4 animate-spin" />

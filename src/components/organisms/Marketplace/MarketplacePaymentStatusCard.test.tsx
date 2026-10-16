@@ -1450,7 +1450,7 @@ describe('MarketplacePaymentStatusCard', () => {
     expect(screen.queryByText('Resolve Bitcoin payment review')).not.toBeInTheDocument();
   });
 
-  it('tells the buyer to add the seller as a Bitkit contact when delivery failed', () => {
+  it('asks the buyer to check Bitkit first, then add the seller as a contact, when delivery could not be confirmed', () => {
     render(
       <MarketplacePaymentStatusCard
         order={createOrderFixture('pending_payment', {
@@ -1468,12 +1468,117 @@ describe('MarketplacePaymentStatusCard', () => {
       />,
     );
     expect(screen.getByTestId('paykit-delivery-failed')).toHaveTextContent(
-      "Your wallet didn't receive the request. In Bitkit, add the seller as a contact, then try again.",
+      "We couldn't confirm your wallet got the payment request. Check Bitkit for it; if it's not there, add the seller as a contact in Bitkit, cancel this checkout, then check out again.",
     );
+    expect(screen.getByTestId('paykit-delivery-failed')).not.toHaveTextContent(
+      /didn.t receive|did not receive|never (reached|arrived|delivered)/i,
+    );
+    expect(screen.queryByText(/Payment request sent/)).not.toBeInTheDocument();
     expect(screen.queryByTestId('paykit-delivery-status')).not.toBeInTheDocument();
   });
 
-  it('keeps the wallet hint on an elapsed Bitcoin checkout whose request was never delivered', () => {
+  it('puts the checkout action right next to the unconfirmed-delivery copy, and only there', () => {
+    const renderBound = (paykitDeliveryState: string) =>
+      render(
+        <MarketplacePaymentStatusCard
+          order={createOrderFixture('pending_payment', {
+            holdExpiresAt: '2026-08-20T21:15:00.000Z',
+            holdSource: 'bind',
+            paymentMethod: 'bitcoin',
+            paykitRequestState: 'pending',
+            paykitDeliveryState,
+          })}
+          payment={createPaymentFixture('awaiting_entitlement', { adapter: 'paykit' })}
+          isBuyer
+          adapterMode="transaction-service"
+          advancePayment={async () => false}
+          onPaymentChanged={() => {}}
+          checkoutActions={<button type="button">Cancel checkout</button>}
+        />,
+      );
+
+    const { unmount } = renderBound('failed');
+    const failed = screen.getByTestId('paykit-delivery-failed');
+    expect(failed).toHaveTextContent('cancel this checkout, then check out again.');
+    expect(failed.parentElement).toContainElement(screen.getByRole('button', { name: 'Cancel checkout' }));
+    unmount();
+
+    for (const state of ['pending', 'delivered']) {
+      const { unmount: next } = renderBound(state);
+      expect(screen.queryByRole('button', { name: 'Cancel checkout' })).not.toBeInTheDocument();
+      next();
+    }
+  });
+
+  it.each([
+    ['a seen payment (detected)', 'pending_payment', { paykitRequestState: 'detected' }, 'awaiting_entitlement', true],
+    [
+      'a seen payment (awaiting the seller)',
+      'pending_payment',
+      { paykitRequestState: 'awaiting_seller_confirmation' },
+      'awaiting_entitlement',
+      true,
+    ],
+    ['a payment in review', 'pending_payment', { paykitRequestState: 'pending' }, 'manual_review', true],
+    ['an elapsed checkout', 'cancelled', { cancellationReason: 'payment window elapsed' }, 'expired', true],
+    ['a seller viewing the order', 'pending_payment', { paykitRequestState: 'pending' }, 'awaiting_entitlement', false],
+    ['a paid order', 'paid', { paykitRequestState: 'confirmed' }, 'confirmed', true],
+  ] as const)(
+    'offers no checkout action beside the unconfirmed-delivery copy for %s, even when one is passed',
+    (_label, orderState, overrides, paymentState, isBuyer) => {
+      const payment = createPaymentFixture(paymentState, { adapter: 'paykit' });
+      render(
+        <MarketplacePaymentStatusCard
+          order={createOrderFixture(orderState, {
+            paymentId: payment.id,
+            holdExpiresAt: '2026-08-20T21:15:00.000Z',
+            holdSource: 'bind',
+            paymentMethod: 'bitcoin',
+            paykitDeliveryState: 'failed',
+            paykitSellerConfirmationDeadline: '2026-08-20T21:15:00.000Z',
+            ...overrides,
+          })}
+          payment={payment}
+          isBuyer={isBuyer}
+          adapterMode="transaction-service"
+          advancePayment={async () => false}
+          onPaymentChanged={() => {}}
+          checkoutActions={<button type="button">Cancel checkout</button>}
+        />,
+      );
+
+      expect(screen.queryByRole('button', { name: 'Cancel checkout' })).not.toBeInTheDocument();
+    },
+  );
+
+  it.each(['awaiting_seller_confirmation', 'detected'] as const)(
+    'still shows a seen payment when the delivery state reads failed (%s), since detection never depends on delivery',
+    (paykitRequestState) => {
+      render(
+        <MarketplacePaymentStatusCard
+          order={createOrderFixture('pending_payment', {
+            holdExpiresAt: '2026-08-20T21:15:00.000Z',
+            holdSource: 'bind',
+            paymentMethod: 'bitcoin',
+            paykitRequestState,
+            paykitDeliveryState: 'failed',
+            paykitSellerConfirmationDeadline: '2026-08-20T21:15:00.000Z',
+          })}
+          payment={createPaymentFixture('awaiting_entitlement', { adapter: 'paykit' })}
+          isBuyer
+          adapterMode="transaction-service"
+          advancePayment={async () => false}
+          onPaymentChanged={() => {}}
+        />,
+      );
+
+      expect(screen.getByTestId('bitcoin-payment-seen')).toBeInTheDocument();
+      expect(screen.getByTestId('bitcoin-seen-hold-copy')).toBeInTheDocument();
+      expect(screen.queryByTestId('paykit-delivery-failed')).not.toBeInTheDocument();
+    },
+  );
+
+  it('tells the buyer of an elapsed Bitcoin checkout not to pay a request it could not confirm, and says nothing when delivery is confirmed', () => {
     const payment = createPaymentFixture('expired', { adapter: 'paykit' });
     const { unmount } = render(
       <MarketplacePaymentStatusCard
@@ -1490,7 +1595,10 @@ describe('MarketplacePaymentStatusCard', () => {
         onPaymentChanged={() => {}}
       />,
     );
-    expect(screen.getByTestId('paykit-delivery-failed')).toBeInTheDocument();
+    expect(screen.getByTestId('paykit-delivery-failed')).toHaveTextContent(
+      "We couldn't confirm your wallet got the payment request before the payment window ended. If you find it in Bitkit, don't pay it. This checkout has ended; check out again.",
+    );
+    expect(screen.getByTestId('paykit-delivery-failed')).not.toHaveTextContent(/try again|check Bitkit for it/i);
     unmount();
     render(
       <MarketplacePaymentStatusCard
@@ -1509,6 +1617,31 @@ describe('MarketplacePaymentStatusCard', () => {
     );
     expect(screen.queryByTestId('paykit-delivery-failed')).not.toBeInTheDocument();
   });
+
+  it.each(['manual_review', 'confirmed'] as const)(
+    'shows no unconfirmed-delivery copy on an elapsed Bitcoin checkout whose payment was seen (%s)',
+    (paymentState) => {
+      const payment = createPaymentFixture(paymentState, { adapter: 'paykit' });
+      render(
+        <MarketplacePaymentStatusCard
+          order={createOrderFixture('cancelled', {
+            paymentId: payment.id,
+            cancellationReason: 'payment window elapsed',
+            paymentMethod: 'bitcoin',
+            paykitDeliveryState: 'failed',
+          })}
+          payment={payment}
+          isBuyer
+          adapterMode="transaction-service"
+          advancePayment={async () => false}
+          onPaymentChanged={() => {}}
+        />,
+      );
+
+      expect(screen.queryByTestId('paykit-delivery-failed')).not.toBeInTheDocument();
+      expect(screen.queryByText(/don't pay it/)).not.toBeInTheDocument();
+    },
+  );
 
   it('renders late-completion copy for buyer and seller', () => {
     const payment = createPaymentFixture('confirmed');
