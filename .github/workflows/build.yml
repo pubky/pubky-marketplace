@@ -52,7 +52,7 @@ jobs:
           while IFS= read -r file; do
             [ -n "$file" ] || continue
             case "$file" in
-              src/*|public/*|vendor/*|*.css|package.json|package-lock.json|next.config.ts|next.config.test.ts|postcss.config.mjs|tsconfig*.json|scripts/locks-sdk-smoke.mjs|scripts/paykit-wasm-smoke.mjs|scripts/ci-launch-e2e.sh|scripts/ci-launch-e2e-gate.sh|.github/workflows/build.yml)
+              src/*|public/*|vendor/*|*.css|package.json|package-lock.json|next.config.ts|next.config.test.ts|postcss.config.mjs|tsconfig*.json|scripts/locks-sdk-smoke.mjs|scripts/paykit-wasm-smoke.mjs|scripts/ci-launch-e2e.sh|scripts/ci-launch-e2e-gate.sh|scripts/ci-chat-e2e.sh|.github/workflows/build.yml)
                 run=true
                 break
                 ;;
@@ -266,5 +266,75 @@ jobs:
         with:
           name: launch-e2e-log
           path: launch-e2e-results.json
+          if-no-files-found: ignore
+          retention-days: 7
+
+  chat-e2e:
+    name: chat-e2e
+    needs: build
+    # Same gate as launch-e2e: Shop pull requests that have a Next build artifact.
+    if: always() && needs.build.result == 'success' && github.event_name == 'pull_request' && (github.base_ref == 'master' || startsWith(github.base_ref, 'release/shop-'))
+    # No job container: the stack's ports (homeserver, relays, Nexus, inbox) must
+    # be localhost for the browser, the Node signer and the Shop alike.
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Download Next build
+        uses: actions/download-artifact@v4
+        with:
+          name: next-build
+          path: next-build-artifact
+
+      - name: Place .next
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -d next-build-artifact/.next ]; then
+            mv next-build-artifact/.next .next
+          elif [ -f next-build-artifact/BUILD_ID ]; then
+            mv next-build-artifact .next
+          else
+            echo "Unexpected next-build artifact layout"
+            find next-build-artifact -maxdepth 3 | head -80
+            exit 1
+          fi
+          test -f .next/BUILD_ID
+          mkdir -p public
+          if [ -f next-build-artifact/public/sw.js ]; then
+            mv next-build-artifact/public/sw.js public/sw.js
+          fi
+
+      # The two-account chat proof on a disposable testnet stack (pubky-docker)
+      # with a pubky/inbox container: delivery both ways, pings with the event
+      # stream blocked, offline queue, second tab, reload, new-device rebuild,
+      # ciphertext-only files. See docs/chat/README.md, "Verification".
+      - name: Run the two-account chat proof
+        env:
+          SCREENSHOT_DIR: .chat-e2e
+        run: bash scripts/ci-chat-e2e.sh
+
+      - name: Upload chat-e2e screenshots and server log
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: chat-e2e-debug
+          path: |
+            .chat-e2e
+            chat-e2e-server.log
           if-no-files-found: ignore
           retention-days: 7
