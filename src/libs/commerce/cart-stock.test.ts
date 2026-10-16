@@ -50,6 +50,27 @@ describe('cartLineStock', () => {
     expect(cartLineStock(sizes, 'size_s', { state: 'reserved' })).toBeNull();
   });
 
+  it('keeps a held listing buyable when the service flags its held sizes', () => {
+    const held = {
+      state: 'reserved',
+      variants: [
+        { variantId: 'size_s', soldOut: true },
+        { variantId: 'size_m', soldOut: false },
+      ],
+    };
+
+    expect(cartLineStock(sizes, 'size_s', held)).toBeNull();
+    expect(
+      cartLineStock(sizes, 'size_m', { ...held, variants: held.variants.map((row) => ({ ...row, soldOut: true })) }),
+    ).toBeNull();
+  });
+
+  it('still reads a size the seller set to zero as sold out while the listing is held', () => {
+    const record = [{ ...sizes[0], quantity: 0 }, sizes[1]];
+
+    expect(cartLineStock(record, 'size_s', { state: 'reserved' })).toBe('variant_sold_out');
+  });
+
   it('is null for a line whose size left the record', () => {
     expect(cartLineStock(sizes, 'size_gone', { state: 'available' })).toBeNull();
   });

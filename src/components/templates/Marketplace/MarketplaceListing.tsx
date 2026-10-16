@@ -53,8 +53,8 @@ import {
   everyOfferedVariantSoldOut,
   firstAvailableVariantId,
   isVariantSoldOut,
+  listingSoldOutVariantIds,
   projectionReadsSoldOut,
-  soldOutVariantIds,
 } from '@/libs/commerce/listing-variants';
 import {
   commerceListingFulfillmentMethods,
@@ -116,7 +116,7 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
   const favorite = useCommerceFavorite(`${sellerPubky}:${listingId}`);
   const negotiation = useMarketplaceProjection(sellerPubky, listingId);
   const publicStock = useMarketplacePublicAvailability(sellerPubky, listingId, negotiation.needsSession);
-  const soldOutVariants = soldOutVariantIds(negotiation.projection?.variants ?? publicStock?.variants);
+  const soldOutVariants = listingSoldOutVariantIds(negotiation.projection ?? publicStock);
   const sellerReputation = useSellerReputation(sellerPubky);
   const cart = useMarketplaceCart();
   const orders = useMarketplaceOrders();

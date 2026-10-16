@@ -4,6 +4,7 @@ import {
   everyOfferedVariantSoldOut,
   firstAvailableVariantId,
   isVariantSoldOut,
+  listingSoldOutVariantIds,
   projectionReadsSoldOut,
   soldOutVariantIds,
   tracksVariantStock,
@@ -62,6 +63,13 @@ describe('sold-out reading', () => {
     expect([...soldOutVariantIds(rows)]).toEqual(['size_s']);
     expect(soldOutVariantIds(undefined).size).toBe(0);
     expect(soldOutVariantIds(null).size).toBe(0);
+  });
+
+  it('takes no size as sold out from a held listing, whose flags count held units', () => {
+    expect([...listingSoldOutVariantIds({ state: 'available', variants: rows })]).toEqual(['size_s']);
+    expect([...listingSoldOutVariantIds({ state: 'sold', variants: rows })]).toEqual(['size_s']);
+    expect(listingSoldOutVariantIds({ state: 'reserved', variants: rows }).size).toBe(0);
+    expect(listingSoldOutVariantIds(null).size).toBe(0);
   });
 
   it('treats a size as sold out from the service or from a zero record quantity', () => {

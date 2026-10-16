@@ -1,10 +1,10 @@
 import {
   everyOfferedVariantSoldOut,
   isVariantSoldOut,
+  listingSoldOutVariantIds,
   type ListingVariantStockInput,
   type ProjectedVariantAvailability,
   projectionReadsSoldOut,
-  soldOutVariantIds,
   tracksVariantStock,
 } from '@/libs/commerce/listing-variants';
 
@@ -40,7 +40,7 @@ export function cartLineStock(
   availability: CartListingAvailability | null | undefined,
 ): CartLineStock | null {
   if (availability && projectionReadsSoldOut(availability)) return 'listing_sold_out';
-  const serviceSoldOut = soldOutVariantIds(availability?.variants);
+  const serviceSoldOut = listingSoldOutVariantIds(availability);
   const variant = variants.find(({ id }) => id === variantId);
   if (!variant || !isVariantSoldOut(variant, serviceSoldOut)) return null;
   return tracksVariantStock(variants) && !everyOfferedVariantSoldOut(variants, serviceSoldOut)
