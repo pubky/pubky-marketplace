@@ -467,6 +467,16 @@ describe('useMarketplaceOrders', () => {
       "Ask the buyer to confirm a refund address first. It's on their order page.",
     ],
     [
+      'refund.record_external',
+      'refund_rail_unknown',
+      'The buyer paid on both rails and the Shop cannot tell which one this refund returns. Resolve the order as paid or abandoned first.',
+    ],
+    [
+      'refund.record_external',
+      'refund_amount_unrecordable',
+      'This USDT amount cannot be recorded as a refund because it is not a whole number of cents. Contact the marketplace operator.',
+    ],
+    [
       'refund.confirm_destination',
       'invalid_refund_destination',
       "That isn't a valid Arbitrum address. Check it and try again.",
@@ -491,6 +501,30 @@ describe('useMarketplaceOrders', () => {
     expect(vi.mocked(toast)).toHaveBeenCalledWith({ variant: 'error', description: copy });
     expect(JSON.stringify(vi.mocked(toast).mock.calls)).not.toContain('5aAeb');
   });
+
+  it.each(['refund_rail_unknown', 'refund_amount_unrecordable'])(
+    'never shows the seller-directed %s copy or the raw token on the buyer refund-address path',
+    async (reason) => {
+      const { result } = renderHook(() => useMarketplaceOrders());
+      await waitFor(() => expect(result.current.orders).toHaveLength(1));
+      const order = result.current.orders[0].order;
+      const { toast } = await import('@/molecules/Toaster/use-toast');
+      vi.mocked(toast).mockClear();
+      vi.mocked(CommerceController.executeMarketplaceCommand).mockResolvedValueOnce({
+        ok: false,
+        error: { code: 'INVALID_STATE', message: reason, reason },
+      });
+
+      await act(async () => {
+        await result.current.actOnOrder(order, 'refund.confirm_destination', { address: '0x1' });
+      });
+
+      const shown = JSON.stringify(vi.mocked(toast).mock.calls);
+      expect(shown).not.toContain(reason);
+      expect(shown).not.toContain('Resolve the order as paid or abandoned');
+      expect(shown).not.toContain('Contact the marketplace operator');
+    },
+  );
 
   it('flags needsSession on a session-required load failure and refetches once a session connects', async () => {
     config.mode = 'transaction-service';

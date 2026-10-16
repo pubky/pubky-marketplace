@@ -1,6 +1,5 @@
 import type { SellerPaymentConfigOwnView } from '@/libs/commerce/payment-methods';
 import type { UsdtSellerReadiness } from '@/libs/commerce/usdt-seller-setup';
-import { locksCreatorMatchesShopPubky } from '@/services/locks/locks-frontend-session';
 
 /** Plain-language setup state shown as the status pill on each method card. */
 export type PaymentMethodStatus = 'not_set_up' | 'connected' | 'email_saved' | 'needs_attention';
@@ -26,24 +25,45 @@ export function derivePaypalStatus(config: SellerPaymentConfigOwnView | null): P
 }
 
 /**
- * Bitcoin is connected only when both live signals are present:
- * - Lock Server authorization: `connectedCreator` from `useMarketplaceLocksConnect`
- *   (restored from localStorage and revalidated with the Lock Server after reload)
- * - Paykit claim: `accountClaimed === true` from `useMarketplaceSellerPaymentConfig`
+ * The Bitcoin pill from the service's uncached `bitcoin_setup`
+ * (`accountClaimed` from `useMarketplaceSellerPaymentConfig`): `ready` is
+ * Connected and only a definite `setup_required` is Not set up. An unknown
+ * answer (`unavailable`, a failed read, or a service without the field) needs
+ * attention, like USDT's `unavailable`: Bitkit may already be connected.
  */
-export function deriveBitcoinStatus(args: {
-  connectedCreator: string | null;
-  accountPubky: string | null | undefined;
-  accountClaimed: boolean | null;
-  locksError: string | null;
-  claimError: string | null;
-}): PaymentMethodStatus {
-  if (args.locksError || args.claimError) return 'needs_attention';
-  const locksAuthorized = locksCreatorMatchesShopPubky(args.connectedCreator, args.accountPubky);
-  const paykitClaimed = args.accountClaimed === true;
-  if (locksAuthorized && paykitClaimed) return 'connected';
-  if (!locksAuthorized && !paykitClaimed) return 'not_set_up';
+export function deriveBitcoinStatus(accountClaimed: boolean | null): PaymentMethodStatus {
+  if (accountClaimed === true) return 'connected';
+  if (accountClaimed === false) return 'not_set_up';
   return 'needs_attention';
+}
+
+/**
+ * Whether the Bitkit step may offer Connect or Reconnect Bitkit: only after a
+ * definite answer (`ready` or `setup_required`). An unknown answer offers
+ * Check again instead, so an outage never starts a Paykit authorization.
+ */
+export function canOfferBitkitSetup(accountClaimed: boolean | null): accountClaimed is boolean {
+  return accountClaimed !== null;
+}
+
+/** Why "Accept bitcoin" is still switched off, or null when nothing is missing. */
+export type BitcoinToggleBlocker = 'bitkit' | 'bitkit-unknown';
+
+export const BITCOIN_TOGGLE_BLOCKER_COPY: Record<BitcoinToggleBlocker, string> = {
+  bitkit: 'Connect Bitkit first.',
+  'bitkit-unknown': "We can't check Bitkit right now.",
+};
+
+/**
+ * Names the missing step behind a disabled "Accept bitcoin" switch. An
+ * unknown claim (`null`) is never reported as missing: the read failed, so
+ * Bitkit may already be connected. Bitkit is named only when the service
+ * answered `setup_required`.
+ */
+export function deriveBitcoinToggleBlocker(accountClaimed: boolean | null): BitcoinToggleBlocker | null {
+  if (accountClaimed === false) return 'bitkit';
+  if (accountClaimed === null) return 'bitkit-unknown';
+  return null;
 }
 
 /** USDT is Connected only when the service reports it ready; a lookup it cannot make needs attention. */

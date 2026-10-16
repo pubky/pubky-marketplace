@@ -1,8 +1,8 @@
 'use client';
 
 import { useState } from 'react';
-import { ImageIcon, Package, RefreshCw, ShoppingBag, Upload } from 'lucide-react';
-import { MARKETPLACE_ROUTES } from '@/app/routes';
+import { ImageIcon, Package, Play, RefreshCw, ShoppingBag, Upload } from 'lucide-react';
+import { getMarketplaceListingRoute, MARKETPLACE_ROUTES } from '@/app/routes';
 import type { InventoryBoardRow } from '@/application/commerce/inventory';
 import { Badge } from '@/atoms/Badge/Badge';
 import { Button } from '@/atoms/Button/Button';
@@ -188,9 +188,13 @@ export function MarketplaceInventory() {
                                 </div>
                               )}
                               <div className="flex flex-wrap items-center gap-2">
-                                <Typography as="p" className="font-medium">
+                                <Link
+                                  href={getMarketplaceListingRoute(entry.sellerPubky, entry.listingId)}
+                                  overrideDefaults
+                                  className="font-medium hover:text-brand hover:underline"
+                                >
                                   {entry.title}
-                                </Typography>
+                                </Link>
                                 {entry.recordStatus === 'unavailable' ? (
                                   <Badge variant="outline" data-testid={`inventory-unavailable-${entry.listingId}`}>
                                     Unavailable
@@ -199,7 +203,11 @@ export function MarketplaceInventory() {
                               </div>
                             </div>
                           </td>
-                          <td className="p-3">{entry.state}</td>
+                          <td className="p-3">
+                            <Badge variant="secondary" data-testid={`inventory-state-${entry.listingId}`}>
+                              {entry.listingState ?? entry.state}
+                            </Badge>
+                          </td>
                           <td className="p-3">{entry.format}</td>
                           <td className="p-3">{entry.dropId ?? '—'}</td>
                           <td className="p-3">
@@ -244,8 +252,20 @@ export function MarketplaceInventory() {
                                 }}
                               >
                                 <Package className="size-4" />
-                                Set available
+                                Set stock
                               </Button>
+                              {entry.listingState === 'paused' && entry.format === 'fixed_price' && (
+                                <Button
+                                  size="sm"
+                                  variant="secondary"
+                                  className="rounded-full"
+                                  disabled={board.pendingListingId === entry.listingId}
+                                  onClick={() => void board.relist(entry)}
+                                >
+                                  <Play className="size-4" />
+                                  Relist
+                                </Button>
+                              )}
                               {entry.sync === 'missing' && (
                                 <Button
                                   size="sm"
@@ -282,7 +302,7 @@ export function MarketplaceInventory() {
           if (!open) importer.reset();
         }}
       >
-        <DialogContent className="border-border bg-popover">
+        <DialogContent className="max-h-[90vh] overflow-y-auto border-border bg-popover">
           <DialogHeader>
             <DialogTitle>Import listings</DialogTitle>
           </DialogHeader>
@@ -293,6 +313,35 @@ export function MarketplaceInventory() {
             message={importer.message}
             counts={importer.counts}
             progress={importer.progress}
+            progressPhase={importer.progressPhase}
+            batchInfo={importer.batchInfo}
+            waitSeconds={importer.waitSeconds}
+            photoPlan={importer.photoPlan}
+            unfinished={importer.unfinished}
+            onResumeUnfinished={() => void importer.resumeUnfinished()}
+            confirmingDiscard={importer.confirmingDiscard}
+            onAskDiscardUnfinished={importer.askDiscardUnfinished}
+            onKeepUnfinished={importer.keepUnfinished}
+            onDiscardUnfinished={() => void importer.discardUnfinished()}
+            fetchPhase={importer.fetchPhase}
+            store={{ control: importer.storeForm.control, onSubmit: () => void importer.submitStoreUrl() }}
+            busy={importer.busy}
+            publishDisabledReason={importer.publishDisabledReason}
+            publishNotice={importer.publishNotice}
+            lossSummary={importer.lossSummary}
+            settings={
+              importer.format
+                ? {
+                    control: importer.form.control,
+                    currencyOptions: importer.currencyOptions,
+                    conditionOptions: importer.conditionOptions,
+                    format: importer.format,
+                    onApply: () => void importer.applySettings(),
+                    onChooseFreeShipping: () => void importer.chooseFreeShipping(),
+                  }
+                : undefined
+            }
+            onDownloadLossReport={importer.downloadLossReport}
             onFile={(file) => void importer.planFile(file)}
             onPublish={() => void importer.publish()}
             onResume={() => void importer.resume()}
@@ -308,7 +357,7 @@ export function MarketplaceInventory() {
       <Dialog open={editing !== null} onOpenChange={(open) => !open && setEditing(null)}>
         <DialogContent className="border-border bg-popover">
           <DialogHeader>
-            <DialogTitle>Set available</DialogTitle>
+            <DialogTitle>Set available stock</DialogTitle>
           </DialogHeader>
           {editing && (
             <>

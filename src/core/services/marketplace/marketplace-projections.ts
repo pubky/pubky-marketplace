@@ -54,6 +54,7 @@ const marketplaceListingProjectionBaseSchema = z
     availableQuantity: z.number().int().nonnegative(),
     reservedQuantity: z.number().int().nonnegative(),
     unitPrice: marketplaceMoneySchema,
+    shipping: marketplaceMoneySchema.optional(),
     saleFormat: z.enum(['fixed_price', 'auction']),
     // The fulfillment methods the listing publishes (local pickup design
     // §A1), served by both backends. Defaults to shipping-only for rows
@@ -300,6 +301,7 @@ export const marketplaceNotificationSchema = z
       'bitcoin_prepare_voided',
       'order_cancelled',
       'order_shipped',
+      'tracking_updated',
       'order_delivery_assumed',
       'order_delivered',
       'order_completed',
@@ -469,8 +471,36 @@ export const marketplaceBitcoinQuoteSchema = z
     fetchedAt: z.string().nullable(),
     expiresAt: z.string().nullable(),
     spreadBps: z.number().int().nonnegative().nullable(),
+    // The Blocktank ticker `rate` belongs to (`BTCEUR`: listing-currency units
+    // per bitcoin). Present once a quote exists on a service that names it.
+    pair: z.string().nullish(),
   })
   .passthrough();
+
+/**
+ * How a non-USD fiat price was converted to the USD cents its payment request
+ * was denominated in, fixed at bind from one Blocktank snapshot. `from` is the
+ * price of record in the listing currency, `to` the USD cents charged, `rate`
+ * the cross rate (`EURUSD`: USD per one listing-currency unit) and `usdRate`
+ * and `currencyRate` the two `BTC<CCY>` tickers it comes from. Present only on
+ * non-USD fiat orders. PROVISIONAL: pinned from the service's
+ * `usd_conversion_view`, not yet released.
+ */
+export const marketplaceFxConversionSchema = z
+  .object({
+    pair: z.string(),
+    // Informational (12 places); the service sends null when it cannot render it.
+    rate: z.union([z.string(), z.number().finite()]).nullable(),
+    usdRate: z.union([z.string(), z.number().finite()]),
+    currencyRate: z.union([z.string(), z.number().finite()]),
+    source: z.string(),
+    fetchedAt: z.string(),
+    from: marketplaceMoneySchema,
+    to: marketplaceMoneySchema,
+  })
+  .passthrough();
+
+export type MarketplaceFxConversion = z.infer<typeof marketplaceFxConversionSchema>;
 
 const marketplaceDeliveryAddressValueSchema = z
   .object({
@@ -602,7 +632,12 @@ export const marketplaceOrderProjectionSchema = z
     shipment: z
       .object({
         carrier: z.string(),
-        trackingNumber: z.string(),
+        // Absent on the wire until the seller adds one; read as an empty
+        // string so every consumer tests one shape (`hasTrackingNumber`).
+        trackingNumber: z
+          .string()
+          .nullish()
+          .transform((value) => value ?? ''),
         state: z.enum(['shipped', 'delivered']),
         shippedAt: z.string(),
         deliveredAt: z.string().nullable(),
@@ -680,6 +715,9 @@ export const marketplaceOrderProjectionSchema = z
     // FX-quoted Bitcoin orders carry the service's exact settlement amount.
     // Older orders and non-FX orders may omit this projection entirely.
     bitcoinQuote: marketplaceBitcoinQuoteSchema.nullable().optional(),
+    // Non-USD fiat orders: the conversion to the USD cents actually charged.
+    // A malformed object is dropped so it cannot fail the order.
+    fxConversion: marketplaceFxConversionSchema.nullish().catch(undefined),
     // Physical-bitcoin orders: the Paykit payment-request reference and the
     // worker-observed request state. The enum is intentionally closed to the
     // service CHECK constraint.

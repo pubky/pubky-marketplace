@@ -2,10 +2,11 @@
 import { describe, expect, it, vi } from 'vitest';
 import { config, proxy } from './proxy';
 
-const runtime = vi.hoisted(() => ({ frameAncestors: [] as string[] }));
+const runtime = vi.hoisted(() => ({ frameAncestors: [] as string[], embedded: false }));
 
 vi.mock('@/libs/runtime-config/runtime-config', () => ({
   getFrameAncestors: () => runtime.frameAncestors,
+  getEmbeddedFlag: () => runtime.embedded,
 }));
 
 describe('proxy', () => {
@@ -44,4 +45,13 @@ describe('proxy', () => {
     expect(pattern.test('/_next/static/chunks/main.js')).toBe(false);
     expect(pattern.test('/_next/image')).toBe(false);
   });
+});
+
+it('omits Shop COOP when the App owns the top-level page and popup return', () => {
+  runtime.embedded = true;
+  runtime.frameAncestors = ["'self'"];
+  const response = proxy();
+  expect(response.headers.get('cross-origin-opener-policy')).toBeNull();
+  expect(response.headers.get('content-security-policy')).toBe("frame-ancestors 'self'");
+  runtime.embedded = false;
 });

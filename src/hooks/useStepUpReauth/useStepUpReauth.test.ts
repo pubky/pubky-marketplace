@@ -1,7 +1,8 @@
 import type { Session } from '@synonymdev/pubky';
 import { act, renderHook, waitFor } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AuthController } from '@/controllers/auth/auth';
+import { requestShopHostAction } from '@/libs/shop-session/bridge';
 import { copyToClipboard } from '@/libs/utils/utils';
 import { AUTH_FLOW_CANCELED_ERROR_NAME } from '@/services/homeserver/error.utils';
 import type { TGenerateAuthUrlResult } from '@/services/homeserver/homeserver.types';
@@ -18,6 +19,8 @@ vi.mock('@/controllers/auth/auth', () => ({
     releaseAuthFlow: vi.fn((cancelAuthFlow: () => void) => cancelAuthFlow()),
   },
 }));
+
+vi.mock('@/libs/shop-session/bridge', () => ({ requestShopHostAction: vi.fn(() => false) }));
 
 const navigation = vi.hoisted(() => ({ navigateTop: vi.fn() }));
 
@@ -52,6 +55,45 @@ function createDeferredFlow(url: string) {
 describe('useStepUpReauth', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(requestShopHostAction).mockReturnValue(false);
+  });
+
+  it('asks the host for scope upgrades without creating a Shop authorization', () => {
+    vi.mocked(requestShopHostAction).mockReturnValue(true);
+    const { result } = renderHook(() => useStepUpReauth());
+    act(() => result.current.start());
+    expect(requestShopHostAction).toHaveBeenCalledWith('request-capabilities');
+    expect(AuthController.getStepUpAuthUrl).not.toHaveBeenCalled();
+    expect(result.current.status).toBe('awaiting-host');
+    expect(result.current.authorizationUrl).toBe('');
+  });
+
+  afterEach(() => vi.restoreAllMocks());
+
+  it('opens the Passport step-up popup synchronously from its explicit click', async () => {
+    const { flow, resolveApproval } = createDeferredFlow('pubkyauth://signin_grant?caps=full');
+    vi.mocked(AuthController.getStepUpAuthUrl).mockResolvedValue(flow);
+    vi.mocked(AuthController.completeStepUpReauth).mockResolvedValue(undefined);
+    const popup = {
+      closed: false,
+      location: { replace: vi.fn() },
+      focus: vi.fn(),
+      close: vi.fn(() => {
+        popup.closed = true;
+      }),
+    };
+    const open = vi.spyOn(window, 'open').mockReturnValue(asOpaque<Window>(popup));
+    const { result } = renderHook(() => useStepUpReauth({ signer: 'passport' }));
+    act(() => result.current.start());
+    expect(open).not.toHaveBeenCalled();
+    expect(AuthController.getStepUpAuthUrl).not.toHaveBeenCalled();
+    act(() => result.current.startPassport());
+    expect(open).toHaveBeenCalledOnce();
+    await waitFor(() => expect(result.current.status).toBe('awaiting'));
+    expect(AuthController.getStepUpAuthUrl).toHaveBeenCalledWith(expect.objectContaining({ signer: 'passport' }));
+    resolveApproval(SESSION);
+    await waitFor(() => expect(result.current.status).toBe('reauthenticated'));
+    expect(AuthController.completeStepUpReauth).toHaveBeenCalledWith({ session: SESSION });
   });
 
   it('hands the signer deeplink to the top window inside the tap, with no async boundary before it', async () => {
@@ -65,6 +107,50 @@ describe('useStepUpReauth', () => {
       navigatesWithinGesture(navigation.navigateTop, 'pubkyauth:///?caps=full', () => result.current.openInRing()),
     ).toBe(true);
     expect(result.current.isOpeningRing).toBe(true);
+  });
+
+  describe('Bitkit on iOS', () => {
+    const GRANT_URL = 'pubkyauth://signin_grant?caps=x&relay=r&secret=s&cid=shop.pubky.app&cpk=k';
+    const BITKIT_IOS_URL = 'bitkit://pubky-auth/signin?caps=x&relay=r&secret=s&cid=shop.pubky.app&cpk=k';
+    const IPHONE = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15';
+    const MAC = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15';
+    const ANDROID = 'Mozilla/5.0 (Linux; Android 15; Pixel 9) AppleWebKit/537.36 Chrome/140.0 Mobile';
+
+    async function awaitingWith(userAgent: string, maxTouchPoints: number, signer: 'ring' | 'bitkit') {
+      vi.stubGlobal('navigator', { userAgent, maxTouchPoints });
+      vi.mocked(AuthController.getStepUpAuthUrl).mockResolvedValue(createDeferredFlow(GRANT_URL).flow);
+      const { result } = renderHook(() => useStepUpReauth({ signer }));
+      act(() => result.current.start());
+      await waitFor(() => expect(result.current.status).toBe('awaiting'));
+      return result;
+    }
+
+    afterEach(() => {
+      vi.unstubAllGlobals();
+    });
+
+    it.each([
+      ['iPhone', IPHONE, 5],
+      ['iPadOS reporting Macintosh with touch', MAC, 5],
+    ])('opens the bitkit:// link on %s and keeps the QR and copy on pubkyauth://', async (_, userAgent, touch) => {
+      const result = await awaitingWith(userAgent, touch, 'bitkit');
+
+      expect(navigatesWithinGesture(navigation.navigateTop, BITKIT_IOS_URL, () => result.current.openInRing())).toBe(
+        true,
+      );
+      expect(result.current.authorizationUrl).toBe(GRANT_URL);
+    });
+
+    it.each([
+      ['Android', ANDROID, 5, 'bitkit'],
+      ['desktop Mac', MAC, 0, 'bitkit'],
+      ['iPhone with Pubky Ring', IPHONE, 5, 'ring'],
+    ] as const)('keeps the pubkyauth:// link on %s', async (_, userAgent, touch, signer) => {
+      const result = await awaitingWith(userAgent, touch, signer);
+
+      act(() => result.current.openInRing());
+      expect(navigation.navigateTop).toHaveBeenCalledWith(GRANT_URL);
+    });
   });
 
   it('never auto-starts: mounting the hook requests no auth URL (only the explicit CTA may)', () => {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { getMarketplaceListingRoute, MARKETPLACE_ROUTES } from '@/app/routes';
+import { APP_ROUTES, getMarketplaceListingRoute, MARKETPLACE_ROUTES } from '@/app/routes';
 import type { MarketplaceNotification } from '@/services/marketplace/marketplace';
 import { MARKETPLACE_NOTIFICATION_TYPE_MAX_LENGTH } from '@/services/marketplace/marketplace-projections';
 import { createNotificationFixture, NOTIFICATION_TYPES } from '@/test/fixtures/commerce/notifications';
@@ -187,7 +187,7 @@ describe('MarketplaceNotificationNormalizer.toFeedNotification', () => {
 
 describe('MarketplaceNotificationNormalizer.toDeepLink', () => {
   const expectedRoutes: Record<MarketplaceNotification['type'], string> = {
-    message_received: MARKETPLACE_ROUTES.MESSAGES,
+    message_received: APP_ROUTES.MESSAGES,
     offer_received: MARKETPLACE_ROUTES.OFFERS,
     offer_countered: MARKETPLACE_ROUTES.OFFERS,
     offer_accepted: MARKETPLACE_ROUTES.OFFERS,
@@ -205,6 +205,7 @@ describe('MarketplaceNotificationNormalizer.toDeepLink', () => {
     order_cancelled: MARKETPLACE_ROUTES.ORDERS,
     order_cancelled_terms_change: MARKETPLACE_ROUTES.ORDERS,
     order_shipped: MARKETPLACE_ROUTES.ORDERS,
+    tracking_updated: MARKETPLACE_ROUTES.ORDERS,
     order_delivery_assumed: MARKETPLACE_ROUTES.ORDERS,
     order_delivered: MARKETPLACE_ROUTES.ORDERS,
     order_completed: MARKETPLACE_ROUTES.ORDERS,
@@ -232,7 +233,7 @@ describe('MarketplaceNotificationNormalizer.toDeepLink', () => {
 
     expect(MarketplaceNotificationNormalizer.toDeepLink(type, aggregateId)).toBe(expectedRoutes[type]);
     if (type === 'message_received') {
-      expect(MarketplaceNotificationNormalizer.toDeepLink(type, aggregateId)).toBe(MARKETPLACE_ROUTES.MESSAGES);
+      expect(MarketplaceNotificationNormalizer.toDeepLink(type, aggregateId)).toBe(APP_ROUTES.MESSAGES);
       expect(MarketplaceNotificationNormalizer.toDeepLink(type, aggregateId)).not.toContain('conversation=');
     }
   });

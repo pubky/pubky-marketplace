@@ -1,6 +1,5 @@
 import { DB_NAME } from '@/config/database';
 import { db } from '@/database/franky/franky';
-import { resumeMessagingKeyTeardown, tearDownMessagingKeys } from '@/libs/crypto/messaging-keyring';
 
 export const PUBLIC_CACHE_TABLES: ReadonlySet<string> = new Set([
   'user_counts',
@@ -25,24 +24,8 @@ export const PUBLIC_CACHE_TABLES: ReadonlySet<string> = new Set([
  */
 export const IDENTITY_SCOPED_DEVICE_TABLES: ReadonlySet<string> = new Set(['commerce_delivery_addresses']);
 
-/**
- * Tables whose rows are wrapped under the messaging wrapping key. They are
- * cleared together with the key, holding the key fence
- * (`tearDownMessagingKeys`), never alongside the other tables.
- */
-const KEY_WRAPPED_MESSAGING_TABLES: ReadonlySet<string> = new Set([
-  'commerce_messaging_receivers',
-  'commerce_messaging_links',
-  'commerce_messaging_messages',
-  'commerce_messaging_outbox',
-  'commerce_messaging_unprocessed',
-]);
-
-async function clearKeyWrappedMessagingTables(): Promise<void> {
-  await Promise.all(
-    db.tables.filter((table) => KEY_WRAPPED_MESSAGING_TABLES.has(table.name)).map((table) => table.clear()),
-  );
-}
+/** IndexedDB database of the retired encrypted-messaging keyring, deleted once on boot. */
+export const LEGACY_MESSAGING_KEYRING_DB_NAME = `${DB_NAME}-messaging-keyring`;
 
 function tablesClearedOnIdentitySwitch(includePublicCache: boolean) {
   return db.tables.filter((table) => {
@@ -56,39 +39,29 @@ export async function clearDatabase(): Promise<void> {
   if (!db.isOpen()) {
     await db.open();
   }
-
-  // The messaging wrapping key lives outside the Dexie tables; wipe it too so
-  // sign-out/account switch leaves no key material behind. The teardown
-  // holds the messaging key lock, so no other tab reads or writes wrapped
-  // state between the clear and the key deletion, and every other tab's
-  // cached key is known stale afterwards.
-  await Promise.all(
-    tablesClearedOnIdentitySwitch(true)
-      .filter((table) => !KEY_WRAPPED_MESSAGING_TABLES.has(table.name))
-      .map((table) => table.clear()),
-  );
-  await tearDownMessagingKeys(clearKeyWrappedMessagingTables);
+  await Promise.all(tablesClearedOnIdentitySwitch(true).map((table) => table.clear()));
 }
 
 export async function clearPrivateData(): Promise<void> {
   if (!db.isOpen()) {
     await db.open();
   }
-
-  await Promise.all(
-    tablesClearedOnIdentitySwitch(false)
-      .filter((table) => !KEY_WRAPPED_MESSAGING_TABLES.has(table.name))
-      .map((table) => table.clear()),
-  );
-  await tearDownMessagingKeys(clearKeyWrappedMessagingTables);
+  await Promise.all(tablesClearedOnIdentitySwitch(false).map((table) => table.clear()));
 }
 
 /**
- * Completes a messaging key teardown that a sign-out left queued when its
- * tab closed before other tabs let it run. Called once the database is open.
+ * Removes the IndexedDB database the retired encrypted-messaging transport
+ * kept its wrapping key in. Best-effort and idempotent; a blocked delete
+ * (another tab still holds it open) is retried on the next boot.
  */
-export async function resumePendingMessagingTeardown(): Promise<void> {
-  await resumeMessagingKeyTeardown(clearKeyWrappedMessagingTables);
+export function deleteLegacyMessagingKeyring(): Promise<void> {
+  if (typeof indexedDB === 'undefined') return Promise.resolve();
+  return new Promise((resolve) => {
+    const request = indexedDB.deleteDatabase(LEGACY_MESSAGING_KEYRING_DB_NAME);
+    request.onsuccess = () => resolve();
+    request.onerror = () => resolve();
+    request.onblocked = () => resolve();
+  });
 }
 
 export async function resetDatabase(): Promise<void> {

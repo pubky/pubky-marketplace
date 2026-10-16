@@ -177,6 +177,21 @@ const optionalPositiveIntArrayFromString = (label: string) =>
     })
     .pipe(z.array(positiveIntValue).min(1).optional());
 
+const optionalHomeserverArrayFromString = (label: string) =>
+  z
+    .string()
+    .optional()
+    .transform((val, ctx) => {
+      if (val === undefined || val.trim() === '') return undefined;
+      try {
+        return parseJsonStringArray(val, label);
+      } catch (error) {
+        ctx.addIssue({ code: 'custom', message: `Invalid ${label} value: ${(error as Error).message}` });
+        return z.NEVER;
+      }
+    })
+    .pipe(z.array(homeserverValue).optional());
+
 /**
  * Optional-tier env strings: a missing OR empty/whitespace value means "unset".
  * The outer `.optional()` keeps the key optional in the OUTPUT type too, so the env-input
@@ -352,17 +367,62 @@ function validateAuctionDurationsEnvInput(
  * Upstream pubky/paykit-server rejects every `/setup` query parameter except
  * `return_to` and `state`, so `paykitServerApi=upstream` needs the creator
  * parameter explicitly off. Unset counts as on (the fork default) and fails.
+ * The other way round, the creator parameter off only fits upstream: the fork
+ * requires it, and a fork-mode Shop reads seller readiness from a route
+ * upstream Paykit does not serve, so it would offer initial setup to every
+ * seller.
  */
 function validatePaykitServerApiEnvInput(
   input: { paykitServerApi?: PaykitServerApi; paykitSetupCreatorParam?: boolean },
   ctx: z.RefinementCtx,
 ): void {
-  if (input.paykitServerApi !== 'upstream' || input.paykitSetupCreatorParam === false) return;
+  if (input.paykitServerApi === 'upstream') {
+    if (input.paykitSetupCreatorParam === false) return;
+    ctx.addIssue({
+      code: 'custom',
+      path: ['paykitSetupCreatorParam'],
+      message: `paykitServerApi=upstream requires ${PUBKY_RUNTIME_ENV_NAMES.paykitSetupCreatorParam}=false; upstream Paykit rejects the creator parameter.`,
+    });
+    return;
+  }
+  if (input.paykitSetupCreatorParam !== false) return;
   ctx.addIssue({
     code: 'custom',
-    path: ['paykitSetupCreatorParam'],
-    message: `paykitServerApi=upstream requires ${PUBKY_RUNTIME_ENV_NAMES.paykitSetupCreatorParam}=false; upstream Paykit rejects the creator parameter.`,
+    path: ['paykitServerApi'],
+    message: `${PUBKY_RUNTIME_ENV_NAMES.paykitSetupCreatorParam}=false requires ${PUBKY_RUNTIME_ENV_NAMES.paykitServerApi}=upstream; the fork Paykit needs the creator parameter.`,
   });
+}
+
+/** Production Pubky HTTP relay host. A staging deploy never hands it to a signer. */
+export const PRODUCTION_HTTP_RELAY_HOST = 'httprelay.pubky.app';
+
+/**
+ * A deployed staging container must name its own relay and FX source: the
+ * relay must not be production's, and the FX source has no default, because
+ * the schema default is production Blocktank. Strict (deployed) parse only;
+ * local dev keeps its staging defaults.
+ */
+function validateStagingEndpointsEnvInput(
+  input: { deployEnv?: DeployEnv; defaultHttpRelay?: string; exchangeRateApi?: string },
+  ctx: z.RefinementCtx,
+): void {
+  if (input.deployEnv !== 'staging') return;
+  if (input.exchangeRateApi === undefined) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['exchangeRateApi'],
+      message: `${PUBKY_RUNTIME_ENV_NAMES.deployEnv}=staging requires ${PUBKY_RUNTIME_ENV_NAMES.exchangeRateApi} to be explicitly set; staging never falls back to the production FX source.`,
+    });
+  }
+  if (input.defaultHttpRelay && URL.canParse(input.defaultHttpRelay)) {
+    if (new URL(input.defaultHttpRelay).hostname === PRODUCTION_HTTP_RELAY_HOST) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['defaultHttpRelay'],
+        message: `${PUBKY_RUNTIME_ENV_NAMES.deployEnv}=staging must not use the production HTTP relay (${PRODUCTION_HTTP_RELAY_HOST}) in ${PUBKY_RUNTIME_ENV_NAMES.defaultHttpRelay}.`,
+      });
+    }
+  }
 }
 
 /**
@@ -403,13 +463,15 @@ export const APP_RUNTIME_DEFAULTS = {
   paykitServerApi: 'fork' as PaykitServerApi,
   commerceAdapterMode: 'unavailable' as CommerceAdapterMode,
   commercePollIntervalMs: 2_000,
-  singleApprovalSignIn: true,
   marketplaceGrantFlowEnabled: false,
   marketplaceGrantPollMilliseconds: 1_000,
   passportSignIn: true,
   usdtPaymentsEnabled: false,
   frameAncestors: [] as string[],
   embedded: false,
+  privEncryptionKeys: false,
+  passportPrivEncryptionKeys: false,
+  privEncryptionKeysHomeservers: [] as string[],
   preludeSdkTimeoutMs: 5_000,
   previewImage: '/preview.webp',
   siteName: 'Pubky App',
@@ -499,6 +561,14 @@ export const runtimeConfigValueSchema = networkConfigValueSchema.extend({
    * `getMarketplaceNexusUrl`).
    */
   marketplaceNexusUrl: urlValue.optional(),
+  /**
+   * The inbox ping service used by chat for first contact and wake-ups.
+   * Absent means chat runs on homeserver streams and polling alone.
+   * `inboxAudience` is the audience string the deployment expects in
+   * session proofs; it defaults to `inboxUrl`.
+   */
+  inboxUrl: urlValue.optional(),
+  inboxAudience: nonEmptyStringValue.optional(),
   locksUrl: urlValue.default(APP_RUNTIME_DEFAULTS.locksUrl),
   paykitSetupUrl: urlValue.default(APP_RUNTIME_DEFAULTS.paykitSetupUrl),
   /**
@@ -512,13 +582,6 @@ export const runtimeConfigValueSchema = networkConfigValueSchema.extend({
   paykitServerApi: paykitServerApiValue.default(APP_RUNTIME_DEFAULTS.paykitServerApi),
   commerceAdapterMode: commerceAdapterModeValue.default(APP_RUNTIME_DEFAULTS.commerceAdapterMode),
   commercePollIntervalMs: positiveIntValue.default(APP_RUNTIME_DEFAULTS.commercePollIntervalMs),
-  /**
-   * Interim dual-POST ceremony (docs/ecommerce/single-approval.md). `false`
-   * restores the previous two-prompt path: `awaitApproval()` sign-in plus the
-   * empty-capability marketplace connect on first commerce. Runtime-rollback,
-   * never by POSTing empty capabilities to `/session`.
-   */
-  singleApprovalSignIn: z.boolean().default(APP_RUNTIME_DEFAULTS.singleApprovalSignIn),
   marketplaceGrantFlowEnabled: z.boolean().default(APP_RUNTIME_DEFAULTS.marketplaceGrantFlowEnabled),
   marketplaceGrantPollMilliseconds: positiveIntValue
     .min(750)
@@ -569,6 +632,32 @@ export const runtimeConfigValueSchema = networkConfigValueSchema.extend({
    * (see `getShopPublicPath`).
    */
   shopPublicPath: shopPublicPathValue.optional(),
+  /**
+   * Whether the Shop's grant sign-in asks the signer for the `e` action on
+   * `/priv/pubky.app/marketplace/` (priv-encryption Phase 4), so the user's
+   * data key is wrapped under a key only the signer can derive. Off by
+   * default: a homeserver without scoped-key support rejects the grant after
+   * the user has approved it. Also requires the deploy's homeserver to be
+   * listed in `privEncryptionKeysHomeservers`.
+   */
+  privEncryptionKeys: z.boolean().default(APP_RUNTIME_DEFAULTS.privEncryptionKeys),
+  /**
+   * Like `privEncryptionKeys`, for the Pubky Passport sign-in only. Passport
+   * (v1.2.0 and later) answers `e` with selective approval, so it can ask for
+   * scoped keys while signers that cannot answer `e` keep the plain grant.
+   * Off by default; also requires the deploy's homeserver to be listed in
+   * `privEncryptionKeysHomeservers`.
+   */
+  passportPrivEncryptionKeys: z.boolean().default(APP_RUNTIME_DEFAULTS.passportPrivEncryptionKeys),
+  /**
+   * Public keys (in the form of `homeserver`) of the homeservers known to run a release with
+   * scoped encryption keys. The homeserver does not advertise the capability
+   * in `/info`, so the operator lists it here once it is deployed. The `e`
+   * request is made only while the deploy's configured homeserver is listed.
+   */
+  privEncryptionKeysHomeservers: z
+    .array(homeserverValue)
+    .default([...APP_RUNTIME_DEFAULTS.privEncryptionKeysHomeservers]),
   /** Client id of the Shop's grant sign-in. Absent means `SHOP_GRANT_CLIENT_ID` in `src/config/app.ts`. */
   shopGrantClientId: shopGrantClientIdValue.optional(),
   preludeSdkKey: nonEmptyStringValue.optional(),
@@ -646,13 +735,14 @@ export const runtimeEnvInputSchema = z
     exchangeRateApi: optionalUrlFromString,
     marketplaceUrl: optionalUrlFromString,
     marketplaceNexusUrl: optionalUrlFromString,
+    inboxUrl: optionalUrlFromString,
+    inboxAudience: optionalTrimmedString,
     locksUrl: optionalUrlFromString,
     paykitSetupUrl: optionalUrlFromString,
     paykitSetupCreatorParam: optionalBooleanFromString,
     paykitServerApi: paykitServerApiValue.optional(),
     commerceAdapterMode: commerceAdapterModeValue.optional(),
     commercePollIntervalMs: optionalPositiveIntFromString,
-    singleApprovalSignIn: optionalBooleanFromString,
     marketplaceGrantFlowEnabled: optionalBooleanFromString,
     marketplaceGrantPollMilliseconds: optionalPositiveIntFromString,
     passportSignIn: optionalBooleanFromString,
@@ -662,6 +752,9 @@ export const runtimeEnvInputSchema = z
     embedded: optionalBooleanFromString,
     storageAdoptLegacy: optionalBooleanFromString,
     shopPublicPath: optionalShopPublicPathFromString,
+    privEncryptionKeys: optionalBooleanFromString,
+    passportPrivEncryptionKeys: optionalBooleanFromString,
+    privEncryptionKeysHomeservers: optionalHomeserverArrayFromString('PRIV_ENCRYPTION_KEYS_HOMESERVERS'),
     shopGrantClientId: optionalShopGrantClientIdFromString,
     preludeSdkKey: optionalTrimmedString,
     preludeSdkTimeoutMs: optionalPositiveIntFromString,
@@ -689,6 +782,7 @@ export const runtimeEnvInputSchema = z
   .superRefine(validateLocksPaykitEnvInput)
   .superRefine(validatePaykitServerApiEnvInput)
   .superRefine(validateAuctionDurationsEnvInput)
+  .superRefine(validateStagingEndpointsEnvInput)
   .pipe(runtimeConfigValueSchema);
 
 /**
@@ -747,13 +841,14 @@ export const runtimeEnvInputSchemaWithDefaults = z
     exchangeRateApi: optionalUrlFromString,
     marketplaceUrl: optionalUrlFromString,
     marketplaceNexusUrl: optionalUrlFromString,
+    inboxUrl: optionalUrlFromString,
+    inboxAudience: optionalTrimmedString,
     locksUrl: optionalUrlFromString,
     paykitSetupUrl: optionalUrlFromString,
     paykitSetupCreatorParam: optionalBooleanFromString,
     paykitServerApi: paykitServerApiValue.optional(),
     commerceAdapterMode: commerceAdapterModeValue.optional(),
     commercePollIntervalMs: optionalPositiveIntFromString,
-    singleApprovalSignIn: optionalBooleanFromString,
     marketplaceGrantFlowEnabled: optionalBooleanFromString,
     marketplaceGrantPollMilliseconds: optionalPositiveIntFromString,
     passportSignIn: optionalBooleanFromString,
@@ -763,6 +858,9 @@ export const runtimeEnvInputSchemaWithDefaults = z
     embedded: optionalBooleanFromString,
     storageAdoptLegacy: optionalBooleanFromString,
     shopPublicPath: optionalShopPublicPathFromString,
+    privEncryptionKeys: optionalBooleanFromString,
+    passportPrivEncryptionKeys: optionalBooleanFromString,
+    privEncryptionKeysHomeservers: optionalHomeserverArrayFromString('PRIV_ENCRYPTION_KEYS_HOMESERVERS'),
     shopGrantClientId: optionalShopGrantClientIdFromString,
     preludeSdkKey: optionalTrimmedString,
     preludeSdkTimeoutMs: optionalPositiveIntFromString,
@@ -840,13 +938,14 @@ export const PUBKY_RUNTIME_ENV_NAMES: Record<keyof RuntimeConfig, string> = {
   exchangeRateApi: 'PUBKY_RUNTIME_EXCHANGE_RATE_API',
   marketplaceUrl: 'PUBKY_RUNTIME_MARKETPLACE_URL',
   marketplaceNexusUrl: 'PUBKY_RUNTIME_MARKETPLACE_NEXUS_URL',
+  inboxUrl: 'PUBKY_RUNTIME_INBOX_URL',
+  inboxAudience: 'PUBKY_RUNTIME_INBOX_AUDIENCE',
   locksUrl: 'PUBKY_RUNTIME_LOCKS_URL',
   paykitSetupUrl: 'PUBKY_RUNTIME_PAYKIT_SETUP_URL',
   paykitSetupCreatorParam: 'PUBKY_RUNTIME_PAYKIT_SETUP_CREATOR_PARAM',
   paykitServerApi: 'PUBKY_RUNTIME_PAYKIT_SERVER_API',
   commerceAdapterMode: 'PUBKY_RUNTIME_COMMERCE_ADAPTER_MODE',
   commercePollIntervalMs: 'PUBKY_RUNTIME_COMMERCE_POLL_INTERVAL_MS',
-  singleApprovalSignIn: 'PUBKY_RUNTIME_SINGLE_APPROVAL_SIGN_IN',
   marketplaceGrantFlowEnabled: 'PUBKY_RUNTIME_MARKETPLACE_GRANT_FLOW_ENABLED',
   marketplaceGrantPollMilliseconds: 'PUBKY_RUNTIME_MARKETPLACE_GRANT_POLL_MILLISECONDS',
   passportSignIn: 'PUBKY_RUNTIME_PASSPORT_SIGN_IN',
@@ -856,6 +955,9 @@ export const PUBKY_RUNTIME_ENV_NAMES: Record<keyof RuntimeConfig, string> = {
   embedded: 'PUBKY_RUNTIME_EMBEDDED',
   storageAdoptLegacy: 'PUBKY_RUNTIME_STORAGE_ADOPT_LEGACY',
   shopPublicPath: 'PUBKY_RUNTIME_SHOP_PUBLIC_PATH',
+  privEncryptionKeys: 'PUBKY_RUNTIME_PRIV_ENCRYPTION_KEYS',
+  passportPrivEncryptionKeys: 'PUBKY_RUNTIME_PASSPORT_PRIV_ENCRYPTION_KEYS',
+  privEncryptionKeysHomeservers: 'PUBKY_RUNTIME_PRIV_ENCRYPTION_KEYS_HOMESERVERS',
   shopGrantClientId: 'PUBKY_RUNTIME_SHOP_GRANT_CLIENT_ID',
   preludeSdkKey: 'PUBKY_RUNTIME_PRELUDE_SDK_KEY',
   preludeSdkTimeoutMs: 'PUBKY_RUNTIME_PRELUDE_SDK_TIMEOUT_MS',

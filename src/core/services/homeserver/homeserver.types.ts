@@ -28,6 +28,13 @@ export type TGenerateAuthUrlResult = {
   cancelAuthFlow: () => void;
 };
 
+export type TGrantAuthUrlOptions = {
+  /** Ask for scoped encryption keys. Omitted: the deploy default for {@link TGrantAuthUrlOptions.signer}. */
+  withPrivKeys?: boolean;
+  /** The Pubky Passport sign-in, whose scoped-key default has its own runtime switch. */
+  signer?: 'passport';
+};
+
 export type TGenerateAuthTokenFlowResult = {
   authorizationUrl: string;
   awaitToken: () => Promise<AuthToken>;
@@ -91,12 +98,23 @@ export type THomeserverRequestParams = {
 
 export type THomeserverGetJsonIfFoundParams = {
   url: string;
+  /** Refuse (as `{ found: false, tooLarge: true }`) a body larger than this, before parsing it. */
+  maxBytes?: number;
   /** The URL recorded in error context and logs; defaults to `url`. Unpublished paths pass a redacted form. */
   logUrl?: string;
+  /**
+   * Treat a failure to reach the resource (unresolvable owner, network, 5xx)
+   * as `{ found: false, unreachable: true }` with a warning instead of an
+   * error. For probes of other users' public records, where absence and
+   * unreachability both mean "not now".
+   */
+  tolerateUnreachable?: boolean;
 };
 
 /** A GET that may find nothing: `json` is the parsed body, `undefined` for an empty or non-JSON one. */
-export type THomeserverJsonIfFound<T> = { found: false } | { found: true; json: T | undefined };
+export type THomeserverJsonIfFound<T> =
+  | { found: false; unreachable?: boolean; tooLarge?: boolean }
+  | { found: true; json: T | undefined };
 
 export type TPutBlobParams = {
   url: string;
@@ -127,6 +145,18 @@ export type THomeserverListAllParams = Pick<THomeserverListParams, 'baseDirector
 export type THomeserverUserEvent = {
   cursor: string;
   eventType: string;
+};
+
+/** A user event with the resource it touched: `owner` (z32) and absolute `path`. */
+export type THomeserverResourceEvent = THomeserverUserEvent & {
+  owner: string;
+  path: string;
+};
+
+/** Credentials the inbox service accepts: the grant JWS plus a client-signed custom proof. */
+export type THomeserverInboxCredentials = {
+  grant: string;
+  pop: string;
 };
 
 // Utility function parameter types

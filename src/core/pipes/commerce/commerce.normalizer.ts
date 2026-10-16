@@ -8,6 +8,7 @@ import {
   watchlistUriBuilder,
 } from 'pubky-app-specs';
 import { z } from 'zod';
+import { LISTING_CURRENCY_CODES } from '@/config/currencies';
 import {
   type CommerceCollectionRecord,
   commerceCollectionRecordSchema,
@@ -93,7 +94,7 @@ const commerceShippingPresetInputSchema = z
   .object({
     label: z.string().trim().min(1).max(100),
     priceMinor: z.number().int().positive().max(100_000_000),
-    currency: z.literal('USD'),
+    currency: z.enum(LISTING_CURRENCY_CODES),
     estimatedMinDays: z.number().int().min(0).max(365),
     estimatedMaxDays: z.number().int().min(0).max(365),
   })

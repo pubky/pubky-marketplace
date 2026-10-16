@@ -11,6 +11,7 @@ import {
   PAYMENT_WINDOW_ELAPSED_REASON,
 } from '@/libs/commerce/checkout-hold';
 import { buyerCheckoutStateLabel, formatRemainingHMmSs, reservedWhileYouPayCopy } from '@/libs/commerce/checkout-phase';
+import { mayPayInBitcoin, observedPaymentRail } from '@/libs/commerce/paykit-rail';
 import type { PaymentMethodKind } from '@/libs/commerce/payment-methods';
 import type { CommerceMoney } from '@/libs/commerce/transaction-contracts';
 
@@ -57,18 +58,26 @@ export const PAYMENT_CONFIRMED_WAITING_SELLER_COPY =
  * Paykit's `delivered` means the request was published for the buyer's
  * wallet, not that the wallet accepted it, so the copy says "sent".
  * Paykit sends only over an Encrypted Link, and Bitkit links only with saved
- * contacts, so the contact step belongs to the waiting copy, not this one.
+ * contacts, so the contact step stays visible while waiting, not in the sent state.
  */
-export const BITCOIN_WALLET_SENT_COPY = `Sent to your wallet. Open Bitkit to pay. If you have already sent the payment, this page updates as soon as the marketplace sees the transaction. ${CHECKOUT_HOLD_COPY.pendingBitcoinPaymentBuyer}`;
+export const BITCOIN_WALLET_SENT_COPY = 'Payment request sent. Open Bitkit to approve and pay.';
+
+export const BITCOIN_WALLET_SENT_HELP_COPY =
+  'After you pay, this page updates automatically. Let any pending payment finish, or resolve it in your wallet, before ordering again.';
+
+export const BITCOIN_WALLET_CONTACT_COPY = 'Make sure the seller is in your Bitkit contacts to receive the request.';
+
+export const BITCOIN_PAYMENT_EXPIRY_COPY = 'If the payment window ends, the item returns to stock.';
 
 export const BITCOIN_WALLET_WAITING_COPY =
-  "Waiting for your wallet. Keep Bitkit open so it can receive the payment request. Bitkit only receives requests from your contacts, so if the seller isn't one yet, add them in Bitkit.";
+  'Waiting for your wallet. Open Bitkit so it can receive the payment request.';
 
 const SEEN_REQUEST_STATES = new Set(['detected', 'awaiting_seller_confirmation', 'confirmed']);
 
 type BitcoinStatusOrder = {
   cancellationReason?: string | null;
   paymentMethod?: PaymentMethodKind | null;
+  paymentAsset?: string | null;
   paykitRequestState?: string | null;
   paykitDeliveryState?: string | null;
   holdExpiresAt?: string | null;
@@ -350,9 +359,10 @@ export const BITCOIN_BUYER_STATUS_TABLE: readonly BitcoinBuyerStatusRow[] = [
 ];
 
 function isBitcoinOrder(order: BitcoinStatusOrder): boolean {
-  // A USDT attempt also rides Paykit and may carry a request state; it is never a Bitcoin order.
-  if (order.paymentMethod === 'usdt') return false;
-  return order.paymentMethod === 'bitcoin' || order.paykitRequestState != null;
+  // A USDT payment also rides Paykit and may carry a request state; it is never a Bitcoin order.
+  const rail = observedPaymentRail(order);
+  if (rail === 'usdt') return false;
+  return rail === 'bitcoin' || order.paykitRequestState != null;
 }
 
 /** A chain confirmation the buyer projection actually records. */
@@ -396,7 +406,7 @@ export function bitcoinPaidConfirmation(
   order: BitcoinStatusOrder,
   payment: BitcoinStatusPayment,
 ): BitcoinPaidConfirmation | null {
-  if (order.paymentMethod !== 'bitcoin' || payment?.state !== 'confirmed') return null;
+  if (observedPaymentRail(order) !== 'bitcoin' || payment?.state !== 'confirmed') return null;
   const resolvedPaid = payment.resolutionOutcome === 'paid';
   const lateCompleted = !resolvedPaid && order.cancellationReason === PAYMENT_WINDOW_ELAPSED_REASON;
   const reviewedChainObservation = resolvedPaid && isChainObservationReviewReason(payment.reviewReason);
@@ -552,7 +562,8 @@ export function sellerBitcoinDecision(
   order: BitcoinStatusOrder,
   payment: BitcoinStatusPayment,
 ): 'confirm' | 'resolve' | null {
-  if (order.paymentMethod !== 'bitcoin') return null;
+  // A single-bind Paykit order in review with no rail observed (a payment on both rails) is resolved here too.
+  if (!mayPayInBitcoin(order)) return null;
   if (payment?.state === 'manual_review') return 'resolve';
   if (order.paykitRequestState === 'awaiting_seller_confirmation') return 'confirm';
   return null;

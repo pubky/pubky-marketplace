@@ -14,7 +14,7 @@ import {
   UserRoundPlus,
   UsersRound,
 } from 'lucide-react';
-import { getDmConversationRoute } from '@/app/routes';
+import { getChatRoute } from '@/app/routes';
 import { AvatarEmojiBadge } from '@/atoms/AvatarEmojiBadge/AvatarEmojiBadge';
 import { Button } from '@/atoms/Button/Button';
 import { Container } from '@/atoms/Container/Container';
@@ -72,7 +72,7 @@ export function ProfilePageHeader({ profile, actions, isOwnProfile = true, userI
   });
   const router = useRouter();
   const { requireAuth } = useRequireAuth();
-  const openDmConversation = () => requireAuth(() => router.push(getDmConversationRoute(userId)));
+  const openChat = () => requireAuth(() => router.push(getChatRoute(userId)));
   const formattedPublicKey = formatPublicKey({
     key: publicKey,
   });
@@ -287,15 +287,13 @@ export function ProfilePageHeader({ profile, actions, isOwnProfile = true, userI
                   )}
                 </Button>
               )}
-              {/* Direct message: opens the encrypted DM conversation page. The
-                  conversation surface itself reports the honest transport state
-                  (enable, counterparty not enrolled, handshake pending). */}
+              {/* Opens the private 1:1 conversation with this user. */}
               <Button
                 data-cy="profile-message-btn"
                 variant="secondary"
                 size="sm"
                 className={ACTION_BUTTON_GRID_CELL}
-                onClick={openDmConversation}
+                onClick={openChat}
               >
                 <MessageCircle className="size-4" />
                 {'Message'}

@@ -57,6 +57,51 @@ describe('MarketplaceFilters', () => {
     expect(useMarketplaceDisplayStore.getState().displayCurrency).toBe('BTC');
   });
 
+  it('starts on the currency the browser language suggests when the buyer has not chosen', () => {
+    vi.spyOn(window.navigator, 'languages', 'get').mockReturnValue(['de-CH', 'de']);
+    useMarketplaceDisplayStore.setState({ displayCurrency: null });
+
+    render(<MarketplaceFilters resultCount={8} />);
+
+    expect(screen.getByRole('combobox', { name: 'Display currency: Swiss francs' })).toHaveTextContent('CHF');
+    vi.restoreAllMocks();
+  });
+
+  it('keeps an explicit choice over the browser language', () => {
+    vi.spyOn(window.navigator, 'languages', 'get').mockReturnValue(['de-CH']);
+    useMarketplaceDisplayStore.setState({ displayCurrency: 'USD' });
+
+    render(<MarketplaceFilters resultCount={8} />);
+
+    expect(screen.getByRole('combobox', { name: 'Display currency: US dollars' })).toBeInTheDocument();
+    vi.restoreAllMocks();
+  });
+
+  it('offers every listing currency as a display currency and shows the chosen code', async () => {
+    const user = userEvent.setup();
+    render(<MarketplaceFilters resultCount={8} />);
+
+    await user.click(screen.getByRole('combobox', { name: 'Display currency: US dollars' }));
+    for (const name of [
+      'US dollars',
+      'Euros',
+      'Swiss francs',
+      'British pounds',
+      'Japanese yen',
+      'Canadian dollars',
+      'Australian dollars',
+      'Bitcoin',
+    ]) {
+      expect(screen.getByRole('option', { name })).toBeInTheDocument();
+    }
+    expect(screen.getAllByRole('option')).toHaveLength(8);
+
+    await user.click(screen.getByRole('option', { name: 'Japanese yen' }));
+
+    expect(useMarketplaceDisplayStore.getState().displayCurrency).toBe('JPY');
+    expect(screen.getByRole('combobox', { name: 'Display currency: Japanese yen' })).toHaveTextContent('JPY');
+  });
+
   it('clears active discovery filters without changing layout', async () => {
     const user = userEvent.setup();
     useCommerceStore.getState().setLayout('list');

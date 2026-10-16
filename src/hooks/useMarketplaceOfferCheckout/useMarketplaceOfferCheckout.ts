@@ -4,12 +4,12 @@ import { useRef, useState } from 'react';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import { isMarketplaceAwardCheckoutEligible } from '@/core/services/marketplace/marketplace-projections';
 import { useDeliveryKeyGate } from '@/hooks/useDeliveryKeyGate/useDeliveryKeyGate';
+import { checkDestinationCountry } from '@/hooks/useMarketplaceSellerShipsTo/useMarketplaceSellerShipsTo';
 import { BIND_FAIL_CANCEL_REASON, extractCheckoutOrderIds } from '@/libs/commerce/checkout-phase';
 import {
+  isPaykitUnavailableRefusal,
   MARKETPLACE_FAILURE_MESSAGES,
   marketplaceOfferCheckoutFailureMessage,
-  usdtOfferRefusalReason,
-  usdtRefusalKey,
 } from '@/libs/commerce/failure-messages';
 import type { PaymentMethodKind } from '@/libs/commerce/payment-methods';
 import { buildMarketplaceOrderAggregateId } from '@/libs/commerce/transaction-commands';
@@ -30,7 +30,7 @@ type DeliveryAddress = {
 
 export type MarketplaceOfferCheckoutResult =
   | { ok: true; orderId: string | null; boundOrder: MarketplaceOrder | null }
-  | { ok: false; code: string | null };
+  | { ok: false; code: string | null; paykitUnavailable?: boolean };
 
 export function useMarketplaceOfferCheckout(onCompleted?: () => Promise<void> | void) {
   const submittingRef = useRef(false);
@@ -82,6 +82,11 @@ export function useMarketplaceOfferCheckout(onCompleted?: () => Promise<void> | 
         | { deliveryAddressEnvelope: { keyId: string; envelope: string } } = { fulfillment: 'pickup' };
       if (deliveryAddress) {
         const sellerPubky = award.listing.sellerPubky;
+        const destinationError = await checkDestinationCountry(deliveryAddress.countryCode, [sellerPubky]);
+        if (destinationError) {
+          toast({ variant: 'error', description: destinationError });
+          return { ok: false, code: 'DESTINATION_COUNTRY' };
+        }
         const gate = await resolveKeys([sellerPubky]);
         if (!gate.ok) return { ok: false, code: 'DELIVERY_KEY' };
         const key = gate.keys.get(sellerPubky);
@@ -148,16 +153,16 @@ export function useMarketplaceOfferCheckout(onCompleted?: () => Promise<void> | 
             } catch {
               // Bind already failed; leftover expires on the hold clock.
             }
-            const usdtRefusal = usdtOfferRefusalReason(bindError);
-            if (usdtRefusal) {
-              CommerceController.rememberUsdtRefusal(usdtRefusalKey([award.listing.sellerPubky]), usdtRefusal);
-            }
             showPaymentMethodRefusalToast({
               error: bindError,
               fallback: MARKETPLACE_FAILURE_MESSAGES.checkout,
               onRetry,
             });
-            return { ok: false, code: 'BIND_FAILED' };
+            return {
+              ok: false,
+              code: 'BIND_FAILED',
+              ...(isPaykitUnavailableRefusal(bindError) ? { paykitUnavailable: true } : {}),
+            };
           }
         }
         await onCompleted?.();

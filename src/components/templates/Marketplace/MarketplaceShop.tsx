@@ -21,6 +21,7 @@ import {
 } from '@/hooks/useMarketplaceCatalog/useMarketplaceCatalog.utils';
 import { useMarketplaceMediaUrl } from '@/hooks/useMarketplaceMediaUrl/useMarketplaceMediaUrl';
 import { resolveSellerDeliveryTerms, sellerDeliveryTermsCopy } from '@/libs/commerce/seller-delivery-terms';
+import { formatShipsToCountries, shopShipsToCountries } from '@/libs/commerce/ships-to';
 import { ContentLayout } from '@/organisms/ContentLayout/ContentLayout';
 import { MarketplaceCommunityTags } from '@/organisms/Marketplace/MarketplaceCommunityTags';
 import { MarketplaceListingCard } from '@/organisms/Marketplace/MarketplaceListingCard';
@@ -76,6 +77,7 @@ export function MarketplaceShop({ sellerPubky }: { sellerPubky: string }) {
   // homeserver) must not leave a broken image; fall back like the cards do.
   const bannerUrl = useMarketplaceMediaUrl(shop?.record.bannerUrl);
   const avatarUrl = useMarketplaceMediaUrl(shop?.record.avatarUrl);
+  const shipsToCountries = shopShipsToCountries(shop?.record);
 
   return (
     <ContentLayout
@@ -170,6 +172,11 @@ export function MarketplaceShop({ sellerPubky }: { sellerPubky: string }) {
               }
             />
 
+            {shipsToCountries && (
+              <Typography as="p" className="text-sm text-muted-foreground" data-testid="marketplace-shop-ships-to">
+                Ships to: {formatShipsToCountries(shipsToCountries)}
+              </Typography>
+            )}
             <Typography as="p" className="text-sm text-muted-foreground" data-testid="marketplace-shop-delivery-terms">
               {sellerDeliveryTermsCopy(resolveSellerDeliveryTerms(shop.record))}
             </Typography>

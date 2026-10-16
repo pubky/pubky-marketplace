@@ -9,6 +9,7 @@ import type {
   MarketplaceOrderDigitalEvidence,
   MarketplaceSellerDigitalDelivery,
 } from '@/libs/commerce/digital';
+import { type PaykitRailStatus, paykitRailStatusFromHealth } from '@/libs/commerce/paykit-rail';
 import type {
   BindDeliveryAddress,
   PaymentMethodKind,
@@ -16,18 +17,19 @@ import type {
   SellerPaymentConfigOwnView,
 } from '@/libs/commerce/payment-methods';
 import type { MarketplacePickupReveal, MarketplaceSellerPickupDetails } from '@/libs/commerce/pickup';
-import type { MarketplacePrivKeysResult } from '@/libs/commerce/priv-keys';
+import type { MarketplacePrivKeysRead } from '@/libs/commerce/priv-keys';
 import {
   type MarketplaceCommand,
   type MarketplaceCommandResponse,
   marketplaceCommandResponseSchema,
 } from '@/libs/commerce/transaction-commands';
 import { commercePubkySchema } from '@/libs/commerce/transaction-contracts';
-import { AuthErrorCode, ClientErrorCode, ServerErrorCode } from '@/libs/error/error.codes';
+import { ClientErrorCode, ServerErrorCode } from '@/libs/error/error.codes';
 import { Err } from '@/libs/error/error.factories';
 import { safeFetch } from '@/libs/error/error.http';
 import { ErrorService } from '@/libs/error/error.types';
 import { PARSE_JSON_WITH_BODY_EXCERPT, parseResponseOrThrow } from '@/libs/http/response.utils';
+import { marketplaceSessionRequired } from './marketplace-approval-failure';
 import { reportMarketplaceNotificationInvalidTypes } from './marketplace-notification-diagnostics';
 import {
   type MarketplaceBidHistory,
@@ -249,11 +251,22 @@ export class MarketplaceGatewayService {
    * no attestor and no receipts worth exporting.
    */
   /** The owner's `/priv` data keys; none outside the durable service. */
-  static async getPrivKeys(actor: string): Promise<MarketplacePrivKeysResult> {
+  static async getPrivKeys(actor: string): Promise<MarketplacePrivKeysRead> {
     if (isDurableCommerceMode(getCommerceAdapterMode())) {
       return await MarketplaceTransactionService.getPrivKeys(actor);
     }
     return { kind: 'unavailable' };
+  }
+
+  /** Drops the service's copies of the owner's data keys once wrapped copies exist (Phase 4). */
+  static async releasePrivKeyCustody(
+    actor: string,
+    keyIds: readonly string[],
+  ): Promise<'released' | 'needs_reauth' | 'unavailable' | 'key_set_changed'> {
+    if (isDurableCommerceMode(getCommerceAdapterMode())) {
+      return await MarketplaceTransactionService.releasePrivKeyCustody(actor, keyIds);
+    }
+    return 'unavailable';
   }
 
   static async getReceiptAttestation(actor: string, receiptId: string) {
@@ -570,6 +583,12 @@ export class MarketplaceGatewayService {
     return health.usdtPayments?.available === true;
   }
 
+  /** The Paykit rail's state from the service's `/health`; unknown outside the durable service. */
+  static async getPaykitRailStatus(): Promise<PaykitRailStatus> {
+    if (!isDurableCommerceMode(getCommerceAdapterMode())) return 'unknown';
+    return paykitRailStatusFromHealth(await MarketplaceTransactionService.getHealth());
+  }
+
   /**
    * Seller-configurable payment methods — durable service only (the sandbox
    * has no payment rails). See `MarketplaceTransactionService` for the
@@ -693,10 +712,9 @@ export class MarketplaceGatewayService {
    */
   private static requireActor(operation: string, actor: string | null): string {
     if (actor) return actor;
-    throw Err.auth(
-      AuthErrorCode.SESSION_EXPIRED,
+    throw marketplaceSessionRequired(
       'A marketplace session is required. Sign in and approve the marketplace connection on your signer.',
-      { service: ErrorService.Marketplace, operation },
+      operation,
     );
   }
 

@@ -15,7 +15,8 @@ const { SELLER, row } = vi.hoisted(() => {
     aggregateId: `listing:${seller}_boots`,
     title: 'Vintage work boots',
     thumbUrl: null,
-    state: 'active',
+    state: 'available',
+    listingState: 'active',
     format: 'fixed_price',
     dropId: null,
     available: 4,
@@ -55,6 +56,7 @@ vi.mock('@/hooks/useMarketplaceInventory/useMarketplaceInventory', () => ({
     refresh: async () => undefined,
     setAvailable: async () => ({ status: 'updated', row: row() }),
     retrySync: async () => undefined,
+    relist: async () => true,
   }),
 }));
 
@@ -82,6 +84,8 @@ vi.mock('@/hooks/useMarketplaceInventoryImport/useMarketplaceInventoryImport', (
     busy: false,
     reset: () => {},
     planFile: async () => undefined,
+    submitStoreUrl: async () => false,
+    storeForm: { control: {} },
     publish: async () => undefined,
     resume: async () => undefined,
     confirmConflict: async () => undefined,
@@ -134,6 +138,32 @@ describe('MarketplaceInventory VRT', () => {
     const screen = await renderForVRT(<MarketplaceInventory />, { viewport: VRT_VIEWPORT_MOBILE, disableHover: true });
     await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot(
       'inventory-populated-reserved-mobile',
+      VRT_DENSE_CHROME_SCREENSHOT,
+    );
+  });
+
+  it('renders a paused listing with Relist at desktop viewport', async () => {
+    view.isLoading = false;
+    view.load = {
+      status: 'ready',
+      rows: [
+        row(),
+        row({
+          listingId: 'lamp',
+          aggregateId: `listing:${SELLER}_lamp`,
+          title: 'Brass desk lamp',
+          listingState: 'paused',
+          reserved: 0,
+          available: 3,
+          sold: 0,
+          total: 3,
+        }),
+      ],
+    };
+    view.conflictListingId = null;
+    const screen = await renderForVRT(<MarketplaceInventory />, { viewport: VRT_VIEWPORT_DESKTOP, disableHover: true });
+    await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot(
+      'inventory-paused-relist-desktop',
       VRT_DENSE_CHROME_SCREENSHOT,
     );
   });

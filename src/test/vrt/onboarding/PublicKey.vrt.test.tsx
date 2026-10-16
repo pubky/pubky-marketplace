@@ -51,6 +51,8 @@ vi.mock('@/molecules/Toaster/use-toast', () => ({
 vi.mock('@/stores/auth/auth.store', () => ({
   useAuthStore: createZustandLikeHook({
     currentUserPubky: 'vrt000000000000000000000000000000000000000000alice01',
+    // Generating a key precedes signup; no homeserver session exists yet.
+    session: null,
     hasHydrated: true,
   }),
 }));

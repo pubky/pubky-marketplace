@@ -82,7 +82,7 @@ export class MarketplaceNotificationNormalizer {
   static toDeepLink(type: MarketplaceNotification['type'], aggregateId: string): string {
     switch (type) {
       case 'message_received':
-        return MARKETPLACE_ROUTES.MESSAGES;
+        return APP_ROUTES.MESSAGES;
       case 'offer_received':
       case 'offer_countered':
       case 'offer_accepted':
@@ -105,6 +105,7 @@ export class MarketplaceNotificationNormalizer {
       case 'order_cancelled':
       case 'order_cancelled_terms_change':
       case 'order_shipped':
+      case 'tracking_updated':
       case 'order_delivery_assumed':
       case 'order_delivered':
       case 'order_completed':

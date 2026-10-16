@@ -96,14 +96,18 @@ vi.mock('@/stores/hot/hot.store', () => ({
 
 vi.mock('@/stores/auth/auth.store', async () => {
   const f = await fixtures;
+  const { mockGrantSession } = await import('@/test-utils/pubky');
+  const session = mockGrantSession(f.viewerPubky);
   return {
     useAuthStore: createZustandLikeHook({
       currentUserPubky: f.viewerPubky,
+      session,
       sessionExport: null,
       hasProfile: true,
       hasHydrated: true,
       isRestoringSession: false,
       selectCurrentUserPubky: () => f.viewerPubky,
+      selectSession: () => session,
     }),
   };
 });

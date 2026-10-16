@@ -1,8 +1,10 @@
 import type { PaykitServerApi } from '@/libs/runtime-config/runtime-config.schema';
 import { formatCommerceMoney } from './format';
+import { mayPayInBitcoin, observedPaymentRail } from './paykit-rail';
 import type { PaymentMethodKind } from './payment-methods';
 import { formatBitcoinAmount, hasSameAsset, isBitcoinAsset, MAX_BITCOIN_BASE_UNITS } from './pricing';
 import type { CommerceMoney } from './transaction-contracts';
+import { usdtRefundCap } from './usdt-refund';
 
 /**
  * On the fork Paykit server a Bitcoin payment adds a random 1–999 sat amount
@@ -13,25 +15,19 @@ import type { CommerceMoney } from './transaction-contracts';
  * equal the price, so the request is for exactly the price.
  */
 export const BITCOIN_PAYMENT_CODE_MIN_SATS = 1;
-export const BITCOIN_PAYMENT_CODE_MAX_SATS = 999;
 
-export const BITCOIN_PAYMENT_CODE_CHECKOUT_NOTE =
-  'The payment adds a small unique amount of 1–999 sats. The exact amount appears when you place the order.';
-
-/** The checkout heads-up about the payment code, only where the deployment adds one. */
-export function bitcoinPaymentCodeCheckoutNote(paykitServerApi: PaykitServerApi): string | null {
-  return paykitServerApi === 'fork' ? BITCOIN_PAYMENT_CODE_CHECKOUT_NOTE : null;
+export function bitcoinPaymentCodeCheckoutNote(api: PaykitServerApi): string | null {
+  return api === 'fork' ? 'Bitcoin payments include an extra ₿1–₿999 to help the seller match your payment.' : null;
 }
 
-/** Says what the payment code line of the amount breakdown is, with the figure drawn for this order. */
-export function bitcoinPaymentCodeExplanation(paymentCode: CommerceMoney): string {
-  return `Payment code ${formatBitcoinAwareMoney(paymentCode)}: a small unique amount (${BITCOIN_PAYMENT_CODE_MIN_SATS}–${BITCOIN_PAYMENT_CODE_MAX_SATS} sats) added so the seller's wallet can match your payment. It is included in the total you send.`;
-}
+export const BITCOIN_PAYMENT_CODE_EXPLANATION = 'The payment code helps the seller match your payment.';
 
 const SATOSHI: CommerceMoney = { amountMinor: 0, currency: 'SAT', exponent: 0 };
 
 export type BitcoinPaymentOrder = {
   paymentMethod?: PaymentMethodKind | null;
+  paymentAsset?: string | null;
+  paymentAmountMinor?: number | null;
   subtotal: CommerceMoney;
   shipping: CommerceMoney;
   total?: CommerceMoney;
@@ -75,12 +71,14 @@ export type OrderAmountEntry = {
  * the order total's own currency and exponent.
  */
 export function orderAmountEntry(order: BitcoinPaymentOrder & { total: CommerceMoney }): OrderAmountEntry {
+  const usdtCap = usdtRefundCap(order);
+  if (usdtCap) return { amountMinor: usdtCap.amountMinor, exponent: usdtCap.exponent, unitLabel: 'USDT' };
   const breakdown = bitcoinPaymentBreakdown(order);
   if (breakdown) {
     const sats = satoshiCount(breakdown.payable);
     if (sats !== null) return { amountMinor: sats, exponent: 0, unitLabel: '₿' };
   }
-  if (order.paymentMethod === 'bitcoin') {
+  if (observedPaymentRail(order) === 'bitcoin') {
     const sats = satoshiCount(order.total);
     if (sats !== null) return { amountMinor: sats, exponent: 0, unitLabel: '₿' };
   }
@@ -109,7 +107,7 @@ function payableSats(order: BitcoinPaymentOrder): number | null {
  * rail, and when the parts would not add up.
  */
 export function bitcoinPaymentBreakdown(order: BitcoinPaymentOrder): BitcoinPaymentBreakdown | null {
-  if (order.paymentMethod !== 'bitcoin') return null;
+  if (!mayPayInBitcoin(order)) return null;
   const payable = payableSats(order);
   if (payable === null) return null;
 

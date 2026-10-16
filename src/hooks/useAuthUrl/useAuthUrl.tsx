@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Session } from '@synonymdev/pubky';
 import { AuthController } from '@/controllers/auth/auth';
+import { SIGN_IN_FAILED_MESSAGE, SIGN_IN_LINK_FAILED_MESSAGE, signInErrorCopy } from '@/libs/auth/sign-in-error-copy';
 import { AuthErrorCode } from '@/libs/error/error.codes';
 import {
   getWrongEnvironmentHomeserverMessage,
@@ -39,6 +40,7 @@ export function useAuthUrl(options: UseAuthUrlOptions = {}): UseAuthUrlReturn {
   const autoFetch = options.autoFetch ?? true;
   const type = options.type ?? 'signin';
   const inviteCode = options.type === 'signup' ? options.inviteCode : '';
+  const withPrivKeys = options.type === 'grant' ? options.withPrivKeys : undefined;
 
   const [url, setUrl] = useState('');
   const [isLoading, setIsLoading] = useState(autoFetch);
@@ -56,7 +58,9 @@ export function useAuthUrl(options: UseAuthUrlOptions = {}): UseAuthUrlReturn {
         type === 'signup'
           ? await AuthController.getSignupAuthUrl(inviteCode)
           : type === 'grant'
-            ? await AuthController.getGrantAuthUrl()
+            ? await (withPrivKeys === undefined
+                ? AuthController.getGrantAuthUrl()
+                : AuthController.getGrantAuthUrl({ withPrivKeys }))
             : await AuthController.getAuthUrl();
 
       awaitApproval
@@ -75,7 +79,9 @@ export function useAuthUrl(options: UseAuthUrlOptions = {}): UseAuthUrlReturn {
             }
             toast({
               variant: 'error',
-              description: isWrongEnvironment ? getWrongEnvironmentHomeserverMessage() : 'Sign in failed. Try again.',
+              description: isWrongEnvironment
+                ? getWrongEnvironmentHomeserverMessage()
+                : signInErrorCopy(error, SIGN_IN_FAILED_MESSAGE),
             });
             if (isMountedRef.current) {
               setUrl('');
@@ -104,24 +110,21 @@ export function useAuthUrl(options: UseAuthUrlOptions = {}): UseAuthUrlReturn {
       if (!isMountedRef.current) return;
       setUrl(authorizationUrl ?? '');
     } catch (error) {
-      Logger.error('Failed to generate auth URL:', error);
+      if (!isAppError(error)) Logger.error('Failed to generate auth URL:', error);
       if (!isMountedRef.current) return;
-      // The Bitkit grant sign-in needs WebCrypto algorithms older browsers lack; it sits beside a
-      // Pubky Ring option, so fail it quietly into its reload state instead of an error toast.
-      if (type === 'grant') {
-        setIsExpired(true);
-        return;
-      }
+      setIsExpired(true);
+      // Another sign-in took over while this link was being made; it owns the page.
+      if (isAuthFlowCanceled(error)) return;
       toast({
         variant: 'error',
-        description: 'Could not generate QR. Refresh and try again.',
+        description: signInErrorCopy(error, SIGN_IN_LINK_FAILED_MESSAGE),
       });
     } finally {
       if (isMountedRef.current) {
         setIsLoading(false);
       }
     }
-  }, [type, inviteCode]);
+  }, [type, inviteCode, withPrivKeys]);
 
   const copyAuthUrl = useCallback(async (): Promise<void> => {
     if (!url) return;

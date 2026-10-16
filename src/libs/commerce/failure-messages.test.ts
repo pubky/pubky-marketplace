@@ -11,13 +11,12 @@ import {
   marketplaceCheckoutRefusalMessage,
   marketplaceDropRefusalMessage,
   marketplaceFailureMessage,
+  marketplaceListingNotActiveMessage,
   marketplaceOfferCheckoutFailureMessage,
   marketplaceOfferFailureMessage,
   marketplacePaymentMethodFailureMessage,
   marketplacePaymentMethodReasonMessage,
-  USDT_PAYMENT_METHOD_REASON_MESSAGES,
-  usdtOfferRefusalReason,
-  usdtRefusalKey,
+  PAYKIT_PAYMENT_METHOD_REASON_MESSAGES,
 } from './failure-messages';
 
 describe('marketplaceFailureMessage', () => {
@@ -115,6 +114,11 @@ describe('marketplaceCheckoutRefusalMessage', () => {
       'Only available fixed-price listings can enter checkout.',
       'This listing is not available for checkout.',
     ],
+    [
+      'UPSTREAM_UNAVAILABLE',
+      "The seller's homeserver could not be reached. Try again shortly.",
+      "We couldn't reach the seller's shop. Try again in a moment.",
+    ],
   ] as const;
 
   it.each(mappedRefusals)('maps %s refusal %s to static copy', (code, message, expected) => {
@@ -136,6 +140,21 @@ describe('marketplaceCheckoutRefusalMessage', () => {
 });
 
 describe('marketplacePaymentMethodFailureMessage', () => {
+  it('names a removed listing on a bind refused with LISTING_NOT_ACTIVE', () => {
+    const removedCopy = marketplaceListingNotActiveMessage({ code: 'LISTING_NOT_ACTIVE', reason: 'listing_removed' });
+    const error = new AppError({
+      category: ErrorCategory.Client,
+      code: ClientErrorCode.CONFLICT,
+      message: 'SENTINEL_PAYMENT_METHOD_WIRE',
+      service: ErrorService.Marketplace,
+      operation: 'bindPaymentMethod',
+      context: { statusCode: 409, serviceCode: 'LISTING_NOT_ACTIVE', reason: 'listing_removed' },
+    });
+    expect(removedCopy).toBe('The seller removed this listing.');
+    expect(marketplacePaymentMethodFailureMessage(error, 'fallback')).toBe(removedCopy);
+    expect(marketplacePaymentMethodReasonMessage('listing_removed')).toBe(removedCopy);
+  });
+
   it('maps a capability_required family from the service code', () => {
     const error = new AppError({
       category: ErrorCategory.Client,
@@ -201,7 +220,7 @@ describe('marketplacePaymentMethodFailureMessage', () => {
       context: { statusCode: 503, reason: 'paykit_unavailable' },
     });
     expect(marketplacePaymentMethodFailureMessage(unavailable, 'fallback')).toBe(
-      'Bitcoin payment requests are unavailable right now. If you haven’t set up Bitkit for this Pubky account yet, do that first. Then try again shortly.',
+      'Paykit is temporarily unreachable, retrying…',
     );
   });
 
@@ -224,7 +243,7 @@ describe('marketplacePaymentMethodFailureMessage', () => {
       ],
       [
         'buyer_paykit_wallet_required',
-        'Connect Bitkit to pay with Bitcoin: this account has no Paykit wallet that can receive a payment request.',
+        'Connect Bitkit to pay with Bitcoin: this pubky has no Paykit wallet that can receive a payment request.',
       ],
       [
         'buyer_paykit_wallet_setup_needed',
@@ -239,10 +258,7 @@ describe('marketplacePaymentMethodFailureMessage', () => {
         'paykit_expiry_inconsistent',
         'The Bitcoin payment window didn’t match this checkout, so Bitcoin wasn’t started. Try again, or choose another payment method.',
       ],
-      [
-        'paykit_unavailable',
-        'Bitcoin payment requests are unavailable right now. If you haven’t set up Bitkit for this Pubky account yet, do that first. Then try again shortly.',
-      ],
+      ['paykit_unavailable', 'Paykit is temporarily unreachable, retrying…'],
     ])('maps the %s refusal to static buyer copy', (reason, copy) => {
       const message = marketplacePaymentMethodFailureMessage(bindRefusal(reason), 'fallback');
       expect(message).toBe(copy);
@@ -262,47 +278,62 @@ describe('marketplacePaymentMethodFailureMessage', () => {
     });
   });
 
-  describe('USDT bind refusals', () => {
-    const usdtRefusal = (reason: string) =>
+  describe('Paykit bind refusals', () => {
+    const paykitRefusal = (reason: string) =>
       new AppError({
         category: ErrorCategory.Client,
         code: ClientErrorCode.BAD_REQUEST,
         message: 'SENTINEL_SERVER_TEXT',
         service: ErrorService.Marketplace,
         operation: 'bindPaymentMethod',
-        context: { statusCode: 409, reason, paymentMethod: 'usdt' },
+        context: { statusCode: 409, reason, paymentMethod: 'paykit' },
       });
 
     it.each([
-      ['usdt_unavailable', "USDT payments aren't available right now. Choose another payment method."],
       [
-        'usdt_seller_not_ready',
-        "This seller can't take USDT right now. Choose another payment method, or contact the seller.",
-      ],
-      [
-        'buyer_usdt_wallet_required',
-        "Your wallet doesn't support USDT yet. Pay with a Bitkit version that supports USDT, or choose another payment method.",
+        'auction_payment_window_too_short',
+        'Too little time is left on this auction win to pay with Paykit. Choose another payment method, or message the seller.',
       ],
       [
         'buyer_paykit_wallet_required',
-        'Connect Bitkit to pay with USDT: this account has no Paykit wallet that can receive a payment request.',
+        'Connect Bitkit to pay with Paykit: this pubky has no Paykit wallet that can receive a payment request.',
       ],
-      ['paykit_rejected', 'The USDT payment request was refused. Try again, or choose another payment method.'],
       [
-        'paykit_unavailable',
-        'USDT payment requests are unavailable right now. If you haven’t set up Bitkit for this Pubky account yet, do that first. Then try again shortly.',
+        'paykit_expiry_inconsistent',
+        'The payment window didn’t match this checkout, so Paykit wasn’t started. Try again, or choose another payment method.',
       ],
+      ['paykit_rejected', 'The Paykit payment request was refused. Try again, or choose another payment method.'],
+      [
+        'paykit_total_inconsistent',
+        'The amount didn’t match this checkout, so Paykit wasn’t started. Try again, or choose another payment method.',
+      ],
+      ['paykit_unavailable', 'Paykit is temporarily unreachable, retrying…'],
       [
         'seller_account_unclaimed',
-        "This seller can't take USDT right now. Choose another payment method, or contact the seller.",
+        'This seller can’t take Paykit payments right now. Choose another payment method, or contact the seller.',
       ],
-    ])('maps the %s refusal to USDT copy that never names Bitcoin', (reason, copy) => {
-      const message = marketplacePaymentMethodFailureMessage(usdtRefusal(reason), 'fallback');
+      [
+        'seller_setup_pending',
+        'This seller’s Paykit setup isn’t finished, so they can’t take a payment yet. Choose another payment method, or contact the seller.',
+      ],
+      ['bitcoin_unavailable', 'Paykit payments are not available for this seller.'],
+      ['invalid_sats', 'Enter a whole-number amount greater than zero.'],
+      [
+        'buyer_usdt_wallet_required',
+        'Your Bitkit does not support the asset this seller offers yet. Update Bitkit, or choose another payment method.',
+      ],
+      [
+        'usdt_seller_not_ready',
+        'This seller can’t take Paykit payments right now. Choose another payment method, or contact the seller.',
+      ],
+      ['usdt_unavailable', 'Paykit payments aren’t available right now. Choose another payment method.'],
+    ])('maps the %s refusal to Paykit copy that names neither Bitcoin nor USDT', (reason, copy) => {
+      const message = marketplacePaymentMethodFailureMessage(paykitRefusal(reason), 'fallback');
       expect(message).toBe(copy);
-      expect(message).not.toMatch(/Bitcoin|SENTINEL/);
+      expect(message).not.toMatch(/Bitcoin|USDT|₿|\bsats?\b|SENTINEL/i);
     });
 
-    it('keeps the Bitcoin string for the same reason on a Bitcoin bind', () => {
+    it('keeps the Bitcoin string for the same reason on a legacy Bitcoin bind', () => {
       const bitcoinBind = new AppError({
         category: ErrorCategory.Client,
         code: ClientErrorCode.BAD_REQUEST,
@@ -312,46 +343,13 @@ describe('marketplacePaymentMethodFailureMessage', () => {
         context: { statusCode: 409, reason: 'buyer_paykit_wallet_required' },
       });
       expect(marketplacePaymentMethodFailureMessage(bitcoinBind, 'fallback')).toBe(
-        'Connect Bitkit to pay with Bitcoin: this account has no Paykit wallet that can receive a payment request.',
+        'Connect Bitkit to pay with Bitcoin: this pubky has no Paykit wallet that can receive a payment request.',
       );
     });
 
-    it.each(['usdt_unavailable', 'usdt_seller_not_ready'] as const)(
-      'reads %s on a USDT bind as an offer refusal',
-      (reason) => {
-        expect(usdtOfferRefusalReason(usdtRefusal(reason))).toBe(reason);
-      },
-    );
-
-    it.each(['buyer_usdt_wallet_required', 'paykit_rejected', 'paykit_unavailable', 'seller_account_unclaimed'])(
-      'does not read %s as an offer refusal: another try can succeed or the buyer can act',
-      (reason) => {
-        expect(usdtOfferRefusalReason(usdtRefusal(reason))).toBeNull();
-      },
-    );
-
-    it('never reads a refusal on another rail, or a plain error, as a USDT offer refusal', () => {
-      const bitcoinBind = new AppError({
-        category: ErrorCategory.Client,
-        code: ClientErrorCode.BAD_REQUEST,
-        message: 'SENTINEL',
-        service: ErrorService.Marketplace,
-        operation: 'bindPaymentMethod',
-        context: { statusCode: 409, reason: 'usdt_unavailable' },
-      });
-      expect(usdtOfferRefusalReason(bitcoinBind)).toBeNull();
-      expect(usdtOfferRefusalReason(new Error('usdt_unavailable'))).toBeNull();
-      expect(usdtOfferRefusalReason(undefined)).toBeNull();
-    });
-
-    it('keys a refusal by the distinct sellers of the checkout', () => {
-      expect(usdtRefusalKey(['s'])).toBe('s');
-      expect(usdtRefusalKey(['a', 'b', 'a'])).toBe('a|b');
-    });
-
-    it('reads the rail from the bind when the service error is built', () => {
-      expect(marketplacePaymentMethodReasonMessage('paykit_rejected', 'usdt')).toBe(
-        'The USDT payment request was refused. Try again, or choose another payment method.',
+    it('reads the method from the bind when the service error is built', () => {
+      expect(marketplacePaymentMethodReasonMessage('paykit_rejected', 'paykit')).toBe(
+        'The Paykit payment request was refused. Try again, or choose another payment method.',
       );
       expect(marketplacePaymentMethodReasonMessage('paykit_rejected', 'bitcoin')).toBe(
         'The Bitcoin payment request was refused. Try again, or choose another payment method.',
@@ -367,12 +365,23 @@ describe('marketplacePaymentMethodFailureMessage', () => {
       );
     });
 
-    it('adds exactly the USDT reasons to the closed set, each with a USDT override only where a Bitcoin string exists', () => {
-      for (const reason of ['usdt_unavailable', 'usdt_seller_not_ready', 'buyer_usdt_wallet_required']) {
-        expect(MARKETPLACE_PAYMENT_METHOD_REASON_MESSAGES.has(reason)).toBe(true);
-        expect(USDT_PAYMENT_METHOD_REASON_MESSAGES.has(reason)).toBe(false);
+    it('overrides every reason whose main-table copy names one rail, so the neutral entry never names one', () => {
+      for (const [reason, copy] of MARKETPLACE_PAYMENT_METHOD_REASON_MESSAGES) {
+        if (/Bitcoin|USDT|₿|\bsats?\b/i.test(copy)) {
+          expect(PAYKIT_PAYMENT_METHOD_REASON_MESSAGES.has(reason), reason).toBe(true);
+        }
       }
-      for (const reason of USDT_PAYMENT_METHOD_REASON_MESSAGES.keys()) {
+    });
+
+    it('keeps the legacy Bitcoin copy for a bitcoin bind of a rail-naming reason', () => {
+      expect(marketplacePaymentMethodReasonMessage('bitcoin_unavailable', 'bitcoin')).toBe(
+        'Bitcoin payments are not available for this seller.',
+      );
+    });
+
+    it('overrides only reasons the main table words for a rail', () => {
+      for (const reason of PAYKIT_PAYMENT_METHOD_REASON_MESSAGES.keys()) {
+        if (reason === 'seller_setup_pending') continue;
         expect(MARKETPLACE_PAYMENT_METHOD_REASON_MESSAGES.has(reason)).toBe(true);
       }
       for (const [reason, copy] of MARKETPLACE_PAYMENT_METHOD_REASON_MESSAGES) {
@@ -400,7 +409,7 @@ describe('marketplacePaymentMethodFailureMessage', () => {
     });
 
     it('keeps the reader wallet setup refusal rail-neutral', () => {
-      expect(isReaderWalletSetupNeeded(usdtRefusal('buyer_paykit_wallet_setup_needed'))).toBe(true);
+      expect(isReaderWalletSetupNeeded(paykitRefusal('buyer_paykit_wallet_setup_needed'))).toBe(true);
     });
   });
 
@@ -414,7 +423,7 @@ describe('marketplacePaymentMethodFailureMessage', () => {
       context: { statusCode: 409, reason: 'buyer_paykit_wallet_required' },
     });
     expect(marketplacePaymentMethodFailureMessage(error, 'fallback')).toBe(
-      'Connect Bitkit to pay with Bitcoin: this account has no Paykit wallet that can receive a payment request.',
+      'Connect Bitkit to pay with Bitcoin: this pubky has no Paykit wallet that can receive a payment request.',
     );
   });
 
@@ -558,10 +567,7 @@ describe('Bitkit purchase bootstrap reason codes', () => {
     ['flow_expired', 'This approval expired. Start again.'],
     ['flow_cancelled', 'Approval cancelled.'],
     ['result_denied', 'This approval could not be completed. Start again.'],
-    [
-      'identity_mismatch',
-      "This approval came from a different account. Approve with the account you're signed in with.",
-    ],
+    ['identity_mismatch', 'This approval came from a different pubky. Approve with your current pubky.'],
     ['fresh_approval_required', 'Approve again in Bitkit.'],
     ['flow_binding_missing', 'This approval belongs to another tab. Start again here.'],
     ['flow_binding_denied', 'This approval belongs to another tab. Start again here.'],
@@ -590,5 +596,36 @@ describe('Bitkit purchase bootstrap reason codes', () => {
 
   it('an unknown bootstrap code falls back to static copy, never the code', () => {
     expect(marketplaceBootstrapFailureMessage('something_new')).toBe(MARKETPLACE_FAILURE_MESSAGES.sessionStart);
+  });
+});
+
+describe('marketplaceListingNotActiveMessage', () => {
+  it.each([
+    ['listing_paused', 'The seller paused this listing. Check back later.'],
+    ['listing_ended', 'This listing has ended.'],
+    ['listing_removed', 'The seller removed this listing.'],
+    ['listing_not_active', "This item isn't for sale right now."],
+  ] as const)('maps reason %s to static copy', (reason, expected) => {
+    expect(
+      marketplaceListingNotActiveMessage({
+        code: 'LISTING_NOT_ACTIVE',
+        message: 'The seller is not selling this listing right now.',
+        reason,
+      } as { code: string; reason: string }),
+    ).toBe(expected);
+  });
+
+  it('falls back to not-for-sale copy for a missing or unknown reason', () => {
+    expect(marketplaceListingNotActiveMessage({ code: 'LISTING_NOT_ACTIVE' })).toBe(
+      "This item isn't for sale right now.",
+    );
+    expect(marketplaceListingNotActiveMessage({ code: 'LISTING_NOT_ACTIVE', reason: 'listing_archived' })).toBe(
+      "This item isn't for sale right now.",
+    );
+  });
+
+  it('returns null for any other code', () => {
+    expect(marketplaceListingNotActiveMessage({ code: 'INVALID_STATE', reason: 'listing_paused' })).toBeNull();
+    expect(marketplaceListingNotActiveMessage({ code: 'UPSTREAM_UNAVAILABLE' })).toBeNull();
   });
 });

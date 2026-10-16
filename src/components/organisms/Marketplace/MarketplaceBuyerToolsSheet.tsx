@@ -11,7 +11,7 @@ import {
   ReceiptText,
   ShoppingCart,
 } from 'lucide-react';
-import { MARKETPLACE_ROUTES } from '@/app/routes';
+import { APP_ROUTES, MARKETPLACE_ROUTES } from '@/app/routes';
 import { Badge } from '@/atoms/Badge/Badge';
 import { Button } from '@/atoms/Button/Button';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/atoms/Sheet/Sheet';
@@ -32,7 +32,7 @@ type MarketplaceBuyerTool = {
 };
 
 const MARKETPLACE_BUYER_TOOLS: MarketplaceBuyerTool[] = [
-  { label: 'Messages', href: MARKETPLACE_ROUTES.MESSAGES, icon: MessageCircle },
+  { label: 'Messages', href: APP_ROUTES.MESSAGES, icon: MessageCircle },
   { label: 'Offers', href: MARKETPLACE_ROUTES.OFFERS, icon: HandCoins },
   { label: 'Watchlist', href: MARKETPLACE_ROUTES.WATCHLIST, icon: Heart },
   { label: 'Cart', href: MARKETPLACE_ROUTES.CART, icon: ShoppingCart, countKey: 'cart' },

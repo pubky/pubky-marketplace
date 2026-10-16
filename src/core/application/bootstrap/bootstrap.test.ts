@@ -7,7 +7,7 @@ import { MuteApplication } from '@/application/mute/mute';
 import { UserApplication } from '@/application/user/user';
 import { getModerationId } from '@/config/moderation';
 import { TtlCoordinator } from '@/coordinators/ttl/ttl';
-import { ClientErrorCode, ServerErrorCode } from '@/libs/error/error.codes';
+import { ServerErrorCode } from '@/libs/error/error.codes';
 import { Err } from '@/libs/error/error.factories';
 import { ErrorCategory, ErrorService } from '@/libs/error/error.types';
 import { HttpMethod, HttpStatusCode } from '@/libs/http/http.types';
@@ -148,7 +148,7 @@ type MockConfig = {
 
 type ServiceMocks = {
   nexusFetch: unknown;
-  homeserverRequest: unknown;
+  homeserverRead: unknown;
   fetchMutedUsers: unknown;
   fetchFeeds: unknown;
   persistUsers: unknown;
@@ -191,10 +191,12 @@ const setupMocks = (config: MockConfig = {}): ServiceMocks => {
           ? () => Promise.reject(bootstrapError)
           : () => Promise.resolve(bootstrapData as NexusBootstrapResponse),
       ),
-    homeserverRequest: vi
-      .spyOn(HomeserverService, 'request')
+    homeserverRead: vi
+      .spyOn(HomeserverService, 'getJsonIfFound')
       .mockImplementation(
-        homeserverError ? () => Promise.reject(homeserverError) : () => Promise.resolve({ timestamp: MOCK_LAST_READ }),
+        homeserverError
+          ? () => Promise.reject(homeserverError)
+          : () => Promise.resolve({ found: true, json: { timestamp: MOCK_LAST_READ } }),
       ),
     fetchMutedUsers: vi
       .spyOn(MuteApplication, 'fetchMutedUsers')
@@ -242,7 +244,7 @@ const setupMocks = (config: MockConfig = {}): ServiceMocks => {
 
 const assertCommonCalls = (mocks: ServiceMocks, bootstrapData: NexusBootstrapResponse) => {
   expect(mocks.nexusFetch).toHaveBeenCalledWith(TEST_PUBKY);
-  expect(mocks.homeserverRequest).toHaveBeenCalledWith({ method: HttpMethod.GET, url: MOCK_LAST_READ_URL });
+  expect(mocks.homeserverRead).toHaveBeenCalledWith({ url: MOCK_LAST_READ_URL });
   expect(mocks.fetchMutedUsers).toHaveBeenCalledWith(TEST_PUBKY);
   expect(mocks.fetchFeeds).toHaveBeenCalledWith(TEST_PUBKY);
   expect(mocks.persistUsers).toHaveBeenCalledWith(bootstrapData.users);
@@ -358,7 +360,7 @@ describe('BootstrapApplication', () => {
       });
     });
 
-    it('should handle 404 homeserver error gracefully and create new lastRead', async () => {
+    it('should create a new lastRead without an error when the file is missing', async () => {
       const bootstrapData = emptyBootstrap();
       const MOCK_NORMALIZED_TIMESTAMP = 9876543210;
       const MOCK_NORMALIZED_LAST_READ_URL = 'pubky://test-pubky/pub/pubky.app/last-read';
@@ -371,19 +373,10 @@ describe('BootstrapApplication', () => {
       };
 
       const mocks = setupMocks({ bootstrapData });
-      const homeserverRequestSpy = vi.spyOn(HomeserverService, 'request').mockImplementation(({ method, url }) => {
-        if (method === HttpMethod.GET) {
-          return Promise.reject(
-            Err.client(ClientErrorCode.NOT_FOUND, 'Not found', {
-              service: ErrorService.Homeserver,
-              operation: 'request',
-              context: { statusCode: HttpStatusCode.NOT_FOUND, url },
-            }),
-          );
-        }
-        return Promise.resolve(undefined);
-      });
-      mocks.homeserverRequest = homeserverRequestSpy;
+      const homeserverReadSpy = vi.spyOn(HomeserverService, 'getJsonIfFound').mockResolvedValue({ found: false });
+      mocks.homeserverRead = homeserverReadSpy;
+      const homeserverRequestSpy = vi.spyOn(HomeserverService, 'request').mockResolvedValue(undefined);
+      const loggerErrorSpy = vi.spyOn(Logger, 'error').mockImplementation(() => {});
 
       const lastReadNormalizerSpy = vi
         .spyOn(LastReadNormalizer, 'to')
@@ -396,7 +389,8 @@ describe('BootstrapApplication', () => {
         pubky: TEST_PUBKY,
       });
       expect(lastReadNormalizerSpy).toHaveBeenCalledWith(TEST_PUBKY);
-      expect(homeserverRequestSpy).toHaveBeenCalledWith({ method: HttpMethod.GET, url: MOCK_LAST_READ_URL });
+      expect(homeserverReadSpy).toHaveBeenCalledWith({ url: MOCK_LAST_READ_URL });
+      expect(loggerErrorSpy).not.toHaveBeenCalled();
       expect(homeserverRequestSpy).toHaveBeenCalledWith({
         method: HttpMethod.PUT,
         url: MOCK_NORMALIZED_LAST_READ_URL,
@@ -416,19 +410,14 @@ describe('BootstrapApplication', () => {
       const bootstrapData = emptyBootstrap();
       const mocks = setupMocks({ bootstrapData });
 
-      const homeserverRequestSpy = vi.spyOn(HomeserverService, 'request').mockImplementation(({ method, url }) => {
-        if (method === HttpMethod.GET) {
-          return Promise.reject(
-            Err.server(ServerErrorCode.INTERNAL_ERROR, 'Internal server error', {
-              service: ErrorService.Homeserver,
-              operation: 'request',
-              context: { statusCode: HttpStatusCode.INTERNAL_SERVER_ERROR, url },
-            }),
-          );
-        }
-        return Promise.resolve(undefined);
-      });
-      mocks.homeserverRequest = homeserverRequestSpy;
+      const homeserverReadSpy = vi.spyOn(HomeserverService, 'getJsonIfFound').mockRejectedValue(
+        Err.server(ServerErrorCode.INTERNAL_ERROR, 'Internal server error', {
+          service: ErrorService.Homeserver,
+          operation: 'getJsonIfFound',
+          context: { statusCode: HttpStatusCode.INTERNAL_SERVER_ERROR, url: MOCK_LAST_READ_URL },
+        }),
+      );
+      mocks.homeserverRead = homeserverReadSpy;
 
       const loggerErrorSpy = vi.spyOn(Logger, 'error').mockImplementation(() => {});
 
@@ -446,10 +435,10 @@ describe('BootstrapApplication', () => {
           message: 'Internal server error',
         }),
       );
-      expect(homeserverRequestSpy).toHaveBeenCalledTimes(1);
-      expect(homeserverRequestSpy).toHaveBeenCalledWith({ method: HttpMethod.GET, url: MOCK_LAST_READ_URL });
+      expect(homeserverReadSpy).toHaveBeenCalledTimes(1);
+      expect(homeserverReadSpy).toHaveBeenCalledWith({ url: MOCK_LAST_READ_URL });
 
-      // fetchOrPutLastRead fails in the first Promise.all, so persistence is never reached
+      // fetchOrPutLastRead fails in the initial sync stage, so persistence is never reached
       expect(mocks.persistUsers).not.toHaveBeenCalled();
     });
 
@@ -457,13 +446,10 @@ describe('BootstrapApplication', () => {
       const bootstrapData = emptyBootstrap();
       const mocks = setupMocks({ bootstrapData });
 
-      const homeserverRequestSpy = vi.spyOn(HomeserverService, 'request').mockImplementation(({ method }) => {
-        if (method === HttpMethod.GET) {
-          return Promise.reject(new Error('Network timeout'));
-        }
-        return Promise.resolve(undefined);
-      });
-      mocks.homeserverRequest = homeserverRequestSpy;
+      const homeserverReadSpy = vi
+        .spyOn(HomeserverService, 'getJsonIfFound')
+        .mockRejectedValue(new Error('Network timeout'));
+      mocks.homeserverRead = homeserverReadSpy;
 
       const loggerErrorSpy = vi.spyOn(Logger, 'error').mockImplementation(() => {});
 
@@ -473,11 +459,46 @@ describe('BootstrapApplication', () => {
         'Failed to fetch last read timestamp',
         expect.objectContaining({ message: 'Network timeout' }),
       );
-      expect(homeserverRequestSpy).toHaveBeenCalledTimes(1);
-      expect(homeserverRequestSpy).toHaveBeenCalledWith({ method: HttpMethod.GET, url: MOCK_LAST_READ_URL });
+      expect(homeserverReadSpy).toHaveBeenCalledTimes(1);
+      expect(homeserverReadSpy).toHaveBeenCalledWith({ url: MOCK_LAST_READ_URL });
 
-      // fetchOrPutLastRead fails in the first Promise.all, so persistence is never reached
+      // fetchOrPutLastRead fails in the initial sync stage, so persistence is never reached
       expect(mocks.persistUsers).not.toHaveBeenCalled();
+    });
+
+    it('waits for started account sync writes before surfacing a bootstrap failure', async () => {
+      setupMocks({ bootstrapError: new Error('Bootstrap unavailable') });
+      const pendingFeeds = Promise.withResolvers<Awaited<ReturnType<typeof FeedApplication.fetchFeeds>>>();
+      vi.spyOn(FeedApplication, 'fetchFeeds').mockReturnValue(pendingFeeds.promise);
+      let settled = false;
+      const result = BootstrapApplication.initialize(getBootstrapParams(TEST_PUBKY)).catch((error: unknown) => {
+        settled = true;
+        return error;
+      });
+
+      // A failed read must not release account ownership while another branch can still write.
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(settled).toBe(false);
+      pendingFeeds.resolve([]);
+      await expect(result).resolves.toMatchObject({ message: 'Bootstrap unavailable' });
+      expect(settled).toBe(true);
+    });
+
+    it('waits for sibling cache writes before surfacing a persistence failure', async () => {
+      setupMocks({ persistPostsError: new Error('Posts persistence error') });
+      const pendingUsers = Promise.withResolvers<Awaited<ReturnType<typeof LocalStreamUsersService.persistUsers>>>();
+      vi.spyOn(LocalStreamUsersService, 'persistUsers').mockReturnValue(pendingUsers.promise);
+      let settled = false;
+      const result = BootstrapApplication.initialize(getBootstrapParams(TEST_PUBKY)).catch((error: unknown) => {
+        settled = true;
+        return error;
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(settled).toBe(false);
+      pendingUsers.resolve([]);
+      await expect(result).resolves.toMatchObject({ message: 'Posts persistence error' });
+      expect(settled).toBe(true);
     });
 
     it('should throw error when persistPosts fails', async () => {
@@ -732,7 +753,7 @@ describe('BootstrapApplication', () => {
       await expect(BootstrapApplication.initialize(getBootstrapParams(TEST_PUBKY))).rejects.toThrow('Mute fetch error');
 
       expect(mocks.fetchMutedUsers).toHaveBeenCalledWith(TEST_PUBKY);
-      // fetchMutedUsers fails in the first Promise.all, so persistence is never reached
+      // fetchMutedUsers fails in the initial sync stage, so persistence is never reached
       expect(mocks.persistUsers).not.toHaveBeenCalled();
     });
   });

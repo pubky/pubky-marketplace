@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { COMMERCE_CONTRACT_VERSION, COMMERCE_TAXONOMY_VERSION } from '@/config/commerce';
-import { createCommerceListingFixture } from '@/test/fixtures/commerce/commerce';
+import {
+  COMMERCE_CONTRACT_VERSION,
+  COMMERCE_SHOP_SHIPS_TO_MAX_COUNTRIES,
+  COMMERCE_TAXONOMY_VERSION,
+} from '@/config/commerce';
+import { createCommerceListingFixture, createCommerceShopFixture } from '@/test/fixtures/commerce/commerce';
 import receiptAttestationV1 from '@/test/fixtures/commerce/receipt-attestation-v1.json';
 import receiptAttestationV2Bitcoin from '@/test/fixtures/commerce/receipt-attestation-v2-bitcoin.json';
 import receiptAttestationV2SameCurrency from '@/test/fixtures/commerce/receipt-attestation-v2-same-currency.json';
@@ -11,6 +15,9 @@ import {
   commerceCollectionRecordSchema,
   commerceDropRecordSchema,
   commerceListingFulfillmentMethods,
+  commerceListingProjectionChargesRecordTerms,
+  commerceListingProjectionIsStale,
+  commerceListingProjectionMatchesRecord,
   type CommerceListingRecord,
   commerceListingRecordSchema,
   commerceListingShippingMinor,
@@ -402,6 +409,39 @@ describe('commerceListingRecordSchema', () => {
     expect(commerceListingRecordSchema.safeParse(listing).success).toBe(true);
   });
 
+  it('rejects a Locks auction', () => {
+    const listing = makeFixedListing();
+    const auction = {
+      ...listing,
+      fulfillmentMethods: ['digital' as const],
+      package: undefined,
+      shippingOptions: [],
+      sale: {
+        format: 'auction' as const,
+        startingPrice: { amountMinor: 4_500, currency: 'USD', exponent: 2 },
+        minimumIncrement: { amountMinor: 500, currency: 'USD', exponent: 2 },
+        startsAt: '2026-08-19T20:00:00.000Z',
+        endsAt: '2026-08-29T20:00:00.000Z',
+        antiSnipingWindowSeconds: 120,
+        antiSnipingExtensionSeconds: 120,
+      },
+      digitalLock: {
+        policyUri: LOCK_URL,
+        criterionId: 'criterion-1',
+        contentPath: 'premium.txt',
+        resourceHash: 'b'.repeat(64),
+        minimumConfirmations: 6,
+      },
+    };
+
+    const result = commerceListingRecordSchema.safeParse(auction);
+
+    expect(result.success).toBe(false);
+    expect(result.error?.issues.map(({ message }) => message)).toContain(
+      'A Locks listing must be sold at a fixed price',
+    );
+  });
+
   it('a Locks listing must be digital-only: any physical or pickup method beside digital is rejected', () => {
     const shipped = makeFixedListing();
     const lock = {
@@ -593,6 +633,31 @@ describe('other public marketplace records', () => {
         expected,
       );
     }
+  });
+
+  it('keeps shipsToCountries optional and reads it leniently without failing the record or failing open', () => {
+    const shop = createCommerceShopFixture();
+    const read = (shipsToCountries: unknown) => {
+      const parsed = commerceShopRecordSchema.safeParse({ ...shop, shipsToCountries });
+      expect(parsed.success, JSON.stringify(shipsToCountries)).toBe(true);
+      return parsed.success ? parsed.data.shipsToCountries : 'unparsed';
+    };
+    expect(commerceShopRecordSchema.parse(shop).shipsToCountries).toBeUndefined();
+    expect(read(['CH', 'LI'])).toEqual(['CH', 'LI']);
+    // Lowercase, aliases and duplicates normalize; malformed entries beside a usable code are dropped.
+    expect(read([' ch ', 'uk', 'EL', 'GB', 'CHE', 1, null, 'li'])).toEqual(['CH', 'GB', 'GR', 'LI']);
+    expect(read('ch')).toEqual(['CH']);
+    // Only absent or empty means anywhere.
+    expect(read([])).toBeUndefined();
+    expect(read(null)).toBeUndefined();
+    // A present list with no usable code keeps its entries, so it is never read (or re-saved) as anywhere.
+    expect(read(['che', 'CHE'])).toEqual(['CHE']);
+    expect(read([1])).toEqual(['1']);
+    expect(read([''])).toEqual(['[""]']);
+    expect(read({ CH: true })).toEqual(['{"CH":true}']);
+    const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+    const everyPair = [...letters].flatMap((first) => [...letters].map((second) => first + second));
+    expect(read(everyPair)).toHaveLength(COMMERCE_SHOP_SHIPS_TO_MAX_COUNTRIES);
   });
 
   it('accepts a valid drop record and rejects every cross-field violation', () => {
@@ -834,6 +899,167 @@ describe('commerceListingFulfillmentMethods (mirrors the service homeserver deri
     // The service deliberately dedupes set-wise (not Vec::dedup's adjacent-only
     // collapse) so a non-adjacent repeat cannot fail registration validation.
     expect(commerceListingFulfillmentMethods(['shipping', 'pickup', 'shipping'])).toEqual(['shipping', 'pickup']);
+  });
+});
+
+describe('commerceListingProjectionIsStale (a listing.sync would change the service terms)', () => {
+  const record = createCommerceListingFixture({ revision: 3 });
+  const unitPrice = { amountMinor: 12_500, currency: 'USD', exponent: 2 };
+  const current = {
+    listingRevision: 3,
+    unitPrice,
+    fulfillmentMethods: ['shipping'] as const,
+    shipping: { amountMinor: 1_200 },
+  };
+
+  it('is current when the projection derives the same terms from the same record revision', () => {
+    expect(commerceListingProjectionIsStale(record, current)).toBe(false);
+  });
+
+  it('treats a projection without shipping as charging none', () => {
+    expect(commerceListingProjectionIsStale(record, { ...current, shipping: undefined })).toBe(true);
+    const free = createCommerceListingFixture({
+      revision: 3,
+      fulfillmentMethods: ['digital'],
+      package: undefined,
+      shippingOptions: [],
+    });
+    expect(
+      commerceListingProjectionIsStale(free, {
+        listingRevision: 3,
+        unitPrice,
+        fulfillmentMethods: ['digital'],
+        shipping: undefined,
+      }),
+    ).toBe(false);
+  });
+
+  it('is stale when the record revision moved past the projection', () => {
+    expect(commerceListingProjectionIsStale(record, { ...current, listingRevision: 2 })).toBe(true);
+  });
+
+  it('is not stale against a projection of a newer record than the one held', () => {
+    expect(
+      commerceListingProjectionIsStale(record, {
+        listingRevision: 4,
+        unitPrice,
+        fulfillmentMethods: ['pickup'],
+        shipping: undefined,
+      }),
+    ).toBe(false);
+  });
+
+  it('is stale when a digital record still projects as shipping-only, as old Locks rows do', () => {
+    const locks = createCommerceListingFixture({
+      revision: 3,
+      fulfillmentMethods: ['digital'],
+      package: undefined,
+      shippingOptions: [],
+    });
+    expect(
+      commerceListingProjectionIsStale(locks, {
+        listingRevision: 3,
+        unitPrice,
+        fulfillmentMethods: ['shipping'],
+        shipping: { amountMinor: 0 },
+      }),
+    ).toBe(true);
+    expect(
+      commerceListingProjectionIsStale(locks, {
+        listingRevision: 3,
+        unitPrice,
+        fulfillmentMethods: ['digital'],
+        shipping: { amountMinor: 0 },
+      }),
+    ).toBe(false);
+  });
+
+  it('compares methods in derivation order, as the service does', () => {
+    const both = createCommerceListingFixture({ revision: 3, fulfillmentMethods: ['physical', 'shipping', 'pickup'] });
+    expect(commerceListingProjectionIsStale(both, { ...current, fulfillmentMethods: ['pickup', 'shipping'] })).toBe(
+      true,
+    );
+    expect(commerceListingProjectionIsStale(both, { ...current, fulfillmentMethods: ['shipping', 'pickup'] })).toBe(
+      false,
+    );
+  });
+
+  it('is stale when the projected shipping differs from the record', () => {
+    expect(commerceListingProjectionIsStale(record, { ...current, shipping: { amountMinor: 0 } })).toBe(true);
+  });
+
+  it.each([
+    ['amount', { ...unitPrice, amountMinor: 13_000 }],
+    ['currency', { ...unitPrice, currency: 'EUR' }],
+    ['exponent', { ...unitPrice, exponent: 0 }],
+  ])('is stale when the projected unit price differs in %s at the same revision', (_label, price) => {
+    expect(commerceListingProjectionIsStale(record, { ...current, unitPrice: price })).toBe(true);
+  });
+
+  it('never flags an auction, whose terms listing.sync does not rewrite', () => {
+    const auction = createCommerceListingFixture({
+      revision: 3,
+      sale: {
+        format: 'auction',
+        startingPrice: { amountMinor: 4_500, currency: 'USD', exponent: 2 },
+        minimumIncrement: { amountMinor: 500, currency: 'USD', exponent: 2 },
+        startsAt: '2026-08-19T20:00:00.000Z',
+        endsAt: '2026-08-29T20:00:00.000Z',
+        antiSnipingWindowSeconds: 120,
+        antiSnipingExtensionSeconds: 120,
+      },
+    });
+    expect(commerceListingProjectionIsStale(auction, { ...current, listingRevision: 1, shipping: undefined })).toBe(
+      false,
+    );
+  });
+});
+
+describe('commerceListingProjectionMatchesRecord and commerceListingProjectionChargesRecordTerms', () => {
+  const record = createCommerceListingFixture({ revision: 3 });
+  const unitPrice = { amountMinor: 12_500, currency: 'USD', exponent: 2 };
+  const current = {
+    listingRevision: 3,
+    unitPrice,
+    fulfillmentMethods: ['shipping'] as const,
+    shipping: { amountMinor: 1_200 },
+  };
+
+  it('matches only the same revision with the same terms', () => {
+    expect(commerceListingProjectionMatchesRecord(record, current)).toBe(true);
+    expect(commerceListingProjectionMatchesRecord(record, { ...current, listingRevision: 4 })).toBe(false);
+    expect(commerceListingProjectionMatchesRecord(record, { ...current, listingRevision: 2 })).toBe(false);
+    expect(
+      commerceListingProjectionMatchesRecord(record, { ...current, unitPrice: { ...unitPrice, amountMinor: 13_000 } }),
+    ).toBe(false);
+  });
+
+  it('separates money terms from fulfillment methods', () => {
+    expect(commerceListingProjectionChargesRecordTerms(record, { ...current, fulfillmentMethods: ['pickup'] })).toBe(
+      true,
+    );
+    expect(commerceListingProjectionChargesRecordTerms(record, { ...current, shipping: undefined })).toBe(false);
+    expect(
+      commerceListingProjectionChargesRecordTerms(record, { ...current, unitPrice: { ...unitPrice, currency: 'EUR' } }),
+    ).toBe(false);
+  });
+
+  it('always matches an auction, which is paid at its bid', () => {
+    const auction = createCommerceListingFixture({
+      revision: 3,
+      sale: {
+        format: 'auction',
+        startingPrice: { amountMinor: 4_500, currency: 'USD', exponent: 2 },
+        minimumIncrement: { amountMinor: 500, currency: 'USD', exponent: 2 },
+        startsAt: '2026-08-19T20:00:00.000Z',
+        endsAt: '2026-08-29T20:00:00.000Z',
+        antiSnipingWindowSeconds: 120,
+        antiSnipingExtensionSeconds: 120,
+      },
+    });
+    const divergent = { ...current, listingRevision: 5, unitPrice: { ...unitPrice, amountMinor: 9_999 } };
+    expect(commerceListingProjectionMatchesRecord(auction, divergent)).toBe(true);
+    expect(commerceListingProjectionChargesRecordTerms(auction, divergent)).toBe(true);
   });
 });
 

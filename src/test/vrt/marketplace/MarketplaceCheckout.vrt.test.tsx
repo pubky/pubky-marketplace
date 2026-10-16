@@ -1,10 +1,12 @@
 // Intentional import order — browser-mode mock factories rely on stable aliases.
 /* eslint-disable simple-import-sort/imports */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { createMarketplaceVrtAuthStore } from '@/test/mocks/marketplace-vrt';
 import { expectVrtSurface, parkVrtHover, renderForVRT, VRT_DENSE_CHROME_SCREENSHOT } from '@/test-utils/vrt';
 import { VRT_VIEWPORT_DESKTOP, VRT_VIEWPORT_MOBILE } from '@/test-utils/vrt.viewports';
 import { MarketplaceCheckout } from '@/templates/Marketplace/MarketplaceCheckout';
 import { useCommerceStore } from '@/stores/commerce/commerce.store';
+import type { BuyerPaykitWalletState } from '@/hooks/useBuyerPaykitWallet/useBuyerPaykitWallet';
 
 const VRT_VIEWPORT_LAPTOP = { width: 1280, height: 800 };
 
@@ -140,13 +142,16 @@ const view = vi.hoisted(() => ({
   items: [] as unknown[],
   isLoading: false,
   adapterMode: 'sandbox' as string,
+  paykitServerApi: 'fork' as 'fork' | 'upstream',
   deployEnv: 'staging' as 'production' | 'staging' | undefined,
   hasMarketplaceSession: false,
+  currentUserPubky: null as string | null,
   addresses: [] as unknown[],
   selectedAddressId: null as string | null,
   fulfillmentOptions: {} as Record<string, Array<'shipping' | 'pickup'>>,
   fulfillmentEffective: {} as Record<string, 'shipping' | 'pickup'>,
   requiresDeliveryAddress: true,
+  allowedDestinationCountries: null as string[] | null,
   orderCount: 1,
   fulfillmentByItem: {} as Record<string, 'shipping' | 'pickup' | 'digital'>,
   digitalKinds: {} as Record<string, 'file' | 'link' | 'text' | 'email' | 'message' | null>,
@@ -155,9 +160,22 @@ const view = vi.hoisted(() => ({
   hasInstantDigitalLine: false,
   hasManualDigitalLine: false,
   usdtAvailable: false,
-  usdtOnly: false,
   usdtSellers: null as string[] | null,
   orders: [] as unknown[],
+  buyerWalletState: 'payable' as BuyerPaykitWalletState,
+}));
+
+vi.mock('@/hooks/useBuyerPaykitWallet/useBuyerPaykitWallet', () => ({
+  useBuyerPaykitWallet: (_pubky: string | null, enabled: boolean) => ({
+    state: enabled ? view.buyerWalletState : 'idle',
+    recheck: vi.fn(),
+  }),
+}));
+
+vi.mock('@/stores/auth/auth.store', () => ({
+  useAuthStore: createMarketplaceVrtAuthStore({
+    getCurrentUserPubky: () => view.currentUserPubky,
+  }),
 }));
 
 const savedAddresses = vi.hoisted(() => {
@@ -206,7 +224,7 @@ vi.mock('next/navigation', () => ({
 
 vi.mock('@/config/commerce', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/config/commerce')>();
-  return { ...actual, getCommerceAdapterMode: () => view.adapterMode };
+  return { ...actual, getCommerceAdapterMode: () => view.adapterMode, getPaykitServerApi: () => view.paykitServerApi };
 });
 
 vi.mock('@/libs/runtime-config/runtime-config', async (importOriginal) => {
@@ -251,7 +269,13 @@ vi.mock('@/hooks/useMarketplaceCheckout/useMarketplaceCheckout', async () => {
   const { marketplaceCheckoutDefaults } = await import('@/hooks/useMarketplaceCheckout/useMarketplaceCheckout.types');
   return {
     useMarketplaceCheckout: () => ({
-      form: useForm({ defaultValues: marketplaceCheckoutDefaults }),
+      // The real hook starts a new address in the first allowed country.
+      form: useForm({
+        defaultValues: {
+          ...marketplaceCheckoutDefaults,
+          ...(view.allowedDestinationCountries ? { countryCode: view.allowedDestinationCountries[0] } : {}),
+        },
+      }),
       submit: vi.fn(async () => false),
       pay: vi.fn(async () => ({ ok: false, orderIds: [], boundOrders: [] })),
       isPaying: false,
@@ -265,6 +289,8 @@ vi.mock('@/hooks/useMarketplaceCheckout/useMarketplaceCheckout', async () => {
       fulfillmentForSeller: (sellerPubky: string) => view.fulfillmentEffective[sellerPubky] ?? 'shipping',
       setFulfillmentChoice: vi.fn(),
       requiresDeliveryAddress: view.requiresDeliveryAddress,
+      allowedDestinationCountries: view.allowedDestinationCountries,
+      storeShare: { stores: new Map(), chosen: new Set(), selected: [], setShare: () => {} },
       hasFulfillmentConflict: false,
       isPickupCapabilityLoadingForSeller: () => false,
       orderCount: view.orderCount,
@@ -346,14 +372,15 @@ vi.mock('@/hooks/useMarketplaceSessionConnect/useMarketplaceSessionConnect', () 
 vi.mock('@/controllers/commerce/commerce', () => ({
   CommerceController: {
     getSellerPaymentConfig: vi.fn(async (sellerPubky: string) => ({
-      bitcoinAvailable: !view.usdtOnly,
+      bitcoinAvailable: true,
       bitcoinOfferAvailable: true,
-      paypalAvailable: !view.usdtOnly,
+      paypalAvailable: true,
       usdtAvailable: view.usdtAvailable && (view.usdtSellers === null || view.usdtSellers.includes(sellerPubky)),
     })),
     fetchUsdtPaymentsAvailable: vi.fn(async () => view.usdtAvailable),
     getIndicativeBtcRate: vi.fn(async () => null),
     getOrFetchListing: vi.fn(async () => null),
+    getConnectorStores: vi.fn(async () => new Map()),
   },
 }));
 
@@ -375,13 +402,16 @@ beforeEach(async () => {
   view.items = [];
   view.isLoading = false;
   view.hasMarketplaceSession = false;
+  view.currentUserPubky = null;
   view.adapterMode = 'sandbox';
+  view.paykitServerApi = 'fork';
   view.deployEnv = 'staging';
   view.addresses = [];
   view.selectedAddressId = null;
   view.fulfillmentOptions = {};
   view.fulfillmentEffective = {};
   view.requiresDeliveryAddress = true;
+  view.allowedDestinationCountries = null;
   view.orderCount = 1;
   view.fulfillmentByItem = {};
   view.digitalKinds = {};
@@ -390,9 +420,9 @@ beforeEach(async () => {
   view.hasInstantDigitalLine = false;
   view.hasManualDigitalLine = false;
   view.usdtAvailable = false;
-  view.usdtOnly = false;
   view.usdtSellers = null;
   view.orders = [];
+  view.buyerWalletState = 'payable';
   useCommerceStore.getState().reset();
   window.history.replaceState(null, '', '/marketplace/checkout');
 });
@@ -406,7 +436,7 @@ describe('Marketplace checkout — visual regression', () => {
 
   async function waitForPaymentMethods() {
     await vi.waitFor(() => {
-      if (!document.querySelector('[data-testid="marketplace-checkout-method-bitcoin"]')) {
+      if (!document.querySelector('[data-testid="marketplace-checkout-method-paykit"]')) {
         throw new Error('Payment methods have not loaded yet.');
       }
     });
@@ -468,6 +498,70 @@ describe('Marketplace checkout — visual regression', () => {
     await captureCheckout('checkout-single-seller-desktop');
   });
 
+  for (const [name, viewport] of [
+    ['desktop', VRT_VIEWPORT_DESKTOP],
+    ['mobile', VRT_VIEWPORT_MOBILE],
+  ] as const) {
+    it(`shows the missing-wallet guide on ${name}`, async () => {
+      const { singleSeller } = await fixtures;
+      view.items = singleSeller;
+      view.adapterMode = 'transaction-service';
+      view.deployEnv = 'production';
+      view.hasMarketplaceSession = true;
+      view.currentUserPubky = 'b'.repeat(52);
+      view.buyerWalletState = 'not_payable';
+      view.paykitServerApi = 'upstream';
+
+      const screen = await renderForVRT(<MarketplaceCheckout />, { viewport });
+      await expect.element(screen.getByTestId('marketplace-checkout-bitkit-required')).toBeVisible();
+      await expect.element(screen.getByTestId('marketplace-checkout-bitkit-connect')).toBeEnabled();
+      await expect.element(screen.getByTestId('marketplace-checkout-pay')).toBeDisabled();
+      const earlyNotice = screen.getByTestId('marketplace-checkout-bitkit-notice');
+      if (name === 'mobile') {
+        await expect.element(earlyNotice).toBeVisible();
+      } else {
+        await expect.element(earlyNotice).not.toBeVisible();
+      }
+      await captureCheckout(`checkout-bitkit-required-${name}`);
+    });
+
+    it(`keeps fork checkout free of incompatible downloads on ${name}`, async () => {
+      view.items = (await fixtures).singleSeller;
+      view.adapterMode = 'transaction-service';
+      view.deployEnv = 'production';
+      view.hasMarketplaceSession = true;
+      view.currentUserPubky = 'b'.repeat(52);
+      view.buyerWalletState = 'not_payable';
+      const screen = await renderForVRT(<MarketplaceCheckout />, { viewport });
+      await expect.element(screen.getByText('A compatible Bitkit wallet is required', { exact: true })).toBeVisible();
+      await expect.element(screen.getByRole('button', { name: 'Connect Bitkit', exact: true })).not.toBeInTheDocument();
+      await expect.element(screen.getByTestId('bitcoin-payment-code-note')).toBeVisible();
+      await captureCheckout(`checkout-bitkit-fork-${name}`);
+    });
+
+    it(`opens and closes the shared connection dialog on ${name}`, async () => {
+      const { singleSeller } = await fixtures;
+      view.items = singleSeller;
+      view.adapterMode = 'transaction-service';
+      view.deployEnv = 'production';
+      view.hasMarketplaceSession = true;
+      view.currentUserPubky = 'b'.repeat(52);
+      view.buyerWalletState = 'not_payable';
+      view.paykitServerApi = 'upstream';
+
+      const screen = await renderForVRT(<MarketplaceCheckout />, { viewport });
+      await expect.element(screen.getByTestId('marketplace-checkout-bitkit-required')).toBeVisible();
+      await expect.element(screen.getByTestId('marketplace-checkout-bitkit-connect')).toBeEnabled();
+      await screen.getByTestId('marketplace-checkout-bitkit-connect').click();
+      const dialog = screen.getByRole('dialog', { name: 'Connect Bitkit', exact: true });
+      await expect.element(dialog).toBeVisible();
+      await expect.element(screen.getByTestId('buyer-bitkit-account')).toHaveTextContent(view.currentUserPubky);
+      await expect(dialog).toMatchScreenshot(`checkout-bitkit-connect-dialog-${name}`);
+      await screen.getByRole('button', { name: 'Close', exact: true }).click();
+      await expect.element(dialog).not.toBeInTheDocument();
+    });
+  }
+
   // Issue #50: a cancelled checkout carries no "Awaiting payment · Item reserved" header.
   it('renders a cancelled PayPal checkout without the reserved header at desktop viewport', async () => {
     const { createOrderFixture, createPaymentFixture } = await import('@/test/fixtures/commerce/orders');
@@ -490,6 +584,24 @@ describe('Marketplace checkout — visual regression', () => {
     expect(document.body.textContent).toContain('Order cancelled');
     expect(document.body.textContent).not.toContain('Item reserved');
     await captureCheckout('checkout-cancelled-paypal-desktop', false);
+  });
+
+  it('limits the address country to the seller’s destination countries at desktop viewport', async () => {
+    const { singleSeller } = await fixtures;
+    view.items = singleSeller;
+    view.allowedDestinationCountries = ['CH', 'LI'];
+
+    await renderForVRT(<MarketplaceCheckout />, { viewport: VRT_VIEWPORT_DESKTOP });
+    await vi.waitFor(() => {
+      if (
+        !document
+          .querySelector('[data-testid="marketplace-address-country-select"]')
+          ?.textContent?.includes('Switzerland')
+      ) {
+        throw new Error('The destination country picker has not rendered yet.');
+      }
+    });
+    await captureCheckout('checkout-ships-to-desktop');
   });
 
   it('renders a single-seller checkout at mobile viewport', async () => {
@@ -619,24 +731,6 @@ describe('Marketplace checkout — visual regression', () => {
     await captureCheckout('checkout-durable-desktop');
   });
 
-  it('explains the missing USDT option on a bitcoin-priced cart at desktop viewport', async () => {
-    const { bitcoinPriced } = await fixtures;
-    view.items = bitcoinPriced;
-    view.adapterMode = 'transaction-service';
-    view.deployEnv = 'production';
-    view.hasMarketplaceSession = true;
-    view.usdtAvailable = true;
-
-    await renderForVRT(<MarketplaceCheckout />, { viewport: VRT_VIEWPORT_DESKTOP });
-    await vi.waitFor(() => {
-      if (!document.querySelector('[data-testid="marketplace-checkout-usdt-missing-note"]')) {
-        throw new Error('The missing-USDT note has not rendered yet.');
-      }
-    });
-    expect(document.querySelector('[data-testid="marketplace-checkout-method-usdt"]')).toBeNull();
-    await captureCheckout('checkout-usdt-missing-bitcoin-priced-desktop');
-  });
-
   it('names the seller who does not take USDT on a multi-seller cart at desktop viewport', async () => {
     const { multiSeller } = await fixtures;
     view.items = multiSeller;
@@ -653,10 +747,13 @@ describe('Marketplace checkout — visual regression', () => {
       }
     });
     expect(document.querySelector('[data-testid="marketplace-checkout-method-usdt"]')).toBeNull();
+    expect(
+      document.querySelector('[data-testid="marketplace-checkout-paykit-requirement"]')?.textContent,
+    ).not.toContain('USDT');
     await captureCheckout('checkout-usdt-missing-seller-desktop');
   });
 
-  it('renders USDT beside Bitcoin and PayPal, unselected, at desktop viewport', async () => {
+  it('renders one Pay with Paykit entry beside PayPal, naming Bitcoin or USDT, at desktop viewport', async () => {
     const { singleSeller } = await fixtures;
     view.items = singleSeller;
     view.adapterMode = 'transaction-service';
@@ -666,57 +763,17 @@ describe('Marketplace checkout — visual regression', () => {
 
     await renderForVRT(<MarketplaceCheckout />, { viewport: VRT_VIEWPORT_DESKTOP });
     await vi.waitFor(() => {
-      if (!document.querySelector('[data-testid="marketplace-checkout-method-usdt"]')) {
-        throw new Error('USDT has not loaded yet.');
-      }
-    });
-    await captureCheckout('checkout-usdt-offered-desktop');
-  });
-
-  it('stops offering USDT after the service refused it for this seller at desktop viewport', async () => {
-    const { singleSeller } = await fixtures;
-    view.items = singleSeller;
-    view.adapterMode = 'transaction-service';
-    view.deployEnv = 'production';
-    view.hasMarketplaceSession = true;
-    view.usdtAvailable = true;
-    useCommerceStore.getState().setUsdtRefusal(singleSeller[0].listing.record.ownerPubky, 'usdt_unavailable');
-
-    await renderForVRT(<MarketplaceCheckout />, { viewport: VRT_VIEWPORT_DESKTOP });
-    await vi.waitFor(() => {
-      if (!document.querySelector('[data-testid="marketplace-checkout-method-bitcoin"]')) {
-        throw new Error('The payment methods have not loaded yet.');
-      }
+      const note = document.querySelector('[data-testid="marketplace-checkout-paykit-requirement"]');
+      if (!note?.textContent?.includes('Bitcoin or USDT')) throw new Error('The Paykit entry has not loaded yet.');
     });
     expect(document.querySelector('[data-testid="marketplace-checkout-method-usdt"]')).toBeNull();
-    await captureCheckout('checkout-usdt-refused-desktop');
+    expect(document.querySelector('[data-testid="marketplace-checkout-method-bitcoin"]')).toBeNull();
+    await captureCheckout('checkout-paykit-offered-desktop');
   });
 
-  it('says why Pay is disabled when USDT was the only method and the service refused it at desktop viewport', async () => {
-    const { singleSeller } = await fixtures;
-    view.items = singleSeller;
-    view.adapterMode = 'transaction-service';
-    view.deployEnv = 'production';
-    view.hasMarketplaceSession = true;
-    view.usdtAvailable = true;
-    view.usdtOnly = true;
-    useCommerceStore.getState().setUsdtRefusal(singleSeller[0].listing.record.ownerPubky, 'usdt_seller_not_ready');
-
-    await renderForVRT(<MarketplaceCheckout />, { viewport: VRT_VIEWPORT_DESKTOP });
-    await vi.waitFor(() => {
-      if (!document.querySelector('[data-testid="marketplace-checkout-pay"]')) {
-        throw new Error('The checkout has not loaded yet.');
-      }
-      if (!document.body.textContent?.includes("This seller can't take USDT right now")) {
-        throw new Error('The refusal copy has not rendered yet.');
-      }
-    });
-    await captureCheckout('checkout-usdt-refused-only-desktop', false);
-  });
-
-  it('renders the USDT amount, network and Bitkit hint once USDT is chosen at desktop viewport', async () => {
-    const { singleSeller } = await fixtures;
-    view.items = singleSeller;
+  it('renders the Paykit entry on a bitcoin-priced cart without a USDT amount at desktop viewport', async () => {
+    const { bitcoinPriced } = await fixtures;
+    view.items = bitcoinPriced;
     view.adapterMode = 'transaction-service';
     view.deployEnv = 'production';
     view.hasMarketplaceSession = true;
@@ -724,19 +781,14 @@ describe('Marketplace checkout — visual regression', () => {
 
     await renderForVRT(<MarketplaceCheckout />, { viewport: VRT_VIEWPORT_DESKTOP });
     await vi.waitFor(() => {
-      const button = document.querySelector('[data-testid="marketplace-checkout-method-usdt"]');
-      if (!(button instanceof HTMLElement)) throw new Error('USDT has not loaded yet.');
-      button.click();
+      const note = document.querySelector('[data-testid="marketplace-checkout-paykit-requirement"]');
+      if (!note?.textContent?.includes('Bitcoin or USDT')) throw new Error('The Paykit entry has not loaded yet.');
     });
-    await vi.waitFor(() => {
-      if (!document.querySelector('[data-testid="marketplace-checkout-usdt-amount"]')) {
-        throw new Error('The USDT amount has not rendered yet.');
-      }
-    });
-    await captureCheckout('checkout-usdt-selected-desktop');
+    expect(document.querySelector('[data-testid="marketplace-checkout-usdt-amount"]')).toBeNull();
+    await captureCheckout('checkout-paykit-bitcoin-priced-desktop');
   });
 
-  it('renders the USDT amount, network and Bitkit hint once USDT is chosen at mobile viewport', async () => {
+  it('renders the Paykit entry with the USDT amount, network and Bitkit hint at mobile viewport', async () => {
     const { singleSeller } = await fixtures;
     view.items = singleSeller;
     view.adapterMode = 'transaction-service';
@@ -746,19 +798,14 @@ describe('Marketplace checkout — visual regression', () => {
 
     await renderForVRT(<MarketplaceCheckout />, { viewport: VRT_VIEWPORT_MOBILE });
     await vi.waitFor(() => {
-      const button = document.querySelector('[data-testid="marketplace-checkout-method-usdt"]');
-      if (!(button instanceof HTMLElement)) throw new Error('USDT has not loaded yet.');
-      button.click();
-    });
-    await vi.waitFor(() => {
       if (!document.querySelector('[data-testid="marketplace-checkout-usdt-amount"]')) {
         throw new Error('The USDT amount has not rendered yet.');
       }
     });
-    await captureCheckout('checkout-usdt-selected-mobile');
+    await captureCheckout('checkout-paykit-offered-mobile');
   });
 
-  it('renders the one-approval-per-seller note on a multi-seller USDT cart at desktop viewport', async () => {
+  it('renders the one-approval-per-seller note on a multi-seller Paykit cart at desktop viewport', async () => {
     const { multiSeller } = await fixtures;
     view.items = multiSeller;
     view.adapterMode = 'transaction-service';
@@ -768,16 +815,11 @@ describe('Marketplace checkout — visual regression', () => {
 
     await renderForVRT(<MarketplaceCheckout />, { viewport: VRT_VIEWPORT_DESKTOP });
     await vi.waitFor(() => {
-      const button = document.querySelector('[data-testid="marketplace-checkout-method-usdt"]');
-      if (!(button instanceof HTMLElement)) throw new Error('USDT has not loaded yet.');
-      button.click();
-    });
-    await vi.waitFor(() => {
       if (!document.querySelector('[data-testid="marketplace-checkout-usdt-multi-seller-note"]')) {
         throw new Error('The multi-seller note has not rendered yet.');
       }
     });
-    await captureCheckout('checkout-usdt-selected-multi-seller-desktop');
+    await captureCheckout('checkout-paykit-multi-seller-desktop');
   });
 
   it('renders the locks-paykit checkout labels at desktop viewport', async () => {

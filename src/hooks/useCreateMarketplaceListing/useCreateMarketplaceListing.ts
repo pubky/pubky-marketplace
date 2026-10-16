@@ -15,6 +15,7 @@ import {
   type UseListingMediaManagerResult,
 } from '@/hooks/useListingMediaManager/useListingMediaManager';
 import { useMeasurementSystem } from '@/hooks/useMeasurementSystem/useMeasurementSystem';
+import { usePaykitRecovery } from '@/hooks/usePaykitRecovery/usePaykitRecovery';
 import { resolveAuctionDurationMinutes } from '@/libs/commerce/auction-duration';
 import {
   contentfulListingDrafts,
@@ -75,6 +76,28 @@ export function sellerDeliveryKeyRequirement(required: boolean): SellerDeliveryK
   };
 }
 
+/**
+ * The publish guards Create and Edit run, for putting published listings back
+ * on sale without the composer (Inventory relist, dashboard bulk activate).
+ * The delivery key is required when any of the listings ships.
+ */
+export async function evaluateListingActivationGuards(input: {
+  ownerPubky: string | null;
+  hasMarketplaceSession: boolean;
+  records: readonly CommerceListingRecord[];
+}): Promise<ListingPublishBlockReason | null> {
+  if (!isDurableCommerceMode(getCommerceAdapterMode())) return null;
+  const ships = input.records.some((record) =>
+    fulfillmentRequiresShipping(fulfillmentFormValueFromRecord(record.fulfillmentMethods)),
+  );
+  return evaluateDurableListingPublishGuards({
+    ownerPubky: input.ownerPubky,
+    hasMarketplaceSession: input.hasMarketplaceSession,
+    loadPaymentConfig: (pubky) => CommerceController.getSellerPaymentConfig(pubky),
+    deliveryKey: sellerDeliveryKeyRequirement(ships),
+  });
+}
+
 export interface ListingDraftRestorePrompt {
   listingId: string;
   updatedAt: number;
@@ -118,6 +141,8 @@ export function useCreateMarketplaceListing(): UseCreateMarketplaceListingResult
   const [seededAuctionAsFixedPrice, setSeededAuctionAsFixedPrice] = useState(false);
   const durablePublish = isDurableCommerceMode(getCommerceAdapterMode());
   const [publishBlocked, setPublishBlocked] = useState<ListingPublishBlockReason | null>(null);
+  const paykitRecheck = usePaykitRecovery(publishBlocked === 'paykit-unreachable');
+  const guardInputsRef = useRef<string | null>(null);
   const [publishGuardReady, setPublishGuardReady] = useState(!durablePublish);
   const draftReadyRef = useRef(false);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -290,7 +315,10 @@ export function useCreateMarketplaceListing(): UseCreateMarketplaceListingResult
       return;
     }
     let active = true;
-    setPublishGuardReady(false);
+    // A recheck during an outage keeps the guard showing; changed inputs blank it again.
+    const guardInputs = `${currentUserPubky}|${Boolean(marketplaceSession)}|${shipsListing}`;
+    if (guardInputsRef.current !== guardInputs) setPublishGuardReady(false);
+    guardInputsRef.current = guardInputs;
     void evaluateDurableListingPublishGuards({
       ownerPubky: currentUserPubky,
       hasMarketplaceSession: Boolean(marketplaceSession),
@@ -304,7 +332,7 @@ export function useCreateMarketplaceListing(): UseCreateMarketplaceListingResult
     return () => {
       active = false;
     };
-  }, [currentUserPubky, durablePublish, marketplaceSession, shipsListing]);
+  }, [currentUserPubky, durablePublish, marketplaceSession, shipsListing, paykitRecheck]);
 
   const submit = async (): Promise<string | null> => {
     if (!currentUserPubky) return null;

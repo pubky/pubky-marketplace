@@ -17,6 +17,8 @@ import {
   isTransactionalCommerceMode,
   MARKETPLACE_FOLLOWED_SHELF_MAX_SELLER_FETCHES,
 } from '@/config/commerce';
+import { CONNECTOR_SHARE_CONSENT_VERSION } from '@/config/commerce-copy';
+import { BASE_UNITS_PER_BITCOIN } from '@/config/currencies';
 import { NEXUS_LISTINGS_PER_PAGE } from '@/config/nexus';
 import { readAuthEpoch } from '@/controllers/auth/auth-epoch';
 import {
@@ -26,6 +28,7 @@ import {
   verifyOwnOrderReceipt,
   verifyOwnReviewAttestation,
 } from '@/libs/commerce/attestation';
+import { decodeConnectorRecipientKey, sealConnectorAddress } from '@/libs/commerce/connector-address-envelope';
 import {
   sealDeliveryAddressForSellers,
   type SellerDeliveryEnvelope,
@@ -53,6 +56,7 @@ import {
   newDigitalDeliverableId,
   openDigitalDeliverable,
 } from '@/libs/commerce/digital-file';
+import { listingPublishNeedsMarketplaceSession } from '@/libs/commerce/listing-publish-guards';
 import { locksAdmissionView } from '@/libs/commerce/locks-lifecycle';
 import { lockPolicyCreator, toBareLockResource } from '@/libs/commerce/locks-payment';
 import {
@@ -78,7 +82,7 @@ import {
   paykitAppRegistryUrl,
   paykitReaderAuthorizationUrl,
 } from '@/libs/commerce/paykit-wallet';
-import type { BindDeliveryAddress, PaymentMethodKind } from '@/libs/commerce/payment-methods';
+import type { BindDeliveryAddress, PaymentMethodKind, SellerPaymentConfig } from '@/libs/commerce/payment-methods';
 import {
   type MarketplaceCheckoutFulfillmentLine,
   type MarketplaceFulfillmentMethod,
@@ -105,6 +109,7 @@ import {
   buildMarketplaceOrderAggregateId,
   buildMarketplacePaymentAggregateId,
   classifyMarketplacePickupCommandRefusal,
+  type ConnectorShare,
   type CreateMarketplaceCheckoutCommand,
   isCorrelatedBenignListingRegistrationResponse,
   isListingRecordNotFoundResponse,
@@ -149,14 +154,17 @@ import {
   watchlistStatesEqual,
   watchlistStateToRecordBody,
 } from '@/pipes/commerce/commerce.watchlist';
+import { buildDefaultShopRecord } from '@/pipes/commerce/default-shop';
 import {
   detectWatchAlerts,
   type WatchIndexObservation,
   type WatchObservation,
   type WatchProjectionObservation,
 } from '@/pipes/marketplaceWatch/marketplaceWatch.detector';
+import { buildFxRateSnapshot } from '@/pipes/money/money.rates';
 import { MarketplaceMediaService } from '@/services/commerce/marketplace-media';
 import { ExchangerateService } from '@/services/exchangerate/exchangerate';
+import type { BtcRate } from '@/services/exchangerate/exchangerate.types';
 import { CommerceHomeserverService } from '@/services/homeserver/commerce/commerce';
 import { CommercePrivStoreService } from '@/services/homeserver/commerce/priv-store';
 import { HomeserverService, PRIVATE_APP_DATA_PATH } from '@/services/homeserver/homeserver';
@@ -168,13 +176,13 @@ import {
   type MarketplaceTagKind,
 } from '@/services/local/tag/marketplace/tag.marketplace';
 import { LocksGatewayService } from '@/services/locks/locks';
-import { locksCreatorMatchesShopPubky, LocksFrontendSessionStore } from '@/services/locks/locks-frontend-session';
+import { RetiredLocksSessionStorage } from '@/services/locks/retired-locks-session';
 import {
   MarketplaceGatewayService,
   type MarketplaceOrder,
   type MarketplacePayment,
 } from '@/services/marketplace/marketplace';
-import { MarketplacePaykitClaimService } from '@/services/marketplace/marketplace-paykit-claim';
+import { MarketplaceConnectorStatusService } from '@/services/marketplace/marketplace-connector-status';
 import {
   type MarketplaceSessionEndedEvent,
   MarketplaceSessionService,
@@ -186,7 +194,7 @@ import type {
   NexusListingSaleFormat,
 } from '@/services/nexus/marketplace/marketplace.types';
 import type { NexusTag } from '@/services/nexus/nexus.types';
-import { PaykitMessagingService } from '@/services/paykit/paykit-messaging';
+import { PaykitReceiverService } from '@/services/paykit/paykit-receiver';
 import { useAuthStore } from '@/stores/auth/auth.store';
 
 /**
@@ -204,6 +212,14 @@ const reviewResultSchema = z
     updatedAt: z.string().min(1),
   })
   .passthrough();
+
+export interface TCommitCreateDefaultShopParams {
+  ownerPubky: string;
+  /** The seller's published profile, if any. */
+  profile: { name: string; bio: string } | null;
+  /** Where the triggering listing ships from; otherwise a cached listing of the seller's, then the default. */
+  location?: CommerceShopRecord['location'];
+}
 
 export interface CommerceCatalogStreamFilters {
   saleFormat?: NexusListingSaleFormat;
@@ -361,7 +377,20 @@ export type CommerceCheckoutFulfillmentInput = {
    * address is sealed to these keys and only ciphertext leaves the device.
    */
   deliveryKeys?: ReadonlyMap<string, SellerDeliveryKey>;
+  /**
+   * Sellers whose connected store the buyer chose to share the address with,
+   * each with the connection's recipient key as the service published it.
+   * Only a seller that ships and gets a sealed delivery address can be in it.
+   */
+  connectorShares?: readonly ConnectorShareChoice[];
   deliveryEmail?: string;
+};
+
+export type ConnectorShareChoice = {
+  sellerPubky: string;
+  shopDomain: string;
+  keyId: string;
+  publicKey: Uint8Array;
 };
 
 /** A review-list page, or the honest signal that no review index serves this deployment. */
@@ -395,6 +424,8 @@ export class CommerceApplication {
   private constructor() {}
 
   private static sellerListingsRefreshInFlight = new Map<string, Promise<void>>();
+  /** Tail of each seller's queued shop writes in this tab (owner → settled promise). */
+  private static shopWrites = new Map<string, Promise<void>>();
   /** Listings (composite id → count) with a `commitUpsertListing` running in this tab. */
   private static listingPublishesInFlight = new Map<string, number>();
 
@@ -1173,10 +1204,88 @@ export class CommerceApplication {
           fulfillment: plan.lineFulfillments[index],
         })),
         ...sealedAddress,
+        ...(await this.sealConnectorShares(actorPubky, commandId, input, sealedAddress)),
         ...(input.deliveryEmail !== undefined ? { deliveryEmail: input.deliveryEmail } : {}),
       },
     });
     return await this.executeMarketplaceCommand(actorPubky, command);
+  }
+
+  /**
+   * The buyer's opt-in copies of the address, one per chosen seller, sealed to
+   * the store connection's recipient key and bound to this checkout. The seller
+   * must also get the sealed delivery address: sharing with a store is never the
+   * only copy, and a seller who does not ship has nothing to share.
+   */
+  private static async sealConnectorShares(
+    actorPubky: string,
+    commandId: string,
+    input: CommerceCheckoutFulfillmentInput,
+    sealedAddress: { deliveryAddress?: unknown; deliveryAddressEnvelopes?: SellerDeliveryEnvelope[] },
+  ): Promise<{ connectorShares?: ConnectorShare[] }> {
+    const choices = input.connectorShares ?? [];
+    if (choices.length === 0 || !input.deliveryAddress) return {};
+    const sealedSellers = new Set((sealedAddress.deliveryAddressEnvelopes ?? []).map(({ sellerPubky }) => sellerPubky));
+    const address = input.deliveryAddress;
+    const shares = await Promise.all(
+      choices.map(async (choice) => {
+        if (!sealedSellers.has(choice.sellerPubky)) {
+          throw Err.validation(
+            ValidationErrorCode.INVALID_INPUT,
+            'An address can be shared only with the store of a seller that ships this checkout.',
+            {
+              service: ErrorService.Marketplace,
+              operation: 'commitCreateMarketplaceCheckout',
+              context: { sellerPubky: choice.sellerPubky },
+            },
+          );
+        }
+        return {
+          sellerPubky: choice.sellerPubky,
+          shopDomain: choice.shopDomain,
+          consentVersion: CONNECTOR_SHARE_CONSENT_VERSION,
+          keyId: choice.keyId,
+          envelope: await sealConnectorAddress({
+            address,
+            recipientPublicKey: choice.publicKey,
+            binding: {
+              checkoutCommandId: commandId,
+              buyerPubky: actorPubky,
+              sellerPubky: choice.sellerPubky,
+              keyId: choice.keyId,
+            },
+          }),
+        };
+      }),
+    );
+    return { connectorShares: shares };
+  }
+
+  /**
+   * The connected stores a buyer may share the address with, for the shipped
+   * sellers of a checkout. A seller whose status cannot be read is simply
+   * offered no choice: sharing is optional and never blocks a checkout.
+   */
+  static async getConnectorStores(sellerPubkys: readonly string[]): Promise<Map<string, ConnectorShareChoice>> {
+    const stores = new Map<string, ConnectorShareChoice>();
+    await Promise.all(
+      sellerPubkys.map(async (sellerPubky) => {
+        try {
+          const [store] = await MarketplaceConnectorStatusService.getStores(sellerPubky);
+          if (!store) return;
+          const key = store.addressSharing.recipientKey;
+          stores.set(sellerPubky, {
+            sellerPubky,
+            shopDomain: store.domain,
+            keyId: key.keyId,
+            publicKey: decodeConnectorRecipientKey(key.publicKey),
+          });
+        } catch {
+          // No store, or its status could not be read: no opt-in is offered.
+        }
+      }),
+    );
+    return stores;
   }
 
   /**
@@ -1334,10 +1443,11 @@ export class CommerceApplication {
    * Server creator session another tab persisted, because none may outlive
    * the user who is leaving.
    */
-  static clearMarketplaceSessionForSignOut(): void {
-    MarketplaceSessionService.clearForSignOut();
-    LocksFrontendSessionStore.clearForSignOut();
+  static clearMarketplaceSessionForSignOut(options?: { confirmBff?: boolean }): void | Promise<void> {
+    const cleanup = MarketplaceSessionService.clearForSignOut(options);
+    RetiredLocksSessionStorage.clear();
     this.clearSessionScopedState();
+    return cleanup;
   }
 
   /**
@@ -1348,7 +1458,7 @@ export class CommerceApplication {
   static clearMarketplaceSessionsOfOtherAccounts(keepPubky: string): void {
     MarketplaceSessionService.clearOtherAccounts(keepPubky);
     CommerceInventoryApplication.clearInventorySessionsOfOtherAccounts(keepPubky);
-    LocksFrontendSessionStore.clearOtherAccounts(keepPubky);
+    RetiredLocksSessionStorage.clear();
     this.clearSessionScopedState();
   }
 
@@ -1454,8 +1564,18 @@ export class CommerceApplication {
 
   // --- Seller-configurable payment methods (durable service only) ----------
 
-  static async getSellerPaymentConfig(sellerPubky: string) {
-    return await MarketplaceGatewayService.getSellerPaymentConfig(sellerPubky);
+  /**
+   * The seller's public payment config. While Bitcoin is not offered, the
+   * service's `/health` is read too, so a Paykit outage is reported as such
+   * (`paykitUnreachable`) instead of reading as a seller with no setup. A
+   * failed health read says nothing, so it leaves the config as the service
+   * returned it.
+   */
+  static async getSellerPaymentConfig(sellerPubky: string): Promise<SellerPaymentConfig> {
+    const config = await MarketplaceGatewayService.getSellerPaymentConfig(sellerPubky);
+    if (config.bitcoinAvailable && config.bitcoinOfferAvailable) return config;
+    const rail = await MarketplaceGatewayService.getPaykitRailStatus().catch(() => 'unknown' as const);
+    return rail === 'unreachable' ? { ...config, paykitUnreachable: true } : config;
   }
 
   /**
@@ -1495,7 +1615,7 @@ export class CommerceApplication {
       }
     }
     if (registry.found && foundAppRegistryShowsNewWallet(registry.json)) return 'unsupported';
-    return (await PaykitMessagingService.hasPaymentRequestReceiver(buyerPubky)) ? 'payable' : 'not_payable';
+    return (await PaykitReceiverService.hasPaymentRequestReceiver(buyerPubky)) ? 'payable' : 'not_payable';
   }
 
   static async getMyPaymentConfig(actorPubky: string) {
@@ -1528,39 +1648,6 @@ export class CommerceApplication {
 
   static async confirmFiatReceived(actorPubky: string, orderId: string) {
     return await MarketplaceGatewayService.confirmFiatReceived(actorPubky, orderId);
-  }
-
-  /**
-   * Whether Paykit holds the seller's watch-only setup. The fork answers on
-   * its public `GET /v0/accounts/{creator}`. Upstream Paykit has no such
-   * route, so `paykitServerApi=upstream` first takes the service's
-   * `bitcoinAvailable` (Bitcoin on and Paykit's signed setup status ready),
-   * then asks the Lock Server with the seller's own Locks frontend session.
-   * With neither, or when the Lock Server cannot reach Paykit, the state is
-   * unknown and this rejects rather than report a setup it has not seen.
-   */
-  static async isPaykitAccountClaimed(pubky: string) {
-    if (getPaykitServerApi() !== 'upstream') return await MarketplacePaykitClaimService.isAccountClaimed(pubky);
-    try {
-      if ((await MarketplaceGatewayService.getSellerPaymentConfig(pubky)).bitcoinAvailable) return true;
-    } catch {
-      // The Lock Server read below still decides.
-    }
-    const session = LocksFrontendSessionStore.restore(pubky);
-    if (!session) {
-      throw Err.auth(AuthErrorCode.UNAUTHORIZED, 'Connect the Lock Server to read the Paykit setup state.', {
-        service: ErrorService.Locks,
-        operation: 'isPaykitAccountClaimed',
-      });
-    }
-    const status = await LocksGatewayService.getCreatorPaykitSetupStatus(session.token, 'BTC');
-    if (status === 'unavailable') {
-      throw Err.server(ServerErrorCode.SERVICE_UNAVAILABLE, 'The Lock Server could not read the Paykit setup state.', {
-        service: ErrorService.Locks,
-        operation: 'isPaykitAccountClaimed',
-      });
-    }
-    return status === 'ready';
   }
 
   static async getMarketplaceReceipt(actorPubky: string, receiptId: string) {
@@ -1764,41 +1851,6 @@ export class CommerceApplication {
     return { bytes, contentPath: correlation.content_path };
   }
 
-  /**
-   * Exchanges a Lock Server legacy-connect completion (`code`/`state`) for a
-   * creator frontend session — the seller-setup "connected" proof. When
-   * `accountPubky` is the signed-in Shop identity the bearer is persisted so
-   * Step 1 survives reload; sign-out still wipes it via {@link clearMarketplaceSession}.
-   */
-  static async createLocksFrontendSession(code: string, state: string, accountPubky?: string) {
-    const session = await LocksGatewayService.createFrontendSession(code, state);
-    if (!accountPubky || !locksCreatorMatchesShopPubky(session.creator, accountPubky)) {
-      return session;
-    }
-    LocksFrontendSessionStore.save({
-      token: session.session_token,
-      creator: session.creator,
-      pubky: accountPubky,
-    });
-    return session;
-  }
-
-  static async getLocksCreatorAuthorityStatus(sessionToken: string) {
-    return await LocksGatewayService.getCreatorAuthorityStatus(sessionToken);
-  }
-
-  static async getLocksPublicCreatorAuthorityStatus(accountPubky: string) {
-    return await LocksGatewayService.getPublicCreatorAuthorityStatus(accountPubky);
-  }
-
-  static restoreLocksFrontendSession(accountPubky: string) {
-    return LocksFrontendSessionStore.restore(accountPubky);
-  }
-
-  static clearLocksFrontendSession(token: string): void {
-    LocksFrontendSessionStore.clear(token);
-  }
-
   static async lookupLocksVerification(creatorPubky: string, bundleId: string) {
     return await LocksGatewayService.lookupVerification(creatorPubky, bundleId);
   }
@@ -1832,13 +1884,22 @@ export class CommerceApplication {
   }
 
   /**
-   * BTC/USD rate for the indicative "≈" price estimates shown beside listing
-   * prices. Display-only: nothing transactional consumes this rate, and it
-   * throws when unavailable so the UI shows no estimate instead of a stale
-   * or invented number.
+   * The bitcoin price in every listing currency, from one Blocktank snapshot,
+   * for the indicative "≈" price hints shown beside listing prices.
+   * Display-only: nothing transactional consumes these rates (the service
+   * fixes the amount actually charged at checkout), and it throws when
+   * unavailable so the UI shows no hint instead of a stale or invented number.
    */
-  static async getIndicativeBtcRate() {
-    return await ExchangerateService.getIndicativeBtcRate();
+  static async getIndicativeBtcRate(): Promise<BtcRate> {
+    const { fiatPerBtc } = buildFxRateSnapshot(await ExchangerateService.getIndicativeTickers());
+    const btcUsd = Number(fiatPerBtc.USD);
+    if (!Number.isFinite(btcUsd) || btcUsd <= 0) {
+      throw Err.server(ServerErrorCode.INVALID_RESPONSE, 'BTCUSD ticker not found in API response', {
+        service: ErrorService.Exchangerate,
+        operation: 'getIndicativeBtcRate',
+      });
+    }
+    return { btcUsd, satUsd: btcUsd / BASE_UNITS_PER_BITCOIN, lastUpdatedAt: new Date(), fiatPerBtc };
   }
 
   static async isFavorite(ownerPubky: string, listingId: string): Promise<boolean> {
@@ -1953,7 +2014,16 @@ export class CommerceApplication {
   // ---------------------------------------------------------------------------
 
   /** In-flight sync per owner, so overlapping triggers share one round-trip. */
-  private static watchlistSyncInFlight = new Map<string, Promise<CommerceWatchlistSyncStatus>>();
+  private static watchlistSyncInFlight = new Map<
+    string,
+    { run: Promise<CommerceWatchlistSyncStatus>; purchaseSession: string; keysEpoch: number }
+  >();
+
+  /** Which purchase session a round started under: the private data key is released to it, and only to it. */
+  private static watchlistPurchaseSessionId(): string {
+    const session = MarketplaceSessionService.getActiveSession();
+    return session ? `${session.pubky}:${session.issuedAt}` : '';
+  }
 
   private static watchlistSyncJobId(ownerPubky: string): string {
     return `watchlist|${ownerPubky}`;
@@ -2023,7 +2093,18 @@ export class CommerceApplication {
     if (capability === 'needs_reauth') return 'needs_reauth';
 
     const inFlight = this.watchlistSyncInFlight.get(ownerPubky);
-    if (inFlight) return await inFlight;
+    if (inFlight) {
+      const outcome = await inFlight.run;
+      // A round that started before the purchase session changed asked the
+      // marketplace for the key without it (or with the old one), and one that
+      // ended without the document while keys became available meanwhile
+      // (another reader took custody of them) never read it. Its outcome says
+      // nothing about the new state, so read the document again.
+      const sessionChanged = inFlight.purchaseSession !== this.watchlistPurchaseSessionId();
+      const keysArrived = outcome !== 'synced' && inFlight.keysEpoch !== CommercePrivKeyringApplication.getReadyEpoch();
+      if (sessionChanged || keysArrived) return await this.syncWatchlist(ownerPubky);
+      return outcome;
+    }
 
     // Without a lock every tab shares, two rounds can interleave their
     // read-merge-write and one tab's change is lost. No lock, no remote work:
@@ -2041,7 +2122,11 @@ export class CommerceApplication {
         this.watchlistSyncInFlight.delete(ownerPubky);
       }
     })();
-    this.watchlistSyncInFlight.set(ownerPubky, run);
+    this.watchlistSyncInFlight.set(ownerPubky, {
+      run,
+      purchaseSession: this.watchlistPurchaseSessionId(),
+      keysEpoch: CommercePrivKeyringApplication.getReadyEpoch(),
+    });
     return await run;
   }
 
@@ -2079,12 +2164,11 @@ export class CommerceApplication {
       }
       let legacy: CommerceWatchlistRecord | null = null;
       try {
-        legacy = CommerceRecordNormalizer.watchlistRecord(
-          await CommerceHomeserverService.fetchJson(legacyUrl, PRIV_V1_LOG_PATH),
-        );
+        const stored = await CommerceHomeserverService.fetchJsonIfFound(legacyUrl, PRIV_V1_LOG_PATH);
+        if (stored.found) legacy = CommerceRecordNormalizer.watchlistRecord(stored.json);
       } catch (error) {
         if (this.isPrivateAccessDenied(error)) return 'needs_reauth';
-        if (!(isAppError(error) && isNotFound(error))) throw error;
+        throw error;
       }
 
       const [favorites, tombstoneRows] = await Promise.all([
@@ -2975,7 +3059,22 @@ export class CommerceApplication {
 
   static async fetchListing(ownerPubky: string, listingId: string): Promise<CommerceListingRecord> {
     const url = CommerceRecordNormalizer.listingUri(ownerPubky, listingId);
-    const record = CommerceRecordNormalizer.listing(await CommerceHomeserverService.fetchJson(url));
+    return this.canonicalListing(await CommerceHomeserverService.fetchJson(url), ownerPubky, listingId);
+  }
+
+  /** {@link fetchListing}, with a missing record answered as `null` instead of a reported 404. */
+  private static async fetchListingIfFound(
+    ownerPubky: string,
+    listingId: string,
+  ): Promise<CommerceListingRecord | null> {
+    const stored = await CommerceHomeserverService.fetchJsonIfFound(
+      CommerceRecordNormalizer.listingUri(ownerPubky, listingId),
+    );
+    return stored.found ? this.canonicalListing(stored.json, ownerPubky, listingId) : null;
+  }
+
+  private static canonicalListing(raw: unknown, ownerPubky: string, listingId: string): CommerceListingRecord {
+    const record = CommerceRecordNormalizer.listing(raw);
     if (record.ownerPubky !== ownerPubky || record.listingId !== listingId) {
       throw Err.validation(
         ValidationErrorCode.INVALID_INPUT,
@@ -3190,7 +3289,12 @@ export class CommerceApplication {
         role,
       });
       const url = CommerceRecordNormalizer.reviewUri(actorPubky, reviewId);
-      const record = CommerceRecordNormalizer.review(await CommerceHomeserverService.fetchJson(url));
+      const stored = await CommerceHomeserverService.fetchJsonIfFound(url);
+      if (!stored.found) {
+        this.ownReviewHomeserverMisses.add(this.ownReviewMissKey(actorPubky, order.id));
+        return null;
+      }
+      const record = CommerceRecordNormalizer.review(stored.json);
       if (
         record.ownerPubky !== actorPubky ||
         record.listingId !== listingId ||
@@ -3549,7 +3653,61 @@ export class CommerceApplication {
     return published;
   }
 
+  /**
+   * Whether a seller has no storefront (`shop.json`) yet: no local row (saved
+   * or mid-save) and no published record. An unreadable homeserver throws
+   * rather than being taken as "no shop".
+   */
+  static async needsDefaultShop(ownerPubky: string): Promise<boolean> {
+    if (await LocalCommerceService.getShop(ownerPubky)) return false;
+    const published = await CommerceHomeserverService.fetchJsonIfFound(CommerceRecordNormalizer.shopUri(ownerPubky));
+    return !published.found;
+  }
+
+  /**
+   * Publishes a default storefront for a seller who has none, so apps that
+   * only trust sellers with a storefront (Bitkit's Shop contacts) see them.
+   * The final absence check and the write run in the seller's shop-write
+   * queue, so a settings save queued first wins and one queued after
+   * replaces the default.
+   */
+  static async commitCreateDefaultShop({
+    ownerPubky,
+    profile,
+    location,
+  }: TCommitCreateDefaultShopParams): Promise<void> {
+    const shipsFrom =
+      location ??
+      (await LocalCommerceService.getListingsBySeller(ownerPubky)).find((row) => row.record.location)?.record.location;
+    const record = buildDefaultShopRecord({ ownerPubky, profile, location: shipsFrom, now: new Date() });
+    await this.queueShopWrite(ownerPubky, async () => {
+      if (await LocalCommerceService.getShop(ownerPubky)) return;
+      // A failed default leaves no pending row, which would read as a settings save and block every retry.
+      await this.writeShop(record, { discardOnFailure: true });
+    });
+  }
+
   static async commitUpsertShop(record: CommerceShopRecord): Promise<void> {
+    await this.queueShopWrite(record.ownerPubky, () => this.writeShop(record));
+  }
+
+  /** Runs a seller's shop writes in this tab one at a time, in call order. */
+  private static async queueShopWrite(ownerPubky: string, write: () => Promise<void>): Promise<void> {
+    const previous = this.shopWrites.get(ownerPubky) ?? Promise.resolve();
+    const current = previous.then(write);
+    const tail = current.catch(() => undefined);
+    this.shopWrites.set(ownerPubky, tail);
+    try {
+      await current;
+    } finally {
+      if (this.shopWrites.get(ownerPubky) === tail) this.shopWrites.delete(ownerPubky);
+    }
+  }
+
+  private static async writeShop(
+    record: CommerceShopRecord,
+    { discardOnFailure = false }: { discardOnFailure?: boolean } = {},
+  ): Promise<void> {
     const now = Date.now();
     const url = CommerceRecordNormalizer.shopUri(record.ownerPubky);
     const job = this.createSyncJob({
@@ -3562,7 +3720,13 @@ export class CommerceApplication {
     });
 
     await LocalCommerceService.stageShopSync(record, job);
-    await CommerceHomeserverService.putJson(url, { ...record });
+    try {
+      await CommerceHomeserverService.putJson(url, { ...record });
+    } catch (error) {
+      // The write error is the one to surface; a failed discard reports itself at its origin.
+      if (discardOnFailure) await LocalCommerceService.discardStagedShopSync(record, job.id).catch(() => undefined);
+      throw error;
+    }
     await LocalCommerceService.upsertShop(record, 'synced');
     await LocalCommerceService.completeSyncJob(job.id);
   }
@@ -3595,7 +3759,17 @@ export class CommerceApplication {
     record: CommerceListingRecord,
     reservePrice?: CommerceMoney | null,
   ): Promise<{ registered: boolean; verified: boolean }> {
-    if (isDurableCommerceMode(getCommerceAdapterMode()) && !this.hasActiveMarketplaceSession()) {
+    // A pause without a session keeps the row's registration status; the next publish or heal with a
+    // session registers it.
+    const missingDurableSession =
+      isDurableCommerceMode(getCommerceAdapterMode()) && !this.hasActiveMarketplaceSession();
+    const pausingWithoutSession =
+      missingDurableSession &&
+      !listingPublishNeedsMarketplaceSession(
+        (await LocalCommerceService.getListing(`${record.ownerPubky}:${record.listingId}`))?.record,
+        record,
+      );
+    if (missingDurableSession && !pausingWithoutSession) {
       throw Err.auth(AuthErrorCode.SESSION_EXPIRED, 'Connect a marketplace session to publish a listing.', {
         service: ErrorService.Marketplace,
         operation: 'commitUpsertListing',
@@ -3617,7 +3791,8 @@ export class CommerceApplication {
     const mode = getCommerceAdapterMode();
     const attempt = this.beginListingRegistration(record.ownerPubky, record.listingId);
     const registering = mode !== 'unavailable' && this.canCoordinateListingRegistration();
-    const registrationStatus = mode === 'unavailable' ? 'unavailable' : 'unregistered';
+    const registrationStatus =
+      mode === 'unavailable' ? 'unavailable' : pausingWithoutSession ? undefined : 'unregistered';
     this.assertListingRegistrationFence(attempt);
     attempt.observed = await LocalCommerceService.stageListingSync(record, publishJob, registrationStatus);
     if (registering && record.sale.format === 'auction' && isDurableCommerceMode(mode)) {
@@ -3651,7 +3826,7 @@ export class CommerceApplication {
     // truths (published / verified / registered) are returned separately; an
     // unregistered listing self-heals through ensureListingRegistered /
     // listing.sync once a marketplace session exists.
-    if (mode === 'unavailable') {
+    if (mode === 'unavailable' || pausingWithoutSession) {
       await LocalCommerceService.completeSyncJob(publishJob.id);
       return { registered: false, verified };
     }
@@ -3821,6 +3996,14 @@ export class CommerceApplication {
       this.assertListingRegistrationFence(attempt);
       return stillObserved;
     };
+    // A heal of a listing the service already holds (re-syncing a stale projection) leaves its row as it
+    // is: a failure must not offer registration again, and an unchanged success need not rewrite it.
+    const healsRegisteredRow = async (): Promise<boolean> => {
+      if (owner !== 'heal') return false;
+      const { registrationStatus } = await LocalCommerceService.getListingRegistrationState(attempt.compositeListingId);
+      this.assertListingRegistrationFence(attempt);
+      return registrationStatus === 'registered';
+    };
     try {
       assertPublishableListingStock(record, 'registerListing');
       if (isDurableCommerceMode(getCommerceAdapterMode())) {
@@ -3845,7 +4028,7 @@ export class CommerceApplication {
             await this.settleUnregistrableListing(attempt, outcome);
             return false;
           }
-          await settle({ status: 'registered' });
+          if (!(await healsRegisteredRow())) await settle({ status: 'registered' });
           if (publishJobId) {
             this.assertListingRegistrationFence(attempt);
             await LocalCommerceService.completeSyncJob(publishJobId);
@@ -3853,7 +4036,7 @@ export class CommerceApplication {
           return true;
         } catch (error) {
           if (!this.listingRegistrationFenceHolds(attempt)) return false;
-          await settle({ status: 'unregistered' });
+          if (!(await healsRegisteredRow())) await settle({ status: 'unregistered' });
           Logger.warn('Listing registration failed; it stays pending for the next attempt', { error });
           return false;
         }
@@ -3863,7 +4046,9 @@ export class CommerceApplication {
       if (!this.listingRegistrationFenceHolds(attempt)) return false;
       // Best effort: a refused lock or a sign-out here leaves the row as it is, which is already pending.
       await this.withListingRegistrationLock(attempt, 'heal', async () => {
-        if (await this.listingRowStillObserved(attempt)) await settle({ status: 'unregistered' });
+        if ((await this.listingRowStillObserved(attempt)) && !(await healsRegisteredRow())) {
+          await settle({ status: 'unregistered' });
+        }
       }).catch(() => null);
       Logger.warn('Listing registration failed before it reached the service; it stays pending', { error });
       return false;
@@ -3926,16 +4111,11 @@ export class CommerceApplication {
 
   /**
    * Whether the seller's homeserver still holds the listing record. Only a
-   * 404 answers false; any other failure throws, so the caller stays pending.
+   * 404 answers false, without reporting it; any other failure throws, so the
+   * caller stays pending.
    */
   private static async hasPublishedListingRecord(listing: CommerceListingRecord): Promise<boolean> {
-    try {
-      await this.fetchListing(listing.ownerPubky, listing.listingId);
-      return true;
-    } catch (error) {
-      if (isAppError(error) && isNotFound(error)) return false;
-      throw error;
-    }
+    return (await this.fetchListingIfFound(listing.ownerPubky, listing.listingId)) !== null;
   }
 
   /**
@@ -4211,18 +4391,23 @@ export class CommerceApplication {
     assertPublishableListingStock(record, 'putVerifiedPublicListing');
     let current: Record<string, unknown> = {};
     let exists = false;
-    try {
-      const fetched = await CommerceHomeserverService.fetchJson(url);
-      if (!isPlainRecord(fetched)) {
+    const published = await CommerceHomeserverService.fetchJsonIfFound(url);
+    if (published.found) {
+      if (!isPlainRecord(published.json)) {
         throw Err.validation(ValidationErrorCode.INVALID_INPUT, 'The published listing is not a JSON object.', {
           service: ErrorService.Homeserver,
           operation: 'putVerifiedPublicListing',
         });
       }
-      current = fetched;
+      current = published.json;
       exists = true;
-    } catch (error) {
-      if (!(isAppError(error) && isNotFound(error) && record.revision === 1)) throw error;
+    } else if (record.revision !== 1) {
+      // Only a first publish may find nothing: an edit whose base record is gone is a real failure.
+      throw Err.client(ClientErrorCode.NOT_FOUND, 'The published listing is missing. Reload and try again.', {
+        service: ErrorService.Homeserver,
+        operation: 'putVerifiedPublicListing',
+        context: { statusCode: HttpStatusCode.NOT_FOUND },
+      });
     }
 
     const scrubbed = stripForbiddenPublicReserveKeys(current);
@@ -4263,16 +4448,11 @@ export class CommerceApplication {
             operation: 'putVerifiedPublicListing',
           });
         }
-      } else {
-        try {
-          await CommerceHomeserverService.fetchJson(url);
-          throw Err.client(ClientErrorCode.CONFLICT, 'The published listing changed. Reload and try again.', {
-            service: ErrorService.Homeserver,
-            operation: 'putVerifiedPublicListing',
-          });
-        } catch (error) {
-          if (!(isAppError(error) && isNotFound(error))) throw error;
-        }
+      } else if ((await CommerceHomeserverService.fetchJsonIfFound(url)).found) {
+        throw Err.client(ClientErrorCode.CONFLICT, 'The published listing changed. Reload and try again.', {
+          service: ErrorService.Homeserver,
+          operation: 'putVerifiedPublicListing',
+        });
       }
       await retryHomeserverWrite(HttpMethod.PUT, () =>
         this.withListingWriteLock(attempt, async () => {
@@ -4337,17 +4517,13 @@ export class CommerceApplication {
     record: CommerceListingRecord,
   ): Promise<{ record: unknown } | undefined> {
     for (let attempt = 0; ; attempt += 1) {
-      try {
-        const fetched = await CommerceHomeserverService.fetchJson(url);
-        const staleLag = isPlainRecord(fetched) && fetched.revision === record.revision - 1;
-        if (!staleLag || attempt >= LISTING_READ_BACK_RETRY_DELAYS_MS.length)
-          return staleLag ? undefined : { record: fetched };
-      } catch (error) {
-        const missing = isAppError(error) && isNotFound(error);
-        if (!missing || attempt >= LISTING_READ_BACK_RETRY_DELAYS_MS.length) {
-          if (missing) return undefined;
-          throw error;
-        }
+      const lastAttempt = attempt >= LISTING_READ_BACK_RETRY_DELAYS_MS.length;
+      const read = await CommerceHomeserverService.fetchJsonIfFound(url);
+      if (read.found) {
+        const staleLag = isPlainRecord(read.json) && read.json.revision === record.revision - 1;
+        if (!staleLag || lastAttempt) return staleLag ? undefined : { record: read.json };
+      } else if (lastAttempt) {
+        return undefined;
       }
       await new Promise<void>((resolve) => {
         setTimeout(resolve, LISTING_READ_BACK_RETRY_DELAYS_MS[attempt]);
@@ -4540,7 +4716,10 @@ export class CommerceApplication {
       signal: attempt.signal,
     });
     this.assertListingRegistrationFence(attempt);
-    if (existing?.serverRevision) {
+    // `listing.register` carries no Locks lock, so a Locks listing registered with it would sell as a
+    // digital item without its lock. `listing.sync` derives the lock from the seller-signed record.
+    const locksListing = durable && listing.digitalLock !== undefined;
+    if (existing?.serverRevision || locksListing) {
       // Already registered: EDITS must still reach the authority. `listing.sync`
       // is convergent — the service re-reads the seller-signed record and
       // updates the aggregate's terms when the record revision advanced, or
@@ -4551,7 +4730,14 @@ export class CommerceApplication {
         const command = this.createListingSyncCommand(listing.ownerPubky, listing.listingId);
         const response = await send(command);
         if (isListingRecordNotFoundResponse(response, aggregateId, command.commandId)) return 'service_not_found';
-        if (!isSuccessfulListingRegistrationResponse(response, aggregateId, command.commandId, true)) {
+        if (
+          !isSuccessfulListingRegistrationResponse(
+            response,
+            aggregateId,
+            command.commandId,
+            Boolean(existing?.serverRevision),
+          )
+        ) {
           throw Err.client(ClientErrorCode.BAD_REQUEST, 'Marketplace listing registration was refused.', {
             service: ErrorService.Marketplace,
             operation: 'registerListing',

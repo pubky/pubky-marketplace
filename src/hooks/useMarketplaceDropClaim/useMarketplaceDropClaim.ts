@@ -5,6 +5,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { getCommerceAdapterMode, isDurableCommerceMode } from '@/config/commerce';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import { type PendingDeliveryKeyChange, useDeliveryKeyGate } from '@/hooks/useDeliveryKeyGate/useDeliveryKeyGate';
+import { checkDestinationCountry } from '@/hooks/useMarketplaceSellerShipsTo/useMarketplaceSellerShipsTo';
 import { extractCheckoutOrderIds } from '@/libs/commerce/checkout-phase';
 import { MARKETPLACE_FAILURE_MESSAGES, marketplaceDropRefusalMessage } from '@/libs/commerce/failure-messages';
 import {
@@ -125,6 +126,11 @@ export function useMarketplaceDropClaim(onClaimed?: () => void | Promise<void>):
         postalCode: claimAddress.postal_code,
         countryCode: claimAddress.country_code.toUpperCase(),
       };
+      const destinationError = await checkDestinationCountry(address.countryCode, [listingOwnerPubky]);
+      if (destinationError) {
+        setFailure(destinationError);
+        return false;
+      }
       const gate = await resolveKeys([listingOwnerPubky]);
       if (!gate.ok) {
         if (gate.blocked) setFailure(gate.blocked.message);

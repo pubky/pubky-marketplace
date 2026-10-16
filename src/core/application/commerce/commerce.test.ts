@@ -11,10 +11,12 @@ import { CommerceController } from '@/controllers/commerce/commerce';
 import { marketplaceCommandResponseSchema } from '@/libs/commerce/transaction-commands';
 import { UNLIMITED_STOCK_REFUSAL, UNLIMITED_STOCK_RESERVED_MESSAGE } from '@/libs/commerce/unlimited-stock';
 import { toCamelCaseWire } from '@/libs/commerce/wire-casing';
+import { AppError } from '@/libs/error/error';
 import { AuthErrorCode, ClientErrorCode, ServerErrorCode } from '@/libs/error/error.codes';
 import { Err } from '@/libs/error/error.factories';
 import { httpStatusCodeToError } from '@/libs/error/error.http';
-import { ErrorService } from '@/libs/error/error.types';
+import { ErrorCategory, ErrorService } from '@/libs/error/error.types';
+import { isAppError } from '@/libs/error/error.utils';
 import { Logger } from '@/libs/logger/logger';
 import {
   CommerceCatalogEntryModel,
@@ -133,10 +135,30 @@ describe('CommerceApplication', () => {
           .find(([writtenUrl]) => writtenUrl === url);
         if (latest) return latest[1];
       }
-      throw Err.client(ClientErrorCode.NOT_FOUND, 'Not found', {
+      throw new AppError({
+        category: ErrorCategory.Client,
+        code: ClientErrorCode.NOT_FOUND,
+        message: 'Not found',
         service: ErrorService.Homeserver,
         operation: 'fetchJson',
+        context: { statusCode: 404 },
       });
+    });
+    // Tests state the homeserver through the fetchJson mock. The if-found read sees the same records,
+    // with fetchJsonIfFound's contract: only a homeserver HTTP 404 is { found: false }, anything else is thrown.
+    vi.spyOn(CommerceHomeserverService, 'fetchJsonIfFound').mockImplementation(async (url, logUrl) => {
+      try {
+        const json =
+          logUrl === undefined
+            ? await CommerceHomeserverService.fetchJson(url)
+            : await CommerceHomeserverService.fetchJson(url, logUrl);
+        return { found: true, json };
+      } catch (error) {
+        if (isAppError(error) && error.service === ErrorService.Homeserver && error.context?.statusCode === 404) {
+          return { found: false };
+        }
+        throw error;
+      }
     });
   });
 
@@ -653,6 +675,103 @@ describe('CommerceApplication', () => {
     });
   });
 
+  describe('a state change without a marketplace session', () => {
+    const sessionless = async (record: ReturnType<typeof createCommerceListingFixture>) => {
+      vi.spyOn(commerceConfig, 'getCommerceAdapterMode').mockReturnValue('transaction-service');
+      vi.spyOn(CommerceApplication, 'hasActiveMarketplaceSession').mockReturnValue(false);
+      await CommerceListingModel.table.put({ ...toCommerceListingModel(record), registration_status: 'registered' });
+      let published: Record<string, unknown> = { ...record };
+      const put = vi.spyOn(CommerceHomeserverService, 'putJson').mockImplementation(async (url, body) => {
+        if (url === LISTING_URL) published = body;
+      });
+      vi.mocked(CommerceHomeserverService.fetchJson).mockImplementation(async (url) => {
+        if (url === LISTING_URL) return published;
+        throw Err.client(ClientErrorCode.NOT_FOUND, 'Not found', {
+          service: ErrorService.Homeserver,
+          operation: 'fetchJson',
+          context: { statusCode: 404 },
+        });
+      });
+      const execute = vi.spyOn(MarketplaceGatewayService, 'execute');
+      return { put, execute };
+    };
+    const next = (
+      record: ReturnType<typeof createCommerceListingFixture>,
+      state: 'active' | 'paused',
+    ): ReturnType<typeof createCommerceListingFixture> => ({
+      ...record,
+      revision: record.revision + 1,
+      state,
+      updatedAt: new Date().toISOString(),
+    });
+
+    it('pauses a fixed-price listing on the homeserver and keeps its registration', async () => {
+      const record = createCommerceListingFixture();
+      const { put, execute } = await sessionless(record);
+
+      await expect(CommerceApplication.commitUpsertListing(next(record, 'paused'))).resolves.toEqual({
+        registered: false,
+        verified: true,
+      });
+
+      expect(put).toHaveBeenCalledWith(LISTING_URL, expect.objectContaining({ state: 'paused' }), expect.anything());
+      expect(execute).not.toHaveBeenCalled();
+      await expect(LocalCommerceService.getListing(`${record.ownerPubky}:${record.listingId}`)).resolves.toMatchObject({
+        state: 'paused',
+        sync_status: 'synced',
+        registration_status: 'registered',
+      });
+      await expect(CommerceSyncJobModel.table.count()).resolves.toBe(0);
+    });
+
+    it.each([
+      ['a pause that also edits the listing', 'active', 'Renamed boots'],
+      ['an edit of a paused listing', 'paused', 'Renamed boots'],
+    ] as const)('still asks for the session for %s, before anything is written', async (_case, from, title) => {
+      const record = { ...createCommerceListingFixture(), state: from };
+      const { put, execute } = await sessionless(record);
+
+      await expect(CommerceApplication.commitUpsertListing({ ...next(record, 'paused'), title })).rejects.toMatchObject(
+        { code: AuthErrorCode.SESSION_EXPIRED },
+      );
+      expect(put).not.toHaveBeenCalled();
+      expect(execute).not.toHaveBeenCalled();
+      await expect(LocalCommerceService.getListing(`${record.ownerPubky}:${record.listingId}`)).resolves.toMatchObject({
+        state: from,
+        record: expect.objectContaining({ title: record.title }),
+      });
+    });
+
+    it('still asks for the session to relist, before anything is written', async () => {
+      const record = { ...createCommerceListingFixture(), state: 'paused' as const };
+      const { put } = await sessionless(record);
+
+      await expect(CommerceApplication.commitUpsertListing(next(record, 'active'))).rejects.toMatchObject({
+        code: AuthErrorCode.SESSION_EXPIRED,
+      });
+      expect(put).not.toHaveBeenCalled();
+    });
+
+    it('still asks for the session to pause an auction', async () => {
+      const record = createCommerceListingFixture();
+      record.sale = {
+        format: 'auction',
+        startingPrice: { amountMinor: 4_500, currency: 'USD', exponent: 2 },
+        minimumIncrement: { amountMinor: 500, currency: 'USD', exponent: 2 },
+        startsAt: '2026-08-19T20:00:00.000Z',
+        endsAt: '2026-08-29T20:00:00.000Z',
+        antiSnipingWindowSeconds: 120,
+        antiSnipingExtensionSeconds: 120,
+      };
+      const { put } = await sessionless(record);
+
+      await expect(CommerceApplication.commitUpsertListing(next(record, 'paused'))).rejects.toMatchObject({
+        code: AuthErrorCode.SESSION_EXPIRED,
+      });
+      expect(put).not.toHaveBeenCalled();
+    });
+  });
+
   it('scrubs nested public reserve keys and reuses the verified private reserve on retry', async () => {
     const listing = createCommerceListingFixture();
     listing.sale = {
@@ -691,6 +810,7 @@ describe('CommerceApplication', () => {
         throw Err.client(ClientErrorCode.NOT_FOUND, 'Not found', {
           service: ErrorService.Homeserver,
           operation: 'fetchJson',
+          context: { statusCode: 404 },
         });
       }
       return {
@@ -789,6 +909,7 @@ describe('CommerceApplication', () => {
       Err.client(ClientErrorCode.NOT_FOUND, 'Not found', {
         service: ErrorService.Homeserver,
         operation: 'fetchJson',
+        context: { statusCode: 404 },
       });
     const publishableSession = () => {
       vi.spyOn(commerceConfig, 'getCommerceAdapterMode').mockReturnValue('transaction-service');
@@ -854,6 +975,81 @@ describe('CommerceApplication', () => {
       const registered = await LocalCommerceService.getListing(listingId);
       expect(registered).toMatchObject({ registration_status: 'registered' });
       expect(registered?.read_back_pending_since).toBeUndefined();
+    });
+
+    describe('reads that find nothing yet', () => {
+      const notFoundReports = (spy: { mock: { calls: unknown[][] } }) =>
+        spy.mock.calls.filter(([code]) => code === ClientErrorCode.NOT_FOUND);
+
+      it('publishes a new listing through a lagging read-back without logging or reporting a 404', async () => {
+        const record = createCommerceListingFixture();
+        publishableSession();
+        let reads = 0;
+        const read = vi.spyOn(CommerceHomeserverService, 'fetchJsonIfFound').mockImplementation(async () => {
+          reads += 1;
+          // Pre-write read, fresh-base read and first read-back find nothing; then the write is visible.
+          return reads <= 3 ? { found: false } : { found: true, json: { ...record } };
+        });
+        const fetchJson = vi.spyOn(CommerceHomeserverService, 'fetchJson');
+        const errClient = vi.spyOn(Err, 'client');
+        const loggerError = vi.spyOn(Logger, 'error');
+
+        await expect(CommerceApplication.commitUpsertListing(record)).resolves.toEqual({
+          registered: true,
+          verified: true,
+        });
+
+        expect(read).toHaveBeenCalledWith(LISTING_URL);
+        expect(fetchJson).not.toHaveBeenCalledWith(LISTING_URL);
+        expect(CommerceHomeserverService.putJson).toHaveBeenCalledOnce();
+        expect(notFoundReports(errClient)).toHaveLength(0);
+        expect(loggerError).not.toHaveBeenCalled();
+      });
+
+      it('still reports an edit whose base record is gone, and writes nothing', async () => {
+        const record = createCommerceListingFixture();
+        record.revision = 2;
+        vi.spyOn(commerceConfig, 'getCommerceAdapterMode').mockReturnValue('unavailable');
+        vi.spyOn(CommerceHomeserverService, 'fetchJsonIfFound').mockResolvedValue({ found: false });
+        const put = vi.spyOn(CommerceHomeserverService, 'putJson');
+        const errClient = vi.spyOn(Err, 'client');
+
+        await expect(CommerceApplication.commitUpsertListing(record)).rejects.toMatchObject({
+          code: ClientErrorCode.NOT_FOUND,
+          context: { statusCode: 404 },
+        });
+        expect(notFoundReports(errClient)).toHaveLength(1);
+        expect(put).not.toHaveBeenCalled();
+      });
+
+      it('still throws a real read failure before the write', async () => {
+        const record = createCommerceListingFixture();
+        vi.spyOn(commerceConfig, 'getCommerceAdapterMode').mockReturnValue('unavailable');
+        const failure = Err.server(ServerErrorCode.INTERNAL_ERROR, 'Homeserver failed', {
+          service: ErrorService.Homeserver,
+          operation: 'getJsonIfFound',
+          context: { statusCode: 500 },
+        });
+        vi.spyOn(CommerceHomeserverService, 'fetchJsonIfFound').mockRejectedValue(failure);
+        const put = vi.spyOn(CommerceHomeserverService, 'putJson');
+
+        await expect(CommerceApplication.commitUpsertListing(record)).rejects.toBe(failure);
+        expect(put).not.toHaveBeenCalled();
+      });
+
+      it('refuses a first publish when the record appears before the write', async () => {
+        const record = createCommerceListingFixture();
+        vi.spyOn(commerceConfig, 'getCommerceAdapterMode').mockReturnValue('unavailable');
+        vi.spyOn(CommerceHomeserverService, 'fetchJsonIfFound')
+          .mockResolvedValueOnce({ found: false })
+          .mockResolvedValueOnce({ found: true, json: { ...record } });
+        const put = vi.spyOn(CommerceHomeserverService, 'putJson');
+
+        await expect(CommerceApplication.commitUpsertListing(record)).rejects.toMatchObject({
+          code: ClientErrorCode.CONFLICT,
+        });
+        expect(put).not.toHaveBeenCalled();
+      });
     });
 
     it('settles a remote deletion as authoritative once the read-back window has passed', async () => {
@@ -1367,9 +1563,12 @@ describe('CommerceApplication', () => {
         .spyOn(MarketplaceGatewayService, 'execute')
         .mockImplementation(async (_actor, command) => listingRegisteredResponse(command));
 
+      const loggerError = vi.spyOn(Logger, 'error');
+
       await expect(CommerceApplication.ensureListingRegistered(record)).resolves.toBe(false);
 
-      expect(CommerceHomeserverService.fetchJson).toHaveBeenCalledWith(LISTING_URL);
+      expect(CommerceHomeserverService.fetchJsonIfFound).toHaveBeenCalledWith(LISTING_URL);
+      expect(loggerError).not.toHaveBeenCalled();
       expect(getListing).not.toHaveBeenCalled();
       expect(execute).not.toHaveBeenCalled();
       await expect(LocalCommerceService.getListing(listingId)).resolves.toBeNull();
@@ -1479,6 +1678,7 @@ describe('CommerceApplication', () => {
         Err.client(ClientErrorCode.NOT_FOUND, 'Not found', {
           service: ErrorService.Homeserver,
           operation: 'fetchJson',
+          context: { statusCode: 404 },
         });
 
       /** Homeserver whose listing reads return the latest PUT, else the original record. */
@@ -1725,6 +1925,7 @@ describe('CommerceApplication', () => {
         Err.client(ClientErrorCode.NOT_FOUND, 'Not found', {
           service: ErrorService.Homeserver,
           operation: 'fetchJson',
+          context: { statusCode: 404 },
         }),
       );
       await expect(CommerceApplication.ensureListingRegistered(record)).resolves.toBe(false);
@@ -1794,6 +1995,42 @@ describe('CommerceApplication', () => {
       };
       return { gate, run };
     };
+
+    it.each([
+      [
+        'fails',
+        async () => {
+          throw new TypeError('sync unavailable');
+        },
+        false,
+      ],
+      [
+        'succeeds',
+        async (_actor: string, command: Parameters<typeof listingRegisteredResponse>[0]) =>
+          listingRegisteredResponse(command),
+        true,
+      ],
+    ] as const)(
+      'a heal of a registered listing whose sync %s leaves the registered row untouched',
+      async (_label, answer, healed) => {
+        const record = createCommerceListingFixture();
+        const listingId = await durableSeller(record);
+        const generation = await LocalCommerceService.getListingRowGeneration(listingId);
+        await LocalCommerceService.settleListingRegistration(listingId, generation, { status: 'registered' });
+        const before = await LocalCommerceService.getListing(listingId);
+        vi.spyOn(MarketplaceGatewayService, 'getListing').mockResolvedValue({ serverRevision: 4 } as never);
+        const execute = vi.spyOn(MarketplaceGatewayService, 'execute').mockImplementation(answer as never);
+
+        await expect(CommerceApplication.ensureListingRegistered(record)).resolves.toBe(healed);
+
+        expect(execute).toHaveBeenCalledOnce();
+        expect(execute.mock.calls[0][1]).toMatchObject({ kind: 'listing.sync' });
+        await expect(LocalCommerceService.getListing(listingId)).resolves.toMatchObject({
+          registration_status: 'registered',
+          write_id: before?.write_id,
+        });
+      },
+    );
 
     it('a second tab gives up while the first holds the listing, so one command is sent', async () => {
       const record = createCommerceListingFixture();
@@ -2018,6 +2255,7 @@ describe('CommerceApplication', () => {
         Err.client(ClientErrorCode.NOT_FOUND, 'Not found', {
           service: ErrorService.Homeserver,
           operation: 'fetchJson',
+          context: { statusCode: 404 },
         });
       /** One listing record on the seller's homeserver, changed only by the PUT and DELETE spies. */
       const homeserver = (record: ReturnType<typeof createCommerceListingFixture>) => {
@@ -2246,6 +2484,7 @@ describe('CommerceApplication', () => {
         Err.client(ClientErrorCode.NOT_FOUND, 'Not found', {
           service: ErrorService.Homeserver,
           operation: 'fetchJson',
+          context: { statusCode: 404 },
         }),
       );
 
@@ -2303,6 +2542,95 @@ describe('CommerceApplication', () => {
     expect(result).toEqual({ registered: true, verified: true });
   });
 
+  describe('first registration of a digital listing (durable)', () => {
+    const digitalListing = (locks: boolean) =>
+      createCommerceListingFixture({
+        fulfillmentMethods: ['digital'],
+        package: undefined,
+        shippingOptions: [],
+        ...(locks
+          ? {
+              digitalLock: {
+                policyUri: `pubky://${COMMERCE_FIXTURE_SELLER}/pub/locks.app/boots_01.json`,
+                criterionId: 'criterion-1',
+                contentPath: 'premium.txt',
+                resourceHash: 'b'.repeat(64),
+                minimumConfirmations: 6,
+              },
+            }
+          : {}),
+      });
+
+    beforeEach(() => {
+      vi.spyOn(commerceConfig, 'getCommerceAdapterMode').mockReturnValue('transaction-service');
+      vi.spyOn(CommerceApplication, 'hasActiveMarketplaceSession').mockReturnValue(true);
+      vi.spyOn(LocalCommerceService, 'stageListingSync');
+      vi.spyOn(CommerceHomeserverService, 'putJson').mockResolvedValue(undefined);
+      vi.spyOn(LocalCommerceService, 'completeSyncJob').mockResolvedValue(undefined);
+      vi.spyOn(MarketplaceGatewayService, 'getListing').mockResolvedValue(null);
+    });
+
+    it('registers a Locks listing through listing.sync, which derives its lock from the record', async () => {
+      const record = digitalListing(true);
+      const execute = vi
+        .spyOn(MarketplaceGatewayService, 'execute')
+        .mockImplementation(async (_actor, command) => listingRegisteredResponse(command));
+
+      await expect(CommerceApplication.commitUpsertListing(record)).resolves.toEqual({
+        registered: true,
+        verified: true,
+      });
+
+      expect(execute).toHaveBeenCalledOnce();
+      expect(execute).toHaveBeenCalledWith(
+        record.ownerPubky,
+        expect.objectContaining({
+          kind: 'listing.sync',
+          expectedRevision: 0,
+          payload: { sellerPubky: record.ownerPubky, listingId: record.listingId },
+        }),
+        { signal: expect.any(AbortSignal) },
+      );
+    });
+
+    it('keeps a new Locks listing pending when its sync is refused', async () => {
+      const record = digitalListing(true);
+      vi.spyOn(MarketplaceGatewayService, 'execute').mockImplementation(async (_actor, command) => ({
+        ok: false as const,
+        version: 1 as const,
+        commandId: command.commandId,
+        aggregateId: command.aggregateId,
+        error: { code: 'INVALID_STATE', message: 'The seller listing record could not be interpreted.' },
+      }));
+
+      await expect(CommerceApplication.commitUpsertListing(record)).resolves.toEqual({
+        registered: false,
+        verified: true,
+      });
+      await expect(LocalCommerceService.getListing(`${record.ownerPubky}:${record.listingId}`)).resolves.toMatchObject({
+        registration_status: 'unregistered',
+      });
+    });
+
+    it('still registers a digital listing without a lock through listing.register', async () => {
+      const record = digitalListing(false);
+      const execute = vi
+        .spyOn(MarketplaceGatewayService, 'execute')
+        .mockImplementation(async (_actor, command) => listingRegisteredResponse(command));
+
+      await CommerceApplication.commitUpsertListing(record);
+
+      expect(execute).toHaveBeenCalledWith(
+        record.ownerPubky,
+        expect.objectContaining({
+          kind: 'listing.register',
+          payload: expect.objectContaining({ fulfillmentMethods: ['digital'] }),
+        }),
+        { signal: expect.any(AbortSignal) },
+      );
+    });
+  });
+
   it.each(['unavailable', 'transaction-service'] as const)(
     'publishes a composer record whose optional fields are undefined, verified against its JSON read-back (%s)',
     async (mode) => {
@@ -2330,6 +2658,7 @@ describe('CommerceApplication', () => {
         throw Err.client(ClientErrorCode.NOT_FOUND, 'Not found', {
           service: ErrorService.Homeserver,
           operation: 'fetchJson',
+          context: { statusCode: 404 },
         });
       });
 

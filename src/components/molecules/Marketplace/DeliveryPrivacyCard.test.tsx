@@ -34,6 +34,7 @@ describe('DeliveryPrivacyCard', () => {
   it('shows the fingerprint and warns about rotation loss and kept keys', async () => {
     renderCard({ local, publication: 'matches', publishedKeyId: KEY_ID });
     expect(screen.getByTestId('delivery-key-fingerprint')).toHaveTextContent('0123 4567 89ab cdef 0123 4567 89ab cdef');
+    expect(screen.getByText('Key fingerprint (public, safe to share)')).toBeInTheDocument();
     expect(screen.getByText('Published')).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Rotate key' }));
     expect(await screen.findByText(/keeps your earlier keys/)).toBeInTheDocument();

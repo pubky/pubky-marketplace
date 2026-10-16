@@ -10,13 +10,19 @@ import { useMarketplaceOfferCheckout } from './useMarketplaceOfferCheckout';
 
 const errorState = vi.hoisted(() => ({ sessionRequired: false }));
 
+const shopShipsTo = vi.hoisted(() => new Map<string, string[]>());
+
 vi.mock('@/controllers/commerce/commerce', () => ({
   CommerceController: {
+    refreshShop: vi.fn(async (sellerPubky: string) => ({
+      ownerPubky: sellerPubky,
+      shipsToCountries: shopShipsTo.get(sellerPubky),
+    })),
+    getShop: vi.fn(async () => null),
     getMarketplaceOffers: vi.fn(),
     commitOfferCheckout: vi.fn(),
     bindPaymentMethod: vi.fn(),
     executeMarketplaceCommand: vi.fn(),
-    rememberUsdtRefusal: vi.fn(),
     resolveDeliveryKeysForCheckout: vi.fn(),
     commitAcceptDeliveryKeyChange: vi.fn(),
     sealDeliveryAddressForCheckout: vi.fn(),
@@ -89,6 +95,7 @@ function committedPayload(): Record<string, unknown> | undefined {
 describe('useMarketplaceOfferCheckout', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    shopShipsTo.clear();
     errorState.sessionRequired = false;
     vi.mocked(CommerceController.getMarketplaceOffers).mockResolvedValue([offer]);
     vi.mocked(CommerceController.commitOfferCheckout).mockResolvedValue({
@@ -103,50 +110,38 @@ describe('useMarketplaceOfferCheckout', () => {
     vi.spyOn(globalThis.crypto, 'randomUUID').mockReturnValue('00000000-0000-4000-8000-000000000704');
   });
 
-  describe('a refused USDT bind', () => {
-    const bindRefusal = (reason: string, paymentMethod?: 'usdt') =>
-      new AppError({
-        category: ErrorCategory.Client,
-        code: ClientErrorCode.BAD_REQUEST,
-        message: 'SENTINEL',
-        service: ErrorService.Marketplace,
-        operation: 'bindPaymentMethod',
-        context: { statusCode: 409, reason, ...(paymentMethod ? { paymentMethod } : {}) },
-      });
-
-    it.each(['usdt_unavailable', 'usdt_seller_not_ready'] as const)(
-      'remembers %s for the award seller',
-      async (reason) => {
-        vi.mocked(CommerceController.bindPaymentMethod).mockRejectedValueOnce(bindRefusal(reason, 'usdt'));
-        const { result } = renderHook(() => useMarketplaceOfferCheckout());
-
-        await act(async () => {
-          await expect(result.current.submit(offer, address, 'usdt')).resolves.toEqual({
-            ok: false,
-            code: 'BIND_FAILED',
-          });
+  it.each(['paykit', 'bitcoin'] as const)(
+    'reports a %s bind refused because Paykit is unreachable, and only that refusal',
+    async (method) => {
+      const refusal = (reason: string) =>
+        new AppError({
+          category: ErrorCategory.Client,
+          code: ClientErrorCode.BAD_REQUEST,
+          message: 'SENTINEL',
+          service: ErrorService.Marketplace,
+          operation: 'bindPaymentMethod',
+          context: { statusCode: reason === 'paykit_unavailable' ? 503 : 409, reason, paymentMethod: method },
         });
-
-        expect(CommerceController.rememberUsdtRefusal).toHaveBeenCalledWith('s'.repeat(52), reason);
-      },
-    );
-
-    it('remembers nothing for a refusal the buyer can fix, or on another rail', async () => {
       vi.mocked(CommerceController.bindPaymentMethod)
-        .mockRejectedValueOnce(bindRefusal('paykit_rejected', 'usdt'))
-        .mockRejectedValueOnce(bindRefusal('usdt_unavailable'));
+        .mockRejectedValueOnce(refusal('paykit_unavailable'))
+        .mockRejectedValueOnce(refusal('paykit_rejected'));
       const { result } = renderHook(() => useMarketplaceOfferCheckout());
 
       await act(async () => {
-        await result.current.submit(offer, address, 'usdt');
+        await expect(result.current.submit(offer, address, method)).resolves.toEqual({
+          ok: false,
+          code: 'BIND_FAILED',
+          paykitUnavailable: true,
+        });
       });
       await act(async () => {
-        await result.current.submit(offer, address, 'bitcoin');
+        await expect(result.current.submit(offer, address, method)).resolves.toEqual({
+          ok: false,
+          code: 'BIND_FAILED',
+        });
       });
-
-      expect(CommerceController.rememberUsdtRefusal).not.toHaveBeenCalled();
-    });
-  });
+    },
+  );
 
   it('re-reads the accepted projection and submits its locked award terms', async () => {
     const completed = vi.fn();
@@ -210,6 +205,35 @@ describe('useMarketplaceOfferCheckout', () => {
       sellerPubky: 's'.repeat(52),
       message: DELIVERY_KEY_COPY.noKey,
     });
+  });
+
+  it('refuses a shipped award to a country the seller does not ship to, before sealing', async () => {
+    shopShipsTo.set('s'.repeat(52), ['CH']);
+    const { result } = renderHook(() => useMarketplaceOfferCheckout());
+    await act(async () => {
+      await expect(result.current.submit(offer, address)).resolves.toEqual({
+        ok: false,
+        code: 'DESTINATION_COUNTRY',
+      });
+    });
+    const { toast } = await import('@/molecules/Toaster/use-toast');
+    expect(vi.mocked(toast)).toHaveBeenCalledWith({
+      variant: 'error',
+      description: 'This seller ships only to Switzerland. Choose pickup if offered.',
+    });
+    expect(CommerceController.resolveDeliveryKeysForCheckout).not.toHaveBeenCalled();
+    expect(CommerceController.sealDeliveryAddressForCheckout).not.toHaveBeenCalled();
+    expect(CommerceController.commitOfferCheckout).not.toHaveBeenCalled();
+  });
+
+  it('settles a pickup award from a Swiss-only seller without checking a destination', async () => {
+    shopShipsTo.set('s'.repeat(52), ['CH']);
+    const { result } = renderHook(() => useMarketplaceOfferCheckout());
+    await act(async () => {
+      await result.current.submit(offer, null);
+    });
+    expect(CommerceController.refreshShop).not.toHaveBeenCalled();
+    expect(committedPayload()).toMatchObject({ fulfillment: 'pickup' });
   });
 
   it('settles a pickup award with fulfillment pickup and no delivery address', async () => {

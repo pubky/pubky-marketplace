@@ -28,6 +28,7 @@ const NOTIFICATION_TYPE_UNREAD = {
   order_cancelled: false,
   order_cancelled_terms_change: true,
   order_shipped: true,
+  tracking_updated: true,
   order_delivery_assumed: true,
   order_delivered: false,
   order_completed: false,
