@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
+import { vi } from 'vitest';
 import { commands, page, userEvent } from 'vitest/browser';
 import { render } from 'vitest-browser-react';
 import { TooltipProvider } from '@/atoms/Tooltip/Tooltip';
@@ -182,15 +183,34 @@ export async function renderForVRT(ui: ReactNode, options: RenderForVRTOptions) 
   return screen;
 }
 
-/** Drop leftover :hover from a prior test's cursor (shared browser window). */
+/**
+ * Drop any :hover under the cursor before a capture (the browser window and its
+ * pointer are shared across scenes).
+ *
+ * The scene goes inert BEFORE the pointer moves. `unhover` parks the pointer at
+ * a spot derived from the element's box, which after a layout shift can sit on
+ * any hoverable control (the QuickReply mobile scene parked it on a tag pill).
+ * Chromium only recomputes hover on a real pointer move or a later hit-test, so
+ * making the scene inert after the move left the stale :hover to win or lose a
+ * race with the screenshot. Moving the pointer while the scene is inert
+ * recomputes hover against the inert tree, and the wait fails the scene rather
+ * than baselining a hover state if anything inside it is still hovered.
+ */
 export async function parkVrtHover() {
-  const active = document.activeElement;
-  if (active instanceof HTMLElement && active !== document.body) {
-    active.blur();
-    await userEvent.unhover(active);
-  }
   const root = document.querySelector(`[data-testid="${VRT_ROOT_TESTID}"]`);
   if (root instanceof HTMLElement) root.style.pointerEvents = 'none';
+  const active = document.activeElement;
+  const target = active instanceof HTMLElement && active !== document.body ? active : root;
+  if (active instanceof HTMLElement && active !== document.body) active.blur();
+  if (target instanceof HTMLElement) await userEvent.unhover(target);
+  if (root instanceof HTMLElement) {
+    await vi.waitFor(
+      () => {
+        if (root.matches(':hover')) throw new Error('A pointer is still hovering the VRT scene after parking it.');
+      },
+      { timeout: 2_000 },
+    );
+  }
 }
 
 /** Marketplace cards use `hover:scale-105`. Live proof treats ≥ 1.04 as settled. */
