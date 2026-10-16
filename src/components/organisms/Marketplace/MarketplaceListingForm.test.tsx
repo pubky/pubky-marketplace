@@ -1,5 +1,5 @@
 import { createRef, useEffect } from 'react';
-import { act, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useForm, type UseFormReturn } from 'react-hook-form';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -13,9 +13,10 @@ import {
   isCreateMarketplaceListingPublishReady,
 } from '@/hooks/useCreateMarketplaceListing/useCreateMarketplaceListing.types';
 import { formDataFromRecord } from '@/hooks/useEditMarketplaceListing/useEditMarketplaceListing';
-import type {
-  ListingMediaItem,
-  UseListingMediaManagerResult,
+import {
+  type ListingMediaItem,
+  useListingMediaManager,
+  type UseListingMediaManagerResult,
 } from '@/hooks/useListingMediaManager/useListingMediaManager';
 import { DIGITAL_DELIVERY_COPY } from '@/libs/commerce/digital';
 import { PICKUP_NOTHING_PUBLISHED_TOAST } from '@/libs/commerce/pickup';
@@ -160,6 +161,7 @@ function buildMedia(items: ListingMediaItem[] = []): UseListingMediaManagerResul
     error: null,
     inputRef: createRef<HTMLInputElement>(),
     onInputChange: vi.fn(),
+    addFiles: vi.fn(),
     choose: vi.fn(),
     removeItem: vi.fn(),
     moveItem: vi.fn(),
@@ -181,6 +183,32 @@ function photoItem(key: string, altText = ''): ListingMediaItem {
   };
 }
 
+function imageFile(name: string): File {
+  return new File([new Uint8Array([1, 2, 3])], name, { type: 'image/jpeg' });
+}
+
+function fileDrag(files: File[]) {
+  return {
+    dataTransfer: {
+      types: ['Files'],
+      files,
+      items: files.map((file) => ({ kind: 'file' as const, getAsFile: () => file })),
+      dropEffect: 'none' as DataTransfer['dropEffect'],
+    },
+  };
+}
+
+function photoDropZone(): HTMLElement {
+  const zone = document.getElementById('listing-section-photos')?.querySelector('[data-slot="card"]');
+  if (!(zone instanceof HTMLElement)) throw new Error('Photo drop zone was not rendered.');
+  return zone;
+}
+
+function LiveMediaForm() {
+  const media = useListingMediaManager();
+  return <FormHarness media={media} />;
+}
+
 function expectIconOnlyButtonsToHaveLabels(container: HTMLElement) {
   const iconOnlyButtons = Array.from(container.querySelectorAll('button')).filter(
     (button) => button.textContent?.trim() === '' && button.querySelector('svg') !== null,
@@ -197,6 +225,7 @@ function FormHarness({
   onSubmit = vi.fn(),
   onPublished,
   media = buildMedia(),
+  isPublishing = false,
   mode = 'create' as const,
   saleTermsLocked = false,
   listingId,
@@ -211,6 +240,7 @@ function FormHarness({
   submittedFulfillment?: CreateMarketplaceListingData['fulfillment'][];
   onPublished?: () => void;
   media?: UseListingMediaManagerResult;
+  isPublishing?: boolean;
   mode?: 'create' | 'edit';
   saleTermsLocked?: boolean;
   listingId?: string;
@@ -233,7 +263,7 @@ function FormHarness({
         return onSubmit(options);
       }}
       onPublished={onPublished}
-      isPublishing={false}
+      isPublishing={isPublishing}
       mode={mode}
       saleTermsLocked={saleTermsLocked}
       listingId={listingId}
@@ -740,6 +770,128 @@ describe('MarketplaceListingForm pickup capability (§A7)', () => {
     render(<FormHarness media={media} />);
 
     expect(screen.getByRole('button', { name: 'Add photos (8/8)' })).toBeDisabled();
+  });
+
+  it('shows a drag-over state for file drags and clears it when the pointer leaves', () => {
+    render(<FormHarness />);
+    const zone = photoDropZone();
+    const payload = fileDrag([imageFile('boot.jpg')]);
+
+    expect(fireEvent.dragEnter(zone, payload)).toBe(false);
+    expect(zone).toHaveAttribute('data-drag-over', 'true');
+    expect(zone.className).toContain('border-brand');
+    expect(zone.className).toContain('border-dashed');
+    expect(screen.getByRole('status')).toHaveTextContent('Drop photos here');
+    expect(screen.getByRole('status')).toHaveClass('text-brand');
+    expect(screen.getByRole('status').parentElement).toHaveClass('bg-brand/10');
+    expect(screen.getByRole('button', { name: 'Add photos (0/8)' })).toHaveClass('border-brand', 'text-brand');
+
+    // Entering a child counts as still inside the card.
+    fireEvent.dragEnter(screen.getByRole('button', { name: 'Add photos (0/8)' }), payload);
+    fireEvent.dragLeave(screen.getByRole('button', { name: 'Add photos (0/8)' }), payload);
+    expect(zone).toHaveAttribute('data-drag-over', 'true');
+
+    fireEvent.dragLeave(zone, payload);
+    expect(zone).not.toHaveAttribute('data-drag-over');
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Add photos (0/8)' })).toBeEnabled();
+  });
+
+  it('ignores non-file drags and does not treat them as a drop', () => {
+    const media = buildMedia();
+    render(<FormHarness media={media} />);
+    const zone = photoDropZone();
+    const textDrag = {
+      dataTransfer: {
+        types: ['text/plain'],
+        files: [],
+        items: [{ kind: 'string', getAsFile: () => null }],
+      },
+    };
+
+    expect(fireEvent.dragEnter(zone, textDrag)).toBe(true);
+    expect(fireEvent.dragOver(zone, textDrag)).toBe(true);
+    expect(zone).not.toHaveAttribute('data-drag-over');
+    expect(screen.queryByText('Drop photos here')).not.toBeInTheDocument();
+
+    expect(fireEvent.drop(zone, textDrag)).toBe(true);
+    expect(media.addFiles).not.toHaveBeenCalled();
+  });
+
+  it('adds dropped files through the picker path and keeps click and keyboard working', async () => {
+    const user = userEvent.setup();
+    const media = buildMedia();
+    render(<FormHarness media={media} />);
+    const image = imageFile('boot.jpg');
+    const notes = new File(['hello'], 'notes.txt', { type: 'text/plain' });
+    const payload = fileDrag([image, notes]);
+
+    const button = screen.getByRole('button', { name: 'Add photos (0/8)' });
+    expect(fireEvent.dragOver(button, payload)).toBe(false);
+    expect(payload.dataTransfer.dropEffect).toBe('copy');
+    expect(fireEvent.drop(button, payload)).toBe(false);
+    expect(media.addFiles).toHaveBeenCalledWith([image, notes]);
+    expect(photoDropZone()).not.toHaveAttribute('data-drag-over');
+
+    button.focus();
+    expect(button).toHaveFocus();
+    await user.keyboard('{Enter}');
+    expect(media.choose).toHaveBeenCalledOnce();
+    expect(button).toHaveAttribute('type', 'button');
+  });
+
+  it('still validates a drop when the add button is disabled at the photo limit', () => {
+    const media = buildMedia(Array.from({ length: 8 }, (_, index) => photoItem(`photo-${index + 1}`)));
+    render(<FormHarness media={media} />);
+    const extra = imageFile('extra.jpg');
+
+    expect(screen.getByRole('button', { name: 'Add photos (8/8)' })).toBeDisabled();
+    fireEvent.drop(photoDropZone(), fileDrag([extra]));
+
+    expect(media.addFiles).toHaveBeenCalledWith([extra]);
+  });
+
+  it('does not add photos dropped while publishing, and still blocks navigation', () => {
+    const media = buildMedia();
+    render(<FormHarness media={media} isPublishing />);
+    const image = imageFile('boot.jpg');
+
+    expect(fireEvent.dragEnter(photoDropZone(), fileDrag([image]))).toBe(false);
+    expect(photoDropZone()).not.toHaveAttribute('data-drag-over');
+    expect(fireEvent.drop(photoDropZone(), fileDrag([image]))).toBe(false);
+    expect(media.addFiles).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: 'Add photos (0/8)' })).toBeDisabled();
+  });
+
+  it('shows a preview for a dropped image and rejects a dropped non-image', () => {
+    if (!('createObjectURL' in URL)) {
+      Object.defineProperty(URL, 'createObjectURL', { writable: true, configurable: true, value: () => '' });
+    }
+    if (!('revokeObjectURL' in URL)) {
+      Object.defineProperty(URL, 'revokeObjectURL', { writable: true, configurable: true, value: () => undefined });
+    }
+    const createObjectURL = vi
+      .spyOn(URL, 'createObjectURL')
+      .mockImplementation((blob: Blob | MediaSource) => `blob:${blob instanceof File ? blob.name : 'preview'}`);
+    const revokeObjectURL = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => undefined);
+
+    try {
+      render(<LiveMediaForm />);
+      const image = imageFile('boot.jpg');
+      fireEvent.drop(photoDropZone(), fileDrag([image]));
+
+      expect(screen.getByRole('img', { name: 'Photo 1 of 1' })).toHaveAttribute('src', 'blob:boot.jpg');
+      expect(screen.getByRole('button', { name: 'Add photos (1/8)' })).toBeEnabled();
+
+      fireEvent.drop(photoDropZone(), fileDrag([new File(['hello'], 'notes.txt', { type: 'text/plain' })]));
+
+      expect(screen.getByRole('alert')).toHaveTextContent('Choose image files only.');
+      expect(screen.getAllByRole('img')).toHaveLength(1);
+      expect(createObjectURL).toHaveBeenCalledWith(image);
+    } finally {
+      createObjectURL.mockRestore();
+      revokeObjectURL.mockRestore();
+    }
   });
 
   it('locks the sale format and relabels submit in edit mode', () => {

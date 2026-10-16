@@ -93,6 +93,7 @@ vi.mock('@/hooks/useListingMediaManager/useListingMediaManager', () => ({
     error: null,
     inputRef: { current: null },
     onInputChange: vi.fn(),
+    addFiles: vi.fn(),
     choose: vi.fn(),
     removeItem: vi.fn(),
     moveItem: vi.fn(),

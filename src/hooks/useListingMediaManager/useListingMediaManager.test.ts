@@ -109,6 +109,31 @@ describe('useListingMediaManager', () => {
     expect(prepared.media.map(({ altText }) => altText)).toEqual(['Two', 'One']);
   });
 
+  it('adds dropped photos through the same checks as the file picker', () => {
+    const { result } = renderHook(() => useListingMediaManager());
+
+    act(() => result.current.addFiles([imageFile('dropped.jpg'), imageFile('side.jpg', [4, 5, 6])]));
+
+    expect(result.current.error).toBeNull();
+    expect(result.current.items.map((item) => (item.kind === 'new' ? item.previewUrl : null))).toEqual([
+      'blob:dropped.jpg',
+      'blob:side.jpg',
+    ]);
+    expect(result.current.items.every((item) => item.kind === 'new')).toBe(true);
+  });
+
+  it('rejects dropped files that are not images', () => {
+    const { result } = renderHook(() => useListingMediaManager());
+
+    act(() =>
+      result.current.addFiles([new File(['text'], 'notes.txt', { type: 'text/plain' }), imageFile('kept.jpg')]),
+    );
+
+    expect(result.current.error).toBe('invalid-type');
+    expect(result.current.items).toHaveLength(1);
+    expect(result.current.items[0]).toMatchObject({ kind: 'new', previewUrl: 'blob:kept.jpg' });
+  });
+
   it('rejects non-image and oversized files and enforces the photo limit', () => {
     const { result } = renderHook(() => useListingMediaManager(2));
 

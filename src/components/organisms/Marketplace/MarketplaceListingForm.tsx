@@ -1,6 +1,6 @@
 'use client';
 
-import { type ReactNode, useEffect, useRef, useState } from 'react';
+import { type DragEvent, type ReactNode, useEffect, useRef, useState } from 'react';
 import {
   ArrowDown,
   ArrowUp,
@@ -89,6 +89,7 @@ import {
   weightUnitLabel,
 } from '@/libs/commerce/units';
 import { UNLIMITED_STOCK_LABEL } from '@/libs/commerce/unlimited-stock';
+import { cn } from '@/libs/utils/utils';
 import { ControlledInputField } from '@/molecules/ControlledInputField/ControlledInputField';
 import { ControlledTextareaField } from '@/molecules/ControlledTextareaField/ControlledTextareaField';
 import { ListingPublishGuardNotice } from '@/molecules/Marketplace/ListingPublishGuardNotice';
@@ -179,11 +180,13 @@ export function MarketplaceListingForm({
     error: pickerError,
     inputRef,
     onInputChange,
+    addFiles,
     choose,
     removeItem,
     moveItem,
     setAltText,
   } = media;
+  const photoDrop = usePhotoFileDrop(addFiles, !isPublishing);
   const fulfillment = useWatch({ control: form.control, name: CREATE_MARKETPLACE_LISTING_FIELDS.FULFILLMENT });
   const saleFormat = useWatch({ control: form.control, name: CREATE_MARKETPLACE_LISTING_FIELDS.SALE_FORMAT });
   const auctionDurations = getAuctionDurationsMinutes();
@@ -489,6 +492,11 @@ export function MarketplaceListingForm({
           title="Photos"
           description={`Up to ${media.maxPhotos} photos. The first photo is the cover buyers see everywhere. Metadata is stripped before publication.`}
           complete={sectionStatuses['listing-section-photos']}
+          dragOver={photoDrop.dragOver}
+          onDragEnter={photoDrop.onDragEnter}
+          onDragLeave={photoDrop.onDragLeave}
+          onDragOver={photoDrop.onDragOver}
+          onDrop={photoDrop.onDrop}
         >
           {mediaItems.length > 0 && (
             <ul className="flex flex-col gap-3" aria-label="Listing photos in display order">
@@ -510,7 +518,7 @@ export function MarketplaceListingForm({
           <Button
             type="button"
             variant="secondary"
-            className="w-fit rounded-full"
+            className={cn('w-fit rounded-full', photoDrop.dragOver && 'border-brand bg-brand/16 text-brand')}
             disabled={isPublishing || mediaItems.length >= maxPhotos}
             onClick={choose}
           >
@@ -1208,18 +1216,97 @@ function MobileSectionStepper({
   );
 }
 
+function isFileDrag(dataTransfer: DataTransfer | null): dataTransfer is DataTransfer {
+  if (!dataTransfer?.types) return false;
+  return Array.from(dataTransfer.types).some((type) => type === 'Files' || type === 'application/x-moz-file');
+}
+
+function filesFromDataTransfer(dataTransfer: DataTransfer | null): File[] {
+  if (!dataTransfer) return [];
+  const items = dataTransfer.items;
+  if (items && items.length > 0) {
+    const files: File[] = [];
+    for (const item of Array.from(items)) {
+      if (item.kind !== 'file') continue;
+      const file = item.getAsFile();
+      if (file) files.push(file);
+    }
+    return files;
+  }
+  return Array.from(dataTransfer.files ?? []);
+}
+
+/**
+ * File drops on the photos card share `addFiles` with the picker. Non-file
+ * drags are ignored. File drags call preventDefault so the browser does not
+ * navigate to the dropped file.
+ */
+function usePhotoFileDrop(onFiles: (files: readonly File[]) => void, acceptDrops: boolean) {
+  const [dragOver, setDragOver] = useState(false);
+  const dragCounter = useRef(0);
+
+  const onDragEnter = (event: DragEvent<HTMLDivElement>) => {
+    const dataTransfer = event.dataTransfer;
+    if (!isFileDrag(dataTransfer)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    dragCounter.current += 1;
+    if (acceptDrops) setDragOver(true);
+  };
+
+  const onDragOver = (event: DragEvent<HTMLDivElement>) => {
+    const dataTransfer = event.dataTransfer;
+    if (!isFileDrag(dataTransfer)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    dataTransfer.dropEffect = acceptDrops ? 'copy' : 'none';
+  };
+
+  const onDragLeave = (event: DragEvent<HTMLDivElement>) => {
+    if (dragCounter.current === 0) return;
+    event.preventDefault();
+    event.stopPropagation();
+    dragCounter.current -= 1;
+    if (dragCounter.current === 0) setDragOver(false);
+  };
+
+  const onDrop = (event: DragEvent<HTMLDivElement>) => {
+    const dataTransfer = event.dataTransfer;
+    const files = filesFromDataTransfer(dataTransfer);
+    if (!isFileDrag(dataTransfer) && files.length === 0) return;
+    event.preventDefault();
+    event.stopPropagation();
+    dragCounter.current = 0;
+    setDragOver(false);
+    if (!acceptDrops || files.length === 0) return;
+    onFiles(files);
+  };
+
+  return { dragOver: dragOver && acceptDrops, onDragEnter, onDragOver, onDragLeave, onDrop };
+}
+
 function ListingFormSection({
   id,
   title,
   description,
   complete,
   children,
+  dragOver = false,
+  onDragEnter,
+  onDragLeave,
+  onDragOver,
+  onDrop,
 }: {
   id: ListingFormSectionId;
   title: string;
   description: string;
   complete: boolean;
   children: ReactNode;
+  dragOver?: boolean;
+  onDragEnter?: (event: DragEvent<HTMLDivElement>) => void;
+  onDragLeave?: (event: DragEvent<HTMLDivElement>) => void;
+  onDragOver?: (event: DragEvent<HTMLDivElement>) => void;
+  onDrop?: (event: DragEvent<HTMLDivElement>) => void;
 }) {
   // Below lg, a jump also clears the sticky mobile step bar (about 104px).
   return (
@@ -1231,7 +1318,21 @@ function ListingFormSection({
       data-surface={id}
       className="scroll-mt-[calc(var(--header-offset-mobile)+8.5rem)] lg:scroll-mt-(--header-offset-main)"
     >
-      <Card className="rounded-md p-0 shadow-lg">
+      <Card
+        className={cn('rounded-md p-0 shadow-lg', dragOver && 'relative border border-dashed border-brand')}
+        data-drag-over={dragOver ? 'true' : undefined}
+        onDragEnter={onDragEnter}
+        onDragLeave={onDragLeave}
+        onDragOver={onDragOver}
+        onDrop={onDrop}
+      >
+        {dragOver && (
+          <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-md bg-brand/10">
+            <Typography as="p" role="status" size="sm" className="text-brand">
+              Drop photos here
+            </Typography>
+          </div>
+        )}
         <CardContent className="grid gap-6 p-6">
           <div className="flex items-start justify-between gap-4">
             <div>

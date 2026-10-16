@@ -39,6 +39,12 @@ export interface UseListingMediaManagerResult {
   error: ListingMediaManagerError | null;
   inputRef: RefObject<HTMLInputElement | null>;
   onInputChange: (event: ChangeEvent<HTMLInputElement>) => void;
+  /**
+   * Shared entry for the file picker and drag-and-drop. Applies the same
+   * type, size, and photo-count checks, then stores previews for the ones
+   * that pass.
+   */
+  addFiles: (files: readonly File[]) => void;
   choose: () => void;
   removeItem: (key: string) => void;
   /** Moves a photo one position earlier (-1) or later (1) in display order. */
@@ -77,9 +83,7 @@ export function useListingMediaManager(maxSize = IMAGE_MAX_RAW_SIZE): UseListing
     [],
   );
 
-  const onInputChange = (event: ChangeEvent<HTMLInputElement>) => {
-    const selected = Array.from(event.target.files ?? []);
-    if (event.target) event.target.value = '';
+  const addFiles = (selected: readonly File[]) => {
     if (selected.length === 0) return;
 
     let nextError: ListingMediaManagerError | null = null;
@@ -111,6 +115,12 @@ export function useListingMediaManager(maxSize = IMAGE_MAX_RAW_SIZE): UseListing
       setItems((current) => [...current, ...additions]);
     }
     setError(nextError);
+  };
+
+  const onInputChange = (event: ChangeEvent<HTMLInputElement>) => {
+    const selected = Array.from(event.target.files ?? []);
+    if (event.target) event.target.value = '';
+    addFiles(selected);
   };
 
   const removeItem = (key: string) => {
@@ -256,6 +266,7 @@ export function useListingMediaManager(maxSize = IMAGE_MAX_RAW_SIZE): UseListing
     error,
     inputRef,
     onInputChange,
+    addFiles,
     choose: () => inputRef.current?.click(),
     removeItem,
     moveItem,
