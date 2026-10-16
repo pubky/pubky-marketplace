@@ -88,6 +88,9 @@ export function useMarketplaceSessionConnect(
   const passportRunRef = useRef<(() => void) | null>(null);
   const activeGrantFlowRef = useRef<MarketplaceGrantFlow | null>(null);
   const generationRef = useRef(0);
+  // Every approval shares one flow cookie per browser, and a cancel response clears it. A flow is
+  // created only after the previous one's creation and cancel have settled, or it loses its binding.
+  const flowCookieChainRef = useRef<Promise<void>>(Promise.resolve());
   const onConnectedRef = useRef(options.onConnected);
   const visibilityHandlerRef = useRef<(() => void) | null>(null);
 
@@ -108,7 +111,9 @@ export function useMarketplaceSessionConnect(
     passportRunRef.current = null;
     const grantFlow = activeGrantFlowRef.current;
     activeGrantFlowRef.current = null;
-    if (grantFlow) void grantFlow.cancel();
+    if (grantFlow) {
+      flowCookieChainRef.current = flowCookieChainRef.current.then(() => grantFlow.cancel()).catch(() => undefined);
+    }
   }, []);
 
   /** Holds a Passport approval until the user clicks; the dialog shows the Passport button meanwhile. */
@@ -163,16 +168,28 @@ export function useMarketplaceSessionConnect(
         setStatus('creating');
         let grantFlow: MarketplaceGrantFlow | null = null;
         const attach = async () => {
-          const flow = await begin();
-          if (generationRef.current !== generation || !isCurrentIdentity()) {
-            await flow.cancel();
-            throw new PassportAttemptError('cancelled');
+          const previous = flowCookieChainRef.current;
+          let settle = () => {};
+          flowCookieChainRef.current = new Promise<void>((resolve) => {
+            settle = resolve;
+          });
+          try {
+            await previous;
+            const isStale = () => generationRef.current !== generation || !isCurrentIdentity();
+            if (isStale()) throw new PassportAttemptError('cancelled');
+            const flow = await begin();
+            if (isStale()) {
+              await flow.cancel();
+              throw new PassportAttemptError('cancelled');
+            }
+            grantFlow = flow;
+            activeGrantFlowRef.current = flow;
+            setAuthorizationUrl(flow.authorizationUrl);
+            setStatus('awaiting');
+            return flow;
+          } finally {
+            settle();
           }
-          grantFlow = flow;
-          activeGrantFlowRef.current = flow;
-          setAuthorizationUrl(flow.authorizationUrl);
-          setStatus('awaiting');
-          return flow;
         };
         const settled = viaPassport
           ? startPassportAttempt(

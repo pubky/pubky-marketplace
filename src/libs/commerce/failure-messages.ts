@@ -82,6 +82,9 @@ export const MARKETPLACE_FAILURE_MESSAGES = {
 
 type MarketplaceFailureCode = string | null | undefined;
 
+/** The browser's flow cookie binds a different approval, so this one can only be restarted. */
+export const APPROVAL_OTHER_TAB = 'This approval belongs to another tab. Start again here.';
+
 const CODE_MESSAGES: ReadonlyMap<string, string> = new Map([
   ['INVALID_RESPONSE', MARKETPLACE_FAILURE_MESSAGES.unavailable],
   ['SESSION_EXPIRED', MARKETPLACE_FAILURE_MESSAGES.session],
@@ -89,6 +92,8 @@ const CODE_MESSAGES: ReadonlyMap<string, string> = new Map([
   ['shop_session_missing', MARKETPLACE_FAILURE_MESSAGES.sessionMissing],
   ['shop_session_expired', MARKETPLACE_FAILURE_MESSAGES.sessionCookieExpired],
   ['flow_expired', MARKETPLACE_FAILURE_MESSAGES.sessionTimeout],
+  ['flow_binding_missing', APPROVAL_OTHER_TAB],
+  ['flow_binding_denied', APPROVAL_OTHER_TAB],
 ]);
 
 const DROP_REFUSAL_MESSAGES: ReadonlyMap<string, string> = new Map([
@@ -133,7 +138,6 @@ const CHECKOUT_REFUSAL_MESSAGES: ReadonlyMap<string, string> = new Map([
  * (see {@link marketplaceBootstrapFailureMessage}).
  */
 export const BOOTSTRAP_APPROVAL_EXPIRED = 'This approval expired. Start again.';
-const BOOTSTRAP_OTHER_TAB = 'This approval belongs to another tab. Start again here.';
 
 export const MARKETPLACE_BOOTSTRAP_CODE_MESSAGES: ReadonlyMap<string, string> = new Map([
   ['origin_denied', 'This request did not come from the Shop. Reload and try again.'],
@@ -146,8 +150,8 @@ export const MARKETPLACE_BOOTSTRAP_CODE_MESSAGES: ReadonlyMap<string, string> = 
   ['flow_cancelled', 'Approval cancelled.'],
   ['result_denied', 'This approval could not be completed. Start again.'],
   ['identity_mismatch', 'This approval came from a different pubky. Approve with your current pubky.'],
-  ['flow_binding_missing', BOOTSTRAP_OTHER_TAB],
-  ['flow_binding_denied', BOOTSTRAP_OTHER_TAB],
+  ['flow_binding_missing', APPROVAL_OTHER_TAB],
+  ['flow_binding_denied', APPROVAL_OTHER_TAB],
   ['flow_not_found', BOOTSTRAP_APPROVAL_EXPIRED],
   ['claim_in_progress', 'Finishing your approval…'],
   ['shop_session_expired', 'Your Shop session ended. Sign in again.'],

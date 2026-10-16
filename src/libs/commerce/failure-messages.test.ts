@@ -41,6 +41,15 @@ describe('marketplaceFailureMessage', () => {
     );
   });
 
+  it.each(['flow_binding_missing', 'flow_binding_denied'])(
+    'tells a reconnect whose flow cookie binds another approval (%s) to start again here',
+    (code) => {
+      expect(marketplaceFailureMessage(code, MARKETPLACE_FAILURE_MESSAGES.sessionStart)).toBe(
+        'This approval belongs to another tab. Start again here.',
+      );
+    },
+  );
+
   it('does not expose prototype properties as messages', () => {
     for (const code of ['constructor', 'toString', '__proto__', 'hasOwnProperty']) {
       expect(marketplaceFailureMessage(code, 'F')).toBe('F');
