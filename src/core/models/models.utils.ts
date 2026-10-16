@@ -21,7 +21,9 @@ export function buildCompositeIdFromPubkyUri({ uri, domain }: CompositeIdParams)
   if (!uri.startsWith(PUBKY_URI_PREFIX)) {
     return null;
   }
-  const [pubky, ...segments] = uri.slice(PUBKY_URI_PREFIX.length).split(/[?#]/, 1)[0].split('/').filter(Boolean);
+  // The authority is the first component; a missing one (`pubky:///…`) stays empty and is rejected.
+  const [pubky, ...pathSegments] = uri.slice(PUBKY_URI_PREFIX.length).split(/[?#]/, 1)[0].split('/');
+  const segments = pathSegments.filter(Boolean);
   const domainIndex = segments.lastIndexOf(domain);
   const id = domainIndex !== -1 ? segments[domainIndex + 1] : undefined;
 

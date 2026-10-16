@@ -57,6 +57,14 @@ describe('models.utils (composite id)', () => {
     }
   });
 
+  it('buildCompositeIdFromPubkyUri returns null when the uri has no authority', () => {
+    const composite = buildCompositeIdFromPubkyUri({
+      uri: 'pubky:///pub/pubky.app/files/file-789',
+      domain: CompositeIdDomain.FILES,
+    });
+    expect(composite).toBeNull();
+  });
+
   it('round-trip is stable', () => {
     const c1 = buildCompositeId({ pubky: author, id: postId });
     const parts = parseCompositeId(c1);
