@@ -81,7 +81,6 @@ import {
   mayPayInBitcoin,
   observedPaymentRail,
   orderOfferedAssets,
-  PAYKIT_PICKER_LABEL,
   paykitAssetsLabel,
   paykitAwaitingBody,
   paykitAwaitingTitle,
@@ -601,7 +600,7 @@ export function MarketplacePaymentStatusCard({
               </div>
               {methodPayment.availableMethods.includes('paykit') && (
                 <Typography as="p" className="text-xs text-muted-foreground" data-testid="order-payment-paykit-hint">
-                  {PAYKIT_PICKER_LABEL}: pay in Bitkit with {paykitAssetsLabel(methodPayment.paykitAssets)}.
+                  Paykit: pay in Bitkit with {paykitAssetsLabel(methodPayment.paykitAssets)}.
                 </Typography>
               )}
               {bitcoinWalletChecking && (

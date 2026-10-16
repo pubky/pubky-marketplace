@@ -2,6 +2,10 @@ import type { Pubky } from '@/models/models.types';
 import { COMPOSITE_ID_DELIMITER } from './models.defaults';
 import type { CompositeIdParams, CompositeIdResult } from './models.types';
 
+const PUBKY_URI_PREFIX = 'pubky://';
+/** A pubky authority is a bare public key: userinfo (`@`) or a port (`:`) would corrupt the composite id. */
+const PUBKY_AUTHORITY = /^[^:@]+$/;
+
 /**
  * Parses a pubky:// URI to extract the author and ID,
  * then builds a composite ID in the format "author:id"
@@ -15,21 +19,23 @@ import type { CompositeIdParams, CompositeIdResult } from './models.types';
  * // Returns: "author123:file456"
  */
 export function buildCompositeIdFromPubkyUri({ uri, domain }: CompositeIdParams): string | null {
-  try {
-    const parsed = new URL(uri);
-    const pubky = parsed.hostname;
-    const segments = parsed.pathname.split('/').filter(Boolean);
-    const domainIndex = segments.lastIndexOf(domain);
-    const id = domainIndex !== -1 ? segments[domainIndex + 1] : undefined;
-
-    if (!pubky || !id) {
-      return null;
-    }
-
-    return buildCompositeId({ pubky, id });
-  } catch {
+  // Parsed by hand: `new URL('pubky://…').hostname` is empty on Chrome before 130 (non-special schemes).
+  // The scheme is case-insensitive (`PUBKY://…` is valid); the authority keeps its case.
+  // `uri` comes from unvalidated remote data: a Nexus file record without a `uri` returns null instead of throwing.
+  if (typeof uri !== 'string' || uri.slice(0, PUBKY_URI_PREFIX.length).toLowerCase() !== PUBKY_URI_PREFIX) {
     return null;
   }
+  // The authority is the first component; a missing one (`pubky:///…`) stays empty and is rejected.
+  const [pubky, ...pathSegments] = uri.slice(PUBKY_URI_PREFIX.length).split(/[?#]/, 1)[0].split('/');
+  const segments = pathSegments.filter(Boolean);
+  const domainIndex = segments.lastIndexOf(domain);
+  const id = domainIndex !== -1 ? segments[domainIndex + 1] : undefined;
+
+  if (!PUBKY_AUTHORITY.test(pubky) || !id) {
+    return null;
+  }
+
+  return buildCompositeId({ pubky, id });
 }
 
 export function buildCompositeId({ pubky, id }: CompositeIdResult): string {

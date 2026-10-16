@@ -464,6 +464,29 @@ describe('FileApplication', () => {
   });
 
   describe('persistFiles', () => {
+    it.each([{ uri: undefined }, { uri: null }, { uri: 'invalid-file-uri' }, { urls: '{invalid json' }])(
+      'stores the valid records when one has malformed metadata: %j',
+      async (invalid) => {
+        const valid = createMockFile('', 'valid.png', createFileUri('valid'));
+        const malformed = asOpaque<NexusFileDetails>({ ...valid, ...invalid });
+        const createManySpy = vi.spyOn(LocalFileService, 'createMany').mockResolvedValue(undefined);
+
+        await FileApplication.persistFiles([malformed, valid]);
+
+        expect(createManySpy).toHaveBeenCalledWith({
+          files: [{ ...valid, id: buildCompositeId({ pubky: TEST_PUBKY, id: 'valid' }) }],
+        });
+      },
+    );
+
+    it('skips the write when no record is valid', async () => {
+      const createManySpy = vi.spyOn(LocalFileService, 'createMany');
+
+      await FileApplication.persistFiles([asOpaque<NexusFileDetails>({ uri: undefined })]);
+
+      expect(createManySpy).not.toHaveBeenCalled();
+    });
+
     it('returns early when fileAttachments is empty', async () => {
       const createManySpy = vi.spyOn(LocalFileService, 'createMany');
 

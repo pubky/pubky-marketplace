@@ -423,7 +423,7 @@ describe('MarketplacePaymentStatusCard — method picker', () => {
       within(button.parentElement as HTMLElement).getByRole('button', { name: /Continue with PayPal/ }),
     ).toBeVisible();
     expect(screen.getByTestId('order-payment-paykit-hint')).toHaveTextContent(
-      'Pay with Paykit: pay in Bitkit with Bitcoin or USDT.',
+      'Paykit: pay in Bitkit with Bitcoin or USDT.',
     );
     await userEvent.setup().click(button);
 

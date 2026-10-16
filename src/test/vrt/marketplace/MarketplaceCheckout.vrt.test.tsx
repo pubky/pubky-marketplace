@@ -895,7 +895,7 @@ describe('Marketplace checkout — visual regression', () => {
     await captureCheckout('checkout-usdt-missing-seller-desktop');
   });
 
-  it('renders one Pay with Paykit entry beside PayPal, naming Bitcoin or USDT, at desktop viewport', async () => {
+  it('renders one Paykit entry beside PayPal, naming Bitcoin or USDT, at desktop viewport', async () => {
     const { singleSeller } = await fixtures;
     view.items = singleSeller;
     view.adapterMode = 'transaction-service';

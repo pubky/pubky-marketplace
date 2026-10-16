@@ -1,0 +1,1 @@
+Checkout's Paykit method tile now names what the buyer pays with and where ("Bitcoin via Bitkit", or "Bitcoin or USDT via Bitkit"), and the submit button says where the buyer goes next ("Continue to Bitkit" or "Continue to PayPal"), so the tile no longer reads like a second Pay button.
