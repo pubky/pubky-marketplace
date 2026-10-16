@@ -148,24 +148,44 @@ function requirePublicKey(publicKey: Uint8Array, keyId: string): void {
   }
 }
 
+/**
+ * The one HPKE seal both address envelopes use: the canonical address JSON,
+ * padded to one bucket, sealed to `recipientPublicKey` with the given `info`
+ * context and AAD. The delivery envelope (to the seller's delivery key) and the
+ * connector envelope (to a store connection's recipient key) differ only in
+ * their context strings and AAD.
+ */
+export async function sealAddressToRecipient(input: {
+  address: CommerceDeliveryAddressValue;
+  recipientPublicKey: Uint8Array;
+  context: string;
+  aad: Uint8Array;
+}): Promise<string> {
+  const padded = padPlaintext(encoder.encode(canonicalDeliveryAddressJson(input.address)));
+  const recipientPublicKey = await suite.kem.deserializePublicKey(input.recipientPublicKey as BufferSource);
+  const sealed = await suite.seal(
+    { recipientPublicKey, info: encoder.encode(input.context) },
+    padded as BufferSource,
+    input.aad as BufferSource,
+  );
+  const wire = new Uint8Array(HPKE_ENC_BYTES + sealed.ct.byteLength);
+  wire.set(new Uint8Array(sealed.enc), 0);
+  wire.set(new Uint8Array(sealed.ct), HPKE_ENC_BYTES);
+  return bytesToBase64Url(wire);
+}
+
 export async function sealDeliveryAddress(input: {
   address: CommerceDeliveryAddressValue;
   recipientPublicKey: Uint8Array;
   binding: DeliveryEnvelopeBinding;
 }): Promise<string> {
   requirePublicKey(input.recipientPublicKey, input.binding.keyId);
-  const aad = buildDeliveryAad(input.binding);
-  const padded = padPlaintext(encoder.encode(canonicalDeliveryAddressJson(input.address)));
-  const recipientPublicKey = await suite.kem.deserializePublicKey(input.recipientPublicKey as BufferSource);
-  const sealed = await suite.seal(
-    { recipientPublicKey, info: encoder.encode(DELIVERY_ENVELOPE_CONTEXT) },
-    padded as BufferSource,
-    aad as BufferSource,
-  );
-  const wire = new Uint8Array(HPKE_ENC_BYTES + sealed.ct.byteLength);
-  wire.set(new Uint8Array(sealed.enc), 0);
-  wire.set(new Uint8Array(sealed.ct), HPKE_ENC_BYTES);
-  return bytesToBase64Url(wire);
+  return await sealAddressToRecipient({
+    address: input.address,
+    recipientPublicKey: input.recipientPublicKey,
+    context: DELIVERY_ENVELOPE_CONTEXT,
+    aad: buildDeliveryAad(input.binding),
+  });
 }
 
 export type SellerDeliveryKey = { keyId: string; publicKey: Uint8Array };

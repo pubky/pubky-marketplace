@@ -1,15 +1,18 @@
 /** @vitest-environment node */
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as commerceConfig from '@/config/commerce';
+import { CONNECTOR_SHARE_CONSENT_VERSION } from '@/libs/commerce/connector-address-envelope';
 import {
   type DeliveryKeyPair,
   generateDeliveryKeyPair,
   openDeliveryAddress,
   type SellerDeliveryEnvelope,
 } from '@/libs/commerce/delivery-envelope';
+import { bytesToBase64Url } from '@/libs/commerce/priv-envelope';
 import { buildMarketplaceListingAggregateId } from '@/libs/commerce/transaction-commands';
 import { LocalCommerceService } from '@/services/local/commerce/commerce';
 import { MarketplaceGatewayService } from '@/services/marketplace/marketplace';
+import { MarketplaceConnectorStatusService } from '@/services/marketplace/marketplace-connector-status';
 import { COMMERCE_FIXTURE_SELLER } from '@/test/fixtures/commerce/commerce';
 import { CommerceApplication } from './commerce';
 
@@ -296,6 +299,116 @@ describe('CommerceApplication local pickup (Wave 7)', () => {
           },
         }),
       ).resolves.toEqual(address);
+    });
+
+    describe('opt-in address sharing with a connected store', () => {
+      const STORE_KEY_ID = 'connector-key-1';
+
+      async function storeKey() {
+        const pair = await generateDeliveryKeyPair();
+        return {
+          pair,
+          choice: {
+            sellerPubky: SELLER,
+            shopDomain: 'dezentralshop.ch',
+            keyId: STORE_KEY_ID,
+            publicKey: pair.publicKey,
+          },
+        };
+      }
+
+      it('seals a second copy of the address to the store key, bound to this checkout, and records the consent', async () => {
+        const execute = vi.spyOn(MarketplaceGatewayService, 'execute').mockResolvedValue(okResponse as never);
+        const { pair, choice } = await storeKey();
+
+        await CommerceApplication.commitCreateMarketplaceCheckout(BUYER, {
+          lines: [lineA],
+          deliveryAddress: address,
+          deliveryKeys: keysFor([SELLER, sellerKey]),
+          connectorShares: [choice],
+        });
+
+        const command = execute.mock.calls[0][1];
+        const payload = command.payload as {
+          deliveryAddressEnvelopes: SellerDeliveryEnvelope[];
+          connectorShares: {
+            sellerPubky: string;
+            shopDomain: string;
+            consentVersion: number;
+            keyId: string;
+            envelope: string;
+          }[];
+        };
+        expect(payload.deliveryAddressEnvelopes).toHaveLength(1);
+        expect(payload.connectorShares).toHaveLength(1);
+        const [share] = payload.connectorShares;
+        expect(share).toMatchObject({
+          sellerPubky: SELLER,
+          shopDomain: 'dezentralshop.ch',
+          consentVersion: CONNECTOR_SHARE_CONSENT_VERSION,
+          keyId: STORE_KEY_ID,
+        });
+        expect(share?.envelope).not.toBe(payload.deliveryAddressEnvelopes[0]?.envelope);
+        expect(JSON.stringify(payload)).not.toContain('1 Market Street');
+        expect(pair.keyId).toBeDefined();
+      });
+
+      it('sends no share unless the buyer chose one', async () => {
+        const execute = vi.spyOn(MarketplaceGatewayService, 'execute').mockResolvedValue(okResponse as never);
+
+        await CommerceApplication.commitCreateMarketplaceCheckout(BUYER, {
+          lines: [lineA],
+          deliveryAddress: address,
+          deliveryKeys: keysFor([SELLER, sellerKey]),
+        });
+
+        expect(execute.mock.calls[0][1].payload).not.toHaveProperty('connectorShares');
+      });
+
+      it('refuses a share for a seller that does not ship this checkout, and sends nothing', async () => {
+        const execute = vi.spyOn(MarketplaceGatewayService, 'execute');
+        const { choice } = await storeKey();
+
+        await expect(
+          CommerceApplication.commitCreateMarketplaceCheckout(BUYER, {
+            lines: [lineA, lineB],
+            fulfillmentChoiceBySeller: { [sellerB]: 'pickup' },
+            deliveryAddress: address,
+            deliveryKeys: keysFor([SELLER, sellerKey]),
+            connectorShares: [{ ...choice, sellerPubky: sellerB }],
+          }),
+        ).rejects.toMatchObject({ category: 'validation', context: { sellerPubky: sellerB } });
+        expect(execute).not.toHaveBeenCalled();
+      });
+
+      it('offers the connected stores of the sellers whose status can be read, and nothing for the rest', async () => {
+        const { pair } = await storeKey();
+        vi.spyOn(MarketplaceConnectorStatusService, 'getStores').mockImplementation(async (sellerPubky) => {
+          if (sellerPubky === sellerB) throw new Error('offline');
+          if (sellerPubky === 'z'.repeat(52)) return [];
+          return [
+            {
+              provider: 'woocommerce',
+              domain: 'dezentralshop.ch',
+              addressSharing: {
+                recipientKey: {
+                  keyId: STORE_KEY_ID,
+                  publicKey: bytesToBase64Url(pair.publicKey),
+                  algorithm: 'hpke-x25519-hkdf-sha256-chacha20poly1305',
+                  envelopeContext: 'pubky-marketplace/connector-address/v1',
+                  envelopeBytes: 2096,
+                },
+              },
+            },
+          ];
+        });
+
+        const stores = await CommerceApplication.getConnectorStores([SELLER, sellerB, 'z'.repeat(52)]);
+
+        expect([...stores.keys()]).toEqual([SELLER]);
+        expect(stores.get(SELLER)).toMatchObject({ shopDomain: 'dezentralshop.ch', keyId: STORE_KEY_ID });
+        expect(stores.get(SELLER)?.publicKey).toEqual(pair.publicKey);
+      });
     });
 
     it('stops a durable shipping checkout whose seller has no resolved delivery key', async () => {
