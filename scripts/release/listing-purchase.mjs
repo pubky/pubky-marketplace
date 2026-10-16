@@ -4,14 +4,19 @@
 // sessions off, or not yet minted) gets the "Enable purchases" dialog instead; once the buyer approves it, the
 // Shop closes the dialog and runs the pending add to cart itself.
 //
-// observed: {
-//   buyEnabled            the listing showed an enabled Buy button for the buyer
-//   enablePurchases       clicking Buy opened the "Enable purchases" dialog
-//   approvalLink          that dialog offered an authorization link to approve (unset when it never opened)
-//   dialogClosed          the dialog closed after the buyer approved (unset when it never opened)
-//   cartHasCheckout       the cart then showed its checkout control
-// }
-// Returns null when the listing is in the cart, else the reason it is not.
+// Returns null when the listing is in the cart, else the reason it is not. Fields after a failed step are unset.
+/**
+ * @param {{
+ *   buyEnabled: boolean,
+ *   enablePurchases: boolean,
+ *   approvalLink?: boolean,
+ *   dialogClosed?: boolean,
+ *   cartHasCheckout?: boolean,
+ * }} observed buyEnabled: the listing showed an enabled Buy button for the buyer; enablePurchases: clicking Buy
+ *   opened the "Enable purchases" dialog; approvalLink: that dialog offered an authorization link to approve;
+ *   dialogClosed: the dialog closed after the buyer approved; cartHasCheckout: the cart then showed its checkout control
+ * @returns {string | null}
+ */
 export function purchaseFailure({ buyEnabled, enablePurchases, approvalLink, dialogClosed, cartHasCheckout }) {
   if (!buyEnabled) {
     return 'the listing shows no enabled Buy button for the buyer (own listing, sold out, held, or transactions off)';
