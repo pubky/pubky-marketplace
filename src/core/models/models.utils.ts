@@ -21,7 +21,8 @@ const PUBKY_AUTHORITY = /^[^:@]+$/;
 export function buildCompositeIdFromPubkyUri({ uri, domain }: CompositeIdParams): string | null {
   // Parsed by hand: `new URL('pubky://…').hostname` is empty on Chrome before 130 (non-special schemes).
   // The scheme is case-insensitive (`PUBKY://…` is valid); the authority keeps its case.
-  if (uri.slice(0, PUBKY_URI_PREFIX.length).toLowerCase() !== PUBKY_URI_PREFIX) {
+  // `uri` comes from unvalidated remote data: a Nexus file record without a `uri` returns null instead of throwing.
+  if (typeof uri !== 'string' || uri.slice(0, PUBKY_URI_PREFIX.length).toLowerCase() !== PUBKY_URI_PREFIX) {
     return null;
   }
   // The authority is the first component; a missing one (`pubky:///…`) stays empty and is rejected.

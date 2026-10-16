@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { COMPOSITE_ID_DELIMITER } from '@/models/models.defaults';
 import { CompositeIdDomain, type Pubky } from '@/models/models.types';
 import { buildCompositeId, buildCompositeIdFromPubkyUri, parseCompositeId } from '@/models/models.utils';
+import { asInvalid } from '@/test-utils/type-assertions';
 
 describe('models.utils (composite id)', () => {
   const author: Pubky = 'operrr8wsbpr3ue9d4qj41ge1kcc6r7fdiy6o3ugjrrhi4y77rd0';
@@ -79,6 +80,10 @@ describe('models.utils (composite id)', () => {
       expect(buildCompositeIdFromPubkyUri({ uri, domain: CompositeIdDomain.POSTS })).toBeNull();
     },
   );
+
+  it.each([undefined, null, 42])('buildCompositeIdFromPubkyUri returns null for the non-string uri %s', (uri) => {
+    expect(buildCompositeIdFromPubkyUri({ uri: asInvalid<Pubky>(uri), domain: CompositeIdDomain.FILES })).toBeNull();
+  });
 
   it('round-trip is stable', () => {
     const c1 = buildCompositeId({ pubky: author, id: postId });
