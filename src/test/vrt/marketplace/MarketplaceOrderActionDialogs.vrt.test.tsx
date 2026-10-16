@@ -105,7 +105,7 @@ describe('Marketplace order action dialogs — visual regression', () => {
       </ActionsHarness>,
       { viewport: VRT_VIEWPORT_DESKTOP },
     );
-    await openDialog(screen.getByRole('button', { name: 'Add tracking' }));
+    await openDialog(screen.getByRole('button', { name: 'Mark shipped' }));
     await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('dialog-order-ship-open-desktop');
   });
 

@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { OTHER_CARRIER_ID, SHIPPING_CARRIERS } from '@/libs/commerce/carriers';
+import { SHIPPING_CARRIERS } from '@/libs/commerce/carriers';
 import { isArbitrumTxHash, USDT_REFUND_COPY } from '@/libs/commerce/usdt-refund';
 
 const carrierIds = SHIPPING_CARRIERS.map(({ id }) => id) as [string, ...string[]];
@@ -26,14 +26,6 @@ export const marketplaceOrderActionSchema = z
   .superRefine((data, context) => {
     if (['cancel', 'return'].includes(data.action) && !data.reason) {
       context.addIssue({ code: 'custom', path: ['reason'], message: 'Reason is required.' });
-    }
-    if (data.action === 'ship') {
-      if (!data.trackingNumber) {
-        context.addIssue({ code: 'custom', path: ['trackingNumber'], message: 'The tracking number is required.' });
-      }
-      if (data.carrierChoice === OTHER_CARRIER_ID && !data.carrier) {
-        context.addIssue({ code: 'custom', path: ['carrier'], message: 'Name the carrier.' });
-      }
     }
     if (data.action === 'refund') {
       // Up to six decimals here (USDT millionths); `marketplaceOrderActionSchemaFor` caps them at the order's units.

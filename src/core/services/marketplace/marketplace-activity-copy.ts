@@ -48,6 +48,7 @@ export const SERVICE_NOTIFICATION_TYPES = [
   'refund_recorded',
   'return_updated',
   'review_received',
+  'tracking_updated',
 ] as const;
 
 export type ServiceNotificationType = (typeof SERVICE_NOTIFICATION_TYPES)[number];
@@ -78,6 +79,7 @@ export const MARKETPLACE_ACTIVITY_LABELS = {
   order_cancelled: 'Order cancelled',
   order_cancelled_terms_change: 'Order cancelled — pickup terms changed',
   order_shipped: 'Order shipped',
+  tracking_updated: 'Tracking updated for your order',
   order_delivery_assumed: 'Delivery marked automatically',
   order_delivered: 'Delivery confirmed',
   order_completed: 'Order completed',
