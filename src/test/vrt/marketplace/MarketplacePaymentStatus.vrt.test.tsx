@@ -809,12 +809,44 @@ describe('Marketplace payment status card — USDT orders', () => {
     view.sellerConfig = { ...view.sellerConfig, usdtAvailable: true };
     const screen = await renderCard('awaiting_entitlement', 'transaction-service', {
       deployEnv: 'production',
+      paykitServerApi: 'upstream',
       orderOverrides: { holdExpiresAt: HOLD_DEADLINE, holdSource: 'checkout' },
     });
     await expect.element(screen.getByRole('button', { name: 'Continue with Paykit' })).toBeInTheDocument();
     await expect.element(screen.getByText(/pay in Bitkit with Bitcoin or USDT/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Continue with USDT/ }).elements()).toHaveLength(0);
     await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('payment-status-paykit-method-picker-desktop');
+    view.usdtAvailable = false;
+    view.sellerConfig = { bitcoinAvailable: true, bitcoinOfferAvailable: true, paypalAvailable: true };
+    view.locks.enabled = true;
+  });
+
+  it('renders the Continue with Paykit entry paused during a Paykit outage, with PayPal usable, at desktop viewport', async () => {
+    view.locks = { ...view.locks, enabled: false, correlation: null, delivery: null, error: null };
+    view.usdtAvailable = true;
+    view.sellerConfig = {
+      bitcoinAvailable: false,
+      bitcoinOfferAvailable: false,
+      paypalAvailable: true,
+      usdtAvailable: true,
+      paykitUnreachable: true,
+    };
+    const screen = await renderCard('awaiting_entitlement', 'transaction-service', {
+      deployEnv: 'production',
+      paykitServerApi: 'upstream',
+      orderOverrides: { holdExpiresAt: HOLD_DEADLINE, holdSource: 'checkout' },
+    });
+    await expect.element(screen.getByRole('button', { name: 'Continue with Paykit' })).toBeDisabled();
+    await expect.element(screen.getByRole('button', { name: 'Continue with PayPal' })).toBeEnabled();
+    await expect
+      .element(
+        screen.getByText(
+          'Paykit is temporarily unreachable, retrying… Paykit returns on its own; PayPal is unaffected.',
+        ),
+      )
+      .toBeInTheDocument();
+    expect(screen.getByTestId('bitcoin-payment-code-note').elements()).toHaveLength(0);
+    await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('payment-status-paykit-outage-desktop');
     view.usdtAvailable = false;
     view.sellerConfig = { bitcoinAvailable: true, bitcoinOfferAvailable: true, paypalAvailable: true };
     view.locks.enabled = true;

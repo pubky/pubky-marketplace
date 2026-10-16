@@ -161,6 +161,7 @@ const view = vi.hoisted(() => ({
   hasManualDigitalLine: false,
   usdtAvailable: false,
   usdtSellers: null as string[] | null,
+  paykitOutage: false,
   orders: [] as unknown[],
   buyerWalletState: 'payable' as BuyerPaykitWalletState,
 }));
@@ -371,10 +372,11 @@ vi.mock('@/hooks/useMarketplaceSessionConnect/useMarketplaceSessionConnect', () 
 vi.mock('@/controllers/commerce/commerce', () => ({
   CommerceController: {
     getSellerPaymentConfig: vi.fn(async (sellerPubky: string) => ({
-      bitcoinAvailable: true,
-      bitcoinOfferAvailable: true,
+      bitcoinAvailable: !view.paykitOutage,
+      bitcoinOfferAvailable: !view.paykitOutage,
       paypalAvailable: true,
       usdtAvailable: view.usdtAvailable && (view.usdtSellers === null || view.usdtSellers.includes(sellerPubky)),
+      ...(view.paykitOutage ? { paykitUnreachable: true } : {}),
     })),
     fetchUsdtPaymentsAvailable: vi.fn(async () => view.usdtAvailable),
     getIndicativeBtcRate: vi.fn(async () => null),
@@ -419,6 +421,7 @@ beforeEach(async () => {
   view.hasManualDigitalLine = false;
   view.usdtAvailable = false;
   view.usdtSellers = null;
+  view.paykitOutage = false;
   view.orders = [];
   view.buyerWalletState = 'payable';
   useCommerceStore.getState().reset();
@@ -757,6 +760,7 @@ describe('Marketplace checkout — visual regression', () => {
     view.adapterMode = 'transaction-service';
     view.deployEnv = 'production';
     view.hasMarketplaceSession = true;
+    view.paykitServerApi = 'upstream';
     view.usdtAvailable = true;
 
     await renderForVRT(<MarketplaceCheckout />, { viewport: VRT_VIEWPORT_DESKTOP });
@@ -775,6 +779,7 @@ describe('Marketplace checkout — visual regression', () => {
     view.adapterMode = 'transaction-service';
     view.deployEnv = 'production';
     view.hasMarketplaceSession = true;
+    view.paykitServerApi = 'upstream';
     view.usdtAvailable = true;
 
     await renderForVRT(<MarketplaceCheckout />, { viewport: VRT_VIEWPORT_DESKTOP });
@@ -792,6 +797,7 @@ describe('Marketplace checkout — visual regression', () => {
     view.adapterMode = 'transaction-service';
     view.deployEnv = 'production';
     view.hasMarketplaceSession = true;
+    view.paykitServerApi = 'upstream';
     view.usdtAvailable = true;
 
     await renderForVRT(<MarketplaceCheckout />, { viewport: VRT_VIEWPORT_MOBILE });
@@ -803,12 +809,46 @@ describe('Marketplace checkout — visual regression', () => {
     await captureCheckout('checkout-paykit-offered-mobile');
   });
 
+  for (const [name, viewport] of [
+    ['desktop', VRT_VIEWPORT_DESKTOP],
+    ['mobile', VRT_VIEWPORT_MOBILE],
+  ] as const) {
+    it(`pins the Paykit outage: the Paykit entry unavailable with the retrying reason and PayPal selected, at ${name} viewport`, async () => {
+      const { singleSeller } = await fixtures;
+      view.items = singleSeller;
+      view.adapterMode = 'transaction-service';
+      view.deployEnv = 'production';
+      view.hasMarketplaceSession = true;
+      view.paykitServerApi = 'upstream';
+      view.usdtAvailable = true;
+      view.paykitOutage = true;
+
+      const screen = await renderForVRT(<MarketplaceCheckout />, { viewport });
+      await vi.waitFor(() => {
+        if (!document.querySelector('[data-testid="marketplace-checkout-method-paykit-reason"]')) {
+          throw new Error('The Paykit outage has not rendered yet.');
+        }
+      });
+      await expect.element(screen.getByTestId('marketplace-checkout-method-paykit')).toBeDisabled();
+      await expect.element(screen.getByTestId('marketplace-checkout-method-paypal')).toBeEnabled();
+      expect(screen.getByTestId('marketplace-checkout-method-paypal').element().getAttribute('aria-pressed')).toBe(
+        'true',
+      );
+      expect(document.body.textContent).toContain('Paykit returns on its own; PayPal is unaffected.');
+      expect(document.querySelector('[data-testid="bitcoin-payment-code-note"]')).toBeNull();
+      expect(document.querySelector('[data-testid="marketplace-checkout-method-bitcoin"]')).toBeNull();
+      expect(document.querySelector('[data-testid="marketplace-checkout-method-usdt"]')).toBeNull();
+      await captureCheckout(`checkout-paykit-outage-${name}`);
+    });
+  }
+
   it('renders the one-approval-per-seller note on a multi-seller Paykit cart at desktop viewport', async () => {
     const { multiSeller } = await fixtures;
     view.items = multiSeller;
     view.adapterMode = 'transaction-service';
     view.deployEnv = 'production';
     view.hasMarketplaceSession = true;
+    view.paykitServerApi = 'upstream';
     view.usdtAvailable = true;
 
     await renderForVRT(<MarketplaceCheckout />, { viewport: VRT_VIEWPORT_DESKTOP });
