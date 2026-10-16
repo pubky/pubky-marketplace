@@ -39,6 +39,7 @@ import { AUTH_IO_TIMEOUT_MS, withIoDeadline } from '@/libs/http/io-deadline';
 import { signRootAuthToken } from '@/libs/identity/auth-token';
 import { Identity } from '@/libs/identity/identity';
 import { Logger } from '@/libs/logger/logger';
+import { isIosUserAgent } from '@/libs/navigation/bitkit-ios-url';
 import type { Pubky as TPubkyModel } from '@/models/models.types';
 import type {
   TGenerateAuthTokenFlowResult,
@@ -723,6 +724,9 @@ export class HomeserverService {
           owned.storage === 'delegated'
             ? GrantAuthFlow.resumeDelegated(owned.saved)
             : pubkySdk.resumeGrantAuthFlow(owned.saved),
+        // WebKit on iOS suspends hidden pages and aborts their in-flight work; other browsers keep
+        // polling in the background so an approval made there completes at once.
+        releaseWhileHidden: isIosUserAgent(),
         onCanceledSession: async (session) => {
           await session.signout().catch(() => {});
           await cleanupKey();
