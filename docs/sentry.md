@@ -83,6 +83,8 @@ Expected user-flow states are not failures and must not reach the factory:
 - A marketplace service without store connectors (`404 connectors_disabled`, or a bare 404/405 from a service
   older than the connector routes) is built with `new AppError(...)` in `MarketplaceConnectorsService`: the
   Shop hides store connections there. A connector 404 that names another refusal stays on `Err.*`.
+- Marketplace media its owner has removed (404/410 from the owner's homeserver) is built the same way in
+  `MarketplaceMediaService.fetchMedia`: the UI shows no image. Other media failures stay on `Err.*`.
 - A Shop-owned sign-in started while the Shop is embedded in Pubky App ("Continue sign-in in Pubky App.",
   `AuthController.assertStandaloneMode`) is also built with `new AppError(...)`: App owns sign-in there.
 
