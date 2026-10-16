@@ -71,7 +71,7 @@ export function ChatConversation({ peerPubky }: { peerPubky: string }) {
         className="mx-auto flex h-[calc(100svh-12rem)] w-full max-w-3xl flex-col gap-3 sm:h-[calc(100svh-15rem)] lg:h-[calc(100svh-10rem)]"
         data-surface="chat-conversation"
       >
-        <div className="flex items-center gap-2">
+        <div className="sticky top-24 z-10 flex items-center gap-2 bg-background lg:top-(--header-offset-main)">
           <Button asChild variant="ghost" size="icon" className="rounded-full" aria-label="All messages">
             <Link href={APP_ROUTES.MESSAGES} overrideDefaults>
               <ArrowLeft className="size-5" aria-hidden="true" />
