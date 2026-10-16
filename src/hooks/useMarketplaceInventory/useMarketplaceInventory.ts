@@ -12,8 +12,6 @@ import { toast } from '@/molecules/Toaster/use-toast';
 import { useAuthStore } from '@/stores/auth/auth.store';
 import { useCommerceStore } from '@/stores/commerce/commerce.store';
 
-type SetAvailableInput = Parameters<typeof CommerceController.setInventoryAvailable>[0] & { variantId?: string };
-
 export function useMarketplaceInventory() {
   const sellerPubky = useAuthStore((state) => state.currentUserPubky);
   const identitySession = useCommerceStore((state) => state.marketplaceSession);
@@ -44,7 +42,7 @@ export function useMarketplaceInventory() {
       if (!sellerPubky) return { status: 'error' as const, message: 'unauthenticated' };
       setPendingListingId(row.listingId);
       setConflictListingId(null);
-      const input: SetAvailableInput = {
+      const input = {
         sellerPubky,
         row,
         targetAvailable,
