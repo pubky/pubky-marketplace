@@ -251,7 +251,8 @@ describe('MarketplaceGetPaidSettings USDT', () => {
         .mockResolvedValueOnce(fromWire(USDT_SELLER_CONFIG_UNAVAILABLE_WIRE))
         .mockResolvedValue(fromWire(USDT_SELLER_CONFIG_READY_WIRE));
       await renderSettings();
-      await userEvent.click(await screen.findByRole('button', { name: /Check again/ }));
+      const panel = await screen.findByTestId('usdt-readiness-unavailable');
+      await userEvent.click(within(panel).getByRole('button', { name: /Check again/ }));
 
       expect(await screen.findByTestId('usdt-readiness-ready')).toBeInTheDocument();
       expect(mocked.getMyPaymentConfig).toHaveBeenCalledTimes(2);
