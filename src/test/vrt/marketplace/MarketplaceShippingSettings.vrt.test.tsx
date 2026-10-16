@@ -47,6 +47,7 @@ vi.mock('@/hooks/useIndicativeBtcRate/useIndicativeBtcRate', () => ({
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn() }),
   usePathname: () => '/marketplace/settings/shipping',
+  useSearchParams: () => new URLSearchParams(),
 }));
 
 const multiCurrencyFixtures = vi.hoisted(() => {
