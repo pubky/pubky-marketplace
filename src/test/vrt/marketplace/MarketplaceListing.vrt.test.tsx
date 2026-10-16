@@ -517,6 +517,28 @@ describe('Marketplace listing detail — visual regression', () => {
     );
   });
 
+  it('renders a sold-out listing with Sold out in place of Buy at mobile viewport', async () => {
+    const { seller, fixedPriceListing, fixedPriceProjection } = await fixtures;
+    await setView({
+      listing: fixedPriceListing,
+      adapterMode: 'transaction-service',
+      projection: { ...fixedPriceProjection, state: 'sold', availableQuantity: 0 },
+    });
+
+    const screen = await renderForVRT(<MarketplaceListing sellerPubky={seller} listingId="boots_01" />, {
+      viewport: VRT_VIEWPORT_MOBILE,
+    });
+    await expect(screen.getByRole('button', { name: 'Sold out' })).toBeDisabled();
+    expect(document.querySelector('[data-surface="marketplace-listing-purchase"]')?.textContent).not.toContain('Buy');
+    expect(document.querySelector('[data-surface="marketplace-listing-purchase"]')?.textContent).not.toContain(
+      'Make offer',
+    );
+    await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot(
+      'listing-sold-out-mobile',
+      VRT_DENSE_CHROME_SCREENSHOT,
+    );
+  });
+
   it('renders an auction listing with live bid state at desktop viewport', async () => {
     const { seller, auctionListing, auctionProjection } = await fixtures;
     await setView({ listing: auctionListing, projection: auctionProjection });

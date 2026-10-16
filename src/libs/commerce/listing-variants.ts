@@ -55,6 +55,19 @@ export function soldOutVariantIds(
   return new Set((variants ?? []).filter((variant) => variant.soldOut).map((variant) => variant.variantId));
 }
 
+/**
+ * The sizes a listing's projection or public read reports sold out. The
+ * service flags a size once it has no free unit, held units included, so
+ * while the listing is held (`reserved`) a flag cannot tell a sold size from a
+ * held one and none is taken as sold out.
+ */
+export function listingSoldOutVariantIds(
+  availability: { state: string; variants?: readonly ProjectedVariantAvailability[] | null } | null | undefined,
+): ReadonlySet<string> {
+  if (!availability || availability.state === 'reserved') return new Set();
+  return soldOutVariantIds(availability.variants);
+}
+
 /** A size is sold out when the service says so or the seller's record has none left. */
 export function isVariantSoldOut(variant: ListingVariantStockInput, serviceSoldOut: ReadonlySet<string>): boolean {
   return variant.quantity === 0 || serviceSoldOut.has(variant.id);

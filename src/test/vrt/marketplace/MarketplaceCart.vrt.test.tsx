@@ -102,6 +102,11 @@ const fixtures = vi.hoisted(async () => {
     locksOnly: [item(locksTrack, 'variant_01', 1)],
     locksWithShipped: [item(boots, 'variant_42', 1), item(locksTrack, 'variant_01', 1)],
     staleItem: [item(boots, 'variant_42', 1), item(jacket, 'variant_gone', 1)],
+    soldOut: [item(boots, 'variant_42', 1), item(camera, 'variant_01', 1), item(jacket, 'variant_01', 1)],
+    soldOutKeys: {
+      boots: `${boots.record.ownerPubky}:${boots.record.listingId}`,
+      camera: `${camera.record.ownerPubky}:${camera.record.listingId}`,
+    },
   };
 });
 
@@ -127,7 +132,20 @@ const view = vi.hoisted(() => ({
   items: [] as unknown[],
   offers: [] as unknown[],
   isLoading: false,
+  durable: false,
+  availability: new Map<
+    string,
+    { state: 'available' | 'reserved' | 'sold'; variants?: Array<{ variantId: string; soldOut: boolean }> }
+  >(),
 }));
+
+vi.mock('@/config/commerce', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/config/commerce')>();
+  return {
+    ...actual,
+    getCommerceAdapterMode: () => (view.durable ? 'transaction-service' : actual.getCommerceAdapterMode()),
+  };
+});
 
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn() }),
@@ -190,6 +208,13 @@ beforeEach(async () => {
   useMarketplaceDisplayStore.setState({ showFxEstimate: true, measurementSystem: 'metric' });
   view.offers = [];
   view.isLoading = false;
+  view.durable = false;
+  view.availability.clear();
+  const { CommerceController } = await import('@/controllers/commerce/commerce');
+  vi.spyOn(CommerceController, 'getPublicListingAvailability').mockImplementation(async (seller, listingId) => {
+    const answer = view.availability.get(`${String(seller)}:${String(listingId)}`);
+    return answer ? { aggregateId: 'listing:vrt', serverTime: '2026-10-16T09:00:00.000Z', ...answer } : null;
+  });
 });
 
 describe('Marketplace cart — visual regression', () => {
@@ -344,6 +369,51 @@ describe('Marketplace cart — visual regression', () => {
 
     await renderForVRT(<MarketplaceCart />, { viewport: VRT_VIEWPORT_DESKTOP });
     await captureCart('cart-stale-item-desktop');
+  });
+
+  async function seedSoldOutCart() {
+    const { soldOut, soldOutKeys } = await fixtures;
+    view.items = soldOut;
+    view.durable = true;
+    view.availability.set(soldOutKeys.boots, {
+      state: 'available',
+      variants: [
+        { variantId: 'variant_42', soldOut: true },
+        { variantId: 'variant_43', soldOut: false },
+      ],
+    });
+    view.availability.set(soldOutKeys.camera, { state: 'sold' });
+  }
+
+  async function waitForSoldOutLines() {
+    await vi.waitFor(() => {
+      if (document.querySelectorAll('[data-testid="marketplace-cart-line-sold-out"]').length !== 2) {
+        throw new Error('The sold-out lines have not rendered yet.');
+      }
+    });
+  }
+
+  it.each([
+    ['desktop', VRT_VIEWPORT_DESKTOP],
+    ['mobile', VRT_VIEWPORT_MOBILE],
+  ] as const)(
+    'marks a sold-out listing and a sold-out size and blocks Checkout at %s viewport',
+    async (name, viewport) => {
+      await seedSoldOutCart();
+
+      await renderForVRT(<MarketplaceCart />, { viewport });
+      await waitForSoldOutLines();
+      expect(document.querySelector('[data-testid="marketplace-cart-checkout"]')).toHaveProperty('disabled', true);
+      await captureCart(`cart-sold-out-${name}`);
+    },
+  );
+
+  it('keeps the sold-out cart inside the phone width with every control in view', async () => {
+    await seedSoldOutCart();
+
+    await renderForVRT(<MarketplaceCart />, { viewport: VRT_VIEWPORT_MOBILE });
+    await waitForSoldOutLines();
+    expectMobileWorkflowGeometry();
   });
 
   it('renders the empty cart at desktop viewport', async () => {
