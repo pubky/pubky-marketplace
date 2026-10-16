@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { COMMERCE_LISTING_MAX_QUANTITY, COMMERCE_LISTING_MAX_VARIANTS } from '@/config/commerce';
 import { DELIVERY_ENVELOPE_BYTES, DELIVERY_KEY_ID_PATTERN } from './delivery-envelope-format';
 import {
   type DigitalDeliveryCommandResult,
@@ -55,6 +56,14 @@ const auctionReserveSchema = z
   })
   .strict();
 
+const registerVariantSchema = z
+  .object({
+    id: commerceEntityIdSchema,
+    quantity: z.number().int().min(0).max(COMMERCE_LISTING_MAX_QUANTITY),
+    sku: z.string().trim().min(1).max(64).optional(),
+  })
+  .strict();
+
 const registerListingPayloadSchema = z
   .object({
     sellerPubky: commercePubkySchema,
@@ -75,6 +84,10 @@ const registerListingPayloadSchema = z
     // pickup design §A1). Public catalog data echoed at register/sync;
     // defaults to shipping-only so pre-pickup clients are unaffected.
     fulfillmentMethods: marketplaceFulfillmentMethodsSchema,
+    // The record's enabled variants, in record order, when it offers two or
+    // more: the service then tracks stock per size. Absent registers one
+    // implicit row. `quantity` above stays the sum of every record variant.
+    variants: z.array(registerVariantSchema).min(2).max(COMMERCE_LISTING_MAX_VARIANTS).optional(),
   })
   .strict()
   .superRefine((payload, context) => {
@@ -173,6 +186,9 @@ export const reserveInventoryCommandSchema = createCommerceCommandSchema(
     .object({
       quantity: z.number().int().positive().max(1_000_000),
       reservationTtlSeconds: z.number().int().min(60).max(1_800),
+      // Names the size on a variant-tracked listing; the service requires it
+      // unless the listing offers exactly one.
+      variantId: commerceEntityIdSchema.optional(),
     })
     .strict(),
 );

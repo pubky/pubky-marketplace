@@ -102,6 +102,28 @@ describe('useMarketplaceLiveBid', () => {
     expect(CommerceController.getMarketplaceListingProjection).toHaveBeenCalledExactlyOnceWith(SELLER, 'camera');
   });
 
+  it('reports sold out when every size is sold out, and not while one has stock', async () => {
+    const withVariants = (soldOut: boolean[]) =>
+      ({
+        ...auctionProjection(),
+        auction: null,
+        saleFormat: 'fixed_price',
+        variants: soldOut.map((value, index) => ({ variantId: `size_${index}`, soldOut: value })),
+      }) as MarketplaceListingProjection;
+
+    vi.mocked(CommerceController.getMarketplaceListingProjection).mockResolvedValue(withVariants([true, true]));
+    const allSold = renderHook(() => useMarketplaceLiveBid(SELLER, 'camera', true));
+    attachAndShow(allSold.result.current.ref);
+    await waitFor(() => expect(allSold.result.current.soldOut).toBe(true));
+    expect(allSold.result.current.listingState).toBe('available');
+
+    vi.mocked(CommerceController.getMarketplaceListingProjection).mockResolvedValue(withVariants([true, false]));
+    const someLeft = renderHook(() => useMarketplaceLiveBid(SELLER, 'camera', true));
+    attachAndShow(someLeft.result.current.ref);
+    await waitFor(() => expect(someLeft.result.current.listingState).toBe('available'));
+    expect(someLeft.result.current.soldOut).toBe(false);
+  });
+
   it('fetches only once per card even across repeated visibility changes', async () => {
     const { result } = renderHook(() => useMarketplaceLiveBid(SELLER, 'camera', true));
 

@@ -1,6 +1,6 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { UseMarketplaceDropClaimResult } from '@/hooks/useMarketplaceDropClaim/useMarketplaceDropClaim';
 import type { CommerceDropRecord } from '@/libs/commerce/marketplace-records';
 import { DropClaimPanel } from './DropClaimPanel';
@@ -18,14 +18,40 @@ vi.mock('@/stores/auth/auth.store', () => ({
   }),
 }));
 
+const listingState = vi.hoisted(() => ({
+  variants: [{ id: 'default', options: {}, quantity: 3, enabled: true }] as {
+    id: string;
+    options: Record<string, string>;
+    quantity: number;
+    enabled: boolean;
+  }[],
+  soldOut: [] as string[],
+}));
+
+vi.mock('@/config/commerce', async () => {
+  const actual = await vi.importActual<typeof import('@/config/commerce')>('@/config/commerce');
+  return { ...actual, getCommerceAdapterMode: () => 'transaction-service', getCommercePollIntervalMs: () => 60_000 };
+});
+
 vi.mock('@/controllers/commerce/commerce', () => ({
   CommerceController: {
     getOrFetchListing: vi.fn(async () => ({
+      listingId: 'listing1',
       title: 'Field Recordings',
       media: [],
+      fulfillmentMethods: ['shipping'],
+      variants: listingState.variants,
       sale: { format: 'fixed_price', unitPrice: { amountMinor: 5_000, currency: 'USD', exponent: 2 } },
     })),
     getIndicativeBtcRate: vi.fn(async () => null),
+    getPublicListingAvailability: vi.fn(async () => ({
+      aggregateId: 'listing:x',
+      state: 'available',
+      serverTime: '2026-10-15T12:00:00.000Z',
+      variants: listingState.soldOut.length
+        ? listingState.variants.map(({ id }) => ({ variantId: id, soldOut: listingState.soldOut.includes(id) }))
+        : undefined,
+    })),
   },
 }));
 
@@ -63,8 +89,17 @@ function makeClaim(): UseMarketplaceDropClaimResult {
   };
 }
 
+beforeAll(() => {
+  Element.prototype.scrollIntoView = vi.fn();
+  Element.prototype.hasPointerCapture = vi.fn();
+  Element.prototype.releasePointerCapture = vi.fn();
+  Element.prototype.setPointerCapture = vi.fn();
+});
+
 describe('DropClaimPanel', () => {
   beforeEach(() => {
+    listingState.variants = [{ id: 'default', options: {}, quantity: 3, enabled: true }];
+    listingState.soldOut = [];
     authState.currentUserPubky = BUYER;
     authState.setShowSignInDialog.mockClear();
   });
@@ -116,5 +151,59 @@ describe('DropClaimPanel', () => {
     const claim = await screen.findByRole('link', { name: 'Claim one' });
     expect(claim).toHaveAttribute('href', `/marketplace/checkout?seller=${SELLER}&drop=vol1&listing=listing1`);
     expect(screen.queryByText(/No saved delivery address/)).not.toBeInTheDocument();
+  });
+
+  describe('per-size listing', () => {
+    const record = { ownerPubky: SELLER, dropId: 'vol1', listingIds: ['listing1'] } as CommerceDropRecord;
+
+    beforeEach(() => {
+      listingState.variants = [
+        { id: 'size_s', options: { size: 'S' }, quantity: 3, enabled: true },
+        { id: 'size_m', options: { size: 'M' }, quantity: 3, enabled: true },
+      ];
+      listingState.soldOut = ['size_s'];
+    });
+
+    it('asks for a size and chooses none for the buyer', async () => {
+      render(<DropClaimPanel record={record} claim={makeClaim()} remainingAllowance={2} />);
+
+      expect(await screen.findByRole('combobox', { name: 'Choose listing variant' })).toHaveTextContent(
+        'Choose a size',
+      );
+      expect(screen.getByRole('button', { name: 'Choose a size' })).toBeDisabled();
+      expect(screen.queryByRole('link', { name: 'Claim one' })).not.toBeInTheDocument();
+    });
+
+    it('keeps a sold-out size listed and disabled, and claims the size that has stock', async () => {
+      const user = userEvent.setup();
+      render(<DropClaimPanel record={record} claim={makeClaim()} remainingAllowance={2} />);
+
+      await user.click(await screen.findByRole('combobox', { name: 'Choose listing variant' }));
+      const listbox = await screen.findByRole('listbox');
+      await vi.waitFor(() =>
+        expect(within(listbox).getByRole('option', { name: 'S · Sold out' })).toHaveAttribute('aria-disabled', 'true'),
+      );
+      await user.click(within(listbox).getByRole('option', { name: 'M · 3 left' }));
+
+      expect(await screen.findByRole('link', { name: 'Claim one' })).toHaveAttribute(
+        'href',
+        `/marketplace/checkout?seller=${SELLER}&drop=vol1&listing=listing1&variant=size_m`,
+      );
+    });
+
+    it('shows no picker for a listing with one enabled size', async () => {
+      listingState.variants = [
+        { id: 'size_s', options: { size: 'S' }, quantity: 3, enabled: false },
+        { id: 'size_m', options: { size: 'M' }, quantity: 3, enabled: true },
+      ];
+      listingState.soldOut = [];
+      render(<DropClaimPanel record={record} claim={makeClaim()} remainingAllowance={2} />);
+
+      expect(await screen.findByRole('link', { name: 'Claim one' })).toHaveAttribute(
+        'href',
+        `/marketplace/checkout?seller=${SELLER}&drop=vol1&listing=listing1`,
+      );
+      expect(screen.queryByRole('combobox')).not.toBeInTheDocument();
+    });
   });
 });

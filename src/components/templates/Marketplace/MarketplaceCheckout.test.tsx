@@ -2506,4 +2506,60 @@ describe('MarketplaceCheckout drop-claim path', () => {
     expect(screen.getByTestId('marketplace-checkout-pay')).toBeInTheDocument();
     expect(screen.getByLabelText('Full name')).toBeInTheDocument();
   });
+
+  describe('per-size drop listing', () => {
+    const sized = {
+      ...listing,
+      record: {
+        ...listing.record,
+        variants: [
+          { id: 'size_s', options: { size: 'S' }, quantity: 3, enabled: true },
+          { id: 'size_m', options: { size: 'M' }, quantity: 3, enabled: true },
+        ],
+      },
+    };
+
+    beforeEach(() => {
+      vi.mocked(CommerceController.getListing).mockResolvedValue(sized as never);
+    });
+
+    afterEach(() => {
+      vi.mocked(CommerceController.getListing).mockResolvedValue(listing as never);
+    });
+
+    it('checks out the size the buyer chose on the drop page', async () => {
+      searchParams.current = new URLSearchParams({
+        seller: listing.record.ownerPubky,
+        drop: 'vol1',
+        listing: 'boots',
+        variant: 'size_m',
+      });
+
+      render(<MarketplaceCheckout />);
+
+      expect(await screen.findByText('Vintage boots')).toBeInTheDocument();
+      expect(screen.getByText('M')).toBeInTheDocument();
+      expect(screen.queryByText('S')).not.toBeInTheDocument();
+    });
+
+    it('picks no size for the buyer when the link carries none', async () => {
+      render(<MarketplaceCheckout />);
+
+      expect(await screen.findByText('This drop listing could not be loaded.')).toBeInTheDocument();
+      expect(screen.queryByTestId('marketplace-checkout-pay')).not.toBeInTheDocument();
+    });
+
+    it('refuses a size that is not on the listing', async () => {
+      searchParams.current = new URLSearchParams({
+        seller: listing.record.ownerPubky,
+        drop: 'vol1',
+        listing: 'boots',
+        variant: 'size_gone',
+      });
+
+      render(<MarketplaceCheckout />);
+
+      expect(await screen.findByText('This drop listing could not be loaded.')).toBeInTheDocument();
+    });
+  });
 });
