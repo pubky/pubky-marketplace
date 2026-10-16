@@ -544,17 +544,11 @@ async function verify() {
         const shop = await page.evaluate(
           (title) => ({
             title: [...document.querySelectorAll('h1')].some((node) => node.textContent?.trim() === title),
-            addToCart: [...document.querySelectorAll('button')].some(
-              (node) => node.textContent?.trim() === 'Add to cart',
-            ),
+            buy: [...document.querySelectorAll('button')].some((node) => node.textContent?.trim() === 'Buy'),
           }),
           state.listingTitle,
         );
-        check(
-          `verify: Shop page no longer shows ${id.slice(0, 8)}`,
-          !shop.title && !shop.addToCart,
-          JSON.stringify(shop),
-        );
+        check(`verify: Shop page no longer shows ${id.slice(0, 8)}`, !shop.title && !shop.buy, JSON.stringify(shop));
       }
     } finally {
       await browser.close();
