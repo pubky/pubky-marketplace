@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { isConnectorsUnavailableError } from '@/libs/commerce/connectors';
 import { AppError } from '@/libs/error/error';
-import { AuthErrorCode } from '@/libs/error/error.codes';
+import { AuthErrorCode, ClientErrorCode } from '@/libs/error/error.codes';
+import { Err } from '@/libs/error/error.factories';
 import { Logger } from '@/libs/logger/logger';
 import { MarketplaceConnectorsService } from './marketplace-connectors';
 import { MarketplaceSessionService } from './marketplace-session';
@@ -67,6 +69,14 @@ describe('MarketplaceConnectorsService', () => {
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
   });
+
+  function spyOnReports() {
+    return [vi.spyOn(Err, 'auth'), vi.spyOn(Err, 'client'), vi.spyOn(Err, 'server')];
+  }
+
+  function reportCount(reports: ReturnType<typeof spyOnReports>) {
+    return reports.reduce((total, report) => total + report.mock.calls.length, 0);
+  }
 
   function lastCall() {
     const [url, init] = fetchMock.mock.calls.at(-1) ?? [];
@@ -320,9 +330,11 @@ describe('MarketplaceConnectorsService', () => {
 
   it('needs a session for this pubky', async () => {
     vi.mocked(MarketplaceSessionService.getActiveSession).mockReturnValue(null);
+    const reports = spyOnReports();
     await expect(MarketplaceConnectorsService.list(ACTOR)).rejects.toMatchObject({
       code: AuthErrorCode.SESSION_EXPIRED,
     });
+    expect(reportCount(reports)).toBe(0);
     vi.mocked(MarketplaceSessionService.getActiveSession).mockReturnValue({
       token: TOKEN,
       pubky: 'z'.repeat(52),
@@ -344,15 +356,40 @@ describe('MarketplaceConnectorsService', () => {
         404,
       ),
     );
+    const reports = spyOnReports();
     const error = await MarketplaceConnectorsService.list(ACTOR).catch((caught: unknown) => caught);
     expect((error as AppError).context).toMatchObject({ reason: 'connectors_disabled', statusCode: 404 });
+    expect(error).toMatchObject({ code: ClientErrorCode.NOT_FOUND });
+    expect(isConnectorsUnavailableError(error)).toBe(true);
+    expect(reportCount(reports)).toBe(0);
   });
 
-  it('reads a service that has no connector routes as a failure with no refusal code', async () => {
-    fetchMock.mockResolvedValue(new Response('Not Found', { status: 404 }));
-    const error = await MarketplaceConnectorsService.list(ACTOR).catch((caught: unknown) => caught);
-    expect((error as AppError).context?.statusCode).toBe(404);
-    expect((error as AppError).context?.reason).toBeUndefined();
+  it.each([404, 405])(
+    'reads a service that has no connector routes (%i) as a failure with no refusal code',
+    async (status) => {
+      fetchMock.mockResolvedValue(new Response('Not Found', { status }));
+      const reports = spyOnReports();
+      const error = await MarketplaceConnectorsService.list(ACTOR).catch((caught: unknown) => caught);
+      expect((error as AppError).context?.statusCode).toBe(status);
+      expect((error as AppError).context?.reason).toBeUndefined();
+      expect(isConnectorsUnavailableError(error)).toBe(true);
+      expect(reportCount(reports)).toBe(0);
+    },
+  );
+
+  it('still reports a 404 that names another refusal, and a service failure', async () => {
+    const reports = spyOnReports();
+    fetchMock.mockResolvedValueOnce(
+      json({ error: { code: 'connection_not_found', message: 'No such connection.' } }, 404),
+    );
+    const notFound = await MarketplaceConnectorsService.check(ACTOR, CONNECTION_ID).catch((caught: unknown) => caught);
+    expect((notFound as AppError).context).toMatchObject({ reason: 'connection_not_found', statusCode: 404 });
+    expect(isConnectorsUnavailableError(notFound)).toBe(false);
+    expect(reportCount(reports)).toBe(1);
+
+    fetchMock.mockResolvedValueOnce(json({ error: { code: 'internal', message: 'boom' } }, 500));
+    await expect(MarketplaceConnectorsService.list(ACTOR)).rejects.toMatchObject({ context: { statusCode: 500 } });
+    expect(reportCount(reports)).toBe(2);
   });
 
   it('refuses an answer that is not the documented shape', async () => {

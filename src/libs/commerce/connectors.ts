@@ -581,10 +581,14 @@ export function connectorRefusalReason(error: unknown): string | null {
  */
 export function isConnectorsUnavailableError(error: unknown): boolean {
   if (!isAppError(error)) return false;
-  const reason = connectorRefusalReason(error);
-  if (reason === 'connectors_disabled') return true;
   const status = error.context?.statusCode;
-  return reason === null && (status === 404 || status === 405);
+  return isConnectorsUnavailableAnswer(typeof status === 'number' ? status : null, connectorRefusalReason(error));
+}
+
+/** {@link isConnectorsUnavailableError} for a raw answer: its HTTP status and refusal code, if any. */
+export function isConnectorsUnavailableAnswer(status: number | null, reason: string | null | undefined): boolean {
+  if (reason === 'connectors_disabled') return true;
+  return !reason && (status === 404 || status === 405);
 }
 
 export type ConnectionReturn =
