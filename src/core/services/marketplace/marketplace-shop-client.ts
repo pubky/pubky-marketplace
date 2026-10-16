@@ -1,9 +1,9 @@
 import {
+  ALLOWED_CHECKPOINT_TRANSITIONS,
   browserFileSource,
   type CanonicalCsvRow,
   canonicalCsvRowIdentity,
   type CheckpointImportResult,
-  checkpointImportRow,
   chunkSyncManyListings,
   classifySyncManyItem,
   type CurrentImportItem,
@@ -494,6 +494,14 @@ export class MarketplaceShopClientService {
     return exportCanonicalCsv(rows);
   }
 
+  /**
+   * One checkpoint hop through the store's incremental `patchRow`: one row and
+   * the manifest version are written, never the whole manifest. This is the
+   * SDK's own `checkpointImportRow` step (its transition table, the manifest
+   * version guard and the result check), done here because SDK 0.1.6 only knows
+   * `compareAndSwap`. Once Shop depends on an SDK whose `ManifestStore` has the
+   * optional `patchRow`, this becomes `checkpointImportRow(store, …)` again.
+   */
   static async checkpointRow(
     store: InventoryManifestStore,
     manifestId: string,
@@ -502,14 +510,34 @@ export class MarketplaceShopClientService {
     checkpoint: ImportCheckpoint,
     failureCode?: PlannedImportRow['failureCode'],
   ): Promise<SdkResult<CheckpointImportResult>> {
-    return checkpointImportRow(
-      store as unknown as ManifestStore,
-      manifestId,
-      expectedManifestVersion,
-      rowIdentity,
-      checkpoint,
-      failureCode,
-    );
+    const step = (row: PlannedImportRow): PlannedImportRow => {
+      if (!ALLOWED_CHECKPOINT_TRANSITIONS[row.checkpoint].includes(checkpoint)) {
+        throw new PubkyShopError('manifest_store_error', { manifestId, rowIdentity });
+      }
+      return failureCode === undefined ? { ...row, checkpoint } : { ...row, checkpoint, failureCode };
+    };
+    try {
+      const patched = (await store.patchRow(
+        manifestId,
+        expectedManifestVersion,
+        rowIdentity,
+        step as unknown as Parameters<InventoryManifestStore['patchRow']>[3],
+      )) as unknown as CheckpointImportResult;
+      if (
+        patched.row.rowIdentity !== rowIdentity ||
+        patched.row.checkpoint !== checkpoint ||
+        patched.manifest.manifestId !== manifestId ||
+        patched.manifest.manifestVersion !== expectedManifestVersion + 1
+      ) {
+        throw new PubkyShopError('manifest_store_error', { manifestId, rowIdentity });
+      }
+      return { ok: true, value: patched };
+    } catch (error) {
+      return {
+        ok: false,
+        error: error instanceof PubkyShopError ? error : new PubkyShopError('manifest_store_error', { manifestId }),
+      };
+    }
   }
 
   /**
