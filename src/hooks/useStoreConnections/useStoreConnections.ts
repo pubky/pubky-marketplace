@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { getCommerceAdapterMode, getStoreConnectionsEnabled, isDurableCommerceMode } from '@/config/commerce';
+import { getCommerceAdapterMode, isDurableCommerceMode } from '@/config/commerce';
 import { ConnectorsController } from '@/controllers/connectors/connectors';
 import {
   type ConnectionHealth,
@@ -9,8 +9,8 @@ import {
   type ConnectorAlert,
   type ConnectorConnection,
   connectorErrorMessage,
-  connectorRefusalReason,
   type ConnectorUnmappedListing,
+  isConnectorsUnavailableError,
   type VariantMode,
 } from '@/libs/commerce/connectors';
 import { isMarketplaceSessionRequiredError } from '@/libs/error/error.utils';
@@ -48,8 +48,7 @@ const LOAD_FAILED_COPY = 'Your store connections could not be loaded. Try again 
 export function useStoreConnections() {
   const currentUserPubky = useAuthStore((state) => state.currentUserPubky);
   const marketplaceSession = useCommerceStore((state) => state.marketplaceSession);
-  const enabled =
-    getStoreConnectionsEnabled() && isDurableCommerceMode(getCommerceAdapterMode()) && Boolean(currentUserPubky);
+  const enabled = isDurableCommerceMode(getCommerceAdapterMode()) && Boolean(currentUserPubky);
   const [connections, setConnections] = useState<ConnectorConnection[]>([]);
   const [disconnected, setDisconnected] = useState<ConnectorConnection[]>([]);
   const [isLoading, setIsLoading] = useState(enabled);
@@ -77,9 +76,8 @@ export function useStoreConnections() {
       setUnavailable(false);
     } catch (loadError) {
       if (!isCurrent()) return;
-      const reason = connectorRefusalReason(loadError);
       setNeedsSession(isMarketplaceSessionRequiredError(loadError));
-      setUnavailable(reason === 'connectors_disabled');
+      setUnavailable(isConnectorsUnavailableError(loadError));
       setError(connectorErrorMessage(loadError, LOAD_FAILED_COPY));
     } finally {
       if (isCurrent()) setIsLoading(false);
