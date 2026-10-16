@@ -960,6 +960,26 @@ describe('Marketplace payment status card — USDT orders', () => {
     await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('payment-status-paykit-awaiting-mobile');
   });
 
+  for (const [name, viewport] of [
+    ['desktop', VRT_VIEWPORT_DESKTOP],
+    ['mobile', VRT_VIEWPORT_MOBILE],
+  ] as const) {
+    it(`asks the buyer of a single-bind Paykit order to check Bitkit, never claiming non-delivery, when the request reads failed on ${name}`, async () => {
+      const screen = await renderCard('awaiting_entitlement', 'transaction-service', {
+        adapter: 'paykit',
+        deployEnv: 'production',
+        viewport,
+        orderOverrides: paykit({ paykitRequestState: 'pending', paykitDeliveryState: 'failed' }),
+      });
+      await expect
+        .element(screen.getByTestId('paykit-delivery-failed'))
+        .toHaveTextContent("We couldn't confirm your wallet got the payment request.");
+      await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot(
+        `payment-status-paykit-delivery-unconfirmed-${name}`,
+      );
+    });
+  }
+
   it('renders a single-bind Paykit order paid in USDT with the USDT copy and the finality wait at desktop viewport', async () => {
     const screen = await renderCard('confirmed', 'transaction-service', {
       adapter: 'paykit',
