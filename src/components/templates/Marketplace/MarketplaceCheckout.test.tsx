@@ -1,7 +1,7 @@
 import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { MARKETPLACE_DELIVERY_ADDRESS_DISCLOSURE } from '@/config/commerce-copy';
+import { CONNECTOR_SHARE_CONSENT_COPY, MARKETPLACE_DELIVERY_ADDRESS_DISCLOSURE } from '@/config/commerce-copy';
 import { LISTING_CURRENCY_REGISTRY, LISTING_FIAT_CURRENCY_CODES } from '@/config/currencies';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import { DELIVERY_KEY_COPY } from '@/libs/commerce/delivery-key-copy';
@@ -52,6 +52,8 @@ const view = vi.hoisted(() => ({
   awardItems: [] as Array<{ awardId: string; listingId: string; variantId: string }>,
   shops: {} as Record<string, { name: string; deliveryAssumeDays?: number; autoCompleteDays?: number }>,
   allowedDestinationCountries: null as string[] | null,
+  storeStores: new Map<string, unknown>(),
+  storeChosen: new Set<string>(),
 }));
 
 const checkoutActions = vi.hoisted(() => ({
@@ -59,6 +61,7 @@ const checkoutActions = vi.hoisted(() => ({
   actOnOrder: vi.fn(async () => true),
   setFulfillmentChoice: vi.fn(),
   setDigitalChoice: vi.fn(),
+  setStoreShare: vi.fn(),
   remove: vi.fn(async () => {}),
   rememberAddress: vi.fn(async () => {}),
   lastAward: undefined as unknown,
@@ -217,6 +220,12 @@ vi.mock('@/hooks/useMarketplaceCheckout/useMarketplaceCheckout', async () => {
         setFulfillmentChoice: checkoutActions.setFulfillmentChoice,
         requiresDeliveryAddress: view.requiresDeliveryAddress,
         allowedDestinationCountries: view.allowedDestinationCountries,
+        storeShare: {
+          stores: view.storeStores,
+          chosen: view.storeChosen,
+          selected: [],
+          setShare: checkoutActions.setStoreShare,
+        },
         hasFulfillmentConflict: view.hasFulfillmentConflict,
         isPickupCapabilityLoadingForSeller: () => view.isPickupCapabilityLoading,
         orderCount: view.orderCount,
@@ -276,6 +285,7 @@ vi.mock('@/controllers/commerce/commerce', () => ({
       return { ...shop };
     }),
     getShop: vi.fn(async () => null),
+    getConnectorStores: vi.fn(async () => new Map()),
   },
 }));
 
@@ -381,6 +391,8 @@ function resetCheckoutView() {
   view.awardItems = [];
   view.shops = {};
   view.allowedDestinationCountries = null;
+  view.storeStores = new Map();
+  view.storeChosen = new Set();
   offerState.offers = [];
   offerState.isLoading = false;
   offerState.refresh.mockClear();
@@ -498,6 +510,22 @@ describe('MarketplaceCheckout', () => {
 
     expect(await screen.findByTestId('marketplace-address-country-select')).toBeInTheDocument();
     expect(document.querySelector('input[name="countryCode"]')).toBeNull();
+  });
+
+  it('offers the opt-in to share the address with the seller store, unticked, only when the seller has one', async () => {
+    seededCart();
+    const { unmount } = render(<MarketplaceCheckout />);
+    await screen.findByTestId('marketplace-checkout-summary');
+    expect(screen.queryByTestId('checkout-store-share')).not.toBeInTheDocument();
+    unmount();
+
+    view.storeStores = new Map([['seller', { sellerPubky: 'seller', shopDomain: 'dezentralshop.ch' }]]);
+    render(<MarketplaceCheckout />);
+
+    const box = await screen.findByRole('checkbox', { name: CONNECTOR_SHARE_CONSENT_COPY.label('dezentralshop.ch') });
+    expect(box).not.toBeChecked();
+    await userEvent.setup().click(box);
+    expect(checkoutActions.setStoreShare).toHaveBeenCalledWith('seller', true);
   });
 
   it('shows no periods when the seller shop cannot be read, rather than guessing', async () => {

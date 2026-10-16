@@ -17,6 +17,7 @@ import {
   isTransactionalCommerceMode,
   MARKETPLACE_FOLLOWED_SHELF_MAX_SELLER_FETCHES,
 } from '@/config/commerce';
+import { CONNECTOR_SHARE_CONSENT_VERSION } from '@/config/commerce-copy';
 import { BASE_UNITS_PER_BITCOIN } from '@/config/currencies';
 import { NEXUS_LISTINGS_PER_PAGE } from '@/config/nexus';
 import { readAuthEpoch } from '@/controllers/auth/auth-epoch';
@@ -27,6 +28,7 @@ import {
   verifyOwnOrderReceipt,
   verifyOwnReviewAttestation,
 } from '@/libs/commerce/attestation';
+import { decodeConnectorRecipientKey, sealConnectorAddress } from '@/libs/commerce/connector-address-envelope';
 import {
   sealDeliveryAddressForSellers,
   type SellerDeliveryEnvelope,
@@ -107,6 +109,7 @@ import {
   buildMarketplaceOrderAggregateId,
   buildMarketplacePaymentAggregateId,
   classifyMarketplacePickupCommandRefusal,
+  type ConnectorShare,
   type CreateMarketplaceCheckoutCommand,
   isCorrelatedBenignListingRegistrationResponse,
   isListingRecordNotFoundResponse,
@@ -179,6 +182,7 @@ import {
   type MarketplaceOrder,
   type MarketplacePayment,
 } from '@/services/marketplace/marketplace';
+import { MarketplaceConnectorStatusService } from '@/services/marketplace/marketplace-connector-status';
 import {
   type MarketplaceSessionEndedEvent,
   MarketplaceSessionService,
@@ -373,7 +377,20 @@ export type CommerceCheckoutFulfillmentInput = {
    * address is sealed to these keys and only ciphertext leaves the device.
    */
   deliveryKeys?: ReadonlyMap<string, SellerDeliveryKey>;
+  /**
+   * Sellers whose connected store the buyer chose to share the address with,
+   * each with the connection's recipient key as the service published it.
+   * Only a seller that ships and gets a sealed delivery address can be in it.
+   */
+  connectorShares?: readonly ConnectorShareChoice[];
   deliveryEmail?: string;
+};
+
+export type ConnectorShareChoice = {
+  sellerPubky: string;
+  shopDomain: string;
+  keyId: string;
+  publicKey: Uint8Array;
 };
 
 /** A review-list page, or the honest signal that no review index serves this deployment. */
@@ -1187,10 +1204,88 @@ export class CommerceApplication {
           fulfillment: plan.lineFulfillments[index],
         })),
         ...sealedAddress,
+        ...(await this.sealConnectorShares(actorPubky, commandId, input, sealedAddress)),
         ...(input.deliveryEmail !== undefined ? { deliveryEmail: input.deliveryEmail } : {}),
       },
     });
     return await this.executeMarketplaceCommand(actorPubky, command);
+  }
+
+  /**
+   * The buyer's opt-in copies of the address, one per chosen seller, sealed to
+   * the store connection's recipient key and bound to this checkout. The seller
+   * must also get the sealed delivery address: sharing with a store is never the
+   * only copy, and a seller who does not ship has nothing to share.
+   */
+  private static async sealConnectorShares(
+    actorPubky: string,
+    commandId: string,
+    input: CommerceCheckoutFulfillmentInput,
+    sealedAddress: { deliveryAddress?: unknown; deliveryAddressEnvelopes?: SellerDeliveryEnvelope[] },
+  ): Promise<{ connectorShares?: ConnectorShare[] }> {
+    const choices = input.connectorShares ?? [];
+    if (choices.length === 0 || !input.deliveryAddress) return {};
+    const sealedSellers = new Set((sealedAddress.deliveryAddressEnvelopes ?? []).map(({ sellerPubky }) => sellerPubky));
+    const address = input.deliveryAddress;
+    const shares = await Promise.all(
+      choices.map(async (choice) => {
+        if (!sealedSellers.has(choice.sellerPubky)) {
+          throw Err.validation(
+            ValidationErrorCode.INVALID_INPUT,
+            'An address can be shared only with the store of a seller that ships this checkout.',
+            {
+              service: ErrorService.Marketplace,
+              operation: 'commitCreateMarketplaceCheckout',
+              context: { sellerPubky: choice.sellerPubky },
+            },
+          );
+        }
+        return {
+          sellerPubky: choice.sellerPubky,
+          shopDomain: choice.shopDomain,
+          consentVersion: CONNECTOR_SHARE_CONSENT_VERSION,
+          keyId: choice.keyId,
+          envelope: await sealConnectorAddress({
+            address,
+            recipientPublicKey: choice.publicKey,
+            binding: {
+              checkoutCommandId: commandId,
+              buyerPubky: actorPubky,
+              sellerPubky: choice.sellerPubky,
+              keyId: choice.keyId,
+            },
+          }),
+        };
+      }),
+    );
+    return { connectorShares: shares };
+  }
+
+  /**
+   * The connected stores a buyer may share the address with, for the shipped
+   * sellers of a checkout. A seller whose status cannot be read is simply
+   * offered no choice: sharing is optional and never blocks a checkout.
+   */
+  static async getConnectorStores(sellerPubkys: readonly string[]): Promise<Map<string, ConnectorShareChoice>> {
+    const stores = new Map<string, ConnectorShareChoice>();
+    await Promise.all(
+      sellerPubkys.map(async (sellerPubky) => {
+        try {
+          const [store] = await MarketplaceConnectorStatusService.getStores(sellerPubky);
+          if (!store) return;
+          const key = store.addressSharing.recipientKey;
+          stores.set(sellerPubky, {
+            sellerPubky,
+            shopDomain: store.domain,
+            keyId: key.keyId,
+            publicKey: decodeConnectorRecipientKey(key.publicKey),
+          });
+        } catch {
+          // No store, or its status could not be read: no opt-in is offered.
+        }
+      }),
+    );
+    return stores;
   }
 
   /**

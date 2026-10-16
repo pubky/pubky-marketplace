@@ -968,6 +968,64 @@ describe('sealed delivery address fields', () => {
     ).toBe(false);
   });
 
+  describe('connector shares (the buyer opt-in to share the address with the seller store)', () => {
+    const share = {
+      sellerPubky: SELLER,
+      shopDomain: 'dezentralshop.ch',
+      consentVersion: 1,
+      keyId: 'connector-key-1',
+      envelope: ENVELOPE,
+    };
+    const withSealed = { deliveryAddressEnvelopes: [{ sellerPubky: SELLER, ...sealed }] };
+
+    it('accepts a share beside the sealed delivery envelope of the same seller', () => {
+      const command = checkout([shippingLine], { ...withSealed, connectorShares: [share] });
+      expect(createMarketplaceCheckoutCommandSchema.safeParse(command).success).toBe(true);
+    });
+
+    it('refuses a share without the seller own sealed delivery envelope, and a plaintext address', () => {
+      expect(
+        createMarketplaceCheckoutCommandSchema.safeParse(checkout([shippingLine], { connectorShares: [share] }))
+          .success,
+      ).toBe(false);
+      expect(
+        createMarketplaceCheckoutCommandSchema.safeParse(
+          checkout([shippingLine], { deliveryAddress: address, connectorShares: [share] }),
+        ).success,
+      ).toBe(false);
+    });
+
+    it('refuses two shares for one seller, a bad consent version and an envelope of the wrong size', () => {
+      for (const connectorShares of [
+        [share, share],
+        [{ ...share, consentVersion: 0 }],
+        [{ ...share, envelope: 'A'.repeat(100) }],
+        [{ ...share, address: 'x' }],
+      ]) {
+        expect(
+          createMarketplaceCheckoutCommandSchema.safeParse(checkout([shippingLine], { ...withSealed, connectorShares }))
+            .success,
+        ).toBe(false);
+      }
+    });
+
+    it('puts the share on the wire in snake case', () => {
+      const command = checkout([shippingLine], { ...withSealed, connectorShares: [share] });
+      const wire = toSnakeCaseWire(createMarketplaceCheckoutCommandSchema.parse(command)) as {
+        payload: { connector_shares: unknown[] };
+      };
+      expect(wire.payload.connector_shares).toEqual([
+        {
+          seller_pubky: SELLER,
+          shop_domain: 'dezentralshop.ch',
+          consent_version: 1,
+          key_id: 'connector-key-1',
+          envelope: ENVELOPE,
+        },
+      ]);
+    });
+  });
+
   it.each([
     ['a wrong length', { keyId: KEY_ID, envelope: 'A'.repeat(100) }],
     ['padding characters', { keyId: KEY_ID, envelope: `${'A'.repeat(2794)}=` }],
