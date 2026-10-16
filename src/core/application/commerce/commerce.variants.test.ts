@@ -45,6 +45,13 @@ describe('listing.register per-variant stock', () => {
         operation: 'fetchJson',
       });
     });
+    vi.spyOn(CommerceHomeserverService, 'fetchJsonIfFound').mockImplementation(async (url) => {
+      const latest = vi
+        .mocked(CommerceHomeserverService.putJson)
+        .mock.calls.toReversed()
+        .find(([writtenUrl]) => writtenUrl === url);
+      return latest ? { found: true, json: latest[1] } : { found: false };
+    });
     vi.spyOn(LocalCommerceService, 'stageListingSync');
     vi.spyOn(CommerceHomeserverService, 'putJson').mockResolvedValue(undefined);
     vi.spyOn(LocalCommerceService, 'completeSyncJob').mockResolvedValue(undefined);
