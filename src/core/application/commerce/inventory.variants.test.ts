@@ -1,3 +1,4 @@
+import { decodeInventoryAdjustment } from '@bitcoinerrorlog/pubky-shop';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { INVENTORY_GRANT } from '@/services/marketplace/marketplace-inventory-grant';
 import { MarketplaceInventorySessionService } from '@/services/marketplace/marketplace-inventory-session';
@@ -133,6 +134,40 @@ const sizedRow = (): InventoryBoardRow =>
     ],
   });
 
+const variantAnswer = (
+  variantId: string,
+  counts: { available: number; reserved: number; sold: number; total: number } = {
+    available: 5,
+    reserved: 1,
+    sold: 0,
+    total: 6,
+  },
+) => ({
+  schema_version: BigInt(1),
+  ok: true as const,
+  result: {
+    aggregate_id: `listing:${PUBKY}_boots`,
+    listing_id: 'boots',
+    server_revision: BigInt(4),
+    event_id: '22222222-2222-4222-8222-222222222222',
+    stock: {
+      authority: 'variant' as const,
+      variant_id: variantId,
+      available: BigInt(counts.available),
+      reserved: BigInt(counts.reserved),
+      sold: BigInt(counts.sold),
+      total: BigInt(counts.total),
+      listing_total: {
+        authority: 'listing_total' as const,
+        available: BigInt(counts.available),
+        reserved: BigInt(2),
+        sold: BigInt(0),
+        total: BigInt(counts.available + 2),
+      },
+    },
+  },
+});
+
 const setSize = (overrides: { variantId?: string; row?: InventoryBoardRow; target?: number } = {}) =>
   CommerceInventoryApplication.setAvailable({
     sellerPubky: PUBKY,
@@ -236,14 +271,11 @@ describe('inventory board per size', () => {
 });
 
 describe('set stock for a size', () => {
-  it('sends the size and the delta from that size, then shows the re-read counts', async () => {
+  it('sends the size and the delta from that size, then shows the counts the service answered', async () => {
     vi.mocked(MarketplaceShopClientService.adjustInventory).mockResolvedValue({
       ok: true,
-      value: { result: { stock: {}, server_revision: BigInt(4) } },
-    } as never);
-    vi.mocked(MarketplaceShopClientService.getInventoryProjection).mockResolvedValue(
-      projection([sizeRow('size_s', 0), sizeRow('size_m', 5)], 5, 4),
-    );
+      value: decodeInventoryAdjustment(variantAnswer('size_m', { available: 5, reserved: 1, sold: 0, total: 6 })),
+    });
 
     const result = await setSize();
 
@@ -251,38 +283,64 @@ describe('set stock for a size', () => {
       expect.anything(),
       expect.objectContaining({ delta: BigInt(2), variant: { id: 'size_m' }, expected_revision: BigInt(3) }),
     );
+    expect(MarketplaceShopClientService.getInventoryProjection).not.toHaveBeenCalled();
     expect(result.status).toBe('updated');
     if (result.status === 'updated') {
       expect(result.row.serverRevision).toBe(4);
-      expect(result.row.variants?.find((size) => size.variantId === 'size_m')?.available).toBe(5);
+      expect(result.row.variants?.find((size) => size.variantId === 'size_m')).toMatchObject({
+        available: 5,
+        reserved: 1,
+        total: 6,
+        soldOut: false,
+      });
+      expect(result.row.variants?.find((size) => size.variantId === 'size_s')?.available).toBe(0);
+      expect(result.row.available).toBe(5);
+      expect(result.row.total).toBe(7);
     }
   });
 
-  it('confirms by re-reading when the SDK cannot decode the size answer', async () => {
-    vi.mocked(MarketplaceShopClientService.adjustInventory).mockResolvedValue({
-      ok: false,
-      error: new PubkyShopError('invalid_response'),
-    });
-    vi.mocked(MarketplaceShopClientService.getInventoryProjection).mockResolvedValue(
-      projection([sizeRow('size_s', 0), sizeRow('size_m', 5)], 5, 4),
-    );
-
-    expect((await setSize()).status).toBe('updated');
+  it('decodes a size answer in the SDK instead of rejecting it as invalid', () => {
+    expect(() => decodeInventoryAdjustment(variantAnswer('size_m'))).not.toThrow();
+    const broken = variantAnswer('size_m', { available: 9, reserved: 1, sold: 0, total: 6 });
+    expect(() => decodeInventoryAdjustment(broken)).toThrow();
   });
 
-  it('says so when the re-read does not show the new stock', async () => {
+  it('marks a size sold out when the answer leaves it with nothing available', async () => {
     vi.mocked(MarketplaceShopClientService.adjustInventory).mockResolvedValue({
-      ok: false,
-      error: new PubkyShopError('invalid_response'),
+      ok: true,
+      value: decodeInventoryAdjustment(variantAnswer('size_m', { available: 0, reserved: 1, sold: 0, total: 1 })),
     });
-    vi.mocked(MarketplaceShopClientService.getInventoryProjection).mockResolvedValue(
-      projection([sizeRow('size_s', 0), sizeRow('size_m', 3)]),
-    );
+
+    const result = await setSize({ target: 0 });
+
+    expect(
+      result.status === 'updated' && result.row.variants?.find((size) => size.variantId === 'size_m'),
+    ).toMatchObject({
+      available: 0,
+      soldOut: true,
+    });
+  });
+
+  it('refuses an answer for a different size than the one adjusted', async () => {
+    vi.mocked(MarketplaceShopClientService.adjustInventory).mockResolvedValue({
+      ok: true,
+      value: decodeInventoryAdjustment(variantAnswer('size_s')),
+    });
 
     await expect(setSize()).resolves.toEqual({
       status: 'error',
       message: 'The stock change could not be confirmed. Refresh and check the size.',
     });
+  });
+
+  it('does not re-read after an invalid response: it is an error', async () => {
+    vi.mocked(MarketplaceShopClientService.adjustInventory).mockResolvedValue({
+      ok: false,
+      error: new PubkyShopError('invalid_response'),
+    });
+
+    expect((await setSize()).status).toBe('error');
+    expect(MarketplaceShopClientService.getInventoryProjection).not.toHaveBeenCalled();
   });
 
   it('refuses a per-size listing without a size before calling the service', async () => {

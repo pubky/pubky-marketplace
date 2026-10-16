@@ -1,4 +1,4 @@
-import type { InventoryAdjustRequest, InventoryProjection } from '@bitcoinerrorlog/pubky-shop';
+import type { InventoryAdjustRequest } from '@bitcoinerrorlog/pubky-shop';
 import { getCommerceAdapterMode, isDurableCommerceMode } from '@/config/commerce';
 import { effectiveListingState } from '@/libs/commerce/auction-phase';
 import type { CommerceListingRecord } from '@/libs/commerce/marketplace-records';
@@ -195,23 +195,6 @@ function parseBoardVariants(value: unknown, labels: ReadonlyMap<string, string>)
     });
   }
   return rows.length > 0 ? rows : undefined;
-}
-
-/** The row with a fresh inventory read applied: listing sums, revision and per-size rows. */
-function applyInventoryProjection(row: InventoryBoardRow, value: InventoryProjection): InventoryBoardRow {
-  const labels = new Map((row.variants ?? []).map((variant) => [variant.variantId, variant.label]));
-  const variants = parseBoardVariants(value.variants, labels);
-  const { variants: _previous, ...rest } = row;
-  return {
-    ...rest,
-    available: Number(value.stock.available),
-    reserved: Number(value.stock.reserved),
-    sold: Number(value.stock.sold),
-    total: Number(value.stock.total),
-    serverRevision: Number(value.server_revision),
-    sync: 'synced',
-    ...variantsField(variants),
-  };
 }
 
 export function planInventoryAdjust(input: {
@@ -467,11 +450,6 @@ export class CommerceInventoryApplication {
     }
     const client = MarketplaceShopClientService.createInventoryClient(inventory.token);
     const result = await MarketplaceShopClientService.adjustInventory(client, plan.request);
-    // A size's adjust answers with that size's stock, which SDK 0.1.6 does not decode, so it reports
-    // `invalid_response` for a change the service applied. The inventory read is the truth either way.
-    if (variant && (result.ok || result.error.code === 'invalid_response')) {
-      return await this.confirmVariantStock(client, input.row, variant.variantId, input.targetAvailable);
-    }
     if (!result.ok) {
       const classified = classifyClientError(result.error);
       if (classified === 'grant-needed') {
@@ -490,6 +468,36 @@ export class CommerceInventoryApplication {
       return { status: 'error', message: variantAdjustRefusal(result.error) ?? result.error.message };
     }
     const stock = result.value.result.stock;
+    if (variant) {
+      if (stock.authority !== 'variant' || stock.variant_id !== variant.variantId) {
+        return { status: 'error', message: VARIANT_ADJUST_COPY.unconfirmed };
+      }
+      const available = Number(stock.available);
+      return {
+        status: 'updated',
+        row: {
+          ...input.row,
+          available: Number(stock.listing_total.available),
+          reserved: Number(stock.listing_total.reserved),
+          sold: Number(stock.listing_total.sold),
+          total: Number(stock.listing_total.total),
+          serverRevision: Number(result.value.result.server_revision),
+          sync: 'synced',
+          variants: input.row.variants?.map((entry) =>
+            entry.variantId === variant.variantId
+              ? {
+                  ...entry,
+                  available,
+                  reserved: Number(stock.reserved),
+                  sold: Number(stock.sold),
+                  total: Number(stock.total),
+                  soldOut: available === 0,
+                }
+              : entry,
+          ),
+        },
+      };
+    }
     return {
       status: 'updated',
       row: {
@@ -502,20 +510,6 @@ export class CommerceInventoryApplication {
         sync: 'synced',
       },
     };
-  }
-
-  private static async confirmVariantStock(
-    client: ReturnType<typeof MarketplaceShopClientService.createInventoryClient>,
-    row: InventoryBoardRow,
-    variantId: string,
-    targetAvailable: number,
-  ): Promise<InventorySetResult> {
-    const read = await MarketplaceShopClientService.getInventoryProjection(client, row.aggregateId);
-    if (!read.ok) return { status: 'error', message: VARIANT_ADJUST_COPY.unconfirmed };
-    const next = applyInventoryProjection(row, read.value);
-    const size = next.variants?.find((entry) => entry.variantId === variantId);
-    if (size?.available !== targetAvailable) return { status: 'error', message: VARIANT_ADJUST_COPY.unconfirmed };
-    return { status: 'updated', row: next };
   }
 
   static async retrySync(sellerPubky: string, listingId: string): Promise<InventoryRetryResult> {
