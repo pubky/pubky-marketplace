@@ -1,0 +1,1 @@
+From Store connections, a seller can publish the store products they chose through the Studio import: choose ships-from and shipping once, review the dry run and the loss report, publish, and the listings are linked to the store so its stock follows to Pubky and Pubky orders reach it.
