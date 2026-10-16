@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   BROWSER_STORAGE_BLOCKED_MESSAGE,
   FULL_GRANT_REQUIRED_MESSAGE,
+  HOSTED_SIGN_IN_MESSAGE,
   SIGN_IN_FAILED_MESSAGE,
   SIGN_IN_LINK_FAILED_MESSAGE,
 } from '@/libs/auth/sign-in-error-copy';
@@ -471,6 +472,23 @@ describe('useAuthUrl', () => {
 
     await waitFor(() => expect(result.current.isExpired).toBe(true));
     expect(mockToast).toHaveBeenCalledWith({ variant: 'error', description: message });
+  });
+
+  it('tells an embedded Shop user to continue in Pubky App instead of blaming the connection', async () => {
+    mockGetGrantAuthUrl.mockRejectedValue(
+      new AppError({
+        category: ErrorCategory.Auth,
+        code: AuthErrorCode.UNAUTHORIZED,
+        message: HOSTED_SIGN_IN_MESSAGE,
+        service: ErrorService.Local,
+        operation: 'standaloneSignIn',
+      }),
+    );
+
+    const { result } = renderHook(() => useAuthUrl({ type: 'grant' }));
+
+    await waitFor(() => expect(result.current.isExpired).toBe(true));
+    expect(mockToast).toHaveBeenCalledWith({ variant: 'error', description: HOSTED_SIGN_IN_MESSAGE });
   });
 
   it('asks the controller for the grant with the deploy default, or without scoped keys when told to', async () => {

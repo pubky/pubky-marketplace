@@ -78,6 +78,8 @@ Expected user-flow states are not failures and must not reach the factory:
   `{ found: false }` before any error is created. Do not read it with `request` and catch the 404.
 - A state the UI answers with a prompt (no marketplace session yet, approval in progress) is built with `new AppError(...)`, as in `marketplace-approval-failure.ts`. Server answers
   (401, 5xx) for the same flows stay on `Err.*`.
+- A Shop-owned sign-in started while the Shop is embedded in Pubky App ("Continue sign-in in Pubky App.",
+  `AuthController.assertStandaloneMode`) is also built with `new AppError(...)`: App owns sign-in there.
 
 The two route-segment error boundaries (`app/error.tsx`, `app/global-error.tsx`) guard their `Sentry.captureException` call with `if (!(error instanceof AppError))` so an `AppError` thrown during render isn't captured twice (once by the factory, once by the boundary).
 
