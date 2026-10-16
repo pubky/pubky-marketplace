@@ -93,7 +93,7 @@ const UNSAVED_SELLER_PAYMENT_CONFIG: SellerPaymentConfigOwnView = {
 };
 const PAYPAL_EMAIL_INVALID_COPY = 'Enter a valid email address.';
 const PAYKIT_RECONNECT_EXPLANATION =
-  'Scan the code with Bitkit, or open this page on your phone and tap Open in Bitkit, to share a USDT address. Your Bitkit account and Bitcoin setup stay the same.';
+  'Scan the code with Bitkit, or open this page on your phone and tap Continue with Bitkit, to share a USDT address. Your Bitkit account and Bitcoin setup stay the same.';
 const PAYKIT_BITCOIN_RECONNECT_EXPLANATION =
   'Paykit already has a Bitkit setup for this pubky. Approve it again in Bitkit to reconnect; your Bitkit account and Bitcoin addresses stay the same.';
 /** Upstream `/setup` refuses an account Paykit already holds (for example one set up for Locks); reconnect re-approves it. */
@@ -751,7 +751,9 @@ export function MarketplaceGetPaidSettings({ onSaved }: MarketplaceGetPaidSettin
             ) : (
               <>
                 <span className="[@media(hover:none)_and_(pointer:coarse)]:hidden">Scan the code with Bitkit</span>
-                <span className="hidden [@media(hover:none)_and_(pointer:coarse)]:inline">Tap Open in Bitkit</span>
+                <span className="hidden [@media(hover:none)_and_(pointer:coarse)]:inline">
+                  Tap Continue with Bitkit
+                </span>
               </>
             )}
           </Typography>
@@ -777,7 +779,12 @@ export function MarketplaceGetPaidSettings({ onSaved }: MarketplaceGetPaidSettin
                 }
                 sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-top-navigation-to-custom-protocols"
                 referrerPolicy="no-referrer"
-                className="h-[40rem] w-full rounded-lg border bg-popover"
+                className={
+                  // Upstream Paykit's page is only its 192px QR panel (a 60px Bitkit button on touch screens).
+                  upstreamPaykit
+                    ? 'h-48 w-full [@media(hover:none)_and_(pointer:coarse)]:h-15'
+                    : 'h-[40rem] w-full rounded-lg border bg-popover'
+                }
               />
             )
           )}

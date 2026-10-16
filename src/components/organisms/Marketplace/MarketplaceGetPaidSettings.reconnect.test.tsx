@@ -122,6 +122,7 @@ describe('MarketplaceGetPaidSettings Bitkit reconnect (upstream Paykit)', () => 
     await userEvent.click(await screen.findByRole('button', { name: /Connect Bitkit/ }));
     const setupFrame = paykitFrame('Connect Bitkit');
     expect(framePath(setupFrame)).toBe('https://paykit.example/setup');
+    expect(screen.getByText('Tap Continue with Bitkit')).toBeInTheDocument();
 
     sendCallback(setupFrame, { error: 'setup-failed' });
     expect(await screen.findByText(/reconnect it instead/)).toBeInTheDocument();
