@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { COMPOSITE_ID_DELIMITER } from '@/models/models.defaults';
 import { CompositeIdDomain, type Pubky } from '@/models/models.types';
 import { buildCompositeId, buildCompositeIdFromPubkyUri, parseCompositeId } from '@/models/models.utils';
@@ -35,6 +35,26 @@ describe('models.utils (composite id)', () => {
   it('buildCompositeIdFromPubkyUri returns null for invalid uri', () => {
     const composite = buildCompositeIdFromPubkyUri({ uri: 'not-a-uri', domain: CompositeIdDomain.POSTS });
     expect(composite).toBeNull();
+  });
+
+  it('buildCompositeIdFromPubkyUri does not rely on URL hostname, which is empty on Chrome before 130', () => {
+    const RealURL = globalThis.URL;
+    vi.stubGlobal(
+      'URL',
+      class extends RealURL {
+        get hostname() {
+          return this.protocol === 'pubky:' ? '' : super.hostname;
+        }
+      },
+    );
+    try {
+      const uri = `pubky://${author}/pub/pubky.app/files/file-789?v=1`;
+      expect(buildCompositeIdFromPubkyUri({ uri, domain: CompositeIdDomain.FILES })).toBe(
+        `${author}${COMPOSITE_ID_DELIMITER}file-789`,
+      );
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it('round-trip is stable', () => {
