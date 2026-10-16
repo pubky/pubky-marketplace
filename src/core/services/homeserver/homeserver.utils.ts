@@ -241,8 +241,7 @@ export const createCancelableAuthApproval = (
   let freed = false;
   const waiting = new AbortController();
   const releasable = Boolean(options?.resume && options.releaseWhileHidden);
-  let polling = false;
-  let released = false;
+  let endPause: (() => void) | null = null;
 
   const freeFlow = () => {
     if (freed) return;
@@ -254,22 +253,34 @@ export const createCancelableAuthApproval = (
     }
   };
 
-  // WebKit throttles timers in hidden pages while the SDK listener's long-poll still completes, so the flow is
-  // freed on the hide event rather than on the next poll. A poll in flight still borrows the WASM handle; the
-  // loop frees it as soon as that poll returns.
-  const releaseOnHide = () => {
-    if (canceled || polling || !isPageHidden()) return;
-    released = true;
-    freeFlow();
+  /** Waits between polls; a hide ends the wait early. */
+  const pause = (ms: number): Promise<void> =>
+    new Promise((resolve) => {
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const done = () => {
+        clearTimeout(timer);
+        endPause = null;
+        resolve();
+      };
+      endPause = done;
+      timer = setTimeout(done, ms);
+    });
+
+  // The SDK listener ACKs an approval on the relay before queuing it for `tryPollOnce`, so freeing the flow drops
+  // an approval it has already queued. A hide therefore triggers one more poll at once (WebKit throttles timers in
+  // hidden pages), and the flow is only freed straight after a poll that found nothing. An approval whose ACK is
+  // still in flight is not queued yet and is still lost; closing that needs the SDK to ACK after the exchange.
+  const pollNowIfHidden = () => {
+    if (isPageHidden()) endPause?.();
   };
   if (releasable && typeof document !== 'undefined') {
-    document.addEventListener('visibilitychange', releaseOnHide);
+    document.addEventListener('visibilitychange', pollNowIfHidden);
   }
 
   const cancel = () => {
     canceled = true;
     if (releasable && typeof document !== 'undefined') {
-      document.removeEventListener('visibilitychange', releaseOnHide);
+      document.removeEventListener('visibilitychange', pollNowIfHidden);
     }
     waiting.abort();
     freeFlow();
@@ -284,21 +295,12 @@ export const createCancelableAuthApproval = (
     let resumeError: unknown;
     for (;;) {
       if (canceled) throw createCanceledError();
-      // A live SDK flow takes the approval off the relay as soon as it arrives and the next poll exchanges it.
-      // iOS suspends a hidden page mid-exchange and WebKit aborts its IndexedDB and fetch work, losing the
-      // approval. Without a live flow the relay keeps the approval for the same channel to collect when visible.
-      if (options?.resume && releasable && (released || isPageHidden())) {
-        freeFlow();
+      // Parked: the flow was freed on a hidden page, so nothing took a later approval off the relay. Resume the
+      // same channel once visible; the relay's retention counts from when the approval was published, not from
+      // when this flow started, so the flow's age says nothing about whether it is still there.
+      if (options?.resume && releasable && freed) {
         if (isPageHidden()) await waitUntilVisible(waiting.signal);
         if (canceled) throw createCanceledError();
-        if (Date.now() - startedAt > AUTH_RELAY_RETENTION_MS) {
-          throw Err.timeout(TimeoutErrorCode.REQUEST_TIMEOUT, 'Auth flow expired while the page was hidden', {
-            service: ErrorService.Homeserver,
-            operation: 'awaitApproval',
-            context: { retentionMs: AUTH_RELAY_RETENTION_MS, statusCode: HttpStatusCode.REQUEST_TIMEOUT },
-          });
-        }
-        released = false;
         let resumed: Pick<AuthFlow, 'tryPollOnce' | 'free'>;
         try {
           resumed = await options.resume();
@@ -332,13 +334,7 @@ export const createCancelableAuthApproval = (
       }
 
       try {
-        polling = true;
-        let maybeSession: Session | undefined;
-        try {
-          maybeSession = await flow.tryPollOnce();
-        } finally {
-          polling = false;
-        }
+        const maybeSession = await flow.tryPollOnce();
         if (maybeSession) {
           if (canceled) {
             await options?.onCanceledSession?.(maybeSession);
@@ -357,7 +353,6 @@ export const createCancelableAuthApproval = (
           if (canceled) throw createCanceledError();
           if (Date.now() - startedAt <= AUTH_RELAY_RETENTION_MS) {
             freeFlow();
-            released = false;
             try {
               const resumed = await options.resume();
               if (canceled) {
@@ -395,8 +390,14 @@ export const createCancelableAuthApproval = (
         });
       }
 
-      if (releasable && isPageHidden()) continue;
-      await sleep(pollIntervalMs);
+      // A live SDK flow takes an approval off the relay as soon as it arrives and the next poll exchanges it. iOS
+      // suspends a hidden page mid-exchange and WebKit aborts its IndexedDB and fetch work, losing the approval.
+      // This poll found nothing queued, so freeing now leaves any later approval on the relay for the resumed flow.
+      if (releasable && isPageHidden()) {
+        freeFlow();
+        continue;
+      }
+      await pause(pollIntervalMs);
     }
   })();
 

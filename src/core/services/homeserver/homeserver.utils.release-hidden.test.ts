@@ -1,6 +1,6 @@
 import type { Session } from '@synonymdev/pubky';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { AuthErrorCode, TimeoutErrorCode } from '@/libs/error/error.codes';
+import { AuthErrorCode } from '@/libs/error/error.codes';
 import { asOpaque } from '@/test-utils/type-assertions';
 import { createCancelableAuthApproval } from './homeserver.utils';
 
@@ -66,16 +66,20 @@ describe('createCancelableAuthApproval with releaseWhileHidden', () => {
     await vi.advanceTimersByTimeAsync(250);
     const pollsBeforeHide = live.tryPollOnce.mock.calls.length;
 
-    // The loop is sleeping between polls; WebKit may hold that timer back for seconds once hidden.
+    // The loop is sleeping between polls; WebKit may hold that timer back for seconds once hidden. The hide
+    // triggers one last poll at once, and the empty result frees the flow without advancing any timer.
     hide();
+    expect(live.free).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(live.tryPollOnce).toHaveBeenCalledTimes(pollsBeforeHide + 1);
     expect(live.free).toHaveBeenCalledOnce();
 
-    // Back before the timer fires: the freed handle is never polled again, the same channel is resumed.
+    // Back before the timer would have fired: the freed handle is never polled again, the channel is resumed.
     show();
     await vi.advanceTimersByTimeAsync(100);
 
     await expect(approval.awaitApproval).resolves.toBe(session);
-    expect(live.tryPollOnce).toHaveBeenCalledTimes(pollsBeforeHide);
+    expect(live.tryPollOnce).toHaveBeenCalledTimes(pollsBeforeHide + 1);
     expect(resume).toHaveBeenCalledOnce();
 
     // The settled approval no longer reacts to visibility changes.
@@ -135,7 +139,8 @@ describe('createCancelableAuthApproval with releaseWhileHidden', () => {
     await vi.advanceTimersByTimeAsync(0);
     expect(live.tryPollOnce).toHaveBeenCalledOnce();
     hide();
-    expect(live.free).toHaveBeenCalledOnce();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(live.free).not.toHaveBeenCalled();
 
     show();
     await vi.advanceTimersByTimeAsync(1_000);
@@ -144,6 +149,25 @@ describe('createCancelableAuthApproval with releaseWhileHidden', () => {
     expect(live.free).toHaveBeenCalledOnce();
     expect(resume).toHaveBeenCalledOnce();
     expect(resumed.free).toHaveBeenCalledOnce();
+  });
+
+  it('exchanges an approval the listener queued between polls instead of freeing it on hide', async () => {
+    const live = pendingFlow();
+    const resume = vi.fn();
+    const approval = createCancelableAuthApproval(live, { resume, releaseWhileHidden: true });
+
+    await vi.advanceTimersByTimeAsync(250);
+    const pollsBeforeHide = live.tryPollOnce.mock.calls.length;
+
+    // The listener received and ACKed the approval since the last poll: the live handle holds the only copy.
+    live.tryPollOnce.mockResolvedValue(session);
+    hide();
+    await vi.advanceTimersByTimeAsync(0);
+
+    await expect(approval.awaitApproval).resolves.toBe(session);
+    expect(live.tryPollOnce).toHaveBeenCalledTimes(pollsBeforeHide + 1);
+    expect(resume).not.toHaveBeenCalled();
+    expect(live.free).toHaveBeenCalledOnce();
   });
 
   it('settles at once when cancelled while parked, without resuming', async () => {
@@ -158,28 +182,28 @@ describe('createCancelableAuthApproval with releaseWhileHidden', () => {
     await vi.advanceTimersByTimeAsync(0);
 
     await rejection;
-    expect(live.tryPollOnce).not.toHaveBeenCalled();
+    expect(live.tryPollOnce).toHaveBeenCalledOnce();
     expect(live.free).toHaveBeenCalledOnce();
     expect(resume).not.toHaveBeenCalled();
   });
 
-  it('times out without resuming once the relay no longer holds the approval', async () => {
+  it('collects an approval published at the end of a long hidden interval', async () => {
     const live = pendingFlow();
-    const resume = vi.fn();
+    const resumed = { tryPollOnce: vi.fn().mockResolvedValue(session), free: vi.fn() };
+    const resume = vi.fn().mockResolvedValue(resumed);
     const approval = createCancelableAuthApproval(live, { resume, releaseWhileHidden: true });
-    const rejection = expect(approval.awaitApproval).rejects.toMatchObject({
-      code: TimeoutErrorCode.REQUEST_TIMEOUT,
-      operation: 'awaitApproval',
-    });
 
     await vi.advanceTimersByTimeAsync(0);
     hide();
-    await vi.advanceTimersByTimeAsync(6 * 60 * 1000);
-    show();
-    await vi.advanceTimersByTimeAsync(0);
-
-    await rejection;
+    // 310 s in the signer, longer than the relay keeps a message; the approval is published at the end.
+    await vi.advanceTimersByTimeAsync(310_000);
     expect(resume).not.toHaveBeenCalled();
+    show();
+
+    await expect(approval.awaitApproval).resolves.toBe(session);
+    expect(resume).toHaveBeenCalledOnce();
+    expect(live.free).toHaveBeenCalledOnce();
+    expect(resumed.free).toHaveBeenCalledOnce();
   });
 
   it('rejects with SESSION_EXPIRED when the channel cannot be resumed once visible', async () => {
