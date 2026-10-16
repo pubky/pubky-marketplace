@@ -138,21 +138,22 @@ describe('MarketplaceDashboard', () => {
   });
 
   describe('store connections entry', () => {
-    it('shows the Store connections button when the switch is on', () => {
-      vi.spyOn(commerceConfig, 'getStoreConnectionsEnabled').mockReturnValue(true);
-      render(<MarketplaceDashboard />);
-      expect(screen.getByRole('link', { name: /Store connections/ })).toHaveAttribute(
-        'href',
-        MARKETPLACE_ROUTES.SETTINGS_STORE_CONNECTIONS,
-      );
-    });
+    const entry = () => screen.getByRole('link', { name: /Store connections/ });
 
-    it('hides the Store connections button when the switch is off', () => {
-      vi.spyOn(commerceConfig, 'getStoreConnectionsEnabled').mockReturnValue(false);
+    it('always shows the Store connections button next to Payment settings', () => {
       render(<MarketplaceDashboard />);
-      expect(screen.queryByRole('link', { name: /Store connections/ })).not.toBeInTheDocument();
+      expect(entry()).toHaveAttribute('href', MARKETPLACE_ROUTES.SETTINGS_STORE_CONNECTIONS);
       expect(screen.getByRole('link', { name: /Payment settings/ })).toBeInTheDocument();
     });
+
+    it.each(['unavailable', 'sandbox', 'transaction-service'] as const)(
+      'shows it in the %s commerce mode too, because it is not hidden behind a setting',
+      (mode) => {
+        vi.spyOn(commerceConfig, 'getCommerceAdapterMode').mockReturnValue(mode);
+        render(<MarketplaceDashboard />);
+        expect(entry()).toBeInTheDocument();
+      },
+    );
   });
 
   describe('storefront prompt', () => {

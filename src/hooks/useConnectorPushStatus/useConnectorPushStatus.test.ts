@@ -4,15 +4,15 @@ import type { OrderPushRow, StorePushOverview } from '@/application/connectors/c
 import { ConnectorsController } from '@/controllers/connectors/connectors';
 import { connectorAlertSchema, connectorPushSchema } from '@/libs/commerce/connectors';
 import { toast } from '@/molecules/Toaster/use-toast';
-import { connectorRefusal } from '@/test-utils/connector-errors';
+import { bareHttpFailure, connectorRefusal } from '@/test-utils/connector-errors';
 import { connectionFixture } from '@/test-utils/connector-fixtures';
-import { useConnectorPushStatus } from './useConnectorPushStatus';
+import { resetConnectorsUnavailableMemoForTests, useConnectorPushStatus } from './useConnectorPushStatus';
 
-const mode = vi.hoisted(() => ({ value: 'transaction-service' as string, enabled: true }));
+const mode = vi.hoisted(() => ({ value: 'transaction-service' as string }));
 
 vi.mock('@/config/commerce', async () => {
   const actual = await vi.importActual<typeof import('@/config/commerce')>('@/config/commerce');
-  return { ...actual, getCommerceAdapterMode: () => mode.value, getStoreConnectionsEnabled: () => mode.enabled };
+  return { ...actual, getCommerceAdapterMode: () => mode.value };
 });
 
 vi.mock('@/stores/auth/auth.store', () => ({
@@ -71,7 +71,7 @@ describe('useConnectorPushStatus', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mode.value = 'transaction-service';
-    mode.enabled = true;
+    resetConnectorsUnavailableMemoForTests();
   });
 
   it('is hidden for a seller with no store and no alerts', async () => {
@@ -102,16 +102,50 @@ describe('useConnectorPushStatus', () => {
     expect(ConnectorsController.fetchPushOverview).not.toHaveBeenCalled();
   });
 
-  it('stays hidden, with its alerts, and reads nothing while the store connections switch is off', async () => {
-    mode.enabled = false;
-    vi.mocked(ConnectorsController.fetchPushOverview).mockResolvedValue(
-      overview({ pushes: [{ connection, push: quarantined }], alerts: [alert('a1', 'push_quarantined', 'order-2')] }),
-    );
-    const { result } = renderHook(() => useConnectorPushStatus());
-    expect(ConnectorsController.fetchPushOverview).not.toHaveBeenCalled();
-    expect(result.current.visible).toBe(false);
-    expect(result.current.alerts).toEqual([]);
-    expect(result.current.pushes).toEqual([]);
+  it('stops asking for a while once the service says it has no connectors, so Orders is not refused on every visit', async () => {
+    vi.mocked(ConnectorsController.fetchPushOverview).mockRejectedValue(connectorRefusal('connectors_disabled', 404));
+    const first = renderHook(() => useConnectorPushStatus());
+    await waitFor(() => expect(ConnectorsController.fetchPushOverview).toHaveBeenCalledTimes(1));
+    expect(first.result.current.visible).toBe(false);
+    first.unmount();
+
+    const second = renderHook(() => useConnectorPushStatus());
+    await act(async () => {});
+
+    expect(ConnectorsController.fetchPushOverview).toHaveBeenCalledTimes(1);
+    expect(second.result.current.visible).toBe(false);
+    expect(toast).not.toHaveBeenCalled();
+  });
+
+  it('asks again after the pause, in case the server has connectors by then', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      vi.mocked(ConnectorsController.fetchPushOverview).mockRejectedValueOnce(
+        connectorRefusal('connectors_disabled', 404),
+      );
+      const first = renderHook(() => useConnectorPushStatus());
+      await waitFor(() => expect(ConnectorsController.fetchPushOverview).toHaveBeenCalledTimes(1));
+      first.unmount();
+
+      vi.setSystemTime(Date.now() + 11 * 60_000);
+      vi.mocked(ConnectorsController.fetchPushOverview).mockResolvedValue(overview());
+      const second = renderHook(() => useConnectorPushStatus());
+
+      await waitFor(() => expect(ConnectorsController.fetchPushOverview).toHaveBeenCalledTimes(2));
+      expect(second.result.current.visible).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('does not pause for a failure that is not "no connectors", such as a 503', async () => {
+    vi.mocked(ConnectorsController.fetchPushOverview).mockRejectedValue(bareHttpFailure(503));
+    const first = renderHook(() => useConnectorPushStatus());
+    await waitFor(() => expect(ConnectorsController.fetchPushOverview).toHaveBeenCalledTimes(1));
+    first.unmount();
+
+    renderHook(() => useConnectorPushStatus());
+    await waitFor(() => expect(ConnectorsController.fetchPushOverview).toHaveBeenCalledTimes(2));
   });
 
   it('separates orders that need action from the ones in the store', async () => {

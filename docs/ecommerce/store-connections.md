@@ -5,14 +5,18 @@ products to also publish on Pubky, and sees whether Pubky orders reached the
 store. The service side is the connector worker in `pubky-marketplace-service`
 (`/v1/connectors`); this page is the Shop side.
 
-## Switch
+## When the server has no connectors
 
-Everything here is behind `PUBKY_RUNTIME_STORE_CONNECTIONS_ENABLED` (default
-`false`), so the Shop can deploy before the service connectors are deployed with
-`CONNECTORS_ENABLED`. Off: the dashboard has no Store connections button, both
-routes below answer like an unknown page, the orders page shows no push status
-card or store alert, and the Shop sends no `/v1/connectors` request. Turn it on
-after the service side is live.
+Store connections are always shown: the dashboard has the button on every
+environment and there is no Shop setting for it. The marketplace service has its
+own: `CONNECTORS_ENABLED` is off unless set, and then every `/v1/connectors`
+route answers `404 connectors_disabled` (a service older than the connectors has
+no such route, a bare 404 or 405). The Shop reads either as "no connectors on
+this server": the page says "Not available on this server yet" with a plain
+sentence instead of an error or a toast, and the Orders page shows no push
+status card and asks again only after ten minutes, so it is not refused on every
+visit. Any other failure (a 503, a network error) is a load error that offers
+Try again. The dashboard itself sends no connector request.
 
 ## Pages
 
