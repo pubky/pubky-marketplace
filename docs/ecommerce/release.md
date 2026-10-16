@@ -313,7 +313,9 @@ on a target with USDT on, run the other steps (`PROOF_STEPS`).
 The fixture changes the seller seat's PayPal rail only for the run. Setup records the rail's current value in
 `paypal-fixture-state.json` (mode 600) before changing it, and teardown restores exactly that value and reads it back.
 When the prior value is the test address itself, only a marker is stored, so the address never reaches disk. Without
-a state file, `teardown` and `verify` change and check nothing.
+a state file, `teardown` and `verify` change and check nothing. Setup also records whether the seller had a storefront
+(`shop.json`) before it published the listing; teardown deletes one the run caused and verifies it gone from the
+homeserver and Nexus, and keeps one that existed before.
 
 If the run fails or is interrupted, `paypal-fixture-state.json` stays in the evidence folder. Retry the cleanup with
 `node scripts/release/production-paypal-fixture.mjs teardown` (same environment, including `PAYPAL_TEST_EMAIL`) until

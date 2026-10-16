@@ -3,8 +3,9 @@
 //
 // The seller seat gets a temporary PayPal rail and one "TEST, do not buy <run>" listing;
 // the buyer seat checks it out up to the payment-method step (Pay is never clicked);
-// teardown deletes the listing, restores the seller's PayPal rail to exactly its value before setup,
-// revokes every marketplace session either seat gained during the run, and verifies all of it.
+// teardown deletes the listing and any seller storefront the run published, restores the seller's PayPal rail to
+// exactly its value before setup, revokes every marketplace session either seat gained during the run, and verifies
+// all of it.
 // Without a state file (nothing was set up) teardown and verify change and check nothing.
 //
 //   node production-paypal-fixture.mjs proof      setup → buyer checkout → teardown → verify (always tears down)
@@ -34,6 +35,7 @@ import {
   repoRequire,
   shopCapabilities,
 } from './seats.mjs';
+import { removeRunStorefront, storefrontExists } from './storefront-cleanup.mjs';
 
 const { chromium } = repoRequire('playwright');
 const { AuthFlowKind, Pubky } = repoRequire('@synonymdev/pubky');
@@ -133,7 +135,10 @@ async function ringSignIn(page, seat) {
     (expected) => {
       const raw = localStorage.getItem('shop-auth-store') ?? localStorage.getItem('auth-store');
       const state = raw ? (JSON.parse(raw).state ?? {}) : {};
-      return state.currentUserPubky === expected && typeof state.sessionExport === 'string';
+      return (
+        state.currentUserPubky === expected &&
+        (typeof state.grantSessionRecordId === 'string' || typeof state.sessionExport === 'string')
+      );
     },
     seat.publicKey.z32(),
     { timeout: 180_000 },
@@ -344,7 +349,9 @@ async function revokeRunSessions(seat, runStart) {
 async function setup() {
   const runStart = Date.now();
   const title = `${TITLE_BASE} ${randomBytes(3).toString('hex')}`;
-  let base = { runStart, listingTitle: title, listingId: null };
+  // Publishing makes the Shop write the seller's default storefront, so teardown needs the state before setup.
+  const storefrontBefore = await storefrontExists(new Pubky().publicStorage, sellerPubky);
+  let base = { runStart, listingTitle: title, listingId: null, storefrontBefore };
   writeState({ ...base, phase: 'paypal-read' });
   const { browser, page } = await openBrowser();
   try {
@@ -490,6 +497,20 @@ async function teardown() {
     writeState({ ...state, listingIds: ids, phase: 'torn-down' });
   } finally {
     await browser.close();
+  }
+  if ('storefrontBefore' in state) {
+    const cleanup = await removeRunStorefront({
+      publicStorage: new Pubky().publicStorage,
+      signer: new Pubky().signer(seller),
+      pubky: sellerPubky,
+      existedBefore: state.storefrontBefore,
+      nexus: NEXUS,
+    }).catch((error) => ({ ok: false, error: String(error?.message ?? error) }));
+    check(
+      'teardown: no seller storefront the run published (gone from the homeserver and Nexus, or pre-existing and kept)',
+      cleanup.ok,
+      JSON.stringify(cleanup),
+    );
   }
   if (state.runStart) {
     for (const [name, seat] of [
