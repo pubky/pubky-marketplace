@@ -16,7 +16,7 @@ import { AuthErrorCode, ClientErrorCode, ServerErrorCode } from '@/libs/error/er
 import { Err } from '@/libs/error/error.factories';
 import { httpStatusCodeToError } from '@/libs/error/error.http';
 import { ErrorCategory, ErrorService } from '@/libs/error/error.types';
-import { isAppError } from '@/libs/error/error.utils';
+import { hasHttpStatus, isAppError } from '@/libs/error/error.utils';
 import { Logger } from '@/libs/logger/logger';
 import {
   CommerceCatalogEntryModel,
@@ -411,6 +411,34 @@ describe('CommerceApplication', () => {
 
     await expect(CommerceApplication.getOrFetchShop(COMMERCE_FIXTURE_SELLER)).resolves.toEqual(record);
     expect(upsert).toHaveBeenCalledWith(record, 'synced');
+  });
+
+  it('answers a seller with no published shop with an unreported 404 and caches nothing', async () => {
+    vi.spyOn(LocalCommerceService, 'getShop').mockResolvedValue(null);
+    vi.spyOn(CommerceHomeserverService, 'fetchJsonIfFound').mockResolvedValue({ found: false });
+    const report = vi.spyOn(Err, 'client');
+    const upsert = vi.spyOn(LocalCommerceService, 'upsertShop');
+
+    const error = await CommerceApplication.getOrFetchShop(COMMERCE_FIXTURE_SELLER).catch((caught: unknown) => caught);
+
+    expect(hasHttpStatus(error, 404)).toBe(true);
+    expect(error).toMatchObject({ category: ErrorCategory.Client, code: ClientErrorCode.NOT_FOUND });
+    expect(CommerceHomeserverService.fetchJsonIfFound).toHaveBeenCalledWith(
+      CommerceRecordNormalizer.shopUri(COMMERCE_FIXTURE_SELLER),
+    );
+    expect(report).not.toHaveBeenCalled();
+    expect(upsert).not.toHaveBeenCalled();
+  });
+
+  it('still propagates a shop read that failed for another reason', async () => {
+    const failure = Err.server(ServerErrorCode.SERVICE_UNAVAILABLE, 'homeserver down', {
+      service: ErrorService.Homeserver,
+      operation: 'getJsonIfFound',
+    });
+    vi.spyOn(LocalCommerceService, 'getShop').mockResolvedValue(null);
+    vi.spyOn(CommerceHomeserverService, 'fetchJsonIfFound').mockRejectedValue(failure);
+
+    await expect(CommerceApplication.getOrFetchShop(COMMERCE_FIXTURE_SELLER)).rejects.toBe(failure);
   });
 
   it('refreshes shop settings into the cache used by the public shop', async () => {
@@ -3587,6 +3615,24 @@ describe('CommerceApplication', () => {
 
       expect(bulkUpsert).toHaveBeenCalledOnce();
       expect(upsertShop).toHaveBeenCalledExactlyOnceWith(sellerAShop, 'synced');
+    });
+
+    it('lists a seller who has not published a shop yet without reporting the missing shop record', async () => {
+      vi.spyOn(commerceConfig, 'getCommerceAdapterMode').mockReturnValue('unavailable');
+      vi.spyOn(NexusMarketplaceService, 'fetchListingStream').mockResolvedValue([
+        createNexusListingDetailsFixture({ owner_id: SELLER_B, id: 'jacket_01' }),
+      ]);
+      const bulkUpsert = vi.spyOn(LocalCommerceService, 'bulkUpsertCatalogEntries').mockResolvedValue(undefined);
+      vi.spyOn(LocalCommerceService, 'getShop').mockResolvedValue(null);
+      const report = vi.spyOn(Err, 'client');
+      const upsertShop = vi.spyOn(LocalCommerceService, 'upsertShop');
+
+      await expect(CommerceApplication.fetchCatalogListings()).resolves.toBeUndefined();
+
+      expect(CommerceHomeserverService.fetchJsonIfFound).toHaveBeenCalledWith(SELLER_B_SHOP_URL);
+      expect(bulkUpsert).toHaveBeenCalledOnce();
+      expect(upsertShop).not.toHaveBeenCalled();
+      expect(report).not.toHaveBeenCalled();
     });
 
     it('propagates a Nexus failure without touching the cache', async () => {
