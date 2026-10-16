@@ -1012,7 +1012,7 @@ describe('useMarketplaceCheckout', () => {
     vi.mocked(CommerceController.bindPaymentMethod).mockResolvedValue({
       id: orderId,
       state: 'pending_payment',
-      paymentMethod: 'bitcoin',
+      paymentMethod: 'paykit',
     } as never);
     const clear = vi.fn(async () => {});
     const { result } = renderHook(() => useMarketplaceCheckout([item], clear));
@@ -1026,19 +1026,19 @@ describe('useMarketplaceCheckout', () => {
 
     let paid: Awaited<ReturnType<typeof result.current.pay>> | null = null;
     await act(async () => {
-      paid = await result.current.pay('bitcoin');
+      paid = await result.current.pay('paykit');
     });
 
     expect(paid).toEqual({
       ok: true,
       orderIds: [orderId],
-      boundOrders: [expect.objectContaining({ id: orderId, paymentMethod: 'bitcoin' })],
+      boundOrders: [expect.objectContaining({ id: orderId, paymentMethod: 'paykit' })],
     });
-    expect(CommerceController.bindPaymentMethod).toHaveBeenCalledWith(orderId, 'bitcoin');
+    expect(CommerceController.bindPaymentMethod).toHaveBeenCalledWith(orderId, 'paykit');
     expect(clear).toHaveBeenCalled();
 
     vi.mocked(CommerceController.bindPaymentMethod).mockRejectedValueOnce(new Error('bind failed'));
-    const paidAfterFail = await act(async () => result.current.pay('bitcoin'));
+    const paidAfterFail = await act(async () => result.current.pay('paykit'));
     expect(paidAfterFail.ok).toBe(false);
     expect(CommerceController.executeMarketplaceCommand).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -1055,11 +1055,12 @@ describe('useMarketplaceCheckout', () => {
         message: 'SENTINEL',
         service: ErrorService.Marketplace,
         operation: 'bindPaymentMethod',
-        context: { statusCode: 503, reason: 'paykit_unavailable' },
+        context: { statusCode: 503, reason: 'paykit_unavailable', paymentMethod: 'paykit' },
       }),
     );
-    const paykitDown = await act(async () => result.current.pay('bitcoin'));
+    const paykitDown = await act(async () => result.current.pay('paykit'));
     expect(paykitDown).toMatchObject({ ok: false, paykitUnavailable: true });
+    expect(toast).toHaveBeenCalledTimes(2);
     expect(vi.mocked(toast).mock.calls.at(-1)?.[0]).toMatchObject({
       variant: 'error',
       description: 'Paykit is temporarily unreachable, retrying…',
@@ -1080,8 +1081,9 @@ describe('useMarketplaceCheckout', () => {
         context: { statusCode: 409, reason: 'buyer_paykit_wallet_setup_needed', serviceCode: 'INVALID_STATE' },
       }),
     );
-    const setupNeeded = await act(async () => result.current.pay('bitcoin', onRetry));
+    const setupNeeded = await act(async () => result.current.pay('paykit', onRetry));
     expect(setupNeeded.ok).toBe(false);
+    expect(toast).toHaveBeenCalledTimes(3);
     const setupToast = vi.mocked(toast).mock.calls.at(-1)?.[0];
     expect(setupToast).toMatchObject({
       variant: 'error',
@@ -1093,6 +1095,55 @@ describe('useMarketplaceCheckout', () => {
     asOpaque<{ props: { onClick: () => void } }>(setupToast?.action).props.onClick();
     expect(onRetry).toHaveBeenCalledTimes(1);
     expect(vi.mocked(CommerceController.bindPaymentMethod).mock.calls.length).toBe(bindsBefore + 1);
+  });
+
+  it('keeps the legacy bitcoin and usdt method ids mapping a Paykit-down refusal to the same retrying copy', async () => {
+    config.mode = 'locks-paykit';
+    const orderId = '018f47d2-6a27-7c23-a49d-000000001201';
+    vi.mocked(CommerceController.commitCreateMarketplaceCheckout).mockResolvedValue({
+      ok: true,
+      version: 1,
+      commandId: '00000000-0000-4000-8000-000000001101',
+      aggregateId: 'checkout:00000000-0000-4000-8000-000000001101',
+      revision: 1,
+      eventIds: [],
+      result: { kind: 'checkout', orders: [{ id: orderId }] },
+    });
+    const { result } = renderHook(() =>
+      useMarketplaceCheckout(
+        [item],
+        vi.fn(async () => {}),
+      ),
+    );
+    act(() => {
+      result.current.form.setValue('name', 'Alice Buyer');
+      result.current.form.setValue('line1', '1 Market Street');
+      result.current.form.setValue('city', 'New York');
+      result.current.form.setValue('region', 'NY');
+      result.current.form.setValue('postalCode', '10001');
+    });
+
+    for (const method of ['bitcoin', 'usdt'] as const) {
+      vi.mocked(toast).mockClear();
+      vi.mocked(CommerceController.bindPaymentMethod).mockRejectedValueOnce(
+        new AppError({
+          category: ErrorCategory.Client,
+          code: ClientErrorCode.BAD_REQUEST,
+          message: 'SENTINEL',
+          service: ErrorService.Marketplace,
+          operation: 'bindPaymentMethod',
+          context: { statusCode: 503, reason: 'paykit_unavailable', paymentMethod: method },
+        }),
+      );
+      const paid = await act(async () => result.current.pay(method));
+
+      expect(paid).toMatchObject({ ok: false, paykitUnavailable: true });
+      expect(toast).toHaveBeenCalledTimes(1);
+      expect(vi.mocked(toast).mock.calls[0]?.[0]).toMatchObject({
+        variant: 'error',
+        description: 'Paykit is temporarily unreachable, retrying…',
+      });
+    }
   });
 
   describe('after a refused Paykit bind', () => {

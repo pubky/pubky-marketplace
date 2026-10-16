@@ -224,10 +224,12 @@ describe('useMarketplaceOrderPayment', () => {
       });
       expect(result.current.paykitOutage).toBe(false);
 
+      vi.mocked(toast).mockClear();
       await act(async () => {
         await result.current.bind('paykit');
       });
-      const toastCall = vi.mocked(toast).mock.calls.at(-1)?.[0];
+      expect(toast).toHaveBeenCalledTimes(1);
+      const toastCall = vi.mocked(toast).mock.calls[0]?.[0];
       expect(toastCall?.description).toBe('Paykit is temporarily unreachable, retrying…');
       expect(JSON.stringify(toastCall)).not.toContain('SENTINEL');
       expect(result.current.paykitOutage).toBe(true);
