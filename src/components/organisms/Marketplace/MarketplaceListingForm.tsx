@@ -56,7 +56,10 @@ import type {
   ListingMediaItem,
   UseListingMediaManagerResult,
 } from '@/hooks/useListingMediaManager/useListingMediaManager';
-import { isListingMediaPublishReady } from '@/hooks/useListingMediaManager/useListingMediaManager';
+import {
+  isListingMediaPublishReady,
+  LISTING_PHOTO_MIME_TYPES,
+} from '@/hooks/useListingMediaManager/useListingMediaManager';
 import { useMarketplaceShippingPresets } from '@/hooks/useMarketplaceShippingPresets/useMarketplaceShippingPresets';
 import {
   presetToShippingFields,
@@ -327,7 +330,7 @@ export function MarketplaceListingForm({
   });
   const mediaError =
     pickerError === 'invalid-type'
-      ? 'Choose image files only.'
+      ? 'Choose JPEG, PNG or WebP images.'
       : pickerError === 'too-large'
         ? 'An image is too large.'
         : pickerError === 'decode-failed'
@@ -492,11 +495,7 @@ export function MarketplaceListingForm({
           title="Photos"
           description={`Up to ${media.maxPhotos} photos. The first photo is the cover buyers see everywhere. Metadata is stripped before publication.`}
           complete={sectionStatuses['listing-section-photos']}
-          dragOver={photoDrop.dragOver}
-          onDragEnter={photoDrop.onDragEnter}
-          onDragLeave={photoDrop.onDragLeave}
-          onDragOver={photoDrop.onDragOver}
-          onDrop={photoDrop.onDrop}
+          dropZone={photoDrop}
         >
           {mediaItems.length > 0 && (
             <ul className="flex flex-col gap-3" aria-label="Listing photos in display order">
@@ -518,7 +517,7 @@ export function MarketplaceListingForm({
           <Button
             type="button"
             variant="secondary"
-            className={cn('w-fit rounded-full', photoDrop.dragOver && 'border-brand bg-brand/16 text-brand')}
+            className="w-fit rounded-full"
             disabled={isPublishing || mediaItems.length >= maxPhotos}
             onClick={choose}
           >
@@ -528,7 +527,7 @@ export function MarketplaceListingForm({
           <input
             ref={inputRef}
             type="file"
-            accept="image/jpeg,image/png,image/webp"
+            accept={LISTING_PHOTO_MIME_TYPES.join(',')}
             multiple
             hidden
             onChange={onInputChange}
@@ -1216,73 +1215,47 @@ function MobileSectionStepper({
   );
 }
 
-function isFileDrag(dataTransfer: DataTransfer | null): dataTransfer is DataTransfer {
-  if (!dataTransfer?.types) return false;
-  return Array.from(dataTransfer.types).some((type) => type === 'Files' || type === 'application/x-moz-file');
-}
-
-function filesFromDataTransfer(dataTransfer: DataTransfer | null): File[] {
-  if (!dataTransfer) return [];
-  const items = dataTransfer.items;
-  if (items && items.length > 0) {
-    const files: File[] = [];
-    for (const item of Array.from(items)) {
-      if (item.kind !== 'file') continue;
-      const file = item.getAsFile();
-      if (file) files.push(file);
-    }
-    return files;
-  }
-  return Array.from(dataTransfer.files ?? []);
+function isFileDrag(event: DragEvent): boolean {
+  return event.dataTransfer?.types.includes('Files') ?? false;
 }
 
 /**
- * File drops on the photos card share `addFiles` with the picker. Non-file
- * drags are ignored. File drags call preventDefault so the browser does not
- * navigate to the dropped file.
+ * Nested children fire their own dragenter/dragleave, so a depth count keeps
+ * the card highlighted until the pointer leaves it. File drags are
+ * preventDefault-ed even when drops are disabled so the browser never opens
+ * the dropped file.
  */
-function usePhotoFileDrop(onFiles: (files: readonly File[]) => void, acceptDrops: boolean) {
-  const [dragOver, setDragOver] = useState(false);
-  const dragCounter = useRef(0);
+function usePhotoFileDrop(addFiles: (files: readonly File[]) => void, enabled: boolean) {
+  const [isDragOver, setIsDragOver] = useState(false);
+  const depth = useRef(0);
 
-  const onDragEnter = (event: DragEvent<HTMLDivElement>) => {
-    const dataTransfer = event.dataTransfer;
-    if (!isFileDrag(dataTransfer)) return;
-    event.preventDefault();
-    event.stopPropagation();
-    dragCounter.current += 1;
-    if (acceptDrops) setDragOver(true);
+  const handlers = {
+    onDragEnter: (event: DragEvent<HTMLDivElement>) => {
+      if (!isFileDrag(event)) return;
+      event.preventDefault();
+      depth.current += 1;
+      setIsDragOver(true);
+    },
+    onDragOver: (event: DragEvent<HTMLDivElement>) => {
+      if (!isFileDrag(event)) return;
+      event.preventDefault();
+      event.dataTransfer.dropEffect = enabled ? 'copy' : 'none';
+    },
+    onDragLeave: (event: DragEvent<HTMLDivElement>) => {
+      if (!isFileDrag(event)) return;
+      depth.current = Math.max(0, depth.current - 1);
+      if (depth.current === 0) setIsDragOver(false);
+    },
+    onDrop: (event: DragEvent<HTMLDivElement>) => {
+      if (!isFileDrag(event)) return;
+      event.preventDefault();
+      depth.current = 0;
+      setIsDragOver(false);
+      if (enabled) addFiles(Array.from(event.dataTransfer.files));
+    },
   };
 
-  const onDragOver = (event: DragEvent<HTMLDivElement>) => {
-    const dataTransfer = event.dataTransfer;
-    if (!isFileDrag(dataTransfer)) return;
-    event.preventDefault();
-    event.stopPropagation();
-    dataTransfer.dropEffect = acceptDrops ? 'copy' : 'none';
-  };
-
-  const onDragLeave = (event: DragEvent<HTMLDivElement>) => {
-    if (dragCounter.current === 0) return;
-    event.preventDefault();
-    event.stopPropagation();
-    dragCounter.current -= 1;
-    if (dragCounter.current === 0) setDragOver(false);
-  };
-
-  const onDrop = (event: DragEvent<HTMLDivElement>) => {
-    const dataTransfer = event.dataTransfer;
-    const files = filesFromDataTransfer(dataTransfer);
-    if (!isFileDrag(dataTransfer) && files.length === 0) return;
-    event.preventDefault();
-    event.stopPropagation();
-    dragCounter.current = 0;
-    setDragOver(false);
-    if (!acceptDrops || files.length === 0) return;
-    onFiles(files);
-  };
-
-  return { dragOver: dragOver && acceptDrops, onDragEnter, onDragOver, onDragLeave, onDrop };
+  return { isDragOver: enabled && isDragOver, handlers };
 }
 
 function ListingFormSection({
@@ -1291,22 +1264,14 @@ function ListingFormSection({
   description,
   complete,
   children,
-  dragOver = false,
-  onDragEnter,
-  onDragLeave,
-  onDragOver,
-  onDrop,
+  dropZone,
 }: {
   id: ListingFormSectionId;
   title: string;
   description: string;
   complete: boolean;
   children: ReactNode;
-  dragOver?: boolean;
-  onDragEnter?: (event: DragEvent<HTMLDivElement>) => void;
-  onDragLeave?: (event: DragEvent<HTMLDivElement>) => void;
-  onDragOver?: (event: DragEvent<HTMLDivElement>) => void;
-  onDrop?: (event: DragEvent<HTMLDivElement>) => void;
+  dropZone?: ReturnType<typeof usePhotoFileDrop>;
 }) {
   // Below lg, a jump also clears the sticky mobile step bar (about 104px).
   return (
@@ -1319,16 +1284,19 @@ function ListingFormSection({
       className="scroll-mt-[calc(var(--header-offset-mobile)+8.5rem)] lg:scroll-mt-(--header-offset-main)"
     >
       <Card
-        className={cn('rounded-md p-0 shadow-lg', dragOver && 'relative border border-dashed border-brand')}
-        data-drag-over={dragOver ? 'true' : undefined}
-        onDragEnter={onDragEnter}
-        onDragLeave={onDragLeave}
-        onDragOver={onDragOver}
-        onDrop={onDrop}
+        className={cn(
+          'rounded-md p-0 shadow-lg',
+          dropZone?.isDragOver && 'relative outline-2 outline-brand outline-dashed',
+        )}
+        data-drag-over={dropZone?.isDragOver || undefined}
+        {...dropZone?.handlers}
       >
-        {dragOver && (
-          <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-md bg-brand/10">
-            <Typography as="p" role="status" size="sm" className="text-brand">
+        {dropZone?.isDragOver && (
+          <div
+            aria-hidden
+            className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-md bg-card/90"
+          >
+            <Typography as="p" size="sm" className="font-semibold text-brand">
               Drop photos here
             </Typography>
           </div>

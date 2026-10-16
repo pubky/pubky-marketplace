@@ -15,6 +15,8 @@ export type ListingMediaRecord = CommerceListingRecord['media'][number];
 
 export type ListingMediaManagerError = 'invalid-type' | 'too-large' | 'decode-failed' | 'limit-reached';
 
+export const LISTING_PHOTO_MIME_TYPES: readonly string[] = ['image/jpeg', 'image/png', 'image/webp'];
+
 /**
  * One photo in the sell/edit studio, in display order (`items[0]` is the
  * cover). New photos hold the picked file until publish; existing photos
@@ -39,11 +41,7 @@ export interface UseListingMediaManagerResult {
   error: ListingMediaManagerError | null;
   inputRef: RefObject<HTMLInputElement | null>;
   onInputChange: (event: ChangeEvent<HTMLInputElement>) => void;
-  /**
-   * Shared entry for the file picker and drag-and-drop. Applies the same
-   * type, size, and photo-count checks, then stores previews for the ones
-   * that pass.
-   */
+  /** Shared by the file picker and drag-and-drop so both apply the same checks. */
   addFiles: (files: readonly File[]) => void;
   choose: () => void;
   removeItem: (key: string) => void;
@@ -90,7 +88,7 @@ export function useListingMediaManager(maxSize = IMAGE_MAX_RAW_SIZE): UseListing
     const additions: ListingMediaItem[] = [];
     let capacity = COMMERCE_LISTING_STUDIO_MAX_PHOTOS - itemsRef.current.length;
     for (const file of selected) {
-      if (!file.type.startsWith('image/')) {
+      if (!LISTING_PHOTO_MIME_TYPES.includes(file.type)) {
         nextError = 'invalid-type';
         continue;
       }
