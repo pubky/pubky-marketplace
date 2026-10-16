@@ -9,7 +9,7 @@ Production operations (kill switch, rollback, Railway restarts, the `shop.pubky.
 [`runbook-production.md`](runbook-production.md). Local setup is in [`onboarding.md`](onboarding.md) and
 [`RUNNING.md`](RUNNING.md).
 
-"Live" means the deployed grant sign-in, shared-session lifecycle and service-approval journeys have passed against the release revisions. A green build or synthetic network fixture is not that proof. The older cookie-based production script below cannot certify the current grant-only release.
+"Live" means the deployed grant sign-in, shared-session lifecycle and service-approval journeys have passed against the release revisions. A green build or synthetic network fixture is not that proof; the [signed-in production proof](#signed-in-production-proof) is.
 
 ## Branches and targets
 
@@ -216,29 +216,37 @@ current one. The commands are in [`runbook-production.md`](runbook-production.md
 
 ## Signed-in production proof
 
-**Legacy harness, not a grant-release gate.** The scripts in this section still require Ring cookie sign-in, an exported cookie session and the old AuthToken exchange. Their assertions deliberately do not match the current grant-only UI. Preserve this recipe for historical deployments; do not run it against this release or report its old 34/39-check counts as grant coverage. Migrating that harness is separate work. Until it is migrated, use the [grant release requirements above](#grant-sdk-and-embedded-release-requirements) and record the deployed manual results; the synthetic launch gate alone cannot establish live signer/payment completion.
-
 `scripts/release/release-proof.mjs` drives the deployed Shop in headless Chromium with two test seats and the same
-`approveAuthRequest` call Pubky Ring and Bitkit's Paykit make. `scripts/release/production-paypal-fixture.mjs` wraps
-it: it gives the seller seat a temporary PayPal rail and one `TEST, do not buy <run>` listing, runs the proof against
-that listing, then always tears everything down and verifies the teardown. The proof alone takes about three
-minutes; fixture setup and teardown add a few more.
+`approveAuthRequest` call Pubky Ring and Bitkit's Paykit make. It proves the grant-session release: both signers sign in
+with a `signin_grant`, sign-in mints the marketplace session from the grant where grant sessions are on, sign-out ends
+the grant session, and checkout, Activity and the seller surfaces work for a signed-in seat. Nothing is paid and no
+order command is sent. Afterwards it revokes every marketplace session either seat gained and deletes any storefront
+(`shop.json`) the run caused, and verifies both.
+
+`scripts/release/production-paypal-fixture.mjs` can wrap it: it gives the seller seat a temporary PayPal rail and one
+`TEST, do not buy <run>` listing, runs the proof against that listing, then always tears everything down and verifies
+the teardown. Without the wrapper, step 4 looks for an existing listing whose seller takes PayPal (test titles first,
+never either seat's own).
 
 ### Inputs
 
 All inputs are environment variables. Seat files, passphrases and the PayPal address never enter the repository, a
 command line, or the evidence folder.
 
-| Variable                                                      | Meaning                                                                                                                                                                                                                                                                                                                                                                                                                               |
-| ------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `PROOF_SELLER_RECOVERY_FILE`, `PROOF_BUYER_RECOVERY_FILE`     | Encrypted `pubky.org/recovery` backups of the two production test seats                                                                                                                                                                                                                                                                                                                                                               |
-| `PROOF_RECOVERY_PASSPHRASE`                                   | Passphrase for those backups                                                                                                                                                                                                                                                                                                                                                                                                          |
-| `PROOF_SEAT_SECRET_HEX`, `PROOF_BUYER_SECRET_HEX`             | Alternative to the files: 32-byte seat secrets as hex (used for staging-homeserver seats)                                                                                                                                                                                                                                                                                                                                             |
-| `PROOF_SELLER_PREFIX`, `PROOF_BUYER_PREFIX`                   | Optional. The run stops unless each seat's pubky starts with this, which catches a swapped seat                                                                                                                                                                                                                                                                                                                                       |
-| `PAYPAL_TEST_EMAIL`                                           | PayPal address for the temporary seller rail. Never logged or written                                                                                                                                                                                                                                                                                                                                                                 |
-| `PROOF_EVIDENCE`                                              | Evidence folder for this release, outside the repository (the scripts refuse a path inside it)                                                                                                                                                                                                                                                                                                                                        |
-| `EXPECTED_DPL`                                                | The `dpl_…` id now aliased to the origin. The proof fails if production serves anything else                                                                                                                                                                                                                                                                                                                                          |
-| `PROOF_ORIGIN`, `PROOF_SERVICE`, `PROOF_NEXUS`, `PROOF_RELAY` | Optional overrides. Defaults: `https://shop.pubky.app`, the production marketplace service, Nexus `-7108`, `https://httprelay.pubky.app/inbox`. When the Shop is served under a mount path, `PROOF_ORIGIN` carries it (`https://pubky.app/shop`, or `https://pubky.app/shop-embed` when the App owns `/shop` and frames the build, because the proof drives the build itself); every route the scripts open is joined under that path |
+| Variable                                                      | Meaning                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| ------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `PROOF_SELLER_RECOVERY_FILE`, `PROOF_BUYER_RECOVERY_FILE`     | Encrypted `pubky.org/recovery` backups of the two production test seats                                                                                                                                                                                                                                                                                                                                                                                                    |
+| `PROOF_RECOVERY_PASSPHRASE`                                   | Passphrase for those backups                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| `PROOF_SEAT_SECRET_HEX`, `PROOF_BUYER_SECRET_HEX`             | Alternative to the files: 32-byte seat secrets as hex (used for staging-homeserver seats)                                                                                                                                                                                                                                                                                                                                                                                  |
+| `PROOF_SELLER_PREFIX`, `PROOF_BUYER_PREFIX`                   | Optional. The run stops unless each seat's pubky starts with this, which catches a swapped seat                                                                                                                                                                                                                                                                                                                                                                            |
+| `PAYPAL_TEST_EMAIL`                                           | PayPal address for the temporary seller rail. Never logged or written                                                                                                                                                                                                                                                                                                                                                                                                      |
+| `PROOF_EVIDENCE`                                              | Evidence folder for this release, outside the repository (the scripts refuse a path inside it)                                                                                                                                                                                                                                                                                                                                                                             |
+| `EXPECTED_DPL`                                                | The `dpl_…` id now aliased to the origin. The proof fails if production serves anything else                                                                                                                                                                                                                                                                                                                                                                               |
+| `PROOF_CLIENT_ID`                                             | Optional. The grant client id the Shop's QRs must carry (`cid=`), the Shop's `PUBKY_RUNTIME_SHOP_GRANT_CLIENT_ID`. Default `shop.pubky.app`                                                                                                                                                                                                                                                                                                                                |
+| `PROOF_GS1`                                                   | `1` where grant sessions are on (`MARKETPLACE_GRANT_SESSION_ENABLED` on the service, `PUBKY_RUNTIME_MARKETPLACE_GRANT_SESSION_ENABLED` on the Shop): step 1 also checks that sign-in minted the marketplace session from the grant, one challenge and one mint, with no further approval                                                                                                                                                                                   |
+| `PROOF_STEPS`                                                 | Optional comma-separated subset, e.g. `1,2,9`. Step 0 and cleanup always run; `1` runs the Ring journey with steps 5 and 6. Step 11 runs only when named                                                                                                                                                                                                                                                                                                                   |
+| `PROOF_PAYPAL_LISTING_URL`, `PROOF_BITCOIN_LISTING_URL`       | Optional listing paths (`/marketplace/listing/<seller>/<id>`) for steps 4 and 9. The PayPal fixture sets the first; without them the proof picks test listings from Nexus                                                                                                                                                                                                                                                                                                  |
+| `PROOF_ORIGIN`, `PROOF_SERVICE`, `PROOF_NEXUS`, `PROOF_RELAY` | Optional overrides. Defaults: John Prod (`https://pubky-marketplace-production.vercel.app`), the production marketplace service, Nexus `-7108`, `https://httprelay.pubky.app/inbox`. When the Shop is served under a mount path, `PROOF_ORIGIN` carries it (`https://pubky.app/shop`, or `https://pubky.app/shop-embed` when the App owns `/shop` and frames the build, because the proof drives the build itself); every route the scripts open is joined under that path |
 
 The production seats belong to the product owner, who passes seat backups, the passphrase and the PayPal address out
 of band. The seller seat owns the long-lived "Cutover test — do not buy" listings and must not buy its own listing;
@@ -249,43 +257,57 @@ you run it from, so run it from the release commit that was deployed (or set `PR
 
 ### Run
 
+Start every proof in a new shell with no `PROOF_*` variables left over from another target (`unset` them), and name
+the target explicitly:
+
 ```bash
+export PROOF_ORIGIN=https://pubky-marketplace-production.vercel.app
 export PROOF_SELLER_RECOVERY_FILE=/secure/path/seller.pkarr
 export PROOF_BUYER_RECOVERY_FILE=/secure/path/buyer.pkarr
 read -rs PROOF_RECOVERY_PASSPHRASE && export PROOF_RECOVERY_PASSPHRASE
 read -rs PAYPAL_TEST_EMAIL && export PAYPAL_TEST_EMAIL
 export PROOF_EVIDENCE=$HOME/shop-evidence/shop-vX.Y.Z/live-proof
+export PROOF_GS1=1
 mkdir -p "$PROOF_EVIDENCE"
 EXPECTED_DPL=dpl_<new> node scripts/release/production-paypal-fixture.mjs proof -- \
   node scripts/release/release-proof.mjs | tee "$PROOF_EVIDENCE/run.log"
 ```
 
-The legacy harness reports success when `release-proof.mjs` prints `RESULT PASS` and the fixture prints
-`PAYPAL_FIXTURE proof OK`. That result does not replace the grant-session release requirements above.
+Without the PayPal fixture, run `EXPECTED_DPL=dpl_<new> node scripts/release/release-proof.mjs` directly; step 4
+then needs an existing PayPal-ready test listing on Nexus.
+
+The proof passes when `release-proof.mjs` prints `RESULT PASS n/n` (and, with the wrapper, the fixture prints
+`PAYPAL_FIXTURE proof OK`). Record `n/n` in the release notes.
 
 ### What it checks
 
-These are the cookie-era script assertions, not the current authentication contract. Step 3 is unused.
+Step 3 is unused; step ids are stable across releases.
 
-| Step    | Checks                                                                                                                                                                                                                                                         |
-| ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 0       | Production serves `EXPECTED_DPL`                                                                                                                                                                                                                               |
-| 1       | Ring and Bitkit QRs are both live on `/sign-in`; the Ring QR is the cookie sign-in URL for the Shop's capabilities and is not in the DOM; one approval gives exactly one homeserver `POST /session` and one marketplace `POST /v1/auth/sessions`, and no grant |
-| 2       | The Bitkit QR is a `signin_grant` for the Shop's capabilities and client id `shop.pubky.app`; approval signs in with a grant record; reload restores it; sign-out from Settings clears it and holds across a reload                                            |
-| 4       | The buyer seat reaches checkout on the fixture listing; `payment-config` loads; PayPal is offered; no "no payment method" copy; nothing is paid and no order command is sent; the cart is emptied; the buyer signs out                                         |
-| 5       | Activity is in the marketplace nav, has no unrecognized events, lists order rows, and a row opens its order card on the Orders page. If the seller's rows only point at orders its Orders page hides, the buyer seat is used                                   |
-| 6       | Sign-out of the Ring session from Settings clears the Shop state, ends the homeserver session (`DELETE /session` 2xx), and holds across a reload                                                                                                               |
-| cleanup | Every marketplace session either seat gained during the run is revoked, the audit bearer last, and none remain                                                                                                                                                 |
+| Step    | Checks                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 0       | The origin serves `EXPECTED_DPL`                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| 1       | Ring and Bitkit QRs are both live on `/sign-in`; the Ring QR is a `signin_grant` for the Shop's capabilities and `PROOF_CLIENT_ID` and is not in the DOM; one approval gives one grant `POST` 2xx and no cookie homeserver `POST /session` or marketplace `POST /v1/auth/sessions`; the seat is signed in with a grant record and no cookie export; both QRs are gone. With `PROOF_GS1=1`, sign-in also minted the marketplace session from the grant (one challenge and one mint, both 2xx) |
+| 2       | The Bitkit QR is a `signin_grant` for the Shop's capabilities and client id; approval signs in with a grant record; reload restores it; sign-out from Settings clears it and holds across a reload                                                                                                                                                                                                                                                                                           |
+| 4       | The buyer seat (Ring) reaches checkout on a PayPal listing; `payment-config` loads; PayPal is offered, selectable, and its Pay control renders (never clicked); no "no payment method" copy; no USDT at checkout; nothing is paid and no order command is sent; the cart is emptied; sign-out ends the grant session (`DELETE` 2xx)                                                                                                                                                          |
+| 5       | The seat's marketplace session is approved where the Shop still asks ("Authorize" or "Enable selling" in Settings); Activity is in the marketplace nav, has no unrecognized events, lists order rows, and a row opens its order card on the Orders page. If the seller's rows only point at orders its Orders page hides, the buyer seat is used                                                                                                                                             |
+| 6       | Sign-out of the Ring session from Settings clears the Shop state, ends the grant session (`DELETE /auth/grant/session` 2xx), and holds across a reload                                                                                                                                                                                                                                                                                                                                       |
+| 7       | Runs when step 4 found a listing. A Bitkit-grant buyer sees a purchase control; "Approve to buy" opens a grant-link approval QR that is never approved; Settings is reachable from the shared navigation at desktop and mobile width; the seller's Bitcoin availability is recorded                                                                                                                                                                                                          |
+| 8       | The seller seat opens cart, checkout, orders, My shop and storefront at desktop and mobile width with a heading and no error page, sending no command                                                                                                                                                                                                                                                                                                                                        |
+| 9       | The buyer seat adds a Bitcoin test listing, completes the "Enable purchases" approval when the Shop asks for it, and reaches checkout: Bitcoin is offered, with no Bitkit 2.6 or "Couldn't verify your Bitcoin wallet" notice; nothing is paid; the cart is emptied. When the fixture seller is not Paykit-ready (`bitcoin_available` false) the offer is reported `KNOWN` instead                                                                                                           |
+| 10      | The seller's payment settings and My shop show no USDT, and no request during the run mentions USDT (flag off)                                                                                                                                                                                                                                                                                                                                                                               |
+| 11      | Only with `PROOF_STEPS=11`: the service `/health` lists `woocommerce` under `connectors.providers`, the seller sees the WooCommerce and Shopify store types and the WooCommerce connect form, and nothing is written to `/v1/connectors`                                                                                                                                                                                                                                                     |
+| cleanup | Every marketplace session either seat gained during the run is revoked, the audit bearer last, and none remain. A storefront (`shop.json`) a seat did not have before the run is deleted and verified gone from the homeserver and Nexus; one that existed before is kept, and an unknown "before" state fails                                                                                                                                                                               |
 
-A full pass is 34 checks, or 39 when step 5 falls back to the buyer seat. Rows reported as `KNOWN` are informational
-defects outside the release and never gate it.
+The number of checks depends on the steps run and on which fallbacks fire, so the result is reported as `n/n`. Rows
+reported as `KNOWN` are informational defects outside the release and never gate it. Steps 9 and 10 expect USDT off;
+on a target with USDT on, run the other steps (`PROOF_STEPS`).
 
 ### Reading the result
 
 - `proof-log.txt`: one PASS or FAIL line per check.
-- `results.json`: `steps`, `sessionAudit`, `knownDefects`, network tags and console errors. Every
-  `sessionAudit[].activeFromRunAfter` must be empty.
-- Screenshots `01`–`08` and `11`.
+- `results.json`: `steps`, `sessionAudit`, `storefrontCleanup`, `knownDefects`, network tags and console errors.
+  Every `sessionAudit[].activeFromRunAfter` must be empty and every `storefrontCleanup[].ok` true.
+- Screenshots `01`–`20`, one set per step that ran, plus a `*-journey-error.png` for any journey that stopped early.
 - Evidence carries 8-character pubky prefixes only. Auth URLs, session exports and bearers are never printed.
 
 The fixture changes the seller seat's PayPal rail only for the run. Setup records the rail's current value in
@@ -309,8 +331,9 @@ release notes and removed before the next release.
 The staging Shop signs out accounts that live on the production homeserver, so a staging run needs seats created on
 `homeserver.staging.pubky.app` (signup tokens come from the staging homeserver admin; ask the team), passed as
 `PROOF_SEAT_SECRET_HEX` and `PROOF_BUYER_SECRET_HEX`, with `PROOF_ORIGIN=https://pubky-marketplace-staging.vercel.app`
-and `PROOF_SERVICE=https://staging-api.pubky.app`. Step 4 also needs `PROOF_PAYPAL_LISTING_URL` pointing at a
-"do not buy" listing whose seller has a PayPal sandbox rail; without it step 4 fails. Production is the release gate.
+and `PROOF_SERVICE=https://staging-api.pubky.app` (listing discovery then reads the staging Nexus). Step 4 needs a
+"do not buy" listing whose seller has a PayPal sandbox rail: pass it as `PROOF_PAYPAL_LISTING_URL`, or step 4 fails
+when discovery finds none. Production is the release gate.
 
 ## Tag and release notes
 

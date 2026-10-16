@@ -30,7 +30,7 @@ export function shopCapabilities() {
 // (`https://pubky.app/shop`, or `https://pubky.app/shop-embed` when the App owns `/shop` and frames the build:
 // the proof drives the build itself). `origin` is what browser permissions and the service CORS check see;
 // `at(path)` joins the mount path in front of a Shop route such as `/sign-in`.
-export function proofTarget(raw = process.env.PROOF_ORIGIN ?? 'https://shop.pubky.app') {
+export function proofTarget(raw = process.env.PROOF_ORIGIN ?? 'https://pubky-marketplace-production.vercel.app') {
   const url = new URL(raw);
   if (url.search || url.hash) throw new Error('PROOF_ORIGIN must not carry a query or fragment');
   const basePath = url.pathname.replace(/\/+$/, '');

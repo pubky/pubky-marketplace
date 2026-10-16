@@ -1,18 +1,33 @@
 #!/usr/bin/env node
-// Signed-in Shop release proof in real Chromium against production.
-//   1. Ring sign-in with the Ring and Bitkit QRs both live; exactly one session.
+// Signed-in Shop release proof in real Chromium against a deployed Shop with grant sessions.
+//   1. Ring sign-in with the Ring and Bitkit QRs both live: the Ring QR is a signin_grant, one approval gives one
+//      grant session and no cookie session. Steps 5 and 6 run on the same browser session.
 //   2. Bitkit grant sign-in (Signer.approveAuthRequest, the binding Bitkit's Paykit calls), reload, sign-out.
 //   (Step ids are stable across releases; 3 is unused.)
-//   4. Buyer seat checkout on the PayPal fixture listing (PROOF_PAYPAL_LISTING_URL, set by
-//      production-paypal-fixture.mjs proof): payment-config loads, PayPal is offered. Pay is never clicked.
+//   4. Buyer seat checkout, read-only: on PROOF_PAYPAL_LISTING_URL if set (production-paypal-fixture.mjs sets it),
+//      else on an existing listing whose seller takes PayPal (test titles first, never either seat's own).
+//      Payment-config loads, PayPal is offered, selecting it marks it chosen and the Pay control renders.
+//      Pay is never clicked.
 //   5. Activity opens an order; the order page shows it (buyer seat when the seller's rows only
 //      point at orders its Orders page hides — recorded as a known defect).
-//   6. Sign-out of the Ring session through Settings, held across reload.
+//   6. Sign-out of the Ring session through Settings ends the grant session and holds across reload.
+//   7. Bitkit-grant buyer on the step 4 listing: "Approve to buy" grant QR (never approved), Settings
+//      in the shared navigation at desktop and mobile width, seller Bitcoin availability.
+//   8. Seller seat: cart, checkout, orders, My shop and storefront render without an error page
+//      at desktop and mobile width; no command is sent.
+//   9. Buyer seat: Bitcoin wallet state at checkout (no Bitkit 2.6 / unverified notice for a 2.5 wallet).
+//  10. Seller seat: payment settings and My shop show no USDT, and no request mentions USDT (flag off).
+//  11. Opt-in only (PROOF_STEPS=11): the service lists WooCommerce and the seller sees its connect form.
 // Afterwards every marketplace session the seat gained during the run is revoked and the
-// revocation is verified. Nothing else is written: the cart is local (Dexie) and is emptied.
+// revocation is verified. The Shop publishes a default storefront (shop.json) for a Paykit-enabled
+// seller that opens payment settings; a storefront either seat did not have before the run is deleted
+// and verified gone from the homeserver and Nexus. Nothing else is written: the cart is local (Dexie) and is emptied.
 // Env: PROOF_EVIDENCE and EXPECTED_DPL (required), seats (see seats.mjs), PROOF_ORIGIN (with the mount path when
-// the Shop is embedded, e.g. https://pubky.app/shop), PROOF_SERVICE,
-// PROOF_RELAY, PROOF_PAYPAL_LISTING_URL (fixture listing path for step 4, set by production-paypal-fixture.mjs).
+// the Shop is embedded, e.g. https://pubky.app/shop-embed), PROOF_SERVICE, PROOF_RELAY, PROOF_CLIENT_ID (the
+// grant client id the Shop's QRs carry; default shop.pubky.app), PROOF_PAYPAL_LISTING_URL (optional listing path
+// for step 4), PROOF_BITCOIN_LISTING_URL (optional listing path for step 9), PROOF_NEXUS (listing discovery and
+// storefront cleanup; default -7108, or the staging index when PROOF_SERVICE is staging-api), PROOF_GS1=1 (step 1
+// also checks that sign-in minted the marketplace session from the grant), PROOF_STEPS (optional subset, e.g. 1,2,9).
 // Runbook: docs/ecommerce/release.md.
 // Output: 8-char pubky prefixes only; auth URLs, exports and bearers never print.
 import { appendFileSync, mkdirSync, writeFileSync } from 'node:fs';
@@ -27,6 +42,7 @@ import {
   seatSource,
   shopCapabilities,
 } from './seats.mjs';
+import { removeRunStorefront, storefrontExists } from './storefront-cleanup.mjs';
 
 const { chromium } = repoRequire('playwright');
 const { AuthFlowKind, Pubky, SigninGrantDeepLink } = repoRequire('@synonymdev/pubky');
@@ -39,9 +55,17 @@ if (!EXPECTED_DPL) throw new Error('set EXPECTED_DPL to the dpl_… id now alias
 const SERVICE = process.env.PROOF_SERVICE ?? 'https://marketplace-service-production-ce23.up.railway.app';
 const RELAY = process.env.PROOF_RELAY ?? 'https://httprelay.pubky.app/inbox';
 const CAPABILITIES = shopCapabilities();
-const CLIENT_ID = 'shop.pubky.app';
+const CLIENT_ID = process.env.PROOF_CLIENT_ID ?? 'shop.pubky.app';
 const FORBIDDEN_COPY = /hasn't set up a payment method|do not share a payment method/i;
 const RUN_START = Date.now();
+// PROOF_STEPS=4,9 runs only those step blocks (1 = the Ring journey with steps 5 and 6; step 0 always runs).
+const ONLY_STEPS = new Set(
+  (process.env.PROOF_STEPS ?? '')
+    .split(',')
+    .map((v) => v.trim())
+    .filter(Boolean),
+);
+const runs = (step) => ONLY_STEPS.size === 0 || ONLY_STEPS.has(step);
 mkdirSync(EVIDENCE, { recursive: true });
 const PROGRESS = join(EVIDENCE, 'proof-log.txt');
 writeFileSync(PROGRESS, '');
@@ -95,12 +119,17 @@ function instrument(page, net, commands) {
       path: redact(url.pathname).slice(0, 120),
       t: Date.now() - RUN_START,
     };
+    if (/usdt/i.test(url.pathname + url.search)) usdtRequests.push({ ...entry });
     if (url.pathname === '/session') net.push({ tag: 'homeserver-session', ...entry });
-    else if (/\/auth\/grant/.test(url.pathname)) net.push({ tag: 'grant', ...entry });
+    else if (url.origin === SERVICE && /^\/v1\/auth\/grant-session(s|-challenges)(\/|$)/.test(url.pathname))
+      net.push({ tag: 'gs1', ...entry });
+    else if (/\/auth\/grant(\/|$)/.test(url.pathname)) net.push({ tag: 'grant', ...entry });
     else if (url.origin === SERVICE && url.pathname.startsWith('/v1/auth/sessions'))
       net.push({ tag: 'marketplace-session', ...entry });
     else if (url.origin === SERVICE && /\/payment-config$/.test(url.pathname))
       net.push({ tag: 'payment-config', ...entry });
+    else if (url.origin === SERVICE && url.pathname.startsWith('/v1/connectors'))
+      net.push({ tag: 'connectors', ...entry });
     if (method === 'POST' && /\/v1\/commands/.test(url.pathname)) {
       const kind = ((request.postData() || '').match(/"kind"\s*:\s*"([^"]+)"/) || [])[1] || 'unknown';
       commands.push({ kind, status: response.status() });
@@ -138,29 +167,50 @@ const signedInAs = (page, key, timeout = 180_000) =>
     { timeout },
   );
 
+// The session lives in localStorage `auth-store` up to v0.6.50 and `shop-auth-store` from #147
+// (v0.6.51, storage namespace); every read below takes the new key first.
+// Up to v0.6.48 /sign-in shows the Ring and Bitkit QRs side by side. From #135 (v0.6.49) it shows one
+// QR with a "Sign-in app" toggle (Pubky Ring | Bitkit); each copy button renders only for its signer.
+const SIGNER_OF_LABEL = { 'Copy authentication link': 'Pubky Ring', 'Copy Bitkit authentication link': 'Bitkit' };
+async function showSigner(page, label) {
+  const toggle = page.getByRole('group', { name: 'Sign-in app' }).first();
+  if (!(await toggle.count())) return;
+  if (
+    await page
+      .getByRole('button', { name: label })
+      .first()
+      .isVisible()
+      .catch(() => false)
+  )
+    return;
+  await toggle.getByRole('radio', { name: SIGNER_OF_LABEL[label] }).first().click();
+}
+async function qrLive(page, label) {
+  await showSigner(page, label);
+  await page.waitForFunction(
+    (value) => {
+      const el = document.querySelector(`[aria-label="${value}"]`);
+      return Boolean(el && !el.disabled && el.querySelector('[data-testid="qr-auth-url"]'));
+    },
+    label,
+    { timeout: 180_000 },
+  );
+  return await page.getByRole('button', { name: label }).first().isVisible();
+}
 async function bothQrsLive(page) {
   await page.goto(at('/sign-in'), { waitUntil: 'domcontentloaded', timeout: 180_000 });
   await waitForAppReady(page);
   await page
-    .getByRole('button', { name: 'Copy authentication link' })
+    .locator('[aria-label="Copy authentication link"],[aria-label="Copy Bitkit authentication link"]')
     .first()
     .waitFor({ state: 'visible', timeout: 180_000 });
-  await page.waitForFunction(
-    () =>
-      ['Copy authentication link', 'Copy Bitkit authentication link'].every((label) => {
-        const el = document.querySelector(`[aria-label="${label}"]`);
-        return Boolean(el && !el.disabled && el.querySelector('[data-testid="qr-auth-url"]'));
-      }),
-    null,
-    { timeout: 180_000 },
-  );
-  return (
-    (await page.getByRole('button', { name: 'Copy authentication link' }).first().isVisible()) &&
-    (await page.getByRole('button', { name: 'Copy Bitkit authentication link' }).first().isVisible())
-  );
+  const bitkit = await qrLive(page, 'Copy Bitkit authentication link');
+  const ring = await qrLive(page, 'Copy authentication link');
+  return ring && bitkit;
 }
 
 async function copyQrUrl(page, label) {
+  await qrLive(page, label);
   await page.evaluate(() => navigator.clipboard.writeText(''));
   await page.getByRole('button', { name: label }).first().click();
   const handle = await page.waitForFunction(
@@ -231,8 +281,56 @@ async function emptyCart(page) {
   return await page.getByRole('button', { name: /^Remove / }).count();
 }
 
-// Step 4 runs as the buyer seat on the seller-seat fixture listing that
-// production-paypal-fixture.mjs publishes (staging: staging-fixture.mjs); a seller cannot buy its own listing.
+// Listing CTAs: "Add to cart" / "Approve to buy" up to v0.6.48; one "Buy" button from #135 (v0.6.49).
+const BUY_LABEL = /^(Add to cart|Buy)$/;
+const LISTING_CTA =
+  /^(Add to cart|Buy|Approve to buy|Sign in to buy|Sold out|Held by another buyer|You cannot buy your own listing)$/;
+// From #135 the "Buy" button renders at once and stays disabled until availability loads (earlier
+// builds showed "Checking availability…" instead), so wait for an enabled purchase button.
+async function waitForEnabledPurchase(page, timeout = 30_000) {
+  await page
+    .waitForFunction(
+      () =>
+        [...document.querySelectorAll('button')].some(
+          (el) => /^(Add to cart|Buy|Approve to buy)$/.test((el.textContent || '').trim()) && !el.disabled,
+        ),
+      null,
+      { timeout },
+    )
+    .catch(() => {});
+}
+
+// Step 4 candidates when no PROOF_PAYPAL_LISTING_URL is set: active fixed-price listings on the
+// marketplace Nexus whose seller's public payment-config offers PayPal, test titles first, never a
+// listing of either proof seat. Read-only: nothing is published or changed for the proof.
+// Each environment has its own index: -7108 follows the production homeserver only (16 Oct 2026).
+const NEXUS =
+  process.env.PROOF_NEXUS ??
+  (SERVICE === 'https://staging-api.pubky.app'
+    ? 'https://nexusd-staging-production.up.railway.app'
+    : 'https://nexusd-production-7108.up.railway.app');
+async function discoverPaypalListings(excludeOwners) {
+  const items = await (await fetch(`${NEXUS}/v0/stream/listings?limit=100`)).json().catch(() => []);
+  const rows = (Array.isArray(items) ? items : []).filter(
+    (row) => row.state === 'active' && row.sale_format === 'fixed_price' && !excludeOwners.includes(row.owner_id),
+  );
+  rows.sort((a, b) => Number(/test|do not buy/i.test(b.title ?? '')) - Number(/test|do not buy/i.test(a.title ?? '')));
+  const paypal = new Map();
+  const out = [];
+  for (const row of rows) {
+    if (!paypal.has(row.owner_id)) {
+      const config = await (await fetch(`${SERVICE}/v0/sellers/${encodeURIComponent(row.owner_id)}/payment-config`))
+        .json()
+        .catch(() => null);
+      paypal.set(row.owner_id, config?.paypal_available === true);
+    }
+    if (paypal.get(row.owner_id)) out.push(`/marketplace/listing/${row.owner_id}/${row.id}`);
+    if (out.length >= 5) break;
+  }
+  return out;
+}
+
+// Step 4 runs as the buyer seat on a listing whose seller takes PayPal (a seller cannot buy its own listing).
 async function paypalCheckout(page, commands, href) {
   const sellerOf = (value) => {
     const parts = value.split('/');
@@ -243,7 +341,7 @@ async function paypalCheckout(page, commands, href) {
     .json()
     .catch(() => null);
   const sellerHasPaypal = sellerConfig?.paypal_available === true;
-  log(`fixture seller ${sellerOf(href).slice(0, 8)} public payment-config paypal=${sellerHasPaypal}`);
+  log(`listing seller ${sellerOf(href).slice(0, 8)} public payment-config paypal=${sellerHasPaypal}`);
   await emptyCart(page);
   {
     await page.goto(at(href), { waitUntil: 'domcontentloaded' });
@@ -260,23 +358,29 @@ async function paypalCheckout(page, commands, href) {
       .slice(0, 80);
     await page
       .waitForFunction(
-        () => {
-          const button = [...document.querySelectorAll('button')].find((el) =>
-            /Add to cart|Approve to buy|Sold out|Held|Unavailable|cannot buy|Checking availability/.test(
-              el.textContent || '',
-            ),
-          );
-          return Boolean(button && !/Checking availability/.test(button.textContent || ''));
-        },
-        null,
+        (source) =>
+          [...document.querySelectorAll('button')].some((el) => new RegExp(source).test((el.textContent || '').trim())),
+        LISTING_CTA.source,
         { timeout: 30_000 },
       )
       .catch(() => {});
-    const add = page.getByRole('button', { name: 'Add to cart', exact: true }).first();
+    await waitForEnabledPurchase(page);
+    const add = page.getByRole('button', { name: BUY_LABEL }).first();
     if (
       !((await add.count()) && (await add.isVisible().catch(() => false)) && (await add.isEnabled().catch(() => false)))
     ) {
-      return { sellerHasPaypal, error: `fixture listing "${title}" has no enabled Add to cart for the buyer` };
+      const buttons = await page.evaluate(
+        (source) =>
+          [...document.querySelectorAll('button')]
+            .filter((el) => new RegExp(source).test((el.textContent || '').trim()))
+            .map((el) => `${(el.textContent || '').trim()}${el.disabled ? ' (disabled)' : ''}`),
+        LISTING_CTA.source,
+      );
+      await shot(page, `06-skip-${(href.split('/').filter(Boolean).slice(-1)[0] || '').slice(0, 8)}.png`);
+      return {
+        sellerHasPaypal,
+        error: `listing "${title}" has no enabled Add to cart or Buy for the buyer: ${JSON.stringify(buttons)}`,
+      };
     }
     await add.click();
     await page.waitForTimeout(1200);
@@ -319,9 +423,30 @@ async function paypalCheckout(page, commands, href) {
     const loadingLeft = await page.locator('[aria-label="Loading payment methods"]').count();
     const retry = await page.getByTestId('marketplace-checkout-methods-retry').count();
     const forbidden = FORBIDDEN_COPY.test(await page.locator('body').innerText());
+    const usdtOption = await page.getByTestId('marketplace-checkout-method-usdt').count();
+    const usdtText = /USDT/.test(await page.locator('body').innerText());
+    let paypalSelected = false;
+    if (paypal) {
+      await page.getByTestId('marketplace-checkout-method-paypal').first().click();
+      await page.waitForTimeout(800);
+      // aria-pressed exists from #135 (v0.6.49); earlier builds expose no selected state.
+      const pressed = await page.getByTestId('marketplace-checkout-method-paypal').first().getAttribute('aria-pressed');
+      paypalSelected = pressed === null ? null : pressed === 'true';
+    }
     const payControl = page.getByTestId('marketplace-checkout-pay');
     const payState = (await payControl.count())
-      ? { visible: await payControl.first().isVisible(), disabled: await payControl.first().isDisabled() }
+      ? {
+          visible: await payControl.first().isVisible(),
+          disabled: await payControl.first().isDisabled(),
+          reason:
+            (
+              (await page
+                .locator('#checkout-pay-reason')
+                .first()
+                .innerText()
+                .catch(() => '')) || ''
+            ).slice(0, 120) || null,
+        }
       : null;
     await page
       .getByTestId('marketplace-checkout-method-paypal')
@@ -335,7 +460,7 @@ async function paypalCheckout(page, commands, href) {
       /^(checkout|order|payment|fulfillment|offer|auction|drop|inventory)\./i.test(row.kind),
     );
     log(
-      `checkout "${title}" listing=${listingId} seller=${sellerPrefix} config=${configStatus} paypal=${paypal} loadingLeft=${loadingLeft} retry=${retry} forbidden=${forbidden} pay=${JSON.stringify(payState)}`,
+      `checkout "${title}" listing=${listingId} seller=${sellerPrefix} config=${configStatus} paypal=${paypal} selected=${paypalSelected} loadingLeft=${loadingLeft} retry=${retry} forbidden=${forbidden} pay=${JSON.stringify(payState)}`,
     );
     const cartLeft = await emptyCart(page);
     return {
@@ -345,12 +470,15 @@ async function paypalCheckout(page, commands, href) {
       sellerPrefix,
       configStatus,
       paypal,
+      paypalSelected,
       loadingLeft,
       retry,
       forbidden,
       payState,
       payCommands,
       cartLeft,
+      usdtOption,
+      usdtText,
     };
   }
 }
@@ -382,7 +510,47 @@ async function renderedOrderCards(page) {
 
 // Activity rows link to /marketplace/orders#order-<id>; the Orders page renders only a
 // card per order that belongs in its history (paid/receipted, or held reservations).
-async function activityAndOrder(page, tag) {
+// Grant sessions carry no marketplace session. Settings → Get paid offers "Authorize" (Ring approval of the
+// marketplace session); approve it as the given seat so commerce state (orders, Activity) can sync.
+async function enableMarketplaceSession(page, keypair) {
+  await page.goto(at('/marketplace/settings'), { waitUntil: 'domcontentloaded', timeout: 180_000 });
+  await waitForAppReady(page);
+  await page
+    .getByRole('region', { name: 'Payment methods' })
+    .waitFor({ state: 'visible', timeout: 120_000 })
+    .catch(() => {});
+  await page.waitForTimeout(3000);
+  const authorize = page.getByRole('button', { name: /^Authorize$|Enable selling/ }).first();
+  if (!(await authorize.isVisible().catch(() => false))) return 'already-enabled';
+  await authorize.click();
+  const copy = page.getByRole('button', { name: 'Copy authorization link' }).first();
+  await copy.waitFor({ state: 'visible', timeout: 60_000 });
+  await page.waitForFunction(
+    () => {
+      const b = document.querySelector('[aria-label="Copy authorization link"]');
+      return Boolean(b && !b.disabled);
+    },
+    null,
+    { timeout: 60_000 },
+  );
+  await page.evaluate(() => navigator.clipboard.writeText(''));
+  await copy.click();
+  const handle = await page.waitForFunction(
+    async () => {
+      const t = await navigator.clipboard.readText();
+      return t.startsWith('pubkyauth://') ? t : null;
+    },
+    null,
+    { timeout: 15_000 },
+  );
+  await new Pubky().signer(keypair).approveAuthRequest(await handle.jsonValue());
+  await page.getByText('Waiting for approval in Pubky Ring').first().waitFor({ state: 'hidden', timeout: 120_000 });
+  await page.waitForTimeout(4000);
+  return 'approved';
+}
+
+async function activityAndOrder(page, tag, keypair) {
+  log(`marketplace session (${tag}): ${await enableMarketplaceSession(page, keypair)}`);
   const rendered = new Set(await renderedOrderCards(page));
   await page.goto(at('/marketplace/notifications'), { waitUntil: 'domcontentloaded' });
   await waitForAppReady(page);
@@ -480,7 +648,10 @@ async function ringSignIn(page, keypair) {
     (expected) => {
       const raw = localStorage.getItem('shop-auth-store') ?? localStorage.getItem('auth-store');
       const state = raw ? (JSON.parse(raw).state ?? {}) : {};
-      return state.currentUserPubky === expected && typeof state.sessionExport === 'string';
+      return (
+        state.currentUserPubky === expected &&
+        (typeof state.sessionExport === 'string' || typeof state.grantSessionRecordId === 'string')
+      );
     },
     keypair.publicKey.z32(),
     { timeout: 180_000 },
@@ -554,8 +725,17 @@ async function revokeRunSessions(keypair) {
   return audit;
 }
 
+// Any request whose path or query mentions USDT (step 4 and step 10 require none while the flag is off).
+const usdtRequests = [];
 const consoleErrors = [];
 const summary = {};
+const storefrontBefore = new Map();
+for (const keypair of [seat, buyerSeat]) {
+  storefrontBefore.set(
+    keypair.publicKey.z32(),
+    await storefrontExists(new Pubky().publicStorage, keypair.publicKey.z32()),
+  );
+}
 const browser = await chromium.launch({ headless: true });
 try {
   const html = await (await fetch(at('/marketplace'))).text();
@@ -564,57 +744,69 @@ try {
   check('0', 'production serves the expected deployment', !EXPECTED_DPL || dpl === EXPECTED_DPL, `${dpl}`);
 
   // Journey A: Ring (steps 1, 5, 6) on one browser session.
-  {
+  if (runs('1')) {
     const net = [];
     const commands = [];
     const { context, page } = await newContext(browser);
     instrument(page, net, commands);
     try {
-      check('1', 'Ring and Bitkit QRs are both live on /sign-in', await bothQrsLive(page));
+      check(
+        '1',
+        'Ring and Bitkit QRs are both live on /sign-in (side by side, or through the Sign-in app toggle from #135)',
+        await bothQrsLive(page),
+      );
       await shot(page, '01-sign-in-both-qrs.png');
       const ringUrl = await copyQrUrl(page, 'Copy authentication link');
       const parsed = new URL(ringUrl);
       check(
         '1',
-        'Ring QR is the cookie sign-in URL for the Shop caps',
-        parsed.host === 'signin' &&
-          [...parsed.searchParams.keys()].sort().join(',') === 'caps,relay,secret' &&
-          parsed.searchParams.get('caps') === CAPABILITIES,
+        'Ring QR is a signin_grant for the Shop caps and client id (grant sessions, Shop #248)',
+        parsed.host === 'signin_grant' &&
+          [...parsed.searchParams.keys()].sort().join(',') === 'caps,cid,cpk,relay,secret' &&
+          parsed.searchParams.get('caps') === CAPABILITIES &&
+          parsed.searchParams.get('cid') === CLIENT_ID,
         `host=${parsed.host}`,
       );
       const leak = await qrDomLeak(page, ringUrl);
       check('1', 'the QR slot does not carry the authorization URL in the DOM', !leak.attr && !leak.html);
       await new Pubky().signer(seat).approveAuthRequest(ringUrl);
       log('ring: approved');
-      await signedInAs(page, 'sessionExport');
+      await signedInAs(page, 'grantSessionRecordId');
       await page.waitForFunction((path) => window.location.pathname !== path, signInPath, { timeout: 180_000 });
       await page.waitForTimeout(4000);
       await shot(page, '02-ring-signed-in.png');
       const state = await authState(page);
       check(
         '1',
-        'signed in as the seat with a cookie export and no grant record',
-        state.currentUserPubky === pubky && !state.grantSessionRecordId,
+        'signed in as the seat with a grant record and no cookie export',
+        state.currentUserPubky === pubky && Boolean(state.grantSessionRecordId) && state.sessionExport === null,
         prefix(state.currentUserPubky),
       );
       const hsPosts = net.filter((e) => e.tag === 'homeserver-session' && e.method === 'POST');
       const mpPosts = net.filter((e) => e.tag === 'marketplace-session' && e.method === 'POST');
+      const ringGrantPosts = net.filter((e) => e.tag === 'grant' && e.method === 'POST');
       check(
         '1',
-        'one approval → one homeserver POST /session',
-        hsPosts.length === 1 && hsPosts[0].status < 300,
-        hsPosts.map((e) => e.status).join(','),
+        'one approval → one grant POST 2xx (grant session)',
+        ringGrantPosts.length === 1 && ringGrantPosts[0].status < 300,
+        ringGrantPosts.map((e) => e.status).join(','),
       );
+      if (process.env.PROOF_GS1 === '1') {
+        const gs1Posts = net.filter((e) => e.tag === 'gs1' && e.method === 'POST');
+        const challenges = gs1Posts.filter((e) => e.path.includes('grant-session-challenges'));
+        const mints = gs1Posts.filter((e) => !e.path.includes('grant-session-challenges'));
+        check(
+          '1',
+          'sign-in minted a marketplace session from the grant with no further approval (one challenge, one mint, both 2xx)',
+          challenges.length === 1 && mints.length === 1 && [...challenges, ...mints].every((e) => e.status < 300),
+          gs1Posts.map((e) => `${e.path.split('/').pop()}:${e.status}`).join(','),
+        );
+      }
       check(
         '1',
-        'one approval → one marketplace POST /v1/auth/sessions',
-        mpPosts.length === 1 && mpPosts[0].status < 300,
-        mpPosts.map((e) => e.status).join(','),
-      );
-      check(
-        '1',
-        'no grant session was exchanged for the Ring approval',
-        !net.some((e) => e.tag === 'grant' && e.method === 'POST'),
+        'one approval → no cookie homeserver POST /session and no cookie marketplace POST /v1/auth/sessions',
+        hsPosts.length === 0 && mpPosts.length === 0,
+        `hs=${hsPosts.length} mp=${mpPosts.length}`,
       );
       check(
         '1',
@@ -624,14 +816,14 @@ try {
           .count()) === 0,
       );
 
-      const act = await activityAndOrder(page, 'seller');
+      const act = await activityAndOrder(page, 'seller', seat);
       summary.activity = { seller: act };
       checkActivity(act, 'seller');
 
-      const deletesBefore = net.filter((e) => e.tag === 'homeserver-session' && e.method === 'DELETE').length;
+      const deletesBefore = net.filter((e) => e.tag === 'grant' && e.method === 'DELETE').length;
       const viaSettings = await signOutThroughSettings(page);
       await shot(page, '11-signed-out.png');
-      const deletes = net.filter((e) => e.tag === 'homeserver-session' && e.method === 'DELETE').slice(deletesBefore);
+      const deletes = net.filter((e) => e.tag === 'grant' && e.method === 'DELETE').slice(deletesBefore);
       check(
         '6',
         'sign-out from Settings → Account clears the Shop state',
@@ -640,7 +832,7 @@ try {
       );
       check(
         '6',
-        'sign-out ends the homeserver session (DELETE /session 2xx)',
+        'sign-out ends the grant session (DELETE /auth/grant/session 2xx)',
         deletes.some((e) => e.status >= 200 && e.status < 300),
         deletes.map((e) => e.status).join(','),
       );
@@ -659,13 +851,13 @@ try {
   }
 
   // Journey B: Bitkit grant (step 2).
-  {
+  if (runs('2')) {
     const net = [];
     const commands = [];
     const { context, page } = await newContext(browser);
     instrument(page, net, commands);
     try {
-      check('2', 'Bitkit QR is live next to the Ring QR without a click', await bothQrsLive(page));
+      check('2', 'Bitkit QR is live on /sign-in alongside the Ring QR', await bothQrsLive(page));
       const grantUrl = await copyQrUrl(page, 'Copy Bitkit authentication link');
       const parsed = new URL(grantUrl);
       const link = SigninGrantDeepLink.parse(grantUrl);
@@ -732,28 +924,39 @@ try {
     }
   }
 
-  // Step 4: buyer seat checkout on the PayPal fixture listing.
-  {
+  // Step 4: buyer seat checkout on a listing whose seller takes PayPal, read-only.
+  let listingHref = process.env.PROOF_PAYPAL_LISTING_URL ?? null;
+  if (runs('4')) {
     const net = [];
     const commands = [];
     const { context, page } = await newContext(browser);
     instrument(page, net, commands);
     try {
-      const fixture = process.env.PROOF_PAYPAL_LISTING_URL;
+      const candidates = listingHref ? [listingHref] : await discoverPaypalListings([pubky, buyerSeat.publicKey.z32()]);
+      summary.checkoutCandidates = candidates.length;
       check(
         '4',
-        'a PayPal fixture listing is provided (run under production-paypal-fixture.mjs proof)',
-        Boolean(fixture),
+        'a listing whose seller takes PayPal is available (PROOF_PAYPAL_LISTING_URL or Nexus discovery)',
+        candidates.length > 0,
+        `candidates=${candidates.length}`,
       );
-      if (fixture) {
+      if (candidates.length) {
         await ringSignIn(page, buyerSeat);
         log(`buyer ${prefix(buyerSeat.publicKey.z32())} signed in with Ring for checkout`);
-        const co = await paypalCheckout(page, commands, fixture);
+        let co = null;
+        for (const href of candidates) {
+          co = await paypalCheckout(page, commands, href);
+          if (!co.error) {
+            listingHref = href;
+            break;
+          }
+          log(`checkout candidate skipped: ${co.error}`);
+        }
         summary.checkout = co;
-        check('4', 'the fixture seller offers PayPal', co.sellerHasPaypal);
+        check('4', 'the listing seller offers PayPal', co.sellerHasPaypal);
         check(
           '4',
-          'the buyer reached checkout on the fixture listing',
+          'the buyer reached checkout on the listing',
           !co.error,
           co.error ?? `"${co.title}" seller=${co.sellerPrefix} listing=${co.listingId}`,
         );
@@ -765,7 +968,22 @@ try {
             `status=${co.configStatus}`,
           );
           check('4', 'PayPal is offered at checkout', co.paypal >= 1);
+          if (co.paypalSelected === null)
+            note('4', 'PayPal selection state not exposed by this build (aria-pressed arrives with #135)', true);
+          else check('4', 'selecting PayPal marks it as the chosen method', co.paypalSelected);
+          check(
+            '4',
+            'the Pay control renders for PayPal (never clicked)',
+            Boolean(co.payState?.visible),
+            JSON.stringify(co.payState),
+          );
           check('4', 'no "no payment method" copy', !co.forbidden);
+          check(
+            '4',
+            'no USDT option or USDT text at checkout (flag off)',
+            co.usdtOption === 0 && !co.usdtText,
+            `option=${co.usdtOption} text=${co.usdtText}`,
+          );
           check(
             '4',
             'nothing paid and no order command sent',
@@ -775,10 +993,10 @@ try {
           check('4', 'cart emptied afterwards', co.cartLeft === 0);
         }
         await signOutThroughSettings(page);
-        const deletes = net.filter((e) => e.tag === 'homeserver-session' && e.method === 'DELETE');
+        const deletes = net.filter((e) => e.tag === 'grant' && e.method === 'DELETE');
         check(
           '4',
-          'buyer seat signed out after checkout (DELETE /session 2xx)',
+          'buyer seat signed out after checkout (DELETE /auth/grant/session 2xx)',
           deletes.some((e) => e.status >= 200 && e.status < 300),
           deletes.map((e) => e.status).join(','),
         );
@@ -792,51 +1010,609 @@ try {
     }
   }
 
-  // Step 5 order page: the seller's Activity may only point at orders its Orders page hides;
-  // then the buyer seat, whose paid orders are rendered, proves the row → order navigation.
-  let opened = summary.activity?.seller?.opened ?? null;
-  let openedBy = 'seller';
-  if (!opened) {
+  // Step 7: a Bitkit-grant buyer on the step 4 listing. The purchase CTA opens a grant-link QR (#94)
+  // that is never approved; the shared navigation reaches Shop settings (#118, #119) at desktop and
+  // mobile width; the seller's public Bitcoin availability explains which checkout wallet states
+  // (#128) this environment can reach.
+  if (listingHref && runs('7')) {
+    const net = [];
+    const commands = [];
+    const { context, page } = await newContext(browser);
+    instrument(page, net, commands);
+    const buyerPubky = buyerSeat.publicKey.z32();
+    const grantBuyer = {};
+    try {
+      await bothQrsLive(page);
+      await new Pubky().signer(buyerSeat).approveAuthRequest(await copyQrUrl(page, 'Copy Bitkit authentication link'));
+      await page.waitForFunction(
+        (expected) => {
+          const raw = localStorage.getItem('shop-auth-store') ?? localStorage.getItem('auth-store');
+          const state = raw ? (JSON.parse(raw).state ?? {}) : {};
+          return state.currentUserPubky === expected && typeof state.grantSessionRecordId === 'string';
+        },
+        buyerPubky,
+        { timeout: 180_000 },
+      );
+      await page.waitForTimeout(3000);
+      log(`buyer ${prefix(buyerPubky)} signed in with a Bitkit grant`);
+      const href = listingHref;
+      await page.goto(at(href), { waitUntil: 'domcontentloaded' });
+      await waitForAppReady(page);
+      const ctaPattern = LISTING_CTA;
+      await page
+        .waitForFunction(
+          (source) =>
+            [...document.querySelectorAll('button')].some((el) =>
+              new RegExp(source).test((el.textContent || '').trim()),
+            ),
+          ctaPattern.source,
+          { timeout: 60_000 },
+        )
+        .catch(() => {});
+      await waitForEnabledPurchase(page);
+      const cta = await page.evaluate(
+        (source) =>
+          [...document.querySelectorAll('button')]
+            .map((el) => (el.textContent || '').trim())
+            .find((text) => new RegExp(source).test(text)) ?? null,
+        ctaPattern.source,
+      );
+      grantBuyer.cta = cta;
+      check(
+        '7',
+        'the grant buyer sees a purchase control on the listing',
+        ['Approve to buy', 'Buy', 'Add to cart'].includes(cta),
+        `cta=${cta}`,
+      );
+      if (cta === 'Approve to buy' || cta === 'Buy') {
+        await page.getByRole('button', { name: cta, exact: true }).first().click();
+        // v0.6.48 card: "Approve in Bitkit" / "Approve in Pubky Ring"; #135 card: "Authorize".
+        const opener = page.getByRole('button', { name: /^(Approve in (Bitkit|Pubky Ring)|Authorize)$/ }).first();
+        await opener.waitFor({ state: 'visible', timeout: 30_000 }).catch(() => {});
+        grantBuyer.approvalOpener = (await opener.textContent().catch(() => null))?.trim() ?? null;
+        await shot(page, '12-approve-to-buy.png');
+        if (grantBuyer.approvalOpener) await opener.click();
+        const qr = page
+          .locator('[role="dialog"] [aria-label="Copy authorization link"] [data-testid="qr-auth-url"]')
+          .first();
+        const qrShown = await qr
+          .waitFor({ state: 'visible', timeout: 60_000 })
+          .then(() => true)
+          .catch(() => false);
+        await shot(page, '12b-approval-qr.png');
+        let host = null;
+        if (qrShown) {
+          const copy = page.locator('[role="dialog"] [aria-label="Copy authorization link"]').first();
+          await page.evaluate(() => navigator.clipboard.writeText(''));
+          await copy.click().catch(() => {});
+          const link = await page
+            .waitForFunction(
+              async () => {
+                const text = await navigator.clipboard.readText();
+                return text.startsWith('pubkyauth://') ? text : null;
+              },
+              null,
+              { timeout: 10_000 },
+            )
+            .then((handle) => handle.jsonValue())
+            .catch(() => null);
+          host = link ? new URL(link).host : null;
+        }
+        grantBuyer.approvalHost = host;
+        check(
+          '7',
+          'the purchase CTA opens a purchase-approval QR',
+          qrShown,
+          `cta=${cta} opener=${grantBuyer.approvalOpener}`,
+        );
+        check('7', 'the purchase approval is a grant link (#94)', Boolean(host && /grant/.test(host)), `host=${host}`);
+        await page.keyboard.press('Escape');
+        await page.waitForTimeout(1500);
+        grantBuyer.cartLeft = await emptyCart(page);
+      } else {
+        note(
+          '7',
+          'purchase approval QR not exercised: the grant buyer needed no approval on this listing',
+          true,
+          `cta=${cta}`,
+        );
+      }
+      check(
+        '7',
+        'nothing paid and no order command sent',
+        commands.filter((row) => /^(checkout|order|payment)\./i.test(row.kind)).length === 0,
+        JSON.stringify(commands),
+      );
+      const navSettings = async () =>
+        await page.evaluate(
+          (settingsPath) =>
+            [...document.querySelectorAll('a[href]')].filter((el) => {
+              const path = new URL(el.href, location.origin).pathname;
+              const box = el.getBoundingClientRect();
+              return path.startsWith(settingsPath) && box.width > 0 && box.height > 0;
+            }).length,
+          `${BASE_PATH}/settings`,
+        );
+      await page.goto(at('/marketplace'), { waitUntil: 'domcontentloaded' });
+      await waitForAppReady(page);
+      await page.waitForTimeout(3000);
+      grantBuyer.desktopSettingsLinks = await navSettings();
+      await shot(page, '13-nav-desktop.png');
+      check(
+        '7',
+        'desktop: the shared navigation shows a Settings link (#118, #119)',
+        grantBuyer.desktopSettingsLinks >= 1,
+        `links=${grantBuyer.desktopSettingsLinks}`,
+      );
+      await page.setViewportSize({ width: 390, height: 844 });
+      await page.reload({ waitUntil: 'domcontentloaded' });
+      await waitForAppReady(page);
+      await page.waitForTimeout(3000);
+      grantBuyer.mobileSettingsLinks = await navSettings();
+      await shot(page, '14-nav-mobile.png');
+      if (grantBuyer.mobileSettingsLinks === 0) {
+        const menu = page.getByRole('button', { name: /menu|navigation/i }).first();
+        if (await menu.isVisible().catch(() => false)) {
+          await menu.click();
+          await page.waitForTimeout(1500);
+          grantBuyer.mobileSettingsLinks = await navSettings();
+          await shot(page, '15-nav-mobile-menu.png');
+        }
+      }
+      check(
+        '7',
+        'mobile: Settings is reachable from the navigation',
+        grantBuyer.mobileSettingsLinks >= 1,
+        `links=${grantBuyer.mobileSettingsLinks}`,
+      );
+      await page.goto(at(href), { waitUntil: 'domcontentloaded' });
+      await waitForAppReady(page);
+      await page.waitForTimeout(3000);
+      await shot(page, '16-listing-mobile.png');
+      await page.setViewportSize({ width: 1440, height: 1000 });
+      const sellerPk = href.split('/')[href.split('/').indexOf('listing') + 1];
+      const config = await (await fetch(`${SERVICE}/v0/sellers/${encodeURIComponent(sellerPk)}/payment-config`))
+        .json()
+        .catch(() => null);
+      const health = await (await fetch(`${SERVICE}/health`)).json().catch(() => null);
+      grantBuyer.sellerBitcoin = {
+        bitcoinAvailable: config?.bitcoin_available ?? null,
+        bitcoinOfferAvailable: config?.bitcoin_offer_available ?? null,
+        serviceOffer: health?.paykit_rail?.bitcoin_offer_available ?? null,
+      };
+      note(
+        '7',
+        'Bitcoin checkout reachable on this environment (needed for the #128 wallet states)',
+        grantBuyer.sellerBitcoin.bitcoinAvailable === true && grantBuyer.sellerBitcoin.serviceOffer === true,
+        JSON.stringify(grantBuyer.sellerBitcoin),
+      );
+      const viaSettings = await signOutThroughSettings(page);
+      check('7', 'grant buyer signed out from Settings', viaSettings);
+    } catch (error) {
+      await shot(page, 'grant-buyer-journey-error.png').catch(() => {});
+      check('7', 'grant-buyer journey ran to completion', false, String(error?.message ?? error).slice(0, 240));
+    } finally {
+      summary.grantBuyer = grantBuyer;
+      summary.grantBuyerNetwork = net;
+      await context.close();
+    }
+  }
+
+  // Step 8: the seller seat (Ring) opens the main buyer and seller surfaces read-only: cart, checkout,
+  // orders, My shop and storefront render a heading and no error page, at desktop and mobile width.
+  if (runs('8')) {
+    const net = [];
+    const commands = [];
+    const { context, page } = await newContext(browser);
+    instrument(page, net, commands);
+    const surfaces = {};
+    try {
+      await ringSignIn(page, seat);
+      for (const [width, height, tag] of [
+        [1440, 1000, 'desktop'],
+        [390, 844, 'mobile'],
+      ]) {
+        await page.setViewportSize({ width, height });
+        for (const name of ['cart', 'checkout', 'orders', 'my-shop', 'storefront']) {
+          await page.goto(at(`/marketplace/${name}`), { waitUntil: 'domcontentloaded', timeout: 180_000 });
+          await waitForAppReady(page);
+          await page.waitForTimeout(2500);
+          const view = await page.evaluate(() => ({
+            path: location.pathname,
+            heading: (document.querySelector('h1')?.textContent ?? '').replace(/\s+/g, ' ').trim().slice(0, 60),
+            error: /Something went wrong|Application error|This page could not be found|Unhandled Runtime Error/i.test(
+              document.body?.innerText ?? '',
+            ),
+          }));
+          surfaces[`${name}-${tag}`] = view;
+          await shot(page, `17-${name}-${tag}.png`);
+          check(
+            '8',
+            `${name} renders at ${tag} width without an error page`,
+            !view.error && view.heading.length > 0,
+            `${view.path} h1="${view.heading}"`,
+          );
+        }
+      }
+      check('8', 'surfaces sent no command', commands.length === 0, JSON.stringify(commands));
+      await page.setViewportSize({ width: 1440, height: 1000 });
+      const viaSettings = await signOutThroughSettings(page);
+      check('8', 'seller signed out from Settings', viaSettings);
+    } catch (error) {
+      await shot(page, 'surfaces-journey-error.png').catch(() => {});
+      check('8', 'surfaces journey ran to completion', false, String(error?.message ?? error).slice(0, 240));
+    } finally {
+      summary.surfaces = surfaces;
+      await context.close();
+    }
+  }
+
+  // Step 9: the buyer seat's Bitcoin wallet state at checkout, read-only (#128). A buyer whose pubky
+  // has Paykit receiver markers and no App Registry (Bitkit 2.5) must not see the Bitkit 2.6 or
+  // "Couldn't verify" notice. PROOF_BITCOIN_LISTING_URL is tried first.
+  // Pay is never clicked; the cart is emptied.
+  if (runs('9')) {
+    const net = [];
+    const commands = [];
+    const { context, page } = await newContext(browser);
+    instrument(page, net, commands);
+    const btc = {};
+    try {
+      const buyerPubky = buyerSeat.publicKey.z32();
+      btc.registry = await new Pubky().publicStorage
+        .exists(`pubky://${buyerPubky}/pub/paykit/v0/app-registry.json`)
+        .catch(() => null);
+      const items = await (await fetch(`${NEXUS}/v0/stream/listings?limit=100`)).json().catch(() => []);
+      const configs = new Map();
+      const hrefs = process.env.PROOF_BITCOIN_LISTING_URL ? [process.env.PROOF_BITCOIN_LISTING_URL] : [];
+      for (const row of Array.isArray(items) ? items : []) {
+        if (row.state !== 'active' || row.sale_format !== 'fixed_price' || row.owner_id === buyerPubky) continue;
+        if (hrefs.some((href) => href.endsWith(`/${row.id}`))) continue;
+        if (!configs.has(row.owner_id))
+          configs.set(
+            row.owner_id,
+            await (await fetch(`${SERVICE}/v0/sellers/${encodeURIComponent(row.owner_id)}/payment-config`))
+              .json()
+              .catch(() => null),
+          );
+        const config = configs.get(row.owner_id);
+        if (
+          config?.bitcoin_available === true &&
+          config?.bitcoin_offer_available !== false &&
+          /test|do not buy/i.test(row.title ?? '')
+        ) {
+          hrefs.push(`/marketplace/listing/${row.owner_id}/${row.id}`);
+        }
+      }
+      btc.candidates = hrefs.length;
+      check(
+        '9',
+        'a test listing whose seller takes Bitcoin is available',
+        hrefs.length > 0,
+        `candidates=${hrefs.length}`,
+      );
+      if (hrefs.length) {
+        await ringSignIn(page, buyerSeat);
+        await emptyCart(page);
+        let canAdd = false;
+        let add = null;
+        btc.skipped = [];
+        for (const href of hrefs) {
+          await page.goto(at(href), { waitUntil: 'domcontentloaded' });
+          await waitForAppReady(page);
+          await page
+            .waitForFunction(
+              (source) =>
+                [...document.querySelectorAll('button')].some((el) =>
+                  new RegExp(source).test((el.textContent || '').trim()),
+                ),
+              LISTING_CTA.source,
+              { timeout: 30_000 },
+            )
+            .catch(() => {});
+          await waitForEnabledPurchase(page);
+          add = page.getByRole('button', { name: BUY_LABEL }).first();
+          canAdd = Boolean((await add.count()) && (await add.isEnabled().catch(() => false)));
+          if (canAdd) {
+            btc.listingHref = href;
+            btc.listing = href
+              .split('/')
+              .slice(-2)
+              .map((part) => part.slice(0, 8))
+              .join('/');
+            break;
+          }
+          const id = (href.split('/').filter(Boolean).slice(-1)[0] || '').slice(0, 8);
+          const buttons = await page.evaluate(
+            (source) =>
+              [...document.querySelectorAll('button')]
+                .filter((el) => new RegExp(source).test((el.textContent || '').trim()))
+                .map((el) => `${(el.textContent || '').trim()}${el.disabled ? ' (disabled)' : ''}`),
+            LISTING_CTA.source,
+          );
+          btc.skipped.push({ id, buttons });
+          await shot(page, `18-skip-${id}.png`);
+        }
+        check('9', 'the buyer can add a Bitcoin test listing to the cart', canAdd, JSON.stringify(btc.skipped));
+        if (canAdd) {
+          await add.click();
+          await page.waitForTimeout(1200);
+          // Grant sessions carry no marketplace session: the first purchase action opens "Enable purchases",
+          // a Ring approval of the marketplace session. Approve it as the buyer seat, then buy again if needed.
+          const enable = page.getByRole('dialog').filter({ hasText: 'Enable purchases' }).first();
+          btc.enablePurchases = await enable.isVisible().catch(() => false);
+          if (btc.enablePurchases) {
+            const copy = enable.getByRole('button', { name: 'Copy authorization link' }).first();
+            await page.waitForFunction(
+              () => {
+                const b = document.querySelector('[role="dialog"] [aria-label="Copy authorization link"]');
+                return Boolean(b && !b.disabled);
+              },
+              null,
+              { timeout: 60_000 },
+            );
+            await page.evaluate(() => navigator.clipboard.writeText(''));
+            await copy.click();
+            const handle = await page.waitForFunction(
+              async () => {
+                const t = await navigator.clipboard.readText();
+                return t.startsWith('pubkyauth://') ? t : null;
+              },
+              null,
+              { timeout: 15_000 },
+            );
+            const link = await handle.jsonValue();
+            btc.enablePurchasesHost = new URL(link).host;
+            await new Pubky().signer(buyerSeat).approveAuthRequest(link);
+            await enable.waitFor({ state: 'hidden', timeout: 120_000 });
+            await page.waitForTimeout(3000);
+          }
+          check(
+            '9',
+            'the Enable purchases approval completed (or was not needed)',
+            !btc.enablePurchases || !(await enable.isVisible().catch(() => false)),
+            JSON.stringify({ enablePurchases: btc.enablePurchases, host: btc.enablePurchasesHost }),
+          );
+          await shot(page, '18-after-add.png');
+          await page.goto(at('/marketplace/cart'), { waitUntil: 'domcontentloaded' });
+          await waitForAppReady(page);
+          await page.waitForTimeout(1500);
+          if (!(await page.getByTestId('marketplace-cart-checkout').count())) {
+            btc.boughtAgain = true;
+            await page.goto(at(btc.listingHref), { waitUntil: 'domcontentloaded' });
+            await waitForAppReady(page);
+            await waitForEnabledPurchase(page);
+            await page.getByRole('button', { name: BUY_LABEL }).first().click();
+            await page.waitForTimeout(2500);
+            await page.goto(at('/marketplace/cart'), { waitUntil: 'domcontentloaded' });
+            await waitForAppReady(page);
+          }
+          await page.getByTestId('marketplace-cart-checkout').first().click();
+          await page.waitForURL(/\/marketplace\/checkout/, { timeout: 30_000 });
+          await waitForAppReady(page);
+          await page
+            .waitForFunction(() => !document.querySelector('[aria-label="Loading payment methods"]'), null, {
+              timeout: 30_000,
+            })
+            .catch(() => {});
+          const method = page.getByTestId('marketplace-checkout-method-paykit').first();
+          await method.waitFor({ state: 'visible', timeout: 15_000 }).catch(() => {});
+          btc.offered = (await method.count()) > 0;
+          const sellerConfig = await (
+            await fetch(`${SERVICE}/v0/sellers/${encodeURIComponent(seat.publicKey.z32())}/payment-config`)
+          )
+            .json()
+            .catch(() => null);
+          btc.sellerBitcoinAvailable = sellerConfig?.bitcoin_available === true;
+          if (btc.sellerBitcoinAvailable) check('9', 'Bitcoin is offered at checkout', btc.offered);
+          else
+            note(
+              '9',
+              'KNOWN: Bitcoin checkout not provable here, the fixture seller is not Paykit-ready (bitcoin_available=false), so checkout offers no method',
+              !btc.offered,
+              JSON.stringify(sellerConfig),
+            );
+          if (!btc.offered) {
+            await shot(page, '18-checkout-no-method.png');
+            btc.checkoutText = (
+              (await page
+                .locator('[data-testid="marketplace-checkout-payment-method"]')
+                .first()
+                .innerText()
+                .catch(() => '')) || ''
+            )
+              .replace(/\s+/g, ' ')
+              .slice(0, 300);
+            note('9', 'checkout payment method section', true, btc.checkoutText);
+          }
+          if (btc.offered) {
+            await method.click();
+            await page.waitForTimeout(6000);
+            const count = async (id) => await page.getByTestId(id).count();
+            btc.unsupported = await count('marketplace-checkout-bitkit-unsupported');
+            btc.unverified = await count('marketplace-checkout-bitkit-unverified');
+            btc.required = await count('marketplace-checkout-bitkit-required');
+            btc.reason =
+              (
+                (await page
+                  .locator('#checkout-pay-reason')
+                  .first()
+                  .innerText()
+                  .catch(() => '')) || ''
+              ).slice(0, 120) || null;
+            await shot(page, '18-checkout-bitcoin.png');
+            check('9', 'no Bitkit 2.6 notice for this buyer', btc.unsupported === 0, JSON.stringify(btc));
+            check('9', 'no "Couldn\'t verify your Bitcoin wallet" notice', btc.unverified === 0);
+            note(
+              '9',
+              'buyer wallet takes Bitcoin payment requests (no "Connect Bitkit")',
+              btc.required === 0,
+              `registry=${btc.registry}`,
+            );
+          }
+          check(
+            '9',
+            'nothing paid and no order command sent',
+            commands.filter((row) => /^(checkout|order|payment)\./i.test(row.kind)).length === 0,
+            JSON.stringify(commands),
+          );
+          btc.cartLeft = await emptyCart(page);
+          check('9', 'cart emptied afterwards', btc.cartLeft === 0);
+        }
+        check('9', 'buyer signed out from Settings', await signOutThroughSettings(page));
+      }
+    } catch (error) {
+      await shot(page, 'bitcoin-journey-error.png').catch(() => {});
+      check(
+        '9',
+        'Bitcoin wallet-state journey ran to completion',
+        false,
+        String(error?.message ?? error).slice(0, 240),
+      );
+    } finally {
+      summary.bitcoin = btc;
+      await context.close();
+    }
+  }
+
+  // Step 10: USDT stays invisible with the flag off (#146, #150, #151, #149, #157). The seller seat opens
+  // payment settings (How you get paid) and My shop; neither shows USDT, and no request mentions USDT.
+  if (runs('10')) {
     const net = [];
     const commands = [];
     const { context, page } = await newContext(browser);
     instrument(page, net, commands);
     try {
-      await ringSignIn(page, buyerSeat);
-      log(`buyer ${prefix(buyerSeat.publicKey.z32())} signed in with Ring`);
-      const act = await activityAndOrder(page, 'buyer');
-      summary.activity.buyer = act;
-      checkActivity(act, 'buyer');
-      opened = act.opened;
-      openedBy = 'buyer';
-      await signOutThroughSettings(page);
-      const deletes = net.filter((e) => e.tag === 'homeserver-session' && e.method === 'DELETE');
+      await ringSignIn(page, seat);
+      for (const path of ['/marketplace/settings', '/marketplace/my-shop']) {
+        await page.goto(at(path), { waitUntil: 'domcontentloaded', timeout: 180_000 });
+        await waitForAppReady(page);
+        await page.waitForTimeout(4000);
+        const text = await page.locator('body').innerText();
+        await shot(page, `19-usdt${path.replaceAll('/', '-')}.png`);
+        check('10', `${path} shows no USDT`, !/USDT/.test(text), `chars=${text.length}`);
+      }
       check(
-        '5',
-        'buyer seat signed out (DELETE /session 2xx)',
-        deletes.some((e) => e.status >= 200 && e.status < 300),
-        deletes.map((e) => e.status).join(','),
+        '10',
+        'no request mentions USDT during the run',
+        usdtRequests.length === 0,
+        JSON.stringify(usdtRequests.slice(0, 5)),
       );
-      check('5', 'buyer journey sent no order command', commands.length === 0, JSON.stringify(commands));
+      check('10', 'seller signed out from Settings', await signOutThroughSettings(page));
     } catch (error) {
-      await shot(page, 'buyer-journey-error.png').catch(() => {});
-      check('C', 'buyer Activity journey ran to completion', false, String(error?.message ?? error).slice(0, 240));
+      await shot(page, 'usdt-journey-error.png').catch(() => {});
+      check('10', 'USDT-invisible journey ran to completion', false, String(error?.message ?? error).slice(0, 240));
     } finally {
-      summary.buyerNetwork = net;
       await context.close();
     }
   }
-  check(
-    '5',
-    'an Activity row opens that order on the Orders page (card rendered, in view, label matches)',
-    Boolean(
-      opened?.hashIsOrder &&
-      opened?.labelMatches &&
-      opened?.inView &&
-      opened.path === `${BASE_PATH}/marketplace/orders`,
-    ),
-    `${openedBy} ${JSON.stringify(opened)}`,
-  );
+
+  // Step 11: store connections (WooCommerce, #135). The service's /health lists woocommerce under
+  // connectors.providers, and the seller seat sees the WooCommerce tab and connect form (read only).
+  if (ONLY_STEPS.has('11')) {
+    const health = await (await fetch(`${SERVICE}/health`)).json();
+    check(
+      '11',
+      'service /health connectors.providers includes woocommerce',
+      Array.isArray(health.connectors?.providers) && health.connectors.providers.includes('woocommerce'),
+      JSON.stringify(health.connectors ?? null),
+    );
+    const net = [];
+    const commands = [];
+    const { context, page } = await newContext(browser);
+    instrument(page, net, commands);
+    try {
+      await ringSignIn(page, seat);
+      await page.goto(at('/marketplace/settings/store-connections'), {
+        waitUntil: 'domcontentloaded',
+        timeout: 180_000,
+      });
+      await waitForAppReady(page);
+      await page.getByRole('heading', { level: 1 }).first().waitFor({ state: 'visible', timeout: 60_000 });
+      await page.waitForTimeout(5000);
+      const unavailable = await page.getByTestId('store-connections-unavailable').count();
+      const tab = page.getByRole('tab', { name: 'WooCommerce' });
+      const tabs = await page
+        .getByRole('tablist', { name: 'Store type' })
+        .innerText()
+        .catch(() => '');
+      check('11', 'Store connections is available on this server', unavailable === 0, `unavailable=${unavailable}`);
+      check(
+        '11',
+        'the seller sees WooCommerce (and Shopify) as store types',
+        (await tab.count()) === 1 && /Shopify/.test(tabs),
+        JSON.stringify(tabs),
+      );
+      if (await tab.count()) await tab.click();
+      await page.waitForTimeout(1500);
+      await shot(page, '20-store-connections-woocommerce.png');
+      const connect = await page
+        .getByTestId('connect-woocommerce')
+        .isVisible()
+        .catch(() => false);
+      check('11', 'the WooCommerce connect form is shown', connect);
+      check(
+        '11',
+        'no connector write happened (no POST to /v1/connectors)',
+        !net.some((e) => e.tag === 'connectors' && e.method !== 'GET'),
+        JSON.stringify(net.filter((e) => e.tag === 'connectors').map((e) => `${e.method} ${e.status}`)),
+      );
+      check('11', 'seller signed out from Settings', await signOutThroughSettings(page));
+    } catch (error) {
+      await shot(page, 'store-connections-error.png').catch(() => {});
+      check('11', 'store connections journey ran to completion', false, String(error?.message ?? error).slice(0, 240));
+    } finally {
+      await context.close();
+    }
+  }
+
+  // Step 5 order page: the seller's Activity may only point at orders its Orders page hides;
+  // then the buyer seat, whose paid orders are rendered, proves the row → order navigation.
+  if (runs('1')) {
+    let opened = summary.activity?.seller?.opened ?? null;
+    let openedBy = 'seller';
+    if (!opened) {
+      const net = [];
+      const commands = [];
+      const { context, page } = await newContext(browser);
+      instrument(page, net, commands);
+      try {
+        await ringSignIn(page, buyerSeat);
+        log(`buyer ${prefix(buyerSeat.publicKey.z32())} signed in with Ring`);
+        const act = await activityAndOrder(page, 'buyer', buyerSeat);
+        summary.activity.buyer = act;
+        checkActivity(act, 'buyer');
+        opened = act.opened;
+        openedBy = 'buyer';
+        await signOutThroughSettings(page);
+        const deletes = net.filter((e) => e.tag === 'grant' && e.method === 'DELETE');
+        check(
+          '5',
+          'buyer seat signed out (DELETE /auth/grant/session 2xx)',
+          deletes.some((e) => e.status >= 200 && e.status < 300),
+          deletes.map((e) => e.status).join(','),
+        );
+        check('5', 'buyer journey sent no order command', commands.length === 0, JSON.stringify(commands));
+      } catch (error) {
+        await shot(page, 'buyer-journey-error.png').catch(() => {});
+        check('C', 'buyer Activity journey ran to completion', false, String(error?.message ?? error).slice(0, 240));
+      } finally {
+        summary.buyerNetwork = net;
+        await context.close();
+      }
+    }
+    check(
+      '5',
+      'an Activity row opens that order on the Orders page (card rendered, in view, label matches)',
+      Boolean(
+        opened?.hashIsOrder &&
+        opened?.labelMatches &&
+        opened?.inView &&
+        opened.path === `${BASE_PATH}/marketplace/orders`,
+      ),
+      `${openedBy} ${JSON.stringify(opened)}`,
+    );
+  }
 } finally {
   await browser.close();
 }
@@ -853,6 +1629,24 @@ for (const keypair of [seat, buyerSeat]) {
       (audit.activeFromRunAfter ?? []).length === 0 &&
       audit.verifierRevoke < 300,
     audit.error ?? `revoked=${audit.revoked.length} activeAfter=${(audit.activeFromRunAfter ?? []).length}`,
+  );
+}
+summary.storefrontCleanup = [];
+for (const keypair of [seat, buyerSeat]) {
+  const seatPubky = keypair.publicKey.z32();
+  const cleanup = await removeRunStorefront({
+    publicStorage: new Pubky().publicStorage,
+    signer: new Pubky().signer(keypair),
+    pubky: seatPubky,
+    existedBefore: storefrontBefore.get(seatPubky),
+    nexus: NEXUS,
+  }).catch((error) => ({ ok: false, error: String(error?.message ?? error) }));
+  summary.storefrontCleanup.push({ seat: prefix(seatPubky), ...cleanup });
+  check(
+    'cleanup',
+    `${prefix(seatPubky)} has no storefront the run published (shop.json gone from the homeserver and Nexus, or pre-existing and kept)`,
+    cleanup.ok,
+    JSON.stringify(cleanup),
   );
 }
 summary.consoleErrors = consoleErrors.slice(0, 40);

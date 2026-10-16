@@ -11,9 +11,9 @@
 // There is no build-meta or `/version.json` check, on purpose: the Shop publishes neither (#184), so identity is the
 // deployment id (check 1) and the git tag. Do not add one back.
 //
-// Env: PROOF_ORIGIN (default https://shop.pubky.app; with the Shop's mount path when it is mounted, e.g.
-// https://pubky.app/shop-embed), EXPECTED_DPL, LOCKS_WASM_SHA256 (default: the wasm in this checkout's node_modules),
-// SERVICE_URL (default: the marketplaceUrl in the served config), SERVED_CHECKS_USDT=on to expect USDT on.
+// Env: PROOF_ORIGIN (default John Prod, https://pubky-marketplace-production.vercel.app; with the Shop's mount path
+// when it is mounted, e.g. https://pubky.app/shop-embed), EXPECTED_DPL, LOCKS_WASM_SHA256 (default: the wasm in this
+// checkout's node_modules), SERVICE_URL (default: the marketplaceUrl in the served config), SERVED_CHECKS_USDT=on to expect USDT on.
 // Exit 0 only when every check passed.
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
