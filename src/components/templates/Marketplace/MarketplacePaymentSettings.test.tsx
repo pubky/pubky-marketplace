@@ -175,18 +175,116 @@ describe('MarketplacePaymentSettings', () => {
   });
 
   it.each([
-    ['setup_required', 'Not set up'],
-    ['unavailable', 'Not set up'],
-    ['ready', 'Connected'],
-  ] as const)('never shows a Lock Server step (bitcoin_setup %s)', async (bitcoinSetup, pill) => {
+    ['setup_required', 'Not set up', '1. Connect Bitkit'],
+    ['unavailable', 'Needs attention', '1. Bitkit wallet'],
+    ['ready', 'Connected', '1. Connect Bitkit'],
+  ] as const)('never shows a Lock Server step (bitcoin_setup %s)', async (bitcoinSetup, pill, step) => {
     mockedController.getMyPaymentConfig.mockResolvedValue({ ...EMPTY_CONFIG, bitcoinSetup });
     await renderSettings();
 
     expect(screen.getByTestId('payment-method-status-bitcoin')).toHaveTextContent(pill);
     expect(screen.queryByRole('button', { name: /Connect Lock Server/ })).not.toBeInTheDocument();
     expect(screen.queryByText(/Lock Server/)).not.toBeInTheDocument();
-    expect(screen.getByText('1. Connect Bitkit')).toBeInTheDocument();
+    expect(screen.getByText(step)).toBeInTheDocument();
     expect(screen.getByText('2. Accept bitcoin')).toBeInTheDocument();
+  });
+
+  describe('Bitkit state the service cannot check', () => {
+    const unknownReads: [string, () => void][] = [
+      [
+        'bitcoin_setup unavailable',
+        () => mockedController.getMyPaymentConfig.mockResolvedValue({ ...EMPTY_CONFIG, bitcoinSetup: 'unavailable' }),
+      ],
+      [
+        'a service without bitcoin_setup',
+        () => {
+          const { bitcoinSetup: _omitted, ...withoutSetup } = EMPTY_CONFIG;
+          mockedController.getMyPaymentConfig.mockResolvedValue(withoutSetup);
+        },
+      ],
+      ['a failed read', () => mockedController.getMyPaymentConfig.mockRejectedValue(new Error('offline'))],
+    ];
+
+    it.each(unknownReads)(
+      'says it cannot check Bitkit, never Not set up or Connect Bitkit (%s)',
+      async (_, arrange) => {
+        arrange();
+        render(<MarketplacePaymentSettings />);
+
+        const message = await screen.findByTestId('bitkit-setup-unknown');
+        expect(message).toHaveTextContent("We can't check Bitkit right now.");
+        expect(screen.getByTestId('payment-method-status-bitcoin')).toHaveTextContent('Needs attention');
+        expect(screen.getByTestId('payment-method-status-bitcoin')).not.toHaveTextContent('Not set up');
+        expect(screen.queryByText('1. Connect Bitkit')).not.toBeInTheDocument();
+        expect(screen.queryByText(/Connect Bitkit first/)).not.toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: /Connect Bitkit|Reconnect Bitkit|Connect now/ })).toBeNull();
+        expect(screen.getByRole('button', { name: /Check again/ })).toBeInTheDocument();
+        expect(screen.getByRole('switch', { name: 'Accept bitcoin' })).toBeDisabled();
+        expect(screen.getByRole('switch', { name: 'Accept bitcoin' })).toHaveAccessibleDescription(
+          "We can't check Bitkit right now.",
+        );
+        expect(mockedController.getPaykitSetupUrl).not.toHaveBeenCalled();
+        expect(mockedController.getPaykitReconnectUrl).not.toHaveBeenCalled();
+      },
+    );
+
+    it('re-reads the payment config on Check again and keeps the message while it is still unavailable', async () => {
+      mockedController.getMyPaymentConfig.mockResolvedValue({ ...EMPTY_CONFIG, bitcoinSetup: 'unavailable' });
+      render(<MarketplacePaymentSettings />);
+      await screen.findByTestId('bitkit-setup-unknown');
+      expect(mockedController.getMyPaymentConfig).toHaveBeenCalledTimes(1);
+
+      fireEvent.click(screen.getByRole('button', { name: /Check again/ }));
+
+      await waitFor(() => expect(mockedController.getMyPaymentConfig).toHaveBeenCalledTimes(2));
+      expect(await screen.findByTestId('bitkit-setup-unknown')).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /Connect Bitkit/ })).toBeNull();
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    });
+
+    it('shows Connected once Check again reads ready', async () => {
+      mockedController.getMyPaymentConfig.mockResolvedValue({ ...EMPTY_CONFIG, bitcoinSetup: 'unavailable' });
+      render(<MarketplacePaymentSettings />);
+      await screen.findByTestId('bitkit-setup-unknown');
+      mockedController.getMyPaymentConfig.mockResolvedValue({ ...EMPTY_CONFIG, bitcoinSetup: 'ready' });
+
+      fireEvent.click(screen.getByRole('button', { name: /Check again/ }));
+
+      await waitFor(() => expect(screen.getByRole('switch', { name: 'Accept bitcoin' })).toBeEnabled());
+      expect(screen.getByTestId('payment-method-status-bitcoin')).toHaveTextContent('Connected');
+      expect(screen.queryByTestId('bitkit-setup-unknown')).not.toBeInTheDocument();
+    });
+
+    it('shows Not set up with Connect Bitkit once Check again reads setup_required', async () => {
+      mockedController.getMyPaymentConfig.mockResolvedValue({ ...EMPTY_CONFIG, bitcoinSetup: 'unavailable' });
+      render(<MarketplacePaymentSettings />);
+      await screen.findByTestId('bitkit-setup-unknown');
+      mockedController.getMyPaymentConfig.mockResolvedValue(EMPTY_CONFIG);
+
+      fireEvent.click(screen.getByRole('button', { name: /Check again/ }));
+
+      expect(await screen.findByRole('button', { name: /Connect Bitkit/ })).toBeInTheDocument();
+      expect(screen.getByTestId('payment-method-status-bitcoin')).toHaveTextContent('Not set up');
+      expect(screen.getByTestId('bitcoin-toggle-blocker')).toHaveTextContent(/^Connect Bitkit first\./);
+    });
+
+    it('claims nothing while the first read is in flight', async () => {
+      let release: (config: SellerPaymentConfigOwnView) => void = () => {};
+      mockedController.getMyPaymentConfig.mockImplementation(
+        () =>
+          new Promise<SellerPaymentConfigOwnView>((resolve) => {
+            release = resolve;
+          }),
+      );
+      render(<MarketplacePaymentSettings />);
+
+      expect(await screen.findByTestId('bitkit-setup-checking')).toBeInTheDocument();
+      expect(screen.queryByTestId('payment-method-status-bitcoin')).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /Connect Bitkit/ })).toBeNull();
+
+      await act(async () => release(EMPTY_CONFIG));
+      expect(await screen.findByRole('button', { name: /Connect Bitkit/ })).toBeInTheDocument();
+    });
   });
 
   it('shows Not set up on every pill for a new seller', async () => {
@@ -239,25 +337,12 @@ describe('MarketplacePaymentSettings', () => {
       expect(await screen.findByRole('dialog', { name: 'Connect Bitkit' })).toBeInTheDocument();
     });
 
-    it('offers a recheck when the service cannot say, without blaming Bitkit', async () => {
+    it('names nothing missing under the switch when the service cannot say', async () => {
       mockedController.getMyPaymentConfig.mockResolvedValue({ ...EMPTY_CONFIG, bitcoinSetup: 'unavailable' });
       await renderSettings();
 
-      const reason = screen.getByTestId('bitcoin-toggle-blocker');
-      expect(reason).toHaveTextContent(/^We can't check Bitkit right now\./);
-      mockedController.getMyPaymentConfig.mockResolvedValue({ ...EMPTY_CONFIG, bitcoinSetup: 'ready' });
-      fireEvent.click(within(reason).getByRole('button', { name: 'Check again' }));
-
-      await waitFor(() => expect(screen.getByRole('switch', { name: 'Accept bitcoin' })).toBeEnabled());
       expect(screen.queryByTestId('bitcoin-toggle-blocker')).not.toBeInTheDocument();
-    });
-
-    it('treats a service that predates bitcoin_setup as unknown, never as missing', async () => {
-      const { bitcoinSetup: _omitted, ...withoutSetup } = EMPTY_CONFIG;
-      mockedController.getMyPaymentConfig.mockResolvedValue(withoutSetup);
-      await renderSettings();
-
-      expect(screen.getByTestId('bitcoin-toggle-blocker')).toHaveTextContent(/^We can't check Bitkit right now\./);
+      expect(screen.getByTestId('bitkit-setup-unknown')).toHaveTextContent("We can't check Bitkit right now.");
     });
 
     it('shows no reason once Bitkit is connected', async () => {
@@ -475,7 +560,7 @@ describe('MarketplacePaymentSettings', () => {
     render(<MarketplacePaymentSettings />);
     expect(screen.getByRole('heading', { name: 'PayPal' })).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: /Connect Bitkit/ }));
+    fireEvent.click(await screen.findByRole('button', { name: /Connect Bitkit/ }));
 
     expect(mockedController.getPaykitSetupUrl).toHaveBeenCalledTimes(1);
     const iframe = screen.getByTitle('Connect Bitkit') as HTMLIFrameElement;
@@ -654,12 +739,43 @@ describe('MarketplacePaymentSettings', () => {
       ),
     );
 
-    await screen.findByText("We couldn't confirm Bitkit's approval just now. Try again.");
+    await screen.findByText("We couldn't confirm Bitkit's approval just now. Check again in a moment.");
     expect(screen.queryByText(/approved a different pubky/)).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
     expect(screen.getByTestId('paykit-setup-problem')).toHaveTextContent(
       "We couldn't confirm Bitkit's approval just now.",
     );
+    expect(screen.queryByRole('button', { name: /Connect Bitkit|Try again/ })).toBeNull();
+  });
+
+  it('re-reads, never re-opens Paykit setup, when the dialog checks an unconfirmed approval again', async () => {
+    await renderSettings();
+    fireEvent.click(screen.getByRole('button', { name: /Connect Bitkit/ }));
+    const iframe = screen.getByTitle('Connect Bitkit') as HTMLIFrameElement;
+    const source = setPaykitIframeSource(iframe);
+    const state = new URL(iframe.src).searchParams.get('state');
+    mockedController.getMyPaymentConfig.mockResolvedValueOnce({ ...EMPTY_CONFIG, bitcoinSetup: 'unavailable' });
+    act(() =>
+      window.dispatchEvent(
+        new MessageEvent('message', {
+          origin: 'https://paykit.example',
+          source,
+          data: { type: 'paykit-setup-callback', state },
+        }),
+      ),
+    );
+    const dialog = await screen.findByRole('dialog', { name: 'Connect Bitkit' });
+    await within(dialog).findByText(/couldn't confirm Bitkit's approval/);
+    expect(within(dialog).queryByRole('button', { name: /Retry/ })).toBeNull();
+    const readsBefore = mockedController.getMyPaymentConfig.mock.calls.length;
+    mockedController.getMyPaymentConfig.mockResolvedValueOnce({ ...EMPTY_CONFIG, bitcoinSetup: 'ready' });
+
+    fireEvent.click(within(dialog).getByRole('button', { name: /Check again/ }));
+
+    await waitFor(() => expect(mockedToast).toHaveBeenCalledWith({ title: 'Bitkit setup connected' }));
+    expect(mockedController.getMyPaymentConfig.mock.calls.length).toBe(readsBefore + 1);
+    expect(mockedController.getPaykitSetupUrl).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId('payment-method-status-bitcoin')).toHaveTextContent('Connected');
   });
 
   it('maps identity mismatch separately from other setup errors', async () => {

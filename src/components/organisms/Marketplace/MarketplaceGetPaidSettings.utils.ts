@@ -25,13 +25,25 @@ export function derivePaypalStatus(config: SellerPaymentConfigOwnView | null): P
 }
 
 /**
- * Bitcoin is Connected when the service's uncached `bitcoin_setup` says the
- * seller's Bitkit setup can receive it (`accountClaimed === true` from
- * `useMarketplaceSellerPaymentConfig`). Anything else is Not set up; an
- * unknown answer is explained under the Accept bitcoin switch.
+ * The Bitcoin pill from the service's uncached `bitcoin_setup`
+ * (`accountClaimed` from `useMarketplaceSellerPaymentConfig`): `ready` is
+ * Connected and only a definite `setup_required` is Not set up. An unknown
+ * answer (`unavailable`, a failed read, or a service without the field) needs
+ * attention, like USDT's `unavailable`: Bitkit may already be connected.
  */
 export function deriveBitcoinStatus(accountClaimed: boolean | null): PaymentMethodStatus {
-  return accountClaimed === true ? 'connected' : 'not_set_up';
+  if (accountClaimed === true) return 'connected';
+  if (accountClaimed === false) return 'not_set_up';
+  return 'needs_attention';
+}
+
+/**
+ * Whether the Bitkit step may offer Connect or Reconnect Bitkit: only after a
+ * definite answer (`ready` or `setup_required`). An unknown answer offers
+ * Check again instead, so an outage never starts a Paykit authorization.
+ */
+export function canOfferBitkitSetup(accountClaimed: boolean | null): accountClaimed is boolean {
+  return accountClaimed !== null;
 }
 
 /** Why "Accept bitcoin" is still switched off, or null when nothing is missing. */
