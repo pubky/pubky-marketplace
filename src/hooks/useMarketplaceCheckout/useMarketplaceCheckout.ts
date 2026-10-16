@@ -6,6 +6,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { useForm, type UseFormReturn, useWatch } from 'react-hook-form';
 import { getCommerceAdapterMode, getPaykitServerApi, isDurableCommerceMode } from '@/config/commerce';
 import { CommerceController } from '@/controllers/commerce/commerce';
+import { useConnectorStoreShare } from '@/hooks/useConnectorStoreShare/useConnectorStoreShare';
 import {
   type DeliveryKeyBlock,
   type PendingDeliveryKeyChange,
@@ -176,6 +177,8 @@ export function useMarketplaceCheckout(
   setFulfillmentChoice: (sellerPubky: string, method: MarketplaceFulfillmentMethod) => void;
   /** True only when a line ships — pickup and digital lines send no address (§A2). */
   requiresDeliveryAddress: boolean;
+  /** The opt-in to share the address with a shipped seller's connected store. */
+  storeShare: ReturnType<typeof useConnectorStoreShare>;
   /** The countries the shipped sellers deliver to; null when any country is accepted (or still loading). */
   allowedDestinationCountries: readonly string[] | null;
   /**
@@ -435,6 +438,7 @@ export function useMarketplaceCheckout(
     ...(award && fulfillmentForSeller(award.sellerPubky) === 'shipping' ? [award.sellerPubky] : []),
   ];
   const shipsTo = useMarketplaceSellerShipsTo(shippedSellerPubkys);
+  const storeShare = useConnectorStoreShare(shippedSellerPubkys);
   const orderCount = new Set([
     ...items.map((item) => `${item.listing.record.ownerPubky}|${fulfillmentForItem(item.id) ?? ''}`),
     ...(award ? [`${award.sellerPubky}|${fulfillmentForSeller(award.sellerPubky) ?? ''}`] : []),
@@ -718,6 +722,9 @@ export function useMarketplaceCheckout(
       lines: checkoutLines,
       fulfillmentChoiceBySeller,
       deliveryKeys: sealedTo.keys,
+      ...(storeShare.selected.some((store) => shippedSellers.includes(store.sellerPubky))
+        ? { connectorShares: storeShare.selected.filter((store) => shippedSellers.includes(store.sellerPubky)) }
+        : {}),
       ...(freshKinds.includes('email') ? { deliveryEmail: data.deliveryEmail } : {}),
       ...(requiresDeliveryAddress
         ? {
@@ -902,6 +909,7 @@ export function useMarketplaceCheckout(
     fulfillmentForSeller,
     setFulfillmentChoice,
     requiresDeliveryAddress,
+    storeShare,
     allowedDestinationCountries: shipsTo.status === 'ready' ? shipsTo.countries : null,
     fulfillmentForItem,
     canChooseDigitalForItem: (itemId: string) => {

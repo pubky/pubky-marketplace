@@ -1217,6 +1217,7 @@ describe('MarketplaceTransactionService read projections', () => {
   });
 
   it('requires a session for every projection read', async () => {
+    const loggerError = vi.spyOn(Logger, 'error');
     await expect(MarketplaceTransactionService.getListing(ACTOR, AGGREGATE_ID)).rejects.toMatchObject({
       code: 'SESSION_EXPIRED',
     });
@@ -1232,6 +1233,8 @@ describe('MarketplaceTransactionService read projections', () => {
       code: 'SESSION_EXPIRED',
     });
     expect(fetch).not.toHaveBeenCalled();
+    // The connect prompt is the expected state, so the guard is not logged or sent to Sentry.
+    expect(loggerError).not.toHaveBeenCalled();
   });
 
   it('fails closed outside transaction-service mode', async () => {
@@ -1247,8 +1250,11 @@ describe('MarketplaceTransactionService read projections', () => {
       jsonResponse(401, { error: { message: 'The session is invalid or expired.' } }),
     );
 
+    const loggerError = vi.spyOn(Logger, 'error');
+
     await expect(MarketplaceTransactionService.getOrders(ACTOR)).rejects.toMatchObject({ code: 'SESSION_EXPIRED' });
     expect(MarketplaceSessionService.getActiveSession()).toBeNull();
+    expect(loggerError).toHaveBeenCalled();
   });
 
   describe('public listing availability', () => {

@@ -290,6 +290,7 @@ vi.mock('@/hooks/useMarketplaceCheckout/useMarketplaceCheckout', async () => {
       setFulfillmentChoice: vi.fn(),
       requiresDeliveryAddress: view.requiresDeliveryAddress,
       allowedDestinationCountries: view.allowedDestinationCountries,
+      storeShare: { stores: new Map(), chosen: new Set(), selected: [], setShare: () => {} },
       hasFulfillmentConflict: false,
       isPickupCapabilityLoadingForSeller: () => false,
       orderCount: view.orderCount,
@@ -379,6 +380,7 @@ vi.mock('@/controllers/commerce/commerce', () => ({
     fetchUsdtPaymentsAvailable: vi.fn(async () => view.usdtAvailable),
     getIndicativeBtcRate: vi.fn(async () => null),
     getOrFetchListing: vi.fn(async () => null),
+    getConnectorStores: vi.fn(async () => new Map()),
   },
 }));
 

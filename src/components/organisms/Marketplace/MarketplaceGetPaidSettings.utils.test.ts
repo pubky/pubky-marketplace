@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import type { SellerPaymentConfigOwnView } from '@/libs/commerce/payment-methods';
+import { bitcoinSetupClaim, type SellerPaymentConfigOwnView } from '@/libs/commerce/payment-methods';
 import {
   atLeastOneMethodSentence,
   BITCOIN_TOGGLE_BLOCKER_COPY,
+  canOfferBitkitSetup,
   countReadyPaymentMethods,
   deriveBitcoinStatus,
   deriveBitcoinToggleBlocker,
@@ -36,9 +37,33 @@ describe('MarketplaceGetPaidSettings status derivation', () => {
     it.each([
       [true, 'connected'],
       [false, 'not_set_up'],
-      [null, 'not_set_up'],
+      [null, 'needs_attention'],
     ] as const)('claimed=%s → %s', (accountClaimed, expected) => {
       expect(deriveBitcoinStatus(accountClaimed)).toBe(expected);
+    });
+  });
+
+  describe('bitcoin_setup through the derivations', () => {
+    it.each([
+      { bitcoinSetup: 'ready', status: 'connected', offer: true, blocker: null },
+      { bitcoinSetup: 'setup_required', status: 'not_set_up', offer: true, blocker: 'bitkit' },
+      { bitcoinSetup: 'unavailable', status: 'needs_attention', offer: false, blocker: 'bitkit-unknown' },
+      { bitcoinSetup: undefined, status: 'needs_attention', offer: false, blocker: 'bitkit-unknown' },
+    ] as const)('$bitcoinSetup → $status', ({ bitcoinSetup, status, offer, blocker }) => {
+      const claimed = bitcoinSetupClaim({ bitcoinSetup });
+      expect(deriveBitcoinStatus(claimed)).toBe(status);
+      expect(canOfferBitkitSetup(claimed)).toBe(offer);
+      expect(deriveBitcoinToggleBlocker(claimed)).toBe(blocker);
+    });
+
+    it('treats a failed read (no config) as unknown, never as Not set up', () => {
+      const claimed = bitcoinSetupClaim(null);
+      expect(deriveBitcoinStatus(claimed)).toBe('needs_attention');
+      expect(canOfferBitkitSetup(claimed)).toBe(false);
+    });
+
+    it('never counts an unknown answer as a ready method', () => {
+      expect(isReadyPaymentMethodStatus(deriveBitcoinStatus(null))).toBe(false);
     });
   });
 

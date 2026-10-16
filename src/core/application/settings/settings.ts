@@ -1,5 +1,4 @@
-import { hasHttpStatus } from '@/libs/error/error.utils';
-import { HttpMethod, HttpStatusCode } from '@/libs/http/http.types';
+import { HttpMethod } from '@/libs/http/http.types';
 import { Logger } from '@/libs/logger/logger';
 import type { Pubky } from '@/models/models.types';
 import { type SettingsJson, SettingsNormalizer } from '@/pipes/settings/settings.normalizer';
@@ -47,25 +46,19 @@ export class SettingsApplication {
 
     Logger.info('[Settings] Pulling from homeserver', { url });
 
-    try {
-      const settingsJson = await HomeserverService.request<SettingsJson>({ method: HttpMethod.GET, url });
-
-      if (!settingsJson) {
-        Logger.info('[Settings] Pull complete, no settings found');
-        return null;
-      }
-
-      const settings = SettingsNormalizer.from(settingsJson);
-      Logger.info('[Settings] Pull complete', { settings });
-      return settings;
-    } catch (error) {
-      // Handle 404, settings don't exist yet
-      if (hasHttpStatus(error, HttpStatusCode.NOT_FOUND)) {
-        Logger.info('[Settings] Pull complete, settings file not found (404)');
-        return null;
-      }
-      throw error;
+    const stored = await HomeserverService.getJsonIfFound<SettingsJson>({ url });
+    if (!stored.found) {
+      Logger.info('[Settings] Pull complete, settings file not found (404)');
+      return null;
     }
+    if (!stored.json) {
+      Logger.info('[Settings] Pull complete, no settings found');
+      return null;
+    }
+
+    const settings = SettingsNormalizer.from(stored.json);
+    Logger.info('[Settings] Pull complete', { settings });
+    return settings;
   }
 
   /**

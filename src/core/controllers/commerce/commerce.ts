@@ -1375,6 +1375,11 @@ export class CommerceController {
     return response;
   }
 
+  /** The connected stores of these sellers that a buyer may share the delivery address with (opt-in). */
+  static async getConnectorStores(sellerPubkys: readonly string[]) {
+    return await CommerceApplication.getConnectorStores(sellerPubkys);
+  }
+
   /** The pickup-details CAS version: a non-negative safe integer (0 when no details exist yet). */
   private static pickupDetailsVersion(value: unknown): number {
     if (typeof value !== 'number' || !Number.isInteger(value) || value < 0 || value > Number.MAX_SAFE_INTEGER) {

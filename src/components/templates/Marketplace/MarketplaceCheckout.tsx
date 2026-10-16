@@ -98,6 +98,7 @@ import { SettingsSectionContent } from '@/molecules/Settings/SettingsSectionCont
 import { ContentLayout } from '@/organisms/ContentLayout/ContentLayout';
 import { MarketplaceBuyerBitkitConnectDialog } from '@/organisms/Marketplace/MarketplaceBuyerBitkitConnectDialog';
 import { MarketplaceCheckoutItem } from '@/organisms/Marketplace/MarketplaceCheckoutItem';
+import { MarketplaceCheckoutStoreShare } from '@/organisms/Marketplace/MarketplaceCheckoutStoreShare';
 import { MarketplaceDeliveryKeyChangeDialog } from '@/organisms/Marketplace/MarketplaceDeliveryKeyChangeDialog';
 import { MarketplaceDeliveryTerms } from '@/organisms/Marketplace/MarketplaceDeliveryTerms';
 import { MarketplaceIndicativePrice } from '@/organisms/Marketplace/MarketplaceIndicativePrice';
@@ -1002,6 +1003,11 @@ function MarketplaceCartCheckout() {
                       control={checkout.form.control}
                       setValue={checkout.form.setValue}
                       allowedCountries={checkout.allowedDestinationCountries}
+                    />
+                    <MarketplaceCheckoutStoreShare
+                      stores={checkout.storeShare.stores}
+                      chosen={checkout.storeShare.chosen}
+                      onChange={checkout.storeShare.setShare}
                     />
                     <div className="grid gap-4">
                       <Typography as="p" className="text-sm text-muted-foreground">

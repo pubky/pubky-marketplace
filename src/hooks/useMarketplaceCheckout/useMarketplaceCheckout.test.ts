@@ -79,6 +79,7 @@ vi.mock('@/controllers/commerce/commerce', () => ({
     clearIdentitySession: vi.fn(),
     bindPaymentMethod: vi.fn(),
     getMarketplaceOrders: vi.fn(async () => []),
+    getConnectorStores: vi.fn(async () => new Map()),
   },
 }));
 
@@ -194,6 +195,47 @@ describe('useMarketplaceCheckout', () => {
       sellerPubky: listing.ownerPubky,
       message: DELIVERY_KEY_COPY.noKey,
     });
+  });
+
+  it('shares the address with the store only when the buyer ticks it, and only for a shipped seller', async () => {
+    const choice = {
+      sellerPubky: listing.ownerPubky,
+      shopDomain: 'dezentralshop.ch',
+      keyId: 'connector-key-1',
+      publicKey: new Uint8Array(32),
+    };
+    vi.mocked(CommerceController.getConnectorStores).mockResolvedValue(new Map([[listing.ownerPubky, choice]]));
+    const { result } = renderHook(() =>
+      useMarketplaceCheckout(
+        [item],
+        vi.fn(async () => {}),
+      ),
+    );
+    await waitFor(() => expect(result.current.storeShare.stores.size).toBe(1));
+    expect(result.current.storeShare.selected).toEqual([]);
+    act(() => {
+      result.current.form.setValue('name', 'Alice Buyer');
+      result.current.form.setValue('line1', '1 Market Street');
+      result.current.form.setValue('city', 'New York');
+      result.current.form.setValue('region', 'NY');
+      result.current.form.setValue('postalCode', '10001');
+    });
+
+    await act(async () => {
+      await result.current.submit();
+    });
+    expect(vi.mocked(CommerceController.commitCreateMarketplaceCheckout).mock.calls[0]?.[0]).not.toHaveProperty(
+      'connectorShares',
+    );
+
+    vi.mocked(CommerceController.commitCreateMarketplaceCheckout).mockClear();
+    act(() => result.current.storeShare.setShare(listing.ownerPubky, true));
+    await act(async () => {
+      await result.current.submit();
+    });
+    expect(CommerceController.commitCreateMarketplaceCheckout).toHaveBeenCalledWith(
+      expect.objectContaining({ connectorShares: [choice] }),
+    );
   });
 
   it('refreshes terms and creates a guarantee-versioned checkout', async () => {

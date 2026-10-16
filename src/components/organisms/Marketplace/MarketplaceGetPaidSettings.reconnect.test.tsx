@@ -163,22 +163,30 @@ describe('MarketplaceGetPaidSettings Bitkit reconnect (upstream Paykit)', () => 
     expect(within(dialog).getByRole('button', { name: /Retry/ })).toBeInTheDocument();
   });
 
-  it('starts initial setup when the wallet state is unknown, and still offers reconnect if Paykit refuses it', async () => {
+  it('starts no Bitkit authorization while the wallet state is unavailable, and offers setup once the service answers', async () => {
     mocked.getMyPaymentConfig.mockResolvedValue(ownConfig('unavailable'));
     await renderSettings();
+
+    expect(await screen.findByTestId('bitkit-setup-unknown')).toHaveTextContent("We can't check Bitkit right now.");
     expect(screen.queryByText('Wallet connected.')).not.toBeInTheDocument();
+    expect(screen.queryByText('1. Connect Bitkit')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Connect Bitkit|Reconnect Bitkit|Connect now|Try again/ })).toBeNull();
 
+    mocked.getMyPaymentConfig.mockResolvedValue(ownConfig('unavailable'));
+    await userEvent.click(screen.getByRole('button', { name: /Check again/ }));
+    await waitFor(() => expect(mocked.getMyPaymentConfig).toHaveBeenCalledTimes(2));
+    expect(await screen.findByTestId('bitkit-setup-unknown')).toBeInTheDocument();
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(document.querySelector('iframe')).toBeNull();
+    expect(mocked.getPaykitSetupUrl).not.toHaveBeenCalled();
+    expect(mocked.getPaykitReconnectUrl).not.toHaveBeenCalled();
+
+    mocked.getMyPaymentConfig.mockResolvedValue(ownConfig('setup_required'));
+    await userEvent.click(screen.getByRole('button', { name: /Check again/ }));
     await userEvent.click(await screen.findByRole('button', { name: /Connect Bitkit/ }));
-    const setupFrame = paykitFrame('Connect Bitkit');
-    expect(framePath(setupFrame)).toBe('https://paykit.example/setup');
-    sendCallback(setupFrame, { error: 'setup-failed' });
-
-    const dialog = screen.getByRole('dialog', { name: 'Connect Bitkit' });
-    expect(await within(dialog).findByText(/reconnect it instead/)).toBeInTheDocument();
-    await userEvent.click(within(dialog).getByRole('button', { name: /Reconnect Bitkit/ }));
-    expect(framePath(paykitFrame('Reconnect Bitkit'))).toBe('https://paykit.example/setup/reconnect');
+    expect(framePath(paykitFrame('Connect Bitkit'))).toBe('https://paykit.example/setup');
   });
-
   it('keeps the fork Paykit on its initial setup route', async () => {
     runtime.api = 'fork';
     mocked.getMyPaymentConfig.mockResolvedValue(ownConfig('ready'));
