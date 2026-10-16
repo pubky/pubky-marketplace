@@ -797,7 +797,8 @@ describe('Marketplace checkout — visual regression', () => {
       const pay = document.querySelector('[data-testid="marketplace-checkout-pay"]');
       if (!(pay instanceof HTMLButtonElement) || pay.disabled) throw new Error('Pay is not enabled yet.');
     });
-    await screen.getByTestId('marketplace-checkout-pay').click();
+    // A DOM click: the browser-driven click scrolls the frame, which skews the next scene's Firefox capture.
+    (screen.getByTestId('marketplace-checkout-pay').element() as HTMLButtonElement).click();
     await vi.waitFor(() => {
       if (!document.querySelector('[data-testid="marketplace-checkout-pay-refusal"]')) {
         throw new Error('The Pay refusal has not rendered yet.');

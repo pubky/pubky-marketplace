@@ -530,6 +530,9 @@ describe('Marketplace listing detail — visual regression', () => {
     });
     await expect(screen.getByRole('button', { name: 'Sold out' })).toBeDisabled();
     expect(document.querySelector('[data-surface="marketplace-listing-purchase"]')?.textContent).not.toContain('Buy');
+    expect(document.querySelector('[data-surface="marketplace-listing-purchase"]')?.textContent).not.toContain(
+      'Make offer',
+    );
     await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot(
       'listing-sold-out-mobile',
       VRT_DENSE_CHROME_SCREENSHOT,
