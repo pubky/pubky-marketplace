@@ -6,8 +6,8 @@ import { NotificationApplication } from '@/application/notification/notification
 import { UserApplication } from '@/application/user/user';
 import { getModerationId } from '@/config/moderation';
 import { TtlCoordinator } from '@/coordinators/ttl/ttl';
-import { hasHttpStatus, isAppError } from '@/libs/error/error.utils';
-import { HttpMethod, HttpStatusCode } from '@/libs/http/http.types';
+import { isAppError } from '@/libs/error/error.utils';
+import { HttpMethod } from '@/libs/http/http.types';
 import { Logger } from '@/libs/logger/logger';
 import { getTtlRetryDelayMs } from '@/libs/runtime-config/runtime-config';
 import { buildHotTagsId } from '@/models/hot/hot.helper';
@@ -17,6 +17,7 @@ import { TagStreamTypes } from '@/models/stream/tag/tagStream.types';
 import { UserStreamTypes } from '@/models/stream/user/userStream.types';
 import { LastReadNormalizer } from '@/pipes/lastRead/lastRead.normalizer';
 import { HomeserverService } from '@/services/homeserver/homeserver';
+import type { THomeserverJsonIfFound } from '@/services/homeserver/homeserver.types';
 import { LocalHotService } from '@/services/local/hot/hot';
 import { LocalStreamPostsService } from '@/services/local/stream/posts/posts';
 import { LocalStreamTagsService } from '@/services/local/stream/tags/tags';
@@ -175,29 +176,25 @@ export class BootstrapApplication {
    * @returns Promise resolving to notification list and last read timestamp
    */
   private static async fetchOrPutLastRead({ pubky, lastReadUrl }: TBootstrapParams): Promise<number> {
+    let stored: THomeserverJsonIfFound<{ timestamp: number }>;
     try {
-      const { timestamp } = await HomeserverService.request<{ timestamp: number }>({
-        method: HttpMethod.GET,
-        url: lastReadUrl,
-      });
-      return timestamp;
+      stored = await HomeserverService.getJsonIfFound<{ timestamp: number }>({ url: lastReadUrl });
     } catch (error) {
-      // Only handle 404 errors (resource not found), rethrow everything else
-      if (hasHttpStatus(error, HttpStatusCode.NOT_FOUND)) {
-        Logger.info('Last read file not found, creating new one...', { pubky });
-        const lastRead = LastReadNormalizer.to(pubky);
-        void HomeserverService.request({
-          method: HttpMethod.PUT,
-          url: lastRead.meta.url,
-          bodyJson: lastRead.last_read.toJson(),
-        });
-        return Number(lastRead.last_read.timestamp);
-      } else {
-        // Network errors, timeouts, server errors, etc. should bubble up
-        Logger.error('Failed to fetch last read timestamp', error);
-        // TODO: TO harsh, we should handle this error better
-        throw error;
-      }
+      // Network errors, timeouts, server errors, etc. should bubble up
+      Logger.error('Failed to fetch last read timestamp', error);
+      throw error;
     }
+    if (stored.found) {
+      const { timestamp } = stored.json as { timestamp: number };
+      return timestamp;
+    }
+    Logger.info('Last read file not found, creating new one...', { pubky });
+    const lastRead = LastReadNormalizer.to(pubky);
+    void HomeserverService.request({
+      method: HttpMethod.PUT,
+      url: lastRead.meta.url,
+      bodyJson: lastRead.last_read.toJson(),
+    });
+    return Number(lastRead.last_read.timestamp);
   }
 }

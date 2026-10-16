@@ -65,6 +65,10 @@ describe('MarketplaceListingOwnerPanel unlist through the real commit', () => {
       }
       return structuredClone(homeserverRecord);
     });
+    vi.spyOn(CommerceHomeserverService, 'fetchJsonIfFound').mockImplementation(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      return homeserverRecord ? { found: true, json: structuredClone(homeserverRecord) } : { found: false };
+    });
     vi.spyOn(CommerceHomeserverService, 'putJson').mockImplementation(async (_url, body) => {
       homeserverRecord = structuredClone(body);
     });
