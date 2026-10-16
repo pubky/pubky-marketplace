@@ -228,6 +228,10 @@ export const getMarketplaceUrl = (): string => getRuntimeConfig().marketplaceUrl
  */
 export const getMarketplaceNexusUrl = (): string =>
   getRuntimeConfig().marketplaceNexusUrl ?? getRuntimeConfig().nexusUrl;
+/** The chat inbox ping service; `null` when the deployment has none. */
+export const getInboxUrl = (): string | null => getRuntimeConfig().inboxUrl ?? null;
+/** Audience the inbox expects in session proofs; defaults to the inbox URL. */
+export const getInboxAudience = (): string | null => getRuntimeConfig().inboxAudience ?? getInboxUrl();
 export const getLocksUrl = (): string => getRuntimeConfig().locksUrl;
 export const getPaykitSetupUrl = (): string => getRuntimeConfig().paykitSetupUrl;
 export const getPaykitSetupCreatorParam = (): boolean => getRuntimeConfig().paykitSetupCreatorParam;
@@ -238,6 +242,11 @@ export const getMarketplaceGrantFlowEnabled = (): boolean => getRuntimeConfig().
 export const getMarketplaceGrantPollMilliseconds = (): number => getRuntimeConfig().marketplaceGrantPollMilliseconds;
 export const getPassportSignInEnabled = (): boolean => getRuntimeConfig().passportSignIn;
 export const getUsdtPaymentsEnabled = (): boolean => getRuntimeConfig().usdtPaymentsEnabled;
+export const getStoreConnectionsEnabled = (): boolean => getRuntimeConfig().storeConnectionsEnabled;
+export const getPrivEncryptionKeysEnabled = (): boolean => getRuntimeConfig().privEncryptionKeys;
+export const getPassportPrivEncryptionKeysEnabled = (): boolean => getRuntimeConfig().passportPrivEncryptionKeys;
+export const getPrivEncryptionKeysHomeservers = (): readonly string[] =>
+  getRuntimeConfig().privEncryptionKeysHomeservers;
 
 /** The Passport deployment whose Google sign-up lands on each deploy's homeserver. */
 const PASSPORT_ORIGIN_BY_DEPLOY_ENV: Record<DeployEnv, string> = {

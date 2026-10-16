@@ -3,8 +3,6 @@ import { AuthApplication, isDefinitiveSessionAuthFailure } from '@/application/a
 import type { TKeypairParams, TRestorePersistedSessionResult } from '@/application/auth/auth.types';
 import { BootstrapApplication, type BootstrapProgressCallback } from '@/application/bootstrap/bootstrap';
 import { CommerceApplication } from '@/application/commerce/commerce';
-import { FirstContactApplication } from '@/application/messaging/first-contact';
-import { MessagingApplication } from '@/application/messaging/messaging';
 import { SettingsApplication } from '@/application/settings/settings';
 import { postStreamQueue } from '@/application/stream/posts/muting/post-stream-queue';
 import { TagApplication } from '@/application/tag/tag';
@@ -25,6 +23,7 @@ import {
   shouldSkipDestructiveCleanup,
 } from '@/controllers/auth/auth-identity-guard';
 import { isGrantKeyCleanupPending } from '@/controllers/auth/grant-key-cleanup';
+import { ChatController } from '@/controllers/chat/chat';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import { NotificationCoordinator } from '@/coordinators/notifications/notifications';
 import { StreamCoordinator } from '@/coordinators/streams/stream';
@@ -66,7 +65,6 @@ import { useCommerceStore } from '@/stores/commerce/commerce.store';
 import { useHomeStore } from '@/stores/home/home.store';
 import { useHotStore } from '@/stores/hot/hot.store';
 import { useLocalFilesStore } from '@/stores/localFiles/localFiles.store';
-import { useMessagingStore } from '@/stores/messaging/messaging.store';
 import { useMigrationStore } from '@/stores/migration/migration.store';
 import { useNotificationStore } from '@/stores/notification/notification.store';
 import { useOnboardingStore } from '@/stores/onboarding/onboarding.store';
@@ -1008,7 +1006,6 @@ export class AuthController {
           useHotStore.getState().reset();
           useLocalFilesStore.getState().reset();
           useCommerceStore.getState().reset();
-          useMessagingStore.getState().clearMessagingEnabled();
         }
         // Identity replacement is committed only after the new grant is saved.
         if (persistedPubky && persistedPubky !== newPubky) clearPersistedAuthIdentity();
@@ -1021,8 +1018,7 @@ export class AuthController {
       // the account that left must not keep a bearer at rest here.
       if ([captured?.pubky ?? null, currentPubky, persistedPubky].some((pubky) => pubky && pubky !== newPubky)) {
         CommerceController.clearMarketplaceSessionsOfOtherAccounts(newPubky);
-        MessagingApplication.clearMessagingSessionsOfOtherAccounts(newPubky);
-        FirstContactApplication.clearOtherAccounts(newPubky);
+        ChatController.clearSessionsOfOtherAccounts(newPubky);
       }
       this.markLocalStateDirty();
       this.pendingLocalStateCapture = null;
@@ -1045,14 +1041,12 @@ export class AuthController {
    */
   private static async cleanupLocalState({
     preservePublicCache = false,
-    preserveMessagingHistory = false,
     preserveServiceSessions = false,
     confirmMarketplaceBff = false,
     preservePrivateData = false,
     keepServicePubky = null,
   }: {
     preservePublicCache?: boolean;
-    preserveMessagingHistory?: boolean;
     preserveServiceSessions?: boolean;
     confirmMarketplaceBff?: boolean;
     preservePrivateData?: boolean;
@@ -1066,7 +1060,6 @@ export class AuthController {
     }
     this.cleanupState.promise = this.runCleanupLocalState({
       preservePublicCache,
-      preserveMessagingHistory,
       preserveServiceSessions,
       confirmMarketplaceBff,
       preservePrivateData,
@@ -1080,14 +1073,12 @@ export class AuthController {
 
   private static async runCleanupLocalState({
     preservePublicCache,
-    preserveMessagingHistory,
     preserveServiceSessions,
     confirmMarketplaceBff,
     preservePrivateData,
     keepServicePubky,
   }: {
     preservePublicCache: boolean;
-    preserveMessagingHistory: boolean;
     preserveServiceSessions: boolean;
     confirmMarketplaceBff: boolean;
     preservePrivateData: boolean;
@@ -1120,13 +1111,16 @@ export class AuthController {
       } else CommerceController.clearMarketplaceSessionForSignOut();
     }
     try {
-      // Keep the newly active account's persisted messaging approval on another
-      // frame's repeat cleanup, while dropping this frame's old live handles.
-      if (keepServicePubky) MessagingApplication.clearMessagingSessionsOfOtherAccounts(keepServicePubky);
-      else MessagingApplication.clearMessagingSession();
-      // The mute list, known contacts and message counters belong to the signed-out identity.
-      FirstContactApplication.clear();
-      useMessagingStore.getState().clearMessagingEnabled();
+      // Chat: keep the inbox session of the account that stays (another frame's
+      // repeat cleanup, or a same-identity restore that keeps service sessions);
+      // otherwise end this account's session and wipe its cache.
+      if (keepServicePubky) ChatController.clearSessionsOfOtherAccounts(keepServicePubky);
+      else if (preserveServiceSessions && pubky) ChatController.clearSessionsOfOtherAccounts(pubky);
+      else {
+        await ChatController.clearForSignOut(pubky ?? null).catch((error: unknown) => {
+          Logger.warn('Chat sign-out cleanup failed', { error });
+        });
+      }
       TtlCoordinator.resetInstance();
       StreamCoordinator.resetInstance();
       NotificationCoordinator.resetInstance();
@@ -1163,9 +1157,9 @@ export class AuthController {
       // no-identity restore path: the latter keeps the public browse cache.
       if (!preservePrivateData) {
         if (preservePublicCache) {
-          await clearPrivateData({ preserveMessagingHistory });
+          await clearPrivateData();
         } else {
-          await clearDatabase({ preserveMessagingHistory });
+          await clearDatabase();
         }
       }
       // Skip post-migration resync — full cleanup resets all state
@@ -1192,8 +1186,14 @@ export class AuthController {
    * Bitkit has its own grant QR slot beside Ring. The approved homeserver
    * grant is saved to BrowserSessionStore before it becomes active.
    */
-  static async getGrantAuthUrl(): Promise<TGenerateAuthUrlResult> {
-    return await this.beginGrantCeremony(() => AuthApplication.generateGrantAuthUrl(), 'bitkit');
+  static async getGrantAuthUrl(options?: { withPrivKeys?: boolean }): Promise<TGenerateAuthUrlResult> {
+    return await this.beginGrantCeremony(
+      () =>
+        options === undefined
+          ? AuthApplication.generateGrantAuthUrl()
+          : AuthApplication.generateGrantAuthUrl(undefined, options),
+      'bitkit',
+    );
   }
 
   /**
@@ -1201,10 +1201,17 @@ export class AuthController {
    * Bitkit, approved in the Passport popup. `xCallback` names the Shop's
    * Passport return page. Completion is the Bitkit grant ceremony; the
    * session is recorded as Passport-approved so its purchase grant is
-   * requested from Passport too.
+   * requested from Passport too. Scoped encryption keys follow the
+   * Passport default unless `options.withPrivKeys` says otherwise.
    */
-  static async getPassportGrantAuthUrl(xCallback?: XCallbackParams): Promise<TGenerateAuthUrlResult> {
-    return await this.beginGrantCeremony(() => AuthApplication.generateGrantAuthUrl(xCallback), 'passport');
+  static async getPassportGrantAuthUrl(
+    xCallback?: XCallbackParams,
+    options?: { withPrivKeys?: boolean },
+  ): Promise<TGenerateAuthUrlResult> {
+    return await this.beginGrantCeremony(
+      () => AuthApplication.generateGrantAuthUrl(xCallback, { ...options, signer: 'passport' }),
+      'passport',
+    );
   }
 
   private static async beginGrantCeremony(
@@ -1270,7 +1277,13 @@ export class AuthController {
     xCallback,
   }: { signer?: 'ring' | 'bitkit' | 'passport'; xCallback?: XCallbackParams } = {}): Promise<TGenerateAuthUrlResult> {
     this.assertStandaloneMode();
-    return this.beginGrantCeremony(() => AuthApplication.generateGrantAuthUrl(xCallback), signer);
+    return this.beginGrantCeremony(
+      () =>
+        signer === 'passport'
+          ? AuthApplication.generateGrantAuthUrl(xCallback, { signer })
+          : AuthApplication.generateGrantAuthUrl(xCallback),
+      signer,
+    );
   }
 
   /**

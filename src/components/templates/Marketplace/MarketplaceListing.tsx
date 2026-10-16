@@ -38,6 +38,7 @@ import { useMarketplacePublicAvailability } from '@/hooks/useMarketplacePublicAv
 import { useSellerReputation } from '@/hooks/useMarketplaceReviews/useMarketplaceReviews';
 import { useMeasurementSystem } from '@/hooks/useMeasurementSystem/useMeasurementSystem';
 import { useRequireAuth } from '@/hooks/useRequireAuth/useRequireAuth';
+import { CHAT_COPY } from '@/libs/chat/copy';
 import { getAuctionPhase } from '@/libs/commerce/auction-phase';
 import {
   CHECKOUT_HOLD_COPY,
@@ -61,6 +62,7 @@ import { formatPackageDimensions, formatWeight } from '@/libs/commerce/units';
 import { formatStockQuantity, UNLIMITED_STOCK_LABEL } from '@/libs/commerce/unlimited-stock';
 import { MarketplaceFulfillmentBadge } from '@/molecules/MarketplaceFulfillmentBadge/MarketplaceFulfillmentBadge';
 import { MarketplaceSellerIdentity } from '@/molecules/MarketplaceSellerIdentity/MarketplaceSellerIdentity';
+import { ChatEntryButton } from '@/organisms/Chat/ChatEntryButton';
 import { ContentLayout } from '@/organisms/ContentLayout/ContentLayout';
 import { DialogReportPost } from '@/organisms/DialogReportPost/DialogReportPost';
 import { MarketplaceAuctionPanel } from '@/organisms/Marketplace/MarketplaceAuctionPanel';
@@ -72,7 +74,6 @@ import { MarketplaceListingOwnerPanel } from '@/organisms/Marketplace/Marketplac
 import { MarketplaceListingSavePicker } from '@/organisms/Marketplace/MarketplaceListingSavePicker';
 import { MarketplaceListingSpecifics } from '@/organisms/Marketplace/MarketplaceListingSpecifics';
 import { MarketplaceMediaGallery } from '@/organisms/Marketplace/MarketplaceMediaGallery';
-import { MarketplaceMessageDialog } from '@/organisms/Marketplace/MarketplaceMessageDialog';
 import { MarketplaceOfferDialog } from '@/organisms/Marketplace/MarketplaceOfferDialog';
 import { MarketplaceReviewsSection } from '@/organisms/Marketplace/MarketplaceReviewsSection';
 import { MarketplaceSectionNav } from '@/organisms/Marketplace/MarketplaceSectionNav';
@@ -295,8 +296,11 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
     requireAuth(revealSessionRequired);
   };
   const onSessionConnected = () => {
+    const pendingPurchase = pendingPurchaseRef.current;
+    pendingPurchaseRef.current = null;
     setShowSessionRequired(false);
     void negotiation.refresh();
+    pendingPurchase?.();
   };
   const addSelectedVariantToCart = () => {
     if (!selectedVariant) return;
@@ -368,6 +372,7 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
               <MarketplaceListingOwnerPanel
                 record={record}
                 registrationStatus={listing.registration_status}
+                projection={negotiation.projection}
                 auctionPhase={auctionPhase ?? undefined}
               />
             )}
@@ -661,9 +666,13 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
                       </Link>
                     </Button>
                   )}
-                  <div>
-                    <MarketplaceMessageDialog sellerPubky={sellerPubky} listingId={listingId} />
-                  </div>
+                  <ChatEntryButton
+                    peerPubky={sellerPubky}
+                    context={{ listingId }}
+                    label={CHAT_COPY.listingCta}
+                    className="rounded-full"
+                    dataTestId="marketplace-listing-message-seller"
+                  />
                   {!isOwner && (
                     <Button
                       variant="ghost"

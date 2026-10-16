@@ -7,6 +7,7 @@ import { Typography } from '@/atoms/Typography/Typography';
 import { HumanFooter } from '@/molecules/HumanFooter/HumanFooter';
 import { HumanSmsCard } from '@/molecules/HumanSmsCard/HumanSmsCard';
 import { PageTitle } from '@/molecules/Page/Page';
+import { PassportSignInButton } from '@/molecules/PassportSignInButton/PassportSignInButton';
 import { HumanBitcoinCard } from '../HumanBitcoinCard/HumanBitcoinCard';
 import type { HumanSelectionProps } from './HumanSelection.types';
 
@@ -39,6 +40,7 @@ export const HumanSelection = ({ onClick, onInviteCodeClick, onDevMode }: HumanS
         <HumanSmsCard onClick={() => onClick('sms')} />
         <HumanBitcoinCard onClick={() => onClick('payment')} />
       </Container>
+      <PassportSignInButton intro="Have a Google account? Pubky Passport creates your pubky with it, with no phone code or payment." />
       {isDevMode && (
         <Container className="relative mt-6 flex items-start rounded border px-4 py-6">
           <Typography

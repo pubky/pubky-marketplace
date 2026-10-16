@@ -221,6 +221,70 @@ describe('grant-only marketplace approval', () => {
     expect(navigatesWithinGesture(navigation.navigateTop, URL, () => result.current.openInRing())).toBe(true);
   });
 
+  describe('Bitkit on iOS', () => {
+    const BITKIT_IOS_URL = `bitkit://pubky-auth/signin?caps=${encodeURIComponent(CAPS)}`;
+    const IPHONE = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15';
+    const MAC = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15';
+    const ANDROID = 'Mozilla/5.0 (Linux; Android 15; Pixel 9) AppleWebKit/537.36 Chrome/140.0 Mobile';
+
+    async function awaitingWith(
+      userAgent: string,
+      maxTouchPoints: number,
+      options: { signer?: MarketplaceSignerChoice } = {},
+    ) {
+      vi.stubGlobal('navigator', { userAgent, maxTouchPoints });
+      vi.mocked(beginMarketplaceBootstrapFlow).mockResolvedValue(pendingFlow().flow);
+      const { result } = renderHook(() => useMarketplaceSessionConnect(options));
+      act(() => result.current.start());
+      await waitFor(() => expect(result.current.status).toBe('awaiting'));
+      return result;
+    }
+
+    afterEach(() => {
+      vi.unstubAllGlobals();
+    });
+
+    it.each([
+      ['iPhone', IPHONE, 5],
+      ['iPadOS reporting Macintosh with touch', MAC, 5],
+    ])('opens the bitkit:// link on %s and keeps the QR and copy on pubkyauth://', async (_, userAgent, touch) => {
+      signIn('bitkit');
+      const result = await awaitingWith(userAgent, touch);
+
+      expect(navigatesWithinGesture(navigation.navigateTop, BITKIT_IOS_URL, () => result.current.openInRing())).toBe(
+        true,
+      );
+      expect(result.current.authorizationUrl).toBe(URL);
+    });
+
+    it('follows the Bitkit choice from the signer toggle', async () => {
+      signIn('ring');
+      const result = await awaitingWith(IPHONE, 5, { signer: 'bitkit' });
+
+      act(() => result.current.openInRing());
+      expect(navigation.navigateTop).toHaveBeenCalledWith(BITKIT_IOS_URL);
+    });
+
+    it.each([
+      ['Android', ANDROID, 5],
+      ['desktop Mac', MAC, 0],
+    ])('keeps the pubkyauth:// link on %s', async (_, userAgent, touch) => {
+      signIn('bitkit');
+      const result = await awaitingWith(userAgent, touch);
+
+      act(() => result.current.openInRing());
+      expect(navigation.navigateTop).toHaveBeenCalledWith(URL);
+    });
+
+    it('keeps the Pubky Ring link on iPhone', async () => {
+      signIn('ring');
+      const result = await awaitingWith(IPHONE, 5);
+
+      act(() => result.current.openInRing());
+      expect(navigation.navigateTop).toHaveBeenCalledWith(URL);
+    });
+  });
+
   it('does not commit an approval that arrives after the dialog unmounts', async () => {
     const { flow, resolve } = pendingFlow();
     vi.mocked(beginMarketplaceBootstrapFlow).mockResolvedValue(flow);

@@ -290,9 +290,20 @@ export const createCancelableAuthApproval = (
               // Ignore double-free or already-finalized WASM objects.
             }
             try {
-              flow = await options.resume();
+              const resumed = await options.resume();
+              if (canceled) {
+                // cancel() freed the previous flow while this one was being resumed.
+                try {
+                  resumed.free();
+                } catch {
+                  // Ignore double-free or already-finalized WASM objects.
+                }
+                throw createCanceledError();
+              }
+              flow = resumed;
               continue;
             } catch (resumeFailure) {
+              if (canceled) throw createCanceledError();
               // The channel cannot be resumed: fall through to the dead-flow error below.
               resumeError = resumeFailure;
             }

@@ -1,6 +1,8 @@
 # Reading encrypted marketplace data without the marketplace
 
-The Shop encrypts your watchlist, order receipts, badge checkpoints and the people you muted in messages before they reach your homeserver. The key is a random 32-byte data key that the marketplace service holds sealed and releases only to your signed-in session. **Settings → Privacy and Safety → Export recovery key** downloads that key. With the file and your homeserver data, you can read everything offline, even if the marketplace service no longer exists.
+> When your signer shares encryption keys with the Shop, the key below is also stored on your homeserver wrapped under a key only your signer can derive, and the marketplace service deletes its copy. See [priv-key-wrapping.md](priv-key-wrapping.md).
+
+The Shop encrypts your watchlist, order receipts, badge checkpoints before they reach your homeserver. The key is a random 32-byte data key that the marketplace service holds sealed and releases only to your signed-in session. **Settings → Privacy and Safety → Export recovery key** downloads that key. With the file and your homeserver data, you can read everything offline, even if the marketplace service no longer exists.
 
 Anyone who has the file can read the same data. Keep it offline.
 
@@ -53,11 +55,10 @@ path           = /priv/pubky.app/marketplace/v2/s/{family segment}/{entry name}
 | Order receipt             | `order_receipt`           | entry segment for the receipt id (a UUID) |
 | Activity badge checkpoint | `attention_seen/activity` | a random 32-character lowercase hex name  |
 | Orders badge checkpoint   | `attention_seen/orders`   | a random 32-character lowercase hex name  |
-| Messaging mute changes    | `messaging_mutes`         | a random 32-character lowercase hex name  |
 
 A badge checkpoint's plaintext is `{ "version": 1, "seenAt": <ms> }`; the checkpoint is the largest `seenAt`.
 
-Each mute change's plaintext is `{ "version": 1, "kind": "pubky_app.messaging_mute_change.v0", "owner_pubky": <your pubky>, "counterparty_pubky": <pubky>, "muted": <bool>, "changed_at": <ms> }`. List the family and open every entry; per person the change with the largest `changed_at` applies, and a mute wins a tie. An older list may also exist as one entry named by the entry segment for id `mutes`, with plaintext `{ "version": 1, "kind": "pubky_app.messaging_mutes.v0", "owner_pubky": <your pubky>, "entries": { <pubky>: { "muted": <bool>, "changed_at": <ms> } } }`; count each of its entries as one more change.
+Chat messages are not in this family: they are encrypted under per-pair keys derived from your chat key (`/priv/chat/v0/key.json`, plain JSON in your private tree), see [`../chat/README.md`](../chat/README.md). The retired messaging mute family (`messaging_mutes`) is no longer written; entries left by an earlier version are ignored.
 
 To open a record, find the key whose `keyId` equals the envelope's `kid`. Decrypt `ct` with XChaCha20-Poly1305 under that key's record key, the envelope's `nonce`, and associated data built from the entry's own name (the last segment of its path):
 

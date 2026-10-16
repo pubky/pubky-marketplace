@@ -7,7 +7,7 @@ import {
   wrapPayload,
 } from './secret-wrapping';
 
-const TABLE = 'commerce_messaging_receivers';
+const TABLE = 'commerce_delivery_keys';
 const ROW_ID = 'a'.repeat(52);
 
 let key: CryptoKey;
@@ -24,7 +24,7 @@ describe('buildWrapAad', () => {
 
   it('differs across tables and row ids', () => {
     const base = buildWrapAad(TABLE, ROW_ID);
-    expect(buildWrapAad('commerce_messaging_links', ROW_ID)).not.toEqual(base);
+    expect(buildWrapAad('commerce_delivery_records', ROW_ID)).not.toEqual(base);
     expect(buildWrapAad(TABLE, 'b'.repeat(52))).not.toEqual(base);
   });
 });
@@ -64,7 +64,7 @@ describe('wrapPayload/unwrapPayload', () => {
 
   it('fails authentication when unwrapped under a different table', async () => {
     const wrapped = await wrapPayload(key, buildWrapAad(TABLE, ROW_ID), new Uint8Array(32).fill(3));
-    await expect(unwrapPayload(key, buildWrapAad('commerce_messaging_links', ROW_ID), wrapped)).rejects.toSatisfy(
+    await expect(unwrapPayload(key, buildWrapAad('commerce_delivery_records', ROW_ID), wrapped)).rejects.toSatisfy(
       isUnwrapAuthenticationError,
     );
   });

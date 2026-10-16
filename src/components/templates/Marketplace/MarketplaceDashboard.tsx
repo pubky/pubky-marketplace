@@ -14,6 +14,7 @@ import {
   Pause,
   PencilLine,
   Play,
+  Plug,
   Plus,
   ShoppingBag,
   Store,
@@ -33,7 +34,7 @@ import { Image } from '@/atoms/Image/Image';
 import { Link } from '@/atoms/Link/Link';
 import { Skeleton } from '@/atoms/Skeleton/Skeleton';
 import { Typography } from '@/atoms/Typography/Typography';
-import { getCommerceAdapterMode, isDurableCommerceMode } from '@/config/commerce';
+import { getCommerceAdapterMode, getStoreConnectionsEnabled, isDurableCommerceMode } from '@/config/commerce';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import { useIsMobile } from '@/hooks/useIsMobile/useIsMobile';
 import { useMarketplaceFirstMediaUrl } from '@/hooks/useMarketplaceMediaUrl/useMarketplaceMediaUrl';
@@ -202,6 +203,14 @@ export function MarketplaceDashboard() {
               Payment settings
             </Link>
           </Button>
+          {getStoreConnectionsEnabled() && (
+            <Button asChild variant="secondary" size="sm" className="rounded-full text-xs font-bold">
+              <Link href={MARKETPLACE_ROUTES.SETTINGS_STORE_CONNECTIONS} overrideDefaults>
+                <Plug className="size-4" aria-hidden="true" />
+                Store connections
+              </Link>
+            </Button>
+          )}
         </nav>
 
         {dashboard.isLoading ? (

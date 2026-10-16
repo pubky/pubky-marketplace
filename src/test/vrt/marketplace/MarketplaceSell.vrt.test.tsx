@@ -165,6 +165,7 @@ vi.mock('@/controllers/commerce/commerce', () => ({
     commitCreateMedia: () => Promise.resolve(),
     commitUpsertListing: () => Promise.resolve(),
     getShippingPresets: () => Promise.resolve(view.shippingPresets),
+    getIndicativeBtcRate: () => Promise.resolve(null),
     commitUpsertShippingPreset: () => Promise.resolve(),
     fetchPickupAvailable: () => Promise.resolve(view.pickupAvailable),
     fetchDigitalDeliveryCapability: () =>

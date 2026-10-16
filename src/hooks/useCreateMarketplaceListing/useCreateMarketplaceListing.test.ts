@@ -216,6 +216,95 @@ describe('useCreateMarketplaceListing', () => {
     expect(CommerceController.commitUpsertListing).not.toHaveBeenCalled();
   });
 
+  describe('a Paykit outage', () => {
+    const outage = {
+      bitcoinAvailable: false,
+      bitcoinOfferAvailable: false,
+      paypalAvailable: false,
+      paykitUnreachable: true,
+    };
+    const healthy = { bitcoinAvailable: true, bitcoinOfferAvailable: true, paypalAvailable: false };
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('says Paykit is unreachable, not "add a payment method", and clears itself when Paykit is back', async () => {
+      vi.useFakeTimers();
+      vi.mocked(CommerceController.getSellerPaymentConfig).mockResolvedValue(outage);
+      const { result } = renderHook(() => useCreateMarketplaceListing());
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      expect(result.current.publishBlocked).toBe('paykit-unreachable');
+      expect(result.current.publishGuardReady).toBe(true);
+
+      await act(async () => {
+        await result.current.submit();
+      });
+      expect(toast).toHaveBeenCalledWith({
+        variant: 'error',
+        description: 'Paykit is temporarily unreachable. Try again in a moment.',
+      });
+      expect(CommerceController.commitUpsertListing).not.toHaveBeenCalled();
+
+      vi.mocked(CommerceController.getSellerPaymentConfig).mockResolvedValue(healthy);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(5_000);
+      });
+      expect(result.current.publishBlocked).toBeNull();
+    });
+
+    it('keeps showing the outage during a recheck, and blanks the guard again when its inputs change', async () => {
+      vi.useFakeTimers();
+      vi.mocked(CommerceController.getSellerPaymentConfig).mockResolvedValue(outage);
+      const { result } = renderHook(() => useCreateMarketplaceListing());
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      expect(result.current.publishBlocked).toBe('paykit-unreachable');
+
+      let finishRead: (config: typeof healthy | typeof outage) => void = () => {};
+      vi.mocked(CommerceController.getSellerPaymentConfig).mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            finishRead = resolve as typeof finishRead;
+          }),
+      );
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(5_000);
+      });
+      expect(result.current.publishGuardReady).toBe(true);
+      expect(result.current.publishBlocked).toBe('paykit-unreachable');
+
+      await act(async () => {
+        finishRead(healthy);
+      });
+      expect(result.current.publishBlocked).toBeNull();
+
+      vi.mocked(CommerceController.getSellerPaymentConfig).mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            finishRead = resolve as typeof finishRead;
+          }),
+      );
+      vi.mocked(CommerceController.getMyDeliveryKeyStatus).mockResolvedValue(PUBLISHED_KEY_STATUS);
+      act(() =>
+        result.current.form.setValue(
+          'fulfillment',
+          result.current.form.getValues('fulfillment') === 'shipping' ? 'pickup' : 'shipping',
+        ),
+      );
+      expect(result.current.publishGuardReady).toBe(false);
+
+      await act(async () => {
+        finishRead(outage);
+      });
+      expect(result.current.publishBlocked).toBe('paykit-unreachable');
+      expect(result.current.publishGuardReady).toBe(true);
+    });
+  });
+
   it('blocks publishing a listing that ships until the seller has a published delivery key', async () => {
     vi.mocked(CommerceController.getMyDeliveryKeyStatus).mockResolvedValue(NO_KEY_STATUS);
     const { result } = renderHook(() => useCreateMarketplaceListing());
@@ -416,6 +505,77 @@ describe('useCreateMarketplaceListing', () => {
       sale: { format: 'fixed_price', unitPrice: { amountMinor: 15_000, currency: 'BTC', exponent: 8 } },
     });
   });
+
+  it.each([
+    { currency: 'EUR', price: '119.90', shipping: '9.90', priceMinor: 11_990, shippingMinor: 990, exponent: 2 },
+    { currency: 'CHF', price: '99.95', shipping: '8.50', priceMinor: 9_995, shippingMinor: 850, exponent: 2 },
+    { currency: 'GBP', price: '89.00', shipping: '7.25', priceMinor: 8_900, shippingMinor: 725, exponent: 2 },
+    { currency: 'JPY', price: '15000', shipping: '1200', priceMinor: 15_000, shippingMinor: 1_200, exponent: 0 },
+    { currency: 'CAD', price: '149.99', shipping: '14.00', priceMinor: 14_999, shippingMinor: 1_400, exponent: 2 },
+    { currency: 'AUD', price: '159.50', shipping: '15.00', priceMinor: 15_950, shippingMinor: 1_500, exponent: 2 },
+  ] as const)(
+    'publishes a $currency listing with price and shipping in $currency minor units (exponent $exponent)',
+    async ({ currency, price, shipping, priceMinor, shippingMinor, exponent }) => {
+      const { result } = renderHook(() => useCreateMarketplaceListing());
+      act(() => {
+        result.current.form.setValue('title', 'Vintage leather boots');
+        result.current.form.setValue('description', 'Well cared for boots with light wear.');
+        result.current.form.setValue('categoryId', 'fashion-men-footwear-boots');
+        result.current.form.setValue('attrSize', 'US 9');
+        result.current.form.setValue('currency', currency);
+        result.current.form.setValue('price', price);
+        result.current.form.setValue('fulfillment', 'shipping');
+        result.current.form.setValue('shippingPrice', shipping);
+        result.current.form.setValue('packageWeight', '500');
+        result.current.form.setValue('packageLength', '30');
+        result.current.form.setValue('packageWidth', '20');
+        result.current.form.setValue('packageHeight', '10');
+        result.current.form.setValue('countryCode', 'US');
+      });
+
+      await act(async () => {
+        await result.current.submit();
+      });
+
+      const listing = vi.mocked(CommerceController.commitUpsertListing).mock.calls[0][0];
+      expect(commerceListingRecordSchema.safeParse(listing).success).toBe(true);
+      expect(listing).toMatchObject({
+        sale: { format: 'fixed_price', unitPrice: { amountMinor: priceMinor, currency, exponent } },
+        shippingOptions: [{ pricing: 'flat', price: { amountMinor: shippingMinor, currency, exponent } }],
+      });
+    },
+  );
+
+  // The service refuses a Locks-gated listing (`digitalLock`) outside USD, BTC and SAT
+  // (`locks_currency_unsupported`). The studio never authors a lock, in any currency,
+  // so that refusal cannot come from a listing published here.
+  it.each(['USD', 'EUR', 'CHF', 'GBP', 'JPY', 'CAD', 'AUD', 'BTC'] as const)(
+    'publishes a digital %s listing without a Locks gate',
+    async (currency) => {
+      const { result } = renderHook(() => useCreateMarketplaceListing());
+      act(() => {
+        result.current.form.setValue('title', 'Printable field guide');
+        result.current.form.setValue('description', 'A printable guide for the trail.');
+        result.current.form.setValue('categoryId', 'fashion-men-footwear-boots');
+        result.current.form.setValue('attrSize', 'US 9');
+        result.current.form.setValue('currency', currency);
+        result.current.form.setValue('price', '1500');
+        result.current.form.setValue('fulfillment', 'digital');
+        result.current.form.setValue('countryCode', 'US');
+      });
+
+      await act(async () => {
+        await result.current.submit();
+      });
+
+      const listing = commerceListingRecordSchema.parse(
+        vi.mocked(CommerceController.commitUpsertListing).mock.calls[0][0],
+      );
+      expect(listing.fulfillmentMethods).toEqual(['digital']);
+      expect(listing).not.toHaveProperty('digitalLock');
+      expect(listing.sale).toMatchObject({ unitPrice: { currency } });
+    },
+  );
 
   function fillAuction(result: { current: ReturnType<typeof useCreateMarketplaceListing> }, duration?: string) {
     act(() => {
@@ -652,6 +812,24 @@ describe('useCreateMarketplaceListing', () => {
     expect(result.current.form.getValues('currency')).toBe('BTC');
     expect(result.current.form.getValues('price')).toBe('15000');
   });
+
+  it.each(['USD', 'EUR', 'CHF', 'GBP', 'JPY', 'CAD', 'AUD', 'BTC'] as const)(
+    'resumes a draft priced in %s without migrating it',
+    async (currency) => {
+      markListingDraftResumeId('draftlisting03');
+      vi.mocked(CommerceController.getListingDrafts).mockResolvedValue([
+        listingDraftRow('draftlisting03', { title: 'Multi-currency draft', currency, price: '1500' }),
+      ]);
+      const { result } = renderHook(() => useCreateMarketplaceListing());
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      expect(result.current.restoredDraft).toBe(true);
+      expect(result.current.form.getValues('currency')).toBe(currency);
+      expect(result.current.form.getValues('price')).toBe('1500');
+    },
+  );
 
   // Sol re-review P1: a duplicate drafted on the pre-fix head could be saved
   // after adding Ship or Local pickup with the cap still in its quantity.

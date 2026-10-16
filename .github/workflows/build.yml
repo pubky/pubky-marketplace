@@ -102,7 +102,7 @@ jobs:
       - name: Smoke test Locks SDK package
         run: node scripts/locks-sdk-smoke.mjs
 
-      - name: Smoke test vendored paykit-wasm messaging binding
+      - name: Smoke test vendored paykit-wasm binding
         run: node scripts/paykit-wasm-smoke.mjs
 
       - name: Build prod
@@ -122,6 +122,7 @@ jobs:
           export PUBKY_RUNTIME_HOMEGATE_URL="https://homegate.staging.pubky.app"
           export PUBKY_RUNTIME_PKARR_RELAYS='["https://pkarr.pubky.app","https://pkarr.pubky.org"]'
           export PUBKY_RUNTIME_DEFAULT_HTTP_RELAY="https://httprelay.staging.pubky.app/inbox"
+          export PUBKY_RUNTIME_EXCHANGE_RATE_API="https://api1.blocktank.to/api/fx/rates/btc"
 
           npm run start > "$SERVER_LOG" 2>&1 &
           SERVER_PID=$!

@@ -3,7 +3,6 @@
 import { type ReactNode, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ExternalLink, ReceiptText } from 'lucide-react';
-import { MARKETPLACE_ROUTES } from '@/app/routes';
 import { Badge } from '@/atoms/Badge/Badge';
 import { Button } from '@/atoms/Button/Button';
 import { Card, CardContent } from '@/atoms/Card/Card';
@@ -12,10 +11,11 @@ import { Heading } from '@/atoms/Heading/Heading';
 import { Link } from '@/atoms/Link/Link';
 import { Skeleton } from '@/atoms/Skeleton/Skeleton';
 import { Typography } from '@/atoms/Typography/Typography';
-import { type CommerceAdapterMode, isDurableCommerceMode, isTransactionalCommerceMode } from '@/config/commerce';
+import { isTransactionalCommerceMode } from '@/config/commerce';
 import { type MarketplaceOrderView, useMarketplaceOrders } from '@/hooks/useMarketplaceOrders/useMarketplaceOrders';
 import { useMarkMarketplaceOrdersSeen } from '@/hooks/useMarkMarketplaceOrdersSeen/useMarkMarketplaceOrdersSeen';
 import { useNowMs } from '@/hooks/useNowMs/useNowMs';
+import { CHAT_COPY } from '@/libs/chat/copy';
 import { orderAnchorId, readOrderAnchorId } from '@/libs/commerce/activity-links';
 import {
   bitcoinPaymentHasBeenSeen,
@@ -47,9 +47,9 @@ import {
   isInstantDigitalDeliveryKind,
 } from '@/libs/commerce/digital';
 import { formatCommerceMoney } from '@/libs/commerce/format';
+import { listingIdFromOrder } from '@/libs/commerce/listing-aggregate';
 import { buyerVisiblePaymentStatus } from '@/libs/commerce/locks-payment';
-import { listingIdFromOrder, marketplaceConversationHref } from '@/libs/commerce/marketplace-conversation-query';
-import { MESSAGING_COPY } from '@/libs/commerce/messaging-copy';
+import { observedPaymentRail } from '@/libs/commerce/paykit-rail';
 import { formatBitcoinAmount } from '@/libs/commerce/pricing';
 import {
   REFUND_ORDER_NOTICES,
@@ -57,16 +57,16 @@ import {
   refundRecordLine,
   refundStateLabel,
 } from '@/libs/commerce/refund-copy';
-import { buildMarketplaceConversationAggregateId } from '@/libs/commerce/transaction-commands';
 import { usdtPaidAsLine } from '@/libs/commerce/usdt-buyer-status';
 import { isUsdtRefundOrder } from '@/libs/commerce/usdt-refund';
 import { ArbiscanLookupLink } from '@/molecules/Marketplace/ArbiscanLookupLink';
 import { MarketplaceEmptyState } from '@/molecules/Marketplace/MarketplaceEmptyState';
+import { ChatEntryButton } from '@/organisms/Chat/ChatEntryButton';
 import { ContentLayout } from '@/organisms/ContentLayout/ContentLayout';
 import { DropEditionBadge, DropEditionReceiptLine } from '@/organisms/Marketplace/DropEditionBadge';
 import { MarketplaceBitcoinAmountBreakdown } from '@/organisms/Marketplace/MarketplaceBitcoinAmountBreakdown';
 import { MarketplaceCheckoutItem } from '@/organisms/Marketplace/MarketplaceCheckoutItem';
-import { MarketplaceEncryptedConversationDialog } from '@/organisms/Marketplace/MarketplaceEncryptedConversationDialog';
+import { MarketplaceConnectorPushStatus } from '@/organisms/Marketplace/MarketplaceConnectorPushStatus';
 import { MarketplaceIndicativePrice } from '@/organisms/Marketplace/MarketplaceIndicativePrice';
 import { MarketplaceMyReviews } from '@/organisms/Marketplace/MarketplaceMyReviews';
 import { MarketplaceOrderActions } from '@/organisms/Marketplace/MarketplaceOrderActions';
@@ -214,6 +214,8 @@ export function MarketplaceOrders() {
               : 'Track your purchases and sales.'}
           </Typography>
         </div>
+
+        {hasTransactionBackend && <MarketplaceConnectorPushStatus />}
 
         {!hasTransactionBackend ? (
           <div className="flex min-h-64 flex-col items-center justify-center rounded-md px-6 text-center">
@@ -538,11 +540,13 @@ export function MarketplaceOrders() {
                                 </Typography>
                                 {isBuyer && (
                                   <div className="mt-2 max-w-44">
-                                    <Button asChild variant="secondary" className="rounded-full">
-                                      <Link href={MARKETPLACE_ROUTES.MESSAGES} overrideDefaults>
-                                        Message seller
-                                      </Link>
-                                    </Button>
+                                    <ChatEntryButton
+                                      peerPubky={order.sellerPubky}
+                                      context={{ orderId: order.id, listingId: listingIdFromOrder(order) ?? undefined }}
+                                      label={CHAT_COPY.listingCta}
+                                      size="default"
+                                      className="rounded-full"
+                                    />
                                   </div>
                                 )}
                               </div>
@@ -593,7 +597,7 @@ export function MarketplaceOrders() {
                             {!isBuyer && order.fulfillment === 'digital' && (
                               <MarketplaceSellerDigitalPanel order={order} onChanged={refresh} />
                             )}
-                            <MarketplaceOrderMessageCta order={order} adapterMode={adapterMode} />
+                            <MarketplaceOrderMessageCta order={order} />
                             <div className="mt-4 min-w-0">
                               <MarketplacePaymentStatusCard
                                 order={order}
@@ -659,55 +663,29 @@ export function MarketplaceOrders() {
   );
 }
 
-function MarketplaceOrderMessageCta({
-  order,
-  adapterMode,
-}: {
-  order: MarketplaceOrder;
-  adapterMode: CommerceAdapterMode;
-}) {
+function MarketplaceOrderMessageCta({ order }: { order: MarketplaceOrder }) {
   const currentUserPubky = useAuthStore((state) => state.currentUserPubky);
-  const listingId = listingIdFromOrder(order);
-  if (!listingId) return null;
-
-  const conversationId = buildMarketplaceConversationAggregateId(order.sellerPubky, order.buyerPubky, listingId);
-  const trigger = (
-    <Button variant="secondary" className="rounded-full">
-      {MESSAGING_COPY.orderCta}
-    </Button>
-  );
-
-  if (isDurableCommerceMode(adapterMode) && currentUserPubky) {
-    const counterpartyPubky = currentUserPubky === order.sellerPubky ? order.buyerPubky : order.sellerPubky;
-    return (
-      <div className="mt-3" data-surface="marketplace-order-message-cta">
-        <MarketplaceEncryptedConversationDialog
-          sellerPubky={order.sellerPubky}
-          buyerPubky={order.buyerPubky}
-          listingId={listingId}
-          counterpartyPubky={counterpartyPubky}
-          trigger={trigger}
-        />
-      </div>
-    );
-  }
-
+  if (!currentUserPubky) return null;
+  const peerPubky = currentUserPubky === order.sellerPubky ? order.buyerPubky : order.sellerPubky;
   return (
     <div className="mt-3" data-surface="marketplace-order-message-cta">
-      <Button asChild variant="secondary" className="rounded-full">
-        <Link href={marketplaceConversationHref(conversationId)} overrideDefaults>
-          {MESSAGING_COPY.orderCta}
-        </Link>
-      </Button>
+      <ChatEntryButton
+        peerPubky={peerPubky}
+        context={{ orderId: order.id, listingId: listingIdFromOrder(order) ?? undefined }}
+        label={CHAT_COPY.orderCta}
+        size="default"
+        className="rounded-full"
+      />
     </div>
   );
 }
 
 function MarketplaceOrderBitcoinAmount({ order }: { order: MarketplaceOrder }): ReactNode {
   if (bitcoinPaymentBreakdown(order)) return null;
-  // A USDT order settles at parity with its USD price; a bitcoin estimate would mislead.
-  if (order.paymentMethod === 'usdt') return null;
-  const quote = order.paymentMethod === 'bitcoin' ? order.bitcoinQuote : null;
+  // A USDT payment settles in USDT; a bitcoin estimate would mislead.
+  const rail = observedPaymentRail(order);
+  if (rail === 'usdt') return null;
+  const quote = rail === 'bitcoin' ? order.bitcoinQuote : null;
   if (quote?.quotedSats !== null && quote?.quotedSats !== undefined) {
     return (
       <Typography as="span" className="text-sm font-normal">

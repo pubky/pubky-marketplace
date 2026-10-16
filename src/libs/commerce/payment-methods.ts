@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { PAYMENT_METHOD_KINDS } from '@/libs/commerce/payment-options';
+import { PAYMENT_ASSETS, type PAYMENT_METHOD_KINDS, type PaymentAsset } from '@/libs/commerce/payment-options';
 import type { CommerceDeliveryAddressValue } from '@/libs/commerce/postal-address';
 import { usdtSetupActionSchema, usdtSetupStatusSchema } from '@/libs/commerce/usdt-seller-setup';
 
@@ -43,6 +43,17 @@ export const sellerPaymentConfigSchema = z
     // Present only when the service's USDT flag is on. A malformed value is
     // dropped, which reads as "not available".
     usdtAvailable: z.boolean().optional().catch(undefined),
+    // Present only while the service's USDT flag is on: whether this seller can
+    // take a Paykit request at all, on any asset.
+    paykitAvailable: z.boolean().optional().catch(undefined),
+    // The assets one Paykit request offers for this seller. Unknown assets are
+    // dropped; an absent or unreadable list falls back to `bitcoinAvailable` /
+    // `usdtAvailable` in `sellerPaykitAssets`.
+    acceptedAssets: z
+      .array(z.string())
+      .transform((assets) => PAYMENT_ASSETS.filter((asset) => assets.includes(asset)))
+      .optional()
+      .catch(undefined),
   })
   .transform(
     ({
@@ -51,38 +62,77 @@ export const sellerPaymentConfigSchema = z
       paypalAvailable,
       paypalMerchantEmail,
       usdtAvailable,
+      paykitAvailable,
+      acceptedAssets,
     }): {
       bitcoinAvailable: boolean;
       bitcoinOfferAvailable: boolean;
       paypalAvailable: boolean;
       usdtAvailable?: boolean;
+      paykitAvailable?: boolean;
+      acceptedAssets?: PaymentAsset[];
     } => ({
       bitcoinAvailable,
       bitcoinOfferAvailable,
       paypalAvailable: paypalAvailable ?? Boolean(paypalMerchantEmail),
       ...(usdtAvailable === undefined ? {} : { usdtAvailable }),
+      ...(paykitAvailable === undefined ? {} : { paykitAvailable }),
+      ...(acceptedAssets === undefined ? {} : { acceptedAssets }),
     }),
   );
 
-export type SellerPaymentConfig = z.infer<typeof sellerPaymentConfigSchema>;
+/**
+ * `paykitUnreachable` is not on the wire: the client adds it when Bitcoin is
+ * not offered and the service's `/health` says the Paykit rail is down, so
+ * "Paykit is down" never reads as "the seller has no payment method".
+ */
+export type SellerPaymentConfig = z.infer<typeof sellerPaymentConfigSchema> & { paykitUnreachable?: boolean };
+
+/**
+ * The assets one Paykit request from this seller offers, Bitcoin first. USDT
+ * is counted only when the caller's gate (`usdtPaymentsAvailable`: Shop flag
+ * AND service capability) is on, so a deployment with USDT off never says
+ * "USDT". The service's `acceptedAssets` list wins when it sends one; older
+ * services are read from `bitcoinAvailable` and `usdtAvailable`, and a
+ * service that says `paykitAvailable: false` offers none. The
+ * rail-wide Bitcoin offer gate removes Bitcoin either way.
+ */
+export function sellerPaykitAssets(
+  config: SellerPaymentConfig,
+  { usdtPaymentsAvailable = false }: { usdtPaymentsAvailable?: boolean } = {},
+): PaymentAsset[] {
+  if (config.paykitAvailable === false) return [];
+  const bitcoin =
+    (config.acceptedAssets ? config.acceptedAssets.includes('BTC') : config.bitcoinAvailable) &&
+    config.bitcoinOfferAvailable;
+  const usdt = config.acceptedAssets ? config.acceptedAssets.includes('USDT') : config.usdtAvailable === true;
+  return PAYMENT_ASSETS.filter((asset) => (asset === 'BTC' ? bitcoin : usdtPaymentsAvailable && usdt));
+}
 
 /**
  * Methods the buyer can actually choose, in the order the UI renders them.
- * USDT is offered only when the caller's gate
- * (`usdtPaymentsAvailable`: Shop flag AND service capability) is on AND the
- * seller's public config says `usdtAvailable`; every existing caller omits the
- * gate, so their result is unchanged.
+ * Paykit is one entry whatever the assets: it is offered when the seller takes
+ * Bitcoin or, through the gate, USDT, and the buyer picks the asset in Bitkit.
  */
 export function availablePaymentMethods(
   config: SellerPaymentConfig,
-  { usdtPaymentsAvailable = false }: { usdtPaymentsAvailable?: boolean } = {},
+  options: { usdtPaymentsAvailable?: boolean } = {},
 ): PaymentMethodKind[] {
   const methods: PaymentMethodKind[] = [];
-  if (config.bitcoinAvailable && config.bitcoinOfferAvailable) methods.push('bitcoin');
-  if (usdtPaymentsAvailable && config.usdtAvailable === true) methods.push('usdt');
+  if (sellerPaykitAssets(config, options).length > 0) methods.push('paykit');
   if (config.paypalAvailable) methods.push('paypal');
   return methods;
 }
+
+export const BITCOIN_SETUP_STATUSES = ['ready', 'setup_required', 'unavailable'] as const;
+export type BitcoinSetupStatus = (typeof BITCOIN_SETUP_STATUSES)[number];
+
+/**
+ * The service's uncached Paykit answer for receiving Bitcoin (`bitcoin_setup`),
+ * present whether or not Bitcoin is switched on. An unrecognised value is
+ * dropped, which reads as "readiness unknown".
+ */
+const bitcoinSetupSchema = z.enum(BITCOIN_SETUP_STATUSES).optional().catch(undefined);
 
 /**
  * The seller's own view when editing the configuration. Mirrors the
@@ -90,6 +140,7 @@ export function availablePaymentMethods(
  */
 export const sellerPaymentConfigOwnViewSchema = z.object({
   bitcoinEnabled: z.boolean(),
+  bitcoinSetup: bitcoinSetupSchema,
   // Present only when the service's USDT flag is on (the seller's Shop-level consent).
   usdtEnabled: z.boolean().optional().catch(undefined),
   // Readiness from the service's signed Paykit lookup (see usdt-seller-setup.ts).
@@ -100,6 +151,18 @@ export const sellerPaymentConfigOwnViewSchema = z.object({
 });
 
 export type SellerPaymentConfigOwnView = z.infer<typeof sellerPaymentConfigOwnViewSchema>;
+
+/**
+ * Whether the seller's Bitkit setup can receive Bitcoin: `true` for
+ * `ready`, `false` for `setup_required`, and `null` when the service cannot
+ * say (`unavailable`, or a service that predates the field). `null` is never a
+ * reason to tell the seller Bitkit is missing.
+ */
+export function bitcoinSetupClaim(config: Pick<SellerPaymentConfigOwnView, 'bitcoinSetup'> | null): boolean | null {
+  if (config?.bitcoinSetup === 'ready') return true;
+  if (config?.bitcoinSetup === 'setup_required') return false;
+  return null;
+}
 
 const PAYPAL_EMAIL_MAX_BYTES = 254;
 const WHITESPACE_OR_CONTROL = /[\p{White_Space}\p{Cc}]/u;

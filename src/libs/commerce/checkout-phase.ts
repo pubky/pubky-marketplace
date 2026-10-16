@@ -1,5 +1,6 @@
 import { MARKETPLACE_ROUTES } from '@/app/routes';
 import { formatOrderInstant, UNBOUND_BACK_CANCEL_REASON } from '@/libs/commerce/checkout-hold';
+import { followsBitcoinFlow } from '@/libs/commerce/paykit-rail';
 import type { PaymentMethodKind } from '@/libs/commerce/payment-methods';
 import { isUsdtPaymentReviewOrder } from '@/libs/commerce/usdt-payment-review';
 
@@ -84,6 +85,7 @@ type SellerOrderRole = {
   buyerPubky: string;
   paymentMethod?: PaymentMethodKind | null;
   paymentAsset?: string | null;
+  paykitRequestState?: string | null;
 };
 
 function isSellerParty(order: SellerOrderRole, currentUserPubky: string | null): boolean {
@@ -92,10 +94,12 @@ function isSellerParty(order: SellerOrderRole, currentUserPubky: string | null):
 
 /**
  * A bound Bitcoin payment is a sale, not a stock hold. The seller resolves
- * and confirms it on the sales card. An unbound hold stays a reservation.
+ * and confirms it on the sales card. An unbound hold stays a reservation, and
+ * so does a single-bind Paykit order until its Bitcoin payment is seen: before
+ * that the buyer has not picked an asset in Bitkit.
  */
 export function isSellerBoundBitcoinOrder(order: SellerOrderRole): boolean {
-  return isPendingPaymentState(order.state) && order.paymentMethod === 'bitcoin';
+  return isPendingPaymentState(order.state) && followsBitcoinFlow(order);
 }
 
 /**
@@ -227,7 +231,7 @@ export function listingAggregatesFromCheckoutLines(lines: Array<{ listingAggrega
   return lines.flatMap((line) => (line.listingAggregateId ? [line.listingAggregateId] : []));
 }
 
-const PAYMENT_METHOD_ORDER: PaymentMethodKind[] = ['bitcoin', 'usdt', 'paypal'];
+const PAYMENT_METHOD_ORDER: PaymentMethodKind[] = ['paykit', 'bitcoin', 'usdt', 'paypal'];
 
 /** Shared rails across every seller in a cart. Empty means Pay stays disabled. */
 export function intersectPaymentMethods(sets: PaymentMethodKind[][]): PaymentMethodKind[] {

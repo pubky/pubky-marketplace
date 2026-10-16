@@ -1,5 +1,7 @@
 # Pubky Shop: team brief
 
+> **Note (2026-10-12):** the messaging statements in this document (a frozen beta on Paykit Encrypted Links, Ring cookie sessions only, no messaging for Bitkit and Passport users until SSO-E1) predate the chat rewrite. Shop messaging now runs on homeserver files with every sign-in ([`../chat/README.md`](../chat/README.md), [ADR 0030](../adr/0030-chat-transport.md)); the pubky-chat (MLS) cutover remains the long-term direction. The rest is kept as written.
+
 For developers taking over [shop.pubky.app](https://shop.pubky.app) for the beta. The launch plan, with decisions and the timeline, is in [shop-launch-plan.md](shop-launch-plan.md).
 
 ## What the Shop is

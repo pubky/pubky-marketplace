@@ -84,6 +84,8 @@ vi.mock('@/hooks/useMarketplaceInventoryImport/useMarketplaceInventoryImport', (
     busy: false,
     reset: () => {},
     planFile: async () => undefined,
+    submitStoreUrl: async () => false,
+    storeForm: { control: {} },
     publish: async () => undefined,
     resume: async () => undefined,
     confirmConflict: async () => undefined,

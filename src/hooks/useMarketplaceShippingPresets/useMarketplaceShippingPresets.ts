@@ -1,6 +1,7 @@
 'use client';
 
 import { useLiveQuery } from 'dexie-react-hooks';
+import type { ListingCurrencyCode } from '@/config/currencies';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import type { CommerceShippingPresetModelSchema } from '@/models/commerce/commerce.schema';
 import { toast } from '@/molecules/Toaster/use-toast';
@@ -33,8 +34,12 @@ export function useMarketplaceShippingPresets() {
     undefined,
   );
 
-  const saveFromFields = async (presetId: string | null, fields: MarketplaceShippingPresetFields): Promise<boolean> => {
-    const input = shippingFieldsToPresetInput(fields);
+  const saveFromFields = async (
+    presetId: string | null,
+    fields: MarketplaceShippingPresetFields,
+    currency: ListingCurrencyCode,
+  ): Promise<boolean> => {
+    const input = shippingFieldsToPresetInput(fields, currency);
     if (!input) {
       toast({
         variant: 'error',

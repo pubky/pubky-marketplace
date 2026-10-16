@@ -25,7 +25,7 @@ import {
   marketplaceDigitalDeliveryChannelSchema,
   type MarketplaceDigitalDeliveryInput,
 } from '@/libs/commerce/digital';
-import { parseListingAggregateId } from '@/libs/commerce/marketplace-conversation-query';
+import { parseListingAggregateId } from '@/libs/commerce/listing-aggregate';
 import type { CommerceDigitalLock, CommerceShopRecord } from '@/libs/commerce/marketplace-records';
 import type { BindDeliveryAddress, PaymentMethodKind } from '@/libs/commerce/payment-methods';
 import { resolveCheckoutFulfillment } from '@/libs/commerce/pickup';
@@ -33,7 +33,7 @@ import type { CommerceDeliveryAddressValue } from '@/libs/commerce/postal-addres
 import type { PrivRecoveryKeyExport } from '@/libs/commerce/priv-recovery-key';
 import type { ShipFromAddress, ShippingParcel, ShippoRate } from '@/libs/commerce/shipping';
 import { buildMarketplaceListingAggregateId } from '@/libs/commerce/transaction-commands';
-import { commercePositiveMoneySchema, commercePubkySchema } from '@/libs/commerce/transaction-contracts';
+import { commercePositiveMoneySchema } from '@/libs/commerce/transaction-contracts';
 import { isAppError } from '@/libs/error/error';
 import { ValidationErrorCode } from '@/libs/error/error.codes';
 import { Err } from '@/libs/error/error.factories';
@@ -48,12 +48,7 @@ import { isRecognizedMarketplaceNotification } from '@/services/marketplace/mark
 import type { MarketplaceSessionEndedEvent, MarketplaceSessionInfo } from '@/services/marketplace/marketplace-session';
 import { useAuthStore } from '@/stores/auth/auth.store';
 import { useCommerceStore } from '@/stores/commerce/commerce.store';
-import type {
-  CommerceConditionFilter,
-  CommerceSaleFormatFilter,
-  CommerceSort,
-  CommerceUsdtRefusalReason,
-} from '@/stores/commerce/commerce.types';
+import type { CommerceConditionFilter, CommerceSaleFormatFilter, CommerceSort } from '@/stores/commerce/commerce.types';
 import { useNotificationStore } from '@/stores/notification/notification.store';
 
 /** Rates for an order, or why this device could not open the address to quote against. */
@@ -395,8 +390,69 @@ export class CommerceController {
   static async planInventoryImport(
     sellerPubky: string,
     file: Parameters<CommerceInventoryImportApplication['planFile']>[0],
+    settings?: Parameters<CommerceInventoryImportApplication['planFile']>[1],
   ) {
-    return await CommerceInventoryImportApplication.forSeller(sellerPubky).planFile(file);
+    return await CommerceInventoryImportApplication.forSeller(sellerPubky).planFile(file, settings);
+  }
+
+  static async planInventoryStoreImport(
+    sellerPubky: string,
+    catalog: Parameters<CommerceInventoryImportApplication['planStoreCatalog']>[0],
+    settings: Parameters<CommerceInventoryImportApplication['planStoreCatalog']>[1],
+    offeredCurrencies: Parameters<CommerceInventoryImportApplication['planStoreCatalog']>[2],
+  ) {
+    return await CommerceInventoryImportApplication.forSeller(sellerPubky).planStoreCatalog(
+      catalog,
+      settings,
+      offeredCurrencies,
+    );
+  }
+
+  static async inventoryImportImageTargets(sellerPubky: string, manifestId: string) {
+    return await CommerceInventoryImportApplication.forSeller(sellerPubky).imageTargets(manifestId);
+  }
+
+  static async markInventoryImportStarted(sellerPubky: string, manifestId: string) {
+    return await CommerceInventoryImportApplication.forSeller(sellerPubky).markStarted(manifestId);
+  }
+
+  static async findUnfinishedInventoryImport(sellerPubky: string) {
+    return await CommerceInventoryImportApplication.forSeller(sellerPubky).findUnfinished();
+  }
+
+  static async discardInventoryImport(sellerPubky: string, manifestId: string) {
+    return await CommerceInventoryImportApplication.forSeller(sellerPubky).discard(manifestId);
+  }
+
+  static async inventoryImportKnownMedia(sellerPubky: string, manifestId: string, urls: readonly string[]) {
+    return await CommerceInventoryImportApplication.forSeller(sellerPubky).knownMedia(manifestId, urls);
+  }
+
+  static async journalInventoryImportPhoto(
+    sellerPubky: string,
+    manifestId: string,
+    rowIdentity: string,
+    url: string,
+    media: Parameters<CommerceInventoryImportApplication['journalPhoto']>[3],
+  ) {
+    return await CommerceInventoryImportApplication.forSeller(sellerPubky).journalPhoto(
+      manifestId,
+      rowIdentity,
+      url,
+      media,
+    );
+  }
+
+  static async attachInventoryImportImages(
+    sellerPubky: string,
+    manifestId: string,
+    outcomes: Parameters<CommerceInventoryImportApplication['attachImages']>[1],
+  ) {
+    await CommerceInventoryImportApplication.forSeller(sellerPubky).attachImages(manifestId, outcomes);
+  }
+
+  static async inventoryImportDefaults(sellerPubky: string) {
+    return await CommerceInventoryImportApplication.forSeller(sellerPubky).importDefaults();
   }
 
   static async dryRunInventoryImport(sellerPubky: string, manifestId: string) {
@@ -660,8 +716,8 @@ export class CommerceController {
   static async getMyPaymentConfig() {
     const ownerPubky = this.getCurrentUserPubky();
     const config = await CommerceApplication.getMyPaymentConfig(ownerPubky);
-    // Sellers who turned bitcoin on before the Shop published storefronts get one here.
-    if (config?.bitcoinEnabled) this.ensureStorefront(ownerPubky);
+    // Sellers who turned bitcoin or USDT on before the Shop published storefronts get one here.
+    if (config?.bitcoinEnabled || config?.usdtEnabled === true) this.ensureStorefront(ownerPubky);
     return config;
   }
 
@@ -673,13 +729,13 @@ export class CommerceController {
   }) {
     const ownerPubky = this.getCurrentUserPubky();
     const saved = await CommerceApplication.putMyPaymentConfig(ownerPubky, input);
-    if (saved.bitcoinEnabled) this.ensureStorefront(ownerPubky);
+    if (saved.bitcoinEnabled || saved.usdtEnabled === true) this.ensureStorefront(ownerPubky);
     return saved;
   }
 
   /**
-   * A seller who can be paid in bitcoin (Accept bitcoin on, or a published
-   * listing) gets a default storefront when they have none, because Bitkit
+   * A seller who can be paid through Paykit (Accept bitcoin or Accept USDT on,
+   * or a published listing) gets a default storefront when they have none, because Bitkit
    * only makes a seller the buyer's contact when the seller publishes
    * `shop.json`. Runs behind the seller's action and never blocks or fails it.
    * Checks once per seller per session; a failure or an account switch allows
@@ -821,11 +877,6 @@ export class CommerceController {
   /** Seller's PayPal receipt confirmation — this is what pays the order. */
   static async confirmFiatReceived(orderId: string) {
     return await CommerceApplication.confirmFiatReceived(this.getCurrentUserPubky(), orderId);
-  }
-
-  /** Whether the current user already has a claimed watch-only account. */
-  static async isOwnPaykitAccountClaimed() {
-    return await CommerceApplication.isPaykitAccountClaimed(this.getCurrentUserPubky());
   }
 
   /**
@@ -1107,15 +1158,6 @@ export class CommerceController {
   /** Whether USDT may be offered: the Shop flag AND the service capability. A failed read rejects. */
   static async fetchUsdtPaymentsAvailable(): Promise<boolean> {
     return await CommerceApplication.fetchUsdtPaymentsAvailable();
-  }
-
-  /**
-   * Remembers, for this browser session, that the service refused a USDT bind
-   * for this seller set, so the checkout picker and the order's payment card
-   * stop offering a method that would be refused again.
-   */
-  static rememberUsdtRefusal(sellerKey: string, reason: CommerceUsdtRefusalReason): void {
-    useCommerceStore.getState().setUsdtRefusal(sellerKey, reason);
   }
 
   /**
@@ -1442,54 +1484,6 @@ export class CommerceController {
     );
   }
 
-  static async createLocksFrontendSession(code: unknown, state: unknown, accountPubky?: unknown) {
-    if (
-      typeof code !== 'string' ||
-      code.length === 0 ||
-      code.length > 4_096 ||
-      typeof state !== 'string' ||
-      state.length === 0 ||
-      state.length > 256
-    ) {
-      throw Err.validation(ValidationErrorCode.INVALID_INPUT, 'Locks connect completion is invalid.', {
-        service: ErrorService.Local,
-        operation: 'createLocksFrontendSession',
-      });
-    }
-    const pubky = typeof accountPubky === 'string' && accountPubky.length > 0 ? accountPubky : undefined;
-    return await CommerceApplication.createLocksFrontendSession(code, state, pubky);
-  }
-
-  static async getLocksCreatorAuthorityStatus(sessionToken: unknown) {
-    if (typeof sessionToken !== 'string' || sessionToken.length === 0 || sessionToken.length > 4_096) {
-      throw Err.validation(ValidationErrorCode.INVALID_INPUT, 'Lock Server session is invalid.', {
-        service: ErrorService.Local,
-        operation: 'getLocksCreatorAuthorityStatus',
-      });
-    }
-    return await CommerceApplication.getLocksCreatorAuthorityStatus(sessionToken);
-  }
-
-  static async getLocksPublicCreatorAuthorityStatus(accountPubky: unknown) {
-    const parsed = commercePubkySchema.safeParse(accountPubky);
-    if (!parsed.success) {
-      throw Err.validation(ValidationErrorCode.INVALID_INPUT, 'Shop account is invalid.', {
-        service: ErrorService.Local,
-        operation: 'getLocksPublicCreatorAuthorityStatus',
-      });
-    }
-    return await CommerceApplication.getLocksPublicCreatorAuthorityStatus(parsed.data);
-  }
-
-  static restoreLocksFrontendSession(accountPubky: string) {
-    return CommerceApplication.restoreLocksFrontendSession(accountPubky);
-  }
-
-  /** Removes the persisted Lock Server session only while it still carries `token`. */
-  static clearLocksFrontendSession(token: string): void {
-    CommerceApplication.clearLocksFrontendSession(token);
-  }
-
   static async lookupLocksVerification(creatorPubky: unknown, bundleId: unknown) {
     return await CommerceApplication.lookupLocksVerification(
       CommerceRecordNormalizer.pubky(creatorPubky),
@@ -1730,6 +1724,18 @@ export class CommerceController {
     }
     const status = await CommerceApplication.syncWatchlist(currentUserPubky);
     useCommerceStore.getState().setWatchlistSyncStatus(status === 'skipped' ? 'idle' : status);
+  }
+
+  /**
+   * Calls `listener` whenever the signed-in user's private data keys become
+   * available, whichever surface asked for them first. A surface that ran
+   * before they were available (the watchlist sync, for one) uses it to run
+   * again. Returns the unsubscribe function.
+   */
+  static subscribePrivKeysReady(listener: () => void): () => void {
+    return CommercePrivKeyringApplication.subscribeReady((ownerPubky) => {
+      if (useAuthStore.getState().currentUserPubky === ownerPubky) listener();
+    });
   }
 
   /**
