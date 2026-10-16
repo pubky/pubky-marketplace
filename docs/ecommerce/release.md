@@ -1,22 +1,32 @@
 # Shop Release Runbook
 
-How a Shop release goes from merged pull requests to a proven deployment on <https://shop.pubky.app>. Production
-operations (kill switch, rollback, Railway restarts, domain moves) are in [`runbook-production.md`](runbook-production.md).
-Local setup is in [`onboarding.md`](onboarding.md) and [`RUNNING.md`](RUNNING.md).
+How a Shop release goes from merged pull requests to a proven deployment. The launched Shop runs on Synonym's GCP at
+<https://pubky.app/shop>, deployed by Vlad from [pubky/shop-migration](https://github.com/pubky/shop-migration);
+`shop.pubky.app` belongs to that deployment and redirects to `pubky.app/shop`. The Vercel projects in this runbook are
+John Prod (<https://pubky-marketplace-production.vercel.app>) and John Staging
+(<https://pubky-marketplace-staging.vercel.app>), test environments where a release is deployed and proven first.
+Production operations (kill switch, rollback, Railway restarts, the `shop.pubky.app` rule) are in
+[`runbook-production.md`](runbook-production.md). Local setup is in [`onboarding.md`](onboarding.md) and
+[`RUNNING.md`](RUNNING.md).
 
 "Live" means the deployed grant sign-in, shared-session lifecycle and service-approval journeys have passed against the release revisions. A green build or synthetic network fixture is not that proof. The older cookie-based production script below cannot certify the current grant-only release.
 
 ## Branches and targets
 
-The Vercel targets and deploy commands in this runbook describe the standalone deployment before the embedding cutover. Confirm the current target with VV in [pubky/shop-migration](https://github.com/pubky/shop-migration); the [embedding guide](../launch/shop-embedding.md) specifies the new frontend requirements.
+The Vercel targets and deploy commands in this runbook deploy the standalone Shop to John Prod and John Staging. The GCP
+deployment takes the Shop as a Docker image built from a `v*` tag by
+[`release-docker.yml`](../../.github/workflows/release-docker.yml), which shop-migration then pins; agree the tag with
+Vlad there, because this runbook tags `shop-vX.Y.Z`. The [embedding guide](../launch/shop-embedding.md) specifies the
+embedded frontend requirements.
 
 | Item               | Value                                                                                                                                                                                                                       |
 | ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Release branch     | `master`, the repository default and the Shop line; every release ships from it. Releases up to `shop-v0.6.46` shipped from `release/shop-v0.6.8` in `BitcoinErrorLog/pubky-app`, whose history is part of this repository. |
 | Train branches     | `train/shop-<YYYY-MM-DD>-<am\|pm>`, cut from the release branch head                                                                                                                                                        |
 | Tags               | `shop-vX.Y.Z` on the deployed commit, with a GitHub release                                                                                                                                                                 |
-| Production client  | Vercel project `pubky-marketplace-production`, team `synonymdev`, alias `shop.pubky.app`                                                                                                                                    |
-| Staging client     | Vercel project `pubky-marketplace-staging`, team `synonymdev`, <https://pubky-marketplace-staging.vercel.app>                                                                                                               |
+| Launched Shop      | Synonym GCP, <https://pubky.app/shop> (`shop.pubky.app` redirects there), deployed from [pubky/shop-migration](https://github.com/pubky/shop-migration) by Vlad                                                             |
+| John Prod          | Vercel project `pubky-marketplace-production`, team `synonymdev`, <https://pubky-marketplace-production.vercel.app>. Never attach `shop.pubky.app` to it ([why](runbook-production.md#shoppubkyapp-is-not-a-vercel-domain)) |
+| John Staging       | Vercel project `pubky-marketplace-staging`, team `synonymdev`, <https://pubky-marketplace-staging.vercel.app>                                                                                                               |
 | Backend services   | Separate repositories, deployed separately: `pubky-marketplace-service`, `pubky/marketplace-nexus`, the `paykit-server` fork (until the upstream Paykit switch). See their READMEs.                                         |
 | Unrelated branches | `pubchi/v1` is a different product. Do not base Shop work on it.                                                                                                                                                            |
 
@@ -133,7 +143,7 @@ At most one or two Shop releases a day. An extra cut runs only for a production 
      read them there instead of pulling env (`vercel env pull` writes every secret to disk):
 
      ```bash
-     curl -fsS https://shop.pubky.app/marketplace \
+     curl -fsS https://pubky-marketplace-production.vercel.app/marketplace \
        | grep -oE '"(marketplaceNexusUrl|marketplaceUrl|locksUrl|paykitSetupUrl|homeserverUrl|commerceAdapterMode)":"[^"]*"'
      ```
 
@@ -152,8 +162,9 @@ At most one or two Shop releases a day. An extra cut runs only for a production 
 ## Deploy
 
 A fresh clone or worktree is not linked to any Vercel project, because `.vercel/` is gitignored. Running
-`vercel --prod` unlinked creates a new project named after the directory and leaves `shop.pubky.app` untouched. Link
-first, every time you deploy from a new checkout:
+`vercel --prod` unlinked creates a new project named after the directory and leaves John Prod untouched. Stray
+`VERCEL_PROJECT_ID` or `VERCEL_ORG_ID` variables in the shell override the link, so unset them. Link first, every time
+you deploy from a new checkout:
 
 ```bash
 rm -rf .vercel
@@ -166,7 +177,7 @@ If a stray project was created, delete it with `vercel project rm <name> --yes`.
 Record the deployment currently on the alias before deploying; it is the rollback target:
 
 ```bash
-vercel inspect shop.pubky.app --scope synonymdev    # note the dpl_… id
+vercel inspect pubky-marketplace-production.vercel.app --scope synonymdev    # note the dpl_… id
 ```
 
 Deploy with a fresh build cache. Corrupt caches have stalled builds at `Running TypeScript` for 40 minutes:
@@ -179,8 +190,8 @@ vercel --prod --yes --force --scope synonymdev --env GIT_COMMIT="$(git rev-parse
 else: no version, build time or host. It reads `GIT_COMMIT`, then Vercel's `VERCEL_GIT_COMMIT_SHA`, and reports
 `unknown` for anything that is not a hex SHA, so `--env GIT_COMMIT` keeps CLI deploys exact. Docker images take the
 `GIT_COMMIT` build arg. Use it to confirm which commit a host runs; the Shop has no version endpoint or build meta tag.
-The deployment itself is still identified from the records we keep: `vercel inspect shop.pubky.app --scope synonymdev`
-prints the `dpl_…` id and the build for the alias; the id is what the proof's `EXPECTED_DPL` pins, and the release notes record it next to the tag and exact commit. For the
+The deployment itself is still identified from the records we keep:
+`vercel inspect pubky-marketplace-production.vercel.app --scope synonymdev` prints the `dpl_…` id and the build for the alias; the id is what the proof's `EXPECTED_DPL` pins, and the release notes record it next to the tag and exact commit. For the
 marketplace service, the digest of the running image (Railway, or GCP once the service runs there) is the record; see
 [Backend releases](#backend-releases).
 
@@ -193,9 +204,10 @@ no build-meta or version check; `/api/build` is for people confirming a deploy.
 A build takes about six minutes. Allow ten before treating it as stuck, and do not cancel earlier. On
 `Error: Deployment not found`, run `vercel ls pubky-marketplace-production --scope synonymdev` before redeploying.
 
-Confirm the alias moved: `vercel alias ls --scope synonymdev | grep shop.pubky.app` must show the new deployment.
-After any `vercel rollback`, the domain stays pinned to the rolled-back deployment, and the next `vercel --prod`
-aliases only the generic `*.vercel.app` name. Un-pin with `vercel promote <dpl_id> --yes --scope synonymdev` and
+Confirm the alias moved: `vercel alias ls --scope synonymdev | grep pubky-marketplace-production.vercel.app` must show
+the new deployment.
+After any `vercel rollback`, the production alias stays pinned to the rolled-back deployment, and the next
+`vercel --prod` gets only its own deployment URL. Un-pin with `vercel promote <dpl_id> --yes --scope synonymdev` and
 re-check the alias before proving anything.
 
 **Pre-launch policy: fix forward.** Do not roll back for a failed proof or an ordinary incident. Roll back only when
