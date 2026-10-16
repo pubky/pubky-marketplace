@@ -1,7 +1,7 @@
 import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { MARKETPLACE_DELIVERY_ADDRESS_DISCLOSURE } from '@/config/commerce-copy';
+import { CONNECTOR_SHARE_CONSENT_COPY, MARKETPLACE_DELIVERY_ADDRESS_DISCLOSURE } from '@/config/commerce-copy';
 import { LISTING_CURRENCY_REGISTRY, LISTING_FIAT_CURRENCY_CODES } from '@/config/currencies';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import { DELIVERY_KEY_COPY } from '@/libs/commerce/delivery-key-copy';
@@ -522,9 +522,7 @@ describe('MarketplaceCheckout', () => {
     view.storeStores = new Map([['seller', { sellerPubky: 'seller', shopDomain: 'dezentralshop.ch' }]]);
     render(<MarketplaceCheckout />);
 
-    const box = await screen.findByRole('checkbox', {
-      name: 'Share my shipping address with dezentralshop.ch to fulfil this order',
-    });
+    const box = await screen.findByRole('checkbox', { name: CONNECTOR_SHARE_CONSENT_COPY.label('dezentralshop.ch') });
     expect(box).not.toBeChecked();
     await userEvent.setup().click(box);
     expect(checkoutActions.setStoreShare).toHaveBeenCalledWith('seller', true);

@@ -2,6 +2,7 @@ import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import type { ConnectorShareChoice } from '@/application/commerce/commerce';
+import { CONNECTOR_SHARE_CONSENT_COPY } from '@/config/commerce-copy';
 import { MarketplaceCheckoutStoreShare } from './MarketplaceCheckoutStoreShare';
 
 const SELLER = 's'.repeat(52);
@@ -19,10 +20,9 @@ describe('MarketplaceCheckoutStoreShare', () => {
 
   it('offers an unticked checkbox that names the store', () => {
     render(<MarketplaceCheckoutStoreShare stores={STORES} chosen={new Set()} onChange={vi.fn()} />);
-    const box = screen.getByRole('checkbox', {
-      name: 'Share my shipping address with dezentralshop.ch to fulfil this order',
-    });
+    const box = screen.getByRole('checkbox', { name: CONNECTOR_SHARE_CONSENT_COPY.label('dezentralshop.ch') });
     expect(box).not.toBeChecked();
+    expect(screen.getByText(CONNECTOR_SHARE_CONSENT_COPY.helper)).toBeInTheDocument();
   });
 
   it('reports the buyer choice, and shows a ticked box when chosen', async () => {

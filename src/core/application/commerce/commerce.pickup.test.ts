@@ -1,7 +1,7 @@
 /** @vitest-environment node */
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as commerceConfig from '@/config/commerce';
-import { CONNECTOR_SHARE_CONSENT_VERSION } from '@/libs/commerce/connector-address-envelope';
+import { CONNECTOR_SHARE_CONSENT_VERSION } from '@/config/commerce-copy';
 import {
   type DeliveryKeyPair,
   generateDeliveryKeyPair,

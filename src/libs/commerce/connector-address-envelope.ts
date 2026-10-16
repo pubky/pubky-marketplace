@@ -21,9 +21,6 @@ import { commercePubkySchema } from '@/libs/commerce/transaction-contracts';
 
 export const CONNECTOR_ADDRESS_CONTEXT = 'pubky-marketplace/connector-address/v1';
 
-/** The wording version the buyer agreed to, stored with the order. Bump it when the checkbox copy changes. */
-export const CONNECTOR_SHARE_CONSENT_VERSION = 1;
-
 const RECIPIENT_PUBLIC_KEY_BYTES = 32;
 
 export type ConnectorAddressBinding = {

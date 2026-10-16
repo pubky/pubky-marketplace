@@ -17,6 +17,7 @@ import {
   isTransactionalCommerceMode,
   MARKETPLACE_FOLLOWED_SHELF_MAX_SELLER_FETCHES,
 } from '@/config/commerce';
+import { CONNECTOR_SHARE_CONSENT_VERSION } from '@/config/commerce-copy';
 import { BASE_UNITS_PER_BITCOIN } from '@/config/currencies';
 import { NEXUS_LISTINGS_PER_PAGE } from '@/config/nexus';
 import { readAuthEpoch } from '@/controllers/auth/auth-epoch';
@@ -27,11 +28,7 @@ import {
   verifyOwnOrderReceipt,
   verifyOwnReviewAttestation,
 } from '@/libs/commerce/attestation';
-import {
-  CONNECTOR_SHARE_CONSENT_VERSION,
-  decodeConnectorRecipientKey,
-  sealConnectorAddress,
-} from '@/libs/commerce/connector-address-envelope';
+import { decodeConnectorRecipientKey, sealConnectorAddress } from '@/libs/commerce/connector-address-envelope';
 import {
   sealDeliveryAddressForSellers,
   type SellerDeliveryEnvelope,
@@ -185,11 +182,7 @@ import {
   type MarketplaceOrder,
   type MarketplacePayment,
 } from '@/services/marketplace/marketplace';
-<<<<<<< ours
-=======
 import { MarketplaceConnectorStatusService } from '@/services/marketplace/marketplace-connector-status';
-import { MarketplacePaykitClaimService } from '@/services/marketplace/marketplace-paykit-claim';
->>>>>>> theirs
 import {
   type MarketplaceSessionEndedEvent,
   MarketplaceSessionService,

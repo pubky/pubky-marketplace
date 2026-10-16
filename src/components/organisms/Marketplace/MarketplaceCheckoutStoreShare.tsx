@@ -4,6 +4,7 @@ import type { ConnectorShareChoice } from '@/application/commerce/commerce';
 import { Checkbox } from '@/atoms/Checkbox/Checkbox';
 import { Label } from '@/atoms/Label/Label';
 import { Typography } from '@/atoms/Typography/Typography';
+import { CONNECTOR_SHARE_CONSENT_COPY } from '@/config/commerce-copy';
 
 type MarketplaceCheckoutStoreShareProps = {
   stores: ReadonlyMap<string, ConnectorShareChoice>;
@@ -31,11 +32,10 @@ export function MarketplaceCheckoutStoreShare({ stores, chosen, onChange }: Mark
                 checked={chosen.has(store.sellerPubky)}
                 onCheckedChange={(checked) => onChange(store.sellerPubky, checked === true)}
               />
-              <span>Share my shipping address with {store.shopDomain} to fulfil this order</span>
+              <span>{CONNECTOR_SHARE_CONSENT_COPY.label(store.shopDomain)}</span>
             </Label>
             <Typography as="p" className="pl-7 text-sm text-muted-foreground">
-              Your address is encrypted to the seller&apos;s store and used only to create this order there. If you
-              leave this off, the seller still gets your address from Pubky.
+              {CONNECTOR_SHARE_CONSENT_COPY.helper}
             </Typography>
           </div>
         );
