@@ -2,6 +2,7 @@
 
 import { Minus, Plus, ShoppingCart, Trash2 } from 'lucide-react';
 import { getMarketplaceListingRoute } from '@/app/routes';
+import { Badge } from '@/atoms/Badge/Badge';
 import { Button } from '@/atoms/Button/Button';
 import { Card, CardContent } from '@/atoms/Card/Card';
 import { Container } from '@/atoms/Container/Container';
@@ -10,8 +11,10 @@ import { Image } from '@/atoms/Image/Image';
 import { Link } from '@/atoms/Link/Link';
 import { Typography } from '@/atoms/Typography/Typography';
 import { useMarketplaceCart } from '@/hooks/useMarketplaceCart/useMarketplaceCart';
+import { useMarketplaceCartStock } from '@/hooks/useMarketplaceCartStock/useMarketplaceCartStock';
 import { useMarketplaceFirstMediaUrls } from '@/hooks/useMarketplaceMediaUrl/useMarketplaceMediaUrl';
 import { useMarketplaceOffers } from '@/hooks/useMarketplaceOffers/useMarketplaceOffers';
+import { cartLineStockLabel,SOLD_OUT_COPY } from '@/libs/commerce/cart-stock';
 import { getMarketplaceCheckoutRoute, getMarketplaceOfferCheckoutRoute } from '@/libs/commerce/checkout-phase';
 import { DIGITAL_CHECKOUT_COPY } from '@/libs/commerce/digital';
 import { formatCommerceMoney } from '@/libs/commerce/format';
@@ -39,6 +42,7 @@ export function MarketplaceCart() {
   const allDigital = ordinaryItems.length > 0 && digitalOnlyCount === ordinaryItems.length;
   const awardItems = cart.awardItems ?? [];
   const offers = useMarketplaceOffers();
+  const stock = useMarketplaceCartStock(ordinaryItems);
 
   return (
     <ContentLayout
@@ -148,6 +152,7 @@ export function MarketplaceCart() {
                         item.listing.record.ownerPubky,
                         item.listing.listing_id,
                       );
+                      const lineStock = stock.stockFor(item.id);
                       return (
                         <Card key={item.id} className="rounded-md p-0">
                           <CardContent className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-4 p-6 sm:flex">
@@ -183,9 +188,18 @@ export function MarketplaceCart() {
                                   <MarketplaceIndicativePrice money={price} className="font-normal" />
                                 </Typography>
                               )}
+                              {lineStock && (
+                                <Badge
+                                  variant="outline"
+                                  className="mt-2 border-destructive/50 text-destructive"
+                                  data-testid="marketplace-cart-line-sold-out"
+                                >
+                                  {cartLineStockLabel(lineStock)}
+                                </Badge>
+                              )}
                             </div>
                             <div className="col-span-2 flex items-center justify-end gap-1 sm:shrink-0">
-                              {((variant?.quantity ?? 0) > 1 || item.quantity > 1) && (
+                              {!lineStock && ((variant?.quantity ?? 0) > 1 || item.quantity > 1) && (
                                 <>
                                   <Button
                                     size="icon"
@@ -269,15 +283,36 @@ export function MarketplaceCart() {
                           </Typography>
                         </div>
                       </div>
-                      <Button asChild className="w-full rounded-full">
-                        <Link
-                          href={getMarketplaceCheckoutRoute()}
-                          overrideDefaults
-                          data-testid="marketplace-cart-checkout"
-                        >
-                          Checkout
-                        </Link>
-                      </Button>
+                      {stock.hasSoldOut ? (
+                        <div className="grid gap-2">
+                          <Button
+                            className="w-full rounded-full"
+                            disabled
+                            aria-describedby="marketplace-cart-sold-out-reason"
+                            data-testid="marketplace-cart-checkout"
+                          >
+                            Checkout
+                          </Button>
+                          <Typography
+                            id="marketplace-cart-sold-out-reason"
+                            as="p"
+                            role="status"
+                            className="text-xs text-muted-foreground"
+                          >
+                            {SOLD_OUT_COPY.cartBlocked}
+                          </Typography>
+                        </div>
+                      ) : (
+                        <Button asChild className="w-full rounded-full">
+                          <Link
+                            href={getMarketplaceCheckoutRoute()}
+                            overrideDefaults
+                            data-testid="marketplace-cart-checkout"
+                          >
+                            Checkout
+                          </Link>
+                        </Button>
+                      )}
                     </SettingsSectionContent>
                   </section>
                 </CardContent>

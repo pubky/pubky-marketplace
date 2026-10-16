@@ -56,7 +56,7 @@ import {
   isListingDeletedResponse,
   isMarketplaceRevisionConflict,
 } from '@/libs/commerce/transaction-commands';
-import { variantRefusalMessage } from '@/libs/commerce/variant-refusals';
+import { classifyVariantRefusal, variantRefusalMessage } from '@/libs/commerce/variant-refusals';
 import { AppError } from '@/libs/error/error';
 import { isMarketplaceSessionRequiredError } from '@/libs/error/error.utils';
 import { Logger } from '@/libs/logger/logger';
@@ -139,6 +139,10 @@ export type MarketplacePayResult = {
   boundOrders: MarketplaceOrder[];
   /** The bind failed because the service could not reach Paykit. */
   paykitUnavailable?: boolean;
+  /** The service refused to create the checkout; the copy the buyer was shown. */
+  refusal?: string;
+  /** The refusal says a listing or size in the cart sold out. */
+  soldOut?: boolean;
 };
 
 /**
@@ -604,7 +608,9 @@ export function useMarketplaceCheckout(
 
   const createCheckout = async (
     data: MarketplaceCheckoutData,
-  ): Promise<{ ok: true; result: unknown; lines: CheckoutLine[] } | { ok: false }> => {
+  ): Promise<
+    { ok: true; result: unknown; lines: CheckoutLine[] } | { ok: false; refusal?: string; soldOut?: boolean }
+  > => {
     const freshKinds: Array<MarketplaceDigitalDeliveryKind | null> = [];
     let sawRemovedListing = false;
     let sawChangedListing = false;
@@ -741,34 +747,31 @@ export function useMarketplaceCheckout(
         : {}),
     });
     if (!response.ok) {
+      const refuse = (refusal: string, soldOut = false) => {
+        toast({ variant: 'error', description: refusal });
+        return { ok: false as const, refusal, soldOut };
+      };
       if (isMarketplaceRevisionConflict(response)) {
-        toast({
-          variant: 'error',
-          description: 'A listing changed while you were checking out. Review your cart and try again.',
-        });
-        return { ok: false };
+        return refuse('A listing changed while you were checking out. Review your cart and try again.');
       }
       const digitalRefusal = classifyDigitalCheckoutRefusal(response.error);
       if (digitalRefusal) {
         if (digitalRefusal !== 'invalid_email') setDigitalKindsAttempt((attempt) => attempt + 1);
-        toast({ variant: 'error', description: DIGITAL_CHECKOUT_REFUSAL_COPY[digitalRefusal] });
-        return { ok: false };
+        return refuse(DIGITAL_CHECKOUT_REFUSAL_COPY[digitalRefusal]);
       }
       const variantRefusal = variantRefusalMessage(response.error);
       if (variantRefusal) {
-        toast({ variant: 'error', description: variantRefusal });
-        return { ok: false };
+        return refuse(variantRefusal, classifyVariantRefusal(response.error) === 'variant_sold_out');
       }
       const pickupRefusal = classifyMarketplacePickupCommandRefusal(response);
-      toast({
-        variant: 'error',
-        description: pickupRefusal
-          ? pickupRefusalFailureMessage(pickupRefusal)
-          : (marketplaceListingNotActiveMessage(response.error) ??
-            marketplaceCheckoutRefusalMessage(response.error.code, response.error.message) ??
-            marketplaceFailureMessage(response.error.code, MARKETPLACE_FAILURE_MESSAGES.checkout)),
-      });
-      return { ok: false };
+      if (pickupRefusal) return refuse(pickupRefusalFailureMessage(pickupRefusal));
+      const checkoutRefusal = marketplaceCheckoutRefusalMessage(response.error.code, response.error.message);
+      return refuse(
+        marketplaceListingNotActiveMessage(response.error) ??
+          checkoutRefusal ??
+          marketplaceFailureMessage(response.error.code, MARKETPLACE_FAILURE_MESSAGES.checkout),
+        checkoutRefusal === MARKETPLACE_FAILURE_MESSAGES.listingSoldOut,
+      );
     }
     return { ok: true, result: response.result, lines: checkoutLines };
   };
@@ -839,7 +842,10 @@ export function useMarketplaceCheckout(
       let createdIds: string[] = [];
       try {
         const created = await createCheckout(data);
-        if (!created.ok) return;
+        if (!created.ok) {
+          if (created.refusal) outcome = { ...empty, refusal: created.refusal, soldOut: created.soldOut };
+          return;
+        }
         let listed: MarketplaceOrder[] = [];
         try {
           listed = await CommerceController.getMarketplaceOrders();

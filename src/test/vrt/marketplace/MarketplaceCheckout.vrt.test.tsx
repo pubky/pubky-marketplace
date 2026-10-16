@@ -118,6 +118,7 @@ const fixtures = vi.hoisted(async () => {
     singleSeller: [item(boots, 'variant_42', 1), item(boots, 'variant_43', 1)],
     bitcoinPriced: [item(btcLamp, 'variant_01', 1)],
     multiSeller: [item(boots, 'variant_42', 2), item(jacket, 'variant_01', 1), item(camera, 'variant_01', 1)],
+    bootsKey: `${boots.record.ownerPubky}:${boots.record.listingId}`,
   };
 });
 
@@ -163,6 +164,12 @@ const view = vi.hoisted(() => ({
   usdtSellers: null as string[] | null,
   orders: [] as unknown[],
   buyerWalletState: 'payable' as BuyerPaykitWalletState,
+  availability: new Map<
+    string,
+    { state: 'available' | 'reserved' | 'sold'; variants?: Array<{ variantId: string; soldOut: boolean }> }
+  >(),
+  formValues: {} as Record<string, string>,
+  payResult: { ok: false, orderIds: [] as string[], boundOrders: [] as unknown[] } as Record<string, unknown>,
 }));
 
 vi.mock('@/hooks/useBuyerPaykitWallet/useBuyerPaykitWallet', () => ({
@@ -274,10 +281,11 @@ vi.mock('@/hooks/useMarketplaceCheckout/useMarketplaceCheckout', async () => {
         defaultValues: {
           ...marketplaceCheckoutDefaults,
           ...(view.allowedDestinationCountries ? { countryCode: view.allowedDestinationCountries[0] } : {}),
+          ...view.formValues,
         },
       }),
       submit: vi.fn(async () => false),
-      pay: vi.fn(async () => ({ ok: false, orderIds: [], boundOrders: [] })),
+      pay: vi.fn(async () => view.payResult),
       isPaying: false,
       needsSession: false,
       sessionError: null,
@@ -381,6 +389,10 @@ vi.mock('@/controllers/commerce/commerce', () => ({
     getIndicativeBtcRate: vi.fn(async () => null),
     getOrFetchListing: vi.fn(async () => null),
     getConnectorStores: vi.fn(async () => new Map()),
+    getPublicListingAvailability: vi.fn(async (sellerPubky: string, listingId: string) => {
+      const answer = view.availability.get(`${sellerPubky}:${listingId}`);
+      return answer ? { aggregateId: 'listing:vrt', serverTime: '2026-10-16T09:00:00.000Z', ...answer } : null;
+    }),
   },
 }));
 
@@ -423,6 +435,9 @@ beforeEach(async () => {
   view.usdtSellers = null;
   view.orders = [];
   view.buyerWalletState = 'payable';
+  view.availability.clear();
+  view.formValues = {};
+  view.payResult = { ok: false, orderIds: [], boundOrders: [] };
   useCommerceStore.getState().reset();
   window.history.replaceState(null, '', '/marketplace/checkout');
 });
@@ -729,6 +744,66 @@ describe('Marketplace checkout — visual regression', () => {
 
     await renderForVRT(<MarketplaceCheckout />, { viewport: VRT_VIEWPORT_DESKTOP });
     await captureCheckout('checkout-durable-desktop');
+  });
+
+  it('marks a sold-out size and holds Pay with the reason at mobile viewport', async () => {
+    const { singleSeller, bootsKey } = await fixtures;
+    view.items = singleSeller;
+    view.adapterMode = 'transaction-service';
+    view.hasMarketplaceSession = true;
+    view.availability.set(bootsKey, {
+      state: 'available',
+      variants: [
+        { variantId: 'variant_42', soldOut: true },
+        { variantId: 'variant_43', soldOut: false },
+      ],
+    });
+
+    await renderForVRT(<MarketplaceCheckout />, { viewport: VRT_VIEWPORT_MOBILE });
+    await vi.waitFor(() => {
+      if (!document.querySelector('[data-testid="marketplace-checkout-line-sold-out"]')) {
+        throw new Error('The sold-out line has not rendered yet.');
+      }
+    });
+    expect(document.getElementById('checkout-pay-reason')?.textContent).toBe(
+      'Remove sold-out items from your cart to pay.',
+    );
+    await captureCheckout('checkout-sold-out-size-mobile');
+  });
+
+  it('keeps the sold-out refusal from Pay next to Pay at mobile viewport', async () => {
+    const { singleSeller } = await fixtures;
+    view.items = singleSeller;
+    view.adapterMode = 'transaction-service';
+    view.hasMarketplaceSession = true;
+    view.formValues = {
+      name: 'Alice Buyer',
+      line1: '1 Market Street',
+      city: 'New York',
+      region: 'NY',
+      postalCode: '10001',
+    };
+    view.payResult = {
+      ok: false,
+      orderIds: [],
+      boundOrders: [],
+      refusal: 'This listing has sold out.',
+      soldOut: true,
+    };
+
+    const screen = await renderForVRT(<MarketplaceCheckout />, { viewport: VRT_VIEWPORT_MOBILE });
+    await waitForPaymentMethods();
+    await vi.waitFor(() => {
+      const pay = document.querySelector('[data-testid="marketplace-checkout-pay"]');
+      if (!(pay instanceof HTMLButtonElement) || pay.disabled) throw new Error('Pay is not enabled yet.');
+    });
+    await screen.getByTestId('marketplace-checkout-pay').click();
+    await vi.waitFor(() => {
+      if (!document.querySelector('[data-testid="marketplace-checkout-pay-refusal"]')) {
+        throw new Error('The Pay refusal has not rendered yet.');
+      }
+    });
+    await captureCheckout('checkout-pay-refusal-sold-out-mobile');
   });
 
   it('names the seller who does not take USDT on a multi-seller cart at desktop viewport', async () => {

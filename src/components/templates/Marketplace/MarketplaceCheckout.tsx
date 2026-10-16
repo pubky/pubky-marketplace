@@ -5,6 +5,7 @@ import { useSearchParams } from 'next/navigation';
 import { HandCoins, LoaderCircle, ShoppingCart, WalletCards } from 'lucide-react';
 import { Controller, useWatch } from 'react-hook-form';
 import { APP_ROUTES, getMarketplaceDropRoute, getMarketplaceListingRoute, MARKETPLACE_ROUTES } from '@/app/routes';
+import { Badge } from '@/atoms/Badge/Badge';
 import { Button } from '@/atoms/Button/Button';
 import { Card, CardContent } from '@/atoms/Card/Card';
 import { Checkbox } from '@/atoms/Checkbox/Checkbox';
@@ -33,6 +34,7 @@ import {
   marketplaceCartShippingTotals,
   useMarketplaceCart,
 } from '@/hooks/useMarketplaceCart/useMarketplaceCart';
+import { useMarketplaceCartStock } from '@/hooks/useMarketplaceCartStock/useMarketplaceCartStock';
 import { useMarketplaceCheckout } from '@/hooks/useMarketplaceCheckout/useMarketplaceCheckout';
 import { marketplaceCheckoutSchema } from '@/hooks/useMarketplaceCheckout/useMarketplaceCheckout.types';
 import { useMarketplaceFirstMediaUrls } from '@/hooks/useMarketplaceMediaUrl/useMarketplaceMediaUrl';
@@ -44,6 +46,7 @@ import { usePaykitOutage } from '@/hooks/usePaykitOutage/usePaykitOutage';
 import { useUsdtPaymentsCapability } from '@/hooks/useUsdtPaymentsCapability/useUsdtPaymentsCapability';
 import { buyerCheckoutProgressCopy } from '@/libs/commerce/bitcoin-buyer-status';
 import { bitcoinPaymentCodeCheckoutNote } from '@/libs/commerce/bitcoin-payment-code';
+import { cartLineStockLabel,SOLD_OUT_COPY } from '@/libs/commerce/cart-stock';
 import {
   getMarketplaceCheckoutRoute,
   intersectPaymentMethods,
@@ -232,6 +235,8 @@ function MarketplaceCartCheckout() {
     isOfferCheckout || isDropCheckout ? async () => undefined : cart.clear,
     awardFulfillment,
   );
+  const stock = useMarketplaceCartStock(isOfferCheckout || isDropCheckout ? EMPTY_CHECKOUT_ITEMS : checkoutItems);
+  const [payRefusal, setPayRefusal] = useState<string | null>(null);
   const orders = useMarketplaceOrders();
   const adapterMode = getCommerceAdapterMode();
   const isSandbox = adapterMode === 'sandbox';
@@ -486,40 +491,43 @@ function MarketplaceCartCheckout() {
     !buyerConnectionRequired &&
     (!isOfferCheckout || offerEligible) &&
     !paykitBlocksPay &&
+    !stock.hasSoldOut &&
     (isSandbox || (sharedMethods !== null && sharedMethods.length > 0 && selectedMethod !== null));
 
   const paymentCodeNote = paykitSelected ? bitcoinPaymentCodeCheckoutNote(getPaykitServerApi()) : null;
-  const checkoutPayDisabledReason = approvalNeeded
-    ? 'Enable purchases to pay.'
-    : isPaying
-      ? 'Payment is in progress.'
-      : checkout.hasFulfillmentConflict
-        ? "Some items can't be checked out together — see the note above."
-        : !checkout.isDigitalReady
-          ? checkout.digitalNotReadyItemIds.length > 0
-            ? DIGITAL_CHECKOUT_COPY.payReasonNotReady
-            : DIGITAL_CHECKOUT_COPY.payReasonLoading
-          : buyerWalletMissing
-            ? 'A compatible Bitkit wallet is required to pay with Paykit.'
-            : buyerWalletUnsupported
-              ? bitcoinWalletUnsupportedPayReason(canPayWithPaypal)
-              : buyerWalletUnverified
-                ? bitcoinWalletUnverifiedPayReason(canPayWithPaypal)
-                : buyerWalletChecking
-                  ? 'Pay unlocks once your Bitkit wallet is checked.'
-                  : railsFailed
-                    ? 'Pay unlocks once payment options load.'
-                    : paykitBlocksPay || (paykitOutageForCart && sharedMethods?.length === 0)
-                      ? PAYKIT_OUTAGE_COPY.title
-                      : sharedMethods && sharedMethods.length === 0 && !isSandbox
-                        ? isMultiSeller
-                          ? 'Choose sellers that share a payment method.'
-                          : 'Pay unlocks once this seller sets up a payment method.'
-                        : buyerConnectionRequired
-                          ? 'Check your Bitkit connection to pay with Paykit.'
-                          : isOfferCheckout && !offerEligible
-                            ? 'This offer is not available for checkout.'
-                            : 'Fill in delivery details and choose a payment method to pay.';
+  const checkoutPayDisabledReason = stock.hasSoldOut
+    ? SOLD_OUT_COPY.payBlocked
+    : approvalNeeded
+      ? 'Enable purchases to pay.'
+      : isPaying
+        ? 'Payment is in progress.'
+        : checkout.hasFulfillmentConflict
+          ? "Some items can't be checked out together — see the note above."
+          : !checkout.isDigitalReady
+            ? checkout.digitalNotReadyItemIds.length > 0
+              ? DIGITAL_CHECKOUT_COPY.payReasonNotReady
+              : DIGITAL_CHECKOUT_COPY.payReasonLoading
+            : buyerWalletMissing
+              ? 'A compatible Bitkit wallet is required to pay with Paykit.'
+              : buyerWalletUnsupported
+                ? bitcoinWalletUnsupportedPayReason(canPayWithPaypal)
+                : buyerWalletUnverified
+                  ? bitcoinWalletUnverifiedPayReason(canPayWithPaypal)
+                  : buyerWalletChecking
+                    ? 'Pay unlocks once your Bitkit wallet is checked.'
+                    : railsFailed
+                      ? 'Pay unlocks once payment options load.'
+                      : paykitBlocksPay || (paykitOutageForCart && sharedMethods?.length === 0)
+                        ? PAYKIT_OUTAGE_COPY.title
+                        : sharedMethods && sharedMethods.length === 0 && !isSandbox
+                          ? isMultiSeller
+                            ? 'Choose sellers that share a payment method.'
+                            : 'Pay unlocks once this seller sets up a payment method.'
+                          : buyerConnectionRequired
+                            ? 'Check your Bitkit connection to pay with Paykit.'
+                            : isOfferCheckout && !offerEligible
+                              ? 'This offer is not available for checkout.'
+                              : 'Fill in delivery details and choose a payment method to pay.';
   const payDisabledReason = locksRoute === 'mixed' ? LOCKS_MIXED_CHECKOUT_COPY : checkoutPayDisabledReason;
 
   const removeAwardLine = async () => {
@@ -596,9 +604,12 @@ function MarketplaceCartCheckout() {
     // Sandbox creates its simulated payment with the order; it cannot bind a
     // real rail. A Locks checkout binds none either (`locksCheckoutRoute`).
     const method = isSandbox || isLocksCheckout ? null : selectedMethod;
+    setPayRefusal(null);
     const result = await checkout.pay(method, () => void pay());
     if (!result.ok) {
       if (result.paykitUnavailable) markPaykitRefused();
+      if (result.refusal) setPayRefusal(result.refusal);
+      if (result.soldOut) stock.refresh();
       setRailRefresh((refresh) => refresh + 1);
       return;
     }
@@ -884,6 +895,7 @@ function MarketplaceCartCheckout() {
                       );
                       const coverUrl = checkoutMediaUrls[checkoutItems.findIndex(({ id }) => id === item.id)] ?? null;
                       const variantLabel = variant ? Object.values(variant.options).filter(Boolean).join(' · ') : '';
+                      const lineStock = stock.stockFor(item.id);
                       return (
                         <Card key={item.id} className="rounded-md p-0">
                           <CardContent className="flex flex-wrap items-center gap-4 p-6">
@@ -922,6 +934,15 @@ function MarketplaceCartCheckout() {
                                     <MarketplaceIndicativePrice money={price} className="font-normal" />
                                   )}
                                 </Typography>
+                              )}
+                              {lineStock && (
+                                <Badge
+                                  variant="outline"
+                                  className="mt-2 border-destructive/50 text-destructive"
+                                  data-testid="marketplace-checkout-line-sold-out"
+                                >
+                                  {cartLineStockLabel(lineStock)}
+                                </Badge>
                               )}
                               {checkout.fulfillmentForItem(item.id) === 'digital' && (
                                 <Typography
@@ -1379,6 +1400,16 @@ function MarketplaceCartCheckout() {
                           data-testid="bitcoin-payment-code-note"
                         >
                           {paymentCodeNote}
+                        </Typography>
+                      )}
+                      {payRefusal && (
+                        <Typography
+                          as="p"
+                          role="alert"
+                          className="rounded-md border border-destructive/40 px-4 py-3 text-sm"
+                          data-testid="marketplace-checkout-pay-refusal"
+                        >
+                          {payRefusal}
                         </Typography>
                       )}
                       <Button

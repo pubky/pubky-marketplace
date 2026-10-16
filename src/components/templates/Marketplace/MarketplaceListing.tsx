@@ -39,6 +39,7 @@ import { useMeasurementSystem } from '@/hooks/useMeasurementSystem/useMeasuremen
 import { useRequireAuth } from '@/hooks/useRequireAuth/useRequireAuth';
 import { CHAT_COPY } from '@/libs/chat/copy';
 import { getAuctionPhase } from '@/libs/commerce/auction-phase';
+import { SOLD_OUT_COPY } from '@/libs/commerce/cart-stock';
 import {
   CHECKOUT_HOLD_COPY,
   findViewerAcceptedOfferHold,
@@ -49,6 +50,7 @@ import { DIGITAL_DELIVERY_COPY, digitalDeliveryBadgeLabel } from '@/libs/commerc
 import { MARKETPLACE_FAILURE_MESSAGES } from '@/libs/commerce/failure-messages';
 import { formatCommerceCondition, formatCommerceMoney } from '@/libs/commerce/format';
 import {
+  everyOfferedVariantSoldOut,
   firstAvailableVariantId,
   isVariantSoldOut,
   projectionReadsSoldOut,
@@ -284,6 +286,7 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
   const isSoldOut = isDurable
     ? projectionIsSoldOut || publicStockIsSoldOut
     : (listing.purchasableQuantity ?? recordQuantity) <= 0;
+  const listingSoldOut = isSoldOut || everyOfferedVariantSoldOut(record.variants, soldOutVariants);
   const isPurchasable = record.state === 'active';
   const availabilityPending = isDurable && negotiation.isLoading;
   const availabilityNeedsSession = isDurable && negotiation.needsSession;
@@ -514,6 +517,15 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
                       >
                         Buy
                       </Link>
+                    </Button>
+                  ) : listingSoldOut ? (
+                    <Button
+                      size="default"
+                      className="w-fit rounded-full"
+                      disabled
+                      data-cy="marketplace-listing-sold-out"
+                    >
+                      {SOLD_OUT_COPY.listingSoldOut}
                     </Button>
                   ) : (
                     <Button
