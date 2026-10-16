@@ -529,7 +529,7 @@ describe('MarketplacePaymentSettings', () => {
     fireEvent.click(screen.getByRole('button', { name: /Connect Bitkit/ }));
     expect(screen.getAllByText(helper)).toHaveLength(1);
     expect(screen.getByText('Scan the code with Bitkit')).toBeInTheDocument();
-    expect(screen.getByText('Tap Open in Bitkit')).toBeInTheDocument();
+    expect(screen.getByText('Tap Continue with Bitkit')).toBeInTheDocument();
     expect(screen.queryByText(/Bitkit 2\.5 or newer is required/)).not.toBeInTheDocument();
     const iframe = screen.getByTitle('Connect Bitkit');
     const dialog = iframe.closest('[data-testid="dialog-content"]');

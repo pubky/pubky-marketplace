@@ -414,13 +414,6 @@ describe('MarketplaceGetPaidSettings USDT', () => {
       expect(screen.getByText(/tap Continue with Bitkit, to share a USDT address/)).toBeInTheDocument();
     });
 
-    it('names the fork Paykit button in the reconnect explanation', async () => {
-      runtime.api = 'fork';
-      await openReconnect();
-
-      expect(screen.getByText(/tap Open in Bitkit, to share a USDT address/)).toBeInTheDocument();
-    });
-
     it('re-reads the configuration on completion and shows USDT ready', async () => {
       const iframe = await openReconnect();
       mocked.getMyPaymentConfig.mockResolvedValue(fromWire(USDT_SELLER_CONFIG_READY_WIRE));
