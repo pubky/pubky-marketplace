@@ -411,6 +411,14 @@ describe('MarketplaceGetPaidSettings USDT', () => {
       expect(url.hash).toBe('#embed');
       expect(screen.getByRole('heading', { name: 'Add USDT in Bitkit' })).toBeInTheDocument();
       expect(screen.getByText(/Your Bitkit account and Bitcoin setup stay the same/)).toBeInTheDocument();
+      expect(screen.getByText(/tap Continue with Bitkit, to share a USDT address/)).toBeInTheDocument();
+    });
+
+    it('names the fork Paykit button in the reconnect explanation', async () => {
+      runtime.api = 'fork';
+      await openReconnect();
+
+      expect(screen.getByText(/tap Open in Bitkit, to share a USDT address/)).toBeInTheDocument();
     });
 
     it('re-reads the configuration on completion and shows USDT ready', async () => {

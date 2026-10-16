@@ -92,8 +92,13 @@ const UNSAVED_SELLER_PAYMENT_CONFIG: SellerPaymentConfigOwnView = {
   updatedAt: '',
 };
 const PAYPAL_EMAIL_INVALID_COPY = 'Enter a valid email address.';
-const PAYKIT_RECONNECT_EXPLANATION =
-  'Scan the code with Bitkit, or open this page on your phone and tap Open in Bitkit, to share a USDT address. Your Bitkit account and Bitcoin setup stay the same.';
+/** The label the Paykit setup page paints on its touch-screen Bitkit button. */
+function paykitTouchButtonLabel(upstreamPaykit: boolean): string {
+  return upstreamPaykit ? 'Continue with Bitkit' : 'Open in Bitkit';
+}
+function paykitReconnectExplanation(upstreamPaykit: boolean): string {
+  return `Scan the code with Bitkit, or open this page on your phone and tap ${paykitTouchButtonLabel(upstreamPaykit)}, to share a USDT address. Your Bitkit account and Bitcoin setup stay the same.`;
+}
 const PAYKIT_BITCOIN_RECONNECT_EXPLANATION =
   'Paykit already has a Bitkit setup for this pubky. Approve it again in Bitkit to reconnect; your Bitkit account and Bitcoin addresses stay the same.';
 /** Upstream `/setup` refuses an account Paykit already holds (for example one set up for Locks); reconnect re-approves it. */
@@ -745,13 +750,15 @@ export function MarketplaceGetPaidSettings({ onSaved }: MarketplaceGetPaidSettin
           )}
           <Typography as="p" className="text-sm text-muted-foreground">
             {paykitSetupMode === 'reconnect' ? (
-              PAYKIT_RECONNECT_EXPLANATION
+              paykitReconnectExplanation(upstreamPaykit)
             ) : paykitSetupMode === 'bitcoin-reconnect' ? (
               PAYKIT_BITCOIN_RECONNECT_EXPLANATION
             ) : (
               <>
                 <span className="[@media(hover:none)_and_(pointer:coarse)]:hidden">Scan the code with Bitkit</span>
-                <span className="hidden [@media(hover:none)_and_(pointer:coarse)]:inline">Tap Open in Bitkit</span>
+                <span className="hidden [@media(hover:none)_and_(pointer:coarse)]:inline">
+                  {`Tap ${paykitTouchButtonLabel(upstreamPaykit)}`}
+                </span>
               </>
             )}
           </Typography>
