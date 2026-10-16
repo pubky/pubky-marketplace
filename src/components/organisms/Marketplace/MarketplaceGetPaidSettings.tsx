@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useEffectEvent, useRef, useState } from 'react';
 import {
   Bitcoin,
   CheckCircle2,
@@ -73,8 +73,8 @@ function paykitMismatchMessage(pubky: string | null): string {
   return `Bitkit approved a different pubky than the one you're signed in with here${paykitKeyLabel(pubky)}. In Bitkit, switch to that pubky, then try again.`;
 }
 
-/** A setup that finished but that the service's Paykit lookup could not confirm. */
-const PAYKIT_UNCONFIRMED_COPY = "We couldn't confirm Bitkit's approval just now. Try again.";
+/** A setup that finished but that the service's Paykit lookup could not confirm; the seller re-checks, not re-approves. */
+const PAYKIT_UNCONFIRMED_COPY = "We couldn't confirm Bitkit's approval just now. Check again in a moment.";
 
 function paykitTimeoutMessage(pubky: string | null): string {
   return `No approval received. If you approved in Bitkit, check that Bitkit holds the pubky you're signed in with here${paykitKeyLabel(pubky)}, then try again.`;
@@ -220,6 +220,27 @@ export function MarketplaceGetPaidSettings({ onSaved }: MarketplaceGetPaidSettin
     setRailDraft({ bitcoin: null, paypal: null, usdt: null });
   }
 
+  /** Confirms a finished Bitcoin setup against a fresh read; an unknown answer is re-read, never re-authorized. */
+  function confirmBitcoinSetup(state: string) {
+    setPaykitSetupStatus('verifying');
+    void refreshPaymentConfig().then((claimed) => {
+      if (paykitSetupGenerationRef.current !== state) return;
+      if (claimed === true) {
+        commitAccountClaimed(true);
+        setPaykitSetupProblem(null);
+        closePaykitSetup();
+        toast({ title: paykitSetupMode === 'bitcoin-reconnect' ? 'Bitkit reconnected' : 'Bitkit setup connected' });
+        return;
+      }
+      // `false` is a definite answer: Bitkit finished, but not for this key.
+      // `null` is no answer, which must not accuse the seller of a wrong key.
+      const problem = claimed === false ? 'mismatch' : 'unconfirmed';
+      setPaykitSetupStatus(problem);
+      setPaykitSetupProblem({ problem, pubky: currentUserPubky });
+    });
+  }
+  const onBitcoinSetupFinished = useEffectEvent(confirmBitcoinSetup);
+
   useEffect(() => {
     if (!paykitSetupOpen || !paykitSetupUrl || !paykitSetupState) return;
     const setupOrigin = new URL(paykitSetupUrl).origin;
@@ -255,34 +276,11 @@ export function MarketplaceGetPaidSettings({ onSaved }: MarketplaceGetPaidSettin
         });
         return;
       }
-      void refreshPaymentConfig().then((claimed) => {
-        if (paykitSetupGenerationRef.current !== event.data.state) return;
-        if (claimed === true) {
-          commitAccountClaimed(true);
-          setPaykitSetupProblem(null);
-          closePaykitSetup();
-          toast({ title: paykitSetupMode === 'bitcoin-reconnect' ? 'Bitkit reconnected' : 'Bitkit setup connected' });
-          return;
-        }
-        // `false` is a definite answer: Bitkit finished, but not for this key.
-        // `null` is no answer, which must not accuse the seller of a wrong key.
-        const problem = claimed === false ? 'mismatch' : 'unconfirmed';
-        setPaykitSetupStatus(problem);
-        setPaykitSetupProblem({ problem, pubky: currentUserPubky });
-      });
+      onBitcoinSetupFinished(event.data.state);
     };
     window.addEventListener('message', onMessage);
     return () => window.removeEventListener('message', onMessage);
-  }, [
-    commitAccountClaimed,
-    currentUserPubky,
-    paykitSetupMode,
-    paykitSetupOpen,
-    paykitSetupState,
-    paykitSetupUrl,
-    refreshOwnConfig,
-    refreshPaymentConfig,
-  ]);
+  }, [currentUserPubky, paykitSetupMode, paykitSetupOpen, paykitSetupState, paykitSetupUrl, refreshOwnConfig]);
 
   useEffect(() => {
     if (!paykitSetupOpen || !paykitSetupUrl || !paykitSetupState || paykitSetupStatus !== 'idle') return;
@@ -721,14 +719,27 @@ export function MarketplaceGetPaidSettings({ onSaved }: MarketplaceGetPaidSettin
                     Reconnect Bitkit
                   </Button>
                 )}
-                <Button
-                  variant="secondary"
-                  className="w-fit rounded-full"
-                  onClick={() => openPaykitSetup(paykitSetupMode)}
-                >
-                  <RefreshCw className="size-4" />
-                  Retry
-                </Button>
+                {paykitSetupStatus === 'unconfirmed' ? (
+                  <Button
+                    variant="secondary"
+                    className="w-fit rounded-full"
+                    onClick={() => {
+                      if (paykitSetupGenerationRef.current) confirmBitcoinSetup(paykitSetupGenerationRef.current);
+                    }}
+                  >
+                    <RefreshCw className="size-4" />
+                    Check again
+                  </Button>
+                ) : (
+                  <Button
+                    variant="secondary"
+                    className="w-fit rounded-full"
+                    onClick={() => openPaykitSetup(paykitSetupMode)}
+                  >
+                    <RefreshCw className="size-4" />
+                    Retry
+                  </Button>
+                )}
               </div>
             </div>
           )}
