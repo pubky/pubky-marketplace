@@ -120,6 +120,19 @@ describe('LocksGatewayService', () => {
     expect(vi.mocked(fetch).mock.calls.flatMap((call) => String(call[0]))).not.toContain(BUNDLE_ID);
   });
 
+  // `p`, `u`, `b`, `k` and `y` are z-base-32 characters, so a bare id can start with `pubky`.
+  it('sends the Lock Server the prefixed creator whether it gets the bare or the prefixed id', async () => {
+    const bare = 'pubky3f4khszd4gzg38bsazw88dmcfws36js9ct19s9dikb3a9ht';
+    for (const input of [bare, `pubky${bare}`]) {
+      vi.mocked(fetch).mockResolvedValueOnce(
+        jsonResponse({ credential: 'opaque-secret', expires_at: '2026-08-20T00:00:00.000Z' }),
+      );
+      await LocksGatewayService.issueAccessCredential(input, BUNDLE_ID);
+      const init = vi.mocked(fetch).mock.calls.at(-1)?.[1] as RequestInit;
+      expect(JSON.parse(String(init.body)).creator).toBe(`pubky${bare}`);
+    }
+  });
+
   it('reads the durable-admission lifecycle fields (pubky/locks#72) and stays compatible without them', async () => {
     vi.mocked(fetch)
       .mockResolvedValueOnce(
@@ -363,7 +376,7 @@ describe('LocksGatewayService', () => {
     it('builds the reconnect URL beside the setup URL with creator, return_to and state', () => {
       const built = LocksGatewayService.buildPaykitReconnectUrl(returnTo, 'opaque-state', creator);
       expect(built).toBe(
-        `https://paykit.example.com/setup/reconnect?creator=${creator}&return_to=https%3A%2F%2Fapp.example.com%2Fmarketplace%2Fsettings&state=opaque-state`,
+        `https://paykit.example.com/setup/reconnect?creator=pubky${creator}&return_to=https%3A%2F%2Fapp.example.com%2Fmarketplace%2Fsettings&state=opaque-state`,
       );
       expect([...new URL(built).searchParams.keys()]).toEqual(['creator', 'return_to', 'state']);
     });
@@ -376,10 +389,24 @@ describe('LocksGatewayService', () => {
           new URL(LocksGatewayService.buildPaykitReconnectUrl(returnTo, 'opaque-state', creator)).searchParams.get(
             'creator',
           ),
-        ).toBe(creator);
+        ).toBe(`pubky${creator}`);
       } finally {
         paykitSetupConfig.creatorParam = true;
       }
+    });
+
+    // Upstream `parse_setup_query` -> `parse_creator` accepts only the
+    // canonical `pubky<z32>` form; the bare z32 id answers 400 invalid_request.
+    it('sends the bare seller id in the pubky-prefixed form Paykit parses', () => {
+      const z32 = '3f4khszd4gzg38bsazw88dmcfws36js9ct19s9dikb3a9ht3r84y';
+      const built = new URL(LocksGatewayService.buildPaykitReconnectUrl(returnTo, 'opaque-state', z32));
+      expect(built.searchParams.get('creator')).toBe(`pubky${z32}`);
+    });
+
+    it('prefixes a bare id that itself starts with pubky', () => {
+      const z32 = 'pubky3f4khszd4gzg38bsazw88dmcfws36js9ct19s9dikb3a9ht';
+      const built = new URL(LocksGatewayService.buildPaykitReconnectUrl(returnTo, 'opaque-state', z32));
+      expect(built.searchParams.get('creator')).toBe(`pubky${z32}`);
     });
 
     it('builds /setup/reconnect from the configured origin, whatever path or query the setup URL carries', () => {
