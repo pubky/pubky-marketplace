@@ -1,8 +1,11 @@
 # Shop Production Kill Switch And Rollback Runbook
 
-Operational scope: Shop production client on Vercel project `pubky-marketplace-production`, with staging client on
-`pubky-marketplace-staging`, both in Vercel team `synonymdev` (`team_y2cqjCWZ9vTnCPWQkUAgfijD`). Releases are in
-[`release.md`](release.md).
+Operational scope: John Prod, the Shop on Vercel project `pubky-marketplace-production`
+(<https://pubky-marketplace-production.vercel.app>), and John Staging on `pubky-marketplace-staging`
+(<https://pubky-marketplace-staging.vercel.app>), both in Vercel team `synonymdev` (`team_y2cqjCWZ9vTnCPWQkUAgfijD`),
+with the Railway services behind them. These are test environments. The launched Shop runs on Synonym's GCP at
+<https://pubky.app/shop>, deployed by Vlad from [pubky/shop-migration](https://github.com/pubky/shop-migration); its
+operations live there. Releases are in [`release.md`](release.md).
 
 Run Vercel commands from a checkout linked to the target project. `.vercel/` is gitignored, so a fresh checkout is
 unlinked, and `vercel --prod` from an unlinked checkout creates a new project instead of touching the Shop:
@@ -58,31 +61,19 @@ vercel env update PUBKY_RUNTIME_COMMERCE_ADAPTER_MODE production --value locks-p
 vercel deploy --prod --yes --scope synonymdev
 ```
 
-## Move The Shop Domain Between Vercel Projects
+## shop.pubky.app Is Not A Vercel Domain
 
-Moving `shop.pubky.app` between Vercel projects is **not** a reassignment. The `pubky.app` DNS zone is external
-(Namecheap), and its apex belongs to a different Vercel account; Shop is held by TXT proof. Each time Vercel attaches
-the domain to a project, it mints a new `_vercel` TXT verification token. Detaching the domain from the current project
-invalidates the token currently published in DNS.
+`shop.pubky.app` belongs to the GCP deployment in [pubky/shop-migration](https://github.com/pubky/shop-migration),
+managed by Vlad, and redirects to `https://pubky.app/shop`. It is not attached to any Vercel project and must never be
+added to one. John Prod is reached only at <https://pubky-marketplace-production.vercel.app>; use that URL in every
+`vercel inspect`, `vercel alias ls`, `curl` and proof command. DNS changes for `pubky.app` go through Vlad, never from
+this repository's tooling.
 
-There is no way to obtain the destination token in advance. Attaching the domain to a second project while the first
-still holds it fails with `domain_already_in_use`, so the token only exists after the detach. **The move therefore
-always takes the hostname offline**, from the moment of detach until the new TXT record propagates. Plan for that
-window rather than trying to eliminate it:
-
-1. Lower the TTL on `_vercel.pubky.app` well in advance (the observed TTL is 1800s).
-2. Have the DNS owner at the keyboard before you start; the outage lasts exactly as long as they take to publish.
-3. Detach from the current project, immediately attach to the destination, and read the minted token from the attach
-   response (`verification[].value`).
-4. Publish that exact token, confirm with `dig +short TXT _vercel.pubky.app` against both a public resolver and the
-   authoritative nameservers, then call the verify endpoint and pin the alias.
-
-Do not re-run the attach while waiting. Every attach and detach mints a fresh token and invalidates the record the DNS
-owner just published. On 2026-09-08 that mistake turned a planned move into a two-hour outage.
-
-Rolling back has the same cost as going forward: reattaching to the prior project mints its own new token and needs its
-own DNS publish. Once you have detached, the fastest route back to a working hostname is usually to finish the move,
-not to reverse it. Meanwhile the project's own `*.vercel.app` alias keeps serving, so Shop stays reachable there.
+Why: the `pubky.app` zone is external and its apex belongs to a different Vercel account, so a Vercel project can only
+hold a `pubky.app` host by `_vercel` TXT proof. Every attach mints a new TXT verification token and invalidates the
+one published in DNS, so attaching the host takes it offline until the DNS owner publishes the new token. On 2026-09-08
+re-running the attach while waiting turned a planned domain move into a two-hour outage. Attaching `shop.pubky.app`
+to a Vercel project now would break Vlad's redirect in the same way.
 
 ## Vercel Rollback Or Promote
 
@@ -92,8 +83,9 @@ bad deployment id or URL. Each release records the deployment that was on the al
 lists recent deployments, and `vercel inspect <url-or-id> --scope synonymdev` shows one.
 
 Pre-launch, roll back only when data is being lost or money is moving wrongly, and always to the **previous**
-known-good deployment, never the current one. After a `rollback`, the domain stays pinned: the next `vercel --prod`
-aliases only the generic `*.vercel.app` name until you `promote` a deployment.
+known-good deployment, never the current one. After a `rollback`, the production alias
+`pubky-marketplace-production.vercel.app` stays pinned: the next `vercel --prod` gets only its own deployment URL
+until you `promote` a deployment.
 
 Runtime config is serialized into each deployment at build time, so `promote` re-points the alias to that deployment's
 env snapshot in about 5 seconds with no build (measured in the 2026-09-06 drill). That makes `promote` the instant
@@ -107,7 +99,7 @@ From a checkout linked to `pubky-marketplace-production`:
 ```bash
 vercel promote <dpl_id-or-url> --yes --scope synonymdev
 vercel rollback <dpl_id-or-url> --yes --scope synonymdev
-vercel alias ls --scope synonymdev | grep shop.pubky.app   # confirm where the domain points
+vercel alias ls --scope synonymdev | grep pubky-marketplace-production.vercel.app   # confirm where the alias points
 ```
 
 For staging, run the same commands from a checkout linked to `pubky-marketplace-staging`.

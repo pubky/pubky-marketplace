@@ -81,7 +81,7 @@ Single source of truth for all project standards, conventions, and architectural
 | `ecommerce/onboarding.md`         | Start here: repositories, access, run, test, merge, who to ask                |
 | `ecommerce/RUNNING.md`            | Running the marketplace locally in every mode, and the live test suites       |
 | `ecommerce/release.md`            | Release train, VRT baselines, Vercel deploy, signed-in production proof, tags |
-| `ecommerce/runbook-production.md` | Kill switch, rollback, Vercel domain moves, Railway restarts                  |
+| `ecommerce/runbook-production.md` | Kill switch, rollback, `shop.pubky.app` rule, Railway restarts                |
 | `ecommerce/status.md`             | What is real and what is simulated                                            |
 
 #### Migrations

@@ -82,6 +82,17 @@ describe('release proof target', () => {
     }
   });
 
+  it('refuses a route that is an absolute URL or already carries the mount path', () => {
+    const target = proofTarget('https://pubky.app/shop-embed');
+    expect(() => target.at('https://pubky.app/shop-embed/marketplace/cart')).toThrow(/path from the Shop root/);
+    expect(() => target.at('//pubky.app/marketplace/cart')).toThrow(/path from the Shop root/);
+    expect(() => target.at('marketplace/cart')).toThrow(/path from the Shop root/);
+    expect(() => target.at('/shop-embed/marketplace/cart')).toThrow(/already carries the mount path/);
+    expect(() => target.at('/shop-embed')).toThrow(/already carries the mount path/);
+    expect(target.at('/shop-embedded')).toBe('https://pubky.app/shop-embed/shop-embedded');
+    expect(proofTarget('https://shop.example').at('/shop-embed/x')).toBe('https://shop.example/shop-embed/x');
+  });
+
   it('rejects a query or fragment', () => {
     expect(() => proofTarget('https://pubky.app/shop?x=1')).toThrow(/query or fragment/);
     expect(() => proofTarget('https://pubky.app/shop#top')).toThrow(/query or fragment/);
