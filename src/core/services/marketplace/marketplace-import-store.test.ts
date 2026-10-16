@@ -106,12 +106,14 @@ describe('DexieManifestStore incremental checkpoints', () => {
     await db.close();
   });
 
+  // The assertion is on operation counts. The time is the fake-indexeddb setup of a 500-row
+  // manifest before the one measured checkpoint, which exceeds 5 s on CI runners.
   it('costs the same row reads and writes per checkpoint for 50 rows as for 500', async () => {
     const small = await oneCheckpointCost(50);
     const large = await oneCheckpointCost(500);
     expect(small).toEqual({ put: 1, bulkPut: 0, get: 1, bulkGet: 1, where: 0 });
     expect(large).toEqual(small);
-  });
+  }, 60_000);
 
   it('writes the one row and the header version, and leaves every other row record untouched', async () => {
     const store = new DexieManifestStore(SELLER);
