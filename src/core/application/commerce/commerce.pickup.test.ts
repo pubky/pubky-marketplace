@@ -1,14 +1,18 @@
 /** @vitest-environment node */
+import { Chacha20Poly1305 } from '@hpke/chacha20poly1305';
+import { CipherSuite, HkdfSha256 } from '@hpke/core';
+import { DhkemX25519HkdfSha256 } from '@hpke/dhkem-x25519';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as commerceConfig from '@/config/commerce';
 import { CONNECTOR_SHARE_CONSENT_VERSION } from '@/config/commerce-copy';
 import {
+  canonicalDeliveryAddressJson,
   type DeliveryKeyPair,
   generateDeliveryKeyPair,
   openDeliveryAddress,
   type SellerDeliveryEnvelope,
 } from '@/libs/commerce/delivery-envelope';
-import { bytesToBase64Url } from '@/libs/commerce/priv-envelope';
+import { base64UrlToBytes, bytesToBase64Url } from '@/libs/commerce/priv-envelope';
 import { buildMarketplaceListingAggregateId } from '@/libs/commerce/transaction-commands';
 import { LocalCommerceService } from '@/services/local/commerce/commerce';
 import { MarketplaceGatewayService } from '@/services/marketplace/marketplace';
@@ -342,15 +346,61 @@ describe('CommerceApplication local pickup (Wave 7)', () => {
         expect(payload.deliveryAddressEnvelopes).toHaveLength(1);
         expect(payload.connectorShares).toHaveLength(1);
         const [share] = payload.connectorShares;
+        expect(Object.keys(share).sort()).toEqual(['consentVersion', 'envelope', 'keyId', 'sellerPubky', 'shopDomain']);
         expect(share).toMatchObject({
           sellerPubky: SELLER,
           shopDomain: 'dezentralshop.ch',
           consentVersion: CONNECTOR_SHARE_CONSENT_VERSION,
           keyId: STORE_KEY_ID,
         });
-        expect(share?.envelope).not.toBe(payload.deliveryAddressEnvelopes[0]?.envelope);
-        expect(JSON.stringify(payload)).not.toContain('1 Market Street');
-        expect(pair.keyId).toBeDefined();
+        expect(share.consentVersion).toBe(1);
+        expect(Number.isInteger(share.consentVersion)).toBe(true);
+        expect(share.envelope).not.toBe(payload.deliveryAddressEnvelopes[0]?.envelope);
+
+        expect(payload).not.toHaveProperty('deliveryAddress');
+        const wire = JSON.stringify(command);
+        for (const value of [address.name, address.line1, address.city, address.postalCode]) {
+          expect(wire).not.toContain(value);
+        }
+        for (const field of ['line1', 'line2', 'postalCode', 'countryCode', 'region', 'city']) {
+          expect(wire).not.toContain(`"${field}"`);
+        }
+
+        const enc = base64UrlToBytes(share.envelope);
+        const opened = await new CipherSuite({
+          kem: new DhkemX25519HkdfSha256(),
+          kdf: new HkdfSha256(),
+          aead: new Chacha20Poly1305(),
+        }).open(
+          {
+            recipientKey: await new DhkemX25519HkdfSha256().deserializePrivateKey(pair.privateKey as BufferSource),
+            enc: enc.slice(0, 32) as BufferSource,
+            info: new TextEncoder().encode('pubky-marketplace/connector-address/v1'),
+          },
+          enc.slice(32) as BufferSource,
+          new TextEncoder().encode(
+            `pubky-marketplace/connector-address/v1|${command.commandId}|${BUYER}|${SELLER}|${STORE_KEY_ID}`,
+          ) as BufferSource,
+        );
+        const padded = new Uint8Array(opened);
+        expect(new TextDecoder().decode(padded.subarray(0, padded.lastIndexOf(0x80)))).toBe(
+          canonicalDeliveryAddressJson(address),
+        );
+      });
+
+      it('refuses a share when there is no sealed delivery envelope, and sends nothing', async () => {
+        vi.spyOn(commerceConfig, 'getCommerceAdapterMode').mockReturnValue('sandbox');
+        const execute = vi.spyOn(MarketplaceGatewayService, 'execute');
+        const { choice } = await storeKey();
+
+        await expect(
+          CommerceApplication.commitCreateMarketplaceCheckout(BUYER, {
+            lines: [lineA],
+            deliveryAddress: address,
+            connectorShares: [choice],
+          }),
+        ).rejects.toMatchObject({ category: 'validation', context: { sellerPubky: SELLER } });
+        expect(execute).not.toHaveBeenCalled();
       });
 
       it('sends no share unless the buyer chose one', async () => {

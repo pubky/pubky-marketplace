@@ -57,6 +57,12 @@ describe('connector address envelope', () => {
     ).toBe(
       `pubky-marketplace/connector-address/v1|${BINDING.checkoutCommandId}|${BINDING.buyerPubky}|${BINDING.sellerPubky}|connector-key-1`,
     );
+    expect(buildConnectorAddressAad(BINDING)).toEqual(
+      new TextEncoder().encode(
+        'pubky-marketplace/connector-address/v1|3f2b8a52-6c1e-4d0a-9a53-7d5d2f0b61aa|' +
+          `${'b'.repeat(52)}|${'s'.repeat(52)}|connector-key-1`,
+      ),
+    );
   });
 
   it('seals to 2,096 bytes the recipient opens with the context and AAD, and only those', async () => {
