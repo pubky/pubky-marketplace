@@ -4,7 +4,6 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ArrowLeft, PencilLine, Store } from 'lucide-react';
 import { getMarketplaceListingEditRoute, getMarketplaceListingRoute } from '@/app/routes';
-import { Badge } from '@/atoms/Badge/Badge';
 import { Button } from '@/atoms/Button/Button';
 import { Container } from '@/atoms/Container/Container';
 import { Heading } from '@/atoms/Heading/Heading';
@@ -99,7 +98,6 @@ export function MarketplaceEditListing({ sellerPubky, listingId }: MarketplaceEd
         </Link>
 
         <div>
-          <Badge className="mb-4">Seller studio</Badge>
           <Heading level={1} size="xl" className="text-4xl sm:text-6xl">
             Edit listing
           </Heading>

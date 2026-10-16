@@ -3,9 +3,11 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Eye, Gavel, type LucideIcon, Tag, Timer } from 'lucide-react';
+import { Badge } from '@/atoms/Badge/Badge';
 import { Container } from '@/atoms/Container/Container';
 import { Typography } from '@/atoms/Typography/Typography';
 import { useRelativeTime } from '@/hooks/useRelativeTime/useRelativeTime';
+import { cn } from '@/libs/utils/utils';
 import { RelativeTimestamp } from '@/molecules/RelativeTimestamp/RelativeTimestamp';
 import type { MarketplaceWatchAlertFeedItem } from '@/pipes/marketplaceWatch/marketplaceWatchAlert.types';
 import { getWatchAlertDetail, getWatchAlertHeadline } from './MarketplaceWatchAlertItem.utils';
@@ -17,16 +19,20 @@ const BADGE_SIZE = 11;
 interface MarketplaceWatchAlertItemProps {
   item: MarketplaceWatchAlertFeedItem;
   isMobile?: boolean;
+  showSourceBadge?: boolean;
 }
 
 /**
  * A device-local watch alert row inside the general notification list.
  * Deliberately NOT dressed as a server event: there is no actor (nobody sent
  * this), the leading mark is a watchlist icon instead of an avatar, and the
- * row says "Watchlist · checked on this device" so the origin — a check this
- * device ran against real reads — is visible at a glance.
+ * row identifies device detection with either a label or its secondary copy.
  */
-export function MarketplaceWatchAlertItem({ item, isMobile = false }: MarketplaceWatchAlertItemProps) {
+export function MarketplaceWatchAlertItem({
+  item,
+  isMobile = false,
+  showSourceBadge = false,
+}: MarketplaceWatchAlertItemProps) {
   const router = useRouter();
   const { formatRelativeTime } = useRelativeTime();
   const timestampDate = new Date(item.timestamp);
@@ -40,7 +46,12 @@ export function MarketplaceWatchAlertItem({ item, isMobile = false }: Marketplac
   return (
     <Container
       overrideDefaults={true}
-      className="flex w-full min-w-0 cursor-pointer items-center justify-between gap-2"
+      className={cn(
+        'w-full min-w-0 cursor-pointer items-center gap-2',
+        showSourceBadge
+          ? 'grid grid-cols-[minmax(0,1fr)_auto] sm:grid-cols-[minmax(0,1fr)_auto_auto]'
+          : 'flex justify-between',
+      )}
       onClick={handleRowClick}
       data-cy="marketplace-watch-alert-item"
     >
@@ -56,19 +67,41 @@ export function MarketplaceWatchAlertItem({ item, isMobile = false }: Marketplac
         <Container overrideDefaults={true} className="min-w-0 flex-1">
           <Typography
             as="p"
-            className="min-w-0 truncate text-sm leading-normal font-medium text-foreground lg:text-base"
+            className={cn(
+              'min-w-0 text-sm leading-normal font-medium text-foreground lg:text-base',
+              showSourceBadge ? 'break-words' : 'truncate',
+            )}
           >
             <Link href={item.href} className="text-foreground hover:underline">
               {getWatchAlertHeadline(item)}: {item.title}
             </Link>
           </Typography>
-          <Typography as="p" className="truncate text-xs text-muted-foreground">
-            {detail ? `${detail} · ` : ''}Watchlist · checked on this device
-          </Typography>
+          {(detail || !showSourceBadge) && (
+            <Typography
+              as="p"
+              className={cn('text-xs text-muted-foreground', showSourceBadge ? 'break-words' : 'truncate')}
+            >
+              {showSourceBadge ? detail : `${detail ? `${detail} · ` : ''}Watchlist · checked on this device`}
+            </Typography>
+          )}
         </Container>
       </Container>
 
-      <Link href={item.href} className="flex shrink-0 items-center gap-2 transition-opacity hover:opacity-80">
+      {showSourceBadge && (
+        <Badge
+          variant="outline"
+          className="col-start-1 row-start-2 ml-8 w-fit sm:col-start-2 sm:row-start-1 sm:mr-2 sm:ml-0"
+        >
+          Detected by device
+        </Badge>
+      )}
+      <Link
+        href={item.href}
+        className={cn(
+          'flex shrink-0 items-center gap-2 transition-opacity hover:opacity-80',
+          showSourceBadge && 'col-start-2 row-start-1 sm:col-start-3',
+        )}
+      >
         <RelativeTimestamp
           timeAgo={formatRelativeTime(timestampDate)}
           date={timestampDate}

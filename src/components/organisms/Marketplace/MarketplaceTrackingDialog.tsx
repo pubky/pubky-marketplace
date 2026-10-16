@@ -43,7 +43,7 @@ export function MarketplaceTrackingDialog({
   return (
     <>
       <Button
-        size="sm"
+        size="default"
         variant="secondary"
         className="rounded-full"
         onClick={() => {

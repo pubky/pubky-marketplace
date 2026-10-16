@@ -1055,6 +1055,38 @@ body {
   animation: marketplace-promo-exit 180ms ease-in both;
 }
 
+/* Two seconds of movement, then ten seconds hidden before repeating. */
+@keyframes marketplace-nav-swipe {
+  0% {
+    opacity: 0;
+    transform: translateX(4px) rotate(-20deg);
+  }
+  2.5%,
+  14% {
+    opacity: 1;
+    transform: translateX(4px) rotate(-20deg);
+  }
+  5%,
+  11% {
+    opacity: 1;
+    transform: translate(-6px, -2px) rotate(-24deg);
+  }
+  8% {
+    opacity: 1;
+    transform: translateX(5px) rotate(-18deg);
+  }
+  16.667%,
+  100% {
+    opacity: 0;
+    transform: translateX(4px) rotate(-20deg);
+  }
+}
+
+.marketplace-nav-swipe-hint {
+  opacity: 0;
+  animation: marketplace-nav-swipe 12s ease-in-out infinite;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .marketplace-card-enter,
   .marketplace-promo-enter,

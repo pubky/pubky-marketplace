@@ -89,12 +89,13 @@ import {
 import { usdtMissingOptionExplanation } from '@/libs/commerce/usdt-missing-option';
 import { navigateTop } from '@/libs/navigation/navigate-top';
 import { getDeployEnv } from '@/libs/runtime-config/runtime-config';
+import { formatDateTime } from '@/libs/utils/dateTime';
 import type { CommerceListingModelSchema } from '@/models/commerce/commerce.schema';
 import { BitkitDownloads } from '@/molecules/BitkitDownloads/BitkitDownloads';
 import { ControlledInputField } from '@/molecules/ControlledInputField/ControlledInputField';
 import { DeliveryKeyBlockedNotice } from '@/molecules/Marketplace/DeliveryKeyBlockedNotice';
+import { MarketplaceCheckoutStatusLabels } from '@/molecules/Marketplace/MarketplaceCheckoutStatusLabels';
 import { MarketplaceCheckoutSteps } from '@/molecules/Marketplace/MarketplaceCheckoutSteps';
-import { MarketplacePaymentStatusBadge } from '@/molecules/Marketplace/MarketplacePaymentStatusBadge';
 import { MarketplaceSellerLink } from '@/molecules/Marketplace/MarketplaceSellerLink';
 import { PaykitOutageNotice } from '@/molecules/Marketplace/PaykitOutageNotice';
 import { MarketplaceAddressFields } from '@/molecules/MarketplaceAddressFields/MarketplaceAddressFields';
@@ -670,13 +671,13 @@ function MarketplaceCartCheckout() {
               {showPaying
                 ? 'Review your items and payment status.'
                 : isOfferCheckout && offerEligible && award
-                  ? `Checkout window closes ${new Date(award.convertBy).toLocaleString('en-US')}`
+                  ? `Checkout window closes ${formatDateTime(new Date(award.convertBy))}`
                   : `Enter delivery details and choose how to pay.${
                       checkout.orderCount > 1 ? ' Each order requires a separate payment.' : ''
                     }`}
             </Typography>
           </div>
-          <div className="justify-self-end">
+          <div className="w-full justify-self-end md:w-auto">
             <MarketplaceCheckoutSteps
               currentStep={showPaying || awardOutcome === 'success' ? 3 : 2}
               completed={allPaymentsConfirmed}
@@ -718,15 +719,8 @@ function MarketplaceCartCheckout() {
               focusedPaying.map(({ order, payment }) => (
                 <Card className="rounded-md p-0" key={order.id}>
                   <CardContent className="grid min-w-0 gap-4 p-6">
-                    <MarketplaceOrderReference
-                      order={order}
-                      isBuyer
-                      status={
-                        payment?.state === 'confirmed' && observedPaymentRail(order) !== 'usdt' ? (
-                          <MarketplacePaymentStatusBadge order={order} payment={payment} />
-                        ) : undefined
-                      }
-                    />
+                    <MarketplaceOrderReference order={order} isBuyer />
+                    <MarketplaceCheckoutStatusLabels order={order} payment={payment} isSandbox={isSandbox} />
                     {order.lines.map((line, index) => (
                       <MarketplaceCheckoutItem
                         key={`${line.listingAggregateId}:${line.variantId ?? index}`}
@@ -742,6 +736,7 @@ function MarketplaceCartCheckout() {
                         advancePayment={orders.advancePayment}
                         onPaymentChanged={orders.refresh}
                         showStagingNotice={false}
+                        showStatusLabels={false}
                         checkoutActions={
                           order.state === 'pending_payment' &&
                           (order.paymentMethod === 'paypal' || order.paykitDeliveryState === 'failed') ? (

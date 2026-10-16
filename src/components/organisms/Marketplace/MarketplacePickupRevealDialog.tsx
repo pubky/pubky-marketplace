@@ -48,9 +48,9 @@ export function MarketplacePickupRevealDialog({ order }: { order: MarketplaceOrd
 
   return (
     <>
-      <Button size="sm" variant="secondary" className="rounded-full" onClick={() => handleOpenChange(true)}>
+      <Button size="default" variant="secondary" className="rounded-full" onClick={() => handleOpenChange(true)}>
         <MapPin className="size-4" />
-        Show meeting point
+        Meeting point
       </Button>
       <Dialog open={open} onOpenChange={handleOpenChange}>
         <DialogContent className="border-border bg-popover" data-surface="pickup-reveal-dialog">

@@ -264,6 +264,11 @@ describe('Marketplace cart — visual regression', () => {
     for (const control of surface.querySelectorAll('button, [data-testid="marketplace-cart-checkout"]')) {
       expect(control.getBoundingClientRect().right).toBeLessThanOrEqual(surface.getBoundingClientRect().right);
     }
+    for (const decrease of surface.querySelectorAll('button[aria-label^="Decrease "]')) {
+      const quantity = decrease.parentElement!.getBoundingClientRect();
+      const actions = decrease.parentElement!.parentElement!.getBoundingClientRect();
+      expect(quantity.left + quantity.width / 2).toBeCloseTo(actions.left + actions.width / 2, 0);
+    }
   }
 
   it('renders a single-seller cart at desktop viewport', async () => {
@@ -348,6 +353,10 @@ describe('Marketplace cart — visual regression', () => {
     view.isLoading = false;
 
     await renderForVRT(<MarketplaceCart />, { viewport: VRT_VIEWPORT_MOBILE });
+    const progress = document.querySelector<HTMLElement>('[aria-label="Checkout progress: step 1 of 3, Cart"]')!;
+    const header = progress.parentElement!.parentElement!;
+    const bar = progress.querySelector<HTMLElement>('.lg\\:hidden')!;
+    expect(bar.getBoundingClientRect().width).toBeCloseTo(header.getBoundingClientRect().width, 0);
     await captureCart('cart-multi-seller-mobile');
   });
 

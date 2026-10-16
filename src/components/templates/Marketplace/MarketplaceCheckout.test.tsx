@@ -1340,7 +1340,14 @@ describe('MarketplaceCheckout', () => {
       showPaidOrder({ paymentMethod: 'paypal', confirmations: 0 });
       expect(screen.queryByTestId('marketplace-checkout-paid-headline')).not.toBeInTheDocument();
       expect(screen.queryByTestId('payment-status-panel')).not.toBeInTheDocument();
-      expect(screen.getByTestId('order-reference')).toHaveTextContent('Payment confirmed');
+      expect(screen.getByTestId('order-reference')).not.toHaveTextContent('Payment confirmed');
+      const labels = screen.getByTestId('marketplace-checkout-status-labels');
+      expect(labels).toHaveTextContent('Payment confirmed');
+      expect(screen.getAllByText('Payment confirmed')).toHaveLength(1);
+      expect(
+        labels.compareDocumentPosition(screen.getByRole('link', { name: 'Handmade leather boots' })) &
+          Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
       expect(screen.getByRole('group', { name: 'Checkout complete' })).toBeInTheDocument();
       expect(screen.queryByText('Checkout in progress')).not.toBeInTheDocument();
       expect(screen.queryByRole('button', { name: 'Cancel checkout' })).not.toBeInTheDocument();

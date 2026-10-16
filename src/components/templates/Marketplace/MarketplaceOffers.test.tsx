@@ -21,6 +21,7 @@ const getManyListings = vi.hoisted(() => vi.fn());
 vi.mock('@/controllers/commerce/commerce', () => ({
   CommerceController: {
     getManyListings,
+    getIndicativeBtcRate: vi.fn(async () => null),
     getOrFetchListing,
     getMarketplaceOrder: vi.fn(async () => ({ state: 'cancelled' })),
   },
@@ -94,7 +95,7 @@ describe('Marketplace offers UX', () => {
 
   it('names a rejected offer Declined for the seller and the buyer', () => {
     expect(offerStateLabel('rejected', '2026-09-13T00:00:00.000Z')).toBe('Declined');
-    expect(offerStateLabel('withdrawn', '2026-09-13T00:00:00.000Z')).toBe('withdrawn');
+    expect(offerStateLabel('withdrawn', '2026-09-13T00:00:00.000Z')).toBe('Withdrawn');
   });
 
   it('hides expiry once an offer is declined, accepted, withdrawn, expired, or converted', () => {

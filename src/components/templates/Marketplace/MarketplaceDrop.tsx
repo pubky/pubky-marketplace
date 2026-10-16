@@ -22,6 +22,7 @@ import {
 import { useMarketplaceDrop } from '@/hooks/useMarketplaceDrop/useMarketplaceDrop';
 import { useMarketplaceDropClaim } from '@/hooks/useMarketplaceDropClaim/useMarketplaceDropClaim';
 import { useMarketplaceFirstMediaUrl } from '@/hooks/useMarketplaceMediaUrl/useMarketplaceMediaUrl';
+import { formatDateTime } from '@/libs/utils/dateTime';
 import { SettingsSectionContent } from '@/molecules/Settings/SettingsSectionContent/SettingsSectionContent';
 import { ContentLayout } from '@/organisms/ContentLayout/ContentLayout';
 import { DropClaimPanel } from '@/organisms/Marketplace/DropClaimPanel';
@@ -255,8 +256,8 @@ export function MarketplaceDrop({ sellerPubky, dropId }: MarketplaceDropProps) {
               <ArchiveFact label="Per-buyer limit" value={String(projection.perBuyerLimit)} />
               <ArchiveFact
                 label="Window"
-                value={`${new Date(projection.startsAt).toLocaleString()}${
-                  projection.endsAt ? ` → ${new Date(projection.endsAt).toLocaleString()}` : ' → sold out / cancelled'
+                value={`${formatDateTime(new Date(projection.startsAt))}${
+                  projection.endsAt ? ` → ${formatDateTime(new Date(projection.endsAt))}` : ' → sold out / cancelled'
                 }`}
               />
             </div>

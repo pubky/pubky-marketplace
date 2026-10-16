@@ -7,7 +7,6 @@ import { Button } from '@/atoms/Button/Button';
 import { Card, CardContent } from '@/atoms/Card/Card';
 import { Container } from '@/atoms/Container/Container';
 import { Heading } from '@/atoms/Heading/Heading';
-import { Image } from '@/atoms/Image/Image';
 import { Link } from '@/atoms/Link/Link';
 import { Typography } from '@/atoms/Typography/Typography';
 import { useMarketplaceCart } from '@/hooks/useMarketplaceCart/useMarketplaceCart';
@@ -19,8 +18,10 @@ import { getMarketplaceCheckoutRoute, getMarketplaceOfferCheckoutRoute } from '@
 import { DIGITAL_CHECKOUT_COPY } from '@/libs/commerce/digital';
 import { formatCommerceMoney } from '@/libs/commerce/format';
 import { commerceListingFulfillmentMethods } from '@/libs/commerce/marketplace-records';
+import { formatDateTime } from '@/libs/utils/dateTime';
 import { MarketplaceCheckoutSteps } from '@/molecules/Marketplace/MarketplaceCheckoutSteps';
 import { MarketplaceEmptyState } from '@/molecules/Marketplace/MarketplaceEmptyState';
+import { MarketplaceProductSummary } from '@/molecules/Marketplace/MarketplaceProductSummary';
 import { MarketplaceSellerLink } from '@/molecules/Marketplace/MarketplaceSellerLink';
 import { SettingsSectionContent } from '@/molecules/Settings/SettingsSectionContent/SettingsSectionContent';
 import { ContentLayout } from '@/organisms/ContentLayout/ContentLayout';
@@ -63,7 +64,7 @@ export function MarketplaceCart() {
               {cart.itemCount} {cart.itemCount === 1 ? 'item' : 'items'} in your cart.
             </Typography>
           </div>
-          <div className="justify-self-end">
+          <div className="w-full justify-self-end md:w-auto">
             <MarketplaceCheckoutSteps currentStep={1} />
           </div>
         </div>
@@ -75,7 +76,7 @@ export function MarketplaceCart() {
         ) : cart.items.length ? (
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_420px]" data-surface="marketplace-cart">
             <div className="flex flex-col gap-6 lg:col-start-1 lg:row-start-1">
-              <div className="flex flex-col gap-4" data-testid="marketplace-cart-items">
+              <div className="flex flex-col gap-3" data-testid="marketplace-cart-items">
                 {awardItems.map((item) => {
                   const variant = item.listing.record.variants.find(({ id }) => id === item.variantId);
                   const award = offers.offers.find(({ award }) => award?.id === item.awardId)?.award;
@@ -91,17 +92,23 @@ export function MarketplaceCart() {
                       </Heading>
                       <Card className="rounded-md p-0">
                         <CardContent className="flex flex-col gap-4 p-6 sm:flex-row sm:items-center sm:justify-between">
-                          <div>
-                            <Typography as="p" className="font-semibold">
-                              {item.listing.record.title}
-                            </Typography>
-                            <MarketplaceSellerLink sellerPubky={item.listing.record.ownerPubky} />
-                            <Typography as="p" className="text-sm text-muted-foreground">
-                              {variant && Object.values(variant.options).filter(Boolean).length > 0
-                                ? `${Object.values(variant.options).filter(Boolean).join(' · ')} · `
-                                : ''}
-                              Quantity {item.quantity}
-                            </Typography>
+                          <div className="min-w-0 flex-1">
+                            <MarketplaceProductSummary
+                              title={item.listing.record.title}
+                              href={getMarketplaceListingRoute(item.listing.record.ownerPubky, item.listing.listing_id)}
+                              imageUrl={cartMediaUrls[cart.items.findIndex(({ id }) => id === item.id)] ?? null}
+                              quantity={item.quantity}
+                              details={<MarketplaceSellerLink sellerPubky={item.listing.record.ownerPubky} />}
+                              titleDetails={variant ? Object.values(variant.options).filter(Boolean) : undefined}
+                              price={
+                                award && (
+                                  <>
+                                    {formatCommerceMoney(award.unitPrice)}
+                                    <MarketplaceIndicativePrice money={award.unitPrice} className="font-normal" />
+                                  </>
+                                )
+                              }
+                            />
                             {award && (
                               <>
                                 <Typography as="p" className="mt-1 text-sm text-muted-foreground">
@@ -110,7 +117,7 @@ export function MarketplaceCart() {
                                   {formatCommerceMoney(award.merchandiseTotal)}
                                 </Typography>
                                 <Typography as="p" className="text-sm text-muted-foreground">
-                                  Buy by {new Date(award.convertBy).toLocaleString('en-US')}
+                                  Buy by {formatDateTime(new Date(award.convertBy))}
                                 </Typography>
                               </>
                             )}
@@ -155,52 +162,39 @@ export function MarketplaceCart() {
                       const lineStock = stock.stockFor(item.id);
                       return (
                         <Card key={item.id} className="rounded-md p-0">
-                          <CardContent className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-4 p-6 sm:flex">
-                            <Link href={listingRoute} overrideDefaults aria-label={`View ${item.listing.record.title}`}>
-                              <div className="relative flex size-20 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-brand/15">
-                                <ShoppingCart className="size-7 text-brand" />
-                                {coverUrl && (
-                                  <Image
-                                    src={coverUrl}
-                                    alt={item.listing.record.title}
-                                    fill
-                                    sizes="80px"
-                                    className="absolute inset-0 object-cover object-center"
-                                  />
-                                )}
-                              </div>
-                            </Link>
-                            <div className="min-w-0 flex-1">
-                              <Typography as="h2" className="truncate font-semibold">
-                                <Link href={listingRoute} overrideDefaults className="hover:text-brand">
-                                  {item.listing.record.title}
-                                </Link>
-                              </Typography>
-                              <MarketplaceSellerLink sellerPubky={group.sellerPubky} />
-                              {variant && Object.values(variant.options).filter(Boolean).length > 0 && (
-                                <Typography as="p" className="text-sm text-muted-foreground">
-                                  {Object.values(variant.options).filter(Boolean).join(' · ')}
-                                </Typography>
-                              )}
-                              {price && (
-                                <Typography as="p" className="mt-1 font-bold text-brand">
-                                  {formatCommerceMoney(price)}{' '}
-                                  <MarketplaceIndicativePrice money={price} className="font-normal" />
-                                </Typography>
-                              )}
-                              {lineStock && (
-                                <Badge
-                                  variant="outline"
-                                  className="mt-2 border-destructive/50 text-destructive"
-                                  data-testid="marketplace-cart-line-sold-out"
-                                >
-                                  {cartLineStockLabel(lineStock)}
-                                </Badge>
-                              )}
-                            </div>
-                            <div className="col-span-2 flex items-center justify-end gap-1 sm:shrink-0">
-                              {!lineStock && ((variant?.quantity ?? 0) > 1 || item.quantity > 1) && (
+                          <CardContent className="flex flex-col gap-4 p-6 sm:flex-row sm:items-center">
+                            <MarketplaceProductSummary
+                              className="flex-1"
+                              title={item.listing.record.title}
+                              href={listingRoute}
+                              imageUrl={coverUrl}
+                              details={
                                 <>
+                                  <MarketplaceSellerLink sellerPubky={group.sellerPubky} />
+                                  {lineStock && (
+                                    <Badge
+                                      variant="outline"
+                                      className="mt-2 border-destructive/50 text-destructive"
+                                      data-testid="marketplace-cart-line-sold-out"
+                                    >
+                                      {cartLineStockLabel(lineStock)}
+                                    </Badge>
+                                  )}
+                                </>
+                              }
+                              titleDetails={variant ? Object.values(variant.options).filter(Boolean) : undefined}
+                              price={
+                                price && (
+                                  <>
+                                    {formatCommerceMoney(price)}{' '}
+                                    <MarketplaceIndicativePrice money={price} className="font-normal" />
+                                  </>
+                                )
+                              }
+                            />
+                            <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-1 sm:flex sm:shrink-0">
+                              {!lineStock && ((variant?.quantity ?? 0) > 1 || item.quantity > 1) && (
+                                <div className="col-start-2 flex items-center gap-1">
                                   <Button
                                     size="icon"
                                     variant="ghost"
@@ -222,9 +216,10 @@ export function MarketplaceCart() {
                                   >
                                     <Plus className="size-4" />
                                   </Button>
-                                </>
+                                </div>
                               )}
                               <Button
+                                className="col-start-3 justify-self-end"
                                 size="icon"
                                 variant="secondary"
                                 aria-label={`Remove ${item.listing.record.title}`}

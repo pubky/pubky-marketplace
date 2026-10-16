@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { type ReactNode, useEffect, useState } from 'react';
 import { Controller, useWatch } from 'react-hook-form';
 import { Button } from '@/atoms/Button/Button';
 import { Checkbox } from '@/atoms/Checkbox/Checkbox';
@@ -43,11 +43,13 @@ export function MarketplaceOrderActions({
   canEditReview,
   actOnOrder,
   onChanged,
-  cancelButtonSize = 'sm',
+  cancelButtonSize = 'default',
+  messageAction,
 }: {
   order: MarketplaceOrder;
   isBuyer: boolean;
   cancelButtonSize?: 'sm' | 'default';
+  messageAction?: ReactNode;
   /**
    * `review.update` only exists on the durable service (the sandbox has no
    * review editing), so the edit affordance is withheld in sandbox mode
@@ -227,30 +229,14 @@ export function MarketplaceOrderActions({
 
   return (
     <>
-      <div className="flex flex-wrap gap-2">
-        {/* Cancellation (order.cancel_request / order.cancel_approve) is now
-            implemented by BOTH engines — the sandbox and the durable service —
-            so the affordance is no longer mode-gated. Pickup orders add
-            `ready_for_pickup` to the cancellable states (§A6). */}
-        {isBuyer &&
-          (['pending_payment', 'paid', 'processing'].includes(order.state) ||
-            (isPickup && order.state === 'ready_for_pickup')) && (
-            <Button
-              size={cancelButtonSize}
-              variant="secondary"
-              className="rounded-full"
-              onClick={() => begin('cancel')}
-            >
-              {order.state === 'pending_payment' ? 'Cancel checkout' : 'Cancel order'}
-            </Button>
-          )}
+      <div className="flex w-full flex-col gap-2 empty:hidden sm:w-auto sm:flex-row sm:flex-wrap">
         {canReveal && <MarketplacePickupRevealDialog order={order} />}
         {/* The handover confirm belongs to EITHER party — whoever is standing
             there with the item taps confirm (§A6). */}
         {isPickup && ['paid', 'ready_for_pickup'].includes(order.state) && (
           <Button
-            size="sm"
-            className="rounded-full"
+            size="default"
+            className="rounded-full sm:order-last"
             disabled={pickup.isActing || fulfilmentBlocked}
             onClick={() => {
               setTermsBlocked(false);
@@ -262,7 +248,7 @@ export function MarketplaceOrderActions({
         )}
         {!isBuyer && isPickup && order.state === 'paid' && (
           <Button
-            size="sm"
+            size="default"
             variant="secondary"
             className="rounded-full"
             disabled={pickup.isActing || fulfilmentBlocked}
@@ -274,7 +260,12 @@ export function MarketplaceOrderActions({
         {/* Pickup orders never ship: no tracking, no label (§A6). */}
         {!isBuyer && !isPickup && !isDigital && ['paid', 'processing'].includes(order.state) && (
           <>
-            <Button size="sm" className="rounded-full" disabled={fulfilmentBlocked} onClick={() => begin('ship')}>
+            <Button
+              size="default"
+              className="rounded-full sm:order-last"
+              disabled={fulfilmentBlocked}
+              onClick={() => begin('ship')}
+            >
               Mark shipped
             </Button>
             <MarketplaceShippingLabelDialog order={order} actOnOrder={actOnOrder} />
@@ -293,37 +284,49 @@ export function MarketplaceOrderActions({
         <MarketplaceTrackingDialog order={order} isBuyer={isBuyer} onChanged={reloadOrders} />
         {isBuyer && !isDigital && order.state === 'shipped' && (
           <Button
-            size="sm"
-            className="rounded-full"
+            size="default"
+            className="rounded-full sm:order-last"
             onClick={() => void actOnOrder(order, 'fulfillment.confirm_delivery', {})}
           >
             Confirm delivery
           </Button>
         )}
         {isBuyer && !isDigital && ['delivered', 'completed'].includes(order.state) && !order.returnRequest && (
-          <Button size="sm" variant="secondary" className="rounded-full" onClick={() => begin('return')}>
+          <Button size="default" variant="secondary" className="rounded-full" onClick={() => begin('return')}>
             Request return
           </Button>
         )}
         {!isBuyer && order.state === 'cancel_requested' && (
-          <Button size="sm" className="rounded-full" onClick={() => void actOnOrder(order, 'order.cancel_approve', {})}>
+          <Button
+            size="default"
+            className="rounded-full sm:order-last"
+            onClick={() => void actOnOrder(order, 'order.cancel_approve', {})}
+          >
             Approve cancellation
           </Button>
         )}
         {!isBuyer && order.state === 'return_requested' && (
-          <Button size="sm" className="rounded-full" onClick={() => void actOnOrder(order, 'return.approve', {})}>
+          <Button
+            size="default"
+            className="rounded-full sm:order-last"
+            onClick={() => void actOnOrder(order, 'return.approve', {})}
+          >
             Approve return
           </Button>
         )}
         {!isBuyer && order.state === 'return_approved' && (
-          <Button size="sm" className="rounded-full" onClick={() => void actOnOrder(order, 'return.receive', {})}>
+          <Button
+            size="default"
+            className="rounded-full sm:order-last"
+            onClick={() => void actOnOrder(order, 'return.receive', {})}
+          >
             Mark return received
           </Button>
         )}
         {canRecordRefund && (
           <Button
-            size="sm"
-            className="rounded-full"
+            size="default"
+            className="rounded-full sm:order-last"
             disabled={awaitingUsdtRefundAddress}
             onClick={() => begin('refund')}
           >
@@ -334,13 +337,13 @@ export function MarketplaceOrderActions({
           !order.reviews?.some(({ reviewerPubky }) =>
             isBuyer ? reviewerPubky === order.buyerPubky : reviewerPubky === order.sellerPubky,
           ) && (
-            <Button size="sm" variant="secondary" className="rounded-full" onClick={() => begin('review')}>
+            <Button size="default" variant="secondary" className="rounded-full" onClick={() => begin('review')}>
               Leave review
             </Button>
           )}
         {canEditReview && ownReview && isOwnReviewEditable && (
           <Button
-            size="sm"
+            size="default"
             variant="secondary"
             className="rounded-full"
             onClick={() => begin('review_edit', { rating: String(ownReview.rating), text: ownReview.text })}
@@ -348,6 +351,21 @@ export function MarketplaceOrderActions({
             Edit review
           </Button>
         )}
+        {messageAction}
+        {/* Both engines support cancellation. Pickup orders also allow it
+            while ready for pickup (§A6). Keep this exit after the other actions. */}
+        {isBuyer &&
+          (['pending_payment', 'paid', 'processing'].includes(order.state) ||
+            (isPickup && order.state === 'ready_for_pickup')) && (
+            <Button
+              size={cancelButtonSize}
+              variant="ghost"
+              className="rounded-full sm:order-first"
+              onClick={() => begin('cancel')}
+            >
+              {order.state === 'pending_payment' ? 'Cancel checkout' : 'Cancel order'}
+            </Button>
+          )}
       </div>
       {!isBuyer &&
         fulfilmentBlocked &&

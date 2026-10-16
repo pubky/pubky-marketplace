@@ -15,7 +15,7 @@ export function DropEditionBadge({ order }: { order: MarketplaceOrder }) {
   const { edition } = useMarketplaceDropEdition(order);
   if (edition === null) return null;
   return (
-    <Badge variant="secondary">
+    <Badge variant="outline">
       <Hash className="mr-1 size-3" />
       Edition {edition}
     </Badge>
