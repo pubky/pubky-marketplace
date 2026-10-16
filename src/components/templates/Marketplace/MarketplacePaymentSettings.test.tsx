@@ -912,11 +912,12 @@ describe('MarketplacePaymentSettings', () => {
     const removeSpy = vi.spyOn(window, 'removeEventListener');
     const user = userEvent.setup();
     const { unmount } = render(<MarketplacePaymentSettings />);
-    await screen.findByRole('heading', { name: 'PayPal' });
-    await user.click(screen.getByRole('button', { name: /Connect Bitkit/ }));
+    // The Bitkit setup state loads after the PayPal section renders.
+    await user.click(await screen.findByRole('button', { name: /Connect Bitkit/ }));
+    const listeners = addSpy.mock.calls.filter(([type]) => type === 'message').map(([, listener]) => listener);
+    expect(listeners).not.toHaveLength(0);
     unmount();
-    expect(addSpy).toHaveBeenCalledWith('message', expect.any(Function));
-    expect(removeSpy).toHaveBeenCalledWith('message', expect.any(Function));
+    for (const listener of listeners) expect(removeSpy).toHaveBeenCalledWith('message', listener);
     addSpy.mockRestore();
     removeSpy.mockRestore();
   });
