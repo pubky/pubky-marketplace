@@ -3,15 +3,15 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ConnectorsController } from '@/controllers/connectors/connectors';
 import { connectorAlertSchema } from '@/libs/commerce/connectors';
 import { toast } from '@/molecules/Toaster/use-toast';
-import { connectorRefusal } from '@/test-utils/connector-errors';
+import { bareHttpFailure, connectorRefusal } from '@/test-utils/connector-errors';
 import { connectionFixture } from '@/test-utils/connector-fixtures';
 import { useStoreConnections } from './useStoreConnections';
 
-const mode = vi.hoisted(() => ({ value: 'transaction-service' as string, enabled: true }));
+const mode = vi.hoisted(() => ({ value: 'transaction-service' as string }));
 
 vi.mock('@/config/commerce', async () => {
   const actual = await vi.importActual<typeof import('@/config/commerce')>('@/config/commerce');
-  return { ...actual, getCommerceAdapterMode: () => mode.value, getStoreConnectionsEnabled: () => mode.enabled };
+  return { ...actual, getCommerceAdapterMode: () => mode.value };
 });
 
 vi.mock('@/stores/auth/auth.store', () => ({
@@ -46,7 +46,6 @@ describe('useStoreConnections', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mode.value = 'transaction-service';
-    mode.enabled = true;
   });
 
   it('lists the connections with their health', async () => {
@@ -80,7 +79,35 @@ describe('useStoreConnections', () => {
     await waitFor(() => expect(result.current.isLoading).toBe(false));
 
     expect(result.current.unavailable).toBe(true);
-    expect(result.current.error).toBe('Store connections are not switched on for this shop yet.');
+    expect(result.current.error).toBe('Store connections are not available on this server yet.');
+  });
+
+  it.each([
+    ['404 with no code (a service older than connectors)', bareHttpFailure(404)],
+    ['405 with no code', bareHttpFailure(405)],
+  ])('treats a %s as connectors not available, without a toast', async (_label, failure) => {
+    vi.mocked(ConnectorsController.fetchConnections).mockRejectedValue(failure);
+    const { result } = renderHook(() => useStoreConnections());
+
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    expect(result.current.unavailable).toBe(true);
+    expect(result.current.error).toBe('Store connections are not available on this server yet.');
+    expect(toast).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['a 503', bareHttpFailure(503)],
+    ['a 500', bareHttpFailure(500)],
+    ['a coded 404 such as provider_unavailable', connectorRefusal('provider_unavailable', 404)],
+  ])('does not call %s "not available on this server", it is a load failure to retry', async (_label, failure) => {
+    vi.mocked(ConnectorsController.fetchConnections).mockRejectedValue(failure);
+    const { result } = renderHook(() => useStoreConnections());
+
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    expect(result.current.unavailable).toBe(false);
+    expect(result.current.error).not.toBe('Store connections are not available on this server yet.');
   });
 
   it('does not call the service outside the durable mode', async () => {
@@ -89,16 +116,6 @@ describe('useStoreConnections', () => {
     await waitFor(() => expect(result.current.isLoading).toBe(false));
     expect(result.current.enabled).toBe(false);
     expect(ConnectorsController.fetchConnections).not.toHaveBeenCalled();
-  });
-
-  it('does not call the service while the store connections switch is off', async () => {
-    mode.enabled = false;
-    const { result } = renderHook(() => useStoreConnections());
-    await waitFor(() => expect(result.current.isLoading).toBe(false));
-    expect(result.current.enabled).toBe(false);
-    expect(result.current.lostAlerts).toEqual([]);
-    expect(ConnectorsController.fetchConnections).not.toHaveBeenCalled();
-    expect(ConnectorsController.fetchAlerts).not.toHaveBeenCalled();
   });
 
   it('keeps a disconnected store in the list as Disconnected until the page is reloaded', async () => {

@@ -2,12 +2,13 @@
 
 import { useEffect, useState } from 'react';
 import type { OrderPushRow, StorePushOverview } from '@/application/connectors/connectors';
-import { getCommerceAdapterMode, getStoreConnectionsEnabled, isDurableCommerceMode } from '@/config/commerce';
+import { getCommerceAdapterMode, isDurableCommerceMode } from '@/config/commerce';
 import { ConnectorsController } from '@/controllers/connectors/connectors';
 import {
   type ConnectorAlert,
   connectorErrorMessage,
   connectorRefusalReason,
+  isConnectorsUnavailableError,
   pushNeedsAction,
 } from '@/libs/commerce/connectors';
 import { toast } from '@/molecules/Toaster/use-toast';
@@ -15,6 +16,18 @@ import { useAuthStore } from '@/stores/auth/auth.store';
 import { useCommerceStore } from '@/stores/commerce/commerce.store';
 
 const POLL_MS = 30_000;
+const UNAVAILABLE_MEMO_MS = 10 * 60_000;
+
+/**
+ * When the service answers that it has no connectors, the Orders page stops
+ * asking for a while instead of sending (and logging) the same refusal on every
+ * visit. It is a fact about the server, so it is shared by every mount.
+ */
+let connectorsUnavailableUntil = 0;
+
+export function resetConnectorsUnavailableMemoForTests() {
+  connectorsUnavailableUntil = 0;
+}
 
 const RETRY_REFUSALS: Readonly<Record<string, string>> = {
   not_retryable: 'This order is not waiting for a retry any more.',
@@ -27,22 +40,26 @@ const RETRY_REFUSALS: Readonly<Record<string, string>> = {
  * Which orders reached the seller's connected stores, which did not, and the
  * unresolved alerts. Pushes keep running while a store needs attention, so every
  * listed connection that is not a draft counts. Hidden (`visible` false) when
- * the seller has no such store, no alert, or the service has store connections switched off, so the orders page
- * is unchanged for everyone else.
+ * the seller has no such store and no alert, or the service has no connectors
+ * (`connectors_disabled`), so the orders page is unchanged for everyone else.
  */
 export function useConnectorPushStatus() {
   const currentUserPubky = useAuthStore((state) => state.currentUserPubky);
   const marketplaceSession = useCommerceStore((state) => state.marketplaceSession);
-  const enabled =
-    getStoreConnectionsEnabled() && isDurableCommerceMode(getCommerceAdapterMode()) && Boolean(currentUserPubky);
+  const enabled = isDurableCommerceMode(getCommerceAdapterMode()) && Boolean(currentUserPubky);
   const [overview, setOverview] = useState<StorePushOverview | null>(null);
   const [retryingOrderId, setRetryingOrderId] = useState<string | null>(null);
 
   const load = async (isCurrent: () => boolean = () => true) => {
+    if (Date.now() < connectorsUnavailableUntil) {
+      if (isCurrent()) setOverview(null);
+      return;
+    }
     try {
       const next = await ConnectorsController.fetchPushOverview();
       if (isCurrent()) setOverview(next);
-    } catch {
+    } catch (error) {
+      if (isConnectorsUnavailableError(error)) connectorsUnavailableUntil = Date.now() + UNAVAILABLE_MEMO_MS;
       if (isCurrent()) setOverview(null);
     }
   };

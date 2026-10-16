@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { bareHttpFailure, connectorRefusal } from '@/test-utils/connector-errors';
 import { connectionFixture } from '@/test-utils/connector-fixtures';
 import {
   connectionHealth,
@@ -9,10 +10,13 @@ import {
   connectorAlertSchema,
   connectorCatalogSchema,
   type ConnectorConnection,
+  connectorErrorMessage,
   connectorFailureCopy,
   connectorListingRouteId,
   connectorListSchema,
+  CONNECTORS_UNAVAILABLE_COPY,
   connectorSettingsResultSchema,
+  isConnectorsUnavailableError,
   isWooAuthorizeUrlFor,
   normalizeShopifyDomain,
   normalizeWooStoreAddress,
@@ -313,6 +317,30 @@ describe('copy', () => {
         .success,
     ).toBe(false);
     expect(connectorFailureCopy('mappings_conflict', 'fallback')).toBe('fallback');
+  });
+
+  it('reads "this service has no connectors" from the refusal code or from a route that is not there', () => {
+    expect(isConnectorsUnavailableError(connectorRefusal('connectors_disabled', 404))).toBe(true);
+    expect(isConnectorsUnavailableError(bareHttpFailure(404))).toBe(true);
+    expect(isConnectorsUnavailableError(bareHttpFailure(405))).toBe(true);
+    expect(isConnectorsUnavailableError(connectorRefusal('provider_unavailable', 404))).toBe(false);
+    expect(isConnectorsUnavailableError(connectorRefusal('connection_not_found', 404))).toBe(false);
+    expect(isConnectorsUnavailableError(bareHttpFailure(503))).toBe(false);
+    expect(isConnectorsUnavailableError(bareHttpFailure(500))).toBe(false);
+    expect(isConnectorsUnavailableError(new Error('network'))).toBe(false);
+    expect(isConnectorsUnavailableError(null)).toBe(false);
+  });
+
+  it('says "not available on this server yet" for either kind of missing connectors, and keeps other copy', () => {
+    expect(connectorErrorMessage(connectorRefusal('connectors_disabled', 404), 'fallback')).toBe(
+      CONNECTORS_UNAVAILABLE_COPY,
+    );
+    expect(connectorErrorMessage(bareHttpFailure(404), 'fallback')).toBe(CONNECTORS_UNAVAILABLE_COPY);
+    expect(CONNECTORS_UNAVAILABLE_COPY).toBe('Store connections are not available on this server yet.');
+    expect(connectorErrorMessage(connectorRefusal('already_connected'), 'fallback')).toBe(
+      'That store is already connected.',
+    );
+    expect(connectorErrorMessage(bareHttpFailure(503), 'fallback')).toBe('fallback');
   });
 
   it('labels push states and treats info quarantines as nothing to do', () => {
