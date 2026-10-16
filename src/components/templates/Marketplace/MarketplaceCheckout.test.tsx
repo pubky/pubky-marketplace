@@ -1118,7 +1118,12 @@ describe('MarketplaceCheckout', () => {
     it.each([
       ['bitcoin', 'failed', 'pending_payment', true],
       ['usdt', 'failed', 'pending_payment', true],
+      ['paykit', 'failed', 'pending_payment', true],
       ['paypal', null, 'pending_payment', true],
+      ['paykit', 'delivered', 'pending_payment', false],
+      ['paykit', 'pending', 'pending_payment', false],
+      ['paykit', null, 'pending_payment', false],
+      ['paykit', 'failed', 'cancelled', false],
       ['bitcoin', 'delivered', 'pending_payment', false],
       ['bitcoin', 'pending', 'pending_payment', false],
       ['bitcoin', null, 'pending_payment', false],

@@ -129,11 +129,88 @@ describe('MarketplacePaymentStatusCard — one Paykit order before payment', () 
     expect(container).not.toHaveTextContent(/USDT/);
   });
 
-  it('keeps the delivery failure line when the request never reached Bitkit', () => {
-    renderPhase('unpaid', true, { paykitDeliveryState: 'failed' });
+  it('does not claim non-delivery when the request could not be confirmed', () => {
+    const { container } = renderPhase('unpaid', true, { paykitDeliveryState: 'failed' });
 
-    expect(screen.getByTestId('paykit-delivery-failed')).toBeInTheDocument();
+    expect(screen.getByTestId('paykit-delivery-failed')).toHaveTextContent(
+      "We couldn't confirm your wallet got the payment request. Check Bitkit for it; if it's not there, add the seller as a contact in Bitkit, cancel this checkout, then check out again.",
+    );
+    expect(container).not.toHaveTextContent(/didn.t receive/);
+    expect(container).not.toHaveTextContent(/Payment request sent/);
     expect(screen.queryByTestId('paykit-awaiting-status')).not.toBeInTheDocument();
+  });
+
+  it('puts the checkout action next to the unconfirmed-delivery copy only', () => {
+    const failed = createPaykitOrderFixture('unpaid', { paykitDeliveryState: 'failed' });
+    const { unmount } = render(
+      <MarketplacePaymentStatusCard
+        order={failed.order}
+        payment={failed.payment}
+        isBuyer
+        adapterMode="transaction-service"
+        advancePayment={async () => false}
+        onPaymentChanged={() => {}}
+        checkoutActions={<button type="button">Cancel checkout</button>}
+      />,
+    );
+    expect(screen.getByTestId('paykit-delivery-failed').parentElement).toContainElement(
+      screen.getByRole('button', { name: 'Cancel checkout' }),
+    );
+    unmount();
+
+    const delivered = createPaykitOrderFixture('unpaid');
+    render(
+      <MarketplacePaymentStatusCard
+        order={delivered.order}
+        payment={delivered.payment}
+        isBuyer
+        adapterMode="transaction-service"
+        advancePayment={async () => false}
+        onPaymentChanged={() => {}}
+        checkoutActions={<button type="button">Cancel checkout</button>}
+      />,
+    );
+    expect(screen.queryByRole('button', { name: 'Cancel checkout' })).not.toBeInTheDocument();
+  });
+
+  it.each([
+    ['pending', 'pending', true],
+    ['pending', null, true],
+    ['pending', 'failed', false],
+    ['awaiting_seller_confirmation', 'failed', true],
+  ] as const)(
+    'offers no checkout action for a request %s whose delivery reads %s (buyer: %s), even when one is passed',
+    (paykitRequestState, paykitDeliveryState, isBuyer) => {
+      const { order, payment } = createPaykitOrderFixture('unpaid', { paykitRequestState, paykitDeliveryState });
+      render(
+        <MarketplacePaymentStatusCard
+          order={order}
+          payment={payment}
+          isBuyer={isBuyer}
+          adapterMode="transaction-service"
+          advancePayment={async () => false}
+          onPaymentChanged={() => {}}
+          checkoutActions={<button type="button">Cancel checkout</button>}
+        />,
+      );
+
+      expect(screen.queryByRole('button', { name: 'Cancel checkout' })).not.toBeInTheDocument();
+    },
+  );
+
+  it('tells the buyer of an elapsed checkout not to pay a request it could not confirm', () => {
+    const payment = createPaymentFixture('expired', { adapter: 'paykit' });
+    const { order } = createPaykitOrderFixture('unpaid', {
+      state: 'cancelled',
+      paymentId: payment.id,
+      cancellationReason: 'payment window elapsed',
+      paykitDeliveryState: 'failed',
+    });
+    renderCard({ order, payment }, true);
+
+    expect(screen.getByTestId('paykit-delivery-failed')).toHaveTextContent(
+      "We couldn't confirm your wallet got the payment request before the payment window ended. If you find it in Bitkit, don't pay it. This checkout has ended; check out again.",
+    );
   });
 
   it('shows the seller the neutral badge and no buyer instructions', () => {
