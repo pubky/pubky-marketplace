@@ -22,6 +22,11 @@ const VALID_ENV_INPUT = {
   deployEnv: 'production',
 };
 
+const STAGING_ENDPOINTS = {
+  defaultHttpRelay: 'https://httprelay.staging.example.com/inbox',
+  exchangeRateApi: 'https://rates.staging.example.com/btc',
+};
+
 const SENTRY_ENV_INPUT = {
   sentryDsn: 'https://abc123@o123.ingest.example.com/456',
   sentryEnvironment: 'staging',
@@ -77,7 +82,46 @@ describe('runtimeEnvInputSchema', () => {
 
   it('parses both deploy identities', () => {
     expect(runtimeEnvInputSchema.parse(VALID_ENV_INPUT).deployEnv).toBe('production');
-    expect(runtimeEnvInputSchema.parse({ ...VALID_ENV_INPUT, deployEnv: 'staging' }).deployEnv).toBe('staging');
+    expect(
+      runtimeEnvInputSchema.parse({ ...VALID_ENV_INPUT, ...STAGING_ENDPOINTS, deployEnv: 'staging' }).deployEnv,
+    ).toBe('staging');
+  });
+
+  describe('staging endpoints', () => {
+    const STAGING_ENV_INPUT = { ...VALID_ENV_INPUT, ...STAGING_ENDPOINTS, deployEnv: 'staging' };
+
+    it('refuses a staging deploy without an explicit FX source instead of defaulting to production', () => {
+      const { exchangeRateApi: _fx, ...withoutFx } = STAGING_ENV_INPUT;
+      expect(() => runtimeEnvInputSchema.parse(withoutFx)).toThrow(
+        /PUBKY_RUNTIME_ENV=staging requires PUBKY_RUNTIME_EXCHANGE_RATE_API/,
+      );
+      expect(() => runtimeEnvInputSchema.parse({ ...withoutFx, exchangeRateApi: '  ' })).toThrow(
+        /PUBKY_RUNTIME_EXCHANGE_RATE_API/,
+      );
+    });
+
+    it('refuses the production HTTP relay on a staging deploy', () => {
+      for (const relay of ['https://httprelay.pubky.app/inbox', 'https://httprelay.pubky.app/link/']) {
+        expect(() => runtimeEnvInputSchema.parse({ ...STAGING_ENV_INPUT, defaultHttpRelay: relay })).toThrow(
+          /must not use the production HTTP relay \(httprelay\.pubky\.app\) in PUBKY_RUNTIME_DEFAULT_HTTP_RELAY/,
+        );
+      }
+    });
+
+    it('accepts a staging deploy that names its relay and FX source', () => {
+      const parsed = runtimeEnvInputSchema.parse(STAGING_ENV_INPUT);
+      expect(parsed.defaultHttpRelay).toBe(STAGING_ENDPOINTS.defaultHttpRelay);
+      expect(parsed.exchangeRateApi).toBe(STAGING_ENDPOINTS.exchangeRateApi);
+    });
+
+    it('keeps the production defaults for a production deploy and the lenient dev parse', () => {
+      expect(runtimeEnvInputSchema.parse(VALID_ENV_INPUT).exchangeRateApi).toBe(APP_RUNTIME_DEFAULTS.exchangeRateApi);
+      expect(
+        runtimeEnvInputSchema.parse({ ...VALID_ENV_INPUT, defaultHttpRelay: 'https://httprelay.pubky.app/inbox' })
+          .defaultHttpRelay,
+      ).toBe('https://httprelay.pubky.app/inbox');
+      expect(runtimeEnvInputSchemaWithDefaults.parse({}).exchangeRateApi).toBe(APP_RUNTIME_DEFAULTS.exchangeRateApi);
+    });
   });
 
   it('throws on malformed PKARR_RELAYS JSON', () => {
@@ -201,6 +245,7 @@ describe('runtimeEnvInputSchema', () => {
   it('parses staging auction lengths in minutes', () => {
     const parsed = runtimeEnvInputSchema.parse({
       ...VALID_ENV_INPUT,
+      ...STAGING_ENDPOINTS,
       deployEnv: 'staging',
       auctionDurationsMinutes: '[15, 60, 10080]',
     });
@@ -241,10 +286,18 @@ describe('runtimeEnvInputSchema', () => {
     expect(
       runtimeEnvInputSchema.parse({ ...VALID_ENV_INPUT, paykitSetupCreatorParam: '' }).paykitSetupCreatorParam,
     ).toBe(true);
-    expect(
-      runtimeEnvInputSchema.parse({ ...VALID_ENV_INPUT, paykitSetupCreatorParam: 'false' }).paykitSetupCreatorParam,
-    ).toBe(false);
     expect(() => runtimeEnvInputSchema.parse({ ...VALID_ENV_INPUT, paykitSetupCreatorParam: 'no' })).toThrow();
+  });
+
+  it('refuses the creator parameter off unless the Paykit Server API is upstream', () => {
+    for (const paykitServerApi of [undefined, 'fork']) {
+      expect(() =>
+        runtimeEnvInputSchema.parse({ ...VALID_ENV_INPUT, paykitServerApi, paykitSetupCreatorParam: 'false' }),
+      ).toThrow(/PUBKY_RUNTIME_PAYKIT_SETUP_CREATOR_PARAM=false requires PUBKY_RUNTIME_PAYKIT_SERVER_API=upstream/);
+      expect(() =>
+        runtimeEnvInputSchemaWithDefaults.parse({ paykitServerApi, paykitSetupCreatorParam: 'false' }),
+      ).toThrow(/PUBKY_RUNTIME_PAYKIT_SERVER_API=upstream/);
+    }
   });
 
   it('defaults to the fork Paykit Server API and takes upstream only with the creator parameter off', () => {

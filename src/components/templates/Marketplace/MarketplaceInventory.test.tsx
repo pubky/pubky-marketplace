@@ -59,7 +59,7 @@ vi.mock('@/hooks/useMarketplaceInventory/useMarketplaceInventory', () => ({
 }));
 
 vi.mock('@/hooks/useMarketplaceInventoryImport/useMarketplaceInventoryImport', () => ({
-  useMarketplaceInventoryImport: () => ({ reset: vi.fn() }),
+  useMarketplaceInventoryImport: () => ({ reset: vi.fn(), submitStoreUrl: vi.fn(), storeForm: { control: {} } }),
 }));
 
 describe('MarketplaceInventory', () => {

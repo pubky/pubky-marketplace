@@ -320,3 +320,42 @@ describe('MarketplaceGatewayService USDT payments capability', () => {
     expect(url).toBe('http://localhost:3100/health');
   });
 });
+
+describe('MarketplaceGatewayService Paykit rail status', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    config.mode = 'sandbox';
+  });
+
+  it.each(['sandbox', 'unavailable'])('is unknown in %s mode without a network read', async (mode) => {
+    config.mode = mode;
+    await expect(MarketplaceGatewayService.getPaykitRailStatus()).resolves.toBe('unknown');
+    expect(vi.mocked(fetch)).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['a fresh good probe', { status: 'ok', paykit_rail: { bitcoin_offer_available: true, age_seconds: 8 } }, 'ready'],
+    [
+      'a probe that says down',
+      { status: 'ok', paykit_rail: { bitcoin_offer_available: false, age_seconds: 2 } },
+      'unreachable',
+    ],
+    [
+      'a last good probe long ago',
+      { status: 'ok', paykit_rail: { bitcoin_offer_available: true, age_seconds: 900 } },
+      'unreachable',
+    ],
+    [
+      'a rail that never succeeded',
+      { status: 'ok', paykit_rail: { bitcoin_offer_available: null, age_seconds: null } },
+      'unknown',
+    ],
+    ['no paykit_rail key', { status: 'ok' }, 'unknown'],
+  ])('reads /health: %s', async (_label, body, expected) => {
+    config.mode = 'transaction-service';
+    vi.mocked(fetch).mockResolvedValueOnce(jsonResponse(200, body));
+
+    await expect(MarketplaceGatewayService.getPaykitRailStatus()).resolves.toBe(expected);
+    expect((vi.mocked(fetch).mock.calls[0] as [string])[0]).toBe('http://localhost:3100/health');
+  });
+});

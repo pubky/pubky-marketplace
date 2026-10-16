@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CommerceSellerReputationOverview } from '@/application/commerce/commerce';
@@ -101,22 +101,27 @@ vi.mock('@/controllers/commerce/commerce', () => ({
   },
 }));
 
+const sessionConnect = vi.hoisted(() => ({ onConnected: undefined as (() => void) | undefined }));
+
 vi.mock('@/hooks/useMarketplaceSessionConnect/useMarketplaceSessionConnect', () => ({
-  useMarketplaceSessionConnect: () => ({
-    status: 'awaiting',
-    authorizationUrl: 'pubkyauth://signin_grant?caps=%2Fpub%2Fpubky.app%2Fmarketplace-service%2Fv1%2F%3Arw',
-    errorMessage: null,
-    requestsFullGrant: false,
-    requestsGrantReconnect: false,
-    requestsGrantBootstrap: true,
-    requestsPassport: false,
-    approvalSigner: authState.grantSigner === 'ring' ? 'Pubky Ring' : 'your signer',
-    start: vi.fn(),
-    cancel: vi.fn(),
-    copyAuthUrl: vi.fn(async () => {}),
-    openInRing: vi.fn(),
-    isOpeningRing: false,
-  }),
+  useMarketplaceSessionConnect: (options: { onConnected?: () => void }) => {
+    sessionConnect.onConnected = options.onConnected;
+    return {
+      status: 'awaiting',
+      authorizationUrl: 'pubkyauth://signin_grant?caps=%2Fpub%2Fpubky.app%2Fmarketplace-service%2Fv1%2F%3Arw',
+      errorMessage: null,
+      requestsFullGrant: false,
+      requestsGrantReconnect: false,
+      requestsGrantBootstrap: true,
+      requestsPassport: false,
+      approvalSigner: authState.grantSigner === 'ring' ? 'Pubky Ring' : 'your signer',
+      start: vi.fn(),
+      cancel: vi.fn(),
+      copyAuthUrl: vi.fn(async () => {}),
+      openInRing: vi.fn(),
+      isOpeningRing: false,
+    };
+  },
 }));
 
 vi.mock('@/stores/auth/auth.store', () => ({
@@ -668,6 +673,34 @@ describe('MarketplaceListing', () => {
       expect(cartAdd).toHaveBeenCalledWith(`${listing.seller_id}:${listing.listing_id}`, 'variant_01', 1);
       expect(projectionRefresh).toHaveBeenCalled();
       expect(screen.queryByRole('heading', { name: 'Enable purchases' })).not.toBeInTheDocument();
+    });
+
+    it('adds to the cart once when the buyer approves in the dialog, without a second Buy tap', async () => {
+      const user = userEvent.setup();
+      const { listing, sessionRestores } = renderNeedingSession();
+
+      await user.click(screen.getByRole('button', { name: 'Buy' }));
+      expect(screen.getByRole('heading', { name: 'Enable purchases' })).toBeInTheDocument();
+
+      sessionState.pubky = 'b'.repeat(52);
+      act(() => sessionConnect.onConnected?.());
+      sessionRestores();
+
+      await waitFor(() => expect(screen.queryByRole('heading', { name: 'Enable purchases' })).not.toBeInTheDocument());
+      expect(cartAdd).toHaveBeenCalledTimes(1);
+      expect(cartAdd).toHaveBeenCalledWith(`${listing.seller_id}:${listing.listing_id}`, 'variant_01', 1);
+    });
+
+    it('does not add to the cart after a cancel, even when a session arrived from another tab meanwhile', async () => {
+      const user = userEvent.setup();
+      const { sessionRestores } = renderNeedingSession();
+
+      await user.click(screen.getByRole('button', { name: 'Buy' }));
+      sessionState.pubky = 'b'.repeat(52);
+      await user.click(screen.getByRole('button', { name: 'Cancel' }));
+      sessionRestores();
+
+      expect(cartAdd).not.toHaveBeenCalled();
     });
 
     it('does not add to the cart after the buyer cancelled the approval', async () => {

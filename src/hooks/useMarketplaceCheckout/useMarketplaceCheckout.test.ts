@@ -78,7 +78,6 @@ vi.mock('@/controllers/commerce/commerce', () => ({
     clearMarketplaceSession: vi.fn(),
     clearIdentitySession: vi.fn(),
     bindPaymentMethod: vi.fn(),
-    rememberUsdtRefusal: vi.fn(),
     getMarketplaceOrders: vi.fn(async () => []),
   },
 }));
@@ -1048,6 +1047,25 @@ describe('useMarketplaceCheckout', () => {
       }),
     );
 
+    // A refused bind because Paykit is down is reported on the result so the page can retry on its own.
+    vi.mocked(CommerceController.bindPaymentMethod).mockRejectedValueOnce(
+      new AppError({
+        category: ErrorCategory.Client,
+        code: ClientErrorCode.BAD_REQUEST,
+        message: 'SENTINEL',
+        service: ErrorService.Marketplace,
+        operation: 'bindPaymentMethod',
+        context: { statusCode: 503, reason: 'paykit_unavailable' },
+      }),
+    );
+    const paykitDown = await act(async () => result.current.pay('bitcoin'));
+    expect(paykitDown).toMatchObject({ ok: false, paykitUnavailable: true });
+    expect(vi.mocked(toast).mock.calls.at(-1)?.[0]).toMatchObject({
+      variant: 'error',
+      description: 'Paykit is temporarily unreachable, retrying…',
+    });
+    expect(paidAfterFail.paykitUnavailable).toBeUndefined();
+
     // service#84: an unfinished Paykit wallet refuses the bind. The toast names it and offers
     // Try again, which runs only the caller's step on click; the hook never retries by itself.
     const onRetry = vi.fn();
@@ -1077,21 +1095,12 @@ describe('useMarketplaceCheckout', () => {
     expect(vi.mocked(CommerceController.bindPaymentMethod).mock.calls.length).toBe(bindsBefore + 1);
   });
 
-  describe('after a refused USDT bind', () => {
+  describe('after a refused Paykit bind', () => {
     const orderId = '018f47d2-6a27-7c23-a49d-000000001210';
 
-    const usdtBindRefusal = (reason: string) =>
-      new AppError({
-        category: ErrorCategory.Client,
-        code: ClientErrorCode.BAD_REQUEST,
-        message: 'SENTINEL',
-        service: ErrorService.Marketplace,
-        operation: 'bindPaymentMethod',
-        context: { statusCode: 409, reason, paymentMethod: 'usdt' },
-      });
-
-    async function payRefused(method: 'usdt' | 'bitcoin', error: unknown) {
+    it('still cancels the order and shows the refusal once', async () => {
       config.mode = 'locks-paykit';
+      vi.mocked(toast).mockClear();
       vi.mocked(CommerceController.commitCreateMarketplaceCheckout).mockResolvedValue({
         ok: true,
         version: 1,
@@ -1101,7 +1110,16 @@ describe('useMarketplaceCheckout', () => {
         eventIds: [],
         result: { kind: 'checkout', orders: [{ id: orderId }] },
       });
-      vi.mocked(CommerceController.bindPaymentMethod).mockRejectedValueOnce(error);
+      vi.mocked(CommerceController.bindPaymentMethod).mockRejectedValueOnce(
+        new AppError({
+          category: ErrorCategory.Client,
+          code: ClientErrorCode.BAD_REQUEST,
+          message: 'SENTINEL',
+          service: ErrorService.Marketplace,
+          operation: 'bindPaymentMethod',
+          context: { statusCode: 409, reason: 'seller_setup_pending', paymentMethod: 'paykit' },
+        }),
+      );
       const { result } = renderHook(() =>
         useMarketplaceCheckout(
           [item],
@@ -1115,44 +1133,15 @@ describe('useMarketplaceCheckout', () => {
         result.current.form.setValue('region', 'NY');
         result.current.form.setValue('postalCode', '10001');
       });
-      return await act(async () => result.current.pay(method));
-    }
 
-    it.each(['usdt_unavailable', 'usdt_seller_not_ready'] as const)(
-      'remembers %s for this seller and still cancels the order and shows the refusal once',
-      async (reason) => {
-        vi.mocked(CommerceController.rememberUsdtRefusal).mockClear();
-        vi.mocked(toast).mockClear();
+      const paid = await act(async () => result.current.pay('paykit'));
 
-        const paid = await payRefused('usdt', usdtBindRefusal(reason));
-
-        expect(paid.ok).toBe(false);
-        expect(CommerceController.rememberUsdtRefusal).toHaveBeenCalledTimes(1);
-        expect(CommerceController.rememberUsdtRefusal).toHaveBeenCalledWith(item.listing.record.ownerPubky, reason);
-        expect(CommerceController.executeMarketplaceCommand).toHaveBeenCalledWith(
-          expect.objectContaining({ kind: 'order.cancel_request', payload: expect.objectContaining({ orderId }) }),
-        );
-        expect(vi.mocked(toast)).toHaveBeenCalledTimes(1);
-      },
-    );
-
-    it.each(['buyer_usdt_wallet_required', 'paykit_rejected'])(
-      'does not remember %s, which another try or the buyer can fix',
-      async (reason) => {
-        vi.mocked(CommerceController.rememberUsdtRefusal).mockClear();
-
-        await payRefused('usdt', usdtBindRefusal(reason));
-
-        expect(CommerceController.rememberUsdtRefusal).not.toHaveBeenCalled();
-      },
-    );
-
-    it('does not remember a refusal of another rail', async () => {
-      vi.mocked(CommerceController.rememberUsdtRefusal).mockClear();
-
-      await payRefused('bitcoin', new Error('bind failed'));
-
-      expect(CommerceController.rememberUsdtRefusal).not.toHaveBeenCalled();
+      expect(paid.ok).toBe(false);
+      expect(CommerceController.bindPaymentMethod).toHaveBeenLastCalledWith(orderId, 'paykit');
+      expect(CommerceController.executeMarketplaceCommand).toHaveBeenCalledWith(
+        expect.objectContaining({ kind: 'order.cancel_request', payload: expect.objectContaining({ orderId }) }),
+      );
+      expect(vi.mocked(toast)).toHaveBeenCalledTimes(1);
     });
   });
 

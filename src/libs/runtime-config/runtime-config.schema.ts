@@ -367,17 +367,62 @@ function validateAuctionDurationsEnvInput(
  * Upstream pubky/paykit-server rejects every `/setup` query parameter except
  * `return_to` and `state`, so `paykitServerApi=upstream` needs the creator
  * parameter explicitly off. Unset counts as on (the fork default) and fails.
+ * The other way round, the creator parameter off only fits upstream: the fork
+ * requires it, and a fork-mode Shop reads seller readiness from a route
+ * upstream Paykit does not serve, so it would offer initial setup to every
+ * seller.
  */
 function validatePaykitServerApiEnvInput(
   input: { paykitServerApi?: PaykitServerApi; paykitSetupCreatorParam?: boolean },
   ctx: z.RefinementCtx,
 ): void {
-  if (input.paykitServerApi !== 'upstream' || input.paykitSetupCreatorParam === false) return;
+  if (input.paykitServerApi === 'upstream') {
+    if (input.paykitSetupCreatorParam === false) return;
+    ctx.addIssue({
+      code: 'custom',
+      path: ['paykitSetupCreatorParam'],
+      message: `paykitServerApi=upstream requires ${PUBKY_RUNTIME_ENV_NAMES.paykitSetupCreatorParam}=false; upstream Paykit rejects the creator parameter.`,
+    });
+    return;
+  }
+  if (input.paykitSetupCreatorParam !== false) return;
   ctx.addIssue({
     code: 'custom',
-    path: ['paykitSetupCreatorParam'],
-    message: `paykitServerApi=upstream requires ${PUBKY_RUNTIME_ENV_NAMES.paykitSetupCreatorParam}=false; upstream Paykit rejects the creator parameter.`,
+    path: ['paykitServerApi'],
+    message: `${PUBKY_RUNTIME_ENV_NAMES.paykitSetupCreatorParam}=false requires ${PUBKY_RUNTIME_ENV_NAMES.paykitServerApi}=upstream; the fork Paykit needs the creator parameter.`,
   });
+}
+
+/** Production Pubky HTTP relay host. A staging deploy never hands it to a signer. */
+export const PRODUCTION_HTTP_RELAY_HOST = 'httprelay.pubky.app';
+
+/**
+ * A deployed staging container must name its own relay and FX source: the
+ * relay must not be production's, and the FX source has no default, because
+ * the schema default is production Blocktank. Strict (deployed) parse only;
+ * local dev keeps its staging defaults.
+ */
+function validateStagingEndpointsEnvInput(
+  input: { deployEnv?: DeployEnv; defaultHttpRelay?: string; exchangeRateApi?: string },
+  ctx: z.RefinementCtx,
+): void {
+  if (input.deployEnv !== 'staging') return;
+  if (input.exchangeRateApi === undefined) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['exchangeRateApi'],
+      message: `${PUBKY_RUNTIME_ENV_NAMES.deployEnv}=staging requires ${PUBKY_RUNTIME_ENV_NAMES.exchangeRateApi} to be explicitly set; staging never falls back to the production FX source.`,
+    });
+  }
+  if (input.defaultHttpRelay && URL.canParse(input.defaultHttpRelay)) {
+    if (new URL(input.defaultHttpRelay).hostname === PRODUCTION_HTTP_RELAY_HOST) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['defaultHttpRelay'],
+        message: `${PUBKY_RUNTIME_ENV_NAMES.deployEnv}=staging must not use the production HTTP relay (${PRODUCTION_HTTP_RELAY_HOST}) in ${PUBKY_RUNTIME_ENV_NAMES.defaultHttpRelay}.`,
+      });
+    }
+  }
 }
 
 /**
@@ -422,6 +467,7 @@ export const APP_RUNTIME_DEFAULTS = {
   marketplaceGrantPollMilliseconds: 1_000,
   passportSignIn: true,
   usdtPaymentsEnabled: false,
+  storeConnectionsEnabled: false,
   frameAncestors: [] as string[],
   embedded: false,
   privEncryptionKeys: false,
@@ -557,6 +603,14 @@ export const runtimeConfigValueSchema = networkConfigValueSchema.extend({
    * without a service deploy. It never gates the display of an existing USDT order.
    */
   usdtPaymentsEnabled: z.boolean().default(APP_RUNTIME_DEFAULTS.usdtPaymentsEnabled),
+  /**
+   * Whether the Shop offers Store connections (WooCommerce and Shopify). Off by
+   * default so the Shop can deploy before the marketplace service's connectors
+   * are deployed and enabled. Off hides the Settings entry, answers the
+   * Store connections routes like an unknown page, and keeps the order push
+   * status card and connector alerts hidden; no connector request is sent.
+   */
+  storeConnectionsEnabled: z.boolean().default(APP_RUNTIME_DEFAULTS.storeConnectionsEnabled),
   /**
    * Pubky Passport origin override. Absent means the Passport deployment that
    * signs users up on this deploy's homeserver (see `getPassportOrigin`).
@@ -702,6 +756,7 @@ export const runtimeEnvInputSchema = z
     marketplaceGrantPollMilliseconds: optionalPositiveIntFromString,
     passportSignIn: optionalBooleanFromString,
     usdtPaymentsEnabled: optionalBooleanFromString,
+    storeConnectionsEnabled: optionalBooleanFromString,
     passportUrl: optionalPassportUrlFromString,
     frameAncestors: optionalFrameAncestorsFromString(false),
     embedded: optionalBooleanFromString,
@@ -737,6 +792,7 @@ export const runtimeEnvInputSchema = z
   .superRefine(validateLocksPaykitEnvInput)
   .superRefine(validatePaykitServerApiEnvInput)
   .superRefine(validateAuctionDurationsEnvInput)
+  .superRefine(validateStagingEndpointsEnvInput)
   .pipe(runtimeConfigValueSchema);
 
 /**
@@ -807,6 +863,7 @@ export const runtimeEnvInputSchemaWithDefaults = z
     marketplaceGrantPollMilliseconds: optionalPositiveIntFromString,
     passportSignIn: optionalBooleanFromString,
     usdtPaymentsEnabled: optionalBooleanFromString,
+    storeConnectionsEnabled: optionalBooleanFromString,
     passportUrl: optionalDevPassportUrlFromString,
     frameAncestors: optionalFrameAncestorsFromString(true),
     embedded: optionalBooleanFromString,
@@ -904,6 +961,7 @@ export const PUBKY_RUNTIME_ENV_NAMES: Record<keyof RuntimeConfig, string> = {
   marketplaceGrantPollMilliseconds: 'PUBKY_RUNTIME_MARKETPLACE_GRANT_POLL_MILLISECONDS',
   passportSignIn: 'PUBKY_RUNTIME_PASSPORT_SIGN_IN',
   usdtPaymentsEnabled: 'PUBKY_RUNTIME_USDT_PAYMENTS_ENABLED',
+  storeConnectionsEnabled: 'PUBKY_RUNTIME_STORE_CONNECTIONS_ENABLED',
   passportUrl: 'PUBKY_RUNTIME_PASSPORT_URL',
   frameAncestors: 'PUBKY_RUNTIME_FRAME_ANCESTORS',
   embedded: 'PUBKY_RUNTIME_EMBEDDED',

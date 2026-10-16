@@ -1,0 +1,1 @@
+A temporary Paykit outage now shows "Paykit is temporarily unreachable, retrying…" instead of a silent failed Pay, "The seller has not set up any payment methods" for buyers, or "Add a payment method to publish" for sellers. Checkout, the order page and the listing composer retry on their own with backoff and re-enable as soon as Paykit is back, with no reload.

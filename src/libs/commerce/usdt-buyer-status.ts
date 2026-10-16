@@ -1,6 +1,7 @@
 import { PAYMENT_RECEIVED_REVIEW_COPY } from './bitcoin-buyer-status';
 import { CHECKOUT_HOLD_COPY } from './checkout-hold';
 import { formatCommerceMoney } from './format';
+import { observedPaymentRail } from './paykit-rail';
 import { formatUsdt, USDT_EXPONENT } from './payment-options';
 import type { CommerceMoney } from './transaction-contracts';
 import type { PaymentFinality } from './usdt-settlement-contract';
@@ -25,6 +26,10 @@ export const USDT_FUNDS_HINT =
 export const USDT_FINALITY_EXPECTATION_COPY =
   'The seller ships once Arbitrum finalizes your payment, usually within minutes.';
 
+/** The same expectation before the buyer has chosen an asset: it applies only if they pay in USDT. */
+export const PAYKIT_USDT_FINALITY_EXPECTATION_COPY =
+  'If you pay in USDT, the seller ships once Arbitrum finalizes your payment, usually within minutes.';
+
 /**
  * Paykit gives the buyer half the payment window, counted from activation, to
  * approve the request in Bitkit (plan §2.4, D4). The default 1,800 s window
@@ -45,6 +50,7 @@ export const USDT_AMOUNT_MISMATCH_COPY = 'The USDT amount does not match. The se
 
 type UsdtStatusOrder = {
   paymentMethod?: string | null;
+  paymentAsset?: string | null;
   paymentAmountMinor?: number | null;
   paymentFinality?: PaymentFinality | null;
   total?: CommerceMoney;
@@ -62,8 +68,9 @@ export function usdtFulfilmentWaitsForFinality(fulfillments: readonly (string | 
   return fulfillments.some((fulfillment) => fulfillment !== 'digital');
 }
 
-export function isUsdtOrder(order: { paymentMethod?: string | null }): boolean {
-  return order.paymentMethod === 'usdt';
+/** The order was, or is being, paid in USDT: the observed asset, else a legacy `usdt` method. */
+export function isUsdtOrder(order: { paymentMethod?: string | null; paymentAsset?: string | null }): boolean {
+  return observedPaymentRail(order) === 'usdt';
 }
 
 /**
@@ -188,8 +195,4 @@ export function usdtParityMillionths(totals: readonly CommerceMoney[]): number |
   }
   const millionths = cents * USDT_MILLIONTHS_PER_CENT;
   return Number.isSafeInteger(millionths) ? millionths : null;
-}
-
-export function isUsdPricedTotals(totals: readonly CommerceMoney[]): boolean {
-  return totals.length > 0 && totals.every((money) => money.currency === 'USD' && money.exponent === 2);
 }

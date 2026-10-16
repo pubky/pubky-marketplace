@@ -3,25 +3,24 @@
 import { useCallback, useEffect, useState } from 'react';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import { useAuctionWinnerDeliveryAddress } from '@/hooks/useAuctionWinnerDeliveryAddress/useAuctionWinnerDeliveryAddress';
-import { useUsdtPaymentsAvailable } from '@/hooks/useUsdtPaymentsAvailable/useUsdtPaymentsAvailable';
+import { usePaykitOutage } from '@/hooks/usePaykitOutage/usePaykitOutage';
+import { useUsdtPaymentsCapability } from '@/hooks/useUsdtPaymentsCapability/useUsdtPaymentsCapability';
 import {
+  isPaykitUnavailableRefusal,
   MARKETPLACE_FAILURE_MESSAGES,
   marketplaceErrorCode,
   marketplaceFailureMessage,
-  usdtOfferRefusalReason,
-  usdtRefusalKey,
 } from '@/libs/commerce/failure-messages';
 import {
   availablePaymentMethods,
   type BindDeliveryAddress,
   type PaymentMethodKind,
+  sellerPaykitAssets,
   type SellerPaymentConfig,
 } from '@/libs/commerce/payment-methods';
-import { isUsdPricedTotals } from '@/libs/commerce/usdt-buyer-status';
 import { Logger } from '@/libs/logger/logger';
 import { showPaymentMethodRefusalToast } from '@/molecules/Toaster/payment-method-refusal-toast';
 import type { MarketplaceOrder } from '@/services/marketplace/marketplace';
-import { useCommerceStore } from '@/stores/commerce/commerce.store';
 
 /**
  * Buyer/seller actions for one order's payment method (durable modes only):
@@ -39,29 +38,39 @@ export function useMarketplaceOrderPayment({
   enabled: boolean;
   onPaymentChanged: () => void | Promise<void>;
 }) {
+  const needsConfig = enabled && !order.paymentMethod;
   const [sellerConfig, setSellerConfig] = useState<SellerPaymentConfig | null>(null);
   const [configError, setConfigError] = useState<string | null>(null);
   const [pendingAction, setPendingAction] = useState<'bind' | 'verify' | 'mark-paid' | 'confirm' | null>(null);
+  // Re-reads the rails without blanking them: after a refused bind, and while Paykit is down.
+  const [railRefresh, setRailRefresh] = useState(0);
+  const {
+    outage: paykitOutage,
+    recheck: paykitRecheck,
+    markRefused: markPaykitRefused,
+    settleRead: settlePaykitRead,
+  } = usePaykitOutage(sellerConfig?.paykitUnreachable === true || configError !== null, needsConfig);
 
-  const needsConfig = enabled && !order.paymentMethod;
   const shippingAddressRequired = needsConfig && order.shippingAddressRequired === true;
   const winnerDelivery = useAuctionWinnerDeliveryAddress({
     sellerPubky: order.sellerPubky,
     orderId: order.id,
     enabled: shippingAddressRequired,
   });
-  const usdtPaymentsAvailable = useUsdtPaymentsAvailable(needsConfig);
-  const sellerKey = usdtRefusalKey([order.sellerPubky]);
-  const usdtRefused = useCommerceStore((state) => state.usdtRefusals[sellerKey] !== undefined);
+  const usdtCapability = useUsdtPaymentsCapability(needsConfig).status;
+  const usdtPaymentsAvailable = usdtCapability === 'available';
 
   useEffect(() => {
     if (!needsConfig) return;
     let active = true;
     const load = async () => {
-      setConfigError(null);
       try {
         const config = await CommerceController.getSellerPaymentConfig(order.sellerPubky);
-        if (active) setSellerConfig(config);
+        if (active) {
+          setConfigError(null);
+          setSellerConfig(config);
+          settlePaykitRead(paykitRecheck, config.paykitUnreachable !== true);
+        }
       } catch (error) {
         Logger.error('Failed to load the seller payment configuration', { error });
         if (active)
@@ -74,7 +83,7 @@ export function useMarketplaceOrderPayment({
     return () => {
       active = false;
     };
-  }, [needsConfig, order.sellerPubky]);
+  }, [needsConfig, order.sellerPubky, railRefresh, paykitRecheck, settlePaykitRead]);
 
   const runAction = useCallback(
     async (action: 'bind' | 'verify' | 'mark-paid' | 'confirm', run: () => Promise<void>, onRetry?: () => void) => {
@@ -84,8 +93,10 @@ export function useMarketplaceOrderPayment({
         await onPaymentChanged();
       } catch (error) {
         Logger.error(`Marketplace payment action '${action}' failed`, { error });
-        const usdtRefusal = usdtOfferRefusalReason(error);
-        if (usdtRefusal) CommerceController.rememberUsdtRefusal(sellerKey, usdtRefusal);
+        if (action === 'bind') {
+          if (isPaykitUnavailableRefusal(error)) markPaykitRefused();
+          setRailRefresh((refresh) => refresh + 1);
+        }
         showPaymentMethodRefusalToast({
           error,
           fallback: 'The payment action could not be completed.',
@@ -96,7 +107,7 @@ export function useMarketplaceOrderPayment({
         setPendingAction(null);
       }
     },
-    [onPaymentChanged, sellerKey],
+    [onPaymentChanged, markPaykitRefused],
   );
 
   const bind = async (method: PaymentMethodKind) => {
@@ -135,13 +146,16 @@ export function useMarketplaceOrderPayment({
     });
   }, [order.id, runAction]);
 
+  // The picker names its assets from the seller config read with the USDT answer, so it waits for that answer.
+  const ready = sellerConfig !== null && usdtCapability !== 'checking';
+
   return {
-    availableMethods: sellerConfig
-      ? availablePaymentMethods(sellerConfig, {
-          usdtPaymentsAvailable: usdtPaymentsAvailable && !usdtRefused && isUsdPricedTotals([order.total]),
-        })
-      : null,
-    bitcoinOfferUnavailable: sellerConfig?.bitcoinAvailable === true && sellerConfig.bitcoinOfferAvailable === false,
+    availableMethods: ready ? availablePaymentMethods(sellerConfig, { usdtPaymentsAvailable }) : null,
+    paykitAssets: ready ? sellerPaykitAssets(sellerConfig, { usdtPaymentsAvailable }) : [],
+    bitcoinOfferUnavailable:
+      paykitOutage || (sellerConfig?.bitcoinAvailable === true && sellerConfig.bitcoinOfferAvailable === false),
+    /** Paykit is down, so the Paykit entry is missing or paused for that reason and not because the seller has no setup. */
+    paykitOutage,
     configError,
     /** Set while an auction winner's order still needs the address it ships to. */
     deliveryAddress: shippingAddressRequired ? winnerDelivery : null,

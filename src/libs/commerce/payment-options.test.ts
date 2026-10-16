@@ -32,8 +32,14 @@ describe('payment option model', () => {
     expect(paymentOptionForMethod('usdt').id).toBe('paykit.usdt.arbitrum-one');
   });
 
-  it('defines exactly one option per method label, and every option id is {method}.{asset}.{network} or {method}.fiat', () => {
-    expect(PAYMENT_OPTION_IDS).toHaveLength(PAYMENT_METHOD_KINDS.length);
+  it('gives the single `paykit` bind an option only once an asset is observed', () => {
+    expect(paymentOptionForMethod('paykit', null)).toBeNull();
+    expect(paymentOptionForMethod('paykit', 'BTC')?.id).toBe('paykit.btc.bitcoin');
+    expect(paymentOptionForMethod('paykit', 'USDT')?.id).toBe('paykit.usdt.arbitrum-one');
+  });
+
+  it('defines exactly one option per concrete method label, and every option id is {method}.{asset}.{network} or {method}.fiat', () => {
+    expect(PAYMENT_OPTION_IDS).toHaveLength(PAYMENT_METHOD_KINDS.length - 1);
     for (const id of PAYMENT_OPTION_IDS) {
       const option = PAYMENT_OPTIONS[id];
       const [rail, ...rest] = id.split('.');
@@ -99,6 +105,19 @@ describe('asset-bearing order fields', () => {
       paymentExponent: null,
       paymentQuoteBasis: null,
     });
+  });
+
+  it('reads the assets a single-bind order offered, dropping unknown ones', () => {
+    expect(schema.parse({ acceptedAssets: ['USDT', 'BTC'] }).acceptedAssets).toEqual(['BTC', 'USDT']);
+    expect(schema.parse({ acceptedAssets: ['DAI', 'BTC'] }).acceptedAssets).toEqual(['BTC']);
+    expect(schema.parse({ acceptedAssets: 'BTC' }).acceptedAssets).toBeUndefined();
+    expect(schema.parse({}).acceptedAssets).toBeUndefined();
+  });
+
+  it('reads every quote basis the service names for the observed rail', () => {
+    for (const basis of ['parity', 'native', 'fixed_rate']) {
+      expect(schema.parse({ paymentQuoteBasis: basis }).paymentQuoteBasis).toBe(basis);
+    }
   });
 
   it('drops a value the Shop does not recognise instead of failing', () => {

@@ -110,13 +110,13 @@ const createListing = vi.hoisted(() => ({
   flushDraft: vi.fn(async () => undefined),
   resumeDraft: vi.fn(),
   reset: vi.fn(),
-  publishBlocked: null as 'unsigned' | 'session' | 'no-method' | 'unverified' | null,
+  publishBlocked: null as 'unsigned' | 'session' | 'no-method' | 'paykit-unreachable' | 'unverified' | null,
 }));
 
 const paymentGate = vi.hoisted(() => ({
   isDurable: false,
   ready: true,
-  reason: null as 'unsigned' | 'no-method' | 'unverified' | null,
+  reason: null as 'unsigned' | 'no-method' | 'paykit-unreachable' | 'unverified' | null,
 }));
 
 vi.mock('@/hooks/useCreateMarketplaceListing/useCreateMarketplaceListing', async (importOriginal) => {
@@ -314,6 +314,26 @@ describe('MarketplaceSell payment-method entrance', () => {
 
     fireEvent.submit(screen.getByRole('button', { name: 'Publish listing' }).closest('form')!);
     await waitFor(() => expect(createListing.submit).not.toHaveBeenCalled());
+  });
+
+  it('shows a calm Paykit outage state, not "add a payment method", and clears it when Paykit is back', () => {
+    paymentGate.reason = 'paykit-unreachable';
+    createListing.publishBlocked = 'paykit-unreachable';
+    const { rerender } = render(<MarketplaceSell />);
+
+    const status = document.querySelector('[data-surface="listing-paykit-outage"]') as HTMLElement;
+    expect(status).toHaveTextContent('Paykit is temporarily unreachable, retrying…');
+    expect(status).toHaveTextContent('Your payment settings are unchanged.');
+    expect(document.querySelector('[data-surface="listing-payment-setup"]')).toBeNull();
+    expect(screen.queryByText('Add a payment method to publish')).not.toBeInTheDocument();
+    expect(screen.queryByText('Configure a payment method before publishing')).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Title')).toBeInTheDocument();
+
+    paymentGate.reason = null;
+    createListing.publishBlocked = null;
+    rerender(<MarketplaceSell />);
+    expect(document.querySelector('[data-surface="listing-paykit-outage"]')).toBeNull();
+    expect(screen.queryByText('Paykit is temporarily unreachable, retrying…')).not.toBeInTheDocument();
   });
 
   it('renders the listing composer without the banner once a payment method is configured', () => {

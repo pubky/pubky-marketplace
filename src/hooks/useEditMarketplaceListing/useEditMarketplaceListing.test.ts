@@ -1,5 +1,5 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { COMMERCE_LISTING_MAX_QUANTITY } from '@/config/commerce';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import { commerceListingRecordSchema } from '@/libs/commerce/marketplace-records';
@@ -115,6 +115,10 @@ describe('useEditMarketplaceListing', () => {
     vi.mocked(CommerceController.getMyDeliveryKeyStatus).mockResolvedValue(PUBLISHED_KEY_STATUS);
   });
 
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it('hydrates the form and photos from the published record', async () => {
     const { result } = renderHook(() => useEditMarketplaceListing(OWNER, LISTING_ID));
 
@@ -196,6 +200,39 @@ describe('useEditMarketplaceListing', () => {
 
     expect(result.current.publishBlocked).toBe('no-method');
     expect(CommerceController.commitUpsertListing).not.toHaveBeenCalled();
+  });
+
+  it('reports a Paykit outage, keeps it showing during a recheck, and clears it when Paykit is back', async () => {
+    const outage = {
+      bitcoinAvailable: false,
+      bitcoinOfferAvailable: false,
+      paypalAvailable: false,
+      paykitUnreachable: true,
+    };
+    const healthy = { bitcoinAvailable: true, bitcoinOfferAvailable: true, paypalAvailable: false };
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    vi.mocked(CommerceController.getSellerPaymentConfig).mockResolvedValue(outage);
+    const { result } = renderHook(() => useEditMarketplaceListing(OWNER, LISTING_ID));
+    await waitFor(() => expect(result.current.publishBlocked).toBe('paykit-unreachable'));
+
+    let finishRead: (config: typeof healthy) => void = () => {};
+    vi.mocked(CommerceController.getSellerPaymentConfig).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finishRead = resolve as typeof finishRead;
+        }),
+    );
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5_000);
+    });
+    expect(result.current.publishGuardReady).toBe(true);
+    expect(result.current.publishBlocked).toBe('paykit-unreachable');
+
+    await act(async () => {
+      finishRead(healthy);
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(result.current.publishBlocked).toBeNull();
   });
 
   it('refuses to save a listing that ships while the seller has no published delivery key', async () => {

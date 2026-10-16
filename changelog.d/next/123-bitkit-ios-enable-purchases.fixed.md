@@ -1,0 +1,1 @@
+On an iPhone, "Authorize with Bitkit" in Enable purchases, the inventory approval and the reconnect dialog now opens Bitkit, so a buyer with only Bitkit installed can approve without copying the link; the QR code and copied link are unchanged and Android, desktop and Pubky Ring are unaffected.

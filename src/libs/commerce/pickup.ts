@@ -252,6 +252,7 @@ export const marketplaceSellerPickupDetailsSchema = z
  * key is configured (digital delivery design §6 B5); absent reads as off,
  * and `digitalDeliveryMaxBytes` is the file cap the service enforces.
  * `usdtPayments.available` is present only when the service's USDT flag is on.
+ * `paykitRail` is the last Paykit rail probe the Bitcoin offer follows.
  */
 export const marketplaceHealthSchema = z
   .object({
@@ -263,6 +264,15 @@ export const marketplaceHealthSchema = z
     // Present only when the service's USDT flag is on; absent reads as off.
     usdtPayments: z
       .object({ available: z.boolean().catch(false) })
+      .passthrough()
+      .optional()
+      .catch(undefined),
+    // The last Paykit rail probe: `bitcoinOfferAvailable` is null until one has succeeded.
+    paykitRail: z
+      .object({
+        bitcoinOfferAvailable: z.boolean().nullable().catch(null),
+        ageSeconds: z.number().nullable().catch(null),
+      })
       .passthrough()
       .optional()
       .catch(undefined),

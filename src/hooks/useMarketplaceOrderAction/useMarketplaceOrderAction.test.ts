@@ -290,3 +290,60 @@ describe('useMarketplaceOrderAction USDT refund', () => {
     });
   });
 });
+
+describe('useMarketplaceOrderAction USDT refund on an order priced in satoshis', () => {
+  const hash = `0x${'ab12'.repeat(16)}`;
+  const order = createUsdtOrderFixture('return_received', {
+    total: { amountMinor: 150_000, currency: 'SAT', exponent: 0 },
+    paymentMethod: 'paykit',
+    paymentAmountMinor: 41_250_000,
+    refundDestination: {
+      address: '0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed',
+      network: 'arbitrum-one',
+      asset: 'USDT',
+      source: 'buyer_entered',
+      confirmedAt: '2026-10-09T16:00:00.000Z',
+    },
+  });
+
+  async function record(amount: string) {
+    const actOnOrder = vi.fn(async () => true);
+    const { result } = renderHook(() => {
+      const value = useMarketplaceOrderAction(order, actOnOrder);
+      void value.form.formState.errors;
+      return value;
+    });
+    act(() => {
+      result.current.setAction('refund', { amount, transactionId: hash });
+    });
+    await act(async () => {
+      await result.current.submit();
+    });
+    return { actOnOrder, result };
+  }
+
+  it('starts at the whole amount paid and records it in USDT millionths', async () => {
+    const actOnOrder = vi.fn(async () => true);
+    const { result } = renderHook(() => useMarketplaceOrderAction(order, actOnOrder));
+    act(() => result.current.setAction('refund', { transactionId: hash }));
+    expect(result.current.form.getValues('amount')).toBe('41.250000');
+    await act(async () => {
+      await result.current.submit();
+    });
+    expect(actOnOrder).toHaveBeenCalledWith(order, 'refund.record_external', {
+      amountMinor: 41_250_000,
+      transactionId: hash,
+    });
+  });
+
+  it('accepts six decimals and refuses more than the amount paid', async () => {
+    const partial = await record('10.123456');
+    expect(partial.actOnOrder).toHaveBeenCalledWith(order, 'refund.record_external', {
+      amountMinor: 10_123_456,
+      transactionId: hash,
+    });
+    const over = await record('41.250001');
+    expect(over.actOnOrder).not.toHaveBeenCalled();
+    expect(over.result.current.form.formState.errors.amount?.message).toBe('Enter a refund up to the order total.');
+  });
+});

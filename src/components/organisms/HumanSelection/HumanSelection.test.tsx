@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { HumanSelection } from './HumanSelection';
 
@@ -20,9 +20,17 @@ vi.mock('@/organisms/HumanBitcoinCard/HumanBitcoinCard', () => {
   };
 });
 
+const passport = vi.hoisted(() => ({ isAvailable: false, isPending: false, start: vi.fn() }));
+
+vi.mock('@/hooks/usePassportSignIn/usePassportSignIn', () => ({
+  usePassportSignIn: () => passport,
+}));
+
 describe('HumanSelection', () => {
   beforeEach(() => {
     vi.stubEnv('NODE_ENV', 'test');
+    passport.isAvailable = false;
+    passport.start.mockReset();
   });
 
   afterEach(() => {
@@ -49,5 +57,21 @@ describe('HumanSelection', () => {
       <HumanSelection onClick={() => {}} onInviteCodeClick={() => {}} onDevMode={() => {}} />,
     );
     expect(container).toMatchSnapshot();
+  });
+
+  it('offers Pubky Passport sign-up with Google beside the verification cards', () => {
+    passport.isAvailable = true;
+    render(<HumanSelection onClick={() => {}} onInviteCodeClick={() => {}} onDevMode={() => {}} />);
+
+    expect(screen.getByText(/Pubky Passport creates your pubky with it/)).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('sign-in-passport-button'));
+    expect(passport.start).toHaveBeenCalledTimes(1);
+  });
+
+  it('hides the Google option where Pubky Passport is unavailable', () => {
+    render(<HumanSelection onClick={() => {}} onInviteCodeClick={() => {}} onDevMode={() => {}} />);
+
+    expect(screen.queryByTestId('sign-in-passport-option')).not.toBeInTheDocument();
+    expect(screen.queryByText(/Pubky Passport creates your pubky/)).not.toBeInTheDocument();
   });
 });

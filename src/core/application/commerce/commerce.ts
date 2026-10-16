@@ -81,7 +81,7 @@ import {
   paykitAppRegistryUrl,
   paykitReaderAuthorizationUrl,
 } from '@/libs/commerce/paykit-wallet';
-import type { BindDeliveryAddress, PaymentMethodKind } from '@/libs/commerce/payment-methods';
+import type { BindDeliveryAddress, PaymentMethodKind, SellerPaymentConfig } from '@/libs/commerce/payment-methods';
 import {
   type MarketplaceCheckoutFulfillmentLine,
   type MarketplaceFulfillmentMethod,
@@ -175,13 +175,12 @@ import {
   type MarketplaceTagKind,
 } from '@/services/local/tag/marketplace/tag.marketplace';
 import { LocksGatewayService } from '@/services/locks/locks';
-import { locksCreatorMatchesShopPubky, LocksFrontendSessionStore } from '@/services/locks/locks-frontend-session';
+import { RetiredLocksSessionStorage } from '@/services/locks/retired-locks-session';
 import {
   MarketplaceGatewayService,
   type MarketplaceOrder,
   type MarketplacePayment,
 } from '@/services/marketplace/marketplace';
-import { MarketplacePaykitClaimService } from '@/services/marketplace/marketplace-paykit-claim';
 import {
   type MarketplaceSessionEndedEvent,
   MarketplaceSessionService,
@@ -1353,7 +1352,7 @@ export class CommerceApplication {
    */
   static clearMarketplaceSessionForSignOut(options?: { confirmBff?: boolean }): void | Promise<void> {
     const cleanup = MarketplaceSessionService.clearForSignOut(options);
-    LocksFrontendSessionStore.clearForSignOut();
+    RetiredLocksSessionStorage.clear();
     this.clearSessionScopedState();
     return cleanup;
   }
@@ -1366,7 +1365,7 @@ export class CommerceApplication {
   static clearMarketplaceSessionsOfOtherAccounts(keepPubky: string): void {
     MarketplaceSessionService.clearOtherAccounts(keepPubky);
     CommerceInventoryApplication.clearInventorySessionsOfOtherAccounts(keepPubky);
-    LocksFrontendSessionStore.clearOtherAccounts(keepPubky);
+    RetiredLocksSessionStorage.clear();
     this.clearSessionScopedState();
   }
 
@@ -1472,8 +1471,18 @@ export class CommerceApplication {
 
   // --- Seller-configurable payment methods (durable service only) ----------
 
-  static async getSellerPaymentConfig(sellerPubky: string) {
-    return await MarketplaceGatewayService.getSellerPaymentConfig(sellerPubky);
+  /**
+   * The seller's public payment config. While Bitcoin is not offered, the
+   * service's `/health` is read too, so a Paykit outage is reported as such
+   * (`paykitUnreachable`) instead of reading as a seller with no setup. A
+   * failed health read says nothing, so it leaves the config as the service
+   * returned it.
+   */
+  static async getSellerPaymentConfig(sellerPubky: string): Promise<SellerPaymentConfig> {
+    const config = await MarketplaceGatewayService.getSellerPaymentConfig(sellerPubky);
+    if (config.bitcoinAvailable && config.bitcoinOfferAvailable) return config;
+    const rail = await MarketplaceGatewayService.getPaykitRailStatus().catch(() => 'unknown' as const);
+    return rail === 'unreachable' ? { ...config, paykitUnreachable: true } : config;
   }
 
   /**
@@ -1546,39 +1555,6 @@ export class CommerceApplication {
 
   static async confirmFiatReceived(actorPubky: string, orderId: string) {
     return await MarketplaceGatewayService.confirmFiatReceived(actorPubky, orderId);
-  }
-
-  /**
-   * Whether Paykit holds the seller's watch-only setup. The fork answers on
-   * its public `GET /v0/accounts/{creator}`. Upstream Paykit has no such
-   * route, so `paykitServerApi=upstream` first takes the service's
-   * `bitcoinAvailable` (Bitcoin on and Paykit's signed setup status ready),
-   * then asks the Lock Server with the seller's own Locks frontend session.
-   * With neither, or when the Lock Server cannot reach Paykit, the state is
-   * unknown and this rejects rather than report a setup it has not seen.
-   */
-  static async isPaykitAccountClaimed(pubky: string) {
-    if (getPaykitServerApi() !== 'upstream') return await MarketplacePaykitClaimService.isAccountClaimed(pubky);
-    try {
-      if ((await MarketplaceGatewayService.getSellerPaymentConfig(pubky)).bitcoinAvailable) return true;
-    } catch {
-      // The Lock Server read below still decides.
-    }
-    const session = LocksFrontendSessionStore.restore(pubky);
-    if (!session) {
-      throw Err.auth(AuthErrorCode.UNAUTHORIZED, 'Connect the Lock Server to read the Paykit setup state.', {
-        service: ErrorService.Locks,
-        operation: 'isPaykitAccountClaimed',
-      });
-    }
-    const status = await LocksGatewayService.getCreatorPaykitSetupStatus(session.token, 'BTC');
-    if (status === 'unavailable') {
-      throw Err.server(ServerErrorCode.SERVICE_UNAVAILABLE, 'The Lock Server could not read the Paykit setup state.', {
-        service: ErrorService.Locks,
-        operation: 'isPaykitAccountClaimed',
-      });
-    }
-    return status === 'ready';
   }
 
   static async getMarketplaceReceipt(actorPubky: string, receiptId: string) {
@@ -1780,41 +1756,6 @@ export class CommerceApplication {
       });
     }
     return { bytes, contentPath: correlation.content_path };
-  }
-
-  /**
-   * Exchanges a Lock Server legacy-connect completion (`code`/`state`) for a
-   * creator frontend session — the seller-setup "connected" proof. When
-   * `accountPubky` is the signed-in Shop identity the bearer is persisted so
-   * Step 1 survives reload; sign-out still wipes it via {@link clearMarketplaceSession}.
-   */
-  static async createLocksFrontendSession(code: string, state: string, accountPubky?: string) {
-    const session = await LocksGatewayService.createFrontendSession(code, state);
-    if (!accountPubky || !locksCreatorMatchesShopPubky(session.creator, accountPubky)) {
-      return session;
-    }
-    LocksFrontendSessionStore.save({
-      token: session.session_token,
-      creator: session.creator,
-      pubky: accountPubky,
-    });
-    return session;
-  }
-
-  static async getLocksCreatorAuthorityStatus(sessionToken: string) {
-    return await LocksGatewayService.getCreatorAuthorityStatus(sessionToken);
-  }
-
-  static async getLocksPublicCreatorAuthorityStatus(accountPubky: string) {
-    return await LocksGatewayService.getPublicCreatorAuthorityStatus(accountPubky);
-  }
-
-  static restoreLocksFrontendSession(accountPubky: string) {
-    return LocksFrontendSessionStore.restore(accountPubky);
-  }
-
-  static clearLocksFrontendSession(token: string): void {
-    LocksFrontendSessionStore.clear(token);
   }
 
   static async lookupLocksVerification(creatorPubky: string, bundleId: string) {
