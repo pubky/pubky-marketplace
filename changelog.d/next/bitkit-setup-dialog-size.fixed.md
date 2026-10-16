@@ -1,0 +1,1 @@
+The Connect Bitkit dialog in Payment settings is now sized to its QR code. It no longer opens a tall empty box with the code at the bottom, and the code and Cancel button fit on screen without scrolling.

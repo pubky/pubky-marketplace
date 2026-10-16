@@ -777,7 +777,12 @@ export function MarketplaceGetPaidSettings({ onSaved }: MarketplaceGetPaidSettin
                 }
                 sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-top-navigation-to-custom-protocols"
                 referrerPolicy="no-referrer"
-                className="h-[40rem] w-full rounded-lg border bg-popover"
+                className={
+                  // Upstream Paykit's page is only its 192px QR panel (a 60px Bitkit button on touch screens).
+                  upstreamPaykit
+                    ? 'h-48 w-full [@media(hover:none)_and_(pointer:coarse)]:h-15'
+                    : 'h-[40rem] w-full rounded-lg border bg-popover'
+                }
               />
             )
           )}

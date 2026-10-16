@@ -402,7 +402,8 @@ describe('MarketplaceGetPaidSettings USDT', () => {
       expect(mocked.getPaykitReconnectUrl).toHaveBeenCalledTimes(1);
       expect(mocked.getPaykitSetupUrl).not.toHaveBeenCalled();
       expect(iframe).not.toHaveAttribute('scrolling', 'no');
-      expect(iframe).toHaveClass('h-[40rem]', 'w-full');
+      expect(iframe).toHaveClass('h-48', 'w-full');
+      expect(iframe).not.toHaveClass('h-[40rem]');
       const url = new URL(iframe.getAttribute('src')!);
       expect(url.origin + url.pathname).toBe('https://paykit.example/setup/reconnect');
       expect(url.searchParams.get('creator')).toBe(PUBKY);
