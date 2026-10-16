@@ -26,6 +26,7 @@ import { randomBytes } from 'node:crypto';
 import { chmodSync, existsSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { purchaseFailure } from './listing-purchase.mjs';
 import {
   evidenceDir,
   loadBuyerSeat,
@@ -163,6 +164,64 @@ async function approveMarketplaceSession(page, seat) {
     await new Pubky().signer(seat).approveAuthRequest(await copyAuthUrl(page, label));
     await page.waitForTimeout(5000);
   }
+}
+
+// Clicks the listing's Buy button and approves "Enable purchases" as the buyer when the Shop asks for it, then opens
+// the cart. Returns what it observed; `purchaseFailure` decides whether the listing reached the cart.
+async function buyListing(page, seat) {
+  const observed = { buyEnabled: false, enablePurchases: false };
+  // Buy renders at once and stays disabled until the listing's availability has loaded.
+  observed.buyEnabled = await page
+    .waitForFunction(
+      () => [...document.querySelectorAll('button')].some((el) => el.textContent?.trim() === 'Buy' && !el.disabled),
+      null,
+      { timeout: 60_000 },
+    )
+    .then(
+      () => true,
+      () => false,
+    );
+  if (!observed.buyEnabled) return observed;
+  await page.getByRole('button', { name: 'Buy', exact: true }).first().click();
+  const dialog = page.getByRole('dialog').filter({ hasText: 'Enable purchases' }).first();
+  observed.enablePurchases = await dialog.waitFor({ state: 'visible', timeout: 10_000 }).then(
+    () => true,
+    () => false,
+  );
+  if (observed.enablePurchases) {
+    observed.approvalLink = await page
+      .waitForFunction(
+        () => {
+          const button = document.querySelector('[role="dialog"] [aria-label="Copy authorization link"]');
+          return Boolean(button && !button.disabled);
+        },
+        null,
+        { timeout: 60_000 },
+      )
+      .then(
+        () => true,
+        () => false,
+      );
+    if (!observed.approvalLink) return observed;
+    await new Pubky().signer(seat).approveAuthRequest(await copyAuthUrl(page, 'Copy authorization link'));
+    observed.dialogClosed = await dialog.waitFor({ state: 'hidden', timeout: 120_000 }).then(
+      () => true,
+      () => false,
+    );
+    if (!observed.dialogClosed) return observed;
+  }
+  await page.waitForTimeout(1200);
+  await page.goto(at('/marketplace/cart'), { waitUntil: 'domcontentloaded' });
+  await waitForAppReady(page);
+  observed.cartHasCheckout = await page
+    .getByTestId('marketplace-cart-checkout')
+    .first()
+    .waitFor({ state: 'visible', timeout: 30_000 })
+    .then(
+      () => true,
+      () => false,
+    );
+  return observed;
 }
 
 async function signOut(page) {
@@ -399,20 +458,16 @@ async function checkout() {
     await emptyCart(page);
     await page.goto(at(listingPath(state.listingId)), { waitUntil: 'domcontentloaded', timeout: 180_000 });
     await waitForAppReady(page);
-    const add = page.getByRole('button', { name: 'Add to cart', exact: true }).first();
-    const addVisible = await add.waitFor({ state: 'visible', timeout: 60_000 }).then(
-      () => true,
-      () => false,
-    );
+    const observed = await buyListing(page, buyer);
+    const failure = purchaseFailure(observed);
     if (
-      check('checkout: fixture listing has an enabled Add to cart for the buyer', addVisible && (await add.isEnabled()))
+      check(
+        'checkout: Buy put the fixture listing in the buyer\'s cart (after "Enable purchases" when the Shop asked)',
+        failure === null,
+        failure ?? `enablePurchases=${observed.enablePurchases}`,
+      )
     ) {
-      await add.click();
-      await page.waitForTimeout(1200);
-      await page.goto(at('/marketplace/cart'), { waitUntil: 'domcontentloaded' });
-      await waitForAppReady(page);
       const go = page.getByTestId('marketplace-cart-checkout').first();
-      await go.waitFor({ state: 'visible', timeout: 30_000 });
       const configResponse = page.waitForResponse(
         (response) =>
           response.request().method() === 'GET' &&
