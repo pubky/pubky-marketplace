@@ -336,11 +336,16 @@ function MarketplaceCartCheckout() {
     offered: paykitOffersUsdt,
     sellerAcceptsUsdt: loadedForCart?.sellerAcceptsUsdt ?? null,
   });
+  // The Paykit entry is shown but cannot be chosen while Paykit is down, so Pay never meets a refused choice.
+  const selectableMethods = availableCheckoutMethods.filter((method) => !(method === 'paykit' && paykitOutageForCart));
   const selectedMethod =
-    preferredMethod && availableCheckoutMethods.includes(preferredMethod)
-      ? preferredMethod
-      : (availableCheckoutMethods[0] ?? null);
-  const paykitBlocksPay = (paykitRefused || paykitOutageForCart) && selectedMethod === 'paykit';
+    preferredMethod && selectableMethods.includes(preferredMethod) ? preferredMethod : (selectableMethods[0] ?? null);
+  const paykitBlocksPay = paykitOutageForCart && selectedMethod === null;
+
+  // A Paykit choice made before the outage is dropped, so recovery restores the default instead of silently re-selecting it.
+  useEffect(() => {
+    if (paykitOutageForCart) setSelectedMethod((current) => (current === 'paykit' ? null : current));
+  }, [paykitOutageForCart]);
   const isMultiSeller = sellerKey.includes('|');
   const isPaying = isOfferCheckout ? offerPay.isSubmitting : checkout.isPaying;
   const listingRoute = award && getMarketplaceListingRoute(award.listing.sellerPubky, award.listing.listingId);
@@ -499,7 +504,7 @@ function MarketplaceCartCheckout() {
                   ? 'Pay unlocks once your Bitkit wallet is checked.'
                   : railsFailed
                     ? 'Pay unlocks once payment options load.'
-                    : paykitBlocksPay || (paykitOutageForCart && sharedMethods?.length === 0)
+                    : paykitBlocksPay
                       ? PAYKIT_OUTAGE_COPY.title
                       : sharedMethods && sharedMethods.length === 0 && !isSandbox
                         ? isMultiSeller
@@ -1175,28 +1180,53 @@ function MarketplaceCartCheckout() {
                         </Typography>
                       ) : (
                         <div className="grid grid-cols-2 gap-3" role="group" aria-label="Payment method">
-                          {availableCheckoutMethods.map((method) => (
-                            <Button
-                              key={method}
-                              type="button"
-                              variant={selectedMethod === method ? 'default' : 'secondary'}
-                              className="h-20 w-full gap-3 rounded-md px-4 text-base"
-                              aria-pressed={selectedMethod === method}
-                              data-testid={`marketplace-checkout-method-${method}`}
-                              onClick={() => setSelectedMethod(method)}
-                            >
-                              {method === 'paykit' && <WalletCards className="size-6 shrink-0" aria-hidden="true" />}
-                              {method === 'paypal' && <HandCoins className="size-6 shrink-0" aria-hidden="true" />}
-                              {METHOD_COPY[method]}
-                            </Button>
-                          ))}
+                          {availableCheckoutMethods.map((method) => {
+                            const paused = !selectableMethods.includes(method);
+                            return (
+                              <Button
+                                key={method}
+                                type="button"
+                                variant={selectedMethod === method ? 'default' : 'secondary'}
+                                className={
+                                  paused
+                                    ? 'h-20 w-full flex-col gap-1 rounded-md px-3 text-base'
+                                    : 'h-20 w-full gap-3 rounded-md px-4 text-base'
+                                }
+                                aria-pressed={selectedMethod === method}
+                                disabled={paused}
+                                data-testid={`marketplace-checkout-method-${method}`}
+                                onClick={() => setSelectedMethod(method)}
+                              >
+                                <span className="flex items-center gap-3">
+                                  {method === 'paykit' && (
+                                    <WalletCards className="size-6 shrink-0" aria-hidden="true" />
+                                  )}
+                                  {method === 'paypal' && <HandCoins className="size-6 shrink-0" aria-hidden="true" />}
+                                  {METHOD_COPY[method]}
+                                </span>
+                                {paused && (
+                                  <span
+                                    className="text-xs font-normal text-wrap"
+                                    data-testid={`marketplace-checkout-method-${method}-reason`}
+                                  >
+                                    {PAYKIT_OUTAGE_COPY.title}
+                                  </span>
+                                )}
+                              </Button>
+                            );
+                          })}
                         </div>
                       )}
-                      {paykitOutageForCart && sharedMethods !== null && sharedMethods.length > 0 && (
-                        <Typography as="p" aria-live="polite" className="text-sm text-muted-foreground">
-                          {PAYKIT_OUTAGE_COPY.title} {PAYKIT_OUTAGE_COPY.buyerOthers}
-                        </Typography>
-                      )}
+                      {paykitOutageForCart &&
+                        sharedMethods !== null &&
+                        sharedMethods.length > 0 &&
+                        (selectableMethods.length > 0 ? (
+                          <Typography as="p" aria-live="polite" className="text-sm text-muted-foreground">
+                            {PAYKIT_OUTAGE_COPY.buyerOthers}
+                          </Typography>
+                        ) : (
+                          <PaykitOutageNotice audience="buyer" surface="checkout-paykit-outage" />
+                        ))}
                       {paykitChosen && (
                         <Typography
                           as="p"
