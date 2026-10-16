@@ -322,7 +322,8 @@ jobs:
       # The two-account chat proof on a disposable testnet stack (pubky-docker)
       # with a pubky/inbox container: delivery both ways, pings with the event
       # stream blocked, offline queue, second tab, reload, new-device rebuild,
-      # ciphertext-only files. See docs/chat/README.md, "Verification".
+      # a stranger's first message with and without the inbox, ciphertext-only
+      # files. See docs/chat/README.md, "Verification".
       - name: Run the two-account chat proof
         env:
           SCREENSHOT_DIR: .chat-e2e

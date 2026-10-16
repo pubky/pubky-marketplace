@@ -15,8 +15,10 @@
  * identity key published, a message from Alice reaches Bob's thread, Bob's
  * reply reaches Alice's OPEN thread live, both tabs open an inbox session,
  * with the event stream blocked a message still reaches Bob's inbox list
- * through a ping, history survives a reload, and a fresh browser context
- * rebuilds the conversation from the homeservers. Screenshots land in
+ * through a ping, history survives a reload, a fresh browser context
+ * rebuilds the conversation from the homeservers, and a stranger's first
+ * message reaches the inbox list through a ping, or, with the inbox
+ * unreachable, only once the thread is opened. Screenshots land in
  * SCREENSHOT_DIR.
  */
 import { mkdirSync } from 'node:fs';
@@ -44,7 +46,8 @@ function record(name, ok, detail = '') {
 }
 
 // Against a deployed homeserver there is no admin endpoint: pass pre-issued
-// signup tokens, one per account, as CHAT_E2E_SIGNUP_TOKENS="tokA,tokB".
+// signup tokens, one per account (four: Alice, Bob and the two strangers), as
+// CHAT_E2E_SIGNUP_TOKENS="tokA,tokB,tokC,tokD".
 const SIGNUP_TOKENS = (process.env.CHAT_E2E_SIGNUP_TOKENS ?? '')
   .split(',')
   .map((token) => token.trim())
@@ -534,6 +537,69 @@ try {
   );
   record('alice:new-device-rebuild', countDeviceTwo >= 5, `${countDeviceTwo} messages: ${deviceTwoOrder.join(' | ')}`);
   await snap(alicePageTwo, '05-alice-new-device');
+
+  // Stranger first contact, with the inbox. Carol has never talked to Alice, so
+  // Alice's leader streams nothing of hers and the 60 s reconcile knows no folder
+  // to list: a row within 30 s on Alice's inbox list (no open thread) is a ping.
+  const carol = await registerIdentity('carol');
+  const carolContext = await makeContext();
+  const carolPage = await signIn(carolContext, carol, 'Carol Stranger');
+  await alicePage.goto(`${BASE}/messages`, { waitUntil: 'domcontentloaded' });
+  await alicePage.locator('[data-surface="chat-inbox"]').waitFor({ state: 'visible', timeout: 60_000 });
+  await sleep(3_000);
+  const strangerNonce = `cold-${Date.now().toString(36)}`;
+  await carolPage.goto(`${BASE}/messages/${alice.id}`, { waitUntil: 'domcontentloaded' });
+  const strangerAt = Date.now();
+  await sendMessage(carolPage, `Hello from a stranger ${strangerNonce}`);
+  await waitForSent(carolPage, strangerNonce);
+  let strangerFound = true;
+  try {
+    await alicePage
+      .locator('[data-testid="chat-conversation-row"]', { hasText: strangerNonce })
+      .first()
+      .waitFor({ state: 'visible', timeout: 30_000 });
+  } catch {
+    strangerFound = false;
+  }
+  record('stranger:first-message-via-inbox', strangerFound, `${Date.now() - strangerAt} ms on the inbox list`);
+  await snap(alicePage, '06-alice-inbox-stranger-via-ping');
+
+  // Stranger first contact without the inbox. Dave signs in with the inbox
+  // unreachable (no session, no polls), the same as a deploy without
+  // PUBKY_RUNTIME_INBOX_URL: chat runs on event streams and reconciliation
+  // alone. Carol's first message does not surface while Dave sits on his inbox
+  // list; it is there as soon as he opens the thread.
+  const dave = await registerIdentity('dave');
+  const daveContext = await makeContext();
+  await daveContext.route('**/v1/auth/session', (route) => route.abort());
+  await daveContext.route('**/v1/pings**', (route) => route.abort());
+  const davePage = await signIn(daveContext, dave, 'Dave Offline');
+  await davePage.goto(`${BASE}/messages`, { waitUntil: 'domcontentloaded' });
+  await davePage.locator('[data-surface="chat-inbox"]').waitFor({ state: 'visible', timeout: 60_000 });
+  const coldNonce = `noinbox-${Date.now().toString(36)}`;
+  await carolPage.goto(`${BASE}/messages/${dave.id}`, { waitUntil: 'domcontentloaded' });
+  await sendMessage(carolPage, `Nobody told you ${coldNonce}`);
+  await waitForSent(carolPage, coldNonce);
+  let surfacedWithoutInbox = true;
+  try {
+    await davePage
+      .locator('[data-testid="chat-conversation-row"]', { hasText: coldNonce })
+      .first()
+      .waitFor({ state: 'visible', timeout: 15_000 });
+  } catch {
+    surfacedWithoutInbox = false;
+  }
+  record('stranger:no-inbox-stays-unknown-on-list', !surfacedWithoutInbox, 'no row after 15 s');
+  const openedAt = Date.now();
+  await davePage.goto(`${BASE}/messages/${carol.id}`, { waitUntil: 'domcontentloaded' });
+  let foundOnOpen = true;
+  try {
+    await messageWithText(davePage, coldNonce).first().waitFor({ state: 'visible', timeout: 30_000 });
+  } catch {
+    foundOnOpen = false;
+  }
+  record('stranger:no-inbox-found-on-thread-open', foundOnOpen, `${Date.now() - openedAt} ms after opening`);
+  await snap(davePage, '07-dave-thread-no-inbox');
 
   // The homeserver only ever holds ciphertext.
   const aliceKeyJson = JSON.parse((await readPublic(`pubky://${alice.id}/pub/chat/v0/key.json`)) ?? '{}');
