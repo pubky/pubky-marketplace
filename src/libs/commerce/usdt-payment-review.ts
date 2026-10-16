@@ -2,11 +2,11 @@ import { z } from 'zod';
 import { formatCommerceMoney } from '@/libs/commerce/format';
 import { formatUsdt } from '@/libs/commerce/payment-options';
 import { sellerPaymentResolutionOutcomeSchema } from './marketplace-payment-review';
+import { observedPaymentRail } from './paykit-rail';
 import type { CommerceMoney } from './transaction-contracts';
 import {
   ARBITRUM_TX_HASH_PATTERN,
   formatUsdtParity,
-  isUsdtRefundOrder,
   normalizeArbitrumTxHash,
   type RefundDestination,
   USDT_REFUND_COPY,
@@ -55,14 +55,15 @@ export const USDT_RESOLUTION_REASON_MAX_LENGTH = 500;
 /**
  * Whether a seller may resolve this order's manual-review payment as USDT. It
  * follows the order's own asset, never the new-offer flag, so an existing USDT
- * order is never stranded when the flag flips off (plan §3). The method label
- * is read too because the service scopes the endpoint on it.
+ * order is never stranded when the flag flips off (plan §3). The observed asset
+ * decides for a single-bind `paykit` order; a legacy `usdt` method label is
+ * read too because the service scopes the endpoint on it.
  */
 export function isUsdtPaymentReviewOrder(order: {
   paymentMethod?: string | null;
   paymentAsset?: string | null;
 }): boolean {
-  return order.paymentMethod === 'usdt' || isUsdtRefundOrder(order);
+  return observedPaymentRail(order) === 'usdt';
 }
 
 /** Which rail's copy and reference rules a manual-review resolution follows. */

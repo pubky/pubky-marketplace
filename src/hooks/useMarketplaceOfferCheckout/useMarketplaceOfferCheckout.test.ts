@@ -23,7 +23,6 @@ vi.mock('@/controllers/commerce/commerce', () => ({
     commitOfferCheckout: vi.fn(),
     bindPaymentMethod: vi.fn(),
     executeMarketplaceCommand: vi.fn(),
-    rememberUsdtRefusal: vi.fn(),
     resolveDeliveryKeysForCheckout: vi.fn(),
     commitAcceptDeliveryKeyChange: vi.fn(),
     sealDeliveryAddressForCheckout: vi.fn(),
@@ -111,80 +110,38 @@ describe('useMarketplaceOfferCheckout', () => {
     vi.spyOn(globalThis.crypto, 'randomUUID').mockReturnValue('00000000-0000-4000-8000-000000000704');
   });
 
-  describe('a refused USDT bind', () => {
-    const bindRefusal = (reason: string, paymentMethod?: 'usdt') =>
-      new AppError({
-        category: ErrorCategory.Client,
-        code: ClientErrorCode.BAD_REQUEST,
-        message: 'SENTINEL',
-        service: ErrorService.Marketplace,
-        operation: 'bindPaymentMethod',
-        context: { statusCode: 409, reason, ...(paymentMethod ? { paymentMethod } : {}) },
-      });
-
-    it.each(['usdt_unavailable', 'usdt_seller_not_ready'] as const)(
-      'remembers %s for the award seller',
-      async (reason) => {
-        vi.mocked(CommerceController.bindPaymentMethod).mockRejectedValueOnce(bindRefusal(reason, 'usdt'));
-        const { result } = renderHook(() => useMarketplaceOfferCheckout());
-
-        await act(async () => {
-          await expect(result.current.submit(offer, address, 'usdt')).resolves.toEqual({
-            ok: false,
-            code: 'BIND_FAILED',
-          });
+  it.each(['paykit', 'bitcoin'] as const)(
+    'reports a %s bind refused because Paykit is unreachable, and only that refusal',
+    async (method) => {
+      const refusal = (reason: string) =>
+        new AppError({
+          category: ErrorCategory.Client,
+          code: ClientErrorCode.BAD_REQUEST,
+          message: 'SENTINEL',
+          service: ErrorService.Marketplace,
+          operation: 'bindPaymentMethod',
+          context: { statusCode: reason === 'paykit_unavailable' ? 503 : 409, reason, paymentMethod: method },
         });
-
-        expect(CommerceController.rememberUsdtRefusal).toHaveBeenCalledWith('s'.repeat(52), reason);
-      },
-    );
-
-    it('remembers nothing for a refusal the buyer can fix, or on another rail', async () => {
       vi.mocked(CommerceController.bindPaymentMethod)
-        .mockRejectedValueOnce(bindRefusal('paykit_rejected', 'usdt'))
-        .mockRejectedValueOnce(bindRefusal('usdt_unavailable'));
+        .mockRejectedValueOnce(refusal('paykit_unavailable'))
+        .mockRejectedValueOnce(refusal('paykit_rejected'));
       const { result } = renderHook(() => useMarketplaceOfferCheckout());
 
       await act(async () => {
-        await result.current.submit(offer, address, 'usdt');
+        await expect(result.current.submit(offer, address, method)).resolves.toEqual({
+          ok: false,
+          code: 'BIND_FAILED',
+          paykitUnavailable: true,
+        });
       });
       await act(async () => {
-        await result.current.submit(offer, address, 'bitcoin');
+        await expect(result.current.submit(offer, address, method)).resolves.toEqual({
+          ok: false,
+          code: 'BIND_FAILED',
+        });
       });
-
-      expect(CommerceController.rememberUsdtRefusal).not.toHaveBeenCalled();
-    });
-  });
-
-  it('reports a bind refused because Paykit is unreachable, and only that refusal', async () => {
-    const refusal = (reason: string) =>
-      new AppError({
-        category: ErrorCategory.Client,
-        code: ClientErrorCode.BAD_REQUEST,
-        message: 'SENTINEL',
-        service: ErrorService.Marketplace,
-        operation: 'bindPaymentMethod',
-        context: { statusCode: reason === 'paykit_unavailable' ? 503 : 409, reason },
-      });
-    vi.mocked(CommerceController.bindPaymentMethod)
-      .mockRejectedValueOnce(refusal('paykit_unavailable'))
-      .mockRejectedValueOnce(refusal('paykit_rejected'));
-    const { result } = renderHook(() => useMarketplaceOfferCheckout());
-
-    await act(async () => {
-      await expect(result.current.submit(offer, address, 'bitcoin')).resolves.toEqual({
-        ok: false,
-        code: 'BIND_FAILED',
-        paykitUnavailable: true,
-      });
-    });
-    await act(async () => {
-      await expect(result.current.submit(offer, address, 'bitcoin')).resolves.toEqual({
-        ok: false,
-        code: 'BIND_FAILED',
-      });
-    });
-  });
+    },
+  );
 
   it('re-reads the accepted projection and submits its locked award terms', async () => {
     const completed = vi.fn();

@@ -12,8 +12,14 @@ import { ErrorService } from '@/libs/error/error.types';
  * `fiat` standing for "the order's own fiat currency".
  */
 
-/** The method-label values the service may send, in the order the Shop prefers them. */
-export const PAYMENT_METHOD_KINDS = ['bitcoin', 'usdt', 'paypal'] as const;
+/**
+ * The method-label values the service may send, in the order the Shop prefers
+ * them. `paykit` is the one Paykit bind: the buyer picks Bitcoin or USDT in
+ * Bitkit, so the rail is known only from the observed `paymentAsset`. `bitcoin`
+ * and `usdt` are the legacy Paykit binds, still read on orders placed before
+ * the single bind.
+ */
+export const PAYMENT_METHOD_KINDS = ['paykit', 'bitcoin', 'usdt', 'paypal'] as const;
 
 /** What the buyer sends on a Paykit rail. Fiat methods pay in the order's own currency and carry no asset. */
 export const PAYMENT_ASSETS = ['BTC', 'USDT'] as const;
@@ -57,14 +63,32 @@ export const PAYMENT_OPTIONS: Record<PaymentOptionId, PaymentOption> = {
   'paypal.fiat': { id: 'paypal.fiat', method: 'paypal', asset: null, network: null },
 };
 
-const OPTION_ID_BY_METHOD: Record<PaymentOptionMethod, PaymentOptionId> = {
+const OPTION_ID_BY_METHOD: Record<Exclude<PaymentOptionMethod, 'paykit'>, PaymentOptionId> = {
   bitcoin: 'paykit.btc.bitcoin',
   usdt: 'paykit.usdt.arbitrum-one',
   paypal: 'paypal.fiat',
 };
 
-/** The option a method label stands for. Each method label maps to exactly one option today. */
-export function paymentOptionForMethod(method: PaymentOptionMethod): PaymentOption {
+const OPTION_ID_BY_ASSET: Record<PaymentAsset, PaymentOptionId> = {
+  BTC: 'paykit.btc.bitcoin',
+  USDT: 'paykit.usdt.arbitrum-one',
+};
+
+/**
+ * The option a method label stands for. The legacy labels each map to exactly
+ * one option. `paykit` stands for whichever asset the buyer paid with, so it
+ * has an option only once `paymentAsset` is observed.
+ */
+export function paymentOptionForMethod(method: Exclude<PaymentOptionMethod, 'paykit'>): PaymentOption;
+export function paymentOptionForMethod(
+  method: PaymentOptionMethod,
+  observedAsset: PaymentAsset | null,
+): PaymentOption | null;
+export function paymentOptionForMethod(
+  method: PaymentOptionMethod,
+  observedAsset: PaymentAsset | null = null,
+): PaymentOption | null {
+  if (method === 'paykit') return observedAsset ? PAYMENT_OPTIONS[OPTION_ID_BY_ASSET[observedAsset]] : null;
   return PAYMENT_OPTIONS[OPTION_ID_BY_METHOD[method]];
 }
 
@@ -76,15 +100,23 @@ export function parsePaymentOptionId(value: unknown): PaymentOptionId | null {
 /**
  * Order projection fields that describe how the buyer pays. Every field is
  * display-only and tolerant: a value the Shop does not recognise is dropped
- * for that order and never fails the order parse. All are null/absent for
- * Bitcoin and PayPal orders.
+ * for that order and never fails the order parse. `paymentAsset` is the
+ * OBSERVED rail: null until a payment is seen on a `paykit` order, `BTC` or
+ * `USDT` after, and absent on PayPal and legacy Bitcoin orders.
  */
 export const paymentAssetFieldsShape = {
   paymentAsset: z.enum(PAYMENT_ASSETS).nullish().catch(undefined),
   paymentNetwork: z.enum(PAYMENT_NETWORKS).nullish().catch(undefined),
   paymentAmountMinor: z.number().int().nonnegative().nullish().catch(undefined),
   paymentExponent: z.number().int().nonnegative().nullish().catch(undefined),
-  paymentQuoteBasis: z.enum(['parity']).nullish().catch(undefined),
+  paymentQuoteBasis: z.enum(['parity', 'native', 'fixed_rate']).nullish().catch(undefined),
+  // The assets a `paykit` order offered the buyer. Unknown assets are dropped
+  // so a newer service never hides the ones the Shop knows.
+  acceptedAssets: z
+    .array(z.string())
+    .transform((assets) => PAYMENT_ASSETS.filter((asset) => assets.includes(asset)))
+    .nullish()
+    .catch(undefined),
 };
 
 export const USDT_EXPONENT = 6;

@@ -34,8 +34,6 @@ import {
   marketplaceErrorCode,
   marketplaceFailureMessage,
   marketplaceListingNotActiveMessage,
-  usdtOfferRefusalReason,
-  usdtRefusalKey,
 } from '@/libs/commerce/failure-messages';
 import { LOCKS_MIXED_CHECKOUT_COPY, locksCheckoutRoute } from '@/libs/commerce/locks-payment';
 import {
@@ -858,13 +856,6 @@ export function useMarketplaceCheckout(
           }
         } catch (bindError) {
           await cancelCreatedCheckouts(createdIds);
-          const usdtRefusal = usdtOfferRefusalReason(bindError);
-          if (usdtRefusal) {
-            CommerceController.rememberUsdtRefusal(
-              usdtRefusalKey(items.map((item) => item.listing.record.ownerPubky)),
-              usdtRefusal,
-            );
-          }
           showPaymentMethodRefusalToast({ error: bindError, fallback: MARKETPLACE_FAILURE_MESSAGES.checkout, onRetry });
           if (isPaykitUnavailableRefusal(bindError)) outcome = { ...empty, paykitUnavailable: true };
           return;

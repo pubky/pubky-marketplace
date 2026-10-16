@@ -59,15 +59,6 @@ describe('CommerceController', () => {
     expect(refresh).toHaveBeenCalledOnce();
   });
 
-  it('remembers a refused USDT bind for the seller set until the store resets', () => {
-    CommerceController.rememberUsdtRefusal(COMMERCE_FIXTURE_SELLER, 'usdt_seller_not_ready');
-
-    expect(useCommerceStore.getState().usdtRefusals).toEqual({ [COMMERCE_FIXTURE_SELLER]: 'usdt_seller_not_ready' });
-
-    useCommerceStore.getState().reset();
-    expect(useCommerceStore.getState().usdtRefusals).toEqual({});
-  });
-
   it('binds a valid creator to the Paykit setup URL and rejects invalid creators', () => {
     const getPaykitSetupUrl = vi
       .spyOn(CommerceApplication, 'getPaykitSetupUrl')

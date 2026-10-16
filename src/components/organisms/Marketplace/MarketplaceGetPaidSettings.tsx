@@ -7,8 +7,6 @@ import {
   ChevronDown,
   ExternalLink,
   HandCoins,
-  KeyRound,
-  Loader2,
   LoaderCircle,
   RefreshCw,
   Save,
@@ -23,7 +21,7 @@ import { Input } from '@/atoms/Input/Input';
 import { Label } from '@/atoms/Label/Label';
 import { Switch } from '@/atoms/Switch/Switch';
 import { Typography } from '@/atoms/Typography/Typography';
-import { getLocksUrl, getPaykitServerApi } from '@/config/commerce';
+import { getPaykitServerApi } from '@/config/commerce';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import { useMarketplaceSellerPaymentConfig } from '@/hooks/useMarketplaceSellerPaymentConfig/useMarketplaceSellerPaymentConfig';
 import { useUsdtPaymentsCapability } from '@/hooks/useUsdtPaymentsCapability/useUsdtPaymentsCapability';
@@ -36,7 +34,6 @@ import { SettingsSectionContent } from '@/molecules/Settings/SettingsSectionCont
 import { toast } from '@/molecules/Toaster/use-toast';
 import { MarketplaceSessionConnectDialog } from '@/organisms/Marketplace/MarketplaceSessionConnectDialog';
 import { MarketplaceUsdtSellerSetup } from '@/organisms/Marketplace/MarketplaceUsdtSellerSetup';
-import { locksCreatorMatchesShopPubky } from '@/services/locks/locks-frontend-session';
 import { useAuthStore } from '@/stores/auth/auth.store';
 import { useCommerceStore } from '@/stores/commerce/commerce.store';
 import {
@@ -49,27 +46,13 @@ import {
   type PaymentMethodStatus,
 } from './MarketplaceGetPaidSettings.utils';
 
-type LocksConnectView = {
-  connectedCreator: string | null;
-  isExchanging: boolean;
-  error: string | null;
-  reapproveNotice?: string | null;
-  connectOpen?: boolean;
-  connectUrl?: string | null;
-  setConnectIframe?: (element: HTMLIFrameElement | null) => void;
-  openConnect: () => void;
-  closeConnect?: () => void;
-};
-
 type MarketplaceGetPaidSettingsProps = {
-  /** Step 1 of the bitcoin method, owned by the template (no session needed). */
-  locksConnect: LocksConnectView;
   onSaved?: (config: SellerPaymentConfigOwnView) => void;
 };
 
 type PaykitSetupStatus = 'idle' | 'error' | 'mismatch' | 'unconfirmed' | 'verifying' | 'timeout' | 'usdt-missing';
 
-/** What stays under Step 2 after the setup dialog closes without a connection. */
+/** What stays under the Bitkit step after the setup dialog closes without a connection. */
 type PaykitSetupProblem = 'mismatch' | 'unconfirmed' | 'error';
 
 /**
@@ -89,15 +72,8 @@ function paykitMismatchMessage(pubky: string | null): string {
   return `Bitkit approved a different pubky than the one you're signed in with here${paykitKeyLabel(pubky)}. In Bitkit, switch to that pubky, then try again.`;
 }
 
-/**
- * A setup that finished but could not be confirmed. The upstream claim read
- * goes through the Lock Server, so without Step 1 it cannot answer at all.
- */
-function paykitUnconfirmedMessage(locksConnected: boolean): string {
-  return locksConnected
-    ? "We couldn't confirm Bitkit's approval just now. Try again."
-    : "Bitkit finished, but we can't confirm it until the Lock Server is connected (step 1). Connect it, then try Bitkit again.";
-}
+/** A setup that finished but that the service's Paykit lookup could not confirm. */
+const PAYKIT_UNCONFIRMED_COPY = "We couldn't confirm Bitkit's approval just now. Try again.";
 
 function paykitTimeoutMessage(pubky: string | null): string {
   return `No approval received. If you approved in Bitkit, check that Bitkit holds the pubky you're signed in with here${paykitKeyLabel(pubky)}, then try again.`;
@@ -189,18 +165,7 @@ function MethodCard({
  * seller's own claimed watch-only account. PayPal settles into the seller's
  * own account. This marketplace never receives funds on any rail.
  */
-export function MarketplaceGetPaidSettings({ locksConnect, onSaved }: MarketplaceGetPaidSettingsProps) {
-  const {
-    connectedCreator,
-    isExchanging,
-    error: locksError,
-    reapproveNotice,
-    connectOpen,
-    connectUrl,
-    setConnectIframe,
-    openConnect,
-    closeConnect,
-  } = locksConnect;
+export function MarketplaceGetPaidSettings({ onSaved }: MarketplaceGetPaidSettingsProps) {
   const marketplaceSession = useCommerceStore((state) => state.marketplaceSession);
   const currentUserPubky = useAuthStore((state) => state.currentUserPubky);
   const payments = useMarketplaceSellerPaymentConfig();
@@ -379,19 +344,12 @@ export function MarketplaceGetPaidSettings({ locksConnect, onSaved }: Marketplac
   );
 
   const paypalStatus = derivePaypalStatus(payments.config);
-  const bitcoinStatus = deriveBitcoinStatus({
-    connectedCreator,
-    accountPubky: currentUserPubky,
-    accountClaimed: payments.accountClaimed,
-    locksError,
-    claimError: null,
-  });
   const usdtReadiness = deriveUsdtSellerReadiness(serverConfig ?? {});
+  const bitcoinStatus = deriveBitcoinStatus(payments.accountClaimed);
   const usdtStatus = deriveUsdtStatus(usdtReadiness);
   const usdtValue = railDraft.usdt ?? serverConfig?.usdtEnabled ?? false;
   const serverBitcoin = serverConfig?.bitcoinEnabled ?? false;
   const bitcoinValue = railDraft.bitcoin ?? serverBitcoin;
-  const step1Connected = locksCreatorMatchesShopPubky(connectedCreator, currentUserPubky);
   const paykitSetupProblem =
     paykitSetupProblemState && paykitSetupProblemState.pubky === currentUserPubky
       ? paykitSetupProblemState.problem
@@ -406,24 +364,17 @@ export function MarketplaceGetPaidSettings({ locksConnect, onSaved }: Marketplac
   // card's "Enable selling" prompt already says why the switch is off.
   const bitcoinToggleBlocker =
     marketplaceSession && !payments.isLoading && !payments.loadError && !bitcoinValue && bitcoinStatus !== 'connected'
-      ? deriveBitcoinToggleBlocker({
-          lockServerConnected: step1Connected,
-          locksError,
-          accountClaimed: payments.accountClaimed,
-        })
+      ? deriveBitcoinToggleBlocker(payments.accountClaimed)
       : null;
 
   // Stored rails need the marketplace session and the loaded config; the
-  // bitcoin connect steps above them do not, so they render unconditionally.
+  // bitcoin connect steps above them render outside this gate.
   const renderStoredRailBody = (children: React.ReactNode) => {
     if (!marketplaceSession) {
       return (
-        <div className="grid justify-items-start gap-6 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
-          <Typography as="p" className="text-sm text-muted-foreground">
-            Enable selling to save your payment methods.
-          </Typography>
-          <MarketplaceSessionConnectDialog triggerLabel="Enable selling" intent="sell" />
-        </div>
+        <Typography as="p" className="text-sm text-muted-foreground">
+          Enable selling above to set this up.
+        </Typography>
       );
     }
     if (payments.isLoading) {
@@ -446,6 +397,25 @@ export function MarketplaceGetPaidSettings({ locksConnect, onSaved }: Marketplac
 
   return (
     <section aria-label="Payment methods" className="flex flex-col gap-6" data-surface="marketplace-get-paid">
+      {!marketplaceSession && (
+        <Card className="rounded-md p-0 shadow-lg" data-testid="enable-selling-card">
+          <CardContent className="grid gap-6 p-6 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
+            <div className="grid gap-1">
+              <Heading level={2} size="md">
+                Enable selling
+              </Heading>
+              <Typography as="p" className="text-sm text-muted-foreground">
+                Enable selling to save your payment methods.
+              </Typography>
+              <Typography as="p" className="text-sm text-muted-foreground">
+                You approve once, with the same app you signed in with.
+              </Typography>
+            </div>
+            <MarketplaceSessionConnectDialog triggerLabel="Enable selling" intent="sell" />
+          </CardContent>
+        </Card>
+      )}
+
       <MethodCard
         icon={HandCoins}
         title="PayPal"
@@ -497,45 +467,7 @@ export function MarketplaceGetPaidSettings({ locksConnect, onSaved }: Marketplac
         <div className="grid gap-6 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
           <div>
             <Typography as="h3" className="text-sm font-semibold">
-              1. Connect Lock Server
-            </Typography>
-            <Typography as="p" className="text-sm text-muted-foreground">
-              Authorize with Pubky Ring to enable secure delivery. Bitkit works only when this Lock Server offers a
-              Bitkit sign-in.
-            </Typography>
-            {step1Connected && (
-              <Typography as="p" className="mt-2 flex items-center gap-2 text-sm text-brand">
-                <CheckCircle2 className="size-4" />
-                Connected to your pubky.
-              </Typography>
-            )}
-            {locksError && (
-              <Typography as="p" role="alert" className="mt-2 text-sm text-amber-300">
-                {locksError}
-              </Typography>
-            )}
-            {!step1Connected && !locksError && reapproveNotice && (
-              <Typography as="p" className="mt-2 text-sm text-muted-foreground" data-testid="locks-reapprove-notice">
-                {reapproveNotice}
-              </Typography>
-            )}
-          </div>
-          {step1Connected ? (
-            <Badge variant="secondary" className="justify-self-start sm:justify-self-auto">
-              Connected
-            </Badge>
-          ) : (
-            <Button variant="secondary" className="w-fit" disabled={isExchanging} onClick={openConnect}>
-              {isExchanging ? <LoaderCircle className="size-4 animate-spin" /> : <KeyRound className="size-4" />}
-              Connect Lock Server
-            </Button>
-          )}
-        </div>
-
-        <div className="grid gap-6 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
-          <div>
-            <Typography as="h3" className="text-sm font-semibold">
-              2. Connect Bitkit
+              1. Connect Bitkit
             </Typography>
             <Typography as="p" className="text-sm text-muted-foreground">
               Approve payment setup in Bitkit to receive bitcoin.
@@ -556,7 +488,7 @@ export function MarketplaceGetPaidSettings({ locksConnect, onSaved }: Marketplac
                 {paykitSetupProblem === 'mismatch'
                   ? paykitMismatchMessage(currentUserPubky)
                   : paykitSetupProblem === 'unconfirmed'
-                    ? paykitUnconfirmedMessage(step1Connected)
+                    ? PAYKIT_UNCONFIRMED_COPY
                     : offerBitcoinReconnect
                       ? PAYKIT_SETUP_FAILED_COPY
                       : 'Bitkit setup failed. Try again.'}
@@ -594,7 +526,7 @@ export function MarketplaceGetPaidSettings({ locksConnect, onSaved }: Marketplac
         <div className="grid gap-6 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
           <div>
             <Typography as="label" htmlFor="get-paid-bitcoin" className="block text-sm font-semibold">
-              3. Accept bitcoin
+              2. Accept bitcoin
             </Typography>
             <Typography as="p" className="text-sm text-muted-foreground">
               Offer bitcoin payment option at checkout.
@@ -611,17 +543,13 @@ export function MarketplaceGetPaidSettings({ locksConnect, onSaved }: Marketplac
                   <Button variant="link" className="h-auto p-0" onClick={() => void refreshPaymentConfig()}>
                     Check again
                   </Button>
-                ) : bitcoinToggleBlocker === 'bitkit' ? (
+                ) : (
                   <Button
                     variant="link"
                     className="h-auto p-0"
                     disabled={!currentUserPubky}
                     onClick={() => openPaykitSetup('setup')}
                   >
-                    Connect now
-                  </Button>
-                ) : (
-                  <Button variant="link" className="h-auto p-0" disabled={isExchanging} onClick={openConnect}>
                     Connect now
                   </Button>
                 )}
@@ -657,16 +585,7 @@ export function MarketplaceGetPaidSettings({ locksConnect, onSaved }: Marketplac
                 <Typography as="p" className="text-sm text-muted-foreground">
                   Bitkit keeps your spending keys private and shares a watch-only account with Paykit to generate
                   payment addresses. Payments go directly to your wallet through private payment requests, without
-                  exposing your identity secret to Shop.{' '}
-                  <a
-                    href={getLocksUrl()}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="underline underline-offset-4"
-                  >
-                    Locks Server
-                  </a>{' '}
-                  handles secure delivery.
+                  exposing your identity secret to Shop.
                   {payments.accountClaimed !== true &&
                     (payments.accountClaimed === null
                       ? ' Your wallet status is currently unavailable.'
@@ -714,54 +633,6 @@ export function MarketplaceGetPaidSettings({ locksConnect, onSaved }: Marketplac
         </MethodCard>
       )}
 
-      <Dialog
-        open={Boolean(connectOpen)}
-        onOpenChange={(open) => {
-          if (open) openConnect();
-          else closeConnect?.();
-        }}
-      >
-        <DialogContent className="w-full max-w-lg overflow-hidden" centered>
-          <DialogHeader>
-            <DialogTitle>Connect Lock Server</DialogTitle>
-          </DialogHeader>
-          <Typography as="p" className="text-sm text-muted-foreground">
-            Scan with Pubky Ring to enable secure delivery. Bitkit works only if this page shows a Bitkit sign-in.
-          </Typography>
-          {connectUrl && (
-            <iframe
-              ref={setConnectIframe}
-              key={connectUrl}
-              src={connectUrl}
-              title="Connect Lock Server"
-              sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-top-navigation-to-custom-protocols"
-              referrerPolicy="no-referrer"
-              className="h-[min(22rem,45vh)] w-full rounded-lg border bg-popover"
-            />
-          )}
-          {locksError && (
-            <div role="alert" className="grid gap-3 rounded-md border border-amber-500/40 p-3 text-sm">
-              <Typography as="p">{locksError}</Typography>
-              <Button variant="secondary" className="w-fit rounded-full" onClick={openConnect}>
-                <RefreshCw className="size-4" />
-                Retry
-              </Button>
-            </div>
-          )}
-          {isExchanging && (
-            <div className="flex items-center gap-2 text-sm text-muted-foreground" aria-live="polite">
-              <Loader2 className="size-4 animate-spin" />
-              Confirming your Lock Server connection…
-            </div>
-          )}
-          <DialogFooter>
-            <Button variant="secondary" className="rounded-full" onClick={() => closeConnect?.()}>
-              Cancel
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
       <Dialog open={paykitSetupOpen} onOpenChange={(open) => (open ? setPaykitSetupOpen(true) : closePaykitSetup())}>
         <DialogContent className="w-full max-w-lg" centered>
           <DialogHeader>
@@ -785,7 +656,7 @@ export function MarketplaceGetPaidSettings({ locksConnect, onSaved }: Marketplac
                   : paykitSetupStatus === 'mismatch'
                     ? paykitMismatchMessage(currentUserPubky)
                     : paykitSetupStatus === 'unconfirmed'
-                      ? paykitUnconfirmedMessage(step1Connected)
+                      ? PAYKIT_UNCONFIRMED_COPY
                       : paykitSetupStatus === 'verifying'
                         ? paykitSetupMode === 'reconnect'
                           ? 'Confirming your USDT address…'

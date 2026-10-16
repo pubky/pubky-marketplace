@@ -1,6 +1,6 @@
 # USDT payments (flagged, default off)
 
-The Shop can carry USDT (USDT0 on Arbitrum One) as a payment method beside Bitcoin and PayPal. It ships behind one flag and is off by default: with the flag off the Shop's behaviour for Bitcoin and PayPal is unchanged and nothing USDT-shaped is rendered.
+The Shop can carry USDT (USDT0 on Arbitrum One) as an asset a buyer can pay with in Bitkit, through the single "Pay with Paykit" checkout entry beside PayPal (decision PK1, below). It ships behind one flag and is off by default: with the flag off the Shop's behaviour for Bitcoin and PayPal is unchanged and nothing USDT-shaped is rendered.
 
 ## The flag
 
@@ -9,9 +9,9 @@ The Shop can carry USDT (USDT0 on Arbitrum One) as a payment method beside Bitco
 | Shop runtime config           | `PUBKY_RUNTIME_USDT_PAYMENTS_ENABLED` (`usdtPaymentsEnabled`) | `false` | The Shop may offer USDT                                                     |
 | Marketplace service `/health` | `usdt_payments: { available: true }`                          | absent  | The service has USDT on; absent when its own `USDT_PAYMENTS_ENABLED` is off |
 
-The service is authoritative. A new USDT offer needs both: the Shop flag on AND `/health` reporting `usdt_payments.available`. `useUsdtPaymentsAvailable()` (via `CommerceController.fetchUsdtPaymentsAvailable`) is the one gate. It is false while loading and after a failed read, and with the Shop flag off it never calls `/health`.
+The service is authoritative. A new USDT offer needs both: the Shop flag on AND `/health` reporting `usdt_payments.available`. `useUsdtPaymentsCapability()` (via `CommerceController.fetchUsdtPaymentsAvailable`) is the one gate; USDT is offered only when its status is `available`. It is not available while loading and after a failed read, and with the Shop flag off it never calls `/health`.
 
-The gate covers new offers only. An order that already carries `payment_method: "usdt"` is always parsed and displayed, so it never shows as Bitcoin and never strands money after a flag flip.
+The gate covers new offers only. An order that already carries `payment_asset: "USDT"` (or the legacy `payment_method: "usdt"`) is always parsed and displayed, so it never shows as Bitcoin and never strands money after a flag flip.
 
 The flag does not cover the Locks path. Once locks#75 and a `[usdt]` Paykit config are deployed, a Locks invoice for a USD-priced locked listing offers USDT to every buyer of a seller who approved a USDT address, whatever this flag says: the invoice offers every approved option and neither the service nor the Shop shapes it. The flag only controls whether the Shop mentions USDT on that path. A `locked` settlement can also carry a USDT payment after locks#75, and the Shop will not know the rail, so a locked receipt must not be labelled "Bitcoin".
 
@@ -19,7 +19,7 @@ The flag does not cover the Locks path. Once locks#75 and a `[usdt]` Paykit conf
 
 `src/libs/commerce/payment-options.ts` separates the buyer-facing method label from what the buyer sends and where it settles:
 
-- Method label (`PaymentMethodKind`, wire `payment_method`): `bitcoin`, `usdt`, `paypal`, `stripe`.
+- Method label (`PaymentMethodKind`, wire `payment_method`): `paykit`, `paypal`, and the legacy Paykit binds `bitcoin` and `usdt` that orders placed before PK1 still carry (`stripe` is read as unbound).
 - Asset: `BTC`, `USDT` (fiat methods carry none; the asset is the order's own currency).
 - Network: `bitcoin`, `arbitrum-one`.
 - Settlement mode: `locked` (Lock Server entitlement) or a service-verified mode: `paykit`, `gateway-notified`, `processor`, `seller-attested`.
@@ -32,7 +32,7 @@ Listings are priced in the studio's listing currencies (USD, EUR, CHF, GBP, JPY,
 ## Gated surfaces
 
 - The seller's "How you get paid" settings render a USDT card (below) when `useUsdtPaymentsCapability()` reports `available`, or `unreadable` (the Shop flag is on but `/health` could not be read), in which case the card says USDT can't be checked right now instead of disappearing. With the Shop flag off, or `/health` answering without the key, there is no card.
-- `availablePaymentMethods(config, { usdtPaymentsAvailable })` offers `usdt` only when the gate is on AND the seller's public config carries `usdtAvailable: true`. Callers that omit the option get today's result.
+- `availablePaymentMethods(config, { usdtPaymentsAvailable })` offers `paykit` (then `paypal`) and `sellerPaykitAssets(config, { usdtPaymentsAvailable })` names its assets: USDT only when the gate is on AND the seller's public config carries `usdtAvailable: true` (or lists `USDT` in `acceptedAssets`). Callers that omit the option get Bitcoin only.
 - `getUsdtPaymentsEnabled()` (`@/config/commerce`) reads the runtime flag.
 - The `/health` capability read sits beside `getDigitalDeliveryCapability` in `MarketplaceGatewayService`.
 
@@ -84,6 +84,8 @@ The address check is `0x` + 40 hex; a mixed-case address must carry a valid EIP-
 
 Both parties get a "Look up address on Arbiscan" link beside the confirmed address (the panels, the seller's resolve panel and the Record refund dialog), and the order card's recorded-refund line adds "Look up transaction on Arbiscan" for the recorded hash (UX audit P6). They are plain links to `https://arbiscan.io/tx/<hash>` and `/address/<address>`, worded as a lookup: the Shop never checks the transfer and never calls it verified. A recorded reference that is not exactly `0x` plus 64 hex characters gets no link, because it comes from the seller and never becomes part of a URL (`src/libs/commerce/arbiscan.ts`).
 
+A USDT payment on an order priced in satoshis or BTC (one Paykit request carries USDT for every currency the service converts, with the rate fixed at prepare) is refunded in USDT0, not in the order's currency: the refund form starts at the whole amount paid (`payment_amount_minor`), accepts up to six decimals, and the service records `external_refund.amount_minor` in millionths, capped at the amount paid (`usdtRefundCap`, `formatUsdtRefundAmount`). A USD order keeps cents at parity. A return request in order units has no exact USDT figure, so the seller is asked to send the whole amount paid.
+
 The "send it back to the address I paid from" choice appears only when the order projection carries an optional `payment_address`. The service does not send it today (paykit-server's status exposes no payer address), so the buyer enters an address.
 
 ## Resolving a USDT payment in manual review (W5)
@@ -104,34 +106,39 @@ The panel shows the order total beside its parity USDT amount ("$137.00 · 137.0
 
 The contract is pinned in `src/libs/commerce/usdt-payment-review.ts`, with wire fixtures in `src/test/fixtures/commerce/usdt-payment-review.wire.ts`. Until S6 merges they are hand-written from its PR; replace them with captures then.
 
+## Sellers who accept USDT but not Bitcoin
+
+One Paykit request pays such a seller too, so the default storefront (`shop.json`, which Bitkit needs to make a seller the buyer's contact) is published when the payment configuration has `bitcoinEnabled` or `usdtEnabled`, on save and on load (`CommerceController.putMyPaymentConfig` and `getMyPaymentConfig`).
+
 ## Deploy order
 
 The Shop that accepts `usdt` in its order projection must be deployed before the service's USDT flag is ever turned on: an older Shop rejects an unknown `payment_method` and breaks the order page.
 
 ## Checkout, status and refusals (W3)
 
-### Checkout
+### One Paykit entry (decision PK1)
 
-USDT is its own picker option, never a merged "Bitcoin or USDT" entry. It appears at cart, drop and offer checkout only when all of these hold:
+The checkout offers ONE "Pay with Paykit" entry beside PayPal, never separate Bitcoin and USDT entries. The buyer picks Bitcoin or USDT in Bitkit; one Paykit request carries every asset the seller accepts. The note under the picker says "Pay in Bitkit (Bitcoin or USDT)" when the gate is on and every seller in the cart takes USDT, and "Pay in Bitkit (Bitcoin)" otherwise (`paykitAwaitingTitle`, `src/libs/commerce/paykit-rail.ts`). A Locks checkout always says Bitcoin, and the sandbox, which binds no real rail, shows no note and never reads the USDT capability. The seller's "Accept USDT" toggle stays the seller's consent: the service turns it into the assets the request offers.
 
-- the gate is on (`useUsdtPaymentsAvailable`), and a sandbox checkout never reads it;
-- every seller's public config says `usdtAvailable: true` (a multi-seller cart offers only options all sellers offer);
-- every total is `USD/2`. USDT is quoted at exact parity, so one cent is 10,000 millionths and nothing rounds. A Bitcoin-priced cart never offers it.
+- The bind sends `{ method: 'paykit' }` (cart, drop, offer and the order page's picker, "Continue with Paykit"). Before payment the order shows a neutral state: "Pay in Bitkit (Bitcoin or USDT)" with "Approve in Bitkit within 15 minutes." and, when USDT is on offer, the Bitkit USDT hint and the finality expectation ("If you pay in USDT, the seller ships once Arbitrum finalizes your payment, usually within minutes.").
+- The assets named come from the seller configs (`accepted_assets`, else `bitcoinAvailable` / `usdtAvailable`) at checkout and from the order's own `accepted_assets` once bound; an order that carries none was bound before the service reported them and means Bitcoin only. A multi-seller cart names only the assets every seller accepts and, when a seller who does not take USDT keeps it off, says who (`usdtMissingOptionExplanation`).
+- USDT is no longer limited to USD totals at the picker. The service fixes one rate at prepare for a Bitcoin-priced or other-currency cart, so the Shop does not guess. The USDT figure it can state exactly, a USD total at parity, appears as "12.000000 USDT · USDT0 on Arbitrum One if you pay in USDT". The indicative bitcoin estimate stays while Bitcoin is on offer.
+- After payment everything follows the rail the buyer ACTUALLY paid on. `observedPaymentRail` reads `payment_asset` (`BTC` or `USDT`, null until a payment is seen), and falls back to the legacy `payment_method` (`bitcoin` or `usdt`) for orders placed before PK1. Every rail-keyed table below (`bitcoin-buyer-status.ts`, `usdt-buyer-status.ts`, the refund and review copy) is reached through that one function; nothing is duplicated. A `paykit` order whose Bitcoin request is already seen (`detected`, `awaiting_seller_confirmation`, `confirmed`) follows the Bitcoin tables before `payment_asset` is recorded.
+- A payment seen on both rails, or any review the service cannot attribute to a rail, shows the generic review copy, and the seller resolves it with the neutral "Resolve payment review" form.
+- A bind refusal for `paykit` reads in Paykit terms, never "Bitcoin" or "USDT" (`PAYKIT_PAYMENT_METHOD_REASON_MESSAGES`).
 
-The bind sends `{ method: 'usdt' }`. Once USDT is chosen the summary shows "25.000000 USDT · USDT0 on Arbitrum One · pay with Bitkit" and "Pay with a Bitkit version that supports USDT.", and the indicative bitcoin estimate is hidden. There is no pre-check of the buyer's wallet: a missing Paykit wallet is the existing refusal, read in USDT copy.
+Deploy order: the service that accepts the `paykit` bind goes first; this Shop merges after it. Orders already bound as `bitcoin` or `usdt` keep rendering unchanged.
 
-Two more lines can follow it (UX audit P3 and P13):
+Two more lines can follow the Paykit note (UX audit P3 and P13):
 
-- Any cart with a shipped or pickup line adds "The seller ships once Arbitrum finalizes your payment, usually within minutes." A cart whose lines are all digital omits it, because a service-sealed digital line releases at inclusion.
+- When USDT is on offer, any cart with a shipped or pickup line adds the finality expectation above. A cart whose lines are all digital omits it, because a service-sealed digital line releases at inclusion.
 - A cart with more than one seller adds "You'll approve one request per seller in Bitkit.", because the bind sends one Paykit request per seller.
 
-An unbound order's method picker (the status card) offers "Continue with USDT" under the same rules.
-
-Once the request is bound, the order page's pay panel (`BuyerUsdtPaymentProgress`) adds "Approve in Bitkit within 15 minutes." under the "Pay by" line (UX audit P4). Paykit gives the buyer half the payment window, counted from activation, to approve the request (plan §2.4, D4), which is 15 minutes for the default 1,800 s window; the order carries no accept-by of its own, so `USDT_ACCEPT_BY_MINUTES` pins the default and must change with `USDT_PAYMENT_WINDOW_SECONDS`. It needs a Paykit that has the half-window accept-by (paykit-server #67, on `master`, in no deployed Paykit as of 12 Oct 2026), and it is hidden once the wallet delivery failed. The same panel repeats the finality line above for non-digital orders. The checkout itself never shows an accept-by line, because the window starts at activation.
+Once the request is bound, the order page's neutral Paykit panel (`BuyerPaykitPaymentProgress`) shows the same accept-by line; a USDT-observed order's pay panel (`BuyerUsdtPaymentProgress`) adds "Approve in Bitkit within 15 minutes." under the "Pay by" line (UX audit P4). Paykit gives the buyer half the payment window, counted from activation, to approve the request (plan §2.4, D4), which is 15 minutes for the default 1,800 s window; the order carries no accept-by of its own, so `USDT_ACCEPT_BY_MINUTES` pins the default and must change with `USDT_PAYMENT_WINDOW_SECONDS`. It needs a Paykit that has the half-window accept-by (paykit-server #67, on `master`, in no deployed Paykit as of 12 Oct 2026), and it is hidden once the wallet delivery failed. The same panel repeats the finality line above for non-digital orders. The checkout itself never shows an accept-by line, because the window starts at activation.
 
 ### Order status
 
-Everything below renders whenever an order carries `payment_method: "usdt"`, whatever the flag says. It lives in `usdt-buyer-status.ts` as its own rail-keyed table; the Bitcoin tables are untouched and a USDT order that carries a Paykit request state is never read as a Bitcoin order.
+Everything below renders whenever an order's observed rail is USDT (`payment_asset: "USDT"`, or the legacy `payment_method: "usdt"`), whatever the flag says. It lives in `usdt-buyer-status.ts` as its own rail-keyed table; the Bitcoin tables are untouched and a USDT order that carries a Paykit request state is never read as a Bitcoin order.
 
 | Phase                                                      | Buyer                                                                            | Seller                                                                                       |
 | ---------------------------------------------------------- | -------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
@@ -159,22 +166,19 @@ A Locks-verified (`locked`) receipt carries no payment method, so it is never la
 
 Until a USDT payment is `final`, Add tracking, the shipping label's "Mark shipped", Mark ready for pickup and the pickup handover are disabled, and the seller sees "Wait to ship: this USDT payment isn't final on Arbitrum yet. This usually takes a few minutes." A refusal from the service shows the same copy. Service-sealed digital orders release at inclusion and are never gated.
 
-### Why USDT can be missing from checkout
+### Why the Paykit entry may not say USDT
 
-When USDT is missing for a reason the buyer could not see, a muted line under the picker says why (UX audit P5, `usdtMissingOptionExplanation`): "USDT isn't available for this cart: Brass desk lamp is priced in bitcoin." and/or "Film Camera Supply doesn't accept USDT." (joined with a semicolon when both apply). It shows only when the gate is open and at least one seller in the cart takes USDT, so a cart whose sellers never offered USDT stays silent, and never in the sandbox, on a Locks checkout, or after the service refused USDT (that has its own copy). It explains only the two checks above; the picker is unchanged. The order page's method picker has no such line.
+When a seller in a multi-seller cart does not take USDT, a muted line under the picker says why (UX audit P5, `usdtMissingOptionExplanation`): "USDT isn't available for this cart: Film Camera Supply doesn't accept USDT." It shows only when the gate is open and at least one seller in the cart takes USDT, so a cart whose sellers never offered USDT stays silent, and never in the sandbox or on a Locks checkout. The order page's method picker has no such line.
 
 ### Refusals
 
-| Reason                                                                                | Copy                                                                                                                  |
-| ------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
-| `usdt_unavailable`                                                                    | USDT payments aren't available right now. Choose another payment method.                                              |
-| `usdt_seller_not_ready`                                                               | This seller can't take USDT right now. Choose another payment method, or contact the seller.                          |
-| `buyer_usdt_wallet_required` (reserved)                                               | Your wallet doesn't support USDT yet. Pay with a Bitkit version that supports USDT, or choose another payment method. |
-| `buyer_paykit_wallet_required`, `paykit_*`, `seller_account_unclaimed` on a USDT bind | The existing Bitcoin string with "USDT" for "Bitcoin" (`USDT_PAYMENT_METHOD_REASON_MESSAGES`)                         |
+| Reason                                                                                    | Copy                                                                                                                               |
+| ----------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `buyer_paykit_wallet_required`, `paykit_*`, `seller_account_unclaimed` on a `paykit` bind | The Bitcoin string with "Paykit" for "Bitcoin" (`PAYKIT_PAYMENT_METHOD_REASON_MESSAGES`)                                           |
+| `seller_setup_pending` on a `paykit` bind                                                 | This seller's Paykit setup isn't finished, so they can't take a payment yet. Choose another payment method, or contact the seller. |
+| `usdt_unavailable`, `usdt_seller_not_ready`, `buyer_usdt_wallet_required` (reserved)      | Static USDT copy in the main table, for a service that still answers with them                                                     |
 
-A bind for `usdt` tags its refusal with `context.paymentMethod: "usdt"` so the toast picks the USDT string; a Bitcoin or PayPal refusal is unchanged. `buyer_usdt_wallet_required` is reserved until Paykit types it.
-
-**After a refusal, USDT is no longer offered.** `usdt_unavailable` and `usdt_seller_not_ready` mean the same bind would be refused again (before S4, every USDT bind is). When a bind fails with either one, the Shop remembers it for the seller set of that checkout (`CommerceController.rememberUsdtRefusal`, `usdtRefusals` in the commerce store). The checkout picker and the order page's "Continue with USDT" then stop offering USDT, the next shared rail is selected, and the refusal toast has been shown once. If USDT was the only rail, the checkout says why instead of blaming the seller's setup. The memory is per browser session: a reload clears it, and a different seller set has its own key. Other USDT refusals (`buyer_usdt_wallet_required`, `paykit_*`, `seller_account_unclaimed`) don't count: a retry or the buyer's own action can fix them.
+A `paykit` bind tags its refusal with `context.paymentMethod: "paykit"` so the toast picks the Paykit string; a legacy Bitcoin or PayPal refusal is unchanged. The USDT refusal memory (`usdtRefusals`) is gone: nothing binds `usdt` any more, so there is no repeated refusal to remember.
 
 ### Not in W3
 

@@ -20,7 +20,7 @@ describe('Locks SDK server-render isolation', () => {
     await import('./locks');
     await import('@/application/commerce/commerce');
     await import('@/controllers/commerce/commerce');
-    await import('@/hooks/useMarketplaceLocksConnect/useMarketplaceLocksConnect');
+    await import('@/hooks/useMarketplaceLocksPayment/useMarketplaceLocksPayment');
     await import('@/organisms/Marketplace/MarketplacePaymentStatusCard');
 
     expect(sdkModuleEvaluated).not.toHaveBeenCalled();
