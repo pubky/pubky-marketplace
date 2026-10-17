@@ -7,6 +7,7 @@ import {
   Github2,
   LineHorizontal,
   MarkdownMark,
+  PaypalIcon,
   PubkyIcon,
   RoundedCorner,
   Synonym,
@@ -521,6 +522,30 @@ describe('Custom Icons', () => {
       expect(paths.length).toBe(2);
       expect(paths[0]).toHaveAttribute('fill', '#53ae94');
       expect(paths[1]).toHaveAttribute('fill', '#fff');
+    });
+  });
+
+  describe('PaypalIcon', () => {
+    it('should render correctly with default props', () => {
+      const { container } = render(<PaypalIcon />);
+      const svg = container.querySelector('svg');
+
+      expect(svg).toBeInTheDocument();
+      expect(svg).toHaveAttribute('width', '24');
+      expect(svg).toHaveAttribute('height', '24');
+      expect(svg).toHaveAttribute('viewBox', '0 0 24 24');
+      expect(svg).toHaveAttribute('fill', 'currentColor');
+    });
+
+    it('should apply custom size, className and additional props', () => {
+      const { container } = render(<PaypalIcon size={12} className="custom-class" data-testid="paypal-icon" />);
+      const svg = container.querySelector('svg');
+
+      expect(svg).toHaveAttribute('width', '12');
+      expect(svg).toHaveAttribute('height', '12');
+      expect(svg).toHaveClass('custom-class');
+      expect(svg).toHaveAttribute('data-testid', 'paypal-icon');
+      expect(container.querySelectorAll('path')).toHaveLength(1);
     });
   });
 

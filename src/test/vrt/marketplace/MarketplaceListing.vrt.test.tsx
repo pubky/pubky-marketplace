@@ -229,6 +229,7 @@ const view = vi.hoisted(() => ({
     award?: { state: string } | null;
   }>,
   sessionPubky: null as string | null,
+  paymentBadges: [] as Array<'bitcoin' | 'usdt' | 'paypal'>,
 }));
 
 vi.mock('next/navigation', () => ({
@@ -301,6 +302,7 @@ vi.mock('@/controllers/commerce/commerce', () => ({
     fetchSellerReputation: () => Promise.resolve(view.reputation),
     fetchSellerReviews: () => Promise.resolve({ status: 'unavailable' }),
     fetchListingReviews: () => Promise.resolve({ status: 'unavailable' }),
+    fetchSellerPaymentBadges: () => Promise.resolve(view.paymentBadges),
   },
 }));
 
@@ -421,6 +423,7 @@ async function setView(overrides: Partial<typeof view>) {
   view.orders = [];
   view.offers = [];
   view.sessionPubky = null;
+  view.paymentBadges = [];
   Object.assign(view, overrides);
 }
 
@@ -537,6 +540,38 @@ describe('Marketplace listing detail — visual regression', () => {
       'listing-sold-out-mobile',
       VRT_DENSE_CHROME_SCREENSHOT,
     );
+  });
+
+  it("renders the seller's accepted payment methods at desktop viewport", async () => {
+    const { seller, fixedPriceListing, fixedPriceProjection } = await fixtures;
+    await setView({
+      listing: fixedPriceListing,
+      adapterMode: 'transaction-service',
+      projection: fixedPriceProjection,
+      paymentBadges: ['bitcoin', 'usdt', 'paypal'],
+    });
+
+    const screen = await renderForVRT(<MarketplaceListing sellerPubky={seller} listingId="boots_01" />, {
+      viewport: VRT_VIEWPORT_DESKTOP,
+    });
+    await expect.element(screen.getByRole('list', { name: 'Accepted payment methods' })).toBeVisible();
+    await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('listing-payment-methods-desktop');
+  });
+
+  it('renders a PayPal-only seller at mobile viewport', async () => {
+    const { seller, fixedPriceListing, fixedPriceProjection } = await fixtures;
+    await setView({
+      listing: fixedPriceListing,
+      adapterMode: 'transaction-service',
+      projection: fixedPriceProjection,
+      paymentBadges: ['paypal'],
+    });
+
+    const screen = await renderForVRT(<MarketplaceListing sellerPubky={seller} listingId="boots_01" />, {
+      viewport: VRT_VIEWPORT_MOBILE,
+    });
+    await expect.element(screen.getByRole('list', { name: 'Accepted payment methods' })).toBeVisible();
+    await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('listing-payment-methods-paypal-mobile');
   });
 
   it('renders an auction listing with live bid state at desktop viewport', async () => {

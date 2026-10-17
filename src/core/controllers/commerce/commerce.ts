@@ -27,6 +27,7 @@ import {
 } from '@/libs/commerce/digital';
 import { parseListingAggregateId } from '@/libs/commerce/listing-aggregate';
 import type { CommerceDigitalLock, CommerceShopRecord } from '@/libs/commerce/marketplace-records';
+import { resolveSellerPaymentBadges, type SellerPaymentBadge } from '@/libs/commerce/payment-badges';
 import type { BindDeliveryAddress, PaymentMethodKind } from '@/libs/commerce/payment-methods';
 import { resolveCheckoutFulfillment } from '@/libs/commerce/pickup';
 import type { CommerceDeliveryAddressValue } from '@/libs/commerce/postal-address';
@@ -774,6 +775,25 @@ export class CommerceController {
   /** A seller's publicly visible payment rails (bitcoin/usdt/paypal). */
   static async getSellerPaymentConfig(sellerPubky: unknown) {
     return await CommerceApplication.getSellerPaymentConfig(CommerceRecordNormalizer.pubky(sellerPubky));
+  }
+
+  /**
+   * The payment badges a buyer sees for this seller, resolved against the
+   * set last shown this session so a degraded Paykit read holds a badge
+   * instead of flickering it off. A failed read leaves the remembered set
+   * untouched and returns it (null when nothing was ever resolved).
+   */
+  static async fetchSellerPaymentBadges(sellerPubky: unknown): Promise<SellerPaymentBadge[] | null> {
+    const pubky = CommerceRecordNormalizer.pubky(sellerPubky);
+    const [config, usdtPaymentsAvailable] = await Promise.all([
+      CommerceApplication.getSellerPaymentConfig(pubky).catch(() => null),
+      CommerceApplication.fetchUsdtPaymentsAvailable().catch(() => null),
+    ]);
+    const previous = useCommerceStore.getState().sellerPaymentBadges[pubky];
+    if (!config) return previous ?? null;
+    const badges = resolveSellerPaymentBadges(config, { usdtPaymentsAvailable, previous });
+    useCommerceStore.getState().setSellerPaymentBadges(pubky, badges);
+    return badges;
   }
 
   /** Whether the buyer's Paykit wallet can receive a Bitcoin payment request from the Shop. */
