@@ -1327,15 +1327,13 @@ describe('MarketplaceListing', () => {
         bidCount: 4,
       },
     });
-    view.projectionError = 'This listing could not be prepared for checkout. It may have been removed by the seller.';
+    view.projectionError = "This listing isn't available for checkout right now.";
 
     renderListing();
 
     expect(screen.getByRole('button', { name: 'Auction ended' })).toBeDisabled();
     expect(screen.getByRole('alert')).toHaveTextContent('This auction is no longer open for bidding.');
-    expect(
-      screen.queryByText('This listing could not be prepared for checkout. It may have been removed by the seller.'),
-    ).not.toBeInTheDocument();
+    expect(screen.queryByText("This listing isn't available for checkout right now.")).not.toBeInTheDocument();
   });
 
   it('shows Unlimited on a digital-only variant instead of the quantity cap', () => {

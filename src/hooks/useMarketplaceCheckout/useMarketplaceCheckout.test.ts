@@ -361,7 +361,7 @@ describe('useMarketplaceCheckout', () => {
     expect(clear).not.toHaveBeenCalled();
     const { toast } = await import('@/molecules/Toaster/use-toast');
     expect(vi.mocked(toast)).toHaveBeenCalledWith(
-      expect.objectContaining({ description: expect.stringContaining('could not be prepared for checkout') }),
+      expect.objectContaining({ description: expect.stringContaining("isn't available for checkout right now") }),
     );
   });
 
