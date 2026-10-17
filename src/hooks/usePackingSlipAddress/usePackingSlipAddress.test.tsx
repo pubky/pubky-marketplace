@@ -86,7 +86,7 @@ describe('usePackingSlipAddress', () => {
     );
     await waitFor(() => expect(result.current.deliveryAddress.status).toBe('ready'));
 
-    rerender({ polled: createOrderFixture('shipped') });
+    rerender({ polled: { ...order, state: 'shipped' } });
 
     expect(result.current.deliveryAddress).toEqual({ status: 'idle' });
   });
