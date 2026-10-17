@@ -84,6 +84,12 @@ import {
   paykitAppRegistryUrl,
   paykitReaderAuthorizationUrl,
 } from '@/libs/commerce/paykit-wallet';
+import {
+  PAYMENT_METHOD_DISCOVERY_CONCURRENCY,
+  PAYMENT_METHOD_SELLERS_MAX_PAGES,
+  type PaymentMethodFilter,
+  type PaymentMethodSellersPage,
+} from '@/libs/commerce/payment-method-filter';
 import type { BindDeliveryAddress, PaymentMethodKind, SellerPaymentConfig } from '@/libs/commerce/payment-methods';
 import {
   type MarketplaceCheckoutFulfillmentLine,
@@ -240,6 +246,8 @@ export interface CommerceCatalogStreamFilters {
   endingSoonest?: boolean;
   /** Seller-declared item location: ISO-3166-1 alpha-2 country code. */
   country?: string;
+  /** One seller's listings only (Nexus `seller_id`). */
+  sellerId?: string;
 }
 
 /**
@@ -2929,10 +2937,45 @@ export class CommerceApplication {
       ...(filters.condition ? { condition: filters.condition } : {}),
       ...(filters.endingSoonest ? { sorting: 'ends_at' as const, order: 'ascending' as const } : {}),
       ...(filters.country ? { country: filters.country } : {}),
+      ...(filters.sellerId ? { seller_id: filters.sellerId } : {}),
     });
     const entries = CommerceRecordNormalizer.nexusListingStream(payload);
     await LocalCommerceService.bulkUpsertCatalogEntries(entries);
     await this.hydrateDiscoveredShops([...new Set(entries.map(({ seller_id }) => seller_id))]);
+  }
+
+  /**
+   * Every seller whose stored configuration has `method` enabled, read page
+   * by page from the service up to {@link PAYMENT_METHOD_SELLERS_MAX_PAGES}.
+   * Stored config, never Paykit health: a degraded Paykit drops nobody.
+   */
+  static async fetchPaymentMethodSellers(method: PaymentMethodFilter): Promise<string[]> {
+    const sellers: string[] = [];
+    let after: string | null = null;
+    for (let page = 0; page < PAYMENT_METHOD_SELLERS_MAX_PAGES; page++) {
+      const result: PaymentMethodSellersPage = await MarketplaceGatewayService.getPaymentMethodSellers(method, after);
+      sellers.push(...result.sellers);
+      if (!result.nextAfter) break;
+      after = result.nextAfter;
+    }
+    return sellers;
+  }
+
+  /**
+   * Widens discovery to the listings of these sellers: one Nexus
+   * `seller_id` stream page each, carrying the catalog's server-side
+   * filters, {@link PAYMENT_METHOD_DISCOVERY_CONCURRENCY} at a time. One
+   * unreachable seller does not stop the rest; the grid keeps rendering
+   * whatever is cached for them.
+   */
+  static async fetchSellerSetCatalogListings(
+    sellers: readonly string[],
+    filters: Omit<CommerceCatalogStreamFilters, 'sellerId'> = {},
+  ): Promise<void> {
+    for (let start = 0; start < sellers.length; start += PAYMENT_METHOD_DISCOVERY_CONCURRENCY) {
+      const batch = sellers.slice(start, start + PAYMENT_METHOD_DISCOVERY_CONCURRENCY);
+      await Promise.allSettled(batch.map((sellerId) => this.fetchCatalogListings({ ...filters, sellerId })));
+    }
   }
 
   /**
