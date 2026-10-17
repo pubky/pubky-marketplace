@@ -38,6 +38,15 @@ const EMPTY_BOOTSTRAP = {
   ids: { stream: [], influencers: [], recommended: [], hot_tags: [] },
 };
 
+// The listing seller's public rails exactly as `GET /v0/sellers/{pubky}/payment-config`
+// answers with `USDT_PAYMENTS_ENABLED` off: booleans only, never the PayPal email.
+// Bitcoin is enabled and Paykit-ready, PayPal has a stored merchant email.
+export const PUBLIC_PAYMENT_CONFIG = Object.freeze({
+  bitcoin_available: true,
+  bitcoin_offer_available: true,
+  paypal_available: true,
+});
+
 function localOrigin(value, label) {
   const url = new URL(value);
   assert(['localhost', '127.0.0.1', '[::1]'].includes(url.hostname), `${label} must use a loopback fixture`);
@@ -72,6 +81,7 @@ export async function installSyntheticLaunchFixture({ context, baseUrl, serviceU
   const serviceClientId = JSON.parse(parity).parity_request.cid;
   const publicListing = JSON.parse(listingFixture);
   const publicAvailabilityPath = `/v0/listings/${encodeURIComponent(publicListing.ownerPubky)}/${encodeURIComponent(publicListing.listingId)}/availability`;
+  const publicPaymentConfigPath = `/v0/sellers/${encodeURIComponent(publicListing.ownerPubky)}/payment-config`;
   const counters = {
     shopApprovals: 0,
     serviceApprovals: 0,
@@ -82,6 +92,7 @@ export async function installSyntheticLaunchFixture({ context, baseUrl, serviceU
     proofVerifications: 0,
     authorizedSellerListings: 0,
     publicAvailabilityReads: 0,
+    publicPaymentConfigReads: 0,
     authorizedOrderReads: 0,
     authorizedOfferReads: 0,
   };
@@ -433,6 +444,10 @@ export async function installSyntheticLaunchFixture({ context, baseUrl, serviceU
         }
         if (method === 'GET' && url.pathname.startsWith('/v0/drops/'))
           return await reply({ status: 404, json: { error: 'not_found' } });
+        if (method === 'GET' && url.pathname === publicPaymentConfigPath) {
+          counters.publicPaymentConfigReads += 1;
+          return await reply({ json: PUBLIC_PAYMENT_CONFIG });
+        }
         if (!serviceTokens.has(bearer)) return await reject('service_request_without_approved_bearer');
         if (
           method === 'GET' &&
@@ -518,6 +533,7 @@ export async function installSyntheticLaunchFixture({ context, baseUrl, serviceU
         'bootstrap-proof-uploaded-verified-deleted':
           counters.proofUploads > 0 && counters.proofVerifications > 0 && counters.proofDeletes > 0,
         'seller-listings-authorized': counters.authorizedSellerListings > 0,
+        'listing-payment-config-read': counters.publicPaymentConfigReads > 0,
         'no-unexpected-network-operations': violations.length === 0,
       };
       return {
