@@ -57,6 +57,40 @@ describe('usePackingSlipAddress', () => {
     await waitFor(() => expect(hook.result.current.deliveryAddress).toEqual(expected));
   });
 
+  it('opens the address once while polls hand down fresh copies of the same order', async () => {
+    const read = vi.spyOn(CommerceController, 'getMarketplaceOrder');
+    const open = vi
+      .spyOn(CommerceController, 'getOrderDeliveryAddress')
+      .mockResolvedValue({ kind: 'address', address: ADDRESS });
+    const { result, rerender } = renderHook(
+      ({ polled }: { polled: typeof order }) => usePackingSlipAddress({ order: polled, enabled: true }),
+      { initialProps: { polled: order } },
+    );
+    await waitFor(() => expect(result.current.deliveryAddress.status).toBe('ready'));
+
+    rerender({ polled: { ...order } });
+    rerender({ polled: { ...order, state: 'processing' } });
+    rerender({ polled: { ...order, lines: [...order.lines] } });
+
+    expect(result.current.deliveryAddress).toEqual({ status: 'ready', address: ADDRESS });
+    await waitFor(() => expect(result.current.deliveryAddress).toEqual({ status: 'ready', address: ADDRESS }));
+    expect(read).toHaveBeenCalledTimes(1);
+    expect(open).toHaveBeenCalledTimes(1);
+  });
+
+  it('drops the address when a poll shows the order is no longer awaiting shipment', async () => {
+    vi.spyOn(CommerceController, 'getOrderDeliveryAddress').mockResolvedValue({ kind: 'address', address: ADDRESS });
+    const { result, rerender } = renderHook(
+      ({ polled }: { polled: typeof order }) => usePackingSlipAddress({ order: polled, enabled: true }),
+      { initialProps: { polled: order } },
+    );
+    await waitFor(() => expect(result.current.deliveryAddress.status).toBe('ready'));
+
+    rerender({ polled: createOrderFixture('shipped') });
+
+    expect(result.current.deliveryAddress).toEqual({ status: 'idle' });
+  });
+
   it('reads nothing for an order the viewer did not sell', async () => {
     useAuthStore.setState({ currentUserPubky: 'z'.repeat(52) });
     const open = vi.spyOn(CommerceController, 'getOrderDeliveryAddress');
