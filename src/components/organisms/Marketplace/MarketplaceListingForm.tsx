@@ -1,6 +1,6 @@
 'use client';
 
-import { type ReactNode, useEffect, useRef, useState } from 'react';
+import { type DragEvent, type ReactNode, useEffect, useRef, useState } from 'react';
 import {
   ArrowDown,
   ArrowUp,
@@ -56,7 +56,10 @@ import type {
   ListingMediaItem,
   UseListingMediaManagerResult,
 } from '@/hooks/useListingMediaManager/useListingMediaManager';
-import { isListingMediaPublishReady } from '@/hooks/useListingMediaManager/useListingMediaManager';
+import {
+  isListingMediaPublishReady,
+  LISTING_PHOTO_MIME_TYPES,
+} from '@/hooks/useListingMediaManager/useListingMediaManager';
 import { useMarketplaceShippingPresets } from '@/hooks/useMarketplaceShippingPresets/useMarketplaceShippingPresets';
 import {
   presetToShippingFields,
@@ -89,6 +92,7 @@ import {
   weightUnitLabel,
 } from '@/libs/commerce/units';
 import { UNLIMITED_STOCK_LABEL } from '@/libs/commerce/unlimited-stock';
+import { cn } from '@/libs/utils/utils';
 import { ControlledInputField } from '@/molecules/ControlledInputField/ControlledInputField';
 import { ControlledTextareaField } from '@/molecules/ControlledTextareaField/ControlledTextareaField';
 import { ListingPublishGuardNotice } from '@/molecules/Marketplace/ListingPublishGuardNotice';
@@ -179,11 +183,13 @@ export function MarketplaceListingForm({
     error: pickerError,
     inputRef,
     onInputChange,
+    addFiles,
     choose,
     removeItem,
     moveItem,
     setAltText,
   } = media;
+  const photoDrop = usePhotoFileDrop(addFiles, !isPublishing);
   const fulfillment = useWatch({ control: form.control, name: CREATE_MARKETPLACE_LISTING_FIELDS.FULFILLMENT });
   const saleFormat = useWatch({ control: form.control, name: CREATE_MARKETPLACE_LISTING_FIELDS.SALE_FORMAT });
   const auctionDurations = getAuctionDurationsMinutes();
@@ -324,7 +330,7 @@ export function MarketplaceListingForm({
   });
   const mediaError =
     pickerError === 'invalid-type'
-      ? 'Choose image files only.'
+      ? 'Choose JPEG, PNG or WebP images.'
       : pickerError === 'too-large'
         ? 'An image is too large.'
         : pickerError === 'decode-failed'
@@ -489,6 +495,7 @@ export function MarketplaceListingForm({
           title="Photos"
           description={`Up to ${media.maxPhotos} photos. The first photo is the cover buyers see everywhere. Metadata is stripped before publication.`}
           complete={sectionStatuses['listing-section-photos']}
+          dropZone={photoDrop}
         >
           {mediaItems.length > 0 && (
             <ul className="flex flex-col gap-3" aria-label="Listing photos in display order">
@@ -520,7 +527,7 @@ export function MarketplaceListingForm({
           <input
             ref={inputRef}
             type="file"
-            accept="image/jpeg,image/png,image/webp"
+            accept={LISTING_PHOTO_MIME_TYPES.join(',')}
             multiple
             hidden
             onChange={onInputChange}
@@ -1208,18 +1215,63 @@ function MobileSectionStepper({
   );
 }
 
+function isFileDrag(event: DragEvent): boolean {
+  return event.dataTransfer?.types.includes('Files') ?? false;
+}
+
+/**
+ * Nested children fire their own dragenter/dragleave, so a depth count keeps
+ * the card highlighted until the pointer leaves it. File drags are
+ * preventDefault-ed even when drops are disabled so the browser never opens
+ * the dropped file.
+ */
+function usePhotoFileDrop(addFiles: (files: readonly File[]) => void, enabled: boolean) {
+  const [isDragOver, setIsDragOver] = useState(false);
+  const depth = useRef(0);
+
+  const handlers = {
+    onDragEnter: (event: DragEvent<HTMLDivElement>) => {
+      if (!isFileDrag(event)) return;
+      event.preventDefault();
+      depth.current += 1;
+      setIsDragOver(true);
+    },
+    onDragOver: (event: DragEvent<HTMLDivElement>) => {
+      if (!isFileDrag(event)) return;
+      event.preventDefault();
+      event.dataTransfer.dropEffect = enabled ? 'copy' : 'none';
+    },
+    onDragLeave: (event: DragEvent<HTMLDivElement>) => {
+      if (!isFileDrag(event)) return;
+      depth.current = Math.max(0, depth.current - 1);
+      if (depth.current === 0) setIsDragOver(false);
+    },
+    onDrop: (event: DragEvent<HTMLDivElement>) => {
+      if (!isFileDrag(event)) return;
+      event.preventDefault();
+      depth.current = 0;
+      setIsDragOver(false);
+      if (enabled) addFiles(Array.from(event.dataTransfer.files));
+    },
+  };
+
+  return { isDragOver: enabled && isDragOver, handlers };
+}
+
 function ListingFormSection({
   id,
   title,
   description,
   complete,
   children,
+  dropZone,
 }: {
   id: ListingFormSectionId;
   title: string;
   description: string;
   complete: boolean;
   children: ReactNode;
+  dropZone?: ReturnType<typeof usePhotoFileDrop>;
 }) {
   // Below lg, a jump also clears the sticky mobile step bar (about 104px).
   return (
@@ -1231,7 +1283,24 @@ function ListingFormSection({
       data-surface={id}
       className="scroll-mt-[calc(var(--header-offset-mobile)+8.5rem)] lg:scroll-mt-(--header-offset-main)"
     >
-      <Card className="rounded-md p-0 shadow-lg">
+      <Card
+        className={cn(
+          'rounded-md p-0 shadow-lg',
+          dropZone?.isDragOver && 'relative outline-2 outline-brand outline-dashed',
+        )}
+        data-drag-over={dropZone?.isDragOver || undefined}
+        {...dropZone?.handlers}
+      >
+        {dropZone?.isDragOver && (
+          <div
+            aria-hidden
+            className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-md bg-card/90"
+          >
+            <Typography as="p" size="sm" className="font-semibold text-brand">
+              Drop photos here
+            </Typography>
+          </div>
+        )}
         <CardContent className="grid gap-6 p-6">
           <div className="flex items-start justify-between gap-4">
             <div>
