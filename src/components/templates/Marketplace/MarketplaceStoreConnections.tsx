@@ -24,6 +24,7 @@ import {
 import { BackToMyShop } from '@/molecules/Marketplace/BackToMyShop';
 import { ContentLayout } from '@/organisms/ContentLayout/ContentLayout';
 import { MarketplaceConnectionStatusCheck } from '@/organisms/Marketplace/MarketplaceConnectionStatusCheck';
+import { MarketplaceConnectorListingLinks } from '@/organisms/Marketplace/MarketplaceConnectorListingLinks';
 import { MarketplaceConnectShopify } from '@/organisms/Marketplace/MarketplaceConnectShopify';
 import { MarketplaceConnectWooCommerce } from '@/organisms/Marketplace/MarketplaceConnectWooCommerce';
 import { MarketplaceSectionNav } from '@/organisms/Marketplace/MarketplaceSectionNav';
@@ -210,15 +211,22 @@ export function MarketplaceStoreConnections() {
         ) : (
           <>
             {connections.rows.length > 0 ? (
-              <MarketplaceStoreConnectionList
-                rows={connections.rows}
-                workingId={connections.workingId}
-                onDisconnect={connections.disconnect}
-                onVariantMode={connections.setVariantMode}
-                onReplaced={(connection) =>
-                  checkAndRefresh({ connectionId: connection.id, provider: connection.provider, attempts: 1 })
-                }
-              />
+              <>
+                <MarketplaceStoreConnectionList
+                  rows={connections.rows}
+                  workingId={connections.workingId}
+                  onDisconnect={connections.disconnect}
+                  onVariantMode={connections.setVariantMode}
+                  onReplaced={(connection) =>
+                    checkAndRefresh({ connectionId: connection.id, provider: connection.provider, attempts: 1 })
+                  }
+                />
+                {connections.rows
+                  .filter((row) => row.health.state !== 'disconnected')
+                  .map((row) => (
+                    <MarketplaceConnectorListingLinks key={row.connection.id} connection={row.connection} />
+                  ))}
+              </>
             ) : (
               <Card className="rounded-md p-0" data-testid="store-connections-empty">
                 <CardContent className="flex min-h-32 flex-col items-center justify-center gap-1 p-6 text-center">

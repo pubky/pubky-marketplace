@@ -69,4 +69,21 @@ describe('MarketplaceVariantPicker', () => {
 
     expect(onSelect).toHaveBeenCalledWith('size_s');
   });
+
+  it('shows a made-to-order size without a count and never sold out, even at zero in the record', async () => {
+    render(
+      <MarketplaceVariantPicker
+        record={record}
+        selectedVariantId="size_m"
+        onSelect={vi.fn()}
+        soldOutVariantIds={new Set()}
+        madeToOrderVariantIds={new Set(['size_l'])}
+      />,
+    );
+    await userEvent.click(screen.getByRole('combobox', { name: 'Choose listing variant' }));
+    const listbox = await screen.findByRole('listbox');
+    const made = within(listbox).getByRole('option', { name: 'L · Made to order' });
+    expect(made).not.toHaveAttribute('aria-disabled', 'true');
+    expect(within(listbox).getByRole('option', { name: 'S · 3 left' })).toBeInTheDocument();
+  });
 });

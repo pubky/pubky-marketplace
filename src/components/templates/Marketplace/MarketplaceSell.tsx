@@ -15,6 +15,7 @@ import { useCreateMarketplaceListing } from '@/hooks/useCreateMarketplaceListing
 import { CREATE_MARKETPLACE_LISTING_FIELDS } from '@/hooks/useCreateMarketplaceListing/useCreateMarketplaceListing.types';
 import { useMarketplaceSellingAccess } from '@/hooks/useMarketplaceSellingAccess/useMarketplaceSellingAccess';
 import { useSellerPaymentMethodGate } from '@/hooks/useSellerPaymentMethodGate/useSellerPaymentMethodGate';
+import { useStoreListingAutoLink } from '@/hooks/useStoreListingAutoLink/useStoreListingAutoLink';
 import { listingDraftResumePrompt, listingDraftTitleLabel } from '@/libs/commerce/listing-drafts';
 import { BackToMyShop } from '@/molecules/Marketplace/BackToMyShop';
 import { ListingComposerPaymentBanner } from '@/molecules/Marketplace/ListingComposerPaymentBanner';
@@ -77,6 +78,7 @@ function MarketplaceSellComposer() {
   const router = useRouter();
   const listing = useCreateMarketplaceListing();
   const paymentGate = useSellerPaymentMethodGate();
+  const storeLinks = useStoreListingAutoLink();
   const [isPublishing, setIsPublishing] = useState(false);
   const [publishAfterSession, setPublishAfterSession] = useState(false);
   const showPaymentBanner = paymentGate.isDurable && paymentGate.ready && paymentGate.reason === 'no-method';
@@ -87,6 +89,7 @@ function MarketplaceSellComposer() {
     try {
       const compositeId = await listing.submit();
       if (!compositeId) return false;
+      void storeLinks.run();
       const separator = compositeId.indexOf(':');
       const sellerPubky = compositeId.slice(0, separator);
       const listingId = compositeId.slice(separator + 1);

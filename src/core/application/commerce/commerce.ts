@@ -407,6 +407,7 @@ export type CommerceIndexedReviewsResult =
   | { status: 'unavailable' };
 
 type CommerceListingWithProjection = CommerceListingModelSchema & {
+  /** What a buyer can take now; `null` while unknown, and for made-to-order stock, which has no count. */
   purchasableQuantity: number | null;
 };
 
@@ -417,7 +418,7 @@ function applyInventoryProjection(
   const recordQuantity = listing.record.variants
     .filter(({ enabled }) => enabled)
     .reduce((total, variant) => total + variant.quantity, 0);
-  if (!projection || projection.listing_revision !== listing.revision) {
+  if (!projection || projection.listing_revision !== listing.revision || projection.made_to_order) {
     return { ...listing, purchasableQuantity: null };
   }
   return {

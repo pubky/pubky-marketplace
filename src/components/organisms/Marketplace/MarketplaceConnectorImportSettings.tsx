@@ -22,8 +22,10 @@ type MarketplaceConnectorImportSettingsProps = {
   /** The currency the store prices in; prices are not converted. */
   currency: string;
   productCount: number;
-  /** Variants whose stock the store does not track. */
+  /** Variants whose stock the store does not track and does not make to order. */
   untrackedVariants: number;
+  /** Variants the store sells without a stock limit (print-on-demand): always available on Pubky. */
+  madeToOrderVariants?: number;
   conditionOptions: readonly string[];
   /** `split`: every size or variant becomes its own listing. */
   variantMode: VariantMode;
@@ -61,6 +63,7 @@ export function MarketplaceConnectorImportSettings({
   currency,
   productCount,
   untrackedVariants,
+  madeToOrderVariants = 0,
   conditionOptions,
   variantMode,
   busy,
@@ -257,6 +260,14 @@ export function MarketplaceConnectorImportSettings({
                 </div>
               )}
             />
+
+            {madeToOrderVariants > 0 && (
+              <Typography as="p" className="text-sm text-muted-foreground" data-testid="connector-import-made-to-order">
+                {madeToOrderVariants} {madeToOrderVariants === 1 ? 'variant is' : 'variants are'} made to order in your
+                store (for example print-on-demand). On Pubky {madeToOrderVariants === 1 ? 'it stays' : 'they stay'}{' '}
+                available without a stock count, and every sale goes to your store to be made and shipped.
+              </Typography>
+            )}
 
             {untrackedVariants > 0 && (
               <Controller

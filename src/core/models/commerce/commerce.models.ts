@@ -389,6 +389,7 @@ export class CommerceListingProjectionModel
   server_revision: number;
   state: CommerceListingProjectionModelSchema['state'];
   available_quantity: number;
+  made_to_order?: boolean;
   current_price: CommerceListingProjectionModelSchema['current_price'];
   auction_state: CommerceListingProjectionModelSchema['auction_state'];
   bid_count: number;
@@ -404,6 +405,7 @@ export class CommerceListingProjectionModel
     this.server_revision = projection.server_revision;
     this.state = projection.state;
     this.available_quantity = projection.available_quantity;
+    if (projection.made_to_order) this.made_to_order = true;
     this.current_price = projection.current_price;
     this.auction_state = projection.auction_state;
     this.bid_count = projection.bid_count;

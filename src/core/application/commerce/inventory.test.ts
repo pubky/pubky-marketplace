@@ -485,6 +485,77 @@ describe('CommerceInventoryApplication', () => {
     expect(byId.boots.unlimited).toBeUndefined();
     expect(byId.locks).toMatchObject({ unlimited: true });
   });
+
+  it('marks made-to-order stock on the listing and on its sizes, never sold out', async () => {
+    vi.mocked(MarketplaceShopClientService.listSellerListings).mockResolvedValue({
+      ok: true,
+      value: {
+        kind: 'seller_listing_export',
+        listings: [
+          {
+            projection: { listing_id: 'tee', title: 'Tee', state: 'available', sale_format: 'fixed_price' },
+            record: {
+              fulfillmentMethods: ['physical'],
+              variants: [
+                { id: 'size_s', options: { Size: 'S' }, quantity: 1 },
+                { id: 'size_m', options: { Size: 'M' }, quantity: 1 },
+              ],
+            },
+          },
+        ],
+      },
+    });
+    vi.mocked(MarketplaceShopClientService.getInventoryProjection).mockResolvedValue({
+      ok: true,
+      value: {
+        schema_version: BigInt(1),
+        kind: 'inventory_projection',
+        aggregate_id: `listing:${PUBKY}_tee`,
+        seller_pubky: PUBKY,
+        listing_id: 'tee',
+        server_revision: BigInt(4),
+        stock: {
+          authority: 'listing_total',
+          available: BigInt(0),
+          reserved: BigInt(0),
+          sold: BigInt(3),
+          total: BigInt(3),
+          made_to_order: true,
+        },
+        variants: [
+          {
+            variant_id: 'size_s',
+            enabled: true,
+            available: BigInt(0),
+            reserved: BigInt(0),
+            sold: BigInt(1),
+            total: BigInt(1),
+            sold_out: true,
+          },
+          {
+            variant_id: 'size_m',
+            enabled: true,
+            available: BigInt(0),
+            reserved: BigInt(0),
+            sold: BigInt(2),
+            total: BigInt(2),
+            sold_out: false,
+            made_to_order: true,
+          },
+        ],
+      },
+    } as Awaited<ReturnType<typeof MarketplaceShopClientService.getInventoryProjection>>);
+
+    const board = await CommerceInventoryApplication.loadBoard(PUBKY);
+    expect(board.status).toBe('ready');
+    if (board.status !== 'ready') return;
+    const [tee] = board.rows;
+    expect(tee).toMatchObject({ madeToOrder: true });
+    expect(tee?.variants?.map((size) => [size.variantId, size.soldOut, size.madeToOrder === true])).toEqual([
+      ['size_s', true, false],
+      ['size_m', false, true],
+    ]);
+  });
 });
 
 describe('classifySyncManyItem', () => {

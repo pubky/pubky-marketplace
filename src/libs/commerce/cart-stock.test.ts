@@ -8,6 +8,26 @@ const sizes = [
 ];
 
 describe('cartLineStock', () => {
+  it('never reads a made-to-order line sold out, though its record shows none left', () => {
+    const record = [
+      { id: 'size_s', quantity: 0, enabled: true },
+      { id: 'size_m', quantity: 0, enabled: true },
+    ];
+    const availability = {
+      state: 'available',
+      madeToOrder: true,
+      variants: [
+        { variantId: 'size_s', soldOut: true },
+        { variantId: 'size_m', soldOut: false, madeToOrder: true },
+      ],
+    };
+    expect(cartLineStock(record, 'size_m', availability)).toBeNull();
+    expect(cartLineStock(record, 'size_s', availability)).toBe('variant_sold_out');
+    expect(
+      cartLineStock([{ id: 'only', quantity: 0, enabled: true }], 'only', { state: 'available', madeToOrder: true }),
+    ).toBeNull();
+  });
+
   it('reads the whole listing sold out when the service says sold', () => {
     expect(cartLineStock(sizes, 'size_s', { state: 'sold' })).toBe('listing_sold_out');
   });

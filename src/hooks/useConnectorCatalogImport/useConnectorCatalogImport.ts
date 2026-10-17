@@ -72,7 +72,13 @@ export function useConnectorCatalogImport(connection: ImportConnection | null) {
   const form = importer.form;
   const currency = connectorStoreCurrency(products);
   const untrackedVariants = products.reduce(
-    (total, product) => total + product.variants.filter((variant) => typeof variant.stock !== 'number').length,
+    (total, product) =>
+      total +
+      product.variants.filter((variant) => variant.madeToOrder !== true && typeof variant.stock !== 'number').length,
+    0,
+  );
+  const madeToOrderVariants = products.reduce(
+    (total, product) => total + product.variants.filter((variant) => variant.madeToOrder === true).length,
     0,
   );
 
@@ -213,6 +219,7 @@ export function useConnectorCatalogImport(connection: ImportConnection | null) {
     productCount: products.length,
     currency,
     untrackedVariants,
+    madeToOrderVariants,
     linkState,
     importer: {
       ...importer,

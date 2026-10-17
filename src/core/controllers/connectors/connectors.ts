@@ -1,5 +1,6 @@
 import { ConnectorsApplication } from '@/application/connectors/connectors';
-import type { ConnectorMapping, VariantMode } from '@/libs/commerce/connectors';
+import type { ConnectorConnection, ConnectorMapping, VariantMode } from '@/libs/commerce/connectors';
+import type { LinkableListing } from '@/pipes/commerce/connector-listing-links';
 import { useAuthStore } from '@/stores/auth/auth.store';
 
 /** Store connections (WooCommerce, Shopify) for the signed-in seller. */
@@ -75,6 +76,21 @@ export class ConnectorsController {
 
   static async commitMappings(connectionId: string, additions: readonly ConnectorMapping[]) {
     return await ConnectorsApplication.addMappings(this.actor(), connectionId, additions);
+  }
+
+  static async commitAutoLinkListings(
+    connection: Pick<ConnectorConnection, 'id' | 'variantMode'>,
+    listings: readonly LinkableListing[],
+  ) {
+    return await ConnectorsApplication.autoLinkListings(this.actor(), connection, listings);
+  }
+
+  static async commitAutoLinkAcrossStores(listings: readonly LinkableListing[]) {
+    return await ConnectorsApplication.autoLinkAcrossStores(this.actor(), listings);
+  }
+
+  static async commitLinkListing(connectionId: string, mappings: readonly ConnectorMapping[]) {
+    return await ConnectorsApplication.linkListing(this.actor(), connectionId, mappings);
   }
 
   static async fetchAlerts() {

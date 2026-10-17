@@ -176,6 +176,7 @@ async function cacheProjection(projection: MarketplaceListingProjection): Promis
     server_revision: projection.serverRevision,
     state: projection.state,
     available_quantity: projection.availableQuantity,
+    ...(projection.madeToOrder ? { made_to_order: true } : {}),
     current_price: projection.auction?.currentPrice ?? projection.unitPrice,
     auction_state:
       projection.auction?.status === 'scheduled' ||

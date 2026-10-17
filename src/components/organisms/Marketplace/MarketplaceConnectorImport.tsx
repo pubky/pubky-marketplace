@@ -44,6 +44,7 @@ export function MarketplaceConnectorImport({ flow, connection, onBack }: Marketp
         currency={flow.currency ?? ''}
         productCount={flow.productCount}
         untrackedVariants={flow.untrackedVariants}
+        madeToOrderVariants={flow.madeToOrderVariants}
         conditionOptions={importer.conditionOptions}
         variantMode={connection.variantMode ?? 'native'}
         busy={importer.busy}
