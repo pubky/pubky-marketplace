@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { ArrowLeft, Store } from 'lucide-react';
 import { APP_ROUTES, getMarketplaceShopRoute } from '@/app/routes';
@@ -10,6 +10,7 @@ import { Link } from '@/atoms/Link/Link';
 import { Typography } from '@/atoms/Typography/Typography';
 import { useChatConversation } from '@/hooks/useChatConversation/useChatConversation';
 import { useChatIdentity } from '@/hooks/useChatIdentity/useChatIdentity';
+import { useFillViewport } from '@/hooks/useFillViewport/useFillViewport';
 import { useIsEmbedded } from '@/hooks/useIsEmbedded/useIsEmbedded';
 import { CHAT_COPY } from '@/libs/chat/copy';
 import { cn } from '@/libs/utils/utils';
@@ -38,6 +39,9 @@ export function ChatConversation({ peerPubky }: { peerPubky: string }) {
   const setShowSignInDialog = useAuthStore((state) => state.setShowSignInDialog);
   const { identityState, inboxStatus } = useChatIdentity();
   const isEmbedded = useIsEmbedded();
+  const frameRef = useRef<HTMLDivElement>(null);
+  // The thread ends where the page ends, whatever the layout puts above or below it.
+  const fillHeight = useFillViewport(frameRef);
   const thread = useChatConversation(peerPubky, context);
   const { name } = useChatPeerName(peerPubky);
   const router = useRouter();
@@ -67,22 +71,25 @@ export function ChatConversation({ peerPubky }: { peerPubky: string }) {
       showRightSidebar={false}
       showLeftMobileButton={false}
       showRightMobileButton={false}
-      // Embedded in the App, the Shop header is gone and the legal strip follows
-      // the thread: size the thread to the frame minus that strip, with a small
-      // gap, so the page does not scroll. Standalone keeps room for the header.
-      className={isEmbedded ? 'pb-4' : 'pb-24'}
+      // Standalone keeps room under the thread for the fixed mobile footer; the
+      // embedded Shop has none, only the legal strip that follows in flow.
+      className={isEmbedded ? 'pb-4' : 'pb-24 lg:pb-8'}
     >
       <Container
+        ref={frameRef}
         overrideDefaults
         className={cn(
-          'mx-auto flex w-full max-w-3xl flex-col gap-3',
-          isEmbedded
-            ? 'h-[calc(100svh-9rem)] pt-2 sm:h-[calc(100svh-7rem)]'
-            : 'h-[calc(100svh-12rem)] sm:h-[calc(100svh-15rem)] lg:h-[calc(100svh-10rem)]',
+          // The server render's height only; the measured height takes over before the first paint.
+          'mx-auto flex h-[calc(100svh-12rem)] w-full max-w-3xl flex-col gap-3',
+          isEmbedded && 'pt-2',
         )}
+        style={fillHeight === null ? undefined : { height: fillHeight }}
         data-surface="chat-conversation"
       >
-        <div className="sticky top-24 z-10 flex items-center gap-2 bg-background lg:top-(--header-offset-main)">
+        {/* Phones: stays under the sticky Pubky header if the page scrolls (the embed collapses the
+            offset). Desktop: static. A sticky offset there lands 144px into the thread, because the
+            layout wrapper, not the window, is the scrollport. */}
+        <div className="sticky top-24 z-10 flex items-center gap-2 bg-background lg:static">
           <Button asChild variant="ghost" size="icon" className="rounded-full" aria-label="All messages">
             <Link href={APP_ROUTES.MESSAGES} overrideDefaults>
               <ArrowLeft className="size-5" aria-hidden="true" />

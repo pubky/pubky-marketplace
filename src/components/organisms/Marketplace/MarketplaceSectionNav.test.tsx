@@ -1,6 +1,7 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useChatUnread } from '@/hooks/useChatUnread/useChatUnread';
+import { setEmbedded } from '@/test-utils/embedded';
 import { setSocialHost } from '@/test-utils/social-host';
 import { MarketplaceSectionNav } from './MarketplaceSectionNav';
 
@@ -94,6 +95,17 @@ describe('MarketplaceSectionNav', () => {
     expect(screen.getByTestId('marketplace-section-nav-messages-badge')).toHaveTextContent('4');
     expect(screen.getByLabelText('4 unread messages')).toBeInTheDocument();
     expect(useChatUnread).toHaveBeenCalledWith({ enabled: true });
+  });
+
+  it('keeps unread messages visible in the embedded Shop, where there is no global navigation', () => {
+    setEmbedded(true);
+    try {
+      render(<MarketplaceSectionNav />);
+      expect(screen.getByLabelText('4 unread messages')).toBeInTheDocument();
+      expect(useChatUnread).toHaveBeenCalledWith({ enabled: true });
+    } finally {
+      setEmbedded(false);
+    }
   });
 
   it('leaves message counts to the global navigation while link-out is off', () => {
