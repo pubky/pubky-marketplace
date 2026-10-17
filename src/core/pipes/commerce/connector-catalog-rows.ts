@@ -32,8 +32,17 @@ import { currencyExponent, type ImportSettings, rescaleMinor } from './import-se
  * Rules (coordination C10): shipping and ships-from come only from the
  * settings the seller chose (the rows carry neither until they did); a variant
  * whose stock the store does not track gets the seller's default quantity and a
- * "Stock unknown, set to N" note.
+ * "Stock unknown, set to N" note. A variant the store sells without a stock
+ * limit (made to order, print-on-demand) needs no default: once linked, the
+ * service sells it made to order, so it never sells out on Pubky.
  */
+
+/**
+ * The record quantity of a made-to-order variant. Registration needs a listing
+ * to carry at least one unit; once the listing is linked the service sells the
+ * variant made to order and this number is not a count.
+ */
+export const MADE_TO_ORDER_RECORD_QUANTITY = 1;
 
 const ID_PREFIX: Readonly<Record<ConnectorProvider, string>> = { shopify: 'shopify', woocommerce: 'woo' };
 
@@ -290,6 +299,7 @@ export function mapConnectorCatalog(input: ConnectorCatalogRowsInput): Connector
     const usedVariantIds = new Set<string>();
     let unknownStock = 0;
     let unknownStockQuantity = 0;
+    let madeToOrder = 0;
     const productLinks: ConnectorImportLink[] = [];
 
     variants.forEach((variant, index) => {
@@ -297,11 +307,16 @@ export function mapConnectorCatalog(input: ConnectorCatalogRowsInput): Connector
       if (usedVariantIds.has(variantId)) variantId = `${variantId}-${index + 1}`;
       usedVariantIds.add(variantId);
       const price = prices[index] ?? listingPrice;
-      const tracked = typeof variant.stock === 'number';
-      const quantity = tracked
-        ? Math.min(Math.max(0, variant.stock as number), COMMERCE_LISTING_MAX_QUANTITY - 1)
-        : Math.min(settings.unmanagedStock, COMMERCE_LISTING_MAX_QUANTITY - 1);
-      if (!tracked) {
+      const onDemand = variant.madeToOrder === true;
+      const tracked = !onDemand && typeof variant.stock === 'number';
+      const quantity = onDemand
+        ? MADE_TO_ORDER_RECORD_QUANTITY
+        : tracked
+          ? Math.min(Math.max(0, variant.stock as number), COMMERCE_LISTING_MAX_QUANTITY - 1)
+          : Math.min(settings.unmanagedStock, COMMERCE_LISTING_MAX_QUANTITY - 1);
+      if (onDemand) {
+        madeToOrder += 1;
+      } else if (!tracked) {
         unknownStock += 1;
         unknownStockQuantity = quantity;
       }
@@ -352,6 +367,18 @@ export function mapConnectorCatalog(input: ConnectorCatalogRowsInput): Connector
         sku: sku === '' ? null : sku,
       });
     });
+    if (madeToOrder > 0) {
+      losses.push(
+        loss(
+          'stock_made_to_order',
+          'changed',
+          'Stock',
+          `Made to order in your store, so always available on Pubky.${madeToOrder > 1 ? ` (${madeToOrder} variants)` : ''}`,
+          label,
+          madeToOrder,
+        ),
+      );
+    }
     if (unknownStock > 0) {
       losses.push(
         loss(

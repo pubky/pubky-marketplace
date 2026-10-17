@@ -173,6 +173,37 @@ describe('mapConnectorCatalog', () => {
     });
   });
 
+  it('lists a made-to-order variant without a default count and says it stays available', () => {
+    const printOnDemand = simple('1', {
+      variants: [
+        {
+          providerVariantId: '11',
+          sku: 'TEE-S',
+          price: { amountMinor: 2500, currency: 'CHF', exponent: 2 },
+          stock: null,
+          madeToOrder: true,
+        },
+        {
+          providerVariantId: '12',
+          sku: 'TEE-M',
+          price: { amountMinor: 2500, currency: 'CHF', exponent: 2 },
+          stock: 0,
+          madeToOrder: true,
+        },
+      ],
+    });
+    const { rows, report, links } = mapped([printOnDemand], { ...CHOSEN, unmanagedStock: 40 });
+
+    expect(rows.map((row) => row.variantQuantity)).toEqual([1, 1]);
+    expect(report.losses.find((entry) => entry.code === 'stock_unmanaged')).toBeUndefined();
+    expect(report.losses.find((entry) => entry.code === 'stock_made_to_order')).toMatchObject({
+      severity: 'changed',
+      detail: 'Made to order in your store, so always available on Pubky. (2 variants)',
+      count: 2,
+    });
+    expect(links.map((link) => link.providerVariantId)).toEqual(['11', '12']);
+  });
+
   it('counts several untracked variants in one note', () => {
     const untracked = simple('1', {
       variants: [

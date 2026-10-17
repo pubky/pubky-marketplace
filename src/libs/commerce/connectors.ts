@@ -142,6 +142,8 @@ const catalogVariantSchema = z.object({
     exponent: z.number().int().min(0).max(8),
   }),
   stock: z.number().int().nullable().optional(),
+  /** The store sells it without a stock limit (untracked, or kept on sale at zero: print-on-demand). */
+  madeToOrder: z.boolean().optional(),
   imageUrl: z.string().nullable().optional(),
 });
 
