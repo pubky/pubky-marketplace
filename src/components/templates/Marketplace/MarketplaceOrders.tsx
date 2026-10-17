@@ -121,6 +121,8 @@ export function MarketplaceOrders() {
   );
   const orderCounts = getOrderTabCounts(historyOrders, currentUserPubky);
   const visibleOrders = historyOrders.filter((view) => isOrderInTab(view, activeTab, currentUserPubky));
+  const waitingLabel = waitingTabLabel(historyOrders, currentUserPubky);
+  const orderTabs = ORDER_TABS.map((tab) => (tab.id === 'waiting_other' ? { ...tab, label: waitingLabel } : tab));
   const listedOrderIds = new Set(
     [...buyerCheckouts, ...sellerReservations, ...historyOrders, ...abandonedCheckouts].map(({ order }) => order.id),
   );
@@ -363,7 +365,7 @@ export function MarketplaceOrders() {
                   role="tablist"
                   aria-label="Order filters"
                 >
-                  {ORDER_TABS.map((tab) => (
+                  {orderTabs.map((tab) => (
                     <Button
                       key={tab.id}
                       type="button"
@@ -801,6 +803,20 @@ function isOrderNeedingCurrentUser(order: MarketplaceOrder, currentUserPubky: st
   if (order.nextActor === 'buyer') return isCurrentUserBuyer(order, currentUserPubky);
   if (order.nextActor === 'seller') return isCurrentUserSeller(order, currentUserPubky);
   return false;
+}
+
+/**
+ * The waiting tab names the side its orders wait on, from the viewer's seat: a
+ * buyer's orders wait on the seller, a seller's unpaid sales on the buyer, and
+ * an account with both reads "Waiting on others".
+ */
+function waitingTabLabel(orders: MarketplaceOrderView[], currentUserPubky: string | null): string {
+  const waiting = orders.filter((view) => isOrderWaitingOnOtherSide(view, currentUserPubky));
+  const onSeller = waiting.some(({ order }) => order.nextActor === 'seller');
+  const onBuyer = waiting.some(({ order }) => order.nextActor === 'buyer');
+  if (onSeller && onBuyer) return 'Waiting on others';
+  if (onBuyer) return 'Waiting on buyer';
+  return 'Waiting on seller';
 }
 
 function isOrderWaitingOnOtherSide(

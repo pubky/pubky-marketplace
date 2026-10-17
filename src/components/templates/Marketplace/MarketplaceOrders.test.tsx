@@ -985,6 +985,40 @@ describe('MarketplaceOrders tabs', () => {
     expect(screen.queryByText('No action pending')).not.toBeInTheDocument();
   });
 
+  it('names the waiting tab for the side a seller waits on', async () => {
+    ordersState.orders = [
+      orderView(
+        'pending_payment',
+        'Sold unpaid lamp',
+        'seller',
+        { paymentMethod: 'bitcoin', paykitRequestState: 'pending', nextActor: 'buyer' },
+        'awaiting_entitlement',
+      ),
+    ];
+
+    render(<MarketplaceOrders />);
+
+    expect(await screen.findByRole('tab', { name: /Waiting on buyer 1/i })).toBeInTheDocument();
+    expect(screen.queryByRole('tab', { name: /Waiting on seller/i })).not.toBeInTheDocument();
+  });
+
+  it('names the waiting tab for both sides when the account buys and sells', async () => {
+    ordersState.orders = [
+      orderView(
+        'pending_payment',
+        'Sold unpaid lamp',
+        'seller',
+        { paymentMethod: 'bitcoin', paykitRequestState: 'pending', nextActor: 'buyer' },
+        'awaiting_entitlement',
+      ),
+      orderView('paid', 'Bought paid boots', 'buyer', { nextActor: 'seller' }),
+    ];
+
+    render(<MarketplaceOrders />);
+
+    expect(await screen.findByRole('tab', { name: /Waiting on others 2/i })).toBeInTheDocument();
+  });
+
   it('uses next_actor to place buyer and seller work in Needs my action', async () => {
     ordersState.orders = [
       orderView('pending_payment', 'Bought pending boots', 'buyer'),
