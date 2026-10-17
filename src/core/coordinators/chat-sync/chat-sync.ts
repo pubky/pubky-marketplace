@@ -128,8 +128,12 @@ export class ChatSyncCoordinator {
 
   private setupListeners(): void {
     this.authStoreUnsubscribe = useAuthStore.subscribe((state, prevState) => {
+      // Compare the raw fields: a store selector reads the live state, so calling
+      // it on `prevState` compares the current state with itself. The persisted
+      // pubky is hydrated before the session is restored, so the session's
+      // arrival is the change that starts chat on a cold load.
       const changed =
-        state.selectIsAuthenticated() !== prevState.selectIsAuthenticated() ||
+        (state.session !== null) !== (prevState.session !== null) ||
         state.currentUserPubky !== prevState.currentUserPubky;
       if (changed) this.evaluate();
     });

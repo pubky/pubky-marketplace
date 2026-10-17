@@ -1,0 +1,1 @@
+Messages now start syncing on the first page you open after a cold load, including the catalog and the embedded Shop: a stranger's first message and unread badges arrive without first visiting Messages.

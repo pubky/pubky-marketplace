@@ -19,6 +19,7 @@ import { Link } from '@/atoms/Link/Link';
 import { Typography } from '@/atoms/Typography/Typography';
 import { isSocialLinkOutEnabled } from '@/config/social';
 import { useChatUnread } from '@/hooks/useChatUnread/useChatUnread';
+import { useIsEmbedded } from '@/hooks/useIsEmbedded/useIsEmbedded';
 import { useMarketplaceActivityUnread } from '@/hooks/useMarketplaceActivityUnread/useMarketplaceActivityUnread';
 import { useMarketplaceCartCount } from '@/hooks/useMarketplaceCartCount/useMarketplaceCartCount';
 import { useMarketplaceNavSwipeHint } from '@/hooks/useMarketplaceNavSwipeHint/useMarketplaceNavSwipeHint';
@@ -80,8 +81,11 @@ export function MarketplaceSectionNav({
 }) {
   const pathname = usePathname();
   const socialLinkOut = isSocialLinkOutEnabled();
+  const isEmbedded = useIsEmbedded();
   const cartCount = useMarketplaceCartCount();
-  const messagesCount = useChatUnread({ enabled: socialLinkOut });
+  // The global navigation carries the unread count when it is shown; with
+  // link-out, and in the embedded Shop (no Shop header), this bar is the only place.
+  const messagesCount = useChatUnread({ enabled: socialLinkOut || isEmbedded });
   const activityUnreadCount = useMarketplaceActivityUnread();
   const ordersAttentionCount = useMarketplaceOrdersAttention();
   const { scrollRef, onScroll, onInteract, showSwipeHint } = useMarketplaceNavSwipeHint(pathname);
