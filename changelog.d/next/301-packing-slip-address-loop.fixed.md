@@ -1,0 +1,1 @@
+The packing slip opens the buyer's delivery address once and keeps it on screen. Before, every orders refresh reset the "Deliver to" section to "Opening the delivery address on this device…" and fetched and decrypted the address again, so the slip flickered for as long as it was open.
