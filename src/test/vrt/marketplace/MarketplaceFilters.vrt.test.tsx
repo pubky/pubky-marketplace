@@ -43,10 +43,18 @@ const facetItem: MarketplaceCatalogItem = {
   updatedAt: 1_000,
 };
 
-function FiltersHarness({ resultCount, facetPool }: { resultCount: number; facetPool?: MarketplaceCatalogItem[] }) {
+function FiltersHarness({
+  resultCount,
+  facetPool,
+  paymentMethodOptions,
+}: {
+  resultCount: number;
+  facetPool?: MarketplaceCatalogItem[];
+  paymentMethodOptions?: Array<'bitcoin' | 'usdt' | 'paypal'>;
+}) {
   return (
     <main className="w-full px-6 py-6">
-      <MarketplaceFilters resultCount={resultCount} facetPool={facetPool} />
+      <MarketplaceFilters resultCount={resultCount} facetPool={facetPool} paymentMethodOptions={paymentMethodOptions} />
     </main>
   );
 }
@@ -68,6 +76,28 @@ describe('Marketplace filters — visual regression', () => {
       disableHover: true,
     });
     await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('filters-default-desktop');
+  });
+
+  it('renders the payment filter with PayPal selected at desktop viewport', async () => {
+    setStoreState({ paymentMethod: 'paypal' });
+
+    const screen = await renderForVRT(
+      <FiltersHarness resultCount={3} paymentMethodOptions={['bitcoin', 'usdt', 'paypal']} />,
+      { viewport: VRT_VIEWPORT_DESKTOP, disableHover: true },
+    );
+    await expect.element(screen.getByRole('combobox', { name: 'Payment method' })).toHaveTextContent('PayPal');
+    await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('filters-payment-paypal-desktop');
+  });
+
+  it('renders the payment filter at its default at mobile viewport', async () => {
+    setStoreState();
+
+    const screen = await renderForVRT(<FiltersHarness resultCount={8} paymentMethodOptions={['bitcoin', 'paypal']} />, {
+      viewport: VRT_VIEWPORT_MOBILE,
+      disableHover: true,
+    });
+    await expect.element(screen.getByRole('combobox', { name: 'Payment method' })).toHaveTextContent('Any payment');
+    await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('filters-payment-default-mobile');
   });
 
   it('renders the default filter bar at mobile viewport', async () => {

@@ -26,6 +26,11 @@ import {
   sellerPaymentReviewReasonSchema,
 } from '@/libs/commerce/marketplace-payment-review';
 import {
+  type PaymentMethodFilter,
+  type PaymentMethodSellersPage,
+  paymentMethodSellersPageSchema,
+} from '@/libs/commerce/payment-method-filter';
+import {
   type BindDeliveryAddress,
   type PaymentMethodKind,
   type SellerPaymentConfig,
@@ -1065,6 +1070,34 @@ export class MarketplaceTransactionService {
       sellerPaymentConfigSchema,
       toCamelCaseWire(raw),
       'Marketplace returned an invalid seller payment configuration.',
+    );
+  }
+
+  /**
+   * `GET /v0/payment-methods/{method}/sellers` — deliberately public (no
+   * bearer): one page of the sellers whose stored configuration has `method`
+   * enabled, for the marketplace payment-method filter. Seller keys only.
+   */
+  static async getPaymentMethodSellers(
+    method: PaymentMethodFilter,
+    after: string | null,
+  ): Promise<PaymentMethodSellersPage> {
+    this.assertTransactionServiceMode('getPaymentMethodSellers');
+    const query = after ? `?after=${encodeURIComponent(after)}` : '';
+    const url = `${getMarketplaceUrl()}/v0/payment-methods/${encodeURIComponent(method)}/sellers${query}`;
+    const response = await safeFetch(
+      url,
+      { method: 'GET', signal: AbortSignal.timeout(SELLER_PAYMENT_CONFIG_TIMEOUT_MS) },
+      ErrorService.Marketplace,
+      'getPaymentMethodSellers',
+    );
+    await this.throwPaymentMethodError(response, 'getPaymentMethodSellers');
+    const raw = await parseResponseOrThrow<unknown>(response, ErrorService.Marketplace, 'getPaymentMethodSellers', url);
+    return this.parseProjection(
+      'getPaymentMethodSellers',
+      paymentMethodSellersPageSchema,
+      toCamelCaseWire(raw),
+      'Marketplace returned an invalid payment-method seller page.',
     );
   }
 

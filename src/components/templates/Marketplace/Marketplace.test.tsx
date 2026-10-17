@@ -40,6 +40,12 @@ const catalogState = vi.hoisted(() => ({
   listings: [] as Array<{ id: string; title: string }>,
   isLoading: false,
   adapterMode: 'sandbox' as 'sandbox' | 'transaction-service' | 'locks-paykit' | 'unavailable',
+  paymentFilter: { method: null, status: 'off', sellers: null } as {
+    method: 'bitcoin' | 'usdt' | 'paypal' | null;
+    status: 'off' | 'loading' | 'ready' | 'unavailable';
+    sellers: ReadonlySet<string> | null;
+  },
+  paymentOptions: [] as Array<'bitcoin' | 'usdt' | 'paypal'>,
 }));
 const runtime = vi.hoisted(() => ({ deployEnv: 'staging' as 'production' | 'staging' | undefined }));
 const commerceState = vi.hoisted(() => ({
@@ -100,7 +106,12 @@ vi.mock('@/hooks/useMarketplaceCatalog/useMarketplaceCatalog', () => ({
     shopsBySeller: new Map(initialShops.map((shop) => [shop.ownerPubky, shop])),
     isLoading: catalogState.isLoading,
     adapterMode: catalogState.adapterMode,
+    paymentFilter: catalogState.paymentFilter,
   }),
+}));
+
+vi.mock('@/hooks/useMarketplacePaymentFilterOptions/useMarketplacePaymentFilterOptions', () => ({
+  useMarketplacePaymentFilterOptions: () => catalogState.paymentOptions,
 }));
 
 vi.mock('@/hooks/useMarketplacePromoDismissal/useMarketplacePromoDismissal', () => ({
@@ -143,11 +154,13 @@ vi.mock('@/organisms/Marketplace/MarketplaceFilters', () => ({
   MarketplaceFilters: ({
     searchControl,
     sellControl,
+    paymentMethodOptions = [],
   }: {
     searchControl?: React.ReactNode;
     sellControl?: React.ReactNode;
+    paymentMethodOptions?: readonly string[];
   }) => (
-    <div data-testid="marketplace-filters">
+    <div data-testid="marketplace-filters" data-payment-options={paymentMethodOptions.join(',')}>
       {searchControl}
       {sellControl}
     </div>
@@ -179,6 +192,8 @@ describe('Marketplace', () => {
     catalogState.listings = [];
     catalogState.isLoading = false;
     catalogState.adapterMode = 'sandbox';
+    catalogState.paymentFilter = { method: null, status: 'off', sellers: null };
+    catalogState.paymentOptions = [];
     runtime.deployEnv = 'staging';
     commerceState.query = '';
     commerceState.saleFormat = 'all';
@@ -363,5 +378,37 @@ describe('Marketplace', () => {
       screen.getByText(/Discover timed, limited releases. Open a drop to check availability./),
     ).toBeInTheDocument();
     expect(screen.getAllByText('Drops live proof — 1 of 1')).toHaveLength(1);
+  });
+
+  it("passes the deployment's payment filter options to the filter bar", () => {
+    catalogState.paymentOptions = ['bitcoin', 'usdt', 'paypal'];
+
+    render(<Marketplace />);
+
+    expect(screen.getByTestId('marketplace-filters')).toHaveAttribute('data-payment-options', 'bitcoin,usdt,paypal');
+  });
+
+  it('shows only drops whose seller is in the payment filter set', () => {
+    commerceState.saleFormat = 'drops';
+    catalogState.adapterMode = 'transaction-service';
+    const otherSellerDrop = { ...dropEntry, id: 'drop-2', owner_id: 'z'.repeat(52), title: 'Other seller drop' };
+    dropsState.buckets = { live: [dropEntry, otherSellerDrop], upcoming: [], ended: [] };
+    catalogState.paymentFilter = { method: 'paypal', status: 'ready', sellers: new Set([dropEntry.owner_id]) };
+
+    render(<Marketplace />);
+
+    expect(screen.getByText('Drops live proof — 1 of 1')).toBeInTheDocument();
+    expect(screen.queryByText('Other seller drop')).not.toBeInTheDocument();
+  });
+
+  it('says the payment filter is unavailable instead of claiming no listings match', () => {
+    catalogState.adapterMode = 'transaction-service';
+    catalogState.paymentFilter = { method: 'usdt', status: 'unavailable', sellers: null };
+
+    render(<Marketplace />);
+
+    expect(screen.getByRole('heading', { name: 'Payment filter unavailable' })).toBeInTheDocument();
+    expect(screen.getByRole('status')).toHaveTextContent("We can't check which sellers accept USDT right now.");
+    expect(screen.queryByRole('heading', { name: 'No listings match' })).not.toBeInTheDocument();
   });
 });

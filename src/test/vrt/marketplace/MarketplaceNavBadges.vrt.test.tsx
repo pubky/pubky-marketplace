@@ -65,6 +65,7 @@ vi.mock('@/hooks/useMarketplaceCatalog/useMarketplaceCatalog', async () => {
       shopsBySeller: catalog.shopsBySeller,
       isLoading: false,
       adapterMode: 'sandbox',
+      paymentFilter: { method: null, status: 'off', sellers: null },
     }),
   };
 });
