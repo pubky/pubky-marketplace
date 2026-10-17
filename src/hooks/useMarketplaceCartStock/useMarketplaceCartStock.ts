@@ -50,7 +50,16 @@ export function useMarketplaceCartStock(items: readonly CartStockItem[]) {
               key.slice(0, separator),
               key.slice(separator + 1),
             );
-            return [key, availability ? { state: availability.state, variants: availability.variants ?? [] } : null];
+            return [
+              key,
+              availability
+                ? {
+                    state: availability.state,
+                    madeToOrder: availability.madeToOrder === true,
+                    variants: availability.variants ?? [],
+                  }
+                : null,
+            ];
           } catch (error) {
             Logger.debug('Cart listing availability read failed', { error });
             return null;

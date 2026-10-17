@@ -370,6 +370,32 @@ describe('CommerceApplication', () => {
     expect(listing.purchasableQuantity).toBeNull();
   });
 
+  it('reads no count from made-to-order stock', async () => {
+    const record = createCommerceListingFixture();
+    const model = toCommerceListingModel(record);
+    vi.spyOn(LocalCommerceService, 'getListingsBySeller').mockResolvedValue([model]);
+    vi.spyOn(LocalCommerceService, 'getListingProjection').mockResolvedValue({
+      id: model.id,
+      seller_id: model.seller_id,
+      listing_id: model.listing_id,
+      listing_revision: record.revision,
+      content_hash: record.media[0].contentHash,
+      server_revision: 3,
+      state: 'available',
+      available_quantity: 0,
+      made_to_order: true,
+      current_price: record.sale.format === 'fixed_price' ? record.sale.unitPrice : record.sale.startingPrice,
+      auction_state: null,
+      bid_count: 0,
+      sync_status: 'synced',
+      synced_at: Date.now(),
+    });
+
+    const [listing] = await CommerceApplication.getListingsBySeller(record.ownerPubky);
+
+    expect(listing.purchasableQuantity).toBeNull();
+  });
+
   it('seeds catalog data only when sandbox mode is explicit', async () => {
     const seed = vi.spyOn(LocalCommerceService, 'seedSandboxCatalog').mockResolvedValue(true);
     vi.spyOn(CommerceApplication, 'ensureListingRegistered').mockResolvedValue(true);

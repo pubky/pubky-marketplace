@@ -27,6 +27,8 @@ export type InventoryBoardVariant = {
   sold: number;
   total: number;
   soldOut: boolean;
+  /** The seller's connected store sells this size without a stock count: it has no stock to set. */
+  madeToOrder?: boolean;
 };
 
 export type InventoryBoardRow = {
@@ -53,6 +55,11 @@ export type InventoryBoardRow = {
   variants?: InventoryBoardVariant[];
   /** Set when the listing record itself is unlimited. Available may be lower while a hold reserves units. */
   unlimited?: boolean;
+  /**
+   * Set when the service sells the listing (or, for a per-size listing, some size) made to order: the
+   * connected store sells it without a stock count, so its stock follows the store and is not set here.
+   */
+  madeToOrder?: boolean;
   sync: 'synced' | 'missing';
   syncMessage?: string | null;
   recordStatus?: 'unavailable';
@@ -182,6 +189,7 @@ function parseBoardVariants(value: unknown, labels: ReadonlyMap<string, string>)
     const total = asInt(object?.total);
     if (!object || !variantId || available === null || reserved === null || sold === null || total === null) continue;
     const sku = asString(object.sku);
+    const madeToOrder = object.made_to_order === true;
     rows.push({
       variantId,
       label: labels.get(variantId) ?? sku ?? variantId,
@@ -191,7 +199,8 @@ function parseBoardVariants(value: unknown, labels: ReadonlyMap<string, string>)
       reserved,
       sold,
       total,
-      soldOut: object.sold_out === true || available === 0,
+      soldOut: !madeToOrder && (object.sold_out === true || available === 0),
+      ...(madeToOrder ? { madeToOrder: true as const } : {}),
     });
   }
   return rows.length > 0 ? rows : undefined;
@@ -401,6 +410,7 @@ export class CommerceInventoryApplication {
           serverRevision: Number(inventoryResult.value.server_revision),
           ...variantsField(parseBoardVariants(inventoryResult.value.variants, recordVariantLabels(record))),
           ...(unlimited ? { unlimited: true as const } : {}),
+          ...(asObject(stock)?.made_to_order === true ? { madeToOrder: true as const } : {}),
           sync: 'synced',
           ...(recordStatusFromExport(object) ? { recordStatus: 'unavailable' as const } : {}),
         });

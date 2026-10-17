@@ -4,6 +4,7 @@ import {
   isVariantSoldOut,
   listingSoldOutVariantIds,
   type ListingVariantStockInput,
+  madeToOrderVariantIds,
   type ProjectedVariantAvailability,
   projectionReadsSoldOut,
   tracksVariantStock,
@@ -15,6 +16,7 @@ export type CartLineStock = 'listing_sold_out' | 'variant_sold_out';
 /** The service's public availability for one listing, as the cart reads it. */
 export interface CartListingAvailability {
   state: string;
+  madeToOrder?: boolean;
   variants?: readonly ProjectedVariantAvailability[] | null;
 }
 
@@ -50,9 +52,10 @@ export function cartLineStock(
 ): CartLineStock | null {
   if (availability && projectionReadsSoldOut(availability)) return 'listing_sold_out';
   const serviceSoldOut = listingSoldOutVariantIds(availability);
+  const madeToOrder = madeToOrderVariantIds(availability, variants);
   const variant = variants.find(({ id }) => id === variantId);
-  if (!variant || !isVariantSoldOut(variant, serviceSoldOut)) return null;
-  return tracksVariantStock(variants) && !everyOfferedVariantSoldOut(variants, serviceSoldOut)
+  if (!variant || !isVariantSoldOut(variant, serviceSoldOut, madeToOrder)) return null;
+  return tracksVariantStock(variants) && !everyOfferedVariantSoldOut(variants, serviceSoldOut, madeToOrder)
     ? 'variant_sold_out'
     : 'listing_sold_out';
 }

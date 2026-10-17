@@ -54,6 +54,8 @@ import {
   firstAvailableVariantId,
   isVariantSoldOut,
   listingSoldOutVariantIds,
+  MADE_TO_ORDER_LABEL,
+  madeToOrderVariantIds,
   projectionReadsSoldOut,
 } from '@/libs/commerce/listing-variants';
 import {
@@ -158,6 +160,10 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
   }, [adapterMode, listingId, sellerPubky]);
 
   const listing = useLiveQuery(() => CommerceController.getListing(sellerPubky, listingId), [sellerPubky, listingId]);
+  const madeToOrderVariants = madeToOrderVariantIds(
+    negotiation.projection ?? publicStock,
+    listing?.record.variants ?? [],
+  );
   const shop = useLiveQuery(() => CommerceController.getShop(sellerPubky), [sellerPubky]);
   const auctionEndsAt =
     listing?.record.sale.format === 'auction'
@@ -174,10 +180,11 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
     const variants = listing?.record.variants;
     if (!variants) return;
     const selected = variants.find(({ id }) => id === selectedVariantId);
-    if (selected?.enabled && !isVariantSoldOut(selected, soldOutVariants)) return;
-    const next = firstAvailableVariantId(variants, soldOutVariants) ?? selected?.id ?? variants[0]?.id;
+    if (selected?.enabled && !isVariantSoldOut(selected, soldOutVariants, madeToOrderVariants)) return;
+    const next =
+      firstAvailableVariantId(variants, soldOutVariants, madeToOrderVariants) ?? selected?.id ?? variants[0]?.id;
     if (next && next !== selectedVariantId) setSelectedVariantId(next);
-  }, [listing, selectedVariantId, soldOutVariants]);
+  }, [listing, selectedVariantId, soldOutVariants, madeToOrderVariants]);
 
   useEffect(() => {
     pendingPurchaseRef.current = null;
@@ -286,7 +293,8 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
   const isSoldOut = isDurable
     ? projectionIsSoldOut || publicStockIsSoldOut
     : (listing.purchasableQuantity ?? recordQuantity) <= 0;
-  const listingSoldOut = isSoldOut || everyOfferedVariantSoldOut(record.variants, soldOutVariants);
+  const listingSoldOut = isSoldOut || everyOfferedVariantSoldOut(record.variants, soldOutVariants, madeToOrderVariants);
+  const selectedMadeToOrder = selectedVariant !== undefined && madeToOrderVariants.has(selectedVariant.id);
   const isPurchasable = record.state === 'active';
   const availabilityPending = isDurable && negotiation.isLoading;
   const availabilityNeedsSession = isDurable && negotiation.needsSession;
@@ -413,6 +421,11 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
                   </Badge>
                 )}
                 {isSoldOut && record.sale.format === 'fixed_price' && <Badge variant="outline">Sold out</Badge>}
+                {!isSoldOut && selectedMadeToOrder && record.sale.format === 'fixed_price' && (
+                  <Badge variant="secondary" data-testid="marketplace-listing-made-to-order">
+                    {MADE_TO_ORDER_LABEL}
+                  </Badge>
+                )}
                 {shop?.record.vacationMode && (
                   <Badge variant="outline" className="border-amber-500/50 bg-amber-500/10 text-amber-300">
                     <PlaneTakeoff className="mr-1 size-3" />
@@ -466,6 +479,7 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
                 selectedVariantId={selectedVariant?.id}
                 onSelect={setSelectedVariantId}
                 soldOutVariantIds={soldOutVariants}
+                madeToOrderVariantIds={madeToOrderVariants}
               />
             )}
 
@@ -545,7 +559,7 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
                             isSoldOut ||
                             projectionIsReserved ||
                             !selectedVariant ||
-                            isVariantSoldOut(selectedVariant, soldOutVariants)
+                            isVariantSoldOut(selectedVariant, soldOutVariants, madeToOrderVariants)
                       }
                       onClick={availabilityNeedsSession ? beginPurchase : addSelectedVariantToCart}
                     >

@@ -34,7 +34,7 @@ describe('useMarketplacePublicAvailability', () => {
   it('reads the public stock state while enabled', async () => {
     const { result } = renderHook(() => useMarketplacePublicAvailability(SELLER, 'item', true));
 
-    await waitFor(() => expect(result.current).toEqual({ state: 'reserved', variants: [] }));
+    await waitFor(() => expect(result.current).toEqual({ state: 'reserved', madeToOrder: false, variants: [] }));
     expect(CommerceController.getPublicListingAvailability).toHaveBeenCalledWith(SELLER, 'item');
   });
 
@@ -51,12 +51,26 @@ describe('useMarketplacePublicAvailability', () => {
     await waitFor(() =>
       expect(result.current).toEqual({
         state: 'available',
+        madeToOrder: false,
         variants: [
           { variantId: 'size_s', soldOut: true },
           { variantId: 'size_m', soldOut: false },
         ],
       }),
     );
+  });
+
+  it('says when the listing is made to order, so its record count is not read as sold out', async () => {
+    vi.mocked(CommerceController.getPublicListingAvailability).mockResolvedValue({
+      aggregateId: `listing:${SELLER}_item`,
+      state: 'available',
+      serverTime: '2026-10-17T10:00:00.000Z',
+      madeToOrder: true,
+    });
+
+    const { result } = renderHook(() => useMarketplacePublicAvailability(SELLER, 'item', true));
+
+    await waitFor(() => expect(result.current).toEqual({ state: 'available', madeToOrder: true, variants: [] }));
   });
 
   it('reads nothing while disabled', async () => {
@@ -96,7 +110,7 @@ describe('useMarketplacePublicAvailability', () => {
         initialProps: { enabled: true },
       },
     );
-    await waitFor(() => expect(result.current).toEqual({ state: 'reserved', variants: [] }));
+    await waitFor(() => expect(result.current).toEqual({ state: 'reserved', madeToOrder: false, variants: [] }));
 
     rerender({ enabled: false });
 
@@ -105,21 +119,21 @@ describe('useMarketplacePublicAvailability', () => {
 
   it('re-reads on window focus so a lapsed hold clears', async () => {
     const { result } = renderHook(() => useMarketplacePublicAvailability(SELLER, 'item', true));
-    await waitFor(() => expect(result.current).toEqual({ state: 'reserved', variants: [] }));
+    await waitFor(() => expect(result.current).toEqual({ state: 'reserved', madeToOrder: false, variants: [] }));
     vi.mocked(CommerceController.getPublicListingAvailability).mockResolvedValue(availability('available'));
 
     act(() => {
       window.dispatchEvent(new Event('focus'));
     });
 
-    await waitFor(() => expect(result.current).toEqual({ state: 'available', variants: [] }));
+    await waitFor(() => expect(result.current).toEqual({ state: 'available', madeToOrder: false, variants: [] }));
   });
 
   it("does not show one listing's hold on another listing", async () => {
     const { result, rerender } = renderHook(({ id }) => useMarketplacePublicAvailability(SELLER, id, true), {
       initialProps: { id: 'item' },
     });
-    await waitFor(() => expect(result.current).toEqual({ state: 'reserved', variants: [] }));
+    await waitFor(() => expect(result.current).toEqual({ state: 'reserved', madeToOrder: false, variants: [] }));
     vi.mocked(CommerceController.getPublicListingAvailability).mockReturnValue(new Promise(() => {}));
 
     rerender({ id: 'other' });

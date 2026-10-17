@@ -240,6 +240,8 @@ export interface CommerceListingProjectionModelSchema {
   server_revision: number;
   state: CommerceListingProjectionState;
   available_quantity: number;
+  /** The seller's store sells the listing without a stock count: `available_quantity` is not a count. */
+  made_to_order?: boolean;
   current_price: CommerceMoney;
   auction_state: AuctionState | null;
   bid_count: number;

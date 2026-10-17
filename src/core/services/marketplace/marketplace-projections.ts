@@ -51,6 +51,8 @@ const marketplaceProjectedVariantSchema = z
     variantId: z.string().min(1),
     availableQuantity: z.number().int().nonnegative().optional(),
     soldOut: z.boolean(),
+    // The seller's store sells this size without a stock count; absent when counted.
+    madeToOrder: z.boolean().optional(),
   })
   .passthrough();
 
@@ -65,6 +67,9 @@ const marketplaceListingProjectionBaseSchema = z
     state: z.enum(['available', 'reserved', 'sold']),
     availableQuantity: z.number().int().nonnegative(),
     reservedQuantity: z.number().int().nonnegative(),
+    // True while a size is made to order (the store sells it without a count):
+    // the listing never sells out there and its zero quantity is not a count.
+    madeToOrder: z.boolean().optional(),
     variants: z.array(marketplaceProjectedVariantSchema).optional(),
     unitPrice: marketplaceMoneySchema,
     shipping: marketplaceMoneySchema.optional(),
@@ -900,8 +905,11 @@ export const marketplacePublicListingAvailabilitySchema = z.object({
   aggregateId: z.string(),
   state: listingStateSchema,
   serverTime: z.string(),
+  madeToOrder: z.boolean().optional(),
   // Per size, only for a variant-tracked listing, and without quantities by design.
-  variants: z.array(z.object({ variantId: z.string().min(1), soldOut: z.boolean() })).optional(),
+  variants: z
+    .array(z.object({ variantId: z.string().min(1), soldOut: z.boolean(), madeToOrder: z.boolean().optional() }))
+    .optional(),
 });
 
 export type MarketplacePublicListingAvailability = z.infer<typeof marketplacePublicListingAvailabilitySchema>;

@@ -956,6 +956,15 @@ describe('MarketplaceListing', () => {
     expect(screen.queryByRole('button', { name: /Make offer/ })).not.toBeInTheDocument();
   });
 
+  it('sells a made-to-order listing with no stock count, and says it is made to order', () => {
+    view.projection = createListingProjectionFixture({ state: 'available', availableQuantity: 0, madeToOrder: true });
+    renderListing();
+
+    expect(screen.queryByRole('button', { name: 'Sold out' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Buy' })).toBeEnabled();
+    expect(screen.getByTestId('marketplace-listing-made-to-order')).toHaveTextContent('Made to order');
+  });
+
   it('shows the holding sentence and disables checkout when the listing is reserved', () => {
     view.projection = createListingProjectionFixture({ state: 'reserved', availableQuantity: 0, reservedQuantity: 1 });
     renderListing();
