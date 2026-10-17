@@ -753,7 +753,7 @@ describe('MarketplaceOrders tabs', () => {
     ];
 
     render(<MarketplaceOrders />);
-    await user.click(screen.getByRole('tab', { name: /Waiting on seller 0/i }));
+    await user.click(screen.getByRole('tab', { name: /Waiting on buyer 0/i }));
 
     expect(screen.getAllByRole('link', { name: 'Continue checkout' }).length).toBeGreaterThan(0);
     expect(screen.getByRole('heading', { name: 'Reservations' })).toBeInTheDocument();
@@ -1017,6 +1017,17 @@ describe('MarketplaceOrders tabs', () => {
     render(<MarketplaceOrders />);
 
     expect(await screen.findByRole('tab', { name: /Waiting on others 2/i })).toBeInTheDocument();
+    expect(screen.queryByRole('tab', { name: /Waiting on seller/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('tab', { name: /Waiting on buyer/i })).not.toBeInTheDocument();
+  });
+
+  it('names an empty waiting tab for the side a seller-only account waits on', async () => {
+    ordersState.orders = [orderView('paid', 'Sold paid lamp', 'seller', { nextActor: 'seller' })];
+
+    render(<MarketplaceOrders />);
+
+    expect(await screen.findByRole('tab', { name: /Waiting on buyer 0/i })).toBeInTheDocument();
+    expect(screen.queryByRole('tab', { name: /Waiting on seller/i })).not.toBeInTheDocument();
   });
 
   it('uses next_actor to place buyer and seller work in Needs my action', async () => {

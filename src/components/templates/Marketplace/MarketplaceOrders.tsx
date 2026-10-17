@@ -808,12 +808,22 @@ function isOrderNeedingCurrentUser(order: MarketplaceOrder, currentUserPubky: st
 /**
  * The waiting tab names the side its orders wait on, from the viewer's seat: a
  * buyer's orders wait on the seller, a seller's unpaid sales on the buyer, and
- * an account with both reads "Waiting on others".
+ * an account with both reads "Waiting on others". An empty tab follows whether
+ * the viewer buys, sells or both.
  */
 function waitingTabLabel(orders: MarketplaceOrderView[], currentUserPubky: string | null): string {
   const waiting = orders.filter((view) => isOrderWaitingOnOtherSide(view, currentUserPubky));
-  const onSeller = waiting.some(({ order }) => order.nextActor === 'seller');
-  const onBuyer = waiting.some(({ order }) => order.nextActor === 'buyer');
+  // With nothing waiting, the viewer's own roles in their orders pick the side.
+  const onSeller =
+    waiting.length > 0
+      ? waiting.some(({ order }) => order.nextActor === 'seller')
+      : orders.some(({ order }) => isCurrentUserBuyer(order, currentUserPubky));
+  const onBuyer =
+    waiting.length > 0
+      ? waiting.some(({ order }) => order.nextActor === 'buyer')
+      : orders.some(
+          ({ order }) => isCurrentUserSeller(order, currentUserPubky) && !isCurrentUserBuyer(order, currentUserPubky),
+        );
   if (onSeller && onBuyer) return 'Waiting on others';
   if (onBuyer) return 'Waiting on buyer';
   return 'Waiting on seller';
