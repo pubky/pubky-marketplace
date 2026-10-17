@@ -353,7 +353,7 @@ describe('CommerceApplication local pickup (Wave 7)', () => {
           consentVersion: CONNECTOR_SHARE_CONSENT_VERSION,
           keyId: STORE_KEY_ID,
         });
-        expect(share.consentVersion).toBe(1);
+        expect(share.consentVersion).toBe(2);
         expect(Number.isInteger(share.consentVersion)).toBe(true);
         expect(share.envelope).not.toBe(payload.deliveryAddressEnvelopes[0]?.envelope);
 
