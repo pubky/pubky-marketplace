@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { getStoreConnectionCatalogRoute } from '@/app/routes';
+import { getStoreConnectionCatalogRoute, MARKETPLACE_ROUTES } from '@/app/routes';
 import { isAppError } from '@/libs/error/error';
 
 /**
@@ -252,6 +252,7 @@ export const CONNECTOR_ALERT_KINDS = [
   'refund_reversed_after_mirror',
   'push_total_mismatch',
   'listings_unmapped',
+  'listing_not_linked',
 ] as const;
 
 /** The existing Pubky flow a store-side cancel or refund alert leads to (C13); `null` when none applies. */
@@ -422,13 +423,19 @@ const PUSH_STATE_LABELS: Readonly<Record<ConnectorPushState, string>> = {
   quarantined: 'Needs attention',
 };
 
-export function pushStateLabel(push: Pick<ConnectorPush, 'state' | 'quarantineSeverity'>): string {
+export function pushStateLabel(
+  push: Pick<ConnectorPush, 'state' | 'quarantineSeverity'> & { quarantineReason?: string | null },
+): string {
+  if (push.state === 'quarantined' && push.quarantineReason === 'no_mapped_lines')
+    return 'Not sent: listing not linked';
   if (push.state === 'quarantined' && push.quarantineSeverity === 'info') return 'Not sent';
   return PUSH_STATE_LABELS[push.state];
 }
 
 const QUARANTINE_REASON_COPY: Readonly<Record<string, string>> = {
   order_cancelled_before_push: 'The order was cancelled before it reached your store. Nothing to do.',
+  no_mapped_lines:
+    'Not sent: no listing in this order is linked to a product in your store. Link it in Store connections and the order is sent.',
   order_not_paid: 'The order is not paid, so it was not sent to your store.',
   order_not_found: 'The order could not be read to send it. Try again in a moment.',
   unmapped_variant:
@@ -469,6 +476,8 @@ const ALERT_KIND_COPY: Readonly<Record<string, string>> = {
     'An order reached your store with a different total than the buyer paid in Pubky, for example because the store added tax. Check the order in your store.',
   listings_unmapped:
     'Some listings that combined several variants were unlinked from your store when you switched to one listing per size or variant. Import each variant again, or end the combined listing.',
+  listing_not_linked:
+    'Order not sent to your store: its listing is not linked to a product there. Link the listing and the order is sent. If you sell it only on Pubky, dismiss this.',
 };
 
 /**
@@ -495,6 +504,12 @@ const CATALOG_LINK_ALERTS: ReadonlySet<string> = new Set(['variant_mapping_error
 
 export function connectorAlertCatalogRoute(alert: Pick<ConnectorAlert, 'kind' | 'connectionId'>): string | null {
   return CATALOG_LINK_ALERTS.has(alert.kind) ? getStoreConnectionCatalogRoute(alert.connectionId) : null;
+}
+
+/** Alerts whose fix is to link a listing to its store product, in that connection's unlinked listings. */
+export function connectorAlertLinkRoute(alert: Pick<ConnectorAlert, 'kind' | 'connectionId'>): string | null {
+  if (alert.kind !== 'listing_not_linked') return null;
+  return `${MARKETPLACE_ROUTES.SETTINGS_STORE_CONNECTIONS}#listing-links-${encodeURIComponent(alert.connectionId)}`;
 }
 
 /** A listing id the service named, safe to put in a route; anything else is shown as text. */

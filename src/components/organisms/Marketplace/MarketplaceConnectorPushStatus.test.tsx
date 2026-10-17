@@ -262,4 +262,27 @@ describe('MarketplaceConnectorPushStatus', () => {
     expect(screen.queryByTestId('store-push-alert-action')).not.toBeInTheDocument();
     expect(screen.getAllByRole('button', { name: 'Dismiss' })).toHaveLength(2);
   });
+
+  it('leads an order that was not sent for want of a link to the listing links', () => {
+    const alert = connectorAlertSchema.parse({
+      id: 'l1',
+      connectionId: 'c1',
+      kind: 'listing_not_linked',
+      pubkyOrderId: 'order-7-aaaaaaaa',
+      createdAt: '2026-10-17T10:00:00.000Z',
+    });
+    status({
+      alerts: [alert],
+      pushes: [row('7', { state: 'quarantined', quarantineReason: 'no_mapped_lines', quarantineSeverity: 'info' })],
+    });
+    render(<MarketplaceConnectorPushStatus />);
+
+    const item = screen.getByTestId('store-push-alert');
+    expect(item).toHaveTextContent('Order not sent to your store: its listing is not linked to a product there.');
+    expect(within(item).getByRole('link', { name: 'Link listing' })).toHaveAttribute(
+      'href',
+      `${MARKETPLACE_ROUTES.SETTINGS_STORE_CONNECTIONS}#listing-links-c1`,
+    );
+    expect(screen.getByTestId('store-push-state')).toHaveTextContent('Not sent: listing not linked');
+  });
 });
