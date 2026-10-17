@@ -151,6 +151,8 @@ export type ConnectorCatalogVariant = z.infer<typeof catalogVariantSchema>;
 
 export const connectorCatalogProductSchema = z.object({
   providerProductId: z.string().min(1),
+  /** The store's URL key for the product (a Shopify handle); a Shopify product CSV names products by it. */
+  handle: z.string().nullable().optional(),
   title: z.string(),
   description: z.string().nullable().optional(),
   url: z.string().nullable().optional(),

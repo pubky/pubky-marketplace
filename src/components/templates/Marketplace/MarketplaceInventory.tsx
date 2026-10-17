@@ -18,6 +18,7 @@ import { Skeleton } from '@/atoms/Skeleton/Skeleton';
 import { Typography } from '@/atoms/Typography/Typography';
 import { useMarketplaceInventory } from '@/hooks/useMarketplaceInventory/useMarketplaceInventory';
 import { useMarketplaceInventoryImport } from '@/hooks/useMarketplaceInventoryImport/useMarketplaceInventoryImport';
+import { useStoreListingAutoLink } from '@/hooks/useStoreListingAutoLink/useStoreListingAutoLink';
 import { MADE_TO_ORDER_LABEL } from '@/libs/commerce/listing-variants';
 import { UNLIMITED_STOCK_LABEL } from '@/libs/commerce/unlimited-stock';
 import { cn } from '@/libs/utils/utils';
@@ -32,6 +33,7 @@ import { MarketplaceSessionRequiredCard } from '@/organisms/Marketplace/Marketpl
 export function MarketplaceInventory() {
   const board = useMarketplaceInventory();
   const importer = useMarketplaceInventoryImport(board.sellerPubky ?? null);
+  const storeLinks = useStoreListingAutoLink();
   const [editing, setEditing] = useState<{ row: InventoryBoardRow; size?: InventoryBoardVariant } | null>(null);
   const [target, setTarget] = useState('');
   const [selected, setSelected] = useState<string[]>([]);
@@ -421,8 +423,8 @@ export function MarketplaceInventory() {
             }
             onDownloadLossReport={importer.downloadLossReport}
             onFile={(file) => void importer.planFile(file)}
-            onPublish={() => void importer.publish()}
-            onResume={() => void importer.resume()}
+            onPublish={() => void importer.publish().then(storeLinks.run)}
+            onResume={() => void importer.resume().then(storeLinks.run)}
             onConfirmConflict={() => void importer.confirmConflict()}
             onDiscardConflict={() => void importer.discardConflict()}
             onDownloadResult={() => void importer.downloadResult()}
