@@ -1,13 +1,15 @@
 // Intentional import order — browser-mode mock factories rely on stable aliases.
 /* eslint-disable simple-import-sort/imports */
 import { createMarketplaceVrtAuthStore } from '@/test/mocks/marketplace-vrt';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ChatOpenResult } from '@/application/chat/chat.types';
 import type { ChatConversationView, ChatMessageView } from '@/controllers/chat/chat.types';
 import type { ChatStore } from '@/stores/chat/chat.types';
 import { renderForVRT, VRT_ROOT_TESTID } from '@/test-utils/vrt';
 import { HOUR_MS, MINUTE_MS, VRT_FROZEN_NOW_MS } from '@/test-utils/vrt.clock';
 import { VRT_VIEWPORT_DESKTOP, VRT_VIEWPORT_MOBILE } from '@/test-utils/vrt.viewports';
+import { setEmbedded } from '@/test-utils/embedded';
+import { EmbeddedLegalFooter } from '@/molecules/EmbeddedLegalFooter/EmbeddedLegalFooter';
 import { ChatConversation } from '@/templates/Chat/ChatConversation';
 
 /**
@@ -184,6 +186,8 @@ const conversation = (): ChatConversationView => ({
 });
 
 describe('Chat conversation — visual regression', () => {
+  afterEach(() => setEmbedded(false));
+
   beforeEach(() => {
     scene.messages = [];
     scene.conversation = null;
@@ -209,6 +213,40 @@ describe('Chat conversation — visual regression', () => {
     await expect.element(screen.getByText('Not sent')).toBeInTheDocument();
     await expect.element(screen.getByText('Leather hiking boots, size 43').first()).toBeInTheDocument();
     await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('chat-conversation-desktop');
+  });
+
+  it('renders the thread embedded in the App at desktop viewport, fitting the frame with the legal strip', async () => {
+    setEmbedded(true);
+    scene.messages = thread();
+    scene.conversation = conversation();
+
+    const screen = await renderForVRT(
+      <>
+        <ChatConversation peerPubky={PEER} />
+        <EmbeddedLegalFooter />
+      </>,
+      { viewport: VRT_VIEWPORT_DESKTOP, disableHover: true },
+    );
+    await expect.element(screen.getByText('Great, I will take them.')).toBeInTheDocument();
+    const root = screen.getByTestId(VRT_ROOT_TESTID).element() as HTMLElement;
+    expect(root.querySelector('[data-testid="embedded-legal-footer"]'), 'the legal strip').not.toBeNull();
+    await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('chat-conversation-embedded-desktop');
+  });
+
+  it('renders the thread embedded in the App at mobile viewport, fitting the frame with the legal strip', async () => {
+    setEmbedded(true);
+    scene.messages = thread();
+    scene.conversation = conversation();
+
+    const screen = await renderForVRT(
+      <>
+        <ChatConversation peerPubky={PEER} />
+        <EmbeddedLegalFooter />
+      </>,
+      { viewport: VRT_VIEWPORT_MOBILE, disableHover: true },
+    );
+    await expect.element(screen.getByText('Great, I will take them.')).toBeInTheDocument();
+    await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('chat-conversation-embedded-mobile');
   });
 
   it('renders the thread at mobile viewport', async () => {

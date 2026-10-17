@@ -104,6 +104,24 @@ describe('ChatSyncCoordinator', () => {
     expect(pingsCalls).toBe(2);
   });
 
+  it('starts once the session is restored after the persisted pubky was hydrated first (cold load)', async () => {
+    // A cold load hydrates the persisted pubky before the session restore
+    // completes; the coordinator may start in between, as on the catalog page.
+    useAuthStore.setState({ currentUserPubky: OWNER, hasProfile: true, hasHydrated: true });
+    const coordinator = ChatSyncCoordinator.getInstance();
+    coordinator.setRoute('/marketplace');
+    coordinator.start();
+    await settle();
+    expect(useChatStore.getState().isLeaderTab).toBe(false);
+    expect(ChatController.getOrFetchIdentity).not.toHaveBeenCalled();
+
+    useAuthStore.setState({ session: mockSession() });
+    await settle();
+    expect(useChatStore.getState().isLeaderTab).toBe(true);
+    expect(ChatController.getOrFetchIdentity).toHaveBeenCalled();
+    expect(pingsCalls).toBe(1);
+  });
+
   it('does not poll the inbox while the sign-in lacks the chat scopes', async () => {
     vi.mocked(ChatController.getOrFetchIdentity).mockResolvedValue('needs_reauth');
     const coordinator = ChatSyncCoordinator.getInstance();

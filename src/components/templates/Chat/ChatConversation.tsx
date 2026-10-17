@@ -10,7 +10,9 @@ import { Link } from '@/atoms/Link/Link';
 import { Typography } from '@/atoms/Typography/Typography';
 import { useChatConversation } from '@/hooks/useChatConversation/useChatConversation';
 import { useChatIdentity } from '@/hooks/useChatIdentity/useChatIdentity';
+import { useIsEmbedded } from '@/hooks/useIsEmbedded/useIsEmbedded';
 import { CHAT_COPY } from '@/libs/chat/copy';
+import { cn } from '@/libs/utils/utils';
 import type { ChatContext } from '@/models/chat/chat.schema';
 import { ChatComposer } from '@/organisms/Chat/ChatComposer';
 import { ChatContextChip } from '@/organisms/Chat/ChatContextChip';
@@ -35,6 +37,7 @@ export function ChatConversation({ peerPubky }: { peerPubky: string }) {
   const currentUserPubky = useAuthStore((state) => state.currentUserPubky);
   const setShowSignInDialog = useAuthStore((state) => state.setShowSignInDialog);
   const { identityState, inboxStatus } = useChatIdentity();
+  const isEmbedded = useIsEmbedded();
   const thread = useChatConversation(peerPubky, context);
   const { name } = useChatPeerName(peerPubky);
   const router = useRouter();
@@ -64,11 +67,19 @@ export function ChatConversation({ peerPubky }: { peerPubky: string }) {
       showRightSidebar={false}
       showLeftMobileButton={false}
       showRightMobileButton={false}
-      className="pb-24"
+      // Embedded in the App, the Shop header is gone and the legal strip follows
+      // the thread: size the thread to the frame minus that strip, with a small
+      // gap, so the page does not scroll. Standalone keeps room for the header.
+      className={isEmbedded ? 'pb-4' : 'pb-24'}
     >
       <Container
         overrideDefaults
-        className="mx-auto flex h-[calc(100svh-12rem)] w-full max-w-3xl flex-col gap-3 sm:h-[calc(100svh-15rem)] lg:h-[calc(100svh-10rem)]"
+        className={cn(
+          'mx-auto flex w-full max-w-3xl flex-col gap-3',
+          isEmbedded
+            ? 'h-[calc(100svh-9rem)] pt-2 sm:h-[calc(100svh-7rem)]'
+            : 'h-[calc(100svh-12rem)] sm:h-[calc(100svh-15rem)] lg:h-[calc(100svh-10rem)]',
+        )}
         data-surface="chat-conversation"
       >
         <div className="sticky top-24 z-10 flex items-center gap-2 bg-background lg:top-(--header-offset-main)">
