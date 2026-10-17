@@ -26,6 +26,7 @@ import {
   listingDraftHasUserContent,
   type ListingDraftMediaInput,
   type ListingDraftSectionId,
+  markListingDraftResumeId,
   parseListingDraftMediaRefs,
   serializeListingDraftMedia,
   takeListingDraftResumeId,
@@ -124,6 +125,8 @@ export interface UseCreateMarketplaceListingResult {
   reset: () => void;
   resumeDraft: () => void;
   flushDraft: () => Promise<void>;
+  /** Saves the draft and marks it to reopen directly when the seller comes back from settings. */
+  keepDraftForReturn: () => void;
   publishBlocked: ListingPublishBlockReason | null;
   publishGuardReady: boolean;
 }
@@ -431,6 +434,13 @@ export function useCreateMarketplaceListing(): UseCreateMarketplaceListingResult
 
   const flushDraft = () => persistDraftRef.current();
 
+  const keepDraftForReturn = () => {
+    // The form is blank behind a Resume / Discard prompt, so there is no draft of this visit to reopen.
+    if (pendingRestoreRef.current) return;
+    markListingDraftResumeId(draftIdRef.current);
+    void persistDraftRef.current();
+  };
+
   return {
     form,
     media,
@@ -445,6 +455,7 @@ export function useCreateMarketplaceListing(): UseCreateMarketplaceListingResult
     reset,
     resumeDraft,
     flushDraft,
+    keepDraftForReturn,
     publishBlocked,
     publishGuardReady,
   };

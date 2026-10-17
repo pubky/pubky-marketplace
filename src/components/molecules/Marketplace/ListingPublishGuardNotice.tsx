@@ -1,6 +1,10 @@
 'use client';
 
-import { getMarketplacePaymentSettingsRoute, MARKETPLACE_ROUTES } from '@/app/routes';
+import {
+  getMarketplacePaymentSettingsRoute,
+  getMarketplaceShippingSettingsRoute,
+  MARKETPLACE_ROUTES,
+} from '@/app/routes';
 import { Button } from '@/atoms/Button/Button';
 import { Link } from '@/atoms/Link/Link';
 import { Typography } from '@/atoms/Typography/Typography';
@@ -19,6 +23,7 @@ export function ListingPublishGuardNotice({
   density = 'banner',
   returnTo,
   onSessionConnected,
+  onLeaveForSettings,
 }: {
   reason: ListingPublishBlockReason;
   surface: string;
@@ -26,6 +31,8 @@ export function ListingPublishGuardNotice({
   density?: 'banner' | 'action';
   returnTo?: string;
   onSessionConnected?: () => void | Promise<void>;
+  /** Called when the seller follows a settings link, before the composer unmounts. */
+  onLeaveForSettings?: () => void;
 }) {
   if (reason === 'paykit-unreachable') {
     return (
@@ -39,6 +46,11 @@ export function ListingPublishGuardNotice({
   }
   const copy = LISTING_PUBLISH_BLOCK_COPY[reason];
   const needsSession = reason === 'session' || reason === 'unverified';
+  const composerPath = returnTo ?? MARKETPLACE_ROUTES.SELL;
+  const leaveForSettings = () => {
+    rememberListingComposerReturnTo(composerPath);
+    onLeaveForSettings?.();
+  };
 
   return (
     <div
@@ -60,17 +72,13 @@ export function ListingPublishGuardNotice({
       </Typography>
       {reason === 'no-method' ? (
         <Button asChild variant="link" className="mt-2 h-auto p-0">
-          <Link
-            href={getMarketplacePaymentSettingsRoute(returnTo ?? MARKETPLACE_ROUTES.SELL)}
-            overrideDefaults
-            onClick={() => rememberListingComposerReturnTo(returnTo ?? MARKETPLACE_ROUTES.SELL)}
-          >
+          <Link href={getMarketplacePaymentSettingsRoute(composerPath)} overrideDefaults onClick={leaveForSettings}>
             Payment settings
           </Link>
         </Button>
       ) : reason === 'no-delivery-key' ? (
         <Button asChild variant="link" className="mt-2 h-auto p-0">
-          <Link href={MARKETPLACE_ROUTES.SETTINGS_SHIPPING} overrideDefaults>
+          <Link href={getMarketplaceShippingSettingsRoute(composerPath)} overrideDefaults onClick={leaveForSettings}>
             Create delivery key
           </Link>
         </Button>

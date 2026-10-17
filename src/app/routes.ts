@@ -99,6 +99,11 @@ export function getMarketplacePaymentSettingsRoute(returnTo?: string): string {
   return `${MARKETPLACE_ROUTES.SETTINGS}?returnTo=${encodeURIComponent(returnTo)}`;
 }
 
+export function getMarketplaceShippingSettingsRoute(returnTo?: string): string {
+  if (!returnTo || !isMarketplaceListingComposerReturnTo(returnTo)) return MARKETPLACE_ROUTES.SETTINGS_SHIPPING;
+  return `${MARKETPLACE_ROUTES.SETTINGS_SHIPPING}?returnTo=${encodeURIComponent(returnTo)}`;
+}
+
 export function readMarketplaceListingComposerReturnTo(returnTo: string | null): string | null {
   return returnTo && isMarketplaceListingComposerReturnTo(returnTo) ? returnTo : null;
 }

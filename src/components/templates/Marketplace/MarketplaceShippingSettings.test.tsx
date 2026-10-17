@@ -1,8 +1,10 @@
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { MARKETPLACE_ROUTES } from '@/app/routes';
 import { TooltipProvider } from '@/atoms/Tooltip/Tooltip';
 import { CommerceController } from '@/controllers/commerce/commerce';
+import { peekListingComposerReturnTo, rememberListingComposerReturnTo } from '@/libs/commerce/listing-publish-guards';
 import { useMarketplaceDisplayStore } from '@/stores/marketplace-display/marketplace-display.store';
 import { MarketplaceShippingSettings } from './MarketplaceShippingSettings';
 
@@ -24,9 +26,31 @@ const presetsView = vi.hoisted(() => ({
   remove: vi.fn(async () => {}),
 }));
 
+const navigation = vi.hoisted(() => ({ search: '' }));
+
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn() }),
   usePathname: () => '/marketplace/settings/shipping',
+  useSearchParams: () => new URLSearchParams(navigation.search),
+}));
+
+const deliveryKeyView = vi.hoisted(() => ({
+  enabled: false,
+  publication: null as 'matches' | 'missing' | null,
+}));
+
+vi.mock('@/hooks/useMyDeliveryKey/useMyDeliveryKey', () => ({
+  useMyDeliveryKey: () => ({
+    enabled: deliveryKeyView.enabled,
+    status: deliveryKeyView.publication
+      ? { local: null, publication: deliveryKeyView.publication, publishedKeyId: null }
+      : null,
+    isLoading: false,
+    isWorking: false,
+    loadFailed: false,
+    create: vi.fn(async () => true),
+    publish: vi.fn(async () => true),
+  }),
 }));
 
 vi.mock('@/hooks/useMarketplaceShippingPresets/useMarketplaceShippingPresets', async (importOriginal) => {
@@ -93,6 +117,10 @@ beforeAll(() => {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  sessionStorage.clear();
+  navigation.search = '';
+  deliveryKeyView.enabled = false;
+  deliveryKeyView.publication = null;
   presetsView.presets = [];
   useMarketplaceDisplayStore.setState({ displayCurrency: 'USD', showFxEstimate: true });
   vi.mocked(CommerceController.getIndicativeBtcRate).mockResolvedValue(RATE);
@@ -238,4 +266,57 @@ describe('MarketplaceShippingSettings presets', () => {
     const card = screen.getByRole('heading', { name: 'Edit preset' }).closest('div');
     expect(within(card as HTMLElement).getByRole('button', { name: 'Save preset' })).toBeInTheDocument();
   });
+});
+
+describe('MarketplaceShippingSettings return to the listing draft', () => {
+  it('shows no return action when the seller did not come from a listing', () => {
+    renderPage();
+
+    expect(screen.queryByTestId('listing-composer-return')).not.toBeInTheDocument();
+  });
+
+  it('links back to the draft while the delivery key is not published', () => {
+    deliveryKeyView.enabled = true;
+    deliveryKeyView.publication = 'missing';
+    navigation.search = `returnTo=${encodeURIComponent(MARKETPLACE_ROUTES.SELL)}`;
+
+    renderPage();
+
+    expect(screen.getByRole('link', { name: 'Back to listing' })).toHaveAttribute('href', MARKETPLACE_ROUTES.SELL);
+    expect(peekListingComposerReturnTo()).toBe(MARKETPLACE_ROUTES.SELL);
+  });
+
+  it('offers Continue listing once the delivery key is published, and forgets the return on use', async () => {
+    const editPath = `/marketplace/listing/${OWNER}/item/edit`;
+    deliveryKeyView.enabled = true;
+    deliveryKeyView.publication = 'matches';
+    navigation.search = `returnTo=${encodeURIComponent(editPath)}`;
+    renderPage();
+
+    const link = screen.getByRole('link', { name: 'Continue listing' });
+    expect(link).toHaveAttribute('href', editPath);
+    link.addEventListener('click', (event) => event.preventDefault());
+    await userEvent.click(link);
+
+    expect(peekListingComposerReturnTo()).toBeNull();
+  });
+
+  it('keeps the return when the seller reaches Shipping from Payment settings', () => {
+    rememberListingComposerReturnTo(MARKETPLACE_ROUTES.SELL);
+
+    renderPage();
+
+    expect(screen.getByRole('link', { name: 'Back to listing' })).toHaveAttribute('href', MARKETPLACE_ROUTES.SELL);
+  });
+
+  it.each(['https://evil.example/marketplace/sell', '//evil.example', '/marketplace/orders'])(
+    'ignores a return target that is not a listing composer: %s',
+    (target) => {
+      navigation.search = `returnTo=${encodeURIComponent(target)}`;
+
+      renderPage();
+
+      expect(screen.queryByTestId('listing-composer-return')).not.toBeInTheDocument();
+    },
+  );
 });
