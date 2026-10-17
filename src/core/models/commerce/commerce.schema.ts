@@ -553,6 +553,11 @@ export interface CommerceSavedSearchParams {
    */
   countryCode?: string | null;
   sort: 'recommended' | 'newest' | 'price_low' | 'price_high' | 'ending_soon';
+  /**
+   * Only sellers who accept this rail, null = any. Optional because rows
+   * persisted before the filter existed lack it; readers coalesce to null.
+   */
+  paymentMethod?: 'bitcoin' | 'usdt' | 'paypal' | null;
 }
 
 /**
