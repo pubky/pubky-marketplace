@@ -54,5 +54,7 @@ export function createMarketplaceVrtCommerceController() {
       bitcoinOfferAvailable: true,
       paypalAvailable: false,
     }),
+    // No payment badges unless a scene opts in.
+    fetchSellerPaymentBadges: async () => [],
   };
 }

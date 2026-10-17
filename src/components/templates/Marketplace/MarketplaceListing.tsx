@@ -37,6 +37,7 @@ import { useMarketplacePublicAvailability } from '@/hooks/useMarketplacePublicAv
 import { useSellerReputation } from '@/hooks/useMarketplaceReviews/useMarketplaceReviews';
 import { useMeasurementSystem } from '@/hooks/useMeasurementSystem/useMeasurementSystem';
 import { useRequireAuth } from '@/hooks/useRequireAuth/useRequireAuth';
+import { useSellerPaymentBadges } from '@/hooks/useSellerPaymentBadges/useSellerPaymentBadges';
 import { CHAT_COPY } from '@/libs/chat/copy';
 import { getAuctionPhase } from '@/libs/commerce/auction-phase';
 import { SOLD_OUT_COPY } from '@/libs/commerce/cart-stock';
@@ -67,6 +68,7 @@ import { formatShipsToCountries, shopShipsToCountries } from '@/libs/commerce/sh
 import { buildMarketplaceListingAggregateId } from '@/libs/commerce/transaction-commands';
 import { formatPackageDimensions, formatWeight } from '@/libs/commerce/units';
 import { MarketplaceFulfillmentBadge } from '@/molecules/MarketplaceFulfillmentBadge/MarketplaceFulfillmentBadge';
+import { MarketplacePaymentMethodBadges } from '@/molecules/MarketplacePaymentMethodBadges/MarketplacePaymentMethodBadges';
 import { MarketplaceSellerIdentity } from '@/molecules/MarketplaceSellerIdentity/MarketplaceSellerIdentity';
 import { ChatEntryButton } from '@/organisms/Chat/ChatEntryButton';
 import { ContentLayout } from '@/organisms/ContentLayout/ContentLayout';
@@ -118,6 +120,7 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
   const publicStock = useMarketplacePublicAvailability(sellerPubky, listingId, negotiation.needsSession);
   const soldOutVariants = listingSoldOutVariantIds(negotiation.projection ?? publicStock);
   const sellerReputation = useSellerReputation(sellerPubky);
+  const paymentBadges = useSellerPaymentBadges(sellerPubky);
   const cart = useMarketplaceCart();
   const orders = useMarketplaceOrders();
   const offers = useMarketplaceOffers();
@@ -458,6 +461,11 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
                   {negotiation.projection.auction.bidCount === 1 ? 'bid' : 'bids'}
                 </Typography>
               )}
+              <MarketplacePaymentMethodBadges
+                methods={paymentBadges}
+                className="mt-3"
+                testId="marketplace-listing-payment-methods"
+              />
             </div>
 
             {record.variants.length > 1 && (

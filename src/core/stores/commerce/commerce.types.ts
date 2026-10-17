@@ -1,3 +1,5 @@
+import type { SellerPaymentBadge } from '@/libs/commerce/payment-badges';
+
 export type CommerceSaleFormatFilter = 'all' | 'fixed_price' | 'auction' | 'drops';
 
 /**
@@ -81,6 +83,12 @@ export interface CommerceState {
   inventorySession: CommerceMarketplaceSession | null;
   watchlistSyncStatus: CommerceWatchlistSyncUiStatus;
   receiptsPublicationStatus: CommerceReceiptPublicationUiStatus;
+  /**
+   * The payment badges last resolved per seller this session, written by the
+   * controller. Memory only: it lets a degraded Paykit read hold a badge
+   * instead of flickering it off (see `resolveSellerPaymentBadges`).
+   */
+  sellerPaymentBadges: Record<string, SellerPaymentBadge[]>;
 }
 
 export interface CommerceActions {
@@ -99,6 +107,7 @@ export interface CommerceActions {
   setInventorySession: (session: CommerceMarketplaceSession | null) => void;
   setWatchlistSyncStatus: (watchlistSyncStatus: CommerceWatchlistSyncUiStatus) => void;
   setReceiptsPublicationStatus: (receiptsPublicationStatus: CommerceReceiptPublicationUiStatus) => void;
+  setSellerPaymentBadges: (sellerPubky: string, badges: SellerPaymentBadge[]) => void;
   resetFilters: () => void;
   reset: () => void;
 }
@@ -122,6 +131,7 @@ export const commerceInitialState: CommerceState = {
   inventorySession: null,
   watchlistSyncStatus: 'idle',
   receiptsPublicationStatus: 'idle',
+  sellerPaymentBadges: {},
 };
 
 export enum CommerceActionTypes {
@@ -140,6 +150,7 @@ export enum CommerceActionTypes {
   SET_INVENTORY_SESSION = 'SET_INVENTORY_SESSION',
   SET_WATCHLIST_SYNC_STATUS = 'SET_WATCHLIST_SYNC_STATUS',
   SET_RECEIPTS_PUBLICATION_STATUS = 'SET_RECEIPTS_PUBLICATION_STATUS',
+  SET_SELLER_PAYMENT_BADGES = 'SET_SELLER_PAYMENT_BADGES',
   RESET_FILTERS = 'RESET_FILTERS',
   RESET = 'RESET',
 }

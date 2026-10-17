@@ -111,4 +111,21 @@ describe('useCommerceStore', () => {
     store.reset();
     expect(useCommerceStore.getState().inventorySession).toBeNull();
   });
+
+  it('remembers payment badges per seller until reset, and keeps them across a filter reset', () => {
+    const store = useCommerceStore.getState();
+    const sellerA = 'a'.repeat(52);
+    const sellerB = 'b'.repeat(52);
+
+    store.setSellerPaymentBadges(sellerA, ['bitcoin', 'paypal']);
+    store.setSellerPaymentBadges(sellerB, ['usdt']);
+    store.setSellerPaymentBadges(sellerA, ['paypal']);
+    expect(useCommerceStore.getState().sellerPaymentBadges).toEqual({ [sellerA]: ['paypal'], [sellerB]: ['usdt'] });
+
+    store.resetFilters();
+    expect(useCommerceStore.getState().sellerPaymentBadges[sellerB]).toEqual(['usdt']);
+
+    store.reset();
+    expect(useCommerceStore.getState().sellerPaymentBadges).toEqual({});
+  });
 });

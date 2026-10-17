@@ -91,7 +91,15 @@ const view = vi.hoisted(() => ({
   catalogEntries: undefined as unknown,
   currentUserPubky: 'u'.repeat(52),
   shopTags: [] as unknown[],
+  // Null keeps the deployment's own adapter mode, so existing scenes are unchanged.
+  adapterMode: null as 'transaction-service' | null,
+  paymentBadges: [] as Array<'bitcoin' | 'usdt' | 'paypal'>,
 }));
+
+vi.mock('@/config/commerce', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/config/commerce')>();
+  return { ...actual, getCommerceAdapterMode: () => view.adapterMode ?? actual.getCommerceAdapterMode() };
+});
 
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn() }),
@@ -149,6 +157,7 @@ vi.mock('@/controllers/commerce/commerce', () => ({
     fetchSellerReputation: () => Promise.resolve({ status: 'unavailable' }),
     fetchSellerReviews: () => Promise.resolve({ status: 'unavailable' }),
     fetchListingReviews: () => Promise.resolve({ status: 'unavailable' }),
+    fetchSellerPaymentBadges: () => Promise.resolve(view.paymentBadges),
   },
 }));
 
@@ -325,6 +334,69 @@ describe('Marketplace shop — visual regression', () => {
     });
     await expect.element(screen.getByTestId('marketplace-shop-ships-to')).toHaveTextContent('Ships to: Switzerland');
     await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('shop-ships-to-desktop');
+  });
+
+  it("renders the seller's accepted payment methods in the header at desktop viewport", async () => {
+    const { seller, shop, listings } = await fixtures;
+    view.currentUserPubky = 'u'.repeat(52);
+    view.shop = shop;
+    view.listings = listings;
+    view.catalogEntries = [];
+    view.adapterMode = 'transaction-service';
+    view.paymentBadges = ['bitcoin', 'usdt', 'paypal'];
+    try {
+      const screen = await renderForVRT(<MarketplaceShop sellerPubky={seller} />, {
+        viewport: VRT_VIEWPORT_DESKTOP,
+        disableHover: true,
+      });
+      await expect.element(screen.getByRole('list', { name: 'Accepted payment methods' })).toBeVisible();
+      await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('shop-payment-methods-desktop');
+    } finally {
+      view.adapterMode = null;
+      view.paymentBadges = [];
+    }
+  });
+
+  it('renders a Bitcoin-only seller in the header at mobile viewport', async () => {
+    const { seller, shop, listings } = await fixtures;
+    view.currentUserPubky = 'u'.repeat(52);
+    view.shop = shop;
+    view.listings = listings;
+    view.catalogEntries = [];
+    view.adapterMode = 'transaction-service';
+    view.paymentBadges = ['bitcoin'];
+    try {
+      const screen = await renderForVRT(<MarketplaceShop sellerPubky={seller} />, {
+        viewport: VRT_VIEWPORT_MOBILE,
+        disableHover: true,
+      });
+      await expect.element(screen.getByRole('list', { name: 'Accepted payment methods' })).toBeVisible();
+      await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('shop-payment-methods-bitcoin-mobile');
+    } finally {
+      view.adapterMode = null;
+      view.paymentBadges = [];
+    }
+  });
+
+  it('renders accepted payment methods on the no-shop fallback at desktop viewport', async () => {
+    const { seller, listings } = await fixtures;
+    view.currentUserPubky = 'u'.repeat(52);
+    view.shop = null;
+    view.listings = listings;
+    view.catalogEntries = [];
+    view.adapterMode = 'transaction-service';
+    view.paymentBadges = ['usdt', 'paypal'];
+    try {
+      const screen = await renderForVRT(<MarketplaceShop sellerPubky={seller} />, {
+        viewport: VRT_VIEWPORT_DESKTOP,
+        disableHover: true,
+      });
+      await expect.element(screen.getByRole('list', { name: 'Accepted payment methods' })).toBeVisible();
+      await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('shop-no-record-payment-methods-desktop');
+    } finally {
+      view.adapterMode = null;
+      view.paymentBadges = [];
+    }
   });
 
   it('renders a shop with no listings at desktop viewport', async () => {

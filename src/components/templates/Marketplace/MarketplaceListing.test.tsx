@@ -23,6 +23,7 @@ import { MarketplaceListing } from './MarketplaceListing';
 const LOCKS_POLICY_URL = `pubky://${COMMERCE_FIXTURE_SELLER}/pub/locks.app/boots_01.json`;
 const cartAdd = vi.hoisted(() => vi.fn());
 const publicAvailabilityRead = vi.hoisted(() => vi.fn());
+const paymentBadgesRead = vi.hoisted(() => vi.fn());
 const projectionRefresh = vi.hoisted(() => vi.fn());
 const confirmRemovedCalls = vi.hoisted(() => vi.fn());
 const sellerReputation = vi.hoisted((): { value: CommerceSellerReputationOverview | { status: 'loading' } } => ({
@@ -95,6 +96,7 @@ vi.mock('@/controllers/commerce/commerce', () => ({
         : Promise.resolve(view.confirmedRemoved);
     },
     getPublicListingAvailability: publicAvailabilityRead,
+    fetchSellerPaymentBadges: paymentBadgesRead,
     hasFullHomeserverGrant: () => view.hasFullHomeserverGrant,
     canRegisterListings: () => false,
     ensureListingRegistered: vi.fn(async () => {}),
@@ -254,6 +256,8 @@ describe('MarketplaceListing', () => {
             }
           : null,
     );
+    paymentBadgesRead.mockReset();
+    paymentBadgesRead.mockResolvedValue([]);
     view.hasFullHomeserverGrant = true;
     view.orders = [];
     view.offers = [];
@@ -408,6 +412,29 @@ describe('MarketplaceListing', () => {
     expect(screen.getByTestId('marketplace-listing-ships-to')).toHaveTextContent(
       'Ships to: Switzerland and Liechtenstein',
     );
+  });
+
+  it("badges the seller's accepted payment methods", async () => {
+    paymentBadgesRead.mockResolvedValue(['bitcoin', 'paypal']);
+    const listing = renderListing();
+
+    const list = await screen.findByRole('list', { name: 'Accepted payment methods' });
+    expect(list).toHaveTextContent('Bitcoin');
+    expect(list).toHaveTextContent('PayPal');
+    expect(list).not.toHaveTextContent('USDT');
+    expect(paymentBadgesRead).toHaveBeenCalledWith(listing.seller_id);
+  });
+
+  it('shows no payment row for a seller with no rails, or when the read fails', async () => {
+    renderListing();
+    await waitFor(() => expect(paymentBadgesRead).toHaveBeenCalledOnce());
+    expect(screen.queryByTestId('marketplace-listing-payment-methods')).not.toBeInTheDocument();
+    cleanup();
+
+    paymentBadgesRead.mockResolvedValue(null);
+    renderListing();
+    await waitFor(() => expect(paymentBadgesRead).toHaveBeenCalledTimes(2));
+    expect(screen.queryByTestId('marketplace-listing-payment-methods')).not.toBeInTheDocument();
   });
 
   it('says nothing about destinations for a seller who ships anywhere, or for pickup only', () => {

@@ -50,6 +50,12 @@ export const useCommerceStore = create<CommerceStore>()(
         set({ watchlistSyncStatus }, false, CommerceActionTypes.SET_WATCHLIST_SYNC_STATUS),
       setReceiptsPublicationStatus: (receiptsPublicationStatus) =>
         set({ receiptsPublicationStatus }, false, CommerceActionTypes.SET_RECEIPTS_PUBLICATION_STATUS),
+      setSellerPaymentBadges: (sellerPubky, badges) =>
+        set(
+          (state) => ({ sellerPaymentBadges: { ...state.sellerPaymentBadges, [sellerPubky]: badges } }),
+          false,
+          CommerceActionTypes.SET_SELLER_PAYMENT_BADGES,
+        ),
       resetFilters: () =>
         set(
           {
