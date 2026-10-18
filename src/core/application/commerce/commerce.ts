@@ -178,7 +178,7 @@ import type { BtcRate } from '@/services/exchangerate/exchangerate.types';
 import { CommerceHomeserverService } from '@/services/homeserver/commerce/commerce';
 import { CommercePrivStoreService } from '@/services/homeserver/commerce/priv-store';
 import { HomeserverService, PRIVATE_APP_DATA_PATH } from '@/services/homeserver/homeserver';
-import { retryHomeserverWrite } from '@/services/homeserver/write-retry';
+import { retryHomeserverWrite, retryHomeserverWriteAfterReread } from '@/services/homeserver/write-retry';
 import { type CommerceListingRowGeneration, LocalCommerceService } from '@/services/local/commerce/commerce';
 import {
   buildMarketplaceTagRowId,
@@ -4468,8 +4468,20 @@ export class CommerceApplication {
    * listing must not read as a failed publish, or the seller re-posts it as a
    * duplicate. Proven divergence — the homeserver serving something other than
    * what was written — still throws.
+   *
+   * A PUT the homeserver refuses with its publish conflict starts over from
+   * the read: the record changed after it was checked.
    */
   private static async putVerifiedPublicListing(
+    record: CommerceListingRecord,
+    url: string,
+    attempt: ListingRegistrationAttempt,
+    guard?: () => Promise<void>,
+  ): Promise<boolean> {
+    return await retryHomeserverWriteAfterReread(() => this.putVerifiedPublicListingOnce(record, url, attempt, guard));
+  }
+
+  private static async putVerifiedPublicListingOnce(
     record: CommerceListingRecord,
     url: string,
     attempt: ListingRegistrationAttempt,
@@ -4541,11 +4553,14 @@ export class CommerceApplication {
           operation: 'putVerifiedPublicListing',
         });
       }
-      await retryHomeserverWrite(HttpMethod.PUT, () =>
-        this.withListingWriteLock(attempt, async () => {
-          await guard?.();
-          await CommerceHomeserverService.putJson(url, candidate, { singleAttempt: true });
-        }),
+      await retryHomeserverWrite(
+        HttpMethod.PUT,
+        () =>
+          this.withListingWriteLock(attempt, async () => {
+            await guard?.();
+            await CommerceHomeserverService.putJson(url, candidate, { singleAttempt: true });
+          }),
+        { retryPublishConflict: false },
       );
     }
 
