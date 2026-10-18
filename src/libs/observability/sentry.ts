@@ -92,8 +92,8 @@ export function getSentryInitBase(): Sentry.NodeOptions & Sentry.BrowserOptions 
   return {
     dsn: getSentryDsn(),
     environment: resolveSentryEnvironment(),
-    // The release stays build-time on purpose: Docker CI sets this to the commit SHA,
-    // local builds fall back to package.json version, and source-map uploads must match it.
+    // The release stays build-time on purpose: it is the deployed commit SHA (Docker CI, Vercel),
+    // which source-map uploads and scripts/sentry-release use too; local builds use the package version.
     release: Env.NEXT_PUBLIC_APP_VERSION,
     debug: false,
     sendDefaultPii: false,

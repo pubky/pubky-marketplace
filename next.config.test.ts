@@ -4,6 +4,7 @@ import withSerwistInit from '@serwist/next';
 import type { NextConfig } from 'next';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { redirects, resolveMountConfig } from './next.config';
+import packageJson from './package.json';
 
 vi.mock('@serwist/next', () => ({ default: vi.fn(() => (config: NextConfig) => config) }));
 
@@ -222,6 +223,40 @@ describe('resolveMountConfig', () => {
     expect(() => resolveMountConfig({ NEXT_PUBLIC_ASSET_PREFIX: 'cdn.example.com' })).toThrow(
       /NEXT_PUBLIC_ASSET_PREFIX/,
     );
+  });
+});
+
+describe('Sentry release baked into the build', () => {
+  const SHA = '2f844c1084c432d8dd6d7e66c320dcaeeb9eb02e';
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.resetModules();
+  });
+
+  async function bakedRelease(env: Record<string, string | undefined>) {
+    for (const name of ['NEXT_PUBLIC_APP_VERSION', 'GIT_COMMIT', 'VERCEL_GIT_COMMIT_SHA']) {
+      vi.stubEnv(name, env[name]);
+    }
+    vi.resetModules();
+    const { default: config } = await import('./next.config');
+    return config.env?.NEXT_PUBLIC_APP_VERSION;
+  }
+
+  it("bakes Vercel's commit SHA", async () => {
+    expect(await bakedRelease({ VERCEL_GIT_COMMIT_SHA: SHA.toUpperCase() })).toBe(SHA);
+  });
+
+  it('bakes the GIT_COMMIT of a Vercel CLI deploy', async () => {
+    expect(await bakedRelease({ GIT_COMMIT: SHA })).toBe(SHA);
+  });
+
+  it('keeps the NEXT_PUBLIC_APP_VERSION Docker CI passes, which the source-map upload also uses', async () => {
+    expect(await bakedRelease({ NEXT_PUBLIC_APP_VERSION: SHA, VERCEL_GIT_COMMIT_SHA: 'a'.repeat(40) })).toBe(SHA);
+  });
+
+  it('falls back to the package version for a local build', async () => {
+    expect(await bakedRelease({})).toBe(packageJson.version);
   });
 });
 

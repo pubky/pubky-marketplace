@@ -42,7 +42,7 @@ export const envSchema = z
       .transform((val) => val === 'true')
       .pipe(z.boolean()),
 
-    // Build-intrinsic release value (package version locally; Git SHA in Docker CI).
+    // Build-intrinsic Sentry release: the deployed commit SHA (Docker CI, Vercel), else the package version.
     NEXT_PUBLIC_APP_VERSION: z.string(),
 
     // Social link-out origin (baked per artifact). Unset = link-out off. The
