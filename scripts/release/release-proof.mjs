@@ -508,7 +508,7 @@ async function renderedOrderCards(page) {
   );
 }
 
-// Activity rows link to /marketplace/orders#order-<id>; the Orders page renders only a
+// Activity rows link to /marketplace/orders?order=<id> (#304); the Orders page renders only a
 // card per order that belongs in its history (paid/receipted, or held reservations).
 // Grant sessions carry no marketplace session. Settings → Get paid offers "Authorize" (Ring approval of the
 // marketplace session); approve it as the given seat so commerce state (orders, Activity) can sync.
@@ -555,7 +555,7 @@ async function activityAndOrder(page, tag, keypair) {
   await page.goto(at('/marketplace/notifications'), { waitUntil: 'domcontentloaded' });
   await waitForAppReady(page);
   await page
-    .locator('a[href*="#order-"]')
+    .locator('a[href*="/marketplace/orders?order="]')
     .first()
     .waitFor({ state: 'visible', timeout: 45_000 })
     .catch(() => {});
@@ -566,9 +566,9 @@ async function activityAndOrder(page, tag, keypair) {
   const unrecognizedRows = await page.locator('[data-cy="marketplace-unrecognized-notification"]').count();
   const targets = (
     await page
-      .locator('a[href*="#order-"]')
+      .locator('a[href*="/marketplace/orders?order="]')
       .evaluateAll((els) => els.map((el) => el.getAttribute('href')).filter(Boolean))
-  ).map((href) => decodeURIComponent(href.split('#order-')[1] ?? ''));
+  ).map((href) => decodeURIComponent(new URL(href, 'https://x.invalid').searchParams.get('order') ?? ''));
   const distinct = [...new Set(targets)];
   const hiddenTargets = distinct.filter((id) => !rendered.has(id)).map((id) => id.slice(0, 8));
   await shot(page, `07-activity-${tag}.png`);
@@ -578,7 +578,7 @@ async function activityAndOrder(page, tag, keypair) {
   let opened = null;
   if (index >= 0) {
     const target = targets[index];
-    await page.locator('a[href*="#order-"]').nth(index).click();
+    await page.locator('a[href*="/marketplace/orders?order="]').nth(index).click();
     await page.waitForURL(/\/marketplace\/orders/, { timeout: 30_000 }).catch(() => {});
     await waitForAppReady(page);
     const card = page.locator(`[id="order-${target}"]`);
@@ -602,7 +602,7 @@ async function activityAndOrder(page, tag, keypair) {
       .catch(() => false);
     opened = {
       path: url.pathname,
-      hashIsOrder: url.hash.startsWith('#order-'),
+      queryIsOrder: url.searchParams.get('order') === target && url.hash === '',
       targetPrefix: target.slice(0, 8),
       label,
       inView,
@@ -1605,7 +1605,7 @@ try {
       '5',
       'an Activity row opens that order on the Orders page (card rendered, in view, label matches)',
       Boolean(
-        opened?.hashIsOrder &&
+        opened?.queryIsOrder &&
         opened?.labelMatches &&
         opened?.inView &&
         opened.path === `${BASE_PATH}/marketplace/orders`,
