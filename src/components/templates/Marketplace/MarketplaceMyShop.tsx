@@ -47,7 +47,7 @@ export function MarketplaceMyShop() {
               My storefront
             </Heading>
             <Typography as="p" className="mt-2 max-w-xl text-muted-foreground">
-              Manage the shop name and other details buyers see on your storefront and listings.
+              Manage the shop name and details buyers see on your storefront and listings.
             </Typography>
           </div>
           <div className="flex flex-wrap gap-2">

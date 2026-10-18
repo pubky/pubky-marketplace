@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createOrderFixture, ORDER_FIXTURE_BUYER } from '@/test/fixtures/commerce/orders';
+import { setupFixedDateLocale } from '@/test-utils/date-locale';
 import {
   buyerPayByDeadline,
   CHECKOUT_HOLD_COPY,
@@ -18,6 +19,8 @@ import {
   UNBOUND_BACK_CANCEL_REASON,
 } from './checkout-hold';
 
+setupFixedDateLocale();
+
 describe('buyerPayByDeadline', () => {
   const HOLD = '2026-08-20T21:15:00.000Z';
   const REQUEST = '2026-08-20T21:07:00.000Z';
@@ -31,7 +34,7 @@ describe('buyerPayByDeadline', () => {
   it('shows the activated request deadline on an auction order', () => {
     expect(buyerPayByDeadline(activeAuction)).toBe(REQUEST);
     expect(holderBoundCopy(buyerPayByDeadline(activeAuction))).toBe(
-      'Pay by Aug 20, 2026, 9:07 PM UTC. If the window ends, the item restocks.',
+      `Pay by 20 Aug 2026, 21:07. If the window ends, the item restocks.`,
     );
   });
 
@@ -63,12 +66,12 @@ describe('checkout-hold copy', () => {
     expect(CHECKOUT_HOLD_COPY.expiredNoLateMoney).toBe('Payment window elapsed. The item is available again.');
   });
 
-  it('formats hold deadlines in en-US UTC', () => {
-    expect(formatHoldDeadline('2026-08-20T21:15:00.000Z')).toBe('Aug 20, 2026, 9:15 PM UTC');
+  it("formats hold deadlines using Pubky's local date and time", () => {
+    expect(formatHoldDeadline('2026-08-20T21:15:00.000Z')).toBe(`20 Aug 2026, 21:15`);
   });
 
   it('formats order timestamps with the day, and nothing for a missing or invalid value', () => {
-    expect(formatOrderInstant('2026-10-01T08:10:00.000Z')).toBe('Oct 1, 2026, 8:10 AM UTC');
+    expect(formatOrderInstant('2026-10-01T08:10:00.000Z')).toBe(`1 Oct 2026, 08:10`);
     expect(formatOrderInstant(null)).toBeNull();
     expect(formatOrderInstant(undefined)).toBeNull();
     expect(formatOrderInstant('')).toBeNull();
@@ -76,11 +79,9 @@ describe('checkout-hold copy', () => {
   });
 
   it('renders unbound and bound holder copy with the deadline', () => {
-    expect(holderUnboundCopy('2026-08-20T21:15:00.000Z')).toBe(
-      'The item is held for you until Aug 20, 2026, 9:15 PM UTC.',
-    );
+    expect(holderUnboundCopy('2026-08-20T21:15:00.000Z')).toBe(`The item is held for you until 20 Aug 2026, 21:15.`);
     expect(holderBoundCopy('2026-08-20T21:15:00.000Z')).toBe(
-      'Pay by Aug 20, 2026, 9:15 PM UTC. If the window ends, the item restocks.',
+      `Pay by 20 Aug 2026, 21:15. If the window ends, the item restocks.`,
     );
     expect(holderUnboundCopy(null)).toBe('The item is held for you once a payment starts.');
   });

@@ -1,0 +1,1 @@
+When Review & publish sends a seller to Shipping to create a delivery key, the Shipping page now offers Back to listing, then Continue listing once the key is published. The draft is saved on the way out and reopens directly, without the resume prompt. The same applies when Payment settings is reached from the composer.

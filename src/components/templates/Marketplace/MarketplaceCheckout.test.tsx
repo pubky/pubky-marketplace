@@ -48,7 +48,14 @@ const view = vi.hoisted(() => ({
   hasInstantDigitalLine: false,
   hasManualDigitalLine: false,
   orderCount: 1,
-  payResult: { ok: false, orderIds: [] as string[], boundOrders: [] as unknown[] },
+  payResult: { ok: false, orderIds: [] as string[], boundOrders: [] as unknown[] } as {
+    ok: boolean;
+    orderIds: string[];
+    boundOrders: unknown[];
+    refusal?: string;
+    soldOut?: boolean;
+  },
+  availability: new Map<string, { aggregateId: string; state: string; serverTime: string }>(),
   awardItems: [] as Array<{ awardId: string; listingId: string; variantId: string }>,
   shops: {} as Record<string, { name: string; deliveryAssumeDays?: number; autoCompleteDays?: number }>,
   allowedDestinationCountries: null as string[] | null,
@@ -286,6 +293,9 @@ vi.mock('@/controllers/commerce/commerce', () => ({
     }),
     getShop: vi.fn(async () => null),
     getConnectorStores: vi.fn(async () => new Map()),
+    getPublicListingAvailability: vi.fn(async (sellerPubky: string, listingId: string) =>
+      Promise.resolve(view.availability.get(`${sellerPubky}:${listingId}`) ?? null),
+    ),
   },
 }));
 
@@ -387,6 +397,7 @@ function resetCheckoutView() {
   checkoutActions.setDigitalChoice.mockReset();
   view.orderCount = 1;
   view.payResult = { ok: false, orderIds: [], boundOrders: [] };
+  view.availability.clear();
   navigation.navigateTop.mockReset();
   view.awardItems = [];
   view.shops = {};
@@ -974,6 +985,89 @@ describe('MarketplaceCheckout', () => {
     expect(checkoutActions.pay).toHaveBeenCalledWith(method, expect.any(Function));
   });
 
+  describe('sold-out items', () => {
+    const soldListing = () => ({
+      aggregateId: `listing:${listing.record.ownerPubky}_boots`,
+      state: 'sold',
+      serverTime: '2026-10-16T09:00:00.000Z',
+    });
+
+    it('marks a line that sold out and keeps Pay blocked with the reason', async () => {
+      const user = userEvent.setup();
+      seededCart();
+      view.adapterMode = 'transaction-service';
+      view.hasMarketplaceSession = true;
+      view.availability.set(`${listing.record.ownerPubky}:boots`, soldListing());
+
+      render(<MarketplaceCheckout />);
+      await fillValidDelivery(user);
+
+      expect(await screen.findByTestId('marketplace-checkout-line-sold-out')).toHaveTextContent('Sold out');
+      expect(screen.getByTestId('marketplace-checkout-pay')).toBeDisabled();
+      expect(document.getElementById('checkout-pay-reason')).toHaveTextContent(
+        'Remove sold-out items from your cart to pay.',
+      );
+    });
+
+    it('keeps a sold-out refusal from Pay on the page and rereads stock', async () => {
+      const user = userEvent.setup();
+      seededCart();
+      view.adapterMode = 'transaction-service';
+      view.hasMarketplaceSession = true;
+      view.payResult = {
+        ok: false,
+        orderIds: [],
+        boundOrders: [],
+        refusal: 'This listing has sold out.',
+        soldOut: true,
+      };
+
+      render(<MarketplaceCheckout />);
+      await fillValidDelivery(user);
+      const pay = screen.getByTestId('marketplace-checkout-pay');
+      await waitFor(() => expect(pay).toBeEnabled());
+      const { CommerceController } = await import('@/controllers/commerce/commerce');
+      const readsBeforePay = vi.mocked(CommerceController.getPublicListingAvailability).mock.calls.length;
+      view.availability.set(`${listing.record.ownerPubky}:boots`, soldListing());
+      await user.click(pay);
+
+      expect(await screen.findByTestId('marketplace-checkout-pay-refusal')).toHaveTextContent(
+        'This listing has sold out.',
+      );
+      expect(screen.getByTestId('marketplace-checkout-pay-refusal')).toHaveAttribute('role', 'alert');
+      await waitFor(() => expect(pay).toBeDisabled());
+      expect(vi.mocked(CommerceController.getPublicListingAvailability).mock.calls.length).toBeGreaterThan(
+        readsBeforePay,
+      );
+      expect(screen.getByTestId('marketplace-checkout-line-sold-out')).toHaveTextContent('Sold out');
+    });
+
+    it('keeps any other Pay refusal on the page without rereading stock', async () => {
+      const user = userEvent.setup();
+      seededCart();
+      view.adapterMode = 'transaction-service';
+      view.hasMarketplaceSession = true;
+      view.payResult = {
+        ok: false,
+        orderIds: [],
+        boundOrders: [],
+        refusal: 'You cannot purchase your own listing.',
+        soldOut: false,
+      };
+
+      render(<MarketplaceCheckout />);
+      await fillValidDelivery(user);
+      const pay = screen.getByTestId('marketplace-checkout-pay');
+      await waitFor(() => expect(pay).toBeEnabled());
+      await user.click(pay);
+
+      expect(await screen.findByTestId('marketplace-checkout-pay-refusal')).toHaveTextContent(
+        'You cannot purchase your own listing.',
+      );
+      expect(pay).toBeEnabled();
+    });
+  });
+
   describe('PayPal hand-off leaves the Shop through the top window', () => {
     const PAYPAL_URL = 'https://www.paypal.com/checkoutnow?token=EC-ABC123';
 
@@ -1246,7 +1340,14 @@ describe('MarketplaceCheckout', () => {
       showPaidOrder({ paymentMethod: 'paypal', confirmations: 0 });
       expect(screen.queryByTestId('marketplace-checkout-paid-headline')).not.toBeInTheDocument();
       expect(screen.queryByTestId('payment-status-panel')).not.toBeInTheDocument();
-      expect(screen.getByTestId('order-reference')).toHaveTextContent('Payment confirmed');
+      expect(screen.getByTestId('order-reference')).not.toHaveTextContent('Payment confirmed');
+      const labels = screen.getByTestId('marketplace-checkout-status-labels');
+      expect(labels).toHaveTextContent('Payment confirmed');
+      expect(screen.getAllByText('Payment confirmed')).toHaveLength(1);
+      expect(
+        labels.compareDocumentPosition(screen.getByRole('link', { name: 'Handmade leather boots' })) &
+          Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
       expect(screen.getByRole('group', { name: 'Checkout complete' })).toBeInTheDocument();
       expect(screen.queryByText('Checkout in progress')).not.toBeInTheDocument();
       expect(screen.queryByRole('button', { name: 'Cancel checkout' })).not.toBeInTheDocument();
@@ -1942,13 +2043,13 @@ describe('MarketplaceCheckout Paykit option (Bitcoin or USDT)', () => {
     }));
   });
 
-  it('offers one Pay with Paykit entry beside PayPal, never separate Bitcoin and USDT entries', async () => {
+  it('offers one Paykit entry beside PayPal, never separate Bitcoin and USDT entries', async () => {
     seededCart();
 
     render(<MarketplaceCheckout />);
 
     const paykit = await screen.findByTestId('marketplace-checkout-method-paykit');
-    expect(paykit).toHaveTextContent('Pay with Paykit');
+    expect(paykit).toHaveTextContent('Bitcoin or USDT via Bitkit');
     expect(paykit).toHaveAttribute('aria-pressed', 'true');
     expect(screen.getByTestId('marketplace-checkout-method-paypal')).toBeInTheDocument();
     expect(screen.queryByTestId('marketplace-checkout-method-bitcoin')).not.toBeInTheDocument();
@@ -1956,6 +2057,21 @@ describe('MarketplaceCheckout Paykit option (Bitcoin or USDT)', () => {
     expect(screen.getByTestId('marketplace-checkout-paykit-requirement')).toHaveTextContent(
       'Paykit payments require Bitkit. You choose Bitcoin or USDT there.',
     );
+  });
+
+  it('labels the submit button with the next step for the selected method, distinct from the method tile', async () => {
+    seededCart();
+    const user = userEvent.setup();
+
+    render(<MarketplaceCheckout />);
+
+    const paykit = await screen.findByTestId('marketplace-checkout-method-paykit');
+    const pay = screen.getByTestId('marketplace-checkout-pay');
+    expect(pay).toHaveTextContent(/^Continue to Bitkit$/);
+    expect(paykit.textContent).not.toBe(pay.textContent);
+
+    await user.click(screen.getByTestId('marketplace-checkout-method-paypal'));
+    expect(screen.getByTestId('marketplace-checkout-pay')).toHaveTextContent(/^Continue to PayPal$/);
   });
 
   it('does not let a USDT-only Paykit entry be paid while Paykit is unreachable, and keeps PayPal usable', async () => {
@@ -2213,7 +2329,9 @@ describe('MarketplaceCheckout Paykit option (Bitcoin or USDT)', () => {
 
       const shown = formatCommerceMoney(price).replace(/\s/g, ' ');
       expect((await screen.findAllByText((text) => text.replace(/\s/g, ' ') === shown)).length).toBeGreaterThan(0);
-      expect(await screen.findByTestId('marketplace-checkout-method-paykit')).toHaveTextContent('Pay with Paykit');
+      expect(await screen.findByTestId('marketplace-checkout-method-paykit')).toHaveTextContent(
+        'Bitcoin or USDT via Bitkit',
+      );
       expect(screen.queryByTestId('marketplace-checkout-method-bitcoin')).not.toBeInTheDocument();
       expect(screen.queryByTestId('marketplace-checkout-method-usdt')).not.toBeInTheDocument();
       expect(screen.getByTestId('marketplace-checkout-paykit-requirement')).toHaveTextContent('Bitcoin or USDT');

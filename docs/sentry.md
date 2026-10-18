@@ -74,10 +74,17 @@ The `Err.*` factories already log once and capture once — adding extra `Sentry
 Expected user-flow states are not failures and must not reach the factory:
 
 - A homeserver file that may not exist yet (profile, settings, last read, legacy watchlist, an own review, a
-  listing before its first publish or while its read-back lags) is read with `HomeserverService.getJsonIfFound` / `CommerceHomeserverService.fetchJsonIfFound`, which answer
+  listing before its first publish or while its read-back lags, a seller's `shop.json` before they publish a storefront) is read with `HomeserverService.getJsonIfFound` / `CommerceHomeserverService.fetchJsonIfFound`, which answer
   `{ found: false }` before any error is created. Do not read it with `request` and catch the 404.
 - A state the UI answers with a prompt (no marketplace session yet, approval in progress) is built with `new AppError(...)`, as in `marketplace-approval-failure.ts`. Server answers
   (401, 5xx) for the same flows stay on `Err.*`.
+- A grant approval whose flow cookie now binds another approval or none (`flow_binding_missing` 401,
+  `flow_binding_denied` 403: another tab started one, or it expired) is built the same way, in `marketplace-approval-failure.ts`.
+- A marketplace service without store connectors (`404 connectors_disabled`, or a bare 404/405 from a service
+  older than the connector routes) is built with `new AppError(...)` in `MarketplaceConnectorsService`: the
+  Shop hides store connections there. A connector 404 that names another refusal stays on `Err.*`.
+- Marketplace media its owner has removed (404/410 from the owner's homeserver) is built the same way in
+  `MarketplaceMediaService.fetchMedia`: the UI shows no image. Other media failures stay on `Err.*`.
 - A Shop-owned sign-in started while the Shop is embedded in Pubky App ("Continue sign-in in Pubky App.",
   `AuthController.assertStandaloneMode`) is also built with `new AppError(...)`: App owns sign-in there.
 

@@ -281,10 +281,14 @@ export class LocksGatewayService {
    * sent regardless of `paykitSetupCreatorParam`. The configured
    * `paykitSetupUrl` is the full setup URL (it already ends in `/setup`), so
    * the route is built from its origin as exactly `/setup/reconnect`.
+   * Paykit parses `creator` only in its canonical `pubky<z32>` form and
+   * answers 400 invalid_request to the bare z32 id the Shop holds. The
+   * controller passes only a validated bare 52-character id, so the prefix is
+   * added unconditionally, as the service's `pubky_app_key` does.
    */
   static buildPaykitReconnectUrl(returnTo: string, state: string, creator: string): string {
     const url = new URL('/setup/reconnect', new URL(getPaykitSetupUrl()).origin);
-    url.searchParams.set('creator', creator);
+    url.searchParams.set('creator', `pubky${creator}`);
     url.searchParams.set('return_to', returnTo);
     url.searchParams.set('state', state);
     return url.toString();
@@ -350,8 +354,12 @@ async function readLocksRefusalCode(response: Response): Promise<LocksSubmitRefu
   }
 }
 
+// `p`, `u`, `b`, `k` and `y` are z-base-32 characters, so a bare 52-character
+// id can itself start with `pubky`; only the 57-character form is prefixed.
+const PREFIXED_PUBKY_LENGTH = 'pubky'.length + 52;
+
 function withPubkyPrefix(pubky: string): string {
-  return pubky.startsWith('pubky') ? pubky : `pubky${pubky}`;
+  return pubky.length === PREFIXED_PUBKY_LENGTH && pubky.startsWith('pubky') ? pubky : `pubky${pubky}`;
 }
 
 function toLocksResource(resource: string): string {

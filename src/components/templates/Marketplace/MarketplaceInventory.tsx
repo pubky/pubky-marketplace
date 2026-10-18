@@ -18,6 +18,8 @@ import { Skeleton } from '@/atoms/Skeleton/Skeleton';
 import { Typography } from '@/atoms/Typography/Typography';
 import { useMarketplaceInventory } from '@/hooks/useMarketplaceInventory/useMarketplaceInventory';
 import { useMarketplaceInventoryImport } from '@/hooks/useMarketplaceInventoryImport/useMarketplaceInventoryImport';
+import { useStoreListingAutoLink } from '@/hooks/useStoreListingAutoLink/useStoreListingAutoLink';
+import { MADE_TO_ORDER_LABEL } from '@/libs/commerce/listing-variants';
 import { UNLIMITED_STOCK_LABEL } from '@/libs/commerce/unlimited-stock';
 import { cn } from '@/libs/utils/utils';
 import { BackToMyShop } from '@/molecules/Marketplace/BackToMyShop';
@@ -31,6 +33,7 @@ import { MarketplaceSessionRequiredCard } from '@/organisms/Marketplace/Marketpl
 export function MarketplaceInventory() {
   const board = useMarketplaceInventory();
   const importer = useMarketplaceInventoryImport(board.sellerPubky ?? null);
+  const storeLinks = useStoreListingAutoLink();
   const [editing, setEditing] = useState<{ row: InventoryBoardRow; size?: InventoryBoardVariant } | null>(null);
   const [target, setTarget] = useState('');
   const [selected, setSelected] = useState<string[]>([]);
@@ -50,7 +53,6 @@ export function MarketplaceInventory() {
         <MarketplaceSectionNav />
         <BackToMyShop />
         <div>
-          <Badge className="mb-4">Seller studio · Inventory</Badge>
           <Heading level={1} size="xl" className="text-4xl sm:text-6xl">
             Inventory
           </Heading>
@@ -214,15 +216,24 @@ export function MarketplaceInventory() {
                             <td className="p-3">{entry.dropId ?? '—'}</td>
                             <td className="p-3">
                               <div className="flex flex-col gap-0.5" data-testid={`inventory-stock-${entry.listingId}`}>
-                                <span>
-                                  <span className="font-medium">
-                                    {entry.unlimited ? UNLIMITED_STOCK_LABEL : entry.available}
+                                {entry.madeToOrder && !entry.variants ? (
+                                  <span>
+                                    <span className="font-medium">{MADE_TO_ORDER_LABEL}</span>
+                                    <span className="text-muted-foreground"> · stock follows your store</span>
                                   </span>
-                                  <span className="text-muted-foreground"> avail</span>
-                                </span>
+                                ) : (
+                                  <span>
+                                    <span className="font-medium">
+                                      {entry.unlimited ? UNLIMITED_STOCK_LABEL : entry.available}
+                                    </span>
+                                    <span className="text-muted-foreground"> avail</span>
+                                  </span>
+                                )}
                                 <span className="text-muted-foreground">
                                   {entry.reserved} reserved · {entry.sold} sold
-                                  {entry.unlimited ? '' : ` · ${entry.total} total`}
+                                  {entry.unlimited || (entry.madeToOrder && !entry.variants)
+                                    ? ''
+                                    : ` · ${entry.total} total`}
                                 </span>
                                 {entry.reserved > 0 && (
                                   <span className="text-xs text-muted-foreground">
@@ -243,7 +254,7 @@ export function MarketplaceInventory() {
                             </td>
                             <td className="p-3">
                               <div className="flex flex-wrap gap-2">
-                                {!entry.variants && (
+                                {!entry.variants && !entry.madeToOrder && (
                                   <Button
                                     size="sm"
                                     variant="secondary"
@@ -307,6 +318,10 @@ export function MarketplaceInventory() {
                                   <Badge variant="outline" className="ml-2">
                                     Withdrawn
                                   </Badge>
+                                ) : size.madeToOrder ? (
+                                  <Badge variant="secondary" className="ml-2">
+                                    {MADE_TO_ORDER_LABEL}
+                                  </Badge>
                                 ) : size.soldOut ? (
                                   <Badge variant="outline" className="ml-2">
                                     Sold out
@@ -314,15 +329,23 @@ export function MarketplaceInventory() {
                                 ) : null}
                               </td>
                               <td className="px-3 py-1.5" data-testid={`inventory-size-stock-${size.variantId}`}>
-                                <span className="font-medium">{size.available}</span>
-                                <span className="text-muted-foreground">
-                                  {' '}
-                                  avail · {size.reserved} reserved · {size.sold} sold · {size.total} total
-                                </span>
+                                {size.madeToOrder ? (
+                                  <span className="text-muted-foreground">
+                                    Stock follows your store · {size.reserved} reserved · {size.sold} sold
+                                  </span>
+                                ) : (
+                                  <>
+                                    <span className="font-medium">{size.available}</span>
+                                    <span className="text-muted-foreground">
+                                      {' '}
+                                      avail · {size.reserved} reserved · {size.sold} sold · {size.total} total
+                                    </span>
+                                  </>
+                                )}
                               </td>
                               <td className="px-3 py-1.5" colSpan={2} />
                               <td className="px-3 py-1.5">
-                                {size.enabled && (
+                                {size.enabled && !size.madeToOrder && (
                                   <Button
                                     size="sm"
                                     variant="secondary"
@@ -400,8 +423,8 @@ export function MarketplaceInventory() {
             }
             onDownloadLossReport={importer.downloadLossReport}
             onFile={(file) => void importer.planFile(file)}
-            onPublish={() => void importer.publish()}
-            onResume={() => void importer.resume()}
+            onPublish={() => void importer.publish().then(storeLinks.run)}
+            onResume={() => void importer.resume().then(storeLinks.run)}
             onConfirmConflict={() => void importer.confirmConflict()}
             onDiscardConflict={() => void importer.discardConflict()}
             onDownloadResult={() => void importer.downloadResult()}

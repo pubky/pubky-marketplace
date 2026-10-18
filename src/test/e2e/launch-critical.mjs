@@ -31,7 +31,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
 import { seedListingCacheRows } from './launch-critical.cache.mjs';
-import { installSyntheticLaunchFixture } from './launch-critical.synthetic.mjs';
+import { installSyntheticLaunchFixture, PUBLIC_PAYMENT_CONFIG } from './launch-critical.synthetic.mjs';
 import { launchTarget } from './launch-target.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
@@ -204,6 +204,22 @@ async function waitForListingReady(page) {
 
 async function exerciseListingCheckout(page) {
   await waitForListingReady(page);
+  // Live sellers configure their own rails, so only the fixture's known config is asserted.
+  if (SYNTHETIC) {
+    const methods = page.getByRole('list', { name: 'Accepted payment methods' });
+    if (await expectVisible(page, methods, 'listing:payment-badges')) {
+      const labels = (await methods.getByRole('listitem').allTextContents()).map((label) => label.trim());
+      const expected = [
+        PUBLIC_PAYMENT_CONFIG.bitcoin_available && 'Bitcoin',
+        PUBLIC_PAYMENT_CONFIG.paypal_available && 'PayPal',
+      ].filter(Boolean);
+      assert(
+        'listing:payment-badges-match-config',
+        labels.join(',') === expected.join(','),
+        `${labels.join(',')} (expected ${expected.join(',')})`,
+      );
+    }
+  }
   const buy = page.getByRole('button', { name: 'Buy', exact: true });
   if (await buy.count()) {
     await buy.first().click();

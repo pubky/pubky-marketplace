@@ -20,6 +20,12 @@ import { isAppError } from '@/libs/error/error';
 import { ServerErrorCode, ValidationErrorCode } from '@/libs/error/error.codes';
 import { Err } from '@/libs/error/error.factories';
 import { ErrorService } from '@/libs/error/error.types';
+import {
+  type LinkableListing,
+  type ListingLinkSuggestion,
+  planListingLinks,
+  type UnlinkedListing,
+} from '@/pipes/commerce/connector-listing-links';
 import { MarketplaceConnectorsService } from '@/services/marketplace/marketplace-connectors';
 
 export type WooConnectStart = { connection: ConnectorConnection; authorizeUrl: string };
@@ -35,6 +41,20 @@ export type ConnectionCheck = {
 };
 
 export type OrderPushRow = { connection: ConnectorConnection; push: ConnectorPush };
+
+export type ListingLinkResult = {
+  /** Listings linked in this call, without guessing (SKU or handle). */
+  linked: ListingLinkSuggestion[];
+  /** Listings still not linked to a product of this store, for the seller to match or leave Pubky-only. */
+  unlinked: UnlinkedListing[];
+  /** The store's whole catalog, for matching by hand. */
+  products: ConnectorCatalogProduct[];
+  /** Orders that were not sent for want of a link and were sent again. */
+  resent: number;
+};
+
+/** The quarantine reason of a paid order none of whose listings is linked to the store. */
+export const NOT_LINKED_PUSH_REASON = 'no_mapped_lines';
 
 export type StorePushOverview = {
   connections: ConnectorConnection[];
@@ -275,6 +295,108 @@ export class ConnectorsApplication {
       page = next.nextPage;
     }
     return products;
+  }
+
+  /** Every product in the store's catalog, all pages. */
+  static async allProducts(actor: string, connectionId: string): Promise<ConnectorCatalogProduct[]> {
+    const products: ConnectorCatalogProduct[] = [];
+    let page: string | null = null;
+    for (let index = 0; index < MAX_CATALOG_PAGES; index += 1) {
+      const next = await MarketplaceConnectorsService.catalog(actor, connectionId, { page });
+      products.push(...next.products);
+      if (!next.nextPage) return products;
+      page = next.nextPage;
+    }
+    return products;
+  }
+
+  /**
+   * Links the seller's own listings (made by hand or imported from a CSV) to
+   * the store products they match without guessing (by SKU, or by a Shopify
+   * handle and the variants' options), then sends again the orders that were
+   * not sent to the store because nothing was linked. Linking is idempotent:
+   * a listing already linked is left alone.
+   */
+  static async autoLinkListings(
+    actor: string,
+    connection: Pick<ConnectorConnection, 'id' | 'variantMode'>,
+    listings: readonly LinkableListing[],
+  ): Promise<ListingLinkResult> {
+    const [products, mappings] = await Promise.all([
+      this.allProducts(actor, connection.id),
+      MarketplaceConnectorsService.mappings(actor, connection.id),
+    ]);
+    const plan = planListingLinks({ listings, products, mappings, variantMode: connection.variantMode });
+    if (plan.suggestions.length === 0) {
+      return { linked: [], unlinked: [...plan.unlinked], products, resent: 0 };
+    }
+    const { skippedListingIds } = await this.addMappings(
+      actor,
+      connection.id,
+      plan.suggestions.flatMap((suggestion) => suggestion.mappings),
+    );
+    const skipped = new Set(skippedListingIds);
+    const linked = plan.suggestions.filter((suggestion) => !skipped.has(suggestion.listingId));
+    const resent = linked.length > 0 ? await this.resendNotLinkedPushes(actor, connection.id) : 0;
+    return { linked, unlinked: [...plan.unlinked], products, resent };
+  }
+
+  /**
+   * {@link autoLinkListings} for every live store of the seller, after they
+   * published listings outside a store import (a CSV import, a listing made
+   * by hand). A store that could not be checked is reported, not skipped.
+   */
+  static async autoLinkAcrossStores(
+    actor: string,
+    listings: readonly LinkableListing[],
+  ): Promise<{ linked: number; resent: number; failedStores: ConnectorConnection[] }> {
+    const live = (await MarketplaceConnectorsService.list(actor)).filter(
+      (connection) => connection.status === 'connected' || connection.status === 'needs_attention',
+    );
+    let linked = 0;
+    let resent = 0;
+    const failedStores: ConnectorConnection[] = [];
+    for (const connection of live) {
+      try {
+        const result = await this.autoLinkListings(actor, connection, listings);
+        linked += result.linked.length;
+        resent += result.resent;
+      } catch {
+        failedStores.push(connection);
+      }
+    }
+    return { linked, resent, failedStores };
+  }
+
+  /** Links one listing the seller matched by hand, then sends again the orders that were waiting for a link. */
+  static async linkListing(
+    actor: string,
+    connectionId: string,
+    mappings: readonly ConnectorMapping[],
+  ): Promise<{ linked: boolean; resent: number }> {
+    if (mappings.length === 0) invalidInput('linkListing', 'Choose the store product for each variant.');
+    const { skippedListingIds } = await this.addMappings(actor, connectionId, mappings);
+    const linked = !mappings.some((mapping) => skippedListingIds.includes(mapping.listingId));
+    return { linked, resent: linked ? await this.resendNotLinkedPushes(actor, connectionId) : 0 };
+  }
+
+  /**
+   * Retries the store pushes set aside because none of the order's listings
+   * was linked. A push whose order is still not linked (a Pubky-only sale) is
+   * set aside again by the service, with no second alert.
+   */
+  static async resendNotLinkedPushes(actor: string, connectionId: string): Promise<number> {
+    const { pushes } = await MarketplaceConnectorsService.pushes(actor, connectionId, {
+      state: 'quarantined',
+      limit: RECENT_PUSHES_PER_CONNECTION,
+    });
+    let resent = 0;
+    for (const push of pushes) {
+      if (push.state !== 'quarantined' || push.quarantineReason !== NOT_LINKED_PUSH_REASON) continue;
+      await MarketplaceConnectorsService.retryPush(actor, connectionId, push.pubkyOrderId);
+      resent += 1;
+    }
+    return resent;
   }
 
   static async selection(actor: string, connectionId: string): Promise<string[]> {

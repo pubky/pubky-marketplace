@@ -969,6 +969,44 @@ describe('useCreateMarketplaceListing', () => {
       {},
     );
   });
+
+  it('saves the draft and marks it to reopen directly when the seller leaves for settings', async () => {
+    vi.useFakeTimers();
+    const { result } = renderHook(() => useCreateMarketplaceListing());
+    await act(async () => {
+      await Promise.resolve();
+    });
+    act(() => {
+      result.current.form.setValue('title', 'Back after the delivery key');
+    });
+
+    await act(async () => {
+      result.current.keepDraftForReturn();
+      await Promise.resolve();
+    });
+
+    expect(sessionStorage.getItem(LISTING_DRAFT_RESUME_STORAGE_KEY)).toBe('018f47d26a277c23a49d6b21bb770121');
+    expect(CommerceController.commitUpdateListingDraft).toHaveBeenCalledWith(
+      '018f47d26a277c23a49d6b21bb770121',
+      expect.objectContaining({ title: 'Back after the delivery key' }),
+      {},
+    );
+  });
+
+  it('marks no draft to reopen while a restore prompt is open', async () => {
+    vi.mocked(CommerceController.getListingDrafts).mockResolvedValue([
+      listingDraftRow('draftlisting01', { title: 'Keep me' }),
+    ]);
+    const { result } = renderHook(() => useCreateMarketplaceListing());
+    await waitFor(() => expect(result.current.pendingRestore?.listingId).toBe('draftlisting01'));
+
+    act(() => {
+      result.current.keepDraftForReturn();
+    });
+
+    expect(sessionStorage.getItem(LISTING_DRAFT_RESUME_STORAGE_KEY)).toBeNull();
+    expect(CommerceController.commitUpdateListingDraft).not.toHaveBeenCalled();
+  });
 });
 
 function listingDraftRow(

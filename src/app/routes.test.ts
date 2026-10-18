@@ -9,6 +9,7 @@ import {
   getMarketplaceListingEditRoute,
   getMarketplaceListingRoute,
   getMarketplacePaymentSettingsRoute,
+  getMarketplaceShippingSettingsRoute,
   getMarketplaceShopRoute,
   getProfileRoute,
   getShopHomeRoute,
@@ -241,6 +242,26 @@ describe('getMarketplacePaymentSettingsRoute', () => {
   ])('rejects unsafe return target %s', (returnTo) => {
     expect(getMarketplacePaymentSettingsRoute(returnTo)).toBe('/marketplace/settings');
   });
+});
+
+describe('getMarketplaceShippingSettingsRoute', () => {
+  const editPath = getMarketplaceListingEditRoute('y'.repeat(52), 'boots_01');
+
+  it('attaches the listing composer return path', () => {
+    expect(getMarketplaceShippingSettingsRoute(MARKETPLACE_ROUTES.SELL)).toBe(
+      '/marketplace/settings/shipping?returnTo=%2Fmarketplace%2Fsell',
+    );
+    expect(getMarketplaceShippingSettingsRoute(editPath)).toBe(
+      `/marketplace/settings/shipping?returnTo=${encodeURIComponent(editPath)}`,
+    );
+  });
+
+  it.each(['https://evil.example/sell', '//evil.example/sell', 'javascript:alert(1)', '/marketplace/orders'])(
+    'rejects unsafe return target %s',
+    (returnTo) => {
+      expect(getMarketplaceShippingSettingsRoute(returnTo)).toBe('/marketplace/settings/shipping');
+    },
+  );
 });
 
 describe('matchesAllowedRoute', () => {

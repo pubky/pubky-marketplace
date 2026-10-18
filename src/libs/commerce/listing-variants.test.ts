@@ -4,6 +4,8 @@ import {
   everyOfferedVariantSoldOut,
   firstAvailableVariantId,
   isVariantSoldOut,
+  listingSoldOutVariantIds,
+  madeToOrderVariantIds,
   projectionReadsSoldOut,
   soldOutVariantIds,
   tracksVariantStock,
@@ -64,6 +66,13 @@ describe('sold-out reading', () => {
     expect(soldOutVariantIds(null).size).toBe(0);
   });
 
+  it('takes no size as sold out from a held listing, whose flags count held units', () => {
+    expect([...listingSoldOutVariantIds({ state: 'available', variants: rows })]).toEqual(['size_s']);
+    expect([...listingSoldOutVariantIds({ state: 'sold', variants: rows })]).toEqual(['size_s']);
+    expect(listingSoldOutVariantIds({ state: 'reserved', variants: rows }).size).toBe(0);
+    expect(listingSoldOutVariantIds(null).size).toBe(0);
+  });
+
   it('treats a size as sold out from the service or from a zero record quantity', () => {
     const sold = soldOutVariantIds(rows);
     expect(isVariantSoldOut(variant('size_s', 3), sold)).toBe(true);
@@ -105,5 +114,41 @@ describe('sold-out reading', () => {
         variants: rows.map((row) => ({ ...row, soldOut: true })),
       }),
     ).toBe(false);
+  });
+});
+
+describe('made-to-order stock', () => {
+  it('names the made-to-order sizes, or every size of a one-variant listing', () => {
+    const sizes = [variant('size_s', 0), variant('size_m', 0)];
+    expect(
+      madeToOrderVariantIds(
+        {
+          state: 'available',
+          madeToOrder: true,
+          variants: [
+            { variantId: 'size_s', soldOut: true },
+            { variantId: 'size_m', soldOut: false, madeToOrder: true },
+          ],
+        },
+        sizes,
+      ),
+    ).toEqual(new Set(['size_m']));
+    expect(madeToOrderVariantIds({ state: 'available', madeToOrder: true }, [variant('only', 1)])).toEqual(
+      new Set(['only']),
+    );
+    expect(madeToOrderVariantIds({ state: 'available' }, sizes).size).toBe(0);
+    expect(madeToOrderVariantIds(null, sizes).size).toBe(0);
+  });
+
+  it('never reads a made-to-order size or listing as sold out, whatever the record says', () => {
+    const made = new Set(['size_m']);
+    expect(isVariantSoldOut(variant('size_m', 0), new Set(), made)).toBe(false);
+    expect(isVariantSoldOut(variant('size_s', 0), new Set(), made)).toBe(true);
+    expect(everyOfferedVariantSoldOut([variant('size_s', 0), variant('size_m', 0)], new Set(['size_s']), made)).toBe(
+      false,
+    );
+    expect(firstAvailableVariantId([variant('size_s', 0), variant('size_m', 0)], new Set(), made)).toBe('size_m');
+    expect(projectionReadsSoldOut({ state: 'available', availableQuantity: 0, madeToOrder: true })).toBe(false);
+    expect(projectionReadsSoldOut({ state: 'available', availableQuantity: 0 })).toBe(true);
   });
 });

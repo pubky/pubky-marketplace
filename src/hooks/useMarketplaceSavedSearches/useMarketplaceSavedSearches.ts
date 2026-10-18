@@ -6,6 +6,7 @@ import {
   COMMERCE_SAVED_SEARCH_CHECK_MAX,
   COMMERCE_WATCH_CHECK_MIN_INTERVAL_MS,
   getCommerceAdapterMode,
+  isDurableCommerceMode,
 } from '@/config/commerce';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import {
@@ -13,6 +14,7 @@ import {
   marketplaceErrorCode,
   marketplaceFailureMessage,
 } from '@/libs/commerce/failure-messages';
+import type { PaymentMethodFilter } from '@/libs/commerce/payment-method-filter';
 import { Logger } from '@/libs/logger/logger';
 import type { CommerceSavedSearchModelSchema, CommerceSavedSearchParams } from '@/models/commerce/commerce.schema';
 import { toast } from '@/molecules/Toaster/use-toast';
@@ -20,6 +22,38 @@ import { useAuthStore } from '@/stores/auth/auth.store';
 import { useCommerceStore } from '@/stores/commerce/commerce.store';
 import { buildMarketplaceCatalogItems } from '../useMarketplaceCatalog/useMarketplaceCatalog.utils';
 import { matchSavedSearch, summarizeSavedSearchMatches } from './useMarketplaceSavedSearches.utils';
+
+/**
+ * The seller set of every payment method the saved searches filter by: read
+ * fresh (which also discovers those sellers' listings), or the set
+ * remembered this session when the read fails. A method with neither is
+ * left out, so its searches are skipped rather than miscounted.
+ */
+async function readPaymentSellerSets(
+  searches: CommerceSavedSearchModelSchema[],
+): Promise<Map<PaymentMethodFilter, ReadonlySet<string>>> {
+  const methods = [...new Set(searches.flatMap(({ params }) => (params.paymentMethod ? [params.paymentMethod] : [])))];
+  const sets = new Map<PaymentMethodFilter, ReadonlySet<string>>();
+  // Only the durable service has payment rails to read.
+  if (!isDurableCommerceMode(getCommerceAdapterMode())) return sets;
+  await Promise.all(
+    methods.map(async (method) => {
+      try {
+        const sellers = await CommerceController.fetchPaymentMethodCatalog(method, {
+          saleFormat: 'all',
+          conditions: [],
+          sort: 'recommended',
+        });
+        sets.set(method, new Set(sellers));
+      } catch (error) {
+        const remembered = useCommerceStore.getState().paymentMethodSellers[method];
+        if (remembered) sets.set(method, new Set(remembered));
+        Logger.warn('Saved-search payment seller read failed', { error, method });
+      }
+    }),
+  );
+  return sets;
+}
 
 /** Check passes already run this session, per account — same spacing rationale as watch detection. */
 const lastCheckRunAt = new Map<string, number>();
@@ -74,10 +108,14 @@ async function runSavedSearchChecks(): Promise<void> {
     }
   }
 
+  const paymentSellers = await readPaymentSellerSets(toCheck);
   const items = await loadCatalogItems();
   const checkedAt = Date.now();
   for (const search of toCheck) {
-    const summary = summarizeSavedSearchMatches(matchSavedSearch(items, search.params), search.watermark_updated_at);
+    const matches = matchSavedSearch(items, search.params, paymentSellers);
+    // A payment-method search whose seller set is unknown keeps its last result.
+    if (!matches) continue;
+    const summary = summarizeSavedSearchMatches(matches, search.watermark_updated_at);
     await CommerceController.recordSavedSearchCheck(search.id, {
       newCount: summary.newCount,
       latestMatchUpdatedAt: summary.latestMatchUpdatedAt,
@@ -142,10 +180,21 @@ export function useMarketplaceSavedSearches() {
       maximumPriceMinor: state.maximumPriceMinor,
       countryCode: state.countryCode,
       sort: state.sort,
+      paymentMethod: state.paymentMethod,
     };
     try {
       const items = await loadCatalogItems();
-      const { latestMatchUpdatedAt } = summarizeSavedSearchMatches(matchSavedSearch(items, params), 0);
+      const remembered = state.paymentMethod ? state.paymentMethodSellers[state.paymentMethod] : undefined;
+      const paymentSellers = new Map<PaymentMethodFilter, ReadonlySet<string>>(
+        state.paymentMethod && remembered ? [[state.paymentMethod, new Set(remembered)]] : [],
+      );
+      // With no seller set yet, every current non-payment match is treated as
+      // seen: later arrivals can still badge NEW, nothing already listed can.
+      const matches =
+        matchSavedSearch(items, params, paymentSellers) ??
+        matchSavedSearch(items, { ...params, paymentMethod: null }) ??
+        [];
+      const { latestMatchUpdatedAt } = summarizeSavedSearchMatches(matches, 0);
       await CommerceController.commitCreateSavedSearch(name, params, latestMatchUpdatedAt);
       return true;
     } catch (error) {
@@ -166,6 +215,7 @@ export function useMarketplaceSavedSearches() {
     store.setConditions(search.params.conditions);
     store.setPriceRange(search.params.minimumPriceMinor, search.params.maximumPriceMinor);
     store.setCountryCode(search.params.countryCode ?? null);
+    store.setPaymentMethod(search.params.paymentMethod ?? null);
     store.setSort(search.params.sort);
     try {
       await CommerceController.acknowledgeSavedSearch(search.id);

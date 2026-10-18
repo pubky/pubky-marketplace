@@ -8,7 +8,6 @@ import {
   WEBHOOK_DELIVERY_COPY,
   WEBHOOK_URL_COPY,
 } from '@/application/commerce/inventory-automations';
-import { Badge } from '@/atoms/Badge/Badge';
 import { Button } from '@/atoms/Button/Button';
 import { Card, CardContent } from '@/atoms/Card/Card';
 import { Container } from '@/atoms/Container/Container';
@@ -52,7 +51,6 @@ export function MarketplaceInventoryAutomations() {
           Inventory
         </Link>
         <div>
-          <Badge className="mb-4">Seller studio · Automations</Badge>
           <Heading level={1} size="xl" className="text-4xl sm:text-6xl">
             Automations
           </Heading>

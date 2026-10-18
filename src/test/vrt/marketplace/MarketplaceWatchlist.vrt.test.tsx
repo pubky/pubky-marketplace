@@ -1,10 +1,19 @@
 // Intentional import order — browser-mode mock factories rely on stable aliases.
 /* eslint-disable simple-import-sort/imports */
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderForVRT, VRT_ROOT_TESTID } from '@/test-utils/vrt';
 import { formatStableRelative } from '@/test-utils/vrt.clock';
 import { VRT_VIEWPORT_DESKTOP, VRT_VIEWPORT_MOBILE } from '@/test-utils/vrt.viewports';
 import { MarketplaceWatchlist } from '@/templates/Marketplace/MarketplaceWatchlist';
+import { useMarketplaceDisplayStore } from '@/stores/marketplace-display/marketplace-display.store';
+
+vi.mock('@/hooks/useIndicativeBtcRate/useIndicativeBtcRate', () => ({
+  useIndicativeBtcRate: (enabled: boolean) =>
+    enabled ? { satUsd: 0.001, btcUsd: 100_000, lastUpdatedAt: new Date('2026-08-21T00:00:00Z') } : null,
+}));
+beforeEach(() => {
+  useMarketplaceDisplayStore.setState({ showFxEstimate: true, measurementSystem: 'metric' });
+});
 
 const ROW_IMAGE_DATA_URL = vi.hoisted(
   () =>

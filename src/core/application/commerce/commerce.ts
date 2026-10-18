@@ -84,6 +84,12 @@ import {
   paykitAppRegistryUrl,
   paykitReaderAuthorizationUrl,
 } from '@/libs/commerce/paykit-wallet';
+import {
+  PAYMENT_METHOD_DISCOVERY_CONCURRENCY,
+  PAYMENT_METHOD_SELLERS_MAX_PAGES,
+  type PaymentMethodFilter,
+  type PaymentMethodSellersPage,
+} from '@/libs/commerce/payment-method-filter';
 import type { BindDeliveryAddress, PaymentMethodKind, SellerPaymentConfig } from '@/libs/commerce/payment-methods';
 import {
   type MarketplaceCheckoutFulfillmentLine,
@@ -122,9 +128,10 @@ import {
 import type { CommerceJsonValue, CommerceMoney } from '@/libs/commerce/transaction-contracts';
 import { assertPublishableListingStock } from '@/libs/commerce/unlimited-stock';
 import { variantRefusalMessage } from '@/libs/commerce/variant-refusals';
+import { AppError } from '@/libs/error/error';
 import { AuthErrorCode, ClientErrorCode, ServerErrorCode, ValidationErrorCode } from '@/libs/error/error.codes';
 import { Err } from '@/libs/error/error.factories';
-import { ErrorService } from '@/libs/error/error.types';
+import { ErrorCategory, ErrorService } from '@/libs/error/error.types';
 import { hasHttpStatus, isAppError, isNotFound } from '@/libs/error/error.utils';
 import { HttpMethod, HttpStatusCode } from '@/libs/http/http.types';
 import { Logger } from '@/libs/logger/logger';
@@ -239,6 +246,8 @@ export interface CommerceCatalogStreamFilters {
   endingSoonest?: boolean;
   /** Seller-declared item location: ISO-3166-1 alpha-2 country code. */
   country?: string;
+  /** One seller's listings only (Nexus `seller_id`). */
+  sellerId?: string;
 }
 
 /**
@@ -406,6 +415,7 @@ export type CommerceIndexedReviewsResult =
   | { status: 'unavailable' };
 
 type CommerceListingWithProjection = CommerceListingModelSchema & {
+  /** What a buyer can take now; `null` while unknown, and for made-to-order stock, which has no count. */
   purchasableQuantity: number | null;
 };
 
@@ -416,7 +426,7 @@ function applyInventoryProjection(
   const recordQuantity = listing.record.variants
     .filter(({ enabled }) => enabled)
     .reduce((total, variant) => total + variant.quantity, 0);
-  if (!projection || projection.listing_revision !== listing.revision) {
+  if (!projection || projection.listing_revision !== listing.revision || projection.made_to_order) {
     return { ...listing, purchasableQuantity: null };
   }
   return {
@@ -444,9 +454,25 @@ export class CommerceApplication {
     return await LocalCommerceService.getAllShops();
   }
 
+  /**
+   * A seller can list before publishing a storefront, so a missing `shop.json`
+   * is an ordinary answer: it rejects with a 404 that callers read as "no shop"
+   * (`hasHttpStatus`), built without the reporting factory.
+   */
   static async fetchShop(ownerPubky: string): Promise<CommerceShopRecord> {
     const url = CommerceRecordNormalizer.shopUri(ownerPubky);
-    return CommerceRecordNormalizer.shop(await CommerceHomeserverService.fetchJson(url));
+    const published = await CommerceHomeserverService.fetchJsonIfFound(url);
+    if (!published.found) {
+      throw new AppError({
+        category: ErrorCategory.Client,
+        code: ClientErrorCode.NOT_FOUND,
+        message: 'This seller has not published a shop yet.',
+        service: ErrorService.Homeserver,
+        operation: 'fetchShop',
+        context: { statusCode: HttpStatusCode.NOT_FOUND },
+      });
+    }
+    return CommerceRecordNormalizer.shop(published.json);
   }
 
   /** Refresh published settings without discarding an unpublished local edit. */
@@ -2912,10 +2938,45 @@ export class CommerceApplication {
       ...(filters.condition ? { condition: filters.condition } : {}),
       ...(filters.endingSoonest ? { sorting: 'ends_at' as const, order: 'ascending' as const } : {}),
       ...(filters.country ? { country: filters.country } : {}),
+      ...(filters.sellerId ? { seller_id: filters.sellerId } : {}),
     });
     const entries = CommerceRecordNormalizer.nexusListingStream(payload);
     await LocalCommerceService.bulkUpsertCatalogEntries(entries);
     await this.hydrateDiscoveredShops([...new Set(entries.map(({ seller_id }) => seller_id))]);
+  }
+
+  /**
+   * Every seller whose stored configuration has `method` enabled, read page
+   * by page from the service up to {@link PAYMENT_METHOD_SELLERS_MAX_PAGES}.
+   * Stored config, never Paykit health: a degraded Paykit drops nobody.
+   */
+  static async fetchPaymentMethodSellers(method: PaymentMethodFilter): Promise<string[]> {
+    const sellers: string[] = [];
+    let after: string | null = null;
+    for (let page = 0; page < PAYMENT_METHOD_SELLERS_MAX_PAGES; page++) {
+      const result: PaymentMethodSellersPage = await MarketplaceGatewayService.getPaymentMethodSellers(method, after);
+      sellers.push(...result.sellers);
+      if (!result.nextAfter) break;
+      after = result.nextAfter;
+    }
+    return sellers;
+  }
+
+  /**
+   * Widens discovery to the listings of these sellers: one Nexus
+   * `seller_id` stream page each, carrying the catalog's server-side
+   * filters, {@link PAYMENT_METHOD_DISCOVERY_CONCURRENCY} at a time. One
+   * unreachable seller does not stop the rest; the grid keeps rendering
+   * whatever is cached for them.
+   */
+  static async fetchSellerSetCatalogListings(
+    sellers: readonly string[],
+    filters: Omit<CommerceCatalogStreamFilters, 'sellerId'> = {},
+  ): Promise<void> {
+    for (let start = 0; start < sellers.length; start += PAYMENT_METHOD_DISCOVERY_CONCURRENCY) {
+      const batch = sellers.slice(start, start + PAYMENT_METHOD_DISCOVERY_CONCURRENCY);
+      await Promise.allSettled(batch.map((sellerId) => this.fetchCatalogListings({ ...filters, sellerId })));
+    }
   }
 
   /**

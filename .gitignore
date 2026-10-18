@@ -14,6 +14,8 @@
 /coverage
 /.vitest-attachments
 /.chat-e2e
+/.chat-e2e-stack
+/chat-e2e-server.log
 
 # next.js
 /.next/

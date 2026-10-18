@@ -111,4 +111,40 @@ describe('useCommerceStore', () => {
     store.reset();
     expect(useCommerceStore.getState().inventorySession).toBeNull();
   });
+
+  it('remembers payment badges per seller until reset, and keeps them across a filter reset', () => {
+    const store = useCommerceStore.getState();
+    const sellerA = 'a'.repeat(52);
+    const sellerB = 'b'.repeat(52);
+
+    store.setSellerPaymentBadges(sellerA, ['bitcoin', 'paypal']);
+    store.setSellerPaymentBadges(sellerB, ['usdt']);
+    store.setSellerPaymentBadges(sellerA, ['paypal']);
+    expect(useCommerceStore.getState().sellerPaymentBadges).toEqual({ [sellerA]: ['paypal'], [sellerB]: ['usdt'] });
+
+    store.resetFilters();
+    expect(useCommerceStore.getState().sellerPaymentBadges[sellerB]).toEqual(['usdt']);
+
+    store.reset();
+    expect(useCommerceStore.getState().sellerPaymentBadges).toEqual({});
+  });
+
+  it('resets the payment filter with the other filters but keeps the remembered seller sets until reset', () => {
+    const store = useCommerceStore.getState();
+    store.setPaymentMethod('paypal');
+    store.setPaymentMethodSellers('paypal', ['a'.repeat(52)]);
+    store.setPaymentMethodSellers('bitcoin', ['b'.repeat(52)]);
+    store.setPaymentMethodSellers('paypal', ['c'.repeat(52)]);
+    expect(useCommerceStore.getState()).toMatchObject({
+      paymentMethod: 'paypal',
+      paymentMethodSellers: { paypal: ['c'.repeat(52)], bitcoin: ['b'.repeat(52)] },
+    });
+
+    store.resetFilters();
+    expect(useCommerceStore.getState().paymentMethod).toBeNull();
+    expect(useCommerceStore.getState().paymentMethodSellers.bitcoin).toEqual(['b'.repeat(52)]);
+
+    store.reset();
+    expect(useCommerceStore.getState().paymentMethodSellers).toEqual({});
+  });
 });

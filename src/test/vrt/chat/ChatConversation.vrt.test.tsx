@@ -95,9 +95,12 @@ vi.mock('@/controllers/chat/chat', () => ({
   ChatController: { commitSendMessage: async () => 'id' },
 }));
 
+// The real shell renders the app header above the page (96px on phones, 144px
+// from lg); the conversation header sticks at that offset, so the frame keeps
+// the same room above the content.
 vi.mock('@/organisms/ContentLayout/ContentLayout', () => ({
   ContentLayout: ({ children }: { children: React.ReactNode }) => (
-    <main className="h-[900px] w-full py-6">{children}</main>
+    <main className="h-[900px] w-full pt-24 pb-6 lg:pt-36">{children}</main>
   ),
 }));
 

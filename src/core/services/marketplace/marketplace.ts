@@ -10,6 +10,7 @@ import type {
   MarketplaceSellerDigitalDelivery,
 } from '@/libs/commerce/digital';
 import { type PaykitRailStatus, paykitRailStatusFromHealth } from '@/libs/commerce/paykit-rail';
+import type { PaymentMethodFilter, PaymentMethodSellersPage } from '@/libs/commerce/payment-method-filter';
 import type {
   BindDeliveryAddress,
   PaymentMethodKind,
@@ -597,6 +598,14 @@ export class MarketplaceGatewayService {
   static async getSellerPaymentConfig(sellerPubky: string): Promise<SellerPaymentConfig> {
     this.assertDurableServiceOnly('getSellerPaymentConfig');
     return await MarketplaceTransactionService.getSellerPaymentConfig(sellerPubky);
+  }
+
+  static async getPaymentMethodSellers(
+    method: PaymentMethodFilter,
+    after: string | null,
+  ): Promise<PaymentMethodSellersPage> {
+    this.assertDurableServiceOnly('getPaymentMethodSellers');
+    return await MarketplaceTransactionService.getPaymentMethodSellers(method, after);
   }
 
   static async getMyPaymentConfig(actor: string): Promise<SellerPaymentConfigOwnView | null> {

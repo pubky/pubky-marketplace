@@ -13,6 +13,7 @@ import { Typography } from '@/atoms/Typography/Typography';
 import { useDropStudio } from '@/hooks/useDropStudio/useDropStudio';
 import { type OwnDropRow, useOwnDrops } from '@/hooks/useOwnDrops/useOwnDrops';
 import type { DropState } from '@/libs/commerce/transaction-contracts';
+import { formatDateTime } from '@/libs/utils/dateTime';
 import { ContentLayout } from '@/organisms/ContentLayout/ContentLayout';
 import { DropStudioComposer } from '@/organisms/Marketplace/DropStudioComposer';
 import { MarketplaceSessionConnectDialog } from '@/organisms/Marketplace/MarketplaceSessionConnectDialog';
@@ -67,7 +68,6 @@ export function DropStudioHome() {
         </div>
 
         <div>
-          <Badge className="mb-4">Seller studio · Drops</Badge>
           <Heading level={1} size="xl" className="text-4xl sm:text-6xl">
             Drops
           </Heading>
@@ -183,7 +183,7 @@ function DropStudioHomeRow({ row, onRetry }: { row: OwnDropRow; onRetry: () => v
         </Typography>
         <Typography as="p" className="text-sm text-muted-foreground">
           {startsAtMs !== null
-            ? `Launch ${new Date(startsAtMs).toLocaleString()}${endsAtMs !== null ? ` → ends ${new Date(endsAtMs).toLocaleString()}` : ' → runs until sell-out or cancel'}`
+            ? `Launch ${formatDateTime(new Date(startsAtMs))}${endsAtMs !== null ? ` → ends ${formatDateTime(new Date(endsAtMs))}` : ' → runs until sell-out or cancel'}`
             : 'This drop could not be loaded.'}
         </Typography>
         {statusLine ? (

@@ -44,6 +44,43 @@ describe('MarketplaceFilters', () => {
     expect(screen.getByTestId('card')).toHaveClass('flex-wrap');
   });
 
+  it('hides the payment filter when the deployment offers no payment options', () => {
+    render(<MarketplaceFilters resultCount={8} />);
+    expect(screen.queryByRole('combobox', { name: 'Payment method' })).not.toBeInTheDocument();
+  });
+
+  it('filters by an offered payment method and clears with the other filters', async () => {
+    const user = userEvent.setup();
+    render(<MarketplaceFilters resultCount={8} paymentMethodOptions={['bitcoin', 'usdt', 'paypal']} />);
+
+    const trigger = screen.getByRole('combobox', { name: 'Payment method' });
+    expect(trigger).toHaveTextContent('Any payment');
+    await user.click(trigger);
+    expect(screen.getAllByRole('option').map((option) => option.textContent)).toEqual([
+      'Any payment',
+      'Bitcoin',
+      'USDT',
+      'PayPal',
+    ]);
+    await user.click(screen.getByRole('option', { name: 'PayPal' }));
+    expect(useCommerceStore.getState().paymentMethod).toBe('paypal');
+
+    await user.click(screen.getByRole('button', { name: 'Reset search and filters' }));
+    expect(useCommerceStore.getState().paymentMethod).toBeNull();
+  });
+
+  it('keeps an active payment method listed after the deployment stops offering it, so it can be cleared', async () => {
+    const user = userEvent.setup();
+    useCommerceStore.getState().setPaymentMethod('usdt');
+    render(<MarketplaceFilters resultCount={0} paymentMethodOptions={['bitcoin', 'paypal']} />);
+
+    const trigger = screen.getByRole('combobox', { name: 'Payment method' });
+    expect(trigger).toHaveTextContent('USDT');
+    await user.click(trigger);
+    await user.click(screen.getByRole('option', { name: 'Any payment' }));
+    expect(useCommerceStore.getState().paymentMethod).toBeNull();
+  });
+
   it('updates layout and display currency through compact selectors', async () => {
     const user = userEvent.setup();
     render(<MarketplaceFilters resultCount={8} />);

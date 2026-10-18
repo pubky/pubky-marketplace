@@ -61,7 +61,7 @@ export function MarketplaceOrderReference({
       {placedAt ? (
         <time
           dateTime={order.createdAt}
-          className="ml-auto text-right text-sm text-muted-foreground"
+          className="w-full text-left text-sm text-muted-foreground sm:ml-auto sm:w-auto sm:text-right"
           data-testid="order-placed-at"
         >
           Placed {placedAt}

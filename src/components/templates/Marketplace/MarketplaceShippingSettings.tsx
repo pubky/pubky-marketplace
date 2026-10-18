@@ -1,16 +1,19 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { Package, Pencil, Plus, Trash2 } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Package, Pencil, Plus, Trash2 } from 'lucide-react';
 import { Controller, useForm, useWatch } from 'react-hook-form';
 import { z } from 'zod';
+import { readMarketplaceListingComposerReturnTo } from '@/app/routes';
 import { Badge } from '@/atoms/Badge/Badge';
 import { Button } from '@/atoms/Button/Button';
 import { Card, CardContent } from '@/atoms/Card/Card';
 import { Container } from '@/atoms/Container/Container';
 import { Heading } from '@/atoms/Heading/Heading';
 import { Label } from '@/atoms/Label/Label';
+import { Link } from '@/atoms/Link/Link';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/atoms/Select/Select';
 import { Skeleton } from '@/atoms/Skeleton/Skeleton';
 import { Typography } from '@/atoms/Typography/Typography';
@@ -25,6 +28,11 @@ import {
 import { shippingPresetMoney } from '@/hooks/useMarketplaceShippingPresets/useMarketplaceShippingPresets.types';
 import { useMyDeliveryKey } from '@/hooks/useMyDeliveryKey/useMyDeliveryKey';
 import { formatCommerceMoney } from '@/libs/commerce/format';
+import {
+  consumeListingComposerReturnTo,
+  peekListingComposerReturnTo,
+  rememberListingComposerReturnTo,
+} from '@/libs/commerce/listing-publish-guards';
 import {
   AMOUNT_EXAMPLES,
   amountInputExample,
@@ -204,17 +212,48 @@ function ShippoIntegrationCard() {
   );
 }
 
-function DeliveryPrivacySection() {
+function DeliveryPrivacySection({ returnPath }: { returnPath: string | null }) {
   const deliveryKey = useMyDeliveryKey();
-  if (!deliveryKey.enabled || deliveryKey.isLoading) return null;
+  const keyPublished = deliveryKey.status?.publication === 'matches';
   return (
-    <DeliveryPrivacyCard
-      status={deliveryKey.status}
-      isWorking={deliveryKey.isWorking}
-      loadFailed={deliveryKey.loadFailed}
-      onCreate={deliveryKey.create}
-      onPublish={deliveryKey.publish}
-    />
+    <>
+      {returnPath && (
+        <div
+          data-testid="listing-composer-return"
+          className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-brand/40 bg-brand/5 p-4"
+        >
+          <Typography as="p" className="text-sm">
+            {keyPublished
+              ? 'Your delivery key is published. Your listing draft is waiting for you.'
+              : 'Create your delivery key here, then go back to your listing draft.'}
+          </Typography>
+          <Button asChild variant={keyPublished ? 'default' : 'secondary'} className="w-fit rounded-full">
+            <Link href={returnPath} overrideDefaults onClick={() => consumeListingComposerReturnTo()}>
+              {keyPublished ? (
+                <>
+                  Continue listing
+                  <ArrowRight className="size-4" />
+                </>
+              ) : (
+                <>
+                  <ArrowLeft className="size-4" />
+                  Back to listing
+                </>
+              )}
+            </Link>
+          </Button>
+        </div>
+      )}
+      {deliveryKey.enabled && !deliveryKey.isLoading && (
+        <DeliveryPrivacyCard
+          status={deliveryKey.status}
+          isWorking={deliveryKey.isWorking}
+          loadFailed={deliveryKey.loadFailed}
+          onCreate={deliveryKey.create}
+          onPublish={deliveryKey.publish}
+        />
+      )}
+    </>
   );
 }
 
@@ -269,6 +308,13 @@ const presetFormDefaults: PresetFormData = {
 };
 
 export function MarketplaceShippingSettings() {
+  const searchParams = useSearchParams();
+  const returnPath =
+    readMarketplaceListingComposerReturnTo(searchParams.get('returnTo')) ??
+    readMarketplaceListingComposerReturnTo(peekListingComposerReturnTo());
+  useEffect(() => {
+    if (returnPath) rememberListingComposerReturnTo(returnPath);
+  }, [returnPath]);
   const { presets, isLoading, saveFromFields, remove } = useMarketplaceShippingPresets();
   // A new preset starts in the currency of the seller's latest one, else the one their browser suggests.
   const browserCurrency = useDisplayCurrency();
@@ -405,14 +451,11 @@ export function MarketplaceShippingSettings() {
         <BackToMyShop />
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
-            <Badge className="mb-4">Seller studio</Badge>
             <Heading level={1} size="xl" className="text-4xl sm:text-6xl">
               Shipping
             </Heading>
             <Typography as="p" className="mt-2 max-w-xl text-muted-foreground">
-              Your Shippo label integration, plus reusable presets for the sell studio&apos;s shipping fields (label,
-              flat price, delivery estimate). Presets are stored on this device only — applying one just pre-fills the
-              form, and listings publish exactly as before.
+              Manage shipping labels and presets for your listings. Presets are saved on this device.
             </Typography>
           </div>
           {editingId === null && (
@@ -425,7 +468,7 @@ export function MarketplaceShippingSettings() {
 
         {editingId === 'new' && presetFormCard}
 
-        <DeliveryPrivacySection />
+        <DeliveryPrivacySection returnPath={returnPath} />
 
         <ShippoIntegrationCard />
 

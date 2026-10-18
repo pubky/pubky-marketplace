@@ -26,6 +26,7 @@ export const useCommerceStore = create<CommerceStore>()(
       setPriceRange: (minimumPriceMinor, maximumPriceMinor) =>
         set({ minimumPriceMinor, maximumPriceMinor }, false, CommerceActionTypes.SET_PRICE_RANGE),
       setCountryCode: (countryCode) => set({ countryCode }, false, CommerceActionTypes.SET_COUNTRY),
+      setPaymentMethod: (paymentMethod) => set({ paymentMethod }, false, CommerceActionTypes.SET_PAYMENT_METHOD),
       setSort: (sort) => set({ sort }, false, CommerceActionTypes.SET_SORT),
       setLayout: (layout) => set({ layout }, false, CommerceActionTypes.SET_LAYOUT),
       setSelectedListingId: (selectedListingId) =>
@@ -50,6 +51,18 @@ export const useCommerceStore = create<CommerceStore>()(
         set({ watchlistSyncStatus }, false, CommerceActionTypes.SET_WATCHLIST_SYNC_STATUS),
       setReceiptsPublicationStatus: (receiptsPublicationStatus) =>
         set({ receiptsPublicationStatus }, false, CommerceActionTypes.SET_RECEIPTS_PUBLICATION_STATUS),
+      setSellerPaymentBadges: (sellerPubky, badges) =>
+        set(
+          (state) => ({ sellerPaymentBadges: { ...state.sellerPaymentBadges, [sellerPubky]: badges } }),
+          false,
+          CommerceActionTypes.SET_SELLER_PAYMENT_BADGES,
+        ),
+      setPaymentMethodSellers: (method, sellers) =>
+        set(
+          (state) => ({ paymentMethodSellers: { ...state.paymentMethodSellers, [method]: sellers } }),
+          false,
+          CommerceActionTypes.SET_PAYMENT_METHOD_SELLERS,
+        ),
       resetFilters: () =>
         set(
           {
@@ -61,6 +74,7 @@ export const useCommerceStore = create<CommerceStore>()(
             minimumPriceMinor: commerceInitialState.minimumPriceMinor,
             maximumPriceMinor: commerceInitialState.maximumPriceMinor,
             countryCode: commerceInitialState.countryCode,
+            paymentMethod: commerceInitialState.paymentMethod,
             sort: commerceInitialState.sort,
           },
           false,

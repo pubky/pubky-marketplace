@@ -50,23 +50,25 @@ export function usePackingSlipAddress({
     setDeliveryAddress(IDLE);
   }, [pathname, currentUserPubky]);
 
+  // The orders surface polls and hands down a new `order` object on every
+  // poll, so the effect keys on the order's id and eligibility, never on the
+  // object: the address is opened once per open dialog, not once per poll.
+  const orderId = order?.id ?? null;
+  const isEligible =
+    enabled &&
+    order?.fulfillment === 'shipping' &&
+    currentUserPubky === order.sellerPubky &&
+    ['paid', 'processing'].includes(order.state);
+
   useEffect(() => {
     setDeliveryAddress(IDLE);
-    if (
-      !enabled ||
-      !order ||
-      currentUserPubky !== order.sellerPubky ||
-      order.fulfillment !== 'shipping' ||
-      !['paid', 'processing'].includes(order.state)
-    ) {
-      return;
-    }
+    if (!isEligible || !orderId) return;
 
     let active = true;
     setDeliveryAddress({ status: 'loading' });
     void (async () => {
       try {
-        const freshOrder = await CommerceController.getMarketplaceOrder(order.id);
+        const freshOrder = await CommerceController.getMarketplaceOrder(orderId);
         if (
           !freshOrder ||
           freshOrder.sellerPubky !== currentUserPubky ||
@@ -91,7 +93,7 @@ export function usePackingSlipAddress({
     return () => {
       active = false;
     };
-  }, [currentUserPubky, enabled, order]);
+  }, [currentUserPubky, isEligible, orderId]);
 
   const clear = () => setDeliveryAddress(IDLE);
 

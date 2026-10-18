@@ -414,10 +414,18 @@ describe('useMarketplaceLocksPayment', () => {
       await act(async () => {});
       await act(async () => vi.advanceTimersByTimeAsync(50));
       expect(result.current.pollExhausted).toBe(true);
+      const resumedAt = Date.now();
       act(() => result.current.resumePolling());
       await act(async () => vi.advanceTimersByTimeAsync(50));
       expect(onPaymentChanged).toHaveBeenCalled();
-      await act(async () => vi.advanceTimersByTimeAsync(15 * 60_000));
+
+      // Check the deadline without replaying 18,000 intervening polling ticks.
+      vi.setSystemTime(resumedAt + 15 * 60_000 - 50);
+      const readsBeforeDeadline = onPaymentChanged.mock.calls.length;
+      await act(async () => vi.advanceTimersByTimeAsync(50));
+      expect(result.current.pollExhausted).toBe(false);
+      expect(onPaymentChanged).toHaveBeenCalledTimes(readsBeforeDeadline + 1);
+      await act(async () => vi.advanceTimersByTimeAsync(50));
       expect(result.current.pollExhausted).toBe(true);
       const reads = onPaymentChanged.mock.calls.length;
       await act(async () => vi.advanceTimersByTimeAsync(1_000));

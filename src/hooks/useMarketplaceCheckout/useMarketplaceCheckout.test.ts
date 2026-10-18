@@ -361,7 +361,7 @@ describe('useMarketplaceCheckout', () => {
     expect(clear).not.toHaveBeenCalled();
     const { toast } = await import('@/molecules/Toaster/use-toast');
     expect(vi.mocked(toast)).toHaveBeenCalledWith(
-      expect.objectContaining({ description: expect.stringContaining('could not be prepared for checkout') }),
+      expect.objectContaining({ description: expect.stringContaining("isn't available for checkout right now") }),
     );
   });
 
@@ -747,6 +747,48 @@ describe('useMarketplaceCheckout', () => {
     expect(vi.mocked(toast)).toHaveBeenCalledWith(
       expect.objectContaining({ description: 'This listing has sold out.' }),
     );
+  });
+
+  it.each([
+    [{ code: 'INVALID_STATE', message: 'This listing has sold out.' }, 'This listing has sold out.', true],
+    [
+      { code: 'INSUFFICIENT_INVENTORY', message: 'Checkout quantity is unavailable.' },
+      'This listing has sold out.',
+      true,
+    ],
+    [
+      { code: 'INVALID_STATE', message: 'This variant has sold out.', reason: 'variant_sold_out' },
+      'That option is sold out. Choose another.',
+      true,
+    ],
+    [
+      { code: 'UNAUTHORIZED', message: 'A buyer cannot purchase their own listing.' },
+      'You cannot purchase your own listing.',
+      false,
+    ],
+  ])('returns the %o refusal from Pay so the page can keep it on screen', async (error, refusal, soldOut) => {
+    vi.mocked(CommerceController.commitCreateMarketplaceCheckout).mockResolvedValue({ ok: false, error } as never);
+    const { result } = renderHook(() =>
+      useMarketplaceCheckout(
+        [item],
+        vi.fn(async () => {}),
+      ),
+    );
+    act(() => {
+      result.current.form.setValue('name', 'Alice Buyer');
+      result.current.form.setValue('line1', '1 Market Street');
+      result.current.form.setValue('city', 'New York');
+      result.current.form.setValue('region', 'NY');
+      result.current.form.setValue('postalCode', '10001');
+    });
+
+    let outcome: Awaited<ReturnType<typeof result.current.pay>> | undefined;
+    await act(async () => {
+      outcome = await result.current.pay('paykit');
+    });
+
+    expect(outcome).toEqual({ ok: false, orderIds: [], boundOrders: [], refusal, soldOut });
+    expect(CommerceController.bindPaymentMethod).not.toHaveBeenCalled();
   });
 
   describe('per-size listings', () => {

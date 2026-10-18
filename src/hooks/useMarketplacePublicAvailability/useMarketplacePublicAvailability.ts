@@ -10,6 +10,8 @@ export type PublicListingStockState = MarketplacePublicListingAvailability['stat
 
 export interface PublicListingStock {
   state: PublicListingStockState;
+  /** The seller's store sells it without a stock count (print-on-demand): never sold out. */
+  madeToOrder: boolean;
   /** Per-size sold-out flags; empty for a listing that sells one variant. */
   variants: NonNullable<MarketplacePublicListingAvailability['variants']>;
 }
@@ -40,7 +42,13 @@ export function useMarketplacePublicAvailability(
         if (current)
           setRead({
             key,
-            stock: availability ? { state: availability.state, variants: availability.variants ?? [] } : null,
+            stock: availability
+              ? {
+                  state: availability.state,
+                  madeToOrder: availability.madeToOrder === true,
+                  variants: availability.variants ?? [],
+                }
+              : null,
           });
       } catch (error) {
         Logger.debug('Public listing availability read failed', { error });

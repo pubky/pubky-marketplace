@@ -14,6 +14,7 @@ import { MarketplaceConnectorImportSettings } from './MarketplaceConnectorImport
 function Harness({
   values = {},
   untrackedVariants = 0,
+  madeToOrderVariants = 0,
   variantMode = 'native',
   onReview = vi.fn(),
   onChooseFreeShipping = vi.fn(),
@@ -21,6 +22,7 @@ function Harness({
 }: {
   values?: Partial<ImportSettingsFormData>;
   untrackedVariants?: number;
+  madeToOrderVariants?: number;
   variantMode?: 'native' | 'split';
   onReview?: () => void;
   onChooseFreeShipping?: () => void;
@@ -39,6 +41,7 @@ function Harness({
       currency="USD"
       productCount={3}
       untrackedVariants={untrackedVariants}
+      madeToOrderVariants={madeToOrderVariants}
       conditionOptions={IMPORT_CONDITION_OPTIONS}
       variantMode={variantMode}
       busy={false}
@@ -99,6 +102,14 @@ describe('MarketplaceConnectorImportSettings', () => {
     expect(screen.getByLabelText('Quantity where your store has no count')).toHaveValue('1');
     expect(screen.getByTestId('connector-import-untracked')).toHaveTextContent(
       '2 variants do not track stock in your store.',
+    );
+  });
+
+  it('says made-to-order variants stay available and asks no quantity for them', () => {
+    render(<Harness madeToOrderVariants={3} />);
+    expect(screen.queryByLabelText('Quantity where your store has no count')).not.toBeInTheDocument();
+    expect(screen.getByTestId('connector-import-made-to-order')).toHaveTextContent(
+      '3 variants are made to order in your store (for example print-on-demand). On Pubky they stay available without a stock count, and every sale goes to your store to be made and shipped.',
     );
   });
 

@@ -278,10 +278,72 @@ describe('grant-only marketplace approval', () => {
     );
     const { result } = renderHook(() => useMarketplaceSessionConnect());
     act(() => result.current.start());
+    await waitFor(() => expect(beginMarketplaceBootstrapFlow).toHaveBeenCalledOnce());
     act(() => result.current.cancel());
     await act(async () => created(flow));
     expect(flow.cancel).toHaveBeenCalled();
     expect(result.current.authorizationUrl).toBe('');
+  });
+
+  it('creates no flow when the dialog closes before creation starts', async () => {
+    vi.mocked(beginMarketplaceBootstrapFlow).mockResolvedValue(pendingFlow().flow);
+    const { result } = renderHook(() => useMarketplaceSessionConnect());
+    act(() => {
+      result.current.start();
+      result.current.cancel();
+    });
+    await act(async () => undefined);
+    expect(beginMarketplaceBootstrapFlow).not.toHaveBeenCalled();
+  });
+
+  it('creates a restarted flow only after the previous flow is cancelled, so its cookie survives', async () => {
+    const first = pendingFlow().flow;
+    let cancelled!: () => void;
+    vi.mocked(first.cancel).mockReturnValue(
+      new Promise((resolve) => {
+        cancelled = resolve;
+      }),
+    );
+    vi.mocked(beginMarketplaceBootstrapFlow).mockResolvedValueOnce(first).mockResolvedValueOnce(pendingFlow().flow);
+    const { result } = renderHook(() => useMarketplaceSessionConnect());
+    act(() => result.current.start());
+    await waitFor(() => expect(result.current.status).toBe('awaiting'));
+
+    act(() => result.current.start());
+    await act(async () => undefined);
+    expect(first.cancel).toHaveBeenCalledOnce();
+    expect(beginMarketplaceBootstrapFlow).toHaveBeenCalledOnce();
+
+    await act(async () => cancelled());
+    await waitFor(() => expect(beginMarketplaceBootstrapFlow).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(result.current.status).toBe('awaiting'));
+  });
+
+  it('creates a restarted flow only after a still-creating flow is created and cancelled', async () => {
+    const first = pendingFlow().flow;
+    let created!: (flow: MarketplaceGrantFlow) => void;
+    vi.mocked(beginMarketplaceBootstrapFlow)
+      .mockReturnValueOnce(
+        new Promise((resolve) => {
+          created = resolve;
+        }),
+      )
+      .mockResolvedValueOnce(pendingFlow().flow);
+    const { result } = renderHook(() => useMarketplaceSessionConnect());
+    act(() => result.current.start());
+    await waitFor(() => expect(beginMarketplaceBootstrapFlow).toHaveBeenCalledOnce());
+
+    act(() => result.current.start());
+    await act(async () => undefined);
+    expect(beginMarketplaceBootstrapFlow).toHaveBeenCalledOnce();
+
+    await act(async () => created(first));
+    expect(first.cancel).toHaveBeenCalledOnce();
+    await waitFor(() => expect(beginMarketplaceBootstrapFlow).toHaveBeenCalledTimes(2));
+    expect(vi.mocked(first.cancel).mock.invocationCallOrder[0]).toBeLessThan(
+      vi.mocked(beginMarketplaceBootstrapFlow).mock.invocationCallOrder[1],
+    );
+    await waitFor(() => expect(result.current.status).toBe('awaiting'));
   });
 
   it('opens the prepared grant in the top window within the phone tap gesture', async () => {

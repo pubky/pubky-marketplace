@@ -7,6 +7,7 @@ import {
   connectorAlertAction,
   connectorAlertCatalogRoute,
   connectorAlertCopy,
+  connectorAlertLinkRoute,
   connectorAlertSchema,
   connectorCatalogSchema,
   type ConnectorConnection,
@@ -347,6 +348,10 @@ describe('copy', () => {
     expect(pushStateLabel({ state: 'created', quarantineSeverity: null })).toBe('In your store');
     expect(pushStateLabel({ state: 'quarantined', quarantineSeverity: 'action_required' })).toBe('Needs attention');
     expect(pushStateLabel({ state: 'quarantined', quarantineSeverity: 'info' })).toBe('Not sent');
+    expect(
+      pushStateLabel({ state: 'quarantined', quarantineSeverity: 'info', quarantineReason: 'no_mapped_lines' }),
+    ).toBe('Not sent: listing not linked');
+    expect(quarantineReasonCopy('no_mapped_lines')).toContain('no listing in this order is linked');
     expect(pushNeedsAction({ state: 'quarantined', quarantineSeverity: 'info' })).toBe(false);
     expect(pushNeedsAction({ state: 'quarantined', quarantineSeverity: 'action_required' })).toBe(true);
     expect(pushNeedsAction({ state: 'created', quarantineSeverity: null })).toBe(false);
@@ -428,5 +433,41 @@ describe('contract shapes', () => {
       price: { amountMinor: 2500, currency: 'CHF', exponent: 2 },
       stock: null,
     });
+  });
+
+  it('says an order was not sent for want of a link, and leads to the listing links', () => {
+    const alert = connectorAlertSchema.parse({
+      id: 'a1',
+      connectionId: '11111111-1111-4111-8111-111111111111',
+      kind: 'listing_not_linked',
+      pubkyOrderId: 'order-1',
+      createdAt: '2026-10-17T10:00:00.000Z',
+    });
+    expect(CONNECTOR_ALERT_KINDS).toContain('listing_not_linked');
+    expect(connectorAlertCopy('listing_not_linked')).toContain('Order not sent to your store');
+    expect(connectorAlertLinkRoute(alert)).toBe(
+      '/marketplace/settings/store-connections#listing-links-11111111-1111-4111-8111-111111111111',
+    );
+    expect(connectorAlertLinkRoute({ ...alert, kind: 'push_quarantined' })).toBeNull();
+  });
+
+  it('reads whether a catalog variant is made to order and the product handle', () => {
+    const page = connectorCatalogSchema.parse({
+      kind: 'connector_catalog',
+      connectionId: 'c1',
+      products: [
+        {
+          providerProductId: 'p1',
+          handle: 'organic-tee',
+          title: 'Tee',
+          variants: [
+            { providerVariantId: 'v1', price: { amountMinor: 100, currency: 'USD', exponent: 2 }, madeToOrder: true },
+            { providerVariantId: 'v2', price: { amountMinor: 100, currency: 'USD', exponent: 2 }, stock: 3 },
+          ],
+        },
+      ],
+    });
+    expect(page.products[0]?.handle).toBe('organic-tee');
+    expect(page.products[0]?.variants.map((variant) => variant.madeToOrder === true)).toEqual([true, false]);
   });
 });

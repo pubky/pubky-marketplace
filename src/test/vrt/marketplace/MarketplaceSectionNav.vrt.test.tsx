@@ -42,7 +42,7 @@ describe('Marketplace section navigation — visual regression', () => {
     await expect(await expectVrtSurface('marketplace-section-nav')).toMatchScreenshot('section-nav-offers-desktop');
   });
 
-  it('renders the wrapping section navigation on mobile', async () => {
+  it('keeps mobile sections in one horizontally scrollable row', async () => {
     await renderForVRT(
       <div className="w-full p-4">
         <MarketplaceSectionNav />
@@ -50,6 +50,20 @@ describe('Marketplace section navigation — visual regression', () => {
       { viewport: VRT_VIEWPORT_MOBILE },
     );
     await expect(await expectVrtSurface('marketplace-section-nav')).toMatchScreenshot('section-nav-offers-mobile');
+
+    const nav = document.querySelector<HTMLElement>('[data-testid="marketplace-section-nav"]')!;
+    const links = Array.from(nav.querySelectorAll('a'));
+    expect(nav.scrollWidth).toBeGreaterThan(nav.clientWidth);
+    expect(new Set(links.map((link) => link.offsetTop)).size).toBe(1);
+    const active = nav.querySelector<HTMLElement>('[aria-current="page"]')!;
+    expect(active.getBoundingClientRect().right).toBeLessThanOrEqual(nav.getBoundingClientRect().right + 1);
+    expect(active.getBoundingClientRect().left).toBeGreaterThanOrEqual(nav.getBoundingClientRect().left);
+
+    nav.scrollLeft = nav.scrollWidth;
+    const last = links.at(-1)!;
+    expect(nav.scrollLeft).toBeGreaterThan(0);
+    expect(last.getBoundingClientRect().right).toBeLessThanOrEqual(nav.getBoundingClientRect().right + 1);
+    expect(last.getBoundingClientRect().left).toBeGreaterThanOrEqual(nav.getBoundingClientRect().left);
   });
 
   it('keeps My shop reachable with a two-digit activity badge at 1024px', async () => {

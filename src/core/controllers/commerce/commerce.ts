@@ -1,4 +1,8 @@
-import { CommerceApplication, type CommerceCheckoutFulfillmentInput } from '@/application/commerce/commerce';
+import {
+  CommerceApplication,
+  type CommerceCatalogStreamFilters,
+  type CommerceCheckoutFulfillmentInput,
+} from '@/application/commerce/commerce';
 import {
   type CheckoutDeliveryKeysResolution,
   CommerceDeliveryKeysApplication,
@@ -27,6 +31,8 @@ import {
 } from '@/libs/commerce/digital';
 import { parseListingAggregateId } from '@/libs/commerce/listing-aggregate';
 import type { CommerceDigitalLock, CommerceShopRecord } from '@/libs/commerce/marketplace-records';
+import { resolveSellerPaymentBadges, type SellerPaymentBadge } from '@/libs/commerce/payment-badges';
+import { PAYMENT_METHOD_DISCOVERY_SELLER_CAP, type PaymentMethodFilter } from '@/libs/commerce/payment-method-filter';
 import type { BindDeliveryAddress, PaymentMethodKind } from '@/libs/commerce/payment-methods';
 import { resolveCheckoutFulfillment } from '@/libs/commerce/pickup';
 import type { CommerceDeliveryAddressValue } from '@/libs/commerce/postal-address';
@@ -56,6 +62,14 @@ import { useNotificationStore } from '@/stores/notification/notification.store';
 export type ShippingRatesResult =
   | { kind: 'rates'; rates: ShippoRate[] }
   | Exclude<OrderDeliveryAddressResult, { kind: 'address' }>;
+
+/** The catalog filter state a refresh maps onto the Nexus stream. */
+export interface CommerceCatalogUiFilters {
+  saleFormat: CommerceSaleFormatFilter;
+  conditions: CommerceConditionFilter[];
+  sort: CommerceSort;
+  countryCode?: string | null;
+}
 
 export class CommerceController {
   private constructor() {}
@@ -239,20 +253,20 @@ export class CommerceController {
    * the remaining sorts) stays client-side in `filterMarketplaceCatalog`, so
    * server-side filters only narrow what gets fetched, never what renders.
    */
-  static async fetchCatalogListings(filters: {
-    saleFormat: CommerceSaleFormatFilter;
-    conditions: CommerceConditionFilter[];
-    sort: CommerceSort;
-    countryCode?: string | null;
-  }): Promise<void> {
-    await CommerceApplication.fetchCatalogListings({
+  static async fetchCatalogListings(filters: CommerceCatalogUiFilters): Promise<void> {
+    await CommerceApplication.fetchCatalogListings(this.catalogStreamFilters(filters));
+  }
+
+  /** The catalog UI filters Nexus can apply server-side. */
+  private static catalogStreamFilters(filters: CommerceCatalogUiFilters): CommerceCatalogStreamFilters {
+    return {
       ...(filters.saleFormat === 'fixed_price' || filters.saleFormat === 'auction'
         ? { saleFormat: filters.saleFormat }
         : {}),
       ...(filters.conditions.length === 1 ? { condition: filters.conditions[0] } : {}),
       ...(filters.sort === 'ending_soon' ? { endingSoonest: true } : {}),
       ...(filters.countryCode ? { country: filters.countryCode } : {}),
-    });
+    };
   }
 
   static async fetchSellerCatalogListings(sellerPubky: unknown): Promise<void> {
@@ -774,6 +788,46 @@ export class CommerceController {
   /** A seller's publicly visible payment rails (bitcoin/usdt/paypal). */
   static async getSellerPaymentConfig(sellerPubky: unknown) {
     return await CommerceApplication.getSellerPaymentConfig(CommerceRecordNormalizer.pubky(sellerPubky));
+  }
+
+  /**
+   * The payment badges a buyer sees for this seller, resolved against the
+   * set last shown this session so a degraded Paykit read holds a badge
+   * instead of flickering it off. A failed read leaves the remembered set
+   * untouched and returns it (null when nothing was ever resolved).
+   */
+  static async fetchSellerPaymentBadges(sellerPubky: unknown): Promise<SellerPaymentBadge[] | null> {
+    const pubky = CommerceRecordNormalizer.pubky(sellerPubky);
+    const [config, usdtPaymentsAvailable] = await Promise.all([
+      CommerceApplication.getSellerPaymentConfig(pubky).catch(() => null),
+      CommerceApplication.fetchUsdtPaymentsAvailable().catch(() => null),
+    ]);
+    const previous = useCommerceStore.getState().sellerPaymentBadges[pubky];
+    if (!config) return previous ?? null;
+    const badges = resolveSellerPaymentBadges(config, { usdtPaymentsAvailable, previous });
+    useCommerceStore.getState().setSellerPaymentBadges(pubky, badges);
+    return badges;
+  }
+
+  /**
+   * The marketplace payment-method filter: reads the sellers whose stored
+   * configuration has `method` enabled, remembers the set for this session,
+   * then discovers the listings of up to {@link PAYMENT_METHOD_DISCOVERY_SELLER_CAP}
+   * of them from Nexus with the catalog's server-side filters. Resolves to the
+   * full seller set; rejects when the set cannot be read, leaving the
+   * remembered set untouched.
+   */
+  static async fetchPaymentMethodCatalog(
+    method: PaymentMethodFilter,
+    filters: CommerceCatalogUiFilters,
+  ): Promise<string[]> {
+    const sellers = await CommerceApplication.fetchPaymentMethodSellers(method);
+    useCommerceStore.getState().setPaymentMethodSellers(method, sellers);
+    await CommerceApplication.fetchSellerSetCatalogListings(
+      sellers.slice(0, PAYMENT_METHOD_DISCOVERY_SELLER_CAP),
+      this.catalogStreamFilters(filters),
+    );
+    return sellers;
   }
 
   /** Whether the buyer's Paykit wallet can receive a Bitcoin payment request from the Shop. */

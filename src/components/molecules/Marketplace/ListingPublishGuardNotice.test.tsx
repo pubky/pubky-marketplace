@@ -1,7 +1,12 @@
 import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { MARKETPLACE_ROUTES } from '@/app/routes';
-import { LISTING_PUBLISH_BLOCK_COPY, LISTING_PUBLISH_BLOCK_REASONS } from '@/libs/commerce/listing-publish-guards';
+import {
+  LISTING_PUBLISH_BLOCK_COPY,
+  LISTING_PUBLISH_BLOCK_REASONS,
+  peekListingComposerReturnTo,
+} from '@/libs/commerce/listing-publish-guards';
 import { ListingPublishGuardNotice } from './ListingPublishGuardNotice';
 
 vi.mock('@/organisms/Marketplace/MarketplaceSessionConnectDialog', () => ({
@@ -77,9 +82,49 @@ describe('ListingPublishGuardNotice', () => {
 
     expect(screen.getByRole('link', { name: 'Create delivery key' })).toHaveAttribute(
       'href',
-      MARKETPLACE_ROUTES.SETTINGS_SHIPPING,
+      `${MARKETPLACE_ROUTES.SETTINGS_SHIPPING}?returnTo=${encodeURIComponent(MARKETPLACE_ROUTES.SELL)}`,
     );
     expect(screen.queryByRole('button', { name: 'Enable selling' })).not.toBeInTheDocument();
+  });
+
+  it('sends an edited listing back to its edit page from Shipping settings', () => {
+    const editPath = `/marketplace/listing/${'y'.repeat(52)}/item/edit`;
+    render(
+      <ListingPublishGuardNotice
+        reason="no-delivery-key"
+        surface="listing-publish-guard"
+        density="action"
+        returnTo={editPath}
+      />,
+    );
+
+    expect(screen.getByRole('link', { name: 'Create delivery key' })).toHaveAttribute(
+      'href',
+      `${MARKETPLACE_ROUTES.SETTINGS_SHIPPING}?returnTo=${encodeURIComponent(editPath)}`,
+    );
+  });
+
+  it.each([
+    ['no-delivery-key', 'Create delivery key'],
+    ['no-method', 'Payment settings'],
+  ] as const)('remembers the composer and keeps the draft when the %s link is followed', async (reason, name) => {
+    sessionStorage.clear();
+    const onLeaveForSettings = vi.fn();
+    render(
+      <ListingPublishGuardNotice
+        reason={reason}
+        surface="listing-publish-guard"
+        density="action"
+        onLeaveForSettings={onLeaveForSettings}
+      />,
+    );
+
+    const link = screen.getByRole('link', { name });
+    link.addEventListener('click', (event) => event.preventDefault());
+    await userEvent.click(link);
+
+    expect(onLeaveForSettings).toHaveBeenCalledTimes(1);
+    expect(peekListingComposerReturnTo()).toBe(MARKETPLACE_ROUTES.SELL);
   });
 
   it('offers no action for an unreadable delivery key, which a reload resolves', () => {

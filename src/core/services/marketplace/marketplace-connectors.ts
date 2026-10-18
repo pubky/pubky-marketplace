@@ -22,15 +22,18 @@ import {
   connectorSelectionSchema,
   type ConnectorSettingsResult,
   connectorSettingsResultSchema,
+  isConnectorsUnavailableAnswer,
   type VariantMode,
 } from '@/libs/commerce/connectors';
 import { toCamelCaseWire, toSnakeCaseWire } from '@/libs/commerce/wire-casing';
+import { AppError } from '@/libs/error/error';
 import { AuthErrorCode, ClientErrorCode, ServerErrorCode } from '@/libs/error/error.codes';
 import { Err } from '@/libs/error/error.factories';
 import { httpResponseToError, safeFetch } from '@/libs/error/error.http';
-import { ErrorService } from '@/libs/error/error.types';
+import { ErrorCategory, ErrorService } from '@/libs/error/error.types';
 import { HttpStatusCode } from '@/libs/http/http.types';
 import { parseResponseOrThrow } from '@/libs/http/response.utils';
+import { marketplaceSessionRequired } from './marketplace-approval-failure';
 import { MarketplaceSessionService } from './marketplace-session';
 
 type RequestOptions = {
@@ -250,10 +253,23 @@ export class MarketplaceConnectorsService {
     }
     if (!response.ok) {
       const refusal = await this.refusal(response);
-      throw httpResponseToError(response, ErrorService.Marketplace, operation, path, {
+      const extraContext = {
         reason: refusal.code,
         ...(refusal.listingId ? { listingId: refusal.listingId } : {}),
-      });
+      };
+      // A service without connectors is a deployment fact the UI answers by
+      // hiding store connections, so it must not reach the reporting factory.
+      if (isConnectorsUnavailableAnswer(response.status, refusal.code)) {
+        throw new AppError({
+          category: ErrorCategory.Client,
+          code: response.status === HttpStatusCode.NOT_FOUND ? ClientErrorCode.NOT_FOUND : ClientErrorCode.BAD_REQUEST,
+          message: 'Store connections are not available on this marketplace service.',
+          service: ErrorService.Marketplace,
+          operation,
+          context: { endpoint: path, statusCode: response.status, ...extraContext },
+        });
+      }
+      throw httpResponseToError(response, ErrorService.Marketplace, operation, path, extraContext);
     }
     if (response.status === HttpStatusCode.NO_CONTENT) return null;
     const text = await response.clone().text();
@@ -295,10 +311,9 @@ export class MarketplaceConnectorsService {
   private static requireSession(operation: string, actor: string): { token: string; pubky: string } {
     const session = MarketplaceSessionService.getActiveSession();
     if (!session) {
-      throw Err.auth(
-        AuthErrorCode.SESSION_EXPIRED,
+      throw marketplaceSessionRequired(
         'A marketplace session is required. Approve the marketplace connection on your signer and try again.',
-        { service: ErrorService.Marketplace, operation },
+        operation,
       );
     }
     if (session.pubky !== actor) {

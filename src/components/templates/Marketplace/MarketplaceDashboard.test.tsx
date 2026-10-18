@@ -427,7 +427,7 @@ describe('MarketplaceDashboard', () => {
     expect(screen.queryByTestId('create-listing-payment-precondition')).not.toBeInTheDocument();
   });
 
-  it('downloads the canonical import CSV from Export CSV', async () => {
+  it('downloads the canonical import CSV from Export', async () => {
     viewport.isMobile = false;
     paymentGate.isDurable = true;
     paymentGate.ready = true;
@@ -438,7 +438,7 @@ describe('MarketplaceDashboard', () => {
     const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined);
 
     render(<MarketplaceDashboard />);
-    fireEvent.click(screen.getByRole('button', { name: /Export CSV/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Export' }));
 
     await waitFor(() => expect(click).toHaveBeenCalledTimes(1));
     const blob = createObjectURL.mock.calls[0]![0];

@@ -1,14 +1,20 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { TooltipProvider } from '@/atoms/Tooltip/Tooltip';
 import { catalogItemFromCatalogEntry } from '@/hooks/useMarketplaceCatalog/useMarketplaceCatalog.utils';
 import type { MarketplaceWatchlistEntry } from '@/hooks/useMarketplaceWatchlist/useMarketplaceWatchlist';
+import type { MarketplaceFeedNotification } from '@/pipes/marketplaceNotification/marketplaceNotification.types';
+import type { MarketplaceWatchAlertFeedItem } from '@/pipes/marketplaceWatch/marketplaceWatchAlert.types';
 import { createCommerceCatalogEntryFixture } from '@/test/fixtures/commerce/commerce';
+import { createWatchAlertFeedItemFixture } from '@/test/fixtures/commerce/watch-alerts';
 import { MarketplaceWatchlist } from './MarketplaceWatchlist';
 
 const relativeTime = vi.hoisted(() => ({ value: '11s' }));
 const sellerSummary = vi.hoisted(() => ({ displayName: 'Proof of Film' }));
 const view = vi.hoisted(() => ({
   entries: [] as MarketplaceWatchlistEntry[],
+  watchAlerts: [] as MarketplaceWatchAlertFeedItem[],
+  notifications: [] as MarketplaceFeedNotification[],
   isSignedIn: true,
   watchlistSyncStatus: 'synced' as string,
 }));
@@ -33,11 +39,11 @@ vi.mock('@/hooks/useMarketplaceWatchlist/useMarketplaceWatchlist', () => ({
 }));
 
 vi.mock('@/hooks/useMarketplaceWatchAlertFeed/useMarketplaceWatchAlertFeed', () => ({
-  useMarketplaceWatchAlertFeed: () => ({ items: [] }),
+  useMarketplaceWatchAlertFeed: () => ({ items: view.watchAlerts }),
 }));
 
 vi.mock('@/hooks/useMarketplaceNotificationFeed/useMarketplaceNotificationFeed', () => ({
-  useMarketplaceNotificationFeed: () => ({ items: [] }),
+  useMarketplaceNotificationFeed: () => ({ items: view.notifications }),
 }));
 
 vi.mock('@/hooks/useMarketplaceWatchDetection/useMarketplaceWatchDetection', () => ({
@@ -50,6 +56,10 @@ vi.mock('@/hooks/useCommerceFavorite/useCommerceFavorite', () => ({
 
 vi.mock('@/hooks/useMarketplaceLiveBid/useMarketplaceLiveBid', () => ({
   useMarketplaceLiveBid: () => ({ ref: () => {}, bid: null }),
+}));
+
+vi.mock('@/hooks/useUserProfile/useUserProfile', () => ({
+  useUserProfile: () => ({ profile: { name: 'Rival Bidder' } }),
 }));
 
 const sellerSummaryCalls = vi.hoisted(() => ({ options: [] as Array<{ includeReputation?: boolean } | undefined> }));
@@ -118,6 +128,8 @@ describe('MarketplaceWatchlist', () => {
     relativeTime.value = '11s';
     sellerSummary.displayName = 'Proof of Film';
     view.entries = [watchlistEntry()];
+    view.watchAlerts = [];
+    view.notifications = [];
     view.isSignedIn = true;
     view.watchlistSyncStatus = 'synced';
   });
@@ -137,6 +149,63 @@ describe('MarketplaceWatchlist', () => {
     render(<MarketplaceWatchlist />);
 
     expect(screen.getByText('Checked just now')).toBeInTheDocument();
+  });
+
+  it('keeps device alert links and unseen state in labeled notification rows', () => {
+    view.watchAlerts = [
+      createWatchAlertFeedItemFixture('outbid', { isUnseen: true }),
+      createWatchAlertFeedItemFixture('ending_soon'),
+    ];
+
+    const { container } = render(
+      <TooltipProvider>
+        <MarketplaceWatchlist />
+      </TooltipProvider>,
+    );
+
+    const rows = container.querySelectorAll<HTMLElement>('[data-cy="marketplace-watch-alert-item"]');
+    expect(rows).toHaveLength(2);
+    rows.forEach((row, index) => {
+      expect(within(row).getByText('Detected by device')).toBeInTheDocument();
+      expect(within(row).getByRole('link', { name: /Vintage mechanical keyboard/ })).toHaveAttribute(
+        'href',
+        view.watchAlerts[index].href,
+      );
+      expect(within(row).getByText(relativeTime.value)).toBeInTheDocument();
+    });
+    expect(rows[0].querySelector('[data-cy="notification-unread-dot"]')).toBeInTheDocument();
+    expect(rows[1].querySelector('[data-cy="notification-unread-dot"]')).not.toBeInTheDocument();
+  });
+
+  it('combines service and device notifications newest first in one section', () => {
+    view.watchAlerts = [createWatchAlertFeedItemFixture('ending_soon', { timestamp: 200 })];
+    view.notifications = [
+      {
+        id: 'marketplace:outbid',
+        source: 'marketplace',
+        type: 'outbid',
+        actorPubky: 'a'.repeat(52),
+        aggregateId: 'listing:auction',
+        timestamp: 100,
+        isUnread: false,
+        href: '/marketplace/listing/auction',
+      },
+    ];
+    render(
+      <TooltipProvider>
+        <MarketplaceWatchlist />
+      </TooltipProvider>,
+    );
+    const section = screen.getByRole('region', { name: 'Auction notifications' });
+    const rows = section.querySelectorAll(
+      '[data-cy="marketplace-watch-alert-item"], [data-cy="marketplace-notification-item"]',
+    );
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toHaveTextContent('Auction ending soon');
+    expect(rows[0]).toHaveTextContent('Detected by device');
+    expect(rows[1]).toHaveTextContent('Rival Bidder');
+    expect(rows[1]).not.toHaveTextContent('Detected by device');
+    expect(screen.queryByRole('heading', { name: 'Detected on this device' })).not.toBeInTheDocument();
   });
 
   it('says private sync is unavailable when the data key cannot be released', () => {

@@ -1,17 +1,27 @@
+import { filterBySellerSet, type PaymentMethodFilter } from '@/libs/commerce/payment-method-filter';
 import type { CommerceSavedSearchParams } from '@/models/commerce/commerce.schema';
 import {
   filterMarketplaceCatalog,
   type MarketplaceCatalogItem,
 } from '../useMarketplaceCatalog/useMarketplaceCatalog.utils';
 
-/** Runs a saved search's persisted params over catalog items — exactly the catalog page's filter. */
+/**
+ * Runs a saved search's persisted params over catalog items — exactly the
+ * catalog page's filter. A payment-method search also needs that method's
+ * seller set; without one the matches are unknown (`null`), never guessed.
+ */
 export function matchSavedSearch(
   items: MarketplaceCatalogItem[],
   params: CommerceSavedSearchParams,
-): MarketplaceCatalogItem[] {
-  // Legacy rows persisted before the location filter existed carry no
-  // countryCode; they mean "anywhere".
-  return filterMarketplaceCatalog(items, { ...params, countryCode: params.countryCode ?? null });
+  paymentSellers: ReadonlyMap<PaymentMethodFilter, ReadonlySet<string>> = new Map(),
+): MarketplaceCatalogItem[] | null {
+  // Legacy rows persisted before the location or payment filters existed
+  // carry neither; they mean "anywhere" and "any payment".
+  const matches = filterMarketplaceCatalog(items, { ...params, countryCode: params.countryCode ?? null });
+  const method = params.paymentMethod ?? null;
+  if (!method) return matches;
+  const sellers = paymentSellers.get(method);
+  return sellers ? filterBySellerSet(matches, sellers, (item) => item.sellerId) : null;
 }
 
 export interface SavedSearchMatchSummary {

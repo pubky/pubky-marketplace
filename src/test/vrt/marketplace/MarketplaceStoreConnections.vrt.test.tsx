@@ -41,6 +41,16 @@ vi.mock('@/organisms/ContentLayout/ContentLayout', () => ({
 
 vi.mock('@/organisms/Marketplace/MarketplaceSectionNav', () => ({ MarketplaceSectionNav: () => null }));
 
+vi.mock('@/hooks/useConnectorListingLinks/useConnectorListingLinks', () => ({
+  useConnectorListingLinks: () => ({
+    state: { status: 'ready', unlinked: [], products: [] },
+    linkingId: null,
+    check: async () => true,
+    linkByHand: async () => true,
+    store: 'Shopify',
+  }),
+}));
+
 function row(overrides: Record<string, unknown>, options: { disconnectedLocally?: boolean } = {}) {
   const connection = connectionFixture({
     status: 'connected',

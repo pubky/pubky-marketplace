@@ -20,8 +20,10 @@ import {
   type MarketplaceCatalogItem,
 } from '@/hooks/useMarketplaceCatalog/useMarketplaceCatalog.utils';
 import { useMarketplaceMediaUrl } from '@/hooks/useMarketplaceMediaUrl/useMarketplaceMediaUrl';
+import { useSellerPaymentBadges } from '@/hooks/useSellerPaymentBadges/useSellerPaymentBadges';
 import { resolveSellerDeliveryTerms, sellerDeliveryTermsCopy } from '@/libs/commerce/seller-delivery-terms';
 import { formatShipsToCountries, shopShipsToCountries } from '@/libs/commerce/ships-to';
+import { MarketplacePaymentMethodBadges } from '@/molecules/MarketplacePaymentMethodBadges/MarketplacePaymentMethodBadges';
 import { ContentLayout } from '@/organisms/ContentLayout/ContentLayout';
 import { MarketplaceCommunityTags } from '@/organisms/Marketplace/MarketplaceCommunityTags';
 import { MarketplaceListingCard } from '@/organisms/Marketplace/MarketplaceListingCard';
@@ -35,6 +37,7 @@ export function MarketplaceShop({ sellerPubky }: { sellerPubky: string }) {
   const follow = useCommerceShopFollow(sellerPubky);
   const currentUserPubky = useAuthStore((state) => state.currentUserPubky);
   const isOwner = currentUserPubky === sellerPubky;
+  const paymentBadges = useSellerPaymentBadges(sellerPubky);
   const profileRoute = getProfileRoute(PROFILE_ROUTES.PROFILE, sellerPubky);
   // With social link-out on, profiles live on the social host; plain <a>, same tab.
   const socialProfileUrl = getSocialHostUrl(profileRoute);
@@ -114,7 +117,16 @@ export function MarketplaceShop({ sellerPubky }: { sellerPubky: string }) {
               locationExtras={
                 <MarketplaceCommunityTags target={{ kind: TagKind.SHOP, ownerPubky: sellerPubky }} variant="inline" />
               }
-              afterLocation={<MarketplaceReputationHeader sellerPubky={sellerPubky} variant="full" className="mt-3" />}
+              afterLocation={
+                <>
+                  <MarketplaceReputationHeader sellerPubky={sellerPubky} variant="full" className="mt-3" />
+                  <MarketplacePaymentMethodBadges
+                    methods={paymentBadges}
+                    className="mt-3"
+                    testId="marketplace-shop-payment-methods"
+                  />
+                </>
+              }
               aside={
                 <div className="flex flex-col items-start gap-4 sm:items-end">
                   <div className="flex flex-wrap gap-2">
@@ -205,6 +217,11 @@ export function MarketplaceShop({ sellerPubky }: { sellerPubky: string }) {
                       : 'This seller hasn\u2019t set up a shop profile yet. Their owner-signed listings are below.'}
                   </Typography>
                   <MarketplaceReputationHeader sellerPubky={sellerPubky} variant="full" className="mt-3" />
+                  <MarketplacePaymentMethodBadges
+                    methods={paymentBadges}
+                    className="mt-3"
+                    testId="marketplace-shop-payment-methods"
+                  />
                 </div>
                 <div className="flex flex-wrap gap-2">
                   {isOwner ? (

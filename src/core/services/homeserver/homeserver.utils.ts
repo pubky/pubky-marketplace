@@ -210,6 +210,8 @@ export const waitUntilVisible = (signal?: AbortSignal): Promise<void> =>
     document.addEventListener('visibilitychange', onChange);
   });
 
+const isPageHidden = (): boolean => typeof document !== 'undefined' && document.visibilityState === 'hidden';
+
 /**
  * Creates a cancelable auth approval wrapper around an AuthFlow.
  * Pubky rc7: awaitApproval consumes the WASM handle, so we use tryPollOnce to keep flow.free() usable.
@@ -217,6 +219,8 @@ export const waitUntilVisible = (signal?: AbortSignal): Promise<void> =>
  * @param options - Optional configuration: poll interval in milliseconds and `resume`, which reconnects to
  * the same relay channel. The SDK gives up on a flow after a few failed relay requests and never polls again,
  * so a later `tryPollOnce` cannot recover it; only a resumed flow can pick up an approval posted meanwhile.
+ * With `releaseWhileHidden`, a resumable flow is also freed while the page is hidden and resumed once it is
+ * visible, so the approval stays on the relay and the grant exchange only runs in the foreground.
  * @returns CancelableAuthApproval with awaitApproval promise and cancel function
  */
 export const createCancelableAuthApproval = (
@@ -225,6 +229,9 @@ export const createCancelableAuthApproval = (
     pollIntervalMs?: number;
     maxPollAttempts?: number;
     resume?: () => Pick<AuthFlow, 'tryPollOnce' | 'free'> | Promise<Pick<AuthFlow, 'tryPollOnce' | 'free'>>;
+    releaseWhileHidden?: boolean;
+    /** True once the SDK listener has sent its relay ACK (see `watchRelayAcks`); the flow is then never released. */
+    ackSent?: () => boolean;
     onCanceledSession?: (session: Session) => Promise<void>;
   },
 ): CancelableAuthApproval => {
@@ -235,10 +242,10 @@ export const createCancelableAuthApproval = (
   let canceled = false;
   let freed = false;
   const waiting = new AbortController();
+  const releasable = Boolean(options?.resume && options.releaseWhileHidden);
+  let endPause: (() => void) | null = null;
 
-  const cancel = () => {
-    canceled = true;
-    waiting.abort();
+  const freeFlow = () => {
     if (freed) return;
     freed = true;
     try {
@@ -246,6 +253,39 @@ export const createCancelableAuthApproval = (
     } catch {
       // Ignore double-free or already-finalized WASM objects.
     }
+  };
+
+  /** Waits between polls; a hide ends the wait early. */
+  const pause = (ms: number): Promise<void> =>
+    new Promise((resolve) => {
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const done = () => {
+        clearTimeout(timer);
+        endPause = null;
+        resolve();
+      };
+      endPause = done;
+      timer = setTimeout(done, ms);
+    });
+
+  // The SDK listener ACKs an approval on the relay before queuing it for `tryPollOnce`, so freeing the flow drops
+  // an approval it has already queued. A hide therefore triggers one more poll at once (WebKit throttles timers in
+  // hidden pages), and the flow is only freed straight after a poll that found nothing and before the listener has
+  // sent its ACK: from then on the relay may no longer hold the approval and only the live flow can deliver it.
+  const pollNowIfHidden = () => {
+    if (isPageHidden()) endPause?.();
+  };
+  if (releasable && typeof document !== 'undefined') {
+    document.addEventListener('visibilitychange', pollNowIfHidden);
+  }
+
+  const cancel = () => {
+    canceled = true;
+    if (releasable && typeof document !== 'undefined') {
+      document.removeEventListener('visibilitychange', pollNowIfHidden);
+    }
+    waiting.abort();
+    freeFlow();
   };
 
   const awaitApproval = (async () => {
@@ -257,6 +297,36 @@ export const createCancelableAuthApproval = (
     let resumeError: unknown;
     for (;;) {
       if (canceled) throw createCanceledError();
+      // Parked: the flow was freed on a hidden page, so nothing took a later approval off the relay. Resume the
+      // same channel once visible; the relay's retention counts from when the approval was published, not from
+      // when this flow started, so the flow's age says nothing about whether it is still there.
+      if (options?.resume && releasable && freed) {
+        if (isPageHidden()) await waitUntilVisible(waiting.signal);
+        if (canceled) throw createCanceledError();
+        let resumed: Pick<AuthFlow, 'tryPollOnce' | 'free'>;
+        try {
+          resumed = await options.resume();
+        } catch (resumeFailure) {
+          if (canceled) throw createCanceledError();
+          throw Err.auth(AuthErrorCode.SESSION_EXPIRED, 'Auth flow could not be resumed', {
+            service: ErrorService.Homeserver,
+            operation: 'awaitApproval',
+            context: { resumeError: resumeFailure instanceof Error ? resumeFailure.message : String(resumeFailure) },
+            cause: resumeFailure,
+          });
+        }
+        if (canceled) {
+          try {
+            resumed.free();
+          } catch {
+            // Ignore double-free or already-finalized WASM objects.
+          }
+          throw createCanceledError();
+        }
+        flow = resumed;
+        freed = false;
+        continue;
+      }
       if (++attempts > maxPollAttempts) {
         throw Err.timeout(TimeoutErrorCode.REQUEST_TIMEOUT, 'Auth flow timed out after maximum attempts', {
           service: ErrorService.Homeserver,
@@ -284,11 +354,7 @@ export const createCancelableAuthApproval = (
           await waitUntilVisible(waiting.signal);
           if (canceled) throw createCanceledError();
           if (Date.now() - startedAt <= AUTH_RELAY_RETENTION_MS) {
-            try {
-              flow.free();
-            } catch {
-              // Ignore double-free or already-finalized WASM objects.
-            }
+            freeFlow();
             try {
               const resumed = await options.resume();
               if (canceled) {
@@ -301,6 +367,7 @@ export const createCancelableAuthApproval = (
                 throw createCanceledError();
               }
               flow = resumed;
+              freed = false;
               continue;
             } catch (resumeFailure) {
               if (canceled) throw createCanceledError();
@@ -325,7 +392,15 @@ export const createCancelableAuthApproval = (
         });
       }
 
-      await sleep(pollIntervalMs);
+      // A live SDK flow takes an approval off the relay as soon as it arrives and the next poll exchanges it. iOS
+      // suspends a hidden page mid-exchange and WebKit aborts its IndexedDB and fetch work, losing the approval.
+      // This poll found nothing queued and no ACK was sent, so freeing now leaves any approval on the relay for the
+      // resumed flow. After an ACK the live flow keeps polling until the approval is queued.
+      if (releasable && isPageHidden() && !options?.ackSent?.()) {
+        freeFlow();
+        continue;
+      }
+      await pause(pollIntervalMs);
     }
   })();
 

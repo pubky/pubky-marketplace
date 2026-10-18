@@ -1345,6 +1345,36 @@ describe('MarketplaceTransactionService read projections', () => {
       expect(init.signal).toBeInstanceOf(AbortSignal);
     });
 
+    it('reads one page of the sellers who accept a payment method, publicly', async () => {
+      const seller = 'a'.repeat(52);
+      vi.mocked(fetch)
+        .mockResolvedValueOnce(jsonResponse(200, { method: 'paypal', sellers: [seller], next_after: seller }))
+        .mockResolvedValueOnce(jsonResponse(200, { method: 'paypal', sellers: [], next_after: null }));
+
+      await expect(MarketplaceTransactionService.getPaymentMethodSellers('paypal', null)).resolves.toEqual({
+        method: 'paypal',
+        sellers: [seller],
+        nextAfter: seller,
+      });
+      await MarketplaceTransactionService.getPaymentMethodSellers('paypal', seller);
+
+      const [[firstUrl, init], [secondUrl]] = vi.mocked(fetch).mock.calls as [string, RequestInit][];
+      expect(firstUrl).toBe('http://127.0.0.1:8080/v0/payment-methods/paypal/sellers');
+      expect(secondUrl).toBe(`http://127.0.0.1:8080/v0/payment-methods/paypal/sellers?after=${seller}`);
+      expect(init.headers).toEqual(expect.not.objectContaining({ authorization: expect.anything() }));
+      expect(init.signal).toBeInstanceOf(AbortSignal);
+    });
+
+    it('refuses a seller page that is not seller keys', async () => {
+      vi.mocked(fetch).mockResolvedValueOnce(
+        jsonResponse(200, { method: 'paypal', sellers: ['seller@example.com'], next_after: null }),
+      );
+
+      await expect(MarketplaceTransactionService.getPaymentMethodSellers('paypal', null)).rejects.toMatchObject({
+        name: 'AppError',
+      });
+    });
+
     it('drops payout identifiers from a service that still sends them', async () => {
       vi.mocked(fetch).mockResolvedValueOnce(
         jsonResponse(200, {

@@ -489,4 +489,132 @@ describe('ConnectorsApplication', () => {
       expect(overview.pushes[0]?.connection.domain).toBe('other.example');
     });
   });
+
+  describe('linking listings made outside a store import', () => {
+    const tee = {
+      providerProductId: 'gid://shopify/Product/1',
+      handle: 'tee',
+      title: 'Tee',
+      options: [],
+      imageUrls: [],
+      selected: false,
+      variants: [
+        {
+          providerVariantId: 'gid://shopify/ProductVariant/11',
+          sku: 'TEE-1',
+          optionValues: [],
+          price: { amountMinor: 2500, currency: 'USD', exponent: 2 },
+        },
+      ],
+    };
+    const csvListing = {
+      listingId: 'csv-tee',
+      title: 'Tee',
+      variants: [{ id: 'v1', sku: 'TEE-1', options: {}, enabled: true }],
+    };
+    const handmade = { listingId: 'scarf', title: 'Scarf', variants: [{ id: 'v1', options: {}, enabled: true }] };
+
+    it('links the listings that match by SKU and sends again the orders that waited for a link', async () => {
+      const catalog = vi.spyOn(MarketplaceConnectorsService, 'catalog').mockResolvedValue({
+        kind: 'connector_catalog',
+        connectionId: ID,
+        products: [tee],
+        nextPage: null,
+      });
+      vi.spyOn(MarketplaceConnectorsService, 'mappings').mockResolvedValue([]);
+      const put = vi
+        .spyOn(MarketplaceConnectorsService, 'putMappings')
+        .mockImplementation(async (_actor, _id, mappings) => [...mappings]);
+      const pushes = vi.spyOn(MarketplaceConnectorsService, 'pushes').mockResolvedValue({
+        pushes: [
+          push({ id: 'p1', pubkyOrderId: 'waiting', state: 'quarantined', quarantineReason: 'no_mapped_lines' }),
+          push({ id: 'p2', pubkyOrderId: 'other', state: 'quarantined', quarantineReason: 'provider_rejected' }),
+        ],
+        nextCursor: null,
+      });
+      const retry = vi.spyOn(MarketplaceConnectorsService, 'retryPush').mockResolvedValue(push({ state: 'sending' }));
+
+      const result = await ConnectorsApplication.autoLinkListings(ACTOR, connection({ provider: 'shopify' }), [
+        csvListing,
+        handmade,
+      ]);
+
+      expect(catalog).toHaveBeenCalledWith(ACTOR, ID, { page: null });
+      expect(put).toHaveBeenCalledWith(ACTOR, ID, [
+        {
+          listingId: 'csv-tee',
+          variantId: 'v1',
+          providerProductId: 'gid://shopify/Product/1',
+          providerVariantId: 'gid://shopify/ProductVariant/11',
+          sku: 'TEE-1',
+        },
+      ]);
+      expect(result.linked.map((entry) => entry.listingId)).toEqual(['csv-tee']);
+      expect(result.unlinked).toEqual([{ listingId: 'scarf', title: 'Scarf', reason: 'no_match' }]);
+      expect(pushes).toHaveBeenCalledWith(ACTOR, ID, { state: 'quarantined', limit: 50 });
+      expect(retry).toHaveBeenCalledTimes(1);
+      expect(retry).toHaveBeenCalledWith(ACTOR, ID, 'waiting');
+      expect(result.resent).toBe(1);
+    });
+
+    it('writes nothing and resends nothing when no listing matches', async () => {
+      vi.spyOn(MarketplaceConnectorsService, 'catalog').mockResolvedValue({
+        kind: 'connector_catalog',
+        connectionId: ID,
+        products: [tee],
+        nextPage: null,
+      });
+      vi.spyOn(MarketplaceConnectorsService, 'mappings').mockResolvedValue([]);
+      const put = vi.spyOn(MarketplaceConnectorsService, 'putMappings');
+      const pushes = vi.spyOn(MarketplaceConnectorsService, 'pushes');
+
+      const result = await ConnectorsApplication.autoLinkListings(ACTOR, connection(), [handmade]);
+
+      expect(put).not.toHaveBeenCalled();
+      expect(pushes).not.toHaveBeenCalled();
+      expect(result.unlinked).toHaveLength(1);
+    });
+
+    it('links a listing matched by hand and refuses an empty link', async () => {
+      vi.spyOn(MarketplaceConnectorsService, 'mappings').mockResolvedValue([]);
+      vi.spyOn(MarketplaceConnectorsService, 'putMappings').mockImplementation(async (_a, _i, mappings) => [
+        ...mappings,
+      ]);
+      vi.spyOn(MarketplaceConnectorsService, 'pushes').mockResolvedValue({ pushes: [], nextCursor: null });
+      const mapping = {
+        listingId: 'scarf',
+        variantId: 'v1',
+        providerProductId: 'gid://shopify/Product/1',
+        providerVariantId: 'gid://shopify/ProductVariant/11',
+      };
+      await expect(ConnectorsApplication.linkListing(ACTOR, ID, [mapping])).resolves.toEqual({
+        linked: true,
+        resent: 0,
+      });
+      await expect(ConnectorsApplication.linkListing(ACTOR, ID, [])).rejects.toBeInstanceOf(AppError);
+    });
+
+    it('checks every live store and names one that could not be checked', async () => {
+      const broken = connection({ id: '55555555-5555-4555-8555-555555555555', domain: 'down.myshopify.com' });
+      vi.spyOn(MarketplaceConnectorsService, 'list').mockResolvedValue([
+        connection(),
+        broken,
+        connection({ id: '66666666-6666-4666-8666-666666666666', status: 'draft' }),
+      ]);
+      vi.spyOn(MarketplaceConnectorsService, 'catalog').mockImplementation(async (_actor, id) => {
+        if (id === broken.id) throw connectorRefusal('provider_unavailable', 502);
+        return { kind: 'connector_catalog', connectionId: ID, products: [tee], nextPage: null };
+      });
+      vi.spyOn(MarketplaceConnectorsService, 'mappings').mockResolvedValue([]);
+      vi.spyOn(MarketplaceConnectorsService, 'putMappings').mockImplementation(async (_a, _i, mappings) => [
+        ...mappings,
+      ]);
+      vi.spyOn(MarketplaceConnectorsService, 'pushes').mockResolvedValue({ pushes: [], nextCursor: null });
+
+      const result = await ConnectorsApplication.autoLinkAcrossStores(ACTOR, [csvListing]);
+
+      expect(result.linked).toBe(1);
+      expect(result.failedStores.map((store) => store.domain)).toEqual(['down.myshopify.com']);
+    });
+  });
 });

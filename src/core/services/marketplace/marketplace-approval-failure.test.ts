@@ -14,6 +14,8 @@ describe('expected approval states', () => {
     ['claim_in_progress', 409, ErrorCategory.Client],
     ['flow_expired', 410, ErrorCategory.Client],
     ['flow_cancelled', 410, ErrorCategory.Client],
+    ['flow_binding_missing', 401, ErrorCategory.Client],
+    ['flow_binding_denied', 403, ErrorCategory.Client],
   ] as const)('keeps %s out of the logging and Sentry factory', (code, status, category) => {
     const report = vi.spyOn(Err, 'server');
     const error = marketplaceApprovalFailure(code, 'marketplaceBootstrap', status);
@@ -23,6 +25,7 @@ describe('expected approval states', () => {
   });
   it.each([
     ['shop_session_missing', 503],
+    ['flow_binding_missing', 500],
     ['unknown_failure', 409],
   ] as const)('still reports unexpected %s HTTP %s', (code, status) => {
     const report = vi.spyOn(Err, 'server');

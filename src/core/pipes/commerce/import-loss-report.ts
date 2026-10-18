@@ -82,6 +82,7 @@ const LOSS_LABELS: Readonly<Record<string, string>> = {
   shipping_class: 'Shipping classes',
   related_products: 'Related products',
   stock_unmanaged: 'Stock unknown',
+  stock_made_to_order: 'Made to order',
   stock_capped: 'Stock capped',
   stock_not_public: 'Exact stock not public',
   stock_from_cart_limit: 'Stock from the cart limit',

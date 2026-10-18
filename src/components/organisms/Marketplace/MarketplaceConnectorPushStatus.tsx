@@ -16,6 +16,7 @@ import {
   connectorAlertAction,
   connectorAlertCatalogRoute,
   connectorAlertCopy,
+  connectorAlertLinkRoute,
   pushNeedsAction,
   pushStateLabel,
   quarantineReasonCopy,
@@ -138,6 +139,13 @@ export function MarketplaceConnectorPushStatus() {
                       <a href={`#${orderAnchorId(connectorAlertAction(alert)?.orderId ?? '')}`}>
                         {connectorAlertAction(alert)?.label}
                       </a>
+                    </Button>
+                  )}
+                  {connectorAlertLinkRoute(alert) && (
+                    <Button asChild size="sm" className="rounded-full" data-testid="store-push-alert-link">
+                      <Link href={connectorAlertLinkRoute(alert) ?? ''} overrideDefaults>
+                        Link listing
+                      </Link>
                     </Button>
                   )}
                   {connectorAlertCatalogRoute(alert) && (

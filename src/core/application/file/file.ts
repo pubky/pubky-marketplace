@@ -9,6 +9,7 @@ import {
   IMAGE_UPLOAD_SIZE_LIMIT_KIND_CONTEXT_KEY,
 } from '@/libs/image/imageUploadSizeLimit';
 import { stripImageMetadata } from '@/libs/image/stripImageMetadata';
+import { Logger } from '@/libs/logger/logger';
 import { CompositeIdDomain, type Pubky } from '@/models/models.types';
 import { buildCompositeIdFromPubkyUri, parseCompositeId } from '@/models/models.utils';
 import { FileNormalizer } from '@/pipes/file/file.normalizer';
@@ -159,19 +160,27 @@ export class FileApplication {
       return;
     }
 
-    const filesWithCompositeIds = fileAttachments.map((file) => {
+    const filesWithCompositeIds = fileAttachments.flatMap((file) => {
       const compositeId = buildCompositeIdFromPubkyUri({
         uri: file.uri,
         domain: CompositeIdDomain.FILES,
       });
-      return {
-        ...file,
-        urls: typeof file.urls === 'string' ? (JSON.parse(file.urls) as NexusFileUrls) : file.urls,
-        id: compositeId,
-      };
+      // A malformed remote record must not prevent valid peers from being stored.
+      if (!compositeId) {
+        Logger.warn('Ignoring file metadata with an invalid URI');
+        return [];
+      }
+      let urls: NexusFileUrls;
+      try {
+        urls = typeof file.urls === 'string' ? (JSON.parse(file.urls) as NexusFileUrls) : file.urls;
+      } catch {
+        Logger.warn('Ignoring file metadata with malformed URL JSON', { fileId: compositeId });
+        return [];
+      }
+      return [{ ...file, urls, id: compositeId }];
     });
 
-    await LocalFileService.createMany({ files: filesWithCompositeIds as NexusFileDetails[] });
+    if (filesWithCompositeIds.length) await LocalFileService.createMany({ files: filesWithCompositeIds });
   }
 
   /**
