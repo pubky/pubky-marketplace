@@ -1134,7 +1134,7 @@ describe('MarketplaceListing', () => {
     renderListing();
 
     const link = screen.getByRole('link', { name: 'Buy' });
-    expect(link).toHaveAttribute('href', `/marketplace/checkout#${ownHold.id}`);
+    expect(link).toHaveAttribute('href', `/marketplace/checkout?order=${ownHold.id}`);
     expect(screen.queryByRole('link', { name: CHECKOUT_HOLD_COPY.heldForYouOfferCta })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: CHECKOUT_HOLD_COPY.heldForYouCta })).toBeDisabled();
     expect(

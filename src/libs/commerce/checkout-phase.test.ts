@@ -18,7 +18,7 @@ import {
   isSellerReservation,
   isSellerSalesOrder,
   isSellerUsdtReviewOrder,
-  readCheckoutHashOrderId,
+  readCheckoutOrderId,
   reservedWhileYouPayCopy,
   resolveCreatedCheckoutOrderIds,
   sellerReservationCopy,
@@ -42,12 +42,20 @@ describe('checkout-phase', () => {
   it('builds the checkout route without minting a second id', () => {
     expect(getMarketplaceCheckoutRoute()).toBe(MARKETPLACE_ROUTES.CHECKOUT);
     expect(getMarketplaceCheckoutRoute('018f47d2-6a27-7c23-a49d-000000000001')).toBe(
-      `${MARKETPLACE_ROUTES.CHECKOUT}#018f47d2-6a27-7c23-a49d-000000000001`,
+      `${MARKETPLACE_ROUTES.CHECKOUT}?order=018f47d2-6a27-7c23-a49d-000000000001`,
     );
     expect(getMarketplaceOfferCheckoutRoute('offer-1')).toBe(`${MARKETPLACE_ROUTES.CHECKOUT}?offer=offer-1`);
     expect(getMarketplaceDropCheckoutRoute({ sellerPubky: SELLER, dropId: 'vol1', listingId: 'boots' })).toBe(
       `${MARKETPLACE_ROUTES.CHECKOUT}?seller=${SELLER}&drop=vol1&listing=boots`,
     );
+  });
+
+  it('reads the order to resume from the checkout query, never from a fragment', () => {
+    const route = new URL(getMarketplaceCheckoutRoute('018f47d2-6a27-7c23-a49d-000000000001'), 'https://shop.test');
+    expect(route.hash).toBe('');
+    expect(readCheckoutOrderId(route.searchParams)).toBe('018f47d2-6a27-7c23-a49d-000000000001');
+    expect(readCheckoutOrderId(new URLSearchParams('order=%20%20'))).toBeNull();
+    expect(readCheckoutOrderId(new URLSearchParams())).toBeNull();
   });
 
   it('keeps unpaid buyer rows out of order history', () => {
@@ -201,9 +209,6 @@ describe('checkout-phase', () => {
         ['bitcoin', 'paypal'],
       ]),
     ).toEqual(['bitcoin', 'paypal']);
-    expect(readCheckoutHashOrderId('#018f47d2-6a27-7c23-a49d-000000000001')).toBe(
-      '018f47d2-6a27-7c23-a49d-000000000001',
-    );
     expect(
       resolveCreatedCheckoutOrderIds({
         result: { kind: 'checkout' },

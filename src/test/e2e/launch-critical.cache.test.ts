@@ -90,6 +90,33 @@ describe('launch fixture cache readiness', () => {
     expect(await readRows()).toEqual([[listing], [shopRecord]]);
   });
 
+  it('commits a cart line in the same transaction as the listing it points at', async () => {
+    const cartItem = { id: 'buyer|seller:listing|v1', owner_id: 'buyer', listing_id: 'seller:listing' };
+    await createSchema(1, ['commerce_listings', 'commerce_shops', 'commerce_cart_items']);
+    await expect(seedListingCacheRows({ listing, shopRecord, cartItem })).resolves.toBe(true);
+    expect(await readRows()).toEqual([[listing], [shopRecord]]);
+    const carts = await new Promise<unknown[]>((resolve, reject) => {
+      const open = indexedDB.open(dbName);
+      open.onerror = () => reject(open.error);
+      open.onsuccess = () => {
+        const request = open.result.transaction('commerce_cart_items').objectStore('commerce_cart_items').getAll();
+        request.onsuccess = () => {
+          open.result.close();
+          resolve(request.result);
+        };
+        request.onerror = () => reject(request.error);
+      };
+    });
+    expect(carts).toEqual([cartItem]);
+  });
+
+  it('waits for the cart store before seeding a cart line', async () => {
+    await createSchema(1, ['commerce_listings', 'commerce_shops']);
+    await expect(
+      seedListingCacheRows({ listing, shopRecord, cartItem: { id: 'line' }, timeoutMs: 50, pollMs: 5 }),
+    ).rejects.toThrow('missing stores commerce_cart_items');
+  });
+
   it('rejects an aborted write transaction and leaves neither fixture row committed', async () => {
     await createSchema(1, ['commerce_listings', 'commerce_shops']);
     const put = IDBObjectStore.prototype.put;

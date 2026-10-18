@@ -82,7 +82,10 @@ describe('MarketplaceConnectorPushStatus', () => {
     expect(rows[0]).toHaveTextContent('in dezentralshop.ch (WooCommerce, #501)');
     expect(within(rows[0] as HTMLElement).getByTestId('store-push-state')).toHaveTextContent('In your store');
     expect(within(rows[1] as HTMLElement).getByTestId('store-push-state')).toHaveTextContent('Sending');
-    expect(within(rows[0] as HTMLElement).getByRole('link')).toHaveAttribute('href', '#order-order-1-aaaaaaaa');
+    expect(within(rows[0] as HTMLElement).getByRole('link')).toHaveAttribute(
+      'href',
+      '/marketplace/orders?order=order-1-aaaaaaaa',
+    );
   });
 
   it('shows a quarantined order with why, and Retry sends it again', async () => {
@@ -221,7 +224,7 @@ describe('MarketplaceConnectorPushStatus', () => {
 
     const action = screen.getByTestId('store-push-alert-action');
     expect(action).toHaveTextContent("Approve the buyer's cancellation request");
-    expect(action).toHaveAttribute('href', '#order-order-5');
+    expect(action).toHaveAttribute('href', '/marketplace/orders?order=order-5');
   });
 
   it('offers recording the refund for a store-side refund of a cancelled order', () => {

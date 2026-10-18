@@ -82,6 +82,7 @@ export async function installSyntheticLaunchFixture({ context, baseUrl, serviceU
   const publicListing = JSON.parse(listingFixture);
   const publicAvailabilityPath = `/v0/listings/${encodeURIComponent(publicListing.ownerPubky)}/${encodeURIComponent(publicListing.listingId)}/availability`;
   const publicPaymentConfigPath = `/v0/sellers/${encodeURIComponent(publicListing.ownerPubky)}/payment-config`;
+  const publicConnectorStatusPath = `/v0/sellers/${encodeURIComponent(publicListing.ownerPubky)}/connector-status`;
   const counters = {
     shopApprovals: 0,
     serviceApprovals: 0,
@@ -93,6 +94,8 @@ export async function installSyntheticLaunchFixture({ context, baseUrl, serviceU
     authorizedSellerListings: 0,
     publicAvailabilityReads: 0,
     publicPaymentConfigReads: 0,
+    publicConnectorStatusReads: 0,
+    unpublishedSellerPkarrReads: 0,
     authorizedOrderReads: 0,
     authorizedOfferReads: 0,
   };
@@ -182,7 +185,13 @@ export async function installSyntheticLaunchFixture({ context, baseUrl, serviceU
       }
       if (method === 'OPTIONS') return await reply({ status: 204 });
       if (['pkarr.pubky.app', 'pkarr.pubky.org'].includes(url.hostname) && method === 'GET') {
-        const packet = PKARR_PACKETS[url.pathname.slice(1)];
+        const identity = url.pathname.slice(1);
+        const packet = PKARR_PACKETS[identity];
+        // The fixture listing's seller has no homeserver here; a relay answers 404 for an unpublished key.
+        if (!packet && identity === publicListing.ownerPubky) {
+          counters.unpublishedSellerPkarrReads += 1;
+          return await reply({ status: 404, body: '' });
+        }
         if (!packet) return await reject('unknown_pkarr_identity');
         return await reply({ contentType: 'application/octet-stream', body: Buffer.from(packet, 'base64') });
       }
@@ -447,6 +456,12 @@ export async function installSyntheticLaunchFixture({ context, baseUrl, serviceU
         if (method === 'GET' && url.pathname === publicPaymentConfigPath) {
           counters.publicPaymentConfigReads += 1;
           return await reply({ json: PUBLIC_PAYMENT_CONFIG });
+        }
+        if (method === 'GET' && url.pathname === publicConnectorStatusPath) {
+          counters.publicConnectorStatusReads += 1;
+          return await reply({
+            json: { kind: 'connector_status', seller_pubky: publicListing.ownerPubky, stores: [] },
+          });
         }
         if (!serviceTokens.has(bearer)) return await reject('service_request_without_approved_bearer');
         if (

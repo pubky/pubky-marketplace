@@ -1,9 +1,9 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { HandCoins } from 'lucide-react';
-import { getMarketplaceListingRoute, MARKETPLACE_ROUTES } from '@/app/routes';
+import { getMarketplaceListingRoute } from '@/app/routes';
 import { Badge } from '@/atoms/Badge/Badge';
 import { Button } from '@/atoms/Button/Button';
 import { Card, CardContent } from '@/atoms/Card/Card';
@@ -13,15 +13,23 @@ import { Heading } from '@/atoms/Heading/Heading';
 import { Link } from '@/atoms/Link/Link';
 import { Skeleton } from '@/atoms/Skeleton/Skeleton';
 import { Typography } from '@/atoms/Typography/Typography';
+import { withBasePath } from '@/config/base-path';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import { isMarketplaceAwardCheckoutEligible } from '@/core/services/marketplace/marketplace-projections';
 import { useMarketplaceCart } from '@/hooks/useMarketplaceCart/useMarketplaceCart';
 import { useMarketplaceFirstMediaUrl } from '@/hooks/useMarketplaceMediaUrl/useMarketplaceMediaUrl';
 import { useMarketplaceOffers } from '@/hooks/useMarketplaceOffers/useMarketplaceOffers';
+import {
+  getMarketplaceOfferRoute,
+  getMarketplaceOrderRoute,
+  readLegacyOfferFragment,
+  readLinkedOfferId,
+} from '@/libs/commerce/activity-links';
 import { getMarketplaceOfferCheckoutRoute } from '@/libs/commerce/checkout-phase';
 import { formatCommerceMoney } from '@/libs/commerce/format';
 import type { CommerceListingRecord } from '@/libs/commerce/marketplace-records';
 import { AMOUNT_EXAMPLES, amountInputExample, amountInputUnitLabel } from '@/libs/commerce/pricing';
+import { takeDocumentFragment } from '@/libs/navigation/document-fragment';
 import { formatDateTime } from '@/libs/utils/dateTime';
 import { ControlledInputField } from '@/molecules/ControlledInputField/ControlledInputField';
 import { ControlledTextareaField } from '@/molecules/ControlledTextareaField/ControlledTextareaField';
@@ -41,7 +49,7 @@ export function MarketplaceOffers() {
   const [convertedOrderStates, setConvertedOrderStates] = useState<Record<string, MarketplaceOrder['state']>>({});
   const [countering, setCountering] = useState<MarketplaceOffer | null>(null);
   const { listings, isHydrating } = useOfferListings(offers.offers);
-  const linkedOfferId = useOfferAnchor();
+  const linkedOfferId = useLinkedOffer(offers.isLoading);
   const linkedOfferMissing = isLinkedOfferMissing(linkedOfferId, offers.offers, offers.isLoading, offers.error);
 
   useEffect(() => {
@@ -174,7 +182,7 @@ export function MarketplaceOffers() {
                             <>
                               {' · '}
                               <Link
-                                href={`${MARKETPLACE_ROUTES.ORDERS}#${convertedAward.convertedOrderId}`}
+                                href={getMarketplaceOrderRoute(convertedAward.convertedOrderId)}
                                 overrideDefaults
                                 className="underline"
                               >
@@ -392,14 +400,20 @@ function useOfferListings(offers: readonly MarketplaceOffer[]) {
   return { listings, isHydrating };
 }
 
-function useOfferAnchor() {
-  const [offerId, setOfferId] = useState<string | null>(null);
+function useLinkedOffer(isLoading: boolean) {
+  const offerId = readLinkedOfferId(useSearchParams());
+
   useEffect(() => {
-    const update = () => setOfferId(window.location.hash.startsWith('#offer-') ? window.location.hash.slice(7) : null);
-    update();
-    window.addEventListener('hashchange', update);
-    return () => window.removeEventListener('hashchange', update);
+    const fragment = takeDocumentFragment(window.location);
+    const legacyId = fragment ? readLegacyOfferFragment(fragment) : null;
+    if (legacyId) window.history.replaceState(null, '', withBasePath(getMarketplaceOfferRoute(legacyId)));
   }, []);
+
+  useEffect(() => {
+    if (isLoading || !offerId) return;
+    document.getElementById(`offer-${offerId}`)?.scrollIntoView({ block: 'center' });
+  }, [isLoading, offerId]);
+
   return offerId;
 }
 

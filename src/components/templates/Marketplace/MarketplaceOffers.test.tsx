@@ -1,6 +1,6 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { CommerceListingRecord } from '@/libs/commerce/marketplace-records';
 import type { MarketplaceOffer } from '@/services/marketplace/marketplace';
 import { parseContractFaithfulOffer } from '@/test/fixtures/commerce/offer-award';
@@ -40,6 +40,7 @@ const offerView = vi.hoisted(() => ({
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: offerView.push }),
   usePathname: () => '/marketplace/offers',
+  useSearchParams: () => new URLSearchParams(window.location.search),
 }));
 vi.mock('@/stores/auth/auth.store', () => ({
   useAuthStore: (selector: (state: { currentUserPubky: string }) => unknown) =>
@@ -149,6 +150,39 @@ describe('Marketplace offers UX', () => {
     expect(getOrFetchListing).toHaveBeenCalledWith(seller, 'camera');
   });
 
+  describe('linked offer', () => {
+    afterEach(() => {
+      window.history.replaceState(null, '', '/');
+    });
+
+    it('says a ?offer= link is gone instead of listing the rest', () => {
+      offerView.offers = [offer];
+      window.history.replaceState(null, '', '/marketplace/offers?offer=gone-offer');
+      render(<MarketplaceOffers />);
+      expect(screen.getByRole('status')).toHaveTextContent('This offer is no longer available.');
+    });
+
+    // Next appends the fragment of the document load to every later in-app visit to Offers,
+    // which would hide every offer behind "no longer available" until a reload.
+    it('moves an old Activity #offer-<id> link to ?offer= once per document, not on later visits', async () => {
+      offerView.offers = [offer];
+      window.history.replaceState(null, '', '/marketplace/offers#offer-gone-legacy-offer');
+
+      const first = render(<MarketplaceOffers />);
+      await waitFor(() => expect(window.location.search).toBe('?offer=gone-legacy-offer'));
+      expect(window.location.hash).toBe('');
+      first.rerender(<MarketplaceOffers />);
+      expect(screen.getByRole('status')).toHaveTextContent('This offer is no longer available.');
+      first.unmount();
+
+      window.history.replaceState(null, '', '/marketplace/offers#offer-gone-legacy-offer');
+      render(<MarketplaceOffers />);
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(window.location.search).toBe('');
+      expect(screen.queryByText('This offer is no longer available.')).toBeNull();
+    });
+  });
+
   it('shows the missing-offer fallback only for a loaded, unmatched anchor', () => {
     expect(isLinkedOfferMissing('missing', [offer], false, null)).toBe(true);
     expect(isLinkedOfferMissing(offer.id, [offer], false, null)).toBe(false);
@@ -210,7 +244,7 @@ describe('Marketplace offers UX', () => {
     expect(screen.getByText(/Converted to an order/)).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'View order' })).toHaveAttribute(
       'href',
-      `/marketplace/orders#${convertedOffer.award?.convertedOrderId}`,
+      `/marketplace/orders?order=${convertedOffer.award?.convertedOrderId}`,
     );
     await waitFor(() =>
       expect(screen.getByRole('link', { name: 'Make a new offer to buy this item' })).toBeInTheDocument(),

@@ -1,7 +1,7 @@
 'use client';
 
 import { type ReactNode, useEffect, useRef, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { ExternalLink, ReceiptText } from 'lucide-react';
 import { Badge } from '@/atoms/Badge/Badge';
 import { Button } from '@/atoms/Button/Button';
@@ -11,12 +11,18 @@ import { Heading } from '@/atoms/Heading/Heading';
 import { Link } from '@/atoms/Link/Link';
 import { Skeleton } from '@/atoms/Skeleton/Skeleton';
 import { Typography } from '@/atoms/Typography/Typography';
+import { withBasePath } from '@/config/base-path';
 import { isTransactionalCommerceMode } from '@/config/commerce';
 import { type MarketplaceOrderView, useMarketplaceOrders } from '@/hooks/useMarketplaceOrders/useMarketplaceOrders';
 import { useMarkMarketplaceOrdersSeen } from '@/hooks/useMarkMarketplaceOrdersSeen/useMarkMarketplaceOrdersSeen';
 import { useNowMs } from '@/hooks/useNowMs/useNowMs';
 import { CHAT_COPY } from '@/libs/chat/copy';
-import { orderAnchorId, readOrderAnchorId } from '@/libs/commerce/activity-links';
+import {
+  getMarketplaceOrderRoute,
+  orderAnchorId,
+  readLegacyOrderFragment,
+  readLinkedOrderId,
+} from '@/libs/commerce/activity-links';
 import {
   bitcoinPaymentHasBeenSeen,
   buyerCheckoutBadgeLabel,
@@ -35,7 +41,6 @@ import {
   isSellerReservation,
   isSellerSalesOrder,
   isSellerUsdtReviewOrder,
-  readCheckoutHashOrderId,
   sellerReservationCopy,
   unlistedOrderStateLabel,
 } from '@/libs/commerce/checkout-phase';
@@ -59,6 +64,7 @@ import {
 } from '@/libs/commerce/refund-copy';
 import { usdtPaidAsLine } from '@/libs/commerce/usdt-buyer-status';
 import { isUsdtRefundOrder } from '@/libs/commerce/usdt-refund';
+import { takeDocumentFragment } from '@/libs/navigation/document-fragment';
 import { ArbiscanLookupLink } from '@/molecules/Marketplace/ArbiscanLookupLink';
 import { MarketplaceCheckoutStatusLabels } from '@/molecules/Marketplace/MarketplaceCheckoutStatusLabels';
 import { MarketplaceEmptyState } from '@/molecules/Marketplace/MarketplaceEmptyState';
@@ -97,6 +103,7 @@ const ORDER_TABS: { id: OrdersTab; label: string }[] = [
 
 export function MarketplaceOrders() {
   const router = useRouter();
+  const anchorOrderId = readLinkedOrderId(useSearchParams());
   const currentUserPubky = useAuthStore((state) => state.currentUserPubky);
   const receiptsPublicationStatus = useCommerceStore((state) => state.receiptsPublicationStatus);
   const { orders, isLoading, error, needsSession, refresh, advancePayment, actOnOrder, adapterMode } =
@@ -107,8 +114,8 @@ export function MarketplaceOrders() {
   const [hasSelectedTab, setHasSelectedTab] = useState(false);
   const tabListRef = useRef<HTMLDivElement>(null);
   const tabRefs = useRef<Partial<Record<OrdersTab, HTMLButtonElement | null>>>({});
-  const redirectedHashRef = useRef<string | null>(null);
-  const [anchorOrderId, setAnchorOrderId] = useState<string | null>(null);
+  const redirectedOrderRef = useRef<string | null>(null);
+  const [legacyOrderId, setLegacyOrderId] = useState<string | null>(null);
   const nowMs = useNowMs(orders.some(({ order }) => order.state === 'pending_payment' && Boolean(order.holdExpiresAt)));
   const buyerCheckouts = orders.filter(({ order }) => isBuyerCheckoutInProgress(order, currentUserPubky));
   const sellerReservations = orders.filter(({ order, payment }) =>
@@ -136,11 +143,18 @@ export function MarketplaceOrders() {
   useMarkMarketplaceOrdersSeen(!isLoading && !error && !needsSession);
 
   useEffect(() => {
-    const readAnchor = () => setAnchorOrderId(readOrderAnchorId(window.location.hash));
-    readAnchor();
-    window.addEventListener('hashchange', readAnchor);
-    return () => window.removeEventListener('hashchange', readAnchor);
+    const fragment = takeDocumentFragment(window.location);
+    const id = fragment ? readLegacyOrderFragment(fragment) : null;
+    if (id) setLegacyOrderId(id);
   }, []);
+
+  useEffect(() => {
+    if (isLoading || !legacyOrderId) return;
+    setLegacyOrderId(null);
+    if (orders.some(({ order }) => order.id === legacyOrderId)) {
+      window.history.replaceState(null, '', withBasePath(getMarketplaceOrderRoute(legacyOrderId)));
+    }
+  }, [isLoading, legacyOrderId, orders]);
 
   useEffect(() => {
     if (isLoading) return;
@@ -160,14 +174,14 @@ export function MarketplaceOrders() {
 
   useEffect(() => {
     if (isLoading) return;
-    const id = readCheckoutHashOrderId(window.location.hash);
-    if (!id || redirectedHashRef.current === id) return;
+    const id = anchorOrderId;
+    if (!id || redirectedOrderRef.current === id) return;
     const view = orders.find((candidate) => candidate.order.id === id);
     if (view && isBuyerCheckoutInProgress(view.order, currentUserPubky)) {
-      redirectedHashRef.current = id;
+      redirectedOrderRef.current = id;
       router.replace(getMarketplaceCheckoutRoute(id));
     }
-  }, [currentUserPubky, isLoading, orders, router]);
+  }, [anchorOrderId, currentUserPubky, isLoading, orders, router]);
 
   useEffect(() => {
     if (hasSelectedTab || !historyOrders.length) return;

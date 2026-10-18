@@ -39,6 +39,7 @@ const view = vi.hoisted(() => ({
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn() }),
   usePathname: () => '/marketplace/offers',
+  useSearchParams: () => new URLSearchParams(),
 }));
 
 vi.mock('@/controllers/commerce/commerce', async (importOriginal) => {

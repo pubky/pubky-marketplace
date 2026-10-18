@@ -51,7 +51,7 @@ import {
   getMarketplaceCheckoutRoute,
   intersectPaymentMethods,
   isPendingPaymentState,
-  readCheckoutHashOrderId,
+  readCheckoutOrderId,
 } from '@/libs/commerce/checkout-phase';
 import { DELIVERY_EMAIL_MAX_CHARS, DIGITAL_CHECKOUT_COPY, digitalCheckoutLineLabel } from '@/libs/commerce/digital';
 import { marketplaceOfferCheckoutFailureMessage } from '@/libs/commerce/failure-messages';
@@ -153,6 +153,7 @@ function MarketplaceCartCheckout() {
   const dropId = searchParams.get('drop');
   const dropListingId = searchParams.get('listing');
   const dropVariantId = searchParams.get('variant');
+  const resumeOrderId = readCheckoutOrderId(searchParams);
   const isOfferCheckout = Boolean(offerReference);
   const isDropCheckout = Boolean(dropSeller && dropId && dropListingId);
 
@@ -297,7 +298,6 @@ function MarketplaceCartCheckout() {
         }, []);
   const sessionExpired = Boolean(checkout.needsSession && checkout.sessionError);
   const approvalNeeded = isDurableCommerceMode(adapterMode) && (!checkout.hasMarketplaceSession || sessionExpired);
-  const [hashOrderId, setHashOrderId] = useState<string | null>(null);
   const [payingOrderIds, setPayingOrderIds] = useState<string[]>([]);
   const [preferredMethod, setSelectedMethod] = useState<CheckoutRail | null>(null);
   const [buyerConnection, setBuyerConnection] = useState<{ owner: string; open: boolean } | null>(null);
@@ -371,13 +371,6 @@ function MarketplaceCartCheckout() {
   const backLabel = isDropCheckout ? 'Back to drop' : 'Back to cart';
 
   useEffect(() => {
-    const syncHash = () => setHashOrderId(readCheckoutHashOrderId(window.location.hash));
-    syncHash();
-    window.addEventListener('hashchange', syncHash);
-    return () => window.removeEventListener('hashchange', syncHash);
-  }, []);
-
-  useEffect(() => {
     const sellers = sellerKey.length === 0 ? [] : sellerKey.split('|');
     if (sellers.length === 0 || usdtCapabilityChecking) return;
     let active = true;
@@ -432,7 +425,7 @@ function MarketplaceCartCheckout() {
     settlePaykitRead,
   ]);
 
-  const targetPayingIds = [...new Set([...payingOrderIds, ...(hashOrderId ? [hashOrderId] : [])])];
+  const targetPayingIds = [...new Set([...payingOrderIds, ...(resumeOrderId ? [resumeOrderId] : [])])];
   const focusedPaying = orders.orders.filter((view) => targetPayingIds.includes(view.order.id));
   const showPaying = targetPayingIds.length > 0;
   const allPaymentsConfirmed =
@@ -574,7 +567,6 @@ function MarketplaceCartCheckout() {
       if (result.orderId) {
         setPayingOrderIds([result.orderId]);
         window.history.replaceState(null, '', withBasePath(getMarketplaceCheckoutRoute(result.orderId)));
-        setHashOrderId(result.orderId);
         await orders.refresh();
         return;
       }
@@ -623,7 +615,6 @@ function MarketplaceCartCheckout() {
     setPayingOrderIds(result.orderIds);
     if (result.orderIds[0]) {
       window.history.replaceState(null, '', withBasePath(getMarketplaceCheckoutRoute(result.orderIds[0])));
-      setHashOrderId(result.orderIds[0]);
     }
     const fiatBound = result.boundOrders.filter((order) => order.fiatCheckoutUrl);
     if (fiatBound.length === 1 && fiatBound[0].fiatCheckoutUrl) {
