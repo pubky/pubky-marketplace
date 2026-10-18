@@ -353,7 +353,7 @@ describe('MarketplaceNotifications', () => {
 
     ordersView.orders = [{ order: { id: orderId, state: 'pending_payment', buyerPubky: buyer } }];
     rerender(<MarketplaceNotifications />);
-    expect(link()).toHaveAttribute('href', `/marketplace/checkout#${orderId}`);
+    expect(link()).toHaveAttribute('href', `/marketplace/checkout?order=${orderId}`);
 
     authStoreState.currentUserPubky = 's'.repeat(52);
     rerender(<MarketplaceNotifications />);

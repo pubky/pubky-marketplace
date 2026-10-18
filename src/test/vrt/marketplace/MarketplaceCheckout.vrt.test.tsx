@@ -226,7 +226,7 @@ const savedAddresses = vi.hoisted(() => {
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn() }),
   usePathname: () => '/marketplace/checkout',
-  useSearchParams: () => new URLSearchParams(),
+  useSearchParams: () => new URLSearchParams(window.location.search),
 }));
 
 vi.mock('@/config/commerce', async (importOriginal) => {
@@ -591,7 +591,7 @@ describe('Marketplace checkout — visual regression', () => {
         });
         view.adapterMode = 'transaction-service';
         view.orders = [{ order, payment }];
-        window.history.replaceState(null, '', `/marketplace/checkout#${order.id}`);
+        window.history.replaceState(null, '', `/marketplace/checkout?order=${order.id}`);
 
         await renderForVRT(<MarketplaceCheckout />, { viewport });
         const label = state === 'confirmed' ? 'Payment confirmed' : 'Awaiting payment';
@@ -622,7 +622,7 @@ describe('Marketplace checkout — visual regression', () => {
     });
     view.adapterMode = 'transaction-service';
     view.orders = [{ order, payment }];
-    window.history.replaceState(null, '', `/marketplace/checkout#${order.id}`);
+    window.history.replaceState(null, '', `/marketplace/checkout?order=${order.id}`);
 
     await renderForVRT(<MarketplaceCheckout />, { viewport: VRT_VIEWPORT_DESKTOP });
     await vi.waitFor(() => {

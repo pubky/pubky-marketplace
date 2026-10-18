@@ -30,7 +30,7 @@ describe('activityRowHref', () => {
       `${MARKETPLACE_ROUTES.ORDERS}#order-${ORDER}`,
     );
     expect(activityRowHref('order_created', `order:${ORDER}`, { canCheckout: true })).toBe(
-      `${MARKETPLACE_ROUTES.CHECKOUT}#${ORDER}`,
+      `${MARKETPLACE_ROUTES.CHECKOUT}?order=${ORDER}`,
     );
     expect(activityRowHref('order_created', null, { canCheckout: true })).toBe(MARKETPLACE_ROUTES.ORDERS);
   });

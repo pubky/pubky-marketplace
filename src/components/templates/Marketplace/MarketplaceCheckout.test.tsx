@@ -966,7 +966,7 @@ describe('MarketplaceCheckout', () => {
     await user.click(screen.getByTestId('marketplace-checkout-pay'));
 
     expect(checkoutActions.pay).toHaveBeenCalledWith(null, expect.any(Function));
-    await waitFor(() => expect(window.location.hash).toBe('#018f47d2-6a27-7c23-a49d-000000000001'));
+    await waitFor(() => expect(window.location.search).toBe('?order=018f47d2-6a27-7c23-a49d-000000000001'));
   });
 
   it.each(['paykit', 'paypal'] as const)('preserves the selected %s rail for real checkout', async (method) => {
@@ -1106,7 +1106,7 @@ describe('MarketplaceCheckout', () => {
 
       await payWithPaypal();
 
-      await waitFor(() => expect(window.location.hash).toBe('#018f47d2-6a27-7c23-a49d-000000000001'));
+      await waitFor(() => expect(window.location.search).toBe('?order=018f47d2-6a27-7c23-a49d-000000000001'));
       expect(navigation.navigateTop).not.toHaveBeenCalled();
     });
 
@@ -1119,7 +1119,7 @@ describe('MarketplaceCheckout', () => {
 
       await payWithPaypal();
 
-      await waitFor(() => expect(window.location.hash).toBe('#018f47d2-6a27-7c23-a49d-000000000001'));
+      await waitFor(() => expect(window.location.search).toBe('?order=018f47d2-6a27-7c23-a49d-000000000001'));
       expect(navigation.navigateTop).not.toHaveBeenCalled();
     });
   });
@@ -1157,10 +1157,6 @@ describe('MarketplaceCheckout', () => {
   });
 
   describe('checkout order overview', () => {
-    afterEach(() => {
-      window.location.hash = '';
-    });
-
     const showPaidOrder = (overrides: { paymentMethod: 'bitcoin' | 'paypal'; confirmations: number }) => {
       const payment = createPaymentFixture('confirmed', {
         adapter: overrides.paymentMethod === 'bitcoin' ? 'paykit' : 'paypal',
@@ -1172,9 +1168,42 @@ describe('MarketplaceCheckout', () => {
         paykitRequestState: overrides.paymentMethod === 'bitcoin' ? 'confirmed' : null,
       });
       view.orders = [{ order, payment }];
-      window.location.hash = `#${order.id}`;
+      searchParams.current = new URLSearchParams({ order: order.id });
       render(<MarketplaceCheckout />);
     };
+
+    // #292: Next carries `#<id>` from a document load of `/marketplace/checkout#<id>` onto
+    // the cart's later Checkout link, so a fragment must never pick the order to show.
+    it('starts a fresh checkout from the cart while an earlier order awaits payment, whatever the fragment', () => {
+      seededCart();
+      const pending = createOrderFixture('pending_payment', { paymentMethod: 'paykit' });
+      view.orders = [{ order: pending, payment: null }];
+      window.history.replaceState(null, '', `/marketplace/checkout#${pending.id}`);
+
+      render(<MarketplaceCheckout />);
+
+      expect(screen.queryByTestId('marketplace-checkout-paying')).not.toBeInTheDocument();
+      expect(screen.queryByText(/Awaiting payment · Item reserved/)).not.toBeInTheDocument();
+      expect(screen.getByRole('link', { name: 'Vintage boots' })).toBeInTheDocument();
+      expect(screen.getByText('Enter delivery details and choose how to pay.')).toBeInTheDocument();
+      expect(screen.getByTestId('marketplace-checkout-pay')).toBeInTheDocument();
+      expect(screen.getByRole('group', { name: /step 2 of 3/ })).toBeInTheDocument();
+    });
+
+    it('resumes the pending order the buyer opens with ?order=, beside a different cart item', () => {
+      seededCart();
+      const pending = createOrderFixture('pending_payment', { paymentMethod: 'paykit' });
+      view.orders = [{ order: pending, payment: null }];
+      searchParams.current = new URLSearchParams({ order: pending.id });
+
+      render(<MarketplaceCheckout />);
+
+      expect(screen.getByTestId('marketplace-checkout-paying')).toBeInTheDocument();
+      expect(screen.getByText(/Awaiting payment · Item reserved/)).toBeInTheDocument();
+      expect(screen.getByRole('link', { name: 'Handmade leather boots' })).toBeInTheDocument();
+      expect(screen.queryByRole('link', { name: 'Vintage boots' })).not.toBeInTheDocument();
+      expect(screen.queryByTestId('marketplace-checkout-pay')).not.toBeInTheDocument();
+    });
 
     it('shows order snapshot items in the checkout overview', async () => {
       showPaidOrder({ paymentMethod: 'paypal', confirmations: 0 });
@@ -1192,7 +1221,7 @@ describe('MarketplaceCheckout', () => {
       const payment = createPaymentFixture('awaiting_entitlement');
       const order = createOrderFixture('pending_payment', { paymentId: payment.id, paymentMethod: 'paypal' });
       view.orders = [{ order, payment }];
-      window.location.hash = `#${order.id}`;
+      searchParams.current = new URLSearchParams({ order: order.id });
       render(<MarketplaceCheckout />);
 
       expect(screen.getByTestId('payment-status-panel')).toBeInTheDocument();
@@ -1237,7 +1266,7 @@ describe('MarketplaceCheckout', () => {
           paykitDeliveryState,
         });
         view.orders = [{ order, payment }];
-        window.location.hash = `#${order.id}`;
+        searchParams.current = new URLSearchParams({ order: order.id });
         render(<MarketplaceCheckout />);
 
         expect(screen.getByTestId('payment-status-panel')).toBeInTheDocument();
@@ -1256,7 +1285,7 @@ describe('MarketplaceCheckout', () => {
         paykitDeliveryState: 'failed',
       });
       view.orders = [{ order, payment }];
-      window.location.hash = `#${order.id}`;
+      searchParams.current = new URLSearchParams({ order: order.id });
       render(<MarketplaceCheckout />);
 
       expect(screen.getByTestId('payment-status-panel')).toBeInTheDocument();
@@ -1275,7 +1304,7 @@ describe('MarketplaceCheckout', () => {
     it('shows the reserved header for a pending PayPal checkout that is not yet awaiting entitlement', () => {
       const order = createOrderFixture('pending_payment', { paymentMethod: 'paypal' });
       view.orders = [{ order, payment: null }];
-      window.location.hash = `#${order.id}`;
+      searchParams.current = new URLSearchParams({ order: order.id });
       render(<MarketplaceCheckout />);
 
       expect(screen.getByText(/Awaiting payment · Item reserved/)).toBeInTheDocument();
@@ -1289,7 +1318,7 @@ describe('MarketplaceCheckout', () => {
         holdExpiresAt: new Date(Date.now() + 10 * 60_000).toISOString(),
       });
       view.orders = [{ order, payment }];
-      window.location.hash = `#${order.id}`;
+      searchParams.current = new URLSearchParams({ order: order.id });
       render(<MarketplaceCheckout />);
 
       expect(screen.getByTestId('payment-status-panel')).toBeInTheDocument();
@@ -1301,7 +1330,7 @@ describe('MarketplaceCheckout', () => {
     it('drops the reserved header for a cancelled order that was never bound to a method', () => {
       const order = createOrderFixture('cancelled', { paymentMethod: null });
       view.orders = [{ order, payment: null }];
-      window.location.hash = `#${order.id}`;
+      searchParams.current = new URLSearchParams({ order: order.id });
       render(<MarketplaceCheckout />);
 
       expect(screen.queryByText('Checkout in progress')).not.toBeInTheDocument();
@@ -1312,7 +1341,7 @@ describe('MarketplaceCheckout', () => {
       view.adapterMode = 'transaction-service';
       const { order, payment } = createPaykitOrderFixture('unpaid');
       view.orders = [{ order, payment }];
-      window.location.hash = `#${order.id}`;
+      searchParams.current = new URLSearchParams({ order: order.id });
       render(<MarketplaceCheckout />);
 
       expect(screen.getByText(/Awaiting payment · Item reserved/)).toBeInTheDocument();
@@ -1323,14 +1352,14 @@ describe('MarketplaceCheckout', () => {
       view.adapterMode = 'transaction-service';
       const usdt = createPaykitOrderFixture('paid-usdt');
       view.orders = [usdt];
-      window.location.hash = `#${usdt.order.id}`;
+      searchParams.current = new URLSearchParams({ order: usdt.order.id });
       const first = render(<MarketplaceCheckout />);
       expect(screen.getByTestId('payment-status-panel')).toBeInTheDocument();
       first.unmount();
 
       const bitcoin = createPaykitOrderFixture('paid-bitcoin');
       view.orders = [bitcoin];
-      window.location.hash = `#${bitcoin.order.id}`;
+      searchParams.current = new URLSearchParams({ order: bitcoin.order.id });
       render(<MarketplaceCheckout />);
       expect(screen.queryByTestId('payment-status-panel')).not.toBeInTheDocument();
       expect(screen.getByRole('group', { name: 'Checkout complete' })).toBeInTheDocument();

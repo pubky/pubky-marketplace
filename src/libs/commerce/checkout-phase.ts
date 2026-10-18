@@ -24,8 +24,22 @@ const PAID_OR_LATER_STATES = new Set([
   'closed',
 ]);
 
+export const CHECKOUT_ORDER_PARAM = 'order';
+
+/**
+ * Checkout resumes an order only from `?order=`, never from a `#fragment`: after a
+ * document load of `/marketplace/checkout#<id>`, Next's router carries that fragment
+ * onto every later in-app navigation to plain `/marketplace/checkout`.
+ */
 export function getMarketplaceCheckoutRoute(orderId?: string | null): string {
-  return orderId ? `${MARKETPLACE_ROUTES.CHECKOUT}#${orderId}` : MARKETPLACE_ROUTES.CHECKOUT;
+  if (!orderId) return MARKETPLACE_ROUTES.CHECKOUT;
+  const params = new URLSearchParams({ [CHECKOUT_ORDER_PARAM]: orderId });
+  return `${MARKETPLACE_ROUTES.CHECKOUT}?${params.toString()}`;
+}
+
+export function readCheckoutOrderId(searchParams: Pick<URLSearchParams, 'get'>): string | null {
+  const value = searchParams.get(CHECKOUT_ORDER_PARAM)?.trim() ?? '';
+  return value.length > 0 ? value : null;
 }
 
 export function getMarketplaceOfferCheckoutRoute(offerId?: string | null): string {
