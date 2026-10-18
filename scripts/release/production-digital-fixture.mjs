@@ -3,7 +3,7 @@
 // release-proof test seats. THIS SPENDS REAL MONEY ON PRODUCTION. It refuses to start without today's go-ahead
 // token from the product owner (PROOF_DIGITAL_GO=GO-<UTC date>). Run `plan` first: it touches nothing.
 //
-// What it automates: publishing one "TEST, do not buy" digital listing per kind from the seller seat and setting
+// What it automates: publishing one "SMOKE FIXTURE, do not buy" digital listing per kind from the seller seat and setting
 // its delivery; checkout, Bitcoin and Pay as the buyer seat; waiting for the order to be paid; then the delivery
 // checks on both sides; then teardown and verification.
 // What it cannot automate, by design: paying the Bitkit Payment Request (a real wallet holds the buyer's funds),
@@ -32,6 +32,7 @@
 // mailbox the tester controls; never logged or written), PROOF_ORIGIN, PROOF_SERVICE, PROOF_NEXUS, PROOF_RELAY,
 // PROOF_FIXTURE_PHOTO.
 // Exit 0 only when every check passed. Paid orders cannot be deleted; they stay as the proof's evidence.
+// Also driven by the service's hold-smoke (HOLD_SMOKE_DIGITAL_FIXTURE_CMD): prepare + publish before a run, teardown after.
 // Runbook: docs/ecommerce/release.md, "Paid digital delivery proof".
 import { randomBytes } from 'node:crypto';
 import { chmodSync, existsSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
@@ -213,9 +214,12 @@ async function ringSignIn(page, seat) {
   await new Pubky().signer(seat).approveAuthRequest(await copyAuthUrl(page, 'Copy authentication link'));
   await page.waitForFunction(
     (expected) => {
-      const raw = localStorage.getItem('auth-store');
+      const raw = localStorage.getItem('shop-auth-store') ?? localStorage.getItem('auth-store');
       const state = raw ? (JSON.parse(raw).state ?? {}) : {};
-      return state.currentUserPubky === expected && typeof state.sessionExport === 'string';
+      return (
+        state.currentUserPubky === expected &&
+        (typeof state.grantSessionRecordId === 'string' || typeof state.sessionExport === 'string')
+      );
     },
     seat.publicKey.z32(),
     { timeout: 180_000 },
@@ -249,7 +253,7 @@ async function signOut(page) {
   await button.waitFor({ state: 'visible', timeout: 30_000 });
   await button.click();
   await page.waitForURL(/\/sign-in/, { timeout: 60_000 }).catch(() => {});
-  const raw = await page.evaluate(() => localStorage.getItem('auth-store'));
+  const raw = await page.evaluate(() => localStorage.getItem('shop-auth-store') ?? localStorage.getItem('auth-store'));
   return raw === null || !JSON.parse(raw)?.state?.currentUserPubky;
 }
 
@@ -406,7 +410,9 @@ async function fillDigitalListing(page, title) {
     .first()
     .fill('Digital delivery proof fixture cover photo');
   await page.getByLabel(/^Title$/i).fill(title);
-  await page.getByLabel(/^Description$/i).fill('Paid delivery proof fixture. Do not purchase.');
+  await page
+    .getByLabel(/^Description$/i)
+    .fill('Staging smoke fixture for the release hold-smoke (digital delivery). Do not purchase.');
   await pickCategoryLeaf(page);
   await page.locator('#listing-section-price').scrollIntoViewIfNeeded();
   const priceField = page.getByLabel(/^Price \(USD\)$/i).first();

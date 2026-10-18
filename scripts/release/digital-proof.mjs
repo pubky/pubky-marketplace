@@ -123,7 +123,7 @@ export function formatSizeLabel(sizeBytes) {
 
 export const newRunId = () => randomBytes(3).toString('hex');
 
-export const listingTitle = (runId, kind) => `TEST, do not buy ${runId} ${kind}`;
+export const listingTitle = (runId, kind) => `SMOKE FIXTURE, do not buy ${runId} ${kind}`;
 
 // Reasons the pay wait ended, in the order they are decided.
 export function payOutcome({ paid, elapsedMs, timeoutMs }) {
@@ -177,7 +177,7 @@ export function describePlan({ kinds, priceText, origin, service }) {
     `service ${service}`,
     `price ${priceText} USD per listing, paid in Bitcoin (service quote, 1,000-sat floor)`,
     `kinds ${kinds.join(', ')}`,
-    'setup: one "TEST, do not buy" digital listing per kind from the seller seat, delivery set on its edit page',
+    'setup: one "SMOKE FIXTURE, do not buy" digital listing per kind from the seller seat, delivery set on its edit page',
   ];
   for (const kind of kinds) {
     lines.push(

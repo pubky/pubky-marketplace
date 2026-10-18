@@ -190,7 +190,7 @@ describe('redaction and titles', () => {
   });
 
   it('titles every fixture as a do-not-buy listing', () => {
-    expect(listingTitle('ab12cd', 'file')).toBe('TEST, do not buy ab12cd file');
+    expect(listingTitle('ab12cd', 'file')).toBe('SMOKE FIXTURE, do not buy ab12cd file');
   });
 });
 

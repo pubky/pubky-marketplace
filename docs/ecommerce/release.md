@@ -343,7 +343,7 @@ when discovery finds none. Production is the release gate.
 ### Paid digital delivery proof (opt-in, spends real money)
 
 `scripts/release/production-digital-fixture.mjs` proves digital delivery with real paid Bitcoin orders on the same two
-test seats: one `TEST, do not buy <run> <kind>` listing per delivery kind (file, link, text, "I'll email it", "I'll
+test seats: one `SMOKE FIXTURE, do not buy <run> <kind>` listing per delivery kind (file, link, text, "I'll email it", "I'll
 send it in messages"), a buyer checkout paid in Bitcoin, the delivery checks on both sides, then teardown and
 verification. It is not part of the release gate. It refuses to start without `PROOF_DIGITAL_GO=GO-<UTC date>`, which
 the product owner authorizes per run, and it needs both `PROOF_*_PREFIX` seat guards and `EXPECTED_DPL`.
@@ -371,6 +371,28 @@ Price defaults to $2.00 so the Bitcoin quote clears the service's 1,000-satoshi 
 evidence folder; clean up with `... production-digital-fixture.mjs teardown` until it prints `DIGITAL_FIXTURE
 teardown OK`. The selectors come from the Shop source at the commit the script was written against; the first run
 should be a staging rehearsal with staging-homeserver seats and a regtest wallet.
+
+#### Used by the service hold-smoke (`HOLD_SMOKE_DIGITAL_FIXTURE_CMD`)
+
+The service's `scripts/release/hold-smoke.py` needs real digital listings on a dedicated fixture seller. It publishes
+them before the run and removes them afterwards, so no smoke listing stays live in the Nexus index. It does not call
+this script directly: it runs the command in `HOLD_SMOKE_DIGITAL_FIXTURE_CMD` (split like a shell line) with one
+argument, and puts the kinds in `HOLD_SMOKE_DIGITAL_FIXTURE_KINDS` (comma separated, same names as
+`PROOF_DIGITAL_KINDS`).
+
+| Argument   | What the wrapper must run                                                                                                   |
+| ---------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `publish`  | `production-digital-fixture.mjs prepare`, then `production-digital-fixture.mjs publish`, both with `PROOF_EXTERNAL_BUYER=1` |
+| `teardown` | `production-digital-fixture.mjs teardown`                                                                                   |
+
+The wrapper is yours to write and keep outside the repository, because it carries the environment: the fixture seller's
+seat (see `seats.mjs`), `PROOF_SELLER_PREFIX`, `EXPECTED_DPL`, the day's `PROOF_DIGITAL_GO`, `PROOF_DIGITAL_KINDS`
+set from `HOLD_SMOKE_DIGITAL_FIXTURE_KINDS`, `PROOF_ORIGIN`, `PROOF_SERVICE`, `PROOF_NEXUS` and `PROOF_RELAY` pointing
+at the staging stack, and a `PROOF_EVIDENCE` folder that is emptied before each `publish`. It must exit non-zero when a
+step fails: hold-smoke then runs `teardown` and a sweep, and stops if the seller still has any listing.
+
+Listings made this way are titled `SMOKE FIXTURE, do not buy <run> <kind>` and carry a description that says they are
+a staging smoke fixture. Point it at staging only: never run the hold-smoke wrapper against production.
 
 ## Tag and release notes
 
