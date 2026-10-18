@@ -6,7 +6,8 @@
 // Env: SENTRY_AUTH_TOKEN (unset = skip), SENTRY_ORG, SENTRY_PROJECT, plus the build's release inputs
 // (NEXT_PUBLIC_APP_VERSION, GIT_COMMIT, VERCEL_GIT_COMMIT_SHA). The deploy is recorded under the environment events
 // carry: PUBKY_RUNTIME_SENTRY_ENVIRONMENT, else the deployed NODE_ENV.
-// --warn-only reports failures without failing the command, so a Sentry outage never blocks a Vercel deploy.
+// --warn-only reports every failure as a warning and exits 0, so Sentry never blocks a Vercel deploy.
+import { spawn, type SpawnOptions } from 'node:child_process';
 import packageJson from '../../package.json';
 import { isFullCommitSha, resolveSentryRelease } from '../../src/libs/build-info/build-info';
 import { readSentryEnvironment } from '../../src/libs/runtime-config/runtime-config.schema';
@@ -26,6 +27,28 @@ export type SentryReleasePlan =
   | { kind: 'run'; release: string; commands: string[][] };
 
 export type ExecuteSentryCli = (args: string[]) => Promise<unknown>;
+
+/**
+ * Runs sentry-cli with its output inherited. `@sentry/cli`'s own `execute` leaves the child's `error` event
+ * unhandled, so a binary that is missing or cannot start would crash the process; here it rejects like any
+ * other failed step.
+ */
+export function createSentryCliExecutor(
+  binaryPath: () => string,
+  env: NodeJS.ProcessEnv = process.env,
+): ExecuteSentryCli {
+  return (args) =>
+    new Promise<void>((resolve, reject) => {
+      const options: SpawnOptions = { env, stdio: ['ignore', 'inherit', 'inherit'] };
+      const child = spawn(binaryPath(), args, options);
+      child.on('error', reject);
+      child.on('exit', (code, signal) => {
+        if (code === 0) return resolve();
+        const outcome = signal ? `was killed by ${signal}` : `failed with exit code ${code}`;
+        reject(new Error(`Command ${args.join(' ')} ${outcome}`));
+      });
+    });
+}
 
 export function parseSentryReleaseArgs(argv: string[]): SentryReleaseOptions {
   const unknown = argv.filter((arg) => arg !== '--deploy' && arg !== '--warn-only');

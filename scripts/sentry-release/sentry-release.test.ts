@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import packageJson from '../../package.json';
 import { resolveSentryRelease } from '../../src/libs/build-info/build-info';
 import {
+  createSentryCliExecutor,
   type ExecuteSentryCli,
   parseSentryReleaseArgs,
   planSentryRelease,
@@ -192,5 +193,50 @@ describe('runSentryRelease', () => {
 
   it('rejects unknown arguments before doing anything', async () => {
     await expect(run(['--dry-run'], DOCKER_CI)).rejects.toThrow(/Unknown argument --dry-run/);
+  });
+});
+
+describe('createSentryCliExecutor', () => {
+  const node = () => process.execPath;
+
+  it('resolves when the command exits 0', async () => {
+    await expect(createSentryCliExecutor(node)(['-e', ''])).resolves.toBeUndefined();
+  });
+
+  it('rejects with the exit code', async () => {
+    await expect(createSentryCliExecutor(node)(['-e', 'process.exit(3)'])).rejects.toThrow(
+      'Command -e process.exit(3) failed with exit code 3',
+    );
+  });
+
+  it('rejects with the signal that killed the command', async () => {
+    await expect(createSentryCliExecutor(node)(['-e', "process.kill(process.pid, 'SIGTERM')"])).rejects.toThrow(
+      /was killed by SIGTERM$/,
+    );
+  });
+
+  it('rejects instead of crashing when the binary cannot be spawned', async () => {
+    await expect(createSentryCliExecutor(() => '/nonexistent/sentry-cli')(['--version'])).rejects.toThrow(
+      'spawn /nonexistent/sentry-cli ENOENT',
+    );
+  });
+
+  it('rejects when the binary path cannot be resolved', async () => {
+    const unresolved = () => {
+      throw new Error('Unsupported platform');
+    };
+    await expect(createSentryCliExecutor(unresolved)(['--version'])).rejects.toThrow('Unsupported platform');
+  });
+
+  it('turns a missing binary into a warning under --warn-only', async () => {
+    const logs: string[] = [];
+    const code = await runSentryRelease({
+      argv: ['--deploy', '--warn-only'],
+      env: VERCEL,
+      execute: createSentryCliExecutor(() => '/nonexistent/sentry-cli'),
+      log: (message) => logs.push(message),
+    });
+    expect(code).toBe(0);
+    expect(logs).toContain(`Sentry release ${SHA}: releases new failed: spawn /nonexistent/sentry-cli ENOENT`);
   });
 });
