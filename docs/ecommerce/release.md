@@ -45,7 +45,7 @@ missing dependency: fix `package-lock.json` in a pull request, then `HUSKY=0 npm
 
 ## Grant SDK and embedded release requirements
 
-App and Shop share the SDK's `pubky-auth` database on the embedded origin. For an SDK upgrade, bump `@synonymdev/pubky` in **both repositories**, update both lockfiles, and verify both builds resolve the same reviewed SDK version. This branch pins 0.16.1. Do not independently upgrade one consumer or assume the pending-key persistence adapter survives a schema change.
+App and Shop share the SDK's `pubky-auth` database on the embedded origin. For an SDK upgrade, bump `@synonymdev/pubky` in **both repositories**, update both lockfiles, and verify both builds resolve the same reviewed SDK version. This branch pins 0.16.2. Do not independently upgrade one consumer or assume the pending-key persistence adapter survives a schema change.
 
 Before shipping an SDK bump, rerun the real SDK storage/error and ownership contracts plus auth lifecycle tests in both checkouts:
 
