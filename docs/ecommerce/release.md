@@ -348,6 +348,15 @@ send it in messages"), a buyer checkout paid in Bitcoin, the delivery checks on 
 verification. It is not part of the release gate. It refuses to start without `PROOF_DIGITAL_GO=GO-<UTC date>`, which
 the product owner authorizes per run, and it needs both `PROOF_*_PREFIX` seat guards and `EXPECTED_DPL`.
 
+Two guards are enforced in code. Every mode but `plan` refuses unless `PROOF_ORIGIN`, `PROOF_SERVICE` and `PROOF_NEXUS`
+are the staging stack (John Staging, `https://staging-api.pubky.app`, `https://nexusd-staging-production.up.railway.app`);
+the production defaults are refused, and `PROOF_ALLOW_PRODUCTION=1` is the explicit, deliberate way to run against
+production. Every mode that publishes or spends first checks that the origin serves `EXPECTED_DPL`, including `publish`
+and `await-buyer`. `plan` prints which side of that line the environment is on.
+
+The email kind types and shows the tester mailbox, so its screenshots are not saved unless `PROOF_DIGITAL_EMAIL_SCREENSHOTS=1`.
+When a mailbox is configured, every saved screenshot has text containing it and any field holding it masked.
+
 ```bash
 # touches nothing: prints the plan and what the environment still lacks
 PROOF_EVIDENCE=$HOME/shop-evidence/digital node scripts/release/production-digital-fixture.mjs plan
@@ -392,7 +401,7 @@ at the staging stack, and a `PROOF_EVIDENCE` folder that is emptied before each 
 step fails: hold-smoke then runs `teardown` and a sweep, and stops if the seller still has any listing.
 
 Listings made this way are titled `SMOKE FIXTURE, do not buy <run> <kind>` and carry a description that says they are
-a staging smoke fixture. Point it at staging only: never run the hold-smoke wrapper against production.
+a staging smoke fixture. The script itself refuses a non-staging target unless `PROOF_ALLOW_PRODUCTION=1`: never set that in the hold-smoke wrapper.
 
 ## Tag and release notes
 

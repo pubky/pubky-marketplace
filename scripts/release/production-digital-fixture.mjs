@@ -1,7 +1,10 @@
 #!/usr/bin/env node
 // Paid digital delivery proof (design decision DD4): one real Bitcoin purchase per delivery kind, with the
-// release-proof test seats. THIS SPENDS REAL MONEY ON PRODUCTION. It refuses to start without today's go-ahead
-// token from the product owner (PROOF_DIGITAL_GO=GO-<UTC date>). Run `plan` first: it touches nothing.
+// release-proof test seats. ON PRODUCTION THIS SPENDS REAL MONEY. Every mode but `plan` refuses unless PROOF_ORIGIN,
+// PROOF_SERVICE and PROOF_NEXUS are the staging stack (digital-proof.mjs, STAGING_TARGET), or PROOF_ALLOW_PRODUCTION=1
+// says otherwise on purpose. Modes that spend or publish also need EXPECTED_DPL to be what the origin serves right
+// now, and today's go-ahead token from the product owner (PROOF_DIGITAL_GO=GO-<UTC date>). Run `plan` first: it
+// touches nothing.
 //
 // What it automates: publishing one "SMOKE FIXTURE, do not buy" digital listing per kind from the seller seat and setting
 // its delivery; checkout, Bitcoin and Pay as the buyer seat; waiting for the order to be paid; then the delivery
@@ -29,8 +32,9 @@
 // Env: PROOF_EVIDENCE (state and results; outside the repository), seats and both PROOF_*_PREFIX values (see
 // seats.mjs), EXPECTED_DPL, PROOF_DIGITAL_GO, PROOF_DIGITAL_KINDS (default file), PROOF_DIGITAL_PRICE_USD (default
 // 2.00), PROOF_DIGITAL_PAY_TIMEOUT_MIN (default 25), PROOF_DIGITAL_BUYER_EMAIL (required for the email kind: a
-// mailbox the tester controls; never logged or written), PROOF_ORIGIN, PROOF_SERVICE, PROOF_NEXUS, PROOF_RELAY,
-// PROOF_FIXTURE_PHOTO.
+// mailbox the tester controls; redacted from the log and the evidence JSON, masked in screenshots), PROOF_ORIGIN, PROOF_SERVICE, PROOF_NEXUS, PROOF_RELAY,
+// PROOF_FIXTURE_PHOTO, PROOF_ALLOW_PRODUCTION (1 to run against anything but staging), PROOF_DIGITAL_EMAIL_SCREENSHOTS
+// (1 to save the email kind's screenshots; they are not saved by default, and any saved screenshot has the mailbox masked).
 // Exit 0 only when every check passed. Paid orders cannot be deleted; they stay as the proof's evidence.
 // Also driven by the service's hold-smoke (HOLD_SMOKE_DIGITAL_FIXTURE_CMD): prepare + publish before a run, teardown after.
 // Runbook: docs/ecommerce/release.md, "Paid digital delivery proof".
@@ -41,16 +45,20 @@ import { createInterface } from 'node:readline/promises';
 import { fileURLToPath } from 'node:url';
 import {
   DELIVERABLES_PREFIX,
+  deploymentRefusal,
   describePlan,
   DIGITAL_KINDS,
   expectedCheckoutLine,
   expectedCurrentSummary,
+  extractDpl,
   formatSizeLabel,
   hasGoAhead,
   isInstantKind,
+  isStagingTarget,
   KIND_RADIO_LABEL,
   listingTitle,
   makeFixtureFile,
+  maskedScreenshot,
   newDeliverablePaths,
   newRunId,
   parseBtcUsdRate,
@@ -61,8 +69,10 @@ import {
   pathFromPubkyUrl,
   payOutcome,
   priceClearsMinimum,
-  redactEmail,
+  redactSensitive,
+  screenshotPolicy,
   sha256Hex,
+  targetRefusal,
 } from './digital-proof.mjs';
 import { evidenceDir, loadBuyerSeat, loadSellerSeat, prefix, repoRequire, shopCapabilities } from './seats.mjs';
 
@@ -89,6 +99,12 @@ if ((mode === 'buy' || mode === 'settle') && !DIGITAL_KINDS.includes(kindArg)) {
   throw new Error(`usage: production-digital-fixture.mjs ${mode} <${DIGITAL_KINDS.join('|')}>`);
 }
 
+const TARGET = { origin: ORIGIN, service: SERVICE, nexus: NEXUS };
+if (mode !== 'plan') {
+  const refusal = targetRefusal(TARGET, process.env);
+  if (refusal) throw new Error(refusal);
+}
+
 const kinds = parseKinds(process.env.PROOF_DIGITAL_KINDS);
 const price = parsePriceUsd(process.env.PROOF_DIGITAL_PRICE_USD);
 const payTimeoutMs = parsePayTimeoutMinutes(process.env.PROOF_DIGITAL_PAY_TIMEOUT_MIN) * 60_000;
@@ -98,6 +114,11 @@ const waitMs = parsePositiveMinutes(process.env.PROOF_DIGITAL_WAIT_MIN, 90) * 60
 
 if (mode === 'plan') {
   console.log(describePlan({ kinds, priceText: price.text, origin: ORIGIN, service: SERVICE }).join('\n'));
+  console.log(
+    isStagingTarget(TARGET)
+      ? 'target: the staging stack'
+      : `target: NOT the staging stack (nexus ${NEXUS}); every mode but plan refuses unless PROOF_ALLOW_PRODUCTION=1`,
+  );
   console.log(
     "go-ahead needed to run: PROOF_DIGITAL_GO=GO-<today, UTC, YYYY-MM-DD>, set only on the product owner's instruction; it expires at the end of that UTC day",
   );
@@ -125,8 +146,7 @@ const OUT = evidenceDir();
 const STATE_PATH = join(OUT, 'digital-fixture-state.json');
 const FILE_PATH = join(OUT, 'digital-fixture-file.bin');
 
-const redact = (text) =>
-  redactEmail(String(text ?? ''), buyerEmail).replace(/\b([13-9a-km-uw-z]{8})[13-9a-km-uw-z]{44}\b/g, '$1…');
+const redact = (text) => redactSensitive(text, buyerEmail);
 const log = (line) => console.log(redact(line));
 
 const seller = loadSellerSeat();
@@ -154,6 +174,29 @@ const writeState = (state) => {
 };
 const listingPath = (id) => `/marketplace/listing/${sellerPubky}/${id}`;
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const EMAIL_SCREENSHOTS = process.env.PROOF_DIGITAL_EMAIL_SCREENSHOTS === '1';
+
+// Every screenshot goes through here. Screenshots are not redacted like the log, so the tester mailbox is painted
+// over, and the email kind saves none unless PROOF_DIGITAL_EMAIL_SCREENSHOTS=1.
+async function shot(target, file, { kind = null, fullPage = false } = {}) {
+  const policy = screenshotPolicy({ kind, email: buyerEmail, optIn: EMAIL_SCREENSHOTS });
+  if (!policy.save) {
+    log(
+      `screenshot ${file} not saved: it would show the tester mailbox (PROOF_DIGITAL_EMAIL_SCREENSHOTS=1 saves it masked)`,
+    );
+    return;
+  }
+  await maskedScreenshot(target, { path: join(OUT, file), email: policy.mask ? buyerEmail : '', fullPage });
+}
+
+// The origin must be serving the deployment the run was authorized against.
+async function expectedDeploymentRefusal() {
+  const found = extractDpl(
+    await (await fetch(`${ORIGIN}/marketplace`, { signal: AbortSignal.timeout(30_000) })).text(),
+  );
+  return { found, refusal: deploymentRefusal({ found, expected: process.env.EXPECTED_DPL }) };
+}
 
 async function operator(prompt) {
   if (!process.stdin.isTTY) {
@@ -569,7 +612,7 @@ async function publish() {
       if (!result.saved) throw new Error(`delivery for ${kind} did not save`);
       state.listings[kind].delivery = { url: result.url ?? null, text: result.text ?? null };
       writeState(state);
-      await page.screenshot({ path: join(OUT, `digital-setup-${kind}.png`) });
+      await shot(page, `digital-setup-${kind}.png`, { kind });
       log(`setup ${kind}: listing ${listingId.slice(0, 8)}`);
     }
     state = {
@@ -605,7 +648,7 @@ async function ordersCard(page, title, orderId = null) {
   // The page picks a default tab once the orders load, so wait for the counts before choosing All.
   const all = page.getByRole('tab', { name: /^All\s*[1-9]/ }).first();
   await all.waitFor({ state: 'visible', timeout: 60_000 }).catch(async (error) => {
-    await page.screenshot({ path: join(OUT, 'digital-orders-tabs-missing.png') }).catch(() => {});
+    await shot(page, 'digital-orders-tabs-missing.png').catch(() => {});
     throw error;
   });
   await page.waitForTimeout(1500);
@@ -625,7 +668,7 @@ async function confirmSeenBitcoin(page, title, kind) {
   if ((await prompt.count()) === 0) return false;
   const facts = (await card.innerText()).replace(/\s+/g, ' ');
   if (!/Amount matched Yes/.test(facts)) return false;
-  await page.screenshot({ path: join(OUT, `digital-seller-confirm-${kind}.png`) });
+  await shot(page, `digital-seller-confirm-${kind}.png`, { kind });
   await card.getByRole('button', { name: 'Confirm payment received' }).click();
   await page.waitForTimeout(8000);
   log(`buy ${kind}: the seller confirmed receipt of the matched payment`);
@@ -636,9 +679,9 @@ async function buy(kind) {
   const state = readState();
   const listing = state?.listings?.[kind];
   if (!listing?.id) throw new Error(`no published ${kind} listing in the state file; run setup first`);
-  const dpl = ((await (await fetch(`${ORIGIN}/marketplace`)).text()).match(/dpl_[A-Za-z0-9]+/) || [])[0] || null;
-  check(`buy ${kind}: the expected deployment is live`, dpl === process.env.EXPECTED_DPL, String(dpl));
-  if (dpl !== process.env.EXPECTED_DPL) throw new Error('production is not serving EXPECTED_DPL');
+  const deployment = await expectedDeploymentRefusal();
+  check(`buy ${kind}: the expected deployment is live`, !deployment.refusal, String(deployment.found));
+  if (deployment.refusal) throw new Error(deployment.refusal);
   const { browser, page, commands } = await openBrowser();
   try {
     await ringSignIn(page, buyer);
@@ -661,7 +704,7 @@ async function buy(kind) {
       () => false,
     );
     if (!check(`buy ${kind}: the Buy button is enabled for the buyer`, addOk)) {
-      await page.screenshot({ path: join(OUT, `digital-buy-blocked-${kind}.png`) }).catch(() => {});
+      await shot(page, `digital-buy-blocked-${kind}.png`, { kind }).catch(() => {});
       throw new Error('the buyer cannot add the listing');
     }
     await add.click();
@@ -721,7 +764,7 @@ async function buy(kind) {
       summary.includes(`$${state.price}`),
       `expected $${state.price}`,
     );
-    await page.screenshot({ path: join(OUT, `digital-checkout-${kind}.png`) });
+    await shot(page, `digital-checkout-${kind}.png`, { kind });
     const guarantee = page.getByTestId('marketplace-checkout-guarantee').getByRole('checkbox').first();
     await guarantee.check();
     check(`buy ${kind}: the guarantee policy is accepted`, await guarantee.isChecked());
@@ -734,7 +777,7 @@ async function buy(kind) {
     }
     check(`buy ${kind}: Pay is enabled`, payReady);
     if (!payReady) {
-      await page.screenshot({ path: join(OUT, `digital-pay-blocked-${kind}.png`), fullPage: true }).catch(() => {});
+      await shot(page, `digital-pay-blocked-${kind}.png`, { kind, fullPage: true }).catch(() => {});
       const reason = await page
         .locator('#checkout-pay-reason')
         .innerText()
@@ -750,7 +793,7 @@ async function buy(kind) {
     const payCommands = commands.slice(before).map((row) => `${row.kind}:${row.status}`);
     log(`buy ${kind}: Pay sent ${JSON.stringify(payCommands)}`);
     await page.waitForTimeout(8000);
-    await page.screenshot({ path: join(OUT, `digital-paying-${kind}.png`) });
+    await shot(page, `digital-paying-${kind}.png`, { kind });
     const paying = (await page.getByTestId('marketplace-checkout-paying').innerText())
       .replace(/\s+/g, ' ')
       .slice(0, 700);
@@ -774,7 +817,7 @@ async function buy(kind) {
         const card = await ordersCard(page, listing.title);
         const paid = (await card.count()) > 0 && (await card.getByTestId('order-receipt-details').count()) > 0;
         if ((await card.count()) > 0) cardId = (await card.getAttribute('id'))?.replace(/^order-/, '') ?? cardId;
-        outcome = payOutcome({ paid, elapsedMs: Date.now() - started, timeoutMs: payTimeoutMs });
+        outcome = payOutcome({ paid, elapsedMs: Date.now() - started, timeoutMs: payTimeoutMs, interrupted });
         log(`buy ${kind}: waiting for payment, ${Math.round((Date.now() - started) / 1000)}s, ${outcome}`);
       }
     } finally {
@@ -790,11 +833,11 @@ async function buy(kind) {
     if (outcome !== 'paid') {
       note(
         `buy ${kind}`,
-        'not paid in time; the order expires on its own. If money moved late it takes the late-payment path (manual review or refund): check the order before teardown',
+        'not paid; the order expires on its own. If money moved late it takes the late-payment path (manual review or refund): check the order before teardown',
       );
-      throw new Error('payment timeout');
+      throw new Error(outcome === 'interrupted' ? 'interrupted while waiting for payment' : 'payment timeout');
     }
-    await page.screenshot({ path: join(OUT, `digital-paid-${kind}.png`) });
+    await shot(page, `digital-paid-${kind}.png`, { kind });
     await emptyCart(page);
     await signOut(page).catch(() => false);
   } finally {
@@ -828,7 +871,7 @@ async function settle(kind) {
     const { page } = buyerSession;
     await ringSignIn(page, buyer);
     let { panel } = await buyerPanel(page, listing.title, state.orders[kind].id);
-    await page.screenshot({ path: join(OUT, `digital-order-${kind}-before.png`) });
+    await shot(page, `digital-order-${kind}-before.png`, { kind });
     if (kind === 'file') {
       const hashes = [];
       for (let attempt = 1; attempt <= 2; attempt += 1) {
@@ -921,7 +964,7 @@ async function settle(kind) {
         );
       check('settle message: Mark delivered is accepted', marked);
     }
-    await page.screenshot({ path: join(OUT, `digital-seller-${kind}.png`) });
+    await shot(page, `digital-seller-${kind}.png`, { kind });
     await signOut(page).catch(() => false);
   } finally {
     await sellerSession.browser.close();
@@ -940,7 +983,7 @@ async function settle(kind) {
           'settle message: the buyer sees the delivered line',
           text.includes('The seller marked this delivered. Check your messages.'),
         );
-      await again.page.screenshot({ path: join(OUT, `digital-order-${kind}-after.png`) });
+      await shot(again.page, `digital-order-${kind}-after.png`, { kind });
       await signOut(again.page).catch(() => false);
     } finally {
       await again.browser.close();
@@ -970,7 +1013,7 @@ async function awaitBuyer() {
   try {
     await ringSignIn(page, seller);
     log(`await-buyer: listing ${listing.id.slice(0, 8)} is live; waiting up to ${Math.round(waitMs / 60000)} min`);
-    while (Date.now() - started < waitMs) {
+    while (!interrupted && Date.now() - started < waitMs) {
       const card = await ordersCard(page, listing.title);
       if ((await card.count()) > 0) {
         orderId = (await card.getAttribute('id'))?.replace(/^order-/, '') ?? orderId;
@@ -989,7 +1032,7 @@ async function awaitBuyer() {
         }
         if (opened) {
           await card.scrollIntoViewIfNeeded().catch(() => {});
-          await card.screenshot({ path: join(OUT, 'digital-seller-await-buyer.png') }).catch(() => {});
+          await shot(card, 'digital-seller-await-buyer.png').catch(() => {});
           break;
         }
       }
@@ -1026,7 +1069,11 @@ async function teardown() {
     const entries = Object.entries(state.listings ?? {});
     for (const [kind, listing] of entries) {
       let ids = listing.id ? [listing.id] : [];
-      if (listing.title && ids.length === 0) ids = (await nexusListingsByTitle(listing.title)).ids;
+      // Nexus can trail the homeserver; a listing whose id never reached the state file is found by its title.
+      for (let attempt = 0; listing.title && ids.length === 0 && attempt < 6; attempt += 1) {
+        if (attempt > 0) await sleep(10_000);
+        ids = (await nexusListingsByTitle(listing.title)).ids;
+      }
       for (const id of ids) {
         await page.goto(`${ORIGIN}${listingPath(id)}`, { waitUntil: 'domcontentloaded' });
         await waitForAppReady(page);
@@ -1173,9 +1220,14 @@ async function verify() {
 // ---- entry -------------------------------------------------------------------------------------
 
 let interrupted = false;
+// These modes have no loop that can notice the flag; a signal would otherwise be swallowed until they finished.
+const STOPS_AT_ONCE = ['prepare', 'publish', 'setup'];
 for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP']) {
   process.on(signal, () => {
-    if (interrupted) process.exit(130);
+    if (interrupted || STOPS_AT_ONCE.includes(mode)) {
+      log(`${signal}: stopping; run teardown to remove anything already published`);
+      process.exit(130);
+    }
     interrupted = true;
     log(`${signal}: finishing with teardown and verification`);
   });
@@ -1195,6 +1247,11 @@ async function tearDownAndVerify() {
 }
 
 try {
+  if (spends) {
+    const deployment = await expectedDeploymentRefusal();
+    if (deployment.refusal) throw new Error(deployment.refusal);
+    log(`the origin is serving the expected deployment ${deployment.found}`);
+  }
   if (mode === 'proof') {
     try {
       await setup();

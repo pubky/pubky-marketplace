@@ -9,14 +9,17 @@ import {
 import {
   BITCOIN_WINDOW_MINUTES,
   DELIVERABLES_PREFIX,
+  deploymentRefusal,
   describePlan,
   DIGITAL_KINDS,
   expectedCheckoutLine,
   expectedCurrentSummary,
+  extractDpl,
   formatSizeLabel,
   goToken,
   hasGoAhead,
   isInstantKind,
+  isStagingTarget,
   KIND_RADIO_LABEL,
   listingTitle,
   makeFixtureFile,
@@ -31,7 +34,11 @@ import {
   payOutcome,
   priceClearsMinimum,
   redactEmail,
+  redactSensitive,
+  screenshotPolicy,
   sha256Hex,
+  STAGING_TARGET,
+  targetRefusal,
 } from './digital-proof.mjs';
 
 describe('digital proof copy stays in step with the Shop', () => {
@@ -147,6 +154,11 @@ describe('pay wait', () => {
     expect(payOutcome({ paid: false, elapsedMs: 5, timeoutMs: 10 })).toBe('waiting');
     expect(payOutcome({ paid: false, elapsedMs: 10, timeoutMs: 10 })).toBe('timeout');
   });
+
+  it('stops waiting for payment when interrupted, but never discards a payment that arrived', () => {
+    expect(payOutcome({ paid: false, elapsedMs: 5, timeoutMs: 10, interrupted: true })).toBe('interrupted');
+    expect(payOutcome({ paid: true, elapsedMs: 5, timeoutMs: 10, interrupted: true })).toBe('paid');
+  });
 });
 
 describe('fixture file', () => {
@@ -205,5 +217,114 @@ describe('plan', () => {
     expect(lines.some((line) => line.startsWith('file:') && line.includes('SHA-256 matches'))).toBe(true);
     expect(lines.some((line) => line.startsWith('email:') && line.includes('Emailed to'))).toBe(true);
     expect(lines.at(-1)).toContain('paid orders remain as evidence');
+  });
+});
+
+describe('redaction of keys and the mailbox', () => {
+  const z32 = 'ka7q4cmabp6amo13bye9q6iwhb4pxuwr9fo37h5ygx4uk9e63tjy';
+
+  it('cuts a full public key to its 8-character prefix', () => {
+    expect(z32).toHaveLength(52);
+    expect(redactSensitive(`seller ${z32} signed in`, '')).toBe('seller ka7q4cma… signed in');
+    expect(redactSensitive(`${z32},${z32}`, '')).toBe('ka7q4cma…,ka7q4cma…');
+  });
+
+  it('leaves shorter ids, longer words and prefixes alone', () => {
+    expect(redactSensitive(z32.slice(0, 51), '')).toBe(z32.slice(0, 51));
+    expect(redactSensitive('ka7q4cma…', '')).toBe('ka7q4cma…');
+    expect(redactSensitive('2289548f24dc429e815719bd63ad4a17', '')).toBe('2289548f24dc429e815719bd63ad4a17');
+  });
+
+  it('removes the mailbox and the key in the same line', () => {
+    expect(redactSensitive(`${z32} emailed tester@example.com`, 'tester@example.com')).toBe(
+      'ka7q4cma… emailed [redacted-email]',
+    );
+  });
+});
+
+describe('the staging guard', () => {
+  const staging = {
+    origin: STAGING_TARGET.origins[0],
+    service: STAGING_TARGET.services[0],
+    nexus: STAGING_TARGET.nexus[0],
+  };
+  const production = {
+    origin: 'https://shop.pubky.app',
+    service: 'https://marketplace-service-production-ce23.up.railway.app',
+    nexus: 'https://nexusd-production-7108.up.railway.app',
+  };
+
+  it('lets the staging stack through, with or without a mount path or trailing slash', () => {
+    expect(isStagingTarget(staging)).toBe(true);
+    expect(targetRefusal(staging, {})).toBeNull();
+    expect(targetRefusal({ ...staging, origin: `${staging.origin}/` }, {})).toBeNull();
+  });
+
+  it('refuses the production defaults and names every variable that is wrong', () => {
+    const message = targetRefusal(production, {});
+    expect(message).toContain('PROOF_ORIGIN=https://shop.pubky.app');
+    expect(message).toContain('PROOF_SERVICE=https://marketplace-service-production-ce23.up.railway.app');
+    expect(message).toContain('PROOF_NEXUS=https://nexusd-production-7108.up.railway.app');
+    expect(message).toContain('PROOF_ALLOW_PRODUCTION=1');
+  });
+
+  it('refuses a stack that is only partly staging', () => {
+    expect(targetRefusal({ ...staging, service: production.service }, {})).toContain('PROOF_SERVICE=');
+    expect(targetRefusal({ ...staging, nexus: production.nexus }, {})).toContain('PROOF_NEXUS=');
+    expect(targetRefusal({ ...staging, origin: production.origin }, {})).toContain('PROOF_ORIGIN=');
+    expect(targetRefusal({ ...staging, nexus: production.nexus }, {})).not.toContain('PROOF_ORIGIN=');
+  });
+
+  it('refuses hosts that only look like staging', () => {
+    for (const origin of [
+      'https://pubky-marketplace-staging.vercel.app.evil.example',
+      'http://pubky-marketplace-staging.vercel.app',
+      'https://evil.example/https://pubky-marketplace-staging.vercel.app',
+      'not a url',
+    ]) {
+      expect(targetRefusal({ ...staging, origin }, {})).toContain('PROOF_ORIGIN=');
+    }
+  });
+
+  it('is overridden only by PROOF_ALLOW_PRODUCTION=1 exactly', () => {
+    expect(targetRefusal(production, { PROOF_ALLOW_PRODUCTION: '1' })).toBeNull();
+    for (const value of ['', '0', 'true', 'yes', ' 1']) {
+      expect(targetRefusal(production, { PROOF_ALLOW_PRODUCTION: value })).not.toBeNull();
+    }
+  });
+});
+
+describe('the expected deployment guard', () => {
+  it('reads the first deployment id from the served page', () => {
+    expect(extractDpl('<script>x="dpl_AbC123xyz"</script> dpl_other')).toBe('dpl_AbC123xyz');
+    expect(extractDpl('no id here')).toBeNull();
+    expect(extractDpl(undefined)).toBeNull();
+  });
+
+  it('passes only when the served id equals the expectation', () => {
+    expect(deploymentRefusal({ found: 'dpl_A', expected: 'dpl_A' })).toBeNull();
+    expect(deploymentRefusal({ found: 'dpl_B', expected: 'dpl_A' })).toContain('dpl_B');
+    expect(deploymentRefusal({ found: null, expected: 'dpl_A' })).toContain('no deployment id');
+  });
+
+  it('never passes without an expectation, even when the page has no id either', () => {
+    expect(deploymentRefusal({ found: 'dpl_A', expected: '' })).toContain('EXPECTED_DPL');
+    expect(deploymentRefusal({ found: null, expected: undefined })).toContain('EXPECTED_DPL');
+  });
+});
+
+describe('screenshots and the tester mailbox', () => {
+  it('does not save the email kind unless asked, and saves every other kind', () => {
+    expect(screenshotPolicy({ kind: 'email', email: 'a@b.c', optIn: false }).save).toBe(false);
+    expect(screenshotPolicy({ kind: 'email', email: 'a@b.c', optIn: true }).save).toBe(true);
+    for (const kind of ['file', 'link', 'text', 'messages', null]) {
+      expect(screenshotPolicy({ kind, email: 'a@b.c', optIn: false }).save).toBe(true);
+    }
+  });
+
+  it('masks whenever a mailbox is configured, including for an opted-in email screenshot', () => {
+    expect(screenshotPolicy({ kind: 'email', email: 'a@b.c', optIn: true }).mask).toBe(true);
+    expect(screenshotPolicy({ kind: 'file', email: 'a@b.c', optIn: false }).mask).toBe(true);
+    expect(screenshotPolicy({ kind: 'file', email: '', optIn: false }).mask).toBe(false);
   });
 });

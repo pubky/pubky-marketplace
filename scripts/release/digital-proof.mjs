@@ -126,8 +126,9 @@ export const newRunId = () => randomBytes(3).toString('hex');
 export const listingTitle = (runId, kind) => `SMOKE FIXTURE, do not buy ${runId} ${kind}`;
 
 // Reasons the pay wait ended, in the order they are decided.
-export function payOutcome({ paid, elapsedMs, timeoutMs }) {
+export function payOutcome({ paid, elapsedMs, timeoutMs, interrupted = false }) {
   if (paid) return 'paid';
+  if (interrupted) return 'interrupted';
   return elapsedMs >= timeoutMs ? 'timeout' : 'waiting';
 }
 
@@ -170,6 +171,65 @@ export function redactEmail(text, email) {
   return email ? String(text ?? '').replaceAll(email, '[redacted-email]') : String(text ?? '');
 }
 
+// Everything the proof logs or records goes through here: the tester mailbox is replaced and a full z32 public key
+// (52 characters) is cut to its 8-character prefix.
+export function redactSensitive(text, email) {
+  return redactEmail(text, email).replace(/\b([13-9a-km-uw-z]{8})[13-9a-km-uw-z]{44}\b/g, '$1…');
+}
+
+// The stack the hold-smoke and rehearsals run against. Anything else is production for this script's purposes.
+export const STAGING_TARGET = {
+  origins: ['https://pubky-marketplace-staging.vercel.app'],
+  services: ['https://staging-api.pubky.app'],
+  nexus: ['https://nexusd-staging-production.up.railway.app'],
+};
+
+const originOf = (raw) => {
+  try {
+    return new URL(String(raw)).origin;
+  } catch {
+    return null;
+  }
+};
+
+export function isStagingTarget({ origin, service, nexus }) {
+  return (
+    STAGING_TARGET.origins.includes(originOf(origin)) &&
+    STAGING_TARGET.services.includes(originOf(service)) &&
+    STAGING_TARGET.nexus.includes(originOf(nexus))
+  );
+}
+
+// A run that touches anything but staging needs PROOF_ALLOW_PRODUCTION=1, set on purpose by the person who
+// authorized it. Returns the refusal message, or null when the run may go ahead.
+export function targetRefusal(target, env = {}) {
+  if (env.PROOF_ALLOW_PRODUCTION === '1' || isStagingTarget(target)) return null;
+  const wrong = [
+    ['PROOF_ORIGIN', target.origin, STAGING_TARGET.origins],
+    ['PROOF_SERVICE', target.service, STAGING_TARGET.services],
+    ['PROOF_NEXUS', target.nexus, STAGING_TARGET.nexus],
+  ]
+    .filter(([, url, allowed]) => !allowed.includes(originOf(url)))
+    .map(([name, url]) => `${name}=${originOf(url) ?? 'invalid'}`);
+  return `refusing to run: ${wrong.join(', ')} is not the staging stack. Point PROOF_ORIGIN, PROOF_SERVICE and PROOF_NEXUS at staging, or set PROOF_ALLOW_PRODUCTION=1 to run against production on purpose`;
+}
+
+export const extractDpl = (html) => (String(html ?? '').match(/dpl_[A-Za-z0-9]+/) || [])[0] ?? null;
+
+// The expected deployment must be the one the origin serves now; a missing expectation never passes.
+export function deploymentRefusal({ found, expected }) {
+  if (!expected) return 'set EXPECTED_DPL to the dpl_… id now aliased to the origin';
+  if (found !== expected) return `the origin is serving ${found ?? 'no deployment id'}, not EXPECTED_DPL ${expected}`;
+  return null;
+}
+
+// The email kind is the one flow that types and shows the tester mailbox, so its screenshots are not saved unless
+// asked for (PROOF_DIGITAL_EMAIL_SCREENSHOTS=1). Whenever a mailbox is configured, every saved screenshot has it
+// masked, including any field whose value holds it.
+export function screenshotPolicy({ kind, email, optIn }) {
+  return { save: kind !== 'email' || Boolean(optIn), mask: Boolean(email) };
+}
+
 // The step list `plan` prints and the evidence folder records; no step here is run by the planner.
 export function describePlan({ kinds, priceText, origin, service }) {
   const lines = [
@@ -204,5 +264,39 @@ function describeSettle(kind) {
       return 'the seller sends it in messages by hand, marks it delivered; the buyer sees the delivered line';
     default:
       throw new Error(`unknown delivery kind ${kind}`);
+  }
+}
+
+const MASK_ATTRIBUTE = 'data-proof-mask';
+
+// Takes a Playwright screenshot of a page or locator with the tester mailbox painted over: any element whose text
+// contains it, and any input or textarea whose value does (a value is not text, so it is tagged first and the tag
+// removed afterwards). With no mailbox it is a plain screenshot.
+export async function maskedScreenshot(target, { path, email = '', fullPage = false }) {
+  const page = typeof target.page === 'function' ? target.page() : target;
+  if (email) {
+    await page.evaluate(
+      ({ needle, attribute }) => {
+        for (const field of document.querySelectorAll('input, textarea')) {
+          if (field.value.toLowerCase().includes(needle)) field.setAttribute(attribute, '1');
+        }
+      },
+      { needle: email.toLowerCase(), attribute: MASK_ATTRIBUTE },
+    );
+  }
+  try {
+    return await target.screenshot({
+      path,
+      ...(fullPage ? { fullPage } : {}),
+      mask: email ? [page.locator(`[${MASK_ATTRIBUTE}]`), page.getByText(email)] : [],
+    });
+  } finally {
+    if (email) {
+      await page
+        .evaluate((attribute) => {
+          for (const field of document.querySelectorAll(`[${attribute}]`)) field.removeAttribute(attribute);
+        }, MASK_ATTRIBUTE)
+        .catch(() => {});
+    }
   }
 }

@@ -1,0 +1,222 @@
+// @vitest-environment node
+import { execFile } from 'node:child_process';
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { createServer, type Server } from 'node:http';
+import type { AddressInfo } from 'node:net';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { promisify } from 'node:util';
+import { chromium } from 'playwright';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { maskedScreenshot, STAGING_TARGET } from './digital-proof.mjs';
+
+const run = promisify(execFile);
+const SCRIPT = join(__dirname, 'production-digital-fixture.mjs');
+
+// A throwaway seat: secret 0x01 x32 and its public key.
+const SEAT_HEX = '01'.repeat(32);
+const SEAT_PREFIX = 'tkrq8zmw';
+
+const today = () => `GO-${new Date().toISOString().slice(0, 10)}`;
+
+type Outcome = { code: number; stdout: string; stderr: string };
+
+async function runScript(mode: string, env: Record<string, string>): Promise<Outcome> {
+  try {
+    const { stdout, stderr } = await run(process.execPath, [SCRIPT, mode], {
+      env: { NODE_ENV: 'test', PATH: process.env.PATH ?? '', HOME: process.env.HOME ?? '', ...env },
+      encoding: 'utf8',
+      timeout: 60_000,
+    });
+    return { code: 0, stdout, stderr };
+  } catch (error) {
+    const failure = error as { code?: number; stdout?: string; stderr?: string };
+    return { code: failure.code ?? 1, stdout: failure.stdout ?? '', stderr: failure.stderr ?? '' };
+  }
+}
+
+describe('production-digital-fixture.mjs target guard', () => {
+  let evidence: string;
+  beforeEach(() => {
+    evidence = mkdtempSync(join(tmpdir(), 'digital-fixture-guard-'));
+  });
+  afterEach(() => rmSync(evidence, { recursive: true, force: true }));
+
+  const hold = () => ({
+    PROOF_EXTERNAL_BUYER: '1',
+    PROOF_DIGITAL_GO: today(),
+    EXPECTED_DPL: 'dpl_expected',
+    PROOF_SEAT_SECRET_HEX: SEAT_HEX,
+    PROOF_SELLER_PREFIX: SEAT_PREFIX,
+    PROOF_EVIDENCE: evidence,
+  });
+
+  it('refuses the hold-smoke publish on the production defaults before touching anything', async () => {
+    const outcome = await runScript('publish', hold());
+    expect(outcome.code).not.toBe(0);
+    expect(outcome.stderr).toContain('is not the staging stack');
+    expect(outcome.stderr).toContain('PROOF_ORIGIN=https://shop.pubky.app');
+    expect(outcome.stderr).toContain('PROOF_SERVICE=');
+    expect(outcome.stderr).toContain('PROOF_NEXUS=');
+    expect(existsSync(join(evidence, 'digital-fixture-publish.json'))).toBe(false);
+  });
+
+  it('refuses every mode but plan on a half-staging stack, naming only what is wrong', async () => {
+    const env = { ...hold(), PROOF_ORIGIN: STAGING_TARGET.origins[0] };
+    for (const mode of ['prepare', 'publish', 'await-buyer', 'teardown', 'verify']) {
+      const outcome = await runScript(mode, env);
+      expect(outcome.code, mode).not.toBe(0);
+      expect(outcome.stderr, mode).toContain('PROOF_SERVICE=');
+      expect(outcome.stderr, mode).not.toContain('PROOF_ORIGIN=');
+    }
+  });
+
+  it('plan runs anywhere, touches nothing and says which side it is on', async () => {
+    const prod = await runScript('plan', { PROOF_EVIDENCE: evidence });
+    expect(prod.code).toBe(0);
+    expect(prod.stdout).toContain('NOT the staging stack');
+
+    const stage = await runScript('plan', {
+      PROOF_EVIDENCE: evidence,
+      PROOF_ORIGIN: STAGING_TARGET.origins[0],
+      PROOF_SERVICE: STAGING_TARGET.services[0],
+      PROOF_NEXUS: STAGING_TARGET.nexus[0],
+    });
+    expect(stage.code).toBe(0);
+    expect(stage.stdout).toContain('target: the staging stack');
+  });
+});
+
+describe('production-digital-fixture.mjs expected deployment on publish', () => {
+  let server: Server;
+  let origin: string;
+  let served = 'dpl_other';
+  let evidence: string;
+
+  beforeEach(async () => {
+    evidence = mkdtempSync(join(tmpdir(), 'digital-fixture-dpl-'));
+    served = 'dpl_other';
+    server = createServer((request, response) => {
+      response.setHeader('content-type', 'text/html');
+      response.end(request.url === '/marketplace' ? `<html><script>window.d="${served}"</script></html>` : '');
+    });
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  });
+  afterEach(async () => {
+    await new Promise((resolve) => server.close(resolve));
+    rmSync(evidence, { recursive: true, force: true });
+  });
+
+  // The local origin is not staging, so these runs use the explicit production override: the point under test is
+  // the deployment check, which must hold for the external-buyer publish path hold-smoke uses.
+  const publishEnv = () => ({
+    PROOF_ALLOW_PRODUCTION: '1',
+    PROOF_ORIGIN: origin,
+    PROOF_EXTERNAL_BUYER: '1',
+    PROOF_DIGITAL_GO: today(),
+    EXPECTED_DPL: 'dpl_expected',
+    PROOF_SEAT_SECRET_HEX: SEAT_HEX,
+    PROOF_SELLER_PREFIX: SEAT_PREFIX,
+    PROOF_EVIDENCE: evidence,
+  });
+
+  const detail = (mode: string) =>
+    (JSON.parse(readFileSync(join(evidence, `digital-fixture-${mode}.json`), 'utf8')).checks as { detail: string }[])
+      .map((row) => row.detail)
+      .join('\n');
+
+  it('refuses to publish when the origin serves another deployment', async () => {
+    const outcome = await runScript('publish', publishEnv());
+    expect(outcome.code).toBe(1);
+    expect(detail('publish')).toContain('is serving dpl_other, not EXPECTED_DPL dpl_expected');
+    expect(outcome.stdout).not.toContain('the origin is serving the expected deployment');
+  });
+
+  it('gets past the check when the origin serves the expected deployment, and fails only on the missing state', async () => {
+    served = 'dpl_expected';
+    const outcome = await runScript('publish', publishEnv());
+    expect(outcome.code).toBe(1);
+    expect(outcome.stdout).toContain('the origin is serving the expected deployment dpl_expected');
+    expect(detail('publish')).toContain('no prepared state file; run prepare first');
+  });
+
+  it('refuses a publish with no EXPECTED_DPL at all', async () => {
+    const outcome = await runScript('publish', { ...publishEnv(), EXPECTED_DPL: '' });
+    expect(outcome.code).not.toBe(0);
+    expect(outcome.stderr).toContain('EXPECTED_DPL');
+  });
+});
+
+// Needs the Chromium that `npx playwright install chromium` fetches. The unit CI job installs no browsers, so there
+// this block is reported as skipped; it runs wherever Chromium is present.
+const hasChromium = existsSync(chromium.executablePath());
+
+describe.skipIf(!hasChromium)('maskedScreenshot in a real browser', () => {
+  let shots: string;
+  beforeEach(() => {
+    shots = mkdtempSync(join(tmpdir(), 'digital-mask-'));
+  });
+  afterEach(() => rmSync(shots, { recursive: true, force: true }));
+  const MAGENTA = 'magenta pixels';
+  const email = 'tester@example.com';
+  const page = (body: string) =>
+    `<html><body style="margin:0;background:#fff;font:20px sans-serif">${body}</body></html>`;
+
+  async function withPage<T>(html: string, body: (page: import('playwright').Page) => Promise<T>) {
+    const browser = await chromium.launch({ headless: true });
+    try {
+      const context = await browser.newContext({ viewport: { width: 600, height: 300 } });
+      const tab = await context.newPage();
+      await tab.setContent(html);
+      return await body(tab);
+    } finally {
+      await browser.close();
+    }
+  }
+
+  // Counts pure #FF00FF pixels, the colour Playwright paints masks with.
+  const countMask = (tab: import('playwright').Page, png: Buffer) =>
+    tab.evaluate(async (base64) => {
+      const bitmap = await createImageBitmap(await (await fetch(`data:image/png;base64,${base64}`)).blob());
+      const canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
+      const context = canvas.getContext('2d')!;
+      context.drawImage(bitmap, 0, 0);
+      const data = context.getImageData(0, 0, bitmap.width, bitmap.height).data;
+      let count = 0;
+      for (let i = 0; i < data.length; i += 4)
+        if (data[i] === 255 && data[i + 1] === 0 && data[i + 2] === 255) count += 1;
+      return count;
+    }, png.toString('base64'));
+
+  const withMailbox = page(
+    `<p>The seller will email this to ${email}</p><input id="a" value="TESTER@Example.com" size="30"><textarea id="b">hello ${email}</textarea><p>plain line</p>`,
+  );
+  const withoutMailbox = page(
+    '<p>The seller will email this to someone</p><input id="a" value="other" size="30"><p>plain line</p>',
+  );
+
+  it(`paints ${MAGENTA} over the mailbox in text and in field values, and leaves no tag behind`, async () => {
+    await withPage(withMailbox, async (tab) => {
+      const unmasked = await maskedScreenshot(tab, { path: join(shots, 'shot.png'), email: '' });
+      expect(await countMask(tab, unmasked)).toBe(0);
+      const masked = await maskedScreenshot(tab, { path: join(shots, 'shot.png'), email });
+      expect(await countMask(tab, masked)).toBeGreaterThan(2000);
+      expect(await tab.locator('[data-proof-mask]').count()).toBe(0);
+    });
+  });
+
+  it('masks a page element screenshot the same way', async () => {
+    await withPage(withMailbox, async (tab) => {
+      const masked = await maskedScreenshot(tab.locator('p').first(), { path: join(shots, 'shot.png'), email });
+      expect(await countMask(tab, masked)).toBeGreaterThan(500);
+    });
+  });
+
+  it('paints nothing on a page that does not show the mailbox', async () => {
+    await withPage(withoutMailbox, async (tab) => {
+      const masked = await maskedScreenshot(tab, { path: join(shots, 'shot.png'), email });
+      expect(await countMask(tab, masked)).toBe(0);
+    });
+  });
+});
