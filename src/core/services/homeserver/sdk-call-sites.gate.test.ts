@@ -67,7 +67,7 @@ describe('@synonymdev/pubky 0.16 call sites', () => {
     const offenders = files
       .filter(({ path, text }) => {
         if (path === 'src/core/services/homeserver/homeserver.ts') return false;
-        return /\.storage\.(?:putJson|putBytes|delete)\(/.test(text);
+        return /\.storage\.(?:putJson|putBytes|putText|delete)(?:Locked)?\(/.test(text);
       })
       .map(({ path }) => path);
 

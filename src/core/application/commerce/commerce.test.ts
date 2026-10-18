@@ -28,6 +28,10 @@ import { isListingRegistrationPending, LISTING_READ_BACK_PENDING_WINDOW_MS } fro
 import { CommerceRecordNormalizer } from '@/pipes/commerce/commerce.normalizer';
 import { CommerceHomeserverService } from '@/services/homeserver/commerce/commerce';
 import { HomeserverService } from '@/services/homeserver/homeserver';
+import {
+  HOMESERVER_PUBLISH_CONFLICT_MESSAGE,
+  installHomeserverWriteRetryDependenciesForTests,
+} from '@/services/homeserver/write-retry';
 import { LocalCommerceService } from '@/services/local/commerce/commerce';
 import { LocalMarketplaceTagService } from '@/services/local/tag/marketplace/tag.marketplace';
 import { MarketplaceGatewayService } from '@/services/marketplace/marketplace';
@@ -2742,6 +2746,133 @@ describe('CommerceApplication', () => {
     expect(execute).not.toHaveBeenCalled();
     await expect(LocalCommerceService.getListing(listingId)).resolves.toMatchObject({
       registration_status: 'unavailable',
+    });
+  });
+
+  describe('a listing write the homeserver refuses', () => {
+    const homeserverError = (statusCode: number, body: string) =>
+      httpStatusCodeToError(
+        statusCode,
+        `Request failed: Server responded with an error: ${statusCode} - ${body}`,
+        ErrorService.Homeserver,
+        'unknown',
+        LISTING_URL,
+      );
+    const publishConflict = () => homeserverError(409, HOMESERVER_PUBLISH_CONFLICT_MESSAGE);
+
+    beforeEach(() => {
+      vi.spyOn(commerceConfig, 'getCommerceAdapterMode').mockReturnValue('unavailable');
+      installHomeserverWriteRetryDependenciesForTests({ sleep: async () => {}, random: () => 0, now: () => 0 });
+    });
+
+    afterEach(() => {
+      installHomeserverWriteRetryDependenciesForTests(null);
+    });
+
+    /** The homeserver as the listing reads see it: only a PUT that resolves lands. */
+    const servePublished = () => {
+      const state: { published: Record<string, unknown> | null } = { published: null };
+      const reads = vi
+        .mocked(CommerceHomeserverService.fetchJsonIfFound)
+        .mockImplementation(async (url) =>
+          url === LISTING_URL && state.published ? { found: true, json: state.published } : { found: false },
+        );
+      vi.mocked(CommerceHomeserverService.fetchJson).mockImplementation(async (url) => {
+        if (url === LISTING_URL && state.published) return state.published;
+        throw httpStatusCodeToError(404, 'Not Found', ErrorService.Homeserver, 'fetchJson', String(url));
+      });
+      return { state, reads };
+    };
+
+    it('reads the record again after a publish conflict, then writes', async () => {
+      const record = createCommerceListingFixture();
+      const { state, reads } = servePublished();
+      const put = vi
+        .spyOn(CommerceHomeserverService, 'putJson')
+        .mockRejectedValueOnce(publishConflict())
+        .mockImplementationOnce(async (_url, body) => {
+          state.published = body;
+        });
+
+      await expect(CommerceApplication.commitUpsertListing(record)).resolves.toEqual({
+        registered: false,
+        verified: true,
+      });
+
+      expect(put).toHaveBeenCalledTimes(2);
+      expect(put).toHaveBeenNthCalledWith(2, LISTING_URL, record, { singleAttempt: true });
+      // Each pass reads the record before its PUT and again just before writing.
+      const readsBeforeRetry = reads.mock.invocationCallOrder.filter(
+        (order, index) =>
+          reads.mock.calls[index][0] === LISTING_URL &&
+          order > put.mock.invocationCallOrder[0] &&
+          order < put.mock.invocationCallOrder[1],
+      );
+      expect(readsBeforeRetry).toHaveLength(2);
+    });
+
+    it('does not write again when its own write landed behind the publish conflict', async () => {
+      const record = createCommerceListingFixture();
+      const { state } = servePublished();
+      const put = vi.spyOn(CommerceHomeserverService, 'putJson').mockImplementationOnce(async (_url, body) => {
+        state.published = body;
+        throw publishConflict();
+      });
+
+      await expect(CommerceApplication.commitUpsertListing(record)).resolves.toEqual({
+        registered: false,
+        verified: true,
+      });
+      expect(put).toHaveBeenCalledOnce();
+    });
+
+    it('does not write over another edit that landed behind the publish conflict', async () => {
+      const record = createCommerceListingFixture();
+      const landed = { ...record, title: 'Edited on another device' };
+      const { state } = servePublished();
+      const put = vi.spyOn(CommerceHomeserverService, 'putJson').mockImplementationOnce(async () => {
+        state.published = landed;
+        throw publishConflict();
+      });
+
+      await expect(CommerceApplication.commitUpsertListing(record)).rejects.toMatchObject({
+        code: ClientErrorCode.CONFLICT,
+      });
+      expect(put).toHaveBeenCalledOnce();
+      expect(state.published).toBe(landed);
+    });
+
+    it('does not retry a path collision', async () => {
+      const record = createCommerceListingFixture();
+      const put = vi
+        .spyOn(CommerceHomeserverService, 'putJson')
+        .mockRejectedValue(homeserverError(409, 'File/folder path collision'));
+
+      await expect(CommerceApplication.commitUpsertListing(record)).rejects.toMatchObject({
+        context: { statusCode: 409 },
+      });
+      expect(put).toHaveBeenCalledOnce();
+    });
+
+    it('backs off outside the listing lock and retries a 503 PUT and a publish-conflict DELETE', async () => {
+      const record = createCommerceListingFixture();
+      const put = vi
+        .spyOn(CommerceHomeserverService, 'putJson')
+        .mockRejectedValueOnce(homeserverError(503, 'Service Unavailable'))
+        .mockResolvedValueOnce(undefined);
+
+      await CommerceApplication.commitUpsertListing(record);
+      expect(put).toHaveBeenCalledTimes(2);
+
+      vi.spyOn(LocalCommerceService, 'getListing').mockResolvedValue(null);
+      const remove = vi
+        .spyOn(CommerceHomeserverService, 'delete')
+        .mockRejectedValueOnce(publishConflict())
+        .mockResolvedValueOnce(undefined);
+
+      await CommerceApplication.commitDeleteListing(record.ownerPubky, record.listingId);
+      expect(remove).toHaveBeenCalledTimes(2);
+      expect(remove).toHaveBeenNthCalledWith(2, LISTING_URL, undefined, { singleAttempt: true });
     });
   });
 
