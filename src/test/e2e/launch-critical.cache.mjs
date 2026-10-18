@@ -3,9 +3,16 @@
  * an empty DB; only its required schema is ready for fixture writes. Never
  * create/upgrade a database while probing, including a deletion/open race.
  */
-export function seedListingCacheRows({ listing, shopRecord, dbName = 'shop-franky', timeoutMs = 15_000, pollMs = 50 }) {
+export function seedListingCacheRows({
+  listing,
+  shopRecord,
+  cartItem = null,
+  dbName = 'shop-franky',
+  timeoutMs = 15_000,
+  pollMs = 50,
+}) {
   return new Promise((resolve, reject) => {
-    const stores = ['commerce_listings', 'commerce_shops'];
+    const stores = ['commerce_listings', 'commerce_shops', ...(cartItem ? ['commerce_cart_items'] : [])];
     let done = false;
     let db;
     let transaction;
@@ -78,6 +85,7 @@ export function seedListingCacheRows({ listing, shopRecord, dbName = 'shop-frank
             transaction.onerror = () => finish(transaction.error ?? new Error('Fixture cache transaction failed'));
             transaction.objectStore('commerce_listings').put(listing);
             transaction.objectStore('commerce_shops').put(shopRecord);
+            if (cartItem) transaction.objectStore('commerce_cart_items').put(cartItem);
           } catch (error) {
             finish(error);
           }
