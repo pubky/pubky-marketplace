@@ -1,0 +1,1 @@
+On the seller Shipping page, Add preset now opens the New preset form right under the page heading, where the button was, and puts the cursor in its Shipping label field. It used to open below the Delivery privacy and Shippo cards, out of view. Cancel and Save preset return focus to the button that opened the form.

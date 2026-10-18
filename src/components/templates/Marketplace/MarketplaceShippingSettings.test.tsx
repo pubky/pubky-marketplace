@@ -268,6 +268,78 @@ describe('MarketplaceShippingSettings presets', () => {
   });
 });
 
+describe('MarketplaceShippingSettings preset form focus', () => {
+  it('opens the new preset form right under the page heading and focuses its label field', async () => {
+    presetsView.presets = [preset('usd', 'UPS', 'USD', 1_200)];
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(screen.getByRole('button', { name: 'Add preset' }));
+
+    const form = screen.getByRole('region', { name: 'New preset' });
+    const pageHeading = screen.getByRole('heading', { level: 1, name: 'Shipping' });
+    const firstPreset = screen.getByRole('heading', { name: 'UPS' });
+    expect(pageHeading.compareDocumentPosition(form) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(form.compareDocumentPosition(firstPreset) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(Element.prototype.scrollIntoView).toHaveBeenCalledWith({ block: 'nearest' });
+    expect(screen.getByLabelText('Shipping label')).toHaveFocus();
+  });
+
+  it('restores the Add preset button and its focus on cancel', async () => {
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(screen.getByRole('button', { name: 'Add preset' }));
+    await user.click(screen.getByRole('button', { name: 'Cancel' }));
+
+    expect(screen.queryByRole('region', { name: 'New preset' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Add preset' })).toHaveFocus();
+  });
+
+  it('returns focus to the Add preset button after saving a new preset', async () => {
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(screen.getByRole('button', { name: 'Add preset' }));
+    await user.type(screen.getByLabelText('Shipping label'), 'Swiss Post');
+    await user.type(screen.getByLabelText('Flat price (USD)'), '8.50');
+    await user.click(screen.getByRole('button', { name: 'Save preset' }));
+
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Add preset' })).toHaveFocus());
+  });
+
+  it('focuses the label when editing and returns focus to that preset on cancel', async () => {
+    presetsView.presets = [preset('usd', 'UPS', 'USD', 1_200), preset('chf', 'Swiss Post', 'CHF', 800)];
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(screen.getByRole('button', { name: 'Edit Swiss Post' }));
+
+    expect(screen.getByRole('region', { name: 'Edit preset' })).toBeInTheDocument();
+    expect(screen.getByLabelText('Shipping label')).toHaveFocus();
+    expect(screen.getByLabelText('Shipping label')).toHaveValue('Swiss Post');
+
+    await user.click(screen.getByRole('button', { name: 'Cancel' }));
+
+    expect(screen.getByRole('button', { name: 'Edit Swiss Post' })).toHaveFocus();
+  });
+
+  it('opens the new preset form above the return to the listing draft', async () => {
+    deliveryKeyView.enabled = true;
+    deliveryKeyView.publication = 'missing';
+    navigation.search = `returnTo=${encodeURIComponent(MARKETPLACE_ROUTES.SELL)}`;
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(screen.getByRole('button', { name: 'Add preset' }));
+
+    const form = screen.getByRole('region', { name: 'New preset' });
+    const listingReturn = screen.getByTestId('listing-composer-return');
+    expect(form.compareDocumentPosition(listingReturn) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.getByLabelText('Shipping label')).toHaveFocus();
+  });
+});
+
 describe('MarketplaceShippingSettings return to the listing draft', () => {
   it('shows no return action when the seller did not come from a listing', () => {
     renderPage();
