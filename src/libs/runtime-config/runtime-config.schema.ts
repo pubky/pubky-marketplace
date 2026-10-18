@@ -992,3 +992,12 @@ export const PUBKY_RUNTIME_ENV_NAMES: Record<keyof RuntimeConfig, string> = {
   appStoreUrl: 'PUBKY_RUNTIME_APP_STORE_URL',
   playStoreUrl: 'PUBKY_RUNTIME_PLAY_STORE_URL',
 };
+
+/**
+ * The Sentry environment set for a deployment, read from its env with the same rule the runtime
+ * resolver applies to `PUBKY_RUNTIME_SENTRY_ENVIRONMENT` (blank = unset). For deploy tooling
+ * (`scripts/sentry-release`), which must record a deploy under the environment events carry.
+ */
+export function readSentryEnvironment(env: Record<string, string | undefined>): string | undefined {
+  return optionalTrimmedString.parse(env[PUBKY_RUNTIME_ENV_NAMES.sentryEnvironment]);
+}

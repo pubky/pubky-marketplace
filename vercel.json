@@ -1,4 +1,5 @@
 {
+  "buildCommand": "npm run build && npx tsx scripts/sentry-release/main.ts --deploy --warn-only",
   "crons": [
     {
       "path": "/api/marketplace/grant-cleanup",

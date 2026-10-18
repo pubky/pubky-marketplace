@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   APP_RUNTIME_DEFAULTS,
   NETWORK_RUNTIME_DEFAULTS,
+  readSentryEnvironment,
   runtimeConfigValueSchema,
   runtimeEnvInputSchema,
   runtimeEnvInputSchemaWithDefaults,
@@ -623,5 +624,19 @@ describe('shop grant client id runtime value', () => {
       'pubky.app',
     );
     expect(() => runtimeConfigValueSchema.parse({ ...base, shopGrantClientId: 'https://pubky.app' })).toThrow();
+  });
+});
+
+describe('readSentryEnvironment', () => {
+  it('reads PUBKY_RUNTIME_SENTRY_ENVIRONMENT as the runtime resolver parses it', () => {
+    const env = { PUBKY_RUNTIME_SENTRY_ENVIRONMENT: 'staging' };
+    expect(readSentryEnvironment(env)).toBe('staging');
+    expect(readSentryEnvironment(env)).toBe(
+      runtimeEnvInputSchemaWithDefaults.parse({ sentryEnvironment: 'staging' }).sentryEnvironment,
+    );
+  });
+
+  it.each([undefined, '', '   '])('treats %j as unset', (value) => {
+    expect(readSentryEnvironment({ PUBKY_RUNTIME_SENTRY_ENVIRONMENT: value })).toBeUndefined();
   });
 });
