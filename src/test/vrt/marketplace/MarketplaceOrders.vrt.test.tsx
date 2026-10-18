@@ -514,6 +514,7 @@ const ordersState = vi.hoisted(() => ({
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn() }),
   usePathname: () => '/marketplace/orders',
+  useSearchParams: () => new URLSearchParams(window.location.search),
 }));
 
 vi.mock('@/hooks/useRequireAuth/useRequireAuth', () => ({
@@ -894,7 +895,7 @@ describe('Marketplace orders — visual regression', () => {
       ordersState.isLoading = false;
       ordersState.error = null;
       const previous = `${window.location.pathname}${window.location.search}${window.location.hash}`;
-      window.history.replaceState(null, '', `${window.location.pathname}#order-${activityLinkedUnlistedId}`);
+      window.history.replaceState(null, '', `${window.location.pathname}?order=${activityLinkedUnlistedId}`);
       try {
         const screen = await renderForVRT(<MarketplaceOrders />, { viewport });
         await expect.element(screen.getByRole('heading', { name: 'From Activity' })).toBeVisible();

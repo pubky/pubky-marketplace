@@ -93,6 +93,7 @@ const ordersState = vi.hoisted(() => ({
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn() }),
   usePathname: () => '/marketplace/orders',
+  useSearchParams: () => new URLSearchParams(),
 }));
 
 vi.mock('@/stores/auth/auth.store', () => ({
