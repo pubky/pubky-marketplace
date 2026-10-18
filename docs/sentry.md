@@ -44,6 +44,56 @@ After deployment, verify capture with the mounted harness described below. This 
 Shop's Next.js server/BFF as well as its browser; it does not instrument the separate marketplace
 service, Locks or Paykit processes.
 
+## Releases
+
+Every event's `release` is the **deployed commit's full SHA**, baked into the build as
+`NEXT_PUBLIC_APP_VERSION` for the browser, Node and Edge runtimes alike (`resolveSentryRelease` in
+`src/libs/build-info/build-info.ts`):
+
+| Deploy path                                         | Release taken from                                                         | Release created by                  |
+| --------------------------------------------------- | -------------------------------------------------------------------------- | ----------------------------------- |
+| Docker image from a `v*` tag (`release-docker.yml`) | the `NEXT_PUBLIC_APP_VERSION` build arg, the tagged commit                 | the workflow's `sentry-release` job |
+| Vercel (John Staging, John Prod)                    | `GIT_COMMIT` (`--build-env` on a CLI deploy), else `VERCEL_GIT_COMMIT_SHA` | the build command in `vercel.json`  |
+| Local build                                         | the package version                                                        | nobody                              |
+
+`scripts/sentry-release` creates the release under that exact name, associates its commits and
+finalizes it. On Vercel it also records the deploy under the environment the events carry
+(`PUBKY_RUNTIME_SENTRY_ENVIRONMENT`, else `production`). With commits attached, stack-trace links open
+each file at the deployed commit, and suspect commits and `Fixes <ISSUE>` resolution work. The script
+skips with a warning while `SENTRY_AUTH_TOKEN` is unset. On Vercel a Sentry failure is printed in the
+build log and never blocks the deploy; in the Docker workflow it fails the `sentry-release` job (the
+image is already pushed). The `withSentryConfig` plugin creates no releases: in webpack builds it would
+create one per compiler.
+
+**Prerequisite (Sentry admin):** commit association resolves only once `pubky/pubky-marketplace` is
+added to the Sentry GitHub integration: **Settings → Integrations → GitHub → Configure → Add
+Repository**, with the Sentry GitHub App granted access to the repository in the `pubky` org, and a
+code mapping for the `pubky-marketplace` project on branch `master` (**Code Mappings → Add Mapping**).
+`sentry-cli repos list` then prints `pubky/pubky-marketplace`. Until then `set-commits` fails while the
+release is still created, finalized and (on Vercel) deployed. The Docker job uses `set-commits --auto`
+on a full-history checkout. A Vercel CLI upload has no git history, so there the commit is named
+explicitly and its range starts at the previous release with commits; `sentry-cli` needs a previous
+commit for the project's first such release, so the first one should come from the Docker job or a
+Vercel git deployment (which provides `VERCEL_GIT_PREVIOUS_SHA`).
+
+Credentials, never committed and never in `PUBKY_RUNTIME_*` or `NEXT_PUBLIC_*`:
+
+- GitHub Actions secret `SENTRY_AUTH_TOKEN` on `pubky/pubky-marketplace`: a `synonym-52` organization
+  auth token (Settings → Developer Settings → Organization Tokens). The workflow sets the org and
+  project.
+- Vercel, in each project that should create releases: `SENTRY_AUTH_TOKEN` (sensitive),
+  `SENTRY_ORG=synonym-52` and `SENTRY_PROJECT=pubky-marketplace`. Leave `NEXT_PUBLIC_APP_VERSION`
+  unset there: it would replace the commit SHA.
+
+The GCP deployment records its own deploys, because the image is promoted across environments. After
+an image is live, run this with the image's commit SHA and the container's
+`PUBKY_RUNTIME_SENTRY_ENVIRONMENT`:
+
+```bash
+SENTRY_AUTH_TOKEN=<token> npx @sentry/cli@2.58.5 deploys new --org synonym-52 --project pubky-marketplace \
+  --release <commit SHA> --env <staging|production>
+```
+
 ## What is captured
 
 | Source                                               | Mechanism                                                                                                                                                                         |
@@ -123,7 +173,9 @@ See [React 19's `onRecoverableError` docs](https://react.dev/reference/react-dom
 - `src/sentry.server.config.ts` / `src/sentry.edge.config.ts` — runtime-specific init
 - `src/libs/observability/sentry.ts` — single source of truth (`shouldEnableSentry`, `getSentryInitBase`, `captureAppError`). Sentry is off when `NODE_ENV=test`, `VITEST` is set, the **runtime** config has `testnet=true`, or no **runtime** DSN is configured. If the runtime config cannot be resolved at all, the gate returns `false` instead of throwing (the capture funnel must never mask the original boot error).
 - `src/libs/error/error.factories.ts` — `createAppError()` calls `captureAppError(error)` after `Logger.error`
-- `next.config.ts` — wrapped by `withSentryConfig(...)` for SDK wiring only; source-map upload is disabled (see below)
+- `next.config.ts` — wrapped by `withSentryConfig(...)` for SDK wiring only; source-map upload and release creation are disabled (see below)
+- `src/libs/build-info/build-info.ts` — `resolveSentryRelease`, the release name baked into the build
+- `scripts/sentry-release/` — creates the release, sets its commits, finalizes it and records Vercel deploys ([Releases](#releases))
 
 ## Environment variables
 
@@ -138,7 +190,7 @@ All Sentry values are part of the **optional runtime-config tier** ([ADR 0018](a
 | `PUBKY_RUNTIME_SENTRY_REPLAYS_SESSION_SAMPLE_RATE`  | browser                 | Optional. Default `0.0` (record only on error).            |
 | `PUBKY_RUNTIME_SENTRY_REPLAYS_ON_ERROR_SAMPLE_RATE` | browser                 | Optional. Default `1.0`.                                   |
 
-`SENTRY_AUTH_TOKEN` / `SENTRY_ORG` / `SENTRY_PROJECT` are optional Docker build inputs used only for source-map upload. They are never app runtime config and are not required to build or run the public image. The release tag comes from `NEXT_PUBLIC_APP_VERSION`: local builds fall back to the package version, while Docker CI sets it to the commit SHA so SDK events and uploaded maps use the same release.
+`SENTRY_AUTH_TOKEN` / `SENTRY_ORG` / `SENTRY_PROJECT` are optional build inputs: the Dockerfile uses them for source-map upload, and `scripts/sentry-release` for the release ([Releases](#releases)). They are never app runtime config and are not required to build or run the public image. The release tag comes from `NEXT_PUBLIC_APP_VERSION`, the deployed commit SHA on Vercel and in Docker CI (so SDK events, uploaded maps and the created release share one name); local builds fall back to the package version.
 
 ## Source maps
 
@@ -207,4 +259,6 @@ silent-failure mode where Sentry is enabled but the browser SDK never initialize
 
 Then inspect recent events in **`pubky-marketplace`** for the configured environment and confirm the
 **source maps** resolve (original `.tsx`/`.ts` frames, not minified bundle names) and the **`release`**
-tag matches `NEXT_PUBLIC_APP_VERSION` for the build under test.
+tag is the deployed commit's full SHA (`GET /api/build` reports its first 12 characters). Open that
+release in Sentry and confirm it lists its commits and, for a Vercel deployment, a deploy in the
+configured environment.

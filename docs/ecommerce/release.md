@@ -183,13 +183,15 @@ vercel inspect pubky-marketplace-production.vercel.app --scope synonymdev    # n
 Deploy with a fresh build cache. Corrupt caches have stalled builds at `Running TypeScript` for 40 minutes:
 
 ```bash
-vercel --prod --yes --force --scope synonymdev --env GIT_COMMIT="$(git rev-parse HEAD)" 2>&1 | tee <evidence-folder>/deploy.log
+vercel --prod --yes --force --scope synonymdev --env GIT_COMMIT="$(git rev-parse HEAD)" --build-env GIT_COMMIT="$(git rev-parse HEAD)" 2>&1 | tee <evidence-folder>/deploy.log
 ```
 
 `GET /api/build` (under the base path when the Shop is mounted on one) returns `{"commit":"<12-char SHA>"}` and nothing
 else: no version, build time or host. It reads `GIT_COMMIT`, then Vercel's `VERCEL_GIT_COMMIT_SHA`, and reports
 `unknown` for anything that is not a hex SHA, so `--env GIT_COMMIT` keeps CLI deploys exact. Docker images take the
-`GIT_COMMIT` build arg. Use it to confirm which commit a host runs; the Shop has no version endpoint or build meta tag.
+`GIT_COMMIT` build arg. `--build-env GIT_COMMIT` makes the commit the build's Sentry release; the build command in
+`vercel.json` then creates that release with its commits and records the deploy
+([Sentry → Releases](../sentry.md#releases)). Use it to confirm which commit a host runs; the Shop has no version endpoint or build meta tag.
 The deployment itself is still identified from the records we keep:
 `vercel inspect pubky-marketplace-production.vercel.app --scope synonymdev` prints the `dpl_…` id and the build for the alias; the id is what the proof's `EXPECTED_DPL` pins, and the release notes record it next to the tag and exact commit. For the
 marketplace service, the digest of the running image (Railway, or GCP once the service runs there) is the record; see
