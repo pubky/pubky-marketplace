@@ -24,6 +24,7 @@ setHeavySuiteBudgets();
 const CURRENT_USER = ORDER_FIXTURE_BUYER;
 const OTHER_USER = 'o'.repeat(52);
 const routerPush = vi.hoisted(() => vi.fn());
+const routerReplace = vi.hoisted(() => vi.fn());
 
 const ordersState = vi.hoisted(() => ({
   currentUserPubky: 'b'.repeat(52),
@@ -105,8 +106,9 @@ vi.mock('@/organisms/Marketplace/MarketplaceMyReviews', () => ({
 }));
 
 vi.mock('next/navigation', () => ({
-  useRouter: () => ({ replace: vi.fn(), push: routerPush }),
+  useRouter: () => ({ replace: routerReplace, push: routerPush }),
   usePathname: () => '/marketplace/orders',
+  useSearchParams: () => new URLSearchParams(window.location.search),
 }));
 
 afterEach(() => {
@@ -1405,7 +1407,7 @@ describe('MarketplaceOrders Activity link to an order no section lists', () => {
   });
 
   it('shows the linked order with its state and short ID, and scrolls to it', async () => {
-    window.history.replaceState(null, '', '/marketplace/orders#order-test-unpaid-sold-lamp');
+    window.history.replaceState(null, '', '/marketplace/orders?order=test-unpaid-sold-lamp');
 
     render(<MarketplaceOrders />);
 
@@ -1430,7 +1432,7 @@ describe('MarketplaceOrders Activity link to an order no section lists', () => {
   });
 
   it('does not duplicate an order another section already lists', async () => {
-    window.history.replaceState(null, '', '/marketplace/orders#order-test-sold-paid-boots');
+    window.history.replaceState(null, '', '/marketplace/orders?order=test-sold-paid-boots');
 
     render(<MarketplaceOrders />);
 
@@ -1446,7 +1448,7 @@ describe('MarketplaceOrders Activity link to an order no section lists', () => {
       sellerPubky: ORDER_FIXTURE_SELLER,
     });
     ordersState.orders = [orderView('paid', 'Sold paid boots', 'seller'), foreign];
-    window.history.replaceState(null, '', `/marketplace/orders#order-${foreign.order.id}`);
+    window.history.replaceState(null, '', `/marketplace/orders?order=${foreign.order.id}`);
 
     render(<MarketplaceOrders />);
 
@@ -1456,14 +1458,67 @@ describe('MarketplaceOrders Activity link to an order no section lists', () => {
     expect(document.getElementById(`order-${foreign.order.id}`)).toBeNull();
   });
 
-  it('follows a hash change while the page is open', async () => {
-    render(<MarketplaceOrders />);
+  it('follows a new ?order= while the page is open', async () => {
+    const view = render(<MarketplaceOrders />);
     expect(screen.queryByTestId('marketplace-linked-order')).toBeNull();
 
-    window.history.replaceState(null, '', '/marketplace/orders#order-test-unpaid-sold-lamp');
-    window.dispatchEvent(new HashChangeEvent('hashchange'));
+    window.history.replaceState(null, '', '/marketplace/orders?order=test-unpaid-sold-lamp');
+    view.rerender(<MarketplaceOrders />);
 
     expect(await screen.findByTestId('marketplace-linked-order-state')).toHaveTextContent('Cancelled before payment');
+  });
+});
+
+describe('MarketplaceOrders links shared before #292', () => {
+  beforeEach(() => {
+    routerReplace.mockClear();
+    ordersState.currentUserPubky = CURRENT_USER;
+    ordersState.adapterMode = 'transaction-service';
+    ordersState.orders = [
+      orderView('pending_payment', 'Unpaid offer boots', 'buyer', { paymentMethod: 'paykit' }),
+      orderView('cancelled', 'Unpaid activity lamp', 'seller', { receiptId: null }),
+    ];
+    Element.prototype.scrollIntoView = vi.fn();
+    vi.spyOn(CommerceController, 'markOrdersAttentionSeen').mockResolvedValue();
+  });
+
+  afterEach(() => {
+    window.history.replaceState(null, '', '/');
+  });
+
+  it('moves an old Activity #order-<id> link to ?order= once', async () => {
+    window.history.replaceState(null, '', '/marketplace/orders#order-test-unpaid-activity-lamp');
+
+    render(<MarketplaceOrders />);
+
+    await waitFor(() => expect(window.location.search).toBe('?order=test-unpaid-activity-lamp'));
+    expect(window.location.pathname).toBe('/marketplace/orders');
+    expect(window.location.hash).toBe('');
+    expect(routerReplace).not.toHaveBeenCalled();
+  });
+
+  // Next appends the fragment of the document load to every later in-app visit to Orders,
+  // so the old Offers link to an unpaid order must open its checkout once, not on every visit.
+  it('opens the unpaid checkout behind an old Offers #<id> link once per document, not on later visits', async () => {
+    window.history.replaceState(null, '', '/marketplace/orders#test-unpaid-offer-boots');
+
+    const view = render(<MarketplaceOrders />);
+    await waitFor(() => expect(window.location.search).toBe('?order=test-unpaid-offer-boots'));
+    expect(window.location.hash).toBe('');
+    view.rerender(<MarketplaceOrders />);
+    await waitFor(() =>
+      expect(routerReplace).toHaveBeenCalledWith('/marketplace/checkout?order=test-unpaid-offer-boots'),
+    );
+    view.unmount();
+    routerReplace.mockClear();
+
+    window.history.replaceState(null, '', '/marketplace/orders#test-unpaid-offer-boots');
+    render(<MarketplaceOrders />);
+    await screen.findByText('Unpaid offer boots');
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(routerReplace).not.toHaveBeenCalled();
+    expect(window.location.search).toBe('');
+    expect(screen.queryByTestId('marketplace-linked-order')).toBeNull();
   });
 });
 

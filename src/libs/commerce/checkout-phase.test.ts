@@ -18,7 +18,6 @@ import {
   isSellerReservation,
   isSellerSalesOrder,
   isSellerUsdtReviewOrder,
-  readCheckoutHashOrderId,
   readCheckoutOrderId,
   reservedWhileYouPayCopy,
   resolveCreatedCheckoutOrderIds,
@@ -210,9 +209,6 @@ describe('checkout-phase', () => {
         ['bitcoin', 'paypal'],
       ]),
     ).toEqual(['bitcoin', 'paypal']);
-    expect(readCheckoutHashOrderId('#018f47d2-6a27-7c23-a49d-000000000001')).toBe(
-      '018f47d2-6a27-7c23-a49d-000000000001',
-    );
     expect(
       resolveCreatedCheckoutOrderIds({
         result: { kind: 'checkout' },

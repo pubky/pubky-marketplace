@@ -305,6 +305,36 @@ async function exerciseCartCheckoutBesidePendingOrder(page, canonicalListing, sh
   assert('checkout:cart-after-resume', afterResume === 'cart', `${afterResume} at ${page.url()}`);
 }
 
+async function readOffersSurface(page) {
+  const gone = page.getByText('This offer is no longer available.');
+  const empty = page.getByRole('heading', { name: 'No offers yet' });
+  await gone
+    .or(empty)
+    .first()
+    .waitFor({ state: 'visible', timeout: 30_000 })
+    .catch(() => undefined);
+  if (await gone.isVisible()) return 'linked-offer-gone';
+  if (await empty.isVisible()) return 'offers';
+  return 'none';
+}
+
+/** #292: an old `#offer-<id>` Activity link is honoured once, not on every later visit to Offers. */
+async function exerciseLegacyOfferLinkOnce(page) {
+  await gotoAndSettle(page, '/marketplace/offers#offer-018f47d2-6a27-7c23-b51e-000000000292');
+  const linked = await readOffersSurface(page);
+  assert('offers:legacy-link-opened', linked === 'linked-offer-gone', `${linked} at ${page.url()}`);
+  await page.waitForURL((url) => url.searchParams.has('offer') && url.hash === '', { timeout: 20_000 });
+  await page.getByTestId('marketplace-section-nav').getByRole('link', { name: /^Cart/ }).click();
+  await page.waitForURL((url) => TARGET.routeOf(url.pathname) === '/marketplace/cart', { timeout: 20_000 });
+  await page
+    .getByTestId('marketplace-section-nav')
+    .getByRole('link', { name: /^Offers/ })
+    .click();
+  await page.waitForURL((url) => TARGET.routeOf(url.pathname) === '/marketplace/offers', { timeout: 20_000 });
+  const later = await readOffersSurface(page);
+  assert('offers:legacy-link-not-sticky', later === 'offers', `${later} at ${page.url()}`);
+}
+
 /**
  * Ring grant QR only. `qr-auth-url` stays the slot id. The URL is not read
  * from the DOM: the copy button is what a person uses, and the slot must not
@@ -1108,6 +1138,11 @@ async function main() {
           await exerciseCartCheckoutBesidePendingOrder(page, canonicalListing, shop);
         } catch (error) {
           record('checkout:cart-beside-pending-order', false, String(error).slice(0, 240));
+        }
+        try {
+          await exerciseLegacyOfferLinkOnce(page);
+        } catch (error) {
+          record('offers:legacy-link-once', false, String(error).slice(0, 240));
         }
       }
     } else {

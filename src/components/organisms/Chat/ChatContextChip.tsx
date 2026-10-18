@@ -2,10 +2,11 @@
 
 import { useLiveQuery } from 'dexie-react-hooks';
 import { Package, ReceiptText } from 'lucide-react';
-import { getMarketplaceListingRoute, MARKETPLACE_ROUTES } from '@/app/routes';
+import { getMarketplaceListingRoute } from '@/app/routes';
 import { Link } from '@/atoms/Link/Link';
 import { Typography } from '@/atoms/Typography/Typography';
 import { CommerceController } from '@/controllers/commerce/commerce';
+import { getMarketplaceOrderRoute } from '@/libs/commerce/activity-links';
 import { Logger } from '@/libs/logger/logger';
 import { cn } from '@/libs/utils/utils';
 import type { ChatContext } from '@/models/chat/chat.schema';
@@ -64,11 +65,7 @@ export function ChatContextChip({
         )
       ) : null}
       {context.orderId ? (
-        <Link
-          href={`${MARKETPLACE_ROUTES.ORDERS}#order-${encodeURIComponent(context.orderId)}`}
-          overrideDefaults
-          className={chip}
-        >
+        <Link href={getMarketplaceOrderRoute(context.orderId)} overrideDefaults className={chip}>
           <ReceiptText className="size-3.5 shrink-0" aria-hidden="true" />
           <Typography as="span" size="xs" overrideDefaults>
             Order {context.orderId.slice(0, 8)}

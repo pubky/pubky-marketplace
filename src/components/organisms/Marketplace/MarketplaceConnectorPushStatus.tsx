@@ -10,7 +10,7 @@ import { Heading } from '@/atoms/Heading/Heading';
 import { Link } from '@/atoms/Link/Link';
 import { Typography } from '@/atoms/Typography/Typography';
 import { useConnectorPushStatus } from '@/hooks/useConnectorPushStatus/useConnectorPushStatus';
-import { orderAnchorId } from '@/libs/commerce/activity-links';
+import { getMarketplaceOrderRoute } from '@/libs/commerce/activity-links';
 import {
   CONNECTOR_PROVIDER_LABELS,
   connectorAlertAction,
@@ -30,9 +30,14 @@ function shortId(orderId: string): string {
 
 function OrderLink({ orderId }: { orderId: string }) {
   return (
-    <a href={`#${orderAnchorId(orderId)}`} className="font-semibold underline-offset-2 hover:underline">
+    <Link
+      href={getMarketplaceOrderRoute(orderId)}
+      scroll={false}
+      overrideDefaults
+      className="font-semibold underline-offset-2 hover:underline"
+    >
       Order {shortId(orderId)}
-    </a>
+    </Link>
   );
 }
 
@@ -136,9 +141,13 @@ export function MarketplaceConnectorPushStatus() {
                 <div className="flex shrink-0 flex-wrap gap-2">
                   {connectorAlertAction(alert) && (
                     <Button asChild size="sm" className="rounded-full" data-testid="store-push-alert-action">
-                      <a href={`#${orderAnchorId(connectorAlertAction(alert)?.orderId ?? '')}`}>
+                      <Link
+                        href={getMarketplaceOrderRoute(connectorAlertAction(alert)?.orderId ?? '')}
+                        scroll={false}
+                        overrideDefaults
+                      >
                         {connectorAlertAction(alert)?.label}
-                      </a>
+                      </Link>
                     </Button>
                   )}
                   {connectorAlertLinkRoute(alert) && (

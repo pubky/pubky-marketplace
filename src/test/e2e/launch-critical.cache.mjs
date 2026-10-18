@@ -2,11 +2,13 @@
  * Runs inside page.evaluate. The application version probe can briefly expose
  * an empty DB; only its required schema is ready for fixture writes. Never
  * create/upgrade a database while probing, including a deletion/open race.
+ *
+ * @param {{ listing: object, shopRecord: object, cartItem?: object, dbName?: string, timeoutMs?: number, pollMs?: number }} input
  */
 export function seedListingCacheRows({
   listing,
   shopRecord,
-  cartItem = null,
+  cartItem,
   dbName = 'shop-franky',
   timeoutMs = 15_000,
   pollMs = 50,

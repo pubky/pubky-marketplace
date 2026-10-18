@@ -253,12 +253,6 @@ export function intersectPaymentMethods(sets: PaymentMethodKind[][]): PaymentMet
   return PAYMENT_METHOD_ORDER.filter((method) => sets.every((set) => set.includes(method)));
 }
 
-export function readCheckoutHashOrderId(hash = ''): string | null {
-  const value = hash.startsWith('#') ? hash.slice(1) : hash;
-  const trimmed = value.trim();
-  return trimmed.length > 0 ? trimmed : null;
-}
-
 export function resolveCreatedCheckoutOrderIds(input: {
   result: unknown;
   orders: Array<{
