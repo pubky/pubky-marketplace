@@ -66,7 +66,7 @@ but unreleased homeserver work, such as selective approval
 
 ## SDK
 
-The Shop pins `@synonymdev/pubky` **0.16.1** from npm. 0.16.0 was the first
+The Shop pins `@synonymdev/pubky` **0.16.2** from npm. 0.16.0 was the first
 release that carries scoped encryption keys (`e`, `EncryptionKeys`) and HPKE-sealed
 approvals (`epk` in an `af=v1` link). `@bitcoinerrorlog/pubky-shop` follows the
 root dependency through the `overrides` entry, so the SDK is pinned in one
