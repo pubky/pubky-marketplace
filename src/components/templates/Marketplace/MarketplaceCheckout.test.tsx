@@ -2155,6 +2155,53 @@ describe('MarketplaceCheckout Paykit option (Bitcoin or USDT)', () => {
     expect(screen.queryByText(/USDT/)).not.toBeInTheDocument();
   });
 
+  describe('staging note', () => {
+    const USDT_NOTE = 'Staging environment. Bitcoin payments use test funds; USDT is real USDT0 on Arbitrum One.';
+    const BITCOIN_NOTE = 'Staging environment. No real funds move.';
+
+    beforeEach(() => {
+      view.deployEnv = 'staging';
+    });
+
+    it('says USDT is real when the checkout offers USDT', async () => {
+      seededCart();
+
+      render(<MarketplaceCheckout />);
+
+      expect(await screen.findByTestId('marketplace-checkout-method-paykit')).toHaveTextContent('Bitcoin or USDT');
+      expect(screen.getByText(USDT_NOTE)).toBeInTheDocument();
+      expect(screen.queryByText(BITCOIN_NOTE)).not.toBeInTheDocument();
+    });
+
+    it('says no real funds move for a Bitcoin-only checkout', async () => {
+      seededCart();
+      vi.mocked(CommerceController.getSellerPaymentConfig).mockImplementation(async () => ({
+        ...RAILS_WITH_USDT,
+        usdtAvailable: false,
+      }));
+
+      render(<MarketplaceCheckout />);
+
+      expect(await screen.findByText(BITCOIN_NOTE)).toBeInTheDocument();
+      expect(screen.queryByText(USDT_NOTE)).not.toBeInTheDocument();
+    });
+
+    it.each([
+      ['unpaid', USDT_NOTE],
+      ['paid-usdt', USDT_NOTE],
+      ['paid-bitcoin', BITCOIN_NOTE],
+    ] as const)('says the right thing while paying a %s Paykit order', (phase, note) => {
+      const paying = createPaykitOrderFixture(phase);
+      view.orders = [paying];
+      searchParams.current = new URLSearchParams({ order: paying.order.id });
+
+      render(<MarketplaceCheckout />);
+
+      expect(screen.getByText(note)).toBeInTheDocument();
+      expect(screen.queryByText(note === USDT_NOTE ? BITCOIN_NOTE : USDT_NOTE)).not.toBeInTheDocument();
+    });
+  });
+
   it('names USDT on a Bitcoin-priced cart too: the service fixes the rate', async () => {
     view.items = [
       {

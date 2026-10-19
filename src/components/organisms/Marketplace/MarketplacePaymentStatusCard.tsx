@@ -81,10 +81,12 @@ import {
   isUnobservedPaykitOrder,
   mayPayInBitcoin,
   observedPaymentRail,
+  orderMayPayInUsdt,
   orderOfferedAssets,
   paykitAssetsLabel,
   paykitAwaitingBody,
   paykitAwaitingTitle,
+  STAGING_USDT_FUNDS_NOTE,
 } from '@/libs/commerce/paykit-rail';
 import {
   BITCOIN_WALLET_FORK_REQUIRED_COPY,
@@ -358,7 +360,7 @@ export function MarketplacePaymentStatusCard({
           role="note"
           className="rounded-md border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-200"
         >
-          Staging environment — test rails, no real funds move
+          {orderMayPayInUsdt(order) ? STAGING_USDT_FUNDS_NOTE : 'Staging environment — test rails, no real funds move'}
         </Typography>
       )}
       {paidBitcoin?.sellerConfirmed && !paidBitcoin.onChain && (
