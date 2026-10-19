@@ -1,0 +1,1 @@
+A listing card in the grid no longer keeps showing Buy now after the item sells: cards re-read availability when an order for the listing appears or moves, when the listing page sees it change, and when the window regains focus.
