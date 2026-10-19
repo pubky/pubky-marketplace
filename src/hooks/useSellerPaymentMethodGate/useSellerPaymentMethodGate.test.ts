@@ -22,6 +22,7 @@ vi.mock('@/stores/auth/auth.store', () => ({
 vi.mock('@/controllers/commerce/commerce', () => ({
   CommerceController: {
     getSellerPaymentConfig: vi.fn(),
+    fetchUsdtPaymentsAvailable: vi.fn(),
   },
 }));
 
@@ -30,6 +31,7 @@ describe('useSellerPaymentMethodGate', () => {
     authState.currentUserPubky = OWNER;
     commerceMode.mode = 'transaction-service';
     vi.mocked(CommerceController.getSellerPaymentConfig).mockReset();
+    vi.mocked(CommerceController.fetchUsdtPaymentsAvailable).mockReset().mockResolvedValue(true);
   });
 
   it('skips the lookup in sandbox mode', () => {
@@ -51,6 +53,37 @@ describe('useSellerPaymentMethodGate', () => {
 
     await waitFor(() => expect(result.current.ready).toBe(true));
     expect(result.current).toEqual({ isDurable: true, ready: true, reason: 'no-method' });
+  });
+
+  it('clears the gate for a USDT-only seller while the deployment offers USDT', async () => {
+    vi.mocked(CommerceController.getSellerPaymentConfig).mockResolvedValue({
+      bitcoinAvailable: false,
+      bitcoinOfferAvailable: true,
+      paypalAvailable: false,
+      usdtAvailable: true,
+      acceptedAssets: ['USDT'],
+    });
+
+    const { result } = renderHook(() => useSellerPaymentMethodGate());
+
+    await waitFor(() => expect(result.current.ready).toBe(true));
+    expect(result.current.reason).toBeNull();
+  });
+
+  it('still reports no-method for a USDT-only seller when the deployment does not offer USDT', async () => {
+    vi.mocked(CommerceController.fetchUsdtPaymentsAvailable).mockResolvedValue(false);
+    vi.mocked(CommerceController.getSellerPaymentConfig).mockResolvedValue({
+      bitcoinAvailable: false,
+      bitcoinOfferAvailable: true,
+      paypalAvailable: false,
+      usdtAvailable: true,
+      acceptedAssets: ['USDT'],
+    });
+
+    const { result } = renderHook(() => useSellerPaymentMethodGate());
+
+    await waitFor(() => expect(result.current.ready).toBe(true));
+    expect(result.current.reason).toBe('no-method');
   });
 
   it('clears the gate when a payable method is configured', async () => {

@@ -87,14 +87,27 @@ export function listingPublishBlockToast(reason: ListingPublishBlockReason): {
   };
 }
 
+/**
+ * Whether a seller can take a payment a buyer could actually make: any rail
+ * the service reports as enabled and ready counts (Bitcoin, USDT or PayPal).
+ * USDT counts only while the deployment offers it (`loadUsdtPaymentsAvailable`:
+ * Shop flag AND service capability), the same gate checkout applies, so a
+ * USDT-only seller can publish exactly when a buyer could pay in USDT. The
+ * capability is read only when USDT is the sole candidate, and an unreadable
+ * capability is "could not verify", never "no payment method".
+ */
 export async function evaluateSellerPaymentMethodGate(input: {
   ownerPubky: string | null;
   loadPaymentConfig: (ownerPubky: string) => Promise<SellerPaymentConfig>;
+  loadUsdtPaymentsAvailable: () => Promise<boolean>;
 }): Promise<SellerPaymentMethodGateReason | null> {
   if (!input.ownerPubky) return 'unsigned';
   try {
     const config = await input.loadPaymentConfig(input.ownerPubky);
     if (availablePaymentMethods(config).length > 0) return null;
+    if (availablePaymentMethods(config, { usdtPaymentsAvailable: true }).length > 0) {
+      if (await input.loadUsdtPaymentsAvailable()) return null;
+    }
     return config.paykitUnreachable ? 'paykit-unreachable' : 'no-method';
   } catch {
     return 'unverified';
@@ -164,6 +177,7 @@ export async function evaluateDurableListingPublishGuards(input: {
   ownerPubky: string | null;
   hasMarketplaceSession: boolean;
   loadPaymentConfig: (ownerPubky: string) => Promise<SellerPaymentConfig>;
+  loadUsdtPaymentsAvailable: () => Promise<boolean>;
   deliveryKey?: SellerDeliveryKeyRequirement;
 }): Promise<ListingPublishBlockReason | null> {
   if (!input.ownerPubky) return 'unsigned';

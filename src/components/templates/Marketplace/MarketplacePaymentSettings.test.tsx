@@ -1031,6 +1031,52 @@ describe('MarketplacePaymentSettings', () => {
     expect(sessionStorage.getItem('pubky.marketplace.listingComposerReturnTo')).toBeNull();
   });
 
+  it('offers Continue listing to a USDT-only seller while the deployment offers USDT', async () => {
+    navigation.searchParams = new URLSearchParams('returnTo=/marketplace/sell');
+    mockedController.fetchUsdtPaymentsAvailable.mockResolvedValue(true);
+    mockedController.getSellerPaymentConfig.mockResolvedValue({
+      bitcoinAvailable: false,
+      bitcoinOfferAvailable: true,
+      paypalAvailable: false,
+      usdtAvailable: true,
+      acceptedAssets: ['USDT'],
+    });
+    await renderSettings();
+
+    const continueButton = await screen.findByRole('button', { name: /Continue listing/ });
+    await userEvent.click(continueButton);
+    expect(navigation.push).toHaveBeenCalledWith('/marketplace/sell');
+  });
+
+  it('returns to the listing composer after a USDT-only seller turns USDT on and saves', async () => {
+    navigation.searchParams = new URLSearchParams('returnTo=/marketplace/sell');
+    mockedController.fetchUsdtPaymentsAvailable.mockResolvedValue(true);
+    mockedController.getMyPaymentConfig.mockResolvedValue({
+      ...EMPTY_CONFIG,
+      usdtEnabled: false,
+      usdtSetup: 'ready',
+      usdtSetupAction: null,
+    });
+    mockedController.putMyPaymentConfig.mockImplementation(async (input) => ({
+      bitcoinEnabled: input.bitcoinEnabled,
+      paypalMerchantEmail: input.paypalMerchantEmail,
+      updatedAt: '2026-08-22T12:30:00.000Z',
+      usdtEnabled: input.usdtEnabled ?? false,
+      usdtSetup: 'ready',
+      usdtSetupAction: null,
+    }));
+    const user = userEvent.setup();
+    await renderSettings();
+
+    await user.click(await screen.findByRole('switch', { name: 'Accept USDT' }));
+    const usdtCard = screen.getByTestId('usdt-seller-setup').closest('section, article, div[class*="card"]');
+    expect(usdtCard).not.toBeNull();
+    await user.click(within(usdtCard as HTMLElement).getByRole('button', { name: 'Save changes' }));
+
+    await waitFor(() => expect(navigation.push).toHaveBeenCalledWith('/marketplace/sell'));
+    expect(mockedController.putMyPaymentConfig.mock.calls[0]?.[0]).toMatchObject({ usdtEnabled: true });
+  });
+
   it('leaves sign-out to account settings while social link-out is off', async () => {
     await renderSettings();
 

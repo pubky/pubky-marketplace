@@ -95,6 +95,7 @@ export async function evaluateListingActivationGuards(input: {
     ownerPubky: input.ownerPubky,
     hasMarketplaceSession: input.hasMarketplaceSession,
     loadPaymentConfig: (pubky) => CommerceController.getSellerPaymentConfig(pubky),
+    loadUsdtPaymentsAvailable: () => CommerceController.fetchUsdtPaymentsAvailable(),
     deliveryKey: sellerDeliveryKeyRequirement(ships),
   });
 }
@@ -326,6 +327,7 @@ export function useCreateMarketplaceListing(): UseCreateMarketplaceListingResult
       ownerPubky: currentUserPubky,
       hasMarketplaceSession: Boolean(marketplaceSession),
       loadPaymentConfig: (pubky) => CommerceController.getSellerPaymentConfig(pubky),
+      loadUsdtPaymentsAvailable: () => CommerceController.fetchUsdtPaymentsAvailable(),
       deliveryKey: sellerDeliveryKeyRequirement(shipsListing),
     }).then((reason) => {
       if (!active) return;
@@ -347,6 +349,7 @@ export function useCreateMarketplaceListing(): UseCreateMarketplaceListingResult
         ownerPubky: currentUserPubky,
         hasMarketplaceSession: Boolean(marketplaceSession),
         loadPaymentConfig: (pubky) => CommerceController.getSellerPaymentConfig(pubky),
+        loadUsdtPaymentsAvailable: () => CommerceController.fetchUsdtPaymentsAvailable(),
         deliveryKey: sellerDeliveryKeyRequirement(fulfillmentRequiresShipping(form.getValues('fulfillment'))),
       });
       if (reason) {
