@@ -13,12 +13,12 @@ export function useMarketplaceOrderItemMedia(listingAggregateId: string) {
     const listing = parseListingAggregateId(listingAggregateId);
     if (!listing) return;
     let active = true;
-    void CommerceController.getOrFetchListing(listing.sellerPubky, listing.listingId)
+    void CommerceController.getOrFetchListingIfFound(listing.sellerPubky, listing.listingId)
       .then((record) => {
         if (active) {
           setMedia({
             aggregateId: listingAggregateId,
-            urls: record.media.filter(({ type }) => type === 'image').map(({ url }) => url),
+            urls: record?.media.filter(({ type }) => type === 'image').map(({ url }) => url) ?? [],
           });
         }
       })
