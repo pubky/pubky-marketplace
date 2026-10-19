@@ -495,7 +495,9 @@ export function marketplaceRegionRefusalMessage(error: { code?: unknown; reason?
     case 'SELLER_ANNUAL_LIMIT_REACHED':
       return SELLER_LIMIT_MESSAGE;
     case 'DIGITAL_UNAVAILABLE_IN_REGION':
-      return `${DIGITAL_REGION_MESSAGE}.`;
+      return error.reason === 'buyer_region_unknown'
+        ? 'We couldn’t confirm where you’re connecting from, so digital items aren’t available right now. Try again in a moment.'
+        : `${DIGITAL_REGION_MESSAGE}.`;
     default:
       return null;
   }

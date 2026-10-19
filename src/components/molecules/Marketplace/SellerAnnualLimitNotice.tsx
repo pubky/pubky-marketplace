@@ -27,8 +27,8 @@ export function SellerAnnualLimitNotice({ limit }: { limit: MarketplaceSellerAnn
             {euros(limit.eurLimitCents ?? 0)}
           </Typography>
           <Typography as="p" className="text-sm text-muted-foreground">
-            Sellers based in the EU can make up to {limit.salesLimit} sales and take {euros(limit.eurLimitCents ?? 0)} a
-            calendar year here for now. After that, buyers can’t order from your shop until the new year.
+            Sellers based in the EU stop at {limit.salesLimit} sales or {euros(limit.eurLimitCents ?? 0)} in total a
+            calendar year, whichever comes first. After that, buyers can’t order from your shop until the new year.
           </Typography>
         </>
       )}

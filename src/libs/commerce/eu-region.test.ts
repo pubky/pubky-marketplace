@@ -92,6 +92,14 @@ describe('marketplaceRegionRefusalMessage', () => {
     expect(marketplaceRegionRefusalMessage({ code: 'DIGITAL_UNAVAILABLE_IN_REGION', reason: 'gb_buyer' })).toBe(
       `${DIGITAL_REGION_MESSAGE}.`,
     );
+    for (const reason of ['eu_buyer', 'gb_buyer', 'eu_ip', 'gb_ip']) {
+      expect(marketplaceRegionRefusalMessage({ code: 'DIGITAL_UNAVAILABLE_IN_REGION', reason })).toBe(
+        `${DIGITAL_REGION_MESSAGE}.`,
+      );
+    }
+    expect(
+      marketplaceRegionRefusalMessage({ code: 'DIGITAL_UNAVAILABLE_IN_REGION', reason: 'buyer_region_unknown' }),
+    ).toMatch(/couldn’t confirm where you’re connecting from/);
     expect(marketplaceRegionRefusalMessage({ code: 'LISTING_NOT_ACTIVE' })).toBeNull();
   });
 });

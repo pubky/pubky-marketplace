@@ -76,6 +76,9 @@ describe('SellerAnnualLimitNotice', () => {
       'Sales this year: 12 of 29, €850 of €2,000',
     );
     expect(screen.queryByTestId('seller-annual-limit-reconfirm')).not.toBeInTheDocument();
+    expect(screen.getByTestId('seller-annual-limit')).toHaveTextContent(
+      'stop at 29 sales or €2,000 in total a calendar year, whichever comes first',
+    );
   });
 
   it('asks a private seller to re-confirm', () => {
