@@ -57,7 +57,7 @@ describe('PrivacySettings', () => {
     render(<PrivacySettings />);
 
     expect(screen.getByText(SELLER_FOLLOW_NOTICE)).toBeInTheDocument();
-    expect(SELLER_FOLLOW_NOTICE).toMatch(/follows sellers you buy from/);
+    expect(SELLER_FOLLOW_NOTICE).toMatch(/follows a seller when you message them, buy from them or show interest/);
   });
 
   it('calls setShowConfirm when toggling confirmation switch', () => {

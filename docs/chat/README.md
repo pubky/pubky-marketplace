@@ -552,8 +552,13 @@ What the design protects, and what it does not. Threat IDs refer to
   opens that thread, when order counterparty discovery runs (transactional commerce modes), or when another
   device of the recipient already recorded the conversation in `/priv`.
 - **Private key unsealed in `/priv`** (above). Hardening later.
-- **Inbox CORS and staging/production deployment** are pending with the inbox team, and the inbox's
-  multi-device semantics (pings are wake-ups only) are an FYI to them.
+- **Inbox deployment.** The Shop only opens an inbox session when its runtime config carries
+  `PUBKY_RUNTIME_INBOX_URL`; each deployment sets it and the inbox service lists the Shop origin in
+  `INBOX_SERVER__CORS_ALLOWED_ORIGINS` (or answers `*`: the inbox uses bearer tokens, not cookies). The install
+  verifier fails a Shop that publishes no `inboxUrl` and one whose inbox refuses the Shop origin or answers
+  without requiring a session (`shop.runtime.inbox`, `shop.inbox.*` in
+  [install verification](../launch/install-verification.md)). The inbox's multi-device semantics (pings are
+  wake-ups only) are an FYI to the inbox team.
 - **Re-approval.** Sessions approved before the chat scopes were added see the `needs_reauth` notice until
   they sign in again. The app had not launched, so no production session is affected.
 - **No migration.** Conversations from the retired transport were device-local and are gone with the
