@@ -35,8 +35,17 @@ const mocked = vi.mocked(CommerceController);
 const mockedToast = vi.mocked(toast);
 
 /** The seller's own config with the service's uncached `bitcoin_setup`. */
-function ownConfig(bitcoinSetup: 'ready' | 'setup_required' | 'unavailable') {
-  return { bitcoinEnabled: false, bitcoinSetup, paypalMerchantEmail: null, updatedAt: '1970-01-01T00:00:00.000Z' };
+function ownConfig(
+  bitcoinSetup: 'ready' | 'setup_required' | 'unavailable',
+  bitcoinSetupAction?: 'setup' | 'reconnect' | null,
+) {
+  return {
+    bitcoinEnabled: false,
+    bitcoinSetup,
+    ...(bitcoinSetupAction === undefined ? {} : { bitcoinSetupAction }),
+    paypalMerchantEmail: null,
+    updatedAt: '1970-01-01T00:00:00.000Z',
+  };
 }
 
 function paykitUrl(path: string) {
@@ -188,6 +197,87 @@ describe('MarketplaceGetPaidSettings Bitkit reconnect (upstream Paykit)', () => 
     await userEvent.click(await screen.findByRole('button', { name: /Connect Bitkit/ }));
     expect(framePath(paykitFrame('Connect Bitkit'))).toBe('https://paykit.example/setup');
   });
+  describe('the service names the flow (bitcoin_setup_action)', () => {
+    it('sends a seller Paykit holds to reconnect, not to the initial setup it refuses', async () => {
+      mocked.getMyPaymentConfig.mockResolvedValue(ownConfig('setup_required', 'reconnect'));
+      await renderSettings();
+
+      expect(await screen.findByTestId('payment-method-status-bitcoin')).toHaveTextContent('Needs attention');
+      expect(screen.queryByRole('button', { name: /Connect Bitkit/ })).not.toBeInTheDocument();
+      expect(screen.getByTestId('bitcoin-toggle-blocker')).toHaveTextContent('Reconnect Bitkit first.');
+      expect(screen.getByRole('switch', { name: 'Accept bitcoin' })).toBeDisabled();
+
+      await userEvent.click(screen.getByRole('button', { name: /Reconnect Bitkit/ }));
+      const iframe = paykitFrame('Reconnect Bitkit');
+      expect(framePath(iframe)).toBe('https://paykit.example/setup/reconnect');
+      expect(new URL(iframe.src).searchParams.get('creator')).toBe(PUBKY);
+      expect(mocked.getPaykitSetupUrl).not.toHaveBeenCalled();
+
+      mocked.getMyPaymentConfig.mockResolvedValue(ownConfig('ready', null));
+      sendCallback(iframe);
+      expect(await screen.findByText('Wallet connected.')).toBeInTheDocument();
+      expect(mockedToast).toHaveBeenCalledWith({ title: 'Bitkit reconnected' });
+      expect(screen.getByTestId('payment-method-status-bitcoin')).toHaveTextContent('Connected');
+      expect(mocked.getPaykitSetupUrl).not.toHaveBeenCalled();
+    });
+
+    it('reconnects from the toggle blocker too, with one Reconnect Bitkit button on the step', async () => {
+      mocked.getMyPaymentConfig.mockResolvedValue(ownConfig('setup_required', 'reconnect'));
+      await renderSettings();
+
+      expect(await screen.findAllByRole('button', { name: /Reconnect Bitkit/ })).toHaveLength(1);
+      await userEvent.click(screen.getByRole('button', { name: 'Reconnect now' }));
+      expect(framePath(paykitFrame('Reconnect Bitkit'))).toBe('https://paykit.example/setup/reconnect');
+      expect(mocked.getPaykitSetupUrl).not.toHaveBeenCalled();
+    });
+
+    it('says reconnecting failed, with one Reconnect Bitkit offer, when that reconnect fails again', async () => {
+      mocked.getMyPaymentConfig.mockResolvedValue(ownConfig('setup_required', 'reconnect'));
+      await renderSettings();
+      await userEvent.click(await screen.findByRole('button', { name: /Reconnect Bitkit/ }));
+      sendCallback(paykitFrame('Reconnect Bitkit'), { error: 'setup-failed' });
+      await userEvent.click(
+        within(screen.getByRole('dialog', { name: 'Reconnect Bitkit' })).getByRole('button', { name: 'Cancel' }),
+      );
+
+      expect(screen.getByTestId('paykit-setup-problem')).toHaveTextContent('Reconnecting Bitkit failed. Try again.');
+      expect(screen.getAllByRole('button', { name: /Reconnect Bitkit/ })).toHaveLength(1);
+      expect(screen.queryByRole('button', { name: /Connect Bitkit|Try again/ })).not.toBeInTheDocument();
+    });
+
+    it('keeps the initial setup for a seller Paykit does not hold', async () => {
+      mocked.getMyPaymentConfig.mockResolvedValue(ownConfig('setup_required', 'setup'));
+      await renderSettings();
+
+      expect(await screen.findByTestId('payment-method-status-bitcoin')).toHaveTextContent('Not set up');
+      expect(screen.getByTestId('bitcoin-toggle-blocker')).toHaveTextContent('Connect Bitkit first.');
+      await userEvent.click(screen.getByRole('button', { name: /Connect Bitkit/ }));
+      expect(framePath(paykitFrame('Connect Bitkit'))).toBe('https://paykit.example/setup');
+      expect(mocked.getPaykitReconnectUrl).not.toHaveBeenCalled();
+    });
+
+    it('ignores the action on the fork, which has no reconnect route', async () => {
+      runtime.api = 'fork';
+      mocked.getMyPaymentConfig.mockResolvedValue(ownConfig('setup_required', 'reconnect'));
+      await renderSettings();
+
+      expect(await screen.findByTestId('payment-method-status-bitcoin')).toHaveTextContent('Not set up');
+      await userEvent.click(screen.getByRole('button', { name: /Connect Bitkit/ }));
+      expect(framePath(paykitFrame('Connect Bitkit'))).toBe('https://paykit.example/setup');
+      expect(mocked.getPaykitReconnectUrl).not.toHaveBeenCalled();
+    });
+
+    it('offers no flow while the answer is unavailable, whatever the action says', async () => {
+      mocked.getMyPaymentConfig.mockResolvedValue(ownConfig('unavailable', 'reconnect'));
+      await renderSettings();
+
+      expect(await screen.findByTestId('bitkit-setup-unknown')).toBeInTheDocument();
+      expect(
+        screen.queryByRole('button', { name: /Connect Bitkit|Reconnect Bitkit|Connect now|Reconnect now/ }),
+      ).toBeNull();
+    });
+  });
+
   it('keeps the fork Paykit on its initial setup route', async () => {
     runtime.api = 'fork';
     mocked.getMyPaymentConfig.mockResolvedValue(ownConfig('ready'));
