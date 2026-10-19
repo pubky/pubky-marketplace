@@ -17,8 +17,8 @@ import { formatCommerceMoney } from '@/libs/commerce/format';
 import { soldOutVariantIds, tracksVariantStock } from '@/libs/commerce/listing-variants';
 import {
   type CommerceDropRecord,
-  type CommerceListingRecord,
   commerceListingFulfillmentMethods,
+  type CommerceListingRecord,
 } from '@/libs/commerce/marketplace-records';
 import { RegionAvailabilityNotice } from '@/molecules/Marketplace/RegionAvailabilityNotice';
 import { MarketplaceDeliveryKeyChangeDialog } from '@/organisms/Marketplace/MarketplaceDeliveryKeyChangeDialog';

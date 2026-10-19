@@ -8,7 +8,8 @@ import {
   marketplaceShopSettingsDefaults,
   marketplaceShopSettingsSchema,
 } from '@/hooks/useMarketplaceShopSettings/useMarketplaceShopSettings.types';
-import { MarketplaceShopSettingsFormView, type MarketplaceShopSettings } from './MarketplaceShopSettingsForm';
+import { asOpaque } from '@/test-utils/type-assertions';
+import { type MarketplaceShopSettings, MarketplaceShopSettingsFormView } from './MarketplaceShopSettingsForm';
 
 vi.mock('@/hooks/useSellerAnnualLimit/useSellerAnnualLimit', () => ({
   useSellerAnnualLimit: () => ({ status: 'idle' }),
@@ -29,7 +30,7 @@ function Harness({ sellerStatus }: { sellerStatus: MarketplaceShopSettingsData['
     resolver: zodResolver(marketplaceShopSettingsSchema),
     defaultValues: { ...marketplaceShopSettingsDefaults, name: 'Quiet Shop', sellerStatus },
   });
-  const settings = {
+  const settings = asOpaque<MarketplaceShopSettings>({
     isLoading: false,
     loadError: null,
     hasShop: true,
@@ -46,7 +47,7 @@ function Harness({ sellerStatus }: { sellerStatus: MarketplaceShopSettingsData['
       })();
       return valid;
     },
-  } as unknown as MarketplaceShopSettings;
+  });
   return <MarketplaceShopSettingsFormView settings={settings} />;
 }
 

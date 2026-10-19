@@ -1,7 +1,7 @@
 'use client';
 
-import type { SellerDeclaration } from '@/libs/commerce/eu-region';
 import { useMarketplaceSellerSummary } from '@/hooks/useMarketplaceSellerSummary/useMarketplaceSellerSummary';
+import type { SellerDeclaration } from '@/libs/commerce/eu-region';
 import { PrivateSellerNotice, RoleStatement } from './SellerSaleTerms';
 
 function NamedPrivateSellerNotice({ sellerPubky }: { sellerPubky: string }) {

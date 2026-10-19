@@ -1,7 +1,7 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
-import { BUYER_COUNTRY_PROMPT, PRIVATE_SELLER_NOTICE, ROLE_STATEMENT } from '@/libs/commerce/eu-region';
 import type { RegionAvailability } from '@/hooks/useRegionAvailability/useRegionAvailability';
+import { BUYER_COUNTRY_PROMPT, PRIVATE_SELLER_NOTICE, ROLE_STATEMENT } from '@/libs/commerce/eu-region';
 import { BuyerCountryField } from './BuyerCountryField';
 import { RegionAvailabilityNotice } from './RegionAvailabilityNotice';
 import { SellerAnnualLimitNotice } from './SellerAnnualLimitNotice';

@@ -99,12 +99,12 @@ import type { CommerceListingModelSchema } from '@/models/commerce/commerce.sche
 import { BitkitDownloads } from '@/molecules/BitkitDownloads/BitkitDownloads';
 import { ControlledInputField } from '@/molecules/ControlledInputField/ControlledInputField';
 import { BuyerCountryField } from '@/molecules/Marketplace/BuyerCountryField';
+import { CheckoutSaleTerms } from '@/molecules/Marketplace/CheckoutSaleTerms';
 import { DeliveryKeyBlockedNotice } from '@/molecules/Marketplace/DeliveryKeyBlockedNotice';
 import { MarketplaceCheckoutStatusLabels } from '@/molecules/Marketplace/MarketplaceCheckoutStatusLabels';
 import { MarketplaceCheckoutSteps } from '@/molecules/Marketplace/MarketplaceCheckoutSteps';
 import { MarketplaceSellerLink } from '@/molecules/Marketplace/MarketplaceSellerLink';
 import { PaykitOutageNotice } from '@/molecules/Marketplace/PaykitOutageNotice';
-import { CheckoutSaleTerms } from '@/molecules/Marketplace/CheckoutSaleTerms';
 import { MarketplaceAddressFields } from '@/molecules/MarketplaceAddressFields/MarketplaceAddressFields';
 import { SettingsSectionContent } from '@/molecules/Settings/SettingsSectionContent/SettingsSectionContent';
 import { ContentLayout } from '@/organisms/ContentLayout/ContentLayout';
@@ -1487,10 +1487,7 @@ function MarketplaceCartCheckout() {
                           {region.refusal}
                         </Typography>
                       )}
-                      <CheckoutSaleTerms
-                        sellerPubkys={checkoutSellers}
-                        declarations={region.declarations}
-                      />
+                      <CheckoutSaleTerms sellerPubkys={checkoutSellers} declarations={region.declarations} />
                       {!canPay && (
                         <Typography id="checkout-pay-reason" as="p" className="text-xs text-muted-foreground">
                           {payDisabledReason}
