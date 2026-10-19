@@ -37,8 +37,45 @@ jobs:
           image: pubky-app
           cache_from: type=gha
           cache_to: type=gha,mode=max
+          # NEXT_PUBLIC_APP_VERSION is the Sentry release (client and server); the sentry-release job below creates
+          # the release under the same commit SHA. GIT_COMMIT is what GET /api/build reports.
           build_args: |
             NEXT_PUBLIC_DB_VERSION=9
             NEXT_PUBLIC_DB_NAME=shop-franky
             NEXT_PUBLIC_DEBUG_MODE=false
             NEXT_PUBLIC_APP_VERSION=${{ github.sha }}
+            GIT_COMMIT=${{ github.sha }}
+
+  sentry-release:
+    name: Create Sentry release
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          # set-commits --auto walks the history back to the previous release's commit.
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+        env:
+          CYPRESS_INSTALL_BINARY: '0'
+
+      # Skips with a warning while the SENTRY_AUTH_TOKEN secret is unset. The deploy is recorded by whoever rolls
+      # the image out, under the environment the container sets (docs/sentry.md).
+      - name: Create the release, associate its commits and finalize it
+        run: npx tsx scripts/sentry-release/main.ts
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_ORG: synonym-52
+          SENTRY_PROJECT: pubky-marketplace
+          NEXT_PUBLIC_APP_VERSION: ${{ github.sha }}

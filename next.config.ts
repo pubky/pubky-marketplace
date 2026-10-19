@@ -10,6 +10,7 @@ import {
   normalizeAssetPrefix,
   normalizeBasePath,
 } from './src/libs/base-path/base-path';
+import { resolveSentryRelease } from './src/libs/build-info/build-info';
 import { buildSocialLinkOutRedirects, parseSocialHost, resolveShopOrigins } from './src/libs/social-host/social-host';
 
 /**
@@ -61,7 +62,7 @@ export const redirects = async () => [
 const nextConfig: NextConfig = {
   ...resolveMountConfig(process.env),
   env: {
-    NEXT_PUBLIC_APP_VERSION: process.env.NEXT_PUBLIC_APP_VERSION ?? packageJson.version,
+    NEXT_PUBLIC_APP_VERSION: resolveSentryRelease(process.env, packageJson.version),
   },
   reactCompiler: true,
   transpilePackages: ['@bitcoinerrorlog/pubky-shop'],
@@ -145,10 +146,10 @@ export default withSentryConfig(composedConfig, {
   sourcemaps: {
     disable: true,
   },
-  // Release identification comes from Sentry.init({ release }) at runtime. Local builds use the
-  // package version; Docker CI overrides NEXT_PUBLIC_APP_VERSION with the commit SHA so events
-  // and uploaded maps share one release value. Disable release creation here so the plugin never
-  // attempts Sentry API calls.
+  // Events carry Sentry.init({ release }): NEXT_PUBLIC_APP_VERSION, the deployed commit SHA on
+  // Vercel and in Docker CI (see resolveSentryRelease). scripts/sentry-release creates that release
+  // and associates its commits; the plugin never calls the Sentry API, which in webpack builds it
+  // would do once per compiler.
   release: {
     create: false,
   },

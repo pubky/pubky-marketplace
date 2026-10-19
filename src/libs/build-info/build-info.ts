@@ -1,6 +1,7 @@
 const COMMIT_UNKNOWN = 'unknown';
 const COMMIT_SHORT_LENGTH = 12;
 const COMMIT_MIN_LENGTH = 7;
+const FULL_COMMIT_PATTERN = /^[0-9a-f]{40}$/i;
 
 type CommitEnv = Record<string, string | undefined>;
 
@@ -19,4 +20,26 @@ export function readBuildCommit(env: CommitEnv = process.env): string {
     }
   }
   return COMMIT_UNKNOWN;
+}
+
+export function isFullCommitSha(value: string): boolean {
+  return FULL_COMMIT_PATTERN.test(value);
+}
+
+/**
+ * The Sentry release of a build, baked into it as `NEXT_PUBLIC_APP_VERSION`: the deployed commit's full SHA.
+ *
+ * An explicit `NEXT_PUBLIC_APP_VERSION` wins and is returned verbatim, because the Dockerfile uploads source maps
+ * under that exact string (Docker CI passes the tagged commit's SHA). Otherwise the commit comes from `GIT_COMMIT`
+ * (`--build-env` on a Vercel CLI deploy) or Vercel's `VERCEL_GIT_COMMIT_SHA`; only a full SHA is accepted there.
+ * A build with none of them (a local build) reports `fallback`, the package version, and gets no Sentry release.
+ */
+export function resolveSentryRelease(env: CommitEnv, fallback: string): string {
+  const explicit = env.NEXT_PUBLIC_APP_VERSION;
+  if (explicit?.trim()) return explicit;
+  for (const raw of [env.GIT_COMMIT, env.VERCEL_GIT_COMMIT_SHA]) {
+    const sha = raw?.trim();
+    if (sha && isFullCommitSha(sha)) return sha.toLowerCase();
+  }
+  return fallback;
 }

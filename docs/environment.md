@@ -18,7 +18,7 @@ The schema is intentionally small:
 
 - **Build-intrinsic public values** (baked into the artifact by design): `NEXT_PUBLIC_DB_NAME`, `NEXT_PUBLIC_DB_VERSION`, `NEXT_PUBLIC_DEBUG_MODE`, `NEXT_PUBLIC_APP_VERSION`, and the optional social link-out origin `NEXT_PUBLIC_SOCIAL_HOST`.
 - **Server-only variables** (never exposed to the browser): `HOMESERVER_ADMIN_URL` / `HOMESERVER_ADMIN_PASSWORD` (dev/test signup tokens) and the Chatwoot support credentials (`BASE_URL_SUPPORT`, `SUPPORT_API_ACCESS_TOKEN`, `SUPPORT_ACCOUNT_ID`).
-- **Build commit** (optional, read straight from the process environment, not part of the schema): `GIT_COMMIT` (Docker build arg or `--env` on a CLI deploy) or Vercel's `VERCEL_GIT_COMMIT_SHA`. `GET /api/build` returns the short SHA as `{"commit": "..."}`, or `unknown`, and nothing else.
+- **Build commit** (optional, read straight from the process environment, not part of the schema): `GIT_COMMIT` (Docker build arg, or `--env` on a CLI deploy) or Vercel's `VERCEL_GIT_COMMIT_SHA`. `GET /api/build` returns the short SHA as `{"commit": "..."}`, or `unknown`, and nothing else. At build time the same variables (`--build-env` on a CLI deploy) give the full SHA that becomes `NEXT_PUBLIC_APP_VERSION`, the Sentry release, when `NEXT_PUBLIC_APP_VERSION` itself is unset (see [Sentry → Releases](sentry.md#releases)).
 - `NODE_ENV` / `VITEST`.
 
 ### Removed vibe session consumer
