@@ -188,6 +188,34 @@ describe('MarketplaceGetPaidSettings Bitkit reconnect (upstream Paykit)', () => 
     await userEvent.click(await screen.findByRole('button', { name: /Connect Bitkit/ }));
     expect(framePath(paykitFrame('Connect Bitkit'))).toBe('https://paykit.example/setup');
   });
+  it('reconnects a seller whose Bitcoin was on when Paykit no longer validates its session', async () => {
+    mocked.getMyPaymentConfig.mockResolvedValue({ ...ownConfig('setup_required'), bitcoinEnabled: true });
+    await renderSettings();
+    expect(screen.queryByRole('button', { name: /Connect Bitkit/ })).not.toBeInTheDocument();
+
+    await userEvent.click(await screen.findByRole('button', { name: /Reconnect Bitkit/ }));
+    expect(framePath(paykitFrame('Reconnect Bitkit'))).toBe('https://paykit.example/setup/reconnect');
+    expect(mocked.getPaykitSetupUrl).not.toHaveBeenCalled();
+  });
+
+  it('adds USDT through reconnect, not initial setup, for that seller', async () => {
+    mocked.fetchUsdtPaymentsAvailable.mockResolvedValue(true);
+    mocked.getMyPaymentConfig.mockResolvedValue({
+      ...ownConfig('setup_required'),
+      bitcoinEnabled: true,
+      usdtEnabled: false,
+      usdtSetup: 'setup_required',
+      usdtSetupAction: 'setup',
+    });
+    await renderSettings();
+
+    const panel = await screen.findByTestId('usdt-readiness-reconnect');
+    expect(screen.queryByRole('button', { name: /Set up Bitkit payments/ })).not.toBeInTheDocument();
+    await userEvent.click(within(panel).getByRole('button', { name: /Add USDT in Bitkit/ }));
+    expect(framePath(paykitFrame('Add USDT in Bitkit'))).toBe('https://paykit.example/setup/reconnect');
+    expect(mocked.getPaykitSetupUrl).not.toHaveBeenCalled();
+  });
+
   it('keeps the fork Paykit on its initial setup route', async () => {
     runtime.api = 'fork';
     mocked.getMyPaymentConfig.mockResolvedValue(ownConfig('ready'));

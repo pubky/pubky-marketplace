@@ -344,7 +344,16 @@ export function MarketplaceGetPaidSettings({ onSaved }: MarketplaceGetPaidSettin
   );
 
   const paypalStatus = derivePaypalStatus(payments.config);
-  const usdtReadiness = deriveUsdtSellerReadiness(serverConfig ?? {});
+  const upstreamPaykit = getPaykitServerApi() === 'upstream';
+  // Upstream Paykit refuses a second initial setup for an account it holds, so such a seller reconnects. A stored
+  // `bitcoin_enabled` could only be switched on while Bitkit read connected, so Paykit holds that seller's account
+  // even when its session no longer validates (`bitcoin_setup: setup_required`).
+  const paykitHoldsAccount =
+    upstreamPaykit &&
+    (payments.accountClaimed === true ||
+      (payments.accountClaimed === false && payments.config?.bitcoinEnabled === true));
+  const serverUsdtReadiness = deriveUsdtSellerReadiness(serverConfig ?? {});
+  const usdtReadiness = paykitHoldsAccount && serverUsdtReadiness === 'setup' ? 'reconnect' : serverUsdtReadiness;
   // Before a session there is no read: the pill matches PayPal and USDT and the
   // Enable selling card is the next step. A reload keeps a known answer; with
   // none yet, nothing is claimed until the read returns.
@@ -373,10 +382,9 @@ export function MarketplaceGetPaidSettings({ onSaved }: MarketplaceGetPaidSettin
       ? paykitSetupProblemState.problem
       : null;
   const paykitCodeExpired = paykitSetupStatus === 'error' || paykitSetupStatus === 'timeout';
-  const upstreamPaykit = getPaykitServerApi() === 'upstream';
-  // Upstream Paykit refuses a second initial setup for an account it holds, so a connected wallet reconnects.
-  const step2Mode: PaykitSetupMode = upstreamPaykit && payments.accountClaimed === true ? 'bitcoin-reconnect' : 'setup';
-  const offerBitcoinReconnect = upstreamPaykit && paykitSetupProblem === 'error' && payments.accountClaimed === false;
+  const step2Mode: PaykitSetupMode = paykitHoldsAccount ? 'bitcoin-reconnect' : 'setup';
+  const offerBitcoinReconnect =
+    upstreamPaykit && !paykitHoldsAccount && paykitSetupProblem === 'error' && payments.accountClaimed === false;
   const failedSetupInDialog = upstreamPaykit && paykitSetupStatus === 'error' && paykitSetupMode === 'setup';
   // Only the missing-step reason is explained here; without a session the
   // card's "Enable selling" prompt already says why the switch is off.
@@ -589,7 +597,7 @@ export function MarketplaceGetPaidSettings({ onSaved }: MarketplaceGetPaidSettin
                   variant="link"
                   className="h-auto p-0"
                   disabled={!currentUserPubky}
-                  onClick={() => openPaykitSetup('setup')}
+                  onClick={() => openPaykitSetup(step2Mode)}
                 >
                   Connect now
                 </Button>
