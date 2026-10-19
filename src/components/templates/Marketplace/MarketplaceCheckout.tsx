@@ -67,6 +67,7 @@ import {
   paykitRequirementCopy,
   sharedPaykitAssets,
   STAGING_USDT_FUNDS_NOTE,
+  unboundOrderMayPayInUsdt,
 } from '@/libs/commerce/paykit-rail';
 import {
   BITCOIN_WALLET_FORK_REQUIRED_COPY,
@@ -361,6 +362,8 @@ function MarketplaceCartCheckout() {
     !isLocksCheckout &&
     (usdtCapabilityChecking || usdtPaymentsAvailable) &&
     (loadedForCart === null || paykitOffersUsdt);
+  // A resumed order without a method shows its own picker; only a closed USDT gate rules USDT out there.
+  const resumeOfferedAssets = usdtCapabilityChecking || usdtPaymentsAvailable ? null : BITCOIN_ONLY_ASSETS;
   const usdtMissingExplanation = usdtMissingOptionExplanation({
     gateOpen: usdtPaymentsAvailable && !isSandbox && !isLocksCheckout,
     offered: paykitOffersUsdt,
@@ -761,7 +764,9 @@ function MarketplaceCartCheckout() {
                 role="note"
                 className="rounded-md border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-200"
               >
-                {focusedPaying.some(({ order }) => orderMayPayInUsdt(order))
+                {focusedPaying.some(
+                  ({ order }) => orderMayPayInUsdt(order) || unboundOrderMayPayInUsdt(order, resumeOfferedAssets),
+                )
                   ? STAGING_USDT_FUNDS_NOTE
                   : 'Staging environment. No real funds move.'}
               </Typography>

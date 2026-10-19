@@ -100,6 +100,16 @@ export function orderMayPayInUsdt(order: RailOrder & { acceptedAssets?: readonly
 }
 
 /**
+ * An order with no method bound yet pays on whatever the picker beside it
+ * offers. `offeredAssets` is null until those assets load, when USDT may still
+ * be among them.
+ */
+export function unboundOrderMayPayInUsdt(order: RailOrder, offeredAssets: readonly PaymentAsset[] | null): boolean {
+  if (order.paymentMethod) return false;
+  return offeredAssets === null || offeredAssets.includes('USDT');
+}
+
+/**
  * Staging runs Bitcoin on regtest, but Bitkit has no test USDT: its USDT is
  * real USDT0 on Arbitrum One on staging builds too. The staging note claims no
  * real funds move only when USDT cannot be paid.

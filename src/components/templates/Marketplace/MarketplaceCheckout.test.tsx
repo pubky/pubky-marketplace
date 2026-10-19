@@ -2200,6 +2200,21 @@ describe('MarketplaceCheckout Paykit option (Bitcoin or USDT)', () => {
       expect(screen.getByText(note)).toBeInTheDocument();
       expect(screen.queryByText(note === USDT_NOTE ? BITCOIN_NOTE : USDT_NOTE)).not.toBeInTheDocument();
     });
+
+    it.each([
+      [true, USDT_NOTE],
+      [false, BITCOIN_NOTE],
+    ] as const)('follows the USDT gate (%s) while paying an order with no method bound yet', async (usdt, note) => {
+      vi.mocked(CommerceController.fetchUsdtPaymentsAvailable).mockResolvedValue(usdt);
+      const paying = createPaykitOrderFixture('unpaid', { paymentMethod: null, acceptedAssets: null });
+      view.orders = [paying];
+      searchParams.current = new URLSearchParams({ order: paying.order.id });
+
+      render(<MarketplaceCheckout />);
+
+      expect(await screen.findByText(note)).toBeInTheDocument();
+      expect(screen.queryByText(note === USDT_NOTE ? BITCOIN_NOTE : USDT_NOTE)).not.toBeInTheDocument();
+    });
   });
 
   it('names USDT on a Bitcoin-priced cart too: the service fixes the rate', async () => {
