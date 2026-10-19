@@ -4,7 +4,7 @@ import { CheckCircle2, ExternalLink, RefreshCw } from 'lucide-react';
 import { Button } from '@/atoms/Button/Button';
 import { Switch } from '@/atoms/Switch/Switch';
 import { Typography } from '@/atoms/Typography/Typography';
-import { type UsdtSellerReadiness, usdtNeedsBitkitCopy } from '@/libs/commerce/usdt-seller-setup';
+import { usdtNeedsBitkitCopy, type UsdtSellerReadiness } from '@/libs/commerce/usdt-seller-setup';
 import type { GrantSigner } from '@/stores/auth/auth.types';
 
 type MarketplaceUsdtSellerSetupProps = {

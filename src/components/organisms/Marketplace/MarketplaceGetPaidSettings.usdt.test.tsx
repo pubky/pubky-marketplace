@@ -1,3 +1,4 @@
+import type { Session } from '@synonymdev/pubky';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -7,7 +8,6 @@ import { type SellerPaymentConfigOwnView, sellerPaymentConfigOwnViewSchema } fro
 import { toCamelCaseWire } from '@/libs/commerce/wire-casing';
 import { toast } from '@/molecules/Toaster/use-toast';
 import { MarketplaceGetPaidSettings } from '@/organisms/Marketplace/MarketplaceGetPaidSettings';
-import type { Session } from '@synonymdev/pubky';
 import { useAuthStore } from '@/stores/auth/auth.store';
 import type { GrantSigner } from '@/stores/auth/auth.types';
 import { useCommerceStore } from '@/stores/commerce/commerce.store';
@@ -18,6 +18,7 @@ import {
   USDT_SELLER_CONFIG_SETUP_WIRE,
   USDT_SELLER_CONFIG_UNAVAILABLE_WIRE,
 } from '@/test/fixtures/commerce/seller-payment-config-usdt.wire';
+import { asOpaque } from '@/test-utils/type-assertions';
 
 const runtime = vi.hoisted(() => ({ api: 'fork' as 'fork' | 'upstream' }));
 vi.mock('@/config/commerce', async (importOriginal) => {
@@ -107,7 +108,7 @@ beforeEach(() => {
 });
 
 function signInWith(grantSigner: GrantSigner) {
-  useAuthStore.setState({ session: { grant: {} } as unknown as Session, grantSigner });
+  useAuthStore.setState({ session: asOpaque<Session>({ grant: {} }), grantSigner });
 }
 
 function methodTitles() {
