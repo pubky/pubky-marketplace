@@ -30,10 +30,14 @@ For readable production stack traces, the **Shop image build** also needs:
 
 - `SENTRY_ORG=synonym-52`
 - `SENTRY_PROJECT=pubky-marketplace`
-- `SENTRY_AUTH_TOKEN` from the CI secret store, authorized to upload source maps to that project
-- `NEXT_PUBLIC_APP_VERSION` identifying the Shop commit being built
+- `SENTRY_AUTH_TOKEN` from the CI secret store, authorized to upload source maps and manage releases
+  (`org:ci` for an organization token, or `org:read` plus `project:releases` for a personal token)
+- `NEXT_PUBLIC_APP_VERSION` set to the full SHA of the Shop commit being built, not the infra repo's SHA
 
-The Dockerfile already supports these inputs and uploads the maps for that exact build. Without
+The Dockerfile uploads the maps for that exact build, then creates the release and associates
+`pubky/pubky-marketplace@<Shop SHA>`. A failed map upload fails the image build. Release metadata
+failures log a warning and let the build continue: events still carry the release and resolve maps
+through Debug IDs. Without
 upload credentials, errors still arrive but browser stack traces may remain minified. Never expose
 the auth token in `PUBKY_RUNTIME_*` or `NEXT_PUBLIC_*` variables. Runtime DSN changes require a
 container restart/redeploy, not a new frontend build; uploading maps requires the build artifacts.
@@ -52,40 +56,57 @@ Every event's `release` is the **deployed commit's full SHA**, baked into the bu
 `NEXT_PUBLIC_APP_VERSION` for the browser, Node and Edge runtimes alike (`resolveSentryRelease` in
 `src/libs/build-info/build-info.ts`):
 
-| Deploy path                                         | Release taken from                                                         | Release created by                  |
-| --------------------------------------------------- | -------------------------------------------------------------------------- | ----------------------------------- |
-| Docker image from a `v*` tag (`release-docker.yml`) | the `NEXT_PUBLIC_APP_VERSION` build arg, the tagged commit                 | the workflow's `sentry-release` job |
-| Vercel (John Staging, John Prod)                    | `GIT_COMMIT` (`--build-env` on a CLI deploy), else `VERCEL_GIT_COMMIT_SHA` | the build command in `vercel.json`  |
-| Local build                                         | the package version                                                        | nobody                              |
+| Deploy path                                         | Release taken from                                                         | Release created by                                        |
+| --------------------------------------------------- | -------------------------------------------------------------------------- | --------------------------------------------------------- |
+| Docker image built by `shop-migration`              | the `NEXT_PUBLIC_APP_VERSION` build arg, the Shop submodule commit         | the Dockerfile, when Sentry build credentials are present |
+| Docker image from a `v*` tag (`release-docker.yml`) | the `NEXT_PUBLIC_APP_VERSION` build arg, the tagged commit                 | the workflow's `sentry-release` job                       |
+| Vercel (John Staging, John Prod)                    | `GIT_COMMIT` (`--build-env` on a CLI deploy), else `VERCEL_GIT_COMMIT_SHA` | the build command in `vercel.json`                        |
+| Local build                                         | the package version                                                        | nobody                                                    |
 
 `scripts/sentry-release` creates the release under that exact name, associates its commits and
 finalizes it. On Vercel it also records the deploy under the environment the events carry
 (`PUBKY_RUNTIME_SENTRY_ENVIRONMENT`, else `production`). With commits attached, stack-trace links open
 each file at the deployed commit, and suspect commits and `Fixes <ISSUE>` resolution work. The script
 skips with a warning while `SENTRY_AUTH_TOKEN` is unset. On Vercel a Sentry failure is printed in the
-build log and never blocks the deploy; in the Docker workflow it fails the `sentry-release` job (the
+build log and never blocks the deploy; in the tag-release workflow it fails the `sentry-release` job (the
 image is already pushed). The `withSentryConfig` plugin creates no releases: in webpack builds it would
 create one per compiler.
+
+The credentialed Docker build runs the same script with `--no-git --warn-only` after uploading maps. `--no-git`
+names the Shop repository and baked-in SHA explicitly, so no Git history or enclosing infra checkout
+is used. A release-script failure warns without blocking the image build; builds without the Sentry
+credentials skip both steps. No deploy is recorded during the build: the same image can be promoted to staging
+and production later.
 
 **Prerequisite (Sentry admin):** commit association resolves only once `pubky/pubky-marketplace` is
 added to the Sentry GitHub integration: **Settings → Integrations → GitHub → Configure → Add
 Repository**, with the Sentry GitHub App granted access to the repository in the `pubky` org, and a
 code mapping for the `pubky-marketplace` project on branch `master` (**Code Mappings → Add Mapping**).
 `sentry-cli repos list` then prints `pubky/pubky-marketplace`. Until then `set-commits` fails while the
-release is still created, finalized and (on Vercel) deployed. The Docker job uses `set-commits --auto`
-on a full-history checkout. A Vercel CLI upload has no git history, so there the commit is named
-explicitly and its range starts at the previous release with commits; `sentry-cli` needs a previous
-commit for the project's first such release, so the first one should come from the Docker job or a
-Vercel git deployment (which provides `VERCEL_GIT_PREVIOUS_SHA`).
+release is still created, finalized and (on Vercel) deployed. The tag-release job uses `set-commits --auto`
+on a full-history checkout. Docker builds and Vercel CLI uploads name the commit explicitly. Sentry
+fetches the range from the previous release when available; for the first release, the GitHub
+integration fetches recent commits ending at the supplied SHA. A Vercel git deployment can supply
+`VERCEL_GIT_PREVIOUS_SHA` as the range start.
 
 Credentials, never committed and never in `PUBKY_RUNTIME_*` or `NEXT_PUBLIC_*`:
 
+- Docker builds in `pubky/shop-migration`: its `SENTRY_AUTH_TOKEN` CI secret is passed with
+  `SENTRY_ORG=synonym-52`, `SENTRY_PROJECT=pubky-marketplace` and the Shop submodule's full SHA as
+  `NEXT_PUBLIC_APP_VERSION`. No additional build input is needed for commit association.
 - GitHub Actions secret `SENTRY_AUTH_TOKEN` on `pubky/pubky-marketplace`: a `synonym-52` organization
   auth token (Settings → Developer Settings → Organization Tokens). The workflow sets the org and
   project.
 - Vercel, in each project that should create releases: `SENTRY_AUTH_TOKEN` (sensitive),
   `SENTRY_ORG=synonym-52` and `SENTRY_PROJECT=pubky-marketplace`. Leave `NEXT_PUBLIC_APP_VERSION`
   unset there: it would replace the commit SHA.
+
+Never pass `SENTRY_AUTH_TOKEN` as a Docker build arg from a public repository workflow, including
+`release-docker.yml`. `docker/build-push-action` defaults to `mode=max` provenance for public repos,
+which records build args in the published attestation. The token can also appear in the builder
+stage's image history. The current private `shop-migration` build uses a build arg and the action's
+default `mode=min` provenance. Moving this token to a BuildKit secret mount requires
+support in the shared build action and is a separate change.
 
 The GCP deployment records its own deploys, because the image is promoted across environments. After
 an image is live, run this with the image's commit SHA and the container's
@@ -214,7 +235,7 @@ All Sentry and Pulse values are part of the **optional runtime-config tier** ([A
 | `PUBKY_RUNTIME_PULSE_CLIENT_KEY`                    | browser                 | Optional. Empty/unset disables Pulse entirely. Public, write-only `pulse_client_…` key — never an admin key.  |
 | `PUBKY_RUNTIME_PULSE_ENDPOINT`                      | browser                 | Optional. Overrides the SDK's hosted ingest host (`https://ingest.pubkypulse.com`); self-hosters must set it. |
 
-`SENTRY_AUTH_TOKEN` / `SENTRY_ORG` / `SENTRY_PROJECT` are optional build inputs: the Dockerfile uses them for source-map upload, and `scripts/sentry-release` for the release ([Releases](#releases)). They are never app runtime config and are not required to build or run the public image. The release tag comes from `NEXT_PUBLIC_APP_VERSION`, the deployed commit SHA on Vercel and in Docker CI (so SDK events, uploaded maps and the created release share one name); local builds fall back to the package version.
+`SENTRY_AUTH_TOKEN` / `SENTRY_ORG` / `SENTRY_PROJECT` are optional build inputs: the Dockerfile uses them for release creation, commit association and source-map upload ([Releases](#releases)). They are never app runtime config and are not required to build or run the public image. The release tag comes from `NEXT_PUBLIC_APP_VERSION`, the deployed commit SHA on Vercel and in Docker CI (so SDK events, uploaded maps and the created release share one name); local builds fall back to the package version.
 
 ## Source maps
 
@@ -222,7 +243,7 @@ The public Docker image remains buildable **without** Sentry credentials. Docker
 
 1. `next.config.ts` generates maps for every build (`productionBrowserSourceMaps` + `experimental.serverSourceMaps`) and disables the plugin upload (`sourcemaps.disable: true`, `release.create: false`).
 2. The Dockerfile builder stage runs `npx sentry-cli sourcemaps inject` over `.next` and over the nested `.next/standalone/.next` (hidden directories are skipped by the walker) — offline, deterministic Debug-ID stamping of chunks and maps.
-3. If `SENTRY_AUTH_TOKEN`, `SENTRY_ORG`, and `SENTRY_PROJECT` are present, the Dockerfile uploads `.next` source maps with `--release="$NEXT_PUBLIC_APP_VERSION"`.
+3. If `SENTRY_AUTH_TOKEN`, `SENTRY_ORG`, and `SENTRY_PROJECT` are present, the Dockerfile uploads `.next` source maps with `--release="$NEXT_PUBLIC_APP_VERSION"`. After a successful upload, it runs `scripts/sentry-release/main.ts --no-git --warn-only` to associate the exact Shop commit. Release metadata failures warn without failing the build.
 4. The runner stage deletes `*.map` under `.next/static` (browser maps must not be publicly served); standalone server maps stay for readable Node stack traces.
 
 Third-party deployers get unsymbolicated events unless they obtain the maps for their image version and upload them to their own org (publishing maps as a release artifact is the recommended follow-up).

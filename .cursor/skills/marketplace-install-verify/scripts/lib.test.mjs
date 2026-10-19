@@ -3,12 +3,15 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import test from 'node:test';
 import {
+  checkInboxRuntime,
   checkPaypalReturnBase,
   compareMigrations,
+  corsAllowsOrigin,
   expectedMigration,
   extractRuntimeConfig,
   framableBySameOrigin,
   frameAncestorsAllow,
+  inboxNotUp,
   isTruthy,
   locksReturnOriginsFromToml,
   missingOrigins,
@@ -275,4 +278,36 @@ test('a standalone Shop expects PayPal to return to its origin root', () => {
   assert.equal(checkPaypalReturnBase('https://staging.shop.example', stack).ok, true);
   assert.equal(checkPaypalReturnBase('https://shop.example/', stack).ok, true);
   assert.equal(checkPaypalReturnBase('https://shop.example/shop', stack).ok, false);
+});
+
+test('the Shop runtime must name an inbox, or a stranger\'s first message is never noticed', () => {
+  assert.deepEqual(checkInboxRuntime({ inboxUrl: 'https://inbox.staging.pubky.app/' }), {
+    ok: true,
+    detail: 'https://inbox.staging.pubky.app',
+    url: 'https://inbox.staging.pubky.app',
+  });
+  for (const runtime of [undefined, {}, { inboxUrl: undefined }, { inboxUrl: null }, { inboxUrl: '  ' }]) {
+    const result = checkInboxRuntime(runtime);
+    assert.equal(result.ok, false);
+    assert.equal(result.detail, 'inboxUrl unset');
+    assert.match(result.hint, /PUBKY_RUNTIME_INBOX_URL.*PUBKY_RUNTIME_INBOX_AUDIENCE/);
+  }
+  const bad = checkInboxRuntime({ inboxUrl: 'ftp://inbox.example' });
+  assert.equal(bad.ok, false);
+  assert.match(bad.hint, /http\(s\) URL/);
+});
+
+test('inbox CORS accepts the Shop origin or a wildcard (bearer tokens, no cookies), nothing else', () => {
+  assert.equal(corsAllowsOrigin('https://pubky.app', 'https://pubky.app'), true);
+  assert.equal(corsAllowsOrigin('https://PUBKY.app', 'https://pubky.app'), true);
+  assert.equal(corsAllowsOrigin('*', 'https://pubky.app'), true);
+  assert.equal(corsAllowsOrigin('https://staging.pubky.app', 'https://pubky.app'), false);
+  assert.equal(corsAllowsOrigin(null, 'https://pubky.app'), false);
+  assert.equal(corsAllowsOrigin('', 'https://pubky.app'), false);
+  assert.equal(corsAllowsOrigin('null', 'https://pubky.app'), false);
+});
+
+test('an inbox that is not deployed yet is told apart from one that answers', () => {
+  for (const status of [0, undefined, 404, 502, 503, 504]) assert.equal(inboxNotUp(status), true, String(status));
+  for (const status of [200, 401, 403, 429, 500]) assert.equal(inboxNotUp(status), false, String(status));
 });

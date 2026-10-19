@@ -4,13 +4,14 @@ import { FooterLinks } from '@/atoms/FooterLinks/FooterLinks';
 import { Link } from '@/atoms/Link/Link';
 import { COMPLAINT_EMAIL, LEGAL_ENTITY_NAME } from '@/config/legal';
 import { useIsEmbedded } from '@/hooks/useIsEmbedded/useIsEmbedded';
+import { DialogPrivacy } from '@/organisms/DialogPrivacy/DialogPrivacy';
 import { DialogTerms } from '@/organisms/DialogTerms/DialogTerms';
 
 /**
  * Legal information for the embedded Shop. Embedded, the host app owns the page chrome, so the
- * Shop's own footer is not rendered; this strip keeps the Terms, the contracting entity, the
- * complaint contact and the way to report a listing on every Shop page. A top-level Shop
- * renders nothing: the Terms and entity are in its Settings.
+ * Shop's own footer is not rendered; this strip keeps the Terms, the Privacy Policy, the
+ * contracting entity, the complaint contact and the way to report a listing on every Shop page.
+ * A top-level Shop renders nothing: the Terms, Privacy Policy and entity are in its Settings.
  */
 export function EmbeddedLegalFooter() {
   const isEmbedded = useIsEmbedded();
@@ -25,6 +26,8 @@ export function EmbeddedLegalFooter() {
       <FooterLinks>
         {`Pubky Shop is provided by ${LEGAL_ENTITY_NAME} · `}
         <DialogTerms />
+        {' · '}
+        <DialogPrivacy />
       </FooterLinks>
       <FooterLinks>
         {'Complaints: '}

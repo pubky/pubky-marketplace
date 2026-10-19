@@ -53,9 +53,8 @@ ENV NEXT_STANDALONE=true
 RUN npm run build
 
 # Inject Sentry Debug IDs into the built chunks and their source maps (deterministic, offline,
-# no credentials). The shipped JS must carry the same Debug IDs as the maps the CI pipeline
-# uploads — that pipeline extracts the maps from THIS stage (docker build --target builder),
-# so it must not re-inject. Browser maps are stripped from the runner stage below.
+# no credentials). The conditional upload below uses these stamped artifacts, so its maps
+# match the shipped JS. Browser maps are removed before copying assets into the runner.
 # The standalone tree needs its own pass: sentry-cli skips hidden directories while walking,
 # so the nested .next/standalone/.next is missed by the first command. IDs are derived from
 # file content, so the standalone copies receive the exact same IDs as the originals.
@@ -65,8 +64,13 @@ RUN npx sentry-cli sourcemaps inject .next \
 ARG SENTRY_AUTH_TOKEN
 ARG SENTRY_ORG
 ARG SENTRY_PROJECT
+# The shop-migration image build does not run this repo's tag-release workflow.
+# Associate the baked-in Shop SHA explicitly: Docker contexts do not have usable Git history.
+# Upload failures remain fatal. Release metadata is best-effort; rollout deploy records are separate.
 RUN if [ -n "$SENTRY_AUTH_TOKEN" ] && [ -n "$SENTRY_ORG" ] && [ -n "$SENTRY_PROJECT" ]; then \
-      npx sentry-cli sourcemaps upload --release="$NEXT_PUBLIC_APP_VERSION" .next; \
+      npx sentry-cli sourcemaps upload --release="$NEXT_PUBLIC_APP_VERSION" .next \
+      && (npx tsx scripts/sentry-release/main.ts --no-git --warn-only \
+          || echo 'Sentry release: the release script did not run; the image build continues.'); \
     else \
       echo "Skipping Sentry source-map upload; Sentry build credentials not set."; \
     fi

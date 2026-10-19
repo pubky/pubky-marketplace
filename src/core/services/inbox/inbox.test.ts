@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { Logger } from '@/libs/logger/logger';
 import { INBOX_SESSION_STORAGE_KEY, InboxService } from '@/services/inbox/inbox';
 
 const ME = 'm'.repeat(52);
@@ -45,6 +46,8 @@ describe('InboxService', () => {
 
   afterEach(() => {
     vi.unstubAllGlobals();
+    vi.useRealTimers();
+    vi.restoreAllMocks();
   });
 
   it('is disabled without a configured URL and without credentials', async () => {
@@ -159,5 +162,80 @@ describe('InboxService', () => {
     const calls = installFetch(() => json(201, { access_token: 'NEW', expires_at: future }));
     expect(await InboxService.ensureSession(ME, credentials)).toBe('ready');
     expect(calls).toHaveLength(1);
+  });
+
+  describe('an inbox that is not up', () => {
+    const refused = () => {
+      throw new TypeError('Failed to fetch');
+    };
+
+    it('reports unavailable without an error event, holds off retries and recovers by itself', async () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2026-10-19T09:00:00Z'));
+      const error = vi.spyOn(Logger, 'error');
+      const warn = vi.spyOn(Logger, 'warn').mockImplementation(() => undefined);
+      let up = false;
+      const calls = installFetch(() => {
+        if (!up) return refused();
+        return json(201, { access_token: 'TOKEN', expires_at: new Date(Date.now() + 3_600_000).toISOString() });
+      });
+
+      expect(await InboxService.ensureSession(ME, credentials)).toBe('unavailable');
+      expect(calls).toHaveLength(1);
+
+      // Every caller (the leader loop, each outbox flush, each reconcile pass) is answered from the schedule.
+      for (let pass = 0; pass < 6; pass += 1) {
+        vi.advanceTimersByTime(400);
+        expect(await InboxService.ensureSession(ME, credentials)).toBe('unavailable');
+      }
+      expect(calls).toHaveLength(1);
+
+      // Retries come back, spaced further apart, and the outage is logged once.
+      for (let minutes = 0; minutes < 30; minutes += 1) {
+        vi.advanceTimersByTime(60_000);
+        await InboxService.ensureSession(ME, credentials);
+      }
+      expect(calls.length).toBeGreaterThan(1);
+      expect(calls.length).toBeLessThanOrEqual(10);
+      expect(error).not.toHaveBeenCalled();
+      expect(warn).toHaveBeenCalledTimes(1);
+
+      up = true;
+      vi.advanceTimersByTime(10 * 60_000);
+      expect(await InboxService.ensureSession(ME, credentials)).toBe('ready');
+      expect(await InboxService.ensureSession(ME, credentials)).toBe('ready');
+      expect(error).not.toHaveBeenCalled();
+    });
+
+    it.each([404, 502, 503, 504])('treats a host that answers %i as not up', async (status) => {
+      const error = vi.spyOn(Logger, 'error');
+      vi.spyOn(Logger, 'warn').mockImplementation(() => undefined);
+      installFetch(() => new Response('nope', { status }));
+      expect(await InboxService.ensureSession(ME, credentials)).toBe('unavailable');
+      expect(error).not.toHaveBeenCalled();
+    });
+
+    it('gives up on a request that never answers instead of holding the outbox lock', async () => {
+      vi.useFakeTimers();
+      vi.spyOn(Logger, 'warn').mockImplementation(() => undefined);
+      vi.stubGlobal(
+        'fetch',
+        (_url: string, init: RequestInit) =>
+          new Promise((_resolve, reject) => {
+            init.signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')));
+          }),
+      );
+      const pending = InboxService.ensureSession(ME, credentials);
+      await vi.advanceTimersByTimeAsync(15_000);
+      expect(await pending).toBe('unavailable');
+    });
+
+    it('still raises a misconfiguration the operator must fix', async () => {
+      for (const status of [400, 401, 403]) {
+        InboxService.clearSession();
+        installFetch(() => json(status, { error: { code: 'rejected' } }));
+        await expect(InboxService.ensureSession(ME, credentials)).rejects.toThrow();
+      }
+    });
   });
 });

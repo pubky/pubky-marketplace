@@ -17,12 +17,15 @@ import { dirname, join, resolve } from 'node:path';
 import tls from 'node:tls';
 import { fileURLToPath } from 'node:url';
 import {
+  checkInboxRuntime,
   checkPaypalReturnBase,
   compareMigrations,
+  corsAllowsOrigin,
   expectedMigration,
   extractRuntimeConfig,
   framableBySameOrigin,
   frameAncestorsAllow,
+  inboxNotUp,
   isTruthy,
   locksReturnOriginsFromToml,
   missingOrigins,
@@ -143,6 +146,7 @@ const PAYKIT = url('PAYKIT_URL');
 const LOCKS = url('LOCKS_URL');
 const NEXUS = url('NEXUS_URL');
 const FIAT = url('FIAT_VERIFIER_URL');
+const INBOX = url('INBOX_URL');
 const FORBIDDEN_HOSTS = parseList(get('FORBIDDEN_HOSTS')).map((h) => h.toLowerCase());
 
 // Config facts: from the rendered config files when given, else from explicit keys.
@@ -354,7 +358,7 @@ async function sectionConfig() {
     missing.length ? `missing ${missing.join(', ')}` : `${SHOP_ORIGINS.length} Shop origin(s), 4 services`,
     `set ${missing.join(', ')}`,
   );
-  const all = [...SHOP_ORIGINS, SERVICE, PAYKIT, LOCKS, NEXUS, FIAT].filter(Boolean);
+  const all = [...SHOP_ORIGINS, SERVICE, PAYKIT, LOCKS, NEXUS, FIAT, INBOX].filter(Boolean);
   const plain = all.filter((value) => !value.startsWith('https://'));
   if (plain.length && get('ALLOW_HTTP') !== '1')
     fail('config.https', 'every public endpoint uses https', plain.join(', '), 'serve every public endpoint over HTTPS');
@@ -363,7 +367,7 @@ async function sectionConfig() {
 
 async function sectionTls() {
   heading('tls');
-  const hosts = [...new Set([...SHOP_ORIGINS, SERVICE, PAYKIT, LOCKS, NEXUS, FIAT].filter(Boolean))]
+  const hosts = [...new Set([...SHOP_ORIGINS, SERVICE, PAYKIT, LOCKS, NEXUS, FIAT, INBOX].filter(Boolean))]
     .filter((value) => value.startsWith('https://'))
     .map((value) => new URL(value).hostname);
   const minDays = Number(get('TLS_MIN_DAYS') ?? 21);
@@ -388,6 +392,38 @@ async function sectionTls() {
     else if (!plain.status) pass(`${id}.redirect`, 'plain HTTP not served', `port 80 ${plain.error}`);
     else warn(`${id}.redirect`, 'plain HTTP redirects to HTTPS', describe(plain), 'redirect port 80 to HTTPS (301/308)');
   }
+}
+
+// The inbox is called from the browser with a bearer token: the session endpoint, then pings. A deploy that does not
+// answer the Shop origin's preflight leaves the receiver without wake-ups (the Shop logs "Chat inbox session failed"
+// and a stranger's first message is never noticed). Reads only: preflights and one unauthenticated GET it must reject.
+async function probeInbox(host, origin, inboxUrl) {
+  const pings = await http(`${inboxUrl}/v1/pings`);
+  // An inbox that is not deployed yet is a state that fixes itself, not a wrong configuration: the Shop keeps
+  // chat working on homeserver files and starts pinging when the service answers. Say so, and do not judge
+  // CORS or authentication of a service that is not there.
+  if (inboxNotUp(pings.status)) {
+    warn(
+      `shop.inbox.reachable.${host}`,
+      'inbox service is not up yet',
+      describe(pings),
+      `deploy the pubky/inbox service at ${inboxUrl} (owner: the inbox team, Matthew); until then a stranger's first message is found only when the recipient opens the thread, and chat starts pinging by itself once the inbox answers`,
+    );
+    return;
+  }
+  for (const [path, requested] of [['/v1/auth/session', 'content-type'], ['/v1/pings', 'authorization,content-type']]) {
+    const response = await preflight(`${inboxUrl}${path}`, origin, 'POST', requested);
+    const allowed = response.headers.get('access-control-allow-origin');
+    const headers = (response.headers.get('access-control-allow-headers') ?? '').toLowerCase();
+    check(
+      `shop.inbox.cors.${host}${path.replaceAll('/', '.')}`,
+      corsAllowsOrigin(allowed, origin) && requested.split(',').every((name) => headers.includes(name)),
+      `inbox CORS allows the Shop on ${path}`,
+      response.status ? `allow-origin ${allowed ?? 'none'}, allow-headers ${headers || 'none'}` : `no answer (${response.error})`,
+      `list ${origin} in INBOX_SERVER__CORS_ALLOWED_ORIGINS on the inbox service and allow the ${requested} request headers, then restart it`,
+    );
+  }
+  check(`shop.inbox.auth-required.${host}`, pings.status === 401, 'inbox answers and requires a session', describe(pings), 'GET /v1/pings must be 401 without a bearer token; check that PUBKY_RUNTIME_INBOX_URL points at the pubky/inbox service and not a proxy page');
 }
 
 async function sectionShop() {
@@ -427,6 +463,7 @@ async function sectionShop() {
       ['marketplaceNexusUrl', NEXUS, 'PUBKY_RUNTIME_MARKETPLACE_NEXUS_URL'],
       ['locksUrl', LOCKS, 'PUBKY_RUNTIME_LOCKS_URL'],
       ['paykitSetupUrl', PAYKIT && `${PAYKIT}/setup`, 'PUBKY_RUNTIME_PAYKIT_SETUP_URL'],
+      ['inboxUrl', INBOX, 'PUBKY_RUNTIME_INBOX_URL'],
     ];
     for (const [key, expected, envName] of pairs) {
       if (!expected) continue;
@@ -438,6 +475,8 @@ async function sectionShop() {
         `set ${envName}=${expected} on the Shop and redeploy (runtime values change only on restart)`,
       );
     }
+    const inbox = checkInboxRuntime(runtime);
+    if (check(`shop.runtime.${host}.inbox`, inbox.ok, 'chat inbox configured', inbox.detail, inbox.hint)) await probeInbox(host, origin, inbox.url);
     const publicBase = publicBasePath(SHOP_PATH);
     if (EMBED_PATH && publicBase) {
       check(

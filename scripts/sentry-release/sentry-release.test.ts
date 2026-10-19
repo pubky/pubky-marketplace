@@ -59,6 +59,18 @@ describe('planSentryRelease', () => {
     });
   });
 
+  it('names the baked Shop commit without Git history or a deployment record in Docker', () => {
+    expect(planSentryRelease({ ...DOCKER_CI, GIT_COMMIT: PREVIOUS_SHA }, { deploy: false, noGit: true })).toEqual({
+      kind: 'run',
+      release: SHA,
+      commands: [
+        ['releases', 'new', SHA],
+        ['releases', 'set-commits', SHA, '--commit', `${SENTRY_REPOSITORY}@${SHA}`, '--ignore-missing'],
+        ['releases', 'finalize', SHA],
+      ],
+    });
+  });
+
   it('uses the release the build baked in', () => {
     for (const env of [DOCKER_CI, VERCEL, { ...CREDENTIALS, VERCEL: '1', GIT_COMMIT: SHA }]) {
       const plan = planSentryRelease(env, { deploy: false });
@@ -122,9 +134,10 @@ describe('planSentryRelease', () => {
 });
 
 describe('parseSentryReleaseArgs', () => {
-  it('reads the two flags', () => {
-    expect(parseSentryReleaseArgs([])).toEqual({ deploy: false, warnOnly: false });
-    expect(parseSentryReleaseArgs(['--warn-only', '--deploy'])).toEqual({ deploy: true, warnOnly: true });
+  it('reads the release flags', () => {
+    expect(parseSentryReleaseArgs([])).toEqual({ deploy: false, warnOnly: false, noGit: false });
+    expect(parseSentryReleaseArgs(['--warn-only', '--deploy'])).toEqual({ deploy: true, warnOnly: true, noGit: false });
+    expect(parseSentryReleaseArgs(['--no-git'])).toEqual({ deploy: false, warnOnly: false, noGit: true });
   });
 
   it('rejects anything else', () => {

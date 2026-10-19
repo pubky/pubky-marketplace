@@ -323,7 +323,7 @@ exports[`Privacy - Snapshots > matches snapshot 1`] = `
       class="text-sm leading-5 font-medium text-secondary-foreground"
       data-testid="typography"
     >
-      The Shop follows sellers you buy from, so you and they can connect. You can unfollow any seller at any time.
+      The Shop follows a seller when you message them, buy from them or show interest in their listings (cart, watchlist, offers, bids), so you and they can connect. You can unfollow any seller at any time.
     </p>
   </div>
 </div>
