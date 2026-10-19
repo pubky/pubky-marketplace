@@ -48,6 +48,7 @@ const MARKETPLACE_TAB_NOTIFICATION_TYPES = {
   order_cancelled: true,
   order_cancelled_terms_change: true,
   order_shipped: true,
+  tracking_updated: true,
   order_delivery_assumed: true,
   order_delivered: true,
   order_completed: true,

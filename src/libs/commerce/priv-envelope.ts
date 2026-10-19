@@ -55,12 +55,7 @@ const KEY_ID = /^[0-9a-f]{32}$/;
 const HKDF_SALT = new TextEncoder().encode(PRIV_ENVELOPE_ENC);
 
 /** The logical record families stored under the v2 prefix. */
-export type PrivFamily =
-  | 'watchlist'
-  | 'order_receipt'
-  | 'attention_seen/activity'
-  | 'attention_seen/orders'
-  | 'messaging_mutes';
+export type PrivFamily = 'watchlist' | 'order_receipt' | 'attention_seen/activity' | 'attention_seen/orders';
 
 export type PrivDataKey = {
   keyId: string;
@@ -90,7 +85,7 @@ export type PrivEnvelope = z.infer<typeof privEnvelopeSchema>;
 
 export type PrivEnvelopeRejection = 'malformed' | 'unknown_key' | 'unauthenticated';
 
-function rejected(reason: PrivEnvelopeRejection) {
+export function privEnvelopeRejected(reason: PrivEnvelopeRejection) {
   return Err.validation(ValidationErrorCode.INVALID_INPUT, 'Encrypted private record rejected.', {
     service: ErrorService.Local,
     operation: 'privEnvelope',
@@ -146,7 +141,7 @@ export function bytesToBase64Url(bytes: Uint8Array): string {
 
 export function base64UrlToBytes(value: string): Uint8Array {
   if (!/^[A-Za-z0-9_-]*$/.test(value) || value.length % 4 === 1) {
-    throw rejected('malformed');
+    throw privEnvelopeRejected('malformed');
   }
   const padded = value.replace(/-/g, '+').replace(/_/g, '/') + '='.repeat((4 - (value.length % 4)) % 4);
   const binary = atob(padded);
@@ -188,7 +183,7 @@ export function assertPrivKeyringLive(keyring: PrivKeyring): void {
 }
 
 function assertField(value: string): void {
-  if (value.length === 0 || value.includes('|')) throw rejected('malformed');
+  if (value.length === 0 || value.includes('|')) throw privEnvelopeRejected('malformed');
 }
 
 export function privAad(ownerPubky: string, family: PrivFamily, name: string, keyId: string): Uint8Array {
@@ -228,7 +223,7 @@ export function privEntryPath(keyring: PrivKeyring, family: PrivFamily, id: stri
  * rather than an HMAC, because readers find it by listing the family.
  */
 export function privListedEntryPath(keyring: PrivKeyring, family: PrivFamily, name: string): string {
-  if (!isPrivEntryName(name)) throw rejected('malformed');
+  if (!isPrivEntryName(name)) throw privEnvelopeRejected('malformed');
   return `${privFamilyPath(keyring, family)}${name}`;
 }
 
@@ -264,7 +259,7 @@ export function encryptPrivRecord(input: {
   const { keyring, family, name, record } = input;
   assertPrivKeyringLive(keyring);
   const current = keyring.keys.find((key) => key.keyId === keyring.currentKeyId);
-  if (!current) throw rejected('unknown_key');
+  if (!current) throw privEnvelopeRejected('unknown_key');
   const nonce = crypto.getRandomValues(new Uint8Array(NONCE_BYTES));
   const plaintext = new TextEncoder().encode(JSON.stringify(record));
   const recordKey = subkey(current.key, 'record');
@@ -295,12 +290,12 @@ export function decryptPrivRecord(input: {
   const { keyring, family, name } = input;
   assertPrivKeyringLive(keyring);
   const parsed = privEnvelopeSchema.safeParse(input.envelope);
-  if (!parsed.success) throw rejected('malformed');
+  if (!parsed.success) throw privEnvelopeRejected('malformed');
   const envelope = parsed.data;
   const key = keyring.keys.find((candidate) => candidate.keyId === envelope.kid);
-  if (!key) throw rejected('unknown_key');
+  if (!key) throw privEnvelopeRejected('unknown_key');
   const nonce = base64UrlToBytes(envelope.nonce);
-  if (nonce.length !== NONCE_BYTES) throw rejected('malformed');
+  if (nonce.length !== NONCE_BYTES) throw privEnvelopeRejected('malformed');
   let plaintext: Uint8Array;
   const recordKey = subkey(key.key, 'record');
   try {
@@ -309,14 +304,14 @@ export function decryptPrivRecord(input: {
     );
   } catch (error) {
     if (privEnvelopeRejection(error) !== null) throw error;
-    throw rejected('unauthenticated');
+    throw privEnvelopeRejected('unauthenticated');
   } finally {
     recordKey.fill(0);
   }
   try {
     return JSON.parse(new TextDecoder().decode(plaintext));
   } catch {
-    throw rejected('malformed');
+    throw privEnvelopeRejected('malformed');
   } finally {
     plaintext.fill(0);
   }

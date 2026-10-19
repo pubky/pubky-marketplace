@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { getCommerceAdapterMode } from '@/config/commerce';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import { useViewportObserver } from '@/hooks/useViewportObserver/useViewportObserver';
+import { projectionReadsSoldOut } from '@/libs/commerce/listing-variants';
 import type { CommerceMoney } from '@/libs/commerce/transaction-contracts';
 
 export interface MarketplaceLiveBid {
@@ -18,6 +19,8 @@ export interface UseMarketplaceLiveBidResult {
   bid: MarketplaceLiveBid | null;
   /** Durable listing state, used to replace Buy now on a reserved unit. */
   listingState: 'available' | 'reserved' | 'sold' | null;
+  /** True when the service reports the listing sold out, including every size sold out. */
+  soldOut: boolean;
 }
 
 /**
@@ -50,6 +53,7 @@ export function useMarketplaceLiveBid(
   const { ref, isVisible } = useViewportObserver({ enabled: isActive });
   const [bid, setBid] = useState<MarketplaceLiveBid | null>(null);
   const [listingState, setListingState] = useState<'available' | 'reserved' | 'sold' | null>(null);
+  const [soldOut, setSoldOut] = useState(false);
   const hasFetchedRef = useRef(false);
 
   useEffect(() => {
@@ -60,6 +64,7 @@ export function useMarketplaceLiveBid(
       .then((projection) => {
         if (!mounted || !projection) return;
         setListingState(projection.state);
+        setSoldOut(projectionReadsSoldOut(projection));
         if (!projection.auction) return;
         setBid({
           currentPrice: projection.auction.currentPrice,
@@ -75,5 +80,5 @@ export function useMarketplaceLiveBid(
     };
   }, [isActive, isVisible, listingId, sellerPubky]);
 
-  return { ref, bid, listingState };
+  return { ref, bid, listingState, soldOut };
 }

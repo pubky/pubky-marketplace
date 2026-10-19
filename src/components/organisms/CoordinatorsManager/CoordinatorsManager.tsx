@@ -3,7 +3,8 @@
 import { useEffect } from 'react';
 import { usePathname } from 'next/navigation';
 import { CommerceController } from '@/controllers/commerce/commerce';
-import { MessagingSyncCoordinator } from '@/coordinators/messaging-sync/messaging-sync';
+import { ChatSyncCoordinator } from '@/coordinators/chat-sync/chat-sync';
+import { MarketplaceGrantSessionCoordinator } from '@/coordinators/marketplace-grant-session/marketplace-grant-session';
 import { MuteListSyncCoordinator } from '@/coordinators/mute-list-sync/mute-list-sync';
 import { NotificationCoordinator } from '@/coordinators/notifications/notifications';
 import { StreamCoordinator } from '@/coordinators/streams/stream';
@@ -15,7 +16,7 @@ function getAppCoordinators() {
     stream: StreamCoordinator.getInstance(),
     ttl: TtlCoordinator.getInstance(),
     muteListSync: MuteListSyncCoordinator.getInstance(),
-    messagingSync: MessagingSyncCoordinator.getInstance(),
+    chatSync: ChatSyncCoordinator.getInstance(),
   };
 }
 
@@ -25,27 +26,29 @@ function applyRouteToCoordinators(pathname: string): void {
   void coordinators.stream.setRoute(pathname);
   coordinators.ttl.setRoute(pathname);
   coordinators.muteListSync.setRoute(pathname);
-  void coordinators.messagingSync.setRoute(pathname);
+  coordinators.chatSync.setRoute(pathname);
 }
 
 function startAppCoordinators(): void {
   CommerceController.bindMarketplaceSessionStore();
+  MarketplaceGrantSessionCoordinator.getInstance().start();
   const coordinators = getAppCoordinators();
   void coordinators.notification.start();
   void coordinators.stream.start();
   coordinators.ttl.start();
   coordinators.muteListSync.start();
-  void coordinators.messagingSync.start();
+  coordinators.chatSync.start();
 }
 
 function stopAppCoordinators(): void {
   CommerceController.unbindMarketplaceSessionStore();
+  MarketplaceGrantSessionCoordinator.getInstance().stop();
   const coordinators = getAppCoordinators();
   coordinators.notification.stop();
   coordinators.stream.stop();
   coordinators.ttl.stop();
   coordinators.muteListSync.stop();
-  coordinators.messagingSync.stop();
+  coordinators.chatSync.stop();
 }
 
 /**
@@ -56,7 +59,8 @@ function stopAppCoordinators(): void {
  *
  * Responsibilities:
  * - Initialize coordinators on mount (NotificationCoordinator, StreamCoordinator,
- *   MuteListSyncCoordinator, TtlCoordinator, MessagingSyncCoordinator)
+ *   MuteListSyncCoordinator, TtlCoordinator, ChatSyncCoordinator,
+ *   MarketplaceGrantSessionCoordinator)
  * - Start coordination when the component is mounted
  * - Track route changes and inform coordinators
  * - Stop coordination and cleanup when unmounted

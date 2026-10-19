@@ -93,12 +93,12 @@ const ordersState = vi.hoisted(() => ({
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn() }),
   usePathname: () => '/marketplace/orders',
+  useSearchParams: () => new URLSearchParams(),
 }));
 
 vi.mock('@/stores/auth/auth.store', () => ({
   useAuthStore: createMarketplaceVrtAuthStore({
     currentUserPubky: ids.seller,
-    session: { pubky: ids.seller },
   }),
 }));
 
@@ -134,24 +134,6 @@ vi.mock('@/hooks/useRequireAuth/useRequireAuth', () => ({
 
 vi.mock('@/hooks/useUserDetails/useUserDetails', () => ({
   useUserDetails: () => ({ userDetails: null, isLoading: false }),
-}));
-
-vi.mock('@/hooks/useEncryptedConversation/useEncryptedConversation', () => ({
-  useEncryptedConversation: () => ({
-    status: 'ready',
-    errorMessage: null,
-    thread: [],
-    receiverProvisioned: false,
-    draft: '',
-    setDraft: vi.fn(),
-    bodyBudgetBytes: 620,
-    draftBytes: 0,
-    isSending: false,
-    sendError: null,
-    send: vi.fn(async () => 'queued'),
-    cancelQueued: vi.fn(async () => {}),
-    refresh: vi.fn(),
-  }),
 }));
 
 vi.mock('@/hooks/useMarketplaceOrders/useMarketplaceOrders', () => ({
@@ -229,10 +211,11 @@ describe('PayPal sale activity copy', () => {
   it('wraps the PayPal-verified explanation and hides the receipt hash', async () => {
     await renderForVRT(<MarketplaceOrders />, { viewport: { width: 1100, height: 1400 } });
     const orders = document.querySelector('[data-surface="marketplace-orders"]');
-    const card = document.querySelector('[data-surface="marketplace-payment-status-card"]');
+    const paymentDetails = orders?.querySelector('[data-surface="marketplace-payment-details"]');
     expect(orders).toBeTruthy();
-    expect(card).toBeTruthy();
-    const explanation = document.querySelector('[data-testid="paypal-verified-explanation"]');
+    expect(paymentDetails).toBeTruthy();
+    expect(orders?.textContent).toContain('Payment confirmed');
+    const explanation = paymentDetails?.querySelector('[data-testid="paypal-verified-explanation"]');
     if (!(explanation instanceof HTMLElement)) throw new Error('missing paypal explanation');
     expect(explanation.textContent).toContain('exact order total');
     expect(explanation.scrollWidth).toBeLessThanOrEqual(explanation.clientWidth + 1);

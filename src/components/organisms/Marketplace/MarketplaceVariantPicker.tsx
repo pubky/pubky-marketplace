@@ -1,0 +1,70 @@
+'use client';
+
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/atoms/Select/Select';
+import { Typography } from '@/atoms/Typography/Typography';
+import { isVariantSoldOut, MADE_TO_ORDER_LABEL } from '@/libs/commerce/listing-variants';
+import type { CommerceListingRecord } from '@/libs/commerce/marketplace-records';
+import { formatStockQuantity, UNLIMITED_STOCK_LABEL } from '@/libs/commerce/unlimited-stock';
+
+export const VARIANT_SOLD_OUT_LABEL = 'Sold out';
+
+export interface MarketplaceVariantPickerProps {
+  record: Pick<CommerceListingRecord, 'variants' | 'fulfillmentMethods'>;
+  selectedVariantId: string | undefined;
+  onSelect: (variantId: string) => void;
+  /** Sizes the service reports sold out. Every one stays listed, disabled. */
+  soldOutVariantIds: ReadonlySet<string>;
+  /** Sizes the seller's store makes to order: never sold out, and shown without a count. */
+  madeToOrderVariantIds?: ReadonlySet<string>;
+  /** Shown while no size is chosen. A caller that wants no default size passes no `selectedVariantId`. */
+  placeholder?: string;
+  /** False when the surrounding row already says what is being chosen. */
+  showHeading?: boolean;
+  className?: string;
+}
+
+/** The size picker. A sold-out size stays visible, disabled and labelled. */
+export function MarketplaceVariantPicker({
+  record,
+  selectedVariantId,
+  onSelect,
+  soldOutVariantIds,
+  madeToOrderVariantIds,
+  placeholder,
+  showHeading = true,
+  className,
+}: MarketplaceVariantPickerProps) {
+  return (
+    <div data-surface="marketplace-variant-picker" className={className}>
+      {showHeading && (
+        <Typography as="p" className="mb-2 text-sm font-semibold">
+          Variant
+        </Typography>
+      )}
+      <Select value={selectedVariantId} onValueChange={onSelect}>
+        <SelectTrigger theme="secondary" className="w-full" aria-label="Choose listing variant">
+          <SelectValue placeholder={placeholder} />
+        </SelectTrigger>
+        <SelectContent>
+          {record.variants.map((variant) => {
+            const madeToOrder = madeToOrderVariantIds?.has(variant.id) === true;
+            const soldOut = isVariantSoldOut(variant, soldOutVariantIds, madeToOrderVariantIds);
+            const stock = formatStockQuantity(record, variant.quantity);
+            const availability = soldOut
+              ? VARIANT_SOLD_OUT_LABEL
+              : madeToOrder
+                ? MADE_TO_ORDER_LABEL
+                : stock === UNLIMITED_STOCK_LABEL
+                  ? stock
+                  : `${stock} left`;
+            return (
+              <SelectItem key={variant.id} value={variant.id} disabled={!variant.enabled || soldOut}>
+                {Object.values(variant.options).join(' · ') || variant.sku || 'Default'} · {availability}
+              </SelectItem>
+            );
+          })}
+        </SelectContent>
+      </Select>
+    </div>
+  );
+}

@@ -5,6 +5,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { getCommerceAdapterMode, isDurableCommerceMode } from '@/config/commerce';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import { type PendingDeliveryKeyChange, useDeliveryKeyGate } from '@/hooks/useDeliveryKeyGate/useDeliveryKeyGate';
+import { checkDestinationCountry } from '@/hooks/useMarketplaceSellerShipsTo/useMarketplaceSellerShipsTo';
 import { extractCheckoutOrderIds } from '@/libs/commerce/checkout-phase';
 import { MARKETPLACE_FAILURE_MESSAGES, marketplaceDropRefusalMessage } from '@/libs/commerce/failure-messages';
 import {
@@ -13,6 +14,7 @@ import {
   isListingDeletedResponse,
   isMarketplaceRevisionConflict,
 } from '@/libs/commerce/transaction-commands';
+import { VARIANT_REFUSAL_COPY, variantRefusalMessage } from '@/libs/commerce/variant-refusals';
 import { isMarketplaceSessionRequiredError } from '@/libs/error/error.utils';
 import type { CommerceDeliveryAddressModelSchema } from '@/models/commerce/commerce.schema';
 import { toast } from '@/molecules/Toaster/use-toast';
@@ -40,7 +42,13 @@ export interface UseMarketplaceDropClaimResult {
   /** A seller key change the buyer must confirm before the claim continues. */
   pendingKeyChange: PendingDeliveryKeyChange | null;
   decideKeyChange: (accepted: boolean) => void;
-  claim: (listingOwnerPubky: string, listingId: string, remainingAllowance: number | null) => Promise<boolean>;
+  claim: (
+    listingOwnerPubky: string,
+    listingId: string,
+    remainingAllowance: number | null,
+    /** The size to claim on a per-size listing; none is ever chosen for the buyer. */
+    variantId?: string,
+  ) => Promise<boolean>;
 }
 
 /**
@@ -86,6 +94,7 @@ export function useMarketplaceDropClaim(onClaimed?: () => void | Promise<void>):
     listingOwnerPubky: string,
     listingId: string,
     remainingAllowance: number | null,
+    variantId?: string,
   ): Promise<boolean> => {
     if (submittingListingId !== null) return false;
     if (currentUserPubky === listingOwnerPubky) {
@@ -115,6 +124,15 @@ export function useMarketplaceDropClaim(onClaimed?: () => void | Promise<void>):
         );
         return false;
       }
+      const offeredSizes = projection.variants ?? [];
+      if (offeredSizes.length > 1 && !variantId) {
+        setFailure(VARIANT_REFUSAL_COPY.variant_required);
+        return false;
+      }
+      if (variantId && offeredSizes.some((size) => size.variantId === variantId && size.soldOut)) {
+        setFailure(VARIANT_REFUSAL_COPY.variant_sold_out);
+        return false;
+      }
       const commandId = crypto.randomUUID();
       const address = {
         name: claimAddress.name,
@@ -125,8 +143,16 @@ export function useMarketplaceDropClaim(onClaimed?: () => void | Promise<void>):
         postalCode: claimAddress.postal_code,
         countryCode: claimAddress.country_code.toUpperCase(),
       };
+      const destinationError = await checkDestinationCountry(address.countryCode, [listingOwnerPubky]);
+      if (destinationError) {
+        setFailure(destinationError);
+        return false;
+      }
       const gate = await resolveKeys([listingOwnerPubky]);
-      if (!gate.ok) return false;
+      if (!gate.ok) {
+        if (gate.blocked) setFailure(gate.blocked.message);
+        return false;
+      }
       const key = gate.keys.get(listingOwnerPubky);
       const addressFields = key
         ? {
@@ -150,6 +176,7 @@ export function useMarketplaceDropClaim(onClaimed?: () => void | Promise<void>):
               listingAggregateId: projection.aggregateId,
               expectedRevision: projection.serverRevision,
               quantity: 1,
+              ...(variantId ? { variantId } : {}),
             },
           ],
           ...addressFields,
@@ -162,7 +189,8 @@ export function useMarketplaceDropClaim(onClaimed?: () => void | Promise<void>):
         setFailure(
           isMarketplaceRevisionConflict(response)
             ? 'The listing changed while you were claiming. Refresh and try again.'
-            : (marketplaceDropRefusalMessage(response.error.code, response.error.message) ??
+            : (variantRefusalMessage(response.error) ??
+                marketplaceDropRefusalMessage(response.error.code, response.error.message) ??
                 MARKETPLACE_FAILURE_MESSAGES.claimRefusal),
         );
         return false;

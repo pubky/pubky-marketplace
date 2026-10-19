@@ -117,12 +117,9 @@ Service-delivered notification rows (outbox, at-least-once with dedup) merge int
 ![Marketplace notifications](docs/vrt/notifications.png)
 ![Marketplace events in the app's general notification surface](docs/vrt/notifications-app-surface.png)
 
-### Private messaging (end-to-end encrypted in durable modes, experiment grade)
+### Messages (end-to-end encrypted chat)
 
-In the durable modes, listing conversations — and general direct messages for any signed-in user — run over Paykit Encrypted Links (Noise XX) through the vendored browser WASM binding: the identity secret never enters the browser (it holds a capability-scoped session, not the secret — so session theft grants write authority over that grant, though not the identity itself), a receiver-scoped Noise key lives on the device, and no operator can read message bodies. Proven by the binding's 19/19 three-engine browser e2e at vendored revision `0a6c6e4` plus live two-party proofs against a local testnet and the real staging homeserver over the public pkarr relays. Honest limits, disclosed in the UI: 1,000-byte messages, device-local history (the multi-device backup-key decision is open), the live Ring-approval leg is unexercised in automation, and upstream paykit-rs is pre-1.0 with no independent security review. Sandbox-mode messaging stays plaintext, in-memory, operator-readable — disclosed where people type.
-
-![Messaging inbox with plaintext disclosure](docs/vrt/messaging-inbox.png)
-![Message dialog with point-of-use disclosure](docs/vrt/message-dialog.png)
+Buyer↔seller chat was rebuilt on homeserver files: each message is an encrypted file on the sender's own homeserver, delivered through the peer homeserver's event stream, `pubky/inbox` pings and reconciliation, so it works for every grant sign-in, across devices, and with the other person offline. The earlier Paykit Encrypted Links transport (Noise XX through a vendored WASM binding) is retired. Design, threat model and verification: [`docs/chat/README.md`](docs/chat/README.md) and [ADR 0030](docs/adr/0030-chat-transport.md).
 
 ## The transaction service
 

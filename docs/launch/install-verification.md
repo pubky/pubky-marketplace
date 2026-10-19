@@ -20,13 +20,18 @@ Minimum:
 ```bash
 MIV_ENV=staging                       # or production
 SHOP_ORIGINS=https://staging.shop.example
-SHOP_PATH=/marketplace                # default; /shop/marketplace when the Shop is mounted at pubky.app/shop
+SHOP_PATH=/marketplace                # default; /shop/marketplace when the Shop is served at pubky.app/shop
+# SHOP_EMBED_PATH=/shop-embed         # only when the App owns SHOP_PATH and frames the Shop build at this path
 SERVICE_URL=https://api.staging.shop.example
 PAYKIT_URL=https://paykit.staging.shop.example
 LOCKS_URL=https://locks.staging.shop.example
 NEXUS_URL=https://nexus.staging.shop.example
 FIAT_VERIFIER_URL=https://fiat.staging.shop.example   # only if deployed
 ```
+
+The Shop at `pubky.app/shop` uses the Paykit and Locks instances it shares with Pubky App: one Paykit process and one Postgres, one Lock Server. For that install, `PAYKIT_URL` and `LOCKS_URL` are the shared instances, `SHOP_ORIGINS` is the App origin (`https://pubky.app` or `https://staging.pubky.app`, no `/shop`) with `SHOP_PATH=/shop/marketplace`, and the shared Paykit config must list the Lock Server key and the marketplace service key under `[signed_services] trusted_public_keys` and the App origin under `[setup] allowed_origins`. See [Shop embedding](shop-embedding.md) for the full list of settings.
+
+At `pubky.app/shop` the App owns `/shop` and frames the Shop build mounted at `/shop-embed`, so `SHOP_PATH` (`/shop/marketplace`) is the App's page and the Shop's own HTML, runtime config, `llms.txt` and framing headers live under `SHOP_EMBED_PATH=/shop-embed`. Set `SHOP_EMBED_PATH` and the Shop checks run against both: the wrapper must load, and the framed build must load, allow a same-origin frame, and publish `shopPublicPath=/shop` so share links and canonical URLs point at the App. Leave it unset for a Shop served directly (a Vercel test instance, or `shop.pubky.app`); nothing changes there. Add `SERVICE_PUBLIC_APP_ORIGIN` (the service's `PUBLIC_APP_ORIGIN`) to check the PayPal hand-off: the buyer returns to `{value}/marketplace/orders` after paying or cancelling, so it must be `https://pubky.app/shop`, not the `/shop-embed` build and not the bare origin.
 
 Then add, as they become available:
 
@@ -83,7 +88,9 @@ Exit code 0 means no FAIL; `--strict` also fails on WARN. `report.md` in the out
 | `tls`     | `tls.<host>.redirect`                     | port 80 redirects to HTTPS or is closed                                                                              | redirect HTTP to HTTPS                                                                                    |
 | `shop`    | `shop.page`, `shop.runtime`               | `/marketplace` returns HTML with `window.__PUBKY_CONFIG__`                                                            | check the Shop deployment                                                                                 |
 | `shop`    | `shop.runtime.<key>`                      | `marketplaceUrl`, `marketplaceNexusUrl`, `locksUrl`, `paykitSetupUrl` point at this stack; expectations match        | set the matching `PUBKY_RUNTIME_*` value and restart the Shop                                             |
-| `shop`    | `shop.runtime.forbidden`, `shop.llms`     | no retired host in the runtime config; `/llms.txt` names this Nexus                                                  | replace the retired host                                                                                  |
+| `shop`    | `shop.runtime.forbidden`, `shop.llms`     | no retired host in the runtime config; `/llms.txt` (under `SHOP_EMBED_PATH` when set) names this Nexus               | replace the retired host                                                                                  |
+| `shop`    | `shop.embed.page`, `shop.embed.framing`   | with `SHOP_EMBED_PATH`: the framed build loads and answers `frame-ancestors 'self'` with no `X-Frame-Options: DENY`  | route `SHOP_EMBED_PATH` to the Shop with the prefix kept; set `PUBKY_RUNTIME_FRAME_ANCESTORS='self'`; drop a proxy DENY |
+| `shop`    | `shop.runtime.shopPublicPath`             | with `SHOP_EMBED_PATH`: the Shop's `shopPublicPath` is the public path of `SHOP_PATH` (`/shop`)                      | set `PUBKY_RUNTIME_SHOP_PUBLIC_PATH=/shop` on the Shop                                                    |
 | `service` | `service.ready`, `service.health`         | `/ready` is `ready`; `/health` is `ok`                                                                               | read the service log                                                                                      |
 | `service` | `service.paykit-rail`                     | the service has polled Paykit in the last 5 minutes                                                                  | fix `PAYKIT_SERVER_URL` or the service's Paykit signing key                                               |
 | `service` | `service.cors.*`                          | each Shop origin is allowed with `authorization`; a foreign origin is not                                            | set `ALLOWED_ORIGINS` to the exact Shop origins                                                           |
@@ -100,10 +107,11 @@ Exit code 0 means no FAIL; `--strict` also fails on WARN. `report.md` in the out
 | `nexus`   | `nexus.info`, `nexus.commit`              | `/v0/info` answers and `commit_hash` equals `NEXUS_SOURCE`                                                           | build from a git checkout with `.git` in the Docker context                                               |
 | `nexus`   | `nexus.snapshot`, `nexus.listings`        | the index snapshot is recent; `/v0/stream/listings` returns at least `EXPECT_MIN_LISTINGS`                           | wait for the replay; check the watcher log                                                                |
 | `nexus`   | `nexus.parity`                            | the same listings, revisions and states as `REFERENCE_NEXUS_URL`                                                     | wait for the replay, then compare again                                                                   |
-| `wiring`  | `wiring.paykit-trusts-locks`              | Paykit `[locks] trusted_public_key` equals the Lock Server key Locks publishes                                       | copy the published `lock_server` value into the Paykit config and restart Paykit                          |
+| `wiring`  | `wiring.paykit-trusts-locks`              | Paykit `[signed_services] trusted_public_keys` lists the Lock Server key Locks publishes (rc13 rejects the retired `[locks] trusted_public_key`; an older config that still has it is read when the new table is absent)                                       | add the published `lock_server` value to `trusted_public_keys` in the Paykit config and restart Paykit                          |
 | `wiring`  | `wiring.*-origins`                        | Paykit setup, Locks connect, the service and the fiat verifier list every Shop origin, and no `*` in production      | add the missing origins                                                                                   |
 | `wiring`  | `wiring.*-url`, `wiring.*-reachable`      | the service, Locks and the fiat verifier point at this stack's Paykit and Locks, and those addresses answer          | fix the URL, or the network path                                                                          |
 | `wiring`  | `wiring.locks-paykit-url`, `wiring.fiat-paykit-url` | Locks-gated Bitcoin reaches this stack's Paykit. With `LOCKS_SHARED_FROM` declared, a route to the other environment's Paykit is INFO on staging and WARN on production, naming both Paykits | point Locks (or the fiat verifier) at this stack's Paykit |
+| `wiring`  | `wiring.service-paypal-return`            | the service's `PUBLIC_APP_ORIGIN` is a Shop origin plus the public path (PayPal `return` and `cancel_return` land on `{value}/marketplace/orders`) | set `PUBLIC_APP_ORIGIN=https://pubky.app/shop` (or the staging origin plus `/shop`) |
 | `wiring`  | `wiring.service-sandbox`                  | sandbox payments are off in production                                                                               | unset `SANDBOX_PAYMENTS_ENABLED`                                                                          |
 | `wiring`  | `wiring.shop-setup-creator-param`         | the Shop sends `creator` to Paykit `/setup` only for the fork server                                                 | set `PUBKY_RUNTIME_PAYKIT_SETUP_CREATOR_PARAM` (false for upstream Paykit)                                |
 | `wiring`  | `wiring.shop-paykit-server-api`           | the Shop's Paykit Server API (`fork` when unset) matches the Paykit server it is wired to                            | set `PUBKY_RUNTIME_PAYKIT_SERVER_API` (`upstream` for upstream Paykit)                                    |
@@ -111,7 +119,7 @@ Exit code 0 means no FAIL; `--strict` also fails on WARN. `report.md` in the out
 | `db`      | `db.<svc>.migrations`                     | `_sqlx_migrations` holds exactly the source's migrations, all successful, with matching SHA-384 checksums. Without a source pin, `db.<svc>.migrations-applied` checks only for failures and the exact match is SKIP | extra or mismatched rows mean another build migrated this database: use a fresh database for this release |
 | `flow`    | `flow.paykit-setup.*`, `flow.locks-connect.*` | the setup and connect pages frame each Shop origin and refuse a foreign one                                      | fix `[setup] allowed_origins` or `allowed_return_origins` (the `grant_connect` list when Locks runs `grant-connect`) |
 | `write`   | `write.nexus*`                            | a fresh post appears in the Nexus, its delete is indexed, and the probe data is gone from the homeserver             | check the watcher's homeserver and its log                                                                |
-| `browser` | `browser.<host>.*`                        | the running client reads from this Nexus, calls no retired host, and logs no CORS error                              | fix the Shop runtime config or CORS                                                                       |
+| `browser` | `browser.<host>.*`                        | the running client reads from this Nexus, calls no retired host, and logs no CORS error; with `SHOP_EMBED_PATH`, `browser.<host>.iframe` proves `SHOP_PATH` frames the Shop and the framed page renders | fix the Shop runtime config or CORS; check the App's `/shop` route and the proxy route for the build      |
 | `deep`    | `deep.<name>`                             | each configured staging proof exits 0 and prints its pass marker                                                     | read `deep-<name>.log` in the output folder                                                               |
 
 ## 5. What each opt-in probe leaves behind
@@ -133,7 +141,7 @@ Production on Railway, 6 October 2026 (read-only, excerpt). The stack declares `
 
 ```text
 == wiring
-PASS  wiring.paykit-trusts-locks             Paykit trusts the Lock Server key — trusted pubkyrqrnn1d…, Locks pubkyrqrnn1d…
+PASS  wiring.paykit-trusts-locks             Paykit trusts the Lock Server key — 2 trusted key(s), Locks pubkyrqrnn1d…
 PASS  wiring.paykit-setup-origins            Paykit setup allows the Shop origins — 1 origin(s)
 PASS  wiring.locks-paykit-reachable          Locks [paykit] server_url answers (from inside its network) — LOCKS_PAYKIT_REACH_CMD exit 0
 WARN  wiring.fiat-paykit-url                 fiat verifier forwards Bitcoin to this Paykit — Locks-gated Bitcoin goes to http://paykit-server.railway.internal:3001, not this stack’s Paykit https://paykit-shop.pubky.app (declared: Lock Server shared from staging)

@@ -6,8 +6,17 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { useForm, type UseFormReturn, useWatch } from 'react-hook-form';
 import { getCommerceAdapterMode, getPaykitServerApi, isDurableCommerceMode } from '@/config/commerce';
 import { CommerceController } from '@/controllers/commerce/commerce';
-import { type PendingDeliveryKeyChange, useDeliveryKeyGate } from '@/hooks/useDeliveryKeyGate/useDeliveryKeyGate';
+import { useConnectorStoreShare } from '@/hooks/useConnectorStoreShare/useConnectorStoreShare';
+import {
+  type DeliveryKeyBlock,
+  type PendingDeliveryKeyChange,
+  useDeliveryKeyGate,
+} from '@/hooks/useDeliveryKeyGate/useDeliveryKeyGate';
 import type { MarketplaceCartItem } from '@/hooks/useMarketplaceCart/useMarketplaceCart';
+import {
+  checkDestinationCountry,
+  useMarketplaceSellerShipsTo,
+} from '@/hooks/useMarketplaceSellerShipsTo/useMarketplaceSellerShipsTo';
 import {
   BIND_FAIL_CANCEL_REASON,
   listingAggregatesFromCheckoutLines,
@@ -20,19 +29,26 @@ import {
   type MarketplaceDigitalDeliveryKind,
 } from '@/libs/commerce/digital';
 import {
+  isPaykitUnavailableRefusal,
   MARKETPLACE_FAILURE_MESSAGES,
   marketplaceCheckoutRefusalMessage,
   marketplaceErrorCode,
   marketplaceFailureMessage,
-  usdtOfferRefusalReason,
-  usdtRefusalKey,
+  marketplaceListingNotActiveMessage,
 } from '@/libs/commerce/failure-messages';
+import { tracksVariantStock } from '@/libs/commerce/listing-variants';
 import { LOCKS_MIXED_CHECKOUT_COPY, locksCheckoutRoute } from '@/libs/commerce/locks-payment';
-import { commerceListingFulfillmentMethods } from '@/libs/commerce/marketplace-records';
+import {
+  commerceListingFulfillmentMethods,
+  commerceListingProjectionChargesRecordTerms,
+  commerceListingProjectionIsStale,
+  commerceListingProjectionMatchesRecord,
+} from '@/libs/commerce/marketplace-records';
 import type { PaymentMethodKind } from '@/libs/commerce/payment-methods';
 import type { MarketplaceFulfillmentMethod } from '@/libs/commerce/pickup';
 import { pickupRefusalFailureMessage } from '@/libs/commerce/pickup';
 import { browserAddressCountry } from '@/libs/commerce/postal-address';
+import { isDestinationAllowed } from '@/libs/commerce/ships-to';
 import {
   buildMarketplaceListingAggregateId,
   buildMarketplaceOrderAggregateId,
@@ -40,8 +56,10 @@ import {
   isListingDeletedResponse,
   isMarketplaceRevisionConflict,
 } from '@/libs/commerce/transaction-commands';
+import { classifyVariantRefusal, variantRefusalMessage } from '@/libs/commerce/variant-refusals';
 import { AppError } from '@/libs/error/error';
 import { isMarketplaceSessionRequiredError } from '@/libs/error/error.utils';
+import { Logger } from '@/libs/logger/logger';
 import type { CommerceDeliveryAddressModelSchema } from '@/models/commerce/commerce.schema';
 import { showPaymentMethodRefusalToast } from '@/molecules/Toaster/payment-method-refusal-toast';
 import { toast } from '@/molecules/Toaster/use-toast';
@@ -87,7 +105,10 @@ function addressFieldValues(
 async function syncLineProjection(ownerPubky: string, listingId: string) {
   try {
     const response = await CommerceController.syncListingRegistration(ownerPubky, listingId);
-    if (!response.ok) return { projection: null, removed: false };
+    if (!response.ok) {
+      Logger.warn('Checkout line listing sync was refused', { code: response.error.code });
+      return { projection: null, removed: false };
+    }
     if (isListingDeletedResponse(response, buildMarketplaceListingAggregateId(ownerPubky, listingId))) {
       return { projection: null, removed: true };
     }
@@ -95,7 +116,8 @@ async function syncLineProjection(ownerPubky: string, listingId: string) {
       projection: await CommerceController.getMarketplaceListingProjection(ownerPubky, listingId),
       removed: false,
     };
-  } catch {
+  } catch (error) {
+    Logger.warn('Checkout line listing sync failed', { error });
     return { projection: null, removed: false };
   }
 }
@@ -115,6 +137,12 @@ export type MarketplacePayResult = {
   ok: boolean;
   orderIds: string[];
   boundOrders: MarketplaceOrder[];
+  /** The bind failed because the service could not reach Paykit. */
+  paykitUnavailable?: boolean;
+  /** The service refused to create the checkout; the copy the buyer was shown. */
+  refusal?: string;
+  /** The refusal says a listing or size in the cart sold out. */
+  soldOut?: boolean;
 };
 
 /**
@@ -153,6 +181,10 @@ export function useMarketplaceCheckout(
   setFulfillmentChoice: (sellerPubky: string, method: MarketplaceFulfillmentMethod) => void;
   /** True only when a line ships — pickup and digital lines send no address (§A2). */
   requiresDeliveryAddress: boolean;
+  /** The opt-in to share the address with a shipped seller's connected store. */
+  storeShare: ReturnType<typeof useConnectorStoreShare>;
+  /** The countries the shipped sellers deliver to; null when any country is accepted (or still loading). */
+  allowedDestinationCountries: readonly string[] | null;
   /**
    * The line's method: digital for a digital line (digital delivery design
    * §3 "Mixed carts"), else its seller group's choice. Undefined while a
@@ -189,6 +221,8 @@ export function useMarketplaceCheckout(
   /** Persist a used or newly saved address after a successful create (offer or cart). */
   pendingKeyChange: PendingDeliveryKeyChange | null;
   decideKeyChange: (accepted: boolean) => void;
+  /** Why Pay stopped at a seller's delivery key; stays until the next attempt. */
+  deliveryKeyBlock: DeliveryKeyBlock | null;
   rememberAddress: () => Promise<void>;
 } {
   const currentUserPubky = useAuthStore((state) => state.currentUserPubky);
@@ -210,7 +244,12 @@ export function useMarketplaceCheckout(
   } | null>(null);
   const [digitalKindsAttempt, setDigitalKindsAttempt] = useState(0);
   const appliedInitialAddressRef = useRef(false);
-  const { resolveKeys, pendingChange: pendingKeyChange, decide: decideKeyChange } = useDeliveryKeyGate();
+  const {
+    resolveKeys,
+    pendingChange: pendingKeyChange,
+    decide: decideKeyChange,
+    blocked: deliveryKeyBlock,
+  } = useDeliveryKeyGate();
   const form = useForm<MarketplaceCheckoutData>({
     resolver: zodResolver(marketplaceCheckoutSchema),
     defaultValues: marketplaceCheckoutDefaults,
@@ -296,18 +335,16 @@ export function useMarketplaceCheckout(
     };
   }, []);
 
+  // A Locks listing is a digital listing: it collects no address, and the
+  // Lock Server delivers it, so it needs no seller deliverable and does not
+  // depend on the deployment's digital capability.
+  const isLocksItem = (item: MarketplaceCartItem) => item.listing.record.digitalLock !== undefined;
   const publishedByItem = new Map<string, MarketplaceFulfillmentMethod[]>();
   for (const item of items) {
-    publishedByItem.set(
-      item.id,
-      commerceListingFulfillmentMethods(
-        item.listing.record.fulfillmentMethods,
-        item.listing.record.digitalLock !== undefined,
-      ),
-    );
+    publishedByItem.set(item.id, commerceListingFulfillmentMethods(item.listing.record.fulfillmentMethods));
   }
   const publishedFor = (item: MarketplaceCartItem) => publishedByItem.get(item.id) ?? [];
-  const anyPublishesDigital = items.some((item) => publishedFor(item).includes('digital'));
+  const anyPublishesDigital = items.some((item) => !isLocksItem(item) && publishedFor(item).includes('digital'));
 
   // The deployment's digital capability (digital delivery design §6 B5):
   // digital lines are offered only when /health reports it.
@@ -333,15 +370,19 @@ export function useMarketplaceCheckout(
   const physicalOptionsFor = (item: MarketplaceCartItem) =>
     publishedFor(item).filter((method) => method === 'shipping' || (method === 'pickup' && pickupAvailable === true));
   const digitalOffered = (item: MarketplaceCartItem) =>
-    digitalAvailable === true && publishedFor(item).includes('digital');
+    (isLocksItem(item) || digitalAvailable === true) && publishedFor(item).includes('digital');
   // A pickup line whose capability is still loading may yet be physical.
   const physicalPossible = (item: MarketplaceCartItem) =>
     physicalOptionsFor(item).length > 0 || (pickupAvailable === null && publishedFor(item).includes('pickup'));
   const digitalPending = (item: MarketplaceCartItem) =>
-    digitalAvailable === null && publishedFor(item).includes('digital') && !physicalPossible(item);
+    !isLocksItem(item) &&
+    digitalAvailable === null &&
+    publishedFor(item).includes('digital') &&
+    !physicalPossible(item);
   const goesDigital = (item: MarketplaceCartItem) =>
     digitalOffered(item) && (!physicalPossible(item) || digitalChoices[item.id] === true);
   const digitalItems = items.filter(goesDigital);
+  const deliverableItems = digitalItems.filter((item) => !isLocksItem(item));
   const physicalItems = items.filter((item) => !goesDigital(item) && !digitalPending(item));
 
   // Per-seller-group fulfillment resolution (§A2): the intersection of the
@@ -394,6 +435,14 @@ export function useMarketplaceCheckout(
     (items.length === 0 && award === null) ||
     physicalItems.some((item) => fulfillmentForItem(item.id) !== 'pickup') ||
     (award !== null && fulfillmentForSeller(award.sellerPubky) !== 'pickup');
+  const shippedSellerPubkys = [
+    ...physicalItems
+      .filter((item) => fulfillmentForItem(item.id) === 'shipping')
+      .map((item) => item.listing.record.ownerPubky),
+    ...(award && fulfillmentForSeller(award.sellerPubky) === 'shipping' ? [award.sellerPubky] : []),
+  ];
+  const shipsTo = useMarketplaceSellerShipsTo(shippedSellerPubkys);
+  const storeShare = useConnectorStoreShare(shippedSellerPubkys);
   const orderCount = new Set([
     ...items.map((item) => `${item.listing.record.ownerPubky}|${fulfillmentForItem(item.id) ?? ''}`),
     ...(award ? [`${award.sellerPubky}|${fulfillmentForSeller(award.sellerPubky) ?? ''}`] : []),
@@ -404,7 +453,7 @@ export function useMarketplaceCheckout(
   // lines change or a checkout refusal says the delivery moved.
   const digitalKindsKey = JSON.stringify({
     attempt: digitalKindsAttempt,
-    lines: digitalItems.map((item) => [item.id, item.listing.record.ownerPubky, item.listing.record.listingId]),
+    lines: deliverableItems.map((item) => [item.id, item.listing.record.ownerPubky, item.listing.record.listingId]),
   });
   useEffect(() => {
     const { lines } = JSON.parse(digitalKindsKey) as { lines: Array<[string, string, string]> };
@@ -429,10 +478,10 @@ export function useMarketplaceCheckout(
       active = false;
     };
   }, [digitalKindsKey]);
-  const kindsLoaded = digitalItems.length === 0 || digitalKinds?.key === digitalKindsKey;
+  const kindsLoaded = deliverableItems.length === 0 || digitalKinds?.key === digitalKindsKey;
   const digitalKindForItem = (itemId: string): MarketplaceDigitalDeliveryKind | null | undefined => {
     const item = itemById.get(itemId);
-    if (!item || !goesDigital(item) || !kindsLoaded) return undefined;
+    if (!item || !goesDigital(item) || isLocksItem(item) || !kindsLoaded) return undefined;
     return digitalKinds?.kinds[itemId] ?? null;
   };
   const digitalLineKinds = digitalItems.map((item) => digitalKindForItem(item.id));
@@ -451,6 +500,28 @@ export function useMarketplaceCheckout(
   useEffect(() => {
     form.setValue('requiresDeliveryEmail', requiresDeliveryEmail, { shouldValidate: true });
   }, [form, requiresDeliveryEmail]);
+  // A new address starts in a country the sellers ship to; one the buyer
+  // started or picked from the address book is never rewritten, so a
+  // disallowed country shows its error instead.
+  useEffect(() => {
+    form.setValue('shipsTo', shipsTo, { shouldValidate: true });
+    const allowed = shipsTo.status === 'ready' ? shipsTo.countries : null;
+    const values = form.getValues();
+    const addressStarted = MARKETPLACE_CHECKOUT_ADDRESS_FIELDS.some(
+      (field) => field !== 'countryCode' && values[field].trim() !== '',
+    );
+    if (
+      allowed?.length &&
+      !isDestinationAllowed(values.countryCode, allowed) &&
+      !form.getFieldState('countryCode').isDirty &&
+      !addressStarted
+    ) {
+      form.setValue('countryCode', allowed[0]);
+    }
+    if (allowed || shipsTo.status === 'unavailable' || form.getFieldState('countryCode').error) {
+      void form.trigger('countryCode');
+    }
+  }, [form, shipsTo]);
 
   const setFulfillmentChoice = (sellerPubky: string, method: MarketplaceFulfillmentMethod) => {
     setChoiceOverrides((current) => ({ ...current, [sellerPubky]: method }));
@@ -537,22 +608,64 @@ export function useMarketplaceCheckout(
 
   const createCheckout = async (
     data: MarketplaceCheckoutData,
-  ): Promise<{ ok: true; result: unknown; lines: CheckoutLine[] } | { ok: false }> => {
+  ): Promise<
+    { ok: true; result: unknown; lines: CheckoutLine[] } | { ok: false; refusal?: string; soldOut?: boolean }
+  > => {
     const freshKinds: Array<MarketplaceDigitalDeliveryKind | null> = [];
     let sawRemovedListing = false;
+    let sawChangedListing = false;
+    let sawUnsyncedLocksLine = false;
     const lines = await Promise.all(
       items.map(async (item) => {
         const record = item.listing.record;
         let projection = await CommerceController.getMarketplaceListingProjection(record.ownerPubky, record.listingId);
-        if (!projection && isDurableCommerceMode(getCommerceAdapterMode())) {
+        // The service charges and validates from its projection, so one that lags the record is synced
+        // first. A Locks lock is not projected, so a Locks line is always synced (a no-op when current) and
+        // cannot check out unsynced: the service may not hold its lock.
+        const durable = isDurableCommerceMode(getCommerceAdapterMode());
+        const needsSync = !projection || isLocksItem(item) || commerceListingProjectionIsStale(record, projection);
+        let synced = false;
+        if (needsSync && durable) {
           const healed = await syncLineProjection(record.ownerPubky, record.listingId);
-          projection = healed.projection;
           if (healed.removed) sawRemovedListing = true;
+          if (!healed.projection && !healed.removed && isLocksItem(item)) {
+            sawUnsyncedLocksLine = true;
+            return null;
+          }
+          synced = healed.projection !== null;
+          projection = healed.removed ? null : (healed.projection ?? projection);
         }
         if (!projection) return null;
+        // The service charges its projection's terms. A projection of a newer record than the cart holds, or
+        // a fresh sync that does not reproduce the cart's record, means the seller changed the listing since
+        // the buyer saw it: the cart's record is refreshed and the buyer reviews the new terms. A projection
+        // whose price or shipping differs stops checkout even when its sync failed. Any other unsynced
+        // mismatch charges what the buyer saw, and the service refuses an unpublished method itself.
+        if (
+          durable &&
+          (synced ||
+            projection.listingRevision > record.revision ||
+            !commerceListingProjectionChargesRecordTerms(record, projection)) &&
+          !commerceListingProjectionMatchesRecord(record, projection)
+        ) {
+          sawChangedListing = true;
+          await CommerceController.refreshListing(record.ownerPubky, record.listingId).catch((error: unknown) => {
+            Logger.warn('Checkout could not refresh a changed listing', { error });
+          });
+          return null;
+        }
         const digital = goesDigital(item);
-        if (digital) freshKinds.push(projection.digitalDelivery?.kind ?? null);
+        if (digital && !isLocksItem(item)) freshKinds.push(projection.digitalDelivery?.kind ?? null);
         const variant = record.variants.find(({ id }) => id === item.variantId);
+        // A listing the service tracks per size needs the size on every line. A cart row whose size left
+        // the record is a changed listing, not a line to send blind.
+        if (!variant && tracksVariantStock(record.variants)) {
+          sawChangedListing = true;
+          await CommerceController.refreshListing(record.ownerPubky, record.listingId).catch((error: unknown) => {
+            Logger.warn('Checkout could not refresh a changed listing', { error });
+          });
+          return null;
+        }
         const variantOptions = variant ? Object.entries(variant.options) : [];
         return {
           listingAggregateId: projection.aggregateId,
@@ -573,7 +686,11 @@ export function useMarketplaceCheckout(
         variant: 'error',
         description: sawRemovedListing
           ? `${MARKETPLACE_FAILURE_MESSAGES.listingRemoved} Nothing was reserved.`
-          : 'A listing in your cart could not be prepared for checkout. It may have been removed by the seller. Nothing was reserved.',
+          : sawChangedListing
+            ? 'A listing changed while you were checking out. Review your cart and try again.'
+            : sawUnsyncedLocksLine
+              ? 'A Locks item in your cart could not be confirmed with the marketplace. Nothing was reserved. Try again in a moment.'
+              : "A listing in your cart isn't available for checkout right now. Nothing was reserved.",
       });
       return { ok: false };
     }
@@ -598,12 +715,22 @@ export function useMarketplaceCheckout(
     const shippedSellers = requiresDeliveryAddress
       ? CommerceController.getShippedSellers({ lines: checkoutLines, fulfillmentChoiceBySeller })
       : [];
+    if (shippedSellers.length > 0) {
+      const destinationError = await checkDestinationCountry(data.countryCode, shippedSellers);
+      if (destinationError) {
+        toast({ variant: 'error', description: destinationError });
+        return { ok: false };
+      }
+    }
     const sealedTo = await resolveKeys(shippedSellers);
     if (!sealedTo.ok) return { ok: false };
     const response = await CommerceController.commitCreateMarketplaceCheckout({
       lines: checkoutLines,
       fulfillmentChoiceBySeller,
       deliveryKeys: sealedTo.keys,
+      ...(storeShare.selected.some((store) => shippedSellers.includes(store.sellerPubky))
+        ? { connectorShares: storeShare.selected.filter((store) => shippedSellers.includes(store.sellerPubky)) }
+        : {}),
       ...(freshKinds.includes('email') ? { deliveryEmail: data.deliveryEmail } : {}),
       ...(requiresDeliveryAddress
         ? {
@@ -620,28 +747,31 @@ export function useMarketplaceCheckout(
         : {}),
     });
     if (!response.ok) {
+      const refuse = (refusal: string, soldOut = false) => {
+        toast({ variant: 'error', description: refusal });
+        return { ok: false as const, refusal, soldOut };
+      };
       if (isMarketplaceRevisionConflict(response)) {
-        toast({
-          variant: 'error',
-          description: 'A listing changed while you were checking out. Review your cart and try again.',
-        });
-        return { ok: false };
+        return refuse('A listing changed while you were checking out. Review your cart and try again.');
       }
       const digitalRefusal = classifyDigitalCheckoutRefusal(response.error);
       if (digitalRefusal) {
         if (digitalRefusal !== 'invalid_email') setDigitalKindsAttempt((attempt) => attempt + 1);
-        toast({ variant: 'error', description: DIGITAL_CHECKOUT_REFUSAL_COPY[digitalRefusal] });
-        return { ok: false };
+        return refuse(DIGITAL_CHECKOUT_REFUSAL_COPY[digitalRefusal]);
+      }
+      const variantRefusal = variantRefusalMessage(response.error);
+      if (variantRefusal) {
+        return refuse(variantRefusal, classifyVariantRefusal(response.error) === 'variant_sold_out');
       }
       const pickupRefusal = classifyMarketplacePickupCommandRefusal(response);
-      toast({
-        variant: 'error',
-        description: pickupRefusal
-          ? pickupRefusalFailureMessage(pickupRefusal)
-          : (marketplaceCheckoutRefusalMessage(response.error.code, response.error.message) ??
-            marketplaceFailureMessage(response.error.code, MARKETPLACE_FAILURE_MESSAGES.checkout)),
-      });
-      return { ok: false };
+      if (pickupRefusal) return refuse(pickupRefusalFailureMessage(pickupRefusal));
+      const checkoutRefusal = marketplaceCheckoutRefusalMessage(response.error.code, response.error.message);
+      return refuse(
+        marketplaceListingNotActiveMessage(response.error) ??
+          checkoutRefusal ??
+          marketplaceFailureMessage(response.error.code, MARKETPLACE_FAILURE_MESSAGES.checkout),
+        checkoutRefusal === MARKETPLACE_FAILURE_MESSAGES.listingSoldOut,
+      );
     }
     return { ok: true, result: response.result, lines: checkoutLines };
   };
@@ -712,7 +842,10 @@ export function useMarketplaceCheckout(
       let createdIds: string[] = [];
       try {
         const created = await createCheckout(data);
-        if (!created.ok) return;
+        if (!created.ok) {
+          if (created.refusal) outcome = { ...empty, refusal: created.refusal, soldOut: created.soldOut };
+          return;
+        }
         let listed: MarketplaceOrder[] = [];
         try {
           listed = await CommerceController.getMarketplaceOrders();
@@ -752,14 +885,8 @@ export function useMarketplaceCheckout(
           }
         } catch (bindError) {
           await cancelCreatedCheckouts(createdIds);
-          const usdtRefusal = usdtOfferRefusalReason(bindError);
-          if (usdtRefusal) {
-            CommerceController.rememberUsdtRefusal(
-              usdtRefusalKey(items.map((item) => item.listing.record.ownerPubky)),
-              usdtRefusal,
-            );
-          }
           showPaymentMethodRefusalToast({ error: bindError, fallback: MARKETPLACE_FAILURE_MESSAGES.checkout, onRetry });
+          if (isPaykitUnavailableRefusal(bindError)) outcome = { ...empty, paykitUnavailable: true };
           return;
         }
         await finishCreatedCheckout(data);
@@ -788,6 +915,8 @@ export function useMarketplaceCheckout(
     fulfillmentForSeller,
     setFulfillmentChoice,
     requiresDeliveryAddress,
+    storeShare,
+    allowedDestinationCountries: shipsTo.status === 'ready' ? shipsTo.countries : null,
     fulfillmentForItem,
     canChooseDigitalForItem: (itemId: string) => {
       const item = itemById.get(itemId);
@@ -807,6 +936,7 @@ export function useMarketplaceCheckout(
     orderCount,
     pendingKeyChange,
     decideKeyChange,
+    deliveryKeyBlock,
     rememberAddress: async () => {
       await persistAddressBookAfterOrder(form.getValues());
     },

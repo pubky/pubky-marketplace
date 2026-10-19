@@ -5,7 +5,6 @@ import { CommerceController } from '@/controllers/commerce/commerce';
 import type { SellerDeliveryKey } from '@/libs/commerce/delivery-envelope';
 import { DELIVERY_KEY_COPY } from '@/libs/commerce/delivery-key-copy';
 import { Logger } from '@/libs/logger/logger';
-import { toast } from '@/molecules/Toaster/use-toast';
 
 export type PendingDeliveryKeyChange = {
   sellerPubky: string;
@@ -13,14 +12,26 @@ export type PendingDeliveryKeyChange = {
   currentKeyId: string;
 };
 
-export type DeliveryKeyGateOutcome = { ok: true; keys: Map<string, SellerDeliveryKey> } | { ok: false };
+/** Why checkout stopped before sealing: shown inline next to Pay until the buyer tries again. */
+export type DeliveryKeyBlock = {
+  kind: 'no_key' | 'invalid' | 'unreachable';
+  /** The seller whose key stopped the checkout; null when no key was read at all. */
+  sellerPubky: string | null;
+  message: string;
+};
+
+export type DeliveryKeyGateOutcome =
+  | { ok: true; keys: Map<string, SellerDeliveryKey> }
+  | { ok: false; blocked: DeliveryKeyBlock | null };
 
 /**
  * Resolves the delivery key of every shipped seller before a buyer submits
- * an address. A seller without a usable key stops the checkout with a toast;
- * a seller whose key changed since the buyer last saw it opens a
- * confirmation that shows both fingerprints, and the buyer's answer decides
- * whether the new key is pinned and used.
+ * an address. A seller without a usable key stops the checkout with an inline
+ * message that stays until the buyer tries again; a toast alone vanished in
+ * three seconds and read as Pay doing nothing. A seller whose key changed
+ * since the buyer last saw it opens a confirmation that shows both
+ * fingerprints, and the buyer's answer decides whether the new key is pinned
+ * and used.
  */
 export function useDeliveryKeyGate() {
   const [pendingChange, setPendingChange] = useState<{
@@ -38,7 +49,25 @@ export function useDeliveryKeyGate() {
     setPendingChange(null);
   };
 
+  const [blocked, setBlocked] = useState<DeliveryKeyBlock | null>(null);
+
+  const block = (kind: DeliveryKeyBlock['kind'], sellerPubky: string | null): DeliveryKeyGateOutcome => {
+    const next: DeliveryKeyBlock = {
+      kind,
+      sellerPubky,
+      message:
+        kind === 'no_key'
+          ? DELIVERY_KEY_COPY.noKey
+          : kind === 'invalid'
+            ? DELIVERY_KEY_COPY.invalid
+            : DELIVERY_KEY_COPY.unreachable,
+    };
+    setBlocked(next);
+    return { ok: false, blocked: next };
+  };
+
   const resolveKeys = async (sellerPubkys: readonly string[]): Promise<DeliveryKeyGateOutcome> => {
+    setBlocked(null);
     try {
       for (let attempt = 0; attempt <= sellerPubkys.length; attempt += 1) {
         const resolution = await CommerceController.resolveDeliveryKeysForCheckout(sellerPubkys);
@@ -50,24 +79,18 @@ export function useDeliveryKeyGate() {
             pinnedKeyId: problem.pinnedKeyId,
             currentKeyId: problem.currentKeyId,
           });
-          if (!accepted) return { ok: false };
+          if (!accepted) return { ok: false, blocked: null };
           await CommerceController.commitAcceptDeliveryKeyChange(sellerPubky, problem.currentKeyId);
           continue;
         }
-        toast({
-          variant: 'error',
-          description: problem.kind === 'no_key' ? DELIVERY_KEY_COPY.noKey : DELIVERY_KEY_COPY.invalid,
-        });
-        return { ok: false };
+        return block(problem.kind, sellerPubky);
       }
     } catch (error) {
       Logger.error('Seller delivery key could not be resolved', { error });
-      toast({ variant: 'error', description: DELIVERY_KEY_COPY.unreachable });
-      return { ok: false };
+      return block('unreachable', null);
     }
-    toast({ variant: 'error', description: DELIVERY_KEY_COPY.unreachable });
-    return { ok: false };
+    return block('unreachable', null);
   };
 
-  return { resolveKeys, pendingChange: pendingChange?.change ?? null, decide };
+  return { resolveKeys, pendingChange: pendingChange?.change ?? null, decide, blocked };
 }

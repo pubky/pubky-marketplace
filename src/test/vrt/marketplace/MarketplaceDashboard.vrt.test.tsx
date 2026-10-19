@@ -54,6 +54,7 @@ const fixtures = vi.hoisted(async () => {
   return {
     seller: COMMERCE_FIXTURE_SELLER,
     shop: toCommerceShopModel(createCommerceShopFixture()),
+    defaultShop: toCommerceShopModel(createCommerceShopFixture({ shippingPolicy: '', returnPolicy: '' })),
     listings,
     populatedMetrics: {
       activeListings: 3,
@@ -225,7 +226,33 @@ describe('Marketplace seller dashboard — visual regression', () => {
     );
   });
 
-  it('renders the new-seller empty state at desktop viewport', async () => {
+  // The storefront the Shop publishes by default has no policies; the
+  // dashboard keeps asking for them until the seller writes one.
+  it('renders the add-policies prompt for a default storefront at desktop viewport', async () => {
+    const { listings, populatedMetrics, populatedActionNeeded, defaultShop } = await fixtures;
+    view.listings = listings;
+    view.metrics = populatedMetrics;
+    view.actionNeeded = populatedActionNeeded;
+    view.isLoading = false;
+    view.shop = defaultShop;
+
+    const screen = await renderForVRT(<MarketplaceDashboard />, { viewport: VRT_VIEWPORT_DESKTOP });
+    await vi.waitFor(() => {
+      if (!screen.container.textContent?.includes('Add your shipping and return policies')) {
+        throw new Error('The policies prompt has not rendered yet.');
+      }
+    });
+    await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot(
+      'dashboard-policies-prompt-desktop',
+      VRT_DENSE_CHROME_SCREENSHOT,
+    );
+  });
+
+  it.each([
+    { name: 'desktop', viewport: VRT_VIEWPORT_DESKTOP },
+    { name: 'mobile', viewport: VRT_VIEWPORT_MOBILE },
+    { name: 'small-mobile', viewport: { width: 375, height: 812 } },
+  ])('renders the new-seller empty state with one action row at $name viewport', async ({ name, viewport }) => {
     const { emptyMetrics, emptyActionNeeded, shop } = await fixtures;
     view.listings = [];
     view.metrics = emptyMetrics;
@@ -233,9 +260,14 @@ describe('Marketplace seller dashboard — visual regression', () => {
     view.isLoading = false;
     view.shop = shop;
 
-    const screen = await renderForVRT(<MarketplaceDashboard />, { viewport: VRT_VIEWPORT_DESKTOP });
+    const screen = await renderForVRT(<MarketplaceDashboard />, { viewport });
+    const actions = screen.getByTestId('marketplace-listing-actions').element();
+    const buttons = Array.from(actions.querySelectorAll('button'));
+    expect(new Set(buttons.map((button) => button.getBoundingClientRect().top)).size).toBe(1);
+    expect(actions.scrollWidth).toBeLessThanOrEqual(actions.clientWidth);
+    expect(buttons.at(-1)!.getBoundingClientRect().right).toBeLessThanOrEqual(viewport.width);
     await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot(
-      'dashboard-empty-desktop',
+      `dashboard-empty-${name}`,
       VRT_DENSE_CHROME_SCREENSHOT,
     );
   });

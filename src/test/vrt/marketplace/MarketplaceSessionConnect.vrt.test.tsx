@@ -11,7 +11,7 @@ import { BOOTSTRAP_APPROVAL_EXPIRED } from '@/libs/commerce/failure-messages';
 // The QR encodes the authorization URL verbatim, so it must be a FIXED fake
 // for a byte-stable matrix across runs and OSes. It is never dereferenced.
 const VRT_AUTH_URL =
-  'pubkyauth:///?relay=https%3A%2F%2Fvrt.invalid%2Flink%2F&capabilities=%2Fpub%2Fpubky.app%2F%3Arw&secret=vrt-fixed-secret';
+  'pubkyauth://signin_grant?caps=%2Fpub%2Fpubky.app%2Fmarketplace-service%2Fv1%2F%3Arw&relay=https%3A%2F%2Fvrt.invalid%2Finbox&secret=vrt-fixed-secret&cid=vrt.invalid&cpk=vrt-fixed-cpk';
 
 const QR_LOGO_URLS = ['/images/ring-logo.svg'];
 
@@ -36,25 +36,35 @@ const view = vi.hoisted(() => ({
   isOpeningRing: false,
   grantEnabled: false,
   bootstrap: false,
-  approvalSigner: 'Bitkit' as 'Bitkit' | 'Pubky Ring or Bitkit',
+  requiresSignIn: false,
+  passportEnabled: true,
+  hosted: false,
+  approvalSigner: 'Pubky Ring' as 'Bitkit' | 'Pubky Ring' | 'Pubky Passport' | 'your signer',
 }));
 
 const VRT_BOOTSTRAP_URL =
   'pubkyauth://signin_grant?caps=%2Fpub%2Fpubky.app%2Fmarketplace-service%2Fv1%2F%3Arw&relay=https%3A%2F%2Fvrt.invalid%2Finbox&secret=vrt-fixed-secret&cid=vrt.invalid&cpk=vrt-fixed-cpk';
+
+vi.mock('@/providers/ShopHostSessionProvider/ShopHostSessionProvider', () => ({
+  useIsShopHosted: () => view.hosted,
+}));
 
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn() }),
   usePathname: () => '/marketplace/orders',
 }));
 
-// Bridged / narrow-grant arrival: the dialog asks for a Shop purchase
-// approval. Direct Shop sign-in never mounts this surface with a full grant
-// already in hand.
+// Shop's homeserver grant is already present. This dialog obtains the separate
+// marketplace service approval for the same identity.
 vi.mock('@/controllers/commerce/commerce', () => ({
   CommerceController: {
     ...createMarketplaceVrtCommerceController(),
-    hasFullHomeserverGrant: () => false,
+    hasFullHomeserverGrant: () => true,
   },
+}));
+
+vi.mock('@/hooks/useMarketplaceApprovalSigner/useMarketplaceApprovalSigner', () => ({
+  useMarketplaceApprovalSigner: () => view.approvalSigner,
 }));
 
 vi.mock('@/hooks/useMarketplaceSessionConnect/useMarketplaceSessionConnect', () => ({
@@ -62,13 +72,14 @@ vi.mock('@/hooks/useMarketplaceSessionConnect/useMarketplaceSessionConnect', () 
     status: view.status,
     authorizationUrl: view.authorizationUrl,
     errorMessage: view.errorMessage,
-    // Bridged / narrow-grant arrival: the full-grant copy (mirrors the
-    // CommerceController.hasFullHomeserverGrant mock above).
-    requestsFullGrant: true,
+    requestsFullGrant: false,
     requestsGrantReconnect: view.grantEnabled && !view.bootstrap,
     requestsGrantBootstrap: view.bootstrap,
+    requestsPassport: view.approvalSigner === 'Pubky Passport' && view.passportEnabled,
+    requiresSignIn: view.requiresSignIn,
     approvalSigner: view.approvalSigner,
     start: vi.fn(),
+    startPassport: vi.fn(),
     cancel: vi.fn(),
     copyAuthUrl: vi.fn(async () => {}),
     openInRing: vi.fn(),
@@ -79,6 +90,7 @@ vi.mock('@/hooks/useMarketplaceSessionConnect/useMarketplaceSessionConnect', () 
 vi.mock('@/libs/runtime-config/runtime-config', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/libs/runtime-config/runtime-config')>()),
   getMarketplaceGrantFlowEnabled: () => view.grantEnabled,
+  getPassportSignInEnabled: () => view.passportEnabled,
 }));
 
 async function openDialog(trigger: { click: () => Promise<void> }) {
@@ -98,12 +110,106 @@ describe('Marketplace session connect — visual regression', () => {
     view.authorizationUrl = '';
     view.errorMessage = null;
     view.isOpeningRing = false;
-    view.grantEnabled = false;
+    view.grantEnabled = true;
     view.bootstrap = false;
-    view.approvalSigner = 'Bitkit';
+    view.requiresSignIn = false;
+    view.passportEnabled = true;
+    view.hosted = false;
+    view.approvalSigner = 'Pubky Ring';
+  });
+
+  it.each([
+    ['desktop', VRT_VIEWPORT_DESKTOP],
+    ['mobile', VRT_VIEWPORT_MOBILE],
+  ] as const)('asks hosted and recovery-key users to choose their signer at %s viewport', async (name, viewport) => {
+    view.approvalSigner = 'your signer';
+    view.status = 'idle';
+    view.bootstrap = true;
+    const screen = await renderForVRT(
+      <Harness>
+        <MarketplaceSessionConnectDialog triggerLabel="Approve purchases" />
+      </Harness>,
+      { viewport },
+    );
+    await openDialog(screen.getByRole('button', { name: 'Approve purchases' }));
+    await expect(screen.getByRole('button', { name: 'Pubky Ring', exact: true })).toBeVisible();
+    await expect(screen.getByRole('button', { name: 'Pubky Passport', exact: true })).toBeVisible();
+    await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot(`session-connect-signer-choice-${name}`);
+  });
+
+  it.each([
+    ['standalone-desktop', false, VRT_VIEWPORT_DESKTOP],
+    ['standalone-mobile', false, VRT_VIEWPORT_MOBILE],
+    ['hosted-desktop', true, VRT_VIEWPORT_DESKTOP],
+    ['hosted-mobile', true, VRT_VIEWPORT_MOBILE],
+  ] as const)('offers sign-in for a remembered identity without authority (%s)', async (name, hosted, viewport) => {
+    view.requiresSignIn = true;
+    view.hosted = hosted;
+    view.status = 'idle';
+    const screen = await renderForVRT(
+      <Harness>
+        <MarketplaceSessionConnectDialog triggerLabel="Approve purchases" />
+      </Harness>,
+      { viewport },
+    );
+    await openDialog(screen.getByRole('button', { name: 'Approve purchases' }));
+    await expect(
+      screen.getByRole('button', { name: hosted ? 'Continue in Pubky App' : 'Sign in', exact: true }),
+    ).toBeVisible();
+    expect(document.querySelector('[aria-label="Copy authorization link"]')).toBeNull();
+    await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot(`session-connect-sign-in-${name}`);
+  });
+
+  it.each([
+    ['desktop', VRT_VIEWPORT_DESKTOP],
+    ['mobile', VRT_VIEWPORT_MOBILE],
+  ] as const)('offers another signer when Passport is disabled at %s viewport', async (name, viewport) => {
+    view.approvalSigner = 'Pubky Passport';
+    view.passportEnabled = false;
+    view.status = 'idle';
+    view.bootstrap = true;
+    const screen = await renderForVRT(
+      <Harness>
+        <MarketplaceSessionConnectDialog triggerLabel="Approve purchases" />
+      </Harness>,
+      { viewport },
+    );
+    await openDialog(screen.getByRole('button', { name: 'Approve purchases' }));
+    await expect(screen.getByRole('button', { name: 'Pubky Ring', exact: true })).toBeVisible();
+    await expect(screen.getByRole('button', { name: 'Bitkit', exact: true })).toBeVisible();
+    expect(document.querySelector('[data-testid="marketplace-passport-approval"]')).toBeNull();
+    expect(document.querySelector('[aria-label="Copy authorization link"]')).toBeNull();
+    await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot(`session-connect-passport-disabled-${name}`);
+  });
+
+  it('offers an explicit Passport popup action at desktop viewport', async () => {
+    view.approvalSigner = 'Pubky Passport';
+    view.status = 'idle';
+    view.bootstrap = true;
+    const screen = await renderForVRT(
+      <Harness>
+        <MarketplaceSessionConnectDialog triggerLabel="Approve purchases" />
+      </Harness>,
+      { viewport: VRT_VIEWPORT_DESKTOP },
+    );
+    await openDialog(screen.getByRole('button', { name: 'Approve purchases' }));
+    await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('session-connect-passport-desktop');
+  });
+
+  it('explains when the deployment has not enabled marketplace grant approvals', async () => {
+    view.grantEnabled = false;
+    const screen = await renderForVRT(
+      <Harness>
+        <MarketplaceSessionConnectDialog triggerLabel="Approve purchases" />
+      </Harness>,
+      { viewport: VRT_VIEWPORT_DESKTOP },
+    );
+    await openDialog(screen.getByRole('button', { name: 'Approve purchases' }));
+    await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('session-connect-unavailable-desktop');
   });
 
   it('renders the Bitkit purchase bootstrap approval at desktop viewport', async () => {
+    view.approvalSigner = 'Bitkit';
     view.grantEnabled = true;
     view.bootstrap = true;
     view.authorizationUrl = VRT_BOOTSTRAP_URL;
@@ -118,10 +224,10 @@ describe('Marketplace session connect — visual regression', () => {
     await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('session-connect-bitkit-bootstrap-desktop');
   });
 
-  it('renders the Pubky Ring (cookie) sign-in purchase bootstrap approval at desktop viewport', async () => {
+  it('renders the Pubky Ring grant sign-in purchase bootstrap approval at desktop viewport', async () => {
     view.grantEnabled = true;
     view.bootstrap = true;
-    view.approvalSigner = 'Pubky Ring or Bitkit';
+    view.approvalSigner = 'Pubky Ring';
     view.authorizationUrl = VRT_BOOTSTRAP_URL;
 
     const screen = await renderForVRT(
@@ -137,7 +243,7 @@ describe('Marketplace session connect — visual regression', () => {
   it('renders a lapsed grant approval with the signers that can approve it at desktop viewport', async () => {
     view.grantEnabled = true;
     view.bootstrap = true;
-    view.approvalSigner = 'Pubky Ring or Bitkit';
+    view.approvalSigner = 'Pubky Ring';
     view.status = 'error';
     view.errorMessage = BOOTSTRAP_APPROVAL_EXPIRED;
 

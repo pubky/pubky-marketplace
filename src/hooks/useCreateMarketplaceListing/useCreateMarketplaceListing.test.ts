@@ -1,6 +1,6 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { COMMERCE_LISTING_MAX_QUANTITY } from '@/config/commerce';
+import { COMMERCE_LISTING_MAX_QUANTITY, getAuctionDurationsMinutes } from '@/config/commerce';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import {
   LISTING_DRAFT_AUTOSAVE_MS,
@@ -20,9 +20,16 @@ import {
 import { createMarketplaceListingSchema } from './useCreateMarketplaceListing.types';
 
 const OWNER = 'y'.repeat(52);
+const PUBLISHED_KEY_STATUS = {
+  local: null,
+  publication: 'matches' as const,
+  publishedKeyId: 'k'.repeat(32),
+};
+const NO_KEY_STATUS = { local: null, publication: 'missing' as const, publishedKeyId: null };
 
 vi.mock('@/config/commerce', async () => ({
   ...(await vi.importActual<typeof import('@/config/commerce')>('@/config/commerce')),
+  getAuctionDurationsMinutes: vi.fn(() => [7 * 24 * 60]),
   getCommerceAdapterMode: () => 'transaction-service',
 }));
 const mediaState = vi.hoisted(() => ({
@@ -120,6 +127,7 @@ vi.mock('@/controllers/commerce/commerce', () => ({
       bitcoinOfferAvailable: true,
       paypalAvailable: false,
     })),
+    getMyDeliveryKeyStatus: vi.fn(),
   },
 }));
 
@@ -130,6 +138,7 @@ vi.mock('@/molecules/Toaster/use-toast', () => ({
 describe('useCreateMarketplaceListing', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(getAuctionDurationsMinutes).mockReturnValue([7 * 24 * 60]);
     vi.mocked(CommerceController.getListingDrafts).mockResolvedValue([]);
     mediaState.prepared = true;
     mediaState.items = [];
@@ -145,6 +154,7 @@ describe('useCreateMarketplaceListing', () => {
       bitcoinOfferAvailable: true,
       paypalAvailable: false,
     });
+    vi.mocked(CommerceController.getMyDeliveryKeyStatus).mockResolvedValue(PUBLISHED_KEY_STATUS);
     vi.spyOn(globalThis.crypto, 'randomUUID').mockReturnValue('018f47d2-6a27-7c23-a49d-6b21bb770121');
   });
 
@@ -204,6 +214,134 @@ describe('useCreateMarketplaceListing', () => {
 
     expect(result.current.publishBlocked).toBe('no-method');
     expect(CommerceController.commitUpsertListing).not.toHaveBeenCalled();
+  });
+
+  describe('a Paykit outage', () => {
+    const outage = {
+      bitcoinAvailable: false,
+      bitcoinOfferAvailable: false,
+      paypalAvailable: false,
+      paykitUnreachable: true,
+    };
+    const healthy = { bitcoinAvailable: true, bitcoinOfferAvailable: true, paypalAvailable: false };
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('says Paykit is unreachable, not "add a payment method", and clears itself when Paykit is back', async () => {
+      vi.useFakeTimers();
+      vi.mocked(CommerceController.getSellerPaymentConfig).mockResolvedValue(outage);
+      const { result } = renderHook(() => useCreateMarketplaceListing());
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      expect(result.current.publishBlocked).toBe('paykit-unreachable');
+      expect(result.current.publishGuardReady).toBe(true);
+
+      await act(async () => {
+        await result.current.submit();
+      });
+      expect(toast).toHaveBeenCalledWith({
+        variant: 'error',
+        description: 'Paykit is temporarily unreachable. Try again in a moment.',
+      });
+      expect(CommerceController.commitUpsertListing).not.toHaveBeenCalled();
+
+      vi.mocked(CommerceController.getSellerPaymentConfig).mockResolvedValue(healthy);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(5_000);
+      });
+      expect(result.current.publishBlocked).toBeNull();
+    });
+
+    it('keeps showing the outage during a recheck, and blanks the guard again when its inputs change', async () => {
+      vi.useFakeTimers();
+      vi.mocked(CommerceController.getSellerPaymentConfig).mockResolvedValue(outage);
+      const { result } = renderHook(() => useCreateMarketplaceListing());
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      expect(result.current.publishBlocked).toBe('paykit-unreachable');
+
+      let finishRead: (config: typeof healthy | typeof outage) => void = () => {};
+      vi.mocked(CommerceController.getSellerPaymentConfig).mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            finishRead = resolve as typeof finishRead;
+          }),
+      );
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(5_000);
+      });
+      expect(result.current.publishGuardReady).toBe(true);
+      expect(result.current.publishBlocked).toBe('paykit-unreachable');
+
+      await act(async () => {
+        finishRead(healthy);
+      });
+      expect(result.current.publishBlocked).toBeNull();
+
+      vi.mocked(CommerceController.getSellerPaymentConfig).mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            finishRead = resolve as typeof finishRead;
+          }),
+      );
+      vi.mocked(CommerceController.getMyDeliveryKeyStatus).mockResolvedValue(PUBLISHED_KEY_STATUS);
+      act(() =>
+        result.current.form.setValue(
+          'fulfillment',
+          result.current.form.getValues('fulfillment') === 'shipping' ? 'pickup' : 'shipping',
+        ),
+      );
+      expect(result.current.publishGuardReady).toBe(false);
+
+      await act(async () => {
+        finishRead(outage);
+      });
+      expect(result.current.publishBlocked).toBe('paykit-unreachable');
+      expect(result.current.publishGuardReady).toBe(true);
+    });
+  });
+
+  it('blocks publishing a listing that ships until the seller has a published delivery key', async () => {
+    vi.mocked(CommerceController.getMyDeliveryKeyStatus).mockResolvedValue(NO_KEY_STATUS);
+    const { result } = renderHook(() => useCreateMarketplaceListing());
+    act(() => result.current.form.setValue('fulfillment', 'shipping'));
+    await waitFor(() => expect(result.current.publishBlocked).toBe('no-delivery-key'));
+
+    await act(async () => {
+      await result.current.submit();
+    });
+
+    expect(result.current.publishBlocked).toBe('no-delivery-key');
+    expect(toast).toHaveBeenCalledWith({
+      variant: 'error',
+      description: 'Create your delivery key before publishing a listing that ships',
+    });
+    expect(CommerceController.commitUpsertListing).not.toHaveBeenCalled();
+  });
+
+  it('lifts the delivery-key block when the listing switches to pickup, without reading the key', async () => {
+    vi.mocked(CommerceController.getMyDeliveryKeyStatus).mockResolvedValue(NO_KEY_STATUS);
+    const { result } = renderHook(() => useCreateMarketplaceListing());
+    act(() => result.current.form.setValue('fulfillment', 'shipping'));
+    await waitFor(() => expect(result.current.publishBlocked).toBe('no-delivery-key'));
+    vi.mocked(CommerceController.getMyDeliveryKeyStatus).mockClear();
+
+    act(() => result.current.form.setValue('fulfillment', 'pickup'));
+
+    await waitFor(() => expect(result.current.publishBlocked).toBeNull());
+    expect(CommerceController.getMyDeliveryKeyStatus).not.toHaveBeenCalled();
+  });
+
+  it('says the delivery key could not be checked when its status read fails', async () => {
+    vi.mocked(CommerceController.getMyDeliveryKeyStatus).mockRejectedValue(new Error('offline'));
+    const { result } = renderHook(() => useCreateMarketplaceListing());
+    act(() => result.current.form.setValue('fulfillment', 'shipping'));
+
+    await waitFor(() => expect(result.current.publishBlocked).toBe('delivery-key-unverified'));
   });
 
   it('blocks publishing when the public payment-config request is rejected', async () => {
@@ -366,6 +504,127 @@ describe('useCreateMarketplaceListing', () => {
     expect(listing).toMatchObject({
       sale: { format: 'fixed_price', unitPrice: { amountMinor: 15_000, currency: 'BTC', exponent: 8 } },
     });
+  });
+
+  it.each([
+    { currency: 'EUR', price: '119.90', shipping: '9.90', priceMinor: 11_990, shippingMinor: 990, exponent: 2 },
+    { currency: 'CHF', price: '99.95', shipping: '8.50', priceMinor: 9_995, shippingMinor: 850, exponent: 2 },
+    { currency: 'GBP', price: '89.00', shipping: '7.25', priceMinor: 8_900, shippingMinor: 725, exponent: 2 },
+    { currency: 'JPY', price: '15000', shipping: '1200', priceMinor: 15_000, shippingMinor: 1_200, exponent: 0 },
+    { currency: 'CAD', price: '149.99', shipping: '14.00', priceMinor: 14_999, shippingMinor: 1_400, exponent: 2 },
+    { currency: 'AUD', price: '159.50', shipping: '15.00', priceMinor: 15_950, shippingMinor: 1_500, exponent: 2 },
+  ] as const)(
+    'publishes a $currency listing with price and shipping in $currency minor units (exponent $exponent)',
+    async ({ currency, price, shipping, priceMinor, shippingMinor, exponent }) => {
+      const { result } = renderHook(() => useCreateMarketplaceListing());
+      act(() => {
+        result.current.form.setValue('title', 'Vintage leather boots');
+        result.current.form.setValue('description', 'Well cared for boots with light wear.');
+        result.current.form.setValue('categoryId', 'fashion-men-footwear-boots');
+        result.current.form.setValue('attrSize', 'US 9');
+        result.current.form.setValue('currency', currency);
+        result.current.form.setValue('price', price);
+        result.current.form.setValue('fulfillment', 'shipping');
+        result.current.form.setValue('shippingPrice', shipping);
+        result.current.form.setValue('packageWeight', '500');
+        result.current.form.setValue('packageLength', '30');
+        result.current.form.setValue('packageWidth', '20');
+        result.current.form.setValue('packageHeight', '10');
+        result.current.form.setValue('countryCode', 'US');
+      });
+
+      await act(async () => {
+        await result.current.submit();
+      });
+
+      const listing = vi.mocked(CommerceController.commitUpsertListing).mock.calls[0][0];
+      expect(commerceListingRecordSchema.safeParse(listing).success).toBe(true);
+      expect(listing).toMatchObject({
+        sale: { format: 'fixed_price', unitPrice: { amountMinor: priceMinor, currency, exponent } },
+        shippingOptions: [{ pricing: 'flat', price: { amountMinor: shippingMinor, currency, exponent } }],
+      });
+    },
+  );
+
+  // The service refuses a Locks-gated listing (`digitalLock`) outside USD, BTC and SAT
+  // (`locks_currency_unsupported`). The studio never authors a lock, in any currency,
+  // so that refusal cannot come from a listing published here.
+  it.each(['USD', 'EUR', 'CHF', 'GBP', 'JPY', 'CAD', 'AUD', 'BTC'] as const)(
+    'publishes a digital %s listing without a Locks gate',
+    async (currency) => {
+      const { result } = renderHook(() => useCreateMarketplaceListing());
+      act(() => {
+        result.current.form.setValue('title', 'Printable field guide');
+        result.current.form.setValue('description', 'A printable guide for the trail.');
+        result.current.form.setValue('categoryId', 'fashion-men-footwear-boots');
+        result.current.form.setValue('attrSize', 'US 9');
+        result.current.form.setValue('currency', currency);
+        result.current.form.setValue('price', '1500');
+        result.current.form.setValue('fulfillment', 'digital');
+        result.current.form.setValue('countryCode', 'US');
+      });
+
+      await act(async () => {
+        await result.current.submit();
+      });
+
+      const listing = commerceListingRecordSchema.parse(
+        vi.mocked(CommerceController.commitUpsertListing).mock.calls[0][0],
+      );
+      expect(listing.fulfillmentMethods).toEqual(['digital']);
+      expect(listing).not.toHaveProperty('digitalLock');
+      expect(listing.sale).toMatchObject({ unitPrice: { currency } });
+    },
+  );
+
+  function fillAuction(result: { current: ReturnType<typeof useCreateMarketplaceListing> }, duration?: string) {
+    act(() => {
+      result.current.form.setValue('title', 'Vintage leather boots');
+      result.current.form.setValue('description', 'Well cared for boots with light wear.');
+      result.current.form.setValue('categoryId', 'fashion-men-footwear-boots');
+      result.current.form.setValue('attrSize', 'US 9');
+      result.current.form.setValue('saleFormat', 'auction');
+      result.current.form.setValue('currency', 'BTC');
+      result.current.form.setValue('price', '15000');
+      result.current.form.setValue('fulfillment', 'shipping');
+      result.current.form.setValue('freeShipping', true);
+      result.current.form.setValue('packageWeight', '500');
+      result.current.form.setValue('packageLength', '30');
+      result.current.form.setValue('packageWidth', '20');
+      result.current.form.setValue('packageHeight', '10');
+      result.current.form.setValue('countryCode', 'US');
+      if (duration !== undefined) result.current.form.setValue('auctionDurationMinutes', duration);
+    });
+  }
+
+  function auctionLengthMinutes(): number {
+    const listing = vi.mocked(CommerceController.commitUpsertListing).mock.calls[0][0];
+    expect(commerceListingRecordSchema.safeParse(listing).success).toBe(true);
+    const sale = (listing as { sale: { startsAt: string; endsAt: string } }).sale;
+    return (Date.parse(sale.endsAt) - Date.parse(sale.startsAt)) / 60_000;
+  }
+
+  it('publishes a 7-day auction when the deploy offers only the default length', async () => {
+    const { result } = renderHook(() => useCreateMarketplaceListing());
+    fillAuction(result);
+
+    await act(async () => {
+      await result.current.submit();
+    });
+
+    expect(auctionLengthMinutes()).toBe(7 * 24 * 60);
+  });
+
+  it('publishes the chosen auction length when the deploy offers it', async () => {
+    vi.mocked(getAuctionDurationsMinutes).mockReturnValue([7 * 24 * 60, 15]);
+    const { result } = renderHook(() => useCreateMarketplaceListing());
+    fillAuction(result, '15');
+
+    await act(async () => {
+      await result.current.submit();
+    });
+
+    expect(auctionLengthMinutes()).toBe(15);
   });
 
   it('converts imperial package inputs to exact millimeters and grams on publish', async () => {
@@ -554,6 +813,24 @@ describe('useCreateMarketplaceListing', () => {
     expect(result.current.form.getValues('price')).toBe('15000');
   });
 
+  it.each(['USD', 'EUR', 'CHF', 'GBP', 'JPY', 'CAD', 'AUD', 'BTC'] as const)(
+    'resumes a draft priced in %s without migrating it',
+    async (currency) => {
+      markListingDraftResumeId('draftlisting03');
+      vi.mocked(CommerceController.getListingDrafts).mockResolvedValue([
+        listingDraftRow('draftlisting03', { title: 'Multi-currency draft', currency, price: '1500' }),
+      ]);
+      const { result } = renderHook(() => useCreateMarketplaceListing());
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      expect(result.current.restoredDraft).toBe(true);
+      expect(result.current.form.getValues('currency')).toBe(currency);
+      expect(result.current.form.getValues('price')).toBe('1500');
+    },
+  );
+
   // Sol re-review P1: a duplicate drafted on the pre-fix head could be saved
   // after adding Ship or Local pickup with the cap still in its quantity.
   it.each(['shipping_and_digital', 'pickup_and_digital'] as const)(
@@ -691,6 +968,44 @@ describe('useCreateMarketplaceListing', () => {
       expect.objectContaining({ title: 'Flushed on hide' }),
       {},
     );
+  });
+
+  it('saves the draft and marks it to reopen directly when the seller leaves for settings', async () => {
+    vi.useFakeTimers();
+    const { result } = renderHook(() => useCreateMarketplaceListing());
+    await act(async () => {
+      await Promise.resolve();
+    });
+    act(() => {
+      result.current.form.setValue('title', 'Back after the delivery key');
+    });
+
+    await act(async () => {
+      result.current.keepDraftForReturn();
+      await Promise.resolve();
+    });
+
+    expect(sessionStorage.getItem(LISTING_DRAFT_RESUME_STORAGE_KEY)).toBe('018f47d26a277c23a49d6b21bb770121');
+    expect(CommerceController.commitUpdateListingDraft).toHaveBeenCalledWith(
+      '018f47d26a277c23a49d6b21bb770121',
+      expect.objectContaining({ title: 'Back after the delivery key' }),
+      {},
+    );
+  });
+
+  it('marks no draft to reopen while a restore prompt is open', async () => {
+    vi.mocked(CommerceController.getListingDrafts).mockResolvedValue([
+      listingDraftRow('draftlisting01', { title: 'Keep me' }),
+    ]);
+    const { result } = renderHook(() => useCreateMarketplaceListing());
+    await waitFor(() => expect(result.current.pendingRestore?.listingId).toBe('draftlisting01'));
+
+    act(() => {
+      result.current.keepDraftForReturn();
+    });
+
+    expect(sessionStorage.getItem(LISTING_DRAFT_RESUME_STORAGE_KEY)).toBeNull();
+    expect(CommerceController.commitUpdateListingDraft).not.toHaveBeenCalled();
   });
 });
 

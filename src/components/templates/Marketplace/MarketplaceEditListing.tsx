@@ -4,7 +4,6 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ArrowLeft, PencilLine, Store } from 'lucide-react';
 import { getMarketplaceListingEditRoute, getMarketplaceListingRoute } from '@/app/routes';
-import { Badge } from '@/atoms/Badge/Badge';
 import { Button } from '@/atoms/Button/Button';
 import { Container } from '@/atoms/Container/Container';
 import { Heading } from '@/atoms/Heading/Heading';
@@ -62,7 +61,7 @@ export function MarketplaceEditListing({ sellerPubky, listingId }: MarketplaceEd
               </Heading>
               <Typography as="p" className="mt-2 max-w-md text-muted-foreground">
                 {editing.status === 'not-owner'
-                  ? 'You are signed in as a different account than the one that published this listing.'
+                  ? 'This listing was published with a different pubky.'
                   : editing.status === 'unsupported'
                     ? 'This listing uses digital delivery settings or a pricing asset the in-app studio cannot author, so editing it here could break its payment-locked content or silently rewrite its price.'
                     : 'This listing could not be loaded from your device or the network.'}
@@ -99,7 +98,6 @@ export function MarketplaceEditListing({ sellerPubky, listingId }: MarketplaceEd
         </Link>
 
         <div>
-          <Badge className="mb-4">Seller studio</Badge>
           <Heading level={1} size="xl" className="text-4xl sm:text-6xl">
             Edit listing
           </Heading>

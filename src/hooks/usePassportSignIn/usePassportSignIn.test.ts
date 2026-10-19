@@ -1,8 +1,13 @@
 import type { Session } from '@synonymdev/pubky';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  BROWSER_STORAGE_BLOCKED_MESSAGE,
+  FULL_GRANT_REQUIRED_MESSAGE,
+  SIGN_IN_FAILED_RETRY_MESSAGE,
+} from '@/libs/auth/sign-in-error-copy';
 import { AppError } from '@/libs/error/error';
-import { AuthErrorCode } from '@/libs/error/error.codes';
+import { AuthErrorCode, ServerErrorCode } from '@/libs/error/error.codes';
 import { ErrorCategory, ErrorService } from '@/libs/error/error.types';
 import { type PassportApproval, PassportAttemptError } from '@/libs/passport/passport-popup';
 import { AUTH_FLOW_CANCELED_ERROR_NAME } from '@/services/homeserver/error.utils';
@@ -86,6 +91,25 @@ describe('usePassportSignIn', () => {
     await waitFor(() => expect(result.current.isPending).toBe(false));
   });
 
+  it("returns to the build's mount path, not the App's public /shop, when the App frames the Shop", async () => {
+    setBasePath('/shop-embed');
+    mocks.getPassportGrantAuthUrl.mockResolvedValue({
+      authorizationUrl: 'pubkyauth://signin_grant?caps=x',
+      awaitApproval: Promise.resolve(session),
+      cancelAuthFlow: vi.fn(),
+    });
+    mocks.startPassportAttempt.mockImplementation(async (begin: () => Promise<PassportApproval<Session>>) => {
+      const approval = await begin();
+      return await approval.result;
+    });
+
+    const { result } = renderHook(() => usePassportSignIn());
+    act(() => result.current.start());
+
+    await waitFor(() => expect(mocks.passportCallbacks).toHaveBeenCalledWith(window.location.origin, '/shop-embed'));
+    await waitFor(() => expect(result.current.isPending).toBe(false));
+  });
+
   it('runs the Shop grant ceremony inside the Passport attempt and initializes the approved session', async () => {
     const awaitApproval = Promise.resolve(session);
     const cancelAuthFlow = vi.fn();
@@ -143,6 +167,30 @@ describe('usePassportSignIn', () => {
       else expect(mocks.toast).not.toHaveBeenCalled();
     },
   );
+
+  it.each([
+    ['a raw homeserver message', 'PKARR relay unavailable', SIGN_IN_FAILED_RETRY_MESSAGE],
+    ["the Shop's permission remedy", FULL_GRANT_REQUIRED_MESSAGE, FULL_GRANT_REQUIRED_MESSAGE],
+    ["the Shop's storage remedy", BROWSER_STORAGE_BLOCKED_MESSAGE, BROWSER_STORAGE_BLOCKED_MESSAGE],
+  ])('a failed session start with %s shows plain copy', async (_case, message, copy) => {
+    mocks.startPassportAttempt.mockResolvedValue(session);
+    mocks.initializeAuthenticatedSession.mockRejectedValue(
+      new AppError({
+        category: ErrorCategory.Server,
+        code: ServerErrorCode.INTERNAL_ERROR,
+        message,
+        service: ErrorService.Homeserver,
+        operation: 'initializeAuthenticatedSession',
+      }),
+    );
+    const { result } = renderHook(() => usePassportSignIn());
+
+    act(() => result.current.start());
+    await waitFor(() => expect(result.current.isPending).toBe(false));
+
+    expect(mocks.toast).toHaveBeenCalledTimes(1);
+    expect(mocks.toast).toHaveBeenCalledWith({ variant: 'error', description: copy });
+  });
 
   it('an approval that lost to another sign-in ends silently', async () => {
     mocks.startPassportAttempt.mockRejectedValue(

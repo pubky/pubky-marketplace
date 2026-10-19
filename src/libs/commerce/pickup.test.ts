@@ -285,6 +285,25 @@ describe('reveal and owner-read schemas (captured shapes from crates/service/tes
     expect(marketplaceHealthSchema.parse({ status: 'ok' }).pickupAvailable).toBe(false);
   });
 
+  it('reads the Paykit rail probe from the wire and treats anything malformed as unknown', () => {
+    expect(
+      marketplaceHealthSchema.parse(
+        toCamelCaseWire({ status: 'ok', paykit_rail: { bitcoin_offer_available: false, age_seconds: 4 } }),
+      ).paykitRail,
+    ).toMatchObject({ bitcoinOfferAvailable: false, ageSeconds: 4 });
+    expect(
+      marketplaceHealthSchema.parse(
+        toCamelCaseWire({ status: 'ok', paykit_rail: { bitcoin_offer_available: null, age_seconds: null } }),
+      ).paykitRail,
+    ).toMatchObject({ bitcoinOfferAvailable: null, ageSeconds: null });
+    expect(marketplaceHealthSchema.parse({ status: 'ok' }).paykitRail).toBeUndefined();
+    expect(marketplaceHealthSchema.parse({ status: 'ok', paykitRail: 'down' }).paykitRail).toBeUndefined();
+    expect(
+      marketplaceHealthSchema.parse({ status: 'ok', paykitRail: { bitcoinOfferAvailable: 'no', ageSeconds: 'x' } })
+        .paykitRail,
+    ).toMatchObject({ bitcoinOfferAvailable: null, ageSeconds: null });
+  });
+
   it('reads usdt_payments only when the service sends it, and treats anything malformed as absent', () => {
     expect(
       marketplaceHealthSchema.parse(toCamelCaseWire({ status: 'ok', usdt_payments: { available: true } })).usdtPayments,

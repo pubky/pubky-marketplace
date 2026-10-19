@@ -2,7 +2,6 @@ import Dexie, { type Table } from 'dexie';
 import { DB_NAME } from '@/config/database';
 import { getStorageAdoptLegacy } from '@/config/storage-namespace';
 import { AppDatabase } from '@/database/franky/franky';
-import { KEYRING_DB_VERSION, KEYRING_STORE_NAME, messagingKeyringDbName } from '@/libs/crypto/messaging-keyring';
 import { DatabaseErrorCode } from '@/libs/error/error.codes';
 import { Err } from '@/libs/error/error.factories';
 import { ErrorService } from '@/libs/error/error.types';
@@ -108,108 +107,6 @@ async function copyTable(source: Table, target: Table): Promise<number> {
   return copied;
 }
 
-async function openExistingDatabase(name: string): Promise<IDBDatabase | null> {
-  return new Promise((resolve, reject) => {
-    const request = indexedDB.open(name);
-    let created = false;
-    request.onupgradeneeded = () => {
-      // Opening a database that does not exist would create it; abort so it stays absent.
-      created = true;
-      request.transaction?.abort();
-    };
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => {
-      if (created) {
-        resolve(null);
-        return;
-      }
-      reject(request.error ?? new Error(`Failed to open ${name}`));
-    };
-  });
-}
-
-function requestToPromise<T>(request: IDBRequest<T>): Promise<T> {
-  return new Promise((resolve, reject) => {
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error ?? new Error('IndexedDB request failed'));
-  });
-}
-
-function readAllRecords(store: IDBObjectStore): Promise<Array<[IDBValidKey, unknown]>> {
-  return new Promise((resolve, reject) => {
-    const records: Array<[IDBValidKey, unknown]> = [];
-    const request = store.openCursor();
-    request.onsuccess = () => {
-      const cursor = request.result;
-      if (!cursor) {
-        resolve(records);
-        return;
-      }
-      records.push([cursor.key, cursor.value]);
-      cursor.continue();
-    };
-    request.onerror = () => reject(request.error ?? new Error('Failed to read the keyring'));
-  });
-}
-
-async function openKeyringTarget(name: string): Promise<IDBDatabase> {
-  return new Promise((resolve, reject) => {
-    const request = indexedDB.open(name, KEYRING_DB_VERSION);
-    request.onupgradeneeded = () => {
-      if (!request.result.objectStoreNames.contains(KEYRING_STORE_NAME)) {
-        request.result.createObjectStore(KEYRING_STORE_NAME);
-      }
-    };
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error ?? new Error(`Failed to open ${name}`));
-  });
-}
-
-/**
- * Copies the keyring records (the wrapping key and its epoch) that the target does not hold
- * yet. Returns how many legacy records exist; 0 when there is no legacy keyring.
- */
-async function copyKeyring(legacyName: string, targetName: string): Promise<number> {
-  const legacy = await openExistingDatabase(legacyName);
-  if (!legacy) return 0;
-  try {
-    if (!legacy.objectStoreNames.contains(KEYRING_STORE_NAME)) return 0;
-    const records = await readAllRecords(
-      legacy.transaction(KEYRING_STORE_NAME, 'readonly').objectStore(KEYRING_STORE_NAME),
-    );
-    if (records.length === 0) return 0;
-
-    const target = await openKeyringTarget(targetName);
-    try {
-      await new Promise<void>((resolve, reject) => {
-        const transaction = target.transaction(KEYRING_STORE_NAME, 'readwrite');
-        const store = transaction.objectStore(KEYRING_STORE_NAME);
-        for (const [key, value] of records) {
-          const request = store.add(value, key);
-          request.onerror = (event) => {
-            // A record the target already holds is kept: destination wins.
-            if (request.error?.name === 'ConstraintError') event.preventDefault();
-          };
-        }
-        transaction.oncomplete = () => resolve();
-        transaction.onabort = () => reject(transaction.error ?? new Error('Keyring write aborted'));
-      });
-
-      const check = target.transaction(KEYRING_STORE_NAME, 'readonly').objectStore(KEYRING_STORE_NAME);
-      for (const [key] of records) {
-        if ((await requestToPromise(check.count(key))) === 0) {
-          throw failure('migrateLegacyDatabases', `The messaging keyring record ${String(key)} did not copy`);
-        }
-      }
-      return records.length;
-    } finally {
-      target.close();
-    }
-  } finally {
-    legacy.close();
-  }
-}
-
 function deleteIndexedDb(name: string): Promise<void> {
   return new Promise((resolve) => {
     const request = indexedDB.deleteDatabase(name);
@@ -251,10 +148,6 @@ async function moveDatabase(
     return { status: 'foreign', rows: 0 };
   }
 
-  const legacyKeyringName = messagingKeyringDbName(legacyName);
-  const targetKeyringName = messagingKeyringDbName(targetName);
-  const legacyKeyringRecords = await copyKeyring(legacyKeyringName, targetKeyringName);
-
   const legacyDb = new AppDatabase(legacyName);
   const targetDb = new AppDatabase(targetName);
   let rows = 0;
@@ -280,8 +173,9 @@ async function moveDatabase(
   }
 
   await deleteIndexedDb(legacyName);
-  if (legacyKeyringRecords > 0) await deleteIndexedDb(legacyKeyringName);
-  return { status: rows > 0 || legacyKeyringRecords > 0 ? 'migrated' : 'nothing', rows };
+  // The retired messaging keyring that sat next to the legacy database is not carried over.
+  await deleteIndexedDb(`${legacyName}-messaging-keyring`);
+  return { status: rows > 0 ? 'migrated' : 'nothing', rows };
 }
 
 async function withMigrationLock<T>(run: () => Promise<T>): Promise<T> {

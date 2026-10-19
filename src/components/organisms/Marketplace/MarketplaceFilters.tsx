@@ -20,6 +20,7 @@ import {
   Sparkles,
   Star,
   Timer,
+  Wallet,
 } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { Button, buttonVariants } from '@/atoms/Button/Button';
@@ -37,14 +38,24 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/atoms/Select/Select';
 import { Typography } from '@/atoms/Typography/Typography';
 import {
+  isListingCurrencyCode,
+  LISTING_CURRENCY_CODES,
+  LISTING_CURRENCY_REGISTRY,
+  type ListingCurrencyCode,
+} from '@/config/currencies';
+import {
   commerceAttributeLabel,
   commerceAttributeSetKeys,
   commerceAttributeValueLabel,
   commerceCategoryChildren,
   resolveCommerceCategory,
 } from '@/config/taxonomy/taxonomy';
+import { useDisplayCurrency } from '@/hooks/useDisplayCurrency/useDisplayCurrency';
 import type { MarketplaceCatalogItem } from '@/hooks/useMarketplaceCatalog/useMarketplaceCatalog.utils';
 import { collectMarketplaceAttributeFacets } from '@/hooks/useMarketplaceCatalog/useMarketplaceCatalog.utils';
+import { BTCIcon, PaypalIcon, Tether } from '@/icons';
+import { SELLER_PAYMENT_BADGE_LABELS } from '@/libs/commerce/payment-badges';
+import type { PaymentMethodFilter } from '@/libs/commerce/payment-method-filter';
 import { cn } from '@/libs/utils/utils';
 import { useCommerceStore } from '@/stores/commerce/commerce.store';
 import type { CommerceSaleFormatFilter, CommerceSort } from '@/stores/commerce/commerce.types';
@@ -82,7 +93,15 @@ export interface MarketplaceFiltersProps {
    */
   facetPool?: MarketplaceCatalogItem[];
   countryFacetPool?: MarketplaceCatalogItem[];
+  /**
+   * The rails this deployment can filter by (see
+   * `useMarketplacePaymentFilterOptions`). Empty or absent hides the
+   * payment filter.
+   */
+  paymentMethodOptions?: readonly PaymentMethodFilter[];
 }
+
+const PAYMENT_FILTER_ICONS = { bitcoin: BTCIcon, usdt: Tether, paypal: PaypalIcon } as const;
 
 /** `US` → `United States`; falls back to the raw code for unknown values. */
 function countryLabel(code: string): string {
@@ -102,12 +121,24 @@ export function collectMarketplaceCountryFacets(items: MarketplaceCatalogItem[])
   return [...counts.entries()].sort(([left], [right]) => left.localeCompare(right));
 }
 
+/** The dollar and bitcoin icons stay as they were; every other currency shows its code. */
+function DisplayCurrencyGlyph({ code }: { code: ListingCurrencyCode }) {
+  if (code === 'USD') return <DollarSign aria-hidden="true" className="size-4" />;
+  if (code === 'BTC') return <Bitcoin aria-hidden="true" className="size-4" />;
+  return (
+    <span aria-hidden="true" className="text-xs font-semibold">
+      {code}
+    </span>
+  );
+}
+
 export function MarketplaceFilters({
   resultCount,
   searchControl,
   sellControl,
   facetPool = [],
   countryFacetPool = facetPool,
+  paymentMethodOptions = [],
 }: MarketplaceFiltersProps) {
   const hasActiveFilters = useCommerceStore((state) =>
     Boolean(
@@ -115,6 +146,7 @@ export function MarketplaceFilters({
       state.categoryId ||
       state.saleFormat !== 'all' ||
       state.countryCode ||
+      state.paymentMethod ||
       state.conditions.length ||
       state.minimumPriceMinor !== null ||
       state.maximumPriceMinor !== null ||
@@ -128,13 +160,15 @@ export function MarketplaceFilters({
   const saleFormat = useCommerceStore((state) => state.saleFormat);
   const countryCode = useCommerceStore((state) => state.countryCode);
   const sort = useCommerceStore((state) => state.sort);
-  const displayCurrency = useMarketplaceDisplayStore((state) => state.displayCurrency);
+  const displayCurrency = useDisplayCurrency();
   const setDisplayCurrency = useMarketplaceDisplayStore((state) => state.setDisplayCurrency);
   const layout = useCommerceStore((state) => state.layout);
   const setCategoryId = useCommerceStore((state) => state.setCategoryId);
   const setAttributeFilter = useCommerceStore((state) => state.setAttributeFilter);
   const setSaleFormat = useCommerceStore((state) => state.setSaleFormat);
   const setCountryCode = useCommerceStore((state) => state.setCountryCode);
+  const paymentMethod = useCommerceStore((state) => state.paymentMethod);
+  const setPaymentMethod = useCommerceStore((state) => state.setPaymentMethod);
   const setSort = useCommerceStore((state) => state.setSort);
   const setLayout = useCommerceStore((state) => state.setLayout);
 
@@ -145,6 +179,11 @@ export function MarketplaceFilters({
   const countryCounts = new Map(collectMarketplaceCountryFacets(countryFacetPool));
   if (countryCode && !countryCounts.has(countryCode)) countryCounts.set(countryCode, 0);
   const countryOptions = [...countryCounts.entries()].sort(([left], [right]) => left.localeCompare(right));
+  // The active selection stays listed even if the deployment stops offering it, so it can be cleared.
+  const paymentOptions =
+    paymentMethod && !paymentMethodOptions.includes(paymentMethod)
+      ? [...paymentMethodOptions, paymentMethod]
+      : paymentMethodOptions;
 
   return (
     <section aria-label="Marketplace filters" className="flex flex-col gap-4">
@@ -201,6 +240,32 @@ export function MarketplaceFilters({
             </SelectContent>
           </Select>
 
+          {paymentOptions.length > 0 && (
+            <Select
+              value={paymentMethod ?? 'any'}
+              onValueChange={(value) => setPaymentMethod(paymentOptions.find((option) => option === value) ?? null)}
+            >
+              <SelectTrigger aria-label="Payment method" className={FILTER_TRIGGER_CLASS}>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent position="popper" align="start" className={FILTER_MENU_CLASS}>
+                <SelectItem className={FILTER_ITEM_CLASS} value="any">
+                  <Wallet aria-hidden="true" className="size-4" />
+                  Any payment
+                </SelectItem>
+                {paymentOptions.map((option) => {
+                  const Icon = PAYMENT_FILTER_ICONS[option];
+                  return (
+                    <SelectItem className={FILTER_ITEM_CLASS} key={option} value={option}>
+                      <Icon aria-hidden="true" focusable="false" className="size-4" />
+                      {SELLER_PAYMENT_BADGE_LABELS[option]}
+                    </SelectItem>
+                  );
+                })}
+              </SelectContent>
+            </Select>
+          )}
+
           <Select value={sort} onValueChange={(value) => setSort(value as CommerceSort)}>
             <SelectTrigger aria-label="Sort marketplace" className={FILTER_TRIGGER_CLASS}>
               <SelectValue />
@@ -252,27 +317,23 @@ export function MarketplaceFilters({
           </Select>
           <Select
             value={displayCurrency}
-            onValueChange={(value) => setDisplayCurrency(value === 'BTC' ? 'BTC' : 'USD')}
+            onValueChange={(value) => {
+              if (isListingCurrencyCode(value)) setDisplayCurrency(value);
+            }}
           >
             <SelectTrigger
-              aria-label={`Display currency: ${displayCurrency === 'BTC' ? 'Bitcoin' : 'US dollars'}`}
+              aria-label={`Display currency: ${LISTING_CURRENCY_REGISTRY[displayCurrency].name}`}
               className={FILTER_TRIGGER_CLASS}
             >
-              {displayCurrency === 'BTC' ? (
-                <Bitcoin aria-hidden="true" className="size-4" />
-              ) : (
-                <DollarSign aria-hidden="true" className="size-4" />
-              )}
+              <DisplayCurrencyGlyph code={displayCurrency} />
             </SelectTrigger>
             <SelectContent position="popper" align="end" className={FILTER_MENU_CLASS}>
-              <SelectItem className={FILTER_ITEM_CLASS} value="USD">
-                <DollarSign aria-hidden="true" className="size-4" />
-                US dollars
-              </SelectItem>
-              <SelectItem className={FILTER_ITEM_CLASS} value="BTC">
-                <Bitcoin aria-hidden="true" className="size-4" />
-                Bitcoin
-              </SelectItem>
+              {LISTING_CURRENCY_CODES.map((code) => (
+                <SelectItem key={code} className={FILTER_ITEM_CLASS} value={code}>
+                  <DisplayCurrencyGlyph code={code} />
+                  {LISTING_CURRENCY_REGISTRY[code].name}
+                </SelectItem>
+              ))}
             </SelectContent>
           </Select>
         </div>

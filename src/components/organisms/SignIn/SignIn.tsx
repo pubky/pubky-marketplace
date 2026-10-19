@@ -9,6 +9,7 @@ import { FooterLinks } from '@/atoms/FooterLinks/FooterLinks';
 import { PageHeader } from '@/atoms/PageHeader/PageHeader';
 import { PageSubtitle } from '@/atoms/PageSubtitle/PageSubtitle';
 import { Typography } from '@/atoms/Typography/Typography';
+import { isPrivKeysRequested } from '@/config/app';
 import { useGrantSignInAvailable } from '@/hooks/useGrantSignInAvailable/useGrantSignInAvailable';
 import { useMobileAuth } from '@/hooks/useMobileAuth/useMobileAuth';
 import { Logger } from '@/libs/logger/logger';
@@ -17,7 +18,6 @@ import { BalancedQrCard } from '@/molecules/BalancedQrCard/BalancedQrCard';
 import { ContentCard } from '@/molecules/Content/Content';
 import { IllustratedCard } from '@/molecules/IllustratedCard/IllustratedCard';
 import { Logo } from '@/molecules/Logo/Logo';
-import { MarketplaceApprovalDisclosure } from '@/molecules/MarketplaceApprovalDisclosure/MarketplaceApprovalDisclosure';
 import { PageTitle } from '@/molecules/Page/Page';
 import { PassportSignInButton } from '@/molecules/PassportSignInButton/PassportSignInButton';
 import { QrCodeSlot } from '@/molecules/QrCodeSlot/QrCodeSlot';
@@ -28,7 +28,6 @@ import {
 } from '@/molecules/SignerAuthOption/SignerAuthOption';
 import { SignerToggle } from '@/molecules/SignerToggle/SignerToggle';
 import { toast } from '@/molecules/Toaster/use-toast';
-import { signInApprovalDisclosure } from '@/services/marketplace/marketplace-session-grant';
 import { useOnboardingStore } from '@/stores/onboarding/onboarding.store';
 import { useSignInStore } from '@/stores/signIn/signIn.store';
 import type { SignInState } from '@/stores/signIn/signIn.types';
@@ -120,14 +119,6 @@ type TSignerAuth = ReturnType<typeof useMobileAuth>;
 
 const SIGNERS = SIGNER_AUTH_COPY.signIn;
 
-/**
- * The Ring sign-in token is also redeemed at the marketplace under single
- * approval; Bitkit's grant sign-in never is, so only Ring gets a disclosure.
- */
-function ringSignInDisclosure(ring: TSignerAuth): string | null {
-  return ring.url ? signInApprovalDisclosure(ring.url) : null;
-}
-
 const SignInQrOption = ({ signer, auth }: { signer: keyof typeof SIGNERS; auth: TSignerAuth }) => (
   <SignerAuthOption
     copy={SIGNERS[signer]}
@@ -149,11 +140,11 @@ const SignInAuthorizeButton = ({ signer, auth }: { signer: keyof typeof SIGNERS;
 
 /** Keep both existing approval flows alive while displaying the selected signer. */
 const SignInBothSigners = ({ ring }: { ring: TSignerAuth }) => {
-  const bitkit = useMobileAuth({ type: 'grant' });
+  const [withoutKeys, setWithoutKeys] = useState(false);
+  const bitkit = useMobileAuth(withoutKeys ? { type: 'grant', withPrivKeys: false } : { type: 'grant' });
   const [signer, setSigner] = useState<keyof typeof SIGNERS>('ring');
+  const offersWithoutKeys = signer === 'bitkit' && !withoutKeys && isPrivKeysRequested();
   const auth = signer === 'ring' ? ring : bitkit;
-  const ringDisclosure = ringSignInDisclosure(ring);
-  const identityHint = SIGNERS[signer].identityHint;
   return (
     <Container size="container">
       <SignInHeader signer="both" />
@@ -182,11 +173,16 @@ const SignInBothSigners = ({ ring }: { ring: TSignerAuth }) => {
             <div className="w-full md:hidden">
               <SignInAuthorizeButton signer={signer} auth={auth} />
             </div>
-            {signer === 'ring' && <MarketplaceApprovalDisclosure sentence={ringDisclosure} />}
-            {identityHint && (
-              <Typography as="p" className="text-sm text-muted-foreground">
-                {identityHint}
-              </Typography>
+            {offersWithoutKeys && (
+              <Button
+                type="button"
+                variant="link"
+                className="h-auto border-none p-0 text-left text-sm whitespace-normal shadow-none"
+                onClick={() => setWithoutKeys(true)}
+                data-testid="sign-in-without-keys-button"
+              >
+                Your signer can&apos;t share private-data keys? Sign in without them.
+              </Button>
             )}
           </div>
         </IllustratedCard>
@@ -213,7 +209,6 @@ export const SignInContent = () => {
   const { url, isLoading, isExpired, fetchUrl, copyAuthUrl, isOpeningRing, onAuthorizeClick } = ringAuth;
   const authUrlResolved = useSignInStore((state) => state.authUrlResolved);
   const isGrantSignInAvailable = useGrantSignInAvailable();
-  const ringDisclosure = ringSignInDisclosure(ringAuth);
   useEffect(() => {
     // Clear onboarding storage when sign-in flow begins to prevent backup reminders from showing for existing users
     useOnboardingStore.getState().reset();
@@ -292,14 +287,7 @@ export const SignInContent = () => {
             />
           }
         >
-          {ringDisclosure ? (
-            <div className="flex flex-col items-center gap-3">
-              {signInQrButton}
-              <MarketplaceApprovalDisclosure sentence={ringDisclosure} className="max-w-48" />
-            </div>
-          ) : (
-            signInQrButton
-          )}
+          {signInQrButton}
         </BalancedQrCard>
       </Container>
 
@@ -319,7 +307,6 @@ export const SignInContent = () => {
             >
               {mobileAuthorizeContent}
             </Button>
-            <MarketplaceApprovalDisclosure sentence={ringDisclosure} />
           </Container>
         </ContentCard>
       </Container>

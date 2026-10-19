@@ -5,6 +5,7 @@ import {
   COMMERCE_LISTING_TITLE_MAX_CHARS,
   COMMERCE_LISTING_TITLE_MIN_CHARS,
 } from '@/config/commerce';
+import { LISTING_CURRENCY_CODES } from '@/config/currencies';
 import {
   COMMERCE_ATTRIBUTE_VALUE_MAX_CHARS,
   commerceAttributeFieldsFor,
@@ -43,6 +44,7 @@ export const CREATE_MARKETPLACE_LISTING_FIELDS = {
   CURRENCY: 'currency',
   PRICE: 'price',
   RESERVE_PRICE: 'reservePrice',
+  AUCTION_DURATION: 'auctionDurationMinutes',
   VARIANTS: 'variants',
   FULFILLMENT: 'fulfillment',
   SHIPPING_LABEL: 'shippingLabel',
@@ -315,9 +317,11 @@ export const createMarketplaceListingSchema = z
       .regex(/^[A-Za-z]{2}$/, 'Enter a two-letter country code.'),
     region: z.string().trim().max(100, 'Region is too long.'),
     saleFormat: z.enum(['fixed_price', 'auction']),
-    currency: z.enum(['USD', 'BTC']),
+    currency: z.enum(LISTING_CURRENCY_CODES),
     price: z.string().trim(),
     reservePrice: z.string().trim(),
+    /** Minutes, as a select value; resolved against the deploy's offered lengths on publish. */
+    auctionDurationMinutes: z.string().trim(),
     variants: z.array(listingVariantSchema).min(1, 'Add at least one variant.').max(100, 'Too many variants.'),
     fulfillment: listingFulfillmentSchema,
     shippingLabel: z.string().trim().max(100, 'Keep the shipping label under 100 characters.'),
@@ -477,9 +481,11 @@ export const createMarketplaceListingDraftSchema = z
     region: z.string(),
     saleFormat: z.enum(['fixed_price', 'auction']),
     /** Legacy drafts stored the bitcoin choice as 'SATS'; accepted here and migrated to 'BTC' on restore. */
-    currency: z.enum(['USD', 'BTC', 'SATS']),
+    currency: z.enum([...LISTING_CURRENCY_CODES, 'SATS']),
     price: z.string(),
     reservePrice: z.string(),
+    /** Older drafts omit this; publish then uses the deploy's first offered length. */
+    auctionDurationMinutes: z.string().optional(),
     variants: z.array(
       z.object({
         sku: z.string(),
@@ -635,6 +641,7 @@ export const createMarketplaceListingDefaults: CreateMarketplaceListingData = {
   currency: 'USD',
   price: '',
   reservePrice: '',
+  auctionDurationMinutes: '',
   variants: [{ sku: '', size: '', color: '', style: '', quantity: '1', unlimited: false, priceOverride: '' }],
   fulfillment: 'shipping',
   shippingLabel: 'Seller shipping',

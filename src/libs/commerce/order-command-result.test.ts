@@ -160,3 +160,24 @@ describe('orderShowsCommandResult', () => {
     expect(orderShowsCommandResult(order({ state: 'delivered' }), 'fulfillment.confirm_pickup', {})).toBe(false);
   });
 });
+
+describe('orderShowsCommandResult shipment tracking', () => {
+  const shipped = (carrier: string, trackingNumber: string) =>
+    order({ state: 'shipped', shipment: { carrier, trackingNumber, state: 'shipped' } });
+
+  it('reads a ship without a number as landed when the shipment has none', () => {
+    expect(orderShowsCommandResult(shipped('Other', ''), 'fulfillment.ship', { carrier: 'Other' })).toBe(true);
+    expect(orderShowsCommandResult(shipped('Other', 'X-1'), 'fulfillment.ship', { carrier: 'Other' })).toBe(false);
+  });
+
+  it('matches a tracking update only when carrier and number both match', () => {
+    const payload = { carrier: 'UPS', trackingNumber: '1Z999AA10123456784' };
+    expect(orderShowsCommandResult(shipped('UPS', '1Z999AA10123456784'), 'fulfillment.update_tracking', payload)).toBe(
+      true,
+    );
+    expect(orderShowsCommandResult(shipped('UPS', ''), 'fulfillment.update_tracking', payload)).toBe(false);
+    expect(
+      orderShowsCommandResult(shipped('FedEx', '1Z999AA10123456784'), 'fulfillment.update_tracking', payload),
+    ).toBe(false);
+  });
+});

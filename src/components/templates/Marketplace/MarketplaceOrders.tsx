@@ -1,9 +1,8 @@
 'use client';
 
 import { type ReactNode, useEffect, useRef, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { ExternalLink, ReceiptText } from 'lucide-react';
-import { MARKETPLACE_ROUTES } from '@/app/routes';
 import { Badge } from '@/atoms/Badge/Badge';
 import { Button } from '@/atoms/Button/Button';
 import { Card, CardContent } from '@/atoms/Card/Card';
@@ -12,11 +11,18 @@ import { Heading } from '@/atoms/Heading/Heading';
 import { Link } from '@/atoms/Link/Link';
 import { Skeleton } from '@/atoms/Skeleton/Skeleton';
 import { Typography } from '@/atoms/Typography/Typography';
-import { type CommerceAdapterMode, isDurableCommerceMode, isTransactionalCommerceMode } from '@/config/commerce';
+import { withBasePath } from '@/config/base-path';
+import { isTransactionalCommerceMode } from '@/config/commerce';
 import { type MarketplaceOrderView, useMarketplaceOrders } from '@/hooks/useMarketplaceOrders/useMarketplaceOrders';
 import { useMarkMarketplaceOrdersSeen } from '@/hooks/useMarkMarketplaceOrdersSeen/useMarkMarketplaceOrdersSeen';
 import { useNowMs } from '@/hooks/useNowMs/useNowMs';
-import { orderAnchorId, readOrderAnchorId } from '@/libs/commerce/activity-links';
+import { CHAT_COPY } from '@/libs/chat/copy';
+import {
+  getMarketplaceOrderRoute,
+  orderAnchorId,
+  readLegacyOrderFragment,
+  readLinkedOrderId,
+} from '@/libs/commerce/activity-links';
 import {
   bitcoinPaymentHasBeenSeen,
   buyerCheckoutBadgeLabel,
@@ -25,7 +31,6 @@ import {
   sellerBitcoinDecision,
 } from '@/libs/commerce/bitcoin-buyer-status';
 import { bitcoinPaymentBreakdown, formatBitcoinAwareMoney } from '@/libs/commerce/bitcoin-payment-code';
-import { buildCarrierTrackingUrl } from '@/libs/commerce/carriers';
 import { CHECKOUT_HOLD_COPY, isHoldExpiredNoLateMoney } from '@/libs/commerce/checkout-hold';
 import {
   getMarketplaceCheckoutRoute,
@@ -36,7 +41,6 @@ import {
   isSellerReservation,
   isSellerSalesOrder,
   isSellerUsdtReviewOrder,
-  readCheckoutHashOrderId,
   sellerReservationCopy,
   unlistedOrderStateLabel,
 } from '@/libs/commerce/checkout-phase';
@@ -47,9 +51,10 @@ import {
   isInstantDigitalDeliveryKind,
 } from '@/libs/commerce/digital';
 import { formatCommerceMoney } from '@/libs/commerce/format';
+import { listingIdFromOrder } from '@/libs/commerce/listing-aggregate';
 import { buyerVisiblePaymentStatus } from '@/libs/commerce/locks-payment';
-import { listingIdFromOrder, marketplaceConversationHref } from '@/libs/commerce/marketplace-conversation-query';
-import { MESSAGING_COPY } from '@/libs/commerce/messaging-copy';
+import { buyerShipmentTracking } from '@/libs/commerce/order-tracking';
+import { observedPaymentRail } from '@/libs/commerce/paykit-rail';
 import { formatBitcoinAmount } from '@/libs/commerce/pricing';
 import {
   REFUND_ORDER_NOTICES,
@@ -57,16 +62,19 @@ import {
   refundRecordLine,
   refundStateLabel,
 } from '@/libs/commerce/refund-copy';
-import { buildMarketplaceConversationAggregateId } from '@/libs/commerce/transaction-commands';
 import { usdtPaidAsLine } from '@/libs/commerce/usdt-buyer-status';
 import { isUsdtRefundOrder } from '@/libs/commerce/usdt-refund';
+import { takeDocumentFragment } from '@/libs/navigation/document-fragment';
 import { ArbiscanLookupLink } from '@/molecules/Marketplace/ArbiscanLookupLink';
+import { MarketplaceCheckoutStatusLabels } from '@/molecules/Marketplace/MarketplaceCheckoutStatusLabels';
 import { MarketplaceEmptyState } from '@/molecules/Marketplace/MarketplaceEmptyState';
+import { MarketplacePaymentStatusLabels } from '@/molecules/Marketplace/MarketplacePaymentStatusBadge';
+import { ChatEntryButton } from '@/organisms/Chat/ChatEntryButton';
 import { ContentLayout } from '@/organisms/ContentLayout/ContentLayout';
 import { DropEditionBadge, DropEditionReceiptLine } from '@/organisms/Marketplace/DropEditionBadge';
 import { MarketplaceBitcoinAmountBreakdown } from '@/organisms/Marketplace/MarketplaceBitcoinAmountBreakdown';
 import { MarketplaceCheckoutItem } from '@/organisms/Marketplace/MarketplaceCheckoutItem';
-import { MarketplaceEncryptedConversationDialog } from '@/organisms/Marketplace/MarketplaceEncryptedConversationDialog';
+import { MarketplaceConnectorPushStatus } from '@/organisms/Marketplace/MarketplaceConnectorPushStatus';
 import { MarketplaceIndicativePrice } from '@/organisms/Marketplace/MarketplaceIndicativePrice';
 import { MarketplaceMyReviews } from '@/organisms/Marketplace/MarketplaceMyReviews';
 import { MarketplaceOrderActions } from '@/organisms/Marketplace/MarketplaceOrderActions';
@@ -86,7 +94,7 @@ type OrdersTab = 'needs_action' | 'waiting_other' | 'in_transit' | 'completed' |
 
 const ORDER_TABS: { id: OrdersTab; label: string }[] = [
   { id: 'needs_action', label: 'Needs my action' },
-  { id: 'waiting_other', label: 'Waiting on the other side' },
+  { id: 'waiting_other', label: 'Waiting on seller' },
   { id: 'in_transit', label: 'In transit' },
   { id: 'completed', label: 'Completed' },
   { id: 'cancelled', label: 'Cancelled' },
@@ -95,6 +103,7 @@ const ORDER_TABS: { id: OrdersTab; label: string }[] = [
 
 export function MarketplaceOrders() {
   const router = useRouter();
+  const anchorOrderId = readLinkedOrderId(useSearchParams());
   const currentUserPubky = useAuthStore((state) => state.currentUserPubky);
   const receiptsPublicationStatus = useCommerceStore((state) => state.receiptsPublicationStatus);
   const { orders, isLoading, error, needsSession, refresh, advancePayment, actOnOrder, adapterMode } =
@@ -105,8 +114,8 @@ export function MarketplaceOrders() {
   const [hasSelectedTab, setHasSelectedTab] = useState(false);
   const tabListRef = useRef<HTMLDivElement>(null);
   const tabRefs = useRef<Partial<Record<OrdersTab, HTMLButtonElement | null>>>({});
-  const redirectedHashRef = useRef<string | null>(null);
-  const [anchorOrderId, setAnchorOrderId] = useState<string | null>(null);
+  const redirectedOrderRef = useRef<string | null>(null);
+  const [legacyOrderId, setLegacyOrderId] = useState<string | null>(null);
   const nowMs = useNowMs(orders.some(({ order }) => order.state === 'pending_payment' && Boolean(order.holdExpiresAt)));
   const buyerCheckouts = orders.filter(({ order }) => isBuyerCheckoutInProgress(order, currentUserPubky));
   const sellerReservations = orders.filter(({ order, payment }) =>
@@ -119,6 +128,8 @@ export function MarketplaceOrders() {
   );
   const orderCounts = getOrderTabCounts(historyOrders, currentUserPubky);
   const visibleOrders = historyOrders.filter((view) => isOrderInTab(view, activeTab, currentUserPubky));
+  const waitingLabel = waitingTabLabel(historyOrders, currentUserPubky);
+  const orderTabs = ORDER_TABS.map((tab) => (tab.id === 'waiting_other' ? { ...tab, label: waitingLabel } : tab));
   const listedOrderIds = new Set(
     [...buyerCheckouts, ...sellerReservations, ...historyOrders, ...abandonedCheckouts].map(({ order }) => order.id),
   );
@@ -132,11 +143,18 @@ export function MarketplaceOrders() {
   useMarkMarketplaceOrdersSeen(!isLoading && !error && !needsSession);
 
   useEffect(() => {
-    const readAnchor = () => setAnchorOrderId(readOrderAnchorId(window.location.hash));
-    readAnchor();
-    window.addEventListener('hashchange', readAnchor);
-    return () => window.removeEventListener('hashchange', readAnchor);
+    const fragment = takeDocumentFragment(window.location);
+    const id = fragment ? readLegacyOrderFragment(fragment) : null;
+    if (id) setLegacyOrderId(id);
   }, []);
+
+  useEffect(() => {
+    if (isLoading || !legacyOrderId) return;
+    setLegacyOrderId(null);
+    if (orders.some(({ order }) => order.id === legacyOrderId)) {
+      window.history.replaceState(null, '', withBasePath(getMarketplaceOrderRoute(legacyOrderId)));
+    }
+  }, [isLoading, legacyOrderId, orders]);
 
   useEffect(() => {
     if (isLoading) return;
@@ -156,14 +174,14 @@ export function MarketplaceOrders() {
 
   useEffect(() => {
     if (isLoading) return;
-    const id = readCheckoutHashOrderId(window.location.hash);
-    if (!id || redirectedHashRef.current === id) return;
+    const id = anchorOrderId;
+    if (!id || redirectedOrderRef.current === id) return;
     const view = orders.find((candidate) => candidate.order.id === id);
     if (view && isBuyerCheckoutInProgress(view.order, currentUserPubky)) {
-      redirectedHashRef.current = id;
+      redirectedOrderRef.current = id;
       router.replace(getMarketplaceCheckoutRoute(id));
     }
-  }, [currentUserPubky, isLoading, orders, router]);
+  }, [anchorOrderId, currentUserPubky, isLoading, orders, router]);
 
   useEffect(() => {
     if (hasSelectedTab || !historyOrders.length) return;
@@ -215,6 +233,8 @@ export function MarketplaceOrders() {
           </Typography>
         </div>
 
+        {hasTransactionBackend && <MarketplaceConnectorPushStatus />}
+
         {!hasTransactionBackend ? (
           <div className="flex min-h-64 flex-col items-center justify-center rounded-md px-6 text-center">
             <ReceiptText className="mb-3 size-10 text-muted-foreground" />
@@ -245,25 +265,27 @@ export function MarketplaceOrders() {
                   From Activity
                 </Heading>
                 <Card id={orderAnchorId(linkedUnlistedOrder.id)} className="scroll-mt-24 rounded-md p-0">
-                  <CardContent className="grid gap-2 p-6">
-                    <div className="flex flex-wrap gap-2">
-                      <Badge variant="outline" className="border-border/60 text-muted-foreground">
-                        {currentUserPubky === linkedUnlistedOrder.buyerPubky ? 'Your purchase' : 'Your sale'}
-                      </Badge>
-                      <Badge variant="secondary" data-testid="marketplace-linked-order-state">
-                        {unlistedOrderStateLabel(linkedUnlistedOrder)}
-                      </Badge>
-                    </div>
-                    {linkedUnlistedOrder.lines.map((line) => (
-                      <Typography key={line.listingAggregateId} as="p" className="font-semibold">
-                        {line.title} × {line.quantity}
-                      </Typography>
-                    ))}
+                  <CardContent className="grid min-w-0 gap-4 p-6">
                     <MarketplaceOrderReference
                       order={linkedUnlistedOrder}
                       isBuyer={currentUserPubky === linkedUnlistedOrder.buyerPubky}
                       showPlacedAt
                     />
+                    {linkedUnlistedOrder.lines.map((line, index) => (
+                      <MarketplaceCheckoutItem
+                        key={`${line.listingAggregateId}:${line.variantId ?? index}`}
+                        line={line}
+                        showEstimate={showsLineEstimate(linkedUnlistedOrder)}
+                      />
+                    ))}
+                    <div className="flex flex-wrap gap-2">
+                      <Badge variant="outline">
+                        {currentUserPubky === linkedUnlistedOrder.buyerPubky ? 'Your purchase' : 'Your sale'}
+                      </Badge>
+                      <Badge variant="outline" data-testid="marketplace-linked-order-state">
+                        {unlistedOrderStateLabel(linkedUnlistedOrder)}
+                      </Badge>
+                    </div>
                   </CardContent>
                 </Card>
               </div>
@@ -277,17 +299,26 @@ export function MarketplaceOrders() {
                   <Card key={order.id} className="rounded-md p-0">
                     <CardContent className="grid min-w-0 gap-4 p-6">
                       <MarketplaceOrderReference order={order} isBuyer showPlacedAt />
+                      <MarketplaceCheckoutStatusLabels
+                        order={order}
+                        payment={payment}
+                        isSandbox={isSandbox}
+                        showCheckoutPhase={false}
+                      />
                       {order.lines.map((line, index) => (
                         <MarketplaceCheckoutItem
                           key={`${line.listingAggregateId}:${line.variantId ?? index}`}
                           line={line}
+                          showEstimate={showsLineEstimate(order)}
                         />
                       ))}
                       <div className="flex flex-wrap items-center justify-between gap-3">
-                        <Typography as="p" className="text-sm text-muted-foreground">
-                          {buyerCheckoutProgressCopy(order, payment, nowMs)}
-                        </Typography>
-                        <Button asChild className="rounded-full">
+                        {order.paymentMethod && (
+                          <Typography as="p" className="text-sm text-muted-foreground">
+                            {buyerCheckoutProgressCopy(order, payment, nowMs)}
+                          </Typography>
+                        )}
+                        <Button asChild size="default" className="ml-auto rounded-full">
                           <Link href={getMarketplaceCheckoutRoute(order.id)} overrideDefaults>
                             {bitcoinPaymentHasBeenSeen(order, payment) ? 'View payment' : 'Continue checkout'}
                           </Link>
@@ -307,23 +338,23 @@ export function MarketplaceOrders() {
                   const decision = sellerBitcoinDecision(order, payment);
                   return (
                     <Card key={order.id} className="rounded-md p-0">
-                      <CardContent className="grid gap-2 p-6">
+                      <CardContent className="grid min-w-0 gap-4 p-6">
+                        <MarketplaceOrderReference order={order} isBuyer={false} showPlacedAt />
                         <div className="flex flex-wrap gap-2">
-                          <Badge variant="outline" className="border-border/60 text-muted-foreground">
-                            Reservation
-                          </Badge>
-                          <Badge variant="secondary">{decision ? PAYMENT_SEEN_LABEL : 'Held'}</Badge>
+                          <Badge variant="outline">Reservation</Badge>
+                          <Badge variant="outline">{decision ? PAYMENT_SEEN_LABEL : 'Held'}</Badge>
                         </div>
-                        {order.lines.map((line) => (
-                          <Typography key={line.listingAggregateId} as="p" className="font-semibold">
-                            {line.title} × {line.quantity}
-                          </Typography>
+                        {order.lines.map((line, index) => (
+                          <MarketplaceCheckoutItem
+                            key={`${line.listingAggregateId}:${line.variantId ?? index}`}
+                            line={line}
+                            showEstimate={showsLineEstimate(order)}
+                          />
                         ))}
                         <Typography as="p" className="text-sm text-muted-foreground">
                           {decision ? PAYMENT_SEEN_LABEL : sellerReservationCopy(order.holdExpiresAt)}
                         </Typography>
                         <MarketplaceUsdtPaymentSummary order={order} payment={payment} isBuyer={false} />
-                        <MarketplaceOrderReference order={order} isBuyer={false} showPlacedAt />
                         {decision && (
                           <MarketplacePaymentStatusCard
                             order={order}
@@ -348,13 +379,13 @@ export function MarketplaceOrders() {
                   role="tablist"
                   aria-label="Order filters"
                 >
-                  {ORDER_TABS.map((tab) => (
+                  {orderTabs.map((tab) => (
                     <Button
                       key={tab.id}
                       type="button"
                       size="sm"
-                      variant={activeTab === tab.id ? 'default' : 'ghost'}
-                      className="rounded-full"
+                      variant="ghost"
+                      className="rounded-none border-0 border-b border-solid border-transparent bg-transparent shadow-none aria-selected:border-white aria-selected:text-white"
                       role="tab"
                       aria-selected={activeTab === tab.id}
                       aria-label={`${tab.label} ${orderCounts[tab.id]}`}
@@ -364,7 +395,9 @@ export function MarketplaceOrders() {
                       onClick={() => chooseTab(tab.id)}
                     >
                       {tab.label}
-                      <span className="text-xs text-muted-foreground">{orderCounts[tab.id]}</span>
+                      <span className={activeTab === tab.id ? 'text-xs text-white' : 'text-xs text-muted-foreground'}>
+                        {orderCounts[tab.id]}
+                      </span>
                     </Button>
                   ))}
                 </div>
@@ -373,62 +406,92 @@ export function MarketplaceOrders() {
                     const isBuyer = currentUserPubky === order.buyerPubky;
                     const refundRecord = refundRecordLine(order);
                     const nextActorHint = getNextActorHint(order, payment, isBuyer);
+                    const nextActorBadge = nextActorHint && (
+                      <Badge
+                        variant="outline"
+                        className={nextActorHint.isCurrentUser ? 'bg-orange-400 text-primary-foreground' : undefined}
+                      >
+                        {nextActorHint.label}
+                      </Badge>
+                    );
+                    const paymentConfirmed =
+                      payment !== null && buyerVisiblePaymentStatus(payment.state) === 'confirmed';
                     const bitcoinBreakdown = bitcoinPaymentBreakdown(order);
                     return (
                       <Card key={order.id} id={orderAnchorId(order.id)} className="scroll-mt-24 rounded-md p-0">
-                        <CardContent className="grid min-w-0 gap-5 p-6 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-start">
-                          <div className="min-w-0">
-                            <div className="mb-3 flex flex-wrap gap-2">
-                              <Badge variant="outline" className="border-border/60 text-muted-foreground">
-                                {isBuyer ? 'You bought' : 'You sold'}
-                              </Badge>
-                              <Badge variant="secondary">
-                                {isPendingPaymentState(order.state)
-                                  ? isBuyer
-                                    ? buyerCheckoutBadgeLabel(order, payment)
-                                    : 'Held'
-                                  : orderStateLabel(order)}
-                              </Badge>
-                              {order.fulfillment === 'pickup' && <Badge variant="secondary">Local pickup</Badge>}
-                              {order.fulfillment === 'digital' && <Badge variant="secondary">Digital delivery</Badge>}
-                              <DropEditionBadge order={order} />
-                              {nextActorHint && (
-                                <Badge variant={nextActorHint.isCurrentUser ? 'default' : 'outline'}>
-                                  {nextActorHint.label}
-                                </Badge>
-                              )}
-                              {order.pricedFrom === 'offer' && (
-                                <Badge variant="secondary">Priced from your accepted offer</Badge>
+                        <CardContent className="grid min-w-0 gap-4 p-6">
+                          <MarketplaceOrderReference order={order} isBuyer={isBuyer} showPlacedAt />
+                          <div
+                            className="flex flex-wrap items-center gap-2"
+                            data-testid="marketplace-order-status-labels"
+                          >
+                            {paymentConfirmed ? (
+                              <MarketplacePaymentStatusLabels
+                                order={order}
+                                payment={payment}
+                                isBuyer={isBuyer}
+                                isSandbox={adapterMode === 'sandbox'}
+                                statusHint={nextActorBadge}
+                              />
+                            ) : (
+                              nextActorBadge
+                            )}
+                            <Badge variant="outline">{isBuyer ? 'Bought' : 'Sold'}</Badge>
+                            <Badge variant="outline">
+                              {isPendingPaymentState(order.state)
+                                ? isBuyer
+                                  ? buyerCheckoutBadgeLabel(order, payment)
+                                  : 'Held'
+                                : orderStateLabel(order)}
+                            </Badge>
+                            {order.fulfillment === 'pickup' && <Badge variant="outline">Local pickup</Badge>}
+                            {order.fulfillment === 'digital' && <Badge variant="outline">Digital delivery</Badge>}
+                            <DropEditionBadge order={order} />
+                            {order.pricedFrom === 'offer' && (
+                              <Badge variant="outline">Priced from your accepted offer</Badge>
+                            )}
+                          </div>
+                          {order.lines.map((line, index) => (
+                            <MarketplaceCheckoutItem
+                              key={`${line.listingAggregateId}:${line.variantId ?? index}`}
+                              line={line}
+                              showEstimate={showsLineEstimate(order)}
+                            />
+                          ))}
+                          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                            <div className="min-w-0">
+                              <Typography
+                                as="p"
+                                className="flex flex-wrap items-baseline gap-x-2 text-lg font-semibold text-brand"
+                              >
+                                {bitcoinBreakdown
+                                  ? formatBitcoinAwareMoney(bitcoinBreakdown.payable)
+                                  : formatCommerceMoney(order.total)}{' '}
+                                <MarketplaceOrderBitcoinAmount order={order} />
+                              </Typography>
+                              {bitcoinBreakdown ? (
+                                <MarketplaceBitcoinAmountBreakdown order={order} className="mt-1" />
+                              ) : (
+                                <div className="mt-1 grid gap-1 text-xs text-muted-foreground">
+                                  <span>Items: {formatCommerceMoney(order.subtotal)}</span>
+                                  {order.fulfillment !== 'digital' && (
+                                    <span>Shipping: {formatCommerceMoney(order.shipping)}</span>
+                                  )}
+                                </div>
                               )}
                             </div>
-                            {order.lines.map((line) => (
-                              <div key={line.listingAggregateId}>
-                                <Typography as="p" className="font-semibold">
-                                  {line.title} × {line.quantity}
-                                </Typography>
-                                {/* The buyer's variant snapshot from checkout. */}
-                                {line.variantOptions?.length ? (
-                                  <Typography as="p" className="text-xs text-muted-foreground">
-                                    {line.variantOptions.map(({ name, value }) => `${name}: ${value}`).join(' · ')}
-                                  </Typography>
-                                ) : null}
-                              </div>
-                            ))}
-                            <Typography as="p" className="mt-2 text-2xl font-bold text-brand">
-                              {bitcoinBreakdown
-                                ? formatBitcoinAwareMoney(bitcoinBreakdown.payable)
-                                : formatCommerceMoney(order.total)}{' '}
-                              <MarketplaceOrderBitcoinAmount order={order} />
-                            </Typography>
-                            {bitcoinBreakdown ? (
-                              <MarketplaceBitcoinAmountBreakdown order={order} className="mt-1" />
-                            ) : (
-                              <Typography as="p" className="mt-1 text-xs text-muted-foreground">
-                                Items {formatCommerceMoney(order.subtotal)} · Shipping{' '}
-                                {formatCommerceMoney(order.shipping)}
-                              </Typography>
-                            )}
-                            <MarketplaceOrderReference order={order} isBuyer={isBuyer} showPlacedAt />
+                            <div className="flex flex-col items-end">
+                              <MarketplaceOrderActions
+                                order={order}
+                                isBuyer={isBuyer}
+                                canEditReview={adapterMode === 'transaction-service'}
+                                actOnOrder={actOnOrder}
+                                onChanged={refresh}
+                                messageAction={<MarketplaceOrderMessageCta order={order} />}
+                              />
+                            </div>
+                          </div>
+                          <div className="min-w-0 empty:hidden">
                             {order.state === 'pending_payment' &&
                               order.holdExpiresAt &&
                               (isBuyer ||
@@ -502,29 +565,33 @@ export function MarketplaceOrders() {
                             )}
                             {order.shipment && order.fulfillment !== 'digital' && (
                               <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
-                                <Typography as="p">
-                                  {order.shipment.carrier} · {order.shipment.trackingNumber} · {order.shipment.state}
-                                </Typography>
-                                {/* Only carriers the curated registry can resolve get a
-                              link — an unrecognized carrier stays plain text
-                              instead of risking a dead tracking URL. */}
                                 {(() => {
-                                  const trackingUrl = buildCarrierTrackingUrl(
-                                    order.shipment.carrier,
-                                    order.shipment.trackingNumber,
+                                  const tracking = buyerShipmentTracking(order.shipment);
+                                  if (tracking.kind === 'pending') {
+                                    return <Typography as="p">{tracking.label}</Typography>;
+                                  }
+                                  return (
+                                    <>
+                                      <Typography as="p">
+                                        {tracking.carrier} · {tracking.trackingNumber} · {order.shipment.state}
+                                      </Typography>
+                                      {/* Only carriers the curated registry can resolve get a
+                                    link — an unrecognized carrier stays plain text
+                                    instead of risking a dead tracking URL. */}
+                                      {tracking.url && (
+                                        <Link
+                                          href={tracking.url}
+                                          target="_blank"
+                                          rel="noopener noreferrer"
+                                          overrideDefaults
+                                          className="inline-flex items-center gap-1 font-medium text-brand hover:underline"
+                                        >
+                                          Track package
+                                          <ExternalLink className="size-3.5" />
+                                        </Link>
+                                      )}
+                                    </>
                                   );
-                                  return trackingUrl ? (
-                                    <Link
-                                      href={trackingUrl}
-                                      target="_blank"
-                                      rel="noopener noreferrer"
-                                      overrideDefaults
-                                      className="inline-flex items-center gap-1 font-medium text-brand hover:underline"
-                                    >
-                                      Track package
-                                      <ExternalLink className="size-3.5" />
-                                    </Link>
-                                  ) : null;
                                 })()}
                               </div>
                             )}
@@ -534,15 +601,6 @@ export function MarketplaceOrders() {
                                   Marked delivered automatically after the delivery window; tell the seller if it
                                   hasn&apos;t arrived.
                                 </Typography>
-                                {isBuyer && (
-                                  <div className="mt-2 max-w-44">
-                                    <Button asChild variant="secondary" className="rounded-full">
-                                      <Link href={MARKETPLACE_ROUTES.MESSAGES} overrideDefaults>
-                                        Message seller
-                                      </Link>
-                                    </Button>
-                                  </div>
-                                )}
                               </div>
                             )}
                             {order.state === 'delivered' && order.fulfillment !== 'digital' && (
@@ -591,26 +649,17 @@ export function MarketplaceOrders() {
                             {!isBuyer && order.fulfillment === 'digital' && (
                               <MarketplaceSellerDigitalPanel order={order} onChanged={refresh} />
                             )}
-                            <MarketplaceOrderMessageCta order={order} adapterMode={adapterMode} />
-                            <div className="mt-4 min-w-0">
-                              <MarketplacePaymentStatusCard
-                                order={order}
-                                payment={payment}
-                                isBuyer={isBuyer}
-                                adapterMode={adapterMode}
-                                advancePayment={advancePayment}
-                                onPaymentChanged={refresh}
-                              />
-                            </div>
+                            <MarketplacePaymentStatusCard
+                              order={order}
+                              payment={payment}
+                              isBuyer={isBuyer}
+                              adapterMode={adapterMode}
+                              advancePayment={advancePayment}
+                              onPaymentChanged={refresh}
+                              confirmedStatusInOrderLabels={paymentConfirmed}
+                              className="mt-4"
+                            />
                           </div>
-
-                          <MarketplaceOrderActions
-                            order={order}
-                            isBuyer={isBuyer}
-                            canEditReview={adapterMode === 'transaction-service'}
-                            actOnOrder={actOnOrder}
-                            onChanged={refresh}
-                          />
                         </CardContent>
                       </Card>
                     );
@@ -625,18 +674,22 @@ export function MarketplaceOrders() {
                 </Heading>
                 {abandonedCheckouts.map(({ order }) => (
                   <Card key={order.id} className="rounded-md p-0">
-                    <CardContent className="grid gap-1 p-6">
-                      <Typography as="p" className="font-semibold">
-                        {order.lines.map((line) => line.title).join(', ')}
-                      </Typography>
-                      <Typography as="p" className="text-sm text-muted-foreground">
-                        Checkout ended before payment.
-                      </Typography>
+                    <CardContent className="grid min-w-0 gap-4 p-6">
                       <MarketplaceOrderReference
                         order={order}
                         isBuyer={currentUserPubky === order.buyerPubky}
                         showPlacedAt
                       />
+                      {order.lines.map((line, index) => (
+                        <MarketplaceCheckoutItem
+                          key={`${line.listingAggregateId}:${line.variantId ?? index}`}
+                          line={line}
+                          showEstimate={showsLineEstimate(order)}
+                        />
+                      ))}
+                      <Typography as="p" className="text-sm text-muted-foreground">
+                        Checkout ended before payment.
+                      </Typography>
                     </CardContent>
                   </Card>
                 ))}
@@ -657,55 +710,34 @@ export function MarketplaceOrders() {
   );
 }
 
-function MarketplaceOrderMessageCta({
-  order,
-  adapterMode,
-}: {
-  order: MarketplaceOrder;
-  adapterMode: CommerceAdapterMode;
-}) {
+function MarketplaceOrderMessageCta({ order }: { order: MarketplaceOrder }) {
   const currentUserPubky = useAuthStore((state) => state.currentUserPubky);
-  const listingId = listingIdFromOrder(order);
-  if (!listingId) return null;
-
-  const conversationId = buildMarketplaceConversationAggregateId(order.sellerPubky, order.buyerPubky, listingId);
-  const trigger = (
-    <Button variant="secondary" className="rounded-full">
-      {MESSAGING_COPY.orderCta}
-    </Button>
-  );
-
-  if (isDurableCommerceMode(adapterMode) && currentUserPubky) {
-    const counterpartyPubky = currentUserPubky === order.sellerPubky ? order.buyerPubky : order.sellerPubky;
-    return (
-      <div className="mt-3" data-surface="marketplace-order-message-cta">
-        <MarketplaceEncryptedConversationDialog
-          sellerPubky={order.sellerPubky}
-          buyerPubky={order.buyerPubky}
-          listingId={listingId}
-          counterpartyPubky={counterpartyPubky}
-          trigger={trigger}
-        />
-      </div>
-    );
-  }
-
+  if (!currentUserPubky) return null;
+  const peerPubky = currentUserPubky === order.sellerPubky ? order.buyerPubky : order.sellerPubky;
   return (
-    <div className="mt-3" data-surface="marketplace-order-message-cta">
-      <Button asChild variant="secondary" className="rounded-full">
-        <Link href={marketplaceConversationHref(conversationId)} overrideDefaults>
-          {MESSAGING_COPY.orderCta}
-        </Link>
-      </Button>
+    <div data-surface="marketplace-order-message-cta">
+      <ChatEntryButton
+        peerPubky={peerPubky}
+        context={{ orderId: order.id, listingId: listingIdFromOrder(order) ?? undefined }}
+        label={CHAT_COPY.orderCta}
+        size="default"
+        className="w-full rounded-full sm:w-auto"
+      />
     </div>
   );
 }
 
+function showsLineEstimate(order: MarketplaceOrder): boolean {
+  const rail = observedPaymentRail(order);
+  return rail !== 'usdt' && !(rail === 'bitcoin' && order.bitcoinQuote?.quotedSats != null);
+}
+
 function MarketplaceOrderBitcoinAmount({ order }: { order: MarketplaceOrder }): ReactNode {
   if (bitcoinPaymentBreakdown(order)) return null;
-  // A USDT order settles at parity with its USD price; a bitcoin estimate would mislead.
-  if (order.paymentMethod === 'usdt') return null;
-  const quote = order.paymentMethod === 'bitcoin' ? order.bitcoinQuote : null;
+  // A USDT payment settles in USDT; a bitcoin estimate would mislead.
+  const rail = observedPaymentRail(order);
+  if (rail === 'usdt') return null;
+  const quote = rail === 'bitcoin' ? order.bitcoinQuote : null;
   if (quote?.quotedSats !== null && quote?.quotedSats !== undefined) {
     return (
       <Typography as="span" className="text-sm font-normal">
@@ -787,6 +819,30 @@ function isOrderNeedingCurrentUser(order: MarketplaceOrder, currentUserPubky: st
   return false;
 }
 
+/**
+ * The waiting tab names the side its orders wait on, from the viewer's seat: a
+ * buyer's orders wait on the seller, a seller's unpaid sales on the buyer, and
+ * an account with both reads "Waiting on others". An empty tab follows whether
+ * the viewer buys, sells or both.
+ */
+function waitingTabLabel(orders: MarketplaceOrderView[], currentUserPubky: string | null): string {
+  const waiting = orders.filter((view) => isOrderWaitingOnOtherSide(view, currentUserPubky));
+  // With nothing waiting, the viewer's own roles in their orders pick the side.
+  const onSeller =
+    waiting.length > 0
+      ? waiting.some(({ order }) => order.nextActor === 'seller')
+      : orders.some(({ order }) => isCurrentUserBuyer(order, currentUserPubky));
+  const onBuyer =
+    waiting.length > 0
+      ? waiting.some(({ order }) => order.nextActor === 'buyer')
+      : orders.some(
+          ({ order }) => isCurrentUserSeller(order, currentUserPubky) && !isCurrentUserBuyer(order, currentUserPubky),
+        );
+  if (onSeller && onBuyer) return 'Waiting on others';
+  if (onBuyer) return 'Waiting on buyer';
+  return 'Waiting on seller';
+}
+
 function isOrderWaitingOnOtherSide(
   { order, payment }: Pick<MarketplaceOrderView, 'order' | 'payment'>,
   currentUserPubky: string | null,
@@ -822,7 +878,8 @@ function orderStateLabel(order: MarketplaceOrder): string {
         return 'Picked up';
     }
   }
-  return order.state.replaceAll('_', ' ');
+  const label = order.state.replaceAll('_', ' ');
+  return label.charAt(0).toUpperCase() + label.slice(1);
 }
 
 function getNextActorHint(
@@ -837,7 +894,9 @@ function getNextActorHint(
     return { label: CHECKOUT_HOLD_COPY.expiredNoLateMoney, isCurrentUser: false };
   }
   if (order.nextActor === 'buyer') {
-    return isBuyer ? { label: 'Your move', isCurrentUser: true } : { label: 'Waiting on buyer', isCurrentUser: false };
+    return isBuyer
+      ? { label: 'Needs action', isCurrentUser: true }
+      : { label: 'Waiting on buyer', isCurrentUser: false };
   }
   if (order.nextActor === 'seller') {
     if (isBuyer) return { label: 'Waiting on seller', isCurrentUser: false };
@@ -849,7 +908,7 @@ function getNextActorHint(
     ) {
       return { label: DIGITAL_SELLER_COPY.toDeliver, isCurrentUser: true };
     }
-    return { label: 'Your move', isCurrentUser: true };
+    return { label: 'Needs action', isCurrentUser: true };
   }
-  return { label: 'No action pending', isCurrentUser: false };
+  return null;
 }

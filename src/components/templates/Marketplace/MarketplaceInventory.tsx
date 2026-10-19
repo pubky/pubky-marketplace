@@ -1,9 +1,9 @@
 'use client';
 
-import { useState } from 'react';
-import { ImageIcon, Package, RefreshCw, ShoppingBag, Upload } from 'lucide-react';
-import { MARKETPLACE_ROUTES } from '@/app/routes';
-import type { InventoryBoardRow } from '@/application/commerce/inventory';
+import { Fragment, useState } from 'react';
+import { ImageIcon, Package, Play, RefreshCw, ShoppingBag, Upload } from 'lucide-react';
+import { getMarketplaceListingRoute, MARKETPLACE_ROUTES } from '@/app/routes';
+import type { InventoryBoardRow, InventoryBoardVariant } from '@/application/commerce/inventory';
 import { Badge } from '@/atoms/Badge/Badge';
 import { Button } from '@/atoms/Button/Button';
 import { Card, CardContent } from '@/atoms/Card/Card';
@@ -18,7 +18,10 @@ import { Skeleton } from '@/atoms/Skeleton/Skeleton';
 import { Typography } from '@/atoms/Typography/Typography';
 import { useMarketplaceInventory } from '@/hooks/useMarketplaceInventory/useMarketplaceInventory';
 import { useMarketplaceInventoryImport } from '@/hooks/useMarketplaceInventoryImport/useMarketplaceInventoryImport';
+import { useStoreListingAutoLink } from '@/hooks/useStoreListingAutoLink/useStoreListingAutoLink';
+import { MADE_TO_ORDER_LABEL } from '@/libs/commerce/listing-variants';
 import { UNLIMITED_STOCK_LABEL } from '@/libs/commerce/unlimited-stock';
+import { cn } from '@/libs/utils/utils';
 import { BackToMyShop } from '@/molecules/Marketplace/BackToMyShop';
 import { SettingsSectionContent } from '@/molecules/Settings/SettingsSectionContent/SettingsSectionContent';
 import { ContentLayout } from '@/organisms/ContentLayout/ContentLayout';
@@ -30,7 +33,8 @@ import { MarketplaceSessionRequiredCard } from '@/organisms/Marketplace/Marketpl
 export function MarketplaceInventory() {
   const board = useMarketplaceInventory();
   const importer = useMarketplaceInventoryImport(board.sellerPubky ?? null);
-  const [editing, setEditing] = useState<InventoryBoardRow | null>(null);
+  const storeLinks = useStoreListingAutoLink();
+  const [editing, setEditing] = useState<{ row: InventoryBoardRow; size?: InventoryBoardVariant } | null>(null);
   const [target, setTarget] = useState('');
   const [selected, setSelected] = useState<string[]>([]);
   const [importOpen, setImportOpen] = useState(false);
@@ -49,7 +53,6 @@ export function MarketplaceInventory() {
         <MarketplaceSectionNav />
         <BackToMyShop />
         <div>
-          <Badge className="mb-4">Seller studio · Inventory</Badge>
           <Heading level={1} size="xl" className="text-4xl sm:text-6xl">
             Inventory
           </Heading>
@@ -156,115 +159,212 @@ export function MarketplaceInventory() {
                     </thead>
                     <tbody>
                       {rows.map((entry) => (
-                        <tr key={entry.listingId} className="border-b border-border last:border-0">
-                          <td className="p-3">
-                            <Checkbox
-                              aria-label={`Select ${entry.title}`}
-                              checked={selected.includes(entry.listingId)}
-                              onCheckedChange={(checked) => {
-                                setSelected((current) =>
-                                  checked === true
-                                    ? [...current, entry.listingId]
-                                    : current.filter((id) => id !== entry.listingId),
-                                );
-                              }}
-                            />
-                          </td>
-                          <td className="p-3">
-                            <div className="flex items-center gap-3">
-                              {entry.thumbUrl ? (
-                                <div className="relative size-10 shrink-0 overflow-hidden rounded-md">
-                                  <Image
-                                    src={entry.thumbUrl}
-                                    alt=""
-                                    fill
-                                    sizes="40px"
-                                    className="object-cover object-center"
-                                  />
+                        <Fragment key={entry.listingId}>
+                          <tr className={cn('border-b border-border last:border-0', entry.variants && 'border-b-0')}>
+                            <td className="p-3">
+                              <Checkbox
+                                aria-label={`Select ${entry.title}`}
+                                checked={selected.includes(entry.listingId)}
+                                onCheckedChange={(checked) => {
+                                  setSelected((current) =>
+                                    checked === true
+                                      ? [...current, entry.listingId]
+                                      : current.filter((id) => id !== entry.listingId),
+                                  );
+                                }}
+                              />
+                            </td>
+                            <td className="p-3">
+                              <div className="flex items-center gap-3">
+                                {entry.thumbUrl ? (
+                                  <div className="relative size-10 shrink-0 overflow-hidden rounded-md">
+                                    <Image
+                                      src={entry.thumbUrl}
+                                      alt=""
+                                      fill
+                                      sizes="40px"
+                                      className="object-cover object-center"
+                                    />
+                                  </div>
+                                ) : (
+                                  <div className="flex size-10 items-center justify-center rounded-md bg-muted">
+                                    <ImageIcon className="size-4 text-muted-foreground" />
+                                  </div>
+                                )}
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <Link
+                                    href={getMarketplaceListingRoute(entry.sellerPubky, entry.listingId)}
+                                    overrideDefaults
+                                    className="font-medium hover:text-brand hover:underline"
+                                  >
+                                    {entry.title}
+                                  </Link>
+                                  {entry.recordStatus === 'unavailable' ? (
+                                    <Badge variant="outline" data-testid={`inventory-unavailable-${entry.listingId}`}>
+                                      Unavailable
+                                    </Badge>
+                                  ) : null}
                                 </div>
-                              ) : (
-                                <div className="flex size-10 items-center justify-center rounded-md bg-muted">
-                                  <ImageIcon className="size-4 text-muted-foreground" />
-                                </div>
-                              )}
-                              <div className="flex flex-wrap items-center gap-2">
-                                <Typography as="p" className="font-medium">
-                                  {entry.title}
+                              </div>
+                            </td>
+                            <td className="p-3">
+                              <Badge variant="secondary" data-testid={`inventory-state-${entry.listingId}`}>
+                                {entry.listingState ?? entry.state}
+                              </Badge>
+                            </td>
+                            <td className="p-3">{entry.format}</td>
+                            <td className="p-3">{entry.dropId ?? '—'}</td>
+                            <td className="p-3">
+                              <div className="flex flex-col gap-0.5" data-testid={`inventory-stock-${entry.listingId}`}>
+                                {entry.madeToOrder && !entry.variants ? (
+                                  <span>
+                                    <span className="font-medium">{MADE_TO_ORDER_LABEL}</span>
+                                    <span className="text-muted-foreground"> · stock follows your store</span>
+                                  </span>
+                                ) : (
+                                  <span>
+                                    <span className="font-medium">
+                                      {entry.unlimited ? UNLIMITED_STOCK_LABEL : entry.available}
+                                    </span>
+                                    <span className="text-muted-foreground"> avail</span>
+                                  </span>
+                                )}
+                                <span className="text-muted-foreground">
+                                  {entry.reserved} reserved · {entry.sold} sold
+                                  {entry.unlimited || (entry.madeToOrder && !entry.variants)
+                                    ? ''
+                                    : ` · ${entry.total} total`}
+                                </span>
+                                {entry.reserved > 0 && (
+                                  <span className="text-xs text-muted-foreground">
+                                    Held for a buyer. Not available to sell.
+                                  </span>
+                                )}
+                              </div>
+                            </td>
+                            <td className="p-3">{entry.serverRevision}</td>
+                            <td className="p-3">
+                              {entry.sync === 'missing' ? (
+                                <Typography as="p" className="text-sm text-muted-foreground">
+                                  {entry.syncMessage ?? 'Published, not yet registered for checkout'}
                                 </Typography>
-                                {entry.recordStatus === 'unavailable' ? (
-                                  <Badge variant="outline" data-testid={`inventory-unavailable-${entry.listingId}`}>
-                                    Unavailable
+                              ) : (
+                                'Synced'
+                              )}
+                            </td>
+                            <td className="p-3">
+                              <div className="flex flex-wrap gap-2">
+                                {!entry.variants && !entry.madeToOrder && (
+                                  <Button
+                                    size="sm"
+                                    variant="secondary"
+                                    className="rounded-full"
+                                    disabled={board.pendingListingId === entry.listingId}
+                                    onClick={() => {
+                                      setEditing({ row: entry });
+                                      setTarget(String(entry.available));
+                                    }}
+                                  >
+                                    <Package className="size-4" />
+                                    Set stock
+                                  </Button>
+                                )}
+                                {entry.listingState === 'paused' && entry.format === 'fixed_price' && (
+                                  <Button
+                                    size="sm"
+                                    variant="secondary"
+                                    className="rounded-full"
+                                    disabled={board.pendingListingId === entry.listingId}
+                                    onClick={() => void board.relist(entry)}
+                                  >
+                                    <Play className="size-4" />
+                                    Relist
+                                  </Button>
+                                )}
+                                {entry.sync === 'missing' && (
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    className="rounded-full"
+                                    onClick={() => void board.retrySync(entry)}
+                                  >
+                                    <RefreshCw className="size-4" />
+                                    Retry
+                                  </Button>
+                                )}
+                              </div>
+                              {board.conflictListingId === entry.listingId && (
+                                <Typography as="p" className="mt-2 text-sm text-muted-foreground" role="status">
+                                  Stock changed since this page loaded. Refresh and set the new available amount.
+                                </Typography>
+                              )}
+                            </td>
+                          </tr>
+                          {entry.variants?.map((size, index) => (
+                            <tr
+                              key={size.variantId}
+                              data-testid={`inventory-size-${entry.listingId}-${size.variantId}`}
+                              className={cn(
+                                'text-xs',
+                                index === (entry.variants?.length ?? 0) - 1 && 'border-b border-border',
+                              )}
+                            >
+                              <td className="px-3 py-1.5" />
+                              <td className="px-3 py-1.5 pl-16" colSpan={4}>
+                                <span className={cn('font-medium', !size.enabled && 'text-muted-foreground')}>
+                                  {size.label}
+                                </span>
+                                {!size.enabled ? (
+                                  <Badge variant="outline" className="ml-2">
+                                    Withdrawn
+                                  </Badge>
+                                ) : size.madeToOrder ? (
+                                  <Badge variant="secondary" className="ml-2">
+                                    {MADE_TO_ORDER_LABEL}
+                                  </Badge>
+                                ) : size.soldOut ? (
+                                  <Badge variant="outline" className="ml-2">
+                                    Sold out
                                   </Badge>
                                 ) : null}
-                              </div>
-                            </div>
-                          </td>
-                          <td className="p-3">{entry.state}</td>
-                          <td className="p-3">{entry.format}</td>
-                          <td className="p-3">{entry.dropId ?? '—'}</td>
-                          <td className="p-3">
-                            <div className="flex flex-col gap-0.5" data-testid={`inventory-stock-${entry.listingId}`}>
-                              <span>
-                                <span className="font-medium">
-                                  {entry.unlimited ? UNLIMITED_STOCK_LABEL : entry.available}
-                                </span>
-                                <span className="text-muted-foreground"> avail</span>
-                              </span>
-                              <span className="text-muted-foreground">
-                                {entry.reserved} reserved · {entry.sold} sold
-                                {entry.unlimited ? '' : ` · ${entry.total} total`}
-                              </span>
-                              {entry.reserved > 0 && (
-                                <span className="text-xs text-muted-foreground">
-                                  Held for a buyer. Not available to sell.
-                                </span>
-                              )}
-                            </div>
-                          </td>
-                          <td className="p-3">{entry.serverRevision}</td>
-                          <td className="p-3">
-                            {entry.sync === 'missing' ? (
-                              <Typography as="p" className="text-sm text-muted-foreground">
-                                {entry.syncMessage ?? 'Published, not yet registered for checkout'}
-                              </Typography>
-                            ) : (
-                              'Synced'
-                            )}
-                          </td>
-                          <td className="p-3">
-                            <div className="flex flex-wrap gap-2">
-                              <Button
-                                size="sm"
-                                variant="secondary"
-                                className="rounded-full"
-                                disabled={board.pendingListingId === entry.listingId}
-                                onClick={() => {
-                                  setEditing(entry);
-                                  setTarget(String(entry.available));
-                                }}
-                              >
-                                <Package className="size-4" />
-                                Set available
-                              </Button>
-                              {entry.sync === 'missing' && (
-                                <Button
-                                  size="sm"
-                                  variant="ghost"
-                                  className="rounded-full"
-                                  onClick={() => void board.retrySync(entry)}
-                                >
-                                  <RefreshCw className="size-4" />
-                                  Retry
-                                </Button>
-                              )}
-                            </div>
-                            {board.conflictListingId === entry.listingId && (
-                              <Typography as="p" className="mt-2 text-sm text-muted-foreground" role="status">
-                                Stock changed since this page loaded. Refresh and set the new available amount.
-                              </Typography>
-                            )}
-                          </td>
-                        </tr>
+                              </td>
+                              <td className="px-3 py-1.5" data-testid={`inventory-size-stock-${size.variantId}`}>
+                                {size.madeToOrder ? (
+                                  <span className="text-muted-foreground">
+                                    Stock follows your store · {size.reserved} reserved · {size.sold} sold
+                                  </span>
+                                ) : (
+                                  <>
+                                    <span className="font-medium">{size.available}</span>
+                                    <span className="text-muted-foreground">
+                                      {' '}
+                                      avail · {size.reserved} reserved · {size.sold} sold · {size.total} total
+                                    </span>
+                                  </>
+                                )}
+                              </td>
+                              <td className="px-3 py-1.5" colSpan={2} />
+                              <td className="px-3 py-1.5">
+                                {size.enabled && !size.madeToOrder && (
+                                  <Button
+                                    size="sm"
+                                    variant="secondary"
+                                    className="h-7 rounded-full"
+                                    aria-label={`Set stock for ${entry.title}, ${size.label}`}
+                                    disabled={board.pendingListingId === entry.listingId}
+                                    onClick={() => {
+                                      setEditing({ row: entry, size });
+                                      setTarget(String(size.available));
+                                    }}
+                                  >
+                                    <Package className="size-3.5" />
+                                    Set stock
+                                  </Button>
+                                )}
+                              </td>
+                            </tr>
+                          ))}
+                        </Fragment>
                       ))}
                     </tbody>
                   </table>
@@ -282,7 +382,7 @@ export function MarketplaceInventory() {
           if (!open) importer.reset();
         }}
       >
-        <DialogContent className="border-border bg-popover">
+        <DialogContent className="max-h-[90vh] overflow-y-auto border-border bg-popover">
           <DialogHeader>
             <DialogTitle>Import listings</DialogTitle>
           </DialogHeader>
@@ -293,9 +393,38 @@ export function MarketplaceInventory() {
             message={importer.message}
             counts={importer.counts}
             progress={importer.progress}
+            progressPhase={importer.progressPhase}
+            batchInfo={importer.batchInfo}
+            waitSeconds={importer.waitSeconds}
+            photoPlan={importer.photoPlan}
+            unfinished={importer.unfinished}
+            onResumeUnfinished={() => void importer.resumeUnfinished()}
+            confirmingDiscard={importer.confirmingDiscard}
+            onAskDiscardUnfinished={importer.askDiscardUnfinished}
+            onKeepUnfinished={importer.keepUnfinished}
+            onDiscardUnfinished={() => void importer.discardUnfinished()}
+            fetchPhase={importer.fetchPhase}
+            store={{ control: importer.storeForm.control, onSubmit: () => void importer.submitStoreUrl() }}
+            busy={importer.busy}
+            publishDisabledReason={importer.publishDisabledReason}
+            publishNotice={importer.publishNotice}
+            lossSummary={importer.lossSummary}
+            settings={
+              importer.format
+                ? {
+                    control: importer.form.control,
+                    currencyOptions: importer.currencyOptions,
+                    conditionOptions: importer.conditionOptions,
+                    format: importer.format,
+                    onApply: () => void importer.applySettings(),
+                    onChooseFreeShipping: () => void importer.chooseFreeShipping(),
+                  }
+                : undefined
+            }
+            onDownloadLossReport={importer.downloadLossReport}
             onFile={(file) => void importer.planFile(file)}
-            onPublish={() => void importer.publish()}
-            onResume={() => void importer.resume()}
+            onPublish={() => void importer.publish().then(storeLinks.run)}
+            onResume={() => void importer.resume().then(storeLinks.run)}
             onConfirmConflict={() => void importer.confirmConflict()}
             onDiscardConflict={() => void importer.discardConflict()}
             onDownloadResult={() => void importer.downloadResult()}
@@ -308,12 +437,14 @@ export function MarketplaceInventory() {
       <Dialog open={editing !== null} onOpenChange={(open) => !open && setEditing(null)}>
         <DialogContent className="border-border bg-popover">
           <DialogHeader>
-            <DialogTitle>Set available</DialogTitle>
+            <DialogTitle>Set available stock</DialogTitle>
           </DialogHeader>
           {editing && (
             <>
               <Typography as="p" className="text-sm text-muted-foreground">
-                {editing.title}. Reserved {editing.reserved} stays reserved. Setting available cannot go below 0.
+                {editing.row.title}
+                {editing.size ? `, ${editing.size.label}` : ''}. Reserved {(editing.size ?? editing.row).reserved} stays
+                reserved. Setting available cannot go below 0.
               </Typography>
               <Input
                 theme="dashed"
@@ -329,10 +460,10 @@ export function MarketplaceInventory() {
                 </Button>
                 <Button
                   className="rounded-full"
-                  disabled={board.pendingListingId === editing.listingId}
+                  disabled={board.pendingListingId === editing.row.listingId}
                   onClick={async () => {
                     const parsed = Number.parseInt(target, 10);
-                    await board.setAvailable(editing, parsed);
+                    await board.setAvailable(editing.row, parsed, editing.size?.variantId);
                     setEditing(null);
                   }}
                 >

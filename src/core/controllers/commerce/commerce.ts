@@ -1,4 +1,8 @@
-import { CommerceApplication, type CommerceCheckoutFulfillmentInput } from '@/application/commerce/commerce';
+import {
+  CommerceApplication,
+  type CommerceCatalogStreamFilters,
+  type CommerceCheckoutFulfillmentInput,
+} from '@/application/commerce/commerce';
 import {
   type CheckoutDeliveryKeysResolution,
   CommerceDeliveryKeysApplication,
@@ -9,7 +13,9 @@ import { CommerceInventoryAutomationsApplication } from '@/application/commerce/
 import { CommerceInventoryImportApplication } from '@/application/commerce/inventory-import';
 import { CommercePrivKeyringApplication } from '@/application/commerce/priv-keyring';
 import { CommerceShippingApplication } from '@/application/commerce/shipping';
+import { ProfileApplication } from '@/application/profile/profile';
 import { TagKind } from '@/application/tag/tag.types';
+import { UserApplication } from '@/application/user/user';
 import {
   COMMERCE_SAVED_SEARCH_NAME_MAX_CHARS,
   getCommerceAdapterMode,
@@ -23,18 +29,25 @@ import {
   marketplaceDigitalDeliveryChannelSchema,
   type MarketplaceDigitalDeliveryInput,
 } from '@/libs/commerce/digital';
-import type { CommerceDigitalLock } from '@/libs/commerce/marketplace-records';
-import type { PaymentMethodKind } from '@/libs/commerce/payment-methods';
+import { parseListingAggregateId } from '@/libs/commerce/listing-aggregate';
+import type { CommerceDigitalLock, CommerceShopRecord } from '@/libs/commerce/marketplace-records';
+import { resolveSellerPaymentBadges, type SellerPaymentBadge } from '@/libs/commerce/payment-badges';
+import { PAYMENT_METHOD_DISCOVERY_SELLER_CAP, type PaymentMethodFilter } from '@/libs/commerce/payment-method-filter';
+import type { BindDeliveryAddress, PaymentMethodKind } from '@/libs/commerce/payment-methods';
 import { resolveCheckoutFulfillment } from '@/libs/commerce/pickup';
 import type { CommerceDeliveryAddressValue } from '@/libs/commerce/postal-address';
 import type { PrivRecoveryKeyExport } from '@/libs/commerce/priv-recovery-key';
 import type { ShipFromAddress, ShippingParcel, ShippoRate } from '@/libs/commerce/shipping';
 import { buildMarketplaceListingAggregateId } from '@/libs/commerce/transaction-commands';
-import { commercePositiveMoneySchema, commercePubkySchema } from '@/libs/commerce/transaction-contracts';
+import { commercePositiveMoneySchema } from '@/libs/commerce/transaction-contracts';
+import { isAppError } from '@/libs/error/error';
 import { ValidationErrorCode } from '@/libs/error/error.codes';
 import { Err } from '@/libs/error/error.factories';
 import { ErrorService } from '@/libs/error/error.types';
+import { Logger } from '@/libs/logger/logger';
+import { getMarketplaceGrantSessionEnabled } from '@/libs/runtime-config/runtime-config';
 import type { CommerceIndexedReview, CommerceListingProjectionModelSchema } from '@/models/commerce/commerce.schema';
+import type { Pubky } from '@/models/models.types';
 import { CommerceRecordNormalizer } from '@/pipes/commerce/commerce.normalizer';
 import { MarketplaceNotificationNormalizer } from '@/pipes/marketplaceNotification/marketplaceNotification.normalizer';
 import type { MarketplaceOrder, MarketplacePayment } from '@/services/marketplace/marketplace';
@@ -42,12 +55,7 @@ import { isRecognizedMarketplaceNotification } from '@/services/marketplace/mark
 import type { MarketplaceSessionEndedEvent, MarketplaceSessionInfo } from '@/services/marketplace/marketplace-session';
 import { useAuthStore } from '@/stores/auth/auth.store';
 import { useCommerceStore } from '@/stores/commerce/commerce.store';
-import type {
-  CommerceConditionFilter,
-  CommerceSaleFormatFilter,
-  CommerceSort,
-  CommerceUsdtRefusalReason,
-} from '@/stores/commerce/commerce.types';
+import type { CommerceConditionFilter, CommerceSaleFormatFilter, CommerceSort } from '@/stores/commerce/commerce.types';
 import { useNotificationStore } from '@/stores/notification/notification.store';
 
 /** Rates for an order, or why this device could not open the address to quote against. */
@@ -55,10 +63,25 @@ export type ShippingRatesResult =
   | { kind: 'rates'; rates: ShippoRate[] }
   | Exclude<OrderDeliveryAddressResult, { kind: 'address' }>;
 
+/** The catalog filter state a refresh maps onto the Nexus stream. */
+export interface CommerceCatalogUiFilters {
+  saleFormat: CommerceSaleFormatFilter;
+  conditions: CommerceConditionFilter[];
+  sort: CommerceSort;
+  countryCode?: string | null;
+}
+
 export class CommerceController {
   private constructor() {}
 
+  /** Sellers whose default storefront check ran (or runs) in this session. */
+  private static defaultShopSession = new Map<string, Promise<void>>();
+
   private static sessionEndedUnbind: (() => void) | null = null;
+  private static grantSessionMint: { session: object; promise: Promise<MarketplaceSessionInfo | null> } | null = null;
+  private static grantSessionFailures = new WeakSet<object>();
+  /** The grant-minted session this tab installed, to recognise its rejection. */
+  private static grantSessionInstalled: { authSession: object; issuedAt: string } | null = null;
   private static inventorySessionEndedUnbind: (() => void) | null = null;
 
   /**
@@ -230,20 +253,20 @@ export class CommerceController {
    * the remaining sorts) stays client-side in `filterMarketplaceCatalog`, so
    * server-side filters only narrow what gets fetched, never what renders.
    */
-  static async fetchCatalogListings(filters: {
-    saleFormat: CommerceSaleFormatFilter;
-    conditions: CommerceConditionFilter[];
-    sort: CommerceSort;
-    countryCode?: string | null;
-  }): Promise<void> {
-    await CommerceApplication.fetchCatalogListings({
+  static async fetchCatalogListings(filters: CommerceCatalogUiFilters): Promise<void> {
+    await CommerceApplication.fetchCatalogListings(this.catalogStreamFilters(filters));
+  }
+
+  /** The catalog UI filters Nexus can apply server-side. */
+  private static catalogStreamFilters(filters: CommerceCatalogUiFilters): CommerceCatalogStreamFilters {
+    return {
       ...(filters.saleFormat === 'fixed_price' || filters.saleFormat === 'auction'
         ? { saleFormat: filters.saleFormat }
         : {}),
       ...(filters.conditions.length === 1 ? { condition: filters.conditions[0] } : {}),
       ...(filters.sort === 'ending_soon' ? { endingSoonest: true } : {}),
       ...(filters.countryCode ? { country: filters.countryCode } : {}),
-    });
+    };
   }
 
   static async fetchSellerCatalogListings(sellerPubky: unknown): Promise<void> {
@@ -286,6 +309,69 @@ export class CommerceController {
   }
 
   /**
+   * Gives a grant-backed sign-in its marketplace session without a signer
+   * approval: adopts a persisted bearer when one is on the device, otherwise
+   * mints one from the sign-in grant. Concurrent callers share one attempt.
+   * Resolves null when the flag is off, the sign-in is not grant-backed, or
+   * the service refused; the caller then offers the approval flow. A failed
+   * attempt, or a minted session the service later rejected, is not repeated
+   * for the same sign-in unless `retryAfterFailure` (an explicit user retry).
+   */
+  static async ensureMarketplaceSessionFromGrant(
+    options: { retryAfterFailure?: boolean } = {},
+  ): Promise<MarketplaceSessionInfo | null> {
+    if (!getMarketplaceGrantSessionEnabled()) return null;
+    const auth = useAuthStore.getState();
+    const session = auth.session;
+    const grant = session?.grant;
+    if (!session || !grant || auth.isLoggingOut) return null;
+    const pubky = session.info.publicKey.z32();
+    const current = useCommerceStore.getState().marketplaceSession;
+    if (CommerceApplication.hasActiveMarketplaceSession() && current?.pubky === pubky) return current;
+    if (this.grantSessionMint?.session === session) return await this.grantSessionMint.promise;
+    if (this.grantSessionFailures.has(session) && !options.retryAfterFailure) return null;
+
+    const isCurrent = () => useAuthStore.getState().session === session && !useAuthStore.getState().isLoggingOut;
+    const attempt = (async (): Promise<MarketplaceSessionInfo | null> => {
+      try {
+        const restored = this.restorePersistedMarketplaceSession(pubky);
+        if (restored) return restored;
+        const minted = await CommerceApplication.mintMarketplaceSessionFromGrant({ grant, pubky });
+        if (!isCurrent()) {
+          await CommerceApplication.revokeGrantMarketplaceSession(minted);
+          return null;
+        }
+        let installed: MarketplaceSessionInfo;
+        try {
+          installed = CommerceApplication.installGrantMarketplaceSession(minted, pubky);
+        } catch (error) {
+          await CommerceApplication.revokeGrantMarketplaceSession(minted);
+          throw error;
+        }
+        this.grantSessionInstalled = { authSession: session, issuedAt: installed.issuedAt };
+        this.writeMarketplaceSessionStore(installed);
+        this.grantSessionFailures.delete(session);
+        return installed;
+      } catch (error) {
+        if (isCurrent()) this.grantSessionFailures.add(session);
+        // SDK errors may carry proof material in their message; log the kind only.
+        if (!isAppError(error)) {
+          Logger.error('Marketplace session from the sign-in grant failed', {
+            errorName: error instanceof Error ? error.name : typeof error,
+          });
+        }
+        return null;
+      }
+    })();
+    this.grantSessionMint = { session, promise: attempt };
+    try {
+      return await attempt;
+    } finally {
+      if (this.grantSessionMint?.promise === attempt) this.grantSessionMint = null;
+    }
+  }
+
+  /**
    * Loads a still-valid persisted marketplace bearer into memory and the
    * commerce store. Returns the public facts, or null when nothing valid is
    * stored for this account. Seller Studio uses this so a reload does not
@@ -318,11 +404,12 @@ export class CommerceController {
   }
 
   /** Sign-out and account switch (`AuthController` local-state cleanup). */
-  static clearMarketplaceSessionForSignOut(): void {
-    CommerceApplication.clearMarketplaceSessionForSignOut();
+  static clearMarketplaceSessionForSignOut(options?: { confirmBff?: boolean }): void | Promise<void> {
+    const cleanup = CommerceApplication.clearMarketplaceSessionForSignOut(options);
     this.clearMarketplaceSessionStore();
     CommerceApplication.clearInventorySessionForSignOut();
     this.clearInventorySessionStore();
+    return cleanup;
   }
 
   /**
@@ -370,6 +457,7 @@ export class CommerceController {
     row: InventoryBoardRow;
     targetAvailable: number;
     idempotencyKey: string;
+    variantId?: string;
   }) {
     return await CommerceInventoryApplication.setAvailable(input);
   }
@@ -385,8 +473,69 @@ export class CommerceController {
   static async planInventoryImport(
     sellerPubky: string,
     file: Parameters<CommerceInventoryImportApplication['planFile']>[0],
+    settings?: Parameters<CommerceInventoryImportApplication['planFile']>[1],
   ) {
-    return await CommerceInventoryImportApplication.forSeller(sellerPubky).planFile(file);
+    return await CommerceInventoryImportApplication.forSeller(sellerPubky).planFile(file, settings);
+  }
+
+  static async planInventoryStoreImport(
+    sellerPubky: string,
+    catalog: Parameters<CommerceInventoryImportApplication['planStoreCatalog']>[0],
+    settings: Parameters<CommerceInventoryImportApplication['planStoreCatalog']>[1],
+    offeredCurrencies: Parameters<CommerceInventoryImportApplication['planStoreCatalog']>[2],
+  ) {
+    return await CommerceInventoryImportApplication.forSeller(sellerPubky).planStoreCatalog(
+      catalog,
+      settings,
+      offeredCurrencies,
+    );
+  }
+
+  static async inventoryImportImageTargets(sellerPubky: string, manifestId: string) {
+    return await CommerceInventoryImportApplication.forSeller(sellerPubky).imageTargets(manifestId);
+  }
+
+  static async markInventoryImportStarted(sellerPubky: string, manifestId: string) {
+    return await CommerceInventoryImportApplication.forSeller(sellerPubky).markStarted(manifestId);
+  }
+
+  static async findUnfinishedInventoryImport(sellerPubky: string) {
+    return await CommerceInventoryImportApplication.forSeller(sellerPubky).findUnfinished();
+  }
+
+  static async discardInventoryImport(sellerPubky: string, manifestId: string) {
+    return await CommerceInventoryImportApplication.forSeller(sellerPubky).discard(manifestId);
+  }
+
+  static async inventoryImportKnownMedia(sellerPubky: string, manifestId: string, urls: readonly string[]) {
+    return await CommerceInventoryImportApplication.forSeller(sellerPubky).knownMedia(manifestId, urls);
+  }
+
+  static async journalInventoryImportPhoto(
+    sellerPubky: string,
+    manifestId: string,
+    rowIdentity: string,
+    url: string,
+    media: Parameters<CommerceInventoryImportApplication['journalPhoto']>[3],
+  ) {
+    return await CommerceInventoryImportApplication.forSeller(sellerPubky).journalPhoto(
+      manifestId,
+      rowIdentity,
+      url,
+      media,
+    );
+  }
+
+  static async attachInventoryImportImages(
+    sellerPubky: string,
+    manifestId: string,
+    outcomes: Parameters<CommerceInventoryImportApplication['attachImages']>[1],
+  ) {
+    await CommerceInventoryImportApplication.forSeller(sellerPubky).attachImages(manifestId, outcomes);
+  }
+
+  static async inventoryImportDefaults(sellerPubky: string) {
+    return await CommerceInventoryImportApplication.forSeller(sellerPubky).importDefaults();
   }
 
   static async dryRunInventoryImport(sellerPubky: string, manifestId: string) {
@@ -451,17 +600,42 @@ export class CommerceController {
   }
 
   static async executeMarketplaceCommand(input: unknown) {
-    return await CommerceApplication.executeMarketplaceCommand(
-      this.getCurrentUserPubky(),
-      CommerceRecordNormalizer.marketplaceCommand(input),
-    );
+    const command = CommerceRecordNormalizer.marketplaceCommand(input);
+    const response = await CommerceApplication.executeMarketplaceCommand(this.getCurrentUserPubky(), command);
+    if (response.ok && (command.kind === 'offer.create' || command.kind === 'auction.place_bid')) {
+      this.autoFollowSellers([parseListingAggregateId(command.aggregateId)?.sellerPubky]);
+    }
+    return response;
   }
 
   static async commitOfferCheckout(input: unknown) {
-    return await CommerceApplication.commitOfferCheckout(
-      this.getCurrentUserPubky(),
-      CommerceRecordNormalizer.marketplaceCommand(input),
-    );
+    const command = CommerceRecordNormalizer.marketplaceCommand(input);
+    const response = await CommerceApplication.commitOfferCheckout(this.getCurrentUserPubky(), command);
+    if (response.ok && command.kind === 'offer.checkout') {
+      this.autoFollowSellers([parseListingAggregateId(command.payload.listingAggregateId)?.sellerPubky]);
+    }
+    return response;
+  }
+
+  /**
+   * The Shop follows the seller on the buyer's behalf once the buyer shows
+   * intent (cart, checkout, watchlist, shop follow, offer, bid), so the two
+   * accounts know each other. Runs behind the buyer's action and never
+   * blocks or fails it; see `UserApplication.ensureSellerFollow` for the
+   * once-only and unfollow rules.
+   */
+  private static autoFollowSellers(sellers: Iterable<string | undefined>): void {
+    const follower = this.getCurrentUserPubky();
+    for (const seller of new Set([...sellers].filter((value): value is string => Boolean(value)))) {
+      void UserApplication.ensureSellerFollow({ follower, seller }).catch((error: unknown) => {
+        // AppError factories already report at their origin.
+        if (!isAppError(error)) Logger.warn('Could not follow the seller for this action', { error });
+      });
+    }
+  }
+
+  private static sellerOfListingCompositeId(listingCompositeId: string): string {
+    return listingCompositeId.slice(0, listingCompositeId.indexOf(':'));
   }
 
   /**
@@ -616,6 +790,46 @@ export class CommerceController {
     return await CommerceApplication.getSellerPaymentConfig(CommerceRecordNormalizer.pubky(sellerPubky));
   }
 
+  /**
+   * The payment badges a buyer sees for this seller, resolved against the
+   * set last shown this session so a degraded Paykit read holds a badge
+   * instead of flickering it off. A failed read leaves the remembered set
+   * untouched and returns it (null when nothing was ever resolved).
+   */
+  static async fetchSellerPaymentBadges(sellerPubky: unknown): Promise<SellerPaymentBadge[] | null> {
+    const pubky = CommerceRecordNormalizer.pubky(sellerPubky);
+    const [config, usdtPaymentsAvailable] = await Promise.all([
+      CommerceApplication.getSellerPaymentConfig(pubky).catch(() => null),
+      CommerceApplication.fetchUsdtPaymentsAvailable().catch(() => null),
+    ]);
+    const previous = useCommerceStore.getState().sellerPaymentBadges[pubky];
+    if (!config) return previous ?? null;
+    const badges = resolveSellerPaymentBadges(config, { usdtPaymentsAvailable, previous });
+    useCommerceStore.getState().setSellerPaymentBadges(pubky, badges);
+    return badges;
+  }
+
+  /**
+   * The marketplace payment-method filter: reads the sellers whose stored
+   * configuration has `method` enabled, remembers the set for this session,
+   * then discovers the listings of up to {@link PAYMENT_METHOD_DISCOVERY_SELLER_CAP}
+   * of them from Nexus with the catalog's server-side filters. Resolves to the
+   * full seller set; rejects when the set cannot be read, leaving the
+   * remembered set untouched.
+   */
+  static async fetchPaymentMethodCatalog(
+    method: PaymentMethodFilter,
+    filters: CommerceCatalogUiFilters,
+  ): Promise<string[]> {
+    const sellers = await CommerceApplication.fetchPaymentMethodSellers(method);
+    useCommerceStore.getState().setPaymentMethodSellers(method, sellers);
+    await CommerceApplication.fetchSellerSetCatalogListings(
+      sellers.slice(0, PAYMENT_METHOD_DISCOVERY_SELLER_CAP),
+      this.catalogStreamFilters(filters),
+    );
+    return sellers;
+  }
+
   /** Whether the buyer's Paykit wallet can receive a Bitcoin payment request from the Shop. */
   static async fetchBuyerPaykitWallet(buyerPubky: unknown) {
     return await CommerceApplication.fetchBuyerPaykitWallet(CommerceRecordNormalizer.pubky(buyerPubky));
@@ -623,7 +837,11 @@ export class CommerceController {
 
   /** The current user's own stored payment configuration, or null. */
   static async getMyPaymentConfig() {
-    return await CommerceApplication.getMyPaymentConfig(this.getCurrentUserPubky());
+    const ownerPubky = this.getCurrentUserPubky();
+    const config = await CommerceApplication.getMyPaymentConfig(ownerPubky);
+    // Sellers who turned bitcoin or USDT on before the Shop published storefronts get one here.
+    if (config?.bitcoinEnabled || config?.usdtEnabled === true) this.ensureStorefront(ownerPubky);
+    return config;
   }
 
   /** Saves the current user's own payment configuration. */
@@ -632,12 +850,52 @@ export class CommerceController {
     paypalMerchantEmail: string | null;
     usdtEnabled?: boolean;
   }) {
-    return await CommerceApplication.putMyPaymentConfig(this.getCurrentUserPubky(), input);
+    const ownerPubky = this.getCurrentUserPubky();
+    const saved = await CommerceApplication.putMyPaymentConfig(ownerPubky, input);
+    if (saved.bitcoinEnabled || saved.usdtEnabled === true) this.ensureStorefront(ownerPubky);
+    return saved;
+  }
+
+  /**
+   * A seller who can be paid through Paykit (Accept bitcoin or Accept USDT on,
+   * or a published listing) gets a default storefront when they have none, because Bitkit
+   * only makes a seller the buyer's contact when the seller publishes
+   * `shop.json`. Runs behind the seller's action and never blocks or fails it.
+   * Checks once per seller per session; a failure or an account switch allows
+   * a retry. See `CommerceApplication.commitCreateDefaultShop` for the
+   * never-overwrite rules.
+   */
+  private static ensureStorefront(ownerPubky: string, location?: CommerceShopRecord['location']): void {
+    if (this.defaultShopSession.has(ownerPubky)) return;
+    const attempt = this.ensureDefaultShop(ownerPubky, location)
+      .then((settled) => {
+        if (!settled) this.defaultShopSession.delete(ownerPubky);
+      })
+      .catch((error: unknown) => {
+        this.defaultShopSession.delete(ownerPubky);
+        // AppError factories already report at their origin.
+        if (!isAppError(error)) Logger.warn('Could not publish a default storefront for the seller', { error });
+      });
+    this.defaultShopSession.set(ownerPubky, attempt);
+  }
+
+  /** False when the seller signed out or switched accounts before the check finished. */
+  private static async ensureDefaultShop(
+    ownerPubky: string,
+    location?: CommerceShopRecord['location'],
+  ): Promise<boolean> {
+    const isOwnerSignedIn = () => this.getCurrentUserPubky() === ownerPubky;
+    if (!isOwnerSignedIn()) return false;
+    if (!(await CommerceApplication.needsDefaultShop(ownerPubky))) return true;
+    const profile = await ProfileApplication.readProfileSeed({ pubky: ownerPubky as Pubky });
+    if (!isOwnerSignedIn()) return false;
+    await CommerceApplication.commitCreateDefaultShop({ ownerPubky, profile, location });
+    return true;
   }
 
   /** Buyer's one-shot payment-method binding for an order. */
-  static async bindPaymentMethod(orderId: string, method: PaymentMethodKind) {
-    return await CommerceApplication.bindPaymentMethod(this.getCurrentUserPubky(), orderId, method);
+  static async bindPaymentMethod(orderId: string, method: PaymentMethodKind, delivery?: BindDeliveryAddress) {
+    return await CommerceApplication.bindPaymentMethod(this.getCurrentUserPubky(), orderId, method, delivery);
   }
 
   /** Buyer's PayPal payment report (attestation, never advances payment). */
@@ -742,11 +1000,6 @@ export class CommerceController {
   /** Seller's PayPal receipt confirmation — this is what pays the order. */
   static async confirmFiatReceived(orderId: string) {
     return await CommerceApplication.confirmFiatReceived(this.getCurrentUserPubky(), orderId);
-  }
-
-  /** Whether the current user already has a claimed watch-only account. */
-  static async isOwnPaykitAccountClaimed() {
-    return await CommerceApplication.isPaykitAccountClaimed(this.getCurrentUserPubky());
   }
 
   /**
@@ -1031,15 +1284,6 @@ export class CommerceController {
   }
 
   /**
-   * Remembers, for this browser session, that the service refused a USDT bind
-   * for this seller set, so the checkout picker and the order's payment card
-   * stop offering a method that would be refused again.
-   */
-  static rememberUsdtRefusal(sellerKey: string, reason: CommerceUsdtRefusalReason): void {
-    useCommerceStore.getState().setUsdtRefusal(sellerKey, reason);
-  }
-
-  /**
    * The current buyer's per-line pickup-details reveal for one of their
    * paid orders (§A3). Memory only: re-fetch on each view, never persist.
    */
@@ -1246,7 +1490,16 @@ export class CommerceController {
    * address.
    */
   static async commitCreateMarketplaceCheckout(input: CommerceCheckoutFulfillmentInput) {
-    return await CommerceApplication.commitCreateMarketplaceCheckout(this.getCurrentUserPubky(), input);
+    const response = await CommerceApplication.commitCreateMarketplaceCheckout(this.getCurrentUserPubky(), input);
+    if (response.ok) {
+      this.autoFollowSellers(input.lines.map((line) => parseListingAggregateId(line.listingAggregateId)?.sellerPubky));
+    }
+    return response;
+  }
+
+  /** The connected stores of these sellers that a buyer may share the delivery address with (opt-in). */
+  static async getConnectorStores(sellerPubkys: readonly string[]) {
+    return await CommerceApplication.getConnectorStores(sellerPubkys);
   }
 
   /** The pickup-details CAS version: a non-negative safe integer (0 when no details exist yet). */
@@ -1359,54 +1612,6 @@ export class CommerceController {
     );
   }
 
-  static async createLocksFrontendSession(code: unknown, state: unknown, accountPubky?: unknown) {
-    if (
-      typeof code !== 'string' ||
-      code.length === 0 ||
-      code.length > 4_096 ||
-      typeof state !== 'string' ||
-      state.length === 0 ||
-      state.length > 256
-    ) {
-      throw Err.validation(ValidationErrorCode.INVALID_INPUT, 'Locks connect completion is invalid.', {
-        service: ErrorService.Local,
-        operation: 'createLocksFrontendSession',
-      });
-    }
-    const pubky = typeof accountPubky === 'string' && accountPubky.length > 0 ? accountPubky : undefined;
-    return await CommerceApplication.createLocksFrontendSession(code, state, pubky);
-  }
-
-  static async getLocksCreatorAuthorityStatus(sessionToken: unknown) {
-    if (typeof sessionToken !== 'string' || sessionToken.length === 0 || sessionToken.length > 4_096) {
-      throw Err.validation(ValidationErrorCode.INVALID_INPUT, 'Lock Server session is invalid.', {
-        service: ErrorService.Local,
-        operation: 'getLocksCreatorAuthorityStatus',
-      });
-    }
-    return await CommerceApplication.getLocksCreatorAuthorityStatus(sessionToken);
-  }
-
-  static async getLocksPublicCreatorAuthorityStatus(accountPubky: unknown) {
-    const parsed = commercePubkySchema.safeParse(accountPubky);
-    if (!parsed.success) {
-      throw Err.validation(ValidationErrorCode.INVALID_INPUT, 'Shop account is invalid.', {
-        service: ErrorService.Local,
-        operation: 'getLocksPublicCreatorAuthorityStatus',
-      });
-    }
-    return await CommerceApplication.getLocksPublicCreatorAuthorityStatus(parsed.data);
-  }
-
-  static restoreLocksFrontendSession(accountPubky: string) {
-    return CommerceApplication.restoreLocksFrontendSession(accountPubky);
-  }
-
-  /** Removes the persisted Lock Server session only while it still carries `token`. */
-  static clearLocksFrontendSession(token: string): void {
-    CommerceApplication.clearLocksFrontendSession(token);
-  }
-
   static async lookupLocksVerification(creatorPubky: unknown, bundleId: unknown) {
     return await CommerceApplication.lookupLocksVerification(
       CommerceRecordNormalizer.pubky(creatorPubky),
@@ -1512,12 +1717,14 @@ export class CommerceController {
   static async commitUpsertCartItem(listingCompositeId: unknown, variantId: unknown, quantity: unknown): Promise<void> {
     const parsedQuantity =
       typeof quantity === 'number' && Number.isSafeInteger(quantity) && quantity > 0 ? quantity : Number.NaN;
+    const listing = CommerceRecordNormalizer.listingCompositeId(listingCompositeId);
     await CommerceApplication.commitUpsertCartItem(
       this.getCurrentUserPubky(),
-      CommerceRecordNormalizer.listingCompositeId(listingCompositeId),
+      listing,
       CommerceRecordNormalizer.entityId(variantId),
       parsedQuantity,
     );
+    this.autoFollowSellers([this.sellerOfListingCompositeId(listing)]);
   }
 
   static async commitUpsertAwardCartItem(
@@ -1533,14 +1740,16 @@ export class CommerceController {
       typeof offerRevision === 'number' && Number.isSafeInteger(offerRevision) && offerRevision > 0
         ? offerRevision
         : Number.NaN;
+    const listing = CommerceRecordNormalizer.listingCompositeId(listingCompositeId);
     await CommerceApplication.commitUpsertAwardCartItem(
       this.getCurrentUserPubky(),
-      CommerceRecordNormalizer.listingCompositeId(listingCompositeId),
+      listing,
       CommerceRecordNormalizer.entityId(variantId),
       parsedQuantity,
       CommerceRecordNormalizer.entityId(awardId),
       parsedRevision,
     );
+    this.autoFollowSellers([this.sellerOfListingCompositeId(listing)]);
   }
 
   static async commitDeleteCartItem(listingCompositeId: unknown, variantId: unknown, awardId?: unknown): Promise<void> {
@@ -1613,10 +1822,9 @@ export class CommerceController {
   }
 
   static async commitCreateFavorite(listingCompositeId: unknown): Promise<void> {
-    await CommerceApplication.commitCreateFavorite(
-      this.getCurrentUserPubky(),
-      CommerceRecordNormalizer.listingCompositeId(listingCompositeId),
-    );
+    const listing = CommerceRecordNormalizer.listingCompositeId(listingCompositeId);
+    await CommerceApplication.commitCreateFavorite(this.getCurrentUserPubky(), listing);
+    this.autoFollowSellers([this.sellerOfListingCompositeId(listing)]);
     // Local write already landed (local-first); the private-document push
     // runs behind it and reports its outcome through the sync status store.
     void this.syncWatchlist();
@@ -1644,6 +1852,18 @@ export class CommerceController {
     }
     const status = await CommerceApplication.syncWatchlist(currentUserPubky);
     useCommerceStore.getState().setWatchlistSyncStatus(status === 'skipped' ? 'idle' : status);
+  }
+
+  /**
+   * Calls `listener` whenever the signed-in user's private data keys become
+   * available, whichever surface asked for them first. A surface that ran
+   * before they were available (the watchlist sync, for one) uses it to run
+   * again. Returns the unsubscribe function.
+   */
+  static subscribePrivKeysReady(listener: () => void): () => void {
+    return CommercePrivKeyringApplication.subscribeReady((ownerPubky) => {
+      if (useAuthStore.getState().currentUserPubky === ownerPubky) listener();
+    });
   }
 
   /**
@@ -1805,6 +2025,7 @@ export class CommerceController {
       });
     }
     await CommerceApplication.commitCreateShopFollow(ownerPubky, seller);
+    this.autoFollowSellers([seller]);
   }
 
   static async commitDeleteShopFollow(sellerPubky: unknown): Promise<void> {
@@ -1827,9 +2048,11 @@ export class CommerceController {
     const record = CommerceRecordNormalizer.listing(input);
     const reserve = reservePrice === undefined ? undefined : commercePositiveMoneySchema.nullable().parse(reservePrice);
     this.assertCurrentUserOwns(record.ownerPubky);
-    return await this.withPending(`${record.ownerPubky}:${record.listingId}`, () =>
+    const result = await this.withPending(`${record.ownerPubky}:${record.listingId}`, () =>
       CommerceApplication.commitUpsertListing(record, reserve),
     );
+    this.ensureStorefront(record.ownerPubky, record.location);
+    return result;
   }
 
   static async commitDeleteListing(ownerPubky: unknown, listingId: unknown): Promise<void> {
@@ -1878,6 +2101,14 @@ export class CommerceController {
    * the new session and must never resurrect the cleared one.
    */
   private static onMarketplaceSessionEnded(event: MarketplaceSessionEndedEvent): void {
+    // A grant-minted session the service rejected must not be re-minted at
+    // once: the store clear below wakes the grant-session coordinator, and a
+    // service that keeps rejecting would otherwise see a mint per request.
+    const installed = this.grantSessionInstalled;
+    if (installed && installed.issuedAt === event.issuedAt) {
+      this.grantSessionInstalled = null;
+      if (event.reason === 'rejected') this.grantSessionFailures.add(installed.authSession);
+    }
     const current = useCommerceStore.getState().marketplaceSession;
     if (!current) return;
     if (Date.parse(current.issuedAt) > Date.parse(event.issuedAt)) return;

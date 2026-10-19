@@ -1,11 +1,16 @@
 // Intentional import order — browser-mode mock factories rely on stable aliases.
 /* eslint-disable simple-import-sort/imports */
 import { createMarketplaceVrtCommerceController } from '@/test/mocks/marketplace-vrt';
+import { getPaykitSetupPageUrl, waitForPaykitSetupPage } from '@/test/mocks/paykit-server';
+import {
+  VRT_PAYKIT_RECONNECT_AUTHORIZATION_URL,
+  VRT_PAYKIT_SETUP_AUTHORIZATION_URL,
+} from '@/test/fixtures/commerce/paykit-setup';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { commands, userEvent } from 'vitest/browser';
 import { renderForVRT, VRT_ROOT_TESTID } from '@/test-utils/vrt';
 import { VRT_VIEWPORT_DESKTOP, VRT_VIEWPORT_MOBILE } from '@/test-utils/vrt.viewports';
 import { MarketplacePaymentSettings } from '@/templates/Marketplace/MarketplacePaymentSettings';
-import { LOCKS_CONNECT_REAPPROVE_NOTICE } from '@/hooks/useMarketplaceLocksConnect/useMarketplaceLocksConnect';
 import { setSocialHost } from '@/test-utils/social-host';
 import { toCamelCaseWire } from '@/libs/commerce/wire-casing';
 import { sellerPaymentConfigOwnViewSchema } from '@/libs/commerce/payment-methods';
@@ -18,29 +23,26 @@ import {
 } from '@/test/fixtures/commerce/seller-payment-config-usdt.wire';
 
 const view = vi.hoisted(() => ({
-  locksConnect: {
-    connectedCreator: null as string | null,
-    isExchanging: false,
-    error: null as string | null,
-    reapproveNotice: null as string | null,
-    connectOpen: false,
-    connectUrl: null as string | null,
-  },
   // USDT stays off (and the seller's own view carries no USDT keys) unless a scene opts in.
   usdt: { available: false, unreadable: false, ownView: null as Record<string, unknown> | null },
+  // Stored-rail overrides for scenes that need Accept bitcoin off or Bitkit not yet connected.
+  ownConfig: {} as Record<string, unknown>,
+  accountClaimed: true,
+  paykitServerApi: 'fork' as 'fork' | 'upstream',
+  touch: false,
 }));
 
-function setLocksConnect(partial: Partial<(typeof view)['locksConnect']> = {}) {
-  view.locksConnect = {
-    connectedCreator: null,
-    isExchanging: false,
-    error: null,
-    reapproveNotice: null,
-    connectOpen: false,
-    connectUrl: null,
-    ...partial,
-  };
+// A phone's touch screen, for the page and the Paykit frame: `(hover: none) and (pointer: coarse)`.
+async function setTouch(enabled: boolean) {
+  if (view.touch === enabled) return;
+  await commands.emulateVrtTouch(enabled);
+  view.touch = enabled;
 }
+
+vi.mock('@/config/commerce', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/config/commerce')>();
+  return { ...actual, getPaykitServerApi: () => view.paykitServerApi };
+});
 
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn() }),
@@ -56,34 +58,23 @@ vi.mock('@/controllers/commerce/commerce', () => ({
       bitcoinOfferAvailable: true,
       paypalAvailable: true,
     }),
-    getPaykitSetupUrl: () => 'about:blank',
-    getPaykitReconnectUrl: () => 'about:blank#reconnect',
+    getPaykitSetupUrl: () => getPaykitSetupPageUrl(VRT_PAYKIT_SETUP_AUTHORIZATION_URL),
+    getPaykitReconnectUrl: () => getPaykitSetupPageUrl(VRT_PAYKIT_RECONNECT_AUTHORIZATION_URL),
     fetchUsdtPaymentsAvailable: async () => {
       if (view.usdt.unreadable) throw new TypeError('health unreachable');
       return view.usdt.available;
     },
     getMyPaymentConfig: vi.fn(async () => ({
       bitcoinEnabled: true,
+      bitcoinSetup: view.accountClaimed ? 'ready' : 'setup_required',
       paypalMerchantEmail: 'seller@example.com',
       updatedAt: '2026-08-22T12:00:00.000Z',
       ...view.usdt.ownView,
+      ...view.ownConfig,
     })),
-    isOwnPaykitAccountClaimed: vi.fn(async () => true),
     putMyPaymentConfig: vi.fn(),
     beginMarketplaceSessionConnect: vi.fn(),
   },
-}));
-
-vi.mock('@/hooks/useMarketplaceLocksConnect/useMarketplaceLocksConnect', async (importOriginal) => ({
-  LOCKS_CONNECT_REAPPROVE_NOTICE: (
-    await importOriginal<typeof import('@/hooks/useMarketplaceLocksConnect/useMarketplaceLocksConnect')>()
-  ).LOCKS_CONNECT_REAPPROVE_NOTICE,
-  useMarketplaceLocksConnect: () => ({
-    ...view.locksConnect,
-    setConnectIframe: vi.fn(),
-    openConnect: vi.fn(),
-    closeConnect: vi.fn(),
-  }),
 }));
 
 // The sign-out card's flow is covered by unit tests; the capture needs only its idle state.
@@ -112,7 +103,13 @@ function setUsdt(wire: { payment_config: object } | null, { unreadable = false }
 }
 
 describe('Marketplace payment settings — visual regression', () => {
-  afterEach(() => setUsdt(null));
+  afterEach(async () => {
+    await setTouch(false);
+    setUsdt(null);
+    view.ownConfig = {};
+    view.accountClaimed = true;
+    view.paykitServerApi = 'fork';
+  });
 
   beforeEach(async () => {
     // The Get paid section requires a marketplace session; a fixture session
@@ -130,48 +127,20 @@ describe('Marketplace payment settings — visual regression', () => {
     useAuthStore.setState({ currentUserPubky: 'gy1wnkhfwezwdnawnur1bc3kw1x3jf5ggjj3cm37e31i5ntq3pco' });
   });
 
-  it('renders the payments and Locks setup at desktop viewport', async () => {
-    setLocksConnect();
-
+  it('renders the payments setup at desktop viewport', async () => {
     const screen = await renderForVRT(<MarketplacePaymentSettings />, { viewport: VRT_VIEWPORT_DESKTOP });
     await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('payment-settings-new-seller-desktop');
   });
 
-  it('renders the payments and Locks setup at mobile viewport', async () => {
-    setLocksConnect();
-
+  it('renders the payments setup at mobile viewport', async () => {
     const screen = await renderForVRT(<MarketplacePaymentSettings />, { viewport: VRT_VIEWPORT_MOBILE });
     await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('payment-settings-new-seller-mobile');
-  });
-
-  // The completed state is driven by a REAL signal: the Lock Server's
-  // frontend-session exchange proved creator authority for this seller.
-  it('renders the connected Lock Server setup state at desktop viewport', async () => {
-    setLocksConnect({
-      connectedCreator: 'gy1wnkhfwezwdnawnur1bc3kw1x3jf5ggjj3cm37e31i5ntq3pco',
-    });
-
-    const screen = await renderForVRT(<MarketplacePaymentSettings />, { viewport: VRT_VIEWPORT_DESKTOP });
-    await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('payment-settings-locks-connected-desktop');
-    setLocksConnect();
-  });
-
-  // No live Lock Server session and no creator-keyed status to confirm the
-  // connection: Step 1 explains the one fresh approval beside the button.
-  it('renders the Lock Server fresh-approval note at desktop viewport', async () => {
-    setLocksConnect({ reapproveNotice: LOCKS_CONNECT_REAPPROVE_NOTICE });
-
-    const screen = await renderForVRT(<MarketplacePaymentSettings />, { viewport: VRT_VIEWPORT_DESKTOP });
-    await expect.element(screen.getByTestId('locks-reapprove-notice')).toBeVisible();
-    await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('payment-settings-locks-reapprove-desktop');
-    setLocksConnect();
   });
 
   // A taller viewport so the display-preferences card at the bottom of the
   // page (the approximate-conversion toggle and the measurement-system
   // select) is inside the capture.
   it('renders the display preferences controls at desktop viewport', async () => {
-    setLocksConnect();
     const { useMarketplaceDisplayStore } = await import('@/stores/marketplace-display/marketplace-display.store');
     useMarketplaceDisplayStore.setState({ showFxEstimate: true, measurementSystem: 'imperial' });
 
@@ -183,7 +152,6 @@ describe('Marketplace payment settings — visual regression', () => {
 
   // Social link-out moves sign-out off /settings/account (the social host's page) onto Shop settings.
   it('renders the Shop sign-out card under social link-out at desktop viewport', async () => {
-    setLocksConnect();
     setSocialHost('https://pubky.app');
     try {
       const screen = await renderForVRT(<MarketplacePaymentSettings />, { viewport: { width: 1440, height: 1800 } });
@@ -194,40 +162,64 @@ describe('Marketplace payment settings — visual regression', () => {
     }
   });
 
-  it('renders the Bitkit setup dialog', async () => {
-    setLocksConnect();
-    const screen = await renderForVRT(<MarketplacePaymentSettings />, { viewport: VRT_VIEWPORT_MOBILE });
-    await screen.getByRole('button', { name: /Connect Bitkit/ }).click();
-    await expect(screen.getByTitle('Connect Bitkit')).toBeVisible();
-    await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('payment-settings-bitkit-dialog-mobile');
-  });
+  // Bitkit is not connected yet, so Accept bitcoin is off and says why.
+  it('renders the Accept bitcoin missing-step reason at desktop viewport', async () => {
+    view.ownConfig = { bitcoinEnabled: false };
+    view.accountClaimed = false;
 
-  it('renders the Lock Server connect dialog at desktop viewport', async () => {
-    setLocksConnect({
-      connectOpen: true,
-      connectUrl: 'about:blank#locks-connect',
-    });
-
-    const screen = await renderForVRT(<MarketplacePaymentSettings />, { viewport: VRT_VIEWPORT_DESKTOP });
-    await expect(screen.getByTitle('Connect Lock Server')).toBeVisible();
+    const screen = await renderForVRT(<MarketplacePaymentSettings />, { viewport: { width: 1440, height: 1100 } });
+    await expect.element(screen.getByTestId('bitcoin-toggle-blocker')).toHaveTextContent('Connect Bitkit first.');
     await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot(
-      'payment-settings-locks-connect-dialog-desktop',
+      'payment-settings-bitcoin-missing-step-desktop',
     );
-    setLocksConnect();
   });
 
-  it('renders the Lock Server connect error without raw JSON', async () => {
-    setLocksConnect({
-      error: 'This Lock Server connection did not finish. Approve it again from this page.',
-      connectOpen: true,
-      connectUrl: 'about:blank#locks-connect',
-    });
+  // The service could not ask Paykit: no Not set up, no Connect Bitkit, only Check again.
+  it.each([
+    ['desktop', { width: 1440, height: 1100 }, 'payment-settings-bitkit-unavailable-desktop'],
+    ['mobile', { width: 390, height: 1300 }, 'payment-settings-bitkit-unavailable-mobile'],
+  ] as const)('renders the Bitkit unavailable state at %s viewport', async (_size, viewport, baseline) => {
+    view.ownConfig = { bitcoinEnabled: false, bitcoinSetup: 'unavailable' };
+
+    const screen = await renderForVRT(<MarketplacePaymentSettings />, { viewport });
+    await expect
+      .element(screen.getByTestId('bitkit-setup-unknown'))
+      .toHaveTextContent("We can't check Bitkit right now.");
+    await expect.element(screen.getByTestId('payment-method-status-bitcoin')).toHaveTextContent('Needs attention');
+    await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot(baseline);
+  });
+
+  it('renders the inline PayPal email error at desktop viewport', async () => {
+    view.ownConfig = { paypalMerchantEmail: null };
 
     const screen = await renderForVRT(<MarketplacePaymentSettings />, { viewport: VRT_VIEWPORT_DESKTOP });
-    await expect(screen.getByTitle('Connect Lock Server')).toBeVisible();
-    await expect(screen.getByTestId('dialog-content').getByText(/Approve it again from this page/)).toBeVisible();
-    await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('payment-settings-locks-connect-error-desktop');
-    setLocksConnect();
+    const email = screen.getByLabelText('PayPal merchant email');
+    await userEvent.fill(email, 'test');
+    (document.activeElement as HTMLElement | null)?.blur();
+    await expect.element(screen.getByText('Enter a valid email address.')).toBeVisible();
+    await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('payment-settings-paypal-invalid-desktop');
+  });
+
+  // Upstream Paykit frames only its QR panel, or on a phone its Continue with Bitkit button.
+  // A not-yet-connected seller gets the initial setup.
+  it.each([
+    ['desktop', VRT_VIEWPORT_DESKTOP, 'payment-settings-bitkit-dialog-desktop'],
+    ['mobile', VRT_VIEWPORT_MOBILE, 'payment-settings-bitkit-dialog-mobile'],
+  ] as const)('renders the Bitkit setup dialog at %s viewport', async (size, viewport, baseline) => {
+    view.paykitServerApi = 'upstream';
+    view.accountClaimed = false;
+    await setTouch(size === 'mobile');
+
+    const screen = await renderForVRT(<MarketplacePaymentSettings />, { viewport });
+    await screen.getByRole('button', { name: 'Connect Bitkit' }).click();
+    const frame = screen.getByTitle('Connect Bitkit');
+    await expect(frame).toBeVisible();
+    await expect(await waitForPaykitSetupPage('Connect Bitkit')).toBe(view.touch ? 'bitkit-button' : 'qr');
+    await expect.element(frame).toHaveStyle({ height: view.touch ? '60px' : '192px' });
+    await expect
+      .element(screen.getByText(view.touch ? 'Tap Continue with Bitkit' : 'Scan the code with Bitkit'))
+      .toBeVisible();
+    await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot(baseline);
   });
 
   // USDT is flagged: these scenes turn the Shop flag and the service capability on.
@@ -238,17 +230,14 @@ describe('Marketplace payment settings — visual regression', () => {
     ['setup', USDT_SELLER_CONFIG_SETUP_WIRE, 'payment-settings-usdt-setup-desktop'],
     ['unavailable', USDT_SELLER_CONFIG_UNAVAILABLE_WIRE, 'payment-settings-usdt-unavailable-desktop'],
   ] as const)('renders the USDT %s state at desktop viewport', async (_state, wire, baseline) => {
-    setLocksConnect({ connectedCreator: 'gy1wnkhfwezwdnawnur1bc3kw1x3jf5ggjj3cm37e31i5ntq3pco' });
     setUsdt(wire);
 
     const screen = await renderForVRT(<MarketplacePaymentSettings />, { viewport: USDT_VIEWPORT_DESKTOP });
     await expect.element(screen.getByTestId('usdt-seller-setup')).toBeVisible();
     await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot(baseline);
-    setLocksConnect();
   });
 
   it('keeps the USDT card, as "can\'t be checked right now", when the service capability cannot be read', async () => {
-    setLocksConnect({ connectedCreator: 'gy1wnkhfwezwdnawnur1bc3kw1x3jf5ggjj3cm37e31i5ntq3pco' });
     setUsdt(USDT_SELLER_CONFIG_FLAG_OFF_WIRE, { unreadable: true });
 
     const screen = await renderForVRT(<MarketplacePaymentSettings />, { viewport: USDT_VIEWPORT_DESKTOP });
@@ -256,29 +245,30 @@ describe('Marketplace payment settings — visual regression', () => {
     await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot(
       'payment-settings-usdt-health-unreadable-desktop',
     );
-    setLocksConnect();
   });
 
   it('renders the USDT reconnect state at mobile viewport', async () => {
-    setLocksConnect({ connectedCreator: 'gy1wnkhfwezwdnawnur1bc3kw1x3jf5ggjj3cm37e31i5ntq3pco' });
     setUsdt(USDT_SELLER_CONFIG_RECONNECT_WIRE);
 
     const screen = await renderForVRT(<MarketplacePaymentSettings />, { viewport: USDT_VIEWPORT_MOBILE });
     await expect.element(screen.getByTestId('usdt-seller-setup')).toBeVisible();
     await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('payment-settings-usdt-reconnect-mobile');
-    setLocksConnect();
   });
 
-  it('renders the USDT reconnect dialog at mobile viewport', async () => {
-    setLocksConnect({ connectedCreator: 'gy1wnkhfwezwdnawnur1bc3kw1x3jf5ggjj3cm37e31i5ntq3pco' });
+  it.each([
+    ['desktop', VRT_VIEWPORT_DESKTOP, 'payment-settings-usdt-reconnect-dialog-desktop'],
+    ['mobile', VRT_VIEWPORT_MOBILE, 'payment-settings-usdt-reconnect-dialog-mobile'],
+  ] as const)('renders the USDT reconnect dialog at %s viewport', async (size, viewport, baseline) => {
+    view.paykitServerApi = 'upstream';
     setUsdt(USDT_SELLER_CONFIG_RECONNECT_WIRE);
+    await setTouch(size === 'mobile');
 
-    const screen = await renderForVRT(<MarketplacePaymentSettings />, { viewport: VRT_VIEWPORT_MOBILE });
+    const screen = await renderForVRT(<MarketplacePaymentSettings />, { viewport });
     await screen.getByRole('button', { name: /Add USDT in Bitkit/ }).click();
-    await expect(screen.getByTitle('Add USDT in Bitkit')).toBeVisible();
-    await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot(
-      'payment-settings-usdt-reconnect-dialog-mobile',
-    );
-    setLocksConnect();
+    const frame = screen.getByTitle('Add USDT in Bitkit');
+    await expect(frame).toBeVisible();
+    await expect(await waitForPaykitSetupPage('Add USDT in Bitkit')).toBe(view.touch ? 'bitkit-button' : 'qr');
+    await expect.element(frame).toHaveStyle({ height: view.touch ? '60px' : '192px' });
+    await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot(baseline);
   });
 });

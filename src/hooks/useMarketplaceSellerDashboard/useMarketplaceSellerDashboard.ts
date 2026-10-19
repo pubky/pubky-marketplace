@@ -3,7 +3,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { CommerceController } from '@/controllers/commerce/commerce';
-import { seedDraftFormFromListing } from '@/hooks/useCreateMarketplaceListing/useCreateMarketplaceListing';
+import {
+  evaluateListingActivationGuards,
+  seedDraftFormFromListing,
+} from '@/hooks/useCreateMarketplaceListing/useCreateMarketplaceListing';
 import { useMarketplaceOffers } from '@/hooks/useMarketplaceOffers/useMarketplaceOffers';
 import { useMarketplaceOrders } from '@/hooks/useMarketplaceOrders/useMarketplaceOrders';
 import { useMeasurementSystem } from '@/hooks/useMeasurementSystem/useMeasurementSystem';
@@ -16,10 +19,12 @@ import {
   listingDraftTitleLabel,
   markListingDraftResumeId,
 } from '@/libs/commerce/listing-drafts';
+import { listingPublishBlockToast } from '@/libs/commerce/listing-publish-guards';
 import { sumMoneyByAsset } from '@/libs/commerce/pricing';
 import { countableStockQuantity, isUnlimitedStock, UNLIMITED_STOCK_LABEL } from '@/libs/commerce/unlimited-stock';
 import { toast } from '@/molecules/Toaster/use-toast';
 import { useAuthStore } from '@/stores/auth/auth.store';
+import { useCommerceStore } from '@/stores/commerce/commerce.store';
 
 const REVENUE_ORDER_STATES = ['paid', 'processing', 'shipped', 'delivered', 'completed'] as const;
 
@@ -93,6 +98,19 @@ export function useMarketplaceSellerDashboard() {
 
   const updateListingState = async (listingIds: string[], state: 'active' | 'paused') => {
     const selected = (localListings ?? []).filter(({ id }) => listingIds.includes(id));
+    if (state === 'active') {
+      // Read at call time: the dashboard calls this straight from the session
+      // dialog's onConnected, before a re-render would refresh a selector value.
+      const blocked = await evaluateListingActivationGuards({
+        ownerPubky: currentUserPubky,
+        hasMarketplaceSession: Boolean(useCommerceStore.getState().marketplaceSession),
+        records: selected.map(({ record }) => record),
+      });
+      if (blocked) {
+        toast(listingPublishBlockToast(blocked));
+        return false;
+      }
+    }
     try {
       await Promise.all(
         selected.map(({ record }) =>

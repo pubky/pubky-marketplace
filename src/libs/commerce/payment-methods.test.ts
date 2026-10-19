@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import {
   availablePaymentMethods,
   isPlausibleAccountXpub,
+  isValidPaypalMerchantEmail,
+  sellerPaykitAssets,
   sellerPaymentConfigOwnViewSchema,
   sellerPaymentConfigSchema,
 } from './payment-methods';
@@ -12,14 +14,14 @@ const TPUB =
 
 describe('payment-methods', () => {
   describe('availablePaymentMethods', () => {
-    it('renders methods in bitcoin, paypal order and only when configured', () => {
+    it('renders one Paykit entry, then PayPal, and only when configured', () => {
       expect(
         availablePaymentMethods({
           bitcoinAvailable: true,
           bitcoinOfferAvailable: true,
           paypalAvailable: true,
         }),
-      ).toEqual(['bitcoin', 'paypal']);
+      ).toEqual(['paykit', 'paypal']);
       expect(
         availablePaymentMethods({
           bitcoinAvailable: false,
@@ -40,17 +42,20 @@ describe('payment-methods', () => {
       const base = { bitcoinAvailable: true, bitcoinOfferAvailable: true, paypalAvailable: true };
 
       it.each([
-        { gate: undefined, usdtAvailable: true, expected: ['bitcoin', 'paypal'] },
-        { gate: false, usdtAvailable: true, expected: ['bitcoin', 'paypal'] },
-        { gate: true, usdtAvailable: undefined, expected: ['bitcoin', 'paypal'] },
-        { gate: true, usdtAvailable: false, expected: ['bitcoin', 'paypal'] },
-        { gate: true, usdtAvailable: true, expected: ['bitcoin', 'usdt', 'paypal'] },
-      ])('gate=$gate usdtAvailable=$usdtAvailable offers $expected', ({ gate, usdtAvailable, expected }) => {
-        const config = { ...base, ...(usdtAvailable === undefined ? {} : { usdtAvailable }) };
-        expect(
-          availablePaymentMethods(config, gate === undefined ? undefined : { usdtPaymentsAvailable: gate }),
-        ).toEqual(expected);
-      });
+        { gate: undefined, usdtAvailable: true, expected: ['BTC'] },
+        { gate: false, usdtAvailable: true, expected: ['BTC'] },
+        { gate: true, usdtAvailable: undefined, expected: ['BTC'] },
+        { gate: true, usdtAvailable: false, expected: ['BTC'] },
+        { gate: true, usdtAvailable: true, expected: ['BTC', 'USDT'] },
+      ])(
+        'gate=$gate usdtAvailable=$usdtAvailable offers one Paykit entry for $expected',
+        ({ gate, usdtAvailable, expected }) => {
+          const config = { ...base, ...(usdtAvailable === undefined ? {} : { usdtAvailable }) };
+          const options = gate === undefined ? undefined : { usdtPaymentsAvailable: gate };
+          expect(availablePaymentMethods(config, options)).toEqual(['paykit', 'paypal']);
+          expect(sellerPaykitAssets(config, options)).toEqual(expected);
+        },
+      );
 
       it('offers USDT on its own for a seller with no other rail, only through the gate', () => {
         const config = {
@@ -60,7 +65,61 @@ describe('payment-methods', () => {
           usdtAvailable: true,
         };
         expect(availablePaymentMethods(config)).toEqual([]);
-        expect(availablePaymentMethods(config, { usdtPaymentsAvailable: true })).toEqual(['usdt']);
+        expect(availablePaymentMethods(config, { usdtPaymentsAvailable: true })).toEqual(['paykit']);
+        expect(sellerPaykitAssets(config, { usdtPaymentsAvailable: true })).toEqual(['USDT']);
+      });
+
+      it('reads the offered assets from the service list and never offers USDT through a closed gate', () => {
+        const config = sellerPaymentConfigSchema.parse({
+          ...base,
+          usdtAvailable: false,
+          acceptedAssets: ['USDT', 'DOGE', 'BTC'],
+        });
+        expect(config.acceptedAssets).toEqual(['BTC', 'USDT']);
+        expect(sellerPaykitAssets(config, { usdtPaymentsAvailable: true })).toEqual(['BTC', 'USDT']);
+        expect(sellerPaykitAssets(config, { usdtPaymentsAvailable: false })).toEqual(['BTC']);
+      });
+
+      it('lets a USDT-only list offer Paykit without Bitcoin, and an empty list offer none', () => {
+        const usdtOnly = sellerPaymentConfigSchema.parse({ ...base, acceptedAssets: ['USDT'], paypalAvailable: false });
+        expect(sellerPaykitAssets(usdtOnly, { usdtPaymentsAvailable: true })).toEqual(['USDT']);
+        expect(availablePaymentMethods(usdtOnly, { usdtPaymentsAvailable: false })).toEqual([]);
+        const none = sellerPaymentConfigSchema.parse({ ...base, acceptedAssets: [], paypalAvailable: false });
+        expect(availablePaymentMethods(none, { usdtPaymentsAvailable: true })).toEqual([]);
+      });
+
+      it('drops a malformed asset list and falls back to the readiness flags', () => {
+        const config = sellerPaymentConfigSchema.parse({ ...base, usdtAvailable: true, acceptedAssets: 'BTC' });
+        expect('acceptedAssets' in config).toBe(false);
+        expect(sellerPaykitAssets(config, { usdtPaymentsAvailable: true })).toEqual(['BTC', 'USDT']);
+      });
+
+      it('offers no Paykit at all when the service says paykit_available is false', () => {
+        const config = sellerPaymentConfigSchema.parse({
+          ...base,
+          usdtAvailable: true,
+          paykitAvailable: false,
+          acceptedAssets: ['BTC', 'USDT'],
+        });
+        expect(config.paykitAvailable).toBe(false);
+        expect(sellerPaykitAssets(config, { usdtPaymentsAvailable: true })).toEqual([]);
+        expect(availablePaymentMethods(config, { usdtPaymentsAvailable: true })).toEqual(['paypal']);
+      });
+
+      it('keeps reading the readiness flags when paykit_available is true or absent', () => {
+        const available = sellerPaymentConfigSchema.parse({ ...base, usdtAvailable: true, paykitAvailable: true });
+        expect(sellerPaykitAssets(available, { usdtPaymentsAvailable: true })).toEqual(['BTC', 'USDT']);
+        const malformed = sellerPaymentConfigSchema.parse({ ...base, paykitAvailable: 'yes' });
+        expect('paykitAvailable' in malformed).toBe(false);
+      });
+
+      it('removes Bitcoin when the rail-wide offer gate is off, whatever the list says', () => {
+        const config = sellerPaymentConfigSchema.parse({
+          ...base,
+          bitcoinOfferAvailable: false,
+          acceptedAssets: ['BTC', 'USDT'],
+        });
+        expect(sellerPaykitAssets(config, { usdtPaymentsAvailable: true })).toEqual(['USDT']);
       });
     });
 
@@ -71,7 +130,7 @@ describe('payment-methods', () => {
       });
 
       expect(config.bitcoinOfferAvailable).toBe(true);
-      expect(availablePaymentMethods(config)).toEqual(['bitcoin']);
+      expect(availablePaymentMethods(config)).toEqual(['paykit']);
     });
 
     it('omits Bitcoin when the rail-wide offer gate is off', () => {
@@ -84,7 +143,7 @@ describe('payment-methods', () => {
       expect(availablePaymentMethods(config)).toEqual([]);
     });
 
-    it('lists only Bitcoin, USDT and PayPal, whatever else a service sends', () => {
+    it('lists only Paykit and PayPal, whatever else a service sends', () => {
       const config = sellerPaymentConfigSchema.parse({
         bitcoinAvailable: true,
         bitcoinOfferAvailable: true,
@@ -92,8 +151,8 @@ describe('payment-methods', () => {
         stripeAvailable: true,
       });
 
-      expect(availablePaymentMethods(config)).toEqual(['bitcoin', 'paypal']);
-      expect(PAYMENT_METHOD_KINDS).toEqual(['bitcoin', 'usdt', 'paypal']);
+      expect(availablePaymentMethods(config)).toEqual(['paykit', 'paypal']);
+      expect(PAYMENT_METHOD_KINDS).toEqual(['paykit', 'bitcoin', 'usdt', 'paypal']);
       expect(
         availablePaymentMethods(
           sellerPaymentConfigSchema.parse({ bitcoinAvailable: false, paypalAvailable: false, stripeAvailable: true }),
@@ -153,7 +212,7 @@ describe('payment-methods', () => {
         paypalAvailable: false,
       });
 
-      expect(availablePaymentMethods(config)).toEqual(['bitcoin']);
+      expect(availablePaymentMethods(config)).toEqual(['paykit']);
     });
   });
 
@@ -222,5 +281,42 @@ describe('payment-methods', () => {
       expect(ready).toMatchObject({ usdtEnabled: true, usdtSetup: 'ready', usdtSetupAction: null });
       expect(sellerPaymentConfigOwnViewSchema.parse(ownView)).not.toHaveProperty('usdtSetup');
     });
+  });
+});
+
+describe('isValidPaypalMerchantEmail', () => {
+  it.each(['merchant@example.com', 'a.b+c@sub.example.co', '  seller@example.com  '])('accepts %j', (email) => {
+    expect(isValidPaypalMerchantEmail(email)).toBe(true);
+  });
+
+  it('treats empty input as clearing PayPal', () => {
+    expect(isValidPaypalMerchantEmail('')).toBe(true);
+    expect(isValidPaypalMerchantEmail('   ')).toBe(true);
+  });
+
+  it.each([
+    'test',
+    'no-at-sign',
+    '@example.com',
+    'user@',
+    'user@nodot',
+    'user@ex..ample.com',
+    'user name@example.com',
+    'user@.example.com',
+    'user@example.com.',
+    'user\u0007@example.com',
+    'user\u00a0name@example.com',
+  ])('refuses %j like the service', (email) => {
+    expect(isValidPaypalMerchantEmail(email)).toBe(false);
+  });
+
+  it('refuses an address over 254 UTF-8 bytes', () => {
+    const domain = '@example.com';
+    expect(isValidPaypalMerchantEmail(`${'a'.repeat(254 - domain.length)}${domain}`)).toBe(true);
+    expect(isValidPaypalMerchantEmail(`${'a'.repeat(255 - domain.length)}${domain}`)).toBe(false);
+  });
+
+  it('refuses an address the saved-config schema could not read back', () => {
+    expect(isValidPaypalMerchantEmail('a@b@example.com')).toBe(false);
   });
 });

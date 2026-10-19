@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { MARKETPLACE_ROUTES } from '@/app/routes';
+import { setupFixedDateLocale } from '@/test-utils/date-locale';
 import {
   buyerCheckoutStateLabel,
   extractCheckoutOrderIds,
@@ -17,12 +18,14 @@ import {
   isSellerReservation,
   isSellerSalesOrder,
   isSellerUsdtReviewOrder,
-  readCheckoutHashOrderId,
+  readCheckoutOrderId,
   reservedWhileYouPayCopy,
   resolveCreatedCheckoutOrderIds,
   sellerReservationCopy,
   unlistedOrderStateLabel,
 } from './checkout-phase';
+
+setupFixedDateLocale();
 
 const BUYER = 'b'.repeat(52);
 const SELLER = 's'.repeat(52);
@@ -39,12 +42,20 @@ describe('checkout-phase', () => {
   it('builds the checkout route without minting a second id', () => {
     expect(getMarketplaceCheckoutRoute()).toBe(MARKETPLACE_ROUTES.CHECKOUT);
     expect(getMarketplaceCheckoutRoute('018f47d2-6a27-7c23-a49d-000000000001')).toBe(
-      `${MARKETPLACE_ROUTES.CHECKOUT}#018f47d2-6a27-7c23-a49d-000000000001`,
+      `${MARKETPLACE_ROUTES.CHECKOUT}?order=018f47d2-6a27-7c23-a49d-000000000001`,
     );
     expect(getMarketplaceOfferCheckoutRoute('offer-1')).toBe(`${MARKETPLACE_ROUTES.CHECKOUT}?offer=offer-1`);
     expect(getMarketplaceDropCheckoutRoute({ sellerPubky: SELLER, dropId: 'vol1', listingId: 'boots' })).toBe(
       `${MARKETPLACE_ROUTES.CHECKOUT}?seller=${SELLER}&drop=vol1&listing=boots`,
     );
+  });
+
+  it('reads the order to resume from the checkout query, never from a fragment', () => {
+    const route = new URL(getMarketplaceCheckoutRoute('018f47d2-6a27-7c23-a49d-000000000001'), 'https://shop.test');
+    expect(route.hash).toBe('');
+    expect(readCheckoutOrderId(route.searchParams)).toBe('018f47d2-6a27-7c23-a49d-000000000001');
+    expect(readCheckoutOrderId(new URLSearchParams('order=%20%20'))).toBeNull();
+    expect(readCheckoutOrderId(new URLSearchParams())).toBeNull();
   });
 
   it('keeps unpaid buyer rows out of order history', () => {
@@ -162,9 +173,7 @@ describe('checkout-phase', () => {
     expect(formatRemainingHMmSs('2026-09-28T12:00:00.000Z', Date.parse('2026-09-28T11:00:00.000Z'))).toBe('1:00:00');
     expect(formatRemainingHMmSs('2026-09-29T10:53:06.000Z', Date.parse('2026-09-28T11:00:00.000Z'))).toBe('23:53:06');
     expect(formatRemainingHMmSs('2026-09-28T10:00:00.000Z', Date.parse('2026-09-28T11:00:00.000Z'))).toBe('0:00:00');
-    expect(sellerReservationCopy('2026-10-02T09:10:00.000Z')).toBe(
-      'Held for a buyer · restocks Oct 2, 2026, 9:10 AM UTC',
-    );
+    expect(sellerReservationCopy('2026-10-02T09:10:00.000Z')).toBe(`Held for a buyer · restocks 2 Oct 2026, 09:10`);
     expect(sellerReservationCopy(null)).toBe('Held for a buyer.');
     expect(sellerReservationCopy('not a date')).toBe('Held for a buyer.');
   });
@@ -200,9 +209,6 @@ describe('checkout-phase', () => {
         ['bitcoin', 'paypal'],
       ]),
     ).toEqual(['bitcoin', 'paypal']);
-    expect(readCheckoutHashOrderId('#018f47d2-6a27-7c23-a49d-000000000001')).toBe(
-      '018f47d2-6a27-7c23-a49d-000000000001',
-    );
     expect(
       resolveCreatedCheckoutOrderIds({
         result: { kind: 'checkout' },

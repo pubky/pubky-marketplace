@@ -8,8 +8,16 @@ import type { MarketplacePublicListingAvailability } from '@/services/marketplac
 
 export type PublicListingStockState = MarketplacePublicListingAvailability['state'];
 
+export interface PublicListingStock {
+  state: PublicListingStockState;
+  /** The seller's store sells it without a stock count (print-on-demand): never sold out. */
+  madeToOrder: boolean;
+  /** Per-size sold-out flags; empty for a listing that sells one variant. */
+  variants: NonNullable<MarketplacePublicListingAvailability['variants']>;
+}
+
 /**
- * The listing's stock state from the service's public availability read, for
+ * The listing's stock state, and which sizes are sold out, from the service's public availability read, for
  * a viewer whose marketplace session has lapsed and so cannot read the
  * listing projection. It is read only while `enabled` and exists to show
  * another buyer's hold before the viewer re-approves purchases. Null while
@@ -20,9 +28,9 @@ export function useMarketplacePublicAvailability(
   sellerPubky: string,
   listingId: string,
   enabled: boolean,
-): PublicListingStockState | null {
+): PublicListingStock | null {
   const active = enabled && isDurableCommerceMode(getCommerceAdapterMode());
-  const [read, setRead] = useState<{ key: string; state: PublicListingStockState | null } | null>(null);
+  const [read, setRead] = useState<{ key: string; stock: PublicListingStock | null } | null>(null);
   const key = `${sellerPubky}:${listingId}`;
 
   useEffect(() => {
@@ -31,10 +39,20 @@ export function useMarketplacePublicAvailability(
     const load = async () => {
       try {
         const availability = await CommerceController.getPublicListingAvailability(sellerPubky, listingId);
-        if (current) setRead({ key, state: availability?.state ?? null });
+        if (current)
+          setRead({
+            key,
+            stock: availability
+              ? {
+                  state: availability.state,
+                  madeToOrder: availability.madeToOrder === true,
+                  variants: availability.variants ?? [],
+                }
+              : null,
+          });
       } catch (error) {
         Logger.debug('Public listing availability read failed', { error });
-        if (current) setRead({ key, state: null });
+        if (current) setRead({ key, stock: null });
       }
     };
     void load();
@@ -48,5 +66,5 @@ export function useMarketplacePublicAvailability(
     };
   }, [active, key, sellerPubky, listingId]);
 
-  return active && read?.key === key ? read.state : null;
+  return active && read?.key === key ? read.stock : null;
 }

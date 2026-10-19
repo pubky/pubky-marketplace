@@ -28,6 +28,8 @@ import { Label } from '@/atoms/Label/Label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/atoms/Select/Select';
 import { Skeleton } from '@/atoms/Skeleton/Skeleton';
 import { Typography } from '@/atoms/Typography/Typography';
+import { getAuctionDurationsMinutes } from '@/config/commerce';
+import { LISTING_CURRENCY_CODES, LISTING_CURRENCY_REGISTRY, type ListingCurrencyCode } from '@/config/currencies';
 import { FORM_LABEL_CLASSES } from '@/config/forms';
 import { commerceAttributeFieldsFor, resolveCommerceCategory } from '@/config/taxonomy/taxonomy';
 import { CommerceController } from '@/controllers/commerce/commerce';
@@ -48,14 +50,21 @@ import {
   useDigitalDeliveryCapability,
   useSellerAcceptsPaypal,
 } from '@/hooks/useDigitalDeliveryCapability/useDigitalDeliveryCapability';
+import { useDisplayCurrency } from '@/hooks/useDisplayCurrency/useDisplayCurrency';
+import { useIndicativeBtcRate } from '@/hooks/useIndicativeBtcRate/useIndicativeBtcRate';
 import type {
   ListingMediaItem,
   UseListingMediaManagerResult,
 } from '@/hooks/useListingMediaManager/useListingMediaManager';
 import { isListingMediaPublishReady } from '@/hooks/useListingMediaManager/useListingMediaManager';
 import { useMarketplaceShippingPresets } from '@/hooks/useMarketplaceShippingPresets/useMarketplaceShippingPresets';
-import { presetToShippingFields } from '@/hooks/useMarketplaceShippingPresets/useMarketplaceShippingPresets.types';
+import {
+  presetToShippingFields,
+  shippingPresetMoney,
+} from '@/hooks/useMarketplaceShippingPresets/useMarketplaceShippingPresets.types';
+import { auctionDurationLabel, auctionDurationOptionLabel } from '@/libs/commerce/auction-duration';
 import { DIGITAL_DELIVERY_COPY } from '@/libs/commerce/digital';
+import { formatCommerceMoney } from '@/libs/commerce/format';
 import { isListingDraftSectionId, type ListingDraftSectionId } from '@/libs/commerce/listing-drafts';
 import {
   LISTING_PUBLISH_BLOCK_COPY,
@@ -63,7 +72,14 @@ import {
   type ListingPublishBlockReason,
 } from '@/libs/commerce/listing-publish-guards';
 import { PICKUP_NOTHING_PUBLISHED_TOAST, PICKUP_REVERT_FAILED_TOAST } from '@/libs/commerce/pickup';
-import { amountInputSchemaForAsset, amountInputUnitLabel, assetForListingCurrency } from '@/libs/commerce/pricing';
+import {
+  AMOUNT_EXAMPLES,
+  amountInputExample,
+  amountInputSchemaForAsset,
+  amountInputUnitLabel,
+  assetForListingCurrency,
+  tryAmountInputToMoney,
+} from '@/libs/commerce/pricing';
 import {
   dimensionInputFromMillimeters,
   dimensionUnitLabel,
@@ -86,6 +102,9 @@ import {
   MarketplacePickupDetailsEditor,
   type MarketplacePickupDetailsEditorHandle,
 } from '@/organisms/Marketplace/MarketplacePickupDetailsEditor';
+import { indicativeHintLabel } from '@/pipes/money/money.convert';
+import { fxRateSnapshotFromBtcRate } from '@/pipes/money/money.rates';
+import type { Money } from '@/pipes/money/money.types';
 import { useMarketplaceDisplayStore } from '@/stores/marketplace-display/marketplace-display.store';
 
 const LISTING_FORM_SECTIONS = [
@@ -132,8 +151,10 @@ export interface MarketplaceListingFormProps {
   /** False while the durable publish guards are still being evaluated. */
   publishGuardReady?: boolean;
   onSessionConnected?: () => void | Promise<void>;
-  /** Composer path to resume after configuring a payment method. */
+  /** Composer path to resume after configuring a payment method or delivery key. */
   returnTo?: string;
+  /** Keeps the draft for the seller's return when a publish guard sends them to settings. */
+  onLeaveForSettings?: () => void;
   sidebarFooter?: ReactNode;
 }
 
@@ -151,6 +172,7 @@ export function MarketplaceListingForm({
   publishBlocked = null,
   publishGuardReady = true,
   returnTo,
+  onLeaveForSettings,
   onSessionConnected,
   sidebarFooter,
 }: MarketplaceListingFormProps) {
@@ -167,6 +189,7 @@ export function MarketplaceListingForm({
   } = media;
   const fulfillment = useWatch({ control: form.control, name: CREATE_MARKETPLACE_LISTING_FIELDS.FULFILLMENT });
   const saleFormat = useWatch({ control: form.control, name: CREATE_MARKETPLACE_LISTING_FIELDS.SALE_FORMAT });
+  const auctionDurations = getAuctionDurationsMinutes();
   const currency = useWatch({ control: form.control, name: CREATE_MARKETPLACE_LISTING_FIELDS.CURRENCY });
   const { presets, saveFromFields } = useMarketplaceShippingPresets();
   const [saveDeliveryPreset, setSaveDeliveryPreset] = useState(false);
@@ -223,6 +246,14 @@ export function MarketplaceListingForm({
     }
   };
   const isEdit = mode === 'edit';
+  const auctionDuration = useWatch({ control: form.control, name: CREATE_MARKETPLACE_LISTING_FIELDS.AUCTION_DURATION });
+  // The select shows the length that will publish: an empty or no-longer-offered
+  // value (a fresh form, an older draft) moves to the deploy's first offered length.
+  useEffect(() => {
+    if (isEdit || saleFormat !== 'auction') return;
+    if (auctionDurations.includes(Number(auctionDuration))) return;
+    form.setValue(CREATE_MARKETPLACE_LISTING_FIELDS.AUCTION_DURATION, String(auctionDurations[0]));
+  }, [auctionDuration, auctionDurations, form, isEdit, saleFormat]);
   // The deployment's `pickup_available` capability (§A7), the same source the
   // pickup-details editor and the checkout read: off without the sealing key
   // and on every sandbox deployment. When off (or unreadable), the form
@@ -288,7 +319,7 @@ export function MarketplaceListingForm({
   }, [fulfillment, form]);
   const delivery = fulfillmentFlags(fulfillment);
   const priceUnit = amountInputUnitLabel(assetForListingCurrency(currency));
-  const pricePlaceholder = currency === 'BTC' ? '150000' : '125.00';
+  const pricePlaceholder = amountInputExample(assetForListingCurrency(currency), AMOUNT_EXAMPLES.price);
   const isImperial = measurementSystem === 'imperial';
   const formValues = createMarketplaceListingValuesFromWatch(watchedListingFields, () => {
     void form.formState.isValidating;
@@ -412,7 +443,7 @@ export function MarketplaceListingForm({
       editor.isDirty;
     const values = form.getValues();
     const presetFields =
-      saveDeliveryPreset && delivery.ship && values.currency === 'USD' && !values.freeShipping
+      saveDeliveryPreset && delivery.ship && !values.freeShipping
         ? {
             shippingLabel: values.shippingLabel,
             shippingPrice: values.shippingPrice,
@@ -429,7 +460,7 @@ export function MarketplaceListingForm({
         return;
       }
     }
-    if (presetFields && (await saveFromFields(null, presetFields))) setSaveDeliveryPreset(false);
+    if (presetFields && (await saveFromFields(null, presetFields, values.currency))) setSaveDeliveryPreset(false);
     publishedFulfillmentRef.current = form.getValues(CREATE_MARKETPLACE_LISTING_FIELDS.FULFILLMENT);
     setPublishedFulfillment(publishedFulfillmentRef.current);
     onPublished?.();
@@ -584,18 +615,34 @@ export function MarketplaceListingForm({
               disabled={isPublishing || isEdit}
               options={[
                 { value: 'fixed_price', label: 'Buy now' },
-                { value: 'auction', label: '7-day auction' },
+                {
+                  value: 'auction',
+                  label:
+                    auctionDurations.length === 1 ? `${auctionDurationLabel(auctionDurations[0])} auction` : 'Auction',
+                },
               ]}
             />
+            {saleFormat === 'auction' && !isEdit && auctionDurations.length > 1 && (
+              <FormSelect
+                form={form}
+                name={CREATE_MARKETPLACE_LISTING_FIELDS.AUCTION_DURATION}
+                label="Auction length"
+                disabled={isPublishing}
+                options={auctionDurations.map((minutes) => ({
+                  value: String(minutes),
+                  label: auctionDurationOptionLabel(minutes),
+                }))}
+              />
+            )}
             <FormSelect
               form={form}
               name={CREATE_MARKETPLACE_LISTING_FIELDS.CURRENCY}
               label="Pricing currency"
               disabled={isPublishing || saleTermsLocked}
-              options={[
-                { value: 'USD', label: 'US dollars (USD)' },
-                { value: 'BTC', label: 'Bitcoin (₿)' },
-              ]}
+              options={LISTING_CURRENCY_CODES.map((code) => ({
+                value: code,
+                label: LISTING_CURRENCY_REGISTRY[code].pickerLabel,
+              }))}
             />
             <ControlledInputField
               name={CREATE_MARKETPLACE_LISTING_FIELDS.PRICE}
@@ -859,7 +906,12 @@ export function MarketplaceListingForm({
 
           {delivery.ship && (
             <>
-              <ListingShippingPresetRow form={form} isPublishing={isPublishing} presets={presets} />
+              <ListingShippingPresetRow
+                form={form}
+                isPublishing={isPublishing}
+                presets={presets}
+                listingCurrency={currency}
+              />
               <div className="grid gap-5 sm:grid-cols-2">
                 <ControlledInputField
                   name={CREATE_MARKETPLACE_LISTING_FIELDS.SHIPPING_LABEL}
@@ -873,7 +925,7 @@ export function MarketplaceListingForm({
                     name={CREATE_MARKETPLACE_LISTING_FIELDS.SHIPPING_PRICE}
                     control={form.control}
                     label={`Flat shipping (${priceUnit})`}
-                    placeholder={currency === 'BTC' ? '15000' : '12.00'}
+                    placeholder={amountInputExample(assetForListingCurrency(currency), AMOUNT_EXAMPLES.shipping)}
                     disabled={isPublishing || freeShipping}
                   />
                   <div className="flex items-center gap-2">
@@ -907,8 +959,8 @@ export function MarketplaceListingForm({
                 <div className="flex items-center gap-2">
                   <Checkbox
                     id="listing-save-delivery-preset"
-                    checked={saveDeliveryPreset && currency === 'USD' && !freeShipping}
-                    disabled={isPublishing || currency !== 'USD' || freeShipping}
+                    checked={saveDeliveryPreset && !freeShipping}
+                    disabled={isPublishing || freeShipping}
                     onCheckedChange={(checked) => setSaveDeliveryPreset(checked === true)}
                     aria-describedby="listing-save-delivery-preset-hint"
                   />
@@ -917,8 +969,8 @@ export function MarketplaceListingForm({
                   </Label>
                 </div>
                 <Typography as="p" id="listing-save-delivery-preset-hint" className="text-sm text-muted-foreground">
-                  {currency !== 'USD' || freeShipping
-                    ? 'Presets support paid USD shipping.'
+                  {freeShipping
+                    ? 'Presets hold a paid flat rate; free shipping cannot be saved as one.'
                     : 'Saves the shipping label, flat rate and delivery estimates on this device when you save the listing.'}
                 </Typography>
               </div>
@@ -1019,6 +1071,7 @@ export function MarketplaceListingForm({
               density="action"
               returnTo={returnTo}
               onSessionConnected={onSessionConnected}
+              onLeaveForSettings={onLeaveForSettings}
             />
           ) : null}
           <Button
@@ -1409,21 +1462,39 @@ function ListingDeliveryOptions({
 /**
  * Save/apply shipping presets: device-local templates over the four shipping
  * fields. Applying only fills the form — the published record shape is
- * unchanged either way.
+ * unchanged either way. A preset in another currency is converted into the
+ * listing currency here, with a fresh rate snapshot, and the form says so: the
+ * record needs the flat price in the listing's own currency.
  */
 function ListingShippingPresetRow({
   form,
   isPublishing,
   presets,
+  listingCurrency,
 }: {
   form: UseFormReturn<CreateMarketplaceListingData>;
   isPublishing: boolean;
   presets: ReturnType<typeof useMarketplaceShippingPresets>['presets'];
+  listingCurrency: ListingCurrencyCode;
 }) {
+  const rate = useIndicativeBtcRate(presets.length > 0);
+  const snapshot = rate ? fxRateSnapshotFromBtcRate(rate) : null;
+  const showFxEstimate = useMarketplaceDisplayStore((state) => state.showFxEstimate);
+  const displayCurrency = useDisplayCurrency();
+  const [converted, setConverted] = useState<{ currency: ListingCurrencyCode; from: Money; to: Money } | null>(null);
+
   const applyPreset = (presetId: string) => {
     const preset = presets.find(({ id }) => id === presetId);
     if (!preset) return;
-    const fields = presetToShippingFields(preset);
+    const applied = presetToShippingFields(preset, listingCurrency, snapshot);
+    if (!applied) {
+      toast({
+        variant: 'error',
+        description: `"${preset.label}" is priced in ${preset.currency} and could not be converted to ${listingCurrency} right now. Enter the shipping price yourself.`,
+      });
+      return;
+    }
+    const { fields, convertedFrom } = applied;
     // Presets carry a concrete flat price, so applying one is a priced
     // choice: untoggle free shipping if it was on.
     form.setValue(CREATE_MARKETPLACE_LISTING_FIELDS.FREE_SHIPPING, false);
@@ -1435,31 +1506,49 @@ function ListingShippingPresetRow({
     form.setValue(CREATE_MARKETPLACE_LISTING_FIELDS.SHIPPING_MAX_DAYS, fields.shippingMaxDays, {
       shouldValidate: true,
     });
+    const asset = assetForListingCurrency(listingCurrency);
+    setConverted(
+      convertedFrom
+        ? {
+            currency: listingCurrency,
+            from: convertedFrom,
+            to: tryAmountInputToMoney(fields.shippingPrice, asset) ?? { amountMinor: 0, ...asset },
+          }
+        : null,
+    );
   };
 
   if (presets.length === 0) return null;
 
   return (
-    <div className="flex flex-wrap items-end gap-3">
-      {presets.length > 0 && (
-        <Container className="min-w-48 flex-1 gap-2">
-          <Label htmlFor="listing-shipping-preset" className={FORM_LABEL_CLASSES}>
-            Shipping preset
-          </Label>
-          <Select onValueChange={applyPreset} disabled={isPublishing}>
-            <SelectTrigger theme="secondary" id="listing-shipping-preset" className="w-full">
-              <SelectValue placeholder="Apply a saved preset" />
-            </SelectTrigger>
-            <SelectContent>
-              {presets.map((preset) => (
+    <div className="flex flex-col gap-2">
+      <Container className="min-w-48 flex-1 gap-2">
+        <Label htmlFor="listing-shipping-preset" className={FORM_LABEL_CLASSES}>
+          Shipping preset
+        </Label>
+        <Select onValueChange={applyPreset} disabled={isPublishing}>
+          <SelectTrigger theme="secondary" id="listing-shipping-preset" className="w-full">
+            <SelectValue placeholder="Apply a saved preset" />
+          </SelectTrigger>
+          <SelectContent>
+            {presets.map((preset) => {
+              const price = shippingPresetMoney(preset);
+              const hint = showFxEstimate && snapshot ? indicativeHintLabel(price, displayCurrency, snapshot) : null;
+              return (
                 <SelectItem key={preset.id} value={preset.id}>
-                  {preset.label} · ${(preset.price_minor / 100).toFixed(2)} · {preset.estimated_min_days}–
-                  {preset.estimated_max_days}d
+                  {preset.label} · {formatCommerceMoney(price)}
+                  {hint ? ` ${hint}` : ''} · {preset.estimated_min_days}–{preset.estimated_max_days}d
                 </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </Container>
+              );
+            })}
+          </SelectContent>
+        </Select>
+      </Container>
+      {converted && converted.currency === listingCurrency && (
+        <Typography as="p" role="status" className="text-sm text-muted-foreground">
+          Converted from {formatCommerceMoney(converted.from)} to {formatCommerceMoney(converted.to)} at the current
+          rate, because the listing is priced in {listingCurrency}. Check the amount before you publish.
+        </Typography>
       )}
     </div>
   );
@@ -1561,6 +1650,7 @@ function FormSelect({
   name:
     | typeof CREATE_MARKETPLACE_LISTING_FIELDS.CONDITION
     | typeof CREATE_MARKETPLACE_LISTING_FIELDS.SALE_FORMAT
+    | typeof CREATE_MARKETPLACE_LISTING_FIELDS.AUCTION_DURATION
     | typeof CREATE_MARKETPLACE_LISTING_FIELDS.CURRENCY
     | typeof CREATE_MARKETPLACE_LISTING_FIELDS.FULFILLMENT
     | typeof CREATE_MARKETPLACE_LISTING_FIELDS.RETURN_DAYS;

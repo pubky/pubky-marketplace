@@ -1,7 +1,7 @@
 'use client';
 
 import { ImagePlus, Store, Trash2 } from 'lucide-react';
-import { Controller } from 'react-hook-form';
+import { type Control, Controller, useWatch } from 'react-hook-form';
 import { Button } from '@/atoms/Button/Button';
 import { Card, CardContent } from '@/atoms/Card/Card';
 import { Label } from '@/atoms/Label/Label';
@@ -18,6 +18,8 @@ import {
   type ShopImageSlot,
   useMarketplaceShopSettings,
 } from '@/hooks/useMarketplaceShopSettings/useMarketplaceShopSettings';
+import type { MarketplaceShopSettingsData } from '@/hooks/useMarketplaceShopSettings/useMarketplaceShopSettings.types';
+import { formatShipsToCountries, parseShipsToField, shipsToFieldError } from '@/libs/commerce/ships-to';
 import { ControlledInputField } from '@/molecules/ControlledInputField/ControlledInputField';
 import { ControlledTextareaField } from '@/molecules/ControlledTextareaField/ControlledTextareaField';
 import { SettingsSectionContent } from '@/molecules/Settings/SettingsSectionContent/SettingsSectionContent';
@@ -100,6 +102,16 @@ export function MarketplaceShopSettingsFormView({ settings, onSaved }: Marketpla
           </div>
 
           <ControlledTextareaField name="shippingPolicy" control={settings.form.control} label="Shipping policy" />
+          <div className="grid gap-2" data-testid="shop-settings-ships-to">
+            <ControlledInputField
+              name="shipsToCountries"
+              control={settings.form.control}
+              label="Ships to (country codes)"
+              placeholder="Anywhere"
+              disabled={settings.isSaving}
+            />
+            <ShipsToHint control={settings.form.control} />
+          </div>
           <ControlledTextareaField name="returnPolicy" control={settings.form.control} label="Return policy" />
 
           <div className="grid gap-4">
@@ -164,6 +176,20 @@ export function MarketplaceShopSettingsFormView({ settings, onSaved }: Marketpla
   );
 }
 
+function ShipsToHint({ control }: { control: Control<MarketplaceShopSettingsData> }) {
+  const value = useWatch({ control, name: 'shipsToCountries' });
+  const codes = parseShipsToField(value ?? '');
+  const valid = codes.length > 0 && shipsToFieldError(value) === null;
+
+  return (
+    <Typography as="p" className="text-sm text-muted-foreground" data-testid="shop-settings-ships-to-hint">
+      {valid
+        ? `Buyers see “Ships to: ${formatShipsToCountries(codes)}”, and checkout only accepts delivery addresses there. Pickup is not affected.`
+        : 'Two-letter codes separated by commas, for example CH or CH, LI. Leave empty to ship anywhere.'}
+    </Typography>
+  );
+}
+
 function ShopImageField({
   slot,
   label,
@@ -193,7 +219,13 @@ function ShopImageField({
       <Typography as="p" className="mt-1 text-sm text-muted-foreground">
         {description}
       </Typography>
-      <div className="mt-3 flex items-center gap-4">
+      <div
+        className={
+          shape === 'banner'
+            ? 'mt-3 flex flex-col items-start gap-4 sm:flex-row sm:items-center'
+            : 'mt-3 flex items-center gap-4'
+        }
+      >
         <div
           className={
             shape === 'avatar'

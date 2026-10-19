@@ -66,14 +66,14 @@ describe('seller Bitcoin notification contract', () => {
     const seen = recognized[0];
     expect(seen?.reviewReason ?? null).toBeNull();
     expect(bitcoinNotificationCopy(seen!)?.label).toBe('A Bitcoin payment is waiting for your confirmation');
-    expect(activityRowHref(seen!.type, seen!.aggregateId)).toBe(`/marketplace/orders#order-${ORDER_ID}`);
+    expect(activityRowHref(seen!.type, seen!.aggregateId)).toBe(`/marketplace/orders?order=${ORDER_ID}`);
 
     for (const entry of recognized.slice(1)) {
       const reason = entry.reviewReason;
       expect(reason).toBeTruthy();
       expect(BITCOIN_REVIEW_REASON_COPY[reason!].label).toBe(REVIEW_SENTENCES[reason!]);
       expect(bitcoinNotificationCopy(entry)?.label).toBe(REVIEW_SENTENCES[reason!]);
-      expect(activityRowHref(entry.type, entry.aggregateId)).toBe(`/marketplace/orders#order-${ORDER_ID}`);
+      expect(activityRowHref(entry.type, entry.aggregateId)).toBe(`/marketplace/orders?order=${ORDER_ID}`);
     }
   });
 
@@ -89,7 +89,7 @@ describe('seller Bitcoin notification contract', () => {
     expect(entry.reviewReason ?? null).toBeNull();
     expect(bitcoinNotificationCopy(entry)).toBeNull();
     expect(MARKETPLACE_ACTIVITY_LABELS[entry.type]).toBe('Bitcoin payment needs a decision');
-    expect(activityRowHref(entry.type, entry.aggregateId)).toBe(`/marketplace/orders#order-${ORDER_ID}`);
+    expect(activityRowHref(entry.type, entry.aggregateId)).toBe(`/marketplace/orders?order=${ORDER_ID}`);
   });
 
   it('quarantines seller_response_overdue when it arrives as a type instead of a review reason', () => {

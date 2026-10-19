@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { CommerceApplication } from '@/application/commerce/commerce';
+import { UserApplication } from '@/application/user/user';
 import type { CommerceAdapterMode } from '@/config/commerce';
 import { useAuthStore } from '@/stores/auth/auth.store';
 import { useCommerceStore } from '@/stores/commerce/commerce.store';
@@ -40,6 +41,8 @@ describe('CommerceController', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
     commerceConfig.mode = 'sandbox';
+    vi.spyOn(UserApplication, 'ensureSellerFollow').mockResolvedValue(undefined);
+    vi.spyOn(CommerceApplication, 'needsDefaultShop').mockResolvedValue(false);
     useAuthStore.setState({ currentUserPubky: COMMERCE_FIXTURE_SELLER });
     useCommerceStore.getState().reset();
     useNotificationStore.getState().reset();
@@ -54,15 +57,6 @@ describe('CommerceController', () => {
 
     await expect(CommerceController.refreshListing('not-a-pubky', record.listingId)).rejects.toThrow();
     expect(refresh).toHaveBeenCalledOnce();
-  });
-
-  it('remembers a refused USDT bind for the seller set until the store resets', () => {
-    CommerceController.rememberUsdtRefusal(COMMERCE_FIXTURE_SELLER, 'usdt_seller_not_ready');
-
-    expect(useCommerceStore.getState().usdtRefusals).toEqual({ [COMMERCE_FIXTURE_SELLER]: 'usdt_seller_not_ready' });
-
-    useCommerceStore.getState().reset();
-    expect(useCommerceStore.getState().usdtRefusals).toEqual({});
   });
 
   it('binds a valid creator to the Paykit setup URL and rejects invalid creators', () => {

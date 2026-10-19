@@ -42,6 +42,20 @@ export const marketplaceMoneySchema = z.object({
   exponent: z.number().int(),
 });
 
+/**
+ * One size of a variant-tracked listing, as the service projects it. The key
+ * is absent on a listing that sells one variant.
+ */
+const marketplaceProjectedVariantSchema = z
+  .object({
+    variantId: z.string().min(1),
+    availableQuantity: z.number().int().nonnegative().optional(),
+    soldOut: z.boolean(),
+    // The seller's store sells this size without a stock count; absent when counted.
+    madeToOrder: z.boolean().optional(),
+  })
+  .passthrough();
+
 const marketplaceListingProjectionBaseSchema = z
   .object({
     aggregateId: z.string(),
@@ -53,7 +67,12 @@ const marketplaceListingProjectionBaseSchema = z
     state: z.enum(['available', 'reserved', 'sold']),
     availableQuantity: z.number().int().nonnegative(),
     reservedQuantity: z.number().int().nonnegative(),
+    // True while a size is made to order (the store sells it without a count):
+    // the listing never sells out there and its zero quantity is not a count.
+    madeToOrder: z.boolean().optional(),
+    variants: z.array(marketplaceProjectedVariantSchema).optional(),
     unitPrice: marketplaceMoneySchema,
+    shipping: marketplaceMoneySchema.optional(),
     saleFormat: z.enum(['fixed_price', 'auction']),
     // The fulfillment methods the listing publishes (local pickup design
     // §A1), served by both backends. Defaults to shipping-only for rows
@@ -300,6 +319,7 @@ export const marketplaceNotificationSchema = z
       'bitcoin_prepare_voided',
       'order_cancelled',
       'order_shipped',
+      'tracking_updated',
       'order_delivery_assumed',
       'order_delivered',
       'order_completed',
@@ -469,8 +489,36 @@ export const marketplaceBitcoinQuoteSchema = z
     fetchedAt: z.string().nullable(),
     expiresAt: z.string().nullable(),
     spreadBps: z.number().int().nonnegative().nullable(),
+    // The Blocktank ticker `rate` belongs to (`BTCEUR`: listing-currency units
+    // per bitcoin). Present once a quote exists on a service that names it.
+    pair: z.string().nullish(),
   })
   .passthrough();
+
+/**
+ * How a non-USD fiat price was converted to the USD cents its payment request
+ * was denominated in, fixed at bind from one Blocktank snapshot. `from` is the
+ * price of record in the listing currency, `to` the USD cents charged, `rate`
+ * the cross rate (`EURUSD`: USD per one listing-currency unit) and `usdRate`
+ * and `currencyRate` the two `BTC<CCY>` tickers it comes from. Present only on
+ * non-USD fiat orders. PROVISIONAL: pinned from the service's
+ * `usd_conversion_view`, not yet released.
+ */
+export const marketplaceFxConversionSchema = z
+  .object({
+    pair: z.string(),
+    // Informational (12 places); the service sends null when it cannot render it.
+    rate: z.union([z.string(), z.number().finite()]).nullable(),
+    usdRate: z.union([z.string(), z.number().finite()]),
+    currencyRate: z.union([z.string(), z.number().finite()]),
+    source: z.string(),
+    fetchedAt: z.string(),
+    from: marketplaceMoneySchema,
+    to: marketplaceMoneySchema,
+  })
+  .passthrough();
+
+export type MarketplaceFxConversion = z.infer<typeof marketplaceFxConversionSchema>;
 
 const marketplaceDeliveryAddressValueSchema = z
   .object({
@@ -602,7 +650,12 @@ export const marketplaceOrderProjectionSchema = z
     shipment: z
       .object({
         carrier: z.string(),
-        trackingNumber: z.string(),
+        // Absent on the wire until the seller adds one; read as an empty
+        // string so every consumer tests one shape (`hasTrackingNumber`).
+        trackingNumber: z
+          .string()
+          .nullish()
+          .transform((value) => value ?? ''),
         state: z.enum(['shipped', 'delivered']),
         shippedAt: z.string(),
         deliveredAt: z.string().nullable(),
@@ -680,6 +733,9 @@ export const marketplaceOrderProjectionSchema = z
     // FX-quoted Bitcoin orders carry the service's exact settlement amount.
     // Older orders and non-FX orders may omit this projection entirely.
     bitcoinQuote: marketplaceBitcoinQuoteSchema.nullable().optional(),
+    // Non-USD fiat orders: the conversion to the USD cents actually charged.
+    // A malformed object is dropped so it cannot fail the order.
+    fxConversion: marketplaceFxConversionSchema.nullish().catch(undefined),
     // Physical-bitcoin orders: the Paykit payment-request reference and the
     // worker-observed request state. The enum is intentionally closed to the
     // service CHECK constraint.
@@ -698,6 +754,11 @@ export const marketplaceOrderProjectionSchema = z
     paykitSellerConfirmationEnteredAt: z.string().nullable().optional(),
     paykitSellerConfirmationDeadline: z.string().nullable().optional(),
     paykitTotalSats: z.number().int().nonnegative().nullable().optional(),
+    // The activated Paykit request's deadline: the wallet's own "pay by".
+    // Null until the request is activated (an upstream auction bind starts
+    // from the reservation-based hold). Tolerant: a malformed value reads as
+    // absent so the hold deadline still shows.
+    paykitExpiresAt: z.string().nullish().catch(null),
     // Merchandise before the per-invoice amount code, and the exact bitcoin
     // amount the buyer pays. A malformed value is dropped so one bad money
     // object cannot fail the order.
@@ -712,6 +773,10 @@ export const marketplaceOrderProjectionSchema = z
     // Drop orders (ADR 0026): the bound drop aggregate and, once paid, the
     // gapless edition number assigned inside the exactly-once confirmation.
     dropAggregateId: z.string().nullable().optional(),
+    // An auction winner's order is created at close, with no delivery
+    // address yet; true until the winner sends one with the payment method.
+    auctionAggregateId: z.string().nullable().optional(),
+    shippingAddressRequired: z.boolean().optional(),
     edition: z.number().int().min(1).nullable().optional(),
     createdAt: z.string(),
     updatedAt: z.string(),
@@ -832,13 +897,19 @@ export const marketplaceReceiptSchema = z.object({
 
 /**
  * `GET /v0/listings/{seller}/{listing}/availability` is public and answers
- * the listing's stock state and the service clock, nothing else. It is the
+ * the listing's stock state, the service clock and, for a variant-tracked
+ * listing, which sizes are sold out (never a quantity). It is the
  * only hold signal a viewer without a marketplace session can read.
  */
 export const marketplacePublicListingAvailabilitySchema = z.object({
   aggregateId: z.string(),
   state: listingStateSchema,
   serverTime: z.string(),
+  madeToOrder: z.boolean().optional(),
+  // Per size, only for a variant-tracked listing, and without quantities by design.
+  variants: z
+    .array(z.object({ variantId: z.string().min(1), soldOut: z.boolean(), madeToOrder: z.boolean().optional() }))
+    .optional(),
 });
 
 export type MarketplacePublicListingAvailability = z.infer<typeof marketplacePublicListingAvailabilitySchema>;

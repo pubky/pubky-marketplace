@@ -2,7 +2,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useForm, useWatch } from 'react-hook-form';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   type MarketplaceAddressFormData,
   marketplaceAddressFormDefaults,
@@ -33,7 +33,13 @@ function providerReturning(result: AddressSuggestResult) {
   return { suggest: vi.fn(async () => result) } satisfies AddressAutocompleteProvider;
 }
 
-function Harness({ provider }: { provider?: AddressAutocompleteProvider | null }) {
+function Harness({
+  provider,
+  allowedCountries,
+}: {
+  provider?: AddressAutocompleteProvider | null;
+  allowedCountries?: readonly string[] | null;
+}) {
   const form = useForm<MarketplaceAddressFormData>({
     resolver: zodResolver(marketplaceAddressFormSchema),
     defaultValues: { ...marketplaceAddressFormDefaults, label: 'Home', name: 'Alice Buyer' },
@@ -51,6 +57,7 @@ function Harness({ provider }: { provider?: AddressAutocompleteProvider | null }
         control={form.control}
         setValue={form.setValue}
         autocompleteProvider={provider === undefined ? null : provider}
+        allowedCountries={allowedCountries}
       />
       <output data-testid="filled-city">{city}</output>
       <output data-testid="filled-region">{region}</output>
@@ -69,6 +76,43 @@ describe('MarketplaceAddressFields', () => {
       input.getAttribute('name'),
     );
     expect(fields).toEqual(['countryCode', 'line1', 'line2', 'city', 'region', 'postalCode']);
+  });
+
+  describe('limited to the seller’s destination countries', () => {
+    beforeEach(() => {
+      HTMLElement.prototype.hasPointerCapture = vi.fn(() => false);
+      HTMLElement.prototype.setPointerCapture = vi.fn();
+      HTMLElement.prototype.releasePointerCapture = vi.fn();
+      HTMLElement.prototype.scrollIntoView = vi.fn();
+    });
+
+    it('replaces the typed country with a choice of the allowed countries, by name', async () => {
+      const user = userEvent.setup();
+      render(<Harness provider={null} allowedCountries={['CH', 'LI']} />);
+
+      expect(document.querySelector('input[name="countryCode"]')).toBeNull();
+      const picker = screen.getByTestId('marketplace-address-country-select');
+      expect(picker).toHaveTextContent('Choose a country');
+
+      await user.click(picker);
+      expect(screen.getAllByRole('option').map((option) => option.textContent)).toEqual([
+        'Switzerland',
+        'Liechtenstein',
+      ]);
+      await user.click(screen.getByRole('option', { name: 'Switzerland' }));
+
+      expect(screen.getByTestId('filled-country')).toHaveTextContent('CH');
+      expect(picker).toHaveTextContent('Switzerland');
+      expect(screen.getByLabelText('Postal code')).toBeInTheDocument();
+    });
+
+    it('keeps the typed country when no list is set or the list is empty', () => {
+      const { unmount } = render(<Harness provider={null} allowedCountries={null} />);
+      expect(document.querySelector('input[name="countryCode"]')).not.toBeNull();
+      unmount();
+      render(<Harness provider={null} allowedCountries={[]} />);
+      expect(document.querySelector('input[name="countryCode"]')).not.toBeNull();
+    });
   });
 
   it('searches in the country chosen before the street is typed', async () => {

@@ -14,7 +14,6 @@ import { Switch } from '@/atoms/Switch/Switch';
 import { Typography } from '@/atoms/Typography/Typography';
 import { isSocialLinkOutEnabled } from '@/config/social';
 import { CommerceController } from '@/controllers/commerce/commerce';
-import { useMarketplaceLocksConnect } from '@/hooks/useMarketplaceLocksConnect/useMarketplaceLocksConnect';
 import {
   consumeListingComposerReturnTo,
   peekListingComposerReturnTo,
@@ -24,6 +23,7 @@ import { availablePaymentMethods, type SellerPaymentConfigOwnView } from '@/libs
 import { BackToMyShop } from '@/molecules/Marketplace/BackToMyShop';
 import { SettingsSectionContent } from '@/molecules/Settings/SettingsSectionContent/SettingsSectionContent';
 import { ContentLayout } from '@/organisms/ContentLayout/ContentLayout';
+import { MarketplaceDeliveryKeyStep } from '@/organisms/Marketplace/MarketplaceDeliveryKeyStep';
 import { MarketplaceGetPaidSettings } from '@/organisms/Marketplace/MarketplaceGetPaidSettings';
 import { MarketplaceSectionNav } from '@/organisms/Marketplace/MarketplaceSectionNav';
 import { MarketplaceSignOutCard } from '@/organisms/Marketplace/MarketplaceSignOutCard';
@@ -38,7 +38,6 @@ export function MarketplacePaymentSettings() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const currentUserPubky = useAuthStore((state) => state.currentUserPubky);
-  const locksConnect = useMarketplaceLocksConnect();
   const showFxEstimate = useMarketplaceDisplayStore((state) => state.showFxEstimate);
   const setShowFxEstimate = useMarketplaceDisplayStore((state) => state.setShowFxEstimate);
   const measurementSystem = useMarketplaceDisplayStore((state) => state.measurementSystem);
@@ -123,7 +122,9 @@ export function MarketplacePaymentSettings() {
           )}
         </div>
 
-        <MarketplaceGetPaidSettings locksConnect={locksConnect} onSaved={onPaymentSaved} />
+        <MarketplaceGetPaidSettings onSaved={onPaymentSaved} />
+
+        <MarketplaceDeliveryKeyStep />
 
         <Card className="rounded-md p-0 shadow-lg">
           <CardContent className="grid gap-6 p-6">

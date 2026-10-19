@@ -1,5 +1,6 @@
 import { MARKETPLACE_ROUTES } from '@/app/routes';
 import { formatOrderInstant, UNBOUND_BACK_CANCEL_REASON } from '@/libs/commerce/checkout-hold';
+import { followsBitcoinFlow } from '@/libs/commerce/paykit-rail';
 import type { PaymentMethodKind } from '@/libs/commerce/payment-methods';
 import { isUsdtPaymentReviewOrder } from '@/libs/commerce/usdt-payment-review';
 
@@ -23,8 +24,22 @@ const PAID_OR_LATER_STATES = new Set([
   'closed',
 ]);
 
+export const CHECKOUT_ORDER_PARAM = 'order';
+
+/**
+ * Checkout resumes an order only from `?order=`, never from a `#fragment`: after a
+ * document load of `/marketplace/checkout#<id>`, Next's router carries that fragment
+ * onto every later in-app navigation to plain `/marketplace/checkout`.
+ */
 export function getMarketplaceCheckoutRoute(orderId?: string | null): string {
-  return orderId ? `${MARKETPLACE_ROUTES.CHECKOUT}#${orderId}` : MARKETPLACE_ROUTES.CHECKOUT;
+  if (!orderId) return MARKETPLACE_ROUTES.CHECKOUT;
+  const params = new URLSearchParams({ [CHECKOUT_ORDER_PARAM]: orderId });
+  return `${MARKETPLACE_ROUTES.CHECKOUT}?${params.toString()}`;
+}
+
+export function readCheckoutOrderId(searchParams: Pick<URLSearchParams, 'get'>): string | null {
+  const value = searchParams.get(CHECKOUT_ORDER_PARAM)?.trim() ?? '';
+  return value.length > 0 ? value : null;
 }
 
 export function getMarketplaceOfferCheckoutRoute(offerId?: string | null): string {
@@ -84,6 +99,7 @@ type SellerOrderRole = {
   buyerPubky: string;
   paymentMethod?: PaymentMethodKind | null;
   paymentAsset?: string | null;
+  paykitRequestState?: string | null;
 };
 
 function isSellerParty(order: SellerOrderRole, currentUserPubky: string | null): boolean {
@@ -92,10 +108,12 @@ function isSellerParty(order: SellerOrderRole, currentUserPubky: string | null):
 
 /**
  * A bound Bitcoin payment is a sale, not a stock hold. The seller resolves
- * and confirms it on the sales card. An unbound hold stays a reservation.
+ * and confirms it on the sales card. An unbound hold stays a reservation, and
+ * so does a single-bind Paykit order until its Bitcoin payment is seen: before
+ * that the buyer has not picked an asset in Bitkit.
  */
 export function isSellerBoundBitcoinOrder(order: SellerOrderRole): boolean {
-  return isPendingPaymentState(order.state) && order.paymentMethod === 'bitcoin';
+  return isPendingPaymentState(order.state) && followsBitcoinFlow(order);
 }
 
 /**
@@ -227,18 +245,12 @@ export function listingAggregatesFromCheckoutLines(lines: Array<{ listingAggrega
   return lines.flatMap((line) => (line.listingAggregateId ? [line.listingAggregateId] : []));
 }
 
-const PAYMENT_METHOD_ORDER: PaymentMethodKind[] = ['bitcoin', 'usdt', 'paypal'];
+const PAYMENT_METHOD_ORDER: PaymentMethodKind[] = ['paykit', 'bitcoin', 'usdt', 'paypal'];
 
 /** Shared rails across every seller in a cart. Empty means Pay stays disabled. */
 export function intersectPaymentMethods(sets: PaymentMethodKind[][]): PaymentMethodKind[] {
   if (sets.length === 0) return [];
   return PAYMENT_METHOD_ORDER.filter((method) => sets.every((set) => set.includes(method)));
-}
-
-export function readCheckoutHashOrderId(hash = ''): string | null {
-  const value = hash.startsWith('#') ? hash.slice(1) : hash;
-  const trimmed = value.trim();
-  return trimmed.length > 0 ? trimmed : null;
 }
 
 export function resolveCreatedCheckoutOrderIds(input: {

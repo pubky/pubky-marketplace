@@ -1,0 +1,1 @@
+The marketplace catalog prerender gives each seller's shop record 3 seconds instead of 0.8 so a cold build or instance, which the Pubky SDK 0.16 `/info` round trip slowed down, still renders shop names instead of timing out.

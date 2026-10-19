@@ -153,12 +153,12 @@ describe('MarketplaceNotifications', () => {
     render(<MarketplaceNotifications />);
 
     const link = screen.getByRole('link', { name: 'New offer received' });
-    expect(link).toHaveAttribute('href', '/marketplace/offers#offer-00000000-0000-4000-8000-000000000933');
+    expect(link).toHaveAttribute('href', '/marketplace/offers?offer=00000000-0000-4000-8000-000000000933');
     expect(link.tagName).toBe('A');
     expect(link).not.toHaveAttribute('tabindex', '-1');
   });
 
-  it('links an order event to that order and a message to its thread', () => {
+  it('links an order event to that order and a message to the inbox', () => {
     const orderId = '018f47d2-6a27-7c23-a62f-000000000001';
     const seller = 's'.repeat(52);
     const buyer = 'b'.repeat(52);
@@ -188,12 +188,9 @@ describe('MarketplaceNotifications', () => {
 
     expect(screen.getByRole('link', { name: 'Payment confirmed' })).toHaveAttribute(
       'href',
-      `/marketplace/orders#order-${orderId}`,
+      `/marketplace/orders?order=${orderId}`,
     );
-    expect(screen.getByRole('link', { name: 'New marketplace message' })).toHaveAttribute(
-      'href',
-      `/marketplace/messages?conversation=${encodeURIComponent(conversation)}`,
-    );
+    expect(screen.getByRole('link', { name: 'New marketplace message' })).toHaveAttribute('href', '/messages');
   });
 
   it('titles a digital delivery as a purchase, and a shipped one as before', () => {
@@ -250,11 +247,11 @@ describe('MarketplaceNotifications', () => {
 
     expect(screen.getByRole('link', { name: 'Return requested — mistake on my part' })).toHaveAttribute(
       'href',
-      `/marketplace/orders#order-${orderId}`,
+      `/marketplace/orders?order=${orderId}`,
     );
     expect(screen.getByRole('link', { name: 'Return approved' })).toHaveAttribute(
       'href',
-      `/marketplace/orders#order-${orderId}`,
+      `/marketplace/orders?order=${orderId}`,
     );
   });
 
@@ -295,7 +292,7 @@ describe('MarketplaceNotifications', () => {
     expect(screen.queryByText(/Payment reversed/)).not.toBeInTheDocument();
     expect(screen.queryByText(/Refunded \$1\.89 of \$2\.50/)).not.toBeInTheDocument();
     for (const link of screen.getAllByRole('link')) {
-      expect(link).toHaveAttribute('href', `/marketplace/orders#order-${orderId}`);
+      expect(link).toHaveAttribute('href', `/marketplace/orders?order=${orderId}`);
     }
 
     // PayPal cancels the reversal: the same rows keep the same titles.
@@ -352,25 +349,25 @@ describe('MarketplaceNotifications', () => {
     const { rerender } = render(<MarketplaceNotifications />);
     const link = () => screen.getByRole('link', { name: 'Checkout started' });
 
-    expect(link()).toHaveAttribute('href', `/marketplace/orders#order-${orderId}`);
+    expect(link()).toHaveAttribute('href', `/marketplace/orders?order=${orderId}`);
 
     ordersView.orders = [{ order: { id: orderId, state: 'pending_payment', buyerPubky: buyer } }];
     rerender(<MarketplaceNotifications />);
-    expect(link()).toHaveAttribute('href', `/marketplace/checkout#${orderId}`);
+    expect(link()).toHaveAttribute('href', `/marketplace/checkout?order=${orderId}`);
 
     authStoreState.currentUserPubky = 's'.repeat(52);
     rerender(<MarketplaceNotifications />);
-    expect(link()).toHaveAttribute('href', `/marketplace/orders#order-${orderId}`);
+    expect(link()).toHaveAttribute('href', `/marketplace/orders?order=${orderId}`);
 
     authStoreState.currentUserPubky = buyer;
     ordersView.orders = [];
     rerender(<MarketplaceNotifications />);
-    expect(link()).toHaveAttribute('href', `/marketplace/orders#order-${orderId}`);
+    expect(link()).toHaveAttribute('href', `/marketplace/orders?order=${orderId}`);
 
     ordersView.isLoading = true;
     ordersView.orders = [{ order: { id: orderId, state: 'pending_payment', buyerPubky: buyer } }];
     rerender(<MarketplaceNotifications />);
-    expect(link()).toHaveAttribute('href', `/marketplace/orders#order-${orderId}`);
+    expect(link()).toHaveAttribute('href', `/marketplace/orders?order=${orderId}`);
   });
 
   it('still links a known event whose row failed schema checks', () => {
@@ -409,7 +406,7 @@ describe('MarketplaceNotifications', () => {
 
     expect(screen.getByRole('link', { name: 'The buyer confirmed a USDT refund address' })).toHaveAttribute(
       'href',
-      `/marketplace/orders#order-${orderId}`,
+      `/marketplace/orders?order=${orderId}`,
     );
     expect(screen.queryByText(/history may be incomplete/)).not.toBeInTheDocument();
     expect(screen.queryByText('Unrecognized marketplace event')).not.toBeInTheDocument();
@@ -440,7 +437,7 @@ describe('MarketplaceNotifications', () => {
 
     render(<MarketplaceNotifications />);
 
-    const orderHref = `/marketplace/orders#order-${orderId}`;
+    const orderHref = `/marketplace/orders?order=${orderId}`;
     const sentences = [
       'A Bitcoin payment is waiting for your confirmation',
       'A Bitcoin payment settled late and needs your decision',

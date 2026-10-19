@@ -1,5 +1,6 @@
 import type { InventoryAdjustRequest } from '@bitcoinerrorlog/pubky-shop';
 import { getCommerceAdapterMode, isDurableCommerceMode } from '@/config/commerce';
+import { effectiveListingState } from '@/libs/commerce/auction-phase';
 import type { CommerceListingRecord } from '@/libs/commerce/marketplace-records';
 import { buildMarketplaceListingAggregateId } from '@/libs/commerce/transaction-commands';
 import { isUnlimitedStock } from '@/libs/commerce/unlimited-stock';
@@ -13,13 +14,36 @@ import {
 import { MarketplaceSessionService } from '@/services/marketplace/marketplace-session';
 import { MarketplaceShopClientService, PubkyShopError } from '@/services/marketplace/marketplace-shop-client';
 
+/** One size of a per-size listing, from the seller inventory read. */
+export type InventoryBoardVariant = {
+  variantId: string;
+  /** The size as the buyer reads it: the record's options, else the SKU, else the id. */
+  label: string;
+  sku?: string;
+  /** False for a size the seller withdrew from the record; it keeps its counts. */
+  enabled: boolean;
+  available: number;
+  reserved: number;
+  sold: number;
+  total: number;
+  soldOut: boolean;
+  /** The seller's connected store sells this size without a stock count: it has no stock to set. */
+  madeToOrder?: boolean;
+};
+
 export type InventoryBoardRow = {
   listingId: string;
   sellerPubky: string;
   aggregateId: string;
   title: string;
   thumbUrl: string | null;
+  /** The service's stock state (`available`, `reserved`, `sold`), not whether buyers can see the listing. */
   state: string;
+  /**
+   * The owner-signed record's lifecycle state (`active`, `paused`, `ended`, `removed`), the state My shop
+   * shows. An active auction past its end time reads `ended`. Null when the export carries no record.
+   */
+  listingState: string | null;
   format: string;
   dropId: string | null;
   available: number;
@@ -27,8 +51,15 @@ export type InventoryBoardRow = {
   sold: number;
   total: number;
   serverRevision: number;
+  /** Present only for a listing the service tracks per size. Counts above are then the listing sums. */
+  variants?: InventoryBoardVariant[];
   /** Set when the listing record itself is unlimited. Available may be lower while a hold reserves units. */
   unlimited?: boolean;
+  /**
+   * Set when the service sells the listing (or, for a per-size listing, some size) made to order: the
+   * connected store sells it without a stock count, so its stock follows the store and is not set here.
+   */
+  madeToOrder?: boolean;
   sync: 'synced' | 'missing';
   syncMessage?: string | null;
   recordStatus?: 'unavailable';
@@ -79,6 +110,10 @@ function asInt(value: unknown): number | null {
   return null;
 }
 
+function variantsField(variants: InventoryBoardVariant[] | undefined): { variants?: InventoryBoardVariant[] } {
+  return variants ? { variants } : {};
+}
+
 function thumbUrl(record: Record<string, unknown> | null): string | null {
   const media = record?.media;
   if (!Array.isArray(media) || media.length === 0) return null;
@@ -91,6 +126,14 @@ function thumbUrl(record: Record<string, unknown> | null): string | null {
 function dropIdFromRecord(record: Record<string, unknown> | null): string | null {
   const edition = asObject(record?.edition);
   return asString(edition?.dropId) ?? asString(record?.dropId);
+}
+
+function listingStateFromRecord(record: Record<string, unknown> | null, nowMs: number): string | null {
+  const state = asString(record?.state);
+  if (!state) return null;
+  const sale = asObject(record?.sale);
+  const auctionEndsAt = asString(sale?.format) === 'auction' ? asString(sale?.endsAt) : null;
+  return effectiveListingState(state, auctionEndsAt, nowMs);
 }
 
 function recordStatusFromExport(entry: Record<string, unknown>): 'unavailable' | undefined {
@@ -111,10 +154,56 @@ function exportRecordIsUnlimited(record: Record<string, unknown> | null): boolea
   return variants.some((entry) => {
     const object = asObject(entry);
     const quantity = object ? asInt(object.quantity) : null;
-    return (
-      quantity !== null && isUnlimitedStock({ fulfillmentMethods: methods, digitalLock: record.digitalLock }, quantity)
-    );
+    return quantity !== null && isUnlimitedStock({ fulfillmentMethods: methods }, quantity);
   });
+}
+
+function recordVariantLabels(record: Record<string, unknown> | null): ReadonlyMap<string, string> {
+  const labels = new Map<string, string>();
+  const variants = Array.isArray(record?.variants) ? record.variants : [];
+  for (const entry of variants) {
+    const object = asObject(entry);
+    const id = asString(object?.id);
+    if (!id) continue;
+    const options = asObject(object?.options);
+    const text = options
+      ? Object.values(options)
+          .filter((value): value is string => typeof value === 'string' && value.length > 0)
+          .join(' · ')
+      : '';
+    labels.set(id, text || asString(object?.sku) || id);
+  }
+  return labels;
+}
+
+/** The per-size rows of one inventory read; undefined when the service sends none (a single-variant listing). */
+function parseBoardVariants(value: unknown, labels: ReadonlyMap<string, string>): InventoryBoardVariant[] | undefined {
+  if (!Array.isArray(value) || value.length === 0) return undefined;
+  const rows: InventoryBoardVariant[] = [];
+  for (const entry of value) {
+    const object = asObject(entry);
+    const variantId = asString(object?.variant_id);
+    const available = asInt(object?.available);
+    const reserved = asInt(object?.reserved);
+    const sold = asInt(object?.sold);
+    const total = asInt(object?.total);
+    if (!object || !variantId || available === null || reserved === null || sold === null || total === null) continue;
+    const sku = asString(object.sku);
+    const madeToOrder = object.made_to_order === true;
+    rows.push({
+      variantId,
+      label: labels.get(variantId) ?? sku ?? variantId,
+      ...(sku ? { sku } : {}),
+      enabled: object.enabled !== false,
+      available,
+      reserved,
+      sold,
+      total,
+      soldOut: !madeToOrder && (object.sold_out === true || available === 0),
+      ...(madeToOrder ? { madeToOrder: true as const } : {}),
+    });
+  }
+  return rows.length > 0 ? rows : undefined;
 }
 
 export function planInventoryAdjust(input: {
@@ -124,6 +213,8 @@ export function planInventoryAdjust(input: {
   targetAvailable: number;
   expectedRevision: number;
   idempotencyKey: string;
+  /** Names the size on a per-size listing; the service refuses an adjust without one. */
+  variantId?: string;
 }): InventoryAdjustPlan {
   if (!Number.isSafeInteger(input.targetAvailable) || input.targetAvailable < 0) {
     return { ok: false, reason: 'negative_available' };
@@ -142,6 +233,7 @@ export function planInventoryAdjust(input: {
       expected_revision: BigInt(input.expectedRevision),
       delta,
       idempotency_key: input.idempotencyKey,
+      ...(input.variantId ? { variant: { id: input.variantId } } : {}),
     },
   };
 }
@@ -181,6 +273,23 @@ function classifyClientError(error: PubkyShopError): InventoryBoardLoad['status'
   if (MarketplaceShopClientService.isCapabilityRequired(error)) return 'grant-needed';
   if (MarketplaceShopClientService.isRevisionConflict(error)) return 'revision_conflict';
   return 'error';
+}
+
+const VARIANT_ADJUST_COPY = {
+  required: 'Choose a size to set its stock.',
+  unknown: 'That size is no longer on this listing. Refresh and try again.',
+  stale: 'This listing’s sizes changed. Refresh and try again.',
+  unconfirmed: 'The stock change could not be confirmed. Refresh and check the size.',
+} as const;
+
+/** Plain copy for the service refusals a size adjust adds; null for any other error. */
+function variantAdjustRefusal(error: PubkyShopError): string | null {
+  const serviceCode = (error.details as { serviceCode?: string }).serviceCode;
+  if (serviceCode === 'variant_required') return VARIANT_ADJUST_COPY.required;
+  if (serviceCode === 'variant_assertion_mismatch' || serviceCode === 'variant_lookup_unavailable') {
+    return VARIANT_ADJUST_COPY.stale;
+  }
+  return null;
 }
 
 export class CommerceInventoryApplication {
@@ -229,6 +338,7 @@ export class CommerceInventoryApplication {
 
     const client = MarketplaceShopClientService.createInventoryClient(inventory.token);
     const rows: InventoryBoardRow[] = [];
+    const nowMs = Date.now();
     let cursor: string | undefined;
     for (;;) {
       const page = await MarketplaceShopClientService.listSellerListings(client, sellerPubky, {
@@ -268,6 +378,7 @@ export class CommerceInventoryApplication {
             title: asString(projection?.title) ?? asString(record?.title) ?? listingId,
             thumbUrl: thumbUrl(record),
             state: asString(projection?.state) ?? 'unknown',
+            listingState: listingStateFromRecord(record, nowMs),
             format: asString(projection?.sale_format) ?? asString(asObject(record?.sale)?.format) ?? 'fixed_price',
             dropId: dropIdFromRecord(record),
             available: asInt(projection?.available_quantity) ?? 0,
@@ -289,6 +400,7 @@ export class CommerceInventoryApplication {
           title: asString(projection?.title) ?? asString(record?.title) ?? listingId,
           thumbUrl: thumbUrl(record),
           state: asString(projection?.state) ?? 'unknown',
+          listingState: listingStateFromRecord(record, nowMs),
           format: asString(projection?.sale_format) ?? asString(asObject(record?.sale)?.format) ?? 'fixed_price',
           dropId: dropIdFromRecord(record),
           available: Number(stock.available),
@@ -296,7 +408,9 @@ export class CommerceInventoryApplication {
           sold: Number(stock.sold),
           total: Number(stock.total),
           serverRevision: Number(inventoryResult.value.server_revision),
+          ...variantsField(parseBoardVariants(inventoryResult.value.variants, recordVariantLabels(record))),
           ...(unlimited ? { unlimited: true as const } : {}),
+          ...(asObject(stock)?.made_to_order === true ? { madeToOrder: true as const } : {}),
           sync: 'synced',
           ...(recordStatusFromExport(object) ? { recordStatus: 'unavailable' as const } : {}),
         });
@@ -316,15 +430,27 @@ export class CommerceInventoryApplication {
     row: InventoryBoardRow;
     targetAvailable: number;
     idempotencyKey: string;
+    /** The size to set on a per-size listing. */
+    variantId?: string;
   }): Promise<InventorySetResult> {
     const inventory = MarketplaceInventorySessionService.getCoveringBearer(input.sellerPubky);
     if (!inventory) {
       return { status: 'grant-needed' };
     }
+    const variant = input.variantId
+      ? input.row.variants?.find(({ variantId }) => variantId === input.variantId)
+      : undefined;
+    if (input.variantId && !variant) {
+      return { status: 'error', message: VARIANT_ADJUST_COPY.unknown };
+    }
+    if (!input.variantId && input.row.variants) {
+      return { status: 'error', message: VARIANT_ADJUST_COPY.required };
+    }
     const plan = planInventoryAdjust({
       listingId: input.row.listingId,
       aggregateId: input.row.aggregateId,
-      currentAvailable: input.row.available,
+      variantId: input.variantId,
+      currentAvailable: variant ? variant.available : input.row.available,
       targetAvailable: input.targetAvailable,
       expectedRevision: input.row.serverRevision,
       idempotencyKey: input.idempotencyKey,
@@ -349,9 +475,39 @@ export class CommerceInventoryApplication {
         MarketplaceInventorySessionService.clearRejectedBearer(inventory);
         return { status: 'grant-needed' };
       }
-      return { status: 'error', message: result.error.message };
+      return { status: 'error', message: variantAdjustRefusal(result.error) ?? result.error.message };
     }
     const stock = result.value.result.stock;
+    if (variant) {
+      if (stock.authority !== 'variant' || stock.variant_id !== variant.variantId) {
+        return { status: 'error', message: VARIANT_ADJUST_COPY.unconfirmed };
+      }
+      const available = Number(stock.available);
+      return {
+        status: 'updated',
+        row: {
+          ...input.row,
+          available: Number(stock.listing_total.available),
+          reserved: Number(stock.listing_total.reserved),
+          sold: Number(stock.listing_total.sold),
+          total: Number(stock.listing_total.total),
+          serverRevision: Number(result.value.result.server_revision),
+          sync: 'synced',
+          variants: input.row.variants?.map((entry) =>
+            entry.variantId === variant.variantId
+              ? {
+                  ...entry,
+                  available,
+                  reserved: Number(stock.reserved),
+                  sold: Number(stock.sold),
+                  total: Number(stock.total),
+                  soldOut: available === 0,
+                }
+              : entry,
+          ),
+        },
+      };
+    }
     return {
       status: 'updated',
       row: {

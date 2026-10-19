@@ -16,7 +16,15 @@ vi.mock('@/hooks/useIndicativeBtcRate/useIndicativeBtcRate', () => ({
 
 const VRT_USER_PUBKY = vi.hoisted(() => 'y'.repeat(52));
 
-const catalogView = vi.hoisted(() => ({ adapterMode: 'sandbox' as string }));
+const catalogView = vi.hoisted(() => ({
+  adapterMode: 'sandbox' as string,
+  paymentFilter: { method: null, status: 'off', sellers: null } as {
+    method: 'bitcoin' | 'usdt' | 'paypal' | null;
+    status: 'off' | 'loading' | 'ready' | 'unavailable';
+    sellers: ReadonlySet<string> | null;
+  },
+  paymentOptions: [] as Array<'bitcoin' | 'usdt' | 'paypal'>,
+}));
 
 const fixtures = vi.hoisted(async () => {
   const { createCommerceSandboxCatalog } = await import('@/libs/commerce/sandbox-catalog');
@@ -54,15 +62,28 @@ vi.mock('@/stores/auth/auth.store', () => ({
 vi.mock('@/hooks/useMarketplaceCatalog/useMarketplaceCatalog', async () => {
   const catalog = await fixtures;
   return {
-    useMarketplaceCatalog: () => ({
-      listings: catalog.listings,
-      facetPool: catalog.listings,
-      shopsBySeller: catalog.shopsBySeller,
-      isLoading: false,
-      adapterMode: catalogView.adapterMode,
-    }),
+    useMarketplaceCatalog: () => {
+      const { paymentFilter } = catalogView;
+      const listings =
+        paymentFilter.status === 'off'
+          ? catalog.listings
+          : catalog.listings.filter((listing) => paymentFilter.sellers?.has(listing.sellerId) === true);
+      return {
+        listings,
+        facetPool: listings,
+        shopsBySeller: catalog.shopsBySeller,
+        isLoading: false,
+        adapterMode: catalogView.adapterMode,
+        paymentFilter,
+      };
+    },
   };
 });
+
+// The payment filter is offered only on durable deployments; scenes opt in.
+vi.mock('@/hooks/useMarketplacePaymentFilterOptions/useMarketplacePaymentFilterOptions', () => ({
+  useMarketplacePaymentFilterOptions: () => catalogView.paymentOptions,
+}));
 
 // The card watch toggle reads live favorite state; VRT keeps every card at
 // the unwatched baseline (toggle states are captured in the watchlist VRT).
@@ -148,9 +169,13 @@ vi.mock('@/organisms/ContentLayout/ContentLayout', () => ({
 }));
 
 describe('Marketplace — visual regression', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     window.localStorage.clear();
     catalogView.adapterMode = 'sandbox';
+    catalogView.paymentFilter = { method: null, status: 'off', sellers: null };
+    catalogView.paymentOptions = [];
+    const { useCommerceStore } = await import('@/stores/commerce/commerce.store');
+    useCommerceStore.getState().resetFilters();
   });
 
   it('renders the sandbox catalog with the promo visible at desktop viewport', async () => {
@@ -170,5 +195,55 @@ describe('Marketplace — visual regression', () => {
   it('renders the sandbox catalog at mobile viewport', async () => {
     const screen = await renderForVRT(<Marketplace />, { viewport: VRT_VIEWPORT_MOBILE, disableHover: true });
     await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('marketplace-mobile');
+  });
+
+  it('renders the catalog filtered to PayPal sellers at desktop viewport', async () => {
+    const { listings } = await fixtures;
+    const { useCommerceStore } = await import('@/stores/commerce/commerce.store');
+    const firstSeller = listings[0].sellerId;
+    catalogView.paymentOptions = ['bitcoin', 'usdt', 'paypal'];
+    catalogView.paymentFilter = { method: 'paypal', status: 'ready', sellers: new Set([firstSeller]) };
+    useCommerceStore.getState().setPaymentMethod('paypal');
+    window.localStorage.setItem(
+      buildFeatureDiscoveryStorageKey(VRT_USER_PUBKY, MARKETPLACE_PROMO_STORAGE_ID),
+      'dismissed',
+    );
+
+    const screen = await renderForVRT(<Marketplace />, { viewport: VRT_VIEWPORT_DESKTOP, disableHover: true });
+    await expect.element(screen.getByRole('combobox', { name: 'Payment method' })).toHaveTextContent('PayPal');
+    await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('marketplace-payment-filter-paypal-desktop');
+  });
+
+  it('renders the payment filter at mobile viewport', async () => {
+    const { listings } = await fixtures;
+    const { useCommerceStore } = await import('@/stores/commerce/commerce.store');
+    catalogView.paymentOptions = ['bitcoin', 'paypal'];
+    catalogView.paymentFilter = { method: 'bitcoin', status: 'ready', sellers: new Set([listings[0].sellerId]) };
+    useCommerceStore.getState().setPaymentMethod('bitcoin');
+    window.localStorage.setItem(
+      buildFeatureDiscoveryStorageKey(VRT_USER_PUBKY, MARKETPLACE_PROMO_STORAGE_ID),
+      'dismissed',
+    );
+
+    const screen = await renderForVRT(<Marketplace />, { viewport: VRT_VIEWPORT_MOBILE, disableHover: true });
+    await expect.element(screen.getByRole('combobox', { name: 'Payment method' })).toHaveTextContent('Bitcoin');
+    await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('marketplace-payment-filter-bitcoin-mobile');
+  });
+
+  it('renders the payment filter unavailable state at desktop viewport', async () => {
+    const { useCommerceStore } = await import('@/stores/commerce/commerce.store');
+    catalogView.paymentOptions = ['bitcoin', 'usdt', 'paypal'];
+    catalogView.paymentFilter = { method: 'usdt', status: 'unavailable', sellers: null };
+    useCommerceStore.getState().setPaymentMethod('usdt');
+    window.localStorage.setItem(
+      buildFeatureDiscoveryStorageKey(VRT_USER_PUBKY, MARKETPLACE_PROMO_STORAGE_ID),
+      'dismissed',
+    );
+
+    const screen = await renderForVRT(<Marketplace />, { viewport: VRT_VIEWPORT_DESKTOP, disableHover: true });
+    await expect.element(screen.getByRole('heading', { name: 'Payment filter unavailable' })).toBeVisible();
+    await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot(
+      'marketplace-payment-filter-unavailable-desktop',
+    );
   });
 });

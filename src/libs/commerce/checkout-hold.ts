@@ -1,4 +1,5 @@
 /** Exact Shop copy for exclusive checkout holds (issue #50). */
+import { formatDateTime } from '@/libs/utils/dateTime';
 
 export const PAYMENT_WINDOW_ELAPSED_REASON = 'payment window elapsed';
 
@@ -27,20 +28,38 @@ export const CHECKOUT_HOLD_COPY = {
     'Refund this PayPal payment from your PayPal account. This marketplace cannot refund PayPal. Then record the refund.',
 } as const;
 
-/** An order timestamp with its day, e.g. `Oct 1, 2026, 10:10 AM UTC`. Holds can run 24 hours. */
+/** An exact local timestamp including the day. Holds can run 24 hours. */
 export function formatOrderInstant(value: string | null | undefined): string | null {
   if (!value) return null;
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return null;
-  return `${new Intl.DateTimeFormat('en-US', {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-    timeZone: 'UTC',
-  }).format(date)} UTC`;
+  return formatDateTime(date);
 }
 
 export function formatHoldDeadline(holdExpiresAt: string | null | undefined): string | null {
   return formatOrderInstant(holdExpiresAt);
+}
+
+type PayByOrder = {
+  holdExpiresAt?: string | null;
+  paykitExpiresAt?: string | null;
+  paykitRequestState?: string | null;
+  auctionAggregateId?: string | null;
+};
+
+/**
+ * The deadline the buyer is told to pay by. An auction winner's order starts
+ * from the reservation-based hold; once Paykit activates the request, the
+ * request's own deadline is the wallet's real one, so that is shown instead.
+ * Every other order keeps the hold deadline.
+ */
+export function buyerPayByDeadline(order: PayByOrder): string | null {
+  const requestDeadline = order.paykitExpiresAt;
+  const activated = Boolean(order.paykitRequestState) && order.paykitRequestState !== 'preparing';
+  if (order.auctionAggregateId && activated && requestDeadline && formatHoldDeadline(requestDeadline)) {
+    return requestDeadline;
+  }
+  return order.holdExpiresAt ?? null;
 }
 
 export function holderUnboundCopy(holdExpiresAt: string | null | undefined): string {

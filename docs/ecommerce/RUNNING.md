@@ -1,6 +1,6 @@
 # Running the Marketplace Locally
 
-How to get the marketplace working on your machine so you can click through it as a user. Every command here was run and verified; nothing in this file is aspirational.
+How to run the marketplace locally. Current grant authentication and embedded deployment requirements are in [Grant authentication and App-owned sessions](../launch/grant-auth-session.md) and [Shop embedding](../launch/shop-embedding.md). Older live transport proofs below are labeled separately; they do not establish compatibility with the current grant-only UI.
 
 Read [`status.md`](status.md) first if you want to know which parts are real and which are simulated before you start. New to the Shop: start with [`onboarding.md`](onboarding.md). Shipping a release: [`release.md`](release.md).
 
@@ -38,7 +38,7 @@ The four modes:
 | ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `unavailable` (default) | Browse-only. No commands. No nav entry. Fails closed.                                                                                                                                                                                                                                                                                                                                    |
 | `sandbox`               | Full click-through against the in-memory service. Everything transactional is simulated and labeled.                                                                                                                                                                                                                                                                                     |
-| `transaction-service`   | Commands and reads go to the durable Rust service with real Pubky AuthToken sessions. Authoritative outcomes and an interactive shopping UI; establishing the session is a signer approval started from the in-app "Connect marketplace session" dialog (QR or Pubky Ring deeplink) — see below.                                                                                         |
+| `transaction-service`   | Commands and reads go to the durable Rust service with a marketplace bearer session. The current UI obtains it through a separate grant approval after homeserver sign-in; client, BFF and service grant support must be configured — see below.                                                                                                                                         |
 | `locks-paykit`          | Everything `transaction-service` does, PLUS the real Locks/Paykit payment rails. The modes compose rather than exclude: the durable service stays the transactional authority (its worker independently verifies the Locks lifecycle and confirms payments); the client additionally submits the buyer's proof bundle and registers the correlation. See "Running a real payment" below. |
 
 ## Verifying the service is up
@@ -78,11 +78,15 @@ The marketplace endpoints are implemented on the `main` branch of [`pubky/market
 
 Because a dedicated marketplace-indexing Nexus is deployed separately from the main social Nexus, the app supports an **optional marketplace-only override**: set `PUBKY_RUNTIME_MARKETPLACE_NEXUS_URL` to route ONLY the commerce/marketplace index reads at that deployment — listing stream and details, listing/shop tags, shop reviews/reputation, and the drops stream — while every social surface (posts, users, tags, files, streams, search) keeps using `PUBKY_RUNTIME_NEXUS_URL`. When the override is unset, marketplace reads fall back to the main `nexusUrl` — the variable is genuinely optional, including under the strict deployed-mode config parse. (Pointing the whole app at a marketplace-indexing Nexus with `PUBKY_RUNTIME_NEXUS_URL` still works for a single-Nexus setup.)
 
-## Shared pubky.app sign-in (vibe session consumer)
+## Shared pubky.app sign-in
 
-**Off in both live Shop builds.** The production and staging deployments are built with `NEXT_PUBLIC_VIBE_SESSION_BRIDGE_ORIGIN` and `NEXT_PUBLIC_VIBE_ID` unset, so the Shop uses only its own sign-in, makes no `/session-bridge` request, and ignores a `#s=` hand-off link. Keep them unset. The cookie bridge shares one homeserver cookie between sites, and cookie sessions are deprecated by the homeserver, so it is not the path to single sign-on with pubky.app.
+The supported integration is the same-origin App `/shop` wrapper around Shop `/shop-embed`. App owns the homeserver grant; Shop restores its exact SDK record and delegates sign-in, capability upgrades and logout to App. Standalone Shop continues to establish its own grant. This is not cross-origin SSO.
 
-The consumer code remains (ADR 0029): the two variables are **build-time** values, baked into the artifact at `npm run build` — not `PUBKY_RUNTIME_*` values — and consumer mode turns on only when the bridge origin is set (an exact origin such as `https://pubky.app`; `http://localhost:<port>` is accepted only outside production builds). A bridged restore never auto-triggers a re-approval, and the staging homeserver guard still runs on every restore when `PUBKY_RUNTIME_ENV=staging`.
+The old vibe session consumer and `#s=` cookie handoff are removed. Keep `NEXT_PUBLIC_VIBE_SESSION_BRIDGE_ORIGIN` and `NEXT_PUBLIC_VIBE_ID` unset; they do not enable a supported authentication path. [ADR 0029](../adr/0029-vibe-session-consumer.md) records the earlier design. Follow [Shop embedding](../launch/shop-embedding.md) for the current build path, runtime environment and BFF requirements.
+
+## Dev server hygiene
+
+Turbopack's persistent cache under `.next` grows with every rebuild and, after a large merge or a long session, can leave the dev server pegging every core or serving a stale module graph (pages stuck on the app loader, `Module … was instantiated` errors in the console, IndexedDB "object store not found" in a fresh browser context). Stop the server, delete `.next`, and start it again; a cold compile takes a minute or two. Do this after any merge of `master` before trusting a browser or e2e run.
 
 ## Running the tests
 
@@ -95,9 +99,11 @@ npm run test:marketplace                            # sandbox service
 npm run test:marketplace:service                    # durable Rust service transport, needs it running (see below)
 npm run test:marketplace:locks                      # LIVE real-payment purchase, needs the composed stack (see below)
 npm run test:marketplace:drops                      # LIVE FCFS drop race on the deployed staging stack (see below)
-npm run test:e2e:launch-critical                    # launch-critical browser journey (CI runs it as launch-e2e)
+LAUNCH_E2E_MODE=synthetic bash scripts/ci-launch-e2e.sh # CI browser journey; reuses a standalone production build
 bash scripts/vrt-linux.sh [spec...]                 # Linux visual regression in Docker (npm run test:vrt is the same)
 ```
+
+The synthetic launch gate runs the real SDK and production UI against isolated network fixtures. It requires positive Shop sign-in, exact saved-grant reload, separate marketplace approval, proof upload/verification/removal and an authorized seller inventory read. It does not establish live backend or signer compatibility. For an opt-in live run, use `LAUNCH_E2E_MODE=live` with the seller secret and a correctly configured grant-enabled BFF/service; unsupported live configuration fails rather than silently switching to fixtures.
 
 Run `bash scripts/prepush.sh` before every push; its last line is `PREPUSH OK <sha> <seconds> fast`. Releases use `PREPUSH_FULL=1 bash scripts/prepush.sh`, which adds Linux VRT for every spec that renders a changed file.
 
@@ -144,7 +150,7 @@ The homeserver admin endpoint on port 6288 matches the Cypress defaults (`HOMESE
 
 ## Running against the durable transaction service
 
-`services/marketplace/` is the **sandbox adapter only**. The real, durable transaction service is a separate Rust service with PostgreSQL persistence and real Pubky AuthToken authentication:
+`services/marketplace/` is the **sandbox adapter only**. The real, durable transaction service is a separate Rust service with PostgreSQL persistence and authenticated bearer sessions:
 
 <https://github.com/pubky/pubky-marketplace-service>
 
@@ -157,7 +163,7 @@ cargo test --workspace   # optional but recommended
 cargo run -p marketplace-service   # listens on 127.0.0.1:8080
 ```
 
-Then run the app against it:
+Then run the app against it. These variables select the transport; they do not configure purchase approval. For new sessions, also provision the [grant BFF and matching service configuration](../launch/shop-embedding.md#shop-bff-prerequisites), and set `PUBKY_RUNTIME_MARKETPLACE_GRANT_FLOW_ENABLED=true`. Without that support, the UI reports approval unavailable:
 
 ```bash
 PUBKY_RUNTIME_COMMERCE_ADAPTER_MODE=transaction-service \
@@ -167,21 +173,21 @@ npm run dev
 
 The client selects a wholly different transport in this mode (`MarketplaceTransactionService`):
 
-- **Auth is real.** A session is established by POSTing a Pubky `AuthToken` (obtained through the SDK auth flow after signer approval — see [`service-auth.md`](service-auth.md)) to `/v1/auth/sessions`; commands carry the returned opaque token as `Authorization: Bearer`. The forgeable `x-pubky-actor` header does not exist on this path. The bearer token lives in memory plus a `localStorage` mirror so reloads, new tabs, and browser restarts do not force a fresh signer approval — never in IndexedDB, cookies, or logs — and is dropped on sign-out, account switch, and expiry (see `service-auth.md` for the storage contract and tradeoff).
+- **Auth is real.** The active homeserver grant writes a bootstrap proof; the Shop BFF verifies it and starts a separate marketplace grant approval. The resulting service bearer authorizes commands through `Authorization: Bearer`; the forgeable `x-pubky-actor` header does not exist on this path. The client keeps the bearer in memory and a `localStorage` mirror, bounded by expiry and identity. The BFF separately holds an encrypted server-side pairing referenced by an HttpOnly cookie. Sign-out/account changes clear service credentials; a hosted cleanup boundary is not acknowledged until the BFF confirms cookie removal. [`service-auth.md`](service-auth.md) also documents older AuthToken compatibility paths, which the current UI does not use.
 - **Wire casing is snake_case** per ADR 0019 §3; the client converts its camelCase contracts at the transport boundary in both directions.
-- **The ported command set is accepted** — listings, offers, bids, checkout, order cancellation, fulfillment, returns, external-refund evidence, and reviews. Kinds the durable service does not implement (`payment.sandbox_advance`, messaging, notification read state/preferences) are rejected client-side before any bytes are sent, and the UI withholds those affordances in this mode.
+- **The ported command set is accepted** — listings, offers, bids, checkout, order cancellation, fulfillment, returns, external-refund evidence, and reviews. Kinds the durable service does not implement (`payment.sandbox_advance`, the sandbox's plaintext `message.send`, notification read state/preferences) are rejected client-side before any bytes are sent, and the UI withholds those affordances in this mode.
 - **Reads come from the service's role-scoped projections** (listings, offers, orders with embedded payment/shipment/return/refund/review sub-objects, payments, receipts, and notifications). The interactive shopping UI sources every `expected_revision` from a fresh projection read and treats `REVISION_CONFLICT` as refetch-and-retry.
 
 ### Connecting the session from the UI
 
-Durable-mode screens that need a session (orders, offers, notifications, the cart's checkout, listing negotiation state) render a **"Connect marketplace session"** card instead of a dead end. Clicking it opens a dialog that:
+Durable-mode screens that need a session offer a marketplace approval action. If the homeserver grant is missing, the dialog first offers standalone sign-in or **Continue in Pubky App** for a hosted session. Once authority is available:
 
-1. states what approval authorizes (a marketplace session: the app may transact as you against the transaction service until it expires or you sign out),
-2. shows the flow's `pubkyauth://` authorization URL as a QR — scan it with Pubky Ring on another device — plus an "Open in Pubky Ring" deeplink for same-device Ring and a copy affordance,
-3. waits for the approval (cancellable; closing the dialog frees the flow), and
-4. on approval exchanges the AuthToken for the bearer session and refetches the surfaces that were waiting on it.
+1. The active grant writes the single-use bootstrap proof and the BFF verifies it.
+2. Shop opens a separate `pubkyauth://signin_grant` approval for the same identity, using Ring, Bitkit or enabled Passport. Hosted and local-key sessions ask the user to choose an external signer; a recovery key is not retained for later purchases.
+3. Closing the dialog cancels the attempt. Identity/session changes invalidate pending work, and failures offer a fresh attempt.
+4. Successful approval yields the marketplace bearer and refreshes the waiting surfaces.
 
-If the flow fails (relay timeout, rejected token, unreachable service) the dialog shows the transport's actual error and a "Try again" that begins a fresh flow — AuthTokens are single-use, so a failed flow's QR is never reused. A connect attempt that is never approved times out after two minutes with the same visible-error-plus-retry treatment, so the dialog can never sit in "waiting for approval" forever on a dead relay channel; closing and reopening the dialog likewise cancels the old flow and mints a fresh QR (an old QR from a previous open is dead — scanning it approves into a freed flow and connects nothing). Once connected, the session survives page reloads, new tabs, and browser restarts (`localStorage`, bounded by the service-side TTL); another device still needs its own approval. When a session later expires (or the service answers 401 — including for a restored token the service no longer accepts), the same card resurfaces in place; reconnecting requires a fresh signer approval by design (see `service-auth.md`). The signer approval itself needs a device running Pubky Ring; the integration suite below proves the same transport programmatically with a throwaway keypair.
+The flow is bounded by the backend expiry; expired or rejected approvals are not reused. A valid persisted bearer can resume after reload until expiry or refusal. A 401 or expired bearer returns the surface to reconnect. These are separate service credentials: homeserver sign-in alone does not approve a purchase. See [the current grant contract](../launch/grant-auth-session.md#commerce-remains-a-separate-approval).
 
 To prove the transport against the running service (session establishment, snake_case commands, idempotent replay, revision conflicts, report reads):
 
@@ -189,38 +195,38 @@ To prove the transport against the running service (session establishment, snake
 npm run test:marketplace:service
 ```
 
-This integration suite uses no mocks: it runs a genuine Pubky auth flow (acting as the signer with a throwaway keypair), needs the service on `127.0.0.1:8080` (override with `MARKETPLACE_SERVICE_URL`) and network access to the Pubky HTTP relay. It is intentionally not part of the unit gates.
+This older transport integration suite exercises the service AuthToken compatibility path with a throwaway signer; it does not exercise the current browser grant/bootstrap path. It needs the service on `127.0.0.1:8080` (override with `MARKETPLACE_SERVICE_URL`) and relay access. It is not a unit gate or proof of deployed grant sign-in. Use the synthetic launch gate for the current UI/SDK contract and perform deployed grant QA separately.
 
 The client's state tables are held in lockstep with the service's canonical contract: `contracts/state-machines.json` from the service repo is vendored at `src/libs/commerce/contracts/state-machines.json`, and `src/libs/commerce/state-machines.contract.test.ts` fails CI on any drift. When the service contract changes, re-vendor the file and reconcile the TypeScript — the service is canonical.
 
-### Enabling encrypted messaging (durable modes)
+### Chat (every mode)
 
-Marketplace messaging in the durable modes is end-to-end encrypted over Paykit Encrypted Links (experiment grade — see [`status.md`](status.md) and [`paykit-wasm-provenance.md`](paykit-wasm-provenance.md)). It needs its OWN Pubky Ring approval, separate from the marketplace session above, because it grants a different capability:
+Buyer↔seller chat does not depend on the commerce adapter mode: it needs a signed-in session holding the chat scopes (`/pub/chat/v0/:rw`, `/priv/chat/v0/:rw`, part of the sign-in grant) and the homeserver. Each message is an end-to-end encrypted file on the sender's own homeserver; delivery runs on the peer homeserver's event stream, optional `pubky/inbox` pings and reconciliation. Design and threat model: [`../chat/README.md`](../chat/README.md); decision: [ADR 0030](../adr/0030-chat-transport.md).
 
-1. Open a listing's **Message seller** dialog or the marketplace **Messages** page. If messaging is not enabled yet, an **"Enable encrypted messaging"** step appears.
-2. The dialog shows a `pubkyauth://` URL (QR for cross-device Ring, deeplink/copy for same-device) requesting exactly `/pub/paykit/:rw` — the Paykit homeserver tree where receiver markers, handshake slots, and encrypted message slots live. Approve it in Pubky Ring.
-3. On approval the app generates a receiver-scoped Noise key on this device (never the identity key, which stays in Ring), publishes your receiver marker, and messaging is live for this tab.
+Facts to know: a session approved before the chat scopes existed shows "Messages need a newer sign-in approval" until the user signs in again; a message to someone who has not set up messages yet stays queued ("Waiting for them to set up messages") and goes out once their key is published; the inbox (`PUBKY_RUNTIME_INBOX_URL`) is what makes a stranger's first message arrive at once, and it needs a grant session (Bitkit, Ring grant, Passport) because a Ring cookie session cannot sign the inbox proof; without it chat still works through streams and reconciliation. History and read state follow the account to other devices. One message is at most 4,096 bytes; no attachments.
 
-Facts to know, all disclosed in the UI: the messaging session survives reloads, new tabs, and browser restarts (secret-free metadata in `localStorage`; the real credential is the browser's HTTP-only homeserver cookie, revalidated on restore — see `service-auth.md`), and the **Reconnect** affordance asks for a fresh Ring approval only when the homeserver no longer accepts that cookie (stored history stays readable without one); BOTH parties must have enabled messaging before anything can be delivered, and the composer stays disabled with a truthful "waiting for the counterparty" state until the Noise handshake completes; one message is capped at 1,000 bytes (live byte meter, no attachments); conversation history and the local key material are device-local in origin-scoped IndexedDB (`shop-franky`, not per-pubky; it was `franky` before `shop-v0.6.51`) and wiped on sign-out/account switch — clearing site data also deletes them, and other devices cannot show the history (the multi-device backup key is an open product decision).
-
-To prove the encrypted transport live — two parties, real crypto, real homeserver — against a local Pubky testnet:
+To run chat against a local Pubky testnet with an inbox, start the stack from [pubky-docker](https://github.com/pubky/pubky-docker) and an inbox container built from the `pubky/inbox` Dockerfile (full recipe in [`../chat/README.md`](../chat/README.md), "Local development"):
 
 ```bash
-pubky-testnet   # stock ports: pkarr relay 15411, homeserver HTTP 6286, admin 6288
-npm run test:marketplace:messaging
+docker run -d --name pubky-inbox-dev --network pubky-docker_pubky -p 8088:8080 \
+  -e INBOX_DATABASE__URL=postgres://test_user:test_pass@postgres:5432/inbox -e INBOX_AUTH__AUDIENCE=http://localhost:8088 \
+  -e 'INBOX_SERVER__CORS_ALLOWED_ORIGINS=["http://localhost:3000"]' -v pubky-inbox-dev-data:/data pubky-inbox:dev
+
+PUBKY_RUNTIME_TESTNET=true PUBKY_RUNTIME_HOMESERVER=8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo \
+PUBKY_RUNTIME_HOMESERVER_URL=http://localhost:6286 PUBKY_RUNTIME_NEXUS_URL=http://localhost:8080 \
+PUBKY_RUNTIME_CDN_URL=http://localhost:8080/static PUBKY_RUNTIME_DEFAULT_HTTP_RELAY=http://localhost:15412/inbox/ \
+PUBKY_RUNTIME_INBOX_URL=http://localhost:8088 PUBKY_RUNTIME_INBOX_AUDIENCE=http://localhost:8088 npm run dev
 ```
 
-This live suite runs the vendored WASM binding in a real Chromium page with no mocks: enrollment and marker publish through the app's own messaging service, the not-enrolled honest dead end, the Noise XX handshake over live homeserver outbox slots, bidirectional `marketplace.chat_message.v0` delivery, IndexedDB persistence, and snapshot/restore across a simulated reload. Sessions come from the binding's dev signup helper — the interactive Ring approval is the one leg a machine cannot honestly perform. It is intentionally not part of the unit gates.
+The dev signup-token route needs `HOMESERVER_ADMIN_URL=http://localhost:6288/generate_signup_token` and `HOMESERVER_ADMIN_PASSWORD=admin`.
 
-The same proof also exists against the REAL staging network — the staging homeserver reached through the public pkarr relays, the exact topology of the staging deployment (`PUBKY_RUNTIME_TESTNET=false`). It passed on 2026-08-21. The staging homeserver requires single-use signup tokens, so this is a run-on-demand suite, never a standing gate:
+To prove chat live — two accounts, real crypto, real homeserver — against that stack (dev server, homeserver and inbox container running):
 
 ```bash
-PAYKIT_STAGING_SIGNUP_TOKEN_A=XXXX-XXXX-XXXX \
-PAYKIT_STAGING_SIGNUP_TOKEN_B=YYYY-YYYY-YYYY \
-npm run test:marketplace:messaging:staging
+npm run test:e2e:chat
 ```
 
-The harness prints the throwaway identity secrets it generates; if a run fails after signup (tokens consumed), re-run with `PAYKIT_STAGING_SECRET_A`/`PAYKIT_STAGING_SECRET_B` instead of tokens to sign back in.
+The script (`src/test/e2e/chat-two-accounts.mjs`) drives two Playwright browser contexts signed in through the grant sign-in link with a Node-side signer, and checks: keys published, a message reaches the other thread, a reply reaches the open thread live, thread order, the unread badge appears and clears on read, both tabs hold an inbox session, a ping-only delivery with the event stream blocked, history survives a reload, a fresh browser context rebuilds the conversation from the homeservers, the published key file carries no secret, and the message files on the homeserver are ciphertext. Where Playwright cannot install its own browser, set `CHROMIUM_PATH` to an existing `chrome-headless-shell`. It is intentionally not part of the unit gates.
 
 ## Cross-account live proof (stranger reads a published listing)
 
@@ -266,7 +272,7 @@ The Paykit server the Shop talks to is a runtime choice. The default, `PUBKY_RUN
 
 Three pieces must run:
 
-1. **The composed payments environment** (Lock Server, Paykit Server, Bitcoin regtest, Fulcrum, pinned Pubky testnet). It lives in its own repo checkout (`payments-env`); `./scripts/up.sh` brings it up with Lock Server on `13000` and Paykit Server on `13001`, and its own `verify.sh` re-proves the protocol leg independently.
+1. **The composed payments environment** (Lock Server, Paykit Server, Bitcoin regtest, Fulcrum, pinned Pubky testnet). It lives in its own repo checkout (`payments-env`); `./scripts/up.sh` brings it up with Lock Server on `13000` and Paykit Server on `13001`, and its own `verify.sh` re-proves the protocol leg independently. The live test drives the seller's homeserver write through the app's own homeserver path in the SDK's testnet mode, which talks to the testnet's fixed localhost ports. Publish the testnet on those stock ports in `payments-env/.env` (`LOCKS_DHT_PORT=6881`, `LOCKS_PKARR_RELAY_PORT=15411`, `LOCKS_HTTP_RELAY_PORT=15412`, `LOCKS_HOMESERVER_HTTP_PORT=6286`, `LOCKS_HOMESERVER_PUBKY_PORT=6287`, `LOCKS_HOMESERVER_ADMIN_PORT=6288`) instead of the shifted example values, and keep the `creator-demo` port (default `18080`) clear of the service's port.
 2. **The durable transaction service, with Locks verification enabled.** The three `LOCKS_*` values are all-or-nothing; the service fails closed at startup on a partial configuration and refuses `payment.register_locks` entirely when they are absent:
 
 ```bash
@@ -274,8 +280,13 @@ DATABASE_URL='postgres://marketplace:marketplace@localhost:55432/marketplace' \
 LOCKS_SERVER_URL='http://localhost:13000' \
 LOCKS_BUNDLE_ENCRYPTION_KEY="$(openssl rand -hex 32)" \
 LOCKS_LOOKUP_HMAC_KEY="$(openssl rand -hex 32)" \
-cargo run -p marketplace-service
+DIGITAL_DELIVERY_ENCRYPTION_KEY="$(openssl rand -hex 32)" \
+HOMESERVER_URL='http://localhost:6286' \
+NEXUS_URL='http://127.0.0.1:9' \
+cargo run -p marketplace-service --bin marketplace-service
 ```
+
+The service also refuses to boot without the refusal-audit settings (`REFUSAL_AUDIT_DATABASE_URL`, `REFUSAL_AUDIT_RETENTION_DATABASE_URL`, `REFUSAL_AUDIT_HMAC_ROOT_B64`, `REFUSAL_AUDIT_HMAC_KEY_EPOCH` and the three attestations); see the service README's _Run_ section. The audit logins are created by the service's migrations, so run the service once, then give them passwords with `ALTER ROLE marketplace_refusal_audit_writer_login PASSWORD '...'` and `ALTER ROLE marketplace_refusal_audit_retention PASSWORD '...'` (and `GRANT CONNECT ON DATABASE marketplace` to both) matching the URLs. `DIGITAL_DELIVERY_ENCRYPTION_KEY` is required because a Locks listing is digital and checkout refuses digital lines without it. The Nexus URL only needs to be a well-formed `http(s)` URL here: an unreachable index fails open. To use a port other than `8080` (the `creator-demo` container publishes `8080` by default), set `BIND_ADDR` and pass `MARKETPLACE_SERVICE_URL` to the test.
 
 3. **The app in `locks-paykit` mode.** Activation is validated fail-closed: every payment-rail URL must be EXPLICITLY set or the runtime config parse throws — the mode never activates on defaulted localhost URLs:
 
@@ -287,7 +298,7 @@ PUBKY_RUNTIME_PAYKIT_SETUP_URL=http://localhost:13001/setup \
 npm run dev
 ```
 
-Upstream Paykit seller setup uses the denomination-aware Locks API: `GET /creator/paykit/setup-status?asset=BTC`. Deploy Shop and the Lock Server supporting that contract (pubky/locks#75) together. The older Lock Server rejects the query parameter, while the denomination-aware server requires it; mismatched deployments make seller setup appear disconnected. This checks readiness for the Shop's BTC-priced payment requests; accepted payment methods are supplied by Paykit. Deployments using `paykitServerApi=fork` do not use this route.
+Seller setup reads Bitkit readiness from the marketplace service: the seller's own payment config carries `bitcoin_setup` (`ready`, `setup_required` or `unavailable`), which the service asks paykit-server for on every read (fork and upstream alike). Sellers never connect the Lock Server; deploy a service that sends `bitcoin_setup` before this Shop, or the Bitcoin step shows "We can't check Bitkit right now".
 
 What the buyer flow does (and deliberately does not do): after checkout creates an order with an `awaiting_entitlement` payment, the buyer's "Request payment in your wallet" action submits a proof bundle to the Lock Server (which signs and sends the real invoice request to Paykit Server) and registers the correlation with the transaction service via `payment.register_locks`, sourcing `expected_revision` from a fresh projection read. Registration flips the payment to the `locks` adapter — permanently refusing sandbox advancement — and **never advances the payment**: the service's worker independently verifies the Locks lifecycle and confirms exactly once. The buyer-visible status is limited to awaiting payment, confirmed, window expired, and manual review; detection and confirmation counts stay internal per the upstream contract. Status polling is bounded by the registration's payment window, abortable, and resumable after reload (the correlation — including the bearer bundle id in plaintext — is persisted in origin-scoped Dexie `commerce_locks_correlations` and wiped on sign-out/account switch; the Dexie name and the bundle id do not isolate identities). After confirmation, a digital order unlocks its content through a short-lived Locks access credential and the delivered bytes are BLAKE3-verified against the listing record before being offered.
 

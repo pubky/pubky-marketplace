@@ -3,22 +3,28 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import test from 'node:test';
 import {
+  checkPaypalReturnBase,
   compareMigrations,
   expectedMigration,
   extractRuntimeConfig,
+  framableBySameOrigin,
   frameAncestorsAllow,
   isTruthy,
   locksReturnOriginsFromToml,
   missingOrigins,
   normalizeBase,
   parseBearerChallenge,
+  parseEmbedPath,
   parseEnvFile,
   parseImageRef,
   parseJsonLenient,
   parseList,
   parseMigrationRows,
+  parseShopPath,
   parseSourceRef,
   parseTomlFlat,
+  paykitTrustedKeys,
+  publicBasePath,
   redact,
 } from './lib.mjs';
 
@@ -58,8 +64,8 @@ bind_addr = "127.0.0.1:3000"
 [credentials]
 lock_server_secret_key = "/data/secret.sess" # path, never read by the checks
 lock_server_public_key = "pubkyabc"
-[locks]
-trusted_public_key = "pubkyabc"
+[signed_services]
+trusted_public_keys = ["pubkyabc", "pubkydef"]
 [setup]
 allowed_origins = [
   "https://shop.example", # production
@@ -72,7 +78,7 @@ allowed_return_origins = ["https://shop.example"]
 max_resource_bytes = 10_000_000
 `);
   assert.equal(toml.bind_addr, '127.0.0.1:3000');
-  assert.equal(toml['locks.trusted_public_key'], 'pubkyabc');
+  assert.deepEqual(toml['signed_services.trusted_public_keys'], ['pubkyabc', 'pubkydef']);
   assert.deepEqual(toml['setup.allowed_origins'], ['https://shop.example', 'https://staging.shop.example']);
   assert.equal(toml['setup.log_authorization_url'], false);
   assert.deepEqual(toml['creator_authority_acquisition.legacy_connect.allowed_return_origins'], ['https://shop.example']);
@@ -187,4 +193,86 @@ allowed_return_origins = ["https://shop.example"]
 `);
   assert.deepEqual(locksReturnOriginsFromToml(unset), ['https://shop.example']);
   assert.equal(locksReturnOriginsFromToml({}), undefined);
+});
+
+test('parseShopPath defaults, trims a trailing slash and rejects values that would build another host', () => {
+  assert.equal(parseShopPath(undefined), '/marketplace');
+  assert.equal(parseShopPath('  '), '/marketplace');
+  assert.equal(parseShopPath('/shop/marketplace'), '/shop/marketplace');
+  assert.equal(parseShopPath('/shop/marketplace/'), '/shop/marketplace');
+  assert.equal(parseShopPath('/'), '/');
+  for (const bad of ['shop/marketplace', '//evil.example', '/shop?x=1', '/shop#a', '/shop marketplace']) {
+    assert.throws(() => parseShopPath(bad), /SHOP_PATH must start with one "\/"/, bad);
+  }
+});
+
+test('paykitTrustedKeys reads the rc13 allowlist and falls back to the retired [locks] key only when it is absent', () => {
+  assert.deepEqual(
+    paykitTrustedKeys(parseTomlFlat('[signed_services]\ntrusted_public_keys = ["pubkyabc", "pubkydef"]')),
+    ['pubkyabc', 'pubkydef'],
+  );
+  assert.deepEqual(
+    paykitTrustedKeys(
+      parseTomlFlat('[signed_services]\ntrusted_public_keys = ["pubkynew"]\n[locks]\ntrusted_public_key = "pubkyold"'),
+    ),
+    ['pubkynew'],
+  );
+  assert.deepEqual(paykitTrustedKeys(parseTomlFlat('[locks]\ntrusted_public_key = "pubkyold"')), ['pubkyold']);
+  assert.equal(paykitTrustedKeys(parseTomlFlat('[setup]\nallowed_origins = []')), undefined);
+});
+
+test('parseEmbedPath accepts a mount path and treats unset as a Shop served directly', () => {
+  assert.equal(parseEmbedPath(undefined), '');
+  assert.equal(parseEmbedPath('  '), '');
+  assert.equal(parseEmbedPath('/shop-embed'), '/shop-embed');
+  assert.equal(parseEmbedPath('/a/b'), '/a/b');
+  for (const bad of ['shop-embed', '/shop-embed/', '//evil.example', '/shop-embed?x=1', '/shop-embed#a', '/a/../b', '/', '/ shop']) {
+    assert.throws(() => parseEmbedPath(bad), /SHOP_EMBED_PATH must be a mount path/, bad);
+  }
+});
+
+test('publicBasePath is the landing path without /marketplace', () => {
+  assert.equal(publicBasePath('/shop/marketplace'), '/shop');
+  assert.equal(publicBasePath('/marketplace'), '');
+  assert.equal(publicBasePath('/shop'), undefined);
+});
+
+test('the framed build must allow a same-origin frame in both CSP and X-Frame-Options', () => {
+  const origin = 'https://pubky.app';
+  assert.equal(framableBySameOrigin("frame-ancestors 'self'", 'SAMEORIGIN', origin), true);
+  assert.equal(framableBySameOrigin("default-src 'self'; frame-ancestors 'self' https://staging.pubky.app", null, origin), true);
+  assert.equal(framableBySameOrigin('frame-ancestors https://pubky.app', null, origin), true);
+  assert.equal(framableBySameOrigin("frame-ancestors 'none'", 'DENY', origin), false);
+  assert.equal(framableBySameOrigin("frame-ancestors 'self'", 'DENY', origin), false, 'a proxy DENY overrides the CSP');
+  assert.equal(framableBySameOrigin('frame-ancestors https://evil.example', null, origin), false);
+  assert.equal(framableBySameOrigin("frame-ancestors 'self'", 'SAMEORIGIN', null), true);
+  assert.equal(framableBySameOrigin('frame-ancestors https://pubky.app', null, null), false);
+});
+
+test('PayPal return and cancel land on the public /shop, never the framed build or a bare origin', () => {
+  const stack = { origins: ['https://pubky.app'], publicBase: '/shop', embedPath: '/shop-embed' };
+  assert.deepEqual(checkPaypalReturnBase('https://pubky.app/shop', stack), {
+    ok: true,
+    detail: 'https://pubky.app/shop/marketplace/orders',
+  });
+  assert.equal(checkPaypalReturnBase('https://PUBKY.app/shop/', stack).ok, true);
+
+  const framed = checkPaypalReturnBase('https://pubky.app/shop-embed', stack);
+  assert.equal(framed.ok, false);
+  assert.match(framed.hint, /outside the App.*https:\/\/pubky\.app\/shop$/);
+
+  const bare = checkPaypalReturnBase('https://pubky.app', stack);
+  assert.equal(bare.ok, false);
+  assert.match(bare.hint, /https:\/\/pubky\.app\/shop/);
+
+  assert.equal(checkPaypalReturnBase('https://other.example/shop', stack).ok, false);
+  assert.equal(checkPaypalReturnBase('https://pubky.app/shop?x=1', stack).ok, false);
+  assert.equal(checkPaypalReturnBase('not a url', stack).ok, false);
+});
+
+test('a standalone Shop expects PayPal to return to its origin root', () => {
+  const stack = { origins: ['https://shop.example', 'https://staging.shop.example'], publicBase: '', embedPath: '' };
+  assert.equal(checkPaypalReturnBase('https://staging.shop.example', stack).ok, true);
+  assert.equal(checkPaypalReturnBase('https://shop.example/', stack).ok, true);
+  assert.equal(checkPaypalReturnBase('https://shop.example/shop', stack).ok, false);
 });

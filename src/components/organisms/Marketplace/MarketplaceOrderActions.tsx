@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { type ReactNode, useEffect, useState } from 'react';
 import { Controller, useWatch } from 'react-hook-form';
 import { Button } from '@/atoms/Button/Button';
 import { Checkbox } from '@/atoms/Checkbox/Checkbox';
@@ -19,9 +19,11 @@ import { orderAmountEntry } from '@/libs/commerce/bitcoin-payment-code';
 import { OTHER_CARRIER_ID, SHIPPING_CARRIERS } from '@/libs/commerce/carriers';
 import { DIGITAL_ORDER_COPY, DIGITAL_SELLER_COPY, isInstantDigitalDeliveryKind } from '@/libs/commerce/digital';
 import { formatCommerceMoney } from '@/libs/commerce/format';
+import { observedPaymentRail } from '@/libs/commerce/paykit-rail';
+import { formatUsdt } from '@/libs/commerce/payment-options';
 import { formatBitcoinAmount } from '@/libs/commerce/pricing';
 import { isUsdtFulfilmentBlocked, PAYMENT_NOT_FINAL_COPY } from '@/libs/commerce/usdt-buyer-status';
-import { formatUsdtParity, isUsdtRefundOrder, USDT_REFUND_COPY } from '@/libs/commerce/usdt-refund';
+import { formatUsdtRefundAmount, isUsdtRefundOrder, USDT_REFUND_COPY } from '@/libs/commerce/usdt-refund';
 import type { CommerceReviewModelSchema } from '@/models/commerce/commerce.schema';
 import { ControlledInputField } from '@/molecules/ControlledInputField/ControlledInputField';
 import { ControlledTextareaField } from '@/molecules/ControlledTextareaField/ControlledTextareaField';
@@ -32,6 +34,7 @@ import { MarketplaceBitcoinAmountBreakdown } from '@/organisms/Marketplace/Marke
 import { MarketplacePackingSlipDialog } from '@/organisms/Marketplace/MarketplacePackingSlipDialog';
 import { MarketplacePickupRevealDialog } from '@/organisms/Marketplace/MarketplacePickupRevealDialog';
 import { MarketplaceShippingLabelDialog } from '@/organisms/Marketplace/MarketplaceShippingLabelDialog';
+import { MarketplaceTrackingDialog } from '@/organisms/Marketplace/MarketplaceTrackingDialog';
 import type { MarketplaceOrder } from '@/services/marketplace/marketplace';
 
 export function MarketplaceOrderActions({
@@ -40,11 +43,13 @@ export function MarketplaceOrderActions({
   canEditReview,
   actOnOrder,
   onChanged,
-  cancelButtonSize = 'sm',
+  cancelButtonSize = 'default',
+  messageAction,
 }: {
   order: MarketplaceOrder;
   isBuyer: boolean;
   cancelButtonSize?: 'sm' | 'default';
+  messageAction?: ReactNode;
   /**
    * `review.update` only exists on the durable service (the sandbox has no
    * review editing), so the edit affordance is withheld in sandbox mode
@@ -156,16 +161,24 @@ export function MarketplaceOrderActions({
   const awaitingUsdtRefundAddress = isUsdt && canRecordRefund && usdtRefundAddress === null;
   const refundAmountValue = useWatch({ control: action.form.control, name: 'amount' });
   const usdtRefundAmount =
-    isUsdt && actionType === 'refund' && /^\d+(?:\.\d{1,2})?$/.test(refundAmountValue)
-      ? formatUsdtParity({ ...order.total, amountMinor: majorToMinor(refundAmountValue, order.total.exponent) })
+    isUsdt &&
+    actionType === 'refund' &&
+    new RegExp(`^\\d+(?:\\.\\d{1,${Math.max(amountEntry.exponent, 1)}})?$`).test(refundAmountValue)
+      ? formatUsdtRefundAmount(order, majorToMinor(refundAmountValue, amountEntry.exponent))
       : null;
   const amountLabel = amountEntry.unitLabel === 'USD' ? 'Amount (USD)' : `Amount (${amountEntry.unitLabel})`;
   const refundedMoney =
     amountEntry.unitLabel === '₿'
       ? formatBitcoinAmount(refundedMinor)
-      : formatCommerceMoney({ ...order.total, amountMinor: refundedMinor });
+      : amountEntry.unitLabel === 'USDT'
+        ? formatUsdt(refundedMinor)
+        : formatCommerceMoney({ ...order.total, amountMinor: refundedMinor });
   const refundCapMoney =
-    amountEntry.unitLabel === '₿' ? formatBitcoinAmount(amountEntry.amountMinor) : formatCommerceMoney(order.total);
+    amountEntry.unitLabel === '₿'
+      ? formatBitcoinAmount(amountEntry.amountMinor)
+      : amountEntry.unitLabel === 'USDT'
+        ? formatUsdt(amountEntry.amountMinor)
+        : formatCommerceMoney(order.total);
   const canReveal =
     isBuyer &&
     isPickup &&
@@ -216,30 +229,14 @@ export function MarketplaceOrderActions({
 
   return (
     <>
-      <div className="flex flex-wrap gap-2">
-        {/* Cancellation (order.cancel_request / order.cancel_approve) is now
-            implemented by BOTH engines — the sandbox and the durable service —
-            so the affordance is no longer mode-gated. Pickup orders add
-            `ready_for_pickup` to the cancellable states (§A6). */}
-        {isBuyer &&
-          (['pending_payment', 'paid', 'processing'].includes(order.state) ||
-            (isPickup && order.state === 'ready_for_pickup')) && (
-            <Button
-              size={cancelButtonSize}
-              variant="secondary"
-              className="rounded-full"
-              onClick={() => begin('cancel')}
-            >
-              {order.state === 'pending_payment' ? 'Cancel checkout' : 'Cancel order'}
-            </Button>
-          )}
+      <div className="flex w-full flex-col gap-2 empty:hidden sm:w-auto sm:flex-row sm:flex-wrap">
         {canReveal && <MarketplacePickupRevealDialog order={order} />}
         {/* The handover confirm belongs to EITHER party — whoever is standing
             there with the item taps confirm (§A6). */}
         {isPickup && ['paid', 'ready_for_pickup'].includes(order.state) && (
           <Button
-            size="sm"
-            className="rounded-full"
+            size="default"
+            className="rounded-full sm:order-last"
             disabled={pickup.isActing || fulfilmentBlocked}
             onClick={() => {
               setTermsBlocked(false);
@@ -251,7 +248,7 @@ export function MarketplaceOrderActions({
         )}
         {!isBuyer && isPickup && order.state === 'paid' && (
           <Button
-            size="sm"
+            size="default"
             variant="secondary"
             className="rounded-full"
             disabled={pickup.isActing || fulfilmentBlocked}
@@ -263,8 +260,13 @@ export function MarketplaceOrderActions({
         {/* Pickup orders never ship: no tracking, no label (§A6). */}
         {!isBuyer && !isPickup && !isDigital && ['paid', 'processing'].includes(order.state) && (
           <>
-            <Button size="sm" className="rounded-full" disabled={fulfilmentBlocked} onClick={() => begin('ship')}>
-              Add tracking
+            <Button
+              size="default"
+              className="rounded-full sm:order-last"
+              disabled={fulfilmentBlocked}
+              onClick={() => begin('ship')}
+            >
+              Mark shipped
             </Button>
             <MarketplaceShippingLabelDialog order={order} actOnOrder={actOnOrder} />
           </>
@@ -279,39 +281,52 @@ export function MarketplaceOrderActions({
           ['paid', 'processing', 'shipped', 'delivered', 'completed'].includes(order.state) && (
             <MarketplacePackingSlipDialog order={order} />
           )}
+        <MarketplaceTrackingDialog order={order} isBuyer={isBuyer} onChanged={reloadOrders} />
         {isBuyer && !isDigital && order.state === 'shipped' && (
           <Button
-            size="sm"
-            className="rounded-full"
+            size="default"
+            className="rounded-full sm:order-last"
             onClick={() => void actOnOrder(order, 'fulfillment.confirm_delivery', {})}
           >
             Confirm delivery
           </Button>
         )}
         {isBuyer && !isDigital && ['delivered', 'completed'].includes(order.state) && !order.returnRequest && (
-          <Button size="sm" variant="secondary" className="rounded-full" onClick={() => begin('return')}>
+          <Button size="default" variant="secondary" className="rounded-full" onClick={() => begin('return')}>
             Request return
           </Button>
         )}
         {!isBuyer && order.state === 'cancel_requested' && (
-          <Button size="sm" className="rounded-full" onClick={() => void actOnOrder(order, 'order.cancel_approve', {})}>
+          <Button
+            size="default"
+            className="rounded-full sm:order-last"
+            onClick={() => void actOnOrder(order, 'order.cancel_approve', {})}
+          >
             Approve cancellation
           </Button>
         )}
         {!isBuyer && order.state === 'return_requested' && (
-          <Button size="sm" className="rounded-full" onClick={() => void actOnOrder(order, 'return.approve', {})}>
+          <Button
+            size="default"
+            className="rounded-full sm:order-last"
+            onClick={() => void actOnOrder(order, 'return.approve', {})}
+          >
             Approve return
           </Button>
         )}
         {!isBuyer && order.state === 'return_approved' && (
-          <Button size="sm" className="rounded-full" onClick={() => void actOnOrder(order, 'return.receive', {})}>
+          <Button
+            size="default"
+            className="rounded-full sm:order-last"
+            onClick={() => void actOnOrder(order, 'return.receive', {})}
+          >
             Mark return received
           </Button>
         )}
         {canRecordRefund && (
           <Button
-            size="sm"
-            className="rounded-full"
+            size="default"
+            className="rounded-full sm:order-last"
             disabled={awaitingUsdtRefundAddress}
             onClick={() => begin('refund')}
           >
@@ -322,13 +337,13 @@ export function MarketplaceOrderActions({
           !order.reviews?.some(({ reviewerPubky }) =>
             isBuyer ? reviewerPubky === order.buyerPubky : reviewerPubky === order.sellerPubky,
           ) && (
-            <Button size="sm" variant="secondary" className="rounded-full" onClick={() => begin('review')}>
+            <Button size="default" variant="secondary" className="rounded-full" onClick={() => begin('review')}>
               Leave review
             </Button>
           )}
         {canEditReview && ownReview && isOwnReviewEditable && (
           <Button
-            size="sm"
+            size="default"
             variant="secondary"
             className="rounded-full"
             onClick={() => begin('review_edit', { rating: String(ownReview.rating), text: ownReview.text })}
@@ -336,6 +351,21 @@ export function MarketplaceOrderActions({
             Edit review
           </Button>
         )}
+        {messageAction}
+        {/* Both engines support cancellation. Pickup orders also allow it
+            while ready for pickup (§A6). Keep this exit after the other actions. */}
+        {isBuyer &&
+          (['pending_payment', 'paid', 'processing'].includes(order.state) ||
+            (isPickup && order.state === 'ready_for_pickup')) && (
+            <Button
+              size={cancelButtonSize}
+              variant="ghost"
+              className="rounded-full sm:order-first"
+              onClick={() => begin('cancel')}
+            >
+              {order.state === 'pending_payment' ? 'Cancel checkout' : 'Cancel order'}
+            </Button>
+          )}
       </div>
       {!isBuyer &&
         fulfilmentBlocked &&
@@ -439,7 +469,11 @@ export function MarketplaceOrderActions({
               {carrierChoice === OTHER_CARRIER_ID && (
                 <ControlledInputField name="carrier" control={action.form.control} label="Carrier name" />
               )}
-              <ControlledInputField name="trackingNumber" control={action.form.control} label="Tracking number" />
+              <ControlledInputField
+                name="trackingNumber"
+                control={action.form.control}
+                label="Tracking number (optional)"
+              />
             </>
           )}
           {actionType === 'refund' && isPaypal && refundedMinor > 0 && (
@@ -479,7 +513,7 @@ export function MarketplaceOrderActions({
             <ControlledInputField
               name="transactionId"
               control={action.form.control}
-              label={externalRefundReferenceLabel(order.paymentMethod)}
+              label={externalRefundReferenceLabel(observedPaymentRail(order) ?? order.paymentMethod)}
               placeholder={isUsdt ? '0x…' : undefined}
             />
           )}
@@ -635,7 +669,7 @@ function actionTitle(action: MarketplaceOrderActionData['action'], orderState?: 
     case 'cancel':
       return orderState === 'pending_payment' ? 'Cancel checkout' : 'Cancel order';
     case 'ship':
-      return 'Add shipment tracking';
+      return 'Mark as shipped';
     case 'return':
       return 'Request a return';
     case 'refund':

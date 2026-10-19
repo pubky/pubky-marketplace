@@ -1,8 +1,7 @@
 import { Typography } from '@/atoms/Typography/Typography';
 import {
+  BITCOIN_PAYMENT_CODE_EXPLANATION,
   bitcoinPaymentBreakdown,
-  bitcoinPaymentCodeExplanation,
-  formatBitcoinAmountBreakdown,
   formatBitcoinAwareMoney,
 } from '@/libs/commerce/bitcoin-payment-code';
 import { cn } from '@/libs/utils/utils';
@@ -21,7 +20,7 @@ export function MarketplaceBitcoinAmountBreakdown({
   order: MarketplaceOrder;
   /** The payment step names the figure the buyer sends. */
   showExact?: boolean;
-  /** The payment step says what the payment code is. Lists show the equation alone. */
+  /** The payment step says what the payment code is. */
   explainCode?: boolean;
   className?: string;
 }) {
@@ -29,18 +28,39 @@ export function MarketplaceBitcoinAmountBreakdown({
   if (!breakdown) return null;
 
   return (
-    <div className={cn('grid gap-1', className)} data-testid="bitcoin-amount-breakdown">
-      {showExact ? (
-        <Typography as="p" className="text-lg font-semibold text-brand" data-testid="bitcoin-amount-due">
-          Pay exactly {formatBitcoinAwareMoney(breakdown.payable)}
-        </Typography>
-      ) : null}
-      <Typography as="p" className="text-xs text-muted-foreground">
-        {formatBitcoinAmountBreakdown(breakdown)}
-      </Typography>
+    <div className={cn('grid gap-6', className)} data-testid="bitcoin-amount-breakdown">
+      <table className="w-full text-sm" aria-label="Bitcoin payment breakdown">
+        <tbody>
+          {[
+            { label: 'Items', amount: breakdown.items },
+            { label: 'Shipping', amount: breakdown.shipping },
+            { label: explainCode ? 'Payment code*' : 'Payment code', amount: breakdown.paymentCode },
+          ].map(({ label, amount }) => (
+            <tr key={label} className="last:[&>td]:pb-4 last:[&>th]:pb-4">
+              <th scope="row" className="py-1.5 pr-4 text-left font-normal text-muted-foreground">
+                {label}
+              </th>
+              <td className="py-1.5 text-right tabular-nums">{formatBitcoinAwareMoney(amount)}</td>
+            </tr>
+          ))}
+        </tbody>
+        <tfoot>
+          <tr className="border-t border-border">
+            <th scope="row" className="pt-4 pr-4 text-left font-semibold">
+              Total
+            </th>
+            <td
+              className={cn('pt-4 text-right font-semibold tabular-nums', showExact && 'text-lg text-brand')}
+              data-testid={showExact ? 'bitcoin-amount-due' : undefined}
+            >
+              {formatBitcoinAwareMoney(breakdown.payable)}
+            </td>
+          </tr>
+        </tfoot>
+      </table>
       {explainCode ? (
         <Typography as="p" className="text-xs text-muted-foreground" data-testid="bitcoin-payment-code-explanation">
-          {bitcoinPaymentCodeExplanation(breakdown.paymentCode)}
+          *{BITCOIN_PAYMENT_CODE_EXPLANATION}
         </Typography>
       ) : null}
     </div>

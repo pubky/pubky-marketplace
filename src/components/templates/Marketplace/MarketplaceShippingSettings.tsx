@@ -1,24 +1,46 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { Package, Pencil, Plus, Trash2 } from 'lucide-react';
-import { useForm } from 'react-hook-form';
+import { ArrowLeft, ArrowRight, Package, Pencil, Plus, Trash2 } from 'lucide-react';
+import { Controller, useForm, useWatch } from 'react-hook-form';
 import { z } from 'zod';
+import { readMarketplaceListingComposerReturnTo } from '@/app/routes';
 import { Badge } from '@/atoms/Badge/Badge';
 import { Button } from '@/atoms/Button/Button';
 import { Card, CardContent } from '@/atoms/Card/Card';
 import { Container } from '@/atoms/Container/Container';
 import { Heading } from '@/atoms/Heading/Heading';
+import { Label } from '@/atoms/Label/Label';
+import { Link } from '@/atoms/Link/Link';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/atoms/Select/Select';
 import { Skeleton } from '@/atoms/Skeleton/Skeleton';
 import { Typography } from '@/atoms/Typography/Typography';
+import { isListingCurrencyCode, LISTING_CURRENCY_CODES, LISTING_CURRENCY_REGISTRY } from '@/config/currencies';
+import { FORM_LABEL_CLASSES } from '@/config/forms';
+import { useDisplayCurrency } from '@/hooks/useDisplayCurrency/useDisplayCurrency';
 import { useMarketplaceShippingIntegration } from '@/hooks/useMarketplaceShippingIntegration/useMarketplaceShippingIntegration';
 import {
   bareShippingPresetId,
   useMarketplaceShippingPresets,
 } from '@/hooks/useMarketplaceShippingPresets/useMarketplaceShippingPresets';
+import { shippingPresetMoney } from '@/hooks/useMarketplaceShippingPresets/useMarketplaceShippingPresets.types';
 import { useMyDeliveryKey } from '@/hooks/useMyDeliveryKey/useMyDeliveryKey';
 import { formatCommerceMoney } from '@/libs/commerce/format';
+import {
+  consumeListingComposerReturnTo,
+  peekListingComposerReturnTo,
+  rememberListingComposerReturnTo,
+} from '@/libs/commerce/listing-publish-guards';
+import {
+  AMOUNT_EXAMPLES,
+  amountInputExample,
+  amountInputFromMoney,
+  amountInputSchemaForAsset,
+  amountInputUnitLabel,
+  assetForListingCurrency,
+} from '@/libs/commerce/pricing';
 import { isPlausibleShippoApiKey, type ShipFromAddress } from '@/libs/commerce/shipping';
 import type { CommerceShippingPresetModelSchema } from '@/models/commerce/commerce.schema';
 import { ControlledInputField } from '@/molecules/ControlledInputField/ControlledInputField';
@@ -26,6 +48,7 @@ import { BackToMyShop } from '@/molecules/Marketplace/BackToMyShop';
 import { DeliveryPrivacyCard } from '@/molecules/Marketplace/DeliveryPrivacyCard';
 import { SettingsSectionContent } from '@/molecules/Settings/SettingsSectionContent/SettingsSectionContent';
 import { ContentLayout } from '@/organisms/ContentLayout/ContentLayout';
+import { MarketplaceIndicativePrice } from '@/organisms/Marketplace/MarketplaceIndicativePrice';
 
 const shippoFormSchema = z.object({
   shippoApiKey: z
@@ -189,17 +212,48 @@ function ShippoIntegrationCard() {
   );
 }
 
-function DeliveryPrivacySection() {
+function DeliveryPrivacySection({ returnPath }: { returnPath: string | null }) {
   const deliveryKey = useMyDeliveryKey();
-  if (!deliveryKey.enabled || deliveryKey.isLoading) return null;
+  const keyPublished = deliveryKey.status?.publication === 'matches';
   return (
-    <DeliveryPrivacyCard
-      status={deliveryKey.status}
-      isWorking={deliveryKey.isWorking}
-      loadFailed={deliveryKey.loadFailed}
-      onCreate={deliveryKey.create}
-      onPublish={deliveryKey.publish}
-    />
+    <>
+      {returnPath && (
+        <div
+          data-testid="listing-composer-return"
+          className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-brand/40 bg-brand/5 p-4"
+        >
+          <Typography as="p" className="text-sm">
+            {keyPublished
+              ? 'Your delivery key is published. Your listing draft is waiting for you.'
+              : 'Create your delivery key here, then go back to your listing draft.'}
+          </Typography>
+          <Button asChild variant={keyPublished ? 'default' : 'secondary'} className="w-fit rounded-full">
+            <Link href={returnPath} overrideDefaults onClick={() => consumeListingComposerReturnTo()}>
+              {keyPublished ? (
+                <>
+                  Continue listing
+                  <ArrowRight className="size-4" />
+                </>
+              ) : (
+                <>
+                  <ArrowLeft className="size-4" />
+                  Back to listing
+                </>
+              )}
+            </Link>
+          </Button>
+        </div>
+      )}
+      {deliveryKey.enabled && !deliveryKey.isLoading && (
+        <DeliveryPrivacyCard
+          status={deliveryKey.status}
+          isWorking={deliveryKey.isWorking}
+          loadFailed={deliveryKey.loadFailed}
+          onCreate={deliveryKey.create}
+          onPublish={deliveryKey.publish}
+        />
+      )}
+    </>
   );
 }
 
@@ -210,11 +264,8 @@ const presetFormSchema = z
       .trim()
       .min(1, 'Give the shipping option a label.')
       .max(100, 'Keep the label under 100 characters.'),
-    shippingPrice: z
-      .string()
-      .trim()
-      .regex(/^\d+(?:\.\d{1,2})?$/, 'Enter a valid USD amount with at most two decimal places.')
-      .refine((value) => Number(value) > 0, 'Price must be greater than zero.'),
+    currency: z.enum(LISTING_CURRENCY_CODES),
+    shippingPrice: z.string().trim(),
     shippingMinDays: z
       .string()
       .trim()
@@ -227,6 +278,14 @@ const presetFormSchema = z
       .refine((value) => Number(value) <= 365, 'Estimates are capped at 365 days.'),
   })
   .superRefine((data, context) => {
+    const price = amountInputSchemaForAsset(assetForListingCurrency(data.currency)).safeParse(data.shippingPrice);
+    if (!price.success) {
+      context.addIssue({
+        code: 'custom',
+        path: ['shippingPrice'],
+        message: price.error.issues[0]?.message ?? 'Enter a valid amount.',
+      });
+    }
     if (/^\d+$/.test(data.shippingMinDays) && /^\d+$/.test(data.shippingMaxDays)) {
       if (Number(data.shippingMaxDays) < Number(data.shippingMinDays)) {
         context.addIssue({
@@ -242,13 +301,28 @@ type PresetFormData = z.infer<typeof presetFormSchema>;
 
 const presetFormDefaults: PresetFormData = {
   shippingLabel: '',
+  currency: 'USD',
   shippingPrice: '',
   shippingMinDays: '3',
   shippingMaxDays: '7',
 };
 
 export function MarketplaceShippingSettings() {
+  const searchParams = useSearchParams();
+  const returnPath =
+    readMarketplaceListingComposerReturnTo(searchParams.get('returnTo')) ??
+    readMarketplaceListingComposerReturnTo(peekListingComposerReturnTo());
+  useEffect(() => {
+    if (returnPath) rememberListingComposerReturnTo(returnPath);
+  }, [returnPath]);
   const { presets, isLoading, saveFromFields, remove } = useMarketplaceShippingPresets();
+  // A new preset starts in the currency of the seller's latest one, else the one their browser suggests.
+  const browserCurrency = useDisplayCurrency();
+  const latestCurrency = presets[0]?.currency;
+  const newPresetDefaults: PresetFormData = {
+    ...presetFormDefaults,
+    currency: isListingCurrencyCode(latestCurrency) ? latestCurrency : browserCurrency,
+  };
   // null: list only; 'new': creating; otherwise the composite id being edited.
   const [editingId, setEditingId] = useState<string | null>(null);
   const form = useForm<PresetFormData>({
@@ -258,27 +332,112 @@ export function MarketplaceShippingSettings() {
   });
 
   const beginCreate = () => {
-    form.reset(presetFormDefaults);
+    form.reset(newPresetDefaults);
     setEditingId('new');
   };
 
   const beginEdit = (preset: CommerceShippingPresetModelSchema) => {
     form.reset({
       shippingLabel: preset.label,
-      shippingPrice: (preset.price_minor / 100).toFixed(2),
+      currency: isListingCurrencyCode(preset.currency) ? preset.currency : presetFormDefaults.currency,
+      shippingPrice: amountInputFromMoney(shippingPresetMoney(preset)),
       shippingMinDays: String(preset.estimated_min_days),
       shippingMaxDays: String(preset.estimated_max_days),
     });
     setEditingId(preset.id);
   };
 
+  const presetCurrency = useWatch({ control: form.control, name: 'currency' });
+
+  const presetCardRef = useRef<HTMLDivElement>(null);
+  const addPresetButtonRef = useRef<HTMLButtonElement>(null);
+  const editButtonRefs = useRef(new Map<string, HTMLButtonElement>());
+  const previousEditingId = useRef<string | null>(null);
+
+  // Opening the form moves focus into it; closing it hands focus back to whichever button opened it.
+  useEffect(() => {
+    const closedId = previousEditingId.current;
+    previousEditingId.current = editingId;
+    if (editingId !== null) {
+      presetCardRef.current?.scrollIntoView?.({ block: 'nearest' });
+      presetCardRef.current?.querySelector<HTMLInputElement>('input[name="shippingLabel"]')?.focus();
+    } else if (closedId !== null) {
+      (editButtonRefs.current.get(closedId) ?? addPresetButtonRef.current)?.focus();
+    }
+  }, [editingId]);
+
   const submit = form.handleSubmit(async (data) => {
     const editing = presets.find(({ id }) => id === editingId);
-    if (await saveFromFields(editing ? bareShippingPresetId(editing) : null, data)) {
-      form.reset(presetFormDefaults);
+    if (await saveFromFields(editing ? bareShippingPresetId(editing) : null, data, data.currency)) {
+      // The preset just saved is now the latest, so the next new one starts in its currency.
+      form.reset({ ...presetFormDefaults, currency: data.currency });
       setEditingId(null);
     }
   });
+
+  const presetFormCard = editingId !== null && (
+    <Card
+      ref={presetCardRef}
+      role="region"
+      aria-labelledby="preset-form-heading"
+      className="scroll-mt-24 rounded-md p-0 shadow-lg"
+    >
+      <CardContent className="grid gap-6 p-6">
+        <Typography as="h2" id="preset-form-heading" className="text-xl font-semibold">
+          {editingId === 'new' ? 'New preset' : 'Edit preset'}
+        </Typography>
+        <SettingsSectionContent>
+          <ControlledInputField
+            name="shippingLabel"
+            control={form.control}
+            label="Shipping label"
+            placeholder="Standard shipping"
+          />
+          <div className="grid gap-4 sm:grid-cols-4">
+            <Container className="gap-2">
+              <Label htmlFor="preset-currency" className={FORM_LABEL_CLASSES}>
+                Currency
+              </Label>
+              <Controller
+                name="currency"
+                control={form.control}
+                render={({ field }) => (
+                  <Select value={field.value} onValueChange={field.onChange}>
+                    <SelectTrigger theme="secondary" id="preset-currency" className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {LISTING_CURRENCY_CODES.map((code) => (
+                        <SelectItem key={code} value={code}>
+                          {LISTING_CURRENCY_REGISTRY[code].pickerLabel}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+              />
+            </Container>
+            <ControlledInputField
+              name="shippingPrice"
+              control={form.control}
+              label={`Flat price (${amountInputUnitLabel(assetForListingCurrency(presetCurrency))})`}
+              placeholder={amountInputExample(assetForListingCurrency(presetCurrency), AMOUNT_EXAMPLES.shipping)}
+            />
+            <ControlledInputField name="shippingMinDays" control={form.control} label="Min days" placeholder="3" />
+            <ControlledInputField name="shippingMaxDays" control={form.control} label="Max days" placeholder="7" />
+          </div>
+          <div className="flex gap-2">
+            <Button className="rounded-full" onClick={() => void submit()}>
+              Save preset
+            </Button>
+            <Button variant="secondary" className="rounded-full" onClick={() => setEditingId(null)}>
+              Cancel
+            </Button>
+          </div>
+        </SettingsSectionContent>
+      </CardContent>
+    </Card>
+  );
 
   return (
     <ContentLayout
@@ -292,73 +451,28 @@ export function MarketplaceShippingSettings() {
         <BackToMyShop />
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
-            <Badge className="mb-4">Seller studio</Badge>
             <Heading level={1} size="xl" className="text-4xl sm:text-6xl">
               Shipping
             </Heading>
             <Typography as="p" className="mt-2 max-w-xl text-muted-foreground">
-              Your Shippo label integration, plus reusable presets for the sell studio&apos;s shipping fields (label,
-              flat price, delivery estimate). Presets are stored on this device only — applying one just pre-fills the
-              form, and listings publish exactly as before.
+              Manage shipping labels and presets for your listings. Presets are saved on this device.
             </Typography>
           </div>
           {editingId === null && (
-            <Button className="rounded-full" onClick={beginCreate}>
+            <Button ref={addPresetButtonRef} className="rounded-full" onClick={beginCreate}>
               <Plus className="size-4" />
               Add preset
             </Button>
           )}
         </div>
 
-        <DeliveryPrivacySection />
+        {editingId === 'new' && presetFormCard}
+
+        <DeliveryPrivacySection returnPath={returnPath} />
 
         <ShippoIntegrationCard />
 
-        {editingId !== null && (
-          <Card className="rounded-md p-0 shadow-lg">
-            <CardContent className="grid gap-6 p-6">
-              <Typography as="h2" className="text-xl font-semibold">
-                {editingId === 'new' ? 'New preset' : 'Edit preset'}
-              </Typography>
-              <SettingsSectionContent>
-                <ControlledInputField
-                  name="shippingLabel"
-                  control={form.control}
-                  label="Shipping label"
-                  placeholder="Standard shipping"
-                />
-                <div className="grid gap-4 sm:grid-cols-3">
-                  <ControlledInputField
-                    name="shippingPrice"
-                    control={form.control}
-                    label="Flat price (USD)"
-                    placeholder="12.00"
-                  />
-                  <ControlledInputField
-                    name="shippingMinDays"
-                    control={form.control}
-                    label="Min days"
-                    placeholder="3"
-                  />
-                  <ControlledInputField
-                    name="shippingMaxDays"
-                    control={form.control}
-                    label="Max days"
-                    placeholder="7"
-                  />
-                </div>
-                <div className="flex gap-2">
-                  <Button className="rounded-full" onClick={() => void submit()}>
-                    Save preset
-                  </Button>
-                  <Button variant="secondary" className="rounded-full" onClick={() => setEditingId(null)}>
-                    Cancel
-                  </Button>
-                </div>
-              </SettingsSectionContent>
-            </CardContent>
-          </Card>
-        )}
+        {editingId !== 'new' && presetFormCard}
 
         {isLoading ? (
           <Skeleton className="h-32 w-full" />
@@ -372,12 +486,9 @@ export function MarketplaceShippingSettings() {
                       {preset.label}
                     </Typography>
                     <Typography as="p" className="mt-1 text-sm text-muted-foreground">
-                      {formatCommerceMoney({
-                        amountMinor: preset.price_minor,
-                        currency: preset.currency,
-                        exponent: 2,
-                      })}{' '}
-                      flat · {preset.estimated_min_days}–{preset.estimated_max_days} days
+                      {formatCommerceMoney(shippingPresetMoney(preset))}{' '}
+                      <MarketplaceIndicativePrice money={shippingPresetMoney(preset)} className="font-normal" /> flat ·{' '}
+                      {preset.estimated_min_days}–{preset.estimated_max_days} days
                     </Typography>
                   </div>
                   <div className="flex shrink-0 items-center gap-1">
@@ -386,6 +497,10 @@ export function MarketplaceShippingSettings() {
                       variant="ghost"
                       className="rounded-full"
                       aria-label={`Edit ${preset.label}`}
+                      ref={(button) => {
+                        if (button) editButtonRefs.current.set(preset.id, button);
+                        else editButtonRefs.current.delete(preset.id);
+                      }}
                       onClick={() => beginEdit(preset)}
                     >
                       <Pencil className="size-4" />

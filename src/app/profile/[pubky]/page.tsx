@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import { withBasePath } from '@/config/base-path';
+import { withPublicPath } from '@/config/base-path';
 import { fetchProfileForMetadata } from '@/libs/og/ogData';
 import { truncateByGraphemes } from '@/libs/utils/truncate';
 import { resolveDisplayName, stripPubkyPrefix } from '@/libs/utils/utils';
@@ -30,7 +30,7 @@ interface DynamicProfilePageProps {
 export async function generateMetadata({ params }: DynamicProfilePageProps): Promise<Metadata> {
   const { pubky } = await params;
   const normalizedPubky = stripPubkyPrefix(decodeURIComponent(pubky));
-  const canonical = withBasePath(`/profile/${normalizedPubky}`);
+  const canonical = withPublicPath(`/profile/${normalizedPubky}`);
 
   try {
     const result = await fetchProfileForMetadata(pubky);

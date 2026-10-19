@@ -69,7 +69,7 @@ Keep these when changing the scripts:
 
 - Only the Nexus publishes its build commit. The other services need `<SVC>_RUNNING_COMMIT_CMD`
   (`scripts/running-commit.mjs` reads the image's `org.opencontainers.image.revision` label).
-- Paykit's trusted key, setup origins and Locks' Paykit URL live in config, not on the wire:
+- Paykit's trusted keys (`[signed_services] trusted_public_keys`, which must list the Lock Server key), setup origins and Locks' Paykit URL live in config, not on the wire:
   give the rendered config files or the values (`stack.env.example`, "Config facts").
 - A single Paykit process is a platform fact: `PAYKIT_INSTANCE_COUNT_CMD` must print 1.
 - Private service-to-service URLs answer only from inside their network: `<KEY>_REACH_CMD`.

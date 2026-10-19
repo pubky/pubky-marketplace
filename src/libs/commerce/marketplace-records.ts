@@ -16,6 +16,7 @@ import {
   COMMERCE_SHOP_BIO_MAX_CHARS,
   COMMERCE_SHOP_NAME_MAX_CHARS,
   COMMERCE_SHOP_POLICY_MAX_CHARS,
+  COMMERCE_SHOP_SHIPS_TO_MAX_COUNTRIES,
   COMMERCE_SHOP_TERM_DAYS_MAX,
   COMMERCE_SHOP_TERM_DAYS_MIN,
   COMMERCE_TAXONOMY_VERSION_MAX,
@@ -29,6 +30,7 @@ import {
   COMMERCE_LISTING_MAX_ATTRIBUTES,
 } from '@/config/taxonomy/taxonomy';
 import type { MarketplaceFulfillmentMethod } from './pickup';
+import { canonicalCountryCode } from './postal-address';
 import {
   commerceEntityIdSchema,
   commerceMoneySchema,
@@ -274,22 +276,21 @@ export function commerceListingShippingMinor(shippingOptions: readonly CommerceS
  * (`shipping` | `pickup` | `digital`), derived from the record's
  * `fulfillmentMethods` EXACTLY as the durable service derives them from a
  * fetched record (`homeserver.rs::registration_payload_from_record`, digital
- * delivery design §6 A1–A3): `shipping`, `pickup` and `digital` map, except
- * that a Locks listing (one carrying `digitalLock`) skips `digital`;
+ * delivery design §6 A1–A3): `shipping`, `pickup` and `digital` map;
  * first-seen dedup (not just adjacent); an empty result defaults to
- * shipping-only. So records predating pickup, and Locks listings, register
- * as shipping-only, and `['physical', 'digital']` (no explicit `shipping`)
- * registers as digital-only. The register payload validation mirrors the
- * service (non-empty, known values, deduped), so this derivation's output
- * always validates.
+ * shipping-only. So records predating pickup register as shipping-only, and
+ * `['physical', 'digital']` (no explicit `shipping`) registers as
+ * digital-only. A Locks listing (one carrying `digitalLock`) is a digital
+ * listing like any other: it publishes `digital`, so it registers as
+ * digital. The register payload validation mirrors the service (non-empty,
+ * known values, deduped), so this derivation's output always validates.
  */
 export function commerceListingFulfillmentMethods(
   methods: readonly CommerceListingRecord['fulfillmentMethods'][number][],
-  hasDigitalLock = false,
 ): MarketplaceFulfillmentMethod[] {
   const derived: MarketplaceFulfillmentMethod[] = [];
   for (const method of methods) {
-    const maps = method === 'shipping' || method === 'pickup' || (method === 'digital' && !hasDigitalLock);
+    const maps = method === 'shipping' || method === 'pickup' || method === 'digital';
     if (maps && !derived.includes(method)) {
       derived.push(method);
     }
@@ -297,13 +298,84 @@ export function commerceListingFulfillmentMethods(
   return derived.length > 0 ? derived : ['shipping'];
 }
 
+type CommerceListingTermsRecord = Pick<
+  CommerceListingRecord,
+  'revision' | 'sale' | 'fulfillmentMethods' | 'shippingOptions'
+>;
+
+interface CommerceListingTermsProjection {
+  listingRevision: number;
+  unitPrice: { amountMinor: number; currency: string; exponent: number };
+  fulfillmentMethods: readonly MarketplaceFulfillmentMethod[];
+  shipping?: { amountMinor: number };
+}
+
+/**
+ * Whether the projection charges what the record prices: the same unit price
+ * (amount, currency and exponent) and the same shipping, a projection without
+ * shipping charging none. An auction always does: it is paid at its bid.
+ */
+export function commerceListingProjectionChargesRecordTerms(
+  record: CommerceListingTermsRecord,
+  projection: CommerceListingTermsProjection,
+): boolean {
+  if (record.sale.format !== 'fixed_price') return true;
+  const { unitPrice } = record.sale;
+  return (
+    projection.unitPrice.amountMinor === unitPrice.amountMinor &&
+    projection.unitPrice.currency === unitPrice.currency &&
+    projection.unitPrice.exponent === unitPrice.exponent &&
+    (projection.shipping?.amountMinor ?? 0) === commerceListingShippingMinor(record.shippingOptions)
+  );
+}
+
+/**
+ * Whether the transaction service's projection of a registered fixed-price
+ * listing no longer reflects the seller-signed record, so a `listing.sync`
+ * would change what checkout charges or accepts: the record's revision moved
+ * past the projection (an edit whose sync never landed), or at the same
+ * revision the unit price, shipping or fulfillment methods differ (rows
+ * registered before the service's derivation changed, or a record rewritten
+ * without a new revision). Auctions are excluded: `listing.sync` never
+ * rewrites a registered auction's terms.
+ */
+export function commerceListingProjectionIsStale(
+  record: CommerceListingTermsRecord,
+  projection: CommerceListingTermsProjection,
+): boolean {
+  if (record.sale.format !== 'fixed_price') return false;
+  if (projection.listingRevision < record.revision) return true;
+  if (projection.listingRevision > record.revision) return false;
+  const methods = commerceListingFulfillmentMethods(record.fulfillmentMethods);
+  if (
+    methods.length !== projection.fulfillmentMethods.length ||
+    methods.some((method, index) => projection.fulfillmentMethods[index] !== method)
+  ) {
+    return true;
+  }
+  return !commerceListingProjectionChargesRecordTerms(record, projection);
+}
+
+/**
+ * Whether a projection of a fixed-price listing carries exactly the terms of
+ * the record the buyer is checking out: the same revision, unit price,
+ * fulfillment methods and shipping. A seller edit the buyer has not seen
+ * fails this, so the buyer is never charged terms they did not see. An
+ * auction always matches: it is paid at its bid.
+ */
+export function commerceListingProjectionMatchesRecord(
+  record: CommerceListingTermsRecord,
+  projection: CommerceListingTermsProjection,
+): boolean {
+  if (record.sale.format !== 'fixed_price') return true;
+  return projection.listingRevision === record.revision && !commerceListingProjectionIsStale(record, projection);
+}
+
 /**
  * Whether the listing offers **Make offer**: a fixed-price sale that accepts
  * offers and publishes a physical fulfillment (shipping or pickup). Digital
- * items take no offers; the service refuses them
- * (`offers_unavailable_for_digital`). A Locks listing publishes only
- * `digital`, so it takes none either, although the service registers it as
- * shipping.
+ * items, Locks listings included, take no offers; the service refuses them
+ * (`offers_unavailable_for_digital`).
  */
 export function commerceListingTakesOffers(
   record: Pick<CommerceListingRecord, 'sale' | 'fulfillmentMethods'>,
@@ -400,6 +472,26 @@ const commerceTransactionServiceSchema = z
 /** Whole days, `COMMERCE_SHOP_TERM_DAYS_MIN` to `COMMERCE_SHOP_TERM_DAYS_MAX`. */
 const commerceShopTermDaysSchema = z.number().int().min(COMMERCE_SHOP_TERM_DAYS_MIN).max(COMMERCE_SHOP_TERM_DAYS_MAX);
 
+/**
+ * Destination countries, read leniently: a malformed list from another
+ * writer must not make the whole shop record unreadable. Entries are
+ * uppercased and canonicalized (UK becomes GB) and kept once. When any entry
+ * is then a two-letter code, only those codes are kept, capped. A present
+ * list with no such entry (["CHE"], "CH", [1]) keeps its normalized entries
+ * instead, so the seller's restriction survives a re-save and readers can
+ * refuse it rather than read it as anywhere. Only absent or empty is anywhere.
+ */
+const commerceShipsToCountriesSchema = z.unknown().transform((value): string[] | undefined => {
+  if (value === undefined || value === null) return undefined;
+  const entries = (Array.isArray(value) ? value : [value]).map((entry) =>
+    typeof entry === 'string' ? canonicalCountryCode(entry) : JSON.stringify(entry),
+  );
+  const unique = [...new Set(entries)].filter((entry) => entry !== '');
+  if (unique.length === 0) return Array.isArray(value) && value.length === 0 ? undefined : [JSON.stringify(value)];
+  const codes = unique.filter((entry) => /^[A-Z]{2}$/.test(entry));
+  return (codes.length > 0 ? codes : unique).slice(0, COMMERCE_SHOP_SHIPS_TO_MAX_COUNTRIES);
+});
+
 const commerceShopRecordSchemaInner = commercePublicRecordBaseSchema
   .extend({
     recordType: z.literal('shop'),
@@ -418,6 +510,10 @@ const commerceShopRecordSchemaInner = commercePublicRecordBaseSchema
     // service's configured defaults apply. See docs/ecommerce/seller-delivery-terms.md.
     deliveryAssumeDays: commerceShopTermDaysSchema.optional(),
     autoCompleteDays: commerceShopTermDaysSchema.optional(),
+    // Where shipped orders may go. Absent or empty means anywhere. Checkout
+    // enforces it client-side only: the buyer's address is sealed to the
+    // seller, so the transaction service never sees the destination country.
+    shipsToCountries: commerceShipsToCountriesSchema.optional(),
     createdAt: commerceTimestampSchema,
     updatedAt: commerceTimestampSchema,
   })
@@ -615,6 +711,25 @@ const commerceListingRecordSchemaInner = commercePublicRecordBaseSchema
       context.addIssue({
         code: 'custom',
         message: 'digitalLock requires digital fulfillment',
+        path: ['digitalLock'],
+      });
+    }
+    // A Locks listing is digital end to end: the service registers it only
+    // as exactly [digital], so a record that also publishes shipping or
+    // pickup would bring the shipping UI and checkout back for it.
+    if (listing.digitalLock !== undefined && hasDigital && !listing.fulfillmentMethods.every((m) => m === 'digital')) {
+      context.addIssue({
+        code: 'custom',
+        message: 'A Locks listing must be digital-only',
+        path: ['fulfillmentMethods'],
+      });
+    }
+    // Auctions register through the seller's private reserve authority, which carries no lock, and they
+    // ship; the service would hold a Locks auction without its lock.
+    if (listing.digitalLock !== undefined && listing.sale.format === 'auction') {
+      context.addIssue({
+        code: 'custom',
+        message: 'A Locks listing must be sold at a fixed price',
         path: ['digitalLock'],
       });
     }

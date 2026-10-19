@@ -26,6 +26,29 @@ export function shopCapabilities() {
   return match[1];
 }
 
+// PROOF_ORIGIN is the origin the Shop is served from, with its mount path when embedded
+// (`https://pubky.app/shop`, or `https://pubky.app/shop-embed` when the App owns `/shop` and frames the build:
+// the proof drives the build itself). `origin` is what browser permissions and the service CORS check see;
+// `at(path)` joins the mount path in front of a Shop route such as `/sign-in`. A route is a path from the Shop's
+// root: an absolute URL or a path that already carries the mount path is refused rather than joined twice.
+export function proofTarget(raw = process.env.PROOF_ORIGIN ?? 'https://pubky-marketplace-production.vercel.app') {
+  const url = new URL(raw);
+  if (url.search || url.hash) throw new Error('PROOF_ORIGIN must not carry a query or fragment');
+  const basePath = url.pathname.replace(/\/+$/, '');
+  const at = (path) => {
+    if (typeof path !== 'string' || !path.startsWith('/') || path.startsWith('//')) {
+      throw new Error(
+        `Shop route must be a path from the Shop root, like /marketplace/…: ${String(path).slice(0, 80)}`,
+      );
+    }
+    if (basePath && (path === basePath || path.startsWith(`${basePath}/`))) {
+      throw new Error(`Shop route already carries the mount path ${basePath}; pass it without: ${path.slice(0, 80)}`);
+    }
+    return `${url.origin}${basePath}${path}`;
+  };
+  return { origin: url.origin, basePath, at };
+}
+
 const lexists = (path) => {
   try {
     lstatSync(path);

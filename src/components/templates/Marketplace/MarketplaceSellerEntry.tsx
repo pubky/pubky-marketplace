@@ -34,7 +34,7 @@ export function MarketplaceSellerEntry() {
             <Store className="size-12 text-brand" />
             <div>
               <Heading level={1} size="lg">
-                Set up your seller account to start listing
+                Set up your shop to start listing
               </Heading>
               <Typography as="p" className="mt-2 max-w-xl text-muted-foreground">
                 Add payment settings and shop details before sending buyers to your seller page.

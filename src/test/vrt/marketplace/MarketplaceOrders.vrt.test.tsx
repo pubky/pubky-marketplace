@@ -14,6 +14,9 @@ import {
   ORDER_FIXTURE_BUYER as USDT_SCENE_ME,
 } from '@/test/fixtures/commerce/orders';
 import { USDT_ORDER_FIELDS } from '@/test/fixtures/commerce/usdt-orders';
+import { setupFixedDateLocale } from '@/test-utils/date-locale';
+
+setupFixedDateLocale('en-US');
 
 // Deterministic BTC/USD rate for the capture (1 BTC = $100,000): the "≈"
 // estimates render from this fixed value, never from the network.
@@ -511,6 +514,7 @@ const ordersState = vi.hoisted(() => ({
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn() }),
   usePathname: () => '/marketplace/orders',
+  useSearchParams: () => new URLSearchParams(window.location.search),
 }));
 
 vi.mock('@/hooks/useRequireAuth/useRequireAuth', () => ({
@@ -519,24 +523,6 @@ vi.mock('@/hooks/useRequireAuth/useRequireAuth', () => ({
 
 vi.mock('@/hooks/useUserDetails/useUserDetails', () => ({
   useUserDetails: () => ({ userDetails: null, isLoading: false }),
-}));
-
-vi.mock('@/hooks/useEncryptedConversation/useEncryptedConversation', () => ({
-  useEncryptedConversation: () => ({
-    status: 'ready',
-    errorMessage: null,
-    thread: [],
-    receiverProvisioned: false,
-    draft: '',
-    setDraft: vi.fn(),
-    bodyBudgetBytes: 620,
-    draftBytes: 0,
-    isSending: false,
-    sendError: null,
-    send: vi.fn(async () => 'queued'),
-    cancelQueued: vi.fn(async () => {}),
-    refresh: vi.fn(),
-  }),
 }));
 
 vi.mock('@/stores/auth/auth.store', async () => ({
@@ -586,6 +572,14 @@ describe('Marketplace orders — visual regression', () => {
     ordersState.error = null;
 
     const screen = await renderForVRT(<MarketplaceOrders />, { viewport: VRT_VIEWPORT_MOBILE });
+    const checkoutLabels = screen.container.querySelector('[data-testid="marketplace-checkout-status-labels"]');
+    expect(checkoutLabels).not.toBeNull();
+    expect(checkoutLabels).not.toHaveTextContent('Checkout in progress');
+    const placedDates = screen.container.querySelectorAll<HTMLElement>('[data-testid="order-placed-at"]');
+    expect(placedDates.length).toBeGreaterThan(0);
+    for (const date of placedDates) {
+      expect(date.getBoundingClientRect().left).toBeCloseTo(date.parentElement!.getBoundingClientRect().left, 0);
+    }
     const tabList = screen.container.querySelector('[role="tablist"]') as HTMLElement;
     tabList.scrollLeft = 0;
     await new Promise<void>((resolve) => {
@@ -884,8 +878,8 @@ describe('Marketplace orders — visual regression', () => {
     const screen = await renderForVRT(<MarketplaceOrders />, { viewport: VRT_VIEWPORT_DESKTOP });
     await expect.element(screen.getByRole('heading', { name: 'Reservations' })).toBeVisible();
     await expect.element(screen.getByText('Seller pending-payment zine')).toBeVisible();
-    await expect.element(screen.getByText('Held for a buyer · restocks Jan 1, 2026, 2:00 PM UTC')).toBeVisible();
-    await expect.element(screen.getByTestId('order-placed-at')).toHaveTextContent('Placed Dec 31, 2025, 2:00 PM UTC');
+    await expect.element(screen.getByText('Held for a buyer · restocks Jan 1, 2026, 2:00 PM')).toBeVisible();
+    await expect.element(screen.getByTestId('order-placed-at')).toHaveTextContent('Placed Dec 31, 2025, 2:00 PM');
     await expect(await expectVrtSurface('marketplace-orders')).toMatchScreenshot(
       'orders-pending-payment-seller-desktop',
     );
@@ -901,7 +895,7 @@ describe('Marketplace orders — visual regression', () => {
       ordersState.isLoading = false;
       ordersState.error = null;
       const previous = `${window.location.pathname}${window.location.search}${window.location.hash}`;
-      window.history.replaceState(null, '', `${window.location.pathname}#order-${activityLinkedUnlistedId}`);
+      window.history.replaceState(null, '', `${window.location.pathname}?order=${activityLinkedUnlistedId}`);
       try {
         const screen = await renderForVRT(<MarketplaceOrders />, { viewport });
         await expect.element(screen.getByRole('heading', { name: 'From Activity' })).toBeVisible();
@@ -1086,7 +1080,7 @@ describe('Marketplace orders — USDT orders', () => {
     ordersState.error = null;
 
     const screen = await renderForVRT(<MarketplaceOrders />, { viewport: VRT_VIEWPORT_DESKTOP });
-    await expect.element(screen.getByText('USDT sale waiting for finality × 1')).toBeVisible();
+    await expect.element(screen.getByText('USDT sale waiting for finality')).toBeVisible();
     await expect(await expectVrtSurface('marketplace-orders')).toMatchScreenshot('orders-usdt-seller-finality-desktop');
   });
 

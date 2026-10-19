@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { CAPABILITIES } from '@/config/app';
+import { RETIRED_LOCKS_SESSION_STORAGE_KEYS } from '@/services/locks/retired-locks-session';
 import { MARKETPLACE_SESSION_STORAGE_KEY, MarketplaceSessionService } from '@/services/marketplace/marketplace-session';
 import { useCommerceStore } from '@/stores/commerce/commerce.store';
 import captured from '@/test/fixtures/auth/marketplace-grant-priv-parity.staging.json';
@@ -128,5 +129,11 @@ describe('clearing the purchase session from the controller', () => {
     expect(MarketplaceSessionService.getActiveSession()).toBeNull();
     expect(useCommerceStore.getState().marketplaceSession).toBeNull();
     expect(window.localStorage.getItem(MARKETPLACE_SESSION_STORAGE_KEY)).toBeNull();
+  });
+
+  it('sign-out also removes the Lock Server session older Shops left', () => {
+    for (const key of RETIRED_LOCKS_SESSION_STORAGE_KEYS) window.localStorage.setItem(key, 'left-by-an-older-shop');
+    CommerceController.clearMarketplaceSessionForSignOut();
+    for (const key of RETIRED_LOCKS_SESSION_STORAGE_KEYS) expect(window.localStorage.getItem(key)).toBeNull();
   });
 });

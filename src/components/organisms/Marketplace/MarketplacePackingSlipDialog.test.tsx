@@ -152,6 +152,30 @@ describe('MarketplacePackingSlipDialog — sealed delivery address', () => {
     expect(within(reopened).getByText(DELIVERY_KEY_COPY.addressLoading)).toBeInTheDocument();
   });
 
+  it('keeps the opened address on screen when an orders poll re-renders the slip with a fresh order object', async () => {
+    const read = vi
+      .spyOn(CommerceController, 'getMarketplaceOrder')
+      .mockResolvedValue(createOrderFixture('paid', { deliveryAddress: SEALED }));
+    const open = vi.spyOn(CommerceController, 'getOrderDeliveryAddress').mockResolvedValue({
+      kind: 'address',
+      address: ADDRESS,
+    });
+    useAuthStore.setState({ currentUserPubky: ORDER_FIXTURE_SELLER });
+    const { rerender } = render(<MarketplacePackingSlipDialog order={createOrderFixture('paid')} />);
+    await userEvent.click(screen.getByRole('button', { name: 'Packing slip' }));
+    const dialog = screen.getByRole('dialog');
+    await waitFor(() => expect(within(dialog).getByText('1 Market Street')).toBeInTheDocument());
+
+    for (let poll = 0; poll < 3; poll += 1) {
+      rerender(<MarketplacePackingSlipDialog order={createOrderFixture('paid')} />);
+      expect(within(dialog).queryByText(DELIVERY_KEY_COPY.addressLoading)).toBeNull();
+      expect(within(dialog).getByText('1 Market Street')).toBeInTheDocument();
+    }
+    await waitFor(() => expect(within(dialog).getByText('1 Market Street')).toBeInTheDocument());
+    expect(read).toHaveBeenCalledTimes(1);
+    expect(open).toHaveBeenCalledTimes(1);
+  });
+
   it('never persists the decrypted address (Dexie, localStorage, sessionStorage)', async () => {
     vi.spyOn(CommerceController, 'getOrderDeliveryAddress').mockResolvedValue({ kind: 'address', address: ADDRESS });
     const dialog = await openSealedSlip();

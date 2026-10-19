@@ -1,3 +1,6 @@
+import type { SellerPaymentBadge } from '@/libs/commerce/payment-badges';
+import type { PaymentMethodFilter } from '@/libs/commerce/payment-method-filter';
+
 export type CommerceSaleFormatFilter = 'all' | 'fixed_price' | 'auction' | 'drops';
 
 /**
@@ -55,13 +58,6 @@ export type CommerceReceiptPublicationUiStatus =
   | 'needs_marketplace_approval'
   | 'unavailable';
 
-/**
- * Why the service refused to bind USDT to an order: `usdt_unavailable` (the
- * deployment cannot take USDT yet) or `usdt_seller_not_ready` (this seller
- * cannot). Either way the same USDT bind would be refused again.
- */
-export type CommerceUsdtRefusalReason = 'usdt_unavailable' | 'usdt_seller_not_ready';
-
 export type CommerceConditionFilter = 'new' | 'like_new' | 'excellent' | 'good' | 'fair' | 'for_parts';
 export type CommerceSort = 'recommended' | 'newest' | 'price_low' | 'price_high' | 'ending_soon';
 export type CommerceLayout = 'grid' | 'list';
@@ -80,6 +76,8 @@ export interface CommerceState {
   maximumPriceMinor: number | null;
   /** Seller-declared item location filter: ISO-3166-1 alpha-2, null = anywhere. */
   countryCode: string | null;
+  /** Only listings from sellers who accept this rail; null = any. */
+  paymentMethod: PaymentMethodFilter | null;
   sort: CommerceSort;
   layout: CommerceLayout;
   selectedListingId: string | null;
@@ -89,13 +87,16 @@ export interface CommerceState {
   watchlistSyncStatus: CommerceWatchlistSyncUiStatus;
   receiptsPublicationStatus: CommerceReceiptPublicationUiStatus;
   /**
-   * USDT refusals this browser session has seen, keyed by the checkout's
-   * seller set (the seller pubky, or the pubkys joined with `|` for a
-   * multi-seller cart). Checkout and the order's payment card stop offering
-   * USDT for that key. Memory only: a reload clears it, and a different
-   * seller set has a different key.
+   * The payment badges last resolved per seller this session, written by the
+   * controller. Memory only: it lets a degraded Paykit read hold a badge
+   * instead of flickering it off (see `resolveSellerPaymentBadges`).
    */
-  usdtRefusals: Record<string, CommerceUsdtRefusalReason>;
+  sellerPaymentBadges: Record<string, SellerPaymentBadge[]>;
+  /**
+   * The seller set last read per payment method this session, written by the
+   * controller. Memory only: the filter shows it while a fresh read is in flight.
+   */
+  paymentMethodSellers: Partial<Record<PaymentMethodFilter, string[]>>;
 }
 
 export interface CommerceActions {
@@ -106,6 +107,7 @@ export interface CommerceActions {
   setConditions: (conditions: CommerceConditionFilter[]) => void;
   setPriceRange: (minimumPriceMinor: number | null, maximumPriceMinor: number | null) => void;
   setCountryCode: (countryCode: string | null) => void;
+  setPaymentMethod: (paymentMethod: PaymentMethodFilter | null) => void;
   setSort: (sort: CommerceSort) => void;
   setLayout: (layout: CommerceLayout) => void;
   setSelectedListingId: (listingId: string | null) => void;
@@ -114,7 +116,8 @@ export interface CommerceActions {
   setInventorySession: (session: CommerceMarketplaceSession | null) => void;
   setWatchlistSyncStatus: (watchlistSyncStatus: CommerceWatchlistSyncUiStatus) => void;
   setReceiptsPublicationStatus: (receiptsPublicationStatus: CommerceReceiptPublicationUiStatus) => void;
-  setUsdtRefusal: (sellerKey: string, reason: CommerceUsdtRefusalReason) => void;
+  setSellerPaymentBadges: (sellerPubky: string, badges: SellerPaymentBadge[]) => void;
+  setPaymentMethodSellers: (method: PaymentMethodFilter, sellers: string[]) => void;
   resetFilters: () => void;
   reset: () => void;
 }
@@ -130,6 +133,7 @@ export const commerceInitialState: CommerceState = {
   minimumPriceMinor: null,
   maximumPriceMinor: null,
   countryCode: null,
+  paymentMethod: null,
   sort: 'recommended',
   layout: 'grid',
   selectedListingId: null,
@@ -138,7 +142,8 @@ export const commerceInitialState: CommerceState = {
   inventorySession: null,
   watchlistSyncStatus: 'idle',
   receiptsPublicationStatus: 'idle',
-  usdtRefusals: {},
+  sellerPaymentBadges: {},
+  paymentMethodSellers: {},
 };
 
 export enum CommerceActionTypes {
@@ -149,6 +154,7 @@ export enum CommerceActionTypes {
   SET_CONDITIONS = 'SET_CONDITIONS',
   SET_PRICE_RANGE = 'SET_PRICE_RANGE',
   SET_COUNTRY = 'SET_COUNTRY',
+  SET_PAYMENT_METHOD = 'SET_PAYMENT_METHOD',
   SET_SORT = 'SET_SORT',
   SET_LAYOUT = 'SET_LAYOUT',
   SET_SELECTED_LISTING = 'SET_SELECTED_LISTING',
@@ -157,7 +163,8 @@ export enum CommerceActionTypes {
   SET_INVENTORY_SESSION = 'SET_INVENTORY_SESSION',
   SET_WATCHLIST_SYNC_STATUS = 'SET_WATCHLIST_SYNC_STATUS',
   SET_RECEIPTS_PUBLICATION_STATUS = 'SET_RECEIPTS_PUBLICATION_STATUS',
-  SET_USDT_REFUSAL = 'SET_USDT_REFUSAL',
+  SET_SELLER_PAYMENT_BADGES = 'SET_SELLER_PAYMENT_BADGES',
+  SET_PAYMENT_METHOD_SELLERS = 'SET_PAYMENT_METHOD_SELLERS',
   RESET_FILTERS = 'RESET_FILTERS',
   RESET = 'RESET',
 }

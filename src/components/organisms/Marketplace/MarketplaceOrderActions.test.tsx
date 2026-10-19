@@ -309,9 +309,11 @@ describe('MarketplaceOrderActions refund reference labels', () => {
     await user.click(screen.getByRole('button', { name: 'Record refund' }));
     expect(screen.getByLabelText('Amount (₿)')).toHaveValue('1255');
     expect(screen.queryByLabelText('Amount (USD)')).not.toBeInTheDocument();
-    expect(screen.getByTestId('bitcoin-amount-breakdown')).toHaveTextContent(
-      'Items ₿1,000 · Shipping ₿0 · Payment code ₿255 = Total ₿1,255',
-    );
+    expect(
+      within(screen.getByRole('table', { name: 'Bitcoin payment breakdown' }))
+        .getAllByRole('row')
+        .map((row) => row.textContent),
+    ).toEqual(['Items₿1,000', 'Shipping₿0', 'Payment code₿255', 'Total₿1,255']);
     await user.type(screen.getByLabelText('External Bitcoin transaction reference'), 'txid-canary-refund');
     await user.click(screen.getByRole('button', { name: 'Confirm' }));
 
@@ -461,7 +463,7 @@ describe('MarketplaceOrderActions local pickup (Wave 7, §A6)', () => {
     expect(screen.getByRole('button', { name: 'Mark ready for pickup' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Confirm handover' })).toBeInTheDocument();
     // Pickup orders never ship (§A6): no tracking, no label.
-    expect(screen.queryByRole('button', { name: 'Add tracking' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Mark shipped' })).not.toBeInTheDocument();
   });
 
   it('hides the packing-slip print affordance on pickup orders (§A5)', () => {
@@ -497,26 +499,31 @@ describe('MarketplaceOrderActions local pickup (Wave 7, §A6)', () => {
     expect(onChanged).toHaveBeenCalled();
   });
 
-  it('offers the buyer Show meeting point and Confirm handover from ready_for_pickup', () => {
+  it('offers the buyer Meeting point and Confirm handover from ready_for_pickup', () => {
     renderPickupActions({ state: 'ready_for_pickup', isBuyer: true });
 
-    expect(screen.getByRole('button', { name: 'Show meeting point' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Meeting point' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Confirm handover' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Cancel order' })).toBeInTheDocument();
+    expect(screen.getAllByRole('button').map((button) => button.textContent)).toEqual([
+      'Meeting point',
+      'Confirm handover',
+      'Cancel order',
+    ]);
   });
 
   it('withholds the meeting-point reveal once the order is terminal (§A3)', () => {
     // A delivered pickup order is NOT terminal — the buyer may still need the
     // pinned meeting point (a return is still possible).
     renderPickupActions({ state: 'delivered', isBuyer: true });
-    expect(screen.getByRole('button', { name: 'Show meeting point' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Meeting point' })).toBeInTheDocument();
   });
 
   it('hides the reveal on a cancelled pickup order — the entitlement ended at the cancel (§A3)', () => {
     // The order keeps its payment receipt — the gate is the terminal state,
     // not the receipt, per the reveal cutoff.
     renderPickupActions({ state: 'delivered', isBuyer: true, overrides: { state: 'cancelled' } });
-    expect(screen.queryByRole('button', { name: 'Show meeting point' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Meeting point' })).not.toBeInTheDocument();
   });
 
   it('warns the buyer before confirm — only once the item is in their hands', async () => {
@@ -674,7 +681,7 @@ describe('MarketplaceOrderActions digital orders (digital delivery design §6 E1
   it('offers the seller no tracking, label or packing slip on a digital order (E1)', () => {
     renderDigital('paid', false);
 
-    expect(screen.queryByRole('button', { name: 'Add tracking' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Mark shipped' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Packing slip' })).not.toBeInTheDocument();
   });
 
@@ -714,6 +721,64 @@ describe('MarketplaceOrderActions digital orders in an inconsistent shipped stat
     );
 
     expect(screen.getByRole('button', { name: 'Confirm delivery' })).toBeInTheDocument();
+  });
+});
+
+describe('MarketplaceOrderActions shipment tracking', () => {
+  const shippedWith = (carrier: string, trackingNumber: string) =>
+    createOrderFixture('shipped', {
+      fulfillment: 'shipping',
+      shipment: { carrier, trackingNumber, state: 'shipped', shippedAt: '2026-08-14T10:00:00.000Z', deliveredAt: null },
+    });
+
+  const renderShipped = (order: MarketplaceOrder, isBuyer: boolean) =>
+    render(
+      <MarketplaceOrderActions
+        order={order}
+        isBuyer={isBuyer}
+        canEditReview={false}
+        actOnOrder={vi.fn(async () => true)}
+        onChanged={vi.fn()}
+      />,
+    );
+
+  it('offers the seller Add tracking on a shipped order with no number', () => {
+    renderShipped(shippedWith('Other', ''), false);
+
+    expect(screen.getByRole('button', { name: 'Add tracking' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Mark shipped' })).not.toBeInTheDocument();
+  });
+
+  it('offers the seller Edit tracking once a number is on the order', () => {
+    renderShipped(shippedWith('UPS', '1Z999AA10123456784'), false);
+
+    expect(screen.getByRole('button', { name: 'Edit tracking' })).toBeInTheDocument();
+  });
+
+  it('offers the buyer no tracking button', () => {
+    renderShipped(shippedWith('Other', ''), true);
+    expect(screen.queryByRole('button', { name: /tracking/i })).not.toBeInTheDocument();
+  });
+
+  it('lets the seller mark an order shipped with the tracking number left empty', async () => {
+    const user = userEvent.setup();
+    const actOnOrder = vi.fn(async () => true);
+    render(
+      <MarketplaceOrderActions
+        order={createOrderFixture('paid', { fulfillment: 'shipping' })}
+        isBuyer={false}
+        canEditReview={false}
+        actOnOrder={actOnOrder}
+      />,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Mark shipped' }));
+    expect(screen.getByLabelText('Tracking number (optional)')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Confirm' }));
+
+    await waitFor(() =>
+      expect(actOnOrder).toHaveBeenCalledWith(expect.anything(), 'fulfillment.ship', { carrier: 'USPS' }),
+    );
   });
 });
 

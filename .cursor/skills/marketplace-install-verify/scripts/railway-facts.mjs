@@ -7,19 +7,20 @@
 // Only allowlisted keys are read out of each service's variables: URLs, origins, public keys,
 // the Bitcoin network and boolean switches. Secret values never leave this process.
 import { execFileSync } from 'node:child_process';
-import { parseTomlFlat } from './lib.mjs';
+import { parseTomlFlat, paykitTrustedKeys } from './lib.mjs';
 
 const ROLES = {
   service: (vars) => ({
     SERVICE_PAYKIT_SERVER_URL: vars.PAYKIT_SERVER_URL,
     SERVICE_LOCKS_SERVER_URL: vars.LOCKS_SERVER_URL,
     SERVICE_ALLOWED_ORIGINS: vars.ALLOWED_ORIGINS,
+    SERVICE_PUBLIC_APP_ORIGIN: vars.PUBLIC_APP_ORIGIN,
     SERVICE_SANDBOX_PAYMENTS_ENABLED: vars.SANDBOX_PAYMENTS_ENABLED ?? 'false',
   }),
   paykit: (vars) => {
     const toml = parseTomlFlat(vars.PAYKIT_CONFIG_TOML ?? '');
     return {
-      PAYKIT_TRUSTED_LOCKS_KEY: toml['locks.trusted_public_key'],
+      PAYKIT_TRUSTED_LOCKS_KEY: paykitTrustedKeys(toml)?.join(','),
       PAYKIT_SETUP_ALLOWED_ORIGINS: toml['setup.allowed_origins'] && JSON.stringify(toml['setup.allowed_origins']),
       PAYKIT_BITCOIN_NETWORK: toml['bitcoin.network'],
       PAYKIT_LOG_AUTHORIZATION_URL:

@@ -3,8 +3,9 @@
 //
 // The seller seat gets a temporary PayPal rail and one "TEST, do not buy <run>" listing;
 // the buyer seat checks it out up to the payment-method step (Pay is never clicked);
-// teardown deletes the listing, restores the seller's PayPal rail to exactly its value before setup,
-// revokes every marketplace session either seat gained during the run, and verifies all of it.
+// teardown deletes the listing and any seller storefront the run published, restores the seller's PayPal rail to
+// exactly its value before setup, revokes every marketplace session either seat gained during the run, and verifies
+// all of it.
 // Without a state file (nothing was set up) teardown and verify change and check nothing.
 //
 //   node production-paypal-fixture.mjs proof      setup → buyer checkout → teardown → verify (always tears down)
@@ -18,19 +19,29 @@
 // Env: PROOF_EVIDENCE (required; state and results are written there), seats (see seats.mjs),
 // PAYPAL_TEST_EMAIL (required for setup and proof, and for a teardown that restores it; never logged or
 // written to disk), EXPECTED_DPL (optional,
-// checked before checkout), PROOF_ORIGIN, PROOF_SERVICE, PROOF_NEXUS, PROOF_RELAY, PROOF_FIXTURE_PHOTO.
+// checked before checkout), PROOF_ORIGIN (with the mount path when embedded), PROOF_SERVICE, PROOF_NEXUS, PROOF_RELAY, PROOF_FIXTURE_PHOTO.
 // Exit 0 only when every check passed; teardown and verify exit 1 while anything is left behind.
 import { spawnSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { chmodSync, existsSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { evidenceDir, loadBuyerSeat, loadSellerSeat, prefix, repoRequire, shopCapabilities } from './seats.mjs';
+import { purchaseFailure } from './listing-purchase.mjs';
+import {
+  evidenceDir,
+  loadBuyerSeat,
+  loadSellerSeat,
+  prefix,
+  proofTarget,
+  repoRequire,
+  shopCapabilities,
+} from './seats.mjs';
+import { removeRunStorefront, storefrontExists } from './storefront-cleanup.mjs';
 
 const { chromium } = repoRequire('playwright');
 const { AuthFlowKind, Pubky } = repoRequire('@synonymdev/pubky');
 
-const ORIGIN = process.env.PROOF_ORIGIN ?? 'https://shop.pubky.app';
+const { origin: ORIGIN, at } = proofTarget();
 const SERVICE = process.env.PROOF_SERVICE ?? 'https://marketplace-service-production-ce23.up.railway.app';
 const NEXUS = process.env.PROOF_NEXUS ?? 'https://nexusd-production-7108.up.railway.app';
 const RELAY = process.env.PROOF_RELAY ?? 'https://httprelay.pubky.app/inbox';
@@ -118,14 +129,17 @@ async function copyAuthUrl(page, label) {
 }
 
 async function ringSignIn(page, seat) {
-  await page.goto(`${ORIGIN}/sign-in`, { waitUntil: 'domcontentloaded', timeout: 180_000 });
+  await page.goto(at('/sign-in'), { waitUntil: 'domcontentloaded', timeout: 180_000 });
   await waitForAppReady(page);
   await new Pubky().signer(seat).approveAuthRequest(await copyAuthUrl(page, 'Copy authentication link'));
   await page.waitForFunction(
     (expected) => {
       const raw = localStorage.getItem('shop-auth-store') ?? localStorage.getItem('auth-store');
       const state = raw ? (JSON.parse(raw).state ?? {}) : {};
-      return state.currentUserPubky === expected && typeof state.sessionExport === 'string';
+      return (
+        state.currentUserPubky === expected &&
+        (typeof state.grantSessionRecordId === 'string' || typeof state.sessionExport === 'string')
+      );
     },
     seat.publicKey.z32(),
     { timeout: 180_000 },
@@ -152,8 +166,66 @@ async function approveMarketplaceSession(page, seat) {
   }
 }
 
+// Clicks the listing's Buy button and approves "Enable purchases" as the buyer when the Shop asks for it, then opens
+// the cart. Returns what it observed; `purchaseFailure` decides whether the listing reached the cart.
+async function buyListing(page, seat) {
+  const observed = { buyEnabled: false, enablePurchases: false };
+  // Buy renders at once and stays disabled until the listing's availability has loaded.
+  observed.buyEnabled = await page
+    .waitForFunction(
+      () => [...document.querySelectorAll('button')].some((el) => el.textContent?.trim() === 'Buy' && !el.disabled),
+      null,
+      { timeout: 60_000 },
+    )
+    .then(
+      () => true,
+      () => false,
+    );
+  if (!observed.buyEnabled) return observed;
+  await page.getByRole('button', { name: 'Buy', exact: true }).first().click();
+  const dialog = page.getByRole('dialog').filter({ hasText: 'Enable purchases' }).first();
+  observed.enablePurchases = await dialog.waitFor({ state: 'visible', timeout: 10_000 }).then(
+    () => true,
+    () => false,
+  );
+  if (observed.enablePurchases) {
+    observed.approvalLink = await page
+      .waitForFunction(
+        () => {
+          const button = document.querySelector('[role="dialog"] [aria-label="Copy authorization link"]');
+          return Boolean(button && !button.disabled);
+        },
+        null,
+        { timeout: 60_000 },
+      )
+      .then(
+        () => true,
+        () => false,
+      );
+    if (!observed.approvalLink) return observed;
+    await new Pubky().signer(seat).approveAuthRequest(await copyAuthUrl(page, 'Copy authorization link'));
+    observed.dialogClosed = await dialog.waitFor({ state: 'hidden', timeout: 120_000 }).then(
+      () => true,
+      () => false,
+    );
+    if (!observed.dialogClosed) return observed;
+  }
+  await page.waitForTimeout(1200);
+  await page.goto(at('/marketplace/cart'), { waitUntil: 'domcontentloaded' });
+  await waitForAppReady(page);
+  observed.cartHasCheckout = await page
+    .getByTestId('marketplace-cart-checkout')
+    .first()
+    .waitFor({ state: 'visible', timeout: 30_000 })
+    .then(
+      () => true,
+      () => false,
+    );
+  return observed;
+}
+
 async function signOut(page) {
-  await page.goto(`${ORIGIN}/settings/account`, { waitUntil: 'domcontentloaded' });
+  await page.goto(at('/settings/account'), { waitUntil: 'domcontentloaded' });
   await waitForAppReady(page);
   const button = page.locator('#sign-out-btn');
   await button.waitFor({ state: 'visible', timeout: 30_000 });
@@ -166,7 +238,7 @@ async function signOut(page) {
 // The field renders only after the seller's own payment config loaded without error, so its value is the
 // stored rail ('' when none is set).
 async function openPaypalField(page) {
-  await page.goto(`${ORIGIN}/marketplace/settings`, { waitUntil: 'domcontentloaded' });
+  await page.goto(at('/marketplace/settings'), { waitUntil: 'domcontentloaded' });
   await waitForAppReady(page);
   await approveMarketplaceSession(page, seller);
   const field = page.locator('#get-paid-paypal');
@@ -209,7 +281,7 @@ async function pickCategoryLeaf(page) {
 }
 
 async function fillShippingListing(page, title) {
-  await page.goto(`${ORIGIN}/marketplace/sell`, { waitUntil: 'domcontentloaded' });
+  await page.goto(at('/marketplace/sell'), { waitUntil: 'domcontentloaded' });
   await waitForAppReady(page);
   const discard = page.getByRole('button', { name: 'Discard draft and start fresh' });
   if (await discard.isVisible().catch(() => false)) {
@@ -265,7 +337,7 @@ async function fillShippingListing(page, title) {
 }
 
 async function emptyCart(page) {
-  await page.goto(`${ORIGIN}/marketplace/cart`, { waitUntil: 'domcontentloaded' });
+  await page.goto(at('/marketplace/cart'), { waitUntil: 'domcontentloaded' });
   await waitForAppReady(page);
   for (let n = 0; n < 8; n += 1) {
     const remove = page.getByRole('button', { name: /^Remove / }).first();
@@ -336,7 +408,9 @@ async function revokeRunSessions(seat, runStart) {
 async function setup() {
   const runStart = Date.now();
   const title = `${TITLE_BASE} ${randomBytes(3).toString('hex')}`;
-  let base = { runStart, listingTitle: title, listingId: null };
+  // Publishing makes the Shop write the seller's default storefront, so teardown needs the state before setup.
+  const storefrontBefore = await storefrontExists(new Pubky().publicStorage, sellerPubky);
+  let base = { runStart, listingTitle: title, listingId: null, storefrontBefore };
   writeState({ ...base, phase: 'paypal-read' });
   const { browser, page } = await openBrowser();
   try {
@@ -376,28 +450,24 @@ async function checkout() {
   const { browser, page, commands } = await openBrowser();
   try {
     if (process.env.EXPECTED_DPL) {
-      const dpl = ((await (await fetch(`${ORIGIN}/marketplace`)).text()).match(/dpl_[A-Za-z0-9]+/) || [])[0] || null;
+      const dpl = ((await (await fetch(at('/marketplace'))).text()).match(/dpl_[A-Za-z0-9]+/) || [])[0] || null;
       check('checkout: expected deployment is live', dpl === process.env.EXPECTED_DPL, String(dpl));
     }
     await ringSignIn(page, buyer);
     log(`buyer ${prefix(buyer.publicKey.z32())} signed in`);
     await emptyCart(page);
-    await page.goto(`${ORIGIN}${listingPath(state.listingId)}`, { waitUntil: 'domcontentloaded', timeout: 180_000 });
+    await page.goto(at(listingPath(state.listingId)), { waitUntil: 'domcontentloaded', timeout: 180_000 });
     await waitForAppReady(page);
-    const add = page.getByRole('button', { name: 'Add to cart', exact: true }).first();
-    const addVisible = await add.waitFor({ state: 'visible', timeout: 60_000 }).then(
-      () => true,
-      () => false,
-    );
+    const observed = await buyListing(page, buyer);
+    const failure = purchaseFailure(observed);
     if (
-      check('checkout: fixture listing has an enabled Add to cart for the buyer', addVisible && (await add.isEnabled()))
+      check(
+        'checkout: Buy put the fixture listing in the buyer\'s cart (after "Enable purchases" when the Shop asked)',
+        failure === null,
+        failure ?? `enablePurchases=${observed.enablePurchases}`,
+      )
     ) {
-      await add.click();
-      await page.waitForTimeout(1200);
-      await page.goto(`${ORIGIN}/marketplace/cart`, { waitUntil: 'domcontentloaded' });
-      await waitForAppReady(page);
       const go = page.getByTestId('marketplace-cart-checkout').first();
-      await go.waitFor({ state: 'visible', timeout: 30_000 });
       const configResponse = page.waitForResponse(
         (response) =>
           response.request().method() === 'GET' &&
@@ -452,7 +522,7 @@ async function teardown() {
     let ids = state.listingId ? [state.listingId] : [];
     if (state.listingTitle && ids.length === 0) ids = (await nexusListingsByTitle(state.listingTitle)).ids;
     for (const id of ids) {
-      await page.goto(`${ORIGIN}${listingPath(id)}`, { waitUntil: 'domcontentloaded' });
+      await page.goto(at(listingPath(id)), { waitUntil: 'domcontentloaded' });
       await waitForAppReady(page);
       await approveMarketplaceSession(page, seller);
       const openDelete = page.getByRole('button', { name: /^Delete$/i }).first();
@@ -524,22 +594,16 @@ async function verify() {
     const { browser, page } = await openBrowser();
     try {
       for (const id of ids) {
-        await page.goto(`${ORIGIN}${listingPath(id)}`, { waitUntil: 'domcontentloaded', timeout: 180_000 });
+        await page.goto(at(listingPath(id)), { waitUntil: 'domcontentloaded', timeout: 180_000 });
         await page.waitForTimeout(8000);
         const shop = await page.evaluate(
           (title) => ({
             title: [...document.querySelectorAll('h1')].some((node) => node.textContent?.trim() === title),
-            addToCart: [...document.querySelectorAll('button')].some(
-              (node) => node.textContent?.trim() === 'Add to cart',
-            ),
+            buy: [...document.querySelectorAll('button')].some((node) => node.textContent?.trim() === 'Buy'),
           }),
           state.listingTitle,
         );
-        check(
-          `verify: Shop page no longer shows ${id.slice(0, 8)}`,
-          !shop.title && !shop.addToCart,
-          JSON.stringify(shop),
-        );
+        check(`verify: Shop page no longer shows ${id.slice(0, 8)}`, !shop.title && !shop.buy, JSON.stringify(shop));
       }
     } finally {
       await browser.close();
@@ -607,12 +671,32 @@ for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP']) {
   });
 }
 
+// Needs no browser, so it runs even when the browser part of teardown failed. A state file from a version of this
+// script that did not record `storefrontBefore` has no before-state, which fails closed.
+async function removeSellerStorefront() {
+  const state = readState();
+  if (!state?.runStart) return;
+  const cleanup = await removeRunStorefront({
+    publicStorage: new Pubky().publicStorage,
+    signer: new Pubky().signer(seller),
+    pubky: sellerPubky,
+    existedBefore: 'storefrontBefore' in state ? state.storefrontBefore : null,
+    nexus: NEXUS,
+  }).catch((error) => ({ ok: false, error: String(error?.message ?? error) }));
+  check(
+    'teardown: no seller storefront the run published (gone from the homeserver and Nexus, or pre-existing and kept)',
+    cleanup.ok,
+    JSON.stringify(cleanup),
+  );
+}
+
 async function tearDownAndVerify() {
   try {
     await teardown();
   } catch (error) {
     check('teardown completed', false, String(error?.message ?? error).slice(0, 240));
   }
+  await removeSellerStorefront();
   await verify();
 }
 

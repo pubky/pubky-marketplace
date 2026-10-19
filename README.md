@@ -55,12 +55,12 @@ Project documents (launch plan, team brief, SSO, upstream briefs):
   reviews, reputation aggregates, and signed order receipts published to
   the participants' own homeservers ("credible exit": operator death leaves
   verifiable history).
-- **E2EE messaging & DMs (beta)** — listing chat and general direct messages
-  over Paykit Encrypted Links (Noise XX), vendored browser WASM binding; no
-  operator can read bodies. It needs a Pubky Ring cookie session, so Bitkit
-  and Passport sign-ins have no messaging. The next chat stack and its inbox
-  service are owned by other teams; Shop messages are deferred until they land
-  ([`docs/ecommerce/messaging/README.md`](docs/ecommerce/messaging/README.md)).
+- **Private messages** — buyer↔seller chat as end-to-end encrypted files on
+  the sender's own homeserver, delivered live through homeserver event
+  streams and the Pubky inbox, with history and read state that follow the
+  account across devices. No operator can read a body. Works with Ring,
+  Bitkit and Passport sign-ins
+  ([`docs/chat/README.md`](docs/chat/README.md), ADR 0030).
 - **Watchlist with private cross-device sync** (`/priv` homeserver
   documents), saved searches, device-honest alerts.
 - **Honesty architecture** — commerce modes fail closed
@@ -70,7 +70,7 @@ Project documents (launch plan, team brief, SSO, upstream briefs):
 
 Start with [`docs/ecommerce/status.md`](docs/ecommerce/status.md) (what is
 real vs simulated, per mode, with a reproducible proof ledger) and ADRs
-0019–0029 in [`docs/adr/`](docs/adr/).
+0019–0030 in [`docs/adr/`](docs/adr/).
 
 ## Prerequisites
 

@@ -3,7 +3,7 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
 import { orderAmountEntry } from '@/libs/commerce/bitcoin-payment-code';
-import { getCarrierById, OTHER_CARRIER_ID } from '@/libs/commerce/carriers';
+import { resolveTrackingCarrierName } from '@/libs/commerce/order-tracking';
 import { isUsdtRefundOrder, normalizeArbitrumTxHash } from '@/libs/commerce/usdt-refund';
 import type { MarketplaceOrder } from '@/services/marketplace/marketplace';
 import {
@@ -58,13 +58,13 @@ export function useMarketplaceOrderAction(
           // The service's `carrier` field is a structured free string; the
           // curated select writes the registry's canonical display name into
           // it (resolvable back to a tracking link on the buyer side), and
-          // "Other" passes the seller's own carrier name through verbatim.
+          // "Other" passes the seller's own carrier name through verbatim, or
+          // `Other` when none was given. The tracking number is optional: a
+          // blank one is left out and added later with
+          // `fulfillment.update_tracking`.
           succeeded = await actOnOrder(order, 'fulfillment.ship', {
-            carrier:
-              data.carrierChoice === OTHER_CARRIER_ID
-                ? data.carrier
-                : (getCarrierById(data.carrierChoice)?.name ?? data.carrier),
-            trackingNumber: data.trackingNumber,
+            carrier: resolveTrackingCarrierName(data.carrierChoice, data.carrier),
+            ...(data.trackingNumber ? { trackingNumber: data.trackingNumber } : {}),
           });
           break;
         case 'return':

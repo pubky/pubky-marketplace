@@ -9,7 +9,11 @@ import { useAuthStore } from '@/stores/auth/auth.store';
 import { asOpaque } from '@/test-utils/type-assertions';
 import { CommerceHomeserverService } from './commerce/commerce';
 import { HomeserverService } from './homeserver';
-import { installHomeserverWriteRetryDependenciesForTests } from './write-retry';
+import {
+  HOMESERVER_PUBLISH_CONFLICT_MESSAGE,
+  installHomeserverWriteRetryDependenciesForTests,
+  isHomeserverPublishConflict,
+} from './write-retry';
 
 const mockState = vi.hoisted(() => ({
   putJson: vi.fn(),
@@ -57,6 +61,13 @@ function requestError(statusCode: number, extra: Record<string, unknown> = {}): 
   return Object.assign(new Error(`Request failed: Server responded with an error: ${statusCode}`), {
     name: 'RequestError',
     data: { statusCode, ...extra },
+  });
+}
+
+function conflictError(body: string): Error {
+  return Object.assign(new Error(`Request failed: Server responded with an error: 409 Conflict - ${body}`), {
+    name: 'RequestError',
+    data: { statusCode: 409 },
   });
 }
 
@@ -207,6 +218,34 @@ describe('homeserver writes route through the shared retry policy', () => {
     expect(Array.from(seen[1])).toEqual([7, 8, 9]);
     expect(seen[0]).not.toBe(seen[1]);
     expect(Array.from(bytes)).toEqual([7, 8, 9]);
+  });
+
+  it('retries a listing PUT refused by the backend publish conflict and does not retry a path collision', async () => {
+    mockState.putJson
+      .mockRejectedValueOnce(conflictError(HOMESERVER_PUBLISH_CONFLICT_MESSAGE))
+      .mockResolvedValueOnce(undefined);
+    await CommerceHomeserverService.putJson(LISTING_URL, { name: 'boots' });
+    expect(mockState.putJson).toHaveBeenCalledTimes(2);
+    expect(mockState.putJson).toHaveBeenNthCalledWith(2, '/pub/pubky.app/marketplace/v1/listings/boots', {
+      name: 'boots',
+    });
+
+    mockState.putJson.mockReset().mockRejectedValue(conflictError('File/folder path collision'));
+    await expect(CommerceHomeserverService.putJson(LISTING_URL, { name: 'boots' })).rejects.toMatchObject({
+      context: { statusCode: 409 },
+    });
+    expect(mockState.putJson).toHaveBeenCalledOnce();
+  });
+
+  it('a single-attempt write surfaces the publish conflict for its caller to retry', async () => {
+    mockState.delete.mockRejectedValueOnce(conflictError(HOMESERVER_PUBLISH_CONFLICT_MESSAGE));
+
+    const error = await CommerceHomeserverService.delete(LISTING_URL, undefined, { singleAttempt: true }).catch(
+      (thrown: unknown) => thrown,
+    );
+
+    expect(mockState.delete).toHaveBeenCalledOnce();
+    expect(isHomeserverPublishConflict(error)).toBe(true);
   });
 
   it('retries a non-owned PUT when the fetch response is 429 and stops on 400', async () => {

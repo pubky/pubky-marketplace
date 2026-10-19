@@ -26,6 +26,12 @@ import {
   sellerPaymentReviewReasonSchema,
 } from '@/libs/commerce/marketplace-payment-review';
 import {
+  type PaymentMethodFilter,
+  type PaymentMethodSellersPage,
+  paymentMethodSellersPageSchema,
+} from '@/libs/commerce/payment-method-filter';
+import {
+  type BindDeliveryAddress,
   type PaymentMethodKind,
   type SellerPaymentConfig,
   type SellerPaymentConfigOwnView,
@@ -44,7 +50,7 @@ import {
   pickupRefusalFailureMessage,
 } from '@/libs/commerce/pickup';
 import {
-  type MarketplacePrivKeysResult,
+  type MarketplacePrivKeysRead,
   marketplacePrivKeysSchema,
   privKeyringFromResponse,
 } from '@/libs/commerce/priv-keys';
@@ -61,6 +67,7 @@ import { httpResponseToError, safeFetch } from '@/libs/error/error.http';
 import { ErrorService } from '@/libs/error/error.types';
 import { HttpStatusCode } from '@/libs/http/http.types';
 import { PARSE_JSON_WITH_BODY_EXCERPT, parseResponseOrThrow } from '@/libs/http/response.utils';
+import { marketplaceSessionRequired } from './marketplace-approval-failure';
 import { reportMarketplaceNotificationInvalidTypes } from './marketplace-notification-diagnostics';
 import {
   listingHasSellerReserveAuthority,
@@ -129,6 +136,7 @@ const TRANSACTION_SERVICE_COMMAND_KINDS: ReadonlySet<MarketplaceCommand['kind']>
   'payment.prepare_locks',
   'payment.register_locks',
   'fulfillment.ship',
+  'fulfillment.update_tracking',
   'fulfillment.confirm_delivery',
   // Local pickup (Wave 7 safe subset, §A7): the sealed-details commands and
   // the pickup handover path. The service refuses them on sandbox-payments
@@ -809,7 +817,7 @@ export class MarketplaceTransactionService {
    * otherwise and 503 `priv_keys_unavailable` when the deployment holds no
    * sealing key. Never cached: the request asks for `no-store`.
    */
-  static async getPrivKeys(actor: string): Promise<MarketplacePrivKeysResult> {
+  static async getPrivKeys(actor: string): Promise<MarketplacePrivKeysRead> {
     const operation = 'getPrivKeys';
     this.assertTransactionServiceMode(operation);
     const session = this.requireSession(operation, actor);
@@ -821,11 +829,17 @@ export class MarketplaceTransactionService {
       operation,
     );
     this.throwIfSessionRejected(response.status, operation, session.token);
-    if (response.status === HttpStatusCode.FORBIDDEN || response.status === HttpStatusCode.SERVICE_UNAVAILABLE) {
+    if (
+      response.status === HttpStatusCode.FORBIDDEN ||
+      response.status === HttpStatusCode.SERVICE_UNAVAILABLE ||
+      response.status === HttpStatusCode.CONFLICT
+    ) {
       const code = await response
+        .clone()
         .json()
         .then((body: unknown) => z.object({ error: z.object({ code: z.string() }) }).parse(body).error.code)
         .catch(() => null);
+      if (response.status === HttpStatusCode.CONFLICT && code === 'custody_released') return { kind: 'released' };
       if (response.status === HttpStatusCode.FORBIDDEN && code === 'needs_reauth') return { kind: 'needs_reauth' };
       if (response.status === HttpStatusCode.SERVICE_UNAVAILABLE && code === 'priv_keys_unavailable') {
         return { kind: 'unavailable' };
@@ -847,6 +861,61 @@ export class MarketplaceTransactionService {
       });
     }
     return { kind: 'keys', keyring };
+  }
+
+  /**
+   * `POST /v1/me/priv-keys/release`: asks the service to drop its sealed
+   * copies of the owner's data keys, named by `keyIds`, after the owner's own
+   * wrapped copies were written and read back (priv-encryption Phase 4). The
+   * service refuses with 409 `key_set_changed` when `keyIds` is not exactly the
+   * set it holds, so a key issued since the read is never dropped unseen. After
+   * a release the service answers key reads with `custody_released` and never
+   * creates a key for that owner again. Repeating a completed release succeeds.
+   * Resolves `released` once the service holds no key for the owner;
+   * `needs_reauth` and `unavailable` mirror {@link getPrivKeys}; `key_set_changed`
+   * tells the caller to read the keys again.
+   */
+  static async releasePrivKeyCustody(
+    actor: string,
+    keyIds: readonly string[],
+  ): Promise<'released' | 'needs_reauth' | 'unavailable' | 'key_set_changed'> {
+    const operation = 'releasePrivKeyCustody';
+    this.assertTransactionServiceMode(operation);
+    const session = this.requireSession(operation, actor);
+    const url = `${getMarketplaceUrl()}/v1/me/priv-keys/release`;
+    const response = await safeFetch(
+      url,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${session.token}` },
+        body: JSON.stringify({ key_ids: keyIds }),
+        cache: 'no-store',
+      },
+      ErrorService.Marketplace,
+      operation,
+    );
+    this.throwIfSessionRejected(response.status, operation, session.token);
+    if (response.ok) {
+      const raw = await parseResponseOrThrow<unknown>(response, ErrorService.Marketplace, operation, url);
+      this.parseProjection(
+        operation,
+        z.object({ released: z.literal(true) }).passthrough(),
+        toCamelCaseWire(raw),
+        'Marketplace returned an invalid private key release.',
+      );
+      return 'released';
+    }
+    const code = await response
+      .clone()
+      .json()
+      .then((body: unknown) => z.object({ error: z.object({ code: z.string() }) }).parse(body).error.code)
+      .catch(() => null);
+    if (response.status === HttpStatusCode.FORBIDDEN && code === 'needs_reauth') return 'needs_reauth';
+    if (response.status === HttpStatusCode.SERVICE_UNAVAILABLE && code === 'priv_keys_unavailable') {
+      return 'unavailable';
+    }
+    if (response.status === HttpStatusCode.CONFLICT && code === 'key_set_changed') return 'key_set_changed';
+    throw httpResponseToError(response, ErrorService.Marketplace, operation, url);
   }
 
   /**
@@ -1005,6 +1074,34 @@ export class MarketplaceTransactionService {
   }
 
   /**
+   * `GET /v0/payment-methods/{method}/sellers` — deliberately public (no
+   * bearer): one page of the sellers whose stored configuration has `method`
+   * enabled, for the marketplace payment-method filter. Seller keys only.
+   */
+  static async getPaymentMethodSellers(
+    method: PaymentMethodFilter,
+    after: string | null,
+  ): Promise<PaymentMethodSellersPage> {
+    this.assertTransactionServiceMode('getPaymentMethodSellers');
+    const query = after ? `?after=${encodeURIComponent(after)}` : '';
+    const url = `${getMarketplaceUrl()}/v0/payment-methods/${encodeURIComponent(method)}/sellers${query}`;
+    const response = await safeFetch(
+      url,
+      { method: 'GET', signal: AbortSignal.timeout(SELLER_PAYMENT_CONFIG_TIMEOUT_MS) },
+      ErrorService.Marketplace,
+      'getPaymentMethodSellers',
+    );
+    await this.throwPaymentMethodError(response, 'getPaymentMethodSellers');
+    const raw = await parseResponseOrThrow<unknown>(response, ErrorService.Marketplace, 'getPaymentMethodSellers', url);
+    return this.parseProjection(
+      'getPaymentMethodSellers',
+      paymentMethodSellersPageSchema,
+      toCamelCaseWire(raw),
+      'Marketplace returned an invalid payment-method seller page.',
+    );
+  }
+
+  /**
    * `GET /v0/sellers/me/payment-config` — the seller's own STORED
    * configuration (no paykit availability lookup). `null` when nothing was
    * ever saved.
@@ -1049,12 +1146,17 @@ export class MarketplaceTransactionService {
    * `bitcoin` creates the signed Paykit payment request inside the same
    * transaction, so a paykit refusal leaves the order unbound and retryable.
    */
-  static async bindPaymentMethod(actor: string, orderId: string, method: PaymentMethodKind): Promise<MarketplaceOrder> {
+  static async bindPaymentMethod(
+    actor: string,
+    orderId: string,
+    method: PaymentMethodKind,
+    delivery?: BindDeliveryAddress,
+  ): Promise<MarketplaceOrder> {
     const raw = await this.paymentMethodRequest(
       'bindPaymentMethod',
       actor,
       `/v0/orders/${encodeURIComponent(orderId)}/payment-method`,
-      { method: 'POST', body: { method }, boundPaymentMethod: method },
+      { method: 'POST', body: { method, ...delivery }, boundPaymentMethod: method },
     );
     return this.parseOrderEnvelope('bindPaymentMethod', raw);
   }
@@ -1249,7 +1351,6 @@ export class MarketplaceTransactionService {
       // A non-JSON failure body falls through to the generic parse error.
       return;
     }
-    const usdtBind = boundPaymentMethod === 'usdt';
     throw Err.client(
       ClientErrorCode.BAD_REQUEST,
       marketplacePaymentMethodReasonMessage(reason ?? serviceCode, boundPaymentMethod),
@@ -1260,7 +1361,7 @@ export class MarketplaceTransactionService {
           statusCode: response.status,
           ...(reason ? { reason } : {}),
           ...(serviceCode ? { serviceCode } : {}),
-          ...(usdtBind ? { paymentMethod: 'usdt' } : {}),
+          ...(boundPaymentMethod === 'paykit' ? { paymentMethod: boundPaymentMethod } : {}),
         },
       },
     );
@@ -1322,10 +1423,9 @@ export class MarketplaceTransactionService {
   private static requireSession(operation: string, actor: string): { token: string; pubky: string } {
     const session = MarketplaceSessionService.getActiveSession();
     if (!session) {
-      throw Err.auth(
-        AuthErrorCode.SESSION_EXPIRED,
+      throw marketplaceSessionRequired(
         'A marketplace session is required. Approve the marketplace connection on your signer and try again.',
-        { service: ErrorService.Marketplace, operation },
+        operation,
       );
     }
     if (session.pubky !== actor) {

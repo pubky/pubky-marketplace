@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { EyeOff, LinkIcon, PencilLine, Play, Star, Trash2 } from 'lucide-react';
 import { getMarketplaceListingEditRoute, getMarketplaceListingRoute, MARKETPLACE_ROUTES } from '@/app/routes';
@@ -17,10 +17,12 @@ import {
 } from '@/atoms/Dialog/Dialog';
 import { Link } from '@/atoms/Link/Link';
 import { Typography } from '@/atoms/Typography/Typography';
-import { withBasePath } from '@/config/base-path';
+import { withPublicPath } from '@/config/base-path';
 import { CommerceController } from '@/controllers/commerce/commerce';
-import { LISTING_PUBLISH_BLOCK_COPY } from '@/libs/commerce/listing-publish-guards';
-import type { CommerceListingRecord } from '@/libs/commerce/marketplace-records';
+import { evaluateListingActivationGuards } from '@/hooks/useCreateMarketplaceListing/useCreateMarketplaceListing';
+import type { AuctionPhase } from '@/libs/commerce/auction-phase';
+import { LISTING_PUBLISH_BLOCK_COPY, listingPublishBlockToast } from '@/libs/commerce/listing-publish-guards';
+import { commerceListingProjectionIsStale, type CommerceListingRecord } from '@/libs/commerce/marketplace-records';
 import { AuthErrorCode } from '@/libs/error/error.codes';
 import { isAppError } from '@/libs/error/error.utils';
 import { Logger } from '@/libs/logger/logger';
@@ -29,12 +31,17 @@ import {
   isListingRegistrationPending,
 } from '@/models/commerce/commerce.schema';
 import { toast } from '@/molecules/Toaster/use-toast';
+import type { MarketplaceListingProjection } from '@/services/marketplace/marketplace';
 import { useAuthStore } from '@/stores/auth/auth.store';
 import { useCommerceStore } from '@/stores/commerce/commerce.store';
 
 export interface MarketplaceListingOwnerPanelProps {
   record: CommerceListingRecord;
   registrationStatus?: CommerceListingRegistrationStatus;
+  /** The transaction service's projection of the listing, when the page has read one. */
+  projection?: MarketplaceListingProjection | null;
+  /** The page's auction phase, which also counts the service's close and anti-sniping extensions. */
+  auctionPhase?: AuctionPhase;
 }
 
 /**
@@ -44,7 +51,12 @@ export interface MarketplaceListingOwnerPanelProps {
  * would pull terms bidders already acted on, so only fixed-price listings
  * offer the pause/relist toggle.
  */
-export function MarketplaceListingOwnerPanel({ record, registrationStatus }: MarketplaceListingOwnerPanelProps) {
+export function MarketplaceListingOwnerPanel({
+  record,
+  registrationStatus,
+  projection,
+  auctionPhase,
+}: MarketplaceListingOwnerPanelProps) {
   // Self-heal: listings published before durable-mode registration existed
   // (or while it failed) have no aggregate on the transaction service, which
   // makes them un-buyable. Registration is idempotent, so re-run it whenever
@@ -69,13 +81,28 @@ export function MarketplaceListingOwnerPanel({ record, registrationStatus }: Mar
 
   const canRegister = CommerceController.canRegisterListings();
   const registrationPending = isListingRegistrationPending({ registration_status: registrationStatus });
+  // A registered listing whose projection lags its record heals the same way: for a registered aggregate the
+  // registration sends `listing.sync`, which re-derives the service's terms from the record. Each staleness
+  // (record revision against server revision) is healed once, because every attempt can rewrite the local
+  // row and so hand this panel a new record.
+  const staleKey =
+    projection && commerceListingProjectionIsStale(record, projection)
+      ? `${record.revision}:${projection.serverRevision}`
+      : null;
+  const healedStaleKey = useRef<string | null>(null);
   // Not while this panel is committing: Unlist and Relist stage the row as pending registration before they
   // write, and a heal started from that staged row races the publish for it. The effect runs again when the
   // commit ends, so a registration the commit left pending is still retried.
   useEffect(() => {
-    if (!registrationPending || !marketplaceSession || !canRegister || isMutating) return;
+    if (!marketplaceSession || !canRegister || isMutating) return;
+    if (registrationPending) {
+      void CommerceController.ensureListingRegistered(record);
+      return;
+    }
+    if (staleKey === null || healedStaleKey.current === staleKey) return;
+    healedStaleKey.current = staleKey;
     void CommerceController.ensureListingRegistered(record);
-  }, [record, registrationPending, marketplaceSession, canRegister, isMutating]);
+  }, [record, registrationPending, staleKey, marketplaceSession, canRegister, isMutating]);
 
   const router = useRouter();
   // A page opened in a fresh tab renders from the persisted pubky before the homeserver session is restored;
@@ -83,10 +110,22 @@ export function MarketplaceListingOwnerPanel({ record, registrationStatus }: Mar
   const hasHomeserverSession = useAuthStore((state) => state.session !== null);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const canToggleVisibility = record.sale.format === 'fixed_price' && ['active', 'paused'].includes(record.state);
+  const displayState = record.state === 'active' && auctionPhase === 'ended' ? 'ended' : record.state;
 
   const setListingState = async (state: 'active' | 'paused') => {
     setIsMutating(true);
     try {
+      if (state === 'active') {
+        const blocked = await evaluateListingActivationGuards({
+          ownerPubky: record.ownerPubky,
+          hasMarketplaceSession: Boolean(marketplaceSession),
+          records: [record],
+        });
+        if (blocked) {
+          toast(listingPublishBlockToast(blocked));
+          return;
+        }
+      }
       await CommerceController.commitUpsertListing({
         ...record,
         revision: record.revision + 1,
@@ -147,7 +186,7 @@ export function MarketplaceListingOwnerPanel({ record, registrationStatus }: Mar
   };
 
   const copyLink = async () => {
-    const url = `${window.location.origin}${withBasePath(getMarketplaceListingRoute(record.ownerPubky, record.listingId))}`;
+    const url = `${window.location.origin}${withPublicPath(getMarketplaceListingRoute(record.ownerPubky, record.listingId))}`;
     try {
       await navigator.clipboard.writeText(url);
       toast({ title: 'Link copied', description: 'Share it anywhere — the listing page is public.' });
@@ -165,8 +204,12 @@ export function MarketplaceListingOwnerPanel({ record, registrationStatus }: Mar
             <Typography as="p" className="text-sm leading-5 font-semibold">
               Your listing
             </Typography>
-            <Badge variant="secondary" className={record.state === 'active' ? 'bg-brand/24 text-brand' : undefined}>
-              {record.state}
+            <Badge
+              variant="secondary"
+              className={displayState === 'active' ? 'bg-brand/24 text-brand' : undefined}
+              data-testid="listing-owner-state"
+            >
+              {displayState}
             </Badge>
           </div>
           {registrationPending && !canRegister && (

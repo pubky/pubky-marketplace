@@ -1,5 +1,5 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { COMMERCE_LISTING_MAX_QUANTITY } from '@/config/commerce';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import { commerceListingRecordSchema } from '@/libs/commerce/marketplace-records';
@@ -7,6 +7,12 @@ import { toast } from '@/molecules/Toaster/use-toast';
 import { useEditMarketplaceListing } from './useEditMarketplaceListing';
 
 const OWNER = 'y'.repeat(52);
+const PUBLISHED_KEY_STATUS = {
+  local: null,
+  publication: 'matches' as const,
+  publishedKeyId: 'k'.repeat(32),
+};
+const NO_KEY_STATUS = { local: null, publication: 'missing' as const, publishedKeyId: null };
 const OTHER = 'z'.repeat(52);
 const LISTING_ID = 'listing01';
 
@@ -87,6 +93,7 @@ vi.mock('@/controllers/commerce/commerce', () => ({
       bitcoinOfferAvailable: true,
       paypalAvailable: false,
     })),
+    getMyDeliveryKeyStatus: vi.fn(),
   },
 }));
 
@@ -105,6 +112,11 @@ describe('useEditMarketplaceListing', () => {
       bitcoinOfferAvailable: true,
       paypalAvailable: false,
     });
+    vi.mocked(CommerceController.getMyDeliveryKeyStatus).mockResolvedValue(PUBLISHED_KEY_STATUS);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   it('hydrates the form and photos from the published record', async () => {
@@ -190,6 +202,81 @@ describe('useEditMarketplaceListing', () => {
     expect(CommerceController.commitUpsertListing).not.toHaveBeenCalled();
   });
 
+  it('reports a Paykit outage, keeps it showing during a recheck, and clears it when Paykit is back', async () => {
+    const outage = {
+      bitcoinAvailable: false,
+      bitcoinOfferAvailable: false,
+      paypalAvailable: false,
+      paykitUnreachable: true,
+    };
+    const healthy = { bitcoinAvailable: true, bitcoinOfferAvailable: true, paypalAvailable: false };
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    vi.mocked(CommerceController.getSellerPaymentConfig).mockResolvedValue(outage);
+    const { result } = renderHook(() => useEditMarketplaceListing(OWNER, LISTING_ID));
+    await waitFor(() => expect(result.current.publishBlocked).toBe('paykit-unreachable'));
+
+    let finishRead: (config: typeof healthy) => void = () => {};
+    vi.mocked(CommerceController.getSellerPaymentConfig).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finishRead = resolve as typeof finishRead;
+        }),
+    );
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5_000);
+    });
+    expect(result.current.publishGuardReady).toBe(true);
+    expect(result.current.publishBlocked).toBe('paykit-unreachable');
+
+    await act(async () => {
+      finishRead(healthy);
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(result.current.publishBlocked).toBeNull();
+  });
+
+  it('refuses to save a listing that ships while the seller has no published delivery key', async () => {
+    vi.mocked(CommerceController.getOrFetchListing).mockResolvedValue({
+      ...structuredClone(publishedRecord),
+      fulfillmentMethods: ['shipping' as const],
+      package: { weightGrams: 500, lengthMillimeters: 300, widthMillimeters: 200, heightMillimeters: 100 },
+      shippingOptions: [
+        {
+          id: 'seller_flat_rate',
+          pricing: 'free' as const,
+          label: 'Free shipping',
+          estimatedMinDays: 2,
+          estimatedMaxDays: 5,
+        },
+      ],
+    });
+    vi.mocked(CommerceController.getMyDeliveryKeyStatus).mockResolvedValue(NO_KEY_STATUS);
+    const { result } = renderHook(() => useEditMarketplaceListing(OWNER, LISTING_ID));
+    await waitFor(() => expect(result.current.status).toBe('ready'));
+    await waitFor(() => expect(result.current.publishBlocked).toBe('no-delivery-key'));
+
+    await act(async () => {
+      await result.current.submit();
+    });
+
+    expect(result.current.publishBlocked).toBe('no-delivery-key');
+    expect(CommerceController.commitUpsertListing).not.toHaveBeenCalled();
+  });
+
+  it('saves a pickup listing without reading the delivery key', async () => {
+    vi.mocked(CommerceController.getMyDeliveryKeyStatus).mockResolvedValue(NO_KEY_STATUS);
+    const { result } = renderHook(() => useEditMarketplaceListing(OWNER, LISTING_ID));
+    await waitFor(() => expect(result.current.status).toBe('ready'));
+    await waitFor(() => expect(result.current.publishGuardReady).toBe(true));
+    await waitFor(() => expect(result.current.publishBlocked).toBeNull());
+
+    await act(async () => {
+      await result.current.submit();
+    });
+
+    expect(CommerceController.commitUpsertListing).toHaveBeenCalledOnce();
+  });
+
   it('refuses to publish when the public payment-config request is rejected', async () => {
     vi.mocked(CommerceController.getSellerPaymentConfig).mockRejectedValue(new Error('offline'));
     const { result } = renderHook(() => useEditMarketplaceListing(OWNER, LISTING_ID));
@@ -245,6 +332,61 @@ describe('useEditMarketplaceListing', () => {
       expect.objectContaining({ pricing: 'free', label: 'Free shipping', estimatedMinDays: 2, estimatedMaxDays: 5 }),
     ]);
     expect(updated.shippingOptions[0]).not.toHaveProperty('price');
+  });
+
+  it.each([
+    { currency: 'EUR', exponent: 2, amountMinor: 11_990, shippingMinor: 990, price: '119.90', shipping: '9.90' },
+    { currency: 'JPY', exponent: 0, amountMinor: 15_000, shippingMinor: 1_200, price: '15000', shipping: '1200' },
+  ] as const)(
+    'hydrates and republishes a $currency listing in its own currency',
+    async ({ currency, exponent, amountMinor, shippingMinor, price, shipping }) => {
+      vi.mocked(CommerceController.getOrFetchListing).mockResolvedValue({
+        ...structuredClone(publishedRecord),
+        fulfillmentMethods: ['shipping' as const],
+        package: { weightGrams: 500, lengthMillimeters: 300, widthMillimeters: 200, heightMillimeters: 100 },
+        sale: { format: 'fixed_price' as const, unitPrice: { amountMinor, currency, exponent }, acceptsOffers: true },
+        shippingOptions: [
+          {
+            id: 'seller_flat_rate',
+            pricing: 'flat' as const,
+            label: 'Tracked',
+            price: { amountMinor: shippingMinor, currency, exponent },
+            estimatedMinDays: 2,
+            estimatedMaxDays: 5,
+          },
+        ],
+      });
+
+      const { result } = renderHook(() => useEditMarketplaceListing(OWNER, LISTING_ID));
+      await waitFor(() => expect(result.current.status).toBe('ready'));
+
+      expect(result.current.form.getValues()).toMatchObject({ currency, price, shippingPrice: shipping });
+
+      await act(async () => {
+        await result.current.submit();
+      });
+
+      const updated = commerceListingRecordSchema.parse(
+        vi.mocked(CommerceController.commitUpsertListing).mock.calls[0][0],
+      );
+      expect(updated.sale).toMatchObject({ unitPrice: { amountMinor, currency, exponent } });
+      expect(updated.shippingOptions[0]).toMatchObject({ price: { amountMinor: shippingMinor, currency, exponent } });
+    },
+  );
+
+  it('refuses a listing priced in a currency the studio does not offer', async () => {
+    vi.mocked(CommerceController.getOrFetchListing).mockResolvedValue({
+      ...structuredClone(publishedRecord),
+      sale: {
+        format: 'fixed_price' as const,
+        unitPrice: { amountMinor: 12_500, currency: 'SEK', exponent: 2 },
+        acceptsOffers: true,
+      },
+    });
+
+    const { result } = renderHook(() => useEditMarketplaceListing(OWNER, LISTING_ID));
+
+    await waitFor(() => expect(result.current.status).toBe('unsupported'));
   });
 
   it('round-trips unknown record members through an edit (open-world records)', async () => {

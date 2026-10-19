@@ -2,7 +2,7 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CommerceController } from '@/controllers/commerce/commerce';
-import { MESSAGING_COPY } from '@/libs/commerce/messaging-copy';
+import { CHAT_COPY } from '@/libs/chat/copy';
 import { REFUND_ORDER_NOTICES } from '@/libs/commerce/refund-copy';
 import { useMarketplaceDisplayStore } from '@/stores/marketplace-display/marketplace-display.store';
 import {
@@ -13,13 +13,18 @@ import {
   ORDER_FIXTURE_SELLER,
 } from '@/test/fixtures/commerce/orders';
 import { REFUND_FIXTURE_ADDRESS, REFUND_FIXTURE_TX_HASH } from '@/test/fixtures/commerce/usdt-refund.wire';
+import { setupFixedDateLocale } from '@/test-utils/date-locale';
 import { setHeavySuiteBudgets } from '@/test-utils/load-budget';
 import { MarketplaceOrders } from './MarketplaceOrders';
+
+setupFixedDateLocale();
 
 setHeavySuiteBudgets();
 
 const CURRENT_USER = ORDER_FIXTURE_BUYER;
 const OTHER_USER = 'o'.repeat(52);
+const routerPush = vi.hoisted(() => vi.fn());
+const routerReplace = vi.hoisted(() => vi.fn());
 
 const ordersState = vi.hoisted(() => ({
   currentUserPubky: 'b'.repeat(52),
@@ -52,24 +57,6 @@ vi.mock('@/hooks/useMarketplaceOrderItemMedia/useMarketplaceOrderItemMedia', () 
 
 vi.mock('@/hooks/useUserDetails/useUserDetails', () => ({
   useUserDetails: () => ({ userDetails: null, isLoading: false }),
-}));
-
-vi.mock('@/hooks/useEncryptedConversation/useEncryptedConversation', () => ({
-  useEncryptedConversation: () => ({
-    status: 'ready',
-    errorMessage: null,
-    thread: [],
-    receiverProvisioned: false,
-    draft: '',
-    setDraft: vi.fn(),
-    bodyBudgetBytes: 620,
-    draftBytes: 0,
-    isSending: false,
-    sendError: null,
-    send: vi.fn(async () => 'queued'),
-    cancelQueued: vi.fn(async () => {}),
-    refresh: vi.fn(),
-  }),
 }));
 
 vi.mock('@/hooks/useIndicativeBtcRate/useIndicativeBtcRate', () => ({
@@ -119,8 +106,9 @@ vi.mock('@/organisms/Marketplace/MarketplaceMyReviews', () => ({
 }));
 
 vi.mock('next/navigation', () => ({
-  useRouter: () => ({ replace: vi.fn(), push: vi.fn() }),
+  useRouter: () => ({ replace: routerReplace, push: routerPush }),
   usePathname: () => '/marketplace/orders',
+  useSearchParams: () => new URLSearchParams(window.location.search),
 }));
 
 afterEach(() => {
@@ -168,6 +156,7 @@ function orderView(
 
 describe('MarketplaceOrders tabs', () => {
   beforeEach(() => {
+    routerPush.mockClear();
     ordersState.currentUserPubky = CURRENT_USER;
     ordersState.orders = [];
     ordersState.adapterMode = 'sandbox';
@@ -486,7 +475,7 @@ describe('MarketplaceOrders tabs', () => {
     expect(screen.getByText(/Sold bitcoin awaiting/)).toBeInTheDocument();
     expect(screen.getByText(/Sold bitcoin confirm/)).toBeInTheDocument();
     expect(screen.getByText(/Sold bitcoin review/)).toBeInTheDocument();
-    expect(screen.getAllByText('You sold').length).toBe(3);
+    expect(screen.getAllByText('Sold').length).toBe(3);
     expect(screen.getAllByTestId('payment-status')).toHaveLength(3);
   });
 
@@ -520,6 +509,14 @@ describe('MarketplaceOrders tabs', () => {
     expect(screen.getByRole('link', { name: 'Continue checkout' })).toBeInTheDocument();
     expect(screen.getByText(/Awaiting payment · Item reserved · 5:00/)).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Bought deadline boots' })).toBeInTheDocument();
+    const labels = screen.getByTestId('marketplace-checkout-status-labels');
+    expect(labels).not.toHaveTextContent('Checkout in progress');
+    expect(labels).toHaveTextContent('Awaiting payment');
+    expect(labels).not.toHaveTextContent('Payment confirmed');
+    expect(
+      labels.compareDocumentPosition(screen.getByRole('link', { name: 'Bought deadline boots' })) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
     expect(screen.getByText('Quantity 1')).toBeInTheDocument();
     expect(screen.queryByText(/Open Bitkit to pay/)).not.toBeInTheDocument();
     expect(screen.queryByText(/Complete payment by/)).not.toBeInTheDocument();
@@ -568,7 +565,7 @@ describe('MarketplaceOrders tabs', () => {
       ),
     ];
     render(<MarketplaceOrders />);
-    expect(screen.getByText('Seller confirms by Sep 29, 2026, 10:56 AM UTC. 23:56:41 left')).toBeInTheDocument();
+    expect(screen.getByText(`Seller confirms by 29 Sept 2026, 10:56. 23:56:41 left`)).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'View payment' })).toBeInTheDocument();
     expect(screen.queryByText(/Awaiting payment · Item reserved/)).not.toBeInTheDocument();
     expect(screen.queryByText(/Pay by/)).not.toBeInTheDocument();
@@ -592,7 +589,7 @@ describe('MarketplaceOrders tabs', () => {
       ),
     ];
     render(<MarketplaceOrders />);
-    expect(screen.getByText('Seller confirms by Sep 29, 2026, 10:56 AM UTC.')).toBeInTheDocument();
+    expect(screen.getByText(`Seller confirms by 29 Sept 2026, 10:56.`)).toBeInTheDocument();
   });
 
   it('does not tell a buyer in unconfirmed manual review to pay again', () => {
@@ -644,7 +641,7 @@ describe('MarketplaceOrders tabs', () => {
     render(<MarketplaceOrders />);
     expect(screen.queryByRole('heading', { name: 'Reservations' })).not.toBeInTheDocument();
     expect(screen.getByText(/Sold seen boots/)).toBeInTheDocument();
-    expect(screen.getByText('You sold')).toBeInTheDocument();
+    expect(screen.getByText('Sold')).toBeInTheDocument();
     expect(screen.getByTestId('payment-status')).toBeInTheDocument();
     expect(screen.queryByText(/restocks/)).not.toBeInTheDocument();
     expect(screen.queryByText(/Pay by/)).not.toBeInTheDocument();
@@ -669,7 +666,7 @@ describe('MarketplaceOrders tabs', () => {
 
       expect(screen.queryByRole('heading', { name: 'Reservations' })).not.toBeInTheDocument();
       expect(screen.getByText(/Sold review boots/)).toBeInTheDocument();
-      expect(screen.getByText('You sold')).toBeInTheDocument();
+      expect(screen.getByText('Sold')).toBeInTheDocument();
       expect(screen.getByTestId('payment-status')).toBeInTheDocument();
       expect(screen.queryByText(/restocks/)).not.toBeInTheDocument();
     });
@@ -684,7 +681,7 @@ describe('MarketplaceOrders tabs', () => {
       expect(screen.getByRole('heading', { name: 'Reservations' })).toBeInTheDocument();
       expect(screen.getByText(/Sold unpaid usdt bag/)).toBeInTheDocument();
       expect(screen.getByText(/Sold plain review bag/)).toBeInTheDocument();
-      expect(screen.queryByText('You sold')).not.toBeInTheDocument();
+      expect(screen.queryByText('Sold')).not.toBeInTheDocument();
     });
   });
 
@@ -706,7 +703,7 @@ describe('MarketplaceOrders tabs', () => {
     expect(screen.getByText(/Sold paid cancel scarf/)).toBeInTheDocument();
   });
 
-  it('does not label an elapsed unpaid order as Your move', () => {
+  it('does not label an elapsed unpaid order as Needs action', () => {
     ordersState.orders = [
       orderView(
         'cancelled',
@@ -718,7 +715,7 @@ describe('MarketplaceOrders tabs', () => {
     ];
     render(<MarketplaceOrders />);
     expect(screen.getByText('Checkout ended before payment.')).toBeInTheDocument();
-    expect(screen.queryByText('Your move')).not.toBeInTheDocument();
+    expect(screen.queryByText('Needs action')).not.toBeInTheDocument();
   });
 
   it('puts buyer pending payment under Continue checkout, not Needs my action', async () => {
@@ -758,7 +755,7 @@ describe('MarketplaceOrders tabs', () => {
     ];
 
     render(<MarketplaceOrders />);
-    await user.click(screen.getByRole('tab', { name: /Waiting on the other side 0/i }));
+    await user.click(screen.getByRole('tab', { name: /Waiting on buyer 0/i }));
 
     expect(screen.getAllByRole('link', { name: 'Continue checkout' }).length).toBeGreaterThan(0);
     expect(screen.getByRole('heading', { name: 'Reservations' })).toBeInTheDocument();
@@ -865,10 +862,29 @@ describe('MarketplaceOrders tabs', () => {
 
     const boughtCard = screen.getByText(/Bought paid coat/).closest('[data-slot="card"]');
     const soldCard = screen.getByText(/Sold paid boots/).closest('[data-slot="card"]');
-    expect(within(boughtCard as HTMLElement).getByText('You bought')).toBeInTheDocument();
-    expect(within(soldCard as HTMLElement).getByText('You sold')).toBeInTheDocument();
+    expect(within(boughtCard as HTMLElement).getByText('Bought')).toBeInTheDocument();
+    expect(within(soldCard as HTMLElement).getByText('Sold')).toBeInTheDocument();
     expect(within(boughtCard as HTMLElement).getByTestId('order-reference-label')).toHaveTextContent('Order test-bou');
     expect(within(soldCard as HTMLElement).getByTestId('order-reference-label')).toHaveTextContent('Order test-sol');
+  });
+
+  it('places payment and action labels first, above the order products', () => {
+    ordersState.orders = [
+      orderView('ready_for_pickup', 'Pickup table', 'buyer', { fulfillment: 'pickup', nextActor: 'buyer' }),
+    ];
+
+    render(<MarketplaceOrders />);
+
+    const labels = screen.getByTestId('marketplace-order-status-labels');
+    expect(
+      Array.from(labels.children)
+        .slice(0, 2)
+        .map((label) => label.textContent),
+    ).toEqual(['Payment confirmed', 'Needs action']);
+    expect(
+      labels.compareDocumentPosition(screen.getByRole('link', { name: 'Pickup table' })) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
   });
 
   it('shows when each order was placed, and the day a held item restocks', async () => {
@@ -899,12 +915,12 @@ describe('MarketplaceOrders tabs', () => {
       const card = screen.getAllByText(title)[0].closest('[data-slot="card"]') as HTMLElement;
       return within(card).getByTestId('order-placed-at');
     };
-    expect(placedAt(/Bought dated coat/)).toHaveTextContent('Placed Sep 30, 2026, 6:45 PM UTC');
+    expect(placedAt(/Bought dated coat/)).toHaveTextContent(`Placed 30 Sept 2026, 18:45`);
     expect(placedAt(/Bought dated coat/)).toHaveAttribute('dateTime', '2026-09-30T18:45:00.000Z');
-    expect(placedAt(/Sold held boots/)).toHaveTextContent('Placed Oct 1, 2026, 8:10 AM UTC');
-    expect(placedAt(/Bought checkout scarf/)).toHaveTextContent('Placed Oct 1, 2026, 8:55 AM UTC');
+    expect(placedAt(/Sold held boots/)).toHaveTextContent(`Placed 1 Oct 2026, 08:10`);
+    expect(placedAt(/Bought checkout scarf/)).toHaveTextContent(`Placed 1 Oct 2026, 08:55`);
     expect(within(screen.getByTestId('marketplace-reservations')).getByText(/restocks/)).toHaveTextContent(
-      'Held for a buyer · restocks Oct 2, 2026, 8:10 AM UTC',
+      `Held for a buyer · restocks 2 Oct 2026, 08:10`,
     );
   });
 
@@ -943,17 +959,17 @@ describe('MarketplaceOrders tabs', () => {
 
     const soldCard = screen.getByText(/Sold paid boots/).closest('[data-slot="card"]');
     const boughtCard = screen.getByText(/Bought paid coat/).closest('[data-slot="card"]');
-    expect(within(soldCard as HTMLElement).getByText('Your move')).toBeInTheDocument();
+    expect(within(soldCard as HTMLElement).getByText('Needs action')).toBeInTheDocument();
     expect(within(boughtCard as HTMLElement).getByText('Waiting on seller')).toBeInTheDocument();
   });
 
-  it('renders a neutral hint when the service reports no pending actor', async () => {
+  it('omits the action hint when the service reports no pending actor', async () => {
     ordersState.orders = [orderView('completed', 'Completed order', 'buyer', { nextActor: 'none' })];
 
     render(<MarketplaceOrders />);
     await userEvent.setup().click(screen.getByRole('tab', { name: /All 1/i }));
 
-    expect(screen.getByText('No action pending')).toBeInTheDocument();
+    expect(screen.queryByText('No action pending')).not.toBeInTheDocument();
   });
 
   it('renders each service actor variant without inventing an actor', async () => {
@@ -966,9 +982,54 @@ describe('MarketplaceOrders tabs', () => {
     render(<MarketplaceOrders />);
     await userEvent.setup().click(screen.getByRole('tab', { name: /All 3/i }));
 
-    expect(screen.getByText('Waiting on seller')).toBeInTheDocument();
-    expect(screen.getAllByText('Your move')).toHaveLength(1);
-    expect(screen.getByText('No action pending')).toBeInTheDocument();
+    expect(screen.getByText('Waiting on seller', { selector: '[data-slot="badge"]' })).toBeInTheDocument();
+    expect(screen.getAllByText('Needs action')).toHaveLength(1);
+    expect(screen.queryByText('No action pending')).not.toBeInTheDocument();
+  });
+
+  it('names the waiting tab for the side a seller waits on', async () => {
+    ordersState.orders = [
+      orderView(
+        'pending_payment',
+        'Sold unpaid lamp',
+        'seller',
+        { paymentMethod: 'bitcoin', paykitRequestState: 'pending', nextActor: 'buyer' },
+        'awaiting_entitlement',
+      ),
+    ];
+
+    render(<MarketplaceOrders />);
+
+    expect(await screen.findByRole('tab', { name: /Waiting on buyer 1/i })).toBeInTheDocument();
+    expect(screen.queryByRole('tab', { name: /Waiting on seller/i })).not.toBeInTheDocument();
+  });
+
+  it('names the waiting tab for both sides when the account buys and sells', async () => {
+    ordersState.orders = [
+      orderView(
+        'pending_payment',
+        'Sold unpaid lamp',
+        'seller',
+        { paymentMethod: 'bitcoin', paykitRequestState: 'pending', nextActor: 'buyer' },
+        'awaiting_entitlement',
+      ),
+      orderView('paid', 'Bought paid boots', 'buyer', { nextActor: 'seller' }),
+    ];
+
+    render(<MarketplaceOrders />);
+
+    expect(await screen.findByRole('tab', { name: /Waiting on others 2/i })).toBeInTheDocument();
+    expect(screen.queryByRole('tab', { name: /Waiting on seller/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('tab', { name: /Waiting on buyer/i })).not.toBeInTheDocument();
+  });
+
+  it('names an empty waiting tab for the side a seller-only account waits on', async () => {
+    ordersState.orders = [orderView('paid', 'Sold paid lamp', 'seller', { nextActor: 'seller' })];
+
+    render(<MarketplaceOrders />);
+
+    expect(await screen.findByRole('tab', { name: /Waiting on buyer 0/i })).toBeInTheDocument();
+    expect(screen.queryByRole('tab', { name: /Waiting on seller/i })).not.toBeInTheDocument();
   });
 
   it('uses next_actor to place buyer and seller work in Needs my action', async () => {
@@ -1001,34 +1062,32 @@ describe('MarketplaceOrders tabs', () => {
 
     const assumedCard = screen.getByText(/Bought assumed boots/).closest('[data-slot="card"]');
     const confirmedCard = screen.getByText(/Bought confirmed coat/).closest('[data-slot="card"]');
-    expect(within(assumedCard as HTMLElement).getByText(MESSAGING_COPY.assumedDelivery)).toBeInTheDocument();
-    expect(within(assumedCard as HTMLElement).getByRole('link', { name: MESSAGING_COPY.orderCta })).toHaveAttribute(
-      'href',
-      expect.stringMatching(/^\/marketplace\/messages\?conversation=/),
-    );
+    expect(within(assumedCard as HTMLElement).getByText(CHAT_COPY.assumedDelivery)).toBeInTheDocument();
+    expect(within(assumedCard as HTMLElement).getByRole('button', { name: CHAT_COPY.orderCta })).toBeInTheDocument();
     expect(
       within(assumedCard as HTMLElement).getByText(/Completes automatically after the return window/),
     ).toBeInTheDocument();
-    expect(within(confirmedCard as HTMLElement).queryByText(MESSAGING_COPY.assumedDelivery)).not.toBeInTheDocument();
-    expect(
-      within(confirmedCard as HTMLElement).getByRole('link', { name: MESSAGING_COPY.orderCta }),
-    ).toBeInTheDocument();
+    expect(within(confirmedCard as HTMLElement).queryByText(CHAT_COPY.assumedDelivery)).not.toBeInTheDocument();
+    expect(within(confirmedCard as HTMLElement).getByRole('button', { name: CHAT_COPY.orderCta })).toBeInTheDocument();
   });
 
-  it('opens the listing conversation dialog from a durable order card', async () => {
+  it.each([
+    { role: 'buyer' as const, mode: 'sandbox', peer: ORDER_FIXTURE_SELLER },
+    { role: 'buyer' as const, mode: 'transaction-service', peer: ORDER_FIXTURE_SELLER },
+    { role: 'seller' as const, mode: 'sandbox', peer: OTHER_USER },
+    { role: 'seller' as const, mode: 'transaction-service', peer: OTHER_USER },
+  ])('opens the other party’s chat with order context for a $role in $mode', async ({ role, mode, peer }) => {
     const user = userEvent.setup();
-    ordersState.adapterMode = 'transaction-service';
-    ordersState.orders = [orderView('paid', 'Bought paid boots', 'buyer', { nextActor: 'none' })];
+    ordersState.adapterMode = mode;
+    ordersState.orders = [orderView('paid', 'Paid boots', role, { nextActor: 'none' })];
 
     render(<MarketplaceOrders />);
     await user.click(screen.getByRole('tab', { name: /All 1/i }));
 
-    const card = screen.getByText(/Bought paid boots/).closest('[data-slot="card"]');
-    expect(within(card as HTMLElement).queryByRole('link', { name: MESSAGING_COPY.orderCta })).not.toBeInTheDocument();
+    const card = screen.getByText('Paid boots').closest('[data-slot="card"]');
     expect((card as HTMLElement).querySelector('[data-surface="marketplace-order-message-cta"]')).toBeTruthy();
-    await user.click(within(card as HTMLElement).getByRole('button', { name: MESSAGING_COPY.orderCta }));
-    expect(await screen.findByRole('dialog')).toBeInTheDocument();
-    expect(document.querySelector('[data-surface="marketplace-encrypted-conversation"]')).toBeTruthy();
+    await user.click(within(card as HTMLElement).getByRole('button', { name: CHAT_COPY.orderCta }));
+    expect(routerPush).toHaveBeenCalledWith(`/messages/${peer}?listing=Paid_boots&order=test-paid-boots`);
   });
 
   it('keeps icon-only order card buttons accessible when they render', () => {
@@ -1120,10 +1179,17 @@ describe('MarketplaceOrders tabs', () => {
     render(<MarketplaceOrders />);
     await user.click(screen.getByRole('tab', { name: /All 1/i }));
 
-    const equation = 'Items ₿1,000 · Shipping ₿0 · Payment code ₿255 = Total ₿1,255';
-    expect(screen.getByText('₿1,255')).toBeInTheDocument();
-    expect(screen.getAllByText(equation)).toHaveLength(2);
-    expect(within(screen.getByTestId('order-receipt-details')).getByText(equation)).toBeInTheDocument();
+    const breakdowns = screen.getAllByRole('table', { name: 'Bitcoin payment breakdown' });
+    expect(breakdowns).toHaveLength(2);
+    for (const breakdown of breakdowns) {
+      expect(within(breakdown).getByRole('row', { name: 'Items ₿1,000' })).toBeInTheDocument();
+      expect(within(breakdown).getByRole('row', { name: 'Shipping ₿0' })).toBeInTheDocument();
+      expect(within(breakdown).getByRole('row', { name: 'Payment code ₿255' })).toBeInTheDocument();
+      expect(within(breakdown).getByRole('row', { name: 'Total ₿1,255' })).toBeInTheDocument();
+    }
+    expect(
+      within(screen.getByTestId('order-receipt-details')).getByRole('table', { name: 'Bitcoin payment breakdown' }),
+    ).toBeInTheDocument();
     expect(screen.queryByText(/Locked Bitcoin amount/)).not.toBeInTheDocument();
   });
 
@@ -1139,7 +1205,7 @@ describe('MarketplaceOrders tabs', () => {
     render(<MarketplaceOrders />);
     await userEvent.setup().click(screen.getByRole('tab', { name: /All 1/i }));
 
-    expect(await screen.findByText('≈ ₿137,000')).toBeInTheDocument();
+    expect(await screen.findAllByText('≈ ₿137,000')).toHaveLength(2);
     expect(screen.queryByText(/Locked Bitcoin amount/)).not.toBeInTheDocument();
   });
 });
@@ -1160,7 +1226,7 @@ describe('MarketplaceOrders local pickup cards (Wave 7, §A3/§A6)', () => {
     const card = screen.getByText(/Bought pickup boots/).closest('[data-slot="card"]') as HTMLElement;
     expect(within(card).getByText('Local pickup')).toBeInTheDocument();
     expect(within(card).getByText('Ready for pickup')).toBeInTheDocument();
-    expect(within(card).getByRole('button', { name: 'Show meeting point' })).toBeInTheDocument();
+    expect(within(card).getByRole('button', { name: 'Meeting point' })).toBeInTheDocument();
     expect(within(card).getByRole('button', { name: 'Confirm handover' })).toBeInTheDocument();
   });
 
@@ -1197,7 +1263,7 @@ describe('MarketplaceOrders local pickup cards (Wave 7, §A3/§A6)', () => {
 
     const card = screen.getByText(/Sold pickup boots/).closest('[data-slot="card"]') as HTMLElement;
     expect(within(card).getByRole('button', { name: 'Mark ready for pickup' })).toBeInTheDocument();
-    expect(within(card).queryByRole('button', { name: 'Add tracking' })).not.toBeInTheDocument();
+    expect(within(card).queryByRole('button', { name: 'Mark shipped' })).not.toBeInTheDocument();
   });
 });
 
@@ -1244,6 +1310,18 @@ describe('MarketplaceOrders digital cards (digital delivery design §3 "After pa
     expect(within(card).queryByRole('link', { name: /Track package/ })).not.toBeInTheDocument();
   });
 
+  it('shows no shipping amount on a digital order card, for the buyer or the seller', () => {
+    ordersState.orders = [digitalView('delivered', 'buyer'), digitalView('paid', 'seller')];
+
+    render(<MarketplaceOrders />);
+
+    for (const card of screen.getAllByText(/Field guide/).map((node) => node.closest('[data-slot="card"]'))) {
+      expect(within(card as HTMLElement).queryByText(/Shipping/)).not.toBeInTheDocument();
+      expect(within(card as HTMLElement).queryByRole('button', { name: /Packing slip/i })).not.toBeInTheDocument();
+      expect(within(card as HTMLElement).queryByRole('button', { name: 'Mark shipped' })).not.toBeInTheDocument();
+    }
+  });
+
   it('shows the seller no purchase panel', () => {
     ordersState.orders = [digitalView('delivered', 'seller')];
 
@@ -1266,13 +1344,13 @@ describe('MarketplaceOrders digital cards (digital delivery design §3 "After pa
     expect(within(card).getByRole('button', { name: 'Mark emailed' })).toBeInTheDocument();
   });
 
-  it('keeps Your move on a paid shipped order', () => {
+  it('keeps Needs action on a paid shipped order', () => {
     ordersState.orders = [orderView('paid', 'Shipped lamp', 'seller', { nextActor: 'seller' })];
 
     render(<MarketplaceOrders />);
 
     const card = screen.getByText(/Shipped lamp/).closest('[data-slot="card"]') as HTMLElement;
-    expect(within(card).getByText('Your move')).toBeInTheDocument();
+    expect(within(card).getByText('Needs action')).toBeInTheDocument();
     expect(within(card).queryByText('To deliver')).not.toBeInTheDocument();
   });
 
@@ -1329,7 +1407,7 @@ describe('MarketplaceOrders Activity link to an order no section lists', () => {
   });
 
   it('shows the linked order with its state and short ID, and scrolls to it', async () => {
-    window.history.replaceState(null, '', '/marketplace/orders#order-test-unpaid-sold-lamp');
+    window.history.replaceState(null, '', '/marketplace/orders?order=test-unpaid-sold-lamp');
 
     render(<MarketplaceOrders />);
 
@@ -1337,7 +1415,8 @@ describe('MarketplaceOrders Activity link to an order no section lists', () => {
     expect(within(section).getByRole('heading', { name: 'From Activity' })).toBeInTheDocument();
     expect(within(section).getByText('Your sale')).toBeInTheDocument();
     expect(within(section).getByTestId('marketplace-linked-order-state')).toHaveTextContent('Cancelled before payment');
-    expect(within(section).getByText('Unpaid sold lamp × 1')).toBeInTheDocument();
+    expect(within(section).getByText('Unpaid sold lamp')).toBeInTheDocument();
+    expect(within(section).getByText('Quantity 1')).toBeInTheDocument();
     expect(within(section).getByTestId('order-reference-label')).toHaveTextContent('Order test-unp');
     const card = section.querySelector('[id="order-test-unpaid-sold-lamp"]');
     expect(card).not.toBeNull();
@@ -1353,13 +1432,13 @@ describe('MarketplaceOrders Activity link to an order no section lists', () => {
   });
 
   it('does not duplicate an order another section already lists', async () => {
-    window.history.replaceState(null, '', '/marketplace/orders#order-test-sold-paid-boots');
+    window.history.replaceState(null, '', '/marketplace/orders?order=test-sold-paid-boots');
 
     render(<MarketplaceOrders />);
 
-    await waitFor(() => expect(screen.getByText('Sold paid boots × 1')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('Sold paid boots')).toBeInTheDocument());
     expect(screen.queryByTestId('marketplace-linked-order')).toBeNull();
-    expect(screen.getAllByText('Sold paid boots × 1')).toHaveLength(1);
+    expect(screen.getAllByText('Sold paid boots')).toHaveLength(1);
   });
 
   it('shows nothing for a linked order the signed-in account is not part of', async () => {
@@ -1369,24 +1448,77 @@ describe('MarketplaceOrders Activity link to an order no section lists', () => {
       sellerPubky: ORDER_FIXTURE_SELLER,
     });
     ordersState.orders = [orderView('paid', 'Sold paid boots', 'seller'), foreign];
-    window.history.replaceState(null, '', `/marketplace/orders#order-${foreign.order.id}`);
+    window.history.replaceState(null, '', `/marketplace/orders?order=${foreign.order.id}`);
 
     render(<MarketplaceOrders />);
 
-    await waitFor(() => expect(screen.getByText('Sold paid boots × 1')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('Sold paid boots')).toBeInTheDocument());
     expect(screen.queryByTestId('marketplace-linked-order')).toBeNull();
     expect(screen.queryByText(/Foreign unpaid lamp/)).toBeNull();
     expect(document.getElementById(`order-${foreign.order.id}`)).toBeNull();
   });
 
-  it('follows a hash change while the page is open', async () => {
-    render(<MarketplaceOrders />);
+  it('follows a new ?order= while the page is open', async () => {
+    const view = render(<MarketplaceOrders />);
     expect(screen.queryByTestId('marketplace-linked-order')).toBeNull();
 
-    window.history.replaceState(null, '', '/marketplace/orders#order-test-unpaid-sold-lamp');
-    window.dispatchEvent(new HashChangeEvent('hashchange'));
+    window.history.replaceState(null, '', '/marketplace/orders?order=test-unpaid-sold-lamp');
+    view.rerender(<MarketplaceOrders />);
 
     expect(await screen.findByTestId('marketplace-linked-order-state')).toHaveTextContent('Cancelled before payment');
+  });
+});
+
+describe('MarketplaceOrders links shared before #292', () => {
+  beforeEach(() => {
+    routerReplace.mockClear();
+    ordersState.currentUserPubky = CURRENT_USER;
+    ordersState.adapterMode = 'transaction-service';
+    ordersState.orders = [
+      orderView('pending_payment', 'Unpaid offer boots', 'buyer', { paymentMethod: 'paykit' }),
+      orderView('cancelled', 'Unpaid activity lamp', 'seller', { receiptId: null }),
+    ];
+    Element.prototype.scrollIntoView = vi.fn();
+    vi.spyOn(CommerceController, 'markOrdersAttentionSeen').mockResolvedValue();
+  });
+
+  afterEach(() => {
+    window.history.replaceState(null, '', '/');
+  });
+
+  it('moves an old Activity #order-<id> link to ?order= once', async () => {
+    window.history.replaceState(null, '', '/marketplace/orders#order-test-unpaid-activity-lamp');
+
+    render(<MarketplaceOrders />);
+
+    await waitFor(() => expect(window.location.search).toBe('?order=test-unpaid-activity-lamp'));
+    expect(window.location.pathname).toBe('/marketplace/orders');
+    expect(window.location.hash).toBe('');
+    expect(routerReplace).not.toHaveBeenCalled();
+  });
+
+  // Next appends the fragment of the document load to every later in-app visit to Orders,
+  // so the old Offers link to an unpaid order must open its checkout once, not on every visit.
+  it('opens the unpaid checkout behind an old Offers #<id> link once per document, not on later visits', async () => {
+    window.history.replaceState(null, '', '/marketplace/orders#test-unpaid-offer-boots');
+
+    const view = render(<MarketplaceOrders />);
+    await waitFor(() => expect(window.location.search).toBe('?order=test-unpaid-offer-boots'));
+    expect(window.location.hash).toBe('');
+    view.rerender(<MarketplaceOrders />);
+    await waitFor(() =>
+      expect(routerReplace).toHaveBeenCalledWith('/marketplace/checkout?order=test-unpaid-offer-boots'),
+    );
+    view.unmount();
+    routerReplace.mockClear();
+
+    window.history.replaceState(null, '', '/marketplace/orders#test-unpaid-offer-boots');
+    render(<MarketplaceOrders />);
+    await screen.findByText('Unpaid offer boots');
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(routerReplace).not.toHaveBeenCalled();
+    expect(window.location.search).toBe('');
+    expect(screen.queryByTestId('marketplace-linked-order')).toBeNull();
   });
 });
 
@@ -1409,15 +1541,20 @@ describe('MarketplaceOrders USDT orders', () => {
     useMarketplaceDisplayStore.setState({ showFxEstimate: true, measurementSystem: null });
   });
 
-  it('never shows the indicative bitcoin estimate on a USDT-paid USD order', async () => {
-    ordersState.orders = [orderView('paid', 'USDT boots', 'buyer', { ...usdtFields, paymentFinality: 'final' })];
+  it.each(['usdt', 'paykit'] as const)(
+    'never shows a Bitcoin estimate on a USD order paid in USDT through %s',
+    async (paymentMethod) => {
+      ordersState.orders = [
+        orderView('paid', 'USDT boots', 'buyer', { ...usdtFields, paymentMethod, paymentFinality: 'final' }),
+      ];
 
-    render(<MarketplaceOrders />);
-    await userEvent.setup().click(screen.getByRole('tab', { name: /All 1/i }));
+      render(<MarketplaceOrders />);
+      await userEvent.setup().click(screen.getByRole('tab', { name: /All 1/i }));
 
-    expect(await screen.findByText('USDT boots × 1')).toBeInTheDocument();
-    expect(screen.queryByText('≈ ₿137,000')).not.toBeInTheDocument();
-  });
+      expect(await screen.findByText('USDT boots')).toBeInTheDocument();
+      expect(screen.queryByText(/≈ ₿/)).not.toBeInTheDocument();
+    },
+  );
 
   it('links the recorded refund hash and address to Arbiscan as lookups, and never calls them verified', async () => {
     ordersState.orders = [
@@ -1508,20 +1645,20 @@ describe('MarketplaceOrders USDT orders', () => {
     expect(screen.getByTestId('order-receipt-details')).not.toHaveTextContent(/Bitcoin|₿/);
   });
 
-  it('holds Add tracking back for the seller until Arbitrum finalizes, then opens it', async () => {
+  it('holds Mark shipped back for the seller until Arbitrum finalizes, then opens it', async () => {
     ordersState.orders = [
       orderView('paid', 'USDT pending boots', 'seller', { ...usdtFields, paymentFinality: 'pending' }),
     ];
     const { unmount } = render(<MarketplaceOrders />);
     await userEvent.setup().click(screen.getByRole('tab', { name: /All 1/i }));
-    expect(await screen.findByRole('button', { name: 'Add tracking' })).toBeDisabled();
+    expect(await screen.findByRole('button', { name: 'Mark shipped' })).toBeDisabled();
     expect(screen.getByTestId('usdt-payment-not-final')).toBeInTheDocument();
     unmount();
 
     ordersState.orders = [orderView('paid', 'USDT final boots', 'seller', { ...usdtFields, paymentFinality: 'final' })];
     render(<MarketplaceOrders />);
     await userEvent.setup().click(screen.getByRole('tab', { name: /All 1/i }));
-    expect(await screen.findByRole('button', { name: 'Add tracking' })).toBeEnabled();
+    expect(await screen.findByRole('button', { name: 'Mark shipped' })).toBeEnabled();
     expect(screen.queryByTestId('usdt-payment-not-final')).not.toBeInTheDocument();
   });
 
@@ -1553,7 +1690,7 @@ describe('MarketplaceOrders USDT orders', () => {
     const { container } = render(<MarketplaceOrders />);
     await userEvent.setup().click(screen.getByRole('tab', { name: /All 3/i }));
 
-    expect(await screen.findByText('Bitcoin boots × 1')).toBeInTheDocument();
+    expect(await screen.findByText('Bitcoin boots')).toBeInTheDocument();
     expect(container).not.toHaveTextContent(/USDT|Arbitrum/);
   });
 });
@@ -1579,10 +1716,72 @@ describe('MarketplaceOrders USDT refund address', () => {
     render(<MarketplaceOrders />);
     await userEvent.setup().click(await screen.findByRole('tab', { name: /^All/ }));
 
-    await waitFor(() => expect(screen.getByText('Bought USDT boots × 1')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('Bought USDT boots')).toBeInTheDocument());
     expect(screen.getAllByTestId('usdt-refund-buyer')).toHaveLength(1);
     expect(screen.getAllByTestId('usdt-refund-seller')).toHaveLength(1);
-    expect(screen.getByText('Bought Bitcoin boots × 1')).toBeInTheDocument();
-    expect(screen.getByText('Bought PayPal boots × 1')).toBeInTheDocument();
+    expect(screen.getByText('Bought Bitcoin boots')).toBeInTheDocument();
+    expect(screen.getByText('Bought PayPal boots')).toBeInTheDocument();
+  });
+});
+
+describe('MarketplaceOrders shipment tracking', () => {
+  beforeEach(() => {
+    ordersState.currentUserPubky = CURRENT_USER;
+    ordersState.adapterMode = 'transaction-service';
+    ordersState.needsSession = false;
+    ordersState.error = null;
+    window.history.replaceState(null, '', '/marketplace/orders');
+  });
+
+  const shipment = (carrier: string, trackingNumber: string) => ({
+    carrier,
+    trackingNumber,
+    state: 'shipped' as const,
+    shippedAt: '2026-08-14T10:00:00.000Z',
+    deliveredAt: null,
+  });
+
+  it('tells the buyer the order shipped with no tracking yet, and shows no link', async () => {
+    ordersState.orders = [orderView('shipped', 'Olive oil', 'buyer', { shipment: shipment('Other', '') })];
+
+    render(<MarketplaceOrders />);
+    await userEvent.setup().click(await screen.findByRole('tab', { name: /^All/ }));
+
+    const card = (await screen.findByText(/Olive oil/)).closest('[data-slot="card"]') as HTMLElement;
+    expect(within(card).getByText('Shipped, no tracking yet')).toBeInTheDocument();
+    expect(within(card).queryByRole('link', { name: /Track package/ })).not.toBeInTheDocument();
+    expect(within(card).queryByRole('button', { name: /tracking/i })).not.toBeInTheDocument();
+  });
+
+  it('shows the buyer the carrier, number and link once the seller adds tracking', async () => {
+    ordersState.orders = [
+      orderView('shipped', 'Olive oil', 'buyer', { shipment: shipment('UPS', '1Z999AA10123456784') }),
+    ];
+
+    render(<MarketplaceOrders />);
+    await userEvent.setup().click(await screen.findByRole('tab', { name: /^All/ }));
+
+    const card = (await screen.findByText(/Olive oil/)).closest('[data-slot="card"]') as HTMLElement;
+    expect(within(card).getByText('UPS · 1Z999AA10123456784 · shipped')).toBeInTheDocument();
+    expect(within(card).getByRole('link', { name: /Track package/ })).toHaveAttribute(
+      'href',
+      'https://www.ups.com/track?tracknum=1Z999AA10123456784',
+    );
+    expect(within(card).queryByText('Shipped, no tracking yet')).not.toBeInTheDocument();
+  });
+
+  it('gives the seller Add tracking on a shipped order with no number, and Edit tracking once there is one', async () => {
+    ordersState.orders = [
+      orderView('shipped', 'Olive oil', 'seller', { shipment: shipment('Other', '') }),
+      orderView('shipped', 'Olive jar', 'seller', { shipment: shipment('UPS', '1Z999AA10123456784') }),
+    ];
+
+    render(<MarketplaceOrders />);
+    await userEvent.setup().click(await screen.findByRole('tab', { name: /^All/ }));
+
+    const oil = (await screen.findByText(/Olive oil/)).closest('[data-slot="card"]') as HTMLElement;
+    const jar = (await screen.findByText(/Olive jar/)).closest('[data-slot="card"]') as HTMLElement;
+    expect(within(oil).getByRole('button', { name: 'Add tracking' })).toBeInTheDocument();
+    expect(within(jar).getByRole('button', { name: 'Edit tracking' })).toBeInTheDocument();
   });
 });

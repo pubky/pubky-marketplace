@@ -1,9 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import type { SellerPaymentConfigOwnView } from '@/libs/commerce/payment-methods';
+import { bitcoinSetupClaim, type SellerPaymentConfigOwnView } from '@/libs/commerce/payment-methods';
 import {
   atLeastOneMethodSentence,
+  BITCOIN_TOGGLE_BLOCKER_COPY,
+  canOfferBitkitSetup,
   countReadyPaymentMethods,
   deriveBitcoinStatus,
+  deriveBitcoinToggleBlocker,
   derivePaypalStatus,
   isReadyPaymentMethodStatus,
   type PaymentMethodStatus,
@@ -31,163 +34,53 @@ describe('MarketplaceGetPaidSettings status derivation', () => {
   });
 
   describe('deriveBitcoinStatus', () => {
-    const C = 'gy1wnkhfwezwdnawnur1bc3kw1x3jf5ggjj3cm37e31i5ntq3pco';
     it.each([
-      // neither step, no errors
-      { connectedCreator: null, accountClaimed: null, locksError: null, claimError: null, expected: 'not_set_up' },
-      { connectedCreator: null, accountClaimed: false, locksError: null, claimError: null, expected: 'not_set_up' },
-      // claim without locks
-      { connectedCreator: null, accountClaimed: true, locksError: null, claimError: null, expected: 'needs_attention' },
-      // locks without claim
-      { connectedCreator: C, accountClaimed: null, locksError: null, claimError: null, expected: 'needs_attention' },
-      { connectedCreator: C, accountClaimed: false, locksError: null, claimError: null, expected: 'needs_attention' },
-      // both steps
-      { connectedCreator: C, accountClaimed: true, locksError: null, claimError: null, expected: 'connected' },
-      // any error → needs attention (all remaining claim/creator combos)
-      {
-        connectedCreator: null,
-        accountClaimed: null,
-        locksError: 'rejected',
-        claimError: null,
-        expected: 'needs_attention',
-      },
-      {
-        connectedCreator: null,
-        accountClaimed: null,
-        locksError: null,
-        claimError: 'failed',
-        expected: 'needs_attention',
-      },
-      {
-        connectedCreator: null,
-        accountClaimed: null,
-        locksError: 'rejected',
-        claimError: 'failed',
-        expected: 'needs_attention',
-      },
-      {
-        connectedCreator: null,
-        accountClaimed: false,
-        locksError: 'rejected',
-        claimError: null,
-        expected: 'needs_attention',
-      },
-      {
-        connectedCreator: null,
-        accountClaimed: false,
-        locksError: null,
-        claimError: 'failed',
-        expected: 'needs_attention',
-      },
-      {
-        connectedCreator: null,
-        accountClaimed: false,
-        locksError: 'rejected',
-        claimError: 'failed',
-        expected: 'needs_attention',
-      },
-      {
-        connectedCreator: null,
-        accountClaimed: true,
-        locksError: 'rejected',
-        claimError: null,
-        expected: 'needs_attention',
-      },
-      {
-        connectedCreator: null,
-        accountClaimed: true,
-        locksError: null,
-        claimError: 'failed',
-        expected: 'needs_attention',
-      },
-      {
-        connectedCreator: null,
-        accountClaimed: true,
-        locksError: 'rejected',
-        claimError: 'failed',
-        expected: 'needs_attention',
-      },
-      {
-        connectedCreator: C,
-        accountClaimed: null,
-        locksError: 'rejected',
-        claimError: null,
-        expected: 'needs_attention',
-      },
-      {
-        connectedCreator: C,
-        accountClaimed: null,
-        locksError: null,
-        claimError: 'failed',
-        expected: 'needs_attention',
-      },
-      {
-        connectedCreator: C,
-        accountClaimed: null,
-        locksError: 'rejected',
-        claimError: 'failed',
-        expected: 'needs_attention',
-      },
-      {
-        connectedCreator: C,
-        accountClaimed: false,
-        locksError: 'rejected',
-        claimError: null,
-        expected: 'needs_attention',
-      },
-      {
-        connectedCreator: C,
-        accountClaimed: false,
-        locksError: null,
-        claimError: 'failed',
-        expected: 'needs_attention',
-      },
-      {
-        connectedCreator: C,
-        accountClaimed: false,
-        locksError: 'rejected',
-        claimError: 'failed',
-        expected: 'needs_attention',
-      },
-      {
-        connectedCreator: C,
-        accountClaimed: true,
-        locksError: 'rejected',
-        claimError: null,
-        expected: 'needs_attention',
-      },
-      {
-        connectedCreator: C,
-        accountClaimed: true,
-        locksError: null,
-        claimError: 'failed',
-        expected: 'needs_attention',
-      },
-      {
-        connectedCreator: C,
-        accountClaimed: true,
-        locksError: 'rejected',
-        claimError: 'failed',
-        expected: 'needs_attention',
-      },
-    ] as const)(
-      'creator=$connectedCreator claimed=$accountClaimed locksError=$locksError claimError=$claimError → $expected',
-      ({ expected, ...args }) => {
-        expect(deriveBitcoinStatus({ accountPubky: C, ...args })).toBe(expected);
-      },
-    );
+      [true, 'connected'],
+      [false, 'not_set_up'],
+      [null, 'needs_attention'],
+    ] as const)('claimed=%s → %s', (accountClaimed, expected) => {
+      expect(deriveBitcoinStatus(accountClaimed)).toBe(expected);
+    });
+  });
 
-    it('does not treat a foreign Lock Server creator as Step 1 Connected', () => {
-      const other = 'ybndrfg8ejkmcpqxot1uwisza345h769ybndrfg8ejkmcpqxot1u';
-      expect(
-        deriveBitcoinStatus({
-          connectedCreator: other,
-          accountPubky: C,
-          accountClaimed: true,
-          locksError: null,
-          claimError: null,
-        }),
-      ).toBe('needs_attention');
+  describe('bitcoin_setup through the derivations', () => {
+    it.each([
+      { bitcoinSetup: 'ready', status: 'connected', offer: true, blocker: null },
+      { bitcoinSetup: 'setup_required', status: 'not_set_up', offer: true, blocker: 'bitkit' },
+      { bitcoinSetup: 'unavailable', status: 'needs_attention', offer: false, blocker: 'bitkit-unknown' },
+      { bitcoinSetup: undefined, status: 'needs_attention', offer: false, blocker: 'bitkit-unknown' },
+    ] as const)('$bitcoinSetup → $status', ({ bitcoinSetup, status, offer, blocker }) => {
+      const claimed = bitcoinSetupClaim({ bitcoinSetup });
+      expect(deriveBitcoinStatus(claimed)).toBe(status);
+      expect(canOfferBitkitSetup(claimed)).toBe(offer);
+      expect(deriveBitcoinToggleBlocker(claimed)).toBe(blocker);
+    });
+
+    it('treats a failed read (no config) as unknown, never as Not set up', () => {
+      const claimed = bitcoinSetupClaim(null);
+      expect(deriveBitcoinStatus(claimed)).toBe('needs_attention');
+      expect(canOfferBitkitSetup(claimed)).toBe(false);
+    });
+
+    it('never counts an unknown answer as a ready method', () => {
+      expect(isReadyPaymentMethodStatus(deriveBitcoinStatus(null))).toBe(false);
+    });
+  });
+
+  describe('deriveBitcoinToggleBlocker', () => {
+    it.each([
+      [false, 'bitkit'],
+      [null, 'bitkit-unknown'],
+      [true, null],
+    ] as const)('claimed=%s → %s', (accountClaimed, expected) => {
+      expect(deriveBitcoinToggleBlocker(accountClaimed)).toBe(expected);
+    });
+
+    it('names only Bitkit in its copy', () => {
+      expect(BITCOIN_TOGGLE_BLOCKER_COPY).toEqual({
+        bitkit: 'Connect Bitkit first.',
+        'bitkit-unknown': "We can't check Bitkit right now.",
+      });
     });
   });
 

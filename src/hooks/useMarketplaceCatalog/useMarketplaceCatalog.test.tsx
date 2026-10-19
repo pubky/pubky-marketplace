@@ -21,12 +21,14 @@ const mockGetAllListings = vi.fn();
 const mockGetAllCatalogEntries = vi.fn();
 const mockGetAllShops = vi.fn();
 const mockFetchCatalogListings = vi.fn();
+const mockFetchPaymentMethodCatalog = vi.fn();
 vi.mock('@/controllers/commerce/commerce', () => ({
   CommerceController: {
     getAllListings: () => mockGetAllListings(),
     getAllCatalogEntries: () => mockGetAllCatalogEntries(),
     getAllShops: () => mockGetAllShops(),
     fetchCatalogListings: (filters: unknown) => mockFetchCatalogListings(filters),
+    fetchPaymentMethodCatalog: (method: unknown, filters: unknown) => mockFetchPaymentMethodCatalog(method, filters),
   },
 }));
 
@@ -64,6 +66,7 @@ describe('useMarketplaceCatalog', () => {
     mockGetAllCatalogEntries.mockReturnValue([]);
     mockGetAllShops.mockReturnValue([]);
     mockFetchCatalogListings.mockResolvedValue(undefined);
+    mockFetchPaymentMethodCatalog.mockResolvedValue([]);
   });
 
   it('uses independent category filters without changing the browse filters', () => {
@@ -237,5 +240,129 @@ describe('useMarketplaceCatalog', () => {
         countryCode: null,
       }),
     );
+  });
+});
+
+describe('useMarketplaceCatalog payment-method filter', () => {
+  const ACCEPTING = 'a'.repeat(52);
+  const OTHER = 'b'.repeat(52);
+  const accepting = createCommerceCatalogEntryFixture({ id: `${ACCEPTING}:boots_01`, seller_id: ACCEPTING });
+  const other = createCommerceCatalogEntryFixture({
+    id: `${OTHER}:boots_02`,
+    seller_id: OTHER,
+    listing_id: 'boots_02',
+  });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    useCommerceStore.getState().reset();
+    mockGetCommerceAdapterMode.mockReturnValue('transaction-service');
+    mockGetAllListings.mockReturnValue([]);
+    mockGetAllCatalogEntries.mockReturnValue([accepting, other]);
+    mockGetAllShops.mockReturnValue([]);
+    mockFetchCatalogListings.mockResolvedValue(undefined);
+  });
+
+  it('is off and filters nothing while no payment method is chosen', () => {
+    const { result } = renderHook(() => useMarketplaceCatalog(), { wrapper: readyWrapper });
+
+    expect(result.current.paymentFilter).toEqual({ method: null, status: 'off', sellers: null });
+    expect(result.current.listings).toHaveLength(2);
+    expect(mockFetchPaymentMethodCatalog).not.toHaveBeenCalled();
+  });
+
+  it('shows only listings from sellers who accept the method once the set is read', async () => {
+    let land: (() => void) | undefined;
+    mockFetchPaymentMethodCatalog.mockImplementation(
+      (method: 'paypal') =>
+        new Promise<string[]>((resolve) => {
+          land = () => {
+            useCommerceStore.getState().setPaymentMethodSellers(method, [ACCEPTING]);
+            resolve([ACCEPTING]);
+          };
+        }),
+    );
+    useCommerceStore.getState().setPaymentMethod('paypal');
+
+    const { result } = renderHook(() => useMarketplaceCatalog(), { wrapper: readyWrapper });
+
+    expect(result.current.isLoading).toBe(true);
+    expect(result.current.listings).toEqual([]);
+    act(() => land?.());
+    await waitFor(() => expect(result.current.paymentFilter.status).toBe('ready'));
+    expect(result.current.listings).toEqual([catalogItemFromCatalogEntry(accepting)]);
+    expect(result.current.facetPool).toEqual([catalogItemFromCatalogEntry(accepting)]);
+    expect(mockFetchPaymentMethodCatalog).toHaveBeenCalledWith('paypal', {
+      saleFormat: 'all',
+      conditions: [],
+      sort: 'recommended',
+      countryCode: null,
+    });
+  });
+
+  it('uses the set remembered this session while a fresh read is in flight', () => {
+    useCommerceStore.getState().setPaymentMethodSellers('bitcoin', [OTHER]);
+    mockFetchPaymentMethodCatalog.mockReturnValue(new Promise(() => {}));
+    useCommerceStore.getState().setPaymentMethod('bitcoin');
+
+    const { result } = renderHook(() => useMarketplaceCatalog(), { wrapper: readyWrapper });
+
+    expect(result.current.paymentFilter.status).toBe('ready');
+    expect(result.current.listings).toEqual([catalogItemFromCatalogEntry(other)]);
+  });
+
+  it('claims no matches and reports unavailable when the set cannot be read', async () => {
+    mockFetchPaymentMethodCatalog.mockRejectedValue(new TypeError('offline'));
+    useCommerceStore.getState().setPaymentMethod('usdt');
+
+    const { result } = renderHook(() => useMarketplaceCatalog(), { wrapper: readyWrapper });
+
+    await waitFor(() => expect(result.current.paymentFilter.status).toBe('unavailable'));
+    expect(result.current.listings).toEqual([]);
+    expect(result.current.isLoading).toBe(false);
+  });
+
+  it('re-reads the set when a server-side filter changes', async () => {
+    useCommerceStore.getState().setPaymentMethod('paypal');
+    renderHook(() => useMarketplaceCatalog(), { wrapper: readyWrapper });
+    await waitFor(() => expect(mockFetchPaymentMethodCatalog).toHaveBeenCalledTimes(1));
+
+    act(() => useCommerceStore.getState().setSaleFormat('auction'));
+
+    await waitFor(() => expect(mockFetchPaymentMethodCatalog).toHaveBeenCalledTimes(2));
+    expect(mockFetchPaymentMethodCatalog).toHaveBeenLastCalledWith(
+      'paypal',
+      expect.objectContaining({ saleFormat: 'auction' }),
+    );
+  });
+
+  it('never applies the payment filter to explicit filters (similar items)', () => {
+    useCommerceStore.getState().setPaymentMethod('paypal');
+    const filters: MarketplaceCatalogFilters = {
+      query: '',
+      categoryId: null,
+      saleFormat: 'all',
+      conditions: [],
+      minimumPriceMinor: null,
+      maximumPriceMinor: null,
+      countryCode: null,
+      sort: 'recommended',
+    };
+
+    const { result } = renderHook(() => useMarketplaceCatalog([], [], filters), { wrapper: readyWrapper });
+
+    expect(result.current.paymentFilter.status).toBe('off');
+    expect(result.current.listings).toHaveLength(2);
+    expect(mockFetchPaymentMethodCatalog).not.toHaveBeenCalled();
+  });
+
+  it('is off outside the durable service', () => {
+    mockGetCommerceAdapterMode.mockReturnValue('sandbox');
+    useCommerceStore.getState().setPaymentMethod('paypal');
+
+    const { result } = renderHook(() => useMarketplaceCatalog(), { wrapper: readyWrapper });
+
+    expect(result.current.paymentFilter.status).toBe('off');
+    expect(mockFetchPaymentMethodCatalog).not.toHaveBeenCalled();
   });
 });

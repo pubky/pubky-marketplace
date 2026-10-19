@@ -21,9 +21,9 @@ Handoff readiness lives in these docs; start with the team brief.
 - [Environment variables](environment.md): build-time and `PUBKY_RUNTIME_*` configuration, including the marketplace, Paykit, USDT and framing keys.
 - [USDT payments](ecommerce/usdt-payments.md): the dark flag, the payment option model and the service gate.
 - [Serving the Shop inside pubky.app](launch/shop-embedding.md): base path, framing, embedded mode and the `shop-` storage namespace.
-- [Messaging](ecommerce/messaging/README.md): the encrypted-messaging record and its current status.
+- [Chat](chat/README.md): buyer↔seller messages as end-to-end encrypted files on the sender's homeserver, delivered through homeserver event streams, `pubky/inbox` pings and reconciliation; the design decision is [ADR 0030](adr/0030-chat-transport.md).
 - [Upstream integration](ecommerce/upstream-integration.md): pinned Locks, Paykit and Paykit server contracts.
-- Architectural decisions: [`adr/`](adr/), indexed in [`architecture.md`](architecture.md). ADRs 0019 to 0029 cover the marketplace (transaction authority, public records, namespaces, the Rust service, portable reputation, drops, the indexer contract and the vibe session consumer).
+- Architectural decisions: [`adr/`](adr/), indexed in [`architecture.md`](architecture.md). ADRs 0019 to 0030 cover the marketplace (transaction authority, public records, namespaces, the Rust service, portable reputation, drops, the indexer contract, the vibe session consumer and the chat transport).
 
 ## Single sign-on
 
@@ -81,7 +81,7 @@ Single source of truth for all project standards, conventions, and architectural
 | `ecommerce/onboarding.md`         | Start here: repositories, access, run, test, merge, who to ask                |
 | `ecommerce/RUNNING.md`            | Running the marketplace locally in every mode, and the live test suites       |
 | `ecommerce/release.md`            | Release train, VRT baselines, Vercel deploy, signed-in production proof, tags |
-| `ecommerce/runbook-production.md` | Kill switch, rollback, Vercel domain moves, Railway restarts                  |
+| `ecommerce/runbook-production.md` | Kill switch, rollback, `shop.pubky.app` rule, Railway restarts                |
 | `ecommerce/status.md`             | What is real and what is simulated                                            |
 
 #### Migrations

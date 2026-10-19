@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   APP_RUNTIME_DEFAULTS,
   NETWORK_RUNTIME_DEFAULTS,
+  readSentryEnvironment,
   runtimeConfigValueSchema,
   runtimeEnvInputSchema,
   runtimeEnvInputSchemaWithDefaults,
@@ -20,6 +21,11 @@ const VALID_ENV_INPUT = {
   pkarrRelays: '["https://pkarr.example.com"]',
   testnet: 'true',
   deployEnv: 'production',
+};
+
+const STAGING_ENDPOINTS = {
+  defaultHttpRelay: 'https://httprelay.staging.example.com/inbox',
+  exchangeRateApi: 'https://rates.staging.example.com/btc',
 };
 
 const SENTRY_ENV_INPUT = {
@@ -77,7 +83,46 @@ describe('runtimeEnvInputSchema', () => {
 
   it('parses both deploy identities', () => {
     expect(runtimeEnvInputSchema.parse(VALID_ENV_INPUT).deployEnv).toBe('production');
-    expect(runtimeEnvInputSchema.parse({ ...VALID_ENV_INPUT, deployEnv: 'staging' }).deployEnv).toBe('staging');
+    expect(
+      runtimeEnvInputSchema.parse({ ...VALID_ENV_INPUT, ...STAGING_ENDPOINTS, deployEnv: 'staging' }).deployEnv,
+    ).toBe('staging');
+  });
+
+  describe('staging endpoints', () => {
+    const STAGING_ENV_INPUT = { ...VALID_ENV_INPUT, ...STAGING_ENDPOINTS, deployEnv: 'staging' };
+
+    it('refuses a staging deploy without an explicit FX source instead of defaulting to production', () => {
+      const { exchangeRateApi: _fx, ...withoutFx } = STAGING_ENV_INPUT;
+      expect(() => runtimeEnvInputSchema.parse(withoutFx)).toThrow(
+        /PUBKY_RUNTIME_ENV=staging requires PUBKY_RUNTIME_EXCHANGE_RATE_API/,
+      );
+      expect(() => runtimeEnvInputSchema.parse({ ...withoutFx, exchangeRateApi: '  ' })).toThrow(
+        /PUBKY_RUNTIME_EXCHANGE_RATE_API/,
+      );
+    });
+
+    it('refuses the production HTTP relay on a staging deploy', () => {
+      for (const relay of ['https://httprelay.pubky.app/inbox', 'https://httprelay.pubky.app/link/']) {
+        expect(() => runtimeEnvInputSchema.parse({ ...STAGING_ENV_INPUT, defaultHttpRelay: relay })).toThrow(
+          /must not use the production HTTP relay \(httprelay\.pubky\.app\) in PUBKY_RUNTIME_DEFAULT_HTTP_RELAY/,
+        );
+      }
+    });
+
+    it('accepts a staging deploy that names its relay and FX source', () => {
+      const parsed = runtimeEnvInputSchema.parse(STAGING_ENV_INPUT);
+      expect(parsed.defaultHttpRelay).toBe(STAGING_ENDPOINTS.defaultHttpRelay);
+      expect(parsed.exchangeRateApi).toBe(STAGING_ENDPOINTS.exchangeRateApi);
+    });
+
+    it('keeps the production defaults for a production deploy and the lenient dev parse', () => {
+      expect(runtimeEnvInputSchema.parse(VALID_ENV_INPUT).exchangeRateApi).toBe(APP_RUNTIME_DEFAULTS.exchangeRateApi);
+      expect(
+        runtimeEnvInputSchema.parse({ ...VALID_ENV_INPUT, defaultHttpRelay: 'https://httprelay.pubky.app/inbox' })
+          .defaultHttpRelay,
+      ).toBe('https://httprelay.pubky.app/inbox');
+      expect(runtimeEnvInputSchemaWithDefaults.parse({}).exchangeRateApi).toBe(APP_RUNTIME_DEFAULTS.exchangeRateApi);
+    });
   });
 
   it('throws on malformed PKARR_RELAYS JSON', () => {
@@ -193,16 +238,67 @@ describe('runtimeEnvInputSchema', () => {
     );
   });
 
+  it('offers only the 7-day auction when AUCTION_DURATIONS_MINUTES is unset', () => {
+    expect(runtimeEnvInputSchema.parse(VALID_ENV_INPUT).auctionDurationsMinutes).toEqual([7 * 24 * 60]);
+    expect(runtimeEnvInputSchemaWithDefaults.parse({}).auctionDurationsMinutes).toEqual([7 * 24 * 60]);
+  });
+
+  it('parses staging auction lengths in minutes', () => {
+    const parsed = runtimeEnvInputSchema.parse({
+      ...VALID_ENV_INPUT,
+      ...STAGING_ENDPOINTS,
+      deployEnv: 'staging',
+      auctionDurationsMinutes: '[15, 60, 10080]',
+    });
+
+    expect(parsed.auctionDurationsMinutes).toEqual([15, 60, 10080]);
+  });
+
+  it('refuses auctions shorter than a day on a production deploy', () => {
+    expect(() => runtimeEnvInputSchema.parse({ ...VALID_ENV_INPUT, auctionDurationsMinutes: '[15, 10080]' })).toThrow(
+      /PUBKY_RUNTIME_AUCTION_DURATIONS_MINUTES/,
+    );
+    expect(
+      runtimeEnvInputSchema.parse({ ...VALID_ENV_INPUT, auctionDurationsMinutes: '[1440, 10080]' })
+        .auctionDurationsMinutes,
+    ).toEqual([1440, 10080]);
+  });
+
+  it('rejects malformed auction lengths', () => {
+    for (const value of ['[]', '[0]', '[1.5]', '["15"]', '15', 'not json']) {
+      expect(() =>
+        runtimeEnvInputSchemaWithDefaults.parse({ deployEnv: 'staging', auctionDurationsMinutes: value }),
+      ).toThrow();
+    }
+  });
+
+  it('refuses duplicate auction lengths', () => {
+    expect(() =>
+      runtimeEnvInputSchemaWithDefaults.parse({ deployEnv: 'staging', auctionDurationsMinutes: '[15, 15]' }),
+    ).toThrow(/PUBKY_RUNTIME_AUCTION_DURATIONS_MINUTES value: duplicate lengths are not allowed/);
+    expect(() =>
+      runtimeEnvInputSchema.parse({ ...VALID_ENV_INPUT, auctionDurationsMinutes: '[10080, 1440, 10080]' }),
+    ).toThrow(/PUBKY_RUNTIME_AUCTION_DURATIONS_MINUTES value: duplicate lengths are not allowed/);
+  });
+
   it('keeps the fork Paykit setup creator parameter unless explicitly turned off', () => {
     expect(runtimeEnvInputSchema.parse(VALID_ENV_INPUT).paykitSetupCreatorParam).toBe(true);
     expect(runtimeEnvInputSchemaWithDefaults.parse({}).paykitSetupCreatorParam).toBe(true);
     expect(
       runtimeEnvInputSchema.parse({ ...VALID_ENV_INPUT, paykitSetupCreatorParam: '' }).paykitSetupCreatorParam,
     ).toBe(true);
-    expect(
-      runtimeEnvInputSchema.parse({ ...VALID_ENV_INPUT, paykitSetupCreatorParam: 'false' }).paykitSetupCreatorParam,
-    ).toBe(false);
     expect(() => runtimeEnvInputSchema.parse({ ...VALID_ENV_INPUT, paykitSetupCreatorParam: 'no' })).toThrow();
+  });
+
+  it('refuses the creator parameter off unless the Paykit Server API is upstream', () => {
+    for (const paykitServerApi of [undefined, 'fork']) {
+      expect(() =>
+        runtimeEnvInputSchema.parse({ ...VALID_ENV_INPUT, paykitServerApi, paykitSetupCreatorParam: 'false' }),
+      ).toThrow(/PUBKY_RUNTIME_PAYKIT_SETUP_CREATOR_PARAM=false requires PUBKY_RUNTIME_PAYKIT_SERVER_API=upstream/);
+      expect(() =>
+        runtimeEnvInputSchemaWithDefaults.parse({ paykitServerApi, paykitSetupCreatorParam: 'false' }),
+      ).toThrow(/PUBKY_RUNTIME_PAYKIT_SERVER_API=upstream/);
+    }
   });
 
   it('defaults to the fork Paykit Server API and takes upstream only with the creator parameter off', () => {
@@ -461,5 +557,86 @@ describe('embedding runtime values', () => {
       'https://pubky.app',
     ]);
     expect(() => runtimeConfigValueSchema.parse({ ...base, frameAncestors: ['https://*.pubky.app'] })).toThrow();
+  });
+});
+
+describe('shop public path runtime value', () => {
+  it('is unset by default, so the mount path serves people too', () => {
+    expect(runtimeEnvInputSchema.parse(VALID_ENV_INPUT).shopPublicPath).toBeUndefined();
+    expect(runtimeEnvInputSchemaWithDefaults.parse({}).shopPublicPath).toBeUndefined();
+    expect(runtimeEnvInputSchema.parse({ ...VALID_ENV_INPUT, shopPublicPath: '  ' }).shopPublicPath).toBeUndefined();
+  });
+
+  it('parses a path the host app serves the Shop at', () => {
+    expect(runtimeEnvInputSchema.parse({ ...VALID_ENV_INPUT, shopPublicPath: '/shop' }).shopPublicPath).toBe('/shop');
+    expect(runtimeEnvInputSchemaWithDefaults.parse({ shopPublicPath: '/shop' }).shopPublicPath).toBe('/shop');
+  });
+
+  it.each([
+    ['no leading slash', 'shop'],
+    ['a trailing slash', '/shop/'],
+    ['a dot segment', '/shop/../x'],
+    ['an origin', 'https://pubky.app/shop'],
+    ['a query', '/shop?x=1'],
+  ])('rejects %s', (_label, value) => {
+    expect(() => runtimeEnvInputSchema.parse({ ...VALID_ENV_INPUT, shopPublicPath: value })).toThrow();
+    expect(() => runtimeEnvInputSchemaWithDefaults.parse({ shopPublicPath: value })).toThrow();
+  });
+
+  it('validates the parsed value schema too', () => {
+    const base = runtimeEnvInputSchema.parse(VALID_ENV_INPUT);
+    expect(runtimeConfigValueSchema.parse({ ...base, shopPublicPath: '/shop' }).shopPublicPath).toBe('/shop');
+    expect(() => runtimeConfigValueSchema.parse({ ...base, shopPublicPath: '' })).toThrow();
+    expect(() => runtimeConfigValueSchema.parse({ ...base, shopPublicPath: '/shop/' })).toThrow();
+  });
+});
+
+describe('shop grant client id runtime value', () => {
+  it('is unset by default, so the built-in client id applies', () => {
+    expect(runtimeEnvInputSchema.parse(VALID_ENV_INPUT).shopGrantClientId).toBeUndefined();
+    expect(runtimeEnvInputSchemaWithDefaults.parse({}).shopGrantClientId).toBeUndefined();
+    expect(
+      runtimeEnvInputSchema.parse({ ...VALID_ENV_INPUT, shopGrantClientId: '  ' }).shopGrantClientId,
+    ).toBeUndefined();
+  });
+
+  it.each(['pubky.app', 'staging.pubky.app', 'shop.pubky.app'])('accepts the host name %s', (value) => {
+    expect(runtimeEnvInputSchema.parse({ ...VALID_ENV_INPUT, shopGrantClientId: value }).shopGrantClientId).toBe(value);
+    expect(runtimeEnvInputSchemaWithDefaults.parse({ shopGrantClientId: value }).shopGrantClientId).toBe(value);
+  });
+
+  it.each([
+    ['a scheme', 'https://pubky.app'],
+    ['a path', 'pubky.app/shop'],
+    ['a port', 'pubky.app:443'],
+    ['upper case', 'Pubky.app'],
+    ['no dot', 'pubky'],
+    ['a leading dot', '.pubky.app'],
+    ['a trailing dot', 'pubky.app.'],
+  ])('rejects %s', (_label, value) => {
+    expect(() => runtimeEnvInputSchema.parse({ ...VALID_ENV_INPUT, shopGrantClientId: value })).toThrow();
+    expect(() => runtimeEnvInputSchemaWithDefaults.parse({ shopGrantClientId: value })).toThrow();
+  });
+
+  it('validates the parsed value schema too', () => {
+    const base = runtimeEnvInputSchema.parse(VALID_ENV_INPUT);
+    expect(runtimeConfigValueSchema.parse({ ...base, shopGrantClientId: 'pubky.app' }).shopGrantClientId).toBe(
+      'pubky.app',
+    );
+    expect(() => runtimeConfigValueSchema.parse({ ...base, shopGrantClientId: 'https://pubky.app' })).toThrow();
+  });
+});
+
+describe('readSentryEnvironment', () => {
+  it('reads PUBKY_RUNTIME_SENTRY_ENVIRONMENT as the runtime resolver parses it', () => {
+    const env = { PUBKY_RUNTIME_SENTRY_ENVIRONMENT: 'staging' };
+    expect(readSentryEnvironment(env)).toBe('staging');
+    expect(readSentryEnvironment(env)).toBe(
+      runtimeEnvInputSchemaWithDefaults.parse({ sentryEnvironment: 'staging' }).sentryEnvironment,
+    );
+  });
+
+  it.each([undefined, '', '   '])('treats %j as unset', (value) => {
+    expect(readSentryEnvironment({ PUBKY_RUNTIME_SENTRY_ENVIRONMENT: value })).toBeUndefined();
   });
 });

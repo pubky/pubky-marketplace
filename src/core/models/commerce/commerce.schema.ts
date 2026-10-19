@@ -240,6 +240,8 @@ export interface CommerceListingProjectionModelSchema {
   server_revision: number;
   state: CommerceListingProjectionState;
   available_quantity: number;
+  /** The seller's store sells the listing without a stock count: `available_quantity` is not a count. */
+  made_to_order?: boolean;
   current_price: CommerceMoney;
   auction_state: AuctionState | null;
   bid_count: number;
@@ -553,6 +555,11 @@ export interface CommerceSavedSearchParams {
    */
   countryCode?: string | null;
   sort: 'recommended' | 'newest' | 'price_low' | 'price_high' | 'ending_soon';
+  /**
+   * Only sellers who accept this rail, null = any. Optional because rows
+   * persisted before the filter existed lack it; readers coalesce to null.
+   */
+  paymentMethod?: 'bitcoin' | 'usdt' | 'paypal' | null;
 }
 
 /**

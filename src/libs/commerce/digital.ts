@@ -463,6 +463,7 @@ export const DIGITAL_CHECKOUT_COPY = {
   digitalOption: 'Digital delivery',
   noShippingDigital: 'No shipping for digital items.',
   noShippingMixed: 'No shipping for these items.',
+  shippingMixedWithDigital: 'Shipping is calculated at checkout for items that ship. Digital items have none.',
   payReasonNotReady: "An item's seller hasn't finished setting up delivery. Remove it in the cart to continue.",
   payReasonLoading: 'Pay unlocks once delivery options load.',
 } as const;

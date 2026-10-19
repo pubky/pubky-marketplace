@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { setBasePath } from '@/test-utils/base-path';
 import { asOpaque } from '@/test-utils/type-assertions';
 import {
   PASSPORT_CALLBACK_MESSAGE,
@@ -91,6 +92,14 @@ async function settle<T>(promise: Promise<T>) {
 }
 
 describe('passportCallbacks', () => {
+  afterEach(() => setBasePath(''));
+  it('returns callbacks under the Shop mount prefix', () => {
+    setBasePath('/shop-embed');
+    expect(passportCallbacks('https://pubky.app')?.xSuccess).toBe(
+      'https://pubky.app/shop-embed/auth/passport/return?outcome=success',
+    );
+  });
+
   it('returns one-origin HTTPS callbacks for each outcome', () => {
     expect(passportCallbacks('https://shop.pubky.app')).toEqual({
       xSource: 'Pubky Shop',
@@ -110,6 +119,15 @@ describe('passportCallbacks', () => {
     expect(passportCallbacks('https://staging.pubky.app', '/shop')?.xSuccess).toBe(
       'https://staging.pubky.app/shop/auth/passport/return?outcome=success',
     );
+  });
+
+  it("returns to the build's own mount path, not the App's /shop wrapper, when the App frames the Shop", () => {
+    expect(passportCallbacks('https://pubky.app', '/shop-embed')).toEqual({
+      xSource: 'Pubky Shop',
+      xSuccess: 'https://pubky.app/shop-embed/auth/passport/return?outcome=success',
+      xError: 'https://pubky.app/shop-embed/auth/passport/return?outcome=error',
+      xCancel: 'https://pubky.app/shop-embed/auth/passport/return?outcome=cancel',
+    });
   });
 
   it('sends no callbacks from plain HTTP, which Passport would reject', () => {

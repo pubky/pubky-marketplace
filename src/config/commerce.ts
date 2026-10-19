@@ -1,4 +1,5 @@
 import {
+  getAuctionDurationsMinutes,
   getCommerceAdapterMode,
   getCommercePollIntervalMs,
   getLocksUrl,
@@ -12,6 +13,7 @@ import type { CommerceAdapterMode, PaykitServerApi } from '@/libs/runtime-config
 
 export {
   type CommerceAdapterMode,
+  getAuctionDurationsMinutes,
   getCommerceAdapterMode,
   getCommercePollIntervalMs,
   getLocksUrl,
@@ -88,6 +90,8 @@ export const COMMERCE_SHOP_TERM_DAYS_MAX = 60;
  */
 export const COMMERCE_DEFAULT_DELIVERY_ASSUME_DAYS = 14;
 export const COMMERCE_DEFAULT_AUTO_COMPLETE_DAYS = 14;
+/** Upper bound for the shop record's `shipsToCountries` list (ISO 3166-1 has 249 assigned codes). */
+export const COMMERCE_SHOP_SHIPS_TO_MAX_COUNTRIES = 250;
 
 export const COMMERCE_LISTING_TITLE_MIN_CHARS = 3;
 export const COMMERCE_LISTING_TITLE_MAX_CHARS = 80;
@@ -185,6 +189,21 @@ export const COMMERCE_WATCH_CHECK_MAX_ITEMS = 24;
  * per-item reads.
  */
 export const COMMERCE_WATCH_CHECK_MIN_INTERVAL_MS = 60 * 1_000;
+
+/**
+ * The cart and checkout reread each cart listing's public availability, one
+ * request per listing, against the service's per-client budget on that route
+ * (`LISTING_AVAILABILITY_CLIENT_PER_MINUTE`, 120 a minute by default, burst
+ * 30). A pass runs at most this often, and on window focus no sooner.
+ */
+export const COMMERCE_CART_STOCK_MIN_INTERVAL_MS = 15 * 1_000;
+
+/**
+ * Most availability reads a minute the cart's repeating passes spend, whatever
+ * the number of listings: a larger cart rereads each listing less often, so the
+ * rest of the budget stays free for the listing page and other tabs.
+ */
+export const COMMERCE_CART_STOCK_READS_PER_MINUTE = 20;
 
 /** Saved searches re-run per check pass (each is one Nexus stream request). */
 export const COMMERCE_SAVED_SEARCH_CHECK_MAX = 10;

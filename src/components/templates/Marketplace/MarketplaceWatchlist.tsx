@@ -1,15 +1,13 @@
 'use client';
 
 import { useState } from 'react';
-import { Bell, Eye, Gavel, Heart, Package, RefreshCw } from 'lucide-react';
+import { Bell, Eye, Gavel, Heart, RefreshCw } from 'lucide-react';
 import { getMarketplaceListingRoute } from '@/app/routes';
 import { Badge } from '@/atoms/Badge/Badge';
 import { Button } from '@/atoms/Button/Button';
 import { Card, CardContent } from '@/atoms/Card/Card';
 import { Container } from '@/atoms/Container/Container';
 import { Heading } from '@/atoms/Heading/Heading';
-import { Image } from '@/atoms/Image/Image';
-import { Link } from '@/atoms/Link/Link';
 import { Skeleton } from '@/atoms/Skeleton/Skeleton';
 import { Typography } from '@/atoms/Typography/Typography';
 import { CommerceController } from '@/controllers/commerce/commerce';
@@ -29,14 +27,13 @@ import { effectiveListingState } from '@/libs/commerce/auction-phase';
 import { formatCommerceMoney } from '@/libs/commerce/format';
 import { Logger } from '@/libs/logger/logger';
 import { MarketplaceEmptyState } from '@/molecules/Marketplace/MarketplaceEmptyState';
+import { MarketplaceProductSummary } from '@/molecules/Marketplace/MarketplaceProductSummary';
 import { ContentLayout } from '@/organisms/ContentLayout/ContentLayout';
+import { MarketplaceIndicativePrice } from '@/organisms/Marketplace/MarketplaceIndicativePrice';
 import { MarketplaceReauthDialog } from '@/organisms/Marketplace/MarketplaceReauthDialog';
 import { MarketplaceSectionNav } from '@/organisms/Marketplace/MarketplaceSectionNav';
 import { MarketplaceNotificationItem } from '@/organisms/MarketplaceNotificationItem/MarketplaceNotificationItem';
-import {
-  getWatchAlertDetail,
-  getWatchAlertHeadline,
-} from '@/organisms/MarketplaceWatchAlertItem/MarketplaceWatchAlertItem.utils';
+import { MarketplaceWatchAlertItem } from '@/organisms/MarketplaceWatchAlertItem/MarketplaceWatchAlertItem';
 
 /** Auction lifecycle kinds the transaction service actually emits to this user. */
 const SERVICE_AUCTION_KINDS = new Set(['outbid', 'auction_won', 'auction_ended']);
@@ -53,6 +50,10 @@ export function MarketplaceWatchlist() {
 
   const serviceAuctionRows = serviceFeed.items.filter((item) => SERVICE_AUCTION_KINDS.has(item.type)).slice(0, 5);
   const localAlerts = alertFeed.items.slice(0, WATCH_ALERTS_PAGE_LIMIT);
+  const auctionNotifications = [
+    ...serviceAuctionRows.map((item) => ({ source: 'service' as const, item })),
+    ...localAlerts.map((item) => ({ source: 'device' as const, item })),
+  ].sort((a, b) => b.item.timestamp - a.item.timestamp);
   const lastCheckedAt = entries.reduce((newest, entry) => Math.max(newest, entry.snapshot?.checked_at ?? 0), 0);
 
   const checkNow = async () => {
@@ -90,7 +91,7 @@ export function MarketplaceWatchlist() {
             <div className="flex items-center gap-3">
               {lastCheckedAt > 0 && <LastCheckedLabel checkedAt={lastCheckedAt} />}
               <Button
-                variant="secondary"
+                variant="outline"
                 className="rounded-full"
                 disabled={isCheckingNow}
                 onClick={() => void checkNow()}
@@ -139,70 +140,32 @@ export function MarketplaceWatchlist() {
                 Sign in to keep a watchlist
               </Heading>
               <Typography as="p" className="max-w-md text-muted-foreground">
-                Watched items are stored with your account on this device and synced privately across your devices
-                through your homeserver. Alerts come from checks the app runs while you browse.
+                Watched items are stored for your pubky on this device and synced privately across your devices through
+                your homeserver. Alerts come from checks the app runs while you browse.
               </Typography>
             </CardContent>
           </Card>
         ) : (
           <>
-            {serviceAuctionRows.length > 0 && (
-              <section aria-label="Auction notifications" className="flex flex-col gap-3">
-                <div className="flex items-center gap-2">
+            {auctionNotifications.length > 0 && (
+              <section aria-label="Auction notifications" className="flex flex-col gap-3" data-cy="watchlist-alerts">
+                <div className="flex flex-wrap items-center gap-2">
                   <Gavel className="size-4 text-brand" />
                   <Heading level={2} size="sm" className="text-lg">
                     Auction notifications
                   </Heading>
-                  <Typography as="span" className="text-xs text-muted-foreground">
-                    Delivered by the marketplace service — you are notified when a bid displaces you.
-                  </Typography>
                 </div>
                 <Card className="rounded-md p-0">
-                  <CardContent className="flex flex-col gap-3 p-6">
-                    {serviceAuctionRows.map((notification) => (
-                      <MarketplaceNotificationItem key={notification.id} notification={notification} />
+                  <CardContent className="divide-y divide-border p-0">
+                    {auctionNotifications.map((row) => (
+                      <div key={`${row.source}:${row.item.id}`} className="p-6">
+                        {row.source === 'service' ? (
+                          <MarketplaceNotificationItem notification={row.item} />
+                        ) : (
+                          <MarketplaceWatchAlertItem item={row.item} showSourceBadge />
+                        )}
+                      </div>
                     ))}
-                  </CardContent>
-                </Card>
-              </section>
-            )}
-
-            {localAlerts.length > 0 && (
-              <section aria-label="Watchlist alerts" className="flex flex-col gap-3" data-cy="watchlist-alerts">
-                <div className="flex items-center gap-2">
-                  <Bell className="size-4 text-brand" />
-                  <Heading level={2} size="sm" className="text-lg">
-                    Detected on this device
-                  </Heading>
-                  <Typography as="span" className="text-xs text-muted-foreground">
-                    From this device&apos;s own checks of the listing index and public auction state — not server
-                    events.
-                  </Typography>
-                </div>
-                <Card className="rounded-md p-0">
-                  <CardContent className="flex flex-col gap-1 p-6">
-                    {localAlerts.map((alert) => {
-                      const detail = getWatchAlertDetail(alert);
-                      return (
-                        <Link
-                          key={alert.id}
-                          href={alert.href}
-                          overrideDefaults
-                          className="flex items-center justify-between gap-3 rounded-lg px-2 py-2 hover:bg-background/60"
-                        >
-                          <div className="min-w-0">
-                            <Typography as="p" className="truncate text-sm font-medium">
-                              {getWatchAlertHeadline(alert)}: {alert.title}
-                            </Typography>
-                            <Typography as="p" className="truncate text-xs text-muted-foreground">
-                              {detail ? `${detail} · ` : ''}
-                              <CheckedAtLabel timestamp={alert.timestamp} />
-                            </Typography>
-                          </div>
-                          {alert.isUnseen && <span className="size-2 shrink-0 rounded-full bg-brand" aria-hidden />}
-                        </Link>
-                      );
-                    })}
                   </CardContent>
                 </Card>
               </section>
@@ -262,18 +225,12 @@ function LastCheckedLabel({ checkedAt }: { checkedAt: number }) {
   );
 }
 
-function CheckedAtLabel({ timestamp }: { timestamp: number }) {
-  const { formatRelativeTime } = useRelativeTime();
-  return <>Observed {formatRelativeTime(new Date(timestamp))} by this device</>;
-}
-
 function WatchlistItemRow({ entry }: { entry: MarketplaceWatchlistEntry }) {
   const { item, snapshot, sellerId, rawListingId, listingId } = entry;
   const isAuction = item ? item.saleFormat === 'auction' : snapshot?.auction_ends_at !== null;
   const watch = useCommerceFavorite(listingId);
   const seller = useMarketplaceSellerSummary(sellerId, { includeReputation: false });
   const { ref: liveBidRef, bid } = useMarketplaceLiveBid(sellerId, rawListingId, Boolean(item && isAuction));
-  const [mediaFailed, setMediaFailed] = useState(false);
 
   const hasLiveBid = bid !== null && bid.bidCount > 0;
   const title = item?.title ?? snapshot?.title ?? rawListingId;
@@ -283,91 +240,64 @@ function WatchlistItemRow({ entry }: { entry: MarketplaceWatchlistEntry }) {
 
   return (
     <Card ref={liveBidRef} className="rounded-md p-0" data-cy="watchlist-item">
-      <CardContent className="flex items-center gap-4 p-6">
-        <Link
+      <CardContent className="grid gap-4 p-6">
+        <MarketplaceProductSummary
+          inset
+          title={title}
           href={getMarketplaceListingRoute(sellerId, rawListingId)}
-          overrideDefaults
-          className="flex min-w-0 flex-1 items-center gap-4"
-        >
-          <div className="flex size-16 shrink-0 items-center justify-center overflow-hidden rounded-lg border bg-background/60">
-            {mediaUrl && !mediaFailed ? (
-              <div className="relative size-16">
-                <Image
-                  src={mediaUrl}
-                  alt={title}
-                  fill
-                  sizes="64px"
-                  className="object-cover object-center"
-                  onError={() => setMediaFailed(true)}
+          imageUrl={mediaUrl}
+          details={seller.displayName}
+          priceLabel={isAuction ? (hasLiveBid ? 'Current bid' : 'Starting bid') : undefined}
+          price={
+            item && (
+              <>
+                {formatCommerceMoney(hasLiveBid ? bid.currentPrice : item.price)}
+                <MarketplaceIndicativePrice
+                  money={hasLiveBid ? bid.currentPrice : item.price}
+                  className="font-normal"
                 />
-              </div>
-            ) : (
-              <Package className="size-7 text-muted-foreground" aria-hidden="true" />
+                {hasLiveBid && (
+                  <span className="ml-2 text-xs font-normal text-muted-foreground">
+                    {bid.bidCount} {bid.bidCount === 1 ? 'bid' : 'bids'}
+                  </span>
+                )}
+              </>
+            )
+          }
+        />
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+            <Badge variant="outline">{isAuction ? 'Auction' : 'Buy now'}</Badge>
+            {state && (
+              <Badge
+                variant="outline"
+                className={state.tone === 'warn' ? 'border-amber-500/50 text-amber-300' : undefined}
+              >
+                {state.label}
+              </Badge>
+            )}
+            {endsAt && <EndsAtBadge endsAt={endsAt} />}
+            {!item && (
+              <Typography as="span" className="text-xs text-muted-foreground">
+                Not in the local catalog cache yet. Open the listing or wait for the next check.
+              </Typography>
             )}
           </div>
-
-          <div className="min-w-0 flex-1">
-            <Typography as="h3" className="truncate text-base font-semibold">
-              {title}
-            </Typography>
-            <Typography as="p" className="truncate text-xs text-muted-foreground">
-              {seller.displayName}
-            </Typography>
-            <div className="mt-1 flex flex-wrap items-center gap-2">
-              <Badge variant="secondary">{isAuction ? 'Auction' : 'Buy now'}</Badge>
-              {state && (
-                <Badge
-                  variant="outline"
-                  className={state.tone === 'warn' ? 'border-amber-500/50 text-amber-300' : undefined}
-                >
-                  {state.label}
-                </Badge>
-              )}
-              {endsAt && <EndsAtBadge endsAt={endsAt} />}
-              {!item && (
-                <Typography as="span" className="text-xs text-muted-foreground">
-                  Not in the local catalog cache yet — open the listing or wait for the next check.
-                </Typography>
-              )}
-            </div>
-          </div>
-
-          {item && (
-            <div className="flex shrink-0 flex-col items-end">
-              {isAuction && (
-                <Typography
-                  as="span"
-                  className="text-[11px] leading-4 font-medium tracking-[1.2px] text-muted-foreground uppercase"
-                >
-                  {hasLiveBid ? 'Current bid' : 'Starting bid'}
-                </Typography>
-              )}
-              <Typography as="p" className="text-base font-bold text-brand">
-                {formatCommerceMoney(hasLiveBid ? bid.currentPrice : item.price)}
-              </Typography>
-              {hasLiveBid && (
-                <Typography as="span" className="text-xs text-muted-foreground">
-                  {bid.bidCount} {bid.bidCount === 1 ? 'bid' : 'bids'}
-                </Typography>
-              )}
-            </div>
-          )}
-        </Link>
-
-        <Button
-          size="icon"
-          variant="ghost"
-          aria-label="Remove from watchlist"
-          disabled={watch.isMutating}
-          onClick={() => void watch.toggle()}
-          data-cy="watchlist-item-unwatch"
-        >
-          {isAuction ? (
-            <Bell className="size-4 fill-brand text-brand" />
-          ) : (
-            <Heart className="size-4 fill-brand text-brand" />
-          )}
-        </Button>
+          <Button
+            size="icon"
+            variant="ghost"
+            aria-label="Remove from watchlist"
+            disabled={watch.isMutating}
+            onClick={() => void watch.toggle()}
+            data-cy="watchlist-item-unwatch"
+          >
+            {isAuction ? (
+              <Bell className="size-4 fill-brand text-brand" />
+            ) : (
+              <Heart className="size-4 fill-brand text-brand" />
+            )}
+          </Button>
+        </div>
       </CardContent>
     </Card>
   );

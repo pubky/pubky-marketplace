@@ -29,13 +29,13 @@ import { Typography } from '@/atoms/Typography/Typography';
 import { getCommerceAdapterMode } from '@/config/commerce';
 import { getSocialHostUrl } from '@/config/social';
 import { FileController } from '@/controllers/file/file';
+import { useChatUnread } from '@/hooks/useChatUnread/useChatUnread';
 import { useCollectionsNavDiscovery } from '@/hooks/useCollectionsNavDiscovery/useCollectionsNavDiscovery';
 import { useCurrentUserProfile } from '@/hooks/useCurrentUserProfile/useCurrentUserProfile';
 import { useIsEmbedded } from '@/hooks/useIsEmbedded/useIsEmbedded';
 import { useKeyboardOffset } from '@/hooks/useKeyboardOffset/useKeyboardOffset';
 import { useMarketplaceCartCount } from '@/hooks/useMarketplaceCartCount/useMarketplaceCartCount';
 import { useMarketplaceNavAttention } from '@/hooks/useMarketplaceNavAttention/useMarketplaceNavAttention';
-import { useMessagesUnread } from '@/hooks/useMessagesUnread/useMessagesUnread';
 import { usePublicRoute } from '@/hooks/usePublicRoute/usePublicRoute';
 import { marketplaceNavAccessibleName } from '@/libs/commerce/marketplace-attention';
 import { handleFeedNavClick } from '@/libs/utils/feedScrollTop';
@@ -65,7 +65,7 @@ type FooterNavItem = {
  */
 export function MobileFooter({ className }: MobileFooterProps) {
   const pathname = usePathname();
-  const isAuthenticated = useAuthStore((state) => Boolean(state.currentUserPubky));
+  const isAuthenticated = useAuthStore((state) => Boolean(state.session));
   const setShowSignInDialog = useAuthStore((state) => state.setShowSignInDialog);
   const { isPublicExploreRoute } = usePublicRoute();
   const { userDetails, currentUserPubky } = useCurrentUserProfile();
@@ -74,7 +74,7 @@ export function MobileFooter({ className }: MobileFooterProps) {
   const unreadNotifications = useNotificationStore((state) => state.selectTotalUnread());
   // Honest device-local unread: conversations whose last received message
   // postdates the local read checkpoint.
-  const unreadMessages = useMessagesUnread({ enabled: !socialHostUrl });
+  const unreadMessages = useChatUnread({ enabled: !socialHostUrl });
   const marketplaceCartCount = useMarketplaceCartCount();
   const marketplaceAttention = useMarketplaceNavAttention();
   const accountUnread = unreadNotifications + unreadMessages;

@@ -1,6 +1,7 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { CommerceController } from '@/controllers/commerce/commerce';
+import { DELIVERY_KEY_COPY } from '@/libs/commerce/delivery-key-copy';
 import { AppError } from '@/libs/error/error';
 import { ClientErrorCode } from '@/libs/error/error.codes';
 import { ErrorCategory, ErrorService } from '@/libs/error/error.types';
@@ -16,8 +17,15 @@ vi.mock('@/config/commerce', async () => {
   return { ...actual, getCommerceAdapterMode: () => config.mode };
 });
 
+const shopShipsTo = vi.hoisted(() => new Map<string, string[]>());
+
 vi.mock('@/controllers/commerce/commerce', () => ({
   CommerceController: {
+    refreshShop: vi.fn(async (sellerPubky: string) => ({
+      ownerPubky: sellerPubky,
+      shipsToCountries: shopShipsTo.get(sellerPubky),
+    })),
+    getShop: vi.fn(async () => null),
     getMarketplaceListingProjection: vi.fn(),
     getMarketplaceOrders: vi.fn(async () => []),
     syncListingRegistration: vi.fn(),
@@ -65,6 +73,7 @@ const savedAddress = {
 describe('useMarketplaceDropClaim', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    shopShipsTo.clear();
     config.mode = 'transaction-service';
     vi.spyOn(globalThis.crypto, 'randomUUID').mockReturnValue('00000000-0000-4000-8000-000000002200');
     vi.mocked(CommerceController.getDeliveryAddresses).mockResolvedValue([savedAddress] as never);
@@ -145,6 +154,113 @@ describe('useMarketplaceDropClaim', () => {
     });
 
     expect(ok).toBe(false);
+    expect(CommerceController.executeMarketplaceCommand).not.toHaveBeenCalled();
+    expect(result.current.failure).toBe(DELIVERY_KEY_COPY.noKey);
+  });
+
+  describe('per-size listings', () => {
+    const sizedProjection = (soldOut: Record<string, boolean>) =>
+      ({
+        aggregateId: `listing:${SELLER}_listing1`,
+        sellerPubky: SELLER,
+        listingId: 'listing1',
+        serverRevision: 4,
+        state: 'available',
+        availableQuantity: 3,
+        reservedQuantity: 0,
+        unitPrice: { amountMinor: 4_500, currency: 'USD', exponent: 2 },
+        saleFormat: 'fixed_price',
+        auction: null,
+        variants: Object.entries(soldOut).map(([variantId, value]) => ({ variantId, soldOut: value })),
+      }) as never;
+
+    it('sends the size the buyer chose on the claim line', async () => {
+      vi.mocked(CommerceController.getMarketplaceListingProjection).mockResolvedValue(
+        sizedProjection({ size_s: true, size_m: false }),
+      );
+      const { result } = renderHook(() => useMarketplaceDropClaim());
+      await waitFor(() => expect(result.current.claimAddress).not.toBeNull());
+
+      let ok = false;
+      await act(async () => {
+        ok = await result.current.claim(SELLER, 'listing1', 1, 'size_m');
+      });
+
+      expect(ok).toBe(true);
+      expect(CommerceController.executeMarketplaceCommand).toHaveBeenCalledWith(
+        expect.objectContaining({
+          payload: expect.objectContaining({
+            lines: [expect.objectContaining({ quantity: 1, variantId: 'size_m' })],
+          }),
+        }),
+      );
+    });
+
+    it('never picks a size: a per-size listing without one is refused before any command', async () => {
+      vi.mocked(CommerceController.getMarketplaceListingProjection).mockResolvedValue(
+        sizedProjection({ size_s: false, size_m: false }),
+      );
+      const { result } = renderHook(() => useMarketplaceDropClaim());
+      await waitFor(() => expect(result.current.claimAddress).not.toBeNull());
+
+      let ok = true;
+      await act(async () => {
+        ok = await result.current.claim(SELLER, 'listing1', 1);
+      });
+
+      expect(ok).toBe(false);
+      expect(result.current.failure).toBe('Choose an option for this item.');
+      expect(CommerceController.executeMarketplaceCommand).not.toHaveBeenCalled();
+    });
+
+    it('refuses a size the projection reports sold out before any command', async () => {
+      vi.mocked(CommerceController.getMarketplaceListingProjection).mockResolvedValue(
+        sizedProjection({ size_s: true, size_m: false }),
+      );
+      const { result } = renderHook(() => useMarketplaceDropClaim());
+      await waitFor(() => expect(result.current.claimAddress).not.toBeNull());
+
+      await act(async () => {
+        await result.current.claim(SELLER, 'listing1', 1, 'size_s');
+      });
+
+      expect(result.current.failure).toBe('That option is sold out. Choose another.');
+      expect(CommerceController.executeMarketplaceCommand).not.toHaveBeenCalled();
+    });
+
+    it('shows the plain copy when the service refuses the size', async () => {
+      vi.mocked(CommerceController.getMarketplaceListingProjection).mockResolvedValue(
+        sizedProjection({ size_s: false, size_m: false }),
+      );
+      vi.mocked(CommerceController.executeMarketplaceCommand).mockResolvedValue({
+        ok: false,
+        error: { code: 'INVALID_STATE', message: 'Wire text', reason: 'variant_sold_out' },
+      } as never);
+      const { result } = renderHook(() => useMarketplaceDropClaim());
+      await waitFor(() => expect(result.current.claimAddress).not.toBeNull());
+
+      await act(async () => {
+        await result.current.claim(SELLER, 'listing1', 1, 'size_m');
+      });
+
+      expect(result.current.failure).toBe('That option is sold out. Choose another.');
+    });
+  });
+
+  it('does not claim to an address outside the seller’s destination countries', async () => {
+    shopShipsTo.set(SELLER, ['CH']);
+    const { result } = renderHook(() => useMarketplaceDropClaim());
+    await waitFor(() => expect(result.current.claimAddress).not.toBeNull());
+
+    let ok = true;
+    await act(async () => {
+      ok = await result.current.claim(SELLER, 'listing1', 1);
+    });
+
+    expect(ok).toBe(false);
+    expect(result.current.failure).toBe('This seller ships only to Switzerland. Choose pickup if offered.');
+    expect(CommerceController.resolveDeliveryKeysForCheckout).not.toHaveBeenCalled();
+    expect(CommerceController.sealDeliveryAddressForCheckout).not.toHaveBeenCalled();
     expect(CommerceController.executeMarketplaceCommand).not.toHaveBeenCalled();
   });
 

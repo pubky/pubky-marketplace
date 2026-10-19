@@ -217,6 +217,29 @@ describe('marketplace order projection — Bitcoin quote', () => {
     },
   );
 
+  it('carries the activated paykit request deadline from the wire', () => {
+    const parsed = marketplaceOrderSchema.safeParse({
+      ...createOrderFixture('pending_payment'),
+      ...(toCamelCaseWire({ paykit_expires_at: '2026-08-20T21:07:00.000Z' }) as Record<string, unknown>),
+    });
+
+    expect(parsed.success).toBe(true);
+    if (parsed.success) expect(parsed.data.paykitExpiresAt).toBe('2026-08-20T21:07:00.000Z');
+  });
+
+  it.each([undefined, null, 42])(
+    'reads paykit_expires_at=%s as no activated deadline without failing the order',
+    (value) => {
+      const parsed = marketplaceOrderSchema.safeParse({
+        ...createOrderFixture('pending_payment'),
+        ...(toCamelCaseWire({ paykit_expires_at: value }) as Record<string, unknown>),
+      });
+
+      expect(parsed.success).toBe(true);
+      if (parsed.success) expect(parsed.data.paykitExpiresAt ?? null).toBeNull();
+    },
+  );
+
   it.each([undefined, null])('accepts an order with bitcoin_quote %s', (bitcoinQuote) => {
     const parsed = marketplaceOrderSchema.safeParse({
       ...createOrderFixture('pending_payment'),
@@ -800,5 +823,89 @@ describe('marketplace order projection — USDT refund destination (S6 wire cont
       expect(parsed.refundDestination).toBeUndefined();
       expect(parsed.paymentAddress).toBeUndefined();
     }
+  });
+});
+
+describe('marketplace order projection — the single Paykit bind', () => {
+  // Wire shape from the service's PK1 projection: `payment_method: "paykit"` with the offered
+  // assets, and the observed rail only once a payment is seen or held for review.
+  const wire = (values: Record<string, unknown>) => ({
+    ...createOrderFixture('pending_payment'),
+    ...(toCamelCaseWire(values) as Record<string, unknown>),
+  });
+
+  it('reads an unpaid order as paykit with its offered assets and no observed rail', () => {
+    const parsed = marketplaceOrderSchema.parse(
+      wire({ payment_method: 'paykit', accepted_assets: ['USDT', 'BTC'], payment_amounts: { BTC: 62, USDT: 50_000 } }),
+    );
+    expect(parsed.paymentMethod).toBe('paykit');
+    expect(parsed.acceptedAssets).toEqual(['BTC', 'USDT']);
+    expect(parsed.paymentAsset).toBeUndefined();
+    expect(parsed.paymentFinality).toBeUndefined();
+  });
+
+  it('reads the observed rail, quote basis and finality of an order paid in USDT', () => {
+    const parsed = marketplaceOrderSchema.parse(
+      wire({
+        payment_method: 'paykit',
+        accepted_assets: ['BTC', 'USDT'],
+        payment_asset: 'USDT',
+        payment_network: 'arbitrum-one',
+        payment_amount_minor: 41_250_000,
+        payment_exponent: 6,
+        payment_quote_basis: 'fixed_rate',
+        payment_finality: 'pending',
+        paykit_total_sats: null,
+        bitcoin_payable: null,
+      }),
+    );
+    expect(parsed.paymentAsset).toBe('USDT');
+    expect(parsed.paymentQuoteBasis).toBe('fixed_rate');
+    expect(parsed.paymentFinality).toBe('pending');
+    expect(parsed.paykitTotalSats).toBeNull();
+  });
+
+  it('keeps the order when the offered assets are malformed and drops only that field', () => {
+    const parsed = marketplaceOrderSchema.parse(wire({ payment_method: 'paykit', accepted_assets: 'BTC' }));
+    expect(parsed.paymentMethod).toBe('paykit');
+    expect(parsed.acceptedAssets).toBeUndefined();
+  });
+
+  it('still reads orders bound before the single bind', () => {
+    for (const method of ['bitcoin', 'usdt', 'paypal'] as const) {
+      expect(marketplaceOrderSchema.parse(wire({ payment_method: method })).paymentMethod).toBe(method);
+    }
+  });
+
+  it('reads the seller observation that names both rails without failing the order', () => {
+    const parsed = marketplaceOrderSchema.parse(
+      wire({
+        payment_method: 'paykit',
+        paykit_observation: {
+          txid: null,
+          observed_sats: null,
+          asset: 'BTC',
+          observed_units: 6173,
+          other_rail_asset: 'USDT',
+          other_rail_amount: '5000000',
+          other_rail_reference: `0x${'ab'.repeat(32)}`,
+        },
+      }),
+    );
+    expect(parsed.paykitObservation).toMatchObject({
+      asset: 'BTC',
+      observedUnits: 6173,
+      otherRailAsset: 'USDT',
+      otherRailAmount: '5000000',
+    });
+  });
+
+  it('drops a malformed observation scalar but keeps the observation', () => {
+    const parsed = marketplaceOrderSchema.parse(
+      wire({ payment_method: 'paykit', paykit_observation: { asset: 7, other_rail_asset: {}, txid: 'abc' } }),
+    );
+    expect(parsed.paykitObservation?.txid).toBe('abc');
+    expect(parsed.paykitObservation?.asset).toBeUndefined();
+    expect(parsed.paykitObservation?.otherRailAsset).toBeUndefined();
   });
 });

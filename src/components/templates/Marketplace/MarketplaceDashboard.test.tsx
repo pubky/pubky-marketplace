@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { MARKETPLACE_ROUTES } from '@/app/routes';
+import * as commerceConfig from '@/config/commerce';
 import { COMMERCE_LISTING_MAX_QUANTITY } from '@/config/commerce';
 import { COMMERCE_FIXTURE_SELLER, createCommerceListingFixture } from '@/test/fixtures/commerce/commerce';
 import { toCommerceListingModel } from '@/test/fixtures/commerce/listing-models';
@@ -13,6 +14,7 @@ const dashboardFns = vi.hoisted(() => ({
   hasUnsavedListingDraft: vi.fn(async (): Promise<string | null> => null),
   discardListingDraft: vi.fn(async () => undefined),
   resumeListingDraft: vi.fn(),
+  updateListingState: vi.fn(async () => true),
 }));
 const dashboardState = vi.hoisted(() => ({
   listings: [] as unknown[],
@@ -60,7 +62,7 @@ vi.mock('@/hooks/useMarketplaceSellerDashboard/useMarketplaceSellerDashboard', (
     sessionError: dashboardState.sessionError,
     metrics: dashboardState.metrics,
     actionNeeded: dashboardState.actionNeeded,
-    updateListingState: vi.fn(async () => true),
+    updateListingState: dashboardFns.updateListingState,
     duplicateListing: dashboardFns.duplicateListing,
     hasUnsavedListingDraft: dashboardFns.hasUnsavedListingDraft,
     unfinishedDrafts: dashboardState.unfinishedDrafts,
@@ -71,11 +73,18 @@ vi.mock('@/hooks/useMarketplaceSellerDashboard/useMarketplaceSellerDashboard', (
 }));
 
 vi.mock('@/organisms/Marketplace/MarketplaceSessionConnectDialog', () => ({
-  MarketplaceSessionConnectDialog: ({ triggerLabel }: { triggerLabel: string }) => <button>{triggerLabel}</button>,
+  MarketplaceSessionConnectDialog: ({ triggerLabel, autoOpen }: { triggerLabel?: string; autoOpen?: boolean }) => (
+    <button data-testid={autoOpen ? 'session-connect-auto-open' : undefined}>{triggerLabel}</button>
+  ),
 }));
 
+const SHOP_WITH_POLICIES = {
+  record: { name: 'Satoshi Vintage', shippingPolicy: 'Ships within three days.', returnPolicy: '' },
+};
+const shopState = vi.hoisted(() => ({ shop: null as unknown }));
+
 vi.mock('dexie-react-hooks', () => ({
-  useLiveQuery: () => ({ record: { name: 'Satoshi Vintage' } }),
+  useLiveQuery: () => shopState.shop,
 }));
 
 const paymentGate = vi.hoisted(() => ({
@@ -116,6 +125,7 @@ vi.mock('@/organisms/ContentLayout/ContentLayout', () => ({
 
 describe('MarketplaceDashboard', () => {
   beforeEach(() => {
+    shopState.shop = SHOP_WITH_POLICIES;
     dashboardState.unfinishedDrafts = [];
     dashboardState.needsSession = false;
     dashboardState.sessionError = null;
@@ -125,6 +135,62 @@ describe('MarketplaceDashboard', () => {
     paymentGate.isDurable = false;
     paymentGate.ready = true;
     paymentGate.reason = null;
+  });
+
+  describe('store connections entry', () => {
+    const entry = () => screen.getByRole('link', { name: /Store connections/ });
+
+    it('always shows the Store connections button next to Payment settings', () => {
+      render(<MarketplaceDashboard />);
+      expect(entry()).toHaveAttribute('href', MARKETPLACE_ROUTES.SETTINGS_STORE_CONNECTIONS);
+      expect(screen.getByRole('link', { name: /Payment settings/ })).toBeInTheDocument();
+    });
+
+    it.each(['unavailable', 'sandbox', 'transaction-service'] as const)(
+      'shows it in the %s commerce mode too, because it is not hidden behind a setting',
+      (mode) => {
+        vi.spyOn(commerceConfig, 'getCommerceAdapterMode').mockReturnValue(mode);
+        render(<MarketplaceDashboard />);
+        expect(entry()).toBeInTheDocument();
+      },
+    );
+  });
+
+  describe('storefront prompt', () => {
+    it('asks a seller with listings and no shop to set up their storefront', async () => {
+      shopState.shop = null;
+      dashboardState.listings = [listing()];
+
+      render(<MarketplaceDashboard />);
+
+      expect(await screen.findByRole('heading', { name: 'Your storefront is not set up' })).toBeInTheDocument();
+      expect(screen.getByRole('link', { name: 'Set up your storefront' })).toHaveAttribute(
+        'href',
+        MARKETPLACE_ROUTES.MY_SHOP,
+      );
+    });
+
+    it('asks for policies while the default storefront has neither policy', async () => {
+      shopState.shop = { record: { name: 'Satoshi', shippingPolicy: '', returnPolicy: ' ' } };
+      dashboardState.listings = [listing()];
+
+      render(<MarketplaceDashboard />);
+
+      expect(await screen.findByRole('heading', { name: 'Add your shipping and return policies' })).toBeInTheDocument();
+      expect(screen.getByRole('link', { name: 'Add policies' })).toHaveAttribute('href', MARKETPLACE_ROUTES.MY_SHOP);
+      expect(screen.queryByText('Your storefront is not set up')).not.toBeInTheDocument();
+    });
+
+    it('stays away once the seller wrote a policy', async () => {
+      dashboardState.listings = [listing()];
+
+      render(<MarketplaceDashboard />);
+
+      await waitFor(() => expect(screen.getByRole('heading', { name: 'My shop' })).toBeInTheDocument());
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(screen.queryByText('Add your shipping and return policies')).not.toBeInTheDocument();
+      expect(screen.queryByText('Your storefront is not set up')).not.toBeInTheDocument();
+    });
   });
 
   it('keeps the seller entry point available without an inline approval card', () => {
@@ -361,7 +427,7 @@ describe('MarketplaceDashboard', () => {
     expect(screen.queryByTestId('create-listing-payment-precondition')).not.toBeInTheDocument();
   });
 
-  it('downloads the canonical import CSV from Export CSV', async () => {
+  it('downloads the canonical import CSV from Export', async () => {
     viewport.isMobile = false;
     paymentGate.isDurable = true;
     paymentGate.ready = true;
@@ -372,7 +438,7 @@ describe('MarketplaceDashboard', () => {
     const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined);
 
     render(<MarketplaceDashboard />);
-    fireEvent.click(screen.getByRole('button', { name: /Export CSV/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Export' }));
 
     await waitFor(() => expect(click).toHaveBeenCalledTimes(1));
     const blob = createObjectURL.mock.calls[0]![0];
@@ -416,6 +482,60 @@ describe('MarketplaceDashboard', () => {
     expect(within(guide).getByText('Unlimited')).toBeInTheDocument();
     expect(within(guide).queryByText(String(COMMERCE_LISTING_MAX_QUANTITY))).not.toBeInTheDocument();
     expect(within(screen.getByRole('row', { name: /Vintage leather boots/ })).getByText('1')).toBeInTheDocument();
+  });
+});
+
+describe('MarketplaceDashboard state changes without a marketplace session', () => {
+  beforeEach(() => {
+    vi.spyOn(commerceConfig, 'getCommerceAdapterMode').mockReturnValue('transaction-service');
+    dashboardFns.updateListingState.mockClear();
+    viewport.isMobile = false;
+  });
+
+  const selectAndClick = (title: string, action: 'Pause' | 'Activate') => {
+    fireEvent.click(screen.getByRole('checkbox', { name: `Select ${title}` }));
+    fireEvent.click(screen.getByRole('button', { name: action }));
+  };
+
+  it('pauses a fixed-price listing without asking to enable selling', () => {
+    const fixedPrice = listing({ title: 'Boots' });
+    dashboardState.listings = [fixedPrice];
+
+    render(<MarketplaceDashboard />);
+    selectAndClick('Boots', 'Pause');
+
+    expect(dashboardFns.updateListingState).toHaveBeenCalledWith([fixedPrice.id], 'paused');
+    expect(screen.queryByTestId('session-connect-auto-open')).not.toBeInTheDocument();
+  });
+
+  it('asks to enable selling before activating', () => {
+    dashboardState.listings = [listing({ title: 'Boots', state: 'paused' })];
+
+    render(<MarketplaceDashboard />);
+    selectAndClick('Boots', 'Activate');
+
+    expect(dashboardFns.updateListingState).not.toHaveBeenCalled();
+    expect(screen.getByTestId('session-connect-auto-open')).toBeInTheDocument();
+  });
+
+  it('asks to enable selling before pausing an auction', () => {
+    const record = createCommerceListingFixture({ title: 'Lamp' });
+    record.sale = {
+      format: 'auction',
+      startingPrice: { amountMinor: 4_500, currency: 'USD', exponent: 2 },
+      minimumIncrement: { amountMinor: 500, currency: 'USD', exponent: 2 },
+      startsAt: '2026-09-20T00:00:00.000Z',
+      endsAt: '2026-09-30T00:00:00.000Z',
+      antiSnipingWindowSeconds: 120,
+      antiSnipingExtensionSeconds: 120,
+    };
+    dashboardState.listings = [toCommerceListingModel(record)];
+
+    render(<MarketplaceDashboard />);
+    selectAndClick('Lamp', 'Pause');
+
+    expect(dashboardFns.updateListingState).not.toHaveBeenCalled();
+    expect(screen.getByTestId('session-connect-auto-open')).toBeInTheDocument();
   });
 });
 

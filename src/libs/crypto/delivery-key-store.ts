@@ -2,15 +2,14 @@
  * Device custody for seller delivery keys and buyer pins (design:
  * docs/ecommerce/encrypted-delivery-address-design.md §C).
  *
- * Lives in its own IndexedDB database, deliberately NOT in the Dexie cache
- * and NOT in the messaging keyring: sign-out wipes the cache and the
- * messaging keyring, and a seller who signs out must still be able to open
- * the addresses sealed to a key they published earlier. Records are keyed by
+ * Lives in its own IndexedDB database, deliberately NOT in the Dexie cache:
+ * sign-out wipes the cache, and a seller who signs out must still be able to
+ * open the addresses sealed to a key they published earlier. Records are keyed by
  * the owning account, so another account on the same browser profile never
  * sees them.
  *
- * Seller private keys are wrapped with the same AES-GCM helper the messaging
- * keys use (`./secret-wrapping`) under a NON-EXTRACTABLE device key, and each
+ * Seller private keys are wrapped with the AES-GCM helper in
+ * `./secret-wrapping` under a NON-EXTRACTABLE device key, and each
  * wrapped key is bound to its owner and key id by AAD. Fail closed: with no
  * WebCrypto or IndexedDB every call throws; there is no plaintext fallback.
  */

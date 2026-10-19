@@ -89,7 +89,7 @@ describe('foundAppRegistryShowsNewWallet', () => {
 describe('Bitkit 2.6 fallback copy', () => {
   it('offers PayPal only when the seller takes it', () => {
     expect(bitcoinWalletUnsupportedBody(true)).toBe(
-      "This Pubky account uses Bitkit 2.6 or later. The Shop can't send it a Bitcoin payment request yet; that comes with an upcoming Shop update. You can pay with PayPal instead.",
+      "This pubky uses Bitkit 2.6 or later. The Shop can't send it a Bitcoin payment request yet; that comes with an upcoming Shop update. You can pay with PayPal instead.",
     );
     expect(bitcoinWalletUnsupportedBody(false)).not.toMatch(/PayPal/);
     expect(bitcoinWalletUnsupportedPayReason(true)).toBe(
@@ -102,7 +102,7 @@ describe('Bitkit 2.6 fallback copy', () => {
 describe('unverified wallet copy', () => {
   it('asks for a recheck and offers PayPal only when the seller takes it', () => {
     expect(bitcoinWalletUnverifiedBody(true)).toBe(
-      "The Shop couldn't check which Bitkit version this Pubky account uses, so Bitcoin Pay is paused. Check again in a moment. You can also pay with PayPal.",
+      "The Shop couldn't check which Bitkit version this pubky uses, so Bitcoin Pay is paused. Check again in a moment. You can also pay with PayPal.",
     );
     expect(bitcoinWalletUnverifiedBody(false)).not.toMatch(/PayPal/);
     expect(bitcoinWalletUnverifiedPayReason(true)).toBe(

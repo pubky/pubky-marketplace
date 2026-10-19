@@ -1,73 +1,72 @@
+import { getHomeserver } from '@/config/network';
 import { Env } from '@/libs/env/env';
-import { getSingleApprovalSignIn } from '@/libs/runtime-config/runtime-config';
+import {
+  getPassportPrivEncryptionKeysEnabled,
+  getPrivEncryptionKeysEnabled,
+  getPrivEncryptionKeysHomeservers,
+  getShopGrantClientIdOverride,
+} from '@/libs/runtime-config/runtime-config';
 
 export const APP_VERSION = Env.NEXT_PUBLIC_APP_VERSION;
 
-/**
- * The single sign-in grant. One Ring approval covers everything the app does,
- * on purpose: the homeserver keeps ONE session cookie per user per origin, so
- * splitting capabilities across separate approvals means each new approval
- * clobbers the previous session (this broke all pubky.app writes when the
- * paykit-only messaging grant landed — see `messaging-contracts.ts`).
- * Scopes: the app's own tree, the Paykit tree (encrypted messaging), and the
- * app's private tree (cross-device watchlist sync — `/priv/` is enforced
- * private by the homeserver, verified empirically in
- * `docs/ecommerce/watchlist.md`).
- *
- * This is the grant Bitkit approves for client id {@link SHOP_GRANT_CLIENT_ID}.
- * Pubky Ring cookie approvals request {@link RING_COOKIE_CAPABILITIES}, a
- * superset of it.
- */
-export const CAPABILITIES = '/pub/pubky.app/:rw,/pub/paykit/:rw,/priv/pubky.app/:rw';
-
-/** Client id Bitkit shows on its Authorize screen for the Shop's grant sign-in. */
-export const SHOP_GRANT_CLIENT_ID = 'shop.pubky.app';
+/** Minimum storage permissions needed to open Shop with an existing grant. */
+export const CORE_CAPABILITIES = '/pub/pubky.app/:rw,/pub/paykit/:rw,/priv/pubky.app/:rw';
 
 /**
- * Interim dual-POST ceremony (docs/ecommerce/single-approval.md). Runtime
- * flag (`PUBKY_RUNTIME_SINGLE_APPROVAL_SIGN_IN`, default on): `false`
- * restores `awaitApproval()` sign-in plus empty-capability marketplace
- * connect. Read at call time so a deploy can roll back without a rebuild.
- * Do not roll back by POSTing empty capabilities to `/session`.
+ * The chat trees, versioned so the Shop neither writes the shared chat
+ * library's planned `/pub/chat/v1/` nor exposes its key to apps holding it.
+ * Requested at sign-in; optional for opening the Shop (docs/chat).
  */
-export function isSingleApprovalSignInEnabled(): boolean {
-  return getSingleApprovalSignIn();
+export const CHAT_CAPABILITIES = '/pub/chat/v0/:rw,/priv/chat/v0/:rw';
+
+/** New approvals also cover Chat v0; signer-derived encryption keys are requested only by {@link KEYED_CAPABILITIES}. */
+export const CAPABILITIES = '/pub/pubky.app/:rw,/pub/paykit/:rw,/priv/pubky.app/:rw,/pub/chat/v0/:rw,/priv/chat/v0/:rw';
+
+/**
+ * The Shop's scope for scoped encryption keys (priv-encryption Phase 4):
+ * read, write and the `e` action on the Shop's own private tree only. `e` is
+ * on no other scope, and `/priv/pubky.app/` stays `rw` so the key file and
+ * the encrypted records sit under a scope that already exists today.
+ */
+export const PRIV_KEYS_SCOPE = '/priv/pubky.app/marketplace/:rwe';
+
+/**
+ * What a signer approves for {@link PRIV_KEYS_SCOPE} when the user declines
+ * `e` but approves storage; the approval then carries no keys.
+ */
+export const PRIV_KEYS_SCOPE_DECLINED = '/priv/pubky.app/marketplace/:rw';
+
+/** The grant sign-in request when scoped encryption keys are asked for. */
+export const KEYED_CAPABILITIES = `${CAPABILITIES},${PRIV_KEYS_SCOPE}`;
+
+/**
+ * Whether the grant sign-in asks the signer for `e`. The deploy's homeserver
+ * must be listed as running scoped keys: the homeserver does not advertise
+ * the capability, and one that predates it rejects the whole grant after the
+ * user approved. Then either the switch for every signer is on, or, for a
+ * Pubky Passport sign-in, the Passport-only switch is (Passport answers `e`
+ * with selective approval; other signers may not answer it at all).
+ */
+export function isPrivKeysRequested(signer?: 'passport'): boolean {
+  if (!getPrivEncryptionKeysHomeservers().includes(getHomeserver())) return false;
+  return getPrivEncryptionKeysEnabled() || (signer === 'passport' && getPassportPrivEncryptionKeysEnabled());
 }
 
-/**
- * What a Pubky Ring cookie sign-in requests: {@link CAPABILITIES} plus
- * pubky.app's own sign-in scopes (`/priv/social/:rw` and the Locks guarded
- * read `/priv/app.locks/content/:r`, from pubky.app's
- * `HOMESERVER_CAPABILITIES`). Shop and pubky.app share the one homeserver
- * cookie, so each cookie approval replaces the other site's; requesting both
- * sets keeps a Shop sign-in from stripping pubky.app's access. Every cookie
- * approval the Shop starts (sign-in, sign-up, step-up, bridged commerce
- * connect, messaging enable) requests this string, and the token it yields
- * must carry exactly this set.
- *
- * Grant sign-ins (Bitkit) are bound to the Shop's client id, never share the
- * cookie, and keep requesting and checking {@link CAPABILITIES}.
- */
+/** Default client id signers show on their approval screen for the Shop's grant sign-in. */
+export const SHOP_GRANT_CLIENT_ID = 'shop.pubky.app';
+
+/** The client id in use: runtime deployment override or the standalone Shop default. */
+export function getShopGrantClientId(): string {
+  return getShopGrantClientIdOverride() ?? SHOP_GRANT_CLIENT_ID;
+}
+
+/** Legacy messaging protocol scopes; never used for Shop homeserver sign-in. */
 export const RING_COOKIE_CAPABILITIES =
   '/pub/pubky.app/:rw,/pub/paykit/:rw,/priv/pubky.app/:rw,/priv/social/:rw,/priv/app.locks/content/:r';
 
-function capabilitiesMatchSet(capabilities: readonly string[], expectedSet: string): boolean {
-  const expected = expectedSet
-    .split(',')
-    .map((entry) => entry.trim())
-    .filter((entry) => entry.length > 0);
-  const incoming = [...new Set(capabilities.map((entry) => entry.trim()).filter((entry) => entry.length > 0))];
-  if (incoming.length !== expected.length) return false;
-  const incomingSet = new Set(incoming);
-  return expected.every((entry) => incomingSet.has(entry));
-}
-
-/** Order-insensitive set equality with {@link CAPABILITIES} split on commas. */
-export function capabilitiesMatchFullGrant(capabilities: readonly string[]): boolean {
-  return capabilitiesMatchSet(capabilities, CAPABILITIES);
-}
-
-/** Order-insensitive set equality with {@link RING_COOKIE_CAPABILITIES} split on commas. */
+/** Legacy identity-only AuthToken verifiers still use exact scopes. */
 export function capabilitiesMatchRingCookieGrant(capabilities: readonly string[]): boolean {
-  return capabilitiesMatchSet(capabilities, RING_COOKIE_CAPABILITIES);
+  const expected = RING_COOKIE_CAPABILITIES.split(',');
+  const incoming = new Set(capabilities.map((entry) => entry.trim()));
+  return incoming.size === expected.length && expected.every((entry) => incoming.has(entry));
 }

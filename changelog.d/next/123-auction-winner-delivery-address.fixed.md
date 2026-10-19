@@ -1,0 +1,1 @@
+An auction winner's order page now asks where to ship before the payment methods, and sends the address sealed to the seller with the method the winner picks; before, the order had no delivery address at all.

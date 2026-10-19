@@ -1,12 +1,13 @@
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CommerceSellerReputationOverview } from '@/application/commerce/commerce';
 import { CAPABILITIES } from '@/config/app';
 import { COMMERCE_LISTING_MAX_QUANTITY } from '@/config/commerce';
 import { CHECKOUT_HOLD_COPY } from '@/libs/commerce/checkout-hold';
 import { getMarketplaceOfferCheckoutRoute } from '@/libs/commerce/checkout-phase';
 import type { MarketplaceOffer } from '@/services/marketplace/marketplace';
+import type { GrantSigner } from '@/stores/auth/auth.types';
 import {
   COMMERCE_FIXTURE_SELLER,
   createCommerceListingFixture,
@@ -16,11 +17,13 @@ import { toCommerceListingModel, toCommerceShopModel } from '@/test/fixtures/com
 import { parseContractFaithfulOffer } from '@/test/fixtures/commerce/offer-award';
 import { createOrderFixture } from '@/test/fixtures/commerce/orders';
 import { createListingProjectionFixture } from '@/test/fixtures/commerce/projections';
+import { setEmbedded } from '@/test-utils/embedded';
 import { MarketplaceListing } from './MarketplaceListing';
 
 const LOCKS_POLICY_URL = `pubky://${COMMERCE_FIXTURE_SELLER}/pub/locks.app/boots_01.json`;
 const cartAdd = vi.hoisted(() => vi.fn());
 const publicAvailabilityRead = vi.hoisted(() => vi.fn());
+const paymentBadgesRead = vi.hoisted(() => vi.fn());
 const projectionRefresh = vi.hoisted(() => vi.fn());
 const confirmRemovedCalls = vi.hoisted(() => vi.fn());
 const sellerReputation = vi.hoisted((): { value: CommerceSellerReputationOverview | { status: 'loading' } } => ({
@@ -28,6 +31,11 @@ const sellerReputation = vi.hoisted((): { value: CommerceSellerReputationOvervie
 }));
 const authState = vi.hoisted(() => ({
   currentUserPubky: 'b'.repeat(52) as string | null,
+  session: { grant: {} },
+  hasProfile: true,
+  isRestoringSession: false,
+  isLoggingOut: false,
+  grantSigner: 'ring' as GrantSigner,
   setShowSignInDialog: vi.fn(),
 }));
 const sessionState = vi.hoisted(() => ({
@@ -45,7 +53,8 @@ const view = vi.hoisted(() => ({
   needsSession: false,
   publicStock: null as 'available' | 'reserved' | 'sold' | null,
   publicStockFailure: false,
-  hasFullHomeserverGrant: false,
+  publicStockVariants: undefined as { variantId: string; soldOut: boolean }[] | undefined,
+  hasFullHomeserverGrant: true,
   orders: [] as Array<{ order: ReturnType<typeof createOrderFixture> }>,
   offers: [] as MarketplaceOffer[],
 }));
@@ -65,6 +74,11 @@ vi.mock('@/config/commerce', async (importOriginal) => {
   return { ...actual, getCommerceAdapterMode: () => 'transaction-service' };
 });
 
+vi.mock('@/libs/runtime-config/runtime-config', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/libs/runtime-config/runtime-config')>()),
+  getMarketplaceGrantFlowEnabled: () => true,
+}));
+
 vi.mock('dexie-react-hooks', () => ({
   useLiveQuery: (querier: () => unknown) => querier(),
 }));
@@ -73,6 +87,7 @@ vi.mock('@/controllers/commerce/commerce', () => ({
   CommerceController: {
     getListing: () => view.listing,
     getShop: () => view.shop,
+    getOrFetchShop: () => Promise.resolve(null),
     getOrFetchListing: () => (view.fetchFailure === null ? Promise.resolve(null) : Promise.reject(view.fetchFailure)),
     isListingConfirmedRemoved: (_seller: string, _listing: string, fetchError: unknown) => {
       confirmRemovedCalls(fetchError);
@@ -81,27 +96,34 @@ vi.mock('@/controllers/commerce/commerce', () => ({
         : Promise.resolve(view.confirmedRemoved);
     },
     getPublicListingAvailability: publicAvailabilityRead,
+    fetchSellerPaymentBadges: paymentBadgesRead,
     hasFullHomeserverGrant: () => view.hasFullHomeserverGrant,
     canRegisterListings: () => false,
     ensureListingRegistered: vi.fn(async () => {}),
   },
 }));
 
+const sessionConnect = vi.hoisted(() => ({ onConnected: undefined as (() => void) | undefined }));
+
 vi.mock('@/hooks/useMarketplaceSessionConnect/useMarketplaceSessionConnect', () => ({
-  useMarketplaceSessionConnect: () => ({
-    status: 'awaiting',
-    authorizationUrl: '',
-    errorMessage: null,
-    // Mirrors the hook's single decision: full grant iff the homeserver
-    // grant is narrow (the flag defaults on under tests).
-    requestsFullGrant: !view.hasFullHomeserverGrant,
-    requestsGrantReconnect: false,
-    start: vi.fn(),
-    cancel: vi.fn(),
-    copyAuthUrl: vi.fn(async () => {}),
-    openInRing: vi.fn(),
-    isOpeningRing: false,
-  }),
+  useMarketplaceSessionConnect: (options: { onConnected?: () => void }) => {
+    sessionConnect.onConnected = options.onConnected;
+    return {
+      status: 'awaiting',
+      authorizationUrl: 'pubkyauth://signin_grant?caps=%2Fpub%2Fpubky.app%2Fmarketplace-service%2Fv1%2F%3Arw',
+      errorMessage: null,
+      requestsFullGrant: false,
+      requestsGrantReconnect: false,
+      requestsGrantBootstrap: true,
+      requestsPassport: false,
+      approvalSigner: authState.grantSigner === 'ring' ? 'Pubky Ring' : 'your signer',
+      start: vi.fn(),
+      cancel: vi.fn(),
+      copyAuthUrl: vi.fn(async () => {}),
+      openInRing: vi.fn(),
+      isOpeningRing: false,
+    };
+  },
 }));
 
 vi.mock('@/stores/auth/auth.store', () => ({
@@ -200,6 +222,13 @@ vi.mock('@/organisms/Marketplace/MarketplaceReviewsSection', () => ({
   MarketplaceReviewsSection: () => <section aria-label="Reviews" />,
 }));
 
+beforeAll(() => {
+  Element.prototype.scrollIntoView = vi.fn();
+  Element.prototype.hasPointerCapture = vi.fn();
+  Element.prototype.releasePointerCapture = vi.fn();
+  Element.prototype.setPointerCapture = vi.fn();
+});
+
 describe('MarketplaceListing', () => {
   beforeEach(() => {
     view.listing = toCommerceListingModel(createCommerceListingFixture());
@@ -213,15 +242,23 @@ describe('MarketplaceListing', () => {
     view.needsSession = false;
     view.publicStock = null;
     view.publicStockFailure = false;
+    view.publicStockVariants = undefined;
     publicAvailabilityRead.mockReset();
     publicAvailabilityRead.mockImplementation(async () =>
       view.publicStockFailure
         ? Promise.reject(new Error('offline'))
         : view.publicStock
-          ? { aggregateId: 'listing:x', state: view.publicStock, serverTime: '2026-10-13T07:45:00.000Z' }
+          ? {
+              aggregateId: 'listing:x',
+              state: view.publicStock,
+              serverTime: '2026-10-13T07:45:00.000Z',
+              ...(view.publicStockVariants ? { variants: view.publicStockVariants } : {}),
+            }
           : null,
     );
-    view.hasFullHomeserverGrant = false;
+    paymentBadgesRead.mockReset();
+    paymentBadgesRead.mockResolvedValue([]);
+    view.hasFullHomeserverGrant = true;
     view.orders = [];
     view.offers = [];
     sessionState.pubky = null;
@@ -229,6 +266,7 @@ describe('MarketplaceListing', () => {
     cartAdd.mockClear();
     projectionRefresh.mockClear();
     authState.currentUserPubky = 'b'.repeat(52);
+    authState.grantSigner = 'ring';
     authState.setShowSignInDialog.mockClear();
   });
 
@@ -368,6 +406,48 @@ describe('MarketplaceListing', () => {
     ).toBeTruthy();
   });
 
+  it('shows where a shipped listing ships to when the seller limits destinations', () => {
+    view.shop = toCommerceShopModel(createCommerceShopFixture({ shipsToCountries: ['CH', 'LI'] }));
+    renderListing();
+    expect(screen.getByTestId('marketplace-listing-ships-to')).toHaveTextContent(
+      'Ships to: Switzerland and Liechtenstein',
+    );
+  });
+
+  it("badges the seller's accepted payment methods", async () => {
+    paymentBadgesRead.mockResolvedValue(['bitcoin', 'paypal']);
+    const listing = renderListing();
+
+    const list = await screen.findByRole('list', { name: 'Accepted payment methods' });
+    expect(list).toHaveTextContent('Bitcoin');
+    expect(list).toHaveTextContent('PayPal');
+    expect(list).not.toHaveTextContent('USDT');
+    expect(paymentBadgesRead).toHaveBeenCalledWith(listing.seller_id);
+  });
+
+  it('shows no payment row for a seller with no rails, or when the read fails', async () => {
+    renderListing();
+    await waitFor(() => expect(paymentBadgesRead).toHaveBeenCalledOnce());
+    expect(screen.queryByTestId('marketplace-listing-payment-methods')).not.toBeInTheDocument();
+    cleanup();
+
+    paymentBadgesRead.mockResolvedValue(null);
+    renderListing();
+    await waitFor(() => expect(paymentBadgesRead).toHaveBeenCalledTimes(2));
+    expect(screen.queryByTestId('marketplace-listing-payment-methods')).not.toBeInTheDocument();
+  });
+
+  it('says nothing about destinations for a seller who ships anywhere, or for pickup only', () => {
+    renderListing();
+    expect(screen.queryByTestId('marketplace-listing-ships-to')).not.toBeInTheDocument();
+    cleanup();
+
+    view.shop = toCommerceShopModel(createCommerceShopFixture({ shipsToCountries: ['CH'] }));
+    view.listing = toCommerceListingModel(createCommerceListingFixture({ fulfillmentMethods: ['pickup'] }));
+    renderListing();
+    expect(screen.queryByTestId('marketplace-listing-ships-to')).not.toBeInTheDocument();
+  });
+
   // Digital delivery design §3 and §6 B7, B8.
   const digitalOnly = () =>
     toCommerceListingModel(
@@ -440,7 +520,7 @@ describe('MarketplaceListing', () => {
     );
   });
 
-  it('leaves a Locks listing on its own digital notice', () => {
+  it('presents a Locks listing as digital delivery with no shipping or ship-from', () => {
     view.listing = toCommerceListingModel(
       createCommerceListingFixture({
         fulfillmentMethods: ['digital'],
@@ -457,8 +537,10 @@ describe('MarketplaceListing', () => {
     );
     renderListing();
 
-    expect(screen.queryByTestId('marketplace-listing-digital-badge')).not.toBeInTheDocument();
-    expect(screen.queryByTestId('marketplace-listing-digital-offer-note')).not.toBeInTheDocument();
+    expect(screen.getByTestId('marketplace-listing-digital-badge')).toHaveTextContent('Digital');
+    expect(screen.queryByText(/Shipping/)).not.toBeInTheDocument();
+    expect(screen.queryByText('Ships from')).not.toBeInTheDocument();
+    expect(screen.queryByText('Pickup location')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Make offer/ })).not.toBeInTheDocument();
   });
 
@@ -483,7 +565,7 @@ describe('MarketplaceListing', () => {
       }),
     );
     renderListing();
-    expect(screen.queryByRole('button', { name: 'Make offer' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Make offer/ })).not.toBeInTheDocument();
   });
 
   it('shows no Make offer when the listing does not accept offers', () => {
@@ -498,7 +580,7 @@ describe('MarketplaceListing', () => {
       }),
     );
     renderListing();
-    expect(screen.queryByRole('button', { name: 'Make offer' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Make offer/ })).not.toBeInTheDocument();
   });
 
   it('keeps Make offer on a listing that ships as well as offering pickup', () => {
@@ -575,6 +657,91 @@ describe('MarketplaceListing', () => {
     ).not.toBeInTheDocument();
   });
 
+  describe('Buy clicked before the marketplace session is known', () => {
+    const renderNeedingSession = () => {
+      view.projection = null;
+      view.projectionError = 'A marketplace session is required.';
+      view.needsSession = true;
+      const listing = view.listing;
+      if (!listing) throw new Error('Expected listing fixture');
+      const element = () => <MarketplaceListing sellerPubky={listing.seller_id} listingId={listing.listing_id} />;
+      const utils = render(element());
+      const sessionRestores = () => {
+        view.needsSession = false;
+        view.projection = createListingProjectionFixture();
+        view.projectionError = null;
+        utils.rerender(element());
+      };
+      return { listing, sessionRestores };
+    };
+
+    it('adds to the cart when the session restores in the background after the click', async () => {
+      const user = userEvent.setup();
+      const { listing, sessionRestores } = renderNeedingSession();
+
+      await user.click(screen.getByRole('button', { name: 'Buy' }));
+      expect(screen.getByRole('heading', { name: 'Enable purchases' })).toBeInTheDocument();
+      expect(cartAdd).not.toHaveBeenCalled();
+
+      sessionRestores();
+
+      await waitFor(() => expect(screen.queryByRole('heading', { name: 'Enable purchases' })).not.toBeInTheDocument());
+      expect(cartAdd).toHaveBeenCalledTimes(1);
+      expect(cartAdd).toHaveBeenCalledWith(`${listing.seller_id}:${listing.listing_id}`, 'variant_01', 1);
+    });
+
+    it('adds to the cart straight away when the session is already restored but the read is stale', async () => {
+      const user = userEvent.setup();
+      sessionState.pubky = 'b'.repeat(52);
+      const { listing } = renderNeedingSession();
+
+      await user.click(screen.getByRole('button', { name: 'Buy' }));
+
+      expect(cartAdd).toHaveBeenCalledWith(`${listing.seller_id}:${listing.listing_id}`, 'variant_01', 1);
+      expect(projectionRefresh).toHaveBeenCalled();
+      expect(screen.queryByRole('heading', { name: 'Enable purchases' })).not.toBeInTheDocument();
+    });
+
+    it('adds to the cart once when the buyer approves in the dialog, without a second Buy tap', async () => {
+      const user = userEvent.setup();
+      const { listing, sessionRestores } = renderNeedingSession();
+
+      await user.click(screen.getByRole('button', { name: 'Buy' }));
+      expect(screen.getByRole('heading', { name: 'Enable purchases' })).toBeInTheDocument();
+
+      sessionState.pubky = 'b'.repeat(52);
+      act(() => sessionConnect.onConnected?.());
+      sessionRestores();
+
+      await waitFor(() => expect(screen.queryByRole('heading', { name: 'Enable purchases' })).not.toBeInTheDocument());
+      expect(cartAdd).toHaveBeenCalledTimes(1);
+      expect(cartAdd).toHaveBeenCalledWith(`${listing.seller_id}:${listing.listing_id}`, 'variant_01', 1);
+    });
+
+    it('does not add to the cart after a cancel, even when a session arrived from another tab meanwhile', async () => {
+      const user = userEvent.setup();
+      const { sessionRestores } = renderNeedingSession();
+
+      await user.click(screen.getByRole('button', { name: 'Buy' }));
+      sessionState.pubky = 'b'.repeat(52);
+      await user.click(screen.getByRole('button', { name: 'Cancel' }));
+      sessionRestores();
+
+      expect(cartAdd).not.toHaveBeenCalled();
+    });
+
+    it('does not add to the cart after the buyer cancelled the approval', async () => {
+      const user = userEvent.setup();
+      const { sessionRestores } = renderNeedingSession();
+
+      await user.click(screen.getByRole('button', { name: 'Buy' }));
+      await user.click(screen.getByRole('button', { name: 'Cancel' }));
+      sessionRestores();
+
+      expect(cartAdd).not.toHaveBeenCalled();
+    });
+  });
+
   it('uses one Sign in to buy path when the viewer has no identity', async () => {
     authState.currentUserPubky = null;
     view.projection = null;
@@ -603,6 +770,22 @@ describe('MarketplaceListing', () => {
   });
 
   describe('Report listing', () => {
+    afterEach(() => setEmbedded(false));
+
+    it('stays on the listing and opens the dialog when the Shop is embedded in pubky.app', async () => {
+      setEmbedded(true);
+      const user = userEvent.setup();
+      renderListing();
+
+      await user.click(screen.getByRole('button', { name: 'Report listing' }));
+
+      expect(await screen.findByRole('dialog')).toBeInTheDocument();
+      expect(screen.getByText('What sort of issue are you reporting?')).toBeInTheDocument();
+      for (const label of ['Illegal Sales or Criminal', 'Copyright Infringement', 'Personal Info Leak']) {
+        expect(screen.getByRole('option', { name: label })).toBeInTheDocument();
+      }
+    });
+
     it('opens the report dialog with the pubky.app reasons for a signed-in viewer', async () => {
       const user = userEvent.setup();
       renderListing();
@@ -650,6 +833,165 @@ describe('MarketplaceListing', () => {
     expect(screen.queryByRole('button', { name: 'Authorize with Pubky Ring' })).not.toBeInTheDocument();
   });
 
+  describe('per-size stock', () => {
+    const sizes = (...ids: string[]) =>
+      toCommerceListingModel(
+        createCommerceListingFixture({
+          variants: ids.map((id) => ({
+            id,
+            options: { size: id.toUpperCase() },
+            quantity: 3,
+            mediaIds: [],
+            enabled: true,
+          })),
+        }),
+      );
+
+    it('selects the first size that has stock and adds that size', async () => {
+      view.listing = sizes('size_s', 'size_m');
+      view.projection = createListingProjectionFixture({
+        availableQuantity: 3,
+        variants: [
+          { variantId: 'size_s', availableQuantity: 0, soldOut: true },
+          { variantId: 'size_m', availableQuantity: 3, soldOut: false },
+        ],
+      });
+      const user = userEvent.setup();
+
+      const listing = renderListing();
+      await waitFor(() =>
+        expect(screen.getByRole('combobox', { name: 'Choose listing variant' })).toHaveTextContent('SIZE_M'),
+      );
+      await user.click(screen.getByRole('button', { name: 'Buy' }));
+
+      expect(cartAdd).toHaveBeenCalledWith(`${listing.seller_id}:${listing.listing_id}`, 'size_m', 1);
+    });
+
+    it('lists a sold-out size as unavailable in the picker', async () => {
+      view.listing = sizes('size_s', 'size_m');
+      view.projection = createListingProjectionFixture({
+        variants: [
+          { variantId: 'size_s', availableQuantity: 0, soldOut: true },
+          { variantId: 'size_m', availableQuantity: 3, soldOut: false },
+        ],
+      });
+      const user = userEvent.setup();
+
+      renderListing();
+      await user.click(screen.getByRole('combobox', { name: 'Choose listing variant' }));
+
+      expect(await screen.findByRole('option', { name: 'SIZE_S · Sold out' })).toHaveAttribute('aria-disabled', 'true');
+    });
+
+    it('shows Sold out instead of Buy when every size is sold out', () => {
+      view.listing = sizes('size_s', 'size_m');
+      view.projection = createListingProjectionFixture({
+        availableQuantity: 3,
+        variants: [
+          { variantId: 'size_s', availableQuantity: 0, soldOut: true },
+          { variantId: 'size_m', availableQuantity: 0, soldOut: true },
+        ],
+      });
+
+      renderListing();
+
+      expect(screen.getByRole('button', { name: 'Sold out' })).toBeDisabled();
+      expect(screen.queryByRole('button', { name: 'Buy' })).not.toBeInTheDocument();
+    });
+
+    it('takes the sold-out sizes from the public read when the viewer has no session', async () => {
+      view.listing = sizes('size_s', 'size_m');
+      view.projection = null;
+      view.projectionError = 'A marketplace session is required.';
+      view.needsSession = true;
+      view.publicStock = 'available';
+      view.publicStockVariants = [
+        { variantId: 'size_s', soldOut: true },
+        { variantId: 'size_m', soldOut: false },
+      ];
+
+      renderListing();
+
+      await waitFor(() =>
+        expect(screen.getByRole('combobox', { name: 'Choose listing variant' })).toHaveTextContent('SIZE_M'),
+      );
+      expect(screen.getByRole('button', { name: 'Buy' })).toBeEnabled();
+    });
+
+    it('shows Sold out instead of Buy from the public read when every size is sold out', async () => {
+      view.listing = sizes('size_s', 'size_m');
+      view.projection = null;
+      view.projectionError = 'A marketplace session is required.';
+      view.needsSession = true;
+      view.publicStock = 'available';
+      view.publicStockVariants = [
+        { variantId: 'size_s', soldOut: true },
+        { variantId: 'size_m', soldOut: true },
+      ];
+
+      renderListing();
+
+      expect(await screen.findByRole('button', { name: 'Sold out' })).toBeDisabled();
+      expect(screen.queryByRole('button', { name: 'Buy' })).not.toBeInTheDocument();
+    });
+
+    it('reads a held listing as held, not sold out, when the service flags every held size', () => {
+      view.listing = sizes('size_s', 'size_m');
+      view.projection = createListingProjectionFixture({
+        state: 'reserved',
+        availableQuantity: 0,
+        reservedQuantity: 2,
+        variants: [
+          { variantId: 'size_s', availableQuantity: 0, soldOut: true },
+          { variantId: 'size_m', availableQuantity: 0, soldOut: true },
+        ],
+      });
+
+      renderListing();
+
+      expect(screen.getByText(CHECKOUT_HOLD_COPY.listingReserved)).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Buy' })).toBeDisabled();
+      expect(screen.getByRole('button', { name: CHECKOUT_HOLD_COPY.heldWhileAnotherPays })).toBeDisabled();
+      expect(screen.queryByRole('button', { name: 'Sold out' })).not.toBeInTheDocument();
+    });
+
+    it('reads a held listing as held from the public read when the viewer has no session', async () => {
+      view.listing = sizes('size_s', 'size_m');
+      view.projection = null;
+      view.projectionError = 'A marketplace session is required.';
+      view.needsSession = true;
+      view.publicStock = 'reserved';
+      view.publicStockVariants = [
+        { variantId: 'size_s', soldOut: true },
+        { variantId: 'size_m', soldOut: true },
+      ];
+
+      renderListing();
+
+      expect(await screen.findByText(CHECKOUT_HOLD_COPY.listingReserved)).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Buy' })).toBeDisabled();
+      expect(screen.queryByRole('button', { name: 'Sold out' })).not.toBeInTheDocument();
+    });
+  });
+
+  it('shows Sold out instead of Buy and Make offer when the service reads the listing sold', () => {
+    view.projection = createListingProjectionFixture({ state: 'sold', availableQuantity: 0 });
+    renderListing();
+
+    expect(screen.getByRole('button', { name: 'Sold out' })).toBeDisabled();
+    expect(screen.queryByRole('button', { name: 'Buy' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Make offer/ })).not.toBeInTheDocument();
+  });
+
+  it('sells a made-to-order listing with no stock count, and says it is made to order', () => {
+    view.projection = createListingProjectionFixture({ state: 'available', availableQuantity: 0, madeToOrder: true });
+    renderListing();
+
+    expect(screen.queryByRole('button', { name: 'Sold out' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Buy' })).toBeEnabled();
+    expect(screen.getByTestId('marketplace-listing-made-to-order')).toHaveTextContent('Made to order');
+  });
+
   it('shows the holding sentence and disables checkout when the listing is reserved', () => {
     view.projection = createListingProjectionFixture({ state: 'reserved', availableQuantity: 0, reservedQuantity: 1 });
     renderListing();
@@ -662,7 +1004,7 @@ describe('MarketplaceListing', () => {
     ).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Sold out' })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: CHECKOUT_HOLD_COPY.heldWhileAnotherPays })).toBeDisabled();
-    expect(screen.queryByRole('button', { name: 'Make offer' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Make offer/ })).not.toBeInTheDocument();
   });
 
   describe('another buyer holds the item and the viewer has no marketplace session (#50)', () => {
@@ -680,7 +1022,7 @@ describe('MarketplaceListing', () => {
       expect(await screen.findByText(CHECKOUT_HOLD_COPY.listingReserved)).toBeInTheDocument();
       expect(screen.getByRole('button', { name: 'Buy' })).toBeDisabled();
       expect(screen.getByRole('button', { name: CHECKOUT_HOLD_COPY.heldWhileAnotherPays })).toBeDisabled();
-      expect(screen.queryByRole('button', { name: 'Make offer' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /Make offer/ })).not.toBeInTheDocument();
       expect(publicAvailabilityRead).toHaveBeenCalledWith(view.listing?.seller_id, view.listing?.listing_id);
     });
 
@@ -792,7 +1134,7 @@ describe('MarketplaceListing', () => {
     renderListing();
 
     const link = screen.getByRole('link', { name: 'Buy' });
-    expect(link).toHaveAttribute('href', `/marketplace/checkout#${ownHold.id}`);
+    expect(link).toHaveAttribute('href', `/marketplace/checkout?order=${ownHold.id}`);
     expect(screen.queryByRole('link', { name: CHECKOUT_HOLD_COPY.heldForYouOfferCta })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: CHECKOUT_HOLD_COPY.heldForYouCta })).toBeDisabled();
     expect(
@@ -939,14 +1281,17 @@ describe('MarketplaceListing', () => {
     expect(screen.getByRole('button', { name: 'Place a bid' })).toBeEnabled();
   });
 
-  it('reveals the full-grant approval card when a bridged buyer with a narrow grant places a bid', async () => {
-    view.hasFullHomeserverGrant = false;
+  it('requires an explicit signer choice when a hosted buyer places a bid without a marketplace session', async () => {
+    authState.grantSigner = 'host';
     const user = userEvent.setup();
 
     renderAuctionListingNeedingSession();
     await user.click(screen.getByRole('button', { name: 'Place a bid' }));
 
     expect(screen.getByRole('heading', { name: 'Enable purchases' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Authorize with Pubky Ring' })).not.toBeInTheDocument();
+    expect(screen.getByText(/Choose the signer that holds the same pubky/)).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Pubky Ring' }));
     expect(screen.getByRole('button', { name: 'Authorize with Pubky Ring' })).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Authorize with Pubky Ring' }));
@@ -982,15 +1327,13 @@ describe('MarketplaceListing', () => {
         bidCount: 4,
       },
     });
-    view.projectionError = 'This listing could not be prepared for checkout. It may have been removed by the seller.';
+    view.projectionError = "This listing isn't available for checkout right now.";
 
     renderListing();
 
     expect(screen.getByRole('button', { name: 'Auction ended' })).toBeDisabled();
     expect(screen.getByRole('alert')).toHaveTextContent('This auction is no longer open for bidding.');
-    expect(
-      screen.queryByText('This listing could not be prepared for checkout. It may have been removed by the seller.'),
-    ).not.toBeInTheDocument();
+    expect(screen.queryByText("This listing isn't available for checkout right now.")).not.toBeInTheDocument();
   });
 
   it('shows Unlimited on a digital-only variant instead of the quantity cap', () => {
@@ -1025,7 +1368,7 @@ describe('MarketplaceListing', () => {
     expect(variant).not.toHaveTextContent(String(COMMERCE_LISTING_MAX_QUANTITY));
   });
 
-  it('reveals the empty-caps reconnect card when a full-grant buyer places a bid without a marketplace session', async () => {
+  it('reveals the service-grant approval card when a Ring buyer places a bid without a marketplace session', async () => {
     view.hasFullHomeserverGrant = true;
     const user = userEvent.setup();
 
@@ -1033,6 +1376,9 @@ describe('MarketplaceListing', () => {
     await user.click(screen.getByRole('button', { name: 'Place a bid' }));
 
     expect(screen.getByRole('heading', { name: 'Enable purchases' })).toBeInTheDocument();
+    expect(
+      screen.getByText(/Approve with Pubky Ring to connect the marketplace for the identity signed in to Shop/),
+    ).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Authorize with Pubky Ring' })).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Authorize with Pubky Ring' }));

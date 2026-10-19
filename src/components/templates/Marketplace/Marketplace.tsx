@@ -14,15 +14,16 @@ import { Typography } from '@/atoms/Typography/Typography';
 import { isDurableCommerceMode } from '@/config/commerce';
 import { buildFeatureDiscoveryDeviceStorageKey, MARKETPLACE_PROMO_STORAGE_ID } from '@/config/featureDiscovery';
 import { SEARCH_CLOSED_STYLE } from '@/config/search';
-import { useIsMobile } from '@/hooks/useIsMobile/useIsMobile';
 import { useMarketplaceCatalog } from '@/hooks/useMarketplaceCatalog/useMarketplaceCatalog';
 import type { MarketplaceCatalogItem } from '@/hooks/useMarketplaceCatalog/useMarketplaceCatalog.utils';
 import { useMarketplaceDrops } from '@/hooks/useMarketplaceDrops/useMarketplaceDrops';
+import { useMarketplacePaymentFilterOptions } from '@/hooks/useMarketplacePaymentFilterOptions/useMarketplacePaymentFilterOptions';
 import { useMarketplacePromoDismissal } from '@/hooks/useMarketplacePromoDismissal/useMarketplacePromoDismissal';
 import { useMarketplaceSellingAccess } from '@/hooks/useMarketplaceSellingAccess/useMarketplaceSellingAccess';
 import { useMarketplaceWatchDetection } from '@/hooks/useMarketplaceWatchDetection/useMarketplaceWatchDetection';
 import { useRequireAuth } from '@/hooks/useRequireAuth/useRequireAuth';
 import type { CommerceShopRecord } from '@/libs/commerce/marketplace-records';
+import { paymentFilterUnavailableCopy } from '@/libs/commerce/payment-method-filter';
 import { removeMarketplacePromoPrepaintStyle } from '@/libs/commerce/promo-prepaint';
 import { cn } from '@/libs/utils/utils';
 import { ContentLayout } from '@/organisms/ContentLayout/ContentLayout';
@@ -46,7 +47,6 @@ export function Marketplace({
   initialShops?: CommerceShopRecord[];
 }) {
   const router = useRouter();
-  const isMobile = useIsMobile({ breakpoint: 'sm' });
   const { requireAuth } = useRequireAuth();
   const sellingAccess = useMarketplaceSellingAccess();
   const [showSellingApproval, setShowSellingApproval] = useState(false);
@@ -74,7 +74,14 @@ export function Marketplace({
   const catalog = useMarketplaceCatalog(initialListings, initialShops);
   const { shopsBySeller, adapterMode, listings, facetPool, countryFacetPool } = catalog;
   const listingCards = listings.map((listing) => ({ kind: 'listing' as const, listing }));
-  const dropCards = uniqueDropCards(visibleDrops.map((drop) => ({ kind: 'drop' as const, ...drop })));
+  const { paymentFilter } = catalog;
+  const paymentFilterOptions = useMarketplacePaymentFilterOptions();
+  // Drops follow the payment filter too: their seller must be in the set.
+  const dropCards = uniqueDropCards(
+    visibleDrops
+      .filter(({ entry }) => paymentFilter.status === 'off' || paymentFilter.sellers?.has(entry.owner_id) === true)
+      .map((drop) => ({ kind: 'drop' as const, ...drop })),
+  );
   const catalogListingCards = saleFormat === 'drops' ? [] : listingCards;
   const catalogCards: Array<(typeof listingCards)[number] | (typeof dropCards)[number]> = [];
   if (sort === 'recommended' && saleFormat === 'all') {
@@ -223,6 +230,7 @@ export function Marketplace({
             resultCount={resultCount}
             facetPool={facetPool}
             countryFacetPool={countryFacetPool}
+            paymentMethodOptions={paymentFilterOptions}
             searchControl={
               <div
                 className="relative flex h-8 min-w-48 flex-1 items-center gap-1.5 rounded-full border border-border pl-3"
@@ -232,7 +240,7 @@ export function Marketplace({
                   aria-label="Filter marketplace"
                   value={query}
                   onChange={(event) => setQuery(event.target.value)}
-                  placeholder={isMobile ? 'Search' : 'Filter items, styles, or sellers'}
+                  placeholder="Search"
                   className="h-auto min-w-0 flex-1 border-none bg-transparent p-0 text-xs font-medium text-foreground md:text-xs"
                 />
                 <span
@@ -286,7 +294,9 @@ export function Marketplace({
           ) : resultCount > 0 ? (
             <div
               className={cn(
-                layout === 'grid' ? 'grid grid-cols-2 gap-6 sm:grid-cols-3 lg:grid-cols-4' : 'grid grid-cols-1 gap-6',
+                layout === 'grid'
+                  ? 'grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-6 lg:grid-cols-4'
+                  : 'grid grid-cols-1 gap-3 sm:gap-6',
               )}
             >
               {catalogCards.map((card, index) =>
@@ -313,12 +323,25 @@ export function Marketplace({
           ) : (
             <div className="flex min-h-64 flex-col items-center justify-center rounded-md bg-card/40 p-6 text-center">
               <Store className="mb-4 size-10 text-muted-foreground" />
-              <Heading level={2} size="md">
-                No listings match
-              </Heading>
-              <Typography as="p" className="mt-2 text-muted-foreground">
-                Try another search or clear the active filters.
-              </Typography>
+              {paymentFilter.status === 'unavailable' && paymentFilter.method ? (
+                <>
+                  <Heading level={2} size="md">
+                    Payment filter unavailable
+                  </Heading>
+                  <Typography as="p" role="status" className="mt-2 text-muted-foreground">
+                    {paymentFilterUnavailableCopy(paymentFilter.method)}
+                  </Typography>
+                </>
+              ) : (
+                <>
+                  <Heading level={2} size="md">
+                    No listings match
+                  </Heading>
+                  <Typography as="p" className="mt-2 text-muted-foreground">
+                    Try another search or clear the active filters.
+                  </Typography>
+                </>
+              )}
             </div>
           )}
         </section>

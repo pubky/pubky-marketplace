@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CommerceApplication } from '@/application/commerce/commerce';
 import * as commerceConfig from '@/config/commerce';
 import { CommerceController } from '@/controllers/commerce/commerce';
+import { LISTING_PUBLISH_BLOCK_COPY } from '@/libs/commerce/listing-publish-guards';
 import type { CommerceListingRecord } from '@/libs/commerce/marketplace-records';
 import { ClientErrorCode } from '@/libs/error/error.codes';
 import { Err } from '@/libs/error/error.factories';
@@ -40,6 +41,9 @@ function ListingPage({ listingId }: { listingId: string }) {
   );
 }
 
+const PAID_CONFIG = { bitcoinAvailable: true, bitcoinOfferAvailable: true, paypalAvailable: false };
+const NO_METHOD_CONFIG = { bitcoinAvailable: false, bitcoinOfferAvailable: true, paypalAvailable: false };
+
 describe('MarketplaceListingOwnerPanel unlist through the real commit', () => {
   const published = createCommerceListingFixture();
   let homeserverRecord: Record<string, unknown>;
@@ -53,6 +57,7 @@ describe('MarketplaceListingOwnerPanel unlist through the real commit', () => {
     useCommerceStore.setState({ marketplaceSession: {} as never });
     vi.spyOn(commerceConfig, 'getCommerceAdapterMode').mockReturnValue('transaction-service');
     vi.spyOn(CommerceApplication, 'hasActiveMarketplaceSession').mockReturnValue(true);
+    vi.spyOn(CommerceApplication, 'needsDefaultShop').mockResolvedValue(false);
     vi.spyOn(CommerceHomeserverService, 'fetchJson').mockImplementation(async () => {
       await new Promise((resolve) => setTimeout(resolve, 5));
       if (!homeserverRecord) {
@@ -60,10 +65,20 @@ describe('MarketplaceListingOwnerPanel unlist through the real commit', () => {
       }
       return structuredClone(homeserverRecord);
     });
+    vi.spyOn(CommerceHomeserverService, 'fetchJsonIfFound').mockImplementation(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      return homeserverRecord ? { found: true, json: structuredClone(homeserverRecord) } : { found: false };
+    });
     vi.spyOn(CommerceHomeserverService, 'putJson').mockImplementation(async (_url, body) => {
       homeserverRecord = structuredClone(body);
     });
     vi.spyOn(MarketplaceGatewayService, 'getListing').mockResolvedValue(null);
+    vi.spyOn(CommerceController, 'getSellerPaymentConfig').mockResolvedValue(PAID_CONFIG);
+    vi.spyOn(CommerceController, 'getMyDeliveryKeyStatus').mockResolvedValue({
+      local: null,
+      publication: 'matches',
+      publishedKeyId: 'key',
+    });
     vi.spyOn(MarketplaceGatewayService, 'execute').mockImplementation(async (_actor, command) => {
       registrations.push(command.kind);
       return {
@@ -149,18 +164,118 @@ describe('MarketplaceListingOwnerPanel unlist through the real commit', () => {
     expect(await screen.findByRole('button', { name: /Unlist/ })).toBeEnabled();
   });
 
-  it('asks for the selling approval, and changes nothing, when no marketplace session is connected', async () => {
+  it('unlists on the sign-in grant alone when no marketplace session is connected', async () => {
     const user = userEvent.setup();
     vi.spyOn(CommerceApplication, 'hasActiveMarketplaceSession').mockReturnValue(false);
-    const put = vi.spyOn(CommerceHomeserverService, 'putJson');
     render(<ListingPage listingId={published.listingId} />);
 
     await user.click(await screen.findByRole('button', { name: /Unlist/ }));
+
+    await waitFor(() => expect(toast).toHaveBeenCalledWith(expect.objectContaining({ title: 'Listing unlisted' })));
+    expect(toast).not.toHaveBeenCalledWith(expect.objectContaining({ variant: 'error' }));
+    expect(homeserverRecord).toMatchObject({ state: 'paused', revision: published.revision + 1 });
+    expect(registrations).toEqual([]);
+    await expect(
+      LocalCommerceService.getListing(`${published.ownerPubky}:${published.listingId}`),
+    ).resolves.toMatchObject({ state: 'paused', registration_status: 'registered', sync_status: 'synced' });
+  });
+
+  it('asks for the selling approval, and changes nothing, when relisting without a marketplace session', async () => {
+    const user = userEvent.setup();
+    vi.spyOn(CommerceApplication, 'hasActiveMarketplaceSession').mockReturnValue(false);
+    const paused = createCommerceListingFixture({ state: 'paused', revision: 2 });
+    homeserverRecord = asWire(paused);
+    await LocalCommerceService.upsertListing(paused, 'synced');
+    const put = vi.spyOn(CommerceHomeserverService, 'putJson');
+    render(<ListingPage listingId={published.listingId} />);
+
+    await user.click(await screen.findByRole('button', { name: /Relist/ }));
 
     await waitFor(() =>
       expect(toast).toHaveBeenCalledWith({ variant: 'error', description: 'Enable selling to publish' }),
     );
     expect(put).not.toHaveBeenCalled();
-    expect(screen.getByTestId('state')).toHaveTextContent('active');
+    expect(screen.getByTestId('state')).toHaveTextContent('paused');
+  });
+
+  describe('relist publish guards', () => {
+    async function renderPaused() {
+      const paused = createCommerceListingFixture({ state: 'paused', revision: 2 });
+      homeserverRecord = asWire(paused);
+      await LocalCommerceService.upsertListing(paused, 'synced');
+      const put = vi.spyOn(CommerceHomeserverService, 'putJson');
+      render(<ListingPage listingId={published.listingId} />);
+      return put;
+    }
+
+    it('keeps the listing paused when the seller has no payment method', async () => {
+      const user = userEvent.setup();
+      vi.mocked(CommerceController.getSellerPaymentConfig).mockResolvedValue(NO_METHOD_CONFIG);
+      const put = await renderPaused();
+
+      await user.click(await screen.findByRole('button', { name: /Relist/ }));
+
+      await waitFor(() =>
+        expect(toast).toHaveBeenCalledWith({
+          variant: 'error',
+          description: LISTING_PUBLISH_BLOCK_COPY['no-method'].title,
+        }),
+      );
+      expect(CommerceController.getSellerPaymentConfig).toHaveBeenCalledWith(COMMERCE_FIXTURE_SELLER);
+      expect(put).not.toHaveBeenCalled();
+      expect(registrations).toEqual([]);
+      expect(screen.getByTestId('state')).toHaveTextContent('paused');
+      expect(await screen.findByRole('button', { name: /Relist/ })).toBeEnabled();
+    });
+
+    it('keeps a shipped listing paused without a published delivery key', async () => {
+      const user = userEvent.setup();
+      vi.mocked(CommerceController.getMyDeliveryKeyStatus).mockResolvedValue({
+        local: null,
+        publication: 'missing',
+        publishedKeyId: null,
+      });
+      const put = await renderPaused();
+
+      await user.click(await screen.findByRole('button', { name: /Relist/ }));
+
+      await waitFor(() =>
+        expect(toast).toHaveBeenCalledWith({
+          variant: 'error',
+          description: LISTING_PUBLISH_BLOCK_COPY['no-delivery-key'].title,
+        }),
+      );
+      expect(put).not.toHaveBeenCalled();
+      expect(screen.getByTestId('state')).toHaveTextContent('paused');
+    });
+
+    it('asks for the selling approval before checking payment settings when no session is in the store', async () => {
+      const user = userEvent.setup();
+      const put = await renderPaused();
+      useCommerceStore.setState({ marketplaceSession: null });
+
+      await user.click(await screen.findByRole('button', { name: /Relist/ }));
+
+      await waitFor(() =>
+        expect(toast).toHaveBeenCalledWith({
+          variant: 'error',
+          description: LISTING_PUBLISH_BLOCK_COPY.session.title,
+        }),
+      );
+      expect(CommerceController.getSellerPaymentConfig).not.toHaveBeenCalled();
+      expect(put).not.toHaveBeenCalled();
+    });
+
+    it('still unlists without a payment method: pausing is not guarded', async () => {
+      const user = userEvent.setup();
+      vi.mocked(CommerceController.getSellerPaymentConfig).mockResolvedValue(NO_METHOD_CONFIG);
+      render(<ListingPage listingId={published.listingId} />);
+
+      await user.click(await screen.findByRole('button', { name: /Unlist/ }));
+
+      await waitFor(() => expect(toast).toHaveBeenCalledWith(expect.objectContaining({ title: 'Listing unlisted' })));
+      expect(CommerceController.getSellerPaymentConfig).not.toHaveBeenCalled();
+      expect(homeserverRecord).toMatchObject({ state: 'paused', revision: published.revision + 1 });
+    });
   });
 });

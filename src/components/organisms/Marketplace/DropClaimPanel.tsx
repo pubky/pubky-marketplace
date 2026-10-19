@@ -9,14 +9,58 @@ import { Typography } from '@/atoms/Typography/Typography';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import type { UseMarketplaceDropClaimResult } from '@/hooks/useMarketplaceDropClaim/useMarketplaceDropClaim';
 import { useMarketplaceFirstMediaUrls } from '@/hooks/useMarketplaceMediaUrl/useMarketplaceMediaUrl';
+import { useMarketplacePublicAvailability } from '@/hooks/useMarketplacePublicAvailability/useMarketplacePublicAvailability';
 import { useRequireAuth } from '@/hooks/useRequireAuth/useRequireAuth';
 import { getMarketplaceCheckoutRoute, getMarketplaceDropCheckoutRoute } from '@/libs/commerce/checkout-phase';
 import { formatCommerceMoney } from '@/libs/commerce/format';
+import { soldOutVariantIds, tracksVariantStock } from '@/libs/commerce/listing-variants';
 import type { CommerceDropRecord, CommerceListingRecord } from '@/libs/commerce/marketplace-records';
 import { MarketplaceDeliveryKeyChangeDialog } from '@/organisms/Marketplace/MarketplaceDeliveryKeyChangeDialog';
 import { useAuthStore } from '@/stores/auth/auth.store';
 import { MarketplaceIndicativePrice } from './MarketplaceIndicativePrice';
 import { MarketplaceSessionRequiredCard } from './MarketplaceSessionRequiredCard';
+import { MarketplaceVariantPicker } from './MarketplaceVariantPicker';
+
+/**
+ * The size picker of one per-size drop listing. Sold-out sizes come from the
+ * service's public availability read (no session needed), stay listed, and
+ * cannot be chosen; a chosen size that sells out is dropped. No size is
+ * chosen for the buyer.
+ */
+function DropClaimSizePicker({
+  sellerPubky,
+  listing,
+  selectedVariantId,
+  onSelect,
+}: {
+  sellerPubky: string;
+  listing: CommerceListingRecord;
+  selectedVariantId: string | undefined;
+  onSelect: (variantId: string | undefined) => void;
+}) {
+  const stock = useMarketplacePublicAvailability(sellerPubky, listing.listingId, true);
+  const soldOut = soldOutVariantIds(stock?.variants);
+  const chosenSoldOut = selectedVariantId !== undefined && soldOut.has(selectedVariantId);
+  useEffect(() => {
+    if (chosenSoldOut) onSelect(undefined);
+  }, [chosenSoldOut, onSelect]);
+  return (
+    <MarketplaceVariantPicker
+      record={listing}
+      selectedVariantId={selectedVariantId}
+      onSelect={onSelect}
+      soldOutVariantIds={soldOut}
+      placeholder="Choose a size"
+      showHeading={false}
+      className="mt-2 w-48 max-w-full"
+    />
+  );
+}
+
+/** The drop checkout route, carrying the size the buyer chose on a per-size listing. */
+function dropClaimHref(route: string, variantId: string | undefined): string {
+  return variantId ? `${route}&variant=${encodeURIComponent(variantId)}` : route;
+}
 
 type HydratedDropListing = {
   listingId: string;
@@ -44,6 +88,7 @@ export function DropClaimPanel({
   const currentUserPubky = useAuthStore((state) => state.currentUserPubky);
   const { requireAuth } = useRequireAuth();
   const [listings, setListings] = useState<HydratedDropListing[] | null>(null);
+  const [sizes, setSizes] = useState<Record<string, string | undefined>>({});
 
   useEffect(() => {
     let active = true;
@@ -99,6 +144,8 @@ export function DropClaimPanel({
               const allowanceSpent = remainingAllowance === 0;
               const mediaUrl = mediaUrls[index] ?? null;
               const price = listing?.sale.format === 'fixed_price' ? listing.sale.unitPrice : null;
+              const needsSize = listing !== null && tracksVariantStock(listing.variants);
+              const chosenSize = sizes[listingId];
               return (
                 <li key={listingId} className="flex items-center gap-3 rounded-md bg-card p-6">
                   {mediaUrl && (
@@ -120,6 +167,14 @@ export function DropClaimPanel({
                       <Typography as="p" className="text-xs text-muted-foreground">
                         The listing record could not be loaded; claiming still works.
                       </Typography>
+                    )}
+                    {needsSize && !isClaimed && !isOwner && !allowanceSpent && (
+                      <DropClaimSizePicker
+                        sellerPubky={record.ownerPubky}
+                        listing={listing}
+                        selectedVariantId={chosenSize}
+                        onSelect={(variantId) => setSizes((current) => ({ ...current, [listingId]: variantId }))}
+                      />
                     )}
                   </div>
                   {isClaimed ? (
@@ -145,14 +200,22 @@ export function DropClaimPanel({
                       {allowanceSpent ? <CheckCircle2 className="size-4" /> : <Zap className="size-4" />}
                       {isOwner ? 'You cannot claim from your own drop' : 'Per-buyer limit reached'}
                     </Button>
+                  ) : needsSize && !chosenSize ? (
+                    <Button size="sm" className="rounded-full" disabled>
+                      <Zap className="size-4" />
+                      Choose a size
+                    </Button>
                   ) : (
                     <Button asChild size="sm" className="rounded-full">
                       <Link
-                        href={getMarketplaceDropCheckoutRoute({
-                          sellerPubky: record.ownerPubky,
-                          dropId: record.dropId,
-                          listingId,
-                        })}
+                        href={dropClaimHref(
+                          getMarketplaceDropCheckoutRoute({
+                            sellerPubky: record.ownerPubky,
+                            dropId: record.dropId,
+                            listingId,
+                          }),
+                          needsSize ? chosenSize : undefined,
+                        )}
                         overrideDefaults
                       >
                         <Zap className="size-4" />

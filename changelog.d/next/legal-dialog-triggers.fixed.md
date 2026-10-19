@@ -1,0 +1,1 @@
+The Terms of Service, Privacy Policy and age links in the landing and onboarding footers are now real buttons: keyboard users can focus them and open them with Enter or Space, with a visible focus ring. Every mention of the contracting entity (the Terms, Privacy Policy, footers, copyright line and copyright form) now reads Synonym Software, S.A. de C.V., from one constant.

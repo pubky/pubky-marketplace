@@ -76,6 +76,7 @@ vi.mock('@/hooks/useMarketplaceCatalog/useMarketplaceCatalog', async () => {
       shopsBySeller: catalog.shopsBySeller,
       isLoading: false,
       adapterMode: 'sandbox',
+      paymentFilter: { method: null, status: 'off', sellers: null },
     }),
   };
 });
@@ -97,8 +98,8 @@ vi.mock('@/hooks/useMarketplaceActivityUnread/useMarketplaceActivityUnread', () 
 vi.mock('@/hooks/useMarketplaceNavAttention/useMarketplaceNavAttention', () => ({
   useMarketplaceNavAttention: () => 0,
 }));
-vi.mock('@/hooks/useMessagesUnread/useMessagesUnread', () => ({
-  useMessagesUnread: () => 0,
+vi.mock('@/hooks/useChatUnread/useChatUnread', () => ({
+  useChatUnread: () => 0,
 }));
 
 vi.mock('@/hooks/useMarketplaceSavedSearches/useMarketplaceSavedSearches', () => ({
@@ -215,7 +216,7 @@ function overlap(a: DOMRect, b: DOMRect): DOMRect | null {
 }
 
 function tabsWrapper(): HTMLElement {
-  const wrapper = requireElement('[data-testid="marketplace-section-nav"]').parentElement;
+  const wrapper = requireElement('[data-testid="marketplace-section-nav"]').closest<HTMLElement>('.sticky');
   if (!wrapper) throw new Error('Section tabs have no sticky wrapper');
   return wrapper;
 }

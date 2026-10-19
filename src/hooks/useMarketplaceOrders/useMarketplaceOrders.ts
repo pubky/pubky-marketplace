@@ -168,7 +168,7 @@ export function useMarketplaceOrders() {
           (kind === 'order.cancel_request' && order.fulfillment === 'pickup');
         const usdtRefusal =
           kind === 'refund.record_external' || kind === CONFIRM_REFUND_DESTINATION_KIND
-            ? usdtRefundRefusalMessage(response.error)
+            ? usdtRefundRefusalMessage(response.error, { seller: kind === 'refund.record_external' })
             : null;
         const refundRefusal =
           usdtRefusal ?? (kind === 'refund.record_external' ? plainRefundRefusal(response.error.message) : null);

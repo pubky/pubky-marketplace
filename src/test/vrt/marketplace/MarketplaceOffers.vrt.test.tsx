@@ -1,10 +1,19 @@
 // Intentional import order — browser-mode mock factories rely on stable aliases.
 /* eslint-disable simple-import-sort/imports */
 import { createMarketplaceVrtAuthStore } from '@/test/mocks/marketplace-vrt';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderForVRT, VRT_ROOT_TESTID } from '@/test-utils/vrt';
 import { VRT_VIEWPORT_DESKTOP, VRT_VIEWPORT_MOBILE } from '@/test-utils/vrt.viewports';
 import { MarketplaceOffers } from '@/templates/Marketplace/MarketplaceOffers';
+import { useMarketplaceDisplayStore } from '@/stores/marketplace-display/marketplace-display.store';
+
+vi.mock('@/hooks/useIndicativeBtcRate/useIndicativeBtcRate', () => ({
+  useIndicativeBtcRate: (enabled: boolean) =>
+    enabled ? { satUsd: 0.001, btcUsd: 100_000, lastUpdatedAt: new Date('2026-08-21T00:00:00Z') } : null,
+}));
+beforeEach(() => {
+  useMarketplaceDisplayStore.setState({ showFxEstimate: true, measurementSystem: 'metric' });
+});
 
 // Covers every offer state defined by the offer schema union, split into
 // viewport-sized sweeps so each state is actually visible in a baseline, plus
@@ -30,6 +39,7 @@ const view = vi.hoisted(() => ({
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn() }),
   usePathname: () => '/marketplace/offers',
+  useSearchParams: () => new URLSearchParams(),
 }));
 
 vi.mock('@/controllers/commerce/commerce', async (importOriginal) => {

@@ -1,6 +1,100 @@
 # Observability (Sentry + Pulse)
 
-How errors and performance data leave Pubky App. Sentry is the primary sink (browser, server and edge). Pulse (`@synonymdev/pubky-pulse-web`) is an optional, consent-gated, browser-only second sink for anonymous usage and errors — see [Pulse](#pulse-browser-only-second-sink) below, and [environment.md](environment.md) for its configuration and consent flow.
+How errors and performance data flow into Sentry from Pubky Marketplace (Shop).
+
+Pulse (`@synonymdev/pubky-pulse-web`) is an optional, consent-gated, browser-only second sink for anonymous usage and errors — see [Pulse](#pulse-browser-only-second-sink) below, and [environment.md](environment.md) for its configuration and consent flow.
+
+The Shop already includes the Sentry Next.js SDK and browser, Node and Edge initialization.
+Use the existing **`synonym-52 / pubky-marketplace`** project; do not run the setup wizard or add a
+second SDK. The embedded Shop has its own runtime config and SDK inside the iframe, so its events
+go to the Shop DSN even when Pubky App serves the parent page on the same origin.
+
+## Deployment checklist
+
+Set these on the **Shop container**, keeping the existing network and embedded configuration:
+
+```dotenv
+PUBKY_RUNTIME_SENTRY_DSN=<DSN from synonym-52 / pubky-marketplace>
+PUBKY_RUNTIME_SENTRY_ENVIRONMENT=staging
+PUBKY_RUNTIME_SENTRY_TRACES_SAMPLE_RATE=0.1
+PUBKY_RUNTIME_SENTRY_REPLAYS_SESSION_SAMPLE_RATE=0.0
+PUBKY_RUNTIME_SENTRY_REPLAYS_ON_ERROR_SAMPLE_RATE=1.0
+```
+
+The DSN is a public client key, available in the project's **Settings → Client Keys (DSN)**.
+It is not the upload auth token. Set the environment to `production` for the production deployment.
+Staging uses `PUBKY_RUNTIME_TESTNET=false`; the testnet switch is for test networks and disables
+Sentry. Do not change the homeserver/network settings to enable telemetry.
+
+For readable production stack traces, the **Shop image build** also needs:
+
+- `SENTRY_ORG=synonym-52`
+- `SENTRY_PROJECT=pubky-marketplace`
+- `SENTRY_AUTH_TOKEN` from the CI secret store, authorized to upload source maps to that project
+- `NEXT_PUBLIC_APP_VERSION` identifying the Shop commit being built
+
+The Dockerfile already supports these inputs and uploads the maps for that exact build. Without
+upload credentials, errors still arrive but browser stack traces may remain minified. Never expose
+the auth token in `PUBKY_RUNTIME_*` or `NEXT_PUBLIC_*` variables. Runtime DSN changes require a
+container restart/redeploy, not a new frontend build; uploading maps requires the build artifacts.
+
+The staging image is built through **`pubky/shop-migration`**. Its maintainer must wire the runtime
+values and build credentials there. The copied `build-docker-image.yml` in this repo is gated to
+`pubky/pubky-app` and does not configure Marketplace deployments.
+
+After deployment, verify capture with the mounted harness described below. This config covers the
+Shop's Next.js server/BFF as well as its browser; it does not instrument the separate marketplace
+service, Locks or Paykit processes.
+
+## Releases
+
+Every event's `release` is the **deployed commit's full SHA**, baked into the build as
+`NEXT_PUBLIC_APP_VERSION` for the browser, Node and Edge runtimes alike (`resolveSentryRelease` in
+`src/libs/build-info/build-info.ts`):
+
+| Deploy path                                         | Release taken from                                                         | Release created by                  |
+| --------------------------------------------------- | -------------------------------------------------------------------------- | ----------------------------------- |
+| Docker image from a `v*` tag (`release-docker.yml`) | the `NEXT_PUBLIC_APP_VERSION` build arg, the tagged commit                 | the workflow's `sentry-release` job |
+| Vercel (John Staging, John Prod)                    | `GIT_COMMIT` (`--build-env` on a CLI deploy), else `VERCEL_GIT_COMMIT_SHA` | the build command in `vercel.json`  |
+| Local build                                         | the package version                                                        | nobody                              |
+
+`scripts/sentry-release` creates the release under that exact name, associates its commits and
+finalizes it. On Vercel it also records the deploy under the environment the events carry
+(`PUBKY_RUNTIME_SENTRY_ENVIRONMENT`, else `production`). With commits attached, stack-trace links open
+each file at the deployed commit, and suspect commits and `Fixes <ISSUE>` resolution work. The script
+skips with a warning while `SENTRY_AUTH_TOKEN` is unset. On Vercel a Sentry failure is printed in the
+build log and never blocks the deploy; in the Docker workflow it fails the `sentry-release` job (the
+image is already pushed). The `withSentryConfig` plugin creates no releases: in webpack builds it would
+create one per compiler.
+
+**Prerequisite (Sentry admin):** commit association resolves only once `pubky/pubky-marketplace` is
+added to the Sentry GitHub integration: **Settings → Integrations → GitHub → Configure → Add
+Repository**, with the Sentry GitHub App granted access to the repository in the `pubky` org, and a
+code mapping for the `pubky-marketplace` project on branch `master` (**Code Mappings → Add Mapping**).
+`sentry-cli repos list` then prints `pubky/pubky-marketplace`. Until then `set-commits` fails while the
+release is still created, finalized and (on Vercel) deployed. The Docker job uses `set-commits --auto`
+on a full-history checkout. A Vercel CLI upload has no git history, so there the commit is named
+explicitly and its range starts at the previous release with commits; `sentry-cli` needs a previous
+commit for the project's first such release, so the first one should come from the Docker job or a
+Vercel git deployment (which provides `VERCEL_GIT_PREVIOUS_SHA`).
+
+Credentials, never committed and never in `PUBKY_RUNTIME_*` or `NEXT_PUBLIC_*`:
+
+- GitHub Actions secret `SENTRY_AUTH_TOKEN` on `pubky/pubky-marketplace`: a `synonym-52` organization
+  auth token (Settings → Developer Settings → Organization Tokens). The workflow sets the org and
+  project.
+- Vercel, in each project that should create releases: `SENTRY_AUTH_TOKEN` (sensitive),
+  `SENTRY_ORG=synonym-52` and `SENTRY_PROJECT=pubky-marketplace`. Leave `NEXT_PUBLIC_APP_VERSION`
+  unset there: it would replace the commit SHA.
+
+The GCP deployment records its own deploys, because the image is promoted across environments. After
+an image is live, run this with the image's commit SHA and the container's
+`PUBKY_RUNTIME_SENTRY_ENVIRONMENT`:
+
+```bash
+SENTRY_AUTH_TOKEN=<token> npx @sentry/cli@2.58.5 deploys new --org synonym-52 --project pubky-marketplace \
+  --release <commit SHA> --env <staging|production>
+```
 
 ## What is captured
 
@@ -10,6 +104,7 @@ How errors and performance data leave Pubky App. Sentry is the primary sink (bro
 | Unhandled browser JS exceptions                      | Sentry `globalHandlers` integration (auto); Pulse `captureUnhandled` (auto)                                                                                                       | Sentry + Pulse |
 | Unhandled promise rejections                         | Sentry `globalHandlers` integration (auto); Pulse `captureUnhandled` (auto)                                                                                                       | Sentry + Pulse |
 | Server Component / Route Handler / middleware errors | `onRequestError = Sentry.captureRequestError` exported from `src/instrumentation.ts` (Next.js 15+)                                                                                | Sentry         |
+| Caught Shop grant BFF server failures                | Browser/CLI route handlers report mapped 5xx through `Err.server` with safe metadata only. Mapped 4xx and 429 are not reported by this server path.                               | Sentry         |
 | Route segment render errors                          | `Sentry.captureException(error)` + `Pulse.captureException(error)` in the `useEffect` of `src/app/error.tsx`                                                                      | Sentry + Pulse |
 | Root layout render errors                            | the same pair in the `useEffect` of `src/app/global-error.tsx`                                                                                                                    | Sentry + Pulse |
 | Replay (masked)                                      | `replayIntegration({ maskAllText, blockAllMedia, maskAllInputs })` on errored sessions                                                                                            | Sentry         |
@@ -19,9 +114,34 @@ Every `Pulse.*` capture call is a no-op until `Pulse.init()` runs, and it never 
 
 ## Capture rule
 
+BFF events include the operation, mapped HTTP status and a fixed `kind` derived from the error class.
+Marketplace service errors also include their numeric `upstreamStatus`. Original messages, names,
+stacks, causes, upstream error codes and SQL details are never forwarded; unrecognized errors use `unknown`.
+
+A failed BFF request can intentionally produce both a browser event and a server event. The browser
+records the failed operation; the server adds the failure category and also covers CLI requests and
+best-effort cancellation/session cleanup paths that do not report failed responses in the browser.
+
 > Throw via `Err.*` factories. Do **not** call `Sentry.captureException` or `Pulse.captureException` directly anywhere except the single `Pulse.captureException` inside `createAppError()` (`src/libs/error/error.factories.ts`) and the two boundaries `app/error.tsx` and `app/global-error.tsx` — and in those two files only for non-`AppError` instances.
 
 The `Err.*` factories already log once and capture once into each sink — adding extra `Sentry.captureException` or `Pulse.captureException` calls causes duplicate issues in that dashboard. Anything that bubbles to the browser global handler is captured automatically by both SDKs; the server `onRequestError` hook reaches Sentry only.
+
+Expected user-flow states are not failures and must not reach the factory:
+
+- A homeserver file that may not exist yet (profile, settings, last read, legacy watchlist, an own review, a
+  listing before its first publish or while its read-back lags, a seller's `shop.json` before they publish a storefront) is read with `HomeserverService.getJsonIfFound` / `CommerceHomeserverService.fetchJsonIfFound`, which answer
+  `{ found: false }` before any error is created. Do not read it with `request` and catch the 404.
+- A state the UI answers with a prompt (no marketplace session yet, approval in progress) is built with `new AppError(...)`, as in `marketplace-approval-failure.ts`. Server answers
+  (401, 5xx) for the same flows stay on `Err.*`.
+- A grant approval whose flow cookie now binds another approval or none (`flow_binding_missing` 401,
+  `flow_binding_denied` 403: another tab started one, or it expired) is built the same way, in `marketplace-approval-failure.ts`.
+- A marketplace service without store connectors (`404 connectors_disabled`, or a bare 404/405 from a service
+  older than the connector routes) is built with `new AppError(...)` in `MarketplaceConnectorsService`: the
+  Shop hides store connections there. A connector 404 that names another refusal stays on `Err.*`.
+- Marketplace media its owner has removed (404/410 from the owner's homeserver) is built the same way in
+  `MarketplaceMediaService.fetchMedia`: the UI shows no image. Other media failures stay on `Err.*`.
+- A Shop-owned sign-in started while the Shop is embedded in Pubky App ("Continue sign-in in Pubky App.",
+  `AuthController.assertStandaloneMode`) is also built with `new AppError(...)`: App owns sign-in there.
 
 The two route-segment error boundaries (`app/error.tsx`, `app/global-error.tsx`) guard their `Sentry.captureException` and `Pulse.captureException` calls with `if (!(error instanceof AppError))` so an `AppError` thrown during render isn't captured twice (once by the factory, once by the boundary).
 
@@ -75,7 +195,9 @@ There is deliberately no `capturePulseException` funnel mirroring `captureAppErr
 - `src/libs/observability/pulse.ts` — Pulse init, the consent gate, the screen-name allowlist and `beforeSendPulse`
 - `src/libs/observability/pulse-consent.ts` — the stored consent choice and its generation, the availability gate, and the cross-tab subscription
 - `src/libs/error/error.factories.ts` — `createAppError()` calls `captureAppError(error)` after `Logger.error`, then `Pulse.captureException(error)`
-- `next.config.ts` — wrapped by `withSentryConfig(...)` for SDK wiring only; source-map upload is disabled (see below)
+- `next.config.ts` — wrapped by `withSentryConfig(...)` for SDK wiring only; source-map upload and release creation are disabled (see below)
+- `src/libs/build-info/build-info.ts` — `resolveSentryRelease`, the release name baked into the build
+- `scripts/sentry-release/` — creates the release, sets its commits, finalizes it and records Vercel deploys ([Releases](#releases))
 
 ## Environment variables
 
@@ -92,7 +214,7 @@ All Sentry and Pulse values are part of the **optional runtime-config tier** ([A
 | `PUBKY_RUNTIME_PULSE_CLIENT_KEY`                    | browser                 | Optional. Empty/unset disables Pulse entirely. Public, write-only `pulse_client_…` key — never an admin key.  |
 | `PUBKY_RUNTIME_PULSE_ENDPOINT`                      | browser                 | Optional. Overrides the SDK's hosted ingest host (`https://ingest.pubkypulse.com`); self-hosters must set it. |
 
-`SENTRY_AUTH_TOKEN` / `SENTRY_ORG` / `SENTRY_PROJECT` are optional Docker build inputs used only for source-map upload. They are never app runtime config and are not required to build or run the public image. The release tag comes from `NEXT_PUBLIC_APP_VERSION`: local builds fall back to the package version, while Docker CI sets it to the commit SHA so SDK events and uploaded maps use the same release.
+`SENTRY_AUTH_TOKEN` / `SENTRY_ORG` / `SENTRY_PROJECT` are optional build inputs: the Dockerfile uses them for source-map upload, and `scripts/sentry-release` for the release ([Releases](#releases)). They are never app runtime config and are not required to build or run the public image. The release tag comes from `NEXT_PUBLIC_APP_VERSION`, the deployed commit SHA on Vercel and in Docker CI (so SDK events, uploaded maps and the created release share one name); local builds fall back to the package version.
 
 ## Source maps
 
@@ -107,9 +229,9 @@ Third-party deployers get unsymbolicated events unless they obtain the maps for 
 
 ## Privacy
 
-Pubky App is decentralized social — strict defaults:
+Shop retains the App's privacy defaults:
 
-- `sendDefaultPii: false` (no IP, no headers)
+- `sendDefaultPii: false`; the scrubber below also removes sensitive fields from captured payloads
 - Replay: `maskAllText: true`, `maskAllInputs: true`, `blockAllMedia: true`, `networkCaptureBodies: false`
 - `beforeSend` defensively redacts user identifiers and user-provided data from app-controlled payloads:
   `email`, `phone` / `phoneNumber`, `name`, `firstName`, `lastName`, `displayName`, `username`, `bio`, `file`,
@@ -152,12 +274,18 @@ would be redundant and risks double-scrubbing.
 
 ## Verification
 
-To verify a deployment, open the `/sentry-test` harness (reachable everywhere except real
-production) and trigger each capture path. The diagnostics card shows the resolved runtime
+To verify a deployment, open the `/sentry-test` harness on standalone Shop, or
+`/shop/sentry-test` through the App wrapper when Shop is mounted at `/shop-embed`. The iframe
+document is `/shop-embed/sentry-test`, and its server triggers must call
+`/shop-embed/api/sentry-test`, not Pubky App's root `/api/sentry-test`. The harness is reachable
+outside the `production` Sentry environment; set the explicit `staging` environment above.
+Trigger each capture path. The diagnostics card shows the resolved runtime
 settings, including **Client SDK initialized** (`Sentry.getClient()`), which catches the
 silent-failure mode where Sentry is enabled but the browser SDK never initialized because
 `window.__PUBKY_CONFIG__` was not injected before `instrumentation-client.ts` evaluated.
 
-Then inspect recent Sentry events for the configured environment and confirm the
+Then inspect recent events in **`pubky-marketplace`** for the configured environment and confirm the
 **source maps** resolve (original `.tsx`/`.ts` frames, not minified bundle names) and the **`release`**
-tag matches `NEXT_PUBLIC_APP_VERSION` for the build under test.
+tag is the deployed commit's full SHA (`GET /api/build` reports its first 12 characters). Open that
+release in Sentry and confirm it lists its commits and, for a Vercel deployment, a deploy in the
+configured environment.

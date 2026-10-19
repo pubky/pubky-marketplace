@@ -3,7 +3,6 @@ import { BITCOIN_BUYER_STATUS_TABLE } from '@/libs/commerce/bitcoin-buyer-status
 import { createPaymentFixture } from '@/test/fixtures/commerce/orders';
 import { createUsdtOrderFixture } from '@/test/fixtures/commerce/usdt-orders';
 import {
-  isUsdPricedTotals,
   isUsdtFulfilmentBlocked,
   USDT_ACCEPT_BY_COPY,
   USDT_BUYER_PHASE_COPY,
@@ -43,7 +42,7 @@ describe('usdtSettlementPhase', () => {
 
   it('is null for every order that is not a USDT order', () => {
     for (const method of ['bitcoin', 'paypal', null] as const) {
-      const { order, payment } = createUsdtOrderFixture('final', { paymentMethod: method });
+      const { order, payment } = createUsdtOrderFixture('final', { paymentMethod: method, paymentAsset: null });
       expect(usdtSettlementPhase(order, payment)).toBeNull();
       expect(usdtPhaseCopy(order, payment, true)).toBeNull();
       expect(usdtAmountLabel(order)).toBeNull();
@@ -140,12 +139,6 @@ describe('USDT amounts', () => {
     expect(usdtParityMillionths([usd(100), { amountMinor: 100, currency: 'SAT', exponent: 0 }])).toBeNull();
     expect(usdtParityMillionths([{ amountMinor: 100, currency: 'USD', exponent: 0 }])).toBeNull();
     expect(usdtParityMillionths([usd(Number.MAX_SAFE_INTEGER)])).toBeNull();
-  });
-
-  it('offers USDT only on USD-priced totals', () => {
-    expect(isUsdPricedTotals([usd(100)])).toBe(true);
-    expect(isUsdPricedTotals([])).toBe(false);
-    expect(isUsdPricedTotals([usd(100), { amountMinor: 1, currency: 'BTC', exponent: 8 }])).toBe(false);
   });
 });
 

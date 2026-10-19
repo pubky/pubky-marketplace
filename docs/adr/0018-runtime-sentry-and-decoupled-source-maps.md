@@ -10,6 +10,13 @@ names are removed with the rest of the fallback tier (see the ADR 0017 amendment
 document is also corrected by the same amendment: the config script must be a raw `<script>`
 element, not `next/script` `beforeInteractive`.
 
+Amended — 2026-10-18: the release is the deployed commit's full SHA on Vercel as well
+(`resolveSentryRelease`: an explicit `NEXT_PUBLIC_APP_VERSION`, else `GIT_COMMIT`, else
+`VERCEL_GIT_COMMIT_SHA`, else the package version). `scripts/sentry-release` creates that release
+with `sentry-cli`, associates its commits and finalizes it, from the `sentry-release` job of
+`release-docker.yml` and from the Vercel build command, which also records the deploy. The plugin
+still makes no Sentry API calls (`release.create: false`). See `docs/sentry.md` → Releases.
+
 ## Context
 
 [ADR 0017](0017-runtime-config-injection.md) made the eight environment-specific **network** values runtime-configurable (`PUBKY_RUNTIME_*` → `window.__PUBKY_CONFIG__`), so one Docker image promotes across staging/prod/testnet. Two gaps remained before the image could be **fully public and plug-and-play** for third-party deployers:
@@ -34,7 +41,7 @@ The resolver exposes five new lazy getters (`getSentryDsn`, …). `JSON.stringif
 
 - `shouldEnableSentry()` gates on runtime `getTestnet()` and `getSentryDsn()` — wrapped in try/catch returning `false`, because the error-capture funnel must never throw and must not mask a boot-time config failure with its own. A prod image switched to testnet at runtime now correctly disables Sentry.
 - `getSentryInitBase()` takes dsn/environment/tracesSampleRate from runtime getters; `instrumentation-client.ts` takes the replay rates from runtime getters. This is safe on the client because `ContainerRoot` renders the `window.__PUBKY_CONFIG__` script as a raw inline `<script>` first in `<body>`, which the browser executes during HTML parsing — before any Next.js bundle (see the ADR 0017 amendment for why `next/script` `beforeInteractive` must not be used here). On the server, `register()` in `src/instrumentation.ts` resolves the config before the Sentry server init is imported (this is also ADR 0017's boot-time fail-fast), so no runtime races the config.
-- `release` stays build-time (`Env.NEXT_PUBLIC_APP_VERSION`): the release is intrinsic to the built artifact and must match the maps uploaded for it. Local builds use the package version; Docker CI sets `NEXT_PUBLIC_APP_VERSION` to the commit SHA.
+- `release` stays build-time (`Env.NEXT_PUBLIC_APP_VERSION`): the release is intrinsic to the built artifact and must match the maps uploaded for it. Local builds use the package version; Docker CI sets `NEXT_PUBLIC_APP_VERSION` to the commit SHA, and Vercel builds take the commit SHA (2026-10-18 amendment).
 - The five `NEXT_PUBLIC_SENTRY_*` entries and the three upload secrets left `env.ts`; the ESLint `no-restricted-syntax` guard bans direct reads of the Sentry names. Local dev sets `PUBKY_RUNTIME_SENTRY_*` in `.env.local` (the transitional `NEXT_PUBLIC_SENTRY_*` fallback was removed by the 2026-07-02 amendment).
 
 ### 3. Source maps: build once with Debug IDs, upload only when credentials exist

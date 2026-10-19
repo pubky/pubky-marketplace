@@ -1,6 +1,7 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { useMessagesUnread } from '@/hooks/useMessagesUnread/useMessagesUnread';
+import { useChatUnread } from '@/hooks/useChatUnread/useChatUnread';
+import { setEmbedded } from '@/test-utils/embedded';
 import { setSocialHost } from '@/test-utils/social-host';
 import { MarketplaceSectionNav } from './MarketplaceSectionNav';
 
@@ -26,20 +27,58 @@ vi.mock('@/hooks/useMarketplaceOrdersAttention/useMarketplaceOrdersAttention', (
   useMarketplaceOrdersAttention: () => state.ordersCount,
 }));
 
-vi.mock('@/hooks/useMessagesUnread/useMessagesUnread', () => ({
-  useMessagesUnread: vi.fn(({ enabled = true } = {}) => (enabled ? 4 : 0)),
+vi.mock('@/hooks/useChatUnread/useChatUnread', () => ({
+  useChatUnread: vi.fn(({ enabled = true } = {}) => (enabled ? 4 : 0)),
 }));
 
 describe('MarketplaceSectionNav', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    window.localStorage.clear();
     setSocialHost(undefined);
     state.pathname = '/marketplace/offers';
     state.activityCount = 22;
     state.ordersCount = 0;
   });
 
-  afterEach(() => setSocialHost(undefined));
+  afterEach(() => {
+    setSocialHost(undefined);
+    vi.restoreAllMocks();
+  });
+
+  it('dismisses the overflow hint after scrolling and remembers the gesture across pages', () => {
+    vi.spyOn(HTMLElement.prototype, 'scrollWidth', 'get').mockReturnValue(600);
+    vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(300);
+    const { unmount } = render(<MarketplaceSectionNav />);
+    expect(screen.getByTestId('marketplace-nav-swipe-hint')).toBeInTheDocument();
+
+    const nav = screen.getByRole('navigation');
+    fireEvent.pointerDown(nav);
+    nav.scrollLeft = 20;
+    fireEvent.scroll(nav);
+    expect(screen.queryByTestId('marketplace-nav-swipe-hint')).not.toBeInTheDocument();
+
+    unmount();
+    render(<MarketplaceSectionNav />);
+    expect(screen.queryByTestId('marketplace-nav-swipe-hint')).not.toBeInTheDocument();
+  });
+
+  it('keeps the hint when tabs scroll without a user gesture', () => {
+    vi.spyOn(HTMLElement.prototype, 'scrollWidth', 'get').mockReturnValue(600);
+    vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(300);
+    render(<MarketplaceSectionNav />);
+    const nav = screen.getByRole('navigation');
+    nav.scrollLeft = 80;
+    fireEvent.scroll(nav);
+    expect(screen.getByTestId('marketplace-nav-swipe-hint')).toBeInTheDocument();
+  });
+
+  it('does not show a swipe hint when every section fits', () => {
+    vi.spyOn(HTMLElement.prototype, 'scrollWidth', 'get').mockReturnValue(900);
+    vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(900);
+    render(<MarketplaceSectionNav />);
+    expect(screen.queryByTestId('marketplace-nav-swipe-hint')).not.toBeInTheDocument();
+  });
 
   it('highlights the active section and wires both badges', () => {
     render(<MarketplaceSectionNav />);
@@ -55,7 +94,18 @@ describe('MarketplaceSectionNav', () => {
     render(<MarketplaceSectionNav />);
     expect(screen.getByTestId('marketplace-section-nav-messages-badge')).toHaveTextContent('4');
     expect(screen.getByLabelText('4 unread messages')).toBeInTheDocument();
-    expect(useMessagesUnread).toHaveBeenCalledWith({ enabled: true });
+    expect(useChatUnread).toHaveBeenCalledWith({ enabled: true });
+  });
+
+  it('keeps unread messages visible in the embedded Shop, where there is no global navigation', () => {
+    setEmbedded(true);
+    try {
+      render(<MarketplaceSectionNav />);
+      expect(screen.getByLabelText('4 unread messages')).toBeInTheDocument();
+      expect(useChatUnread).toHaveBeenCalledWith({ enabled: true });
+    } finally {
+      setEmbedded(false);
+    }
   });
 
   it('leaves message counts to the global navigation while link-out is off', () => {
@@ -63,7 +113,7 @@ describe('MarketplaceSectionNav', () => {
 
     expect(screen.queryByTestId('marketplace-section-nav-messages-badge')).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Shop settings' })).not.toBeInTheDocument();
-    expect(useMessagesUnread).toHaveBeenCalledWith({ enabled: false });
+    expect(useChatUnread).toHaveBeenCalledWith({ enabled: false });
   });
 
   it('lets a link-out buyer open local Shop settings from the section navigation', () => {
@@ -121,14 +171,13 @@ describe('MarketplaceSectionNav', () => {
     expect(screen.getAllByRole('link').every((link) => !link.hasAttribute('aria-current'))).toBe(true);
   });
 
-  it('wraps the section row instead of cropping the last item', () => {
+  it('keeps every section in a scrollable mobile row with desktop wrapping', () => {
     state.activityCount = 12;
     render(<MarketplaceSectionNav />);
 
     const nav = screen.getByTestId('marketplace-section-nav');
-    expect(nav).not.toHaveClass('overflow-x-auto');
-    expect(nav.firstElementChild).toHaveClass('flex-wrap');
-    expect(nav.firstElementChild).not.toHaveClass('min-w-max');
+    expect(nav).toHaveClass('overflow-x-auto', 'sm:overflow-visible');
+    expect(nav.firstElementChild).toHaveClass('flex-nowrap', 'min-w-max', 'sm:flex-wrap');
     expect(screen.getByRole('link', { name: /Activity/ })).toBeVisible();
     expect(screen.getByRole('link', { name: 'My shop' })).toBeVisible();
     expect(screen.getByTestId('marketplace-section-nav-activity-badge')).toHaveTextContent('12');

@@ -59,7 +59,36 @@ describe('matchSavedSearch', () => {
 
     const matches = matchSavedSearch(items, params({ query: 'boots' }));
 
-    expect(matches.map(({ listingId }) => listingId)).toEqual(['boots_01']);
+    expect(matches?.map(({ listingId }) => listingId)).toEqual(['boots_01']);
+  });
+});
+
+describe('matchSavedSearch with a payment method', () => {
+  const ACCEPTING = 'a'.repeat(52);
+  const OTHER = 'b'.repeat(52);
+  const items = [
+    item({ listingId: 'boots_01', sellerId: ACCEPTING }),
+    item({ listingId: 'boots_02', sellerId: OTHER }),
+  ];
+
+  it('keeps only matches from sellers in the method set', () => {
+    const matches = matchSavedSearch(
+      items,
+      params({ paymentMethod: 'paypal' }),
+      new Map([['paypal', new Set([ACCEPTING])]]),
+    );
+    expect(matches?.map(({ listingId }) => listingId)).toEqual(['boots_01']);
+  });
+
+  it('is unknown, never guessed, without the method set', () => {
+    expect(
+      matchSavedSearch(items, params({ paymentMethod: 'usdt' }), new Map([['paypal', new Set([ACCEPTING])]])),
+    ).toBeNull();
+  });
+
+  it('treats rows saved before the filter existed as any payment', () => {
+    expect(matchSavedSearch(items, params({ paymentMethod: undefined }))).toHaveLength(2);
+    expect(matchSavedSearch(items, params({ paymentMethod: null }))).toHaveLength(2);
   });
 });
 

@@ -6,4 +6,6 @@ export type MarketplaceAddressFieldsProps<T extends FieldValues> = {
   setValue: UseFormSetValue<T>;
   disabled?: boolean;
   autocompleteProvider?: AddressAutocompleteProvider | null;
+  /** When set and non-empty, the country is chosen from these codes instead of typed. */
+  allowedCountries?: readonly string[] | null;
 };

@@ -2,7 +2,10 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import type { MarketplaceCartItem } from '@/hooks/useMarketplaceCart/useMarketplaceCart';
+import { DELIVERY_KEY_COPY } from '@/libs/commerce/delivery-key-copy';
+import { commerceListingShippingMinor } from '@/libs/commerce/marketplace-records';
 import { createCommerceSandboxCatalog } from '@/libs/commerce/sandbox-catalog';
+import { SHIPS_TO_UNAVAILABLE_MESSAGE } from '@/libs/commerce/ships-to';
 import { AppError } from '@/libs/error/error';
 import { ClientErrorCode } from '@/libs/error/error.codes';
 import { ErrorCategory, ErrorService } from '@/libs/error/error.types';
@@ -13,6 +16,7 @@ import { useMarketplaceCheckout } from './useMarketplaceCheckout';
 
 const listing = createCommerceSandboxCatalog().listings.find(({ sale }) => sale.format === 'fixed_price')!;
 const price = listing.sale.format === 'fixed_price' ? listing.sale.unitPrice : listing.sale.startingPrice;
+const shipping = { ...price, amountMinor: commerceListingShippingMinor(listing.shippingOptions) };
 const item: MarketplaceCartItem = {
   id: 'cart-item',
   listingId: `${listing.ownerPubky}:${listing.listingId}`,
@@ -48,10 +52,18 @@ vi.mock('@/config/commerce', async () => {
   };
 });
 
+const shopState = vi.hoisted(() => ({ shipsTo: new Map<string, string[]>(), unreadable: new Set<string>() }));
+
 vi.mock('@/controllers/commerce/commerce', () => ({
   CommerceController: {
+    refreshShop: vi.fn(async (sellerPubky: string) => {
+      if (shopState.unreadable.has(sellerPubky)) throw new Error('offline');
+      return { ownerPubky: sellerPubky, shipsToCountries: shopState.shipsTo.get(sellerPubky) };
+    }),
+    getShop: vi.fn(async () => null),
     getMarketplaceListingProjection: vi.fn(),
     syncListingRegistration: vi.fn(),
+    refreshListing: vi.fn(async () => undefined),
     executeMarketplaceCommand: vi.fn(),
     fetchPickupAvailable: vi.fn(async () => true),
     fetchDigitalDeliveryCapability: vi.fn(async () => ({ available: true, maxBytes: null })),
@@ -66,8 +78,8 @@ vi.mock('@/controllers/commerce/commerce', () => ({
     clearMarketplaceSession: vi.fn(),
     clearIdentitySession: vi.fn(),
     bindPaymentMethod: vi.fn(),
-    rememberUsdtRefusal: vi.fn(),
     getMarketplaceOrders: vi.fn(async () => []),
+    getConnectorStores: vi.fn(async () => new Map()),
   },
 }));
 
@@ -109,6 +121,8 @@ const savedAddress = {
 describe('useMarketplaceCheckout', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    shopState.shipsTo.clear();
+    shopState.unreadable.clear();
     config.mode = 'sandbox';
     config.paykitServerApi = 'fork';
     authMock.currentUserPubky = null;
@@ -128,6 +142,7 @@ describe('useMarketplaceCheckout', () => {
       availableQuantity: 1,
       reservedQuantity: 0,
       unitPrice: price,
+      shipping,
       saleFormat: 'fixed_price',
       fulfillmentMethods: ['shipping'],
       auction: null,
@@ -175,6 +190,52 @@ describe('useMarketplaceCheckout', () => {
 
     expect(succeeded).toBe(false);
     expect(CommerceController.commitCreateMarketplaceCheckout).not.toHaveBeenCalled();
+    expect(result.current.deliveryKeyBlock).toEqual({
+      kind: 'no_key',
+      sellerPubky: listing.ownerPubky,
+      message: DELIVERY_KEY_COPY.noKey,
+    });
+  });
+
+  it('shares the address with the store only when the buyer ticks it, and only for a shipped seller', async () => {
+    const choice = {
+      sellerPubky: listing.ownerPubky,
+      shopDomain: 'dezentralshop.ch',
+      keyId: 'connector-key-1',
+      publicKey: new Uint8Array(32),
+    };
+    vi.mocked(CommerceController.getConnectorStores).mockResolvedValue(new Map([[listing.ownerPubky, choice]]));
+    const { result } = renderHook(() =>
+      useMarketplaceCheckout(
+        [item],
+        vi.fn(async () => {}),
+      ),
+    );
+    await waitFor(() => expect(result.current.storeShare.stores.size).toBe(1));
+    expect(result.current.storeShare.selected).toEqual([]);
+    act(() => {
+      result.current.form.setValue('name', 'Alice Buyer');
+      result.current.form.setValue('line1', '1 Market Street');
+      result.current.form.setValue('city', 'New York');
+      result.current.form.setValue('region', 'NY');
+      result.current.form.setValue('postalCode', '10001');
+    });
+
+    await act(async () => {
+      await result.current.submit();
+    });
+    expect(vi.mocked(CommerceController.commitCreateMarketplaceCheckout).mock.calls[0]?.[0]).not.toHaveProperty(
+      'connectorShares',
+    );
+
+    vi.mocked(CommerceController.commitCreateMarketplaceCheckout).mockClear();
+    act(() => result.current.storeShare.setShare(listing.ownerPubky, true));
+    await act(async () => {
+      await result.current.submit();
+    });
+    expect(CommerceController.commitCreateMarketplaceCheckout).toHaveBeenCalledWith(
+      expect.objectContaining({ connectorShares: [choice] }),
+    );
   });
 
   it('refreshes terms and creates a guarantee-versioned checkout', async () => {
@@ -229,7 +290,19 @@ describe('useMarketplaceCheckout', () => {
     config.mode = 'transaction-service';
     const registered = {
       aggregateId: `listing:${listing.ownerPubky}_${listing.listingId}`,
+      sellerPubky: listing.ownerPubky,
+      listingId: listing.listingId,
+      listingRevision: listing.revision,
+      contentHash: listing.media[0].contentHash,
       serverRevision: 1,
+      state: 'available' as const,
+      availableQuantity: 1,
+      reservedQuantity: 0,
+      unitPrice: price,
+      shipping,
+      saleFormat: 'fixed_price' as const,
+      fulfillmentMethods: ['shipping' as const],
+      auction: null,
     };
     vi.mocked(CommerceController.getMarketplaceListingProjection)
       .mockResolvedValueOnce(null)
@@ -288,7 +361,7 @@ describe('useMarketplaceCheckout', () => {
     expect(clear).not.toHaveBeenCalled();
     const { toast } = await import('@/molecules/Toaster/use-toast');
     expect(vi.mocked(toast)).toHaveBeenCalledWith(
-      expect.objectContaining({ description: expect.stringContaining('could not be prepared for checkout') }),
+      expect.objectContaining({ description: expect.stringContaining("isn't available for checkout right now") }),
     );
   });
 
@@ -330,6 +403,257 @@ describe('useMarketplaceCheckout', () => {
     );
   });
 
+  describe('a registered line whose projection lags its record', () => {
+    const aggregateId = `listing:${listing.ownerPubky}_${listing.listingId}`;
+    const projection = {
+      aggregateId,
+      sellerPubky: listing.ownerPubky,
+      listingId: listing.listingId,
+      listingRevision: listing.revision,
+      contentHash: listing.media[0].contentHash,
+      serverRevision: 4,
+      state: 'available' as const,
+      availableQuantity: 1,
+      reservedQuantity: 0,
+      unitPrice: price,
+      shipping,
+      saleFormat: 'fixed_price' as const,
+      fulfillmentMethods: ['shipping' as const],
+      auction: null,
+    };
+    const fillAddress = (form: ReturnType<typeof useMarketplaceCheckout>['form']) => {
+      form.setValue('name', 'Alice Buyer');
+      form.setValue('line1', '1 Market Street');
+      form.setValue('city', 'New York');
+      form.setValue('region', 'NY');
+      form.setValue('postalCode', '10001');
+    };
+    const pay = async (cartItem: MarketplaceCartItem) => {
+      const { result } = renderHook(() =>
+        useMarketplaceCheckout(
+          [cartItem],
+          vi.fn(async () => {}),
+        ),
+      );
+      act(() => fillAddress(result.current.form));
+      let succeeded = false;
+      await act(async () => {
+        succeeded = await result.current.submit();
+      });
+      return succeeded;
+    };
+
+    beforeEach(() => {
+      config.mode = 'transaction-service';
+    });
+
+    it('does not sync a line whose projection matches its record', async () => {
+      vi.mocked(CommerceController.getMarketplaceListingProjection).mockResolvedValue(projection);
+
+      await expect(pay(item)).resolves.toBe(true);
+
+      expect(CommerceController.syncListingRegistration).not.toHaveBeenCalled();
+    });
+
+    it('syncs a line whose record revision moved past the projection and checks out at the healed revision', async () => {
+      vi.mocked(CommerceController.getMarketplaceListingProjection)
+        .mockResolvedValueOnce(projection)
+        .mockResolvedValueOnce({ ...projection, listingRevision: listing.revision + 1, serverRevision: 5 });
+      vi.mocked(CommerceController.syncListingRegistration).mockResolvedValue({ ok: true, revision: 5 } as never);
+      const edited: MarketplaceCartItem = {
+        ...item,
+        listing: { ...item.listing, record: { ...item.listing.record, revision: listing.revision + 1 } },
+      };
+
+      await expect(pay(edited)).resolves.toBe(true);
+
+      expect(CommerceController.syncListingRegistration).toHaveBeenCalledOnce();
+      expect(CommerceController.syncListingRegistration).toHaveBeenCalledWith(listing.ownerPubky, listing.listingId);
+      expect(CommerceController.commitCreateMarketplaceCheckout).toHaveBeenCalledWith(
+        expect.objectContaining({ lines: [expect.objectContaining({ expectedRevision: 5 })] }),
+      );
+    });
+
+    it('syncs a line whose projected fulfillment differs from the record at the same revision', async () => {
+      vi.mocked(CommerceController.getMarketplaceListingProjection)
+        .mockResolvedValueOnce({ ...projection, fulfillmentMethods: ['pickup'] })
+        .mockResolvedValueOnce({ ...projection, serverRevision: 5 });
+      vi.mocked(CommerceController.syncListingRegistration).mockResolvedValue({ ok: true, revision: 5 } as never);
+
+      await expect(pay(item)).resolves.toBe(true);
+
+      expect(CommerceController.syncListingRegistration).toHaveBeenCalledOnce();
+      expect(CommerceController.commitCreateMarketplaceCheckout).toHaveBeenCalledWith(
+        expect.objectContaining({ lines: [expect.objectContaining({ expectedRevision: 5 })] }),
+      );
+    });
+
+    it('checks out against the projection it has when the heal sync fails, leaving the verdict to the service', async () => {
+      vi.mocked(CommerceController.getMarketplaceListingProjection).mockResolvedValue({
+        ...projection,
+        fulfillmentMethods: ['pickup'],
+      });
+      vi.mocked(CommerceController.syncListingRegistration).mockResolvedValue({
+        ok: false,
+        error: { code: 'UPSTREAM_UNAVAILABLE', message: "The seller's homeserver could not be reached." },
+      } as never);
+
+      await expect(pay(item)).resolves.toBe(true);
+
+      expect(CommerceController.syncListingRegistration).toHaveBeenCalledOnce();
+      expect(CommerceController.commitCreateMarketplaceCheckout).toHaveBeenCalledWith(
+        expect.objectContaining({ lines: [expect.objectContaining({ expectedRevision: 4 })] }),
+      );
+      const { Logger } = await import('@/libs/logger/logger');
+      expect(vi.mocked(Logger.warn)).toHaveBeenCalledWith('Checkout line listing sync was refused', {
+        code: 'UPSTREAM_UNAVAILABLE',
+      });
+    });
+
+    it('syncs a line whose projected shipping differs from the record before checking out', async () => {
+      vi.mocked(CommerceController.getMarketplaceListingProjection)
+        .mockResolvedValueOnce({ ...projection, shipping: { ...shipping, amountMinor: shipping.amountMinor + 500 } })
+        .mockResolvedValueOnce({ ...projection, serverRevision: 5 });
+      vi.mocked(CommerceController.syncListingRegistration).mockResolvedValue({ ok: true, revision: 5 } as never);
+
+      await expect(pay(item)).resolves.toBe(true);
+
+      expect(CommerceController.syncListingRegistration).toHaveBeenCalledOnce();
+      expect(CommerceController.commitCreateMarketplaceCheckout).toHaveBeenCalledWith(
+        expect.objectContaining({ lines: [expect.objectContaining({ expectedRevision: 5 })] }),
+      );
+    });
+
+    it.each([
+      ['a newer record revision', { listingRevision: listing.revision + 1 }],
+      ['a different unit price', { unitPrice: { ...price, amountMinor: price.amountMinor + 100 } }],
+    ])('stops before ordering when the healed projection carries %s than the buyer saw', async (_label, edit) => {
+      vi.mocked(CommerceController.getMarketplaceListingProjection)
+        .mockResolvedValueOnce({ ...projection, fulfillmentMethods: ['pickup'] })
+        .mockResolvedValueOnce({ ...projection, ...edit, serverRevision: 5 });
+      vi.mocked(CommerceController.syncListingRegistration).mockResolvedValue({ ok: true, revision: 5 } as never);
+
+      await expect(pay(item)).resolves.toBe(false);
+
+      expect(CommerceController.commitCreateMarketplaceCheckout).not.toHaveBeenCalled();
+      expect(vi.mocked(toast)).toHaveBeenCalledWith(
+        expect.objectContaining({
+          description: 'A listing changed while you were checking out. Review your cart and try again.',
+        }),
+      );
+      expect(CommerceController.refreshListing).toHaveBeenCalledWith(listing.ownerPubky, listing.listingId);
+    });
+
+    it.each([
+      ['a higher unit price', { unitPrice: { ...price, amountMinor: price.amountMinor + 100 } }],
+      ['different shipping', { shipping: { ...shipping, amountMinor: shipping.amountMinor + 500 } }],
+      ['different fulfillment methods', { fulfillmentMethods: ['pickup' as const] }],
+      ['only a newer revision', {}],
+    ])(
+      'stops before ordering, without a sync, when the projection is of a newer record with %s',
+      async (_label, edit) => {
+        vi.mocked(CommerceController.getMarketplaceListingProjection).mockResolvedValue({
+          ...projection,
+          ...edit,
+          listingRevision: listing.revision + 1,
+        });
+
+        await expect(pay(item)).resolves.toBe(false);
+
+        expect(CommerceController.syncListingRegistration).not.toHaveBeenCalled();
+        expect(CommerceController.commitCreateMarketplaceCheckout).not.toHaveBeenCalled();
+        expect(vi.mocked(toast)).toHaveBeenCalledWith(
+          expect.objectContaining({
+            description: 'A listing changed while you were checking out. Review your cart and try again.',
+          }),
+        );
+        expect(CommerceController.refreshListing).toHaveBeenCalledWith(listing.ownerPubky, listing.listingId);
+      },
+    );
+
+    it.each([
+      ['amount', 'the sync cannot heal it', { amountMinor: price.amountMinor + 100 }, { ok: true, revision: 5 }],
+      [
+        'amount',
+        'the sync fails',
+        { amountMinor: price.amountMinor + 100 },
+        { ok: false, error: { code: 'UPSTREAM_UNAVAILABLE', message: 'unreachable' } },
+      ],
+      [
+        'currency',
+        'the sync cannot heal it',
+        { currency: price.currency === 'EUR' ? 'USD' : 'EUR' },
+        { ok: true, revision: 5 },
+      ],
+      ['exponent', 'the sync cannot heal it', { exponent: price.exponent + 1 }, { ok: true, revision: 5 }],
+    ])(
+      'stops before ordering when the unit price %s differs at the same revision and %s',
+      async (_field, _label, drift, answer) => {
+        const divergent = { ...projection, unitPrice: { ...price, ...drift } };
+        vi.mocked(CommerceController.getMarketplaceListingProjection).mockResolvedValue(divergent);
+        vi.mocked(CommerceController.syncListingRegistration).mockResolvedValue(answer as never);
+
+        await expect(pay(item)).resolves.toBe(false);
+
+        expect(CommerceController.syncListingRegistration).toHaveBeenCalledOnce();
+        expect(CommerceController.commitCreateMarketplaceCheckout).not.toHaveBeenCalled();
+        expect(vi.mocked(toast)).toHaveBeenCalledWith(
+          expect.objectContaining({
+            description: 'A listing changed while you were checking out. Review your cart and try again.',
+          }),
+        );
+        expect(CommerceController.refreshListing).toHaveBeenCalledWith(listing.ownerPubky, listing.listingId);
+      },
+    );
+
+    it('checks an auction line out against a newer projection, since it is paid at its bid', async () => {
+      const auctionListing = createCommerceSandboxCatalog().listings.find(({ sale }) => sale.format === 'auction')!;
+      const auctionItem: MarketplaceCartItem = {
+        ...item,
+        id: 'auction-item',
+        listingId: `${auctionListing.ownerPubky}:${auctionListing.listingId}`,
+        variantId: auctionListing.variants[0].id,
+        listing: {
+          ...item.listing,
+          id: `${auctionListing.ownerPubky}:${auctionListing.listingId}`,
+          listing_id: auctionListing.listingId,
+          record: auctionListing,
+          format: 'auction',
+        },
+      };
+      vi.mocked(CommerceController.getMarketplaceListingProjection).mockResolvedValue({
+        ...projection,
+        aggregateId: `listing:${auctionListing.ownerPubky}_${auctionListing.listingId}`,
+        listingId: auctionListing.listingId,
+        listingRevision: auctionListing.revision + 1,
+        unitPrice: { ...price, amountMinor: price.amountMinor + 100 },
+        saleFormat: 'auction',
+      });
+
+      await expect(pay(auctionItem)).resolves.toBe(true);
+
+      expect(CommerceController.syncListingRegistration).not.toHaveBeenCalled();
+      expect(CommerceController.refreshListing).not.toHaveBeenCalled();
+      expect(CommerceController.commitCreateMarketplaceCheckout).toHaveBeenCalledOnce();
+    });
+
+    it('still stops, and logs, when the changed listing cannot be refreshed', async () => {
+      vi.mocked(CommerceController.getMarketplaceListingProjection).mockResolvedValue({
+        ...projection,
+        listingRevision: listing.revision + 1,
+      });
+      vi.mocked(CommerceController.refreshListing).mockRejectedValueOnce(new TypeError('offline'));
+
+      await expect(pay(item)).resolves.toBe(false);
+
+      expect(CommerceController.commitCreateMarketplaceCheckout).not.toHaveBeenCalled();
+      const { Logger } = await import('@/libs/logger/logger');
+      expect(vi.mocked(Logger.warn)).toHaveBeenCalledWith('Checkout could not refresh a changed listing', {
+        error: expect.any(TypeError),
+      });
+    });
+  });
+
   it('keeps the cart and asks for a retry when a listing revision conflicts mid-checkout', async () => {
     vi.mocked(CommerceController.commitCreateMarketplaceCheckout).mockResolvedValue({
       ok: false,
@@ -356,6 +680,42 @@ describe('useMarketplaceCheckout', () => {
     expect(vi.mocked(toast)).toHaveBeenCalledWith(
       expect.objectContaining({ description: expect.stringContaining('try again') }),
     );
+  });
+
+  it.each([
+    [
+      {
+        code: 'LISTING_NOT_ACTIVE',
+        message: 'The seller is not selling this listing right now.',
+        reason: 'listing_paused',
+      },
+      'The seller paused this listing. Check back later.',
+    ],
+    [
+      { code: 'UPSTREAM_UNAVAILABLE', message: "The seller's homeserver could not be reached. Try again shortly." },
+      "We couldn't reach the seller's shop. Try again in a moment.",
+    ],
+  ])('keeps the cart and shows static copy for a %o checkout refusal', async (error, expected) => {
+    vi.mocked(CommerceController.commitCreateMarketplaceCheckout).mockResolvedValue({ ok: false, error } as never);
+    const clear = vi.fn(async () => {});
+    const { result } = renderHook(() => useMarketplaceCheckout([item], clear));
+    act(() => {
+      result.current.form.setValue('name', 'Alice Buyer');
+      result.current.form.setValue('line1', '1 Market Street');
+      result.current.form.setValue('city', 'New York');
+      result.current.form.setValue('region', 'NY');
+      result.current.form.setValue('postalCode', '10001');
+    });
+
+    let succeeded = true;
+    await act(async () => {
+      succeeded = await result.current.submit();
+    });
+
+    expect(succeeded).toBe(false);
+    expect(clear).not.toHaveBeenCalled();
+    const { toast } = await import('@/molecules/Toaster/use-toast');
+    expect(vi.mocked(toast)).toHaveBeenCalledWith(expect.objectContaining({ description: expected }));
   });
 
   it('shows listing-specific copy and returns false for a sold-out checkout refusal', async () => {
@@ -387,6 +747,148 @@ describe('useMarketplaceCheckout', () => {
     expect(vi.mocked(toast)).toHaveBeenCalledWith(
       expect.objectContaining({ description: 'This listing has sold out.' }),
     );
+  });
+
+  it.each([
+    [{ code: 'INVALID_STATE', message: 'This listing has sold out.' }, 'This listing has sold out.', true],
+    [
+      { code: 'INSUFFICIENT_INVENTORY', message: 'Checkout quantity is unavailable.' },
+      'This listing has sold out.',
+      true,
+    ],
+    [
+      { code: 'INVALID_STATE', message: 'This variant has sold out.', reason: 'variant_sold_out' },
+      'That option is sold out. Choose another.',
+      true,
+    ],
+    [
+      { code: 'UNAUTHORIZED', message: 'A buyer cannot purchase their own listing.' },
+      'You cannot purchase your own listing.',
+      false,
+    ],
+  ])('returns the %o refusal from Pay so the page can keep it on screen', async (error, refusal, soldOut) => {
+    vi.mocked(CommerceController.commitCreateMarketplaceCheckout).mockResolvedValue({ ok: false, error } as never);
+    const { result } = renderHook(() =>
+      useMarketplaceCheckout(
+        [item],
+        vi.fn(async () => {}),
+      ),
+    );
+    act(() => {
+      result.current.form.setValue('name', 'Alice Buyer');
+      result.current.form.setValue('line1', '1 Market Street');
+      result.current.form.setValue('city', 'New York');
+      result.current.form.setValue('region', 'NY');
+      result.current.form.setValue('postalCode', '10001');
+    });
+
+    let outcome: Awaited<ReturnType<typeof result.current.pay>> | undefined;
+    await act(async () => {
+      outcome = await result.current.pay('paykit');
+    });
+
+    expect(outcome).toEqual({ ok: false, orderIds: [], boundOrders: [], refusal, soldOut });
+    expect(CommerceController.bindPaymentMethod).not.toHaveBeenCalled();
+  });
+
+  describe('per-size listings', () => {
+    const sizedItem = (variantId: string): MarketplaceCartItem => ({
+      ...item,
+      variantId,
+      listing: {
+        ...item.listing,
+        record: {
+          ...item.listing.record,
+          variants: [
+            { id: 'size_s', options: { size: 'S' }, quantity: 3, mediaIds: [], enabled: true },
+            { id: 'size_m', options: { size: 'M' }, quantity: 4, mediaIds: [], enabled: true },
+          ],
+        },
+      },
+    });
+
+    const fillAddress = (result: { current: ReturnType<typeof useMarketplaceCheckout> }) => {
+      act(() => {
+        result.current.form.setValue('name', 'Alice Buyer');
+        result.current.form.setValue('line1', '1 Market Street');
+        result.current.form.setValue('city', 'New York');
+        result.current.form.setValue('region', 'NY');
+        result.current.form.setValue('postalCode', '10001');
+      });
+    };
+
+    it('sends the chosen size on the line of a per-size listing', async () => {
+      const { result } = renderHook(() =>
+        useMarketplaceCheckout(
+          [sizedItem('size_m')],
+          vi.fn(async () => {}),
+        ),
+      );
+      fillAddress(result);
+
+      await act(async () => {
+        await result.current.submit();
+      });
+
+      expect(CommerceController.commitCreateMarketplaceCheckout).toHaveBeenCalledWith(
+        expect.objectContaining({
+          lines: [expect.objectContaining({ variantId: 'size_m', variantOptions: [{ name: 'size', value: 'M' }] })],
+        }),
+      );
+    });
+
+    it('stops a line whose size left the record instead of sending it without a size', async () => {
+      const { result } = renderHook(() =>
+        useMarketplaceCheckout(
+          [sizedItem('size_gone')],
+          vi.fn(async () => {}),
+        ),
+      );
+      fillAddress(result);
+
+      let succeeded = true;
+      await act(async () => {
+        succeeded = await result.current.submit();
+      });
+
+      expect(succeeded).toBe(false);
+      expect(CommerceController.commitCreateMarketplaceCheckout).not.toHaveBeenCalled();
+      expect(vi.mocked(toast)).toHaveBeenCalledWith(
+        expect.objectContaining({
+          description: 'A listing changed while you were checking out. Review your cart and try again.',
+        }),
+      );
+    });
+
+    it.each([
+      ['variant_required', 'Choose an option for this item.'],
+      ['unknown_variant', 'That option is no longer listed. Reload the item and choose again.'],
+      ['variant_unavailable', 'The seller turned off that option. Choose another.'],
+      ['variant_sold_out', 'That option is sold out. Choose another.'],
+    ])('shows plain copy for the %s refusal', async (reason, copy) => {
+      vi.mocked(CommerceController.commitCreateMarketplaceCheckout).mockResolvedValue({
+        ok: false,
+        error: { code: 'INVALID_STATE', message: 'Wire text that must never render.', reason },
+      } as never);
+      const { result } = renderHook(() =>
+        useMarketplaceCheckout(
+          [sizedItem('size_m')],
+          vi.fn(async () => {}),
+        ),
+      );
+      fillAddress(result);
+
+      let succeeded = true;
+      await act(async () => {
+        succeeded = await result.current.submit();
+      });
+
+      expect(succeeded).toBe(false);
+      expect(vi.mocked(toast)).toHaveBeenCalledWith(expect.objectContaining({ description: copy }));
+      expect(vi.mocked(toast)).not.toHaveBeenCalledWith(
+        expect.objectContaining({ description: expect.stringContaining('Wire text') }),
+      );
+    });
   });
 
   it('shows own-listing copy without setting needsSession', async () => {
@@ -729,6 +1231,25 @@ describe('useMarketplaceCheckout', () => {
       }),
     );
 
+    // A refused bind because Paykit is down is reported on the result so the page can retry on its own.
+    vi.mocked(CommerceController.bindPaymentMethod).mockRejectedValueOnce(
+      new AppError({
+        category: ErrorCategory.Client,
+        code: ClientErrorCode.BAD_REQUEST,
+        message: 'SENTINEL',
+        service: ErrorService.Marketplace,
+        operation: 'bindPaymentMethod',
+        context: { statusCode: 503, reason: 'paykit_unavailable' },
+      }),
+    );
+    const paykitDown = await act(async () => result.current.pay('bitcoin'));
+    expect(paykitDown).toMatchObject({ ok: false, paykitUnavailable: true });
+    expect(vi.mocked(toast).mock.calls.at(-1)?.[0]).toMatchObject({
+      variant: 'error',
+      description: 'Paykit is temporarily unreachable, retrying…',
+    });
+    expect(paidAfterFail.paykitUnavailable).toBeUndefined();
+
     // service#84: an unfinished Paykit wallet refuses the bind. The toast names it and offers
     // Try again, which runs only the caller's step on click; the hook never retries by itself.
     const onRetry = vi.fn();
@@ -758,21 +1279,12 @@ describe('useMarketplaceCheckout', () => {
     expect(vi.mocked(CommerceController.bindPaymentMethod).mock.calls.length).toBe(bindsBefore + 1);
   });
 
-  describe('after a refused USDT bind', () => {
+  describe('after a refused Paykit bind', () => {
     const orderId = '018f47d2-6a27-7c23-a49d-000000001210';
 
-    const usdtBindRefusal = (reason: string) =>
-      new AppError({
-        category: ErrorCategory.Client,
-        code: ClientErrorCode.BAD_REQUEST,
-        message: 'SENTINEL',
-        service: ErrorService.Marketplace,
-        operation: 'bindPaymentMethod',
-        context: { statusCode: 409, reason, paymentMethod: 'usdt' },
-      });
-
-    async function payRefused(method: 'usdt' | 'bitcoin', error: unknown) {
+    it('still cancels the order and shows the refusal once', async () => {
       config.mode = 'locks-paykit';
+      vi.mocked(toast).mockClear();
       vi.mocked(CommerceController.commitCreateMarketplaceCheckout).mockResolvedValue({
         ok: true,
         version: 1,
@@ -782,7 +1294,16 @@ describe('useMarketplaceCheckout', () => {
         eventIds: [],
         result: { kind: 'checkout', orders: [{ id: orderId }] },
       });
-      vi.mocked(CommerceController.bindPaymentMethod).mockRejectedValueOnce(error);
+      vi.mocked(CommerceController.bindPaymentMethod).mockRejectedValueOnce(
+        new AppError({
+          category: ErrorCategory.Client,
+          code: ClientErrorCode.BAD_REQUEST,
+          message: 'SENTINEL',
+          service: ErrorService.Marketplace,
+          operation: 'bindPaymentMethod',
+          context: { statusCode: 409, reason: 'seller_setup_pending', paymentMethod: 'paykit' },
+        }),
+      );
       const { result } = renderHook(() =>
         useMarketplaceCheckout(
           [item],
@@ -796,44 +1317,15 @@ describe('useMarketplaceCheckout', () => {
         result.current.form.setValue('region', 'NY');
         result.current.form.setValue('postalCode', '10001');
       });
-      return await act(async () => result.current.pay(method));
-    }
 
-    it.each(['usdt_unavailable', 'usdt_seller_not_ready'] as const)(
-      'remembers %s for this seller and still cancels the order and shows the refusal once',
-      async (reason) => {
-        vi.mocked(CommerceController.rememberUsdtRefusal).mockClear();
-        vi.mocked(toast).mockClear();
+      const paid = await act(async () => result.current.pay('paykit'));
 
-        const paid = await payRefused('usdt', usdtBindRefusal(reason));
-
-        expect(paid.ok).toBe(false);
-        expect(CommerceController.rememberUsdtRefusal).toHaveBeenCalledTimes(1);
-        expect(CommerceController.rememberUsdtRefusal).toHaveBeenCalledWith(item.listing.record.ownerPubky, reason);
-        expect(CommerceController.executeMarketplaceCommand).toHaveBeenCalledWith(
-          expect.objectContaining({ kind: 'order.cancel_request', payload: expect.objectContaining({ orderId }) }),
-        );
-        expect(vi.mocked(toast)).toHaveBeenCalledTimes(1);
-      },
-    );
-
-    it.each(['buyer_usdt_wallet_required', 'paykit_rejected'])(
-      'does not remember %s, which another try or the buyer can fix',
-      async (reason) => {
-        vi.mocked(CommerceController.rememberUsdtRefusal).mockClear();
-
-        await payRefused('usdt', usdtBindRefusal(reason));
-
-        expect(CommerceController.rememberUsdtRefusal).not.toHaveBeenCalled();
-      },
-    );
-
-    it('does not remember a refusal of another rail', async () => {
-      vi.mocked(CommerceController.rememberUsdtRefusal).mockClear();
-
-      await payRefused('bitcoin', new Error('bind failed'));
-
-      expect(CommerceController.rememberUsdtRefusal).not.toHaveBeenCalled();
+      expect(paid.ok).toBe(false);
+      expect(CommerceController.bindPaymentMethod).toHaveBeenLastCalledWith(orderId, 'paykit');
+      expect(CommerceController.executeMarketplaceCommand).toHaveBeenCalledWith(
+        expect.objectContaining({ kind: 'order.cancel_request', payload: expect.objectContaining({ orderId }) }),
+      );
+      expect(vi.mocked(toast)).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -868,6 +1360,154 @@ describe('useMarketplaceCheckout', () => {
     expect(CommerceController.bindPaymentMethod).not.toHaveBeenCalled();
     expect(clear).toHaveBeenCalled();
   });
+
+  describe('seller destination countries (shop shipsToCountries)', () => {
+    const SWISS_ONLY = 'This seller ships only to Switzerland. Choose pickup if offered.';
+
+    function fillAddress(
+      result: { current: ReturnType<typeof useMarketplaceCheckout> },
+      address: { line1: string; city: string; postalCode: string; countryCode: string },
+    ) {
+      act(() => {
+        result.current.form.setValue('name', 'Alice Buyer');
+        result.current.form.setValue('line1', address.line1);
+        result.current.form.setValue('city', address.city);
+        result.current.form.setValue('region', '');
+        result.current.form.setValue('postalCode', address.postalCode);
+        result.current.form.setValue('countryCode', address.countryCode, { shouldDirty: true });
+      });
+    }
+
+    it('offers only the seller’s countries and starts a new address in the only one', async () => {
+      shopState.shipsTo.set(listing.ownerPubky, ['CH']);
+      const { result } = renderHook(() =>
+        useMarketplaceCheckout(
+          [item],
+          vi.fn(async () => {}),
+        ),
+      );
+
+      await waitFor(() => expect(result.current.allowedDestinationCountries).toEqual(['CH']));
+      expect(result.current.form.getValues('countryCode')).toBe('CH');
+      expect(CommerceController.refreshShop).toHaveBeenCalledWith(listing.ownerPubky);
+    });
+
+    it('checks out an address in an allowed country', async () => {
+      shopState.shipsTo.set(listing.ownerPubky, ['CH', 'LI']);
+      const { result } = renderHook(() =>
+        useMarketplaceCheckout(
+          [item],
+          vi.fn(async () => {}),
+        ),
+      );
+      await waitFor(() => expect(result.current.allowedDestinationCountries).toEqual(['CH', 'LI']));
+      fillAddress(result, { line1: 'Via Nassa 1', city: 'Lugano', postalCode: '6900', countryCode: 'CH' });
+
+      let succeeded = false;
+      await act(async () => {
+        succeeded = await result.current.submit();
+      });
+
+      expect(succeeded).toBe(true);
+      expect(CommerceController.commitCreateMarketplaceCheckout).toHaveBeenCalledWith(
+        expect.objectContaining({ deliveryAddress: expect.objectContaining({ countryCode: 'CH', city: 'Lugano' }) }),
+      );
+    });
+
+    it('marks a disallowed country invalid and never resolves keys or seals', async () => {
+      shopState.shipsTo.set(listing.ownerPubky, ['CH']);
+      const { result } = renderHook(() =>
+        useMarketplaceCheckout(
+          [item],
+          vi.fn(async () => {}),
+        ),
+      );
+      await waitFor(() => expect(result.current.allowedDestinationCountries).toEqual(['CH']));
+      fillAddress(result, { line1: 'Unter den Linden 1', city: 'Berlin', postalCode: '10117', countryCode: 'DE' });
+
+      let succeeded = true;
+      await act(async () => {
+        succeeded = await result.current.submit();
+      });
+
+      expect(succeeded).toBe(false);
+      expect(result.current.form.getFieldState('countryCode').error?.message).toBe(SWISS_ONLY);
+      expect(CommerceController.resolveDeliveryKeysForCheckout).not.toHaveBeenCalled();
+      expect(CommerceController.commitCreateMarketplaceCheckout).not.toHaveBeenCalled();
+    });
+
+    it('re-reads the shop before sealing and refuses a country the seller removed since the page loaded', async () => {
+      const { result } = renderHook(() =>
+        useMarketplaceCheckout(
+          [item],
+          vi.fn(async () => {}),
+        ),
+      );
+      await waitFor(() => expect(CommerceController.refreshShop).toHaveBeenCalled());
+      expect(result.current.allowedDestinationCountries).toBeNull();
+      shopState.shipsTo.set(listing.ownerPubky, ['CH']);
+      fillAddress(result, { line1: 'Unter den Linden 1', city: 'Berlin', postalCode: '10117', countryCode: 'DE' });
+
+      let succeeded = true;
+      await act(async () => {
+        succeeded = await result.current.submit();
+      });
+
+      expect(succeeded).toBe(false);
+      expect(toast).toHaveBeenCalledWith({ variant: 'error', description: SWISS_ONLY });
+      expect(CommerceController.resolveDeliveryKeysForCheckout).not.toHaveBeenCalled();
+      expect(CommerceController.commitCreateMarketplaceCheckout).not.toHaveBeenCalled();
+    });
+
+    it('refuses to ship when the seller’s shop cannot be read at all', async () => {
+      shopState.unreadable.add(listing.ownerPubky);
+      const { result } = renderHook(() =>
+        useMarketplaceCheckout(
+          [item],
+          vi.fn(async () => {}),
+        ),
+      );
+      fillAddress(result, { line1: 'Via Nassa 1', city: 'Lugano', postalCode: '6900', countryCode: 'CH' });
+
+      await waitFor(() =>
+        expect(result.current.form.getFieldState('countryCode').error?.message).toBe(SHIPS_TO_UNAVAILABLE_MESSAGE),
+      );
+      let succeeded = true;
+      await act(async () => {
+        succeeded = await result.current.submit();
+      });
+      expect(succeeded).toBe(false);
+      expect(CommerceController.commitCreateMarketplaceCheckout).not.toHaveBeenCalled();
+    });
+
+    it('leaves pickup alone: a Swiss-only seller’s pickup order sends no address and is not checked', async () => {
+      shopState.shipsTo.set(listing.ownerPubky, ['CH']);
+      vi.mocked(CommerceController.getShippedSellers).mockReturnValue([]);
+      const pickupItem: MarketplaceCartItem = {
+        ...item,
+        listing: { ...item.listing, record: { ...item.listing.record, fulfillmentMethods: ['pickup'] } },
+      };
+      const { result } = renderHook(() =>
+        useMarketplaceCheckout(
+          [pickupItem],
+          vi.fn(async () => {}),
+        ),
+      );
+      await waitFor(() => expect(result.current.requiresDeliveryAddress).toBe(false));
+
+      let succeeded = false;
+      await act(async () => {
+        succeeded = await result.current.submit();
+      });
+
+      expect(succeeded).toBe(true);
+      expect(result.current.allowedDestinationCountries).toBeNull();
+      expect(CommerceController.refreshShop).not.toHaveBeenCalled();
+      expect(vi.mocked(CommerceController.commitCreateMarketplaceCheckout).mock.calls[0][0]).not.toHaveProperty(
+        'deliveryAddress',
+      );
+    });
+  });
 });
 
 describe('useMarketplaceCheckout Locks checkout on upstream Paykit', () => {
@@ -879,7 +1519,15 @@ describe('useMarketplaceCheckout Locks checkout on upstream Paykit', () => {
       ...item.listing,
       record: {
         ...item.listing.record,
-        digitalLock: { policyUri: 'pubky://lock', criterionId: 'c', contentPath: 'p', resourceHash: 'h' },
+        fulfillmentMethods: ['digital'],
+        shippingOptions: [],
+        digitalLock: {
+          policyUri: 'pubky://lock',
+          criterionId: 'c',
+          contentPath: 'p',
+          resourceHash: 'h',
+          minimumConfirmations: 1,
+        },
       } as MarketplaceCartItem['listing']['record'],
     },
   };
@@ -900,10 +1548,12 @@ describe('useMarketplaceCheckout Locks checkout on upstream Paykit', () => {
       availableQuantity: 1,
       reservedQuantity: 0,
       unitPrice: price,
+      shipping: { ...price, amountMinor: 0 },
       saleFormat: 'fixed_price',
-      fulfillmentMethods: ['shipping'],
+      fulfillmentMethods: ['digital'],
       auction: null,
     });
+    vi.mocked(CommerceController.syncListingRegistration).mockResolvedValue({ ok: true, revision: 1 } as never);
     vi.mocked(CommerceController.commitCreateMarketplaceCheckout).mockResolvedValue({
       ok: true,
       version: 1,
@@ -954,6 +1604,90 @@ describe('useMarketplaceCheckout Locks checkout on upstream Paykit', () => {
     expect(CommerceController.bindPaymentMethod).toHaveBeenCalledWith(orderId, 'bitcoin');
   });
 
+  it('checks a Locks line out as digital, with no address, whatever the deployment offers for digital delivery', async () => {
+    vi.mocked(CommerceController.fetchDigitalDeliveryCapability).mockResolvedValue({
+      available: false,
+      maxBytes: null,
+    });
+    const { result } = renderHook(() =>
+      useMarketplaceCheckout(
+        [lockedItem],
+        vi.fn(async () => {}),
+      ),
+    );
+
+    expect(result.current.requiresDeliveryAddress).toBe(false);
+    expect(result.current.fulfillmentForItem(lockedItem.id)).toBe('digital');
+    expect(result.current.isDigitalReady).toBe(true);
+    expect(result.current.digitalNotReadyItemIds).toEqual([]);
+    expect(result.current.isDigitalCapabilityLoading).toBe(false);
+    expect(CommerceController.fetchDigitalDeliveryCapability).not.toHaveBeenCalled();
+
+    const paid = await act(async () => result.current.pay(null));
+
+    expect(paid.ok).toBe(true);
+    const command = vi.mocked(CommerceController.commitCreateMarketplaceCheckout).mock.calls[0][0];
+    expect(command.lines.map((line) => line.fulfillmentChoice)).toEqual(['digital']);
+    expect(command.lines[0].publishedFulfillmentMethods).toEqual(['digital']);
+    expect(command).not.toHaveProperty('deliveryAddress');
+    expect(CommerceController.syncListingRegistration).toHaveBeenCalledOnce();
+    expect(CommerceController.getMarketplaceListingProjection).toHaveBeenCalledTimes(2);
+  });
+
+  it.each([
+    ['refused', async () => ({ ok: false, error: { code: 'UPSTREAM_UNAVAILABLE', message: 'unreachable' } })],
+    [
+      'unreachable',
+      async () => {
+        throw new TypeError('network down');
+      },
+    ],
+  ])('refuses a Locks line whose sync is %s, with a retryable message and nothing ordered', async (_label, sync) => {
+    vi.mocked(CommerceController.syncListingRegistration).mockImplementation(sync as never);
+    const { result } = renderHook(() =>
+      useMarketplaceCheckout(
+        [lockedItem],
+        vi.fn(async () => {}),
+      ),
+    );
+
+    const paid = await act(async () => result.current.pay(null));
+
+    expect(paid.ok).toBe(false);
+    expect(CommerceController.commitCreateMarketplaceCheckout).not.toHaveBeenCalled();
+    expect(vi.mocked(toast)).toHaveBeenCalledWith(
+      expect.objectContaining({
+        description:
+          'A Locks item in your cart could not be confirmed with the marketplace. Nothing was reserved. Try again in a moment.',
+      }),
+    );
+    const { Logger } = await import('@/libs/logger/logger');
+    expect(vi.mocked(Logger.warn)).toHaveBeenCalled();
+  });
+
+  it('syncs a Locks line before checkout, healing a projection registered as shipping-only', async () => {
+    const current = await CommerceController.getMarketplaceListingProjection(listing.ownerPubky, listing.listingId);
+    vi.mocked(CommerceController.getMarketplaceListingProjection).mockClear();
+    vi.mocked(CommerceController.getMarketplaceListingProjection)
+      .mockResolvedValueOnce({ ...current!, fulfillmentMethods: ['shipping'] })
+      .mockResolvedValueOnce({ ...current!, serverRevision: 2 });
+    vi.mocked(CommerceController.syncListingRegistration).mockResolvedValue({ ok: true, revision: 2 } as never);
+    const { result } = renderHook(() =>
+      useMarketplaceCheckout(
+        [lockedItem],
+        vi.fn(async () => {}),
+      ),
+    );
+
+    const paid = await act(async () => result.current.pay(null));
+
+    expect(paid.ok).toBe(true);
+    expect(CommerceController.syncListingRegistration).toHaveBeenCalledOnce();
+    expect(CommerceController.syncListingRegistration).toHaveBeenCalledWith(listing.ownerPubky, listing.listingId);
+    const command = vi.mocked(CommerceController.commitCreateMarketplaceCheckout).mock.calls[0][0];
+    expect(command.lines[0]).toMatchObject({ fulfillmentChoice: 'digital', expectedRevision: 2 });
+  });
+
   it('refuses a cart mixing Locks and other lines before creating any order', async () => {
     const { result } = renderHook(() =>
       useMarketplaceCheckout(
@@ -993,6 +1727,8 @@ describe('useMarketplaceCheckout local pickup (§A2)', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    shopState.shipsTo.clear();
+    shopState.unreadable.clear();
     config.mode = 'sandbox';
     authMock.currentUserPubky = null;
     useCommerceStore.setState({ marketplaceSession: null });
@@ -1009,6 +1745,7 @@ describe('useMarketplaceCheckout local pickup (§A2)', () => {
       availableQuantity: 1,
       reservedQuantity: 0,
       unitPrice: price,
+      shipping,
       saleFormat: 'fixed_price',
       fulfillmentMethods: ['shipping'],
       auction: null,
@@ -1287,6 +2024,8 @@ describe('useMarketplaceCheckout digital delivery (digital delivery design §3 "
 
   beforeEach(() => {
     vi.clearAllMocks();
+    shopState.shipsTo.clear();
+    shopState.unreadable.clear();
     config.mode = 'sandbox';
     authMock.currentUserPubky = null;
     useCommerceStore.setState({ marketplaceSession: null });

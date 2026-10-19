@@ -1,0 +1,1 @@
+On phones, the conversation header (back arrow, seller name, storefront link) now stays below the Pubky logo when the page scrolls, for example when the keyboard opens to type a message, instead of sliding under it. Pages no longer scroll sideways on phones narrower than 375 px (most Android phones are 360 px wide), which made checkout and every other page pan left and right.

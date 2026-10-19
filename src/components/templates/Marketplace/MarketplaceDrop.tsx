@@ -11,7 +11,7 @@ import { Heading } from '@/atoms/Heading/Heading';
 import { Link } from '@/atoms/Link/Link';
 import { Skeleton } from '@/atoms/Skeleton/Skeleton';
 import { Typography } from '@/atoms/Typography/Typography';
-import { withBasePath } from '@/config/base-path';
+import { withPublicPath } from '@/config/base-path';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import { useCommerceShopFollow } from '@/hooks/useCommerceShopFollow/useCommerceShopFollow';
 import {
@@ -22,6 +22,7 @@ import {
 import { useMarketplaceDrop } from '@/hooks/useMarketplaceDrop/useMarketplaceDrop';
 import { useMarketplaceDropClaim } from '@/hooks/useMarketplaceDropClaim/useMarketplaceDropClaim';
 import { useMarketplaceFirstMediaUrl } from '@/hooks/useMarketplaceMediaUrl/useMarketplaceMediaUrl';
+import { formatDateTime } from '@/libs/utils/dateTime';
 import { SettingsSectionContent } from '@/molecules/Settings/SettingsSectionContent/SettingsSectionContent';
 import { ContentLayout } from '@/organisms/ContentLayout/ContentLayout';
 import { DropClaimPanel } from '@/organisms/Marketplace/DropClaimPanel';
@@ -115,7 +116,7 @@ export function MarketplaceDrop({ sellerPubky, dropId }: MarketplaceDropProps) {
   const isEnded = state === 'ended_sold_out' || state === 'ended_closed' || state === 'ended_cancelled';
   const dropUrl =
     (typeof window !== 'undefined' ? window.location.origin : '') +
-    withBasePath(getMarketplaceDropRoute(sellerPubky, dropId));
+    withPublicPath(getMarketplaceDropRoute(sellerPubky, dropId));
 
   return (
     <DropPageShell>
@@ -255,8 +256,8 @@ export function MarketplaceDrop({ sellerPubky, dropId }: MarketplaceDropProps) {
               <ArchiveFact label="Per-buyer limit" value={String(projection.perBuyerLimit)} />
               <ArchiveFact
                 label="Window"
-                value={`${new Date(projection.startsAt).toLocaleString()}${
-                  projection.endsAt ? ` → ${new Date(projection.endsAt).toLocaleString()}` : ' → sold out / cancelled'
+                value={`${formatDateTime(new Date(projection.startsAt))}${
+                  projection.endsAt ? ` → ${formatDateTime(new Date(projection.endsAt))}` : ' → sold out / cancelled'
                 }`}
               />
             </div>

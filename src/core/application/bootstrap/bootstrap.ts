@@ -6,8 +6,8 @@ import { NotificationApplication } from '@/application/notification/notification
 import { UserApplication } from '@/application/user/user';
 import { getModerationId } from '@/config/moderation';
 import { TtlCoordinator } from '@/coordinators/ttl/ttl';
-import { hasHttpStatus, isAppError } from '@/libs/error/error.utils';
-import { HttpMethod, HttpStatusCode } from '@/libs/http/http.types';
+import { isAppError } from '@/libs/error/error.utils';
+import { HttpMethod } from '@/libs/http/http.types';
 import { Logger } from '@/libs/logger/logger';
 import { getTtlRetryDelayMs } from '@/libs/runtime-config/runtime-config';
 import { buildHotTagsId } from '@/models/hot/hot.helper';
@@ -17,6 +17,7 @@ import { TagStreamTypes } from '@/models/stream/tag/tagStream.types';
 import { UserStreamTypes } from '@/models/stream/user/userStream.types';
 import { LastReadNormalizer } from '@/pipes/lastRead/lastRead.normalizer';
 import { HomeserverService } from '@/services/homeserver/homeserver';
+import type { THomeserverJsonIfFound } from '@/services/homeserver/homeserver.types';
 import { LocalHotService } from '@/services/local/hot/hot';
 import { LocalStreamPostsService } from '@/services/local/stream/posts/posts';
 import { LocalStreamTagsService } from '@/services/local/stream/tags/tags';
@@ -70,12 +71,20 @@ export class BootstrapApplication {
 
     try {
       const pubky = params.pubky;
-      const [bootstrapData, userLastRead] = await Promise.all([
+      const [bootstrapResult, lastReadResult, ...syncResults] = await Promise.allSettled([
         NexusBootstrapService.fetch(pubky),
         this.fetchOrPutLastRead(params),
         MuteApplication.fetchMutedUsers(pubky), // fetches and persists MUTED stream internally
         FeedApplication.fetchFeeds(pubky),
       ]);
+      // Keep account ownership until every started sync has finished writing.
+      if (bootstrapResult.status === 'rejected') throw bootstrapResult.reason;
+      if (lastReadResult.status === 'rejected') throw lastReadResult.reason;
+      for (const result of syncResults) {
+        if (result.status === 'rejected') throw result.reason;
+      }
+      const bootstrapData = bootstrapResult.value;
+      const userLastRead = lastReadResult.value;
       onProgress?.('bootstrapFetched'); // Step 3 complete (60%)
 
       if (!bootstrapData.indexed) {
@@ -95,7 +104,7 @@ export class BootstrapApplication {
         TtlCoordinator.getInstance().subscribeUser({ pubky });
       }
 
-      const [{ unread, nextPollCursor }] = await Promise.all([
+      const [notificationResult, ...persistenceResults] = await Promise.allSettled([
         NotificationApplication.persistAndSummarize({
           notifications: bootstrapData.notifications,
           lastRead: userLastRead,
@@ -120,6 +129,11 @@ export class BootstrapApplication {
         LocalHotService.upsert(buildHotTagsId(UserStreamTimeframe.TODAY, 'all'), bootstrapData.ids.hot_tags),
         LocalStreamTagsService.upsert(TagStreamTypes.TODAY_ALL, bootstrapData.ids.hot_tags),
       ]);
+      if (notificationResult.status === 'rejected') throw notificationResult.reason;
+      for (const result of persistenceResults) {
+        if (result.status === 'rejected') throw result.reason;
+      }
+      const { unread, nextPollCursor } = notificationResult.value;
       onProgress?.('dataPersisted'); // Step 4 complete (80%)
       void this.ensureModerationFollow(pubky, moderationFollowController);
       // TODO: We will not have that step, but we will add HomeserverSignIn step before step 1 to catch errors
@@ -162,29 +176,25 @@ export class BootstrapApplication {
    * @returns Promise resolving to notification list and last read timestamp
    */
   private static async fetchOrPutLastRead({ pubky, lastReadUrl }: TBootstrapParams): Promise<number> {
+    let stored: THomeserverJsonIfFound<{ timestamp: number }>;
     try {
-      const { timestamp } = await HomeserverService.request<{ timestamp: number }>({
-        method: HttpMethod.GET,
-        url: lastReadUrl,
-      });
-      return timestamp;
+      stored = await HomeserverService.getJsonIfFound<{ timestamp: number }>({ url: lastReadUrl });
     } catch (error) {
-      // Only handle 404 errors (resource not found), rethrow everything else
-      if (hasHttpStatus(error, HttpStatusCode.NOT_FOUND)) {
-        Logger.info('Last read file not found, creating new one...', { pubky });
-        const lastRead = LastReadNormalizer.to(pubky);
-        void HomeserverService.request({
-          method: HttpMethod.PUT,
-          url: lastRead.meta.url,
-          bodyJson: lastRead.last_read.toJson(),
-        });
-        return Number(lastRead.last_read.timestamp);
-      } else {
-        // Network errors, timeouts, server errors, etc. should bubble up
-        Logger.error('Failed to fetch last read timestamp', error);
-        // TODO: TO harsh, we should handle this error better
-        throw error;
-      }
+      // Network errors, timeouts, server errors, etc. should bubble up
+      Logger.error('Failed to fetch last read timestamp', error);
+      throw error;
     }
+    if (stored.found) {
+      const { timestamp } = stored.json as { timestamp: number };
+      return timestamp;
+    }
+    Logger.info('Last read file not found, creating new one...', { pubky });
+    const lastRead = LastReadNormalizer.to(pubky);
+    void HomeserverService.request({
+      method: HttpMethod.PUT,
+      url: lastRead.meta.url,
+      bodyJson: lastRead.last_read.toJson(),
+    });
+    return Number(lastRead.last_read.timestamp);
   }
 }

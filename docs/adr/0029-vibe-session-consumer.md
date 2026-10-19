@@ -2,14 +2,9 @@
 
 ## Status
 
-Accepted — 2026-09-04
+Superseded — 2026-10-14 by [grant auth and the App-owned session](../launch/grant-auth-session.md).
 
-> **Note**: Update status when the decision changes. Include the date of status change.
->
-> - **Proposed**: Under discussion, not yet implemented
-> - **Accepted**: Approved and being/has been implemented
-> - **Deprecated**: No longer recommended, but still in use (include deprecation date)
-> - **Superseded**: Replaced by another ADR (link to replacement ADR)
+The design below is historical. Shop no longer restores cookie exports or requests sessions from the Vibe bridge. Shared App/Shop sign-in follows the [same-origin embedding contract](../launch/shop-embedding.md).
 
 ## Context
 

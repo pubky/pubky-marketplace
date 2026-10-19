@@ -14,6 +14,7 @@ import {
   Pause,
   PencilLine,
   Play,
+  Plug,
   Plus,
   ShoppingBag,
   Store,
@@ -42,6 +43,7 @@ import { useNowMs } from '@/hooks/useNowMs/useNowMs';
 import { useSellerPaymentMethodGate } from '@/hooks/useSellerPaymentMethodGate/useSellerPaymentMethodGate';
 import { listingDisplayState } from '@/libs/commerce/auction-phase';
 import { formatCommerceMoney } from '@/libs/commerce/format';
+import { listingPublishNeedsMarketplaceSession } from '@/libs/commerce/listing-publish-guards';
 import { formatListingStock } from '@/libs/commerce/unlimited-stock';
 import { isListingRegistrationPending } from '@/models/commerce/commerce.schema';
 import { SettingsSectionContent } from '@/molecules/Settings/SettingsSectionContent/SettingsSectionContent';
@@ -79,6 +81,13 @@ export function MarketplaceDashboard() {
     [currentUserPubky],
   );
   const [shopFetchSettled, setShopFetchSettled] = useState(false);
+  // No shop yet, or an untouched default storefront (both policies empty).
+  const shopSetup =
+    shop === null
+      ? 'create'
+      : shop && !shop.record.shippingPolicy?.trim() && !shop.record.returnPolicy?.trim()
+        ? 'policies'
+        : null;
 
   useEffect(() => {
     if (showSellingApproval && !needsSellingApproval) {
@@ -112,7 +121,12 @@ export function MarketplaceDashboard() {
   };
 
   const updateListingState = (listingIds: string[], state: 'active' | 'paused') => {
-    if (isDurableCommerceMode(getCommerceAdapterMode()) && !marketplaceSession) {
+    const needsSession = dashboard.listings.some(
+      (listing) =>
+        listingIds.includes(listing.id) &&
+        listingPublishNeedsMarketplaceSession(listing.record, { ...listing.record, state }),
+    );
+    if (needsSession && isDurableCommerceMode(getCommerceAdapterMode()) && !marketplaceSession) {
       setPendingStateChange({ listingIds, state });
       return;
     }
@@ -189,6 +203,12 @@ export function MarketplaceDashboard() {
               Payment settings
             </Link>
           </Button>
+          <Button asChild variant="secondary" size="sm" className="rounded-full text-xs font-bold">
+            <Link href={MARKETPLACE_ROUTES.SETTINGS_STORE_CONNECTIONS} overrideDefaults>
+              <Plug className="size-4" aria-hidden="true" />
+              Store connections
+            </Link>
+          </Button>
         </nav>
 
         {dashboard.isLoading ? (
@@ -196,23 +216,28 @@ export function MarketplaceDashboard() {
         ) : (
           <>
             {/* A seller with published listings but no shop record dead-ends
-                every buyer who taps "View shop" — surface that here, where
+                every buyer who taps "View shop", and the storefront the Shop
+                publishes by default has no policies. Surface both here, where
                 sellers actually work. */}
-            {shopFetchSettled && shop === null && dashboard.listings.length > 0 && (
+            {shopFetchSettled && shopSetup && dashboard.listings.length > 0 && (
               <Card className="rounded-md bg-card p-0">
                 <CardContent className="flex flex-col gap-3 p-6 sm:flex-row sm:items-center sm:justify-between">
                   <div>
                     <Typography as="h2" className="font-semibold">
-                      Your storefront is not set up
+                      {shopSetup === 'create'
+                        ? 'Your storefront is not set up'
+                        : 'Add your shipping and return policies'}
                     </Typography>
                     <Typography as="p" className="text-sm text-muted-foreground">
-                      Add a shop name, bio, and policies.
+                      {shopSetup === 'create'
+                        ? 'Add a shop name, bio, and policies.'
+                        : 'Tell buyers how you ship and handle returns.'}
                     </Typography>
                   </div>
                   <Button asChild className="shrink-0 rounded-full">
                     <Link href={MARKETPLACE_ROUTES.MY_SHOP} overrideDefaults>
                       <Store className="size-4" />
-                      Set up your storefront
+                      {shopSetup === 'create' ? 'Set up your storefront' : 'Add policies'}
                     </Link>
                   </Button>
                 </CardContent>
@@ -330,14 +355,14 @@ export function MarketplaceDashboard() {
             )}
             {isMobile ? (
               <div
-                className="-mx-4 flex gap-6 overflow-x-auto px-4 pb-1"
+                className="-mx-4 flex gap-3 overflow-x-auto px-4 pb-1"
                 data-testid="marketplace-dashboard-kpi-chips"
                 tabIndex={0}
                 role="region"
                 aria-label="Dashboard metrics"
               >
                 {dashboardKpis(dashboard.metrics).map(({ label, value }) => (
-                  <div key={label} className="shrink-0 rounded-full bg-card p-6">
+                  <div key={label} className="shrink-0 rounded-md bg-card p-6">
                     <Typography as="p" className="text-sm font-semibold">
                       {value}
                     </Typography>
@@ -388,11 +413,11 @@ export function MarketplaceDashboard() {
                         {dashboard.metrics.openOffers} open offers need attention.
                       </Typography>
                     </div>
-                    <div className="flex flex-wrap gap-2">
+                    <div className="flex flex-nowrap gap-1.5 sm:gap-2" data-testid="marketplace-listing-actions">
                       <Button
                         size="sm"
                         variant="secondary"
-                        className="rounded-full"
+                        className="rounded-full max-sm:has-[>svg]:px-3"
                         disabled={!selected.length}
                         onClick={() => updateListingState(selected, 'paused')}
                       >
@@ -402,16 +427,21 @@ export function MarketplaceDashboard() {
                       <Button
                         size="sm"
                         variant="secondary"
-                        className="rounded-full"
+                        className="rounded-full max-sm:has-[>svg]:px-3"
                         disabled={!selected.length}
                         onClick={() => updateListingState(selected, 'active')}
                       >
                         <Play className="size-4" />
                         Activate
                       </Button>
-                      <Button size="sm" variant="secondary" className="rounded-full" onClick={exportCsv}>
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        className="rounded-full max-sm:has-[>svg]:px-3"
+                        onClick={exportCsv}
+                      >
                         <Download className="size-4" />
-                        Export CSV
+                        Export
                       </Button>
                     </div>
                   </div>
@@ -423,7 +453,7 @@ export function MarketplaceDashboard() {
                       <div className="flex min-h-48 flex-col items-center justify-center rounded-md bg-card/40 p-6 text-center">
                         <ShoppingBag className="mb-4 size-10 text-muted-foreground" />
                         <Heading level={3} size="md">
-                          You have no listings yet
+                          No listings yet
                         </Heading>
                         <Typography as="p" className="mt-2 text-muted-foreground">
                           Let&apos;s create a listing to sell your first item.

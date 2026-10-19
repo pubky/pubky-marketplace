@@ -91,7 +91,7 @@ describe('MarketplacePickupRevealDialog', () => {
     const user = userEvent.setup();
     render(<MarketplacePickupRevealDialog order={pickupOrder()} />);
 
-    await user.click(screen.getByRole('button', { name: 'Show meeting point' }));
+    await user.click(screen.getByRole('button', { name: 'Meeting point' }));
 
     expect(await screen.findByText('Central Station, north entrance')).toBeInTheDocument();
     expect(screen.getByText('Ring the bell twice.')).toBeInTheDocument();
@@ -101,7 +101,9 @@ describe('MarketplacePickupRevealDialog', () => {
     expect(screen.getByText(/Pinned as terms version 2 at payment/)).toBeInTheDocument();
     // Telemetry masking is binding (§7.2), and the dialog carries the VRT
     // capture marker on its content root.
-    const content = screen.getByText('Meeting point').closest('[data-surface="pickup-reveal-dialog"]');
+    const content = screen
+      .getByRole('heading', { name: 'Meeting point' })
+      .closest('[data-surface="pickup-reveal-dialog"]');
     expect(content).not.toBeNull();
     expect(screen.getByText('Central Station, north entrance').closest('[data-sentry-mask]')).not.toBeNull();
     expect(mockedController.fetchPickupReveal).toHaveBeenCalledWith(pickupOrder().id);
@@ -112,7 +114,7 @@ describe('MarketplacePickupRevealDialog', () => {
     const user = userEvent.setup();
     render(<MarketplacePickupRevealDialog order={pickupOrder()} />);
 
-    await user.click(screen.getByRole('button', { name: 'Show meeting point' }));
+    await user.click(screen.getByRole('button', { name: 'Meeting point' }));
 
     expect(await screen.findByText(/Seller changed the pickup terms since you paid/)).toBeInTheDocument();
     expect(screen.getByText(/Details withdrawn by seller/)).toBeInTheDocument();
@@ -133,7 +135,7 @@ describe('MarketplacePickupRevealDialog', () => {
     const user = userEvent.setup();
     render(<MarketplacePickupRevealDialog order={pickupOrder({ state: 'cancelled' })} />);
 
-    await user.click(screen.getByRole('button', { name: 'Show meeting point' }));
+    await user.click(screen.getByRole('button', { name: 'Meeting point' }));
 
     expect(
       await screen.findByText('This order is closed, so the meeting point is no longer shown.'),
@@ -145,14 +147,14 @@ describe('MarketplacePickupRevealDialog', () => {
     const user = userEvent.setup();
     render(<MarketplacePickupRevealDialog order={pickupOrder()} />);
 
-    await user.click(screen.getByRole('button', { name: 'Show meeting point' }));
+    await user.click(screen.getByRole('button', { name: 'Meeting point' }));
     expect(await screen.findByText('Central Station, north entrance')).toBeInTheDocument();
     await user.keyboard('{Escape}');
     await waitFor(() => {
       expect(screen.queryByText('Central Station, north entrance')).not.toBeInTheDocument();
     });
 
-    await user.click(screen.getByRole('button', { name: 'Show meeting point' }));
+    await user.click(screen.getByRole('button', { name: 'Meeting point' }));
     expect(await screen.findByText('Central Station, north entrance')).toBeInTheDocument();
     // One reveal read per view (§A1/§7.2): nothing was cached anywhere.
     expect(mockedController.fetchPickupReveal).toHaveBeenCalledTimes(2);
@@ -181,7 +183,7 @@ describe('MarketplacePickupRevealDialog persistence guard', () => {
     try {
       const user = userEvent.setup();
       render(<MarketplacePickupRevealDialog order={pickupOrder()} />);
-      await user.click(screen.getByRole('button', { name: 'Show meeting point' }));
+      await user.click(screen.getByRole('button', { name: 'Meeting point' }));
       expect(await screen.findByText('Central Station, north entrance')).toBeInTheDocument();
 
       // The one and only seam call is the reveal read itself; the dialog

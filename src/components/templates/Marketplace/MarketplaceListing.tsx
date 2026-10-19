@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import {
   ArrowLeft,
@@ -24,7 +24,6 @@ import { Card, CardContent } from '@/atoms/Card/Card';
 import { Container } from '@/atoms/Container/Container';
 import { Heading } from '@/atoms/Heading/Heading';
 import { Link } from '@/atoms/Link/Link';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/atoms/Select/Select';
 import { Typography } from '@/atoms/Typography/Typography';
 import { getCommerceAdapterMode, isDurableCommerceMode, isTransactionalCommerceMode } from '@/config/commerce';
 import { CommerceController } from '@/controllers/commerce/commerce';
@@ -38,7 +37,10 @@ import { useMarketplacePublicAvailability } from '@/hooks/useMarketplacePublicAv
 import { useSellerReputation } from '@/hooks/useMarketplaceReviews/useMarketplaceReviews';
 import { useMeasurementSystem } from '@/hooks/useMeasurementSystem/useMeasurementSystem';
 import { useRequireAuth } from '@/hooks/useRequireAuth/useRequireAuth';
+import { useSellerPaymentBadges } from '@/hooks/useSellerPaymentBadges/useSellerPaymentBadges';
+import { CHAT_COPY } from '@/libs/chat/copy';
 import { getAuctionPhase } from '@/libs/commerce/auction-phase';
+import { SOLD_OUT_COPY } from '@/libs/commerce/cart-stock';
 import {
   CHECKOUT_HOLD_COPY,
   findViewerAcceptedOfferHold,
@@ -49,17 +51,28 @@ import { DIGITAL_DELIVERY_COPY, digitalDeliveryBadgeLabel } from '@/libs/commerc
 import { MARKETPLACE_FAILURE_MESSAGES } from '@/libs/commerce/failure-messages';
 import { formatCommerceCondition, formatCommerceMoney } from '@/libs/commerce/format';
 import {
+  everyOfferedVariantSoldOut,
+  firstAvailableVariantId,
+  isVariantSoldOut,
+  listingSoldOutVariantIds,
+  MADE_TO_ORDER_LABEL,
+  madeToOrderVariantIds,
+  projectionReadsSoldOut,
+} from '@/libs/commerce/listing-variants';
+import {
   commerceListingFulfillmentMethods,
   type CommerceListingRecord,
   commerceListingTakesOffers,
   type CommerceShippingOption,
 } from '@/libs/commerce/marketplace-records';
 import type { MarketplaceFulfillmentMethod } from '@/libs/commerce/pickup';
+import { formatShipsToCountries, shopShipsToCountries } from '@/libs/commerce/ships-to';
 import { buildMarketplaceListingAggregateId } from '@/libs/commerce/transaction-commands';
 import { formatPackageDimensions, formatWeight } from '@/libs/commerce/units';
-import { formatStockQuantity, UNLIMITED_STOCK_LABEL } from '@/libs/commerce/unlimited-stock';
 import { MarketplaceFulfillmentBadge } from '@/molecules/MarketplaceFulfillmentBadge/MarketplaceFulfillmentBadge';
+import { MarketplacePaymentMethodBadges } from '@/molecules/MarketplacePaymentMethodBadges/MarketplacePaymentMethodBadges';
 import { MarketplaceSellerIdentity } from '@/molecules/MarketplaceSellerIdentity/MarketplaceSellerIdentity';
+import { ChatEntryButton } from '@/organisms/Chat/ChatEntryButton';
 import { ContentLayout } from '@/organisms/ContentLayout/ContentLayout';
 import { DialogReportPost } from '@/organisms/DialogReportPost/DialogReportPost';
 import { MarketplaceAuctionPanel } from '@/organisms/Marketplace/MarketplaceAuctionPanel';
@@ -71,12 +84,12 @@ import { MarketplaceListingOwnerPanel } from '@/organisms/Marketplace/Marketplac
 import { MarketplaceListingSavePicker } from '@/organisms/Marketplace/MarketplaceListingSavePicker';
 import { MarketplaceListingSpecifics } from '@/organisms/Marketplace/MarketplaceListingSpecifics';
 import { MarketplaceMediaGallery } from '@/organisms/Marketplace/MarketplaceMediaGallery';
-import { MarketplaceMessageDialog } from '@/organisms/Marketplace/MarketplaceMessageDialog';
 import { MarketplaceOfferDialog } from '@/organisms/Marketplace/MarketplaceOfferDialog';
 import { MarketplaceReviewsSection } from '@/organisms/Marketplace/MarketplaceReviewsSection';
 import { MarketplaceSectionNav } from '@/organisms/Marketplace/MarketplaceSectionNav';
 import { MarketplaceSessionConnectDialog } from '@/organisms/Marketplace/MarketplaceSessionConnectDialog';
 import { MarketplaceSimilarItems } from '@/organisms/Marketplace/MarketplaceSimilarItems';
+import { MarketplaceVariantPicker } from '@/organisms/Marketplace/MarketplaceVariantPicker';
 import { MarketplaceSessionService } from '@/services/marketplace/marketplace-session';
 import { useAuthStore } from '@/stores/auth/auth.store';
 import { MarketplaceListingDetailSkeleton } from './Marketplace.skeleton';
@@ -94,6 +107,10 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
   const [isFetchSettled, setIsFetchSettled] = useState(false);
   const [selectedVariantId, setSelectedVariantId] = useState('');
   const [showSessionRequired, setShowSessionRequired] = useState(false);
+  // The Buy click that opened the approval card. The click is kept until the
+  // marketplace session resolves, so a session that restores in the background
+  // completes the purchase the buyer asked for instead of silently closing the card.
+  const pendingPurchaseRef = useRef<(() => void) | null>(null);
   const [reportOpen, setReportOpen] = useState(false);
   const [nowMs, setNowMs] = useState(() => Date.now());
   const adapterMode = getCommerceAdapterMode();
@@ -102,8 +119,10 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
   const isOwner = currentUserPubky === sellerPubky;
   const favorite = useCommerceFavorite(`${sellerPubky}:${listingId}`);
   const negotiation = useMarketplaceProjection(sellerPubky, listingId);
-  const publicStockState = useMarketplacePublicAvailability(sellerPubky, listingId, negotiation.needsSession);
+  const publicStock = useMarketplacePublicAvailability(sellerPubky, listingId, negotiation.needsSession);
+  const soldOutVariants = listingSoldOutVariantIds(negotiation.projection ?? publicStock);
   const sellerReputation = useSellerReputation(sellerPubky);
+  const paymentBadges = useSellerPaymentBadges(sellerPubky);
   const cart = useMarketplaceCart();
   const orders = useMarketplaceOrders();
   const offers = useMarketplaceOffers();
@@ -118,6 +137,9 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
     }
     let active = true;
     setIsFetchSettled(false);
+    // Best-effort: a direct visit may not have the seller's shop cached, and
+    // it carries the shop name, vacation notice and destination countries.
+    void CommerceController.getOrFetchShop(sellerPubky).catch(() => undefined);
     CommerceController.getOrFetchListing(sellerPubky, listingId)
       .catch(async (fetchError: unknown) => {
         let confirmedRemoved = false;
@@ -141,6 +163,10 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
   }, [adapterMode, listingId, sellerPubky]);
 
   const listing = useLiveQuery(() => CommerceController.getListing(sellerPubky, listingId), [sellerPubky, listingId]);
+  const madeToOrderVariants = madeToOrderVariantIds(
+    negotiation.projection ?? publicStock,
+    listing?.record.variants ?? [],
+  );
   const shop = useLiveQuery(() => CommerceController.getShop(sellerPubky), [sellerPubky]);
   const auctionEndsAt =
     listing?.record.sale.format === 'auction'
@@ -154,14 +180,25 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
   const shopAvatarUrl = useMarketplaceMediaUrl(shop?.record.avatarUrl);
 
   useEffect(() => {
-    const firstVariant = listing?.record.variants[0]?.id;
-    if (firstVariant && !listing?.record.variants.some(({ id }) => id === selectedVariantId)) {
-      setSelectedVariantId(firstVariant);
-    }
-  }, [listing, selectedVariantId]);
+    const variants = listing?.record.variants;
+    if (!variants) return;
+    const selected = variants.find(({ id }) => id === selectedVariantId);
+    if (selected?.enabled && !isVariantSoldOut(selected, soldOutVariants, madeToOrderVariants)) return;
+    const next =
+      firstAvailableVariantId(variants, soldOutVariants, madeToOrderVariants) ?? selected?.id ?? variants[0]?.id;
+    if (next && next !== selectedVariantId) setSelectedVariantId(next);
+  }, [listing, selectedVariantId, soldOutVariants, madeToOrderVariants]);
 
   useEffect(() => {
-    if (!negotiation.needsSession) setShowSessionRequired(false);
+    pendingPurchaseRef.current = null;
+  }, [sellerPubky, listingId]);
+
+  useEffect(() => {
+    if (negotiation.needsSession) return;
+    setShowSessionRequired(false);
+    const pendingPurchase = pendingPurchaseRef.current;
+    pendingPurchaseRef.current = null;
+    pendingPurchase?.();
   }, [negotiation.needsSession]);
 
   useEffect(() => {
@@ -221,15 +258,13 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
   const price = record.sale.format === 'fixed_price' ? record.sale.unitPrice : record.sale.startingPrice;
   const displayPrice = negotiation.projection?.auction?.currentPrice ?? price;
   // The methods the service sells this listing by (digital delivery design
-  // §6 A1–A3). A Locks listing keeps its own digital notice and derives to
-  // shipping, so it is kept apart here exactly as before.
-  const isLocksListing = record.digitalLock !== undefined;
-  const methods = commerceListingFulfillmentMethods(record.fulfillmentMethods, isLocksListing);
+  // §6 A1–A3). A Locks listing publishes digital delivery only.
+  const methods = commerceListingFulfillmentMethods(record.fulfillmentMethods);
   const offersDigital = methods.includes('digital');
-  const shipsItem = !isLocksListing && methods.includes('shipping');
+  const shipsItem = methods.includes('shipping');
   // Offers settle through shipping or pickup (§6 B7, B8): a digital listing
   // with neither takes no offers.
-  const offersPhysical = shipsItem || (!isLocksListing && methods.includes('pickup'));
+  const offersPhysical = shipsItem || methods.includes('pickup');
   const offersDigitalOnly = offersDigital && !offersPhysical;
   const shippingCopy = formatListingShipping(record, methods);
   const hasFreeShipping = shippingCopy === 'Shipping: free';
@@ -241,6 +276,7 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
         ? `Shipping: ${formatCommerceMoney(flatShipping.price)}`
         : null;
   const sellerDisplayName = shop?.record.name ?? `${sellerPubky.slice(0, 10)}…`;
+  const shipsToCountries = shopShipsToCountries(shop?.record);
   const recordQuantity = record.variants.reduce(
     (total, variant) => total + (variant.enabled ? variant.quantity : 0),
     0,
@@ -254,17 +290,20 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
     projectionIsReserved && !viewerHoldOrder
       ? findViewerAcceptedOfferHold(offers.offers, aggregateId, sessionPubky)
       : null;
-  const projectionIsSoldOut =
-    negotiation.projection !== null &&
-    (negotiation.projection.state === 'sold' ||
-      (negotiation.projection.state === 'available' && negotiation.projection.availableQuantity === 0));
-  const isSoldOut = isDurable ? projectionIsSoldOut : (listing.purchasableQuantity ?? recordQuantity) <= 0;
+  const projectionIsSoldOut = negotiation.projection !== null && projectionReadsSoldOut(negotiation.projection);
+  const publicStockIsSoldOut =
+    negotiation.projection === null && publicStock !== null && projectionReadsSoldOut(publicStock);
+  const isSoldOut = isDurable
+    ? projectionIsSoldOut || publicStockIsSoldOut
+    : (listing.purchasableQuantity ?? recordQuantity) <= 0;
+  const listingSoldOut = isSoldOut || everyOfferedVariantSoldOut(record.variants, soldOutVariants, madeToOrderVariants);
+  const selectedMadeToOrder = selectedVariant !== undefined && madeToOrderVariants.has(selectedVariant.id);
   const isPurchasable = record.state === 'active';
   const availabilityPending = isDurable && negotiation.isLoading;
   const availabilityNeedsSession = isDurable && negotiation.needsSession;
   // Without a session the projection is unreadable, so another buyer's hold
   // comes from the public availability read instead.
-  const publicHold = availabilityNeedsSession && publicStockState === 'reserved';
+  const publicHold = availabilityNeedsSession && publicStock?.state === 'reserved';
   const availabilityReady =
     !isDurable || (!availabilityPending && !availabilityNeedsSession && negotiation.projection !== null);
   const stateNotice =
@@ -280,13 +319,28 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
     requireAuth(revealSessionRequired);
   };
   const onSessionConnected = () => {
+    const pendingPurchase = pendingPurchaseRef.current;
+    pendingPurchaseRef.current = null;
     setShowSessionRequired(false);
     void negotiation.refresh();
+    pendingPurchase?.();
   };
   const addSelectedVariantToCart = () => {
     if (!selectedVariant) return;
     if (isOwner) return;
     void cart.add(`${record.ownerPubky}:${record.listingId}`, selectedVariant.id, 1);
+  };
+  const beginPurchase = () => {
+    requireAuth(() => {
+      if (MarketplaceSessionService.getActiveSession()) {
+        // The session is already restored; only this render's projection is stale.
+        addSelectedVariantToCart();
+        void negotiation.refresh();
+        return;
+      }
+      pendingPurchaseRef.current = addSelectedVariantToCart;
+      revealSessionRequired();
+    });
   };
 
   return (
@@ -338,7 +392,12 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
 
           <div className="flex min-w-0 flex-col gap-5 lg:col-start-2 lg:row-span-2 lg:row-start-1">
             {isOwner && (
-              <MarketplaceListingOwnerPanel record={record} registrationStatus={listing.registration_status} />
+              <MarketplaceListingOwnerPanel
+                record={record}
+                registrationStatus={listing.registration_status}
+                projection={negotiation.projection}
+                auctionPhase={auctionPhase ?? undefined}
+              />
             )}
             {stateNotice && (
               <div
@@ -365,6 +424,11 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
                   </Badge>
                 )}
                 {isSoldOut && record.sale.format === 'fixed_price' && <Badge variant="outline">Sold out</Badge>}
+                {!isSoldOut && selectedMadeToOrder && record.sale.format === 'fixed_price' && (
+                  <Badge variant="secondary" data-testid="marketplace-listing-made-to-order">
+                    {MADE_TO_ORDER_LABEL}
+                  </Badge>
+                )}
                 {shop?.record.vacationMode && (
                   <Badge variant="outline" className="border-amber-500/50 bg-amber-500/10 text-amber-300">
                     <PlaneTakeoff className="mr-1 size-3" />
@@ -395,40 +459,36 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
                   {shippingCopy}
                 </Typography>
               )}
+              {shipsItem && shipsToCountries && (
+                <Typography
+                  as="p"
+                  className="mt-1 text-sm text-muted-foreground"
+                  data-testid="marketplace-listing-ships-to"
+                >
+                  Ships to: {formatShipsToCountries(shipsToCountries)}
+                </Typography>
+              )}
               {negotiation.projection?.auction && (
                 <Typography as="p" className="mt-1 text-sm text-muted-foreground">
                   {negotiation.projection.auction.bidCount}{' '}
                   {negotiation.projection.auction.bidCount === 1 ? 'bid' : 'bids'}
                 </Typography>
               )}
+              <MarketplacePaymentMethodBadges
+                methods={paymentBadges}
+                className="mt-3"
+                testId="marketplace-listing-payment-methods"
+              />
             </div>
 
             {record.variants.length > 1 && (
-              <div>
-                <Typography as="p" className="mb-2 text-sm font-semibold">
-                  Variant
-                </Typography>
-                <Select value={selectedVariant?.id} onValueChange={setSelectedVariantId}>
-                  <SelectTrigger theme="secondary" className="w-full" aria-label="Choose listing variant">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {record.variants.map((variant) => {
-                      const stock = formatStockQuantity(record, variant.quantity);
-                      return (
-                        <SelectItem
-                          key={variant.id}
-                          value={variant.id}
-                          disabled={!variant.enabled || variant.quantity === 0}
-                        >
-                          {Object.values(variant.options).join(' · ') || variant.sku || 'Default'} ·{' '}
-                          {stock === UNLIMITED_STOCK_LABEL ? stock : `${stock} left`}
-                        </SelectItem>
-                      );
-                    })}
-                  </SelectContent>
-                </Select>
-              </div>
+              <MarketplaceVariantPicker
+                record={record}
+                selectedVariantId={selectedVariant?.id}
+                onSelect={setSelectedVariantId}
+                soldOutVariantIds={soldOutVariants}
+                madeToOrderVariantIds={madeToOrderVariants}
+              />
             )}
 
             {record.digitalLock && <MarketplaceDigitalDeliveryNotice adapterMode={adapterMode} />}
@@ -480,13 +540,26 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
                         Buy
                       </Link>
                     </Button>
+                  ) : listingSoldOut ? (
+                    <Button
+                      size="default"
+                      className="w-fit rounded-full"
+                      disabled
+                      data-cy="marketplace-listing-sold-out"
+                    >
+                      {SOLD_OUT_COPY.listingSoldOut}
+                    </Button>
                   ) : (
                     <Button
                       size="default"
                       className="w-fit rounded-full"
                       disabled={
                         availabilityNeedsSession
-                          ? isOwner || adapterMode === 'unavailable' || publicHold
+                          ? isOwner ||
+                            adapterMode === 'unavailable' ||
+                            publicHold ||
+                            isSoldOut ||
+                            (selectedVariant !== undefined && soldOutVariants.has(selectedVariant.id))
                           : isOwner ||
                             adapterMode === 'unavailable' ||
                             !isPurchasable ||
@@ -494,9 +567,9 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
                             isSoldOut ||
                             projectionIsReserved ||
                             !selectedVariant ||
-                            selectedVariant.quantity === 0
+                            isVariantSoldOut(selectedVariant, soldOutVariants, madeToOrderVariants)
                       }
-                      onClick={availabilityNeedsSession ? beginPurchaseAuth : addSelectedVariantToCart}
+                      onClick={availabilityNeedsSession ? beginPurchase : addSelectedVariantToCart}
                     >
                       <ShoppingCart className="size-4" />
                       Buy
@@ -518,7 +591,7 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
                       {CHECKOUT_HOLD_COPY.holdOwnerCheckPrompt}
                     </Button>
                   )}
-                  {commerceListingTakesOffers(record) && !viewerOfferHold && (
+                  {commerceListingTakesOffers(record) && !viewerOfferHold && !listingSoldOut && (
                     <MarketplaceOfferDialog
                       aggregateId={aggregateId}
                       expectedRevision={negotiation.projection?.serverRevision ?? null}
@@ -574,7 +647,10 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
             {isTransactionalCommerceMode(adapterMode) && (
               <MarketplaceSessionConnectDialog
                 open={showSessionRequired}
-                onOpenChange={setShowSessionRequired}
+                onOpenChange={(open) => {
+                  if (!open) pendingPurchaseRef.current = null;
+                  setShowSessionRequired(open);
+                }}
                 hideTrigger
                 onConnected={onSessionConnected}
               />
@@ -618,9 +694,13 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
                       </Link>
                     </Button>
                   )}
-                  <div>
-                    <MarketplaceMessageDialog sellerPubky={sellerPubky} listingId={listingId} />
-                  </div>
+                  <ChatEntryButton
+                    peerPubky={sellerPubky}
+                    context={{ listingId }}
+                    label={CHAT_COPY.listingCta}
+                    className="rounded-full"
+                    dataTestId="marketplace-listing-message-seller"
+                  />
                   {!isOwner && (
                     <Button
                       variant="ghost"
@@ -642,7 +722,7 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
             <section aria-label="Fulfillment and listing information" className="flex min-w-0 flex-col gap-5">
               <div className="grid gap-3 sm:grid-cols-2">
                 <MarketplaceListingSpecifics record={record} />
-                {!isLocksListing && (shipsItem || methods.includes('pickup')) && (
+                {(shipsItem || methods.includes('pickup')) && (
                   <div className="flex items-start gap-3 rounded-md bg-card p-6 text-card-foreground shadow-sm">
                     <MapPin className="size-5 shrink-0 text-brand" aria-hidden="true" />
                     <div className="flex min-w-0 flex-col gap-1">
@@ -728,7 +808,6 @@ function formatListingShipping(
   record: CommerceListingRecord,
   methods: readonly MarketplaceFulfillmentMethod[],
 ): string {
-  if (record.digitalLock !== undefined) return 'Digital delivery';
   if (!methods.includes('shipping')) return methods.includes('pickup') ? 'Local pickup only' : 'Digital delivery';
   const flat = record.shippingOptions.find((option) => option.pricing === 'flat');
   if (flat) return `Shipping: ${formatShippingOption(flat)} ${formatCommerceMoney(flat.price)}`;

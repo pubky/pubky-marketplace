@@ -4,7 +4,9 @@ import { useContext, useEffect, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { getCommerceAdapterMode } from '@/config/commerce';
 import { CommerceController } from '@/controllers/commerce/commerce';
+import { useMarketplacePaymentMethodSellers } from '@/hooks/useMarketplacePaymentMethodSellers/useMarketplacePaymentMethodSellers';
 import type { CommerceShopRecord } from '@/libs/commerce/marketplace-records';
+import { filterBySellerSet } from '@/libs/commerce/payment-method-filter';
 import { Logger } from '@/libs/logger/logger';
 import { DatabaseContext } from '@/providers/DatabaseProvider/DatabaseProvider';
 import { useCommerceStore } from '@/stores/commerce/commerce.store';
@@ -39,6 +41,15 @@ export function useMarketplaceCatalog(
   const countryCode = filters ? filters.countryCode : storedCountryCode;
   const storedSort = useCommerceStore((state) => state.sort);
   const sort = filters ? filters.sort : storedSort;
+  const storedPaymentMethod = useCommerceStore((state) => state.paymentMethod);
+  // Explicit filters (similar items) never carry the buyer's payment filter.
+  const paymentMethod = filters ? null : storedPaymentMethod;
+  const paymentFilter = useMarketplacePaymentMethodSellers(paymentMethod, {
+    saleFormat,
+    conditions,
+    sort,
+    countryCode,
+  });
   const adapterMode = getCommerceAdapterMode();
 
   // Sandbox catalogs are seeded locally and never query Nexus (see
@@ -86,14 +97,22 @@ export function useMarketplaceCatalog(
   const isCacheUnresolved = localListings === undefined || catalogEntries === undefined || localShops === undefined;
   const isCacheEmpty =
     localListings !== undefined && catalogEntries !== undefined && localListings.length + catalogEntries.length === 0;
-  const isLoading = isCacheUnresolved || (isCacheEmpty && isRefreshing);
+  const isLoading = isCacheUnresolved || (isCacheEmpty && isRefreshing) || paymentFilter.status === 'loading';
   // SSR and the first client paint have no Dexie snapshot yet. Keep the
   // server-fetched catalog mounted so hydration does not replace it with a
   // skeleton.
-  const sourceItems =
+  const catalogItems =
     isLoading && initialListings.length > 0
       ? initialListings
       : buildMarketplaceCatalogItems(localListings ?? [], catalogEntries ?? []);
+  // An active payment filter keeps only sellers in its set; with no set yet
+  // (loading or unreadable) nothing is claimed to match.
+  const sourceItems =
+    paymentFilter.status === 'off'
+      ? catalogItems
+      : paymentFilter.sellers
+        ? filterBySellerSet(catalogItems, paymentFilter.sellers, (item) => item.sellerId)
+        : [];
   // The facet pool matches every filter EXCEPT the attribute filters, so the
   // facet chips keep offering alternatives to the active value.
   const facetPool = filterMarketplaceCatalog(sourceItems, {
@@ -131,5 +150,6 @@ export function useMarketplaceCatalog(
     shopsBySeller,
     isLoading,
     adapterMode,
+    paymentFilter: { method: paymentMethod, ...paymentFilter },
   };
 }

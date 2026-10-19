@@ -44,6 +44,43 @@ describe('MarketplaceFilters', () => {
     expect(screen.getByTestId('card')).toHaveClass('flex-wrap');
   });
 
+  it('hides the payment filter when the deployment offers no payment options', () => {
+    render(<MarketplaceFilters resultCount={8} />);
+    expect(screen.queryByRole('combobox', { name: 'Payment method' })).not.toBeInTheDocument();
+  });
+
+  it('filters by an offered payment method and clears with the other filters', async () => {
+    const user = userEvent.setup();
+    render(<MarketplaceFilters resultCount={8} paymentMethodOptions={['bitcoin', 'usdt', 'paypal']} />);
+
+    const trigger = screen.getByRole('combobox', { name: 'Payment method' });
+    expect(trigger).toHaveTextContent('Any payment');
+    await user.click(trigger);
+    expect(screen.getAllByRole('option').map((option) => option.textContent)).toEqual([
+      'Any payment',
+      'Bitcoin',
+      'USDT',
+      'PayPal',
+    ]);
+    await user.click(screen.getByRole('option', { name: 'PayPal' }));
+    expect(useCommerceStore.getState().paymentMethod).toBe('paypal');
+
+    await user.click(screen.getByRole('button', { name: 'Reset search and filters' }));
+    expect(useCommerceStore.getState().paymentMethod).toBeNull();
+  });
+
+  it('keeps an active payment method listed after the deployment stops offering it, so it can be cleared', async () => {
+    const user = userEvent.setup();
+    useCommerceStore.getState().setPaymentMethod('usdt');
+    render(<MarketplaceFilters resultCount={0} paymentMethodOptions={['bitcoin', 'paypal']} />);
+
+    const trigger = screen.getByRole('combobox', { name: 'Payment method' });
+    expect(trigger).toHaveTextContent('USDT');
+    await user.click(trigger);
+    await user.click(screen.getByRole('option', { name: 'Any payment' }));
+    expect(useCommerceStore.getState().paymentMethod).toBeNull();
+  });
+
   it('updates layout and display currency through compact selectors', async () => {
     const user = userEvent.setup();
     render(<MarketplaceFilters resultCount={8} />);
@@ -55,6 +92,51 @@ describe('MarketplaceFilters', () => {
     await user.click(screen.getByRole('combobox', { name: 'Display currency: US dollars' }));
     await user.click(screen.getByRole('option', { name: 'Bitcoin' }));
     expect(useMarketplaceDisplayStore.getState().displayCurrency).toBe('BTC');
+  });
+
+  it('starts on the currency the browser language suggests when the buyer has not chosen', () => {
+    vi.spyOn(window.navigator, 'languages', 'get').mockReturnValue(['de-CH', 'de']);
+    useMarketplaceDisplayStore.setState({ displayCurrency: null });
+
+    render(<MarketplaceFilters resultCount={8} />);
+
+    expect(screen.getByRole('combobox', { name: 'Display currency: Swiss francs' })).toHaveTextContent('CHF');
+    vi.restoreAllMocks();
+  });
+
+  it('keeps an explicit choice over the browser language', () => {
+    vi.spyOn(window.navigator, 'languages', 'get').mockReturnValue(['de-CH']);
+    useMarketplaceDisplayStore.setState({ displayCurrency: 'USD' });
+
+    render(<MarketplaceFilters resultCount={8} />);
+
+    expect(screen.getByRole('combobox', { name: 'Display currency: US dollars' })).toBeInTheDocument();
+    vi.restoreAllMocks();
+  });
+
+  it('offers every listing currency as a display currency and shows the chosen code', async () => {
+    const user = userEvent.setup();
+    render(<MarketplaceFilters resultCount={8} />);
+
+    await user.click(screen.getByRole('combobox', { name: 'Display currency: US dollars' }));
+    for (const name of [
+      'US dollars',
+      'Euros',
+      'Swiss francs',
+      'British pounds',
+      'Japanese yen',
+      'Canadian dollars',
+      'Australian dollars',
+      'Bitcoin',
+    ]) {
+      expect(screen.getByRole('option', { name })).toBeInTheDocument();
+    }
+    expect(screen.getAllByRole('option')).toHaveLength(8);
+
+    await user.click(screen.getByRole('option', { name: 'Japanese yen' }));
+
+    expect(useMarketplaceDisplayStore.getState().displayCurrency).toBe('JPY');
+    expect(screen.getByRole('combobox', { name: 'Display currency: Japanese yen' })).toHaveTextContent('JPY');
   });
 
   it('clears active discovery filters without changing layout', async () => {

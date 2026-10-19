@@ -16,12 +16,21 @@ import { httpResponseToError, safeFetch } from '@/libs/error/error.http';
 import { ErrorService } from '@/libs/error/error.types';
 import { isAppError, isRetryable } from '@/libs/error/error.utils';
 import { Logger } from '@/libs/logger/logger';
-import { getMarketplaceGrantFlowEnabled } from '@/libs/runtime-config/runtime-config';
+import {
+  getMarketplaceGrantFlowEnabled,
+  getMarketplaceGrantSessionEnabled,
+} from '@/libs/runtime-config/runtime-config';
 import { sleep } from '@/libs/utils/utils';
 import { HomeserverService } from '@/services/homeserver/homeserver';
-import { clearMarketplaceBffSession, pairMarketplaceBffSession } from './marketplace-grant-client';
+import {
+  clearMarketplaceBffSession,
+  clearMarketplaceBffSessionConfirmed,
+  pairMarketplaceBffSession,
+} from './marketplace-grant-client';
+import { MarketplaceGrantSessionService } from './marketplace-grant-session';
 import { resetMarketplaceNotificationDiagnostics } from './marketplace-notification-diagnostics';
 import {
+  LEGACY_SHOP_SIGN_IN_GRANT,
   MARKETPLACE_CLAIMABLE_GRANTS,
   MARKETPLACE_PREVIOUS_SESSION_GRANT,
   MARKETPLACE_SESSION_GRANT,
@@ -35,6 +44,7 @@ const MARKETPLACE_RESTORABLE_GRANTS = [
   MARKETPLACE_SESSION_GRANT,
   MARKETPLACE_PREVIOUS_SESSION_GRANT,
   RING_COOKIE_CAPABILITIES,
+  LEGACY_SHOP_SIGN_IN_GRANT,
   CAPABILITIES,
 ] as const;
 
@@ -455,14 +465,17 @@ export class MarketplaceSessionService {
    * stay at rest for this browser, whichever tab persisted it. The only path
    * that removes a record it did not write.
    */
-  static clearForSignOut(): void {
+  static clearForSignOut(options?: { confirmBff?: boolean }): void | Promise<void> {
     const ended = this.session;
     this.session = null;
     resetMarketplaceNotificationDiagnostics();
     this.removePersistedSession();
+    if (ended) this.notifySessionEnded({ reason: 'cleared', issuedAt: ended.issuedAt });
+    if (ended?.sessionId && getMarketplaceGrantSessionEnabled()) {
+      void MarketplaceGrantSessionService.revoke({ token: ended.token, sessionId: ended.sessionId });
+    }
+    if (options?.confirmBff) return clearMarketplaceBffSessionConfirmed();
     if (getMarketplaceGrantFlowEnabled()) void clearMarketplaceBffSession();
-    if (!ended) return;
-    this.notifySessionEnded({ reason: 'cleared', issuedAt: ended.issuedAt });
   }
 
   /**

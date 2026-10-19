@@ -2,9 +2,10 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { Bitcoin, HandCoins, LoaderCircle, ShoppingCart } from 'lucide-react';
+import { HandCoins, LoaderCircle, ShoppingCart, WalletCards } from 'lucide-react';
 import { Controller, useWatch } from 'react-hook-form';
 import { APP_ROUTES, getMarketplaceDropRoute, getMarketplaceListingRoute, MARKETPLACE_ROUTES } from '@/app/routes';
+import { Badge } from '@/atoms/Badge/Badge';
 import { Button } from '@/atoms/Button/Button';
 import { Card, CardContent } from '@/atoms/Card/Card';
 import { Checkbox } from '@/atoms/Checkbox/Checkbox';
@@ -31,9 +32,9 @@ import {
   groupMarketplaceCartItems,
   type MarketplaceCartItem,
   marketplaceCartShippingTotals,
-  priceForCartItem,
   useMarketplaceCart,
 } from '@/hooks/useMarketplaceCart/useMarketplaceCart';
+import { useMarketplaceCartStock } from '@/hooks/useMarketplaceCartStock/useMarketplaceCartStock';
 import { useMarketplaceCheckout } from '@/hooks/useMarketplaceCheckout/useMarketplaceCheckout';
 import { marketplaceCheckoutSchema } from '@/hooks/useMarketplaceCheckout/useMarketplaceCheckout.types';
 import { useMarketplaceFirstMediaUrls } from '@/hooks/useMarketplaceMediaUrl/useMarketplaceMediaUrl';
@@ -41,24 +42,33 @@ import { useMarketplaceOfferCheckout } from '@/hooks/useMarketplaceOfferCheckout
 import { useMarketplaceOffers } from '@/hooks/useMarketplaceOffers/useMarketplaceOffers';
 import { useMarketplaceOrders } from '@/hooks/useMarketplaceOrders/useMarketplaceOrders';
 import { useMarketplaceSellerDeliveryTerms } from '@/hooks/useMarketplaceSellerDeliveryTerms/useMarketplaceSellerDeliveryTerms';
-import { useUsdtPaymentsAvailable } from '@/hooks/useUsdtPaymentsAvailable/useUsdtPaymentsAvailable';
-import { Tether } from '@/icons';
+import { usePaykitOutage } from '@/hooks/usePaykitOutage/usePaykitOutage';
+import { useUsdtPaymentsCapability } from '@/hooks/useUsdtPaymentsCapability/useUsdtPaymentsCapability';
 import { buyerCheckoutProgressCopy } from '@/libs/commerce/bitcoin-buyer-status';
-import { BITCOIN_PAYMENT_CODE_CHECKOUT_NOTE } from '@/libs/commerce/bitcoin-payment-code';
+import { bitcoinPaymentCodeCheckoutNote } from '@/libs/commerce/bitcoin-payment-code';
+import { cartLineStockLabel, SOLD_OUT_COPY } from '@/libs/commerce/cart-stock';
 import {
   getMarketplaceCheckoutRoute,
   intersectPaymentMethods,
   isPendingPaymentState,
-  readCheckoutHashOrderId,
+  readCheckoutOrderId,
 } from '@/libs/commerce/checkout-phase';
 import { DELIVERY_EMAIL_MAX_CHARS, DIGITAL_CHECKOUT_COPY, digitalCheckoutLineLabel } from '@/libs/commerce/digital';
-import {
-  marketplaceOfferCheckoutFailureMessage,
-  marketplacePaymentMethodReasonMessage,
-} from '@/libs/commerce/failure-messages';
+import { marketplaceOfferCheckoutFailureMessage } from '@/libs/commerce/failure-messages';
 import { formatCommerceMoney } from '@/libs/commerce/format';
+import { tracksVariantStock } from '@/libs/commerce/listing-variants';
 import { LOCKS_MIXED_CHECKOUT_COPY, locksCheckoutRoute } from '@/libs/commerce/locks-payment';
+import { PAYKIT_OUTAGE_COPY } from '@/libs/commerce/paykit-rail';
 import {
+  CHECKOUT_SUBMIT_LABEL,
+  observedPaymentRail,
+  paykitPickerLabel,
+  paykitRequirementCopy,
+  sharedPaykitAssets,
+} from '@/libs/commerce/paykit-rail';
+import {
+  BITCOIN_WALLET_FORK_REQUIRED_COPY,
+  BITCOIN_WALLET_FORK_REQUIRED_TITLE,
   BITCOIN_WALLET_UNSUPPORTED_TITLE,
   BITCOIN_WALLET_UNVERIFIED_TITLE,
   bitcoinWalletUnsupportedBody,
@@ -66,11 +76,10 @@ import {
   bitcoinWalletUnverifiedBody,
   bitcoinWalletUnverifiedPayReason,
 } from '@/libs/commerce/paykit-wallet';
-import { availablePaymentMethods, type PaymentMethodKind } from '@/libs/commerce/payment-methods';
-import { formatUsdt } from '@/libs/commerce/payment-options';
+import { availablePaymentMethods, type PaymentMethodKind, sellerPaykitAssets } from '@/libs/commerce/payment-methods';
+import { formatUsdt, type PaymentAsset } from '@/libs/commerce/payment-options';
 import {
-  isUsdPricedTotals,
-  USDT_FINALITY_EXPECTATION_COPY,
+  PAYKIT_USDT_FINALITY_EXPECTATION_COPY,
   USDT_MULTI_SELLER_COPY,
   USDT_NETWORK_LABEL,
   USDT_WALLET_HINT,
@@ -80,15 +89,21 @@ import {
 import { usdtMissingOptionExplanation } from '@/libs/commerce/usdt-missing-option';
 import { navigateTop } from '@/libs/navigation/navigate-top';
 import { getDeployEnv } from '@/libs/runtime-config/runtime-config';
+import { formatDateTime } from '@/libs/utils/dateTime';
 import type { CommerceListingModelSchema } from '@/models/commerce/commerce.schema';
+import { BitkitDownloads } from '@/molecules/BitkitDownloads/BitkitDownloads';
 import { ControlledInputField } from '@/molecules/ControlledInputField/ControlledInputField';
+import { DeliveryKeyBlockedNotice } from '@/molecules/Marketplace/DeliveryKeyBlockedNotice';
+import { MarketplaceCheckoutStatusLabels } from '@/molecules/Marketplace/MarketplaceCheckoutStatusLabels';
 import { MarketplaceCheckoutSteps } from '@/molecules/Marketplace/MarketplaceCheckoutSteps';
-import { MarketplacePaymentStatusBadge } from '@/molecules/Marketplace/MarketplacePaymentStatusBadge';
 import { MarketplaceSellerLink } from '@/molecules/Marketplace/MarketplaceSellerLink';
+import { PaykitOutageNotice } from '@/molecules/Marketplace/PaykitOutageNotice';
 import { MarketplaceAddressFields } from '@/molecules/MarketplaceAddressFields/MarketplaceAddressFields';
 import { SettingsSectionContent } from '@/molecules/Settings/SettingsSectionContent/SettingsSectionContent';
 import { ContentLayout } from '@/organisms/ContentLayout/ContentLayout';
+import { MarketplaceBuyerBitkitConnectDialog } from '@/organisms/Marketplace/MarketplaceBuyerBitkitConnectDialog';
 import { MarketplaceCheckoutItem } from '@/organisms/Marketplace/MarketplaceCheckoutItem';
+import { MarketplaceCheckoutStoreShare } from '@/organisms/Marketplace/MarketplaceCheckoutStoreShare';
 import { MarketplaceDeliveryKeyChangeDialog } from '@/organisms/Marketplace/MarketplaceDeliveryKeyChangeDialog';
 import { MarketplaceDeliveryTerms } from '@/organisms/Marketplace/MarketplaceDeliveryTerms';
 import { MarketplaceIndicativePrice } from '@/organisms/Marketplace/MarketplaceIndicativePrice';
@@ -100,24 +115,28 @@ import { MarketplaceSessionRequiredCard } from '@/organisms/Marketplace/Marketpl
 import { MarketplaceUsdtMissingNote } from '@/organisms/Marketplace/MarketplaceUsdtMissingNote';
 import type { MarketplaceOfferAward } from '@/services/marketplace/marketplace';
 import { useAuthStore } from '@/stores/auth/auth.store';
-import { useCommerceStore } from '@/stores/commerce/commerce.store';
 import { MarketplaceCartSkeleton } from './MarketplaceCart.skeleton';
 
 type AwardPayOutcome = 'expired' | 'converted' | 'error' | 'success' | 'unavailable' | 'session';
 
 const EMPTY_CHECKOUT_ITEMS: MarketplaceCartItem[] = [];
 
-const CHECKOUT_RAILS = ['bitcoin', 'usdt', 'paypal'] as const;
+const CHECKOUT_RAILS = ['paykit', 'paypal'] as const;
 type CheckoutRail = (typeof CHECKOUT_RAILS)[number];
 
-// The sandbox simulates payments and can bind no real rail, so it never offers USDT.
-const SANDBOX_CHECKOUT_RAILS = ['bitcoin', 'paypal'] as const;
+// The sandbox simulates payments and can bind no real rail, so it only ever says Bitcoin.
+const SANDBOX_CHECKOUT_RAILS = ['paykit', 'paypal'] as const;
+const BITCOIN_ONLY_ASSETS: PaymentAsset[] = ['BTC'];
 
-const METHOD_COPY: Record<CheckoutRail, string> = {
-  bitcoin: 'Bitcoin',
-  usdt: 'USDT',
-  paypal: 'PayPal',
-};
+function MethodLabel({ method, paykitAssets }: { method: CheckoutRail; paykitAssets: readonly PaymentAsset[] }) {
+  if (method === 'paypal') return 'PayPal';
+  const label = paykitPickerLabel(paykitAssets);
+  return (
+    <span className="grid min-w-0 text-left leading-tight">
+      <span>{label.assets}</span> <span className="text-sm font-normal opacity-80">{label.wallet}</span>
+    </span>
+  );
+}
 
 function checkoutRails(methods: readonly PaymentMethodKind[]): CheckoutRail[] {
   return CHECKOUT_RAILS.filter((method) => methods.includes(method));
@@ -133,6 +152,8 @@ function MarketplaceCartCheckout() {
   const dropSeller = searchParams.get('seller');
   const dropId = searchParams.get('drop');
   const dropListingId = searchParams.get('listing');
+  const dropVariantId = searchParams.get('variant');
+  const resumeOrderId = readCheckoutOrderId(searchParams);
   const isOfferCheckout = Boolean(offerReference);
   const isDropCheckout = Boolean(dropSeller && dropId && dropListingId);
 
@@ -174,8 +195,15 @@ function MarketplaceCartCheckout() {
         }
         const listing = await CommerceController.getListing(dropSeller, dropListingId);
         if (!active) return;
-        const variant =
-          listing?.record.variants.find((candidate) => candidate.enabled !== false) ?? listing?.record.variants[0];
+        // A listing sold by size is claimed in the size the buyer chose on the drop page; none is picked here.
+        const variant = !listing
+          ? undefined
+          : dropVariantId
+            ? listing.record.variants.find((candidate) => candidate.id === dropVariantId && candidate.enabled !== false)
+            : tracksVariantStock(listing.record.variants)
+              ? undefined
+              : (listing.record.variants.find((candidate) => candidate.enabled !== false) ??
+                listing.record.variants[0]);
         if (!listing || !variant) {
           setDropItem(null);
           setDropLoadState('missing');
@@ -192,7 +220,7 @@ function MarketplaceCartCheckout() {
     return () => {
       active = false;
     };
-  }, [dropSeller, dropListingId]);
+  }, [dropSeller, dropListingId, dropVariantId]);
 
   // An accepted offer settles only through the methods its accepted snapshot
   // published (the service authorizes award checkout from the same
@@ -215,11 +243,18 @@ function MarketplaceCartCheckout() {
     isOfferCheckout || isDropCheckout ? async () => undefined : cart.clear,
     awardFulfillment,
   );
+  const stock = useMarketplaceCartStock(isOfferCheckout || isDropCheckout ? EMPTY_CHECKOUT_ITEMS : checkoutItems);
+  const [payRefusal, setPayRefusal] = useState<string | null>(null);
   const orders = useMarketplaceOrders();
   const adapterMode = getCommerceAdapterMode();
   const isSandbox = adapterMode === 'sandbox';
-  const usdtPaymentsAvailable = useUsdtPaymentsAvailable(!isSandbox);
+  // The picker names its assets from the seller configs read with the USDT answer, so it waits for that answer.
+  const usdtCapability = useUsdtPaymentsCapability(!isSandbox).status;
+  const usdtPaymentsAvailable = usdtCapability === 'available';
+  const usdtCapabilityChecking = !isSandbox && usdtCapability === 'checking';
   const isStaging = getDeployEnv() === 'staging';
+  const isProduction = getDeployEnv() === 'production';
+  const supportsBuyerConnectionGuide = getPaykitServerApi() === 'upstream';
   const formValues = useWatch({ control: checkout.form.control });
   const formValid = marketplaceCheckoutSchema.safeParse(formValues).success;
   const displayGroups = useMemo(() => groupMarketplaceCartItems(checkoutItems), [checkoutItems]);
@@ -263,21 +298,36 @@ function MarketplaceCartCheckout() {
         }, []);
   const sessionExpired = Boolean(checkout.needsSession && checkout.sessionError);
   const approvalNeeded = isDurableCommerceMode(adapterMode) && (!checkout.hasMarketplaceSession || sessionExpired);
-  const [hashOrderId, setHashOrderId] = useState<string | null>(null);
   const [payingOrderIds, setPayingOrderIds] = useState<string[]>([]);
   const [preferredMethod, setSelectedMethod] = useState<CheckoutRail | null>(null);
+  const [buyerConnection, setBuyerConnection] = useState<{ owner: string; open: boolean } | null>(null);
   const [loadedMethods, setLoadedMethods] = useState<{
     sellerKey: string;
     attempt: number;
     methods: PaymentMethodKind[] | null;
+    sharedAssets: PaymentAsset[];
     sellerAcceptsUsdt: Map<string, boolean> | null;
+    paykitUnreachable: boolean;
   } | null>(null);
   const [railAttempt, setRailAttempt] = useState(0);
+  // Re-reads the rails without blanking them: after a refused payment, and while Paykit is down.
+  const [railRefresh, setRailRefresh] = useState(0);
   const [nowMs, setNowMs] = useState(() => Date.now());
   const sellerKey =
     isOfferCheckout && award
       ? award.listing.sellerPubky
       : [...new Set(checkoutItems.map((item) => item.listing.record.ownerPubky))].join('|');
+  // Only a read for this cart's sellers can show an outage or keep the recheck going.
+  const loadedIsCurrent = sellerKey.length > 0 && loadedMethods?.sellerKey === sellerKey;
+  const {
+    refused: paykitRefused,
+    recheck: paykitRecheck,
+    markRefused: markPaykitRefused,
+    settleRead: settlePaykitRead,
+  } = usePaykitOutage(
+    loadedIsCurrent && (loadedMethods?.paykitUnreachable === true || loadedMethods?.methods === null),
+    sellerKey.length > 0,
+  );
   // Rails loaded for an earlier seller set (or before the cart hydrated) are
   // still loading for this one, never "no payment method".
   const loadedForCart =
@@ -290,45 +340,29 @@ function MarketplaceCartCheckout() {
   const isLocksCheckout = locksRoute === 'locks';
   // A failed config read says nothing about the seller's rails; sandbox offers every rail regardless.
   const railsFailed = loadedForCart !== null && loadedForCart.methods === null && !isSandbox && !isLocksCheckout;
-  // After the service refuses a USDT bind for these sellers, USDT is no longer
-  // offered for this browser session: Pay would only be refused again. The
-  // toast already told the buyer why; the picker just stops offering it.
-  const usdtRefusal = useCommerceStore((state) => state.usdtRefusals[sellerKey] ?? null);
-  const loadedMethodsForCart = isLocksCheckout
-    ? (['bitcoin'] satisfies PaymentMethodKind[])
+  const sharedMethods = isLocksCheckout
+    ? (['paykit'] satisfies PaymentMethodKind[])
     : loadedForCart === null
       ? null
       : (loadedForCart.methods ?? []);
-  const sharedMethods =
-    usdtRefusal && loadedMethodsForCart
-      ? loadedMethodsForCart.filter((method) => method !== 'usdt')
-      : loadedMethodsForCart;
-  const usdtRefusedOnly =
-    usdtRefusal !== null &&
-    !isSandbox &&
-    sharedMethods?.length === 0 &&
-    loadedMethodsForCart?.includes('usdt') === true;
-  // USDT is quoted at parity against a USD total, so it is offered only when every total is USD.
-  // An accepted offer without a merchandise total is withheld, so it prices nothing here.
-  const usdtOffered = totalSubtotals.every((money) => money !== undefined) && isUsdPricedTotals(totalSubtotals);
-  const availableCheckoutMethods = checkoutRails(
-    isSandbox ? SANDBOX_CHECKOUT_RAILS : (sharedMethods ?? []).filter((method) => method !== 'usdt' || usdtOffered),
-  );
+  const availableCheckoutMethods = checkoutRails(isSandbox ? SANDBOX_CHECKOUT_RAILS : (sharedMethods ?? []));
+  // Paykit being down must never read as "this seller has no payment method".
+  const paykitOutageForCart =
+    (loadedForCart?.paykitUnreachable === true || paykitRefused) && !isSandbox && !isLocksCheckout;
+  // The one Paykit entry names the assets every seller in the cart accepts; the buyer picks one in Bitkit.
+  const paykitAssets =
+    isSandbox || isLocksCheckout ? BITCOIN_ONLY_ASSETS : (loadedForCart?.sharedAssets ?? BITCOIN_ONLY_ASSETS);
+  const paykitOffersUsdt = paykitAssets.includes('USDT');
   const usdtMissingExplanation = usdtMissingOptionExplanation({
     gateOpen: usdtPaymentsAvailable && !isSandbox && !isLocksCheckout,
-    offered: availableCheckoutMethods.includes('usdt'),
-    refused: usdtRefusal !== null,
+    offered: paykitOffersUsdt,
     sellerAcceptsUsdt: loadedForCart?.sellerAcceptsUsdt ?? null,
-    items: checkoutItems.map((item) => ({
-      title: item.listing.record.title,
-      sellerPubky: item.listing.record.ownerPubky,
-      currency: priceForCartItem(item)?.currency ?? null,
-    })),
   });
   const selectedMethod =
     preferredMethod && availableCheckoutMethods.includes(preferredMethod)
       ? preferredMethod
       : (availableCheckoutMethods[0] ?? null);
+  const paykitBlocksPay = (paykitRefused || paykitOutageForCart) && selectedMethod === 'paykit';
   const isMultiSeller = sellerKey.includes('|');
   const isPaying = isOfferCheckout ? offerPay.isSubmitting : checkout.isPaying;
   const listingRoute = award && getMarketplaceListingRoute(award.listing.sellerPubky, award.listing.listingId);
@@ -337,47 +371,61 @@ function MarketplaceCartCheckout() {
   const backLabel = isDropCheckout ? 'Back to drop' : 'Back to cart';
 
   useEffect(() => {
-    const syncHash = () => setHashOrderId(readCheckoutHashOrderId(window.location.hash));
-    syncHash();
-    window.addEventListener('hashchange', syncHash);
-    return () => window.removeEventListener('hashchange', syncHash);
-  }, []);
-
-  useEffect(() => {
     const sellers = sellerKey.length === 0 ? [] : sellerKey.split('|');
-    if (sellers.length === 0) return;
+    if (sellers.length === 0 || usdtCapabilityChecking) return;
     let active = true;
     void Promise.all(
       sellers.map(async (sellerPubky) => {
         try {
-          return availablePaymentMethods(await CommerceController.getSellerPaymentConfig(sellerPubky), {
-            usdtPaymentsAvailable,
-          });
+          return await CommerceController.getSellerPaymentConfig(sellerPubky);
         } catch {
           return null;
         }
       }),
     ).then((results) => {
       if (!active) return;
-      const sets = results.filter((set): set is PaymentMethodKind[] => set !== null);
-      if (sets.length !== results.length) {
-        setLoadedMethods({ sellerKey, attempt: railAttempt, methods: null, sellerAcceptsUsdt: null });
+      const configs = results.filter((config): config is NonNullable<typeof config> => config !== null);
+      if (configs.length !== results.length) {
+        // A failed read says nothing about Paykit, so the outage it may have been showing carries over.
+        setLoadedMethods((previous) => ({
+          sellerKey,
+          attempt: railAttempt,
+          methods: null,
+          sharedAssets: BITCOIN_ONLY_ASSETS,
+          sellerAcceptsUsdt: null,
+          paykitUnreachable: previous?.sellerKey === sellerKey && previous.paykitUnreachable,
+        }));
         return;
       }
-      const next = intersectPaymentMethods(sets);
+      const options = { usdtPaymentsAvailable };
+      const assetSets = configs.map((config) => sellerPaykitAssets(config, options));
+      const paykitUnreachable = configs.some((config) => config.paykitUnreachable === true);
       setLoadedMethods({
         sellerKey,
         attempt: railAttempt,
-        methods: next,
-        sellerAcceptsUsdt: new Map(sellers.map((sellerPubky, index) => [sellerPubky, sets[index].includes('usdt')])),
+        methods: intersectPaymentMethods(configs.map((config) => availablePaymentMethods(config, options))),
+        sharedAssets: sharedPaykitAssets(assetSets),
+        sellerAcceptsUsdt: new Map(
+          sellers.map((sellerPubky, index) => [sellerPubky, assetSets[index].includes('USDT')]),
+        ),
+        paykitUnreachable,
       });
+      settlePaykitRead(paykitRecheck, !paykitUnreachable);
     });
     return () => {
       active = false;
     };
-  }, [sellerKey, railAttempt, usdtPaymentsAvailable]);
+  }, [
+    sellerKey,
+    railAttempt,
+    railRefresh,
+    paykitRecheck,
+    usdtPaymentsAvailable,
+    usdtCapabilityChecking,
+    settlePaykitRead,
+  ]);
 
-  const targetPayingIds = [...new Set([...payingOrderIds, ...(hashOrderId ? [hashOrderId] : [])])];
+  const targetPayingIds = [...new Set([...payingOrderIds, ...(resumeOrderId ? [resumeOrderId] : [])])];
   const focusedPaying = orders.orders.filter((view) => targetPayingIds.includes(view.order.id));
   const showPaying = targetPayingIds.length > 0;
   const allPaymentsConfirmed =
@@ -394,17 +442,40 @@ function MarketplaceCartCheckout() {
     return () => window.clearInterval(timer);
   }, [showPaying]);
 
-  // A Bitcoin payment request is delivered to the buyer's Paykit wallet;
+  // A Paykit payment request is delivered to the buyer's Paykit wallet;
   // without one, Pay cannot succeed, so it is gated before the attempt.
-  const bitcoinSelected = !isSandbox && isDurableCommerceMode(adapterMode) && selectedMethod === 'bitcoin';
-  const usdtSelected = !isSandbox && selectedMethod === 'usdt';
-  const usdtMillionths = usdtSelected ? usdtParityMillionths(totalSubtotals) : null;
-  const buyerWallet = useBuyerPaykitWallet(currentUserPubky ?? null, bitcoinSelected);
-  const buyerWalletMissing = bitcoinSelected && buyerWallet.state === 'not_payable';
-  const buyerWalletUnsupported = bitcoinSelected && buyerWallet.state === 'unsupported';
-  const buyerWalletUnverified = bitcoinSelected && buyerWallet.state === 'unverified';
-  const buyerWalletChecking = bitcoinSelected && buyerWallet.state === 'checking';
+  const paykitChosen = !isSandbox && selectedMethod === 'paykit';
+  const paykitSelected = paykitChosen && isDurableCommerceMode(adapterMode);
+  // When USDT is the only asset on offer there is no Bitcoin amount to estimate.
+  const hideBitcoinEstimate = paykitChosen && !paykitAssets.includes('BTC');
+  const usdtMillionths = paykitChosen && paykitOffersUsdt ? usdtParityMillionths(totalSubtotals) : null;
+  const buyerConnectionRequested = paykitSelected && buyerConnection?.owner === currentUserPubky;
+  const buyerConnectionOpen =
+    supportsBuyerConnectionGuide && buyerConnectionRequested && Boolean(buyerConnection?.open) && !showPaying;
+  const buyerWallet = useBuyerPaykitWallet(currentUserPubky ?? null, paykitSelected, buyerConnectionOpen);
+  // A failed read during setup must never turn a known missing wallet into permission to pay.
+  const buyerConnectionRequired = buyerConnectionRequested && buyerWallet.state !== 'payable';
+  const buyerWalletMissing = paykitSelected && buyerWallet.state === 'not_payable';
+  const buyerWalletUnsupported = paykitSelected && buyerWallet.state === 'unsupported';
+  const buyerWalletUnverified =
+    paykitSelected &&
+    (buyerWallet.state === 'unverified' || (buyerConnectionRequested && buyerWallet.state === 'unknown'));
+  const buyerWalletChecking = paykitSelected && buyerWallet.state === 'checking';
   const canPayWithPaypal = sharedMethods?.includes('paypal') ?? false;
+
+  useEffect(() => {
+    setBuyerConnection((connection) => {
+      if (!connection || connection.owner !== currentUserPubky) return null;
+      if ((!paykitSelected || showPaying) && connection.open) return { ...connection, open: false };
+      return connection;
+    });
+  }, [paykitSelected, currentUserPubky, showPaying]);
+
+  const checkBuyerConnection = (open: boolean) => {
+    if (!currentUserPubky || !paykitSelected) return;
+    setBuyerConnection({ owner: currentUserPubky, open });
+    buyerWallet.recheck();
+  };
 
   const canPay =
     !approvalNeeded &&
@@ -417,32 +488,46 @@ function MarketplaceCartCheckout() {
     !buyerWalletUnsupported &&
     !buyerWalletUnverified &&
     !buyerWalletChecking &&
+    !buyerConnectionRequired &&
     (!isOfferCheckout || offerEligible) &&
+    !paykitBlocksPay &&
+    !stock.hasSoldOut &&
     (isSandbox || (sharedMethods !== null && sharedMethods.length > 0 && selectedMethod !== null));
 
-  const checkoutPayDisabledReason = checkout.hasFulfillmentConflict
-    ? "Some items can't be checked out together — see the note above."
-    : !checkout.isDigitalReady
-      ? checkout.digitalNotReadyItemIds.length > 0
-        ? DIGITAL_CHECKOUT_COPY.payReasonNotReady
-        : DIGITAL_CHECKOUT_COPY.payReasonLoading
-      : buyerWalletMissing
-        ? 'Connect Bitkit to pay with Bitcoin, or choose another payment method.'
-        : buyerWalletUnsupported
-          ? bitcoinWalletUnsupportedPayReason(canPayWithPaypal)
-          : buyerWalletUnverified
-            ? bitcoinWalletUnverifiedPayReason(canPayWithPaypal)
-            : buyerWalletChecking
-              ? 'Pay unlocks once your Bitcoin wallet is checked.'
-              : railsFailed
-                ? 'Pay unlocks once payment options load.'
-                : usdtRefusedOnly
-                  ? 'Pay unlocks once a payment method is available.'
-                  : sharedMethods && sharedMethods.length === 0 && !isSandbox
-                    ? isMultiSeller
-                      ? 'Choose sellers that share a payment method.'
-                      : 'Pay unlocks once this seller sets up a payment method.'
-                    : 'Fill in delivery details and choose a payment method to pay.';
+  const paymentCodeNote = paykitSelected ? bitcoinPaymentCodeCheckoutNote(getPaykitServerApi()) : null;
+  const checkoutPayDisabledReason = stock.hasSoldOut
+    ? SOLD_OUT_COPY.payBlocked
+    : approvalNeeded
+      ? 'Enable purchases to pay.'
+      : isPaying
+        ? 'Payment is in progress.'
+        : checkout.hasFulfillmentConflict
+          ? "Some items can't be checked out together — see the note above."
+          : !checkout.isDigitalReady
+            ? checkout.digitalNotReadyItemIds.length > 0
+              ? DIGITAL_CHECKOUT_COPY.payReasonNotReady
+              : DIGITAL_CHECKOUT_COPY.payReasonLoading
+            : buyerWalletMissing
+              ? 'A compatible Bitkit wallet is required to pay with Paykit.'
+              : buyerWalletUnsupported
+                ? bitcoinWalletUnsupportedPayReason(canPayWithPaypal)
+                : buyerWalletUnverified
+                  ? bitcoinWalletUnverifiedPayReason(canPayWithPaypal)
+                  : buyerWalletChecking
+                    ? 'Pay unlocks once your Bitkit wallet is checked.'
+                    : railsFailed
+                      ? 'Pay unlocks once payment options load.'
+                      : paykitBlocksPay || (paykitOutageForCart && sharedMethods?.length === 0)
+                        ? PAYKIT_OUTAGE_COPY.title
+                        : sharedMethods && sharedMethods.length === 0 && !isSandbox
+                          ? isMultiSeller
+                            ? 'Choose sellers that share a payment method.'
+                            : 'Pay unlocks once this seller sets up a payment method.'
+                          : buyerConnectionRequired
+                            ? 'Check your Bitkit connection to pay with Paykit.'
+                            : isOfferCheckout && !offerEligible
+                              ? 'This offer is not available for checkout.'
+                              : 'Fill in delivery details and choose a payment method to pay.';
   const payDisabledReason = locksRoute === 'mixed' ? LOCKS_MIXED_CHECKOUT_COPY : checkoutPayDisabledReason;
 
   const removeAwardLine = async () => {
@@ -482,13 +567,14 @@ function MarketplaceCartCheckout() {
       if (result.orderId) {
         setPayingOrderIds([result.orderId]);
         window.history.replaceState(null, '', withBasePath(getMarketplaceCheckoutRoute(result.orderId)));
-        setHashOrderId(result.orderId);
         await orders.refresh();
         return;
       }
       setAwardOutcome('success');
       return;
     }
+    if (result.paykitUnavailable) markPaykitRefused();
+    setRailRefresh((refresh) => refresh + 1);
     if (result.code === 'AWARD_UNAVAILABLE') {
       await removeAwardLine();
       await offers.refresh();
@@ -517,12 +603,18 @@ function MarketplaceCartCheckout() {
     // Sandbox creates its simulated payment with the order; it cannot bind a
     // real rail. A Locks checkout binds none either (`locksCheckoutRoute`).
     const method = isSandbox || isLocksCheckout ? null : selectedMethod;
+    setPayRefusal(null);
     const result = await checkout.pay(method, () => void pay());
-    if (!result.ok) return;
+    if (!result.ok) {
+      if (result.paykitUnavailable) markPaykitRefused();
+      if (result.refusal) setPayRefusal(result.refusal);
+      if (result.soldOut) stock.refresh();
+      setRailRefresh((refresh) => refresh + 1);
+      return;
+    }
     setPayingOrderIds(result.orderIds);
     if (result.orderIds[0]) {
       window.history.replaceState(null, '', withBasePath(getMarketplaceCheckoutRoute(result.orderIds[0])));
-      setHashOrderId(result.orderIds[0]);
     }
     const fiatBound = result.boundOrders.filter((order) => order.fiatCheckoutUrl);
     if (fiatBound.length === 1 && fiatBound[0].fiatCheckoutUrl) {
@@ -544,6 +636,16 @@ function MarketplaceCartCheckout() {
         change={checkout.pendingKeyChange ?? offerPay.pendingKeyChange}
         onDecision={checkout.pendingKeyChange ? checkout.decideKeyChange : offerPay.decideKeyChange}
       />
+      {buyerConnectionOpen && currentUserPubky && (
+        <MarketplaceBuyerBitkitConnectDialog
+          open
+          buyerPubky={currentUserPubky}
+          state={buyerWallet.state}
+          canPayWithPaypal={canPayWithPaypal}
+          onOpenChange={(open) => setBuyerConnection({ owner: currentUserPubky, open })}
+          onRecheck={buyerWallet.recheck}
+        />
+      )}
       <Container
         overrideDefaults
         className="flex w-full flex-col gap-6"
@@ -560,13 +662,13 @@ function MarketplaceCartCheckout() {
               {showPaying
                 ? 'Review your items and payment status.'
                 : isOfferCheckout && offerEligible && award
-                  ? `Checkout window closes ${new Date(award.convertBy).toLocaleString('en-US')}`
+                  ? `Checkout window closes ${formatDateTime(new Date(award.convertBy))}`
                   : `Enter delivery details and choose how to pay.${
                       checkout.orderCount > 1 ? ' Each order requires a separate payment.' : ''
                     }`}
             </Typography>
           </div>
-          <div className="justify-self-end">
+          <div className="w-full justify-self-end md:w-auto">
             <MarketplaceCheckoutSteps
               currentStep={showPaying || awardOutcome === 'success' ? 3 : 2}
               completed={allPaymentsConfirmed}
@@ -608,22 +710,15 @@ function MarketplaceCartCheckout() {
               focusedPaying.map(({ order, payment }) => (
                 <Card className="rounded-md p-0" key={order.id}>
                   <CardContent className="grid min-w-0 gap-4 p-6">
-                    <MarketplaceOrderReference
-                      order={order}
-                      isBuyer
-                      status={
-                        payment?.state === 'confirmed' && order.paymentMethod !== 'usdt' ? (
-                          <MarketplacePaymentStatusBadge order={order} payment={payment} />
-                        ) : undefined
-                      }
-                    />
+                    <MarketplaceOrderReference order={order} isBuyer />
+                    <MarketplaceCheckoutStatusLabels order={order} payment={payment} isSandbox={isSandbox} />
                     {order.lines.map((line, index) => (
                       <MarketplaceCheckoutItem
                         key={`${line.listingAggregateId}:${line.variantId ?? index}`}
                         line={line}
                       />
                     ))}
-                    {(payment?.state !== 'confirmed' || order.paymentMethod === 'usdt') && (
+                    {(payment?.state !== 'confirmed' || observedPaymentRail(order) === 'usdt') && (
                       <MarketplacePaymentStatusCard
                         order={order}
                         payment={payment}
@@ -632,8 +727,10 @@ function MarketplaceCartCheckout() {
                         advancePayment={orders.advancePayment}
                         onPaymentChanged={orders.refresh}
                         showStagingNotice={false}
+                        showStatusLabels={false}
                         checkoutActions={
-                          order.state === 'pending_payment' && order.paymentMethod === 'paypal' ? (
+                          order.state === 'pending_payment' &&
+                          (order.paymentMethod === 'paypal' || order.paykitDeliveryState === 'failed') ? (
                             <MarketplaceOrderActions
                               order={order}
                               isBuyer
@@ -691,6 +788,16 @@ function MarketplaceCartCheckout() {
         ) : (
           <div className="grid gap-6 lg:grid-cols-[1fr_420px]">
             <div className="flex flex-col gap-6 lg:col-start-1 lg:row-start-1">
+              {availableCheckoutMethods.includes('paykit') && (
+                <Typography
+                  as="p"
+                  size="sm"
+                  className="text-muted-foreground lg:hidden"
+                  data-testid="marketplace-checkout-bitkit-notice"
+                >
+                  {paykitRequirementCopy(paykitAssets)}
+                </Typography>
+              )}
               {isOfferCheckout && award ? <MarketplaceAwardTerms award={award} /> : null}
               {fulfillmentGroups.map((group) => {
                 const fulfillmentOptions = checkout.fulfillmentOptionsForSeller(group.sellerPubky);
@@ -780,6 +887,7 @@ function MarketplaceCartCheckout() {
                       );
                       const coverUrl = checkoutMediaUrls[checkoutItems.findIndex(({ id }) => id === item.id)] ?? null;
                       const variantLabel = variant ? Object.values(variant.options).filter(Boolean).join(' · ') : '';
+                      const lineStock = stock.stockFor(item.id);
                       return (
                         <Card key={item.id} className="rounded-md p-0">
                           <CardContent className="flex flex-wrap items-center gap-4 p-6">
@@ -814,10 +922,19 @@ function MarketplaceCartCheckout() {
                               {price && (
                                 <Typography as="p" className="mt-1 font-bold text-brand">
                                   {formatCommerceMoney(price)}{' '}
-                                  {!usdtSelected && (
+                                  {!hideBitcoinEstimate && (
                                     <MarketplaceIndicativePrice money={price} className="font-normal" />
                                   )}
                                 </Typography>
+                              )}
+                              {lineStock && (
+                                <Badge
+                                  variant="outline"
+                                  className="mt-2 border-destructive/50 text-destructive"
+                                  data-testid="marketplace-checkout-line-sold-out"
+                                >
+                                  {cartLineStockLabel(lineStock)}
+                                </Badge>
                               )}
                               {checkout.fulfillmentForItem(item.id) === 'digital' && (
                                 <Typography
@@ -896,7 +1013,16 @@ function MarketplaceCartCheckout() {
                       </div>
                     )}
                     <ControlledInputField name="name" control={checkout.form.control} label="Full name" />
-                    <MarketplaceAddressFields control={checkout.form.control} setValue={checkout.form.setValue} />
+                    <MarketplaceAddressFields
+                      control={checkout.form.control}
+                      setValue={checkout.form.setValue}
+                      allowedCountries={checkout.allowedDestinationCountries}
+                    />
+                    <MarketplaceCheckoutStoreShare
+                      stores={checkout.storeShare.stores}
+                      chosen={checkout.storeShare.chosen}
+                      onChange={checkout.storeShare.setShare}
+                    />
                     <div className="grid gap-4">
                       <Typography as="p" className="text-sm text-muted-foreground">
                         {MARKETPLACE_DELIVERY_ADDRESS_DISCLOSURE}
@@ -972,7 +1098,7 @@ function MarketplaceCartCheckout() {
                                 className="flex flex-col items-end font-bold"
                               >
                                 {formatCommerceMoney(subtotal)}
-                                {!usdtSelected && (
+                                {!hideBitcoinEstimate && (
                                   <MarketplaceIndicativePrice money={subtotal} className="font-normal" />
                                 )}
                               </Typography>
@@ -983,7 +1109,7 @@ function MarketplaceCartCheckout() {
                         <div className="grid gap-1">
                           <div className="flex justify-between">
                             <Typography as="span" className="text-foreground">
-                              Shipping
+                              {allDigital ? 'Delivery' : 'Shipping'}
                             </Typography>
                             {shippingTotals.length > 0 && (
                               <div className="flex flex-col items-end">
@@ -994,7 +1120,7 @@ function MarketplaceCartCheckout() {
                                     className="flex flex-col items-end font-bold"
                                   >
                                     {formatCommerceMoney(subtotal)}
-                                    {!usdtSelected && (
+                                    {!hideBitcoinEstimate && (
                                       <MarketplaceIndicativePrice money={subtotal} className="font-normal" />
                                     )}
                                   </Typography>
@@ -1030,7 +1156,7 @@ function MarketplaceCartCheckout() {
                                 className="flex flex-col items-end font-bold"
                               >
                                 {formatCommerceMoney(subtotal)}
-                                {!usdtSelected && (
+                                {!hideBitcoinEstimate && (
                                   <MarketplaceIndicativePrice money={subtotal} className="font-normal" />
                                 )}
                               </Typography>
@@ -1049,7 +1175,7 @@ function MarketplaceCartCheckout() {
                     <Heading level={2} size="sm" className="text-xl font-semibold">
                       Payment method
                     </Heading>
-                    <SettingsSectionContent>
+                    <SettingsSectionContent className="gap-6">
                       {railsFailed ? (
                         <div role="alert" className="flex flex-wrap items-center gap-3">
                           <Typography as="p" className="text-sm text-muted-foreground">
@@ -1068,13 +1194,13 @@ function MarketplaceCartCheckout() {
                         </div>
                       ) : sharedMethods === null ? (
                         <Skeleton className="h-11 w-full" aria-label="Loading payment methods" />
+                      ) : paykitOutageForCart && sharedMethods.length === 0 ? (
+                        <PaykitOutageNotice audience="buyer" surface="checkout-paykit-outage" />
                       ) : sharedMethods.length === 0 && !isSandbox ? (
                         <Typography as="p" role="alert" className="text-sm text-muted-foreground">
-                          {usdtRefusedOnly && usdtRefusal
-                            ? marketplacePaymentMethodReasonMessage(usdtRefusal, 'usdt')
-                            : isMultiSeller
-                              ? 'These sellers do not share a payment method, so Pay stays disabled. Remove a seller in the cart or ask them to add a shared rail.'
-                              : "This seller hasn't set up a payment method this cart can use, so Pay stays disabled. Message the seller to ask them to add one."}
+                          {isMultiSeller
+                            ? 'These sellers do not share a payment method, so Pay stays disabled. Remove a seller in the cart or ask them to add a shared rail.'
+                            : "This seller hasn't set up a payment method this cart can use, so Pay stays disabled. Message the seller to ask them to add one."}
                         </Typography>
                       ) : (
                         <div className="grid grid-cols-2 gap-3" role="group" aria-label="Payment method">
@@ -1083,38 +1209,41 @@ function MarketplaceCartCheckout() {
                               key={method}
                               type="button"
                               variant={selectedMethod === method ? 'default' : 'secondary'}
-                              className="h-20 w-full gap-3 rounded-md px-4 text-base"
+                              className="h-20 w-full gap-3 rounded-md px-4 text-base whitespace-normal"
                               aria-pressed={selectedMethod === method}
                               data-testid={`marketplace-checkout-method-${method}`}
                               onClick={() => setSelectedMethod(method)}
                             >
-                              {method === 'bitcoin' && <Bitcoin className="size-6" aria-hidden="true" />}
-                              {method === 'usdt' && <Tether className="size-6" aria-hidden="true" />}
-                              {method === 'paypal' && <HandCoins className="size-6" aria-hidden="true" />}
-                              {METHOD_COPY[method]}
+                              {method === 'paykit' && <WalletCards className="size-6 shrink-0" aria-hidden="true" />}
+                              {method === 'paypal' && <HandCoins className="size-6 shrink-0" aria-hidden="true" />}
+                              <MethodLabel method={method} paykitAssets={paykitAssets} />
                             </Button>
                           ))}
                         </div>
                       )}
-                      {usdtMissingExplanation && <MarketplaceUsdtMissingNote explanation={usdtMissingExplanation} />}
-                      {bitcoinSelected && (
-                        <Typography
-                          as="p"
-                          className="text-xs text-muted-foreground"
-                          data-testid="marketplace-checkout-bitcoin-amount-note"
-                        >
-                          {BITCOIN_PAYMENT_CODE_CHECKOUT_NOTE}
+                      {paykitOutageForCart && sharedMethods !== null && sharedMethods.length > 0 && (
+                        <Typography as="p" aria-live="polite" className="text-sm text-muted-foreground">
+                          {PAYKIT_OUTAGE_COPY.title} {PAYKIT_OUTAGE_COPY.buyerOthers}
                         </Typography>
                       )}
-                      {usdtMillionths !== null && (
-                        <div className="grid gap-1" data-testid="marketplace-checkout-usdt-amount-note">
-                          <Typography
-                            as="p"
-                            className="text-sm font-medium"
-                            data-testid="marketplace-checkout-usdt-amount"
-                          >
-                            {formatUsdt(usdtMillionths)} · {USDT_NETWORK_LABEL} · pay with Bitkit
-                          </Typography>
+                      {paykitChosen && (
+                        <Typography
+                          as="p"
+                          size="sm"
+                          className="text-muted-foreground"
+                          data-testid="marketplace-checkout-paykit-requirement"
+                        >
+                          {paykitRequirementCopy(paykitAssets)}
+                        </Typography>
+                      )}
+                      {usdtMissingExplanation && <MarketplaceUsdtMissingNote explanation={usdtMissingExplanation} />}
+                      {paykitChosen && paykitOffersUsdt && (
+                        <div className="grid gap-1" data-testid="marketplace-checkout-paykit-note">
+                          {usdtMillionths !== null && (
+                            <Typography as="p" className="text-sm" data-testid="marketplace-checkout-usdt-amount">
+                              {formatUsdt(usdtMillionths)} · {USDT_NETWORK_LABEL} if you pay in USDT
+                            </Typography>
+                          )}
                           <Typography as="p" className="text-xs text-muted-foreground">
                             {USDT_WALLET_HINT}
                           </Typography>
@@ -1124,7 +1253,7 @@ function MarketplaceCartCheckout() {
                               className="text-xs text-muted-foreground"
                               data-testid="marketplace-checkout-usdt-finality-note"
                             >
-                              {USDT_FINALITY_EXPECTATION_COPY}
+                              {PAYKIT_USDT_FINALITY_EXPECTATION_COPY}
                             </Typography>
                           )}
                           {isMultiSeller && (
@@ -1140,34 +1269,47 @@ function MarketplaceCartCheckout() {
                       )}
                       {buyerWalletChecking && (
                         <Typography as="p" aria-live="polite" className="text-xs text-muted-foreground">
-                          Checking your Bitcoin wallet…
+                          Checking your Bitkit wallet…
                         </Typography>
                       )}
                       {buyerWalletMissing && (
                         <div
                           role="alert"
-                          className="grid gap-2 rounded-md border bg-card/60 p-6"
+                          className="grid gap-4 rounded-md border bg-card/60 p-6"
                           data-testid="marketplace-checkout-bitkit-required"
                         >
                           <Typography as="p" className="text-sm font-medium">
-                            Connect Bitkit to pay with Bitcoin
+                            {supportsBuyerConnectionGuide
+                              ? 'Connect Bitkit to pay with Paykit'
+                              : BITCOIN_WALLET_FORK_REQUIRED_TITLE}
                           </Typography>
-                          <Typography as="p" className="text-xs text-muted-foreground">
-                            Bitcoin payments arrive in your Paykit wallet as a payment request. This account has no
-                            Paykit wallet that can receive one yet. Connect Bitkit to this Pubky account, then check
-                            again.
-                            {canPayWithPaypal ? ' You can also pay with PayPal.' : ''}
+                          {supportsBuyerConnectionGuide && <BitkitDownloads compact />}
+                          <Typography as="p" className="text-sm text-muted-foreground">
+                            {supportsBuyerConnectionGuide
+                              ? 'Use your marketplace pubky in Bitkit to receive a payment request.'
+                              : BITCOIN_WALLET_FORK_REQUIRED_COPY}
                           </Typography>
-                          <div>
+                          <div className="flex flex-wrap gap-2">
+                            {supportsBuyerConnectionGuide && (
+                              <Button
+                                type="button"
+                                size="sm"
+                                data-testid="marketplace-checkout-bitkit-connect"
+                                disabled={!currentUserPubky}
+                                onClick={() => checkBuyerConnection(true)}
+                              >
+                                Connect Bitkit
+                              </Button>
+                            )}
                             <Button
                               type="button"
                               size="sm"
                               variant="secondary"
                               className="rounded-full"
                               data-testid="marketplace-checkout-bitkit-recheck"
-                              onClick={buyerWallet.recheck}
+                              onClick={() => checkBuyerConnection(false)}
                             >
-                              Check again
+                              Check connection
                             </Button>
                           </div>
                         </div>
@@ -1207,36 +1349,23 @@ function MarketplaceCartCheckout() {
                               data-testid="marketplace-checkout-bitkit-unverified-recheck"
                               onClick={buyerWallet.recheck}
                             >
-                              Check again
+                              Check connection
                             </Button>
                           </div>
                         </div>
                       )}
-                      <div className="grid gap-3" data-testid="marketplace-checkout-payment-notice-group">
-                        {allPickup && (
-                          <div className="rounded-md bg-card/60 p-6">
+                      {allPickup && (
+                        <div className="grid gap-3" data-testid="marketplace-checkout-payment-notice-group">
+                          <div className="grid gap-1">
                             <Typography as="p" className="text-sm font-medium">
                               Local pickup
                             </Typography>
-                            <Typography as="p" className="mt-1 text-xs text-muted-foreground">
-                              No delivery address is needed — every item here is collected in person. The seller&apos;s
-                              meeting point is revealed as soon as your payment confirms.
+                            <Typography as="p" className="text-xs text-muted-foreground">
+                              No delivery address needed. Pickup location is shared once payment is confirmed.
                             </Typography>
                           </div>
-                        )}
-                        <Typography
-                          as="p"
-                          size="xs"
-                          className="text-muted-foreground"
-                          data-testid="marketplace-checkout-payment-notice"
-                        >
-                          {isSandbox
-                            ? 'Sandbox checkout: no real funds move.'
-                            : isLocksPaykitCommerceMode(adapterMode)
-                              ? 'Payment goes directly to the seller. This marketplace never holds funds.'
-                              : 'No payment rails are live in this deployment, so no real funds move. This marketplace never holds funds.'}
-                        </Typography>
-                      </div>
+                        </div>
+                      )}
                       {checkout.hasInstantDigitalLine && (
                         <Typography
                           as="p"
@@ -1255,12 +1384,32 @@ function MarketplaceCartCheckout() {
                           {DIGITAL_CHECKOUT_COPY.consentManual}
                         </Typography>
                       )}
+                      <DeliveryKeyBlockedNotice block={checkout.deliveryKeyBlock ?? offerPay.deliveryKeyBlock} />
+                      {paymentCodeNote && (
+                        <Typography
+                          as="p"
+                          className="text-xs text-muted-foreground"
+                          data-testid="bitcoin-payment-code-note"
+                        >
+                          {paymentCodeNote}
+                        </Typography>
+                      )}
+                      {payRefusal && (
+                        <Typography
+                          as="p"
+                          role="alert"
+                          className="rounded-md border border-destructive/40 px-4 py-3 text-sm"
+                          data-testid="marketplace-checkout-pay-refusal"
+                        >
+                          {payRefusal}
+                        </Typography>
+                      )}
                       <Button
                         className="w-full rounded-full"
                         onClick={() => void pay()}
                         disabled={!canPay}
                         data-testid="marketplace-checkout-pay"
-                        aria-describedby={!canPay && !approvalNeeded ? 'checkout-pay-reason' : undefined}
+                        aria-describedby={!canPay ? 'checkout-pay-reason' : undefined}
                       >
                         {isPaying ? (
                           <>
@@ -1269,16 +1418,25 @@ function MarketplaceCartCheckout() {
                           </>
                         ) : isSandbox ? (
                           'Pay sandbox'
+                        ) : selectedMethod ? (
+                          CHECKOUT_SUBMIT_LABEL[selectedMethod]
                         ) : (
                           'Pay'
                         )}
                       </Button>
-                      {!isStaging && !isSandbox && (
-                        <Typography as="p" className="text-xs text-muted-foreground">
-                          Paid directly to the seller.
+                      {isProduction && !isSandbox && (
+                        <Typography
+                          as="p"
+                          size="xs"
+                          className="text-muted-foreground"
+                          data-testid="marketplace-checkout-payment-notice"
+                        >
+                          {isLocksPaykitCommerceMode(adapterMode)
+                            ? 'Payment goes directly to the seller. This marketplace never holds funds.'
+                            : 'No payment rails are live in this deployment, so no real funds move. This marketplace never holds funds.'}
                         </Typography>
                       )}
-                      {!canPay && !approvalNeeded && (
+                      {!canPay && (
                         <Typography id="checkout-pay-reason" as="p" className="text-xs text-muted-foreground">
                           {payDisabledReason}
                         </Typography>

@@ -31,6 +31,8 @@ const listing = {
   record: {
     ownerPubky: BUYER,
     listingId: 'boots',
+    revision: 1,
+    shippingOptions: [],
     title: 'Vintage boots',
     media: [],
     variants: [{ id: 'variant_42', options: { size: '42' }, quantity: 3 }],
@@ -138,6 +140,11 @@ vi.mock('@/hooks/useMarketplaceOfferCheckout/useMarketplaceOfferCheckout', () =>
 
 vi.mock('@/hooks/useMarketplaceSellerDeliveryTerms/useMarketplaceSellerDeliveryTerms', () => ({
   useMarketplaceSellerDeliveryTerms: () => ({ isLoading: false, entries: [] }),
+}));
+
+vi.mock('@/hooks/useMarketplaceSellerShipsTo/useMarketplaceSellerShipsTo', () => ({
+  useMarketplaceSellerShipsTo: () => ({ status: 'ready', countries: null, restrictingSellers: 0 }),
+  checkDestinationCountry: async () => null,
 }));
 
 vi.mock('@/hooks/useMarketplaceCartCount/useMarketplaceCartCount', () => ({

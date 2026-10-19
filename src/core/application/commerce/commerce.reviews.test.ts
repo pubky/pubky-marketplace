@@ -1,9 +1,6 @@
 import crypto from 'node:crypto';
 import { listingUriBuilder } from 'pubky-app-specs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { AppError } from '@/libs/error/error';
-import { ClientErrorCode } from '@/libs/error/error.codes';
-import { ErrorCategory, ErrorService } from '@/libs/error/error.types';
 import type { CommerceReviewModelSchema } from '@/models/commerce/commerce.schema';
 import { CommerceHomeserverService } from '@/services/homeserver/commerce/commerce';
 import { LocalCommerceService } from '@/services/local/commerce/commerce';
@@ -244,7 +241,9 @@ describe('CommerceApplication own-review hydrate after local miss', () => {
   it('hydrates the homeserver record when the local row is gone', async () => {
     const { iss, order, published } = await publishedOwnReview();
     vi.spyOn(LocalCommerceService, 'getOwnReviewByOrder').mockResolvedValue(undefined);
-    const fetch = vi.spyOn(CommerceHomeserverService, 'fetchJson').mockResolvedValue(published.record);
+    const fetch = vi
+      .spyOn(CommerceHomeserverService, 'fetchJsonIfFound')
+      .mockResolvedValue({ found: true, json: published.record });
     const upsert = vi.spyOn(LocalCommerceService, 'upsertOwnReview').mockResolvedValue(undefined);
     upsert.mockClear();
 
@@ -267,25 +266,16 @@ describe('CommerceApplication own-review hydrate after local miss', () => {
   it('does not fetch the homeserver when the local row is present', async () => {
     const { order, published } = await publishedOwnReview();
     vi.spyOn(LocalCommerceService, 'getOwnReviewByOrder').mockResolvedValue(published);
-    const fetch = vi.spyOn(CommerceHomeserverService, 'fetchJson');
+    const fetch = vi.spyOn(CommerceHomeserverService, 'fetchJsonIfFound');
 
     await expect(CommerceApplication.getOwnMarketplaceReview(ORDER_FIXTURE_BUYER, order)).resolves.toBe(published);
     expect(fetch).not.toHaveBeenCalled();
   });
 
-  it('stays unresolved on a homeserver 404 instead of claiming unpublished', async () => {
+  it('stays unresolved on a missing homeserver record instead of claiming unpublished', async () => {
     const { order } = await publishedOwnReview();
     vi.spyOn(LocalCommerceService, 'getOwnReviewByOrder').mockResolvedValue(undefined);
-    vi.spyOn(CommerceHomeserverService, 'fetchJson').mockRejectedValue(
-      new AppError({
-        category: ErrorCategory.Client,
-        code: ClientErrorCode.NOT_FOUND,
-        message: 'HTTP 404',
-        service: ErrorService.Homeserver,
-        operation: 'fetchJson',
-        context: { statusCode: 404 },
-      }),
-    );
+    vi.spyOn(CommerceHomeserverService, 'fetchJsonIfFound').mockResolvedValue({ found: false });
     const upsert = vi.spyOn(LocalCommerceService, 'upsertOwnReview');
     upsert.mockClear();
 
@@ -296,16 +286,7 @@ describe('CommerceApplication own-review hydrate after local miss', () => {
   it('does not re-GET a 404 on remount in the same session', async () => {
     const { order } = await publishedOwnReview();
     vi.spyOn(LocalCommerceService, 'getOwnReviewByOrder').mockResolvedValue(undefined);
-    const fetch = vi.spyOn(CommerceHomeserverService, 'fetchJson').mockRejectedValue(
-      new AppError({
-        category: ErrorCategory.Client,
-        code: ClientErrorCode.NOT_FOUND,
-        message: 'HTTP 404',
-        service: ErrorService.Homeserver,
-        operation: 'fetchJson',
-        context: { statusCode: 404 },
-      }),
-    );
+    const fetch = vi.spyOn(CommerceHomeserverService, 'fetchJsonIfFound').mockResolvedValue({ found: false });
 
     await expect(CommerceApplication.getOwnMarketplaceReview(ORDER_FIXTURE_BUYER, order)).resolves.toBeNull();
     await expect(CommerceApplication.getOwnMarketplaceReview(ORDER_FIXTURE_BUYER, order)).resolves.toBeNull();
@@ -315,9 +296,9 @@ describe('CommerceApplication own-review hydrate after local miss', () => {
   it('does not upsert when the live identity differs from the hydrate actor', async () => {
     const { order, published } = await publishedOwnReview();
     vi.spyOn(LocalCommerceService, 'getOwnReviewByOrder').mockResolvedValue(undefined);
-    vi.spyOn(CommerceHomeserverService, 'fetchJson').mockImplementation(async () => {
+    vi.spyOn(CommerceHomeserverService, 'fetchJsonIfFound').mockImplementation(async () => {
       useAuthStore.getState().setCurrentUserPubky(FOREIGN_PUBKY);
-      return published.record;
+      return { found: true, json: published.record };
     });
     const upsert = vi.spyOn(LocalCommerceService, 'upsertOwnReview');
     upsert.mockClear();
@@ -335,7 +316,10 @@ describe('CommerceApplication own-review hydrate after local miss', () => {
   ])('stays waiting when the homeserver record %s does not match', async (_field, patch) => {
     const { order, published } = await publishedOwnReview();
     vi.spyOn(LocalCommerceService, 'getOwnReviewByOrder').mockResolvedValue(undefined);
-    vi.spyOn(CommerceHomeserverService, 'fetchJson').mockResolvedValue({ ...published.record, ...patch });
+    vi.spyOn(CommerceHomeserverService, 'fetchJsonIfFound').mockResolvedValue({
+      found: true,
+      json: { ...published.record, ...patch },
+    });
     const upsert = vi.spyOn(LocalCommerceService, 'upsertOwnReview');
     upsert.mockClear();
 

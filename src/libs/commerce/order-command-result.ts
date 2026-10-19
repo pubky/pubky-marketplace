@@ -73,10 +73,11 @@ export function orderShowsCommandResult(
     case 'order.cancel_approve':
       return order.state === 'cancelled';
     case 'fulfillment.ship':
+    case 'fulfillment.update_tracking':
       return (
         order.shipment != null &&
         order.shipment.carrier === text(payload.carrier) &&
-        order.shipment.trackingNumber === text(payload.trackingNumber)
+        order.shipment.trackingNumber === (text(payload.trackingNumber) ?? '')
       );
     case 'fulfillment.confirm_delivery':
       return order.shipment?.state === 'delivered' || DELIVERED_OR_LATER.has(order.state);
