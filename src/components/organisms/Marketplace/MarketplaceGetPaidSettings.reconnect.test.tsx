@@ -120,6 +120,9 @@ describe('MarketplaceGetPaidSettings Bitkit reconnect (upstream Paykit)', () => 
     expect(new URL(iframe.src).searchParams.get('creator')).toBe(PUBKY);
     expect(mocked.getPaykitSetupUrl).not.toHaveBeenCalled();
     expect(screen.getByText(/Paykit already has a Bitkit setup for this pubky/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/new Bitcoin account, which can cancel a buyer's pending Bitcoin request/),
+    ).toBeInTheDocument();
 
     sendCallback(iframe);
     await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Reconnect Bitkit' })).not.toBeInTheDocument());

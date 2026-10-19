@@ -82,7 +82,8 @@ export function MarketplaceUsdtSellerSetup({
           {readiness === 'reconnect' && (
             <>
               <Typography as="p" className="text-sm text-muted-foreground">
-                Your Bitkit account stays the same. Reconnect to share a USDT address.
+                Reconnect to share a USDT address. Bitkit also gives Paykit a new Bitcoin account, which can cancel a
+                buyer&apos;s pending Bitcoin request that has not been accepted yet.
               </Typography>
               <Button variant="secondary" className="w-fit" disabled={!canOpenBitkit} onClick={onReconnect}>
                 Add USDT in Bitkit

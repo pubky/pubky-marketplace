@@ -250,6 +250,8 @@ describe('MarketplaceGetPaidSettings USDT', () => {
       expect(within(panel).getByRole('button', { name: /Add USDT in Bitkit/ })).toBeEnabled();
       expect(screen.queryByRole('button', { name: /Set up Bitkit payments/ })).not.toBeInTheDocument();
       expect(screen.getByTestId('payment-method-status-usdt')).toHaveTextContent('Not set up');
+      expect(panel).toHaveTextContent(/can cancel a buyer's pending Bitcoin request that has not been accepted yet/);
+      expect(panel).not.toHaveTextContent(/stays the same/);
     });
 
     it('names Pubky Ring as unable to share a USDT address only for a seller who signed in with Ring', async () => {
@@ -457,7 +459,12 @@ describe('MarketplaceGetPaidSettings USDT', () => {
       expect(url.searchParams.get('state')).toHaveLength(22);
       expect(url.hash).toBe('#embed');
       expect(screen.getByRole('heading', { name: 'Add USDT in Bitkit' })).toBeInTheDocument();
-      expect(screen.getByText(/Your Bitkit account and Bitcoin setup stay the same/)).toBeInTheDocument();
+      const dialog = within(screen.getByRole('dialog', { name: 'Add USDT in Bitkit' }));
+      expect(dialog.getByText(/Bitkit also gives Paykit a new Bitcoin account/)).toBeInTheDocument();
+      expect(
+        dialog.getByText(/can cancel a buyer's pending Bitcoin request that has not been accepted yet/),
+      ).toBeInTheDocument();
+      expect(screen.queryByText(/stay the same/)).not.toBeInTheDocument();
       expect(screen.getByText(/tap Continue with Bitkit, to share a USDT address/)).toBeInTheDocument();
     });
 

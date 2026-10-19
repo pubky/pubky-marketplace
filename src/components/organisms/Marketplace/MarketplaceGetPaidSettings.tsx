@@ -94,9 +94,9 @@ const UNSAVED_SELLER_PAYMENT_CONFIG: SellerPaymentConfigOwnView = {
 };
 const PAYPAL_EMAIL_INVALID_COPY = 'Enter a valid email address.';
 const PAYKIT_RECONNECT_EXPLANATION =
-  'Scan the code with Bitkit, or open this page on your phone and tap Continue with Bitkit, to share a USDT address. Your Bitkit account and Bitcoin setup stay the same.';
+  "Scan the code with Bitkit, or open this page on your phone and tap Continue with Bitkit, to share a USDT address. Bitkit also gives Paykit a new Bitcoin account, which can cancel a buyer's pending Bitcoin request that has not been accepted yet.";
 const PAYKIT_BITCOIN_RECONNECT_EXPLANATION =
-  'Paykit already has a Bitkit setup for this pubky. Approve it again in Bitkit to reconnect; your Bitkit account and Bitcoin addresses stay the same.';
+  "Paykit already has a Bitkit setup for this pubky. Approve it again in Bitkit to reconnect. Bitkit gives Paykit a new Bitcoin account, which can cancel a buyer's pending Bitcoin request that has not been accepted yet.";
 /** Upstream `/setup` refuses an account Paykit already holds (for example one set up for Locks); reconnect re-approves it. */
 const PAYKIT_SETUP_FAILED_COPY =
   'Bitkit setup failed. If this pubky already has a Paykit setup, for example from Locks or another Shop, reconnect it instead.';
