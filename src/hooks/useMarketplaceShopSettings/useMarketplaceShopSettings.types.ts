@@ -59,6 +59,9 @@ export const marketplaceShopSettingsSchema = z.object({
     ),
   // Ticked to re-confirm a private seller's status (plan C4); stamps `sellerStatusConfirmedAt`.
   confirmPrivateStatus: z.boolean(),
+  // True when the seller confirms their own Bitcoin payments (plan B4); published as
+  // `bitcoinConfirmation: "seller"`, and absent when off.
+  confirmBitcoinPayments: z.boolean(),
 });
 
 export type MarketplaceShopSettingsData = z.infer<typeof marketplaceShopSettingsSchema>;
@@ -76,4 +79,5 @@ export const marketplaceShopSettingsDefaults: MarketplaceShopSettingsData = {
   autoCompleteDays: '',
   sellerStatus: '',
   confirmPrivateStatus: false,
+  confirmBitcoinPayments: false,
 };

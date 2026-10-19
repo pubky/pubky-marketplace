@@ -550,5 +550,41 @@ describe('useMarketplaceShopSettings', () => {
       expect(sellerStatusConfirmedAtToPublish({ ...base, previousStatus: 'trader' })).toBe(now);
       expect(sellerStatusConfirmedAtToPublish({ ...base, status: 'trader' })).toBeUndefined();
     });
+  it('publishes the seller-confirms-Bitcoin option as bitcoinConfirmation and hydrates it back', async () => {
+    vi.mocked(CommerceController.refreshShop).mockResolvedValue(publishedShop);
+    const { result } = renderHook(() => useMarketplaceShopSettings());
+    await waitFor(() => expect(result.current.hasShop).toBe(true));
+    expect(result.current.form.getValues('confirmBitcoinPayments')).toBe(false);
+
+    act(() => result.current.form.setValue('confirmBitcoinPayments', true));
+    await act(() => result.current.submit());
+    expect(CommerceController.commitUpsertShop).toHaveBeenLastCalledWith(
+      expect.objectContaining({ bitcoinConfirmation: 'seller' }),
+    );
+
+    vi.mocked(CommerceController.refreshShop).mockResolvedValue({ ...publishedShop, bitcoinConfirmation: 'seller' });
+    const reloaded = renderHook(() => useMarketplaceShopSettings());
+    await waitFor(() => expect(reloaded.result.current.hasShop).toBe(true));
+    expect(reloaded.result.current.form.getValues('confirmBitcoinPayments')).toBe(true);
+  });
+
+  it('publishes the option absent when it is switched off, restoring the default', async () => {
+    vi.mocked(CommerceController.refreshShop).mockResolvedValue({ ...publishedShop, bitcoinConfirmation: 'seller' });
+    const { result } = renderHook(() => useMarketplaceShopSettings());
+    await waitFor(() => expect(result.current.hasShop).toBe(true));
+    act(() => result.current.form.setValue('confirmBitcoinPayments', false));
+    await act(() => result.current.submit());
+    const published = vi.mocked(CommerceController.commitUpsertShop).mock.calls.at(-1)?.[0] as CommerceShopRecord;
+    expect(published.bitcoinConfirmation).toBeUndefined();
+  });
+
+  it('reads an unrecognised bitcoinConfirmation value as the default', async () => {
+    vi.mocked(CommerceController.refreshShop).mockResolvedValue({
+      ...publishedShop,
+      bitcoinConfirmation: 'paykit',
+    } as unknown as CommerceShopRecord);
+    const { result } = renderHook(() => useMarketplaceShopSettings());
+    await waitFor(() => expect(result.current.hasShop).toBe(true));
+    expect(result.current.form.getValues('confirmBitcoinPayments')).toBe(false);
   });
 });
