@@ -82,6 +82,29 @@ describe('useRegionAvailability', () => {
     expect(run({ shop: null }).result.current.refusal).toBeNull();
   });
 
+  it('lets the buyer correct a remembered country that is the reason for a refusal, and no other', async () => {
+    flags(true, false);
+    useBuyerCountryStore.setState({ country: 'DE' });
+    const refused = run({ shop: { sellerStatus: 'trader' } });
+    await waitFor(() => expect(refused.result.current.canChangeCountry).toBe(true));
+
+    useBuyerCountryStore.setState({ country: 'US' });
+    const allowed = run({ shop: { sellerStatus: 'trader' } });
+    expect(allowed.result.current.canChangeCountry).toBe(false);
+
+    useBuyerCountryStore.setState({ country: null });
+    expect(run({ shop: { sellerStatus: 'trader' } }).result.current.canChangeCountry).toBe(false);
+  });
+
+  it('does not offer a country change when the seller is at the annual limit', async () => {
+    flags(true, false);
+    useBuyerCountryStore.setState({ country: 'DE' });
+    vi.mocked(CommerceController.getSellerAnnualLimit).mockResolvedValue({ enabled: true, limitReached: true });
+    const { result } = run({ shop: { sellerStatus: 'private' } });
+    await waitFor(() => expect(result.current.refusal).toBe(SELLER_LIMIT_MESSAGE));
+    expect(result.current.canChangeCountry).toBe(false);
+  });
+
   it('refuses everyone for a seller at the annual limit', async () => {
     flags(true, false);
     useBuyerCountryStore.setState({ country: 'US' });

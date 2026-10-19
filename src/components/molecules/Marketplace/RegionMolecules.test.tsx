@@ -1,7 +1,9 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { BUYER_COUNTRY_PROMPT, PRIVATE_SELLER_NOTICE, ROLE_STATEMENT } from '@/libs/commerce/eu-region';
+import type { RegionAvailability } from '@/hooks/useRegionAvailability/useRegionAvailability';
 import { BuyerCountryField } from './BuyerCountryField';
+import { RegionAvailabilityNotice } from './RegionAvailabilityNotice';
 import { SellerAnnualLimitNotice } from './SellerAnnualLimitNotice';
 import { SellerSaleTerms } from './SellerSaleTerms';
 import { SellerStatusBadge } from './SellerStatusBadge';
@@ -98,5 +100,54 @@ describe('SellerAnnualLimitNotice', () => {
       <SellerAnnualLimitNotice limit={{ enabled: true, residentInEu: false, limitReached: false }} />,
     );
     expect(container).toBeEmptyDOMElement();
+  });
+});
+
+describe('RegionAvailabilityNotice', () => {
+  const base: RegionAvailability = {
+    enabled: true,
+    buyerCountry: null,
+    setBuyerCountry: vi.fn(),
+    needsCountry: false,
+    refusal: null,
+    canChangeCountry: false,
+    digitalNote: null,
+  };
+
+  it('renders nothing when there is nothing to say', () => {
+    const { container } = render(<RegionAvailabilityNotice region={base} testIdPrefix="x" />);
+    expect(container).toBeEmptyDOMElement();
+  });
+
+  it('asks for the country when it is needed', () => {
+    render(<RegionAvailabilityNotice region={{ ...base, needsCountry: true }} testIdPrefix="x" />);
+    expect(screen.getByLabelText(BUYER_COUNTRY_PROMPT)).toHaveValue('');
+  });
+
+  it('shows the refusal with the remembered country open to correction', () => {
+    render(
+      <RegionAvailabilityNotice
+        region={{ ...base, buyerCountry: 'DE', refusal: 'Not available to buyers in the EU', canChangeCountry: true }}
+        testIdPrefix="x"
+      />,
+    );
+    expect(screen.getByTestId('x-region-refusal')).toHaveTextContent('Not available to buyers in the EU');
+    expect(screen.getByLabelText(BUYER_COUNTRY_PROMPT)).toHaveValue('DE');
+  });
+
+  it('shows a refusal that no country can fix without a country field', () => {
+    render(
+      <RegionAvailabilityNotice
+        region={{ ...base, buyerCountry: 'US', refusal: 'Not taking orders' }}
+        testIdPrefix="x"
+      />,
+    );
+    expect(screen.getByTestId('x-region-refusal')).toBeInTheDocument();
+    expect(screen.queryByLabelText(BUYER_COUNTRY_PROMPT)).not.toBeInTheDocument();
+  });
+
+  it('shows the digital note when nothing refuses', () => {
+    render(<RegionAvailabilityNotice region={{ ...base, digitalNote: 'Digital note' }} testIdPrefix="x" />);
+    expect(screen.getByTestId('x-digital-region-note')).toHaveTextContent('Digital note');
   });
 });

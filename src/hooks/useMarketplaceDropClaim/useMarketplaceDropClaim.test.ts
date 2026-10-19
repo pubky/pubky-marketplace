@@ -1,10 +1,14 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import { DELIVERY_KEY_COPY } from '@/libs/commerce/delivery-key-copy';
+import { DIGITAL_REGION_MESSAGE, EU_UNAVAILABLE_MESSAGE, SELLER_LIMIT_MESSAGE } from '@/libs/commerce/eu-region';
 import { AppError } from '@/libs/error/error';
 import { ClientErrorCode } from '@/libs/error/error.codes';
 import { ErrorCategory, ErrorService } from '@/libs/error/error.types';
+import { resetRuntimeConfigForTests } from '@/libs/runtime-config/runtime-config';
+import { PUBKY_RUNTIME_ENV_NAMES } from '@/libs/runtime-config/runtime-config.schema';
+import { useBuyerCountryStore } from '@/stores/buyer-country/buyer-country.store';
 import { useMarketplaceDropClaim } from './useMarketplaceDropClaim';
 
 const SELLER = 's'.repeat(52);
@@ -70,9 +74,24 @@ const savedAddress = {
   updated_at: 100,
 };
 
+function regionFlags(fence: boolean, digital: boolean) {
+  delete process.env[PUBKY_RUNTIME_ENV_NAMES.euFenceEnabled];
+  delete process.env[PUBKY_RUNTIME_ENV_NAMES.digitalRegionBlockEnabled];
+  if (fence) process.env[PUBKY_RUNTIME_ENV_NAMES.euFenceEnabled] = 'true';
+  if (digital) process.env[PUBKY_RUNTIME_ENV_NAMES.digitalRegionBlockEnabled] = 'true';
+  resetRuntimeConfigForTests();
+}
+
 describe('useMarketplaceDropClaim', () => {
+  afterEach(() => {
+    regionFlags(false, false);
+    useBuyerCountryStore.setState({ country: null });
+  });
+
   beforeEach(() => {
     vi.clearAllMocks();
+    regionFlags(false, false);
+    useBuyerCountryStore.setState({ country: null });
     shopShipsTo.clear();
     config.mode = 'transaction-service';
     vi.spyOn(globalThis.crypto, 'randomUUID').mockReturnValue('00000000-0000-4000-8000-000000002200');
@@ -305,6 +324,66 @@ describe('useMarketplaceDropClaim', () => {
       });
       expect(result.current.failure).toBe(expected);
     }
+  });
+
+  describe('with the regional rules on', () => {
+    const sentPayload = () =>
+      (vi.mocked(CommerceController.executeMarketplaceCommand).mock.calls[0][0] as { payload: Record<string, unknown> })
+        .payload;
+
+    it('sends the claim address country as the buyer country even when the device remembers none', async () => {
+      regionFlags(true, false);
+      const { result } = renderHook(() => useMarketplaceDropClaim());
+      await waitFor(() => expect(result.current.claimAddress).not.toBeNull());
+
+      await act(async () => {
+        await result.current.claim(SELLER, 'listing1', 1);
+      });
+
+      expect(sentPayload()).toMatchObject({ buyerCountry: 'US' });
+      expect(result.current.failure).toBeNull();
+    });
+
+    it('sends the claim address country on the digital hold flag alone', async () => {
+      regionFlags(false, true);
+      const { result } = renderHook(() => useMarketplaceDropClaim());
+      await waitFor(() => expect(result.current.claimAddress).not.toBeNull());
+
+      await act(async () => {
+        await result.current.claim(SELLER, 'listing1', 1);
+      });
+
+      expect(sentPayload()).toMatchObject({ buyerCountry: 'US' });
+    });
+
+    it('sends no buyer country with both flags off', async () => {
+      const { result } = renderHook(() => useMarketplaceDropClaim());
+      await waitFor(() => expect(result.current.claimAddress).not.toBeNull());
+
+      await act(async () => {
+        await result.current.claim(SELLER, 'listing1', 1);
+      });
+
+      expect(sentPayload()).not.toHaveProperty('buyerCountry');
+    });
+
+    it('says why the service refused, not the generic claim failure', async () => {
+      regionFlags(true, true);
+      for (const [error, expected] of [
+        [{ code: 'SELLER_UNAVAILABLE_IN_REGION', message: 'x' }, EU_UNAVAILABLE_MESSAGE],
+        [{ code: 'SELLER_ANNUAL_LIMIT_REACHED', message: 'x' }, SELLER_LIMIT_MESSAGE],
+        [{ code: 'DIGITAL_UNAVAILABLE_IN_REGION', message: 'x', reason: 'eu_buyer' }, `${DIGITAL_REGION_MESSAGE}.`],
+      ] as const) {
+        vi.mocked(CommerceController.executeMarketplaceCommand).mockResolvedValueOnce({ ok: false, error } as never);
+        const { result } = renderHook(() => useMarketplaceDropClaim());
+        await waitFor(() => expect(result.current.claimAddress).not.toBeNull());
+
+        await act(async () => {
+          await result.current.claim(SELLER, 'listing1', 1);
+        });
+        expect(result.current.failure).toBe(expected);
+      }
+    });
   });
 
   it('uses refusal fallback for an unknown service refusal', async () => {

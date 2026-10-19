@@ -62,13 +62,16 @@ export function MarketplaceDrop({ sellerPubky, dropId }: MarketplaceDropProps) {
   const claim = useMarketplaceDropClaim(drop.refresh);
   const shopFollow = useCommerceShopFollow(sellerPubky);
   const [shopName, setShopName] = useState<string | null>(null);
+  const [shopRecord, setShopRecord] = useState<{ sellerStatus?: string } | null>(null);
   const teaserUrl = useMarketplaceFirstMediaUrl(drop.record?.media ?? []);
 
   useEffect(() => {
     let active = true;
     CommerceController.getOrFetchShop(sellerPubky)
       .then((shop) => {
-        if (active) setShopName(shop.name);
+        if (!active) return;
+        setShopName(shop.name);
+        setShopRecord(shop);
       })
       .catch(() => {
         // No shop record: the page renders the bare seller key instead.
@@ -237,6 +240,7 @@ export function MarketplaceDrop({ sellerPubky, dropId }: MarketplaceDropProps) {
             claim={claim}
             remainingAllowance={drop.readyCheck?.remainingAllowance ?? null}
             isOwner={currentUserPubky === sellerPubky}
+            shop={shopRecord}
           />
         </>
       )}

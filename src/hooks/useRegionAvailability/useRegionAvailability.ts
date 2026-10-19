@@ -2,7 +2,13 @@
 
 import { useBuyerCountry } from '@/hooks/useBuyerCountry/useBuyerCountry';
 import { useSellerAnnualLimit } from '@/hooks/useSellerAnnualLimit/useSellerAnnualLimit';
-import { DIGITAL_REGION_MESSAGE, digitalHoldRefusal, fenceRefusal, sellerDeclaration } from '@/libs/commerce/eu-region';
+import {
+  DIGITAL_REGION_MESSAGE,
+  digitalHoldRefusal,
+  fenceRefusal,
+  SELLER_LIMIT_MESSAGE,
+  sellerDeclaration,
+} from '@/libs/commerce/eu-region';
 import { getDigitalRegionBlockEnabled, getEuFenceEnabled } from '@/libs/runtime-config/runtime-config';
 
 export interface RegionAvailability {
@@ -15,6 +21,8 @@ export interface RegionAvailability {
   needsCountry: boolean;
   /** Why this buyer cannot buy here, or null. */
   refusal: string | null;
+  /** The refusal turns on the remembered country, so the buyer may need to correct it. */
+  canChangeCountry: boolean;
   /** The standing digital note on digital-only listings while the digital hold is on. */
   digitalNote: string | null;
 }
@@ -44,12 +52,15 @@ export function useRegionAvailability(input: {
         })
       : null) ?? (digitalHold ? digitalHoldRefusal(buyer.country) : null);
 
+  const shownRefusal = input.isOwner ? null : refusal;
+
   return {
     enabled: buyer.enabled,
     buyerCountry: buyer.country,
     setBuyerCountry: buyer.setCountry,
     needsCountry: (fence || digitalHold) && buyer.country === null,
-    refusal: input.isOwner ? null : refusal,
+    refusal: shownRefusal,
+    canChangeCountry: buyer.country !== null && shownRefusal !== null && shownRefusal !== SELLER_LIMIT_MESSAGE,
     digitalNote: digitalHold ? DIGITAL_REGION_MESSAGE : null,
   };
 }
