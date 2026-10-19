@@ -10,6 +10,7 @@ import { Skeleton } from '@/atoms/Skeleton/Skeleton';
 import { Typography } from '@/atoms/Typography/Typography';
 import { useChatConversations } from '@/hooks/useChatConversations/useChatConversations';
 import { useChatIdentity } from '@/hooks/useChatIdentity/useChatIdentity';
+import { useIsEmbedded } from '@/hooks/useIsEmbedded/useIsEmbedded';
 import { CHAT_COPY } from '@/libs/chat/copy';
 import { ChatConversationRow } from '@/organisms/Chat/ChatConversationRow';
 import { ChatIdentityNotice } from '@/organisms/Chat/ChatIdentityNotice';
@@ -20,6 +21,7 @@ import { useAuthStore } from '@/stores/auth/auth.store';
 export function Chat() {
   const { conversations, isLoading, isSignedIn } = useChatConversations();
   const { identityState, retry } = useChatIdentity();
+  const isEmbedded = useIsEmbedded();
   const setShowSignInDialog = useAuthStore((state) => state.setShowSignInDialog);
 
   return (
@@ -28,7 +30,8 @@ export function Chat() {
       showRightSidebar={false}
       showLeftMobileButton={false}
       showRightMobileButton={false}
-      className="pb-28"
+      // The bottom room is for the standalone FAB; the embedded Shop has none.
+      className={isEmbedded ? 'pb-6' : 'pb-28'}
     >
       <Container overrideDefaults className="mx-auto flex w-full max-w-3xl flex-col gap-6" data-surface="chat-inbox">
         <div className="flex flex-col gap-1">
