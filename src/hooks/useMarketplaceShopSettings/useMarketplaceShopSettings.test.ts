@@ -550,6 +550,8 @@ describe('useMarketplaceShopSettings', () => {
       expect(sellerStatusConfirmedAtToPublish({ ...base, previousStatus: 'trader' })).toBe(now);
       expect(sellerStatusConfirmedAtToPublish({ ...base, status: 'trader' })).toBeUndefined();
     });
+  });
+
   it('publishes the seller-confirms-Bitcoin option as bitcoinConfirmation and hydrates it back', async () => {
     vi.mocked(CommerceController.refreshShop).mockResolvedValue(publishedShop);
     const { result } = renderHook(() => useMarketplaceShopSettings());

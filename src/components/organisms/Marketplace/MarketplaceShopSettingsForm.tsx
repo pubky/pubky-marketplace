@@ -251,8 +251,10 @@ function MarketplaceShopSettingsLoaded({ settings, onSaved }: MarketplaceShopSet
                   />
                 </Label>
                 <Typography as="p" className="mt-1 text-sm text-muted-foreground">
-                  When on, a Bitcoin payment is never marked paid automatically: you confirm each one from the order
-                  once it reaches your wallet, and digital items are released only after you do. Off by default.
+                  When on, a Bitcoin payment made through Paykit is not marked paid automatically: you confirm each one
+                  from the order once it reaches your wallet, and digital items are released only after you do. If you
+                  do not confirm within 24 hours, the payment goes to review. This applies to new orders only. Orders
+                  paid through Locks are not held. Off by default.
                 </Typography>
               </div>
             )}
