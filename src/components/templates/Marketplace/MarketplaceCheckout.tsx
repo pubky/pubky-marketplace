@@ -62,9 +62,12 @@ import { PAYKIT_OUTAGE_COPY } from '@/libs/commerce/paykit-rail';
 import {
   CHECKOUT_SUBMIT_LABEL,
   observedPaymentRail,
+  orderMayPayInUsdt,
   paykitPickerLabel,
   paykitRequirementCopy,
   sharedPaykitAssets,
+  STAGING_USDT_FUNDS_NOTE,
+  unboundOrderMayPayInUsdt,
 } from '@/libs/commerce/paykit-rail';
 import {
   BITCOIN_WALLET_FORK_REQUIRED_COPY,
@@ -353,6 +356,14 @@ function MarketplaceCartCheckout() {
   const paykitAssets =
     isSandbox || isLocksCheckout ? BITCOIN_ONLY_ASSETS : (loadedForCart?.sharedAssets ?? BITCOIN_ONLY_ASSETS);
   const paykitOffersUsdt = paykitAssets.includes('USDT');
+  // Until the rails load, USDT may still be offered: only a known Bitcoin-only checkout says no real funds move.
+  const stagingUsdtPossible =
+    !isSandbox &&
+    !isLocksCheckout &&
+    (usdtCapabilityChecking || usdtPaymentsAvailable) &&
+    (loadedForCart === null || paykitOffersUsdt);
+  // A resumed order without a method shows its own picker; only a closed USDT gate rules USDT out there.
+  const resumeOfferedAssets = usdtCapabilityChecking || usdtPaymentsAvailable ? null : BITCOIN_ONLY_ASSETS;
   const usdtMissingExplanation = usdtMissingOptionExplanation({
     gateOpen: usdtPaymentsAvailable && !isSandbox && !isLocksCheckout,
     offered: paykitOffersUsdt,
@@ -753,7 +764,11 @@ function MarketplaceCartCheckout() {
                 role="note"
                 className="rounded-md border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-200"
               >
-                Staging environment. No real funds move.
+                {focusedPaying.some(
+                  ({ order }) => orderMayPayInUsdt(order) || unboundOrderMayPayInUsdt(order, resumeOfferedAssets),
+                )
+                  ? STAGING_USDT_FUNDS_NOTE
+                  : 'Staging environment. No real funds move.'}
               </Typography>
             )}
           </div>
@@ -1451,7 +1466,7 @@ function MarketplaceCartCheckout() {
                   role="note"
                   className="rounded-md border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-200"
                 >
-                  Staging environment. No real funds move.
+                  {stagingUsdtPossible ? STAGING_USDT_FUNDS_NOTE : 'Staging environment. No real funds move.'}
                 </Typography>
               )}
             </div>

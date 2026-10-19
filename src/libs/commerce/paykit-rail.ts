@@ -93,6 +93,30 @@ export function orderOfferedAssets(order: { acceptedAssets?: readonly PaymentAss
   return assets.length > 0 ? [...assets] : ['BTC'];
 }
 
+/** A Paykit order the buyer may pay, or did pay, in USDT. */
+export function orderMayPayInUsdt(order: RailOrder & { acceptedAssets?: readonly PaymentAsset[] | null }): boolean {
+  if (observedPaymentRail(order) === 'usdt') return true;
+  return isUnobservedPaykitOrder(order) && orderOfferedAssets(order).includes('USDT');
+}
+
+/**
+ * An order with no method bound yet pays on whatever the picker beside it
+ * offers. `offeredAssets` is null until those assets load, when USDT may still
+ * be among them.
+ */
+export function unboundOrderMayPayInUsdt(order: RailOrder, offeredAssets: readonly PaymentAsset[] | null): boolean {
+  if (order.paymentMethod) return false;
+  return offeredAssets === null || offeredAssets.includes('USDT');
+}
+
+/**
+ * Staging runs Bitcoin on regtest, but Bitkit has no test USDT: its USDT is
+ * real USDT0 on Arbitrum One on staging builds too. The staging note claims no
+ * real funds move only when USDT cannot be paid.
+ */
+export const STAGING_USDT_FUNDS_NOTE =
+  'Staging environment. Bitcoin payments use test funds; USDT is real USDT0 on Arbitrum One.';
+
 /** The assets every seller in a cart accepts, Bitcoin first: what one entry can honestly name. */
 export function sharedPaykitAssets(assetSets: readonly (readonly PaymentAsset[])[]): PaymentAsset[] {
   if (assetSets.length === 0) return [];

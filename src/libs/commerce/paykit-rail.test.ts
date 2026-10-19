@@ -18,6 +18,7 @@ import {
   paykitRailStatusFromHealth,
   paykitRetryDelayMs,
   sharedPaykitAssets,
+  unboundOrderMayPayInUsdt,
 } from './paykit-rail';
 
 describe('observedPaymentRail', () => {
@@ -88,6 +89,22 @@ describe('Paykit order predicates', () => {
     expect(followsBitcoinFlow({ paymentMethod: 'paykit', paymentAsset: 'USDT', paykitRequestState: 'detected' })).toBe(
       false,
     );
+  });
+});
+
+describe('unboundOrderMayPayInUsdt', () => {
+  it('follows the assets the picker offers while no method is bound', () => {
+    expect(unboundOrderMayPayInUsdt({ paymentMethod: null }, ['BTC', 'USDT'])).toBe(true);
+    expect(unboundOrderMayPayInUsdt({ paymentMethod: null }, ['BTC'])).toBe(false);
+  });
+
+  it('counts USDT as possible until the offered assets load', () => {
+    expect(unboundOrderMayPayInUsdt({ paymentMethod: null }, null)).toBe(true);
+  });
+
+  it('leaves a bound order to its own assets', () => {
+    expect(unboundOrderMayPayInUsdt({ paymentMethod: 'paykit' }, ['BTC', 'USDT'])).toBe(false);
+    expect(unboundOrderMayPayInUsdt({ paymentMethod: 'paypal' }, null)).toBe(false);
   });
 });
 
