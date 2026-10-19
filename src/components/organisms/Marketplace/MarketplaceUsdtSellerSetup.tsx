@@ -4,7 +4,8 @@ import { CheckCircle2, ExternalLink, RefreshCw } from 'lucide-react';
 import { Button } from '@/atoms/Button/Button';
 import { Switch } from '@/atoms/Switch/Switch';
 import { Typography } from '@/atoms/Typography/Typography';
-import { USDT_NEEDS_BITKIT_COPY, type UsdtSellerReadiness } from '@/libs/commerce/usdt-seller-setup';
+import { type UsdtSellerReadiness, usdtNeedsBitkitCopy } from '@/libs/commerce/usdt-seller-setup';
+import type { GrantSigner } from '@/stores/auth/auth.types';
 
 type MarketplaceUsdtSellerSetupProps = {
   readiness: UsdtSellerReadiness;
@@ -16,12 +17,14 @@ type MarketplaceUsdtSellerSetupProps = {
   isRetrying: boolean;
   /** Bitkit setup needs the signed-in seller; without one the buttons stay disabled. */
   canOpenBitkit: boolean;
+  /** How the seller signed in; the not-ready wording names the signer that cannot share a USDT address. */
+  signer: GrantSigner | null;
 };
 
 /**
  * The seller's "Accept USDT" control and its readiness (docs/ecommerce/usdt-payments.md).
  * Readiness comes only from the service's signed Paykit lookup, never from how
- * the seller signed in. The USDT address itself is never shown: it lives in
+ * the seller signed in; only the explanatory wording follows the sign-in. The USDT address itself is never shown: it lives in
  * Bitkit and paykit-server.
  */
 export function MarketplaceUsdtSellerSetup({
@@ -33,6 +36,7 @@ export function MarketplaceUsdtSellerSetup({
   onRetry,
   isRetrying,
   canOpenBitkit,
+  signer,
 }: MarketplaceUsdtSellerSetupProps) {
   return (
     <div className="grid gap-6" data-testid="usdt-seller-setup">
@@ -62,7 +66,7 @@ export function MarketplaceUsdtSellerSetup({
       ) : (
         <div className="grid justify-items-start gap-3" data-testid={`usdt-readiness-${readiness}`}>
           <Typography as="p" className="text-sm text-muted-foreground">
-            {USDT_NEEDS_BITKIT_COPY}
+            {usdtNeedsBitkitCopy(signer)}
           </Typography>
           {readiness === 'setup' && (
             <>

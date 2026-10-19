@@ -11,9 +11,9 @@ import {
 } from '@/test/fixtures/commerce/seller-payment-config-usdt.wire';
 import {
   deriveUsdtSellerReadiness,
-  USDT_NEEDS_BITKIT_COPY,
   USDT_SETUP_ACTIONS,
   USDT_SETUP_STATUSES,
+  usdtNeedsBitkitCopy,
 } from './usdt-seller-setup';
 
 const envelope = z.object({ paymentConfig: sellerPaymentConfigOwnViewSchema });
@@ -86,7 +86,21 @@ describe('deriveUsdtSellerReadiness', () => {
     expect(deriveUsdtSellerReadiness(input)).toBe(expected);
   });
 
-  it('keeps the fixed Ring copy', () => {
-    expect(USDT_NEEDS_BITKIT_COPY).toBe("USDT needs Bitkit. Pubky Ring can't share a USDT address.");
+  it.each([
+    { signer: 'ring', copy: "USDT needs Bitkit. Pubky Ring can't share a USDT address." },
+    { signer: 'passport', copy: "USDT needs Bitkit. Pubky Passport can't share a USDT address." },
+    { signer: 'bitkit', copy: 'USDT needs a USDT address in Bitkit.' },
+    { signer: 'host', copy: 'USDT needs Bitkit to share a USDT address.' },
+    { signer: 'local-key', copy: 'USDT needs Bitkit to share a USDT address.' },
+    { signer: null, copy: 'USDT needs Bitkit to share a USDT address.' },
+  ] as const)('words the not-ready copy for a $signer sign-in', ({ signer, copy }) => {
+    expect(usdtNeedsBitkitCopy(signer)).toBe(copy);
   });
+
+  it.each(['bitkit', 'host', 'local-key', null] as const)(
+    'never mentions Ring or Passport for a %s sign-in',
+    (signer) => {
+      expect(usdtNeedsBitkitCopy(signer)).not.toMatch(/Ring|Passport/);
+    },
+  );
 });

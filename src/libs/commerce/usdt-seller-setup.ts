@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import type { GrantSigner } from '@/stores/auth/auth.types';
 
 /**
  * Seller USDT readiness: the wire contract the Shop consumes from the
@@ -52,5 +53,21 @@ export function deriveUsdtSellerReadiness(input: {
   return 'unavailable';
 }
 
-/** Shown for every not-ready state (plan section 2.3). */
-export const USDT_NEEDS_BITKIT_COPY = "USDT needs Bitkit. Pubky Ring can't share a USDT address.";
+/**
+ * Shown for every not-ready state (plan section 2.3). The wording follows how
+ * the seller signed in, because USDT is shared from Bitkit whichever signer
+ * approved the session: a Bitkit seller is never told about Ring, and only a
+ * signer that cannot share an address is named as unable to.
+ */
+export function usdtNeedsBitkitCopy(signer: GrantSigner | null): string {
+  switch (signer) {
+    case 'bitkit':
+      return 'USDT needs a USDT address in Bitkit.';
+    case 'ring':
+      return "USDT needs Bitkit. Pubky Ring can't share a USDT address.";
+    case 'passport':
+      return "USDT needs Bitkit. Pubky Passport can't share a USDT address.";
+    default:
+      return 'USDT needs Bitkit to share a USDT address.';
+  }
+}
