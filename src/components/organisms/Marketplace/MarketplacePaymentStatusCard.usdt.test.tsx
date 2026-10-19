@@ -57,7 +57,7 @@ vi.mock('@/hooks/useMarketplaceOrderPayment/useMarketplaceOrderPayment', () => (
 
 vi.mock('@/controllers/commerce/commerce', () => ({
   CommerceController: {
-    getOrFetchListing: vi.fn(async () => ({ digitalLock: null })),
+    getOrFetchListingIfFound: vi.fn(async () => ({ digitalLock: null })),
     executeMarketplaceCommand: vi.fn(async () => ({ ok: true })),
   },
 }));

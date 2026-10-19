@@ -204,8 +204,8 @@ export function MarketplacePaymentStatusCard({
         const parsed = parseListingAggregateId(line.listingAggregateId);
         if (!parsed) continue;
         try {
-          const record = await CommerceController.getOrFetchListing(parsed.sellerPubky, parsed.listingId);
-          if (record.digitalLock) {
+          const record = await CommerceController.getOrFetchListingIfFound(parsed.sellerPubky, parsed.listingId);
+          if (record?.digitalLock) {
             if (active) setDigitalLock(record.digitalLock);
             return;
           }

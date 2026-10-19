@@ -283,6 +283,7 @@ vi.mock('@/controllers/commerce/commerce', () => ({
     fetchUsdtPaymentsAvailable: vi.fn(async () => false),
     getIndicativeBtcRate: vi.fn(async () => null),
     getOrFetchListing: vi.fn(async () => listing.record),
+    getOrFetchListingIfFound: vi.fn(async () => listing.record),
     getListing: vi.fn(async () => listing),
     getCartItems: vi.fn(async () => []),
     getManyListings: vi.fn(async () => new Map()),
@@ -1210,7 +1211,7 @@ describe('MarketplaceCheckout', () => {
       expect(screen.getByRole('link', { name: 'Handmade leather boots' })).toBeInTheDocument();
       expect(screen.getByText('Quantity 1')).toBeInTheDocument();
       expect(screen.getByText('Review your items and payment status.')).toBeInTheDocument();
-      await waitFor(() => expect(CommerceController.getOrFetchListing).toHaveBeenCalled());
+      await waitFor(() => expect(CommerceController.getOrFetchListingIfFound).toHaveBeenCalled());
       // The current listing title differs; the order snapshot must remain visible.
       expect(screen.queryByRole('link', { name: 'Vintage boots' })).not.toBeInTheDocument();
     });

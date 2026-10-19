@@ -3200,6 +3200,23 @@ export class CommerceApplication {
    * degradation, mirroring the catalog's behavior when Nexus is down).
    */
   static async getOrFetchListing(ownerPubky: string, listingId: string): Promise<CommerceListingRecord> {
+    return this.readCachedListing(ownerPubky, listingId, () => this.fetchListing(ownerPubky, listingId));
+  }
+
+  /**
+   * Optional metadata for an existing order: a missing canonical record is not
+   * proof of deletion and is not reported as an error. Do not cache absence,
+   * so later order polls can recover the listing and its digital lock.
+   */
+  static async getOrFetchListingIfFound(ownerPubky: string, listingId: string): Promise<CommerceListingRecord | null> {
+    return this.readCachedListing(ownerPubky, listingId, () => this.fetchListingIfFound(ownerPubky, listingId));
+  }
+
+  private static async readCachedListing<T extends CommerceListingRecord | null>(
+    ownerPubky: string,
+    listingId: string,
+    fetchCanonical: () => Promise<T>,
+  ): Promise<CommerceListingRecord | T> {
     const compositeListingId = `${ownerPubky}:${listingId}`;
     const [local, indexed] = await Promise.all([
       LocalCommerceService.getListing(compositeListingId),
@@ -3208,7 +3225,8 @@ export class CommerceApplication {
     if (local && (!indexed || local.revision >= indexed.revision)) return local.record;
 
     try {
-      const record = await this.fetchListing(ownerPubky, listingId);
+      const record = await fetchCanonical();
+      if (record === null) return local?.record ?? record;
       if (indexed && record.revision < indexed.revision) {
         throw Err.validation(
           ValidationErrorCode.INVALID_INPUT,

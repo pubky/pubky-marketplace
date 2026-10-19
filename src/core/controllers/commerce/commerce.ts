@@ -162,6 +162,13 @@ export class CommerceController {
     return await CommerceApplication.getOrFetchListing(owner, id);
   }
 
+  /** An existing order can outlive its listing; missing optional metadata is returned as null. */
+  static async getOrFetchListingIfFound(ownerPubky: unknown, listingId: unknown) {
+    const owner = CommerceRecordNormalizer.pubky(ownerPubky);
+    const id = CommerceRecordNormalizer.entityId(listingId);
+    return await CommerceApplication.getOrFetchListingIfFound(owner, id);
+  }
+
   static async isListingConfirmedRemoved(ownerPubky: unknown, listingId: unknown, fetchError: unknown) {
     const owner = CommerceRecordNormalizer.pubky(ownerPubky);
     const id = CommerceRecordNormalizer.entityId(listingId);

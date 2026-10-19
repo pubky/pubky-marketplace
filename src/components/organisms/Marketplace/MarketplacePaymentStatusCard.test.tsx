@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import { useAuctionWinnerDeliveryAddress } from '@/hooks/useAuctionWinnerDeliveryAddress/useAuctionWinnerDeliveryAddress';
+import { useMarketplaceLocksPayment } from '@/hooks/useMarketplaceLocksPayment/useMarketplaceLocksPayment';
 import { useMarketplaceOrderPayment } from '@/hooks/useMarketplaceOrderPayment/useMarketplaceOrderPayment';
 import {
   CHECKOUT_HOLD_COPY,
@@ -40,7 +41,7 @@ vi.mock('@/libs/runtime-config/runtime-config', async (importOriginal) => {
 const locksView = vi.hoisted(() => ({ overrides: {} as Record<string, unknown> }));
 
 vi.mock('@/hooks/useMarketplaceLocksPayment/useMarketplaceLocksPayment', () => ({
-  useMarketplaceLocksPayment: () => ({
+  useMarketplaceLocksPayment: vi.fn(() => ({
     enabled: false,
     correlation: null,
     isStarting: false,
@@ -53,7 +54,7 @@ vi.mock('@/hooks/useMarketplaceLocksPayment/useMarketplaceLocksPayment', () => (
     resumePolling: vi.fn(),
     admission: null,
     ...locksView.overrides,
-  }),
+  })),
 }));
 
 vi.mock('@/hooks/useBuyerPaykitWallet/useBuyerPaykitWallet', () => ({
@@ -82,6 +83,7 @@ vi.mock('@/hooks/useMarketplaceOrderPayment/useMarketplaceOrderPayment', () => (
 vi.mock('@/controllers/commerce/commerce', () => ({
   CommerceController: {
     getOrFetchListing: vi.fn(async () => ({ digitalLock: null })),
+    getOrFetchListingIfFound: vi.fn(async () => ({ digitalLock: null })),
     getDeliveryAddresses: vi.fn(async () => []),
     executeMarketplaceCommand: vi.fn(async () => ({ ok: true })),
   },
@@ -567,7 +569,7 @@ describe('MarketplacePaymentStatusCard', () => {
   });
 
   it('offers the Locks payment request on an unbound Locks order, with no method bind', async () => {
-    vi.mocked(CommerceController.getOrFetchListing).mockResolvedValueOnce({
+    vi.mocked(CommerceController.getOrFetchListingIfFound).mockResolvedValueOnce({
       digitalLock: { policyUri: 'pubky://lock', criterionId: 'c', contentPath: 'p', resourceHash: 'h' },
     } as never);
     const payment = createPaymentFixture('awaiting_entitlement', { adapter: 'sandbox' });
@@ -585,6 +587,37 @@ describe('MarketplacePaymentStatusCard', () => {
 
     expect(await screen.findByRole('button', { name: /Request payment in your wallet/ })).toBeInTheDocument();
     expect(vi.mocked(useMarketplaceOrderPayment).mock.calls.at(-1)?.[0]).toMatchObject({ enabled: false });
+  });
+
+  it('recovers Locks metadata when a missing listing becomes available on a later order poll', async () => {
+    const digitalLock = { policyUri: 'pubky://lock', criterionId: 'c', contentPath: 'p', resourceHash: 'h' };
+    vi.mocked(CommerceController.getOrFetchListingIfFound)
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({ digitalLock } as never);
+    const payment = createPaymentFixture('awaiting_entitlement', { adapter: 'sandbox' });
+    const order = createOrderFixture('pending_payment', { paymentId: payment.id, paymentMethod: null });
+    const props = {
+      order,
+      payment,
+      isBuyer: true,
+      adapterMode: 'locks-paykit' as const,
+      advancePayment: async () => false,
+      onPaymentChanged: () => {},
+    };
+    const { rerender } = render(<MarketplacePaymentStatusCard {...props} />);
+
+    await waitFor(() => expect(CommerceController.getOrFetchListingIfFound).toHaveBeenCalledTimes(1));
+    expect(vi.mocked(useMarketplaceLocksPayment).mock.calls.at(-1)?.[0].digitalLock).toBeNull();
+    expect(CommerceController.getOrFetchListing).not.toHaveBeenCalled();
+
+    // Orders polling replaces the lines array even when the order revision is unchanged.
+    rerender(
+      <MarketplacePaymentStatusCard {...props} order={{ ...order, lines: order.lines.map((line) => ({ ...line })) }} />,
+    );
+
+    expect(await screen.findByRole('button', { name: /Request payment in your wallet/ })).toBeInTheDocument();
+    expect(CommerceController.getOrFetchListingIfFound).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(useMarketplaceLocksPayment).mock.calls.at(-1)?.[0].digitalLock).toEqual(digitalLock);
   });
 
   describe('Locks invoice admission (pubky/locks#72)', () => {

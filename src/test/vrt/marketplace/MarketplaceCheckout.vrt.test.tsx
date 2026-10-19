@@ -388,6 +388,7 @@ vi.mock('@/controllers/commerce/commerce', () => ({
     fetchUsdtPaymentsAvailable: vi.fn(async () => view.usdtAvailable),
     getIndicativeBtcRate: vi.fn(async () => null),
     getOrFetchListing: vi.fn(async () => null),
+    getOrFetchListingIfFound: vi.fn(async () => null),
     getConnectorStores: vi.fn(async () => new Map()),
     getPublicListingAvailability: vi.fn(async (sellerPubky: string, listingId: string) => {
       const answer = view.availability.get(`${sellerPubky}:${listingId}`);
