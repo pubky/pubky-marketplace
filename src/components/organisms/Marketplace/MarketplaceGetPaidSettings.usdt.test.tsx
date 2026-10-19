@@ -199,6 +199,23 @@ describe('MarketplaceGetPaidSettings USDT', () => {
   });
 
   describe('readiness states', () => {
+    it('shows no USDT pill while the first read is in flight, then the read answer', async () => {
+      let release: (config: SellerPaymentConfigOwnView) => void = () => {};
+      mocked.getMyPaymentConfig.mockImplementation(
+        () =>
+          new Promise<SellerPaymentConfigOwnView>((resolve) => {
+            release = resolve;
+          }),
+      );
+      render(<MarketplaceGetPaidSettings />);
+
+      await waitFor(() => expect(methodTitles()).toEqual(['PayPal', 'Bitcoin', 'USDT']));
+      expect(screen.queryByTestId('payment-method-status-usdt')).not.toBeInTheDocument();
+
+      await act(async () => release(fromWire(USDT_SELLER_CONFIG_READY_WIRE)));
+      expect(await screen.findByTestId('payment-method-status-usdt')).toHaveTextContent('Connected');
+    });
+
     it('shows USDT ready and lets the seller switch Accept USDT off and on', async () => {
       await renderSettings();
       expect(await screen.findByTestId('usdt-readiness-ready')).toHaveTextContent('USDT ready');
