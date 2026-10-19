@@ -54,6 +54,7 @@ import {
 } from '@/libs/commerce/bitcoin-buyer-status';
 import { bitcoinPaymentCodeCheckoutNote } from '@/libs/commerce/bitcoin-payment-code';
 import {
+  approveInBitkitCopy,
   buyerPayByDeadline,
   CHECKOUT_HOLD_COPY,
   formatOrderInstant,
@@ -97,7 +98,6 @@ import { formatBitcoinAmount } from '@/libs/commerce/pricing';
 import { buildMarketplaceOrderAggregateId } from '@/libs/commerce/transaction-commands';
 import {
   PAYKIT_USDT_FINALITY_EXPECTATION_COPY,
-  USDT_ACCEPT_BY_COPY,
   USDT_BUYER_PHASE_COPY,
   USDT_FINALITY_EXPECTATION_COPY,
   USDT_FUNDS_HINT,
@@ -1110,7 +1110,7 @@ function BuyerPaykitPaymentProgress({
             {paykitAwaitingBody(assets)}
           </Typography>
           <Typography as="p" className="text-xs text-muted-foreground" data-testid="paykit-accept-by">
-            {USDT_ACCEPT_BY_COPY}
+            {approveInBitkitCopy(order)}
           </Typography>
         </div>
       )}
@@ -1142,7 +1142,7 @@ function BuyerUsdtPaymentProgress({
       </Typography>
       {order.paykitDeliveryState !== 'failed' && (
         <Typography as="p" className="text-xs text-muted-foreground" data-testid="usdt-accept-by">
-          {USDT_ACCEPT_BY_COPY}
+          {approveInBitkitCopy(order)}
         </Typography>
       )}
       {order.paykitDeliveryState === 'failed' ? (

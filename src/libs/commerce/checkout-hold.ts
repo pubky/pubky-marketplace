@@ -62,6 +62,19 @@ export function buyerPayByDeadline(order: PayByOrder): string | null {
   return order.holdExpiresAt ?? null;
 }
 
+export const APPROVE_IN_BITKIT_FALLBACK_COPY = 'Approve in Bitkit before the payment window ends.';
+
+/**
+ * How long the buyer has to approve the request in Bitkit: the same deadline
+ * the order's "Pay by" line shows, so the two never disagree. The order carries
+ * no accept-by of its own and no window length is stated, so nothing here can
+ * drift from the service's Paykit window.
+ */
+export function approveInBitkitCopy(order: PayByOrder): string {
+  const deadline = formatOrderInstant(buyerPayByDeadline(order));
+  return deadline ? `Approve in Bitkit by ${deadline}.` : APPROVE_IN_BITKIT_FALLBACK_COPY;
+}
+
 export function holderUnboundCopy(holdExpiresAt: string | null | undefined): string {
   const deadline = formatHoldDeadline(holdExpiresAt);
   return deadline ? `The item is held for you until ${deadline}.` : 'The item is held for you once a payment starts.';

@@ -2258,7 +2258,7 @@ describe('MarketplaceCheckout Paykit option (Bitcoin or USDT)', () => {
     render(<MarketplaceCheckout />);
     await screen.findByTestId('marketplace-checkout-paykit-note');
 
-    expect(screen.queryByText(/accept-by|accept by|Approve in Bitkit within/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/accept-by|accept by|Approve in Bitkit/i)).not.toBeInTheDocument();
   });
 
   it('tells the buyer of a shipped cart that, if they pay in USDT, the seller ships once Arbitrum finalizes it', async () => {

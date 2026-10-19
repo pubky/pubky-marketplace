@@ -30,15 +30,6 @@ export const USDT_FINALITY_EXPECTATION_COPY =
 export const PAYKIT_USDT_FINALITY_EXPECTATION_COPY =
   'If you pay in USDT, the seller ships once Arbitrum finalizes your payment, usually within minutes.';
 
-/**
- * Paykit gives the buyer half the payment window, counted from activation, to
- * approve the request in Bitkit (plan §2.4, D4). The default 1,800 s window
- * makes that 15 minutes; the order carries no accept-by of its own.
- */
-export const USDT_ACCEPT_BY_MINUTES = 15;
-
-export const USDT_ACCEPT_BY_COPY = `Approve in Bitkit within ${USDT_ACCEPT_BY_MINUTES} minutes.`;
-
 /** A multi-seller USDT cart sends one Paykit request per seller. */
 export const USDT_MULTI_SELLER_COPY = "You'll approve one request per seller in Bitkit.";
 
