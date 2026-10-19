@@ -49,14 +49,28 @@ describe('EmbeddedLegalFooter', () => {
     expect(await screen.findByRole('dialog', { name: 'Terms of Service' })).toBeInTheDocument();
   });
 
-  it('puts the complaint address next in the Tab order', async () => {
+  it('opens the Privacy Policy in a dialog inside the frame', async () => {
+    setEmbedded(true);
+    const user = userEvent.setup();
+    render(<EmbeddedLegalFooter />);
+
+    await user.click(screen.getByRole('button', { name: 'Privacy Policy' }));
+
+    expect(await screen.findByRole('dialog', { name: 'Privacy Policy' })).toBeInTheDocument();
+  });
+
+  it('puts the Privacy Policy after the Terms and the complaint address after it in the Tab order', async () => {
     setEmbedded(true);
     const user = userEvent.setup();
     render(<EmbeddedLegalFooter />);
 
     await user.tab();
     await user.tab();
+    const privacy = screen.getByRole('button', { name: 'Privacy Policy' });
+    expect(privacy).toHaveFocus();
+    expect(privacy.tagName).toBe('BUTTON');
 
+    await user.tab();
     expect(screen.getByRole('link', { name: 'report@synonym.to' })).toHaveFocus();
   });
 });
