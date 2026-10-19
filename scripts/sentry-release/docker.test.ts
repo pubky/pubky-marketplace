@@ -38,6 +38,7 @@ process.exit(args.slice(0, 2).join(' ') === process.env.TEST_FAIL_STEP ? 7 : 0);
       `#!${process.execPath}
 const { spawnSync } = require('node:child_process');
 const [command, ...args] = process.argv.slice(2);
+if (command === 'tsx' && process.env.TEST_FAIL_STEP === 'release runner') process.exit(127);
 const child = command === 'tsx'
   ? spawnSync(process.execPath, [${JSON.stringify(join(REPO_ROOT, 'node_modules/tsx/dist/cli.mjs'))}, ...args], { stdio: 'inherit' })
   : command === 'sentry-cli'
@@ -72,21 +73,23 @@ process.exit(child?.status ?? 99);
           .split('\n')
           .map((line) => JSON.parse(line))
       : [];
-    return { status: result.status, output: `${result.stdout}${result.stderr}`, calls };
+    const output = `${result.stdout}${result.stderr}`;
+    expect(output).not.toContain(BUILD_ENV.SENTRY_AUTH_TOKEN);
+    return { status: result.status, output, calls };
   } finally {
     rmSync(fixture, { recursive: true, force: true });
   }
 }
 
 describe('Docker Sentry release and source-map wiring', () => {
-  it('associates the Shop build SHA and uploads maps under the same release, without recording a deploy', () => {
+  it('uploads maps before associating the same Shop build SHA, without recording a deploy', () => {
     const { status, calls } = runDockerSentry();
     expect(status).toBe(0);
     expect(calls).toEqual([
+      ['sourcemaps', 'upload', `--release=${SHA}`, '.next'],
       ['releases', 'new', SHA],
       ['releases', 'set-commits', SHA, '--commit', `pubky/pubky-marketplace@${SHA}`, '--ignore-missing'],
       ['releases', 'finalize', SHA],
-      ['sourcemaps', 'upload', `--release=${SHA}`, '.next'],
     ]);
   });
 
@@ -100,25 +103,34 @@ describe('Docker Sentry release and source-map wiring', () => {
     },
   );
 
-  it('rejects a non-commit release before any Sentry operation', () => {
+  it('preserves uploaded maps and continues the image build when the release is not a commit SHA', () => {
     const { status, calls, output } = runDockerSentry({ NEXT_PUBLIC_APP_VERSION: 'v1.5.0' });
-    expect(status).toBe(1);
-    expect(calls).toEqual([]);
+    expect(status).toBe(0);
+    expect(calls).toEqual([['sourcemaps', 'upload', '--release=v1.5.0', '.next']]);
     expect(output).toContain('not a full commit SHA');
   });
 
   it.each(['releases new', 'releases set-commits', 'releases finalize'])(
-    'fails the image build and does not upload maps when %s fails',
+    'preserves uploaded maps and continues the image build when %s fails',
     (step) => {
-      const { status, calls } = runDockerSentry({}, step);
-      expect(status).toBe(1);
-      expect(calls.some((args) => args[0] === 'sourcemaps')).toBe(false);
+      const { status, calls, output } = runDockerSentry({}, step);
+      expect(status).toBe(0);
+      expect(calls[0]).toEqual(['sourcemaps', 'upload', `--release=${SHA}`, '.next']);
+      expect(calls.some((args) => args.slice(0, 2).join(' ') === step)).toBe(true);
+      expect(output).toContain(`${step} failed:`);
     },
   );
+
+  it('continues with a warning when the release script cannot start after uploading maps', () => {
+    const { status, calls, output } = runDockerSentry({}, 'release runner');
+    expect(status).toBe(0);
+    expect(calls).toEqual([['sourcemaps', 'upload', `--release=${SHA}`, '.next']]);
+    expect(output).toContain('the release script did not run; the image build continues');
+  });
 
   it('preserves a source-map upload failure as a failed image build', () => {
     const { status, calls } = runDockerSentry({}, 'sourcemaps upload');
     expect(status).toBe(7);
-    expect(calls.at(-1)).toEqual(['sourcemaps', 'upload', `--release=${SHA}`, '.next']);
+    expect(calls).toEqual([['sourcemaps', 'upload', `--release=${SHA}`, '.next']]);
   });
 });
