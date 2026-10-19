@@ -16,6 +16,7 @@ import {
   LOCKS_TERMINAL_REASONS,
 } from '@/libs/commerce/locks-lifecycle';
 import { createOrderFixture, createPaymentFixture } from '@/test/fixtures/commerce/orders';
+import { createPaykitOrderFixture } from '@/test/fixtures/commerce/paykit-orders';
 import { setupFixedDateLocale } from '@/test-utils/date-locale';
 import { MarketplacePaymentStatusCard } from './MarketplacePaymentStatusCard';
 
@@ -226,7 +227,7 @@ describe('MarketplacePaymentStatusCard', () => {
     runtime.deployEnv = 'staging';
     render(
       <MarketplacePaymentStatusCard
-        order={createOrderFixture('pending_payment')}
+        order={createOrderFixture('pending_payment', { paymentMethod: 'bitcoin' })}
         payment={createPaymentFixture('awaiting_entitlement')}
         isBuyer
         adapterMode="transaction-service"
@@ -237,6 +238,59 @@ describe('MarketplacePaymentStatusCard', () => {
 
     expect(screen.getByRole('note')).toHaveTextContent('Staging environment — test rails, no real funds move');
     expect(screen.queryByText(/Real money/)).not.toBeInTheDocument();
+  });
+
+  it('says USDT is real on a staging deploy when the order offers USDT', () => {
+    runtime.deployEnv = 'staging';
+    const { order, payment } = createPaykitOrderFixture('unpaid');
+    render(
+      <MarketplacePaymentStatusCard
+        order={order}
+        payment={payment}
+        isBuyer
+        adapterMode="transaction-service"
+        advancePayment={async () => false}
+        onPaymentChanged={() => {}}
+      />,
+    );
+
+    expect(screen.getByRole('note')).toHaveTextContent(
+      'Staging environment. Bitcoin payments use test funds; USDT is real USDT0 on Arbitrum One.',
+    );
+    expect(screen.queryByText(/no real funds move/)).not.toBeInTheDocument();
+  });
+
+  it.each([
+    [['BTC', 'USDT'], 'Staging environment. Bitcoin payments use test funds; USDT is real USDT0 on Arbitrum One.'],
+    [['BTC'], 'Staging environment — test rails, no real funds move'],
+  ] as const)('follows the picker on a staging order with no method bound yet (%j)', (paykitAssets, note) => {
+    runtime.deployEnv = 'staging';
+    vi.mocked(useMarketplaceOrderPayment).mockReturnValue({
+      availableMethods: ['paykit'],
+      paykitAssets: [...paykitAssets],
+      bitcoinOfferUnavailable: false,
+      paykitOutage: false,
+      configError: null,
+      deliveryAddress: null,
+      pendingAction: null,
+      bind: vi.fn(),
+      markPaid: vi.fn(),
+      confirmReceived: vi.fn(),
+    });
+    const { order, payment } = createPaykitOrderFixture('unpaid', { paymentMethod: null, acceptedAssets: null });
+    render(
+      <MarketplacePaymentStatusCard
+        order={order}
+        payment={payment}
+        isBuyer
+        adapterMode="transaction-service"
+        advancePayment={async () => false}
+        onPaymentChanged={() => {}}
+      />,
+    );
+
+    expect(screen.getByTestId('order-payment-method-paykit')).toBeInTheDocument();
+    expect(screen.getByText(note)).toBeInTheDocument();
   });
 
   it('does not show a production money warning when the deploy environment is unknown', () => {

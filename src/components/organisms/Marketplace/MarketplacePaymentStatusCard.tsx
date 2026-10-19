@@ -81,10 +81,13 @@ import {
   isUnobservedPaykitOrder,
   mayPayInBitcoin,
   observedPaymentRail,
+  orderMayPayInUsdt,
   orderOfferedAssets,
   paykitAssetsLabel,
   paykitAwaitingBody,
   paykitAwaitingTitle,
+  STAGING_USDT_FUNDS_NOTE,
+  unboundOrderMayPayInUsdt,
 } from '@/libs/commerce/paykit-rail';
 import {
   BITCOIN_WALLET_FORK_REQUIRED_COPY,
@@ -246,6 +249,11 @@ export function MarketplacePaymentStatusCard({
   });
   const paykitBindOffered =
     usesMethodFlow && isBuyer && !order.paymentMethod && (methodPayment.availableMethods?.includes('paykit') ?? false);
+  // An unbound order pays on the assets its picker offers, not yet on its own.
+  const stagingUsdtPossible =
+    orderMayPayInUsdt(order) ||
+    (usesMethodFlow &&
+      unboundOrderMayPayInUsdt(order, methodPayment.availableMethods === null ? null : methodPayment.paykitAssets));
   const buyerConnectionRequested =
     paykitBindOffered && buyerConnection?.owner === currentUserPubky && buyerConnection?.orderId === order.id;
   const supportsBuyerConnectionGuide = getPaykitServerApi() === 'upstream';
@@ -358,7 +366,7 @@ export function MarketplacePaymentStatusCard({
           role="note"
           className="rounded-md border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-200"
         >
-          Staging environment — test rails, no real funds move
+          {stagingUsdtPossible ? STAGING_USDT_FUNDS_NOTE : 'Staging environment — test rails, no real funds move'}
         </Typography>
       )}
       {paidBitcoin?.sellerConfirmed && !paidBitcoin.onChain && (
