@@ -8,6 +8,7 @@ import {
   asPickupDetailsCommandResult,
   clearDigitalDeliveryCommandSchema,
   clearPickupDetailsCommandSchema,
+  compositeListingIdFromAggregateId,
   confirmPickupCommandSchema,
   confirmRefundDestinationCommandSchema,
   createMarketplaceCheckoutCommandSchema,
@@ -1223,5 +1224,23 @@ describe('buyerCountry on the commands that sell (legal launch plan C2)', () => 
       },
     };
     expect(marketplaceCommandSchema.safeParse(counter).success).toBe(false);
+  });
+});
+
+describe('compositeListingIdFromAggregateId', () => {
+  const seller = 'y'.repeat(52);
+
+  it('maps a listing aggregate id to the catalog composite id', () => {
+    expect(compositeListingIdFromAggregateId(`listing:${seller}_boots_01`)).toBe(`${seller}:boots_01`);
+  });
+
+  it.each([
+    ['another aggregate kind', `drop:${seller}_boots`],
+    ['a short seller key', 'listing:short_boots'],
+    ['a missing separator', `listing:${seller}boots`],
+    ['no listing id', `listing:${seller}_`],
+    ['an empty string', ''],
+  ])('returns null for %s', (_name, aggregateId) => {
+    expect(compositeListingIdFromAggregateId(aggregateId)).toBeNull();
   });
 });

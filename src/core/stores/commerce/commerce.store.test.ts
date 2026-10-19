@@ -129,6 +129,20 @@ describe('useCommerceStore', () => {
     expect(useCommerceStore.getState().sellerPaymentBadges).toEqual({});
   });
 
+  it('counts listing card refreshes per listing, keeps them across a filter reset and clears them on reset', () => {
+    const store = useCommerceStore.getState();
+    store.refreshListingCards(['a:boots', 'a:hat']);
+    store.refreshListingCards(['a:boots']);
+    store.refreshListingCards([]);
+    expect(useCommerceStore.getState().listingCardRefresh).toEqual({ 'a:boots': 2, 'a:hat': 1 });
+
+    store.resetFilters();
+    expect(useCommerceStore.getState().listingCardRefresh['a:boots']).toBe(2);
+
+    store.reset();
+    expect(useCommerceStore.getState().listingCardRefresh).toEqual({});
+  });
+
   it('resets the payment filter with the other filters but keeps the remembered seller sets until reset', () => {
     const store = useCommerceStore.getState();
     store.setPaymentMethod('paypal');

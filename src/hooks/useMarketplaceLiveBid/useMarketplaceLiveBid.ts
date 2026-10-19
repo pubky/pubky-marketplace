@@ -6,6 +6,7 @@ import { CommerceController } from '@/controllers/commerce/commerce';
 import { useViewportObserver } from '@/hooks/useViewportObserver/useViewportObserver';
 import { projectionReadsSoldOut } from '@/libs/commerce/listing-variants';
 import type { CommerceMoney } from '@/libs/commerce/transaction-contracts';
+import { useCommerceStore } from '@/stores/commerce/commerce.store';
 
 export interface MarketplaceLiveBid {
   currentPrice: CommerceMoney;
@@ -32,10 +33,16 @@ export interface UseMarketplaceLiveBidResult {
  * Cost model: the durable service exposes only per-listing reads
  * (`GET /v1/listings/{aggregate_id}`, no batch endpoint), so an eager fetch
  * per grid row would issue N requests on every catalog render. Instead the
- * card registers an IntersectionObserver via `ref` and fetches ONCE when it
- * first scrolls into view (200px pre-fetch margin), so off-screen cards cost
- * nothing. The value is a point-in-time read, not a live subscription — the
- * detail page's `useMarketplaceProjection` remains the polling surface.
+ * card registers an IntersectionObserver via `ref` and fetches when it first
+ * scrolls into view (200px pre-fetch margin), so off-screen cards cost
+ * nothing.
+ *
+ * Freshness: a card that stays mounted must not keep offering "Buy now" for a
+ * listing that has since sold. After the first read it re-reads, while on
+ * screen, when the controller reports something that can have changed the
+ * listing's availability (an order of this session moving, the detail page's
+ * poll seeing the listing change — see `listingCardRefresh`) and when the
+ * window regains focus, the same trigger the detail page's poll uses.
  *
  * Scope: `transaction-service` mode only. The sandbox keeps terms-only cards;
  * its simulated bid state stays on the detail page where it is labeled as
@@ -54,15 +61,37 @@ export function useMarketplaceLiveBid(
   const [bid, setBid] = useState<MarketplaceLiveBid | null>(null);
   const [listingState, setListingState] = useState<'available' | 'reserved' | 'sold' | null>(null);
   const [soldOut, setSoldOut] = useState(false);
-  const hasFetchedRef = useRef(false);
+  const refreshCount = useCommerceStore((state) => state.listingCardRefresh[`${sellerPubky}:${listingId}`] ?? 0);
+  const [focusCount, setFocusCount] = useState(0);
+  const lastReadKeyRef = useRef<string | null>(null);
+  const latestRequestRef = useRef(0);
+  const mountedRef = useRef(true);
 
   useEffect(() => {
-    if (!isActive || !isVisible || hasFetchedRef.current) return;
-    hasFetchedRef.current = true;
-    let mounted = true;
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!isActive || !isVisible) return;
+    const onFocus = () => {
+      if (lastReadKeyRef.current !== null) setFocusCount((count) => count + 1);
+    };
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
+  }, [isActive, isVisible]);
+
+  useEffect(() => {
+    if (!isActive || !isVisible) return;
+    const readKey = `${sellerPubky}:${listingId}:${refreshCount}:${focusCount}`;
+    if (lastReadKeyRef.current === readKey) return;
+    lastReadKeyRef.current = readKey;
+    const request = ++latestRequestRef.current;
     void CommerceController.getMarketplaceListingProjection(sellerPubky, listingId)
       .then((projection) => {
-        if (!mounted || !projection) return;
+        if (!mountedRef.current || request !== latestRequestRef.current || !projection) return;
         setListingState(projection.state);
         setSoldOut(projectionReadsSoldOut(projection));
         if (!projection.auction) return;
@@ -75,10 +104,7 @@ export function useMarketplaceLiveBid(
         // Degrade to terms-only: the card must never invent bid state, and a
         // missing session or unreachable service is not an error at card level.
       });
-    return () => {
-      mounted = false;
-    };
-  }, [isActive, isVisible, listingId, sellerPubky]);
+  }, [isActive, isVisible, listingId, sellerPubky, refreshCount, focusCount]);
 
   return { ref, bid, listingState, soldOut };
 }

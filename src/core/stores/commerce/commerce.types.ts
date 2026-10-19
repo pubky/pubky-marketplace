@@ -97,6 +97,13 @@ export interface CommerceState {
    * controller. Memory only: the filter shows it while a fresh read is in flight.
    */
   paymentMethodSellers: Partial<Record<PaymentMethodFilter, string[]>>;
+  /**
+   * Per composite listing id, a counter the controller bumps when something
+   * this session observed (an order moving, the listing's own projection
+   * changing) can have changed whether the listing is still for sale. A
+   * listing card re-reads its availability when its counter moves. Memory only.
+   */
+  listingCardRefresh: Record<string, number>;
 }
 
 export interface CommerceActions {
@@ -118,6 +125,7 @@ export interface CommerceActions {
   setReceiptsPublicationStatus: (receiptsPublicationStatus: CommerceReceiptPublicationUiStatus) => void;
   setSellerPaymentBadges: (sellerPubky: string, badges: SellerPaymentBadge[]) => void;
   setPaymentMethodSellers: (method: PaymentMethodFilter, sellers: string[]) => void;
+  refreshListingCards: (compositeListingIds: readonly string[]) => void;
   resetFilters: () => void;
   reset: () => void;
 }
@@ -144,6 +152,7 @@ export const commerceInitialState: CommerceState = {
   receiptsPublicationStatus: 'idle',
   sellerPaymentBadges: {},
   paymentMethodSellers: {},
+  listingCardRefresh: {},
 };
 
 export enum CommerceActionTypes {
@@ -165,6 +174,7 @@ export enum CommerceActionTypes {
   SET_RECEIPTS_PUBLICATION_STATUS = 'SET_RECEIPTS_PUBLICATION_STATUS',
   SET_SELLER_PAYMENT_BADGES = 'SET_SELLER_PAYMENT_BADGES',
   SET_PAYMENT_METHOD_SELLERS = 'SET_PAYMENT_METHOD_SELLERS',
+  REFRESH_LISTING_CARDS = 'REFRESH_LISTING_CARDS',
   RESET_FILTERS = 'RESET_FILTERS',
   RESET = 'RESET',
 }
