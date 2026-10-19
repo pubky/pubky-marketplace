@@ -109,6 +109,16 @@ describe('useListingMediaManager', () => {
     expect(prepared.media.map(({ altText }) => altText)).toEqual(['Two', 'One']);
   });
 
+  it('adds files directly, accepting only the types the picker offers', () => {
+    const { result } = renderHook(() => useListingMediaManager());
+
+    act(() => result.current.addFiles([new File(['gif'], 'loop.gif', { type: 'image/gif' }), imageFile('kept.jpg')]));
+
+    expect(result.current.error).toBe('invalid-type');
+    expect(result.current.items).toHaveLength(1);
+    expect(result.current.items[0]).toMatchObject({ kind: 'new', previewUrl: 'blob:kept.jpg' });
+  });
+
   it('rejects non-image and oversized files and enforces the photo limit', () => {
     const { result } = renderHook(() => useListingMediaManager(2));
 
