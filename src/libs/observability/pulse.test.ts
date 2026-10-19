@@ -10,7 +10,7 @@ import { resetRuntimeConfigForTests, RUNTIME_CONFIG_WINDOW_KEY } from '@/libs/ru
 import { NETWORK_RUNTIME_DEFAULTS } from '@/libs/runtime-config/runtime-config.schema';
 import { setBasePath } from '@/test-utils/base-path';
 import { PUBKY_52_STAGING_FIXTURE as PUBLIC_KEY } from '@/test-utils/pubky';
-import { beforeSendPulse, initPulse, pulseScreenName } from './pulse';
+import { beforeSendPulse, consentAllowsPulse, initPulse, pulseScreenName } from './pulse';
 import { PULSE_CONSENT_KEY } from './pulse-consent';
 import { OBSERVABILITY_IGNORE_ERRORS } from './sentry.constants';
 
@@ -91,7 +91,16 @@ describe('optional Pulse initialization', () => {
       ignoreErrors: [...OBSERVABILITY_IGNORE_ERRORS],
       screenNameForPath: pulseScreenName,
       beforeSend: beforeSendPulse,
+      canDeliver: consentAllowsPulse,
     });
+  });
+  it('gates delivery at send time with a stable function, not only as events are buffered', () => {
+    initPulse();
+    initPulse();
+    const [first, second] = vi.mocked(Pulse.init).mock.calls.map(([options]) => options.canDeliver);
+    expect(first).toBeTypeOf('function');
+    // The same reference on every init, so a repeated init never reads as a configuration change.
+    expect(second).toBe(first);
   });
   it('never enables SDK network tracking, whose events bypass the shared drop policy', () => {
     initPulse();

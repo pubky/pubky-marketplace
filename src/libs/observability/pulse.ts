@@ -33,10 +33,11 @@ import { SHOP_PULSE_STORAGE_NAMESPACE, shopStorageKey } from '@/libs/storage-nam
 import { getPulseConsent, getPulseConsentGeneration, subscribePulseConsent } from './pulse-consent';
 
 /**
- * Pulse browser SDK wiring: the consent gate, the `Pulse.init()` options, and `beforeSendPulse`.
+ * Pulse browser SDK wiring: the consent gate, the `Pulse.init()` options, `beforeSendPulse` and the
+ * send-time `canDeliver` check.
  *
  * As for Sentry, do NOT import @synonymdev/pubky-pulse-web outside:
- * - This file (init + beforeSend)
+ * - This file (init + beforeSend + canDeliver)
  * - app/error.tsx and app/global-error.tsx (the React error boundaries)
  * - error.factories.ts (the one AppError capture call)
  *
@@ -76,6 +77,23 @@ function setStartedUnder(generation: string | null): boolean {
 function predatesCurrentConsent(): boolean {
   const startedUnder = getStartedUnder();
   return startedUnder !== null && startedUnder !== getPulseConsentGeneration();
+}
+
+/**
+ * Whether the consent stored right now lets this tab's Pulse events through. It is both halves of the
+ * consent gate: `beforeSendPulse` asks it as an event enters the SDK's buffer, and the SDK asks it again as
+ * `canDeliver` right before every send — each interval, threshold or explicit flush, retry, offline-queue
+ * replay and the pagehide keepalive. The second check is what stops an event buffered while consent stood
+ * from leaving after another tab withdrew but before this tab's storage event arrives: every read here goes
+ * to storage, never to a value cached from the last notification. A veto keeps the events in memory and out
+ * of the offline queue, and the reset the storage event then triggers deletes them.
+ *
+ * Synchronous, cheap and non-throwing, as `canDeliver` requires: every read underneath catches its own
+ * storage failure and fails closed. One stable function, so a repeated `init` never reads as a
+ * configuration change.
+ */
+export function consentAllowsPulse(): boolean {
+  return getPulseConsent() === 'accepted' && !predatesCurrentConsent();
 }
 
 /** Route definitions are a telemetry allowlist: never add user identifiers or arbitrary paths. */
@@ -127,7 +145,7 @@ export function pulseScreenName(pathname: string): string {
 }
 
 export function beforeSendPulse(event: LogEvent, { originalException: error }: PulseEventHint): LogEvent | null {
-  if (getPulseConsent() !== 'accepted' || predatesCurrentConsent()) return null;
+  if (!consentAllowsPulse()) return null;
   if (error instanceof AppError) {
     if (shouldDropAppErrorFromSentry(error)) return null;
     // Keep only reviewed operational metadata; never spread the error or its context.
@@ -174,6 +192,8 @@ export function initPulse(): PulseInitResult | null {
       // that the SDK's fetch-level tracking cannot apply.
       screenNameForPath: pulseScreenName,
       beforeSend: beforeSendPulse,
+      // The consent check again, at send time: see consentAllowsPulse.
+      canDeliver: consentAllowsPulse,
     });
   } catch {
     // Unreachable today: the consent check above already resolved and memoized the runtime config, and the
@@ -214,7 +234,7 @@ export function initializePulseConsent(): () => void {
     }
     if (!accepted || running) return;
     // Record the provenance before starting, so "SDK state present, marker absent" cannot exist and the
-    // events init() records synchronously are not dropped by beforeSendPulse. The marker stays if the start
+    // events init() records synchronously pass consentAllowsPulse. The marker stays if the start
     // then fails: it describes the Pulse state this tab may still hold from an earlier page load, and
     // dropping it would make a stale tab look brand new and let it resume a pre-withdrawal session.
     if (!setStartedUnder(getPulseConsentGeneration())) return;

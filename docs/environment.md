@@ -142,10 +142,12 @@ an identifier and neither is sent; they only let a tab that was suspended or awa
 notice it on its next run and clean up then. A withdrawal deletes the browser-wide state, so accepting
 again starts a new anonymous browser in every tab; the stale tab deletes its own client and session
 alone, because the anonymous ID and queued events it finds now belong to the current consent and other
-tabs are still using them. One limit sits in the SDK: it cannot tell whose events are in the shared
-queue, and replayed events are not filtered again. So an event a suspended tab re-queues after another
-tab's withdrawal already ran (a failed retry, or an unload) can still be sent by whichever tab flushes
-next. Users can withdraw in **Settings → Privacy and Safety** or the **Pulse analytics** button (also
+tabs are still using them. Consent is checked twice: as an event is recorded, and again (the SDK's
+`canDeliver`) right before every send — each flush, retry, offline-queue replay and the unload request.
+The send-time check reads the stored choice and acceptance time directly, so a tab that has not yet
+received another tab's withdrawal still sends nothing: it holds its events in memory, never writes them
+to the shared queue, and deletes them when the notification arrives. Only a request already in flight
+when consent is withdrawn can still land. Users can withdraw in **Settings → Privacy and Safety** or the **Pulse analytics** button (also
 available to guests). Withdrawal stops collection without flushing and deletes the anonymous ID,
 session and any queued events from this browser; it does not delete data the server already received.
 Without a key — or on a testnet deploy (`PUBKY_RUNTIME_TESTNET=true`), which disables Pulse exactly as it

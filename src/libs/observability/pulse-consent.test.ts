@@ -1,7 +1,7 @@
 import { gunzipSync } from 'node:zlib';
 import { Pulse } from '@synonymdev/pubky-pulse-web';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { beforeSendPulse, initializePulseConsent, initPulse } from './pulse';
+import { beforeSendPulse, consentAllowsPulse, initializePulseConsent, initPulse } from './pulse';
 import {
   getPulseConsent,
   getPulseConsentSaveFailed,
@@ -314,6 +314,60 @@ describe('consent gate with the real Pulse SDK', () => {
 
   it('drops events if consent changed before a storage event is delivered', () => {
     expect(beforeSendPulse({ message: 'Not consented' } as Parameters<typeof beforeSendPulse>[0], {})).toBeNull();
+  });
+
+  it('re-reads stored consent at send time, before the storage event arrives', () => {
+    unsubscribe = initializePulseConsent();
+    setPulseConsent(true);
+    expect(consentAllowsPulse()).toBe(true);
+    // Another tab withdraws; this tab has not been told yet.
+    otherTabDeclines();
+    expect(consentAllowsPulse()).toBe(false);
+  });
+
+  it('vetoes delivery at send time once this tab started under an older consent', () => {
+    unsubscribe = initializePulseConsent();
+    setPulseConsent(true);
+    // A withdrawal and re-acceptance elsewhere: the stored choice reads 'accepted' again, but not for this tab.
+    otherTabWithdraws();
+    otherTabAccepts();
+    expect(getPulseConsent()).toBe('accepted');
+    expect(consentAllowsPulse()).toBe(false);
+  });
+
+  it('never sends an event buffered before a withdrawal this tab has not heard about yet', async () => {
+    vi.useFakeTimers();
+    try {
+      unsubscribe = initializePulseConsent();
+      setPulseConsent(true);
+      await Pulse.flush();
+      requests.mockClear();
+      Pulse.captureException(new Error('Buffered while accepted'));
+      // Another tab withdraws and deletes the shared state; the storage event is still on its way here.
+      otherTabWithdraws();
+      // Every send path the SDK has: the interval flush, the unload keepalive, and an explicit flush.
+      await vi.advanceTimersByTimeAsync(30_000);
+      window.dispatchEvent(new Event('pagehide'));
+      const hidden = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden');
+      document.dispatchEvent(new Event('visibilitychange'));
+      await Pulse.flush();
+      expect(requests).not.toHaveBeenCalled();
+      // Held in memory only: a vetoed send never parks the events in the shared offline queue.
+      expect(localStorage.getItem(`${SDK_PREFIX}offline_queue`) ?? '').not.toContain('Buffered while accepted');
+      hidden.mockRestore();
+      // The notification arrives: the reset deletes what was held, so re-accepting cannot send it.
+      deliverStorageEvent(PULSE_CONSENT_KEY);
+      expect(Pulse.currentUserId).toBeUndefined();
+      expect(sdkKeys(localStorage)).toEqual([]);
+      setPulseConsent(true);
+      Pulse.captureException(new Error('After re-acceptance'));
+      await Pulse.flush();
+      await vi.advanceTimersByTimeAsync(30_000);
+      expect(sentPayloads()).toContain('After re-acceptance');
+      expect(sentPayloads()).not.toContain('Buffered while accepted');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('resets a tab that slept through a withdrawal and re-acceptance in another tab', async () => {
