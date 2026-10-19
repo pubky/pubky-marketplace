@@ -35,8 +35,11 @@ function storedKeys(store: Storage): string[] {
   return Array.from({ length: store.length }, (_, index) => store.key(index) ?? '');
 }
 
+/** The Shop's Pulse SDK keys: its `storageNamespace` puts them under `pulse:shop.`, never the App's `pulse.`. */
+const SDK_PREFIX = 'pulse:shop.';
+
 function sdkKeys(store: Storage): string[] {
-  return storedKeys(store).filter((key) => key.startsWith('pulse.'));
+  return storedKeys(store).filter((key) => key.startsWith(SDK_PREFIX));
 }
 
 /** Accepting stamps a strictly increasing time, so a same-millisecond re-acceptance still reads as newer. */
@@ -62,7 +65,7 @@ function otherTabDeclines(): void {
 
 /**
  * A real withdrawal elsewhere: that tab runs the same gate, so its browser-wide Pulse.reset() also
- * deletes the `pulse.` localStorage every tab shares. Its own sessionStorage goes with it, which in
+ * deletes the `pulse:shop.` localStorage every tab shares. Its own sessionStorage goes with it, which in
  * jsdom's single realm would be this tab's — the one store another tab can never reach — so it stays.
  */
 function otherTabWithdraws(): void {
@@ -75,7 +78,7 @@ const OTHER_TAB_ANONYMOUS_ID = 'pulse_anon_00000000-0000-4000-8000-0000000000aa'
 
 /** Another tab starts over under the current consent, so the shared ID is one this tab never held. */
 function otherTabStartsOver(): void {
-  localStorage.setItem('pulse.anonymous_id', OTHER_TAB_ANONYMOUS_ID);
+  localStorage.setItem(`${SDK_PREFIX}anonymous_id`, OTHER_TAB_ANONYMOUS_ID);
 }
 
 /**
@@ -84,7 +87,7 @@ function otherTabStartsOver(): void {
  */
 function otherTabParks(message: string): void {
   localStorage.setItem(
-    'pulse.offline_queue',
+    `${SDK_PREFIX}offline_queue`,
     JSON.stringify([
       {
         client_event_id: '00000000-0000-4000-8000-0000000000ab',
@@ -94,13 +97,45 @@ function otherTabParks(message: string): void {
         message,
         environment: 'web',
         sdk_name: 'pubky-pulse-web',
-        sdk_version: '0.9.0',
+        sdk_version: '0.10.0',
         is_dev: true,
         timestamp: new Date().toISOString(),
       },
     ]),
   );
 }
+
+/**
+ * What the Pubky App stores on the same origin when the Shop is mounted under pubky.app/shop: its own
+ * consent under the unprefixed names and its SDK state in the SDK's default `pulse.` namespace.
+ */
+const APP_LOCAL_STATE = {
+  'pubky-pulse-consent-v1': 'accepted',
+  'pubky-pulse-consent-v1-granted-at': '1',
+  'pulse.anonymous_id': 'pulse_anon_00000000-0000-4000-8000-0000000000ee',
+  'pulse.offline_queue': '[{"message":"App event"}]',
+};
+const APP_SESSION_STATE = {
+  'pubky-pulse-consent-v1-started-under': '1',
+  'pulse.session_id': '00000000-0000-4000-8000-0000000000ef',
+};
+
+function seedAppState(): void {
+  for (const [key, value] of Object.entries(APP_LOCAL_STATE)) localStorage.setItem(key, value);
+  for (const [key, value] of Object.entries(APP_SESSION_STATE)) sessionStorage.setItem(key, value);
+}
+
+function appState(): Record<string, string | null> {
+  return Object.fromEntries([
+    ...Object.keys(APP_LOCAL_STATE).map((key) => [key, localStorage.getItem(key)]),
+    ...Object.keys(APP_SESSION_STATE).map((key) => [`session:${key}`, sessionStorage.getItem(key)]),
+  ]);
+}
+
+const APP_STATE_SNAPSHOT = {
+  ...APP_LOCAL_STATE,
+  ...Object.fromEntries(Object.entries(APP_SESSION_STATE).map(([key, value]) => [`session:${key}`, value])),
+};
 
 /** jsdom never fires storage events for its own writes; a real second tab's write would. */
 function deliverStorageEvent(key: string): void {
@@ -151,7 +186,7 @@ describe('consent gate with the real Pulse SDK', () => {
       Pulse.captureException(new Error('Before consent'));
       await Pulse.flush();
       expect(init).not.toHaveBeenCalled();
-      expect(localStorage.getItem('pulse.anonymous_id')).toBeNull();
+      expect(localStorage.getItem(`${SDK_PREFIX}anonymous_id`)).toBeNull();
       expect(sessionStorage.length).toBe(0);
       expect(requests).not.toHaveBeenCalled();
     },
@@ -173,7 +208,7 @@ describe('consent gate with the real Pulse SDK', () => {
       unsubscribe = initializePulseConsent();
       await Pulse.flush();
       expect(getPulseConsent()).toBe('unavailable');
-      expect(localStorage.getItem('pulse.anonymous_id')).toBeNull();
+      expect(localStorage.getItem(`${SDK_PREFIX}anonymous_id`)).toBeNull();
       expect(requests).not.toHaveBeenCalled();
     },
   );
@@ -194,7 +229,7 @@ describe('consent gate with the real Pulse SDK', () => {
   it('deletes the state an earlier load stored once the deploy is a testnet', () => {
     otherTabAccepts();
     unsubscribe = initializePulseConsent();
-    expect(localStorage.getItem('pulse.anonymous_id')).not.toBeNull();
+    expect(localStorage.getItem(`${SDK_PREFIX}anonymous_id`)).not.toBeNull();
     config.testnet = true;
     window.dispatchEvent(new Event('focus'));
     expect(Pulse.currentUserId).toBeUndefined();
@@ -205,7 +240,7 @@ describe('consent gate with the real Pulse SDK', () => {
   it('starts only after acceptance and stops without flushing on withdrawal', async () => {
     unsubscribe = initializePulseConsent();
     setPulseConsent(true);
-    expect(localStorage.getItem('pulse.anonymous_id')).toMatch(/^pulse_anon_/);
+    expect(localStorage.getItem(`${SDK_PREFIX}anonymous_id`)).toMatch(/^pulse_anon_/);
     Pulse.captureException(new Error('Consented error'));
     await Pulse.flush();
     expect(requests).toHaveBeenCalled();
@@ -223,7 +258,7 @@ describe('consent gate with the real Pulse SDK', () => {
     expect(requests).not.toHaveBeenCalled();
     expect(localStorage.getItem(PULSE_CONSENT_KEY)).toBe('declined');
     // Withdrawal deletes what the banner asked consent to store, not only the consent choice.
-    expect(localStorage.getItem('pulse.anonymous_id')).toBeNull();
+    expect(localStorage.getItem(`${SDK_PREFIX}anonymous_id`)).toBeNull();
     expect(sdkKeys(localStorage)).toEqual([]);
     expect(sdkKeys(sessionStorage)).toEqual([]);
     // Nothing per-tab survives either: the marker naming the consent this tab started under goes too.
@@ -285,7 +320,7 @@ describe('consent gate with the real Pulse SDK', () => {
     unsubscribe = initializePulseConsent();
     setPulseConsent(true);
     const firstId = Pulse.currentUserId;
-    const firstSession = sessionStorage.getItem('pulse.session_id') ?? '';
+    const firstSession = sessionStorage.getItem(`${SDK_PREFIX}session_id`) ?? '';
     expect(firstId).toMatch(/^pulse_anon_/);
     expect(firstSession).toMatch(/.+/);
     Pulse.captureException(new Error('Pending before withdrawal'));
@@ -296,7 +331,7 @@ describe('consent gate with the real Pulse SDK', () => {
     await Pulse.flush();
     expect(Pulse.currentUserId).toMatch(/^pulse_anon_/);
     expect(Pulse.currentUserId).not.toBe(firstId);
-    expect(sessionStorage.getItem('pulse.session_id')).not.toBe(firstSession);
+    expect(sessionStorage.getItem(`${SDK_PREFIX}session_id`)).not.toBe(firstSession);
     expect(sentPayloads()).not.toContain('Pending before withdrawal');
     expect(sentPayloads()).not.toContain(firstSession);
   });
@@ -305,7 +340,7 @@ describe('consent gate with the real Pulse SDK', () => {
     unsubscribe = initializePulseConsent();
     setPulseConsent(true);
     const firstId = Pulse.currentUserId;
-    const firstSession = sessionStorage.getItem('pulse.session_id') ?? '';
+    const firstSession = sessionStorage.getItem(`${SDK_PREFIX}session_id`) ?? '';
     expect(firstSession).toMatch(/.+/);
     Pulse.captureException(new Error('Pending before withdrawal'));
     otherTabWithdraws();
@@ -315,7 +350,7 @@ describe('consent gate with the real Pulse SDK', () => {
     await Pulse.flush();
     expect(Pulse.currentUserId).toMatch(/^pulse_anon_/);
     expect(Pulse.currentUserId).not.toBe(firstId);
-    expect(sessionStorage.getItem('pulse.session_id')).not.toBe(firstSession);
+    expect(sessionStorage.getItem(`${SDK_PREFIX}session_id`)).not.toBe(firstSession);
     expect(sentPayloads()).not.toContain('Pending before withdrawal');
     expect(sentPayloads()).not.toContain(firstSession);
   });
@@ -332,7 +367,7 @@ describe('consent gate with the real Pulse SDK', () => {
   ])("keeps another tab's current-consent events when reconciling on %s", async (_where, reconcile) => {
     unsubscribe = initializePulseConsent();
     setPulseConsent(true);
-    const staleSession = sessionStorage.getItem('pulse.session_id') ?? '';
+    const staleSession = sessionStorage.getItem(`${SDK_PREFIX}session_id`) ?? '';
     expect(staleSession).toMatch(/.+/);
     Pulse.captureException(new Error('Recorded under the old consent'));
     // All of this lands while this tab is suspended: another tab withdraws, accepts again, starts over
@@ -347,10 +382,10 @@ describe('consent gate with the real Pulse SDK', () => {
     // Cleaning up this tab must not take the state the freshly consented tabs share: their event is
     // still deliverable, and this tab joins the anonymous browser they are already using.
     expect(sentPayloads()).toContain('Parked under the current consent');
-    expect(localStorage.getItem('pulse.anonymous_id')).toBe(OTHER_TAB_ANONYMOUS_ID);
+    expect(localStorage.getItem(`${SDK_PREFIX}anonymous_id`)).toBe(OTHER_TAB_ANONYMOUS_ID);
     expect(Pulse.currentUserId).toBe(OTHER_TAB_ANONYMOUS_ID);
     // Nothing this tab held under the old consent crosses: not its session, not what it recorded.
-    expect(sessionStorage.getItem('pulse.session_id')).not.toBe(staleSession);
+    expect(sessionStorage.getItem(`${SDK_PREFIX}session_id`)).not.toBe(staleSession);
     expect(sentPayloads()).not.toContain(staleSession);
     expect(sentPayloads()).not.toContain('Recorded under the old consent');
   });
@@ -362,14 +397,14 @@ describe('consent gate with the real Pulse SDK', () => {
     // The control for the test above: a tab with no state of its own reconciles nothing and deletes nothing.
     unsubscribe = initializePulseConsent();
     await Pulse.flush();
-    expect(localStorage.getItem('pulse.anonymous_id')).toBe(OTHER_TAB_ANONYMOUS_ID);
+    expect(localStorage.getItem(`${SDK_PREFIX}anonymous_id`)).toBe(OTHER_TAB_ANONYMOUS_ID);
     expect(sentPayloads()).toContain('Parked under the current consent');
   });
 
   it('deletes the session a previous page stored when the tab returns after withdrawal', async () => {
     unsubscribe = initializePulseConsent();
     setPulseConsent(true);
-    expect(sessionStorage.getItem('pulse.session_id')).toMatch(/.+/);
+    expect(sessionStorage.getItem(`${SDK_PREFIX}session_id`)).toMatch(/.+/);
     leavePage();
     // Only this tab holds its session, so no other tab can delete it on the withdrawal.
     otherTabDeclines();
@@ -384,7 +419,7 @@ describe('consent gate with the real Pulse SDK', () => {
     unsubscribe = initializePulseConsent();
     setPulseConsent(true);
     const firstId = Pulse.currentUserId;
-    const firstSession = sessionStorage.getItem('pulse.session_id') ?? '';
+    const firstSession = sessionStorage.getItem(`${SDK_PREFIX}session_id`) ?? '';
     expect(firstSession).toMatch(/.+/);
     leavePage();
     otherTabWithdraws();
@@ -396,7 +431,7 @@ describe('consent gate with the real Pulse SDK', () => {
     await Pulse.flush();
     expect(Pulse.currentUserId).toMatch(/^pulse_anon_/);
     expect(Pulse.currentUserId).not.toBe(firstId);
-    expect(sessionStorage.getItem('pulse.session_id')).not.toBe(firstSession);
+    expect(sessionStorage.getItem(`${SDK_PREFIX}session_id`)).not.toBe(firstSession);
     expect(sentPayloads()).not.toContain(firstSession);
   });
 
@@ -449,7 +484,7 @@ describe('consent gate with the real Pulse SDK', () => {
     unsubscribe = initializePulseConsent();
     setPulseConsent(true);
     const firstId = Pulse.currentUserId;
-    const firstSession = sessionStorage.getItem('pulse.session_id') ?? '';
+    const firstSession = sessionStorage.getItem(`${SDK_PREFIX}session_id`) ?? '';
     // A repeated Accept in another tab rewrites the same 'accepted' value, for which browsers fire no
     // storage event, so the acceptance time is the only change this tab can be told about.
     localStorage.setItem(PULSE_CONSENT_GRANTED_AT_KEY, nextGeneration());
@@ -458,7 +493,7 @@ describe('consent gate with the real Pulse SDK', () => {
     // This tab starts over, but nothing was withdrawn: no deletion was promised, the shared anonymous
     // browser is still the consented one every other tab is using, and it stays.
     expect(Pulse.currentUserId).toBe(firstId);
-    expect(sessionStorage.getItem('pulse.session_id')).not.toBe(firstSession);
+    expect(sessionStorage.getItem(`${SDK_PREFIX}session_id`)).not.toBe(firstSession);
   });
 
   it('drops events recorded after a missed withdrawal until the tab resyncs', async () => {
@@ -483,17 +518,17 @@ describe('consent gate with the real Pulse SDK', () => {
     sessionStorage.clear();
     returnToPage();
     expect(Pulse.currentUserId).toBe(firstId);
-    expect(localStorage.getItem('pulse.anonymous_id')).toBe(firstId);
+    expect(localStorage.getItem(`${SDK_PREFIX}anonymous_id`)).toBe(firstId);
   });
 
   it('resumes the tab session across a reload under the same consent', () => {
     unsubscribe = initializePulseConsent();
     setPulseConsent(true);
-    const firstSession = sessionStorage.getItem('pulse.session_id') ?? '';
+    const firstSession = sessionStorage.getItem(`${SDK_PREFIX}session_id`) ?? '';
     expect(firstSession).toMatch(/.+/);
     leavePage();
     returnToPage();
-    expect(sessionStorage.getItem('pulse.session_id')).toBe(firstSession);
+    expect(sessionStorage.getItem(`${SDK_PREFIX}session_id`)).toBe(firstSession);
   });
 
   it('does not start when the tab cannot record which consent it started under', async () => {
@@ -507,7 +542,7 @@ describe('consent gate with the real Pulse SDK', () => {
     localStorage.setItem(PULSE_CONSENT_KEY, 'accepted');
     unsubscribe = initializePulseConsent();
     await Pulse.flush();
-    expect(localStorage.getItem('pulse.anonymous_id')).toBeNull();
+    expect(localStorage.getItem(`${SDK_PREFIX}anonymous_id`)).toBeNull();
     expect(Pulse.currentUserId).toBeUndefined();
   });
 
@@ -523,5 +558,51 @@ describe('consent gate with the real Pulse SDK', () => {
     config.key = 'pulse_client_test';
     window.dispatchEvent(new Event('focus'));
     expect(Pulse.currentUserId).toMatch(/^pulse_anon_/);
+  });
+});
+
+describe('isolation from the Pubky App on a shared origin', () => {
+  it("never reads the App's consent as the Shop's", () => {
+    seedAppState();
+    unsubscribe = initializePulseConsent();
+    deliverStorageEvent('pubky-pulse-consent-v1');
+    expect(getPulseConsent()).toBeNull();
+    expect(Pulse.currentUserId).toBeUndefined();
+    expect(sdkKeys(localStorage)).toEqual([]);
+    expect(appState()).toEqual(APP_STATE_SNAPSHOT);
+  });
+
+  it('starts under its own namespace and names it on every reset', () => {
+    seedAppState();
+    const reset = vi.spyOn(Pulse, 'reset');
+    unsubscribe = initializePulseConsent();
+    setPulseConsent(true);
+    expect(localStorage.getItem(`${SDK_PREFIX}anonymous_id`)).toMatch(/^pulse_anon_/);
+    expect(Pulse.currentUserId).not.toBe(APP_LOCAL_STATE['pulse.anonymous_id']);
+    // A stale tab (tab-scoped reset), then a withdrawal (browser-wide reset).
+    otherTabWithdraws();
+    otherTabAccepts();
+    window.dispatchEvent(new Event('focus'));
+    setPulseConsent(false);
+    // The first reset is the gate's own, before any consent was given.
+    expect(reset.mock.calls.map(([options]) => options)).toEqual([
+      { storageNamespace: 'shop' },
+      { storageNamespace: 'shop', scope: 'tab' },
+      { storageNamespace: 'shop' },
+    ]);
+    expect(sdkKeys(localStorage)).toEqual([]);
+    expect(sdkKeys(sessionStorage)).toEqual([]);
+    expect(appState()).toEqual(APP_STATE_SNAPSHOT);
+  });
+
+  it("leaves the App's state alone when a page that never started Pulse resets", () => {
+    // The case a reset without a namespace would get wrong: no running client, so the SDK would fall back
+    // to its default namespace, which is the App's.
+    const reset = vi.spyOn(Pulse, 'reset');
+    seedAppState();
+    otherTabDeclines();
+    unsubscribe = initializePulseConsent();
+    expect(reset).toHaveBeenCalledExactlyOnceWith({ storageNamespace: 'shop' });
+    expect(appState()).toEqual(APP_STATE_SNAPSHOT);
   });
 });

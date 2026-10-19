@@ -1,12 +1,14 @@
 import { getPulseClientKey, getTestnet } from '@/libs/runtime-config/runtime-config';
+import { shopStorageKey } from '@/libs/storage-namespace/storage-namespace';
 
-// Version the choice when the disclosed purposes change. This is not an analytics identifier.
-export const PULSE_CONSENT_KEY = 'pubky-pulse-consent-v1';
+// Version the choice when the disclosed purposes change. This is not an analytics identifier. The App
+// stores its own choice under the unprefixed names, so the Shop's are namespaced (docs/launch/shop-embedding.md).
+export const PULSE_CONSENT_KEY = shopStorageKey('pubky-pulse-consent-v1');
 // When consent was last given: written only by accepting, never sent, and not an analytics identifier.
 // It lets a tab that slept through a withdrawal and a re-acceptance see that its Pulse state predates
 // the current consent, which re-reading the choice alone can never reveal.
-export const PULSE_CONSENT_GRANTED_AT_KEY = 'pubky-pulse-consent-v1-granted-at';
-const CONSENT_CHANGED = 'pubky-pulse-consent-changed';
+export const PULSE_CONSENT_GRANTED_AT_KEY = shopStorageKey('pubky-pulse-consent-v1-granted-at');
+const CONSENT_CHANGED = shopStorageKey('pubky-pulse-consent-changed');
 export type PulseConsent = 'accepted' | 'declined' | 'unavailable' | null;
 let declinedInMemory = false;
 // The last write failed, so the choice is stored nowhere. This belongs beside the choice rather than in a

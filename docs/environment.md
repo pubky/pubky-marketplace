@@ -135,8 +135,8 @@ redaction/drop policy as Sentry; never the browser language (`deviceInfo.languag
 policy — the SDK's fetch-level network tracking is off, because its events bypass the drop rules.
 
 With a client key configured, an analytics banner asks each browser for consent before Pulse
-initializes or stores an identifier. Accept/decline is stored separately as `pubky-pulse-consent-v1`,
-and accepting also stores the acceptance time as `pubky-pulse-consent-v1-granted-at`, which each tab
+initializes or stores an identifier. Accept/decline is stored separately as `shop-pubky-pulse-consent-v1`,
+and accepting also stores the acceptance time as `shop-pubky-pulse-consent-v1-granted-at`, which each tab
 mirrors in a `sessionStorage` marker naming the consent its own Pulse state started under. Neither is
 an identifier and neither is sent; they only let a tab that was suspended or away during a withdrawal
 notice it on its next run and clean up then. A withdrawal deletes the browser-wide state, so accepting
@@ -150,6 +150,9 @@ available to guests). Withdrawal stops collection without flushing and deletes t
 session and any queued events from this browser; it does not delete data the server already received.
 Without a key — or on a testnet deploy (`PUBKY_RUNTIME_TESTNET=true`), which disables Pulse exactly as it
 disables Sentry — neither the banner nor analytics controls appear, and nothing is collected.
+The SDK keeps its own state under `pulse:shop.*` (`storageNamespace: 'shop'`), and these consent keys
+carry the `shop-` prefix, so a Shop served on the Pubky App's origin never reads the App's consent or
+deletes its Pulse state ([Browser storage](launch/shop-embedding.md#browser-storage)).
 Only consented visits are measured, so analytics are a partial, self-selected view of usage.
 This consent covers Pulse only, which is why the banner scopes its promise to Pubky Pulse rather than to
 analytics in general: the optional Plausible script (`PUBKY_RUNTIME_PLAUSIBLE_DOMAIN` /

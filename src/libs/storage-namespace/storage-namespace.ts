@@ -8,7 +8,8 @@
  * schema versions, one app's sign-out sweep clearing the other's keys, one app reading the
  * other's identity as its own legacy data.
  *
- * Every name the App also defines carries the `shop-` prefix instead. Names that already
+ * Every name the App also defines carries the `shop-` prefix instead (the Pulse SDK's own state uses
+ * its `storageNamespace` option, `SHOP_PULSE_STORAGE_NAMESPACE`). Names that already
  * only exist in the Shop (`marketplace:*`, `pubky.marketplace.*`, the messaging keyring
  * flag, the Web Lock names) stay as they are, because nothing else can collide with them.
  * Existing Shop users keep their data through a one-time migration
@@ -18,6 +19,17 @@
  */
 
 export const SHOP_STORAGE_NAMESPACE = 'shop-';
+
+/**
+ * The Pubky Pulse SDK's own storage namespace for the Shop (its `storageNamespace` option). The SDK keeps
+ * the App's state under `pulse.` keys and its offline-queue Web Lock as `pulse_offline_queue`; with this
+ * name the Shop's live under `pulse:shop.` and `pulse_offline_queue:shop` instead, and a `Pulse.reset`
+ * that names it deletes only those. The SDK adds its own separator, so this is the bare name rather
+ * than `SHOP_STORAGE_NAMESPACE`. It must stay 1-32 lowercase letters, digits, `_` or `-`: the SDK
+ * treats any other name as invalid, and an invalid name makes a reset delete every namespace, the App's
+ * included.
+ */
+export const SHOP_PULSE_STORAGE_NAMESPACE = 'shop';
 
 /** Name of the Dexie database before it was namespaced. */
 export const LEGACY_DB_NAME = 'franky';

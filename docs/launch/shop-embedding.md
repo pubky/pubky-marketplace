@@ -233,6 +233,8 @@ Names the App also defines now carry a `shop-` prefix:
 | `auth-store`, `onboarding-storage`, `notification-store`, `search-store`, `home-store`, `hot-store`, `settings-storage`, `marketplace-display-storage` | the same names with `shop-` |
 | `pubky-feature-discovery:*` | `shop-pubky-feature-discovery:*` |
 | session keys `pubky:force-feed-scroll-top`, `pubky-app:mute-sync-cursor:*` | `shop-` prefixed (not migrated; per-tab) |
+| Pulse consent keys `pubky-pulse-consent-v1`, `pubky-pulse-consent-v1-granted-at`, session marker `pubky-pulse-consent-v1-started-under`, window event `pubky-pulse-consent-changed` | `shop-` prefixed (not migrated; Pulse never shipped under the old names) |
+| Pulse SDK state `pulse.*` (anonymous id, session, offline queue) and its Web Lock `pulse_offline_queue` | `pulse:shop.*` and `pulse_offline_queue:shop`, through the SDK's `storageNamespace: 'shop'` option (`SHOP_PULSE_STORAGE_NAMESPACE`) |
 
 Names only the Shop uses (`marketplace:*`, `pubky.marketplace.*`, the Web Lock names) are unchanged, because nothing else can collide with them.
 
@@ -261,6 +263,7 @@ Known edges:
 On iOS Safari (verified on 26.1 and 26.2), `indexedDB.deleteDatabase` called from inside the frame wipes the top page's record of that database too. Whatever the embedded Shop deletes or clears is therefore gone for the host app as well, so the Shop deletes and clears only names inside its namespace:
 
 - Sign-out and identity-switch wipes clear tables of `shop-franky` and remove only `shop-` keys; the retired `shop-franky-messaging-keyring` database is deleted once at boot (`DatabaseProvider`), never a host app's database. A version change recreates `shop-franky`, never `franky`.
+- Every `Pulse.reset` names the Shop's namespace (`{ storageNamespace: 'shop' }`). The consent gate resets on pages that never started Pulse, and there a reset without a namespace targets the SDK's default one, which is the App's `pulse.*` state. `src/libs/observability/pulse-consent.test.ts` seeds the App's Pulse and consent keys and fails if a Shop reset changes them.
 - The one-time migration is the only code that deletes an un-namespaced database or key, and only the Shop's own legacy data: it never runs while the Shop is embedded, never on an origin where the legacy names are the host app's, and never on a `franky` that lacks the Shop-only tables.
 - `src/core/database/franky/franky.namespace-isolation.test.ts` seeds a host app's `franky`, `franky-messaging-keyring`, `pubky-auth` and localStorage keys, runs the migration, sign-out wipes and a schema-change recreate, and fails if any deleted database or removed key is outside the namespace or any host data changed.
 

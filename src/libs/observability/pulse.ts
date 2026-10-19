@@ -29,6 +29,7 @@ import { AppError } from '@/libs/error/error';
 import { OBSERVABILITY_IGNORE_ERRORS } from '@/libs/observability/sentry.constants';
 import { sanitizeForSentry, shouldDropAppErrorFromSentry } from '@/libs/observability/sentry.utils';
 import { getDeployEnv, getPulseClientKey, getPulseEndpoint } from '@/libs/runtime-config/runtime-config';
+import { SHOP_PULSE_STORAGE_NAMESPACE, shopStorageKey } from '@/libs/storage-namespace/storage-namespace';
 import { getPulseConsent, getPulseConsentGeneration, subscribePulseConsent } from './pulse-consent';
 
 /**
@@ -47,9 +48,9 @@ import { getPulseConsent, getPulseConsentGeneration, subscribePulseConsent } fro
  */
 
 // Which consent this tab's Pulse state was created under. It lives in sessionStorage so it is copied and
-// discarded with the SDK's per-tab session keys, and it must not carry the SDK's "pulse." prefix or
+// discarded with the SDK's per-tab session keys, and it must not carry the SDK's "pulse:shop." prefix or
 // Pulse.reset() would purge it. It records an ordering, never an identifier, and is never sent.
-const PULSE_STARTED_UNDER_KEY = 'pubky-pulse-consent-v1-started-under';
+const PULSE_STARTED_UNDER_KEY = shopStorageKey('pubky-pulse-consent-v1-started-under');
 // An unreadable marker can never equal a consent generation, so the state counts as stale.
 const UNREADABLE_GENERATION = 'unreadable';
 
@@ -159,6 +160,9 @@ export function initPulse(): PulseInitResult | null {
       appVersion: Env.NEXT_PUBLIC_APP_VERSION,
       isDev: Env.NODE_ENV !== 'production' || getDeployEnv() !== 'production',
       consoleLogging: false,
+      // Same origin as the App under pubky.app/shop: without it both apps share `pulse.*` and one's reset
+      // or queue flush would reach the other's state. Every Pulse.reset below names it too.
+      storageNamespace: SHOP_PULSE_STORAGE_NAMESPACE,
       // The SDK stamps browser-derived fields on every event, all on by default. Spelled out rather than
       // inherited: OS and browser stay because they are what makes a browser-only error actionable and the
       // banner names them; the language pair goes, because `locale` and `preferred_language` are both
@@ -197,7 +201,14 @@ export function initializePulseConsent(): () => void {
       // browser-wide state belongs to the current consent — another tab may already have minted the
       // shared anonymous ID and parked events under it — and purging it here would destroy telemetry
       // the user has consented to, from tabs that are not stale at all.
-      Pulse.reset(accepted && stale ? { scope: 'tab' } : undefined);
+      //
+      // Both name the namespace: this runs on pages that never started Pulse, where a reset without one
+      // targets the SDK's default namespace, which on a shared origin is the App's.
+      Pulse.reset(
+        accepted && stale
+          ? { storageNamespace: SHOP_PULSE_STORAGE_NAMESPACE, scope: 'tab' }
+          : { storageNamespace: SHOP_PULSE_STORAGE_NAMESPACE },
+      );
       setStartedUnder(null);
       running = false;
     }

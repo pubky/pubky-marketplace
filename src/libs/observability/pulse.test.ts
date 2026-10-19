@@ -86,6 +86,7 @@ describe('optional Pulse initialization', () => {
       appVersion: 'test',
       isDev: true,
       consoleLogging: false,
+      storageNamespace: 'shop',
       deviceInfo: { os: true, browser: true, language: false },
       ignoreErrors: [...OBSERVABILITY_IGNORE_ERRORS],
       screenNameForPath: pulseScreenName,
