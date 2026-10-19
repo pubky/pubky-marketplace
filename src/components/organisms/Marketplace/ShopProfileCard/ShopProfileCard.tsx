@@ -6,6 +6,8 @@ import { Badge } from '@/atoms/Badge/Badge';
 import { Card, CardContent } from '@/atoms/Card/Card';
 import { Heading } from '@/atoms/Heading/Heading';
 import { Typography } from '@/atoms/Typography/Typography';
+import type { SellerDeclaration } from '@/libs/commerce/eu-region';
+import { SellerStatusBadge } from '@/molecules/Marketplace/SellerStatusBadge';
 
 export type ShopProfileCardVariant = 'full' | 'mini';
 
@@ -16,6 +18,8 @@ export interface ShopProfileCardProps {
   bannerUrl: string | null;
   location?: { countryCode: string; region?: string };
   vacation?: boolean;
+  /** The seller's own declaration (plan C1); shown as a badge, hidden when undeclared. */
+  sellerStatus?: SellerDeclaration;
   /**
    * `full` is the public storefront. `mini` is the editor's live preview,
    * using the same dimensions with a subordinate heading.
@@ -67,6 +71,7 @@ export function ShopProfileCard({
   bannerUrl,
   location,
   vacation = false,
+  sellerStatus = 'undeclared',
   variant,
   bannerAlt,
   avatarAlt,
@@ -118,6 +123,7 @@ export function ShopProfileCard({
               {name}
             </Heading>
             {vacation && <Badge variant="secondary">Vacation mode</Badge>}
+            <SellerStatusBadge declaration={sellerStatus} />
           </div>
           <Typography as="p" className={tokens.bio}>
             {bio}

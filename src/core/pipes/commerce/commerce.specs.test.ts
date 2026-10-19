@@ -105,3 +105,14 @@ describe('commerce records against pubky-app-specs', () => {
     expect(() => builder().createShop(incomplete)).toThrow();
   });
 });
+
+describe('the vendored specs parser and the seller declaration (legal launch plan C1)', () => {
+  it('accepts a shop record that carries sellerStatus and sellerStatusConfirmedAt, so no specs change is needed', () => {
+    const result = new PubkySpecsBuilder(COMMERCE_FIXTURE_SELLER).createShop({
+      ...createCommerceShopFixture(),
+      sellerStatus: 'private',
+      sellerStatusConfirmedAt: '2026-10-23T10:00:00.000Z',
+    });
+    expect(result.meta.url).toContain('/pub/pubky.app/marketplace/v1/shop.json');
+  });
+});

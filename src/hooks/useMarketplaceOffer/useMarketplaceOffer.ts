@@ -3,7 +3,11 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm, type UseFormReturn } from 'react-hook-form';
 import { CommerceController } from '@/controllers/commerce/commerce';
-import { marketplaceListingNotActiveMessage, marketplaceOfferFailureMessage } from '@/libs/commerce/failure-messages';
+import {
+  marketplaceListingNotActiveMessage,
+  marketplaceOfferFailureMessage,
+  marketplaceRegionRefusalMessage,
+} from '@/libs/commerce/failure-messages';
 import { amountInputSchemaForAsset, amountInputToMoney, type CommerceAsset } from '@/libs/commerce/pricing';
 import { isMarketplaceRevisionConflict } from '@/libs/commerce/transaction-commands';
 import { toast } from '@/molecules/Toaster/use-toast';
@@ -77,6 +81,7 @@ export function useMarketplaceOffer(
           toast({
             variant: 'error',
             description:
+              marketplaceRegionRefusalMessage(response.error) ??
               marketplaceListingNotActiveMessage(response.error) ??
               marketplaceOfferFailureMessage(response.error.code, response.error.message),
           });

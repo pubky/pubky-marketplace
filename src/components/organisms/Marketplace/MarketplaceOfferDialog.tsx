@@ -5,6 +5,7 @@ import { HandCoins } from 'lucide-react';
 import { Button } from '@/atoms/Button/Button';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/atoms/Dialog/Dialog';
 import { Typography } from '@/atoms/Typography/Typography';
+import { useBuyerCountry } from '@/hooks/useBuyerCountry/useBuyerCountry';
 import { useMarketplaceOffer } from '@/hooks/useMarketplaceOffer/useMarketplaceOffer';
 import { useRequireAuth } from '@/hooks/useRequireAuth/useRequireAuth';
 import { formatCommerceMoney } from '@/libs/commerce/format';
@@ -16,8 +17,10 @@ import {
   tryAmountInputToMoney,
 } from '@/libs/commerce/pricing';
 import type { CommerceMoney } from '@/libs/commerce/transaction-contracts';
+import { getEuFenceEnabled } from '@/libs/runtime-config/runtime-config';
 import { ControlledInputField } from '@/molecules/ControlledInputField/ControlledInputField';
 import { ControlledTextareaField } from '@/molecules/ControlledTextareaField/ControlledTextareaField';
+import { BuyerCountryField } from '@/molecules/Marketplace/BuyerCountryField';
 
 export function MarketplaceOfferDialog({
   aggregateId,
@@ -53,6 +56,8 @@ export function MarketplaceOfferDialog({
   const askingPriceLine = formatAskingPriceLine(comparableAsking);
   const comparisonLine = formatOfferComparisonLine(amount, comparableAsking, priceAsset);
 
+  const buyer = useBuyerCountry();
+  const needsCountry = getEuFenceEnabled() && buyer.country === null;
   const submit = async () => {
     if (!(await offer.submit())) return;
     setOpen(false);
@@ -121,11 +126,14 @@ export function MarketplaceOfferDialog({
             rows={4}
           />
         </div>
+        {needsCountry && (
+          <BuyerCountryField value={buyer.country} onChange={buyer.setCountry} id="dialog-buyer-country" />
+        )}
         <DialogFooter>
           <Button variant="secondary" className="rounded-full" onClick={() => setOpen(false)}>
             Cancel
           </Button>
-          <Button className="rounded-full" onClick={submit}>
+          <Button className="rounded-full" onClick={submit} disabled={needsCountry}>
             Send offer
           </Button>
         </DialogFooter>

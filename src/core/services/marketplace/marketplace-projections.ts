@@ -251,6 +251,27 @@ export const marketplaceSellerListingProjectionSchema = z.preprocess(
  * invented figure. `serverTime` corrects the end-of-auction countdown —
  * auctions run exclusively on the service clock.
  */
+/**
+ * `GET /v1/sellers/{pubky}/annual-limit` (legal launch plan C4). `enabled` is false while the
+ * service's EU fence is off. Everyone sees `limitReached`; the counters and the
+ * re-confirmation state are only served to the seller themself.
+ */
+export const marketplaceSellerAnnualLimitSchema = z.object({
+  enabled: z.boolean(),
+  year: z.number().int().optional(),
+  limitReached: z.boolean().optional(),
+  residentInEu: z.boolean().optional(),
+  salesLimit: z.number().int().optional(),
+  eurLimitCents: z.number().int().optional(),
+  sales: z.number().int().optional(),
+  eurCents: z.number().int().optional(),
+  euBuyerSales: z.number().int().optional(),
+  euBuyerEurCents: z.number().int().optional(),
+  reconfirmationRequired: z.boolean().optional(),
+});
+
+export type MarketplaceSellerAnnualLimit = z.infer<typeof marketplaceSellerAnnualLimitSchema>;
+
 export const marketplaceBidHistorySchema = z.object({
   bids: z.array(
     z.object({

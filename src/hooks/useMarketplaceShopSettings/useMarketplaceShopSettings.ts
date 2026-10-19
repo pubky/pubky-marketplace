@@ -25,6 +25,22 @@ import {
   termDaysFromField,
 } from './useMarketplaceShopSettings.types';
 
+/**
+ * When a private seller last confirmed their status: now when they declare it for the first time
+ * or tick the confirmation, the earlier stamp when nothing changed, and nothing for a business.
+ */
+export function sellerStatusConfirmedAtToPublish(input: {
+  status: string;
+  confirmed: boolean;
+  previousStatus: string | undefined;
+  previousConfirmedAt: string | undefined;
+  now: string;
+}): string | undefined {
+  if (input.status !== 'private') return undefined;
+  if (input.confirmed || input.previousStatus !== 'private') return input.now;
+  return input.previousConfirmedAt;
+}
+
 export type ShopImageSlotError = 'invalid-type' | 'too-large';
 
 /**
@@ -204,6 +220,8 @@ export function useMarketplaceShopSettings() {
         vacationMode: record.vacationMode,
         deliveryAssumeDays: record.deliveryAssumeDays?.toString() ?? '',
         autoCompleteDays: record.autoCompleteDays?.toString() ?? '',
+        sellerStatus: record.sellerStatus ?? '',
+        confirmPrivateStatus: false,
       });
       // A list another writer left unusable (["CHE"]) blocks checkout, so the
       // seller sees why straight away instead of on the next save.
@@ -278,6 +296,14 @@ export function useMarketplaceShopSettings() {
           autoCompleteDays: termDaysFromField(data.autoCompleteDays),
           // Cleared is published absent: the shop ships anywhere again.
           shipsToCountries: shipsToCountriesFromField(data.shipsToCountries),
+          sellerStatus: data.sellerStatus === 'trader' ? 'trader' : 'private',
+          sellerStatusConfirmedAt: sellerStatusConfirmedAtToPublish({
+            status: data.sellerStatus,
+            confirmed: data.confirmPrivateStatus,
+            previousStatus: existingRecord?.sellerStatus,
+            previousConfirmedAt: existingRecord?.sellerStatusConfirmedAt,
+            now,
+          }),
         });
         setRevision((current) => current + 1);
         setCreatedAt((current) => current ?? now);

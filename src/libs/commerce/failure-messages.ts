@@ -1,4 +1,5 @@
 import { CHECKOUT_HOLD_COPY } from '@/libs/commerce/checkout-hold';
+import { DIGITAL_REGION_MESSAGE, EU_UNAVAILABLE_MESSAGE, SELLER_LIMIT_MESSAGE } from '@/libs/commerce/eu-region';
 import { PAYKIT_OUTAGE_COPY } from '@/libs/commerce/paykit-rail';
 import { SHIPPO_FAILURE_REASONS } from '@/libs/commerce/shipping';
 import { isAppError } from '@/libs/error/error';
@@ -481,6 +482,24 @@ const LISTING_NOT_ACTIVE_REASON_MESSAGES: ReadonlyMap<string, string> = new Map(
   ['listing_removed', 'The seller removed this listing.'],
   ['listing_not_active', LISTING_NOT_FOR_SALE],
 ]);
+
+/**
+ * Copy for the service's regional refusals (legal launch plan C3, C3b, C4), or null for any other
+ * failure: a seller who does not sell to the EU, a private seller who must re-confirm, a seller at
+ * the annual limit, and digital items for EU and UK buyers.
+ */
+export function marketplaceRegionRefusalMessage(error: { code?: unknown; reason?: unknown }): string | null {
+  switch (error.code) {
+    case 'SELLER_UNAVAILABLE_IN_REGION':
+      return error.reason === 'private_seller_reconfirmation_required' ? SELLER_LIMIT_MESSAGE : EU_UNAVAILABLE_MESSAGE;
+    case 'SELLER_ANNUAL_LIMIT_REACHED':
+      return SELLER_LIMIT_MESSAGE;
+    case 'DIGITAL_UNAVAILABLE_IN_REGION':
+      return `${DIGITAL_REGION_MESSAGE}.`;
+    default:
+      return null;
+  }
+}
 
 /** Copy for a `LISTING_NOT_ACTIVE` refusal, or null for any other failure. */
 export function marketplaceListingNotActiveMessage(error: { code?: unknown; reason?: unknown }): string | null {

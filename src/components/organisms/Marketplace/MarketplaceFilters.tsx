@@ -54,6 +54,7 @@ import { useDisplayCurrency } from '@/hooks/useDisplayCurrency/useDisplayCurrenc
 import type { MarketplaceCatalogItem } from '@/hooks/useMarketplaceCatalog/useMarketplaceCatalog.utils';
 import { collectMarketplaceAttributeFacets } from '@/hooks/useMarketplaceCatalog/useMarketplaceCatalog.utils';
 import { BTCIcon, PaypalIcon, Tether } from '@/icons';
+import { RANKING_LINE } from '@/libs/commerce/eu-region';
 import { SELLER_PAYMENT_BADGE_LABELS } from '@/libs/commerce/payment-badges';
 import type { PaymentMethodFilter } from '@/libs/commerce/payment-method-filter';
 import { cn } from '@/libs/utils/utils';
@@ -337,6 +338,9 @@ export function MarketplaceFilters({
             </SelectContent>
           </Select>
         </div>
+        <Typography as="p" size="xs" className="text-muted-foreground" data-testid="marketplace-ranking-line">
+          {RANKING_LINE}
+        </Typography>
         {hasActiveFilters && (
           <Button
             variant="dark-outline"

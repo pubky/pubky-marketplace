@@ -9,7 +9,7 @@ import { ClientErrorCode } from '@/libs/error/error.codes';
 import { ErrorCategory, ErrorService } from '@/libs/error/error.types';
 import { Logger } from '@/libs/logger/logger';
 import { asOpaque } from '@/test-utils/type-assertions';
-import { useMarketplaceShopSettings } from './useMarketplaceShopSettings';
+import { sellerStatusConfirmedAtToPublish, useMarketplaceShopSettings } from './useMarketplaceShopSettings';
 import { marketplaceShopSettingsSchema } from './useMarketplaceShopSettings.types';
 
 const OWNER = 'y'.repeat(52);
@@ -55,6 +55,8 @@ const publishedShop = {
   shippingPolicy: 'Ships within three business days.',
   returnPolicy: 'Returns accepted within 30 days.',
   vacationMode: false,
+  sellerStatus: 'private' as const,
+  sellerStatusConfirmedAt: '2026-08-10T10:00:00.000Z',
 };
 
 function changeEvent(file: File): ChangeEvent<HTMLInputElement> {
@@ -103,6 +105,7 @@ describe('useMarketplaceShopSettings', () => {
     act(() => {
       result.current.form.setValue('name', 'Satoshi Vintage');
       result.current.form.setValue('bio', 'Independent circular fashion.');
+      result.current.form.setValue('sellerStatus', 'private');
     });
 
     await act(() => result.current.submit());
@@ -111,6 +114,8 @@ describe('useMarketplaceShopSettings', () => {
       expect.objectContaining({
         ownerPubky: OWNER,
         revision: 1,
+        sellerStatus: 'private',
+        sellerStatusConfirmedAt: expect.any(String),
         name: 'Satoshi Vintage',
         avatarUrl: undefined,
         bannerUrl: undefined,
@@ -365,6 +370,7 @@ describe('useMarketplaceShopSettings', () => {
 
     act(() => {
       result.current.form.setValue('name', 'Satoshi Vintage');
+      result.current.form.setValue('sellerStatus', 'private');
       result.current.avatar.onInputChange(changeEvent(imageFile('avatar.png', [1, 2, 3])));
       result.current.banner.onInputChange(changeEvent(imageFile('banner.png', [4, 5, 6])));
     });
@@ -461,6 +467,7 @@ describe('useMarketplaceShopSettings', () => {
 
     act(() => {
       result.current.form.setValue('name', 'Satoshi Vintage');
+      result.current.form.setValue('sellerStatus', 'private');
       result.current.avatar.onInputChange(changeEvent(imageFile('avatar.png')));
     });
 
@@ -475,5 +482,73 @@ describe('useMarketplaceShopSettings', () => {
     expect(JSON.stringify(vi.mocked(toast).mock.calls)).not.toContain(sentinel);
     expect(JSON.stringify([...errorSpy.mock.calls, ...warnSpy.mock.calls])).not.toContain(sentinel);
     expect(typeof vi.mocked(toast).mock.calls.at(-1)?.[0]?.description).toBe('string');
+  });
+
+  describe('seller declaration (legal launch plan C1, C4)', () => {
+    it('hydrates the declared status and publishes it back with its original confirmation', async () => {
+      vi.mocked(CommerceController.refreshShop).mockResolvedValue(publishedShop);
+      const { result } = renderHook(() => useMarketplaceShopSettings());
+      await waitFor(() => expect(result.current.hasShop).toBe(true));
+      expect(result.current.form.getValues('sellerStatus')).toBe('private');
+
+      await act(() => result.current.submit());
+      expect(CommerceController.commitUpsertShop).toHaveBeenCalledWith(
+        expect.objectContaining({ sellerStatus: 'private', sellerStatusConfirmedAt: '2026-08-10T10:00:00.000Z' }),
+      );
+    });
+
+    it('refuses a save with no declaration and does not publish', async () => {
+      vi.mocked(CommerceController.refreshShop).mockResolvedValue({
+        ...publishedShop,
+        sellerStatus: undefined,
+        sellerStatusConfirmedAt: undefined,
+      });
+      const { result } = renderHook(() => useMarketplaceShopSettings());
+      await waitFor(() => expect(result.current.hasShop).toBe(true));
+      expect(result.current.form.getValues('sellerStatus')).toBe('');
+
+      const succeeded = await act(() => result.current.submit());
+      expect(succeeded).toBe(false);
+      expect(CommerceController.commitUpsertShop).not.toHaveBeenCalled();
+      expect(result.current.form.getFieldState('sellerStatus').error?.message).toMatch(/Choose whether you sell/);
+    });
+
+    it('stamps the confirmation when the seller ticks it and drops it for a business', async () => {
+      vi.mocked(CommerceController.refreshShop).mockResolvedValue(publishedShop);
+      const { result } = renderHook(() => useMarketplaceShopSettings());
+      await waitFor(() => expect(result.current.hasShop).toBe(true));
+
+      act(() => result.current.form.setValue('confirmPrivateStatus', true));
+      await act(() => result.current.submit());
+      const confirmed = vi.mocked(CommerceController.commitUpsertShop).mock.calls[0]?.[0] as CommerceShopRecord;
+      expect(confirmed.sellerStatusConfirmedAt).not.toBe('2026-08-10T10:00:00.000Z');
+      expect(Date.parse(confirmed.sellerStatusConfirmedAt ?? '')).toBeGreaterThan(Date.parse('2026-08-10T10:00:00Z'));
+
+      act(() => result.current.form.setValue('sellerStatus', 'trader'));
+      await act(() => result.current.submit());
+      const trader = vi.mocked(CommerceController.commitUpsertShop).mock.calls[1]?.[0] as CommerceShopRecord;
+      expect(trader.sellerStatus).toBe('trader');
+      expect(trader.sellerStatusConfirmedAt).toBeUndefined();
+    });
+  });
+
+  describe('sellerStatusConfirmedAtToPublish', () => {
+    const now = '2026-10-23T10:00:00.000Z';
+    const earlier = '2026-09-01T10:00:00.000Z';
+
+    it('stamps a first private declaration and a ticked confirmation, keeps an unchanged one, drops a business', () => {
+      const base = {
+        status: 'private',
+        confirmed: false,
+        previousStatus: 'private',
+        previousConfirmedAt: earlier,
+        now,
+      };
+      expect(sellerStatusConfirmedAtToPublish(base)).toBe(earlier);
+      expect(sellerStatusConfirmedAtToPublish({ ...base, confirmed: true })).toBe(now);
+      expect(sellerStatusConfirmedAtToPublish({ ...base, previousStatus: undefined })).toBe(now);
+      expect(sellerStatusConfirmedAtToPublish({ ...base, previousStatus: 'trader' })).toBe(now);
+      expect(sellerStatusConfirmedAtToPublish({ ...base, status: 'trader' })).toBeUndefined();
+    });
   });
 });

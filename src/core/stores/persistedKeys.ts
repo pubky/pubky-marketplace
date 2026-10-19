@@ -13,6 +13,7 @@ export const HOME_PERSIST_KEY = shopStorageKey('home-store');
 export const HOT_PERSIST_KEY = shopStorageKey('hot-store');
 export const SETTINGS_PERSIST_KEY = shopStorageKey('settings-storage');
 export const MARKETPLACE_DISPLAY_PERSIST_KEY = shopStorageKey('marketplace-display-storage');
+export const BUYER_COUNTRY_PERSIST_KEY = shopStorageKey('buyer-country-storage');
 export const MIGRATION_STORE_KEY = 'migration-store';
 
 // List of all persisted store keys (Local storage keys)
@@ -26,6 +27,7 @@ export const PERSISTED_STORE_KEYS = [
   HOT_PERSIST_KEY,
   SETTINGS_PERSIST_KEY,
   MARKETPLACE_DISPLAY_PERSIST_KEY,
+  BUYER_COUNTRY_PERSIST_KEY,
 ] as const;
 
 /**

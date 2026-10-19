@@ -92,6 +92,8 @@ import {
   marketplacePublicListingAvailabilitySchema,
   type MarketplaceReceipt,
   marketplaceReceiptSchema,
+  type MarketplaceSellerAnnualLimit,
+  marketplaceSellerAnnualLimitSchema,
   type MarketplaceSellerDrop,
   marketplaceSellerDropSchema,
   type MarketplaceSellerListingProjection,
@@ -324,6 +326,24 @@ export class MarketplaceTransactionService {
       marketplaceBidHistorySchema,
       raw,
       'Marketplace returned an invalid bid history.',
+    );
+  }
+
+  /**
+   * `GET /v1/sellers/{pubky}/annual-limit`: whether a seller can take another sale under the
+   * service's EU annual limit, with the seller's own counters when the caller is the seller.
+   */
+  static async getSellerAnnualLimit(actor: string, sellerPubky: string): Promise<MarketplaceSellerAnnualLimit> {
+    const raw = await this.readProjection(
+      'getSellerAnnualLimit',
+      actor,
+      `/v1/sellers/${encodeURIComponent(sellerPubky)}/annual-limit`,
+    );
+    return this.parseProjection(
+      'getSellerAnnualLimit',
+      marketplaceSellerAnnualLimitSchema,
+      raw,
+      'Marketplace returned an invalid annual-limit read.',
     );
   }
 

@@ -46,6 +46,7 @@ import {
   marketplacePaymentSchema,
   type MarketplaceReceipt,
   marketplaceReceiptSchema,
+  type MarketplaceSellerAnnualLimit,
   type MarketplaceSellerListingProjection,
   parseMarketplaceNotificationEntries,
 } from './marketplace-projections';
@@ -118,6 +119,7 @@ export type {
   MarketplacePublicDrop,
   MarketplacePublicListingAvailability,
   MarketplaceReceipt,
+  MarketplaceSellerAnnualLimit,
   MarketplaceSellerDrop,
   MarketplaceSellerListingProjection,
   MarketplaceUnrecognizedNotification,
@@ -239,6 +241,17 @@ export class MarketplaceGatewayService {
    * answer is `null` — "the feature does not exist here", which callers must
    * render as absence, never as a fake false-with-a-checkbox.
    */
+  /**
+   * The seller's annual-limit state under the service's EU fence. Outside the durable service
+   * there is no fence, so the answer is "not enabled".
+   */
+  static async getSellerAnnualLimit(actor: string, sellerPubky: string): Promise<MarketplaceSellerAnnualLimit> {
+    if (isDurableCommerceMode(getCommerceAdapterMode())) {
+      return await MarketplaceTransactionService.getSellerAnnualLimit(actor, sellerPubky);
+    }
+    return { enabled: false };
+  }
+
   static async getBandConsent(actor: string, sellerPubky: string): Promise<boolean | null> {
     if (isDurableCommerceMode(getCommerceAdapterMode())) {
       return await MarketplaceTransactionService.getBandConsent(actor, sellerPubky);

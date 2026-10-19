@@ -28,6 +28,7 @@ import { MARKETPLACE_DELIVERY_ADDRESS_DISCLOSURE } from '@/config/commerce-copy'
 import { CommerceController } from '@/controllers/commerce/commerce';
 import { isMarketplaceAwardCheckoutEligible } from '@/core/services/marketplace/marketplace-projections';
 import { useBuyerPaykitWallet } from '@/hooks/useBuyerPaykitWallet/useBuyerPaykitWallet';
+import { useCheckoutRegion } from '@/hooks/useCheckoutRegion/useCheckoutRegion';
 import {
   groupMarketplaceCartItems,
   type MarketplaceCartItem,
@@ -93,11 +94,13 @@ import { formatDateTime } from '@/libs/utils/dateTime';
 import type { CommerceListingModelSchema } from '@/models/commerce/commerce.schema';
 import { BitkitDownloads } from '@/molecules/BitkitDownloads/BitkitDownloads';
 import { ControlledInputField } from '@/molecules/ControlledInputField/ControlledInputField';
+import { BuyerCountryField } from '@/molecules/Marketplace/BuyerCountryField';
 import { DeliveryKeyBlockedNotice } from '@/molecules/Marketplace/DeliveryKeyBlockedNotice';
 import { MarketplaceCheckoutStatusLabels } from '@/molecules/Marketplace/MarketplaceCheckoutStatusLabels';
 import { MarketplaceCheckoutSteps } from '@/molecules/Marketplace/MarketplaceCheckoutSteps';
 import { MarketplaceSellerLink } from '@/molecules/Marketplace/MarketplaceSellerLink';
 import { PaykitOutageNotice } from '@/molecules/Marketplace/PaykitOutageNotice';
+import { SellerSaleTerms } from '@/molecules/Marketplace/SellerSaleTerms';
 import { MarketplaceAddressFields } from '@/molecules/MarketplaceAddressFields/MarketplaceAddressFields';
 import { SettingsSectionContent } from '@/molecules/Settings/SettingsSectionContent/SettingsSectionContent';
 import { ContentLayout } from '@/organisms/ContentLayout/ContentLayout';
@@ -364,6 +367,14 @@ function MarketplaceCartCheckout() {
       : (availableCheckoutMethods[0] ?? null);
   const paykitBlocksPay = (paykitRefused || paykitOutageForCart) && selectedMethod === 'paykit';
   const isMultiSeller = sellerKey.includes('|');
+  const region = useCheckoutRegion({
+    sellerPubkys: sellerKey === '' ? [] : sellerKey.split('|'),
+    hasDigital: checkout.hasInstantDigitalLine || checkout.hasManualDigitalLine || isLocksCheckout,
+    requiresDeliveryAddress: checkout.requiresDeliveryAddress,
+    addressCountry: String(formValues.countryCode ?? ''),
+    currentUserPubky,
+  });
+  const anyPrivateSeller = Object.values(region.declarations).some((declaration) => declaration === 'private');
   const isPaying = isOfferCheckout ? offerPay.isSubmitting : checkout.isPaying;
   const listingRoute = award && getMarketplaceListingRoute(award.listing.sellerPubky, award.listing.listingId);
   const backHref =
@@ -479,6 +490,7 @@ function MarketplaceCartCheckout() {
 
   const canPay =
     !approvalNeeded &&
+    !region.blocked &&
     formValid &&
     !checkout.hasFulfillmentConflict &&
     locksRoute !== 'mixed' &&
@@ -528,7 +540,12 @@ function MarketplaceCartCheckout() {
                             : isOfferCheckout && !offerEligible
                               ? 'This offer is not available for checkout.'
                               : 'Fill in delivery details and choose a payment method to pay.';
-  const payDisabledReason = locksRoute === 'mixed' ? LOCKS_MIXED_CHECKOUT_COPY : checkoutPayDisabledReason;
+  const payDisabledReason =
+    locksRoute === 'mixed'
+      ? LOCKS_MIXED_CHECKOUT_COPY
+      : region.blocked
+        ? (region.refusal ?? 'Tell us the country you live in to continue.')
+        : checkoutPayDisabledReason;
 
   const removeAwardLine = async () => {
     const line = cart.awardItems.find((item) => item.awardId === award?.id);
@@ -974,6 +991,16 @@ function MarketplaceCartCheckout() {
               })}
 
               {approvalNeeded && <MarketplaceSessionRequiredCard />}
+
+              {region.needsCountryField && (
+                <section className="grid min-w-0 gap-4 rounded-md bg-card p-6 shadow-lg" aria-label="Your country">
+                  <BuyerCountryField
+                    value={region.buyerCountry}
+                    onChange={region.setBuyerCountry}
+                    id="checkout-buyer-country"
+                  />
+                </section>
+              )}
 
               {checkout.requiresDeliveryAddress && (
                 <section className="grid min-w-0 gap-6 rounded-md bg-card p-6 shadow-lg" aria-label="Delivery address">
@@ -1436,6 +1463,17 @@ function MarketplaceCartCheckout() {
                             : 'No payment rails are live in this deployment, so no real funds move. This marketplace never holds funds.'}
                         </Typography>
                       )}
+                      {region.refusal && (
+                        <Typography
+                          as="p"
+                          role="alert"
+                          className="text-sm font-medium"
+                          data-testid="checkout-region-refusal"
+                        >
+                          {region.refusal}
+                        </Typography>
+                      )}
+                      <SellerSaleTerms declaration={anyPrivateSeller ? 'private' : 'undeclared'} />
                       {!canPay && (
                         <Typography id="checkout-pay-reason" as="p" className="text-xs text-muted-foreground">
                           {payDisabledReason}

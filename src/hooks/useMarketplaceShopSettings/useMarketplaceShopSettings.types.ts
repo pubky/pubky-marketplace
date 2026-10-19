@@ -50,6 +50,15 @@ export const marketplaceShopSettingsSchema = z.object({
   vacationMode: z.boolean(),
   deliveryAssumeDays: termDaysField,
   autoCompleteDays: termDaysField,
+  // Who the seller says they are (legal launch plan C1): required, so every saved shop declares it.
+  sellerStatus: z
+    .string()
+    .refine(
+      (value): boolean => value === 'private' || value === 'trader',
+      'Choose whether you sell as a private individual or as a business.',
+    ),
+  // Ticked to re-confirm a private seller's status (plan C4); stamps `sellerStatusConfirmedAt`.
+  confirmPrivateStatus: z.boolean(),
 });
 
 export type MarketplaceShopSettingsData = z.infer<typeof marketplaceShopSettingsSchema>;
@@ -65,4 +74,6 @@ export const marketplaceShopSettingsDefaults: MarketplaceShopSettingsData = {
   vacationMode: false,
   deliveryAssumeDays: '',
   autoCompleteDays: '',
+  sellerStatus: '',
+  confirmPrivateStatus: false,
 };

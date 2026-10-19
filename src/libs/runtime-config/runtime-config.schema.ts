@@ -468,6 +468,8 @@ export const APP_RUNTIME_DEFAULTS = {
   marketplaceGrantPollMilliseconds: 1_000,
   passportSignIn: true,
   usdtPaymentsEnabled: false,
+  euFenceEnabled: false,
+  digitalRegionBlockEnabled: false,
   frameAncestors: [] as string[],
   embedded: false,
   privEncryptionKeys: false,
@@ -609,6 +611,21 @@ export const runtimeConfigValueSchema = networkConfigValueSchema.extend({
    * without a service deploy. It never gates the display of an existing USDT order.
    */
   usdtPaymentsEnabled: z.boolean().default(APP_RUNTIME_DEFAULTS.usdtPaymentsEnabled),
+  /**
+   * Shop-side switch for the EU scope fence (legal launch plan C2-C4), mirroring the
+   * marketplace service's `EU_FENCE_ENABLED`. Off by default. On, the Shop asks the buyer
+   * for their country where no address supplies it, sends it with every selling command,
+   * shows business and undeclared sellers as unavailable to EU buyers, and shows sellers
+   * their annual-limit counters. The seller declaration and the consumer-law copy do not
+   * depend on it.
+   */
+  euFenceEnabled: z.boolean().default(APP_RUNTIME_DEFAULTS.euFenceEnabled),
+  /**
+   * Shop-side switch for holding back digital items from buyers in the EU-27 and GB
+   * (legal launch plan C3b), mirroring the service's `DIGITAL_REGION_BLOCK_ENABLED`.
+   * Independent of `euFenceEnabled`. Off by default; ON for launch.
+   */
+  digitalRegionBlockEnabled: z.boolean().default(APP_RUNTIME_DEFAULTS.digitalRegionBlockEnabled),
   /**
    * Pubky Passport origin override. Absent means the Passport deployment that
    * signs users up on this deploy's homeserver (see `getPassportOrigin`).
@@ -755,6 +772,8 @@ export const runtimeEnvInputSchema = z
     marketplaceGrantPollMilliseconds: optionalPositiveIntFromString,
     passportSignIn: optionalBooleanFromString,
     usdtPaymentsEnabled: optionalBooleanFromString,
+    euFenceEnabled: optionalBooleanFromString,
+    digitalRegionBlockEnabled: optionalBooleanFromString,
     passportUrl: optionalPassportUrlFromString,
     frameAncestors: optionalFrameAncestorsFromString(false),
     embedded: optionalBooleanFromString,
@@ -862,6 +881,8 @@ export const runtimeEnvInputSchemaWithDefaults = z
     marketplaceGrantPollMilliseconds: optionalPositiveIntFromString,
     passportSignIn: optionalBooleanFromString,
     usdtPaymentsEnabled: optionalBooleanFromString,
+    euFenceEnabled: optionalBooleanFromString,
+    digitalRegionBlockEnabled: optionalBooleanFromString,
     passportUrl: optionalDevPassportUrlFromString,
     frameAncestors: optionalFrameAncestorsFromString(true),
     embedded: optionalBooleanFromString,
@@ -960,6 +981,8 @@ export const PUBKY_RUNTIME_ENV_NAMES: Record<keyof RuntimeConfig, string> = {
   marketplaceGrantPollMilliseconds: 'PUBKY_RUNTIME_MARKETPLACE_GRANT_POLL_MILLISECONDS',
   passportSignIn: 'PUBKY_RUNTIME_PASSPORT_SIGN_IN',
   usdtPaymentsEnabled: 'PUBKY_RUNTIME_USDT_PAYMENTS_ENABLED',
+  euFenceEnabled: 'PUBKY_RUNTIME_EU_FENCE_ENABLED',
+  digitalRegionBlockEnabled: 'PUBKY_RUNTIME_DIGITAL_REGION_BLOCK_ENABLED',
   passportUrl: 'PUBKY_RUNTIME_PASSPORT_URL',
   frameAncestors: 'PUBKY_RUNTIME_FRAME_ANCESTORS',
   embedded: 'PUBKY_RUNTIME_EMBEDDED',

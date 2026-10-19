@@ -5,13 +5,16 @@ import { Gavel } from 'lucide-react';
 import { Button } from '@/atoms/Button/Button';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/atoms/Dialog/Dialog';
 import { Typography } from '@/atoms/Typography/Typography';
+import { useBuyerCountry } from '@/hooks/useBuyerCountry/useBuyerCountry';
 import { useMarketplaceBid } from '@/hooks/useMarketplaceBid/useMarketplaceBid';
 import { marketplaceBidMinimum } from '@/hooks/useMarketplaceBid/useMarketplaceBid.types';
 import { useRequireAuth } from '@/hooks/useRequireAuth/useRequireAuth';
 import type { AuctionPhase } from '@/libs/commerce/auction-phase';
 import { formatCommerceMoney } from '@/libs/commerce/format';
 import { AMOUNT_EXAMPLES, amountInputExample, amountInputUnitLabel, type CommerceAsset } from '@/libs/commerce/pricing';
+import { getEuFenceEnabled } from '@/libs/runtime-config/runtime-config';
 import { ControlledInputField } from '@/molecules/ControlledInputField/ControlledInputField';
+import { BuyerCountryField } from '@/molecules/Marketplace/BuyerCountryField';
 import type { MarketplaceListingProjection } from '@/services/marketplace/marketplace';
 
 export function MarketplaceBidDialog({
@@ -53,6 +56,8 @@ export function MarketplaceBidDialog({
   );
   const { requireAuth } = useRequireAuth();
 
+  const buyer = useBuyerCountry();
+  const needsCountry = getEuFenceEnabled() && buyer.country === null;
   const submit = async () => {
     if (!(await bid.submit())) return;
     setOpen(false);
@@ -136,11 +141,14 @@ export function MarketplaceBidDialog({
         <Typography as="p" className="text-sm text-muted-foreground">
           Your maximum stays private. The visible price advances only enough to keep you ahead.
         </Typography>
+        {needsCountry && (
+          <BuyerCountryField value={buyer.country} onChange={buyer.setCountry} id="dialog-buyer-country" />
+        )}
         <DialogFooter>
           <Button variant="secondary" className="rounded-full" onClick={() => setOpen(false)}>
             Cancel
           </Button>
-          <Button className="rounded-full" onClick={submit} disabled={auctionPhase === 'ended'}>
+          <Button className="rounded-full" onClick={submit} disabled={auctionPhase === 'ended' || needsCountry}>
             Confirm bid
           </Button>
         </DialogFooter>

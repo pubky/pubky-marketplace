@@ -3,6 +3,8 @@ import {
   escapeForInlineScript,
   getCommerceAdapterMode,
   getCommercePollIntervalMs,
+  getDigitalRegionBlockEnabled,
+  getEuFenceEnabled,
   getLocksUrl,
   getMarketplaceNexusUrl,
   getMarketplaceUrl,
@@ -261,6 +263,33 @@ describe('runtime-config resolver', () => {
       simulateDeployedEnv();
       setAllRuntimeEnv();
       expect(readServerConfig().usdtPaymentsEnabled).toBe(false);
+    });
+
+    it('keeps the EU fence and the digital hold off by default, each on its own switch', () => {
+      expect(PUBKY_RUNTIME_ENV_NAMES.euFenceEnabled).toBe('PUBKY_RUNTIME_EU_FENCE_ENABLED');
+      expect(PUBKY_RUNTIME_ENV_NAMES.digitalRegionBlockEnabled).toBe('PUBKY_RUNTIME_DIGITAL_REGION_BLOCK_ENABLED');
+      expect(getEuFenceEnabled()).toBe(false);
+      expect(getDigitalRegionBlockEnabled()).toBe(false);
+
+      resetRuntimeConfigForTests();
+      process.env[PUBKY_RUNTIME_ENV_NAMES.digitalRegionBlockEnabled] = 'true';
+      expect(getDigitalRegionBlockEnabled()).toBe(true);
+      expect(getEuFenceEnabled()).toBe(false);
+
+      resetRuntimeConfigForTests();
+      process.env[PUBKY_RUNTIME_ENV_NAMES.euFenceEnabled] = 'true';
+      expect(getEuFenceEnabled()).toBe(true);
+      expect(getDigitalRegionBlockEnabled()).toBe(true);
+    });
+
+    it('fails loudly on a malformed region switch and resolves both off in a strict deployed parse', () => {
+      process.env[PUBKY_RUNTIME_ENV_NAMES.euFenceEnabled] = 'maybe';
+      expect(() => readServerConfig()).toThrow();
+      delete process.env[PUBKY_RUNTIME_ENV_NAMES.euFenceEnabled];
+      simulateDeployedEnv();
+      setAllRuntimeEnv();
+      expect(readServerConfig().euFenceEnabled).toBe(false);
+      expect(readServerConfig().digitalRegionBlockEnabled).toBe(false);
     });
 
     it('does not request scoped encryption keys unless the deploy opts in', () => {
