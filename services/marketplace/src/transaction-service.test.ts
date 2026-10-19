@@ -728,6 +728,25 @@ describe('MarketplaceTransactionService', () => {
     });
   });
 
+  it('takes an opening bid equal to the starting bid and asks the next bidder for the increment', async () => {
+    const { repository, service } = createService();
+    await service.execute(SELLER, registerAuctionCommand());
+
+    await expect(service.execute(BUYER, placeBidCommand(1, 4_500, 1))).resolves.toMatchObject({
+      ok: true,
+      result: { listing: { auction: { currentPrice: { amountMinor: 4_500 }, leaderPubky: BUYER, bidCount: 1 } } },
+    });
+    await expect(service.execute(OTHER_BUYER, placeBidCommand(2, 4_999, 2))).resolves.toMatchObject({
+      ok: false,
+      error: { code: 'BID_TOO_LOW' },
+    });
+    await expect(service.execute(OTHER_BUYER, placeBidCommand(3, 5_000, 2))).resolves.toMatchObject({
+      ok: true,
+      result: { listing: { auction: { currentPrice: { amountMinor: 5_000 }, leaderPubky: OTHER_BUYER } } },
+    });
+    expect(repository.getBidsForListing(AGGREGATE_ID)).toHaveLength(2);
+  });
+
   it('rejects seller, low, stale, and post-close bids', async () => {
     let now = new Date(NOW);
     const repository = new InMemoryMarketplaceRepository();
@@ -738,7 +757,7 @@ describe('MarketplaceTransactionService', () => {
       ok: false,
       error: { code: 'UNAUTHORIZED' },
     });
-    await expect(service.execute(BUYER, placeBidCommand(2, 4_500, 1))).resolves.toMatchObject({
+    await expect(service.execute(BUYER, placeBidCommand(2, 4_499, 1))).resolves.toMatchObject({
       ok: false,
       error: { code: 'BID_TOO_LOW' },
     });

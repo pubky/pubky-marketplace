@@ -79,6 +79,30 @@ describe('MarketplaceBidDialog', () => {
     expect(screen.getByText(/Minimum maximum: \$74\.00/)).toBeInTheDocument();
   });
 
+  it('names the starting bid as the minimum while no bid stands', async () => {
+    const user = userEvent.setup();
+    const standing = createAuctionProjectionFixture();
+    render(
+      <MarketplaceBidDialog
+        aggregateId="listing:x"
+        projection={createAuctionProjectionFixture({
+          auction: {
+            ...standing.auction!,
+            currentPrice: { amountMinor: 4_500, currency: 'USD', exponent: 2 },
+            leaderPubky: null,
+            bidCount: 0,
+          },
+        })}
+        priceAsset={USD_ASSET}
+        onAccepted={vi.fn()}
+      />,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Place a bid' }));
+
+    expect(screen.getByText(/Minimum maximum: \$45\.00 the starting bid\./)).toBeInTheDocument();
+  });
+
   it('shows the bidder-specific minimum and current proxy maximum', async () => {
     const user = userEvent.setup();
     render(

@@ -16,7 +16,8 @@ export const MARKETPLACE_FAILURE_MESSAGES = {
   offerShippingOnly: 'This listing is local pickup only. Offers are available only on listings that ship.',
   counterOffer: 'Could not send this counteroffer.',
   bid: 'Could not place this bid.',
-  bidTooLow: 'Your new maximum must be higher than your previous maximum and the current visible price.',
+  bidTooLow:
+    'Your new maximum is below the minimum next bid and must exceed your previous maximum. Check the minimum shown and try again.',
   bidUnauthorized: 'You cannot bid on your own auction.',
   bidStale: 'The auction changed since you loaded it. Reload the latest price and try again.',
   bidClosed: 'This auction is no longer open for bidding.',
