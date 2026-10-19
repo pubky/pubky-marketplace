@@ -208,6 +208,8 @@ describe('Marketplace payment settings — visual regression', () => {
   ] as const)('renders the Bitkit setup dialog at %s viewport', async (size, viewport, baseline) => {
     view.paykitServerApi = 'upstream';
     view.accountClaimed = false;
+    // Bitcoin stays off: a seller who switched it on was connected before and is offered reconnect instead.
+    view.ownConfig = { bitcoinEnabled: false };
     await setTouch(size === 'mobile');
 
     const screen = await renderForVRT(<MarketplacePaymentSettings />, { viewport });
