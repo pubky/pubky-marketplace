@@ -591,6 +591,33 @@ describe('MarketplaceListing', () => {
     expect(screen.getByRole('button', { name: 'Make offer' })).toBeEnabled();
   });
 
+  describe.each(['paused', 'ended', 'removed'] as const)('a %s listing', (state) => {
+    it('offers neither Make offer nor Buy', () => {
+      view.listing = toCommerceListingModel(createCommerceListingFixture({ fulfillmentMethods: ['pickup'], state }));
+      renderListing();
+      expect(screen.queryByRole('button', { name: 'Make offer' })).not.toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /Buy/ })).toBeDisabled();
+    });
+
+    it('keeps Buy disabled and offers no Make offer before the marketplace session is known', () => {
+      view.listing = toCommerceListingModel(createCommerceListingFixture({ fulfillmentMethods: ['pickup'], state }));
+      view.projection = null;
+      view.projectionError = 'A marketplace session is required.';
+      view.needsSession = true;
+      renderListing();
+      expect(screen.queryByRole('button', { name: 'Make offer' })).not.toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /Buy/ })).toBeDisabled();
+    });
+  });
+
+  it('offers Make offer on an active listing', () => {
+    view.listing = toCommerceListingModel(
+      createCommerceListingFixture({ fulfillmentMethods: ['pickup'], state: 'active' }),
+    );
+    renderListing();
+    expect(screen.getByRole('button', { name: 'Make offer' })).toBeEnabled();
+  });
+
   describe('per-variant prices', () => {
     const pricedSizes = () =>
       toCommerceListingModel(
