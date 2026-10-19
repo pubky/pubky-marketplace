@@ -1174,3 +1174,54 @@ describe('fulfillment.update_tracking command contract', () => {
     ).toBe(false);
   });
 });
+
+describe('buyerCountry on the commands that sell (legal launch plan C2)', () => {
+  const base = {
+    version: 1,
+    commandId: '018f47d2-6a27-7c23-a62f-000000000730',
+    expectedRevision: 1,
+    issuedAt: '2026-08-20T12:00:00.000Z',
+  };
+  const money = { amountMinor: 10_000, currency: 'USD', exponent: 2 };
+  const aggregateId = `listing:${'y'.repeat(52)}_boots_01`;
+  const bid = (payload: Record<string, unknown>) => ({
+    ...base,
+    aggregateId,
+    kind: 'auction.place_bid',
+    payload: { maximumAmount: money, ...payload },
+  });
+
+  it('is optional, uppercase alpha-2, and strict', () => {
+    expect(marketplaceCommandSchema.safeParse(bid({})).success).toBe(true);
+    expect(marketplaceCommandSchema.safeParse(bid({ buyerCountry: 'DE' })).success).toBe(true);
+    for (const buyerCountry of ['de', 'DEU', 'D', '1A', '']) {
+      expect(marketplaceCommandSchema.safeParse(bid({ buyerCountry })).success, buyerCountry).toBe(false);
+    }
+  });
+
+  it('rides a bid, an offer and a checkout, and goes over the wire as snake_case', () => {
+    const offer = {
+      ...base,
+      aggregateId,
+      kind: 'offer.create',
+      payload: { amount: money, quantity: 1, expiresInSeconds: 3600, message: '', buyerCountry: 'GB' },
+    };
+    const parsedOffer = marketplaceCommandSchema.parse(offer);
+    expect(toSnakeCaseWire(parsedOffer)).toMatchObject({ payload: { buyer_country: 'GB' } });
+
+    const counter = {
+      ...base,
+      aggregateId: 'offer:018f47d2-6a27-7c23-a62f-000000000731',
+      kind: 'offer.counter',
+      payload: {
+        offerId: '018f47d2-6a27-7c23-a62f-000000000731',
+        amount: money,
+        quantity: 1,
+        expiresInSeconds: 3600,
+        message: '',
+        buyerCountry: 'DE',
+      },
+    };
+    expect(marketplaceCommandSchema.safeParse(counter).success).toBe(false);
+  });
+});

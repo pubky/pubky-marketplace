@@ -196,6 +196,7 @@ describe('MarketplaceCheckout session expiry (real checkout hook)', () => {
     useCommerceStore.getState().setMarketplaceSession(restored);
     CommerceController.bindMarketplaceSessionStore();
     vi.spyOn(CommerceApplication, 'getDeliveryAddresses').mockResolvedValue([]);
+    vi.spyOn(CommerceApplication, 'getOrFetchShop').mockRejectedValue(new Error('no shop in this test'));
     vi.spyOn(CommerceApplication, 'fetchPickupAvailable').mockResolvedValue(true);
     vi.spyOn(CommerceApplication, 'getSellerPaymentConfig').mockResolvedValue({
       bitcoinAvailable: true,

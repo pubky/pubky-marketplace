@@ -21,6 +21,7 @@ import {
 } from '@/hooks/useMarketplaceCatalog/useMarketplaceCatalog.utils';
 import { useMarketplaceMediaUrl } from '@/hooks/useMarketplaceMediaUrl/useMarketplaceMediaUrl';
 import { useSellerPaymentBadges } from '@/hooks/useSellerPaymentBadges/useSellerPaymentBadges';
+import { sellerDeclaration } from '@/libs/commerce/eu-region';
 import { resolveSellerDeliveryTerms, sellerDeliveryTermsCopy } from '@/libs/commerce/seller-delivery-terms';
 import { formatShipsToCountries, shopShipsToCountries } from '@/libs/commerce/ships-to';
 import { MarketplacePaymentMethodBadges } from '@/molecules/MarketplacePaymentMethodBadges/MarketplacePaymentMethodBadges';
@@ -112,6 +113,7 @@ export function MarketplaceShop({ sellerPubky }: { sellerPubky: string }) {
               bannerUrl={bannerUrl}
               location={shop.record.location}
               vacation={shop.record.vacationMode}
+              sellerStatus={sellerDeclaration(shop.record)}
               bannerAlt={`${shop.record.name} banner`}
               avatarAlt={`${shop.record.name} avatar`}
               locationExtras={

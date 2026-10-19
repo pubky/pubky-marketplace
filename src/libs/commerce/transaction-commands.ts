@@ -236,6 +236,14 @@ export const releaseDropListingsCommandSchema = createCommerceCommandSchema(
   z.object({}).strict(),
 );
 
+/**
+ * The buyer's country (ISO 3166-1 alpha-2, uppercase), sent in clear text on
+ * the commands that sell so the service can enforce the EU scope fence without
+ * opening the sealed address. Optional on the wire: the Shop sends it only when
+ * one of its two region flags is on.
+ */
+export const buyerCountrySchema = z.string().regex(/^[A-Z]{2}$/, 'Expected an ISO 3166-1 alpha-2 code');
+
 const offerTermsSchema = z
   .object({
     amount: commercePositiveMoneySchema,
@@ -249,7 +257,10 @@ const offerTermsSchema = z
   })
   .strict();
 
-export const createOfferCommandSchema = createCommerceCommandSchema('offer.create', offerTermsSchema);
+export const createOfferCommandSchema = createCommerceCommandSchema(
+  'offer.create',
+  offerTermsSchema.extend({ buyerCountry: buyerCountrySchema.optional() }).strict(),
+);
 
 export const counterOfferCommandSchema = createCommerceCommandSchema(
   'offer.counter',
@@ -280,6 +291,7 @@ export const offerCheckoutCommandSchema = createCommerceCommandSchema(
       deliveryAddressEnvelope: offerDeliveryEnvelopeSchema.optional(),
       // Absent means shipping; a pickup award sends `pickup` and no address.
       fulfillment: z.literal('pickup').optional(),
+      buyerCountry: buyerCountrySchema.optional(),
     })
     .strict()
     .superRefine((payload, context) => {
@@ -311,7 +323,7 @@ export const offerCheckoutCommandSchema = createCommerceCommandSchema(
 
 export const placeBidCommandSchema = createCommerceCommandSchema(
   'auction.place_bid',
-  z.object({ maximumAmount: commercePositiveMoneySchema }).strict(),
+  z.object({ maximumAmount: commercePositiveMoneySchema, buyerCountry: buyerCountrySchema.optional() }).strict(),
 );
 
 export const closeAuctionCommandSchema = createCommerceCommandSchema('auction.close', z.object({}).strict());
@@ -400,6 +412,7 @@ export const createMarketplaceCheckoutCommandSchema = createCommerceCommandSchem
       // a line is email-kind, which only the listing projection says, so the
       // checkout hook decides and this schema checks only its form.
       deliveryEmail: marketplaceDeliveryEmailSchema.optional(),
+      buyerCountry: buyerCountrySchema.optional(),
     })
     .strict()
     .superRefine((payload, context) => {

@@ -243,6 +243,27 @@ export function MarketplaceDashboard() {
                 </CardContent>
               </Card>
             )}
+            {shopFetchSettled && shop && !shopSetup && !shop.record.sellerStatus && dashboard.listings.length > 0 && (
+              <Card className="rounded-md bg-card p-0" data-testid="seller-status-prompt">
+                <CardContent className="flex flex-col gap-3 p-6 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <Typography as="h2" className="font-semibold">
+                      Tell buyers how you sell
+                    </Typography>
+                    <Typography as="p" className="text-sm text-muted-foreground">
+                      Say whether you sell as a private individual or as a business. Buyers see it next to your
+                      listings.
+                    </Typography>
+                  </div>
+                  <Button asChild className="shrink-0 rounded-full">
+                    <Link href={MARKETPLACE_ROUTES.MY_SHOP} overrideDefaults>
+                      <Store className="size-4" />
+                      Choose how you sell
+                    </Link>
+                  </Button>
+                </CardContent>
+              </Card>
+            )}
             {dashboard.unfinishedDrafts.length > 1 && (
               <Card data-surface="listing-drafts-list" className="rounded-md bg-brand/5 p-0 shadow-lg">
                 <CardContent className="grid gap-6 p-6">

@@ -553,6 +553,11 @@ const commerceShopRecordSchemaInner = commercePublicRecordBaseSchema
     // enforces it client-side only: the buyer's address is sealed to the
     // seller, so the transaction service never sees the destination country.
     shipsToCountries: commerceShipsToCountriesSchema.optional(),
+    // The seller's own declaration of who they are (legal launch plan C1), read leniently: an
+    // absent or unrecognised value reads as undeclared, which the fence treats as a business.
+    sellerStatus: z.enum(['private', 'trader']).optional().catch(undefined),
+    // When the seller last re-confirmed they sell as a private individual (plan C4).
+    sellerStatusConfirmedAt: commerceTimestampSchema.optional().catch(undefined),
     createdAt: commerceTimestampSchema,
     updatedAt: commerceTimestampSchema,
   })

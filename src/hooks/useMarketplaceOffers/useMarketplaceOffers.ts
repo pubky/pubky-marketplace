@@ -16,6 +16,7 @@ import {
   marketplaceErrorCode,
   marketplaceFailureMessage,
   marketplaceListingNotActiveMessage,
+  marketplaceRegionRefusalMessage,
 } from '@/libs/commerce/failure-messages';
 import { amountInputSchemaForAsset, amountInputToMoney } from '@/libs/commerce/pricing';
 import { isMarketplaceRevisionConflict } from '@/libs/commerce/transaction-commands';
@@ -81,6 +82,7 @@ export function useMarketplaceOffers() {
         toast({
           variant: 'error',
           description:
+            marketplaceRegionRefusalMessage(response.error) ??
             marketplaceListingNotActiveMessage(response.error) ??
             marketplaceFailureMessage(response.error.code, MARKETPLACE_FAILURE_MESSAGES.offer),
         });
@@ -146,6 +148,7 @@ export function useMarketplaceOffers() {
           toast({
             variant: 'error',
             description:
+              marketplaceRegionRefusalMessage(response.error) ??
               marketplaceListingNotActiveMessage(response.error) ??
               marketplaceFailureMessage(response.error.code, MARKETPLACE_FAILURE_MESSAGES.counterOffer),
           });

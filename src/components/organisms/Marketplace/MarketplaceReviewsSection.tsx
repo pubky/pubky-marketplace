@@ -13,6 +13,7 @@ import { isTrustedMarketplaceAttestor } from '@/config/commerce';
 import { isSocialLinkOutEnabled } from '@/config/social';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import { useMarketplaceReviews } from '@/hooks/useMarketplaceReviews/useMarketplaceReviews';
+import { VERIFIED_PURCHASE_LINE } from '@/libs/commerce/eu-region';
 import { cn } from '@/libs/utils/utils';
 import type { CommerceIndexedReview, CommerceReviewResponseModelSchema } from '@/models/commerce/commerce.schema';
 import { MarketplaceStarRating } from '@/molecules/MarketplaceStarRating/MarketplaceStarRating';
@@ -84,15 +85,25 @@ export function MarketplaceReviewsSection({
             No reviews yet
           </Typography>
         ) : (
-          <ul className="flex flex-col gap-4">
-            {reviews.map((review) => (
-              <MarketplaceReviewItem
-                key={`${review.reviewerId}:${review.reviewId}`}
-                review={review}
-                currentUserPubky={currentUserPubky}
-              />
-            ))}
-          </ul>
+          <>
+            <Typography
+              as="p"
+              overrideDefaults
+              className="text-xs text-muted-foreground"
+              data-testid="marketplace-reviews-verified-line"
+            >
+              {VERIFIED_PURCHASE_LINE}
+            </Typography>
+            <ul className="flex flex-col gap-4">
+              {reviews.map((review) => (
+                <MarketplaceReviewItem
+                  key={`${review.reviewerId}:${review.reviewId}`}
+                  review={review}
+                  currentUserPubky={currentUserPubky}
+                />
+              ))}
+            </ul>
+          </>
         )}
         {hasMore && (
           <Button

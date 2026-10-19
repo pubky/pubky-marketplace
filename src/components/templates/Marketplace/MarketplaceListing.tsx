@@ -36,6 +36,7 @@ import { useMarketplaceProjection } from '@/hooks/useMarketplaceProjection/useMa
 import { useMarketplacePublicAvailability } from '@/hooks/useMarketplacePublicAvailability/useMarketplacePublicAvailability';
 import { useSellerReputation } from '@/hooks/useMarketplaceReviews/useMarketplaceReviews';
 import { useMeasurementSystem } from '@/hooks/useMeasurementSystem/useMeasurementSystem';
+import { useRegionAvailability } from '@/hooks/useRegionAvailability/useRegionAvailability';
 import { useRequireAuth } from '@/hooks/useRequireAuth/useRequireAuth';
 import { useSellerPaymentBadges } from '@/hooks/useSellerPaymentBadges/useSellerPaymentBadges';
 import { CHAT_COPY } from '@/libs/chat/copy';
@@ -48,6 +49,7 @@ import {
 } from '@/libs/commerce/checkout-hold';
 import { getMarketplaceCheckoutRoute, getMarketplaceOfferCheckoutRoute } from '@/libs/commerce/checkout-phase';
 import { DIGITAL_DELIVERY_COPY, digitalDeliveryBadgeLabel } from '@/libs/commerce/digital';
+import { sellerDeclaration } from '@/libs/commerce/eu-region';
 import { MARKETPLACE_FAILURE_MESSAGES } from '@/libs/commerce/failure-messages';
 import { formatCommerceCondition, formatCommerceMoney } from '@/libs/commerce/format';
 import {
@@ -70,6 +72,9 @@ import type { MarketplaceFulfillmentMethod } from '@/libs/commerce/pickup';
 import { formatShipsToCountries, shopShipsToCountries } from '@/libs/commerce/ships-to';
 import { buildMarketplaceListingAggregateId } from '@/libs/commerce/transaction-commands';
 import { formatPackageDimensions, formatWeight } from '@/libs/commerce/units';
+import { BuyerCountryField } from '@/molecules/Marketplace/BuyerCountryField';
+import { SellerSaleTerms } from '@/molecules/Marketplace/SellerSaleTerms';
+import { SellerStatusBadge } from '@/molecules/Marketplace/SellerStatusBadge';
 import { MarketplaceFulfillmentBadge } from '@/molecules/MarketplaceFulfillmentBadge/MarketplaceFulfillmentBadge';
 import { MarketplacePaymentMethodBadges } from '@/molecules/MarketplacePaymentMethodBadges/MarketplacePaymentMethodBadges';
 import { MarketplaceSellerIdentity } from '@/molecules/MarketplaceSellerIdentity/MarketplaceSellerIdentity';
@@ -179,6 +184,15 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
       ? getAuctionPhase(listing.record.sale.startsAt, auctionEndsAt ?? listing.record.sale.endsAt, nowMs, auctionStatus)
       : null;
   const shopAvatarUrl = useMarketplaceMediaUrl(shop?.record.avatarUrl);
+  const publishedMethods = listing ? commerceListingFulfillmentMethods(listing.record.fulfillmentMethods) : [];
+  const region = useRegionAvailability({
+    sellerPubky,
+    shop: shop?.record,
+    digital: publishedMethods.includes('digital') && !publishedMethods.some((m) => m === 'shipping' || m === 'pickup'),
+    isOwner,
+  });
+  const regionBlocked = region.refusal !== null || region.needsCountry;
+  const declaration = sellerDeclaration(shop?.record);
 
   useEffect(() => {
     const variants = listing?.record.variants;
@@ -556,7 +570,8 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
                       size="default"
                       className="w-fit rounded-full"
                       disabled={
-                        availabilityNeedsSession
+                        regionBlocked ||
+                        (availabilityNeedsSession
                           ? isOwner ||
                             adapterMode === 'unavailable' ||
                             !isPurchasable ||
@@ -570,7 +585,7 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
                             isSoldOut ||
                             projectionIsReserved ||
                             !selectedVariant ||
-                            isVariantSoldOut(selectedVariant, soldOutVariants, madeToOrderVariants)
+                            isVariantSoldOut(selectedVariant, soldOutVariants, madeToOrderVariants))
                       }
                       onClick={availabilityNeedsSession ? beginPurchase : addSelectedVariantToCart}
                     >
@@ -604,7 +619,7 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
                       onSessionRequired={revealSessionRequired}
                       onAccepted={negotiation.refresh}
                       isOwner={isOwner}
-                      holdDisabled={projectionIsReserved || publicHold}
+                      holdDisabled={projectionIsReserved || publicHold || regionBlocked}
                       holdLabel={
                         viewerHoldOrder ? CHECKOUT_HOLD_COPY.heldForYouCta : CHECKOUT_HOLD_COPY.heldWhileAnotherPays
                       }
@@ -665,6 +680,33 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
                   : negotiation.error}
               </Typography>
             )}
+            {!isOwner && (region.refusal || region.needsCountry || region.digitalNote) && (
+              <div className="grid gap-3 rounded-md border p-4" data-testid="marketplace-listing-region">
+                {region.refusal ? (
+                  <Typography
+                    as="p"
+                    role="status"
+                    className="text-sm font-medium"
+                    data-testid="marketplace-listing-region-refusal"
+                  >
+                    {region.refusal}
+                  </Typography>
+                ) : (
+                  region.digitalNote && (
+                    <Typography
+                      as="p"
+                      className="text-sm text-muted-foreground"
+                      data-testid="marketplace-listing-digital-region-note"
+                    >
+                      {region.digitalNote}
+                    </Typography>
+                  )
+                )}
+                {region.needsCountry && (
+                  <BuyerCountryField value={region.buyerCountry} onChange={region.setBuyerCountry} />
+                )}
+              </div>
+            )}
             <Card className="rounded-md p-0">
               <CardContent className="flex flex-col gap-3 p-6">
                 <div className="min-w-0 flex-1 sm:min-w-[12rem]">
@@ -676,6 +718,10 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
                     avatarAlt={`${shop?.record.name ?? 'Shop'} avatar`}
                     reputation={sellerReputation}
                   />
+                  <div className="mt-2 grid gap-2">
+                    <SellerStatusBadge declaration={declaration} />
+                    <SellerSaleTerms declaration={declaration} />
+                  </div>
                   {isOwner && !shop && (
                     <Typography as="p" className="mt-2 text-sm text-muted-foreground">
                       You haven&apos;t created a storefront yet — buyers only see your key.

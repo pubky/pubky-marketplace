@@ -45,7 +45,11 @@ import { ValidationErrorCode } from '@/libs/error/error.codes';
 import { Err } from '@/libs/error/error.factories';
 import { ErrorService } from '@/libs/error/error.types';
 import { Logger } from '@/libs/logger/logger';
-import { getMarketplaceGrantSessionEnabled } from '@/libs/runtime-config/runtime-config';
+import {
+  getDigitalRegionBlockEnabled,
+  getEuFenceEnabled,
+  getMarketplaceGrantSessionEnabled,
+} from '@/libs/runtime-config/runtime-config';
 import type { CommerceIndexedReview, CommerceListingProjectionModelSchema } from '@/models/commerce/commerce.schema';
 import type { Pubky } from '@/models/models.types';
 import { CommerceRecordNormalizer } from '@/pipes/commerce/commerce.normalizer';
@@ -54,6 +58,7 @@ import type { MarketplaceOrder, MarketplacePayment } from '@/services/marketplac
 import { isRecognizedMarketplaceNotification } from '@/services/marketplace/marketplace-projections';
 import type { MarketplaceSessionEndedEvent, MarketplaceSessionInfo } from '@/services/marketplace/marketplace-session';
 import { useAuthStore } from '@/stores/auth/auth.store';
+import { useBuyerCountryStore } from '@/stores/buyer-country/buyer-country.store';
 import { useCommerceStore } from '@/stores/commerce/commerce.store';
 import type { CommerceConditionFilter, CommerceSaleFormatFilter, CommerceSort } from '@/stores/commerce/commerce.types';
 import { useNotificationStore } from '@/stores/notification/notification.store';
@@ -606,7 +611,37 @@ export class CommerceController {
     return CommerceApplication.hasActiveMarketplaceSession();
   }
 
-  static async executeMarketplaceCommand(input: unknown) {
+  /** The country the buyer said they live in on this device, or null until they say (plan C2). */
+  static getBuyerCountry(): string | null {
+    return useBuyerCountryStore.getState().country;
+  }
+
+  static setBuyerCountry(countryCode: string | null): void {
+    useBuyerCountryStore.getState().setCountry(countryCode);
+  }
+
+  /**
+   * The commands that sell carry the buyer's country in clear text while either region flag is
+   * on (the EU fence, the digital hold). A command that already names one keeps it; otherwise
+   * the device's remembered country is added when there is one.
+   */
+  private static withBuyerCountry(input: unknown): unknown {
+    if (!getEuFenceEnabled() && !getDigitalRegionBlockEnabled()) return input;
+    const country = useBuyerCountryStore.getState().country;
+    if (!country || typeof input !== 'object' || input === null) return input;
+    const command = input as { kind?: unknown; payload?: unknown };
+    const sells =
+      command.kind === 'checkout.create' ||
+      command.kind === 'offer.create' ||
+      command.kind === 'offer.checkout' ||
+      command.kind === 'auction.place_bid';
+    if (!sells || typeof command.payload !== 'object' || command.payload === null) return input;
+    if ('buyerCountry' in command.payload) return input;
+    return { ...command, payload: { ...command.payload, buyerCountry: country } };
+  }
+
+  static async executeMarketplaceCommand(rawInput: unknown) {
+    const input = this.withBuyerCountry(rawInput);
     const command = CommerceRecordNormalizer.marketplaceCommand(input);
     const response = await CommerceApplication.executeMarketplaceCommand(this.getCurrentUserPubky(), command);
     if (response.ok && (command.kind === 'offer.create' || command.kind === 'auction.place_bid')) {
@@ -615,8 +650,8 @@ export class CommerceController {
     return response;
   }
 
-  static async commitOfferCheckout(input: unknown) {
-    const command = CommerceRecordNormalizer.marketplaceCommand(input);
+  static async commitOfferCheckout(rawInput: unknown) {
+    const command = CommerceRecordNormalizer.marketplaceCommand(this.withBuyerCountry(rawInput));
     const response = await CommerceApplication.commitOfferCheckout(this.getCurrentUserPubky(), command);
     if (response.ok && command.kind === 'offer.checkout') {
       this.autoFollowSellers([parseListingAggregateId(command.payload.listingAggregateId)?.sellerPubky]);
@@ -650,6 +685,14 @@ export class CommerceController {
    * the backend has no attestation support (sandbox) and the opt-in must not
    * be rendered at all.
    */
+  /** The seller's EU annual-limit state (plan C4); `{ enabled: false }` while the service's fence is off. */
+  static async getSellerAnnualLimit(sellerPubky: unknown) {
+    return await CommerceApplication.getSellerAnnualLimit(
+      this.getCurrentUserPubky(),
+      CommerceRecordNormalizer.pubky(sellerPubky),
+    );
+  }
+
   static async getMarketplaceBandConsent(sellerPubky: unknown) {
     return await CommerceApplication.getMarketplaceBandConsent(
       this.getCurrentUserPubky(),
@@ -1496,7 +1539,12 @@ export class CommerceController {
    * and assigned to every line; a pickup-only checkout sends no delivery
    * address.
    */
-  static async commitCreateMarketplaceCheckout(input: CommerceCheckoutFulfillmentInput) {
+  static async commitCreateMarketplaceCheckout(rawInput: CommerceCheckoutFulfillmentInput) {
+    const country = useBuyerCountryStore.getState().country;
+    const input =
+      (getEuFenceEnabled() || getDigitalRegionBlockEnabled()) && country && rawInput.buyerCountry === undefined
+        ? { ...rawInput, buyerCountry: country }
+        : rawInput;
     const response = await CommerceApplication.commitCreateMarketplaceCheckout(this.getCurrentUserPubky(), input);
     if (response.ok) {
       this.autoFollowSellers(input.lines.map((line) => parseListingAggregateId(line.listingAggregateId)?.sellerPubky));

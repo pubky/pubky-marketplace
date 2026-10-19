@@ -1,0 +1,23 @@
+'use client';
+
+import { CommerceController } from '@/controllers/commerce/commerce';
+import { getDigitalRegionBlockEnabled, getEuFenceEnabled } from '@/libs/runtime-config/runtime-config';
+import { useBuyerCountryStore } from '@/stores/buyer-country/buyer-country.store';
+
+export interface UseBuyerCountryResult {
+  /** Either region flag is on, so commands that sell carry the country and the prompt may appear. */
+  enabled: boolean;
+  /** The country the buyer said they live in on this device, or null until they say. */
+  country: string | null;
+  setCountry: (countryCode: string | null) => void;
+}
+
+/** The buyer's remembered "Country you live in" (legal launch plan C2). */
+export function useBuyerCountry(): UseBuyerCountryResult {
+  const country = useBuyerCountryStore((state) => state.country);
+  return {
+    enabled: getEuFenceEnabled() || getDigitalRegionBlockEnabled(),
+    country,
+    setCountry: (countryCode) => CommerceController.setBuyerCountry(countryCode),
+  };
+}

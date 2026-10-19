@@ -401,6 +401,8 @@ export type CommerceCheckoutFulfillmentInput = {
    */
   connectorShares?: readonly ConnectorShareChoice[];
   deliveryEmail?: string;
+  /** The buyer's country, sent in clear text so the service can apply the EU fence (plan C2). */
+  buyerCountry?: string;
 };
 
 export type ConnectorShareChoice = {
@@ -1253,6 +1255,7 @@ export class CommerceApplication {
         ...sealedAddress,
         ...(await this.sealConnectorShares(actorPubky, commandId, input, sealedAddress)),
         ...(input.deliveryEmail !== undefined ? { deliveryEmail: input.deliveryEmail } : {}),
+        ...(input.buyerCountry !== undefined ? { buyerCountry: input.buyerCountry } : {}),
       },
     });
     return await this.executeMarketplaceCommand(actorPubky, command);
@@ -3293,6 +3296,10 @@ export class CommerceApplication {
    * `null` means the running backend has no attestation support at all
    * (sandbox) — callers render absence, never a fake false.
    */
+  static async getSellerAnnualLimit(actorPubky: string, sellerPubky: string) {
+    return await MarketplaceGatewayService.getSellerAnnualLimit(actorPubky, sellerPubky);
+  }
+
   static async getMarketplaceBandConsent(actorPubky: string, sellerPubky: string): Promise<boolean | null> {
     return await MarketplaceGatewayService.getBandConsent(actorPubky, sellerPubky);
   }

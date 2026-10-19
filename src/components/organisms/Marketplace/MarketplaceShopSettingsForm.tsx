@@ -4,7 +4,9 @@ import { ImagePlus, Store, Trash2 } from 'lucide-react';
 import { type Control, Controller, useWatch } from 'react-hook-form';
 import { Button } from '@/atoms/Button/Button';
 import { Card, CardContent } from '@/atoms/Card/Card';
+import { Checkbox } from '@/atoms/Checkbox/Checkbox';
 import { Label } from '@/atoms/Label/Label';
+import { RadioGroup, RadioGroupItem } from '@/atoms/RadioGroup/RadioGroup';
 import { Skeleton } from '@/atoms/Skeleton/Skeleton';
 import { Switch } from '@/atoms/Switch/Switch';
 import { Typography } from '@/atoms/Typography/Typography';
@@ -19,10 +21,14 @@ import {
   useMarketplaceShopSettings,
 } from '@/hooks/useMarketplaceShopSettings/useMarketplaceShopSettings';
 import type { MarketplaceShopSettingsData } from '@/hooks/useMarketplaceShopSettings/useMarketplaceShopSettings.types';
+import { useSellerAnnualLimit } from '@/hooks/useSellerAnnualLimit/useSellerAnnualLimit';
+import { SELLER_STATUS_COPY } from '@/libs/commerce/eu-region';
 import { formatShipsToCountries, parseShipsToField, shipsToFieldError } from '@/libs/commerce/ships-to';
 import { ControlledInputField } from '@/molecules/ControlledInputField/ControlledInputField';
 import { ControlledTextareaField } from '@/molecules/ControlledTextareaField/ControlledTextareaField';
+import { SellerAnnualLimitNotice } from '@/molecules/Marketplace/SellerAnnualLimitNotice';
 import { SettingsSectionContent } from '@/molecules/Settings/SettingsSectionContent/SettingsSectionContent';
+import { useAuthStore } from '@/stores/auth/auth.store';
 
 export interface MarketplaceShopSettingsFormProps {
   onSaved?: () => void;
@@ -59,6 +65,16 @@ export function MarketplaceShopSettingsFormView({ settings, onSaved }: Marketpla
       </Card>
     );
   }
+
+  return <MarketplaceShopSettingsLoaded settings={settings} onSaved={onSaved} />;
+}
+
+function MarketplaceShopSettingsLoaded({ settings, onSaved }: MarketplaceShopSettingsFormViewProps) {
+  const currentUserPubky = useAuthStore((state) => state.currentUserPubky);
+  const annualLimit = useSellerAnnualLimit(currentUserPubky);
+  const sellerStatus = useWatch({ control: settings.form.control, name: 'sellerStatus' });
+  const reconfirmationRequired =
+    annualLimit.status === 'ready' && annualLimit.limit.reconfirmationRequired === true && sellerStatus === 'private';
 
   const submit = async () => {
     const succeeded = await settings.submit();
@@ -113,6 +129,59 @@ export function MarketplaceShopSettingsFormView({ settings, onSaved }: Marketpla
             <ShipsToHint control={settings.form.control} />
           </div>
           <ControlledTextareaField name="returnPolicy" control={settings.form.control} label="Return policy" />
+
+          <Controller
+            name="sellerStatus"
+            control={settings.form.control}
+            render={({ field, fieldState }) => (
+              <div className="grid gap-3" data-testid="shop-settings-seller-status">
+                <div>
+                  <Typography as="p" className="text-sm font-medium">
+                    How do you sell?
+                  </Typography>
+                  <Typography as="p" className="mt-1 text-sm text-muted-foreground">
+                    Buyers see this next to your listings. It is your own declaration, published in your shop record.
+                  </Typography>
+                </div>
+                <RadioGroup
+                  value={field.value}
+                  onValueChange={field.onChange}
+                  disabled={settings.isSaving}
+                  aria-label="How do you sell?"
+                >
+                  {(['private', 'trader'] as const).map((status) => (
+                    <RadioGroupItem
+                      key={status}
+                      value={status}
+                      variant="box"
+                      label={SELLER_STATUS_COPY[status].choice}
+                      description={SELLER_STATUS_COPY[status].detail}
+                    />
+                  ))}
+                </RadioGroup>
+                {fieldState.error && (
+                  <Typography as="p" className="text-sm text-destructive" role="alert">
+                    {fieldState.error.message}
+                  </Typography>
+                )}
+              </div>
+            )}
+          />
+          {annualLimit.status === 'ready' && <SellerAnnualLimitNotice limit={annualLimit.limit} />}
+          {reconfirmationRequired && (
+            <Controller
+              name="confirmPrivateStatus"
+              control={settings.form.control}
+              render={({ field }) => (
+                <Checkbox
+                  checked={field.value}
+                  onCheckedChange={(checked) => field.onChange(checked === true)}
+                  label="I confirm I still sell as a private individual"
+                  description="Saving with this ticked lets buyers in the EU order from you again."
+                />
+              )}
+            />
+          )}
 
           <div className="grid gap-4">
             <div>

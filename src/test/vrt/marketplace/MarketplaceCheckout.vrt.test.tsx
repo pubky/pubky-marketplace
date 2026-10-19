@@ -379,6 +379,8 @@ vi.mock('@/hooks/useMarketplaceSessionConnect/useMarketplaceSessionConnect', () 
 
 vi.mock('@/controllers/commerce/commerce', () => ({
   CommerceController: {
+    getOrFetchShop: vi.fn(async () => null),
+    getSellerAnnualLimit: vi.fn(async () => ({ enabled: false })),
     getSellerPaymentConfig: vi.fn(async (sellerPubky: string) => ({
       bitcoinAvailable: true,
       bitcoinOfferAvailable: true,
