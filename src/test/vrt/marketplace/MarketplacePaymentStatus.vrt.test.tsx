@@ -867,6 +867,9 @@ describe('Marketplace payment status card — USDT orders', () => {
       orderOverrides: usdt({ paykitDeliveryState: 'delivered' }),
     });
     await expect.element(screen.getByText('Pay exactly 137.000000 USDT')).toBeInTheDocument();
+    await expect
+      .element(screen.getByTestId('usdt-accept-by'))
+      .toHaveTextContent('Approve in Bitkit by Aug 20, 2026, 9:15 PM.');
     await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('payment-status-usdt-awaiting-desktop');
   });
 
@@ -951,6 +954,9 @@ describe('Marketplace payment status card — USDT orders', () => {
       orderOverrides: paykit({ paykitRequestState: 'pending' }),
     });
     await expect.element(screen.getByText('Pay in Bitkit (Bitcoin or USDT)')).toBeInTheDocument();
+    await expect
+      .element(screen.getByTestId('paykit-accept-by'))
+      .toHaveTextContent('Approve in Bitkit by Aug 20, 2026, 9:15 PM.');
     await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('payment-status-paykit-awaiting-desktop');
   });
 

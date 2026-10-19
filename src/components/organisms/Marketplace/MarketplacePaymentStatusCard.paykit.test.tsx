@@ -2,17 +2,20 @@ import { render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useMarketplaceOrderPayment } from '@/hooks/useMarketplaceOrderPayment/useMarketplaceOrderPayment';
 import { PAYMENT_RECEIVED_REVIEW_COPY } from '@/libs/commerce/bitcoin-buyer-status';
+import { APPROVE_IN_BITKIT_FALLBACK_COPY } from '@/libs/commerce/checkout-hold';
 import { PAYMENT_RAIL_BADGE } from '@/libs/commerce/paykit-rail';
 import {
   PAYKIT_USDT_FINALITY_EXPECTATION_COPY,
-  USDT_ACCEPT_BY_COPY,
   USDT_BUYER_PHASE_COPY,
   USDT_SELLER_PHASE_COPY,
   USDT_WALLET_HINT,
 } from '@/libs/commerce/usdt-buyer-status';
 import { createPaymentFixture } from '@/test/fixtures/commerce/orders';
 import { createPaykitOrderFixture, type PaykitOrderPhase } from '@/test/fixtures/commerce/paykit-orders';
+import { setupFixedDateLocale } from '@/test-utils/date-locale';
 import { MarketplacePaymentStatusCard } from './MarketplacePaymentStatusCard';
+
+setupFixedDateLocale();
 
 const auth = vi.hoisted(() => ({ currentUserPubky: 'b'.repeat(52) }));
 
@@ -103,10 +106,24 @@ describe('MarketplacePaymentStatusCard — one Paykit order before payment', () 
     expect(screen.queryByText(PAYMENT_RAIL_BADGE.usdt)).not.toBeInTheDocument();
     expect(screen.getByTestId('paykit-awaiting-status')).toHaveTextContent('Pay in Bitkit (Bitcoin or USDT)');
     expect(screen.getByTestId('paykit-awaiting-status')).toHaveTextContent('choose Bitcoin or USDT');
-    expect(screen.getByTestId('paykit-accept-by')).toHaveTextContent(USDT_ACCEPT_BY_COPY);
+    expect(screen.getByTestId('paykit-accept-by')).toHaveTextContent('Approve in Bitkit by 20 Aug 2026, 21:15.');
     expect(container).not.toHaveTextContent(/Pay exactly/);
     expect(screen.queryByTestId('usdt-payment-awaiting')).not.toBeInTheDocument();
     expect(screen.queryByTestId('bitcoin-payment-seen')).not.toBeInTheDocument();
+  });
+
+  it('states the window the order carries and agrees with its Pay by line', () => {
+    renderPhase('unpaid', true, { holdExpiresAt: '2026-08-20T21:45:00.000Z' });
+
+    expect(screen.getByTestId('paykit-accept-by')).toHaveTextContent('Approve in Bitkit by 20 Aug 2026, 21:45.');
+    expect(screen.getByTestId('paykit-accept-by')).not.toHaveTextContent(/minutes/);
+    expect(screen.getByText('Pay by 20 Aug 2026, 21:45. If the window ends, the item restocks.')).toBeInTheDocument();
+  });
+
+  it('names no window once the order carries no deadline', () => {
+    renderPhase('unpaid', true, { holdExpiresAt: null });
+
+    expect(screen.getByTestId('paykit-accept-by')).toHaveTextContent(APPROVE_IN_BITKIT_FALLBACK_COPY);
   });
 
   it('adds the USDT wallet hint and finality expectation only when USDT is offered', () => {

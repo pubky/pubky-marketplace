@@ -6,7 +6,11 @@ import { ClientErrorCode } from '@/libs/error/error.codes';
 import { ErrorCategory, ErrorService } from '@/libs/error/error.types';
 import { toast } from '@/molecules/Toaster/use-toast';
 import type { MarketplaceOffer } from '@/services/marketplace/marketplace';
+import { parseContractFaithfulOffer } from '@/test/fixtures/commerce/offer-award';
+import { setupFixedDateLocale } from '@/test-utils/date-locale';
 import { useMarketplaceOffers } from './useMarketplaceOffers';
+
+setupFixedDateLocale();
 
 const SELLER = 'y'.repeat(52);
 const BUYER = 'b'.repeat(52);
@@ -80,6 +84,62 @@ describe('useMarketplaceOffers', () => {
         payload: { offerId: offer.id },
       }),
     );
+  });
+
+  describe('the accepted-offer toast', () => {
+    const accepted = parseContractFaithfulOffer('accepted', 'active');
+    const pending: MarketplaceOffer = { ...accepted, state: 'pending', award: undefined };
+
+    async function acceptAndReload(reloaded: MarketplaceOffer[]) {
+      vi.mocked(CommerceController.getMarketplaceOffers).mockResolvedValue([pending]);
+      const { result } = renderHook(() => useMarketplaceOffers());
+      await waitFor(() => expect(result.current.isLoading).toBe(false));
+      vi.mocked(CommerceController.getMarketplaceOffers).mockResolvedValue(reloaded);
+      await act(() => result.current.act(pending, 'offer.accept'));
+    }
+
+    it("names the close of the window the service set for this offer's award", async () => {
+      await acceptAndReload([accepted]);
+
+      expect(toast).toHaveBeenCalledWith({
+        title: "Offer accepted. The buyer's checkout window closes 15 Sept 2026, 09:58.",
+      });
+    });
+
+    it('follows a longer window instead of a fixed one', async () => {
+      await acceptAndReload([{ ...accepted, award: { ...accepted.award!, convertBy: '2026-09-15T10:28:42.884Z' } }]);
+
+      expect(toast).toHaveBeenCalledWith({
+        title: "Offer accepted. The buyer's checkout window closes 15 Sept 2026, 10:28.",
+      });
+    });
+
+    it.each([
+      ['the reload carries no award', [pending]],
+      ['the reload does not list the offer', []],
+    ])('names no window when %s', async (_label, reloaded) => {
+      await acceptAndReload(reloaded);
+
+      expect(toast).toHaveBeenCalledWith({ title: 'Offer accepted.' });
+    });
+
+    it('names no window when the reload fails', async () => {
+      vi.mocked(CommerceController.getMarketplaceOffers).mockResolvedValue([pending]);
+      const { result } = renderHook(() => useMarketplaceOffers());
+      await waitFor(() => expect(result.current.isLoading).toBe(false));
+      vi.mocked(CommerceController.getMarketplaceOffers).mockRejectedValue(new Error('offline'));
+      await act(() => result.current.act(pending, 'offer.accept'));
+
+      expect(toast).toHaveBeenCalledWith({ title: 'Offer accepted.' });
+    });
+
+    it('never states a fixed length', async () => {
+      await acceptAndReload([accepted]);
+
+      expect(vi.mocked(toast).mock.calls.flat()).not.toContainEqual(
+        expect.objectContaining({ title: expect.stringMatching(/\d+ minutes/) }),
+      );
+    });
   });
 
   it('confirms a decline in one line', async () => {

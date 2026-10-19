@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { createOrderFixture, ORDER_FIXTURE_BUYER } from '@/test/fixtures/commerce/orders';
 import { setupFixedDateLocale } from '@/test-utils/date-locale';
 import {
+  APPROVE_IN_BITKIT_FALLBACK_COPY,
+  approveInBitkitCopy,
   buyerPayByDeadline,
   CHECKOUT_HOLD_COPY,
   findViewerAcceptedOfferHold,
@@ -54,6 +56,49 @@ describe('buyerPayByDeadline', () => {
 
   it('is null when nothing carries a deadline', () => {
     expect(buyerPayByDeadline({})).toBeNull();
+  });
+});
+
+describe('approveInBitkitCopy', () => {
+  const HOLD = '2026-10-19T13:05:58.080Z';
+  const REQUEST = '2026-10-19T13:04:58.080Z';
+  const ordinary = { holdExpiresAt: HOLD, paykitExpiresAt: REQUEST, paykitRequestState: 'pending' };
+
+  it('names the same instant as the Pay by line on an ordinary order', () => {
+    expect(approveInBitkitCopy(ordinary)).toBe('Approve in Bitkit by 19 Oct 2026, 13:05.');
+    expect(holderBoundCopy(buyerPayByDeadline(ordinary))).toContain('Pay by 19 Oct 2026, 13:05.');
+  });
+
+  it('follows the activated request deadline on an auction order, as Pay by does', () => {
+    const auction = {
+      ...ordinary,
+      holdExpiresAt: '2026-10-19T13:30:00.000Z',
+      auctionAggregateId: 'listing:seller_boots',
+    };
+    expect(approveInBitkitCopy(auction)).toBe('Approve in Bitkit by 19 Oct 2026, 13:04.');
+    expect(holderBoundCopy(buyerPayByDeadline(auction))).toContain('Pay by 19 Oct 2026, 13:04.');
+  });
+
+  it('moves with the order: a hold twice as long reads twice as long', () => {
+    expect(approveInBitkitCopy({ holdExpiresAt: '2026-10-19T13:35:00.000Z' })).toBe(
+      'Approve in Bitkit by 19 Oct 2026, 13:35.',
+    );
+    expect(approveInBitkitCopy({ holdExpiresAt: '2026-10-19T13:20:00.000Z' })).toBe(
+      'Approve in Bitkit by 19 Oct 2026, 13:20.',
+    );
+  });
+
+  it.each([
+    ['no deadline at all', {}],
+    ['a null hold', { holdExpiresAt: null }],
+    ['a malformed hold', { holdExpiresAt: 'not a date' }],
+  ])('names no window for %s', (_label, order) => {
+    expect(approveInBitkitCopy(order)).toBe(APPROVE_IN_BITKIT_FALLBACK_COPY);
+  });
+
+  it('never states a length of time', () => {
+    expect(APPROVE_IN_BITKIT_FALLBACK_COPY).not.toMatch(/\d|minute|hour/i);
+    expect(approveInBitkitCopy(ordinary)).not.toMatch(/minute|hour/i);
   });
 });
 

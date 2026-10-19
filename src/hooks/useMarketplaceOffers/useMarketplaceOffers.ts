@@ -10,6 +10,7 @@ import {
   marketplaceOfferDefaults,
   marketplaceOfferSchema,
 } from '@/hooks/useMarketplaceOffer/useMarketplaceOffer.types';
+import { formatOrderInstant } from '@/libs/commerce/checkout-hold';
 import {
   MARKETPLACE_FAILURE_MESSAGES,
   marketplaceErrorCode,
@@ -85,9 +86,10 @@ export function useMarketplaceOffers() {
         });
         return false;
       }
-      await refresh();
+      const refreshed = await refresh();
       if (kind === 'offer.accept') {
-        toast({ title: 'Offer accepted — the buyer has 30 minutes to complete checkout.' });
+        const convertBy = refreshed?.find(({ id }) => id === offer.id)?.award?.convertBy;
+        toast({ title: offerAcceptedTitle(convertBy) });
       } else if (kind === 'offer.reject') {
         toast({ title: 'Offer declined.' });
       }
@@ -174,12 +176,14 @@ async function loadOffers(
   setIsLoading: Dispatch<SetStateAction<boolean>>,
   setError: Dispatch<SetStateAction<string | null>>,
   setNeedsSession: Dispatch<SetStateAction<boolean>>,
-): Promise<void> {
-  if (!currentUserPubky) return;
+): Promise<MarketplaceOffer[] | null> {
+  if (!currentUserPubky) return null;
   try {
-    setOffers(await CommerceController.getMarketplaceOffers());
+    const loaded = await CommerceController.getMarketplaceOffers();
+    setOffers(loaded);
     setError(null);
     setNeedsSession(false);
+    return loaded;
   } catch (loadError) {
     // A missing/expired marketplace session is not a dead end: flag it so the
     // surface renders the session-connect affordance with static guidance.
@@ -191,7 +195,14 @@ async function loadOffers(
         loadError,
       ),
     );
+    return null;
   } finally {
     setIsLoading(false);
   }
+}
+
+/** The checkout window is the service's `convertBy`; with it unread the toast names no length. */
+function offerAcceptedTitle(convertBy: string | undefined): string {
+  const closes = formatOrderInstant(convertBy);
+  return closes ? `Offer accepted. The buyer's checkout window closes ${closes}.` : 'Offer accepted.';
 }

@@ -4,7 +4,6 @@ import { createPaymentFixture } from '@/test/fixtures/commerce/orders';
 import { createUsdtOrderFixture } from '@/test/fixtures/commerce/usdt-orders';
 import {
   isUsdtFulfilmentBlocked,
-  USDT_ACCEPT_BY_COPY,
   USDT_BUYER_PHASE_COPY,
   USDT_FINALITY_EXPECTATION_COPY,
   USDT_MULTI_SELLER_COPY,
@@ -147,12 +146,11 @@ describe('USDT expectation copy', () => {
     expect(USDT_FINALITY_EXPECTATION_COPY).toBe(
       'The seller ships once Arbitrum finalizes your payment, usually within minutes.',
     );
-    expect(USDT_ACCEPT_BY_COPY).toBe('Approve in Bitkit within 15 minutes.');
     expect(USDT_MULTI_SELLER_COPY).toBe("You'll approve one request per seller in Bitkit.");
   });
 
   it('never claims the payment is verified or confirmed on-chain', () => {
-    for (const copy of [USDT_FINALITY_EXPECTATION_COPY, USDT_ACCEPT_BY_COPY, USDT_MULTI_SELLER_COPY]) {
+    for (const copy of [USDT_FINALITY_EXPECTATION_COPY, USDT_MULTI_SELLER_COPY]) {
       expect(copy).not.toMatch(/verified|confirmed|bitcoin|₿/i);
     }
   });
