@@ -300,19 +300,60 @@ export function commerceListingFulfillmentMethods(
 
 type CommerceListingTermsRecord = Pick<
   CommerceListingRecord,
-  'revision' | 'sale' | 'fulfillmentMethods' | 'shippingOptions'
+  'revision' | 'sale' | 'fulfillmentMethods' | 'shippingOptions' | 'variants'
 >;
+
+type CommerceTermsMoney = { amountMinor: number; currency: string; exponent: number };
 
 interface CommerceListingTermsProjection {
   listingRevision: number;
-  unitPrice: { amountMinor: number; currency: string; exponent: number };
+  unitPrice: CommerceTermsMoney;
   fulfillmentMethods: readonly MarketplaceFulfillmentMethod[];
   shipping?: { amountMinor: number };
+  /** The variants the service sells at their own price; absent when none does. */
+  variantPrices?: readonly { variantId: string; unitPrice: CommerceTermsMoney }[];
+}
+
+function sameCommerceMoney(left: CommerceTermsMoney, right: CommerceTermsMoney): boolean {
+  return left.amountMinor === right.amountMinor && left.currency === right.currency && left.exponent === right.exponent;
+}
+
+/**
+ * What one unit of a variant costs: the variant's own price when the seller
+ * set one, the listing's fixed price otherwise. `null` for an auction, which
+ * is paid at its bid.
+ */
+export function commerceVariantUnitPrice(
+  record: Pick<CommerceListingRecord, 'sale'>,
+  variant: { priceOverride?: CommerceTermsMoney } | undefined,
+): CommerceTermsMoney | null {
+  if (record.sale.format !== 'fixed_price') return null;
+  return variant?.priceOverride ?? record.sale.unitPrice;
+}
+
+/**
+ * Whether the projection sells every enabled variant at the price the record
+ * gives it: the variant's own price, or the listing price for one without.
+ */
+function projectionChargesVariantPrices(
+  record: CommerceListingTermsRecord,
+  projection: CommerceListingTermsProjection,
+): boolean {
+  if (record.sale.format !== 'fixed_price') return true;
+  const listingPrice = record.sale.unitPrice;
+  return record.variants
+    .filter((variant) => variant.enabled)
+    .every((variant) => {
+      const charged =
+        projection.variantPrices?.find(({ variantId }) => variantId === variant.id)?.unitPrice ?? projection.unitPrice;
+      return sameCommerceMoney(charged, variant.priceOverride ?? listingPrice);
+    });
 }
 
 /**
  * Whether the projection charges what the record prices: the same unit price
- * (amount, currency and exponent) and the same shipping, a projection without
+ * (amount, currency and exponent) for the listing and for every variant that
+ * sells at its own price, and the same shipping, a projection without
  * shipping charging none. An auction always does: it is paid at its bid.
  */
 export function commerceListingProjectionChargesRecordTerms(
@@ -320,12 +361,10 @@ export function commerceListingProjectionChargesRecordTerms(
   projection: CommerceListingTermsProjection,
 ): boolean {
   if (record.sale.format !== 'fixed_price') return true;
-  const { unitPrice } = record.sale;
   return (
-    projection.unitPrice.amountMinor === unitPrice.amountMinor &&
-    projection.unitPrice.currency === unitPrice.currency &&
-    projection.unitPrice.exponent === unitPrice.exponent &&
-    (projection.shipping?.amountMinor ?? 0) === commerceListingShippingMinor(record.shippingOptions)
+    sameCommerceMoney(projection.unitPrice, record.sale.unitPrice) &&
+    (projection.shipping?.amountMinor ?? 0) === commerceListingShippingMinor(record.shippingOptions) &&
+    projectionChargesVariantPrices(record, projection)
   );
 }
 
@@ -334,9 +373,9 @@ export function commerceListingProjectionChargesRecordTerms(
  * listing no longer reflects the seller-signed record, so a `listing.sync`
  * would change what checkout charges or accepts: the record's revision moved
  * past the projection (an edit whose sync never landed), or at the same
- * revision the unit price, shipping or fulfillment methods differ (rows
- * registered before the service's derivation changed, or a record rewritten
- * without a new revision). Auctions are excluded: `listing.sync` never
+ * revision the unit price, a variant's price, shipping or fulfillment methods
+ * differ (rows registered before the service's derivation changed, or a
+ * record rewritten without a new revision). Auctions are excluded: `listing.sync` never
  * rewrites a registered auction's terms.
  */
 export function commerceListingProjectionIsStale(

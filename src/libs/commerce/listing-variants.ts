@@ -1,11 +1,19 @@
 import { COMMERCE_LISTING_MAX_QUANTITY } from '@/config/commerce';
 
-/** The slice of a record variant that stock logic reads. */
+/** The money shape of a record's variant price. */
+export interface ListingVariantMoney {
+  amountMinor: number;
+  currency: string;
+  exponent: number;
+}
+
+/** The slice of a record variant that stock and price logic reads. */
 export interface ListingVariantStockInput {
   id: string;
   sku?: string;
   quantity: number;
   enabled: boolean;
+  priceOverride?: ListingVariantMoney;
 }
 
 /** One enabled variant as `listing.register` carries it. */
@@ -13,6 +21,8 @@ export interface RegisterListingVariant {
   id: string;
   quantity: number;
   sku?: string;
+  /** The variant's own price, when it differs from the listing's. */
+  unitPrice?: ListingVariantMoney;
 }
 
 /** One size's availability as the service serves it: no quantity on the public read. */
@@ -45,22 +55,31 @@ export function tracksVariantStock(variants: readonly ListingVariantStockInput[]
 }
 
 /**
- * The `variants` a `listing.register` carries: the enabled variants in record
- * order, only when the record offers two or more. Fewer than two registers
- * one implicit row exactly as before, so the field is omitted. The listing
+ * The `variants` a `listing.register` carries: the enabled variants in
+ * record order, when the record offers two or more or an enabled variant sells
+ * at its own price. Otherwise the listing registers one implicit row at its
+ * own price exactly as before, so the field is omitted. The listing
  * `quantity` stays the sum of every record variant and is not built here.
  */
 export function buildRegisterVariants(
   variants: readonly ListingVariantStockInput[],
 ): RegisterListingVariant[] | undefined {
-  if (!tracksVariantStock(variants)) return undefined;
-  return variants
-    .filter((variant) => variant.enabled)
-    .map((variant) => ({
-      id: variant.id,
-      quantity: Math.min(variant.quantity, COMMERCE_LISTING_MAX_QUANTITY),
-      ...(variant.sku ? { sku: variant.sku } : {}),
-    }));
+  const enabled = variants.filter((variant) => variant.enabled);
+  if (!tracksVariantStock(variants) && !enabled.some((variant) => variant.priceOverride)) return undefined;
+  return enabled.map((variant) => ({
+    id: variant.id,
+    quantity: Math.min(variant.quantity, COMMERCE_LISTING_MAX_QUANTITY),
+    ...(variant.sku ? { sku: variant.sku } : {}),
+    ...(variant.priceOverride
+      ? {
+          unitPrice: {
+            amountMinor: variant.priceOverride.amountMinor,
+            currency: variant.priceOverride.currency,
+            exponent: variant.priceOverride.exponent,
+          },
+        }
+      : {}),
+  }));
 }
 
 /** The ids the service reports sold out; empty when it reports no per-size rows. */

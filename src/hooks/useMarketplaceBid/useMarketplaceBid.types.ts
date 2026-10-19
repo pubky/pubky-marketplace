@@ -1,11 +1,20 @@
 import { z } from 'zod';
 
+/**
+ * The lowest maximum the service accepts, mirroring its `personal_minimum_next_bid`.
+ * With no bid standing the visible price is the starting bid, not a bid to
+ * beat, so the opening bid may equal it; once a bid stands the floor is the
+ * visible price plus the increment, and a bidder's own earlier maximum can only
+ * raise it.
+ */
 export function marketplaceBidMinimum(
   currentPriceMinor: number,
   minimumIncrementMinor: number,
+  bidCount: number,
   viewerMinimumMinor?: number,
 ): number {
-  return Math.max(currentPriceMinor + minimumIncrementMinor, viewerMinimumMinor ?? 0);
+  const visibleFloor = bidCount === 0 ? currentPriceMinor : currentPriceMinor + minimumIncrementMinor;
+  return Math.max(visibleFloor, viewerMinimumMinor ?? 0);
 }
 
 export const marketplaceBidSchema = z.object({

@@ -36,6 +36,7 @@ export function useMarketplaceBid(
   auction?: {
     currentPrice: { amountMinor: number };
     minimumIncrement: { amountMinor: number };
+    bidCount: number;
     viewerBid?: MarketplaceListingProjection['viewerBid'];
   },
   isOwner = false,
@@ -63,6 +64,7 @@ export function useMarketplaceBid(
         const minimumMinor = marketplaceBidMinimum(
           auction.currentPrice.amountMinor,
           auction.minimumIncrement.amountMinor,
+          auction.bidCount,
           auction.viewerBid?.minimumNextBid.amountMinor,
         );
         if (amountInputToMoney(data.maximumAmount, priceAsset).amountMinor < minimumMinor) {
@@ -71,7 +73,9 @@ export function useMarketplaceBid(
               auction.viewerBid &&
               minimumMinor > auction.currentPrice.amountMinor + auction.minimumIncrement.amountMinor
                 ? 'Your maximum must exceed your own current proxy maximum.'
-                : 'Your maximum must be at least the current visible price plus the minimum increment.',
+                : auction.bidCount === 0
+                  ? 'Your maximum must be at least the starting bid.'
+                  : 'Your maximum must be at least the current visible price plus the minimum increment.',
           });
           return;
         }

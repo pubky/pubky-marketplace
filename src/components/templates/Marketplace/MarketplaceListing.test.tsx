@@ -591,6 +591,109 @@ describe('MarketplaceListing', () => {
     expect(screen.getByRole('button', { name: 'Make offer' })).toBeEnabled();
   });
 
+  describe.each(['paused', 'ended', 'removed'] as const)('a %s listing', (state) => {
+    it('offers neither Make offer nor Buy', () => {
+      view.listing = toCommerceListingModel(createCommerceListingFixture({ fulfillmentMethods: ['pickup'], state }));
+      renderListing();
+      expect(screen.queryByRole('button', { name: 'Make offer' })).not.toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /Buy/ })).toBeDisabled();
+    });
+
+    it('keeps Buy disabled and offers no Make offer before the marketplace session is known', () => {
+      view.listing = toCommerceListingModel(createCommerceListingFixture({ fulfillmentMethods: ['pickup'], state }));
+      view.projection = null;
+      view.projectionError = 'A marketplace session is required.';
+      view.needsSession = true;
+      renderListing();
+      expect(screen.queryByRole('button', { name: 'Make offer' })).not.toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /Buy/ })).toBeDisabled();
+    });
+  });
+
+  it('offers Make offer on an active listing', () => {
+    view.listing = toCommerceListingModel(
+      createCommerceListingFixture({ fulfillmentMethods: ['pickup'], state: 'active' }),
+    );
+    renderListing();
+    expect(screen.getByRole('button', { name: 'Make offer' })).toBeEnabled();
+  });
+
+  describe('per-variant prices', () => {
+    const pricedSizes = () =>
+      toCommerceListingModel(
+        createCommerceListingFixture({
+          variants: [
+            { id: 'size_s', options: { size: 'S' }, quantity: 3, mediaIds: [], enabled: true },
+            {
+              id: 'size_l',
+              options: { size: 'L' },
+              quantity: 2,
+              mediaIds: [],
+              enabled: true,
+              priceOverride: { amountMinor: 15_000, currency: 'USD', exponent: 2 },
+            },
+          ],
+        }),
+      );
+
+    it("shows a size's own price, not the listing price, when that size is selected", async () => {
+      view.listing = pricedSizes();
+      view.projection = createListingProjectionFixture({
+        availableQuantity: 5,
+        variants: [
+          { variantId: 'size_s', availableQuantity: 0, soldOut: true },
+          { variantId: 'size_l', availableQuantity: 2, soldOut: false },
+        ],
+      });
+
+      renderListing();
+
+      await waitFor(() =>
+        expect(screen.getByRole('combobox', { name: 'Choose listing variant' })).toHaveTextContent('L'),
+      );
+      expect(screen.getByText('$150.00')).toBeInTheDocument();
+      expect(screen.queryByText('$125.00')).not.toBeInTheDocument();
+    });
+
+    it('follows the size the buyer picks', async () => {
+      view.listing = pricedSizes();
+      view.projection = createListingProjectionFixture({
+        availableQuantity: 5,
+        variants: [
+          { variantId: 'size_s', availableQuantity: 3, soldOut: false },
+          { variantId: 'size_l', availableQuantity: 2, soldOut: false },
+        ],
+      });
+      const user = userEvent.setup();
+
+      renderListing();
+      await waitFor(() => expect(screen.getByText('$125.00')).toBeInTheDocument());
+      await user.click(screen.getByRole('combobox', { name: 'Choose listing variant' }));
+      await user.click(await screen.findByRole('option', { name: 'L · 2 left' }));
+
+      expect(await screen.findByText('$150.00')).toBeInTheDocument();
+      expect(screen.queryByText('$125.00')).not.toBeInTheDocument();
+    });
+
+    it('shows the listing price for a size with no price of its own', async () => {
+      view.listing = pricedSizes();
+      view.projection = createListingProjectionFixture({
+        availableQuantity: 5,
+        variants: [
+          { variantId: 'size_s', availableQuantity: 3, soldOut: false },
+          { variantId: 'size_l', availableQuantity: 2, soldOut: false },
+        ],
+      });
+
+      renderListing();
+
+      await waitFor(() =>
+        expect(screen.getByRole('combobox', { name: 'Choose listing variant' })).toHaveTextContent('S'),
+      );
+      expect(screen.getByText('$125.00')).toBeInTheDocument();
+    });
+  });
+
   it('falls back to the seller pubky when no shop record exists', () => {
     view.shop = null;
     const listing = renderListing();

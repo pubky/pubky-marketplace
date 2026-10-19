@@ -61,6 +61,8 @@ const registerVariantSchema = z
     id: commerceEntityIdSchema,
     quantity: z.number().int().min(0).max(COMMERCE_LISTING_MAX_QUANTITY),
     sku: z.string().trim().min(1).max(64).optional(),
+    // The variant's own price (`priceOverride`), in the listing's asset.
+    unitPrice: commercePositiveMoneySchema.optional(),
   })
   .strict();
 
@@ -85,9 +87,10 @@ const registerListingPayloadSchema = z
     // defaults to shipping-only so pre-pickup clients are unaffected.
     fulfillmentMethods: marketplaceFulfillmentMethodsSchema,
     // The record's enabled variants, in record order, when it offers two or
-    // more: the service then tracks stock per size. Absent registers one
-    // implicit row. `quantity` above stays the sum of every record variant.
-    variants: z.array(registerVariantSchema).min(2).max(COMMERCE_LISTING_MAX_VARIANTS).optional(),
+    // more (the service then tracks stock per size) or one that sells at its
+    // own price. Absent registers one implicit row at the listing price.
+    // `quantity` above stays the sum of every record variant.
+    variants: z.array(registerVariantSchema).min(1).max(COMMERCE_LISTING_MAX_VARIANTS).optional(),
   })
   .strict()
   .superRefine((payload, context) => {
@@ -101,6 +104,16 @@ const registerListingPayloadSchema = z
         message: 'Auction format, terms, and seller-private reserve must be configured together.',
       });
     }
+    payload.variants?.forEach((variant, index) => {
+      const price = variant.unitPrice;
+      if (price && (price.currency !== payload.unitPrice.currency || price.exponent !== payload.unitPrice.exponent)) {
+        context.addIssue({
+          code: 'custom',
+          path: ['variants', index, 'unitPrice'],
+          message: 'Variant prices must use the listing asset and exponent.',
+        });
+      }
+    });
     if (payload.auctionTerms) {
       if (Date.parse(payload.auctionTerms.endsAt) <= Date.parse(payload.auctionTerms.startsAt)) {
         context.addIssue({

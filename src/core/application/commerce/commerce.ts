@@ -206,6 +206,7 @@ import type {
   NexusListingCondition,
   NexusListingDetails,
   NexusListingSaleFormat,
+  NexusListingState,
 } from '@/services/nexus/marketplace/marketplace.types';
 import type { NexusTag } from '@/services/nexus/nexus.types';
 import { PaykitReceiverService } from '@/services/paykit/paykit-receiver';
@@ -437,6 +438,15 @@ function applyInventoryProjection(
 
 const SELLER_REFRESH_MAX_PAGES = 100;
 
+/**
+ * The states a seller's own refresh reads from the index. The discovery stream
+ * serves one lifecycle state per query, and the seller manages unlisted and
+ * ended listings (relist, inventory, history) as well as live ones, so a
+ * device that never saw them must still learn of them. A removed listing has
+ * nothing left to manage.
+ */
+const SELLER_OWN_LISTING_STATES = ['active', 'paused', 'ended'] as const satisfies readonly NexusListingState[];
+
 export class CommerceApplication {
   private constructor() {}
 
@@ -640,7 +650,11 @@ export class CommerceApplication {
   }
 
   private static async runSellerListingsRefresh(sellerPubky: string): Promise<void> {
-    const entries = await this.collectSellerCatalogEntries(sellerPubky, { strictIdentity: true, paginate: true });
+    const entries = await this.collectSellerCatalogEntries(sellerPubky, {
+      strictIdentity: true,
+      paginate: true,
+      states: SELLER_OWN_LISTING_STATES,
+    });
     const localListings = await LocalCommerceService.getListingsBySeller(sellerPubky);
     const localListingsById = new Map(localListings.map((listing) => [listing.listing_id, listing]));
     const recordsToCommit: CommerceListingRecord[] = [];
@@ -2998,34 +3012,36 @@ export class CommerceApplication {
 
   private static async collectSellerCatalogEntries(
     sellerPubky: string,
-    options: { strictIdentity?: boolean; paginate?: boolean } = {},
+    options: { strictIdentity?: boolean; paginate?: boolean; states?: readonly NexusListingState[] } = {},
   ): Promise<ReturnType<typeof CommerceRecordNormalizer.nexusListingStream>[number][]> {
     const pages: NexusListingDetails[][] = [];
     const maxPages = options.paginate ? SELLER_REFRESH_MAX_PAGES : 1;
-    for (let page = 0; page < maxPages; page += 1) {
-      const payload = await NexusMarketplaceService.fetchListingStream({
-        seller_id: sellerPubky,
-        state: 'active',
-        limit: NEXUS_LISTINGS_PER_PAGE,
-        ...(options.paginate && page > 0 ? { skip: page * NEXUS_LISTINGS_PER_PAGE } : {}),
-      });
-      if (!Array.isArray(payload)) {
-        if (options.strictIdentity) throw this.invalidSellerCatalogIdentity();
-        break;
-      }
-      this.validateSellerCatalogPage(payload, sellerPubky, options.strictIdentity);
-      pages.push(payload);
-      if (!options.paginate || payload.length < NEXUS_LISTINGS_PER_PAGE) break;
-      if (page === maxPages - 1) {
-        throw Err.validation(
-          ValidationErrorCode.INVALID_INPUT,
-          'Seller catalog refresh exceeded its bounded page limit.',
-          {
-            service: ErrorService.Nexus,
-            operation: 'fetchSellerCatalogListings',
-            context: { maxPages },
-          },
-        );
+    for (const state of options.states ?? (['active'] as const)) {
+      for (let page = 0; page < maxPages; page += 1) {
+        const payload = await NexusMarketplaceService.fetchListingStream({
+          seller_id: sellerPubky,
+          state,
+          limit: NEXUS_LISTINGS_PER_PAGE,
+          ...(options.paginate && page > 0 ? { skip: page * NEXUS_LISTINGS_PER_PAGE } : {}),
+        });
+        if (!Array.isArray(payload)) {
+          if (options.strictIdentity) throw this.invalidSellerCatalogIdentity();
+          break;
+        }
+        this.validateSellerCatalogPage(payload, sellerPubky, options.strictIdentity);
+        pages.push(payload);
+        if (!options.paginate || payload.length < NEXUS_LISTINGS_PER_PAGE) break;
+        if (page === maxPages - 1) {
+          throw Err.validation(
+            ValidationErrorCode.INVALID_INPUT,
+            'Seller catalog refresh exceeded its bounded page limit.',
+            {
+              service: ErrorService.Nexus,
+              operation: 'fetchSellerCatalogListings',
+              context: { maxPages, state },
+            },
+          );
+        }
       }
     }
 

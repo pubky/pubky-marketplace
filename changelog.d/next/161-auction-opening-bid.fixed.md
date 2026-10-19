@@ -1,0 +1,1 @@
+An auction's opening bid may equal its starting bid, as the label says. Once a bid stands, the next bid still has to clear the visible price by the increment. The bid dialog names the starting bid as the minimum until the first bid.

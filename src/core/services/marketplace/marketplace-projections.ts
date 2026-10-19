@@ -71,6 +71,11 @@ const marketplaceListingProjectionBaseSchema = z
     // the listing never sells out there and its zero quantity is not a count.
     madeToOrder: z.boolean().optional(),
     variants: z.array(marketplaceProjectedVariantSchema).optional(),
+    // The variants the service sells at their own price (`priceOverride`),
+    // absent when every variant sells at `unitPrice`.
+    variantPrices: z
+      .array(z.object({ variantId: z.string().min(1), unitPrice: marketplaceMoneySchema }).passthrough())
+      .optional(),
     unitPrice: marketplaceMoneySchema,
     shipping: marketplaceMoneySchema.optional(),
     saleFormat: z.enum(['fixed_price', 'auction']),

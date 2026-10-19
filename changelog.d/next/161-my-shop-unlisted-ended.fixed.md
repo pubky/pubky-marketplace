@@ -1,0 +1,1 @@
+My shop now lists a seller's unlisted and ended listings on a device that has not seen them yet. Its refresh asked the index for live listings only, so a new browser showed fewer listings than the seller had until each one was opened.

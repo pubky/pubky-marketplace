@@ -3310,20 +3310,82 @@ describe('CommerceApplication', () => {
     it('deduplicates concurrent refreshes by seller', async () => {
       vi.spyOn(commerceConfig, 'getCommerceAdapterMode').mockReturnValue('transaction-service');
       vi.spyOn(LocalCommerceService, 'getCatalogEntriesBySeller').mockResolvedValue([]);
-      let release: ((entries: NexusListingDetails[]) => void) | undefined;
-      const stream = vi.spyOn(NexusMarketplaceService, 'fetchListingStream').mockImplementation(
-        () =>
-          new Promise((resolve) => {
-            release = resolve;
-          }),
-      );
+      const stream = vi
+        .spyOn(NexusMarketplaceService, 'fetchListingStream')
+        .mockImplementation(() => new Promise((resolve) => setTimeout(() => resolve([]), 0)));
 
       const first = CommerceApplication.refreshListingsBySeller(COMMERCE_FIXTURE_SELLER);
       const second = CommerceApplication.refreshListingsBySeller(COMMERCE_FIXTURE_SELLER);
-      release?.([]);
       await Promise.all([first, second]);
 
-      expect(stream).toHaveBeenCalledOnce();
+      expect(stream.mock.calls.map(([params]) => params?.state)).toEqual(['active', 'paused', 'ended']);
+    });
+
+    it("reads the seller's unlisted and ended listings, not only the live ones", async () => {
+      vi.spyOn(commerceConfig, 'getCommerceAdapterMode').mockReturnValue('transaction-service');
+      await CommerceCatalogEntryModel.table.clear();
+      await CommerceListingModel.table.clear();
+      const [live, unlisted, ended] = SELLER_REFRESH_FIXTURE.nexus;
+      const byState = {
+        active: [{ ...live, state: 'active' as const }],
+        paused: [{ ...unlisted, state: 'paused' as const }],
+        ended: [{ ...ended, state: 'ended' as const }],
+      };
+      const stream = vi
+        .spyOn(NexusMarketplaceService, 'fetchListingStream')
+        .mockImplementation(async (params) => byState[params?.state as keyof typeof byState] ?? []);
+      vi.spyOn(CommerceHomeserverService, 'fetchJson').mockImplementation(async (url) => {
+        const listingId = url.split('/').pop();
+        return capturedById.get(listingId!)!;
+      });
+
+      await CommerceApplication.refreshListingsBySeller(capturedSeller);
+
+      expect(stream.mock.calls.map(([params]) => params?.state)).toEqual(['active', 'paused', 'ended']);
+      expect(
+        (await LocalCommerceService.getListingsBySeller(capturedSeller)).map(({ listing_id }) => listing_id).sort(),
+      ).toEqual([live.id, unlisted.id, ended.id].sort());
+    });
+
+    it('pages each lifecycle state of the seller refresh on its own', async () => {
+      vi.spyOn(commerceConfig, 'getCommerceAdapterMode').mockReturnValue('transaction-service');
+      await CommerceCatalogEntryModel.table.clear();
+      await CommerceListingModel.table.clear();
+      const fullPage = Array.from({ length: NEXUS_LISTINGS_PER_PAGE }, (_, index) => nexusRow(`paused_${index}`, 1));
+      const stream = vi.spyOn(NexusMarketplaceService, 'fetchListingStream').mockImplementation(async (params) => {
+        if (params?.state === 'paused' && params.skip === undefined) return fullPage;
+        return [];
+      });
+      vi.spyOn(CommerceHomeserverService, 'fetchJson').mockImplementation(async (url) => {
+        const listingId = url.split('/').pop()!;
+        return { ...capturedById.get('c73b6be3ab4642539c69a797f9006dcb')!, listingId };
+      });
+
+      await CommerceApplication.refreshListingsBySeller(capturedSeller);
+
+      expect(stream.mock.calls.map(([params]) => [params?.state, params?.skip ?? 0])).toEqual([
+        ['active', 0],
+        ['paused', 0],
+        ['paused', NEXUS_LISTINGS_PER_PAGE],
+        ['ended', 0],
+      ]);
+    });
+
+    it("fails the refresh, retaining the cache, when one lifecycle state's read fails", async () => {
+      vi.spyOn(commerceConfig, 'getCommerceAdapterMode').mockReturnValue('transaction-service');
+      await CommerceCatalogEntryModel.table.clear();
+      await CommerceListingModel.table.clear();
+      await LocalCommerceService.upsertListing(capturedById.get('c73b6be3ab4642539c69a797f9006dcb')!, 'synced');
+      vi.spyOn(NexusMarketplaceService, 'fetchListingStream').mockImplementation(async (params) => {
+        if (params?.state === 'ended') throw new Error('nexus unreachable');
+        return [];
+      });
+      const commitRefresh = vi.spyOn(LocalCommerceService, 'commitSellerCatalogRefresh');
+
+      await expect(CommerceApplication.refreshListingsBySeller(capturedSeller)).rejects.toThrow('nexus unreachable');
+
+      expect(commitRefresh).not.toHaveBeenCalled();
+      expect(await LocalCommerceService.getListingsBySeller(capturedSeller)).toHaveLength(1);
     });
 
     it('returns locally cached seller listings without fetching the catalog', async () => {

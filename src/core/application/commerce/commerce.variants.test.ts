@@ -102,6 +102,28 @@ describe('listing.register per-variant stock', () => {
     expect(payload.quantity).toBe(4);
   });
 
+  it("registers each priced variant's own price so the service charges it", async () => {
+    const payload = await registeredPayload([
+      variant('size_s', 3),
+      variant('size_l', 2, { priceOverride: { amountMinor: 15_000, currency: 'USD', exponent: 2 } }),
+    ]);
+
+    expect(payload.variants).toEqual([
+      { id: 'size_s', quantity: 3 },
+      { id: 'size_l', quantity: 2, unitPrice: { amountMinor: 15_000, currency: 'USD', exponent: 2 } },
+    ]);
+  });
+
+  it('registers a sole enabled variant that sells at its own price', async () => {
+    const payload = await registeredPayload([
+      variant('size_l', 4, { priceOverride: { amountMinor: 15_000, currency: 'USD', exponent: 2 } }),
+    ]);
+
+    expect(payload.variants).toEqual([
+      { id: 'size_l', quantity: 4, unitPrice: { amountMinor: 15_000, currency: 'USD', exponent: 2 } },
+    ]);
+  });
+
   it('sends no variants when only one variant is enabled', async () => {
     const payload = await registeredPayload([variant('size_s', 2, { enabled: false }), variant('size_m', 4)]);
 

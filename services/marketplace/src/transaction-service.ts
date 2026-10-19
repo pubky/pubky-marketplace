@@ -1668,8 +1668,15 @@ export class MarketplaceTransactionService {
     if (!sameAsset(listing.unitPrice, command.payload.maximumAmount)) {
       return failure('INVALID_COMMAND', 'Bid maximum must use the auction asset and exponent.');
     }
-    if (command.payload.maximumAmount.amountMinor <= listing.auction.currentPrice.amountMinor) {
-      return failure('BID_TOO_LOW', 'Bid maximum must exceed the current visible price.', {
+    // Before the first bid the visible price is the starting bid, not a bid to
+    // beat, so the opening bid may equal it; once a bid stands the next bid
+    // clears the visible price by the increment (the Rust service's rule).
+    const minimumNextBid =
+      listing.auction.bidCount === 0
+        ? listing.auction.currentPrice.amountMinor
+        : listing.auction.currentPrice.amountMinor + listing.auction.minimumIncrement.amountMinor;
+    if (command.payload.maximumAmount.amountMinor < minimumNextBid) {
+      return failure('BID_TOO_LOW', 'Bid maximum must meet the minimum next bid.', {
         currentRevision: listing.serverRevision,
       });
     }

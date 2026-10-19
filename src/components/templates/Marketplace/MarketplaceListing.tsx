@@ -64,6 +64,7 @@ import {
   type CommerceListingRecord,
   commerceListingTakesOffers,
   type CommerceShippingOption,
+  commerceVariantUnitPrice,
 } from '@/libs/commerce/marketplace-records';
 import type { MarketplaceFulfillmentMethod } from '@/libs/commerce/pickup';
 import { formatShipsToCountries, shopShipsToCountries } from '@/libs/commerce/ships-to';
@@ -256,7 +257,8 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
   const record = listing.record;
   const selectedVariant = record.variants.find(({ id }) => id === selectedVariantId) ?? record.variants[0];
   const price = record.sale.format === 'fixed_price' ? record.sale.unitPrice : record.sale.startingPrice;
-  const displayPrice = negotiation.projection?.auction?.currentPrice ?? price;
+  const displayPrice =
+    negotiation.projection?.auction?.currentPrice ?? commerceVariantUnitPrice(record, selectedVariant) ?? price;
   // The methods the service sells this listing by (digital delivery design
   // §6 A1–A3). A Locks listing publishes digital delivery only.
   const methods = commerceListingFulfillmentMethods(record.fulfillmentMethods);
@@ -557,6 +559,7 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
                         availabilityNeedsSession
                           ? isOwner ||
                             adapterMode === 'unavailable' ||
+                            !isPurchasable ||
                             publicHold ||
                             isSoldOut ||
                             (selectedVariant !== undefined && soldOutVariants.has(selectedVariant.id))
@@ -591,7 +594,7 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
                       {CHECKOUT_HOLD_COPY.holdOwnerCheckPrompt}
                     </Button>
                   )}
-                  {commerceListingTakesOffers(record) && !viewerOfferHold && !listingSoldOut && (
+                  {isPurchasable && commerceListingTakesOffers(record) && !viewerOfferHold && !listingSoldOut && (
                     <MarketplaceOfferDialog
                       aggregateId={aggregateId}
                       expectedRevision={negotiation.projection?.serverRevision ?? null}

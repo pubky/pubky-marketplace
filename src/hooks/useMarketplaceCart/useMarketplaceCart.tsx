@@ -6,7 +6,7 @@ import { MARKETPLACE_ROUTES } from '@/app/routes';
 import { ToastAction } from '@/atoms/Toast/Toast';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import { useRequireAuth } from '@/hooks/useRequireAuth/useRequireAuth';
-import { commerceListingShippingMinor } from '@/libs/commerce/marketplace-records';
+import { commerceListingShippingMinor, commerceVariantUnitPrice } from '@/libs/commerce/marketplace-records';
 import type { MarketplaceFulfillmentMethod } from '@/libs/commerce/pickup';
 import { sumMoneyByAsset } from '@/libs/commerce/pricing';
 import type { CommerceListingModelSchema } from '@/models/commerce/commerce.schema';
@@ -64,10 +64,7 @@ export function marketplaceCartShippingTotals(
 
 export function priceForCartItem(item: MarketplaceCartItem) {
   const variant = item.listing.record.variants.find(({ id }) => id === item.variantId);
-  return (
-    variant?.priceOverride ??
-    (item.listing.record.sale.format === 'fixed_price' ? item.listing.record.sale.unitPrice : null)
-  );
+  return commerceVariantUnitPrice(item.listing.record, variant);
 }
 
 export function groupMarketplaceCartItems(items: MarketplaceCartItem[]): MarketplaceCartGroup[] {

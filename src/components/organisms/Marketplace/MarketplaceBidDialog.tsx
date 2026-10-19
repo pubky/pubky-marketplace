@@ -108,6 +108,7 @@ export function MarketplaceBidDialog({
                 amountMinor: marketplaceBidMinimum(
                   projection.auction.currentPrice.amountMinor,
                   projection.auction.minimumIncrement.amountMinor,
+                  projection.auction.bidCount,
                   projection.viewerBid?.minimumNextBid.amountMinor,
                 ),
               })}{' '}
@@ -115,7 +116,9 @@ export function MarketplaceBidDialog({
               projection.viewerBid.minimumNextBid.amountMinor >
                 projection.auction.currentPrice.amountMinor + projection.auction.minimumIncrement.amountMinor
                 ? 'minimum required to exceed your own current proxy maximum.'
-                : 'floor based on the visible price.'}
+                : projection.auction.bidCount === 0
+                  ? 'the starting bid.'
+                  : 'floor based on the visible price.'}
             </Typography>
             {projection.viewerBid && (
               <Typography as="p" className="mt-1 text-sm text-muted-foreground">

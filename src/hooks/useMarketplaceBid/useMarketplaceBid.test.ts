@@ -25,8 +25,20 @@ describe('useMarketplaceBid', () => {
     vi.spyOn(globalThis.crypto, 'randomUUID').mockReturnValue('00000000-0000-4000-8000-000000000810');
   });
 
-  it('computes the visible-price floor for a first-time bidder', () => {
-    expect(marketplaceBidMinimum(100, 1)).toBe(101);
+  it('computes the visible-price plus increment floor once a bid stands', () => {
+    expect(marketplaceBidMinimum(100, 1, 1)).toBe(101);
+    expect(marketplaceBidMinimum(4_500, 500, 6)).toBe(5_000);
+  });
+
+  it('lets the opening bid equal the starting bid while no bid stands', () => {
+    expect(marketplaceBidMinimum(100, 1, 0)).toBe(100);
+    expect(marketplaceBidMinimum(100, 100, 0)).toBe(100);
+  });
+
+  it("never lets the bidder's own earlier maximum lower the floor", () => {
+    expect(marketplaceBidMinimum(100, 1, 3, 250)).toBe(250);
+    expect(marketplaceBidMinimum(100, 1, 3, 50)).toBe(101);
+    expect(marketplaceBidMinimum(100, 1, 0, 50)).toBe(100);
   });
 
   it('accepts a maximum exactly equal to the minimum', async () => {
@@ -43,6 +55,7 @@ describe('useMarketplaceBid', () => {
       useMarketplaceBid('listing:seller_item', 3, vi.fn(), USD_ASSET, 'live', {
         currentPrice: { amountMinor: 100 },
         minimumIncrement: { amountMinor: 1 },
+        bidCount: 2,
       }),
     );
     act(() => result.current.form.setValue('maximumAmount', '1.01'));
@@ -56,12 +69,89 @@ describe('useMarketplaceBid', () => {
     expect(CommerceController.executeMarketplaceCommand).toHaveBeenCalled();
   });
 
+  describe('with no bid standing', () => {
+    const opening = (maximum: string) => {
+      const hook = renderHook(() =>
+        useMarketplaceBid('listing:seller_item', 1, vi.fn(), USD_ASSET, 'live', {
+          currentPrice: { amountMinor: 100 },
+          minimumIncrement: { amountMinor: 100 },
+          bidCount: 0,
+        }),
+      );
+      act(() => hook.result.current.form.setValue('maximumAmount', maximum));
+      return hook.result;
+    };
+
+    it('accepts an opening bid equal to the starting bid', async () => {
+      vi.mocked(CommerceController.executeMarketplaceCommand).mockResolvedValue({
+        ok: true,
+        version: 1,
+        commandId: '00000000-0000-4000-8000-000000000810',
+        aggregateId: 'listing:seller_item',
+        revision: 2,
+        eventIds: ['00000000-0000-4000-8000-000000000811'],
+        result: { kind: 'bid' },
+      });
+      const result = opening('1.00');
+
+      let succeeded = false;
+      await act(async () => {
+        succeeded = await result.current.submit();
+      });
+
+      expect(succeeded).toBe(true);
+      expect(CommerceController.executeMarketplaceCommand).toHaveBeenCalledWith(
+        expect.objectContaining({
+          kind: 'auction.place_bid',
+          payload: { maximumAmount: { amountMinor: 100, currency: 'USD', exponent: 2 } },
+        }),
+      );
+    });
+
+    it('refuses an opening bid below the starting bid and says why', async () => {
+      const result = opening('0.99');
+
+      let succeeded = true;
+      await act(async () => {
+        succeeded = await result.current.submit();
+      });
+
+      expect(succeeded).toBe(false);
+      expect(result.current.form.getFieldState('maximumAmount').error?.message).toBe(
+        'Your maximum must be at least the starting bid.',
+      );
+      expect(CommerceController.executeMarketplaceCommand).not.toHaveBeenCalled();
+    });
+  });
+
+  it('still asks for the increment from the second bidder on', async () => {
+    const { result } = renderHook(() =>
+      useMarketplaceBid('listing:seller_item', 2, vi.fn(), USD_ASSET, 'live', {
+        currentPrice: { amountMinor: 100 },
+        minimumIncrement: { amountMinor: 100 },
+        bidCount: 1,
+      }),
+    );
+    act(() => result.current.form.setValue('maximumAmount', '1.00'));
+
+    let succeeded = true;
+    await act(async () => {
+      succeeded = await result.current.submit();
+    });
+
+    expect(succeeded).toBe(false);
+    expect(result.current.form.getFieldState('maximumAmount').error?.message).toBe(
+      'Your maximum must be at least the current visible price plus the minimum increment.',
+    );
+  });
+
   it('uses the bidder viewer minimum and refuses one minor unit below it', async () => {
     const onConflict = vi.fn();
     const { result } = renderHook(() =>
       useMarketplaceBid('listing:seller_item', 3, onConflict, USD_ASSET, 'live', {
         currentPrice: { amountMinor: 4_500 },
         minimumIncrement: { amountMinor: 500 },
+        bidCount: 2,
         viewerBid: {
           maximumAmount: { amountMinor: 7_000, currency: 'USD', exponent: 2 },
           minimumNextBid: { amountMinor: 7_001, currency: 'USD', exponent: 2 },
@@ -96,6 +186,7 @@ describe('useMarketplaceBid', () => {
       useMarketplaceBid('listing:seller_item', 3, vi.fn(), USD_ASSET, 'live', {
         currentPrice: { amountMinor: 4_500 },
         minimumIncrement: { amountMinor: 500 },
+        bidCount: 2,
         viewerBid: {
           maximumAmount: { amountMinor: 7_000, currency: 'USD', exponent: 2 },
           minimumNextBid: { amountMinor: 7_001, currency: 'USD', exponent: 2 },
