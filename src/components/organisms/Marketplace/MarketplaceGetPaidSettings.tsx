@@ -361,7 +361,10 @@ export function MarketplaceGetPaidSettings({ onSaved }: MarketplaceGetPaidSettin
       : bitkitRead === 'checking'
         ? null
         : deriveBitcoinStatus(payments.accountClaimed);
-  const usdtStatus = deriveUsdtStatus(usdtReadiness);
+  // Until the first read returns there is no readiness to show; deriving it
+  // from no config would fail closed to `unavailable` and flash Needs attention.
+  const usdtStatus: PaymentMethodStatus | null =
+    payments.isLoading && !payments.config ? null : deriveUsdtStatus(usdtReadiness);
   const usdtValue = railDraft.usdt ?? serverConfig?.usdtEnabled ?? false;
   const serverBitcoin = serverConfig?.bitcoinEnabled ?? false;
   const bitcoinValue = railDraft.bitcoin ?? serverBitcoin;
