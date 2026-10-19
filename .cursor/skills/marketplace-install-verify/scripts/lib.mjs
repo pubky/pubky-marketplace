@@ -282,6 +282,16 @@ export function checkInboxRuntime(runtime) {
 }
 
 /**
+ * Whether an unauthenticated `GET /v1/pings` shows the inbox service is not there yet: nothing answered (no TLS
+ * certificate for the host, refused, timed out) or a proxy answered for it with 404/502/503/504. The real service
+ * answers 401. Not-up is a state that fixes itself when the service is deployed, unlike a service that answers and
+ * is misconfigured.
+ */
+export function inboxNotUp(status) {
+  return !status || [404, 502, 503, 504].includes(status);
+}
+
+/**
  * Whether a CORS `access-control-allow-origin` value lets `origin` call a bearer-token API. The inbox
  * authenticates with a bearer token and no cookies, so `*` is a valid answer there (unlike the marketplace service,
  * whose allow-list must name exact origins).

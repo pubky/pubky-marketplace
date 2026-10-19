@@ -9,8 +9,11 @@ export type InboxCredentials = { grant: string; pop: string };
  */
 export type InboxCredentialsProvider = (data: InboxSessionProofData) => Promise<InboxCredentials | null>;
 
-/** `disabled`: no inbox configured, or this session cannot sign an inbox proof. */
-export type InboxAvailability = 'disabled' | 'ready';
+/**
+ * `disabled`: no inbox configured, or this session cannot sign an inbox proof.
+ * `unavailable`: configured but not answering (not deployed yet, down, unreachable); retried on a schedule.
+ */
+export type InboxAvailability = 'disabled' | 'ready' | 'unavailable';
 
 export type InboxPing = {
   /** Server-asserted sender pubky. */

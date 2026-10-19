@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { CHAT_PING_MAX_BYTES } from '@/config/chat';
 import { utf8Bytes } from '@/libs/chat/encoding';
+import { MESSAGING_RETRY_POLICY, RetryBackoff } from '@/libs/chat/retry-backoff';
 import { isAppError } from '@/libs/error/error';
 import { ServerErrorCode, ValidationErrorCode } from '@/libs/error/error.codes';
 import { Err } from '@/libs/error/error.factories';
@@ -23,6 +24,12 @@ import type {
 export const INBOX_SESSION_STORAGE_KEY = shopStorageKey('chat-inbox-session:v1');
 /** Drop a session this close to its expiry instead of using it. */
 const SESSION_EXPIRY_MARGIN_MS = 60_000;
+
+/** A request to the inbox that has not answered by now is treated as the inbox not being up. */
+const SESSION_REQUEST_TIMEOUT_MS = 10_000;
+/** Statuses that mean the service is not there (a proxy or an unrelated vhost answers), not that it rejected us. */
+const NOT_UP_STATUSES = new Set([404, 502, 503, 504]);
+const SESSION_RETRY_KEY = 'session';
 
 const sessionResponseSchema = z.object({ access_token: z.string().min(1), expires_at: z.string().min(1) });
 /** The inbox accepts slots of 1–64 characters from the Base64url alphabet. */
@@ -57,16 +64,28 @@ export class InboxService {
 
   private static session: InboxSessionInfo | null = null;
 
+  /**
+   * One schedule for every caller (the leader loop, each outbox flush, each reconcile pass) while the inbox does
+   * not answer, so an inbox that is not deployed costs at most one request per 10 minutes once it settles, not one per pass.
+   */
+  private static readonly sessionRetry = new RetryBackoff<null>(MESSAGING_RETRY_POLICY);
+
   static isConfigured(): boolean {
     return getInboxUrl() !== null;
   }
 
-  /** Establishes (or reuses) the inbox session for `me`. */
+  /**
+   * Establishes (or reuses) the inbox session for `me`. An inbox that does not answer (not deployed yet, down,
+   * unreachable) is an expected condition, not a bug: it returns `unavailable` without raising an error event,
+   * logs the outage once, and is retried on a growing schedule until it answers. A service that answers and
+   * refuses us (bad audience, rejected proof) still throws: that is a configuration fault to report.
+   */
   static async ensureSession(me: string, getCredentials: InboxCredentialsProvider): Promise<InboxAvailability> {
     const baseUrl = getInboxUrl();
     const audience = getInboxAudience();
     if (!baseUrl || !audience) return 'disabled';
     if (this.readSession(me)) return 'ready';
+    if (this.sessionRetry.status(SESSION_RETRY_KEY) === 'waiting') return 'unavailable';
 
     const credentials = await getCredentials({ type: 'pubky-inbox-session-v1', audience });
     if (!credentials) {
@@ -76,12 +95,9 @@ export class InboxService {
     }
 
     const url = `${baseUrl}/v1/auth/session`;
-    const response = await safeFetch(
-      url,
-      { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(credentials) },
-      ErrorService.Inbox,
-      'ensureSession',
-    );
+    const response = await this.fetchSession(url, credentials);
+    if (!response) return this.markUnavailable('no answer');
+    if (NOT_UP_STATUSES.has(response.status)) return this.markUnavailable(`HTTP ${response.status}`);
     if (!response.ok) throw httpResponseToError(response, ErrorService.Inbox, 'ensureSession', url);
     const parsed = sessionResponseSchema.safeParse(await response.json().catch(() => null));
     if (!parsed.success) {
@@ -92,6 +108,10 @@ export class InboxService {
       });
     }
     this.writeSession({ pubky: me, token: parsed.data.access_token, expiresAt: parsed.data.expires_at });
+    if (this.sessionRetry.status(SESSION_RETRY_KEY) !== 'none') {
+      this.sessionRetry.succeed(SESSION_RETRY_KEY);
+      Logger.info('Chat inbox is reachable again');
+    }
     Logger.info('Established inbox session', { expiresAt: parsed.data.expires_at });
     return 'ready';
   }
@@ -170,6 +190,7 @@ export class InboxService {
 
   static clearSession(): void {
     this.session = null;
+    this.sessionRetry.succeed(SESSION_RETRY_KEY);
     this.removeStored();
   }
 
@@ -181,6 +202,36 @@ export class InboxService {
   }
 
   // ---------------------------------------------------------------- internals
+
+  /** The session request, or `null` when nothing answered (refused, TLS or DNS failure, CORS block, timeout). */
+  private static async fetchSession(url: string, credentials: unknown): Promise<Response | null> {
+    const abort = new AbortController();
+    const timer = setTimeout(() => abort.abort(), SESSION_REQUEST_TIMEOUT_MS);
+    try {
+      return await fetch(url, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(credentials),
+        signal: abort.signal,
+      });
+    } catch {
+      return null;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  private static markUnavailable(reason: string): InboxAvailability {
+    const first = this.sessionRetry.status(SESSION_RETRY_KEY) === 'none';
+    const delay = this.sessionRetry.fail(SESSION_RETRY_KEY, null);
+    if (first) {
+      Logger.warn('Chat inbox is not answering; new conversations are found when the thread is opened', {
+        reason,
+        retryInMs: delay,
+      });
+    }
+    return 'unavailable';
+  }
 
   private static async authorized(
     me: string,

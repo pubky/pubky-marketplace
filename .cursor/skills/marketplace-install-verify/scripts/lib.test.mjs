@@ -11,6 +11,7 @@ import {
   extractRuntimeConfig,
   framableBySameOrigin,
   frameAncestorsAllow,
+  inboxNotUp,
   isTruthy,
   locksReturnOriginsFromToml,
   missingOrigins,
@@ -304,4 +305,9 @@ test('inbox CORS accepts the Shop origin or a wildcard (bearer tokens, no cookie
   assert.equal(corsAllowsOrigin(null, 'https://pubky.app'), false);
   assert.equal(corsAllowsOrigin('', 'https://pubky.app'), false);
   assert.equal(corsAllowsOrigin('null', 'https://pubky.app'), false);
+});
+
+test('an inbox that is not deployed yet is told apart from one that answers', () => {
+  for (const status of [0, undefined, 404, 502, 503, 504]) assert.equal(inboxNotUp(status), true, String(status));
+  for (const status of [200, 401, 403, 429, 500]) assert.equal(inboxNotUp(status), false, String(status));
 });
