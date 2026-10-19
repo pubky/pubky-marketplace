@@ -348,10 +348,9 @@ export function MarketplaceGetPaidSettings({ onSaved }: MarketplaceGetPaidSettin
   // Upstream Paykit refuses a second initial setup for an account it holds, so such a seller reconnects. A stored
   // `bitcoin_enabled` could only be switched on while Bitkit read connected, so Paykit holds that seller's account
   // even when its session no longer validates (`bitcoin_setup: setup_required`).
-  const paykitHoldsAccount =
-    upstreamPaykit &&
-    (payments.accountClaimed === true ||
-      (payments.accountClaimed === false && payments.config?.bitcoinEnabled === true));
+  const paykitHoldsAccountInferred =
+    upstreamPaykit && payments.accountClaimed === false && payments.config?.bitcoinEnabled === true;
+  const paykitHoldsAccount = (upstreamPaykit && payments.accountClaimed === true) || paykitHoldsAccountInferred;
   const serverUsdtReadiness = deriveUsdtSellerReadiness(serverConfig ?? {});
   const usdtReadiness = paykitHoldsAccount && serverUsdtReadiness === 'setup' ? 'reconnect' : serverUsdtReadiness;
   // Before a session there is no read: the pill matches PayPal and USDT and the
@@ -386,6 +385,12 @@ export function MarketplaceGetPaidSettings({ onSaved }: MarketplaceGetPaidSettin
   const offerBitcoinReconnect =
     upstreamPaykit && !paykitHoldsAccount && paykitSetupProblem === 'error' && payments.accountClaimed === false;
   const failedSetupInDialog = upstreamPaykit && paykitSetupStatus === 'error' && paykitSetupMode === 'setup';
+  // The inference can be wrong (Paykit lost the creator): a reconnect Paykit refuses never calls back, so a failed or
+  // expired reconnect falls back to initial setup.
+  const failedInferredReconnectInDialog =
+    paykitHoldsAccountInferred &&
+    paykitSetupMode !== 'setup' &&
+    (paykitSetupStatus === 'error' || paykitSetupStatus === 'timeout');
   // Only the missing-step reason is explained here; without a session the
   // card's "Enable selling" prompt already says why the switch is off.
   const bitcoinToggleBlocker =
@@ -728,6 +733,12 @@ export function MarketplaceGetPaidSettings({ onSaved }: MarketplaceGetPaidSettin
                   >
                     <RefreshCw className="size-4" />
                     Reconnect Bitkit
+                  </Button>
+                )}
+                {failedInferredReconnectInDialog && (
+                  <Button variant="secondary" className="w-fit rounded-full" onClick={() => openPaykitSetup('setup')}>
+                    <RefreshCw className="size-4" />
+                    Connect Bitkit
                   </Button>
                 )}
                 {paykitSetupStatus === 'unconfirmed' ? (

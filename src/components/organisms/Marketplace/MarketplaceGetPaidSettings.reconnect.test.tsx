@@ -198,6 +198,17 @@ describe('MarketplaceGetPaidSettings Bitkit reconnect (upstream Paykit)', () => 
     expect(mocked.getPaykitSetupUrl).not.toHaveBeenCalled();
   });
 
+  it('falls back to initial setup when that reconnect fails', async () => {
+    mocked.getMyPaymentConfig.mockResolvedValue({ ...ownConfig('setup_required'), bitcoinEnabled: true });
+    await renderSettings();
+    await userEvent.click(await screen.findByRole('button', { name: /Reconnect Bitkit/ }));
+    sendCallback(paykitFrame('Reconnect Bitkit'), { error: 'setup-failed' });
+
+    const dialog = screen.getByRole('dialog', { name: 'Reconnect Bitkit' });
+    await userEvent.click(await within(dialog).findByRole('button', { name: /Connect Bitkit/ }));
+    expect(framePath(paykitFrame('Connect Bitkit'))).toBe('https://paykit.example/setup');
+  });
+
   it('adds USDT through reconnect, not initial setup, for that seller', async () => {
     mocked.fetchUsdtPaymentsAvailable.mockResolvedValue(true);
     mocked.getMyPaymentConfig.mockResolvedValue({
