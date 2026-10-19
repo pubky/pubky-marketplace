@@ -1,7 +1,7 @@
 import type { ChatIdentityState } from '@/application/chat/chat.types';
 import type { InboxAvailability } from '@/services/inbox/inbox.types';
 
-export type ChatInboxStatus = InboxAvailability | 'unknown' | 'connecting' | 'unavailable';
+export type ChatInboxStatus = InboxAvailability | 'unknown' | 'connecting';
 export type ChatSyncStatus = 'idle' | 'syncing' | 'error';
 
 export interface ChatState {

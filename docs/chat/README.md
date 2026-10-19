@@ -327,6 +327,14 @@ has never seen). A ping is never the message.
   `DELETE /v1/auth/session` best effort and forgets it; signing in as another account forgets the previous
   account's bearer. A session without a grant cannot sign the proof: `createInboxCredentials` returns `null`
   and the inbox is `disabled` for that sign-in (chat still works through streams and reconciliation).
+  An inbox that does not answer the session request (no certificate for the host yet, connection refused, a 10 s
+  timeout, or a proxy's 404/502/503/504) is expected, not a bug: `ensureSession` returns `unavailable` without an
+  error event, logs the outage once, and every caller (the leader loop, each outbox flush, each reconcile pass) is
+  answered from one schedule (5 s doubling to 10 min) until a request gets through, so a Shop published with an
+  `inboxUrl` before the inbox is deployed costs one request per 10 minutes and recovers on its own. Messages are
+  never held back: sends are files on the sender's homeserver, and a stranger's first message is found when the
+  recipient opens the thread. A service that answers and refuses (400, 401, 403) is a configuration fault and
+  still raises.
 - **Send.** `POST /v1/pings` with slot `chat-<folder id>` (slots are 1–64 Base64url characters; a colon is
   rejected), the recipient pubky, the payload `{ "v": 0, "t": "chat", "folder", "file", "p": <padding> }`
   padded to exactly 512 bytes (`CHAT_PING_MAX_BYTES`) so every ping has the same size, and
@@ -556,8 +564,8 @@ What the design protects, and what it does not. Threat IDs refer to
   `PUBKY_RUNTIME_INBOX_URL`; each deployment sets it and the inbox service lists the Shop origin in
   `INBOX_SERVER__CORS_ALLOWED_ORIGINS` (or answers `*`: the inbox uses bearer tokens, not cookies). The install
   verifier fails a Shop that publishes no `inboxUrl` and one whose inbox refuses the Shop origin or answers
-  without requiring a session (`shop.runtime.inbox`, `shop.inbox.*` in
-  [install verification](../launch/install-verification.md)). The inbox's multi-device semantics (pings are
+  without requiring a session, and warns (does not fail) when the inbox is not up yet (`shop.runtime.inbox`,
+  `shop.inbox.*` in [install verification](../launch/install-verification.md)). The inbox's multi-device semantics (pings are
   wake-ups only) are an FYI to the inbox team.
 - **Re-approval.** Sessions approved before the chat scopes were added see the `needs_reauth` notice until
   they sign in again. The app had not launched, so no production session is affected.

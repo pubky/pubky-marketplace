@@ -25,6 +25,7 @@ import {
   extractRuntimeConfig,
   framableBySameOrigin,
   frameAncestorsAllow,
+  inboxNotUp,
   isTruthy,
   locksReturnOriginsFromToml,
   missingOrigins,
@@ -397,6 +398,19 @@ async function sectionTls() {
 // answer the Shop origin's preflight leaves the receiver without wake-ups (the Shop logs "Chat inbox session failed"
 // and a stranger's first message is never noticed). Reads only: preflights and one unauthenticated GET it must reject.
 async function probeInbox(host, origin, inboxUrl) {
+  const pings = await http(`${inboxUrl}/v1/pings`);
+  // An inbox that is not deployed yet is a state that fixes itself, not a wrong configuration: the Shop keeps
+  // chat working on homeserver files and starts pinging when the service answers. Say so, and do not judge
+  // CORS or authentication of a service that is not there.
+  if (inboxNotUp(pings.status)) {
+    warn(
+      `shop.inbox.reachable.${host}`,
+      'inbox service is not up yet',
+      describe(pings),
+      `deploy the pubky/inbox service at ${inboxUrl} (owner: the inbox team, Matthew); until then a stranger's first message is found only when the recipient opens the thread, and chat starts pinging by itself once the inbox answers`,
+    );
+    return;
+  }
   for (const [path, requested] of [['/v1/auth/session', 'content-type'], ['/v1/pings', 'authorization,content-type']]) {
     const response = await preflight(`${inboxUrl}${path}`, origin, 'POST', requested);
     const allowed = response.headers.get('access-control-allow-origin');
@@ -409,7 +423,6 @@ async function probeInbox(host, origin, inboxUrl) {
       `list ${origin} in INBOX_SERVER__CORS_ALLOWED_ORIGINS on the inbox service and allow the ${requested} request headers, then restart it`,
     );
   }
-  const pings = await http(`${inboxUrl}/v1/pings`);
   check(`shop.inbox.auth-required.${host}`, pings.status === 401, 'inbox answers and requires a session', describe(pings), 'GET /v1/pings must be 401 without a bearer token; check that PUBKY_RUNTIME_INBOX_URL points at the pubky/inbox service and not a proxy page');
 }
 
