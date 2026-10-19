@@ -128,4 +128,31 @@ describe('useCheckoutRegion', () => {
     expect(physical.result.current.refusal).toBeNull();
     expect(physical.result.current.needsCountryField).toBe(false);
   });
+
+  it('leaves a seller whose shop could not be read unknown, with no client-side block', async () => {
+    flags(true, false);
+    const UNREADABLE = 'u'.repeat(52);
+    const { result } = region({ sellers: [UNREADABLE], addressCountry: 'DE' });
+    await waitFor(() => expect(result.current.declarations[UNREADABLE]).toBe('unknown'));
+    expect(result.current.refusal).toBeNull();
+    expect(result.current.blocked).toBe(false);
+  });
+
+  it('treats a shop that was read without a declaration as undeclared, which the fence refuses for the EU', async () => {
+    flags(true, false);
+    const BARE = 'n'.repeat(52);
+    shops[BARE] = {};
+    const { result } = region({ sellers: [BARE], addressCountry: 'DE' });
+    await waitFor(() => expect(result.current.declarations[BARE]).toBe('undeclared'));
+    expect(result.current.refusal).toBe(EU_UNAVAILABLE_MESSAGE);
+    delete shops[BARE];
+  });
+
+  it('keeps a readable business seller refused when another seller in the cart could not be read', async () => {
+    flags(true, false);
+    const UNREADABLE = 'u'.repeat(52);
+    const { result } = region({ sellers: [UNREADABLE, TRADER], addressCountry: 'DE' });
+    await waitFor(() => expect(result.current.refusal).toBe(EU_UNAVAILABLE_MESSAGE));
+    expect(result.current.declarations[UNREADABLE]).toBe('unknown');
+  });
 });

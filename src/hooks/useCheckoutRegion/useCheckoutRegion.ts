@@ -59,12 +59,16 @@ export function useCheckoutRegion(input: {
     const sellers = key.split(',');
     void Promise.all(
       sellers.map(async (pubky) => {
-        const shop = await CommerceController.getOrFetchShop(pubky).catch(() => null);
+        const shop = await CommerceController.getOrFetchShop(pubky).then(
+          (record) => ({ read: true as const, record }),
+          () => ({ read: false as const }),
+        );
         const limit =
           !fence || pubky === input.currentUserPubky
             ? null
             : await CommerceController.getSellerAnnualLimit(pubky).catch(() => null);
-        return [pubky, sellerDeclaration(shop), limit?.limitReached === true] as const;
+        const declaration: SellerDeclaration = shop.read ? sellerDeclaration(shop.record) : 'unknown';
+        return [pubky, declaration, limit?.limitReached === true] as const;
       }),
     ).then((rows) => {
       if (!active) return;
@@ -105,7 +109,7 @@ export function useCheckoutRegion(input: {
       }
       const sellerRefusal = fenceRefusal({
         buyerCountry,
-        declaration: known.declarations[pubky] ?? 'undeclared',
+        declaration: known.declarations[pubky] ?? 'unknown',
       });
       if (sellerRefusal) {
         refusal = sellerRefusal;

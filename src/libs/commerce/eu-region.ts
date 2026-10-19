@@ -48,16 +48,23 @@ export function isDigitalHeldCountry(countryCode: string | null | undefined): bo
   return EU_SET.has(code) || code === 'GB' || code === 'UK';
 }
 
-/** What a seller declared in their own shop record: `undeclared` when the field is absent. */
-export type SellerDeclaration = 'private' | 'trader' | 'undeclared';
+/**
+ * What a seller declared in their own shop record: `undeclared` when the field is absent, and
+ * `unknown` when the shop record could not be read at all, so nothing is known about the seller.
+ */
+export type SellerDeclaration = 'private' | 'trader' | 'undeclared' | 'unknown';
 
 export function sellerDeclaration(shop: { sellerStatus?: string } | null | undefined): SellerDeclaration {
   return shop?.sellerStatus === 'private' || shop?.sellerStatus === 'trader' ? shop.sellerStatus : 'undeclared';
 }
 
-/** A business or undeclared seller does not sell to buyers in the EU while the fence is on. */
+/**
+ * A business or undeclared seller does not sell to buyers in the EU while the fence is on. An
+ * unknown seller is not blocked here: a failed read says nothing about them, and the service
+ * decides from the record it reads itself.
+ */
 export function sellerUnavailableToEuBuyers(declaration: SellerDeclaration): boolean {
-  return declaration !== 'private';
+  return declaration === 'trader' || declaration === 'undeclared';
 }
 
 export const EU_UNAVAILABLE_MESSAGE = 'Not available to buyers in the EU';

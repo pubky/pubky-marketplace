@@ -14,6 +14,8 @@ describe('SellerStatusBadge', () => {
     expect(screen.getByTestId('seller-status-badge-trader')).toHaveTextContent('Business seller');
     rerender(<SellerStatusBadge declaration="undeclared" />);
     expect(container).toBeEmptyDOMElement();
+    rerender(<SellerStatusBadge declaration="unknown" />);
+    expect(container).toBeEmptyDOMElement();
   });
 });
 
@@ -22,7 +24,7 @@ describe('SellerSaleTerms', () => {
     const { rerender } = render(<SellerSaleTerms declaration="private" />);
     expect(screen.getByTestId('role-statement')).toHaveTextContent(ROLE_STATEMENT);
     expect(screen.getByTestId('private-seller-notice')).toHaveTextContent(PRIVATE_SELLER_NOTICE);
-    for (const declaration of ['trader', 'undeclared'] as const) {
+    for (const declaration of ['trader', 'undeclared', 'unknown'] as const) {
       rerender(<SellerSaleTerms declaration={declaration} />);
       expect(screen.getByTestId('role-statement')).toBeInTheDocument();
       expect(screen.queryByTestId('private-seller-notice')).not.toBeInTheDocument();

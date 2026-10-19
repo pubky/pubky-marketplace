@@ -39,7 +39,7 @@ export function useRegionAvailability(input: {
     (fence
       ? fenceRefusal({
           buyerCountry: buyer.country,
-          declaration: sellerDeclaration(input.shop),
+          declaration: input.shop ? sellerDeclaration(input.shop) : 'unknown',
           limitReached,
         })
       : null) ?? (digitalHold ? digitalHoldRefusal(buyer.country) : null);

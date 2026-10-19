@@ -192,7 +192,7 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
     isOwner,
   });
   const regionBlocked = region.refusal !== null || region.needsCountry;
-  const declaration = sellerDeclaration(shop?.record);
+  const declaration = shop ? sellerDeclaration(shop.record) : 'unknown';
 
   useEffect(() => {
     const variants = listing?.record.variants;

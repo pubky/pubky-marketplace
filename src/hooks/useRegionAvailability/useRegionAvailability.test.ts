@@ -74,6 +74,14 @@ describe('useRegionAvailability', () => {
     expect(CommerceController.getSellerAnnualLimit).toHaveBeenCalledTimes(1);
   });
 
+  it('refuses an EU buyer for a read shop with no declaration but not for a shop that is not known', async () => {
+    flags(true, false);
+    useBuyerCountryStore.setState({ country: 'DE' });
+    const undeclared = run({ shop: {} });
+    await waitFor(() => expect(undeclared.result.current.refusal).toBe(EU_UNAVAILABLE_MESSAGE));
+    expect(run({ shop: null }).result.current.refusal).toBeNull();
+  });
+
   it('refuses everyone for a seller at the annual limit', async () => {
     flags(true, false);
     useBuyerCountryStore.setState({ country: 'US' });
