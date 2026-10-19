@@ -11,11 +11,18 @@ import {
   tracksVariantStock,
 } from './listing-variants';
 
-const variant = (id: string, quantity: number, extra: { enabled?: boolean; sku?: string } = {}) => ({
+const USD = (amountMinor: number) => ({ amountMinor, currency: 'USD', exponent: 2 });
+
+const variant = (
+  id: string,
+  quantity: number,
+  extra: { enabled?: boolean; sku?: string; priceOverride?: ReturnType<typeof USD> } = {},
+) => ({
   id,
   quantity,
   enabled: extra.enabled ?? true,
   ...(extra.sku ? { sku: extra.sku } : {}),
+  ...(extra.priceOverride ? { priceOverride: extra.priceOverride } : {}),
 });
 
 describe('buildRegisterVariants', () => {
@@ -43,6 +50,28 @@ describe('buildRegisterVariants', () => {
       { id: 'size_s', quantity: 0 },
       { id: 'size_m', quantity: 4 },
     ]);
+  });
+
+  it("carries each priced variant's own price and none for the others", () => {
+    expect(
+      buildRegisterVariants([
+        variant('size_s', 3),
+        variant('size_l', 2, { priceOverride: USD(150) }),
+        variant('size_x', 9, { enabled: false, priceOverride: USD(999) }),
+      ]),
+    ).toEqual([
+      { id: 'size_s', quantity: 3 },
+      { id: 'size_l', quantity: 2, unitPrice: USD(150) },
+    ]);
+  });
+
+  it('registers a sole enabled variant that sells at its own price, so the service charges it', () => {
+    expect(buildRegisterVariants([variant('only', 4, { priceOverride: USD(4_500) })])).toEqual([
+      { id: 'only', quantity: 4, unitPrice: USD(4_500) },
+    ]);
+    expect(
+      buildRegisterVariants([variant('a', 1, { enabled: false, priceOverride: USD(1) }), variant('b', 4)]),
+    ).toBeUndefined();
   });
 });
 

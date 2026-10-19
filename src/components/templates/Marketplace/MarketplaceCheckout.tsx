@@ -58,6 +58,7 @@ import { marketplaceOfferCheckoutFailureMessage } from '@/libs/commerce/failure-
 import { formatCommerceMoney } from '@/libs/commerce/format';
 import { tracksVariantStock } from '@/libs/commerce/listing-variants';
 import { LOCKS_MIXED_CHECKOUT_COPY, locksCheckoutRoute } from '@/libs/commerce/locks-payment';
+import { commerceVariantUnitPrice } from '@/libs/commerce/marketplace-records';
 import { PAYKIT_OUTAGE_COPY } from '@/libs/commerce/paykit-rail';
 import {
   CHECKOUT_SUBMIT_LABEL,
@@ -878,9 +879,7 @@ function MarketplaceCartCheckout() {
                       )}
                     {group.items.map((item) => {
                       const variant = item.listing.record.variants.find(({ id }) => id === item.variantId);
-                      const price =
-                        variant?.priceOverride ??
-                        (item.listing.record.sale.format === 'fixed_price' ? item.listing.record.sale.unitPrice : null);
+                      const price = commerceVariantUnitPrice(item.listing.record, variant);
                       const listingRoute = getMarketplaceListingRoute(
                         item.listing.record.ownerPubky,
                         item.listing.listing_id,

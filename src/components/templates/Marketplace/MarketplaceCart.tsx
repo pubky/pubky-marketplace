@@ -17,7 +17,7 @@ import { cartLineStockLabel, SOLD_OUT_COPY } from '@/libs/commerce/cart-stock';
 import { getMarketplaceCheckoutRoute, getMarketplaceOfferCheckoutRoute } from '@/libs/commerce/checkout-phase';
 import { DIGITAL_CHECKOUT_COPY } from '@/libs/commerce/digital';
 import { formatCommerceMoney } from '@/libs/commerce/format';
-import { commerceListingFulfillmentMethods } from '@/libs/commerce/marketplace-records';
+import { commerceListingFulfillmentMethods, commerceVariantUnitPrice } from '@/libs/commerce/marketplace-records';
 import { formatDateTime } from '@/libs/utils/dateTime';
 import { MarketplaceCheckoutSteps } from '@/molecules/Marketplace/MarketplaceCheckoutSteps';
 import { MarketplaceEmptyState } from '@/molecules/Marketplace/MarketplaceEmptyState';
@@ -151,9 +151,7 @@ export function MarketplaceCart() {
                   >
                     {group.items.map((item) => {
                       const variant = item.listing.record.variants.find(({ id }) => id === item.variantId);
-                      const price =
-                        variant?.priceOverride ??
-                        (item.listing.record.sale.format === 'fixed_price' ? item.listing.record.sale.unitPrice : null);
+                      const price = commerceVariantUnitPrice(item.listing.record, variant);
                       const coverUrl = cartMediaUrls[cart.items.findIndex(({ id }) => id === item.id)] ?? null;
                       const listingRoute = getMarketplaceListingRoute(
                         item.listing.record.ownerPubky,

@@ -436,6 +436,65 @@ describe('pickup_details command result narrowing', () => {
   });
 });
 
+describe('listing.register variant prices (mirrors the service register validation)', () => {
+  const large = { amountMinor: 15_000, currency: 'USD', exponent: 2 };
+  const command = (variants: unknown) => ({
+    version: 1,
+    commandId: '018f47d2-6a27-7c23-a62f-000000000734',
+    aggregateId: LISTING_AGGREGATE_ID,
+    expectedRevision: 0,
+    issuedAt: '2026-08-19T22:00:00.000Z',
+    kind: 'listing.register',
+    payload: {
+      sellerPubky: SELLER,
+      listingId: 'boots_01',
+      listingRevision: 1,
+      contentHash: 'a'.repeat(64),
+      quantity: 5,
+      unitPrice: { amountMinor: 12_500, currency: 'USD', exponent: 2 },
+      variants,
+    },
+  });
+
+  it('accepts a variant that sells at its own price', () => {
+    const parsed = registerListingCommandSchema.parse(
+      command([
+        { id: 'size_s', quantity: 3 },
+        { id: 'size_l', quantity: 2, unitPrice: large },
+      ]),
+    );
+    expect(parsed.payload.variants?.[1]?.unitPrice).toEqual(large);
+  });
+
+  it('accepts a single priced variant, which the service registers as one implicit row', () => {
+    expect(
+      registerListingCommandSchema.safeParse(command([{ id: 'size_l', quantity: 2, unitPrice: large }])).success,
+    ).toBe(true);
+  });
+
+  it.each([
+    ['another currency', { ...large, currency: 'EUR' }],
+    ['another exponent', { ...large, exponent: 3 }],
+    ['a zero price', { ...large, amountMinor: 0 }],
+    ['a negative price', { ...large, amountMinor: -1 }],
+  ])('refuses a variant price in %s', (_label, unitPrice) => {
+    expect(
+      registerListingCommandSchema.safeParse(
+        command([
+          { id: 'size_s', quantity: 3 },
+          { id: 'size_l', quantity: 2, unitPrice },
+        ]),
+      ).success,
+    ).toBe(false);
+  });
+
+  it('refuses a price field the service does not know', () => {
+    expect(registerListingCommandSchema.safeParse(command([{ id: 'size_l', quantity: 2, price: large }])).success).toBe(
+      false,
+    );
+  });
+});
+
 describe('listing.register fulfillment methods (mirrors the service register validation)', () => {
   const registerPayload = {
     sellerPubky: SELLER,

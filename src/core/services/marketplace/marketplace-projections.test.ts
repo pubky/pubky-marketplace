@@ -546,6 +546,38 @@ describe('marketplace listing projection — viewer bid', () => {
     expect(marketplaceListingProjectionSchema.safeParse(stripped).success).toBe(true);
   });
 
+  it('reads the variants the service sells at their own price from the snake_case wire', () => {
+    const wire = {
+      aggregate_id: 'listing:x',
+      seller_pubky: 'y'.repeat(52),
+      listing_id: 'boots_01',
+      listing_revision: 1,
+      content_hash: 'a'.repeat(64),
+      server_revision: 2,
+      state: 'available',
+      available_quantity: 5,
+      reserved_quantity: 0,
+      unit_price: { amount_minor: 12_500, currency: 'USD', exponent: 2 },
+      sale_format: 'fixed_price',
+      fulfillment_methods: ['shipping'],
+      auction: null,
+      variant_prices: [{ variant_id: 'size_l', unit_price: { amount_minor: 15_000, currency: 'USD', exponent: 2 } }],
+    };
+
+    const parsed = marketplaceListingProjectionSchema.safeParse(toCamelCaseWire(wire));
+
+    expect(parsed.success).toBe(true);
+    if (parsed.success) {
+      expect(parsed.data.variantPrices).toEqual([
+        { variantId: 'size_l', unitPrice: { amountMinor: 15_000, currency: 'USD', exponent: 2 } },
+      ]);
+    }
+    const { variant_prices: _omitted, ...unpriced } = wire;
+    const plain = marketplaceListingProjectionSchema.safeParse(toCamelCaseWire(unpriced));
+    expect(plain.success).toBe(true);
+    if (plain.success) expect(plain.data.variantPrices).toBeUndefined();
+  });
+
   it('parses the live bidder viewer_bid shape', () => {
     const parsed = marketplaceListingProjectionSchema.safeParse(createViewerBidAuctionProjectionFixture());
 

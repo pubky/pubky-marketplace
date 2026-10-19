@@ -996,6 +996,65 @@ describe('commerceListingProjectionIsStale (a listing.sync would change the serv
     expect(commerceListingProjectionIsStale(record, { ...current, unitPrice: price })).toBe(true);
   });
 
+  describe('variant prices', () => {
+    const large = { amountMinor: 15_000, currency: 'USD', exponent: 2 };
+    const sizes = (overrides: { large?: typeof large; largeEnabled?: boolean } = {}) =>
+      createCommerceListingFixture({
+        revision: 3,
+        variants: [
+          { id: 'size_s', options: { size: 'S' }, quantity: 3, mediaIds: [], enabled: true },
+          {
+            id: 'size_l',
+            options: { size: 'L' },
+            quantity: 2,
+            mediaIds: [],
+            enabled: overrides.largeEnabled ?? true,
+            ...('large' in overrides ? { priceOverride: overrides.large } : { priceOverride: large }),
+          },
+        ],
+      });
+    const priced = { ...current, variantPrices: [{ variantId: 'size_l', unitPrice: large }] };
+
+    it('is current when the projection sells the priced size at its own price', () => {
+      expect(commerceListingProjectionIsStale(sizes(), priced)).toBe(false);
+      expect(commerceListingProjectionChargesRecordTerms(sizes(), priced)).toBe(true);
+    });
+
+    it('is stale for a projection that predates variant prices, which would charge the listing price', () => {
+      expect(commerceListingProjectionIsStale(sizes(), current)).toBe(true);
+      expect(commerceListingProjectionChargesRecordTerms(sizes(), current)).toBe(false);
+    });
+
+    it.each([
+      ['amount', { ...large, amountMinor: 16_000 }],
+      ['currency', { ...large, currency: 'EUR' }],
+      ['exponent', { ...large, exponent: 3 }],
+    ])('is stale when the projected size price differs in %s', (_label, price) => {
+      const projection = { ...current, variantPrices: [{ variantId: 'size_l', unitPrice: price }] };
+      expect(commerceListingProjectionIsStale(sizes(), projection)).toBe(true);
+    });
+
+    it('is stale when the record dropped the override but the projection still prices the size', () => {
+      expect(commerceListingProjectionIsStale(sizes({ large: undefined }), priced)).toBe(true);
+      expect(commerceListingProjectionIsStale(sizes({ large: undefined }), current)).toBe(false);
+    });
+
+    it('ignores a disabled size, which the service does not sell', () => {
+      expect(commerceListingProjectionIsStale(sizes({ largeEnabled: false }), current)).toBe(false);
+    });
+
+    it('treats an override equal to the listing price as current with or without a projected price', () => {
+      const same = sizes({ large: unitPrice });
+      expect(commerceListingProjectionIsStale(same, current)).toBe(false);
+      expect(
+        commerceListingProjectionIsStale(same, {
+          ...current,
+          variantPrices: [{ variantId: 'size_l', unitPrice }],
+        }),
+      ).toBe(false);
+    });
+  });
+
   it('never flags an auction, whose terms listing.sync does not rewrite', () => {
     const auction = createCommerceListingFixture({
       revision: 3,
