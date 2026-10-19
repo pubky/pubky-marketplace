@@ -65,8 +65,12 @@ RUN npx sentry-cli sourcemaps inject .next \
 ARG SENTRY_AUTH_TOKEN
 ARG SENTRY_ORG
 ARG SENTRY_PROJECT
+# The shop-migration image build does not run this repo's tag-release workflow.
+# Associate the baked-in Shop SHA explicitly: Docker contexts do not have usable Git history.
+# This creates release metadata only; the rollout records staging/production deploys separately.
 RUN if [ -n "$SENTRY_AUTH_TOKEN" ] && [ -n "$SENTRY_ORG" ] && [ -n "$SENTRY_PROJECT" ]; then \
-      npx sentry-cli sourcemaps upload --release="$NEXT_PUBLIC_APP_VERSION" .next; \
+      npx tsx scripts/sentry-release/main.ts --no-git \
+      && npx sentry-cli sourcemaps upload --release="$NEXT_PUBLIC_APP_VERSION" .next; \
     else \
       echo "Skipping Sentry source-map upload; Sentry build credentials not set."; \
     fi

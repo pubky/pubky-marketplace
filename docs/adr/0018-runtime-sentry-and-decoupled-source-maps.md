@@ -17,6 +17,11 @@ with `sentry-cli`, associates its commits and finalizes it, from the `sentry-rel
 `release-docker.yml` and from the Vercel build command, which also records the deploy. The plugin
 still makes no Sentry API calls (`release.create: false`). See `docs/sentry.md` → Releases.
 
+Amended — 2026-10-19: credentialed Docker builds also run `scripts/sentry-release --no-git` before
+source-map upload. This covers images built by `shop-migration`, which does not run this repo's
+tag-release workflow. The script names the Shop repository and baked-in commit SHA explicitly.
+An error fails the build; builds without Sentry credentials still skip both operations.
+
 ## Context
 
 [ADR 0017](0017-runtime-config-injection.md) made the eight environment-specific **network** values runtime-configurable (`PUBKY_RUNTIME_*` → `window.__PUBKY_CONFIG__`), so one Docker image promotes across staging/prod/testnet. Two gaps remained before the image could be **fully public and plug-and-play** for third-party deployers:
@@ -50,7 +55,7 @@ The single public image must remain buildable without Sentry credentials. Instea
 
 - `next.config.ts` enables `productionBrowserSourceMaps` and `experimental.serverSourceMaps`, and disables the Sentry plugin's upload unconditionally (`sourcemaps.disable: true`, `release.create: false`, no org/project/authToken).
 - The Dockerfile builder stage runs `npx sentry-cli sourcemaps inject` after the build (once over `.next`, once over the nested `.next/standalone/.next`, which the walker would otherwise skip as a hidden directory) — a deterministic, offline, credential-free step that stamps matching **Debug IDs** into chunks and maps. The IDs are content-derived, so the standalone copies get identical IDs to the originals.
-- If `SENTRY_AUTH_TOKEN`, `SENTRY_ORG`, and `SENTRY_PROJECT` are present, the Dockerfile uploads `.next` source maps with `--release="$NEXT_PUBLIC_APP_VERSION"`. If they are absent, upload is skipped and the public image still builds.
+- If `SENTRY_AUTH_TOKEN`, `SENTRY_ORG`, and `SENTRY_PROJECT` are present, the Dockerfile creates the release and associates its Shop commit with `scripts/sentry-release/main.ts --no-git`, then uploads `.next` source maps with `--release="$NEXT_PUBLIC_APP_VERSION"`. If they are absent, these steps are skipped and the public image still builds.
 - The runner stage strips `*.map` from `.next/static` (browser maps must not be publicly served). Server-side maps stay in the standalone output — they are never exposed over HTTP and make Node stack traces readable.
 
 ## Consequences
