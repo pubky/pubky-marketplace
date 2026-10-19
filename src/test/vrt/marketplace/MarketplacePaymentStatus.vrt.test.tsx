@@ -98,7 +98,7 @@ vi.mock('@/controllers/commerce/commerce', async () => {
   return {
     CommerceController: {
       ...createMarketplaceVrtCommerceController(),
-      getOrFetchListing: vi.fn(async () => ({
+      getOrFetchListingIfFound: vi.fn(async () => ({
         digitalLock: {
           policyUri: `pubky://${ORDER_FIXTURE_SELLER}/pub/locks.app/${'0'.repeat(52)}.json`,
           criterionId: 'criterion-1',
@@ -267,6 +267,7 @@ describe('Marketplace payment status card — visual regression', () => {
   it('renders awaiting entitlement with the wallet payment request action (locks-paykit) at desktop viewport', async () => {
     view.locks = { ...view.locks, correlation: null, delivery: null, error: null, pollExhausted: false };
     const screen = await renderCard('awaiting_entitlement', 'locks-paykit', { adapter: 'sandbox' });
+    await expect.element(screen.getByRole('button', { name: /Request payment in your wallet/ })).toBeVisible();
     await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('payment-status-awaiting-start-desktop');
   });
 
@@ -276,6 +277,7 @@ describe('Marketplace payment status card — visual regression', () => {
       adapter: 'sandbox',
       viewport: VRT_VIEWPORT_MOBILE,
     });
+    await expect.element(screen.getByRole('button', { name: /Request payment in your wallet/ })).toBeVisible();
     await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('payment-status-awaiting-start-mobile');
   });
 
