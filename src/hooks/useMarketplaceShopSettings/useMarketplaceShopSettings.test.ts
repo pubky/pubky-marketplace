@@ -8,7 +8,7 @@ import { AppError } from '@/libs/error/error';
 import { ClientErrorCode } from '@/libs/error/error.codes';
 import { ErrorCategory, ErrorService } from '@/libs/error/error.types';
 import { Logger } from '@/libs/logger/logger';
-import { asOpaque } from '@/test-utils/type-assertions';
+import { asInvalid, asOpaque } from '@/test-utils/type-assertions';
 import { sellerStatusConfirmedAtToPublish, useMarketplaceShopSettings } from './useMarketplaceShopSettings';
 import { marketplaceShopSettingsSchema } from './useMarketplaceShopSettings.types';
 
@@ -579,10 +579,9 @@ describe('useMarketplaceShopSettings', () => {
   });
 
   it('reads an unrecognised bitcoinConfirmation value as the default', async () => {
-    vi.mocked(CommerceController.refreshShop).mockResolvedValue({
-      ...publishedShop,
-      bitcoinConfirmation: 'paykit',
-    } as unknown as CommerceShopRecord);
+    vi.mocked(CommerceController.refreshShop).mockResolvedValue(
+      asInvalid<CommerceShopRecord>({ ...publishedShop, bitcoinConfirmation: 'paykit' }),
+    );
     const { result } = renderHook(() => useMarketplaceShopSettings());
     await waitFor(() => expect(result.current.hasShop).toBe(true));
     expect(result.current.form.getValues('confirmBitcoinPayments')).toBe(false);
