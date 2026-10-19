@@ -213,6 +213,29 @@ describe('MarketplaceListingOwnerPanel state badge', () => {
     expect(screen.getByTestId('listing-owner-state')).toHaveTextContent('active');
   });
 
+  it('explains that a live auction cannot be unlisted', () => {
+    render(<MarketplaceListingOwnerPanel record={auction()} registrationStatus="registered" auctionPhase="live" />);
+
+    expect(screen.getByTestId('listing-auction-unlist-note')).toHaveTextContent(
+      'Auctions cannot be unlisted: published auction terms stay live until the auction ends.',
+    );
+  });
+
+  it('does not say terms stay live until the auction ends once it has ended', () => {
+    render(<MarketplaceListingOwnerPanel record={auction()} registrationStatus="registered" auctionPhase="ended" />);
+
+    expect(screen.queryByTestId('listing-auction-unlist-note')).not.toBeInTheDocument();
+    expect(screen.queryByText(/Auctions cannot be unlisted/)).not.toBeInTheDocument();
+  });
+
+  it('does not say it for an auction whose record is already ended', () => {
+    const record = { ...auction(), state: 'ended' as const };
+    render(<MarketplaceListingOwnerPanel record={record} registrationStatus="registered" />);
+
+    expect(screen.getByTestId('listing-owner-state')).toHaveTextContent('ended');
+    expect(screen.queryByTestId('listing-auction-unlist-note')).not.toBeInTheDocument();
+  });
+
   it("keeps a paused listing's state whatever the phase", () => {
     const record = { ...createCommerceListingFixture(), state: 'paused' as const };
     render(<MarketplaceListingOwnerPanel record={record} registrationStatus="registered" />);

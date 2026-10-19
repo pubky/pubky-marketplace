@@ -284,8 +284,8 @@ export function MarketplaceListingOwnerPanel({
               Delete is available once your session is restored.
             </Typography>
           )}
-          {record.sale.format === 'auction' && (
-            <Typography as="p" className="text-xs text-muted-foreground">
+          {record.sale.format === 'auction' && displayState === 'active' && (
+            <Typography as="p" className="text-xs text-muted-foreground" data-testid="listing-auction-unlist-note">
               Auctions cannot be unlisted: published auction terms stay live until the auction ends.
             </Typography>
           )}
