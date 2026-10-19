@@ -1,0 +1,330 @@
+// @vitest-environment node
+import { describe, expect, it } from 'vitest';
+import { DIGITAL_DELIVERY_KIND_OPTIONS } from '@/hooks/useDigitalDeliveryEditor/useDigitalDeliveryEditor.types';
+import {
+  digitalCheckoutLineLabel,
+  digitalDeliveryCurrentSummary,
+  formatDigitalFileSize,
+} from '@/libs/commerce/digital';
+import {
+  BITCOIN_WINDOW_MINUTES,
+  DELIVERABLES_PREFIX,
+  deploymentRefusal,
+  describePlan,
+  DIGITAL_KINDS,
+  expectedCheckoutLine,
+  expectedCurrentSummary,
+  extractDpl,
+  formatSizeLabel,
+  goToken,
+  hasGoAhead,
+  isInstantKind,
+  isStagingTarget,
+  KIND_RADIO_LABEL,
+  listingTitle,
+  makeFixtureFile,
+  minPriceCents,
+  newDeliverablePaths,
+  parseBtcUsdRate,
+  parseKinds,
+  parsePayTimeoutMinutes,
+  parsePositiveMinutes,
+  parsePriceUsd,
+  pathFromPubkyUrl,
+  payOutcome,
+  priceClearsMinimum,
+  redactEmail,
+  redactSensitive,
+  screenshotPolicy,
+  sha256Hex,
+  STAGING_TARGET,
+  targetRefusal,
+} from './digital-proof.mjs';
+
+describe('digital proof copy stays in step with the Shop', () => {
+  it('uses the editor radio labels', () => {
+    expect(DIGITAL_KINDS).toEqual(DIGITAL_DELIVERY_KIND_OPTIONS.map((option) => option.kind));
+    for (const option of DIGITAL_DELIVERY_KIND_OPTIONS) expect(KIND_RADIO_LABEL[option.kind]).toBe(option.label);
+  });
+
+  it('expects the summary line the editor shows after a save', () => {
+    const size = 65536;
+    expect(expectedCurrentSummary('file', 'proof.bin', formatSizeLabel(size))).toBe(
+      digitalDeliveryCurrentSummary({ kind: 'file', fileName: 'proof.bin', sizeBytes: size } as never),
+    );
+    for (const kind of ['link', 'text', 'email', 'message'] as const) {
+      expect(expectedCurrentSummary(kind, '', '')).toBe(digitalDeliveryCurrentSummary({ kind } as never));
+    }
+  });
+
+  it('formats sizes like the Shop', () => {
+    for (const size of [1024, 65536, 1_048_576, 5_000_000, 52_428_800]) {
+      expect(formatSizeLabel(size)).toBe(formatDigitalFileSize(size));
+    }
+  });
+
+  it('expects the checkout line the Shop renders per kind', () => {
+    for (const kind of DIGITAL_KINDS) {
+      expect(digitalCheckoutLineLabel(kind as never)).toMatch(
+        new RegExp(`^Digital delivery · ${expectedCheckoutLine(kind).source.replace(/^\^/, '')}`),
+      );
+    }
+  });
+});
+
+describe('kinds', () => {
+  it('parses a list, defaults to file, and rejects unknown or repeated kinds', () => {
+    expect(parseKinds(undefined)).toEqual(['file']);
+    expect(parseKinds('file, text,email')).toEqual(['file', 'text', 'email']);
+    expect(() => parseKinds('')).toThrow(/names no delivery kind/);
+    expect(() => parseKinds('file,zip')).toThrow(/unknown delivery kind "zip"/);
+    expect(() => parseKinds('file,file')).toThrow(/repeats/);
+  });
+
+  it('separates instant kinds from manual ones', () => {
+    expect(DIGITAL_KINDS.filter(isInstantKind)).toEqual(['file', 'link', 'text']);
+  });
+});
+
+describe('go-ahead', () => {
+  it('accepts only today\u2019s UTC token', () => {
+    const now = new Date('2026-10-14T23:59:59Z');
+    expect(goToken(now)).toBe('GO-2026-10-14');
+    expect(hasGoAhead({ PROOF_DIGITAL_GO: 'GO-2026-10-14' }, now)).toBe(true);
+    expect(hasGoAhead({ PROOF_DIGITAL_GO: 'GO-2026-10-13' }, now)).toBe(false);
+    expect(hasGoAhead({ PROOF_DIGITAL_GO: '1' }, now)).toBe(false);
+    expect(hasGoAhead({}, now)).toBe(false);
+  });
+});
+
+describe('price', () => {
+  it('accepts two-decimal dollars between 1.00 and 25.00', () => {
+    expect(parsePriceUsd(undefined)).toEqual({ text: '2.00', cents: 200 });
+    expect(parsePriceUsd('25.00').cents).toBe(2500);
+    for (const bad of ['2', '2.5', '0.50', '25.01', '-1.00', 'abc', '1,00']) expect(() => parsePriceUsd(bad)).toThrow();
+  });
+
+  it('clears the 1,000-sat floor with a margin', () => {
+    expect(minPriceCents(100_000)).toBe(200);
+    expect(priceClearsMinimum(200, 100_000)).toBe(true);
+    expect(priceClearsMinimum(199, 100_000)).toBe(false);
+    expect(priceClearsMinimum(200, 120_000)).toBe(false);
+    expect(() => minPriceCents(0)).toThrow();
+    expect(() => minPriceCents(Number.NaN)).toThrow();
+  });
+});
+
+describe('FX feed', () => {
+  it('reads the BTCUSD row of the Blocktank ticker shape', () => {
+    const body = {
+      tickers: [
+        { symbol: 'BTCARS', lastPrice: '127286275' },
+        { symbol: 'BTCUSD', lastPrice: '83921' },
+      ],
+    };
+    expect(parseBtcUsdRate(body)).toBe(83921);
+  });
+
+  it('returns null for anything else', () => {
+    expect(parseBtcUsdRate(null)).toBeNull();
+    expect(parseBtcUsdRate({})).toBeNull();
+    expect(parseBtcUsdRate({ tickers: [{ symbol: 'BTCEUR', lastPrice: '70000' }] })).toBeNull();
+    expect(parseBtcUsdRate({ tickers: [{ symbol: 'BTCUSD', lastPrice: '0' }] })).toBeNull();
+    expect(parseBtcUsdRate({ USD: 90000 })).toBeNull();
+  });
+});
+
+describe('pay wait', () => {
+  it('stays inside the Bitcoin hold window', () => {
+    expect(parsePayTimeoutMinutes(undefined)).toBe(25);
+    expect(parsePayTimeoutMinutes('2')).toBe(2);
+    expect(parsePayTimeoutMinutes(String(BITCOIN_WINDOW_MINUTES - 3))).toBe(BITCOIN_WINDOW_MINUTES - 3);
+    for (const bad of ['1', '28', '30', '2.5', 'x']) expect(() => parsePayTimeoutMinutes(bad)).toThrow();
+  });
+
+  it('bounds the external-buyer wait in whole minutes', () => {
+    expect(parsePositiveMinutes(undefined, 90)).toBe(90);
+    expect(parsePositiveMinutes('5', 90)).toBe(5);
+    expect(parsePositiveMinutes('480', 90)).toBe(480);
+    for (const bad of ['4', '481', '2.5', 'x', '']) expect(() => parsePositiveMinutes(bad, 90)).toThrow();
+  });
+
+  it('decides the outcome from payment first, then the clock', () => {
+    expect(payOutcome({ paid: true, elapsedMs: 99, timeoutMs: 10 })).toBe('paid');
+    expect(payOutcome({ paid: false, elapsedMs: 5, timeoutMs: 10 })).toBe('waiting');
+    expect(payOutcome({ paid: false, elapsedMs: 10, timeoutMs: 10 })).toBe('timeout');
+  });
+
+  it('stops waiting for payment when interrupted, but never discards a payment that arrived', () => {
+    expect(payOutcome({ paid: false, elapsedMs: 5, timeoutMs: 10, interrupted: true })).toBe('interrupted');
+    expect(payOutcome({ paid: true, elapsedMs: 5, timeoutMs: 10, interrupted: true })).toBe('paid');
+  });
+});
+
+describe('fixture file', () => {
+  it('is distinct per run, carries its own hash and cannot be tiny', () => {
+    const a = makeFixtureFile('aaaaaa');
+    const b = makeFixtureFile('aaaaaa');
+    expect(a.name).toBe('digital-proof-aaaaaa.bin');
+    expect(a.bytes.length).toBe(64 * 1024);
+    expect(a.sha256).toBe(sha256Hex(a.bytes));
+    expect(a.sha256).not.toBe(b.sha256);
+    expect(a.bytes.subarray(0, 40).toString('utf8')).toContain('digital delivery proof aaaaaa');
+    expect(() => makeFixtureFile('x', 10)).toThrow();
+  });
+
+  it('hashes known input', () => {
+    expect(sha256Hex(Buffer.from('abc'))).toBe('ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad');
+  });
+});
+
+describe('teardown scope', () => {
+  const seller = 'pubky://8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo';
+
+  it('extracts the absolute path from a pubky url', () => {
+    expect(pathFromPubkyUrl(`${seller}${DELIVERABLES_PREFIX}abc/1`)).toBe(`${DELIVERABLES_PREFIX}abc/1`);
+    expect(pathFromPubkyUrl('https://example.com/x')).toBeNull();
+  });
+
+  it('deletes only deliverables that appeared during the run', () => {
+    const before = [`${DELIVERABLES_PREFIX}old/1`];
+    const after = [`${DELIVERABLES_PREFIX}old/1`, `${DELIVERABLES_PREFIX}new/1`, '/pub/pubky.app/profile.json'];
+    expect(newDeliverablePaths(before, after)).toEqual([`${DELIVERABLES_PREFIX}new/1`]);
+    expect(newDeliverablePaths(after, after)).toEqual([]);
+  });
+});
+
+describe('redaction and titles', () => {
+  it('removes the tester mailbox from any text', () => {
+    expect(redactEmail('sent to tester@example.com now', 'tester@example.com')).toBe('sent to [redacted-email] now');
+    expect(redactEmail('plain', '')).toBe('plain');
+    expect(redactEmail(undefined, 'a@b.c')).toBe('');
+  });
+
+  it('titles every fixture as a do-not-buy listing', () => {
+    expect(listingTitle('ab12cd', 'file')).toBe('SMOKE FIXTURE, do not buy ab12cd file');
+  });
+});
+
+describe('plan', () => {
+  it('names every kind and the teardown, and says orders remain', () => {
+    const lines = describePlan({
+      kinds: ['file', 'email'],
+      priceText: '2.00',
+      origin: 'https://shop.pubky.app',
+      service: 'https://service.example',
+    });
+    expect(lines.some((line) => line.startsWith('file:') && line.includes('SHA-256 matches'))).toBe(true);
+    expect(lines.some((line) => line.startsWith('email:') && line.includes('Emailed to'))).toBe(true);
+    expect(lines.at(-1)).toContain('paid orders remain as evidence');
+  });
+});
+
+describe('redaction of keys and the mailbox', () => {
+  const z32 = 'ka7q4cmabp6amo13bye9q6iwhb4pxuwr9fo37h5ygx4uk9e63tjy';
+
+  it('cuts a full public key to its 8-character prefix', () => {
+    expect(z32).toHaveLength(52);
+    expect(redactSensitive(`seller ${z32} signed in`, '')).toBe('seller ka7q4cma… signed in');
+    expect(redactSensitive(`${z32},${z32}`, '')).toBe('ka7q4cma…,ka7q4cma…');
+  });
+
+  it('leaves shorter ids, longer words and prefixes alone', () => {
+    expect(redactSensitive(z32.slice(0, 51), '')).toBe(z32.slice(0, 51));
+    expect(redactSensitive('ka7q4cma…', '')).toBe('ka7q4cma…');
+    expect(redactSensitive('2289548f24dc429e815719bd63ad4a17', '')).toBe('2289548f24dc429e815719bd63ad4a17');
+  });
+
+  it('removes the mailbox and the key in the same line', () => {
+    expect(redactSensitive(`${z32} emailed tester@example.com`, 'tester@example.com')).toBe(
+      'ka7q4cma… emailed [redacted-email]',
+    );
+  });
+});
+
+describe('the staging guard', () => {
+  const staging = {
+    origin: STAGING_TARGET.origins[0],
+    service: STAGING_TARGET.services[0],
+    nexus: STAGING_TARGET.nexus[0],
+  };
+  const production = {
+    origin: 'https://shop.pubky.app',
+    service: 'https://marketplace-service-production-ce23.up.railway.app',
+    nexus: 'https://nexusd-production-7108.up.railway.app',
+  };
+
+  it('lets the staging stack through, with or without a mount path or trailing slash', () => {
+    expect(isStagingTarget(staging)).toBe(true);
+    expect(targetRefusal(staging, {})).toBeNull();
+    expect(targetRefusal({ ...staging, origin: `${staging.origin}/` }, {})).toBeNull();
+  });
+
+  it('refuses the production defaults and names every variable that is wrong', () => {
+    const message = targetRefusal(production, {});
+    expect(message).toContain('PROOF_ORIGIN=https://shop.pubky.app');
+    expect(message).toContain('PROOF_SERVICE=https://marketplace-service-production-ce23.up.railway.app');
+    expect(message).toContain('PROOF_NEXUS=https://nexusd-production-7108.up.railway.app');
+    expect(message).toContain('PROOF_ALLOW_PRODUCTION=1');
+  });
+
+  it('refuses a stack that is only partly staging', () => {
+    expect(targetRefusal({ ...staging, service: production.service }, {})).toContain('PROOF_SERVICE=');
+    expect(targetRefusal({ ...staging, nexus: production.nexus }, {})).toContain('PROOF_NEXUS=');
+    expect(targetRefusal({ ...staging, origin: production.origin }, {})).toContain('PROOF_ORIGIN=');
+    expect(targetRefusal({ ...staging, nexus: production.nexus }, {})).not.toContain('PROOF_ORIGIN=');
+  });
+
+  it('refuses hosts that only look like staging', () => {
+    for (const origin of [
+      'https://pubky-marketplace-staging.vercel.app.evil.example',
+      'http://pubky-marketplace-staging.vercel.app',
+      'https://evil.example/https://pubky-marketplace-staging.vercel.app',
+      'not a url',
+    ]) {
+      expect(targetRefusal({ ...staging, origin }, {})).toContain('PROOF_ORIGIN=');
+    }
+  });
+
+  it('is overridden only by PROOF_ALLOW_PRODUCTION=1 exactly', () => {
+    expect(targetRefusal(production, { PROOF_ALLOW_PRODUCTION: '1' })).toBeNull();
+    for (const value of ['', '0', 'true', 'yes', ' 1']) {
+      expect(targetRefusal(production, { PROOF_ALLOW_PRODUCTION: value })).not.toBeNull();
+    }
+  });
+});
+
+describe('the expected deployment guard', () => {
+  it('reads the first deployment id from the served page', () => {
+    expect(extractDpl('<script>x="dpl_AbC123xyz"</script> dpl_other')).toBe('dpl_AbC123xyz');
+    expect(extractDpl('no id here')).toBeNull();
+    expect(extractDpl(undefined)).toBeNull();
+  });
+
+  it('passes only when the served id equals the expectation', () => {
+    expect(deploymentRefusal({ found: 'dpl_A', expected: 'dpl_A' })).toBeNull();
+    expect(deploymentRefusal({ found: 'dpl_B', expected: 'dpl_A' })).toContain('dpl_B');
+    expect(deploymentRefusal({ found: null, expected: 'dpl_A' })).toContain('no deployment id');
+  });
+
+  it('never passes without an expectation, even when the page has no id either', () => {
+    expect(deploymentRefusal({ found: 'dpl_A', expected: '' })).toContain('EXPECTED_DPL');
+    expect(deploymentRefusal({ found: null, expected: undefined })).toContain('EXPECTED_DPL');
+  });
+});
+
+describe('screenshots and the tester mailbox', () => {
+  it('does not save the email kind unless asked, and saves every other kind', () => {
+    expect(screenshotPolicy({ kind: 'email', email: 'a@b.c', optIn: false }).save).toBe(false);
+    expect(screenshotPolicy({ kind: 'email', email: 'a@b.c', optIn: true }).save).toBe(true);
+    for (const kind of ['file', 'link', 'text', 'messages', null]) {
+      expect(screenshotPolicy({ kind, email: 'a@b.c', optIn: false }).save).toBe(true);
+    }
+  });
+
+  it('masks whenever a mailbox is configured, including for an opted-in email screenshot', () => {
+    expect(screenshotPolicy({ kind: 'email', email: 'a@b.c', optIn: true }).mask).toBe(true);
+    expect(screenshotPolicy({ kind: 'file', email: 'a@b.c', optIn: false }).mask).toBe(true);
+    expect(screenshotPolicy({ kind: 'file', email: '', optIn: false }).mask).toBe(false);
+  });
+});

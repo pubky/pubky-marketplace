@@ -342,6 +342,69 @@ and `PROOF_SERVICE=https://staging-api.pubky.app` (listing discovery then reads 
 "do not buy" listing whose seller has a PayPal sandbox rail: pass it as `PROOF_PAYPAL_LISTING_URL`, or step 4 fails
 when discovery finds none. Production is the release gate.
 
+### Paid digital delivery proof (opt-in, spends real money)
+
+`scripts/release/production-digital-fixture.mjs` proves digital delivery with real paid Bitcoin orders on the same two
+test seats: one `SMOKE FIXTURE, do not buy <run> <kind>` listing per delivery kind (file, link, text, "I'll email it", "I'll
+send it in messages"), a buyer checkout paid in Bitcoin, the delivery checks on both sides, then teardown and
+verification. It is not part of the release gate. It refuses to start without `PROOF_DIGITAL_GO=GO-<UTC date>`, which
+the product owner authorizes per run, and it needs both `PROOF_*_PREFIX` seat guards and `EXPECTED_DPL`.
+
+Two guards are enforced in code. Every mode but `plan` refuses unless `PROOF_ORIGIN`, `PROOF_SERVICE` and `PROOF_NEXUS`
+are the staging stack (John Staging, `https://staging-api.pubky.app`, `https://nexusd-staging-production.up.railway.app`);
+the production defaults are refused, and `PROOF_ALLOW_PRODUCTION=1` is the explicit, deliberate way to run against
+production. Every mode that publishes or spends first checks that the origin serves `EXPECTED_DPL`, including `publish`
+and `await-buyer`. `plan` prints which side of that line the environment is on.
+
+The email kind types and shows the tester mailbox, so its screenshots are not saved unless `PROOF_DIGITAL_EMAIL_SCREENSHOTS=1`.
+When a mailbox is configured, every saved screenshot has text containing it and any field holding it masked.
+
+```bash
+# touches nothing: prints the plan and what the environment still lacks
+PROOF_EVIDENCE=$HOME/shop-evidence/digital node scripts/release/production-digital-fixture.mjs plan
+```
+
+What it automates, and what stays with a person:
+
+| Step                                                                                                                  | Who                                                                                                           |
+| --------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| Publish the listing, set the delivery, check out, choose Bitcoin, click Pay                                           | the script (seller and buyer seats)                                                                           |
+| Pay the Bitkit Payment Request                                                                                        | an operator: the buyer wallet is a real Bitkit holding real funds, and the seller must be one of its contacts |
+| File: two downloads whose SHA-256 equals the fixture; link and text: the revealed value equals the one set            | the script                                                                                                    |
+| Seller evidence line after the buyer's access                                                                         | the script                                                                                                    |
+| Email: the mailbox of a tester (`PROOF_DIGITAL_BUYER_EMAIL`) receives a real email from the seller, then Mark emailed | an operator sends the email; the script marks it and checks "Emailed to"                                      |
+| Messages: the seller sends the delivery in chat, then Mark delivered                                                  | an operator (chat needs Ring today); the script marks it and checks the buyer line                            |
+| Delete the listings and their ciphertext, revoke the run's sessions, verify                                           | the script; paid orders cannot be deleted and stay as evidence                                                |
+
+Price defaults to $2.00 so the Bitcoin quote clears the service's 1,000-satoshi floor with a margin
+(`PROOF_DIGITAL_PRICE_USD`, 1.00 to 25.00). The payment wait stops before the 30-minute Bitcoin hold
+(`PROOF_DIGITAL_PAY_TIMEOUT_MIN`, default 25). A run that stops early leaves `digital-fixture-state.json` in the
+evidence folder; clean up with `... production-digital-fixture.mjs teardown` until it prints `DIGITAL_FIXTURE
+teardown OK`. The selectors come from the Shop source at the commit the script was written against; the first run
+should be a staging rehearsal with staging-homeserver seats and a regtest wallet.
+
+#### Used by the service hold-smoke (`HOLD_SMOKE_DIGITAL_FIXTURE_CMD`)
+
+The service's `scripts/release/hold-smoke.py` needs real digital listings on a dedicated fixture seller. It publishes
+them before the run and removes them afterwards, so no smoke listing stays live in the Nexus index. It does not call
+this script directly: it runs the command in `HOLD_SMOKE_DIGITAL_FIXTURE_CMD` (split like a shell line) with one
+argument, and puts the kinds in `HOLD_SMOKE_DIGITAL_FIXTURE_KINDS` (comma separated, same names as
+`PROOF_DIGITAL_KINDS`).
+
+| Argument   | What the wrapper must run                                                                                                   |
+| ---------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `publish`  | `production-digital-fixture.mjs prepare`, then `production-digital-fixture.mjs publish`, both with `PROOF_EXTERNAL_BUYER=1` |
+| `teardown` | `production-digital-fixture.mjs teardown`                                                                                   |
+
+The wrapper is yours to write and keep outside the repository, because it carries the environment: the fixture seller's
+seat (see `seats.mjs`), `PROOF_SELLER_PREFIX`, `EXPECTED_DPL`, the day's `PROOF_DIGITAL_GO`, `PROOF_DIGITAL_KINDS`
+set from `HOLD_SMOKE_DIGITAL_FIXTURE_KINDS`, `PROOF_ORIGIN`, `PROOF_SERVICE`, `PROOF_NEXUS` and `PROOF_RELAY` pointing
+at the staging stack, and a `PROOF_EVIDENCE` folder that is emptied before each `publish`. It must exit non-zero when a
+step fails: hold-smoke then runs `teardown` and a sweep, and stops if the seller still has any listing.
+
+Listings made this way are titled `SMOKE FIXTURE, do not buy <run> <kind>` and carry a description that says they are
+a staging smoke fixture. The script itself refuses a non-staging target unless `PROOF_ALLOW_PRODUCTION=1`: never set that in the hold-smoke wrapper.
+
 ## Tag and release notes
 
 There is no `CHANGELOG.md`. Each user-visible change adds a fragment `changelog.d/next/<issue>.<kind>.md`. Fragments
