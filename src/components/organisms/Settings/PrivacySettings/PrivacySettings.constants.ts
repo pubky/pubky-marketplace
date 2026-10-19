@@ -36,4 +36,4 @@ export const PRIVACY_SETTINGS: Record<PrivacyType, PrivacySettingConfig> = {
 };
 
 export const SELLER_FOLLOW_NOTICE =
-  'The Shop follows sellers you buy from, so you and they can connect. You can unfollow any seller at any time.';
+  'The Shop follows a seller when you message them, buy from them or show interest in their listings (cart, watchlist, offers, bids), so you and they can connect. You can unfollow any seller at any time.';

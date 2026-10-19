@@ -262,6 +262,36 @@ export function paykitTrustedKeys(toml) {
   return legacy === undefined ? undefined : [String(legacy)];
 }
 
+/**
+ * Whether the Shop's runtime config wires the chat inbox (`pubky/inbox`). Without `inboxUrl` the Shop never opens an
+ * inbox session, so a stranger's first message reaches the recipient only when they open that thread. Returns
+ * `{ ok, detail, hint, url }` where `url` is the inbox base with no trailing slash when it is set and valid.
+ */
+export function checkInboxRuntime(runtime) {
+  const raw = runtime?.inboxUrl;
+  if (raw === undefined || raw === null || String(raw).trim() === '') {
+    return {
+      ok: false,
+      detail: 'inboxUrl unset',
+      hint: 'set PUBKY_RUNTIME_INBOX_URL (and PUBKY_RUNTIME_INBOX_AUDIENCE, equal to INBOX_AUTH__AUDIENCE on the inbox service) on the Shop and restart it: without it a seller is not told about a stranger’s first message',
+    };
+  }
+  const origin = normalizeOrigin(raw);
+  if (!origin) return { ok: false, detail: `inboxUrl ${raw}`, hint: 'PUBKY_RUNTIME_INBOX_URL must be an http(s) URL' };
+  return { ok: true, detail: normalizeBase(String(raw)), url: normalizeBase(String(raw)) };
+}
+
+/**
+ * Whether a CORS `access-control-allow-origin` value lets `origin` call a bearer-token API. The inbox
+ * authenticates with a bearer token and no cookies, so `*` is a valid answer there (unlike the marketplace service,
+ * whose allow-list must name exact origins).
+ */
+export function corsAllowsOrigin(allowOrigin, origin) {
+  if (!allowOrigin) return false;
+  const value = String(allowOrigin).trim();
+  return value === '*' || normalizeOrigin(value) === normalizeOrigin(origin);
+}
+
 /** Origins in `required` that `allowed` does not list. A `*` entry is reported separately by callers. */
 export function missingOrigins(allowed, required) {
   const have = new Set(parseList(allowed).map(normalizeOrigin).filter(Boolean));
