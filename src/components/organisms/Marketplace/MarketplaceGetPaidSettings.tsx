@@ -386,6 +386,17 @@ export function MarketplaceGetPaidSettings({ onSaved }: MarketplaceGetPaidSettin
   const offerBitcoinReconnect =
     upstreamPaykit && step2Mode === 'setup' && paykitSetupProblem === 'error' && payments.accountClaimed === false;
   const failedSetupInDialog = upstreamPaykit && paykitSetupStatus === 'error' && paykitSetupMode === 'setup';
+  // The service's `reconnect` is its record that Paykit once held the seller. A Paykit that no longer holds the creator
+  // refuses `/setup/reconnect` without calling back, so a reconnect sent there that fails or expires falls back to
+  // initial setup.
+  const paykitHoldsSellerPerService =
+    upstreamPaykit &&
+    payments.accountClaimed === false &&
+    (payments.config?.bitcoinSetupAction === 'reconnect' || payments.config?.usdtSetupAction === 'reconnect');
+  const failedServiceReconnectInDialog =
+    paykitHoldsSellerPerService &&
+    paykitSetupMode !== 'setup' &&
+    (paykitSetupStatus === 'error' || paykitSetupStatus === 'timeout');
   // Only the missing-step reason is explained here; without a session the
   // card's "Enable selling" prompt already says why the switch is off.
   const bitcoinToggleBlocker =
@@ -731,6 +742,12 @@ export function MarketplaceGetPaidSettings({ onSaved }: MarketplaceGetPaidSettin
                   >
                     <RefreshCw className="size-4" />
                     Reconnect Bitkit
+                  </Button>
+                )}
+                {failedServiceReconnectInDialog && (
+                  <Button variant="secondary" className="w-fit rounded-full" onClick={() => openPaykitSetup('setup')}>
+                    <RefreshCw className="size-4" />
+                    Connect Bitkit
                   </Button>
                 )}
                 {paykitSetupStatus === 'unconfirmed' ? (

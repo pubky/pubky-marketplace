@@ -248,6 +248,53 @@ describe('MarketplaceGetPaidSettings Bitkit reconnect (upstream Paykit)', () => 
       expect(screen.queryByRole('button', { name: /Connect Bitkit|Try again/ })).not.toBeInTheDocument();
     });
 
+    it('falls back to initial setup when Paykit no longer holds the seller and refuses the reconnect', async () => {
+      mocked.getMyPaymentConfig.mockResolvedValue(ownConfig('setup_required', 'reconnect'));
+      await renderSettings();
+      await userEvent.click(await screen.findByRole('button', { name: /Reconnect Bitkit/ }));
+      sendCallback(paykitFrame('Reconnect Bitkit'), { error: 'setup-failed' });
+
+      const dialog = screen.getByRole('dialog', { name: 'Reconnect Bitkit' });
+      await userEvent.click(await within(dialog).findByRole('button', { name: /Connect Bitkit/ }));
+      expect(framePath(paykitFrame('Connect Bitkit'))).toBe('https://paykit.example/setup');
+    });
+
+    it('falls back to initial setup when that reconnect expires without a callback', async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      try {
+        mocked.getMyPaymentConfig.mockResolvedValue(ownConfig('setup_required', 'reconnect'));
+        await renderSettings();
+        await userEvent.click(await screen.findByRole('button', { name: /Reconnect Bitkit/ }));
+        act(() => {
+          vi.advanceTimersByTime(6 * 60 * 1_000);
+        });
+
+        const dialog = screen.getByRole('dialog', { name: 'Reconnect Bitkit' });
+        await userEvent.click(await within(dialog).findByRole('button', { name: /Connect Bitkit/ }));
+        expect(framePath(paykitFrame('Connect Bitkit'))).toBe('https://paykit.example/setup');
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('falls back to initial setup from the USDT card reconnect too', async () => {
+      mocked.fetchUsdtPaymentsAvailable.mockResolvedValue(true);
+      mocked.getMyPaymentConfig.mockResolvedValue({
+        ...ownConfig('setup_required', 'reconnect'),
+        usdtEnabled: false,
+        usdtSetup: 'setup_required',
+        usdtSetupAction: 'reconnect',
+      });
+      await renderSettings();
+      const panel = await screen.findByTestId('usdt-readiness-reconnect');
+      await userEvent.click(within(panel).getByRole('button', { name: /Add USDT in Bitkit/ }));
+      sendCallback(paykitFrame('Add USDT in Bitkit'), { error: 'setup-failed' });
+
+      const dialog = screen.getByRole('dialog', { name: 'Add USDT in Bitkit' });
+      await userEvent.click(await within(dialog).findByRole('button', { name: /Connect Bitkit/ }));
+      expect(framePath(paykitFrame('Connect Bitkit'))).toBe('https://paykit.example/setup');
+    });
+
     it('keeps the initial setup for a seller Paykit does not hold', async () => {
       mocked.getMyPaymentConfig.mockResolvedValue(ownConfig('setup_required', 'setup'));
       await renderSettings();
