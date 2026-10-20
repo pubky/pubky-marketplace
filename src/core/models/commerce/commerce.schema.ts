@@ -554,7 +554,7 @@ export interface CommerceSavedSearchParams {
    * readers coalesce to null.
    */
   countryCode?: string | null;
-  sort: 'recommended' | 'newest' | 'price_low' | 'price_high' | 'ending_soon';
+  sort: 'newest' | 'price_low' | 'price_high' | 'ending_soon';
   /**
    * Only sellers who accept this rail, null = any. Optional because rows
    * persisted before the filter existed lack it; readers coalesce to null.

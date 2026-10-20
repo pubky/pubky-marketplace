@@ -116,7 +116,7 @@ describe('CommerceController', () => {
     await CommerceController.fetchCatalogListings({ saleFormat: 'auction', conditions: ['like_new'], sort: 'newest' });
     expect(fetchCatalog).toHaveBeenCalledWith({ saleFormat: 'auction', condition: 'like_new' });
 
-    await CommerceController.fetchCatalogListings({ saleFormat: 'all', conditions: [], sort: 'recommended' });
+    await CommerceController.fetchCatalogListings({ saleFormat: 'all', conditions: [], sort: 'newest' });
     expect(fetchCatalog).toHaveBeenLastCalledWith({});
   });
 

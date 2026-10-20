@@ -746,7 +746,8 @@ export class CommerceSavedSearchModel
 
   static async findByOwner(ownerId: string): Promise<CommerceSavedSearchModelSchema[]> {
     try {
-      return await this.table.where('owner_id').equals(ownerId).sortBy('created_at');
+      const rows = await this.table.where('owner_id').equals(ownerId).sortBy('created_at');
+      return rows.map(withCurrentSort);
     } catch (error) {
       throw Err.database(DatabaseErrorCode.QUERY_FAILED, `Failed to query ${this.table.name} by owner`, {
         service: ErrorService.Local,
@@ -756,6 +757,15 @@ export class CommerceSavedSearchModel
       });
     }
   }
+}
+
+/**
+ * Searches saved before the "Recommended" sort was removed still carry `sort: 'recommended'`;
+ * they replay as Newest, which is now the default order.
+ */
+function withCurrentSort(row: CommerceSavedSearchModelSchema): CommerceSavedSearchModelSchema {
+  if ((row.params.sort as string) !== 'recommended') return row;
+  return { ...row, params: { ...row.params, sort: 'newest' } };
 }
 
 export class CommerceLocksCorrelationModel

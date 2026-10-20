@@ -17,7 +17,6 @@ import {
   Package,
   RotateCcw,
   Rows4,
-  Sparkles,
   Star,
   Timer,
   Wallet,
@@ -54,7 +53,6 @@ import { useDisplayCurrency } from '@/hooks/useDisplayCurrency/useDisplayCurrenc
 import type { MarketplaceCatalogItem } from '@/hooks/useMarketplaceCatalog/useMarketplaceCatalog.utils';
 import { collectMarketplaceAttributeFacets } from '@/hooks/useMarketplaceCatalog/useMarketplaceCatalog.utils';
 import { BTCIcon, PaypalIcon, Tether } from '@/icons';
-import { RANKING_LINE } from '@/libs/commerce/eu-region';
 import { SELLER_PAYMENT_BADGE_LABELS } from '@/libs/commerce/payment-badges';
 import type { PaymentMethodFilter } from '@/libs/commerce/payment-method-filter';
 import { cn } from '@/libs/utils/utils';
@@ -151,7 +149,7 @@ export function MarketplaceFilters({
       state.conditions.length ||
       state.minimumPriceMinor !== null ||
       state.maximumPriceMinor !== null ||
-      state.sort !== 'recommended' ||
+      state.sort !== 'newest' ||
       Object.keys(state.attributeFilters).length > 0,
     ),
   );
@@ -272,10 +270,6 @@ export function MarketplaceFilters({
               <SelectValue />
             </SelectTrigger>
             <SelectContent position="popper" align="start" className={FILTER_MENU_CLASS}>
-              <SelectItem className={FILTER_ITEM_CLASS} value="recommended">
-                <Sparkles aria-hidden="true" className="size-4" />
-                Recommended
-              </SelectItem>
               <SelectItem className={FILTER_ITEM_CLASS} value="newest">
                 <Clock aria-hidden="true" className="size-4" />
                 Newest
@@ -338,9 +332,6 @@ export function MarketplaceFilters({
             </SelectContent>
           </Select>
         </div>
-        <Typography as="p" size="xs" className="text-muted-foreground" data-testid="marketplace-ranking-line">
-          {RANKING_LINE}
-        </Typography>
         {hasActiveFilters && (
           <Button
             variant="dark-outline"

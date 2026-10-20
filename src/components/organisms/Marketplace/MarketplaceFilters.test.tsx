@@ -31,7 +31,7 @@ describe('MarketplaceFilters', () => {
     expect(screen.getByRole('button', { name: 'Sell an item' })).toBeInTheDocument();
     expect(screen.getByText('Type')).toBeInTheDocument();
     expect(screen.getByText('Anywhere')).toBeInTheDocument();
-    expect(screen.getByText('Recommended')).toBeInTheDocument();
+    expect(screen.getByText('Newest')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Category' })).toBeInTheDocument();
     expect(screen.getByRole('combobox', { name: 'Listing layout: Grid' })).toBeInTheDocument();
     expect(screen.getByRole('combobox', { name: 'Display currency: US dollars' })).toBeInTheDocument();

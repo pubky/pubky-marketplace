@@ -17,8 +17,8 @@ import { SEARCH_CLOSED_STYLE } from '@/config/search';
 import { useMarketplaceCatalog } from '@/hooks/useMarketplaceCatalog/useMarketplaceCatalog';
 import {
   DROP_DISPLAY_BUCKET_ORDER,
-  interleaveInTurn,
   type MarketplaceCatalogItem,
+  orderNewestFirst,
 } from '@/hooks/useMarketplaceCatalog/useMarketplaceCatalog.utils';
 import { useMarketplaceDrops } from '@/hooks/useMarketplaceDrops/useMarketplaceDrops';
 import { useMarketplacePaymentFilterOptions } from '@/hooks/useMarketplacePaymentFilterOptions/useMarketplacePaymentFilterOptions';
@@ -88,14 +88,17 @@ export function Marketplace({
   );
   const catalogListingCards = saleFormat === 'drops' ? [] : listingCards;
   const catalogCards: Array<(typeof listingCards)[number] | (typeof dropCards)[number]> = [];
-  if (sort === 'recommended' && saleFormat === 'all') {
-    const groups: Array<readonly (typeof catalogCards)[number][]> = [
-      listingCards.filter(({ listing }) => listing.saleFormat === 'fixed_price'),
-      listingCards.filter(({ listing }) => listing.saleFormat === 'auction'),
-      dropCards,
-    ];
-    // Stable round-robin keeps each type visible and retains its existing rank.
-    catalogCards.push(...interleaveInTurn(groups));
+  if (sort === 'newest' && saleFormat === 'all') {
+    catalogCards.push(
+      ...orderNewestFirst(
+        listingCards.map((card) => ({ card, at: card.listing.updatedAt })),
+        dropCards.map((card) => ({
+          card,
+          at: Date.parse(card.entry.starts_at) || 0,
+          upcoming: card.bucket === 'upcoming',
+        })),
+      ),
+    );
   } else {
     catalogCards.push(...dropCards, ...catalogListingCards);
   }

@@ -230,7 +230,7 @@ exports[`MarketplaceFilters - Snapshots > matches the default filter snapshot 1`
         >
           <svg
             aria-hidden="true"
-            class="lucide lucide-sparkles size-4"
+            class="lucide lucide-clock size-4"
             fill="none"
             height="24"
             stroke="currentColor"
@@ -241,22 +241,16 @@ exports[`MarketplaceFilters - Snapshots > matches the default filter snapshot 1`
             width="24"
             xmlns="http://www.w3.org/2000/svg"
           >
-            <path
-              d="M11.017 2.814a1 1 0 0 1 1.966 0l1.051 5.558a2 2 0 0 0 1.594 1.594l5.558 1.051a1 1 0 0 1 0 1.966l-5.558 1.051a2 2 0 0 0-1.594 1.594l-1.051 5.558a1 1 0 0 1-1.966 0l-1.051-5.558a2 2 0 0 0-1.594-1.594l-5.558-1.051a1 1 0 0 1 0-1.966l5.558-1.051a2 2 0 0 0 1.594-1.594z"
-            />
-            <path
-              d="M20 2v4"
-            />
-            <path
-              d="M22 4h-4"
-            />
             <circle
-              cx="4"
-              cy="20"
-              r="2"
+              cx="12"
+              cy="12"
+              r="10"
+            />
+            <path
+              d="M12 6v6l4 2"
             />
           </svg>
-          Recommended
+          Newest
         </span>
         <svg
           aria-hidden="true"
@@ -421,12 +415,6 @@ exports[`MarketplaceFilters - Snapshots > matches the default filter snapshot 1`
         </svg>
       </button>
     </div>
-    <p
-      class="text-xs font-medium text-muted-foreground"
-      data-testid="marketplace-ranking-line"
-    >
-      With all sale types shown, Recommended mixes fixed-price listings, auctions and drops in turn. Listings are ordered by when they were last updated, with new or excellent-condition items placed slightly higher; drops are ordered live first, then upcoming, then ended. You can also sort by newest, price or ending soonest. No placement is paid for, and ratings don’t affect order.
-    </p>
     <button
       aria-label="Reset search and filters"
       class="inline-flex items-center justify-center gap-2 whitespace-nowrap text-sm transition-all disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg:not([class*=\\"size-\\"])]:size-4 [&_svg]:shrink-0 outline-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] aria-invalid:ring-destructive/40 aria-invalid:border-destructive font-semibold cursor-pointer border shadow-xs hover:text-white hover:bg-neutral-800 size-8 shrink-0 rounded-full border-border bg-white/5 text-foreground"

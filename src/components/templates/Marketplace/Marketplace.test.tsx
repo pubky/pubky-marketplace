@@ -9,6 +9,7 @@ import {
   MARKETPLACE_PROMO_STORAGE_ID,
 } from '@/config/featureDiscovery';
 import { createCommerceShopFixture } from '@/test/fixtures/commerce/commerce';
+import { asOpaque } from '@/test-utils/type-assertions';
 import { Marketplace } from './Marketplace';
 
 const routerPush = vi.hoisted(() => vi.fn());
@@ -378,6 +379,55 @@ describe('Marketplace', () => {
       screen.getByText(/Discover timed, limited releases. Open a drop to check availability./),
     ).toBeInTheDocument();
     expect(screen.getAllByText('Drops live proof — 1 of 1')).toHaveLength(1);
+  });
+
+  it('places drops among listings by date, upcoming drops first, when all types are shown under Newest', () => {
+    catalogState.adapterMode = 'transaction-service';
+    const listing = (id: string, title: string, updatedAt: string) => ({
+      id: `seller:${id}`,
+      sellerId: 'y'.repeat(52),
+      listingId: id,
+      state: 'active' as const,
+      title,
+      description: 'A listing.',
+      categoryId: 'fashion-shoes-boots',
+      condition: 'good' as const,
+      tags: [],
+      saleFormat: 'fixed_price' as const,
+      price: { amountMinor: 12_500, currency: 'USD', exponent: 2 },
+      auction: null,
+      attributes: null,
+      location: { countryCode: 'US', region: 'NY' },
+      mediaUrls: [],
+      reputation: null,
+      revision: 1,
+      updatedAt: Date.parse(updatedAt),
+    });
+    catalogState.listings = asOpaque<typeof catalogState.listings>([
+      listing('new', 'Listing updated last', '2026-09-25T00:00:00.000Z'),
+      listing('old', 'Listing updated first', '2026-09-01T00:00:00.000Z'),
+    ]);
+    dropsState.buckets = {
+      upcoming: [{ ...dropEntry, id: 'up', title: 'Drop coming up', starts_at: '2026-10-30T12:00:00.000Z' }],
+      live: [{ ...dropEntry, id: 'live', title: 'Drop live now', starts_at: '2026-09-20T12:00:00.000Z' }],
+      ended: [{ ...dropEntry, id: 'ended', title: 'Drop already ended', starts_at: '2026-08-01T12:00:00.000Z' }],
+    };
+
+    render(<Marketplace />);
+
+    const order = [
+      'Drop coming up',
+      'Listing updated last',
+      'Drop live now',
+      'Listing updated first',
+      'Drop already ended',
+    ];
+    const positions = order.map((title) => screen.getByText(title));
+    for (let index = 1; index < positions.length; index++) {
+      expect(positions[index - 1]!.compareDocumentPosition(positions[index]!) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(
+        Node.DOCUMENT_POSITION_FOLLOWING,
+      );
+    }
   });
 
   it("passes the deployment's payment filter options to the filter bar", () => {

@@ -837,6 +837,31 @@ describe('LocalCommerceService', () => {
     expect(await LocalCommerceService.getSavedSearches(COMMERCE_FIXTURE_BUYER)).toEqual([]);
   });
 
+  it('replays a search saved with the removed Recommended sort as Newest', async () => {
+    await CommerceSavedSearchModel.table.put({
+      id: 'legacy-search',
+      owner_id: COMMERCE_FIXTURE_BUYER,
+      name: 'Old search',
+      params: {
+        query: 'boots',
+        categoryId: null,
+        saleFormat: 'all',
+        conditions: [],
+        minimumPriceMinor: null,
+        maximumPriceMinor: null,
+        sort: 'recommended',
+      } as never,
+      watermark_updated_at: 1_000,
+      latest_match_updated_at: 1_000,
+      new_count: 0,
+      last_checked_at: null,
+      created_at: 100,
+    });
+
+    const [search] = await LocalCommerceService.getSavedSearches(COMMERCE_FIXTURE_BUYER);
+    expect(search?.params.sort).toBe('newest');
+  });
+
   describe('delivery address book', () => {
     const addressInput = (label: string) => ({
       label,

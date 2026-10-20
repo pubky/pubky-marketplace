@@ -15,10 +15,10 @@ import {
   collectMarketplaceAttributeFacets,
   DROP_DISPLAY_BUCKET_ORDER,
   filterMarketplaceCatalog,
-  interleaveInTurn,
   isCatalogItemOpen,
   type MarketplaceCatalogFilters,
   type MarketplaceCatalogItem,
+  orderNewestFirst,
 } from './useMarketplaceCatalog.utils';
 
 function catalogItems(): MarketplaceCatalogItem[] {
@@ -261,7 +261,7 @@ describe('ended auctions', () => {
     const fixedPrice = catalogItemFromCatalogEntry(createCommerceCatalogEntryFixture());
     const items = [closed, fixedPrice, running];
 
-    for (const sort of ['newest', 'price_low', 'price_high', 'ending_soon', 'recommended'] as const) {
+    for (const sort of ['newest', 'price_low', 'price_high', 'ending_soon'] as const) {
       const ids = filterMarketplaceCatalog(items, filters({ sort }), endMs).map(({ listingId }) => listingId);
       expect(ids).not.toContain('closed');
       expect(ids).toContain('running');
@@ -335,7 +335,7 @@ describe('collectMarketplaceAttributeFacets', () => {
   });
 });
 
-describe('the Recommended order the ranking line describes', () => {
+describe('the Newest order', () => {
   const day = 86_400_000;
   const listing = (id: string, overrides: Partial<CommerceCatalogEntryModelSchema>) =>
     catalogItemFromCatalogEntry(
@@ -352,42 +352,51 @@ describe('the Recommended order the ranking line describes', () => {
       listing('older', { updated_at: 1_000 * day, condition: 'good' }),
       listing('newer', { updated_at: 1_010 * day, condition: 'good' }),
     ];
-    expect(ids(filterMarketplaceCatalog(items, filters({ sort: 'recommended' })))).toEqual(['newer', 'older']);
+    expect(ids(filterMarketplaceCatalog(items, filters({ sort: 'newest' })))).toEqual(['newer', 'older']);
   });
 
-  it('places new and excellent-condition items slightly higher, not above much newer ones', () => {
+  it('gives no placement to condition, sale type or ratings', () => {
     const base = 1_000 * day;
-    const items = [
-      listing('good_now', { updated_at: base + 100, condition: 'good' }),
-      listing('excellent_slightly_older', { updated_at: base, condition: 'excellent' }),
-      listing('new_much_older', { updated_at: base - 10 * day, condition: 'new' }),
-    ];
-    expect(ids(filterMarketplaceCatalog(items, filters({ sort: 'recommended' })))).toEqual([
-      'excellent_slightly_older',
-      'good_now',
-      'new_much_older',
-    ]);
-  });
-
-  it('does not use ratings: reputation does not move a listing', () => {
-    const base = 1_000 * day;
-    const plain = listing('plain', { updated_at: base + 1, condition: 'good' });
+    const plainNew = listing('plain_new', { updated_at: base + 3, condition: 'good' });
+    const excellentOlder = listing('excellent_older', { updated_at: base + 2, condition: 'excellent' });
+    const auctionOlder = auctionEntryItem('auction_older', '2026-09-30T00:00:00.000Z');
     const rated = {
-      ...listing('rated', { updated_at: base, condition: 'good' }),
+      ...listing('rated', { updated_at: base + 1, condition: 'good' }),
       reputation: { avg: 5, count: 99, verifiedCount: 99 },
     };
+    const items = [rated as MarketplaceCatalogItem, excellentOlder, { ...auctionOlder, updatedAt: base }, plainNew];
     expect(
-      ids(filterMarketplaceCatalog([rated as MarketplaceCatalogItem, plain], filters({ sort: 'recommended' }))),
-    ).toEqual(['plain', 'rated']);
+      ids(filterMarketplaceCatalog(items, filters({ sort: 'newest' }), Date.parse('2026-09-01T00:00:00.000Z'))),
+    ).toEqual(['plain_new', 'excellent_older', 'rated', 'auction_older']);
   });
 
-  it('mixes fixed-price listings, auctions and drops one in turn when all are shown', () => {
-    expect(interleaveInTurn([['f1', 'f2', 'f3'], ['a1', 'a2'], ['d1']])).toEqual(['f1', 'a1', 'd1', 'f2', 'a2', 'f3']);
-    expect(interleaveInTurn([[], ['a1'], ['d1', 'd2']])).toEqual(['a1', 'd1', 'd2']);
-    expect(interleaveInTurn([[], [], []])).toEqual([]);
+  it('is the default sort of the catalog filters', () => {
+    expect(filters().sort).toBe('newest');
   });
 
-  it('shows drops live first, then upcoming, then ended', () => {
+  it('places listings and drops together by date when all sale types are shown', () => {
+    const listings = [
+      { card: 'listing_new', at: 300 },
+      { card: 'listing_old', at: 100 },
+    ];
+    const drops = [
+      { card: 'drop_soon', at: 900, upcoming: true },
+      { card: 'drop_later', at: 950, upcoming: true },
+      { card: 'drop_live', at: 200, upcoming: false },
+      { card: 'drop_ended', at: 50, upcoming: false },
+    ];
+    expect(orderNewestFirst(listings, drops)).toEqual([
+      'drop_soon',
+      'drop_later',
+      'listing_new',
+      'drop_live',
+      'listing_old',
+      'drop_ended',
+    ]);
+    expect(orderNewestFirst([], [])).toEqual([]);
+  });
+
+  it('shows drops live first, then upcoming, then ended when only drops are shown', () => {
     expect(DROP_DISPLAY_BUCKET_ORDER).toEqual(['live', 'upcoming', 'ended']);
   });
 });
