@@ -48,7 +48,7 @@ import {
 import type { PaymentMethodKind } from '@/libs/commerce/payment-methods';
 import type { MarketplaceFulfillmentMethod } from '@/libs/commerce/pickup';
 import { pickupRefusalFailureMessage } from '@/libs/commerce/pickup';
-import { browserAddressCountry } from '@/libs/commerce/postal-address';
+import { browserAddressCountry, canonicalCountryCode } from '@/libs/commerce/postal-address';
 import { isDestinationAllowed } from '@/libs/commerce/ships-to';
 import {
   buildMarketplaceListingAggregateId,
@@ -729,7 +729,7 @@ export function useMarketplaceCheckout(
     // Placing an order to an address is the buyer's choice of country: remember it for the
     // listings and send it with this command (legal launch plan C2).
     if (requiresDeliveryAddress && (getEuFenceEnabled() || getDigitalRegionBlockEnabled())) {
-      CommerceController.setBuyerCountry(data.countryCode.toUpperCase());
+      CommerceController.setBuyerCountry(canonicalCountryCode(data.countryCode));
     }
     const response = await CommerceController.commitCreateMarketplaceCheckout({
       lines: checkoutLines,

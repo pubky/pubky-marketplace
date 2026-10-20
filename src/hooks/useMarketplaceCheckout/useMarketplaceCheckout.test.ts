@@ -265,6 +265,12 @@ describe('useMarketplaceCheckout', () => {
         await result.current.submit();
       });
       expect(CommerceController.setBuyerCountry).toHaveBeenCalledWith('US');
+
+      act(() => result.current.form.setValue('countryCode', 'uk'));
+      await act(async () => {
+        await result.current.submit();
+      });
+      expect(CommerceController.setBuyerCountry).toHaveBeenLastCalledWith('GB');
       expect(vi.mocked(CommerceController.setBuyerCountry).mock.invocationCallOrder[0]).toBeLessThan(
         vi.mocked(CommerceController.commitCreateMarketplaceCheckout).mock.invocationCallOrder[0] ?? 0,
       );
