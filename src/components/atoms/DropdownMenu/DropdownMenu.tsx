@@ -6,7 +6,44 @@ import { DropdownMenu as DropdownMenuPrimitive } from 'radix-ui';
 import { cn } from '@/libs/utils/utils';
 
 const DropdownMenu = DropdownMenuPrimitive.Root;
-const DropdownMenuTrigger = DropdownMenuPrimitive.Trigger;
+/**
+ * Radix opens a dropdown on `pointerdown`, so a scroll that starts on the trigger opens it. A touch or pen
+ * opens it on the completed tap (`click`) instead, as Radix Select already does; a mouse keeps `pointerdown`.
+ */
+const DropdownMenuTrigger = React.forwardRef<
+  React.ComponentRef<typeof DropdownMenuPrimitive.Trigger>,
+  React.ComponentPropsWithoutRef<typeof DropdownMenuPrimitive.Trigger>
+>(({ onPointerDown, onClick, ...props }, ref) => {
+  const tapPending = React.useRef(false);
+  const replaying = React.useRef(false);
+  return (
+    <DropdownMenuPrimitive.Trigger
+      ref={ref}
+      {...props}
+      onPointerDown={(event) => {
+        onPointerDown?.(event);
+        if (replaying.current) {
+          replaying.current = false;
+          return;
+        }
+        tapPending.current = event.pointerType === 'touch' || event.pointerType === 'pen';
+        // Skips Radix's own pointerdown handler.
+        if (tapPending.current) event.preventDefault();
+      }}
+      onClick={(event) => {
+        onClick?.(event);
+        if (!tapPending.current || event.defaultPrevented) return;
+        tapPending.current = false;
+        // Hand the completed tap to Radix as the press it opens on.
+        replaying.current = true;
+        event.currentTarget.dispatchEvent(
+          new MouseEvent('pointerdown', { bubbles: true, cancelable: true, button: 0 }),
+        );
+      }}
+    />
+  );
+});
+DropdownMenuTrigger.displayName = DropdownMenuPrimitive.Trigger.displayName;
 const DropdownMenuGroup = DropdownMenuPrimitive.Group;
 const DropdownMenuPortal = DropdownMenuPrimitive.Portal;
 const DropdownMenuSub = DropdownMenuPrimitive.Sub;

@@ -614,7 +614,12 @@ export function MarketplaceOrders() {
                               </Typography>
                             )}
                             {refundRecord && (
-                              <Typography as="p" className="mt-2 text-sm text-brand" data-testid="order-refund-record">
+                              <Typography
+                                as="p"
+                                // The line carries a full address and transaction hash; unbroken they widen the page.
+                                className="mt-2 text-sm [overflow-wrap:anywhere] text-brand"
+                                data-testid="order-refund-record"
+                              >
                                 {/* Only ever externally evidenced: Paykit Server cannot spend, so
                               the app records the seller's transaction evidence and never
                               claims it moved funds itself. */}

@@ -378,6 +378,8 @@ describe('MarketplaceOrders tabs', () => {
     expect(screen.getByTestId('order-refund-record')).toHaveTextContent(
       'Refunded in full (Items ₿1,000 · Shipping ₿0 · Payment code ₿255 = Total ₿1,255). Reference: txid-canary-refund',
     );
+    // Hashes and addresses break anywhere, so the line can't make the page scroll sideways on a phone.
+    expect(screen.getByTestId('order-refund-record')).toHaveClass('[overflow-wrap:anywhere]');
   });
 
   it('explains a cancelled PayPal reversal on the reopened order', () => {
