@@ -39,7 +39,7 @@ import type { MarketplaceOrder } from '@/services/marketplace/marketplace';
 
 // Paykit cannot withdraw a request Bitkit already shows, so it stays payable after the cancel.
 const PAYKIT_CANCEL_UNPAID_REQUEST_COPY =
-  "The payment request may stay in Bitkit after you cancel. Don't pay it: a late payment needs a refund from the seller.";
+  "The payment request may stay in Bitkit after you cancel. Don't pay it: a late payment still buys the item if it's available, otherwise the seller must refund it.";
 
 export function MarketplaceOrderActions({
   order,
