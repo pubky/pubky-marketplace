@@ -1948,8 +1948,8 @@ export class CommerceApplication {
     return LocksGatewayService.buildPaykitSetupUrl(returnTo, state, creator);
   }
 
-  static getPaykitReconnectUrl(returnTo: string, state: string, creator: string) {
-    return LocksGatewayService.buildPaykitReconnectUrl(returnTo, state, creator);
+  static getPaykitReconnectUrl(returnTo: string, state: string, creator: string, asset?: 'USDT') {
+    return LocksGatewayService.buildPaykitReconnectUrl(returnTo, state, creator, asset);
   }
 
   /**

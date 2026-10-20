@@ -302,7 +302,12 @@ export function MarketplaceGetPaidSettings({ onSaved }: MarketplaceGetPaidSettin
     const url =
       mode === 'setup'
         ? CommerceController.getPaykitSetupUrl(window.location.href, state, currentUserPubky)
-        : CommerceController.getPaykitReconnectUrl(window.location.href, state, currentUserPubky);
+        : CommerceController.getPaykitReconnectUrl(
+            window.location.href,
+            state,
+            currentUserPubky,
+            mode === 'reconnect' ? 'USDT' : undefined,
+          );
     paykitSetupGenerationRef.current = state;
     setPaykitSetupMode(mode);
     setPaykitSetupState(state);

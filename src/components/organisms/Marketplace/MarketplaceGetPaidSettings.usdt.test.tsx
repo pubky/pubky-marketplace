@@ -450,6 +450,12 @@ describe('MarketplaceGetPaidSettings USDT', () => {
       const iframe = await openReconnect();
 
       expect(mocked.getPaykitReconnectUrl).toHaveBeenCalledTimes(1);
+      expect(mocked.getPaykitReconnectUrl).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.any(String),
+        expect.any(String),
+        'USDT',
+      );
       expect(mocked.getPaykitSetupUrl).not.toHaveBeenCalled();
       expect(iframe).not.toHaveAttribute('scrolling', 'no');
       expect(iframe).toHaveClass('h-48', 'w-full');
