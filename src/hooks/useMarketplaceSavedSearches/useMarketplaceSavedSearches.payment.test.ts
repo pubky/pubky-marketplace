@@ -103,7 +103,7 @@ describe('useMarketplaceSavedSearches with a payment method', () => {
     expect(controller.fetchPaymentMethodCatalog).toHaveBeenCalledWith('paypal', {
       saleFormat: 'all',
       conditions: [],
-      sort: 'recommended',
+      sort: 'newest',
     });
   });
 

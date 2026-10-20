@@ -17,7 +17,7 @@ vi.mock('@/config/commerce', async (importOriginal) => {
 });
 
 const fetchCatalog = vi.mocked(CommerceController.fetchPaymentMethodCatalog);
-const FILTERS = { saleFormat: 'all' as const, conditions: [], sort: 'recommended' as const, countryCode: null };
+const FILTERS = { saleFormat: 'all' as const, conditions: [], sort: 'newest' as const, countryCode: null };
 const SELLER = 'a'.repeat(52);
 
 beforeEach(() => {

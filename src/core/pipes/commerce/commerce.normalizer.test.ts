@@ -25,10 +25,24 @@ describe('CommerceRecordNormalizer', () => {
       conditions: [],
       minimumPriceMinor: null,
       maximumPriceMinor: null,
-      sort: 'recommended',
+      sort: 'newest',
     };
 
     expect(CommerceRecordNormalizer.savedSearchParams(existing)).toEqual(existing);
+  });
+
+  it('reads a saved search that used the removed Recommended sort as Newest', () => {
+    const legacy = {
+      query: '',
+      categoryId: null,
+      saleFormat: 'all',
+      conditions: [],
+      minimumPriceMinor: null,
+      maximumPriceMinor: null,
+      sort: 'recommended',
+    };
+
+    expect(CommerceRecordNormalizer.savedSearchParams(legacy)).toEqual({ ...legacy, sort: 'newest' });
   });
 
   it('returns structured validation issues without copying the rejected payload', () => {

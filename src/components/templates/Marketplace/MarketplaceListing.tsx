@@ -692,7 +692,7 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
                     avatarAlt={`${shop?.record.name ?? 'Shop'} avatar`}
                     reputation={sellerReputation}
                   />
-                  <div className="mt-2 grid gap-2">
+                  <div className="mt-2 flex items-center gap-2">
                     <SellerStatusBadge declaration={declaration} />
                     <SellerSaleTerms declaration={declaration} />
                   </div>

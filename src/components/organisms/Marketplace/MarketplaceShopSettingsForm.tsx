@@ -26,6 +26,7 @@ import { SELLER_STATUS_COPY } from '@/libs/commerce/eu-region';
 import { formatShipsToCountries, parseShipsToField, shipsToFieldError } from '@/libs/commerce/ships-to';
 import { ControlledInputField } from '@/molecules/ControlledInputField/ControlledInputField';
 import { ControlledTextareaField } from '@/molecules/ControlledTextareaField/ControlledTextareaField';
+import { InfoHint } from '@/molecules/InfoHint/InfoHint';
 import { SellerAnnualLimitNotice } from '@/molecules/Marketplace/SellerAnnualLimitNotice';
 import { SettingsSectionContent } from '@/molecules/Settings/SettingsSectionContent/SettingsSectionContent';
 import { useAuthStore } from '@/stores/auth/auth.store';
@@ -243,7 +244,14 @@ function MarketplaceShopSettingsLoaded({ settings, onSaved }: MarketplaceShopSet
             render={({ field }) => (
               <div data-testid="shop-settings-confirm-bitcoin">
                 <Label className="justify-between">
-                  I confirm my own Bitcoin payments
+                  <span className="flex items-center gap-1.5">
+                    I confirm my own Bitcoin payments
+                    <InfoHint label="About confirming Bitcoin payments">
+                      You confirm each Paykit Bitcoin payment from the order once it reaches your wallet, and digital
+                      items are released only after you do. If you don’t confirm within 24 hours, the payment goes to
+                      review. This applies to new orders only, and orders paid through Locks aren’t held.
+                    </InfoHint>
+                  </span>
                   <Switch
                     checked={field.value}
                     onCheckedChange={field.onChange}
@@ -252,10 +260,7 @@ function MarketplaceShopSettingsLoaded({ settings, onSaved }: MarketplaceShopSet
                   />
                 </Label>
                 <Typography as="p" className="mt-1 text-sm text-muted-foreground">
-                  When on, a Bitcoin payment made through Paykit is not marked paid automatically: you confirm each one
-                  from the order once it reaches your wallet, and digital items are released only after you do. If you
-                  do not confirm within 24 hours, the payment goes to review. This applies to new orders only. Orders
-                  paid through Locks are not held. Off by default.
+                  A Bitcoin payment isn’t marked paid until you confirm it. Off by default.
                 </Typography>
               </div>
             )}

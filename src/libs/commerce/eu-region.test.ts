@@ -7,7 +7,6 @@ import {
   fenceRefusal,
   isDigitalHeldCountry,
   isEuCountry,
-  RANKING_LINE,
   SELLER_LIMIT_MESSAGE,
   sellerDeclaration,
   sellerUnavailableToEuBuyers,
@@ -102,19 +101,5 @@ describe('marketplaceRegionRefusalMessage', () => {
       marketplaceRegionRefusalMessage({ code: 'DIGITAL_UNAVAILABLE_IN_REGION', reason: 'buyer_region_unknown' }),
     ).toMatch(/couldn’t confirm where you’re connecting from/);
     expect(marketplaceRegionRefusalMessage({ code: 'LISTING_NOT_ACTIVE' })).toBeNull();
-  });
-});
-
-describe('RANKING_LINE', () => {
-  it('describes the Recommended order the page applies (see useMarketplaceCatalog.utils tests)', () => {
-    expect(RANKING_LINE).toContain('mixes fixed-price listings, auctions and drops in turn');
-    expect(RANKING_LINE).toContain('ordered by when they were last updated');
-    expect(RANKING_LINE).toContain('new or excellent-condition items placed slightly higher');
-    expect(RANKING_LINE).toContain('drops are ordered live first, then upcoming, then ended');
-    expect(RANKING_LINE).toContain('No placement is paid for, and ratings don’t affect order.');
-  });
-
-  it('no longer claims that auctions are placed higher', () => {
-    expect(RANKING_LINE).not.toMatch(/auctions and new or excellent/);
   });
 });

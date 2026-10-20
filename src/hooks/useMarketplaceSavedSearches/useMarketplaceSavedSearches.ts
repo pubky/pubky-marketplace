@@ -42,7 +42,7 @@ async function readPaymentSellerSets(
         const sellers = await CommerceController.fetchPaymentMethodCatalog(method, {
           saleFormat: 'all',
           conditions: [],
-          sort: 'recommended',
+          sort: 'newest',
         });
         sets.set(method, new Set(sellers));
       } catch (error) {

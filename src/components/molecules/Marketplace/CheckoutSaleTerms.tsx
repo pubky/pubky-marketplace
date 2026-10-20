@@ -10,7 +10,7 @@ function NamedPrivateSellerNotice({ sellerPubky }: { sellerPubky: string }) {
 }
 
 /**
- * The consumer-law lines for a checkout (legal launch plan C5): the private-seller notice for each
+ * The consumer-law lines for a checkout (legal launch plan C5), kept in view next to Pay: the private-seller notice for each
  * seller in the cart who declared they sell privately, named when the cart has more than one seller
  * so the buyer can tell whose purchase it covers, and the role statement once.
  */

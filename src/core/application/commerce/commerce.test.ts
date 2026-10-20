@@ -3879,7 +3879,7 @@ describe('CommerceApplication', () => {
       await CommerceController.fetchCatalogListings({
         saleFormat: 'all',
         conditions: [],
-        sort: 'recommended',
+        sort: 'newest',
         countryCode: null,
       });
 

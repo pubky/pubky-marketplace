@@ -289,7 +289,10 @@ const commerceSavedSearchParamsSchema: z.ZodType<CommerceSavedSearchParams> = z.
   conditions: z.array(z.enum(['new', 'like_new', 'excellent', 'good', 'fair', 'for_parts'])).max(6),
   minimumPriceMinor: z.number().int().nonnegative().nullable(),
   maximumPriceMinor: z.number().int().nonnegative().nullable(),
-  sort: z.enum(['recommended', 'newest', 'price_low', 'price_high', 'ending_soon']),
+  sort: z.preprocess(
+    (value) => (value === 'recommended' ? 'newest' : value),
+    z.enum(['newest', 'price_low', 'price_high', 'ending_soon']),
+  ),
 });
 
 export class CommerceRecordNormalizer {

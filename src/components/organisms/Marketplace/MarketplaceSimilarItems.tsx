@@ -13,7 +13,7 @@ const SIMILAR_ITEM_FILTERS: MarketplaceCatalogFilters = {
   minimumPriceMinor: null,
   maximumPriceMinor: null,
   countryCode: null,
-  sort: 'recommended',
+  sort: 'newest',
 };
 
 export function MarketplaceSimilarItems({

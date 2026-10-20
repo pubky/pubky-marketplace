@@ -93,15 +93,32 @@ export function digitalHoldRefusal(buyerCountry: string | null): string | null {
   return isDigitalHeldCountry(buyerCountry) ? DIGITAL_REGION_MESSAGE : null;
 }
 
-/** The consumer-law lines of legal launch plan C5 (CRD 6a, UCPD 7(4a) and 7(6)). */
+/**
+ * The consumer-law lines of legal launch plan C5 (CRD 6a, UCPD 7(6)). At checkout they stay in
+ * view, next to Pay; on the listing and in reviews they sit behind a small info icon.
+ */
 export const PRIVATE_SELLER_NOTICE =
-  'Sold by a private individual. EU consumer rights that apply to purchases from businesses, such as the 14-day right of withdrawal, don’t apply to this purchase.';
-export const ROLE_STATEMENT =
-  'Sales are between you and the seller. Synonym provides the software, is not a party to the sale and has no role in disputes.';
-export const RANKING_LINE =
-  'With all sale types shown, Recommended mixes fixed-price listings, auctions and drops in turn. Listings are ordered by when they were last updated, with new or excellent-condition items placed slightly higher; drops are ordered live first, then upcoming, then ended. You can also sort by newest, price or ending soonest. No placement is paid for, and ratings don’t affect order.';
-export const VERIFIED_PURCHASE_LINE =
-  'Verified purchase: the reviewer’s order with this seller was delivered or completed, as attested by the transaction service. Other reviews are labelled unverified.';
+  'This seller is a private individual. EU consumer rights for buying from a business, like the 14-day right to cancel, don’t apply.';
+export function namedPrivateSellerNotice(sellerName: string): string {
+  return `${sellerName} is a private individual. EU consumer rights for buying from a business, like the 14-day right to cancel, don’t apply.`;
+}
+export const ROLE_STATEMENT = 'You buy from the seller. Synonym isn’t a party to the sale and has no role in disputes.';
+
+export const SALE_INFO_LABEL = 'About this sale';
+export const SALE_INFO_ROLE =
+  'You buy from the seller, not Synonym. Synonym provides the software, isn’t a party to the sale and has no role in disputes.';
+export const SALE_INFO_PRIVATE =
+  'This seller is a private individual, so EU consumer rights for buying from a business, like the 14-day right to cancel, don’t apply.';
+
+export const VERIFIED_PURCHASE_INFO_LABEL = 'About verified purchases';
+export const VERIFIED_PURCHASE_INFO =
+  'A verified purchase means the reviewer’s order with this seller was delivered or completed, as confirmed by the transaction service. Other reviews are marked unverified.';
+
+export const BUYER_COUNTRY_INFO_LABEL = 'Why we ask for your country';
+export const BUYER_COUNTRY_INFO =
+  'We ask once and remember it on this device. It is sent with your order so the rules for your country can be applied. Your delivery address stays private to the seller.';
+export const BUYER_COUNTRY_DIGITAL_INFO =
+  'Digital items can’t be sold to buyers in the EU or UK yet, so we check your country first. We remember it on this device and send it with your order.';
 
 export const SELLER_STATUS_COPY = {
   private: {
