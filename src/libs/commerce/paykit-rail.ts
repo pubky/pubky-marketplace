@@ -142,9 +142,13 @@ export function paykitPickerLabel(assets: readonly PaymentAsset[]): { assets: st
   return { assets: paykitAssetsLabel(assets.length > 0 ? assets : ['BTC']), wallet: 'via Bitkit' };
 }
 
-/** The checkout submit button says where the buyer goes next, per selected rail. */
+/**
+ * The checkout submit button says what happens next, per selected rail. Paykit
+ * sends the request without opening Bitkit until Bitkit ships a link to its
+ * payment requests (issue #357).
+ */
 export const CHECKOUT_SUBMIT_LABEL: Record<'paykit' | 'paypal', string> = {
-  paykit: 'Continue to Bitkit',
+  paykit: 'Send request to Bitkit',
   paypal: 'Continue to PayPal',
 };
 

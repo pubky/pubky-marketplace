@@ -2132,7 +2132,7 @@ describe('MarketplaceCheckout Paykit option (Bitcoin or USDT)', () => {
 
     const paykit = await screen.findByTestId('marketplace-checkout-method-paykit');
     const pay = screen.getByTestId('marketplace-checkout-pay');
-    expect(pay).toHaveTextContent(/^Continue to Bitkit$/);
+    expect(pay).toHaveTextContent(/^Send request to Bitkit$/);
     expect(paykit.textContent).not.toBe(pay.textContent);
 
     await user.click(screen.getByTestId('marketplace-checkout-method-paypal'));
