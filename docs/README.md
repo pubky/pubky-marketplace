@@ -1,6 +1,6 @@
 # Documentation
 
-Project documents for the Pubky Marketplace come first; the Shop client's standards, conventions and architectural decisions follow under [Client standards and architecture](#client-standards-and-architecture).
+Project documents for the Pubky Market come first; the Shop client's standards, conventions and architectural decisions follow under [Client standards and architecture](#client-standards-and-architecture).
 
 ## Shop launch
 

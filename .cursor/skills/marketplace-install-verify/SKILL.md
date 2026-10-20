@@ -1,7 +1,7 @@
 ---
 name: marketplace-install-verify
 description: >-
-  Verifies a fresh Pubky Marketplace installation end to end (Shop, marketplace service, Paykit
+  Verifies a fresh Pubky Market installation end to end (Shop, marketplace service, Paykit
   server, Locks server, marketplace Nexus, fiat verifier): health, TLS, CORS, Shop runtime config,
   service-to-Paykit-to-Locks wiring, trusted keys, allowed origins, version parity, applied
   migrations, single-instance Paykit, plus opt-in Nexus write, Chromium and staging-only deep

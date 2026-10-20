@@ -5,8 +5,8 @@ export { MarketplaceNotifications as default } from '@/templates/Marketplace/Mar
 
 export function generateMetadata() {
   return gatedMarketplaceMetadata(
-    'Notifications | Pubky Marketplace',
-    'Your Pubky Marketplace notifications.',
+    'Notifications | Pubky Market',
+    'Your Pubky Market notifications.',
     MARKETPLACE_ROUTES.NOTIFICATIONS,
   );
 }

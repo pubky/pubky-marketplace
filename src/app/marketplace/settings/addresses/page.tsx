@@ -5,7 +5,7 @@ export { MarketplaceAddressSettings as default } from '@/templates/Marketplace/M
 
 export function generateMetadata() {
   return gatedMarketplaceMetadata(
-    'Delivery addresses | Pubky Marketplace',
+    'Delivery addresses | Pubky Market',
     'Manage the delivery addresses saved privately on this device.',
     MARKETPLACE_ROUTES.SETTINGS_ADDRESSES,
   );

@@ -1,6 +1,6 @@
 # Sentry (Observability)
 
-How errors and performance data flow into Sentry from Pubky Marketplace (Shop).
+How errors and performance data flow into Sentry from Pubky Market (Shop).
 
 The Shop already includes the Sentry Next.js SDK and browser, Node and Edge initialization.
 Use the existing **`synonym-52 / pubky-marketplace`** project; do not run the setup wizard or add a

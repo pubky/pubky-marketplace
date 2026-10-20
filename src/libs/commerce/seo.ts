@@ -14,7 +14,7 @@ import type { CommerceListingRecord, CommerceShopRecord } from './marketplace-re
 /** Grapheme cap for meta descriptions (~160 chars is the SERP/unfurl sweet spot). */
 export const SEO_DESCRIPTION_MAX_GRAPHEMES = 160;
 
-const MARKETPLACE_SITE_LABEL = 'Pubky Marketplace';
+const MARKETPLACE_SITE_LABEL = 'Pubky Market';
 
 /**
  * Honest price label for a listing: the fixed price, or the auction's starting
@@ -47,7 +47,7 @@ export function listingStateNotice(listing: CommerceListingRecord, nowMs: number
   }
 }
 
-/** `«title» — «price» | Pubky Marketplace` (title/price straight from the record). */
+/** `«title» — «price» | Pubky Market` (title/price straight from the record). */
 export function buildListingTitle(listing: CommerceListingRecord): string {
   return `${listing.title} — ${listingPriceLabel(listing)} | ${MARKETPLACE_SITE_LABEL}`;
 }
@@ -79,7 +79,7 @@ export function listingConditionLabel(listing: CommerceListingRecord): string {
   return formatCommerceCondition(listing.condition);
 }
 
-/** `«shop name» — Shop | Pubky Marketplace`. */
+/** `«shop name» — Shop | Pubky Market`. */
 export function buildShopTitle(shop: CommerceShopRecord): string {
   return `${shop.name} — Shop | ${MARKETPLACE_SITE_LABEL}`;
 }
@@ -102,7 +102,7 @@ export function buildShopDescription(shop: CommerceShopRecord): string {
  * (`messaging-contracts.ts`).
  */
 export const MARKETPLACE_STATIC_SEO = {
-  title: 'Pubky Marketplace',
+  title: 'Pubky Market',
   description:
     'Buy and sell on Pubky: listings and shops published to seller-owned homeservers, fixed prices and auctions, with encrypted buyer-seller messaging.',
 } as const;

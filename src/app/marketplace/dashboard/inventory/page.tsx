@@ -5,8 +5,8 @@ export { MarketplaceInventory as default } from '@/templates/Marketplace/Marketp
 
 export function generateMetadata() {
   return gatedMarketplaceMetadata(
-    'Inventory | Pubky Marketplace',
-    'View and set listing stock on Pubky Marketplace.',
+    'Inventory | Pubky Market',
+    'View and set listing stock on Pubky Market.',
     MARKETPLACE_ROUTES.INVENTORY,
   );
 }

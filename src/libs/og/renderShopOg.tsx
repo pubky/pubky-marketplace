@@ -89,7 +89,7 @@ export async function renderShopOg({ sellerPubky }: { sellerPubky: string }): Pr
                 color: OG_TOKENS.mutedForeground,
               }}
             >
-              SHOP ON PUBKY MARKETPLACE
+              SHOP ON PUBKY MARKET
             </div>
             <div
               style={{

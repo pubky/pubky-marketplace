@@ -5,7 +5,7 @@ export { MarketplaceShippingSettings as default } from '@/templates/Marketplace/
 
 export function generateMetadata() {
   return gatedMarketplaceMetadata(
-    'Shipping presets | Pubky Marketplace',
+    'Shipping presets | Pubky Market',
     'Manage the reusable shipping option templates saved on this device.',
     MARKETPLACE_ROUTES.SETTINGS_SHIPPING,
   );

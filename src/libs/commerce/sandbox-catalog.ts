@@ -202,7 +202,7 @@ export function createCommerceSandboxCatalog(): CommerceSandboxCatalog {
       createdAt: '2026-08-19T20:00:00.000Z',
       updatedAt: `2026-08-19T21:${index.toString().padStart(2, '0')}:00.000Z`,
       name: shopName,
-      bio: 'Independent seller on the Pubky marketplace.',
+      bio: 'Independent seller on the Pubky Market.',
       location: { countryCode: 'US' },
       shippingPolicy: 'Ships within three business days.',
       returnPolicy: 'Returns accepted within 30 days.',

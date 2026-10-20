@@ -5,8 +5,8 @@ export { MarketplaceInventoryAutomations as default } from '@/templates/Marketpl
 
 export function generateMetadata() {
   return gatedMarketplaceMetadata(
-    'Automations | Pubky Marketplace',
-    'Manage shop sessions and webhook endpoints on Pubky Marketplace.',
+    'Automations | Pubky Market',
+    'Manage shop sessions and webhook endpoints on Pubky Market.',
     MARKETPLACE_ROUTES.INVENTORY_AUTOMATIONS,
   );
 }

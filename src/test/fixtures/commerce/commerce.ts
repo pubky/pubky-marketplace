@@ -320,7 +320,7 @@ export function createCommerceSandboxCatalogFixture(): CommerceSandboxCatalogFix
     createCommerceShopFixture({
       ownerPubky: seller,
       name: shopName,
-      bio: 'Independent seller on the Pubky marketplace.',
+      bio: 'Independent seller on the Pubky Market.',
       updatedAt: `2026-08-19T21:${index.toString().padStart(2, '0')}:00.000Z`,
     }),
   );

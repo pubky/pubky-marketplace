@@ -1,4 +1,4 @@
-# Pubky Marketplace — Project Summary
+# Pubky Market — Project Summary
 
 > **Snapshot from 2026-08-22.** The proof state below is that day's. The Shop now lives in `pubky/pubky-marketplace` (`master`, current release `shop-v0.6.51`), production runs mainnet Bitcoin through Paykit and seller-direct PayPal, and digital delivery is live. Current facts are in [`docs/ecommerce/status.md`](docs/ecommerce/status.md); the links below that point at `BitcoinErrorLog/pubky-app` are to the frozen fork.
 
