@@ -157,7 +157,7 @@ describe('MarketplacePaymentStatusCard — one Paykit order before payment', () 
     expect(screen.queryByTestId('paykit-awaiting-status')).not.toBeInTheDocument();
   });
 
-  it('puts the checkout action next to the unconfirmed-delivery copy only', () => {
+  it('puts the checkout action next to the unconfirmed-delivery copy, else under the awaiting status', () => {
     const failed = createPaykitOrderFixture('unpaid', { paykitDeliveryState: 'failed' });
     const { unmount } = render(
       <MarketplacePaymentStatusCard
@@ -187,17 +187,18 @@ describe('MarketplacePaymentStatusCard — one Paykit order before payment', () 
         checkoutActions={<button type="button">Cancel checkout</button>}
       />,
     );
-    expect(screen.queryByRole('button', { name: 'Cancel checkout' })).not.toBeInTheDocument();
+    expect(screen.getByTestId('paykit-awaiting-status')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Cancel checkout' })).toBeInTheDocument();
   });
 
   it.each([
-    ['pending', 'pending', true],
-    ['pending', null, true],
-    ['pending', 'failed', false],
-    ['awaiting_seller_confirmation', 'failed', true],
+    ['pending', 'pending', true, true],
+    ['pending', null, true, true],
+    ['pending', 'failed', false, false],
+    ['awaiting_seller_confirmation', 'failed', true, false],
   ] as const)(
-    'offers no checkout action for a request %s whose delivery reads %s (buyer: %s), even when one is passed',
-    (paykitRequestState, paykitDeliveryState, isBuyer) => {
+    'for a request %s whose delivery reads %s (buyer: %s), renders the passed checkout action: %s',
+    (paykitRequestState, paykitDeliveryState, isBuyer, shown) => {
       const { order, payment } = createPaykitOrderFixture('unpaid', { paykitRequestState, paykitDeliveryState });
       render(
         <MarketplacePaymentStatusCard
@@ -211,7 +212,7 @@ describe('MarketplacePaymentStatusCard — one Paykit order before payment', () 
         />,
       );
 
-      expect(screen.queryByRole('button', { name: 'Cancel checkout' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Cancel checkout' }) !== null).toBe(shown);
     },
   );
 

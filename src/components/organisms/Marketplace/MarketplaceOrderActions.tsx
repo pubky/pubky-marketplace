@@ -19,7 +19,7 @@ import { orderAmountEntry } from '@/libs/commerce/bitcoin-payment-code';
 import { OTHER_CARRIER_ID, SHIPPING_CARRIERS } from '@/libs/commerce/carriers';
 import { DIGITAL_ORDER_COPY, DIGITAL_SELLER_COPY, isInstantDigitalDeliveryKind } from '@/libs/commerce/digital';
 import { formatCommerceMoney } from '@/libs/commerce/format';
-import { observedPaymentRail } from '@/libs/commerce/paykit-rail';
+import { isPaykitOrder, observedPaymentRail } from '@/libs/commerce/paykit-rail';
 import { formatUsdt } from '@/libs/commerce/payment-options';
 import { formatBitcoinAmount } from '@/libs/commerce/pricing';
 import { isUsdtFulfilmentBlocked, PAYMENT_NOT_FINAL_COPY } from '@/libs/commerce/usdt-buyer-status';
@@ -36,6 +36,10 @@ import { MarketplacePickupRevealDialog } from '@/organisms/Marketplace/Marketpla
 import { MarketplaceShippingLabelDialog } from '@/organisms/Marketplace/MarketplaceShippingLabelDialog';
 import { MarketplaceTrackingDialog } from '@/organisms/Marketplace/MarketplaceTrackingDialog';
 import type { MarketplaceOrder } from '@/services/marketplace/marketplace';
+
+// Paykit cannot withdraw a request Bitkit already shows, so it stays payable after the cancel.
+const PAYKIT_CANCEL_UNPAID_REQUEST_COPY =
+  "The payment request may stay in Bitkit after you cancel. Don't pay it: a late payment needs a refund from the seller.";
 
 export function MarketplaceOrderActions({
   order,
@@ -431,6 +435,11 @@ export function MarketplaceOrderActions({
             <Typography as="p" className="text-sm text-muted-foreground">
               Cancelling moves no money. If you already paid, the refund is arranged with the seller and recorded as
               external evidence. Cancellation requests may need seller approval before the order is cancelled.
+            </Typography>
+          )}
+          {actionType === 'cancel' && order.state === 'pending_payment' && isPaykitOrder(order) && (
+            <Typography as="p" className="text-sm text-muted-foreground" data-testid="paykit-cancel-unpaid-request">
+              {PAYKIT_CANCEL_UNPAID_REQUEST_COPY}
             </Typography>
           )}
           {['cancel', 'return'].includes(actionType) && (

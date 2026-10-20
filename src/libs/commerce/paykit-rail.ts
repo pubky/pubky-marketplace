@@ -57,8 +57,8 @@ export function mayPayInBitcoin(order: RailOrder): boolean {
   return observedPaymentRail(order) === 'bitcoin' || isUnobservedPaykitOrder(order);
 }
 
-/** Request states that mean the service has already seen a Bitcoin payment. */
-const BITCOIN_SEEN_REQUEST_STATES = new Set(['detected', 'awaiting_seller_confirmation', 'confirmed']);
+/** Request states that mean the service has already seen a payment. */
+const SEEN_REQUEST_STATES = new Set(['detected', 'awaiting_seller_confirmation', 'confirmed']);
 
 /**
  * Bitcoin is paid through a seller-confirmation window, so the service sees the
@@ -71,7 +71,17 @@ export function followsBitcoinFlow(order: RailOrder & { paykitRequestState?: str
   return (
     order.paymentMethod === PAYKIT_PAYMENT_METHOD &&
     order.paykitRequestState != null &&
-    BITCOIN_SEEN_REQUEST_STATES.has(order.paykitRequestState)
+    SEEN_REQUEST_STATES.has(order.paykitRequestState)
+  );
+}
+
+/**
+ * A bound Paykit checkout the buyer can still cancel: the service refuses the
+ * cancel once it has seen money on the request, on either rail.
+ */
+export function paykitCheckoutCancellable(order: RailOrder & { paykitRequestState?: string | null }): boolean {
+  return (
+    isPaykitOrder(order) && (order.paykitRequestState == null || !SEEN_REQUEST_STATES.has(order.paykitRequestState))
   );
 }
 

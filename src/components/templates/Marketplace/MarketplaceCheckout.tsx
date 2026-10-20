@@ -65,6 +65,7 @@ import {
   CHECKOUT_SUBMIT_LABEL,
   observedPaymentRail,
   orderMayPayInUsdt,
+  paykitCheckoutCancellable,
   paykitPickerLabel,
   paykitRequirementCopy,
   sharedPaykitAssets,
@@ -759,7 +760,9 @@ function MarketplaceCartCheckout() {
                         showStatusLabels={false}
                         checkoutActions={
                           order.state === 'pending_payment' &&
-                          (order.paymentMethod === 'paypal' || order.paykitDeliveryState === 'failed') ? (
+                          (order.paymentMethod === 'paypal' ||
+                            order.paykitDeliveryState === 'failed' ||
+                            paykitCheckoutCancellable(order)) ? (
                             <MarketplaceOrderActions
                               order={order}
                               isBuyer

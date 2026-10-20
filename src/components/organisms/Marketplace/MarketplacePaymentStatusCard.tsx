@@ -1068,6 +1068,7 @@ function BuyerBitcoinPaymentProgress({
             : `${progress.text}${paymentDeadline ? ` Pay by ${paymentDeadline}.` : ''}`}
         </div>
       )}
+      {order.paykitDeliveryState !== 'failed' && checkoutActions}
       {!requestSent && order.paykitDeliveryState !== 'failed' && (
         <Typography as="p" className="text-xs text-muted-foreground" data-testid="bitcoin-wallet-contact-hint">
           {BITCOIN_WALLET_CONTACT_COPY}
@@ -1122,6 +1123,7 @@ function BuyerPaykitPaymentProgress({
           </Typography>
         </div>
       )}
+      {order.paykitDeliveryState !== 'failed' && checkoutActions}
       {offersUsdt && (
         <Typography as="p" className="text-xs text-muted-foreground" data-testid="paykit-usdt-wallet-hint">
           {USDT_WALLET_HINT} {USDT_FUNDS_HINT}
@@ -1166,6 +1168,7 @@ function BuyerUsdtPaymentProgress({
           {USDT_BUYER_PHASE_COPY.awaiting}
         </div>
       )}
+      {order.paykitDeliveryState !== 'failed' && checkoutActions}
       <Typography as="p" className="text-xs text-muted-foreground" data-testid="usdt-wallet-hint">
         {USDT_WALLET_HINT} {USDT_FUNDS_HINT}
       </Typography>

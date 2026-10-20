@@ -1606,7 +1606,7 @@ describe('MarketplacePaymentStatusCard', () => {
     expect(screen.queryByTestId('paykit-delivery-status')).not.toBeInTheDocument();
   });
 
-  it('puts the checkout action right next to the unconfirmed-delivery copy, and only there', () => {
+  it('puts the checkout action right next to the unconfirmed-delivery copy, else under the request status', () => {
     const renderBound = (paykitDeliveryState: string) =>
       render(
         <MarketplacePaymentStatusCard
@@ -1634,7 +1634,8 @@ describe('MarketplacePaymentStatusCard', () => {
 
     for (const state of ['pending', 'delivered']) {
       const { unmount: next } = renderBound(state);
-      expect(screen.queryByRole('button', { name: 'Cancel checkout' })).not.toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Cancel checkout' })).toBeInTheDocument();
+      expect(screen.queryByTestId('paykit-delivery-failed')).not.toBeInTheDocument();
       next();
     }
   });

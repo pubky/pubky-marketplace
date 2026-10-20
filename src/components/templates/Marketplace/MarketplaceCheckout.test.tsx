@@ -1242,31 +1242,37 @@ describe('MarketplaceCheckout', () => {
     });
 
     it.each([
-      ['bitcoin', 'failed', 'pending_payment', true],
-      ['usdt', 'failed', 'pending_payment', true],
-      ['paykit', 'failed', 'pending_payment', true],
-      ['paypal', null, 'pending_payment', true],
-      ['paykit', 'delivered', 'pending_payment', false],
-      ['paykit', 'pending', 'pending_payment', false],
-      ['paykit', null, 'pending_payment', false],
-      ['paykit', 'failed', 'cancelled', false],
-      ['bitcoin', 'delivered', 'pending_payment', false],
-      ['bitcoin', 'pending', 'pending_payment', false],
-      ['bitcoin', null, 'pending_payment', false],
-      ['usdt', 'pending', 'pending_payment', false],
-      ['usdt', null, 'pending_payment', false],
-      ['usdt', 'delivered', 'pending_payment', false],
-      ['bitcoin', 'failed', 'paid', false],
-      ['bitcoin', 'failed', 'cancelled', false],
-      ['usdt', 'failed', 'cancelled', false],
+      ['bitcoin', 'failed', null, 'pending_payment', true],
+      ['usdt', 'failed', null, 'pending_payment', true],
+      ['paykit', 'failed', null, 'pending_payment', true],
+      ['paypal', null, null, 'pending_payment', true],
+      ['paykit', 'delivered', 'pending', 'pending_payment', true],
+      ['paykit', 'pending', 'preparing', 'pending_payment', true],
+      ['paykit', null, null, 'pending_payment', true],
+      ['bitcoin', 'delivered', 'pending', 'pending_payment', true],
+      ['bitcoin', 'pending', null, 'pending_payment', true],
+      ['bitcoin', null, null, 'pending_payment', true],
+      ['usdt', 'pending', null, 'pending_payment', true],
+      ['usdt', null, null, 'pending_payment', true],
+      ['usdt', 'delivered', 'pending', 'pending_payment', true],
+      // The service refuses a cancel once it has seen money on the request.
+      ['paykit', 'delivered', 'detected', 'pending_payment', false],
+      ['bitcoin', 'delivered', 'detected', 'pending_payment', false],
+      ['bitcoin', 'delivered', 'awaiting_seller_confirmation', 'pending_payment', false],
+      ['usdt', 'delivered', 'detected', 'pending_payment', false],
+      ['paykit', 'failed', null, 'cancelled', false],
+      ['bitcoin', 'failed', null, 'paid', false],
+      ['bitcoin', 'failed', null, 'cancelled', false],
+      ['usdt', 'failed', null, 'cancelled', false],
     ] as const)(
-      'offers cancelling a %s checkout whose delivery reads %s and order is %s beside the card: %s',
-      (paymentMethod, paykitDeliveryState, orderState, offered) => {
+      'offers cancelling a %s checkout whose delivery reads %s, request reads %s and order is %s beside the card: %s',
+      (paymentMethod, paykitDeliveryState, paykitRequestState, orderState, offered) => {
         const payment = createPaymentFixture('awaiting_entitlement', { adapter: 'paykit' });
         const order = createOrderFixture(orderState, {
           paymentId: payment.id,
           paymentMethod,
           paykitDeliveryState,
+          paykitRequestState,
         });
         view.orders = [{ order, payment }];
         searchParams.current = new URLSearchParams({ order: order.id });
@@ -1276,6 +1282,31 @@ describe('MarketplaceCheckout', () => {
         expect(screen.queryByRole('button', { name: 'Cancel checkout' }) !== null).toBe(offered);
       },
     );
+
+    it('cancels a Paykit checkout whose request reached Bitkit through the existing order action', async () => {
+      const user = userEvent.setup();
+      checkoutActions.actOnOrder.mockClear();
+      const payment = createPaymentFixture('awaiting_entitlement', { adapter: 'paykit' });
+      const order = createOrderFixture('pending_payment', {
+        paymentId: payment.id,
+        paymentMethod: 'paykit',
+        paykitRequestState: 'pending',
+        paykitDeliveryState: 'delivered',
+      });
+      view.orders = [{ order, payment }];
+      searchParams.current = new URLSearchParams({ order: order.id });
+      render(<MarketplaceCheckout />);
+
+      await user.click(screen.getByRole('button', { name: 'Cancel checkout' }));
+      expect(screen.getByTestId('paykit-cancel-unpaid-request')).toHaveTextContent("Don't pay it");
+      await user.type(screen.getByRole('textbox', { name: 'Reason' }), 'Dismissed it in Bitkit');
+      await user.click(screen.getByRole('button', { name: 'Confirm' }));
+      await waitFor(() =>
+        expect(checkoutActions.actOnOrder).toHaveBeenCalledWith(order, 'order.cancel_request', {
+          reason: 'Dismissed it in Bitkit',
+        }),
+      );
+    });
 
     it('confirms cancellation of a pending Bitcoin checkout with an unconfirmed delivery through the existing order action', async () => {
       const user = userEvent.setup();
