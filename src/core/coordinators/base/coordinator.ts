@@ -4,6 +4,7 @@ import {
   getNotificationPollOnStart,
   getNotificationRespectPageVisibility,
 } from '@/libs/runtime-config/runtime-config';
+import { isSignedIn, signInChanged } from '@/stores/auth/auth.change';
 import { useAuthStore } from '@/stores/auth/auth.store';
 import {
   type CoordinatorInitOptions,
@@ -163,11 +164,9 @@ export abstract class Coordinator<Config extends PollingServiceConfig, State ext
   protected setupListeners() {
     // Listen to auth store changes
     this.authStoreUnsubscribe = useAuthStore.subscribe((state, prevState) => {
-      const isAuthenticated = state.selectIsAuthenticated();
-      const wasAuthenticated = prevState.selectIsAuthenticated();
-      if (isAuthenticated !== wasAuthenticated) {
+      if (signInChanged(state, prevState)) {
         Logger.debug('Auth state changed', {
-          isAuthenticated,
+          isAuthenticated: isSignedIn(state),
         });
         this.evaluateAndStartPolling();
       }

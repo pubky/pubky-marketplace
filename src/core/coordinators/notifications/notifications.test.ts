@@ -59,6 +59,23 @@ describe('NotificationCoordinator', () => {
   });
 
   describe('Singleton Behavior', () => {
+    it('starts polling when the session is restored after the persisted pubky was hydrated (cold load)', async () => {
+      const spy = vi.spyOn(NotificationController, 'fetchNotifications').mockResolvedValue(undefined);
+      // A cold load hydrates the persisted pubky and profile flag before the
+      // session restore completes; the coordinator may start in between.
+      useAuthStore.setState({ currentUserPubky: 'user123', hasProfile: true, hasHydrated: true });
+      const coordinator = NotificationCoordinator.getInstance();
+      coordinator.configure({ pollOnStart: true, intervalMs: 1_000 } as Partial<CoordinatorConfigWithBase>);
+      await coordinator.setRoute('/marketplace');
+      await coordinator.start();
+      await flushPromises();
+      expect(spy).not.toHaveBeenCalled();
+
+      useAuthStore.setState({ session: mockSession() });
+      await flushPromises();
+      expect(spy).toHaveBeenCalledTimes(1);
+    });
+
     it('returns the same instance on multiple getInstance() calls', () => {
       const instance1 = NotificationCoordinator.getInstance();
       const instance2 = NotificationCoordinator.getInstance();

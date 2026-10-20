@@ -356,6 +356,22 @@ describe('TtlCoordinator', () => {
       expect(findStalePostsSpy).not.toHaveBeenCalled();
     });
 
+    it('starts ticking when the session is restored after the persisted pubky was hydrated (cold load)', async () => {
+      useAuthStore.setState({ currentUserPubky: 'test-user-pubky', hasProfile: true, hasHydrated: true });
+      const coordinator = TtlCoordinator.getInstance();
+      coordinator.configure({ batchIntervalMs: 1_000 });
+      coordinator.subscribePost({ compositePostId: createCompositePostId('author1', 'post1') });
+      findStalePostsSpy.mockClear();
+      coordinator.start();
+      await advanceAndFlush(5_000);
+      expect(findStalePostsSpy).not.toHaveBeenCalled();
+
+      useAuthStore.setState({ session: mockSession() });
+      await waitForTick();
+      await advanceAndFlush(5_000);
+      expect(findStalePostsSpy).toHaveBeenCalled();
+    });
+
     it('start() without authentication does not tick', async () => {
       // Do NOT authenticate
       const coordinator = TtlCoordinator.getInstance();

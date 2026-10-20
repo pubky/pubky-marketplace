@@ -10,6 +10,7 @@ import { routeToRegex } from '@/coordinators/base/coordinators.utils';
 import { Logger } from '@/libs/logger/logger';
 import { getNotificationRespectPageVisibility } from '@/libs/runtime-config/runtime-config';
 import type { Pubky } from '@/models/models.types';
+import { signedInUserChanged } from '@/stores/auth/auth.change';
 import { useAuthStore } from '@/stores/auth/auth.store';
 
 type PendingMuteRefresh = {
@@ -110,11 +111,8 @@ export class MuteListSyncCoordinator {
 
   private setupListeners(): void {
     this.authStoreUnsubscribe = useAuthStore.subscribe((state, prevState) => {
-      const isAuthenticated = state.selectIsAuthenticated();
-      const wasAuthenticated = prevState.selectIsAuthenticated();
       const profileChanged = state.hasProfile !== prevState.hasProfile;
-      const userChanged = state.currentUserPubky !== prevState.currentUserPubky;
-      if (isAuthenticated !== wasAuthenticated || profileChanged || userChanged) {
+      if (signedInUserChanged(state, prevState) || profileChanged) {
         this.evaluateStreaming();
       }
     });

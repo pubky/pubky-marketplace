@@ -8,6 +8,7 @@ import {
 import { TtlController } from '@/controllers/ttl/ttl';
 import { Logger } from '@/libs/logger/logger';
 import type { Pubky } from '@/models/models.types';
+import { isSignedIn, signInChanged } from '@/stores/auth/auth.change';
 import { useAuthStore } from '@/stores/auth/auth.store';
 import type {
   EntityOps,
@@ -237,10 +238,8 @@ export class TtlCoordinator {
   private setupListeners(): void {
     // Listen to auth store changes
     this.authStoreUnsubscribe = useAuthStore.subscribe((state, prevState) => {
-      const isAuthenticated = state.selectIsAuthenticated();
-      const wasAuthenticated = prevState.selectIsAuthenticated();
-
-      if (isAuthenticated !== wasAuthenticated) {
+      if (signInChanged(state, prevState)) {
+        const isAuthenticated = isSignedIn(state);
         Logger.debug('TtlCoordinator: Auth state changed', { isAuthenticated });
 
         if (!isAuthenticated) {
