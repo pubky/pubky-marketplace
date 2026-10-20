@@ -68,8 +68,9 @@ jobs:
     runs-on: ubuntu-latest
     # Last-10 median was 47 min because paykit-wasm-smoke held the event loop
     # after "passed". Post-fix remainder is install (~40s) + next build (~3 min)
-    # + server smoke (~2s) ≈ 5 min; 10 min is 2× that, not 2× the hang.
-    timeout-minutes: 10
+    # + server smoke (~2s) ≈ 5 min. Recent runs: p95 6.2 min, max 8.9 min, so
+    # 15 min is about 1.5× the p95 plus slack, still far below the old hang.
+    timeout-minutes: 15
 
     steps:
       - name: Fail closed when the path filter did not succeed
