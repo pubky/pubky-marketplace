@@ -67,14 +67,24 @@ export const APPROVE_IN_BITKIT_FALLBACK_COPY =
   'Approve in Bitkit soon: Bitkit expires a request you have not approved before the payment window ends.';
 
 /**
+ * The midpoint stays at or after activation only while the buyer bound the
+ * request within one payment window of creating the order, so the span from
+ * creation to the deadline is at most two windows. Past twice the Shop's
+ * 30-minute Bitcoin window (`BITCOIN_PAYMENT_WINDOW_SECONDS`), the request was
+ * bound late (a re-bind, a long hold) and the line names no time.
+ */
+const MAX_TIMED_APPROVAL_SPAN_MS = 60 * 60 * 1000;
+
+/**
  * The latest instant the buyer can approve the request in Bitkit, or null when
  * the Shop cannot tell. Bitkit expires a request the buyer has not approved at
  * its `proposal_expires_at`, which paykit-server sets at activation to at most
  * half the payment window, well before Pay by (issue #358). The order carries
  * only the payment deadline (or its hold, 60 s later), so this takes the
  * midpoint of order creation and that deadline: activation never precedes
- * creation, so it is not later than the wallet's own. An auction order is created at close and may activate much
- * later, so it gets no time. Replace with the request's own
+ * creation, so it is not later than the wallet's own. An auction order is
+ * created at close and may activate much later, so it gets no time, as does
+ * any order bound long after creation. Replace with the request's own
  * `proposal_expires_at` once the service projects it.
  */
 export function approveInBitkitDeadline(order: PayByOrder): string | null {
@@ -83,6 +93,7 @@ export function approveInBitkitDeadline(order: PayByOrder): string | null {
   const requestDeadline = order.paykitExpiresAt ?? order.holdExpiresAt;
   const deadline = requestDeadline ? new Date(requestDeadline).getTime() : NaN;
   if (!Number.isFinite(created) || !Number.isFinite(deadline) || deadline <= created) return null;
+  if (deadline - created > MAX_TIMED_APPROVAL_SPAN_MS) return null;
   return new Date(created + (deadline - created) / 2).toISOString();
 }
 

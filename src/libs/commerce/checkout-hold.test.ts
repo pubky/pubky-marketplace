@@ -93,6 +93,16 @@ describe('approveInBitkitCopy', () => {
     );
   });
 
+  it('names no time when the request was bound long after the order was created', () => {
+    // Created at 12:00, re-bound at 13:30 with a 30-minute window: a midpoint of 12:30 would already be past.
+    const order = {
+      createdAt: '2026-10-19T12:00:00.000Z',
+      paykitExpiresAt: '2026-10-19T14:00:00.000Z',
+      holdExpiresAt: '2026-10-19T14:01:00.000Z',
+    };
+    expect(approveInBitkitCopy(order)).toBe(APPROVE_IN_BITKIT_FALLBACK_COPY);
+  });
+
   it('names no time on an auction order, which activates long after it is created', () => {
     expect(approveInBitkitCopy({ ...ordinary, auctionAggregateId: 'listing:seller_boots' })).toBe(
       APPROVE_IN_BITKIT_FALLBACK_COPY,
