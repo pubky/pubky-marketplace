@@ -425,7 +425,7 @@ exports[`MarketplaceFilters - Snapshots > matches the default filter snapshot 1`
       class="text-xs font-medium text-muted-foreground"
       data-testid="marketplace-ranking-line"
     >
-      Recommended shows recently updated listings first, with auctions and new or excellent-condition items placed slightly higher. You can also sort by newest, price or ending soonest. No placement is paid for, and ratings don’t affect order.
+      With all sale types shown, Recommended mixes fixed-price listings, auctions and drops in turn. Listings are ordered by when they were last updated, with new or excellent-condition items placed slightly higher; drops are ordered live first, then upcoming, then ended. You can also sort by newest, price or ending soonest. No placement is paid for, and ratings don’t affect order.
     </p>
     <button
       aria-label="Reset search and filters"

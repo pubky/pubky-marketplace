@@ -296,3 +296,24 @@ function recommendationScore(item: MarketplaceCatalogItem): number {
   const conditionBoost = item.condition === 'new' || item.condition === 'excellent' ? 5_000 : 0;
   return item.updatedAt + auctionBoost + conditionBoost;
 }
+
+/** The order drops are shown in on the marketplace page: live, then upcoming, then ended. */
+export const DROP_DISPLAY_BUCKET_ORDER = ['live', 'upcoming', 'ended'] as const;
+
+/**
+ * "Recommended" with every sale type shown: one entry from each group in turn
+ * (fixed-price, auctions, drops), each group keeping its own order, until all
+ * are used. A shorter group simply runs out and the rest follow in turn.
+ * The ranking line in `eu-region.ts` describes exactly this, so changing one
+ * means changing the other.
+ */
+export function interleaveInTurn<T>(groups: readonly (readonly T[])[]): T[] {
+  const mixed: T[] = [];
+  const longest = Math.max(0, ...groups.map((group) => group.length));
+  for (let index = 0; index < longest; index++) {
+    for (const group of groups) {
+      if (index < group.length) mixed.push(group[index]);
+    }
+  }
+  return mixed;
+}
