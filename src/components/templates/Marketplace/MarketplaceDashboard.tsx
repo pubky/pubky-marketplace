@@ -546,7 +546,9 @@ export function MarketplaceDashboard() {
                                     </Badge>
                                   </td>
                                   <td className="p-3">{listing.format.replace('_', ' ')}</td>
-                                  <td className="p-3">{formatListingStock(listing.record, listing.purchasableQuantity)}</td>
+                                  <td className="p-3">
+                                    {formatListingStock(listing.record, listing.purchasableQuantity)}
+                                  </td>
                                   <td className="p-3">
                                     {/* The record's own price money: the model row's
                                     `price_minor` has no exponent column, and
