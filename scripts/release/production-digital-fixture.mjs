@@ -1124,6 +1124,22 @@ async function teardown() {
   }
 }
 
+// The service tombstones a listing when its sync sees the homeserver delete, which lags the delete by one to
+// three minutes, so a single read right after the delete reports a false failure.
+const TOMBSTONE_WAIT_MS = 300_000;
+const TOMBSTONE_POLL_MS = 10_000;
+
+async function awaitServiceTombstone(listingId, token) {
+  const deadline = Date.now() + TOMBSTONE_WAIT_MS;
+  for (;;) {
+    const response = await fetch(`${SERVICE}/v1/listings/${encodeURIComponent(listingId)}`, {
+      headers: { authorization: `Bearer ${token}` },
+    });
+    if (response.status === 404 || Date.now() >= deadline) return response;
+    await sleep(TOMBSTONE_POLL_MS);
+  }
+}
+
 async function verify() {
   const state = readState();
   if (!state) {
@@ -1156,9 +1172,7 @@ async function verify() {
           onHomeserver === false,
           `exists=${onHomeserver}`,
         );
-        const projection = await fetch(`${SERVICE}/v1/listings/${encodeURIComponent(`listing:${sellerPubky}_${id}`)}`, {
-          headers: { authorization: `Bearer ${bearer.token}` },
-        });
+        const projection = await awaitServiceTombstone(`listing:${sellerPubky}_${id}`, bearer.token);
         check(
           `verify ${kind}: service listing tombstoned ${id.slice(0, 8)}`,
           projection.status === 404,
