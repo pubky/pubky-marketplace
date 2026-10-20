@@ -172,6 +172,50 @@ describe('CommerceApplication own-review publication', () => {
     ]);
   });
 
+  it('revises a review published before per-order ids at its legacy path when edited', async () => {
+    const { wire } = issuedAttestation('boots');
+    const order = createOrderFixture('completed');
+    vi.spyOn(LocalCommerceService, 'stageOwnReviewSync').mockResolvedValue(undefined);
+    vi.spyOn(LocalCommerceService, 'upsertOwnReview').mockResolvedValue(undefined);
+    vi.spyOn(LocalCommerceService, 'completeSyncJob').mockResolvedValue(undefined);
+    vi.spyOn(LocalCommerceService, 'getOwnReviewById').mockResolvedValue(undefined);
+    const put = vi.spyOn(CommerceHomeserverService, 'putJson').mockResolvedValue(undefined);
+    const current = await CommerceApplication.commitPublishOwnReview({
+      actorPubky: ORDER_FIXTURE_BUYER,
+      order,
+      result: reviewResult(wire),
+    });
+    const { orderRef: _orderRef, ...legacyFields } = current!.record;
+    const legacyBuilt = new PubkySpecsBuilder(ORDER_FIXTURE_BUYER).createMarketplaceReview({
+      ...legacyFields,
+      reviewId: '',
+    });
+    const legacyRow: CommerceReviewModelSchema = {
+      ...current!,
+      id: `${ORDER_FIXTURE_BUYER}:${legacyBuilt.meta.id}`,
+      review_id: legacyBuilt.meta.id,
+      record: legacyBuilt.marketplace_review.toJson() as CommerceReviewModelSchema['record'],
+    };
+    vi.spyOn(LocalCommerceService, 'getOwnReviewByOrder').mockResolvedValue(legacyRow);
+    vi.spyOn(LocalCommerceService, 'getOwnReviewById').mockResolvedValue(legacyRow);
+    put.mockClear();
+
+    const edited = await CommerceApplication.commitPublishOwnReview({
+      actorPubky: ORDER_FIXTURE_BUYER,
+      order,
+      result: reviewResult(wire),
+    });
+
+    expect(edited!.review_id).toBe(legacyRow.review_id);
+    expect(edited!.record.orderRef).toBeUndefined();
+    expect(edited!.record.revision).toBe(2);
+    expect(put).toHaveBeenCalledOnce();
+    expect(put).toHaveBeenCalledWith(
+      `pubky://${ORDER_FIXTURE_BUYER}/pub/pubky.app/marketplace/v1/reviews/${legacyRow.review_id}`,
+      expect.anything(),
+    );
+  });
+
   it('revises the living record on republication instead of forking it', async () => {
     const { wire } = issuedAttestation('boots');
     const order = createOrderFixture('completed');

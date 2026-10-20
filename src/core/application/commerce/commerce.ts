@@ -3530,6 +3530,12 @@ export class CommerceApplication {
       });
     }
     const role = review.reviewerRole === 'buyer' ? 'buyer_reviewing_seller' : 'seller_reviewing_buyer';
+    // A review published before per-order IDs lives at the per-listing path
+    // without `orderRef`; its edits revise it there instead of forking a
+    // second record for the same order.
+    const existing = await LocalCommerceService.getOwnReviewByOrder(actorPubky, order.id);
+    const orderRef =
+      existing !== undefined && existing.record.orderRef === undefined ? undefined : attestation.claims.orderRef;
 
     const build = async (revision: number, createdAt: string) => {
       const { PubkySpecsBuilder } = await import('pubky-app-specs');
@@ -3548,7 +3554,7 @@ export class CommerceApplication {
         ratings: { overall: review.rating },
         text: review.text,
         eligibilityAttestation: attestation.jws,
-        orderRef: attestation.claims.orderRef,
+        ...(orderRef === undefined ? {} : { orderRef }),
       });
       return {
         record: commerceReviewRecordSchema.parse(built.marketplace_review.toJson()),
