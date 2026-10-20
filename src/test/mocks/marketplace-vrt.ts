@@ -50,6 +50,8 @@ export function createMarketplaceVrtCommerceController() {
     // USDT stays off unless a scene opts in.
     fetchUsdtPaymentsAvailable: async () => false,
     getOrFetchShop: async () => null,
+    // No live shop events in a scene.
+    subscribeShopEvents: async () => null,
     getSellerAnnualLimit: async () => ({ enabled: false }),
     getSellerPaymentConfig: async () => ({
       bitcoinAvailable: false,

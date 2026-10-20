@@ -178,6 +178,7 @@ import type { BtcRate } from '@/services/exchangerate/exchangerate.types';
 import { CommerceHomeserverService } from '@/services/homeserver/commerce/commerce';
 import { CommercePrivStoreService } from '@/services/homeserver/commerce/priv-store';
 import { HomeserverService, PRIVATE_APP_DATA_PATH } from '@/services/homeserver/homeserver';
+import type { THomeserverResourceEvent } from '@/services/homeserver/homeserver.types';
 import { retryHomeserverWrite, retryHomeserverWriteAfterReread } from '@/services/homeserver/write-retry';
 import { type CommerceListingRowGeneration, LocalCommerceService } from '@/services/local/commerce/commerce';
 import {
@@ -510,6 +511,22 @@ export class CommerceApplication {
       if (local) return local.record;
       throw error;
     }
+  }
+
+  /**
+   * A live stream of changes to the seller's `shop.json`, from the seller's
+   * homeserver `/events-stream` (public, no session). Replays the file's past
+   * events first, then stays open. Null when the seller has no homeserver.
+   * Callers own the reader lifecycle.
+   */
+  static async subscribeShopEvents(ownerPubky: string): Promise<ReadableStream<THomeserverResourceEvent> | null> {
+    const homeserver = await HomeserverService.resolveHomeserverOf(ownerPubky);
+    if (!homeserver) return null;
+    return await HomeserverService.subscribeHomeserverEventStream({
+      homeserver,
+      users: [[ownerPubky, null]],
+      pathPrefixes: [CommerceRecordNormalizer.shopUri(ownerPubky).slice(`pubky://${ownerPubky}`.length)],
+    });
   }
 
   /** Cache-first: for the per-command and per-catalog-load reads, where a round trip each time costs too much. */

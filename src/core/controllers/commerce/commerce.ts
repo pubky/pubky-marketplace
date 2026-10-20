@@ -142,6 +142,10 @@ export class CommerceController {
     return await CommerceApplication.getOrFetchShop(CommerceRecordNormalizer.pubky(ownerPubky));
   }
 
+  static async subscribeShopEvents(ownerPubky: unknown) {
+    return await CommerceApplication.subscribeShopEvents(CommerceRecordNormalizer.pubky(ownerPubky));
+  }
+
   static async getListing(ownerPubky: unknown, listingId: unknown) {
     const owner = CommerceRecordNormalizer.pubky(ownerPubky);
     const id = CommerceRecordNormalizer.entityId(listingId);

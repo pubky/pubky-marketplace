@@ -492,6 +492,19 @@ describe('CommerceApplication', () => {
     await expect(CommerceApplication.getOrFetchShop(COMMERCE_FIXTURE_SELLER)).rejects.toBe(failure);
   });
 
+  it("subscribes to the seller's homeserver events for their shop record only", async () => {
+    const stream = new ReadableStream();
+    vi.spyOn(HomeserverService, 'resolveHomeserverOf').mockResolvedValue('h'.repeat(52));
+    const subscribe = vi.spyOn(HomeserverService, 'subscribeHomeserverEventStream').mockResolvedValue(stream);
+
+    await expect(CommerceApplication.subscribeShopEvents(COMMERCE_FIXTURE_SELLER)).resolves.toBe(stream);
+    expect(subscribe).toHaveBeenCalledWith({
+      homeserver: 'h'.repeat(52),
+      users: [[COMMERCE_FIXTURE_SELLER, null]],
+      pathPrefixes: ['/pub/pubky.app/marketplace/v1/shop.json'],
+    });
+  });
+
   it('refreshes shop settings into the cache used by the public shop', async () => {
     const record = createCommerceShopFixture();
     vi.mocked(CommerceHomeserverService.fetchJson).mockResolvedValue(record);
