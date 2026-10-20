@@ -1107,8 +1107,8 @@ describe('MarketplaceOrders tabs', () => {
   // Quote values are the live capture of 2026-09-14 (`orders.wire.ts`); the
   // lock expired at 2026-09-13T20:15:09.050Z, so the clock is pinned on each
   // side of that instant instead of trusting the wall clock.
-  const lockedQuoteOrder = () =>
-    orderView('paid', 'Locked quote boots', 'seller', {
+  const lockedQuoteOrder = (state: 'paid' | 'pending_payment' = 'paid') =>
+    orderView(state, 'Locked quote boots', 'seller', {
       paymentMethod: 'bitcoin',
       bitcoinQuote: {
         quotedSats: 2_588,
@@ -1134,9 +1134,9 @@ describe('MarketplaceOrders tabs', () => {
     expect(screen.queryByText(/≈ ₿/)).not.toBeInTheDocument();
   });
 
-  it('marks the locked Bitcoin quote expired once the lock has lapsed', async () => {
+  it('marks the locked Bitcoin quote expired once the lock has lapsed on an unpaid order', async () => {
     vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-09-13T20:15:09.051Z'));
-    ordersState.orders = [lockedQuoteOrder()];
+    ordersState.orders = [lockedQuoteOrder('pending_payment')];
 
     render(<MarketplaceOrders />);
     await userEvent.setup().click(screen.getByRole('tab', { name: /All 1/i }));
@@ -1144,6 +1144,17 @@ describe('MarketplaceOrders tabs', () => {
     expect(screen.getByText(/Locked Bitcoin amount: ₿2,588/)).toBeInTheDocument();
     expect(screen.getByText(/ · Bitcoin quote expired/)).toBeInTheDocument();
     expect(screen.queryByText(/≈ ₿/)).not.toBeInTheDocument();
+  });
+
+  it('keeps a paid order final once its quote window has passed (#364)', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-09-13T20:15:09.051Z'));
+    ordersState.orders = [lockedQuoteOrder('paid')];
+
+    render(<MarketplaceOrders />);
+    await userEvent.setup().click(screen.getByRole('tab', { name: /All 1/i }));
+
+    expect(screen.getByText(/Locked Bitcoin amount: ₿2,588/)).toBeInTheDocument();
+    expect(screen.queryByText(/Bitcoin quote expired/)).not.toBeInTheDocument();
   });
 
   it('shows items, shipping, and the payment code on the order and its receipt', async () => {
