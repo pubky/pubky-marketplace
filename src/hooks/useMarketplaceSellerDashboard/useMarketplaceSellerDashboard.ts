@@ -60,15 +60,25 @@ export function useMarketplaceSellerDashboard() {
       active = false;
     };
   }, [currentUserPubky, localListings]);
+  const orders = useMarketplaceOrders();
+  const offers = useMarketplaceOffers();
+  const sellerOrders = orders.orders.filter(({ order }) => order.sellerPubky === currentUserPubky);
+  const sellerOffers = offers.offers.filter(({ sellerPubky }) => sellerPubky === currentUserPubky);
   // The Inventory column shows the service's count, which moves with each
   // sale; the cached projection is only refreshed where a listing is opened.
+  // It is read again whenever a seller order moves or the session changes.
   const marketplaceSession = useCommerceStore((state) => state.marketplaceSession);
   const stockRefreshed = useRef<string | null>(null);
+  const stockKey = [
+    currentUserPubky,
+    marketplaceSession?.issuedAt,
+    ...sellerOrders.map(({ order }) => `${order.id}:${order.revision}:${order.state}`),
+  ].join('|');
   useEffect(() => {
     if (!currentUserPubky || !marketplaceSession || catalogFetchState !== 'settled') return;
     if (!isDurableCommerceMode(getCommerceAdapterMode())) return;
-    if (stockRefreshed.current === currentUserPubky) return;
-    stockRefreshed.current = currentUserPubky;
+    if (stockRefreshed.current === stockKey) return;
+    stockRefreshed.current = stockKey;
     const sellerPubky = currentUserPubky;
     void (async () => {
       for (const listing of await CommerceController.getListingsBySeller(sellerPubky)) {
@@ -80,11 +90,7 @@ export function useMarketplaceSellerDashboard() {
         }
       }
     })();
-  }, [currentUserPubky, marketplaceSession, catalogFetchState]);
-  const orders = useMarketplaceOrders();
-  const offers = useMarketplaceOffers();
-  const sellerOrders = orders.orders.filter(({ order }) => order.sellerPubky === currentUserPubky);
-  const sellerOffers = offers.offers.filter(({ sellerPubky }) => sellerPubky === currentUserPubky);
+  }, [currentUserPubky, marketplaceSession, catalogFetchState, stockKey]);
   const activeListings = (localListings ?? []).filter(
     (listing) => listing.state === 'active' && !isAuctionSaleEnded(listing.record.sale, nowMs),
   );

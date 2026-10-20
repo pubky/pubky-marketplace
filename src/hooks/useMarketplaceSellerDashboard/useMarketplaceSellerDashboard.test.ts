@@ -749,7 +749,7 @@ describe('useMarketplaceSellerDashboard stock', () => {
       createListingProjectionFixture({ aggregateId: `listing:${OWNER}_guide_01`, availableQuantity: 4 }),
     );
 
-    renderHook(() => useMarketplaceSellerDashboard());
+    const { rerender } = renderHook(() => useMarketplaceSellerDashboard());
 
     await waitFor(() =>
       expect(CommerceController.cacheMarketplaceListingProjection).toHaveBeenCalledWith(
@@ -757,5 +757,23 @@ describe('useMarketplaceSellerDashboard stock', () => {
       ),
     );
     expect(CommerceController.getMarketplaceListingProjection).toHaveBeenCalledWith(OWNER, 'guide_01');
+
+    // A sale while My shop stays open: the seller's order moves, so the stock is read again.
+    rerender();
+    expect(CommerceController.getMarketplaceListingProjection).toHaveBeenCalledTimes(1);
+    ordersState.orders = [
+      {
+        order: {
+          id: 'order-1',
+          revision: 2,
+          state: 'paid',
+          sellerPubky: OWNER,
+          total: { amountMinor: 900, currency: 'USD', exponent: 2 },
+        },
+      } as (typeof ordersState.orders)[number],
+    ];
+    rerender();
+    await waitFor(() => expect(CommerceController.getMarketplaceListingProjection).toHaveBeenCalledTimes(2));
+    ordersState.orders = [];
   });
 });
