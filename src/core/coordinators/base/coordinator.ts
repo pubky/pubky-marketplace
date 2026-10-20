@@ -4,7 +4,7 @@ import {
   getNotificationPollOnStart,
   getNotificationRespectPageVisibility,
 } from '@/libs/runtime-config/runtime-config';
-import { isSignedIn, signInChanged } from '@/stores/auth/auth.change';
+import { isSignedIn, signInOrProfileChanged } from '@/stores/auth/auth.change';
 import { useAuthStore } from '@/stores/auth/auth.store';
 import {
   type CoordinatorInitOptions,
@@ -164,9 +164,12 @@ export abstract class Coordinator<Config extends PollingServiceConfig, State ext
   protected setupListeners() {
     // Listen to auth store changes
     this.authStoreUnsubscribe = useAuthStore.subscribe((state, prevState) => {
-      if (signInChanged(state, prevState)) {
+      // The profile flag can arrive after the session (restore, grant sign-in,
+      // host session) and polling needs both.
+      if (signInOrProfileChanged(state, prevState)) {
         Logger.debug('Auth state changed', {
           isAuthenticated: isSignedIn(state),
+          hasProfile: state.hasProfile,
         });
         this.evaluateAndStartPolling();
       }

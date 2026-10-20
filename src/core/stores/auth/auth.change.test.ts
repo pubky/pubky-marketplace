@@ -1,7 +1,7 @@
 import type { Session } from '@synonymdev/pubky';
 import { describe, expect, it } from 'vitest';
 import { asOpaque } from '@/test-utils/type-assertions';
-import { isSignedIn, signedInUserChanged, signInChanged } from './auth.change';
+import { accountLeft, isSignedIn, signedInUserChanged, signInChanged, signInOrProfileChanged } from './auth.change';
 
 const session = asOpaque<Session>({});
 const out = { session: null, currentUserPubky: null };
@@ -26,5 +26,20 @@ describe('auth change helpers', () => {
     expect(signedInUserChanged(bob, alice)).toBe(true);
     expect(signInChanged(bob, alice)).toBe(false);
     expect(signedInUserChanged({ ...alice }, alice)).toBe(false);
+  });
+
+  it('reports the profile flag arriving after the session, which the pollers wait for', () => {
+    const noProfile = { session, hasProfile: null };
+    const withProfile = { session, hasProfile: true };
+    expect(signInOrProfileChanged(withProfile, noProfile)).toBe(true);
+    expect(signInOrProfileChanged(withProfile, withProfile)).toBe(false);
+  });
+
+  it('tells a sign-out or account switch from a cold load or a same-account session drop', () => {
+    expect(accountLeft(out, alice)).toBe(true);
+    expect(accountLeft(bob, alice)).toBe(true);
+    expect(accountLeft(alice, aliceHydrated)).toBe(false);
+    expect(accountLeft(aliceHydrated, alice)).toBe(false);
+    expect(accountLeft(aliceHydrated, out)).toBe(false);
   });
 });

@@ -76,6 +76,26 @@ describe('NotificationCoordinator', () => {
       expect(spy).toHaveBeenCalledTimes(1);
     });
 
+    it('starts polling when the profile flag arrives after the session (restore, grant sign-in, host session)', async () => {
+      const spy = vi.spyOn(NotificationController, 'fetchNotifications').mockResolvedValue(undefined);
+      useAuthStore.setState({
+        session: mockSession(),
+        currentUserPubky: 'user123',
+        hasProfile: null,
+        hasHydrated: true,
+      });
+      const coordinator = NotificationCoordinator.getInstance();
+      coordinator.configure({ pollOnStart: true, intervalMs: 1_000 } as Partial<CoordinatorConfigWithBase>);
+      await coordinator.setRoute('/marketplace');
+      await coordinator.start();
+      await flushPromises();
+      expect(spy).not.toHaveBeenCalled();
+
+      useAuthStore.setState({ hasProfile: true });
+      await flushPromises();
+      expect(spy).toHaveBeenCalledTimes(1);
+    });
+
     it('returns the same instance on multiple getInstance() calls', () => {
       const instance1 = NotificationCoordinator.getInstance();
       const instance2 = NotificationCoordinator.getInstance();

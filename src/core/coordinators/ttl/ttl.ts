@@ -8,7 +8,7 @@ import {
 import { TtlController } from '@/controllers/ttl/ttl';
 import { Logger } from '@/libs/logger/logger';
 import type { Pubky } from '@/models/models.types';
-import { isSignedIn, signInChanged } from '@/stores/auth/auth.change';
+import { accountLeft, isSignedIn, signInOrProfileChanged } from '@/stores/auth/auth.change';
 import { useAuthStore } from '@/stores/auth/auth.store';
 import type {
   EntityOps,
@@ -238,18 +238,22 @@ export class TtlCoordinator {
   private setupListeners(): void {
     // Listen to auth store changes
     this.authStoreUnsubscribe = useAuthStore.subscribe((state, prevState) => {
-      if (signInChanged(state, prevState)) {
-        const isAuthenticated = isSignedIn(state);
-        Logger.debug('TtlCoordinator: Auth state changed', { isAuthenticated });
-
-        if (!isAuthenticated) {
-          // User logged out - stop and reset
-          this.stopTicking();
-          this.reset();
-        } else {
-          // User logged in - start if coordinator is started
-          this.evaluateAndStartTicking();
-        }
+      // Subscriptions belong to the account, not the session: a sign-out or an
+      // account switch clears them. A transient session drop of the same account
+      // (a cross-tab renewal, a new host snapshot) only pauses ticking, because
+      // the mounted cards never subscribe again.
+      if (accountLeft(state, prevState)) {
+        Logger.debug('TtlCoordinator: Account changed', { currentUserPubky: state.currentUserPubky });
+        this.stopTicking();
+        this.reset();
+      }
+      if (!signInOrProfileChanged(state, prevState)) return;
+      const isAuthenticated = isSignedIn(state);
+      Logger.debug('TtlCoordinator: Auth state changed', { isAuthenticated, hasProfile: state.hasProfile });
+      if (isAuthenticated) {
+        this.evaluateAndStartTicking();
+      } else {
+        this.stopTicking();
       }
     });
 

@@ -372,6 +372,67 @@ describe('TtlCoordinator', () => {
       expect(findStalePostsSpy).toHaveBeenCalled();
     });
 
+    it('starts ticking when the profile flag arrives after the session', async () => {
+      useAuthStore.setState({
+        session: mockSession(),
+        currentUserPubky: 'test-user-pubky',
+        hasProfile: null,
+        hasHydrated: true,
+      });
+      const coordinator = TtlCoordinator.getInstance();
+      coordinator.configure({ batchIntervalMs: 1_000 });
+      coordinator.subscribePost({ compositePostId: createCompositePostId('author1', 'post1') });
+      findStalePostsSpy.mockClear();
+      coordinator.start();
+      await advanceAndFlush(5_000);
+      expect(findStalePostsSpy).not.toHaveBeenCalled();
+
+      useAuthStore.setState({ hasProfile: true });
+      await waitForTick();
+      await advanceAndFlush(5_000);
+      expect(findStalePostsSpy).toHaveBeenCalled();
+    });
+
+    it('keeps the subscriptions through a same-account session drop and restore, and resumes ticking', async () => {
+      setupAuthenticatedUser();
+      const coordinator = TtlCoordinator.getInstance();
+      coordinator.configure({ batchIntervalMs: 1_000 });
+      const postId = createCompositePostId('author1', 'post1');
+      coordinator.subscribePost({ compositePostId: postId });
+      coordinator.start();
+      await waitForTick();
+
+      // A cross-tab renewal, or a new host snapshot in the embed: the session
+      // goes away and comes back for the same account; the cards stay mounted.
+      useAuthStore.setState({ session: null });
+      findStalePostsSpy.mockClear();
+      await advanceAndFlush(5_000);
+      expect(findStalePostsSpy).not.toHaveBeenCalled();
+
+      useAuthStore.setState({ session: mockSession() });
+      await waitForTick();
+      await advanceAndFlush(5_000);
+      expect(findStalePostsSpy).toHaveBeenCalled();
+      const queried: string[][] = findStalePostsSpy.mock.calls.map((call: [{ postIds: string[] }]) => call[0].postIds);
+      expect(queried.some((ids) => ids.includes(postId))).toBe(true);
+    });
+
+    it('clears the subscriptions on sign-out, so a later sign-in ticks nothing until the cards subscribe again', async () => {
+      setupAuthenticatedUser();
+      const coordinator = TtlCoordinator.getInstance();
+      coordinator.configure({ batchIntervalMs: 1_000 });
+      coordinator.subscribePost({ compositePostId: createCompositePostId('author1', 'post1') });
+      coordinator.start();
+      await waitForTick();
+
+      useAuthStore.setState({ session: null, currentUserPubky: null, hasProfile: null });
+      setupAuthenticatedUser();
+      findStalePostsSpy.mockClear();
+      await waitForTick();
+      await advanceAndFlush(5_000);
+      expect(findStalePostsSpy).not.toHaveBeenCalled();
+    });
+
     it('start() without authentication does not tick', async () => {
       // Do NOT authenticate
       const coordinator = TtlCoordinator.getInstance();
