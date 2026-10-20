@@ -386,6 +386,15 @@ export function MarketplaceGetPaidSettings({ onSaved }: MarketplaceGetPaidSettin
   const offerBitcoinReconnect =
     upstreamPaykit && step2Mode === 'setup' && paykitSetupProblem === 'error' && payments.accountClaimed === false;
   const failedSetupInDialog = upstreamPaykit && paykitSetupStatus === 'error' && paykitSetupMode === 'setup';
+  // The service's `reconnect` is its record that Paykit once held the seller. A Paykit that no longer holds the creator
+  // refuses `/setup/reconnect` before serving its page, so nothing calls back and the reconnect only expires; an expired
+  // one falls back to initial setup. An `error` callback means Paykit found the creator, so it keeps the reconnect.
+  const paykitHoldsSellerPerService =
+    upstreamPaykit &&
+    payments.accountClaimed === false &&
+    (payments.config?.bitcoinSetupAction === 'reconnect' || payments.config?.usdtSetupAction === 'reconnect');
+  const expiredServiceReconnectInDialog =
+    paykitHoldsSellerPerService && paykitSetupMode !== 'setup' && paykitSetupStatus === 'timeout';
   // Only the missing-step reason is explained here; without a session the
   // card's "Enable selling" prompt already says why the switch is off.
   const bitcoinToggleBlocker =
@@ -722,6 +731,9 @@ export function MarketplaceGetPaidSettings({ onSaved }: MarketplaceGetPaidSettin
                           ? 'Bitkit did not confirm a USDT address. Try again.'
                           : paykitTimeoutMessage(currentUserPubky)}
               </Typography>
+              {expiredServiceReconnectInDialog && (
+                <Typography as="p">If Bitkit never showed a request, Connect Bitkit starts the setup again.</Typography>
+              )}
               <div className="flex flex-wrap gap-2">
                 {failedSetupInDialog && (
                   <Button
@@ -731,6 +743,12 @@ export function MarketplaceGetPaidSettings({ onSaved }: MarketplaceGetPaidSettin
                   >
                     <RefreshCw className="size-4" />
                     Reconnect Bitkit
+                  </Button>
+                )}
+                {expiredServiceReconnectInDialog && (
+                  <Button variant="secondary" className="w-fit rounded-full" onClick={() => openPaykitSetup('setup')}>
+                    <RefreshCw className="size-4" />
+                    Connect Bitkit
                   </Button>
                 )}
                 {paykitSetupStatus === 'unconfirmed' ? (
