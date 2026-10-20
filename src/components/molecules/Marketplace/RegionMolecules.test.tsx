@@ -1,7 +1,16 @@
 import { fireEvent, render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import type { RegionAvailability } from '@/hooks/useRegionAvailability/useRegionAvailability';
-import { BUYER_COUNTRY_PROMPT, PRIVATE_SELLER_NOTICE, ROLE_STATEMENT } from '@/libs/commerce/eu-region';
+import {
+  BUYER_COUNTRY_DIGITAL_INFO,
+  BUYER_COUNTRY_INFO,
+  BUYER_COUNTRY_INFO_LABEL,
+  BUYER_COUNTRY_PROMPT,
+  SALE_INFO_LABEL,
+  SALE_INFO_PRIVATE,
+  SALE_INFO_ROLE,
+} from '@/libs/commerce/eu-region';
 import { BuyerCountryField } from './BuyerCountryField';
 import { RegionAvailabilityNotice } from './RegionAvailabilityNotice';
 import { SellerAnnualLimitNotice } from './SellerAnnualLimitNotice';
@@ -22,14 +31,22 @@ describe('SellerStatusBadge', () => {
 });
 
 describe('SellerSaleTerms', () => {
-  it('always states the role of the marketplace and adds the private-seller notice for a private seller', () => {
+  it('puts the role of the marketplace behind an info icon, and the private-seller notice too for a private seller', async () => {
+    const user = userEvent.setup();
     const { rerender } = render(<SellerSaleTerms declaration="private" />);
-    expect(screen.getByTestId('role-statement')).toHaveTextContent(ROLE_STATEMENT);
-    expect(screen.getByTestId('private-seller-notice')).toHaveTextContent(PRIVATE_SELLER_NOTICE);
+    const icon = screen.getByRole('button', { name: SALE_INFO_LABEL });
+    expect(screen.queryByTestId('info-hint-content')).not.toBeInTheDocument();
+    await user.click(icon);
+    expect(screen.getByTestId('info-hint-content')).toHaveTextContent(SALE_INFO_PRIVATE);
+    expect(screen.getByTestId('info-hint-content')).toHaveTextContent(SALE_INFO_ROLE);
+    await user.keyboard('{Escape}');
+
     for (const declaration of ['trader', 'undeclared', 'unknown'] as const) {
       rerender(<SellerSaleTerms declaration={declaration} />);
-      expect(screen.getByTestId('role-statement')).toBeInTheDocument();
-      expect(screen.queryByTestId('private-seller-notice')).not.toBeInTheDocument();
+      await user.click(screen.getByRole('button', { name: SALE_INFO_LABEL }));
+      expect(screen.getByTestId('info-hint-content')).toHaveTextContent(SALE_INFO_ROLE);
+      expect(screen.getByTestId('info-hint-content')).not.toHaveTextContent('private individual');
+      await user.keyboard('{Escape}');
     }
   });
 });
@@ -56,6 +73,13 @@ describe('BuyerCountryField', () => {
     expect(screen.getByTestId('buyer-country-hint')).toHaveTextContent('Use a two-letter country code.');
   });
 
+  it('explains why it asks behind an info icon instead of in the page', async () => {
+    render(<BuyerCountryField value={null} onChange={vi.fn()} />);
+    expect(screen.queryByTestId('buyer-country-hint')).not.toBeInTheDocument();
+    await userEvent.setup().click(screen.getByRole('button', { name: BUYER_COUNTRY_INFO_LABEL }));
+    expect(screen.getByTestId('info-hint-content')).toHaveTextContent(BUYER_COUNTRY_INFO);
+  });
+
   it('names the remembered country', () => {
     render(<BuyerCountryField value="DE" onChange={vi.fn()} />);
     expect(screen.getByTestId('buyer-country-hint')).toHaveTextContent('Germany');
@@ -80,8 +104,14 @@ describe('SellerAnnualLimitNotice', () => {
       'Sales this year: 12 of 29, €850 of €2,000',
     );
     expect(screen.queryByTestId('seller-annual-limit-reconfirm')).not.toBeInTheDocument();
-    expect(screen.getByTestId('seller-annual-limit')).toHaveTextContent(
-      'stop at 29 sales or €2,000 in total a calendar year, whichever comes first',
+    expect(screen.getByRole('button', { name: 'About the yearly limit' })).toBeInTheDocument();
+  });
+
+  it('explains the limit behind the info icon', async () => {
+    render(<SellerAnnualLimitNotice limit={limit} />);
+    await userEvent.setup().click(screen.getByRole('button', { name: 'About the yearly limit' }));
+    expect(screen.getByTestId('info-hint-content')).toHaveTextContent(
+      'can make 29 sales or €2,000 a calendar year, whichever comes first',
     );
   });
 
@@ -146,8 +176,24 @@ describe('RegionAvailabilityNotice', () => {
     expect(screen.queryByLabelText(BUYER_COUNTRY_PROMPT)).not.toBeInTheDocument();
   });
 
-  it('shows the digital note when nothing refuses', () => {
-    render(<RegionAvailabilityNotice region={{ ...base, digitalNote: 'Digital note' }} testIdPrefix="x" />);
-    expect(screen.getByTestId('x-digital-region-note')).toHaveTextContent('Digital note');
+  it('says nothing more on a digital item once the country is known and allowed', () => {
+    const { container } = render(
+      <RegionAvailabilityNotice
+        region={{ ...base, buyerCountry: 'US', digitalNote: 'Digital note' }}
+        testIdPrefix="x"
+      />,
+    );
+    expect(container).toBeEmptyDOMElement();
+  });
+
+  it('gives the digital reason for asking behind the country field’s info icon', async () => {
+    render(
+      <RegionAvailabilityNotice
+        region={{ ...base, needsCountry: true, digitalNote: 'Digital note' }}
+        testIdPrefix="x"
+      />,
+    );
+    await userEvent.setup().click(screen.getByRole('button', { name: BUYER_COUNTRY_INFO_LABEL }));
+    expect(screen.getByTestId('info-hint-content')).toHaveTextContent(BUYER_COUNTRY_DIGITAL_INFO);
   });
 });

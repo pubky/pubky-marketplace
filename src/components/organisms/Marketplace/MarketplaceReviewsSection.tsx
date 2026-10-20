@@ -13,9 +13,10 @@ import { isTrustedMarketplaceAttestor } from '@/config/commerce';
 import { isSocialLinkOutEnabled } from '@/config/social';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import { useMarketplaceReviews } from '@/hooks/useMarketplaceReviews/useMarketplaceReviews';
-import { VERIFIED_PURCHASE_LINE } from '@/libs/commerce/eu-region';
+import { VERIFIED_PURCHASE_INFO, VERIFIED_PURCHASE_INFO_LABEL } from '@/libs/commerce/eu-region';
 import { cn } from '@/libs/utils/utils';
 import type { CommerceIndexedReview, CommerceReviewResponseModelSchema } from '@/models/commerce/commerce.schema';
+import { InfoHint } from '@/molecules/InfoHint/InfoHint';
 import { MarketplaceStarRating } from '@/molecules/MarketplaceStarRating/MarketplaceStarRating';
 import { ProfileOnPubkyLink } from '@/molecules/ProfileOnPubkyLink/ProfileOnPubkyLink';
 import { toast } from '@/molecules/Toaster/use-toast';
@@ -69,13 +70,20 @@ export function MarketplaceReviewsSection({
     >
       {infoCard && <Star className="size-5 shrink-0 text-brand" aria-hidden="true" />}
       <div className={cn('flex min-w-0 flex-1 flex-col', infoCard ? 'gap-1' : 'gap-3')}>
-        <Heading
-          level={2}
-          size={infoCard ? 'sm' : 'lg'}
-          className={infoCard ? 'text-sm leading-5 font-semibold' : 'font-medium text-muted-foreground'}
-        >
-          Reviews
-        </Heading>
+        <div className="flex items-center gap-1.5">
+          <Heading
+            level={2}
+            size={infoCard ? 'sm' : 'lg'}
+            className={infoCard ? 'text-sm leading-5 font-semibold' : 'font-medium text-muted-foreground'}
+          >
+            Reviews
+          </Heading>
+          {reviews.length > 0 && (
+            <InfoHint label={VERIFIED_PURCHASE_INFO_LABEL} data-testid="marketplace-reviews-verified-info">
+              {VERIFIED_PURCHASE_INFO}
+            </InfoHint>
+          )}
+        </div>
         {reviews.length === 0 ? (
           <Typography
             as="p"
@@ -86,14 +94,6 @@ export function MarketplaceReviewsSection({
           </Typography>
         ) : (
           <>
-            <Typography
-              as="p"
-              overrideDefaults
-              className="text-xs text-muted-foreground"
-              data-testid="marketplace-reviews-verified-line"
-            >
-              {VERIFIED_PURCHASE_LINE}
-            </Typography>
             <ul className="flex flex-col gap-4">
               {reviews.map((review) => (
                 <MarketplaceReviewItem

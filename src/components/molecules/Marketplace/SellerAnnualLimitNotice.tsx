@@ -2,6 +2,7 @@
 
 import { Typography } from '@/atoms/Typography/Typography';
 import type { MarketplaceSellerAnnualLimit } from '@/core/services/marketplace/marketplace-projections';
+import { InfoHint } from '@/molecules/InfoHint/InfoHint';
 
 const euro = new Intl.NumberFormat('en', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 });
 
@@ -21,16 +22,15 @@ export function SellerAnnualLimitNotice({ limit }: { limit: MarketplaceSellerAnn
   return (
     <div className="grid gap-2 rounded-md border p-4" data-testid="seller-annual-limit">
       {showCounters && (
-        <>
+        <div className="flex items-center gap-1.5">
           <Typography as="p" className="text-sm font-medium" data-testid="seller-annual-limit-counters">
             Sales this year: {limit.sales} of {limit.salesLimit}, {euros(limit.eurCents ?? 0)} of{' '}
             {euros(limit.eurLimitCents ?? 0)}
           </Typography>
-          <Typography as="p" className="text-sm text-muted-foreground">
-            Sellers based in the EU stop at {limit.salesLimit} sales or {euros(limit.eurLimitCents ?? 0)} in total a
-            calendar year, whichever comes first. After that, buyers can’t order from your shop until the new year.
-          </Typography>
-        </>
+          <InfoHint label="About the yearly limit" data-testid="seller-annual-limit-info">
+            {`Sellers based in the EU can make ${limit.salesLimit} sales or ${euros(limit.eurLimitCents ?? 0)} a calendar year, whichever comes first. After that, buyers can’t order from your shop until the new year.`}
+          </InfoHint>
+        </div>
       )}
       {limit.reconfirmationRequired && (
         <Typography as="p" className="text-sm font-medium" role="status" data-testid="seller-annual-limit-reconfirm">
