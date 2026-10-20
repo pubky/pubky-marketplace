@@ -259,9 +259,9 @@ describe('MarketplaceGetPaidSettings USDT', () => {
       mocked.getMyPaymentConfig.mockResolvedValue(fromWire(USDT_SELLER_CONFIG_RECONNECT_WIRE));
       await renderSettings();
 
-      expect(await screen.findByTestId('usdt-readiness-reconnect')).toHaveTextContent(
-        "USDT needs Bitkit. Pubky Ring can't share a USDT address.",
-      );
+      const panel = await screen.findByTestId('usdt-readiness-reconnect');
+      expect(panel).toHaveTextContent("USDT needs Bitkit. Pubky Ring can't share a USDT address.");
+      expect(panel).toHaveTextContent(/can cancel a buyer's pending Bitcoin request that has not been accepted yet/);
     });
 
     it('uses neutral wording when the sign-in does not identify a signer', async () => {
@@ -271,6 +271,7 @@ describe('MarketplaceGetPaidSettings USDT', () => {
       const panel = await screen.findByTestId('usdt-readiness-reconnect');
       expect(panel).toHaveTextContent('USDT needs Bitkit to share a USDT address.');
       expect(panel).not.toHaveTextContent(/Ring|Passport/);
+      expect(panel).toHaveTextContent(/can cancel a buyer's pending Bitcoin request that has not been accepted yet/);
     });
 
     it('offers Set up Bitkit payments for a seller with no Paykit account', async () => {

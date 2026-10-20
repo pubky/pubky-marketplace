@@ -1,0 +1,1 @@
+Reconnect copy no longer says the Bitkit account and Bitcoin setup stay the same: adding USDT also gives Paykit a new Bitcoin account, which can cancel a buyer's pending Bitcoin request that has not been accepted yet.
