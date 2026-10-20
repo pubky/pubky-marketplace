@@ -425,12 +425,35 @@ describe('TtlCoordinator', () => {
       coordinator.start();
       await waitForTick();
 
-      useAuthStore.setState({ session: null, currentUserPubky: null, hasProfile: null });
+      // What sign-out does to the store.
+      useAuthStore.getState().reset();
       setupAuthenticatedUser();
       findStalePostsSpy.mockClear();
       await waitForTick();
       await advanceAndFlush(5_000);
       expect(findStalePostsSpy).not.toHaveBeenCalled();
+    });
+
+    it("clears the old account's subscriptions on an account switch and ticks for the new one", async () => {
+      setupAuthenticatedUser('alice-pubky' as Pubky);
+      const coordinator = TtlCoordinator.getInstance();
+      coordinator.configure({ batchIntervalMs: 1_000 });
+      const alicePost = createCompositePostId('alice-pubky', 'post1');
+      coordinator.subscribePost({ compositePostId: alicePost });
+      coordinator.start();
+      await waitForTick();
+
+      // One update: the session and pubky of the next account land together.
+      setupAuthenticatedUser('bob-pubky' as Pubky);
+      findStalePostsSpy.mockClear();
+      const bobPosts = [createCompositePostId('bob-pubky', 'post1'), createCompositePostId('bob-pubky', 'post2')];
+      for (const compositePostId of bobPosts) coordinator.subscribePost({ compositePostId });
+      await waitForTick();
+      await advanceAndFlush(5_000);
+      // Subscribing checks one post at a time; only the ticker queries them all together.
+      const queried: string[][] = findStalePostsSpy.mock.calls.map((call: [{ postIds: string[] }]) => call[0].postIds);
+      expect(queried.some((ids) => ids.length === 2 && bobPosts.every((id) => ids.includes(id)))).toBe(true);
+      expect(queried.some((ids) => ids.includes(alicePost))).toBe(false);
     });
 
     it('start() without authentication does not tick', async () => {

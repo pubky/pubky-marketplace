@@ -242,12 +242,15 @@ export class TtlCoordinator {
       // account switch clears them. A transient session drop of the same account
       // (a cross-tab renewal, a new host snapshot) only pauses ticking, because
       // the mounted cards never subscribe again.
-      if (accountLeft(state, prevState)) {
+      const switched = accountLeft(state, prevState);
+      if (switched) {
         Logger.debug('TtlCoordinator: Account changed', { currentUserPubky: state.currentUserPubky });
         this.stopTicking();
         this.reset();
       }
-      if (!signInOrProfileChanged(state, prevState)) return;
+      // An account switch in one update leaves the session non-null on both
+      // sides; evaluate then too, so the new account's cards tick.
+      if (!switched && !signInOrProfileChanged(state, prevState)) return;
       const isAuthenticated = isSignedIn(state);
       Logger.debug('TtlCoordinator: Auth state changed', { isAuthenticated, hasProfile: state.hasProfile });
       if (isAuthenticated) {
