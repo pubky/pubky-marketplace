@@ -432,6 +432,24 @@ const fixtures = vi.hoisted(async () => {
     usdtRefundSellerConfirmed: [usdtRefundView('return_received', 'seller', true)],
     usdtRefundSellerWaiting: [usdtRefundView('return_received', 'seller', false)],
     usdtRefundBuyerRecorded: [usdtRefundView('refunded_external', 'buyer', true)],
+    // pubky/pubky-marketplace#373: Arbitrum shows less reaching the buyer than the seller recorded.
+    usdtRefundBuyerShort: [
+      (() => {
+        const view = usdtRefundView('refunded_external', 'buyer', true);
+        return {
+          ...view,
+          order: {
+            ...view.order,
+            externalRefund: {
+              amountMinor: 13_700,
+              transactionId: REFUND_FIXTURE_TX_HASH,
+              recordedAt: '2026-10-10T10:00:00.000Z',
+              receivedUnits: 136_970_435,
+            },
+          },
+        };
+      })(),
+    ],
     usdtReviewSeller: [usdtReviewSellerView()],
     digitalDelivered: [digitalDeliveredView()],
     digitalToDeliver: [digitalToDeliverView()],
@@ -620,6 +638,18 @@ describe('Marketplace orders — visual regression', () => {
     const screen = await renderForVRT(<MarketplaceOrders />, { viewport: VRT_VIEWPORT_DESKTOP });
     await expect.element(screen.getByTestId('order-refund-record')).toBeVisible();
     await expect(await expectVrtSurface('marketplace-orders')).toMatchScreenshot('orders-bitcoin-refund-desktop');
+  });
+
+  it('renders a USDT refund Arbitrum shows short at mobile viewport', async () => {
+    const { usdtRefundBuyerShort } = await fixtures;
+    ordersState.orders = usdtRefundBuyerShort;
+    ordersState.isLoading = false;
+    ordersState.error = null;
+    ordersState.adapterMode = 'transaction-service';
+
+    const screen = await renderForVRT(<MarketplaceOrders />, { viewport: VRT_VIEWPORT_MOBILE });
+    await expect.element(screen.getByTestId('order-refund-record')).toBeVisible();
+    await expect(await expectVrtSurface('marketplace-orders')).toMatchScreenshot('orders-usdt-refund-short-mobile');
   });
 
   it('renders the buyer asking for a USDT refund address at desktop viewport', async () => {
