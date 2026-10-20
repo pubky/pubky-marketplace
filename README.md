@@ -2,7 +2,7 @@
 
 # Pubky web app
 
-## Pubky Marketplace
+## Pubky Market
 
 `pubky/pubky-marketplace` holds the Shop web client, its documentation and
 the tester issue tracker. The client is built on the official

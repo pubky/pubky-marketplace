@@ -1,4 +1,4 @@
-# Pubky Marketplace Threat Model
+# Pubky Market Threat Model
 
 Status: active
 Reviewed baseline: 2026-08-19

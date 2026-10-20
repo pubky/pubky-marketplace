@@ -4,7 +4,7 @@ import { Metadata } from '@/molecules/Metadata/Metadata';
 import { MarketplaceDrops } from '@/templates/Marketplace/MarketplaceDrops';
 
 const DROPS_SEO = {
-  title: 'Drops — Pubky Marketplace',
+  title: 'Drops — Pubky Market',
   description:
     'Timed, limited releases with a server-enforced clock: no fake queues, no invented stock, portable numbered editions.',
 };

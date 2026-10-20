@@ -5,8 +5,8 @@ export { MarketplacePaymentSettings as default } from '@/templates/Marketplace/M
 
 export function generateMetadata() {
   return gatedMarketplaceMetadata(
-    'Payment settings | Pubky Marketplace',
-    'Configure how you pay and get paid on Pubky Marketplace.',
+    'Payment settings | Pubky Market',
+    'Configure how you pay and get paid on Pubky Market.',
     MARKETPLACE_ROUTES.SETTINGS,
   );
 }

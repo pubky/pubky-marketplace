@@ -5,8 +5,8 @@ export { DropStudioHome as default } from '@/organisms/Marketplace/DropStudioHom
 
 export function generateMetadata() {
   return gatedMarketplaceMetadata(
-    'Drops | Pubky Marketplace',
-    'Compose and run timed, limited releases on Pubky Marketplace.',
+    'Drops | Pubky Market',
+    'Compose and run timed, limited releases on Pubky Market.',
     MARKETPLACE_ROUTES.SELL_DROPS,
   );
 }

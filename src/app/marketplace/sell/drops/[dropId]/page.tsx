@@ -15,8 +15,8 @@ export interface DropMissionControlPageProps {
 export async function generateMetadata({ params }: DropMissionControlPageProps) {
   const { dropId } = await params;
   return gatedMarketplaceMetadata(
-    'Drop mission control | Pubky Marketplace',
-    'Run one of your timed, limited releases on Pubky Marketplace.',
+    'Drop mission control | Pubky Market',
+    'Run one of your timed, limited releases on Pubky Market.',
     `${MARKETPLACE_ROUTES.SELL_DROPS}/${dropId}`,
   );
 }

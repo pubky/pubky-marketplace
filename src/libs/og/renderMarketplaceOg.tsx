@@ -41,7 +41,7 @@ export function OgMarketplaceFooter({ withMark = true }: { withMark?: boolean })
 }
 
 /**
- * The static marketplace brand card: keyhole mark, "Pubky Marketplace", and the
+ * The static marketplace brand card: keyhole mark, "Pubky Market", and the
  * truthful static tagline. Used by the `/marketplace` OG route (which nested
  * auth-gated marketplace routes inherit) and as the generic fallback whenever a
  * listing/shop record cannot back a richer card.
@@ -65,7 +65,7 @@ export async function renderMarketplaceOg(
         >
           <PubkyMark size={120} />
           <div style={{ display: 'flex', fontSize: 88, fontWeight: 700, color: OG_TOKENS.foreground }}>
-            Pubky Marketplace
+            Pubky Market
           </div>
           <div
             style={{

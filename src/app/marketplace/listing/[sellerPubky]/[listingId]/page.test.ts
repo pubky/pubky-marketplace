@@ -36,6 +36,6 @@ describe('marketplace listing metadata', () => {
           listingId: 'aa540efdabb144c0babc304c5d19f1d3',
         }),
       }),
-    ).resolves.toMatchObject({ title: 'Pubky Marketplace' });
+    ).resolves.toMatchObject({ title: 'Pubky Market' });
   });
 });

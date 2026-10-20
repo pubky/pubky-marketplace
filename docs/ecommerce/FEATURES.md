@@ -1,6 +1,6 @@
 # Marketplace Feature Inventory
 
-Every feature in the Pubky marketplace, organized hierarchically. Honesty
+Every feature in Pubky Market, organized hierarchically. Honesty
 labels follow [`status.md`](status.md) (the authoritative real-vs-simulated
 ledger with live-proof records): anything unlabeled is built, tested, and
 deployed to the staging stack; **experiment-grade** and **sandbox-only**

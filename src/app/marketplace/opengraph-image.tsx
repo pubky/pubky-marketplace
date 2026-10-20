@@ -8,7 +8,7 @@ import { renderMarketplaceOg } from '@/libs/og/renderMarketplaceOg';
 // routes carry their own record-backed image routes.
 export const size = OG_SIZE;
 export const contentType = OG_CONTENT_TYPE;
-export const alt = 'Pubky Marketplace';
+export const alt = 'Pubky Market';
 
 // Segment config must be a statically-analyzable literal — Next won't resolve an
 // imported constant here — kept in sync with OG_COMMERCE_REVALIDATE.

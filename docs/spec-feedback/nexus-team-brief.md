@@ -1,7 +1,7 @@
 # Marketplace indexer and specs fork, as run on staging
 
 **To:** maintainers of `pubky/pubky-nexus` and `pubky/pubky-app-specs`
-**From:** the Pubky Marketplace integration (forks under `BitcoinErrorLog`)
+**From:** the Pubky Market integration (forks under `BitcoinErrorLog`)
 **Date:** 2026-09-01
 **Status:** technical brief. Not a PR, not a demand list. Every SHA
 below was checked with `git cat-file -e <sha>^{commit}` in the checkout

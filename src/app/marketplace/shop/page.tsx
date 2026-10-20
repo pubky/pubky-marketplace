@@ -6,8 +6,8 @@ export default MarketplaceSellerEntry;
 
 export function generateMetadata() {
   return gatedMarketplaceMetadata(
-    'Seller setup | Pubky Marketplace',
-    'Set up your seller account on Pubky Marketplace.',
+    'Seller setup | Pubky Market',
+    'Set up your seller account on Pubky Market.',
     MARKETPLACE_ROUTES.SHOP,
   );
 }

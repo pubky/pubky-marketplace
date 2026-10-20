@@ -12,8 +12,8 @@ export interface MarketplaceConnectorCatalogPageProps {
 export async function generateMetadata({ params }: MarketplaceConnectorCatalogPageProps) {
   const { connectionId } = await params;
   return gatedMarketplaceMetadata(
-    'Store products | Pubky Marketplace',
-    'Choose which products of your store to also publish on Pubky Marketplace.',
+    'Store products | Pubky Market',
+    'Choose which products of your store to also publish on Pubky Market.',
     getStoreConnectionCatalogRoute(connectionId),
   );
 }

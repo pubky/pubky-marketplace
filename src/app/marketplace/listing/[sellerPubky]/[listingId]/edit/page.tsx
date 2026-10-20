@@ -14,8 +14,8 @@ export interface MarketplaceEditListingPageProps {
 export async function generateMetadata({ params }: MarketplaceEditListingPageProps) {
   const { sellerPubky, listingId } = await params;
   return gatedMarketplaceMetadata(
-    'Edit listing | Pubky Marketplace',
-    'Edit your Pubky Marketplace listing.',
+    'Edit listing | Pubky Market',
+    'Edit your Pubky Market listing.',
     getMarketplaceListingEditRoute(sellerPubky, listingId),
   );
 }

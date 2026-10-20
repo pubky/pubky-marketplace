@@ -4,7 +4,7 @@
 
 **To:** maintainers of the Pubky SDK (`pubky` crate), `pubky-homeserver`,
 Homegate, and pkarr
-**From:** the Pubky Marketplace integration (forks under `BitcoinErrorLog`)
+**From:** the Pubky Market integration (forks under `BitcoinErrorLog`)
 **Date:** 2026-09-01
 **Status:** technical brief. Not a PR, not a demand list. Every git SHA
 below was checked with `git cat-file -e <sha>^{commit}` in the checkout

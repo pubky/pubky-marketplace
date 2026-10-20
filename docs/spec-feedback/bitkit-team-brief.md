@@ -1,11 +1,11 @@
-# Bitkit surface as used by the Pubky Marketplace and Hypercolor
+# Bitkit surface as used by the Pubky Market and Hypercolor
 
 > **Note (2026-10-12):** the Shop's encrypted messaging over Paykit Encrypted Links described in this brief was retired; chat now runs on homeserver files ([`../chat/README.md`](../chat/README.md)). The vendored binding serves only receiver-marker reads for payments. The rest is kept as written.
 
 **To:** maintainers of `synonymdev/bitkit`, `synonymdev/bitkit-ios`,
 `synonymdev/bitkit-android`, `synonymdev/bitkit-core`, and
 `synonymdev/pubky-ring`
-**From:** the Pubky Marketplace + Hypercolor integrations (forks under
+**From:** the Pubky Market + Hypercolor integrations (forks under
 `BitcoinErrorLog`)
 **Date:** 2026-09-01
 **Status:** technical brief. Not a PR, not a demand list. Every SHA below was

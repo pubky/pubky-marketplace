@@ -1,4 +1,4 @@
-# Pubky Marketplace overview
+# Pubky Market overview
 
 This overview maps every repository, branch, and document that makes up the Pubky App marketplace feature. The repository map below records where each piece was built.
 

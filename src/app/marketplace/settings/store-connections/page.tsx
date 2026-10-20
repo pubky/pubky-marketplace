@@ -5,8 +5,8 @@ export { MarketplaceStoreConnections as default } from '@/templates/Marketplace/
 
 export function generateMetadata() {
   return gatedMarketplaceMetadata(
-    'Store connections | Pubky Marketplace',
-    'Connect your WooCommerce or Shopify store to Pubky Marketplace.',
+    'Store connections | Pubky Market',
+    'Connect your WooCommerce or Shopify store to Pubky Market.',
     MARKETPLACE_ROUTES.SETTINGS_STORE_CONNECTIONS,
   );
 }

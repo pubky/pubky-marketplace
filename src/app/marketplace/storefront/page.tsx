@@ -5,8 +5,8 @@ export { MarketplaceMyShop as default } from '@/templates/Marketplace/Marketplac
 
 export function generateMetadata() {
   return gatedMarketplaceMetadata(
-    'Storefront | Pubky Marketplace',
-    'Manage your storefront on Pubky Marketplace.',
+    'Storefront | Pubky Market',
+    'Manage your storefront on Pubky Market.',
     MARKETPLACE_ROUTES.MY_SHOP,
   );
 }
