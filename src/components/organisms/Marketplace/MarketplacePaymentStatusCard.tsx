@@ -539,8 +539,8 @@ export function MarketplacePaymentStatusCard({
               )}
               <Button
                 size="sm"
-                variant="ghost"
-                className="w-fit rounded-full"
+                variant="destructive-soft"
+                className="w-full rounded-full"
                 disabled={isReleasingHold}
                 onClick={() => void releaseUnboundHold()}
               >
@@ -695,8 +695,8 @@ export function MarketplacePaymentStatusCard({
               )}
               <Button
                 size="sm"
-                variant="ghost"
-                className="mt-2 w-fit rounded-full"
+                variant="destructive-soft"
+                className="mt-2 w-full rounded-full"
                 disabled={isReleasingHold || methodPayment.pendingAction !== null}
                 onClick={() => void releaseUnboundHold()}
               >

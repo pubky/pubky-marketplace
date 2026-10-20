@@ -766,6 +766,7 @@ function MarketplaceCartCheckout() {
                               isBuyer
                               canEditReview={false}
                               cancelButtonSize="default"
+                              cancelFullWidth
                               actOnOrder={orders.actOnOrder}
                               onChanged={orders.refresh}
                             />
