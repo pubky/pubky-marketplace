@@ -3103,6 +3103,32 @@ describe('CommerceApplication', () => {
       );
     });
 
+    it('skips a listing Nexus still indexes after its record was deleted, instead of failing the refresh', async () => {
+      vi.spyOn(commerceConfig, 'getCommerceAdapterMode').mockReturnValue('transaction-service');
+      await CommerceCatalogEntryModel.table.clear();
+      await CommerceListingModel.table.clear();
+      const deletedId = 'aa2c8b308dbc47619793fe64dcefa9e8';
+      vi.spyOn(NexusMarketplaceService, 'fetchListingStream').mockResolvedValue(SELLER_REFRESH_FIXTURE.nexus);
+      vi.spyOn(CommerceHomeserverService, 'fetchJson').mockImplementation(async (url) => {
+        const listingId = url.split('/').pop()!;
+        if (listingId === deletedId) {
+          throw Err.client(ClientErrorCode.NOT_FOUND, 'Not found', {
+            service: ErrorService.Homeserver,
+            operation: 'fetchJson',
+            context: { statusCode: 404 },
+          });
+        }
+        return capturedById.get(listingId)!;
+      });
+
+      await CommerceApplication.refreshListingsBySeller(capturedSeller);
+
+      const listings = await LocalCommerceService.getListingsBySeller(capturedSeller);
+      expect(listings).toHaveLength(2);
+      expect(listings.map(({ listing_id }) => listing_id)).not.toContain(deletedId);
+      expect((await CommerceCatalogEntryModel.table.toArray()).map(({ listing_id }) => listing_id)).not.toContain(deletedId);
+    });
+
     it('rejects an owner-mismatched Nexus row before mutating the catalog cache', async () => {
       vi.spyOn(commerceConfig, 'getCommerceAdapterMode').mockReturnValue('transaction-service');
       const existing = createCommerceCatalogEntryFixture({ listing_id: 'existing' });

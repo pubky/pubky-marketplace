@@ -660,11 +660,21 @@ export class CommerceApplication {
     const localListings = await LocalCommerceService.getListingsBySeller(sellerPubky);
     const localListingsById = new Map(localListings.map((listing) => [listing.listing_id, listing]));
     const recordsToCommit: CommerceListingRecord[] = [];
+    // Nexus keeps indexing a listing for a while after the seller deletes it.
+    // Its record is gone, so it is skipped rather than failing the refresh.
+    const deleted = new Set<string>();
 
     for (const entry of entries) {
       const local = localListingsById.get(entry.listing_id);
       if (local && local.revision >= entry.revision) continue;
-      const record = await this.fetchListing(sellerPubky, entry.listing_id);
+      let record: CommerceListingRecord;
+      try {
+        record = await this.fetchListing(sellerPubky, entry.listing_id);
+      } catch (error) {
+        if (!(isAppError(error) && isNotFound(error))) throw error;
+        deleted.add(entry.listing_id);
+        continue;
+      }
       if (record.revision < entry.revision) {
         throw Err.validation(
           ValidationErrorCode.INVALID_INPUT,
@@ -679,7 +689,10 @@ export class CommerceApplication {
       recordsToCommit.push(record);
     }
 
-    await LocalCommerceService.commitSellerCatalogRefresh(entries, recordsToCommit);
+    await LocalCommerceService.commitSellerCatalogRefresh(
+      entries.filter((entry) => !deleted.has(entry.listing_id)),
+      recordsToCommit,
+    );
   }
 
   static async getListingsByCategory(categoryId: string) {
