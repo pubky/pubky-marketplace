@@ -496,7 +496,24 @@ export class CommerceApplication {
     return await LocalCommerceService.cacheRefreshedShop(record, local?.record ?? null);
   }
 
+  /**
+   * A seller's current shop record, read network-first so a seller's later
+   * changes (seller type, country) reach buyers who cached the shop before.
+   * Falls back to the cached copy when the read fails, including a 404, which
+   * may be transient; with nothing cached, the read's error propagates.
+   */
   static async getOrFetchShop(ownerPubky: string): Promise<CommerceShopRecord> {
+    try {
+      return await this.refreshShop(ownerPubky);
+    } catch (error) {
+      const local = await LocalCommerceService.getShop(ownerPubky).catch(() => null);
+      if (local) return local.record;
+      throw error;
+    }
+  }
+
+  /** Cache-first: for the per-command and per-catalog-load reads, where a round trip each time costs too much. */
+  private static async getCachedOrFetchShop(ownerPubky: string): Promise<CommerceShopRecord> {
     const local = await LocalCommerceService.getShop(ownerPubky);
     if (local) return local.record;
 
@@ -1412,7 +1429,7 @@ export class CommerceApplication {
 
     let declared: string | undefined;
     try {
-      declared = (await this.getOrFetchShop(sellerPubky)).transactionService;
+      declared = (await this.getCachedOrFetchShop(sellerPubky)).transactionService;
     } catch {
       return;
     }
@@ -3152,7 +3169,7 @@ export class CommerceApplication {
   }
 
   private static async hydrateDiscoveredShops(sellerIds: string[]): Promise<void> {
-    const shopResults = await Promise.allSettled(sellerIds.map((sellerId) => this.getOrFetchShop(sellerId)));
+    const shopResults = await Promise.allSettled(sellerIds.map((sellerId) => this.getCachedOrFetchShop(sellerId)));
     shopResults.forEach((result, index) => {
       if (result.status === 'rejected') {
         Logger.warn('Failed to hydrate a discovered marketplace shop', {

@@ -8,6 +8,7 @@ import { COMMERCE_LISTING_MAX_QUANTITY } from '@/config/commerce';
 import { NEXUS_LISTINGS_PER_PAGE } from '@/config/nexus';
 import { bumpAuthEpoch } from '@/controllers/auth/auth-epoch';
 import { CommerceController } from '@/controllers/commerce/commerce';
+import { sellerDeclaration } from '@/libs/commerce/eu-region';
 import { marketplaceCommandResponseSchema } from '@/libs/commerce/transaction-commands';
 import { UNLIMITED_STOCK_REFUSAL, UNLIMITED_STOCK_RESERVED_MESSAGE } from '@/libs/commerce/unlimited-stock';
 import { toCamelCaseWire } from '@/libs/commerce/wire-casing';
@@ -262,22 +263,42 @@ describe('CommerceApplication', () => {
     });
   });
 
-  it('returns a local shop without a network request', async () => {
-    const record = createCommerceShopFixture();
-    vi.spyOn(LocalCommerceService, 'getShop').mockResolvedValue(
-      new CommerceShopModel({
-        id: COMMERCE_FIXTURE_SELLER,
-        owner_id: COMMERCE_FIXTURE_SELLER,
-        record,
-        revision: 1,
-        sync_status: 'synced',
-        updated_at: Date.parse(record.updatedAt),
-      }),
-    );
-    const fetchJson = vi.spyOn(CommerceHomeserverService, 'fetchJson');
+  it("reads a cached shop fresh so a seller's later declaration reaches the buyer's EU fence", async () => {
+    const cached = createCommerceShopFixture();
+    const updated = {
+      ...cached,
+      sellerStatus: 'private' as const,
+      location: { countryCode: 'BE' },
+      revision: cached.revision + 1,
+    };
+    await LocalCommerceService.upsertShop(cached, 'synced');
+    vi.mocked(CommerceHomeserverService.fetchJson).mockResolvedValue(updated);
 
-    await expect(CommerceApplication.getOrFetchShop(COMMERCE_FIXTURE_SELLER)).resolves.toEqual(record);
-    expect(fetchJson).not.toHaveBeenCalled();
+    const shop = await CommerceApplication.getOrFetchShop(cached.ownerPubky);
+
+    expect(shop).toEqual(updated);
+    expect(sellerDeclaration(shop)).toBe('private');
+    expect(await CommerceController.getShop(cached.ownerPubky)).toMatchObject({
+      record: updated,
+      sync_status: 'synced',
+    });
+  });
+
+  it.each([
+    {
+      reason: 'offline',
+      fail: () => vi.mocked(CommerceHomeserverService.fetchJson).mockRejectedValue(new TypeError('offline')),
+    },
+    {
+      reason: 'a 404',
+      fail: () => vi.spyOn(CommerceHomeserverService, 'fetchJsonIfFound').mockResolvedValue({ found: false }),
+    },
+  ])('falls back to the cached shop when the read fails ($reason)', async ({ fail }) => {
+    const cached = createCommerceShopFixture();
+    await LocalCommerceService.upsertShop(cached, 'synced');
+    fail();
+
+    await expect(CommerceApplication.getOrFetchShop(cached.ownerPubky)).resolves.toEqual(cached);
   });
 
   it.each([
@@ -3874,8 +3895,6 @@ describe('CommerceApplication', () => {
           headers: { 'content-type': 'application/json' },
         }),
       );
-      vi.spyOn(CommerceApplication, 'getOrFetchShop').mockResolvedValue(createCommerceShopFixture());
-
       await CommerceController.fetchCatalogListings({
         saleFormat: 'all',
         conditions: [],
