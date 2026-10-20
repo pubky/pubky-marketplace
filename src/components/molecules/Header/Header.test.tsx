@@ -556,13 +556,13 @@ describe('Header Components', () => {
       });
     });
 
-    it('hides Marketplace from navigation by default', () => {
+    it('hides Market from navigation by default', () => {
       render(<HeaderNavigationButtons avatarName="TU" />);
       const hrefs = screen.getAllByRole('link').map((link) => link.getAttribute('href'));
       expect(hrefs).not.toContain('/marketplace');
     });
 
-    it('shows Marketplace in navigation when the commerce adapter is enabled', () => {
+    it('shows Market in navigation when the commerce adapter is enabled', () => {
       const adapterMode = vi.spyOn(commerceConfig, 'getCommerceAdapterMode').mockReturnValue('sandbox');
       try {
         render(<HeaderNavigationButtons avatarName="TU" />);
@@ -579,7 +579,7 @@ describe('Header Components', () => {
       try {
         render(<HeaderNavigationButtons avatarName="TU" />);
 
-        expect(screen.getByRole('button', { name: 'Marketplace, 3 items in cart' })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Market, 3 items in cart' })).toBeInTheDocument();
         expect(document.querySelector('[data-cy="header-marketplace-btn-counter"]')).toHaveTextContent('3');
       } finally {
         adapterMode.mockRestore();
@@ -592,7 +592,7 @@ describe('Header Components', () => {
       try {
         render(<HeaderNavigationButtons avatarName="TU" />);
 
-        expect(screen.getByRole('button', { name: 'Marketplace, 1 item in cart' })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Market, 1 item in cart' })).toBeInTheDocument();
       } finally {
         adapterMode.mockRestore();
       }
@@ -609,7 +609,7 @@ describe('Header Components', () => {
         vi.mocked(useMarketplaceCartCount).mockReturnValue(22);
         render(<HeaderNavigationButtons avatarName="TU" />);
         expect(document.querySelector('[data-cy="header-marketplace-btn-counter"]')).toHaveTextContent('21+');
-        expect(screen.getByRole('button', { name: 'Marketplace, 22 items in cart' })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Market, 22 items in cart' })).toBeInTheDocument();
       } finally {
         adapterMode.mockRestore();
       }
@@ -622,7 +622,7 @@ describe('Header Components', () => {
       try {
         render(<HeaderNavigationButtons avatarName="TU" />);
 
-        expect(screen.getByRole('button', { name: 'Marketplace, 2 need attention' })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Market, 2 need attention' })).toBeInTheDocument();
         expect(document.querySelector('[data-cy="header-marketplace-btn-counter"]')).toHaveTextContent('2');
       } finally {
         adapterMode.mockRestore();

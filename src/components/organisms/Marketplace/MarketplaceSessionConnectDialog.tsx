@@ -67,7 +67,7 @@ export const GRANT_APPROVAL_SIGNER_HINT =
  * which is what makes the dependent durable-mode surfaces refetch.
  */
 export function MarketplaceSessionConnectDialog({
-  triggerLabel = 'Connect marketplace session',
+  triggerLabel = 'Connect market session',
   triggerVariant = 'default',
   triggerIcon: TriggerIcon = KeyRound,
   onConnected,
@@ -211,7 +211,7 @@ export function MarketplaceSessionConnectDialog({
         )}
 
         {!refusesGrantSession && !session.requiresSignIn && needsSignerChoice && (
-          <div className="grid gap-2" aria-label="Marketplace approval signer">
+          <div className="grid gap-2" aria-label="Market approval signer">
             <Button variant={signerChoice === 'ring' ? 'default' : 'outline'} onClick={() => setSignerChoice('ring')}>
               Pubky Ring
             </Button>
@@ -335,7 +335,7 @@ export function MarketplaceSessionConnectDialog({
                     : 'Preparing secure approval…'
                   : session.status === 'verifying'
                     ? 'Verifying approval…'
-                    : 'Connecting marketplace…'}
+                    : 'Connecting market…'}
               </div>
             )}
 
@@ -419,7 +419,7 @@ function MarketplacePassportApproval({
               ? confirmingHomeserver
                 ? 'Confirming with your homeserver…'
                 : 'Preparing secure approval…'
-              : 'Connecting marketplace…'}
+              : 'Connecting market…'}
         </div>
       ) : null}
     </div>

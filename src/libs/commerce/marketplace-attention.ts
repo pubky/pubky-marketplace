@@ -135,9 +135,9 @@ export function offerNeedsCurrentUser(
 
 export function marketplaceNavAccessibleName(cartCount: number, attentionCount: number): string {
   const attention = attentionCount === 1 ? '1 needs attention' : `${attentionCount} need attention`;
-  if (cartCount <= 0) return `Marketplace, ${attention}`;
+  if (cartCount <= 0) return `Market, ${attention}`;
   const cart = cartCount === 1 ? '1 item in cart' : `${cartCount} items in cart`;
-  return `Marketplace, ${cart}, ${attention}`;
+  return `Market, ${cart}, ${attention}`;
 }
 
 /** The subject key an order contributes to the combined marketplace badge. */

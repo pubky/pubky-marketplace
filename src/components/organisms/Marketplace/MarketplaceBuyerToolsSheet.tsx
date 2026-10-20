@@ -64,7 +64,7 @@ export function MarketplaceBuyerToolsSheet({
       <SheetTrigger asChild>
         <Button variant="ghost" className="rounded-full">
           <LayoutDashboard className="size-4" />
-          My marketplace
+          My market
           <MarketplaceNavCountBadge count={cartCount + activityUnreadCount} className="ml-2" />
         </Button>
       </SheetTrigger>
@@ -74,7 +74,7 @@ export function MarketplaceBuyerToolsSheet({
         className="rounded-t-2xl border-border bg-popover px-4 pb-6"
       >
         <SheetHeader>
-          <SheetTitle>My marketplace</SheetTitle>
+          <SheetTitle>My market</SheetTitle>
         </SheetHeader>
         <div className="mt-4 grid gap-2" data-testid="marketplace-buyer-tools-sheet">
           {MARKETPLACE_BUYER_TOOLS.map(({ label, href, icon: Icon, countKey }) => {

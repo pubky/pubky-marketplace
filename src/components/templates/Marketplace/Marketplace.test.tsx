@@ -226,7 +226,7 @@ describe('Marketplace', () => {
       vi.stubGlobal('innerWidth', 390);
       view = render(<Marketplace />, { container, hydrate: true });
 
-      expect(screen.getByRole('textbox', { name: 'Filter marketplace' })).toHaveAttribute('placeholder', 'Search');
+      expect(screen.getByRole('textbox', { name: 'Filter market' })).toHaveAttribute('placeholder', 'Search');
       expect(consoleError.mock.calls.flat().join(' ')).not.toMatch(/hydrat|didn't match/i);
     } finally {
       view?.unmount();
@@ -340,7 +340,7 @@ describe('Marketplace', () => {
 
     render(<Marketplace />);
 
-    const dismissButton = await screen.findByRole('button', { name: 'Dismiss marketplace promo' });
+    const dismissButton = await screen.findByRole('button', { name: 'Dismiss market promo' });
     await user.click(dismissButton);
 
     await waitFor(() => expect(promoDismiss).toHaveBeenCalledOnce());
@@ -350,7 +350,7 @@ describe('Marketplace', () => {
     expect(buildFeatureDiscoveryDeviceStorageKey(MARKETPLACE_PROMO_STORAGE_ID)).toBe(
       `${FEATURE_DISCOVERY_STORAGE_PREFIX}:${MARKETPLACE_PROMO_STORAGE_ID}`,
     );
-    expect(screen.queryByRole('region', { name: 'Marketplace promo' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Market promo' })).not.toBeInTheDocument();
   });
 
   it('keeps the server-rendered promo mounted until the account dismissal resolves', () => {
@@ -358,12 +358,12 @@ describe('Marketplace', () => {
 
     const { rerender } = render(<Marketplace />);
 
-    expect(screen.getByRole('region', { name: 'Marketplace promo' })).toHaveAttribute('data-marketplace-promo');
+    expect(screen.getByRole('region', { name: 'Market promo' })).toHaveAttribute('data-marketplace-promo');
 
     promoState.isResolved = true;
     rerender(<Marketplace />);
 
-    expect(screen.queryByRole('region', { name: 'Marketplace promo' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Market promo' })).not.toBeInTheDocument();
   });
 
   it('shows the indexed-state caveat on the drops filter and does not repeat the same drop', () => {

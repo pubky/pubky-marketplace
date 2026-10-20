@@ -22,12 +22,12 @@ describe('MarketplaceFilters', () => {
     render(
       <MarketplaceFilters
         resultCount={8}
-        searchControl={<input aria-label="Filter marketplace" />}
+        searchControl={<input aria-label="Filter market" />}
         sellControl={<button type="button">Sell an item</button>}
       />,
     );
 
-    expect(screen.getByRole('textbox', { name: 'Filter marketplace' })).toBeInTheDocument();
+    expect(screen.getByRole('textbox', { name: 'Filter market' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Sell an item' })).toBeInTheDocument();
     expect(screen.getByText('Type')).toBeInTheDocument();
     expect(screen.getByText('Anywhere')).toBeInTheDocument();

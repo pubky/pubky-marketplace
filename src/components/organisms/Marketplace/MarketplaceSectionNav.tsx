@@ -36,7 +36,7 @@ type MarketplaceSectionItem = {
 
 const getItems = (socialLinkOut: boolean): readonly MarketplaceSectionItem[] => [
   {
-    label: 'Marketplace',
+    label: 'Market',
     href: APP_ROUTES.MARKETPLACE,
     icon: Store,
     activePrefixes: [
@@ -98,7 +98,7 @@ export function MarketplaceSectionNav({
         onPointerDown={onInteract}
         onWheel={onInteract}
         onKeyDown={onInteract}
-        aria-label="Marketplace sections"
+        aria-label="Market sections"
         data-testid="marketplace-section-nav"
         className="w-full min-w-0 overflow-x-auto sm:overflow-visible"
       >

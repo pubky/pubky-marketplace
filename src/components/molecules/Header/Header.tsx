@@ -116,7 +116,7 @@ const isMarketplaceNavEnabled = () => getCommerceAdapterMode() !== 'unavailable'
 const marketplaceNavItem: NavigationItemConfig = {
   href: APP_ROUTES.MARKETPLACE,
   icon: Store,
-  label: 'Marketplace',
+  label: 'Market',
   dataCy: 'header-marketplace-btn',
   activePrefix: APP_ROUTES.MARKETPLACE,
 };

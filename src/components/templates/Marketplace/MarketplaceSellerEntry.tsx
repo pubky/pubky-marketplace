@@ -26,7 +26,7 @@ export function MarketplaceSellerEntry() {
           className="inline-flex w-fit items-center gap-2 text-sm text-muted-foreground hover:text-foreground"
         >
           <ArrowLeft className="size-4" />
-          Marketplace
+          Market
         </Link>
 
         <Card className="rounded-md p-0">

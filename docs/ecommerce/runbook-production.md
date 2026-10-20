@@ -115,7 +115,7 @@ curl -fsS https://pubky-marketplace-production.vercel.app/marketplace/listing/<s
 
 Expected user-visible behavior:
 
-- Marketplace catalog shows: `Marketplace transactions are unavailable in this deployment. Public browsing remains
+- Marketplace catalog shows: `Market transactions are unavailable in this deployment. Public browsing remains
 read-only.` (`src/components/templates/Marketplace/Marketplace.tsx`).
 - Listing purchase controls are disabled and the page shows: `Transactions are disabled in this deployment.`
   (`src/components/templates/Marketplace/MarketplaceListing.tsx`).

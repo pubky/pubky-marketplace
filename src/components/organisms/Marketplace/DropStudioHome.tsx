@@ -107,7 +107,7 @@ export function DropStudioHome() {
                   Connect a marketplace session to read drop status.
                 </Typography>
                 <MarketplaceSessionConnectDialog
-                  triggerLabel="Connect marketplace session"
+                  triggerLabel="Connect market session"
                   onConnected={() => void drops.refresh()}
                 />
               </div>

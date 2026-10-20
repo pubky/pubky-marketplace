@@ -160,7 +160,7 @@ export function Marketplace({
         {renderPromo && (
           <section
             data-marketplace-promo=""
-            aria-label="Marketplace promo"
+            aria-label="Market promo"
             className={cn(
               'marketplace-promo-enter relative overflow-hidden rounded-md bg-card p-6 sm:p-10',
               isPromoDismissing && 'marketplace-promo-exit',
@@ -169,7 +169,7 @@ export function Marketplace({
             <Button
               variant="ghost"
               size="icon"
-              aria-label="Dismiss marketplace promo"
+              aria-label="Dismiss market promo"
               onClick={dismissMarketplacePromo}
               className="absolute top-2 right-2 z-10 size-8 text-muted-foreground hover:text-foreground sm:top-3 sm:right-3 sm:size-10"
             >
@@ -236,7 +236,7 @@ export function Marketplace({
                 style={SEARCH_CLOSED_STYLE}
               >
                 <Input
-                  aria-label="Filter marketplace"
+                  aria-label="Filter market"
                   value={query}
                   onChange={(event) => setQuery(event.target.value)}
                   placeholder="Search"
@@ -270,7 +270,7 @@ export function Marketplace({
 
           {adapterMode === 'unavailable' && (
             <div role="status" className="rounded-md border border-amber-500/30 bg-amber-500/10 p-4 text-amber-200">
-              Marketplace transactions are unavailable in this deployment. Public browsing remains read-only.
+              Market transactions are unavailable in this deployment. Public browsing remains read-only.
             </div>
           )}
 

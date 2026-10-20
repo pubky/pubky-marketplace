@@ -46,7 +46,7 @@ vi.mock('@/controllers/commerce/commerce', () => ({
 }));
 
 vi.mock('@/organisms/Marketplace/MarketplaceSectionNav', () => ({
-  MarketplaceSectionNav: () => <nav aria-label="Marketplace sections" />,
+  MarketplaceSectionNav: () => <nav aria-label="Market sections" />,
 }));
 
 vi.mock('@/molecules/Toaster/use-toast', () => ({

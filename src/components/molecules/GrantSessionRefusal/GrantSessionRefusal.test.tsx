@@ -12,7 +12,7 @@ vi.mock('@/hooks/useGrantSigner/useGrantSigner', async (importOriginal) => ({
 describe('grantSessionRefusalCopy', () => {
   it('explains deployment unavailability without naming a signer or a cookie login', () => {
     expect(grantSessionRefusalCopy()).toBe(
-      'Marketplace approvals are unavailable on this deployment. Try again when access is enabled.',
+      'Market approvals are unavailable on this deployment. Try again when access is enabled.',
     );
   });
 });
@@ -23,7 +23,7 @@ describe('GrantSessionRefusal', () => {
     render(<GrantSessionRefusal />);
 
     expect(screen.getByTestId('grant-session-refusal')).toHaveTextContent(
-      'Marketplace approvals are unavailable on this deployment. Try again when access is enabled.',
+      'Market approvals are unavailable on this deployment. Try again when access is enabled.',
     );
   });
 
@@ -32,7 +32,7 @@ describe('GrantSessionRefusal', () => {
     render(<GrantSessionRefusal />);
 
     expect(screen.getByTestId('grant-session-refusal')).toHaveTextContent(
-      'Marketplace approvals are unavailable on this deployment.',
+      'Market approvals are unavailable on this deployment.',
     );
   });
 });

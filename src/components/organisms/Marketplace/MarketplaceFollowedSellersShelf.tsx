@@ -27,14 +27,14 @@ export function MarketplaceFollowedSellersShelf() {
   if (listings.length === 0) return null;
 
   return (
-    <section aria-label="Marketplace listings from sellers you follow" className="flex flex-col gap-3">
+    <section aria-label="Market listings from sellers you follow" className="flex flex-col gap-3">
       <div className="flex items-end justify-between gap-2">
         <div className="flex flex-col">
           <Typography
             as="span"
             className="text-[11px] leading-4 font-medium tracking-[1.2px] text-muted-foreground uppercase"
           >
-            Marketplace
+            Market
           </Typography>
           <Typography as="h2" className="text-base leading-6 font-semibold text-foreground">
             From sellers you follow

@@ -30,7 +30,7 @@ export function MarketplaceEmptyState({
           </Typography>
           <Button asChild variant="secondary" className="mt-6 rounded-full">
             <Link href={APP_ROUTES.MARKETPLACE} overrideDefaults>
-              Browse marketplace
+              Browse market
             </Link>
           </Button>
         </div>

@@ -203,7 +203,7 @@ export function MarketplaceNotifications() {
           <div className="flex flex-col gap-3">
             {integrityGapCount > 0 && (
               <div role="status" className="rounded-md border border-amber-500/40 p-4 text-sm">
-                {integrityGapCount} unrecognized marketplace event{integrityGapCount === 1 ? '' : 's'} — history may be
+                {integrityGapCount} unrecognized market event{integrityGapCount === 1 ? '' : 's'} — history may be
                 incomplete.
               </div>
             )}
@@ -250,7 +250,7 @@ function KnownOrGapActivityRow({ type, createdAt }: { type: string; createdAt: s
             <Bell className="size-5" />
           </div>
           <Typography as="p" className="font-semibold">
-            Unrecognized marketplace event
+            Unrecognized market event
           </Typography>
           <Typography as="span" className="ml-auto text-xs text-muted-foreground">
             Integrity notice

@@ -147,7 +147,7 @@ export function useMarketplaceSessionConnect(
         setErrorMessage(
           !expectedPubky
             ? 'Sign in again to connect the marketplace.'
-            : 'Marketplace approvals are unavailable on this deployment.',
+            : 'Market approvals are unavailable on this deployment.',
         );
         setStatus('error');
         return;

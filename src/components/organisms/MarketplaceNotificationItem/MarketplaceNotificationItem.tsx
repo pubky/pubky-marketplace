@@ -65,7 +65,7 @@ export function MarketplaceNotificationItem({ notification, isMobile = false }: 
       >
         <Container overrideDefaults={true} className="size-6 shrink-0 rounded-full bg-amber-500/15" />
         <div className="min-w-0 flex-1">
-          <p className="font-medium">Unrecognized marketplace event</p>
+          <p className="font-medium">Unrecognized market event</p>
           <p className="text-sm text-muted-foreground">History may be incomplete.</p>
         </div>
         <span className="shrink-0 text-xs font-medium tracking-widest text-muted-foreground">Integrity notice</span>
