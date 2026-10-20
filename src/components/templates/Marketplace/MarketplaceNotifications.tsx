@@ -26,6 +26,7 @@ import { formatDateTime } from '@/libs/utils/dateTime';
 import { MarketplaceEmptyState } from '@/molecules/Marketplace/MarketplaceEmptyState';
 import { ContentLayout } from '@/organisms/ContentLayout/ContentLayout';
 import { MarketplaceSectionNav } from '@/organisms/Marketplace/MarketplaceSectionNav';
+import { MarketplaceSessionRequiredCard } from '@/organisms/Marketplace/MarketplaceSessionRequiredCard';
 import {
   getWatchAlertDetail,
   getWatchAlertHeadline,
@@ -43,6 +44,8 @@ import { useAuthStore } from '@/stores/auth/auth.store';
 
 /** Device-local alerts shown on this page before the service-delivered list. */
 const WATCH_ALERTS_SECTION_LIMIT = 6;
+
+const ACTIVITY_SESSION_NOTE = 'Your order and payment updates show here once you approve.';
 
 export function MarketplaceNotifications() {
   const {
@@ -191,11 +194,9 @@ export function MarketplaceNotifications() {
         {isLoading ? (
           <Skeleton className="h-32 w-full" />
         ) : needsSession && error ? (
-          <MarketplaceEmptyState
-            icon={Bell}
-            title="No commerce updates"
-            description="Updates about your marketplace activity will appear here."
-          />
+          // A missing or expired marketplace session is not an empty history:
+          // the list loads once the session is approved again.
+          <MarketplaceSessionRequiredCard note={ACTIVITY_SESSION_NOTE} />
         ) : error ? (
           <div role="alert" className="rounded-md border border-destructive/40 p-4">
             {error}
