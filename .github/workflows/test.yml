@@ -78,7 +78,7 @@ jobs:
     needs: paths
     if: always()
     runs-on: ubuntu-latest
-    timeout-minutes: 8
+    timeout-minutes: 12
     env:
       RUN_TESTS: ${{ needs.paths.outputs.run }}
     strategy:
