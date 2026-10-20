@@ -52,7 +52,7 @@ const signInPath = `${BASE_PATH}/sign-in`;
 const EVIDENCE = evidenceDir();
 const EXPECTED_DPL = process.env.EXPECTED_DPL ?? '';
 if (!EXPECTED_DPL) throw new Error('set EXPECTED_DPL to the dpl_… id now aliased to the origin');
-const SERVICE = process.env.PROOF_SERVICE ?? 'https://marketplace-service-production-ce23.up.railway.app';
+const SERVICE = process.env.PROOF_SERVICE ?? 'https://marketplace-edge-production.up.railway.app';
 const RELAY = process.env.PROOF_RELAY ?? 'https://httprelay.pubky.app/inbox';
 const CAPABILITIES = shopCapabilities();
 const CLIENT_ID = process.env.PROOF_CLIENT_ID ?? 'shop.pubky.app';
