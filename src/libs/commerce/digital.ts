@@ -607,6 +607,9 @@ export const DIGITAL_ORDER_COPY = {
   heading: 'Your purchase',
   download: 'Download',
   downloading: 'Downloading…',
+  downloadAgain: 'Download again',
+  /** Shown once the browser has the file: browsers save it without a prompt the Shop can see. */
+  downloadSaved: 'Saved to your downloads.',
   revealText: 'Reveal text',
   showLink: 'Show link',
   openLink: 'Open link',

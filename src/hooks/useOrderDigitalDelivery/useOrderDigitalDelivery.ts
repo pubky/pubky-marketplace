@@ -25,7 +25,7 @@ export type OrderDigitalLine = {
   kind: MarketplaceDigitalDeliveryKind;
 };
 
-export type OrderDigitalLineState = { status: 'idle' | 'opening' | 'failed'; message: string | null };
+export type OrderDigitalLineState = { status: 'idle' | 'opening' | 'saved' | 'failed'; message: string | null };
 
 /** A revealed link or text, held in component memory only. */
 export type OrderDigitalReveal = { kind: 'link'; url: string } | { kind: 'text'; text: string };
@@ -98,6 +98,8 @@ export function useOrderDigitalDelivery(order: MarketplaceOrder) {
           return;
         }
         saveDigitalFile(opened.bytes, opened.fileName, opened.contentType);
+        setLine(lineIndex, { status: 'saved', message: null });
+        return;
       } else {
         setReveals((current) => ({
           ...current,

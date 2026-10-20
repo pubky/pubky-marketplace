@@ -89,6 +89,44 @@ describe('MarketplaceOrderDigitalPanel (digital delivery design §3 "After payme
     );
   });
 
+  it('confirms a saved file and offers it again (#375)', async () => {
+    const user = userEvent.setup();
+    URL.createObjectURL = vi.fn(() => 'blob:purchase');
+    URL.revokeObjectURL = vi.fn();
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+    vi.mocked(CommerceController.fetchOrderDigitalDelivery).mockResolvedValue({
+      orderId: base.id,
+      lines: [
+        {
+          ...common,
+          lineIndex: 0,
+          kind: 'file',
+          key: 'c'.repeat(64),
+          iv: 'd'.repeat(24),
+          ciphertextBlake3: 'e'.repeat(64),
+          plaintextBlake3: 'f'.repeat(64),
+          contentType: 'application/pdf',
+          fileName: 'Field Guide.pdf',
+          sizeBytes: 3,
+        },
+      ],
+    });
+    vi.mocked(CommerceController.openOrderDigitalFile).mockResolvedValue({
+      ok: true,
+      bytes: new Uint8Array([1, 2, 3]),
+      fileName: 'Field Guide.pdf',
+      contentType: 'application/pdf',
+    });
+    render(<MarketplaceOrderDigitalPanel order={digitalOrder('delivered', ['file'])} />);
+
+    await user.click(screen.getByRole('button', { name: 'Download' }));
+
+    expect(await screen.findByRole('status')).toHaveTextContent('Saved to your downloads.');
+    expect(screen.getByRole('button', { name: 'Download again' })).toBeEnabled();
+    expect(click).toHaveBeenCalledTimes(1);
+    click.mockRestore();
+  });
+
   it('says a purchase unlocks at payment, and offers nothing to open before then (D8)', () => {
     render(<MarketplaceOrderDigitalPanel order={digitalOrder('pending_payment', ['file'], { receiptId: null })} />);
 
