@@ -81,6 +81,9 @@ export function MarketplaceListingOwnerPanel({
 
   const canRegister = CommerceController.canRegisterListings();
   const registrationPending = isListingRegistrationPending({ registration_status: registrationStatus });
+  // The service projection is the authority on whether the aggregate exists: a fresh browser has no local
+  // registration status yet, but a non-null projection proves the listing is already registered.
+  const needsRegistration = registrationPending && !projection;
   // A registered listing whose projection lags its record heals the same way: for a registered aggregate the
   // registration sends `listing.sync`, which re-derives the service's terms from the record. Each staleness
   // (record revision against server revision) is healed once, because every attempt can rewrite the local
@@ -212,13 +215,13 @@ export function MarketplaceListingOwnerPanel({
               {displayState}
             </Badge>
           </div>
-          {registrationPending && !canRegister && (
+          {needsRegistration && !canRegister && (
             <Typography as="p" className="text-xs text-muted-foreground" data-testid="listing-registration-unsupported">
               This browser can&apos;t register listings for checkout. Update it or use another browser.
             </Typography>
           )}
           <div className="flex flex-wrap gap-2">
-            {registrationPending && canRegister && (
+            {needsRegistration && canRegister && (
               <Button
                 size="sm"
                 variant="secondary"
