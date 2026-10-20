@@ -6,6 +6,7 @@ import { LISTING_PUBLISH_BLOCK_COPY } from '@/libs/commerce/listing-publish-guar
 import { toast } from '@/molecules/Toaster/use-toast';
 import { useCommerceStore } from '@/stores/commerce/commerce.store';
 import { createCommerceListingFixture } from '@/test/fixtures/commerce/commerce';
+import { createListingProjectionFixture } from '@/test/fixtures/commerce/projections';
 import { useMarketplaceSellerDashboard } from './useMarketplaceSellerDashboard';
 
 const OWNER = 'y'.repeat(52);
@@ -78,6 +79,8 @@ vi.mock('@/controllers/commerce/commerce', () => ({
     exportInventoryListingsCsv: vi.fn(async () => new Uint8Array()),
     getSellerPaymentConfig: vi.fn(),
     getMyDeliveryKeyStatus: vi.fn(),
+    getMarketplaceListingProjection: vi.fn(),
+    cacheMarketplaceListingProjection: vi.fn(async () => undefined),
   },
 }));
 
@@ -719,3 +722,40 @@ function unsavedDraft(form: Record<string, unknown>) {
     updated_at: 2_000,
   };
 }
+
+describe('useMarketplaceSellerDashboard stock', () => {
+  afterEach(() => {
+    adapter.durable = false;
+    useCommerceStore.setState({ marketplaceSession: null });
+  });
+
+  it("refreshes each listing's service stock once the catalog settles, since a sale leaves the record's quantity", async () => {
+    vi.clearAllMocks();
+    adapter.durable = true;
+    currentUserPubky = OWNER;
+    listingDraftRows = [];
+    const record = createCommerceListingFixture({ listingId: 'guide_01' });
+    localListings = [{ id: `${OWNER}:guide_01`, listing_id: 'guide_01', state: 'active', record }];
+    useCommerceStore.setState({
+      marketplaceSession: {
+        pubky: OWNER,
+        capabilities: '/pub/pubky.app/:rw',
+        issuedAt: '2026-10-15T00:00:00.000Z',
+        expiresAt: '2026-11-15T00:00:00.000Z',
+      },
+    });
+    vi.mocked(CommerceController.getListingsBySeller).mockResolvedValue(localListings as never);
+    vi.mocked(CommerceController.getMarketplaceListingProjection).mockResolvedValue(
+      createListingProjectionFixture({ aggregateId: `listing:${OWNER}_guide_01`, availableQuantity: 4 }),
+    );
+
+    renderHook(() => useMarketplaceSellerDashboard());
+
+    await waitFor(() =>
+      expect(CommerceController.cacheMarketplaceListingProjection).toHaveBeenCalledWith(
+        expect.objectContaining({ id: `${OWNER}:guide_01`, available_quantity: 4 }),
+      ),
+    );
+    expect(CommerceController.getMarketplaceListingProjection).toHaveBeenCalledWith(OWNER, 'guide_01');
+  });
+});
