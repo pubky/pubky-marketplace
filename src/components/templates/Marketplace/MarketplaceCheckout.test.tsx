@@ -1260,6 +1260,8 @@ describe('MarketplaceCheckout', () => {
       ['bitcoin', 'delivered', 'detected', 'pending_payment', false],
       ['bitcoin', 'delivered', 'awaiting_seller_confirmation', 'pending_payment', false],
       ['usdt', 'delivered', 'detected', 'pending_payment', false],
+      ['usdt', 'failed', 'detected', 'pending_payment', false],
+      ['bitcoin', 'failed', 'awaiting_seller_confirmation', 'pending_payment', false],
       ['paykit', 'failed', null, 'cancelled', false],
       ['bitcoin', 'failed', null, 'paid', false],
       ['bitcoin', 'failed', null, 'cancelled', false],

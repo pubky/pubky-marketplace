@@ -19,7 +19,7 @@ import { orderAmountEntry } from '@/libs/commerce/bitcoin-payment-code';
 import { OTHER_CARRIER_ID, SHIPPING_CARRIERS } from '@/libs/commerce/carriers';
 import { DIGITAL_ORDER_COPY, DIGITAL_SELLER_COPY, isInstantDigitalDeliveryKind } from '@/libs/commerce/digital';
 import { formatCommerceMoney } from '@/libs/commerce/format';
-import { isPaykitOrder, observedPaymentRail } from '@/libs/commerce/paykit-rail';
+import { observedPaymentRail, paykitCheckoutCancellable } from '@/libs/commerce/paykit-rail';
 import { formatUsdt } from '@/libs/commerce/payment-options';
 import { formatBitcoinAmount } from '@/libs/commerce/pricing';
 import { isUsdtFulfilmentBlocked, PAYMENT_NOT_FINAL_COPY } from '@/libs/commerce/usdt-buyer-status';
@@ -437,7 +437,7 @@ export function MarketplaceOrderActions({
               external evidence. Cancellation requests may need seller approval before the order is cancelled.
             </Typography>
           )}
-          {actionType === 'cancel' && order.state === 'pending_payment' && isPaykitOrder(order) && (
+          {actionType === 'cancel' && order.state === 'pending_payment' && paykitCheckoutCancellable(order) && (
             <Typography as="p" className="text-sm text-muted-foreground" data-testid="paykit-cancel-unpaid-request">
               {PAYKIT_CANCEL_UNPAID_REQUEST_COPY}
             </Typography>

@@ -760,9 +760,7 @@ function MarketplaceCartCheckout() {
                         showStatusLabels={false}
                         checkoutActions={
                           order.state === 'pending_payment' &&
-                          (order.paymentMethod === 'paypal' ||
-                            order.paykitDeliveryState === 'failed' ||
-                            paykitCheckoutCancellable(order)) ? (
+                          (order.paymentMethod === 'paypal' || paykitCheckoutCancellable(order)) ? (
                             <MarketplaceOrderActions
                               order={order}
                               isBuyer

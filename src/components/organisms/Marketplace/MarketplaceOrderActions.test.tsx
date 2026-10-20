@@ -930,3 +930,28 @@ describe('MarketplaceOrderActions USDT refund recording', () => {
     expect(screen.queryByTestId('usdt-refund-address-hint')).not.toBeInTheDocument();
   });
 });
+
+describe('MarketplaceOrderActions Paykit cancel dialog', () => {
+  it.each([
+    ['pending', true],
+    ['detected', false],
+    ['awaiting_seller_confirmation', false],
+  ] as const)(
+    'warns about the leftover Bitkit request when the request reads %s: %s',
+    async (paykitRequestState, shown) => {
+      const user = userEvent.setup();
+      render(
+        <MarketplaceOrderActions
+          order={createOrderFixture('pending_payment', { paymentMethod: 'paykit', paykitRequestState })}
+          isBuyer
+          canEditReview={false}
+          actOnOrder={vi.fn()}
+          onChanged={vi.fn()}
+        />,
+      );
+
+      await user.click(screen.getByRole('button', { name: 'Cancel checkout' }));
+      expect(screen.queryByTestId('paykit-cancel-unpaid-request') !== null).toBe(shown);
+    },
+  );
+});
