@@ -192,6 +192,37 @@ describe('MarketplaceBidDialog', () => {
     expect(screen.getByRole('button', { name: 'Auction ended' })).toBeDisabled();
   });
 
+  it('reads "Auction ended" for the owner of an ended auction, not the own-listing notice', () => {
+    render(
+      <MarketplaceBidDialog
+        aggregateId="listing:x"
+        projection={createAuctionProjectionFixture()}
+        priceAsset={USD_ASSET}
+        onAccepted={vi.fn()}
+        auctionPhase="ended"
+        isOwner
+      />,
+    );
+
+    expect(screen.getByRole('button', { name: 'Auction ended' })).toBeDisabled();
+    expect(screen.queryByRole('button', { name: 'You cannot bid on your own listing' })).not.toBeInTheDocument();
+  });
+
+  it('still tells the owner of a live auction they cannot bid on their own listing', () => {
+    render(
+      <MarketplaceBidDialog
+        aggregateId="listing:x"
+        projection={createAuctionProjectionFixture()}
+        priceAsset={USD_ASSET}
+        onAccepted={vi.fn()}
+        auctionPhase="live"
+        isOwner
+      />,
+    );
+
+    expect(screen.getByRole('button', { name: 'You cannot bid on your own listing' })).toBeDisabled();
+  });
+
   it('keeps the country field open, with the remembered country, so a wrong one can be corrected', async () => {
     process.env[PUBKY_RUNTIME_ENV_NAMES.euFenceEnabled] = 'true';
     resetRuntimeConfigForTests();

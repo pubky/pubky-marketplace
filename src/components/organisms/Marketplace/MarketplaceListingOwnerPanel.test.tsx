@@ -119,6 +119,25 @@ describe('MarketplaceListingOwnerPanel registration self-heal', () => {
       expect(controller.ensureListingRegistered).toHaveBeenCalledWith(record);
     });
 
+    it.each([undefined, 'unregistered'] as const)(
+      'offers no registration when the service already has the listing but the local status is %s',
+      (status) => {
+        render(<MarketplaceListingOwnerPanel record={record} registrationStatus={status} projection={projection} />);
+
+        expect(screen.queryByRole('button', { name: 'Register for checkout' })).not.toBeInTheDocument();
+        expect(screen.queryByTestId('listing-registration-unsupported')).not.toBeInTheDocument();
+      },
+    );
+
+    it('does not claim the browser cannot register a listing the service already has', () => {
+      controller.canRegisterListings.mockReturnValue(false);
+      render(
+        <MarketplaceListingOwnerPanel record={record} registrationStatus="unregistered" projection={projection} />,
+      );
+
+      expect(screen.queryByTestId('listing-registration-unsupported')).not.toBeInTheDocument();
+    });
+
     it('leaves a projection that matches the record alone', () => {
       render(<MarketplaceListingOwnerPanel record={record} registrationStatus="registered" projection={projection} />);
 
