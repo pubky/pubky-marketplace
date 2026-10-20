@@ -42,7 +42,7 @@ const { chromium } = repoRequire('playwright');
 const { AuthFlowKind, Pubky } = repoRequire('@synonymdev/pubky');
 
 const { origin: ORIGIN, at } = proofTarget();
-const SERVICE = process.env.PROOF_SERVICE ?? 'https://marketplace-service-production-ce23.up.railway.app';
+const SERVICE = process.env.PROOF_SERVICE ?? 'https://marketplace-edge-production.up.railway.app';
 const NEXUS = process.env.PROOF_NEXUS ?? 'https://nexusd-production-7108.up.railway.app';
 const RELAY = process.env.PROOF_RELAY ?? 'https://httprelay.pubky.app/inbox';
 const CAPABILITIES = shopCapabilities();

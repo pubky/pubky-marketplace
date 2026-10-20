@@ -80,7 +80,7 @@ const { chromium } = repoRequire('playwright');
 const { AuthFlowKind, Pubky } = repoRequire('@synonymdev/pubky');
 
 const ORIGIN = process.env.PROOF_ORIGIN ?? 'https://shop.pubky.app';
-const SERVICE = process.env.PROOF_SERVICE ?? 'https://marketplace-service-production-ce23.up.railway.app';
+const SERVICE = process.env.PROOF_SERVICE ?? 'https://marketplace-edge-production.up.railway.app';
 const NEXUS = process.env.PROOF_NEXUS ?? 'https://nexusd-production-7108.up.railway.app';
 const RELAY = process.env.PROOF_RELAY ?? 'https://httprelay.pubky.app/inbox';
 const FX_FEED = process.env.PROOF_FX_FEED ?? 'https://api1.blocktank.to/api/fx/rates/btc';

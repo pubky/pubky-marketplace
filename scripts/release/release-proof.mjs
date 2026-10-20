@@ -25,7 +25,7 @@
 // Env: PROOF_EVIDENCE and EXPECTED_DPL (required), seats (see seats.mjs), PROOF_ORIGIN (with the mount path when
 // the Shop is embedded, e.g. https://pubky.app/shop-embed), PROOF_SERVICE, PROOF_RELAY, PROOF_CLIENT_ID (the
 // grant client id the Shop's QRs carry; default shop.pubky.app), PROOF_PAYPAL_LISTING_URL (optional listing path
-// for step 4), PROOF_BITCOIN_LISTING_URL (optional listing path for step 9), PROOF_NEXUS (listing discovery and
+// for step 4), PROOF_BUYER_COUNTRY (answers the "Country you live in" prompt when the region flags are on), PROOF_BITCOIN_LISTING_URL (optional listing path for step 9), PROOF_NEXUS (listing discovery and
 // storefront cleanup; default -7108, or the staging index when PROOF_SERVICE is staging-api), PROOF_GS1=1 (step 1
 // also checks that sign-in minted the marketplace session from the grant), PROOF_STEPS (optional subset, e.g. 1,2,9).
 // Runbook: docs/ecommerce/release.md.
@@ -52,7 +52,7 @@ const signInPath = `${BASE_PATH}/sign-in`;
 const EVIDENCE = evidenceDir();
 const EXPECTED_DPL = process.env.EXPECTED_DPL ?? '';
 if (!EXPECTED_DPL) throw new Error('set EXPECTED_DPL to the dpl_… id now aliased to the origin');
-const SERVICE = process.env.PROOF_SERVICE ?? 'https://marketplace-service-production-ce23.up.railway.app';
+const SERVICE = process.env.PROOF_SERVICE ?? 'https://marketplace-edge-production.up.railway.app';
 const RELAY = process.env.PROOF_RELAY ?? 'https://httprelay.pubky.app/inbox';
 const CAPABILITIES = shopCapabilities();
 const CLIENT_ID = process.env.PROOF_CLIENT_ID ?? 'shop.pubky.app';
@@ -281,6 +281,22 @@ async function emptyCart(page) {
   return await page.getByRole('button', { name: /^Remove / }).count();
 }
 
+// With the EU fence or the digital hold on, the Shop disables "Buy" until the buyer says which country they live in
+// ("Country you live in", remembered on the device). PROOF_BUYER_COUNTRY (two letters, unset by default) answers it.
+async function declareBuyerCountry(page) {
+  const country = process.env.PROOF_BUYER_COUNTRY ?? '';
+  if (!country) return;
+  const field = page.getByTestId('buyer-country-field').locator('input').first();
+  const shown = await field
+    .waitFor({ state: 'visible', timeout: 5_000 })
+    .then(() => true)
+    .catch(() => false);
+  if (!shown) return;
+  if ((await field.inputValue().catch(() => '')) === country) return;
+  await field.fill(country);
+  await page.waitForTimeout(500);
+}
+
 // Listing CTAs: "Add to cart" / "Approve to buy" up to v0.6.48; one "Buy" button from #135 (v0.6.49).
 const BUY_LABEL = /^(Add to cart|Buy)$/;
 const LISTING_CTA =
@@ -288,6 +304,7 @@ const LISTING_CTA =
 // From #135 the "Buy" button renders at once and stays disabled until availability loads (earlier
 // builds showed "Checking availability…" instead), so wait for an enabled purchase button.
 async function waitForEnabledPurchase(page, timeout = 30_000) {
+  await declareBuyerCountry(page);
   await page
     .waitForFunction(
       () =>
