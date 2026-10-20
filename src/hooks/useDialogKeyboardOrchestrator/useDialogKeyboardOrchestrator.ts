@@ -57,7 +57,7 @@ export function useDialogKeyboardOrchestrator<T extends HTMLElement>(
     bottomMargin = DEFAULT_BOTTOM_MARGIN,
     threshold = DEFAULT_THRESHOLD,
   } = options;
-  const { isKeyboardVisible, keyboardHeight, keyboardTop, viewportOffsetTop } = useKeyboardViewport({
+  const { isKeyboardVisible, keyboardHeight, keyboardTop, viewportHeight, viewportOffsetTop } = useKeyboardViewport({
     enabled,
     threshold,
   });
@@ -165,16 +165,22 @@ export function useDialogKeyboardOrchestrator<T extends HTMLElement>(
     viewportOffsetTop,
   ]);
 
-  const contentStyle: CSSProperties | undefined =
-    enabled && isKeyboardVisible && spacerHeight > 0
-      ? {
-          scrollPaddingBottom: `${spacerHeight + bottomMargin}px`,
-        }
-      : undefined;
+  const fitsViewport = enabled && isKeyboardVisible && viewportHeight > 0;
+  const contentStyle: CSSProperties | undefined = fitsViewport
+    ? {
+        // The dialog scrolls inside the visible area, so its footer stays reachable above the keyboard.
+        maxHeight: `${Math.max(0, viewportHeight - 2 * bottomMargin)}px`,
+        ...(spacerHeight > 0 ? { scrollPaddingBottom: `${spacerHeight + bottomMargin}px` } : {}),
+      }
+    : undefined;
+  const layerStyle: CSSProperties | undefined = fitsViewport
+    ? { top: `${viewportOffsetTop}px`, bottom: 'auto', height: `${viewportHeight}px` }
+    : undefined;
 
   return {
     isKeyboardVisible,
     spacerHeight,
     contentStyle,
+    layerStyle,
   };
 }
