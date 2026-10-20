@@ -27,13 +27,16 @@ export function derivePaypalStatus(config: SellerPaymentConfigOwnView | null): P
 /**
  * The Bitcoin pill from the service's uncached `bitcoin_setup`
  * (`accountClaimed` from `useMarketplaceSellerPaymentConfig`): `ready` is
- * Connected and only a definite `setup_required` is Not set up. An unknown
- * answer (`unavailable`, a failed read, or a service without the field) needs
- * attention, like USDT's `unavailable`: Bitkit may already be connected.
+ * Connected and a definite `setup_required` is Not set up, unless Paykit holds
+ * the seller (`needsReconnect`, the service's `bitcoin_setup_action`): they set
+ * Bitkit up before, so the pill says Needs attention and the step offers
+ * Reconnect Bitkit. An unknown answer (`unavailable`, a failed read, or a
+ * service without the field) also needs attention, like USDT's `unavailable`:
+ * Bitkit may already be connected.
  */
-export function deriveBitcoinStatus(accountClaimed: boolean | null): PaymentMethodStatus {
+export function deriveBitcoinStatus(accountClaimed: boolean | null, needsReconnect = false): PaymentMethodStatus {
   if (accountClaimed === true) return 'connected';
-  if (accountClaimed === false) return 'not_set_up';
+  if (accountClaimed === false) return needsReconnect ? 'needs_attention' : 'not_set_up';
   return 'needs_attention';
 }
 
@@ -47,10 +50,11 @@ export function canOfferBitkitSetup(accountClaimed: boolean | null): accountClai
 }
 
 /** Why "Accept bitcoin" is still switched off, or null when nothing is missing. */
-export type BitcoinToggleBlocker = 'bitkit' | 'bitkit-unknown';
+export type BitcoinToggleBlocker = 'bitkit' | 'bitkit-reconnect' | 'bitkit-unknown';
 
 export const BITCOIN_TOGGLE_BLOCKER_COPY: Record<BitcoinToggleBlocker, string> = {
   bitkit: 'Connect Bitkit first.',
+  'bitkit-reconnect': 'Reconnect Bitkit first.',
   'bitkit-unknown': "We can't check Bitkit right now.",
 };
 
@@ -58,10 +62,14 @@ export const BITCOIN_TOGGLE_BLOCKER_COPY: Record<BitcoinToggleBlocker, string> =
  * Names the missing step behind a disabled "Accept bitcoin" switch. An
  * unknown claim (`null`) is never reported as missing: the read failed, so
  * Bitkit may already be connected. Bitkit is named only when the service
- * answered `setup_required`.
+ * answered `setup_required`, and a seller Paykit holds (`needsReconnect`) is
+ * asked to reconnect, not to connect.
  */
-export function deriveBitcoinToggleBlocker(accountClaimed: boolean | null): BitcoinToggleBlocker | null {
-  if (accountClaimed === false) return 'bitkit';
+export function deriveBitcoinToggleBlocker(
+  accountClaimed: boolean | null,
+  needsReconnect = false,
+): BitcoinToggleBlocker | null {
+  if (accountClaimed === false) return needsReconnect ? 'bitkit-reconnect' : 'bitkit';
   if (accountClaimed === null) return 'bitkit-unknown';
   return null;
 }

@@ -41,6 +41,12 @@ describe('MarketplaceGetPaidSettings status derivation', () => {
     ] as const)('claimed=%s → %s', (accountClaimed, expected) => {
       expect(deriveBitcoinStatus(accountClaimed)).toBe(expected);
     });
+
+    it('asks a seller Paykit holds to reconnect: Needs attention, not Not set up', () => {
+      expect(deriveBitcoinStatus(false, true)).toBe('needs_attention');
+      expect(deriveBitcoinStatus(true, true)).toBe('connected');
+      expect(deriveBitcoinStatus(null, true)).toBe('needs_attention');
+    });
   });
 
   describe('bitcoin_setup through the derivations', () => {
@@ -76,9 +82,16 @@ describe('MarketplaceGetPaidSettings status derivation', () => {
       expect(deriveBitcoinToggleBlocker(accountClaimed)).toBe(expected);
     });
 
+    it('asks a seller Paykit holds to reconnect, and never turns an unknown read into a step', () => {
+      expect(deriveBitcoinToggleBlocker(false, true)).toBe('bitkit-reconnect');
+      expect(deriveBitcoinToggleBlocker(null, true)).toBe('bitkit-unknown');
+      expect(deriveBitcoinToggleBlocker(true, true)).toBeNull();
+    });
+
     it('names only Bitkit in its copy', () => {
       expect(BITCOIN_TOGGLE_BLOCKER_COPY).toEqual({
         bitkit: 'Connect Bitkit first.',
+        'bitkit-reconnect': 'Reconnect Bitkit first.',
         'bitkit-unknown': "We can't check Bitkit right now.",
       });
     });

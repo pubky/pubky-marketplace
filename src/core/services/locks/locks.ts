@@ -275,8 +275,10 @@ export class LocksGatewayService {
 
   /**
    * Upstream paykit-server reconnect URL (`GET /setup/reconnect`), the flow
-   * that adds a previously omitted USDT address to an existing Bitkit account
-   * without changing the account or the approved Bitcoin binding. Unlike
+   * that adds a previously omitted USDT address to an existing Bitkit account.
+   * It also asks Bitkit for a Bitcoin account, so the approval moves Bitcoin
+   * receiving to a new account and cancels unaccepted requests on the old
+   * one (paykit-server#106). Unlike
    * `/setup` (which rejects `creator`), reconnect requires it, so it is always
    * sent regardless of `paykitSetupCreatorParam`. The configured
    * `paykitSetupUrl` is the full setup URL (it already ends in `/setup`), so

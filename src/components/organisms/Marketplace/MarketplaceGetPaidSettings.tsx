@@ -94,9 +94,9 @@ const UNSAVED_SELLER_PAYMENT_CONFIG: SellerPaymentConfigOwnView = {
 };
 const PAYPAL_EMAIL_INVALID_COPY = 'Enter a valid email address.';
 const PAYKIT_RECONNECT_EXPLANATION =
-  'Scan the code with Bitkit, or open this page on your phone and tap Continue with Bitkit, to share a USDT address. Your Bitkit account and Bitcoin setup stay the same.';
+  "Scan the code with Bitkit, or open this page on your phone and tap Continue with Bitkit, to share a USDT address. Bitkit also gives Paykit a new Bitcoin account, which can cancel a buyer's pending Bitcoin request that has not been accepted yet.";
 const PAYKIT_BITCOIN_RECONNECT_EXPLANATION =
-  'Paykit already has a Bitkit setup for this pubky. Approve it again in Bitkit to reconnect; your Bitkit account and Bitcoin addresses stay the same.';
+  "Paykit already has a Bitkit setup for this pubky. Approve it again in Bitkit to reconnect. Bitkit gives Paykit a new Bitcoin account, which can cancel a buyer's pending Bitcoin request that has not been accepted yet.";
 /** Upstream `/setup` refuses an account Paykit already holds (for example one set up for Locks); reconnect re-approves it. */
 const PAYKIT_SETUP_FAILED_COPY =
   'Bitkit setup failed. If this pubky already has a Paykit setup, for example from Locks or another Shop, reconnect it instead.';
@@ -347,6 +347,12 @@ export function MarketplaceGetPaidSettings({ onSaved }: MarketplaceGetPaidSettin
 
   const paypalStatus = derivePaypalStatus(payments.config);
   const usdtReadiness = deriveUsdtSellerReadiness(serverConfig ?? {});
+  const upstreamPaykit = getPaykitServerApi() === 'upstream';
+  // Upstream Paykit refuses a second initial setup for an account it holds. A connected wallet reconnects, and so
+  // does a seller the service says Paykit holds (`bitcoin_setup_action`): their reconnect stopped after Paykit
+  // stored the credentials, so every rail reads as not set up until it completes.
+  const bitcoinNeedsReconnect =
+    upstreamPaykit && payments.accountClaimed === false && payments.config?.bitcoinSetupAction === 'reconnect';
   // Before a session there is no read: the pill matches PayPal and USDT and the
   // Enable selling card is the next step. A reload keeps a known answer; with
   // none yet, nothing is claimed until the read returns.
@@ -362,7 +368,7 @@ export function MarketplaceGetPaidSettings({ onSaved }: MarketplaceGetPaidSettin
       ? 'not_set_up'
       : bitkitRead === 'checking'
         ? null
-        : deriveBitcoinStatus(payments.accountClaimed);
+        : deriveBitcoinStatus(payments.accountClaimed, bitcoinNeedsReconnect);
   // Until the first read returns there is no readiness to show; deriving it
   // from no config would fail closed to `unavailable` and flash Needs attention.
   const usdtStatus: PaymentMethodStatus | null =
@@ -375,16 +381,16 @@ export function MarketplaceGetPaidSettings({ onSaved }: MarketplaceGetPaidSettin
       ? paykitSetupProblemState.problem
       : null;
   const paykitCodeExpired = paykitSetupStatus === 'error' || paykitSetupStatus === 'timeout';
-  const upstreamPaykit = getPaykitServerApi() === 'upstream';
-  // Upstream Paykit refuses a second initial setup for an account it holds, so a connected wallet reconnects.
-  const step2Mode: PaykitSetupMode = upstreamPaykit && payments.accountClaimed === true ? 'bitcoin-reconnect' : 'setup';
-  const offerBitcoinReconnect = upstreamPaykit && paykitSetupProblem === 'error' && payments.accountClaimed === false;
+  const step2Mode: PaykitSetupMode =
+    upstreamPaykit && (payments.accountClaimed === true || bitcoinNeedsReconnect) ? 'bitcoin-reconnect' : 'setup';
+  const offerBitcoinReconnect =
+    upstreamPaykit && step2Mode === 'setup' && paykitSetupProblem === 'error' && payments.accountClaimed === false;
   const failedSetupInDialog = upstreamPaykit && paykitSetupStatus === 'error' && paykitSetupMode === 'setup';
   // Only the missing-step reason is explained here; without a session the
   // card's "Enable selling" prompt already says why the switch is off.
   const bitcoinToggleBlocker =
     marketplaceSession && !payments.isLoading && !payments.loadError && !bitcoinValue && bitcoinStatus !== 'connected'
-      ? deriveBitcoinToggleBlocker(payments.accountClaimed)
+      ? deriveBitcoinToggleBlocker(payments.accountClaimed, bitcoinNeedsReconnect)
       : null;
 
   // Stored rails need the marketplace session and the loaded config; the
@@ -532,7 +538,9 @@ export function MarketplaceGetPaidSettings({ onSaved }: MarketplaceGetPaidSettin
                     ? PAYKIT_UNCONFIRMED_COPY
                     : offerBitcoinReconnect
                       ? PAYKIT_SETUP_FAILED_COPY
-                      : 'Bitkit setup failed. Try again.'}
+                      : step2Mode === 'bitcoin-reconnect'
+                        ? PAYKIT_RECONNECT_FAILED_COPY
+                        : 'Bitkit setup failed. Try again.'}
               </Typography>
             )}
           </div>
@@ -579,21 +587,21 @@ export function MarketplaceGetPaidSettings({ onSaved }: MarketplaceGetPaidSettin
             <Typography as="p" className="text-sm text-muted-foreground">
               Offer bitcoin payment option at checkout.
             </Typography>
-            {bitcoinToggleBlocker === 'bitkit' && (
+            {(bitcoinToggleBlocker === 'bitkit' || bitcoinToggleBlocker === 'bitkit-reconnect') && (
               <Typography
                 as="p"
                 id="get-paid-bitcoin-blocker"
                 className="mt-2 text-sm text-muted-foreground"
                 data-testid="bitcoin-toggle-blocker"
               >
-                {BITCOIN_TOGGLE_BLOCKER_COPY.bitkit}{' '}
+                {BITCOIN_TOGGLE_BLOCKER_COPY[bitcoinToggleBlocker]}{' '}
                 <Button
                   variant="link"
                   className="h-auto p-0"
                   disabled={!currentUserPubky}
-                  onClick={() => openPaykitSetup('setup')}
+                  onClick={() => openPaykitSetup(step2Mode)}
                 >
-                  Connect now
+                  {step2Mode === 'bitcoin-reconnect' ? 'Reconnect now' : 'Connect now'}
                 </Button>
               </Typography>
             )}
@@ -601,7 +609,7 @@ export function MarketplaceGetPaidSettings({ onSaved }: MarketplaceGetPaidSettin
           <Switch
             id="get-paid-bitcoin"
             aria-describedby={
-              bitcoinToggleBlocker === 'bitkit'
+              bitcoinToggleBlocker === 'bitkit' || bitcoinToggleBlocker === 'bitkit-reconnect'
                 ? 'get-paid-bitcoin-blocker'
                 : bitkitRead === 'unknown' && !bitcoinValue
                   ? 'get-paid-bitkit-unknown'

@@ -16,6 +16,7 @@ import {
   USDT_SELLER_CONFIG_READY_WIRE,
   USDT_SELLER_CONFIG_RECONNECT_WIRE,
   USDT_SELLER_CONFIG_SETUP_WIRE,
+  USDT_SELLER_CONFIG_STRANDED_WIRE,
   USDT_SELLER_CONFIG_UNAVAILABLE_WIRE,
 } from '@/test/fixtures/commerce/seller-payment-config-usdt.wire';
 import { asOpaque } from '@/test-utils/type-assertions';
@@ -249,6 +250,8 @@ describe('MarketplaceGetPaidSettings USDT', () => {
       expect(within(panel).getByRole('button', { name: /Add USDT in Bitkit/ })).toBeEnabled();
       expect(screen.queryByRole('button', { name: /Set up Bitkit payments/ })).not.toBeInTheDocument();
       expect(screen.getByTestId('payment-method-status-usdt')).toHaveTextContent('Not set up');
+      expect(panel).toHaveTextContent(/can cancel a buyer's pending Bitcoin request that has not been accepted yet/);
+      expect(panel).not.toHaveTextContent(/stays the same/);
     });
 
     it('names Pubky Ring as unable to share a USDT address only for a seller who signed in with Ring', async () => {
@@ -256,9 +259,9 @@ describe('MarketplaceGetPaidSettings USDT', () => {
       mocked.getMyPaymentConfig.mockResolvedValue(fromWire(USDT_SELLER_CONFIG_RECONNECT_WIRE));
       await renderSettings();
 
-      expect(await screen.findByTestId('usdt-readiness-reconnect')).toHaveTextContent(
-        "USDT needs Bitkit. Pubky Ring can't share a USDT address.",
-      );
+      const panel = await screen.findByTestId('usdt-readiness-reconnect');
+      expect(panel).toHaveTextContent("USDT needs Bitkit. Pubky Ring can't share a USDT address.");
+      expect(panel).toHaveTextContent(/can cancel a buyer's pending Bitcoin request that has not been accepted yet/);
     });
 
     it('uses neutral wording when the sign-in does not identify a signer', async () => {
@@ -268,6 +271,7 @@ describe('MarketplaceGetPaidSettings USDT', () => {
       const panel = await screen.findByTestId('usdt-readiness-reconnect');
       expect(panel).toHaveTextContent('USDT needs Bitkit to share a USDT address.');
       expect(panel).not.toHaveTextContent(/Ring|Passport/);
+      expect(panel).toHaveTextContent(/can cancel a buyer's pending Bitcoin request that has not been accepted yet/);
     });
 
     it('offers Set up Bitkit payments for a seller with no Paykit account', async () => {
@@ -456,7 +460,12 @@ describe('MarketplaceGetPaidSettings USDT', () => {
       expect(url.searchParams.get('state')).toHaveLength(22);
       expect(url.hash).toBe('#embed');
       expect(screen.getByRole('heading', { name: 'Add USDT in Bitkit' })).toBeInTheDocument();
-      expect(screen.getByText(/Your Bitkit account and Bitcoin setup stay the same/)).toBeInTheDocument();
+      const dialog = within(screen.getByRole('dialog', { name: 'Add USDT in Bitkit' }));
+      expect(dialog.getByText(/Bitkit also gives Paykit a new Bitcoin account/)).toBeInTheDocument();
+      expect(
+        dialog.getByText(/can cancel a buyer's pending Bitcoin request that has not been accepted yet/),
+      ).toBeInTheDocument();
+      expect(screen.queryByText(/stay the same/)).not.toBeInTheDocument();
       expect(screen.getByText(/tap Continue with Bitkit, to share a USDT address/)).toBeInTheDocument();
     });
 
@@ -507,6 +516,78 @@ describe('MarketplaceGetPaidSettings USDT', () => {
       sendCallback(iframe);
       expect(mocked.getMyPaymentConfig).not.toHaveBeenCalled();
       expect(mockedToast).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('an existing Bitcoin seller adds USDT (reconnect)', () => {
+    const readyBitcoinNoUsdt = () => ({
+      ...fromWire(USDT_SELLER_CONFIG_RECONNECT_WIRE),
+      bitcoinSetup: 'ready' as const,
+      bitcoinSetupAction: null,
+    });
+
+    it('is offered the reconnect again, never the initial setup Paykit refuses, when the reconnect stops after Paykit stored the credentials', async () => {
+      runtime.api = 'upstream';
+      mocked.getMyPaymentConfig.mockResolvedValue(readyBitcoinNoUsdt());
+      await renderSettings();
+      expect(await screen.findByTestId('payment-method-status-bitcoin')).toHaveTextContent('Connected');
+      await userEvent.click(await screen.findByRole('button', { name: /Add USDT in Bitkit/ }));
+      const iframe = screen.getByTitle('Add USDT in Bitkit') as HTMLIFrameElement;
+      expect(new URL(iframe.src).pathname).toBe('/setup/reconnect');
+
+      // The approval went through in Bitkit and paykit-server stored the new credentials, but the reconnect did
+      // not finish: Paykit now reads the seller as setup_required on every rail.
+      mocked.getMyPaymentConfig.mockResolvedValue(fromWire(USDT_SELLER_CONFIG_STRANDED_WIRE));
+      sendCallback(iframe);
+      await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('did not confirm a USDT address'));
+      await userEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+
+      expect(screen.getByTestId('payment-method-status-bitcoin')).toHaveTextContent('Needs attention');
+      const usdt = screen.getByTestId('usdt-seller-setup');
+      expect(within(usdt).getByRole('button', { name: /Add USDT in Bitkit/ })).toBeEnabled();
+      expect(screen.queryByRole('button', { name: /Set up Bitkit payments/ })).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /^Connect Bitkit/ })).not.toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /Reconnect Bitkit/ })).toBeEnabled();
+
+      // Either card finishes it through the reconnect route, and both rails are ready again.
+      mocked.getMyPaymentConfig.mockResolvedValue(fromWire(USDT_SELLER_CONFIG_READY_WIRE));
+      await userEvent.click(screen.getByRole('button', { name: /Reconnect Bitkit/ }));
+      const retried = screen.getByTitle('Reconnect Bitkit') as HTMLIFrameElement;
+      expect(new URL(retried.src).pathname).toBe('/setup/reconnect');
+      sendCallback(retried);
+      expect(await screen.findByTestId('usdt-readiness-ready')).toBeInTheDocument();
+      expect(await screen.findByText('Wallet connected.')).toBeInTheDocument();
+      expect(screen.getByTestId('payment-method-status-bitcoin')).toHaveTextContent('Connected');
+      expect(mocked.getPaykitSetupUrl).not.toHaveBeenCalled();
+    });
+
+    it('adds USDT in one reconnect and leaves Bitcoin connected', async () => {
+      runtime.api = 'upstream';
+      mocked.getMyPaymentConfig.mockResolvedValue(readyBitcoinNoUsdt());
+      await renderSettings();
+      await userEvent.click(await screen.findByRole('button', { name: /Add USDT in Bitkit/ }));
+      const iframe = screen.getByTitle('Add USDT in Bitkit') as HTMLIFrameElement;
+
+      mocked.getMyPaymentConfig.mockResolvedValue(fromWire(USDT_SELLER_CONFIG_READY_WIRE));
+      sendCallback(iframe);
+
+      expect(await screen.findByTestId('usdt-readiness-ready')).toBeInTheDocument();
+      expect(mockedToast).toHaveBeenCalledWith({ title: 'USDT is ready' });
+      expect(screen.getByTestId('payment-method-status-bitcoin')).toHaveTextContent('Connected');
+      expect(mocked.getPaykitSetupUrl).not.toHaveBeenCalled();
+    });
+
+    it('still offers the initial setup, and only that, to a seller Paykit has never held', async () => {
+      runtime.api = 'upstream';
+      mocked.getMyPaymentConfig.mockResolvedValue({
+        ...fromWire(USDT_SELLER_CONFIG_SETUP_WIRE),
+        bitcoinSetupAction: 'setup',
+      });
+      await renderSettings();
+
+      expect(await screen.findByRole('button', { name: /Set up Bitkit payments/ })).toBeEnabled();
+      expect(screen.queryByRole('button', { name: /Add USDT in Bitkit/ })).not.toBeInTheDocument();
+      expect(screen.getByTestId('payment-method-status-bitcoin')).toHaveTextContent('Not set up');
     });
   });
 

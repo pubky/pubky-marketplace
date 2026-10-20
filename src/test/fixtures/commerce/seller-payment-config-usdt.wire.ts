@@ -60,6 +60,26 @@ export const USDT_SELLER_CONFIG_UNAVAILABLE_WIRE = {
   },
 } as const;
 
+/**
+ * A seller who set up Bitkit and then approved a reconnect that stopped after
+ * Paykit stored the credentials. Paykit answers `setup_required` to every
+ * question, as it does for a seller it has never seen, so both cards would
+ * offer the initial setup, which Paykit refuses for a seller it holds. The
+ * service knows it holds them and names the reconnect on both cards
+ * (`bitcoin_setup_action`, `usdt_setup_action`).
+ */
+export const USDT_SELLER_CONFIG_STRANDED_WIRE = {
+  payment_config: {
+    ...BASE_PAYMENT_CONFIG,
+    bitcoin_enabled: false,
+    bitcoin_setup: 'setup_required',
+    bitcoin_setup_action: 'reconnect',
+    usdt_enabled: false,
+    usdt_setup: 'setup_required',
+    usdt_setup_action: 'reconnect',
+  },
+} as const;
+
 /** The same configuration while the service's USDT flag is off: none of the USDT keys appear. */
 export const USDT_SELLER_CONFIG_FLAG_OFF_WIRE = {
   payment_config: BASE_PAYMENT_CONFIG,

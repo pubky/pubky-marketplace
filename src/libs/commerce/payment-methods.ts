@@ -135,12 +135,23 @@ export type BitcoinSetupStatus = (typeof BITCOIN_SETUP_STATUSES)[number];
 const bitcoinSetupSchema = z.enum(BITCOIN_SETUP_STATUSES).optional().catch(undefined);
 
 /**
+ * The Bitkit flow for a seller whose `bitcoin_setup` is `setup_required`, on a
+ * service with upstream Paykit: `reconnect` when Paykit already holds the seller
+ * (its initial setup refuses them, so only a reconnect works), `setup` when it
+ * does not, `null` when nothing is missing. Absent on the fork and on a service
+ * that predates it, and an unrecognised value is dropped, which keeps today's
+ * behaviour.
+ */
+const bitcoinSetupActionSchema = usdtSetupActionSchema;
+
+/**
  * The seller's own view when editing the configuration. Mirrors the
  * service's `payment_config` response.
  */
 export const sellerPaymentConfigOwnViewSchema = z.object({
   bitcoinEnabled: z.boolean(),
   bitcoinSetup: bitcoinSetupSchema,
+  bitcoinSetupAction: bitcoinSetupActionSchema,
   // Present only when the service's USDT flag is on (the seller's Shop-level consent).
   usdtEnabled: z.boolean().optional().catch(undefined),
   // Readiness from the service's signed Paykit lookup (see usdt-seller-setup.ts).

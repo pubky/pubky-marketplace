@@ -271,6 +271,16 @@ describe('payment-methods', () => {
       expect(sellerPaymentConfigOwnViewSchema.parse({ ...ownView, usdtEnabled: 'on' }).usdtEnabled).toBeUndefined();
     });
 
+    it('reads bitcoinSetupAction, keeps null, and drops an unknown value or an absent key', () => {
+      const withAction = (bitcoinSetupAction: unknown) =>
+        sellerPaymentConfigOwnViewSchema.parse({ ...ownView, bitcoinSetup: 'setup_required', bitcoinSetupAction });
+      expect(withAction('reconnect').bitcoinSetupAction).toBe('reconnect');
+      expect(withAction('setup').bitcoinSetupAction).toBe('setup');
+      expect(withAction(null).bitcoinSetupAction).toBeNull();
+      expect(withAction('retry').bitcoinSetupAction).toBeUndefined();
+      expect(sellerPaymentConfigOwnViewSchema.parse(ownView)).not.toHaveProperty('bitcoinSetupAction');
+    });
+
     it('reads the USDT readiness fields and ignores them when absent', () => {
       const ready = sellerPaymentConfigOwnViewSchema.parse({
         ...ownView,
