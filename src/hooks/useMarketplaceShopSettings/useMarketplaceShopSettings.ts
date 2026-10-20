@@ -222,6 +222,7 @@ export function useMarketplaceShopSettings() {
         autoCompleteDays: record.autoCompleteDays?.toString() ?? '',
         sellerStatus: record.sellerStatus ?? '',
         confirmPrivateStatus: false,
+        confirmBitcoinPayments: record.bitcoinConfirmation === 'seller',
       });
       // A list another writer left unusable (["CHE"]) blocks checkout, so the
       // seller sees why straight away instead of on the next save.
@@ -304,6 +305,8 @@ export function useMarketplaceShopSettings() {
             previousConfirmedAt: existingRecord?.sellerStatusConfirmedAt,
             now,
           }),
+          // Off is published absent, so the default applies again.
+          bitcoinConfirmation: data.confirmBitcoinPayments ? 'seller' : undefined,
         });
         setRevision((current) => current + 1);
         setCreatedAt((current) => current ?? now);

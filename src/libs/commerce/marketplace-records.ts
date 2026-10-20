@@ -558,6 +558,9 @@ const commerceShopRecordSchemaInner = commercePublicRecordBaseSchema
     sellerStatus: z.enum(['private', 'trader']).optional().catch(undefined),
     // When the seller last re-confirmed they sell as a private individual (plan C4).
     sellerStatusConfirmedAt: commerceTimestampSchema.optional().catch(undefined),
+    // Who confirms the seller's Bitcoin payments (legal launch plan B4): `seller` means the seller
+    // confirms their own; absent or anything else is the default. Read leniently.
+    bitcoinConfirmation: z.enum(['seller']).optional().catch(undefined),
     createdAt: commerceTimestampSchema,
     updatedAt: commerceTimestampSchema,
   })

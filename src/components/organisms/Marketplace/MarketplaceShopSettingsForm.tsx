@@ -237,6 +237,29 @@ function MarketplaceShopSettingsLoaded({ settings, onSaved }: MarketplaceShopSet
               </div>
             )}
           />
+          <Controller
+            name="confirmBitcoinPayments"
+            control={settings.form.control}
+            render={({ field }) => (
+              <div data-testid="shop-settings-confirm-bitcoin">
+                <Label className="justify-between">
+                  I confirm my own Bitcoin payments
+                  <Switch
+                    checked={field.value}
+                    onCheckedChange={field.onChange}
+                    disabled={settings.isSaving}
+                    aria-label="I confirm my own Bitcoin payments"
+                  />
+                </Label>
+                <Typography as="p" className="mt-1 text-sm text-muted-foreground">
+                  When on, a Bitcoin payment made through Paykit is not marked paid automatically: you confirm each one
+                  from the order once it reaches your wallet, and digital items are released only after you do. If you
+                  do not confirm within 24 hours, the payment goes to review. This applies to new orders only. Orders
+                  paid through Locks are not held. Off by default.
+                </Typography>
+              </div>
+            )}
+          />
           <Button size="lg" className="w-full rounded-full" disabled={settings.isSaving} onClick={() => void submit()}>
             {settings.isSaving ? 'Saving…' : 'Save storefront'}
           </Button>
