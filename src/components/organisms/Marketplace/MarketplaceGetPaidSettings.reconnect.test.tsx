@@ -340,6 +340,116 @@ describe('MarketplaceGetPaidSettings Bitkit reconnect (upstream Paykit)', () => 
     });
   });
 
+  describe('a setup error or expiry is checked against the service first', () => {
+    async function openSetup() {
+      await renderSettings();
+      await userEvent.click(await screen.findByRole('button', { name: /Connect Bitkit/ }));
+      return paykitFrame('Connect Bitkit');
+    }
+
+    it('shows success when the flow expired (410) after the setup completed server-side', async () => {
+      const setupFrame = await openSetup();
+      mocked.getMyPaymentConfig.mockClear().mockResolvedValue(ownConfig('ready', null));
+
+      sendCallback(setupFrame, { error: 'expired' });
+
+      expect(await screen.findByText('Wallet connected.')).toBeInTheDocument();
+      expect(mocked.getMyPaymentConfig).toHaveBeenCalledTimes(1);
+      expect(mockedToast).toHaveBeenCalledWith({ title: 'Bitkit setup connected' });
+      expect(screen.queryByRole('dialog', { name: 'Connect Bitkit' })).not.toBeInTheDocument();
+      expect(screen.queryByText(/setup failed/i)).not.toBeInTheDocument();
+      expect(screen.queryByTestId('paykit-setup-problem')).not.toBeInTheDocument();
+      expect(screen.getByTestId('payment-method-status-bitcoin')).toHaveTextContent('Connected');
+    });
+
+    it('shows the failure and reconnect copy when the service confirms the account is not set up', async () => {
+      const setupFrame = await openSetup();
+      mocked.getMyPaymentConfig.mockClear().mockResolvedValue(ownConfig('setup_required', 'setup'));
+
+      sendCallback(setupFrame, { error: 'expired' });
+
+      const dialog = screen.getByRole('dialog', { name: 'Connect Bitkit' });
+      expect(await within(dialog).findByText(/Bitkit setup failed\..*reconnect it instead/)).toBeInTheDocument();
+      expect(mocked.getMyPaymentConfig).toHaveBeenCalledTimes(1);
+      expect(mockedToast).not.toHaveBeenCalled();
+      expect(within(dialog).getByRole('button', { name: /Reconnect Bitkit/ })).toBeInTheDocument();
+    });
+
+    it('shows neither success nor failure when the service cannot say, and settles on a re-check', async () => {
+      const setupFrame = await openSetup();
+      mocked.getMyPaymentConfig.mockClear().mockResolvedValue(ownConfig('unavailable'));
+
+      sendCallback(setupFrame, { error: 'expired' });
+
+      const dialog = screen.getByRole('dialog', { name: 'Connect Bitkit' });
+      expect(
+        await within(dialog).findByText("We couldn't confirm Bitkit's approval just now. Check again in a moment."),
+      ).toBeInTheDocument();
+      expect(within(dialog).queryByText(/setup failed/i)).not.toBeInTheDocument();
+      expect(mockedToast).not.toHaveBeenCalled();
+
+      mocked.getMyPaymentConfig.mockResolvedValue(ownConfig('ready', null));
+      await userEvent.click(within(dialog).getByRole('button', { name: /Check again/ }));
+      expect(await screen.findByText('Wallet connected.')).toBeInTheDocument();
+      expect(mockedToast).toHaveBeenCalledWith({ title: 'Bitkit setup connected' });
+    });
+
+    it('does not report a wrong pubky when a re-check after an error reads the account as not set up', async () => {
+      const setupFrame = await openSetup();
+      mocked.getMyPaymentConfig.mockClear().mockResolvedValue(ownConfig('setup_required', 'setup'));
+      sendCallback(setupFrame, { error: 'setup-failed' });
+      await screen.findByText(/reconnect it instead/);
+      expect(screen.queryByText(/different pubky/)).not.toBeInTheDocument();
+    });
+
+    it('shows success when the tab resumes after the code timed out but the setup had completed', async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      try {
+        await openSetup();
+        mocked.getMyPaymentConfig.mockClear().mockResolvedValue(ownConfig('ready', null));
+        act(() => {
+          vi.advanceTimersByTime(6 * 60 * 1_000);
+        });
+
+        expect(await screen.findByText('Wallet connected.')).toBeInTheDocument();
+        expect(mockedToast).toHaveBeenCalledWith({ title: 'Bitkit setup connected' });
+        expect(screen.queryByText(/No approval received/)).not.toBeInTheDocument();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('still says no approval was received when the code timed out and the service shows no setup', async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      try {
+        await openSetup();
+        mocked.getMyPaymentConfig.mockClear();
+        act(() => {
+          vi.advanceTimersByTime(6 * 60 * 1_000);
+        });
+
+        expect(await screen.findByText(/No approval received/)).toBeInTheDocument();
+        expect(mocked.getMyPaymentConfig).toHaveBeenCalledTimes(1);
+        expect(mockedToast).not.toHaveBeenCalled();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('takes a failed reconnect as failed without a re-read when the account was already connected', async () => {
+      mocked.getMyPaymentConfig.mockResolvedValue(ownConfig('ready'));
+      await renderSettings();
+      await userEvent.click(await screen.findByRole('button', { name: /Reconnect Bitkit/ }));
+      mocked.getMyPaymentConfig.mockClear();
+
+      sendCallback(paykitFrame('Reconnect Bitkit'), { error: 'expired' });
+
+      expect(await screen.findByText('Reconnecting Bitkit failed. Try again.')).toBeInTheDocument();
+      expect(mocked.getMyPaymentConfig).not.toHaveBeenCalled();
+      expect(mockedToast).not.toHaveBeenCalled();
+    });
+  });
+
   it('keeps the fork Paykit on its initial setup route', async () => {
     runtime.api = 'fork';
     mocked.getMyPaymentConfig.mockResolvedValue(ownConfig('ready'));

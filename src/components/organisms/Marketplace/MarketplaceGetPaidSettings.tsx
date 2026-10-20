@@ -65,6 +65,13 @@ type PaykitSetupMode = 'setup' | 'reconnect' | 'bitcoin-reconnect';
 
 const PAYKIT_SETUP_TIMEOUT_MS = 6 * 60 * 1_000;
 
+/**
+ * How a setup attempt ended. paykit-server expires a flow after five minutes and deletes a completed flow with it, so
+ * a tab that was suspended while the seller approved in Bitkit polls after expiry and gets an error even though the
+ * setup finished. `error` and `timeout` are therefore only claims; the service's own setup status decides.
+ */
+type PaykitSetupOutcome = 'finished' | 'error' | 'timeout';
+
 function paykitKeyLabel(pubky: string | null): string {
   return pubky ? ` (${truncateMiddle(pubky, 16)})` : '';
 }
@@ -182,6 +189,7 @@ export function MarketplaceGetPaidSettings({ onSaved }: MarketplaceGetPaidSettin
   const showUsdtCard = usdtCapability === 'available' || usdtCapability === 'unreadable';
   const paykitIframeRef = useRef<HTMLIFrameElement>(null);
   const paykitSetupGenerationRef = useRef<string | null>(null);
+  const paykitSetupOutcomeRef = useRef<PaykitSetupOutcome>('finished');
   const [paykitSetupOpen, setPaykitSetupOpen] = useState(false);
   const [paykitSetupUrl, setPaykitSetupUrl] = useState<string | null>(null);
   const [paykitSetupState, setPaykitSetupState] = useState<string | null>(null);
@@ -222,8 +230,17 @@ export function MarketplaceGetPaidSettings({ onSaved }: MarketplaceGetPaidSettin
     setRailDraft({ bitcoin: null, paypal: null, usdt: null });
   }
 
-  /** Confirms a finished Bitcoin setup against a fresh read; an unknown answer is re-read, never re-authorized. */
-  function confirmBitcoinSetup(state: string) {
+  function showSetupFailure(outcome: 'error' | 'timeout') {
+    setPaykitSetupStatus(outcome);
+    if (outcome === 'error') setPaykitSetupProblem({ problem: 'error', pubky: currentUserPubky });
+  }
+
+  /**
+   * Confirms a Bitcoin setup against a fresh read; an unknown answer is re-read, never re-authorized. A callback that
+   * reported an error or an expiry is believed only when the service also says the account is not set up.
+   */
+  function confirmBitcoinSetup(state: string, outcome: PaykitSetupOutcome) {
+    paykitSetupOutcomeRef.current = outcome;
     setPaykitSetupStatus('verifying');
     void refreshPaymentConfig().then((claimed) => {
       if (paykitSetupGenerationRef.current !== state) return;
@@ -234,14 +251,51 @@ export function MarketplaceGetPaidSettings({ onSaved }: MarketplaceGetPaidSettin
         toast({ title: paykitSetupMode === 'bitcoin-reconnect' ? 'Bitkit reconnected' : 'Bitkit setup connected' });
         return;
       }
-      // `false` is a definite answer: Bitkit finished, but not for this key.
-      // `null` is no answer, which must not accuse the seller of a wrong key.
+      // `false` is a definite answer. After a finished setup it means Bitkit approved a different key; after an error
+      // or an expiry it means the setup really did not complete. `null` is no answer, which must not accuse the seller
+      // of a wrong key or of a failed setup.
+      if (claimed === false && outcome !== 'finished') {
+        showSetupFailure(outcome);
+        return;
+      }
       const problem = claimed === false ? 'mismatch' : 'unconfirmed';
       setPaykitSetupStatus(problem);
       setPaykitSetupProblem({ problem, pubky: currentUserPubky });
     });
   }
-  const onBitcoinSetupFinished = useEffectEvent(confirmBitcoinSetup);
+
+  /** The USDT reconnect succeeded when the service now reports the seller's USDT setup as ready. */
+  function confirmUsdtSetup(state: string, outcome: PaykitSetupOutcome) {
+    paykitSetupOutcomeRef.current = outcome;
+    setPaykitSetupStatus('verifying');
+    void refreshOwnConfig().then((next) => {
+      if (paykitSetupGenerationRef.current !== state) return;
+      if (next && deriveUsdtSellerReadiness(next) === 'ready') {
+        closePaykitSetup();
+        toast({ title: 'USDT is ready' });
+        return;
+      }
+      if (outcome === 'finished') setPaykitSetupStatus('usdt-missing');
+      else showSetupFailure(outcome);
+    });
+  }
+
+  /**
+   * Every end of a setup attempt re-reads the service before any failure is shown. An account that was already
+   * connected when the attempt ended proves nothing about this attempt, so an error there is taken as it is.
+   */
+  function settleSetupAttempt(state: string, outcome: PaykitSetupOutcome) {
+    if (paykitSetupMode === 'reconnect') {
+      confirmUsdtSetup(state, outcome);
+      return;
+    }
+    if (outcome !== 'finished' && payments.accountClaimed === true) {
+      showSetupFailure(outcome);
+      return;
+    }
+    confirmBitcoinSetup(state, outcome);
+  }
+  const onSetupSettled = useEffectEvent(settleSetupAttempt);
 
   useEffect(() => {
     if (!paykitSetupOpen || !paykitSetupUrl || !paykitSetupState) return;
@@ -260,33 +314,15 @@ export function MarketplaceGetPaidSettings({ onSaved }: MarketplaceGetPaidSettin
         setPaykitSetupProblem({ problem: 'mismatch', pubky: currentUserPubky });
         return;
       }
-      if (event.data.error) {
-        setPaykitSetupStatus('error');
-        setPaykitSetupProblem({ problem: 'error', pubky: currentUserPubky });
-        return;
-      }
-      setPaykitSetupStatus('verifying');
-      if (paykitSetupMode === 'reconnect') {
-        void refreshOwnConfig().then((next) => {
-          if (paykitSetupGenerationRef.current !== event.data.state) return;
-          if (next && deriveUsdtSellerReadiness(next) === 'ready') {
-            closePaykitSetup();
-            toast({ title: 'USDT is ready' });
-            return;
-          }
-          setPaykitSetupStatus('usdt-missing');
-        });
-        return;
-      }
-      onBitcoinSetupFinished(event.data.state);
+      onSetupSettled(event.data.state, event.data.error ? 'error' : 'finished');
     };
     window.addEventListener('message', onMessage);
     return () => window.removeEventListener('message', onMessage);
-  }, [currentUserPubky, paykitSetupMode, paykitSetupOpen, paykitSetupState, paykitSetupUrl, refreshOwnConfig]);
+  }, [currentUserPubky, paykitSetupOpen, paykitSetupState, paykitSetupUrl]);
 
   useEffect(() => {
     if (!paykitSetupOpen || !paykitSetupUrl || !paykitSetupState || paykitSetupStatus !== 'idle') return;
-    const timeout = window.setTimeout(() => setPaykitSetupStatus('timeout'), PAYKIT_SETUP_TIMEOUT_MS);
+    const timeout = window.setTimeout(() => onSetupSettled(paykitSetupState, 'timeout'), PAYKIT_SETUP_TIMEOUT_MS);
     return () => window.clearTimeout(timeout);
   }, [paykitSetupOpen, paykitSetupState, paykitSetupStatus, paykitSetupUrl]);
 
@@ -756,7 +792,9 @@ export function MarketplaceGetPaidSettings({ onSaved }: MarketplaceGetPaidSettin
                     variant="secondary"
                     className="w-fit rounded-full"
                     onClick={() => {
-                      if (paykitSetupGenerationRef.current) confirmBitcoinSetup(paykitSetupGenerationRef.current);
+                      if (paykitSetupGenerationRef.current) {
+                        confirmBitcoinSetup(paykitSetupGenerationRef.current, paykitSetupOutcomeRef.current);
+                      }
                     }}
                   >
                     <RefreshCw className="size-4" />
