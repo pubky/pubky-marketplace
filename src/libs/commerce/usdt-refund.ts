@@ -247,14 +247,14 @@ export function usdtRefundDueMoney(order: UsdtRefundOrder): UsdtRefundOrder['tot
 
 export const USDT_REFUND_COPY = {
   buyerTitle: 'Refund address',
-  buyerNeededDue: 'Confirm where your USDT refund should go. The seller sends it and records it here.',
+  buyerNeededDue: 'Confirm your refund address so the seller can refund you. They send it there and record it here.',
   buyerNeeded:
     'If you are ever refunded, the seller sends it to the address you confirm here. You can confirm it now or when a refund is due.',
   buyerConfirmed: 'Your refund address is confirmed. The seller sends the refund there and records it on this order.',
   buyerRecorded: 'Your refund address is locked in because the seller has recorded a refund.',
   sellerTitle: 'Buyer refund address',
   sellerWaiting: "Ask the buyer to confirm a refund address first. It's on their order page.",
-  sellerAwaitingBuyer: "The buyer hasn't confirmed a refund address yet.",
+  sellerAwaitingBuyer: "Waiting for the buyer's refund address. You can record the refund once they confirm it.",
   sellerConfirmed: 'Send this refund from Bitkit, then record the Arbitrum transaction hash with Record refund.',
   sellerConfirmedInReview:
     'Send this refund from Bitkit, then record the Arbitrum transaction hash when you resolve this payment as refunded.',

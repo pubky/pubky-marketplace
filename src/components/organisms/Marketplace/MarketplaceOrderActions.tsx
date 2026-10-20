@@ -19,6 +19,7 @@ import { orderAmountEntry } from '@/libs/commerce/bitcoin-payment-code';
 import { OTHER_CARRIER_ID, SHIPPING_CARRIERS } from '@/libs/commerce/carriers';
 import { DIGITAL_ORDER_COPY, DIGITAL_SELLER_COPY, isInstantDigitalDeliveryKind } from '@/libs/commerce/digital';
 import { formatCommerceMoney } from '@/libs/commerce/format';
+import { ORDER_RETURN_COPY, orderReturnClosure } from '@/libs/commerce/order-returns';
 import { observedPaymentRail, paykitCheckoutCancellable } from '@/libs/commerce/paykit-rail';
 import { formatUsdt } from '@/libs/commerce/payment-options';
 import { formatBitcoinAmount } from '@/libs/commerce/pricing';
@@ -145,6 +146,9 @@ export function MarketplaceOrderActions({
   const fulfilmentBlocked = isUsdtFulfilmentBlocked(order);
   // Digital orders are never shipped or returned (digital delivery design §6 E1–E4).
   const isDigital = order.fulfillment === 'digital';
+  // The listing's frozen return policy: no return on a final sale, none after the window.
+  const returnClosure = orderReturnClosure(order, nowMs);
+  const returnable = isBuyer && !isDigital && ['delivered', 'completed'].includes(order.state) && !order.returnRequest;
   const pickup = usePickupOrderActions(order, reloadOrders);
   const [handoverOpen, setHandoverOpen] = useState(false);
   const [termsBlocked, setTermsBlocked] = useState(false);
@@ -295,7 +299,7 @@ export function MarketplaceOrderActions({
             Confirm delivery
           </Button>
         )}
-        {isBuyer && !isDigital && ['delivered', 'completed'].includes(order.state) && !order.returnRequest && (
+        {returnable && returnClosure === null && (
           <Button size="default" variant="secondary" className="rounded-full" onClick={() => begin('return')}>
             Request return
           </Button>
@@ -392,6 +396,11 @@ export function MarketplaceOrderActions({
       {isBuyer && isDigital && ['delivered', 'completed'].includes(order.state) && (
         <p className="mt-2 text-xs text-muted-foreground" data-testid="digital-no-return-note">
           {DIGITAL_ORDER_COPY.noReturn}
+        </p>
+      )}
+      {returnable && returnClosure !== null && (
+        <p className="mt-2 text-xs text-muted-foreground" data-testid="return-closed-note">
+          {returnClosure === 'final_sale' ? ORDER_RETURN_COPY.finalSale : ORDER_RETURN_COPY.windowClosed}
         </p>
       )}
       {!isBuyer && order.state === 'return_approved' && order.fulfillment === 'pickup' && (
