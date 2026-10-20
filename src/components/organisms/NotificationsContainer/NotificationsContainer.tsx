@@ -205,7 +205,7 @@ export function NotificationsContainer() {
       </Heading>
       {unrecognizedMarketplaceCount > 0 && (
         <Container role="status" overrideDefaults={true} className="rounded-md border border-amber-500/40 p-4 text-sm">
-          {unrecognizedMarketplaceCount} unrecognized marketplace event
+          {unrecognizedMarketplaceCount} unrecognized market event
           {unrecognizedMarketplaceCount === 1 ? '' : 's'} — history may be incomplete.
         </Container>
       )}

@@ -78,7 +78,7 @@ export function Chat() {
                 </Typography>
                 <Button asChild variant="secondary" className="mt-2 rounded-full">
                   <Link href={APP_ROUTES.MARKETPLACE} overrideDefaults>
-                    Browse marketplace
+                    Browse market
                   </Link>
                 </Button>
               </div>

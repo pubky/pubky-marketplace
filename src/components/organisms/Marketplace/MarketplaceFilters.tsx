@@ -187,7 +187,7 @@ export function MarketplaceFilters({
       : paymentMethodOptions;
 
   return (
-    <section aria-label="Marketplace filters" className="flex flex-col gap-4">
+    <section aria-label="Market filters" className="flex flex-col gap-4">
       <Card className="flex-row flex-wrap items-center gap-2 rounded-md p-6">
         {searchControl ?? (
           <Typography className="min-w-48 flex-1 text-sm text-muted-foreground">
@@ -268,7 +268,7 @@ export function MarketplaceFilters({
           )}
 
           <Select value={sort} onValueChange={(value) => setSort(value as CommerceSort)}>
-            <SelectTrigger aria-label="Sort marketplace" className={FILTER_TRIGGER_CLASS}>
+            <SelectTrigger aria-label="Sort market" className={FILTER_TRIGGER_CLASS}>
               <SelectValue />
             </SelectTrigger>
             <SelectContent position="popper" align="start" className={FILTER_MENU_CLASS}>

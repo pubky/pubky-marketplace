@@ -153,7 +153,7 @@ describe('Marketplace offers — visual regression', () => {
   it('renders the error state at desktop viewport', async () => {
     view.offers = [];
     view.isLoading = false;
-    view.error = 'Marketplace offers are unavailable.';
+    view.error = 'Market offers are unavailable.';
 
     const screen = await renderForVRT(<MarketplaceOffers />, { viewport: VRT_VIEWPORT_DESKTOP });
     await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('offers-error-desktop');

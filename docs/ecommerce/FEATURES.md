@@ -34,7 +34,7 @@ mean exactly that.
   - Title, description, condition (with optional details), adult-content flag
   - Category picker with per-category attribute fields
   - Drafts autosave locally; legacy-draft migration
-  - Namespaced as **Seller studio**; mobile sheet **My marketplace**
+  - Namespaced as **Seller studio**; mobile sheet **My market**
   - Duplicate listing creates a new local draft (photos not copied; auctions
     copied as fixed price)
 - **Pricing**

@@ -2137,7 +2137,7 @@ describe('MarketplaceCheckout Paykit option (Bitcoin or USDT)', () => {
     render(<MarketplaceCheckout />);
 
     expect(await screen.findByTestId('marketplace-checkout-paykit-requirement')).toHaveTextContent(
-      'Bitcoin payments require Bitkit. Marketplace currently supports on-chain bitcoin payments only.',
+      'Bitcoin payments require Bitkit. Market currently supports on-chain bitcoin payments only.',
     );
     expect(screen.queryByText(/USDT/)).not.toBeInTheDocument();
   });
@@ -2152,7 +2152,7 @@ describe('MarketplaceCheckout Paykit option (Bitcoin or USDT)', () => {
     render(<MarketplaceCheckout />);
 
     expect(await screen.findByTestId('marketplace-checkout-paykit-requirement')).toHaveTextContent(
-      'Bitcoin payments require Bitkit. Marketplace currently supports on-chain bitcoin payments only.',
+      'Bitcoin payments require Bitkit. Market currently supports on-chain bitcoin payments only.',
     );
     expect(screen.queryByText(/USDT/)).not.toBeInTheDocument();
   });
@@ -2246,7 +2246,7 @@ describe('MarketplaceCheckout Paykit option (Bitcoin or USDT)', () => {
     render(<MarketplaceCheckout />);
 
     expect(await screen.findByTestId('marketplace-checkout-paykit-requirement')).toHaveTextContent(
-      'Bitcoin payments require Bitkit. Marketplace currently supports on-chain bitcoin payments only.',
+      'Bitcoin payments require Bitkit. Market currently supports on-chain bitcoin payments only.',
     );
     expect(await screen.findByTestId('marketplace-checkout-usdt-missing-note')).toHaveTextContent(
       "USDT isn't available for this cart: Film Camera Supply doesn't accept USDT.",

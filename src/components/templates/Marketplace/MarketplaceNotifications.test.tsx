@@ -133,8 +133,8 @@ describe('MarketplaceNotifications', () => {
 
     expect(screen.getByRole('status')).toHaveTextContent(/history may be incomplete/);
     expect(screen.getByText('Integrity notice')).toBeInTheDocument();
-    expect(screen.getByText('Unrecognized marketplace event')).toBeInTheDocument();
-    expect(screen.queryByRole('link', { name: 'Unrecognized marketplace event' })).not.toBeInTheDocument();
+    expect(screen.getByText('Unrecognized market event')).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Unrecognized market event' })).not.toBeInTheDocument();
   });
 
   it('links a new offer activity row to its offer anchor', () => {
@@ -190,7 +190,7 @@ describe('MarketplaceNotifications', () => {
       'href',
       `/marketplace/orders?order=${orderId}`,
     );
-    expect(screen.getByRole('link', { name: 'New marketplace message' })).toHaveAttribute('href', '/messages');
+    expect(screen.getByRole('link', { name: 'New market message' })).toHaveAttribute('href', '/messages');
   });
 
   it('titles a digital delivery as a purchase, and a shipped one as before', () => {
@@ -307,7 +307,7 @@ describe('MarketplaceNotifications', () => {
 
     expect(titles()).toEqual(['Disputed payment restored', 'Refund recorded', 'Refund recorded']);
     expect(screen.queryByText(/history may be incomplete/)).not.toBeInTheDocument();
-    expect(screen.queryByText('Unrecognized marketplace event')).not.toBeInTheDocument();
+    expect(screen.queryByText('Unrecognized market event')).not.toBeInTheDocument();
   });
 
   it('shows a refund amount only when the row itself carries one', () => {
@@ -409,7 +409,7 @@ describe('MarketplaceNotifications', () => {
       `/marketplace/orders?order=${orderId}`,
     );
     expect(screen.queryByText(/history may be incomplete/)).not.toBeInTheDocument();
-    expect(screen.queryByText('Unrecognized marketplace event')).not.toBeInTheDocument();
+    expect(screen.queryByText('Unrecognized market event')).not.toBeInTheDocument();
   });
 
   it('shows each seller Bitcoin notice as its own sentence and links it to the order', () => {
@@ -449,7 +449,7 @@ describe('MarketplaceNotifications', () => {
     for (const sentence of sentences) {
       expect(screen.getByRole('link', { name: sentence })).toHaveAttribute('href', orderHref);
     }
-    expect(screen.getByText('Unrecognized marketplace event')).toBeInTheDocument();
-    expect(screen.getByText(/1 unrecognized marketplace event/)).toBeInTheDocument();
+    expect(screen.getByText('Unrecognized market event')).toBeInTheDocument();
+    expect(screen.getByText(/1 unrecognized market event/)).toBeInTheDocument();
   });
 });

@@ -34,7 +34,7 @@ export function MarketplaceRecoveryKey() {
   };
 
   return (
-    <SettingsSectionCard icon={KeyRound} title={'Marketplace data'}>
+    <SettingsSectionCard icon={KeyRound} title={'Market data'}>
       <SettingsSection
         title={'Export recovery key'}
         description={

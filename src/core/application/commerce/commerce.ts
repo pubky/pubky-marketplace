@@ -4996,7 +4996,7 @@ export class CommerceApplication {
 
 function listingRegistrationRefusal(response: MarketplaceCommandResponse) {
   const variantCopy = response.ok ? null : variantRefusalMessage(response.error);
-  return Err.client(ClientErrorCode.BAD_REQUEST, variantCopy ?? 'Marketplace listing registration was refused.', {
+  return Err.client(ClientErrorCode.BAD_REQUEST, variantCopy ?? 'Market listing registration was refused.', {
     service: ErrorService.Marketplace,
     operation: 'registerListing',
   });

@@ -61,7 +61,7 @@ export function isServiceNotificationType(type: string): type is ServiceNotifica
 
 /** Plain activity-row titles. One sentence of what happened, no diagnostics. */
 export const MARKETPLACE_ACTIVITY_LABELS = {
-  message_received: 'New marketplace message',
+  message_received: 'New market message',
   offer_received: 'New offer received',
   offer_countered: 'Offer countered',
   offer_accepted: 'Offer accepted',

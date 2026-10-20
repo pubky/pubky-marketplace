@@ -260,7 +260,7 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
           </Typography>
           <Button asChild className="mt-6 rounded-full">
             <Link href={APP_ROUTES.MARKETPLACE} overrideDefaults>
-              Back to marketplace
+              Back to market
             </Link>
           </Button>
         </Container>

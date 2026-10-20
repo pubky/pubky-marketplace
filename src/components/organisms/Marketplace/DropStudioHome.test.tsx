@@ -52,7 +52,7 @@ vi.mock('@/organisms/Marketplace/MarketplaceSessionConnectDialog', () => ({
     onConnected?: () => void;
   }) => (
     <button type="button" onClick={() => void onConnected?.()}>
-      {triggerLabel ?? 'Connect marketplace session'}
+      {triggerLabel ?? 'Connect market session'}
     </button>
   ),
 }));
@@ -107,7 +107,7 @@ describe('DropStudioHome', () => {
     render(<DropStudioHome />);
 
     expect(screen.getByText('Connect a marketplace session to read drop status.')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Connect marketplace session' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Connect market session' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Retry' })).not.toBeInTheDocument();
     expect(screen.queryByText('Status unavailable')).not.toBeInTheDocument();
     expect(screen.queryByText('Approve purchases in Pubky Ring')).not.toBeInTheDocument();
@@ -133,7 +133,7 @@ describe('DropStudioHome', () => {
     view.rows = [{ ...liveRow, projection: { status: 'session-unavailable' } }];
     render(<DropStudioHome />);
 
-    await user.click(screen.getByRole('button', { name: 'Connect marketplace session' }));
+    await user.click(screen.getByRole('button', { name: 'Connect market session' }));
     expect(view.refresh).toHaveBeenCalledTimes(1);
   });
 });

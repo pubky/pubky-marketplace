@@ -84,7 +84,7 @@ describe('MarketplaceSectionNav', () => {
     render(<MarketplaceSectionNav />);
 
     expect(screen.getByRole('link', { name: 'Offers' })).toHaveAttribute('aria-current', 'page');
-    expect(screen.getByRole('link', { name: 'Marketplace' })).not.toHaveAttribute('aria-current');
+    expect(screen.getByRole('link', { name: 'Market' })).not.toHaveAttribute('aria-current');
     expect(screen.getByTestId('marketplace-section-nav-cart-badge')).toHaveTextContent('3');
     expect(screen.getByTestId('marketplace-section-nav-activity-badge')).toHaveTextContent('21+');
   });

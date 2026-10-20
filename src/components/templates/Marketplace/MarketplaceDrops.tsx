@@ -49,7 +49,7 @@ export function MarketplaceDrops() {
           className="inline-flex w-fit items-center gap-2 text-sm text-muted-foreground hover:text-foreground"
         >
           <ArrowLeft className="size-4" />
-          Marketplace
+          Market
         </Link>
         <div>
           <Heading level={1} size="xl" className="text-4xl sm:text-6xl">

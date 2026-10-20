@@ -57,7 +57,7 @@ export function getMarketplaceNotificationActionText(notification: MarketplaceNo
 function getBaseActionText(type: MarketplaceNotification['type']): string {
   switch (type) {
     case 'message_received':
-      return 'sent you a marketplace message';
+      return 'sent you a market message';
     case 'offer_received':
       return 'sent you an offer';
     case 'offer_countered':

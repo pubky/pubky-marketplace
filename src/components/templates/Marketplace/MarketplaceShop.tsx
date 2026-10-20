@@ -98,7 +98,7 @@ export function MarketplaceShop({ sellerPubky }: { sellerPubky: string }) {
           className="inline-flex w-fit items-center gap-2 text-sm text-muted-foreground hover:text-foreground"
         >
           <ArrowLeft className="size-4" />
-          Marketplace
+          Market
         </Link>
 
         {isLoading ? (
@@ -282,7 +282,7 @@ function ShopListingsGrid({
         </Typography>
         <Button asChild className="mt-6 rounded-full">
           <Link href={isOwner ? MARKETPLACE_ROUTES.SELL : APP_ROUTES.MARKETPLACE} overrideDefaults>
-            {isOwner ? 'Sell an item' : 'Browse the marketplace'}
+            {isOwner ? 'Sell an item' : 'Browse the market'}
           </Link>
         </Button>
       </div>

@@ -73,7 +73,7 @@ Public changelog for Shop, the Pubky Market vibe. Newest changes first.
 - [implemented] U6 payment settings `How you get paid`: cards PayPal → Card (Stripe) → Bitcoin with truthful
   pills (PayPal is `Email saved`, never Connected; Bitcoin Connected only with Lock Server + Paykit claim);
   protocol detail under Technical details; payloads unchanged.
-- [implemented] U7 mobile: `My marketplace` sheet, compact mobile promo, dashboard KPI chip strip, listing
+- [implemented] U7 mobile: `My market` sheet, compact mobile promo, dashboard KPI chip strip, listing
   thumbnails; Duplicate listing creates a new local draft (photos not copied; auctions copied as fixed price).
 - [implemented] U8 packing slip: optional local-only pasted address in component state; cleared on close, print,
   and route; Sentry-masked; truthful print caveat. See `docs/ecommerce/shipping.md`.

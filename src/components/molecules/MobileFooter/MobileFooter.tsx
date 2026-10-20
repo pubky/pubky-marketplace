@@ -99,7 +99,7 @@ export function MobileFooter({ className }: MobileFooterProps) {
             href: APP_ROUTES.MARKETPLACE,
             activePrefix: APP_ROUTES.MARKETPLACE,
             icon: Store,
-            label: socialHostUrl ? 'Shop' : 'Marketplace',
+            label: socialHostUrl ? 'Shop' : 'Market',
           },
         ]
       : [];

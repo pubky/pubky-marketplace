@@ -46,7 +46,7 @@ vi.mock('@/config/commerce', async (importOriginal) => {
 
 vi.mock('@/organisms/Marketplace/MarketplaceSessionConnectDialog', () => ({
   MarketplaceSessionConnectDialog: ({
-    triggerLabel = 'Connect marketplace session',
+    triggerLabel = 'Connect market session',
     autoOpen,
   }: {
     triggerLabel?: string;

@@ -148,7 +148,7 @@ export function paykitRequirementCopy(assets: readonly PaymentAsset[]): string {
     return 'Paykit payments require Bitkit. You choose Bitcoin or USDT there.';
   }
   if (assets.includes('USDT')) return 'Paykit payments require Bitkit. You pay in USDT there.';
-  return 'Bitcoin payments require Bitkit. Marketplace currently supports on-chain bitcoin payments only.';
+  return 'Bitcoin payments require Bitkit. Market currently supports on-chain bitcoin payments only.';
 }
 
 /** The neutral status before any payment is seen: the buyer has not chosen an asset yet. */

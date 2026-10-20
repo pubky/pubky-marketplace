@@ -240,16 +240,16 @@ describe('MobileFooter', () => {
     });
   });
 
-  it('hides Marketplace from navigation by default', () => {
+  it('hides Market from navigation by default', () => {
     render(<MobileFooter />);
-    expect(screen.queryByRole('link', { name: 'Marketplace' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Market' })).not.toBeInTheDocument();
   });
 
-  it('shows Marketplace in navigation when the commerce adapter is enabled', () => {
+  it('shows Market in navigation when the commerce adapter is enabled', () => {
     const adapterMode = vi.spyOn(commerceConfig, 'getCommerceAdapterMode').mockReturnValue('sandbox');
     try {
       render(<MobileFooter />);
-      expect(screen.getByRole('link', { name: 'Marketplace' })).toHaveAttribute('href', '/marketplace');
+      expect(screen.getByRole('link', { name: 'Market' })).toHaveAttribute('href', '/marketplace');
     } finally {
       adapterMode.mockRestore();
     }
@@ -261,7 +261,7 @@ describe('MobileFooter', () => {
     try {
       render(<MobileFooter />);
 
-      expect(screen.getByRole('link', { name: 'Marketplace, 3 items in cart' })).toBeInTheDocument();
+      expect(screen.getByRole('link', { name: 'Market, 3 items in cart' })).toBeInTheDocument();
       expect(document.querySelector('[data-cy="mobile-marketplace-counter"]')).toHaveTextContent('3');
     } finally {
       adapterMode.mockRestore();
@@ -274,7 +274,7 @@ describe('MobileFooter', () => {
     try {
       render(<MobileFooter />);
 
-      expect(screen.getByRole('link', { name: 'Marketplace, 1 item in cart' })).toBeInTheDocument();
+      expect(screen.getByRole('link', { name: 'Market, 1 item in cart' })).toBeInTheDocument();
     } finally {
       adapterMode.mockRestore();
     }
@@ -291,7 +291,7 @@ describe('MobileFooter', () => {
       vi.mocked(useMarketplaceCartCount).mockReturnValue(22);
       render(<MobileFooter />);
       expect(document.querySelector('[data-cy="mobile-marketplace-counter"]')).toHaveTextContent('21+');
-      expect(screen.getByRole('link', { name: 'Marketplace, 22 items in cart' })).toBeInTheDocument();
+      expect(screen.getByRole('link', { name: 'Market, 22 items in cart' })).toBeInTheDocument();
     } finally {
       adapterMode.mockRestore();
     }
@@ -304,7 +304,7 @@ describe('MobileFooter', () => {
     try {
       render(<MobileFooter />);
 
-      expect(screen.getByRole('link', { name: 'Marketplace, 1 item in cart, 2 need attention' })).toBeInTheDocument();
+      expect(screen.getByRole('link', { name: 'Market, 1 item in cart, 2 need attention' })).toBeInTheDocument();
       expect(document.querySelector('[data-cy="mobile-marketplace-counter"]')).toHaveTextContent('3');
     } finally {
       adapterMode.mockRestore();

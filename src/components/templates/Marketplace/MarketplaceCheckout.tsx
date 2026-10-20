@@ -800,7 +800,7 @@ function MarketplaceCartCheckout() {
               </Heading>
               <Typography as="p">Checkout for this offer is unavailable right now.</Typography>
               <Link href={APP_ROUTES.MARKETPLACE} overrideDefaults>
-                Browse the marketplace
+                Browse the market
               </Link>
             </CardContent>
           </Card>
