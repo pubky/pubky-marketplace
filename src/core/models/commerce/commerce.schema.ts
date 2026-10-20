@@ -271,7 +271,7 @@ export const commerceListingProjectionTableSchema = [
  * "the embedded attestation verifiably covers this review".
  */
 export interface CommerceReviewModelSchema {
-  /** `${owner_id}:${review_id}` — one living review per (listing, subject, role). */
+  /** `${owner_id}:${review_id}` — one review per (listing, subject, role, order). */
   id: string;
   owner_id: string;
   review_id: string;
