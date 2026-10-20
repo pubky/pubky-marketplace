@@ -99,7 +99,7 @@ export const PRIVATE_SELLER_NOTICE =
 export const ROLE_STATEMENT =
   'Sales are between you and the seller. Synonym provides the software, is not a party to the sale and has no role in disputes.';
 export const RANKING_LINE =
-  'Recommended shows recently updated listings first, with auctions and new or excellent-condition items placed slightly higher. You can also sort by newest, price or ending soonest. No placement is paid for, and ratings don’t affect order.';
+  'With all sale types shown, Recommended mixes fixed-price listings, auctions and drops in turn. Listings are ordered by when they were last updated, with new or excellent-condition items placed slightly higher; drops are ordered live first, then upcoming, then ended. You can also sort by newest, price or ending soonest. No placement is paid for, and ratings don’t affect order.';
 export const VERIFIED_PURCHASE_LINE =
   'Verified purchase: the reviewer’s order with this seller was delivered or completed, as attested by the transaction service. Other reviews are labelled unverified.';
 

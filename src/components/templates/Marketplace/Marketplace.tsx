@@ -15,7 +15,11 @@ import { isDurableCommerceMode } from '@/config/commerce';
 import { buildFeatureDiscoveryDeviceStorageKey, MARKETPLACE_PROMO_STORAGE_ID } from '@/config/featureDiscovery';
 import { SEARCH_CLOSED_STYLE } from '@/config/search';
 import { useMarketplaceCatalog } from '@/hooks/useMarketplaceCatalog/useMarketplaceCatalog';
-import type { MarketplaceCatalogItem } from '@/hooks/useMarketplaceCatalog/useMarketplaceCatalog.utils';
+import {
+  DROP_DISPLAY_BUCKET_ORDER,
+  interleaveInTurn,
+  type MarketplaceCatalogItem,
+} from '@/hooks/useMarketplaceCatalog/useMarketplaceCatalog.utils';
 import { useMarketplaceDrops } from '@/hooks/useMarketplaceDrops/useMarketplaceDrops';
 import { useMarketplacePaymentFilterOptions } from '@/hooks/useMarketplacePaymentFilterOptions/useMarketplacePaymentFilterOptions';
 import { useMarketplacePromoDismissal } from '@/hooks/useMarketplacePromoDismissal/useMarketplacePromoDismissal';
@@ -59,7 +63,7 @@ export function Marketplace({
   // The drop index has no category or location fields: exclude unknown matches.
   const visibleDrops =
     (saleFormat === 'all' || saleFormat === 'drops') && !categoryId && !countryCode
-      ? (['live', 'upcoming', 'ended'] as const).flatMap((bucket) =>
+      ? DROP_DISPLAY_BUCKET_ORDER.flatMap((bucket) =>
           drops.buckets[bucket]
             .filter((entry) =>
               `${entry.title} ${entry.description} ${entry.owner_id}`
@@ -85,18 +89,13 @@ export function Marketplace({
   const catalogListingCards = saleFormat === 'drops' ? [] : listingCards;
   const catalogCards: Array<(typeof listingCards)[number] | (typeof dropCards)[number]> = [];
   if (sort === 'recommended' && saleFormat === 'all') {
-    const groups = [
+    const groups: Array<readonly (typeof catalogCards)[number][]> = [
       listingCards.filter(({ listing }) => listing.saleFormat === 'fixed_price'),
       listingCards.filter(({ listing }) => listing.saleFormat === 'auction'),
       dropCards,
     ];
     // Stable round-robin keeps each type visible and retains its existing rank.
-    const longest = Math.max(...groups.map((group) => group.length));
-    for (let index = 0; index < longest; index++) {
-      for (const group of groups) {
-        if (group[index]) catalogCards.push(group[index]);
-      }
-    }
+    catalogCards.push(...interleaveInTurn(groups));
   } else {
     catalogCards.push(...dropCards, ...catalogListingCards);
   }

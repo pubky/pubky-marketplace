@@ -13,7 +13,9 @@ import {
   catalogItemFromCatalogEntry,
   catalogItemState,
   collectMarketplaceAttributeFacets,
+  DROP_DISPLAY_BUCKET_ORDER,
   filterMarketplaceCatalog,
+  interleaveInTurn,
   isCatalogItemOpen,
   type MarketplaceCatalogFilters,
   type MarketplaceCatalogItem,
@@ -330,5 +332,62 @@ describe('collectMarketplaceAttributeFacets', () => {
       { value: 'grey', count: 1 },
       { value: 'navy', count: 1 },
     ]);
+  });
+});
+
+describe('the Recommended order the ranking line describes', () => {
+  const day = 86_400_000;
+  const listing = (id: string, overrides: Partial<CommerceCatalogEntryModelSchema>) =>
+    catalogItemFromCatalogEntry(
+      createCommerceCatalogEntryFixture({
+        id: `${COMMERCE_FIXTURE_SELLER}:${id}`,
+        listing_id: id,
+        ...overrides,
+      }),
+    );
+  const ids = (items: MarketplaceCatalogItem[]) => items.map(({ listingId }) => listingId);
+
+  it('orders listings by when they were last updated, newest first', () => {
+    const items = [
+      listing('older', { updated_at: 1_000 * day, condition: 'good' }),
+      listing('newer', { updated_at: 1_010 * day, condition: 'good' }),
+    ];
+    expect(ids(filterMarketplaceCatalog(items, filters({ sort: 'recommended' })))).toEqual(['newer', 'older']);
+  });
+
+  it('places new and excellent-condition items slightly higher, not above much newer ones', () => {
+    const base = 1_000 * day;
+    const items = [
+      listing('good_now', { updated_at: base + 100, condition: 'good' }),
+      listing('excellent_slightly_older', { updated_at: base, condition: 'excellent' }),
+      listing('new_much_older', { updated_at: base - 10 * day, condition: 'new' }),
+    ];
+    expect(ids(filterMarketplaceCatalog(items, filters({ sort: 'recommended' })))).toEqual([
+      'excellent_slightly_older',
+      'good_now',
+      'new_much_older',
+    ]);
+  });
+
+  it('does not use ratings: reputation does not move a listing', () => {
+    const base = 1_000 * day;
+    const plain = listing('plain', { updated_at: base + 1, condition: 'good' });
+    const rated = {
+      ...listing('rated', { updated_at: base, condition: 'good' }),
+      reputation: { avg: 5, count: 99, verifiedCount: 99 },
+    };
+    expect(
+      ids(filterMarketplaceCatalog([rated as MarketplaceCatalogItem, plain], filters({ sort: 'recommended' }))),
+    ).toEqual(['plain', 'rated']);
+  });
+
+  it('mixes fixed-price listings, auctions and drops one in turn when all are shown', () => {
+    expect(interleaveInTurn([['f1', 'f2', 'f3'], ['a1', 'a2'], ['d1']])).toEqual(['f1', 'a1', 'd1', 'f2', 'a2', 'f3']);
+    expect(interleaveInTurn([[], ['a1'], ['d1', 'd2']])).toEqual(['a1', 'd1', 'd2']);
+    expect(interleaveInTurn([[], [], []])).toEqual([]);
+  });
+
+  it('shows drops live first, then upcoming, then ended', () => {
+    expect(DROP_DISPLAY_BUCKET_ORDER).toEqual(['live', 'upcoming', 'ended']);
   });
 });
