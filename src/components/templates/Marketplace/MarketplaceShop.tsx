@@ -202,7 +202,11 @@ export function MarketplaceShop({ sellerPubky }: { sellerPubky: string }) {
 
             {/* The section styles its own container and renders NOTHING when no
                 review index serves this deployment — no empty card shell. */}
-            <MarketplaceReviewsSection sellerPubky={sellerPubky} className="rounded-md bg-card p-5" />
+            <MarketplaceReviewsSection
+              sellerPubky={sellerPubky}
+              listings={listings}
+              className="rounded-md bg-card p-5"
+            />
           </>
         ) : (
           <>
@@ -256,7 +260,11 @@ export function MarketplaceShop({ sellerPubky }: { sellerPubky: string }) {
 
             <ShopListingsGrid listings={listings} isOwner={isOwner} />
 
-            <MarketplaceReviewsSection sellerPubky={sellerPubky} className="rounded-md bg-card p-5" />
+            <MarketplaceReviewsSection
+              sellerPubky={sellerPubky}
+              listings={listings}
+              className="rounded-md bg-card p-5"
+            />
           </>
         )}
       </Container>

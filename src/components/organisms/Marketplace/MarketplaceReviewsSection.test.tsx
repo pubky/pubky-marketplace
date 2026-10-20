@@ -1,7 +1,9 @@
 import { render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { catalogItemFromCatalogEntry } from '@/hooks/useMarketplaceCatalog/useMarketplaceCatalog.utils';
 import type { CommerceIndexedReview } from '@/models/commerce/commerce.schema';
 import { useAuthStore } from '@/stores/auth/auth.store';
+import { createCommerceCatalogEntryFixture } from '@/test/fixtures/commerce/commerce';
 import { setSocialHost } from '@/test-utils/social-host';
 import { MarketplaceReviewsSection } from './MarketplaceReviewsSection';
 
@@ -67,5 +69,37 @@ describe('MarketplaceReviewsSection reviewer link', () => {
       'href',
       `https://pubky.app/profile/${REVIEWER}`,
     );
+  });
+});
+
+describe('MarketplaceReviewsSection on a storefront', () => {
+  beforeEach(() => {
+    useAuthStore.setState({ currentUserPubky: null });
+  });
+
+  const listing = catalogItemFromCatalogEntry(
+    createCommerceCatalogEntryFixture({
+      id: `${SELLER}:rangefinder_camera`,
+      seller_id: SELLER,
+      listing_id: 'rangefinder_camera',
+      title: 'Rangefinder camera',
+      media_urls: [],
+    }),
+  );
+
+  it('leads each review with the listing it reviews, linked', () => {
+    render(<MarketplaceReviewsSection sellerPubky={SELLER} listings={[listing]} />);
+
+    expect(screen.getByRole('link', { name: 'Rangefinder camera' })).toHaveAttribute(
+      'href',
+      `/marketplace/listing/${SELLER}/rangefinder_camera`,
+    );
+    expect(screen.getByText('Exactly as described.')).toBeInTheDocument();
+  });
+
+  it('shows no listing on a listing page, which passes no listings', () => {
+    render(<MarketplaceReviewsSection sellerPubky={SELLER} listingId="rangefinder_camera" />);
+
+    expect(screen.queryByRole('link', { name: 'Rangefinder camera' })).not.toBeInTheDocument();
   });
 });

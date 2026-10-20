@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { BadgeCheck, MessageSquareReply, Star } from 'lucide-react';
-import { getMarketplaceShopRoute, getProfileRoute, PROFILE_ROUTES } from '@/app/routes';
+import { getMarketplaceListingRoute, getMarketplaceShopRoute, getProfileRoute, PROFILE_ROUTES } from '@/app/routes';
 import { Badge } from '@/atoms/Badge/Badge';
 import { Button } from '@/atoms/Button/Button';
 import { Heading } from '@/atoms/Heading/Heading';
@@ -12,11 +12,14 @@ import { Typography } from '@/atoms/Typography/Typography';
 import { isTrustedMarketplaceAttestor } from '@/config/commerce';
 import { isSocialLinkOutEnabled } from '@/config/social';
 import { CommerceController } from '@/controllers/commerce/commerce';
+import type { MarketplaceCatalogItem } from '@/hooks/useMarketplaceCatalog/useMarketplaceCatalog.utils';
+import { useMarketplaceFirstMediaUrl } from '@/hooks/useMarketplaceMediaUrl/useMarketplaceMediaUrl';
 import { useMarketplaceReviews } from '@/hooks/useMarketplaceReviews/useMarketplaceReviews';
 import { VERIFIED_PURCHASE_INFO, VERIFIED_PURCHASE_INFO_LABEL } from '@/libs/commerce/eu-region';
 import { cn } from '@/libs/utils/utils';
 import type { CommerceIndexedReview, CommerceReviewResponseModelSchema } from '@/models/commerce/commerce.schema';
 import { InfoHint } from '@/molecules/InfoHint/InfoHint';
+import { MarketplaceProductSummary } from '@/molecules/Marketplace/MarketplaceProductSummary';
 import { MarketplaceStarRating } from '@/molecules/MarketplaceStarRating/MarketplaceStarRating';
 import { ProfileOnPubkyLink } from '@/molecules/ProfileOnPubkyLink/ProfileOnPubkyLink';
 import { toast } from '@/molecules/Toaster/use-toast';
@@ -28,6 +31,8 @@ export interface MarketplaceReviewsSectionProps {
   listingId?: string;
   className?: string;
   infoCard?: boolean;
+  /** The seller's listings; on a storefront each review then leads with the listing it reviews. */
+  listings?: readonly MarketplaceCatalogItem[];
 }
 
 /**
@@ -51,6 +56,7 @@ export function MarketplaceReviewsSection({
   listingId,
   className,
   infoCard = false,
+  listings,
 }: MarketplaceReviewsSectionProps) {
   const { status, reviews, isFetching, hasMore, loadMore } = useMarketplaceReviews({ sellerPubky, listingId });
   const currentUserPubky = useAuthStore((state) => state.currentUserPubky);
@@ -99,6 +105,7 @@ export function MarketplaceReviewsSection({
                 <MarketplaceReviewItem
                   key={`${review.reviewerId}:${review.reviewId}`}
                   review={review}
+                  listing={listings?.find((item) => item.listingId === review.listingId)}
                   currentUserPubky={currentUserPubky}
                 />
               ))}
@@ -123,9 +130,11 @@ export function MarketplaceReviewsSection({
 
 function MarketplaceReviewItem({
   review,
+  listing,
   currentUserPubky,
 }: {
   review: CommerceIndexedReview;
+  listing?: MarketplaceCatalogItem;
   currentUserPubky: string | null;
 }) {
   const isSubject = currentUserPubky !== null && currentUserPubky === review.subjectId;
@@ -134,6 +143,7 @@ function MarketplaceReviewItem({
 
   return (
     <li className="flex flex-col gap-2 rounded-md p-3" data-cy="marketplace-review-item">
+      {listing && <MarketplaceReviewListing listing={listing} />}
       <div className="flex flex-wrap items-center gap-2">
         <MarketplaceStarRating rating={review.ratingOverall} size="sm" />
         <Link
@@ -336,4 +346,16 @@ function toIndexedReviewResponse(
     updatedAt: response.record.updatedAt,
     revision: response.record.revision,
   };
+}
+
+/** The compact listing a storefront review is about: thumbnail and name, linked to the listing. */
+function MarketplaceReviewListing({ listing }: { listing: MarketplaceCatalogItem }) {
+  const imageUrl = useMarketplaceFirstMediaUrl(listing.mediaUrls);
+  return (
+    <MarketplaceProductSummary
+      title={listing.title}
+      href={getMarketplaceListingRoute(listing.sellerId, listing.listingId)}
+      imageUrl={imageUrl}
+    />
+  );
 }

@@ -267,6 +267,28 @@ describe('Marketplace public reviews — visual regression', () => {
     await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('reviews-section-spectrum-mobile');
   });
 
+  it('leads each storefront review with its listing, two orders of one listing as two entries, at mobile viewport', async () => {
+    const { rated } = await cardFixtures;
+    controllerState.reviews = [
+      indexedReview({
+        reviewId: '8Z8CWH8NVYQY39ZEBFGKQWWEKK',
+        ratingOverall: 1,
+        text: 'Second order arrived damaged.',
+        createdAt: '2026-08-12T12:00:00.000Z',
+        updatedAt: '2026-08-12T12:00:00.000Z',
+      }),
+      indexedReview(),
+    ];
+    const screen = await renderForVRT(
+      <main className="flex w-full flex-col gap-6 px-4 py-8">
+        <MarketplaceReviewsSection sellerPubky={SELLER} listings={[rated]} />
+      </main>,
+      { viewport: VRT_VIEWPORT_MOBILE },
+    );
+    await waitForText('Second order arrived damaged.');
+    await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('reviews-section-storefront-listing-mobile');
+  });
+
   it('renders the empty review list honestly at desktop viewport', async () => {
     controllerState.reviews = [];
     const screen = await renderForVRT(
