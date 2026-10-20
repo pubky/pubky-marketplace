@@ -6,8 +6,18 @@ import type { KeyboardViewportState, UseKeyboardViewportOptions } from './useKey
 const DEFAULT_THRESHOLD = 150;
 const DEFAULT_DEBOUNCE_MS = 50;
 
+/**
+ * The layout viewport's height, which the keyboard does not shrink. On iOS Safari and Chrome
+ * `window.innerHeight` shrinks with the keyboard too (695 to 490 on an iPhone 16 against a visual
+ * viewport of 365), so comparing against it alone misses the keyboard; the root element's client
+ * height holds.
+ */
+function layoutViewportHeight(): number {
+  return Math.max(window.innerHeight, document.documentElement.clientHeight);
+}
+
 function getInitialViewportState(): KeyboardViewportState {
-  const viewportHeight = typeof window === 'undefined' ? 0 : window.innerHeight;
+  const viewportHeight = typeof window === 'undefined' ? 0 : layoutViewportHeight();
 
   return {
     isKeyboardVisible: false,
@@ -25,9 +35,10 @@ function measureKeyboardViewport(threshold: number): KeyboardViewportState {
 
   const { height } = window.visualViewport;
   const offsetTop = window.visualViewport.offsetTop ?? 0;
-  const rawKeyboardHeight = window.innerHeight - height - offsetTop;
+  const layoutHeight = layoutViewportHeight();
+  const rawKeyboardHeight = layoutHeight - height - offsetTop;
   const keyboardHeight = Math.max(0, rawKeyboardHeight);
-  const isKeyboardVisible = window.innerHeight - height > threshold;
+  const isKeyboardVisible = layoutHeight - height > threshold;
   const keyboardTop = height + offsetTop;
 
   return {
