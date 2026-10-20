@@ -128,4 +128,13 @@ describe('useRegionAvailability', () => {
     expect(physical.result.current.digitalNote).toBeNull();
     expect(physical.result.current.needsCountry).toBe(false);
   });
+
+  it('keeps the country in view only where it decides whether this buyer may buy', () => {
+    flags(true, true);
+    useBuyerCountryStore.setState({ country: 'CH' });
+    expect(run({ digital: true }).result.current.usesCountry).toBe(true);
+    expect(run({ shop: { sellerStatus: 'trader' } }).result.current.usesCountry).toBe(true);
+    expect(run({ shop: { sellerStatus: 'private' } }).result.current.usesCountry).toBe(false);
+    expect(run({ digital: true, isOwner: true }).result.current.usesCountry).toBe(false);
+  });
 });

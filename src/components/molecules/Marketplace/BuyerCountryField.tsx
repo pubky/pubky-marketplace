@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Input } from '@/atoms/Input/Input';
 import { Label } from '@/atoms/Label/Label';
 import { Typography } from '@/atoms/Typography/Typography';
@@ -16,11 +16,13 @@ export interface BuyerCountryFieldProps {
   disabled?: boolean;
   /** Replaces the standard explanation behind the info icon, for a surface with its own reason to ask. */
   info?: string;
+  autoFocus?: boolean;
 }
 
 /**
  * "Country you live in": asked once, remembered on this device, and sent in clear text with the
- * commands that sell (legal launch plan C2). The delivery address itself stays sealed.
+ * commands that sell (legal launch plan C2). The delivery address itself stays sealed. A typed code
+ * counts only once the buyer confirms it (Enter, or leaving the field), never mid-typing.
  */
 export function BuyerCountryField({
   value,
@@ -28,16 +30,16 @@ export function BuyerCountryField({
   id = 'buyer-country',
   disabled,
   info = BUYER_COUNTRY_INFO,
+  autoFocus,
 }: BuyerCountryFieldProps) {
   const [draft, setDraft] = useState(value ?? '');
   const canonical = canonicalCountryCode(draft);
   const invalid = draft.trim() !== '' && !isAssignedCountryCode(canonical);
 
-  const handleChange = (next: string) => {
-    const upper = next.toUpperCase().slice(0, 2);
-    setDraft(upper);
-    const code = canonicalCountryCode(upper);
-    onChange(isAssignedCountryCode(code) ? code : null);
+  useEffect(() => setDraft(value ?? ''), [value]);
+
+  const commit = () => {
+    if (isAssignedCountryCode(canonical) && canonical !== value) onChange(canonical);
   };
 
   return (
@@ -49,16 +51,22 @@ export function BuyerCountryField({
       <Input
         id={id}
         value={draft}
-        onChange={(event) => handleChange(event.target.value)}
+        onChange={(event) => setDraft(event.target.value.toUpperCase().slice(0, 2))}
+        onBlur={commit}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter') commit();
+        }}
+        enterKeyHint="done"
+        autoFocus={autoFocus}
         placeholder="Two-letter code, for example DE"
         autoComplete="country"
         maxLength={2}
         disabled={disabled}
         aria-invalid={invalid}
       />
-      {(invalid || value) && (
+      {(invalid || isAssignedCountryCode(canonical)) && (
         <Typography as="p" className="text-sm text-muted-foreground" data-testid="buyer-country-hint">
-          {invalid ? 'Use a two-letter country code.' : countryDisplayName(value ?? '')}
+          {invalid ? 'Use a two-letter country code.' : countryDisplayName(canonical)}
         </Typography>
       )}
     </div>

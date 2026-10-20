@@ -61,6 +61,7 @@ import { classifyVariantRefusal, variantRefusalMessage } from '@/libs/commerce/v
 import { AppError } from '@/libs/error/error';
 import { isMarketplaceSessionRequiredError } from '@/libs/error/error.utils';
 import { Logger } from '@/libs/logger/logger';
+import { getDigitalRegionBlockEnabled, getEuFenceEnabled } from '@/libs/runtime-config/runtime-config';
 import type { CommerceDeliveryAddressModelSchema } from '@/models/commerce/commerce.schema';
 import { showPaymentMethodRefusalToast } from '@/molecules/Toaster/payment-method-refusal-toast';
 import { toast } from '@/molecules/Toaster/use-toast';
@@ -725,6 +726,11 @@ export function useMarketplaceCheckout(
     }
     const sealedTo = await resolveKeys(shippedSellers);
     if (!sealedTo.ok) return { ok: false };
+    // Placing an order to an address is the buyer's choice of country: remember it for the
+    // listings and send it with this command (legal launch plan C2).
+    if (requiresDeliveryAddress && (getEuFenceEnabled() || getDigitalRegionBlockEnabled())) {
+      CommerceController.setBuyerCountry(data.countryCode.toUpperCase());
+    }
     const response = await CommerceController.commitCreateMarketplaceCheckout({
       lines: checkoutLines,
       fulfillmentChoiceBySeller,
