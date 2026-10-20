@@ -667,11 +667,8 @@ export class CommerceApplication {
     for (const entry of entries) {
       const local = localListingsById.get(entry.listing_id);
       if (local && local.revision >= entry.revision) continue;
-      let record: CommerceListingRecord;
-      try {
-        record = await this.fetchListing(sellerPubky, entry.listing_id);
-      } catch (error) {
-        if (!(isAppError(error) && isNotFound(error))) throw error;
+      const record = await this.fetchListingIfFound(sellerPubky, entry.listing_id);
+      if (!record) {
         deleted.add(entry.listing_id);
         continue;
       }
@@ -692,6 +689,7 @@ export class CommerceApplication {
     await LocalCommerceService.commitSellerCatalogRefresh(
       entries.filter((entry) => !deleted.has(entry.listing_id)),
       recordsToCommit,
+      { sellerPubky, deletedListingIds: deleted },
     );
   }
 

@@ -3083,6 +3083,18 @@ describe('CommerceApplication', () => {
     const capturedById = new Map(capturedRecords.map((record) => [record.listingId, record]));
     const capturedSeller = capturedRecords[0].ownerPubky;
 
+    // The refresh reads records through fetchJsonIfFound; these tests stub fetchJson, so bridge the two.
+    beforeEach(() => {
+      vi.spyOn(CommerceHomeserverService, 'fetchJsonIfFound').mockImplementation(async (url) => {
+        try {
+          return { found: true, json: await CommerceHomeserverService.fetchJson(url) };
+        } catch (error) {
+          if (isAppError(error) && error.context?.statusCode === 404) return { found: false };
+          throw error;
+        }
+      });
+    });
+
     it('refreshes discovery and hydrates the missing canonical listing while retaining cached records', async () => {
       vi.spyOn(commerceConfig, 'getCommerceAdapterMode').mockReturnValue('transaction-service');
       await CommerceCatalogEntryModel.table.clear();
@@ -3108,6 +3120,14 @@ describe('CommerceApplication', () => {
       await CommerceCatalogEntryModel.table.clear();
       await CommerceListingModel.table.clear();
       const deletedId = 'aa2c8b308dbc47619793fe64dcefa9e8';
+      // This browser met the listing before it was deleted elsewhere: its index entry is cached.
+      await CommerceCatalogEntryModel.table.put(
+        createCommerceCatalogEntryFixture({
+          id: `${capturedSeller}:${deletedId}`,
+          seller_id: capturedSeller,
+          listing_id: deletedId,
+        }),
+      );
       vi.spyOn(NexusMarketplaceService, 'fetchListingStream').mockResolvedValue(SELLER_REFRESH_FIXTURE.nexus);
       vi.spyOn(CommerceHomeserverService, 'fetchJson').mockImplementation(async (url) => {
         const listingId = url.split('/').pop()!;
