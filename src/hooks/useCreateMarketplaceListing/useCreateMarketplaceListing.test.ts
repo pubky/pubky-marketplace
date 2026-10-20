@@ -671,6 +671,7 @@ describe('useCreateMarketplaceListing', () => {
       result.current.form.setValue('attrSize', 'US 9');
       result.current.form.setValue('price', '125.00');
       result.current.form.setValue('fulfillment', 'pickup');
+      result.current.form.setValue('countryCode', 'US');
     });
 
     await act(() => result.current.submit());
