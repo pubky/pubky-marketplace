@@ -192,7 +192,7 @@ describe('MarketplacePaymentStatusCard — USDT orders', () => {
     );
   });
 
-  it('puts the checkout action next to the unconfirmed-delivery copy of an unpaid USDT order only', () => {
+  it('puts the checkout action next to the unconfirmed-delivery copy of an unpaid USDT order, else under the awaiting status', () => {
     const failed = createUsdtOrderFixture('awaiting', { paykitDeliveryState: 'failed' });
     const { unmount } = render(
       <MarketplacePaymentStatusCard
@@ -222,20 +222,21 @@ describe('MarketplacePaymentStatusCard — USDT orders', () => {
         checkoutActions={<button type="button">Cancel checkout</button>}
       />,
     );
-    expect(screen.queryByRole('button', { name: 'Cancel checkout' })).not.toBeInTheDocument();
+    expect(screen.getByTestId('usdt-awaiting-status')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Cancel checkout' })).toBeInTheDocument();
   });
 
   it.each([
-    ['awaiting', 'pending', true],
-    ['awaiting', null, true],
-    ['awaiting', 'delivered', true],
-    ['awaiting', 'failed', false],
-    ['received', 'failed', true],
-    ['final', 'failed', true],
-    ['rechecking', 'failed', true],
+    ['awaiting', 'pending', true, true],
+    ['awaiting', null, true, true],
+    ['awaiting', 'delivered', true, true],
+    ['awaiting', 'failed', false, false],
+    ['received', 'failed', true, false],
+    ['final', 'failed', true, false],
+    ['rechecking', 'failed', true, false],
   ] as const)(
-    'offers no checkout action beside a %s USDT order whose delivery reads %s (buyer: %s), even when one is passed',
-    (phase, paykitDeliveryState, isBuyer) => {
+    'for a %s USDT order whose delivery reads %s (buyer: %s), renders the passed checkout action: %s',
+    (phase, paykitDeliveryState, isBuyer, shown) => {
       const { order, payment } = createUsdtOrderFixture(phase, { paykitDeliveryState });
       render(
         <MarketplacePaymentStatusCard
@@ -249,7 +250,7 @@ describe('MarketplacePaymentStatusCard — USDT orders', () => {
         />,
       );
 
-      expect(screen.queryByRole('button', { name: 'Cancel checkout' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Cancel checkout' }) !== null).toBe(shown);
     },
   );
 
