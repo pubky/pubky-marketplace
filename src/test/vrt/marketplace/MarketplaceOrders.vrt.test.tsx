@@ -229,6 +229,18 @@ const fixtures = vi.hoisted(async () => {
     };
   };
 
+  // pubky/pubky-marketplace#368: a completed order of a final-sale listing, seen by its buyer.
+  const finalSaleBuyerView = () => ({
+    order: createOrderFixture('completed', {
+      id: '018f47d2-6a27-7c23-a49d-000000000706',
+      fulfillment: 'shipping',
+      nextActor: 'none',
+      returnPolicy: { acceptsReturns: false, returnWindowDays: null },
+    }),
+    payment: createPaymentFixture('confirmed'),
+    receipt: null,
+  });
+
   const deliveryAssumedView = () => ({
     order: createOrderFixture('delivered', {
       id: '018f47d2-6a27-7c23-a49d-000000000703',
@@ -427,6 +439,7 @@ const fixtures = vi.hoisted(async () => {
     trackableShipped: [trackableShippedView()],
     bitcoinRefunded: [bitcoinRefundedView()],
     deliveryAssumed: [deliveryAssumedView()],
+    finalSaleBuyer: [finalSaleBuyerView()],
     usdtRefundBuyerNeeded: [usdtRefundView('return_approved', 'buyer', false)],
     usdtRefundBuyerConfirmed: [usdtRefundView('return_approved', 'buyer', true)],
     usdtRefundSellerConfirmed: [usdtRefundView('return_received', 'seller', true)],
@@ -620,6 +633,17 @@ describe('Marketplace orders — visual regression', () => {
     const screen = await renderForVRT(<MarketplaceOrders />, { viewport: VRT_VIEWPORT_DESKTOP });
     await expect.element(screen.getByTestId('order-refund-record')).toBeVisible();
     await expect(await expectVrtSurface('marketplace-orders')).toMatchScreenshot('orders-bitcoin-refund-desktop');
+  });
+
+  it('renders a final-sale order with no return at mobile viewport', async () => {
+    const { finalSaleBuyer } = await fixtures;
+    ordersState.orders = finalSaleBuyer;
+    ordersState.isLoading = false;
+    ordersState.error = null;
+
+    const screen = await renderForVRT(<MarketplaceOrders />, { viewport: VRT_VIEWPORT_MOBILE });
+    await expect.element(screen.getByTestId('return-closed-note')).toBeVisible();
+    await expect(await expectVrtSurface('marketplace-orders')).toMatchScreenshot('orders-final-sale-mobile');
   });
 
   it('renders the buyer asking for a USDT refund address at desktop viewport', async () => {
