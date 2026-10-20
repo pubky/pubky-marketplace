@@ -270,6 +270,29 @@ describe('recorded refund copy', () => {
     );
   });
 
+  it('says a refund was checked on Arbitrum when the buyer received it in full', () => {
+    expect(
+      usdtRefundRecordLine({
+        ...recorded,
+        externalRefund: { amountMinor: 2_500, transactionId: REFUND_FIXTURE_TX_HASH, receivedUnits: 25_000_000 },
+      }),
+    ).toBe(
+      `The seller refunded 25.000000 USDT to ${REFUND_FIXTURE_ADDRESS} (transaction ${REFUND_FIXTURE_TX_HASH}). Checked on Arbitrum.`,
+    );
+  });
+
+  it('flags a refund Arbitrum shows short of what the seller recorded', () => {
+    expect(
+      usdtRefundRecordLine({
+        ...recorded,
+        total: usd(100),
+        externalRefund: { amountMinor: 100, transactionId: REFUND_FIXTURE_TX_HASH, receivedUnits: 970_435 },
+      }),
+    ).toBe(
+      `The seller recorded a refund of 1.000000 USDT to ${REFUND_FIXTURE_ADDRESS} (transaction ${REFUND_FIXTURE_TX_HASH}). Arbitrum shows 0.970435 USDT received of 1.000000 USDT.`,
+    );
+  });
+
   it('groups the digits of a large refund amount, as a receipt does', () => {
     expect(
       usdtRefundRecordLine({

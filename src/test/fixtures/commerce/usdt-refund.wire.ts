@@ -55,4 +55,8 @@ export const USDT_REFUND_REFUSAL_REASONS = [
   'invalid_refund_reference',
   'refund_rail_unknown',
   'refund_amount_unrecordable',
+  // The Arbitrum check of a recorded refund (service ARBITRUM_RPC_URL).
+  'refund_transaction_not_found',
+  'refund_transaction_reverted',
+  'refund_transaction_wrong_recipient',
 ] as const;
