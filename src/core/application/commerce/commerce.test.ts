@@ -263,6 +263,24 @@ describe('CommerceApplication', () => {
     });
   });
 
+  it('returns a local shop without a network request', async () => {
+    const record = createCommerceShopFixture();
+    vi.spyOn(LocalCommerceService, 'getShop').mockResolvedValue(
+      new CommerceShopModel({
+        id: COMMERCE_FIXTURE_SELLER,
+        owner_id: COMMERCE_FIXTURE_SELLER,
+        record,
+        revision: 1,
+        sync_status: 'synced',
+        updated_at: Date.parse(record.updatedAt),
+      }),
+    );
+    const fetchJson = vi.spyOn(CommerceHomeserverService, 'fetchJson');
+
+    await expect(CommerceApplication.getOrFetchShop(COMMERCE_FIXTURE_SELLER)).resolves.toEqual(record);
+    expect(fetchJson).not.toHaveBeenCalled();
+  });
+
   it("reads a cached shop fresh so a seller's later declaration reaches the buyer's EU fence", async () => {
     const cached = createCommerceShopFixture();
     const updated = {
@@ -274,7 +292,7 @@ describe('CommerceApplication', () => {
     await LocalCommerceService.upsertShop(cached, 'synced');
     vi.mocked(CommerceHomeserverService.fetchJson).mockResolvedValue(updated);
 
-    const shop = await CommerceApplication.getOrFetchShop(cached.ownerPubky);
+    const shop = await CommerceApplication.refreshShopOrGetCached(cached.ownerPubky);
 
     expect(shop).toEqual(updated);
     expect(sellerDeclaration(shop)).toBe('private');
@@ -298,7 +316,7 @@ describe('CommerceApplication', () => {
     await LocalCommerceService.upsertShop(cached, 'synced');
     fail();
 
-    await expect(CommerceApplication.getOrFetchShop(cached.ownerPubky)).resolves.toEqual(cached);
+    await expect(CommerceApplication.refreshShopOrGetCached(cached.ownerPubky)).resolves.toEqual(cached);
   });
 
   it.each([
@@ -3908,6 +3926,8 @@ describe('CommerceApplication', () => {
           headers: { 'content-type': 'application/json' },
         }),
       );
+      vi.spyOn(CommerceApplication, 'getOrFetchShop').mockResolvedValue(createCommerceShopFixture());
+
       await CommerceController.fetchCatalogListings({
         saleFormat: 'all',
         conditions: [],

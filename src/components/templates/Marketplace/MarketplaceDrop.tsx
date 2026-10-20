@@ -67,7 +67,7 @@ export function MarketplaceDrop({ sellerPubky, dropId }: MarketplaceDropProps) {
 
   useEffect(() => {
     let active = true;
-    CommerceController.getOrFetchShop(sellerPubky)
+    CommerceController.refreshShopOrGetCached(sellerPubky)
       .then((shop) => {
         if (!active) return;
         setShopName(shop.name);

@@ -138,6 +138,10 @@ export class CommerceController {
     return await CommerceApplication.refreshShop(CommerceRecordNormalizer.pubky(ownerPubky));
   }
 
+  static async refreshShopOrGetCached(ownerPubky: unknown) {
+    return await CommerceApplication.refreshShopOrGetCached(CommerceRecordNormalizer.pubky(ownerPubky));
+  }
+
   static async getOrFetchShop(ownerPubky: unknown) {
     return await CommerceApplication.getOrFetchShop(CommerceRecordNormalizer.pubky(ownerPubky));
   }

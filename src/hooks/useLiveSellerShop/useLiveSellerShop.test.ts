@@ -8,14 +8,14 @@ import { useLiveSellerShop } from './useLiveSellerShop';
 
 vi.mock('@/controllers/commerce/commerce', () => ({
   CommerceController: {
-    getOrFetchShop: vi.fn(),
+    refreshShopOrGetCached: vi.fn(),
     subscribeShopEvents: vi.fn(),
   },
 }));
 
 const SELLER = 'a'.repeat(52);
 const SHOP_PATH = '/pub/pubky.app/marketplace/v1/shop.json';
-const getOrFetchShop = vi.mocked(CommerceController.getOrFetchShop);
+const refreshShopOrGetCached = vi.mocked(CommerceController.refreshShopOrGetCached);
 const subscribeShopEvents = vi.mocked(CommerceController.subscribeShopEvents);
 
 /** A live stream the test pushes events into. */
@@ -33,7 +33,7 @@ const liveStream = () => {
 describe('useLiveSellerShop', () => {
   beforeEach(() => {
     vi.useFakeTimers();
-    getOrFetchShop.mockReset().mockResolvedValue(createCommerceShopFixture());
+    refreshShopOrGetCached.mockReset().mockResolvedValue(createCommerceShopFixture());
     subscribeShopEvents.mockReset();
   });
 
@@ -53,8 +53,8 @@ describe('useLiveSellerShop', () => {
     await vi.advanceTimersByTimeAsync(COMMERCE_SHOP_EVENT_DEBOUNCE_MS);
 
     expect(subscribeShopEvents).toHaveBeenCalledWith(SELLER);
-    expect(getOrFetchShop).toHaveBeenCalledTimes(1);
-    expect(getOrFetchShop).toHaveBeenCalledWith(SELLER);
+    expect(refreshShopOrGetCached).toHaveBeenCalledTimes(1);
+    expect(refreshShopOrGetCached).toHaveBeenCalledWith(SELLER);
     unmount();
   });
 
@@ -66,7 +66,7 @@ describe('useLiveSellerShop', () => {
     window.dispatchEvent(new Event('focus'));
     document.dispatchEvent(new Event('visibilitychange'));
 
-    expect(getOrFetchShop).toHaveBeenCalledTimes(1);
+    expect(refreshShopOrGetCached).toHaveBeenCalledTimes(1);
     unmount();
   });
 
@@ -76,6 +76,6 @@ describe('useLiveSellerShop', () => {
     window.dispatchEvent(new Event('focus'));
 
     expect(subscribeShopEvents).not.toHaveBeenCalled();
-    expect(getOrFetchShop).not.toHaveBeenCalled();
+    expect(refreshShopOrGetCached).not.toHaveBeenCalled();
   });
 });

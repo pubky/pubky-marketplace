@@ -54,7 +54,7 @@ export function MarketplaceShop({ sellerPubky }: { sellerPubky: string }) {
   useEffect(() => {
     let active = true;
     setShopFetchSettled(false);
-    CommerceController.getOrFetchShop(sellerPubky)
+    CommerceController.refreshShopOrGetCached(sellerPubky)
       .catch(() => undefined)
       .finally(() => {
         if (active) setShopFetchSettled(true);

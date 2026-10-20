@@ -28,7 +28,7 @@ export function useLiveSellerShop(sellerPubky: string, enabled = true): void {
     let lastFocusRead = Date.now();
 
     const revalidate = () => {
-      void CommerceController.getOrFetchShop(sellerPubky).catch(() => undefined);
+      void CommerceController.refreshShopOrGetCached(sellerPubky).catch(() => undefined);
     };
     const onEvent = () => {
       clearTimeout(debounce);

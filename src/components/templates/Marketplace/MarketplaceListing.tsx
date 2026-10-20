@@ -146,7 +146,7 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
     setIsFetchSettled(false);
     // Best-effort: a direct visit may not have the seller's shop cached, and
     // it carries the shop name, vacation notice and destination countries.
-    void CommerceController.getOrFetchShop(sellerPubky).catch(() => undefined);
+    void CommerceController.refreshShopOrGetCached(sellerPubky).catch(() => undefined);
     CommerceController.getOrFetchListing(sellerPubky, listingId)
       .catch(async (fetchError: unknown) => {
         let confirmedRemoved = false;

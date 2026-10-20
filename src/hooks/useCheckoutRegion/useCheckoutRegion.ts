@@ -59,7 +59,7 @@ export function useCheckoutRegion(input: {
     const sellers = key.split(',');
     void Promise.all(
       sellers.map(async (pubky) => {
-        const shop = await CommerceController.getOrFetchShop(pubky).then(
+        const shop = await CommerceController.refreshShopOrGetCached(pubky).then(
           (record) => ({ read: true as const, record }),
           () => ({ read: false as const }),
         );
