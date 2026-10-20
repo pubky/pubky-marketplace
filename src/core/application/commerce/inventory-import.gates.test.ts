@@ -42,6 +42,7 @@ const WITH_METHOD: SellerPaymentConfig = {
   paypalAvailable: false,
 };
 const NO_METHOD: SellerPaymentConfig = { bitcoinAvailable: false, bitcoinOfferAvailable: true, paypalAvailable: false };
+const USDT_ONLY: SellerPaymentConfig = { ...NO_METHOD, usdtAvailable: true, acceptedAssets: ['USDT'] };
 
 function physical(listingId: string): CommerceListingRecord {
   return createCommerceListingFixture({ listingId, ownerPubky: PUBKY });
@@ -79,6 +80,7 @@ describe('import publishes run the sell composer gates once per seller', () => {
   let paymentLoads: number;
   let keyLoads: number;
   let payment: () => Promise<SellerPaymentConfig>;
+  let usdtOffered: () => Promise<boolean>;
   let key: () => Promise<SellerDeliveryKeyPublication>;
   let stored: CommerceListingRecord[];
   let putFailure: ((record: CommerceListingRecord) => Error | null) | null;
@@ -89,6 +91,7 @@ describe('import publishes run the sell composer gates once per seller', () => {
     paymentLoads = 0;
     keyLoads = 0;
     payment = async () => WITH_METHOD;
+    usdtOffered = async () => true;
     key = async () => 'matches';
     stored = [];
     putFailure = null;
@@ -111,6 +114,7 @@ describe('import publishes run the sell composer gates once per seller', () => {
         paymentLoads += 1;
         return payment();
       },
+      loadUsdtPaymentsAvailable: () => usdtOffered(),
       loadDeliveryKeyPublication: async () => {
         keyLoads += 1;
         return key();
@@ -163,6 +167,23 @@ describe('import publishes run the sell composer gates once per seller', () => {
       const csv = await importer.resultCsv(planned.manifestId);
       expect(csv).toContain('"synced, paused, no payment method set up"');
       expect(csv.match(/paused, no payment method set up/g)).toHaveLength(2);
+    });
+
+    it('publishes active for a USDT-only seller while the deployment offers USDT', async () => {
+      payment = async () => USDT_ONLY;
+      const { importer, planned } = await plan([physical('boots_01'), digital('guide_01')]);
+      expect(planned.publishGate).toEqual({ reason: null, ships: true, pausing: 0, keptLive: [] });
+      await importer.publish(planned.manifestId);
+      expect(states()).toEqual({ boots_01: 'active', guide_01: 'active' });
+    });
+
+    it('still pauses a USDT-only seller when the deployment does not offer USDT', async () => {
+      payment = async () => USDT_ONLY;
+      usdtOffered = async () => false;
+      const { importer, planned } = await plan([digital('guide_01')]);
+      expect(planned.publishGate.reason).toBe('no-method');
+      await importer.publish(planned.manifestId);
+      expect(states()).toEqual({ guide_01: 'paused' });
     });
 
     it('blocks as unverified when the payment settings cannot be read', async () => {

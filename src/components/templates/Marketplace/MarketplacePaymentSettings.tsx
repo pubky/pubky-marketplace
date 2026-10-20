@@ -16,10 +16,11 @@ import { isSocialLinkOutEnabled } from '@/config/social';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import {
   consumeListingComposerReturnTo,
+  evaluateSellerPaymentMethodGate,
   peekListingComposerReturnTo,
   rememberListingComposerReturnTo,
 } from '@/libs/commerce/listing-publish-guards';
-import { availablePaymentMethods, type SellerPaymentConfigOwnView } from '@/libs/commerce/payment-methods';
+import type { SellerPaymentConfigOwnView } from '@/libs/commerce/payment-methods';
 import { BackToMyShop } from '@/molecules/Marketplace/BackToMyShop';
 import { SettingsSectionContent } from '@/molecules/Settings/SettingsSectionContent/SettingsSectionContent';
 import { ContentLayout } from '@/organisms/ContentLayout/ContentLayout';
@@ -31,7 +32,9 @@ import { useAuthStore } from '@/stores/auth/auth.store';
 import { useMarketplaceDisplayStore } from '@/stores/marketplace-display/marketplace-display.store';
 
 function ownViewLooksBuyerPayable(config: SellerPaymentConfigOwnView): boolean {
-  return Boolean(config.paypalMerchantEmail || config.bitcoinEnabled);
+  return Boolean(
+    config.paypalMerchantEmail || config.bitcoinEnabled || (config.usdtEnabled && config.usdtSetup === 'ready'),
+  );
 }
 
 export function MarketplacePaymentSettings() {
@@ -57,13 +60,13 @@ export function MarketplacePaymentSettings() {
       return;
     }
     let active = true;
-    void CommerceController.getSellerPaymentConfig(currentUserPubky)
-      .then((config) => {
-        if (active) setCanContinue(availablePaymentMethods(config).length > 0);
-      })
-      .catch(() => {
-        if (active) setCanContinue(false);
-      });
+    void evaluateSellerPaymentMethodGate({
+      ownerPubky: currentUserPubky,
+      loadPaymentConfig: (pubky) => CommerceController.getSellerPaymentConfig(pubky),
+      loadUsdtPaymentsAvailable: () => CommerceController.fetchUsdtPaymentsAvailable(),
+    }).then((reason) => {
+      if (active) setCanContinue(reason === null);
+    });
     return () => {
       active = false;
     };

@@ -63,6 +63,17 @@ export const useCommerceStore = create<CommerceStore>()(
           false,
           CommerceActionTypes.SET_PAYMENT_METHOD_SELLERS,
         ),
+      refreshListingCards: (compositeListingIds) =>
+        set(
+          (state) => {
+            if (compositeListingIds.length === 0) return state;
+            const next = { ...state.listingCardRefresh };
+            for (const id of compositeListingIds) next[id] = (next[id] ?? 0) + 1;
+            return { listingCardRefresh: next };
+          },
+          false,
+          CommerceActionTypes.REFRESH_LISTING_CARDS,
+        ),
       resetFilters: () =>
         set(
           {

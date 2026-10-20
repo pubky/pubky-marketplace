@@ -1,3 +1,4 @@
+import type { Session } from '@synonymdev/pubky';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -8,6 +9,7 @@ import { toCamelCaseWire } from '@/libs/commerce/wire-casing';
 import { toast } from '@/molecules/Toaster/use-toast';
 import { MarketplaceGetPaidSettings } from '@/organisms/Marketplace/MarketplaceGetPaidSettings';
 import { useAuthStore } from '@/stores/auth/auth.store';
+import type { GrantSigner } from '@/stores/auth/auth.types';
 import { useCommerceStore } from '@/stores/commerce/commerce.store';
 import {
   USDT_SELLER_CONFIG_FLAG_OFF_WIRE,
@@ -16,6 +18,7 @@ import {
   USDT_SELLER_CONFIG_SETUP_WIRE,
   USDT_SELLER_CONFIG_UNAVAILABLE_WIRE,
 } from '@/test/fixtures/commerce/seller-payment-config-usdt.wire';
+import { asOpaque } from '@/test-utils/type-assertions';
 
 const runtime = vi.hoisted(() => ({ api: 'fork' as 'fork' | 'upstream' }));
 vi.mock('@/config/commerce', async (importOriginal) => {
@@ -101,8 +104,12 @@ beforeEach(() => {
       expiresAt: '2026-11-09T12:00:00.000Z',
     },
   });
-  useAuthStore.setState({ currentUserPubky: PUBKY });
+  useAuthStore.setState({ currentUserPubky: PUBKY, session: null, grantSigner: null });
 });
+
+function signInWith(grantSigner: GrantSigner) {
+  useAuthStore.setState({ session: asOpaque<Session>({ grant: {} }), grantSigner });
+}
 
 function methodTitles() {
   return within(screen.getByRole('region', { name: 'Payment methods' }))
@@ -232,22 +239,44 @@ describe('MarketplaceGetPaidSettings USDT', () => {
     });
 
     it('offers Add USDT in Bitkit for a Bitkit account that never shared a USDT address', async () => {
+      signInWith('bitkit');
       mocked.getMyPaymentConfig.mockResolvedValue(fromWire(USDT_SELLER_CONFIG_RECONNECT_WIRE));
       await renderSettings();
 
       const panel = await screen.findByTestId('usdt-readiness-reconnect');
-      expect(panel).toHaveTextContent("USDT needs Bitkit. Pubky Ring can't share a USDT address.");
+      expect(panel).toHaveTextContent('USDT needs a USDT address in Bitkit.');
+      expect(panel).not.toHaveTextContent(/Ring/);
       expect(within(panel).getByRole('button', { name: /Add USDT in Bitkit/ })).toBeEnabled();
       expect(screen.queryByRole('button', { name: /Set up Bitkit payments/ })).not.toBeInTheDocument();
       expect(screen.getByTestId('payment-method-status-usdt')).toHaveTextContent('Not set up');
     });
 
+    it('names Pubky Ring as unable to share a USDT address only for a seller who signed in with Ring', async () => {
+      signInWith('ring');
+      mocked.getMyPaymentConfig.mockResolvedValue(fromWire(USDT_SELLER_CONFIG_RECONNECT_WIRE));
+      await renderSettings();
+
+      expect(await screen.findByTestId('usdt-readiness-reconnect')).toHaveTextContent(
+        "USDT needs Bitkit. Pubky Ring can't share a USDT address.",
+      );
+    });
+
+    it('uses neutral wording when the sign-in does not identify a signer', async () => {
+      mocked.getMyPaymentConfig.mockResolvedValue(fromWire(USDT_SELLER_CONFIG_RECONNECT_WIRE));
+      await renderSettings();
+
+      const panel = await screen.findByTestId('usdt-readiness-reconnect');
+      expect(panel).toHaveTextContent('USDT needs Bitkit to share a USDT address.');
+      expect(panel).not.toHaveTextContent(/Ring|Passport/);
+    });
+
     it('offers Set up Bitkit payments for a seller with no Paykit account', async () => {
+      signInWith('bitkit');
       mocked.getMyPaymentConfig.mockResolvedValue(fromWire(USDT_SELLER_CONFIG_SETUP_WIRE));
       await renderSettings();
 
       const panel = await screen.findByTestId('usdt-readiness-setup');
-      expect(panel).toHaveTextContent("USDT needs Bitkit. Pubky Ring can't share a USDT address.");
+      expect(panel).toHaveTextContent('USDT needs a USDT address in Bitkit.');
       expect(within(panel).getByRole('button', { name: /Set up Bitkit payments/ })).toBeEnabled();
       expect(screen.queryByRole('button', { name: /Add USDT in Bitkit/ })).not.toBeInTheDocument();
     });

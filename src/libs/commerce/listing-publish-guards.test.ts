@@ -20,6 +20,7 @@ const emptyConfig = {
   bitcoinOfferAvailable: true,
   paypalAvailable: false,
 };
+const usdtOff = async () => false;
 const paidConfig = {
   bitcoinAvailable: true,
   bitcoinOfferAvailable: true,
@@ -85,6 +86,7 @@ describe('evaluateDurableListingPublishGuards', () => {
         ownerPubky: null,
         hasMarketplaceSession: true,
         loadPaymentConfig,
+        loadUsdtPaymentsAvailable: usdtOff,
       }),
     ).resolves.toBe('unsigned');
     expect(loadPaymentConfig).not.toHaveBeenCalled();
@@ -97,6 +99,7 @@ describe('evaluateDurableListingPublishGuards', () => {
         ownerPubky: OWNER,
         hasMarketplaceSession: false,
         loadPaymentConfig,
+        loadUsdtPaymentsAvailable: usdtOff,
       }),
     ).resolves.toBe('session');
     expect(loadPaymentConfig).not.toHaveBeenCalled();
@@ -108,6 +111,7 @@ describe('evaluateDurableListingPublishGuards', () => {
         ownerPubky: OWNER,
         hasMarketplaceSession: true,
         loadPaymentConfig: async () => emptyConfig,
+        loadUsdtPaymentsAvailable: usdtOff,
       }),
     ).resolves.toBe('no-method');
   });
@@ -120,6 +124,7 @@ describe('evaluateDurableListingPublishGuards', () => {
         loadPaymentConfig: async () => {
           throw new Error('offline');
         },
+        loadUsdtPaymentsAvailable: usdtOff,
       }),
     ).resolves.toBe('unverified');
   });
@@ -130,6 +135,7 @@ describe('evaluateDurableListingPublishGuards', () => {
         ownerPubky: OWNER,
         hasMarketplaceSession: true,
         loadPaymentConfig: async () => paidConfig,
+        loadUsdtPaymentsAvailable: usdtOff,
       }),
     ).resolves.toBeNull();
   });
@@ -172,6 +178,7 @@ describe('delivery key guard', () => {
         ownerPubky: null,
         hasMarketplaceSession: true,
         loadPaymentConfig: async () => paidConfig,
+        loadUsdtPaymentsAvailable: usdtOff,
         deliveryKey,
       }),
     ).resolves.toBe('unsigned');
@@ -180,6 +187,7 @@ describe('delivery key guard', () => {
         ownerPubky: OWNER,
         hasMarketplaceSession: false,
         loadPaymentConfig: async () => paidConfig,
+        loadUsdtPaymentsAvailable: usdtOff,
         deliveryKey,
       }),
     ).resolves.toBe('session');
@@ -188,6 +196,7 @@ describe('delivery key guard', () => {
         ownerPubky: OWNER,
         hasMarketplaceSession: true,
         loadPaymentConfig: async () => emptyConfig,
+        loadUsdtPaymentsAvailable: usdtOff,
         deliveryKey,
       }),
     ).resolves.toBe('no-method');
@@ -198,6 +207,7 @@ describe('delivery key guard', () => {
         ownerPubky: OWNER,
         hasMarketplaceSession: true,
         loadPaymentConfig: async () => paidConfig,
+        loadUsdtPaymentsAvailable: usdtOff,
         deliveryKey,
       }),
     ).resolves.toBe('no-delivery-key');
@@ -207,7 +217,9 @@ describe('delivery key guard', () => {
 describe('evaluateSellerPaymentMethodGate', () => {
   it('blocks unsigned sellers before any payment lookup', async () => {
     const loadPaymentConfig = vi.fn();
-    await expect(evaluateSellerPaymentMethodGate({ ownerPubky: null, loadPaymentConfig })).resolves.toBe('unsigned');
+    await expect(
+      evaluateSellerPaymentMethodGate({ ownerPubky: null, loadPaymentConfig, loadUsdtPaymentsAvailable: usdtOff }),
+    ).resolves.toBe('unsigned');
     expect(loadPaymentConfig).not.toHaveBeenCalled();
   });
 
@@ -216,6 +228,7 @@ describe('evaluateSellerPaymentMethodGate', () => {
       evaluateSellerPaymentMethodGate({
         ownerPubky: OWNER,
         loadPaymentConfig: async () => emptyConfig,
+        loadUsdtPaymentsAvailable: usdtOff,
       }),
     ).resolves.toBe('no-method');
   });
@@ -225,6 +238,7 @@ describe('evaluateSellerPaymentMethodGate', () => {
       evaluateSellerPaymentMethodGate({
         ownerPubky: OWNER,
         loadPaymentConfig: async () => paidConfig,
+        loadUsdtPaymentsAvailable: usdtOff,
       }),
     ).resolves.toBeNull();
   });
@@ -234,6 +248,7 @@ describe('evaluateSellerPaymentMethodGate', () => {
       evaluateSellerPaymentMethodGate({
         ownerPubky: OWNER,
         loadPaymentConfig: async () => ({ ...emptyConfig, paykitUnreachable: true }),
+        loadUsdtPaymentsAvailable: usdtOff,
       }),
     ).resolves.toBe('paykit-unreachable');
   });
@@ -248,6 +263,7 @@ describe('evaluateSellerPaymentMethodGate', () => {
           paypalAvailable: true,
           paykitUnreachable: true,
         }),
+        loadUsdtPaymentsAvailable: usdtOff,
       }),
     ).resolves.toBeNull();
   });
@@ -257,9 +273,112 @@ describe('evaluateSellerPaymentMethodGate', () => {
       .fn()
       .mockResolvedValueOnce({ ...emptyConfig, paykitUnreachable: true })
       .mockResolvedValueOnce(paidConfig);
-    const input = { ownerPubky: OWNER, loadPaymentConfig };
+    const input = { ownerPubky: OWNER, loadPaymentConfig, loadUsdtPaymentsAvailable: usdtOff };
     await expect(evaluateSellerPaymentMethodGate(input)).resolves.toBe('paykit-unreachable');
     await expect(evaluateSellerPaymentMethodGate(input)).resolves.toBeNull();
+  });
+});
+
+describe('USDT as a payment method', () => {
+  const usdtOnly = {
+    bitcoinAvailable: false,
+    bitcoinOfferAvailable: true,
+    paypalAvailable: false,
+    usdtAvailable: true,
+    paykitAvailable: true,
+    acceptedAssets: ['USDT' as const],
+  };
+
+  it('lets a USDT-only seller publish while the deployment offers USDT', async () => {
+    await expect(
+      evaluateDurableListingPublishGuards({
+        ownerPubky: OWNER,
+        hasMarketplaceSession: true,
+        loadPaymentConfig: async () => usdtOnly,
+        loadUsdtPaymentsAvailable: async () => true,
+      }),
+    ).resolves.toBeNull();
+    await expect(
+      evaluateSellerPaymentMethodGate({
+        ownerPubky: OWNER,
+        loadPaymentConfig: async () => usdtOnly,
+        loadUsdtPaymentsAvailable: async () => true,
+      }),
+    ).resolves.toBeNull();
+  });
+
+  it('lets a legacy USDT-only config (no accepted-assets list) through', async () => {
+    const { acceptedAssets: _acceptedAssets, ...legacy } = usdtOnly;
+    await expect(
+      evaluateSellerPaymentMethodGate({
+        ownerPubky: OWNER,
+        loadPaymentConfig: async () => legacy,
+        loadUsdtPaymentsAvailable: async () => true,
+      }),
+    ).resolves.toBeNull();
+  });
+
+  it('keeps USDT-only sellers blocked while the deployment does not offer USDT', async () => {
+    await expect(
+      evaluateSellerPaymentMethodGate({
+        ownerPubky: OWNER,
+        loadPaymentConfig: async () => usdtOnly,
+        loadUsdtPaymentsAvailable: async () => false,
+      }),
+    ).resolves.toBe('no-method');
+  });
+
+  it('says it could not verify when the USDT capability cannot be read', async () => {
+    await expect(
+      evaluateSellerPaymentMethodGate({
+        ownerPubky: OWNER,
+        loadPaymentConfig: async () => usdtOnly,
+        loadUsdtPaymentsAvailable: async () => {
+          throw new Error('offline');
+        },
+      }),
+    ).resolves.toBe('unverified');
+  });
+
+  it('does not read the USDT capability when another rail already counts', async () => {
+    const loadUsdtPaymentsAvailable = vi.fn(async () => true);
+    await expect(
+      evaluateSellerPaymentMethodGate({
+        ownerPubky: OWNER,
+        loadPaymentConfig: async () => ({ ...paidConfig, usdtAvailable: true }),
+        loadUsdtPaymentsAvailable,
+      }),
+    ).resolves.toBeNull();
+    await expect(
+      evaluateSellerPaymentMethodGate({
+        ownerPubky: OWNER,
+        loadPaymentConfig: async () => ({ ...emptyConfig, paypalAvailable: true }),
+        loadUsdtPaymentsAvailable,
+      }),
+    ).resolves.toBeNull();
+    expect(loadUsdtPaymentsAvailable).not.toHaveBeenCalled();
+  });
+
+  it('does not read the USDT capability for a seller with no USDT rail', async () => {
+    const loadUsdtPaymentsAvailable = vi.fn(async () => true);
+    await expect(
+      evaluateSellerPaymentMethodGate({
+        ownerPubky: OWNER,
+        loadPaymentConfig: async () => ({ ...emptyConfig, usdtAvailable: false }),
+        loadUsdtPaymentsAvailable,
+      }),
+    ).resolves.toBe('no-method');
+    expect(loadUsdtPaymentsAvailable).not.toHaveBeenCalled();
+  });
+
+  it('lets a USDT-only seller through during a Paykit Bitcoin outage', async () => {
+    await expect(
+      evaluateSellerPaymentMethodGate({
+        ownerPubky: OWNER,
+        loadPaymentConfig: async () => ({ ...usdtOnly, bitcoinOfferAvailable: false, paykitUnreachable: true }),
+        loadUsdtPaymentsAvailable: async () => true,
+      }),
+    ).resolves.toBeNull();
   });
 });
 

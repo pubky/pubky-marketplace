@@ -2,6 +2,7 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import type { MarketplaceListingProjection } from '@/services/marketplace/marketplace';
+import { useCommerceStore } from '@/stores/commerce/commerce.store';
 import { useMarketplaceLiveBid } from './useMarketplaceLiveBid';
 
 const config = vi.hoisted(() => ({ mode: 'transaction-service' }));
@@ -81,6 +82,7 @@ describe('useMarketplaceLiveBid', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     intersectionCallback = null;
+    useCommerceStore.getState().reset();
     config.mode = 'transaction-service';
     vi.mocked(CommerceController.getMarketplaceListingProjection).mockResolvedValue(auctionProjection());
   });
@@ -138,6 +140,97 @@ describe('useMarketplaceLiveBid', () => {
     });
 
     expect(CommerceController.getMarketplaceListingProjection).toHaveBeenCalledTimes(1);
+  });
+
+  describe('after the first read', () => {
+    const fixedPrice = (overrides: Partial<MarketplaceListingProjection> = {}) =>
+      ({
+        ...auctionProjection(),
+        auction: null,
+        saleFormat: 'fixed_price',
+        ...overrides,
+      }) as MarketplaceListingProjection;
+
+    it('re-reads when the listing is reported changed, so a sold item stops reading available', async () => {
+      vi.mocked(CommerceController.getMarketplaceListingProjection).mockResolvedValue(fixedPrice());
+      const { result } = renderHook(() => useMarketplaceLiveBid(SELLER, 'camera', true));
+      attachAndShow(result.current.ref);
+      await waitFor(() => expect(result.current.listingState).toBe('available'));
+      expect(result.current.soldOut).toBe(false);
+
+      vi.mocked(CommerceController.getMarketplaceListingProjection).mockResolvedValue(
+        fixedPrice({ state: 'sold', availableQuantity: 0 }),
+      );
+      act(() => useCommerceStore.getState().refreshListingCards([`${SELLER}:camera`]));
+
+      await waitFor(() => expect(result.current.listingState).toBe('sold'));
+      expect(result.current.soldOut).toBe(true);
+      expect(CommerceController.getMarketplaceListingProjection).toHaveBeenCalledTimes(2);
+    });
+
+    it('ignores a change reported for another listing', async () => {
+      vi.mocked(CommerceController.getMarketplaceListingProjection).mockResolvedValue(fixedPrice());
+      const { result } = renderHook(() => useMarketplaceLiveBid(SELLER, 'camera', true));
+      attachAndShow(result.current.ref);
+      await waitFor(() => expect(result.current.listingState).toBe('available'));
+
+      act(() => useCommerceStore.getState().refreshListingCards([`${SELLER}:lamp`]));
+
+      expect(CommerceController.getMarketplaceListingProjection).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not read a card that is off screen when its listing is reported changed', () => {
+      const { result } = renderHook(() => useMarketplaceLiveBid(SELLER, 'camera', true));
+      act(() => {
+        result.current.ref(document.createElement('div'));
+      });
+
+      act(() => useCommerceStore.getState().refreshListingCards([`${SELLER}:camera`]));
+
+      expect(CommerceController.getMarketplaceListingProjection).not.toHaveBeenCalled();
+    });
+
+    it('re-reads when the window regains focus, but not before the first read', async () => {
+      vi.mocked(CommerceController.getMarketplaceListingProjection).mockResolvedValue(fixedPrice());
+      const { result } = renderHook(() => useMarketplaceLiveBid(SELLER, 'camera', true));
+      act(() => {
+        window.dispatchEvent(new Event('focus'));
+      });
+      expect(CommerceController.getMarketplaceListingProjection).not.toHaveBeenCalled();
+
+      attachAndShow(result.current.ref);
+      await waitFor(() => expect(result.current.listingState).toBe('available'));
+      expect(CommerceController.getMarketplaceListingProjection).toHaveBeenCalledTimes(1);
+
+      vi.mocked(CommerceController.getMarketplaceListingProjection).mockResolvedValue(
+        fixedPrice({ state: 'reserved', availableQuantity: 0 }),
+      );
+      act(() => {
+        window.dispatchEvent(new Event('focus'));
+      });
+
+      await waitFor(() => expect(result.current.listingState).toBe('reserved'));
+    });
+
+    it('keeps the newest answer when an older read resolves last', async () => {
+      let resolveFirst: (projection: MarketplaceListingProjection) => void = () => {};
+      vi.mocked(CommerceController.getMarketplaceListingProjection)
+        .mockImplementationOnce(
+          () =>
+            new Promise<MarketplaceListingProjection>((resolve) => {
+              resolveFirst = resolve;
+            }),
+        )
+        .mockResolvedValueOnce(fixedPrice({ state: 'sold', availableQuantity: 0 }));
+      const { result } = renderHook(() => useMarketplaceLiveBid(SELLER, 'camera', true));
+      attachAndShow(result.current.ref);
+      act(() => useCommerceStore.getState().refreshListingCards([`${SELLER}:camera`]));
+      await waitFor(() => expect(result.current.listingState).toBe('sold'));
+
+      await act(async () => resolveFirst(fixedPrice()));
+
+      expect(result.current.listingState).toBe('sold');
+    });
   });
 
   it('never fetches for off-screen cards', () => {

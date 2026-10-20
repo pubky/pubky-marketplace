@@ -35,6 +35,7 @@ export function useSellerPaymentMethodGate(): {
     void evaluateSellerPaymentMethodGate({
       ownerPubky: currentUserPubky,
       loadPaymentConfig: (pubky) => CommerceController.getSellerPaymentConfig(pubky),
+      loadUsdtPaymentsAvailable: () => CommerceController.fetchUsdtPaymentsAvailable(),
     }).then((next) => {
       if (!active) return;
       setReason(next);

@@ -1074,6 +1074,18 @@ export function buildMarketplaceListingAggregateId(sellerPubky: string, listingI
   return `listing:${sellerPubky}_${listingId}`;
 }
 
+/**
+ * The catalog's composite `seller:listingId` id for a listing aggregate id, or
+ * null for anything that is not a well-formed listing aggregate.
+ */
+export function compositeListingIdFromAggregateId(aggregateId: string): string | null {
+  const prefix = 'listing:';
+  if (!aggregateId.startsWith(prefix)) return null;
+  const rest = aggregateId.slice(prefix.length);
+  if (rest.length < 54 || rest[52] !== '_') return null;
+  return `${rest.slice(0, 52)}:${rest.slice(53)}`;
+}
+
 export function buildMarketplaceDropAggregateId(sellerPubky: string, dropId: string): string {
   return `drop:${sellerPubky}_${dropId}`;
 }

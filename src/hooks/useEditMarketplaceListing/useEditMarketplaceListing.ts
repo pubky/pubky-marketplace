@@ -158,6 +158,7 @@ export function useEditMarketplaceListing(sellerPubky: string, listingId: string
       ownerPubky: currentUserPubky,
       hasMarketplaceSession: Boolean(marketplaceSession),
       loadPaymentConfig: (pubky) => CommerceController.getSellerPaymentConfig(pubky),
+      loadUsdtPaymentsAvailable: () => CommerceController.fetchUsdtPaymentsAvailable(),
       deliveryKey: sellerDeliveryKeyRequirement(shipsListing),
     }).then((reason) => {
       if (!active) return;
@@ -177,6 +178,7 @@ export function useEditMarketplaceListing(sellerPubky: string, listingId: string
         ownerPubky: currentUserPubky,
         hasMarketplaceSession: Boolean(marketplaceSession),
         loadPaymentConfig: (pubky) => CommerceController.getSellerPaymentConfig(pubky),
+        loadUsdtPaymentsAvailable: () => CommerceController.fetchUsdtPaymentsAvailable(),
         deliveryKey: sellerDeliveryKeyRequirement(fulfillmentRequiresShipping(form.getValues('fulfillment'))),
       });
       if (reason) {

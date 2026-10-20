@@ -216,6 +216,7 @@ export type InventoryImportHost = {
   currentItems: () => Promise<Readonly<Record<string, CurrentImportItem>>>;
   localRecords: () => Promise<readonly CommerceListingRecord[]>;
   loadPaymentConfig: (sellerPubky: string) => Promise<SellerPaymentConfig>;
+  loadUsdtPaymentsAvailable: () => Promise<boolean>;
   loadDeliveryKeyPublication: (sellerPubky: string) => Promise<SellerDeliveryKeyPublication>;
   loadShop: (sellerPubky: string) => Promise<CommerceShopRecord | null>;
   /** Whether a media file is on the seller's homeserver at this path. */
@@ -319,6 +320,8 @@ export class CommerceInventoryImportApplication {
         }),
       localRecords,
       loadPaymentConfig: overrides.loadPaymentConfig ?? ((pubky) => CommerceApplication.getSellerPaymentConfig(pubky)),
+      loadUsdtPaymentsAvailable:
+        overrides.loadUsdtPaymentsAvailable ?? (() => CommerceApplication.fetchUsdtPaymentsAvailable()),
       loadDeliveryKeyPublication:
         overrides.loadDeliveryKeyPublication ??
         (async (pubky) => (await CommerceDeliveryKeysApplication.getSellerKeyStatus(pubky)).publication),
@@ -879,6 +882,7 @@ export class CommerceInventoryImportApplication {
       ownerPubky: this.host.sellerPubky,
       hasMarketplaceSession: Boolean(MarketplaceSessionService.getActiveSession()),
       loadPaymentConfig: (pubky) => this.host.loadPaymentConfig(pubky),
+      loadUsdtPaymentsAvailable: () => this.host.loadUsdtPaymentsAvailable(),
       deliveryKey: {
         required: ships,
         loadPublication: () => this.host.loadDeliveryKeyPublication(this.host.sellerPubky),

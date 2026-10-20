@@ -23,6 +23,7 @@ import { Switch } from '@/atoms/Switch/Switch';
 import { Typography } from '@/atoms/Typography/Typography';
 import { getPaykitServerApi } from '@/config/commerce';
 import { CommerceController } from '@/controllers/commerce/commerce';
+import { useGrantSigner } from '@/hooks/useGrantSigner/useGrantSigner';
 import { useMarketplaceSellerPaymentConfig } from '@/hooks/useMarketplaceSellerPaymentConfig/useMarketplaceSellerPaymentConfig';
 import { useUsdtPaymentsCapability } from '@/hooks/useUsdtPaymentsCapability/useUsdtPaymentsCapability';
 import { Tether } from '@/icons';
@@ -170,6 +171,7 @@ function MethodCard({
 export function MarketplaceGetPaidSettings({ onSaved }: MarketplaceGetPaidSettingsProps) {
   const marketplaceSession = useCommerceStore((state) => state.marketplaceSession);
   const currentUserPubky = useAuthStore((state) => state.currentUserPubky);
+  const grantSigner = useGrantSigner();
   const payments = useMarketplaceSellerPaymentConfig();
   const refreshPaymentConfig = payments.refresh;
   const commitAccountClaimed = payments.commitAccountClaimed;
@@ -672,6 +674,7 @@ export function MarketplaceGetPaidSettings({ onSaved }: MarketplaceGetPaidSettin
                 }}
                 isRetrying={isRetryingUsdt}
                 canOpenBitkit={Boolean(marketplaceSession && currentUserPubky)}
+                signer={grantSigner}
               />
               {saveButton}
             </>,

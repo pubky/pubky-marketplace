@@ -38,7 +38,10 @@ import { resolveCheckoutFulfillment } from '@/libs/commerce/pickup';
 import type { CommerceDeliveryAddressValue } from '@/libs/commerce/postal-address';
 import type { PrivRecoveryKeyExport } from '@/libs/commerce/priv-recovery-key';
 import type { ShipFromAddress, ShippingParcel, ShippoRate } from '@/libs/commerce/shipping';
-import { buildMarketplaceListingAggregateId } from '@/libs/commerce/transaction-commands';
+import {
+  buildMarketplaceListingAggregateId,
+  compositeListingIdFromAggregateId,
+} from '@/libs/commerce/transaction-commands';
 import { commercePositiveMoneySchema } from '@/libs/commerce/transaction-contracts';
 import { isAppError } from '@/libs/error/error';
 import { ValidationErrorCode } from '@/libs/error/error.codes';
@@ -88,6 +91,10 @@ export class CommerceController {
   /** The grant-minted session this tab installed, to recognise its rejection. */
   private static grantSessionInstalled: { authSession: object; issuedAt: string } | null = null;
   private static inventorySessionEndedUnbind: (() => void) | null = null;
+  /** What the detail page's projection poll last cached per listing, to spot a sale it did not cause. */
+  private static cachedListingAvailability = new Map<string, string>();
+  /** The order states already seen this session; a new or moved order can change a listing's availability. */
+  private static observedOrderStates = new Map<string, string>();
 
   /**
    * Subscribe once at app coordinator start. Every `clearSession` then nulls
@@ -192,8 +199,43 @@ export class CommerceController {
     await CommerceApplication.refreshListingsBySeller(CommerceRecordNormalizer.pubky(sellerPubky));
   }
 
+  /**
+   * Caches a polled listing projection. When it differs from the one cached
+   * before (a unit sold, held or released), the listing's catalog cards are
+   * told to re-read, so a card never keeps offering "Buy now" for a sold item.
+   */
   static async cacheMarketplaceListingProjection(projection: CommerceListingProjectionModelSchema): Promise<void> {
     await CommerceApplication.cacheMarketplaceListingProjection(projection);
+    const availability = `${projection.state}|${projection.available_quantity}`;
+    const previous = this.cachedListingAvailability.get(projection.id);
+    this.cachedListingAvailability.set(projection.id, availability);
+    if (previous !== undefined && previous !== availability) {
+      useCommerceStore.getState().refreshListingCards([projection.id]);
+    }
+  }
+
+  /** Tells the catalog cards of these listings to re-read their availability. */
+  static refreshListingCards(compositeListingIds: readonly string[]): void {
+    useCommerceStore.getState().refreshListingCards(compositeListingIds);
+  }
+
+  /**
+   * An order the buyer or seller just read: the first time this session it is
+   * seen, and each time its state moves (reserved, paid, cancelled), the
+   * listings on its lines may have sold or come back, so their cards re-read.
+   */
+  private static noteOrderListings(orders: readonly MarketplaceOrder[]): void {
+    const stale = new Set<string>();
+    for (const order of orders) {
+      const observed = `${order.revision}|${order.state}`;
+      if (this.observedOrderStates.get(order.id) === observed) continue;
+      this.observedOrderStates.set(order.id, observed);
+      for (const line of order.lines) {
+        const composite = compositeListingIdFromAggregateId(line.listingAggregateId);
+        if (composite) stale.add(composite);
+      }
+    }
+    if (stale.size > 0) useCommerceStore.getState().refreshListingCards([...stale]);
   }
 
   /**
@@ -1245,7 +1287,9 @@ export class CommerceController {
   }
 
   static async getMarketplaceOrders() {
-    return await CommerceApplication.getMarketplaceOrders(this.getCurrentUserPubky());
+    const orders = await CommerceApplication.getMarketplaceOrders(this.getCurrentUserPubky());
+    this.noteOrderListings(orders);
+    return orders;
   }
 
   static async getMarketplacePayment(paymentId: unknown) {
@@ -1288,10 +1332,12 @@ export class CommerceController {
   }
 
   static async getMarketplaceOrder(orderId: unknown) {
-    return await CommerceApplication.getMarketplaceOrder(
+    const order = await CommerceApplication.getMarketplaceOrder(
       this.getCurrentUserPubky(),
       CommerceRecordNormalizer.entityId(orderId),
     );
+    if (order) this.noteOrderListings([order]);
+    return order;
   }
 
   /**
