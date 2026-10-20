@@ -27,6 +27,7 @@ const controllerState = vi.hoisted(() => ({
   reputation: { status: 'unavailable' } as unknown,
   reviews: [] as unknown[],
   ownResponse: null as unknown,
+  listing: null as unknown,
 }));
 
 vi.mock('@/controllers/commerce/commerce', () => ({
@@ -36,6 +37,8 @@ vi.mock('@/controllers/commerce/commerce', () => ({
     fetchSellerReviews: vi.fn(async () => ({ status: 'ok', reviews: controllerState.reviews })),
     fetchListingReviews: vi.fn(async () => ({ status: 'ok', reviews: controllerState.reviews })),
     getOwnMarketplaceReviewResponse: vi.fn(async () => controllerState.ownResponse),
+    getListing: vi.fn(async () => undefined),
+    fetchListing: vi.fn(async () => controllerState.listing),
     // The scenes render real MarketplaceListingCards against the real auth
     // store (one scene signs the seller in), so the cards' watch toggle
     // reaches the controller: keep the favorite statics on the mock.
@@ -175,6 +178,7 @@ beforeEach(async () => {
   controllerState.reputation = { status: 'unavailable' };
   controllerState.reviews = [];
   controllerState.ownResponse = null;
+  controllerState.listing = null;
 });
 
 async function waitForText(fragment: string) {
@@ -268,7 +272,13 @@ describe('Marketplace public reviews — visual regression', () => {
   });
 
   it('leads each storefront review with its listing, two orders of one listing as two entries, at mobile viewport', async () => {
-    const { rated } = await cardFixtures;
+    const { createCommerceListingFixture } = await import('@/test/fixtures/commerce/commerce');
+    controllerState.listing = createCommerceListingFixture({
+      ownerPubky: SELLER,
+      listingId: 'rangefinder_camera',
+      title: '35mm rangefinder camera',
+      media: [],
+    });
     controllerState.reviews = [
       indexedReview({
         reviewId: '8Z8CWH8NVYQY39ZEBFGKQWWEKK',
@@ -281,11 +291,11 @@ describe('Marketplace public reviews — visual regression', () => {
     ];
     const screen = await renderForVRT(
       <main className="flex w-full flex-col gap-6 px-4 py-8">
-        <MarketplaceReviewsSection sellerPubky={SELLER} listings={[rated]} />
+        <MarketplaceReviewsSection sellerPubky={SELLER} />
       </main>,
       { viewport: VRT_VIEWPORT_MOBILE },
     );
-    await waitForText('Second order arrived damaged.');
+    await waitForText('35mm rangefinder camera');
     await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('reviews-section-storefront-listing-mobile');
   });
 

@@ -12,7 +12,6 @@ import { Typography } from '@/atoms/Typography/Typography';
 import { isTrustedMarketplaceAttestor } from '@/config/commerce';
 import { isSocialLinkOutEnabled } from '@/config/social';
 import { CommerceController } from '@/controllers/commerce/commerce';
-import type { MarketplaceCatalogItem } from '@/hooks/useMarketplaceCatalog/useMarketplaceCatalog.utils';
 import { useMarketplaceFirstMediaUrl } from '@/hooks/useMarketplaceMediaUrl/useMarketplaceMediaUrl';
 import { useMarketplaceReviews } from '@/hooks/useMarketplaceReviews/useMarketplaceReviews';
 import { VERIFIED_PURCHASE_INFO, VERIFIED_PURCHASE_INFO_LABEL } from '@/libs/commerce/eu-region';
@@ -31,8 +30,6 @@ export interface MarketplaceReviewsSectionProps {
   listingId?: string;
   className?: string;
   infoCard?: boolean;
-  /** The seller's listings; on a storefront each review then leads with the listing it reviews. */
-  listings?: readonly MarketplaceCatalogItem[];
 }
 
 /**
@@ -56,7 +53,6 @@ export function MarketplaceReviewsSection({
   listingId,
   className,
   infoCard = false,
-  listings,
 }: MarketplaceReviewsSectionProps) {
   const { status, reviews, isFetching, hasMore, loadMore } = useMarketplaceReviews({ sellerPubky, listingId });
   const currentUserPubky = useAuthStore((state) => state.currentUserPubky);
@@ -105,7 +101,7 @@ export function MarketplaceReviewsSection({
                 <MarketplaceReviewItem
                   key={`${review.reviewerId}:${review.reviewId}`}
                   review={review}
-                  listing={listings?.find((item) => item.listingId === review.listingId)}
+                  showListing={listingId === undefined}
                   currentUserPubky={currentUserPubky}
                 />
               ))}
@@ -130,11 +126,12 @@ export function MarketplaceReviewsSection({
 
 function MarketplaceReviewItem({
   review,
-  listing,
+  showListing,
   currentUserPubky,
 }: {
   review: CommerceIndexedReview;
-  listing?: MarketplaceCatalogItem;
+  /** On a storefront each review leads with the listing it reviews; a listing page omits it. */
+  showListing: boolean;
   currentUserPubky: string | null;
 }) {
   const isSubject = currentUserPubky !== null && currentUserPubky === review.subjectId;
@@ -143,7 +140,7 @@ function MarketplaceReviewItem({
 
   return (
     <li className="flex flex-col gap-2 rounded-md p-3" data-cy="marketplace-review-item">
-      {listing && <MarketplaceReviewListing listing={listing} />}
+      {showListing && <MarketplaceReviewListing sellerPubky={review.listingOwnerId} listingId={review.listingId} />}
       <div className="flex flex-wrap items-center gap-2">
         <MarketplaceStarRating rating={review.ratingOverall} size="sm" />
         <Link
@@ -348,13 +345,37 @@ function toIndexedReviewResponse(
   };
 }
 
-/** The compact listing a storefront review is about: thumbnail and name, linked to the listing. */
-function MarketplaceReviewListing({ listing }: { listing: MarketplaceCatalogItem }) {
-  const imageUrl = useMarketplaceFirstMediaUrl(listing.mediaUrls);
+/**
+ * The compact listing a storefront review is about: thumbnail and name, linked
+ * to the listing. Read from the local copy, else the seller's homeserver, so a
+ * paused, ended or sold-out listing still shows. Renders nothing until found.
+ */
+function MarketplaceReviewListing({ sellerPubky, listingId }: { sellerPubky: string; listingId: string }) {
+  const [listing, setListing] = useState<{ title: string; mediaUrls: string[] } | null>(null);
+  const imageUrl = useMarketplaceFirstMediaUrl(listing?.mediaUrls ?? []);
+
+  useEffect(() => {
+    let active = true;
+    void (async () => {
+      const record =
+        (await CommerceController.getListing(sellerPubky, listingId))?.record ??
+        (await CommerceController.fetchListing(sellerPubky, listingId).catch(() => null));
+      if (!active || !record) return;
+      setListing({
+        title: record.title,
+        mediaUrls: record.media.filter(({ type }) => type === 'image').map(({ url }) => url),
+      });
+    })();
+    return () => {
+      active = false;
+    };
+  }, [sellerPubky, listingId]);
+
+  if (listing === null) return null;
   return (
     <MarketplaceProductSummary
       title={listing.title}
-      href={getMarketplaceListingRoute(listing.sellerId, listing.listingId)}
+      href={getMarketplaceListingRoute(sellerPubky, listingId)}
       imageUrl={imageUrl}
     />
   );

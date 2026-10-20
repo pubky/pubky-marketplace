@@ -1,9 +1,9 @@
 import { render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { catalogItemFromCatalogEntry } from '@/hooks/useMarketplaceCatalog/useMarketplaceCatalog.utils';
+import { CommerceController } from '@/controllers/commerce/commerce';
 import type { CommerceIndexedReview } from '@/models/commerce/commerce.schema';
 import { useAuthStore } from '@/stores/auth/auth.store';
-import { createCommerceCatalogEntryFixture } from '@/test/fixtures/commerce/commerce';
+import { createCommerceListingFixture } from '@/test/fixtures/commerce/commerce';
 import { setSocialHost } from '@/test-utils/social-host';
 import { MarketplaceReviewsSection } from './MarketplaceReviewsSection';
 
@@ -37,6 +37,16 @@ vi.mock('@/hooks/useMarketplaceReviews/useMarketplaceReviews', () => ({
     loadMore: vi.fn(),
   }),
 }));
+
+// No listing lookups reach the network: a storefront entry's listing resolves to nothing unless a test says otherwise.
+beforeEach(() => {
+  vi.spyOn(CommerceController, 'getListing').mockResolvedValue(null);
+  vi.spyOn(CommerceController, 'fetchListing').mockRejectedValue(new Error('offline'));
+});
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
 
 describe('MarketplaceReviewsSection reviewer link', () => {
   beforeEach(() => {
@@ -77,29 +87,37 @@ describe('MarketplaceReviewsSection on a storefront', () => {
     useAuthStore.setState({ currentUserPubky: null });
   });
 
-  const listing = catalogItemFromCatalogEntry(
-    createCommerceCatalogEntryFixture({
-      id: `${SELLER}:rangefinder_camera`,
-      seller_id: SELLER,
-      listing_id: 'rangefinder_camera',
-      title: 'Rangefinder camera',
-      media_urls: [],
-    }),
-  );
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
 
-  it('leads each review with the listing it reviews, linked', () => {
-    render(<MarketplaceReviewsSection sellerPubky={SELLER} listings={[listing]} />);
+  it('leads each review with its listing, read from the homeserver when no local copy exists', async () => {
+    vi.spyOn(CommerceController, 'getListing').mockResolvedValue(null);
+    const fetchListing = vi.spyOn(CommerceController, 'fetchListing').mockResolvedValue(
+      createCommerceListingFixture({
+        ownerPubky: SELLER,
+        listingId: 'rangefinder_camera',
+        title: 'Rangefinder camera',
+        media: [],
+        state: 'ended',
+      }),
+    );
 
-    expect(screen.getByRole('link', { name: 'Rangefinder camera' })).toHaveAttribute(
+    render(<MarketplaceReviewsSection sellerPubky={SELLER} />);
+
+    expect(await screen.findByRole('link', { name: 'Rangefinder camera' })).toHaveAttribute(
       'href',
       `/marketplace/listing/${SELLER}/rangefinder_camera`,
     );
+    expect(fetchListing).toHaveBeenCalledWith(SELLER, 'rangefinder_camera');
     expect(screen.getByText('Exactly as described.')).toBeInTheDocument();
   });
 
-  it('shows no listing on a listing page, which passes no listings', () => {
+  it('shows no listing on a listing page', () => {
+    const getListing = vi.spyOn(CommerceController, 'getListing');
+
     render(<MarketplaceReviewsSection sellerPubky={SELLER} listingId="rangefinder_camera" />);
 
-    expect(screen.queryByRole('link', { name: 'Rangefinder camera' })).not.toBeInTheDocument();
+    expect(getListing).not.toHaveBeenCalled();
   });
 });
