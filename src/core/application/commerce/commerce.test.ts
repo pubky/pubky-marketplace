@@ -3126,7 +3126,9 @@ describe('CommerceApplication', () => {
       const listings = await LocalCommerceService.getListingsBySeller(capturedSeller);
       expect(listings).toHaveLength(2);
       expect(listings.map(({ listing_id }) => listing_id)).not.toContain(deletedId);
-      expect((await CommerceCatalogEntryModel.table.toArray()).map(({ listing_id }) => listing_id)).not.toContain(deletedId);
+      expect((await CommerceCatalogEntryModel.table.toArray()).map(({ listing_id }) => listing_id)).not.toContain(
+        deletedId,
+      );
     });
 
     it('rejects an owner-mismatched Nexus row before mutating the catalog cache', async () => {
