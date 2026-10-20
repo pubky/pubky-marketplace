@@ -809,7 +809,7 @@ describe('MarketplacePaymentSettings', () => {
         }),
       ),
     );
-    expect(screen.getByRole('alert')).toHaveTextContent('Bitkit setup failed. Try again.');
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('Bitkit setup failed. Try again.'));
   });
 
   it('closes the setup dialog when the viewer identity is cleared', async () => {
@@ -874,7 +874,7 @@ describe('MarketplacePaymentSettings', () => {
     });
     act(() => window.dispatchEvent(message));
 
-    expect(screen.getByRole('alert')).toHaveTextContent('Bitkit setup failed. Try again.');
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('Bitkit setup failed. Try again.'));
     expect(screen.queryByTitle('Connect Bitkit')).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Retry' }));
     const secondIframe = screen.getByTitle('Connect Bitkit') as HTMLIFrameElement;
@@ -899,7 +899,7 @@ describe('MarketplacePaymentSettings', () => {
     );
 
     const dialog = screen.getByTestId('dialog-content');
-    expect(screen.getByRole('alert')).toHaveTextContent('Bitkit setup failed. Try again.');
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('Bitkit setup failed. Try again.'));
     expect(within(dialog).queryByTitle('Connect Bitkit')).not.toBeInTheDocument();
     expect(dialog.querySelector('iframe, img, canvas')).toBeNull();
     const placeholder = screen.getByTestId('paykit-setup-qr-expired');

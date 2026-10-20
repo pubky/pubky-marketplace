@@ -1,0 +1,1 @@
+Connecting Bitkit no longer reports "Bitkit setup failed" when the setup actually completed. If the setup tab was suspended while you approved in Bitkit (common on mobile Safari) and the Paykit flow expired before it checked back in, Shop now re-reads your Paykit setup first and shows success; the failure and reconnect message appears only when the setup is really missing.
