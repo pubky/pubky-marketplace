@@ -1,9 +1,13 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CommerceController } from '@/controllers/commerce/commerce';
+import { BUYER_COUNTRY_PROMPT } from '@/libs/commerce/eu-region';
 import { USD_ASSET } from '@/libs/commerce/pricing';
+import { resetRuntimeConfigForTests } from '@/libs/runtime-config/runtime-config';
+import { PUBKY_RUNTIME_ENV_NAMES } from '@/libs/runtime-config/runtime-config.schema';
 import { useAuthStore } from '@/stores/auth/auth.store';
+import { useBuyerCountryStore } from '@/stores/buyer-country/buyer-country.store';
 import {
   createAuctionProjectionFixture,
   createViewerBidAuctionProjectionFixture,
@@ -20,6 +24,12 @@ vi.mock('@/controllers/commerce/commerce', () => ({
 const SIGNED_IN_PUBKY = 'y'.repeat(52);
 
 describe('MarketplaceBidDialog', () => {
+  afterEach(() => {
+    delete process.env[PUBKY_RUNTIME_ENV_NAMES.euFenceEnabled];
+    resetRuntimeConfigForTests();
+    useBuyerCountryStore.setState({ country: null });
+  });
+
   beforeEach(() => {
     useAuthStore.setState({
       currentUserPubky: SIGNED_IN_PUBKY,
@@ -180,5 +190,42 @@ describe('MarketplaceBidDialog', () => {
     );
 
     expect(screen.getByRole('button', { name: 'Auction ended' })).toBeDisabled();
+  });
+
+  it('keeps the country field open, with the remembered country, so a wrong one can be corrected', async () => {
+    process.env[PUBKY_RUNTIME_ENV_NAMES.euFenceEnabled] = 'true';
+    resetRuntimeConfigForTests();
+    useBuyerCountryStore.setState({ country: 'DE' });
+    const user = userEvent.setup();
+    render(
+      <MarketplaceBidDialog
+        aggregateId="listing:x"
+        projection={createAuctionProjectionFixture()}
+        priceAsset={USD_ASSET}
+        onAccepted={vi.fn()}
+      />,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Place a bid' }));
+
+    expect(await screen.findByLabelText(BUYER_COUNTRY_PROMPT)).toHaveValue('DE');
+    expect(screen.getByRole('button', { name: 'Confirm bid' })).toBeEnabled();
+  });
+
+  it('shows no country field with the fence off', async () => {
+    const user = userEvent.setup();
+    render(
+      <MarketplaceBidDialog
+        aggregateId="listing:x"
+        projection={createAuctionProjectionFixture()}
+        priceAsset={USD_ASSET}
+        onAccepted={vi.fn()}
+      />,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Place a bid' }));
+
+    await screen.findByRole('dialog');
+    expect(screen.queryByLabelText(BUYER_COUNTRY_PROMPT)).not.toBeInTheDocument();
   });
 });

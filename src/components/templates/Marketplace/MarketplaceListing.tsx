@@ -72,7 +72,7 @@ import type { MarketplaceFulfillmentMethod } from '@/libs/commerce/pickup';
 import { formatShipsToCountries, shopShipsToCountries } from '@/libs/commerce/ships-to';
 import { buildMarketplaceListingAggregateId } from '@/libs/commerce/transaction-commands';
 import { formatPackageDimensions, formatWeight } from '@/libs/commerce/units';
-import { BuyerCountryField } from '@/molecules/Marketplace/BuyerCountryField';
+import { RegionAvailabilityNotice } from '@/molecules/Marketplace/RegionAvailabilityNotice';
 import { SellerSaleTerms } from '@/molecules/Marketplace/SellerSaleTerms';
 import { SellerStatusBadge } from '@/molecules/Marketplace/SellerStatusBadge';
 import { MarketplaceFulfillmentBadge } from '@/molecules/MarketplaceFulfillmentBadge/MarketplaceFulfillmentBadge';
@@ -192,7 +192,7 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
     isOwner,
   });
   const regionBlocked = region.refusal !== null || region.needsCountry;
-  const declaration = sellerDeclaration(shop?.record);
+  const declaration = shop ? sellerDeclaration(shop.record) : 'unknown';
 
   useEffect(() => {
     const variants = listing?.record.variants;
@@ -680,33 +680,7 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
                   : negotiation.error}
               </Typography>
             )}
-            {!isOwner && (region.refusal || region.needsCountry || region.digitalNote) && (
-              <div className="grid gap-3 rounded-md border p-4" data-testid="marketplace-listing-region">
-                {region.refusal ? (
-                  <Typography
-                    as="p"
-                    role="status"
-                    className="text-sm font-medium"
-                    data-testid="marketplace-listing-region-refusal"
-                  >
-                    {region.refusal}
-                  </Typography>
-                ) : (
-                  region.digitalNote && (
-                    <Typography
-                      as="p"
-                      className="text-sm text-muted-foreground"
-                      data-testid="marketplace-listing-digital-region-note"
-                    >
-                      {region.digitalNote}
-                    </Typography>
-                  )
-                )}
-                {region.needsCountry && (
-                  <BuyerCountryField value={region.buyerCountry} onChange={region.setBuyerCountry} />
-                )}
-              </div>
-            )}
+            {!isOwner && <RegionAvailabilityNotice region={region} testIdPrefix="marketplace-listing" />}
             <Card className="rounded-md p-0">
               <CardContent className="flex flex-col gap-3 p-6">
                 <div className="min-w-0 flex-1 sm:min-w-[12rem]">

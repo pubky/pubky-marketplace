@@ -10,11 +10,17 @@ import { CommerceController } from '@/controllers/commerce/commerce';
 import type { UseMarketplaceDropClaimResult } from '@/hooks/useMarketplaceDropClaim/useMarketplaceDropClaim';
 import { useMarketplaceFirstMediaUrls } from '@/hooks/useMarketplaceMediaUrl/useMarketplaceMediaUrl';
 import { useMarketplacePublicAvailability } from '@/hooks/useMarketplacePublicAvailability/useMarketplacePublicAvailability';
+import { useRegionAvailability } from '@/hooks/useRegionAvailability/useRegionAvailability';
 import { useRequireAuth } from '@/hooks/useRequireAuth/useRequireAuth';
 import { getMarketplaceCheckoutRoute, getMarketplaceDropCheckoutRoute } from '@/libs/commerce/checkout-phase';
 import { formatCommerceMoney } from '@/libs/commerce/format';
 import { soldOutVariantIds, tracksVariantStock } from '@/libs/commerce/listing-variants';
-import type { CommerceDropRecord, CommerceListingRecord } from '@/libs/commerce/marketplace-records';
+import {
+  type CommerceDropRecord,
+  commerceListingFulfillmentMethods,
+  type CommerceListingRecord,
+} from '@/libs/commerce/marketplace-records';
+import { RegionAvailabilityNotice } from '@/molecules/Marketplace/RegionAvailabilityNotice';
 import { MarketplaceDeliveryKeyChangeDialog } from '@/organisms/Marketplace/MarketplaceDeliveryKeyChangeDialog';
 import { useAuthStore } from '@/stores/auth/auth.store';
 import { MarketplaceIndicativePrice } from './MarketplaceIndicativePrice';
@@ -62,6 +68,11 @@ function dropClaimHref(route: string, variantId: string | undefined): string {
   return variantId ? `${route}&variant=${encodeURIComponent(variantId)}` : route;
 }
 
+function isDigitalOnly(listing: CommerceListingRecord): boolean {
+  const methods = commerceListingFulfillmentMethods(listing.fulfillmentMethods);
+  return methods.includes('digital') && !methods.some((method) => method === 'shipping' || method === 'pickup');
+}
+
 type HydratedDropListing = {
   listingId: string;
   record: CommerceListingRecord | null;
@@ -79,11 +90,14 @@ export function DropClaimPanel({
   claim,
   remainingAllowance,
   isOwner = false,
+  shop = null,
 }: {
   record: CommerceDropRecord;
   claim: UseMarketplaceDropClaimResult;
   remainingAllowance: number | null;
   isOwner?: boolean;
+  /** The seller's shop record, or null while it is unread or unreadable (the service then decides). */
+  shop?: { sellerStatus?: string } | null;
 }) {
   const currentUserPubky = useAuthStore((state) => state.currentUserPubky);
   const { requireAuth } = useRequireAuth();
@@ -113,6 +127,13 @@ export function DropClaimPanel({
       active = false;
     };
   }, [record.ownerPubky, record.listingIds]);
+  const region = useRegionAvailability({
+    sellerPubky: record.ownerPubky,
+    shop,
+    digital: (listings ?? []).some(({ record: listing }) => listing !== null && isDigitalOnly(listing)),
+    isOwner,
+  });
+  const regionBlocked = region.refusal !== null || region.needsCountry;
   const mediaUrls = useMarketplaceFirstMediaUrls(
     (listings ?? []).map(({ record: listing }) => (listing ? listing.media.map(({ url }) => url) : [])),
   );
@@ -127,6 +148,9 @@ export function DropClaimPanel({
         A drop order is one unit of one listing per checkout. First come, first served — the service answers reserved or
         refused, immediately.
       </Typography>
+      {!isOwner && currentUserPubky && (
+        <RegionAvailabilityNotice region={region} testIdPrefix="drop-claim" countryFieldId="drop-buyer-country" />
+      )}
       {claim.needsSession && claim.sessionError ? (
         <MarketplaceSessionRequiredCard />
       ) : !currentUserPubky ? (
@@ -204,6 +228,11 @@ export function DropClaimPanel({
                     <Button size="sm" className="rounded-full" disabled>
                       <Zap className="size-4" />
                       Choose a size
+                    </Button>
+                  ) : regionBlocked ? (
+                    <Button size="sm" className="rounded-full" disabled>
+                      <Zap className="size-4" />
+                      Claim one
                     </Button>
                   ) : (
                     <Button asChild size="sm" className="rounded-full">

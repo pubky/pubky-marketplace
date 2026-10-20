@@ -99,12 +99,12 @@ import type { CommerceListingModelSchema } from '@/models/commerce/commerce.sche
 import { BitkitDownloads } from '@/molecules/BitkitDownloads/BitkitDownloads';
 import { ControlledInputField } from '@/molecules/ControlledInputField/ControlledInputField';
 import { BuyerCountryField } from '@/molecules/Marketplace/BuyerCountryField';
+import { CheckoutSaleTerms } from '@/molecules/Marketplace/CheckoutSaleTerms';
 import { DeliveryKeyBlockedNotice } from '@/molecules/Marketplace/DeliveryKeyBlockedNotice';
 import { MarketplaceCheckoutStatusLabels } from '@/molecules/Marketplace/MarketplaceCheckoutStatusLabels';
 import { MarketplaceCheckoutSteps } from '@/molecules/Marketplace/MarketplaceCheckoutSteps';
 import { MarketplaceSellerLink } from '@/molecules/Marketplace/MarketplaceSellerLink';
 import { PaykitOutageNotice } from '@/molecules/Marketplace/PaykitOutageNotice';
-import { SellerSaleTerms } from '@/molecules/Marketplace/SellerSaleTerms';
 import { MarketplaceAddressFields } from '@/molecules/MarketplaceAddressFields/MarketplaceAddressFields';
 import { SettingsSectionContent } from '@/molecules/Settings/SettingsSectionContent/SettingsSectionContent';
 import { ContentLayout } from '@/organisms/ContentLayout/ContentLayout';
@@ -378,15 +378,15 @@ function MarketplaceCartCheckout() {
       ? preferredMethod
       : (availableCheckoutMethods[0] ?? null);
   const paykitBlocksPay = (paykitRefused || paykitOutageForCart) && selectedMethod === 'paykit';
-  const isMultiSeller = sellerKey.includes('|');
+  const checkoutSellers = sellerKey === '' ? [] : sellerKey.split('|');
+  const isMultiSeller = checkoutSellers.length > 1;
   const region = useCheckoutRegion({
-    sellerPubkys: sellerKey === '' ? [] : sellerKey.split('|'),
+    sellerPubkys: checkoutSellers,
     hasDigital: checkout.hasInstantDigitalLine || checkout.hasManualDigitalLine || isLocksCheckout,
     requiresDeliveryAddress: checkout.requiresDeliveryAddress,
     addressCountry: String(formValues.countryCode ?? ''),
     currentUserPubky,
   });
-  const anyPrivateSeller = Object.values(region.declarations).some((declaration) => declaration === 'private');
   const isPaying = isOfferCheckout ? offerPay.isSubmitting : checkout.isPaying;
   const listingRoute = award && getMarketplaceListingRoute(award.listing.sellerPubky, award.listing.listingId);
   const backHref =
@@ -1487,7 +1487,7 @@ function MarketplaceCartCheckout() {
                           {region.refusal}
                         </Typography>
                       )}
-                      <SellerSaleTerms declaration={anyPrivateSeller ? 'private' : 'undeclared'} />
+                      <CheckoutSaleTerms sellerPubkys={checkoutSellers} declarations={region.declarations} />
                       {!canPay && (
                         <Typography id="checkout-pay-reason" as="p" className="text-xs text-muted-foreground">
                           {payDisabledReason}

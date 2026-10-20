@@ -57,7 +57,8 @@ export function MarketplaceBidDialog({
   const { requireAuth } = useRequireAuth();
 
   const buyer = useBuyerCountry();
-  const needsCountry = getEuFenceEnabled() && buyer.country === null;
+  const showsCountry = getEuFenceEnabled();
+  const needsCountry = showsCountry && buyer.country === null;
   const submit = async () => {
     if (!(await bid.submit())) return;
     setOpen(false);
@@ -144,7 +145,7 @@ export function MarketplaceBidDialog({
         <Typography as="p" className="text-sm text-muted-foreground">
           Your maximum stays private. The visible price advances only enough to keep you ahead.
         </Typography>
-        {needsCountry && (
+        {showsCountry && (
           <BuyerCountryField value={buyer.country} onChange={buyer.setCountry} id="dialog-buyer-country" />
         )}
         <DialogFooter>

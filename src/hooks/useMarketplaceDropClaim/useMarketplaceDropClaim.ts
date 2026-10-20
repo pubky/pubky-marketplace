@@ -7,7 +7,11 @@ import { CommerceController } from '@/controllers/commerce/commerce';
 import { type PendingDeliveryKeyChange, useDeliveryKeyGate } from '@/hooks/useDeliveryKeyGate/useDeliveryKeyGate';
 import { checkDestinationCountry } from '@/hooks/useMarketplaceSellerShipsTo/useMarketplaceSellerShipsTo';
 import { extractCheckoutOrderIds } from '@/libs/commerce/checkout-phase';
-import { MARKETPLACE_FAILURE_MESSAGES, marketplaceDropRefusalMessage } from '@/libs/commerce/failure-messages';
+import {
+  MARKETPLACE_FAILURE_MESSAGES,
+  marketplaceDropRefusalMessage,
+  marketplaceRegionRefusalMessage,
+} from '@/libs/commerce/failure-messages';
 import {
   buildMarketplaceCheckoutAggregateId,
   buildMarketplaceListingAggregateId,
@@ -16,6 +20,7 @@ import {
 } from '@/libs/commerce/transaction-commands';
 import { VARIANT_REFUSAL_COPY, variantRefusalMessage } from '@/libs/commerce/variant-refusals';
 import { isMarketplaceSessionRequiredError } from '@/libs/error/error.utils';
+import { getDigitalRegionBlockEnabled, getEuFenceEnabled } from '@/libs/runtime-config/runtime-config';
 import type { CommerceDeliveryAddressModelSchema } from '@/models/commerce/commerce.schema';
 import { toast } from '@/molecules/Toaster/use-toast';
 import { useAuthStore } from '@/stores/auth/auth.store';
@@ -143,6 +148,7 @@ export function useMarketplaceDropClaim(onClaimed?: () => void | Promise<void>):
         postalCode: claimAddress.postal_code,
         countryCode: claimAddress.country_code.toUpperCase(),
       };
+      const regionRulesOn = getEuFenceEnabled() || getDigitalRegionBlockEnabled();
       const destinationError = await checkDestinationCountry(address.countryCode, [listingOwnerPubky]);
       if (destinationError) {
         setFailure(destinationError);
@@ -180,6 +186,7 @@ export function useMarketplaceDropClaim(onClaimed?: () => void | Promise<void>):
             },
           ],
           ...addressFields,
+          ...(regionRulesOn && /^[A-Z]{2}$/.test(address.countryCode) ? { buyerCountry: address.countryCode } : {}),
         },
       });
       if (!response.ok) {
@@ -190,6 +197,7 @@ export function useMarketplaceDropClaim(onClaimed?: () => void | Promise<void>):
           isMarketplaceRevisionConflict(response)
             ? 'The listing changed while you were claiming. Refresh and try again.'
             : (variantRefusalMessage(response.error) ??
+                marketplaceRegionRefusalMessage(response.error) ??
                 marketplaceDropRefusalMessage(response.error.code, response.error.message) ??
                 MARKETPLACE_FAILURE_MESSAGES.claimRefusal),
         );

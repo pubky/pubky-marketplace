@@ -1,8 +1,12 @@
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { UseMarketplaceDropClaimResult } from '@/hooks/useMarketplaceDropClaim/useMarketplaceDropClaim';
+import { BUYER_COUNTRY_PROMPT, EU_UNAVAILABLE_MESSAGE } from '@/libs/commerce/eu-region';
 import type { CommerceDropRecord } from '@/libs/commerce/marketplace-records';
+import { resetRuntimeConfigForTests } from '@/libs/runtime-config/runtime-config';
+import { PUBKY_RUNTIME_ENV_NAMES } from '@/libs/runtime-config/runtime-config.schema';
+import { useBuyerCountryStore } from '@/stores/buyer-country/buyer-country.store';
 import { DropClaimPanel } from './DropClaimPanel';
 
 const SELLER = 's'.repeat(52);
@@ -44,6 +48,8 @@ vi.mock('@/controllers/commerce/commerce', () => ({
       sale: { format: 'fixed_price', unitPrice: { amountMinor: 5_000, currency: 'USD', exponent: 2 } },
     })),
     getIndicativeBtcRate: vi.fn(async () => null),
+    setBuyerCountry: vi.fn((code: string | null) => useBuyerCountryStore.getState().setCountry(code)),
+    getSellerAnnualLimit: vi.fn(async () => ({ enabled: true, limitReached: false })),
     getPublicListingAvailability: vi.fn(async () => ({
       aggregateId: 'listing:x',
       state: 'available',
@@ -102,6 +108,13 @@ describe('DropClaimPanel', () => {
     listingState.soldOut = [];
     authState.currentUserPubky = BUYER;
     authState.setShowSignInDialog.mockClear();
+    useBuyerCountryStore.setState({ country: null });
+  });
+
+  afterEach(() => {
+    delete process.env[PUBKY_RUNTIME_ENV_NAMES.euFenceEnabled];
+    resetRuntimeConfigForTests();
+    useBuyerCountryStore.setState({ country: null });
   });
 
   it('disables repeat claims and states the per-buyer limit at zero allowance', async () => {
@@ -151,6 +164,69 @@ describe('DropClaimPanel', () => {
     const claim = await screen.findByRole('link', { name: 'Claim one' });
     expect(claim).toHaveAttribute('href', `/marketplace/checkout?seller=${SELLER}&drop=vol1&listing=listing1`);
     expect(screen.queryByText(/No saved delivery address/)).not.toBeInTheDocument();
+  });
+
+  describe('with the EU fence on', () => {
+    const record = { ownerPubky: SELLER, dropId: 'vol1', listingIds: ['listing1'] } as CommerceDropRecord;
+
+    beforeEach(() => {
+      process.env[PUBKY_RUNTIME_ENV_NAMES.euFenceEnabled] = 'true';
+      resetRuntimeConfigForTests();
+    });
+
+    it('asks for the country before a claim can start when the device has none', async () => {
+      render(
+        <DropClaimPanel record={record} claim={makeClaim()} remainingAllowance={2} shop={{ sellerStatus: 'trader' }} />,
+      );
+
+      expect(await screen.findByLabelText(BUYER_COUNTRY_PROMPT)).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Claim one' })).toBeDisabled();
+      expect(screen.queryByRole('link', { name: 'Claim one' })).not.toBeInTheDocument();
+    });
+
+    it('refuses an EU buyer for a business seller and lets the buyer correct the country', async () => {
+      useBuyerCountryStore.setState({ country: 'DE' });
+      const user = userEvent.setup();
+      render(
+        <DropClaimPanel record={record} claim={makeClaim()} remainingAllowance={2} shop={{ sellerStatus: 'trader' }} />,
+      );
+
+      expect(await screen.findByTestId('drop-claim-region-refusal')).toHaveTextContent(EU_UNAVAILABLE_MESSAGE);
+      expect(screen.getByRole('button', { name: 'Claim one' })).toBeDisabled();
+
+      const field = screen.getByLabelText(BUYER_COUNTRY_PROMPT);
+      await user.clear(field);
+      await user.type(field, 'CH');
+
+      expect(await screen.findByRole('link', { name: 'Claim one' })).toHaveAttribute(
+        'href',
+        `/marketplace/checkout?seller=${SELLER}&drop=vol1&listing=listing1`,
+      );
+      expect(screen.queryByTestId('drop-claim-region-refusal')).not.toBeInTheDocument();
+    });
+
+    it('leaves the claim to the service when the shop could not be read', async () => {
+      useBuyerCountryStore.setState({ country: 'DE' });
+      render(<DropClaimPanel record={record} claim={makeClaim()} remainingAllowance={2} shop={null} />);
+
+      expect(await screen.findByRole('link', { name: 'Claim one' })).toBeEnabled();
+      expect(screen.queryByTestId('drop-claim-region-refusal')).not.toBeInTheDocument();
+    });
+
+    it('shows a private seller to an EU buyer without a refusal', async () => {
+      useBuyerCountryStore.setState({ country: 'DE' });
+      render(
+        <DropClaimPanel
+          record={record}
+          claim={makeClaim()}
+          remainingAllowance={2}
+          shop={{ sellerStatus: 'private' }}
+        />,
+      );
+
+      expect(await screen.findByRole('link', { name: 'Claim one' })).toBeEnabled();
+      expect(screen.queryByTestId('drop-claim-region')).not.toBeInTheDocument();
+    });
   });
 
   describe('per-size listing', () => {

@@ -57,7 +57,8 @@ export function MarketplaceOfferDialog({
   const comparisonLine = formatOfferComparisonLine(amount, comparableAsking, priceAsset);
 
   const buyer = useBuyerCountry();
-  const needsCountry = getEuFenceEnabled() && buyer.country === null;
+  const showsCountry = getEuFenceEnabled();
+  const needsCountry = showsCountry && buyer.country === null;
   const submit = async () => {
     if (!(await offer.submit())) return;
     setOpen(false);
@@ -126,7 +127,7 @@ export function MarketplaceOfferDialog({
             rows={4}
           />
         </div>
-        {needsCountry && (
+        {showsCountry && (
           <BuyerCountryField value={buyer.country} onChange={buyer.setCountry} id="dialog-buyer-country" />
         )}
         <DialogFooter>

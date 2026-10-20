@@ -144,6 +144,7 @@ function MarketplaceShopSettingsLoaded({ settings, onSaved }: MarketplaceShopSet
                   </Typography>
                 </div>
                 <RadioGroup
+                  ref={field.ref}
                   value={field.value}
                   onValueChange={field.onChange}
                   disabled={settings.isSaving}
