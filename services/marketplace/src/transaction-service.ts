@@ -14,6 +14,7 @@ import {
   buildMarketplaceOfferAggregateId,
   buildMarketplaceOrderAggregateId,
   buildMarketplacePaymentAggregateId,
+  type CancelReturnCommand,
   type ClearPickupDetailsCommand as SharedClearPickupDetailsCommand,
   type CloseAuctionCommand,
   type ConfirmOrderDeliveryCommand,
@@ -454,6 +455,8 @@ export interface MarketplaceReturn {
   state: 'requested' | 'approved' | 'received' | 'refunded';
   reason: string;
   requestedAmountMinor: number;
+  /** Where `return.cancel` sends the order back to. */
+  requestedFrom?: 'delivered' | 'completed';
   requestedAt: string;
   updatedAt: string;
 }
@@ -624,6 +627,7 @@ export interface MarketplaceEvent {
     | 'return.requested'
     | 'return.approved'
     | 'return.received'
+    | 'return.cancelled'
     | 'refund.recorded_external'
     | 'review.created';
   occurredAt: string;
@@ -1217,6 +1221,8 @@ export class MarketplaceTransactionService {
         return this.requestReturn(actorPubky, command);
       case 'return.approve':
         return this.approveReturn(actorPubky, command);
+      case 'return.cancel':
+        return this.cancelReturn(actorPubky, command);
       case 'return.receive':
         return this.receiveReturn(actorPubky, command);
       case 'refund.record_external':
@@ -2552,6 +2558,7 @@ export class MarketplaceTransactionService {
         state: 'requested',
         reason: command.payload.reason,
         requestedAmountMinor: command.payload.requestedAmountMinor,
+        requestedFrom: order.state === 'completed' ? 'completed' : 'delivered',
         requestedAt: occurredAt,
         updatedAt: occurredAt,
       },
@@ -2590,6 +2597,33 @@ export class MarketplaceTransactionService {
       updated,
       'return.approved',
       order.buyerPubky,
+      'return_updated',
+      occurredAt,
+    );
+  }
+
+  private cancelReturn(actorPubky: string, command: CancelReturnCommand): MarketplaceCommandResult {
+    const resolved = this.getOrderAction(actorPubky, command.payload.orderId, command);
+    if (!resolved.ok) return resolved.failure;
+    const order = resolved.order;
+    if (order.buyerPubky !== actorPubky) return failure('UNAUTHORIZED', 'Only the buyer may cancel this return.');
+    if (order.state !== 'return_requested' || !order.returnRequest) {
+      return failure('INVALID_STATE', 'The seller has already acted on this return.');
+    }
+    const occurredAt = this.now().toISOString();
+    const updated: MarketplaceOrder = {
+      ...order,
+      revision: order.revision + 1,
+      state: order.returnRequest.requestedFrom === 'completed' ? 'completed' : 'delivered',
+      returnRequest: null,
+      updatedAt: occurredAt,
+    };
+    return this.persistOrderAction(
+      actorPubky,
+      command,
+      updated,
+      'return.cancelled',
+      order.sellerPubky,
       'return_updated',
       occurredAt,
     );
@@ -3507,6 +3541,8 @@ export function buildPrototypeStateMachineDocument(): {
           { from: 'delivered', to: 'completed', via: [command('review.create')] },
           { from: 'completed', to: 'return_requested', via: [command('return.request')] },
           { from: 'return_requested', to: 'return_approved', via: [command('return.approve')] },
+          { from: 'return_requested', to: 'delivered', via: [command('return.cancel')] },
+          { from: 'return_requested', to: 'completed', via: [command('return.cancel')] },
           { from: 'return_approved', to: 'return_received', via: [command('return.receive')] },
           { from: 'return_received', to: 'refunded_external', via: [command('refund.record_external')] },
           { from: 'cancelled', to: 'refunded_external', via: [command('refund.record_external')] },
@@ -3522,6 +3558,7 @@ export function buildPrototypeStateMachineDocument(): {
           'fulfillment.confirm_pickup',
           'return.request',
           'return.approve',
+          'return.cancel',
           'return.receive',
           'refund.record_external',
           'review.create',

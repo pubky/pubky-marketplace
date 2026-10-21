@@ -440,6 +440,14 @@ const fixtures = vi.hoisted(async () => {
     bitcoinRefunded: [bitcoinRefundedView()],
     deliveryAssumed: [deliveryAssumedView()],
     finalSaleBuyer: [finalSaleBuyerView()],
+    // pubky/pubky-marketplace#370: the buyer's return status block while the seller hasn't acted.
+    returnRequestedBuyer: [
+      {
+        order: createOrderFixture('return_requested', { id: '018f47d2-6a27-7c23-a49d-000000000707' }),
+        payment: createPaymentFixture('confirmed'),
+        receipt: null,
+      },
+    ],
     usdtRefundBuyerNeeded: [usdtRefundView('return_approved', 'buyer', false)],
     usdtRefundBuyerConfirmed: [usdtRefundView('return_approved', 'buyer', true)],
     usdtRefundSellerConfirmed: [usdtRefundView('return_received', 'seller', true)],
@@ -644,6 +652,19 @@ describe('Marketplace orders — visual regression', () => {
     const screen = await renderForVRT(<MarketplaceOrders />, { viewport: VRT_VIEWPORT_MOBILE });
     await expect.element(screen.getByTestId('return-closed-note')).toBeVisible();
     await expect(await expectVrtSurface('marketplace-orders')).toMatchScreenshot('orders-final-sale-mobile');
+  });
+
+  it('renders the buyer return status with Cancel return at mobile viewport', async () => {
+    const { returnRequestedBuyer } = await fixtures;
+    ordersState.orders = returnRequestedBuyer;
+    ordersState.isLoading = false;
+    ordersState.error = null;
+
+    const screen = await renderForVRT(<MarketplaceOrders />, { viewport: VRT_VIEWPORT_MOBILE });
+    await expect.element(screen.getByTestId('order-return-status')).toBeVisible();
+    await expect(await expectVrtSurface('marketplace-orders')).toMatchScreenshot(
+      'orders-return-requested-buyer-mobile',
+    );
   });
 
   it('renders the buyer asking for a USDT refund address at desktop viewport', async () => {

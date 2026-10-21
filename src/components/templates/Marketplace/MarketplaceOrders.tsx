@@ -82,6 +82,7 @@ import { MarketplaceOrderDigitalPanel } from '@/organisms/Marketplace/Marketplac
 import { MarketplaceOrderReference } from '@/organisms/Marketplace/MarketplaceOrderReference';
 import { MarketplacePaymentStatusCard } from '@/organisms/Marketplace/MarketplacePaymentStatusCard';
 import { MarketplaceReauthDialog } from '@/organisms/Marketplace/MarketplaceReauthDialog';
+import { MarketplaceReturnStatus } from '@/organisms/Marketplace/MarketplaceReturnStatus';
 import { MarketplaceSectionNav } from '@/organisms/Marketplace/MarketplaceSectionNav';
 import { MarketplaceSellerDigitalPanel } from '@/organisms/Marketplace/MarketplaceSellerDigitalPanel';
 import { MarketplaceUsdtPaymentSummary } from '@/organisms/Marketplace/MarketplaceUsdtPaymentSummary';
@@ -608,11 +609,7 @@ export function MarketplaceOrders() {
                                 Completes automatically after the return window unless a return is requested.
                               </Typography>
                             )}
-                            {order.returnRequest && (
-                              <Typography as="p" className="mt-2 text-sm text-muted-foreground">
-                                Return {order.returnRequest.state}: {order.returnRequest.reason}
-                              </Typography>
-                            )}
+                            <MarketplaceReturnStatus order={order} isBuyer={isBuyer} actOnOrder={actOnOrder} />
                             {refundRecord && (
                               <Typography as="p" className="mt-2 text-sm text-brand" data-testid="order-refund-record">
                                 {/* Only ever externally evidenced: Paykit Server cannot spend, so
