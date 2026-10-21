@@ -15,6 +15,14 @@ async function body(url, fetchImpl) {
   }
 }
 
+/**
+ * @param {{
+ *   pageUrl: string,
+ *   buildUrl: string,
+ *   env?: Record<string, string | undefined>,
+ *   fetchImpl?: (url: string, init?: { signal?: AbortSignal }) => Promise<{ ok: boolean, text: () => Promise<string> }>,
+ * }} options
+ */
 export async function servedDeployment({ pageUrl, buildUrl, env = process.env, fetchImpl = fetch }) {
   const wantsDpl = Boolean(String(env.EXPECTED_DPL ?? '').trim());
   const wantsCommit = Boolean(String(env.EXPECTED_COMMIT ?? '').trim());
