@@ -194,7 +194,6 @@ export function MarketplaceListingCard({ listing, shopName, layout = 'grid', ind
               <MarketplaceStarRating
                 rating={listing.listingReputation.avg}
                 count={listing.listingReputation.count}
-                verifiedCount={listing.listingReputation.verifiedCount}
                 size="sm"
               />
             ) : (

@@ -26,6 +26,26 @@ describe('ShopProfileCard', () => {
     expect(screen.getByRole('heading', { level: 2, name: 'Satoshi Vintage' })).toBeInTheDocument();
   });
 
+  it('labels the editor preview as a preview and leaves the public storefront unlabeled', () => {
+    const props = {
+      name: 'Satoshi Vintage',
+      bio: 'Circular fashion.',
+      avatarUrl: null,
+      bannerUrl: null,
+      bannerAlt: 'banner',
+      avatarAlt: 'avatar',
+    };
+    const { rerender } = render(<ShopProfileCard variant="mini" {...props} />);
+
+    expect(screen.getByTestId('shop-profile-card-preview-badge')).toHaveTextContent('Preview');
+    expect(screen.getByRole('group', { name: 'Storefront preview' })).toBeInTheDocument();
+
+    rerender(<ShopProfileCard variant="full" {...props} />);
+
+    expect(screen.queryByTestId('shop-profile-card-preview-badge')).not.toBeInTheDocument();
+    expect(screen.queryByRole('group', { name: 'Storefront preview' })).not.toBeInTheDocument();
+  });
+
   it('renders the full shop heading level', () => {
     render(
       <ShopProfileCard

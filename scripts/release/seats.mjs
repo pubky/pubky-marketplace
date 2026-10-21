@@ -26,12 +26,19 @@ export function shopCapabilities() {
   return match[1];
 }
 
+// The proof scripts have no default target: every host comes from the environment, and an unset one stops the run.
+export function requireProofEnv(name, env = process.env) {
+  const value = String(env[name] ?? '').trim();
+  if (!value) throw new Error(`set ${name}: the proof scripts have no default target`);
+  return value;
+}
+
 // PROOF_ORIGIN is the origin the Shop is served from, with its mount path when embedded
 // (`https://pubky.app/shop`, or `https://pubky.app/shop-embed` when the App owns `/shop` and frames the build:
 // the proof drives the build itself). `origin` is what browser permissions and the service CORS check see;
 // `at(path)` joins the mount path in front of a Shop route such as `/sign-in`. A route is a path from the Shop's
 // root: an absolute URL or a path that already carries the mount path is refused rather than joined twice.
-export function proofTarget(raw = process.env.PROOF_ORIGIN ?? 'https://pubky-marketplace-production.vercel.app') {
+export function proofTarget(raw = requireProofEnv('PROOF_ORIGIN')) {
   const url = new URL(raw);
   if (url.search || url.hash) throw new Error('PROOF_ORIGIN must not carry a query or fragment');
   const basePath = url.pathname.replace(/\/+$/, '');

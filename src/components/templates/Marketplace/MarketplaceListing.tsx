@@ -374,9 +374,7 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
       classNameWrapperContent="overflow-visible lg:overflow-visible"
     >
       <Container overrideDefaults className="flex w-full flex-col gap-6">
-        <div className="sticky top-24 z-(--z-sticky-subnav) bg-background after:pointer-events-none after:absolute after:inset-x-0 after:top-full after:h-16 after:bg-linear-to-b after:from-background/80 after:to-transparent after:content-[''] lg:top-(--header-offset-main)">
-          <MarketplaceSectionNav className="mb-0" />
-        </div>
+        <MarketplaceSectionNav className="mb-0 after:h-16" />
         <div className="flex w-full items-center justify-between gap-2">
           <Link
             href={APP_ROUTES.MARKETPLACE}
@@ -463,12 +461,7 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
               {listingRating !== undefined && listingRating !== 'unavailable' && (
                 <div className="mt-2" data-testid="marketplace-listing-rating">
                   {listingRating !== null && listingRating.count > 0 ? (
-                    <MarketplaceStarRating
-                      rating={listingRating.avg}
-                      count={listingRating.count}
-                      verifiedCount={listingRating.verifiedCount}
-                      size="sm"
-                    />
+                    <MarketplaceStarRating rating={listingRating.avg} count={listingRating.count} size="sm" />
                   ) : (
                     <Typography as="p" className="text-sm text-muted-foreground">
                       No rating yet

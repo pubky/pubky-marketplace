@@ -320,7 +320,7 @@ Ring, Passport).
 - **Transaction service** (Rust): event-sourced PostgreSQL with outbox,
   registration drain, auction close, reservation expiry, and drop
   open/close workers; server-time drop gating with gapless edition
-  assignment; health, readiness, metrics; Docker + Railway deploy
+  assignment; health, readiness, metrics; Docker deploy
 - **Marketplace Nexus** (fork): listing/shop/review/tag/drop indexing
   (`/v0/stream/drops` + per-drop projections), reputation aggregation,
   auction-terms and review backfill migrations, replay runbooks, poll
@@ -332,7 +332,7 @@ Ring, Passport).
 - **Fiat verifier gateway** (Rust): PayPal bridging to Locks. Card
   verification code stays in the service and is not offered in the shop.
   Fail-closed configuration, live-mode guards
-- **Payment rails**: per-service Dockerfiles and Railway entrypoints for
+- **Payment rails**: per-service Dockerfiles and entrypoints for
   bitcoind, Fulcrum, Lock Server, Paykit Server; verification driver
 - **Testing discipline**: unit suites, visual regression (timezone-frozen
   harness), contract drift tests against the canonical service contract,

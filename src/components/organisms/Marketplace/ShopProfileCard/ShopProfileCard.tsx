@@ -7,12 +7,15 @@ import { Card, CardContent } from '@/atoms/Card/Card';
 import { Heading } from '@/atoms/Heading/Heading';
 import { Typography } from '@/atoms/Typography/Typography';
 import type { SellerDeclaration } from '@/libs/commerce/eu-region';
+import { cn } from '@/libs/utils/utils';
 import { SellerStatusBadge } from '@/molecules/Marketplace/SellerStatusBadge';
 
 export type ShopProfileCardVariant = 'full' | 'mini';
 
 export interface ShopProfileCardProps {
   name: string;
+  /** The editor preview shows sample text for an unnamed shop; it is muted so it never reads as typed input. */
+  nameIsPlaceholder?: boolean;
   bio: string;
   avatarUrl: string | null;
   bannerUrl: string | null;
@@ -66,6 +69,7 @@ const VARIANT = {
 
 export function ShopProfileCard({
   name,
+  nameIsPlaceholder = false,
   bio,
   avatarUrl,
   bannerUrl,
@@ -86,6 +90,7 @@ export function ShopProfileCard({
   const region = location?.region?.trim() ?? '';
   const countryCode = location?.countryCode?.trim() ?? '';
   const locationLabel = `${region ? `${region}, ` : ''}${countryCode}`;
+  const isPreview = variant === 'mini';
   const showLocation = tokens.alwaysShowLocation || Boolean(countryCode || region);
 
   const locationRow = showLocation ? (
@@ -96,7 +101,21 @@ export function ShopProfileCard({
   ) : null;
 
   return (
-    <Card className="overflow-hidden rounded-md p-0" data-testid={testId}>
+    <Card
+      className="relative overflow-hidden rounded-md p-0"
+      data-testid={testId}
+      role={isPreview ? 'group' : undefined}
+      aria-label={isPreview ? 'Storefront preview' : undefined}
+    >
+      {isPreview && (
+        <Badge
+          variant="outline"
+          className="absolute top-3 left-3 z-10 bg-background/80 tracking-wide uppercase backdrop-blur"
+          data-testid="shop-profile-card-preview-badge"
+        >
+          Preview
+        </Badge>
+      )}
       {bannerUrl ? (
         // eslint-disable-next-line @next/next/no-img-element -- homeserver media and object URLs bypass Next image optimization
         <img src={bannerUrl} alt={bannerAlt} className={tokens.banner} onError={onBannerError} />
@@ -119,7 +138,11 @@ export function ShopProfileCard({
             )}
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <Heading level={tokens.headingLevel} size={tokens.headingSize} className={tokens.headingClass}>
+            <Heading
+              level={tokens.headingLevel}
+              size={tokens.headingSize}
+              className={cn(tokens.headingClass, nameIsPlaceholder && 'text-muted-foreground')}
+            >
               {name}
             </Heading>
             {vacation && <Badge variant="secondary">Vacation mode</Badge>}

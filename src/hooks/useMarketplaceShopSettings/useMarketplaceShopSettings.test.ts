@@ -105,6 +105,9 @@ describe('useMarketplaceShopSettings', () => {
     act(() => {
       result.current.form.setValue('name', 'Satoshi Vintage');
       result.current.form.setValue('bio', 'Independent circular fashion.');
+      result.current.form.setValue('countryCode', 'ch');
+      result.current.form.setValue('shippingPolicy', 'Ships within a week.');
+      result.current.form.setValue('returnPolicy', 'Returns within 14 days.');
       result.current.form.setValue('sellerStatus', 'private');
     });
 
@@ -119,13 +122,32 @@ describe('useMarketplaceShopSettings', () => {
         name: 'Satoshi Vintage',
         avatarUrl: undefined,
         bannerUrl: undefined,
-        shippingPolicy: expect.any(String),
-        returnPolicy: expect.any(String),
+        location: { countryCode: 'CH', region: undefined },
+        shippingPolicy: 'Ships within a week.',
+        returnPolicy: 'Returns within 14 days.',
         vacationMode: false,
       }),
     );
     expect(CommerceController.commitCreateMedia).not.toHaveBeenCalled();
     expect(result.current.hasShop).toBe(true);
+  });
+
+  it('refuses to publish a first shop until the seller has chosen a country and written the policies', async () => {
+    const { result } = renderHook(() => useMarketplaceShopSettings());
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(result.current.form.getValues()).toMatchObject({ countryCode: '', shippingPolicy: '', returnPolicy: '' });
+
+    act(() => {
+      result.current.form.setValue('name', 'Satoshi Vintage');
+      result.current.form.setValue('sellerStatus', 'private');
+    });
+    const succeeded = await act(() => result.current.submit());
+
+    expect(succeeded).toBe(false);
+    expect(CommerceController.commitUpsertShop).not.toHaveBeenCalled();
+    expect(result.current.form.getFieldState('countryCode').error?.message).toBe('Country is required.');
+    expect(result.current.form.getFieldState('shippingPolicy').error?.message).toBe('Shipping policy is required.');
+    expect(result.current.form.getFieldState('returnPolicy').error?.message).toBe('Return policy is required.');
   });
 
   it('edits the published shop record network-first instead of restarting at revision 1', async () => {
@@ -370,6 +392,9 @@ describe('useMarketplaceShopSettings', () => {
 
     act(() => {
       result.current.form.setValue('name', 'Satoshi Vintage');
+      result.current.form.setValue('countryCode', 'ch');
+      result.current.form.setValue('shippingPolicy', 'Ships within a week.');
+      result.current.form.setValue('returnPolicy', 'Returns within 14 days.');
       result.current.form.setValue('sellerStatus', 'private');
       result.current.avatar.onInputChange(changeEvent(imageFile('avatar.png', [1, 2, 3])));
       result.current.banner.onInputChange(changeEvent(imageFile('banner.png', [4, 5, 6])));
@@ -467,6 +492,9 @@ describe('useMarketplaceShopSettings', () => {
 
     act(() => {
       result.current.form.setValue('name', 'Satoshi Vintage');
+      result.current.form.setValue('countryCode', 'ch');
+      result.current.form.setValue('shippingPolicy', 'Ships within a week.');
+      result.current.form.setValue('returnPolicy', 'Returns within 14 days.');
       result.current.form.setValue('sellerStatus', 'private');
       result.current.avatar.onInputChange(changeEvent(imageFile('avatar.png')));
     });
