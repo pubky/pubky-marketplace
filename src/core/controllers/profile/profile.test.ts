@@ -1,5 +1,8 @@
 import { UserResult } from 'pubky-app-specs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { ValidationErrorCode } from '@/libs/error/error.codes';
+import { ErrorCategory } from '@/libs/error/error.types';
+import { PASSPHRASE_MIN_LENGTH } from '@/libs/password/password';
 import type { Pubky } from '@/models/models.types';
 import { asOpaque } from '@/test-utils/type-assertions';
 
@@ -242,6 +245,8 @@ describe('ProfileController', () => {
   });
 
   describe('createRecoveryFile', () => {
+    const passphrase = 'test-passphrase-16';
+
     it('creates recovery file from secret key', () => {
       const mockSelectSecretKey = vi.fn(() => 'test-secret-key');
       mockOnboardingStore.getState.mockReturnValue({
@@ -250,13 +255,13 @@ describe('ProfileController', () => {
       });
       mockIdentity.keypairFromSecretKey.mockReturnValue({ keypair: 'test-keypair' });
 
-      ProfileController.createRecoveryFile('test-passphrase');
+      ProfileController.createRecoveryFile(passphrase);
 
       expect(mockSelectSecretKey).toHaveBeenCalledTimes(1);
       expect(mockIdentity.keypairFromSecretKey).toHaveBeenCalledWith('test-secret-key');
       expect(mockIdentity.createRecoveryFile).toHaveBeenCalledWith({
         keypair: { keypair: 'test-keypair' },
-        passphrase: 'test-passphrase',
+        passphrase,
       });
     });
 
@@ -269,8 +274,34 @@ describe('ProfileController', () => {
         selectSecretKey: mockSelectSecretKey,
       });
 
-      expect(() => ProfileController.createRecoveryFile('test-passphrase')).toThrow('Secret key is not available');
+      expect(() => ProfileController.createRecoveryFile(passphrase)).toThrow('Secret key is not available');
       expect(mockIdentity.createRecoveryFile).not.toHaveBeenCalled();
+    });
+
+    it('requires at least PASSPHRASE_MIN_LENGTH characters before creating an encrypted backup', () => {
+      const mockSelectSecretKey = vi.fn(() => 'test-secret-key');
+      mockOnboardingStore.getState.mockReturnValue({
+        setSecrets: vi.fn(),
+        selectSecretKey: mockSelectSecretKey,
+      });
+
+      expect(() => ProfileController.createRecoveryFile('a'.repeat(PASSPHRASE_MIN_LENGTH - 1))).toThrow(
+        expect.objectContaining({
+          category: ErrorCategory.Validation,
+          code: ValidationErrorCode.INVALID_INPUT,
+          operation: 'createRecoveryFile',
+        }),
+      );
+      expect(mockSelectSecretKey).not.toHaveBeenCalled();
+      expect(mockIdentity.keypairFromSecretKey).not.toHaveBeenCalled();
+      expect(mockIdentity.createRecoveryFile).not.toHaveBeenCalled();
+
+      const minLengthPassphrase = 'a'.repeat(PASSPHRASE_MIN_LENGTH);
+      ProfileController.createRecoveryFile(minLengthPassphrase);
+
+      expect(mockIdentity.createRecoveryFile).toHaveBeenCalledWith(
+        expect.objectContaining({ passphrase: minLengthPassphrase }),
+      );
     });
   });
 

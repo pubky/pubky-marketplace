@@ -5,7 +5,11 @@ import type {
   TDeleteAccountInput,
   TDownloadDataInput,
 } from '@/controllers/profile/profile.types';
+import { ValidationErrorCode } from '@/libs/error/error.codes';
+import { Err } from '@/libs/error/error.factories';
+import { ErrorService } from '@/libs/error/error.types';
 import { Identity } from '@/libs/identity/identity';
+import { PASSPHRASE_MIN_LENGTH } from '@/libs/password/password';
 import type { Pubky } from '@/models/models.types';
 import { UserNormalizer } from '@/pipes/user/user.normalizer';
 import { useAuthStore } from '@/stores/auth/auth.store';
@@ -83,8 +87,16 @@ export class ProfileController {
   /**
    * Creates a recovery file for the keypair
    * @param passphrase - The passphrase to use to create the recovery file
+   * @throws AppError (Validation, INVALID_INPUT) when the passphrase is shorter than {@link PASSPHRASE_MIN_LENGTH} characters
    */
   static createRecoveryFile(passphrase: string) {
+    if (passphrase.length < PASSPHRASE_MIN_LENGTH) {
+      throw Err.validation(
+        ValidationErrorCode.INVALID_INPUT,
+        `The backup password must be at least ${PASSPHRASE_MIN_LENGTH} characters.`,
+        { service: ErrorService.Local, operation: 'createRecoveryFile' },
+      );
+    }
     const secretKey = useOnboardingStore.getState().selectSecretKey();
     const keypair = Identity.keypairFromSecretKey(secretKey);
     Identity.createRecoveryFile({ keypair, passphrase });

@@ -1,5 +1,6 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { PASSPHRASE_MIN_LENGTH } from '@/libs/password/password';
 import { DialogBackupEncrypted } from './DialogBackupEncrypted';
 
 vi.mock('@/atoms/Dialog/Dialog', () => {
@@ -292,23 +293,40 @@ describe('DialogBackupEncrypted', () => {
     expect(mockCreateRecoveryFile).not.toHaveBeenCalled();
   });
 
-  it('allows download with empty password when both fields match', () => {
+  it('keeps download disabled until the password reaches the minimum length', () => {
     render(<DialogBackupEncrypted />);
 
+    const passwordInput = screen.getByPlaceholderText('Enter a strong password');
+    const confirmPasswordInput = screen.getByPlaceholderText('Repeat your password');
     const downloadButton = screen.getByRole('button', { name: /download file/i });
+    const enterPasswords = (password: string, confirmation = password) => {
+      fireEvent.change(passwordInput, { target: { value: password } });
+      fireEvent.change(confirmPasswordInput, { target: { value: confirmation } });
+    };
 
+    expect(downloadButton).toBeDisabled();
+
+    enterPasswords('a'.repeat(PASSPHRASE_MIN_LENGTH - 1));
+    expect(downloadButton).toBeDisabled();
+    fireEvent.keyDown(passwordInput, { key: 'Enter' });
+    expect(mockCreateRecoveryFile).not.toHaveBeenCalled();
+
+    const minLength = 'a'.repeat(PASSPHRASE_MIN_LENGTH);
+    enterPasswords(minLength, 'b'.repeat(PASSPHRASE_MIN_LENGTH));
+    expect(downloadButton).toBeDisabled();
+
+    enterPasswords(minLength);
     expect(downloadButton).not.toBeDisabled();
-    fireEvent.click(downloadButton);
-
-    expect(mockCreateRecoveryFile).toHaveBeenCalledWith('');
+    fireEvent.keyDown(passwordInput, { key: 'Enter' });
+    expect(mockCreateRecoveryFile).toHaveBeenCalledWith(minLength);
   });
 
-  it('renders "over 16 characters" in red when length is 1–15', () => {
+  it('marks the minimum length in red until the password reaches it', () => {
     render(<DialogBackupEncrypted />);
 
     const passwordInput = screen.getByPlaceholderText('Enter a strong password');
 
-    const minLenText = () => screen.getByText(/over 16 characters/i);
+    const minLenText = () => screen.getByText(`at least ${PASSPHRASE_MIN_LENGTH} characters`);
 
     fireEvent.change(passwordInput, { target: { value: 'short' } });
     expect(minLenText()).toHaveClass('text-destructive');
