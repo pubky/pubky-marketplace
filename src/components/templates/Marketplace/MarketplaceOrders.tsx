@@ -22,6 +22,7 @@ import {
   orderAnchorId,
   readLegacyOrderFragment,
   readLinkedOrderId,
+  readStaysOnOrder,
 } from '@/libs/commerce/activity-links';
 import {
   bitcoinPaymentHasBeenSeen,
@@ -103,7 +104,9 @@ const ORDER_TABS: { id: OrdersTab; label: string }[] = [
 
 export function MarketplaceOrders() {
   const router = useRouter();
-  const anchorOrderId = readLinkedOrderId(useSearchParams());
+  const searchParams = useSearchParams();
+  const anchorOrderId = readLinkedOrderId(searchParams);
+  const staysOnOrder = readStaysOnOrder(searchParams);
   const currentUserPubky = useAuthStore((state) => state.currentUserPubky);
   const receiptsPublicationStatus = useCommerceStore((state) => state.receiptsPublicationStatus);
   const { orders, isLoading, error, needsSession, refresh, advancePayment, actOnOrder, adapterMode } =
@@ -175,13 +178,13 @@ export function MarketplaceOrders() {
   useEffect(() => {
     if (isLoading) return;
     const id = anchorOrderId;
-    if (!id || redirectedOrderRef.current === id) return;
+    if (!id || staysOnOrder || redirectedOrderRef.current === id) return;
     const view = orders.find((candidate) => candidate.order.id === id);
     if (view && isBuyerCheckoutInProgress(view.order, currentUserPubky)) {
       redirectedOrderRef.current = id;
       router.replace(getMarketplaceCheckoutRoute(id));
     }
-  }, [anchorOrderId, currentUserPubky, isLoading, orders, router]);
+  }, [anchorOrderId, currentUserPubky, isLoading, orders, router, staysOnOrder]);
 
   useEffect(() => {
     if (hasSelectedTab || !historyOrders.length) return;
