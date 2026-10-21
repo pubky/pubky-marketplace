@@ -29,6 +29,7 @@ import {
   shipOrderCommandSchema,
   updateOrderTrackingCommandSchema,
   updateReviewCommandSchema,
+  withdrawReviewCommandSchema,
 } from './transaction-commands';
 import { toCamelCaseWire, toSnakeCaseWire } from './wire-casing';
 
@@ -84,6 +85,34 @@ describe.each([
 
   it('rejects a non-uuid order id', () => {
     expect(schema.safeParse(reviewCommand(kind, { orderId: 'not-a-uuid' })).success).toBe(false);
+  });
+});
+
+describe('review.withdraw command contract', () => {
+  const withdraw = (payload: Record<string, unknown> = {}) => ({
+    ...reviewCommand('review.update'),
+    kind: 'review.withdraw' as const,
+    payload: { orderId: ORDER_ID, ...payload },
+  });
+
+  it('accepts the order alone, or one item of it', () => {
+    expect(withdrawReviewCommandSchema.parse(withdraw()).payload).toEqual({ orderId: ORDER_ID });
+    expect(withdrawReviewCommandSchema.parse(withdraw({ listingId: 'boots' })).payload).toEqual({
+      orderId: ORDER_ID,
+      listingId: 'boots',
+    });
+  });
+
+  it('is a member of the marketplace command union and goes out in snake_case', () => {
+    const parsed = marketplaceCommandSchema.parse(withdraw({ listingId: 'boots' }));
+    expect(parsed.kind).toBe('review.withdraw');
+    expect(toSnakeCaseWire(parsed)).toMatchObject({ payload: { order_id: ORDER_ID, listing_id: 'boots' } });
+  });
+
+  it('rejects a payload carrying review terms, an empty listing id or a non-uuid order id', () => {
+    expect(withdrawReviewCommandSchema.safeParse(withdraw({ rating: 4 })).success).toBe(false);
+    expect(withdrawReviewCommandSchema.safeParse(withdraw({ listingId: '' })).success).toBe(false);
+    expect(withdrawReviewCommandSchema.safeParse(withdraw({ orderId: 'not-a-uuid' })).success).toBe(false);
   });
 });
 

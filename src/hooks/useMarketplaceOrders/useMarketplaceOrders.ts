@@ -236,6 +236,7 @@ async function loadOrders(
   // mid-flight is retried whenever this surface loads. Best-effort — a
   // failure keeps the row pending and is logged inside the application.
   void CommerceController.resumeOwnReviewPublications().catch(() => undefined);
+  void CommerceController.resumeOwnReviewRemovals().catch(() => undefined);
   void CommerceController.sweepOwnAuctionReserves().catch(() => undefined);
   // Same outbox semantics for own review-RESPONSE records (subject-only
   // responses published to the responder's homeserver).
