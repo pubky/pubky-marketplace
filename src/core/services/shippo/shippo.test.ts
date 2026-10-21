@@ -3,7 +3,7 @@ import { type ShipFromAddress, SHIPPO_FAILURE_REASONS } from '@/libs/commerce/sh
 import { ShippoService } from './shippo';
 
 const SHIP_FROM: ShipFromAddress = {
-  name: "Igor's Olive Farm",
+  name: 'Olive Grove Farm',
   line1: 'Maslinska 1',
   line2: '',
   city: 'Split',

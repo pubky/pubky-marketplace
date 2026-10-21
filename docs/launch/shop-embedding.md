@@ -283,7 +283,7 @@ The outer/inner route scheme, App-owned sign-in, targeted SDK cleanup and mounte
 - Exercise real Ring, Bitkit, Passport, recovery-file and signup journeys, migrated cookie users, narrow grants, rejected approvals, account switches, two tabs, revoked records and sign-out while approval is pending.
 - Verify Safari/mobile IndexedDB persistence across restart, Web Locks, cross-tab lifecycle, synchronous signer/popup gestures, and nested Paykit/Locks frames with the deployed origin.
 - Verify deep links, refresh, Back/Forward, search/hash preservation, top-level signer/PayPal returns, and updated visual baselines.
-- Coordinate Matthew's separate Inbox/chat migration with the same account lifecycle and existing history. No `e` scope or new messaging protocol is introduced by this embedding work.
+- Coordinate secondl1ght's separate Inbox/chat migration with the same account lifecycle and existing history. No `e` scope or new messaging protocol is introduced by this embedding work.
 
 The SDK 0.16.1 local production pair passed restoration of genuine SDK 0.16.0 records, reload, two tabs, and App logout with both Shop iframes absent in Chromium and WebKit on 2026-10-13, without session revival. Chromium also passed temporary-renewal recovery and BFF HTTP 503 cleanup followed by explicit HTTP 204 retry. Synthetic cross-origin popups from App and framed Shop returned through the actual mounted Passport callback in both browsers, preserving the opener and mounted fallback. These checks used real SDK/WASM and IndexedDB with intercepted network fixtures; they do not establish deployed Passport behavior, real backend availability, mobile signer gestures or payment completion.
 
