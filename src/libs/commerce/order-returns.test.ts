@@ -18,10 +18,10 @@ describe('orderReturnClosure', () => {
     ).toBe('final_sale');
   });
 
-  it('closes after the window, counted from delivery', () => {
+  it('closes a day after the window, counted from delivery, so a fast device clock never hides a valid return', () => {
     const order = { returnPolicy: { acceptsReturns: true, returnWindowDays: 14 }, shipment: delivered };
-    expect(orderReturnClosure(order, day(14))).toBeNull();
-    expect(orderReturnClosure(order, day(15))).toBe('window_closed');
+    expect(orderReturnClosure(order, day(15))).toBeNull();
+    expect(orderReturnClosure(order, day(15) + 1)).toBe('window_closed');
   });
 
   it('leaves the window open when delivery or the clock is unknown', () => {
