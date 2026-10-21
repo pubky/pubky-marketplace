@@ -270,9 +270,9 @@ describe('own item reviews on the reviewer homeserver', () => {
       expect(deletedListings()).toEqual([first]);
       expect(homeserver.files.has(urlOf(rowOf(middle)))).toBe(true);
       expect(homeserver.files.has(urlOf(rowOf(last)))).toBe(true);
-      expect(
-        (await removeJobs()).map((job) => (job.payload as { listingId?: string }).listingId).sort(),
-      ).toEqual([last, middle].sort());
+      expect((await removeJobs()).map((job) => (job.payload as { listingId?: string }).listingId).sort()).toEqual(
+        [last, middle].sort(),
+      );
 
       parked.release();
 
@@ -483,7 +483,9 @@ describe('own item reviews on the reviewer homeserver', () => {
       it('publishes nothing from an order read made before the removal', async () => {
         service.withdraw('boots');
 
-        await expect(CommerceApplication.getOwnMarketplaceOrderReviews(ORDER_FIXTURE_BUYER, single)).resolves.toEqual([]);
+        await expect(CommerceApplication.getOwnMarketplaceOrderReviews(ORDER_FIXTURE_BUYER, single)).resolves.toEqual(
+          [],
+        );
 
         expect(puts()).toEqual([]);
         expect(await localRows()).toEqual([]);

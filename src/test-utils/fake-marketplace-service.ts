@@ -73,7 +73,9 @@ export function installFakeMarketplaceService(initial: MarketplaceOrder, authorP
   }[] = [];
 
   const authored = () =>
-    (initial.reviews ?? []).flatMap((review, index) => (review.reviewerPubky === authorPubky ? [{ review, index }] : []));
+    (initial.reviews ?? []).flatMap((review, index) =>
+      review.reviewerPubky === authorPubky ? [{ review, index }] : [],
+    );
   const listingOf = (review: { listingAggregateId?: string }) =>
     review.listingAggregateId?.slice(`listing:${initial.sellerPubky}_`.length);
   const targets = (listingId?: string) =>

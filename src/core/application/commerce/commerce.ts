@@ -4047,7 +4047,8 @@ export class CommerceApplication {
             ? reviewsOfReviewer(order, actorPubky)
             : [reviewOfListing(order, actorPubky, listingId)].filter((review) => review !== undefined);
         if (own.length === 0 || own.every(({ publicRemoved }) => publicRemoved === true)) return null;
-        const itemListingId = listingId !== undefined && own[0]?.listingAggregateId !== undefined ? listingId : undefined;
+        const itemListingId =
+          listingId !== undefined && own[0]?.listingAggregateId !== undefined ? listingId : undefined;
         const response = await MarketplaceGatewayService.execute(
           actorPubky,
           CommerceRecordNormalizer.marketplaceCommand({
@@ -4293,10 +4294,7 @@ export class CommerceApplication {
     if (input.repair !== true) this.deletedOwnReviews.delete(model.id);
     await LocalCommerceService.stageOwnReviewSync(model, job);
     if (!stillCurrent()) return null;
-    if (
-      input.repair === true &&
-      (await this.fetchOwnReviewRemovalState(actorPubky, order.id, listingId)) !== 'live'
-    ) {
+    if (input.repair === true && (await this.fetchOwnReviewRemovalState(actorPubky, order.id, listingId)) !== 'live') {
       // Removed since the order was read, or not checkable: publish nothing.
       await LocalCommerceService.abandonOwnReviewPublication(model);
       return null;
