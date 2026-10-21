@@ -1,3 +1,6 @@
+import { COMMERCE_DEFAULT_AUTO_COMPLETE_DAYS } from '@/config/commerce';
+import { formatTermDays } from '@/libs/commerce/seller-delivery-terms';
+
 /**
  * Whether the buyer may still request a return, from the listing's return
  * policy the service froze on the order when its payment started. The service
@@ -33,4 +36,20 @@ export function orderReturnClosure(
   const deliveredAt = order.shipment?.deliveredAt ? Date.parse(order.shipment.deliveredAt) : NaN;
   if (policy.returnWindowDays === null || nowMs === null || Number.isNaN(deliveredAt)) return null;
   return nowMs > deliveredAt + policy.returnWindowDays * DAY_MS + DEVICE_CLOCK_GRACE_MS ? 'window_closed' : null;
+}
+
+/**
+ * When a delivered order completes, for its delivered card. A final sale takes
+ * no return, so it completes on the service's auto-complete period alone: the
+ * seller's frozen `autoCompleteDays`, or the default (a buyer's review
+ * completes it earlier).
+ */
+export function deliveredCompletionNote(order: {
+  returnPolicy?: OrderReturnPolicy | null;
+  autoCompleteDays?: number | null;
+}): string {
+  if (order.returnPolicy && !order.returnPolicy.acceptsReturns) {
+    return `Completes automatically ${formatTermDays(order.autoCompleteDays ?? COMMERCE_DEFAULT_AUTO_COMPLETE_DAYS)} after delivery.`;
+  }
+  return 'Completes automatically after the return window unless a return is requested.';
 }

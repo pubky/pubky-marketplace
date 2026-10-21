@@ -46,6 +46,18 @@ export type NexusReputationSnippet = {
 export type NexusReviewRole = 'buyer_reviewing_seller' | 'seller_reviewing_buyer';
 
 /**
+ * How the index's moderation treats a review. `text_hidden`: the moderator
+ * hid the text and the review still counts. `excluded`: the review is fraud
+ * and leaves every aggregate. `reason` is the moderator's label.
+ */
+export type NexusReviewModerationState = 'text_hidden' | 'excluded';
+
+export type NexusReviewModeration = {
+  state: NexusReviewModerationState;
+  reason: string;
+};
+
+/**
  * One indexed marketplace review as served inside `GET v0/shop/{seller}/reviews`
  * and `GET v0/listing/{seller}/{listing}/reviews` entries.
  *
@@ -77,6 +89,12 @@ export type NexusReviewDetails = {
   updated_at: string;
   revision: number;
   indexed_at: number;
+  /**
+   * `null` when the review is not moderated; `text` is `""` whenever it is
+   * set. Indexes older than review moderation omit the field, which means
+   * the same as `null`.
+   */
+  moderation?: NexusReviewModeration | null;
 };
 
 /**

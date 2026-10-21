@@ -440,6 +440,28 @@ const fixtures = vi.hoisted(async () => {
     bitcoinRefunded: [bitcoinRefundedView()],
     deliveryAssumed: [deliveryAssumedView()],
     finalSaleBuyer: [finalSaleBuyerView()],
+    // pubky/pubky-marketplace#370: the buyer's return status block while the seller hasn't acted.
+    returnRequestedBuyer: [
+      {
+        order: createOrderFixture('return_requested', { id: '018f47d2-6a27-7c23-a49d-000000000707' }),
+        payment: createPaymentFixture('confirmed'),
+        receipt: null,
+      },
+    ],
+    // A delivered final-sale order: it says when it completes, with no return clause.
+    finalSaleDelivered: [
+      {
+        order: createOrderFixture('delivered', {
+          id: '018f47d2-6a27-7c23-a49d-000000000708',
+          fulfillment: 'shipping',
+          nextActor: 'none',
+          returnPolicy: { acceptsReturns: false, returnWindowDays: null },
+          autoCompleteDays: 7,
+        }),
+        payment: createPaymentFixture('confirmed'),
+        receipt: null,
+      },
+    ],
     usdtRefundBuyerNeeded: [usdtRefundView('return_approved', 'buyer', false)],
     usdtRefundBuyerConfirmed: [usdtRefundView('return_approved', 'buyer', true)],
     usdtRefundSellerConfirmed: [usdtRefundView('return_received', 'seller', true)],
@@ -539,6 +561,7 @@ const ordersState = vi.hoisted(() => ({
   orders: [] as unknown[],
   isLoading: false,
   error: null as string | null,
+  needsSession: false,
   adapterMode: 'sandbox' as string,
 }));
 
@@ -565,10 +588,41 @@ vi.mock('@/hooks/useMarketplaceOrders/useMarketplaceOrders', () => ({
     orders: ordersState.orders,
     isLoading: ordersState.isLoading,
     error: ordersState.error,
+    needsSession: ordersState.needsSession,
     adapterMode: ordersState.adapterMode,
     advancePayment: vi.fn(),
     actOnOrder: vi.fn(),
     refresh: vi.fn(),
+  }),
+}));
+
+// The approval dialog on the missing-session state, closed: only its trigger renders.
+vi.mock('@/hooks/useMarketplaceApprovalSigner/useMarketplaceApprovalSigner', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/hooks/useMarketplaceApprovalSigner/useMarketplaceApprovalSigner')>()),
+  useMarketplaceApprovalSigner: () => 'Bitkit',
+}));
+
+vi.mock('@/providers/ShopHostSessionProvider/ShopHostSessionProvider', () => ({
+  useIsShopHosted: () => false,
+}));
+
+vi.mock('@/hooks/useMarketplaceSessionConnect/useMarketplaceSessionConnect', () => ({
+  useMarketplaceSessionConnect: () => ({
+    status: 'idle',
+    authorizationUrl: '',
+    errorMessage: null,
+    requestsFullGrant: false,
+    requestsGrantReconnect: false,
+    requestsGrantBootstrap: false,
+    requestsPassport: false,
+    requiresSignIn: false,
+    approvalSigner: 'Bitkit',
+    start: vi.fn(),
+    startPassport: vi.fn(),
+    cancel: vi.fn(),
+    copyAuthUrl: vi.fn(async () => {}),
+    openInRing: vi.fn(),
+    isOpeningRing: false,
   }),
 }));
 
@@ -583,9 +637,22 @@ beforeEach(async () => {
   const { useMarketplaceDisplayStore } = await import('@/stores/marketplace-display/marketplace-display.store');
   useMarketplaceDisplayStore.setState({ showFxEstimate: true, measurementSystem: 'metric' });
   ordersState.adapterMode = 'sandbox';
+  ordersState.needsSession = false;
 });
 
 describe('Marketplace orders — visual regression', () => {
+  it('asks to approve the marketplace when the session is missing at mobile viewport', async () => {
+    ordersState.orders = [];
+    ordersState.isLoading = false;
+    ordersState.error = 'A marketplace session is required.';
+    ordersState.needsSession = true;
+    ordersState.adapterMode = 'transaction-service';
+
+    const screen = await renderForVRT(<MarketplaceOrders />, { viewport: VRT_VIEWPORT_MOBILE });
+    await expect(screen.getByRole('button', { name: 'Approve' })).toBeVisible();
+    await expect(await expectVrtSurface('marketplace-orders')).toMatchScreenshot('orders-session-required-mobile');
+  });
+
   it('renders every order state at desktop viewport', async () => {
     const { everyOrderState } = await fixtures;
     ordersState.orders = everyOrderState;
@@ -665,6 +732,17 @@ describe('Marketplace orders — visual regression', () => {
     await expect(await expectVrtSurface('marketplace-orders')).toMatchScreenshot('orders-usdt-refund-short-mobile');
   });
 
+  it('renders a delivered final-sale order with its completion note at mobile viewport', async () => {
+    const { finalSaleDelivered } = await fixtures;
+    ordersState.orders = finalSaleDelivered;
+    ordersState.isLoading = false;
+    ordersState.error = null;
+
+    const screen = await renderForVRT(<MarketplaceOrders />, { viewport: VRT_VIEWPORT_MOBILE });
+    await expect.element(screen.getByText('Completes automatically 7 days after delivery.')).toBeVisible();
+    await expect(await expectVrtSurface('marketplace-orders')).toMatchScreenshot('orders-final-sale-delivered-mobile');
+  });
+
   it('renders a final-sale order with no return at mobile viewport', async () => {
     const { finalSaleBuyer } = await fixtures;
     ordersState.orders = finalSaleBuyer;
@@ -674,6 +752,19 @@ describe('Marketplace orders — visual regression', () => {
     const screen = await renderForVRT(<MarketplaceOrders />, { viewport: VRT_VIEWPORT_MOBILE });
     await expect.element(screen.getByTestId('return-closed-note')).toBeVisible();
     await expect(await expectVrtSurface('marketplace-orders')).toMatchScreenshot('orders-final-sale-mobile');
+  });
+
+  it('renders the buyer return status with Cancel return at mobile viewport', async () => {
+    const { returnRequestedBuyer } = await fixtures;
+    ordersState.orders = returnRequestedBuyer;
+    ordersState.isLoading = false;
+    ordersState.error = null;
+
+    const screen = await renderForVRT(<MarketplaceOrders />, { viewport: VRT_VIEWPORT_MOBILE });
+    await expect.element(screen.getByTestId('order-return-status')).toBeVisible();
+    await expect(await expectVrtSurface('marketplace-orders')).toMatchScreenshot(
+      'orders-return-requested-buyer-mobile',
+    );
   });
 
   it('renders the buyer asking for a USDT refund address at desktop viewport', async () => {

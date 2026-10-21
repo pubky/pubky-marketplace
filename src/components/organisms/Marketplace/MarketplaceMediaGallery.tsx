@@ -6,6 +6,7 @@ import { Badge } from '@/atoms/Badge/Badge';
 import { Carousel, CarouselContent, CarouselItem, CarouselNext, CarouselPrevious } from '@/atoms/Carousel/Carousel';
 import { Dialog, DialogClose, DialogContent } from '@/atoms/Dialog/Dialog';
 import { Image } from '@/atoms/Image/Image';
+import { useHostFrameFullscreen } from '@/hooks/useHostFrameFullscreen/useHostFrameFullscreen';
 import { useMarketplaceMediaUrls } from '@/hooks/useMarketplaceMediaUrl/useMarketplaceMediaUrl';
 import type { AuctionPhase } from '@/libs/commerce/auction-phase';
 import type { CommerceListingRecord } from '@/libs/commerce/marketplace-records';
@@ -49,7 +50,7 @@ export function MarketplaceMediaGallery({
   const viewable = media
     .map((item, index) => ({ item, url: urls[index] }))
     .filter((entry): entry is { item: (typeof media)[number]; url: string } => {
-      return entry.url !== null && !failedIds.has(entry.item.id);
+      return typeof entry.url === 'string' && !failedIds.has(entry.item.id);
     });
 
   const selected = viewable.find(({ item }) => item.id === selectedId) ?? viewable[0];
@@ -163,6 +164,8 @@ function MarketplacePhotoViewer({
   onClose: () => void;
 }) {
   const dragStart = useRef<{ x: number; y: number } | null>(null);
+  // Inside pubky.app the viewer covers the host's header and bottom nav too, not only the Shop frame.
+  useHostFrameFullscreen(true);
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
       <DialogContent

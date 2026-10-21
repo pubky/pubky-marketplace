@@ -715,6 +715,7 @@ export const requestReturnCommandSchema = createCommerceCommandSchema(
 
 export const approveReturnCommandSchema = createCommerceCommandSchema('return.approve', orderIdPayload);
 export const receiveReturnCommandSchema = createCommerceCommandSchema('return.receive', orderIdPayload);
+export const cancelReturnCommandSchema = createCommerceCommandSchema('return.cancel', orderIdPayload);
 
 export const recordExternalRefundCommandSchema = createCommerceCommandSchema(
   'refund.record_external',
@@ -826,6 +827,7 @@ export const marketplaceCommandSchema = z.union([
   confirmPickupCommandSchema,
   requestReturnCommandSchema,
   approveReturnCommandSchema,
+  cancelReturnCommandSchema,
   receiveReturnCommandSchema,
   recordExternalRefundCommandSchema,
   confirmRefundDestinationCommandSchema,
@@ -923,6 +925,7 @@ export type ConfirmPickupCommand = z.infer<typeof confirmPickupCommandSchema>;
 export type RequestReturnCommand = z.infer<typeof requestReturnCommandSchema>;
 export type ApproveReturnCommand = z.infer<typeof approveReturnCommandSchema>;
 export type ReceiveReturnCommand = z.infer<typeof receiveReturnCommandSchema>;
+export type CancelReturnCommand = z.infer<typeof cancelReturnCommandSchema>;
 export type RecordExternalRefundCommand = z.infer<typeof recordExternalRefundCommandSchema>;
 export type ConfirmRefundDestinationCommand = z.infer<typeof confirmRefundDestinationCommandSchema>;
 export type CreateReviewCommand = z.infer<typeof createReviewCommandSchema>;

@@ -11,7 +11,8 @@ export interface MarketplaceSellerIdentityProps {
   displayName: string;
   avatarUrl?: string | null;
   avatarAlt?: string;
-  reputation: CommerceSellerReputationOverview | { status: 'loading' };
+  /** The seller's rating; omitted where the page rates the product instead. */
+  reputation?: CommerceSellerReputationOverview | { status: 'loading' };
   onAvatarError?: () => void;
   variant?: 'default' | 'card';
 }
@@ -46,7 +47,7 @@ export function MarketplaceSellerIdentity({
         >
           {displayName}
         </Typography>
-        {reputation.status === 'rated' && reputation.summary.count > 0 ? (
+        {reputation === undefined ? null : reputation.status === 'rated' && reputation.summary.count > 0 ? (
           <MarketplaceStarRating
             rating={reputation.summary.avg}
             count={reputation.summary.count}

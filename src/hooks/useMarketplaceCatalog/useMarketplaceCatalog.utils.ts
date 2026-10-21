@@ -61,14 +61,14 @@ export interface MarketplaceCatalogItem {
    */
   mediaUrls: string[];
   /**
-   * Seller-scoped reputation from the Nexus stream projection (buyer
-   * reviews across all the seller's listings). Only index entries carry it:
-   * a card built from a cached canonical record inherits the entry's value
-   * in {@link buildMarketplaceCatalogItems}, and `null` renders nothing —
-   * honest absence, never 0.0. Display only; never a ranking input
-   * (ratified D4).
+   * This product's own rating from the Nexus stream projection (buyer
+   * reviews of this listing only, never the seller's other listings). Only
+   * index entries carry it: a card built from a cached canonical record
+   * inherits the entry's value in {@link buildMarketplaceCatalogItems}, and
+   * `null` renders "No rating yet", never 0.0. Display only; never a ranking
+   * input (ratified D4).
    */
-  reputation: CommerceReputationSnippet | null;
+  listingReputation: CommerceReputationSnippet | null;
   revision: number;
   updatedAt: number;
 }
@@ -115,7 +115,7 @@ export function catalogItemFromListingModel(listing: CommerceListingModelSchema)
     mediaUrls: record.media.filter(({ type }) => type === 'image').map(({ url }) => url),
     // Canonical records carry no aggregate; the catalog merge fills this in
     // from the index entry when one exists for the same listing.
-    reputation: null,
+    listingReputation: null,
     revision: listing.revision,
     updatedAt: listing.updated_at,
   };
@@ -141,7 +141,7 @@ export function catalogItemFromCatalogEntry(entry: CommerceCatalogEntryModelSche
     // Nullish fallback: entries cached before the model carried media_urls.
     mediaUrls: entry.media_urls ?? [],
     // Nullish fallback: entries cached before the model carried reputation.
-    reputation: entry.reputation ?? null,
+    listingReputation: entry.listing_reputation ?? null,
     revision: entry.revision,
     updatedAt: entry.updated_at,
   };
@@ -169,7 +169,7 @@ export function buildMarketplaceCatalogItems(
       // The cached canonical record wins the card content, but reputation
       // only exists in the index projection — carry it over so a hydrated
       // listing does not lose its stars.
-      items.set(entry.id, { ...cached, reputation: entry.reputation ?? null });
+      items.set(entry.id, { ...cached, listingReputation: entry.listing_reputation ?? null });
     }
   }
   return [...items.values()];

@@ -216,6 +216,19 @@ const nexusListingStreamSchema = z.array(nexusListingDetailsSchema);
 const nexusReviewRoleSchema = z.enum(['buyer_reviewing_seller', 'seller_reviewing_buyer']);
 
 /**
+ * Review moderation as the index serves it. Indexes older than review
+ * moderation send no field; that reads as null (not moderated).
+ */
+const nexusReviewModerationSchema = z
+  .object({
+    state: z.enum(['text_hidden', 'excluded']),
+    reason: z.string(),
+  })
+  .nullable()
+  .optional()
+  .transform((moderation) => moderation ?? null);
+
+/**
  * Wire schema for one indexed review inside a Nexus review-stream entry.
  * `verified === true` requires `attestor_id` to name the signer — an entry
  * claiming verification without naming who verified is rejected as
@@ -237,6 +250,7 @@ const nexusReviewDetailsSchema = z
     created_at: commerceTimestampSchema,
     updated_at: commerceTimestampSchema,
     revision: z.number().int().positive(),
+    moderation: nexusReviewModerationSchema,
   })
   .superRefine((review, context) => {
     if (review.verified && review.attestor_id === null) {
@@ -420,19 +434,22 @@ export class CommerceRecordNormalizer {
     const entries = this.parse(nexusReviewStreamSchema, input, 'nexusReviewStream');
     return entries.map(({ review, response }) => ({
       reviewId: review.review_id,
+      uri: this.reviewUri(review.reviewer_id, review.review_id),
       reviewerId: review.reviewer_id,
       subjectId: review.subject_id,
       listingOwnerId: review.listing_owner_id,
       listingId: review.listing_id,
       role: review.role,
       ratingOverall: review.rating_overall,
-      text: review.text,
+      // A moderated review never shows its text, even if an index sent some.
+      text: review.moderation === null ? review.text : '',
       verified: review.verified,
       attestorId: review.attestor_id,
       editedLate: review.edited_late,
       createdAt: review.created_at,
       updatedAt: review.updated_at,
       revision: review.revision,
+      moderation: review.moderation,
       response:
         response === null
           ? null

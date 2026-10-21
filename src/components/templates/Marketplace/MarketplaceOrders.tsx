@@ -54,6 +54,7 @@ import {
 import { formatCommerceMoney } from '@/libs/commerce/format';
 import { listingIdFromOrder } from '@/libs/commerce/listing-aggregate';
 import { buyerVisiblePaymentStatus } from '@/libs/commerce/locks-payment';
+import { deliveredCompletionNote } from '@/libs/commerce/order-returns';
 import { buyerShipmentTracking } from '@/libs/commerce/order-tracking';
 import { observedPaymentRail } from '@/libs/commerce/paykit-rail';
 import { formatBitcoinAmount } from '@/libs/commerce/pricing';
@@ -83,8 +84,10 @@ import { MarketplaceOrderDigitalPanel } from '@/organisms/Marketplace/Marketplac
 import { MarketplaceOrderReference } from '@/organisms/Marketplace/MarketplaceOrderReference';
 import { MarketplacePaymentStatusCard } from '@/organisms/Marketplace/MarketplacePaymentStatusCard';
 import { MarketplaceReauthDialog } from '@/organisms/Marketplace/MarketplaceReauthDialog';
+import { MarketplaceReturnStatus } from '@/organisms/Marketplace/MarketplaceReturnStatus';
 import { MarketplaceSectionNav } from '@/organisms/Marketplace/MarketplaceSectionNav';
 import { MarketplaceSellerDigitalPanel } from '@/organisms/Marketplace/MarketplaceSellerDigitalPanel';
+import { MarketplaceSessionConnectDialog } from '@/organisms/Marketplace/MarketplaceSessionConnectDialog';
 import { MarketplaceUsdtPaymentSummary } from '@/organisms/Marketplace/MarketplaceUsdtPaymentSummary';
 import { MarketplaceUsdtRefundAddress } from '@/organisms/Marketplace/MarketplaceUsdtRefundAddress';
 import type { MarketplaceOrder, MarketplacePayment } from '@/services/marketplace/marketplace';
@@ -261,10 +264,13 @@ export function MarketplaceOrders() {
         ) : isLoading ? (
           <Skeleton className="h-48 w-full" />
         ) : needsSession && error ? (
+          // A missing or expired marketplace session is not an empty history:
+          // the orders load once the session is approved again.
           <MarketplaceEmptyState
             icon={ReceiptText}
-            title="No orders yet"
-            description="Your purchases and sales will appear here."
+            title="Approve the marketplace to see your orders"
+            description="Your purchases and sales show here after one approval."
+            action={<MarketplaceSessionConnectDialog triggerLabel="Approve" onConnected={refresh} />}
           />
         ) : error ? (
           <div role="alert" className="rounded-md border border-destructive/40 p-4">
@@ -618,14 +624,10 @@ export function MarketplaceOrders() {
                             )}
                             {order.state === 'delivered' && order.fulfillment !== 'digital' && (
                               <Typography as="p" className="mt-2 text-sm text-muted-foreground">
-                                Completes automatically after the return window unless a return is requested.
+                                {deliveredCompletionNote(order)}
                               </Typography>
                             )}
-                            {order.returnRequest && (
-                              <Typography as="p" className="mt-2 text-sm text-muted-foreground">
-                                Return {order.returnRequest.state}: {order.returnRequest.reason}
-                              </Typography>
-                            )}
+                            <MarketplaceReturnStatus order={order} isBuyer={isBuyer} actOnOrder={actOnOrder} />
                             {refundRecord && (
                               <Typography
                                 as="p"

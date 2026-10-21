@@ -5,17 +5,20 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { useReportPost } from '@/hooks/useReportPost/useReportPost';
 import { REPORT_POST_STEPS } from '@/hooks/useReportPost/useReportPost.constants';
 import type { ReportTarget } from '@/hooks/useReportPost/useReportPost.types';
+import { REPORT_SUBJECT_TITLES } from './DialogReportPost.constants';
 import type { DialogReportPostProps } from './DialogReportPost.types';
 import { DialogReportPostIssueStep } from './DialogReportPostIssueStep/DialogReportPostIssueStep';
 import { DialogReportPostReasonStep } from './DialogReportPostReasonStep/DialogReportPostReasonStep';
 import { DialogReportPostSuccess } from './DialogReportPostSuccess/DialogReportPostSuccess';
 
-export function DialogReportPost({ open, onOpenChange, postId, listing }: DialogReportPostProps) {
-  const target: ReportTarget = listing
-    ? { kind: 'listing', sellerPubky: listing.sellerPubky, listingId: listing.listingId }
-    : { kind: 'post', postId };
+export function DialogReportPost({ open, onOpenChange, postId, listing, review }: DialogReportPostProps) {
+  const target: ReportTarget = review
+    ? { kind: 'review', ...review }
+    : listing
+      ? { kind: 'listing', sellerPubky: listing.sellerPubky, listingId: listing.listingId }
+      : { kind: 'post', postId };
   const subject = target.kind;
-  const subjectTitle = subject === 'listing' ? 'Report Listing' : 'Report Post';
+  const subjectTitle = REPORT_SUBJECT_TITLES[subject];
   const {
     step,
     selectedIssueType,

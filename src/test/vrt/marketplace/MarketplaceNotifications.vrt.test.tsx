@@ -54,6 +54,7 @@ const view = vi.hoisted(() => ({
   preferences: null as unknown,
   isLoading: false,
   error: null as string | null,
+  needsSession: false,
   canMarkRead: true,
   watchAlerts: [] as unknown[],
 }));
@@ -79,9 +80,40 @@ vi.mock('@/hooks/useMarketplaceNotifications/useMarketplaceNotifications', () =>
     unreadCount: (view.notifications as NotificationLike[]).filter(({ readAt }) => !readAt).length,
     isLoading: view.isLoading,
     error: view.error,
+    needsSession: view.needsSession,
     canMarkRead: view.canMarkRead,
     markAllRead: vi.fn(async () => {}),
     updatePreferences: vi.fn(async () => false),
+  }),
+}));
+
+// The session-required card's approval dialog, closed: only its trigger renders.
+vi.mock('@/hooks/useMarketplaceApprovalSigner/useMarketplaceApprovalSigner', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/hooks/useMarketplaceApprovalSigner/useMarketplaceApprovalSigner')>()),
+  useMarketplaceApprovalSigner: () => 'Bitkit',
+}));
+
+vi.mock('@/providers/ShopHostSessionProvider/ShopHostSessionProvider', () => ({
+  useIsShopHosted: () => false,
+}));
+
+vi.mock('@/hooks/useMarketplaceSessionConnect/useMarketplaceSessionConnect', () => ({
+  useMarketplaceSessionConnect: () => ({
+    status: 'idle',
+    authorizationUrl: '',
+    errorMessage: null,
+    requestsFullGrant: false,
+    requestsGrantReconnect: false,
+    requestsGrantBootstrap: false,
+    requestsPassport: false,
+    requiresSignIn: false,
+    approvalSigner: 'Bitkit',
+    start: vi.fn(),
+    startPassport: vi.fn(),
+    cancel: vi.fn(),
+    copyAuthUrl: vi.fn(async () => {}),
+    openInRing: vi.fn(),
+    isOpeningRing: false,
   }),
 }));
 
@@ -110,6 +142,7 @@ async function setView(overrides: Partial<typeof view>) {
   view.preferences = null;
   view.isLoading = false;
   view.error = null;
+  view.needsSession = false;
   view.canMarkRead = true;
   view.watchAlerts = [];
   Object.assign(view, overrides);
@@ -186,6 +219,20 @@ describe('Marketplace notifications — visual regression', () => {
     const screen = await renderForVRT(<MarketplaceNotifications />, { viewport: VRT_VIEWPORT_DESKTOP });
     await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot(
       'notifications-empty-desktop',
+      VRT_DENSE_CHROME_SCREENSHOT,
+    );
+  });
+
+  it.each([
+    ['desktop', VRT_VIEWPORT_DESKTOP],
+    ['mobile', VRT_VIEWPORT_MOBILE],
+  ] as const)('offers the marketplace approval when the session is missing at %s viewport', async (name, viewport) => {
+    await setView({ error: 'Approve the marketplace to continue.', needsSession: true, canMarkRead: false });
+
+    const screen = await renderForVRT(<MarketplaceNotifications />, { viewport });
+    await expect(screen.getByRole('button', { name: 'Approve' })).toBeVisible();
+    await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot(
+      `notifications-session-required-${name}`,
       VRT_DENSE_CHROME_SCREENSHOT,
     );
   });

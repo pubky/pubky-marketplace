@@ -157,6 +157,7 @@ const TRANSACTION_SERVICE_COMMAND_KINDS: ReadonlySet<MarketplaceCommand['kind']>
   'order.cancel_approve',
   'return.request',
   'return.approve',
+  'return.cancel',
   'return.receive',
   'refund.record_external',
   'refund.confirm_destination',

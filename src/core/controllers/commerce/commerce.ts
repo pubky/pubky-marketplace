@@ -1111,6 +1111,13 @@ export class CommerceController {
    * `unavailable`) for rating headers. Network-only: reputation is index
    * data, never cached as a record.
    */
+  static async fetchListingRating(sellerPubky: unknown, listingId: unknown) {
+    return await CommerceApplication.fetchListingRating(
+      CommerceRecordNormalizer.pubky(sellerPubky),
+      CommerceRecordNormalizer.entityId(listingId),
+    );
+  }
+
   static async fetchSellerReputation(sellerPubky: unknown) {
     return await CommerceApplication.fetchSellerReputationOverview(CommerceRecordNormalizer.pubky(sellerPubky));
   }

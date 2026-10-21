@@ -699,6 +699,8 @@ export const marketplaceOrderProjectionSchema = z
         state: z.enum(['requested', 'approved', 'received', 'refunded']),
         reason: z.string(),
         requestedAmountMinor: z.number().int().positive(),
+        // Where `return.cancel` sends the order back to; absent on older returns.
+        requestedFrom: z.enum(['delivered', 'completed']).optional().catch(undefined),
         requestedAt: z.string(),
         updatedAt: z.string(),
       })

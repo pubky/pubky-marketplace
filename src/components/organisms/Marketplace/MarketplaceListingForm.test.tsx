@@ -1,5 +1,5 @@
 import { createRef, useEffect } from 'react';
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useForm, type UseFormReturn } from 'react-hook-form';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -645,6 +645,24 @@ describe('MarketplaceListingForm pickup capability (§A7)', () => {
     expect(requiredItems()).not.toEqual(expect.arrayContaining(['Category']));
     expect(requiredItems()).not.toEqual(expect.arrayContaining(['Price']));
     expect(requiredItems().length).toBeLessThan(remainingBefore);
+  });
+
+  it('takes Required to publish › Country to the Country field in Item and focuses it', async () => {
+    const user = userEvent.setup({ delay: null });
+    const scrolled: Element[] = [];
+    window.HTMLElement.prototype.scrollIntoView = vi.fn(function (this: Element) {
+      scrolled.push(this);
+    });
+    render(<FormHarness defaultValues={{ countryCode: '' }} />);
+
+    const required = screen.getByText('Required to publish').parentElement as HTMLElement;
+    await user.click(within(required).getByRole('link', { name: 'Country' }));
+
+    const country = screen.getByLabelText('Country');
+    expect(country).toHaveFocus();
+    expect(scrolled).toContain(country);
+    expect(scrolled).toContain(document.getElementById('listing-section-item'));
+    expect(scrolled).not.toContain(document.getElementById('listing-section-shipping'));
   });
 
   it('keeps publish disabled when description is empty even if other minimums are filled', () => {

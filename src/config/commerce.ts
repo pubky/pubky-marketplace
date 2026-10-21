@@ -137,8 +137,15 @@ export const COMMERCE_REVIEW_EDIT_WINDOW_SECONDS = 24 * 60 * 60;
  * transaction service's key through `PUBKY_RUNTIME_MARKETPLACE_TRUSTED_ATTESTORS`
  * (see `docs/environment.md`); this compiled list holds only keys every
  * deployment of the Shop should trust.
+ *
+ * Only Pubky Market's production attestor belongs here. A staging attestor
+ * signs test purchases, so it is trusted only by the staging deployment, through
+ * its runtime config. `validFrom` predates the production deployment, so no
+ * attestation the key has issued falls outside the window.
  */
-export const MARKETPLACE_TRUSTED_ATTESTOR_DEFAULTS: readonly MarketplaceTrustedAttestor[] = [];
+export const MARKETPLACE_TRUSTED_ATTESTOR_DEFAULTS: readonly MarketplaceTrustedAttestor[] = [
+  { pubky: 'pstmi1bgg6dnrwmfabo9eqycm91esxx338awz1r5feaiub49934o', label: 'Pubky Market', validFrom: '2026-10-01' },
+];
 
 /** The effective trust list: the compiled defaults plus this deployment's runtime entries. */
 export function marketplaceTrustedAttestors(): readonly MarketplaceTrustedAttestor[] {

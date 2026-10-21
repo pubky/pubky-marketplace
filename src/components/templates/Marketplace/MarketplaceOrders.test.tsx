@@ -378,6 +378,8 @@ describe('MarketplaceOrders tabs', () => {
     expect(screen.getByTestId('order-refund-record')).toHaveTextContent(
       'Refunded in full (Items ₿1,000 · Shipping ₿0 · Payment code ₿255 = Total ₿1,255). Reference: txid-canary-refund',
     );
+    // Hashes and addresses break anywhere, so the line can't make the page scroll sideways on a phone.
+    expect(screen.getByTestId('order-refund-record')).toHaveClass('[overflow-wrap:anywhere]');
   });
 
   it('explains a cancelled PayPal reversal on the reopened order', () => {
@@ -479,14 +481,16 @@ describe('MarketplaceOrders tabs', () => {
     expect(screen.getAllByTestId('payment-status')).toHaveLength(3);
   });
 
-  it('shows the orders empty state before marketplace approval', () => {
+  it('asks to approve the marketplace instead of saying there are no orders', () => {
     ordersState.needsSession = true;
     ordersState.error = 'A marketplace session is required.';
 
     render(<MarketplaceOrders />);
 
-    expect(screen.getByText('No orders yet')).toBeInTheDocument();
-    expect(screen.getByText('Your purchases and sales will appear here.')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Approve the marketplace to see your orders' })).toBeInTheDocument();
+    expect(screen.getByText('Your purchases and sales show here after one approval.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Approve' })).toBeInTheDocument();
+    expect(screen.queryByText('No orders yet')).not.toBeInTheDocument();
   });
 
   it('shows reserved checkout copy on Continue checkout, not a payment deadline on Orders', () => {
@@ -1373,6 +1377,22 @@ describe('MarketplaceOrders digital cards (digital delivery design §3 "After pa
     const card = screen.getByText(/Shipped boots/).closest('[data-slot="card"]') as HTMLElement;
     expect(within(card).getByText(/Completes automatically after the return window/)).toBeInTheDocument();
     expect(within(card).queryByText('Delivered · ready to download')).not.toBeInTheDocument();
+  });
+
+  it('says a delivered final-sale order completes after its auto-complete period, with no return clause', () => {
+    ordersState.orders = [
+      orderView('delivered', 'Final boots', 'buyer', {
+        nextActor: 'none',
+        returnPolicy: { acceptsReturns: false, returnWindowDays: null },
+        autoCompleteDays: 7,
+      }),
+    ];
+
+    render(<MarketplaceOrders />);
+
+    const card = screen.getByText(/Final boots/).closest('[data-slot="card"]') as HTMLElement;
+    expect(within(card).getByText('Completes automatically 7 days after delivery.')).toBeInTheDocument();
+    expect(within(card).queryByText(/unless a return is requested/)).not.toBeInTheDocument();
   });
 });
 

@@ -9,6 +9,36 @@ export const SYSTEM_LAPSE_REASONS: ReadonlySet<string> = new Set([
   'checkout idle elapsed',
 ]);
 
+/**
+ * Every cancellation reason the service writes itself rather than taking from
+ * the buyer: the lapses above, a seller closing a payment after manual review,
+ * and a payment it had to refuse (`bitcoin_review.rs`, `workers.rs`).
+ */
+export const SERVICE_CANCEL_REASONS: ReadonlySet<string> = new Set([
+  ...SYSTEM_LAPSE_REASONS,
+  'closed after manual review',
+  'digital delivery unavailable at payment',
+  'seller annual limit reached',
+]);
+
+/**
+ * Whether an unpaid order was cancelled other than by a lapse the service
+ * applied (Pay by, an idle checkout): the badge then reads "Order cancelled".
+ * An order with no reason keeps reading as an elapsed window (#359).
+ */
+export function isCancelledNotLapsed(order: { state: string; cancellationReason?: string | null }): boolean {
+  return (
+    order.state === 'cancelled' &&
+    Boolean(order.cancellationReason) &&
+    !SYSTEM_LAPSE_REASONS.has(order.cancellationReason ?? '')
+  );
+}
+
+/** Whether the buyer cancelled the order: a reason they gave, not one the service wrote. */
+export function isBuyerCancelledUnpaid(order: { state: string; cancellationReason?: string | null }): boolean {
+  return isCancelledNotLapsed(order) && !SERVICE_CANCEL_REASONS.has(order.cancellationReason ?? '');
+}
+
 export const UNBOUND_BACK_CANCEL_REASON = 'Released hold before choosing a payment method.';
 
 export const CHECKOUT_HOLD_COPY = {
@@ -19,6 +49,9 @@ export const CHECKOUT_HOLD_COPY = {
   heldWhileAnotherPays: 'Held while another buyer pays',
   holdOwnerCheckPrompt: 'Is this your hold? Approve purchases to check.',
   expiredNoLateMoney: 'Payment window elapsed. The item is available again.',
+  cancelledByBuyer:
+    'You cancelled this checkout before paying. A payment that still arrives is reconciled manually, never silently applied or discarded.',
+  cancelledByBuyerSeller: 'The buyer cancelled this checkout before paying.',
   pendingBitcoinPaymentBuyer:
     'If a payment is still pending in Bitkit, another wallet or another device, let it finish or resolve it before you order again.',
   lateCompleteBuyer:

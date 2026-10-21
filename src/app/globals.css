@@ -1144,3 +1144,26 @@ html[data-shop-embedded] {
   --header-offset-mobile: 0px;
   --marketplace-subnav-top: env(safe-area-inset-top, 0px);
 }
+
+/*
+ * Phones: MobileHeader slides away while the page scrolls down (`data-mobile-header-collapsed`), so what
+ * sticks under it moves up into the space it leaves and follows it back on scroll up.
+ */
+@media (width < 64rem) {
+  html[data-mobile-header-collapsed] {
+    --header-offset-mobile: 0px;
+  }
+
+  /* The tab bars under the header on Hot, Profile and Settings (MobileTabBar) stick at the header's height. */
+  html[data-mobile-header-collapsed] .top-\(--header-height-settings\),
+  html[data-mobile-header-collapsed] .top-\(--header-height-mobile\) {
+    top: 0;
+  }
+
+  .top-\(--marketplace-subnav-top\),
+  .top-\(--header-offset-mobile\),
+  .top-\(--header-height-settings\),
+  .top-\(--header-height-mobile\) {
+    transition: top 200ms;
+  }
+}

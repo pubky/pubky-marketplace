@@ -4,7 +4,7 @@ import { handleApiError } from '@/libs/api/route-error-handler';
 import { HttpStatusCode } from '@/libs/http/http.types';
 
 /**
- * API Route for post and listing report submission to Chatwoot
+ * API Route for post, listing and review report submission to Chatwoot
  *
  * This endpoint receives report data from the UI and processes it through
  * the controller layer following Franky's architecture.
@@ -15,10 +15,20 @@ import { HttpStatusCode } from '@/libs/http/http.types';
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { pubky, postUrl, issueType, reason, name, listingId, sellerPubky } = body;
+    const { pubky, postUrl, issueType, reason, name, listingId, sellerPubky, reviewUri, reviewerPubky } = body;
 
     // Delegate to controller - validation happens there
-    await ReportController.submit({ pubky, postUrl, issueType, reason, name, listingId, sellerPubky });
+    await ReportController.submit({
+      pubky,
+      postUrl,
+      issueType,
+      reason,
+      name,
+      listingId,
+      sellerPubky,
+      reviewUri,
+      reviewerPubky,
+    });
 
     return NextResponse.json({ message: 'Success' });
   } catch (error) {
