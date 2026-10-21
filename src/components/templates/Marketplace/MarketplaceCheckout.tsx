@@ -37,7 +37,10 @@ import {
 } from '@/hooks/useMarketplaceCart/useMarketplaceCart';
 import { useMarketplaceCartStock } from '@/hooks/useMarketplaceCartStock/useMarketplaceCartStock';
 import { useMarketplaceCheckout } from '@/hooks/useMarketplaceCheckout/useMarketplaceCheckout';
-import { marketplaceCheckoutSchema } from '@/hooks/useMarketplaceCheckout/useMarketplaceCheckout.types';
+import {
+  marketplaceCheckoutDefaults,
+  marketplaceCheckoutSchema,
+} from '@/hooks/useMarketplaceCheckout/useMarketplaceCheckout.types';
 import { useMarketplaceFirstMediaUrls } from '@/hooks/useMarketplaceMediaUrl/useMarketplaceMediaUrl';
 import { useMarketplaceOfferCheckout } from '@/hooks/useMarketplaceOfferCheckout/useMarketplaceOfferCheckout';
 import { useMarketplaceOffers } from '@/hooks/useMarketplaceOffers/useMarketplaceOffers';
@@ -137,6 +140,11 @@ type CheckoutRail = (typeof CHECKOUT_RAILS)[number];
 // The sandbox simulates payments and can bind no real rail, so it only ever says Bitcoin.
 const SANDBOX_CHECKOUT_RAILS = ['paykit', 'paypal'] as const;
 const BITCOIN_ONLY_ASSETS: PaymentAsset[] = ['BTC'];
+
+/** The checkout's inputs in the order the page shows them. */
+const CHECKOUT_FIELD_ORDER = (
+  Object.keys(marketplaceCheckoutDefaults) as (keyof typeof marketplaceCheckoutDefaults)[]
+).filter((name) => !['requiresDeliveryAddress', 'shipsTo', 'requiresDeliveryEmail', 'saveAddress'].includes(name));
 
 function MethodLabel({ method, paykitAssets }: { method: CheckoutRail; paykitAssets: readonly PaymentAsset[] }) {
   if (method === 'paypal') return 'PayPal';
@@ -503,10 +511,11 @@ function MarketplaceCartCheckout() {
     buyerWallet.recheck();
   };
 
-  const canPay =
+  // Everything but the delivery form: when only the form blocks Pay, the button
+  // stays tappable and shows the buyer which input to fix (#355).
+  const canPayButForm =
     !approvalNeeded &&
     !region.blocked &&
-    formValid &&
     !checkout.hasFulfillmentConflict &&
     locksRoute !== 'mixed' &&
     checkout.isDigitalReady &&
@@ -520,6 +529,19 @@ function MarketplaceCartCheckout() {
     !paykitBlocksPay &&
     !stock.hasSoldOut &&
     (isSandbox || (sharedMethods !== null && sharedMethods.length > 0 && selectedMethod !== null));
+  const canPay = canPayButForm && formValid;
+  const formBlocksPay = canPayButForm && !formValid;
+
+  /** Shows each invalid input's hint and moves the buyer to the first one, in form order. */
+  const revealFirstInvalidInput = async () => {
+    await checkout.form.trigger();
+    const input =
+      CHECKOUT_FIELD_ORDER.filter((name) => checkout.form.getFieldState(name).invalid)
+        .map((name) => document.getElementById(name))
+        .find((element) => element !== null) ?? null;
+    input?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    input?.focus({ preventScroll: true });
+  };
 
   const paymentCodeNote = paykitSelected ? bitcoinPaymentCodeCheckoutNote(getPaykitServerApi()) : null;
   const checkoutPayDisabledReason = stock.hasSoldOut
@@ -1451,8 +1473,8 @@ function MarketplaceCartCheckout() {
                       )}
                       <Button
                         className="w-full rounded-full"
-                        onClick={() => void pay()}
-                        disabled={!canPay}
+                        onClick={() => void (formBlocksPay ? revealFirstInvalidInput() : pay())}
+                        disabled={!canPay && !formBlocksPay}
                         data-testid="marketplace-checkout-pay"
                         aria-describedby={!canPay ? 'checkout-pay-reason' : undefined}
                       >
