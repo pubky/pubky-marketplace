@@ -2,7 +2,7 @@
 
 **Date:** 2026-10-11 (WEST)
 **Commit:** `fb85c3313cf262273d65f11ea51e5ac820dd560d` (`master`, after #168)
-**Vercel deployment:** `dpl_GfpPbfm2kNpyKHtzXz8VAdGzwtiw` (https://pubky-marketplace-production-bcr2uqotw-synonymdev.vercel.app, alias https://shop.pubky.app)
+**Deployment:** `dpl_GfpPbfm2kNpyKHtzXz8VAdGzwtiw` (alias https://shop.pubky.app)
 **Previous production (rollback target):** `dpl_2nVKdkooECaSxnKsCbpEzCyaLenr` (v0.6.50). marketplace-service unchanged (`7cb803d7`, image `sha256:c62c8285…`).
 
 Range: `shop-v0.6.50..master`. Pull requests: #147, #164, #165, #166, and #168 (formatting of one CI workflow).

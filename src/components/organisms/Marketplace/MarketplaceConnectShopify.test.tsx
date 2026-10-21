@@ -21,9 +21,9 @@ vi.mock('@/molecules/Toaster/use-toast', () => ({ toast: vi.fn() }));
 
 const ID = '11111111-1111-4111-8111-111111111111';
 const URLS = {
-  launch: `https://staging-api.pubky.app/v1/connectors/shopify/c/${ID}/launch`,
-  oauthCallback: `https://staging-api.pubky.app/v1/connectors/shopify/c/${ID}/oauth/callback`,
-  webhooks: `https://staging-api.pubky.app/v1/connectors/shopify/c/${ID}/webhooks`,
+  launch: `https://marketplace-service.example.test/v1/connectors/shopify/c/${ID}/launch`,
+  oauthCallback: `https://marketplace-service.example.test/v1/connectors/shopify/c/${ID}/oauth/callback`,
+  webhooks: `https://marketplace-service.example.test/v1/connectors/shopify/c/${ID}/webhooks`,
 };
 
 function connection(overrides: Record<string, unknown> = {}) {

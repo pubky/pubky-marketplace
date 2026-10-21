@@ -8,7 +8,7 @@ Agents read only: no key, no sign-in, no install. To buy, hand the person a link
 
 ## Base URLs
 
-INDEX = https://nexusd-production-95a0.up.railway.app
+INDEX = https://nexus.example.test
 SHOP  = https://shop.pubky.app
 
 INDEX is the current host; a stable alias may replace it. Every path below is INDEX + path.

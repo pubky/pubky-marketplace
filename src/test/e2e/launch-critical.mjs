@@ -4,7 +4,7 @@
  *
  * Node fetch cannot catch Window.fetch "Illegal invocation". Every journey
  * here drives real Chromium against `next start`. The required gate reads a
- * committed Nexus fixture (via LAUNCH_E2E_NEXUS_URL), never live 7108.
+ * committed Nexus fixture (via LAUNCH_E2E_NEXUS_URL), never a live Nexus.
  *
  * Inventory: signed-in seller board is the required Chromium canary
  * (LAUNCH_E2E_REQUIRE_SELLER_BOARD defaults on). Guest Join remains the
@@ -14,7 +14,7 @@
  * persistence with fixture PKARR, homeserver, BFF and marketplace responses.
  * It cannot prove live staging integration; the optional live mode below can.
  *
- * The page origin is 127.0.0.1. staging-api.pubky.app does not send CORS
+ * The page origin is 127.0.0.1. The live service does not send CORS
  * headers for that origin, so the session mint retries for 60s and the board
  * never mounts. The gate forwards that one host through Node after the page
  * calls fetch. An unbound Window.fetch still throws in the page, before any
@@ -38,7 +38,6 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../.
 const FIXTURE_PATH = path.join(ROOT, 'src/test/e2e/fixtures/launch-critical.json');
 const CANONICAL_LISTING_PATH = path.join(ROOT, 'src/test/e2e/fixtures/nexus/canonical-listing.json');
 const SHOP_FIXTURE_PATH = path.join(ROOT, 'src/test/e2e/fixtures/nexus/shop.json');
-const DEFAULT_IDENTITIES_FILE = '/Users/johncarvalho/work/.staging-drop-identities.json';
 
 const TARGET = launchTarget(process.env.LAUNCH_E2E_BASE_URL);
 const BASE_URL = TARGET.baseUrl;
@@ -46,9 +45,8 @@ const routeOf = (url) => TARGET.routeOf(new URL(url).pathname);
 const MODE = process.env.LAUNCH_E2E_MODE ?? 'live';
 if (!['synthetic', 'live'].includes(MODE)) throw new Error('LAUNCH_E2E_MODE must be synthetic or live');
 const SYNTHETIC = MODE === 'synthetic';
-const SERVICE_URL =
-  process.env.LAUNCH_E2E_SERVICE_URL ??
-  (SYNTHETIC ? 'https://launch-marketplace.test' : 'https://staging-api.pubky.app');
+const SERVICE_URL = process.env.LAUNCH_E2E_SERVICE_URL ?? (SYNTHETIC ? 'https://launch-marketplace.test' : '');
+if (!SERVICE_URL) throw new Error('set LAUNCH_E2E_SERVICE_URL: live mode has no default target');
 const NEXUS_URL = (process.env.LAUNCH_E2E_NEXUS_URL ?? '').replace(/\/$/, '');
 const ALLOW_LIVE_NEXUS = process.env.LAUNCH_E2E_ALLOW_LIVE_NEXUS === '1';
 const REQUIRE_SELLER_BOARD = process.env.LAUNCH_E2E_REQUIRE_SELLER_BOARD !== '0';
@@ -77,8 +75,9 @@ function assertNotLiveNexus(url) {
   if (!url) {
     throw new Error('LAUNCH_E2E_NEXUS_URL is required; the required gate must point at the fixture stub');
   }
-  if (/railway\.app|:7108\b|7108\.up\.railway/.test(url)) {
-    throw new Error(`required gate must not read live nexusd (${url})`);
+  const { hostname } = new URL(url);
+  if (!['127.0.0.1', 'localhost', '[::1]'].includes(hostname)) {
+    throw new Error(`required gate must read the loopback fixture stub, not a live Nexus (${url})`);
   }
 }
 
@@ -91,8 +90,8 @@ function hexToBytes(hex) {
 async function loadSellerSecretHex() {
   const fromEnv = process.env.LAUNCH_E2E_SELLER_SECRET_HEX?.trim() ?? '';
   if (/^[0-9a-fA-F]{64}$/.test(fromEnv)) return fromEnv;
-  const identitiesFile = process.env.MARKETPLACE_STAGING_DROP_IDENTITIES_FILE || DEFAULT_IDENTITIES_FILE;
-  if (!existsSync(identitiesFile)) return null;
+  const identitiesFile = process.env.MARKETPLACE_STAGING_DROP_IDENTITIES_FILE;
+  if (!identitiesFile || !existsSync(identitiesFile)) return null;
   const saved = JSON.parse(await readFile(identitiesFile, 'utf8'));
   const secret = saved.seller ?? saved.buyerA ?? null;
   return typeof secret === 'string' && /^[0-9a-fA-F]{64}$/.test(secret) ? secret : null;
@@ -516,11 +515,10 @@ async function signInSeller(page, secretHex) {
 
 async function installStagingServiceProxy(page) {
   const service = new URL(SERVICE_URL);
-  if (service.host !== 'staging-api.pubky.app') {
-    throw new Error(`launch-e2e only forwards staging-api.pubky.app (got ${service.host})`);
-  }
-  if (/railway\.app|:7108\b/.test(SERVICE_URL)) {
-    throw new Error(`launch-e2e must not forward live nexusd (${SERVICE_URL})`);
+  const allowed = process.env.LAUNCH_E2E_ALLOWED_SERVICE_URL?.trim();
+  if (!allowed) throw new Error('set LAUNCH_E2E_ALLOWED_SERVICE_URL: the one service URL a live run may forward to');
+  if (service.origin !== new URL(allowed).origin) {
+    throw new Error(`launch-e2e only forwards ${new URL(allowed).host} (got ${service.host})`);
   }
   await page.route(`${service.origin}/**`, async (route) => {
     const request = route.request();

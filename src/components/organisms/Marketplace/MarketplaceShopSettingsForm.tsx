@@ -72,7 +72,7 @@ export function MarketplaceShopSettingsFormView({ settings, onSaved }: Marketpla
 
 function MarketplaceShopSettingsLoaded({ settings, onSaved }: MarketplaceShopSettingsFormViewProps) {
   const currentUserPubky = useAuthStore((state) => state.currentUserPubky);
-  const annualLimit = useSellerAnnualLimit(currentUserPubky);
+  const annualLimit = useSellerAnnualLimit(currentUserPubky, settings.revision);
   const sellerStatus = useWatch({ control: settings.form.control, name: 'sellerStatus' });
   const reconfirmationRequired =
     annualLimit.status === 'ready' && annualLimit.limit.reconfirmationRequired === true && sellerStatus === 'private';
@@ -111,14 +111,29 @@ function MarketplaceShopSettingsLoaded({ settings, onSaved }: MarketplaceShopSet
             disabled={settings.isSaving}
           />
 
-          <ControlledInputField name="name" control={settings.form.control} label="Shop name" />
+          <ControlledInputField
+            name="name"
+            control={settings.form.control}
+            label="Shop name"
+            placeholder="e.g. Satoshi Vintage"
+          />
           <ControlledTextareaField name="bio" control={settings.form.control} label="About your shop" />
           <div className="grid gap-4 sm:grid-cols-2">
-            <ControlledInputField name="countryCode" control={settings.form.control} label="Country" />
+            <ControlledInputField
+              name="countryCode"
+              control={settings.form.control}
+              label="Country"
+              placeholder="Two-letter code"
+            />
             <ControlledInputField name="region" control={settings.form.control} label="Region" />
           </div>
 
-          <ControlledTextareaField name="shippingPolicy" control={settings.form.control} label="Shipping policy" />
+          <ControlledTextareaField
+            name="shippingPolicy"
+            control={settings.form.control}
+            label="Shipping policy"
+            placeholder="e.g. Ships within three business days."
+          />
           <div className="grid gap-2" data-testid="shop-settings-ships-to">
             <ControlledInputField
               name="shipsToCountries"
@@ -129,7 +144,12 @@ function MarketplaceShopSettingsLoaded({ settings, onSaved }: MarketplaceShopSet
             />
             <ShipsToHint control={settings.form.control} />
           </div>
-          <ControlledTextareaField name="returnPolicy" control={settings.form.control} label="Return policy" />
+          <ControlledTextareaField
+            name="returnPolicy"
+            control={settings.form.control}
+            label="Return policy"
+            placeholder="e.g. Returns accepted within 30 days unless marked final sale."
+          />
 
           <Controller
             name="sellerStatus"

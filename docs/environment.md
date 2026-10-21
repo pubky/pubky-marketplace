@@ -61,7 +61,7 @@ Components must not hard-code root-relative URLs for things the Next.js router d
 
 `NEXT_PUBLIC_DB_NAME` defaults to `shop-franky` (it was `franky`). Persisted store keys, the feature-discovery flags and a few session keys carry a `shop-` prefix (`shopStorageKey` in `@/libs/storage-namespace/storage-namespace`), so the Shop and pubky.app can share an origin. A one-time, idempotent migration moves an existing user's data into the namespace; `PUBKY_RUNTIME_STORAGE_ADOPT_LEGACY` says whether this origin's old names belong to the Shop (default: yes unless `NEXT_PUBLIC_BASE_PATH` is set). New persisted keys must be added to `src/core/stores/persistedKeys.ts` so they are namespaced and migrated.
 
-`NEXT_PUBLIC_DB_VERSION` is `9` (the default in `env.ts`, `.env.example` and the Docker workflows; Vercel staging and production need the same value). Dexie version 9 declares the chat tables (`chat_identity`, `chat_conversations`, `chat_messages`, `chat_sync_state`) and drops the retired `commerce_messaging_*` tables; with an older declared version the chat tables do not exist and `db.table('chat_identity')` throws at import time (an SSR 500). See [`chat/README.md`](chat/README.md).
+`NEXT_PUBLIC_DB_VERSION` is `9` (the default in `env.ts`, `.env.example` and the Docker workflows; every deployment needs the same value). Dexie version 9 declares the chat tables (`chat_identity`, `chat_conversations`, `chat_messages`, `chat_sync_state`) and drops the retired `commerce_messaging_*` tables; with an older declared version the chat tables do not exist and `db.table('chat_identity')` throws at import time (an SSR 500). See [`chat/README.md`](chat/README.md).
 
 ### Framing and embedded mode (runtime)
 
