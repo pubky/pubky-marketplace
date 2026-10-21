@@ -110,6 +110,7 @@ import {
   type PrivKeyring,
 } from '@/libs/commerce/priv-envelope';
 import type { MarketplacePrivKeysResult } from '@/libs/commerce/priv-keys';
+import { attestorWindowsParam } from '@/libs/commerce/review-counting';
 import { createCommerceSandboxCatalog } from '@/libs/commerce/sandbox-catalog';
 import {
   buildMarketplaceCheckoutAggregateId,
@@ -3764,12 +3765,20 @@ export class CommerceApplication {
    * answers 200 (proving the deployment indexes reviews at all). Anything
    * else degrades to `unavailable`, which renders NO reputation surface —
    * absence, never a fake state.
+   *
+   * The request names the effective trust list's windows (`attestors=`), so
+   * an index with trust buckets also serves the exact counted figure
+   * (`scoped`); older indexes ignore the parameter.
    */
   static async fetchSellerReputationOverview(sellerPubky: string): Promise<CommerceSellerReputationOverview> {
     if (getCommerceAdapterMode() === 'sandbox') return { status: 'unavailable' };
 
     try {
-      const payload = await NexusMarketplaceService.fetchShopReputation({ seller_id: sellerPubky });
+      const attestors = attestorWindowsParam();
+      const payload = await NexusMarketplaceService.fetchShopReputation({
+        seller_id: sellerPubky,
+        ...(attestors !== null && { attestors }),
+      });
       return { status: 'rated', summary: CommerceRecordNormalizer.nexusReputationSummary(payload) };
     } catch (error) {
       if (!(isAppError(error) && isNotFound(error))) {

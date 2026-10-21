@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import type { NexusReputationBucket } from '@/services/nexus/marketplace/marketplace.types';
 import {
   COMMERCE_FIXTURE_SELLER,
   createCommerceListingFixture,
@@ -226,6 +227,106 @@ describe('CommerceRecordNormalizer', () => {
       );
     });
   });
+  describe('trust buckets (index release IX2)', () => {
+    const ATTESTOR = 'w'.repeat(52);
+    const wireBucket: NexusReputationBucket = {
+      orders: 4,
+      buyers: 3,
+      sum_buyer_means: 13.8,
+      weighted_sum: 14.2,
+      weight_total: 5,
+      histogram: [0, 0, 0, 2, 3],
+      first_iat: 1_772_323_200,
+      last_iat: 1_788_220_800,
+    };
+    const bucket = {
+      orders: 4,
+      buyers: 3,
+      sumBuyerMeans: 13.8,
+      weightedSum: 14.2,
+      weightTotal: 5,
+      histogram: [0, 0, 0, 2, 3],
+      firstIat: 1_772_323_200,
+      lastIat: 1_788_220_800,
+      sellerBuyers: null,
+      sumSellerBuyerMeans: null,
+    };
+    const summary = {
+      count: 6,
+      verified_count: 5,
+      avg: 4.5,
+      histogram: [0, 0, 1, 1, 4],
+      avg_item_accuracy: null,
+      avg_shipping: 4.5,
+      avg_communication: 5,
+      response_count: 0,
+      edited_late_count: 0,
+      attestors: { [ATTESTOR]: 5 },
+      last_reviewed_at: null,
+    };
+
+    it('carries snippet buckets and the unverified count', () => {
+      const [entry] = CommerceRecordNormalizer.nexusListingStream([
+        createNexusListingDetailsFixture({
+          listing_reputation: {
+            avg: 4.5,
+            count: 6,
+            verified_count: 5,
+            buckets: { [ATTESTOR]: wireBucket },
+            unverified_count: 1,
+          },
+        }),
+      ]);
+
+      expect(entry.listing_reputation).toEqual({
+        avg: 4.5,
+        count: 6,
+        verifiedCount: 5,
+        buckets: { [ATTESTOR]: bucket },
+        unverifiedCount: 1,
+      });
+    });
+
+    it('leaves buckets absent for a snippet from an older index', () => {
+      const [entry] = CommerceRecordNormalizer.nexusListingStream([
+        createNexusListingDetailsFixture({ reputation: { avg: 4.5, count: 6, verified_count: 5 } }),
+      ]);
+
+      expect(entry.reputation).toEqual({ avg: 4.5, count: 6, verifiedCount: 5 });
+    });
+
+    it('carries summary buckets with the seller score and the scoped figure', () => {
+      const sellerBucket = { ...wireBucket, seller_buyers: 2, sum_seller_buyer_means: 9.4 };
+      const normalized = CommerceRecordNormalizer.nexusReputationSummary({
+        ...summary,
+        buckets: { [ATTESTOR]: sellerBucket },
+        unverified_count: 1,
+        scoped: sellerBucket,
+      });
+
+      expect(normalized.buckets).toEqual({ [ATTESTOR]: { ...bucket, sellerBuyers: 2, sumSellerBuyerMeans: 9.4 } });
+      expect(normalized.unverifiedCount).toBe(1);
+      expect(normalized.scoped).toEqual({ ...bucket, sellerBuyers: 2, sumSellerBuyerMeans: 9.4 });
+    });
+
+    it('reads a summary from an older index without buckets or scoped figure', () => {
+      const normalized = CommerceRecordNormalizer.nexusReputationSummary(summary);
+
+      expect(normalized).not.toHaveProperty('buckets');
+      expect(normalized).not.toHaveProperty('scoped');
+    });
+
+    it.each([
+      ['a negative buyer count', { ...wireBucket, buyers: -1 }],
+      ['a short histogram', { ...wireBucket, histogram: [0, 0, 0, 2] }],
+      ['a seller score without its buyer count', { ...wireBucket, sum_seller_buyer_means: 9.4 }],
+    ])('rejects a bucket with %s', (_label, malformed) => {
+      expect(() =>
+        CommerceRecordNormalizer.nexusReputationSummary({ ...summary, buckets: { [ATTESTOR]: malformed } }),
+      ).toThrow(expect.objectContaining({ code: 'INVALID_INPUT' }));
+    });
+  });
+
   describe('shippingPresetInput', () => {
     const valid = { label: 'Tracked', priceMinor: 990, currency: 'USD', estimatedMinDays: 2, estimatedMaxDays: 6 };
 
@@ -303,6 +404,27 @@ describe('CommerceRecordNormalizer', () => {
       ]);
 
       expect(review.text).toBe('');
+    });
+
+    it('carries iat and price weight when the index serves them, null for an unverified review', () => {
+      const [verified, unverified] = CommerceRecordNormalizer.nexusReviewStream([
+        reviewEntry({ verified: true, attestor_id: 'w'.repeat(52), iat: 1_788_220_800, price_weight: 3 }),
+        reviewEntry({ iat: null, price_weight: null }),
+      ]);
+
+      expect(verified).toMatchObject({ iat: 1_788_220_800, priceWeight: 3 });
+      expect(unverified).toMatchObject({ iat: null, priceWeight: null });
+    });
+
+    it('leaves iat absent for a review from an older index', () => {
+      const [review] = CommerceRecordNormalizer.nexusReviewStream([reviewEntry()]);
+
+      expect(review).not.toHaveProperty('iat');
+      expect(review).not.toHaveProperty('priceWeight');
+    });
+
+    it('rejects a price weight outside 1 to 5', () => {
+      expect(() => CommerceRecordNormalizer.nexusReviewStream([reviewEntry({ iat: 1, price_weight: 6 })])).toThrow();
     });
 
     it('rejects a moderation state the frozen contract does not define', () => {
