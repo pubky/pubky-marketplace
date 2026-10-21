@@ -1763,6 +1763,12 @@ describe('MarketplacePaymentStatusCard', () => {
       expect(screen.queryByText(/payment window elapsed/i)).toBeNull();
     });
 
+    it('does not say the buyer cancelled a checkout the seller closed after review', () => {
+      renderCancelled('closed after manual review', false);
+
+      expect(screen.queryByTestId('buyer-cancelled-note')).toBeNull();
+    });
+
     it('keeps the elapsed text when the service cancelled it', () => {
       renderCancelled('payment window elapsed', true);
 
