@@ -321,6 +321,20 @@ describe('DialogBackupEncrypted', () => {
     expect(mockCreateRecoveryFile).toHaveBeenCalledWith(minLength);
   });
 
+  it('downloads the backup when the button is clicked with a password of the minimum length', () => {
+    render(<DialogBackupEncrypted />);
+
+    const minLength = 'a'.repeat(PASSPHRASE_MIN_LENGTH);
+    fireEvent.change(screen.getByPlaceholderText('Enter a strong password'), { target: { value: minLength } });
+    fireEvent.change(screen.getByPlaceholderText('Repeat your password'), { target: { value: minLength } });
+
+    fireEvent.click(screen.getByRole('button', { name: /download file/i }));
+
+    expect(mockCreateRecoveryFile).toHaveBeenCalledTimes(1);
+    expect(mockCreateRecoveryFile).toHaveBeenCalledWith(minLength);
+    expect(screen.getByText('Backup complete')).toBeInTheDocument();
+  });
+
   it('marks the minimum length in red until the password reaches it', () => {
     render(<DialogBackupEncrypted />);
 
