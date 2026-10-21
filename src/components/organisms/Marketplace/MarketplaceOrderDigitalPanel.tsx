@@ -156,7 +156,7 @@ function OrderInstantLine({
             {line.kind === 'file'
               ? opening
                 ? DIGITAL_ORDER_COPY.downloading
-                : state.status === 'saved'
+                : state.status === 'started'
                   ? DIGITAL_ORDER_COPY.downloadAgain
                   : DIGITAL_ORDER_COPY.download
               : line.kind === 'link'
@@ -165,14 +165,14 @@ function OrderInstantLine({
           </Button>
         </div>
       )}
-      {state.status === 'saved' && (
+      {state.status === 'started' && (
         <Typography
           as="p"
           role="status"
           className="text-sm text-muted-foreground"
-          data-testid={`order-digital-saved-${line.lineIndex}`}
+          data-testid={`order-digital-started-${line.lineIndex}`}
         >
-          {DIGITAL_ORDER_COPY.downloadSaved}
+          {DIGITAL_ORDER_COPY.downloadStarted}
         </Typography>
       )}
       {state.status === 'failed' && state.message && (

@@ -89,7 +89,7 @@ describe('MarketplaceOrderDigitalPanel (digital delivery design §3 "After payme
     );
   });
 
-  it('confirms a saved file and offers it again (#375)', async () => {
+  it('confirms the download started and offers it again (#375)', async () => {
     const user = userEvent.setup();
     URL.createObjectURL = vi.fn(() => 'blob:purchase');
     URL.revokeObjectURL = vi.fn();
@@ -121,7 +121,7 @@ describe('MarketplaceOrderDigitalPanel (digital delivery design §3 "After payme
 
     await user.click(screen.getByRole('button', { name: 'Download' }));
 
-    expect(await screen.findByRole('status')).toHaveTextContent('Saved to your downloads.');
+    expect(await screen.findByRole('status')).toHaveTextContent('Download started. Check your downloads.');
     expect(screen.getByRole('button', { name: 'Download again' })).toBeEnabled();
     expect(click).toHaveBeenCalledTimes(1);
     click.mockRestore();
