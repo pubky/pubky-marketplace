@@ -8,12 +8,11 @@ import { postJson } from '@/libs/api/client-request';
 import { Logger } from '@/libs/logger/logger';
 import { parseCompositeId } from '@/models/models.utils';
 import { toast } from '@/molecules/Toaster/use-toast';
-import type { ReportIssueType } from '@/pipes/report/report.types';
 import { REPORT_API_ENDPOINT, REPORT_POST_STEPS } from './useReportPost.constants';
-import type { ReportPostStep, ReportTarget, UseReportPostReturn } from './useReportPost.types';
+import type { ReportPostStep, ReportReasonType, ReportTarget, UseReportPostReturn } from './useReportPost.types';
 
 /**
- * Hook to handle post and listing reporting to Chatwoot.
+ * Hook to handle post, listing and review reporting to Chatwoot.
  *
  * Manages the two-step reporting flow:
  * 1. Issue selection - user selects the type of issue
@@ -21,26 +20,27 @@ import type { ReportPostStep, ReportTarget, UseReportPostReturn } from './useRep
  *
  * A listing report posts the listing URL together with the listing id and the
  * seller pubky, so moderators can find the listing without parsing the URL.
+ * A review report posts the reviewed listing's URL with the review URI, the
+ * reviewer, the listing id and the seller pubky.
  *
- * @param target - The post (composite ID "author:postId") or listing being reported
+ * @param target - The post (composite ID "author:postId"), listing or review being reported
  * @returns Report state and handlers
  */
 export function useReportPost(target: ReportTarget): UseReportPostReturn {
   const { currentUserPubky, userDetails } = useCurrentUserProfile();
   const reportedUrl = buildReportedUrl(target);
-  const listingPayload =
-    target.kind === 'listing' ? { listingId: target.listingId, sellerPubky: target.sellerPubky } : {};
-  // A listing report falls back to the reporter's pubky when no profile name
-  // has loaded, so a missing display name never blocks it.
-  const reporterName = userDetails?.name || (target.kind === 'listing' ? currentUserPubky : undefined);
+  const targetPayload = buildTargetPayload(target);
+  // A marketplace report falls back to the reporter's pubky when no profile
+  // name has loaded, so a missing display name never blocks it.
+  const reporterName = userDetails?.name || (target.kind === 'post' ? undefined : currentUserPubky);
 
   const [step, setStep] = useState<ReportPostStep>(REPORT_POST_STEPS.ISSUE_SELECTION);
-  const [selectedIssueType, setSelectedIssueType] = useState<ReportIssueType | null>(null);
+  const [selectedIssueType, setSelectedIssueType] = useState<ReportReasonType | null>(null);
   const [reason, setReason] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
 
-  const selectIssueType = (issueType: ReportIssueType) => {
+  const selectIssueType = (issueType: ReportReasonType) => {
     setSelectedIssueType(issueType);
     setStep(REPORT_POST_STEPS.REASON_INPUT);
   };
@@ -69,7 +69,7 @@ export function useReportPost(target: ReportTarget): UseReportPostReturn {
         issueType: selectedIssueType,
         reason: trimmedReason,
         name: reporterName,
-        ...listingPayload,
+        ...targetPayload,
       });
 
       setIsSuccess(true);
@@ -108,8 +108,24 @@ export function useReportPost(target: ReportTarget): UseReportPostReturn {
   };
 }
 
+function buildTargetPayload(target: ReportTarget): Record<string, string> {
+  switch (target.kind) {
+    case 'post':
+      return {};
+    case 'listing':
+      return { listingId: target.listingId, sellerPubky: target.sellerPubky };
+    case 'review':
+      return {
+        reviewUri: target.reviewUri,
+        reviewerPubky: target.reviewerPubky,
+        listingId: target.listingId,
+        sellerPubky: target.sellerPubky,
+      };
+  }
+}
+
 function buildReportedUrl(target: ReportTarget): string {
-  if (target.kind === 'listing') {
+  if (target.kind === 'listing' || target.kind === 'review') {
     return `${window.location.origin}${withPublicPath(getMarketplaceListingRoute(target.sellerPubky, target.listingId))}`;
   }
   const parsedId = parseCompositeId(target.postId);

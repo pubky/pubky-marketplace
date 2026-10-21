@@ -3,7 +3,7 @@ import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { Dialog, DialogContent } from '@/atoms/Dialog/Dialog';
-import { REPORT_ISSUE_LABELS, REPORT_ISSUE_TYPES } from '@/pipes/report/report.constants';
+import { REPORT_ISSUE_LABELS, REPORT_ISSUE_TYPES, REVIEW_REPORT_ISSUE_TYPES } from '@/pipes/report/report.constants';
 import { DialogReportPostIssueStep } from './DialogReportPostIssueStep';
 
 // Mock next/navigation
@@ -52,6 +52,28 @@ describe('DialogReportPostIssueStep', () => {
     expect(screen.getByText('Report Listing')).toBeInTheDocument();
     expect(screen.getByText(REPORT_ISSUE_LABELS[REPORT_ISSUE_TYPES.ILLEGAL_SALES])).toBeInTheDocument();
     expect(screen.getByText(REPORT_ISSUE_LABELS[REPORT_ISSUE_TYPES.COPYRIGHT])).toBeInTheDocument();
+  });
+
+  it('titles the step Report Review for a review and offers only the review reasons, in order', async () => {
+    const user = userEvent.setup();
+    renderWithDialog(
+      <DialogReportPostIssueStep subject="review" onSelectIssueType={mockOnSelectIssueType} onCancel={mockOnCancel} />,
+    );
+
+    expect(screen.getByText('Report Review')).toBeInTheDocument();
+    expect(screen.getAllByRole('option').map((option) => option.getAttribute('aria-label'))).toEqual([
+      'Illegal content',
+      'Hate or harassment',
+      'Fake or fraudulent review',
+      'Personal information',
+      'Other',
+    ]);
+    expect(screen.queryByText(REPORT_ISSUE_LABELS[REPORT_ISSUE_TYPES.COPYRIGHT])).not.toBeInTheDocument();
+
+    await user.click(screen.getByLabelText('Fake or fraudulent review'));
+    await user.click(screen.getByRole('button', { name: 'Next' }));
+
+    expect(mockOnSelectIssueType).toHaveBeenCalledWith(REVIEW_REPORT_ISSUE_TYPES.FAKE_REVIEW);
   });
 
   it('renders all issue type options', () => {

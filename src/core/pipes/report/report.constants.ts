@@ -1,4 +1,4 @@
-import type { ReportIssueType } from './report.types';
+import type { ReportIssueType, ReviewReportIssueType } from './report.types';
 
 /**
  * Report-related constants
@@ -41,6 +41,31 @@ export const REPORT_ISSUE_LABELS: Record<ReportIssueType, string> = {
  * All valid issue type values as an array (for validation)
  */
 export const REPORT_ISSUE_TYPE_VALUES = Object.values(REPORT_ISSUE_TYPES);
+
+/**
+ * Reason identifiers for reporting a marketplace review. Reviews have their
+ * own list: "Fake or fraudulent review" has no post equivalent, and the post
+ * list's criminal categories fold into "Illegal content".
+ */
+export const REVIEW_REPORT_ISSUE_TYPES = {
+  ILLEGAL_CONTENT: 'illegal-content',
+  HATE_OR_HARASSMENT: 'hate-or-harassment',
+  FAKE_REVIEW: 'fake-review',
+  PERSONAL_INFO: 'personal-information',
+  OTHER: 'other',
+} as const;
+
+/** Review report reason labels, shown in the dialog and in the Reports inbox message. */
+export const REVIEW_REPORT_ISSUE_LABELS: Record<ReviewReportIssueType, string> = {
+  [REVIEW_REPORT_ISSUE_TYPES.ILLEGAL_CONTENT]: 'Illegal content',
+  [REVIEW_REPORT_ISSUE_TYPES.HATE_OR_HARASSMENT]: 'Hate or harassment',
+  [REVIEW_REPORT_ISSUE_TYPES.FAKE_REVIEW]: 'Fake or fraudulent review',
+  [REVIEW_REPORT_ISSUE_TYPES.PERSONAL_INFO]: 'Personal information',
+  [REVIEW_REPORT_ISSUE_TYPES.OTHER]: 'Other',
+};
+
+/** Review report reasons in display order. */
+export const REVIEW_REPORT_ISSUE_TYPE_VALUES = Object.values(REVIEW_REPORT_ISSUE_TYPES);
 
 /**
  * Maximum character length for report reason text

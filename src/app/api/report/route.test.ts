@@ -83,6 +83,31 @@ describe('API Route: /api/report', () => {
       });
     });
 
+    it('should forward the review URI, reviewer, listing id and seller pubky of a review report', async () => {
+      const reviewFields = {
+        reviewUri: `pubky://${'a'.repeat(52)}/pub/pubky.app/marketplace/v1/reviews/8Z8CWH8NVYQY39ZEBFGKQWWEKG`,
+        reviewerPubky: 'a'.repeat(52),
+        listingId: 'boots_01',
+        sellerPubky: 'o1gg96ewuojmopcjbz8895478wdtxtzzuxnfjjz8o8e77csa1ngo',
+      };
+      const request = createPostRequest({
+        pubky: testData.userPubky,
+        postUrl:
+          'https://example.com/marketplace/listing/o1gg96ewuojmopcjbz8895478wdtxtzzuxnfjjz8o8e77csa1ngo/boots_01',
+        issueType: 'fake-review',
+        reason: testData.reason,
+        name: testData.userName,
+        ...reviewFields,
+      });
+
+      const response = await POST(request);
+
+      expect(response.status).toBe(200);
+      expect(ReportController.submit).toHaveBeenCalledWith(
+        expect.objectContaining({ issueType: 'fake-review', ...reviewFields }),
+      );
+    });
+
     it('should handle AppError from application layer with correct status code', async () => {
       const appError = Err.validation(ValidationErrorCode.INVALID_INPUT, 'Validation failed', {
         service: ErrorService.Local,

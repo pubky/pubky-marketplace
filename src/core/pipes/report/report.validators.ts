@@ -2,8 +2,19 @@ import { commerceEntityIdSchema, commercePubkySchema } from '@/libs/commerce/tra
 import { ValidationErrorCode } from '@/libs/error/error.codes';
 import { Err } from '@/libs/error/error.factories';
 import { ErrorService } from '@/libs/error/error.types';
-import { REPORT_ISSUE_TYPE_VALUES, REPORT_REASON_MAX_LENGTH } from './report.constants';
-import type { ReportIssueType, ReportListingReference } from './report.types';
+import {
+  REPORT_ISSUE_TYPE_VALUES,
+  REPORT_REASON_MAX_LENGTH,
+  REVIEW_REPORT_ISSUE_TYPE_VALUES,
+} from './report.constants';
+import type {
+  ReportIssueType,
+  ReportListingReference,
+  ReportReviewReference,
+  ReviewReportIssueType,
+} from './report.types';
+
+const REVIEW_URI_PATTERN = /^pubky:\/\/([^/]+)\/pub\/pubky\.app\/marketplace\/v1\/reviews\/([^/]+)$/;
 
 /**
  * Report input validators
@@ -196,5 +207,94 @@ export class ReportValidators {
       });
     }
     return { listingId: parsedListingId.data, sellerPubky: parsedSellerPubky.data };
+  }
+
+  /**
+   * Validates review report reason input against the review reason list.
+   *
+   * @param issueType - Reason chosen for the review report
+   * @returns Validated review reason
+   * @throws AppError if the reason is missing or not a review reason
+   */
+  static validateReviewIssueType(issueType: string | undefined | null): ReviewReportIssueType {
+    const trimmedIssueType = typeof issueType === 'string' ? issueType.trim() : '';
+    if (!REVIEW_REPORT_ISSUE_TYPE_VALUES.includes(trimmedIssueType as ReviewReportIssueType)) {
+      throw Err.validation(
+        ValidationErrorCode.INVALID_INPUT,
+        `Invalid review report reason. Must be one of: ${REVIEW_REPORT_ISSUE_TYPE_VALUES.join(', ')}`,
+        {
+          service: ErrorService.NextJsServer,
+          operation: 'validateReviewIssueType',
+          context: { field: 'issueType', value: trimmedIssueType, allowedValues: REVIEW_REPORT_ISSUE_TYPE_VALUES },
+        },
+      );
+    }
+    return trimmedIssueType as ReviewReportIssueType;
+  }
+
+  /**
+   * Validates the optional review reference of a review report.
+   *
+   * A review report names the review URI and its reviewer, and the listing the
+   * review is about. Without a review URI the report is not about a review and
+   * null is returned. The URI must be the reviewer's canonical marketplace
+   * review URI, so a report cannot name one author and point at another's
+   * record.
+   *
+   * @param reviewUri - Canonical review URI (`pubky://<reviewer>/pub/pubky.app/marketplace/v1/reviews/<id>`)
+   * @param reviewerPubky - The review's author
+   * @param listingId - The reviewed listing's id
+   * @param sellerPubky - The reviewed listing's seller
+   * @returns The validated reference, or null when no review URI is present
+   * @throws AppError if any part is missing or malformed, or the URI's owner is not the reviewer
+   */
+  static validateReviewReference(
+    reviewUri: string | undefined | null,
+    reviewerPubky: string | undefined | null,
+    listingId: string | undefined | null,
+    sellerPubky: string | undefined | null,
+  ): ReportReviewReference | null {
+    if (typeof reviewUri !== 'string' || reviewUri.trim() === '') {
+      if (typeof reviewerPubky === 'string' && reviewerPubky.trim() !== '') {
+        throw Err.validation(ValidationErrorCode.MISSING_FIELD, 'A review report needs the review URI', {
+          service: ErrorService.NextJsServer,
+          operation: 'validateReviewReference',
+          context: { field: 'reviewUri' },
+        });
+      }
+      return null;
+    }
+
+    const parsedReviewer = commercePubkySchema.safeParse(
+      typeof reviewerPubky === 'string' ? reviewerPubky.trim() : reviewerPubky,
+    );
+    if (!parsedReviewer.success) {
+      throw Err.validation(ValidationErrorCode.FORMAT_ERROR, 'Reviewer pubky is not valid', {
+        service: ErrorService.NextJsServer,
+        operation: 'validateReviewReference',
+        context: { field: 'reviewerPubky' },
+      });
+    }
+
+    const trimmedUri = reviewUri.trim();
+    const match = REVIEW_URI_PATTERN.exec(trimmedUri);
+    if (!match || match[1] !== parsedReviewer.data || !commerceEntityIdSchema.safeParse(match[2]).success) {
+      throw Err.validation(ValidationErrorCode.FORMAT_ERROR, "Review URI is not the reviewer's marketplace review", {
+        service: ErrorService.NextJsServer,
+        operation: 'validateReviewReference',
+        context: { field: 'reviewUri' },
+      });
+    }
+
+    const listing = this.validateListingReference(listingId, sellerPubky);
+    if (listing === null) {
+      throw Err.validation(ValidationErrorCode.MISSING_FIELD, 'A review report needs the reviewed listing', {
+        service: ErrorService.NextJsServer,
+        operation: 'validateReviewReference',
+        context: { field: 'listingId' },
+      });
+    }
+
+    return { reviewUri: trimmedUri, reviewerPubky: parsedReviewer.data, ...listing };
   }
 }
