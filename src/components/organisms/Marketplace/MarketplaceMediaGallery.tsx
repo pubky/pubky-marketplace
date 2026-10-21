@@ -49,7 +49,7 @@ export function MarketplaceMediaGallery({
   const viewable = media
     .map((item, index) => ({ item, url: urls[index] }))
     .filter((entry): entry is { item: (typeof media)[number]; url: string } => {
-      return entry.url !== null && !failedIds.has(entry.item.id);
+      return typeof entry.url === 'string' && !failedIds.has(entry.item.id);
     });
 
   const selected = viewable.find(({ item }) => item.id === selectedId) ?? viewable[0];
