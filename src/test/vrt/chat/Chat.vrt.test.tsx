@@ -62,6 +62,12 @@ vi.mock('@/hooks/useUserDetails/useUserDetails', () => ({
   }),
 }));
 
+// The launched Shop runs with commerce, so the inbox shows the Market tab bar; without it the bar is left out.
+vi.mock('@/config/commerce', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/config/commerce')>()),
+  getCommerceAdapterMode: () => 'transaction-service',
+}));
+
 // The Market tab bar above the inbox: its badges read the cart, activity and orders; none are shown here.
 vi.mock('@/hooks/useMarketplaceCartCount/useMarketplaceCartCount', () => ({ useMarketplaceCartCount: () => 0 }));
 vi.mock('@/hooks/useMarketplaceActivityUnread/useMarketplaceActivityUnread', () => ({
