@@ -79,7 +79,7 @@ export function MobileFooter({ className }: MobileFooterProps) {
   const marketplaceAttention = useMarketplaceNavAttention();
   const accountUnread = unreadNotifications + unreadMessages;
   const localAvatarUrl = useLocalFilesStore((state) => state.profile);
-  const { isKeyboardVisible, keyboardOffset } = useKeyboardOffset();
+  const { isKeyboardVisible } = useKeyboardOffset();
   const { markCollectionsNavSeen } = useCollectionsNavDiscovery();
   const isEmbedded = useIsEmbedded();
 
@@ -134,7 +134,8 @@ export function MobileFooter({ className }: MobileFooterProps) {
     : socialNavItems;
   // Hide footer for guests only on non-explore routes. Core explore and dynamic public
   // routes (/home, /post/..., /profile/...) use the public explore footer.
-  if (isEmbedded || (!isAuthenticated && !isPublicExploreRoute)) {
+  // While typing the nav would float on the keyboard and take the space the input needs.
+  if (isEmbedded || isKeyboardVisible || (!isAuthenticated && !isPublicExploreRoute)) {
     return null;
   }
 
@@ -142,17 +143,10 @@ export function MobileFooter({ className }: MobileFooterProps) {
     <Container
       overrideDefaults
       className={cn(
-        'fixed bottom-0 z-40 w-full overflow-x-auto bg-gradient-to-t from-background via-background/95 to-transparent px-3 py-4 transition-transform duration-75 lg:hidden',
+        'fixed bottom-0 z-40 w-full overflow-x-auto bg-gradient-to-t from-background via-background/95 to-transparent px-3 py-4 lg:hidden',
         socialHostUrl && 'px-1 min-[360px]:px-3',
         className,
       )}
-      style={
-        isKeyboardVisible && keyboardOffset > 0
-          ? {
-              transform: `translateY(-${keyboardOffset}px)`,
-            }
-          : undefined
-      }
     >
       <Container
         overrideDefaults
