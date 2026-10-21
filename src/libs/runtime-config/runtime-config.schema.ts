@@ -615,7 +615,7 @@ export const runtimeConfigValueSchema = networkConfigValueSchema.extend({
    * Shop-side switch for the EU scope fence (legal launch plan C2-C4), mirroring the
    * marketplace service's `EU_FENCE_ENABLED`. Off by default. On, the Shop asks the buyer
    * for their country where no address supplies it, sends it with every selling command,
-   * shows business and undeclared sellers as unavailable to EU buyers, and shows sellers
+   * shows business and undeclared sellers as unavailable to EU and UK buyers, and shows sellers
    * their annual-limit counters. The seller declaration and the consumer-law copy do not
    * depend on it.
    */

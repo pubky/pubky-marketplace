@@ -20,8 +20,10 @@ import { beforeAll, describe, expect, it } from 'vitest';
  *   npx vitest run src/test/live/listing-sync-probe.live.ts --config vitest.live.config.ts
  */
 
-const SERVICE_URL = process.env.MARKETPLACE_SERVICE_URL ?? 'https://staging-api.pubky.app';
-const NEXUS_URL = process.env.MARKETPLACE_NEXUS_URL ?? 'https://nexusd-production-7108.up.railway.app';
+const SERVICE_URL = process.env.MARKETPLACE_SERVICE_URL ?? '';
+if (!SERVICE_URL) throw new Error('set MARKETPLACE_SERVICE_URL: the live suites have no default service');
+const NEXUS_URL = process.env.MARKETPLACE_NEXUS_URL ?? '';
+if (!NEXUS_URL) throw new Error('set MARKETPLACE_NEXUS_URL: the live suites have no default Nexus');
 
 process.env.PUBKY_RUNTIME_COMMERCE_ADAPTER_MODE = 'transaction-service';
 process.env.PUBKY_RUNTIME_MARKETPLACE_URL = SERVICE_URL;

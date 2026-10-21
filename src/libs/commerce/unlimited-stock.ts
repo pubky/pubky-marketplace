@@ -92,8 +92,11 @@ export function formatStockQuantity(record: UnlimitedStockRecord, quantity: numb
 
 export function formatListingStock(
   record: UnlimitedStockRecord & { variants: readonly { quantity: number }[] },
+  /** The service's count of what a buyer can take now; a sale never changes the record's quantity. */
+  purchasableQuantity: number | null = null,
 ): string {
   if (record.variants.some((variant) => isUnlimitedStock(record, variant.quantity))) return UNLIMITED_STOCK_LABEL;
+  if (purchasableQuantity !== null) return String(purchasableQuantity);
   return String(record.variants.reduce((total, variant) => total + variant.quantity, 0));
 }
 

@@ -1,7 +1,7 @@
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { COMMERCE_REVIEW_EDIT_WINDOW_SECONDS } from '@/config/commerce';
+import { COMMERCE_REVIEW_EDIT_WINDOW_SECONDS, MARKETPLACE_TRUSTED_ATTESTORS } from '@/config/commerce';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import type { CommerceReviewModelSchema } from '@/models/commerce/commerce.schema';
 import type { MarketplaceOrder } from '@/services/marketplace/marketplace';
@@ -165,6 +165,38 @@ describe('MarketplaceOrderActions review editing', () => {
   });
 });
 
+describe('MarketplaceOrderActions review disclosure', () => {
+  it('tells the buyer the review is public, tied to their Pubky, and shows the purchase', async () => {
+    const user = userEvent.setup();
+    renderActions({ withOwnReview: false });
+
+    await user.click(screen.getByRole('button', { name: 'Leave review' }));
+    expect(screen.getByTestId('review-disclosure')).toHaveTextContent(
+      'Your review is public, tied to your Pubky, and shows you bought this item.',
+    );
+  });
+
+  it('tells a seller reviewing a buyer that the review shows the buyer ordered from them', async () => {
+    const user = userEvent.setup();
+    const order = createOrderFixture('completed', { reviews: [] });
+    render(<MarketplaceOrderActions order={order} isBuyer={false} canEditReview={false} actOnOrder={vi.fn()} />);
+
+    await user.click(screen.getByRole('button', { name: 'Leave review' }));
+    expect(screen.getByTestId('review-disclosure')).toHaveTextContent(
+      'Your review is public, tied to your Pubky, and shows this buyer ordered from you.',
+    );
+  });
+
+  it('says in the band opt-in helper text that the band becomes public', async () => {
+    mockedController.getMarketplaceBandConsent.mockResolvedValue(true);
+    const user = userEvent.setup();
+    renderActions({ withOwnReview: false });
+
+    await user.click(screen.getByRole('button', { name: 'Leave review' }));
+    expect(await screen.findByText(/it becomes public with your review/i)).toBeInTheDocument();
+  });
+});
+
 describe('MarketplaceOrderActions amount-band opt-in (D2 both-sides consent)', () => {
   it('renders the opt-in only when the seller consented, and submits the buyer choice', async () => {
     mockedController.getMarketplaceBandConsent.mockResolvedValue(true);
@@ -234,7 +266,7 @@ describe('MarketplaceOrderActions own-review verified status', () => {
       subject_id: 's'.repeat(52),
       record: {} as CommerceReviewModelSchema['record'],
       attestation_verified: true,
-      attestation_iss: 'o'.repeat(52),
+      attestation_iss: MARKETPLACE_TRUSTED_ATTESTORS[0],
       sync_status: 'synced',
       updated_at: Date.now(),
       ...overrides,
@@ -248,7 +280,21 @@ describe('MarketplaceOrderActions own-review verified status', () => {
     await waitFor(() => {
       expect(screen.getByTestId('own-review-status')).toHaveTextContent(/Verified purchase/);
     });
-    expect(screen.getByTestId('own-review-status')).toHaveTextContent(/signed by attestor oooooooo…/);
+    expect(screen.getByTestId('own-review-status')).toHaveTextContent(
+      `signed by attestor ${MARKETPLACE_TRUSTED_ATTESTORS[0].slice(0, 8)}…`,
+    );
+  });
+
+  it('does not claim a verified purchase when the attestation signer is not a trusted attestor', async () => {
+    mockedController.getOwnMarketplaceReview.mockResolvedValue(publishedReviewRow({ attestation_iss: 'o'.repeat(52) }));
+    renderActions();
+
+    await waitFor(() => {
+      expect(screen.getByTestId('own-review-status')).toHaveTextContent(
+        'Your published review embeds a valid purchase attestation, but its signer (oooooooo…) is not an attestor this app recognizes.',
+      );
+    });
+    expect(screen.getByTestId('own-review-status')).not.toHaveTextContent(/Verified purchase/);
   });
 
   it('shows the pending-publication state truthfully', async () => {
@@ -693,6 +739,45 @@ describe('MarketplaceOrderActions digital orders (digital delivery design §6 E1
 
     expect(screen.getByRole('button', { name: 'Request return' })).toBeInTheDocument();
     expect(screen.queryByTestId('digital-no-return-note')).not.toBeInTheDocument();
+  });
+});
+
+describe('MarketplaceOrderActions return policy', () => {
+  function renderBuyer(overrides: Partial<MarketplaceOrder>) {
+    const order = createOrderFixture('completed', { fulfillment: 'shipping', ...overrides });
+    render(
+      <MarketplaceOrderActions order={order} isBuyer canEditReview={false} actOnOrder={vi.fn(async () => true)} />,
+    );
+  }
+
+  it('offers no return on a final sale and says why', () => {
+    renderBuyer({ returnPolicy: { acceptsReturns: false, returnWindowDays: null } });
+
+    expect(screen.queryByRole('button', { name: 'Request return' })).not.toBeInTheDocument();
+    expect(screen.getByTestId('return-closed-note')).toHaveTextContent(
+      "Final sale: the seller doesn't accept returns on this item.",
+    );
+  });
+
+  it('offers no return after the return window', async () => {
+    renderBuyer({ returnPolicy: { acceptsReturns: true, returnWindowDays: 14 } });
+
+    expect(await screen.findByTestId('return-closed-note')).toHaveTextContent(
+      'The return window for this order has closed.',
+    );
+    expect(screen.queryByRole('button', { name: 'Request return' })).not.toBeInTheDocument();
+  });
+
+  it('keeps Request return inside the window', () => {
+    vi.useFakeTimers({ now: new Date('2026-08-20T12:00:00.000Z'), toFake: ['Date'] });
+    try {
+      renderBuyer({ returnPolicy: { acceptsReturns: true, returnWindowDays: 14 } });
+    } finally {
+      vi.useRealTimers();
+    }
+
+    expect(screen.getByRole('button', { name: 'Request return' })).toBeInTheDocument();
+    expect(screen.queryByTestId('return-closed-note')).not.toBeInTheDocument();
   });
 });
 
