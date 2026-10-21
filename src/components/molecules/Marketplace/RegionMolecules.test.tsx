@@ -185,6 +185,7 @@ describe('RegionAvailabilityNotice', () => {
       />,
     );
     expect(screen.getByTestId('x-region-refusal')).toHaveTextContent('Not available to buyers in the EU or UK');
+    expect(screen.getByRole('alert')).toBe(screen.getByTestId('x-region-refusal'));
     expect(screen.getByLabelText(BUYER_COUNTRY_PROMPT)).toHaveValue('DE');
   });
 

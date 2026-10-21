@@ -106,6 +106,7 @@ import { MarketplaceCheckoutStatusLabels } from '@/molecules/Marketplace/Marketp
 import { MarketplaceCheckoutSteps } from '@/molecules/Marketplace/MarketplaceCheckoutSteps';
 import { MarketplaceSellerLink } from '@/molecules/Marketplace/MarketplaceSellerLink';
 import { PaykitOutageNotice } from '@/molecules/Marketplace/PaykitOutageNotice';
+import { RegionRefusal } from '@/molecules/Marketplace/RegionRefusal';
 import { MarketplaceAddressFields } from '@/molecules/MarketplaceAddressFields/MarketplaceAddressFields';
 import { SettingsSectionContent } from '@/molecules/Settings/SettingsSectionContent/SettingsSectionContent';
 import { ContentLayout } from '@/organisms/ContentLayout/ContentLayout';
@@ -1478,16 +1479,7 @@ function MarketplaceCartCheckout() {
                             : 'No payment rails are live in this deployment, so no real funds move. This marketplace never holds funds.'}
                         </Typography>
                       )}
-                      {region.refusal && (
-                        <Typography
-                          as="p"
-                          role="alert"
-                          className="text-sm font-medium"
-                          data-testid="checkout-region-refusal"
-                        >
-                          {region.refusal}
-                        </Typography>
-                      )}
+                      {region.refusal && <RegionRefusal message={region.refusal} testId="checkout-region-refusal" />}
                       <CheckoutSaleTerms sellerPubkys={checkoutSellers} declarations={region.declarations} />
                       {!canPay && (
                         <Typography id="checkout-pay-reason" as="p" className="text-xs text-muted-foreground">
