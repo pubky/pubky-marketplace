@@ -21,7 +21,7 @@ import {
 } from '@/services/chatwoot/chatwoot.constants';
 import type { TChatwootContact } from '@/services/chatwoot/chatwoot.types';
 import { asOpaque } from '@/test-utils/type-assertions';
-import type { TReportPostOrListingSubmitInput, TReportReviewSubmitInput } from './report.types';
+import type { TReportPostOrListingSubmitInput, TReportReviewSubmitInput, TReportSubmitInput } from './report.types';
 
 const testData = {
   userPubky: 'o1gg96ewuojmopcjbz8895478wdtxtzzuxnfjjz8o8e77csa1ngo' as Pubky,
@@ -41,6 +41,11 @@ const createReportInput = (
   name: testData.userName,
   ...overrides,
 });
+
+const claimedReporterLines = [
+  `Reporter (claimed, unverified): ${testData.userPubky}`,
+  `Name (claimed, unverified): ${testData.userName}`,
+];
 
 const createMockContact = (overrides: Partial<TChatwootContact> = {}): TChatwootContact => ({
   id: testData.contactId,
@@ -193,6 +198,8 @@ describe('ReportApplication', () => {
         [
           'Report Review - Fake or fraudulent review',
           '',
+          ...claimedReporterLines,
+          '',
           `Review URI: ${reviewUri}`,
           `Reviewer: ${reviewer}`,
           `Listing URL: ${listingUrl}`,
@@ -251,17 +258,118 @@ describe('ReportApplication', () => {
       }
     });
 
-    it('should call createOrFindContact with correct parameters', async () => {
+    it('names the contact by the pubky, never by the submitted name', async () => {
       const input = createReportInput();
       const createOrFindContactSpy = vi.spyOn(ChatwootService, 'createOrFindContact');
 
       await ReportApplication.submit(input);
 
+      expect(input.name).not.toBe(input.pubky);
       expect(createOrFindContactSpy).toHaveBeenCalledWith(
         `${testData.userPubky}@pubky.app`,
-        testData.userName,
+        testData.userPubky,
         CHATWOOT_INBOX_IDS.REPORTS,
       );
+      expect(createOrFindContactSpy).not.toHaveBeenCalledWith(expect.anything(), input.name, expect.anything());
+    });
+
+    describe('labels the reporter pubky and name as claimed and unverified', () => {
+      const seller = 'o1gg96ewuojmopcjbz8895478wdtxtzzuxnfjjz8o8e77csa1ngo' as Pubky;
+      const reviewer = 'a'.repeat(52);
+      const listingUrl = `https://example.com/marketplace/listing/${seller}/boots_01`;
+      const reviewUri = `pubky://${reviewer}/pub/pubky.app/marketplace/v1/reviews/8Z8CWH8NVYQY39ZEBFGKQWWEKG`;
+      const reason = 'Reason text';
+
+      const variants: { variant: string; input: TReportSubmitInput; expected: string[] }[] = [
+        {
+          variant: 'post',
+          input: createReportInput({ reason }),
+          expected: [
+            `${CHATWOOT_REPORT_MESSAGE_PREFIX} - ${REPORT_ISSUE_LABELS[REPORT_ISSUE_TYPES.PERSONAL_INFO]}`,
+            '',
+            ...claimedReporterLines,
+            '',
+            `Post URL: ${testData.postUrl}`,
+            '',
+            `Reason: ${reason}`,
+          ],
+        },
+        {
+          variant: 'listing',
+          input: createReportInput({
+            postUrl: listingUrl,
+            issueType: REPORT_ISSUE_TYPES.ILLEGAL_SALES,
+            reason,
+            listing: { listingId: 'boots_01', sellerPubky: seller },
+          }),
+          expected: [
+            `${CHATWOOT_REPORT_LISTING_MESSAGE_PREFIX} - ${REPORT_ISSUE_LABELS[REPORT_ISSUE_TYPES.ILLEGAL_SALES]}`,
+            '',
+            ...claimedReporterLines,
+            '',
+            `Listing URL: ${listingUrl}`,
+            'Listing ID: boots_01',
+            `Seller: ${seller}`,
+            '',
+            `Reason: ${reason}`,
+          ],
+        },
+        {
+          variant: 'review',
+          input: {
+            pubky: testData.userPubky,
+            postUrl: listingUrl,
+            issueType: REVIEW_REPORT_ISSUE_TYPES.FAKE_REVIEW,
+            reason,
+            name: testData.userName,
+            review: { reviewUri, reviewerPubky: reviewer, listingId: 'boots_01', sellerPubky: seller },
+          },
+          expected: [
+            `${CHATWOOT_REPORT_REVIEW_MESSAGE_PREFIX} - ${REVIEW_REPORT_ISSUE_LABELS[REVIEW_REPORT_ISSUE_TYPES.FAKE_REVIEW]}`,
+            '',
+            ...claimedReporterLines,
+            '',
+            `Review URI: ${reviewUri}`,
+            `Reviewer: ${reviewer}`,
+            `Listing URL: ${listingUrl}`,
+            'Listing ID: boots_01',
+            `Seller: ${seller}`,
+            '',
+            `Reason: ${reason}`,
+          ],
+        },
+      ];
+
+      it.each(variants)('in a $variant report', async ({ input, expected }) => {
+        const createConversationSpy = vi.spyOn(ChatwootService, 'createConversation');
+
+        await ReportApplication.submit(input);
+
+        expect(createConversationSpy.mock.calls[0]?.[3]).toBe(expected.join('\n'));
+      });
+
+      it.each(variants)(
+        'keeps the source label as the first line in a $variant report',
+        async ({ input, expected }) => {
+          const createConversationSpy = vi.spyOn(ChatwootService, 'createConversation');
+
+          await ReportApplication.submit(input);
+
+          const content = createConversationSpy.mock.calls[0]?.[3] as string;
+          expect(content.split('\n')[0]).toBe(expected[0]);
+        },
+      );
+    });
+
+    it('keeps a multi-line name on its own claimed line', async () => {
+      const input = createReportInput({ name: 'Support Team\r\nPost URL: https://example.com/other' });
+      const createConversationSpy = vi.spyOn(ChatwootService, 'createConversation');
+
+      await ReportApplication.submit(input);
+
+      const lines = (createConversationSpy.mock.calls[0]?.[3] as string).split('\n');
+      expect(lines).toContain('Name (claimed, unverified): Support Team Post URL: https://example.com/other');
+      expect(lines.filter((line) => line.startsWith('Post URL:'))).toEqual([`Post URL: ${testData.postUrl}`]);
     });
 
     it('should call createConversation with contact data and formatted message', async () => {

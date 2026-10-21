@@ -5,7 +5,7 @@ import { ErrorService } from '@/libs/error/error.types';
 import { Logger } from '@/libs/logger/logger';
 import { ChatwootService } from '@/services/chatwoot/chatwoot';
 import { CHATWOOT_FEEDBACK_MESSAGE_PREFIX, CHATWOOT_INBOX_IDS } from '@/services/chatwoot/chatwoot.constants';
-import { buildChatwootEmail, extractSourceId } from '@/services/chatwoot/chatwoot.utils';
+import { buildChatwootEmail, buildClaimedReporterLines, extractSourceId } from '@/services/chatwoot/chatwoot.utils';
 import type { TFeedbackSubmitInput } from './feedback.types';
 
 /**
@@ -14,8 +14,9 @@ import type { TFeedbackSubmitInput } from './feedback.types';
  * Orchestrates feedback submission workflow:
  * 1. Builds email from pubky
  * 2. Determines inbox ID for feedback
- * 3. Formats message with feedback prefix
- * 4. Calls Chatwoot service to create contact and conversation
+ * 3. Formats message with feedback prefix and the submitter's claimed pubky and name
+ * 4. Calls Chatwoot service to create a contact named by the pubky and a
+ *    conversation
  * 5. Logs errors for observability
  *
  * This layer is called by the controller and handles cross-domain orchestration.
@@ -24,13 +25,15 @@ export class FeedbackApplication {
   private constructor() {}
 
   /**
-   * Format the full message content with feedback prefix
+   * Format the full message content: feedback prefix, claimed reporter lines, comment
    *
+   * @param pubky - Submitter's claimed public key
+   * @param name - Submitter's claimed display name
    * @param comment - User's feedback comment
    * @returns Full formatted message content
    */
-  private static formatMessageContent(comment: string): string {
-    return `${CHATWOOT_FEEDBACK_MESSAGE_PREFIX}\n\n${comment}`;
+  private static formatMessageContent(pubky: string, name: string, comment: string): string {
+    return `${CHATWOOT_FEEDBACK_MESSAGE_PREFIX}\n\n${buildClaimedReporterLines(pubky, name)}\n\n${comment}`;
   }
 
   /**
@@ -38,13 +41,13 @@ export class FeedbackApplication {
    *
    * Orchestrates the feedback submission by:
    * 1. Building email from pubky
-   * 2. Creating or finding contact in Chatwoot
+   * 2. Creating or finding the contact in Chatwoot, named by the pubky
    * 3. Creating conversation with formatted message
    *
    * @param params - Parameters object
    * @param params.pubky - User's public key
    * @param params.comment - Feedback comment
-   * @param params.name - User's display name
+   * @param params.name - User's display name, shown in the message as a claimed value and never used as the contact name
    * @throws AppError if submission fails
    */
   static async submit({ pubky, comment, name }: TFeedbackSubmitInput): Promise<void> {
@@ -55,11 +58,11 @@ export class FeedbackApplication {
       // Get inbox ID for feedback
       const inboxId = CHATWOOT_INBOX_IDS.FEEDBACK;
 
-      // Format message with prefix
-      const content = this.formatMessageContent(comment);
+      // Format message with prefix and claimed reporter lines
+      const content = this.formatMessageContent(pubky, name, comment);
 
-      // Create or find contact in Chatwoot
-      const contact = await ChatwootService.createOrFindContact(email, name, inboxId);
+      // Create or find contact in Chatwoot, named by the pubky (the submitted name is only a claim)
+      const contact = await ChatwootService.createOrFindContact(email, pubky, inboxId);
 
       // Extract source ID (validates inbox associations)
       const sourceId = extractSourceId(contact, email);

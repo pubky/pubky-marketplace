@@ -1,7 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { asInvalid } from '@/test-utils/type-assertions';
+import { CHATWOOT_CLAIMED_NAME_LABEL, CHATWOOT_CLAIMED_REPORTER_LABEL } from './chatwoot.constants';
 import type { TChatwootContact } from './chatwoot.types';
-import { buildChatwootEmail, CHATWOOT_EMAIL_DOMAIN, extractSourceId } from './chatwoot.utils';
+import {
+  buildChatwootEmail,
+  buildClaimedReporterLines,
+  CHATWOOT_EMAIL_DOMAIN,
+  extractSourceId,
+} from './chatwoot.utils';
 
 const testData = {
   pubky: 'o1gg96ewuojmopcjbz8895478wdtxtzzuxnfjjz8o8e77csa1ngo',
@@ -38,6 +44,34 @@ describe('chatwoot.utils', () => {
 
     it('should use the correct email domain constant', () => {
       expect(CHATWOOT_EMAIL_DOMAIN).toBe('pubky.app');
+    });
+  });
+
+  describe('buildClaimedReporterLines', () => {
+    it('labels the pubky and name as claimed and unverified', () => {
+      expect(CHATWOOT_CLAIMED_REPORTER_LABEL).toBe('Reporter (claimed, unverified)');
+      expect(CHATWOOT_CLAIMED_NAME_LABEL).toBe('Name (claimed, unverified)');
+
+      expect(buildClaimedReporterLines(testData.pubky, 'Test User')).toBe(
+        `Reporter (claimed, unverified): ${testData.pubky}\nName (claimed, unverified): Test User`,
+      );
+    });
+
+    it('keeps each value on its own labelled line', () => {
+      const name = 'Line one\r\nReporter (claimed, unverified): other\tvalue\u2028next\u2029last\u0085end';
+
+      const lines = buildClaimedReporterLines(`  ${testData.pubky}\n`, name).split('\n');
+
+      expect(lines).toEqual([
+        `${CHATWOOT_CLAIMED_REPORTER_LABEL}: ${testData.pubky}`,
+        `${CHATWOOT_CLAIMED_NAME_LABEL}: Line one Reporter (claimed, unverified): other value next last end`,
+      ]);
+    });
+
+    it('collapses runs of whitespace into one space and trims each value', () => {
+      expect(buildClaimedReporterLines('\t pk \r\n', ' \n\n Ada \t\u2028 Lovelace \u2029 ')).toBe(
+        `${CHATWOOT_CLAIMED_REPORTER_LABEL}: pk\n${CHATWOOT_CLAIMED_NAME_LABEL}: Ada Lovelace`,
+      );
     });
   });
 
