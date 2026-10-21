@@ -14,6 +14,8 @@ const ENV_NAME = PUBKY_RUNTIME_ENV_NAMES.marketplaceTrustedAttestors;
 const SUITE_VALUE = process.env[ENV_NAME];
 const RETIRED = 'h7hcm6mghujfn3hkyrdncxb7whcq19yf7t4fowq1brg3g1arbypp';
 const CURRENT = '6tsjayz6t7qyjhzkipdcri3fbdqf5h85ewkdkf3466abfcoszau8';
+const GCP_PROD_ATTESTOR = 'pstmi1bgg6dnrwmfabo9eqycm91esxx338awz1r5feaiub49934o';
+const GCP_STAGING_ATTESTOR = 'mqasdxcixebjqmzdi15afo4ipsrfe9ecjfatgfyn1tmbz853zpey';
 
 function withTrustList(entries: unknown[]): void {
   process.env[ENV_NAME] = JSON.stringify(entries);
@@ -32,8 +34,26 @@ describe('isDurableCommerceMode', () => {
 });
 
 describe('MARKETPLACE_TRUSTED_ATTESTOR_DEFAULTS', () => {
-  it('compiles in no deployment-specific keys', () => {
-    expect(MARKETPLACE_TRUSTED_ATTESTOR_DEFAULTS).toEqual([]);
+  it('compiles in only the Pubky Market production attestor', () => {
+    expect(MARKETPLACE_TRUSTED_ATTESTOR_DEFAULTS).toEqual([
+      { pubky: GCP_PROD_ATTESTOR, label: 'Pubky Market', validFrom: '2026-10-01' },
+    ]);
+  });
+
+  it('does not trust the staging attestor without runtime config', () => {
+    delete process.env[ENV_NAME];
+    resetRuntimeConfigForTests();
+    expect(trustedMarketplaceAttestorAt(GCP_STAGING_ATTESTOR, new Date('2026-10-21T10:00:00Z'))).toBeNull();
+    expect(trustedMarketplaceAttestorAt(GCP_PROD_ATTESTOR, new Date('2026-10-21T10:00:00Z'))?.label).toBe(
+      'Pubky Market',
+    );
+  });
+
+  it('trusts the staging attestor once the staging deployment lists it', () => {
+    withTrustList([{ pubky: GCP_STAGING_ATTESTOR, label: 'Pubky Market', validFrom: '2026-10-01' }]);
+    expect(trustedMarketplaceAttestorAt(GCP_STAGING_ATTESTOR, new Date('2026-10-21T10:00:00Z'))?.label).toBe(
+      'Pubky Market',
+    );
   });
 });
 
@@ -42,10 +62,10 @@ describe('marketplaceTrustedAttestors', () => {
     expect(marketplaceTrustedAttestors()).toEqual([...MARKETPLACE_TRUSTED_ATTESTOR_DEFAULTS, TEST_TRUSTED_ATTESTOR]);
   });
 
-  it('is empty when the deployment configures no runtime entries', () => {
+  it('is the compiled defaults alone when the deployment configures no runtime entries', () => {
     delete process.env[ENV_NAME];
     resetRuntimeConfigForTests();
-    expect(marketplaceTrustedAttestors()).toEqual([]);
+    expect(marketplaceTrustedAttestors()).toEqual(MARKETPLACE_TRUSTED_ATTESTOR_DEFAULTS);
     expect(trustedMarketplaceAttestorAt(TEST_TRUSTED_ATTESTOR.pubky, new Date('2026-10-21T00:00:00Z'))).toBeNull();
   });
 });
