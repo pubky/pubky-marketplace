@@ -1,6 +1,6 @@
 'use client';
 
-import { type ReactNode, useEffect, useState } from 'react';
+import { type ReactNode, useEffect, useRef, useState } from 'react';
 import { Controller, useWatch } from 'react-hook-form';
 import { Button } from '@/atoms/Button/Button';
 import { Checkbox } from '@/atoms/Checkbox/Checkbox';
@@ -263,11 +263,17 @@ export function MarketplaceOrderActions({
     }
   };
 
-  // A cancel refused because a payment was seen re-reads the order; once the
-  // cancel is no longer offered, its dialog closes too (#347).
+  // A cancel refused because a payment was seen re-reads the order; when that
+  // takes the cancel away while its dialog is open, the dialog closes too
+  // (#347). Only the change closes it: another dialog on an order that was
+  // never cancellable stays open.
+  const cancelWasOffered = useRef(cancelOffered);
   useEffect(() => {
-    if (open && actionType === 'cancel' && isBuyer && !cancelOffered) setOpen(false);
-  }, [open, actionType, isBuyer, cancelOffered]);
+    if (cancelWasOffered.current && !cancelOffered && open && action.form.getValues('action') === 'cancel') {
+      setOpen(false);
+    }
+    cancelWasOffered.current = cancelOffered;
+  }, [cancelOffered, open, action.form]);
 
   const confirmHandover = async () => {
     const outcome = await pickup.confirmHandover();
