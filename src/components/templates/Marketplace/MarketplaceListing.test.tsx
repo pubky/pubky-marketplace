@@ -1398,7 +1398,7 @@ describe('MarketplaceListing', () => {
     expect(screen.getByRole('button', { name: 'Authorize with Pubky Ring' })).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Authorize with Pubky Ring' }));
-    expect(screen.queryByText('Sign in to Pubky Shop.')).not.toBeInTheDocument();
+    expect(screen.queryByText('Sign in to Pubky Market.')).not.toBeInTheDocument();
     expect(screen.queryByText(/permission list/i)).not.toBeInTheDocument();
     expect(screen.queryByText(CAPABILITIES)).not.toBeInTheDocument();
     expect(screen.queryByText(/first Shop-scoped approval/i)).not.toBeInTheDocument();

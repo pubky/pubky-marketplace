@@ -71,7 +71,7 @@ describe('MarketplaceConnectShopify', () => {
       'Open the Dev Dashboard. In Shopify admin, go to Settings → Apps → Develop apps, then Build apps in Dev Dashboard.',
     );
     expect(screen.getByTestId('shopify-step-3')).toHaveTextContent(
-      'Create the app. Click Create app, choose Start from Dev Dashboard, and name it Pubky Shop.',
+      'Create the app. Click Create app, choose Start from Dev Dashboard, and name it Pubky Market.',
     );
     expect(screen.getByTestId('shopify-step-4')).toHaveTextContent("Configure it. In the app's new version, set:");
     expect(screen.getByTestId('shopify-step-5')).toHaveTextContent(
