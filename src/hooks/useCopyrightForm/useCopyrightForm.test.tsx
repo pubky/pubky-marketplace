@@ -1,8 +1,10 @@
 import { act, renderHook } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { COPYRIGHT_BRIEF_DESCRIPTION_MAX_LENGTH, COPYRIGHT_SHORT_FIELD_MAX_LENGTH } from '@/config/copyright';
 import { asInvalid } from '@/test-utils/type-assertions';
 import { useCopyrightForm } from './useCopyrightForm';
 import { COPYRIGHT_ROLES } from './useCopyrightForm.constants';
+import { copyrightFormSchema } from './useCopyrightForm.types';
 
 const mockToast = vi.fn();
 vi.mock('@/molecules/Toaster/use-toast', () => {
@@ -99,6 +101,24 @@ describe('useCopyrightForm', () => {
       });
 
       expect(global.fetch).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['City', 'city', COPYRIGHT_SHORT_FIELD_MAX_LENGTH],
+      ['Brief description', 'briefDescription', COPYRIGHT_BRIEF_DESCRIPTION_MAX_LENGTH],
+    ] as const)('should cap %s at the server limit', (label, field, maxLength) => {
+      const formData = { ...validFormData, role: COPYRIGHT_ROLES.RIGHTS_OWNER };
+
+      expect(copyrightFormSchema.safeParse({ ...formData, [field]: 'a'.repeat(maxLength) }).success).toBe(true);
+
+      const overLimit = copyrightFormSchema.safeParse({ ...formData, [field]: 'a'.repeat(maxLength + 1) });
+      expect(overLimit.success).toBe(false);
+      expect(overLimit.error?.issues).toEqual([
+        expect.objectContaining({
+          path: [field],
+          message: `${label} must be no more than ${maxLength} characters`,
+        }),
+      ]);
     });
   });
 

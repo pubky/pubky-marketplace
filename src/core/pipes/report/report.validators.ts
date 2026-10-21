@@ -169,7 +169,7 @@ export class ReportValidators {
    *
    * @param name - Reporter's display name
    * @returns Normalized name (trimmed)
-   * @throws AppError if name is missing or longer than USER_NAME_MAX_LENGTH
+   * @throws AppError if name is missing, or is longer than USER_NAME_MAX_LENGTH code points and is not a pubky
    */
   static validateName(name: string | undefined | null): string {
     if (!name || name.trim() === '') {
@@ -181,15 +181,21 @@ export class ReportValidators {
     }
 
     const trimmedName = name.trim();
+    // pubky-app-specs counts a name's length in Unicode code points, not UTF-16 units.
+    const nameLength = [...trimmedName].length;
+    // useReportPost sends the reporter's pubky as the name of a marketplace
+    // report when no profile name has loaded, so a valid pubky is accepted
+    // even though it is longer than a display name may be.
+    const isPubkyFallback = commercePubkySchema.safeParse(trimmedName).success;
 
-    if (trimmedName.length > USER_NAME_MAX_LENGTH) {
+    if (nameLength > USER_NAME_MAX_LENGTH && !isPubkyFallback) {
       throw Err.validation(
         ValidationErrorCode.INVALID_INPUT,
         `Name must be no more than ${USER_NAME_MAX_LENGTH} characters`,
         {
           service: ErrorService.NextJsServer,
           operation: 'validateName',
-          context: { field: 'name', maxLength: USER_NAME_MAX_LENGTH, actualLength: trimmedName.length },
+          context: { field: 'name', maxLength: USER_NAME_MAX_LENGTH, actualLength: nameLength },
         },
       );
     }

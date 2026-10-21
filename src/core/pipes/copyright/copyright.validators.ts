@@ -1,14 +1,14 @@
-import { VALIDATION_MESSAGES, VALIDATION_PATTERNS } from '@/config/forms';
-import { ValidationErrorCode } from '@/libs/error/error.codes';
-import { Err } from '@/libs/error/error.factories';
-import { ErrorService } from '@/libs/error/error.types';
 import {
   COPYRIGHT_BRIEF_DESCRIPTION_MAX_LENGTH,
   COPYRIGHT_EMAIL_MAX_LENGTH,
   COPYRIGHT_ORIGINAL_CONTENT_URLS_MAX_LENGTH,
   COPYRIGHT_SHORT_FIELD_MAX_LENGTH,
   COPYRIGHT_URL_MAX_LENGTH,
-} from './copyright.constants';
+} from '@/config/copyright';
+import { VALIDATION_MESSAGES, VALIDATION_PATTERNS } from '@/config/forms';
+import { ValidationErrorCode } from '@/libs/error/error.codes';
+import { Err } from '@/libs/error/error.factories';
+import { ErrorService } from '@/libs/error/error.types';
 
 /**
  * Copyright input validators

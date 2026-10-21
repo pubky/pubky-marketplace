@@ -88,15 +88,17 @@ export class FeedbackValidators {
     }
 
     const trimmedName = name.trim();
+    // pubky-app-specs counts a name's length in Unicode code points, not UTF-16 units.
+    const nameLength = [...trimmedName].length;
 
-    if (trimmedName.length > USER_NAME_MAX_LENGTH) {
+    if (nameLength > USER_NAME_MAX_LENGTH) {
       throw Err.validation(
         ValidationErrorCode.INVALID_INPUT,
         `Name must be no more than ${USER_NAME_MAX_LENGTH} characters`,
         {
           service: ErrorService.NextJsServer,
           operation: 'validateName',
-          context: { field: 'name', maxLength: USER_NAME_MAX_LENGTH, actualLength: trimmedName.length },
+          context: { field: 'name', maxLength: USER_NAME_MAX_LENGTH, actualLength: nameLength },
         },
       );
     }

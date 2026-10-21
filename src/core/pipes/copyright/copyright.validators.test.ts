@@ -1,15 +1,15 @@
 import { describe, expect, it } from 'vitest';
-import { VALIDATION_MESSAGES } from '@/config/forms';
-import { AppError } from '@/libs/error/error';
-import { ValidationErrorCode } from '@/libs/error/error.codes';
-import { ErrorCategory, ErrorService } from '@/libs/error/error.types';
 import {
   COPYRIGHT_BRIEF_DESCRIPTION_MAX_LENGTH,
   COPYRIGHT_EMAIL_MAX_LENGTH,
   COPYRIGHT_ORIGINAL_CONTENT_URLS_MAX_LENGTH,
   COPYRIGHT_SHORT_FIELD_MAX_LENGTH,
   COPYRIGHT_URL_MAX_LENGTH,
-} from './copyright.constants';
+} from '@/config/copyright';
+import { VALIDATION_MESSAGES } from '@/config/forms';
+import { AppError } from '@/libs/error/error';
+import { ValidationErrorCode } from '@/libs/error/error.codes';
+import { ErrorCategory, ErrorService } from '@/libs/error/error.types';
 import { CopyrightValidators } from './copyright.validators';
 
 describe('CopyrightValidators', () => {
@@ -201,6 +201,14 @@ describe('CopyrightValidators', () => {
   describe('field length limits', () => {
     it.each([
       ['Name of rights owner', 'validateNameOwner', COPYRIGHT_SHORT_FIELD_MAX_LENGTH, (n: number) => 'a'.repeat(n)],
+      ['First name', 'validateFirstName', COPYRIGHT_SHORT_FIELD_MAX_LENGTH, (n: number) => 'a'.repeat(n)],
+      ['Last name', 'validateLastName', COPYRIGHT_SHORT_FIELD_MAX_LENGTH, (n: number) => 'a'.repeat(n)],
+      ['Street address', 'validateStreetAddress', COPYRIGHT_SHORT_FIELD_MAX_LENGTH, (n: number) => 'a'.repeat(n)],
+      ['Country', 'validateCountry', COPYRIGHT_SHORT_FIELD_MAX_LENGTH, (n: number) => 'a'.repeat(n)],
+      ['City', 'validateCity', COPYRIGHT_SHORT_FIELD_MAX_LENGTH, (n: number) => 'a'.repeat(n)],
+      ['State/Province', 'validateStateProvince', COPYRIGHT_SHORT_FIELD_MAX_LENGTH, (n: number) => 'a'.repeat(n)],
+      ['Zip code', 'validateZipCode', COPYRIGHT_SHORT_FIELD_MAX_LENGTH, (n: number) => 'a'.repeat(n)],
+      ['Signature', 'validateSignature', COPYRIGHT_SHORT_FIELD_MAX_LENGTH, (n: number) => 'a'.repeat(n)],
       ['Phone number', 'validatePhoneNumber', COPYRIGHT_SHORT_FIELD_MAX_LENGTH, (n: number) => '1'.repeat(n)],
       ['Email', 'validateEmail', COPYRIGHT_EMAIL_MAX_LENGTH, (n: number) => `${'a'.repeat(n - 6)}@a.com`],
       [

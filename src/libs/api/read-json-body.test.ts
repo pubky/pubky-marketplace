@@ -21,6 +21,13 @@ function streamedRequest(body: ReadableStream<Uint8Array>, headers: Record<strin
   return new Request(ROUTE_URL, { method: 'POST', headers, body, duplex: 'half' } as RequestInit);
 }
 
+/** A JSON object body whose UTF-8 encoding is exactly `bytes` long. */
+function objectBodyOfBytes(bytes: number) {
+  const body = JSON.stringify({ c: 'x'.repeat(bytes - '{"c":""}'.length) });
+  expect(new TextEncoder().encode(body).byteLength).toBe(bytes);
+  return body;
+}
+
 async function errorOf(response: Response) {
   return ((await response.json()) as { error: string }).error;
 }
@@ -75,6 +82,34 @@ describe('readJsonBody', () => {
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.response.status).toBe(413);
     expect(request.bodyUsed).toBe(false);
+  });
+
+  it('accepts a streamed body of exactly the cap that declares no length', async () => {
+    const body = objectBodyOfBytes(MAX_BYTES);
+    const request = streamedRequest(chunkedStream([body.slice(0, 500), body.slice(500)]));
+
+    const result = await readJsonBody(request, MAX_BYTES);
+
+    expect(result).toEqual({ ok: true, body: JSON.parse(body) });
+  });
+
+  it('accepts a body of exactly the cap that declares its length', async () => {
+    const body = objectBodyOfBytes(MAX_BYTES);
+    const request = streamedRequest(chunkedStream([body]), { 'content-length': String(MAX_BYTES) });
+
+    const result = await readJsonBody(request, MAX_BYTES);
+
+    expect(result).toEqual({ ok: true, body: JSON.parse(body) });
+  });
+
+  it('caps a streamed body one byte over the cap', async () => {
+    const body = objectBodyOfBytes(MAX_BYTES + 1);
+    const request = streamedRequest(chunkedStream([body.slice(0, 500), body.slice(500)]));
+
+    const result = await readJsonBody(request, MAX_BYTES);
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.response.status).toBe(413);
   });
 
   it('rejects a body that is not valid JSON', async () => {

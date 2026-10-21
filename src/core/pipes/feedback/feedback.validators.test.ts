@@ -187,5 +187,23 @@ describe('FeedbackValidators', () => {
         expect(appError.message).toBe(`Name must be no more than ${USER_NAME_MAX_LENGTH} characters`);
       }
     });
+
+    it('should count the name length in code points', () => {
+      const atLimit = 'Al ' + '🌸'.repeat(USER_NAME_MAX_LENGTH - 3);
+      expect(FeedbackValidators.validateName(atLimit)).toBe(atLimit);
+
+      const overLimit = 'Al ' + '🌸'.repeat(USER_NAME_MAX_LENGTH - 2);
+      try {
+        FeedbackValidators.validateName(overLimit);
+        expect.fail('Should have thrown');
+      } catch (error) {
+        expect(error).toBeInstanceOf(AppError);
+        expect((error as AppError).context).toEqual({
+          field: 'name',
+          maxLength: USER_NAME_MAX_LENGTH,
+          actualLength: USER_NAME_MAX_LENGTH + 1,
+        });
+      }
+    });
   });
 });

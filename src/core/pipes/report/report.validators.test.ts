@@ -354,6 +354,34 @@ describe('ReportValidators', () => {
         expect(appError.message).toBe(`Name must be no more than ${USER_NAME_MAX_LENGTH} characters`);
       }
     });
+
+    it('should count the name length in code points', () => {
+      const atLimit = 'Al ' + '🌸'.repeat(USER_NAME_MAX_LENGTH - 3);
+      expect(ReportValidators.validateName(atLimit)).toBe(atLimit);
+
+      const overLimit = 'Al ' + '🌸'.repeat(USER_NAME_MAX_LENGTH - 2);
+      try {
+        ReportValidators.validateName(overLimit);
+        expect.fail('Should have thrown');
+      } catch (error) {
+        expect(error).toBeInstanceOf(AppError);
+        expect((error as AppError).context).toEqual({
+          field: 'name',
+          maxLength: USER_NAME_MAX_LENGTH,
+          actualLength: USER_NAME_MAX_LENGTH + 1,
+        });
+      }
+    });
+
+    it('should accept a pubky as the name of a report', () => {
+      expect(ReportValidators.validateName(`  ${VALID_PUBKY}  `)).toBe(VALID_PUBKY);
+    });
+
+    it('should reject a name over the limit that is not a valid pubky', () => {
+      expect(() => ReportValidators.validateName(VALID_PUBKY.toUpperCase())).toThrow(
+        `Name must be no more than ${USER_NAME_MAX_LENGTH} characters`,
+      );
+    });
   });
 
   describe('validateListingReference', () => {
