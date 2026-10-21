@@ -79,6 +79,13 @@ export async function replaceBridge(
 ): Promise<void> {
   const db = grantSql(config);
   await db.begin(async (tx) => {
+    // One bridge per user (session_bridge_pubky_idx). Two pairings for the same
+    // user at once (two tabs, or sign-in and a session restore in one load)
+    // would otherwise both delete nothing and the second insert would hit the
+    // unique index. The lock serialises them: the later one replaces the first.
+    // An upsert can't do this, because rewriting bridge_id would break the
+    // flow_state rows that reference the old bridge; the delete cascades them.
+    await tx`SELECT pg_advisory_xact_lock(hashtextextended(${'session-bridge|' + row.pubky}, 0))`;
     await tx`DELETE FROM shop_grant_bff.session_bridge WHERE pubky = ${row.pubky}`;
     await tx`
       INSERT INTO shop_grant_bff.session_bridge
