@@ -1,6 +1,6 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { useKeyboardViewport } from './useKeyboardViewport';
+import { measureFrameViewport, useKeyboardViewport } from './useKeyboardViewport';
 
 const listeners = new Map<string, Set<EventListener>>();
 const mockVisualViewport = {
@@ -197,5 +197,41 @@ describe('useKeyboardViewport', () => {
 
     expect(mockVisualViewport.removeEventListener).toHaveBeenCalledWith('resize', expect.any(Function));
     expect(mockVisualViewport.removeEventListener).toHaveBeenCalledWith('scroll', expect.any(Function));
+  });
+});
+
+describe('measureFrameViewport (the Shop framed by pubky.app)', () => {
+  // A Pixel's host page: 914px layout, the Shop frame from 128px down, 686px tall.
+  const frame = { hostLayoutHeight: 914, frameTop: 128, frameHeight: 686, threshold: 150 };
+
+  it('finds the keyboard in the host viewport, which the frame alone never sees', () => {
+    const state = measureFrameViewport({ ...frame, hostViewport: { height: 498, pageTop: 0 }, focusedInput: true });
+
+    expect(state).toEqual({
+      isKeyboardVisible: true,
+      // Visible frame part: 0 to 498 - 128 = 370; the rest of the 686px frame is under the keyboard.
+      keyboardHeight: 316,
+      keyboardTop: 370,
+      viewportHeight: 370,
+      viewportOffsetTop: 0,
+    });
+  });
+
+  it('follows the host viewport when the host page scrolls the frame top out of view (iOS)', () => {
+    const state = measureFrameViewport({ ...frame, hostViewport: { height: 400, pageTop: 200 }, focusedInput: true });
+
+    expect(state.viewportOffsetTop).toBe(72);
+    expect(state.viewportHeight).toBe(400);
+    expect(state.keyboardTop).toBe(472);
+  });
+
+  it('is no keyboard without a focused text field, or with the host viewport at full height', () => {
+    expect(
+      measureFrameViewport({ ...frame, hostViewport: { height: 498, pageTop: 0 }, focusedInput: false })
+        .isKeyboardVisible,
+    ).toBe(false);
+    const closed = measureFrameViewport({ ...frame, hostViewport: { height: 914, pageTop: 0 }, focusedInput: true });
+    expect(closed.isKeyboardVisible).toBe(false);
+    expect(closed.viewportHeight).toBe(686);
   });
 });
