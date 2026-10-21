@@ -9,7 +9,7 @@ vi.mock('@/config/commerce', async () => {
   const actual = await vi.importActual<typeof import('@/config/commerce')>('@/config/commerce');
   return {
     ...actual,
-    getMarketplaceUrl: () => 'https://staging-api.pubky.app',
+    getMarketplaceUrl: () => 'https://marketplace-service.example.test',
   };
 });
 

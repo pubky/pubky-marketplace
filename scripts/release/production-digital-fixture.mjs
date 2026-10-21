@@ -1,9 +1,10 @@
 #!/usr/bin/env node
 // Paid digital delivery proof (design decision DD4): one real Bitcoin purchase per delivery kind, with the
 // release-proof test seats. ON PRODUCTION THIS SPENDS REAL MONEY. Every mode but `plan` refuses unless PROOF_ORIGIN,
-// PROOF_SERVICE and PROOF_NEXUS are the staging stack (digital-proof.mjs, STAGING_TARGET), or PROOF_ALLOW_PRODUCTION=1
-// says otherwise on purpose. Modes that spend or publish also need EXPECTED_DPL to be what the origin serves right
-// now, and today's go-ahead token from the product owner (PROOF_DIGITAL_GO=GO-<UTC date>). Run `plan` first: it
+// PROOF_SERVICE and PROOF_NEXUS are the staging stack listed in PROOF_STAGING_ORIGINS, PROOF_STAGING_SERVICES and
+// PROOF_STAGING_NEXUS (digital-proof.mjs), or PROOF_ALLOW_PRODUCTION=1 says otherwise on purpose. There is no
+// default target: PROOF_ORIGIN, PROOF_SERVICE and PROOF_NEXUS must be set. Modes that spend or publish also need
+// EXPECTED_DPL or EXPECTED_COMMIT to be what the origin serves right now, and today's go-ahead token from the product owner (PROOF_DIGITAL_GO=GO-<UTC date>). Run `plan` first: it
 // touches nothing.
 //
 // What it automates: publishing one "SMOKE FIXTURE, do not buy" digital listing per kind from the seller seat and setting
@@ -30,9 +31,10 @@
 // the seller, so a second process running await-buyer is the seller.
 //
 // Env: PROOF_EVIDENCE (state and results; outside the repository), seats and both PROOF_*_PREFIX values (see
-// seats.mjs), EXPECTED_DPL, PROOF_DIGITAL_GO, PROOF_DIGITAL_KINDS (default file), PROOF_DIGITAL_PRICE_USD (default
+// seats.mjs), EXPECTED_DPL and/or EXPECTED_COMMIT (one is required), PROOF_DIGITAL_GO, PROOF_DIGITAL_KINDS (default file), PROOF_DIGITAL_PRICE_USD (default
 // 2.00), PROOF_DIGITAL_PAY_TIMEOUT_MIN (default 25), PROOF_DIGITAL_BUYER_EMAIL (required for the email kind: a
 // mailbox the tester controls; redacted from the log and the evidence JSON, masked in screenshots), PROOF_ORIGIN, PROOF_SERVICE, PROOF_NEXUS, PROOF_RELAY,
+// PROOF_STAGING_ORIGINS, PROOF_STAGING_SERVICES, PROOF_STAGING_NEXUS (comma lists naming the staging stack),
 // PROOF_FIXTURE_PHOTO, PROOF_ALLOW_PRODUCTION (1 to run against anything but staging), PROOF_DIGITAL_EMAIL_SCREENSHOTS
 // (1 to save the email kind's screenshots; they are not saved by default, and any saved screenshot has the mailbox masked).
 // Exit 0 only when every check passed. Paid orders cannot be deleted; they stay as the proof's evidence.
@@ -43,14 +45,13 @@ import { chmodSync, existsSync, readFileSync, unlinkSync, writeFileSync } from '
 import { dirname, join } from 'node:path';
 import { createInterface } from 'node:readline/promises';
 import { fileURLToPath } from 'node:url';
+import { servedDeployment } from './deployment-check.mjs';
 import {
   DELIVERABLES_PREFIX,
-  deploymentRefusal,
   describePlan,
   DIGITAL_KINDS,
   expectedCheckoutLine,
   expectedCurrentSummary,
-  extractDpl,
   formatSizeLabel,
   hasGoAhead,
   isInstantKind,
@@ -59,6 +60,7 @@ import {
   listingTitle,
   makeFixtureFile,
   maskedScreenshot,
+  MISSING_EXPECTATION,
   newDeliverablePaths,
   newRunId,
   parseBtcUsdRate,
@@ -79,9 +81,9 @@ import { evidenceDir, loadBuyerSeat, loadSellerSeat, prefix, repoRequire, shopCa
 const { chromium } = repoRequire('playwright');
 const { AuthFlowKind, Pubky } = repoRequire('@synonymdev/pubky');
 
-const ORIGIN = process.env.PROOF_ORIGIN ?? 'https://shop.pubky.app';
-const SERVICE = process.env.PROOF_SERVICE ?? 'https://marketplace-edge-production.up.railway.app';
-const NEXUS = process.env.PROOF_NEXUS ?? 'https://nexusd-production-7108.up.railway.app';
+const ORIGIN = process.env.PROOF_ORIGIN ?? '';
+const SERVICE = process.env.PROOF_SERVICE ?? '';
+const NEXUS = process.env.PROOF_NEXUS ?? '';
 const RELAY = process.env.PROOF_RELAY ?? 'https://httprelay.pubky.app/inbox';
 const FX_FEED = process.env.PROOF_FX_FEED ?? 'https://api1.blocktank.to/api/fx/rates/btc';
 const PHOTO = process.env.PROOF_FIXTURE_PHOTO ?? join(dirname(fileURLToPath(import.meta.url)), 'fixture-photo.png');
@@ -117,12 +119,16 @@ if (mode === 'plan') {
   console.log(
     isStagingTarget(TARGET)
       ? 'target: the staging stack'
-      : `target: NOT the staging stack (nexus ${NEXUS}); every mode but plan refuses unless PROOF_ALLOW_PRODUCTION=1`,
+      : ORIGIN && SERVICE && NEXUS
+        ? `target: NOT the staging stack (nexus ${NEXUS}); every mode but plan refuses unless PROOF_ALLOW_PRODUCTION=1`
+        : 'target: not configured; set PROOF_ORIGIN, PROOF_SERVICE and PROOF_NEXUS (every mode but plan refuses without them)',
   );
   console.log(
     "go-ahead needed to run: PROOF_DIGITAL_GO=GO-<today, UTC, YYYY-MM-DD>, set only on the product owner's instruction; it expires at the end of that UTC day",
   );
-  if (!process.env.EXPECTED_DPL) console.log('NOTE: EXPECTED_DPL is not set; a run needs it');
+  if (!process.env.EXPECTED_DPL?.trim() && !process.env.EXPECTED_COMMIT?.trim()) {
+    console.log('NOTE: neither EXPECTED_DPL nor EXPECTED_COMMIT is set; a run needs one');
+  }
   if (kinds.includes('email') && !buyerEmail)
     console.log('NOTE: PROOF_DIGITAL_BUYER_EMAIL is not set; the email kind needs it');
   process.exit(0);
@@ -132,7 +138,9 @@ if (spends && !hasGoAhead(process.env)) {
     "refusing to start: this run spends real money. PROOF_DIGITAL_GO must be GO-<today's UTC date>, and is set only on the product owner's go-ahead",
   );
 }
-if (spends && !process.env.EXPECTED_DPL) throw new Error('set EXPECTED_DPL to the dpl_… id now aliased to the origin');
+if (spends && !process.env.EXPECTED_DPL?.trim() && !process.env.EXPECTED_COMMIT?.trim()) {
+  throw new Error(MISSING_EXPECTATION);
+}
 if (spends && (!process.env.PROOF_SELLER_PREFIX || (!EXTERNAL && !process.env.PROOF_BUYER_PREFIX))) {
   throw new Error('set PROOF_SELLER_PREFIX and PROOF_BUYER_PREFIX: a paid run must not start on a swapped seat');
 }
@@ -192,10 +200,11 @@ async function shot(target, file, { kind = null, fullPage = false } = {}) {
 
 // The origin must be serving the deployment the run was authorized against.
 async function expectedDeploymentRefusal() {
-  const found = extractDpl(
-    await (await fetch(`${ORIGIN}/marketplace`, { signal: AbortSignal.timeout(30_000) })).text(),
-  );
-  return { found, refusal: deploymentRefusal({ found, expected: process.env.EXPECTED_DPL }) };
+  const { found, refusal } = await servedDeployment({
+    pageUrl: `${ORIGIN}/marketplace`,
+    buildUrl: `${ORIGIN}/api/build`,
+  });
+  return { found, refusal };
 }
 
 async function operator(prompt) {

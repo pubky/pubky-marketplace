@@ -8,9 +8,10 @@ export interface MarketplaceStarRatingProps {
   /** Total review count behind the average; rendered when provided. */
   count?: number;
   /**
-   * Verified-review count (reviews whose purchase attestation
-   * cryptographically verified at the index). Rendered as the "✓ n" affix
-   * when provided and positive.
+   * Verified-purchase count: reviews whose attestation verified AND whose
+   * attestor this client trusts (`trustedAttestedReviewCount`). Never the
+   * index's raw `verifiedCount`, which counts any key. Rendered as the
+   * "✓ n" affix when provided and positive.
    */
   verifiedCount?: number;
   size?: 'sm' | 'md';
