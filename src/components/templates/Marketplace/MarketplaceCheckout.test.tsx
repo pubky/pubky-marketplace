@@ -281,7 +281,7 @@ vi.mock('@/controllers/commerce/commerce', () => ({
       paypalAvailable: true,
     })),
     fetchUsdtPaymentsAvailable: vi.fn(async () => false),
-    getOrFetchShop: vi.fn(async () => null),
+    refreshShopOrGetCached: vi.fn(async () => null),
     getSellerAnnualLimit: vi.fn(async () => ({ enabled: false })),
     getIndicativeBtcRate: vi.fn(async () => null),
     getOrFetchListing: vi.fn(async () => listing.record),

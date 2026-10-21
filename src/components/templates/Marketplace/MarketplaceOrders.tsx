@@ -115,6 +115,7 @@ export function MarketplaceOrders() {
   const tabListRef = useRef<HTMLDivElement>(null);
   const tabRefs = useRef<Partial<Record<OrdersTab, HTMLButtonElement | null>>>({});
   const redirectedOrderRef = useRef<string | null>(null);
+  const scrolledAnchorRef = useRef<string | null>(null);
   const [legacyOrderId, setLegacyOrderId] = useState<string | null>(null);
   const nowMs = useNowMs(orders.some(({ order }) => order.state === 'pending_payment' && Boolean(order.holdExpiresAt)));
   const buyerCheckouts = orders.filter(({ order }) => isBuyerCheckoutInProgress(order, currentUserPubky));
@@ -169,7 +170,13 @@ export function MarketplaceOrders() {
       }
       return;
     }
-    document.getElementById(orderAnchorId(anchorId))?.scrollIntoView({ block: 'center' });
+    // Once per anchor: the orders poll would otherwise pull the page back to this order every few
+    // seconds, under the reader's scroll or an open sheet with the keyboard up.
+    if (scrolledAnchorRef.current === anchorId) return;
+    const anchor = document.getElementById(orderAnchorId(anchorId));
+    if (!anchor) return;
+    scrolledAnchorRef.current = anchorId;
+    anchor.scrollIntoView({ block: 'center' });
   }, [activeTab, anchorOrderId, currentUserPubky, isLoading, orders]);
 
   useEffect(() => {

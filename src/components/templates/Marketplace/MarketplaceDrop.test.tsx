@@ -9,7 +9,7 @@ const toggleShopFollow = vi.hoisted(() => vi.fn());
 
 vi.mock('@/controllers/commerce/commerce', () => ({
   CommerceController: {
-    getOrFetchShop: vi.fn(async () => ({ name: 'Analog Sound Co.' })),
+    refreshShopOrGetCached: vi.fn(async () => ({ name: 'Analog Sound Co.' })),
   },
 }));
 

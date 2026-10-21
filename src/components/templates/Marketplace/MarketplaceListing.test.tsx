@@ -87,7 +87,7 @@ vi.mock('@/controllers/commerce/commerce', () => ({
   CommerceController: {
     getListing: () => view.listing,
     getShop: () => view.shop,
-    getOrFetchShop: () => Promise.resolve(null),
+    refreshShopOrGetCached: () => Promise.resolve(null),
     getOrFetchListing: () => (view.fetchFailure === null ? Promise.resolve(null) : Promise.reject(view.fetchFailure)),
     isListingConfirmedRemoved: (_seller: string, _listing: string, fetchError: unknown) => {
       confirmRemovedCalls(fetchError);

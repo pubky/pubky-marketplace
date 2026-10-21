@@ -56,7 +56,7 @@ vi.mock('@/hooks/useIndicativeBtcRate/useIndicativeBtcRate', () => ({
 vi.mock('@/controllers/commerce/commerce', () => ({
   CommerceController: {
     ...createMarketplaceVrtCommerceController(),
-    getOrFetchShop: vi.fn(async () => ({ name: 'Analog Sound Co.' })),
+    refreshShopOrGetCached: vi.fn(async () => ({ name: 'Analog Sound Co.' })),
     getOrFetchListing: vi.fn(async (_seller: string, listingId: string) => ({
       ownerPubky: VRT_SELLER,
       listingId,

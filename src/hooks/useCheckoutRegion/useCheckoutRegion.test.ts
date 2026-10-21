@@ -10,7 +10,7 @@ import { useCheckoutRegion } from './useCheckoutRegion';
 vi.mock('@/controllers/commerce/commerce', () => ({
   CommerceController: {
     setBuyerCountry: vi.fn((code: string | null) => useBuyerCountryStore.getState().setCountry(code)),
-    getOrFetchShop: vi.fn(),
+    refreshShopOrGetCached: vi.fn(),
     getSellerAnnualLimit: vi.fn(),
   },
 }));
@@ -52,7 +52,7 @@ describe('useCheckoutRegion', () => {
   beforeEach(() => {
     useBuyerCountryStore.setState({ country: null });
     flags(false, false);
-    vi.mocked(CommerceController.getOrFetchShop).mockImplementation(async (pubky) => {
+    vi.mocked(CommerceController.refreshShopOrGetCached).mockImplementation(async (pubky) => {
       const record = shops[String(pubky)];
       if (!record) throw new Error('no shop');
       return record as never;

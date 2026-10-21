@@ -28,6 +28,7 @@ import { Typography } from '@/atoms/Typography/Typography';
 import { getCommerceAdapterMode, isDurableCommerceMode, isTransactionalCommerceMode } from '@/config/commerce';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import { useCommerceFavorite } from '@/hooks/useCommerceFavorite/useCommerceFavorite';
+import { useLiveSellerShop } from '@/hooks/useLiveSellerShop/useLiveSellerShop';
 import { useMarketplaceCart } from '@/hooks/useMarketplaceCart/useMarketplaceCart';
 import { useMarketplaceMediaUrl } from '@/hooks/useMarketplaceMediaUrl/useMarketplaceMediaUrl';
 import { useMarketplaceOffers } from '@/hooks/useMarketplaceOffers/useMarketplaceOffers';
@@ -145,7 +146,7 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
     setIsFetchSettled(false);
     // Best-effort: a direct visit may not have the seller's shop cached, and
     // it carries the shop name, vacation notice and destination countries.
-    void CommerceController.getOrFetchShop(sellerPubky).catch(() => undefined);
+    void CommerceController.refreshShopOrGetCached(sellerPubky).catch(() => undefined);
     CommerceController.getOrFetchListing(sellerPubky, listingId)
       .catch(async (fetchError: unknown) => {
         let confirmedRemoved = false;
@@ -167,6 +168,9 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
       active = false;
     };
   }, [adapterMode, listingId, sellerPubky]);
+
+  // A seller's later change (seller type, country) repaints the shop below and lifts or sets the EU fence.
+  useLiveSellerShop(sellerPubky, adapterMode !== 'sandbox');
 
   const listing = useLiveQuery(() => CommerceController.getListing(sellerPubky, listingId), [sellerPubky, listingId]);
   const madeToOrderVariants = madeToOrderVariantIds(

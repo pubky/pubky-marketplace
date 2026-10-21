@@ -137,7 +137,7 @@ vi.mock('@/controllers/commerce/commerce', () => ({
   CommerceController: {
     ...createMarketplaceVrtCommerceController(),
     getShop: () => view.shop,
-    getOrFetchShop: () =>
+    refreshShopOrGetCached: () =>
       view.shop ? Promise.resolve((view.shop as { record: unknown }).record) : Promise.reject(new Error('no shop')),
     fetchSellerCatalogListings: () => Promise.resolve(),
     getListingsBySeller: () => view.listings,

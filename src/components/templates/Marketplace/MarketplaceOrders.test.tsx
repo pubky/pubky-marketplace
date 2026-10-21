@@ -1424,6 +1424,20 @@ describe('MarketplaceOrders Activity link to an order no section lists', () => {
     expect(scrollIntoView.mock.contexts.some((element) => element === card)).toBe(true);
   });
 
+  it('scrolls to the linked order once, not again on each orders poll', async () => {
+    window.history.replaceState(null, '', '/marketplace/orders?order=test-unpaid-sold-lamp');
+
+    const view = render(<MarketplaceOrders />);
+    await waitFor(() => expect(scrollIntoView).toHaveBeenCalledTimes(1));
+
+    // A poll hands back the same orders as new objects.
+    ordersState.orders = ordersState.orders.map((order) => ({ ...(order as object) }));
+    view.rerender(<MarketplaceOrders />);
+
+    await screen.findByTestId('marketplace-linked-order');
+    expect(scrollIntoView).toHaveBeenCalledTimes(1);
+  });
+
   it('keeps the unpaid cancel out of the page without an Activity link', () => {
     render(<MarketplaceOrders />);
 
