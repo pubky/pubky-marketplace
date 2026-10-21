@@ -147,6 +147,9 @@ export function paykitPickerLabel(assets: readonly PaymentAsset[]): { assets: st
  * sends the request without opening Bitkit until Bitkit ships a link to its
  * payment requests (issue #357).
  */
+/** A Locks checkout creates the order and pays on the order page, so it sends nothing to Bitkit yet. */
+export const LOCKS_CHECKOUT_SUBMIT_LABEL = 'Continue to payment';
+
 export const CHECKOUT_SUBMIT_LABEL: Record<'paykit' | 'paypal', string> = {
   paykit: 'Send request to Bitkit',
   paypal: 'Continue to PayPal',

@@ -63,6 +63,7 @@ import { commerceVariantUnitPrice } from '@/libs/commerce/marketplace-records';
 import { PAYKIT_OUTAGE_COPY } from '@/libs/commerce/paykit-rail';
 import {
   CHECKOUT_SUBMIT_LABEL,
+  LOCKS_CHECKOUT_SUBMIT_LABEL,
   observedPaymentRail,
   orderMayPayInUsdt,
   paykitCheckoutCancellable,
@@ -1461,7 +1462,11 @@ function MarketplaceCartCheckout() {
                         ) : isSandbox ? (
                           'Pay sandbox'
                         ) : selectedMethod ? (
-                          CHECKOUT_SUBMIT_LABEL[selectedMethod]
+                          isLocksCheckout && selectedMethod === 'paykit' ? (
+                            LOCKS_CHECKOUT_SUBMIT_LABEL
+                          ) : (
+                            CHECKOUT_SUBMIT_LABEL[selectedMethod]
+                          )
                         ) : (
                           'Pay'
                         )}

@@ -2124,6 +2124,20 @@ describe('MarketplaceCheckout Paykit option (Bitcoin or USDT)', () => {
     );
   });
 
+  it('labels a Locks checkout by what the tap does: it creates the order and pays on the order page', async () => {
+    seededCart();
+    view.items = view.items.map((item) => ({
+      ...item,
+      listing: { ...item.listing, record: { ...item.listing.record, digitalLock: {} } },
+    })) as typeof view.items;
+    view.adapterMode = 'locks-paykit';
+    view.paykitServerApi = 'upstream';
+
+    render(<MarketplaceCheckout />);
+
+    expect(await screen.findByTestId('marketplace-checkout-pay')).toHaveTextContent(/^Continue to payment$/);
+  });
+
   it('labels the submit button with the next step for the selected method, distinct from the method tile', async () => {
     seededCart();
     const user = userEvent.setup();
