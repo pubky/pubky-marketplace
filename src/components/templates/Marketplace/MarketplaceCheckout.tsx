@@ -48,6 +48,7 @@ import { useMarketplaceOrders } from '@/hooks/useMarketplaceOrders/useMarketplac
 import { useMarketplaceSellerDeliveryTerms } from '@/hooks/useMarketplaceSellerDeliveryTerms/useMarketplaceSellerDeliveryTerms';
 import { usePaykitOutage } from '@/hooks/usePaykitOutage/usePaykitOutage';
 import { useUsdtPaymentsCapability } from '@/hooks/useUsdtPaymentsCapability/useUsdtPaymentsCapability';
+import { getMarketplaceOrderViewRoute } from '@/libs/commerce/activity-links';
 import { buyerCheckoutProgressCopy } from '@/libs/commerce/bitcoin-buyer-status';
 import { bitcoinPaymentCodeCheckoutNote } from '@/libs/commerce/bitcoin-payment-code';
 import { cartLineStockLabel, SOLD_OUT_COPY } from '@/libs/commerce/cart-stock';
@@ -771,6 +772,7 @@ function MarketplaceCartCheckout() {
                       <MarketplaceCheckoutItem
                         key={`${line.listingAggregateId}:${line.variantId ?? index}`}
                         line={line}
+                        orderHref={getMarketplaceOrderViewRoute(order.id)}
                       />
                     ))}
                     {(payment?.state !== 'confirmed' || observedPaymentRail(order) === 'usdt') && (

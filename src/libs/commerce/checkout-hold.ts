@@ -3,6 +3,12 @@ import { formatDateTime } from '@/libs/utils/dateTime';
 
 export const PAYMENT_WINDOW_ELAPSED_REASON = 'payment window elapsed';
 
+/** The reasons the service cancels an unpaid checkout on its own, never the buyer (workers.rs). */
+export const SYSTEM_LAPSE_REASONS: ReadonlySet<string> = new Set([
+  PAYMENT_WINDOW_ELAPSED_REASON,
+  'checkout idle elapsed',
+]);
+
 export const UNBOUND_BACK_CANCEL_REASON = 'Released hold before choosing a payment method.';
 
 export const CHECKOUT_HOLD_COPY = {

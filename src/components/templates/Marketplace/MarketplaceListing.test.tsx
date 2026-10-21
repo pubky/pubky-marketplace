@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CommerceSellerReputationOverview } from '@/application/commerce/commerce';
 import { CAPABILITIES } from '@/config/app';
-import { COMMERCE_LISTING_MAX_QUANTITY, MARKETPLACE_TRUSTED_ATTESTORS } from '@/config/commerce';
+import { COMMERCE_LISTING_MAX_QUANTITY } from '@/config/commerce';
 import { CHECKOUT_HOLD_COPY } from '@/libs/commerce/checkout-hold';
 import { getMarketplaceOfferCheckoutRoute } from '@/libs/commerce/checkout-phase';
 import type { MarketplaceOffer } from '@/services/marketplace/marketplace';
@@ -17,6 +17,7 @@ import { toCommerceListingModel, toCommerceShopModel } from '@/test/fixtures/com
 import { parseContractFaithfulOffer } from '@/test/fixtures/commerce/offer-award';
 import { createOrderFixture } from '@/test/fixtures/commerce/orders';
 import { createListingProjectionFixture } from '@/test/fixtures/commerce/projections';
+import { TEST_TRUSTED_ATTESTOR } from '@/test/fixtures/commerce/trusted-attestors';
 import { setEmbedded } from '@/test-utils/embedded';
 import { MarketplaceListing } from './MarketplaceListing';
 
@@ -713,7 +714,7 @@ describe('MarketplaceListing', () => {
         histogram: [0, 0, 1, 2, 9],
         responseCount: 3,
         editedLateCount: 0,
-        attestors: { [MARKETPLACE_TRUSTED_ATTESTORS[0]]: 4, ['x'.repeat(52)]: 5 },
+        attestors: { [TEST_TRUSTED_ATTESTOR.pubky]: 4, ['x'.repeat(52)]: 5 },
         lastReviewedAt: '2026-08-20T12:00:00.000Z',
       },
     };
