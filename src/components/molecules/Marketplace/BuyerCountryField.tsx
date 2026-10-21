@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Input } from '@/atoms/Input/Input';
 import { Label } from '@/atoms/Label/Label';
 import { Typography } from '@/atoms/Typography/Typography';
@@ -22,7 +22,8 @@ export interface BuyerCountryFieldProps {
 /**
  * "Country you live in": asked once, remembered on this device, and sent in clear text with the
  * commands that sell (legal launch plan C2). The delivery address itself stays sealed. A typed code
- * counts only once the buyer confirms it (Enter, or leaving the field), never mid-typing.
+ * counts only once the buyer confirms it (Enter, leaving the field, or pressing anywhere outside it), never
+ * mid-typing. The outside press matters on iPhone, where tapping a disabled button keeps the field focused.
  */
 export function BuyerCountryField({
   value,
@@ -42,6 +43,18 @@ export function BuyerCountryField({
     if (isAssignedCountryCode(canonical) && canonical !== value) onChange(canonical);
   };
 
+  const inputRef = useRef<HTMLInputElement>(null);
+  const pending = isAssignedCountryCode(canonical) && canonical !== value;
+  useEffect(() => {
+    if (!pending) return;
+    // Capture phase, so the country counts before the pressed button's own click runs.
+    const onPointerDown = (event: PointerEvent) => {
+      if (!inputRef.current?.contains(event.target as Node)) onChange(canonical);
+    };
+    document.addEventListener('pointerdown', onPointerDown, true);
+    return () => document.removeEventListener('pointerdown', onPointerDown, true);
+  }, [pending, canonical, onChange]);
+
   return (
     <div className="grid gap-2" data-testid="buyer-country-field">
       <div className="flex items-center gap-1.5">
@@ -49,6 +62,7 @@ export function BuyerCountryField({
         <InfoHint label={BUYER_COUNTRY_INFO_LABEL}>{info}</InfoHint>
       </div>
       <Input
+        ref={inputRef}
         id={id}
         value={draft}
         onChange={(event) => setDraft(event.target.value.toUpperCase().slice(0, 2))}
