@@ -46,6 +46,8 @@ const ROUTE_TEMPLATES: readonly string[] = [
   '/feed/:id',
 ];
 
+const ROUTE_TEMPLATE_SEGMENTS: readonly (readonly string[])[] = ROUTE_TEMPLATES.map((entry) => entry.split('/'));
+
 export interface PlausibleUrlContext {
   /** Origin of the page sending the event; referrers from it are templated, others keep only their origin. */
   pageOrigin?: string;
@@ -63,7 +65,7 @@ function isPubkySegment(segment: string): boolean {
   return PUBKY_SEGMENT.test(decoded);
 }
 
-function matchesTemplate(template: string[], segments: string[]): boolean {
+function matchesTemplate(template: readonly string[], segments: string[]): boolean {
   return (
     template.length <= segments.length &&
     template.every((part, i) => (part.startsWith(':') ? segments[i] !== '' : part === segments[i]))
@@ -71,9 +73,9 @@ function matchesTemplate(template: string[], segments: string[]): boolean {
 }
 
 /** Replace the segments of the first matching template, then any remaining pubky segment with `:pubky`. */
-function applyRouteTemplates(path: string, templates: readonly string[]): string {
+function applyRouteTemplates(path: string, templates: readonly (readonly string[])[]): string {
   const segments = path.split('/');
-  const template = templates.map((entry) => entry.split('/')).find((entry) => matchesTemplate(entry, segments));
+  const template = templates.find((entry) => matchesTemplate(entry, segments));
   return segments
     .map((segment, i) => {
       if (template && i < template.length) return template[i];
@@ -84,9 +86,8 @@ function applyRouteTemplates(path: string, templates: readonly string[]): string
 
 /** Template the path inside the base path; paths outside it only lose pubky segments. */
 function templatePathname(pathname: string, basePath: string): string {
-  if (!basePath) return applyRouteTemplates(pathname, ROUTE_TEMPLATES);
   if (pathname === basePath || pathname.startsWith(`${basePath}/`)) {
-    return basePath + applyRouteTemplates(pathname.slice(basePath.length), ROUTE_TEMPLATES);
+    return basePath + applyRouteTemplates(pathname.slice(basePath.length), ROUTE_TEMPLATE_SEGMENTS);
   }
   return applyRouteTemplates(pathname, []);
 }
@@ -109,7 +110,6 @@ export function plausiblePageUrlFromHref(href: string, base = 'https://invalid.i
 
 /** Same-origin referrers get the page treatment; other origins keep only the origin. */
 export function plausibleReferrerFromHref(ref: string, pageOrigin: string, basePath = ''): string {
-  if (!ref) return '';
   try {
     const url = new URL(ref);
     if (!isHttpUrl(url)) return '';
@@ -188,6 +188,7 @@ export function plausiblePageUrlBootstrap(basePath: string): string {
   return `(function(){
   var TEMPLATES = ${inlineScriptJson(ROUTE_TEMPLATES)};
   var BASE_PATH = ${inlineScriptJson(basePath)};
+  for (var s = 0; s < TEMPLATES.length; s++) TEMPLATES[s] = TEMPLATES[s].split('/');
   var pubkySegment = null;
   try {
     pubkySegment = new RegExp(${inlineScriptJson(PUBKY_SEGMENT.source)}, 'i');
@@ -210,8 +211,7 @@ export function plausiblePageUrlBootstrap(basePath: string): string {
     var segments = path.split('/');
     var template = null;
     for (var t = 0; t < templates.length && !template; t++) {
-      var candidate = templates[t].split('/');
-      if (matchesTemplate(candidate, segments)) template = candidate;
+      if (matchesTemplate(templates[t], segments)) template = templates[t];
     }
     for (var i = 0; i < segments.length; i++) {
       if (template && i < template.length) segments[i] = template[i];
@@ -220,7 +220,6 @@ export function plausiblePageUrlBootstrap(basePath: string): string {
     return segments.join('/');
   }
   function templatePathname(pathname){
-    if (!BASE_PATH) return applyRouteTemplates(pathname, TEMPLATES);
     if (pathname === BASE_PATH || pathname.indexOf(BASE_PATH + '/') === 0) {
       return BASE_PATH + applyRouteTemplates(pathname.slice(BASE_PATH.length), TEMPLATES);
     }
@@ -237,7 +236,6 @@ export function plausiblePageUrlBootstrap(basePath: string): string {
     return applyRouteTemplates(String(href).split('#')[0].split('?')[0], []);
   }
   function referrerUrl(ref){
-    if (!ref) return '';
     try {
       var url = new URL(ref);
       if (!isHttpUrl(url)) return '';
@@ -245,9 +243,6 @@ export function plausiblePageUrlBootstrap(basePath: string): string {
     } catch (e) {
       return '';
     }
-  }
-  function startsWith(value, prefix){
-    return value.slice(0, prefix.length) === prefix;
   }
   function rewrite(body){
     if (body == null || typeof body !== 'string') return body;
@@ -266,8 +261,9 @@ export function plausiblePageUrlBootstrap(basePath: string): string {
     var hasName = false;
     var hasUrl = false;
     for (var i = 0; i < pairs.length; i++) {
-      if (startsWith(pairs[i], 'n=')) hasName = true;
-      if (startsWith(pairs[i], 'u=')) hasUrl = true;
+      var prefix = pairs[i].slice(0, 2);
+      if (prefix === 'n=') hasName = true;
+      if (prefix === 'u=') hasUrl = true;
     }
     if (!hasName || !hasUrl) return body;
     for (var j = 0; j < pairs.length; j++) {

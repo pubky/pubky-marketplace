@@ -99,6 +99,47 @@ const BASE_PATH_CASES: (PageCase & { basePath: string })[] = [
   },
 ];
 
+const APP_DIR = join(__dirname, '../../app');
+/** The catch-all intercept renders whatever post URL it intercepts, which the post template already covers. */
+const EXEMPT_ROUTES = ['(feeds)/@post/[...catchAll]'];
+
+function pageDirectories(dir: string): string[] {
+  return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+    if (entry.isDirectory()) return pageDirectories(join(dir, entry.name));
+    return entry.name === 'page.tsx' ? [relative(APP_DIR, dir)] : [];
+  });
+}
+
+const APP_ROUTES = pageDirectories(APP_DIR);
+
+/** Route groups and slots are not URL segments; an intercept marker such as `(.)` is dropped. */
+function urlSegments(route: string): string[] {
+  return route
+    .split('/')
+    .filter((segment) => segment !== '' && !/^\(.*\)$/.test(segment) && !segment.startsWith('@'))
+    .map((segment) => segment.replace(/^(?:\(\.{1,3}\))+/, ''));
+}
+
+/** Each app route as a sample path (dynamic segments filled in) and its expected template, with `:` for any param. */
+const ROUTE_CASES = APP_ROUTES.filter((route) => !EXEMPT_ROUTES.includes(route)).map((route) => {
+  const segments = urlSegments(route);
+  return {
+    route,
+    path: `/${segments.map((segment, i) => (segment.startsWith('[') ? `sample-${i}` : segment)).join('/')}`,
+    expected: `/${segments.map((segment) => (segment.startsWith('[') ? ':' : segment)).join('/')}`,
+  };
+});
+
+/** The route-template mismatches of `pageUrl` over every app route, with param names collapsed to `:`. */
+function routeMismatches(pageUrl: (href: string) => string): string[] {
+  return ROUTE_CASES.flatMap(({ route, path, expected }) => {
+    const actual = pageUrl(`${ORIGIN}${path}`)
+      .slice(ORIGIN.length)
+      .replace(/\/:[A-Za-z]+/g, '/:');
+    return actual === expected ? [] : [`${route}: ${actual} (expected ${expected})`];
+  });
+}
+
 function expectNoIdentifiers(value: string) {
   expect(value).not.toMatch(Z32_RUN);
   expect(value).not.toContain(INVITE_CODE);
@@ -208,24 +249,11 @@ type PlausibleWindow = Window & {
 
 describe('plausiblePageUrlBootstrap', () => {
   const plausibleWindow = window as PlausibleWindow;
-  let saved: {
-    sendBeacon: PropertyDescriptor | undefined;
-    fetch: PropertyDescriptor | undefined;
-    plausible: PropertyDescriptor | undefined;
-    send: XMLHttpRequest['send'];
-  };
+  let savedSendBeacon: PropertyDescriptor | undefined;
+  let savedSend: XMLHttpRequest['send'];
   let sendBeacon: Mock;
   let fetchStub: Mock;
   let xhrSend: Mock;
-
-  function restoreProperty(target: object, key: string, descriptor: PropertyDescriptor | undefined) {
-    if (descriptor) Object.defineProperty(target, key, descriptor);
-    else Reflect.deleteProperty(target, key);
-  }
-
-  function stubProperty(target: object, key: string, value: unknown) {
-    Object.defineProperty(target, key, { configurable: true, writable: true, value });
-  }
 
   function runBootstrap(basePath: string) {
     new Function(plausiblePageUrlBootstrap(basePath))();
@@ -237,26 +265,22 @@ describe('plausiblePageUrlBootstrap', () => {
   }
 
   beforeEach(() => {
-    saved = {
-      sendBeacon: Object.getOwnPropertyDescriptor(navigator, 'sendBeacon'),
-      fetch: Object.getOwnPropertyDescriptor(window, 'fetch'),
-      plausible: Object.getOwnPropertyDescriptor(window, 'plausible'),
-      send: XMLHttpRequest.prototype.send,
-    };
+    savedSendBeacon = Object.getOwnPropertyDescriptor(navigator, 'sendBeacon');
+    savedSend = XMLHttpRequest.prototype.send;
     sendBeacon = vi.fn(() => true);
     fetchStub = vi.fn(() => Promise.resolve(new Response(null, { status: 202 })));
     xhrSend = vi.fn();
-    stubProperty(navigator, 'sendBeacon', sendBeacon);
-    stubProperty(window, 'fetch', fetchStub);
-    stubProperty(window, 'plausible', undefined);
+    Object.defineProperty(navigator, 'sendBeacon', { configurable: true, writable: true, value: sendBeacon });
+    vi.stubGlobal('fetch', fetchStub);
+    vi.stubGlobal('plausible', undefined);
     XMLHttpRequest.prototype.send = xhrSend;
   });
 
   afterEach(() => {
-    restoreProperty(navigator, 'sendBeacon', saved.sendBeacon);
-    restoreProperty(window, 'fetch', saved.fetch);
-    restoreProperty(window, 'plausible', saved.plausible);
-    XMLHttpRequest.prototype.send = saved.send;
+    if (savedSendBeacon) Object.defineProperty(navigator, 'sendBeacon', savedSendBeacon);
+    else Reflect.deleteProperty(navigator, 'sendBeacon');
+    vi.unstubAllGlobals();
+    XMLHttpRequest.prototype.send = savedSend;
   });
 
   it('parses in engines without lookbehind support', () => {
@@ -334,6 +358,11 @@ describe('plausiblePageUrlBootstrap', () => {
     expect(sendBeacon.mock.lastCall?.[1]).toBe(body);
   });
 
+  it('maps every app route to its route template', () => {
+    runBootstrap('');
+    expect(routeMismatches(beaconPageUrl)).toEqual([]);
+  });
+
   it('sends route templates for window.plausible page URLs', () => {
     runBootstrap('');
     plausibleWindow.plausible?.('pageview', { u: `${location.origin}/messages/${BUYER}?conversation=x` });
@@ -346,43 +375,12 @@ describe('plausiblePageUrlBootstrap', () => {
 });
 
 describe('Plausible route templates', () => {
-  const APP_DIR = join(__dirname, '../../app');
-  /** The catch-all intercept renders whatever post URL it intercepts, which the post template already covers. */
-  const EXEMPT_ROUTES = ['(feeds)/@post/[...catchAll]'];
-
-  function pageDirectories(dir: string): string[] {
-    return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
-      if (entry.isDirectory()) return pageDirectories(join(dir, entry.name));
-      return entry.name === 'page.tsx' ? [relative(APP_DIR, dir)] : [];
-    });
-  }
-
-  /** Route groups and slots are not URL segments; an intercept marker such as `(.)` is dropped. */
-  function urlSegments(route: string): string[] {
-    return route
-      .split('/')
-      .filter((segment) => segment !== '' && !/^\(.*\)$/.test(segment) && !segment.startsWith('@'))
-      .map((segment) => segment.replace(/^(?:\(\.{1,3}\))+/, ''));
-  }
-
   it('maps every app route to its route template', () => {
-    const routes = pageDirectories(APP_DIR).filter((route) => !EXEMPT_ROUTES.includes(route));
-    expect(routes.some((route) => route.includes('['))).toBe(true);
-
-    const mismatches = routes.flatMap((route) => {
-      const segments = urlSegments(route);
-      const sample = segments.map((segment, i) => (segment.startsWith('[') ? `sample-${i}` : segment));
-      const expected = `/${segments.map((segment) => (segment.startsWith('[') ? ':' : segment)).join('/')}`;
-      const actual = plausiblePageUrlFromHref(`${ORIGIN}/${sample.join('/')}`)
-        .slice(ORIGIN.length)
-        .replace(/\/:[A-Za-z]+/g, '/:');
-      return actual === expected ? [] : [`${route}: ${actual} (expected ${expected})`];
-    });
-    expect(mismatches).toEqual([]);
+    expect(ROUTE_CASES.some(({ route }) => route.includes('['))).toBe(true);
+    expect(routeMismatches((href) => plausiblePageUrlFromHref(href))).toEqual([]);
   });
 
   it('lists only exemptions that exist', () => {
-    const routes = pageDirectories(APP_DIR);
-    for (const route of EXEMPT_ROUTES) expect(routes).toContain(route);
+    for (const route of EXEMPT_ROUTES) expect(APP_ROUTES).toContain(route);
   });
 });
