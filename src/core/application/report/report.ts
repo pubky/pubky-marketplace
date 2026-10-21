@@ -110,7 +110,7 @@ export class ReportApplication {
       // Build source label, claimed reporter lines and comment body
       const content = this.formatMessageContent(input);
 
-      // Create or find contact in Chatwoot, named by the pubky (the submitted name is only a claim)
+      // Create or find contact in Chatwoot; a new contact is named by the pubky, an existing one keeps its name
       const contact = await ChatwootService.createOrFindContact(email, pubky, inboxId);
 
       // Extract source ID (validates inbox associations)

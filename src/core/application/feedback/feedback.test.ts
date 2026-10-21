@@ -112,7 +112,7 @@ describe('FeedbackApplication', () => {
       );
     });
 
-    it('names the contact by the pubky, never by the submitted name', async () => {
+    it('names a new contact by the pubky, not by the submitted name', async () => {
       const input = createFeedbackInput();
       const createOrFindContactSpy = vi.spyOn(ChatwootService, 'createOrFindContact');
 

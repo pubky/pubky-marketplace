@@ -60,7 +60,7 @@ export class FeedbackApplication {
       // Format message with prefix and claimed reporter lines
       const content = this.formatMessageContent(pubky, name, comment);
 
-      // Create or find contact in Chatwoot, named by the pubky (the submitted name is only a claim)
+      // Create or find contact in Chatwoot; a new contact is named by the pubky, an existing one keeps its name
       const contact = await ChatwootService.createOrFindContact(email, pubky, inboxId);
 
       // Extract source ID (validates inbox associations)

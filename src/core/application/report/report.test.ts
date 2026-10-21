@@ -258,7 +258,7 @@ describe('ReportApplication', () => {
       }
     });
 
-    it('names the contact by the pubky, never by the submitted name', async () => {
+    it('names a new contact by the pubky, not by the submitted name', async () => {
       const input = createReportInput();
       const createOrFindContactSpy = vi.spyOn(ChatwootService, 'createOrFindContact');
 
