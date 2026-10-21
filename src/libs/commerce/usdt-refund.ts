@@ -278,6 +278,8 @@ export const USDT_REFUND_COPY = {
   checked: 'Checked on Arbitrum.',
   transactionNotFound: "Arbitrum doesn't show this transaction yet. Check the hash, or try again once it's confirmed.",
   transactionReverted: 'This transaction failed on Arbitrum. Send the refund again and record the new hash.',
+  transactionAlreadyRecorded:
+    'This transaction is already recorded as the refund of another order. Send this refund in its own transaction.',
   transactionWrongRecipient:
     "This transaction sent no USDT to the buyer's refund address. Check that you sent it to the address above.",
   feeHint:
@@ -298,6 +300,7 @@ export const USDT_REFUND_REFUSAL_COPY: ReadonlyMap<string, string> = new Map([
   ['refund_transaction_not_found', USDT_REFUND_COPY.transactionNotFound],
   ['refund_transaction_reverted', USDT_REFUND_COPY.transactionReverted],
   ['refund_transaction_wrong_recipient', USDT_REFUND_COPY.transactionWrongRecipient],
+  ['refund_transaction_already_recorded', USDT_REFUND_COPY.transactionAlreadyRecorded],
 ]);
 
 /**
