@@ -32,6 +32,13 @@ export interface OnboardingSelectors {
 
 export type OnboardingStore = OnboardingState & OnboardingActions & OnboardingSelectors;
 
+/** The onboarding state with the recovery phrase, secret key and their save time removed. */
+export const onboardingClearedSecrets = {
+  secretKey: null,
+  mnemonic: null,
+  secretsSavedAt: null,
+} satisfies Partial<OnboardingState>;
+
 export const onboardingInitialState: OnboardingState = {
   secretKey: null,
   mnemonic: null,

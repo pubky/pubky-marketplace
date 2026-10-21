@@ -3,6 +3,7 @@ import { createJSONStorage } from 'zustand/middleware';
 import { ONBOARDING_SECRETS_TTL_MS } from '@/config/onboarding';
 import { ONBOARDING_PERSIST_KEY } from '../persistedKeys';
 import { useOnboardingStore } from './onboarding.store';
+import { onboardingClearedSecrets, onboardingInitialState } from './onboarding.types';
 
 // Mock localStorage for testing
 const localStorageMock = {
@@ -37,14 +38,7 @@ describe('OnboardingStore', () => {
     localStorageMock.removeItem.mockImplementation(() => {});
 
     // Reset store state to initial state
-    useOnboardingStore.setState({
-      secretKey: null,
-      mnemonic: null,
-      secretsSavedAt: null,
-      hasHydrated: false,
-      showWelcomeDialog: false,
-      inviteCode: '',
-    });
+    useOnboardingStore.setState({ ...onboardingInitialState });
   });
 
   afterEach(() => {
@@ -629,7 +623,9 @@ describe('OnboardingStore', () => {
   describe('Stored secrets lifetime', () => {
     const SAVED_AT = Date.UTC(2026, 0, 1);
 
-    const storeEntry = (state: Record<string, unknown>, version: number) => {
+    const savedSecrets = { ...createMockSecrets(), secretsSavedAt: SAVED_AT };
+
+    const storeEntry = (state: Record<string, unknown>, version = 1) => {
       localStorageMock.getItem.mockReturnValue(JSON.stringify({ state, version }));
     };
 
@@ -671,7 +667,7 @@ describe('OnboardingStore', () => {
     });
 
     it('keeps stored secrets younger than the onboarding lifetime', async () => {
-      storeEntry({ ...createMockSecrets(), secretsSavedAt: SAVED_AT }, 1);
+      storeEntry(savedSecrets);
       vi.setSystemTime(SAVED_AT + ONBOARDING_SECRETS_TTL_MS - 1);
 
       await useOnboardingStore.persist.rehydrate();
@@ -683,33 +679,27 @@ describe('OnboardingStore', () => {
     });
 
     it('drops stored secrets older than the onboarding lifetime and rewrites the stored entry', async () => {
-      storeEntry({ ...createMockSecrets(), secretsSavedAt: SAVED_AT }, 1);
+      storeEntry(savedSecrets);
       vi.setSystemTime(SAVED_AT + ONBOARDING_SECRETS_TTL_MS);
 
       await useOnboardingStore.persist.rehydrate();
 
       const state = useOnboardingStore.getState();
-      expect(state.secretKey).toBeNull();
-      expect(state.mnemonic).toBeNull();
-      expect(state.secretsSavedAt).toBeNull();
+      expect(state).toMatchObject(onboardingClearedSecrets);
       expect(state.hasHydrated).toBe(true);
-      expect(lastWrittenState()).toMatchObject({ secretKey: null, mnemonic: null, secretsSavedAt: null });
+      expect(lastWrittenState()).toMatchObject(onboardingClearedSecrets);
     });
 
     it('drops stored secrets that have no save time', async () => {
-      storeEntry({ ...createMockSecrets(), secretsSavedAt: null }, 1);
+      storeEntry({ ...savedSecrets, secretsSavedAt: null });
 
       await useOnboardingStore.persist.rehydrate();
 
-      expect(useOnboardingStore.getState().secretKey).toBeNull();
-      expect(useOnboardingStore.getState().mnemonic).toBeNull();
+      expect(useOnboardingStore.getState()).toMatchObject(onboardingClearedSecrets);
     });
 
     it('keeps the invite code and welcome dialog flag when the stored secrets expire', async () => {
-      storeEntry(
-        { ...createMockSecrets(), secretsSavedAt: SAVED_AT, inviteCode: 'AAAA-BBBB-CCCC', showWelcomeDialog: true },
-        1,
-      );
+      storeEntry({ ...savedSecrets, inviteCode: 'AAAA-BBBB-CCCC', showWelcomeDialog: true });
       vi.setSystemTime(SAVED_AT + ONBOARDING_SECRETS_TTL_MS);
 
       await useOnboardingStore.persist.rehydrate();
@@ -728,15 +718,14 @@ describe('OnboardingStore', () => {
 
       expect(useOnboardingStore.getState().secretKey).toBe(createMockSecrets().secretKey);
       expect(useOnboardingStore.getState().secretsSavedAt).toBe(SAVED_AT);
-      expect(lastWrittenState()).toMatchObject({ ...createMockSecrets(), secretsSavedAt: SAVED_AT });
+      expect(lastWrittenState()).toMatchObject(savedSecrets);
 
-      storeEntry(lastWrittenState(), 1);
+      storeEntry(lastWrittenState());
       vi.setSystemTime(SAVED_AT + ONBOARDING_SECRETS_TTL_MS);
 
       await useOnboardingStore.persist.rehydrate();
 
-      expect(useOnboardingStore.getState().secretKey).toBeNull();
-      expect(useOnboardingStore.getState().mnemonic).toBeNull();
+      expect(useOnboardingStore.getState()).toMatchObject(onboardingClearedSecrets);
     });
 
     it('does not record a save time for version 0 entries without secrets', async () => {

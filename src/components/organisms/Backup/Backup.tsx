@@ -14,10 +14,12 @@ export const BackupNavigation = () => {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
 
+  const goToProfile = () => router.push(ONBOARDING_ROUTES.PROFILE);
+
   const onHandleContinueButton = () => {
     setLoading(true);
     // Signup already happened at the pubky step; just navigate to profile
-    router.push(ONBOARDING_ROUTES.PROFILE);
+    goToProfile();
   };
 
   return (
@@ -30,7 +32,7 @@ export const BackupNavigation = () => {
         continueButtonClassName="w-full md:flex-0"
         backButtonDisabled={true}
       />
-      <DialogSkipBackup triggerClassName="md:self-end" onConfirm={() => router.push(ONBOARDING_ROUTES.PROFILE)} />
+      <DialogSkipBackup triggerClassName="md:self-end" onConfirm={goToProfile} />
     </Container>
   );
 };

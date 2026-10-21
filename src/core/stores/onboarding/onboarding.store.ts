@@ -4,7 +4,12 @@ import { ONBOARDING_SECRETS_TTL_MS } from '@/config/onboarding';
 import { ONBOARDING_PERSIST_KEY } from '../persistedKeys';
 import { createOnboardingActions } from './onboarding.actions';
 import { createOnboardingSelectors } from './onboarding.selectors';
-import { onboardingInitialState, type OnboardingState, type OnboardingStore } from './onboarding.types';
+import {
+  onboardingClearedSecrets,
+  onboardingInitialState,
+  type OnboardingState,
+  type OnboardingStore,
+} from './onboarding.types';
 
 type StoredOnboardingState = Partial<OnboardingState>;
 
@@ -51,8 +56,8 @@ export const useOnboardingStore = create<OnboardingStore>()(
         // secrets never reach memory, and the setHydrated write below rewrites the entry without them.
         merge: (persisted, current) => {
           const stored = (persisted ?? {}) as StoredOnboardingState;
-          if (!secretsExpired(stored)) return { ...current, ...stored };
-          return { ...current, ...stored, secretKey: null, mnemonic: null, secretsSavedAt: null };
+          const merged = { ...current, ...stored };
+          return secretsExpired(stored) ? { ...merged, ...onboardingClearedSecrets } : merged;
         },
 
         // Set hasHydrated to true after rehydration
