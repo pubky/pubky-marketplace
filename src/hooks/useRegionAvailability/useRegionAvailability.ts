@@ -8,7 +8,7 @@ import {
   fenceRefusal,
   SELLER_LIMIT_MESSAGE,
   sellerDeclaration,
-  sellerUnavailableToEuBuyers,
+  sellerUnavailableToPrivateOnlyBuyers,
 } from '@/libs/commerce/eu-region';
 import { getDigitalRegionBlockEnabled, getEuFenceEnabled } from '@/libs/runtime-config/runtime-config';
 
@@ -65,7 +65,7 @@ export function useRegionAvailability(input: {
     needsCountry: (fence || digitalHold) && buyer.country === null,
     refusal: shownRefusal,
     canChangeCountry: buyer.country !== null && shownRefusal !== null && shownRefusal !== SELLER_LIMIT_MESSAGE,
-    usesCountry: !input.isOwner && (digitalHold || (fence && sellerUnavailableToEuBuyers(declaration))),
+    usesCountry: !input.isOwner && (digitalHold || (fence && sellerUnavailableToPrivateOnlyBuyers(declaration))),
     digitalNote: digitalHold ? DIGITAL_REGION_MESSAGE : null,
   };
 }

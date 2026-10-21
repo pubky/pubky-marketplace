@@ -11,6 +11,7 @@ import { asOpaque } from '@/test-utils/type-assertions';
 import { BuyerCountryField } from '@/molecules/Marketplace/BuyerCountryField';
 import { CheckoutSaleTerms } from '@/molecules/Marketplace/CheckoutSaleTerms';
 import { RegionAvailabilityNotice } from '@/molecules/Marketplace/RegionAvailabilityNotice';
+import { RegionRefusal } from '@/molecules/Marketplace/RegionRefusal';
 import { SellerAnnualLimitNotice } from '@/molecules/Marketplace/SellerAnnualLimitNotice';
 import { SellerSaleTerms } from '@/molecules/Marketplace/SellerSaleTerms';
 import { SellerStatusBadge } from '@/molecules/Marketplace/SellerStatusBadge';
@@ -162,14 +163,14 @@ describe('Marketplace legal copy — visual regression', () => {
     await capture(screen, 'legal-digital-country-desktop');
   });
 
-  it('refuses an EU buyer plainly', async () => {
+  it('refuses an EU or UK buyer plainly', async () => {
     const screen = await renderForVRT(
       <Scene>
         <RegionAvailabilityNotice
           region={{
             ...noRegion,
             buyerCountry: 'DE',
-            refusal: 'Not available to buyers in the EU',
+            refusal: 'Not available to buyers in the EU or UK',
             canChangeCountry: true,
           }}
           testIdPrefix="vrt"
@@ -191,6 +192,19 @@ describe('Marketplace legal copy — visual regression', () => {
       { viewport: VRT_VIEWPORT_DESKTOP, disableHover: true },
     );
     await capture(screen, 'legal-country-kept-desktop');
+  });
+
+  it('puts the refusal above the private-seller notice at checkout, next to Pay', async () => {
+    const screen = await renderForVRT(
+      <Scene>
+        <div className="grid gap-3">
+          <RegionRefusal message="Not available to buyers in the EU or UK" testId="vrt-checkout-refusal" />
+          <CheckoutSaleTerms sellerPubkys={['b']} declarations={{ b: 'trader' }} />
+        </div>
+      </Scene>,
+      { viewport: VRT_VIEWPORT_DESKTOP, disableHover: true },
+    );
+    await capture(screen, 'legal-checkout-refusal-desktop');
   });
 
   it('shows an EU seller their yearly counters with the rule behind an info icon', async () => {

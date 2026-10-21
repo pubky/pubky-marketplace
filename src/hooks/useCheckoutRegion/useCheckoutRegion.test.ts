@@ -1,7 +1,7 @@
 import { renderHook, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CommerceController } from '@/controllers/commerce/commerce';
-import { DIGITAL_REGION_MESSAGE, EU_UNAVAILABLE_MESSAGE, SELLER_LIMIT_MESSAGE } from '@/libs/commerce/eu-region';
+import { DIGITAL_REGION_MESSAGE, REGION_UNAVAILABLE_MESSAGE, SELLER_LIMIT_MESSAGE } from '@/libs/commerce/eu-region';
 import { resetRuntimeConfigForTests } from '@/libs/runtime-config/runtime-config';
 import { PUBKY_RUNTIME_ENV_NAMES } from '@/libs/runtime-config/runtime-config.schema';
 import { useBuyerCountryStore } from '@/stores/buyer-country/buyer-country.store';
@@ -76,7 +76,7 @@ describe('useCheckoutRegion', () => {
     flags(true, false);
     const { result } = region({ sellers: [TRADER], addressCountry: 'de' });
     expect(result.current.blocked).toBe(true);
-    await waitFor(() => expect(result.current.refusal).toBe(EU_UNAVAILABLE_MESSAGE));
+    await waitFor(() => expect(result.current.refusal).toBe(REGION_UNAVAILABLE_MESSAGE));
     expect(result.current.buyerCountry).toBe('DE');
   });
 
@@ -87,6 +87,30 @@ describe('useCheckoutRegion', () => {
     await waitFor(() => expect(Object.keys(result.current.declarations)).toHaveLength(1));
     expect(result.current.buyerCountry).toBe('BE');
     expect(useBuyerCountryStore.getState().country).toBe('CH');
+  });
+
+  it('refuses a UK address for a business seller and lets it buy from a private one', async () => {
+    flags(true, false);
+    const business = region({ sellers: [TRADER], addressCountry: 'gb' });
+    await waitFor(() => expect(business.result.current.refusal).toBe(REGION_UNAVAILABLE_MESSAGE));
+    expect(business.result.current.blocked).toBe(true);
+    expect(business.result.current.buyerCountry).toBe('GB');
+
+    const mixed = region({ sellers: [PRIVATE, TRADER], addressCountry: 'GB' });
+    await waitFor(() => expect(mixed.result.current.refusal).toBe(REGION_UNAVAILABLE_MESSAGE));
+
+    const priv = region({ sellers: [PRIVATE], addressCountry: 'GB' });
+    await waitFor(() => expect(priv.result.current.declarations[PRIVATE]).toBe('private'));
+    expect(priv.result.current.refusal).toBeNull();
+    expect(priv.result.current.blocked).toBe(false);
+  });
+
+  it('refuses a remembered UK country on a pickup checkout from a business seller', async () => {
+    flags(true, false);
+    useBuyerCountryStore.setState({ country: 'GB' });
+    const { result } = region({ sellers: [TRADER], requiresDeliveryAddress: false });
+    await waitFor(() => expect(result.current.refusal).toBe(REGION_UNAVAILABLE_MESSAGE));
+    expect(result.current.blocked).toBe(true);
   });
 
   it('lets a non-EU address buy from a business seller and an EU address from a private seller', async () => {
@@ -152,7 +176,7 @@ describe('useCheckoutRegion', () => {
     shops[BARE] = {};
     const { result } = region({ sellers: [BARE], addressCountry: 'DE' });
     await waitFor(() => expect(result.current.declarations[BARE]).toBe('undeclared'));
-    expect(result.current.refusal).toBe(EU_UNAVAILABLE_MESSAGE);
+    expect(result.current.refusal).toBe(REGION_UNAVAILABLE_MESSAGE);
     delete shops[BARE];
   });
 
@@ -160,7 +184,7 @@ describe('useCheckoutRegion', () => {
     flags(true, false);
     const UNREADABLE = 'u'.repeat(52);
     const { result } = region({ sellers: [UNREADABLE, TRADER], addressCountry: 'DE' });
-    await waitFor(() => expect(result.current.refusal).toBe(EU_UNAVAILABLE_MESSAGE));
+    await waitFor(() => expect(result.current.refusal).toBe(REGION_UNAVAILABLE_MESSAGE));
     expect(result.current.declarations[UNREADABLE]).toBe('unknown');
   });
 });
