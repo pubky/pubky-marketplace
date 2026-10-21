@@ -182,4 +182,36 @@ describe('own item reviews on the reviewer homeserver', () => {
 
     expect(rows.map(({ record }) => record.listingId)).toEqual(['boots', 'belt']);
   });
+
+  it("restores a one-review order's record a later order overwrote at the per-listing path, once", async () => {
+    const [boots] = published;
+    await db.table(CommerceReviewModel.table.name).clear();
+    const otherOrder = issuedAttestation('boots', 'ef'.repeat(32));
+    const { orderRef: _orderRef, ...unscoped } = boots.record;
+    const { PubkySpecsBuilder } = await import('pubky-app-specs');
+    const legacy = new PubkySpecsBuilder(ORDER_FIXTURE_BUYER).createMarketplaceReview({
+      ...unscoped,
+      reviewId: '',
+      eligibilityAttestation: otherOrder.jws,
+    });
+    homeserver.files.clear();
+    homeserver.files.set(
+      CommerceRecordNormalizer.reviewUri(ORDER_FIXTURE_BUYER, legacy.meta.id),
+      legacy.marketplace_review.toJson(),
+    );
+    const single: MarketplaceOrder = { ...order, reviews: [order.reviews![0]] };
+    vi.spyOn(MarketplaceGatewayService, 'getReviewAttestations').mockResolvedValue([
+      { listingId: 'boots', ...attestations[0].wire },
+    ]);
+    homeserver.log.length = 0;
+
+    const rows = await CommerceApplication.getOwnMarketplaceOrderReviews(ORDER_FIXTURE_BUYER, single);
+
+    expect(rows.map((row) => row.review_id)).toEqual([boots.review_id]);
+    expect(rows[0].record.text).toBe('Review of boots.');
+    expect(homeserver.log.filter((entry) => entry.startsWith(HttpMethod.PUT))).toEqual([
+      `${HttpMethod.PUT} ${urlOf(boots)}`,
+    ]);
+    expect(homeserver.files.has(urlOf(boots))).toBe(true);
+  });
 });

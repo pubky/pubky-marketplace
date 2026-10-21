@@ -49,14 +49,14 @@ function RecoveryStep1({ setStep }: { setStep: (step: number) => void }) {
   const [confirmPassphrase, setConfirmPassphrase] = useState('');
   const passphraseStrength = calculatePasswordStrength(passphrase);
   const passphraseMatch = passphrase === confirmPassphrase;
-  const showWeakWarning = passphrase.length < PASSPHRASE_MIN_LENGTH;
+  const meetsMinLength = passphrase.length >= PASSPHRASE_MIN_LENGTH;
 
   const handleDownload = () => {
     ProfileController.createRecoveryFile(passphrase);
     setStep(2);
   };
   const isFormValid = () => {
-    return passphraseMatch;
+    return passphraseMatch && meetsMinLength;
   };
   const handleKeyDown = useEnterSubmit(isFormValid, handleDownload);
   return (
@@ -94,12 +94,15 @@ function RecoveryStep1({ setStep }: { setStep: (step: number) => void }) {
               />
             </Container>
             <Typography id="password-help" size="sm" className="text-xs leading-none font-medium text-muted-foreground">
-              We recommend using a long{' '}
+              Use{' '}
+              <span className={meetsMinLength ? undefined : 'text-destructive'}>
+                {`at least ${PASSPHRASE_MIN_LENGTH} characters`}
+              </span>
+              . A long{' '}
               <Link href={PASSPHRASE_LINK_URL} target="_blank" rel="noopener noreferrer">
                 passphrase
               </Link>{' '}
-              <span className={showWeakWarning ? 'text-destructive' : undefined}>over 16 characters</span> for better
-              security.
+              is easiest to remember.
             </Typography>
           </Container>
         </Container>

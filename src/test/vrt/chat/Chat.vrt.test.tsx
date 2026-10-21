@@ -62,6 +62,16 @@ vi.mock('@/hooks/useUserDetails/useUserDetails', () => ({
   }),
 }));
 
+// The Market tab bar above the inbox: its badges read the cart, activity and orders; none are shown here.
+vi.mock('@/hooks/useMarketplaceCartCount/useMarketplaceCartCount', () => ({ useMarketplaceCartCount: () => 0 }));
+vi.mock('@/hooks/useMarketplaceActivityUnread/useMarketplaceActivityUnread', () => ({
+  useMarketplaceActivityUnread: () => 0,
+}));
+vi.mock('@/hooks/useMarketplaceOrdersAttention/useMarketplaceOrdersAttention', () => ({
+  useMarketplaceOrdersAttention: () => 0,
+}));
+vi.mock('@/hooks/useChatUnread/useChatUnread', () => ({ useChatUnread: () => 0 }));
+
 vi.mock('@/controllers/commerce/commerce', () => ({
   CommerceController: {
     getShop: async (pubky: string) => (pubky === SELLER ? { record: { name: 'Boot Barn' } } : null),

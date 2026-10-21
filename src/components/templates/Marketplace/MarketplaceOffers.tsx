@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { HandCoins } from 'lucide-react';
 import { getMarketplaceListingRoute } from '@/app/routes';
@@ -381,22 +381,26 @@ function useOfferListings(offers: readonly MarketplaceOffer[]) {
   const ids = useMemo(() => offers.map(listingCompositeId).filter(Boolean).sort().join('|'), [offers]);
   const [listings, setListings] = useState<Map<string, CommerceListingRecord>>(new Map());
   const [isHydrating, setIsHydrating] = useState(false);
+  // The offers poll hands back a new array every few seconds even when nothing changed. Reloading on it
+  // cleared the listings each time, so every card's thumbnail fell back to the placeholder and loaded
+  // again. Reload only when the set of listings changes, and keep the shown ones until the new ones land.
+  const offersRef = useRef(offers);
+  useEffect(() => {
+    offersRef.current = offers;
+  }, [offers]);
 
   useEffect(() => {
     let active = true;
-    const currentOffers = offers;
-    setListings(new Map());
-    setIsHydrating(false);
-    void loadOfferListings(currentOffers).then((nextListings) => {
+    void loadOfferListings(offersRef.current).then((nextListings) => {
       if (!active) return;
       setListings(nextListings);
       setIsHydrating(false);
     });
-    if (ids) setIsHydrating(true);
+    setIsHydrating(Boolean(ids));
     return () => {
       active = false;
     };
-  }, [ids, offers]);
+  }, [ids]);
 
   return { listings, isHydrating };
 }

@@ -91,7 +91,14 @@ exports[`DialogBackupEncrypted - Snapshots > matches snapshot for default Dialog
             data-size="sm"
             data-testid="typography"
           >
-            We recommend using a long
+            Use
+             
+            <span
+              class="text-destructive"
+            >
+              at least 16 characters
+            </span>
+            . A long
              
             <a
               class="cursor-pointer hover:text-brand/80 transition-colors text-brand text-sm"
@@ -102,12 +109,7 @@ exports[`DialogBackupEncrypted - Snapshots > matches snapshot for default Dialog
               passphrase
             </a>
              
-            <span
-              class="text-destructive"
-            >
-              over 16 characters
-            </span>
-             for better security.
+            is easiest to remember.
           </p>
         </div>
       </div>
@@ -148,6 +150,7 @@ exports[`DialogBackupEncrypted - Snapshots > matches snapshot for default Dialog
       <button
         class="order-2 sm:order-1"
         data-testid="button-default"
+        disabled=""
       >
         <svg
           aria-hidden="true"

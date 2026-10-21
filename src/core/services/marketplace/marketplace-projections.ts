@@ -736,6 +736,7 @@ export const marketplaceOrderProjectionSchema = z
           shipping: z.number().int().min(1).max(5).nullish(),
           communication: z.number().int().min(1).max(5).nullish(),
           createdAt: z.string(),
+          updatedAt: z.string().optional(),
         }),
       )
       .optional(),
