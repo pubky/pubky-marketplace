@@ -35,7 +35,7 @@ Public changelog for Shop, the Pubky Market vibe. Newest changes first.
 - [proven] Every slice passed an Opus adversarial review and Kimi security/privacy audit. Wave 7.1 received one fix round for the key-rotation job's 100-row stall, an unpinned reveal stamping the withdrawal window, and a confirm-path panic; Wave 7.2a received one for malformed response excerpts reaching logs/Sentry; Wave 7.2b received two for pickup-marked auction fixtures hidden by VRT tolerance, a missing listing-form capability gate, and an unreachable create-mode editor.
 - [known gap] Pickup-only listing detail still shows shipping copy; the capability gate is open during its initial null read (the service still refuses); and pre-Wave-7 listings marked pickup need a meeting point before pickup orders can complete.
 - [deferred] Wave 7b (Part B): scheduling time slots, pickup returns and return-address reveal, and `location_key` grouping.
-- [implemented] Igor's PR #22 (`BitcoinErrorLog/pubky-app`) is credited in code; its silent-shipping-fallback item is fixed.
+- [implemented] PR #22 (`BitcoinErrorLog/pubky-app`, icota) is credited in code; its silent-shipping-fallback item is fixed.
 
 ## 2026-09-07
 

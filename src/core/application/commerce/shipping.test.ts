@@ -17,7 +17,7 @@ const OWNER = 'o'.repeat(52);
 const OTHER = 'p'.repeat(52);
 const TOKEN = 'shippo_test_1234567890';
 const SHIP_FROM: ShipFromAddress = {
-  name: "Igor's Olive Farm",
+  name: 'Olive Grove Farm',
   line1: 'Maslinska 1',
   line2: '',
   city: 'Split',
