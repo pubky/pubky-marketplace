@@ -10,12 +10,23 @@
 
 export type CommandOrderSnapshot = {
   state: string;
+  buyerPubky?: string;
+  sellerPubky?: string;
   cancellationReason?: string | null;
   shipment?: { carrier: string; trackingNumber: string; state: string } | null;
   returnRequest?: { state: string; reason: string; requestedAmountMinor: number } | null;
   externalRefund?: { amountMinor: number; transactionId: string } | null;
   refundDestination?: { address: string } | null;
-  reviews?: { rating: number; text: string }[] | null;
+  reviews?:
+    | {
+        reviewerPubky?: string;
+        listingAggregateId?: string;
+        rating: number;
+        text: string;
+        shipping?: number | null;
+        communication?: number | null;
+      }[]
+    | null;
 };
 
 // A refunded order proves delivery only through its delivered shipment:
@@ -97,6 +108,7 @@ export function orderShowsCommandResult(
       );
     case 'review.create':
     case 'review.update': {
+      if (Array.isArray(payload.items)) return orderShowsReviewItems(order, payload);
       const rating = minor(payload.rating);
       const reviewText = text(payload.text);
       return (order.reviews ?? []).some((review) => review.rating === rating && review.text === reviewText);
@@ -104,4 +116,32 @@ export function orderShowsCommandResult(
     default:
       return false;
   }
+}
+
+/**
+ * Per-item review terms (buyer only): shown once the order carries the
+ * buyer's review of every named listing with the sent stars and text, and
+ * the sent seller ratings on every one of the buyer's reviews of the order.
+ */
+function orderShowsReviewItems(order: CommandOrderSnapshot, payload: Record<string, unknown>): boolean {
+  if (order.buyerPubky === undefined || order.sellerPubky === undefined) return false;
+  const buyerReviews = (order.reviews ?? []).filter((review) => review.reviewerPubky === order.buyerPubky);
+  const items = payload.items as Record<string, unknown>[];
+  const itemsShown = items.every((item) => {
+    const listingId = text(item.listingId);
+    if (listingId === null) return false;
+    const aggregateId = `listing:${order.sellerPubky}_${listingId}`;
+    return buyerReviews.some(
+      (review) =>
+        review.listingAggregateId === aggregateId &&
+        review.rating === minor(item.rating) &&
+        review.text === (text(item.text) ?? ''),
+    );
+  });
+  if (!itemsShown) return false;
+  const seller = payload.seller as { shipping?: unknown; communication?: unknown } | undefined;
+  if (seller === undefined) return true;
+  return buyerReviews.every(
+    (review) => review.shipping === minor(seller.shipping) && review.communication === minor(seller.communication),
+  );
 }

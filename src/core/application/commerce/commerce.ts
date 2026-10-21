@@ -24,6 +24,8 @@ import { NEXUS_LISTINGS_PER_PAGE } from '@/config/nexus';
 import { readAuthEpoch } from '@/controllers/auth/auth-epoch';
 import {
   extractReviewAttestation,
+  extractReviewAttestations,
+  type MarketplaceAttestation,
   marketplaceAttestationSchema,
   verifyOrderReceiptClaims,
   verifyOwnDropEdition,
@@ -76,6 +78,12 @@ import {
   findForbiddenPublicReserveKey,
   stripForbiddenPublicReserveKeys,
 } from '@/libs/commerce/marketplace-records';
+import {
+  listingIdFromAggregate,
+  orderReviewListings,
+  reviewListingAggregateId,
+  reviewsOfReviewer,
+} from '@/libs/commerce/order-reviews';
 import {
   appRegistryTakesPaymentRequests,
   type BuyerPaykitWallet,
@@ -225,11 +233,24 @@ const reviewResultSchema = z
     reviewerRole: z.enum(['buyer', 'seller']),
     subjectPubky: z.string().length(52),
     rating: z.number().int().min(1).max(5),
-    text: z.string().min(1),
+    text: z.string(),
+    /** The buyer's per-order seller ratings, on every one of their item reviews; absent or null when unrated. */
+    shipping: z.number().int().min(1).max(5).nullish(),
+    communication: z.number().int().min(1).max(5).nullish(),
     createdAt: z.string().min(1),
     updatedAt: z.string().min(1),
   })
   .passthrough();
+
+/** One entry of a per-item command result's `reviews[]`: the `review` view plus the listing it rates. */
+const reviewItemResultSchema = reviewResultSchema.extend({ listingAggregateId: z.string().min(1) });
+
+/**
+ * Cross-tab Web Lock that serialises one order's review publications, so two
+ * tabs publishing the same order never read a record's revision at once.
+ * Its holder requests no other lock.
+ */
+export const REVIEW_PUBLICATION_LOCK_PREFIX = 'pubky-review-publication|';
 
 export interface TCommitCreateDefaultShopParams {
   ownerPubky: string;
@@ -3569,6 +3590,165 @@ export class CommerceApplication {
   }
 
   /**
+   * The current user's published review rows of one order, one per reviewed
+   * listing in line order. Local-first like {@link getOwnMarketplaceReview}:
+   * rows in Dexie return at once, and a listing the service shows the user
+   * reviewed but that has no local row (wiped with identity, or published
+   * from another device) is hydrated from the reviewer's homeserver: the
+   * order's per-listing attestations name each `order_ref`, and each record
+   * is read from its deterministic path. GET only, never PUT; a missing
+   * record stays unresolved instead of claiming unpublished.
+   */
+  static async getOwnMarketplaceOrderReviews(
+    actorPubky: string,
+    order: MarketplaceOrder,
+  ): Promise<CommerceReviewModelSchema[]> {
+    const local = await LocalCommerceService.getOwnReviewsByOrder(actorPubky, order.id);
+    const reviewed = reviewsOfReviewer(order, actorPubky).flatMap((review) => {
+      const aggregateId = reviewListingAggregateId(order, review);
+      return aggregateId === null ? [] : [aggregateId];
+    });
+    const missing = orderReviewListings(order).filter(
+      ({ listingAggregateId, listingId }) =>
+        reviewed.includes(listingAggregateId) &&
+        !local.some((row) => row.record.listingId === listingId) &&
+        !this.ownReviewHomeserverMisses.has(this.ownReviewItemMissKey(actorPubky, order.id, listingId)),
+    );
+    const hydrated =
+      missing.length === 0
+        ? []
+        : await this.hydrateOwnReviewItemsFromHomeserver(
+            actorPubky,
+            order,
+            missing.map(({ listingId }) => listingId),
+          );
+    const lineOrder = orderReviewListings(order).map(({ listingId }) => listingId);
+    return [...local, ...hydrated].sort(
+      (a, b) => lineOrder.indexOf(a.record.listingId) - lineOrder.indexOf(b.record.listingId),
+    );
+  }
+
+  private static ownReviewItemMissKey(actorPubky: string, orderId: string, listingId: string): string {
+    return `${actorPubky}:${orderId}:${listingId}`;
+  }
+
+  private static async hydrateOwnReviewItemsFromHomeserver(
+    actorPubky: string,
+    order: MarketplaceOrder,
+    listingIds: string[],
+  ): Promise<CommerceReviewModelSchema[]> {
+    if (!this.liveIdentityMatches(actorPubky)) return [];
+    const isBuyer = actorPubky === order.buyerPubky;
+    if (!isBuyer && actorPubky !== order.sellerPubky) return [];
+    const role: 'buyer_reviewing_seller' | 'seller_reviewing_buyer' = isBuyer
+      ? 'buyer_reviewing_seller'
+      : 'seller_reviewing_buyer';
+    const subjectPubky = isBuyer ? order.sellerPubky : order.buyerPubky;
+    const miss = (listingId: string) =>
+      this.ownReviewHomeserverMisses.add(this.ownReviewItemMissKey(actorPubky, order.id, listingId));
+
+    let attestations: ReturnType<typeof extractReviewAttestations>;
+    try {
+      attestations = extractReviewAttestations({
+        attestations: (await MarketplaceGatewayService.getReviewAttestations(actorPubky, order.id)) ?? [],
+      });
+    } catch (error) {
+      Logger.warn('Own review attestations read failed; leaving publication status unresolved', {
+        orderId: order.id,
+        error,
+      });
+      return [];
+    }
+
+    const hydrated: CommerceReviewModelSchema[] = [];
+    for (const listingId of listingIds) {
+      const attestation = attestations.find((candidate) => candidate.listingId === listingId);
+      // No attestation for the listing means nothing was ever published for it.
+      if (attestation === undefined) {
+        miss(listingId);
+        continue;
+      }
+      try {
+        const pathInput = { actorPubky, listingOwnerPubky: order.sellerPubky, listingId, subjectPubky, role };
+        let reviewId = await this.ownReviewPathId({ ...pathInput, orderRef: attestation.claims.orderRef });
+        let stored = await CommerceHomeserverService.fetchJsonIfFound(
+          CommerceRecordNormalizer.reviewUri(actorPubky, reviewId),
+        );
+        if (!stored.found && listingId === this.listingIdFromOrder(order)) {
+          // A first-line review published before per-order reviews lives at
+          // the legacy per-listing path; it is this order's only when it
+          // embeds this order's attestation.
+          const legacyId = await this.ownReviewPathId(pathInput);
+          const legacy = await CommerceHomeserverService.fetchJsonIfFound(
+            CommerceRecordNormalizer.reviewUri(actorPubky, legacyId),
+          );
+          if (
+            legacy.found &&
+            (legacy.json as { eligibilityAttestation?: unknown } | null)?.eligibilityAttestation === attestation.jws
+          ) {
+            reviewId = legacyId;
+            stored = legacy;
+          }
+        }
+        if (!stored.found) {
+          miss(listingId);
+          continue;
+        }
+        const record = CommerceRecordNormalizer.review(stored.json);
+        if (
+          record.ownerPubky !== actorPubky ||
+          record.listingId !== listingId ||
+          record.listingOwnerPubky !== order.sellerPubky ||
+          record.role !== role ||
+          record.subjectPubky !== subjectPubky ||
+          record.reviewId !== reviewId
+        ) {
+          Logger.warn('Own review homeserver record identity did not match this order; leaving status unresolved', {
+            orderId: order.id,
+            reviewId,
+          });
+          continue;
+        }
+        const verifiedIss = verifyOwnReviewAttestation(record);
+        const model: CommerceReviewModelSchema = {
+          id: `${actorPubky}:${reviewId}`,
+          owner_id: actorPubky,
+          review_id: reviewId,
+          order_id: order.id,
+          subject_id: record.subjectPubky,
+          record,
+          attestation_verified: verifiedIss !== null,
+          attestation_iss: verifiedIss,
+          sync_status: 'synced',
+          updated_at: Date.now(),
+        };
+        // Auth-cleanup may wipe `commerce_reviews` while the GET is in
+        // flight, and a publication may have staged this record since: never
+        // re-seed another identity's table or overwrite a newer local row.
+        if (!this.liveIdentityMatches(actorPubky)) return hydrated;
+        const current = await LocalCommerceService.getOwnReviewById(model.id);
+        if (current !== undefined) {
+          hydrated.push(current);
+          continue;
+        }
+        await LocalCommerceService.upsertOwnReview(model);
+        hydrated.push(model);
+      } catch (error) {
+        if (isAppError(error) && isNotFound(error)) {
+          miss(listingId);
+        } else {
+          Logger.warn('Own review homeserver hydrate failed; leaving publication status unresolved', {
+            orderId: order.id,
+            listingId,
+            error,
+          });
+        }
+      }
+    }
+    return hydrated;
+  }
+
+  /**
    * Publishes the reviewer-owned public review record after a successful
    * `review.create`/`review.update` (trust & reputation plan P1.6): builds
    * the `PubkyAppMarketplaceReview` via the specs builder (deterministic
@@ -3577,6 +3757,10 @@ export class CommerceApplication {
    * the staged-job outbox pattern listing publication established — a failed
    * PUT leaves a visible pending row that
    * {@link resumeOwnReviewPublications} retries.
+   *
+   * This publishes the one record of a result that names no listing: the
+   * `review` and first-line `attestation` of v1 terms. Results of per-item
+   * terms go through {@link commitPublishOwnReviews}.
    *
    * Returns `null` (publishing nothing) when the command result carries no
    * attestation: the record's `eligibilityAttestation` is required, so a
@@ -3601,13 +3785,93 @@ export class CommerceApplication {
         context: { orderId: order.id },
       });
     }
+    return await this.withReviewPublicationLock(actorPubky, order.id, () =>
+      this.publishReviewRecord({ actorPubky, order, listingId, review, attestation }),
+    );
+  }
+
+  /**
+   * Publishes one record per reviewed listing of a review command result:
+   * each `reviews[]` entry is paired with the attestation the service issued
+   * for its listing and written to the reviewer's homeserver, so an edit of
+   * one item revises only that item's record. The buyer's seller ratings
+   * ride on every record the command wrote. A result without per-item
+   * entries publishes its single v1 record.
+   *
+   * The order's records are published under a cross-tab lock and in line
+   * order. A record whose PUT fails stays pending for the resume; the others
+   * are still published, and the first failure is thrown once all were
+   * attempted.
+   */
+  static async commitPublishOwnReviews(input: {
+    actorPubky: string;
+    order: MarketplaceOrder;
+    result: Record<string, unknown>;
+  }): Promise<CommerceReviewModelSchema[]> {
+    const { actorPubky, order, result } = input;
+    const attestations = extractReviewAttestations(result);
+    const entries = Array.isArray(result.reviews)
+      ? result.reviews.flatMap((entry) => {
+          const parsed = reviewItemResultSchema.safeParse(entry);
+          return parsed.success ? [parsed.data] : [];
+        })
+      : [];
+    const items = entries.flatMap((review) => {
+      const listingId = listingIdFromAggregate(order.sellerPubky, review.listingAggregateId);
+      const attestation = attestations.find((candidate) => candidate.listingId === listingId);
+      return listingId === null || attestation === undefined ? [] : [{ listingId, review, attestation }];
+    });
+    if (items.length === 0) {
+      const single = await this.commitPublishOwnReview(input);
+      return single === null ? [] : [single];
+    }
+
+    return await this.withReviewPublicationLock(actorPubky, order.id, async () => {
+      const published: CommerceReviewModelSchema[] = [];
+      let firstFailure: unknown;
+      for (const item of items) {
+        try {
+          published.push(await this.publishReviewRecord({ actorPubky, order, ...item }));
+        } catch (error) {
+          firstFailure ??= error;
+        }
+      }
+      if (firstFailure !== undefined) throw firstFailure;
+      return published;
+    });
+  }
+
+  private static async withReviewPublicationLock<T>(
+    actorPubky: string,
+    orderId: string,
+    body: () => Promise<T>,
+  ): Promise<T> {
+    const locks = typeof navigator === 'undefined' ? undefined : navigator.locks;
+    if (typeof locks?.request !== 'function') return await body();
+    return await locks.request(`${REVIEW_PUBLICATION_LOCK_PREFIX}${actorPubky}|${orderId}`, body);
+  }
+
+  /** Builds, stages and PUTs the record of one reviewed listing; the caller holds the order's publication lock. */
+  private static async publishReviewRecord(input: {
+    actorPubky: string;
+    order: MarketplaceOrder;
+    listingId: string;
+    review: z.infer<typeof reviewResultSchema>;
+    attestation: MarketplaceAttestation;
+  }): Promise<CommerceReviewModelSchema> {
+    const { actorPubky, order, listingId, review, attestation } = input;
     const role = review.reviewerRole === 'buyer' ? 'buyer_reviewing_seller' : 'seller_reviewing_buyer';
     // A review published before per-order IDs lives at the per-listing path
     // without `orderRef`; its edits revise it there instead of forking a
     // second record for the same order.
-    const existing = await LocalCommerceService.getOwnReviewByOrder(actorPubky, order.id);
+    const existing = await LocalCommerceService.getOwnReviewByOrder(actorPubky, order.id, listingId);
     const orderRef =
       existing !== undefined && existing.record.orderRef === undefined ? undefined : attestation.claims.orderRef;
+    // The seller ratings are one per order: both or neither, on every item record.
+    const sellerRatings =
+      review.shipping != null && review.communication != null
+        ? { shipping: review.shipping, communication: review.communication }
+        : {};
 
     const build = async (revision: number, createdAt: string) => {
       const { PubkySpecsBuilder } = await import('pubky-app-specs');
@@ -3623,7 +3887,7 @@ export class CommerceApplication {
         listingOwnerPubky: order.sellerPubky,
         listingId,
         role,
-        ratings: { overall: review.rating },
+        ratings: { overall: review.rating, ...sellerRatings },
         text: review.text,
         eligibilityAttestation: attestation.jws,
         ...(orderRef === undefined ? {} : { orderRef }),
@@ -3635,8 +3899,8 @@ export class CommerceApplication {
     };
 
     // The hash ID is deterministic per (listing, subject, role, order): an
-    // edit of this order's review bumps `revision` and keeps the original
-    // `createdAt`; another order of the same listing gets its own record.
+    // edit of this item's review bumps `revision` and keeps the original
+    // `createdAt`; another item or order gets its own record.
     const probe = await build(1, review.createdAt);
     const prior = await LocalCommerceService.getOwnReviewById(`${actorPubky}:${probe.reviewId}`);
     const { record, reviewId } =

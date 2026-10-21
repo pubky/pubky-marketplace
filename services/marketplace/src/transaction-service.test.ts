@@ -1187,6 +1187,23 @@ describe('MarketplaceTransactionService', () => {
     ).resolves.toMatchObject({ ok: false, error: { code: 'INVALID_COMMAND' } });
   });
 
+  it('refuses per-item review terms instead of dropping the items', async () => {
+    const { service } = createService();
+    const order = await createPaidOrder(service);
+    await service.execute(
+      SELLER,
+      orderCommand('fulfillment.ship', order.id, 2, { carrier: 'Sandbox Post', trackingNumber: 'TRACK-ITEMS' }, 1_260),
+    );
+    await service.execute(BUYER, orderCommand('fulfillment.confirm_delivery', order.id, 3, {}, 1_261));
+
+    await expect(
+      service.execute(
+        BUYER,
+        orderCommand('review.create', order.id, 4, { items: [{ listingId: 'boots_01', rating: 5, text: '' }] }, 1_262),
+      ),
+    ).resolves.toMatchObject({ ok: false, error: { code: 'INVALID_COMMAND' } });
+  });
+
   it('lets the buyer cancel a return until the seller acts', async () => {
     const { service } = createService();
     const order = await createPaidOrder(service);

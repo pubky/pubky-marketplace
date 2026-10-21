@@ -8,7 +8,7 @@ import { MarketplaceOrderActions } from './MarketplaceOrderActions';
 vi.mock('@/controllers/commerce/commerce', () => ({
   CommerceController: {
     getMarketplaceBandConsent: vi.fn(async () => null),
-    getOwnMarketplaceReview: vi.fn(async () => null),
+    getOwnMarketplaceOrderReviews: vi.fn(async () => []),
     commitMarkReady: vi.fn(async () => ({ ok: true })),
     commitConfirmPickup: vi.fn(async () => ({ ok: true })),
     executeMarketplaceCommand: vi.fn(async () => ({ ok: true })),

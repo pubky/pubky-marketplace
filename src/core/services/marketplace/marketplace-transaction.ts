@@ -808,6 +808,32 @@ export class MarketplaceTransactionService {
   }
 
   /**
+   * `GET /v1/orders/{id}/review-attestations`: every purchase attestation
+   * the caller was issued for the order, one per reviewed listing in line
+   * order and all sharing the order's `order_ref`. Idempotent re-fetch for
+   * re-publication of any item record. Empty when the caller has reviewed
+   * nothing or the deployment issues no attestations; null when the order is
+   * unknown or foreign.
+   */
+  static async getReviewAttestations(actor: string, orderId: string): Promise<unknown[] | null> {
+    const raw = await this.readProjection(
+      'getReviewAttestations',
+      actor,
+      `/v1/orders/${encodeURIComponent(orderId)}/review-attestations`,
+      { nullOnNotFound: true },
+    );
+    if (raw === null) return null;
+    return this.parseProjection(
+      'getReviewAttestations',
+      z.object({
+        attestations: z.array(z.object({ listingId: z.string().min(1), jws: z.string().min(32) }).passthrough()),
+      }),
+      raw,
+      'Marketplace returned invalid review attestations.',
+    ).attestations;
+  }
+
+  /**
    * `GET /v1/receipts/{id}/attestation`: the compact JWS the service's
    * attestor signs over the receipt's facts (participants, order/receipt
    * ids, total, `paid_at`), for the portable receipt document the buyer or

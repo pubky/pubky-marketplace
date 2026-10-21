@@ -840,7 +840,8 @@ const commerceReviewRecordSchemaInner = commercePublicRecordBaseSchema
         communication: z.number().int().min(1).max(5).optional(),
       })
       .passthrough(),
-    text: z.string().trim().min(1).max(COMMERCE_REVIEW_TEXT_MAX_CHARS),
+    /** Optional since specs `.15`: an item review may carry stars only. */
+    text: z.string().trim().max(COMMERCE_REVIEW_TEXT_MAX_CHARS),
     eligibilityAttestation: z
       .string()
       .min(32)

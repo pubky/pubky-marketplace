@@ -501,6 +501,77 @@ describe('MarketplaceTransactionService read projections', () => {
     };
   }
 
+  it('reads every review attestation of the order from the per-order route, camel-cased', async () => {
+    await establishSession();
+    const jws = `${'a'.repeat(20)}.${'b'.repeat(20)}.${'c'.repeat(20)}`;
+    vi.mocked(fetch).mockResolvedValueOnce(
+      jsonResponse(200, {
+        attestations: [
+          {
+            listing_id: 'boots',
+            jws,
+            claims: { order_ref: 'cd'.repeat(32), price_decade: 'USD:2' },
+          },
+          { listing_id: 'belt', jws, claims: { order_ref: 'cd'.repeat(32) } },
+        ],
+      }),
+    );
+
+    const attestations = await MarketplaceTransactionService.getReviewAttestations(ACTOR, ORDER_ID);
+
+    expect(attestations).toEqual([
+      { listingId: 'boots', jws, claims: { orderRef: 'cd'.repeat(32), priceDecade: 'USD:2' } },
+      { listingId: 'belt', jws, claims: { orderRef: 'cd'.repeat(32) } },
+    ]);
+    expect(fetch).toHaveBeenCalledTimes(1);
+    const [url, init] = vi.mocked(fetch).mock.calls[0] as [string, RequestInit];
+    expect(url).toBe(`http://127.0.0.1:8080/v1/orders/${ORDER_ID}/review-attestations`);
+    expect(init.headers).toEqual({ authorization: SESSION_BEARER });
+  });
+
+  it('answers null for review attestations of an unknown or foreign order', async () => {
+    await establishSession();
+    vi.mocked(fetch).mockResolvedValueOnce(
+      jsonResponse(404, { ok: false, error: { code: 'NOT_FOUND', message: 'x' } }),
+    );
+
+    await expect(MarketplaceTransactionService.getReviewAttestations(ACTOR, ORDER_ID)).resolves.toBeNull();
+  });
+
+  it('reads the per-item reviews and the seller ratings of an order', async () => {
+    await establishSession();
+    vi.mocked(fetch).mockResolvedValueOnce(
+      jsonResponse(
+        200,
+        orderWire({
+          reviews: [
+            {
+              id: '018f47d2-6a27-7c23-a62f-000000000601',
+              reviewer_pubky: ACTOR,
+              subject_pubky: OTHER_ACTOR,
+              listing_aggregate_id: AGGREGATE_ID,
+              rating: 4,
+              text: '',
+              shipping: 5,
+              communication: 3,
+              created_at: '2026-08-21T10:00:00.000Z',
+            },
+          ],
+        }),
+      ),
+    );
+
+    const order = await MarketplaceTransactionService.getOrder(ACTOR, ORDER_ID);
+
+    expect(order?.reviews?.[0]).toMatchObject({
+      listingAggregateId: AGGREGATE_ID,
+      rating: 4,
+      text: '',
+      shipping: 5,
+      communication: 3,
+    });
+  });
+
   it('keeps participant order list reads cacheable', async () => {
     await establishSession();
     vi.mocked(fetch).mockResolvedValueOnce(jsonResponse(200, { orders: [orderWire()] }));

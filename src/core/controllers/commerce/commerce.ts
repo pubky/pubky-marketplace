@@ -765,13 +765,25 @@ export class CommerceController {
     return await CommerceApplication.getOwnMarketplaceReview(this.getCurrentUserPubky(), order);
   }
 
+  /** The current user's own published review rows of one order, one per reviewed listing. */
+  static async getOwnMarketplaceOrderReviews(order: MarketplaceOrder) {
+    if (typeof order?.id !== 'string' || order.id.length === 0) {
+      throw Err.validation(ValidationErrorCode.INVALID_INPUT, 'An order id is required.', {
+        service: ErrorService.Marketplace,
+        operation: 'getOwnMarketplaceOrderReviews',
+      });
+    }
+    return await CommerceApplication.getOwnMarketplaceOrderReviews(this.getCurrentUserPubky(), order);
+  }
+
   /**
-   * Publishes the current user's review record (with its embedded purchase
-   * attestation) to their homeserver after a successful review command.
-   * Returns null when the command result carried no attestation.
+   * Publishes the current user's review records (one per reviewed listing,
+   * each with its embedded purchase attestation) to their homeserver after
+   * a successful review command. Returns no records when the command result
+   * carried no attestation.
    */
-  static async publishOwnMarketplaceReview(order: MarketplaceOrder, result: Record<string, unknown>) {
-    return await CommerceApplication.commitPublishOwnReview({
+  static async publishOwnMarketplaceReviews(order: MarketplaceOrder, result: Record<string, unknown>) {
+    return await CommerceApplication.commitPublishOwnReviews({
       actorPubky: this.getCurrentUserPubky(),
       order,
       result,

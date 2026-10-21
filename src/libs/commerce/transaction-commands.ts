@@ -1,5 +1,9 @@
 import { z } from 'zod';
-import { COMMERCE_LISTING_MAX_QUANTITY, COMMERCE_LISTING_MAX_VARIANTS } from '@/config/commerce';
+import {
+  COMMERCE_LISTING_MAX_QUANTITY,
+  COMMERCE_LISTING_MAX_VARIANTS,
+  COMMERCE_REVIEW_TEXT_MAX_CHARS,
+} from '@/config/commerce';
 import { DELIVERY_ENVELOPE_BYTES, DELIVERY_KEY_ID_PATTERN } from './delivery-envelope-format';
 import {
   type DigitalDeliveryCommandResult,
@@ -745,13 +749,25 @@ export const confirmRefundDestinationCommandSchema = createCommerceCommandSchema
 
 /**
  * Review terms shared by `review.create` and `review.update`, mirroring the
- * service's single `ReviewTermsPayload` validator: an integer rating 1–5 and
- * trimmed text of 1–5,000 characters against the reviewed order.
+ * service's single `ReviewTermsPayload` validator, which takes exactly one of
+ * two shapes against the reviewed order.
+ *
+ * v1 carries one integer rating 1–5 and trimmed text of 1–5,000 characters.
+ * A seller reviewing the buyer always sends v1; a buyer's v1 rates the
+ * order's first line.
+ *
+ * v2 (buyer only) carries one entry per reviewed listing (`listingId` is the
+ * seller's record id, each at most once, 1–50 items) with a rating 1–5 and
+ * optional trimmed text of 0–5,000 characters, plus optional per-order
+ * `seller` ratings, which the service writes on every item review of the
+ * order.
  */
-const reviewTermsPayloadSchema = orderIdPayload
+const reviewRatingSchema = z.number().int().min(1).max(5);
+
+const reviewV1TermsPayloadSchema = orderIdPayload
   .extend({
-    rating: z.number().int().min(1).max(5),
-    text: z.string().trim().min(1).max(5_000),
+    rating: reviewRatingSchema,
+    text: z.string().trim().min(1).max(COMMERCE_REVIEW_TEXT_MAX_CHARS),
     /**
      * Buyer-side amount-band opt-in (ratified D2, ADR 0024): the purchase
      * attestation carries a log-decade amount band only when this is true
@@ -763,13 +779,50 @@ const reviewTermsPayloadSchema = orderIdPayload
   })
   .strict();
 
+export const MARKETPLACE_REVIEW_MAX_ITEMS = 50;
+
+const reviewItemTermsSchema = z
+  .object({
+    listingId: commerceEntityIdSchema,
+    rating: reviewRatingSchema,
+    text: z.string().trim().max(COMMERCE_REVIEW_TEXT_MAX_CHARS).default(''),
+  })
+  .strict();
+
+export const reviewSellerRatingTermsSchema = z
+  .object({
+    shipping: reviewRatingSchema,
+    communication: reviewRatingSchema,
+  })
+  .strict();
+
+const reviewV2TermsPayloadSchema = orderIdPayload
+  .extend({
+    items: z
+      .array(reviewItemTermsSchema)
+      .min(1)
+      .max(MARKETPLACE_REVIEW_MAX_ITEMS)
+      .refine((items) => new Set(items.map(({ listingId }) => listingId)).size === items.length, {
+        message: 'Each listing may be reviewed once per command.',
+      }),
+    seller: reviewSellerRatingTermsSchema.optional(),
+    allowAmountBand: z.boolean().optional(),
+  })
+  .strict();
+
+const reviewTermsPayloadSchema = z.union([reviewV1TermsPayloadSchema, reviewV2TermsPayloadSchema]);
+
+export type ReviewItemTerms = z.input<typeof reviewItemTermsSchema>;
+export type ReviewSellerRatingTerms = z.infer<typeof reviewSellerRatingTermsSchema>;
+
 export const createReviewCommandSchema = createCommerceCommandSchema('review.create', reviewTermsPayloadSchema);
 
 /**
  * `review.update` exists only on the durable service (the sandbox prototype
- * had no review editing): the reviewer may revise their own review's rating
- * and text within `COMMERCE_REVIEW_EDIT_WINDOW_SECONDS` (24 hours, the
- * service's `REVIEW_EDIT_WINDOW_SECONDS`) of the review's creation. Outside
+ * had no review editing): the reviewer may revise the rating and text of the
+ * listings they reviewed, and a buyer's seller ratings, within
+ * `COMMERCE_REVIEW_EDIT_WINDOW_SECONDS` (24 hours, the service's
+ * `REVIEW_EDIT_WINDOW_SECONDS`) of their first review of the order. Outside
  * the window the service answers `INVALID_STATE` ("The review edit window
  * has closed."), so the UI withholds the affordance instead of failing on
  * submit. `expected_revision` is the ORDER's revision — the service bumps

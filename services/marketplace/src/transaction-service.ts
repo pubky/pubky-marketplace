@@ -3109,6 +3109,12 @@ export class MarketplaceTransactionService {
     const resolved = this.getOrderAction(actorPubky, command.payload.orderId, command);
     if (!resolved.ok) return resolved.failure;
     const order = resolved.order;
+    if (!('rating' in command.payload)) {
+      return failure(
+        'INVALID_COMMAND',
+        'The sandbox takes one rating per order; per-item reviews need the durable service.',
+      );
+    }
     if (!['delivered', 'completed', 'closed'].includes(order.state)) {
       return failure('INVALID_STATE', 'The order is not eligible for review.');
     }

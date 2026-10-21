@@ -1,0 +1,1 @@
+Buyers review each item of an order with its own stars and optional text, and rate the seller once on shipping and communication. Each item becomes its own public review, and the review dialog now says the price range of each reviewed item becomes public.

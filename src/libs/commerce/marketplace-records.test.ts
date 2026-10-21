@@ -809,6 +809,28 @@ describe('other public marketplace records', () => {
     ).toBe(true);
   });
 
+  it('accepts an item review without text', () => {
+    const base = {
+      schemaVersion: COMMERCE_CONTRACT_VERSION,
+      recordType: 'review',
+      ownerPubky: BUYER_PUBKY,
+      revision: 1,
+      createdAt: CREATED_AT,
+      updatedAt: UPDATED_AT,
+      reviewId: 'review_01',
+      subjectPubky: SELLER_PUBKY,
+      listingOwnerPubky: SELLER_PUBKY,
+      listingId: 'boots_01',
+      role: 'buyer_reviewing_seller',
+      ratings: { overall: 5, shipping: 4, communication: 5 },
+      eligibilityAttestation: 'signed.review.attestation_value_123456789',
+    };
+
+    expect(commerceReviewRecordSchema.safeParse({ ...base, text: '' }).success).toBe(true);
+    expect(commerceReviewRecordSchema.safeParse({ ...base, text: '   ' }).success).toBe(true);
+    expect(commerceReviewRecordSchema.safeParse({ ...base, text: 'a'.repeat(5_001) }).success).toBe(false);
+  });
+
   it('rejects duplicate entries in a public collection', () => {
     const result = commerceCollectionRecordSchema.safeParse({
       schemaVersion: COMMERCE_CONTRACT_VERSION,

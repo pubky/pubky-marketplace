@@ -833,8 +833,18 @@ export class LocalCommerceService {
     return (await CommerceReviewModel.findById(compositeReviewId)) ?? undefined;
   }
 
-  static async getOwnReviewByOrder(ownerId: string, orderId: string): Promise<CommerceReviewModelSchema | undefined> {
-    return await CommerceReviewModel.findByOwnerAndOrder(ownerId, orderId);
+  /** One of the user's review rows of an order: the one rating `listingId` when given, otherwise any. */
+  static async getOwnReviewByOrder(
+    ownerId: string,
+    orderId: string,
+    listingId?: string,
+  ): Promise<CommerceReviewModelSchema | undefined> {
+    return await CommerceReviewModel.findByOwnerAndOrder(ownerId, orderId, listingId);
+  }
+
+  /** Every review row of the user's for one order: one per reviewed listing. */
+  static async getOwnReviewsByOrder(ownerId: string, orderId: string): Promise<CommerceReviewModelSchema[]> {
+    return await CommerceReviewModel.findAllByOwnerAndOrder(ownerId, orderId);
   }
 
   static async getPendingOwnReviews(ownerId: string): Promise<CommerceReviewModelSchema[]> {
