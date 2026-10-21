@@ -990,7 +990,7 @@ describe('MarketplaceOrderActions local pickup (Wave 7, §A6)', () => {
     );
   });
 
-  it('uses the shared compact cancellation dialog and request toast for shipping orders', async () => {
+  it('uses the shared compact cancellation dialog and the cancelled toast for an unpaid shipping checkout', async () => {
     const order = createOrderFixture('pending_payment', { fulfillment: 'shipping' });
     const actOnOrder = vi.fn(async () => true);
     const user = userEvent.setup();
@@ -1010,10 +1010,8 @@ describe('MarketplaceOrderActions local pickup (Wave 7, §A6)', () => {
       expect(actOnOrder).toHaveBeenCalledWith(order, 'order.cancel_request', { reason: 'No longer needed' }),
     );
     const { toast } = await import('@/molecules/Toaster/use-toast');
-    expect(toast).toHaveBeenCalledWith({
-      variant: 'info',
-      title: 'Cancellation requested',
-    });
+    // An unpaid checkout is cancelled at once (#348).
+    expect(toast).toHaveBeenCalledWith({ title: 'Checkout cancelled' });
   });
 });
 
@@ -1331,15 +1329,26 @@ describe('MarketplaceOrderActions USDT refund recording', () => {
   });
 });
 
-describe('MarketplaceOrderActions Paykit cancel dialog', () => {
-  it.each([
-    ['pending', true],
-    ['detected', false],
-    ['awaiting_seller_confirmation', false],
-  ] as const)(
-    'warns about the leftover Bitkit request when the request reads %s: %s',
-    async (paykitRequestState, shown) => {
-      const user = userEvent.setup();
+describe('MarketplaceOrderActions Paykit cancel', () => {
+  it('warns about the leftover Bitkit request while no payment is seen', async () => {
+    const user = userEvent.setup();
+    render(
+      <MarketplaceOrderActions
+        order={createOrderFixture('pending_payment', { paymentMethod: 'paykit', paykitRequestState: 'pending' })}
+        isBuyer
+        canEditReview={false}
+        actOnOrder={vi.fn()}
+        onChanged={vi.fn()}
+      />,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Cancel checkout' }));
+    expect(screen.getByTestId('paykit-cancel-unpaid-request')).toBeInTheDocument();
+  });
+
+  it.each(['detected', 'awaiting_seller_confirmation', 'confirmed'] as const)(
+    'offers no Cancel checkout once the request reads %s (#345)',
+    (paykitRequestState) => {
       render(
         <MarketplaceOrderActions
           order={createOrderFixture('pending_payment', { paymentMethod: 'paykit', paykitRequestState })}
@@ -1350,8 +1359,51 @@ describe('MarketplaceOrderActions Paykit cancel dialog', () => {
         />,
       );
 
-      await user.click(screen.getByRole('button', { name: 'Cancel checkout' }));
-      expect(screen.queryByTestId('paykit-cancel-unpaid-request') !== null).toBe(shown);
+      expect(screen.queryByRole('button', { name: 'Cancel checkout' })).not.toBeInTheDocument();
     },
   );
+
+  it('closes the cancel dialog when a re-read shows a payment was seen (#347)', async () => {
+    const user = userEvent.setup();
+    const props = { isBuyer: true, canEditReview: false, actOnOrder: vi.fn(), onChanged: vi.fn() };
+    const { rerender } = render(
+      <MarketplaceOrderActions
+        order={createOrderFixture('pending_payment', { paymentMethod: 'paykit', paykitRequestState: 'pending' })}
+        {...props}
+      />,
+    );
+    await user.click(screen.getByRole('button', { name: 'Cancel checkout' }));
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+
+    rerender(
+      <MarketplaceOrderActions
+        order={createOrderFixture('pending_payment', { paymentMethod: 'paykit', paykitRequestState: 'detected' })}
+        {...props}
+      />,
+    );
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+  });
+
+  it('says an unpaid checkout is cancelled, not that cancellation was requested (#348)', async () => {
+    const user = userEvent.setup();
+    const { toast } = await import('@/molecules/Toaster/use-toast');
+    vi.mocked(toast).mockClear();
+    render(
+      <MarketplaceOrderActions
+        order={createOrderFixture('pending_payment', { paymentMethod: 'paykit', paykitRequestState: 'pending' })}
+        isBuyer
+        canEditReview={false}
+        actOnOrder={vi.fn(async () => true)}
+        onChanged={vi.fn()}
+      />,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Cancel checkout' }));
+    await user.type(within(screen.getByRole('dialog')).getByRole('textbox'), 'Changed my mind');
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Confirm' }));
+
+    await waitFor(() => expect(toast).toHaveBeenCalledWith({ title: 'Checkout cancelled' }));
+    expect(toast).not.toHaveBeenCalledWith(expect.objectContaining({ title: 'Cancellation requested' }));
+  });
 });

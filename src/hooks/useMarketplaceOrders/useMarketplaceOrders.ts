@@ -10,6 +10,7 @@ import {
 } from '@/libs/commerce/failure-messages';
 import { orderShowsCommandResult } from '@/libs/commerce/order-command-result';
 import { plainRefundRefusal } from '@/libs/commerce/partial-refund';
+import { CHECKOUT_CANCEL_PAYMENT_SEEN_COPY } from '@/libs/commerce/paykit-rail';
 import { pickupRefusalFailureMessage } from '@/libs/commerce/pickup';
 import { orderChangedMessage } from '@/libs/commerce/refund-copy';
 import {
@@ -164,6 +165,19 @@ export function useMarketplaceOrders() {
           const fresh = await readOrders();
           const current = fresh?.find((view) => view.order.id === order.id)?.order;
           if (current && orderShowsCommandResult(current, kind, payload)) return true;
+        }
+        // The service refuses a checkout cancel once it has seen a payment on the
+        // request (#347): say so and re-read, so the cancel is no longer offered.
+        if (
+          kind === 'order.cancel_request' &&
+          order.state === 'pending_payment' &&
+          response.error.code === 'INVALID_STATE'
+        ) {
+          const fresh = await readOrders();
+          const current = fresh?.find((view) => view.order.id === order.id)?.order;
+          if (current?.state === 'cancelled') return true;
+          toast({ variant: 'error', description: CHECKOUT_CANCEL_PAYMENT_SEEN_COPY });
+          return false;
         }
         if (isPaymentNotFinalRefusal(response)) {
           toast({ variant: 'error', description: PAYMENT_NOT_FINAL_COPY });

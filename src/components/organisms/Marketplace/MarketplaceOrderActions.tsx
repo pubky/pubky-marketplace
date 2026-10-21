@@ -33,7 +33,7 @@ import {
   reviewWindowClosesAtMs,
   unreviewedListings,
 } from '@/libs/commerce/order-reviews';
-import { observedPaymentRail, paykitCheckoutCancellable } from '@/libs/commerce/paykit-rail';
+import { buyerCancelOffered, observedPaymentRail, paykitCheckoutCancellable } from '@/libs/commerce/paykit-rail';
 import { formatUsdt } from '@/libs/commerce/payment-options';
 import { formatBitcoinAmount } from '@/libs/commerce/pricing';
 import { isUsdtFulfilmentBlocked, PAYMENT_NOT_FINAL_COPY } from '@/libs/commerce/usdt-buyer-status';
@@ -177,6 +177,7 @@ export function MarketplaceOrderActions({
   const fulfilmentBlocked = isUsdtFulfilmentBlocked(order);
   // Digital orders are never shipped or returned (digital delivery design §6 E1–E4).
   const isDigital = order.fulfillment === 'digital';
+  const cancelOffered = buyerCancelOffered(order);
   // The listing's frozen return policy: no return on a final sale, none after the window.
   const returnClosure = orderReturnClosure(order, nowMs);
   const returnable = isBuyer && !isDigital && ['delivered', 'completed'].includes(order.state) && !order.returnRequest;
@@ -251,14 +252,22 @@ export function MarketplaceOrderActions({
         toast({ variant: 'info', title: DIGITAL_SELLER_COPY.refundNote });
       }
       if (actionType === 'cancel') {
-        toast({
-          variant: 'info',
-          title: 'Cancellation requested',
-        });
+        // An unpaid checkout is cancelled at once; a paid order waits for the seller (#348).
+        toast(
+          order.state === 'pending_payment'
+            ? { title: 'Checkout cancelled' }
+            : { variant: 'info', title: 'Cancellation requested' },
+        );
       }
       setOpen(false);
     }
   };
+
+  // A cancel refused because a payment was seen re-reads the order; once the
+  // cancel is no longer offered, its dialog closes too (#347).
+  useEffect(() => {
+    if (open && actionType === 'cancel' && isBuyer && !cancelOffered) setOpen(false);
+  }, [open, actionType, isBuyer, cancelOffered]);
 
   const confirmHandover = async () => {
     const outcome = await pickup.confirmHandover();
@@ -412,18 +421,16 @@ export function MarketplaceOrderActions({
         {messageAction}
         {/* Both engines support cancellation. Pickup orders also allow it
             while ready for pickup (§A6). Keep this exit after the other actions. */}
-        {isBuyer &&
-          (['pending_payment', 'paid', 'processing'].includes(order.state) ||
-            (isPickup && order.state === 'ready_for_pickup')) && (
-            <Button
-              size={cancelButtonSize}
-              variant="destructive-soft"
-              className={cn('rounded-full sm:order-first', cancelFullWidth && 'w-full')}
-              onClick={() => begin('cancel')}
-            >
-              {order.state === 'pending_payment' ? 'Cancel checkout' : 'Cancel order'}
-            </Button>
-          )}
+        {isBuyer && cancelOffered && (
+          <Button
+            size={cancelButtonSize}
+            variant="destructive-soft"
+            className={cn('rounded-full sm:order-first', cancelFullWidth && 'w-full')}
+            onClick={() => begin('cancel')}
+          >
+            {order.state === 'pending_payment' ? 'Cancel checkout' : 'Cancel order'}
+          </Button>
+        )}
       </div>
       {!isBuyer &&
         fulfilmentBlocked &&

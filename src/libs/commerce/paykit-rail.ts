@@ -85,6 +85,24 @@ export function paykitCheckoutCancellable(order: RailOrder & { paykitRequestStat
   );
 }
 
+/** The refusal a checkout cancel gets once the service has seen its payment (#347). */
+export const CHECKOUT_CANCEL_PAYMENT_SEEN_COPY = "We've seen a payment for this order, so it can't be cancelled now.";
+
+/**
+ * Whether the buyer is offered a cancel for an order: a Paykit checkout only
+ * while no payment has been seen on its request (#345); any other unpaid,
+ * paid or processing order as before.
+ */
+export function buyerCancelOffered(
+  order: RailOrder & { state: string; fulfillment?: string | null; paykitRequestState?: string | null },
+): boolean {
+  if (order.state === 'pending_payment') return !isPaykitOrder(order) || paykitCheckoutCancellable(order);
+  return (
+    ['paid', 'processing'].includes(order.state) ||
+    (order.fulfillment === 'pickup' && order.state === 'ready_for_pickup')
+  );
+}
+
 const ASSET_WORD: Record<PaymentAsset, string> = { BTC: 'Bitcoin', USDT: 'USDT' };
 
 /** "Bitcoin", "USDT", "Bitcoin or USDT"; "Bitkit" when no asset is known. */
