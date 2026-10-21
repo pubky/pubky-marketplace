@@ -24,18 +24,18 @@ export const USDT_FUNDS_HINT =
 
 /** Shown before and while a buyer pays in USDT for goods the seller has to ship or hand over. */
 export const USDT_FINALITY_EXPECTATION_COPY =
-  'The seller ships once Arbitrum finalizes your payment, usually in about 15â20 minutes.';
+  'The seller ships once Arbitrum finalizes your payment, usually in about 15–20 minutes.';
 
 /** The same expectation before the buyer has chosen an asset: it applies only if they pay in USDT. */
 export const PAYKIT_USDT_FINALITY_EXPECTATION_COPY =
-  'If you pay in USDT, the seller ships once Arbitrum finalizes your payment, usually in about 15â20 minutes.';
+  'If you pay in USDT, the seller ships once Arbitrum finalizes your payment, usually in about 15–20 minutes.';
 
 /** A multi-seller USDT cart sends one Paykit request per seller. */
 export const USDT_MULTI_SELLER_COPY = "You'll approve one request per seller in Bitkit.";
 
 /** Seller-facing refusal and disabled-action copy for ship, mark ready and pickup. */
 export const PAYMENT_NOT_FINAL_COPY =
-  "Wait to ship: this USDT payment isn't final on Arbitrum yet. This usually takes about 15â20 minutes.";
+  "Wait to ship: this USDT payment isn't final on Arbitrum yet. This usually takes about 15–20 minutes.";
 
 export const USDT_AMOUNT_MISMATCH_COPY = 'The USDT amount does not match. The seller is reviewing it.';
 

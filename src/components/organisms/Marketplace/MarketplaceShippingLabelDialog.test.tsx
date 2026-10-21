@@ -189,7 +189,7 @@ describe('MarketplaceShippingLabelDialog on a USDT order', () => {
 
       expect(screen.getByRole('button', { name: 'Mark shipped with this tracking' })).toBeDisabled();
       expect(screen.getByTestId('usdt-payment-not-final')).toHaveTextContent(
-        "Wait to ship: this USDT payment isn't final on Arbitrum yet. This usually takes about 15â20 minutes.",
+        "Wait to ship: this USDT payment isn't final on Arbitrum yet. This usually takes about 15–20 minutes.",
       );
       expect(actOnOrder).not.toHaveBeenCalled();
     },

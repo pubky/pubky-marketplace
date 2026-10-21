@@ -128,7 +128,7 @@ describe('MarketplacePaymentStatusCard — USDT orders', () => {
 
     expect(screen.getByTestId('usdt-accept-by')).toHaveTextContent('Approve in Bitkit by 20 Aug 2026, 21:15.');
     expect(screen.getByTestId('usdt-finality-note')).toHaveTextContent(
-      'The seller ships once Arbitrum finalizes your payment, usually in about 15â20 minutes.',
+      'The seller ships once Arbitrum finalizes your payment, usually in about 15–20 minutes.',
     );
     expect(screen.getByTestId('usdt-finality-note')).toHaveTextContent(USDT_FINALITY_EXPECTATION_COPY);
   });

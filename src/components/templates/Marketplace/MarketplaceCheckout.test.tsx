@@ -2364,7 +2364,7 @@ describe('MarketplaceCheckout Paykit option (Bitcoin or USDT)', () => {
     render(<MarketplaceCheckout />);
 
     expect(await screen.findByTestId('marketplace-checkout-usdt-finality-note')).toHaveTextContent(
-      'If you pay in USDT, the seller ships once Arbitrum finalizes your payment, usually in about 15â20 minutes.',
+      'If you pay in USDT, the seller ships once Arbitrum finalizes your payment, usually in about 15–20 minutes.',
     );
   });
 

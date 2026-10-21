@@ -21,7 +21,7 @@ vi.mock('@/controllers/commerce/commerce', () => ({
 vi.mock('@/molecules/Toaster/use-toast', () => ({ toast: vi.fn() }));
 
 const NOT_FINAL =
-  "Wait to ship: this USDT payment isn't final on Arbitrum yet. This usually takes about 15â20 minutes.";
+  "Wait to ship: this USDT payment isn't final on Arbitrum yet. This usually takes about 15–20 minutes.";
 
 function renderActions(order: MarketplaceOrder, isBuyer: boolean) {
   return render(
