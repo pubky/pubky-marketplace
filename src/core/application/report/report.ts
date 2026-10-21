@@ -11,7 +11,7 @@ import {
   CHATWOOT_REPORT_MESSAGE_PREFIX,
   CHATWOOT_REPORT_REVIEW_MESSAGE_PREFIX,
 } from '@/services/chatwoot/chatwoot.constants';
-import { buildChatwootEmail, extractSourceId } from '@/services/chatwoot/chatwoot.utils';
+import { buildChatwootEmail, buildClaimedReporterLines, extractSourceId } from '@/services/chatwoot/chatwoot.utils';
 import type { TReportSubmitInput } from './report.types';
 
 /**
@@ -20,7 +20,8 @@ import type { TReportSubmitInput } from './report.types';
  * Orchestrates report submission workflow:
  * 1. Builds email from pubky
  * 2. Determines inbox ID for reports
- * 3. Formats report message with source label, post URL and issue details
+ * 3. Formats report message with source label, the reporter's claimed pubky
+ *    and name, the post URL and issue details
  * 4. Calls Chatwoot service to create contact and conversation
  * 5. Logs errors for observability
  *
@@ -66,14 +67,16 @@ export class ReportApplication {
   }
 
   /**
-   * Format the full message content with source label prefix
+   * Format the full message content: source label, claimed reporter lines, comment body
    *
-   * @param sourceLabel - Source label (e.g., "Report Post - Personal Info Leak")
-   * @param commentBody - Comment body with post URL and reason
+   * @param input - The validated report
    * @returns Full formatted message content
    */
-  private static formatMessageContent(sourceLabel: string, commentBody: string): string {
-    return `${sourceLabel}\n\n${commentBody}`;
+  private static formatMessageContent(input: TReportSubmitInput): string {
+    const sourceLabel = this.buildSourceLabel(input);
+    const claimedReporter = buildClaimedReporterLines(input.pubky, input.name);
+    const commentBody = this.buildCommentBody(input);
+    return `${sourceLabel}\n\n${claimedReporter}\n\n${commentBody}`;
   }
 
   /**
@@ -81,7 +84,7 @@ export class ReportApplication {
    *
    * Orchestrates the report submission by:
    * 1. Building email from pubky
-   * 2. Building source label and comment body
+   * 2. Building source label, claimed reporter lines and comment body
    * 3. Creating or finding contact in Chatwoot
    * 4. Creating conversation with formatted message
    *
@@ -96,7 +99,7 @@ export class ReportApplication {
    * @throws AppError if submission fails
    */
   static async submit(input: TReportSubmitInput): Promise<void> {
-    const { pubky, name } = input;
+    const { pubky } = input;
     try {
       // Build email from pubky
       const email = buildChatwootEmail(pubky);
@@ -104,13 +107,11 @@ export class ReportApplication {
       // Get inbox ID for reports
       const inboxId = CHATWOOT_INBOX_IDS.REPORTS;
 
-      // Build source label and comment body
-      const sourceLabel = this.buildSourceLabel(input);
-      const commentBody = this.buildCommentBody(input);
-      const content = this.formatMessageContent(sourceLabel, commentBody);
+      // Build source label, claimed reporter lines and comment body
+      const content = this.formatMessageContent(input);
 
-      // Create or find contact in Chatwoot
-      const contact = await ChatwootService.createOrFindContact(email, name, inboxId);
+      // Create or find contact in Chatwoot; a new contact is named by the pubky, an existing one keeps its name
+      const contact = await ChatwootService.createOrFindContact(email, pubky, inboxId);
 
       // Extract source ID (validates inbox associations)
       const sourceId = extractSourceId(contact, email);
