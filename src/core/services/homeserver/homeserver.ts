@@ -1167,9 +1167,10 @@ export class HomeserverService {
     logUrl,
     tolerateUnreachable = false,
     maxBytes,
+    publicRead = false,
   }: THomeserverGetJsonIfFoundParams): Promise<THomeserverJsonIfFound<T>> {
     const contextUrl = logUrl ?? url;
-    const owned = this.resolveOwnedSessionPath(url);
+    const owned = publicRead ? null : this.resolveOwnedSessionPath(url);
     const load = owned
       ? () => owned.session.storage.get(toSdkPath(owned.path))
       : () => {

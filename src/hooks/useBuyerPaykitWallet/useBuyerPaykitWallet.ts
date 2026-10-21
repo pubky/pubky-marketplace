@@ -26,6 +26,7 @@ export function useBuyerPaykitWallet(buyerPubky: string | null, enabled: boolean
   const [attempt, setAttempt] = useState({ id: 0, background: false });
   const key = enabled && buyerPubky ? `${buyerPubky}:${attempt.id}` : null;
   const inFlight = useRef<object | null>(null);
+  const [pending, setPending] = useState(false);
 
   useEffect(() => {
     // Deselection clears the verdict, so selecting Bitcoin again starts a fresh check.
@@ -37,6 +38,7 @@ export function useBuyerPaykitWallet(buyerPubky: string | null, enabled: boolean
     let active = true;
     const request = {};
     inFlight.current = request;
+    setPending(true);
     void (async () => {
       try {
         const wallet = await CommerceController.fetchBuyerPaykitWallet(buyerPubky);
@@ -53,6 +55,7 @@ export function useBuyerPaykitWallet(buyerPubky: string | null, enabled: boolean
         }
       } finally {
         if (inFlight.current === request) inFlight.current = null;
+        if (active) setPending(false);
       }
     })();
     return () => {
@@ -88,9 +91,15 @@ export function useBuyerPaykitWallet(buyerPubky: string | null, enabled: boolean
 
   return {
     state,
-    recheck: () => {
+    /** A read is in flight, including a recheck that keeps the previous verdict on screen. */
+    pending: Boolean(key) && pending,
+    /**
+     * `keepVerdict` rechecks behind the current verdict, so a "Check connection"
+     * tap shows progress instead of the card vanishing and coming back (#353).
+     */
+    recheck: ({ keepVerdict = false }: { keepVerdict?: boolean } = {}) => {
       if (key && state !== 'checking' && !inFlight.current)
-        setAttempt((current) => ({ id: current.id + 1, background: false }));
+        setAttempt((current) => ({ id: current.id + 1, background: keepVerdict }));
     },
   };
 }
