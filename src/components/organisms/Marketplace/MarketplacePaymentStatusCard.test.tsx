@@ -784,7 +784,7 @@ describe('MarketplacePaymentStatusCard', () => {
         const payment = createPaymentFixture('expired', { adapter });
         render(
           <MarketplacePaymentStatusCard
-            order={createOrderFixture('cancelled', { paymentId: payment.id })}
+            order={createOrderFixture('cancelled', { paymentId: payment.id, cancellationReason: null })}
             payment={payment}
             isBuyer={isBuyer}
             adapterMode="locks-paykit"
@@ -1707,6 +1707,69 @@ describe('MarketplacePaymentStatusCard', () => {
       expect(screen.queryByTestId('paykit-delivery-failed')).not.toBeInTheDocument();
     },
   );
+
+  describe('a checkout the buyer cancelled (#432)', () => {
+    const renderCancelled = (cancellationReason: string, isBuyer: boolean) => {
+      const payment = createPaymentFixture('expired', { adapter: 'paykit' });
+      render(
+        <MarketplacePaymentStatusCard
+          order={createOrderFixture('cancelled', { paymentId: payment.id, cancellationReason })}
+          payment={payment}
+          isBuyer={isBuyer}
+          adapterMode="transaction-service"
+          advancePayment={async () => false}
+          onPaymentChanged={() => {}}
+        />,
+      );
+    };
+
+    it('tells the buyer they cancelled it, not that the window elapsed', () => {
+      renderCancelled('Changed my mind', true);
+
+      expect(screen.getByTestId('buyer-cancelled-note')).toHaveTextContent(
+        'You cancelled this checkout before paying.',
+      );
+      expect(screen.queryByText(/payment window elapsed/i)).toBeNull();
+    });
+
+    it('says nothing about the payment window ending when the request was not confirmed', () => {
+      const payment = createPaymentFixture('expired', { adapter: 'paykit' });
+      render(
+        <MarketplacePaymentStatusCard
+          order={createOrderFixture('cancelled', {
+            paymentId: payment.id,
+            cancellationReason: 'Changed my mind',
+            paymentMethod: 'bitcoin',
+            paykitDeliveryState: 'pending',
+          })}
+          payment={payment}
+          isBuyer
+          adapterMode="transaction-service"
+          advancePayment={async () => false}
+          onPaymentChanged={() => {}}
+        />,
+      );
+
+      expect(screen.getByTestId('buyer-cancelled-note')).toBeInTheDocument();
+      expect(screen.queryByTestId('paykit-delivery-failed')).toBeNull();
+    });
+
+    it('tells the seller the buyer cancelled it', () => {
+      renderCancelled('Changed my mind', false);
+
+      expect(screen.getByTestId('buyer-cancelled-note')).toHaveTextContent(
+        'The buyer cancelled this checkout before paying.',
+      );
+      expect(screen.queryByText(/payment window elapsed/i)).toBeNull();
+    });
+
+    it('keeps the elapsed text when the service cancelled it', () => {
+      renderCancelled('payment window elapsed', true);
+
+      expect(screen.queryByTestId('buyer-cancelled-note')).toBeNull();
+      expect(screen.getByText(/payment window elapsed/i)).toBeInTheDocument();
+    });
+  });
 
   it('tells the buyer of an elapsed Bitcoin checkout not to pay a request it could not confirm, and says nothing when delivery is confirmed', () => {
     const payment = createPaymentFixture('expired', { adapter: 'paykit' });

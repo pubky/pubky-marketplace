@@ -9,6 +9,19 @@ export const SYSTEM_LAPSE_REASONS: ReadonlySet<string> = new Set([
   'checkout idle elapsed',
 ]);
 
+/**
+ * Whether an unpaid order was cancelled by its buyer rather than lapsed: a
+ * stated reason other than one the service applies on its own (Pay by, an idle
+ * checkout). An order with no reason keeps reading as an elapsed window (#359).
+ */
+export function isBuyerCancelledUnpaid(order: { state: string; cancellationReason?: string | null }): boolean {
+  return (
+    order.state === 'cancelled' &&
+    Boolean(order.cancellationReason) &&
+    !SYSTEM_LAPSE_REASONS.has(order.cancellationReason ?? '')
+  );
+}
+
 export const UNBOUND_BACK_CANCEL_REASON = 'Released hold before choosing a payment method.';
 
 export const CHECKOUT_HOLD_COPY = {
@@ -19,6 +32,9 @@ export const CHECKOUT_HOLD_COPY = {
   heldWhileAnotherPays: 'Held while another buyer pays',
   holdOwnerCheckPrompt: 'Is this your hold? Approve purchases to check.',
   expiredNoLateMoney: 'Payment window elapsed. The item is available again.',
+  cancelledByBuyer:
+    'You cancelled this checkout before paying. A payment that still arrives is reconciled manually, never silently applied or discarded.',
+  cancelledByBuyerSeller: 'The buyer cancelled this checkout before paying.',
   pendingBitcoinPaymentBuyer:
     'If a payment is still pending in Bitkit, another wallet or another device, let it finish or resolve it before you order again.',
   lateCompleteBuyer:

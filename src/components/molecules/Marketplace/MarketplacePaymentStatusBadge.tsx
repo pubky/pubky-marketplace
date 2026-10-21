@@ -7,7 +7,7 @@ import {
   PAYMENT_CONFIRMED_ON_CHAIN_LABEL,
   PAYMENT_SELLER_CONFIRMED_LABEL,
 } from '@/libs/commerce/bitcoin-buyer-status';
-import { SYSTEM_LAPSE_REASONS } from '@/libs/commerce/checkout-hold';
+import { isBuyerCancelledUnpaid } from '@/libs/commerce/checkout-hold';
 import { type BuyerVisiblePaymentStatus, buyerVisiblePaymentStatus } from '@/libs/commerce/locks-payment';
 import { isPaykitOrder, observedPaymentRail, PAYMENT_RAIL_BADGE } from '@/libs/commerce/paykit-rail';
 import { USDT_PHASE_BADGE_LABEL, usdtSettlementPhase } from '@/libs/commerce/usdt-buyer-status';
@@ -46,11 +46,7 @@ export function MarketplacePaymentStatusBadge({
   // A cancel expires the payment too: a stated reason other than a lapse the service
   // applied (Pay by, an idle checkout) reads as cancelled; an order with no reason
   // keeps the expired window it always showed (#359).
-  const buyerCancelledUnpaid =
-    order.state === 'cancelled' &&
-    visibleStatus === 'expired' &&
-    Boolean(order.cancellationReason) &&
-    !SYSTEM_LAPSE_REASONS.has(order.cancellationReason ?? '');
+  const buyerCancelledUnpaid = visibleStatus === 'expired' && isBuyerCancelledUnpaid(order);
   const visibleStatusLabel =
     seenBadge ??
     paidBitcoinBadge ??
