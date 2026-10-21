@@ -2,7 +2,13 @@ import { describe, expect, it } from 'vitest';
 import { AppError } from '@/libs/error/error';
 import { ValidationErrorCode } from '@/libs/error/error.codes';
 import { ErrorCategory, ErrorService } from '@/libs/error/error.types';
-import { REPORT_ISSUE_TYPE_VALUES, REPORT_ISSUE_TYPES, REPORT_REASON_MAX_LENGTH } from './report.constants';
+import {
+  REPORT_ISSUE_TYPE_VALUES,
+  REPORT_ISSUE_TYPES,
+  REPORT_REASON_MAX_LENGTH,
+  REVIEW_REPORT_ISSUE_LABELS,
+  REVIEW_REPORT_ISSUE_TYPE_VALUES,
+} from './report.constants';
 import { ReportValidators } from './report.validators';
 
 describe('ReportValidators', () => {
@@ -313,6 +319,95 @@ describe('ReportValidators', () => {
     it('refuses a seller pubky that is not a 52-character z-base-32 key', () => {
       expect(() => ReportValidators.validateListingReference('boots_01', 'not-a-pubky')).toThrow(
         'Seller pubky is not valid',
+      );
+    });
+  });
+
+  describe('review report reasons', () => {
+    it('offers exactly the review reasons, in order, with their labels', () => {
+      expect(REVIEW_REPORT_ISSUE_TYPE_VALUES.map((value) => REVIEW_REPORT_ISSUE_LABELS[value])).toEqual([
+        'Illegal content',
+        'Hate or harassment',
+        'Fake or fraudulent review',
+        'Personal information',
+        'Other',
+      ]);
+    });
+
+    it('keeps the review reasons apart from the post reasons', () => {
+      for (const value of REVIEW_REPORT_ISSUE_TYPE_VALUES) {
+        expect(REPORT_ISSUE_TYPE_VALUES).not.toContain(value);
+      }
+    });
+  });
+
+  describe('validateReviewIssueType', () => {
+    it.each(REVIEW_REPORT_ISSUE_TYPE_VALUES)('accepts the review reason %s', (value) => {
+      expect(ReportValidators.validateReviewIssueType(` ${value} `)).toBe(value);
+    });
+
+    it.each([REPORT_ISSUE_TYPES.ILLEGAL_SALES, 'spam', '', null, undefined])(
+      'refuses %s, which is not a review reason',
+      (value) => {
+        try {
+          ReportValidators.validateReviewIssueType(value);
+          expect.fail('Should have thrown');
+        } catch (error) {
+          expect(error).toBeInstanceOf(AppError);
+          expect((error as AppError).code).toBe(ValidationErrorCode.INVALID_INPUT);
+          expect((error as AppError).operation).toBe('validateReviewIssueType');
+        }
+      },
+    );
+  });
+
+  describe('validateReviewReference', () => {
+    const SELLER = 'o1gg96ewuojmopcjbz8895478wdtxtzzuxnfjjz8o8e77csa1ngo';
+    const REVIEWER = 'a'.repeat(52);
+    const REVIEW_URI = `pubky://${REVIEWER}/pub/pubky.app/marketplace/v1/reviews/8Z8CWH8NVYQY39ZEBFGKQWWEKG`;
+
+    it('returns null without a review URI or reviewer, so post and listing reports are unchanged', () => {
+      expect(ReportValidators.validateReviewReference(undefined, undefined, 'boots_01', SELLER)).toBeNull();
+      expect(ReportValidators.validateReviewReference('  ', null, undefined, undefined)).toBeNull();
+    });
+
+    it('returns the trimmed reference for a canonical review URI owned by the reviewer', () => {
+      expect(
+        ReportValidators.validateReviewReference(` ${REVIEW_URI} `, ` ${REVIEWER} `, ' boots_01 ', SELLER),
+      ).toEqual({ reviewUri: REVIEW_URI, reviewerPubky: REVIEWER, listingId: 'boots_01', sellerPubky: SELLER });
+    });
+
+    it('refuses a reviewer without the review URI', () => {
+      expect(() => ReportValidators.validateReviewReference(undefined, REVIEWER, 'boots_01', SELLER)).toThrow(
+        'A review report needs the review URI',
+      );
+    });
+
+    it('refuses a review URI owned by someone other than the named reviewer', () => {
+      expect(() => ReportValidators.validateReviewReference(REVIEW_URI, 'b'.repeat(52), 'boots_01', SELLER)).toThrow(
+        "Review URI is not the reviewer's marketplace review",
+      );
+    });
+
+    it.each([
+      `pubky://${REVIEWER}/pub/pubky.app/posts/8Z8CWH8NVYQY39ZEBFGKQWWEKG`,
+      `pubky://${REVIEWER}/pub/pubky.app/marketplace/v1/reviews/8Z8C/../x`,
+      `https://example.com/pub/pubky.app/marketplace/v1/reviews/8Z8CWH8NVYQY39ZEBFGKQWWEKG`,
+    ])('refuses %s, which is not a marketplace review URI', (uri) => {
+      expect(() => ReportValidators.validateReviewReference(uri, REVIEWER, 'boots_01', SELLER)).toThrow(
+        "Review URI is not the reviewer's marketplace review",
+      );
+    });
+
+    it('refuses a malformed reviewer pubky', () => {
+      expect(() => ReportValidators.validateReviewReference(REVIEW_URI, 'nope', 'boots_01', SELLER)).toThrow(
+        'Reviewer pubky is not valid',
+      );
+    });
+
+    it('refuses a review report without the reviewed listing', () => {
+      expect(() => ReportValidators.validateReviewReference(REVIEW_URI, REVIEWER, undefined, undefined)).toThrow(
+        'A review report needs the reviewed listing',
       );
     });
   });

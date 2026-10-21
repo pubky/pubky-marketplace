@@ -9,6 +9,7 @@ import { useCurrentUserProfile } from '@/hooks/useCurrentUserProfile/useCurrentU
 import { getCharacterCount } from '@/libs/utils/utils';
 import { REPORT_REASON_MAX_LENGTH } from '@/pipes/report/report.constants';
 import { PostHeader } from '../../PostHeader/PostHeader';
+import { REPORT_SUBJECT_TITLES } from '../DialogReportPost.constants';
 import type { DialogReportPostReasonStepProps } from './DialogReportPostReasonStep.types';
 
 export function DialogReportPostReasonStep({
@@ -21,7 +22,7 @@ export function DialogReportPostReasonStep({
   onSubmit,
 }: DialogReportPostReasonStepProps) {
   const { currentUserPubky } = useCurrentUserProfile();
-  const title = subject === 'listing' ? 'Report Listing' : 'Report Post';
+  const title = REPORT_SUBJECT_TITLES[subject];
   return (
     <>
       <DialogHeader>

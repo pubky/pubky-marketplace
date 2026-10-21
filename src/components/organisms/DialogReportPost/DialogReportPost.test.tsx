@@ -197,6 +197,20 @@ describe('DialogReportPost', () => {
     expect(screen.getByText('Report Listing', { selector: '[data-slot="dialog-title"]' })).toBeInTheDocument();
   });
 
+  it('reports a review by its URI, reviewer and reviewed listing', () => {
+    const review = {
+      reviewUri: `pubky://${'a'.repeat(52)}/pub/pubky.app/marketplace/v1/reviews/8Z8CWH8NVYQY39ZEBFGKQWWEKG`,
+      reviewerPubky: 'a'.repeat(52),
+      sellerPubky: TEST_SELLER_PUBKY,
+      listingId: 'boots_01',
+    };
+    render(<DialogReportPost open={true} onOpenChange={mockOnOpenChange} review={review} />);
+
+    expect(mockUseReportPost).toHaveBeenCalledWith({ kind: 'review', ...review });
+    expect(mockStepSubject).toHaveBeenCalledWith('issue', 'review');
+    expect(screen.getByText('Report Review', { selector: '[data-slot="dialog-title"]' })).toBeInTheDocument();
+  });
+
   it('passes the listing subject to the reason step', () => {
     mockUseReportPost.mockReturnValue({
       ...defaultUseReportPostReturn,
