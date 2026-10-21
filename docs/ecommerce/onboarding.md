@@ -26,14 +26,14 @@ feature inventory.
 
 The deployment column is an early-October handover snapshot, not a verified current infrastructure inventory. Confirm current images, hosts and environment values with VV in [pubky/shop-migration](https://github.com/pubky/shop-migration).
 
-| Repository                                                                            | What                                                                               | Work branch | Deployment snapshot                                                                     |
-| ------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- | ----------- | --------------------------------------------------------------------------------------- |
-| [pubky/pubky-marketplace](https://github.com/pubky/pubky-marketplace)                 | Shop web client (Next.js, `@synonymdev/pubky` 0.16.2), project docs, tester issues | `master`    | Vercel `pubky-marketplace-production` (shop.pubky.app) and `pubky-marketplace-staging`  |
-| [pubky/pubky-marketplace-service](https://github.com/pubky/pubky-marketplace-service) | Transaction service (Rust, sqlx, Postgres)                                         | `main`      | Railway, GHCR image pinned in `.railway/railway.ts`; staging at `staging-api.pubky.app` |
-| [pubky/marketplace-nexus](https://github.com/pubky/marketplace-nexus)                 | Marketplace indexer (upstream Nexus plus marketplace indexing)                     | `main`      | Railway; see its `docs/railway-deploy.md`                                               |
-| [BitcoinErrorLog/paykit-server](https://github.com/BitcoinErrorLog/paykit-server)     | Paykit server (fork)                                                               | `master`    | Railway; production host `paykit-shop.pubky.app`                                        |
-| [BitcoinErrorLog/pubky-app-specs](https://github.com/BitcoinErrorLog/pubky-app-specs) | Marketplace record types (specs fork)                                              | —           | Vendored into this repository as a tarball                                              |
-| [pubky/pubky-shop-sdk](https://github.com/pubky/pubky-shop-sdk)                       | `@bitcoinerrorlog/pubky-shop` SDK                                                  | `main`      | npm                                                                                     |
+| Repository                                                                            | What                                                                               | Work branch | Deployment snapshot                                                                                                       |
+| ------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- | ----------- | ------------------------------------------------------------------------------------------------------------------------- |
+| [pubky/pubky-marketplace](https://github.com/pubky/pubky-marketplace)                 | Shop web client (Next.js, `@synonymdev/pubky` 0.16.2), project docs, tester issues | `master`    | Deployed through [pubky/shop-migration](https://github.com/pubky/shop-migration)                                          |
+| [pubky/pubky-marketplace-service](https://github.com/pubky/pubky-marketplace-service) | Transaction service (Rust, sqlx, Postgres)                                         | `main`      | GHCR image, deployed through [pubky/shop-migration](https://github.com/pubky/shop-migration)                              |
+| [pubky/marketplace-nexus](https://github.com/pubky/marketplace-nexus)                 | Marketplace indexer (upstream Nexus plus marketplace indexing)                     | `main`      | Deployed through [pubky/shop-migration](https://github.com/pubky/shop-migration)                                          |
+| [BitcoinErrorLog/paykit-server](https://github.com/BitcoinErrorLog/paykit-server)     | Paykit server (fork)                                                               | `master`    | Deployed through [pubky/shop-migration](https://github.com/pubky/shop-migration); production host `paykit-shop.pubky.app` |
+| [BitcoinErrorLog/pubky-app-specs](https://github.com/BitcoinErrorLog/pubky-app-specs) | Marketplace record types (specs fork)                                              | —           | Vendored into this repository as a tarball                                                                                |
+| [pubky/pubky-shop-sdk](https://github.com/pubky/pubky-shop-sdk)                       | `@bitcoinerrorlog/pubky-shop` SDK                                                  | `main`      | npm                                                                                                                       |
 
 In this repository, `master` is the default branch and the Shop release line. Releases up to `shop-v0.6.46` were cut
 from `release/shop-v0.6.8` in `BitcoinErrorLog/pubky-app`; that history and its tags are part of this repository.
@@ -41,7 +41,7 @@ from `release/shop-v0.6.8` in `BitcoinErrorLog/pubky-app`; that history and its 
 ## Access to request on day one
 
 - Write access to the repositories above.
-- Access to the current deployment platform from VV; historical Vercel projects use team `synonymdev`.
+- Access to the deployment configuration in [pubky/shop-migration](https://github.com/pubky/shop-migration), from its maintainers.
 - Sentry, for the Shop's error reports.
 - Test seats for the release proof, passed out of band by the product owner. Never commit them.
 
@@ -101,8 +101,7 @@ Live suites that need a running service, a local Pubky testnet, or staging signu
 
 ## Release
 
-Follow [`release.md`](release.md) for source gates, deployed grant-session verification, tags and notes. Its Vercel recipe is for the historical standalone deployment; use VV’s current deployment configuration for the embedded pair. The older `scripts/release/release-proof.mjs` still asserts Ring cookie sign-in and cannot certify this grant-only release. Production operations, the kill switch and rollback are
-in [`runbook-production.md`](runbook-production.md).
+Follow [`release.md`](release.md) for source gates, deployed grant-session verification, tags and notes. Deployment is through [pubky/shop-migration](https://github.com/pubky/shop-migration); use its configuration for the embedded pair. The older `scripts/release/release-proof.mjs` still asserts Ring cookie sign-in and cannot certify this grant-only release. Production operations, the kill switch and rollback are in shop-migration.
 
 ## Known limits
 
@@ -123,12 +122,12 @@ specs, local-first commerce state, drops, and the former session consumer. Curre
 
 ## Who to ask
 
-| Topic                                                         | GitHub                                                                                                                                  |
-| ------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| Product decisions, Vercel access, test seats, backend deploys | [BitcoinErrorLog](https://github.com/BitcoinErrorLog)                                                                                   |
-| Testing, issue reports, payment canaries                      | [thisispav](https://github.com/thisispav)                                                                                               |
-| Bitkit testing                                                | [piotr-iohk](https://github.com/piotr-iohk)                                                                                             |
-| Visual design                                                 | [aldertnl](https://github.com/aldertnl)                                                                                                 |
-| pubky.app changes                                             | [secondl1ght](https://github.com/secondl1ght), [infin1t3](https://github.com/infin1t3), [talosmachina](https://github.com/talosmachina) |
-| Bitkit and Paykit client issues                               | [ovitrif](https://github.com/ovitrif)                                                                                                   |
-| Nexus, homeserver, Paykit server, Locks, Passport             | The maintainers of the corresponding `pubky/*` repositories                                                                             |
+| Topic                                                | GitHub                                                                                                                                  |
+| ---------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| Product decisions, test seats, backend pull requests | [BitcoinErrorLog](https://github.com/BitcoinErrorLog)                                                                                   |
+| Testing, issue reports, payment canaries             | [thisispav](https://github.com/thisispav)                                                                                               |
+| Bitkit testing                                       | [piotr-iohk](https://github.com/piotr-iohk)                                                                                             |
+| Visual design                                        | [aldertnl](https://github.com/aldertnl)                                                                                                 |
+| pubky.app changes                                    | [secondl1ght](https://github.com/secondl1ght), [infin1t3](https://github.com/infin1t3), [talosmachina](https://github.com/talosmachina) |
+| Bitkit and Paykit client issues                      | [ovitrif](https://github.com/ovitrif)                                                                                                   |
+| Nexus, homeserver, Paykit server, Locks, Passport    | The maintainers of the corresponding `pubky/*` repositories                                                                             |

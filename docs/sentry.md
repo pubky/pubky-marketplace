@@ -54,12 +54,12 @@ Every event's `release` is the **deployed commit's full SHA**, baked into the bu
 `NEXT_PUBLIC_APP_VERSION` for the browser, Node and Edge runtimes alike (`resolveSentryRelease` in
 `src/libs/build-info/build-info.ts`):
 
-| Deploy path                                         | Release taken from                                                         | Release created by                                        |
-| --------------------------------------------------- | -------------------------------------------------------------------------- | --------------------------------------------------------- |
-| Docker image built by `shop-migration`              | the `NEXT_PUBLIC_APP_VERSION` build arg, the Shop submodule commit         | the Dockerfile, when Sentry build credentials are present |
-| Docker image from a `v*` tag (`release-docker.yml`) | the `NEXT_PUBLIC_APP_VERSION` build arg, the tagged commit                 | the workflow's `sentry-release` job                       |
-| Vercel (John Staging, John Prod)                    | `GIT_COMMIT` (`--build-env` on a CLI deploy), else `VERCEL_GIT_COMMIT_SHA` | the build command in `vercel.json`                        |
-| Local build                                         | the package version                                                        | nobody                                                    |
+| Deploy path                                         | Release taken from                                                         | Release created by                                                                  |
+| --------------------------------------------------- | -------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| Docker image built by `shop-migration`              | the `NEXT_PUBLIC_APP_VERSION` build arg, the Shop submodule commit         | the Dockerfile, when Sentry build credentials are present                           |
+| Docker image from a `v*` tag (`release-docker.yml`) | the `NEXT_PUBLIC_APP_VERSION` build arg, the tagged commit                 | the workflow's `sentry-release` job                                                 |
+| A Vercel project                                    | `GIT_COMMIT` (`--build-env` on a CLI deploy), else `VERCEL_GIT_COMMIT_SHA` | the project's build command (`scripts/sentry-release/main.ts --deploy --warn-only`) |
+| Local build                                         | the package version                                                        | nobody                                                                              |
 
 `scripts/sentry-release` creates the release under that exact name, associates its commits and
 finalizes it. On Vercel it also records the deploy under the environment the events carry

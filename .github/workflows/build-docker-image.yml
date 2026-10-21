@@ -64,7 +64,7 @@ env:
 jobs:
   check_image:
     name: Validate and rebuild Pubky App
-    # BitcoinErrorLog Shop previews are built and deployed by Vercel.
+    # Only the pubky organization repository publishes images.
     if: github.repository == 'pubky/pubky-app'
     timeout-minutes: 6
     outputs:
@@ -107,7 +107,7 @@ jobs:
   build_image:
     name: Build and push image
     needs: [check_image]
-    # BitcoinErrorLog Shop previews are built and deployed by Vercel.
+    # Only the pubky organization repository publishes images.
     if: github.repository == 'pubky/pubky-app' && needs.check_image.outputs.image_exists != 'true'
     runs-on: ['ubuntu-latest']
     timeout-minutes: 30

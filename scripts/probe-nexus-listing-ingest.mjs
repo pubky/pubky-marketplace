@@ -1,13 +1,14 @@
 // Ops probe: publish a fresh minimal listing record from a throwaway staging
 // identity, then poll the deployed Nexus for it. Isolates whether the Nexus
-// watcher indexes marketplace listing PUTs at all.
+// watcher indexes marketplace listing PUTs at all. NEXUS_URL names the Nexus to poll (required).
 import { AuthFlowKind, Keypair, Pubky, PublicKey } from '@synonymdev/pubky';
 
 const HOMESERVER_ADMIN = 'https://admin.homeserver.staging.pubky.app/generate_signup_token';
 const ADMIN_PASSWORD = process.env.STAGING_ADMIN_PASSWORD;
 const HOMESERVER_PUBKY = 'ufibwbmed6jeq9k4p583go95wofakh9fwpp4k734trq79pd9u1uy';
 const HTTP_RELAY = 'https://httprelay.staging.pubky.app/inbox';
-const NEXUS = 'https://nexusd-production-7108.up.railway.app';
+const NEXUS = (process.env.NEXUS_URL ?? '').replace(/\/$/, '');
+if (!NEXUS) throw new Error('set NEXUS_URL to the Nexus to poll');
 const SOURCE_SELLER = 'fado4r5k3hwfqe6qjunreykp9gad3kfwdc7epd7y8nztgis5gmhy';
 const SOURCE_LISTING = 'a7fc7d5d0b2a4083b27847193f8fe536';
 

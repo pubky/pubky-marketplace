@@ -1,9 +1,13 @@
 #!/usr/bin/env bash
 # Start the committed Nexus fixture stub, then `next start`, then the
 # launch-critical Chromium suite. Does not run `next build` — CI downloads
-# the Build job's `.next`. Required gate never reads live nexusd 7108.
+# the Build job's `.next`. Required gate never reads a live Nexus: it must be
+# the loopback fixture stub.
 # CI explicitly selects LAUNCH_E2E_MODE=synthetic (real SDK, stubbed services).
-# Optional LAUNCH_E2E_MODE=live also needs grant-enabled staging/BFF config.
+# Optional LAUNCH_E2E_MODE=live also needs grant-enabled staging/BFF config and
+# has no default target: LAUNCH_E2E_SERVICE_URL (and LAUNCH_E2E_ALLOWED_SERVICE_URL, the one
+# service URL the run may forward to) must be set, plus the seller identity
+# (LAUNCH_E2E_SELLER_SECRET_HEX or MARKETPLACE_STAGING_DROP_IDENTITIES_FILE).
 #
 # This suite exercises standalone navigation and needs a standalone production build.
 # Leave NEXT_PUBLIC_BASE_PATH unset, or use a non-embedded test mount (for example /shop-test)
@@ -22,13 +26,14 @@ if [[ "${LAUNCH_E2E_MODE:-live}" == "synthetic" ]]; then
   # Never let server-rendered marketplace reads reach live staging in fixture mode.
   export PUBKY_RUNTIME_MARKETPLACE_URL="$LAUNCH_E2E_SERVICE_URL"
 else
-  export LAUNCH_E2E_SERVICE_URL="${LAUNCH_E2E_SERVICE_URL:-https://staging-api.pubky.app}"
+  : "${LAUNCH_E2E_SERVICE_URL:?set LAUNCH_E2E_SERVICE_URL: live mode has no default target}"
+  export LAUNCH_E2E_SERVICE_URL
+  export PUBKY_RUNTIME_MARKETPLACE_URL="${PUBKY_RUNTIME_MARKETPLACE_URL:-$LAUNCH_E2E_SERVICE_URL}"
 fi
 export LAUNCH_E2E_REQUIRE_SELLER_BOARD="${LAUNCH_E2E_REQUIRE_SELLER_BOARD:-1}"
 if [[ -d /ms-playwright ]]; then
   export PLAYWRIGHT_BROWSERS_PATH="${PLAYWRIGHT_BROWSERS_PATH:-/ms-playwright}"
 fi
-export MARKETPLACE_STAGING_DROP_IDENTITIES_FILE="${MARKETPLACE_STAGING_DROP_IDENTITIES_FILE:-/Users/johncarvalho/work/.staging-drop-identities.json}"
 
 export PUBKY_RUNTIME_ENV="${PUBKY_RUNTIME_ENV:-staging}"
 export PUBKY_RUNTIME_TESTNET="${PUBKY_RUNTIME_TESTNET:-false}"
@@ -41,7 +46,6 @@ export PUBKY_RUNTIME_PKARR_RELAYS="${PUBKY_RUNTIME_PKARR_RELAYS:-[\"https://pkar
 export PUBKY_RUNTIME_DEFAULT_HTTP_RELAY="${PUBKY_RUNTIME_DEFAULT_HTTP_RELAY:-https://httprelay.staging.pubky.app/inbox}"
 export PUBKY_RUNTIME_EXCHANGE_RATE_API="${PUBKY_RUNTIME_EXCHANGE_RATE_API:-https://api1.blocktank.to/api/fx/rates/btc}"
 export PUBKY_RUNTIME_COMMERCE_ADAPTER_MODE="${PUBKY_RUNTIME_COMMERCE_ADAPTER_MODE:-transaction-service}"
-export PUBKY_RUNTIME_MARKETPLACE_URL="${PUBKY_RUNTIME_MARKETPLACE_URL:-https://staging-api.pubky.app}"
 
 STUB_HOST="${LAUNCH_E2E_NEXUS_STUB_HOST:-127.0.0.1}"
 STUB_PORT="${LAUNCH_E2E_NEXUS_STUB_PORT:-7109}"
@@ -53,10 +57,11 @@ forbid_live_nexus() {
   if [[ "${LAUNCH_E2E_ALLOW_LIVE_NEXUS:-}" == "1" ]]; then
     return 0
   fi
-  if [[ "$value" == *railway.app* || "$value" == *7108* ]]; then
-    echo "${name} must not point at live nexusd 7108 (got ${value})"
-    exit 1
-  fi
+  case "$value" in
+    http://127.0.0.1:* | http://localhost:* | 'http://[::1]:'*) return 0 ;;
+  esac
+  echo "${name} must be the loopback fixture stub unless LAUNCH_E2E_ALLOW_LIVE_NEXUS=1 (got ${value})"
+  exit 1
 }
 
 if [[ ! -d .next || ! -f .next/BUILD_ID ]]; then
@@ -110,7 +115,7 @@ if [[ "${LAUNCH_E2E_ALLOW_LIVE_NEXUS:-}" == "1" ]]; then
   export PUBKY_RUNTIME_MARKETPLACE_NEXUS_URL="${PUBKY_RUNTIME_MARKETPLACE_NEXUS_URL:-$STUB_URL}"
   export LAUNCH_E2E_NEXUS_URL="${LAUNCH_E2E_NEXUS_URL:-$PUBKY_RUNTIME_MARKETPLACE_NEXUS_URL}"
 else
-  # Required gate never inherits live 7108 from the parent shell / CI env.
+  # Required gate never inherits a live Nexus from the parent shell / CI env.
   export PUBKY_RUNTIME_MARKETPLACE_NEXUS_URL="$STUB_URL"
   export LAUNCH_E2E_NEXUS_URL="$STUB_URL"
 fi
