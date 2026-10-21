@@ -9,8 +9,8 @@
 //   4. usdt-config: the served runtime config has `usdtPaymentsEnabled: false`.
 //   5. service-health: the marketplace service the config names answers /health without `usdt_payments`.
 //
-// There is no build-meta or `/version.json` check, on purpose: the Shop publishes neither (#184), so identity is the
-// deployment id (check 1) and the git tag. Do not add one back.
+// There is no build-meta or `/version.json` check, on purpose: the Shop publishes neither (#184), so identity is check 1
+// (the deployment id or the `/api/build` commit) and the git tag. Do not add one back.
 //
 // Env: PROOF_ORIGIN (required; with the Shop's mount path when it is mounted, e.g. https://pubky.app/shop-embed), EXPECTED_DPL or EXPECTED_COMMIT, LOCKS_WASM_SHA256 (default: the wasm in this
 // checkout's node_modules), SERVICE_URL (default: the marketplaceUrl in the served config), SERVED_CHECKS_USDT=on to expect USDT on.

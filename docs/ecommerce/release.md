@@ -171,7 +171,7 @@ After a deploy, `PROOF_ORIGIN=<origin> EXPECTED_COMMIT=<sha> node scripts/releas
 serves with plain HTTP: the deployment identity, that the Locks SDK wasm is named in a chunk and served as `application/wasm`
 byte-identical to the pinned SDK, USDT off in the served config, and the service's `/health`. The wasm sits in a lazy
 chunk, so the script reads webpack's chunk map (Next.js writes it in more than one shape) and crawls every chunk. It has
-no build-meta or version check; `/api/build` is for people confirming a deploy.
+no build-meta or version check; `/api/build` is read only when `EXPECTED_COMMIT` is set.
 
 ## Signed-in production proof
 
