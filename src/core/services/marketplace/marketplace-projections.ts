@@ -355,6 +355,10 @@ export const marketplaceNotificationSchema = z
       // receives it, and only for USDT orders.
       'refund_destination_confirmed',
       'review_received',
+      // Double-blind reviews: the counterparty reviewed first; both reviewers
+      // are told when the pair completes or the window ends.
+      'review_waiting',
+      'review_released',
       // Local pickup (Wave 7, §A3/§A6): details edited or cleared on a paid
       // order (buyer-facing), and the seller arming pickup readiness.
       'pickup_details_updated',
@@ -832,21 +836,43 @@ export const marketplaceOrderProjectionSchema = z
   })
   .passthrough();
 
-export const marketplaceOrderSchema = z.preprocess((input) => {
+/**
+ * While a double-blind window runs, the counterparty's review reaches an
+ * order view only as `{ role, submitted: true }`: a fact, not a review. It
+ * has no reviewer, rating or text, so it is dropped here and nothing
+ * downstream can render, count or match it as a review.
+ */
+function withoutSubmittedReviewStubs(record: Record<string, unknown>): Record<string, unknown> {
+  if (!Array.isArray(record.reviews)) return record;
+  const readable = record.reviews.filter(
+    (entry) =>
+      !(
+        entry !== null &&
+        typeof entry === 'object' &&
+        (entry as Record<string, unknown>).submitted === true &&
+        !('rating' in entry)
+      ),
+  );
+  return readable.length === record.reviews.length ? record : { ...record, reviews: readable };
+}
+
+function normalizeOrderInput(input: unknown): unknown {
   if (!input || typeof input !== 'object') return input;
-  const record = input as Record<string, unknown>;
+  const record = withoutSubmittedReviewStubs(input as Record<string, unknown>);
   const bitcoinQuote = record.bitcoinQuote;
   if (
     bitcoinQuote === undefined ||
     bitcoinQuote === null ||
     marketplaceBitcoinQuoteSchema.safeParse(bitcoinQuote).success
   ) {
-    return input;
+    return record;
   }
   const withoutBitcoinQuote = { ...record };
   delete withoutBitcoinQuote.bitcoinQuote;
   return withoutBitcoinQuote;
-}, marketplaceOrderProjectionSchema);
+}
+
+export const marketplaceOrderSchema = z.preprocess(normalizeOrderInput, marketplaceOrderProjectionSchema);
 
 /**
  * Participant-list orders deliberately exclude the seller-only delivery
@@ -858,21 +884,10 @@ export const marketplaceParticipantOrderProjectionSchema = marketplaceOrderProje
   .omit({ deliveryAddress: true })
   .strip();
 
-export const marketplaceParticipantOrderSchema = z.preprocess((input) => {
-  if (!input || typeof input !== 'object') return input;
-  const record = input as Record<string, unknown>;
-  const bitcoinQuote = record.bitcoinQuote;
-  if (
-    bitcoinQuote === undefined ||
-    bitcoinQuote === null ||
-    marketplaceBitcoinQuoteSchema.safeParse(bitcoinQuote).success
-  ) {
-    return input;
-  }
-  const withoutBitcoinQuote = { ...record };
-  delete withoutBitcoinQuote.bitcoinQuote;
-  return withoutBitcoinQuote;
-}, marketplaceParticipantOrderProjectionSchema);
+export const marketplaceParticipantOrderSchema = z.preprocess(
+  normalizeOrderInput,
+  marketplaceParticipantOrderProjectionSchema,
+);
 
 /**
  * The PUBLIC drop projection (`GET /v0/drops/{seller}/{dropId}`, ADR 0026):

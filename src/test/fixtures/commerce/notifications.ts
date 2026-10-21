@@ -36,6 +36,8 @@ const NOTIFICATION_TYPE_UNREAD = {
   refund_recorded: false,
   refund_destination_confirmed: true,
   review_received: false,
+  review_waiting: true,
+  review_released: false,
   pickup_details_updated: true,
   pickup_details_cleared: false,
   pickup_ready: true,

@@ -1184,3 +1184,9 @@ export function buildMarketplacePaymentAggregateId(paymentId: string): string {
 export function buildMarketplaceOrderAggregateId(orderId: string): string {
   return `order:${orderId}`;
 }
+
+/** The order id of an `order:{id}` aggregate id, or null for any other aggregate. */
+export function orderIdFromMarketplaceAggregateId(aggregateId: string): string | null {
+  const orderId = aggregateId.startsWith('order:') ? aggregateId.slice('order:'.length) : '';
+  return orderId === '' ? null : orderId;
+}

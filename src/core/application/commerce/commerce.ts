@@ -29,6 +29,8 @@ import {
   type MarketplaceAttestation,
   marketplaceAttestationSchema,
   type MarketplaceItemAttestation,
+  readReviewAttestationPending,
+  readReviewResultPending,
   verifyOrderReceiptClaims,
   verifyOwnDropEdition,
   verifyOwnOrderReceipt,
@@ -137,6 +139,7 @@ import {
   isSuccessfulListingRegistrationResponse,
   type MarketplaceCommand,
   type MarketplaceCommandResponse,
+  orderIdFromMarketplaceAggregateId,
 } from '@/libs/commerce/transaction-commands';
 import type { CommerceJsonValue, CommerceMoney } from '@/libs/commerce/transaction-contracts';
 import { assertPublishableListingStock } from '@/libs/commerce/unlimited-stock';
@@ -204,6 +207,7 @@ import { LocksGatewayService } from '@/services/locks/locks';
 import { RetiredLocksSessionStorage } from '@/services/locks/retired-locks-session';
 import {
   MarketplaceGatewayService,
+  type MarketplaceNotificationEntry,
   type MarketplaceOrder,
   type MarketplacePayment,
 } from '@/services/marketplace/marketplace';
@@ -212,6 +216,7 @@ import {
   MarketplaceGrantSessionService,
   type MintedGrantSession,
 } from '@/services/marketplace/marketplace-grant-session';
+import { isRecognizedMarketplaceNotification } from '@/services/marketplace/marketplace-projections';
 import {
   type MarketplaceSessionEndedEvent,
   MarketplaceSessionService,
@@ -248,6 +253,37 @@ const reviewResultSchema = z
 
 /** One entry of a per-item command result's `reviews[]`: the `review` view plus the listing it rates. */
 const reviewItemResultSchema = reviewResultSchema.extend({ listingAggregateId: z.string().min(1) });
+
+/**
+ * The payload of a review the service withholds behind a double-blind window:
+ * the terms of the latest `review.create` / `review.update` result (every item
+ * review, kept in line order), which publish once the service issues the
+ * attestations. `withdrawn` marks a review the user removed while it was
+ * withheld: it never publishes, and only the service withdrawal is still owed.
+ */
+const awaitingReleasePayloadSchema = z.object({
+  orderId: z.string().min(1),
+  /** The seller and the first-line listing the order's single v1 review rates, for display. */
+  sellerPubky: z.string(),
+  firstListingId: z.string().min(1).nullable(),
+  releaseAt: z.string().min(1).nullable(),
+  withdrawn: z.boolean().optional(),
+  result: z.object({
+    review: reviewResultSchema.optional(),
+    reviews: z.array(reviewItemResultSchema).optional(),
+  }),
+});
+
+type AwaitingReleasePayload = z.infer<typeof awaitingReleasePayloadSchema>;
+
+/** A review withheld by a double-blind window, as the surfaces show it. */
+export interface AwaitingReleaseReview {
+  orderId: string;
+  /** The window's end, or null when the service named none. */
+  releaseAt: string | null;
+  reviewerRole: 'buyer' | 'seller';
+  items: { listingOwnerPubky: string; listingId: string; rating: number; text: string; updatedAt: string }[];
+}
 
 export interface TCommitCreateDefaultShopParams {
   ownerPubky: string;
@@ -1722,7 +1758,36 @@ export class CommerceApplication {
   static async getMarketplaceNotifications(actorPubky: string) {
     const notifications = await MarketplaceGatewayService.getNotifications(actorPubky);
     if (!isDurableCommerceMode(getCommerceAdapterMode())) return notifications;
+    this.retryReleasedReviews(actorPubky, notifications);
     return notifications.filter((notification) => notification.type !== 'message_received');
+  }
+
+  /** Notifications whose `review_released` already started a retry in this tab, so each starts one. */
+  private static releaseNotificationsSeen = new Set<string>();
+
+  /** Test seam: forgets which release notifications this tab already acted on. */
+  static resetReleaseNotificationMemo(): void {
+    this.releaseNotificationsSeen.clear();
+  }
+
+  /**
+   * A `review_released` notification means the service now issues the
+   * attestations of that order's reviews: the user's withheld review for it
+   * is retried at once, once per notification, instead of waiting for the
+   * next orders load. The retry runs beside the notification read, never in
+   * front of it, and a failure is logged inside the retry.
+   */
+  private static retryReleasedReviews(actorPubky: string, notifications: MarketplaceNotificationEntry[]): void {
+    for (const notification of notifications) {
+      if (!isRecognizedMarketplaceNotification(notification) || notification.type !== 'review_released') continue;
+      const orderId = orderIdFromMarketplaceAggregateId(notification.aggregateId);
+      const seen = `${actorPubky}|${notification.id}`;
+      if (orderId === null || this.releaseNotificationsSeen.has(seen)) continue;
+      this.releaseNotificationsSeen.add(seen);
+      void this.resumeAwaitingReleaseReviews(actorPubky, orderId).catch((error) => {
+        Logger.warn('Retrying a released review failed', { orderId, error });
+      });
+    }
   }
 
   static async getMarketplaceNotificationPreferences(actorPubky: string) {
@@ -3954,13 +4019,31 @@ export class CommerceApplication {
    * idempotent) instead of leaving a record public or republishable.
    * Returns `removed` once every record was withdrawn and deleted (one
    * already gone counts), `queued` while any removal is still owed, and
-   * `absent` when there was no local review to remove. The service keeps the
+   * `absent` when there was no local review to remove. A review still
+   * withheld by a double-blind window counts as one. The service keeps the
    * reviews themselves; this never re-opens the order for a new review.
    */
   static async commitDeleteOwnReview(actorPubky: string, orderId: string): Promise<OwnReviewDeleteOutcome> {
     return await this.withOwnReviewLock(actorPubky, orderId, async () => {
       const rows = await LocalCommerceService.getOwnReviewsByOrder(actorPubky, orderId);
-      if (rows.length === 0) return 'absent';
+      // A review still withheld by a double-blind window has no record: its
+      // held terms are marked withdrawn first (so a release never publishes
+      // them), and the service withdrawal follows below.
+      const [withheld] = await LocalCommerceService.getAwaitingReleaseReviewJobs(actorPubky, orderId);
+      if (rows.length === 0 && withheld === undefined) return 'absent';
+      if (withheld !== undefined) {
+        const held = awaitingReleasePayloadSchema.safeParse(withheld.payload);
+        await LocalCommerceService.stageAwaitingReleaseReview({
+          ...withheld,
+          payload: {
+            ...(held.success
+              ? held.data
+              : { orderId, sellerPubky: '', firstListingId: null, releaseAt: null, result: {} }),
+            withdrawn: true,
+          } as CommerceJsonValue,
+          updated_at: Math.max(Date.now(), withheld.updated_at + 1),
+        });
+      }
       const removals: { jobId: string; url: string; listingId: string }[] = [];
       for (const local of rows) {
         const listingId = local.record.listingId;
@@ -3983,6 +4066,9 @@ export class CommerceApplication {
       let outcome: OwnReviewDeleteOutcome = 'removed';
       for (const { jobId, url, listingId } of removals) {
         if (!(await this.sendOwnReviewRemoval(actorPubky, jobId, url, orderId, listingId))) outcome = 'queued';
+      }
+      if (withheld !== undefined && !(await this.finishWithdrawnAwaitingReview(actorPubky, withheld.id, orderId))) {
+        outcome = 'queued';
       }
       return outcome;
     });
@@ -4172,18 +4258,12 @@ export class CommerceApplication {
     result: Record<string, unknown>;
   }): Promise<CommerceReviewModelSchema[]> {
     const { actorPubky, order, result } = input;
-    const attestations = extractReviewAttestations(result);
-    const entries = Array.isArray(result.reviews)
-      ? result.reviews.flatMap((entry) => {
-          const parsed = reviewItemResultSchema.safeParse(entry);
-          return parsed.success ? [parsed.data] : [];
-        })
-      : [];
-    const items = entries.flatMap((review) => {
-      const listingId = listingIdFromAggregate(order.sellerPubky, review.listingAggregateId);
-      const attestation = attestations.find((candidate) => candidate.listingId === listingId);
-      return listingId === null || attestation === undefined ? [] : [{ listingId, review, attestation }];
-    });
+    const withheld = readReviewResultPending(result);
+    if (withheld !== null) {
+      await this.stageAwaitingReleaseReview(actorPubky, order, result, withheld.releaseAt);
+      return [];
+    }
+    const items = this.reviewItemsOf(order, result, extractReviewAttestations(result));
     if (items.length === 0) {
       const single = await this.commitPublishOwnReview(input);
       return single === null ? [] : [single];
@@ -4202,6 +4282,29 @@ export class CommerceApplication {
       }
       if (firstFailure !== undefined) throw firstFailure;
       return published;
+    });
+  }
+
+  /**
+   * The per-item reviews of a command result, each paired with the attestation
+   * the service issued for its listing, in the result's order. Reviews of
+   * listings without an attestation are left out.
+   */
+  private static reviewItemsOf(
+    order: MarketplaceOrder,
+    result: Record<string, unknown>,
+    attestations: MarketplaceItemAttestation[],
+  ) {
+    const entries = Array.isArray(result.reviews)
+      ? result.reviews.flatMap((entry) => {
+          const parsed = reviewItemResultSchema.safeParse(entry);
+          return parsed.success ? [parsed.data] : [];
+        })
+      : [];
+    return entries.flatMap((review) => {
+      const listingId = listingIdFromAggregate(order.sellerPubky, review.listingAggregateId);
+      const attestation = attestations.find((candidate) => candidate.listingId === listingId);
+      return listingId === null || attestation === undefined ? [] : [{ listingId, review, attestation }];
     });
   }
 
@@ -4342,12 +4445,14 @@ export class CommerceApplication {
   /**
    * Retries every own-review record whose homeserver PUT never landed (the
    * visible retryable outbox): re-publishes the staged record verbatim and
-   * marks it synced. Called when the orders surface loads, so a failed
-   * publication heals on the next visit instead of rotting silently.
+   * marks it synced, and re-reads the attestations of reviews a double-blind
+   * window still withheld ({@link resumeAwaitingReleaseReviews}). Called when
+   * the orders surface loads, so a failed publication heals on the next visit
+   * instead of rotting silently.
    */
   static async resumeOwnReviewPublications(actorPubky: string): Promise<number> {
     const pending = await LocalCommerceService.getPendingOwnReviews(actorPubky);
-    let published = 0;
+    let published = await this.resumeAwaitingReleaseReviews(actorPubky);
     for (const queued of pending) {
       const url = CommerceRecordNormalizer.reviewUri(queued.owner_id, queued.review_id);
       published += await this.withOwnReviewLock(queued.owner_id, queued.order_id, async () => {
@@ -4380,6 +4485,270 @@ export class CommerceApplication {
       });
     }
     return published;
+  }
+
+  /**
+   * Holds a review the service withheld behind a double-blind window: it
+   * issued no attestation, so there is no record to build yet. The terms of
+   * the result wait in the outbox as one `awaiting_release` job per order
+   * (not a failure: no attempts, no backoff), and an edit made meanwhile
+   * replaces the item it edits. Nothing is published before release.
+   */
+  private static async stageAwaitingReleaseReview(
+    actorPubky: string,
+    order: MarketplaceOrder,
+    result: Record<string, unknown>,
+    releaseAt: string | null,
+  ): Promise<void> {
+    const review = reviewResultSchema.safeParse(result.review);
+    const reviews = Array.isArray(result.reviews)
+      ? result.reviews.flatMap((entry) => {
+          const parsed = reviewItemResultSchema.safeParse(entry);
+          return parsed.success ? [parsed.data] : [];
+        })
+      : [];
+    if (!review.success && reviews.length === 0) {
+      Logger.warn('A withheld review result carried no review terms; nothing was held for release', {
+        orderId: order.id,
+      });
+      return;
+    }
+    await this.withOwnReviewLock(actorPubky, order.id, async () => {
+      const [earlier] = await LocalCommerceService.getAwaitingReleaseReviewJobs(actorPubky, order.id);
+      const held = earlier === undefined ? null : awaitingReleasePayloadSchema.safeParse(earlier.payload);
+      const before = held?.success === true && held.data.withdrawn !== true ? held.data.result : null;
+      const merged = [...(before?.reviews ?? [])];
+      for (const next of reviews) {
+        const at = merged.findIndex(({ listingAggregateId }) => listingAggregateId === next.listingAggregateId);
+        if (at === -1) merged.push(next);
+        else merged[at] = next;
+      }
+      const lineOf = (aggregateId: string) => order.lines.findIndex((line) => line.listingAggregateId === aggregateId);
+      merged.sort((left, right) => lineOf(left.listingAggregateId) - lineOf(right.listingAggregateId));
+      const payload: AwaitingReleasePayload = {
+        orderId: order.id,
+        sellerPubky: order.sellerPubky,
+        firstListingId: this.listingIdFromOrder(order),
+        releaseAt: releaseAt ?? (held?.success === true ? held.data.releaseAt : null),
+        result: {
+          ...(review.success ? { review: review.data } : before?.review ? { review: before.review } : {}),
+          ...(merged.length > 0 ? { reviews: merged } : {}),
+        },
+      };
+      const now = Date.now();
+      await LocalCommerceService.stageAwaitingReleaseReview({
+        ...this.createSyncJob({
+          ownerId: actorPubky,
+          entityType: 'review',
+          entityId: order.id,
+          operation: 'publish',
+          payload: payload as CommerceJsonValue,
+          now,
+        }),
+        status: 'awaiting_release',
+        created_at: earlier?.created_at ?? now,
+      });
+    });
+  }
+
+  /** The reviews the user wrote that a double-blind window still withholds, newest terms first-written first; withdrawn ones are gone. */
+  static async getAwaitingReleaseReviews(actorPubky: string): Promise<AwaitingReleaseReview[]> {
+    const jobs = await LocalCommerceService.getAwaitingReleaseReviewJobs(actorPubky);
+    return jobs.flatMap((job) => {
+      const parsed = awaitingReleasePayloadSchema.safeParse(job.payload);
+      if (!parsed.success || parsed.data.withdrawn === true) return [];
+      const { orderId, sellerPubky, firstListingId, releaseAt, result } = parsed.data;
+      const reviews = result.reviews ?? (result.review === undefined ? [] : [result.review]);
+      const items = [
+        ...(result.reviews ?? []).map((review) => ({
+          listingId: listingIdFromAggregate(sellerPubky, review.listingAggregateId),
+          review,
+        })),
+        ...((result.reviews ?? []).length === 0 && result.review !== undefined
+          ? [{ listingId: firstListingId, review: result.review }]
+          : []),
+      ].flatMap(({ listingId, review }) =>
+        listingId === null
+          ? []
+          : [
+              {
+                listingOwnerPubky: sellerPubky,
+                listingId,
+                rating: review.rating,
+                text: review.text,
+                updatedAt: review.updatedAt,
+              },
+            ],
+      );
+      const role = reviews[0]?.reviewerRole;
+      return role === undefined || items.length === 0 ? [] : [{ orderId, releaseAt, reviewerRole: role, items }];
+    });
+  }
+
+  /**
+   * Retries the reviews a double-blind window withheld: each order's job is
+   * re-read under that order's lock (two tabs retrying one job publish one
+   * set of records), and the attestations are asked for again. Still
+   * withheld leaves the job as it is, a released answer publishes the item
+   * records in line order, and a review the user removed meanwhile never
+   * publishes. With `orderId` only that order is retried. Returns the number
+   * of records published.
+   */
+  static async resumeAwaitingReleaseReviews(actorPubky: string, orderId?: string): Promise<number> {
+    const jobs = await LocalCommerceService.getAwaitingReleaseReviewJobs(actorPubky, orderId);
+    let published = 0;
+    for (const queued of jobs) {
+      if (!this.liveIdentityMatches(actorPubky)) break;
+      published += await this.withOwnReviewLock(actorPubky, queued.entity_id, () =>
+        this.releaseAwaitingReview(actorPubky, queued.id),
+      );
+    }
+    return published;
+  }
+
+  /** One retry of a withheld review; the caller holds its order's publication lock. */
+  private static async releaseAwaitingReview(actorPubky: string, jobId: string): Promise<number> {
+    const job = await LocalCommerceService.getSyncJob(jobId);
+    if (job === undefined || job === null || job.status !== 'awaiting_release') return 0;
+    const orderId = job.entity_id;
+    const parsed = awaitingReleasePayloadSchema.safeParse(job.payload);
+    if (!parsed.success) {
+      Logger.warn('A withheld review job carries unreadable terms; dropping it', { orderId });
+      await LocalCommerceService.completeSyncJob(job.id);
+      return 0;
+    }
+    const payload = parsed.data;
+    if (payload.withdrawn === true) {
+      await this.finishWithdrawnAwaitingReview(actorPubky, job.id, orderId);
+      return 0;
+    }
+
+    let order: MarketplaceOrder | null;
+    let attestations: MarketplaceItemAttestation[];
+    try {
+      order = await MarketplaceGatewayService.getOrder(actorPubky, orderId);
+      if (order === null) return 0;
+      const read = await this.readAwaitingReleaseAttestations(actorPubky, order, payload);
+      if (read === 'unavailable') return 0;
+      if (read.kind === 'pending') {
+        if (read.releaseAt !== payload.releaseAt) {
+          await LocalCommerceService.stageAwaitingReleaseReview({
+            ...job,
+            payload: { ...payload, releaseAt: read.releaseAt } as CommerceJsonValue,
+            updated_at: Math.max(Date.now(), job.updated_at + 1),
+          });
+        }
+        return 0;
+      }
+      attestations = read.attestations;
+    } catch (error) {
+      Logger.warn('Could not re-read the attestations of a withheld review; it stays held', { orderId, error });
+      return 0;
+    }
+
+    if (attestations.length === 0) {
+      // Released, and this deployment issues no attestations: the review stays
+      // service-only, as when no attestor is configured.
+      await LocalCommerceService.completeSyncJob(job.id);
+      return 0;
+    }
+    const stillCurrent = () => this.liveIdentityMatches(actorPubky);
+    const items = this.awaitingReleaseItems(order, payload, attestations);
+    let published = 0;
+    let keepJob = false;
+    for (const item of items) {
+      if (!stillCurrent()) return published;
+      if (await LocalCommerceService.hasOwedOwnReviewRemoval(actorPubky, orderId, item.listingId)) continue;
+      try {
+        const record = await this.publishReviewRecord({ actorPubky, order, ...item, stillCurrent, repair: true });
+        if (record === null) {
+          // Nothing was written. A removal is final; anything else (a read that
+          // could not answer, an identity change) is retried.
+          if ((await this.fetchOwnReviewRemovalState(actorPubky, orderId, item.listingId)) !== 'removed') {
+            keepJob = true;
+          }
+        } else if (record.sync_status === 'synced') {
+          published += 1;
+        }
+      } catch (error) {
+        Logger.warn('A released review could not be published yet', { orderId, listingId: item.listingId, error });
+        // The row staged before the failed PUT carries on from the outbox;
+        // before that, the held terms are the only copy.
+        if ((await LocalCommerceService.getOwnReviewByOrder(actorPubky, orderId, item.listingId)) === undefined) {
+          keepJob = true;
+        }
+      }
+    }
+    if (!keepJob && stillCurrent()) await LocalCommerceService.completeSyncJob(job.id);
+    return published;
+  }
+
+  /**
+   * Re-reads the attestations of a withheld review: one per held item on
+   * the per-item route, or the single first-line one for a review held
+   * without per-item terms. `pending` carries the window end the service
+   * answered with; `unavailable` means the service knows no such order.
+   */
+  private static async readAwaitingReleaseAttestations(
+    actorPubky: string,
+    order: MarketplaceOrder,
+    payload: AwaitingReleasePayload,
+  ): Promise<
+    | { kind: 'pending'; releaseAt: string | null }
+    | { kind: 'released'; attestations: MarketplaceItemAttestation[] }
+    | 'unavailable'
+  > {
+    const perItem = (payload.result.reviews?.length ?? 0) > 0;
+    const raw = perItem
+      ? await MarketplaceGatewayService.getReviewAttestations(actorPubky, order.id)
+      : await MarketplaceGatewayService.getReviewAttestation(actorPubky, order.id);
+    if (raw === null) return 'unavailable';
+    const pending = readReviewAttestationPending(raw);
+    if (pending !== null) return { kind: 'pending', releaseAt: pending.releaseAt };
+    if (perItem) {
+      return { kind: 'released', attestations: extractReviewAttestations({ attestations: raw }) };
+    }
+    const single = marketplaceAttestationSchema.safeParse(raw);
+    const listingId = this.listingIdFromOrder(order);
+    return {
+      kind: 'released',
+      attestations: single.success && listingId !== null ? [{ ...single.data, listingId }] : [],
+    };
+  }
+
+  /** The held terms paired with the released attestations, in line order. */
+  private static awaitingReleaseItems(
+    order: MarketplaceOrder,
+    payload: AwaitingReleasePayload,
+    attestations: MarketplaceItemAttestation[],
+  ) {
+    if ((payload.result.reviews?.length ?? 0) > 0) {
+      return this.reviewItemsOf(order, { reviews: payload.result.reviews }, attestations);
+    }
+    const [single] = attestations;
+    return payload.result.review === undefined || single === undefined
+      ? []
+      : [{ listingId: single.listingId, review: payload.result.review, attestation: single }];
+  }
+
+  /**
+   * Finishes the removal of a review withdrawn while it was withheld: the
+   * service withdrawal, then the job. Nothing was ever published, so there is
+   * no homeserver record to delete. A withdrawal that does not land leaves
+   * the (already withdrawn-marked) job for the next retry.
+   */
+  private static async finishWithdrawnAwaitingReview(
+    actorPubky: string,
+    jobId: string,
+    orderId: string,
+  ): Promise<boolean> {
+    const failure = await this.withdrawOwnReviewAtService(actorPubky, orderId);
+    if (failure !== null) {
+      Logger.warn('Withdrawal of a withheld review failed; the outbox job stays and retries', { orderId, failure });
+      return false;
+    }
+    await LocalCommerceService.completeSyncJob(jobId);
+    return true;
   }
 
   /**

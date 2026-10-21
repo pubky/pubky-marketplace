@@ -1,3 +1,4 @@
+import { REVIEW_NOTIFICATION_COPY } from '@/config/commerce-copy';
 import type { MarketplaceNotification } from '@/services/marketplace/marketplace';
 
 /**
@@ -13,6 +14,8 @@ import type { MarketplaceNotification } from '@/services/marketplace/marketplace
  * `seller_response_overdue` is one of those reasons, not its own type.
  * `refund_destination_confirmed` is from pubky/pubky-marketplace-service#94
  * (`refund.confirm_destination`, USDT orders only, recipient: the seller).
+ * `review_waiting` and `review_released` are from pubky/pubky-marketplace-service#186
+ * (double-blind reviews behind `REVIEW_BLIND_WINDOW_DAYS`).
  *
  * Shop-only types (`message_received`, `order_cancelled_terms_change`) are
  * mapped too, but they are not in this list because that service revision
@@ -48,6 +51,8 @@ export const SERVICE_NOTIFICATION_TYPES = [
   'refund_recorded',
   'return_updated',
   'review_received',
+  'review_released',
+  'review_waiting',
   'tracking_updated',
 ] as const;
 
@@ -87,6 +92,8 @@ export const MARKETPLACE_ACTIVITY_LABELS = {
   refund_recorded: 'Refund recorded',
   refund_destination_confirmed: 'The buyer confirmed a USDT refund address',
   review_received: 'New review received',
+  review_waiting: REVIEW_NOTIFICATION_COPY.waiting.label,
+  review_released: REVIEW_NOTIFICATION_COPY.released.label,
   pickup_details_updated: 'Pickup details updated',
   pickup_details_cleared: 'Pickup details removed',
   pickup_ready: 'Order ready for pickup',
