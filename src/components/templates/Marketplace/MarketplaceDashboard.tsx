@@ -160,6 +160,7 @@ export function MarketplaceDashboard() {
       showRightSidebar={false}
       showLeftMobileButton={false}
       showRightMobileButton={false}
+      disableMainContentOverflow
       className="pb-28"
     >
       <Container overrideDefaults className="flex w-full flex-col gap-6">
@@ -546,7 +547,9 @@ export function MarketplaceDashboard() {
                                     </Badge>
                                   </td>
                                   <td className="p-3">{listing.format.replace('_', ' ')}</td>
-                                  <td className="p-3">{formatListingStock(listing.record)}</td>
+                                  <td className="p-3">
+                                    {formatListingStock(listing.record, listing.purchasableQuantity)}
+                                  </td>
                                   <td className="p-3">
                                     {/* The record's own price money: the model row's
                                     `price_minor` has no exponent column, and

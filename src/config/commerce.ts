@@ -3,13 +3,18 @@ import {
   getCommerceAdapterMode,
   getCommercePollIntervalMs,
   getLocksUrl,
+  getMarketplaceTrustedAttestors,
   getMarketplaceUrl,
   getPaykitServerApi,
   getPaykitSetupCreatorParam,
   getPaykitSetupUrl,
   getUsdtPaymentsEnabled,
 } from '@/libs/runtime-config/runtime-config';
-import type { CommerceAdapterMode, PaykitServerApi } from '@/libs/runtime-config/runtime-config.schema';
+import type {
+  CommerceAdapterMode,
+  MarketplaceTrustedAttestor,
+  PaykitServerApi,
+} from '@/libs/runtime-config/runtime-config.schema';
 
 export {
   type CommerceAdapterMode,
@@ -124,27 +129,79 @@ export const COMMERCE_REVIEW_TEXT_MAX_CHARS = 5_000;
 export const COMMERCE_REVIEW_EDIT_WINDOW_SECONDS = 24 * 60 * 60;
 
 /**
- * The attestor pubkys this client TRUSTS for the "Verified purchase" label
+ * The review attestors every build TRUSTS for the "Verified purchase" label
  * (ADR 0024 §3: the signature proves key possession, never legitimacy —
  * verifiers pin attestor identities out of band, and this list is that
  * pinning). Nexus indexes every cryptographically verified review and names
- * its attestor; display trust is decided here. Entries cover each deployed
- * transaction service — the staging Railway project
- * `pubky-marketplace-staging` and the production project
- * `pubky-marketplace-production` — both operated by the marketplace operator.
+ * its attestor; display trust is decided here. Each deployment adds its own
+ * transaction service's key through `PUBKY_RUNTIME_MARKETPLACE_TRUSTED_ATTESTORS`
+ * (see `docs/environment.md`); this compiled list holds only keys every
+ * deployment of the Shop should trust.
  */
-export const MARKETPLACE_TRUSTED_ATTESTORS: readonly string[] = [
-  // pubky-marketplace-staging (Railway), current key (rotated 12 Oct 2026)
-  'rhmo67eonanguhd3imztepbdkpm3z7nyt8u1n1bjymkmegjipfto',
-  // pubky-marketplace-staging (Railway), earlier key
-  'ws343aqzmcahagojhmhkbri8odqz9iqg61woxbkh9fd3bxhqomdy',
-  // pubky-marketplace-production (Railway)
-  'szhtpayftdz3mpkoyyk3zesuad11ufuudqqrc73s35w1tfju7gxy',
-];
+export const MARKETPLACE_TRUSTED_ATTESTOR_DEFAULTS: readonly MarketplaceTrustedAttestor[] = [];
 
-/** Whether an attestor pubky is on this client's pinned trust list. */
-export function isTrustedMarketplaceAttestor(attestorId: string | null): boolean {
-  return attestorId !== null && MARKETPLACE_TRUSTED_ATTESTORS.includes(attestorId);
+/** The effective trust list: the compiled defaults plus this deployment's runtime entries. */
+export function marketplaceTrustedAttestors(): readonly MarketplaceTrustedAttestor[] {
+  return [...MARKETPLACE_TRUSTED_ATTESTOR_DEFAULTS, ...getMarketplaceTrustedAttestors()];
+}
+
+/**
+ * The trust-list entry that vouches for an attestation by `attestorId` made
+ * at `attestedAt`, or null. The window is `[validFrom, validUntil)`.
+ *
+ * The attestation's time is its `iat` claim: the purchase-attestation spec
+ * requires it (a positive integer, seconds since the epoch) and the
+ * transaction service sets it to the issuance instant. `completed_on` is the
+ * order's completion day, not when the key signed, so it is not used. `iat`
+ * is asserted by the key holder, so a window protects against a retired
+ * key's later use, not against a thief who backdates; a compromised key
+ * still needs removing from the list.
+ *
+ * Indexed reviews have no `iat` and use
+ * {@link trustedMarketplaceAttestorAtRecordTime}. Aggregate counts (no
+ * per-review time at all) pass the current time, so a retired key's reviews
+ * drop out of the count rather than a compromised key's later ones counting.
+ */
+export function trustedMarketplaceAttestorAt(
+  attestorId: string | null,
+  attestedAt: Date,
+): MarketplaceTrustedAttestor | null {
+  if (attestorId === null) return null;
+  const at = attestedAt.getTime();
+  if (Number.isNaN(at)) return null;
+  return (
+    marketplaceTrustedAttestors().find(
+      (entry) =>
+        entry.pubky === attestorId &&
+        Date.parse(entry.validFrom) <= at &&
+        (entry.validUntil === undefined || at < Date.parse(entry.validUntil)),
+    ) ?? null
+  );
+}
+
+/**
+ * The trust-list entry that vouches for an indexed review, judged by the
+ * review record's `createdAt` because the index serves no attestation `iat`.
+ *
+ * `createdAt` is written by the reviewer, so it fails closed: an entry with a
+ * `validUntil` never vouches here, since whoever holds a retired key could
+ * backdate a review into its window. `validFrom` is still checked, because
+ * backdating gains nothing against it. Once the index serves `iat` (design
+ * ticket IX2) indexed reviews use {@link trustedMarketplaceAttestorAt} and
+ * this fallback goes away.
+ */
+export function trustedMarketplaceAttestorAtRecordTime(
+  attestorId: string | null,
+  recordCreatedAt: Date,
+): MarketplaceTrustedAttestor | null {
+  if (attestorId === null) return null;
+  const at = recordCreatedAt.getTime();
+  if (Number.isNaN(at)) return null;
+  return (
+    marketplaceTrustedAttestors().find(
+      (entry) => entry.pubky === attestorId && entry.validUntil === undefined && Date.parse(entry.validFrom) <= at,
+    ) ?? null
+  );
 }
 
 /** Page size for marketplace review lists (listing and shop surfaces). */

@@ -1,23 +1,24 @@
 #!/usr/bin/env node
 // What a deployed Shop serves, checked from the outside with plain HTTP (no seats, no browser, read-only).
 //
-//   1. deployment: the page names a Vercel deployment id (`dpl_…`); equals EXPECTED_DPL when set.
+//   1. deployment: the page names the Vercel deployment id EXPECTED_DPL, and/or `GET /api/build` reports the commit
+//      EXPECTED_COMMIT (at least one of the two is required; both are checked when both are set).
 //   2. wasm-referenced: the Locks SDK wasm is named in a chunk. It is a lazy chunk, so the check reads the webpack
 //      runtime's chunk map and crawls every chunk (see served-checks-lib.mjs).
 //   3. wasm-served: that wasm answers 200 `application/wasm` and is byte-identical to the SDK this checkout pins.
 //   4. usdt-config: the served runtime config has `usdtPaymentsEnabled: false`.
 //   5. service-health: the marketplace service the config names answers /health without `usdt_payments`.
 //
-// There is no build-meta or `/version.json` check, on purpose: the Shop publishes neither (#184), so identity is the
-// deployment id (check 1) and the git tag. Do not add one back.
+// There is no build-meta or `/version.json` check, on purpose: the Shop publishes neither (#184), so identity is check 1
+// (the deployment id or the `/api/build` commit) and the git tag. Do not add one back.
 //
-// Env: PROOF_ORIGIN (default John Prod, https://pubky-marketplace-production.vercel.app; with the Shop's mount path
-// when it is mounted, e.g. https://pubky.app/shop-embed), EXPECTED_DPL, LOCKS_WASM_SHA256 (default: the wasm in this
+// Env: PROOF_ORIGIN (required; with the Shop's mount path when it is mounted, e.g. https://pubky.app/shop-embed), EXPECTED_DPL or EXPECTED_COMMIT, LOCKS_WASM_SHA256 (default: the wasm in this
 // checkout's node_modules), SERVICE_URL (default: the marketplaceUrl in the served config), SERVED_CHECKS_USDT=on to expect USDT on.
 // Exit 0 only when every check passed.
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { servedDeployment } from './deployment-check.mjs';
 import { proofTarget, REPO_ROOT } from './seats.mjs';
 import {
   assetRoot,
@@ -76,13 +77,8 @@ if (page.status !== 200 || !page.type.includes('text/html')) {
   process.exit(1);
 }
 
-const deployment = html.match(/dpl_[A-Za-z0-9]+/)?.[0];
-const expectedDpl = process.env.EXPECTED_DPL;
-check(
-  'deployment',
-  Boolean(deployment) && (!expectedDpl || deployment === expectedDpl),
-  `${deployment ?? 'no dpl_ id in the page'}${expectedDpl ? ` (expected ${expectedDpl})` : ''}`,
-);
+const deployment = await servedDeployment({ pageUrl, buildUrl: target.at('/api/build') });
+check('deployment', !deployment.refusal, deployment.refusal ?? deployment.found);
 
 const sources = scriptSources(html);
 const root = assetRoot(sources);

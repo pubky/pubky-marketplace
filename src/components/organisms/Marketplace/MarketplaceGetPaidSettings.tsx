@@ -175,7 +175,10 @@ function MethodCard({
  * seller's own claimed watch-only account. PayPal settles into the seller's
  * own account. This marketplace never receives funds on any rail.
  */
+type PaymentCard = 'paypal' | 'bitcoin' | 'usdt';
+
 export function MarketplaceGetPaidSettings({ onSaved }: MarketplaceGetPaidSettingsProps) {
+  const [savingCard, setSavingCard] = useState<PaymentCard | null>(null);
   const marketplaceSession = useCommerceStore((state) => state.marketplaceSession);
   const currentUserPubky = useAuthStore((state) => state.currentUserPubky);
   const grantSigner = useGrantSigner();
@@ -349,8 +352,9 @@ export function MarketplaceGetPaidSettings({ onSaved }: MarketplaceGetPaidSettin
     setPaykitSetupOpen(true);
   };
 
-  const onSave = async () => {
+  const onSave = async (card: PaymentCard) => {
     if (!serverConfig || payments.isLoading || serverBaseline !== draftBaseline) return;
+    setSavingCard(card);
     const saved = await payments.save({
       bitcoinEnabled: railDraft.bitcoin ?? serverConfig.bitcoinEnabled,
       paypalMerchantEmail: railDraft.paypal ?? serverConfig.paypalMerchantEmail ?? '',
@@ -361,6 +365,7 @@ export function MarketplaceGetPaidSettings({ onSaved }: MarketplaceGetPaidSettin
       // from resetting the consent.
       ...(serverConfig.usdtEnabled !== undefined ? { usdtEnabled: railDraft.usdt ?? serverConfig.usdtEnabled } : {}),
     });
+    setSavingCard(null);
     if (saved) onSaved?.(saved);
   };
 
@@ -374,9 +379,15 @@ export function MarketplaceGetPaidSettings({ onSaved }: MarketplaceGetPaidSettin
     serverBaseline === draftBaseline &&
     !paypalInvalid;
 
-  const saveButton = (
-    <Button className="w-fit rounded-full" disabled={payments.isSaving || !saveReady} onClick={() => void onSave()}>
-      {payments.isSaving ? <LoaderCircle className="size-4 animate-spin" /> : <Save className="size-4" />}
+  // Each card has its own button: only the one that started the save spins,
+  // and the others stay disabled while it runs.
+  const saveButton = (card: PaymentCard) => (
+    <Button className="w-fit rounded-full" disabled={payments.isSaving || !saveReady} onClick={() => void onSave(card)}>
+      {payments.isSaving && savingCard === card ? (
+        <LoaderCircle className="size-4 animate-spin" />
+      ) : (
+        <Save className="size-4" />
+      )}
       Save changes
     </Button>
   );
@@ -522,7 +533,7 @@ export function MarketplaceGetPaidSettings({ onSaved }: MarketplaceGetPaidSettin
                 </Typography>
               )}
             </div>
-            {saveButton}
+            {saveButton('paypal')}
           </>,
         )}
       </MethodCard>
@@ -533,7 +544,7 @@ export function MarketplaceGetPaidSettings({ onSaved }: MarketplaceGetPaidSettin
         promise="Connect your Bitkit wallet to accept bitcoin."
         status={bitcoinStatus}
         statusTestId="payment-method-status-bitcoin"
-        headerContent={getPaykitServerApi() === 'upstream' ? <BitkitDownloads compact /> : undefined}
+        headerContent={getPaykitServerApi() === 'upstream' ? <BitkitDownloads compact label="Get Bitkit" /> : undefined}
       >
         <div className="grid gap-6 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
           <div>
@@ -608,10 +619,12 @@ export function MarketplaceGetPaidSettings({ onSaved }: MarketplaceGetPaidSettin
                 </Button>
               )}
               <Button
-                variant="secondary"
+                // The step the card exists for: the main action until the wallet is connected.
+                variant={payments.accountClaimed === true ? 'secondary' : 'default'}
                 className="w-fit"
                 disabled={!marketplaceSession || !currentUserPubky}
                 onClick={() => openPaykitSetup(step2Mode)}
+                data-testid="get-paid-connect-bitkit"
               >
                 {step2Mode === 'bitcoin-reconnect'
                   ? 'Reconnect Bitkit'
@@ -695,7 +708,7 @@ export function MarketplaceGetPaidSettings({ onSaved }: MarketplaceGetPaidSettin
               </CollapsibleContent>
             </Collapsible>
 
-            {saveButton}
+            {saveButton('bitcoin')}
           </>,
         )}
       </MethodCard>
@@ -729,7 +742,7 @@ export function MarketplaceGetPaidSettings({ onSaved }: MarketplaceGetPaidSettin
                 canOpenBitkit={Boolean(marketplaceSession && currentUserPubky)}
                 signer={grantSigner}
               />
-              {saveButton}
+              {saveButton('usdt')}
             </>,
           )}
         </MethodCard>

@@ -20,6 +20,7 @@ export function MarketplaceProductSummary({
   priceLabel,
   className,
   inset = false,
+  linkLabel = 'View listing',
 }: {
   title: string;
   titleDetails?: readonly string[];
@@ -31,6 +32,8 @@ export function MarketplaceProductSummary({
   priceLabel?: string;
   className?: string;
   inset?: boolean;
+  /** The thumbnail link's name: where `href` leads. */
+  linkLabel?: string;
 }) {
   const [failedImage, setFailedImage] = useState<string | null>(null);
   const thumbnail = (
@@ -52,7 +55,7 @@ export function MarketplaceProductSummary({
   const content = (
     <div className={cn('flex min-w-0 items-center gap-4', className)}>
       {href ? (
-        <Link href={href} overrideDefaults tabIndex={-1} aria-label="View listing" className="shrink-0">
+        <Link href={href} overrideDefaults tabIndex={-1} aria-label={linkLabel} className="shrink-0">
           {thumbnail}
         </Link>
       ) : (

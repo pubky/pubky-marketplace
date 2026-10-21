@@ -59,6 +59,20 @@ export function getMarketplaceOrderRoute(orderId: string): string {
   return `${MARKETPLACE_ROUTES.ORDERS}?${new URLSearchParams({ [ORDER_LINK_PARAM]: orderId })}`;
 }
 
+const ORDER_VIEW_PARAM = 'view';
+
+/**
+ * Orders on that order, even while it is the buyer's unpaid checkout: the
+ * checkout's own order card links here (#363), so Orders must not send it back.
+ */
+export function getMarketplaceOrderViewRoute(orderId: string): string {
+  return `${MARKETPLACE_ROUTES.ORDERS}?${new URLSearchParams({ [ORDER_LINK_PARAM]: orderId, [ORDER_VIEW_PARAM]: 'order' })}`;
+}
+
+export function readStaysOnOrder(searchParams: Pick<URLSearchParams, 'get'>): boolean {
+  return searchParams.get(ORDER_VIEW_PARAM) === 'order';
+}
+
 export function getMarketplaceOfferRoute(offerId: string): string {
   return `${MARKETPLACE_ROUTES.OFFERS}?${new URLSearchParams({ [OFFER_LINK_PARAM]: offerId })}`;
 }

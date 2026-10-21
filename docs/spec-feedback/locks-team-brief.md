@@ -32,16 +32,16 @@ not fork Locks.
 
 | Piece | Git | Branch / pin | What it is |
 | --- | --- | --- | --- |
-| Lock Server (deployed) | `pubky/locks` **(no fork)** | detached at `ba49a777a94db318ec6ebd427315080a5b904645` (“fix: docker local dev setup env generation (#9)”, 2026-08-03) | Clean upstream clone, working tree clean. Railway image clones this revision at build time. |
+| Lock Server (deployed) | `pubky/locks` **(no fork)** | detached at `ba49a777a94db318ec6ebd427315080a5b904645` (“fix: docker local dev setup env generation (#9)”, 2026-08-03) | Clean upstream clone, working tree clean. The deployed image clones this revision at build time. |
 | `pubky/locks` `origin/master` | same repo | `1329f16771dd78b4b5f1de41483a8cd158d95404`, tag `v0.1.0-rc2` | **8** commits ahead of the pin. All eight are on `origin/master` (`git ls-remote` + `git merge-base --is-ancestor`). |
-| Staging rails | `pubky/pubky-payment-rails` | `master` `a4d70c893c0e89597a31a6c7b65536a7fed9633a` | Railway project `pubky-marketplace-staging`. `locks-server/Dockerfile` `ARG LOCKS_REV=ba49a777…` with a fail-closed `test "$(git rev-parse HEAD)" = "$LOCKS_REV"`. |
+| Staging rails | `pubky/pubky-payment-rails` | `master` `a4d70c893c0e89597a31a6c7b65536a7fed9633a` | Deployed staging project. `locks-server/Dockerfile` `ARG LOCKS_REV=ba49a777…` with a fail-closed `test "$(git rev-parse HEAD)" = "$LOCKS_REV"`. |
 | Client-vendored WASM | `BitcoinErrorLog/pubky-app` | app `64cb7aee23f4762c995c5ae1b16eef37346c9e10` (`marketplace/pr25-ux`); WASM from locks pin `ba49a777…` | Built from `locks-sdk/bindings/js`. Provenance: `docs/ecommerce/locks-sdk-provenance.md`. Used for `BundleId.generate()` only. |
 | Fiat verifier | `pubky/pubky-fiat-verifier` | `master` `e379bd99073735380c4c84d87e8fb1d228a5727b` | Sits at Lock Server `[paykit] server_url`. New service, no upstream. |
 | Transaction service | `pubky/pubky-marketplace-service` | `main` `0fd9b45737a8dd2bb35afff4156526ea616ca41e` | Stores an encrypted Locks correlation. Does not advance payment on registration. |
 | Paykit Server (BTC target) | `BitcoinErrorLog/paykit-server` | deployed `98f7c2251e5eabf1d7b14704dcdababf25499c53` | Fork of `pubky/paykit-server`. Locks is not on the physical-goods invoice path; see the Paykit brief. |
 
-Live Railway facts, re-checked 2026-09-01. Both deploy timestamps
-below were read from the Railway deploy history (dashboard/API) on
+Live deployment facts, re-checked 2026-09-01. Both deploy timestamps
+below were read from the host's deploy history (dashboard/API) on
 2026-09-01; they appear in no git artifact and are not reproducible
 from any repo.
 
@@ -52,10 +52,10 @@ from any repo.
   `e379bd99` is **unproven** (timestamp is consistent with the
   08:29 UTC+1 commit on `origin/master`; we did not hash the running
   container).
-- Live `LOCKS_PAYKIT_SERVER_URL=http://fiat-verifier.railway.internal:3002`.
-  The Railway entrypoint writes that value into `[paykit] server_url`
+- Live `LOCKS_PAYKIT_SERVER_URL=<fiat-verifier private URL>`.
+  The deployment entrypoint writes that value into `[paykit] server_url`
   (`locks-server/entrypoint.sh` in the rails repo). That hostname is
-  Railway-internal DNS, non-routable from the public internet.
+  private-network DNS, non-routable from the public internet.
 
 Config roles (names only; no values):
 
@@ -111,10 +111,10 @@ At the pin we actually run, that check does **not** exist. Pin-era
 preserve a path prefix (`endpoints_preserve_server_url_path_prefix_…`
 in `paykit_http_client.rs`).
 
-Our staging value `http://fiat-verifier.railway.internal:3002` is an
+Our staging value `<fiat-verifier private URL>` is an
 origin of the same shape as the value the master tests accept (scheme +
 host + non-default port, no path or slash). Whether a Lock Server built
-from `v0.1.0-rc2` / `#38` **boots** in this Railway project with that
+from `v0.1.0-rc2` / `#38` **boots** in this deployment with that
 value — and with the rest of `#38` (companion-handle consumption, demo
 wiring) — is **untested**.
 
@@ -277,7 +277,7 @@ earlier revision of that file is obsolete):
 > `/priv/pubky.app/`, not `/priv/locks.app/`. Remaining suspects are the
 > Lock Server's imported-creator-session/serve layer and
 > redeploy-triggered loss; the original 404's root cause is still not
-> proven. Railway's last locks-server deploy before the 404 was
+> proven. The host's last locks-server deploy before the 404 was
 > 2026-08-21 14:03; the 404 was observed 2026-08-22; whether the vanished
 > object was written before or after that deploy is unrecorded, so
 > redeploy is an untested suspect, not a proven trigger. Re-publishing
@@ -293,7 +293,7 @@ whose guarded content 404’d. The 404’d bytes belonged to the
 driver-held creator identity recorded in `wallet-leg.md`
 (`86xyamrh…zr9go` at rails `a4d70c8`). The two are not the same
 identity; the probe did not test same-identity `/priv/locks.app/` vs
-`/priv/pubky.app/` durability. Railway’s last SUCCESS `locks-server`
+`/priv/pubky.app/` durability. The host’s last SUCCESS `locks-server`
 deploy before that 404 is the `2026-08-21T13:03:06.045Z` row in §1.
 
 Serve mechanism at the pin: Lock Server writes guarded bytes to the
@@ -380,7 +380,7 @@ What you can ignore:
   do not involve Locks source.
 - `CriterionAsset` exact-uppercase `"BTC"` is paykit-server’s. Locks
   already accepts any non-empty `asset` string.
-- The Railway entrypoint and the local compose overlay inject
+- The deployment entrypoint and the local compose overlay inject
   `[paykit] server_url` from `LOCKS_PAYKIT_SERVER_URL`. They do not
   patch Locks source.
 - A local clone of `BitcoinErrorLog/pubky-app` on

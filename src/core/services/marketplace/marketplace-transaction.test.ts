@@ -22,11 +22,11 @@ const OTHER_ACTOR = 'b'.repeat(52);
 const SESSION_BEARER = `Bearer ${'A'.repeat(43)}`;
 const AGGREGATE_ID = buildMarketplaceListingAggregateId(ACTOR, 'boots_01');
 const COMMAND_ID = '00000000-0000-4000-8000-000000000700';
-// Captured from https://marketplace-service-production-ce23.up.railway.app/health at 2026-09-13T12:01:05Z.
+// Captured from https://marketplace-service.example.test/health at 2026-09-13T12:01:05Z.
 const LIVE_HEALTH_RESPONSE =
   '{"status":"ok","pickup_available":true,"paykit_rail":{"bitcoin_offer_available":true,"age_seconds":9}}';
 // Minimized live capture from GET /v1/notifications at
-// https://marketplace-service-production-ce23.up.railway.app on 2026-09-13.
+// https://marketplace-service.example.test on 2026-09-13.
 // Values are replaced with non-identifying placeholders; only the wire shape
 // and literals needed to exercise the client parser are retained.
 const LIVE_NOTIFICATION_ROWS = [

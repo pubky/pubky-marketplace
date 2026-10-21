@@ -607,6 +607,13 @@ export const DIGITAL_ORDER_COPY = {
   heading: 'Your purchase',
   download: 'Download',
   downloading: 'Downloading…',
+  downloadAgain: 'Download again',
+  /**
+   * Shown once the file is handed to the browser. The page can't see whether the
+   * browser saved it (a blocked download, a preview, a cancelled prompt), so this
+   * says it started, not that it was saved.
+   */
+  downloadStarted: 'Download started. Check your downloads.',
   revealText: 'Reveal text',
   showLink: 'Show link',
   openLink: 'Open link',

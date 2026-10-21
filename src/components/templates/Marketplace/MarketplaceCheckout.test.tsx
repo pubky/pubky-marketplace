@@ -1134,10 +1134,24 @@ describe('MarketplaceCheckout', () => {
 
     expect(screen.queryByRole('checkbox', { name: /guarantee/i })).not.toBeInTheDocument();
     expect(screen.queryByText(/guarantee/i)).not.toBeInTheDocument();
-    expect(screen.getByTestId('marketplace-checkout-pay')).toBeDisabled();
+    expect(screen.getByTestId('marketplace-checkout-pay')).toHaveAttribute('aria-describedby', 'checkout-pay-reason');
 
     await fillValidDelivery(userEvent.setup());
-    await waitFor(() => expect(screen.getByTestId('marketplace-checkout-pay')).toBeEnabled());
+    await waitFor(() => expect(screen.getByTestId('marketplace-checkout-pay')).not.toHaveAttribute('aria-describedby'));
+  });
+
+  it('shows which input blocks pay and moves to it, without paying (#355)', async () => {
+    seededCart();
+    const user = userEvent.setup();
+    Element.prototype.scrollIntoView = vi.fn();
+    render(<MarketplaceCheckout />);
+
+    await user.click(screen.getByTestId('marketplace-checkout-pay'));
+
+    expect(await screen.findByText('Recipient name is required.')).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByLabelText('Full name')).toHaveFocus());
+    expect(Element.prototype.scrollIntoView).toHaveBeenCalled();
+    expect(navigation.navigateTop).not.toHaveBeenCalled();
   });
 
   it('re-opens Ring approval when a session expires mid-flow', () => {
@@ -2124,6 +2138,25 @@ describe('MarketplaceCheckout Paykit option (Bitcoin or USDT)', () => {
     );
   });
 
+  it('labels a Locks checkout by what the tap does: it creates the order and pays on the order page', async () => {
+    view.items = [
+      {
+        id: 'seller:boots:variant_42',
+        listingId: listing.id,
+        variantId: 'variant_42',
+        quantity: 1,
+        listing: { ...listing, record: { ...listing.record, digitalLock: {} } },
+      },
+    ];
+    view.isLoading = false;
+    view.adapterMode = 'locks-paykit';
+    view.paykitServerApi = 'upstream';
+
+    render(<MarketplaceCheckout />);
+
+    expect(await screen.findByTestId('marketplace-checkout-pay')).toHaveTextContent(/^Continue to payment$/);
+  });
+
   it('labels the submit button with the next step for the selected method, distinct from the method tile', async () => {
     seededCart();
     const user = userEvent.setup();
@@ -2132,7 +2165,7 @@ describe('MarketplaceCheckout Paykit option (Bitcoin or USDT)', () => {
 
     const paykit = await screen.findByTestId('marketplace-checkout-method-paykit');
     const pay = screen.getByTestId('marketplace-checkout-pay');
-    expect(pay).toHaveTextContent(/^Continue to Bitkit$/);
+    expect(pay).toHaveTextContent(/^Send request to Bitkit$/);
     expect(paykit.textContent).not.toBe(pay.textContent);
 
     await user.click(screen.getByTestId('marketplace-checkout-method-paypal'));
@@ -2551,7 +2584,7 @@ describe('MarketplaceCheckout accepted-offer path', () => {
 
     expect(screen.getByLabelText('Full name')).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Add delivery address' })).not.toBeInTheDocument();
-    expect(screen.getByTestId('marketplace-checkout-pay')).toBeDisabled();
+    expect(screen.getByTestId('marketplace-checkout-pay')).toHaveAttribute('aria-describedby', 'checkout-pay-reason');
   });
 
   it('removes the award line and continues checkout after a successful pay', async () => {

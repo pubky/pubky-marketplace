@@ -1,5 +1,5 @@
 import { CHECKOUT_HOLD_COPY } from '@/libs/commerce/checkout-hold';
-import { DIGITAL_REGION_MESSAGE, EU_UNAVAILABLE_MESSAGE, SELLER_LIMIT_MESSAGE } from '@/libs/commerce/eu-region';
+import { DIGITAL_REGION_MESSAGE, REGION_UNAVAILABLE_MESSAGE, SELLER_LIMIT_MESSAGE } from '@/libs/commerce/eu-region';
 import { PAYKIT_OUTAGE_COPY } from '@/libs/commerce/paykit-rail';
 import { SHIPPO_FAILURE_REASONS } from '@/libs/commerce/shipping';
 import { isAppError } from '@/libs/error/error';
@@ -22,6 +22,14 @@ export const MARKETPLACE_FAILURE_MESSAGES = {
   bidUnauthorized: 'You cannot bid on your own auction.',
   bidStale: 'The auction changed since you loaded it. Reload the latest price and try again.',
   bidClosed: 'This auction is no longer open for bidding.',
+  bidNotOpen: "This auction isn't taking bids right now. Reload the page to see whether it has started or ended.",
+  bidNotRegistered:
+    "The marketplace doesn't have this auction registered, so it can't take bids. The seller may still need to set it up, or may have removed it.",
+  bidServiceProblem:
+    "This auction can't take bids right now because of a problem on the marketplace's side. Try again, and let the seller know if it keeps happening.",
+  bidRejectedAsSent: "The marketplace couldn't accept this bid as sent. Reload the page and try again.",
+  bidSellerUnreachable: "We couldn't reach the seller's shop to check this listing. Try again in a moment.",
+  bidModerated: "This listing was removed by moderation, so it can't take bids.",
   message: 'Could not send this message.',
   notifications: 'Could not update commerce notifications.',
   order: 'Could not update this order.',
@@ -421,12 +429,26 @@ export function marketplacePaymentMethodFailureMessage(error: unknown, fallback:
   return marketplaceFailureMessage(marketplaceErrorCode(error), fallback, error);
 }
 
+/**
+ * `auction.place_bid` refusals by service `error.code` (`handlers/auction.rs`
+ * and the executor's gates). `AUCTION_CLOSED` covers both before the start and
+ * after the end on server time, so its copy names neither.
+ */
+const BID_CODE_MESSAGES: ReadonlyMap<string, string> = new Map([
+  ['BID_TOO_LOW', MARKETPLACE_FAILURE_MESSAGES.bidTooLow],
+  ['UNAUTHORIZED', MARKETPLACE_FAILURE_MESSAGES.bidUnauthorized],
+  ['REVISION_CONFLICT', MARKETPLACE_FAILURE_MESSAGES.bidStale],
+  ['INVALID_STATE', MARKETPLACE_FAILURE_MESSAGES.bidClosed],
+  ['AUCTION_CLOSED', MARKETPLACE_FAILURE_MESSAGES.bidNotOpen],
+  ['NOT_FOUND', MARKETPLACE_FAILURE_MESSAGES.bidNotRegistered],
+  ['INVARIANT_VIOLATION', MARKETPLACE_FAILURE_MESSAGES.bidServiceProblem],
+  ['INVALID_COMMAND', MARKETPLACE_FAILURE_MESSAGES.bidRejectedAsSent],
+  ['UPSTREAM_UNAVAILABLE', MARKETPLACE_FAILURE_MESSAGES.bidSellerUnreachable],
+  ['LISTING_MODERATED', MARKETPLACE_FAILURE_MESSAGES.bidModerated],
+]);
+
 export function marketplaceBidFailureMessage(code: MarketplaceFailureCode): string {
-  if (code === 'BID_TOO_LOW') return MARKETPLACE_FAILURE_MESSAGES.bidTooLow;
-  if (code === 'UNAUTHORIZED') return MARKETPLACE_FAILURE_MESSAGES.bidUnauthorized;
-  if (code === 'REVISION_CONFLICT') return MARKETPLACE_FAILURE_MESSAGES.bidStale;
-  if (code === 'INVALID_STATE') return MARKETPLACE_FAILURE_MESSAGES.bidClosed;
-  return MARKETPLACE_FAILURE_MESSAGES.bid;
+  return (code && BID_CODE_MESSAGES.get(code)) || MARKETPLACE_FAILURE_MESSAGES.bid;
 }
 
 export function marketplaceOfferCheckoutFailureMessage(code: MarketplaceFailureCode): string {
@@ -486,13 +508,15 @@ const LISTING_NOT_ACTIVE_REASON_MESSAGES: ReadonlyMap<string, string> = new Map(
 
 /**
  * Copy for the service's regional refusals (legal launch plan C3, C3b, C4), or null for any other
- * failure: a seller who does not sell to the EU, a private seller who must re-confirm, a seller at
+ * failure: a seller who does not sell to the EU or UK, a private seller who must re-confirm, a seller at
  * the annual limit, and digital items for EU and UK buyers.
  */
 export function marketplaceRegionRefusalMessage(error: { code?: unknown; reason?: unknown }): string | null {
   switch (error.code) {
     case 'SELLER_UNAVAILABLE_IN_REGION':
-      return error.reason === 'private_seller_reconfirmation_required' ? SELLER_LIMIT_MESSAGE : EU_UNAVAILABLE_MESSAGE;
+      return error.reason === 'private_seller_reconfirmation_required'
+        ? SELLER_LIMIT_MESSAGE
+        : REGION_UNAVAILABLE_MESSAGE;
     case 'SELLER_ANNUAL_LIMIT_REACHED':
       return SELLER_LIMIT_MESSAGE;
     case 'DIGITAL_UNAVAILABLE_IN_REGION':

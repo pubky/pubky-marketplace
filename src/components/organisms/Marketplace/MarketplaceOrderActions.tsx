@@ -8,13 +8,14 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '
 import { Label } from '@/atoms/Label/Label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/atoms/Select/Select';
 import { Typography } from '@/atoms/Typography/Typography';
-import { COMMERCE_REVIEW_EDIT_WINDOW_SECONDS } from '@/config/commerce';
+import { COMMERCE_REVIEW_EDIT_WINDOW_SECONDS, trustedMarketplaceAttestorAt } from '@/config/commerce';
 import { FORM_LABEL_CLASSES } from '@/config/forms';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import { useMarketplaceOrderAction } from '@/hooks/useMarketplaceOrderAction/useMarketplaceOrderAction';
 import type { MarketplaceOrderActionData } from '@/hooks/useMarketplaceOrderAction/useMarketplaceOrderAction.types';
 import { majorToMinor, paypalRefundedMinor } from '@/hooks/useMarketplaceOrderAction/useMarketplaceOrderAction.types';
 import { usePickupOrderActions } from '@/hooks/usePickupOrderActions/usePickupOrderActions';
+import { reviewAttestationIssuedAt } from '@/libs/commerce/attestation';
 import { orderAmountEntry } from '@/libs/commerce/bitcoin-payment-code';
 import { OTHER_CARRIER_ID, SHIPPING_CARRIERS } from '@/libs/commerce/carriers';
 import { DIGITAL_ORDER_COPY, DIGITAL_SELLER_COPY, isInstantDigitalDeliveryKind } from '@/libs/commerce/digital';
@@ -25,6 +26,7 @@ import { formatUsdt } from '@/libs/commerce/payment-options';
 import { formatBitcoinAmount } from '@/libs/commerce/pricing';
 import { isUsdtFulfilmentBlocked, PAYMENT_NOT_FINAL_COPY } from '@/libs/commerce/usdt-buyer-status';
 import { formatUsdtRefundAmount, isUsdtRefundOrder, USDT_REFUND_COPY } from '@/libs/commerce/usdt-refund';
+import { cn } from '@/libs/utils/utils';
 import type { CommerceReviewModelSchema } from '@/models/commerce/commerce.schema';
 import { ControlledInputField } from '@/molecules/ControlledInputField/ControlledInputField';
 import { ControlledTextareaField } from '@/molecules/ControlledTextareaField/ControlledTextareaField';
@@ -49,11 +51,14 @@ export function MarketplaceOrderActions({
   actOnOrder,
   onChanged,
   cancelButtonSize = 'default',
+  cancelFullWidth = false,
   messageAction,
 }: {
   order: MarketplaceOrder;
   isBuyer: boolean;
   cancelButtonSize?: 'sm' | 'default';
+  /** The checkout gives its cancel the full width, under the pay instructions. */
+  cancelFullWidth?: boolean;
   messageAction?: ReactNode;
   /**
    * `review.update` only exists on the durable service (the sandbox has no
@@ -367,8 +372,8 @@ export function MarketplaceOrderActions({
             (isPickup && order.state === 'ready_for_pickup')) && (
             <Button
               size={cancelButtonSize}
-              variant="ghost"
-              className="rounded-full sm:order-first"
+              variant="destructive-soft"
+              className={cn('rounded-full sm:order-first', cancelFullWidth && 'w-full')}
               onClick={() => begin('cancel')}
             >
               {order.state === 'pending_payment' ? 'Cancel checkout' : 'Cancel order'}
@@ -546,6 +551,9 @@ export function MarketplaceOrderActions({
                 render={({ field }) => <MarketplaceStarRatingInput value={field.value} onChange={field.onChange} />}
               />
               <ControlledTextareaField name="text" control={action.form.control} label="Review" />
+              <p className="text-xs text-muted-foreground" data-testid="review-disclosure">
+                {isBuyer ? REVIEW_DISCLOSURE_COPY.buyer : REVIEW_DISCLOSURE_COPY.seller}
+              </p>
             </>
           )}
           {actionType === 'review' && isBuyer && sellerBandConsent === true && (
@@ -557,7 +565,7 @@ export function MarketplaceOrderActions({
                   checked={field.value}
                   onCheckedChange={(checked) => field.onChange(checked === true)}
                   label="Include an approximate price range"
-                  description="Your review's purchase attestation will carry a coarse order-of-magnitude band (never the exact amount). This seller has allowed it; it is included only if you opt in too."
+                  description="Your review's purchase attestation will carry a coarse order-of-magnitude band (never the exact amount), and it becomes public with your review. This seller has allowed it; it is included only if you opt in too."
                 />
               )}
             />
@@ -653,11 +661,17 @@ function MarketplaceStarRatingInput({ value, onChange }: { value: string; onChan
   );
 }
 
+const REVIEW_DISCLOSURE_COPY = {
+  buyer: 'Your review is public, tied to your Pubky, and shows you bought this item.',
+  seller: 'Your review is public, tied to your Pubky, and shows this buyer ordered from you.',
+} as const;
+
 /**
  * The truthful publication/verification state of the user's own review.
  * "Verified" means exactly: the published record embeds a purchase
- * attestation whose Ed25519 signature verifies against its issuer pubky and
- * whose claims bind to this record — nothing more.
+ * attestation whose Ed25519 signature verifies against its issuer pubky,
+ * whose claims bind to this record, and whose issuer is an attestor this
+ * client trusts — the same rule as the public review labels.
  */
 function reviewRecordStatus(record: CommerceReviewModelSchema | null): string {
   if (record === null) {
@@ -667,7 +681,12 @@ function reviewRecordStatus(record: CommerceReviewModelSchema | null): string {
     return 'Your review is saved. Publication is pending and will retry automatically.';
   }
   if (record.attestation_verified && record.attestation_iss !== null) {
-    return `Verified purchase — your published review embeds a purchase attestation signed by attestor ${record.attestation_iss.slice(0, 8)}….`;
+    const attestor = `${record.attestation_iss.slice(0, 8)}…`;
+    const issuedAt = reviewAttestationIssuedAt(record.record);
+    const trustedAttestor = issuedAt === null ? null : trustedMarketplaceAttestorAt(record.attestation_iss, issuedAt);
+    return trustedAttestor !== null
+      ? `Verified purchase · ${trustedAttestor.label} — your published review embeds a purchase attestation signed by attestor ${attestor}.`
+      : `Your published review embeds a valid purchase attestation, but its signer (${attestor}) is not an attestor this app recognizes.`;
   }
   return 'Your review record is published, but its embedded attestation did not verify.';
 }

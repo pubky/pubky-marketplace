@@ -17,6 +17,7 @@ import { toCommerceListingModel, toCommerceShopModel } from '@/test/fixtures/com
 import { parseContractFaithfulOffer } from '@/test/fixtures/commerce/offer-award';
 import { createOrderFixture } from '@/test/fixtures/commerce/orders';
 import { createListingProjectionFixture } from '@/test/fixtures/commerce/projections';
+import { TEST_TRUSTED_ATTESTOR } from '@/test/fixtures/commerce/trusted-attestors';
 import { setEmbedded } from '@/test-utils/embedded';
 import { MarketplaceListing } from './MarketplaceListing';
 
@@ -713,7 +714,7 @@ describe('MarketplaceListing', () => {
         histogram: [0, 0, 1, 2, 9],
         responseCount: 3,
         editedLateCount: 0,
-        attestors: {},
+        attestors: { [TEST_TRUSTED_ATTESTOR.pubky]: 4, ['x'.repeat(52)]: 5 },
         lastReviewedAt: '2026-08-20T12:00:00.000Z',
       },
     };
@@ -721,7 +722,7 @@ describe('MarketplaceListing', () => {
     renderListing();
 
     expect(
-      screen.getByRole('img', { name: 'Rated 4.7 out of 5 from 12 reviews, 9 verified purchases' }),
+      screen.getByRole('img', { name: 'Rated 4.7 out of 5 from 12 reviews, 4 verified purchases' }),
     ).toBeInTheDocument();
     expect(screen.getByTitle('12 reviews')).toBeInTheDocument();
     expect(screen.queryByText('No rating yet')).not.toBeInTheDocument();
