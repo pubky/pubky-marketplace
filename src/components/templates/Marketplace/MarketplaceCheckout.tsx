@@ -48,6 +48,7 @@ import { useMarketplaceOrders } from '@/hooks/useMarketplaceOrders/useMarketplac
 import { useMarketplaceSellerDeliveryTerms } from '@/hooks/useMarketplaceSellerDeliveryTerms/useMarketplaceSellerDeliveryTerms';
 import { usePaykitOutage } from '@/hooks/usePaykitOutage/usePaykitOutage';
 import { useUsdtPaymentsCapability } from '@/hooks/useUsdtPaymentsCapability/useUsdtPaymentsCapability';
+import { getMarketplaceOrderViewRoute } from '@/libs/commerce/activity-links';
 import { buyerCheckoutProgressCopy } from '@/libs/commerce/bitcoin-buyer-status';
 import { bitcoinPaymentCodeCheckoutNote } from '@/libs/commerce/bitcoin-payment-code';
 import { cartLineStockLabel, SOLD_OUT_COPY } from '@/libs/commerce/cart-stock';
@@ -100,6 +101,7 @@ import { usdtMissingOptionExplanation } from '@/libs/commerce/usdt-missing-optio
 import { navigateTop } from '@/libs/navigation/navigate-top';
 import { getDeployEnv } from '@/libs/runtime-config/runtime-config';
 import { formatDateTime } from '@/libs/utils/dateTime';
+import { cn } from '@/libs/utils/utils';
 import type { CommerceListingModelSchema } from '@/models/commerce/commerce.schema';
 import { BitkitDownloads } from '@/molecules/BitkitDownloads/BitkitDownloads';
 import { ControlledInputField } from '@/molecules/ControlledInputField/ControlledInputField';
@@ -684,6 +686,7 @@ function MarketplaceCartCheckout() {
       showRightSidebar={false}
       showLeftMobileButton={false}
       showRightMobileButton={false}
+      disableMainContentOverflow
       className="pb-28"
     >
       <MarketplaceDeliveryKeyChangeDialog
@@ -770,6 +773,7 @@ function MarketplaceCartCheckout() {
                       <MarketplaceCheckoutItem
                         key={`${line.listingAggregateId}:${line.variantId ?? index}`}
                         line={line}
+                        orderHref={getMarketplaceOrderViewRoute(order.id)}
                       />
                     ))}
                     {(payment?.state !== 'confirmed' || observedPaymentRail(order) === 'usdt') && (
@@ -1270,7 +1274,12 @@ function MarketplaceCartCheckout() {
                             : "This seller hasn't set up a payment method this cart can use, so Pay stays disabled. Message the seller to ask them to add one."}
                         </Typography>
                       ) : (
-                        <div className="grid grid-cols-2 gap-3" role="group" aria-label="Payment method">
+                        <div
+                          // A single method takes the whole row instead of half of it.
+                          className={cn('grid gap-3', availableCheckoutMethods.length > 1 && 'grid-cols-2')}
+                          role="group"
+                          aria-label="Payment method"
+                        >
                           {availableCheckoutMethods.map((method) => (
                             <Button
                               key={method}

@@ -378,6 +378,8 @@ describe('MarketplaceOrders tabs', () => {
     expect(screen.getByTestId('order-refund-record')).toHaveTextContent(
       'Refunded in full (Items ₿1,000 · Shipping ₿0 · Payment code ₿255 = Total ₿1,255). Reference: txid-canary-refund',
     );
+    // Hashes and addresses break anywhere, so the line can't make the page scroll sideways on a phone.
+    expect(screen.getByTestId('order-refund-record')).toHaveClass('[overflow-wrap:anywhere]');
   });
 
   it('explains a cancelled PayPal reversal on the reopened order', () => {
@@ -1374,6 +1376,22 @@ describe('MarketplaceOrders digital cards (digital delivery design §3 "After pa
     expect(within(card).getByText(/Completes automatically after the return window/)).toBeInTheDocument();
     expect(within(card).queryByText('Delivered · ready to download')).not.toBeInTheDocument();
   });
+
+  it('says a delivered final-sale order completes after its auto-complete period, with no return clause', () => {
+    ordersState.orders = [
+      orderView('delivered', 'Final boots', 'buyer', {
+        nextActor: 'none',
+        returnPolicy: { acceptsReturns: false, returnWindowDays: null },
+        autoCompleteDays: 7,
+      }),
+    ];
+
+    render(<MarketplaceOrders />);
+
+    const card = screen.getByText(/Final boots/).closest('[data-slot="card"]') as HTMLElement;
+    expect(within(card).getByText('Completes automatically 7 days after delivery.')).toBeInTheDocument();
+    expect(within(card).queryByText(/unless a return is requested/)).not.toBeInTheDocument();
+  });
 });
 
 describe('MarketplaceOrders seen checkpoint', () => {
@@ -1520,6 +1538,17 @@ describe('MarketplaceOrders links shared before #292', () => {
     expect(window.location.pathname).toBe('/marketplace/orders');
     expect(window.location.hash).toBe('');
     expect(routerReplace).not.toHaveBeenCalled();
+  });
+
+  it('stays on an unpaid order opened from its own checkout card (#363)', async () => {
+    window.history.replaceState(null, '', '/marketplace/orders?order=test-unpaid-offer-boots&view=order');
+
+    render(<MarketplaceOrders />);
+
+    expect((await screen.findAllByText('Unpaid offer boots')).length).toBeGreaterThan(0);
+    expect(routerReplace).not.toHaveBeenCalled();
+    await waitFor(() => expect(Element.prototype.scrollIntoView).toHaveBeenCalled());
+    expect(document.getElementById('order-test-unpaid-offer-boots')).not.toBeNull();
   });
 
   // Next appends the fragment of the document load to every later in-app visit to Orders,

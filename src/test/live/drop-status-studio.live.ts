@@ -8,7 +8,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 /**
  * Issue 42 C-2 live proof: Chromium against this-branch Shop pointed at
- * staging-api, seller seat from the drop identities file. Confirms:
+ * the staging service, seller seat from the drop identities file. Confirms:
  *   - a missing marketplace session bootstraps (no "Status unavailable")
  *   - restoring the persisted bearer reads real drop status
  *   - header New drop stays above the fold
@@ -17,10 +17,12 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
  *   npm run test:marketplace:drop-status
  */
 
-const SERVICE_URL = process.env.MARKETPLACE_SERVICE_URL ?? 'https://staging-api.pubky.app';
+const SERVICE_URL = process.env.MARKETPLACE_SERVICE_URL ?? '';
+if (!SERVICE_URL) throw new Error('set MARKETPLACE_SERVICE_URL: the live suites have no default service');
 const NEXUS_URL = process.env.MARKETPLACE_NEXUS_URL ?? 'https://nexus.staging.pubky.app';
-const DROP_IDENTITIES_FILE =
-  process.env.MARKETPLACE_STAGING_DROP_IDENTITIES_FILE ?? '/Users/johncarvalho/work/.staging-drop-identities.json';
+const DROP_IDENTITIES_FILE = process.env.MARKETPLACE_STAGING_DROP_IDENTITIES_FILE ?? '';
+if (!DROP_IDENTITIES_FILE)
+  throw new Error('set MARKETPLACE_STAGING_DROP_IDENTITIES_FILE: the live suites have no default identities file');
 const EVIDENCE_DIR = process.env.DROP_STATUS_EVIDENCE_DIR ?? '/Volumes/t7/vibes-dev/.evidence/issue-42';
 const LIVE_SEATS_DIR = path.join(EVIDENCE_DIR, 'live-seats');
 const SHOT_DIR = path.join(EVIDENCE_DIR, 'chromium-shots');

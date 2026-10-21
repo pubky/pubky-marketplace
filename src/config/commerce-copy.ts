@@ -15,3 +15,36 @@ export const CONNECTOR_SHARE_CONSENT_COPY = {
 
 /** The version of `CONNECTOR_SHARE_CONSENT_COPY` the buyer agreed to, sent as `consent_version`. */
 export const CONNECTOR_SHARE_CONSENT_VERSION = 2;
+
+/**
+ * Reader-facing reasons for the index's moderation labels on a review
+ * (pubky.app's moderated-tag vocabulary, plus `review_fraud`). The index
+ * serves the raw label; a label missing here reads as the neutral fallback,
+ * never as the raw label.
+ */
+export const REVIEW_MODERATION_REASON_COPY: Readonly<Record<string, string>> = {
+  hatespeech: 'Hate speech',
+  harassement: 'Harassment',
+  harassment: 'Harassment',
+  terrorism: 'Terrorism',
+  violence: 'Violence',
+  illegal_activities: 'Illegal activity',
+  il_adult_nu_sex_act: 'Sexual content',
+  nudity: 'Nudity',
+  review_fraud: 'Fraud',
+};
+
+export const REVIEW_MODERATION_REASON_FALLBACK = 'Breaks the Pubky Market rules';
+
+/** The reason copy for a moderation label, or the neutral fallback for a label this build doesn't know. */
+export function reviewModerationReasonCopy(label: string): string {
+  return Object.hasOwn(REVIEW_MODERATION_REASON_COPY, label)
+    ? REVIEW_MODERATION_REASON_COPY[label]
+    : REVIEW_MODERATION_REASON_FALLBACK;
+}
+
+export const REVIEW_MODERATION_COPY = {
+  textHidden: (label: string) => `Hidden by Pubky Market moderation · Reason: ${reviewModerationReasonCopy(label)}`,
+  excluded: 'Excluded by Pubky Market moderation (fraud)',
+  notCountedHeading: (count: number) => `${count} not counted`,
+} as const;

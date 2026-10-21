@@ -75,9 +75,9 @@ describe('useConnectShopify', () => {
 
     expect(ConnectorsController.commitCreateShopifyDraft).toHaveBeenCalledWith('Your-Store');
     expect(result.current.draft?.urls).toEqual({
-      launch: `https://staging-api.pubky.app/v1/connectors/shopify/c/${ID}/launch`,
-      oauthCallback: `https://staging-api.pubky.app/v1/connectors/shopify/c/${ID}/oauth/callback`,
-      webhooks: `https://staging-api.pubky.app/v1/connectors/shopify/c/${ID}/webhooks`,
+      launch: `https://marketplace-service.example.test/v1/connectors/shopify/c/${ID}/launch`,
+      oauthCallback: `https://marketplace-service.example.test/v1/connectors/shopify/c/${ID}/oauth/callback`,
+      webhooks: `https://marketplace-service.example.test/v1/connectors/shopify/c/${ID}/webhooks`,
     });
     expect(result.current.draft?.domain).toBe('your-store.myshopify.com');
   });

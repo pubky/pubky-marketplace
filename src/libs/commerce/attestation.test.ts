@@ -4,9 +4,11 @@ import { describe, expect, it } from 'vitest';
 import {
   extractReviewAttestation,
   marketplaceAttestationSchema,
+  reviewAttestationIssuedAt,
   verifyOwnReviewAttestation,
 } from '@/libs/commerce/attestation';
 import { commerceReviewRecordSchema } from '@/libs/commerce/marketplace-records';
+import { purchaseAttestationJwsFixture } from '@/test/fixtures/commerce/trusted-attestors';
 
 const REVIEWER = 'b'.repeat(52);
 const SELLER = 's'.repeat(52);
@@ -154,5 +156,18 @@ describe('marketplace purchase attestation', () => {
     // Binding mismatch: the attestation covers a different listing.
     const otherListing = issueAttestation({ listing: listingUriBuilder(SELLER, 'other_listing') });
     expect(verifyOwnReviewAttestation(publishedRecord(otherListing.jws))).toBeNull();
+  });
+});
+
+describe('reviewAttestationIssuedAt', () => {
+  it("reads the attestation's iat as the issuance instant", () => {
+    const iat = Date.UTC(2026, 9, 12, 14, 30) / 1000;
+    const record = { eligibilityAttestation: purchaseAttestationJwsFixture({ iss: 'o'.repeat(52), iat }) };
+
+    expect(reviewAttestationIssuedAt(record)).toEqual(new Date('2026-10-12T14:30:00Z'));
+  });
+
+  it('is null when the embedded attestation does not parse', () => {
+    expect(reviewAttestationIssuedAt({ eligibilityAttestation: 'not.a.jws' })).toBeNull();
   });
 });

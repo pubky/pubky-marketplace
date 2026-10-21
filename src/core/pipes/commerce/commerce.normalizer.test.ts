@@ -242,4 +242,73 @@ describe('CommerceRecordNormalizer', () => {
       expect(() => CommerceRecordNormalizer.shippingPresetInput({ ...valid, priceMinor: 9.9 })).toThrow();
     });
   });
+
+  describe('nexusReviewStream', () => {
+    const REVIEWER = 'a'.repeat(52);
+
+    function reviewEntry(review: Record<string, unknown> = {}) {
+      return {
+        review: {
+          review_id: '8Z8CWH8NVYQY39ZEBFGKQWWEKG',
+          uri: `pubky://${REVIEWER}/pub/pubky.app/marketplace/v1/reviews/8Z8CWH8NVYQY39ZEBFGKQWWEKG`,
+          reviewer_id: REVIEWER,
+          subject_id: COMMERCE_FIXTURE_SELLER,
+          listing_owner_id: COMMERCE_FIXTURE_SELLER,
+          listing_id: 'boots_01',
+          role: 'buyer_reviewing_seller',
+          rating_overall: 2,
+          text: 'Arrived late.',
+          verified: false,
+          attestor_id: null,
+          order_ref: null,
+          edited_late: false,
+          created_at: '2026-10-20T12:00:00.000Z',
+          updated_at: '2026-10-20T12:00:00.000Z',
+          revision: 1,
+          indexed_at: 1,
+          ...review,
+        },
+        response: null,
+      };
+    }
+
+    it('reads a missing moderation field, from an index older than review moderation, as not moderated', () => {
+      const [review] = CommerceRecordNormalizer.nexusReviewStream([reviewEntry()]);
+
+      expect(review.moderation).toBeNull();
+      expect(review.text).toBe('Arrived late.');
+      expect(review.uri).toBe(`pubky://${REVIEWER}/pub/pubky.app/marketplace/v1/reviews/8Z8CWH8NVYQY39ZEBFGKQWWEKG`);
+    });
+
+    it('reads a null moderation as not moderated', () => {
+      const [review] = CommerceRecordNormalizer.nexusReviewStream([reviewEntry({ moderation: null })]);
+
+      expect(review.moderation).toBeNull();
+      expect(review.text).toBe('Arrived late.');
+    });
+
+    it.each(['text_hidden', 'excluded'] as const)('carries %s moderation with its reason and no text', (state) => {
+      const [review] = CommerceRecordNormalizer.nexusReviewStream([
+        reviewEntry({ text: '', moderation: { state, reason: 'hatespeech' } }),
+      ]);
+
+      expect(review.moderation).toEqual({ state, reason: 'hatespeech' });
+      expect(review.ratingOverall).toBe(2);
+      expect(review.text).toBe('');
+    });
+
+    it('drops text an index sent alongside moderation', () => {
+      const [review] = CommerceRecordNormalizer.nexusReviewStream([
+        reviewEntry({ moderation: { state: 'text_hidden', reason: 'harassement' } }),
+      ]);
+
+      expect(review.text).toBe('');
+    });
+
+    it('rejects a moderation state the frozen contract does not define', () => {
+      expect(() =>
+        CommerceRecordNormalizer.nexusReviewStream([reviewEntry({ moderation: { state: 'hidden', reason: 'x' } })]),
+      ).toThrow();
+    });
+  });
 });

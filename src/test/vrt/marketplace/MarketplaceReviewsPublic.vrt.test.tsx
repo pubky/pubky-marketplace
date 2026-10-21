@@ -9,15 +9,18 @@ import { MarketplaceReputationHeader } from '@/organisms/Marketplace/Marketplace
 import { MarketplaceReviewsSection } from '@/organisms/Marketplace/MarketplaceReviewsSection';
 import { useAuthStore } from '@/stores/auth/auth.store';
 import { setSocialHost } from '@/test-utils/social-host';
+import { TEST_TRUSTED_ATTESTOR } from '@/test/fixtures/commerce/trusted-attestors';
 
 // The Phase 2 public review surfaces in every honest state: stars on catalog
 // cards (only when the index reported reviews), the rating header (rated /
 // "New seller"), and the review list with the D5 labeling spectrum —
 // verified-by-trusted-attestor, attested-by-unrecognized-signer, unverified —
-// plus the D7 subject response threaded beneath and the subject's composer.
+// plus the D7 subject response threaded beneath and the subject's composer,
+// moderated reviews (hidden text, the not-counted group) and the Report
+// review dialog.
 
-/** The staging service's attestor — one of the two entries on the client trust list (staging + production). */
-const TRUSTED_ATTESTOR = 'ws343aqzmcahagojhmhkbri8odqz9iqg61woxbkh9fd3bxhqomdy';
+/** The attestor the mocked runtime trust list holds, labelled "Pubky Market". */
+const TRUSTED_ATTESTOR = TEST_TRUSTED_ATTESTOR.pubky;
 const SELLER = 's'.repeat(52);
 const BUYER_A = 'a'.repeat(52);
 const BUYER_B = 'b'.repeat(52);
@@ -47,6 +50,22 @@ vi.mock('@/controllers/commerce/commerce', () => ({
   },
 }));
 
+vi.mock('@/libs/runtime-config/runtime-config', async (importOriginal) => {
+  const { TEST_TRUSTED_ATTESTOR } = await import('@/test/fixtures/commerce/trusted-attestors');
+  return {
+    ...(await importOriginal<typeof import('@/libs/runtime-config/runtime-config')>()),
+    getMarketplaceTrustedAttestors: () => [TEST_TRUSTED_ATTESTOR],
+  };
+});
+
+vi.mock('@/hooks/useCurrentUserProfile/useCurrentUserProfile', () => ({
+  useCurrentUserProfile: () => ({ currentUserPubky: 'r'.repeat(52), userDetails: { name: 'VRT Reporter' } }),
+}));
+
+vi.mock('@/hooks/useRequireAuth/useRequireAuth', () => ({
+  useRequireAuth: () => ({ isAuthenticated: true, requireAuth: (action: () => void) => action() }),
+}));
+
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn() }),
   usePathname: () => '/marketplace',
@@ -66,9 +85,12 @@ vi.mock('@/hooks/useMarketplaceLiveBid/useMarketplaceLiveBid', () => ({
 }));
 
 function indexedReview(overrides: Record<string, unknown> = {}) {
+  const reviewId = (overrides.reviewId as string | undefined) ?? '8Z8CWH8NVYQY39ZEBFGKQWWEKG';
+  const reviewerId = (overrides.reviewerId as string | undefined) ?? BUYER_A;
   return {
-    reviewId: '8Z8CWH8NVYQY39ZEBFGKQWWEKG',
-    reviewerId: BUYER_A,
+    reviewId,
+    uri: `pubky://${reviewerId}/pub/pubky.app/marketplace/v1/reviews/${reviewId}`,
+    reviewerId,
     subjectId: SELLER,
     listingOwnerId: SELLER,
     listingId: 'rangefinder_camera',
@@ -81,6 +103,7 @@ function indexedReview(overrides: Record<string, unknown> = {}) {
     createdAt: '2026-08-10T12:00:00.000Z',
     updatedAt: '2026-08-10T12:00:00.000Z',
     revision: 1,
+    moderation: null,
     response: null,
     ...overrides,
   };
@@ -110,6 +133,30 @@ const REVIEW_SPECTRUM = [
     verified: false,
     attestorId: null,
     editedLate: true,
+  }),
+];
+
+// A counted review, one whose text moderation hid (stars kept, reason
+// shown), and one excluded as fraud in the not-counted group.
+const MODERATED_REVIEWS = [
+  indexedReview(),
+  indexedReview({
+    reviewId: '8Z8CWH8NVYQY39ZEBFGKQWWEKH',
+    reviewerId: BUYER_B,
+    ratingOverall: 1,
+    text: '',
+    verified: false,
+    attestorId: null,
+    moderation: { state: 'text_hidden', reason: 'hatespeech' },
+  }),
+  indexedReview({
+    reviewId: '8Z8CWH8NVYQY39ZEBFGKQWWEKJ',
+    reviewerId: BUYER_C,
+    ratingOverall: 5,
+    text: '',
+    verified: false,
+    attestorId: null,
+    moderation: { state: 'excluded', reason: 'review_fraud' },
   }),
 ];
 
@@ -296,6 +343,49 @@ describe('Marketplace public reviews — visual regression', () => {
     );
     await waitForText('35mm rangefinder camera');
     await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('reviews-section-storefront-listing-mobile');
+  });
+
+  it('renders a moderated review and the not-counted group at desktop viewport', async () => {
+    controllerState.reviews = MODERATED_REVIEWS;
+    const screen = await renderForVRT(
+      <main className="mx-auto flex w-full max-w-2xl flex-col gap-6 px-6 py-10">
+        <MarketplaceReviewsSection sellerPubky={SELLER} listingId="rangefinder_camera" />
+      </main>,
+      { viewport: VRT_VIEWPORT_DESKTOP },
+    );
+    await waitForText('Hidden by Pubky Market moderation · Reason: Hate speech');
+    await waitForText('Excluded by Pubky Market moderation (fraud)');
+    await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('reviews-section-moderation-desktop');
+  });
+
+  it('renders a moderated review and the not-counted group at mobile viewport', async () => {
+    controllerState.reviews = MODERATED_REVIEWS;
+    const screen = await renderForVRT(
+      <main className="flex w-full flex-col gap-6 px-4 py-8">
+        <MarketplaceReviewsSection sellerPubky={SELLER} listingId="rangefinder_camera" />
+      </main>,
+      { viewport: VRT_VIEWPORT_MOBILE },
+    );
+    await waitForText('Excluded by Pubky Market moderation (fraud)');
+    await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('reviews-section-moderation-mobile');
+  });
+
+  it('renders the Report review dialog with the review reasons at desktop viewport', async () => {
+    controllerState.reviews = [indexedReview()];
+    const screen = await renderForVRT(
+      <main className="mx-auto flex w-full max-w-2xl flex-col gap-6 px-6 py-10">
+        <MarketplaceReviewsSection sellerPubky={SELLER} listingId="rangefinder_camera" />
+      </main>,
+      { viewport: VRT_VIEWPORT_DESKTOP },
+    );
+    await waitForText('Verified purchase');
+    await screen.getByRole('button', { name: 'Review actions' }).click();
+    await screen.getByRole('menuitem', { name: 'Report review' }).click();
+    await vi.waitFor(() => {
+      if (!document.querySelector('[role="dialog"]')) throw new Error('Report dialog has not opened yet.');
+    });
+    await waitForText('Fake or fraudulent review');
+    await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('reviews-section-report-dialog-desktop');
   });
 
   it('renders the empty review list honestly at desktop viewport', async () => {

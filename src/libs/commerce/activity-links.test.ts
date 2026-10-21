@@ -4,10 +4,12 @@ import {
   activityRowHref,
   getMarketplaceOfferRoute,
   getMarketplaceOrderRoute,
+  getMarketplaceOrderViewRoute,
   readLegacyOfferFragment,
   readLegacyOrderFragment,
   readLinkedOfferId,
   readLinkedOrderId,
+  readStaysOnOrder,
 } from './activity-links';
 
 const SELLER = 's'.repeat(52);
@@ -53,6 +55,14 @@ describe('order and offer deep links', () => {
     expect(readLinkedOrderId(order.searchParams)).toBe(ORDER);
     expect(readLinkedOfferId(offer.searchParams)).toBe('offer-1');
     expect(readLinkedOrderId(new URLSearchParams('order=%20'))).toBeNull();
+  });
+
+  it('links an order that stays on Orders even while it is an unpaid checkout (#363)', () => {
+    const view = new URL(getMarketplaceOrderViewRoute(ORDER), 'https://shop.test');
+    expect(view.pathname).toBe(MARKETPLACE_ROUTES.ORDERS);
+    expect(readLinkedOrderId(view.searchParams)).toBe(ORDER);
+    expect(readStaysOnOrder(view.searchParams)).toBe(true);
+    expect(readStaysOnOrder(new URL(getMarketplaceOrderRoute(ORDER), 'https://shop.test').searchParams)).toBe(false);
   });
 
   it('still reads links shared before #292', () => {

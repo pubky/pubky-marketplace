@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { getShopHostWindow } from '@/libs/shop-session/bridge';
 import type { KeyboardViewportState, UseKeyboardViewportOptions } from './useKeyboardViewport.types';
 
 const DEFAULT_THRESHOLD = 150;
@@ -48,9 +49,68 @@ function getInitialViewportState(): KeyboardViewportState {
   };
 }
 
+/** The same-origin page that frames this Shop (the pubky.app wrapper) and the frame element in it. */
+function hostFrame(): { host: Window & { visualViewport: VisualViewport }; frame: Element } | null {
+  const host = getShopHostWindow();
+  const frame = window.frameElement;
+  if (!host?.visualViewport || !frame) return null;
+  return { host: host as Window & { visualViewport: VisualViewport }, frame };
+}
+
+/**
+ * The keyboard as this frame sees it, from the host page. The keyboard shrinks only the host's visual
+ * viewport: inside the frame `visualViewport.height` stays equal to `innerHeight` (686 on a Pixel with
+ * the keyboard up), so the frame's own viewport never shows it. The visible part of the frame is where
+ * the host's visual viewport overlaps the frame element, in the frame's own coordinates. Both are taken
+ * in host document coordinates: iOS scrolls the host's layout viewport as well when the keyboard opens
+ * (`scrollY` 120 on an iPhone 16), so viewport-relative values disagree there.
+ */
+export function measureFrameViewport({
+  hostViewport,
+  hostLayoutHeight,
+  frameTop,
+  frameHeight,
+  threshold,
+  focusedInput,
+}: {
+  /** The host's visual viewport; `pageTop` is its top in the host document. */
+  hostViewport: { height: number; pageTop: number };
+  hostLayoutHeight: number;
+  /** The frame element's top in the host document (`getBoundingClientRect().top + scrollY`). */
+  frameTop: number;
+  frameHeight: number;
+  threshold: number;
+  focusedInput: boolean;
+}): KeyboardViewportState {
+  const clamp = (value: number, min: number) => Math.min(frameHeight, Math.max(min, value));
+  const visibleTop = clamp(hostViewport.pageTop - frameTop, 0);
+  const visibleBottom = clamp(hostViewport.pageTop + hostViewport.height - frameTop, visibleTop);
+  const isKeyboardVisible = hostLayoutHeight - hostViewport.height > threshold && focusedInput;
+  return {
+    isKeyboardVisible,
+    keyboardHeight: isKeyboardVisible ? frameHeight - visibleBottom : 0,
+    keyboardTop: visibleBottom,
+    viewportHeight: visibleBottom - visibleTop,
+    viewportOffsetTop: visibleTop,
+  };
+}
+
 function measureKeyboardViewport(threshold: number): KeyboardViewportState {
   if (typeof window === 'undefined' || !window.visualViewport) {
     return getInitialViewportState();
+  }
+
+  const embed = hostFrame();
+  if (embed) {
+    const { host, frame } = embed;
+    return measureFrameViewport({
+      hostViewport: host.visualViewport,
+      hostLayoutHeight: Math.max(host.innerHeight, host.document.documentElement.clientHeight),
+      frameTop: frame.getBoundingClientRect().top + host.scrollY,
+      frameHeight: window.innerHeight,
+      threshold,
+      focusedInput: isKeyboardInput(document.activeElement),
+    });
   }
 
   const { height } = window.visualViewport;
@@ -113,8 +173,12 @@ export function useKeyboardViewport(options: UseKeyboardViewportOptions = {}): K
 
     applyMeasurement();
 
+    // Embedded, the keyboard shows only in the host page's viewport.
+    const hostViewport = hostFrame()?.host.visualViewport;
     window.visualViewport.addEventListener('resize', handleViewportChange);
     window.visualViewport.addEventListener('scroll', handleViewportChange);
+    hostViewport?.addEventListener('resize', handleViewportChange);
+    hostViewport?.addEventListener('scroll', handleViewportChange);
     document.addEventListener('focusin', handleViewportChange);
     document.addEventListener('focusout', handleViewportChange);
 
@@ -124,6 +188,8 @@ export function useKeyboardViewport(options: UseKeyboardViewportOptions = {}): K
       }
       window.visualViewport?.removeEventListener('resize', handleViewportChange);
       window.visualViewport?.removeEventListener('scroll', handleViewportChange);
+      hostViewport?.removeEventListener('resize', handleViewportChange);
+      hostViewport?.removeEventListener('scroll', handleViewportChange);
       document.removeEventListener('focusin', handleViewportChange);
       document.removeEventListener('focusout', handleViewportChange);
     };

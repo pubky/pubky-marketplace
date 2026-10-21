@@ -6,6 +6,7 @@ import { CommerceController } from '@/controllers/commerce/commerce';
 import type { CommerceReviewModelSchema } from '@/models/commerce/commerce.schema';
 import type { MarketplaceOrder } from '@/services/marketplace/marketplace';
 import { createOrderFixture, createUsdtOrderFixture, ORDER_FIXTURE_BUYER } from '@/test/fixtures/commerce/orders';
+import { purchaseAttestationJwsFixture, TEST_TRUSTED_ATTESTOR } from '@/test/fixtures/commerce/trusted-attestors';
 import { REFUND_FIXTURE_ADDRESS, REFUND_FIXTURE_TX_HASH } from '@/test/fixtures/commerce/usdt-refund.wire';
 import { MarketplaceOrderActions } from './MarketplaceOrderActions';
 
@@ -165,6 +166,38 @@ describe('MarketplaceOrderActions review editing', () => {
   });
 });
 
+describe('MarketplaceOrderActions review disclosure', () => {
+  it('tells the buyer the review is public, tied to their Pubky, and shows the purchase', async () => {
+    const user = userEvent.setup();
+    renderActions({ withOwnReview: false });
+
+    await user.click(screen.getByRole('button', { name: 'Leave review' }));
+    expect(screen.getByTestId('review-disclosure')).toHaveTextContent(
+      'Your review is public, tied to your Pubky, and shows you bought this item.',
+    );
+  });
+
+  it('tells a seller reviewing a buyer that the review shows the buyer ordered from them', async () => {
+    const user = userEvent.setup();
+    const order = createOrderFixture('completed', { reviews: [] });
+    render(<MarketplaceOrderActions order={order} isBuyer={false} canEditReview={false} actOnOrder={vi.fn()} />);
+
+    await user.click(screen.getByRole('button', { name: 'Leave review' }));
+    expect(screen.getByTestId('review-disclosure')).toHaveTextContent(
+      'Your review is public, tied to your Pubky, and shows this buyer ordered from you.',
+    );
+  });
+
+  it('says in the band opt-in helper text that the band becomes public', async () => {
+    mockedController.getMarketplaceBandConsent.mockResolvedValue(true);
+    const user = userEvent.setup();
+    renderActions({ withOwnReview: false });
+
+    await user.click(screen.getByRole('button', { name: 'Leave review' }));
+    expect(await screen.findByText(/it becomes public with your review/i)).toBeInTheDocument();
+  });
+});
+
 describe('MarketplaceOrderActions amount-band opt-in (D2 both-sides consent)', () => {
   it('renders the opt-in only when the seller consented, and submits the buyer choice', async () => {
     mockedController.getMarketplaceBandConsent.mockResolvedValue(true);
@@ -225,6 +258,14 @@ describe('MarketplaceOrderActions amount-band opt-in (D2 both-sides consent)', (
 });
 
 describe('MarketplaceOrderActions own-review verified status', () => {
+  const ISSUED_IN_WINDOW = Date.parse('2026-10-20T12:00:00Z') / 1000;
+
+  function attestedRecord(iss: string, iat: number): CommerceReviewModelSchema['record'] {
+    return {
+      eligibilityAttestation: purchaseAttestationJwsFixture({ iss, iat }),
+    } as CommerceReviewModelSchema['record'];
+  }
+
   function publishedReviewRow(overrides: Partial<CommerceReviewModelSchema> = {}): CommerceReviewModelSchema {
     return {
       id: `${ORDER_FIXTURE_BUYER}:8Z8CWH8NVYQY39ZEBFGKQWWEKG`,
@@ -232,9 +273,9 @@ describe('MarketplaceOrderActions own-review verified status', () => {
       review_id: '8Z8CWH8NVYQY39ZEBFGKQWWEKG',
       order_id: 'order-1',
       subject_id: 's'.repeat(52),
-      record: {} as CommerceReviewModelSchema['record'],
+      record: attestedRecord(TEST_TRUSTED_ATTESTOR.pubky, ISSUED_IN_WINDOW),
       attestation_verified: true,
-      attestation_iss: 'o'.repeat(52),
+      attestation_iss: TEST_TRUSTED_ATTESTOR.pubky,
       sync_status: 'synced',
       updated_at: Date.now(),
       ...overrides,
@@ -246,9 +287,37 @@ describe('MarketplaceOrderActions own-review verified status', () => {
     renderActions();
 
     await waitFor(() => {
-      expect(screen.getByTestId('own-review-status')).toHaveTextContent(/Verified purchase/);
+      expect(screen.getByTestId('own-review-status')).toHaveTextContent(
+        `Verified purchase · Pubky Market — your published review embeds a purchase attestation signed by attestor ${TEST_TRUSTED_ATTESTOR.pubky.slice(0, 8)}….`,
+      );
     });
-    expect(screen.getByTestId('own-review-status')).toHaveTextContent(/signed by attestor oooooooo…/);
+  });
+
+  it('does not claim a verified purchase when the attestation was issued before the attestor became trusted', async () => {
+    const issuedBeforeWindow = Date.parse(TEST_TRUSTED_ATTESTOR.validFrom) / 1000 - 1;
+    mockedController.getOwnMarketplaceReview.mockResolvedValue(
+      publishedReviewRow({ record: attestedRecord(TEST_TRUSTED_ATTESTOR.pubky, issuedBeforeWindow) }),
+    );
+    renderActions();
+
+    await waitFor(() => {
+      expect(screen.getByTestId('own-review-status')).toHaveTextContent(/is not an attestor this app recognizes/);
+    });
+    expect(screen.getByTestId('own-review-status')).not.toHaveTextContent(/Verified purchase/);
+  });
+
+  it('does not claim a verified purchase when the attestation signer is not a trusted attestor', async () => {
+    mockedController.getOwnMarketplaceReview.mockResolvedValue(
+      publishedReviewRow({ attestation_iss: 'o'.repeat(52), record: attestedRecord('o'.repeat(52), ISSUED_IN_WINDOW) }),
+    );
+    renderActions();
+
+    await waitFor(() => {
+      expect(screen.getByTestId('own-review-status')).toHaveTextContent(
+        'Your published review embeds a valid purchase attestation, but its signer (oooooooo…) is not an attestor this app recognizes.',
+      );
+    });
+    expect(screen.getByTestId('own-review-status')).not.toHaveTextContent(/Verified purchase/);
   });
 
   it('shows the pending-publication state truthfully', async () => {

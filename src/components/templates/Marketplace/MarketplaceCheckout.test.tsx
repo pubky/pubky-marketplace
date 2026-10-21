@@ -563,6 +563,24 @@ describe('MarketplaceCheckout', () => {
     expect(screen.getByTestId('marketplace-checkout-method-paypal')).toBeInTheDocument();
     expect(screen.queryByTestId('marketplace-checkout-method-stripe')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Stripe/ })).not.toBeInTheDocument();
+    expect(screen.getByRole('group', { name: 'Payment method' })).toHaveClass('grid-cols-2');
+  });
+
+  it('lets a single payment method take the whole row', async () => {
+    seededCart();
+    view.adapterMode = 'transaction-service';
+    view.hasMarketplaceSession = true;
+    vi.mocked(CommerceController.getSellerPaymentConfig).mockResolvedValueOnce({
+      bitcoinAvailable: true,
+      bitcoinOfferAvailable: true,
+      paypalAvailable: false,
+    } as never);
+
+    render(<MarketplaceCheckout />);
+
+    expect(await screen.findByTestId('marketplace-checkout-method-paykit')).toBeInTheDocument();
+    expect(screen.queryByTestId('marketplace-checkout-method-paypal')).not.toBeInTheDocument();
+    expect(screen.getByRole('group', { name: 'Payment method' })).not.toHaveClass('grid-cols-2');
   });
 
   it('disables Pay without a marketplace session in durable mode', () => {

@@ -13,8 +13,10 @@ import { beforeAll, describe, expect, it } from 'vitest';
  *   npm run test:marketplace:inventory
  */
 
-const SERVICE_URL = process.env.MARKETPLACE_SERVICE_URL ?? 'https://staging-api.pubky.app';
-const NEXUS_URL = process.env.MARKETPLACE_NEXUS_URL ?? 'https://nexusd-production-7108.up.railway.app';
+const SERVICE_URL = process.env.MARKETPLACE_SERVICE_URL ?? '';
+if (!SERVICE_URL) throw new Error('set MARKETPLACE_SERVICE_URL: the live suites have no default service');
+const NEXUS_URL = process.env.MARKETPLACE_NEXUS_URL ?? '';
+if (!NEXUS_URL) throw new Error('set MARKETPLACE_NEXUS_URL: the live suites have no default Nexus');
 const PROOF_DIR = process.env.INVENTORY_IMPORT_PROOF_DIR ?? '/Volumes/t7/vibes-dev/.evidence/studio-w2/live';
 
 process.env.PUBKY_RUNTIME_COMMERCE_ADAPTER_MODE = 'transaction-service';

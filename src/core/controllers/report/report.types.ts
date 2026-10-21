@@ -10,4 +10,8 @@ export interface TReportSubmitParams {
   listingId?: string;
   /** The listing seller's public key; sent together with `listingId`. */
   sellerPubky?: string;
+  /** Canonical review URI; sent with `reviewerPubky`, `listingId` and `sellerPubky` when the report is about a review. */
+  reviewUri?: string;
+  /** The reviewed review's author; sent together with `reviewUri`. */
+  reviewerPubky?: string;
 }

@@ -129,6 +129,14 @@ describe('MarketplaceGetPaidSettings Bitkit reconnect (upstream Paykit)', () => 
     expect(mockedToast).toHaveBeenCalledWith({ title: 'Bitkit reconnected' });
   });
 
+  it('makes Connect Bitkit the main action while no wallet is connected', async () => {
+    await renderSettings();
+
+    const connect = await screen.findByTestId('get-paid-connect-bitkit');
+    expect(connect).toHaveTextContent('Connect Bitkit');
+    expect(connect).toHaveAttribute('data-variant', 'default');
+  });
+
   it('offers reconnect after Paykit refuses the initial setup, and connects through it', async () => {
     await renderSettings();
     await userEvent.click(await screen.findByRole('button', { name: /Connect Bitkit/ }));

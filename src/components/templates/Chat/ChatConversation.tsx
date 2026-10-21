@@ -103,7 +103,10 @@ export function ChatConversation({ peerPubky }: { peerPubky: string }) {
             offset). Desktop: static. A sticky offset there lands 144px into the thread, because the
             layout wrapper, not the window, is the scrollport. */}
         <div
-          className={cn('flex items-center gap-2 bg-background', pinned ? 'static' : 'sticky top-24 z-10 lg:static')}
+          className={cn(
+            'flex items-center gap-2 bg-background',
+            pinned ? 'static' : 'sticky top-(--header-offset-mobile) z-10 lg:static',
+          )}
         >
           <Button asChild variant="ghost" size="icon" className="rounded-full" aria-label="All messages">
             <Link href={APP_ROUTES.MESSAGES} overrideDefaults>

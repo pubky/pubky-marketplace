@@ -319,6 +319,87 @@ describe('runtime-config resolver', () => {
       }
     });
 
+    describe('marketplace trusted attestors', () => {
+      const ATTESTOR = 'wj3drgzdpnf54rxf5d8qd3dqne14j8umgczgrdp95w77zuxmxfu9';
+
+      it('defaults to no runtime entries', () => {
+        expect(readServerConfig().marketplaceTrustedAttestors).toEqual([]);
+        simulateDeployedEnv();
+        setAllRuntimeEnv();
+        expect(readServerConfig().marketplaceTrustedAttestors).toEqual([]);
+      });
+
+      it('parses a JSON array of entries in the strict deployed parse', () => {
+        simulateDeployedEnv();
+        setAllRuntimeEnv();
+        const entries = [
+          { pubky: ATTESTOR, label: 'Pubky Market', validFrom: '2026-10-12', validUntil: '2026-12-01T09:30:00+01:00' },
+          { pubky: 'y'.repeat(52), label: 'Second operator', validFrom: '2026-08-21T00:00:00Z' },
+        ];
+        process.env[PUBKY_RUNTIME_ENV_NAMES.marketplaceTrustedAttestors] = JSON.stringify(entries);
+
+        expect(readServerConfig().marketplaceTrustedAttestors).toEqual(entries);
+        expect(PUBKY_RUNTIME_ENV_NAMES.marketplaceTrustedAttestors).toBe('PUBKY_RUNTIME_MARKETPLACE_TRUSTED_ATTESTORS');
+      });
+
+      it('treats a blank value as no runtime entries', () => {
+        process.env[PUBKY_RUNTIME_ENV_NAMES.marketplaceTrustedAttestors] = '   ';
+        expect(readServerConfig().marketplaceTrustedAttestors).toEqual([]);
+      });
+
+      it.each([
+        ['not JSON', 'not json'],
+        ['an object instead of an array', JSON.stringify({ pubky: ATTESTOR, label: 'x', validFrom: '2026-10-12' })],
+        ['a bare pubky string', JSON.stringify([ATTESTOR])],
+        [
+          'a pubky that is not z-base-32',
+          JSON.stringify([{ pubky: 'l'.repeat(52), label: 'x', validFrom: '2026-10-12' }]),
+        ],
+        ['a missing label', JSON.stringify([{ pubky: ATTESTOR, validFrom: '2026-10-12' }])],
+        ['a blank label', JSON.stringify([{ pubky: ATTESTOR, label: ' ', validFrom: '2026-10-12' }])],
+        ['a missing validFrom', JSON.stringify([{ pubky: ATTESTOR, label: 'x' }])],
+        ['a date that is not ISO', JSON.stringify([{ pubky: ATTESTOR, label: 'x', validFrom: '12/10/2026' }])],
+        [
+          'a datetime without an offset',
+          JSON.stringify([{ pubky: ATTESTOR, label: 'x', validFrom: '2026-10-12T00:00:00' }]),
+        ],
+        [
+          'a misspelt window key',
+          JSON.stringify([{ pubky: ATTESTOR, label: 'x', validFrom: '2026-10-12', valid_until: '2026-11-01' }]),
+        ],
+        [
+          'validUntil equal to validFrom',
+          JSON.stringify([
+            { pubky: ATTESTOR, label: 'x', validFrom: '2026-10-12', validUntil: '2026-10-12T00:00:00Z' },
+          ]),
+        ],
+        [
+          'validUntil before validFrom',
+          JSON.stringify([{ pubky: ATTESTOR, label: 'x', validFrom: '2026-10-12', validUntil: '2026-10-01' }]),
+        ],
+      ])('fails loudly on %s', (_case, value) => {
+        process.env[PUBKY_RUNTIME_ENV_NAMES.marketplaceTrustedAttestors] = value;
+        expect(() => readServerConfig()).toThrow();
+
+        resetRuntimeConfigForTests();
+        simulateDeployedEnv();
+        setAllRuntimeEnv();
+        expect(() => readServerConfig()).toThrow(/Runtime config is incomplete or invalid/);
+      });
+
+      it('round-trips through the injected browser config', () => {
+        const entry = { pubky: ATTESTOR, label: 'Pubky Market', validFrom: '2026-10-12' };
+        window[RUNTIME_CONFIG_WINDOW_KEY] = { ...NETWORK_RUNTIME_DEFAULTS, marketplaceTrustedAttestors: [entry] };
+        expect(readClientConfig().marketplaceTrustedAttestors).toEqual([entry]);
+
+        window[RUNTIME_CONFIG_WINDOW_KEY] = {
+          ...NETWORK_RUNTIME_DEFAULTS,
+          marketplaceTrustedAttestors: [{ ...entry, validUntil: '2026-10-01' }],
+        };
+        expect(() => readClientConfig()).toThrow();
+      });
+    });
+
     it('strict deployed parse succeeds with the scoped-keys values unset', () => {
       simulateDeployedEnv();
       setAllRuntimeEnv();

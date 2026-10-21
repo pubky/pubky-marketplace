@@ -5,16 +5,23 @@ import { ErrorService } from '@/libs/error/error.types';
 import { HttpStatusCode } from '@/libs/http/http.types';
 import { Logger } from '@/libs/logger/logger';
 import type { Pubky } from '@/models/models.types';
-import { REPORT_ISSUE_LABELS, REPORT_ISSUE_TYPES } from '@/pipes/report/report.constants';
+import {
+  REPORT_ISSUE_LABELS,
+  REPORT_ISSUE_TYPES,
+  REVIEW_REPORT_ISSUE_LABELS,
+  REVIEW_REPORT_ISSUE_TYPE_VALUES,
+  REVIEW_REPORT_ISSUE_TYPES,
+} from '@/pipes/report/report.constants';
 import { ChatwootService } from '@/services/chatwoot/chatwoot';
 import {
   CHATWOOT_INBOX_IDS,
   CHATWOOT_REPORT_LISTING_MESSAGE_PREFIX,
   CHATWOOT_REPORT_MESSAGE_PREFIX,
+  CHATWOOT_REPORT_REVIEW_MESSAGE_PREFIX,
 } from '@/services/chatwoot/chatwoot.constants';
 import type { TChatwootContact } from '@/services/chatwoot/chatwoot.types';
 import { asOpaque } from '@/test-utils/type-assertions';
-import type { TReportSubmitInput } from './report.types';
+import type { TReportPostOrListingSubmitInput, TReportReviewSubmitInput } from './report.types';
 
 const testData = {
   userPubky: 'o1gg96ewuojmopcjbz8895478wdtxtzzuxnfjjz8o8e77csa1ngo' as Pubky,
@@ -24,7 +31,9 @@ const testData = {
   sourceId: 'source-123',
 };
 
-const createReportInput = (overrides: Partial<TReportSubmitInput> = {}): TReportSubmitInput => ({
+const createReportInput = (
+  overrides: Partial<TReportPostOrListingSubmitInput> = {},
+): TReportPostOrListingSubmitInput => ({
   pubky: testData.userPubky,
   postUrl: testData.postUrl,
   issueType: REPORT_ISSUE_TYPES.PERSONAL_INFO,
@@ -160,6 +169,66 @@ describe('ReportApplication', () => {
       expect(content).toContain(`Reason: ${input.reason}`);
       expect(content).not.toContain('Post URL');
       expect(createConversationSpy.mock.calls[0]?.[2]).toBe(CHATWOOT_INBOX_IDS.REPORTS);
+    });
+
+    it('should label a review report and carry the review URI, reviewer, listing and seller', async () => {
+      const seller = 'o1gg96ewuojmopcjbz8895478wdtxtzzuxnfjjz8o8e77csa1ngo';
+      const reviewer = 'a'.repeat(52);
+      const listingUrl = `https://example.com/marketplace/listing/${seller}/boots_01`;
+      const reviewUri = `pubky://${reviewer}/pub/pubky.app/marketplace/v1/reviews/8Z8CWH8NVYQY39ZEBFGKQWWEKG`;
+      const input: TReportReviewSubmitInput = {
+        pubky: testData.userPubky,
+        postUrl: listingUrl,
+        issueType: REVIEW_REPORT_ISSUE_TYPES.FAKE_REVIEW,
+        reason: 'The reviewer never bought this.',
+        name: testData.userName,
+        review: { reviewUri, reviewerPubky: reviewer, listingId: 'boots_01', sellerPubky: seller },
+      };
+      const createConversationSpy = vi.spyOn(ChatwootService, 'createConversation');
+
+      await ReportApplication.submit(input);
+
+      const content = createConversationSpy.mock.calls[0]?.[3] as string;
+      expect(content).toBe(
+        [
+          'Report Review - Fake or fraudulent review',
+          '',
+          `Review URI: ${reviewUri}`,
+          `Reviewer: ${reviewer}`,
+          `Listing URL: ${listingUrl}`,
+          'Listing ID: boots_01',
+          `Seller: ${seller}`,
+          '',
+          'Reason: The reviewer never bought this.',
+        ].join('\n'),
+      );
+      expect(content.startsWith(CHATWOOT_REPORT_REVIEW_MESSAGE_PREFIX)).toBe(true);
+      expect(createConversationSpy.mock.calls[0]?.[2]).toBe(CHATWOOT_INBOX_IDS.REPORTS);
+    });
+
+    it('labels each review reason with its review copy', async () => {
+      const createConversationSpy = vi.spyOn(ChatwootService, 'createConversation');
+      const reviewer = 'a'.repeat(52);
+
+      for (const issueType of REVIEW_REPORT_ISSUE_TYPE_VALUES) {
+        createConversationSpy.mockClear();
+        await ReportApplication.submit({
+          pubky: testData.userPubky,
+          postUrl: testData.postUrl,
+          issueType,
+          reason: 'reason',
+          name: testData.userName,
+          review: {
+            reviewUri: `pubky://${reviewer}/pub/pubky.app/marketplace/v1/reviews/8Z8CWH8NVYQY39ZEBFGKQWWEKG`,
+            reviewerPubky: reviewer,
+            listingId: 'boots_01',
+            sellerPubky: testData.userPubky,
+          },
+        });
+        expect(createConversationSpy.mock.calls[0]?.[3]).toContain(
+          `${CHATWOOT_REPORT_REVIEW_MESSAGE_PREFIX} - ${REVIEW_REPORT_ISSUE_LABELS[issueType]}`,
+        );
+      }
     });
 
     it('should format source label correctly for each issue type', async () => {

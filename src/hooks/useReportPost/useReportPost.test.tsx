@@ -1,7 +1,11 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { HttpMethod, JSON_HEADERS } from '@/libs/http/http.types';
-import { REPORT_ISSUE_TYPES, REPORT_REASON_MAX_LENGTH } from '@/pipes/report/report.constants';
+import {
+  REPORT_ISSUE_TYPES,
+  REPORT_REASON_MAX_LENGTH,
+  REVIEW_REPORT_ISSUE_TYPES,
+} from '@/pipes/report/report.constants';
 import { setBasePath } from '@/test-utils/base-path';
 import { useReportPost } from './useReportPost';
 import { REPORT_API_ENDPOINT, REPORT_POST_STEPS } from './useReportPost.constants';
@@ -24,6 +28,15 @@ const POST_TARGET = { kind: 'post', postId: TEST_POST_ID } as const;
 const TEST_SELLER_PUBKY = 'o1gg96ewuojmopcjbz8895478wdtxtzzuxnfjjz8o8e77csa1ngo';
 const TEST_LISTING_ID = 'boots_01';
 const LISTING_TARGET = { kind: 'listing', sellerPubky: TEST_SELLER_PUBKY, listingId: TEST_LISTING_ID } as const;
+const TEST_REVIEWER_PUBKY = 'a'.repeat(52);
+const TEST_REVIEW_URI = `pubky://${TEST_REVIEWER_PUBKY}/pub/pubky.app/marketplace/v1/reviews/8Z8CWH8NVYQY39ZEBFGKQWWEKG`;
+const REVIEW_TARGET = {
+  kind: 'review',
+  reviewUri: TEST_REVIEW_URI,
+  reviewerPubky: TEST_REVIEWER_PUBKY,
+  sellerPubky: TEST_SELLER_PUBKY,
+  listingId: TEST_LISTING_ID,
+} as const;
 
 // Mock window.location
 Object.defineProperty(window, 'location', {
@@ -226,6 +239,53 @@ describe('useReportPost', () => {
 
       expect(global.fetch).not.toHaveBeenCalled();
       expect(mockToast).toHaveBeenCalledWith({ variant: 'error', description: 'Could not load profile' });
+    });
+  });
+
+  describe('review target', () => {
+    async function submitReviewReport() {
+      const { result } = renderHook(() => useReportPost(REVIEW_TARGET));
+      act(() => {
+        result.current.selectIssueType(REVIEW_REPORT_ISSUE_TYPES.FAKE_REVIEW);
+      });
+      act(() => {
+        result.current.handleReasonChange({
+          target: { value: 'The reviewer never bought this' },
+        } as React.ChangeEvent<HTMLTextAreaElement>);
+      });
+      await act(async () => {
+        await result.current.submit();
+      });
+      return result;
+    }
+
+    it('posts the listing URL with the review URI, reviewer, listing id and seller pubky', async () => {
+      const result = await submitReviewReport();
+
+      expect(global.fetch).toHaveBeenCalledTimes(1);
+      const [endpoint, init] = (global.fetch as ReturnType<typeof vi.fn>).mock.calls[0] as [string, RequestInit];
+      expect(endpoint).toBe(REPORT_API_ENDPOINT);
+      expect(JSON.parse(init.body as string)).toEqual({
+        pubky: TEST_USER_PUBKY,
+        postUrl: `https://example.com/marketplace/listing/${TEST_SELLER_PUBKY}/${TEST_LISTING_ID}`,
+        issueType: REVIEW_REPORT_ISSUE_TYPES.FAKE_REVIEW,
+        reason: 'The reviewer never bought this',
+        name: TEST_USER_NAME,
+        reviewUri: TEST_REVIEW_URI,
+        reviewerPubky: TEST_REVIEWER_PUBKY,
+        listingId: TEST_LISTING_ID,
+        sellerPubky: TEST_SELLER_PUBKY,
+      });
+      expect(result.current.isSuccess).toBe(true);
+    });
+
+    it('falls back to the reporter pubky when no profile name has loaded', async () => {
+      mockUseCurrentUserProfile.mockReturnValue({ currentUserPubky: TEST_USER_PUBKY, userDetails: undefined });
+
+      await submitReviewReport();
+
+      const [, init] = (global.fetch as ReturnType<typeof vi.fn>).mock.calls[0] as [string, RequestInit];
+      expect(JSON.parse(init.body as string)).toMatchObject({ name: TEST_USER_PUBKY });
     });
   });
 

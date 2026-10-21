@@ -22,6 +22,7 @@ import {
   orderAnchorId,
   readLegacyOrderFragment,
   readLinkedOrderId,
+  readStaysOnOrder,
 } from '@/libs/commerce/activity-links';
 import {
   bitcoinPaymentHasBeenSeen,
@@ -53,6 +54,7 @@ import {
 import { formatCommerceMoney } from '@/libs/commerce/format';
 import { listingIdFromOrder } from '@/libs/commerce/listing-aggregate';
 import { buyerVisiblePaymentStatus } from '@/libs/commerce/locks-payment';
+import { deliveredCompletionNote } from '@/libs/commerce/order-returns';
 import { buyerShipmentTracking } from '@/libs/commerce/order-tracking';
 import { observedPaymentRail } from '@/libs/commerce/paykit-rail';
 import { formatBitcoinAmount } from '@/libs/commerce/pricing';
@@ -104,7 +106,9 @@ const ORDER_TABS: { id: OrdersTab; label: string }[] = [
 
 export function MarketplaceOrders() {
   const router = useRouter();
-  const anchorOrderId = readLinkedOrderId(useSearchParams());
+  const searchParams = useSearchParams();
+  const anchorOrderId = readLinkedOrderId(searchParams);
+  const staysOnOrder = readStaysOnOrder(searchParams);
   const currentUserPubky = useAuthStore((state) => state.currentUserPubky);
   const receiptsPublicationStatus = useCommerceStore((state) => state.receiptsPublicationStatus);
   const { orders, isLoading, error, needsSession, refresh, advancePayment, actOnOrder, adapterMode } =
@@ -164,7 +168,9 @@ export function MarketplaceOrders() {
     if (!anchorId) return;
     const view = orders.find((candidate) => candidate.order.id === anchorId);
     if (!view) return;
-    if (!isOrderInTab(view, activeTab, currentUserPubky)) {
+    // A checkout in progress sits above the tabs, in its own list (#363).
+    const inCheckoutList = isBuyerCheckoutInProgress(view.order, currentUserPubky);
+    if (!inCheckoutList && !isOrderInTab(view, activeTab, currentUserPubky)) {
       if (activeTab !== 'all') {
         setActiveTab('all');
         setHasSelectedTab(true);
@@ -183,13 +189,13 @@ export function MarketplaceOrders() {
   useEffect(() => {
     if (isLoading) return;
     const id = anchorOrderId;
-    if (!id || redirectedOrderRef.current === id) return;
+    if (!id || staysOnOrder || redirectedOrderRef.current === id) return;
     const view = orders.find((candidate) => candidate.order.id === id);
     if (view && isBuyerCheckoutInProgress(view.order, currentUserPubky)) {
       redirectedOrderRef.current = id;
       router.replace(getMarketplaceCheckoutRoute(id));
     }
-  }, [anchorOrderId, currentUserPubky, isLoading, orders, router]);
+  }, [anchorOrderId, currentUserPubky, isLoading, orders, router, staysOnOrder]);
 
   useEffect(() => {
     if (hasSelectedTab || !historyOrders.length) return;
@@ -226,6 +232,7 @@ export function MarketplaceOrders() {
       showRightSidebar={false}
       showLeftMobileButton={false}
       showRightMobileButton={false}
+      disableMainContentOverflow
       className="pb-28"
     >
       <Container overrideDefaults className="flex w-full flex-col gap-6" data-surface="marketplace-orders">
@@ -304,7 +311,7 @@ export function MarketplaceOrders() {
                   Checkout in progress
                 </Heading>
                 {buyerCheckouts.map(({ order, payment }) => (
-                  <Card key={order.id} className="rounded-md p-0">
+                  <Card key={order.id} id={orderAnchorId(order.id)} className="scroll-mt-24 rounded-md p-0">
                     <CardContent className="grid min-w-0 gap-4 p-6">
                       <MarketplaceOrderReference order={order} isBuyer showPlacedAt />
                       <MarketplaceCheckoutStatusLabels
@@ -613,7 +620,7 @@ export function MarketplaceOrders() {
                             )}
                             {order.state === 'delivered' && order.fulfillment !== 'digital' && (
                               <Typography as="p" className="mt-2 text-sm text-muted-foreground">
-                                Completes automatically after the return window unless a return is requested.
+                                {deliveredCompletionNote(order)}
                               </Typography>
                             )}
                             <MarketplaceReturnStatus order={order} isBuyer={isBuyer} actOnOrder={actOnOrder} />

@@ -1,19 +1,27 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { BadgeCheck, MessageSquareReply, Star } from 'lucide-react';
+import { BadgeCheck, Ellipsis, Flag, MessageSquareReply, Star } from 'lucide-react';
 import { getMarketplaceListingRoute, getMarketplaceShopRoute, getProfileRoute, PROFILE_ROUTES } from '@/app/routes';
 import { Badge } from '@/atoms/Badge/Badge';
 import { Button } from '@/atoms/Button/Button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/atoms/DropdownMenu/DropdownMenu';
 import { Heading } from '@/atoms/Heading/Heading';
 import { Link } from '@/atoms/Link/Link';
 import { Textarea } from '@/atoms/Textarea/Textarea';
 import { Typography } from '@/atoms/Typography/Typography';
-import { isTrustedMarketplaceAttestor } from '@/config/commerce';
+import { trustedMarketplaceAttestorAtRecordTime } from '@/config/commerce';
+import { REVIEW_MODERATION_COPY } from '@/config/commerce-copy';
 import { isSocialLinkOutEnabled } from '@/config/social';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import { useMarketplaceFirstMediaUrl } from '@/hooks/useMarketplaceMediaUrl/useMarketplaceMediaUrl';
 import { useMarketplaceReviews } from '@/hooks/useMarketplaceReviews/useMarketplaceReviews';
+import { useRequireAuth } from '@/hooks/useRequireAuth/useRequireAuth';
 import { VERIFIED_PURCHASE_INFO, VERIFIED_PURCHASE_INFO_LABEL } from '@/libs/commerce/eu-region';
 import { cn } from '@/libs/utils/utils';
 import type { CommerceIndexedReview, CommerceReviewResponseModelSchema } from '@/models/commerce/commerce.schema';
@@ -22,6 +30,7 @@ import { MarketplaceProductSummary } from '@/molecules/Marketplace/MarketplacePr
 import { MarketplaceStarRating } from '@/molecules/MarketplaceStarRating/MarketplaceStarRating';
 import { ProfileOnPubkyLink } from '@/molecules/ProfileOnPubkyLink/ProfileOnPubkyLink';
 import { toast } from '@/molecules/Toaster/use-toast';
+import { DialogReportPost } from '@/organisms/DialogReportPost/DialogReportPost';
 import { useAuthStore } from '@/stores/auth/auth.store';
 
 export interface MarketplaceReviewsSectionProps {
@@ -44,6 +53,10 @@ export interface MarketplaceReviewsSectionProps {
  *   "Unverified" label otherwise.
  * - D7: the subject's single revisable response threads beneath the review,
  *   and the respond/edit affordance renders only for the signed-in subject.
+ * - Moderation: a review whose text the index's moderator hid keeps its
+ *   stars and shows the reason instead of the text; a review excluded as
+ *   fraud sits in a separate "not counted" group below the counted ones.
+ *   Every review but the reader's own offers "Report review".
  *
  * When no review-aware index serves this deployment the section renders
  * nothing at all — absence, not an empty claim.
@@ -58,6 +71,17 @@ export function MarketplaceReviewsSection({
   const currentUserPubky = useAuthStore((state) => state.currentUserPubky);
 
   if (status === 'unavailable' || status === 'loading') return null;
+
+  const counted = reviews.filter((review) => review.moderation?.state !== 'excluded');
+  const notCounted = reviews.filter((review) => review.moderation?.state === 'excluded');
+  const renderReview = (review: CommerceIndexedReview) => (
+    <MarketplaceReviewItem
+      key={`${review.reviewerId}:${review.reviewId}`}
+      review={review}
+      showListing={listingId === undefined}
+      currentUserPubky={currentUserPubky}
+    />
+  );
 
   return (
     <section
@@ -96,16 +120,15 @@ export function MarketplaceReviewsSection({
           </Typography>
         ) : (
           <>
-            <ul className="flex flex-col gap-4">
-              {reviews.map((review) => (
-                <MarketplaceReviewItem
-                  key={`${review.reviewerId}:${review.reviewId}`}
-                  review={review}
-                  showListing={listingId === undefined}
-                  currentUserPubky={currentUserPubky}
-                />
-              ))}
-            </ul>
+            {counted.length > 0 && <ul className="flex flex-col gap-4">{counted.map(renderReview)}</ul>}
+            {notCounted.length > 0 && (
+              <div className="flex flex-col gap-2" data-testid="marketplace-reviews-not-counted">
+                <Typography as="h3" overrideDefaults className="text-xs font-medium text-muted-foreground">
+                  {REVIEW_MODERATION_COPY.notCountedHeading(notCounted.length)}
+                </Typography>
+                <ul className="flex flex-col gap-4">{notCounted.map(renderReview)}</ul>
+              </div>
+            )}
           </>
         )}
         {hasMore && (
@@ -135,6 +158,8 @@ function MarketplaceReviewItem({
   currentUserPubky: string | null;
 }) {
   const isSubject = currentUserPubky !== null && currentUserPubky === review.subjectId;
+  const isReviewer = currentUserPubky !== null && currentUserPubky === review.reviewerId;
+  const moderation = review.moderation ?? null;
   const [composerOpen, setComposerOpen] = useState(false);
   const [response, setResponse] = useState(review.response);
 
@@ -169,11 +194,25 @@ function MarketplaceReviewItem({
           </Typography>
         )}
         <MarketplaceReviewVerificationBadge review={review} />
+        {!isReviewer && <MarketplaceReviewMenu review={review} />}
       </div>
-      {review.text.length > 0 && (
-        <Typography as="p" overrideDefaults className="text-sm whitespace-pre-wrap text-foreground">
-          {review.text}
+      {moderation !== null ? (
+        <Typography
+          as="p"
+          overrideDefaults
+          className="text-sm text-muted-foreground italic"
+          data-testid="marketplace-review-moderated"
+        >
+          {moderation.state === 'excluded'
+            ? REVIEW_MODERATION_COPY.excluded
+            : REVIEW_MODERATION_COPY.textHidden(moderation.reason)}
         </Typography>
+      ) : (
+        review.text.length > 0 && (
+          <Typography as="p" overrideDefaults className="text-sm whitespace-pre-wrap text-foreground">
+            {review.text}
+          </Typography>
+        )
       )}
       {response !== null && (
         <div className="flex flex-col gap-1 rounded-md border-l-2 border-brand/50 bg-muted/40 p-2 pl-3">
@@ -211,17 +250,73 @@ function MarketplaceReviewItem({
 }
 
 /**
+ * The review's menu. "Report review" opens the shared report dialog with the
+ * review as its target; signed-out readers are asked to sign in first. The
+ * dialog mounts only while open, so a long list doesn't hold one profile
+ * query per review.
+ */
+function MarketplaceReviewMenu({ review }: { review: CommerceIndexedReview }) {
+  const [reportOpen, setReportOpen] = useState(false);
+  const { requireAuth } = useRequireAuth();
+
+  return (
+    <>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="ml-auto size-7 rounded-full text-muted-foreground"
+            aria-label="Review actions"
+            data-testid="marketplace-review-menu"
+          >
+            <Ellipsis className="size-4" aria-hidden="true" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          <DropdownMenuItem
+            className="gap-2"
+            data-testid="marketplace-review-report"
+            onSelect={() => requireAuth(() => setReportOpen(true))}
+          >
+            <Flag className="size-4" aria-hidden="true" />
+            Report review
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+      {reportOpen && (
+        <DialogReportPost
+          open
+          onOpenChange={setReportOpen}
+          review={{
+            reviewUri: review.uri,
+            reviewerPubky: review.reviewerId,
+            sellerPubky: review.listingOwnerId,
+            listingId: review.listingId,
+          }}
+        />
+      )}
+    </>
+  );
+}
+
+/**
  * The D5 labeling in one place. Verification proves the SIGNER; whether that
  * signer is a trusted attestor is this client's configuration
- * (`MARKETPLACE_TRUSTED_ATTESTORS`) — so an attested review from an
+ * (`marketplaceTrustedAttestors`) — so an attested review from an
  * unrecognized signer is labeled exactly that, never upgraded to "verified".
+ * The index serves no attestation `iat`, so trust is judged by the record's
+ * `createdAt` (see `trustedMarketplaceAttestorAtRecordTime`).
  */
 function MarketplaceReviewVerificationBadge({ review }: { review: CommerceIndexedReview }) {
-  if (review.verified && review.attestorId !== null && isTrustedMarketplaceAttestor(review.attestorId)) {
+  const trustedAttestor = review.verified
+    ? trustedMarketplaceAttestorAtRecordTime(review.attestorId, new Date(review.createdAt))
+    : null;
+  if (trustedAttestor !== null) {
     return (
       <Badge variant="secondary" className="gap-1 text-emerald-400">
         <BadgeCheck className="size-3" />
-        Verified purchase
+        {`Verified purchase · ${trustedAttestor.label}`}
       </Badge>
     );
   }
