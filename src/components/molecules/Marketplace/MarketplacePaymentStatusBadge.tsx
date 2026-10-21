@@ -43,10 +43,12 @@ export function MarketplacePaymentStatusBadge({
   const usdtBadge = usdtPhase !== null && usdtPhase !== 'awaiting' ? USDT_PHASE_BADGE_LABEL[usdtPhase] : null;
   // A reorged USDT payment stays paid but is not settled, so it never wears the confirmed check.
   const settled = visibleStatus === 'confirmed' && usdtPhase !== 'rechecking';
-  // A cancel expires the payment too; only a lapse at Pay by reads as an expired window (#359).
+  // A cancel expires the payment too: a stated reason other than the lapse at Pay by reads as
+  // cancelled; an order with no reason keeps the expired window it always showed (#359).
   const buyerCancelledUnpaid =
     order.state === 'cancelled' &&
     visibleStatus === 'expired' &&
+    Boolean(order.cancellationReason) &&
     order.cancellationReason !== PAYMENT_WINDOW_ELAPSED_REASON;
   const visibleStatusLabel =
     seenBadge ??

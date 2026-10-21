@@ -13,8 +13,12 @@ describe('MarketplacePaymentStatusBadge', () => {
     expect(screen.queryByText('Payment window expired')).not.toBeInTheDocument();
   });
 
-  it('keeps the expired window for an order that lapsed at Pay by', () => {
-    const order = createOrderFixture('cancelled', { cancellationReason: PAYMENT_WINDOW_ELAPSED_REASON });
+  it.each([
+    ['lapsed at Pay by', PAYMENT_WINDOW_ELAPSED_REASON],
+    ['carries no reason', null],
+    ['omits the reason', undefined],
+  ])('keeps the expired window for an order that %s', (_label, cancellationReason) => {
+    const order = createOrderFixture('cancelled', { cancellationReason });
     render(<MarketplacePaymentStatusBadge order={order} payment={createPaymentFixture('expired')} />);
 
     expect(screen.getByText('Payment window expired')).toBeInTheDocument();
