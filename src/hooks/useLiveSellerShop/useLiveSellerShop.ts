@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import {
   COMMERCE_SHOP_EVENT_DEBOUNCE_MS,
   COMMERCE_SHOP_EVENT_RECONNECT_MAX_MS,
@@ -12,14 +12,25 @@ import { Logger } from '@/libs/logger/logger';
 import type { THomeserverResourceEvent } from '@/services/homeserver/homeserver.types';
 
 /**
- * Keeps one seller's cached shop record current while a buyer's page is open,
- * so a seller's saved change (seller type, country, details) reaches pages that
- * render the shop from the live query without a reload. It re-reads the record
- * when the seller's homeserver reports a write to `shop.json`, and when the tab
- * comes back into view, since a background tab may have lost the stream. Every
- * failure is quiet: the page keeps the record it has.
+ * Reads one seller's shop record when a page opens and keeps the cached copy
+ * current while it stays open, so a seller's saved change (seller type,
+ * country, details) reaches pages that render the shop from the live query
+ * without a reload. With `live`, it first looks up the cursor of the seller's
+ * latest `shop.json` write, then reads the record, then streams the writes
+ * after that cursor from the seller's homeserver: a write that lands before
+ * the read is in the read, and one after it is in the stream. It also re-reads
+ * when the tab comes back into view, since a background tab may have lost the
+ * stream. Every failure is quiet: the page keeps the record it has.
+ *
+ * Returns whether the opening read has settled, for telling a seller with no
+ * shop from one still loading.
  */
-export function useLiveSellerShop(sellerPubky: string, enabled = true): void {
+export function useLiveSellerShop(
+  sellerPubky: string,
+  { enabled = true, live = true }: { enabled?: boolean; live?: boolean } = {},
+): boolean {
+  const [settledFor, setSettledFor] = useState<string | null>(null);
+
   useEffect(() => {
     if (!enabled) return;
     let active = true;
@@ -44,15 +55,20 @@ export function useLiveSellerShop(sellerPubky: string, enabled = true): void {
     };
 
     const run = async () => {
-      // Start after the seller's latest shop write: the page has just read the
-      // record, so replaying past writes would only read it again. A reconnect
-      // resumes after the last event seen, so no write in between is missed.
       let cursor: string | null = null;
-      try {
-        cursor = await CommerceController.latestShopEventCursor(sellerPubky);
-      } catch {
-        // Without it the stream replays past writes: one extra read, nothing missed.
+      if (live) {
+        try {
+          cursor = await CommerceController.latestShopEventCursor(sellerPubky);
+        } catch {
+          // Without it the stream replays past writes: one extra read, nothing missed.
+        }
       }
+      if (!active) return;
+      await CommerceController.refreshShopOrGetCached(sellerPubky).catch(() => undefined);
+      if (!active) return;
+      setSettledFor(sellerPubky);
+      lastFocusRead = Date.now();
+      if (!live) return;
       let failures = 0;
       while (active) {
         let received = false;
@@ -65,11 +81,12 @@ export function useLiveSellerShop(sellerPubky: string, enabled = true): void {
             const { done, value } = await reader.read();
             if (done || !active) break;
             received = true;
+            failures = 0;
             cursor = value.cursor;
             // A delete is ignored: a missing record may be transient, and the cache keeps the last one.
             if (value.eventType === 'PUT') onEvent();
           }
-          failures = received ? 0 : failures + 1;
+          if (!received) failures += 1;
         } catch (error) {
           if (!active) return;
           failures += 1;
@@ -91,8 +108,10 @@ export function useLiveSellerShop(sellerPubky: string, enabled = true): void {
     };
 
     void run();
-    document.addEventListener('visibilitychange', onFocus);
-    window.addEventListener('focus', onFocus);
+    if (live) {
+      document.addEventListener('visibilitychange', onFocus);
+      window.addEventListener('focus', onFocus);
+    }
     return () => {
       active = false;
       clearTimeout(debounce);
@@ -101,5 +120,7 @@ export function useLiveSellerShop(sellerPubky: string, enabled = true): void {
       document.removeEventListener('visibilitychange', onFocus);
       window.removeEventListener('focus', onFocus);
     };
-  }, [enabled, sellerPubky]);
+  }, [enabled, live, sellerPubky]);
+
+  return enabled && settledFor === sellerPubky;
 }

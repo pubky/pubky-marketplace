@@ -144,9 +144,6 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
     }
     let active = true;
     setIsFetchSettled(false);
-    // Best-effort: a direct visit may not have the seller's shop cached, and
-    // it carries the shop name, vacation notice and destination countries.
-    void CommerceController.refreshShopOrGetCached(sellerPubky).catch(() => undefined);
     CommerceController.getOrFetchListing(sellerPubky, listingId)
       .catch(async (fetchError: unknown) => {
         let confirmedRemoved = false;
@@ -169,8 +166,10 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
     };
   }, [adapterMode, listingId, sellerPubky]);
 
-  // A seller's later change (seller type, country) repaints the shop below and lifts or sets the EU fence.
-  useLiveSellerShop(sellerPubky, adapterMode !== 'sandbox');
+  // Best-effort: a direct visit may not have the seller's shop cached, and it carries the shop
+  // name, vacation notice and destination countries. A seller's later change (seller type,
+  // country) repaints the shop below and lifts or sets the EU fence.
+  useLiveSellerShop(sellerPubky, { enabled: adapterMode !== 'sandbox' });
 
   const listing = useLiveQuery(() => CommerceController.getListing(sellerPubky, listingId), [sellerPubky, listingId]);
   const madeToOrderVariants = madeToOrderVariantIds(

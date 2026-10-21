@@ -1,4 +1,4 @@
-import { renderHook } from '@testing-library/react';
+import { act, renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   COMMERCE_SHOP_EVENT_DEBOUNCE_MS,
@@ -35,7 +35,7 @@ const liveStream = () => {
   });
   const push = (eventType: string, cursor = '1') =>
     controller.enqueue({ cursor, eventType, owner: SELLER, path: SHOP_PATH });
-  return { stream, push, end: () => controller.close() };
+  return { stream, push, end: () => controller.close(), error: (reason: Error) => controller.error(reason) };
 };
 
 describe('useLiveSellerShop', () => {
@@ -50,24 +50,42 @@ describe('useLiveSellerShop', () => {
     vi.useRealTimers();
   });
 
+  it('looks up the latest shop cursor, then reads the shop, then streams the writes after it', async () => {
+    const { stream } = liveStream();
+    latestShopEventCursor.mockResolvedValue('41');
+    subscribeShopEvents.mockResolvedValue(stream);
+    const { result, unmount } = renderHook(() => useLiveSellerShop(SELLER));
+    expect(result.current).toBe(false);
+    await act(() => vi.advanceTimersByTimeAsync(0));
+
+    // A write landing before the read is in the read; one after it has a later cursor and is streamed.
+    expect(latestShopEventCursor.mock.invocationCallOrder[0]).toBeLessThan(
+      refreshShopOrGetCached.mock.invocationCallOrder[0],
+    );
+    expect(refreshShopOrGetCached).toHaveBeenCalledTimes(1);
+    expect(refreshShopOrGetCached).toHaveBeenCalledWith(SELLER);
+    expect(subscribeShopEvents).toHaveBeenCalledWith(SELLER, '41');
+    expect(result.current).toBe(true);
+    unmount();
+  });
+
   it("re-reads the shop once when the seller's homeserver reports writes to it", async () => {
     const { stream, push } = liveStream();
     subscribeShopEvents.mockResolvedValue(stream);
     const { unmount } = renderHook(() => useLiveSellerShop(SELLER));
     await vi.advanceTimersByTimeAsync(0);
+    refreshShopOrGetCached.mockClear();
 
     push('PUT');
     push('PUT');
     push('DEL');
     await vi.advanceTimersByTimeAsync(COMMERCE_SHOP_EVENT_DEBOUNCE_MS);
 
-    expect(subscribeShopEvents).toHaveBeenCalledWith(SELLER, null);
     expect(refreshShopOrGetCached).toHaveBeenCalledTimes(1);
-    expect(refreshShopOrGetCached).toHaveBeenCalledWith(SELLER);
     unmount();
   });
 
-  it("streams from the seller's latest shop write and resumes after the last event seen", async () => {
+  it('resumes after the last event seen when the stream reconnects', async () => {
     const first = liveStream();
     const second = liveStream();
     latestShopEventCursor.mockResolvedValue('41');
@@ -75,14 +93,10 @@ describe('useLiveSellerShop', () => {
     const { unmount } = renderHook(() => useLiveSellerShop(SELLER));
     await vi.advanceTimersByTimeAsync(0);
 
-    expect(subscribeShopEvents).toHaveBeenLastCalledWith(SELLER, '41');
-    expect(refreshShopOrGetCached).not.toHaveBeenCalled();
-
     first.push('PUT', '42');
     first.end();
     await vi.advanceTimersByTimeAsync(COMMERCE_SHOP_EVENT_RECONNECT_MS);
 
-    expect(refreshShopOrGetCached).toHaveBeenCalledTimes(1);
     expect(subscribeShopEvents).toHaveBeenLastCalledWith(SELLER, '42');
     unmount();
   });
@@ -105,10 +119,31 @@ describe('useLiveSellerShop', () => {
     unmount();
   });
 
+  it('resets the backoff when a stream delivered events before it dropped', async () => {
+    vi.spyOn(Logger, 'warn').mockImplementation(() => {});
+    const dropping = liveStream();
+    subscribeShopEvents
+      .mockRejectedValueOnce(new Error('offline'))
+      .mockResolvedValueOnce(dropping.stream)
+      .mockRejectedValue(new Error('offline'));
+    const { unmount } = renderHook(() => useLiveSellerShop(SELLER));
+    await vi.advanceTimersByTimeAsync(COMMERCE_SHOP_EVENT_RECONNECT_MS);
+    expect(subscribeShopEvents).toHaveBeenCalledTimes(2);
+
+    dropping.push('PUT', '42');
+    await vi.advanceTimersByTimeAsync(0);
+    dropping.error(new Error('connection reset'));
+    await vi.advanceTimersByTimeAsync(COMMERCE_SHOP_EVENT_RECONNECT_MS);
+
+    expect(subscribeShopEvents).toHaveBeenCalledTimes(3);
+    unmount();
+  });
+
   it('re-reads the shop when the tab comes back into focus, at most once per window', async () => {
     subscribeShopEvents.mockResolvedValue(null);
     const { unmount } = renderHook(() => useLiveSellerShop(SELLER));
     await vi.advanceTimersByTimeAsync(COMMERCE_SHOP_FOCUS_REVALIDATE_MIN_MS);
+    refreshShopOrGetCached.mockClear();
 
     window.dispatchEvent(new Event('focus'));
     document.dispatchEvent(new Event('visibilitychange'));
@@ -117,8 +152,19 @@ describe('useLiveSellerShop', () => {
     unmount();
   });
 
+  it('only reads the shop when not live', async () => {
+    const { result } = renderHook(() => useLiveSellerShop(SELLER, { live: false }));
+    await act(() => vi.advanceTimersByTimeAsync(COMMERCE_SHOP_FOCUS_REVALIDATE_MIN_MS));
+    window.dispatchEvent(new Event('focus'));
+
+    expect(refreshShopOrGetCached).toHaveBeenCalledTimes(1);
+    expect(latestShopEventCursor).not.toHaveBeenCalled();
+    expect(subscribeShopEvents).not.toHaveBeenCalled();
+    expect(result.current).toBe(true);
+  });
+
   it('does nothing while disabled', async () => {
-    renderHook(() => useLiveSellerShop(SELLER, false));
+    renderHook(() => useLiveSellerShop(SELLER, { enabled: false }));
     await vi.advanceTimersByTimeAsync(COMMERCE_SHOP_FOCUS_REVALIDATE_MIN_MS);
     window.dispatchEvent(new Event('focus'));
 
