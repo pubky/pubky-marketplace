@@ -1,6 +1,7 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { CommerceController } from '@/controllers/commerce/commerce';
 import type { MarketplaceOrder } from '@/services/marketplace/marketplace';
 import { createOrderFixture, createUsdtOrderFixture } from '@/test/fixtures/commerce/orders';
 import {
@@ -11,6 +12,11 @@ import {
 import { MarketplaceUsdtRefundAddress } from './MarketplaceUsdtRefundAddress';
 
 vi.mock('@/molecules/Toaster/use-toast', () => ({ toast: vi.fn() }));
+
+// The draft Paykit lookup reads homeservers; it finds nothing unless a test says otherwise.
+beforeEach(() => {
+  vi.spyOn(CommerceController, 'fetchBuyerPaykitUsdtAddress').mockResolvedValue(null);
+});
 
 const destination = {
   address: REFUND_FIXTURE_ADDRESS,
@@ -255,5 +261,25 @@ describe('MarketplaceUsdtRefundAddress — seller', () => {
       'You recorded a refund to this address. The Shop has not checked it on Arbitrum.',
     );
     expect(screen.queryByTestId('usdt-refund-amount')).not.toBeInTheDocument();
+  });
+});
+
+describe('MarketplaceUsdtRefundAddress — Paykit endpoint (draft)', () => {
+  it("offers the buyer's published Paykit USDT address and confirms it", async () => {
+    vi.spyOn(CommerceController, 'fetchBuyerPaykitUsdtAddress').mockResolvedValue(REFUND_FIXTURE_ADDRESS);
+    const { actOnOrder } = renderPanel(createUsdtOrderFixture('return_approved'));
+    const user = userEvent.setup();
+
+    const choice = await screen.findByRole('radio', { name: /Send it to my Paykit USDT address/ });
+    expect(choice).toBeChecked();
+    expect(screen.queryByLabelText('Arbitrum One USDT address')).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('checkbox', { name: 'This address accepts USDT on Arbitrum One' }));
+    await user.click(screen.getByRole('button', { name: 'Confirm refund address' }));
+    await waitFor(() =>
+      expect(actOnOrder).toHaveBeenCalledWith(expect.anything(), 'refund.confirm_destination', {
+        address: REFUND_FIXTURE_ADDRESS,
+      }),
+    );
   });
 });

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Check, Copy } from 'lucide-react';
 import { Controller, useWatch } from 'react-hook-form';
 import { Button } from '@/atoms/Button/Button';
@@ -8,6 +8,7 @@ import { Checkbox } from '@/atoms/Checkbox/Checkbox';
 import { Heading } from '@/atoms/Heading/Heading';
 import { RadioGroup, RadioGroupItem } from '@/atoms/RadioGroup/RadioGroup';
 import { Typography } from '@/atoms/Typography/Typography';
+import { CommerceController } from '@/controllers/commerce/commerce';
 import { useConfirmRefundDestination } from '@/hooks/useConfirmRefundDestination/useConfirmRefundDestination';
 import { useCopyToClipboard } from '@/hooks/useCopyToClipboard/useCopyToClipboard';
 import { formatOrderInstant } from '@/libs/commerce/checkout-hold';
@@ -83,10 +84,25 @@ function BuyerRefundAddress({
   actOnOrder: ActOnOrder;
 }) {
   const [editing, setEditing] = useState(false);
-  const { form, paymentAddress, submit, reset } = useConfirmRefundDestination(order, actOnOrder);
+  // Draft (pubky/pubky-marketplace#371): offer the USDT address the buyer's Paykit wallet publishes.
+  const [paykitAddress, setPaykitAddress] = useState<string | null>(null);
+  const { form, paymentAddress, submit, reset } = useConfirmRefundDestination(order, actOnOrder, paykitAddress);
   const source = useWatch({ control: form.control, name: 'source' });
   const destination = order.refundDestination ?? null;
   const showForm = phase === 'needed' || (phase === 'confirmed' && editing);
+  useEffect(() => {
+    if (!showForm) return;
+    let active = true;
+    void CommerceController.fetchBuyerPaykitUsdtAddress(order.buyerPubky).then((address) => {
+      if (!active || !address) return;
+      setPaykitAddress(address);
+      form.setValue('source', 'paykit');
+    });
+    return () => {
+      active = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- read once per buyer while the form shows
+  }, [showForm, order.buyerPubky]);
   const copy =
     phase === 'recorded'
       ? USDT_REFUND_COPY.buyerRecorded
@@ -133,24 +149,34 @@ function BuyerRefundAddress({
             void confirm();
           }}
         >
-          {paymentAddress && (
+          {(paymentAddress || paykitAddress) && (
             <Controller
               name="source"
               control={form.control}
               render={({ field }) => (
                 <RadioGroup value={field.value} onValueChange={field.onChange}>
-                  <RadioGroupItem
-                    value="payment"
-                    variant="box"
-                    label={USDT_REFUND_COPY.originalAddressChoice}
-                    description={paymentAddress}
-                  />
+                  {paykitAddress && (
+                    <RadioGroupItem
+                      value="paykit"
+                      variant="box"
+                      label={USDT_REFUND_COPY.paykitAddressChoice}
+                      description={paykitAddress}
+                    />
+                  )}
+                  {paymentAddress && (
+                    <RadioGroupItem
+                      value="payment"
+                      variant="box"
+                      label={USDT_REFUND_COPY.originalAddressChoice}
+                      description={paymentAddress}
+                    />
+                  )}
                   <RadioGroupItem value="another" variant="box" label={USDT_REFUND_COPY.anotherAddressChoice} />
                 </RadioGroup>
               )}
             />
           )}
-          {(!paymentAddress || source === 'another') && (
+          {((!paymentAddress && !paykitAddress) || source === 'another') && (
             <ControlledInputField
               name="address"
               control={form.control}

@@ -267,6 +267,7 @@ export const USDT_REFUND_COPY = {
   addressInvalid: "That isn't a valid Arbitrum address. Check it and try again.",
   anotherAddressChoice: 'Send it to another Arbitrum One USDT address',
   originalAddressChoice: 'Send it back to the address I paid from',
+  paykitAddressChoice: 'Send it to my Paykit USDT address',
   recordedBySeller: 'Recorded by the seller',
   notChecked: "The Shop hasn't checked it on Arbitrum.",
   referenceLabel: 'Arbitrum transaction hash',

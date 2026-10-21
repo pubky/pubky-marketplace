@@ -76,6 +76,13 @@ import {
   stripForbiddenPublicReserveKeys,
 } from '@/libs/commerce/marketplace-records';
 import {
+  PAYKIT_ENDPOINT_MAX_BYTES,
+  paykitEndpointUrl,
+  paykitRegistryAppIds,
+  USDT_ARBITRUM_ENDPOINT_ID,
+  usdtAddressFromEndpointPayload,
+} from '@/libs/commerce/paykit-refund-endpoint';
+import {
   appRegistryTakesPaymentRequests,
   type BuyerPaykitWallet,
   foundAppRegistryShowsNewWallet,
@@ -1685,6 +1692,40 @@ export class CommerceApplication {
     }
     if (registry.found && foundAppRegistryShowsNewWallet(registry.json)) return 'unsupported';
     return (await PaykitReceiverService.hasPaymentRequestReceiver(buyerPubky)) ? 'payable' : 'not_payable';
+  }
+
+  /**
+   * Draft (pubky/pubky-marketplace#371): the Arbitrum USDT address the
+   * buyer's Paykit wallet publishes as a public `usdt-arbitrum-address`
+   * endpoint, from the first app in their App Registry that has one. Null
+   * when none is published or anything cannot be read: the buyer then types
+   * an address as before.
+   */
+  static async fetchBuyerPaykitUsdtAddress(buyerPubky: string): Promise<string | null> {
+    let appIds: string[];
+    try {
+      const registry = await HomeserverService.getJsonIfFound<unknown>({
+        url: paykitAppRegistryUrl(buyerPubky),
+        logUrl: PAYKIT_APP_REGISTRY_PATH,
+      });
+      appIds = registry.found ? paykitRegistryAppIds(registry.json) : [];
+    } catch {
+      return null;
+    }
+    for (const appId of appIds) {
+      try {
+        const bytes = await HomeserverService.getBlob({
+          url: paykitEndpointUrl(buyerPubky, appId, USDT_ARBITRUM_ENDPOINT_ID),
+          logUrl: `/pub/paykit/v0/apps/${appId}/endpoints/${USDT_ARBITRUM_ENDPOINT_ID}`,
+          maxBytes: PAYKIT_ENDPOINT_MAX_BYTES,
+        });
+        const address = usdtAddressFromEndpointPayload(new TextDecoder().decode(bytes));
+        if (address) return address;
+      } catch {
+        // Not published by this app; try the next one.
+      }
+    }
+    return null;
   }
 
   static async getMyPaymentConfig(actorPubky: string) {
