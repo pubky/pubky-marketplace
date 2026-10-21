@@ -188,7 +188,34 @@ describe('plausibleReferrerFromHref', () => {
   });
 });
 
+const PAGE_ORIGIN = location.origin;
+const MALFORMED_ESCAPE = '%E0%A4%A';
+const PAGE_HREF = `${PAGE_ORIGIN}/invite/${INVITE_CODE}`;
+const REFERRER_HREF = `${PAGE_ORIGIN}/messages/${BUYER}?conversation=x`;
+
+/** Bodies that are kept as sent, wholly or in the one pair that cannot be decoded. */
+const MALFORMED_BODY_CASES: { name: string; body: string; expected: string }[] = [
+  ...[
+    { name: 'invalid JSON', body: `{"n":"pageview","u":"${PAGE_HREF}"` },
+    { name: 'JSON without an event name', body: JSON.stringify({ u: PAGE_HREF, r: REFERRER_HREF }) },
+  ].map((c) => ({ ...c, expected: c.body })),
+  {
+    name: 'form page URL with a malformed escape',
+    body: `n=pageview&u=${MALFORMED_ESCAPE}&r=${encodeURIComponent(REFERRER_HREF)}`,
+    expected: `n=pageview&u=${MALFORMED_ESCAPE}&r=${encodeURIComponent(`${PAGE_ORIGIN}/messages/:pubky`)}`,
+  },
+  {
+    name: 'form referrer with a malformed escape',
+    body: `n=pageview&u=${encodeURIComponent(PAGE_HREF)}&r=${MALFORMED_ESCAPE}`,
+    expected: `n=pageview&u=${encodeURIComponent(`${PAGE_ORIGIN}/invite/:code`)}&r=${MALFORMED_ESCAPE}`,
+  },
+];
+
 describe('rewritePlausibleEventBody', () => {
+  it.each(MALFORMED_BODY_CASES)('leaves malformed bodies and pairs untouched: $name', ({ body, expected }) => {
+    expect(rewritePlausibleEventBody(body, { pageOrigin: PAGE_ORIGIN })).toBe(expected);
+  });
+
   it('strips query strings from JSON pageview payloads', () => {
     const rewritten = rewritePlausibleEventBody(JSON.stringify({ n: 'pageview', u: HREF, d: 'shop.pubky.app' }));
     const parsed = JSON.parse(rewritten) as { u: string };
@@ -356,6 +383,12 @@ describe('plausiblePageUrlBootstrap', () => {
     const body = `u=${encodeURIComponent(`${location.origin}/profile/${SELLER}`)}`;
     navigator.sendBeacon('/api/other', body);
     expect(sendBeacon.mock.lastCall?.[1]).toBe(body);
+  });
+
+  it.each(MALFORMED_BODY_CASES)('leaves malformed bodies and pairs untouched: $name', ({ body, expected }) => {
+    runBootstrap('');
+    expect(() => navigator.sendBeacon('/api/event', body)).not.toThrow();
+    expect(sendBeacon.mock.lastCall?.[1]).toBe(expected);
   });
 
   it('maps every app route to its route template', () => {
