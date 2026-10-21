@@ -3406,7 +3406,8 @@ export class CommerceApplication {
    * Local-first: a Dexie hit returns immediately. After a fresh sign-in the
    * local row is gone (wiped with identity) even when the homeserver record
    * is live — hydrate from the deterministic review URI (listing + subject
-   * + role + the order's attested `order_ref`) so the order card can resolve publication/attestation state
+   * + role + the order's attested `order_ref`), and republish a review a
+   * later order overwrote before per-order IDs, so the order card can resolve publication/attestation state
    * instead of waiting forever.
    */
   static async getOwnMarketplaceReview(
@@ -3513,6 +3514,31 @@ export class CommerceApplication {
           legacy.found &&
           (legacy.json as { eligibilityAttestation?: unknown } | null)?.eligibilityAttestation === attestation.data.jws;
         if (!legacyMatches) {
+          // No record on the homeserver carries this order's attestation: a
+          // review a later order overwrote at the shared per-listing path
+          // before per-order IDs. The service still holds it, so republish
+          // it once at this order's own path.
+          const serviceReview = order.reviews?.find(({ reviewerPubky }) => reviewerPubky === actorPubky);
+          if (serviceReview !== undefined && serviceReview.text.trim().length > 0) {
+            if (!this.liveIdentityMatches(hydrateIdentity)) return null;
+            Logger.info('Republishing an own review no homeserver record carries', { orderId: order.id });
+            return await this.commitPublishOwnReview({
+              actorPubky,
+              order,
+              result: {
+                review: {
+                  reviewerPubky: actorPubky,
+                  reviewerRole: isBuyer ? 'buyer' : 'seller',
+                  subjectPubky,
+                  rating: serviceReview.rating,
+                  text: serviceReview.text,
+                  createdAt: serviceReview.createdAt,
+                  updatedAt: serviceReview.updatedAt ?? serviceReview.createdAt,
+                },
+                attestation: attestation.data,
+              },
+            });
+          }
           this.ownReviewHomeserverMisses.add(this.ownReviewMissKey(actorPubky, order.id));
           return null;
         }
