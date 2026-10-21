@@ -23,7 +23,8 @@ export function MarketplaceMyShop() {
     control: settings.form.control,
     name: ['name', 'bio', 'countryCode', 'region', 'vacationMode'],
   });
-  const previewName = String(name ?? '').trim() || 'Your shop name';
+  const typedName = String(name ?? '').trim();
+  const previewName = typedName || 'Your shop name';
   const previewBio = String(bio ?? '').trim() || 'Your shop description will appear here.';
   const previewCountryCode = String(countryCode ?? '')
     .trim()
@@ -62,18 +63,24 @@ export function MarketplaceMyShop() {
           </div>
         </div>
 
-        <ShopProfileCard
-          variant="mini"
-          name={previewName}
-          bio={previewBio}
-          avatarUrl={settings.avatar.previewUrl}
-          bannerUrl={settings.banner.previewUrl}
-          location={{ countryCode: previewCountryCode, region: previewRegion }}
-          vacation={Boolean(vacationMode)}
-          bannerAlt={`${previewName} banner preview`}
-          avatarAlt={`${previewName} avatar preview`}
-          testId="shop-live-preview"
-        />
+        <div className="grid gap-2">
+          <Typography as="p" className="text-sm text-muted-foreground" data-testid="shop-live-preview-caption">
+            This is a preview of your public storefront. Edit your shop details in the form below.
+          </Typography>
+          <ShopProfileCard
+            variant="mini"
+            name={previewName}
+            nameIsPlaceholder={typedName === ''}
+            bio={previewBio}
+            avatarUrl={settings.avatar.previewUrl}
+            bannerUrl={settings.banner.previewUrl}
+            location={{ countryCode: previewCountryCode, region: previewRegion }}
+            vacation={Boolean(vacationMode)}
+            bannerAlt={`${previewName} banner preview`}
+            avatarAlt={`${previewName} avatar preview`}
+            testId="shop-live-preview"
+          />
+        </div>
 
         <MarketplaceShopSettingsFormView settings={settings} />
       </Container>
