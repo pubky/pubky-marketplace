@@ -550,6 +550,9 @@ export function MarketplaceOrderActions({
                 render={({ field }) => <MarketplaceStarRatingInput value={field.value} onChange={field.onChange} />}
               />
               <ControlledTextareaField name="text" control={action.form.control} label="Review" />
+              <p className="text-xs text-muted-foreground" data-testid="review-disclosure">
+                {isBuyer ? REVIEW_DISCLOSURE_COPY.buyer : REVIEW_DISCLOSURE_COPY.seller}
+              </p>
             </>
           )}
           {actionType === 'review' && isBuyer && sellerBandConsent === true && (
@@ -561,7 +564,7 @@ export function MarketplaceOrderActions({
                   checked={field.value}
                   onCheckedChange={(checked) => field.onChange(checked === true)}
                   label="Include an approximate price range"
-                  description="Your review's purchase attestation will carry a coarse order-of-magnitude band (never the exact amount). This seller has allowed it; it is included only if you opt in too."
+                  description="Your review's purchase attestation will carry a coarse order-of-magnitude band (never the exact amount), and it becomes public with your review. This seller has allowed it; it is included only if you opt in too."
                 />
               )}
             />
@@ -656,6 +659,11 @@ function MarketplaceStarRatingInput({ value, onChange }: { value: string; onChan
     </div>
   );
 }
+
+const REVIEW_DISCLOSURE_COPY = {
+  buyer: 'Your review is public, tied to your Pubky, and shows you bought this item.',
+  seller: 'Your review is public, tied to your Pubky, and shows this buyer ordered from you.',
+} as const;
 
 /**
  * The truthful publication/verification state of the user's own review.
