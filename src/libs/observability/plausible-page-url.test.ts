@@ -66,6 +66,8 @@ const APP_CASES: PageCase[] = [
   },
   { name: 'unknown route with a prefixed pubky', path: `/unknown/pubky${SELLER}`, expected: '/unknown/:pubky' },
   { name: 'unknown route with an encoded pubky', path: `/unknown/%70ubky${SELLER}`, expected: '/unknown/:pubky' },
+  { name: 'unknown route with a pk: pubky', path: `/unknown/pk:${SELLER}`, expected: '/unknown/:pubky' },
+  { name: 'unknown route with an encoded pk: pubky', path: `/unknown/pk%3A${SELLER}`, expected: '/unknown/:pubky' },
   {
     name: 'unknown route with a malformed escape',
     path: `/unknown/${SELLER}/%E0%A4%A`,
@@ -188,7 +190,13 @@ const REFERRER_CASES: { name: string; input: string; expected: string }[] = [
   { name: 'empty as nothing', input: '', expected: '' },
   { name: 'invalid as nothing', input: 'not a url', expected: '' },
   { name: 'relative as nothing', input: '/relative/path', expected: '' },
-  { name: 'non-http as nothing', input: `android-app://app/${SELLER}`, expected: '' },
+  { name: 'non-http app as its scheme and host', input: `android-app://app/${SELLER}`, expected: 'android-app://app' },
+  {
+    name: 'Gmail app as its scheme and host',
+    input: 'android-app://com.google.android.gm/',
+    expected: 'android-app://com.google.android.gm',
+  },
+  { name: 'hostless non-http as nothing', input: 'mailto:x@example.com', expected: '' },
 ];
 
 describe('plausibleReferrerFromHref', () => {
@@ -213,6 +221,8 @@ describe('plausibleReferrerFromHref', () => {
 const MALFORMED_ESCAPE = '%E0%A4%A';
 const PAGE_HREF = `${PAGE_ORIGIN}/invite/${INVITE_CODE}`;
 const REFERRER_HREF = `${PAGE_ORIGIN}/messages/${BUYER}?conversation=x`;
+/** A form body with a page URL but no event name. */
+const NON_EVENT_BODY = `u=${encodeURIComponent(`${PAGE_ORIGIN}/profile/${SELLER}`)}`;
 
 /** Bodies that are kept as sent, wholly or in the one pair that cannot be decoded. */
 const MALFORMED_BODY_CASES: { name: string; body: string; expected: string }[] = [
@@ -235,6 +245,10 @@ const MALFORMED_BODY_CASES: { name: string; body: string; expected: string }[] =
 describe('rewritePlausibleEventBody', () => {
   it.each(MALFORMED_BODY_CASES)('leaves malformed bodies and pairs untouched: $name', ({ body, expected }) => {
     expect(rewritePlausibleEventBody(body, { pageOrigin: PAGE_ORIGIN })).toBe(expected);
+  });
+
+  it('leaves non-event bodies untouched', () => {
+    expect(rewritePlausibleEventBody(NON_EVENT_BODY, { pageOrigin: PAGE_ORIGIN })).toBe(NON_EVENT_BODY);
   });
 
   it('strips query strings from JSON pageview payloads', () => {
@@ -331,10 +345,14 @@ describe('plausiblePageUrlBootstrap', () => {
     XMLHttpRequest.prototype.send = savedSend;
   });
 
-  it('parses in engines without lookbehind support', () => {
+  it('stays parseable by older engines (ES5 syntax, no lookbehind)', () => {
     const source = plausiblePageUrlBootstrap('/shop');
     expect(source).not.toContain('(?<=');
     expect(source).not.toContain('(?<!');
+    expect(source).not.toContain('=>');
+    expect(source).not.toContain('`');
+    expect(source).not.toMatch(/\blet\s/);
+    expect(source).not.toMatch(/\bconst\s/);
     expect(() => new Function(source)).not.toThrow();
   });
 
@@ -401,9 +419,8 @@ describe('plausiblePageUrlBootstrap', () => {
 
   it('leaves non-event bodies untouched', () => {
     runBootstrap('');
-    const body = `u=${encodeURIComponent(`${location.origin}/profile/${SELLER}`)}`;
-    navigator.sendBeacon('/api/other', body);
-    expect(sendBeacon.mock.lastCall?.[1]).toBe(body);
+    navigator.sendBeacon('/api/other', NON_EVENT_BODY);
+    expect(sendBeacon.mock.lastCall?.[1]).toBe(NON_EVENT_BODY);
   });
 
   it.each(MALFORMED_BODY_CASES)('leaves malformed bodies and pairs untouched: $name', ({ body, expected }) => {

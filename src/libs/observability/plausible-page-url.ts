@@ -8,8 +8,8 @@
 /** z-base-32, the alphabet of pubky public keys. */
 const Z32_ALPHABET = 'ybndrfg8ejkmcpqxot1uwisza345h769';
 
-/** A whole path segment that is a pubky, with or without the `pubky` prefix. */
-const PUBKY_SEGMENT = new RegExp(`^(?:pubky)?[${Z32_ALPHABET}]{52}$`, 'i');
+/** A whole path segment that is a pubky, with or without the `pubky` or legacy `pk:` prefix. */
+const PUBKY_SEGMENT = new RegExp(`^(?:pubky|pk:)?[${Z32_ALPHABET}]{52}$`, 'i');
 
 /**
  * The dynamic routes under `src/app`, as URL paths. A `:name` segment stands for
@@ -108,11 +108,15 @@ export function plausiblePageUrlFromHref(href: string, base = 'https://invalid.i
   return applyRouteTemplates(href.split('#')[0].split('?')[0], []);
 }
 
-/** Same-origin referrers get the page treatment; other origins keep only the origin. */
+/**
+ * Same-origin referrers get the page treatment; other http(s) origins keep only the
+ * origin. Other schemes keep scheme and host, such as the app referrer
+ * `android-app://com.google.android.gm`, or send nothing when there is no host.
+ */
 export function plausibleReferrerFromHref(ref: string, pageOrigin: string, basePath = ''): string {
   try {
     const url = new URL(ref);
-    if (!isHttpUrl(url)) return '';
+    if (!isHttpUrl(url)) return url.host ? `${url.protocol}//${url.host}` : '';
     return url.origin === pageOrigin ? plausiblePageUrlFromHref(ref, pageOrigin, basePath) : url.origin;
   } catch {
     return '';
@@ -238,7 +242,7 @@ export function plausiblePageUrlBootstrap(basePath: string): string {
   function referrerUrl(ref){
     try {
       var url = new URL(ref);
-      if (!isHttpUrl(url)) return '';
+      if (!isHttpUrl(url)) return url.host ? url.protocol + '//' + url.host : '';
       return url.origin === location.origin ? pageUrl(ref) : url.origin;
     } catch (e) {
       return '';
