@@ -97,7 +97,8 @@ describe('Marketplace filters — visual regression', () => {
       disableHover: true,
     });
     // Phones fold the dropdown filters behind the Filters toggle.
-    await screen.getByTestId('marketplace-filters-toggle').click();
+    // disableHover lays a pointer shield over the page, so click through the DOM.
+    (screen.getByTestId('marketplace-filters-toggle').element() as HTMLElement).click();
     await expect.element(screen.getByRole('combobox', { name: 'Payment method' })).toHaveTextContent('Any payment');
     await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('filters-payment-default-mobile');
   });

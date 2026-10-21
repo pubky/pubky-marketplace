@@ -228,7 +228,8 @@ describe('Marketplace — visual regression', () => {
     const screen = await renderForVRT(<Marketplace />, { viewport: VRT_VIEWPORT_MOBILE, disableHover: true });
     // Phones fold the dropdown filters behind the Filters toggle, which counts the active one.
     await expect.element(screen.getByTestId('marketplace-filters-toggle')).toHaveAccessibleName('Filters, 1 active');
-    await screen.getByTestId('marketplace-filters-toggle').click();
+    // disableHover lays a pointer shield over the page, so click through the DOM.
+    (screen.getByTestId('marketplace-filters-toggle').element() as HTMLElement).click();
     await expect.element(screen.getByRole('combobox', { name: 'Payment method' })).toHaveTextContent('Bitcoin');
     await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('marketplace-payment-filter-bitcoin-mobile');
   });
