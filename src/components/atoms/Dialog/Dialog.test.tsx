@@ -17,6 +17,7 @@ const mockUseDialogKeyboardOrchestrator = vi.hoisted(() =>
     isKeyboardVisible: false,
     spacerHeight: 0,
     contentStyle: undefined,
+    layerStyle: undefined,
   })),
 );
 
@@ -29,6 +30,7 @@ beforeEach(() => {
     isKeyboardVisible: false,
     spacerHeight: 0,
     contentStyle: undefined,
+    layerStyle: undefined,
   });
 });
 
@@ -78,6 +80,7 @@ describe('Dialog', () => {
       isKeyboardVisible: true,
       spacerHeight: 120,
       contentStyle: { scrollPaddingBottom: '144px' },
+      layerStyle: { top: '40px', bottom: 'auto', height: '420px' },
     });
 
     render(
@@ -92,6 +95,7 @@ describe('Dialog', () => {
     expect(dialogContent).not.toHaveClass('will-change-transform');
     expect(dialogContent).not.toHaveStyle({ scrollPaddingBottom: '144px' });
     expect(document.querySelector('[data-slot="dialog-keyboard-spacer"]')).not.toBeInTheDocument();
+    expect(dialogContent.parentElement).not.toHaveStyle({ height: '420px' });
   });
 
   it('applies keyboard spacer and scroll padding when keyboard is visible', () => {
@@ -99,6 +103,7 @@ describe('Dialog', () => {
       isKeyboardVisible: true,
       spacerHeight: 120,
       contentStyle: { scrollPaddingBottom: '144px' },
+      layerStyle: { top: '40px', bottom: 'auto', height: '420px' },
     });
 
     render(
@@ -118,6 +123,27 @@ describe('Dialog', () => {
     expect(spacer).toBeInTheDocument();
     expect(spacer).toHaveAttribute('aria-hidden', 'true');
     expect(spacer).toHaveStyle({ height: '120px' });
+  });
+
+  it('fits the dialog layer to the visible area above the keyboard', () => {
+    mockUseDialogKeyboardOrchestrator.mockReturnValue({
+      isKeyboardVisible: true,
+      spacerHeight: 0,
+      contentStyle: { maxHeight: '372px' },
+      layerStyle: { top: '40px', bottom: 'auto', height: '420px' },
+    });
+
+    render(
+      <Dialog open={true}>
+        <DialogContent avoidKeyboard centered>
+          <div>Dialog Content</div>
+        </DialogContent>
+      </Dialog>,
+    );
+
+    const dialogContent = screen.getByTestId('dialog-content');
+    expect(dialogContent).toHaveStyle({ maxHeight: '372px' });
+    expect(dialogContent.parentElement).toHaveStyle({ top: '40px', height: '420px' });
   });
 
   it('uses the mobile bottom-drawer treatment by default', () => {
