@@ -72,7 +72,8 @@ vi.mock('@/hooks/useChatIdentity/useChatIdentity', () => ({
   }),
 }));
 
-vi.mock('@/hooks/useKeyboardViewport/useKeyboardViewport', () => ({
+vi.mock('@/hooks/useKeyboardViewport/useKeyboardViewport', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/hooks/useKeyboardViewport/useKeyboardViewport')>()),
   useKeyboardViewport: () => ({
     isKeyboardVisible: scene.keyboardHeight > 0,
     keyboardHeight: scene.keyboardHeight,
