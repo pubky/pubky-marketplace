@@ -11,10 +11,12 @@ import { Container } from '@/atoms/Container/Container';
 import { Heading } from '@/atoms/Heading/Heading';
 import { Link } from '@/atoms/Link/Link';
 import { Typography } from '@/atoms/Typography/Typography';
+import { getCommerceAdapterMode } from '@/config/commerce';
 import { getSocialHostUrl } from '@/config/social';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import { useCommerceShopFollow } from '@/hooks/useCommerceShopFollow/useCommerceShopFollow';
 import { useIsEmbedded } from '@/hooks/useIsEmbedded/useIsEmbedded';
+import { useLiveSellerShop } from '@/hooks/useLiveSellerShop/useLiveSellerShop';
 import {
   buildMarketplaceCatalogItems,
   type MarketplaceCatalogItem,
@@ -52,7 +54,7 @@ export function MarketplaceShop({ sellerPubky }: { sellerPubky: string }) {
   useEffect(() => {
     let active = true;
     setShopFetchSettled(false);
-    CommerceController.getOrFetchShop(sellerPubky)
+    CommerceController.refreshShopOrGetCached(sellerPubky)
       .catch(() => undefined)
       .finally(() => {
         if (active) setShopFetchSettled(true);
@@ -65,6 +67,7 @@ export function MarketplaceShop({ sellerPubky }: { sellerPubky: string }) {
     };
   }, [sellerPubky]);
 
+  useLiveSellerShop(sellerPubky, getCommerceAdapterMode() !== 'sandbox');
   const shop = useLiveQuery(() => CommerceController.getShop(sellerPubky), [sellerPubky]);
   // Same two catalog sources as the home grid: hydrated canonical records
   // plus Nexus index projections discovered for this seller.

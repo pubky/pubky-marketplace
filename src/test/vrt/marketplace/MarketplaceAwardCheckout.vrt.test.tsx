@@ -153,7 +153,7 @@ vi.mock('@/libs/runtime-config/runtime-config', async (importOriginal) => {
 vi.mock('@/controllers/commerce/commerce', () => ({
   CommerceController: {
     getShop: vi.fn(async () => null),
-    getOrFetchShop: vi.fn(async () => null),
+    refreshShopOrGetCached: vi.fn(async () => null),
     getSellerAnnualLimit: vi.fn(async () => ({ enabled: false })),
     getSellerPaymentConfig: vi.fn(async () => ({
       bitcoinAvailable: true,
