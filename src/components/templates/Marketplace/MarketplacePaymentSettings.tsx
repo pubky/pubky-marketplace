@@ -92,6 +92,7 @@ export function MarketplacePaymentSettings() {
       showRightSidebar={false}
       showLeftMobileButton={false}
       showRightMobileButton={false}
+      disableMainContentOverflow
       className="pb-28"
     >
       <Container overrideDefaults className="flex w-full flex-col gap-6">
