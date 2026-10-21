@@ -67,6 +67,11 @@ const APP_CASES: PageCase[] = [
   { name: 'unknown route with a prefixed pubky', path: `/unknown/pubky${SELLER}`, expected: '/unknown/:pubky' },
   { name: 'unknown route with an encoded pubky', path: `/unknown/%70ubky${SELLER}`, expected: '/unknown/:pubky' },
   {
+    name: 'unknown route with a malformed escape',
+    path: `/unknown/${SELLER}/%E0%A4%A`,
+    expected: '/unknown/:pubky/%E0%A4%A',
+  },
+  {
     name: 'unknown route with a 52-character non-z32 id',
     path: `/unknown/${NON_Z32_ID}`,
     expected: `/unknown/${NON_Z32_ID}`,
