@@ -275,7 +275,7 @@ describe('Marketplace', () => {
         attributes: null,
         location: { countryCode: 'US', region: 'NY' },
         mediaUrls: [],
-        reputation: null,
+        listingReputation: null,
         revision: 1,
         updatedAt: Date.parse('2026-08-19T21:00:00.000Z'),
       },
@@ -399,7 +399,7 @@ describe('Marketplace', () => {
       attributes: null,
       location: { countryCode: 'US', region: 'NY' },
       mediaUrls: [],
-      reputation: null,
+      listingReputation: null,
       revision: 1,
       updatedAt: Date.parse(updatedAt),
     });

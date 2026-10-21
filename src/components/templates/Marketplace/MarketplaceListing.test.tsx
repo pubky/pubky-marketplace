@@ -1,11 +1,11 @@
 import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { CommerceSellerReputationOverview } from '@/application/commerce/commerce';
 import { CAPABILITIES } from '@/config/app';
 import { COMMERCE_LISTING_MAX_QUANTITY } from '@/config/commerce';
 import { CHECKOUT_HOLD_COPY } from '@/libs/commerce/checkout-hold';
 import { getMarketplaceOfferCheckoutRoute } from '@/libs/commerce/checkout-phase';
+import type { CommerceReputationSnippet } from '@/models/commerce/commerce.schema';
 import type { MarketplaceOffer } from '@/services/marketplace/marketplace';
 import type { GrantSigner } from '@/stores/auth/auth.types';
 import {
@@ -26,8 +26,8 @@ const publicAvailabilityRead = vi.hoisted(() => vi.fn());
 const paymentBadgesRead = vi.hoisted(() => vi.fn());
 const projectionRefresh = vi.hoisted(() => vi.fn());
 const confirmRemovedCalls = vi.hoisted(() => vi.fn());
-const sellerReputation = vi.hoisted((): { value: CommerceSellerReputationOverview | { status: 'loading' } } => ({
-  value: { status: 'new_seller' as const },
+const listingRating = vi.hoisted((): { value: CommerceReputationSnippet | null | undefined } => ({
+  value: null,
 }));
 const authState = vi.hoisted(() => ({
   currentUserPubky: 'b'.repeat(52) as string | null,
@@ -187,7 +187,7 @@ vi.mock('@/hooks/useMarketplaceProjection/useMarketplaceProjection', () => ({
 }));
 
 vi.mock('@/hooks/useMarketplaceReviews/useMarketplaceReviews', () => ({
-  useSellerReputation: () => sellerReputation.value,
+  useListingRating: () => listingRating.value,
 }));
 
 vi.mock('@/hooks/useMeasurementSystem/useMeasurementSystem', () => ({
@@ -262,7 +262,7 @@ describe('MarketplaceListing', () => {
     view.orders = [];
     view.offers = [];
     sessionState.pubky = null;
-    sellerReputation.value = { status: 'new_seller' };
+    listingRating.value = null;
     cartAdd.mockClear();
     projectionRefresh.mockClear();
     authState.currentUserPubky = 'b'.repeat(52);
@@ -703,20 +703,8 @@ describe('MarketplaceListing', () => {
     expect(screen.queryByText('Shop opened Aug 2026')).not.toBeInTheDocument();
   });
 
-  it('renders the seller rating aggregate when reputation is present', () => {
-    sellerReputation.value = {
-      status: 'rated',
-      summary: {
-        count: 12,
-        verifiedCount: 9,
-        avg: 4.7,
-        histogram: [0, 0, 1, 2, 9],
-        responseCount: 3,
-        editedLateCount: 0,
-        attestors: {},
-        lastReviewedAt: '2026-08-20T12:00:00.000Z',
-      },
-    };
+  it("renders this product's own rating, not the seller's", () => {
+    listingRating.value = { avg: 4.7, count: 12, verifiedCount: 9 };
 
     renderListing();
 
@@ -725,6 +713,14 @@ describe('MarketplaceListing', () => {
     ).toBeInTheDocument();
     expect(screen.getByTitle('12 reviews')).toBeInTheDocument();
     expect(screen.queryByText('No rating yet')).not.toBeInTheDocument();
+  });
+
+  it('shows no rating while the product rating is loading', () => {
+    listingRating.value = undefined;
+
+    renderListing();
+
+    expect(screen.queryByTestId('marketplace-listing-rating')).not.toBeInTheDocument();
   });
 
   it('requires a marketplace session before showing availability', async () => {

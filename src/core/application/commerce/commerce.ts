@@ -141,6 +141,7 @@ import type {
   CommerceIndexedReview,
   CommerceListingModelSchema,
   CommerceListingProjectionModelSchema,
+  CommerceReputationSnippet,
   CommerceReputationSummary,
   CommerceReviewModelSchema,
   CommerceReviewResponseModelSchema,
@@ -3662,6 +3663,25 @@ export class CommerceApplication {
       }
     }
     return published;
+  }
+
+  /**
+   * One product's own rating (buyer reviews of this listing only), from the
+   * Nexus listing projection. `null` when the index holds no reviews for it,
+   * has not indexed it, or does not answer: the page then shows "No rating
+   * yet". A single attempt, so a listing Nexus has not indexed yet does not
+   * wait out the 404 backoff.
+   */
+  static async fetchListingRating(sellerPubky: string, listingId: string): Promise<CommerceReputationSnippet | null> {
+    if (getCommerceAdapterMode() === 'sandbox') return null;
+    try {
+      const entry = CommerceRecordNormalizer.nexusListingDetails(
+        await NexusMarketplaceService.fetchListingDetailsOnce({ seller_id: sellerPubky, listing_id: listingId }),
+      );
+      return entry.listing_reputation;
+    } catch {
+      return null;
+    }
   }
 
   /**

@@ -190,11 +190,11 @@ export function MarketplaceListingCard({ listing, shopName, layout = 'grid', ind
             <Typography as="p" className="truncate text-base text-secondary-foreground">
               {shopName ?? `${listing.sellerId.slice(0, 8)}…`}
             </Typography>
-            {listing.reputation !== null && listing.reputation.count > 0 ? (
+            {listing.listingReputation !== null && listing.listingReputation.count > 0 ? (
               <MarketplaceStarRating
-                rating={listing.reputation.avg}
-                count={listing.reputation.count}
-                verifiedCount={listing.reputation.verifiedCount}
+                rating={listing.listingReputation.avg}
+                count={listing.listingReputation.count}
+                verifiedCount={listing.listingReputation.verifiedCount}
                 size="sm"
               />
             ) : (

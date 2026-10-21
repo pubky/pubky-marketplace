@@ -4,7 +4,32 @@ import { useCallback, useEffect, useState } from 'react';
 import type { CommerceIndexedReviewsResult, CommerceSellerReputationOverview } from '@/application/commerce/commerce';
 import { MARKETPLACE_REVIEWS_PAGE_SIZE } from '@/config/commerce';
 import { CommerceController } from '@/controllers/commerce/commerce';
-import type { CommerceIndexedReview } from '@/models/commerce/commerce.schema';
+import type { CommerceIndexedReview, CommerceReputationSnippet } from '@/models/commerce/commerce.schema';
+
+/**
+ * One product's own rating for its listing page: `undefined` while loading,
+ * `null` when it has none (the page shows "No rating yet").
+ */
+export function useListingRating(sellerPubky: string, listingId: string) {
+  const [rating, setRating] = useState<CommerceReputationSnippet | null | undefined>(undefined);
+
+  useEffect(() => {
+    let active = true;
+    setRating(undefined);
+    CommerceController.fetchListingRating(sellerPubky, listingId)
+      .then((result) => {
+        if (active) setRating(result);
+      })
+      .catch(() => {
+        if (active) setRating(null);
+      });
+    return () => {
+      active = false;
+    };
+  }, [sellerPubky, listingId]);
+
+  return rating;
+}
 
 /**
  * The seller's public reputation overview for rating headers.

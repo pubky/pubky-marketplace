@@ -89,6 +89,19 @@ describe('buildMarketplaceCatalogItems', () => {
     expect(item.revision).toBe(2);
   });
 
+  it("carries the product's own rating onto a cached listing, never the seller's", () => {
+    const record = toCommerceListingModel(createCommerceListingFixture({ revision: 2 }));
+    const entry = createCommerceCatalogEntryFixture({
+      revision: 2,
+      reputation: { avg: 1, count: 3, verifiedCount: 3 },
+      listing_reputation: { avg: 4.5, count: 2, verifiedCount: 2 },
+    });
+
+    const [item] = buildMarketplaceCatalogItems([record], [entry]);
+
+    expect(item.listingReputation).toEqual({ avg: 4.5, count: 2, verifiedCount: 2 });
+  });
+
   it('prefers the index entry when it has seen a newer revision than the cache', () => {
     const record = toCommerceListingModel(createCommerceListingFixture({ title: 'Stale cached title', revision: 1 }));
     const entry = createCommerceCatalogEntryFixture({ title: 'Reindexed title', revision: 3 });
@@ -362,7 +375,7 @@ describe('the Newest order', () => {
     const auctionOlder = auctionEntryItem('auction_older', '2026-09-30T00:00:00.000Z');
     const rated = {
       ...listing('rated', { updated_at: base + 1, condition: 'good' }),
-      reputation: { avg: 5, count: 99, verifiedCount: 99 },
+      listingReputation: { avg: 5, count: 99, verifiedCount: 99 },
     };
     const items = [rated as MarketplaceCatalogItem, excellentOlder, { ...auctionOlder, updatedAt: base }, plainNew];
     expect(

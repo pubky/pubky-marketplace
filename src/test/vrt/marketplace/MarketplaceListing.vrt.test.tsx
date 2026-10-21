@@ -212,7 +212,7 @@ const view = vi.hoisted(() => ({
   listing: undefined as unknown,
   shop: undefined as unknown,
   projection: null as unknown,
-  reputation: { status: 'new_seller' as const } as unknown,
+  listingRating: null as unknown,
   fetchFails: false,
   currentUserPubky: 'u'.repeat(52) as string | null,
   listingTags: [] as unknown[],
@@ -299,7 +299,7 @@ vi.mock('@/controllers/commerce/commerce', () => ({
     // the visual outcome only, so the call resolves without side effects.
     ensureListingRegistered: () => Promise.resolve(false),
     canRegisterListings: () => true,
-    fetchSellerReputation: () => Promise.resolve(view.reputation),
+    fetchListingRating: () => Promise.resolve(view.listingRating),
     fetchSellerReviews: () => Promise.resolve({ status: 'unavailable' }),
     fetchListingReviews: () => Promise.resolve({ status: 'unavailable' }),
     fetchSellerPaymentBadges: () => Promise.resolve(view.paymentBadges),
@@ -414,7 +414,7 @@ async function setView(overrides: Partial<typeof view>) {
   view.listing = undefined;
   view.shop = shop;
   view.projection = null;
-  view.reputation = { status: 'new_seller' };
+  view.listingRating = null;
   view.fetchFails = false;
   view.currentUserPubky = 'u'.repeat(52);
   view.listingTags = [];
@@ -472,19 +472,7 @@ describe('Marketplace listing detail — visual regression', () => {
       listing: fixedPriceListing,
       projection: fixedPriceProjection,
       shop: brandedShop,
-      reputation: {
-        status: 'rated',
-        summary: {
-          count: 18,
-          verifiedCount: 14,
-          avg: 4.8,
-          histogram: [0, 0, 1, 3, 14],
-          responseCount: 5,
-          editedLateCount: 0,
-          attestors: {},
-          lastReviewedAt: '2026-08-20T12:00:00.000Z',
-        },
-      },
+      listingRating: { avg: 4.8, count: 18, verifiedCount: 14 },
     });
 
     const screen = await renderForVRT(<MarketplaceListing sellerPubky={seller} listingId="boots_01" />, {

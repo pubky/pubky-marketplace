@@ -102,9 +102,24 @@ describe('MarketplaceListingCard', () => {
     }
   });
 
-  it('renders the seller rating aggregate when the catalog projection carries reviews', () => {
+  it("shows only this product's rating, not the seller's", () => {
+    // The seller is rated, this product was never bought.
     const listing = catalogItemFromCatalogEntry(
-      createCommerceCatalogEntryFixture({ reputation: { avg: 4.6, count: 17, verifiedCount: 11 } }),
+      createCommerceCatalogEntryFixture({
+        reputation: { avg: 1, count: 1, verifiedCount: 1 },
+        listing_reputation: null,
+      }),
+    );
+
+    render(<MarketplaceListingCard listing={listing} shopName="Satoshi Vintage" />);
+
+    expect(screen.getByText('No rating yet')).toBeInTheDocument();
+    expect(screen.queryByRole('img', { name: /^Rated/ })).not.toBeInTheDocument();
+  });
+
+  it("renders the product's own rating aggregate when the catalog projection carries reviews", () => {
+    const listing = catalogItemFromCatalogEntry(
+      createCommerceCatalogEntryFixture({ listing_reputation: { avg: 4.6, count: 17, verifiedCount: 11 } }),
     );
 
     render(<MarketplaceListingCard listing={listing} shopName="Satoshi Vintage" />);

@@ -204,7 +204,7 @@ describe('MarketplaceFilters', () => {
       attributes: null,
       location: { countryCode, region: null },
       mediaUrls: [],
-      reputation: null,
+      listingReputation: null,
       revision: 1,
       updatedAt: 1,
     });
@@ -232,7 +232,7 @@ describe('MarketplaceFilters', () => {
       attributes: null,
       location: { countryCode, region: null },
       mediaUrls: [],
-      reputation: null,
+      listingReputation: null,
       revision: 1,
       updatedAt: 1,
     });
@@ -272,7 +272,7 @@ describe('MarketplaceFilters', () => {
       attributes: { size: 'L', brand: 'Champion', color: ['grey', 'navy'] },
       location: { countryCode: 'US', region: null },
       mediaUrls: [],
-      reputation: null,
+      listingReputation: null,
       revision: 1,
       updatedAt: 1_000,
     };

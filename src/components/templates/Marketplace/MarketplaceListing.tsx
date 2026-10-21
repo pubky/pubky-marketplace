@@ -35,7 +35,7 @@ import { useMarketplaceOffers } from '@/hooks/useMarketplaceOffers/useMarketplac
 import { useMarketplaceOrders } from '@/hooks/useMarketplaceOrders/useMarketplaceOrders';
 import { useMarketplaceProjection } from '@/hooks/useMarketplaceProjection/useMarketplaceProjection';
 import { useMarketplacePublicAvailability } from '@/hooks/useMarketplacePublicAvailability/useMarketplacePublicAvailability';
-import { useSellerReputation } from '@/hooks/useMarketplaceReviews/useMarketplaceReviews';
+import { useListingRating } from '@/hooks/useMarketplaceReviews/useMarketplaceReviews';
 import { useMeasurementSystem } from '@/hooks/useMeasurementSystem/useMeasurementSystem';
 import { useRegionAvailability } from '@/hooks/useRegionAvailability/useRegionAvailability';
 import { useRequireAuth } from '@/hooks/useRequireAuth/useRequireAuth';
@@ -79,6 +79,7 @@ import { SellerStatusBadge } from '@/molecules/Marketplace/SellerStatusBadge';
 import { MarketplaceFulfillmentBadge } from '@/molecules/MarketplaceFulfillmentBadge/MarketplaceFulfillmentBadge';
 import { MarketplacePaymentMethodBadges } from '@/molecules/MarketplacePaymentMethodBadges/MarketplacePaymentMethodBadges';
 import { MarketplaceSellerIdentity } from '@/molecules/MarketplaceSellerIdentity/MarketplaceSellerIdentity';
+import { MarketplaceStarRating } from '@/molecules/MarketplaceStarRating/MarketplaceStarRating';
 import { ChatEntryButton } from '@/organisms/Chat/ChatEntryButton';
 import { ContentLayout } from '@/organisms/ContentLayout/ContentLayout';
 import { DialogReportPost } from '@/organisms/DialogReportPost/DialogReportPost';
@@ -128,7 +129,7 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
   const negotiation = useMarketplaceProjection(sellerPubky, listingId);
   const publicStock = useMarketplacePublicAvailability(sellerPubky, listingId, negotiation.needsSession);
   const soldOutVariants = listingSoldOutVariantIds(negotiation.projection ?? publicStock);
-  const sellerReputation = useSellerReputation(sellerPubky);
+  const listingRating = useListingRating(sellerPubky, listingId);
   const paymentBadges = useSellerPaymentBadges(sellerPubky);
   const cart = useMarketplaceCart();
   const orders = useMarketplaceOrders();
@@ -459,6 +460,22 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
               <Heading level={1} size="xl" className="text-3xl leading-none sm:text-5xl sm:leading-none">
                 {record.title}
               </Heading>
+              {listingRating !== undefined && (
+                <div className="mt-2" data-testid="marketplace-listing-rating">
+                  {listingRating !== null && listingRating.count > 0 ? (
+                    <MarketplaceStarRating
+                      rating={listingRating.avg}
+                      count={listingRating.count}
+                      verifiedCount={listingRating.verifiedCount}
+                      size="sm"
+                    />
+                  ) : (
+                    <Typography as="p" className="text-sm text-muted-foreground">
+                      No rating yet
+                    </Typography>
+                  )}
+                </div>
+              )}
               <Typography as="p" className="mt-1 text-3xl font-bold text-brand">
                 {record.sale.format === 'auction'
                   ? negotiation.projection?.auction?.bidCount
@@ -693,7 +710,6 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
                     displayName={sellerDisplayName}
                     avatarUrl={shopAvatarUrl}
                     avatarAlt={`${shop?.record.name ?? 'Shop'} avatar`}
-                    reputation={sellerReputation}
                   />
                   <div className="mt-2 flex items-center gap-2">
                     <SellerStatusBadge declaration={declaration} />
