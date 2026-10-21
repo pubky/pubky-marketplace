@@ -88,7 +88,8 @@ vi.mock('@/hooks/useMarketplaceNotifications/useMarketplaceNotifications', () =>
 }));
 
 // The session-required card's approval dialog, closed: only its trigger renders.
-vi.mock('@/hooks/useMarketplaceApprovalSigner/useMarketplaceApprovalSigner', () => ({
+vi.mock('@/hooks/useMarketplaceApprovalSigner/useMarketplaceApprovalSigner', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/hooks/useMarketplaceApprovalSigner/useMarketplaceApprovalSigner')>()),
   useMarketplaceApprovalSigner: () => 'Bitkit',
 }));
 
@@ -229,7 +230,7 @@ describe('Marketplace notifications — visual regression', () => {
     await setView({ error: 'Approve the marketplace to continue.', needsSession: true, canMarkRead: false });
 
     const screen = await renderForVRT(<MarketplaceNotifications />, { viewport });
-    await expect(screen.getByRole('button', { name: 'Authorize' })).toBeVisible();
+    await expect(screen.getByRole('button', { name: 'Approve' })).toBeVisible();
     await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot(
       `notifications-session-required-${name}`,
       VRT_DENSE_CHROME_SCREENSHOT,

@@ -100,15 +100,15 @@ describe('MarketplaceNotifications', () => {
     expect(CommerceController.markActivityRead).not.toHaveBeenCalled();
   });
 
-  it('offers to approve the marketplace session instead of saying there are no updates', () => {
+  it('asks to approve the marketplace instead of saying there are no updates', () => {
     marketplaceView.error = 'Approve the marketplace to continue.';
     marketplaceView.needsSession = true;
 
     render(<MarketplaceNotifications />);
 
-    expect(screen.getByRole('heading', { name: 'Enable purchases' })).toBeInTheDocument();
-    expect(screen.getByText('Your order and payment updates show here once you approve.')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Authorize' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Approve the marketplace to see your updates' })).toBeInTheDocument();
+    expect(screen.getByText('Your order and payment updates show here after one approval.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Approve' })).toBeInTheDocument();
     expect(screen.queryByText('No commerce updates')).not.toBeInTheDocument();
   });
 
@@ -116,7 +116,7 @@ describe('MarketplaceNotifications', () => {
     render(<MarketplaceNotifications />);
 
     expect(screen.getByText('No commerce updates')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Authorize' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Approve' })).not.toBeInTheDocument();
   });
 
   it('renders system actors and quarantined rows without failing the history list', () => {

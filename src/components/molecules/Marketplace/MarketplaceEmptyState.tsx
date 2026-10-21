@@ -1,4 +1,5 @@
 import type { LucideIcon } from 'lucide-react';
+import type { ReactNode } from 'react';
 import { APP_ROUTES } from '@/app/routes';
 import { Button } from '@/atoms/Button/Button';
 import { Card, CardContent } from '@/atoms/Card/Card';
@@ -11,11 +12,14 @@ export function MarketplaceEmptyState({
   title,
   description,
   surface,
+  action,
 }: {
   icon: LucideIcon;
   title: string;
   description: string;
   surface?: string;
+  /** Replaces the Browse market link, for a state with its own next step. */
+  action?: ReactNode;
 }) {
   return (
     <Card className="rounded-md p-0" data-surface={surface}>
@@ -28,11 +32,15 @@ export function MarketplaceEmptyState({
           <Typography as="p" className="mt-2 text-muted-foreground">
             {description}
           </Typography>
-          <Button asChild variant="secondary" className="mt-6 rounded-full">
-            <Link href={APP_ROUTES.MARKETPLACE} overrideDefaults>
-              Browse market
-            </Link>
-          </Button>
+          {action ? (
+            <div className="mt-6">{action}</div>
+          ) : (
+            <Button asChild variant="secondary" className="mt-6 rounded-full">
+              <Link href={APP_ROUTES.MARKETPLACE} overrideDefaults>
+                Browse market
+              </Link>
+            </Button>
+          )}
         </div>
       </CardContent>
     </Card>
