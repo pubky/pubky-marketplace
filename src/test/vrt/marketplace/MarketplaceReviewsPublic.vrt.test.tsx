@@ -27,6 +27,7 @@ const controllerState = vi.hoisted(() => ({
   reputation: { status: 'unavailable' } as unknown,
   reviews: [] as unknown[],
   ownResponse: null as unknown,
+  listing: null as unknown,
 }));
 
 vi.mock('@/controllers/commerce/commerce', () => ({
@@ -36,6 +37,7 @@ vi.mock('@/controllers/commerce/commerce', () => ({
     fetchSellerReviews: vi.fn(async () => ({ status: 'ok', reviews: controllerState.reviews })),
     fetchListingReviews: vi.fn(async () => ({ status: 'ok', reviews: controllerState.reviews })),
     getOwnMarketplaceReviewResponse: vi.fn(async () => controllerState.ownResponse),
+    getOrFetchListingIfFound: vi.fn(async () => controllerState.listing),
     // The scenes render real MarketplaceListingCards against the real auth
     // store (one scene signs the seller in), so the cards' watch toggle
     // reaches the controller: keep the favorite statics on the mock.
@@ -175,6 +177,7 @@ beforeEach(async () => {
   controllerState.reputation = { status: 'unavailable' };
   controllerState.reviews = [];
   controllerState.ownResponse = null;
+  controllerState.listing = null;
 });
 
 async function waitForText(fragment: string) {
@@ -265,6 +268,34 @@ describe('Marketplace public reviews — visual regression', () => {
     );
     await waitForText('Verified purchase');
     await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('reviews-section-spectrum-mobile');
+  });
+
+  it('leads each storefront review with its listing, two orders of one listing as two entries, at mobile viewport', async () => {
+    const { createCommerceListingFixture } = await import('@/test/fixtures/commerce/commerce');
+    controllerState.listing = createCommerceListingFixture({
+      ownerPubky: SELLER,
+      listingId: 'rangefinder_camera',
+      title: '35mm rangefinder camera',
+      media: [],
+    });
+    controllerState.reviews = [
+      indexedReview({
+        reviewId: '8Z8CWH8NVYQY39ZEBFGKQWWEKK',
+        ratingOverall: 1,
+        text: 'Second order arrived damaged.',
+        createdAt: '2026-08-12T12:00:00.000Z',
+        updatedAt: '2026-08-12T12:00:00.000Z',
+      }),
+      indexedReview(),
+    ];
+    const screen = await renderForVRT(
+      <main className="flex w-full flex-col gap-6 px-4 py-8">
+        <MarketplaceReviewsSection sellerPubky={SELLER} />
+      </main>,
+      { viewport: VRT_VIEWPORT_MOBILE },
+    );
+    await waitForText('35mm rangefinder camera');
+    await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('reviews-section-storefront-listing-mobile');
   });
 
   it('renders the empty review list honestly at desktop viewport', async () => {

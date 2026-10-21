@@ -2,7 +2,7 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import { DELIVERY_KEY_COPY } from '@/libs/commerce/delivery-key-copy';
-import { DIGITAL_REGION_MESSAGE, EU_UNAVAILABLE_MESSAGE, SELLER_LIMIT_MESSAGE } from '@/libs/commerce/eu-region';
+import { DIGITAL_REGION_MESSAGE, REGION_UNAVAILABLE_MESSAGE, SELLER_LIMIT_MESSAGE } from '@/libs/commerce/eu-region';
 import { AppError } from '@/libs/error/error';
 import { ClientErrorCode } from '@/libs/error/error.codes';
 import { ErrorCategory, ErrorService } from '@/libs/error/error.types';
@@ -370,7 +370,7 @@ describe('useMarketplaceDropClaim', () => {
     it('says why the service refused, not the generic claim failure', async () => {
       regionFlags(true, true);
       for (const [error, expected] of [
-        [{ code: 'SELLER_UNAVAILABLE_IN_REGION', message: 'x' }, EU_UNAVAILABLE_MESSAGE],
+        [{ code: 'SELLER_UNAVAILABLE_IN_REGION', message: 'x' }, REGION_UNAVAILABLE_MESSAGE],
         [{ code: 'SELLER_ANNUAL_LIMIT_REACHED', message: 'x' }, SELLER_LIMIT_MESSAGE],
         [{ code: 'DIGITAL_UNAVAILABLE_IN_REGION', message: 'x', reason: 'eu_buyer' }, `${DIGITAL_REGION_MESSAGE}.`],
       ] as const) {

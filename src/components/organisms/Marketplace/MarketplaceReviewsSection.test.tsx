@@ -1,7 +1,9 @@
 import { render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { CommerceController } from '@/controllers/commerce/commerce';
 import type { CommerceIndexedReview } from '@/models/commerce/commerce.schema';
 import { useAuthStore } from '@/stores/auth/auth.store';
+import { createCommerceListingFixture } from '@/test/fixtures/commerce/commerce';
 import { setSocialHost } from '@/test-utils/social-host';
 import { MarketplaceReviewsSection } from './MarketplaceReviewsSection';
 
@@ -36,6 +38,15 @@ vi.mock('@/hooks/useMarketplaceReviews/useMarketplaceReviews', () => ({
   }),
 }));
 
+// No listing lookups reach the network: a storefront entry's listing resolves to nothing unless a test says otherwise.
+beforeEach(() => {
+  vi.spyOn(CommerceController, 'getOrFetchListingIfFound').mockResolvedValue(null);
+});
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
+
 describe('MarketplaceReviewsSection reviewer link', () => {
   beforeEach(() => {
     useAuthStore.setState({ currentUserPubky: null });
@@ -67,5 +78,56 @@ describe('MarketplaceReviewsSection reviewer link', () => {
       'href',
       `https://pubky.app/profile/${REVIEWER}`,
     );
+  });
+});
+
+describe('MarketplaceReviewsSection on a storefront', () => {
+  beforeEach(() => {
+    useAuthStore.setState({ currentUserPubky: null });
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('leads each review with its listing, even one no longer active', async () => {
+    const lookup = vi.spyOn(CommerceController, 'getOrFetchListingIfFound').mockResolvedValue(
+      createCommerceListingFixture({
+        ownerPubky: SELLER,
+        listingId: 'rangefinder_camera',
+        title: 'Rangefinder camera',
+        media: [],
+        state: 'ended',
+      }),
+    );
+
+    render(<MarketplaceReviewsSection sellerPubky={SELLER} />);
+
+    expect(await screen.findByRole('link', { name: 'Rangefinder camera' })).toHaveAttribute(
+      'href',
+      `/marketplace/listing/${SELLER}/rangefinder_camera`,
+    );
+    expect(lookup).toHaveBeenCalledWith(SELLER, 'rangefinder_camera');
+    expect(screen.getByText('Exactly as described.')).toBeInTheDocument();
+  });
+
+  it('keeps the review of a deleted listing intact without a strict fetch that reports the 404', async () => {
+    const lookup = vi.spyOn(CommerceController, 'getOrFetchListingIfFound').mockResolvedValue(null);
+    const strictFetch = vi.spyOn(CommerceController, 'fetchListing');
+
+    render(<MarketplaceReviewsSection sellerPubky={SELLER} />);
+
+    await vi.waitFor(() => expect(lookup).toHaveBeenCalledWith(SELLER, 'rangefinder_camera'));
+    expect(strictFetch).not.toHaveBeenCalled();
+    expect(screen.queryByRole('link', { name: 'Rangefinder camera' })).not.toBeInTheDocument();
+    expect(screen.getByText('Exactly as described.')).toBeInTheDocument();
+  });
+
+  it('shows no listing on a listing page', () => {
+    const lookup = vi.spyOn(CommerceController, 'getOrFetchListingIfFound');
+
+    render(<MarketplaceReviewsSection sellerPubky={SELLER} listingId="rangefinder_camera" />);
+
+    expect(lookup).not.toHaveBeenCalled();
   });
 });

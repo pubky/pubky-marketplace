@@ -90,7 +90,7 @@ describe('marketplace session grant', () => {
   });
 
   it("says a Ring cookie approval also keeps Pubky App's social and Locks access working", () => {
-    expect(MARKETPLACE_DISCLOSURE_RING_SIGN_IN).toMatch(/^Approving signs you in to Pubky Shop, /);
+    expect(MARKETPLACE_DISCLOSURE_RING_SIGN_IN).toMatch(/^Approving signs you in to Pubky Market, /);
     expect(MARKETPLACE_DISCLOSURE_RING_SIGN_IN).toContain(
       'the marketplace the same access, including your private Shop data',
     );

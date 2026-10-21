@@ -4,6 +4,7 @@ import { setupFixedDateLocale } from '@/test-utils/date-locale';
 import {
   APPROVE_IN_BITKIT_FALLBACK_COPY,
   approveInBitkitCopy,
+  approveInBitkitDeadline,
   buyerPayByDeadline,
   CHECKOUT_HOLD_COPY,
   findViewerAcceptedOfferHold,
@@ -60,39 +61,62 @@ describe('buyerPayByDeadline', () => {
 });
 
 describe('approveInBitkitCopy', () => {
-  const HOLD = '2026-10-19T13:05:58.080Z';
+  const CREATED = '2026-10-19T12:34:58.080Z';
   const REQUEST = '2026-10-19T13:04:58.080Z';
-  const ordinary = { holdExpiresAt: HOLD, paykitExpiresAt: REQUEST, paykitRequestState: 'pending' };
+  const HOLD = '2026-10-19T13:05:58.080Z';
+  const ordinary = { createdAt: CREATED, holdExpiresAt: HOLD, paykitExpiresAt: REQUEST, paykitRequestState: 'pending' };
 
-  it('names the same instant as the Pay by line on an ordinary order', () => {
-    expect(approveInBitkitCopy(ordinary)).toBe('Approve in Bitkit by 19 Oct 2026, 13:05.');
+  it('names an approval deadline before Pay by, as Bitkit expires an unapproved request first (#358)', () => {
+    expect(approveInBitkitCopy(ordinary)).toBe('Approve in Bitkit by 19 Oct 2026, 12:49.');
     expect(holderBoundCopy(buyerPayByDeadline(ordinary))).toContain('Pay by 19 Oct 2026, 13:05.');
   });
 
-  it('follows the activated request deadline on an auction order, as Pay by does', () => {
-    const auction = {
-      ...ordinary,
-      holdExpiresAt: '2026-10-19T13:30:00.000Z',
-      auctionAggregateId: 'listing:seller_boots',
-    };
-    expect(approveInBitkitCopy(auction)).toBe('Approve in Bitkit by 19 Oct 2026, 13:04.');
-    expect(holderBoundCopy(buyerPayByDeadline(auction))).toContain('Pay by 19 Oct 2026, 13:04.');
+  it('is never later than the wallet deadline paykit-server sets at activation', () => {
+    // paykit-server: proposal_expires_at = activated_at + min(acceptance window, payment window / 2).
+    const activatedAt = new Date('2026-10-19T12:36:58.080Z').getTime();
+    const wallet = activatedAt + (new Date(REQUEST).getTime() - activatedAt) / 2;
+    expect(new Date(approveInBitkitDeadline(ordinary)!).getTime()).toBeLessThanOrEqual(wallet);
   });
 
-  it('moves with the order: a hold twice as long reads twice as long', () => {
-    expect(approveInBitkitCopy({ holdExpiresAt: '2026-10-19T13:35:00.000Z' })).toBe(
-      'Approve in Bitkit by 19 Oct 2026, 13:35.',
+  it('matches the 20 Oct mainnet order Bitkit expired at 21:35 CEST', () => {
+    const order = {
+      createdAt: '2026-10-20T19:17:00.000Z',
+      paykitExpiresAt: '2026-10-20T19:47:00.000Z',
+      holdExpiresAt: '2026-10-20T19:48:00.000Z',
+    };
+    expect(approveInBitkitDeadline(order)).toBe('2026-10-20T19:32:00.000Z');
+  });
+
+  it('falls back to the hold, less its 60 s margin, when the request deadline is not projected', () => {
+    expect(approveInBitkitDeadline({ createdAt: CREATED, holdExpiresAt: HOLD })).toBe(
+      approveInBitkitDeadline({ createdAt: CREATED, paykitExpiresAt: REQUEST }),
     );
-    expect(approveInBitkitCopy({ holdExpiresAt: '2026-10-19T13:20:00.000Z' })).toBe(
-      'Approve in Bitkit by 19 Oct 2026, 13:20.',
+    expect(approveInBitkitDeadline({ createdAt: CREATED, holdExpiresAt: HOLD })).toBe('2026-10-19T12:49:58.080Z');
+  });
+
+  it('names no time when the request was bound long after the order was created', () => {
+    // Created at 12:00, re-bound at 13:30 with a 30-minute window: a midpoint of 12:30 would already be past.
+    const order = {
+      createdAt: '2026-10-19T12:00:00.000Z',
+      paykitExpiresAt: '2026-10-19T14:00:00.000Z',
+      holdExpiresAt: '2026-10-19T14:01:00.000Z',
+    };
+    expect(approveInBitkitCopy(order)).toBe(APPROVE_IN_BITKIT_FALLBACK_COPY);
+  });
+
+  it('names no time on an auction order, which activates long after it is created', () => {
+    expect(approveInBitkitCopy({ ...ordinary, auctionAggregateId: 'listing:seller_boots' })).toBe(
+      APPROVE_IN_BITKIT_FALLBACK_COPY,
     );
   });
 
   it.each([
     ['no deadline at all', {}],
-    ['a null hold', { holdExpiresAt: null }],
-    ['a malformed hold', { holdExpiresAt: 'not a date' }],
-  ])('names no window for %s', (_label, order) => {
+    ['a null hold', { createdAt: CREATED, holdExpiresAt: null }],
+    ['a malformed hold', { createdAt: CREATED, holdExpiresAt: 'not a date' }],
+    ['no creation time', { holdExpiresAt: HOLD, paykitExpiresAt: REQUEST }],
+    ['a deadline before creation', { createdAt: HOLD, paykitExpiresAt: CREATED }],
+  ])('names no time for %s', (_label, order) => {
     expect(approveInBitkitCopy(order)).toBe(APPROVE_IN_BITKIT_FALLBACK_COPY);
   });
 
