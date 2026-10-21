@@ -69,7 +69,7 @@ Recovery-file-only commerce remains limited: after local key sign-in, the user m
 
 Until that separate transport lands, this branch retains the legacy messaging guard: fresh grant sessions cannot enroll in the cookie-only Paykit transport. Existing compatible local conversations remain readable. Removing the guard alone would start a separate cookie approval, not enable grant messaging.
 
-Coordinate merge order with Matthew. The replacement must retain this branch's hosted session ownership and account-switch cleanup, handle missing Chat permissions, and clear its Inbox bearer, in-memory chat state and private tables on logout, including when App logs out with no Shop iframe mounted. Verify the shared App grant with reload, two tabs, pending sends and account changes; standalone chat tests do not establish those guarantees. Review the database/history migration policy with #209. VV and the Inbox owner supply the Inbox URL, audience and permitted origins. Paykit payment bindings remain independent of this chat replacement.
+Coordinate merge order with secondl1ght. The replacement must retain this branch's hosted session ownership and account-switch cleanup, handle missing Chat permissions, and clear its Inbox bearer, in-memory chat state and private tables on logout, including when App logs out with no Shop iframe mounted. Verify the shared App grant with reload, two tabs, pending sends and account changes; standalone chat tests do not establish those guarantees. Review the database/history migration policy with #209. VV and the Inbox owner supply the Inbox URL, audience and permitted origins. Paykit payment bindings remain independent of this chat replacement.
 
 ## Release verification still required
 

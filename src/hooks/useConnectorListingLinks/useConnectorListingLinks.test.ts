@@ -29,7 +29,7 @@ vi.mock('@/molecules/Toaster/use-toast', () => ({ toast: vi.fn() }));
 const connection = connectionFixture({
   id: 'c1',
   provider: 'shopify',
-  domain: 'john.myshopify.com',
+  domain: 'demo.myshopify.com',
   status: 'connected',
   scopes: [],
 });

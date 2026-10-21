@@ -65,11 +65,11 @@ exports[`FeedbackCard - Snapshots > matches snapshot with authenticated user wit
         <div
           class="h-12 w-12"
           data-avatar-url="https://cdn.example.com/avatar/user123pubky"
-          data-name="Miguel Medeiros"
+          data-name="Maya Mitchell"
           data-testid="avatar-with-fallback"
         >
           <img
-            alt="Miguel Medeiros"
+            alt="Maya Mitchell"
             data-testid="avatar-image"
             src="https://cdn.example.com/avatar/user123pubky"
           />
@@ -114,7 +114,7 @@ exports[`FeedbackCard - Snapshots > matches snapshot with authenticated user wit
         <div
           class="h-12 w-12"
           data-avatar-url="no-url"
-          data-name="Miguel"
+          data-name="Maya"
           data-testid="avatar-with-fallback"
         >
           <div

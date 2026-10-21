@@ -154,7 +154,7 @@ Reusable packet for reviewing Shop as a Vibes experiment. Fill with repository o
 **Open Decisions**
 
 - Wave 7 local pickup (owner-recorded, design in progress): buyer may cancel if pickup terms change after payment; seller may delete details; one meeting point per order; pickup off without the encryption key; either party confirms handover, no automatic delivery; no pickup details on sandbox deployments; returns re-choose pickup or shipping with optional seller label.
-- Mainnet money, PayPal real purchase, Shippo live API, production `/priv` durability, messaging backup key, upstream bridge / TXT / cutover, Igor's $8.76 overpayment: still open as of 2026-09-06.
+- Mainnet money, PayPal real purchase, Shippo live API, production `/priv` durability, messaging backup key, upstream bridge / TXT / cutover, the $8.76 overpayment: still open as of 2026-09-06.
 
 ## Week Ending 2026-09-06
 
@@ -231,7 +231,7 @@ Reusable packet for reviewing Shop as a Vibes experiment. Fill with repository o
 - Production `/priv` durability: still open. Needs T+1h, T+1d, and T+7d production cadence.
 - Messaging backup key: still open. The ledger says the multi-device backup-key decision is unmade.
 - Upstream bridge deployment, rehearsal TXT verification, and `shop.pubky.app` cutover: still open.
-- Igor's $8.76 overpayment: user call.
+- The $8.76 overpayment: user call.
 
 ## Sources
 
