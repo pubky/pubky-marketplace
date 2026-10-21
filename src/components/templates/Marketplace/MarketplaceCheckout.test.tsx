@@ -2125,11 +2125,16 @@ describe('MarketplaceCheckout Paykit option (Bitcoin or USDT)', () => {
   });
 
   it('labels a Locks checkout by what the tap does: it creates the order and pays on the order page', async () => {
-    seededCart();
-    view.items = view.items.map((item) => ({
-      ...item,
-      listing: { ...item.listing, record: { ...item.listing.record, digitalLock: {} } },
-    })) as typeof view.items;
+    view.items = [
+      {
+        id: 'seller:boots:variant_42',
+        listingId: listing.id,
+        variantId: 'variant_42',
+        quantity: 1,
+        listing: { ...listing, record: { ...listing.record, digitalLock: {} } },
+      },
+    ];
+    view.isLoading = false;
     view.adapterMode = 'locks-paykit';
     view.paykitServerApi = 'upstream';
 
