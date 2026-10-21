@@ -8,7 +8,7 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '
 import { Label } from '@/atoms/Label/Label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/atoms/Select/Select';
 import { Typography } from '@/atoms/Typography/Typography';
-import { COMMERCE_REVIEW_EDIT_WINDOW_SECONDS } from '@/config/commerce';
+import { COMMERCE_REVIEW_EDIT_WINDOW_SECONDS, isTrustedMarketplaceAttestor } from '@/config/commerce';
 import { FORM_LABEL_CLASSES } from '@/config/forms';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import { useMarketplaceOrderAction } from '@/hooks/useMarketplaceOrderAction/useMarketplaceOrderAction';
@@ -668,8 +668,9 @@ const REVIEW_DISCLOSURE_COPY = {
 /**
  * The truthful publication/verification state of the user's own review.
  * "Verified" means exactly: the published record embeds a purchase
- * attestation whose Ed25519 signature verifies against its issuer pubky and
- * whose claims bind to this record — nothing more.
+ * attestation whose Ed25519 signature verifies against its issuer pubky,
+ * whose claims bind to this record, and whose issuer is an attestor this
+ * client trusts — the same rule as the public review labels.
  */
 function reviewRecordStatus(record: CommerceReviewModelSchema | null): string {
   if (record === null) {
@@ -679,7 +680,10 @@ function reviewRecordStatus(record: CommerceReviewModelSchema | null): string {
     return 'Your review is saved. Publication is pending and will retry automatically.';
   }
   if (record.attestation_verified && record.attestation_iss !== null) {
-    return `Verified purchase — your published review embeds a purchase attestation signed by attestor ${record.attestation_iss.slice(0, 8)}….`;
+    const attestor = `${record.attestation_iss.slice(0, 8)}…`;
+    return isTrustedMarketplaceAttestor(record.attestation_iss)
+      ? `Verified purchase — your published review embeds a purchase attestation signed by attestor ${attestor}.`
+      : `Your published review embeds a valid purchase attestation, but its signer (${attestor}) is not an attestor this app recognizes.`;
   }
   return 'Your review record is published, but its embedded attestation did not verify.';
 }

@@ -1,7 +1,7 @@
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { COMMERCE_REVIEW_EDIT_WINDOW_SECONDS } from '@/config/commerce';
+import { COMMERCE_REVIEW_EDIT_WINDOW_SECONDS, MARKETPLACE_TRUSTED_ATTESTORS } from '@/config/commerce';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import type { CommerceReviewModelSchema } from '@/models/commerce/commerce.schema';
 import type { MarketplaceOrder } from '@/services/marketplace/marketplace';
@@ -266,7 +266,7 @@ describe('MarketplaceOrderActions own-review verified status', () => {
       subject_id: 's'.repeat(52),
       record: {} as CommerceReviewModelSchema['record'],
       attestation_verified: true,
-      attestation_iss: 'o'.repeat(52),
+      attestation_iss: MARKETPLACE_TRUSTED_ATTESTORS[0],
       sync_status: 'synced',
       updated_at: Date.now(),
       ...overrides,
@@ -280,7 +280,21 @@ describe('MarketplaceOrderActions own-review verified status', () => {
     await waitFor(() => {
       expect(screen.getByTestId('own-review-status')).toHaveTextContent(/Verified purchase/);
     });
-    expect(screen.getByTestId('own-review-status')).toHaveTextContent(/signed by attestor oooooooo…/);
+    expect(screen.getByTestId('own-review-status')).toHaveTextContent(
+      `signed by attestor ${MARKETPLACE_TRUSTED_ATTESTORS[0].slice(0, 8)}…`,
+    );
+  });
+
+  it('does not claim a verified purchase when the attestation signer is not a trusted attestor', async () => {
+    mockedController.getOwnMarketplaceReview.mockResolvedValue(publishedReviewRow({ attestation_iss: 'o'.repeat(52) }));
+    renderActions();
+
+    await waitFor(() => {
+      expect(screen.getByTestId('own-review-status')).toHaveTextContent(
+        'Your published review embeds a valid purchase attestation, but its signer (oooooooo…) is not an attestor this app recognizes.',
+      );
+    });
+    expect(screen.getByTestId('own-review-status')).not.toHaveTextContent(/Verified purchase/);
   });
 
   it('shows the pending-publication state truthfully', async () => {
