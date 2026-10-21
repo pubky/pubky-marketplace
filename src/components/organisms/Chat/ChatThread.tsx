@@ -77,6 +77,17 @@ export function ChatThread({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lastId, pinnedToBottom]);
 
+  useEffect(() => {
+    const element = scrollRef.current;
+    if (!element || !pinnedToBottom) return;
+    // The list shrinks when the keyboard opens; keep the newest message in view instead of under the composer.
+    const observer = new ResizeObserver(() => {
+      element.scrollTop = element.scrollHeight;
+    });
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [pinnedToBottom]);
+
   const requestOlder = () => {
     const element = scrollRef.current;
     if (!element || !hasMore || olderRequest.current) return;

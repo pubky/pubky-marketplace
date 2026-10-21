@@ -707,7 +707,13 @@ export const marketplaceOrderProjectionSchema = z
       .nullable()
       .optional(),
     externalRefund: z
-      .object({ amountMinor: z.number().int().positive(), transactionId: z.string(), recordedAt: z.string() })
+      .object({
+        amountMinor: z.number().int().positive(),
+        transactionId: z.string(),
+        recordedAt: z.string(),
+        // USDT millionths Arbitrum shows reaching the refund address, when the service checked it.
+        receivedUnits: z.number().int().nonnegative().nullish().catch(null),
+      })
       .nullable()
       .optional(),
     // PayPal refund notifications (service 94ecb0d). Display-only flags: a

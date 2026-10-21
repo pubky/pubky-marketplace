@@ -144,7 +144,7 @@ describe('USDT amounts', () => {
 describe('USDT expectation copy', () => {
   it('states the buyer expectations in the agreed words', () => {
     expect(USDT_FINALITY_EXPECTATION_COPY).toBe(
-      'The seller ships once Arbitrum finalizes your payment, usually within minutes.',
+      'The seller ships once Arbitrum finalizes your payment, usually in about 15–20 minutes.',
     );
     expect(USDT_MULTI_SELLER_COPY).toBe("You'll approve one request per seller in Bitkit.");
   });

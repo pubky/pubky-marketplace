@@ -282,7 +282,7 @@ async function emptyCart(page) {
 }
 
 // With the EU fence or the digital hold on, the Shop disables "Buy" until the buyer says which country they live in
-// ("Country you live in", remembered on the device). PROOF_BUYER_COUNTRY (two letters, unset by default) answers it.
+// ("Country you live in", remembered on the device; the field commits on Enter or blur, #385). PROOF_BUYER_COUNTRY (two letters, unset by default) answers it.
 async function declareBuyerCountry(page) {
   const country = process.env.PROOF_BUYER_COUNTRY ?? '';
   if (!country) return;
@@ -294,6 +294,7 @@ async function declareBuyerCountry(page) {
   if (!shown) return;
   if ((await field.inputValue().catch(() => '')) === country) return;
   await field.fill(country);
+  await field.press('Enter');
   await page.waitForTimeout(500);
 }
 

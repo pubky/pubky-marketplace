@@ -352,6 +352,24 @@ describe('MarketplaceGetPaidSettings USDT', () => {
   });
 
   describe('saving', () => {
+    it('shows progress only on the card being saved and holds the other cards during the save', async () => {
+      const config = fromWire(USDT_SELLER_CONFIG_READY_WIRE);
+      mocked.getMyPaymentConfig.mockResolvedValue(config);
+      let finish: (saved: SellerPaymentConfigOwnView) => void = () => undefined;
+      mocked.putMyPaymentConfig.mockReturnValue(new Promise((resolve) => (finish = resolve)));
+      await renderSettings();
+
+      await userEvent.click(screen.getAllByRole('button', { name: 'Save changes' }).at(-1)!);
+
+      const buttons = screen.getAllByRole('button', { name: 'Save changes' });
+      await waitFor(() => expect(buttons.at(-1)!.querySelector('.animate-spin')).not.toBeNull());
+      for (const other of buttons.slice(0, -1)) expect(other.querySelector('.animate-spin')).toBeNull();
+      for (const button of buttons) expect(button).toBeDisabled();
+
+      finish(config);
+      await waitFor(() => expect(document.querySelector('.animate-spin')).toBeNull());
+    });
+
     it('sends the seller consent with the rest of the configuration', async () => {
       mocked.getMyPaymentConfig.mockResolvedValue({
         ...fromWire(USDT_SELLER_CONFIG_READY_WIRE),

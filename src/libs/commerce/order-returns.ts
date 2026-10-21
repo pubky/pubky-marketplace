@@ -10,6 +10,13 @@ export type OrderReturnPolicy = { acceptsReturns: boolean; returnWindowDays: num
 export type ReturnClosure = 'final_sale' | 'window_closed' | null;
 
 const DAY_MS = 86_400_000;
+/**
+ * The page reads the device clock. A clock running ahead must not hide the
+ * button while the service would still take the request, so the Shop keeps it
+ * a day past the window; a later request gets the service's
+ * `return_window_closed` refusal.
+ */
+const DEVICE_CLOCK_GRACE_MS = DAY_MS;
 
 export const ORDER_RETURN_COPY = {
   finalSale: "Final sale: the seller doesn't accept returns on this item.",
@@ -25,5 +32,5 @@ export function orderReturnClosure(
   if (!policy.acceptsReturns) return 'final_sale';
   const deliveredAt = order.shipment?.deliveredAt ? Date.parse(order.shipment.deliveredAt) : NaN;
   if (policy.returnWindowDays === null || nowMs === null || Number.isNaN(deliveredAt)) return null;
-  return nowMs > deliveredAt + policy.returnWindowDays * DAY_MS ? 'window_closed' : null;
+  return nowMs > deliveredAt + policy.returnWindowDays * DAY_MS + DEVICE_CLOCK_GRACE_MS ? 'window_closed' : null;
 }

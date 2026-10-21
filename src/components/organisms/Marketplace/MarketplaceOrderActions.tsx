@@ -25,6 +25,7 @@ import { formatUsdt } from '@/libs/commerce/payment-options';
 import { formatBitcoinAmount } from '@/libs/commerce/pricing';
 import { isUsdtFulfilmentBlocked, PAYMENT_NOT_FINAL_COPY } from '@/libs/commerce/usdt-buyer-status';
 import { formatUsdtRefundAmount, isUsdtRefundOrder, USDT_REFUND_COPY } from '@/libs/commerce/usdt-refund';
+import { cn } from '@/libs/utils/utils';
 import type { CommerceReviewModelSchema } from '@/models/commerce/commerce.schema';
 import { ControlledInputField } from '@/molecules/ControlledInputField/ControlledInputField';
 import { ControlledTextareaField } from '@/molecules/ControlledTextareaField/ControlledTextareaField';
@@ -49,11 +50,14 @@ export function MarketplaceOrderActions({
   actOnOrder,
   onChanged,
   cancelButtonSize = 'default',
+  cancelFullWidth = false,
   messageAction,
 }: {
   order: MarketplaceOrder;
   isBuyer: boolean;
   cancelButtonSize?: 'sm' | 'default';
+  /** The checkout gives its cancel the full width, under the pay instructions. */
+  cancelFullWidth?: boolean;
   messageAction?: ReactNode;
   /**
    * `review.update` only exists on the durable service (the sandbox has no
@@ -367,8 +371,8 @@ export function MarketplaceOrderActions({
             (isPickup && order.state === 'ready_for_pickup')) && (
             <Button
               size={cancelButtonSize}
-              variant="ghost"
-              className="rounded-full sm:order-first"
+              variant="destructive-soft"
+              className={cn('rounded-full sm:order-first', cancelFullWidth && 'w-full')}
               onClick={() => begin('cancel')}
             >
               {order.state === 'pending_payment' ? 'Cancel checkout' : 'Cancel order'}
@@ -436,7 +440,7 @@ export function MarketplaceOrderActions({
       )}
 
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="w-full max-w-lg border-border bg-popover" centered>
+        <DialogContent className="w-full max-w-lg border-border bg-popover" centered avoidKeyboard>
           <DialogHeader>
             <DialogTitle>{actionTitle(actionType, order.state)}</DialogTitle>
           </DialogHeader>
@@ -525,6 +529,9 @@ export function MarketplaceOrderActions({
                   Amount to send: {usdtRefundAmount}
                 </Typography>
               )}
+              <Typography as="p" className="text-sm text-muted-foreground" data-testid="refund-usdt-fee-hint">
+                {USDT_REFUND_COPY.feeHint}
+              </Typography>
             </div>
           )}
           {actionType === 'refund' && (
@@ -585,7 +592,7 @@ export function MarketplaceOrderActions({
           reputation asymmetry; a seller-actor confirm refused during an
           unresolved terms change gets the explanation, not an error toast. */}
       <Dialog open={handoverOpen} onOpenChange={setHandoverOpen}>
-        <DialogContent className="w-full max-w-lg border-border bg-popover" centered>
+        <DialogContent className="w-full max-w-lg border-border bg-popover" centered avoidKeyboard>
           <DialogHeader>
             <DialogTitle>Confirm the handover</DialogTitle>
           </DialogHeader>

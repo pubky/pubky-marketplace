@@ -220,7 +220,9 @@ function SellerRefundAddress({
   const dueUsdt = isUsdtRefundOrder(order) ? formatUsdtRefundAmount(order, due.amountMinor) : null;
   const copy =
     phase === 'recorded'
-      ? USDT_REFUND_COPY.sellerRecorded
+      ? typeof order.externalRefund?.receivedUnits === 'number'
+        ? USDT_REFUND_COPY.sellerRecordedChecked
+        : USDT_REFUND_COPY.sellerRecorded
       : phase === 'confirmed'
         ? paymentInReview
           ? USDT_REFUND_COPY.sellerConfirmedInReview

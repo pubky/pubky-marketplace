@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
+import { getCommerceAdapterMode, isDurableCommerceMode } from '@/config/commerce';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import {
   evaluateListingActivationGuards,
@@ -9,6 +10,7 @@ import {
 } from '@/hooks/useCreateMarketplaceListing/useCreateMarketplaceListing';
 import { useMarketplaceOffers } from '@/hooks/useMarketplaceOffers/useMarketplaceOffers';
 import { useMarketplaceOrders } from '@/hooks/useMarketplaceOrders/useMarketplaceOrders';
+import { cacheProjection } from '@/hooks/useMarketplaceProjection/useMarketplaceProjection';
 import { useMeasurementSystem } from '@/hooks/useMeasurementSystem/useMeasurementSystem';
 import { isAuctionSaleEnded } from '@/libs/commerce/auction-phase';
 import {
@@ -62,6 +64,33 @@ export function useMarketplaceSellerDashboard() {
   const offers = useMarketplaceOffers();
   const sellerOrders = orders.orders.filter(({ order }) => order.sellerPubky === currentUserPubky);
   const sellerOffers = offers.offers.filter(({ sellerPubky }) => sellerPubky === currentUserPubky);
+  // The Inventory column shows the service's count, which moves with each
+  // sale; the cached projection is only refreshed where a listing is opened.
+  // It is read again whenever a seller order moves or the session changes.
+  const marketplaceSession = useCommerceStore((state) => state.marketplaceSession);
+  const stockRefreshed = useRef<string | null>(null);
+  const stockKey = [
+    currentUserPubky,
+    marketplaceSession?.issuedAt,
+    ...sellerOrders.map(({ order }) => `${order.id}:${order.revision}:${order.state}`),
+  ].join('|');
+  useEffect(() => {
+    if (!currentUserPubky || !marketplaceSession || catalogFetchState !== 'settled') return;
+    if (!isDurableCommerceMode(getCommerceAdapterMode())) return;
+    if (stockRefreshed.current === stockKey) return;
+    stockRefreshed.current = stockKey;
+    const sellerPubky = currentUserPubky;
+    void (async () => {
+      for (const listing of await CommerceController.getListingsBySeller(sellerPubky)) {
+        try {
+          const projection = await CommerceController.getMarketplaceListingProjection(sellerPubky, listing.listing_id);
+          if (projection) await cacheProjection(projection);
+        } catch {
+          // The column keeps the record's count until the next refresh.
+        }
+      }
+    })();
+  }, [currentUserPubky, marketplaceSession, catalogFetchState, stockKey]);
   const activeListings = (localListings ?? []).filter(
     (listing) => listing.state === 'active' && !isAuctionSaleEnded(listing.record.sale, nowMs),
   );

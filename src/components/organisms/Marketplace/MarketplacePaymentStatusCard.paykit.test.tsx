@@ -99,23 +99,23 @@ beforeEach(() => {
 
 describe('MarketplacePaymentStatusCard — one Paykit order before payment', () => {
   it('tells the buyer to pay in Bitkit with Bitcoin or USDT, without naming a rail yet', () => {
-    const { container } = renderPhase('unpaid', true);
+    const { container } = renderPhase('unpaid', true, { createdAt: '2026-08-20T20:46:00.000Z' });
 
     expect(screen.getByText(PAYMENT_RAIL_BADGE.paykit)).toBeInTheDocument();
     expect(screen.queryByText(PAYMENT_RAIL_BADGE.bitcoin)).not.toBeInTheDocument();
     expect(screen.queryByText(PAYMENT_RAIL_BADGE.usdt)).not.toBeInTheDocument();
     expect(screen.getByTestId('paykit-awaiting-status')).toHaveTextContent('Pay in Bitkit (Bitcoin or USDT)');
     expect(screen.getByTestId('paykit-awaiting-status')).toHaveTextContent('choose Bitcoin or USDT');
-    expect(screen.getByTestId('paykit-accept-by')).toHaveTextContent('Approve in Bitkit by 20 Aug 2026, 21:15.');
+    expect(screen.getByTestId('paykit-accept-by')).toHaveTextContent('Approve in Bitkit by 20 Aug 2026, 21:00.');
     expect(container).not.toHaveTextContent(/Pay exactly/);
     expect(screen.queryByTestId('usdt-payment-awaiting')).not.toBeInTheDocument();
     expect(screen.queryByTestId('bitcoin-payment-seen')).not.toBeInTheDocument();
   });
 
-  it('states the window the order carries and agrees with its Pay by line', () => {
-    renderPhase('unpaid', true, { holdExpiresAt: '2026-08-20T21:45:00.000Z' });
+  it('names an approval deadline before its Pay by line, as Bitkit expires an unapproved request first', () => {
+    renderPhase('unpaid', true, { createdAt: '2026-08-20T20:46:00.000Z', holdExpiresAt: '2026-08-20T21:45:00.000Z' });
 
-    expect(screen.getByTestId('paykit-accept-by')).toHaveTextContent('Approve in Bitkit by 20 Aug 2026, 21:45.');
+    expect(screen.getByTestId('paykit-accept-by')).toHaveTextContent('Approve in Bitkit by 20 Aug 2026, 21:15.');
     expect(screen.getByTestId('paykit-accept-by')).not.toHaveTextContent(/minutes/);
     expect(screen.getByText('Pay by 20 Aug 2026, 21:45. If the window ends, the item restocks.')).toBeInTheDocument();
   });

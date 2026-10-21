@@ -1,0 +1,1 @@
+Pubky Shop is now Pubky Market in user-facing text: the embedded legal footer, the sign-in disclosures, the Passport approval source name and return page, the Shopify setup guide app name, the agent guide at `/llms.txt`, and the docs. Code identifiers, routes, URLs and package names are unchanged.
