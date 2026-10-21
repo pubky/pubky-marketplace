@@ -196,6 +196,7 @@ describe('CommerceApplication own-review publication', () => {
     vi.spyOn(LocalCommerceService, 'getPendingOwnReviews').mockResolvedValue([staged]);
     vi.spyOn(LocalCommerceService, 'getOwnReviewById').mockResolvedValue(staged);
     vi.spyOn(LocalCommerceService, 'completeOwnReviewPublishJobs').mockResolvedValue(undefined);
+    vi.spyOn(MarketplaceGatewayService, 'getOrder').mockResolvedValue(order);
     const retryPut = vi.spyOn(CommerceHomeserverService, 'putJson').mockResolvedValue(undefined);
     const retried = await CommerceApplication.resumeOwnReviewPublications(ORDER_FIXTURE_BUYER);
     expect(retried).toBe(1);
@@ -374,6 +375,7 @@ describe('CommerceApplication own-review hydrate after local miss', () => {
     const { order, published } = await publishedOwnReview();
     const otherOrder = issuedAttestation('boots', 'ef'.repeat(32));
     const servedOrder = orderWithServiceReview(order);
+    vi.spyOn(MarketplaceGatewayService, 'getOrder').mockResolvedValue(servedOrder);
     vi.spyOn(LocalCommerceService, 'getOwnReviewByOrder').mockResolvedValue(undefined);
     vi.spyOn(LocalCommerceService, 'getOwnReviewById').mockResolvedValue(undefined);
     vi.spyOn(CommerceHomeserverService, 'fetchJsonIfFound')

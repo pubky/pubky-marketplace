@@ -831,6 +831,20 @@ export const createReviewCommandSchema = createCommerceCommandSchema('review.cre
  */
 export const updateReviewCommandSchema = createCommerceCommandSchema('review.update', reviewTermsPayloadSchema);
 
+/**
+ * `review.withdraw` (durable service only): the reviewer records that they
+ * removed their public review, so no device republishes it. It sets the
+ * author's own review rows of the order to withdrawn (all of them, or the
+ * one item when `listingId` is given) and is idempotent; the rating, text
+ * and attestation stay at the service. `review.update` clears the mark.
+ * Answers `INVALID_STATE` when the caller has no review to withdraw.
+ * `expected_revision` is the ORDER's revision, like `review.update`.
+ */
+export const withdrawReviewCommandSchema = createCommerceCommandSchema(
+  'review.withdraw',
+  orderIdPayload.extend({ listingId: z.string().min(1).optional() }).strict(),
+);
+
 export const sendMarketplaceMessageCommandSchema = createCommerceCommandSchema(
   'message.send',
   z
@@ -886,6 +900,7 @@ export const marketplaceCommandSchema = z.union([
   confirmRefundDestinationCommandSchema,
   createReviewCommandSchema,
   updateReviewCommandSchema,
+  withdrawReviewCommandSchema,
 ]);
 
 export const marketplaceCommandResponseSchema = z.discriminatedUnion('ok', [

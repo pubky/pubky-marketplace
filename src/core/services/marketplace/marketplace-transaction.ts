@@ -163,6 +163,7 @@ const TRANSACTION_SERVICE_COMMAND_KINDS: ReadonlySet<MarketplaceCommand['kind']>
   'refund.confirm_destination',
   'review.create',
   'review.update',
+  'review.withdraw',
 ] satisfies MarketplaceCommand['kind'][]);
 
 /** A hung public config read must end in Checkout's retryable failure state, not an endless skeleton. */

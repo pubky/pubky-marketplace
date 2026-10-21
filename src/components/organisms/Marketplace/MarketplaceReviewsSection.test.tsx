@@ -24,8 +24,8 @@ const REVIEW: CommerceIndexedReview = {
   role: 'buyer_reviewing_seller',
   ratingOverall: 5,
   text: 'Exactly as described.',
-  verified: false,
-  attestorId: null,
+  verified: true,
+  attestorId: TEST_TRUSTED_ATTESTOR.pubky,
   editedLate: false,
   createdAt: '2026-08-10T12:00:00.000Z',
   updatedAt: '2026-08-10T12:00:00.000Z',
@@ -284,6 +284,88 @@ describe('MarketplaceReviewsSection moderation', () => {
 
     expect(screen.getByText('Exactly as described.')).toBeInTheDocument();
     expect(screen.queryByTestId('marketplace-review-moderated')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('marketplace-reviews-not-counted')).not.toBeInTheDocument();
+  });
+});
+
+describe('MarketplaceReviewsSection counting', () => {
+  const envName = PUBKY_RUNTIME_ENV_NAMES.marketplaceTrustedAttestors;
+  let suiteValue: string | undefined;
+
+  beforeEach(() => {
+    useAuthStore.setState({ currentUserPubky: null });
+    suiteValue = process.env[envName];
+  });
+
+  afterEach(() => {
+    listed.reviews = null;
+    process.env[envName] = suiteValue;
+    resetRuntimeConfigForTests();
+  });
+
+  function retireTrustedKey(validUntil: string) {
+    process.env[envName] = JSON.stringify([{ ...TEST_TRUSTED_ATTESTOR, validUntil }]);
+    resetRuntimeConfigForTests();
+  }
+
+  function reviewItems(): HTMLElement[] {
+    return [...document.querySelectorAll<HTMLElement>('[data-cy="marketplace-review-item"]')];
+  }
+
+  it('lists counted reviews first, then unverified and unrecognized ones as not counted', () => {
+    listed.reviews = [
+      { ...REVIEW, reviewId: '8Z8CWH8NVYQY39ZEBFGKQWWEK1', text: 'No attestation.', verified: false, attestorId: null },
+      { ...REVIEW, reviewId: '8Z8CWH8NVYQY39ZEBFGKQWWEK2', text: 'Unknown key.', attestorId: 'x'.repeat(52) },
+      REVIEW,
+    ];
+    render(<MarketplaceReviewsSection sellerPubky={SELLER} listingId="rangefinder_camera" />);
+
+    const group = screen.getByTestId('marketplace-reviews-not-counted');
+    expect(within(group).getByText('2 not counted')).toBeInTheDocument();
+    const items = reviewItems();
+    expect(items[0]).toHaveTextContent('Exactly as described.');
+    expect(group).not.toContainElement(items[0] as HTMLElement);
+    expect(within(group).getByText('No attestation.')).toBeInTheDocument();
+    expect(within(group).getByText('Unknown key.')).toBeInTheDocument();
+  });
+
+  it("checks a retired key's window against the attestation iat when the index serves it", () => {
+    retireTrustedKey('2026-10-12');
+    listed.reviews = [
+      // Signed inside the window, written later: counted on its iat.
+      { ...REVIEW, createdAt: '2026-10-15T12:00:00.000Z', iat: Date.parse('2026-09-15T12:00:00Z') / 1000 },
+      // Signed after retirement, backdated into the window: not counted.
+      {
+        ...REVIEW,
+        reviewId: '8Z8CWH8NVYQY39ZEBFGKQWWEK3',
+        text: 'Backdated.',
+        createdAt: '2026-09-01T12:00:00.000Z',
+        iat: Date.parse('2026-10-13T12:00:00Z') / 1000,
+      },
+    ];
+    render(<MarketplaceReviewsSection sellerPubky={SELLER} listingId="rangefinder_camera" />);
+
+    const [counted] = reviewItems();
+    expect(counted).toHaveTextContent('Exactly as described.');
+    expect(within(counted as HTMLElement).getByText('Verified purchase · Pubky Market')).toBeInTheDocument();
+    const group = screen.getByTestId('marketplace-reviews-not-counted');
+    expect(within(group).getByText('Backdated.')).toBeInTheDocument();
+    expect(within(group).getByText('Attested (unrecognized attestor)')).toBeInTheDocument();
+  });
+
+  it('falls back to the fail-closed record time for an entry without iat', () => {
+    retireTrustedKey('2026-10-12');
+    listed.reviews = [{ ...REVIEW, createdAt: '2026-09-15T12:00:00.000Z', iat: null }];
+    render(<MarketplaceReviewsSection sellerPubky={SELLER} listingId="rangefinder_camera" />);
+
+    expect(screen.getByText('1 not counted')).toBeInTheDocument();
+    expect(screen.getByText('Attested (unrecognized attestor)')).toBeInTheDocument();
+  });
+
+  it('counts a review whose text moderation hid', () => {
+    listed.reviews = [{ ...REVIEW, text: '', moderation: { state: 'text_hidden', reason: 'hatespeech' } }];
+    render(<MarketplaceReviewsSection sellerPubky={SELLER} listingId="rangefinder_camera" />);
+
     expect(screen.queryByTestId('marketplace-reviews-not-counted')).not.toBeInTheDocument();
   });
 });

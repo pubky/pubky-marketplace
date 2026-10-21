@@ -14,6 +14,8 @@ export type OrderReviewSource = {
         shipping?: number | null;
         communication?: number | null;
         createdAt: string;
+        /** Only the author's own view carries it: the reviewer withdrew this public review. */
+        publicRemoved?: boolean;
       }[]
     | null;
 };
@@ -63,6 +65,18 @@ export function reviewsOfReviewer(order: OrderReviewSource, reviewerPubky: strin
  */
 export function reviewListingAggregateId(order: OrderReviewSource, review: OrderItemReview): string | null {
   return review.listingAggregateId ?? order.lines[0]?.listingAggregateId ?? null;
+}
+
+/** The reviewer's review of one listing of the order (named by the seller's record id), if any. */
+export function reviewOfListing(
+  order: OrderReviewSource,
+  reviewerPubky: string,
+  listingId: string,
+): OrderItemReview | undefined {
+  return reviewsOfReviewer(order, reviewerPubky).find((review) => {
+    const aggregateId = reviewListingAggregateId(order, review);
+    return aggregateId !== null && listingIdFromAggregate(order.sellerPubky, aggregateId) === listingId;
+  });
 }
 
 /** The order's listings the buyer has not reviewed yet. */

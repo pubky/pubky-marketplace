@@ -10,6 +10,7 @@ import { MarketplaceGatewayService, type MarketplaceOrder } from '@/services/mar
 import { useAuthStore } from '@/stores/auth/auth.store';
 import { createOrderFixture, ORDER_FIXTURE_BUYER } from '@/test/fixtures/commerce/orders';
 import { type FakeHomeserver, installFakeHomeserver } from '@/test-utils/fake-homeserver';
+import { type FakeMarketplaceService, installFakeMarketplaceService } from '@/test-utils/fake-marketplace-service';
 import { issuedAttestation, reviewResult } from '@/test-utils/review-attestation';
 import { installWebLocks, removeWebLocks } from '@/test-utils/web-locks';
 import { CommerceApplication } from './commerce';
@@ -37,15 +38,14 @@ describe.each([
   ['without Web Locks (one tab queues its own writes)', false],
 ])('own reviews on the reviewer homeserver, %s', (_label, webLocks) => {
   let homeserver: FakeHomeserver;
+  let service: FakeMarketplaceService;
   let order: MarketplaceOrder;
   let published: CommerceReviewModelSchema;
   let url: string;
   let wire: ReturnType<typeof issuedAttestation>['wire'];
 
   const localRow = () => LocalCommerceService.getOwnReviewByOrder(ORDER_FIXTURE_BUYER, order.id);
-  const jobs = () => CommerceSyncJobModel.table.filter((job) => job.entity_type !== 'review_removed').toArray();
-  const removedMarkers = () =>
-    CommerceSyncJobModel.table.filter((job) => job.entity_type === 'review_removed').toArray();
+  const jobs = () => CommerceSyncJobModel.table.toArray();
   const deletes = () => homeserver.log.filter((entry) => entry === `${HttpMethod.DELETE} ${url}`);
 
   /** The record another device would have written: same path, a later revision. */
@@ -95,6 +95,7 @@ describe.each([
     wire = issuedAttestation('boots').wire;
     vi.spyOn(MarketplaceGatewayService, 'getReviewAttestation').mockResolvedValue(wire);
     order = withOwnReview(createOrderFixture('completed'));
+    service = installFakeMarketplaceService(order, ORDER_FIXTURE_BUYER);
     published = (await publishAgain())!;
     url = CommerceRecordNormalizer.reviewUri(ORDER_FIXTURE_BUYER, published.review_id);
     homeserver.log.length = 0;
@@ -265,105 +266,336 @@ describe.each([
     });
   });
 
-  describe('the overwritten-review repair next to removal', () => {
-    /** This order's record is gone from every path the hydrate reads: another order's review overwrote it. */
-    const overwrite = async () => {
-      homeserver.files.delete(url);
-      await CommerceReviewModel.table.clear();
-      homeserver.log.length = 0;
-      CommerceApplication.resetOwnReviewHydrateMemo();
-    };
-    const removalJob = () => ({
-      id: 'removal-job',
-      owner_id: ORDER_FIXTURE_BUYER,
-      entity_type: 'review' as const,
-      entity_id: published.review_id,
-      operation: 'remove' as const,
-      status: 'pending' as const,
-      attempts: 0,
-      next_attempt_at: 0,
-      last_error_code: null,
-      payload: { url, orderId: order.id },
-      created_at: 1,
-      updated_at: 1,
-    });
-    const puts = () => homeserver.log.filter((entry) => entry === `${HttpMethod.PUT} ${url}`);
+  describe('removing a review also withdraws it at the service', () => {
+    const withdraws = () => service.log.filter((entry) => entry === 'review.withdraw');
 
-    it('still republishes a review the service holds when no record carries it', async () => {
-      await overwrite();
+    it('records the withdrawal before the homeserver DEL', async () => {
+      let withdrawnAtDelete: boolean | null = null;
+      homeserver.onRequest = ({ entry, phase }) => {
+        if (phase === 'before' && entry === `${HttpMethod.DELETE} ${url}`) withdrawnAtDelete = service.withdrawn();
+      };
 
-      const restored = await CommerceApplication.getOwnMarketplaceReview(ORDER_FIXTURE_BUYER, order);
+      await expect(CommerceApplication.commitDeleteOwnReview(ORDER_FIXTURE_BUYER, order.id)).resolves.toBe('removed');
 
-      expect(restored?.review_id).toBe(published.review_id);
-      expect(restored?.sync_status).toBe('synced');
-      expect(puts()).toHaveLength(1);
+      expect(withdrawnAtDelete).toBe(true);
+      expect(service.withdrawn()).toBe(true);
       expect(await jobs()).toEqual([]);
     });
 
-    it('does not bring back a review the user removed, even after a reload', async () => {
-      await expect(CommerceApplication.commitDeleteOwnReview(ORDER_FIXTURE_BUYER, order.id)).resolves.toBe('removed');
-      expect(await removedMarkers()).toHaveLength(1);
-      homeserver.log.length = 0;
-      CommerceApplication.resetOwnReviewHydrateMemo();
+    it('sends no DEL while the withdrawal fails, and one retry sends both once', async () => {
+      service.failNext('review.withdraw');
 
-      await expect(CommerceApplication.getOwnMarketplaceReview(ORDER_FIXTURE_BUYER, order)).resolves.toBeNull();
+      await expect(CommerceApplication.commitDeleteOwnReview(ORDER_FIXTURE_BUYER, order.id)).resolves.toBe('queued');
 
-      expect(puts()).toEqual([]);
-      expect(await localRow()).toBeUndefined();
+      expect(deletes()).toEqual([]);
+      expect(homeserver.files.has(url)).toBe(true);
+      expect(service.withdrawn()).toBe(false);
+      const [queued] = await jobs();
+      expect(await jobs()).toHaveLength(1);
+      expect(queued.attempts).toBe(1);
+
+      await expect(CommerceApplication.resumeOwnReviewRemovals(ORDER_FIXTURE_BUYER)).resolves.toBe(1);
+
+      expect(service.withdrawn()).toBe(true);
+      expect(deletes()).toHaveLength(1);
       expect(homeserver.files.has(url)).toBe(false);
+      expect(await jobs()).toEqual([]);
     });
 
-    it('does not bring back a review whose DEL is still owed', async () => {
-      homeserver.failNext(HttpMethod.DELETE, url, 500);
+    it('keeps the job when the order cannot be read, and sends no DEL', async () => {
+      service.failNext('getOrder');
+
       await expect(CommerceApplication.commitDeleteOwnReview(ORDER_FIXTURE_BUYER, order.id)).resolves.toBe('queued');
-      homeserver.log.length = 0;
-      CommerceApplication.resetOwnReviewHydrateMemo();
 
-      await expect(CommerceApplication.getOwnMarketplaceReview(ORDER_FIXTURE_BUYER, order)).resolves.toBeNull();
-
-      expect(puts()).toEqual([]);
+      expect(deletes()).toEqual([]);
       expect(await jobs()).toHaveLength(1);
     });
 
-    it('stops a republish that raced a removal between its tombstone check and its lock', async () => {
-      await overwrite();
-      const check = vi.spyOn(LocalCommerceService, 'isOwnReviewRemoved');
-      check.mockImplementationOnce(async () => {
-        await LocalCommerceService.stageOwnReviewRemoval(published, removalJob());
-        return false;
-      });
+    it('retries a failed DEL without sending the withdrawal again', async () => {
+      homeserver.failNext(HttpMethod.DELETE, url, 500);
 
-      await expect(CommerceApplication.getOwnMarketplaceReview(ORDER_FIXTURE_BUYER, order)).resolves.toBeNull();
+      await expect(CommerceApplication.commitDeleteOwnReview(ORDER_FIXTURE_BUYER, order.id)).resolves.toBe('queued');
 
-      expect(puts()).toEqual([]);
+      expect(service.withdrawn()).toBe(true);
+      expect(await jobs()).toHaveLength(1);
+
+      await expect(CommerceApplication.resumeOwnReviewRemovals(ORDER_FIXTURE_BUYER)).resolves.toBe(1);
+
+      expect(withdraws()).toHaveLength(1);
+      expect(deletes()).toHaveLength(2);
+      expect(homeserver.files.has(url)).toBe(false);
+      expect(await jobs()).toEqual([]);
     });
 
-    it('repairs again after the user removes the review and then edits it', async () => {
-      await CommerceApplication.commitDeleteOwnReview(ORDER_FIXTURE_BUYER, order.id);
-      await expect(publishAgain()).resolves.toMatchObject({ sync_status: 'synced' });
-      expect(await removedMarkers()).toEqual([]);
+    it('re-reads the order and tries again when its revision moved under the withdrawal', async () => {
+      const parked = service.holdNext('getOrder', { afterAnswer: true });
+      const removal = CommerceApplication.commitDeleteOwnReview(ORDER_FIXTURE_BUYER, order.id);
+      await parked.reached;
+      service.touch();
+      parked.release();
 
-      await overwrite();
-      const restored = await CommerceApplication.getOwnMarketplaceReview(ORDER_FIXTURE_BUYER, order);
+      await expect(removal).resolves.toBe('removed');
 
-      expect(restored?.review_id).toBe(published.review_id);
-      expect(puts()).toHaveLength(1);
+      expect(withdraws()).toHaveLength(2);
+      expect(service.withdrawn()).toBe(true);
     });
 
-    it('yields to a local row that appeared before the repair took the lock', async () => {
-      await overwrite();
-      await CommerceReviewModel.table.put(published);
+    it('lets the DEL through when the service holds no review of the user to withdraw', async () => {
+      const bare = { ...order, reviews: [] };
+      vi.mocked(MarketplaceGatewayService.getOrder).mockResolvedValue(bare);
+
+      await expect(CommerceApplication.commitDeleteOwnReview(ORDER_FIXTURE_BUYER, order.id)).resolves.toBe('removed');
+
+      expect(withdraws()).toEqual([]);
+      expect(deletes()).toHaveLength(1);
+    });
+  });
+
+  describe('a removed review stays removed on every device', () => {
+    const puts = () => homeserver.log.filter((entry) => entry === `${HttpMethod.PUT} ${url}`);
+
+    /** A fresh sign-in on another device: nothing local, no session memory; the homeserver and the service are shared. */
+    const switchDevice = async () => {
+      await db.table(CommerceReviewModel.table.name).clear();
+      await CommerceSyncJobModel.table.clear();
+      CommerceApplication.resetOwnReviewHydrateMemo();
       homeserver.log.length = 0;
+      service.log.length = 0;
+    };
 
-      const result = await CommerceApplication.commitPublishOwnReview({
-        actorPubky: ORDER_FIXTURE_BUYER,
-        order,
-        repair: true,
-        result: reviewResult(wire),
+    /** This order's record is gone from every path the hydrate reads: another order's review overwrote it. */
+    const overwrite = async () => {
+      homeserver.files.delete(url);
+      await switchDevice();
+    };
+
+    describe('removed on device 1', () => {
+      beforeEach(async () => {
+        await expect(CommerceApplication.commitDeleteOwnReview(ORDER_FIXTURE_BUYER, order.id)).resolves.toBe('removed');
+        await switchDevice();
       });
 
-      expect(result?.review_id).toBe(published.review_id);
+      it('does not republish or show it when device 2 opens the order, and the homeserver stays empty', async () => {
+        await expect(
+          CommerceApplication.getOwnMarketplaceReview(ORDER_FIXTURE_BUYER, service.order()),
+        ).resolves.toBeNull();
+
+        expect(puts()).toEqual([]);
+        expect(homeserver.files.size).toBe(0);
+        expect(await localRow()).toBeUndefined();
+        expect(await jobs()).toEqual([]);
+      });
+
+      it('still does not republish from an order read made before the removal', async () => {
+        await expect(CommerceApplication.getOwnMarketplaceReview(ORDER_FIXTURE_BUYER, order)).resolves.toBeNull();
+
+        expect(puts()).toEqual([]);
+        expect(homeserver.files.size).toBe(0);
+        expect(await localRow()).toBeUndefined();
+        expect(await jobs()).toEqual([]);
+      });
+
+      it('republishes when device 2 edits the review', async () => {
+        service.reinstate();
+
+        const edited = await publishAgain();
+
+        expect(edited).toMatchObject({ sync_status: 'synced', review_id: published.review_id });
+        expect(puts()).toHaveLength(1);
+        expect(homeserver.files.has(url)).toBe(true);
+      });
+
+      it('repairs again after the edit once another order overwrote the record', async () => {
+        service.reinstate();
+        await publishAgain();
+        await overwrite();
+
+        const restored = await CommerceApplication.getOwnMarketplaceReview(ORDER_FIXTURE_BUYER, service.order());
+
+        expect(restored?.review_id).toBe(published.review_id);
+        expect(puts()).toHaveLength(1);
+      });
+    });
+
+    it('does not show a record the homeserver still serves once the service says it was removed', async () => {
+      service.withdraw();
+      await switchDevice();
+
+      await expect(
+        CommerceApplication.getOwnMarketplaceReview(ORDER_FIXTURE_BUYER, service.order()),
+      ).resolves.toBeNull();
+
+      expect(await localRow()).toBeUndefined();
       expect(puts()).toEqual([]);
+    });
+
+    it('clears the copy a second device still holds when the page refreshes after the removal', async () => {
+      service.withdraw();
+      homeserver.files.delete(url);
+
+      await expect(CommerceApplication.refreshOwnReviews(ORDER_FIXTURE_BUYER, [service.order()])).resolves.toBe(1);
+
+      expect(await localRow()).toBeUndefined();
+    });
+
+    it('keeps the local copy when the order data predates an edit that cleared the removal', async () => {
+      const [own] = order.reviews ?? [];
+      const stale = { ...order, reviews: [{ ...own, publicRemoved: true }] };
+
+      await expect(CommerceApplication.refreshOwnReviews(ORDER_FIXTURE_BUYER, [stale])).resolves.toBe(0);
+
+      expect(await localRow()).toBeDefined();
+    });
+
+    describe('the repair of a review a later order overwrote', () => {
+      it('still republishes a review the service holds when no record carries it', async () => {
+        await overwrite();
+
+        const restored = await CommerceApplication.getOwnMarketplaceReview(ORDER_FIXTURE_BUYER, order);
+
+        expect(restored?.review_id).toBe(published.review_id);
+        expect(restored?.sync_status).toBe('synced');
+        expect(puts()).toHaveLength(1);
+        expect(await jobs()).toEqual([]);
+      });
+
+      it('publishes nothing when the order data already says the review was removed', async () => {
+        service.withdraw();
+        await overwrite();
+        const [own] = order.reviews ?? [];
+
+        await expect(
+          CommerceApplication.getOwnMarketplaceReview(ORDER_FIXTURE_BUYER, {
+            ...order,
+            reviews: [{ ...own, publicRemoved: true }],
+          }),
+        ).resolves.toBeNull();
+
+        expect(puts()).toEqual([]);
+      });
+
+      it('does not bring back a review whose removal is still owed on this device', async () => {
+        service.failNext('review.withdraw');
+        await expect(CommerceApplication.commitDeleteOwnReview(ORDER_FIXTURE_BUYER, order.id)).resolves.toBe('queued');
+        CommerceApplication.resetOwnReviewHydrateMemo();
+        homeserver.log.length = 0;
+
+        await expect(CommerceApplication.getOwnMarketplaceReview(ORDER_FIXTURE_BUYER, order)).resolves.toBeNull();
+
+        expect(puts()).toEqual([]);
+        expect(await jobs()).toHaveLength(1);
+      });
+
+      it('publishes nothing when the removal lands after the repair read the order and before it writes', async () => {
+        await overwrite();
+        const parked = service.holdNext('getOrder');
+        const repair = CommerceApplication.getOwnMarketplaceReview(ORDER_FIXTURE_BUYER, order);
+        await parked.reached;
+        service.withdraw();
+        parked.release();
+
+        await expect(repair).resolves.toBeNull();
+
+        expect(puts()).toEqual([]);
+        expect(homeserver.files.size).toBe(0);
+        expect(await localRow()).toBeUndefined();
+        expect(await jobs()).toEqual([]);
+      });
+
+      it('takes back its own PUT when the withdrawal landed after the check and the DEL has not run yet', async () => {
+        await overwrite();
+        const parked = homeserver.holdNext(HttpMethod.PUT, url);
+        const repair = CommerceApplication.getOwnMarketplaceReview(ORDER_FIXTURE_BUYER, order);
+        await parked.reached;
+        service.withdraw();
+        parked.release();
+
+        await expect(repair).resolves.toBeNull();
+        homeserver.files.delete(url);
+
+        expect(puts()).toHaveLength(1);
+        expect(deletes()).toHaveLength(1);
+        expect(homeserver.files.size).toBe(0);
+        expect(await localRow()).toBeUndefined();
+        expect(await jobs()).toEqual([]);
+      });
+
+      it('takes back its own PUT when the whole removal finished before the PUT landed', async () => {
+        await overwrite();
+        const parked = homeserver.holdNext(HttpMethod.PUT, url);
+        const repair = CommerceApplication.getOwnMarketplaceReview(ORDER_FIXTURE_BUYER, order);
+        await parked.reached;
+        service.withdraw();
+        homeserver.files.delete(url);
+        parked.release();
+
+        await expect(repair).resolves.toBeNull();
+
+        expect(deletes()).toHaveLength(1);
+        expect(homeserver.files.size).toBe(0);
+        expect(await localRow()).toBeUndefined();
+        expect(await jobs()).toEqual([]);
+      });
+
+      it('keeps its PUT when no withdrawal arrived', async () => {
+        await overwrite();
+
+        await CommerceApplication.getOwnMarketplaceReview(ORDER_FIXTURE_BUYER, order);
+
+        expect(deletes()).toEqual([]);
+        expect(homeserver.files.has(url)).toBe(true);
+      });
+
+      it('publishes nothing when the service cannot be asked, and repairs on the next visit', async () => {
+        await overwrite();
+        service.failNext('getOrder');
+
+        await expect(CommerceApplication.getOwnMarketplaceReview(ORDER_FIXTURE_BUYER, order)).resolves.toBeNull();
+
+        expect(puts()).toEqual([]);
+        expect(await localRow()).toBeUndefined();
+        expect(await jobs()).toEqual([]);
+
+        const restored = await CommerceApplication.getOwnMarketplaceReview(ORDER_FIXTURE_BUYER, order);
+        expect(restored?.review_id).toBe(published.review_id);
+        expect(puts()).toHaveLength(1);
+      });
+
+      it('leaves the row pending when the check after the PUT cannot answer, and the retry takes the record back', async () => {
+        await overwrite();
+        homeserver.onRequest = ({ entry, phase }) => {
+          if (phase === 'after' && entry === `${HttpMethod.PUT} ${url}`) service.failNext('getOrder');
+        };
+
+        const pending = await CommerceApplication.getOwnMarketplaceReview(ORDER_FIXTURE_BUYER, order);
+
+        expect(pending?.sync_status).toBe('pending');
+        expect(await jobs()).toHaveLength(1);
+        service.withdraw();
+
+        await expect(CommerceApplication.resumeOwnReviewPublications(ORDER_FIXTURE_BUYER)).resolves.toBe(0);
+
+        expect(deletes()).toHaveLength(1);
+        expect(homeserver.files.size).toBe(0);
+        expect(await localRow()).toBeUndefined();
+        expect(await jobs()).toEqual([]);
+      });
+
+      it('yields to a local row that appeared before the repair took the lock', async () => {
+        await overwrite();
+        await CommerceReviewModel.table.put(published);
+        homeserver.log.length = 0;
+
+        const result = await CommerceApplication.commitPublishOwnReview({
+          actorPubky: ORDER_FIXTURE_BUYER,
+          order,
+          repair: true,
+          result: reviewResult(wire),
+        });
+
+        expect(result?.review_id).toBe(published.review_id);
+        expect(puts()).toEqual([]);
+      });
     });
   });
 

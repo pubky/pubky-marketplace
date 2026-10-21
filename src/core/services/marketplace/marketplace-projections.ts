@@ -737,6 +737,9 @@ export const marketplaceOrderProjectionSchema = z
           communication: z.number().int().min(1).max(5).nullish(),
           createdAt: z.string(),
           updatedAt: z.string().optional(),
+          // Only the author's own view carries it, and only when set (`review.withdraw`).
+          // Absent on an older service and on every other viewer's rows: not removed.
+          publicRemoved: z.boolean().optional().catch(undefined),
         }),
       )
       .optional(),

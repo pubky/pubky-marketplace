@@ -1185,6 +1185,9 @@ describe('MarketplaceTransactionService', () => {
     await expect(
       service.execute(BUYER, orderCommand('review.update', order.id, 6, { rating: 3, text: 'Edited.' }, 1_206)),
     ).resolves.toMatchObject({ ok: false, error: { code: 'INVALID_COMMAND' } });
+    await expect(
+      service.execute(BUYER, orderCommand('review.withdraw', order.id, 6, {}, 1_207)),
+    ).resolves.toMatchObject({ ok: false, error: { code: 'INVALID_COMMAND' } });
   });
 
   it('refuses per-item review terms instead of dropping the items', async () => {

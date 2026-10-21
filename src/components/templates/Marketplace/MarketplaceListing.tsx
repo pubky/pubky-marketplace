@@ -79,7 +79,7 @@ import { SellerStatusBadge } from '@/molecules/Marketplace/SellerStatusBadge';
 import { MarketplaceFulfillmentBadge } from '@/molecules/MarketplaceFulfillmentBadge/MarketplaceFulfillmentBadge';
 import { MarketplacePaymentMethodBadges } from '@/molecules/MarketplacePaymentMethodBadges/MarketplacePaymentMethodBadges';
 import { MarketplaceSellerIdentity } from '@/molecules/MarketplaceSellerIdentity/MarketplaceSellerIdentity';
-import { MarketplaceStarRating } from '@/molecules/MarketplaceStarRating/MarketplaceStarRating';
+import { MarketplaceSnippetRating } from '@/molecules/MarketplaceSnippetRating/MarketplaceSnippetRating';
 import { ChatEntryButton } from '@/organisms/Chat/ChatEntryButton';
 import { ContentLayout } from '@/organisms/ContentLayout/ContentLayout';
 import { DialogReportPost } from '@/organisms/DialogReportPost/DialogReportPost';
@@ -461,7 +461,7 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
               {listingRating !== undefined && listingRating !== 'unavailable' && (
                 <div className="mt-2" data-testid="marketplace-listing-rating">
                   {listingRating !== null && listingRating.count > 0 ? (
-                    <MarketplaceStarRating rating={listingRating.avg} count={listingRating.count} size="sm" />
+                    <MarketplaceSnippetRating snippet={listingRating} emptyClassName="text-sm text-muted-foreground" />
                   ) : (
                     <Typography as="p" className="text-sm text-muted-foreground">
                       No rating yet
