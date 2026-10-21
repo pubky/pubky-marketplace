@@ -31,5 +31,9 @@ describe('MarketplaceCheckoutItem', () => {
       'href',
       '/marketplace/orders?order=o-1&view=order',
     );
+    expect(screen.getByRole('link', { name: 'View order', hidden: true })).toHaveAttribute(
+      'href',
+      '/marketplace/orders?order=o-1&view=order',
+    );
   });
 });

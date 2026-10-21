@@ -1504,6 +1504,8 @@ describe('MarketplaceOrders links shared before #292', () => {
 
     expect((await screen.findAllByText('Unpaid offer boots')).length).toBeGreaterThan(0);
     expect(routerReplace).not.toHaveBeenCalled();
+    await waitFor(() => expect(Element.prototype.scrollIntoView).toHaveBeenCalled());
+    expect(document.getElementById('order-test-unpaid-offer-boots')).not.toBeNull();
   });
 
   // Next appends the fragment of the document load to every later in-app visit to Orders,

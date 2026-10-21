@@ -165,7 +165,9 @@ export function MarketplaceOrders() {
     if (!anchorId) return;
     const view = orders.find((candidate) => candidate.order.id === anchorId);
     if (!view) return;
-    if (!isOrderInTab(view, activeTab, currentUserPubky)) {
+    // A checkout in progress sits above the tabs, in its own list (#363).
+    const inCheckoutList = isBuyerCheckoutInProgress(view.order, currentUserPubky);
+    if (!inCheckoutList && !isOrderInTab(view, activeTab, currentUserPubky)) {
       if (activeTab !== 'all') {
         setActiveTab('all');
         setHasSelectedTab(true);
@@ -299,7 +301,7 @@ export function MarketplaceOrders() {
                   Checkout in progress
                 </Heading>
                 {buyerCheckouts.map(({ order, payment }) => (
-                  <Card key={order.id} className="rounded-md p-0">
+                  <Card key={order.id} id={orderAnchorId(order.id)} className="scroll-mt-24 rounded-md p-0">
                     <CardContent className="grid min-w-0 gap-4 p-6">
                       <MarketplaceOrderReference order={order} isBuyer showPlacedAt />
                       <MarketplaceCheckoutStatusLabels

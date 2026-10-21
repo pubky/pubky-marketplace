@@ -29,6 +29,7 @@ export function MarketplaceCheckoutItem({
       inset
       title={line.title}
       href={orderHref ?? listingHref}
+      linkLabel={orderHref ? 'View order' : undefined}
       details={
         orderHref && listingHref ? (
           <Link href={listingHref} overrideDefaults className="underline-offset-4 hover:text-brand hover:underline">
