@@ -39,6 +39,7 @@ export const marketplaceShopSettingsSchema = z.object({
   countryCode: z
     .string()
     .trim()
+    .min(1, 'Country is required.')
     .regex(/^[A-Za-z]{2}$/, 'Use a two-letter country code.'),
   region: z.string().trim().max(100),
   shippingPolicy: z.string().trim().min(1, 'Shipping policy is required.').max(COMMERCE_SHOP_POLICY_MAX_CHARS),
@@ -69,11 +70,11 @@ export type MarketplaceShopSettingsData = z.infer<typeof marketplaceShopSettings
 export const marketplaceShopSettingsDefaults: MarketplaceShopSettingsData = {
   name: '',
   bio: '',
-  countryCode: 'US',
+  countryCode: '',
   region: '',
-  shippingPolicy: 'Ships within three business days.',
+  shippingPolicy: '',
   shipsToCountries: '',
-  returnPolicy: 'Returns accepted within 30 days unless marked final sale.',
+  returnPolicy: '',
   vacationMode: false,
   deliveryAssumeDays: '',
   autoCompleteDays: '',
