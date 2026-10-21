@@ -3,6 +3,7 @@
 import { Store } from 'lucide-react';
 import type { CommerceSellerReputationOverview } from '@/application/commerce/commerce';
 import { Typography } from '@/atoms/Typography/Typography';
+import { trustedAttestedReviewCount } from '@/libs/commerce/attestor-trust';
 import { MarketplaceStarRating } from '@/molecules/MarketplaceStarRating/MarketplaceStarRating';
 
 export interface MarketplaceSellerIdentityProps {
@@ -49,7 +50,7 @@ export function MarketplaceSellerIdentity({
           <MarketplaceStarRating
             rating={reputation.summary.avg}
             count={reputation.summary.count}
-            verifiedCount={reputation.summary.verifiedCount}
+            verifiedCount={trustedAttestedReviewCount(reputation.summary.attestors)}
             size="sm"
             className="mt-1"
           />

@@ -7,7 +7,7 @@ env:
 on:
   workflow_dispatch:
   schedule:
-    # Full Cypress + Docker/GCR stack. Skipped on BitcoinErrorLog (no GCR).
+    # Full Cypress + Docker/GCR stack. Runs only in the pubky/pubky-app repository (GCR access).
     - cron: '17 4 * * *'
   push:
     branches:

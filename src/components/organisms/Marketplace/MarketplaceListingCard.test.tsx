@@ -109,11 +109,20 @@ describe('MarketplaceListingCard', () => {
 
     render(<MarketplaceListingCard listing={listing} shopName="Satoshi Vintage" />);
 
-    expect(
-      screen.getByRole('img', { name: 'Rated 4.6 out of 5 from 17 reviews, 11 verified purchases' }),
-    ).toBeInTheDocument();
+    expect(screen.getByRole('img', { name: 'Rated 4.6 out of 5 from 17 reviews' })).toBeInTheDocument();
     expect(screen.getByTitle('17 reviews')).toBeInTheDocument();
     expect(screen.queryByText('No rating yet')).not.toBeInTheDocument();
+  });
+
+  it('shows no verified-purchase affix, because the card snippet cannot tell trusted attestors apart', () => {
+    const listing = catalogItemFromCatalogEntry(
+      createCommerceCatalogEntryFixture({ reputation: { avg: 4.6, count: 17, verifiedCount: 11 } }),
+    );
+
+    render(<MarketplaceListingCard listing={listing} shopName="Satoshi Vintage" />);
+
+    expect(screen.queryByTitle(/verified purchase/)).not.toBeInTheDocument();
+    expect(screen.queryByRole('img', { name: /verified/ })).not.toBeInTheDocument();
   });
 
   it('labels the auction price as a starting bid instead of claiming a current price', () => {

@@ -50,17 +50,13 @@ describe('marketplace grant BFF config', () => {
       SHOP_ALLOWED_ORIGINS: JSON.stringify([
         'https://pubky.app',
         'https://staging.pubky.app',
-        'https://pubky-marketplace-staging.vercel.app',
+        'https://shop-staging-example.vercel.app',
       ]),
       SHOP_PUBLIC_ORIGIN: 'https://pubky.app',
       SHOP_GRANT_ASSERTION_ISSUER: 'https://pubky.app',
     };
     expect(getMarketplaceGrantConfig()).toMatchObject({
-      allowedOrigins: [
-        'https://pubky.app',
-        'https://staging.pubky.app',
-        'https://pubky-marketplace-staging.vercel.app',
-      ],
+      allowedOrigins: ['https://pubky.app', 'https://staging.pubky.app', 'https://shop-staging-example.vercel.app'],
       publicOrigin: 'https://pubky.app',
       assertionIssuer: 'https://pubky.app',
     });

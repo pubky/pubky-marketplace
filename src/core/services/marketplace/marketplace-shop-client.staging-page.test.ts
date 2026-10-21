@@ -15,7 +15,7 @@ vi.mock('@/config/commerce', async () => {
   return {
     ...actual,
     getCommerceAdapterMode: () => 'transaction-service',
-    getMarketplaceUrl: () => 'https://staging-api.pubky.app',
+    getMarketplaceUrl: () => 'https://marketplace-service.example.test',
     isDurableCommerceMode: () => true,
   };
 });
@@ -77,7 +77,7 @@ describe('staging seller listings page', () => {
     globalThis.fetch = chromiumFetch as typeof fetch;
     const client = new PubkyShopClient({
       session: TOKEN,
-      serviceUrl: 'https://staging-api.pubky.app',
+      serviceUrl: 'https://marketplace-service.example.test',
     });
     const page = await client.listings(SELLER, { limit: 100 });
     expect(page.ok).toBe(true);

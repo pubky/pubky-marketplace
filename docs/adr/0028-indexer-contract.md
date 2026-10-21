@@ -55,7 +55,7 @@ applied one layer down.
 
 ### Current deployment, restated under this contract
 
-The dedicated marketplace-indexing Nexus (Railway, watching the staging
+The dedicated marketplace-indexing Nexus (watching the staging
 homeserver) is BOTH indexers sharing one codebase and one deployment. The
 social endpoints are upstream-untouched; the marketplace endpoints are a
 separate route namespace. This is compliant: the contracts are separate even

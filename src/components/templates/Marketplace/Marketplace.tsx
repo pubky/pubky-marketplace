@@ -157,9 +157,10 @@ export function Marketplace({
       classNameWrapperContent="overflow-visible lg:overflow-visible"
     >
       <Container overrideDefaults className="flex w-full flex-col gap-6">
-        <div className="sticky top-24 z-(--z-sticky-subnav) bg-background after:pointer-events-none after:absolute after:inset-x-0 after:top-full after:h-16 after:bg-linear-to-b after:from-background/80 after:to-transparent after:content-[''] lg:top-(--header-offset-main)">
-          <MarketplaceSectionNav className="mb-0" onNavigate={(href) => requireAuth(() => router.push(href))} />
-        </div>
+        <MarketplaceSectionNav
+          className="mb-0 after:h-16"
+          onNavigate={(href) => requireAuth(() => router.push(href))}
+        />
         {renderPromo && (
           <section
             data-marketplace-promo=""

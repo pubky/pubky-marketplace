@@ -685,6 +685,7 @@ function MarketplaceCartCheckout() {
       showRightSidebar={false}
       showLeftMobileButton={false}
       showRightMobileButton={false}
+      disableMainContentOverflow
       className="pb-28"
     >
       <MarketplaceDeliveryKeyChangeDialog

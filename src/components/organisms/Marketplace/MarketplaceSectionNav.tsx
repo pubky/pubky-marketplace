@@ -91,7 +91,14 @@ export function MarketplaceSectionNav({
   const { scrollRef, onScroll, onInteract, showSwipeHint } = useMarketplaceNavSwipeHint(pathname);
 
   return (
-    <div className={cn('relative mb-6 w-full min-w-0', className)} data-surface="marketplace-section-nav">
+    <div
+      className={cn(
+        'sticky top-(--marketplace-subnav-top) z-(--z-sticky-subnav) mb-6 w-full min-w-0 bg-background',
+        "after:pointer-events-none after:absolute after:inset-x-0 after:top-full after:h-6 after:bg-linear-to-b after:from-background/80 after:to-transparent after:content-['']",
+        className,
+      )}
+      data-surface="marketplace-section-nav"
+    >
       <nav
         ref={scrollRef}
         onScroll={onScroll}

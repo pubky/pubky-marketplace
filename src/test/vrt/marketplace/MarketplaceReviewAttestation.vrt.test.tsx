@@ -67,7 +67,7 @@ function ownReviewRow(overrides: Record<string, unknown> = {}) {
     subject_id: 's'.repeat(52),
     record: {},
     attestation_verified: true,
-    attestation_iss: 'o'.repeat(52),
+    attestation_iss: 'ws343aqzmcahagojhmhkbri8odqz9iqg61woxbkh9fd3bxhqomdy',
     sync_status: 'synced',
     updated_at: 0,
     ...overrides,
