@@ -3,8 +3,8 @@
 import { BadgeCheck, Sparkles } from 'lucide-react';
 import { Badge } from '@/atoms/Badge/Badge';
 import { Typography } from '@/atoms/Typography/Typography';
-import { isTrustedMarketplaceAttestor } from '@/config/commerce';
 import { useSellerReputation } from '@/hooks/useMarketplaceReviews/useMarketplaceReviews';
+import { trustedAttestedReviewCount } from '@/libs/commerce/attestor-trust';
 import { cn } from '@/libs/utils/utils';
 import { MarketplaceStarRating } from '@/molecules/MarketplaceStarRating/MarketplaceStarRating';
 
@@ -19,10 +19,10 @@ export interface MarketplaceReputationHeaderProps {
  * The seller rating header for listing and shop pages, driven by the Nexus
  * reputation aggregate with three honest states:
  *
- * - rated: stars, count, verified affix, and (in `full`) the verified basis
- *   line naming how many verified reviews come from attestors this client
- *   trusts (ADR 0024: the index verifies signatures; WHO is a trusted
- *   attestor is client policy).
+ * - rated: stars, count, and a verified affix plus (in `full`) a basis line,
+ *   both counting only verified reviews from attestors this client trusts
+ *   (ADR 0024: the index verifies signatures; WHO is a trusted attestor is
+ *   client policy).
  * - new seller: an explicit "New seller" badge — never a fabricated 0.0.
  * - unavailable: renders nothing at all (no reputation-aware index answered).
  *
@@ -53,16 +53,14 @@ export function MarketplaceReputationHeader({
   }
 
   const { summary } = overview;
-  const trustedVerifiedCount = Object.entries(summary.attestors)
-    .filter(([attestorId]) => isTrustedMarketplaceAttestor(attestorId))
-    .reduce((total, [, verifiedCount]) => total + verifiedCount, 0);
+  const trustedVerifiedCount = trustedAttestedReviewCount(summary.attestors);
 
   return (
     <div className={cn('flex flex-col gap-1', className)} data-testid="marketplace-reputation-header">
       <MarketplaceStarRating
         rating={summary.avg}
         count={summary.count}
-        verifiedCount={summary.verifiedCount}
+        verifiedCount={trustedVerifiedCount}
         size={variant === 'full' ? 'md' : 'sm'}
       />
       {variant === 'full' && (

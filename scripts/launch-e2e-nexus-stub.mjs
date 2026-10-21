@@ -3,7 +3,7 @@
  * Local HTTP stub for the required launch-e2e gate.
  *
  * Serves a committed catalog/listing/drop JSON set so Next SSR and the
- * Chromium runner never read live nexusd 7108. Nightly Cypress may still
+ * Chromium runner never read a live Nexus. Nightly Cypress may still
  * hit staging; this process is only for the required PR check.
  */
 import { readFile } from 'node:fs/promises';

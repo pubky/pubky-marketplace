@@ -1,0 +1,1 @@
+"Verified purchase" counts now include only reviews signed by an attestor this Shop trusts. The seller rating on the listing page and the storefront counts trusted attestations only, your own review's status no longer says "Verified purchase" for an unrecognized signer, and listing cards drop the "✓ n" affix because the card summary cannot tell attestors apart.

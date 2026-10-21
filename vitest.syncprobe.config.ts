@@ -4,7 +4,7 @@ import tsconfigPaths from 'vite-tsconfig-paths';
 /**
  * Live project for the FCFS drops proof (ADR 0026 D1): the DEPLOYED staging
  * stack end to end — the real staging homeserver over the public pkarr
- * relays, the deployed Railway transaction service (running with
+ * relays, the deployed transaction service (running with
  * SANDBOX_PAYMENTS_ENABLED=true so the buyer-driven sandbox payment path can
  * stand in for a real rail on staging only), and the dedicated
  * marketplace-indexing Nexus.

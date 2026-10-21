@@ -172,6 +172,8 @@ describe('InboxService', () => {
     it('reports unavailable without an error event, holds off retries and recovers by itself', async () => {
       vi.useFakeTimers();
       vi.setSystemTime(new Date('2026-10-19T09:00:00Z'));
+      // The retry delay is drawn in [cap/2, cap]; the top of the range keeps the call count below its bound on every run.
+      vi.spyOn(Math, 'random').mockReturnValue(1);
       const error = vi.spyOn(Logger, 'error');
       const warn = vi.spyOn(Logger, 'warn').mockImplementation(() => undefined);
       let up = false;

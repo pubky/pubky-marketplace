@@ -17,8 +17,13 @@ const LOADING: SellerAnnualLimitState = { status: 'loading' };
  * The seller's annual-limit state from the service (legal launch plan C4). Off while the Shop's
  * EU fence flag is off, while the service's is, and when the read fails: the service enforces the
  * limit on its own, so a failed read never blocks the page.
+ *
+ * The service derives residence and the declaration from the published shop record, so the state
+ * goes stale whenever that record changes. Pass a value that changes with each saved record (the
+ * shop revision) as `refreshKey` and the read repeats, keeping the previous state on screen until
+ * the new one arrives.
  */
-export function useSellerAnnualLimit(sellerPubky: string | null | undefined): SellerAnnualLimitState {
+export function useSellerAnnualLimit(sellerPubky: string | null | undefined, refreshKey = 0): SellerAnnualLimitState {
   const enabled = getEuFenceEnabled() && Boolean(sellerPubky);
   const [resolved, setResolved] = useState<{ sellerPubky: string; state: SellerAnnualLimitState } | null>(null);
 
@@ -34,7 +39,7 @@ export function useSellerAnnualLimit(sellerPubky: string | null | undefined): Se
     return () => {
       active = false;
     };
-  }, [enabled, sellerPubky]);
+  }, [enabled, sellerPubky, refreshKey]);
 
   if (!enabled) return OFF;
   return resolved !== null && resolved.sellerPubky === sellerPubky ? resolved.state : LOADING;

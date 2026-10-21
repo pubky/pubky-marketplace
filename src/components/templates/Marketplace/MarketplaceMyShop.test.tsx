@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useForm } from 'react-hook-form';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -73,12 +73,49 @@ describe('MarketplaceMyShop', () => {
 
     await user.type(screen.getByLabelText('Shop name'), 'Satoshi Vintage');
     await user.type(screen.getByLabelText('About your shop'), 'Circular fashion and Bitcoin.');
-    await user.clear(screen.getByLabelText('Region'));
+    await user.type(screen.getByLabelText('Country'), 'ch');
     await user.type(screen.getByLabelText('Region'), 'NY');
 
     await waitFor(() => expect(preview).toHaveTextContent('Satoshi Vintage'));
     expect(preview).toHaveTextContent('Circular fashion and Bitcoin.');
-    expect(preview).toHaveTextContent('NY, US');
+    expect(preview).toHaveTextContent('NY, CH');
+  });
+
+  it('shows the storefront preview as a labeled preview, not as an editable field', async () => {
+    const user = userEvent.setup();
+    render(<MarketplaceMyShop />);
+
+    const preview = screen.getByTestId('shop-live-preview');
+    expect(within(preview).getByText('Preview')).toBeInTheDocument();
+    expect(screen.getByTestId('shop-live-preview-caption')).toHaveTextContent(
+      'This is a preview of your public storefront. Edit your shop details in the form below.',
+    );
+    expect(within(preview).queryByRole('textbox')).not.toBeInTheDocument();
+    expect(within(preview).queryByRole('searchbox')).not.toBeInTheDocument();
+    expect(preview.querySelector('input, textarea, [contenteditable="true"]')).toBeNull();
+
+    expect(within(preview).getByRole('heading', { name: 'Your shop name' })).toHaveClass('text-muted-foreground');
+    await user.click(within(preview).getByRole('heading', { name: 'Your shop name' }));
+    await user.keyboard('typed into the preview');
+    expect(preview).toHaveTextContent('Your shop name');
+    expect(preview).not.toHaveTextContent('typed into the preview');
+    expect(screen.getByLabelText('Shop name')).toHaveValue('');
+
+    const field = screen.getByRole('textbox', { name: 'Shop name' });
+    expect(field).toHaveAttribute('placeholder', 'e.g. Satoshi Vintage');
+    await user.type(field, 'Satoshi Vintage');
+    await waitFor(() => expect(preview).toHaveTextContent('Satoshi Vintage'));
+    expect(within(preview).getByRole('heading', { name: 'Satoshi Vintage' })).not.toHaveClass('text-muted-foreground');
+  });
+
+  it('starts a new shop with no country and no policies, so nothing publishes by accident', () => {
+    render(<MarketplaceMyShop />);
+
+    expect(screen.getByLabelText('Country')).toHaveValue('');
+    expect(screen.getByLabelText('Country')).toHaveAttribute('placeholder', 'Two-letter code');
+    expect(screen.getByLabelText('Shipping policy')).toHaveValue('');
+    expect(screen.getByLabelText('Return policy')).toHaveValue('');
+    expect(screen.getByTestId('shop-live-preview')).not.toHaveTextContent('US');
   });
 
   it('explains the destination countries field and previews what buyers will see', async () => {
