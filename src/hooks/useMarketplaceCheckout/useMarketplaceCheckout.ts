@@ -538,7 +538,9 @@ export function useMarketplaceCheckout(
     }
     const address = addresses.find((candidate) => candidate.id === id);
     if (!address) return;
-    form.reset({ ...form.getValues(), ...addressFieldValues(address) });
+    // A saved address hides the save controls, so a pending save with no label
+    // must not keep blocking Pay from an input the buyer can no longer see.
+    form.reset({ ...form.getValues(), ...addressFieldValues(address), saveAddress: false, saveLabel: '' });
     setSelectedAddressId(id);
   };
 

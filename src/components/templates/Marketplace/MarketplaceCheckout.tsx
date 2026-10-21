@@ -533,8 +533,10 @@ function MarketplaceCartCheckout() {
   /** Shows each invalid input's hint and moves the buyer to the first one, in form order. */
   const revealFirstInvalidInput = async () => {
     await checkout.form.trigger();
-    const first = CHECKOUT_FIELD_ORDER.find((name) => checkout.form.getFieldState(name).invalid);
-    const input = first ? document.getElementById(first) : null;
+    const input =
+      CHECKOUT_FIELD_ORDER.filter((name) => checkout.form.getFieldState(name).invalid)
+        .map((name) => document.getElementById(name))
+        .find((element) => element !== null) ?? null;
     input?.scrollIntoView({ block: 'center', behavior: 'smooth' });
     input?.focus({ preventScroll: true });
   };

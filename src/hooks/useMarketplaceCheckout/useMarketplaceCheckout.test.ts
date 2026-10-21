@@ -1118,12 +1118,15 @@ describe('useMarketplaceCheckout', () => {
       if (result.current.selectedAddressId !== null) throw new Error('Selection has not been dropped yet.');
     });
 
-    // Re-picking restores the saved values.
+    // Re-picking restores the saved values and drops a pending save whose label input it hides (#355).
     act(() => {
+      result.current.form.setValue('saveAddress', true);
       result.current.selectAddress(savedAddress.id);
     });
     expect(result.current.form.getValues('line1')).toBe('1 Market Street');
     expect(result.current.selectedAddressId).toBe(savedAddress.id);
+    expect(result.current.form.getValues('saveAddress')).toBe(false);
+    expect(result.current.form.getValues('saveLabel')).toBe('');
   });
 
   it('reports hasMarketplaceSession only when the store and getActiveSession agree', () => {
