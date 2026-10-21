@@ -65,6 +65,16 @@ export async function assertCliGrantSchema(config: MarketplaceGrantConfig): Prom
   if (rows.length !== 1 || rows[0].version !== 2) throw new Error('Shop grant BFF CLI schema is not ready');
 }
 
+/**
+ * Installs a user's bridge, one per user (session_bridge_pubky_idx). Two
+ * pairings for the same user at once (two tabs, or a sign-in and a session
+ * restore in one load) are serialised by a per-user lock. One that finds
+ * another pairing committed while it waited for the lock yields: it leaves
+ * that bridge in place and returns `false`, so its response sets no cookie and
+ * cannot install one for a bridge that is gone. An upsert can't do this:
+ * rewriting `bridge_id` would break the `flow_state` rows that reference the
+ * old bridge, which the delete cascades away.
+ */
 export async function replaceBridge(
   config: MarketplaceGrantConfig,
   row: {
@@ -76,9 +86,17 @@ export async function replaceBridge(
     keyEpoch: number;
     expiresAt: Date;
   },
-): Promise<void> {
+): Promise<boolean> {
   const db = grantSql(config);
-  await db.begin(async (tx) => {
+  return await db.begin(async (tx) => {
+    const before = await tx<{ bridge_id: string }[]>`
+      SELECT bridge_id FROM shop_grant_bff.session_bridge WHERE pubky = ${row.pubky}
+    `;
+    await tx`SELECT pg_advisory_xact_lock(hashtextextended(${'session-bridge|' + row.pubky}, 0))`;
+    const after = await tx<{ bridge_id: string }[]>`
+      SELECT bridge_id FROM shop_grant_bff.session_bridge WHERE pubky = ${row.pubky}
+    `;
+    if (after[0] && after[0].bridge_id !== before[0]?.bridge_id) return false;
     await tx`DELETE FROM shop_grant_bff.session_bridge WHERE pubky = ${row.pubky}`;
     await tx`
       INSERT INTO shop_grant_bff.session_bridge
@@ -88,6 +106,7 @@ export async function replaceBridge(
         (${row.bridgeId}, ${row.cookieHash}, ${row.pubky}, ${row.marketplaceSessionId},
          ${row.bearerSealed}, ${row.keyEpoch}, now(), ${row.expiresAt}, now())
     `;
+    return true;
   });
 }
 
