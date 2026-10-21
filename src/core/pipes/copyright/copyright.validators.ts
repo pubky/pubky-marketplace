@@ -2,6 +2,13 @@ import { VALIDATION_MESSAGES, VALIDATION_PATTERNS } from '@/config/forms';
 import { ValidationErrorCode } from '@/libs/error/error.codes';
 import { Err } from '@/libs/error/error.factories';
 import { ErrorService } from '@/libs/error/error.types';
+import {
+  COPYRIGHT_BRIEF_DESCRIPTION_MAX_LENGTH,
+  COPYRIGHT_EMAIL_MAX_LENGTH,
+  COPYRIGHT_ORIGINAL_CONTENT_URLS_MAX_LENGTH,
+  COPYRIGHT_SHORT_FIELD_MAX_LENGTH,
+  COPYRIGHT_URL_MAX_LENGTH,
+} from './copyright.constants';
 
 /**
  * Copyright input validators
@@ -36,13 +43,15 @@ export class CopyrightValidators {
    * @param value - Field value to validate
    * @param fieldName - Name of the field (for error messages)
    * @param operation - Name of the calling operation (for error context)
+   * @param maxLength - Longest trimmed value accepted, in characters
    * @returns Normalized value (trimmed)
-   * @throws AppError if value is invalid
+   * @throws AppError if value is missing or longer than maxLength
    */
   private static validateRequiredString(
     value: string | undefined | null,
     fieldName: string,
     operation: string,
+    maxLength: number,
   ): string {
     if (!value || value.trim() === '') {
       throw Err.validation(ValidationErrorCode.MISSING_FIELD, `${fieldName} is required`, {
@@ -51,7 +60,22 @@ export class CopyrightValidators {
         context: { field: fieldName },
       });
     }
-    return value.trim();
+
+    const trimmed = value.trim();
+
+    if (trimmed.length > maxLength) {
+      throw Err.validation(
+        ValidationErrorCode.INVALID_INPUT,
+        `${fieldName} must be no more than ${maxLength} characters`,
+        {
+          service: ErrorService.NextJsServer,
+          operation,
+          context: { field: fieldName, maxLength, actualLength: trimmed.length },
+        },
+      );
+    }
+
+    return trimmed;
   }
 
   /**
@@ -97,21 +121,36 @@ export class CopyrightValidators {
    * Validates name of rights owner
    */
   static validateNameOwner(nameOwner: string | undefined | null): string {
-    return this.validateRequiredString(nameOwner, 'Name of rights owner', 'validateNameOwner');
+    return this.validateRequiredString(
+      nameOwner,
+      'Name of rights owner',
+      'validateNameOwner',
+      COPYRIGHT_SHORT_FIELD_MAX_LENGTH,
+    );
   }
 
   /**
    * Validates original content URLs
    */
   static validateOriginalContentUrls(originalContentUrls: string | undefined | null): string {
-    return this.validateRequiredString(originalContentUrls, 'Original content URLs', 'validateOriginalContentUrls');
+    return this.validateRequiredString(
+      originalContentUrls,
+      'Original content URLs',
+      'validateOriginalContentUrls',
+      COPYRIGHT_ORIGINAL_CONTENT_URLS_MAX_LENGTH,
+    );
   }
 
   /**
    * Validates brief description
    */
   static validateBriefDescription(briefDescription: string | undefined | null): string {
-    return this.validateRequiredString(briefDescription, 'Brief description', 'validateBriefDescription');
+    return this.validateRequiredString(
+      briefDescription,
+      'Brief description',
+      'validateBriefDescription',
+      COPYRIGHT_BRIEF_DESCRIPTION_MAX_LENGTH,
+    );
   }
 
   /**
@@ -122,6 +161,7 @@ export class CopyrightValidators {
       infringingContentUrl,
       'Infringing content URL',
       'validateInfringingContentUrl',
+      COPYRIGHT_URL_MAX_LENGTH,
     );
     return this.validateUrlFormat(trimmed, 'Infringing content URL');
   }
@@ -130,21 +170,21 @@ export class CopyrightValidators {
    * Validates first name
    */
   static validateFirstName(firstName: string | undefined | null): string {
-    return this.validateRequiredString(firstName, 'First name', 'validateFirstName');
+    return this.validateRequiredString(firstName, 'First name', 'validateFirstName', COPYRIGHT_SHORT_FIELD_MAX_LENGTH);
   }
 
   /**
    * Validates last name
    */
   static validateLastName(lastName: string | undefined | null): string {
-    return this.validateRequiredString(lastName, 'Last name', 'validateLastName');
+    return this.validateRequiredString(lastName, 'Last name', 'validateLastName', COPYRIGHT_SHORT_FIELD_MAX_LENGTH);
   }
 
   /**
    * Validates email address
    */
   static validateEmail(email: string | undefined | null): string {
-    const trimmed = this.validateRequiredString(email, 'Email', 'validateEmail');
+    const trimmed = this.validateRequiredString(email, 'Email', 'validateEmail', COPYRIGHT_EMAIL_MAX_LENGTH);
     return this.validateEmailFormat(trimmed);
   }
 
@@ -152,7 +192,12 @@ export class CopyrightValidators {
    * Validates phone number
    */
   static validatePhoneNumber(phoneNumber: string | undefined | null): string {
-    const trimmed = this.validateRequiredString(phoneNumber, 'Phone number', 'validatePhoneNumber');
+    const trimmed = this.validateRequiredString(
+      phoneNumber,
+      'Phone number',
+      'validatePhoneNumber',
+      COPYRIGHT_SHORT_FIELD_MAX_LENGTH,
+    );
     return this.validatePhoneNumberFormat(trimmed);
   }
 
@@ -160,42 +205,52 @@ export class CopyrightValidators {
    * Validates street address
    */
   static validateStreetAddress(streetAddress: string | undefined | null): string {
-    return this.validateRequiredString(streetAddress, 'Street address', 'validateStreetAddress');
+    return this.validateRequiredString(
+      streetAddress,
+      'Street address',
+      'validateStreetAddress',
+      COPYRIGHT_SHORT_FIELD_MAX_LENGTH,
+    );
   }
 
   /**
    * Validates country
    */
   static validateCountry(country: string | undefined | null): string {
-    return this.validateRequiredString(country, 'Country', 'validateCountry');
+    return this.validateRequiredString(country, 'Country', 'validateCountry', COPYRIGHT_SHORT_FIELD_MAX_LENGTH);
   }
 
   /**
    * Validates city
    */
   static validateCity(city: string | undefined | null): string {
-    return this.validateRequiredString(city, 'City', 'validateCity');
+    return this.validateRequiredString(city, 'City', 'validateCity', COPYRIGHT_SHORT_FIELD_MAX_LENGTH);
   }
 
   /**
    * Validates state/province
    */
   static validateStateProvince(stateProvince: string | undefined | null): string {
-    return this.validateRequiredString(stateProvince, 'State/Province', 'validateStateProvince');
+    return this.validateRequiredString(
+      stateProvince,
+      'State/Province',
+      'validateStateProvince',
+      COPYRIGHT_SHORT_FIELD_MAX_LENGTH,
+    );
   }
 
   /**
    * Validates zip code
    */
   static validateZipCode(zipCode: string | undefined | null): string {
-    return this.validateRequiredString(zipCode, 'Zip code', 'validateZipCode');
+    return this.validateRequiredString(zipCode, 'Zip code', 'validateZipCode', COPYRIGHT_SHORT_FIELD_MAX_LENGTH);
   }
 
   /**
    * Validates signature
    */
   static validateSignature(signature: string | undefined | null): string {
-    return this.validateRequiredString(signature, 'Signature', 'validateSignature');
+    return this.validateRequiredString(signature, 'Signature', 'validateSignature', COPYRIGHT_SHORT_FIELD_MAX_LENGTH);
   }
 
   /**

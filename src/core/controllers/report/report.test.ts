@@ -263,7 +263,7 @@ describe('ReportController', () => {
 
     it('should trim whitespace from inputs', async () => {
       const params = createReportParams({
-        pubky: '  test-pubky  ' as Pubky,
+        pubky: `  ${testData.userPubky}  ` as Pubky,
         postUrl: '  https://example.com/post  ',
         issueType: `  ${REPORT_ISSUE_TYPES.HATE_SPEECH}  `,
         reason: '  Some reason  ',
@@ -274,7 +274,7 @@ describe('ReportController', () => {
       await ReportController.submit(params);
 
       expect(submitSpy).toHaveBeenCalledWith({
-        pubky: 'test-pubky',
+        pubky: testData.userPubky,
         postUrl: 'https://example.com/post',
         issueType: REPORT_ISSUE_TYPES.HATE_SPEECH,
         reason: 'Some reason',

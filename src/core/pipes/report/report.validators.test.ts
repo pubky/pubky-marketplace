@@ -1,15 +1,19 @@
 import { describe, expect, it } from 'vitest';
+import { USER_NAME_MAX_LENGTH } from '@/config/user';
 import { AppError } from '@/libs/error/error';
 import { ValidationErrorCode } from '@/libs/error/error.codes';
 import { ErrorCategory, ErrorService } from '@/libs/error/error.types';
 import {
   REPORT_ISSUE_TYPE_VALUES,
   REPORT_ISSUE_TYPES,
+  REPORT_POST_URL_MAX_LENGTH,
   REPORT_REASON_MAX_LENGTH,
   REVIEW_REPORT_ISSUE_LABELS,
   REVIEW_REPORT_ISSUE_TYPE_VALUES,
 } from './report.constants';
 import { ReportValidators } from './report.validators';
+
+const VALID_PUBKY = 'o1gg96ewuojmopcjbz8895478wdtxtzzuxnfjjz8o8e77csa1ngo';
 
 describe('ReportValidators', () => {
   describe('validatePostUrl', () => {
@@ -69,6 +73,32 @@ describe('ReportValidators', () => {
 
     it('should throw AppError for URL without protocol', () => {
       expect(() => ReportValidators.validatePostUrl('example.com/post/123')).toThrow(AppError);
+    });
+
+    it('should accept post URL at max length', () => {
+      const prefix = 'https://example.com/';
+      const maxUrl = prefix + 'a'.repeat(REPORT_POST_URL_MAX_LENGTH - prefix.length);
+      expect(ReportValidators.validatePostUrl(maxUrl)).toBe(maxUrl);
+    });
+
+    it('should throw AppError with correct properties for post URL exceeding max length', () => {
+      const prefix = 'https://example.com/';
+      const longUrl = prefix + 'a'.repeat(REPORT_POST_URL_MAX_LENGTH - prefix.length + 1);
+      try {
+        ReportValidators.validatePostUrl(longUrl);
+        expect.fail('Should have thrown');
+      } catch (error) {
+        expect(error).toBeInstanceOf(AppError);
+        const appError = error as AppError;
+        expect(appError.category).toBe(ErrorCategory.Validation);
+        expect(appError.code).toBe(ValidationErrorCode.INVALID_INPUT);
+        expect(appError.operation).toBe('validatePostUrl');
+        expect(appError.context).toEqual({
+          field: 'postUrl',
+          maxLength: REPORT_POST_URL_MAX_LENGTH,
+          actualLength: longUrl.length,
+        });
+      }
     });
   });
 
@@ -209,9 +239,32 @@ describe('ReportValidators', () => {
   });
 
   describe('validatePubky', () => {
-    it('should return trimmed pubky for valid input', () => {
-      const result = ReportValidators.validatePubky('  test-pubky  ');
-      expect(result).toBe('test-pubky');
+    it('should accept a 52-character z-base-32 pubky', () => {
+      expect(ReportValidators.validatePubky(VALID_PUBKY)).toBe(VALID_PUBKY);
+    });
+
+    it('should trim surrounding whitespace from the pubky', () => {
+      expect(ReportValidators.validatePubky(`  ${VALID_PUBKY}  `)).toBe(VALID_PUBKY);
+    });
+
+    it.each([
+      ['a non-z-base-32 value', 'test-pubky'],
+      ['an uppercase pubky', VALID_PUBKY.toUpperCase()],
+      ['a reserved word', 'admin'],
+      ['a pubky one character short', VALID_PUBKY.slice(1)],
+    ])('should reject %s with FORMAT_ERROR', (_label, value) => {
+      try {
+        ReportValidators.validatePubky(value);
+        expect.fail('Should have thrown');
+      } catch (error) {
+        expect(error).toBeInstanceOf(AppError);
+        const appError = error as AppError;
+        expect(appError.category).toBe(ErrorCategory.Validation);
+        expect(appError.code).toBe(ValidationErrorCode.FORMAT_ERROR);
+        expect(appError.service).toBe(ErrorService.NextJsServer);
+        expect(appError.operation).toBe('validatePubky');
+        expect(appError.context).toEqual({ field: 'pubky' });
+      }
     });
 
     it('should throw AppError with correct properties for empty string', () => {
@@ -275,6 +328,31 @@ describe('ReportValidators', () => {
 
     it('should throw AppError for undefined', () => {
       expect(() => ReportValidators.validateName(undefined)).toThrow(AppError);
+    });
+
+    it('should accept name at max length', () => {
+      const maxName = 'a'.repeat(USER_NAME_MAX_LENGTH);
+      expect(ReportValidators.validateName(maxName)).toBe(maxName);
+    });
+
+    it('should throw AppError with correct properties for name exceeding max length', () => {
+      const longName = 'a'.repeat(USER_NAME_MAX_LENGTH + 1);
+      try {
+        ReportValidators.validateName(longName);
+        expect.fail('Should have thrown');
+      } catch (error) {
+        expect(error).toBeInstanceOf(AppError);
+        const appError = error as AppError;
+        expect(appError.category).toBe(ErrorCategory.Validation);
+        expect(appError.code).toBe(ValidationErrorCode.INVALID_INPUT);
+        expect(appError.operation).toBe('validateName');
+        expect(appError.context).toEqual({
+          field: 'name',
+          maxLength: USER_NAME_MAX_LENGTH,
+          actualLength: longName.length,
+        });
+        expect(appError.message).toBe(`Name must be no more than ${USER_NAME_MAX_LENGTH} characters`);
+      }
     });
   });
 

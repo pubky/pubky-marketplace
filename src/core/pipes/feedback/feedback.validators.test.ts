@@ -1,15 +1,41 @@
 import { describe, expect, it } from 'vitest';
 import { FEEDBACK_MAX_CHARACTER_LENGTH } from '@/config/posts';
+import { USER_NAME_MAX_LENGTH } from '@/config/user';
 import { AppError } from '@/libs/error/error';
 import { ValidationErrorCode } from '@/libs/error/error.codes';
 import { ErrorCategory, ErrorService } from '@/libs/error/error.types';
 import { FeedbackValidators } from './feedback.validators';
 
+const VALID_PUBKY = 'o1gg96ewuojmopcjbz8895478wdtxtzzuxnfjjz8o8e77csa1ngo';
+
 describe('FeedbackValidators', () => {
   describe('validatePubky', () => {
-    it('should return trimmed pubky for valid input', () => {
-      const result = FeedbackValidators.validatePubky('  test-pubky  ');
-      expect(result).toBe('test-pubky');
+    it('should accept a 52-character z-base-32 pubky', () => {
+      expect(FeedbackValidators.validatePubky(VALID_PUBKY)).toBe(VALID_PUBKY);
+    });
+
+    it('should trim surrounding whitespace from the pubky', () => {
+      expect(FeedbackValidators.validatePubky(`  ${VALID_PUBKY}  `)).toBe(VALID_PUBKY);
+    });
+
+    it.each([
+      ['a non-z-base-32 value', 'test-pubky'],
+      ['an uppercase pubky', VALID_PUBKY.toUpperCase()],
+      ['a reserved word', 'admin'],
+      ['a pubky one character short', VALID_PUBKY.slice(1)],
+    ])('should reject %s with FORMAT_ERROR', (_label, value) => {
+      try {
+        FeedbackValidators.validatePubky(value);
+        expect.fail('Should have thrown');
+      } catch (error) {
+        expect(error).toBeInstanceOf(AppError);
+        const appError = error as AppError;
+        expect(appError.category).toBe(ErrorCategory.Validation);
+        expect(appError.code).toBe(ValidationErrorCode.FORMAT_ERROR);
+        expect(appError.service).toBe(ErrorService.NextJsServer);
+        expect(appError.operation).toBe('validatePubky');
+        expect(appError.context).toEqual({ field: 'pubky' });
+      }
     });
 
     it('should throw AppError with correct properties for empty string', () => {
@@ -135,6 +161,31 @@ describe('FeedbackValidators', () => {
 
     it('should throw AppError for undefined', () => {
       expect(() => FeedbackValidators.validateName(undefined)).toThrow(AppError);
+    });
+
+    it('should accept name at max length', () => {
+      const maxName = 'a'.repeat(USER_NAME_MAX_LENGTH);
+      expect(FeedbackValidators.validateName(maxName)).toBe(maxName);
+    });
+
+    it('should throw AppError with correct properties for name exceeding max length', () => {
+      const longName = 'a'.repeat(USER_NAME_MAX_LENGTH + 1);
+      try {
+        FeedbackValidators.validateName(longName);
+        expect.fail('Should have thrown');
+      } catch (error) {
+        expect(error).toBeInstanceOf(AppError);
+        const appError = error as AppError;
+        expect(appError.category).toBe(ErrorCategory.Validation);
+        expect(appError.code).toBe(ValidationErrorCode.INVALID_INPUT);
+        expect(appError.operation).toBe('validateName');
+        expect(appError.context).toEqual({
+          field: 'name',
+          maxLength: USER_NAME_MAX_LENGTH,
+          actualLength: longName.length,
+        });
+        expect(appError.message).toBe(`Name must be no more than ${USER_NAME_MAX_LENGTH} characters`);
+      }
     });
   });
 });
