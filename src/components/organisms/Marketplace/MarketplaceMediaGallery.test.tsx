@@ -1,8 +1,25 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import type { CommerceListingRecord } from '@/libs/commerce/marketplace-records';
 import { COMMERCE_FIXTURE_SELLER } from '@/test/fixtures/commerce/commerce';
 import { MarketplaceMediaGallery } from './MarketplaceMediaGallery';
+
+// jsdom lacks the matchMedia APIs Embla needs; the viewer's own behaviour is what these tests check.
+vi.mock('embla-carousel-react', () => ({
+  default: vi.fn(() => [
+    vi.fn(),
+    {
+      canScrollPrev: vi.fn(() => false),
+      canScrollNext: vi.fn(() => false),
+      scrollPrev: vi.fn(),
+      scrollNext: vi.fn(),
+      selectedScrollSnap: vi.fn(() => 0),
+      on: vi.fn(),
+      off: vi.fn(),
+      scrollTo: vi.fn(),
+    },
+  ]),
+}));
 
 vi.mock('@/hooks/useMarketplaceMediaUrl/useMarketplaceMediaUrl', async () => {
   return await import('@/test/mocks/marketplace-media-hooks');
@@ -99,5 +116,49 @@ describe('MarketplaceMediaGallery', () => {
 
     expect(screen.getByText('Auction ended')).toBeInTheDocument();
     expect(screen.queryByText('Live auction')).not.toBeInTheDocument();
+  });
+
+  describe('full-screen viewer', () => {
+    function renderTwoPhotos() {
+      render(
+        <MarketplaceMediaGallery
+          media={[imageMedia('image_01', 'Front view'), imageMedia('image_02', 'Sole view')]}
+          saleFormat="fixed_price"
+        />,
+      );
+    }
+
+    it('opens the tapped photo whole, with the others alongside, and closes from the X', () => {
+      renderTwoPhotos();
+
+      fireEvent.click(screen.getByRole('button', { name: 'View Front view full screen' }));
+
+      const viewer = screen.getByTestId('listing-photo-viewer');
+      expect(within(viewer).getByAltText('Front view')).toHaveClass('object-contain');
+      expect(within(viewer).getByAltText('Sole view')).toBeInTheDocument();
+
+      fireEvent.click(within(viewer).getByRole('button', { name: 'Close photos' }));
+      expect(screen.queryByTestId('listing-photo-viewer')).not.toBeInTheDocument();
+    });
+
+    it('closes on a swipe down but not on a sideways swipe', () => {
+      renderTwoPhotos();
+      fireEvent.click(screen.getByRole('button', { name: 'View Front view full screen' }));
+      const viewer = screen.getByTestId('listing-photo-viewer');
+
+      fireEvent.pointerDown(viewer, { clientX: 200, clientY: 300 });
+      fireEvent.pointerUp(viewer, { clientX: 40, clientY: 330 });
+      expect(screen.getByTestId('listing-photo-viewer')).toBeInTheDocument();
+
+      fireEvent.pointerDown(viewer, { clientX: 200, clientY: 300 });
+      fireEvent.pointerUp(viewer, { clientX: 210, clientY: 420 });
+      expect(screen.queryByTestId('listing-photo-viewer')).not.toBeInTheDocument();
+    });
+
+    it('does not offer the viewer for a video', () => {
+      render(<MarketplaceMediaGallery media={[videoMedia('video_01', 'Walkaround')]} saleFormat="fixed_price" />);
+
+      expect(screen.queryByTestId('listing-photo-open')).not.toBeInTheDocument();
+    });
   });
 });
