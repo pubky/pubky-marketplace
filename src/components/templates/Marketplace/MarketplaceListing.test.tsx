@@ -26,7 +26,7 @@ const publicAvailabilityRead = vi.hoisted(() => vi.fn());
 const paymentBadgesRead = vi.hoisted(() => vi.fn());
 const projectionRefresh = vi.hoisted(() => vi.fn());
 const confirmRemovedCalls = vi.hoisted(() => vi.fn());
-const listingRating = vi.hoisted((): { value: CommerceReputationSnippet | null | undefined } => ({
+const listingRating = vi.hoisted((): { value: CommerceReputationSnippet | null | 'unavailable' | undefined } => ({
   value: null,
 }));
 const authState = vi.hoisted(() => ({
@@ -721,6 +721,15 @@ describe('MarketplaceListing', () => {
     renderListing();
 
     expect(screen.queryByTestId('marketplace-listing-rating')).not.toBeInTheDocument();
+  });
+
+  it('makes no rating claim when the index did not answer', () => {
+    listingRating.value = 'unavailable';
+
+    renderListing();
+
+    expect(screen.queryByTestId('marketplace-listing-rating')).not.toBeInTheDocument();
+    expect(screen.queryByText('No rating yet')).not.toBeInTheDocument();
   });
 
   it('requires a marketplace session before showing availability', async () => {

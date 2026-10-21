@@ -8,10 +8,11 @@ import type { CommerceIndexedReview, CommerceReputationSnippet } from '@/models/
 
 /**
  * One product's own rating for its listing page: `undefined` while loading,
- * `null` when it has none (the page shows "No rating yet").
+ * `null` when it has none (the page shows "No rating yet"), `unavailable`
+ * when the index did not answer (the page shows nothing).
  */
 export function useListingRating(sellerPubky: string, listingId: string) {
-  const [rating, setRating] = useState<CommerceReputationSnippet | null | undefined>(undefined);
+  const [rating, setRating] = useState<CommerceReputationSnippet | null | 'unavailable' | undefined>(undefined);
 
   useEffect(() => {
     let active = true;
@@ -21,7 +22,7 @@ export function useListingRating(sellerPubky: string, listingId: string) {
         if (active) setRating(result);
       })
       .catch(() => {
-        if (active) setRating(null);
+        if (active) setRating('unavailable');
       });
     return () => {
       active = false;

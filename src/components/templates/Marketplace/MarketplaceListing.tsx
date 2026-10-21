@@ -460,7 +460,7 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
               <Heading level={1} size="xl" className="text-3xl leading-none sm:text-5xl sm:leading-none">
                 {record.title}
               </Heading>
-              {listingRating !== undefined && (
+              {listingRating !== undefined && listingRating !== 'unavailable' && (
                 <div className="mt-2" data-testid="marketplace-listing-rating">
                   {listingRating !== null && listingRating.count > 0 ? (
                     <MarketplaceStarRating
