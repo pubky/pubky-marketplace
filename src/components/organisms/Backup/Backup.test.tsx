@@ -5,15 +5,22 @@ import { createZustandLikeHook } from '@/test-utils/stores';
 import { BackupNavigation, BackupPageHeader } from './Backup';
 
 const { mockClearSecrets, mockOnboardingState, mockPush, mockReplace } = vi.hoisted(() => {
-  const mockClearSecrets = vi.fn();
+  // Mutable snapshot: tests change hasHydrated / secretKey before rendering.
+  const mockOnboardingState = {
+    hasHydrated: true,
+    secretKey: 'test-secret-key' as string | null,
+    mnemonic: 'test-mnemonic' as string | null,
+    clearSecrets: () => {},
+  };
+  // Like the real store action: the secrets are gone once it returns.
+  const mockClearSecrets = vi.fn(() => {
+    mockOnboardingState.secretKey = null;
+    mockOnboardingState.mnemonic = null;
+  });
+  mockOnboardingState.clearSecrets = mockClearSecrets;
   return {
     mockClearSecrets,
-    // Mutable snapshot: tests change hasHydrated / secretKey before rendering.
-    mockOnboardingState: {
-      hasHydrated: true,
-      secretKey: 'test-secret-key' as string | null,
-      clearSecrets: mockClearSecrets,
-    },
+    mockOnboardingState,
     mockPush: vi.fn(),
     mockReplace: vi.fn(),
   };
@@ -117,6 +124,7 @@ describe('BackupNavigation', () => {
     vi.clearAllMocks();
     mockOnboardingState.hasHydrated = true;
     mockOnboardingState.secretKey = 'test-secret-key';
+    mockOnboardingState.mnemonic = 'test-mnemonic';
   });
 
   it('matches snapshot for default BackupNavigation', () => {
@@ -172,13 +180,17 @@ describe('BackupNavigation', () => {
   });
 
   it('clears the secrets and replaces the backup step with profile when skipping is confirmed', () => {
-    render(<BackupNavigation />);
+    const { rerender } = render(<BackupNavigation />);
 
     fireEvent.click(screen.getByRole('button', { name: 'Skip backup' }));
     fireEvent.click(screen.getByRole('button', { name: 'Skip and delete phrase' }));
+    // The mocked store does not notify subscribers, so render again to see the cleared secrets.
+    rerender(<BackupNavigation />);
 
     expect(mockClearSecrets).toHaveBeenCalledTimes(1);
-    expect(mockReplace).toHaveBeenCalledTimes(1);
+    expect(mockOnboardingState.secretKey).toBeNull();
+    expect(mockOnboardingState.mnemonic).toBeNull();
+    // Both the confirm handler and the missing-secret check replace the step, so the count is not pinned.
     expect(mockReplace).toHaveBeenCalledWith('/profile');
     expect(mockPush).not.toHaveBeenCalled();
   });
