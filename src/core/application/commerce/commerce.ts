@@ -22,6 +22,7 @@ import { CONNECTOR_SHARE_CONSENT_VERSION } from '@/config/commerce-copy';
 import { BASE_UNITS_PER_BITCOIN } from '@/config/currencies';
 import { NEXUS_LISTINGS_PER_PAGE } from '@/config/nexus';
 import { readAuthEpoch } from '@/controllers/auth/auth-epoch';
+import { withExclusiveLock } from '@/libs/chat/web-locks';
 import {
   extractReviewAttestation,
   marketplaceAttestationSchema,
@@ -414,6 +415,24 @@ export type ConnectorShareChoice = {
   keyId: string;
   publicKey: Uint8Array;
 };
+
+/** An own review read from the reviewer's homeserver: the record, an ordinary 404, or no claim. */
+type OwnReviewRead = { kind: 'found'; model: CommerceReviewModelSchema } | { kind: 'missing' } | { kind: 'unresolved' };
+
+/** What deleting an own review did: confirmed by the homeserver, owed in the outbox, or nothing to delete. */
+export type OwnReviewDeleteOutcome = 'removed' | 'queued' | 'absent';
+
+const ownReviewRemovalPayloadSchema = z.object({ url: z.string().min(1), orderId: z.string().min(1) });
+
+function ownReviewRemovalUrl(payload: unknown): string | null {
+  const parsed = ownReviewRemovalPayloadSchema.safeParse(payload);
+  return parsed.success ? parsed.data.url : null;
+}
+
+function ownReviewRemovalOrderId(payload: unknown): string | null {
+  const parsed = ownReviewRemovalPayloadSchema.safeParse(payload);
+  return parsed.success ? parsed.data.orderId : null;
+}
 
 /** A review-list page, or the honest signal that no review index serves this deployment. */
 export type CommerceIndexedReviewsResult =
@@ -1605,6 +1624,7 @@ export class CommerceApplication {
   private static clearSessionScopedState(): void {
     this.publishedReceiptUrls.clear();
     this.ownReviewHomeserverMisses.clear();
+    this.deletedOwnReviews.clear();
     CommercePrivKeyringApplication.clear();
   }
 
@@ -3385,9 +3405,17 @@ export class CommerceApplication {
    */
   private static ownReviewHomeserverMisses = new Set<string>();
 
-  /** Test support: clears the session-scoped own-review 404 memo. */
+  /**
+   * Reviews this session deleted (composite IDs). A homeserver that still
+   * serves a record just after its DEL must not write it back through a
+   * refresh; a new publication of the review lifts the entry.
+   */
+  private static deletedOwnReviews = new Set<string>();
+
+  /** Test support: clears the session-scoped own-review 404 memo and deleted set. */
   static resetOwnReviewHydrateMemo(): void {
     this.ownReviewHomeserverMisses.clear();
+    this.deletedOwnReviews.clear();
   }
 
   private static ownReviewMissKey(actorPubky: string, orderId: string): string {
@@ -3477,48 +3505,87 @@ export class CommerceApplication {
   ): Promise<CommerceReviewModelSchema | null> {
     const hydrateIdentity = actorPubky;
     if (!this.liveIdentityMatches(hydrateIdentity)) return null;
+    const read = await this.readOwnReviewFromHomeserver(actorPubky, order);
+    if (read.kind === 'missing') {
+      this.ownReviewHomeserverMisses.add(this.ownReviewMissKey(actorPubky, order.id));
+      return null;
+    }
+    if (read.kind !== 'found') return null;
+    // Auth-cleanup may wipe `commerce_reviews` while this GET is in flight.
+    // Do not re-seed another identity's private table; skip if the live
+    // session pubky is no longer the one captured at hydrate start.
+    if (!this.liveIdentityMatches(hydrateIdentity)) return null;
+    try {
+      await LocalCommerceService.upsertOwnReview(read.model);
+    } catch (error) {
+      Logger.warn('Own review homeserver hydrate failed; leaving publication status unresolved', {
+        orderId: order.id,
+        reviewId: read.model.review_id,
+        error,
+      });
+      return null;
+    }
+    return read.model;
+  }
+
+  /**
+   * Reads the actor's review of one order from their homeserver. With
+   * `knownReviewId` (a local row's ID, possibly the legacy per-listing one)
+   * the record is read at that path; without it the path comes from the
+   * order's attested `order_ref`. `missing` is an ordinary 404, `unresolved`
+   * anything that makes no claim (a record that is not this order's, a
+   * failed read).
+   */
+  private static async readOwnReviewFromHomeserver(
+    actorPubky: string,
+    order: MarketplaceOrder,
+    knownReviewId?: string,
+  ): Promise<OwnReviewRead> {
     const listingId = this.listingIdFromOrder(order);
-    if (listingId === null) return null;
+    if (listingId === null) return { kind: 'unresolved' };
     const isBuyer = actorPubky === order.buyerPubky;
     const isSeller = actorPubky === order.sellerPubky;
-    if (!isBuyer && !isSeller) return null;
+    if (!isBuyer && !isSeller) return { kind: 'unresolved' };
     const role: 'buyer_reviewing_seller' | 'seller_reviewing_buyer' = isBuyer
       ? 'buyer_reviewing_seller'
       : 'seller_reviewing_buyer';
     const subjectPubky = isBuyer ? order.sellerPubky : order.buyerPubky;
-    let reviewId = '';
+    let reviewId = knownReviewId ?? '';
     try {
-      // The order's own attestation names its `order_ref`: no attestation
-      // means nothing was ever published for this order.
-      const attestation = marketplaceAttestationSchema.safeParse(
-        await MarketplaceGatewayService.getReviewAttestation(actorPubky, order.id),
-      );
-      if (!attestation.success) {
-        this.ownReviewHomeserverMisses.add(this.ownReviewMissKey(actorPubky, order.id));
-        return null;
-      }
-      const pathInput = { actorPubky, listingOwnerPubky: order.sellerPubky, listingId, subjectPubky, role };
-      reviewId = await this.ownReviewPathId({ ...pathInput, orderRef: attestation.data.claims.orderRef });
-      let stored = await CommerceHomeserverService.fetchJsonIfFound(
-        CommerceRecordNormalizer.reviewUri(actorPubky, reviewId),
-      );
-      if (!stored.found) {
-        // A review published before per-order reviews lives at the legacy
-        // per-listing path; it is this order's only when it embeds this
-        // order's attestation.
-        const legacyId = await this.ownReviewPathId(pathInput);
-        const legacy = await CommerceHomeserverService.fetchJsonIfFound(
-          CommerceRecordNormalizer.reviewUri(actorPubky, legacyId),
+      let stored: { found: false } | { found: true; json: unknown };
+      if (knownReviewId === undefined) {
+        // The order's own attestation names its `order_ref`: no attestation
+        // means nothing was ever published for this order.
+        const attestation = marketplaceAttestationSchema.safeParse(
+          await MarketplaceGatewayService.getReviewAttestation(actorPubky, order.id),
         );
-        const legacyMatches =
-          legacy.found &&
-          (legacy.json as { eligibilityAttestation?: unknown } | null)?.eligibilityAttestation === attestation.data.jws;
-        if (!legacyMatches) {
-          this.ownReviewHomeserverMisses.add(this.ownReviewMissKey(actorPubky, order.id));
-          return null;
+        if (!attestation.success) return { kind: 'missing' };
+        const pathInput = { actorPubky, listingOwnerPubky: order.sellerPubky, listingId, subjectPubky, role };
+        reviewId = await this.ownReviewPathId({ ...pathInput, orderRef: attestation.data.claims.orderRef });
+        stored = await CommerceHomeserverService.fetchJsonIfFound(
+          CommerceRecordNormalizer.reviewUri(actorPubky, reviewId),
+        );
+        if (!stored.found) {
+          // A review published before per-order reviews lives at the legacy
+          // per-listing path; it is this order's only when it embeds this
+          // order's attestation.
+          const legacyId = await this.ownReviewPathId(pathInput);
+          const legacy = await CommerceHomeserverService.fetchJsonIfFound(
+            CommerceRecordNormalizer.reviewUri(actorPubky, legacyId),
+          );
+          const legacyMatches =
+            legacy.found &&
+            (legacy.json as { eligibilityAttestation?: unknown } | null)?.eligibilityAttestation ===
+              attestation.data.jws;
+          if (!legacyMatches) return { kind: 'missing' };
+          reviewId = legacyId;
+          stored = legacy;
         }
-        reviewId = legacyId;
-        stored = legacy;
+      } else {
+        stored = await CommerceHomeserverService.fetchJsonIfFound(
+          CommerceRecordNormalizer.reviewUri(actorPubky, knownReviewId),
+        );
+        if (!stored.found) return { kind: 'missing' };
       }
       const record = CommerceRecordNormalizer.review(stored.json);
       if (
@@ -3533,39 +3600,137 @@ export class CommerceApplication {
           orderId: order.id,
           reviewId,
         });
-        return null;
+        return { kind: 'unresolved' };
       }
       const verifiedIss = verifyOwnReviewAttestation(record);
-      const model: CommerceReviewModelSchema = {
-        id: `${actorPubky}:${reviewId}`,
-        owner_id: actorPubky,
-        review_id: reviewId,
-        order_id: order.id,
-        subject_id: record.subjectPubky,
-        record,
-        attestation_verified: verifiedIss !== null,
-        attestation_iss: verifiedIss,
-        sync_status: 'synced',
-        updated_at: Date.now(),
+      return {
+        kind: 'found',
+        model: {
+          id: `${actorPubky}:${reviewId}`,
+          owner_id: actorPubky,
+          review_id: reviewId,
+          order_id: order.id,
+          subject_id: record.subjectPubky,
+          record,
+          attestation_verified: verifiedIss !== null,
+          attestation_iss: verifiedIss,
+          sync_status: 'synced',
+          updated_at: Date.now(),
+        },
       };
-      // Auth-cleanup may wipe `commerce_reviews` while this GET is in flight.
-      // Do not re-seed another identity's private table; skip if the live
-      // session pubky is no longer the one captured at hydrate start.
-      if (!this.liveIdentityMatches(hydrateIdentity)) return null;
-      await LocalCommerceService.upsertOwnReview(model);
-      return model;
     } catch (error) {
-      if (isAppError(error) && isNotFound(error)) {
-        this.ownReviewHomeserverMisses.add(this.ownReviewMissKey(actorPubky, order.id));
-      } else {
-        Logger.warn('Own review homeserver hydrate failed; leaving publication status unresolved', {
-          orderId: order.id,
-          reviewId,
-          error,
-        });
-      }
-      return null;
+      if (isAppError(error) && isNotFound(error)) return { kind: 'missing' };
+      Logger.warn('Own review homeserver read failed; leaving publication status unresolved', {
+        orderId: order.id,
+        reviewId,
+        error,
+      });
+      return { kind: 'unresolved' };
     }
+  }
+
+  /**
+   * One review's writes (publish, refresh, delete) take this lock, per actor
+   * and order, so a read that raced a delete cannot write the review back and
+   * a DEL cannot land after a newer publication. Without Web Locks the
+   * writes queue in this tab only.
+   */
+  private static async withOwnReviewLock<T>(actorPubky: string, orderId: string, body: () => Promise<T>): Promise<T> {
+    return await withExclusiveLock(`pubky-review|${actorPubky}|${orderId}`, body);
+  }
+
+  /**
+   * Re-reads the actor's own reviews of these orders from their homeserver
+   * and refreshes the local rows, so an edit made on another device shows
+   * without waiting for a cache miss. Only orders that already carry the
+   * actor's review at the service are read. A local row wins over the
+   * homeserver while it is unsynced, owes a removal, or is not older than
+   * the homeserver record; a homeserver 404 or a failed read never clears a
+   * local row (reads lag acked writes). Returns the number of rows changed.
+   */
+  static async refreshOwnReviews(actorPubky: string, orders: MarketplaceOrder[]): Promise<number> {
+    let refreshed = 0;
+    for (const order of orders) {
+      if (!this.liveIdentityMatches(actorPubky)) break;
+      if (!order.reviews?.some(({ reviewerPubky }) => reviewerPubky === actorPubky)) continue;
+      refreshed += await this.withOwnReviewLock(actorPubky, order.id, async () => {
+        const local = await LocalCommerceService.getOwnReviewByOrder(actorPubky, order.id);
+        if (local?.sync_status === 'pending') return 0;
+        const read = await this.readOwnReviewFromHomeserver(actorPubky, order, local?.review_id);
+        if (read.kind !== 'found') return 0;
+        if (this.deletedOwnReviews.has(read.model.id)) return 0;
+        if (!this.liveIdentityMatches(actorPubky)) return 0;
+        return (await LocalCommerceService.applyRefreshedOwnReview(read.model)) ? 1 : 0;
+      });
+    }
+    return refreshed;
+  }
+
+  /**
+   * Removes the actor's published review of one order: the local row goes at
+   * once and the homeserver DEL of the record is staged in the outbox, so a
+   * failed DEL retries ({@link resumeOwnReviewRemovals}) instead of leaving
+   * the record public. Returns `removed` once the homeserver confirmed (a
+   * record already gone counts), `queued` while the DEL is still owed, and
+   * `absent` when there was no local review to remove. The service's own
+   * review stays as it is; this never re-opens the order for a new review.
+   */
+  static async commitDeleteOwnReview(actorPubky: string, orderId: string): Promise<OwnReviewDeleteOutcome> {
+    return await this.withOwnReviewLock(actorPubky, orderId, async () => {
+      const local = await LocalCommerceService.getOwnReviewByOrder(actorPubky, orderId);
+      if (local === undefined) return 'absent';
+      const url = CommerceRecordNormalizer.reviewUri(actorPubky, local.review_id);
+      const job = this.createSyncJob({
+        ownerId: actorPubky,
+        entityType: 'review',
+        entityId: local.review_id,
+        operation: 'remove',
+        payload: { url, orderId },
+        now: Date.now(),
+      });
+      this.deletedOwnReviews.add(local.id);
+      await LocalCommerceService.stageOwnReviewRemoval(local, job);
+      return (await this.sendOwnReviewRemoval(job.id, url)) ? 'removed' : 'queued';
+    });
+  }
+
+  /**
+   * Sends one staged removal. A 404 means the record is already gone. Any
+   * other failure keeps the job, with its attempt count and cause recorded.
+   */
+  private static async sendOwnReviewRemoval(jobId: string, url: string): Promise<boolean> {
+    try {
+      await CommerceHomeserverService.delete(url);
+    } catch (error) {
+      if (!(isAppError(error) && isNotFound(error))) {
+        Logger.warn('Own review removal failed; the outbox job stays and retries', { jobId, error });
+        await LocalCommerceService.recordSyncJobFailure(jobId, isAppError(error) ? String(error.code) : null);
+        return false;
+      }
+    }
+    await LocalCommerceService.completeSyncJob(jobId);
+    return true;
+  }
+
+  /**
+   * Retries every removal whose homeserver DEL never landed. Each job is
+   * re-read under its order's lock first, so two tabs retrying one job send
+   * one DEL. Returns the number of removals that completed.
+   */
+  static async resumeOwnReviewRemovals(actorPubky: string): Promise<number> {
+    const jobs = await LocalCommerceService.getOwnReviewRemovalJobs(actorPubky);
+    let removed = 0;
+    for (const queued of jobs) {
+      const orderId = ownReviewRemovalOrderId(queued.payload);
+      if (orderId === null) continue;
+      removed += await this.withOwnReviewLock(actorPubky, orderId, async () => {
+        const job = await LocalCommerceService.getSyncJob(queued.id);
+        const url = job ? ownReviewRemovalUrl(job.payload) : null;
+        if (!job || url === null) return 0;
+        return (await this.sendOwnReviewRemoval(job.id, url)) ? 1 : 0;
+      });
+    }
+    return removed;
   }
 
   /**
@@ -3602,75 +3767,78 @@ export class CommerceApplication {
       });
     }
     const role = review.reviewerRole === 'buyer' ? 'buyer_reviewing_seller' : 'seller_reviewing_buyer';
-    // A review published before per-order IDs lives at the per-listing path
-    // without `orderRef`; its edits revise it there instead of forking a
-    // second record for the same order.
-    const existing = await LocalCommerceService.getOwnReviewByOrder(actorPubky, order.id);
-    const orderRef =
-      existing !== undefined && existing.record.orderRef === undefined ? undefined : attestation.claims.orderRef;
+    return await this.withOwnReviewLock(actorPubky, order.id, async () => {
+      // A review published before per-order IDs lives at the per-listing path
+      // without `orderRef`; its edits revise it there instead of forking a
+      // second record for the same order.
+      const existing = await LocalCommerceService.getOwnReviewByOrder(actorPubky, order.id);
+      const orderRef =
+        existing !== undefined && existing.record.orderRef === undefined ? undefined : attestation.claims.orderRef;
 
-    const build = async (revision: number, createdAt: string) => {
-      const { PubkySpecsBuilder } = await import('pubky-app-specs');
-      const built = new PubkySpecsBuilder(actorPubky).createMarketplaceReview({
-        schemaVersion: 1,
-        recordType: 'review',
-        ownerPubky: actorPubky,
-        revision,
-        createdAt,
-        updatedAt: review.updatedAt,
-        reviewId: '',
-        subjectPubky: review.subjectPubky,
-        listingOwnerPubky: order.sellerPubky,
-        listingId,
-        role,
-        ratings: { overall: review.rating },
-        text: review.text,
-        eligibilityAttestation: attestation.jws,
-        ...(orderRef === undefined ? {} : { orderRef }),
-      });
-      return {
-        record: commerceReviewRecordSchema.parse(built.marketplace_review.toJson()),
-        reviewId: built.meta.id,
+      const build = async (revision: number, createdAt: string) => {
+        const { PubkySpecsBuilder } = await import('pubky-app-specs');
+        const built = new PubkySpecsBuilder(actorPubky).createMarketplaceReview({
+          schemaVersion: 1,
+          recordType: 'review',
+          ownerPubky: actorPubky,
+          revision,
+          createdAt,
+          updatedAt: review.updatedAt,
+          reviewId: '',
+          subjectPubky: review.subjectPubky,
+          listingOwnerPubky: order.sellerPubky,
+          listingId,
+          role,
+          ratings: { overall: review.rating },
+          text: review.text,
+          eligibilityAttestation: attestation.jws,
+          ...(orderRef === undefined ? {} : { orderRef }),
+        });
+        return {
+          record: commerceReviewRecordSchema.parse(built.marketplace_review.toJson()),
+          reviewId: built.meta.id,
+        };
       };
-    };
 
-    // The hash ID is deterministic per (listing, subject, role, order): an
-    // edit of this order's review bumps `revision` and keeps the original
-    // `createdAt`; another order of the same listing gets its own record.
-    const probe = await build(1, review.createdAt);
-    const prior = await LocalCommerceService.getOwnReviewById(`${actorPubky}:${probe.reviewId}`);
-    const { record, reviewId } =
-      prior === undefined ? probe : await build(prior.record.revision + 1, prior.record.createdAt);
+      // The hash ID is deterministic per (listing, subject, role, order): an
+      // edit of this order's review bumps `revision` and keeps the original
+      // `createdAt`; another order of the same listing gets its own record.
+      const probe = await build(1, review.createdAt);
+      const prior = await LocalCommerceService.getOwnReviewById(`${actorPubky}:${probe.reviewId}`);
+      const { record, reviewId } =
+        prior === undefined ? probe : await build(prior.record.revision + 1, prior.record.createdAt);
 
-    const verifiedIss = verifyOwnReviewAttestation(record);
-    const model: CommerceReviewModelSchema = {
-      id: `${actorPubky}:${reviewId}`,
-      owner_id: actorPubky,
-      review_id: reviewId,
-      order_id: order.id,
-      subject_id: record.subjectPubky,
-      record,
-      attestation_verified: verifiedIss !== null,
-      attestation_iss: verifiedIss,
-      sync_status: 'pending',
-      updated_at: Date.now(),
-    };
-    const url = CommerceRecordNormalizer.reviewUri(actorPubky, reviewId);
-    const job = this.createSyncJob({
-      ownerId: actorPubky,
-      entityType: 'review',
-      entityId: reviewId,
-      operation: 'publish',
-      payload: { url },
-      now: Date.now(),
+      const verifiedIss = verifyOwnReviewAttestation(record);
+      const model: CommerceReviewModelSchema = {
+        id: `${actorPubky}:${reviewId}`,
+        owner_id: actorPubky,
+        review_id: reviewId,
+        order_id: order.id,
+        subject_id: record.subjectPubky,
+        record,
+        attestation_verified: verifiedIss !== null,
+        attestation_iss: verifiedIss,
+        sync_status: 'pending',
+        updated_at: Date.now(),
+      };
+      const url = CommerceRecordNormalizer.reviewUri(actorPubky, reviewId);
+      const job = this.createSyncJob({
+        ownerId: actorPubky,
+        entityType: 'review',
+        entityId: reviewId,
+        operation: 'publish',
+        payload: { url },
+        now: Date.now(),
+      });
+
+      this.deletedOwnReviews.delete(model.id);
+      await LocalCommerceService.stageOwnReviewSync(model, job);
+      await CommerceHomeserverService.putJson(url, { ...record });
+      const synced: CommerceReviewModelSchema = { ...model, sync_status: 'synced', updated_at: Date.now() };
+      await LocalCommerceService.upsertOwnReview(synced);
+      await LocalCommerceService.completeSyncJob(job.id);
+      return synced;
     });
-
-    await LocalCommerceService.stageOwnReviewSync(model, job);
-    await CommerceHomeserverService.putJson(url, { ...record });
-    const synced: CommerceReviewModelSchema = { ...model, sync_status: 'synced', updated_at: Date.now() };
-    await LocalCommerceService.upsertOwnReview(synced);
-    await LocalCommerceService.completeSyncJob(job.id);
-    return synced;
   }
 
   /**
@@ -3682,18 +3850,26 @@ export class CommerceApplication {
   static async resumeOwnReviewPublications(actorPubky: string): Promise<number> {
     const pending = await LocalCommerceService.getPendingOwnReviews(actorPubky);
     let published = 0;
-    for (const row of pending) {
-      const url = CommerceRecordNormalizer.reviewUri(row.owner_id, row.review_id);
-      try {
-        await CommerceHomeserverService.putJson(url, { ...row.record });
-        await LocalCommerceService.upsertOwnReview({ ...row, sync_status: 'synced', updated_at: Date.now() });
-        published += 1;
-      } catch (error) {
-        Logger.warn('Own review publication retry failed; the row stays pending', {
-          reviewId: row.review_id,
-          error,
-        });
-      }
+    for (const queued of pending) {
+      const url = CommerceRecordNormalizer.reviewUri(queued.owner_id, queued.review_id);
+      published += await this.withOwnReviewLock(queued.owner_id, queued.order_id, async () => {
+        // Re-read under the lock: a removal or a newer publication since the
+        // scan owns the review now.
+        const row = await LocalCommerceService.getOwnReviewById(queued.id);
+        if (row === undefined || row.sync_status !== 'pending') return 0;
+        try {
+          await CommerceHomeserverService.putJson(url, { ...row.record });
+          await LocalCommerceService.upsertOwnReview({ ...row, sync_status: 'synced', updated_at: Date.now() });
+          await LocalCommerceService.completeOwnReviewPublishJobs(row.owner_id, row.review_id);
+          return 1;
+        } catch (error) {
+          Logger.warn('Own review publication retry failed; the row stays pending', {
+            reviewId: row.review_id,
+            error,
+          });
+          return 0;
+        }
+      });
     }
     return published;
   }

@@ -855,6 +855,8 @@ export class LocalCommerceService {
     this.assertSyncJobIdentity(job, review.owner_id, review.review_id, 'review');
     try {
       await db.transaction('rw', CommerceReviewModel.table, CommerceSyncJobModel.table, async () => {
+        // A publication supersedes a removal that has not reached the homeserver.
+        await this.ownReviewJobs(review.owner_id, review.review_id, 'remove').delete();
         await CommerceReviewModel.upsert(review);
         await CommerceSyncJobModel.upsert(job);
       });
@@ -863,6 +865,107 @@ export class LocalCommerceService {
       throw Err.database(DatabaseErrorCode.WRITE_FAILED, 'Failed to stage review synchronization', {
         service: ErrorService.Local,
         operation: 'stageOwnReviewSync',
+        context: { tables: [CommerceReviewModel.table.name, CommerceSyncJobModel.table.name] },
+        cause: error,
+      });
+    }
+  }
+
+  private static ownReviewJobs(ownerId: string, reviewId: string, operation?: CommerceSyncJobModelSchema['operation']) {
+    return CommerceSyncJobModel.table
+      .where('entity_id')
+      .equals(reviewId)
+      .filter(
+        (job) =>
+          job.entity_type === 'review' &&
+          job.owner_id === ownerId &&
+          (operation === undefined || job.operation === operation),
+      );
+  }
+
+  /**
+   * Removes an own review locally and stages the homeserver DEL in one
+   * transaction: the row disappears at once, and the `remove` job keeps the
+   * DEL retryable. Jobs of earlier publications of the same review are
+   * dropped; the removal supersedes them.
+   */
+  static async stageOwnReviewRemoval(
+    review: CommerceReviewModelSchema,
+    job: CommerceSyncJobModelSchema,
+  ): Promise<void> {
+    this.assertSyncJobIdentity(job, review.owner_id, review.review_id, 'review');
+    try {
+      await db.transaction('rw', CommerceReviewModel.table, CommerceSyncJobModel.table, async () => {
+        await this.ownReviewJobs(review.owner_id, review.review_id).delete();
+        await CommerceReviewModel.table.delete(review.id);
+        await CommerceSyncJobModel.upsert(job);
+      });
+    } catch (error) {
+      if (isAppError(error)) throw error;
+      throw Err.database(DatabaseErrorCode.WRITE_FAILED, 'Failed to stage review removal', {
+        service: ErrorService.Local,
+        operation: 'stageOwnReviewRemoval',
+        context: { tables: [CommerceReviewModel.table.name, CommerceSyncJobModel.table.name] },
+        cause: error,
+      });
+    }
+  }
+
+  /** The outbox jobs still owed a homeserver DEL of an own review, oldest first. */
+  static async getOwnReviewRemovalJobs(ownerId: string): Promise<CommerceSyncJobModelSchema[]> {
+    const jobs = await CommerceSyncJobModel.table
+      .where('owner_id')
+      .equals(ownerId)
+      .filter((job) => job.entity_type === 'review' && job.operation === 'remove')
+      .toArray();
+    return jobs.sort((left, right) => left.created_at - right.created_at);
+  }
+
+  /** Records a failed DEL attempt on its job so the outbox keeps the count and cause. */
+  static async recordSyncJobFailure(id: string, errorCode: string | null): Promise<void> {
+    await db.transaction('rw', CommerceSyncJobModel.table, async () => {
+      const current = await CommerceSyncJobModel.findById(id);
+      if (!current) return;
+      await CommerceSyncJobModel.upsert({
+        ...current,
+        status: 'failed' as const,
+        attempts: current.attempts + 1,
+        last_error_code: errorCode,
+        updated_at: Math.max(Date.now(), current.updated_at + 1),
+      });
+    });
+  }
+
+  /** Drops the publish jobs a retried publication left behind once its PUT landed. */
+  static async completeOwnReviewPublishJobs(ownerId: string, reviewId: string): Promise<void> {
+    await this.ownReviewJobs(ownerId, reviewId, 'publish').delete();
+  }
+
+  /**
+   * Writes a review read from the reviewer's homeserver into the local row,
+   * unless the local state must win: a removal still owed to the homeserver,
+   * an unsynced local edit, or a local record at the same or a later
+   * revision. Checked in the write's own transaction, so a delete or an edit
+   * staged while the read was in flight is never overwritten.
+   */
+  static async applyRefreshedOwnReview(review: CommerceReviewModelSchema): Promise<boolean> {
+    try {
+      return await db.transaction('rw', CommerceReviewModel.table, CommerceSyncJobModel.table, async () => {
+        const removals = await this.ownReviewJobs(review.owner_id, review.review_id, 'remove').count();
+        if (removals > 0) return false;
+        const current = await CommerceReviewModel.table.get(review.id);
+        if (current) {
+          if (current.sync_status !== 'synced') return false;
+          if (current.record.revision >= review.record.revision) return false;
+        }
+        await CommerceReviewModel.upsert(review);
+        return true;
+      });
+    } catch (error) {
+      if (isAppError(error)) throw error;
+      throw Err.database(DatabaseErrorCode.WRITE_FAILED, 'Failed to refresh an own review', {
+        service: ErrorService.Local,
+        operation: 'applyRefreshedOwnReview',
         context: { tables: [CommerceReviewModel.table.name, CommerceSyncJobModel.table.name] },
         cause: error,
       });

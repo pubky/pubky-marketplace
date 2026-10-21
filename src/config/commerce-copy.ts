@@ -48,3 +48,17 @@ export const REVIEW_MODERATION_COPY = {
   excluded: 'Excluded by Pubky Market moderation (fraud)',
   notCountedHeading: (count: number) => `${count} not counted`,
 } as const;
+
+/** Copy for removing the user's own published review from their homeserver. */
+export const REVIEW_REMOVAL_COPY = {
+  action: 'Remove my review',
+  dialogTitle: 'Remove your review?',
+  dialogDescription:
+    'This deletes your public review from your homeserver, so it disappears from Pubky Market. Your order still shows that you reviewed it.',
+  confirm: 'Remove review',
+  cancel: 'Cancel',
+  removed: 'Your review was removed from your homeserver.',
+  queued:
+    'Your review is removed here. Deleting it from your homeserver did not go through and will retry when your orders next load.',
+  failed: 'Your review could not be removed. Try again.',
+} as const;
