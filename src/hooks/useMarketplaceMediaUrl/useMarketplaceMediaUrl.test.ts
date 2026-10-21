@@ -5,6 +5,7 @@ import {
   clearMarketplaceMediaCache,
   resolveMarketplaceMediaUrlAsync,
   useMarketplaceMediaUrl,
+  useMarketplaceMediaUrls,
 } from './useMarketplaceMediaUrl';
 
 vi.mock('@/core/services/commerce/marketplace-media', () => ({
@@ -33,6 +34,19 @@ describe('marketplace media resolution', () => {
   });
 
   afterEach(() => vi.restoreAllMocks());
+
+  it('answers one entry per media item the moment the list grows, before the new items resolve', () => {
+    // A listing whose cached record had one photo, then a fresh record with three (the seller added two).
+    vi.mocked(MarketplaceMediaService.getOwnerHomeserver).mockReturnValue(new Promise(() => {}));
+    const { result, rerender } = renderHook(({ uris }) => useMarketplaceMediaUrls(uris), {
+      initialProps: { uris: [mediaUri] as readonly string[] },
+    });
+
+    rerender({ uris: [mediaUri, `${mediaUri}-2`, `${mediaUri}-3`] });
+
+    expect(result.current).toHaveLength(3);
+    expect(result.current.every((url) => url === null || typeof url === 'string')).toBe(true);
+  });
 
   it('uses the direct URL for an owner on the configured homeserver', async () => {
     vi.mocked(MarketplaceMediaService.getOwnerHomeserver).mockResolvedValue('configured-homeserver');
