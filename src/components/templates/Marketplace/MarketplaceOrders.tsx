@@ -54,6 +54,7 @@ import {
 import { formatCommerceMoney } from '@/libs/commerce/format';
 import { listingIdFromOrder } from '@/libs/commerce/listing-aggregate';
 import { buyerVisiblePaymentStatus } from '@/libs/commerce/locks-payment';
+import { deliveredCompletionNote } from '@/libs/commerce/order-returns';
 import { buyerShipmentTracking } from '@/libs/commerce/order-tracking';
 import { observedPaymentRail } from '@/libs/commerce/paykit-rail';
 import { formatBitcoinAmount } from '@/libs/commerce/pricing';
@@ -618,7 +619,7 @@ export function MarketplaceOrders() {
                             )}
                             {order.state === 'delivered' && order.fulfillment !== 'digital' && (
                               <Typography as="p" className="mt-2 text-sm text-muted-foreground">
-                                Completes automatically after the return window unless a return is requested.
+                                {deliveredCompletionNote(order)}
                               </Typography>
                             )}
                             {order.returnRequest && (

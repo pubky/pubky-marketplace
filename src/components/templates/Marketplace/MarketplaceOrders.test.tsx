@@ -1374,6 +1374,22 @@ describe('MarketplaceOrders digital cards (digital delivery design §3 "After pa
     expect(within(card).getByText(/Completes automatically after the return window/)).toBeInTheDocument();
     expect(within(card).queryByText('Delivered · ready to download')).not.toBeInTheDocument();
   });
+
+  it('says a delivered final-sale order completes after its auto-complete period, with no return clause', () => {
+    ordersState.orders = [
+      orderView('delivered', 'Final boots', 'buyer', {
+        nextActor: 'none',
+        returnPolicy: { acceptsReturns: false, returnWindowDays: null },
+        autoCompleteDays: 7,
+      }),
+    ];
+
+    render(<MarketplaceOrders />);
+
+    const card = screen.getByText(/Final boots/).closest('[data-slot="card"]') as HTMLElement;
+    expect(within(card).getByText('Completes automatically 7 days after delivery.')).toBeInTheDocument();
+    expect(within(card).queryByText(/unless a return is requested/)).not.toBeInTheDocument();
+  });
 });
 
 describe('MarketplaceOrders seen checkpoint', () => {

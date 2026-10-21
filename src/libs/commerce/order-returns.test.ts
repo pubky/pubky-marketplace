@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { orderReturnClosure } from './order-returns';
+import { deliveredCompletionNote, orderReturnClosure } from './order-returns';
 
 const delivered = { deliveredAt: '2026-10-01T12:00:00.000Z' };
 const day = (n: number) => Date.parse('2026-10-01T12:00:00.000Z') + n * 86_400_000;
@@ -28,5 +28,23 @@ describe('orderReturnClosure', () => {
     const policy = { acceptsReturns: true, returnWindowDays: 14 };
     expect(orderReturnClosure({ returnPolicy: policy, shipment: null }, day(30))).toBeNull();
     expect(orderReturnClosure({ returnPolicy: policy, shipment: delivered }, null)).toBeNull();
+  });
+});
+
+describe('deliveredCompletionNote', () => {
+  it('keeps the return clause off a final sale and names its auto-complete period', () => {
+    const finalSale = { acceptsReturns: false, returnWindowDays: null };
+    expect(deliveredCompletionNote({ returnPolicy: finalSale, autoCompleteDays: 7 })).toBe(
+      'Completes automatically 7 days after delivery.',
+    );
+    expect(deliveredCompletionNote({ returnPolicy: finalSale, autoCompleteDays: null })).toBe(
+      'Completes automatically 14 days after delivery.',
+    );
+  });
+
+  it('keeps the return note when returns are accepted or no policy was frozen', () => {
+    const note = 'Completes automatically after the return window unless a return is requested.';
+    expect(deliveredCompletionNote({ returnPolicy: { acceptsReturns: true, returnWindowDays: 14 } })).toBe(note);
+    expect(deliveredCompletionNote({ returnPolicy: null })).toBe(note);
   });
 });

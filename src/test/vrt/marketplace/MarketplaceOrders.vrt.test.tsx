@@ -440,6 +440,20 @@ const fixtures = vi.hoisted(async () => {
     bitcoinRefunded: [bitcoinRefundedView()],
     deliveryAssumed: [deliveryAssumedView()],
     finalSaleBuyer: [finalSaleBuyerView()],
+    // A delivered final-sale order: it says when it completes, with no return clause.
+    finalSaleDelivered: [
+      {
+        order: createOrderFixture('delivered', {
+          id: '018f47d2-6a27-7c23-a49d-000000000708',
+          fulfillment: 'shipping',
+          nextActor: 'none',
+          returnPolicy: { acceptsReturns: false, returnWindowDays: null },
+          autoCompleteDays: 7,
+        }),
+        payment: createPaymentFixture('confirmed'),
+        receipt: null,
+      },
+    ],
     usdtRefundBuyerNeeded: [usdtRefundView('return_approved', 'buyer', false)],
     usdtRefundBuyerConfirmed: [usdtRefundView('return_approved', 'buyer', true)],
     usdtRefundSellerConfirmed: [usdtRefundView('return_received', 'seller', true)],
@@ -663,6 +677,17 @@ describe('Marketplace orders — visual regression', () => {
     const screen = await renderForVRT(<MarketplaceOrders />, { viewport: VRT_VIEWPORT_MOBILE });
     await expect.element(screen.getByTestId('order-refund-record')).toBeVisible();
     await expect(await expectVrtSurface('marketplace-orders')).toMatchScreenshot('orders-usdt-refund-short-mobile');
+  });
+
+  it('renders a delivered final-sale order with its completion note at mobile viewport', async () => {
+    const { finalSaleDelivered } = await fixtures;
+    ordersState.orders = finalSaleDelivered;
+    ordersState.isLoading = false;
+    ordersState.error = null;
+
+    const screen = await renderForVRT(<MarketplaceOrders />, { viewport: VRT_VIEWPORT_MOBILE });
+    await expect.element(screen.getByText('Completes automatically 7 days after delivery.')).toBeVisible();
+    await expect(await expectVrtSurface('marketplace-orders')).toMatchScreenshot('orders-final-sale-delivered-mobile');
   });
 
   it('renders a final-sale order with no return at mobile viewport', async () => {
