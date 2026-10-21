@@ -142,6 +142,7 @@ import type {
   CommerceIndexedReview,
   CommerceListingModelSchema,
   CommerceListingProjectionModelSchema,
+  CommerceReputationSnippet,
   CommerceReputationSummary,
   CommerceReviewModelSchema,
   CommerceReviewResponseModelSchema,
@@ -3695,6 +3696,29 @@ export class CommerceApplication {
       }
     }
     return published;
+  }
+
+  /**
+   * One product's own rating (buyer reviews of this listing only), from the
+   * Nexus listing projection. `null` when the index answered and holds no
+   * reviews for it (the page shows "No rating yet"); `unavailable` when the
+   * index did not answer, has not indexed the listing, or sent a malformed
+   * projection, so the page makes no claim. A single attempt, so a listing
+   * Nexus has not indexed yet does not wait out the 404 backoff.
+   */
+  static async fetchListingRating(
+    sellerPubky: string,
+    listingId: string,
+  ): Promise<CommerceReputationSnippet | null | 'unavailable'> {
+    if (getCommerceAdapterMode() === 'sandbox') return 'unavailable';
+    try {
+      const entry = CommerceRecordNormalizer.nexusListingDetails(
+        await NexusMarketplaceService.fetchListingDetailsOnce({ seller_id: sellerPubky, listing_id: listingId }),
+      );
+      return entry.listing_reputation;
+    } catch {
+      return 'unavailable';
+    }
   }
 
   /**

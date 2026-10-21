@@ -190,7 +190,7 @@ const cardFixtures = vi.hoisted(async () => {
       media_urls: [],
       price: { amountMinor: 4_500, currency: 'USD', exponent: 2 },
       auction: null,
-      reputation: { avg: 4.7, count: 12, verifiedCount: 9 },
+      listing_reputation: { avg: 4.7, count: 12, verifiedCount: 9 },
       updated_at: Date.parse('2026-08-19T21:02:00.000Z'),
     }),
   );
