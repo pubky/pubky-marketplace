@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CommerceSellerReputationOverview } from '@/application/commerce/commerce';
 import { CAPABILITIES } from '@/config/app';
-import { COMMERCE_LISTING_MAX_QUANTITY } from '@/config/commerce';
+import { COMMERCE_LISTING_MAX_QUANTITY, MARKETPLACE_TRUSTED_ATTESTORS } from '@/config/commerce';
 import { CHECKOUT_HOLD_COPY } from '@/libs/commerce/checkout-hold';
 import { getMarketplaceOfferCheckoutRoute } from '@/libs/commerce/checkout-phase';
 import type { MarketplaceOffer } from '@/services/marketplace/marketplace';
@@ -713,7 +713,7 @@ describe('MarketplaceListing', () => {
         histogram: [0, 0, 1, 2, 9],
         responseCount: 3,
         editedLateCount: 0,
-        attestors: {},
+        attestors: { [MARKETPLACE_TRUSTED_ATTESTORS[0]]: 4, ['x'.repeat(52)]: 5 },
         lastReviewedAt: '2026-08-20T12:00:00.000Z',
       },
     };
@@ -721,7 +721,7 @@ describe('MarketplaceListing', () => {
     renderListing();
 
     expect(
-      screen.getByRole('img', { name: 'Rated 4.7 out of 5 from 12 reviews, 9 verified purchases' }),
+      screen.getByRole('img', { name: 'Rated 4.7 out of 5 from 12 reviews, 4 verified purchases' }),
     ).toBeInTheDocument();
     expect(screen.getByTitle('12 reviews')).toBeInTheDocument();
     expect(screen.queryByText('No rating yet')).not.toBeInTheDocument();
