@@ -3,7 +3,9 @@
  * (C3b) turn on, kept in one place so the Shop, its tests and the service agree.
  *
  * The EU-27 are the member states as ISO 3166-1 alpha-2 codes (Greece is `GR`).
- * The United Kingdom is not a member but takes part in the digital hold (C3b).
+ * The United Kingdom is not a member but takes part in the private-seller rule (C3) and the
+ * digital hold (C3b). The annual limit and the re-confirmation point (C4, DAC7) are EU-only and
+ * live in the service.
  */
 export const EU_27 = [
   'AT',
@@ -41,6 +43,16 @@ export function isEuCountry(countryCode: string | null | undefined): boolean {
   return countryCode !== null && countryCode !== undefined && EU_SET.has(countryCode.toUpperCase());
 }
 
+/**
+ * Whether a buyer in this country can buy only from a private seller (C3): the EU-27 and GB. UK
+ * consumers buying from a business have a 14-day withdrawal right under the Consumer Contracts
+ * Regulations 2013 that a "final sale" label can't remove. This is the one definition; it mirrors
+ * the service's `is_private_seller_only_country`.
+ */
+export function isPrivateSellerOnlyCountry(countryCode: string | null | undefined): boolean {
+  return isEuCountry(countryCode) || countryCode?.toUpperCase() === 'GB';
+}
+
 /** Countries whose buyers cannot have digital items at launch (C3b). */
 export function isDigitalHeldCountry(countryCode: string | null | undefined): boolean {
   if (countryCode === null || countryCode === undefined) return false;
@@ -59,15 +71,15 @@ export function sellerDeclaration(shop: { sellerStatus?: string } | null | undef
 }
 
 /**
- * A business or undeclared seller does not sell to buyers in the EU while the fence is on. An
- * unknown seller is not blocked here: a failed read says nothing about them, and the service
+ * A business or undeclared seller does not sell to buyers in the EU or UK while the fence is on.
+ * An unknown seller is not blocked here: a failed read says nothing about them, and the service
  * decides from the record it reads itself.
  */
-export function sellerUnavailableToEuBuyers(declaration: SellerDeclaration): boolean {
+export function sellerUnavailableToPrivateOnlyBuyers(declaration: SellerDeclaration): boolean {
   return declaration === 'trader' || declaration === 'undeclared';
 }
 
-export const EU_UNAVAILABLE_MESSAGE = 'Not available to buyers in the EU';
+export const REGION_UNAVAILABLE_MESSAGE = 'Not available to buyers in the EU or UK';
 export const DIGITAL_REGION_MESSAGE = 'Digital items aren’t available to buyers in the EU or UK yet';
 export const SELLER_LIMIT_MESSAGE = 'This seller isn’t taking new orders right now.';
 export const BUYER_COUNTRY_PROMPT = 'Country you live in';
@@ -82,8 +94,8 @@ export function fenceRefusal(input: {
   limitReached?: boolean;
 }): string | null {
   if (input.limitReached) return SELLER_LIMIT_MESSAGE;
-  if (isEuCountry(input.buyerCountry) && sellerUnavailableToEuBuyers(input.declaration)) {
-    return EU_UNAVAILABLE_MESSAGE;
+  if (isPrivateSellerOnlyCountry(input.buyerCountry) && sellerUnavailableToPrivateOnlyBuyers(input.declaration)) {
+    return REGION_UNAVAILABLE_MESSAGE;
   }
   return null;
 }
@@ -98,9 +110,9 @@ export function digitalHoldRefusal(buyerCountry: string | null): string | null {
  * view, next to Pay; on the listing and in reviews they sit behind a small info icon.
  */
 export const PRIVATE_SELLER_NOTICE =
-  'This seller is a private individual. EU consumer rights for buying from a business, like the 14-day right to cancel, don’t apply.';
+  'This seller is a private individual. EU and UK consumer rights for buying from a business, like the 14-day right to cancel, don’t apply.';
 export function namedPrivateSellerNotice(sellerName: string): string {
-  return `${sellerName} is a private individual. EU consumer rights for buying from a business, like the 14-day right to cancel, don’t apply.`;
+  return `${sellerName} is a private individual. EU and UK consumer rights for buying from a business, like the 14-day right to cancel, don’t apply.`;
 }
 export const ROLE_STATEMENT = 'You buy from the seller. Synonym isn’t a party to the sale and has no role in disputes.';
 
@@ -108,7 +120,7 @@ export const SALE_INFO_LABEL = 'About this sale';
 export const SALE_INFO_ROLE =
   'You buy from the seller, not Synonym. Synonym provides the software, isn’t a party to the sale and has no role in disputes.';
 export const SALE_INFO_PRIVATE =
-  'This seller is a private individual, so EU consumer rights for buying from a business, like the 14-day right to cancel, don’t apply.';
+  'This seller is a private individual, so EU and UK consumer rights for buying from a business, like the 14-day right to cancel, don’t apply.';
 
 export const VERIFIED_PURCHASE_INFO_LABEL = 'About verified purchases';
 export const VERIFIED_PURCHASE_INFO =

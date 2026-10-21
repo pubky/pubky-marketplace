@@ -115,6 +115,7 @@ export function MarketplaceOrders() {
   const tabListRef = useRef<HTMLDivElement>(null);
   const tabRefs = useRef<Partial<Record<OrdersTab, HTMLButtonElement | null>>>({});
   const redirectedOrderRef = useRef<string | null>(null);
+  const scrolledAnchorRef = useRef<string | null>(null);
   const [legacyOrderId, setLegacyOrderId] = useState<string | null>(null);
   const nowMs = useNowMs(orders.some(({ order }) => order.state === 'pending_payment' && Boolean(order.holdExpiresAt)));
   const buyerCheckouts = orders.filter(({ order }) => isBuyerCheckoutInProgress(order, currentUserPubky));
@@ -169,7 +170,13 @@ export function MarketplaceOrders() {
       }
       return;
     }
-    document.getElementById(orderAnchorId(anchorId))?.scrollIntoView({ block: 'center' });
+    // Once per anchor: the orders poll would otherwise pull the page back to this order every few
+    // seconds, under the reader's scroll or an open sheet with the keyboard up.
+    if (scrolledAnchorRef.current === anchorId) return;
+    const anchor = document.getElementById(orderAnchorId(anchorId));
+    if (!anchor) return;
+    scrolledAnchorRef.current = anchorId;
+    anchor.scrollIntoView({ block: 'center' });
   }, [activeTab, anchorOrderId, currentUserPubky, isLoading, orders]);
 
   useEffect(() => {
@@ -218,6 +225,7 @@ export function MarketplaceOrders() {
       showRightSidebar={false}
       showLeftMobileButton={false}
       showRightMobileButton={false}
+      disableMainContentOverflow
       className="pb-28"
     >
       <Container overrideDefaults className="flex w-full flex-col gap-6" data-surface="marketplace-orders">
@@ -614,7 +622,11 @@ export function MarketplaceOrders() {
                               </Typography>
                             )}
                             {refundRecord && (
-                              <Typography as="p" className="mt-2 text-sm text-brand" data-testid="order-refund-record">
+                              <Typography
+                                as="p"
+                                className="mt-2 text-sm [overflow-wrap:anywhere] text-brand"
+                                data-testid="order-refund-record"
+                              >
                                 {/* Only ever externally evidenced: Paykit Server cannot spend, so
                               the app records the seller's transaction evidence and never
                               claims it moved funds itself. */}
@@ -742,7 +754,9 @@ function MarketplaceOrderBitcoinAmount({ order }: { order: MarketplaceOrder }): 
     return (
       <Typography as="span" className="text-sm font-normal">
         Locked Bitcoin amount: {formatBitcoinAmount(quote.quotedSats)}
-        {isMarketplaceBitcoinQuoteExpired(quote.expiresAt) ? ' · Bitcoin quote expired' : ''}
+        {order.state === 'pending_payment' && isMarketplaceBitcoinQuoteExpired(quote.expiresAt)
+          ? ' · Bitcoin quote expired'
+          : ''}
       </Typography>
     );
   }

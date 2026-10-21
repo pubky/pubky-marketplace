@@ -595,7 +595,7 @@ export function MarketplaceListingForm({
               name={CREATE_MARKETPLACE_LISTING_FIELDS.COUNTRY_CODE}
               control={form.control}
               label="Country"
-              placeholder="US"
+              placeholder="Two-letter code"
               disabled={isPublishing}
             />
             <ControlledInputField

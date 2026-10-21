@@ -129,16 +129,14 @@ export const COMMERCE_REVIEW_EDIT_WINDOW_SECONDS = 24 * 60 * 60;
  * verifiers pin attestor identities out of band, and this list is that
  * pinning). Nexus indexes every cryptographically verified review and names
  * its attestor; display trust is decided here. Entries cover each deployed
- * transaction service — the staging Railway project
- * `pubky-marketplace-staging` and the production project
- * `pubky-marketplace-production` — both operated by the marketplace operator.
+ * transaction service whose attestations this client displays as verified.
  */
 export const MARKETPLACE_TRUSTED_ATTESTORS: readonly string[] = [
-  // pubky-marketplace-staging (Railway), current key (rotated 12 Oct 2026)
+  // staging transaction service, current key (rotated 12 Oct 2026)
   'rhmo67eonanguhd3imztepbdkpm3z7nyt8u1n1bjymkmegjipfto',
-  // pubky-marketplace-staging (Railway), earlier key
+  // staging transaction service, earlier key
   'ws343aqzmcahagojhmhkbri8odqz9iqg61woxbkh9fd3bxhqomdy',
-  // pubky-marketplace-production (Railway)
+  // production transaction service
   'szhtpayftdz3mpkoyyk3zesuad11ufuudqqrc73s35w1tfju7gxy',
 ];
 
@@ -212,3 +210,15 @@ export const COMMERCE_SAVED_SEARCH_NAME_MAX_CHARS = 60;
 
 /** Saved searches storable per account. */
 export const COMMERCE_SAVED_SEARCH_MAX_PER_OWNER = 20;
+
+/** Shortest gap between two shop re-reads a buyer's tab triggers by coming back into focus. */
+export const COMMERCE_SHOP_FOCUS_REVALIDATE_MIN_MS = 15_000;
+
+/** Wait after a seller's shop event before re-reading it, so a burst (or the replay on connect) reads once. */
+export const COMMERCE_SHOP_EVENT_DEBOUNCE_MS = 500;
+
+/** First wait before reconnecting a seller's shop event stream after it failed or ended; doubles per failure in a row. */
+export const COMMERCE_SHOP_EVENT_RECONNECT_MS = 5_000;
+
+/** Longest wait between reconnects of a seller's shop event stream. */
+export const COMMERCE_SHOP_EVENT_RECONNECT_MAX_MS = 60_000;

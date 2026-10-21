@@ -219,7 +219,7 @@ _as the dependency for shipping_; written up as a ready-to-send proposal instead
 
 1. The Lock Server accepts `asset: "USD"` criteria today (§1.3).
 2. The Lock Server trusts whatever service its `[paykit] server_url` names (§1.4). Our
-   deployments (staging on Railway beside marketplace-service and the composed rails)
+   deployments (staging beside marketplace-service and the composed rails)
    configure that URL; pointing it at `fiat-verifier` is an operator decision, not a code
    change.
 3. The status contract is three states + confirmations + amount*matched (§1.5). Fiat
@@ -254,7 +254,7 @@ carry the truth (the UI already never renders `verifier_type`).
 
 ## 3. The fiat-verifier service
 
-A small Rust service (same stack as the rails it sits beside), deployable to Railway
+A small Rust service (same stack as the rails it sits beside), deployable as a container
 next to marketplace-service, the Lock Server, and Paykit Server.
 
 ### 3.1 Wire surface (Lock Server–facing, existing contract)

@@ -564,17 +564,15 @@ describe('MobileFooter', () => {
     expect(setItemSpy).toHaveBeenCalledWith(FORCE_FEED_SCROLL_TOP_KEY, '1');
   });
 
-  it('applies transform when keyboard is visible', async () => {
+  it('hides while the keyboard is open, so it never floats on the keyboard', () => {
     vi.mocked(useKeyboardOffset).mockReturnValue({ isKeyboardVisible: true, keyboardOffset: 300 });
 
     const { container } = render(<MobileFooter />);
-    const footerContainer = container.querySelector('.fixed');
 
-    expect(footerContainer).toBeInTheDocument();
-    expect(footerContainer?.getAttribute('style')).toContain('translateY(-300px)');
+    expect(container.querySelector('.fixed')).not.toBeInTheDocument();
   });
 
-  it('does not apply transform when keyboard is not visible', async () => {
+  it('shows with the keyboard closed', () => {
     vi.mocked(useKeyboardOffset).mockReturnValue({ isKeyboardVisible: false, keyboardOffset: 0 });
 
     const { container } = render(<MobileFooter />);
@@ -582,20 +580,6 @@ describe('MobileFooter', () => {
 
     expect(footerContainer).toBeInTheDocument();
     expect(footerContainer?.getAttribute('style')).toBeFalsy();
-  });
-
-  it('always applies transition classes for smooth keyboard animation', async () => {
-    // transition-transform and duration-75 are always present regardless of keyboard state
-    vi.mocked(useKeyboardOffset).mockReturnValue({ isKeyboardVisible: false, keyboardOffset: 0 });
-    const { container, rerender } = render(<MobileFooter />);
-    let footerContainer = container.querySelector('.fixed');
-    expect(footerContainer).toHaveClass('transition-transform', 'duration-75');
-
-    // Still present when keyboard is visible
-    vi.mocked(useKeyboardOffset).mockReturnValue({ isKeyboardVisible: true, keyboardOffset: 300 });
-    rerender(<MobileFooter />);
-    footerContainer = container.querySelector('.fixed');
-    expect(footerContainer).toHaveClass('transition-transform', 'duration-75');
   });
 
   it('renders the designer public navigation and join action for guests', () => {

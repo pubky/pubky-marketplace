@@ -76,7 +76,11 @@ export const marketplaceCheckoutSchema = z
       }
     }
     if (data.saveAddress && !data.saveLabel) {
-      context.addIssue({ code: 'custom', path: ['saveLabel'], message: 'Give the saved address a label.' });
+      context.addIssue({
+        code: 'custom',
+        path: ['saveLabel'],
+        message: 'Add a label to save this address, or untick Save this address.',
+      });
     }
   });
 

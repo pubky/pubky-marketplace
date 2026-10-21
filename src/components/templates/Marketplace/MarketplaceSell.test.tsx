@@ -128,6 +128,7 @@ vi.mock('@/hooks/useCreateMarketplaceListing/useCreateMarketplaceListing', async
       const form = useForm<CreateMarketplaceListingData>({
         defaultValues: {
           ...createMarketplaceListingDefaults,
+          countryCode: 'US',
           fulfillment: createListing.fulfillment,
           title: 'Vintage leather boots',
           description: 'Well cared for boots with light wear.',

@@ -183,6 +183,21 @@ describe('MarketplaceSectionNav', () => {
     expect(screen.getByTestId('marketplace-section-nav-activity-badge')).toHaveTextContent('12');
   });
 
+  it('pins itself under the page chrome so the sections stay reachable while scrolling', () => {
+    render(<MarketplaceSectionNav />);
+
+    const root = document.querySelector('[data-surface="marketplace-section-nav"]');
+    expect(root).toHaveClass('sticky', 'top-(--marketplace-subnav-top)', 'z-(--z-sticky-subnav)', 'bg-background');
+  });
+
+  it('lets a page keep its own spacing around the pinned bar', () => {
+    render(<MarketplaceSectionNav className="mb-0 after:h-16" />);
+
+    const root = document.querySelector('[data-surface="marketplace-section-nav"]');
+    expect(root).toHaveClass('sticky', 'mb-0', 'after:h-16');
+    expect(root).not.toHaveClass('mb-6', 'after:h-6');
+  });
+
   it('delegates guarded home navigation without requiring an app router', () => {
     const onNavigate = vi.fn();
     render(<MarketplaceSectionNav onNavigate={onNavigate} />);

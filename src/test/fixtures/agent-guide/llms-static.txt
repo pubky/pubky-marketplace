@@ -1,6 +1,6 @@
-# Pubky Shop — guide for agents
+# Pubky Market — guide for agents
 
-Pubky Shop (https://shop.pubky.app) is a peer-to-peer marketplace. Sellers publish their shop,
+Pubky Market (https://shop.pubky.app) is a peer-to-peer marketplace. Sellers publish their shop,
 listings, drops and reviews as signed records on their own homeservers. A public index (Nexus)
 serves a queryable view of those records; it is replaceable, and anyone may run one.
 Checkout is seller-direct (Bitcoin via Paykit, PayPal). No platform holds funds.
@@ -8,7 +8,7 @@ Agents read only: no key, no sign-in, no install. To buy, hand the person a link
 
 ## Base URLs
 
-INDEX = https://nexusd-production-95a0.up.railway.app
+INDEX = https://nexus.example.test
 SHOP  = https://shop.pubky.app
 
 INDEX is the current host; a stable alias may replace it. Every path below is INDEX + path.

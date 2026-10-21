@@ -169,6 +169,20 @@ describe('MuteListSyncCoordinator', () => {
     expect(subscribe).toHaveBeenCalledTimes(1);
   });
 
+  it('opens the stream when the session is restored after the persisted pubky was hydrated (cold load)', async () => {
+    const pubky = '5a1diz4pghi47ywdfyfzpit5f3bdomzt4pugpbmq4rngdd4iub4y' as Pubky;
+    useAuthStore.setState({ currentUserPubky: pubky, hasProfile: true, hasHydrated: true });
+    const coordinator = MuteListSyncCoordinator.getInstance();
+    coordinator.setRoute(APP_ROUTES.HOME);
+    coordinator.start();
+    await flushPromises();
+    expect(MuteController.subscribeMuteDirectoryEventStream).not.toHaveBeenCalled();
+
+    useAuthStore.setState({ session: mockSession() });
+    await flushPromises();
+    expect(MuteController.subscribeMuteDirectoryEventStream).toHaveBeenCalled();
+  });
+
   it('does not open the homeserver stream on disabled auth routes', async () => {
     const pubky = '5a1diz4pghi47ywdfyfzpit5f3bdomzt4pugpbmq4rngdd4iub4y' as Pubky;
     useAuthStore.getState().init({

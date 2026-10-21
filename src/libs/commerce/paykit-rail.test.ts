@@ -124,7 +124,7 @@ describe('Paykit copy', () => {
   });
 
   it('names the next step on the checkout submit button for each rail', () => {
-    expect(CHECKOUT_SUBMIT_LABEL).toEqual({ paykit: 'Continue to Bitkit', paypal: 'Continue to PayPal' });
+    expect(CHECKOUT_SUBMIT_LABEL).toEqual({ paykit: 'Send request to Bitkit', paypal: 'Continue to PayPal' });
   });
 
   it('shows the neutral pay-in-Bitkit state before any rail is seen', () => {

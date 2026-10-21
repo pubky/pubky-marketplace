@@ -8,7 +8,7 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '
 import { Label } from '@/atoms/Label/Label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/atoms/Select/Select';
 import { Typography } from '@/atoms/Typography/Typography';
-import { COMMERCE_REVIEW_EDIT_WINDOW_SECONDS } from '@/config/commerce';
+import { COMMERCE_REVIEW_EDIT_WINDOW_SECONDS, isTrustedMarketplaceAttestor } from '@/config/commerce';
 import { FORM_LABEL_CLASSES } from '@/config/forms';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import { useMarketplaceOrderAction } from '@/hooks/useMarketplaceOrderAction/useMarketplaceOrderAction';
@@ -19,11 +19,13 @@ import { orderAmountEntry } from '@/libs/commerce/bitcoin-payment-code';
 import { OTHER_CARRIER_ID, SHIPPING_CARRIERS } from '@/libs/commerce/carriers';
 import { DIGITAL_ORDER_COPY, DIGITAL_SELLER_COPY, isInstantDigitalDeliveryKind } from '@/libs/commerce/digital';
 import { formatCommerceMoney } from '@/libs/commerce/format';
+import { ORDER_RETURN_COPY, orderReturnClosure } from '@/libs/commerce/order-returns';
 import { observedPaymentRail, paykitCheckoutCancellable } from '@/libs/commerce/paykit-rail';
 import { formatUsdt } from '@/libs/commerce/payment-options';
 import { formatBitcoinAmount } from '@/libs/commerce/pricing';
 import { isUsdtFulfilmentBlocked, PAYMENT_NOT_FINAL_COPY } from '@/libs/commerce/usdt-buyer-status';
 import { formatUsdtRefundAmount, isUsdtRefundOrder, USDT_REFUND_COPY } from '@/libs/commerce/usdt-refund';
+import { cn } from '@/libs/utils/utils';
 import type { CommerceReviewModelSchema } from '@/models/commerce/commerce.schema';
 import { ControlledInputField } from '@/molecules/ControlledInputField/ControlledInputField';
 import { ControlledTextareaField } from '@/molecules/ControlledTextareaField/ControlledTextareaField';
@@ -48,11 +50,14 @@ export function MarketplaceOrderActions({
   actOnOrder,
   onChanged,
   cancelButtonSize = 'default',
+  cancelFullWidth = false,
   messageAction,
 }: {
   order: MarketplaceOrder;
   isBuyer: boolean;
   cancelButtonSize?: 'sm' | 'default';
+  /** The checkout gives its cancel the full width, under the pay instructions. */
+  cancelFullWidth?: boolean;
   messageAction?: ReactNode;
   /**
    * `review.update` only exists on the durable service (the sandbox has no
@@ -145,6 +150,9 @@ export function MarketplaceOrderActions({
   const fulfilmentBlocked = isUsdtFulfilmentBlocked(order);
   // Digital orders are never shipped or returned (digital delivery design §6 E1–E4).
   const isDigital = order.fulfillment === 'digital';
+  // The listing's frozen return policy: no return on a final sale, none after the window.
+  const returnClosure = orderReturnClosure(order, nowMs);
+  const returnable = isBuyer && !isDigital && ['delivered', 'completed'].includes(order.state) && !order.returnRequest;
   const pickup = usePickupOrderActions(order, reloadOrders);
   const [handoverOpen, setHandoverOpen] = useState(false);
   const [termsBlocked, setTermsBlocked] = useState(false);
@@ -295,7 +303,7 @@ export function MarketplaceOrderActions({
             Confirm delivery
           </Button>
         )}
-        {isBuyer && !isDigital && ['delivered', 'completed'].includes(order.state) && !order.returnRequest && (
+        {returnable && returnClosure === null && (
           <Button size="default" variant="secondary" className="rounded-full" onClick={() => begin('return')}>
             Request return
           </Button>
@@ -363,8 +371,8 @@ export function MarketplaceOrderActions({
             (isPickup && order.state === 'ready_for_pickup')) && (
             <Button
               size={cancelButtonSize}
-              variant="ghost"
-              className="rounded-full sm:order-first"
+              variant="destructive-soft"
+              className={cn('rounded-full sm:order-first', cancelFullWidth && 'w-full')}
               onClick={() => begin('cancel')}
             >
               {order.state === 'pending_payment' ? 'Cancel checkout' : 'Cancel order'}
@@ -392,6 +400,11 @@ export function MarketplaceOrderActions({
       {isBuyer && isDigital && ['delivered', 'completed'].includes(order.state) && (
         <p className="mt-2 text-xs text-muted-foreground" data-testid="digital-no-return-note">
           {DIGITAL_ORDER_COPY.noReturn}
+        </p>
+      )}
+      {returnable && returnClosure !== null && (
+        <p className="mt-2 text-xs text-muted-foreground" data-testid="return-closed-note">
+          {returnClosure === 'final_sale' ? ORDER_RETURN_COPY.finalSale : ORDER_RETURN_COPY.windowClosed}
         </p>
       )}
       {!isBuyer && order.state === 'return_approved' && order.fulfillment === 'pickup' && (
@@ -427,7 +440,7 @@ export function MarketplaceOrderActions({
       )}
 
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="w-full max-w-lg border-border bg-popover" centered>
+        <DialogContent className="w-full max-w-lg border-border bg-popover" centered avoidKeyboard>
           <DialogHeader>
             <DialogTitle>{actionTitle(actionType, order.state)}</DialogTitle>
           </DialogHeader>
@@ -516,6 +529,9 @@ export function MarketplaceOrderActions({
                   Amount to send: {usdtRefundAmount}
                 </Typography>
               )}
+              <Typography as="p" className="text-sm text-muted-foreground" data-testid="refund-usdt-fee-hint">
+                {USDT_REFUND_COPY.feeHint}
+              </Typography>
             </div>
           )}
           {actionType === 'refund' && (
@@ -534,6 +550,9 @@ export function MarketplaceOrderActions({
                 render={({ field }) => <MarketplaceStarRatingInput value={field.value} onChange={field.onChange} />}
               />
               <ControlledTextareaField name="text" control={action.form.control} label="Review" />
+              <p className="text-xs text-muted-foreground" data-testid="review-disclosure">
+                {isBuyer ? REVIEW_DISCLOSURE_COPY.buyer : REVIEW_DISCLOSURE_COPY.seller}
+              </p>
             </>
           )}
           {actionType === 'review' && isBuyer && sellerBandConsent === true && (
@@ -545,7 +564,7 @@ export function MarketplaceOrderActions({
                   checked={field.value}
                   onCheckedChange={(checked) => field.onChange(checked === true)}
                   label="Include an approximate price range"
-                  description="Your review's purchase attestation will carry a coarse order-of-magnitude band (never the exact amount). This seller has allowed it; it is included only if you opt in too."
+                  description="Your review's purchase attestation will carry a coarse order-of-magnitude band (never the exact amount), and it becomes public with your review. This seller has allowed it; it is included only if you opt in too."
                 />
               )}
             />
@@ -576,7 +595,7 @@ export function MarketplaceOrderActions({
           reputation asymmetry; a seller-actor confirm refused during an
           unresolved terms change gets the explanation, not an error toast. */}
       <Dialog open={handoverOpen} onOpenChange={setHandoverOpen}>
-        <DialogContent className="w-full max-w-lg border-border bg-popover" centered>
+        <DialogContent className="w-full max-w-lg border-border bg-popover" centered avoidKeyboard>
           <DialogHeader>
             <DialogTitle>Confirm the handover</DialogTitle>
           </DialogHeader>
@@ -641,11 +660,17 @@ function MarketplaceStarRatingInput({ value, onChange }: { value: string; onChan
   );
 }
 
+const REVIEW_DISCLOSURE_COPY = {
+  buyer: 'Your review is public, tied to your Pubky, and shows you bought this item.',
+  seller: 'Your review is public, tied to your Pubky, and shows this buyer ordered from you.',
+} as const;
+
 /**
  * The truthful publication/verification state of the user's own review.
  * "Verified" means exactly: the published record embeds a purchase
- * attestation whose Ed25519 signature verifies against its issuer pubky and
- * whose claims bind to this record — nothing more.
+ * attestation whose Ed25519 signature verifies against its issuer pubky,
+ * whose claims bind to this record, and whose issuer is an attestor this
+ * client trusts — the same rule as the public review labels.
  */
 function reviewRecordStatus(record: CommerceReviewModelSchema | null): string {
   if (record === null) {
@@ -655,7 +680,10 @@ function reviewRecordStatus(record: CommerceReviewModelSchema | null): string {
     return 'Your review is saved. Publication is pending and will retry automatically.';
   }
   if (record.attestation_verified && record.attestation_iss !== null) {
-    return `Verified purchase — your published review embeds a purchase attestation signed by attestor ${record.attestation_iss.slice(0, 8)}….`;
+    const attestor = `${record.attestation_iss.slice(0, 8)}…`;
+    return isTrustedMarketplaceAttestor(record.attestation_iss)
+      ? `Verified purchase — your published review embeds a purchase attestation signed by attestor ${attestor}.`
+      : `Your published review embeds a valid purchase attestation, but its signer (${attestor}) is not an attestor this app recognizes.`;
   }
   return 'Your review record is published, but its embedded attestation did not verify.';
 }
