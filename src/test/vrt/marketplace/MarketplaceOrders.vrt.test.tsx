@@ -553,6 +553,7 @@ const ordersState = vi.hoisted(() => ({
   orders: [] as unknown[],
   isLoading: false,
   error: null as string | null,
+  needsSession: false,
   adapterMode: 'sandbox' as string,
 }));
 
@@ -579,10 +580,41 @@ vi.mock('@/hooks/useMarketplaceOrders/useMarketplaceOrders', () => ({
     orders: ordersState.orders,
     isLoading: ordersState.isLoading,
     error: ordersState.error,
+    needsSession: ordersState.needsSession,
     adapterMode: ordersState.adapterMode,
     advancePayment: vi.fn(),
     actOnOrder: vi.fn(),
     refresh: vi.fn(),
+  }),
+}));
+
+// The approval dialog on the missing-session state, closed: only its trigger renders.
+vi.mock('@/hooks/useMarketplaceApprovalSigner/useMarketplaceApprovalSigner', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/hooks/useMarketplaceApprovalSigner/useMarketplaceApprovalSigner')>()),
+  useMarketplaceApprovalSigner: () => 'Bitkit',
+}));
+
+vi.mock('@/providers/ShopHostSessionProvider/ShopHostSessionProvider', () => ({
+  useIsShopHosted: () => false,
+}));
+
+vi.mock('@/hooks/useMarketplaceSessionConnect/useMarketplaceSessionConnect', () => ({
+  useMarketplaceSessionConnect: () => ({
+    status: 'idle',
+    authorizationUrl: '',
+    errorMessage: null,
+    requestsFullGrant: false,
+    requestsGrantReconnect: false,
+    requestsGrantBootstrap: false,
+    requestsPassport: false,
+    requiresSignIn: false,
+    approvalSigner: 'Bitkit',
+    start: vi.fn(),
+    startPassport: vi.fn(),
+    cancel: vi.fn(),
+    copyAuthUrl: vi.fn(async () => {}),
+    openInRing: vi.fn(),
+    isOpeningRing: false,
   }),
 }));
 
@@ -597,9 +629,22 @@ beforeEach(async () => {
   const { useMarketplaceDisplayStore } = await import('@/stores/marketplace-display/marketplace-display.store');
   useMarketplaceDisplayStore.setState({ showFxEstimate: true, measurementSystem: 'metric' });
   ordersState.adapterMode = 'sandbox';
+  ordersState.needsSession = false;
 });
 
 describe('Marketplace orders — visual regression', () => {
+  it('asks to approve the marketplace when the session is missing at mobile viewport', async () => {
+    ordersState.orders = [];
+    ordersState.isLoading = false;
+    ordersState.error = 'A marketplace session is required.';
+    ordersState.needsSession = true;
+    ordersState.adapterMode = 'transaction-service';
+
+    const screen = await renderForVRT(<MarketplaceOrders />, { viewport: VRT_VIEWPORT_MOBILE });
+    await expect(screen.getByRole('button', { name: 'Approve' })).toBeVisible();
+    await expect(await expectVrtSurface('marketplace-orders')).toMatchScreenshot('orders-session-required-mobile');
+  });
+
   it('renders every order state at desktop viewport', async () => {
     const { everyOrderState } = await fixtures;
     ordersState.orders = everyOrderState;

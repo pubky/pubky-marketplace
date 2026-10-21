@@ -5,7 +5,11 @@ import { MarketplaceNotifications } from './MarketplaceNotifications';
 
 const authStoreState = vi.hoisted(() => ({ session: {} as unknown, currentUserPubky: null as string | null }));
 const markAllSeen = vi.hoisted(() => vi.fn(async () => {}));
-const marketplaceView = vi.hoisted(() => ({ notifications: [] as unknown[] }));
+const marketplaceView = vi.hoisted(() => ({
+  notifications: [] as unknown[],
+  error: null as string | null,
+  needsSession: false,
+}));
 const ordersView = vi.hoisted(() => ({
   orders: [] as {
     order: {
@@ -42,8 +46,8 @@ vi.mock('@/hooks/useMarketplaceNotifications/useMarketplaceNotifications', () =>
     preferences: null,
     unreadCount: 0,
     isLoading: false,
-    error: null,
-    needsSession: false,
+    error: marketplaceView.error,
+    needsSession: marketplaceView.needsSession,
     canMarkRead: false,
     markAllRead: vi.fn(),
     updatePreferences: vi.fn(),
@@ -61,6 +65,9 @@ vi.mock('@/hooks/useMarketplaceWatchDetection/useMarketplaceWatchDetection', () 
 vi.mock('@/organisms/ContentLayout/ContentLayout', () => ({
   ContentLayout: ({ children }: { children: React.ReactNode }) => <main>{children}</main>,
 }));
+vi.mock('@/organisms/Marketplace/MarketplaceSessionConnectDialog', () => ({
+  MarketplaceSessionConnectDialog: ({ triggerLabel }: { triggerLabel: string }) => <button>{triggerLabel}</button>,
+}));
 vi.mock('@/organisms/Marketplace/MarketplaceSectionNav', () => ({
   MarketplaceSectionNav: () => <nav data-testid="marketplace-section-nav" />,
 }));
@@ -71,6 +78,8 @@ describe('MarketplaceNotifications', () => {
     authStoreState.session = {};
     authStoreState.currentUserPubky = null;
     marketplaceView.notifications = [];
+    marketplaceView.error = null;
+    marketplaceView.needsSession = false;
     ordersView.orders = [];
     ordersView.isLoading = false;
   });
@@ -89,6 +98,25 @@ describe('MarketplaceNotifications', () => {
 
     expect(markAllSeen).not.toHaveBeenCalled();
     expect(CommerceController.markActivityRead).not.toHaveBeenCalled();
+  });
+
+  it('asks to approve the marketplace instead of saying there are no updates', () => {
+    marketplaceView.error = 'Approve the marketplace to continue.';
+    marketplaceView.needsSession = true;
+
+    render(<MarketplaceNotifications />);
+
+    expect(screen.getByRole('heading', { name: 'Approve the marketplace to see your updates' })).toBeInTheDocument();
+    expect(screen.getByText('Your order and payment updates show here after one approval.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Approve' })).toBeInTheDocument();
+    expect(screen.queryByText('No commerce updates')).not.toBeInTheDocument();
+  });
+
+  it('says there are no updates when the list loads empty', () => {
+    render(<MarketplaceNotifications />);
+
+    expect(screen.getByText('No commerce updates')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Approve' })).not.toBeInTheDocument();
   });
 
   it('renders system actors and quarantined rows without failing the history list', () => {

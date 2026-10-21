@@ -86,6 +86,7 @@ import { MarketplacePaymentStatusCard } from '@/organisms/Marketplace/Marketplac
 import { MarketplaceReauthDialog } from '@/organisms/Marketplace/MarketplaceReauthDialog';
 import { MarketplaceSectionNav } from '@/organisms/Marketplace/MarketplaceSectionNav';
 import { MarketplaceSellerDigitalPanel } from '@/organisms/Marketplace/MarketplaceSellerDigitalPanel';
+import { MarketplaceSessionConnectDialog } from '@/organisms/Marketplace/MarketplaceSessionConnectDialog';
 import { MarketplaceUsdtPaymentSummary } from '@/organisms/Marketplace/MarketplaceUsdtPaymentSummary';
 import { MarketplaceUsdtRefundAddress } from '@/organisms/Marketplace/MarketplaceUsdtRefundAddress';
 import type { MarketplaceOrder, MarketplacePayment } from '@/services/marketplace/marketplace';
@@ -262,10 +263,13 @@ export function MarketplaceOrders() {
         ) : isLoading ? (
           <Skeleton className="h-48 w-full" />
         ) : needsSession && error ? (
+          // A missing or expired marketplace session is not an empty history:
+          // the orders load once the session is approved again.
           <MarketplaceEmptyState
             icon={ReceiptText}
-            title="No orders yet"
-            description="Your purchases and sales will appear here."
+            title="Approve the marketplace to see your orders"
+            description="Your purchases and sales show here after one approval."
+            action={<MarketplaceSessionConnectDialog triggerLabel="Approve" onConnected={refresh} />}
           />
         ) : error ? (
           <div role="alert" className="rounded-md border border-destructive/40 p-4">

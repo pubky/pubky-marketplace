@@ -481,14 +481,16 @@ describe('MarketplaceOrders tabs', () => {
     expect(screen.getAllByTestId('payment-status')).toHaveLength(3);
   });
 
-  it('shows the orders empty state before marketplace approval', () => {
+  it('asks to approve the marketplace instead of saying there are no orders', () => {
     ordersState.needsSession = true;
     ordersState.error = 'A marketplace session is required.';
 
     render(<MarketplaceOrders />);
 
-    expect(screen.getByText('No orders yet')).toBeInTheDocument();
-    expect(screen.getByText('Your purchases and sales will appear here.')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Approve the marketplace to see your orders' })).toBeInTheDocument();
+    expect(screen.getByText('Your purchases and sales show here after one approval.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Approve' })).toBeInTheDocument();
+    expect(screen.queryByText('No orders yet')).not.toBeInTheDocument();
   });
 
   it('shows reserved checkout copy on Continue checkout, not a payment deadline on Orders', () => {
