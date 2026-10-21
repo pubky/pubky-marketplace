@@ -333,9 +333,12 @@ export function usdtRefundRefusalMessage(
 }
 
 /**
- * The buyer's receipt line for a recorded USDT refund. It states what the
- * seller recorded and that nobody checked it; the Paykit `refunded` outcome is
- * an annotation, never an independently verified on-chain refund (D5).
+ * The receipt line for a recorded USDT refund. When the service checked the
+ * transaction on Arbitrum (`receivedUnits`), it says so, and a short refund
+ * names what was received against what was recorded. Otherwise it states what
+ * the seller recorded and that the Shop hasn't checked it. The Paykit
+ * `refunded` outcome is an annotation, never an independently verified
+ * on-chain refund (D5).
  */
 export function usdtRefundRecordLine(order: UsdtRefundOrder): string | null {
   const refund = order.externalRefund;
