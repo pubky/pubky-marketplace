@@ -96,6 +96,8 @@ describe('Marketplace filters — visual regression', () => {
       viewport: VRT_VIEWPORT_MOBILE,
       disableHover: true,
     });
+    // Phones fold the dropdown filters behind the Filters toggle.
+    await screen.getByTestId('marketplace-filters-toggle').click();
     await expect.element(screen.getByRole('combobox', { name: 'Payment method' })).toHaveTextContent('Any payment');
     await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('filters-payment-default-mobile');
   });
