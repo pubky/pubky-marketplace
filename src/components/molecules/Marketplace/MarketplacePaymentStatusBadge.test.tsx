@@ -15,6 +15,7 @@ describe('MarketplacePaymentStatusBadge', () => {
 
   it.each([
     ['lapsed at Pay by', PAYMENT_WINDOW_ELAPSED_REASON],
+    ['the service cancelled as an idle checkout', 'checkout idle elapsed'],
     ['carries no reason', null],
     ['omits the reason', undefined],
   ])('keeps the expired window for an order that %s', (_label, cancellationReason) => {
