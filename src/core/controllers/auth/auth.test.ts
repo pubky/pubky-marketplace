@@ -127,6 +127,18 @@ describe('grant-only authentication lifecycle', () => {
     expect(signUp.mock.invocationCallOrder[0]).toBeLessThan(restart.mock.invocationCallOrder[0]);
   });
 
+  it('restarts the recovery phrase lifetime once the account exists, even if completing the session fails', async () => {
+    const session = grantSession();
+    vi.spyOn(Identity, 'keypairFromSecretKey').mockReturnValue(mockKeypair({ publicKey: session.info.publicKey }));
+    vi.spyOn(AuthApplication, 'signUp').mockResolvedValue({ session });
+    vi.mocked(AuthApplication.saveGrantSession).mockRejectedValue(new Error('storage blocked'));
+    const restart = vi.spyOn(useOnboardingStore.getState(), 'restartSecretsLifetime');
+    await expect(AuthController.signUp({ secretKey: 'test', signupToken: 'invite' })).rejects.toThrow(
+      'storage blocked',
+    );
+    expect(restart).toHaveBeenCalledOnce();
+  });
+
   it('keeps the recovery phrase lifetime when the account is not created', async () => {
     vi.spyOn(Identity, 'keypairFromSecretKey').mockReturnValue(mockKeypair());
     vi.spyOn(AuthApplication, 'signUp').mockRejectedValue(new Error('invite rejected'));
