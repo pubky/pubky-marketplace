@@ -7,7 +7,9 @@ import { isValidArbitrumAddress } from '@/libs/commerce/usdt-refund';
  * Paykit stores public Payment Endpoints per registered app under
  * `/pub/paykit/v0/apps/{app_id}/endpoints/{payment_endpoint_identifier}`; the
  * app ids are the keys of the App Registry
- * (`/pub/paykit/v0/app-registry.json`). The payload is a UTF-8 string.
+ * (`/pub/paykit/v0/app-registry.json`). Bitkit (Android and iOS) publishes
+ * this endpoint while its USDT payment option is on, with a JSON payload:
+ * `{"chain_id":"42161","token":"<USDT0 contract>","value":"<address>"}`.
  */
 export const USDT_ARBITRUM_ENDPOINT_ID = 'usdt-arbitrum-address';
 
@@ -26,8 +28,26 @@ export function paykitRegistryAppIds(json: unknown): string[] {
   return Object.keys(apps);
 }
 
-/** The Arbitrum address in a `usdt-arbitrum-address` payload, or null. */
+const ARBITRUM_ONE_CHAIN_ID = '42161';
+const USDT0_ARBITRUM_ONE = '0xfd086bc7cd5c481dcc9c85ebe478a1c0b69fcbb9';
+
+/**
+ * The Arbitrum address in a `usdt-arbitrum-address` payload, or null. Takes
+ * only Bitkit's JSON shape for USDT0 on Arbitrum One, as Bitkit's own reader
+ * (`PaykitUsdt.address(from:)`) does.
+ */
 export function usdtAddressFromEndpointPayload(payload: string): string | null {
-  const address = payload.trim();
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(payload);
+  } catch {
+    return null;
+  }
+  if (typeof parsed !== 'object' || parsed === null) return null;
+  const { chain_id: chainId, token, value } = parsed as Record<string, unknown>;
+  if (chainId !== ARBITRUM_ONE_CHAIN_ID) return null;
+  if (typeof token !== 'string' || token.toLowerCase() !== USDT0_ARBITRUM_ONE) return null;
+  if (typeof value !== 'string') return null;
+  const address = value.trim();
   return isValidArbitrumAddress(address) ? address : null;
 }

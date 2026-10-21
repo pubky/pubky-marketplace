@@ -20,8 +20,13 @@ describe('paykit refund endpoint', () => {
     expect(paykitRegistryAppIds({ apps: null })).toEqual([]);
   });
 
-  it('takes only a valid Arbitrum address from a payload', () => {
-    expect(usdtAddressFromEndpointPayload(` ${REFUND_FIXTURE_ADDRESS}\n`)).toBe(REFUND_FIXTURE_ADDRESS);
-    expect(usdtAddressFromEndpointPayload('bc1qnotanarbitrumaddress')).toBeNull();
+  it("reads Bitkit's USDT0 payload and nothing else", () => {
+    const payload = (fields: Record<string, string>) =>
+      JSON.stringify({ chain_id: '42161', token: '0xfd086bc7cd5c481dcc9c85ebe478a1c0b69fcbb9', ...fields });
+    expect(usdtAddressFromEndpointPayload(payload({ value: REFUND_FIXTURE_ADDRESS }))).toBe(REFUND_FIXTURE_ADDRESS);
+    expect(usdtAddressFromEndpointPayload(payload({ value: REFUND_FIXTURE_ADDRESS, chain_id: '1' }))).toBeNull();
+    expect(usdtAddressFromEndpointPayload(payload({ value: REFUND_FIXTURE_ADDRESS, token: '0x0' }))).toBeNull();
+    expect(usdtAddressFromEndpointPayload(payload({ value: 'bc1qnotanarbitrumaddress' }))).toBeNull();
+    expect(usdtAddressFromEndpointPayload(REFUND_FIXTURE_ADDRESS)).toBeNull();
   });
 });
