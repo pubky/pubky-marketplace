@@ -29,13 +29,19 @@ export function isSameOriginRequest(request: NextRequest): boolean {
  * and a shared IP (office, NAT) cannot starve one seller past their own bucket.
  */
 export function importRateLimitKeys(request: NextRequest): string[] {
-  const keys = [`ip:${requestIp(request)}`];
+  const keys = [`ip:${trustedClientIp(request) ?? 'unknown'}`];
   const session = request.cookies.get(SESSION_COOKIE)?.value;
   if (session) keys.push(`session:${createHash('sha256').update(session).digest('hex')}`);
   return keys;
 }
 
-function requestIp(request: NextRequest): string {
+/**
+ * The client address as seen by the nearest trusted proxy: Vercel's own header on
+ * Vercel, else the X-Forwarded-For hop `SHOP_BFF_CLI_TRUSTED_PROXY_COUNT` places from
+ * the right. Hops are counted from the right because the client can write any
+ * value at the left of X-Forwarded-For. Null when no trusted hop is available.
+ */
+export function trustedClientIp(request: NextRequest): string | null {
   if (process.env.VERCEL === '1') {
     const forwarded = lastHop(request.headers.get('x-vercel-forwarded-for'));
     if (forwarded) return forwarded;
@@ -49,7 +55,7 @@ function requestIp(request: NextRequest): string {
   if (Number.isInteger(trustedProxies) && trustedProxies >= 1 && hops.length >= trustedProxies) {
     return hops[hops.length - trustedProxies];
   }
-  return 'unknown';
+  return null;
 }
 
 function lastHop(header: string | null): string {
