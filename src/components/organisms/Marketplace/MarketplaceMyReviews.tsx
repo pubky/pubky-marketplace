@@ -96,7 +96,11 @@ export function MarketplaceMyReviews({ orders = [], className }: { orders?: Mark
   if (currentUserPubky === null || reviews === null || reviews.length === 0) return null;
 
   return (
-    <Card className={cn(cn('py-5', className), 'rounded-md p-0')} data-testid="marketplace-my-reviews">
+    <Card
+      className={cn(cn('py-5', className), 'rounded-md p-0')}
+      data-testid="marketplace-my-reviews"
+      data-surface="marketplace-my-reviews"
+    >
       <CardContent className="grid gap-6 p-6">
         <Typography as="h2" className="flex items-center gap-2 text-sm font-semibold">
           <PenLine className="size-4" />
@@ -162,7 +166,10 @@ export function MarketplaceMyReviews({ orders = [], className }: { orders?: Mark
           </ul>
         </SettingsSectionContent>
         <AlertDialog open={pendingRemoval !== null} onOpenChange={(open) => !open && setPendingRemoval(null)}>
-          <AlertDialogContent data-testid="marketplace-my-review-remove-dialog">
+          <AlertDialogContent
+            data-testid="marketplace-my-review-remove-dialog"
+            data-surface="marketplace-my-review-remove-dialog"
+          >
             <AlertDialogHeader>
               <AlertDialogTitle>{REVIEW_REMOVAL_COPY.dialogTitle}</AlertDialogTitle>
               <AlertDialogDescription>{REVIEW_REMOVAL_COPY.dialogDescription}</AlertDialogDescription>
