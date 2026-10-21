@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { SUPPORT_REPORT_MAX_REQUEST_BODY_BYTES } from '@/config/support-intake';
 import { ReportController } from '@/controllers/report/report';
+import type { TReportSubmitParams } from '@/controllers/report/report.types';
+import { readJsonBody } from '@/libs/api/read-json-body';
 import { handleApiError } from '@/libs/api/route-error-handler';
+import { admitSupportIntake, tooManyRequestsResponse } from '@/libs/api/support-intake-guards';
 import { HttpStatusCode } from '@/libs/http/http.types';
 
 /**
@@ -9,15 +13,20 @@ import { HttpStatusCode } from '@/libs/http/http.types';
  * This endpoint receives report data from the UI and processes it through
  * the controller layer following Franky's architecture.
  *
- * All validation is handled by the controller layer.
- * This route only parses the request body and delegates to the controller.
+ * Requests are limited per client address and across all clients, and the
+ * body is capped in size; both are checked before the body is parsed.
+ * Field validation is handled by the controller layer.
  */
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
-    const { pubky, postUrl, issueType, reason, name, listingId, sellerPubky, reviewUri, reviewerPubky } = body;
+    const admission = admitSupportIntake('report', request);
+    if (!admission.ok) return tooManyRequestsResponse(admission.retryAfterSeconds);
 
-    // Delegate to controller - validation happens there
+    const read = await readJsonBody(request, SUPPORT_REPORT_MAX_REQUEST_BODY_BYTES);
+    if (!read.ok) return read.response;
+    const { pubky, postUrl, issueType, reason, name, listingId, sellerPubky, reviewUri, reviewerPubky } = read.body;
+
+    // Delegate to controller - fields are unchecked until it validates them
     await ReportController.submit({
       pubky,
       postUrl,
@@ -28,7 +37,7 @@ export async function POST(request: NextRequest) {
       sellerPubky,
       reviewUri,
       reviewerPubky,
-    });
+    } as TReportSubmitParams);
 
     return NextResponse.json({ message: 'Success' });
   } catch (error) {

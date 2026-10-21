@@ -1,6 +1,12 @@
 import { NextRequest } from 'next/server';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  SUPPORT_COPYRIGHT_GLOBAL_RATE_LIMIT_REQUESTS,
+  SUPPORT_COPYRIGHT_MAX_REQUEST_BODY_BYTES,
+  SUPPORT_COPYRIGHT_RATE_LIMIT_REQUESTS,
+} from '@/config/support-intake';
 import { CopyrightController } from '@/controllers/copyright/copyright';
+import { admitSupportIntake, resetSupportIntakeForTests } from '@/libs/api/support-intake-guards';
 import { ServerErrorCode, ValidationErrorCode } from '@/libs/error/error.codes';
 import { Err } from '@/libs/error/error.factories';
 import { ErrorService } from '@/libs/error/error.types';
@@ -38,6 +44,7 @@ const createPostRequest = (body: Record<string, unknown>) => {
 describe('API Route: /api/copyright', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    resetSupportIntakeForTests();
     vi.spyOn(CopyrightController, 'submit').mockResolvedValue(undefined);
     vi.spyOn(Logger, 'error').mockImplementation(() => {});
   });
@@ -94,6 +101,63 @@ describe('API Route: /api/copyright', () => {
 
       expect(response.status).toBe(HttpStatusCode.INTERNAL_SERVER_ERROR);
       expect(data.error).toBe('Internal Server Error');
+    });
+  });
+
+  describe('POST limits', () => {
+    const validBody = testData;
+    const requestFrom = (clientIp: string, body: Record<string, unknown> = validBody) =>
+      new NextRequest('http://localhost:3000/api/copyright', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-forwarded-for': clientIp },
+        body: JSON.stringify(body),
+      });
+
+    beforeEach(() => {
+      vi.stubEnv('VERCEL', undefined);
+      vi.stubEnv('SHOP_BFF_CLI_TRUSTED_PROXY_COUNT', '1');
+    });
+
+    afterEach(() => {
+      vi.unstubAllEnvs();
+    });
+
+    it('refuses a client with 429 once its window is used up, before reading the body', async () => {
+      for (let i = 0; i < SUPPORT_COPYRIGHT_RATE_LIMIT_REQUESTS; i++) {
+        expect((await POST(requestFrom('203.0.113.7'))).status).toBe(200);
+      }
+
+      const request = requestFrom('203.0.113.7');
+      const response = await POST(request);
+
+      expect(response.status).toBe(429);
+      expect(Number(response.headers.get('Retry-After'))).toBeGreaterThanOrEqual(1);
+      expect((await response.json()).error).toBe('Too many requests. Try again later.');
+      expect(request.bodyUsed).toBe(false);
+      expect(CopyrightController.submit).toHaveBeenCalledTimes(SUPPORT_COPYRIGHT_RATE_LIMIT_REQUESTS);
+    });
+
+    it('refuses every client with 429 once the shared window is used up', async () => {
+      // Requests without a trusted client address count only against the shared window.
+      for (let i = 0; i < SUPPORT_COPYRIGHT_GLOBAL_RATE_LIMIT_REQUESTS; i++) {
+        admitSupportIntake('copyright', new NextRequest('http://localhost:3000/api/copyright', { method: 'POST' }));
+      }
+
+      const response = await POST(requestFrom('198.51.100.1'));
+
+      expect(response.status).toBe(429);
+      expect(Number(response.headers.get('Retry-After'))).toBeGreaterThanOrEqual(1);
+      expect(CopyrightController.submit).not.toHaveBeenCalled();
+    });
+
+    it('refuses a body over the size cap with 413 before the controller runs', async () => {
+      const oversized = { ...validBody, briefDescription: 'a'.repeat(SUPPORT_COPYRIGHT_MAX_REQUEST_BODY_BYTES) };
+
+      const response = await POST(requestFrom('203.0.113.7', oversized));
+
+      expect(response.status).toBe(413);
+      expect((await response.json()).error).toBe('Request body is too large.');
+      expect(CopyrightController.submit).not.toHaveBeenCalled();
     });
   });
 
