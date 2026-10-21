@@ -175,7 +175,7 @@ function ShippoIntegrationCard() {
                   name="fromName"
                   control={form.control}
                   label="Name"
-                  placeholder="Igor's Olive Farm"
+                  placeholder="Olive Grove Farm"
                 />
                 <ControlledInputField
                   name="fromLine1"
