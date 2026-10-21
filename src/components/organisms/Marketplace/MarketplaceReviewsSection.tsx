@@ -348,7 +348,8 @@ function toIndexedReviewResponse(
 /**
  * The compact listing a storefront review is about: thumbnail and name, linked
  * to the listing. Read from the local copy, else the seller's homeserver, so a
- * paused, ended or sold-out listing still shows. Renders nothing until found.
+ * paused, ended or sold-out listing still shows. Renders nothing until found,
+ * and nothing for a deleted listing.
  */
 function MarketplaceReviewListing({ sellerPubky, listingId }: { sellerPubky: string; listingId: string }) {
   const [listing, setListing] = useState<{ title: string; mediaUrls: string[] } | null>(null);
@@ -357,9 +358,8 @@ function MarketplaceReviewListing({ sellerPubky, listingId }: { sellerPubky: str
   useEffect(() => {
     let active = true;
     void (async () => {
-      const record =
-        (await CommerceController.getListing(sellerPubky, listingId))?.record ??
-        (await CommerceController.fetchListing(sellerPubky, listingId).catch(() => null));
+      // A deleted listing answers null without reporting; the catch covers network and server errors.
+      const record = await CommerceController.getOrFetchListingIfFound(sellerPubky, listingId).catch(() => null);
       if (!active || !record) return;
       setListing({
         title: record.title,

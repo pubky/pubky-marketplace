@@ -40,8 +40,7 @@ vi.mock('@/hooks/useMarketplaceReviews/useMarketplaceReviews', () => ({
 
 // No listing lookups reach the network: a storefront entry's listing resolves to nothing unless a test says otherwise.
 beforeEach(() => {
-  vi.spyOn(CommerceController, 'getListing').mockResolvedValue(null);
-  vi.spyOn(CommerceController, 'fetchListing').mockRejectedValue(new Error('offline'));
+  vi.spyOn(CommerceController, 'getOrFetchListingIfFound').mockResolvedValue(null);
 });
 
 afterEach(() => {
@@ -91,9 +90,8 @@ describe('MarketplaceReviewsSection on a storefront', () => {
     vi.restoreAllMocks();
   });
 
-  it('leads each review with its listing, read from the homeserver when no local copy exists', async () => {
-    vi.spyOn(CommerceController, 'getListing').mockResolvedValue(null);
-    const fetchListing = vi.spyOn(CommerceController, 'fetchListing').mockResolvedValue(
+  it('leads each review with its listing, even one no longer active', async () => {
+    const lookup = vi.spyOn(CommerceController, 'getOrFetchListingIfFound').mockResolvedValue(
       createCommerceListingFixture({
         ownerPubky: SELLER,
         listingId: 'rangefinder_camera',
@@ -109,15 +107,27 @@ describe('MarketplaceReviewsSection on a storefront', () => {
       'href',
       `/marketplace/listing/${SELLER}/rangefinder_camera`,
     );
-    expect(fetchListing).toHaveBeenCalledWith(SELLER, 'rangefinder_camera');
+    expect(lookup).toHaveBeenCalledWith(SELLER, 'rangefinder_camera');
+    expect(screen.getByText('Exactly as described.')).toBeInTheDocument();
+  });
+
+  it('keeps the review of a deleted listing intact without a strict fetch that reports the 404', async () => {
+    const lookup = vi.spyOn(CommerceController, 'getOrFetchListingIfFound').mockResolvedValue(null);
+    const strictFetch = vi.spyOn(CommerceController, 'fetchListing');
+
+    render(<MarketplaceReviewsSection sellerPubky={SELLER} />);
+
+    await vi.waitFor(() => expect(lookup).toHaveBeenCalledWith(SELLER, 'rangefinder_camera'));
+    expect(strictFetch).not.toHaveBeenCalled();
+    expect(screen.queryByRole('link', { name: 'Rangefinder camera' })).not.toBeInTheDocument();
     expect(screen.getByText('Exactly as described.')).toBeInTheDocument();
   });
 
   it('shows no listing on a listing page', () => {
-    const getListing = vi.spyOn(CommerceController, 'getListing');
+    const lookup = vi.spyOn(CommerceController, 'getOrFetchListingIfFound');
 
     render(<MarketplaceReviewsSection sellerPubky={SELLER} listingId="rangefinder_camera" />);
 
-    expect(getListing).not.toHaveBeenCalled();
+    expect(lookup).not.toHaveBeenCalled();
   });
 });
