@@ -664,6 +664,12 @@ export const marketplaceOrderProjectionSchema = z
     // null when the seller left one unset (the service default applies).
     deliveryAssumeDays: z.number().int().positive().nullish(),
     autoCompleteDays: z.number().int().positive().nullish(),
+    // The listing's return policy frozen on the order when its payment
+    // started; null when none was captured (the service then takes any return).
+    returnPolicy: z
+      .object({ acceptsReturns: z.boolean(), returnWindowDays: z.number().int().positive().nullable() })
+      .nullish()
+      .catch(null),
     nextActor: z
       .enum(['buyer', 'seller', 'none'])
       .nullable()
@@ -699,7 +705,13 @@ export const marketplaceOrderProjectionSchema = z
       .nullable()
       .optional(),
     externalRefund: z
-      .object({ amountMinor: z.number().int().positive(), transactionId: z.string(), recordedAt: z.string() })
+      .object({
+        amountMinor: z.number().int().positive(),
+        transactionId: z.string(),
+        recordedAt: z.string(),
+        // USDT millionths Arbitrum shows reaching the refund address, when the service checked it.
+        receivedUnits: z.number().int().nonnegative().nullish().catch(null),
+      })
       .nullable()
       .optional(),
     // PayPal refund notifications (service 94ecb0d). Display-only flags: a

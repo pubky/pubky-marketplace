@@ -165,7 +165,7 @@ export function MarketplaceConnectShopify({ shopify, statusCheck, onCheck }: Mar
             title={
               <>
                 <strong>Create the app.</strong> Click <strong>Create app</strong>, choose{' '}
-                <strong>Start from Dev Dashboard</strong>, and name it <strong>Pubky Shop</strong>.
+                <strong>Start from Dev Dashboard</strong>, and name it <strong>Pubky Market</strong>.
               </>
             }
           >
@@ -301,7 +301,7 @@ export function MarketplaceConnectShopify({ shopify, statusCheck, onCheck }: Mar
             {credentialsSaved && (
               <Typography as="p" data-testid="shopify-install-path">
                 Shopify starts the install from your app, so this opens the Dev Dashboard: open{' '}
-                <strong className="text-foreground">Pubky Shop</strong>, go to{' '}
+                <strong className="text-foreground">Pubky Market</strong>, go to{' '}
                 <strong className="text-foreground">Home</strong> →{' '}
                 <strong className="text-foreground">Install app</strong>, and approve the permissions. Then check the
                 connection below.

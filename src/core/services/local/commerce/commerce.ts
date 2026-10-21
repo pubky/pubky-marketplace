@@ -562,9 +562,18 @@ export class LocalCommerceService {
   static async commitSellerCatalogRefresh(
     entries: CommerceCatalogEntryModelSchema[],
     records: CommerceListingRecord[],
+    /** Listings whose record is gone: their cached index entries are dropped too. */
+    deleted?: { sellerPubky: string; deletedListingIds: ReadonlySet<string> },
   ): Promise<void> {
     try {
       await db.transaction('rw', CommerceCatalogEntryModel.table, CommerceListingModel.table, async () => {
+        if (deleted && deleted.deletedListingIds.size > 0) {
+          await CommerceCatalogEntryModel.table
+            .where('seller_id')
+            .equals(deleted.sellerPubky)
+            .filter((entry) => deleted.deletedListingIds.has(entry.listing_id))
+            .delete();
+        }
         const currentListings = await CommerceListingModel.table.bulkGet(
           records.map((record) => `${record.ownerPubky}:${record.listingId}`),
         );

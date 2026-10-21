@@ -1167,9 +1167,10 @@ export class HomeserverService {
     logUrl,
     tolerateUnreachable = false,
     maxBytes,
+    publicRead = false,
   }: THomeserverGetJsonIfFoundParams): Promise<THomeserverJsonIfFound<T>> {
     const contextUrl = logUrl ?? url;
-    const owned = this.resolveOwnedSessionPath(url);
+    const owned = publicRead ? null : this.resolveOwnedSessionPath(url);
     const load = owned
       ? () => owned.session.storage.get(toSdkPath(owned.path))
       : () => {
@@ -1493,11 +1494,14 @@ export class HomeserverService {
    * Subscribe to one homeserver's `/events-stream` for several of its users at
    * once (max 50), filtered to the given path prefixes (a trailing `/` means a
    * subtree). Public paths need no session. Callers own the reader lifecycle.
+   * `latestOnly` reads just the newest matching event and closes, instead of
+   * replaying history and staying open.
    */
   static async subscribeHomeserverEventStream(params: {
     homeserver: TPubkyModel;
     users: Array<[TPubkyModel, string | null]>;
     pathPrefixes: string[];
+    latestOnly?: boolean;
   }): Promise<ReadableStream<THomeserverResourceEvent>> {
     try {
       const pubkySdk = this.getPubkySdk();
@@ -1505,7 +1509,8 @@ export class HomeserverService {
       for (const prefix of params.pathPrefixes) {
         builder = builder.path(prefix);
       }
-      const stream = (await builder.live().subscribe()) as ReadableStream<HomeserverSdkUserEvent>;
+      builder = params.latestOnly ? builder.reverse().limit(1) : builder.live();
+      const stream = (await builder.subscribe()) as ReadableStream<HomeserverSdkUserEvent>;
       return this.normalizeUserEventStream(stream);
     } catch (error) {
       return handleError({

@@ -635,7 +635,7 @@ export const createMarketplaceListingDefaults: CreateMarketplaceListingData = {
   attrFormat: '',
   attrMaterial: '',
   condition: 'good',
-  countryCode: 'US',
+  countryCode: '',
   region: '',
   saleFormat: 'fixed_price',
   currency: 'USD',

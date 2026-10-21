@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for helping with the Pubky Shop. The rules live in the docs; this page points to them.
+Thanks for helping with Pubky Market. The rules live in the docs; this page points to them.
 
 - **Set up, test and release:** [`docs/ecommerce/onboarding.md`](docs/ecommerce/onboarding.md) and [`docs/ecommerce/release.md`](docs/ecommerce/release.md).
 - **Run it locally:** [`README.md`](README.md) and [`docs/ecommerce/RUNNING.md`](docs/ecommerce/RUNNING.md).

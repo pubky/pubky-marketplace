@@ -102,7 +102,7 @@ describe('Bitkit 2.6 fallback copy', () => {
 describe('unverified wallet copy', () => {
   it('asks for a recheck and offers PayPal only when the seller takes it', () => {
     expect(bitcoinWalletUnverifiedBody(true)).toBe(
-      "The Shop couldn't check which Bitkit version this pubky uses, so Bitcoin Pay is paused. Check again in a moment. You can also pay with PayPal.",
+      "The Shop couldn't check which Bitkit version this pubky uses, so Bitcoin Pay is paused. Check again in a moment. If it keeps failing, sign out and sign in again with Bitkit. You can also pay with PayPal.",
     );
     expect(bitcoinWalletUnverifiedBody(false)).not.toMatch(/PayPal/);
     expect(bitcoinWalletUnverifiedPayReason(true)).toBe(

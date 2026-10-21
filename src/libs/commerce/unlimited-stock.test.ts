@@ -50,6 +50,13 @@ describe('unlimited stock', () => {
     ).toBe('7');
   });
 
+  it("shows the service's count once known: a sale never changes the record's quantity", () => {
+    const record = { ...digital, variants: [{ quantity: 5 }] };
+    expect(formatListingStock(record, 4)).toBe('4');
+    expect(formatListingStock(record, null)).toBe('5');
+    expect(formatListingStock({ ...digital, variants: [{ quantity: cap }] }, 3)).toBe(UNLIMITED_STOCK_LABEL);
+  });
+
   it('refuses the cap on any listing that ships or offers pickup, and nowhere else', () => {
     const variants = (...quantities: number[]) => quantities.map((quantity) => ({ quantity }));
     for (const fulfillmentMethods of [

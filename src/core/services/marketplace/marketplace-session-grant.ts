@@ -113,10 +113,10 @@ export const MARKETPLACE_DISCLOSURE_PRIVATE_DATA =
   'Approving lets the marketplace handle your purchases and stock edits and read and write your private Shop data.';
 export const MARKETPLACE_DISCLOSURE_INVENTORY = 'Approving lets the marketplace handle your purchases and stock edits.';
 export const MARKETPLACE_DISCLOSURE_SIGN_IN =
-  'Approving signs you in to Pubky Shop and gives the marketplace the same access, including your private Shop data.';
+  'Approving signs you in to Pubky Market and gives the marketplace the same access, including your private Shop data.';
 /** The Ring cookie set also carries pubky.app's scopes, so its approval keeps that site working too. */
 export const MARKETPLACE_DISCLOSURE_RING_SIGN_IN =
-  "Approving signs you in to Pubky Shop, gives the marketplace the same access, including your private Shop data, and keeps Pubky App's social and Locks access working.";
+  "Approving signs you in to Pubky Market, gives the marketplace the same access, including your private Shop data, and keeps Pubky App's social and Locks access working.";
 
 /**
  * The one sentence Shop shows beside a QR whose approval produces a

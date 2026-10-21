@@ -3,9 +3,9 @@
  * agents query the same index build as the app.
  */
 export function renderAgentGuide(indexUrl: string): string {
-  return `# Pubky Shop — guide for agents
+  return `# Pubky Market — guide for agents
 
-Pubky Shop (https://shop.pubky.app) is a peer-to-peer marketplace. Sellers publish their shop,
+Pubky Market (https://shop.pubky.app) is a peer-to-peer marketplace. Sellers publish their shop,
 listings, drops and reviews as signed records on their own homeservers. A public index (Nexus)
 serves a queryable view of those records; it is replaceable, and anyone may run one.
 Checkout is seller-direct (Bitcoin via Paykit, PayPal). No platform holds funds.
