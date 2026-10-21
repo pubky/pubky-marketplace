@@ -12,8 +12,10 @@ import { setSocialHost } from '@/test-utils/social-host';
 import { TEST_TRUSTED_ATTESTOR } from '@/test/fixtures/commerce/trusted-attestors';
 
 // The Phase 2 public review surfaces in every honest state: stars on catalog
-// cards (only when the index reported reviews), the rating header (rated /
-// "New seller"), and the review list with the D5 labeling spectrum —
+// cards (only when the index reported reviews; counted per-buyer means from
+// trusted attestor buckets), the rating header (rated / "New seller" / the
+// RV2 seller headline / "No seller rating yet" / "No rating yet"), and the
+// review list, counted reviews first, with the D5 labeling spectrum —
 // verified-by-trusted-attestor, attested-by-unrecognized-signer, unverified —
 // plus the D7 subject response threaded beneath and the subject's composer,
 // moderated reviews (hidden text, the not-counted group) and the Report
@@ -31,6 +33,7 @@ const controllerState = vi.hoisted(() => ({
   reviews: [] as unknown[],
   ownResponse: null as unknown,
   listing: null as unknown,
+  catalogEntries: [] as unknown[],
 }));
 
 vi.mock('@/controllers/commerce/commerce', () => ({
@@ -41,6 +44,7 @@ vi.mock('@/controllers/commerce/commerce', () => ({
     fetchListingReviews: vi.fn(async () => ({ status: 'ok', reviews: controllerState.reviews })),
     getOwnMarketplaceReviewResponse: vi.fn(async () => controllerState.ownResponse),
     getOrFetchListingIfFound: vi.fn(async () => controllerState.listing),
+    getCatalogEntriesBySeller: vi.fn(async () => controllerState.catalogEntries),
     // The scenes render real MarketplaceListingCards against the real auth
     // store (one scene signs the seller in), so the cards' watch toggle
     // reaches the controller: keep the favorite statics on the mock.
@@ -173,6 +177,95 @@ const ratedSummary = {
   },
 };
 
+const UNRECOGNIZED_ATTESTOR = 'x'.repeat(52);
+
+/** One attestor's IX2 bucket; the iat range sits inside the trusted window. */
+function trustBucket(overrides: Record<string, unknown> = {}) {
+  return {
+    orders: 4,
+    buyers: 3,
+    sumBuyerMeans: 13.8,
+    weightedSum: 18,
+    weightTotal: 4,
+    histogram: [0, 0, 0, 2, 2] as [number, number, number, number, number],
+    firstIat: Date.parse('2026-08-01T00:00:00Z') / 1000,
+    lastIat: Date.parse('2026-08-10T00:00:00Z') / 1000,
+    sellerBuyers: 3,
+    sumSellerBuyerMeans: 14.1,
+    ...overrides,
+  };
+}
+
+// IX2: the trusted attestor's bucket (and the scoped figure built from its
+// window) drives the RV2 headline; the unrecognized signer's is not counted.
+const countedSummary = {
+  status: 'rated',
+  summary: {
+    count: 5,
+    verifiedCount: 5,
+    avg: 4.2,
+    histogram: [0, 1, 0, 2, 2],
+    responseCount: 0,
+    editedLateCount: 0,
+    attestors: { [TRUSTED_ATTESTOR]: 4, [UNRECOGNIZED_ATTESTOR]: 1 },
+    unverifiedCount: 0,
+    buckets: {
+      [TRUSTED_ATTESTOR]: trustBucket(),
+      [UNRECOGNIZED_ATTESTOR]: trustBucket({ orders: 1, buyers: 1, sumBuyerMeans: 2, sellerBuyers: 1 }),
+    },
+    scoped: trustBucket(),
+  },
+};
+
+// Every counted review predates the seller questions.
+const legacyOnlySummary = {
+  status: 'rated',
+  summary: {
+    ...countedSummary.summary,
+    buckets: { [TRUSTED_ATTESTOR]: trustBucket({ sellerBuyers: 0, sumSellerBuyerMeans: 0 }) },
+    scoped: trustBucket({ sellerBuyers: 0, sumSellerBuyerMeans: 0 }),
+  },
+};
+
+// Reviews exist, but none from an attestor this app trusts.
+const untrustedSummary = {
+  status: 'rated',
+  summary: {
+    ...countedSummary.summary,
+    count: 2,
+    verifiedCount: 1,
+    unverifiedCount: 1,
+    attestors: { [UNRECOGNIZED_ATTESTOR]: 1 },
+    buckets: { [UNRECOGNIZED_ATTESTOR]: trustBucket({ orders: 1, buyers: 1, sumBuyerMeans: 5 }) },
+    scoped: trustBucket({
+      orders: 0,
+      buyers: 0,
+      sumBuyerMeans: 0,
+      weightedSum: 0,
+      weightTotal: 0,
+      histogram: [0, 0, 0, 0, 0],
+      firstIat: null,
+      lastIat: null,
+      sellerBuyers: 0,
+      sumSellerBuyerMeans: 0,
+    }),
+  },
+};
+
+/** Two cached listings of the seller, each with counted buyers. */
+async function ratedCatalogEntries() {
+  const { createCommerceCatalogEntryFixture } = await import('@/test/fixtures/commerce/commerce');
+  const bucket = trustBucket({ orders: 2, buyers: 2, sumBuyerMeans: 9, sellerBuyers: null, sumSellerBuyerMeans: null });
+  return ['rangefinder_camera', 'light_meter'].map((listingId) =>
+    createCommerceCatalogEntryFixture({
+      id: `${SELLER}:${listingId}`,
+      seller_id: SELLER,
+      listing_id: listingId,
+      listing_reputation: { avg: 4.5, count: 2, verifiedCount: 2, buckets: { [TRUSTED_ATTESTOR]: bucket } },
+    }),
+  );
+}
+
 const cardFixtures = vi.hoisted(async () => {
   const { catalogItemFromCatalogEntry } = await import('@/hooks/useMarketplaceCatalog/useMarketplaceCatalog.utils');
   const { createCommerceCatalogEntryFixture } = await import('@/test/fixtures/commerce/commerce');
@@ -217,6 +310,43 @@ const cardFixtures = vi.hoisted(async () => {
   return { rated, unrated };
 });
 
+/**
+ * IX2 cards: one whose trusted bucket sits inside the trust window (counted
+ * per-buyer mean with its basis), one whose bucket starts before the window
+ * opened, so the window cuts it and nothing is counted.
+ */
+async function countedCardFixtures() {
+  const { catalogItemFromCatalogEntry } = await import('@/hooks/useMarketplaceCatalog/useMarketplaceCatalog.utils');
+  const { createCommerceCatalogEntryFixture } = await import('@/test/fixtures/commerce/commerce');
+  const card = (listingId: string, title: string, bucket: ReturnType<typeof trustBucket>) =>
+    catalogItemFromCatalogEntry(
+      createCommerceCatalogEntryFixture({
+        id: `${SELLER}:${listingId}`,
+        seller_id: SELLER,
+        listing_id: listingId,
+        title,
+        description: 'Recently serviced mechanical rangefinder with bright optics.',
+        category_id: 'electronics-cameras-film',
+        condition: 'excellent',
+        tags: ['film', 'camera'],
+        sale_format: 'fixed_price',
+        media_urls: [],
+        price: { amountMinor: 4_500, currency: 'USD', exponent: 2 },
+        auction: null,
+        reputation: { avg: 4.2, count: 5, verifiedCount: 5, buckets: { [TRUSTED_ATTESTOR]: bucket } },
+        updated_at: Date.parse('2026-08-19T21:02:00.000Z'),
+      }),
+    );
+  return {
+    counted: card('rangefinder_camera', '35mm rangefinder camera', trustBucket()),
+    cut: card(
+      'light_meter',
+      'Selenium light meter',
+      trustBucket({ firstIat: Date.parse('2025-12-20T00:00:00Z') / 1000 }),
+    ),
+  };
+}
+
 beforeEach(async () => {
   const { useMarketplaceDisplayStore } = await import('@/stores/marketplace-display/marketplace-display.store');
   useMarketplaceDisplayStore.setState({ showFxEstimate: true, measurementSystem: 'metric' });
@@ -225,6 +355,7 @@ beforeEach(async () => {
   controllerState.reviews = [];
   controllerState.ownResponse = null;
   controllerState.listing = null;
+  controllerState.catalogEntries = [];
 });
 
 async function waitForText(fragment: string) {
@@ -256,6 +387,73 @@ describe('Marketplace public reviews — visual regression', () => {
     );
     await waitForText('verified by the marketplace attestor');
     await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('reputation-header-rated-full-desktop');
+  });
+
+  it('renders counted card stars with their buyer basis next to a card whose bucket the window cuts at desktop viewport', async () => {
+    const { counted, cut } = await countedCardFixtures();
+    const screen = await renderForVRT(
+      <div className="grid grid-cols-4 gap-5 p-6">
+        <MarketplaceListingCard listing={counted} shopName="Proof of Film" />
+        <MarketplaceListingCard listing={cut} shopName="Proof of Film" />
+      </div>,
+      { viewport: VRT_VIEWPORT_DESKTOP, disableHover: true },
+    );
+    await waitForText('3 buyers · 4 orders');
+    await waitForText('No rating yet');
+    await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('listing-cards-counted-desktop');
+  });
+
+  it('renders the RV2 seller rating headline and the products line at desktop viewport', async () => {
+    controllerState.reputation = countedSummary;
+    controllerState.catalogEntries = await ratedCatalogEntries();
+    const screen = await renderForVRT(
+      <main className="mx-auto flex w-full max-w-xl flex-col gap-6 px-6 py-10">
+        <MarketplaceReputationHeader sellerPubky={SELLER} variant="full" />
+      </main>,
+      { viewport: VRT_VIEWPORT_DESKTOP },
+    );
+    await waitForText('seller rating · 3 buyers');
+    await waitForText('across 2 listings');
+    await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('reputation-header-counted-full-desktop');
+  });
+
+  it('renders the RV2 seller rating headline at mobile viewport', async () => {
+    controllerState.reputation = countedSummary;
+    controllerState.catalogEntries = await ratedCatalogEntries();
+    const screen = await renderForVRT(
+      <main className="flex w-full flex-col gap-6 px-4 py-8">
+        <MarketplaceReputationHeader sellerPubky={SELLER} variant="full" />
+      </main>,
+      { viewport: VRT_VIEWPORT_MOBILE },
+    );
+    await waitForText('across 2 listings');
+    await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('reputation-header-counted-full-mobile');
+  });
+
+  it('renders "No seller rating yet" for a seller with only legacy reviews at desktop viewport', async () => {
+    controllerState.reputation = legacyOnlySummary;
+    controllerState.catalogEntries = await ratedCatalogEntries();
+    const screen = await renderForVRT(
+      <main className="mx-auto flex w-full max-w-xl flex-col gap-6 px-6 py-10">
+        <MarketplaceReputationHeader sellerPubky={SELLER} variant="full" />
+      </main>,
+      { viewport: VRT_VIEWPORT_DESKTOP },
+    );
+    await waitForText('No seller rating yet');
+    await waitForText('across 2 listings');
+    await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('reputation-header-legacy-only-desktop');
+  });
+
+  it('renders "No rating yet" when no review is from a trusted attestor at desktop viewport', async () => {
+    controllerState.reputation = untrustedSummary;
+    const screen = await renderForVRT(
+      <main className="mx-auto flex w-full max-w-xl flex-col gap-6 px-6 py-10">
+        <MarketplaceReputationHeader sellerPubky={SELLER} variant="full" />
+      </main>,
+      { viewport: VRT_VIEWPORT_DESKTOP },
+    );
+    await waitForText('No rating yet');
+    await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('reputation-header-none-trusted-desktop');
   });
 
   it('renders the explicit new-seller state at desktop viewport', async () => {
