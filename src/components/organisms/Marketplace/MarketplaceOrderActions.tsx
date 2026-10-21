@@ -8,12 +8,16 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '
 import { Label } from '@/atoms/Label/Label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/atoms/Select/Select';
 import { Typography } from '@/atoms/Typography/Typography';
-import { COMMERCE_REVIEW_EDIT_WINDOW_SECONDS, trustedMarketplaceAttestorAt } from '@/config/commerce';
+import { trustedMarketplaceAttestorAt } from '@/config/commerce';
 import { FORM_LABEL_CLASSES } from '@/config/forms';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import { useMarketplaceOrderAction } from '@/hooks/useMarketplaceOrderAction/useMarketplaceOrderAction';
 import type { MarketplaceOrderActionData } from '@/hooks/useMarketplaceOrderAction/useMarketplaceOrderAction.types';
-import { majorToMinor, paypalRefundedMinor } from '@/hooks/useMarketplaceOrderAction/useMarketplaceOrderAction.types';
+import {
+  buyerReviewFormValues,
+  majorToMinor,
+  paypalRefundedMinor,
+} from '@/hooks/useMarketplaceOrderAction/useMarketplaceOrderAction.types';
 import { usePickupOrderActions } from '@/hooks/usePickupOrderActions/usePickupOrderActions';
 import { reviewAttestationIssuedAt } from '@/libs/commerce/attestation';
 import { orderAmountEntry } from '@/libs/commerce/bitcoin-payment-code';
@@ -21,6 +25,14 @@ import { OTHER_CARRIER_ID, SHIPPING_CARRIERS } from '@/libs/commerce/carriers';
 import { DIGITAL_ORDER_COPY, DIGITAL_SELLER_COPY, isInstantDigitalDeliveryKind } from '@/libs/commerce/digital';
 import { formatCommerceMoney } from '@/libs/commerce/format';
 import { ORDER_RETURN_COPY, orderReturnClosure } from '@/libs/commerce/order-returns';
+import {
+  buyerSellerRatings,
+  orderReviewListings,
+  reviewListingAggregateId,
+  reviewsOfReviewer,
+  reviewWindowClosesAtMs,
+  unreviewedListings,
+} from '@/libs/commerce/order-reviews';
 import { observedPaymentRail, paykitCheckoutCancellable } from '@/libs/commerce/paykit-rail';
 import { formatUsdt } from '@/libs/commerce/payment-options';
 import { formatBitcoinAmount } from '@/libs/commerce/pricing';
@@ -31,11 +43,12 @@ import type { CommerceReviewModelSchema } from '@/models/commerce/commerce.schem
 import { ControlledInputField } from '@/molecules/ControlledInputField/ControlledInputField';
 import { ControlledTextareaField } from '@/molecules/ControlledTextareaField/ControlledTextareaField';
 import { ArbiscanLookupLink } from '@/molecules/Marketplace/ArbiscanLookupLink';
-import { MarketplaceStarRating } from '@/molecules/MarketplaceStarRating/MarketplaceStarRating';
+import { MarketplaceStarRatingInput } from '@/molecules/MarketplaceStarRatingInput/MarketplaceStarRatingInput';
 import { toast } from '@/molecules/Toaster/use-toast';
 import { MarketplaceBitcoinAmountBreakdown } from '@/organisms/Marketplace/MarketplaceBitcoinAmountBreakdown';
 import { MarketplacePackingSlipDialog } from '@/organisms/Marketplace/MarketplacePackingSlipDialog';
 import { MarketplacePickupRevealDialog } from '@/organisms/Marketplace/MarketplacePickupRevealDialog';
+import { MarketplaceReviewFields } from '@/organisms/Marketplace/MarketplaceReviewFields';
 import { MarketplaceShippingLabelDialog } from '@/organisms/Marketplace/MarketplaceShippingLabelDialog';
 import { MarketplaceTrackingDialog } from '@/organisms/Marketplace/MarketplaceTrackingDialog';
 import type { MarketplaceOrder } from '@/services/marketplace/marketplace';
@@ -83,6 +96,7 @@ export function MarketplaceOrderActions({
   }, []);
   const action = useMarketplaceOrderAction(order, actOnOrder);
   const actionType = useWatch({ control: action.form.control, name: 'action' });
+  const reviewItemCount = useWatch({ control: action.form.control, name: 'reviewItems' }).length;
   const carrierChoice = useWatch({ control: action.form.control, name: 'carrierChoice' });
 
   // Seller-side half of the D2 amount-band consent, read honestly from the
@@ -105,43 +119,55 @@ export function MarketplaceOrderActions({
     };
   }, [open, actionType, isBuyer, order.sellerPubky]);
 
-  // The local-first copy of the user's own published review record: its
-  // publication + attestation state backs the verified-status line below.
-  const [ownReviewRecord, setOwnReviewRecord] = useState<CommerceReviewModelSchema | null>(null);
+  // The local-first copies of the user's own published review records (one
+  // per reviewed listing): their publication + attestation state backs the
+  // verified-status lines below.
+  const [ownReviewRecords, setOwnReviewRecords] = useState<CommerceReviewModelSchema[] | null>(null);
   const ownReviewerPubkyForRecord = isBuyer ? order.buyerPubky : order.sellerPubky;
   const hasOwnReview = order.reviews?.some(({ reviewerPubky }) => reviewerPubky === ownReviewerPubkyForRecord);
+  const ownReviewCount = reviewsOfReviewer(order, ownReviewerPubkyForRecord).length;
   useEffect(() => {
     if (!hasOwnReview) return;
     let active = true;
-    CommerceController.getOwnMarketplaceReview(order)
-      .then((record) => {
-        if (active) setOwnReviewRecord(record);
+    CommerceController.getOwnMarketplaceOrderReviews(order)
+      .then((records) => {
+        if (active) setOwnReviewRecords(records);
       })
       .catch(() => {
-        if (active) setOwnReviewRecord(null);
+        if (active) setOwnReviewRecords(null);
       });
     return () => {
       active = false;
     };
     // Full `order` is the hydrate input (listing identity, parties). The
-    // living row is keyed by id + revision; a new object of the same order
+    // living rows are keyed by id + revision; a new object of the same order
     // must not re-fetch.
     // eslint-disable-next-line react-hooks/exhaustive-deps -- order identity is id+revision
-  }, [hasOwnReview, order.id, order.revision]);
+  }, [hasOwnReview, order.id, order.revision, ownReviewCount]);
 
   const begin = (next: MarketplaceOrderActionData['action'], overrides?: Partial<MarketplaceOrderActionData>) => {
     action.setAction(next, overrides);
     setOpen(true);
   };
 
-  const ownReviewerPubky = isBuyer ? order.buyerPubky : order.sellerPubky;
-  const ownReview = order.reviews?.find(({ reviewerPubky }) => reviewerPubky === ownReviewerPubky);
-  // Mirrors the service's boundary exactly: the edit is refused only once
-  // `now` moves PAST created_at + window, so `<=` here matches `>` there.
-  const isOwnReviewEditable =
+  const ownReviews = reviewsOfReviewer(order, ownReviewerPubkyForRecord);
+  const ownReview = ownReviews[0];
+  // The service counts the window from the reviewer's first review of the
+  // order. It refuses adding and editing only once `now` moves PAST that
+  // plus the window, so `<=` here matches `>` there.
+  const reviewWindowClosesAt = reviewWindowClosesAtMs(ownReviews);
+  const isOwnReviewEditable = reviewWindowClosesAt !== null && nowMs !== null && nowMs <= reviewWindowClosesAt;
+  // A buyer reviews each listing of the order on the durable service; the
+  // sandbox, and a seller reviewing a buyer, keep the single v1 rating.
+  const perItemReview = isBuyer && canEditReview;
+  const reviewable = ['delivered', 'completed'].includes(order.state);
+  const canReviewMoreItems =
+    perItemReview &&
+    reviewable &&
     ownReview !== undefined &&
-    nowMs !== null &&
-    nowMs <= Date.parse(ownReview.createdAt) + COMMERCE_REVIEW_EDIT_WINDOW_SECONDS * 1000;
+    isOwnReviewEditable &&
+    unreviewedListings(order).length > 0;
+  const sellerRatingsGiven = isBuyer && buyerSellerRatings(order) !== null;
 
   // Local pickup (Wave 7, §A6): the pickup path has its own commands and its
   // own exits; shipped orders behave exactly as before.
@@ -346,20 +372,39 @@ export function MarketplaceOrderActions({
             Record refund
           </Button>
         )}
-        {['delivered', 'completed'].includes(order.state) &&
-          !order.reviews?.some(({ reviewerPubky }) =>
-            isBuyer ? reviewerPubky === order.buyerPubky : reviewerPubky === order.sellerPubky,
-          ) && (
-            <Button size="default" variant="secondary" className="rounded-full" onClick={() => begin('review')}>
-              Leave review
-            </Button>
-          )}
+        {reviewable && ownReview === undefined && (
+          <Button
+            size="default"
+            variant="secondary"
+            className="rounded-full"
+            onClick={() => begin('review', perItemReview ? buyerReviewFormValues(order, 'review') : undefined)}
+          >
+            Leave review
+          </Button>
+        )}
+        {canReviewMoreItems && (
+          <Button
+            size="default"
+            variant="secondary"
+            className="rounded-full"
+            onClick={() => begin('review', buyerReviewFormValues(order, 'review'))}
+          >
+            Review more items
+          </Button>
+        )}
         {canEditReview && ownReview && isOwnReviewEditable && (
           <Button
             size="default"
             variant="secondary"
             className="rounded-full"
-            onClick={() => begin('review_edit', { rating: String(ownReview.rating), text: ownReview.text })}
+            onClick={() =>
+              begin(
+                'review_edit',
+                perItemReview
+                  ? buyerReviewFormValues(order, 'review_edit')
+                  : { rating: String(ownReview.rating), text: ownReview.text },
+              )
+            }
           >
             Edit review
           </Button>
@@ -435,9 +480,24 @@ export function MarketplaceOrderActions({
       )}
 
       {ownReview && (
-        <p className="mt-2 text-xs text-muted-foreground" data-testid="own-review-status">
-          {reviewRecordStatus(ownReviewRecord)}
-        </p>
+        <div className="mt-2 grid gap-1 text-xs text-muted-foreground" data-testid="own-review-status">
+          {ownReviews.map((review) => {
+            const aggregateId = reviewListingAggregateId(order, review);
+            const listing = orderReviewListings(order).find(
+              (candidate) => candidate.listingAggregateId === aggregateId,
+            );
+            const record =
+              ownReviewRecords?.find((candidate) =>
+                listing === undefined ? ownReviews.length === 1 : candidate.record.listingId === listing.listingId,
+              ) ?? null;
+            return (
+              <p key={aggregateId ?? review.createdAt}>
+                {ownReviews.length > 1 && listing ? `${listing.title}: ` : ''}
+                {reviewRecordStatus(record)}
+              </p>
+            );
+          })}
+        </div>
       )}
 
       <Dialog open={open} onOpenChange={setOpen}>
@@ -545,14 +605,28 @@ export function MarketplaceOrderActions({
           )}
           {['review', 'review_edit'].includes(actionType) && (
             <>
-              <Controller
-                name="rating"
-                control={action.form.control}
-                render={({ field }) => <MarketplaceStarRatingInput value={field.value} onChange={field.onChange} />}
-              />
-              <ControlledTextareaField name="text" control={action.form.control} label="Review" />
+              {reviewItemCount > 0 ? (
+                <MarketplaceReviewFields
+                  form={action.form}
+                  showSellerRatings={actionType === 'review_edit' || !sellerRatingsGiven}
+                  sellerRatingsNote="Your shipping and communication ratings for the seller stay as you gave them."
+                />
+              ) : (
+                <>
+                  <Controller
+                    name="rating"
+                    control={action.form.control}
+                    render={({ field }) => <MarketplaceStarRatingInput value={field.value} onChange={field.onChange} />}
+                  />
+                  <ControlledTextareaField name="text" control={action.form.control} label="Review" />
+                </>
+              )}
               <p className="text-xs text-muted-foreground" data-testid="review-disclosure">
-                {isBuyer ? REVIEW_DISCLOSURE_COPY.buyer : REVIEW_DISCLOSURE_COPY.seller}
+                {isBuyer
+                  ? perItemReview
+                    ? `${REVIEW_DISCLOSURE_COPY.buyer} ${REVIEW_DISCLOSURE_COPY.buyerPriceRange}`
+                    : REVIEW_DISCLOSURE_COPY.buyer
+                  : REVIEW_DISCLOSURE_COPY.seller}
               </p>
             </>
           )}
@@ -628,41 +702,9 @@ export function MarketplaceOrderActions({
   );
 }
 
-function MarketplaceStarRatingInput({ value, onChange }: { value: string; onChange: (value: string) => void }) {
-  return (
-    <div className="grid gap-2">
-      <Label className={FORM_LABEL_CLASSES}>Rating</Label>
-      <div role="radiogroup" aria-label="Rating" className="flex flex-wrap gap-2">
-        {[1, 2, 3, 4, 5].map((rating) => {
-          const ratingValue = String(rating);
-          return (
-            <label
-              key={ratingValue}
-              className="relative cursor-pointer rounded-full border border-border/70 px-3 py-2 transition-colors has-[:checked]:border-brand has-[:checked]:bg-brand/10 has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ring has-[:focus-visible]:ring-offset-2"
-            >
-              <input
-                type="radio"
-                name="rating"
-                value={ratingValue}
-                checked={value === ratingValue}
-                tabIndex={value === ratingValue ? 0 : -1}
-                onChange={() => onChange(ratingValue)}
-                aria-label={`${rating} ${rating === 1 ? 'star' : 'stars'}`}
-                className="sr-only"
-              />
-              <span aria-hidden="true">
-                <MarketplaceStarRating rating={rating} size="sm" />
-              </span>
-            </label>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
 const REVIEW_DISCLOSURE_COPY = {
   buyer: 'Your review is public, tied to your Pubky, and shows you bought this item.',
+  buyerPriceRange: 'The price range of each item you review becomes public too.',
   seller: 'Your review is public, tied to your Pubky, and shows this buyer ordered from you.',
 } as const;
 

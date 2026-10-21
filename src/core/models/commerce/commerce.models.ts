@@ -90,13 +90,32 @@ export class CommerceReviewModel
     this.updated_at = review.updated_at;
   }
 
-  static async findByOwnerAndOrder(ownerId: string, orderId: string): Promise<CommerceReviewModelSchema | undefined> {
+  static async findByOwnerAndOrder(
+    ownerId: string,
+    orderId: string,
+    listingId?: string,
+  ): Promise<CommerceReviewModelSchema | undefined> {
     try {
-      return await this.table.where('[owner_id+order_id]').equals([ownerId, orderId]).first();
+      const rows = this.table.where('[owner_id+order_id]').equals([ownerId, orderId]);
+      return await (listingId === undefined ? rows : rows.filter((row) => row.record.listingId === listingId)).first();
     } catch (error) {
       throw Err.database(DatabaseErrorCode.QUERY_FAILED, `Failed to read own review from ${this.table.name}`, {
         service: ErrorService.Local,
         operation: 'findByOwnerAndOrder',
+        context: { table: this.table.name },
+        cause: error,
+      });
+    }
+  }
+
+  /** Every item review record of one order, in no particular order. */
+  static async findAllByOwnerAndOrder(ownerId: string, orderId: string): Promise<CommerceReviewModelSchema[]> {
+    try {
+      return await this.table.where('[owner_id+order_id]').equals([ownerId, orderId]).toArray();
+    } catch (error) {
+      throw Err.database(DatabaseErrorCode.QUERY_FAILED, `Failed to read own reviews from ${this.table.name}`, {
+        service: ErrorService.Local,
+        operation: 'findAllByOwnerAndOrder',
         context: { table: this.table.name },
         cause: error,
       });

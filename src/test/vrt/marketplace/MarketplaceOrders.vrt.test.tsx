@@ -1098,6 +1098,30 @@ describe('Marketplace orders — visual regression', () => {
     await expect(await expectVrtSurface('marketplace-my-reviews')).toMatchScreenshot('orders-my-reviews-desktop');
   });
 
+  it('renders an order reviewed item by item as one My reviews card at desktop viewport', async () => {
+    const { reviewedInWindow, ownReviewRow } = await fixtures;
+    ordersState.orders = reviewedInWindow;
+    ordersState.isLoading = false;
+    ordersState.error = null;
+    const beltRow = {
+      ...ownReviewRow,
+      id: `${ownReviewRow.owner_id}:REVIEW2`,
+      review_id: 'REVIEW2',
+      record: {
+        ...ownReviewRow.record,
+        reviewId: 'REVIEW2',
+        listingId: 'belt',
+        ratings: { overall: 4 },
+        text: 'The belt is sturdy.',
+      },
+    };
+    vi.spyOn(CommerceController, 'getOwnMarketplaceReviews').mockResolvedValue([ownReviewRow, beltRow]);
+
+    const screen = await renderForVRT(<MarketplaceOrders />, { viewport: VRT_VIEWPORT_DESKTOP });
+    await expect.element(screen.getByRole('button', { name: 'Remove my review' })).toBeVisible();
+    await expect(await expectVrtSurface('marketplace-my-reviews')).toMatchScreenshot('orders-my-reviews-items-desktop');
+  });
+
   it('renders the remove-review confirmation at mobile viewport', async () => {
     const { reviewedInWindow, ownReviewRow } = await fixtures;
     ordersState.orders = reviewedInWindow;

@@ -728,8 +728,13 @@ export const marketplaceOrderProjectionSchema = z
           id: z.uuid(),
           reviewerPubky: commercePubkySchema,
           subjectPubky: commercePubkySchema,
+          /** The listing a buyer's item review rates; absent on orders read from a service without per-item reviews. */
+          listingAggregateId: z.string().optional(),
           rating: z.number().int().min(1).max(5),
           text: z.string(),
+          /** The buyer's per-order seller ratings, on every item review of the order; null when unrated. */
+          shipping: z.number().int().min(1).max(5).nullish(),
+          communication: z.number().int().min(1).max(5).nullish(),
           createdAt: z.string(),
           updatedAt: z.string().optional(),
           // Only the author's own view carries it, and only when set (`review.withdraw`).

@@ -3,6 +3,7 @@ import { listingUriBuilder, PubkySpecsBuilder } from 'pubky-app-specs';
 import { describe, expect, it } from 'vitest';
 import {
   extractReviewAttestation,
+  extractReviewAttestations,
   marketplaceAttestationSchema,
   reviewAttestationIssuedAt,
   verifyOwnReviewAttestation,
@@ -139,6 +140,41 @@ describe('marketplace purchase attestation', () => {
     expect(extractReviewAttestation({ kind: 'review' })).toBeNull();
     // A malformed attestation is not silently accepted.
     expect(extractReviewAttestation({ kind: 'review', attestation: { jws: 'x' } })).toBeNull();
+  });
+
+  it('extracts every per-listing attestation of an item result in order and skips malformed entries', () => {
+    const boots = issueAttestation();
+    const belt = issueAttestation({ listing: listingUriBuilder(SELLER, 'belt') });
+    const claims = (iss: string, listing: string) => ({
+      v: 1,
+      iss,
+      sub: REVIEWER,
+      cpk: SELLER,
+      role: 'buyer_reviewing_seller',
+      listing,
+      orderRef: 'ab'.repeat(32),
+      completedOn: '2026-08-21',
+      priceDecade: 'USD:2',
+      iat: 1,
+    });
+
+    const extracted = extractReviewAttestations({
+      attestations: [
+        { listingId: LISTING_ID, jws: boots.jws, claims: claims(boots.iss, listingUriBuilder(SELLER, LISTING_ID)) },
+        { listingId: 'belt', jws: belt.jws, claims: claims(belt.iss, listingUriBuilder(SELLER, 'belt')) },
+        { jws: 'x' },
+      ],
+    });
+
+    expect(extracted.map(({ listingId }) => listingId)).toEqual([LISTING_ID, 'belt']);
+    expect(extracted[0].claims.priceDecade).toBe('USD:2');
+    expect(extractReviewAttestations({ kind: 'review' })).toEqual([]);
+  });
+
+  it('keeps price_decade in the pinned claims so a signed item attestation verifies', () => {
+    const { jws, iss } = issueAttestation({ price_decade: 'USD:2' });
+
+    expect(verifyOwnReviewAttestation(publishedRecord(jws))).toBe(iss);
   });
 
   it('verifies a genuinely signed attestation against the record offline', () => {

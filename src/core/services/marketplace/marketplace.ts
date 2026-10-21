@@ -267,6 +267,14 @@ export class MarketplaceGatewayService {
     return null;
   }
 
+  /** The caller's purchase attestations for an order they reviewed, one per listing; none outside the durable service. */
+  static async getReviewAttestations(actor: string, orderId: string): Promise<unknown[] | null> {
+    if (isDurableCommerceMode(getCommerceAdapterMode())) {
+      return await MarketplaceTransactionService.getReviewAttestations(actor, orderId);
+    }
+    return null;
+  }
+
   /**
    * The durable service's deterministic receipt attestation for the
    * portable order-receipt document. Null in sandbox mode — the sandbox has

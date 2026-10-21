@@ -1,8 +1,29 @@
 import { z } from 'zod';
+import { COMMERCE_REVIEW_TEXT_MAX_CHARS } from '@/config/commerce';
 import { SHIPPING_CARRIERS } from '@/libs/commerce/carriers';
+import {
+  buyerSellerRatings,
+  orderReviewListings,
+  type OrderReviewSource,
+  reviewListingAggregateId,
+  reviewsOfReviewer,
+  unreviewedListings,
+} from '@/libs/commerce/order-reviews';
 import { isArbitrumTxHash, USDT_REFUND_COPY } from '@/libs/commerce/usdt-refund';
 
 const carrierIds = SHIPPING_CARRIERS.map(({ id }) => id) as [string, ...string[]];
+
+const REVIEW_STARS = /^[1-5]$/;
+
+/** One listing of the order in the buyer's review: stars are required, text is optional. */
+const reviewItemDraftSchema = z.object({
+  listingId: z.string(),
+  title: z.string(),
+  rating: z.string().trim(),
+  text: z.string().trim().max(COMMERCE_REVIEW_TEXT_MAX_CHARS),
+});
+
+export type ReviewItemDraft = z.infer<typeof reviewItemDraftSchema>;
 
 export const marketplaceOrderActionSchema = z
   .object({
@@ -14,8 +35,14 @@ export const marketplaceOrderActionSchema = z
     trackingNumber: z.string().trim().max(200),
     amount: z.string().trim(),
     transactionId: z.string().trim().max(200),
+    /** The v1 rating and text a seller gives the buyer (and any review while `reviewItems` is empty). */
     rating: z.string().trim(),
-    text: z.string().trim().max(5_000),
+    text: z.string().trim().max(COMMERCE_REVIEW_TEXT_MAX_CHARS),
+    /** The buyer's per-listing reviews (per-item terms); empty for the v1 review. */
+    reviewItems: z.array(reviewItemDraftSchema),
+    /** The buyer's optional seller ratings; both or neither, empty meaning unrated. */
+    sellerShipping: z.string().trim(),
+    sellerCommunication: z.string().trim(),
     /**
      * Buyer-side amount-band opt-in (ratified D2): rendered only when the
      * seller's standing consent allows bands at all; the attestation carries
@@ -33,8 +60,28 @@ export const marketplaceOrderActionSchema = z
         context.addIssue({ code: 'custom', path: ['amount'], message: 'Enter a valid refund amount.' });
       }
     }
-    if (['review', 'review_edit'].includes(data.action) && (!/^[1-5]$/.test(data.rating) || !data.text)) {
-      context.addIssue({ code: 'custom', path: ['rating'], message: 'Rating and review text are required.' });
+    if (!['review', 'review_edit'].includes(data.action)) return;
+    if (data.reviewItems.length === 0) {
+      if (!REVIEW_STARS.test(data.rating)) {
+        context.addIssue({ code: 'custom', path: ['rating'], message: 'Choose a rating.' });
+      }
+      if (!data.text) {
+        context.addIssue({ code: 'custom', path: ['text'], message: 'Review text is required.' });
+      }
+      return;
+    }
+    data.reviewItems.forEach((item, index) => {
+      if (!REVIEW_STARS.test(item.rating)) {
+        context.addIssue({ code: 'custom', path: ['reviewItems', index, 'rating'], message: 'Choose a rating.' });
+      }
+    });
+    const sellerRated = data.sellerShipping !== '' || data.sellerCommunication !== '';
+    if (sellerRated && (!REVIEW_STARS.test(data.sellerShipping) || !REVIEW_STARS.test(data.sellerCommunication))) {
+      context.addIssue({
+        code: 'custom',
+        path: ['sellerCommunication'],
+        message: 'Rate both shipping and communication, or leave both blank.',
+      });
     }
   });
 
@@ -126,5 +173,47 @@ export const marketplaceOrderActionDefaults: MarketplaceOrderActionData = {
   transactionId: '',
   rating: '5',
   text: '',
+  reviewItems: [],
+  sellerShipping: '',
+  sellerCommunication: '',
   allowAmountBand: false,
 };
+
+/** Stars a listing starts at in the review dialog. */
+export const REVIEW_DEFAULT_RATING = '5';
+
+/**
+ * The buyer's review dialog, as form overrides. A new review lists the
+ * listings not reviewed yet; an edit lists the reviewed ones with their
+ * stars and text, and the seller ratings already given. When the order
+ * already carries seller ratings, a review that only adds listings leaves
+ * them alone (the service copies them onto the new records), so the
+ * dialog does not ask again.
+ */
+export function buyerReviewFormValues(
+  order: OrderReviewSource,
+  mode: 'review' | 'review_edit',
+): Pick<MarketplaceOrderActionData, 'reviewItems' | 'sellerShipping' | 'sellerCommunication'> {
+  const rated = buyerSellerRatings(order);
+  if (mode === 'review') {
+    return {
+      reviewItems: unreviewedListings(order).map(({ listingId, title }) => ({
+        listingId,
+        title,
+        rating: REVIEW_DEFAULT_RATING,
+        text: '',
+      })),
+      sellerShipping: '',
+      sellerCommunication: '',
+    };
+  }
+  const own = reviewsOfReviewer(order, order.buyerPubky);
+  return {
+    reviewItems: orderReviewListings(order).flatMap(({ listingAggregateId, listingId, title }) => {
+      const review = own.find((candidate) => reviewListingAggregateId(order, candidate) === listingAggregateId);
+      return review === undefined ? [] : [{ listingId, title, rating: String(review.rating), text: review.text }];
+    }),
+    sellerShipping: rated === null ? '' : String(rated.shipping),
+    sellerCommunication: rated === null ? '' : String(rated.communication),
+  };
+}

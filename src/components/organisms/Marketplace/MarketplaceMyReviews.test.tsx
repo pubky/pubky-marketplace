@@ -24,12 +24,17 @@ const order = createOrderFixture('completed', {
   ],
 });
 
-function ownReview(text: string): CommerceReviewModelSchema {
+function ownReview(text: string, overrides: { reviewId?: string; orderId?: string; listingId?: string } = {}) {
+  const { reviewId = 'REVIEW1', orderId = order.id, listingId = 'boots' } = overrides;
+  return ownReviewRow(text, reviewId, orderId, listingId);
+}
+
+function ownReviewRow(text: string, reviewId: string, orderId: string, listingId: string): CommerceReviewModelSchema {
   return {
-    id: `${ORDER_FIXTURE_BUYER}:REVIEW1`,
+    id: `${ORDER_FIXTURE_BUYER}:${reviewId}`,
     owner_id: ORDER_FIXTURE_BUYER,
-    review_id: 'REVIEW1',
-    order_id: order.id,
+    review_id: reviewId,
+    order_id: orderId,
     subject_id: ORDER_FIXTURE_SELLER,
     record: {
       schemaVersion: 1,
@@ -38,10 +43,10 @@ function ownReview(text: string): CommerceReviewModelSchema {
       revision: 1,
       createdAt: '2026-08-21T10:00:00.000Z',
       updatedAt: '2026-08-21T10:00:00.000Z',
-      reviewId: 'REVIEW1',
+      reviewId,
       subjectPubky: ORDER_FIXTURE_SELLER,
       listingOwnerPubky: ORDER_FIXTURE_SELLER,
-      listingId: 'boots',
+      listingId,
       role: 'buyer_reviewing_seller',
       ratings: { overall: 5 },
       text,
@@ -135,6 +140,39 @@ describe('MarketplaceMyReviews', () => {
     await waitFor(() => expect(screen.queryByText('Remove me.')).not.toBeInTheDocument());
     expect(remove).toHaveBeenCalledWith(order.id);
     expect(toast).toHaveBeenCalledWith({ description: REVIEW_REMOVAL_COPY.removed });
+  });
+
+  it('shows an order reviewed item by item as one card, and removes all of its records with one confirmation', async () => {
+    const otherOrder = createOrderFixture('completed', { id: '018f47d2-6a27-7c23-a49d-0000000000bb' });
+    vi.spyOn(CommerceController, 'getOwnMarketplaceReviews').mockResolvedValue([
+      ownReview('Boots were great.', { reviewId: 'REVIEW1', listingId: 'boots' }),
+      ownReview('Belt is fine.', { reviewId: 'REVIEW2', listingId: 'belt' }),
+      ownReview('Wallet, too.', { reviewId: 'REVIEW3', orderId: otherOrder.id, listingId: 'wallet' }),
+    ]);
+    vi.spyOn(CommerceController, 'refreshOwnMarketplaceReviews').mockResolvedValue(0);
+    const remove = vi.spyOn(CommerceController, 'commitDeleteOwnMarketplaceReview').mockResolvedValue('removed');
+    const user = userEvent.setup();
+
+    render(<MarketplaceMyReviews orders={[order]} />);
+    const cards = await screen.findAllByRole('listitem');
+
+    expect(cards).toHaveLength(2);
+    expect(within(cards[0]).getByText('Boots were great.')).toBeInTheDocument();
+    expect(within(cards[0]).getByText('Belt is fine.')).toBeInTheDocument();
+    expect(within(cards[0]).getAllByText('View listing')).toHaveLength(2);
+    expect(within(cards[0]).getAllByRole('button', { name: REVIEW_REMOVAL_COPY.action })).toHaveLength(1);
+    expect(within(cards[1]).getByText('Wallet, too.')).toBeInTheDocument();
+
+    await user.click(within(cards[0]).getByRole('button', { name: REVIEW_REMOVAL_COPY.action }));
+    await user.click(
+      within(await screen.findByRole('alertdialog')).getByRole('button', { name: REVIEW_REMOVAL_COPY.confirm }),
+    );
+
+    await waitFor(() => expect(screen.queryByText('Boots were great.')).not.toBeInTheDocument());
+    expect(screen.queryByText('Belt is fine.')).not.toBeInTheDocument();
+    expect(screen.getByText('Wallet, too.')).toBeInTheDocument();
+    expect(remove).toHaveBeenCalledTimes(1);
+    expect(remove).toHaveBeenCalledWith(order.id);
   });
 
   it('keeps the review when the confirmation is cancelled', async () => {

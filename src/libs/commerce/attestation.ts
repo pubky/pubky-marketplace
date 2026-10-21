@@ -40,6 +40,15 @@ export const marketplaceAttestationSchema = z
           .string()
           .regex(/^[A-Z][A-Z0-9]{2,11}:\d{1,2}$/)
           .optional(),
+        /**
+         * The order of magnitude of the line's unit price (`"<CUR>:<k>"`,
+         * the `amountBand` encoding), issued on every per-item attestation
+         * from specs `.15`. It is always public: the review dialog says so.
+         */
+        priceDecade: z
+          .string()
+          .regex(/^[A-Z][A-Z0-9]{2,11}:\d{1,2}$/)
+          .optional(),
         iat: z.number().int().positive(),
       })
       .strict(),
@@ -47,6 +56,32 @@ export const marketplaceAttestationSchema = z
   .strict();
 
 export type MarketplaceAttestation = z.infer<typeof marketplaceAttestationSchema>;
+
+/**
+ * One purchase attestation of a per-item review command or of
+ * `GET /v1/orders/{id}/review-attestations`: the closed `{ jws, claims }`
+ * shape plus the `listingId` (the seller's record id) of the listing it
+ * binds. An order carries one per reviewed listing, all sharing `order_ref`.
+ */
+export const marketplaceItemAttestationSchema = marketplaceAttestationSchema
+  .extend({ listingId: z.string().min(1) })
+  .strict();
+
+export type MarketplaceItemAttestation = z.infer<typeof marketplaceItemAttestationSchema>;
+
+/**
+ * Extracts the per-listing attestations from a successful review command
+ * result or from the review-attestations route, in the service's line order.
+ * Entries that do not parse are skipped, so a result from a service without
+ * the per-item fields reads as none.
+ */
+export function extractReviewAttestations(result: Record<string, unknown>): MarketplaceItemAttestation[] {
+  if (!Array.isArray(result.attestations)) return [];
+  return result.attestations.flatMap((entry) => {
+    const parsed = marketplaceItemAttestationSchema.safeParse(entry);
+    return parsed.success ? [parsed.data] : [];
+  });
+}
 
 /**
  * Extracts the attestation from a successful review command result, or null

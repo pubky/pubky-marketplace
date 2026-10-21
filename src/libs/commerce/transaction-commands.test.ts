@@ -88,6 +88,89 @@ describe.each([
   });
 });
 
+describe.each([
+  ['review.create', createReviewCommandSchema],
+  ['review.update', updateReviewCommandSchema],
+] as const)('%s per-item terms', (kind, schema) => {
+  const itemsPayload = (payload: Record<string, unknown> = {}) => ({
+    orderId: ORDER_ID,
+    items: [
+      { listingId: 'boots', rating: 5, text: 'Great boots.' },
+      { listingId: 'belt', rating: 3, text: '' },
+    ],
+    ...payload,
+  });
+  const command = (payload: Record<string, unknown> = {}) => ({
+    ...reviewCommand(kind),
+    payload: itemsPayload(payload),
+  });
+
+  it('accepts one entry per listing with optional text and optional seller ratings', () => {
+    const parsed = schema.parse(command({ seller: { shipping: 4, communication: 5 }, allowAmountBand: true }));
+
+    expect(parsed.payload).toEqual(itemsPayload({ seller: { shipping: 4, communication: 5 }, allowAmountBand: true }));
+  });
+
+  it('defaults an omitted item text to empty and trims it', () => {
+    const parsed = schema.parse(
+      command({
+        items: [
+          { listingId: 'boots', rating: 5 },
+          { listingId: 'belt', rating: 4, text: '  Fine.  ' },
+        ],
+      }),
+    );
+
+    expect(parsed.payload).toMatchObject({
+      items: [
+        { listingId: 'boots', rating: 5, text: '' },
+        { listingId: 'belt', rating: 4, text: 'Fine.' },
+      ],
+    });
+  });
+
+  it('sends items and seller ratings in the service snake_case', () => {
+    const wire = toSnakeCaseWire(schema.parse(command({ seller: { shipping: 4, communication: 5 } }))) as {
+      payload: Record<string, unknown>;
+    };
+
+    expect(wire.payload).toEqual({
+      order_id: ORDER_ID,
+      items: [
+        { listing_id: 'boots', rating: 5, text: 'Great boots.' },
+        { listing_id: 'belt', rating: 3, text: '' },
+      ],
+      seller: { shipping: 4, communication: 5 },
+    });
+  });
+
+  it.each([
+    ['no items', { items: [] }],
+    ['an out-of-range item rating', { items: [{ listingId: 'boots', rating: 6, text: '' }] }],
+    [
+      'a repeated listing',
+      {
+        items: [
+          { listingId: 'boots', rating: 5 },
+          { listingId: 'boots', rating: 4 },
+        ],
+      },
+    ],
+    ['item text over 5,000 characters', { items: [{ listingId: 'boots', rating: 5, text: 'a'.repeat(5_001) }] }],
+    ['an unknown item field', { items: [{ listingId: 'boots', rating: 5, text: '', note: 'x' }] }],
+    ['a seller rating without communication', { seller: { shipping: 4 } }],
+    ['a seller rating without shipping', { seller: { communication: 4 } }],
+    ['an out-of-range seller rating', { seller: { shipping: 0, communication: 5 } }],
+    ['a v1 rating mixed with items', { rating: 5, text: 'Mixed.' }],
+    [
+      'more than 50 items',
+      { items: Array.from({ length: 51 }, (_, index) => ({ listingId: `l${index}`, rating: 5 })) },
+    ],
+  ])('rejects %s', (_label, payload) => {
+    expect(schema.safeParse(command(payload)).success).toBe(false);
+  });
+});
+
 describe('review.withdraw command contract', () => {
   const withdraw = (payload: Record<string, unknown> = {}) => ({
     ...reviewCommand('review.update'),
