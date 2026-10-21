@@ -7,9 +7,27 @@ import {
 } from '@/hooks/useMarketplaceCatalog/useMarketplaceCatalog.utils';
 import type { MarketplaceLiveBid } from '@/hooks/useMarketplaceLiveBid/useMarketplaceLiveBid';
 import { createCommerceSandboxCatalog } from '@/libs/commerce/sandbox-catalog';
+import type { CommerceReputationBucket } from '@/models/commerce/commerce.schema';
 import { createCommerceCatalogEntryFixture } from '@/test/fixtures/commerce/commerce';
 import { toCommerceListingModel } from '@/test/fixtures/commerce/listing-models';
+import { TEST_TRUSTED_ATTESTOR } from '@/test/fixtures/commerce/trusted-attestors';
 import { MarketplaceListingCard } from './MarketplaceListingCard';
+
+function trustBucket(overrides: Partial<CommerceReputationBucket> = {}): CommerceReputationBucket {
+  return {
+    orders: 2,
+    buyers: 2,
+    sumBuyerMeans: 9,
+    weightedSum: 9,
+    weightTotal: 2,
+    histogram: [0, 0, 0, 1, 1],
+    firstIat: Date.parse('2026-03-01T00:00:00Z') / 1000,
+    lastIat: Date.parse('2026-09-01T00:00:00Z') / 1000,
+    sellerBuyers: null,
+    sumSellerBuyerMeans: null,
+    ...overrides,
+  };
+}
 
 // The card is presentational: the live-bid hook (its viewport observer and
 // transaction-service fetch) is behavior-tested in `useMarketplaceLiveBid.test.tsx`.
@@ -127,6 +145,51 @@ describe('MarketplaceListingCard', () => {
     expect(screen.getByRole('img', { name: 'Rated 4.6 out of 5 from 17 reviews' })).toBeInTheDocument();
     expect(screen.getByTitle('17 reviews')).toBeInTheDocument();
     expect(screen.queryByText('No rating yet')).not.toBeInTheDocument();
+  });
+
+  it('shows the per-buyer mean of trusted buckets with its buyers and orders', () => {
+    const listing = catalogItemFromCatalogEntry(
+      createCommerceCatalogEntryFixture({
+        reputation: {
+          avg: 2.1,
+          count: 17,
+          verifiedCount: 11,
+          unverifiedCount: 6,
+          buckets: {
+            [TEST_TRUSTED_ATTESTOR.pubky]: trustBucket({ buyers: 3, orders: 4, sumBuyerMeans: 13.8 }),
+            ['x'.repeat(52)]: trustBucket({ buyers: 5, orders: 5, sumBuyerMeans: 5 }),
+          },
+        },
+      }),
+    );
+
+    render(<MarketplaceListingCard listing={listing} shopName="Satoshi Vintage" />);
+
+    expect(screen.getByRole('img', { name: 'Rated 4.6 out of 5 from 3 buyers, 4 orders' })).toBeInTheDocument();
+    expect(screen.getByText('3 buyers · 4 orders')).toBeInTheDocument();
+    expect(screen.queryByTitle('17 reviews')).not.toBeInTheDocument();
+  });
+
+  it('shows "No rating yet" when a trust window cuts the only trusted bucket', () => {
+    const listing = catalogItemFromCatalogEntry(
+      createCommerceCatalogEntryFixture({
+        reputation: {
+          avg: 4.6,
+          count: 2,
+          verifiedCount: 2,
+          unverifiedCount: 0,
+          // The bucket starts before the trusted key's window opens.
+          buckets: {
+            [TEST_TRUSTED_ATTESTOR.pubky]: trustBucket({ firstIat: Date.parse('2025-12-01T00:00:00Z') / 1000 }),
+          },
+        },
+      }),
+    );
+
+    render(<MarketplaceListingCard listing={listing} shopName="Satoshi Vintage" />);
+
+    expect(screen.getByText('No rating yet')).toBeInTheDocument();
+    expect(screen.queryByRole('img', { name: /Rated/ })).not.toBeInTheDocument();
   });
 
   it('shows no verified-purchase affix, because the card snippet cannot tell trusted attestors apart', () => {
