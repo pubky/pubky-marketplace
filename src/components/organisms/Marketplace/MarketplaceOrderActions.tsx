@@ -525,6 +525,9 @@ export function MarketplaceOrderActions({
                   Amount to send: {usdtRefundAmount}
                 </Typography>
               )}
+              <Typography as="p" className="text-sm text-muted-foreground" data-testid="refund-usdt-fee-hint">
+                {USDT_REFUND_COPY.feeHint}
+              </Typography>
             </div>
           )}
           {actionType === 'refund' && (

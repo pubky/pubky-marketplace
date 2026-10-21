@@ -71,7 +71,7 @@ The toggle stays disabled until `ready` (it can always be switched off), and the
 
 ## Refund address (W4)
 
-The marketplace never holds funds, so a USDT refund is two human steps the Shop only records: the buyer confirms an Arbitrum One USDT address on the order page, and the seller sends the refund with an ordinary USDT send in Bitkit and records the Arbitrum transaction hash with "Record refund". Nothing is detected or checked on-chain; the Shop never calls a recorded refund "verified" or "confirmed on Arbitrum", and the Paykit `resolved: refunded` outcome is an annotation, never a verified refund.
+The marketplace never holds funds, so a USDT refund is two human steps the Shop only records: the buyer confirms an Arbitrum One USDT address on the order page, and the seller sends the refund with an ordinary USDT send in Bitkit and records the Arbitrum transaction hash with "Record refund". When the service has an Arbitrum RPC (`ARBITRUM_RPC_URL`), it reads that transaction's receipt: a hash Arbitrum doesn't show, a reverted transaction or one that sent the buyer's address no USDT0 is refused, and the record keeps `received_units`, the USDT millionths that reached the address. The Shop then says "Checked on Arbitrum", or shows what was received against what was recorded when it is short. Without that field the refund is unchecked and the Shop says so. The Paykit `resolved: refunded` outcome is an annotation, never a verified refund.
 
 These surfaces render for any order whose projection carries `paymentAsset: "USDT"`, whatever the new-offer flag says: a USDT order that already exists must stay refundable after the flag flips. Bitcoin, PayPal and Stripe orders never carry the field, so nothing changes for them.
 
