@@ -15,7 +15,6 @@ import { Heading } from '@/atoms/Heading/Heading';
 import { Link } from '@/atoms/Link/Link';
 import { Textarea } from '@/atoms/Textarea/Textarea';
 import { Typography } from '@/atoms/Typography/Typography';
-import { trustedMarketplaceAttestorAtRecordTime } from '@/config/commerce';
 import { REVIEW_MODERATION_COPY } from '@/config/commerce-copy';
 import { isSocialLinkOutEnabled } from '@/config/social';
 import { CommerceController } from '@/controllers/commerce/commerce';
@@ -23,6 +22,7 @@ import { useMarketplaceFirstMediaUrl } from '@/hooks/useMarketplaceMediaUrl/useM
 import { useMarketplaceReviews } from '@/hooks/useMarketplaceReviews/useMarketplaceReviews';
 import { useRequireAuth } from '@/hooks/useRequireAuth/useRequireAuth';
 import { VERIFIED_PURCHASE_INFO, VERIFIED_PURCHASE_INFO_LABEL } from '@/libs/commerce/eu-region';
+import { indexedReviewTrustedAttestor, isCountedIndexedReview } from '@/libs/commerce/review-counting';
 import { cn } from '@/libs/utils/utils';
 import type { CommerceIndexedReview, CommerceReviewResponseModelSchema } from '@/models/commerce/commerce.schema';
 import { InfoHint } from '@/molecules/InfoHint/InfoHint';
@@ -53,9 +53,13 @@ export interface MarketplaceReviewsSectionProps {
  *   "Unverified" label otherwise.
  * - D7: the subject's single revisable response threads beneath the review,
  *   and the respond/edit affordance renders only for the signed-in subject.
+ * - Counting (rules v2): counted reviews come first, verified by an
+ *   attestor this app trusts at the attestation's time and not excluded by
+ *   moderation. Every other review (unverified, unrecognized or
+ *   out-of-window attestor, excluded as fraud) sits in a separate "n not
+ *   counted" group below them.
  * - Moderation: a review whose text the index's moderator hid keeps its
- *   stars and shows the reason instead of the text; a review excluded as
- *   fraud sits in a separate "not counted" group below the counted ones.
+ *   stars and shows the reason instead of the text, and still counts.
  *   Every review but the reader's own offers "Report review".
  *
  * When no review-aware index serves this deployment the section renders
@@ -72,8 +76,8 @@ export function MarketplaceReviewsSection({
 
   if (status === 'unavailable' || status === 'loading') return null;
 
-  const counted = reviews.filter((review) => review.moderation?.state !== 'excluded');
-  const notCounted = reviews.filter((review) => review.moderation?.state === 'excluded');
+  const counted = reviews.filter(isCountedIndexedReview);
+  const notCounted = reviews.filter((review) => !isCountedIndexedReview(review));
   const renderReview = (review: CommerceIndexedReview) => (
     <MarketplaceReviewItem
       key={`${review.reviewerId}:${review.reviewId}`}
@@ -305,13 +309,12 @@ function MarketplaceReviewMenu({ review }: { review: CommerceIndexedReview }) {
  * signer is a trusted attestor is this client's configuration
  * (`marketplaceTrustedAttestors`) — so an attested review from an
  * unrecognized signer is labeled exactly that, never upgraded to "verified".
- * The index serves no attestation `iat`, so trust is judged by the record's
- * `createdAt` (see `trustedMarketplaceAttestorAtRecordTime`).
+ * The trust window is checked against the attestation's `iat`, or the
+ * record's `createdAt` (fail closed) when the index serves no `iat` (see
+ * `indexedReviewTrustedAttestor`).
  */
 function MarketplaceReviewVerificationBadge({ review }: { review: CommerceIndexedReview }) {
-  const trustedAttestor = review.verified
-    ? trustedMarketplaceAttestorAtRecordTime(review.attestorId, new Date(review.createdAt))
-    : null;
+  const trustedAttestor = indexedReviewTrustedAttestor(review);
   if (trustedAttestor !== null) {
     return (
       <Badge variant="secondary" className="gap-1 text-emerald-400">

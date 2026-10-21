@@ -1,9 +1,11 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import { useLiveQuery } from 'dexie-react-hooks';
 import type { CommerceIndexedReviewsResult, CommerceSellerReputationOverview } from '@/application/commerce/commerce';
 import { MARKETPLACE_REVIEWS_PAGE_SIZE } from '@/config/commerce';
 import { CommerceController } from '@/controllers/commerce/commerce';
+import { countedSnippetReputation } from '@/libs/commerce/review-counting';
 import type { CommerceIndexedReview, CommerceReputationSnippet } from '@/models/commerce/commerce.schema';
 
 /**
@@ -70,6 +72,20 @@ export function useSellerReputation(sellerPubky: string, options?: { enabled?: b
   }, [sellerPubky, enabled]);
 
   return overview;
+}
+
+/**
+ * How many of the seller's indexed listings this device holds have counted
+ * buyer reviews (trusted buckets, card rule): the L of the storefront's
+ * "Products rated 4.6 across L listings". Counts only what the catalog
+ * cache holds, so it never over-counts; 0 while loading.
+ */
+export function useSellerRatedListingCount(sellerPubky: string): number {
+  const entries = useLiveQuery(() => CommerceController.getCatalogEntriesBySeller(sellerPubky), [sellerPubky]);
+  return (entries ?? []).filter((entry) => {
+    const counted = entry.listing_reputation ? countedSnippetReputation(entry.listing_reputation) : null;
+    return counted !== null && counted.buyers > 0;
+  }).length;
 }
 
 export interface MarketplaceReviewsTarget {

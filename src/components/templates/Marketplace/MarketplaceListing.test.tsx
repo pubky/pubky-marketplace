@@ -713,6 +713,31 @@ describe('MarketplaceListing', () => {
     expect(screen.queryByText('No rating yet')).not.toBeInTheDocument();
   });
 
+  it("counts this product's rating from the index's exact scoped figure", () => {
+    listingRating.value = {
+      avg: 3.1,
+      count: 12,
+      verifiedCount: 9,
+      scoped: {
+        orders: 4,
+        buyers: 3,
+        sumBuyerMeans: 13.8,
+        weightedSum: 18,
+        weightTotal: 4,
+        histogram: [0, 0, 0, 2, 2],
+        firstIat: Date.parse('2026-08-01T00:00:00Z') / 1000,
+        lastIat: Date.parse('2026-08-10T00:00:00Z') / 1000,
+        sellerBuyers: null,
+        sumSellerBuyerMeans: null,
+      },
+    };
+
+    renderListing();
+
+    expect(screen.getByRole('img', { name: 'Rated 4.6 out of 5 from 3 buyers, 4 orders' })).toBeInTheDocument();
+    expect(screen.queryByTitle('12 reviews')).not.toBeInTheDocument();
+  });
+
   it('shows no rating while the product rating is loading', () => {
     listingRating.value = undefined;
 
