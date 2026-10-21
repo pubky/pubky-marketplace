@@ -10,10 +10,15 @@ const mockVisualViewport = {
 };
 
 describe('useKeyboardVisible', () => {
+  let field: HTMLInputElement;
   let originalVisualViewport: typeof window.visualViewport;
   let originalInnerHeight: number;
 
   beforeEach(() => {
+    // The keyboard only counts while a text field has focus.
+    field = document.createElement('input');
+    document.body.append(field);
+    field.focus();
     // Save original values
     originalVisualViewport = window.visualViewport;
     originalInnerHeight = window.innerHeight;
@@ -34,6 +39,7 @@ describe('useKeyboardVisible', () => {
   });
 
   afterEach(() => {
+    field.remove();
     // Restore original values
     Object.defineProperty(window, 'visualViewport', {
       writable: true,

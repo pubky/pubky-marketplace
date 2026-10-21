@@ -179,6 +179,7 @@ import type { BtcRate } from '@/services/exchangerate/exchangerate.types';
 import { CommerceHomeserverService } from '@/services/homeserver/commerce/commerce';
 import { CommercePrivStoreService } from '@/services/homeserver/commerce/priv-store';
 import { HomeserverService, PRIVATE_APP_DATA_PATH } from '@/services/homeserver/homeserver';
+import type { THomeserverResourceEvent } from '@/services/homeserver/homeserver.types';
 import { retryHomeserverWrite, retryHomeserverWriteAfterReread } from '@/services/homeserver/write-retry';
 import { type CommerceListingRowGeneration, LocalCommerceService } from '@/services/local/commerce/commerce';
 import {
@@ -495,6 +496,63 @@ export class CommerceApplication {
 
     const record = await this.fetchShop(ownerPubky);
     return await LocalCommerceService.cacheRefreshedShop(record, local?.record ?? null);
+  }
+
+  /**
+   * A seller's current shop record, read network-first so a seller's later
+   * changes (seller type, country) reach buyers who cached the shop before.
+   * Falls back to the cached copy when the read fails, including a 404, which
+   * may be transient; with nothing cached, the read's error propagates.
+   */
+  static async refreshShopOrGetCached(ownerPubky: string): Promise<CommerceShopRecord> {
+    try {
+      return await this.refreshShop(ownerPubky);
+    } catch (error) {
+      const local = await LocalCommerceService.getShop(ownerPubky).catch(() => null);
+      if (local) return local.record;
+      throw error;
+    }
+  }
+
+  /**
+   * A live stream of changes to the seller's `shop.json`, from the seller's
+   * homeserver `/events-stream` (public, no session), starting after `cursor`;
+   * a null cursor replays the file's past events first. Null when the seller
+   * has no homeserver. Callers own the reader lifecycle.
+   */
+  static async subscribeShopEvents(
+    ownerPubky: string,
+    cursor: string | null = null,
+  ): Promise<ReadableStream<THomeserverResourceEvent> | null> {
+    return await this.shopEventStream(ownerPubky, cursor, false);
+  }
+
+  /** The cursor of the latest write to the seller's `shop.json`, so a live stream can start after it; null when none. */
+  static async latestShopEventCursor(ownerPubky: string): Promise<string | null> {
+    const stream = await this.shopEventStream(ownerPubky, null, true);
+    if (!stream) return null;
+    const reader = stream.getReader();
+    try {
+      const { done, value } = await reader.read();
+      return done ? null : value.cursor;
+    } finally {
+      void reader.cancel().catch(() => {});
+    }
+  }
+
+  private static async shopEventStream(
+    ownerPubky: string,
+    cursor: string | null,
+    latestOnly: boolean,
+  ): Promise<ReadableStream<THomeserverResourceEvent> | null> {
+    const homeserver = await HomeserverService.resolveHomeserverOf(ownerPubky);
+    if (!homeserver) return null;
+    return await HomeserverService.subscribeHomeserverEventStream({
+      homeserver,
+      users: [[ownerPubky, cursor]],
+      pathPrefixes: [CommerceRecordNormalizer.shopUri(ownerPubky).slice(`pubky://${ownerPubky}`.length)],
+      ...(latestOnly ? { latestOnly } : {}),
+    });
   }
 
   static async getOrFetchShop(ownerPubky: string): Promise<CommerceShopRecord> {

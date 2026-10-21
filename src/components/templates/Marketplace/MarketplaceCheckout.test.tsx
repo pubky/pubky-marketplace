@@ -281,7 +281,7 @@ vi.mock('@/controllers/commerce/commerce', () => ({
       paypalAvailable: true,
     })),
     fetchUsdtPaymentsAvailable: vi.fn(async () => false),
-    getOrFetchShop: vi.fn(async () => null),
+    refreshShopOrGetCached: vi.fn(async () => null),
     getSellerAnnualLimit: vi.fn(async () => ({ enabled: false })),
     getIndicativeBtcRate: vi.fn(async () => null),
     getOrFetchListing: vi.fn(async () => listing.record),
@@ -2364,7 +2364,7 @@ describe('MarketplaceCheckout Paykit option (Bitcoin or USDT)', () => {
     render(<MarketplaceCheckout />);
 
     expect(await screen.findByTestId('marketplace-checkout-usdt-finality-note')).toHaveTextContent(
-      'If you pay in USDT, the seller ships once Arbitrum finalizes your payment, usually within minutes.',
+      'If you pay in USDT, the seller ships once Arbitrum finalizes your payment, usually in about 15–20 minutes.',
     );
   });
 

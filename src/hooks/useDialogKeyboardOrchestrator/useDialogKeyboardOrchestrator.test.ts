@@ -13,7 +13,8 @@ const mockUseKeyboardViewport = vi.hoisted(() =>
   })),
 );
 
-vi.mock('../useKeyboardViewport/useKeyboardViewport', () => ({
+vi.mock('../useKeyboardViewport/useKeyboardViewport', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../useKeyboardViewport/useKeyboardViewport')>()),
   useKeyboardViewport: mockUseKeyboardViewport,
 }));
 
@@ -166,7 +167,7 @@ describe('useDialogKeyboardOrchestrator', () => {
     await waitFor(() => {
       expect(result.current.spacerHeight).toBe(304);
     });
-    expect(result.current.contentStyle).toEqual({ scrollPaddingBottom: '328px' });
+    expect(result.current.contentStyle).toEqual({ maxHeight: '452px', scrollPaddingBottom: '328px' });
     expect(result.current.contentStyle).not.toHaveProperty('transform');
   });
 
@@ -210,6 +211,31 @@ describe('useDialogKeyboardOrchestrator', () => {
     const { result } = renderHook(() => useDialogKeyboardOrchestrator(contentRef));
 
     expect(result.current.spacerHeight).toBe(0);
+    expect(result.current.contentStyle).not.toHaveProperty('scrollPaddingBottom');
+  });
+
+  it('fits the dialog layer to the visible area above the keyboard', () => {
+    mockUseKeyboardViewport.mockReturnValue({
+      isKeyboardVisible: true,
+      keyboardHeight: 300,
+      keyboardTop: 580,
+      viewportHeight: 500,
+      viewportOffsetTop: 80,
+    });
+    const { content } = createDialogContent();
+
+    const { result } = renderHook(() => useDialogKeyboardOrchestrator({ current: content }));
+
+    expect(result.current.layerStyle).toEqual({ top: '80px', bottom: 'auto', height: '500px' });
+    expect(result.current.contentStyle).toEqual({ maxHeight: '452px' });
+  });
+
+  it('leaves the dialog layer alone with the keyboard closed', () => {
+    const { content } = createDialogContent();
+
+    const { result } = renderHook(() => useDialogKeyboardOrchestrator({ current: content }));
+
+    expect(result.current.layerStyle).toBeUndefined();
     expect(result.current.contentStyle).toBeUndefined();
   });
 

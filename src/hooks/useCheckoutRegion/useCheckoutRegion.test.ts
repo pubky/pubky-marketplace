@@ -10,7 +10,7 @@ import { useCheckoutRegion } from './useCheckoutRegion';
 vi.mock('@/controllers/commerce/commerce', () => ({
   CommerceController: {
     setBuyerCountry: vi.fn((code: string | null) => useBuyerCountryStore.getState().setCountry(code)),
-    getOrFetchShop: vi.fn(),
+    refreshShopOrGetCached: vi.fn(),
     getSellerAnnualLimit: vi.fn(),
   },
 }));
@@ -52,7 +52,7 @@ describe('useCheckoutRegion', () => {
   beforeEach(() => {
     useBuyerCountryStore.setState({ country: null });
     flags(false, false);
-    vi.mocked(CommerceController.getOrFetchShop).mockImplementation(async (pubky) => {
+    vi.mocked(CommerceController.refreshShopOrGetCached).mockImplementation(async (pubky) => {
       const record = shops[String(pubky)];
       if (!record) throw new Error('no shop');
       return record as never;
@@ -72,13 +72,21 @@ describe('useCheckoutRegion', () => {
     expect(useBuyerCountryStore.getState().country).toBeNull();
   });
 
-  it('uses the address country, remembers it, and refuses an EU address for a business seller', async () => {
+  it('uses the address country and refuses an EU address for a business seller', async () => {
     flags(true, false);
     const { result } = region({ sellers: [TRADER], addressCountry: 'de' });
     expect(result.current.blocked).toBe(true);
     await waitFor(() => expect(result.current.refusal).toBe(EU_UNAVAILABLE_MESSAGE));
     expect(result.current.buyerCountry).toBe('DE');
-    expect(useBuyerCountryStore.getState().country).toBe('DE');
+  });
+
+  it('leaves the remembered country alone while the address form shows another one', async () => {
+    flags(true, true);
+    useBuyerCountryStore.setState({ country: 'CH' });
+    const { result } = region({ sellers: [PRIVATE], addressCountry: 'BE' });
+    await waitFor(() => expect(Object.keys(result.current.declarations)).toHaveLength(1));
+    expect(result.current.buyerCountry).toBe('BE');
+    expect(useBuyerCountryStore.getState().country).toBe('CH');
   });
 
   it('lets a non-EU address buy from a business seller and an EU address from a private seller', async () => {

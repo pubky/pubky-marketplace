@@ -22,11 +22,11 @@ import {
 } from './useCreateMarketplaceListing.types';
 
 /**
- * The form defaults deliberately ship no category (the seller must pick
- * one); these tests exercise the rest of the schema with a resolvable
- * category that requires no attributes.
+ * The form defaults deliberately ship no category and no country (the seller
+ * must pick both); these tests exercise the rest of the schema with a
+ * resolvable category that requires no attributes and a country.
  */
-const formDefaults = { ...createMarketplaceListingDefaults, categoryId: 'fashion' };
+const formDefaults = { ...createMarketplaceListingDefaults, categoryId: 'fashion', countryCode: 'CH' };
 
 describe('createMarketplaceListingSchema', () => {
   it('defaults to physical shipping and final sale', () => {
@@ -403,6 +403,14 @@ describe('isCreateMarketplaceListingPublishReady', () => {
     const ready = isCreateMarketplaceListingPublishReady(values, photoCount);
     expect(ready).toBe(expected);
     expect(ready).toBe(schemaValid && photoCount > 0);
+  });
+
+  it('never publishes an unset country as US: an empty country blocks publishing', () => {
+    expect(createMarketplaceListingDefaults.countryCode).toBe('');
+    const noCountry = { ...physicalReady, countryCode: '' };
+    expect(createMarketplaceListingSchema.safeParse(noCountry).success).toBe(false);
+    expect(isCreateMarketplaceListingPublishReady(noCountry, 1)).toBe(false);
+    expect(createMarketplaceListingPublishChecklist(noCountry, 1)).toEqual(['Country']);
   });
 
   it('lists description and shipping until they satisfy the schema', () => {

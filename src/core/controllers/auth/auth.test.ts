@@ -265,10 +265,10 @@ describe('grant-only authentication lifecycle', () => {
     expect(generate).toHaveBeenLastCalledWith();
     await AuthController.getGrantAuthUrl({ withPrivKeys: false });
     expect(generate).toHaveBeenLastCalledWith(undefined, { withPrivKeys: false });
-    await AuthController.getPassportGrantAuthUrl({ xSource: 'Pubky Shop' });
-    expect(generate).toHaveBeenLastCalledWith({ xSource: 'Pubky Shop' }, { signer: 'passport' });
-    await AuthController.getPassportGrantAuthUrl({ xSource: 'Pubky Shop' }, { withPrivKeys: false });
-    expect(generate).toHaveBeenLastCalledWith({ xSource: 'Pubky Shop' }, { withPrivKeys: false, signer: 'passport' });
+    await AuthController.getPassportGrantAuthUrl({ xSource: 'Pubky Market' });
+    expect(generate).toHaveBeenLastCalledWith({ xSource: 'Pubky Market' }, { signer: 'passport' });
+    await AuthController.getPassportGrantAuthUrl({ xSource: 'Pubky Market' }, { withPrivKeys: false });
+    expect(generate).toHaveBeenLastCalledWith({ xSource: 'Pubky Market' }, { withPrivKeys: false, signer: 'passport' });
     await AuthController.getStepUpAuthUrl({ signer: 'bitkit' });
     expect(generate).toHaveBeenLastCalledWith(undefined);
   });
