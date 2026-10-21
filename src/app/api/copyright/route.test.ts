@@ -57,6 +57,36 @@ describe('API Route: /api/copyright', () => {
       expect(CopyrightController.submit).toHaveBeenCalledWith(testData);
     });
 
+    it('should reject an invalid JSON body with 400', async () => {
+      const request = new NextRequest('http://localhost:3000/api/copyright', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: 'invalid json',
+      });
+
+      const response = await POST(request);
+      const data = await response.json();
+
+      expect(response.status).toBe(400);
+      expect(data).toEqual({ error: 'Request body is not valid JSON.' });
+      expect(CopyrightController.submit).not.toHaveBeenCalled();
+    });
+
+    it('should reject a JSON body that is not an object with 400', async () => {
+      const request = new NextRequest('http://localhost:3000/api/copyright', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify([testData]),
+      });
+
+      const response = await POST(request);
+      const data = await response.json();
+
+      expect(response.status).toBe(400);
+      expect(data).toEqual({ error: 'Request body must be a JSON object.' });
+      expect(CopyrightController.submit).not.toHaveBeenCalled();
+    });
+
     it('should handle validation errors with 500 status (no statusCode in context)', async () => {
       const appError = Err.validation(ValidationErrorCode.MISSING_FIELD, 'Validation failed', {
         service: ErrorService.Local,
