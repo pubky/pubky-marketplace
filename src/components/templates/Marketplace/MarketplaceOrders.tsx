@@ -84,6 +84,7 @@ import { MarketplaceOrderDigitalPanel } from '@/organisms/Marketplace/Marketplac
 import { MarketplaceOrderReference } from '@/organisms/Marketplace/MarketplaceOrderReference';
 import { MarketplacePaymentStatusCard } from '@/organisms/Marketplace/MarketplacePaymentStatusCard';
 import { MarketplaceReauthDialog } from '@/organisms/Marketplace/MarketplaceReauthDialog';
+import { MarketplaceReturnStatus } from '@/organisms/Marketplace/MarketplaceReturnStatus';
 import { MarketplaceSectionNav } from '@/organisms/Marketplace/MarketplaceSectionNav';
 import { MarketplaceSellerDigitalPanel } from '@/organisms/Marketplace/MarketplaceSellerDigitalPanel';
 import { MarketplaceSessionConnectDialog } from '@/organisms/Marketplace/MarketplaceSessionConnectDialog';
@@ -626,11 +627,7 @@ export function MarketplaceOrders() {
                                 {deliveredCompletionNote(order)}
                               </Typography>
                             )}
-                            {order.returnRequest && (
-                              <Typography as="p" className="mt-2 text-sm text-muted-foreground">
-                                Return {order.returnRequest.state}: {order.returnRequest.reason}
-                              </Typography>
-                            )}
+                            <MarketplaceReturnStatus order={order} isBuyer={isBuyer} actOnOrder={actOnOrder} />
                             {refundRecord && (
                               <Typography
                                 as="p"

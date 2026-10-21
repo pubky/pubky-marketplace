@@ -57,6 +57,8 @@ export function orderShowsCommandResult(
         order.returnRequest?.state === 'received' ||
         order.returnRequest?.state === 'refunded'
       );
+    case 'return.cancel':
+      return order.returnRequest == null && order.state !== 'return_requested';
     case 'return.receive':
       return (
         order.returnRequest?.state === 'received' ||
