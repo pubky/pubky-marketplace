@@ -8,7 +8,7 @@
 // That is not a mock — it is the same API and the same in-memory state the
 // app under test talks to.
 
-import { backupDownloadFilePath } from './common';
+import { TEST_BACKUP_PASSWORD, backupDownloadFilePath } from './common';
 
 export const MARKETPLACE_SERVICE_URL = 'http://localhost:3100';
 
@@ -88,8 +88,8 @@ export function onboardMarketplaceUser(profileName: string, pubkyAlias: string):
 
   // encrypted-file backup so later tests can sign back in after test isolation
   cy.get('#backup-encrypted-file-btn').click();
-  cy.get('#password').type('123456');
-  cy.get('#confirmPassword').type('123456');
+  cy.get('#password').type(TEST_BACKUP_PASSWORD);
+  cy.get('#confirmPassword').type(TEST_BACKUP_PASSWORD);
   cy.get('#download-file-btn').click();
   cy.renameFile(backupDownloadFilePath(), backupDownloadFilePath(profileName));
   cy.get('#backup-successful-ok-btn').click();

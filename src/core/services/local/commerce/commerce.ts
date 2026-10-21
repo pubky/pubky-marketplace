@@ -855,8 +855,9 @@ export class LocalCommerceService {
     this.assertSyncJobIdentity(job, review.owner_id, review.review_id, 'review');
     try {
       await db.transaction('rw', CommerceReviewModel.table, CommerceSyncJobModel.table, async () => {
-        // A publication supersedes a removal that has not reached the homeserver.
+        // A publication supersedes a removal, owed or done.
         await this.ownReviewJobs(review.owner_id, review.review_id, 'remove').delete();
+        await CommerceSyncJobModel.deleteById(this.ownReviewRemovedMarkerId(review.owner_id, review.order_id));
         await CommerceReviewModel.upsert(review);
         await CommerceSyncJobModel.upsert(job);
       });
@@ -869,6 +870,25 @@ export class LocalCommerceService {
         cause: error,
       });
     }
+  }
+
+  /**
+   * The durable marker that the user removed this order's review on this
+   * device. It is a `commerce_sync_jobs` row no worker picks up (its own
+   * entity type), keyed by order so it outlives the review row, the outbox
+   * `remove` job and the session. A new publication lifts it.
+   */
+  private static ownReviewRemovedMarkerId(ownerId: string, orderId: string): string {
+    return `review-removed|${ownerId}|${orderId}`;
+  }
+
+  static async isOwnReviewRemoved(ownerId: string, orderId: string): Promise<boolean> {
+    return Boolean(await CommerceSyncJobModel.findById(this.ownReviewRemovedMarkerId(ownerId, orderId)));
+  }
+
+  /** True while a homeserver DEL of this own review is still owed in the outbox. */
+  static async hasOwedOwnReviewRemoval(ownerId: string, reviewId: string): Promise<boolean> {
+    return (await this.ownReviewJobs(ownerId, reviewId, 'remove').count()) > 0;
   }
 
   private static ownReviewJobs(ownerId: string, reviewId: string, operation?: CommerceSyncJobModelSchema['operation']) {
@@ -899,6 +919,13 @@ export class LocalCommerceService {
         await this.ownReviewJobs(review.owner_id, review.review_id).delete();
         await CommerceReviewModel.table.delete(review.id);
         await CommerceSyncJobModel.upsert(job);
+        await CommerceSyncJobModel.upsert({
+          ...job,
+          id: this.ownReviewRemovedMarkerId(review.owner_id, review.order_id),
+          entity_type: 'review_removed',
+          entity_id: review.order_id,
+          payload: { orderId: review.order_id },
+        });
       });
     } catch (error) {
       if (isAppError(error)) throw error;

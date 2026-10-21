@@ -731,6 +731,7 @@ export const marketplaceOrderProjectionSchema = z
           rating: z.number().int().min(1).max(5),
           text: z.string(),
           createdAt: z.string(),
+          updatedAt: z.string().optional(),
         }),
       )
       .optional(),

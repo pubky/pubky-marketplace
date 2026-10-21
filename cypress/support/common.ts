@@ -5,6 +5,9 @@ export const defaultBackupFilename = (): string => {
   return 'recovery.pkarr';
 };
 
+/** Password for encrypted backup files made in tests. Backup files need at least 16 characters. */
+export const TEST_BACKUP_PASSWORD = 'e2e-backup-password';
+
 export const backupDownloadFilePath = (filename?: string): string => {
   const filenameWithExtension = filename ? `${filename}.pkarr` : defaultBackupFilename();
   const downloadsFolder = Cypress.config('downloadsFolder');

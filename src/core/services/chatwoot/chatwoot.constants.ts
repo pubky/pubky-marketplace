@@ -36,3 +36,10 @@ export const CHATWOOT_REPORT_LISTING_MESSAGE_PREFIX = 'Report Listing';
  * Message prefix for marketplace review report submissions
  */
 export const CHATWOOT_REPORT_REVIEW_MESSAGE_PREFIX = 'Report Review';
+
+/**
+ * Labels for the submitter's pubky and display name in a support message.
+ * Both come from the request body and are not checked against a session.
+ */
+export const CHATWOOT_CLAIMED_REPORTER_LABEL = 'Reporter (claimed, unverified)';
+export const CHATWOOT_CLAIMED_NAME_LABEL = 'Name (claimed, unverified)';

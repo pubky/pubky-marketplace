@@ -127,6 +127,26 @@ describe('Marketplace offers UX', () => {
     expect(screen.getByRole('img', { name: 'Vintage boots thumbnail' })).toBeInTheDocument();
   });
 
+  it("keeps an offer's listing and thumbnail on screen across offers polls", async () => {
+    const listing = asInvalid<CommerceListingRecord>({
+      title: 'Vintage boots',
+      media: [{ id: 'm1', type: 'image', url: 'https://example.com/boots.jpg', altText: 'Boots' }],
+    });
+    getManyListings.mockResolvedValue(new Map([[`${seller}:boots`, { record: listing }]]));
+    offerView.offers = [offer];
+    const view = render(<MarketplaceOffers />);
+    await screen.findByRole('img', { name: 'Vintage boots thumbnail' });
+    getManyListings.mockClear();
+
+    // A poll returns the same offers as new objects.
+    offerView.offers = [{ ...offer }];
+    view.rerender(<MarketplaceOffers />);
+
+    expect(screen.getByRole('img', { name: 'Vintage boots thumbnail' })).toBeInTheDocument();
+    expect(screen.queryByText('Loading listing…')).toBeNull();
+    expect(getManyListings).not.toHaveBeenCalled();
+  });
+
   it('uses local listings without fetching', async () => {
     const listing = asInvalid<CommerceListingRecord>({ title: 'Local boots', media: [] });
     getManyListings.mockResolvedValue(new Map([[`${seller}:boots`, { record: listing }]]));
