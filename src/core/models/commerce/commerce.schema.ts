@@ -332,7 +332,7 @@ export const commerceReviewResponseTableSchema = ['&id', 'owner_id', 'review_id'
  * Ed25519 signature verified against `attestorId`, and its claims bind to
  * this review" — a cryptographic fact recorded at ingest. Whether
  * `attestorId` is a TRUSTED attestor is this client's policy (see
- * `isTrustedMarketplaceAttestor`); unverified reviews render labeled, never
+ * `trustedMarketplaceAttestorAt`); unverified reviews render labeled, never
  * hidden (ratified D5).
  */
 export interface CommerceIndexedReview {

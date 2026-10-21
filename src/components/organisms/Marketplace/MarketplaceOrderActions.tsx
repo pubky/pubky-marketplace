@@ -8,13 +8,14 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '
 import { Label } from '@/atoms/Label/Label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/atoms/Select/Select';
 import { Typography } from '@/atoms/Typography/Typography';
-import { COMMERCE_REVIEW_EDIT_WINDOW_SECONDS, isTrustedMarketplaceAttestor } from '@/config/commerce';
+import { COMMERCE_REVIEW_EDIT_WINDOW_SECONDS, trustedMarketplaceAttestorAt } from '@/config/commerce';
 import { FORM_LABEL_CLASSES } from '@/config/forms';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import { useMarketplaceOrderAction } from '@/hooks/useMarketplaceOrderAction/useMarketplaceOrderAction';
 import type { MarketplaceOrderActionData } from '@/hooks/useMarketplaceOrderAction/useMarketplaceOrderAction.types';
 import { majorToMinor, paypalRefundedMinor } from '@/hooks/useMarketplaceOrderAction/useMarketplaceOrderAction.types';
 import { usePickupOrderActions } from '@/hooks/usePickupOrderActions/usePickupOrderActions';
+import { reviewAttestationIssuedAt } from '@/libs/commerce/attestation';
 import { orderAmountEntry } from '@/libs/commerce/bitcoin-payment-code';
 import { OTHER_CARRIER_ID, SHIPPING_CARRIERS } from '@/libs/commerce/carriers';
 import { DIGITAL_ORDER_COPY, DIGITAL_SELLER_COPY, isInstantDigitalDeliveryKind } from '@/libs/commerce/digital';
@@ -673,8 +674,10 @@ function reviewRecordStatus(record: CommerceReviewModelSchema | null): string {
   }
   if (record.attestation_verified && record.attestation_iss !== null) {
     const attestor = `${record.attestation_iss.slice(0, 8)}…`;
-    return isTrustedMarketplaceAttestor(record.attestation_iss)
-      ? `Verified purchase — your published review embeds a purchase attestation signed by attestor ${attestor}.`
+    const issuedAt = reviewAttestationIssuedAt(record.record);
+    const trustedAttestor = issuedAt === null ? null : trustedMarketplaceAttestorAt(record.attestation_iss, issuedAt);
+    return trustedAttestor !== null
+      ? `Verified purchase · ${trustedAttestor.label} — your published review embeds a purchase attestation signed by attestor ${attestor}.`
       : `Your published review embeds a valid purchase attestation, but its signer (${attestor}) is not an attestor this app recognizes.`;
   }
   return 'Your review record is published, but its embedded attestation did not verify.';

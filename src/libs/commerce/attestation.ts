@@ -1,4 +1,5 @@
 import {
+  parsePurchaseAttestation,
   verifyDropEditionAttestation,
   verifyOrderReceiptAttestation,
   verifyPurchaseAttestation,
@@ -207,6 +208,21 @@ export function verifyOwnReviewAttestation(record: CommerceReviewRecord): string
   try {
     const claims = verifyPurchaseAttestation({ ...record }) as { iss?: unknown };
     return typeof claims.iss === 'string' ? claims.iss : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * When the review record's embedded purchase attestation was issued: its
+ * `iat` claim (seconds since the epoch), the time a trust-list window is
+ * checked against. Null when the attestation does not parse. Does NOT verify
+ * the signature — pair it with `verifyOwnReviewAttestation`.
+ */
+export function reviewAttestationIssuedAt(record: Pick<CommerceReviewRecord, 'eligibilityAttestation'>): Date | null {
+  try {
+    const claims = parsePurchaseAttestation(record.eligibilityAttestation) as { iat?: unknown };
+    return typeof claims.iat === 'number' ? new Date(claims.iat * 1000) : null;
   } catch {
     return null;
   }

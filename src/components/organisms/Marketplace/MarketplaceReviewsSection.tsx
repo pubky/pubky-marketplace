@@ -9,7 +9,7 @@ import { Heading } from '@/atoms/Heading/Heading';
 import { Link } from '@/atoms/Link/Link';
 import { Textarea } from '@/atoms/Textarea/Textarea';
 import { Typography } from '@/atoms/Typography/Typography';
-import { isTrustedMarketplaceAttestor } from '@/config/commerce';
+import { trustedMarketplaceAttestorAt } from '@/config/commerce';
 import { isSocialLinkOutEnabled } from '@/config/social';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import { useMarketplaceFirstMediaUrl } from '@/hooks/useMarketplaceMediaUrl/useMarketplaceMediaUrl';
@@ -213,15 +213,20 @@ function MarketplaceReviewItem({
 /**
  * The D5 labeling in one place. Verification proves the SIGNER; whether that
  * signer is a trusted attestor is this client's configuration
- * (`MARKETPLACE_TRUSTED_ATTESTORS`) — so an attested review from an
+ * (`marketplaceTrustedAttestors`) — so an attested review from an
  * unrecognized signer is labeled exactly that, never upgraded to "verified".
+ * The index serves no attestation `iat`, so the trust window is checked
+ * against the record's `createdAt` (see `trustedMarketplaceAttestorAt`).
  */
 function MarketplaceReviewVerificationBadge({ review }: { review: CommerceIndexedReview }) {
-  if (review.verified && review.attestorId !== null && isTrustedMarketplaceAttestor(review.attestorId)) {
+  const trustedAttestor = review.verified
+    ? trustedMarketplaceAttestorAt(review.attestorId, new Date(review.createdAt))
+    : null;
+  if (trustedAttestor !== null) {
     return (
       <Badge variant="secondary" className="gap-1 text-emerald-400">
         <BadgeCheck className="size-3" />
-        Verified purchase
+        {`Verified purchase · ${trustedAttestor.label}`}
       </Badge>
     );
   }
