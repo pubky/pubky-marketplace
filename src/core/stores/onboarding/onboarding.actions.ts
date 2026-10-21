@@ -28,6 +28,14 @@ export const createOnboardingActions = (set: ZustandSet<OnboardingStore>): Onboa
     set({ ...onboardingClearedSecrets }, false, OnboardingActionTypes.CLEAR_SECRETS);
   },
 
+  restartSecretsLifetime: () => {
+    set(
+      (state) => (state.secretKey || state.mnemonic ? { secretsSavedAt: Date.now() } : state),
+      false,
+      OnboardingActionTypes.RESTART_SECRETS_LIFETIME,
+    );
+  },
+
   setHydrated: (hasHydrated: boolean) => {
     set({ hasHydrated }, false, OnboardingActionTypes.SET_HYDRATED);
   },

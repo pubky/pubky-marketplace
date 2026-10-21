@@ -64,8 +64,9 @@ export function useInviteCodeSignUp(): UseInviteCodeSignUpResult {
         }
 
         // Even a non-retryable completion error can arrive after account creation.
-        // Keep the recovery key until the user has backed it up or explicitly
-        // abandons onboarding; an invalid invite can be retried with the same key.
+        // Keep the recovery key for the onboarding lifetime (ONBOARDING_SECRETS_TTL_MS in
+        // @/config/onboarding): until the user backs it up, skips the backup, abandons
+        // onboarding, or 24 hours pass. An invalid invite can be retried with the same key.
 
         if (isAppError(error)) {
           if (isAuthError(error)) {

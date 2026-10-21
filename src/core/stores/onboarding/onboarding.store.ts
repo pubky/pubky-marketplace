@@ -54,10 +54,15 @@ export const useOnboardingStore = create<OnboardingStore>()(
 
         // Limit how long the recovery phrase and secret key stay in browser storage: expired
         // secrets never reach memory, and the setHydrated write below rewrites the entry without them.
+        // A save time in the future (the device clock was ahead and has since been corrected) counts
+        // from now, so the secrets never stay longer than the onboarding lifetime.
         merge: (persisted, current) => {
           const stored = (persisted ?? {}) as StoredOnboardingState;
           const merged = { ...current, ...stored };
-          return secretsExpired(stored) ? { ...merged, ...onboardingClearedSecrets } : merged;
+          if (secretsExpired(stored)) return { ...merged, ...onboardingClearedSecrets };
+          const now = Date.now();
+          if (hasSecrets(stored) && (stored.secretsSavedAt ?? 0) > now) return { ...merged, secretsSavedAt: now };
+          return merged;
         },
 
         // Set hasHydrated to true after rehydration

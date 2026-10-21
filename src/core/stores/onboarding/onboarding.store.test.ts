@@ -737,5 +737,71 @@ describe('OnboardingStore', () => {
       expect(state.secretsSavedAt).toBeNull();
       expect(state.inviteCode).toBe('AAAA-BBBB-CCCC');
     });
+
+    it('removes the secrets from the stored entry when they are cleared', () => {
+      const { mnemonic, secretKey } = createMockSecrets();
+      const state = useOnboardingStore.getState();
+
+      state.setSecrets(createMockSecrets());
+      state.clearSecrets();
+
+      const writes = localStorageMock.setItem.mock.calls.filter(([key]) => key === ONBOARDING_PERSIST_KEY);
+      const lastWrite: string = writes[writes.length - 1][1];
+      expect(lastWrittenState()).toMatchObject(onboardingClearedSecrets);
+      expect(lastWrite).not.toContain(mnemonic);
+      expect(lastWrite).not.toContain(secretKey);
+    });
+
+    it('restarts the lifetime of saved secrets from now', () => {
+      const restartedAt = SAVED_AT + 60 * 60 * 1000;
+      useOnboardingStore.getState().setSecrets(createMockSecrets());
+      vi.setSystemTime(restartedAt);
+
+      useOnboardingStore.getState().restartSecretsLifetime();
+
+      expect(useOnboardingStore.getState().secretsSavedAt).toBe(restartedAt);
+      expect(lastWrittenState().secretsSavedAt).toBe(restartedAt);
+    });
+
+    it('does not record a save time when restarting the lifetime without secrets', () => {
+      useOnboardingStore.getState().restartSecretsLifetime();
+
+      expect(useOnboardingStore.getState().secretsSavedAt).toBeNull();
+    });
+
+    it('keeps secrets for the full onboarding lifetime after it restarts', async () => {
+      const hour = 60 * 60 * 1000;
+      useOnboardingStore.getState().setSecrets(createMockSecrets());
+      vi.setSystemTime(SAVED_AT + 23 * hour);
+      useOnboardingStore.getState().restartSecretsLifetime();
+      vi.setSystemTime(SAVED_AT + 25 * hour);
+      storeEntry(lastWrittenState());
+
+      await useOnboardingStore.persist.rehydrate();
+
+      const state = useOnboardingStore.getState();
+      expect(state.secretKey).toBe(createMockSecrets().secretKey);
+      expect(state.mnemonic).toBe(createMockSecrets().mnemonic);
+      expect(state.secretsSavedAt).toBe(SAVED_AT + 23 * hour);
+    });
+
+    it('counts the lifetime of secrets with a future save time from their load', async () => {
+      storeEntry({ ...savedSecrets, secretsSavedAt: SAVED_AT + ONBOARDING_SECRETS_TTL_MS });
+
+      await useOnboardingStore.persist.rehydrate();
+
+      const state = useOnboardingStore.getState();
+      expect(state.secretKey).toBe(createMockSecrets().secretKey);
+      expect(state.mnemonic).toBe(createMockSecrets().mnemonic);
+      expect(state.secretsSavedAt).toBe(SAVED_AT);
+      expect(lastWrittenState().secretsSavedAt).toBe(SAVED_AT);
+
+      storeEntry(lastWrittenState());
+      vi.setSystemTime(SAVED_AT + ONBOARDING_SECRETS_TTL_MS);
+
+      await useOnboardingStore.persist.rehydrate();
+
+      expect(useOnboardingStore.getState()).toMatchObject(onboardingClearedSecrets);
+    });
   });
 });

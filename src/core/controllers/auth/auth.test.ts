@@ -6,6 +6,7 @@ import { CommerceController } from '@/controllers/commerce/commerce';
 import { clearDatabase, clearPrivateData } from '@/database/franky/franky.helpers';
 import { Identity } from '@/libs/identity/identity';
 import { useAuthStore } from '@/stores/auth/auth.store';
+import { useOnboardingStore } from '@/stores/onboarding/onboarding.store';
 import { AUTH_PERSIST_KEY } from '@/stores/persistedKeys';
 import { mockKeypair } from '@/test-utils/pubky';
 import { AuthController } from './auth';
@@ -115,6 +116,26 @@ describe('grant-only authentication lifecycle', () => {
       }
     },
   );
+
+  it('restarts the recovery phrase lifetime once the account is created', async () => {
+    const session = grantSession();
+    vi.spyOn(Identity, 'keypairFromSecretKey').mockReturnValue(mockKeypair({ publicKey: session.info.publicKey }));
+    const signUp = vi.spyOn(AuthApplication, 'signUp').mockResolvedValue({ session });
+    const restart = vi.spyOn(useOnboardingStore.getState(), 'restartSecretsLifetime');
+    await AuthController.signUp({ secretKey: 'test', signupToken: 'invite' });
+    expect(restart).toHaveBeenCalledOnce();
+    expect(signUp.mock.invocationCallOrder[0]).toBeLessThan(restart.mock.invocationCallOrder[0]);
+  });
+
+  it('keeps the recovery phrase lifetime when the account is not created', async () => {
+    vi.spyOn(Identity, 'keypairFromSecretKey').mockReturnValue(mockKeypair());
+    vi.spyOn(AuthApplication, 'signUp').mockRejectedValue(new Error('invite rejected'));
+    const restart = vi.spyOn(useOnboardingStore.getState(), 'restartSecretsLifetime');
+    await expect(AuthController.signUp({ secretKey: 'test', signupToken: 'invite' })).rejects.toThrow(
+      'invite rejected',
+    );
+    expect(restart).not.toHaveBeenCalled();
+  });
 
   it('saves Ring signup grants with Ring ownership', async () => {
     const session = grantSession();

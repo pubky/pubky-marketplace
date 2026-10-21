@@ -889,6 +889,9 @@ export class AuthController {
     if (!(await this.takeLocalStateForCapturedIdentity(captured))) throw createCanceledError();
     const keypair = Identity.keypairFromSecretKey(secretKey);
     const result = await AuthApplication.signUp({ keypair, signupToken });
+    // The account exists from here on: give the user the full onboarding lifetime to back up its
+    // recovery phrase, counted from now rather than from when the key was generated.
+    useOnboardingStore.getState().restartSecretsLifetime();
     this.sessionFlowGeneration.set(result.session, generationAtStart);
     this.grantEpochAtStart.set(result.session, epochAtStart);
     this.grantSignerBySession.set(result.session, 'local-key');
