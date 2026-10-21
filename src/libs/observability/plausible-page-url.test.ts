@@ -196,6 +196,8 @@ const REFERRER_CASES: { name: string; input: string; expected: string }[] = [
     input: 'android-app://com.google.android.gm/',
     expected: 'android-app://com.google.android.gm',
   },
+  { name: 'pubky app host as a template', input: `pubky://${SELLER}/profile`, expected: 'pubky://:pubky' },
+  { name: 'prefixed pubky app host as a template', input: `pubky://pubky${SELLER}`, expected: 'pubky://:pubky' },
   { name: 'hostless non-http as nothing', input: 'mailto:x@example.com', expected: '' },
 ];
 

@@ -96,6 +96,11 @@ function isHttpUrl(url: URL): boolean {
   return url.protocol === 'http:' || url.protocol === 'https:';
 }
 
+/** Host of a non-http(s) referrer, with a pubky host as `:pubky`. */
+function appReferrerHost(url: URL): string {
+  return isPubkySegment(url.hostname) ? ':pubky' : url.host;
+}
+
 export function plausiblePageUrlFromHref(href: string, base = 'https://invalid.invalid', basePath = ''): string {
   try {
     const url = new URL(href, base);
@@ -112,11 +117,13 @@ export function plausiblePageUrlFromHref(href: string, base = 'https://invalid.i
  * Same-origin referrers get the page treatment; other http(s) origins keep only the
  * origin. Other schemes keep scheme and host, such as the app referrer
  * `android-app://com.google.android.gm`, or send nothing when there is no host.
+ * A host that is a pubky becomes `:pubky`, so `pubky://<pubky>/profile` is sent as
+ * `pubky://:pubky`.
  */
 export function plausibleReferrerFromHref(ref: string, pageOrigin: string, basePath = ''): string {
   try {
     const url = new URL(ref);
-    if (!isHttpUrl(url)) return url.host ? `${url.protocol}//${url.host}` : '';
+    if (!isHttpUrl(url)) return url.host ? `${url.protocol}//${appReferrerHost(url)}` : '';
     return url.origin === pageOrigin ? plausiblePageUrlFromHref(ref, pageOrigin, basePath) : url.origin;
   } catch {
     return '';
@@ -239,10 +246,13 @@ export function plausiblePageUrlBootstrap(basePath: string): string {
     } catch (e) {}
     return applyRouteTemplates(String(href).split('#')[0].split('?')[0], []);
   }
+  function appReferrerHost(url){
+    return isPubkySegment(url.hostname) ? ':pubky' : url.host;
+  }
   function referrerUrl(ref){
     try {
       var url = new URL(ref);
-      if (!isHttpUrl(url)) return url.host ? url.protocol + '//' + url.host : '';
+      if (!isHttpUrl(url)) return url.host ? url.protocol + '//' + appReferrerHost(url) : '';
       return url.origin === location.origin ? pageUrl(ref) : url.origin;
     } catch (e) {
       return '';
