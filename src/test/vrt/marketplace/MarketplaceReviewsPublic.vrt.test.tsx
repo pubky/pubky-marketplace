@@ -9,6 +9,7 @@ import { MarketplaceReputationHeader } from '@/organisms/Marketplace/Marketplace
 import { MarketplaceReviewsSection } from '@/organisms/Marketplace/MarketplaceReviewsSection';
 import { useAuthStore } from '@/stores/auth/auth.store';
 import { setSocialHost } from '@/test-utils/social-host';
+import { TEST_TRUSTED_ATTESTOR } from '@/test/fixtures/commerce/trusted-attestors';
 
 // The Phase 2 public review surfaces in every honest state: stars on catalog
 // cards (only when the index reported reviews), the rating header (rated /
@@ -16,8 +17,8 @@ import { setSocialHost } from '@/test-utils/social-host';
 // verified-by-trusted-attestor, attested-by-unrecognized-signer, unverified —
 // plus the D7 subject response threaded beneath and the subject's composer.
 
-/** The staging service's attestor — one of the two entries on the client trust list (staging + production). */
-const TRUSTED_ATTESTOR = 'ws343aqzmcahagojhmhkbri8odqz9iqg61woxbkh9fd3bxhqomdy';
+/** The attestor the mocked runtime trust list holds, labelled "Pubky Market". */
+const TRUSTED_ATTESTOR = TEST_TRUSTED_ATTESTOR.pubky;
 const SELLER = 's'.repeat(52);
 const BUYER_A = 'a'.repeat(52);
 const BUYER_B = 'b'.repeat(52);
@@ -46,6 +47,14 @@ vi.mock('@/controllers/commerce/commerce', () => ({
     commitDeleteFavorite: () => Promise.resolve(),
   },
 }));
+
+vi.mock('@/libs/runtime-config/runtime-config', async (importOriginal) => {
+  const { TEST_TRUSTED_ATTESTOR } = await import('@/test/fixtures/commerce/trusted-attestors');
+  return {
+    ...(await importOriginal<typeof import('@/libs/runtime-config/runtime-config')>()),
+    getMarketplaceTrustedAttestors: () => [TEST_TRUSTED_ATTESTOR],
+  };
+});
 
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn() }),

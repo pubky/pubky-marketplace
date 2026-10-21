@@ -3,6 +3,7 @@ import { normalizeBasePath } from '@/libs/base-path/base-path';
 import {
   type CommerceAdapterMode,
   type DeployEnv,
+  type MarketplaceTrustedAttestor,
   type PaykitServerApi,
   PUBKY_RUNTIME_ENV_NAMES,
   type RuntimeConfig,
@@ -273,6 +274,9 @@ export const getStorageAdoptLegacyOverride = (): boolean | undefined => getRunti
 export const getShopPublicPathOverride = (): string | undefined => getRuntimeConfig().shopPublicPath;
 /** Deployer override for the grant sign-in client id; `undefined` keeps the built-in default. */
 export const getShopGrantClientIdOverride = (): string | undefined => getRuntimeConfig().shopGrantClientId;
+/** Runtime additions to the review attestor trust list (see `marketplaceTrustedAttestors` in `@/config/commerce`). */
+export const getMarketplaceTrustedAttestors = (): readonly MarketplaceTrustedAttestor[] =>
+  getRuntimeConfig().marketplaceTrustedAttestors;
 export const getPreludeSdkKey = (): string | undefined => getRuntimeConfig().preludeSdkKey;
 export const getPreludeSdkTimeoutMs = (): number => getRuntimeConfig().preludeSdkTimeoutMs;
 export const getPlausibleDomain = (): string | undefined => getRuntimeConfig().plausibleDomain;

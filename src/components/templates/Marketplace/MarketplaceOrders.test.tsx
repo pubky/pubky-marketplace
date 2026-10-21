@@ -1522,6 +1522,17 @@ describe('MarketplaceOrders links shared before #292', () => {
     expect(routerReplace).not.toHaveBeenCalled();
   });
 
+  it('stays on an unpaid order opened from its own checkout card (#363)', async () => {
+    window.history.replaceState(null, '', '/marketplace/orders?order=test-unpaid-offer-boots&view=order');
+
+    render(<MarketplaceOrders />);
+
+    expect((await screen.findAllByText('Unpaid offer boots')).length).toBeGreaterThan(0);
+    expect(routerReplace).not.toHaveBeenCalled();
+    await waitFor(() => expect(Element.prototype.scrollIntoView).toHaveBeenCalled());
+    expect(document.getElementById('order-test-unpaid-offer-boots')).not.toBeNull();
+  });
+
   // Next appends the fragment of the document load to every later in-app visit to Orders,
   // so the old Offers link to an unpaid order must open its checkout once, not on every visit.
   it('opens the unpaid checkout behind an old Offers #<id> link once per document, not on later visits', async () => {

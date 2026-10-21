@@ -544,7 +544,7 @@ export function MarketplaceGetPaidSettings({ onSaved }: MarketplaceGetPaidSettin
         promise="Connect your Bitkit wallet to accept bitcoin."
         status={bitcoinStatus}
         statusTestId="payment-method-status-bitcoin"
-        headerContent={getPaykitServerApi() === 'upstream' ? <BitkitDownloads compact /> : undefined}
+        headerContent={getPaykitServerApi() === 'upstream' ? <BitkitDownloads compact label="Get Bitkit" /> : undefined}
       >
         <div className="grid gap-6 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
           <div>
@@ -619,10 +619,12 @@ export function MarketplaceGetPaidSettings({ onSaved }: MarketplaceGetPaidSettin
                 </Button>
               )}
               <Button
-                variant="secondary"
+                // The step the card exists for: the main action until the wallet is connected.
+                variant={payments.accountClaimed === true ? 'secondary' : 'default'}
                 className="w-fit"
                 disabled={!marketplaceSession || !currentUserPubky}
                 onClick={() => openPaykitSetup(step2Mode)}
+                data-testid="get-paid-connect-bitkit"
               >
                 {step2Mode === 'bitcoin-reconnect'
                   ? 'Reconnect Bitkit'

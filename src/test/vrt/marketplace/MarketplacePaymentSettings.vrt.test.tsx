@@ -200,6 +200,23 @@ describe('Marketplace payment settings — visual regression', () => {
     await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('payment-settings-paypal-invalid-desktop');
   });
 
+  // Before Bitkit is connected: the store badges sit under a "Get Bitkit" caption and Connect Bitkit is the main action.
+  it.each([
+    ['desktop', VRT_VIEWPORT_DESKTOP, 'payment-settings-connect-bitkit-desktop'],
+    ['mobile', VRT_VIEWPORT_MOBILE, 'payment-settings-connect-bitkit-mobile'],
+  ] as const)(
+    'renders the Bitcoin card before Bitkit is connected at %s viewport',
+    async (_size, viewport, baseline) => {
+      view.paykitServerApi = 'upstream';
+      view.accountClaimed = false;
+
+      const screen = await renderForVRT(<MarketplacePaymentSettings />, { viewport });
+      await expect.element(screen.getByText('Get Bitkit')).toBeVisible();
+      await expect.element(screen.getByTestId('get-paid-connect-bitkit')).toHaveAttribute('data-variant', 'default');
+      await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot(baseline);
+    },
+  );
+
   // Upstream Paykit frames only its QR panel, or on a phone its Continue with Bitkit button.
   // A not-yet-connected seller gets the initial setup.
   it.each([

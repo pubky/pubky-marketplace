@@ -1,9 +1,12 @@
 import { render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CommerceController } from '@/controllers/commerce/commerce';
+import { resetRuntimeConfigForTests } from '@/libs/runtime-config/runtime-config';
+import { PUBKY_RUNTIME_ENV_NAMES } from '@/libs/runtime-config/runtime-config.schema';
 import type { CommerceIndexedReview } from '@/models/commerce/commerce.schema';
 import { useAuthStore } from '@/stores/auth/auth.store';
 import { createCommerceListingFixture } from '@/test/fixtures/commerce/commerce';
+import { TEST_TRUSTED_ATTESTOR } from '@/test/fixtures/commerce/trusted-attestors';
 import { setSocialHost } from '@/test-utils/social-host';
 import { MarketplaceReviewsSection } from './MarketplaceReviewsSection';
 
@@ -28,10 +31,12 @@ const REVIEW: CommerceIndexedReview = {
   response: null,
 };
 
+const listed = vi.hoisted((): { reviews: CommerceIndexedReview[] | null } => ({ reviews: null }));
+
 vi.mock('@/hooks/useMarketplaceReviews/useMarketplaceReviews', () => ({
   useMarketplaceReviews: () => ({
     status: 'ok',
-    reviews: [REVIEW],
+    reviews: listed.reviews ?? [REVIEW],
     isFetching: false,
     hasMore: false,
     loadMore: vi.fn(),
@@ -129,5 +134,61 @@ describe('MarketplaceReviewsSection on a storefront', () => {
     render(<MarketplaceReviewsSection sellerPubky={SELLER} listingId="rangefinder_camera" />);
 
     expect(lookup).not.toHaveBeenCalled();
+  });
+});
+
+describe('MarketplaceReviewsSection verification badge', () => {
+  beforeEach(() => {
+    useAuthStore.setState({ currentUserPubky: null });
+  });
+
+  afterEach(() => {
+    listed.reviews = null;
+  });
+
+  function renderReview(overrides: Partial<CommerceIndexedReview>) {
+    listed.reviews = [{ ...REVIEW, ...overrides }];
+    render(<MarketplaceReviewsSection sellerPubky={SELLER} listingId="rangefinder_camera" />);
+  }
+
+  it('names the trusted attestor on the badge', () => {
+    renderReview({ verified: true, attestorId: TEST_TRUSTED_ATTESTOR.pubky, createdAt: '2026-10-20T12:00:00.000Z' });
+
+    expect(screen.getByText('Verified purchase · Pubky Market')).toBeInTheDocument();
+  });
+
+  it('does not vouch for a trusted key outside its window', () => {
+    renderReview({ verified: true, attestorId: TEST_TRUSTED_ATTESTOR.pubky, createdAt: '2025-12-31T23:59:59.000Z' });
+
+    expect(screen.getByText('Attested (unrecognized attestor)')).toBeInTheDocument();
+    expect(screen.queryByText(/Verified purchase/)).not.toBeInTheDocument();
+  });
+
+  it("does not vouch for a review backdated into a retired key's window", () => {
+    const envName = PUBKY_RUNTIME_ENV_NAMES.marketplaceTrustedAttestors;
+    const suiteValue = process.env[envName];
+    process.env[envName] = JSON.stringify([{ ...TEST_TRUSTED_ATTESTOR, validUntil: '2026-10-12' }]);
+    resetRuntimeConfigForTests();
+    try {
+      renderReview({ verified: true, attestorId: TEST_TRUSTED_ATTESTOR.pubky, createdAt: '2026-09-15T12:00:00.000Z' });
+
+      expect(screen.getByText('Attested (unrecognized attestor)')).toBeInTheDocument();
+      expect(screen.queryByText(/Verified purchase/)).not.toBeInTheDocument();
+    } finally {
+      process.env[envName] = suiteValue;
+      resetRuntimeConfigForTests();
+    }
+  });
+
+  it('labels a valid signature from an unlisted key as unrecognized', () => {
+    renderReview({ verified: true, attestorId: 'x'.repeat(52), createdAt: '2026-10-20T12:00:00.000Z' });
+
+    expect(screen.getByText('Attested (unrecognized attestor)')).toBeInTheDocument();
+  });
+
+  it('labels an unverified review from a trusted key as unverified', () => {
+    renderReview({ verified: false, attestorId: TEST_TRUSTED_ATTESTOR.pubky, createdAt: '2026-10-20T12:00:00.000Z' });
+
+    expect(screen.getByText('Unverified')).toBeInTheDocument();
   });
 });

@@ -1,8 +1,8 @@
 import { render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CommerceSellerReputationOverview } from '@/application/commerce/commerce';
-import { MARKETPLACE_TRUSTED_ATTESTORS } from '@/config/commerce';
 import type { CommerceReputationSummary } from '@/models/commerce/commerce.schema';
+import { TEST_TRUSTED_ATTESTOR } from '@/test/fixtures/commerce/trusted-attestors';
 import { MarketplaceReputationHeader } from './MarketplaceReputationHeader';
 
 const reputation = vi.hoisted((): { value: CommerceSellerReputationOverview | { status: 'loading' } } => ({
@@ -39,7 +39,7 @@ describe('MarketplaceReputationHeader', () => {
   });
 
   it('counts only trusted-attestor reviews in the star row and the basis line', () => {
-    reputation.value = rated({ attestors: { [MARKETPLACE_TRUSTED_ATTESTORS[0]]: 2, [UNKNOWN_ATTESTOR]: 3 } });
+    reputation.value = rated({ attestors: { [TEST_TRUSTED_ATTESTOR.pubky]: 2, [UNKNOWN_ATTESTOR]: 3 } });
 
     render(<MarketplaceReputationHeader sellerPubky={SELLER} variant="full" />);
 
@@ -59,7 +59,7 @@ describe('MarketplaceReputationHeader', () => {
   });
 
   it('applies the same trusted-only count to the compact listing-page variant', () => {
-    reputation.value = rated({ attestors: { [MARKETPLACE_TRUSTED_ATTESTORS[0]]: 1, [UNKNOWN_ATTESTOR]: 4 } });
+    reputation.value = rated({ attestors: { [TEST_TRUSTED_ATTESTOR.pubky]: 1, [UNKNOWN_ATTESTOR]: 4 } });
 
     render(<MarketplaceReputationHeader sellerPubky={SELLER} />);
 

@@ -466,6 +466,19 @@ describe('Marketplace listing detail — visual regression', () => {
     await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('listing-media-gallery-desktop');
   });
 
+  it('renders a tapped photo full screen at mobile viewport', async () => {
+    const { seller, galleryListing, fixedPriceProjection } = await fixtures;
+    await setView({ listing: galleryListing, projection: fixedPriceProjection });
+
+    const screen = await renderForVRT(<MarketplaceListing sellerPubky={seller} listingId="boots_01" />, {
+      viewport: VRT_VIEWPORT_MOBILE,
+    });
+    await screen.getByTestId('listing-photo-open').click();
+    await expect.element(screen.getByTestId('listing-photo-viewer')).toBeVisible();
+    await expect.element(screen.getByRole('button', { name: 'Close photos' })).toBeVisible();
+    await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('listing-photo-viewer-mobile');
+  });
+
   it('renders the seller block with the shop avatar at desktop viewport', async () => {
     const { seller, fixedPriceListing, fixedPriceProjection, brandedShop } = await fixtures;
     await setView({
