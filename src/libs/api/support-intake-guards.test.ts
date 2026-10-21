@@ -55,6 +55,23 @@ describe('support intake guards', () => {
     if (!refused.ok) expect(refused.retryAfterSeconds).toBeGreaterThanOrEqual(1);
   });
 
+  it('spends no client quota on requests the shared window refuses', () => {
+    vi.useFakeTimers();
+    const { perClientRequests, globalRequests } = SUPPORT_INTAKE_LIMITS.feedback;
+    admitTimes(globalRequests);
+
+    // Halfway through the shared window, so a client window opened now would outlive it.
+    vi.advanceTimersByTime(SUPPORT_INTAKE_RATE_LIMIT_WINDOW_MS / 2);
+    const refused = admitTimes(perClientRequests + 1, '198.51.100.1');
+    expect(refused.every((decision) => !decision.ok)).toBe(true);
+
+    vi.advanceTimersByTime(SUPPORT_INTAKE_RATE_LIMIT_WINDOW_MS / 2);
+
+    const admitted = admitTimes(perClientRequests, '198.51.100.1');
+    expect(admitted.every((decision) => decision.ok)).toBe(true);
+    expect(admitSupportIntake('feedback', requestFrom('198.51.100.1')).ok).toBe(false);
+  });
+
   it('applies only the shared window when no trusted client address is available', () => {
     vi.stubEnv('SHOP_BFF_CLI_TRUSTED_PROXY_COUNT', undefined);
 

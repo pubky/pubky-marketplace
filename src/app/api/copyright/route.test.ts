@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { COPYRIGHT_BRIEF_DESCRIPTION_MAX_LENGTH, COPYRIGHT_ORIGINAL_CONTENT_URLS_MAX_LENGTH } from '@/config/copyright';
 import { SUPPORT_INTAKE_LIMITS } from '@/config/support-intake';
 import { CopyrightController } from '@/controllers/copyright/copyright';
 import { admitSupportIntake, resetSupportIntakeForTests } from '@/libs/api/support-intake-guards';
@@ -184,6 +185,27 @@ describe('API Route: /api/copyright', () => {
       expect(response.status).toBe(413);
       expect((await response.json()).error).toBe('Request body is too large.');
       expect(CopyrightController.submit).not.toHaveBeenCalled();
+    });
+
+    it('accepts a notice larger than the feedback and report cap but within its own cap', async () => {
+      const originalContentUrls = Array.from(
+        { length: 115 },
+        (_, i) => `https://example.com/original/${String(i).padStart(4, '0')}`,
+      ).join('\n');
+      const largeNotice = {
+        ...validBody,
+        originalContentUrls,
+        briefDescription: '日'.repeat(COPYRIGHT_BRIEF_DESCRIPTION_MAX_LENGTH),
+      };
+      expect(originalContentUrls.length).toBeLessThanOrEqual(COPYRIGHT_ORIGINAL_CONTENT_URLS_MAX_LENGTH);
+      const bodyBytes = new TextEncoder().encode(JSON.stringify(largeNotice)).length;
+      expect(bodyBytes).toBeGreaterThan(16 * 1024);
+      expect(bodyBytes).toBeLessThan(SUPPORT_INTAKE_LIMITS.copyright.maxBodyBytes);
+
+      const response = await POST(requestFrom('203.0.113.7', largeNotice));
+
+      expect(response.status).toBe(200);
+      expect(CopyrightController.submit).toHaveBeenCalledWith(largeNotice);
     });
   });
 
