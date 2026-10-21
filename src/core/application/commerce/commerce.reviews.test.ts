@@ -422,6 +422,120 @@ describe('CommerceApplication own-review hydrate after local miss', () => {
     await expect(CommerceApplication.getOwnMarketplaceReview(ORDER_FIXTURE_BUYER, order)).resolves.toBeNull();
   });
 
+  /** The order as the service returns it, still holding the reviewer's review. */
+  function orderWithServiceReview(order: ReturnType<typeof createOrderFixture>) {
+    return {
+      ...order,
+      reviews: [
+        {
+          id: '0f9b6a6e-1c2d-4e5f-8a9b-0c1d2e3f4a5b',
+          reviewerPubky: ORDER_FIXTURE_BUYER,
+          subjectPubky: ORDER_FIXTURE_SELLER,
+          rating: 5,
+          text: 'Arrived early, exactly as listed.',
+          createdAt: '2026-10-20T20:10:00.000Z',
+          updatedAt: '2026-10-20T20:11:00.000Z',
+        },
+      ],
+    };
+  }
+
+  it("republishes a review a later order overwrote, once, at this order's own path", async () => {
+    const { order, published } = await publishedOwnReview();
+    const otherOrder = issuedAttestation('boots', 'ef'.repeat(32));
+    const servedOrder = orderWithServiceReview(order);
+    vi.spyOn(LocalCommerceService, 'getOwnReviewByOrder').mockResolvedValue(undefined);
+    vi.spyOn(LocalCommerceService, 'getOwnReviewById').mockResolvedValue(undefined);
+    vi.spyOn(CommerceHomeserverService, 'fetchJsonIfFound')
+      .mockResolvedValueOnce({ found: false })
+      .mockResolvedValueOnce({ found: true, json: legacyRecord(published.record, otherOrder.jws) });
+    const put = vi.spyOn(CommerceHomeserverService, 'putJson').mockResolvedValue(undefined);
+    put.mockClear();
+
+    const restored = await CommerceApplication.getOwnMarketplaceReview(ORDER_FIXTURE_BUYER, servedOrder);
+
+    expect(restored).not.toBeNull();
+    expect(restored!.review_id).toBe(published.review_id);
+    expect(restored!.record.ratings.overall).toBe(5);
+    expect(restored!.record.text).toBe('Arrived early, exactly as listed.');
+    expect(restored!.record.createdAt).toBe('2026-10-20T20:10:00.000Z');
+    expect(restored!.record.eligibilityAttestation).toBe(published.record.eligibilityAttestation);
+    expect(restored!.attestation_verified).toBe(true);
+    expect(put).toHaveBeenCalledOnce();
+    expect(put).toHaveBeenCalledWith(
+      `pubky://${ORDER_FIXTURE_BUYER}/pub/pubky.app/marketplace/v1/reviews/${published.review_id}`,
+      expect.objectContaining({ text: 'Arrived early, exactly as listed.' }),
+    );
+  });
+
+  it('stops the republish when the signed-in identity changes before it writes', async () => {
+    const { order, published } = await publishedOwnReview();
+    const otherOrder = issuedAttestation('boots', 'ef'.repeat(32));
+    vi.spyOn(LocalCommerceService, 'getOwnReviewByOrder').mockResolvedValue(undefined);
+    vi.spyOn(LocalCommerceService, 'getOwnReviewById').mockImplementation(async () => {
+      // The user signs out while the republish builds its record.
+      useAuthStore.getState().setCurrentUserPubky(FOREIGN_PUBKY);
+      return undefined;
+    });
+    vi.spyOn(CommerceHomeserverService, 'fetchJsonIfFound')
+      .mockResolvedValueOnce({ found: false })
+      .mockResolvedValueOnce({ found: true, json: legacyRecord(published.record, otherOrder.jws) });
+    const stage = vi.spyOn(LocalCommerceService, 'stageOwnReviewSync');
+    stage.mockClear();
+    const put = vi.spyOn(CommerceHomeserverService, 'putJson').mockResolvedValue(undefined);
+    put.mockClear();
+
+    await expect(
+      CommerceApplication.getOwnMarketplaceReview(ORDER_FIXTURE_BUYER, orderWithServiceReview(order)),
+    ).resolves.toBeNull();
+    expect(stage).not.toHaveBeenCalled();
+    expect(put).not.toHaveBeenCalled();
+  });
+
+  it('leaves an order that already has its per-order record alone', async () => {
+    const { order, published } = await publishedOwnReview();
+    vi.spyOn(LocalCommerceService, 'getOwnReviewByOrder').mockResolvedValue(undefined);
+    vi.spyOn(CommerceHomeserverService, 'fetchJsonIfFound').mockResolvedValue({ found: true, json: published.record });
+    const put = vi.spyOn(CommerceHomeserverService, 'putJson').mockResolvedValue(undefined);
+    put.mockClear();
+
+    const hydrated = await CommerceApplication.getOwnMarketplaceReview(
+      ORDER_FIXTURE_BUYER,
+      orderWithServiceReview(order),
+    );
+
+    expect(hydrated!.review_id).toBe(published.review_id);
+    expect(put).not.toHaveBeenCalled();
+  });
+
+  it('publishes nothing on a second run once the review is restored', async () => {
+    const { order, published } = await publishedOwnReview();
+    const put = vi.spyOn(CommerceHomeserverService, 'putJson').mockResolvedValue(undefined);
+    put.mockClear();
+    // The first run left the restored row on the device.
+    vi.spyOn(LocalCommerceService, 'getOwnReviewByOrder').mockResolvedValue(published);
+    const fetch = vi.spyOn(CommerceHomeserverService, 'fetchJsonIfFound');
+
+    await CommerceApplication.getOwnMarketplaceReview(ORDER_FIXTURE_BUYER, orderWithServiceReview(order));
+
+    expect(fetch).not.toHaveBeenCalled();
+    expect(put).not.toHaveBeenCalled();
+  });
+
+  it('publishes nothing when the service holds no review for the order', async () => {
+    const { order, published } = await publishedOwnReview();
+    const otherOrder = issuedAttestation('boots', 'ef'.repeat(32));
+    vi.spyOn(LocalCommerceService, 'getOwnReviewByOrder').mockResolvedValue(undefined);
+    vi.spyOn(CommerceHomeserverService, 'fetchJsonIfFound')
+      .mockResolvedValueOnce({ found: false })
+      .mockResolvedValueOnce({ found: true, json: legacyRecord(published.record, otherOrder.jws) });
+    const put = vi.spyOn(CommerceHomeserverService, 'putJson').mockResolvedValue(undefined);
+    put.mockClear();
+
+    await expect(CommerceApplication.getOwnMarketplaceReview(ORDER_FIXTURE_BUYER, order)).resolves.toBeNull();
+    expect(put).not.toHaveBeenCalled();
+  });
+
   it('does not upsert when the live identity differs from the hydrate actor', async () => {
     const { order, published } = await publishedOwnReview();
     vi.spyOn(LocalCommerceService, 'getOwnReviewByOrder').mockResolvedValue(undefined);
