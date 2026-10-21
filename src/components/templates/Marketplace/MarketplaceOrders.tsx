@@ -723,7 +723,7 @@ export function MarketplaceOrders() {
           />
         )}
 
-        <MarketplaceMyReviews />
+        <MarketplaceMyReviews orders={orders.map(({ order }) => order)} />
       </Container>
     </ContentLayout>
   );

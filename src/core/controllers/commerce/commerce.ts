@@ -796,6 +796,35 @@ export class CommerceController {
   }
 
   /**
+   * Re-reads the current user's own reviews of these orders from their
+   * homeserver and refreshes the local rows (an edit made on another device).
+   * Returns the number of rows changed.
+   */
+  static async refreshOwnMarketplaceReviews(orders: MarketplaceOrder[]) {
+    return await CommerceApplication.refreshOwnReviews(this.getCurrentUserPubky(), orders);
+  }
+
+  /**
+   * Removes the current user's published review of one order: local row now,
+   * homeserver DEL through the retryable outbox. See
+   * `CommerceApplication.commitDeleteOwnReview` for the outcomes.
+   */
+  static async commitDeleteOwnMarketplaceReview(orderId: unknown) {
+    if (typeof orderId !== 'string' || orderId.length === 0) {
+      throw Err.validation(ValidationErrorCode.INVALID_INPUT, 'An order id is required.', {
+        service: ErrorService.Marketplace,
+        operation: 'commitDeleteOwnMarketplaceReview',
+      });
+    }
+    return await CommerceApplication.commitDeleteOwnReview(this.getCurrentUserPubky(), orderId);
+  }
+
+  /** Retries own-review removals whose homeserver DEL never landed. */
+  static async resumeOwnReviewRemovals() {
+    return await CommerceApplication.resumeOwnReviewRemovals(this.getCurrentUserPubky());
+  }
+
+  /**
    * Deletes the signed-in user's leftover auction reserve files. The service
    * holds the reserve; the homeserver copy is not read.
    */

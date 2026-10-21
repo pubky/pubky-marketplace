@@ -1,0 +1,1 @@
+"My reviews" now re-reads your reviews from your homeserver each time the orders page opens, so an edit you made on another device shows up. Each review has "Remove my review": after you confirm, the review record is deleted from your homeserver and disappears from Pubky Market. If the deletion cannot reach your homeserver it is retried the next time your orders load.

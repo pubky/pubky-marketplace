@@ -434,6 +434,33 @@ const fixtures = vi.hoisted(async () => {
     everyOrderState: createOrderViewsForEveryState(),
     everyPaymentState: createOrderViewsForEveryPaymentState(),
     sellerNeedsAttention,
+    ownReviewRow: {
+      id: `${ORDER_FIXTURE_BUYER}:REVIEW1`,
+      owner_id: ORDER_FIXTURE_BUYER,
+      review_id: 'REVIEW1',
+      order_id: reviewedOrderView(23).order.id,
+      subject_id: ORDER_FIXTURE_SELLER,
+      record: {
+        schemaVersion: 1 as const,
+        recordType: 'review' as const,
+        ownerPubky: ORDER_FIXTURE_BUYER,
+        revision: 1,
+        createdAt: '2026-08-21T10:00:00.000Z',
+        updatedAt: '2026-08-21T10:00:00.000Z',
+        reviewId: 'REVIEW1',
+        subjectPubky: ORDER_FIXTURE_SELLER,
+        listingOwnerPubky: ORDER_FIXTURE_SELLER,
+        listingId: 'boots',
+        role: 'buyer_reviewing_seller' as const,
+        ratings: { overall: 5 },
+        text: 'Accurate and fast. The boots fit as described.',
+        eligibilityAttestation: 'A'.repeat(32),
+      },
+      attestation_verified: true,
+      attestation_iss: 'issuer',
+      sync_status: 'synced' as const,
+      updated_at: 1,
+    },
     reviewedInWindow: [reviewedOrderView(23)],
     reviewedOutOfWindow: [reviewedOrderView(25)],
     trackableShipped: [trackableShippedView()],
@@ -638,6 +665,10 @@ beforeEach(async () => {
   useMarketplaceDisplayStore.setState({ showFxEstimate: true, measurementSystem: 'metric' });
   ordersState.adapterMode = 'sandbox';
   ordersState.needsSession = false;
+  // The "My reviews" panel reads the local rows and the reviewer's homeserver; pin both so no scene
+  // reaches the network, and only the scenes below show the panel.
+  vi.spyOn(CommerceController, 'getOwnMarketplaceReviews').mockResolvedValue([]);
+  vi.spyOn(CommerceController, 'refreshOwnMarketplaceReviews').mockResolvedValue(0);
 });
 
 describe('Marketplace orders — visual regression', () => {
@@ -1054,6 +1085,33 @@ describe('Marketplace orders — visual regression', () => {
       }
     });
   }
+
+  it('renders My reviews with Remove my review at desktop viewport', async () => {
+    const { reviewedInWindow, ownReviewRow } = await fixtures;
+    ordersState.orders = reviewedInWindow;
+    ordersState.isLoading = false;
+    ordersState.error = null;
+    vi.spyOn(CommerceController, 'getOwnMarketplaceReviews').mockResolvedValue([ownReviewRow]);
+
+    const screen = await renderForVRT(<MarketplaceOrders />, { viewport: VRT_VIEWPORT_DESKTOP });
+    await expect.element(screen.getByRole('button', { name: 'Remove my review' })).toBeVisible();
+    await expect(await expectVrtSurface('marketplace-my-reviews')).toMatchScreenshot('orders-my-reviews-desktop');
+  });
+
+  it('renders the remove-review confirmation at mobile viewport', async () => {
+    const { reviewedInWindow, ownReviewRow } = await fixtures;
+    ordersState.orders = reviewedInWindow;
+    ordersState.isLoading = false;
+    ordersState.error = null;
+    vi.spyOn(CommerceController, 'getOwnMarketplaceReviews').mockResolvedValue([ownReviewRow]);
+
+    const screen = await renderForVRT(<MarketplaceOrders />, { viewport: VRT_VIEWPORT_MOBILE });
+    await screen.getByRole('button', { name: 'Remove my review' }).click();
+    await expect.element(screen.getByRole('alertdialog')).toBeVisible();
+    await expect(await expectVrtSurface('marketplace-my-review-remove-dialog')).toMatchScreenshot(
+      'orders-remove-review-dialog-mobile',
+    );
+  });
 
   it('rejects an incorrect production surface marker', async () => {
     ordersState.orders = [];
