@@ -1,10 +1,6 @@
 import { NextRequest } from 'next/server';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import {
-  SUPPORT_COPYRIGHT_GLOBAL_RATE_LIMIT_REQUESTS,
-  SUPPORT_COPYRIGHT_MAX_REQUEST_BODY_BYTES,
-  SUPPORT_COPYRIGHT_RATE_LIMIT_REQUESTS,
-} from '@/config/support-intake';
+import { SUPPORT_INTAKE_LIMITS } from '@/config/support-intake';
 import { CopyrightController } from '@/controllers/copyright/copyright';
 import { admitSupportIntake, resetSupportIntakeForTests } from '@/libs/api/support-intake-guards';
 import { ServerErrorCode, ValidationErrorCode } from '@/libs/error/error.codes';
@@ -123,7 +119,7 @@ describe('API Route: /api/copyright', () => {
     });
 
     it('refuses a client with 429 once its window is used up, before reading the body', async () => {
-      for (let i = 0; i < SUPPORT_COPYRIGHT_RATE_LIMIT_REQUESTS; i++) {
+      for (let i = 0; i < SUPPORT_INTAKE_LIMITS.copyright.perClientRequests; i++) {
         expect((await POST(requestFrom('203.0.113.7'))).status).toBe(200);
       }
 
@@ -134,12 +130,12 @@ describe('API Route: /api/copyright', () => {
       expect(Number(response.headers.get('Retry-After'))).toBeGreaterThanOrEqual(1);
       expect((await response.json()).error).toBe('Too many requests. Try again later.');
       expect(request.bodyUsed).toBe(false);
-      expect(CopyrightController.submit).toHaveBeenCalledTimes(SUPPORT_COPYRIGHT_RATE_LIMIT_REQUESTS);
+      expect(CopyrightController.submit).toHaveBeenCalledTimes(SUPPORT_INTAKE_LIMITS.copyright.perClientRequests);
     });
 
     it('refuses every client with 429 once the shared window is used up', async () => {
       // Requests without a trusted client address count only against the shared window.
-      for (let i = 0; i < SUPPORT_COPYRIGHT_GLOBAL_RATE_LIMIT_REQUESTS; i++) {
+      for (let i = 0; i < SUPPORT_INTAKE_LIMITS.copyright.globalRequests; i++) {
         admitSupportIntake('copyright', new NextRequest('http://localhost:3000/api/copyright', { method: 'POST' }));
       }
 
@@ -151,7 +147,7 @@ describe('API Route: /api/copyright', () => {
     });
 
     it('refuses a body over the size cap with 413 before the controller runs', async () => {
-      const oversized = { ...validBody, briefDescription: 'a'.repeat(SUPPORT_COPYRIGHT_MAX_REQUEST_BODY_BYTES) };
+      const oversized = { ...validBody, briefDescription: 'a'.repeat(SUPPORT_INTAKE_LIMITS.copyright.maxBodyBytes) };
 
       const response = await POST(requestFrom('203.0.113.7', oversized));
 

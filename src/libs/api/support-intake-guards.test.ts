@@ -1,10 +1,6 @@
 import { NextRequest } from 'next/server';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import {
-  SUPPORT_FEEDBACK_GLOBAL_RATE_LIMIT_REQUESTS,
-  SUPPORT_FEEDBACK_RATE_LIMIT_REQUESTS,
-  SUPPORT_INTAKE_RATE_LIMIT_WINDOW_MS,
-} from '@/config/support-intake';
+import { SUPPORT_INTAKE_LIMITS, SUPPORT_INTAKE_RATE_LIMIT_WINDOW_MS } from '@/config/support-intake';
 import { Logger } from '@/libs/logger/logger';
 import { admitSupportIntake, resetSupportIntakeForTests } from './support-intake-guards';
 
@@ -32,7 +28,7 @@ describe('support intake guards', () => {
   });
 
   it('refuses a request once the client window is used up', () => {
-    const admitted = admitTimes(SUPPORT_FEEDBACK_RATE_LIMIT_REQUESTS, '203.0.113.7');
+    const admitted = admitTimes(SUPPORT_INTAKE_LIMITS.feedback.perClientRequests, '203.0.113.7');
     expect(admitted.every((decision) => decision.ok)).toBe(true);
 
     const refused = admitSupportIntake('feedback', requestFrom('203.0.113.7'));
@@ -43,16 +39,16 @@ describe('support intake guards', () => {
   });
 
   it('spends no shared quota on requests the client window refuses', () => {
-    admitTimes(SUPPORT_FEEDBACK_RATE_LIMIT_REQUESTS + 50, '203.0.113.7');
+    admitTimes(SUPPORT_INTAKE_LIMITS.feedback.perClientRequests + 50, '203.0.113.7');
 
     // Requests without a trusted address count only against the shared window.
-    const remaining = SUPPORT_FEEDBACK_GLOBAL_RATE_LIMIT_REQUESTS - SUPPORT_FEEDBACK_RATE_LIMIT_REQUESTS;
+    const remaining = SUPPORT_INTAKE_LIMITS.feedback.globalRequests - SUPPORT_INTAKE_LIMITS.feedback.perClientRequests;
     expect(admitTimes(remaining).every((decision) => decision.ok)).toBe(true);
     expect(admitSupportIntake('feedback', requestFrom()).ok).toBe(false);
   });
 
   it('refuses every client once the shared window is used up', () => {
-    admitTimes(SUPPORT_FEEDBACK_GLOBAL_RATE_LIMIT_REQUESTS);
+    admitTimes(SUPPORT_INTAKE_LIMITS.feedback.globalRequests);
 
     const refused = admitSupportIntake('feedback', requestFrom('198.51.100.1'));
     expect(refused.ok).toBe(false);
@@ -63,7 +59,7 @@ describe('support intake guards', () => {
     vi.stubEnv('SHOP_BFF_CLI_TRUSTED_PROXY_COUNT', undefined);
 
     // An untrusted forwarded address is ignored, and unknown clients are not pooled under one client window.
-    const admitted = admitTimes(SUPPORT_FEEDBACK_GLOBAL_RATE_LIMIT_REQUESTS, '203.0.113.7');
+    const admitted = admitTimes(SUPPORT_INTAKE_LIMITS.feedback.globalRequests, '203.0.113.7');
     expect(admitted.every((decision) => decision.ok)).toBe(true);
     expect(admitSupportIntake('feedback', requestFrom('203.0.113.7')).ok).toBe(false);
   });
@@ -81,7 +77,7 @@ describe('support intake guards', () => {
   });
 
   it('keeps the windows of each form apart', () => {
-    admitTimes(SUPPORT_FEEDBACK_RATE_LIMIT_REQUESTS + 1, '203.0.113.7');
+    admitTimes(SUPPORT_INTAKE_LIMITS.feedback.perClientRequests + 1, '203.0.113.7');
 
     expect(admitSupportIntake('report', requestFrom('203.0.113.7')).ok).toBe(true);
     expect(admitSupportIntake('copyright', requestFrom('203.0.113.7')).ok).toBe(true);
@@ -89,7 +85,7 @@ describe('support intake guards', () => {
 
   it('admits the client again once its window has passed', () => {
     vi.useFakeTimers();
-    admitTimes(SUPPORT_FEEDBACK_RATE_LIMIT_REQUESTS + 1, '203.0.113.7');
+    admitTimes(SUPPORT_INTAKE_LIMITS.feedback.perClientRequests + 1, '203.0.113.7');
     expect(admitSupportIntake('feedback', requestFrom('203.0.113.7')).ok).toBe(false);
 
     vi.advanceTimersByTime(SUPPORT_INTAKE_RATE_LIMIT_WINDOW_MS);

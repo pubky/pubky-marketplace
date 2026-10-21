@@ -1,10 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { SUPPORT_FEEDBACK_MAX_REQUEST_BODY_BYTES } from '@/config/support-intake';
 import { FeedbackController } from '@/controllers/feedback/feedback';
 import type { TFeedbackSubmitParams } from '@/controllers/feedback/feedback.types';
-import { readJsonBody } from '@/libs/api/read-json-body';
 import { handleApiError } from '@/libs/api/route-error-handler';
-import { admitSupportIntake, tooManyRequestsResponse } from '@/libs/api/support-intake-guards';
+import { readSupportIntake } from '@/libs/api/support-intake-guards';
 import { HttpStatusCode } from '@/libs/http/http.types';
 
 /**
@@ -19,12 +17,9 @@ import { HttpStatusCode } from '@/libs/http/http.types';
  */
 export async function POST(request: NextRequest) {
   try {
-    const admission = admitSupportIntake('feedback', request);
-    if (!admission.ok) return tooManyRequestsResponse(admission.retryAfterSeconds);
-
-    const read = await readJsonBody(request, SUPPORT_FEEDBACK_MAX_REQUEST_BODY_BYTES);
-    if (!read.ok) return read.response;
-    const { pubky, comment, name } = read.body;
+    const intake = await readSupportIntake('feedback', request);
+    if (!intake.ok) return intake.response;
+    const { pubky, comment, name } = intake.body;
 
     // Delegate to controller - fields are unchecked until it validates them
     await FeedbackController.submit({ pubky, comment, name } as TFeedbackSubmitParams);

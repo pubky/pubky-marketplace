@@ -1,5 +1,3 @@
-import { IMPORT_IMAGE_RATE_LIMIT_MAX_KEYS } from '@/config/import-image';
-
 export type TRateLimitDecision = { ok: true } | { ok: false; retryAfterSeconds: number };
 
 type TWindow = { startedAt: number; used: number };
@@ -15,7 +13,7 @@ export class WindowCounter {
   constructor(
     private readonly limit: number,
     private readonly windowMs: number,
-    private readonly maxKeys: number = IMPORT_IMAGE_RATE_LIMIT_MAX_KEYS,
+    private readonly maxKeys: number,
   ) {}
 
   consume(key: string, amount: number): TRateLimitDecision {

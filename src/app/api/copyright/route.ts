@@ -1,10 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { SUPPORT_COPYRIGHT_MAX_REQUEST_BODY_BYTES } from '@/config/support-intake';
 import { CopyrightController } from '@/controllers/copyright/copyright';
 import type { TCopyrightSubmitParams } from '@/controllers/copyright/copyright.types';
-import { readJsonBody } from '@/libs/api/read-json-body';
 import { handleApiError } from '@/libs/api/route-error-handler';
-import { admitSupportIntake, tooManyRequestsResponse } from '@/libs/api/support-intake-guards';
+import { readSupportIntake } from '@/libs/api/support-intake-guards';
 import { HttpStatusCode } from '@/libs/http/http.types';
 
 /**
@@ -19,11 +17,8 @@ import { HttpStatusCode } from '@/libs/http/http.types';
  */
 export async function POST(request: NextRequest) {
   try {
-    const admission = admitSupportIntake('copyright', request);
-    if (!admission.ok) return tooManyRequestsResponse(admission.retryAfterSeconds);
-
-    const read = await readJsonBody(request, SUPPORT_COPYRIGHT_MAX_REQUEST_BODY_BYTES);
-    if (!read.ok) return read.response;
+    const intake = await readSupportIntake('copyright', request);
+    if (!intake.ok) return intake.response;
     const {
       nameOwner,
       originalContentUrls,
@@ -41,7 +36,7 @@ export async function POST(request: NextRequest) {
       signature,
       isRightsOwner,
       isReportingOnBehalf,
-    } = read.body;
+    } = intake.body;
 
     // Delegate to controller - fields are unchecked until it validates them
     await CopyrightController.submit({

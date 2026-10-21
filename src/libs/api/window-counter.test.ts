@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { IMPORT_IMAGE_RATE_LIMIT_MAX_KEYS } from '@/config/import-image';
 import { WindowCounter } from './window-counter';
 
 const LIMIT = 3;
 const WINDOW_MS = 60_000;
+const MAX_KEYS = 100;
 
 function fill(counter: WindowCounter, keys: number) {
   for (let i = 0; i < keys; i += 1) counter.consume(`key:${i}`, 1);
@@ -19,12 +19,12 @@ describe('WindowCounter', () => {
   });
 
   it('admits a key up to its limit within one window', () => {
-    const counter = new WindowCounter(LIMIT, WINDOW_MS);
+    const counter = new WindowCounter(LIMIT, WINDOW_MS, MAX_KEYS);
     for (let i = 0; i < LIMIT; i += 1) expect(counter.consume('a', 1).ok).toBe(true);
   });
 
   it('refuses a key past its limit and reports a retry of at least one second', () => {
-    const counter = new WindowCounter(LIMIT, WINDOW_MS);
+    const counter = new WindowCounter(LIMIT, WINDOW_MS, MAX_KEYS);
     for (let i = 0; i < LIMIT; i += 1) counter.consume('a', 1);
 
     vi.advanceTimersByTime(WINDOW_MS - 1);
@@ -34,19 +34,19 @@ describe('WindowCounter', () => {
   });
 
   it('counts the amount consumed, not the number of calls', () => {
-    const counter = new WindowCounter(100, WINDOW_MS);
+    const counter = new WindowCounter(100, WINDOW_MS, MAX_KEYS);
     expect(counter.consume('a', 100).ok).toBe(true);
     expect(counter.consume('a', 1).ok).toBe(false);
   });
 
   it('keeps keys independent', () => {
-    const counter = new WindowCounter(LIMIT, WINDOW_MS);
+    const counter = new WindowCounter(LIMIT, WINDOW_MS, MAX_KEYS);
     for (let i = 0; i < LIMIT; i += 1) counter.consume('a', 1);
     expect(counter.consume('b', 1).ok).toBe(true);
   });
 
   it('opens a fresh window once the window elapses', () => {
-    const counter = new WindowCounter(LIMIT, WINDOW_MS);
+    const counter = new WindowCounter(LIMIT, WINDOW_MS, MAX_KEYS);
     for (let i = 0; i < LIMIT; i += 1) counter.consume('a', 1);
     expect(counter.consume('a', 1).ok).toBe(false);
 
@@ -57,7 +57,7 @@ describe('WindowCounter', () => {
 
   describe('peek', () => {
     it('reports a spent key without consuming from it', () => {
-      const counter = new WindowCounter(LIMIT, WINDOW_MS);
+      const counter = new WindowCounter(LIMIT, WINDOW_MS, MAX_KEYS);
       for (let i = 0; i < LIMIT; i += 1) counter.consume('a', 1);
 
       const refused = counter.peek('a');
@@ -75,8 +75,8 @@ describe('WindowCounter', () => {
 
   describe('key table bound', () => {
     it('refuses a new key once the key table is full of live windows', () => {
-      const counter = new WindowCounter(LIMIT, WINDOW_MS);
-      fill(counter, IMPORT_IMAGE_RATE_LIMIT_MAX_KEYS);
+      const counter = new WindowCounter(LIMIT, WINDOW_MS, MAX_KEYS);
+      fill(counter, MAX_KEYS);
 
       const refused = counter.consume('newcomer', 1);
 
@@ -106,12 +106,6 @@ describe('WindowCounter', () => {
 
       expect(counter.consume('newcomer', 1).ok).toBe(true);
       expect(counter.consume('second-newcomer', 1).ok).toBe(true);
-    });
-
-    it('bounds the key table at a custom size', () => {
-      const counter = new WindowCounter(LIMIT, WINDOW_MS, 2);
-      fill(counter, 2);
-      expect(counter.consume('newcomer', 1).ok).toBe(false);
     });
   });
 

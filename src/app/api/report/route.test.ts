@@ -1,10 +1,6 @@
 import { NextRequest } from 'next/server';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import {
-  SUPPORT_REPORT_GLOBAL_RATE_LIMIT_REQUESTS,
-  SUPPORT_REPORT_MAX_REQUEST_BODY_BYTES,
-  SUPPORT_REPORT_RATE_LIMIT_REQUESTS,
-} from '@/config/support-intake';
+import { SUPPORT_INTAKE_LIMITS } from '@/config/support-intake';
 import { ReportController } from '@/controllers/report/report';
 import { admitSupportIntake, resetSupportIntakeForTests } from '@/libs/api/support-intake-guards';
 import { ServerErrorCode, ValidationErrorCode } from '@/libs/error/error.codes';
@@ -379,7 +375,7 @@ describe('API Route: /api/report', () => {
     });
 
     it('refuses a client with 429 once its window is used up, before reading the body', async () => {
-      for (let i = 0; i < SUPPORT_REPORT_RATE_LIMIT_REQUESTS; i++) {
+      for (let i = 0; i < SUPPORT_INTAKE_LIMITS.report.perClientRequests; i++) {
         expect((await POST(requestFrom('203.0.113.7'))).status).toBe(200);
       }
 
@@ -390,12 +386,12 @@ describe('API Route: /api/report', () => {
       expect(Number(response.headers.get('Retry-After'))).toBeGreaterThanOrEqual(1);
       expect((await response.json()).error).toBe('Too many requests. Try again later.');
       expect(request.bodyUsed).toBe(false);
-      expect(ReportController.submit).toHaveBeenCalledTimes(SUPPORT_REPORT_RATE_LIMIT_REQUESTS);
+      expect(ReportController.submit).toHaveBeenCalledTimes(SUPPORT_INTAKE_LIMITS.report.perClientRequests);
     });
 
     it('refuses every client with 429 once the shared window is used up', async () => {
       // Requests without a trusted client address count only against the shared window.
-      for (let i = 0; i < SUPPORT_REPORT_GLOBAL_RATE_LIMIT_REQUESTS; i++) {
+      for (let i = 0; i < SUPPORT_INTAKE_LIMITS.report.globalRequests; i++) {
         admitSupportIntake('report', new NextRequest('http://localhost:3000/api/report', { method: 'POST' }));
       }
 
@@ -407,7 +403,7 @@ describe('API Route: /api/report', () => {
     });
 
     it('refuses a body over the size cap with 413 before the controller runs', async () => {
-      const oversized = { ...validBody, reason: 'a'.repeat(SUPPORT_REPORT_MAX_REQUEST_BODY_BYTES) };
+      const oversized = { ...validBody, reason: 'a'.repeat(SUPPORT_INTAKE_LIMITS.report.maxBodyBytes) };
 
       const response = await POST(requestFrom('203.0.113.7', oversized));
 

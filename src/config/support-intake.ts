@@ -4,6 +4,17 @@
  * instances multiplies every request limit by the instance count.
  */
 
+export type TSupportIntakeKind = 'feedback' | 'report' | 'copyright';
+
+export type TSupportIntakeLimits = {
+  /** Submissions one client address may send per window. */
+  perClientRequests: number;
+  /** Submissions from all clients together per window, per server instance. */
+  globalRequests: number;
+  /** Largest request body accepted. */
+  maxBodyBytes: number;
+};
+
 /** Length of one rate window. May be tuned. */
 export const SUPPORT_INTAKE_RATE_LIMIT_WINDOW_MS = 60 * 60_000;
 
@@ -13,32 +24,13 @@ export const SUPPORT_INTAKE_RATE_LIMIT_WINDOW_MS = 60 * 60_000;
  */
 export const SUPPORT_INTAKE_RATE_LIMIT_MAX_KEYS = 5_000;
 
-/** Feedback submissions one client address may send per window. May be tuned. */
-export const SUPPORT_FEEDBACK_RATE_LIMIT_REQUESTS = 10;
-
-/** Report submissions one client address may send per window. May be tuned. */
-export const SUPPORT_REPORT_RATE_LIMIT_REQUESTS = 20;
-
 /**
- * Copyright notices one client address may send per window. Leaves room for
- * a rights holder who files several notices in one sitting. May be tuned.
+ * Per-form limits. May be tuned. Copyright leaves room for a rights holder who
+ * files several notices in one sitting, and its body cap fits a notice that
+ * lists several URLs and a postal address.
  */
-export const SUPPORT_COPYRIGHT_RATE_LIMIT_REQUESTS = 10;
-
-/** Feedback submissions from all clients together per window, per server instance. May be tuned. */
-export const SUPPORT_FEEDBACK_GLOBAL_RATE_LIMIT_REQUESTS = 300;
-
-/** Report submissions from all clients together per window, per server instance. May be tuned. */
-export const SUPPORT_REPORT_GLOBAL_RATE_LIMIT_REQUESTS = 600;
-
-/** Copyright notices from all clients together per window, per server instance. May be tuned. */
-export const SUPPORT_COPYRIGHT_GLOBAL_RATE_LIMIT_REQUESTS = 100;
-
-/** Largest feedback request body accepted. May be tuned. */
-export const SUPPORT_FEEDBACK_MAX_REQUEST_BODY_BYTES = 16 * 1024;
-
-/** Largest report request body accepted. May be tuned. */
-export const SUPPORT_REPORT_MAX_REQUEST_BODY_BYTES = 16 * 1024;
-
-/** Largest copyright request body accepted; a notice lists several URLs and a postal address. May be tuned. */
-export const SUPPORT_COPYRIGHT_MAX_REQUEST_BODY_BYTES = 64 * 1024;
+export const SUPPORT_INTAKE_LIMITS: Record<TSupportIntakeKind, TSupportIntakeLimits> = {
+  feedback: { perClientRequests: 10, globalRequests: 300, maxBodyBytes: 16 * 1024 },
+  report: { perClientRequests: 20, globalRequests: 600, maxBodyBytes: 16 * 1024 },
+  copyright: { perClientRequests: 10, globalRequests: 100, maxBodyBytes: 64 * 1024 },
+};

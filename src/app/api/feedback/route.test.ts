@@ -1,11 +1,7 @@
 import { NextRequest } from 'next/server';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { FEEDBACK_MAX_CHARACTER_LENGTH } from '@/config/posts';
-import {
-  SUPPORT_FEEDBACK_GLOBAL_RATE_LIMIT_REQUESTS,
-  SUPPORT_FEEDBACK_MAX_REQUEST_BODY_BYTES,
-  SUPPORT_FEEDBACK_RATE_LIMIT_REQUESTS,
-} from '@/config/support-intake';
+import { SUPPORT_INTAKE_LIMITS } from '@/config/support-intake';
 import { FeedbackController } from '@/controllers/feedback/feedback';
 import { admitSupportIntake, resetSupportIntakeForTests } from '@/libs/api/support-intake-guards';
 import { ServerErrorCode, ValidationErrorCode } from '@/libs/error/error.codes';
@@ -238,7 +234,7 @@ describe('API Route: /api/feedback', () => {
     });
 
     it('refuses a client with 429 once its window is used up, before reading the body', async () => {
-      for (let i = 0; i < SUPPORT_FEEDBACK_RATE_LIMIT_REQUESTS; i++) {
+      for (let i = 0; i < SUPPORT_INTAKE_LIMITS.feedback.perClientRequests; i++) {
         expect((await POST(requestFrom('203.0.113.7'))).status).toBe(200);
       }
 
@@ -249,12 +245,12 @@ describe('API Route: /api/feedback', () => {
       expect(Number(response.headers.get('Retry-After'))).toBeGreaterThanOrEqual(1);
       expect((await response.json()).error).toBe('Too many requests. Try again later.');
       expect(request.bodyUsed).toBe(false);
-      expect(FeedbackController.submit).toHaveBeenCalledTimes(SUPPORT_FEEDBACK_RATE_LIMIT_REQUESTS);
+      expect(FeedbackController.submit).toHaveBeenCalledTimes(SUPPORT_INTAKE_LIMITS.feedback.perClientRequests);
     });
 
     it('refuses every client with 429 once the shared window is used up', async () => {
       // Requests without a trusted client address count only against the shared window.
-      for (let i = 0; i < SUPPORT_FEEDBACK_GLOBAL_RATE_LIMIT_REQUESTS; i++) {
+      for (let i = 0; i < SUPPORT_INTAKE_LIMITS.feedback.globalRequests; i++) {
         admitSupportIntake('feedback', new NextRequest('http://localhost:3000/api/feedback', { method: 'POST' }));
       }
 
@@ -266,7 +262,7 @@ describe('API Route: /api/feedback', () => {
     });
 
     it('refuses a body over the size cap with 413 before the controller runs', async () => {
-      const oversized = { ...validBody, comment: 'a'.repeat(SUPPORT_FEEDBACK_MAX_REQUEST_BODY_BYTES) };
+      const oversized = { ...validBody, comment: 'a'.repeat(SUPPORT_INTAKE_LIMITS.feedback.maxBodyBytes) };
 
       const response = await POST(requestFrom('203.0.113.7', oversized));
 

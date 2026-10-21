@@ -1,26 +1,22 @@
 import { type NextRequest, NextResponse } from 'next/server';
 import {
-  SUPPORT_COPYRIGHT_GLOBAL_RATE_LIMIT_REQUESTS,
-  SUPPORT_COPYRIGHT_RATE_LIMIT_REQUESTS,
-  SUPPORT_FEEDBACK_GLOBAL_RATE_LIMIT_REQUESTS,
-  SUPPORT_FEEDBACK_RATE_LIMIT_REQUESTS,
+  SUPPORT_INTAKE_LIMITS,
   SUPPORT_INTAKE_RATE_LIMIT_MAX_KEYS,
   SUPPORT_INTAKE_RATE_LIMIT_WINDOW_MS,
-  SUPPORT_REPORT_GLOBAL_RATE_LIMIT_REQUESTS,
-  SUPPORT_REPORT_RATE_LIMIT_REQUESTS,
+  type TSupportIntakeKind,
 } from '@/config/support-intake';
-import { trustedClientIp } from '@/libs/api/import-route-guards';
+import { trustedClientIp } from '@/libs/api/client-ip';
+import { readJsonBody, type TReadJsonBodyResult } from '@/libs/api/read-json-body';
 import { type TRateLimitDecision, WindowCounter } from '@/libs/api/window-counter';
 import { HttpStatusCode } from '@/libs/http/http.types';
 import { Logger } from '@/libs/logger/logger';
-
-export type TSupportIntakeKind = 'feedback' | 'report' | 'copyright';
 
 type TSupportIntakeLimiters = { perClient: WindowCounter; global: WindowCounter };
 
 const GLOBAL_KEY = 'global';
 
-function limiters(perClientRequests: number, globalRequests: number): TSupportIntakeLimiters {
+function limiters(kind: TSupportIntakeKind): TSupportIntakeLimiters {
+  const { perClientRequests, globalRequests } = SUPPORT_INTAKE_LIMITS[kind];
   return {
     perClient: new WindowCounter(
       perClientRequests,
@@ -32,9 +28,9 @@ function limiters(perClientRequests: number, globalRequests: number): TSupportIn
 }
 
 const LIMITERS: Record<TSupportIntakeKind, TSupportIntakeLimiters> = {
-  feedback: limiters(SUPPORT_FEEDBACK_RATE_LIMIT_REQUESTS, SUPPORT_FEEDBACK_GLOBAL_RATE_LIMIT_REQUESTS),
-  report: limiters(SUPPORT_REPORT_RATE_LIMIT_REQUESTS, SUPPORT_REPORT_GLOBAL_RATE_LIMIT_REQUESTS),
-  copyright: limiters(SUPPORT_COPYRIGHT_RATE_LIMIT_REQUESTS, SUPPORT_COPYRIGHT_GLOBAL_RATE_LIMIT_REQUESTS),
+  feedback: limiters('feedback'),
+  report: limiters('report'),
+  copyright: limiters('copyright'),
 };
 
 let warnedNoClientAddress = false;
@@ -63,11 +59,14 @@ export function admitSupportIntake(kind: TSupportIntakeKind, request: NextReques
   return global.consume(GLOBAL_KEY, 1);
 }
 
-export function tooManyRequestsResponse(retryAfterSeconds: number): NextResponse {
-  return NextResponse.json(
-    { error: 'Too many requests. Try again later.' },
-    { status: HttpStatusCode.TOO_MANY_REQUESTS, headers: { 'Retry-After': String(retryAfterSeconds) } },
-  );
+/**
+ * Admits one submission of a support form, then reads its body within the
+ * form's size cap. A refused request gets 429 before its body is read.
+ */
+export async function readSupportIntake(kind: TSupportIntakeKind, request: NextRequest): Promise<TReadJsonBodyResult> {
+  const admission = admitSupportIntake(kind, request);
+  if (!admission.ok) return { ok: false, response: tooManyRequestsResponse(admission.retryAfterSeconds) };
+  return readJsonBody(request, SUPPORT_INTAKE_LIMITS[kind].maxBodyBytes);
 }
 
 export function resetSupportIntakeForTests(): void {
@@ -83,5 +82,12 @@ function warnNoClientAddressOnce(): void {
   warnedNoClientAddress = true;
   Logger.warn(
     '[support-intake] Per-client limits are off because no trusted proxy is configured; only the shared limit applies',
+  );
+}
+
+function tooManyRequestsResponse(retryAfterSeconds: number): NextResponse {
+  return NextResponse.json(
+    { error: 'Too many requests. Try again later.' },
+    { status: HttpStatusCode.TOO_MANY_REQUESTS, headers: { 'Retry-After': String(retryAfterSeconds) } },
   );
 }

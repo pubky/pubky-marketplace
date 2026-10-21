@@ -1,3 +1,4 @@
+import { IMPORT_IMAGE_RATE_LIMIT_MAX_KEYS } from '@/config/import-image';
 import {
   IMPORT_STORE_GLOBAL_RATE_LIMIT_BYTES,
   IMPORT_STORE_GLOBAL_RATE_LIMIT_REQUESTS,
@@ -15,17 +16,27 @@ import { type TRateLimitDecision, WindowCounter } from '@/libs/api/window-counte
  * all callers together, in process memory, and a full key table refuses new
  * keys instead of evicting live ones (`WindowCounter`).
  */
-const requestCounter = new WindowCounter(IMPORT_STORE_RATE_LIMIT_REQUESTS, IMPORT_STORE_RATE_LIMIT_WINDOW_MS);
-const byteCounter = new WindowCounter(IMPORT_STORE_RATE_LIMIT_BYTES, IMPORT_STORE_RATE_LIMIT_BYTES_WINDOW_MS);
+const requestCounter = new WindowCounter(
+  IMPORT_STORE_RATE_LIMIT_REQUESTS,
+  IMPORT_STORE_RATE_LIMIT_WINDOW_MS,
+  IMPORT_IMAGE_RATE_LIMIT_MAX_KEYS,
+);
+const byteCounter = new WindowCounter(
+  IMPORT_STORE_RATE_LIMIT_BYTES,
+  IMPORT_STORE_RATE_LIMIT_BYTES_WINDOW_MS,
+  IMPORT_IMAGE_RATE_LIMIT_MAX_KEYS,
+);
 
 const GLOBAL_KEY = 'global';
 const globalRequestCounter = new WindowCounter(
   IMPORT_STORE_GLOBAL_RATE_LIMIT_REQUESTS,
   IMPORT_STORE_RATE_LIMIT_WINDOW_MS,
+  IMPORT_IMAGE_RATE_LIMIT_MAX_KEYS,
 );
 const globalByteCounter = new WindowCounter(
   IMPORT_STORE_GLOBAL_RATE_LIMIT_BYTES,
   IMPORT_STORE_RATE_LIMIT_BYTES_WINDOW_MS,
+  IMPORT_IMAGE_RATE_LIMIT_MAX_KEYS,
 );
 
 export class ImportStoreRateLimiter {
