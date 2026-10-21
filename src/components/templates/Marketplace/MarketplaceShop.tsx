@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { ArrowLeft, LayoutDashboard, Store, User, UserCheck, UserPlus } from 'lucide-react';
 import { APP_ROUTES, getProfileRoute, MARKETPLACE_ROUTES, PROFILE_ROUTES } from '@/app/routes';
@@ -11,10 +11,12 @@ import { Container } from '@/atoms/Container/Container';
 import { Heading } from '@/atoms/Heading/Heading';
 import { Link } from '@/atoms/Link/Link';
 import { Typography } from '@/atoms/Typography/Typography';
+import { getCommerceAdapterMode } from '@/config/commerce';
 import { getSocialHostUrl } from '@/config/social';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import { useCommerceShopFollow } from '@/hooks/useCommerceShopFollow/useCommerceShopFollow';
 import { useIsEmbedded } from '@/hooks/useIsEmbedded/useIsEmbedded';
+import { useLiveSellerShop } from '@/hooks/useLiveSellerShop/useLiveSellerShop';
 import {
   buildMarketplaceCatalogItems,
   type MarketplaceCatalogItem,
@@ -46,23 +48,14 @@ export function MarketplaceShop({ sellerPubky }: { sellerPubky: string }) {
   const isEmbedded = useIsEmbedded();
   // The shop record lives on the seller's homeserver; a visitor's local cache
   // may not hold it yet, so resolve network-first and only then treat a
-  // missing record as "this seller has no shop".
-  const [shopFetchSettled, setShopFetchSettled] = useState(false);
+  // missing record as "this seller has no shop". The hook also keeps it
+  // current while the page is open.
+  const shopFetchSettled = useLiveSellerShop(sellerPubky, { live: getCommerceAdapterMode() !== 'sandbox' });
 
   useEffect(() => {
-    let active = true;
-    setShopFetchSettled(false);
-    CommerceController.getOrFetchShop(sellerPubky)
-      .catch(() => undefined)
-      .finally(() => {
-        if (active) setShopFetchSettled(true);
-      });
     // Best-effort: hydrate this seller's listings from the Nexus index so a
     // direct shop visit is not limited to what this device already cached.
     void CommerceController.fetchSellerCatalogListings(sellerPubky).catch(() => undefined);
-    return () => {
-      active = false;
-    };
   }, [sellerPubky]);
 
   const shop = useLiveQuery(() => CommerceController.getShop(sellerPubky), [sellerPubky]);

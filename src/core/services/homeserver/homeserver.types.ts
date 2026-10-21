@@ -109,6 +109,12 @@ export type THomeserverGetJsonIfFoundParams = {
    * unreachability both mean "not now".
    */
   tolerateUnreachable?: boolean;
+  /**
+   * Read through public storage even when the path is the signed-in user's
+   * own: `/pub/` is public, so a check that only reads does not need the
+   * session, which may have been removed from the browser (#353).
+   */
+  publicRead?: boolean;
 };
 
 /** A GET that may find nothing: `json` is the parsed body, `undefined` for an empty or non-JSON one. */

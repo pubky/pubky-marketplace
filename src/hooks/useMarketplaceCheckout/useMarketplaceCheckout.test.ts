@@ -9,6 +9,8 @@ import { SHIPS_TO_UNAVAILABLE_MESSAGE } from '@/libs/commerce/ships-to';
 import { AppError } from '@/libs/error/error';
 import { ClientErrorCode } from '@/libs/error/error.codes';
 import { ErrorCategory, ErrorService } from '@/libs/error/error.types';
+import { resetRuntimeConfigForTests } from '@/libs/runtime-config/runtime-config';
+import { PUBKY_RUNTIME_ENV_NAMES } from '@/libs/runtime-config/runtime-config.schema';
 import { toast } from '@/molecules/Toaster/use-toast';
 import { useCommerceStore } from '@/stores/commerce/commerce.store';
 import { asOpaque } from '@/test-utils/type-assertions';
@@ -68,6 +70,7 @@ vi.mock('@/controllers/commerce/commerce', () => ({
     fetchPickupAvailable: vi.fn(async () => true),
     fetchDigitalDeliveryCapability: vi.fn(async () => ({ available: true, maxBytes: null })),
     commitCreateMarketplaceCheckout: vi.fn(),
+    setBuyerCountry: vi.fn(),
     getShippedSellers: vi.fn(),
     resolveDeliveryKeysForCheckout: vi.fn(),
     commitAcceptDeliveryKeyChange: vi.fn(),
@@ -236,6 +239,45 @@ describe('useMarketplaceCheckout', () => {
     expect(CommerceController.commitCreateMarketplaceCheckout).toHaveBeenCalledWith(
       expect.objectContaining({ connectorShares: [choice] }),
     );
+  });
+
+  it('remembers the address country as the buyer country only once the order is placed', async () => {
+    process.env[PUBKY_RUNTIME_ENV_NAMES.digitalRegionBlockEnabled] = 'true';
+    resetRuntimeConfigForTests();
+    try {
+      const { result } = renderHook(() =>
+        useMarketplaceCheckout(
+          [item],
+          vi.fn(async () => {}),
+        ),
+      );
+      act(() => {
+        result.current.form.setValue('name', 'Alice Buyer');
+        result.current.form.setValue('line1', '1 Market Street');
+        result.current.form.setValue('city', 'New York');
+        result.current.form.setValue('region', 'NY');
+        result.current.form.setValue('postalCode', '10001');
+        result.current.form.setValue('countryCode', 'us');
+      });
+      expect(CommerceController.setBuyerCountry).not.toHaveBeenCalled();
+
+      await act(async () => {
+        await result.current.submit();
+      });
+      expect(CommerceController.setBuyerCountry).toHaveBeenCalledWith('US');
+
+      act(() => result.current.form.setValue('countryCode', 'uk'));
+      await act(async () => {
+        await result.current.submit();
+      });
+      expect(CommerceController.setBuyerCountry).toHaveBeenLastCalledWith('GB');
+      expect(vi.mocked(CommerceController.setBuyerCountry).mock.invocationCallOrder[0]).toBeLessThan(
+        vi.mocked(CommerceController.commitCreateMarketplaceCheckout).mock.invocationCallOrder[0] ?? 0,
+      );
+    } finally {
+      delete process.env[PUBKY_RUNTIME_ENV_NAMES.digitalRegionBlockEnabled];
+      resetRuntimeConfigForTests();
+    }
   });
 
   it('refreshes terms and creates a guarantee-versioned checkout', async () => {
@@ -1118,12 +1160,15 @@ describe('useMarketplaceCheckout', () => {
       if (result.current.selectedAddressId !== null) throw new Error('Selection has not been dropped yet.');
     });
 
-    // Re-picking restores the saved values.
+    // Re-picking restores the saved values and drops a pending save whose label input it hides (#355).
     act(() => {
+      result.current.form.setValue('saveAddress', true);
       result.current.selectAddress(savedAddress.id);
     });
     expect(result.current.form.getValues('line1')).toBe('1 Market Street');
     expect(result.current.selectedAddressId).toBe(savedAddress.id);
+    expect(result.current.form.getValues('saveAddress')).toBe(false);
+    expect(result.current.form.getValues('saveLabel')).toBe('');
   });
 
   it('reports hasMarketplaceSession only when the store and getActiveSession agree', () => {

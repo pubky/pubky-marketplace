@@ -696,6 +696,45 @@ describe('MarketplaceOrderActions digital orders (digital delivery design §6 E1
   });
 });
 
+describe('MarketplaceOrderActions return policy', () => {
+  function renderBuyer(overrides: Partial<MarketplaceOrder>) {
+    const order = createOrderFixture('completed', { fulfillment: 'shipping', ...overrides });
+    render(
+      <MarketplaceOrderActions order={order} isBuyer canEditReview={false} actOnOrder={vi.fn(async () => true)} />,
+    );
+  }
+
+  it('offers no return on a final sale and says why', () => {
+    renderBuyer({ returnPolicy: { acceptsReturns: false, returnWindowDays: null } });
+
+    expect(screen.queryByRole('button', { name: 'Request return' })).not.toBeInTheDocument();
+    expect(screen.getByTestId('return-closed-note')).toHaveTextContent(
+      "Final sale: the seller doesn't accept returns on this item.",
+    );
+  });
+
+  it('offers no return after the return window', async () => {
+    renderBuyer({ returnPolicy: { acceptsReturns: true, returnWindowDays: 14 } });
+
+    expect(await screen.findByTestId('return-closed-note')).toHaveTextContent(
+      'The return window for this order has closed.',
+    );
+    expect(screen.queryByRole('button', { name: 'Request return' })).not.toBeInTheDocument();
+  });
+
+  it('keeps Request return inside the window', () => {
+    vi.useFakeTimers({ now: new Date('2026-08-20T12:00:00.000Z'), toFake: ['Date'] });
+    try {
+      renderBuyer({ returnPolicy: { acceptsReturns: true, returnWindowDays: 14 } });
+    } finally {
+      vi.useRealTimers();
+    }
+
+    expect(screen.getByRole('button', { name: 'Request return' })).toBeInTheDocument();
+    expect(screen.queryByTestId('return-closed-note')).not.toBeInTheDocument();
+  });
+});
+
 describe('MarketplaceOrderActions digital orders in an inconsistent shipped state (review P2)', () => {
   it('offers no Confirm delivery on a digital order projected as shipped', () => {
     render(

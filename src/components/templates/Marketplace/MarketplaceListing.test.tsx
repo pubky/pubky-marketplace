@@ -87,7 +87,7 @@ vi.mock('@/controllers/commerce/commerce', () => ({
   CommerceController: {
     getListing: () => view.listing,
     getShop: () => view.shop,
-    getOrFetchShop: () => Promise.resolve(null),
+    refreshShopOrGetCached: () => Promise.resolve(null),
     getOrFetchListing: () => (view.fetchFailure === null ? Promise.resolve(null) : Promise.reject(view.fetchFailure)),
     isListingConfirmedRemoved: (_seller: string, _listing: string, fetchError: unknown) => {
       confirmRemovedCalls(fetchError);
@@ -1398,7 +1398,7 @@ describe('MarketplaceListing', () => {
     expect(screen.getByRole('button', { name: 'Authorize with Pubky Ring' })).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Authorize with Pubky Ring' }));
-    expect(screen.queryByText('Sign in to Pubky Shop.')).not.toBeInTheDocument();
+    expect(screen.queryByText('Sign in to Pubky Market.')).not.toBeInTheDocument();
     expect(screen.queryByText(/permission list/i)).not.toBeInTheDocument();
     expect(screen.queryByText(CAPABILITIES)).not.toBeInTheDocument();
     expect(screen.queryByText(/first Shop-scoped approval/i)).not.toBeInTheDocument();

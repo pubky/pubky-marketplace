@@ -841,7 +841,7 @@ exports[`MarketplaceListingForm - Snapshots > matches the physical listing form 
                     data-testid="input"
                     id="countryCode"
                     name="countryCode"
-                    placeholder="US"
+                    placeholder="Two-letter code"
                     type="text"
                     value="US"
                   />

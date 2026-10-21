@@ -48,7 +48,7 @@ import {
 import type { PaymentMethodKind } from '@/libs/commerce/payment-methods';
 import type { MarketplaceFulfillmentMethod } from '@/libs/commerce/pickup';
 import { pickupRefusalFailureMessage } from '@/libs/commerce/pickup';
-import { browserAddressCountry } from '@/libs/commerce/postal-address';
+import { browserAddressCountry, canonicalCountryCode } from '@/libs/commerce/postal-address';
 import { isDestinationAllowed } from '@/libs/commerce/ships-to';
 import {
   buildMarketplaceListingAggregateId,
@@ -61,6 +61,7 @@ import { classifyVariantRefusal, variantRefusalMessage } from '@/libs/commerce/v
 import { AppError } from '@/libs/error/error';
 import { isMarketplaceSessionRequiredError } from '@/libs/error/error.utils';
 import { Logger } from '@/libs/logger/logger';
+import { getDigitalRegionBlockEnabled, getEuFenceEnabled } from '@/libs/runtime-config/runtime-config';
 import type { CommerceDeliveryAddressModelSchema } from '@/models/commerce/commerce.schema';
 import { showPaymentMethodRefusalToast } from '@/molecules/Toaster/payment-method-refusal-toast';
 import { toast } from '@/molecules/Toaster/use-toast';
@@ -538,7 +539,9 @@ export function useMarketplaceCheckout(
     }
     const address = addresses.find((candidate) => candidate.id === id);
     if (!address) return;
-    form.reset({ ...form.getValues(), ...addressFieldValues(address) });
+    // A saved address hides the save controls, so a pending save with no label
+    // must not keep blocking Pay from an input the buyer can no longer see.
+    form.reset({ ...form.getValues(), ...addressFieldValues(address), saveAddress: false, saveLabel: '' });
     setSelectedAddressId(id);
   };
 
@@ -725,6 +728,11 @@ export function useMarketplaceCheckout(
     }
     const sealedTo = await resolveKeys(shippedSellers);
     if (!sealedTo.ok) return { ok: false };
+    // Placing an order to an address is the buyer's choice of country: remember it for the
+    // listings and send it with this command (legal launch plan C2).
+    if (requiresDeliveryAddress && (getEuFenceEnabled() || getDigitalRegionBlockEnabled())) {
+      CommerceController.setBuyerCountry(canonicalCountryCode(data.countryCode));
+    }
     const response = await CommerceController.commitCreateMarketplaceCheckout({
       lines: checkoutLines,
       fulfillmentChoiceBySeller,

@@ -37,7 +37,10 @@ import {
 } from '@/hooks/useMarketplaceCart/useMarketplaceCart';
 import { useMarketplaceCartStock } from '@/hooks/useMarketplaceCartStock/useMarketplaceCartStock';
 import { useMarketplaceCheckout } from '@/hooks/useMarketplaceCheckout/useMarketplaceCheckout';
-import { marketplaceCheckoutSchema } from '@/hooks/useMarketplaceCheckout/useMarketplaceCheckout.types';
+import {
+  marketplaceCheckoutDefaults,
+  marketplaceCheckoutSchema,
+} from '@/hooks/useMarketplaceCheckout/useMarketplaceCheckout.types';
 import { useMarketplaceFirstMediaUrls } from '@/hooks/useMarketplaceMediaUrl/useMarketplaceMediaUrl';
 import { useMarketplaceOfferCheckout } from '@/hooks/useMarketplaceOfferCheckout/useMarketplaceOfferCheckout';
 import { useMarketplaceOffers } from '@/hooks/useMarketplaceOffers/useMarketplaceOffers';
@@ -64,6 +67,7 @@ import { commerceVariantUnitPrice } from '@/libs/commerce/marketplace-records';
 import { PAYKIT_OUTAGE_COPY } from '@/libs/commerce/paykit-rail';
 import {
   CHECKOUT_SUBMIT_LABEL,
+  LOCKS_CHECKOUT_SUBMIT_LABEL,
   observedPaymentRail,
   orderMayPayInUsdt,
   paykitCheckoutCancellable,
@@ -107,6 +111,7 @@ import { MarketplaceCheckoutStatusLabels } from '@/molecules/Marketplace/Marketp
 import { MarketplaceCheckoutSteps } from '@/molecules/Marketplace/MarketplaceCheckoutSteps';
 import { MarketplaceSellerLink } from '@/molecules/Marketplace/MarketplaceSellerLink';
 import { PaykitOutageNotice } from '@/molecules/Marketplace/PaykitOutageNotice';
+import { RegionRefusal } from '@/molecules/Marketplace/RegionRefusal';
 import { MarketplaceAddressFields } from '@/molecules/MarketplaceAddressFields/MarketplaceAddressFields';
 import { SettingsSectionContent } from '@/molecules/Settings/SettingsSectionContent/SettingsSectionContent';
 import { ContentLayout } from '@/organisms/ContentLayout/ContentLayout';
@@ -136,6 +141,11 @@ type CheckoutRail = (typeof CHECKOUT_RAILS)[number];
 // The sandbox simulates payments and can bind no real rail, so it only ever says Bitcoin.
 const SANDBOX_CHECKOUT_RAILS = ['paykit', 'paypal'] as const;
 const BITCOIN_ONLY_ASSETS: PaymentAsset[] = ['BTC'];
+
+/** The checkout's inputs in the order the page shows them. */
+const CHECKOUT_FIELD_ORDER = (
+  Object.keys(marketplaceCheckoutDefaults) as (keyof typeof marketplaceCheckoutDefaults)[]
+).filter((name) => !['requiresDeliveryAddress', 'shipsTo', 'requiresDeliveryEmail', 'saveAddress'].includes(name));
 
 function MethodLabel({ method, paykitAssets }: { method: CheckoutRail; paykitAssets: readonly PaymentAsset[] }) {
   if (method === 'paypal') return 'PayPal';
@@ -502,10 +512,11 @@ function MarketplaceCartCheckout() {
     buyerWallet.recheck();
   };
 
-  const canPay =
+  // Everything but the delivery form: when only the form blocks Pay, the button
+  // stays tappable and shows the buyer which input to fix (#355).
+  const canPayButForm =
     !approvalNeeded &&
     !region.blocked &&
-    formValid &&
     !checkout.hasFulfillmentConflict &&
     locksRoute !== 'mixed' &&
     checkout.isDigitalReady &&
@@ -519,6 +530,19 @@ function MarketplaceCartCheckout() {
     !paykitBlocksPay &&
     !stock.hasSoldOut &&
     (isSandbox || (sharedMethods !== null && sharedMethods.length > 0 && selectedMethod !== null));
+  const canPay = canPayButForm && formValid;
+  const formBlocksPay = canPayButForm && !formValid;
+
+  /** Shows each invalid input's hint and moves the buyer to the first one, in form order. */
+  const revealFirstInvalidInput = async () => {
+    await checkout.form.trigger();
+    const input =
+      CHECKOUT_FIELD_ORDER.filter((name) => checkout.form.getFieldState(name).invalid)
+        .map((name) => document.getElementById(name))
+        .find((element) => element !== null) ?? null;
+    input?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    input?.focus({ preventScroll: true });
+  };
 
   const paymentCodeNote = paykitSelected ? bitcoinPaymentCodeCheckoutNote(getPaykitServerApi()) : null;
   const checkoutPayDisabledReason = stock.hasSoldOut
@@ -674,7 +698,7 @@ function MarketplaceCartCheckout() {
           state={buyerWallet.state}
           canPayWithPaypal={canPayWithPaypal}
           onOpenChange={(open) => setBuyerConnection({ owner: currentUserPubky, open })}
-          onRecheck={buyerWallet.recheck}
+          onRecheck={() => buyerWallet.recheck()}
         />
       )}
       <Container
@@ -768,6 +792,7 @@ function MarketplaceCartCheckout() {
                               isBuyer
                               canEditReview={false}
                               cancelButtonSize="default"
+                              cancelFullWidth
                               actOnOrder={orders.actOnOrder}
                               onChanged={orders.refresh}
                             />
@@ -1391,9 +1416,17 @@ function MarketplaceCartCheckout() {
                               variant="secondary"
                               className="rounded-full"
                               data-testid="marketplace-checkout-bitkit-unverified-recheck"
-                              onClick={buyerWallet.recheck}
+                              disabled={buyerWallet.pending}
+                              onClick={() => buyerWallet.recheck({ keepVerdict: true })}
                             >
-                              Check connection
+                              {buyerWallet.pending ? (
+                                <>
+                                  <LoaderCircle className="size-4 animate-spin" />
+                                  Checking…
+                                </>
+                              ) : (
+                                'Check connection'
+                              )}
                             </Button>
                           </div>
                         </div>
@@ -1450,8 +1483,8 @@ function MarketplaceCartCheckout() {
                       )}
                       <Button
                         className="w-full rounded-full"
-                        onClick={() => void pay()}
-                        disabled={!canPay}
+                        onClick={() => void (formBlocksPay ? revealFirstInvalidInput() : pay())}
+                        disabled={!canPay && !formBlocksPay}
                         data-testid="marketplace-checkout-pay"
                         aria-describedby={!canPay ? 'checkout-pay-reason' : undefined}
                       >
@@ -1463,7 +1496,11 @@ function MarketplaceCartCheckout() {
                         ) : isSandbox ? (
                           'Pay sandbox'
                         ) : selectedMethod ? (
-                          CHECKOUT_SUBMIT_LABEL[selectedMethod]
+                          isLocksCheckout && selectedMethod === 'paykit' ? (
+                            LOCKS_CHECKOUT_SUBMIT_LABEL
+                          ) : (
+                            CHECKOUT_SUBMIT_LABEL[selectedMethod]
+                          )
                         ) : (
                           'Pay'
                         )}
@@ -1480,16 +1517,7 @@ function MarketplaceCartCheckout() {
                             : 'No payment rails are live in this deployment, so no real funds move. This marketplace never holds funds.'}
                         </Typography>
                       )}
-                      {region.refusal && (
-                        <Typography
-                          as="p"
-                          role="alert"
-                          className="text-sm font-medium"
-                          data-testid="checkout-region-refusal"
-                        >
-                          {region.refusal}
-                        </Typography>
-                      )}
+                      {region.refusal && <RegionRefusal message={region.refusal} testId="checkout-region-refusal" />}
                       <CheckoutSaleTerms sellerPubkys={checkoutSellers} declarations={region.declarations} />
                       {!canPay && (
                         <Typography id="checkout-pay-reason" as="p" className="text-xs text-muted-foreground">
