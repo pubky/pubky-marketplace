@@ -673,7 +673,7 @@ function MarketplaceCartCheckout() {
           state={buyerWallet.state}
           canPayWithPaypal={canPayWithPaypal}
           onOpenChange={(open) => setBuyerConnection({ owner: currentUserPubky, open })}
-          onRecheck={buyerWallet.recheck}
+          onRecheck={() => buyerWallet.recheck()}
         />
       )}
       <Container
@@ -1389,9 +1389,17 @@ function MarketplaceCartCheckout() {
                               variant="secondary"
                               className="rounded-full"
                               data-testid="marketplace-checkout-bitkit-unverified-recheck"
-                              onClick={buyerWallet.recheck}
+                              disabled={buyerWallet.pending}
+                              onClick={() => buyerWallet.recheck({ keepVerdict: true })}
                             >
-                              Check connection
+                              {buyerWallet.pending ? (
+                                <>
+                                  <LoaderCircle className="size-4 animate-spin" />
+                                  Checking…
+                                </>
+                              ) : (
+                                'Check connection'
+                              )}
                             </Button>
                           </div>
                         </div>

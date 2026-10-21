@@ -346,7 +346,7 @@ export function MarketplacePaymentStatusCard({
           state={buyerWallet.state}
           canPayWithPaypal={methodPayment.availableMethods?.includes('paypal') ?? false}
           onOpenChange={(open) => setBuyerConnection({ owner: currentUserPubky, orderId: order.id, open })}
-          onRecheck={buyerWallet.recheck}
+          onRecheck={() => buyerWallet.recheck()}
         />
       )}
       {showStatusLabels && !statusInLabels && (
@@ -681,9 +681,17 @@ export function MarketplacePaymentStatusCard({
                     variant="secondary"
                     className="w-fit rounded-full"
                     data-testid="order-payment-bitkit-unverified-recheck"
-                    onClick={buyerWallet.recheck}
+                    disabled={buyerWallet.pending}
+                    onClick={() => buyerWallet.recheck({ keepVerdict: true })}
                   >
-                    Check connection
+                    {buyerWallet.pending ? (
+                      <>
+                        <LoaderCircle className="size-4 animate-spin" />
+                        Checking…
+                      </>
+                    ) : (
+                      'Check connection'
+                    )}
                   </Button>
                 </div>
               )}

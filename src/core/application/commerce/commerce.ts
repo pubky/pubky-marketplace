@@ -1664,6 +1664,7 @@ export class CommerceApplication {
       registry = await HomeserverService.getJsonIfFound<unknown>({
         url: paykitAppRegistryUrl(buyerPubky),
         logUrl: PAYKIT_APP_REGISTRY_PATH,
+        publicRead: true,
       });
     } catch {
       return 'unverified';
@@ -1677,6 +1678,7 @@ export class CommerceApplication {
         const authorization = await HomeserverService.getJsonIfFound<unknown>({
           url: paykitReaderAuthorizationUrl(buyerPubky),
           logUrl: PAYKIT_READER_AUTHORIZATION_PATH,
+          publicRead: true,
         });
         return authorization.found ? 'payable' : 'not_payable';
       } catch {

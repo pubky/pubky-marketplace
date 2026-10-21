@@ -95,7 +95,7 @@ export function bitcoinWalletUnsupportedPayReason(canPayWithPaypal: boolean): st
 export const BITCOIN_WALLET_UNVERIFIED_TITLE = "Couldn't verify your Bitcoin wallet";
 
 export function bitcoinWalletUnverifiedBody(canPayWithPaypal: boolean): string {
-  return `The Shop couldn't check which Bitkit version this pubky uses, so Bitcoin Pay is paused. Check again in a moment.${canPayWithPaypal ? ' You can also pay with PayPal.' : ''}`;
+  return `The Shop couldn't check which Bitkit version this pubky uses, so Bitcoin Pay is paused. Check again in a moment. If it keeps failing, sign out and sign in again with Bitkit.${canPayWithPaypal ? ' You can also pay with PayPal.' : ''}`;
 }
 
 export function bitcoinWalletUnverifiedPayReason(canPayWithPaypal: boolean): string {
