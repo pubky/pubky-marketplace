@@ -3797,8 +3797,8 @@ export class CommerceApplication {
         // Only a one-review order can predate per-order IDs, so the service's
         // single review of the reviewer is the one the repair republishes.
         if (reviewsOfReviewer(order, actorPubky).length !== 1) continue;
-        const { listingId: _listingId, ...attestation } = read.attestation;
-        const repaired = await this.republishOverwrittenOwnReview(actorPubky, order, attestation, actorPubky);
+        const { jws, claims } = read.attestation;
+        const repaired = await this.republishOverwrittenOwnReview(actorPubky, order, { jws, claims }, actorPubky);
         if (repaired !== null) hydrated.push(repaired);
         else this.ownReviewHomeserverMisses.add(this.ownReviewItemMissKey(actorPubky, order.id, listingId));
         continue;
