@@ -53,6 +53,7 @@ export function createMarketplaceVrtCommerceController() {
     refreshShopOrGetCached: async () => null,
     // No live shop events in a scene.
     subscribeShopEvents: async () => null,
+    latestShopEventCursor: async () => null,
     getSellerAnnualLimit: async () => ({ enabled: false }),
     getSellerPaymentConfig: async () => ({
       bitcoinAvailable: false,

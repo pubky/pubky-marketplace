@@ -146,8 +146,12 @@ export class CommerceController {
     return await CommerceApplication.getOrFetchShop(CommerceRecordNormalizer.pubky(ownerPubky));
   }
 
-  static async subscribeShopEvents(ownerPubky: unknown) {
-    return await CommerceApplication.subscribeShopEvents(CommerceRecordNormalizer.pubky(ownerPubky));
+  static async subscribeShopEvents(ownerPubky: unknown, cursor: string | null = null) {
+    return await CommerceApplication.subscribeShopEvents(CommerceRecordNormalizer.pubky(ownerPubky), cursor);
+  }
+
+  static async latestShopEventCursor(ownerPubky: unknown) {
+    return await CommerceApplication.latestShopEventCursor(CommerceRecordNormalizer.pubky(ownerPubky));
   }
 
   static async getListing(ownerPubky: unknown, listingId: unknown) {

@@ -3,6 +3,7 @@
 import { useEffect } from 'react';
 import {
   COMMERCE_SHOP_EVENT_DEBOUNCE_MS,
+  COMMERCE_SHOP_EVENT_RECONNECT_MAX_MS,
   COMMERCE_SHOP_EVENT_RECONNECT_MS,
   COMMERCE_SHOP_FOCUS_REVALIDATE_MIN_MS,
 } from '@/config/commerce';
@@ -43,28 +44,48 @@ export function useLiveSellerShop(sellerPubky: string, enabled = true): void {
     };
 
     const run = async () => {
+      // Start after the seller's latest shop write: the page has just read the
+      // record, so replaying past writes would only read it again. A reconnect
+      // resumes after the last event seen, so no write in between is missed.
+      let cursor: string | null = null;
+      try {
+        cursor = await CommerceController.latestShopEventCursor(sellerPubky);
+      } catch {
+        // Without it the stream replays past writes: one extra read, nothing missed.
+      }
+      let failures = 0;
       while (active) {
+        let received = false;
         try {
-          const stream = await CommerceController.subscribeShopEvents(sellerPubky);
+          const stream = await CommerceController.subscribeShopEvents(sellerPubky, cursor);
           if (!stream) return;
           reader = stream.getReader();
           if (!active) break;
           for (;;) {
             const { done, value } = await reader.read();
             if (done || !active) break;
+            received = true;
+            cursor = value.cursor;
             // A delete is ignored: a missing record may be transient, and the cache keeps the last one.
             if (value.eventType === 'PUT') onEvent();
           }
+          failures = received ? 0 : failures + 1;
         } catch (error) {
           if (!active) return;
-          Logger.warn('Shop event stream failed; reconnecting', { error });
+          failures += 1;
+          // One warning per run of failures: a stream that keeps failing stays quiet while it backs off.
+          if (failures === 1) Logger.warn('Shop event stream failed; reconnecting', { error });
         } finally {
           void reader?.cancel().catch(() => {});
           reader = undefined;
         }
+        const delay = Math.min(
+          COMMERCE_SHOP_EVENT_RECONNECT_MS * 2 ** Math.max(failures - 1, 0),
+          COMMERCE_SHOP_EVENT_RECONNECT_MAX_MS,
+        );
         await new Promise<void>((resolve) => {
           wake = resolve;
-          setTimeout(resolve, COMMERCE_SHOP_EVENT_RECONNECT_MS);
+          setTimeout(resolve, delay);
         });
       }
     };

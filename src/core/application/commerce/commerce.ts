@@ -515,17 +515,42 @@ export class CommerceApplication {
 
   /**
    * A live stream of changes to the seller's `shop.json`, from the seller's
-   * homeserver `/events-stream` (public, no session). Replays the file's past
-   * events first, then stays open. Null when the seller has no homeserver.
-   * Callers own the reader lifecycle.
+   * homeserver `/events-stream` (public, no session), starting after `cursor`;
+   * a null cursor replays the file's past events first. Null when the seller
+   * has no homeserver. Callers own the reader lifecycle.
    */
-  static async subscribeShopEvents(ownerPubky: string): Promise<ReadableStream<THomeserverResourceEvent> | null> {
+  static async subscribeShopEvents(
+    ownerPubky: string,
+    cursor: string | null = null,
+  ): Promise<ReadableStream<THomeserverResourceEvent> | null> {
+    return await this.shopEventStream(ownerPubky, cursor, false);
+  }
+
+  /** The cursor of the latest write to the seller's `shop.json`, so a live stream can start after it; null when none. */
+  static async latestShopEventCursor(ownerPubky: string): Promise<string | null> {
+    const stream = await this.shopEventStream(ownerPubky, null, true);
+    if (!stream) return null;
+    const reader = stream.getReader();
+    try {
+      const { done, value } = await reader.read();
+      return done ? null : value.cursor;
+    } finally {
+      void reader.cancel().catch(() => {});
+    }
+  }
+
+  private static async shopEventStream(
+    ownerPubky: string,
+    cursor: string | null,
+    latestOnly: boolean,
+  ): Promise<ReadableStream<THomeserverResourceEvent> | null> {
     const homeserver = await HomeserverService.resolveHomeserverOf(ownerPubky);
     if (!homeserver) return null;
     return await HomeserverService.subscribeHomeserverEventStream({
       homeserver,
-      users: [[ownerPubky, null]],
+      users: [[ownerPubky, cursor]],
       pathPrefixes: [CommerceRecordNormalizer.shopUri(ownerPubky).slice(`pubky://${ownerPubky}`.length)],
+      ...(latestOnly ? { latestOnly } : {}),
     });
   }
 
