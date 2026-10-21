@@ -132,7 +132,7 @@ describe('useOrderDigitalDelivery (digital delivery design §3 "After payment", 
     expect(revokeObjectURL).not.toHaveBeenCalled();
     vi.advanceTimersByTime(1_000);
     expect(revokeObjectURL).toHaveBeenCalledWith('blob:purchase');
-    expect(result.current.stateFor(0)).toEqual({ status: 'idle', message: null });
+    expect(result.current.stateFor(0)).toEqual({ status: 'started', message: null });
   });
 
   it('names a file that does not verify, and saves nothing', async () => {

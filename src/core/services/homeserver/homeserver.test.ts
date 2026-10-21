@@ -1283,6 +1283,18 @@ describe('HomeserverService', () => {
           code: ServerErrorCode.INTERNAL_ERROR,
         });
       });
+
+      it('reads the signed-in user’s own public path without the session when asked (#353)', async () => {
+        mockState.currentSession = createMockSession();
+        mockState.sessionStorageGet.mockRejectedValue(new Error('Browser session was removed'));
+        mockState.publicStorageGet.mockResolvedValue(new Response(JSON.stringify({ ok: true }), { status: 200 }));
+
+        await expect(
+          HomeserverService.getJsonIfFound({ url: 'pubky://user/pub/paykit/v0/app-registry.json', publicRead: true }),
+        ).resolves.toEqual({ found: true, json: { ok: true } });
+        expect(mockState.sessionStorageGet).not.toHaveBeenCalled();
+        expect(mockState.publicStorageGet).toHaveBeenCalledWith('pubky://user/pub/paykit/v0/app-registry.json');
+      });
     });
 
     describe('putBlob', () => {

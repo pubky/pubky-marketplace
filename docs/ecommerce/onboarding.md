@@ -1,6 +1,6 @@
 # Shop Developer Onboarding
 
-Everything a developer needs to run, test and release [Pubky Shop](https://shop.pubky.app), the marketplace client
+Everything a developer needs to run, test and release [Pubky Market](https://shop.pubky.app), the marketplace client
 built from this repository.
 
 ## What the Shop is
