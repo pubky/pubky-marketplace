@@ -80,6 +80,7 @@ const APP_CASES: PageCase[] = [
   },
   { name: 'static route', path: '/marketplace/messages?conversation=x', expected: '/marketplace/messages' },
   { name: 'root', path: '/', expected: '/' },
+  { name: 'empty dynamic segment', path: '/invite/', expected: '/invite/' },
 ];
 
 const BASE_PATH_CASES: (PageCase & { basePath: string })[] = [
