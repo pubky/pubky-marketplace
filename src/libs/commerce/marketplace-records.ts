@@ -846,6 +846,11 @@ const commerceReviewRecordSchemaInner = commercePublicRecordBaseSchema
       .min(32)
       .max(4_096)
       .regex(/^[A-Za-z0-9._~-]+$/),
+    /** The attested order's `order_ref`; part of the hash ID, so each order gets its own review. */
+    orderRef: z
+      .string()
+      .regex(/^[0-9a-f]{64}$/)
+      .optional(),
   })
   .passthrough()
   .superRefine(validateRecordDates);

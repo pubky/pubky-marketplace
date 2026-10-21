@@ -24,6 +24,7 @@ import { NEXUS_LISTINGS_PER_PAGE } from '@/config/nexus';
 import { readAuthEpoch } from '@/controllers/auth/auth-epoch';
 import {
   extractReviewAttestation,
+  marketplaceAttestationSchema,
   verifyOrderReceiptClaims,
   verifyOwnDropEdition,
   verifyOwnOrderReceipt,
@@ -3405,7 +3406,7 @@ export class CommerceApplication {
    * Local-first: a Dexie hit returns immediately. After a fresh sign-in the
    * local row is gone (wiped with identity) even when the homeserver record
    * is live — hydrate from the deterministic review URI (listing + subject
-   * + role) so the order card can resolve publication/attestation state
+   * + role + the order's attested `order_ref`) so the order card can resolve publication/attestation state
    * instead of waiting forever.
    */
   static async getOwnMarketplaceReview(
@@ -3428,9 +3429,11 @@ export class CommerceApplication {
   }
 
   /**
-   * Specs hash ID for the living review of this (listing, subject, role).
+   * Specs hash ID for the review of this (listing, subject, role, order).
    * Dummy text/attestation are ignored by the hash — only listing URI,
-   * subject, and role feed the id.
+   * subject, role and `orderRef` feed the id. Without `orderRef` it is the
+   * legacy per-listing id that reviews published before per-order reviews
+   * live at.
    */
   private static async ownReviewPathId(input: {
     actorPubky: string;
@@ -3438,6 +3441,7 @@ export class CommerceApplication {
     listingId: string;
     subjectPubky: string;
     role: 'buyer_reviewing_seller' | 'seller_reviewing_buyer';
+    orderRef?: string;
   }): Promise<string> {
     const { PubkySpecsBuilder } = await import('pubky-app-specs');
     const built = new PubkySpecsBuilder(input.actorPubky).createMarketplaceReview({
@@ -3455,6 +3459,7 @@ export class CommerceApplication {
       ratings: { overall: 1 },
       text: 'path-id-probe',
       eligibilityAttestation: 'A'.repeat(32),
+      ...(input.orderRef === undefined ? {} : { orderRef: input.orderRef }),
     });
     return built.meta.id;
   }
@@ -3476,22 +3481,43 @@ export class CommerceApplication {
     const isBuyer = actorPubky === order.buyerPubky;
     const isSeller = actorPubky === order.sellerPubky;
     if (!isBuyer && !isSeller) return null;
-    const role = isBuyer ? 'buyer_reviewing_seller' : 'seller_reviewing_buyer';
+    const role: 'buyer_reviewing_seller' | 'seller_reviewing_buyer' = isBuyer
+      ? 'buyer_reviewing_seller'
+      : 'seller_reviewing_buyer';
     const subjectPubky = isBuyer ? order.sellerPubky : order.buyerPubky;
     let reviewId = '';
     try {
-      reviewId = await this.ownReviewPathId({
-        actorPubky,
-        listingOwnerPubky: order.sellerPubky,
-        listingId,
-        subjectPubky,
-        role,
-      });
-      const url = CommerceRecordNormalizer.reviewUri(actorPubky, reviewId);
-      const stored = await CommerceHomeserverService.fetchJsonIfFound(url);
-      if (!stored.found) {
+      // The order's own attestation names its `order_ref`: no attestation
+      // means nothing was ever published for this order.
+      const attestation = marketplaceAttestationSchema.safeParse(
+        await MarketplaceGatewayService.getReviewAttestation(actorPubky, order.id),
+      );
+      if (!attestation.success) {
         this.ownReviewHomeserverMisses.add(this.ownReviewMissKey(actorPubky, order.id));
         return null;
+      }
+      const pathInput = { actorPubky, listingOwnerPubky: order.sellerPubky, listingId, subjectPubky, role };
+      reviewId = await this.ownReviewPathId({ ...pathInput, orderRef: attestation.data.claims.orderRef });
+      let stored = await CommerceHomeserverService.fetchJsonIfFound(
+        CommerceRecordNormalizer.reviewUri(actorPubky, reviewId),
+      );
+      if (!stored.found) {
+        // A review published before per-order reviews lives at the legacy
+        // per-listing path; it is this order's only when it embeds this
+        // order's attestation.
+        const legacyId = await this.ownReviewPathId(pathInput);
+        const legacy = await CommerceHomeserverService.fetchJsonIfFound(
+          CommerceRecordNormalizer.reviewUri(actorPubky, legacyId),
+        );
+        const legacyMatches =
+          legacy.found &&
+          (legacy.json as { eligibilityAttestation?: unknown } | null)?.eligibilityAttestation === attestation.data.jws;
+        if (!legacyMatches) {
+          this.ownReviewHomeserverMisses.add(this.ownReviewMissKey(actorPubky, order.id));
+          return null;
+        }
+        reviewId = legacyId;
+        stored = legacy;
       }
       const record = CommerceRecordNormalizer.review(stored.json);
       if (
@@ -3575,6 +3601,12 @@ export class CommerceApplication {
       });
     }
     const role = review.reviewerRole === 'buyer' ? 'buyer_reviewing_seller' : 'seller_reviewing_buyer';
+    // A review published before per-order IDs lives at the per-listing path
+    // without `orderRef`; its edits revise it there instead of forking a
+    // second record for the same order.
+    const existing = await LocalCommerceService.getOwnReviewByOrder(actorPubky, order.id);
+    const orderRef =
+      existing !== undefined && existing.record.orderRef === undefined ? undefined : attestation.claims.orderRef;
 
     const build = async (revision: number, createdAt: string) => {
       const { PubkySpecsBuilder } = await import('pubky-app-specs');
@@ -3593,6 +3625,7 @@ export class CommerceApplication {
         ratings: { overall: review.rating },
         text: review.text,
         eligibilityAttestation: attestation.jws,
+        ...(orderRef === undefined ? {} : { orderRef }),
       });
       return {
         record: commerceReviewRecordSchema.parse(built.marketplace_review.toJson()),
@@ -3600,9 +3633,9 @@ export class CommerceApplication {
       };
     };
 
-    // The hash ID is deterministic per (listing, subject, role): a revision
-    // of the living record — an edit, or a repeat purchase refreshing the
-    // attestation — bumps `revision` and keeps the original `createdAt`.
+    // The hash ID is deterministic per (listing, subject, role, order): an
+    // edit of this order's review bumps `revision` and keeps the original
+    // `createdAt`; another order of the same listing gets its own record.
     const probe = await build(1, review.createdAt);
     const prior = await LocalCommerceService.getOwnReviewById(`${actorPubky}:${probe.reviewId}`);
     const { record, reviewId } =
