@@ -3525,6 +3525,7 @@ export class CommerceApplication {
             return await this.commitPublishOwnReview({
               actorPubky,
               order,
+              stillCurrent: () => this.liveIdentityMatches(hydrateIdentity),
               result: {
                 review: {
                   reviewerPubky: actorPubky,
@@ -3612,8 +3613,11 @@ export class CommerceApplication {
     actorPubky: string;
     order: MarketplaceOrder;
     result: Record<string, unknown>;
+    /** Checked right before each write; a publish not started by the user stops when the signed-in identity changes. */
+    stillCurrent?: () => boolean;
   }): Promise<CommerceReviewModelSchema | null> {
     const { actorPubky, order, result } = input;
+    const stillCurrent = input.stillCurrent ?? (() => true);
     const attestation = extractReviewAttestation(result);
     if (attestation === null) return null;
     const review = reviewResultSchema.parse(result.review);
@@ -3690,9 +3694,12 @@ export class CommerceApplication {
       now: Date.now(),
     });
 
+    if (!stillCurrent()) return null;
     await LocalCommerceService.stageOwnReviewSync(model, job);
+    if (!stillCurrent()) return null;
     await CommerceHomeserverService.putJson(url, { ...record });
     const synced: CommerceReviewModelSchema = { ...model, sync_status: 'synced', updated_at: Date.now() };
+    if (!stillCurrent()) return null;
     await LocalCommerceService.upsertOwnReview(synced);
     await LocalCommerceService.completeSyncJob(job.id);
     return synced;

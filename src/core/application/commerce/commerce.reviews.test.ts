@@ -468,6 +468,30 @@ describe('CommerceApplication own-review hydrate after local miss', () => {
     );
   });
 
+  it('stops the republish when the signed-in identity changes before it writes', async () => {
+    const { order, published } = await publishedOwnReview();
+    const otherOrder = issuedAttestation('boots', 'ef'.repeat(32));
+    vi.spyOn(LocalCommerceService, 'getOwnReviewByOrder').mockResolvedValue(undefined);
+    vi.spyOn(LocalCommerceService, 'getOwnReviewById').mockImplementation(async () => {
+      // The user signs out while the republish builds its record.
+      useAuthStore.getState().setCurrentUserPubky(FOREIGN_PUBKY);
+      return undefined;
+    });
+    vi.spyOn(CommerceHomeserverService, 'fetchJsonIfFound')
+      .mockResolvedValueOnce({ found: false })
+      .mockResolvedValueOnce({ found: true, json: legacyRecord(published.record, otherOrder.jws) });
+    const stage = vi.spyOn(LocalCommerceService, 'stageOwnReviewSync');
+    stage.mockClear();
+    const put = vi.spyOn(CommerceHomeserverService, 'putJson').mockResolvedValue(undefined);
+    put.mockClear();
+
+    await expect(
+      CommerceApplication.getOwnMarketplaceReview(ORDER_FIXTURE_BUYER, orderWithServiceReview(order)),
+    ).resolves.toBeNull();
+    expect(stage).not.toHaveBeenCalled();
+    expect(put).not.toHaveBeenCalled();
+  });
+
   it('leaves an order that already has its per-order record alone', async () => {
     const { order, published } = await publishedOwnReview();
     vi.spyOn(LocalCommerceService, 'getOwnReviewByOrder').mockResolvedValue(undefined);
