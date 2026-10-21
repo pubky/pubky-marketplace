@@ -1,0 +1,1 @@
+On phones, a single payment method at checkout fills the row, long refund addresses and hashes wrap instead of widening the orders page, and a scroll that starts on the Market's Category filter no longer opens it.
