@@ -333,7 +333,7 @@ async function countedCardFixtures() {
         media_urls: [],
         price: { amountMinor: 4_500, currency: 'USD', exponent: 2 },
         auction: null,
-        reputation: { avg: 4.2, count: 5, verifiedCount: 5, buckets: { [TRUSTED_ATTESTOR]: bucket } },
+        listing_reputation: { avg: 4.2, count: 5, verifiedCount: 5, buckets: { [TRUSTED_ATTESTOR]: bucket } },
         updated_at: Date.parse('2026-08-19T21:02:00.000Z'),
       }),
     );
