@@ -1238,6 +1238,10 @@ export class MarketplaceTransactionService {
         // only on the durable service (24-hour edit window). Refuse honestly
         // rather than mutate a review this service never allowed editing.
         return failure('INVALID_COMMAND', 'The sandbox marketplace does not support review editing.');
+      case 'review.withdraw':
+        // Public review records and their withdrawal exist only on the
+        // durable service; the sandbox publishes none.
+        return failure('INVALID_COMMAND', 'The sandbox marketplace does not support review withdrawal.');
     }
   }
 

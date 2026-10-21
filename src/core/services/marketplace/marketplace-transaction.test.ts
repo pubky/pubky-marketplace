@@ -350,6 +350,7 @@ describe('MarketplaceTransactionService.execute', () => {
     'refund.confirm_destination',
     'review.create',
     'review.update',
+    'review.withdraw',
   ] as const)('sends the ported post-purchase command kind %s to the service', async (kind) => {
     await establishSession();
     vi.mocked(fetch).mockResolvedValueOnce(

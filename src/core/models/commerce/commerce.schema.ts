@@ -399,7 +399,7 @@ export type CommerceSyncJobStatus = 'pending' | 'running' | 'failed';
 export interface CommerceSyncJobModelSchema {
   id: string;
   owner_id: string;
-  entity_type: 'shop' | 'listing' | 'review' | 'review_removed' | 'review_response' | 'collection' | 'watchlist';
+  entity_type: 'shop' | 'listing' | 'review' | 'review_response' | 'collection' | 'watchlist';
   entity_id: string;
   operation: CommerceSyncJobOperation;
   status: CommerceSyncJobStatus;
