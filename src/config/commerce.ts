@@ -157,12 +157,10 @@ export function marketplaceTrustedAttestors(): readonly MarketplaceTrustedAttest
  * key's later use, not against a thief who backdates; a compromised key
  * still needs removing from the list.
  *
- * Callers without the attestation pass the closest time they have and say
- * which in their own docs: indexed reviews (the index serves no `iat`) pass
- * the record's `createdAt`, which the Shop writes when it publishes the
- * freshly issued attestation; aggregate counts (no per-review time at all)
- * pass the current time, so a retired key's reviews drop out of the count
- * rather than a compromised key's later ones counting.
+ * Indexed reviews have no `iat` and use
+ * {@link trustedMarketplaceAttestorAtRecordTime}. Aggregate counts (no
+ * per-review time at all) pass the current time, so a retired key's reviews
+ * drop out of the count rather than a compromised key's later ones counting.
  */
 export function trustedMarketplaceAttestorAt(
   attestorId: string | null,
@@ -177,6 +175,31 @@ export function trustedMarketplaceAttestorAt(
         entry.pubky === attestorId &&
         Date.parse(entry.validFrom) <= at &&
         (entry.validUntil === undefined || at < Date.parse(entry.validUntil)),
+    ) ?? null
+  );
+}
+
+/**
+ * The trust-list entry that vouches for an indexed review, judged by the
+ * review record's `createdAt` because the index serves no attestation `iat`.
+ *
+ * `createdAt` is written by the reviewer, so it fails closed: an entry with a
+ * `validUntil` never vouches here, since whoever holds a retired key could
+ * backdate a review into its window. `validFrom` is still checked, because
+ * backdating gains nothing against it. Once the index serves `iat` (design
+ * ticket IX2) indexed reviews use {@link trustedMarketplaceAttestorAt} and
+ * this fallback goes away.
+ */
+export function trustedMarketplaceAttestorAtRecordTime(
+  attestorId: string | null,
+  recordCreatedAt: Date,
+): MarketplaceTrustedAttestor | null {
+  if (attestorId === null) return null;
+  const at = recordCreatedAt.getTime();
+  if (Number.isNaN(at)) return null;
+  return (
+    marketplaceTrustedAttestors().find(
+      (entry) => entry.pubky === attestorId && entry.validUntil === undefined && Date.parse(entry.validFrom) <= at,
     ) ?? null
   );
 }

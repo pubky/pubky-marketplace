@@ -4,6 +4,7 @@ import {
   MARKETPLACE_TRUSTED_ATTESTOR_DEFAULTS,
   marketplaceTrustedAttestors,
   trustedMarketplaceAttestorAt,
+  trustedMarketplaceAttestorAtRecordTime,
 } from '@/config/commerce';
 import { resetRuntimeConfigForTests } from '@/libs/runtime-config/runtime-config';
 import { PUBKY_RUNTIME_ENV_NAMES } from '@/libs/runtime-config/runtime-config.schema';
@@ -95,5 +96,49 @@ describe('trustedMarketplaceAttestorAt', () => {
     expect(trustedMarketplaceAttestorAt('x'.repeat(52), new Date('2026-10-20T00:00:00Z'))).toBeNull();
     expect(trustedMarketplaceAttestorAt(null, new Date('2026-10-20T00:00:00Z'))).toBeNull();
     expect(trustedMarketplaceAttestorAt(CURRENT, new Date('not a date'))).toBeNull();
+  });
+});
+
+describe('trustedMarketplaceAttestorAtRecordTime', () => {
+  it("does not vouch for a review backdated into a retired key's window", () => {
+    withTrustList([{ pubky: RETIRED, label: 'Staging', validFrom: '2026-08-01', validUntil: '2026-10-12' }]);
+
+    expect(trustedMarketplaceAttestorAtRecordTime(RETIRED, new Date('2026-09-15T12:00:00Z'))).toBeNull();
+    expect(trustedMarketplaceAttestorAtRecordTime(RETIRED, new Date('2026-10-11T23:59:59.999Z'))).toBeNull();
+  });
+
+  it('vouches for the same key and time under an entry without validUntil', () => {
+    withTrustList([{ pubky: RETIRED, label: 'Staging', validFrom: '2026-08-01' }]);
+
+    expect(trustedMarketplaceAttestorAtRecordTime(RETIRED, new Date('2026-09-15T12:00:00Z'))?.label).toBe('Staging');
+  });
+
+  it('still checks validFrom against the record time', () => {
+    withTrustList([{ pubky: CURRENT, label: 'Pubky Market', validFrom: '2026-10-12T14:00:00Z' }]);
+
+    expect(trustedMarketplaceAttestorAtRecordTime(CURRENT, new Date('2026-10-12T13:59:59.999Z'))).toBeNull();
+    expect(trustedMarketplaceAttestorAtRecordTime(CURRENT, new Date('2026-10-12T14:00:00Z'))?.label).toBe(
+      'Pubky Market',
+    );
+  });
+
+  it('uses an open-ended entry when the key also has a closed one', () => {
+    withTrustList([
+      { pubky: CURRENT, label: 'First epoch', validFrom: '2026-01-01', validUntil: '2026-06-01' },
+      { pubky: CURRENT, label: 'Second epoch', validFrom: '2026-09-01' },
+    ]);
+
+    expect(trustedMarketplaceAttestorAtRecordTime(CURRENT, new Date('2026-03-01T00:00:00Z'))).toBeNull();
+    expect(trustedMarketplaceAttestorAtRecordTime(CURRENT, new Date('2026-10-01T00:00:00Z'))?.label).toBe(
+      'Second epoch',
+    );
+  });
+
+  it('never trusts an unlisted key, a missing attestor or an invalid time', () => {
+    withTrustList([{ pubky: CURRENT, label: 'Pubky Market', validFrom: '2026-10-12' }]);
+
+    expect(trustedMarketplaceAttestorAtRecordTime('x'.repeat(52), new Date('2026-10-20T00:00:00Z'))).toBeNull();
+    expect(trustedMarketplaceAttestorAtRecordTime(null, new Date('2026-10-20T00:00:00Z'))).toBeNull();
+    expect(trustedMarketplaceAttestorAtRecordTime(CURRENT, new Date('not a date'))).toBeNull();
   });
 });

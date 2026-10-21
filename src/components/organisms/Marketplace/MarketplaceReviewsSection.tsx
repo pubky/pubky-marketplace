@@ -9,7 +9,7 @@ import { Heading } from '@/atoms/Heading/Heading';
 import { Link } from '@/atoms/Link/Link';
 import { Textarea } from '@/atoms/Textarea/Textarea';
 import { Typography } from '@/atoms/Typography/Typography';
-import { trustedMarketplaceAttestorAt } from '@/config/commerce';
+import { trustedMarketplaceAttestorAtRecordTime } from '@/config/commerce';
 import { isSocialLinkOutEnabled } from '@/config/social';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import { useMarketplaceFirstMediaUrl } from '@/hooks/useMarketplaceMediaUrl/useMarketplaceMediaUrl';
@@ -215,12 +215,12 @@ function MarketplaceReviewItem({
  * signer is a trusted attestor is this client's configuration
  * (`marketplaceTrustedAttestors`) — so an attested review from an
  * unrecognized signer is labeled exactly that, never upgraded to "verified".
- * The index serves no attestation `iat`, so the trust window is checked
- * against the record's `createdAt` (see `trustedMarketplaceAttestorAt`).
+ * The index serves no attestation `iat`, so trust is judged by the record's
+ * `createdAt` (see `trustedMarketplaceAttestorAtRecordTime`).
  */
 function MarketplaceReviewVerificationBadge({ review }: { review: CommerceIndexedReview }) {
   const trustedAttestor = review.verified
-    ? trustedMarketplaceAttestorAt(review.attestorId, new Date(review.createdAt))
+    ? trustedMarketplaceAttestorAtRecordTime(review.attestorId, new Date(review.createdAt))
     : null;
   if (trustedAttestor !== null) {
     return (

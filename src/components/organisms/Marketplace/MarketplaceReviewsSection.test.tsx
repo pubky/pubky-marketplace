@@ -1,6 +1,8 @@
 import { render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CommerceController } from '@/controllers/commerce/commerce';
+import { resetRuntimeConfigForTests } from '@/libs/runtime-config/runtime-config';
+import { PUBKY_RUNTIME_ENV_NAMES } from '@/libs/runtime-config/runtime-config.schema';
 import type { CommerceIndexedReview } from '@/models/commerce/commerce.schema';
 import { useAuthStore } from '@/stores/auth/auth.store';
 import { createCommerceListingFixture } from '@/test/fixtures/commerce/commerce';
@@ -160,6 +162,22 @@ describe('MarketplaceReviewsSection verification badge', () => {
 
     expect(screen.getByText('Attested (unrecognized attestor)')).toBeInTheDocument();
     expect(screen.queryByText(/Verified purchase/)).not.toBeInTheDocument();
+  });
+
+  it("does not vouch for a review backdated into a retired key's window", () => {
+    const envName = PUBKY_RUNTIME_ENV_NAMES.marketplaceTrustedAttestors;
+    const suiteValue = process.env[envName];
+    process.env[envName] = JSON.stringify([{ ...TEST_TRUSTED_ATTESTOR, validUntil: '2026-10-12' }]);
+    resetRuntimeConfigForTests();
+    try {
+      renderReview({ verified: true, attestorId: TEST_TRUSTED_ATTESTOR.pubky, createdAt: '2026-09-15T12:00:00.000Z' });
+
+      expect(screen.getByText('Attested (unrecognized attestor)')).toBeInTheDocument();
+      expect(screen.queryByText(/Verified purchase/)).not.toBeInTheDocument();
+    } finally {
+      process.env[envName] = suiteValue;
+      resetRuntimeConfigForTests();
+    }
   });
 
   it('labels a valid signature from an unlisted key as unrecognized', () => {
