@@ -245,7 +245,7 @@ describe('ProfileController', () => {
   });
 
   describe('createRecoveryFile', () => {
-    const passphrase = 'test-passphrase-16';
+    const passphrase = 'a'.repeat(PASSPHRASE_MIN_LENGTH);
 
     it('creates recovery file from secret key', () => {
       const mockSelectSecretKey = vi.fn(() => 'test-secret-key');
@@ -295,13 +295,6 @@ describe('ProfileController', () => {
       expect(mockSelectSecretKey).not.toHaveBeenCalled();
       expect(mockIdentity.keypairFromSecretKey).not.toHaveBeenCalled();
       expect(mockIdentity.createRecoveryFile).not.toHaveBeenCalled();
-
-      const minLengthPassphrase = 'a'.repeat(PASSPHRASE_MIN_LENGTH);
-      ProfileController.createRecoveryFile(minLengthPassphrase);
-
-      expect(mockIdentity.createRecoveryFile).toHaveBeenCalledWith(
-        expect.objectContaining({ passphrase: minLengthPassphrase }),
-      );
     });
   });
 
