@@ -52,7 +52,9 @@ vi.mock('@/controllers/commerce/commerce', () => ({
   CommerceController: {
     ...createMarketplaceVrtCommerceController(),
     getMarketplaceBandConsent: vi.fn(async () => controllerState.bandConsent),
-    getOwnMarketplaceReview: vi.fn(async () => controllerState.ownReview),
+    getOwnMarketplaceOrderReviews: vi.fn(async () =>
+      controllerState.ownReview === null ? [] : [controllerState.ownReview],
+    ),
   },
 }));
 
@@ -75,6 +77,7 @@ function ownReviewRow(overrides: Record<string, unknown> = {}) {
     order_id: 'order-1',
     subject_id: 's'.repeat(52),
     record: {
+      listingId: 'boots',
       eligibilityAttestation: purchaseAttestationJwsFixture({
         iss: TEST_TRUSTED_ATTESTOR.pubky,
         iat: Date.UTC(2026, 7, 21) / 1000,
