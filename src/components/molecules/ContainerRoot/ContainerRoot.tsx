@@ -1,7 +1,8 @@
 import { Inter_Tight } from 'next/font/google';
 import Script from 'next/script';
 import { Container } from '@/atoms/Container/Container';
-import { PLAUSIBLE_QUERYLESS_PAGE_BOOTSTRAP } from '@/libs/observability/plausible-page-url';
+import { getBasePath } from '@/config/base-path';
+import { plausiblePageUrlBootstrap } from '@/libs/observability/plausible-page-url';
 import {
   getEmbeddedFlag,
   getPlausibleDomain,
@@ -41,7 +42,7 @@ export function RootContainer({ children }: RootContainerProps) {
           <>
             <script
               id="pubky-plausible-page-url"
-              dangerouslySetInnerHTML={{ __html: PLAUSIBLE_QUERYLESS_PAGE_BOOTSTRAP }}
+              dangerouslySetInnerHTML={{ __html: plausiblePageUrlBootstrap(getBasePath()) }}
             />
             <Script
               data-domain={plausibleDomain}

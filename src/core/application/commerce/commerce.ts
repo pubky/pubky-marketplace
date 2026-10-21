@@ -111,6 +111,7 @@ import {
   type PrivKeyring,
 } from '@/libs/commerce/priv-envelope';
 import type { MarketplacePrivKeysResult } from '@/libs/commerce/priv-keys';
+import { attestorWindowsParam } from '@/libs/commerce/review-counting';
 import { createCommerceSandboxCatalog } from '@/libs/commerce/sandbox-catalog';
 import {
   buildMarketplaceCheckoutAggregateId,
@@ -4105,6 +4106,10 @@ export class CommerceApplication {
    * index did not answer, has not indexed the listing, or sent a malformed
    * projection, so the page makes no claim. A single attempt, so a listing
    * Nexus has not indexed yet does not wait out the 404 backoff.
+   *
+   * The request names the effective trust list's windows (`attestors=`), so
+   * an index with trust buckets also serves the exact counted figure, carried
+   * on the snippet as `scoped`; older indexes ignore the parameter.
    */
   static async fetchListingRating(
     sellerPubky: string,
@@ -4112,10 +4117,15 @@ export class CommerceApplication {
   ): Promise<CommerceReputationSnippet | null | 'unavailable'> {
     if (getCommerceAdapterMode() === 'sandbox') return 'unavailable';
     try {
-      const entry = CommerceRecordNormalizer.nexusListingDetails(
-        await NexusMarketplaceService.fetchListingDetailsOnce({ seller_id: sellerPubky, listing_id: listingId }),
-      );
-      return entry.listing_reputation;
+      const attestors = attestorWindowsParam();
+      const details = await NexusMarketplaceService.fetchListingDetailsOnce({
+        seller_id: sellerPubky,
+        listing_id: listingId,
+        ...(attestors !== null && { attestors }),
+      });
+      const rating = CommerceRecordNormalizer.nexusListingDetails(details).listing_reputation;
+      const scoped = CommerceRecordNormalizer.nexusScopedListingReputation(details);
+      return rating === null || scoped === undefined ? rating : { ...rating, scoped };
     } catch {
       return 'unavailable';
     }
@@ -4131,12 +4141,20 @@ export class CommerceApplication {
    * answers 200 (proving the deployment indexes reviews at all). Anything
    * else degrades to `unavailable`, which renders NO reputation surface —
    * absence, never a fake state.
+   *
+   * The request names the effective trust list's windows (`attestors=`), so
+   * an index with trust buckets also serves the exact counted figure
+   * (`scoped`); older indexes ignore the parameter.
    */
   static async fetchSellerReputationOverview(sellerPubky: string): Promise<CommerceSellerReputationOverview> {
     if (getCommerceAdapterMode() === 'sandbox') return { status: 'unavailable' };
 
     try {
-      const payload = await NexusMarketplaceService.fetchShopReputation({ seller_id: sellerPubky });
+      const attestors = attestorWindowsParam();
+      const payload = await NexusMarketplaceService.fetchShopReputation({
+        seller_id: sellerPubky,
+        ...(attestors !== null && { attestors }),
+      });
       return { status: 'rated', summary: CommerceRecordNormalizer.nexusReputationSummary(payload) };
     } catch (error) {
       if (!(isAppError(error) && isNotFound(error))) {

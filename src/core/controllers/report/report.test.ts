@@ -72,6 +72,21 @@ describe('ReportController', () => {
       );
     });
 
+    it('should accept the reporter pubky as the name of a listing report', async () => {
+      const submitSpy = vi.spyOn(ReportApplication, 'submit');
+
+      await ReportController.submit(
+        createReportParams({ name: testData.userPubky, listingId: 'boots_01', sellerPubky: testData.userPubky }),
+      );
+
+      expect(submitSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          name: testData.userPubky,
+          listing: { listingId: 'boots_01', sellerPubky: testData.userPubky },
+        }),
+      );
+    });
+
     it('should not add a listing to a post report', async () => {
       const submitSpy = vi.spyOn(ReportApplication, 'submit');
 
@@ -263,7 +278,7 @@ describe('ReportController', () => {
 
     it('should trim whitespace from inputs', async () => {
       const params = createReportParams({
-        pubky: '  test-pubky  ' as Pubky,
+        pubky: `  ${testData.userPubky}  ` as Pubky,
         postUrl: '  https://example.com/post  ',
         issueType: `  ${REPORT_ISSUE_TYPES.HATE_SPEECH}  `,
         reason: '  Some reason  ',
@@ -274,7 +289,7 @@ describe('ReportController', () => {
       await ReportController.submit(params);
 
       expect(submitSpy).toHaveBeenCalledWith({
-        pubky: 'test-pubky',
+        pubky: testData.userPubky,
         postUrl: 'https://example.com/post',
         issueType: REPORT_ISSUE_TYPES.HATE_SPEECH,
         reason: 'Some reason',

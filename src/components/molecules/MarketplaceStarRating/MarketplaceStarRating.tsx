@@ -1,5 +1,6 @@
 import { Check, Star } from 'lucide-react';
 import { Typography } from '@/atoms/Typography/Typography';
+import { formatCountedBasis } from '@/libs/commerce/review-counting';
 import { cn } from '@/libs/utils/utils';
 
 export interface MarketplaceStarRatingProps {
@@ -14,6 +15,12 @@ export interface MarketplaceStarRatingProps {
    * "✓ n" affix when provided and positive.
    */
   verifiedCount?: number;
+  /**
+   * Counted basis (counting rules v2): the rating is a per-buyer mean over N
+   * buyers and M orders. Rendered as "N buyers · M orders" in place of the
+   * review count.
+   */
+  basis?: { buyers: number; orders: number };
   size?: 'sm' | 'md';
   className?: string;
 }
@@ -29,18 +36,20 @@ export function MarketplaceStarRating({
   rating,
   count,
   verifiedCount,
+  basis,
   size = 'sm',
   className,
 }: MarketplaceStarRatingProps) {
   const starSize = size === 'sm' ? 'size-3.5' : 'size-4.5';
   const textSize = size === 'sm' ? 'text-[11px]' : 'text-sm';
   const clamped = Math.min(5, Math.max(0, rating));
+  const basisText = basis ? formatCountedBasis(basis) : null;
 
   return (
     <div
       className={cn('flex items-center gap-1.5', className)}
       role="img"
-      aria-label={`Rated ${clamped.toFixed(1)} out of 5${count !== undefined ? ` from ${count} ${count === 1 ? 'review' : 'reviews'}` : ''}${verifiedCount !== undefined && verifiedCount > 0 ? `, ${verifiedCount} verified ${verifiedCount === 1 ? 'purchase' : 'purchases'}` : ''}`}
+      aria-label={`Rated ${clamped.toFixed(1)} out of 5${basis ? ` from ${formatCountedBasis(basis, ', ')}` : ''}${count !== undefined ? ` from ${count} ${count === 1 ? 'review' : 'reviews'}` : ''}${verifiedCount !== undefined && verifiedCount > 0 ? `, ${verifiedCount} verified ${verifiedCount === 1 ? 'purchase' : 'purchases'}` : ''}`}
     >
       <div className="relative inline-flex" aria-hidden="true">
         <div className="flex gap-0.5">
@@ -59,6 +68,11 @@ export function MarketplaceStarRating({
       <Typography as="span" className={cn(textSize, 'font-semibold text-foreground')}>
         {clamped.toFixed(1)}
       </Typography>
+      {basisText !== null && (
+        <Typography as="span" className={cn(textSize, 'ml-1 text-muted-foreground')}>
+          {basisText}
+        </Typography>
+      )}
       {count !== undefined && (
         <Typography
           as="span"

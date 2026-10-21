@@ -1,9 +1,11 @@
+import { USER_NAME_MAX_LENGTH } from '@/config/user';
 import { commerceEntityIdSchema, commercePubkySchema } from '@/libs/commerce/transaction-contracts';
 import { ValidationErrorCode } from '@/libs/error/error.codes';
 import { Err } from '@/libs/error/error.factories';
 import { ErrorService } from '@/libs/error/error.types';
 import {
   REPORT_ISSUE_TYPE_VALUES,
+  REPORT_POST_URL_MAX_LENGTH,
   REPORT_REASON_MAX_LENGTH,
   REVIEW_REPORT_ISSUE_TYPE_VALUES,
 } from './report.constants';
@@ -30,7 +32,7 @@ export class ReportValidators {
    *
    * @param postUrl - URL of the post being reported
    * @returns Normalized post URL (trimmed)
-   * @throws AppError if postUrl is invalid or not a valid URL
+   * @throws AppError if postUrl is missing, too long or not a valid URL
    */
   static validatePostUrl(postUrl: string | undefined | null): string {
     if (!postUrl || postUrl.trim() === '') {
@@ -42,6 +44,18 @@ export class ReportValidators {
     }
 
     const trimmedUrl = postUrl.trim();
+
+    if (trimmedUrl.length > REPORT_POST_URL_MAX_LENGTH) {
+      throw Err.validation(
+        ValidationErrorCode.INVALID_INPUT,
+        `Post URL must be no more than ${REPORT_POST_URL_MAX_LENGTH} characters`,
+        {
+          service: ErrorService.NextJsServer,
+          operation: 'validatePostUrl',
+          context: { field: 'postUrl', maxLength: REPORT_POST_URL_MAX_LENGTH, actualLength: trimmedUrl.length },
+        },
+      );
+    }
 
     try {
       new URL(trimmedUrl);
@@ -127,7 +141,7 @@ export class ReportValidators {
    *
    * @param pubky - Reporter's public key
    * @returns Normalized pubky (trimmed)
-   * @throws AppError if pubky is invalid
+   * @throws AppError if pubky is missing or not a 52-character z-base-32 key
    */
   static validatePubky(pubky: string | undefined | null): string {
     if (!pubky || pubky.trim() === '') {
@@ -137,7 +151,17 @@ export class ReportValidators {
         context: { field: 'pubky' },
       });
     }
-    return pubky.trim();
+
+    const parsedPubky = commercePubkySchema.safeParse(pubky.trim());
+    if (!parsedPubky.success) {
+      throw Err.validation(ValidationErrorCode.FORMAT_ERROR, 'Pubky is not valid', {
+        service: ErrorService.NextJsServer,
+        operation: 'validatePubky',
+        context: { field: 'pubky' },
+      });
+    }
+
+    return parsedPubky.data;
   }
 
   /**
@@ -145,7 +169,7 @@ export class ReportValidators {
    *
    * @param name - Reporter's display name
    * @returns Normalized name (trimmed)
-   * @throws AppError if name is invalid
+   * @throws AppError if name is missing, or is longer than USER_NAME_MAX_LENGTH code points and is not a pubky
    */
   static validateName(name: string | undefined | null): string {
     if (!name || name.trim() === '') {
@@ -155,7 +179,28 @@ export class ReportValidators {
         context: { field: 'name' },
       });
     }
-    return name.trim();
+
+    const trimmedName = name.trim();
+    // pubky-app-specs counts a name's length in Unicode code points, not UTF-16 units.
+    const nameLength = [...trimmedName].length;
+    // useReportPost sends the reporter's pubky as the name of a marketplace
+    // report when no profile name has loaded, so a valid pubky is accepted
+    // even though it is longer than a display name may be.
+    const isPubkyFallback = commercePubkySchema.safeParse(trimmedName).success;
+
+    if (nameLength > USER_NAME_MAX_LENGTH && !isPubkyFallback) {
+      throw Err.validation(
+        ValidationErrorCode.INVALID_INPUT,
+        `Name must be no more than ${USER_NAME_MAX_LENGTH} characters`,
+        {
+          service: ErrorService.NextJsServer,
+          operation: 'validateName',
+          context: { field: 'name', maxLength: USER_NAME_MAX_LENGTH, actualLength: nameLength },
+        },
+      );
+    }
+
+    return trimmedName;
   }
 
   /**

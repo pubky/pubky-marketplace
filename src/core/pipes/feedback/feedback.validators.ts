@@ -1,4 +1,6 @@
 import { FEEDBACK_MAX_CHARACTER_LENGTH } from '@/config/posts';
+import { USER_NAME_MAX_LENGTH } from '@/config/user';
+import { commercePubkySchema } from '@/libs/commerce/transaction-contracts';
 import { ValidationErrorCode } from '@/libs/error/error.codes';
 import { Err } from '@/libs/error/error.factories';
 import { ErrorService } from '@/libs/error/error.types';
@@ -13,7 +15,7 @@ export class FeedbackValidators {
    *
    * @param pubky - User's public key to validate
    * @returns Normalized pubky (trimmed)
-   * @throws AppError if pubky is invalid
+   * @throws AppError if pubky is missing or not a 52-character z-base-32 key
    */
   static validatePubky(pubky: string | undefined | null): Pubky {
     if (!pubky || pubky.trim() === '') {
@@ -23,7 +25,17 @@ export class FeedbackValidators {
         context: { field: 'pubky' },
       });
     }
-    return pubky.trim() as Pubky;
+
+    const parsedPubky = commercePubkySchema.safeParse(pubky.trim());
+    if (!parsedPubky.success) {
+      throw Err.validation(ValidationErrorCode.FORMAT_ERROR, 'Pubky is not valid', {
+        service: ErrorService.NextJsServer,
+        operation: 'validatePubky',
+        context: { field: 'pubky' },
+      });
+    }
+
+    return parsedPubky.data as Pubky;
   }
 
   /**
@@ -64,7 +76,7 @@ export class FeedbackValidators {
    *
    * @param name - User's display name to validate
    * @returns Normalized name (trimmed)
-   * @throws AppError if name is invalid
+   * @throws AppError if name is missing or longer than USER_NAME_MAX_LENGTH
    */
   static validateName(name: string | undefined | null): string {
     if (!name || name.trim() === '') {
@@ -74,6 +86,23 @@ export class FeedbackValidators {
         context: { field: 'name' },
       });
     }
-    return name.trim();
+
+    const trimmedName = name.trim();
+    // pubky-app-specs counts a name's length in Unicode code points, not UTF-16 units.
+    const nameLength = [...trimmedName].length;
+
+    if (nameLength > USER_NAME_MAX_LENGTH) {
+      throw Err.validation(
+        ValidationErrorCode.INVALID_INPUT,
+        `Name must be no more than ${USER_NAME_MAX_LENGTH} characters`,
+        {
+          service: ErrorService.NextJsServer,
+          operation: 'validateName',
+          context: { field: 'name', maxLength: USER_NAME_MAX_LENGTH, actualLength: nameLength },
+        },
+      );
+    }
+
+    return trimmedName;
   }
 }
