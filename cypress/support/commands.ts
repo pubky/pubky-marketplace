@@ -1,6 +1,6 @@
 // <reference types="cypress" />
 
-import { backupDownloadFilePath, extendedTimeout } from './common';
+import { TEST_BACKUP_PASSWORD, backupDownloadFilePath, extendedTimeout } from './common';
 import { goToProfilePageFromHeader } from './header';
 import { waitForFeedToLoad } from './posts';
 import { BackupType, CheckForNewPosts, PostType, WaitForNewPosts } from './types/enums';
@@ -41,8 +41,8 @@ Cypress.Commands.add(
 
     if (backup?.includes(BackupType.EncryptedFile)) {
       cy.get('#backup-encrypted-file-btn').click();
-      cy.get('#password').type('123456');
-      cy.get('#confirmPassword').type('123456');
+      cy.get('#password').type(TEST_BACKUP_PASSWORD);
+      cy.get('#confirmPassword').type(TEST_BACKUP_PASSWORD);
       cy.get('#download-file-btn').click();
       cy.renameFile(backupDownloadFilePath(), backupDownloadFilePath(profileName));
       cy.get('#backup-successful-ok-btn').click();
@@ -193,7 +193,7 @@ Cypress.Commands.add('signOut', () => {
   cy.location('pathname').should('eq', '/');
 });
 
-Cypress.Commands.add('signInWithEncryptedFile', (backupFilepath: string, passcode = '123456') => {
+Cypress.Commands.add('signInWithEncryptedFile', (backupFilepath: string, passcode = TEST_BACKUP_PASSWORD) => {
   cy.location('pathname').then((pathname) => {
     if (pathname !== '/') cy.visit('/');
   });
@@ -243,7 +243,7 @@ function inputRecoveryPhraseWords(recoveryPhrase: string): void {
   });
 }
 
-Cypress.Commands.add('backupRecoveryFile', (passcode = '123456') => {
+Cypress.Commands.add('backupRecoveryFile', (passcode = TEST_BACKUP_PASSWORD) => {
   cy.get('#remind-backup-now-btn').click();
   cy.get('#backup-recovery-file-btn').click();
   cy.get('#backup-recovery-file-password-input').type(passcode);
