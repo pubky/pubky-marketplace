@@ -138,6 +138,8 @@ function makeCorrelation(registered: boolean) {
 }
 
 const HOLD_DEADLINE = '2026-08-20T21:15:00.000Z';
+// The Paykit window before the hold (its deadline plus the 60 s margin).
+const ORDER_CREATED_AT = '2026-08-20T20:46:00.000Z';
 const ACTIVATED_REQUEST_DEADLINE = '2026-08-20T21:07:00.000Z';
 
 function Harness({ children }: { children: React.ReactNode }) {
@@ -839,6 +841,7 @@ function projectionBody(scene: keyof typeof projectionSamples): Record<string, u
 describe('Marketplace payment status card — USDT orders', () => {
   const usdt = (overrides: Record<string, unknown> = {}) => ({
     ...USDT_ORDER_FIELDS,
+    createdAt: ORDER_CREATED_AT,
     holdExpiresAt: HOLD_DEADLINE,
     ...overrides,
   });
@@ -869,7 +872,7 @@ describe('Marketplace payment status card — USDT orders', () => {
     await expect.element(screen.getByText('Pay exactly 137.000000 USDT')).toBeInTheDocument();
     await expect
       .element(screen.getByTestId('usdt-accept-by'))
-      .toHaveTextContent('Approve in Bitkit by Aug 20, 2026, 9:15 PM.');
+      .toHaveTextContent('Approve in Bitkit by Aug 20, 2026, 9:00 PM.');
     await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('payment-status-usdt-awaiting-desktop');
   });
 
@@ -942,6 +945,7 @@ describe('Marketplace payment status card — USDT orders', () => {
     paymentMethod: 'paykit',
     paymentAsset: null,
     acceptedAssets: ['BTC', 'USDT'],
+    createdAt: ORDER_CREATED_AT,
     holdExpiresAt: HOLD_DEADLINE,
     paykitDeliveryState: 'delivered',
     ...overrides,
@@ -956,7 +960,7 @@ describe('Marketplace payment status card — USDT orders', () => {
     await expect.element(screen.getByText('Pay in Bitkit (Bitcoin or USDT)')).toBeInTheDocument();
     await expect
       .element(screen.getByTestId('paykit-accept-by'))
-      .toHaveTextContent('Approve in Bitkit by Aug 20, 2026, 9:15 PM.');
+      .toHaveTextContent('Approve in Bitkit by Aug 20, 2026, 9:00 PM.');
     await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('payment-status-paykit-awaiting-desktop');
   });
 
