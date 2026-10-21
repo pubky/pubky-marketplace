@@ -15,12 +15,10 @@ import { useMarketplaceLiveBid } from '@/hooks/useMarketplaceLiveBid/useMarketpl
 import { useMarketplaceFirstMediaUrl } from '@/hooks/useMarketplaceMediaUrl/useMarketplaceMediaUrl';
 import { CHECKOUT_HOLD_COPY } from '@/libs/commerce/checkout-hold';
 import { formatCommerceCondition, formatCommerceMoney } from '@/libs/commerce/format';
-import { countedSnippetReputation } from '@/libs/commerce/review-counting';
 import { cn } from '@/libs/utils/utils';
-import type { CommerceReputationSnippet } from '@/models/commerce/commerce.schema';
 import { MarketplaceCategoryIcon } from '@/molecules/Marketplace/MarketplaceCategoryIcon';
 import { MarketplaceFulfillmentBadge } from '@/molecules/MarketplaceFulfillmentBadge/MarketplaceFulfillmentBadge';
-import { MarketplaceStarRating } from '@/molecules/MarketplaceStarRating/MarketplaceStarRating';
+import { MarketplaceSnippetRating } from '@/molecules/MarketplaceSnippetRating/MarketplaceSnippetRating';
 import { MarketplaceCardPrice } from '@/organisms/Marketplace/MarketplaceCardPrice';
 import type { CommerceLayout } from '@/stores/commerce/commerce.types';
 
@@ -193,7 +191,7 @@ export function MarketplaceListingCard({ listing, shopName, layout = 'grid', ind
               {shopName ?? `${listing.sellerId.slice(0, 8)}…`}
             </Typography>
             {listing.listingReputation !== null && listing.listingReputation.count > 0 ? (
-              <MarketplaceCardRating snippet={listing.listingReputation} />
+              <MarketplaceSnippetRating snippet={listing.listingReputation} />
             ) : (
               <Typography as="p" className="text-xs text-secondary-foreground">
                 No rating yet
@@ -248,25 +246,6 @@ function CardTopAttributes({ listing }: { listing: MarketplaceCatalogItem }) {
       {parts.join(' · ')}
     </Typography>
   );
-}
-
-/**
- * Card stars from the trusted buckets only (card rule: a bucket a trust
- * window cuts adds nothing), as a per-buyer mean with its buyers and
- * orders. A snippet from an index without buckets keeps the index's stars
- * and count, with no counted claim.
- */
-function MarketplaceCardRating({ snippet }: { snippet: CommerceReputationSnippet }) {
-  const counted = countedSnippetReputation(snippet);
-  if (counted === null) return <MarketplaceStarRating rating={snippet.avg} count={snippet.count} size="sm" />;
-  if (counted.itemRating === null) {
-    return (
-      <Typography as="p" className="text-xs text-secondary-foreground">
-        No rating yet
-      </Typography>
-    );
-  }
-  return <MarketplaceStarRating rating={counted.itemRating} basis={counted} size="sm" />;
 }
 
 // Deterministic per-listing gradient, seeded by the listing id so the card

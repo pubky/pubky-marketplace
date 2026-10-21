@@ -217,6 +217,18 @@ describe('countedSnippetReputation and countedSummaryReputation', () => {
     ).toMatchObject({ buyers: 1, itemRating: 5, sellerBuyers: 1, sellerRating: 4.5 });
   });
 
+  it("prefers a listing read's exact scoped figure over the snippet's buckets", () => {
+    expect(
+      countedSnippetReputation({
+        avg: 3,
+        count: 5,
+        verifiedCount: 4,
+        buckets: { [TEST_TRUSTED_ATTESTOR.pubky]: bucket() },
+        scoped: bucket({ buyers: 1, orders: 1, sumBuyerMeans: 4 }),
+      }),
+    ).toMatchObject({ buyers: 1, orders: 1, itemRating: 4 });
+  });
+
   it('falls back to the card rule when the index served buckets but no scoped figure', () => {
     expect(countedSummaryReputation(summary({ buckets: { [TEST_TRUSTED_ATTESTOR.pubky]: bucket() } }))).toMatchObject({
       buyers: 2,

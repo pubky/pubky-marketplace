@@ -3739,6 +3739,10 @@ export class CommerceApplication {
    * index did not answer, has not indexed the listing, or sent a malformed
    * projection, so the page makes no claim. A single attempt, so a listing
    * Nexus has not indexed yet does not wait out the 404 backoff.
+   *
+   * The request names the effective trust list's windows (`attestors=`), so
+   * an index with trust buckets also serves the exact counted figure, carried
+   * on the snippet as `scoped`; older indexes ignore the parameter.
    */
   static async fetchListingRating(
     sellerPubky: string,
@@ -3746,10 +3750,15 @@ export class CommerceApplication {
   ): Promise<CommerceReputationSnippet | null | 'unavailable'> {
     if (getCommerceAdapterMode() === 'sandbox') return 'unavailable';
     try {
-      const entry = CommerceRecordNormalizer.nexusListingDetails(
-        await NexusMarketplaceService.fetchListingDetailsOnce({ seller_id: sellerPubky, listing_id: listingId }),
-      );
-      return entry.listing_reputation;
+      const attestors = attestorWindowsParam();
+      const details = await NexusMarketplaceService.fetchListingDetailsOnce({
+        seller_id: sellerPubky,
+        listing_id: listingId,
+        ...(attestors !== null && { attestors }),
+      });
+      const rating = CommerceRecordNormalizer.nexusListingDetails(details).listing_reputation;
+      const scoped = CommerceRecordNormalizer.nexusScopedListingReputation(details);
+      return rating === null || scoped === undefined ? rating : { ...rating, scoped };
     } catch {
       return 'unavailable';
     }

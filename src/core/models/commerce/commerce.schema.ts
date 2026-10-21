@@ -132,6 +132,12 @@ export interface CommerceReputationSnippet {
   buckets?: Record<string, CommerceReputationBucket>;
   /** Reviews whose attestation did not verify. Absent with `buckets`. */
   unverifiedCount?: number;
+  /**
+   * The index's exact figure over the attestor windows a listing details
+   * request named (`attestors=`). Only a single listing read carries it;
+   * catalog snippets never do.
+   */
+  scoped?: CommerceReputationBucket;
 }
 
 /**

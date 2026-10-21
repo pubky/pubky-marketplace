@@ -295,6 +295,16 @@ describe('CommerceRecordNormalizer', () => {
       expect(entry.reputation).toEqual({ avg: 4.5, count: 6, verifiedCount: 5 });
     });
 
+    it('reads the exact listing figure from listing details, and none from an older index', () => {
+      expect(
+        CommerceRecordNormalizer.nexusScopedListingReputation({
+          ...createNexusListingDetailsFixture(),
+          scoped_listing_reputation: wireBucket,
+        }),
+      ).toEqual(bucket);
+      expect(CommerceRecordNormalizer.nexusScopedListingReputation(createNexusListingDetailsFixture())).toBeUndefined();
+    });
+
     it('carries summary buckets with the seller score and the scoped figure', () => {
       const sellerBucket = { ...wireBucket, seller_buyers: 2, sum_seller_buyer_means: 9.4 };
       const normalized = CommerceRecordNormalizer.nexusReputationSummary({

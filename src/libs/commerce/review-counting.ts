@@ -162,11 +162,13 @@ export function countedFromTrustedBuckets(
 }
 
 /**
- * A card's counted figures, or null when the snippet comes from an index
- * without trust buckets (the caller keeps today's display and claims no
- * counted figure).
+ * A snippet's counted figures: the index's exact scoped figure when the read
+ * carried one, else the summed trusted buckets; null when the snippet comes
+ * from an index without trust buckets (the caller keeps today's display and
+ * claims no counted figure).
  */
 export function countedSnippetReputation(snippet: CommerceReputationSnippet): CountedReputation | null {
+  if (snippet.scoped !== undefined) return countedFromBucket(snippet.scoped);
   return snippet.buckets === undefined ? null : countedFromTrustedBuckets(snippet.buckets);
 }
 

@@ -150,7 +150,7 @@ describe('MarketplaceListingCard', () => {
   it('shows the per-buyer mean of trusted buckets with its buyers and orders', () => {
     const listing = catalogItemFromCatalogEntry(
       createCommerceCatalogEntryFixture({
-        reputation: {
+        listing_reputation: {
           avg: 2.1,
           count: 17,
           verifiedCount: 11,
@@ -173,7 +173,7 @@ describe('MarketplaceListingCard', () => {
   it('shows "No rating yet" when a trust window cuts the only trusted bucket', () => {
     const listing = catalogItemFromCatalogEntry(
       createCommerceCatalogEntryFixture({
-        reputation: {
+        listing_reputation: {
           avg: 4.6,
           count: 2,
           verifiedCount: 2,

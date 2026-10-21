@@ -152,6 +152,10 @@ const nexusReputationBucketSchema = z
 
 const nexusReputationBucketsSchema = z.record(z.string(), nexusReputationBucketSchema);
 
+const nexusScopedListingReputationSchema = z.object({
+  scoped_listing_reputation: nexusReputationBucketSchema.optional(),
+});
+
 const nexusReputationSnippetSchema = z.object({
   avg: z.number().min(0).max(5),
   count: nexusCountSchema,
@@ -452,6 +456,20 @@ export class CommerceRecordNormalizer {
    */
   static nexusListingDetails(input: unknown): CommerceCatalogEntryModelSchema {
     return this.toCatalogEntry(this.parse(nexusListingDetailsSchema, input, 'nexusListingDetails'));
+  }
+
+  /**
+   * The exact listing figure a `v0/listing/{seller}/{listing}` payload carries
+   * when the request named attestor windows; undefined from an index without
+   * trust buckets.
+   */
+  static nexusScopedListingReputation(input: unknown): CommerceReputationBucket | undefined {
+    const { scoped_listing_reputation: scoped } = this.parse(
+      nexusScopedListingReputationSchema,
+      input,
+      'nexusScopedListingReputation',
+    );
+    return scoped === undefined ? undefined : this.toReputationBucket(scoped);
   }
 
   static savedSearchParams(input: unknown): CommerceSavedSearchParams {
