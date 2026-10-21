@@ -4,19 +4,30 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createZustandLikeHook } from '@/test-utils/stores';
 import { BackupNavigation, BackupPageHeader } from './Backup';
 
-const { mockClearSecrets } = vi.hoisted(() => ({ mockClearSecrets: vi.fn() }));
+const { mockClearSecrets, mockOnboardingState, mockPush, mockReplace } = vi.hoisted(() => {
+  const mockClearSecrets = vi.fn();
+  return {
+    mockClearSecrets,
+    // Mutable snapshot: tests change hasHydrated / secretKey before rendering.
+    mockOnboardingState: {
+      hasHydrated: true,
+      secretKey: 'test-secret-key' as string | null,
+      clearSecrets: mockClearSecrets,
+    },
+    mockPush: vi.fn(),
+    mockReplace: vi.fn(),
+  };
+});
 
 vi.mock('@/stores/onboarding/onboarding.store', () => ({
-  useOnboardingStore: createZustandLikeHook({ clearSecrets: mockClearSecrets }),
+  useOnboardingStore: createZustandLikeHook(mockOnboardingState),
 }));
 
-// Mock Next.js router
-const mockPush = vi.fn();
-vi.mock('next/navigation', () => ({
-  useRouter: () => ({
-    push: mockPush,
-  }),
-}));
+// Mock Next.js router (one stable router, as in the app)
+vi.mock('next/navigation', () => {
+  const router = { push: mockPush, replace: mockReplace };
+  return { useRouter: () => router };
+});
 
 // Mock atoms (Button and Dialog stay real so the skip dialog behaves as in the app)
 vi.mock('@/atoms/Container/Container', () => {
@@ -104,6 +115,8 @@ vi.mock('@/app/routes', () => ({
 describe('BackupNavigation', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockOnboardingState.hasHydrated = true;
+    mockOnboardingState.secretKey = 'test-secret-key';
   });
 
   it('matches snapshot for default BackupNavigation', () => {
@@ -144,6 +157,7 @@ describe('BackupNavigation', () => {
 
     expect(mockPush).toHaveBeenCalledTimes(1);
     expect(mockPush).toHaveBeenCalledWith('/profile');
+    expect(mockReplace).not.toHaveBeenCalled();
     expect(mockClearSecrets).not.toHaveBeenCalled();
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
@@ -157,15 +171,16 @@ describe('BackupNavigation', () => {
     expect(mockPush).not.toHaveBeenCalled();
   });
 
-  it('clears the secrets and navigates to profile when skipping is confirmed', () => {
+  it('clears the secrets and replaces the backup step with profile when skipping is confirmed', () => {
     render(<BackupNavigation />);
 
     fireEvent.click(screen.getByRole('button', { name: 'Skip backup' }));
     fireEvent.click(screen.getByRole('button', { name: 'Skip and delete phrase' }));
 
     expect(mockClearSecrets).toHaveBeenCalledTimes(1);
-    expect(mockPush).toHaveBeenCalledTimes(1);
-    expect(mockPush).toHaveBeenCalledWith('/profile');
+    expect(mockReplace).toHaveBeenCalledTimes(1);
+    expect(mockReplace).toHaveBeenCalledWith('/profile');
+    expect(mockPush).not.toHaveBeenCalled();
   });
 
   it('keeps the secrets and stays on the backup step when skipping is cancelled', () => {
@@ -177,6 +192,52 @@ describe('BackupNavigation', () => {
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     expect(mockClearSecrets).not.toHaveBeenCalled();
     expect(mockPush).not.toHaveBeenCalled();
+    expect(mockReplace).not.toHaveBeenCalled();
+  });
+
+  it('stays on the backup step while the secret key is present', () => {
+    render(<BackupNavigation />);
+
+    expect(mockReplace).not.toHaveBeenCalled();
+    expect(mockPush).not.toHaveBeenCalled();
+  });
+
+  it('moves on to the profile step when the loaded store holds no secret key', () => {
+    mockOnboardingState.secretKey = null;
+
+    render(<BackupNavigation />);
+
+    expect(mockReplace).toHaveBeenCalledTimes(1);
+    expect(mockReplace).toHaveBeenCalledWith('/profile');
+    expect(mockPush).not.toHaveBeenCalled();
+  });
+
+  it('waits for the store to load before checking for the secret key', () => {
+    mockOnboardingState.hasHydrated = false;
+    mockOnboardingState.secretKey = null;
+
+    const { rerender } = render(<BackupNavigation />);
+
+    expect(mockReplace).not.toHaveBeenCalled();
+
+    mockOnboardingState.hasHydrated = true;
+    rerender(<BackupNavigation />);
+
+    expect(mockReplace).toHaveBeenCalledTimes(1);
+    expect(mockReplace).toHaveBeenCalledWith('/profile');
+  });
+
+  it('stays on the backup step when the loaded store restores the secret key', () => {
+    mockOnboardingState.hasHydrated = false;
+    mockOnboardingState.secretKey = null;
+
+    const { rerender } = render(<BackupNavigation />);
+
+    mockOnboardingState.hasHydrated = true;
+    mockOnboardingState.secretKey = 'test-secret-key';
+    rerender(<BackupNavigation />);
+
+    expect(mockReplace).not.toHaveBeenCalled();
   });
 });
 
