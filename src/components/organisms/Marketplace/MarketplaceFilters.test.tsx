@@ -36,6 +36,17 @@ describe('MarketplaceFilters', () => {
     expect(group).not.toHaveClass('hidden');
   });
 
+  it('keeps the display currency picker out of the folded filters', () => {
+    render(<MarketplaceFilters resultCount={8} />);
+
+    const toggle = screen.getByTestId('marketplace-filters-toggle');
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    const group = document.getElementById(toggle.getAttribute('aria-controls') ?? '');
+    const currency = screen.getByRole('combobox', { name: /^Display currency:/ });
+    expect(group).not.toContainElement(currency);
+    expect(currency).toBeVisible();
+  });
+
   it('renders the designer filter controls around supplied search and sell controls', () => {
     render(
       <MarketplaceFilters

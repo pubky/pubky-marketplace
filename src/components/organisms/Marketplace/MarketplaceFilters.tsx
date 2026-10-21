@@ -345,28 +345,29 @@ export function MarketplaceFilters({
               </SelectItem>
             </SelectContent>
           </Select>
-          <Select
-            value={displayCurrency}
-            onValueChange={(value) => {
-              if (isListingCurrencyCode(value)) setDisplayCurrency(value);
-            }}
-          >
-            <SelectTrigger
-              aria-label={`Display currency: ${LISTING_CURRENCY_REGISTRY[displayCurrency].name}`}
-              className={FILTER_TRIGGER_CLASS}
-            >
-              <DisplayCurrencyGlyph code={displayCurrency} />
-            </SelectTrigger>
-            <SelectContent position="popper" align="end" className={FILTER_MENU_CLASS}>
-              {LISTING_CURRENCY_CODES.map((code) => (
-                <SelectItem key={code} className={FILTER_ITEM_CLASS} value={code}>
-                  <DisplayCurrencyGlyph code={code} />
-                  {LISTING_CURRENCY_REGISTRY[code].name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
         </div>
+        {/* Display currency is a preference, not a filter: it stays out on phones too. */}
+        <Select
+          value={displayCurrency}
+          onValueChange={(value) => {
+            if (isListingCurrencyCode(value)) setDisplayCurrency(value);
+          }}
+        >
+          <SelectTrigger
+            aria-label={`Display currency: ${LISTING_CURRENCY_REGISTRY[displayCurrency].name}`}
+            className={FILTER_TRIGGER_CLASS}
+          >
+            <DisplayCurrencyGlyph code={displayCurrency} />
+          </SelectTrigger>
+          <SelectContent position="popper" align="end" className={FILTER_MENU_CLASS}>
+            {LISTING_CURRENCY_CODES.map((code) => (
+              <SelectItem key={code} className={FILTER_ITEM_CLASS} value={code}>
+                <DisplayCurrencyGlyph code={code} />
+                {LISTING_CURRENCY_REGISTRY[code].name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
         {hasActiveFilters && (
           <Button
             variant="dark-outline"

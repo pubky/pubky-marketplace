@@ -436,61 +436,61 @@ exports[`MarketplaceFilters - Snapshots > matches the default filter snapshot 1`
           />
         </svg>
       </button>
-      <button
-        aria-autocomplete="none"
-        aria-controls="radix-normalized"
-        aria-expanded="false"
-        aria-label="Display currency: US dollars"
-        class="w-fit py-2 select-none disabled:cursor-not-allowed aria-invalid:ring-1 data-placeholder:text-input data-[size=sm]:h-7 data-[size=sm]:rounded-[min(var(--radius-md),10px)] *:data-[slot=select-value]:line-clamp-1 *:data-[slot=select-value]:flex *:data-[slot=select-value]:items-center *:data-[slot=select-value]:gap-1.5 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 [&_svg:not([class*='size-'])]:size-4 inline-flex items-center justify-center whitespace-nowrap transition-all disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg:not([class*=\\"size-\\"])]:size-4 shrink-0 [&_svg]:shrink-0 outline-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] aria-invalid:ring-destructive/40 aria-invalid:border-destructive font-semibold cursor-pointer rounded-full border shadow-xs bg-secondary text-secondary-foreground hover:bg-accent h-8 gap-1.5 px-3 has-[>svg]:px-3.5 max-w-64 text-xs data-[size=default]:h-8 [&>svg:last-child]:size-3.5"
-        data-size="default"
-        data-slot="select-trigger"
-        data-state="closed"
-        dir="ltr"
-        role="combobox"
-        type="button"
-      >
-        <svg
-          aria-hidden="true"
-          class="lucide lucide-dollar-sign size-4"
-          fill="none"
-          height="24"
-          stroke="currentColor"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-          stroke-width="2"
-          viewBox="0 0 24 24"
-          width="24"
-          xmlns="http://www.w3.org/2000/svg"
-        >
-          <line
-            x1="12"
-            x2="12"
-            y1="2"
-            y2="22"
-          />
-          <path
-            d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"
-          />
-        </svg>
-        <svg
-          aria-hidden="true"
-          class="lucide lucide-chevron-down pointer-events-none size-4"
-          fill="none"
-          height="24"
-          stroke="currentColor"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-          stroke-width="2"
-          viewBox="0 0 24 24"
-          width="24"
-          xmlns="http://www.w3.org/2000/svg"
-        >
-          <path
-            d="m6 9 6 6 6-6"
-          />
-        </svg>
-      </button>
     </div>
+    <button
+      aria-autocomplete="none"
+      aria-controls="radix-normalized"
+      aria-expanded="false"
+      aria-label="Display currency: US dollars"
+      class="w-fit py-2 select-none disabled:cursor-not-allowed aria-invalid:ring-1 data-placeholder:text-input data-[size=sm]:h-7 data-[size=sm]:rounded-[min(var(--radius-md),10px)] *:data-[slot=select-value]:line-clamp-1 *:data-[slot=select-value]:flex *:data-[slot=select-value]:items-center *:data-[slot=select-value]:gap-1.5 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 [&_svg:not([class*='size-'])]:size-4 inline-flex items-center justify-center whitespace-nowrap transition-all disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg:not([class*=\\"size-\\"])]:size-4 shrink-0 [&_svg]:shrink-0 outline-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] aria-invalid:ring-destructive/40 aria-invalid:border-destructive font-semibold cursor-pointer rounded-full border shadow-xs bg-secondary text-secondary-foreground hover:bg-accent h-8 gap-1.5 px-3 has-[>svg]:px-3.5 max-w-64 text-xs data-[size=default]:h-8 [&>svg:last-child]:size-3.5"
+      data-size="default"
+      data-slot="select-trigger"
+      data-state="closed"
+      dir="ltr"
+      role="combobox"
+      type="button"
+    >
+      <svg
+        aria-hidden="true"
+        class="lucide lucide-dollar-sign size-4"
+        fill="none"
+        height="24"
+        stroke="currentColor"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        stroke-width="2"
+        viewBox="0 0 24 24"
+        width="24"
+        xmlns="http://www.w3.org/2000/svg"
+      >
+        <line
+          x1="12"
+          x2="12"
+          y1="2"
+          y2="22"
+        />
+        <path
+          d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"
+        />
+      </svg>
+      <svg
+        aria-hidden="true"
+        class="lucide lucide-chevron-down pointer-events-none size-4"
+        fill="none"
+        height="24"
+        stroke="currentColor"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        stroke-width="2"
+        viewBox="0 0 24 24"
+        width="24"
+        xmlns="http://www.w3.org/2000/svg"
+      >
+        <path
+          d="m6 9 6 6 6-6"
+        />
+      </svg>
+    </button>
     <button
       aria-label="Reset search and filters"
       class="inline-flex items-center justify-center gap-2 whitespace-nowrap text-sm transition-all disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg:not([class*=\\"size-\\"])]:size-4 [&_svg]:shrink-0 outline-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] aria-invalid:ring-destructive/40 aria-invalid:border-destructive font-semibold cursor-pointer border shadow-xs hover:text-white hover:bg-neutral-800 size-8 shrink-0 rounded-full border-border bg-white/5 text-foreground"
