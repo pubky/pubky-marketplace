@@ -1142,12 +1142,17 @@ html[data-shop-embedded] .sticky.top-24 {
     --header-offset-mobile: 0px;
   }
 
-  html[data-mobile-header-collapsed] .sticky.top-24 {
+  /* The tab bars under the header on Hot, Profile and Settings (MobileTabBar) stick at the header's height. */
+  html[data-mobile-header-collapsed] .sticky.top-24,
+  html[data-mobile-header-collapsed] .top-\(--header-height-settings\),
+  html[data-mobile-header-collapsed] .top-\(--header-height-mobile\) {
     top: 0;
   }
 
   .sticky.top-24,
-  .sticky.top-\(--header-offset-mobile\) {
+  .sticky.top-\(--header-offset-mobile\),
+  .top-\(--header-height-settings\),
+  .top-\(--header-height-mobile\) {
     transition: top 200ms;
   }
 }

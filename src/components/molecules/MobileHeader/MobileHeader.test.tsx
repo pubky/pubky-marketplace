@@ -32,6 +32,11 @@ vi.mock('@/stores/auth/auth.store', () => ({
   }),
 }));
 
+const scroll = vi.hoisted(() => ({ collapsed: false }));
+vi.mock('@/hooks/useHideOnScroll/useHideOnScroll', () => ({
+  useHideOnScroll: () => scroll.collapsed,
+}));
+
 vi.mock('@/hooks/usePublicRoute/usePublicRoute', () => ({
   usePublicRoute: vi.fn(() => ({
     isPublicRoute: false,
@@ -291,4 +296,29 @@ it('requests sign-in for a retained legacy identity with no grant session', () =
   } finally {
     mockHasSession = true;
   }
+});
+
+describe('MobileHeader - scrolled away', () => {
+  afterEach(() => {
+    scroll.collapsed = false;
+  });
+
+  it('slides off screen and leaves the tab order while the page scrolls down', () => {
+    scroll.collapsed = true;
+    const { container } = render(<MobileHeader />);
+
+    const header = container.firstElementChild as HTMLElement;
+    expect(header).toHaveClass('-translate-y-full');
+    expect(header).toHaveAttribute('inert');
+    expect(document.documentElement).toHaveAttribute('data-mobile-header-collapsed');
+  });
+
+  it('is in place and reachable otherwise', () => {
+    const { container } = render(<MobileHeader />);
+
+    const header = container.firstElementChild as HTMLElement;
+    expect(header).not.toHaveClass('-translate-y-full');
+    expect(header).not.toHaveAttribute('inert');
+    expect(document.documentElement).not.toHaveAttribute('data-mobile-header-collapsed');
+  });
 });

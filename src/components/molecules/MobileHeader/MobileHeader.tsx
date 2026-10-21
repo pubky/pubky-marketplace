@@ -61,6 +61,8 @@ export function MobileHeader({
           ? 'bg-linear-to-b from-(--background) from-35% to-transparent'
           : 'bg-background shadow-xs',
       )}
+      // Off screen while collapsed: its buttons leave the tab order and the accessibility tree until it returns.
+      inert={collapsed || undefined}
     >
       <Container
         overrideDefaults
