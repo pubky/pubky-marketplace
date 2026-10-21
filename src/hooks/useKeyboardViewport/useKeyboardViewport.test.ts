@@ -21,6 +21,7 @@ function dispatchViewportEvent(eventName: string) {
 }
 
 describe('useKeyboardViewport', () => {
+  let field: HTMLInputElement;
   let originalVisualViewport: typeof window.visualViewport;
   let originalInnerHeight: number;
 
@@ -32,6 +33,10 @@ describe('useKeyboardViewport', () => {
 
     mockVisualViewport.height = 800;
     mockVisualViewport.offsetTop = 0;
+    // The keyboard only counts while a text field has focus.
+    field = document.createElement('input');
+    document.body.append(field);
+    field.focus();
 
     Object.defineProperty(window, 'innerHeight', {
       configurable: true,
@@ -46,6 +51,7 @@ describe('useKeyboardViewport', () => {
   });
 
   afterEach(() => {
+    field.remove();
     Object.defineProperty(window, 'innerHeight', {
       configurable: true,
       writable: true,
@@ -173,6 +179,15 @@ describe('useKeyboardViewport', () => {
     expect(result.current.isKeyboardVisible).toBe(false);
     expect(result.current.keyboardHeight).toBe(0);
     expect(result.current.keyboardTop).toBe(800);
+  });
+
+  it('does not take a pinch-zoom for the keyboard: nothing editable has focus', () => {
+    field.blur();
+    mockVisualViewport.height = 500;
+
+    const { result } = renderHook(() => useKeyboardViewport());
+
+    expect(result.current.isKeyboardVisible).toBe(false);
   });
 
   it('cleans up viewport listeners on unmount', () => {

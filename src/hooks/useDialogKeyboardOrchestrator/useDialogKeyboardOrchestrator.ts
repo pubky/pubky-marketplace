@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import type { CSSProperties, RefObject } from 'react';
-import { useKeyboardViewport } from '@/hooks/useKeyboardViewport/useKeyboardViewport';
+import { isKeyboardInput, useKeyboardViewport } from '@/hooks/useKeyboardViewport/useKeyboardViewport';
 import type {
   UseDialogKeyboardOrchestratorOptions,
   UseDialogKeyboardOrchestratorResult,
@@ -11,30 +11,6 @@ import type {
 const DEFAULT_BOTTOM_MARGIN = 24;
 const DEFAULT_THRESHOLD = 150;
 const DEFAULT_TOP_INSET = 16;
-
-const NON_TEXT_INPUT_TYPES = new Set([
-  'checkbox',
-  'radio',
-  'range',
-  'color',
-  'file',
-  'image',
-  'button',
-  'submit',
-  'reset',
-]);
-
-function isKeyboardInput(target: Element | null): target is HTMLElement {
-  if (!target) return false;
-
-  if (target instanceof HTMLTextAreaElement) return true;
-
-  if (target instanceof HTMLInputElement) {
-    return !NON_TEXT_INPUT_TYPES.has(target.type);
-  }
-
-  return target instanceof HTMLElement && target.isContentEditable;
-}
 
 function scrollElementTo(element: HTMLElement, top: number) {
   const nextTop = Math.max(0, Math.ceil(top));

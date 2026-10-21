@@ -13,7 +13,8 @@ const mockUseKeyboardViewport = vi.hoisted(() =>
   })),
 );
 
-vi.mock('../useKeyboardViewport/useKeyboardViewport', () => ({
+vi.mock('../useKeyboardViewport/useKeyboardViewport', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../useKeyboardViewport/useKeyboardViewport')>()),
   useKeyboardViewport: mockUseKeyboardViewport,
 }));
 

@@ -6,6 +6,26 @@ import type { KeyboardViewportState, UseKeyboardViewportOptions } from './useKey
 const DEFAULT_THRESHOLD = 150;
 const DEFAULT_DEBOUNCE_MS = 50;
 
+const NON_TEXT_INPUT_TYPES = new Set([
+  'checkbox',
+  'radio',
+  'range',
+  'color',
+  'file',
+  'image',
+  'button',
+  'submit',
+  'reset',
+]);
+
+/** Whether focusing `target` brings up the soft keyboard. */
+export function isKeyboardInput(target: Element | null): target is HTMLElement {
+  if (!target) return false;
+  if (target instanceof HTMLTextAreaElement) return true;
+  if (target instanceof HTMLInputElement) return !NON_TEXT_INPUT_TYPES.has(target.type);
+  return target instanceof HTMLElement && target.isContentEditable === true;
+}
+
 /**
  * The layout viewport's height, which the keyboard does not shrink. On iOS Safari and Chrome
  * `window.innerHeight` shrinks with the keyboard too (695 to 490 on an iPhone 16 against a visual
@@ -38,7 +58,9 @@ function measureKeyboardViewport(threshold: number): KeyboardViewportState {
   const layoutHeight = layoutViewportHeight();
   const rawKeyboardHeight = layoutHeight - height - offsetTop;
   const keyboardHeight = Math.max(0, rawKeyboardHeight);
-  const isKeyboardVisible = layoutHeight - height > threshold;
+  // A pinch-zoom shrinks the visual viewport too (iOS ignores `userScalable: false`); only a focused text field
+  // means a keyboard.
+  const isKeyboardVisible = layoutHeight - height > threshold && isKeyboardInput(document.activeElement);
   const keyboardTop = height + offsetTop;
 
   return {
@@ -93,6 +115,8 @@ export function useKeyboardViewport(options: UseKeyboardViewportOptions = {}): K
 
     window.visualViewport.addEventListener('resize', handleViewportChange);
     window.visualViewport.addEventListener('scroll', handleViewportChange);
+    document.addEventListener('focusin', handleViewportChange);
+    document.addEventListener('focusout', handleViewportChange);
 
     return () => {
       if (timeoutRef.current) {
@@ -100,6 +124,8 @@ export function useKeyboardViewport(options: UseKeyboardViewportOptions = {}): K
       }
       window.visualViewport?.removeEventListener('resize', handleViewportChange);
       window.visualViewport?.removeEventListener('scroll', handleViewportChange);
+      document.removeEventListener('focusin', handleViewportChange);
+      document.removeEventListener('focusout', handleViewportChange);
     };
   }, [debounceMs, enabled, threshold]);
 
