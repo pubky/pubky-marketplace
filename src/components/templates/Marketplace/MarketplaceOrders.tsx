@@ -753,7 +753,9 @@ function MarketplaceOrderBitcoinAmount({ order }: { order: MarketplaceOrder }): 
     return (
       <Typography as="span" className="text-sm font-normal">
         Locked Bitcoin amount: {formatBitcoinAmount(quote.quotedSats)}
-        {isMarketplaceBitcoinQuoteExpired(quote.expiresAt) ? ' · Bitcoin quote expired' : ''}
+        {order.state === 'pending_payment' && isMarketplaceBitcoinQuoteExpired(quote.expiresAt)
+          ? ' · Bitcoin quote expired'
+          : ''}
       </Typography>
     );
   }
