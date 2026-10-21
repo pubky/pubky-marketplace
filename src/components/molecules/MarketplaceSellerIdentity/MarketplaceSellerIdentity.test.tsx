@@ -1,6 +1,6 @@
 import { render, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
-import { MARKETPLACE_TRUSTED_ATTESTORS } from '@/config/commerce';
+import { TEST_TRUSTED_ATTESTOR } from '@/test/fixtures/commerce/trusted-attestors';
 import { MarketplaceSellerIdentity } from './MarketplaceSellerIdentity';
 
 describe('MarketplaceSellerIdentity', () => {
@@ -33,7 +33,7 @@ describe('MarketplaceSellerIdentity', () => {
             histogram: [0, 1, 1, 2, 4],
             responseCount: 0,
             editedLateCount: 0,
-            attestors: { [MARKETPLACE_TRUSTED_ATTESTORS[0]]: 3, ['x'.repeat(52)]: 4 },
+            attestors: { [TEST_TRUSTED_ATTESTOR.pubky]: 3, ['x'.repeat(52)]: 4 },
             lastReviewedAt: null,
           },
         }}

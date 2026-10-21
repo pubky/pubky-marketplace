@@ -209,6 +209,24 @@ With none of these keys set the Shop runs with `PUBKY_RUNTIME_COMMERCE_ADAPTER_M
 | `PUBKY_RUNTIME_PRIV_ENCRYPTION_KEYS`                | `false`                       | Every grant sign-in also asks the signer for `e` on `/priv/pubky.app/marketplace/` (scoped encryption keys). Needs the homeserver listed below. See [`ecommerce/priv-key-wrapping.md`](ecommerce/priv-key-wrapping.md).                                                                                                                                                                                                  |
 | `PUBKY_RUNTIME_PASSPORT_PRIV_ENCRYPTION_KEYS`       | `false`                       | The same request for the Pubky Passport sign-in and Passport step-up only (Passport 1.2.0+ answers `e` with selective approval). Needs the homeserver listed below.                                                                                                                                                                                                                                                      |
 | `PUBKY_RUNTIME_PRIV_ENCRYPTION_KEYS_HOMESERVERS`    | `[]`                          | JSON array of homeserver public keys known to run scoped encryption keys. `e` is requested only while `PUBKY_RUNTIME_HOMESERVER` is listed.                                                                                                                                                                                                                                                                              |
+| `PUBKY_RUNTIME_MARKETPLACE_TRUSTED_ATTESTORS`       | `[]`                          | Review attestors this deployment trusts for "Verified purchase", added to the compiled defaults. JSON array of `{pubky, label, validFrom, validUntil?}`. See [Review attestor trust list](#review-attestor-trust-list).                                                                                                                                                                                                  |
+
+### Review attestor trust list
+
+A review shows **Verified purchase · _label_** only when its purchase attestation verifies and its issuer (`iss`) is on the trust list for the attestation's time. The list is `MARKETPLACE_TRUSTED_ATTESTOR_DEFAULTS` in `src/config/commerce.ts` (keys every deployment trusts; currently none) plus `PUBKY_RUNTIME_MARKETPLACE_TRUSTED_ATTESTORS`. Each deployment lists its own transaction service's attestor key there.
+
+```json
+[{ "pubky": "<attestor pubky>", "label": "Pubky Market", "validFrom": "2026-10-12" }]
+```
+
+- `pubky`: the attestor's z-base-32 public key, as the service logs it at boot ("attestation issuance enabled").
+- `label`: the name on the badge, at most 40 characters.
+- `validFrom`, `validUntil`: an RFC 3339 instant with an offset, or a `YYYY-MM-DD` date meaning 00:00 UTC. The window includes `validFrom` and excludes `validUntil`; leave `validUntil` out while the key is in use. When a key is rotated, keep the old entry and set its `validUntil` to the rotation time, so reviews it signed before then stay verified.
+- A key may have several entries (several windows). A malformed value, an unknown field or a `validUntil` that is not later than `validFrom` fails the config parse, so a deployed server refuses to start.
+
+**Which time is checked.** The attestation's time is its `iat` claim, the issuance instant: the purchase-attestation spec requires it, and the transaction service sets it when it signs. `completed_on` is the order's completion day, not the signing time, so it is not used. Where the Shop holds the attestation (the user's own review) it reads `iat`. The review index does not serve `iat`, so the public review lists use the record's `createdAt`, and they fail closed: the reviewer writes `createdAt`, so whoever holds a retired key could backdate a review into its window. In those lists an entry with a `validUntil` never vouches, and an entry without one vouches from its `validFrom` on. A rotated key's reviews therefore show "Attested (unrecognized attestor)" in public lists while still verified on the reviewer's own order. Once the index serves `iat` (design ticket IX2), the public lists check the window against `iat` and this fallback goes away. Seller and listing totals carry no per-review times, so they count an attestor only while its window is open now; a retired key's reviews then drop out of the totals but keep their badge on each review. `iat` is asserted by the key holder: a window stops a retired key's later use, not a thief who backdates, so remove a compromised key from the list.
+
+On Vercel the config is fixed when the deployment is built (see [How it works](#how-it-works)): set the variable first, then deploy.
 
 ### Turning the region flags on
 
