@@ -41,6 +41,7 @@ export function formatHoldDeadline(holdExpiresAt: string | null | undefined): st
 }
 
 type PayByOrder = {
+  createdAt?: string | null;
   holdExpiresAt?: string | null;
   paykitExpiresAt?: string | null;
   paykitRequestState?: string | null;
@@ -62,16 +63,49 @@ export function buyerPayByDeadline(order: PayByOrder): string | null {
   return order.holdExpiresAt ?? null;
 }
 
-export const APPROVE_IN_BITKIT_FALLBACK_COPY = 'Approve in Bitkit before the payment window ends.';
+export const APPROVE_IN_BITKIT_FALLBACK_COPY =
+  'Approve in Bitkit soon: Bitkit expires a request you have not approved before the payment window ends.';
 
 /**
- * How long the buyer has to approve the request in Bitkit: the same deadline
- * the order's "Pay by" line shows, so the two never disagree. The order carries
- * no accept-by of its own and no window length is stated, so nothing here can
- * drift from the service's Paykit window.
+ * The midpoint stays at or after activation only while the buyer bound the
+ * request within one payment window of creating the order, so the span from
+ * creation to the deadline is at most two windows. Past twice the Shop's
+ * 30-minute Bitcoin window (`BITCOIN_PAYMENT_WINDOW_SECONDS`), the request was
+ * bound late (a re-bind, a long hold) and the line names no time.
  */
+const MAX_TIMED_APPROVAL_SPAN_MS = 60 * 60 * 1000;
+
+/** The margin an upstream hold runs past its Paykit deadline (pubky-marketplace-service #150). */
+const HOLD_SKEW_MARGIN_MS = 60 * 1000;
+
+/**
+ * The latest instant the buyer can approve the request in Bitkit, or null when
+ * the Shop cannot tell. Bitkit expires a request the buyer has not approved at
+ * its `proposal_expires_at`, which paykit-server sets at activation to at most
+ * half the payment window, well before Pay by (issue #358). The order carries
+ * only the payment deadline (or its hold, less the hold's 60 s margin), so this takes the
+ * midpoint of order creation and that deadline: activation never precedes
+ * creation, so it is not later than the wallet's own. An auction order is
+ * created at close and may activate much later, so it gets no time, as does
+ * any order bound long after creation. Replace with the request's own
+ * `proposal_expires_at` once the service projects it.
+ */
+export function approveInBitkitDeadline(order: PayByOrder): string | null {
+  if (order.auctionAggregateId) return null;
+  const created = order.createdAt ? new Date(order.createdAt).getTime() : NaN;
+  // The service ends an upstream hold 60 s after the request's deadline.
+  const deadline = order.paykitExpiresAt
+    ? new Date(order.paykitExpiresAt).getTime()
+    : order.holdExpiresAt
+      ? new Date(order.holdExpiresAt).getTime() - HOLD_SKEW_MARGIN_MS
+      : NaN;
+  if (!Number.isFinite(created) || !Number.isFinite(deadline) || deadline <= created) return null;
+  if (deadline - created > MAX_TIMED_APPROVAL_SPAN_MS) return null;
+  return new Date(created + (deadline - created) / 2).toISOString();
+}
+
 export function approveInBitkitCopy(order: PayByOrder): string {
-  const deadline = formatOrderInstant(buyerPayByDeadline(order));
+  const deadline = formatOrderInstant(approveInBitkitDeadline(order));
   return deadline ? `Approve in Bitkit by ${deadline}.` : APPROVE_IN_BITKIT_FALLBACK_COPY;
 }
 

@@ -236,7 +236,7 @@ function FormHarness({
   formRef?: { current: UseFormReturn<CreateMarketplaceListingData> | null };
 }) {
   const form = useForm<CreateMarketplaceListingData>({
-    defaultValues: { ...createMarketplaceListingDefaults, fulfillment, ...defaultValues },
+    defaultValues: { ...createMarketplaceListingDefaults, countryCode: 'US', fulfillment, ...defaultValues },
   });
   useEffect(() => {
     if (formRef) formRef.current = form;
@@ -858,6 +858,7 @@ describe('MarketplaceListingForm scoped status watch', () => {
     const form = useForm<CreateMarketplaceListingData>({
       defaultValues: {
         ...createMarketplaceListingDefaults,
+        countryCode: 'US',
         fulfillment: 'pickup',
         title: 'Vintage boots',
         description: 'Well cared for boots.',
@@ -1347,7 +1348,7 @@ describe('MarketplaceListingForm publish gate vs schema', () => {
       />,
     );
 
-    const formValues = { ...createMarketplaceListingDefaults, fulfillment, ...values };
+    const formValues = { ...createMarketplaceListingDefaults, countryCode: 'US', fulfillment, ...values };
     const schemaValid = createMarketplaceListingSchema.safeParse(formValues).success;
     expect(isCreateMarketplaceListingPublishReady(formValues, photos)).toBe(schemaValid && photos > 0);
     expect(isCreateMarketplaceListingPublishReady(formValues, photos)).toBe(enabled);

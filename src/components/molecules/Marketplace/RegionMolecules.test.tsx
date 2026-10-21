@@ -59,18 +59,35 @@ describe('BuyerCountryField', () => {
     const input = screen.getByLabelText(BUYER_COUNTRY_PROMPT);
 
     fireEvent.change(input, { target: { value: 'de' } });
+    fireEvent.blur(input);
     expect(onChange).toHaveBeenLastCalledWith('DE');
     expect(input).toHaveValue('DE');
 
-    fireEvent.change(input, { target: { value: 'x' } });
-    expect(onChange).toHaveBeenLastCalledWith(null);
-
     fireEvent.change(input, { target: { value: 'uk' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
     expect(onChange).toHaveBeenLastCalledWith('GB');
 
+    onChange.mockClear();
     fireEvent.change(input, { target: { value: 'zz' } });
-    expect(onChange).toHaveBeenLastCalledWith(null);
+    fireEvent.blur(input);
+    expect(onChange).not.toHaveBeenCalled();
     expect(screen.getByTestId('buyer-country-hint')).toHaveTextContent('Use a two-letter country code.');
+  });
+
+  it('commits a country only when the buyer confirms it, never mid-typing', async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    render(<BuyerCountryField value="BE" onChange={onChange} />);
+    const input = screen.getByLabelText(BUYER_COUNTRY_PROMPT);
+
+    await user.clear(input);
+    await user.type(input, 'CH');
+    expect(onChange).not.toHaveBeenCalled();
+    expect(screen.getByTestId('buyer-country-hint')).toHaveTextContent('Switzerland');
+
+    await user.tab();
+    expect(onChange).toHaveBeenCalledOnce();
+    expect(onChange).toHaveBeenCalledWith('CH');
   });
 
   it('explains why it asks behind an info icon instead of in the page', async () => {
@@ -141,6 +158,7 @@ describe('RegionAvailabilityNotice', () => {
     needsCountry: false,
     refusal: null,
     canChangeCountry: false,
+    usesCountry: false,
     digitalNote: null,
   };
 
@@ -189,6 +207,27 @@ describe('RegionAvailabilityNotice', () => {
       />,
     );
     expect(container).toBeEmptyDOMElement();
+  });
+
+  it('keeps a country the decision depends on in view, with a way to change it', async () => {
+    const user = userEvent.setup();
+    const setBuyerCountry = vi.fn();
+    render(
+      <RegionAvailabilityNotice
+        region={{ ...base, buyerCountry: 'CH', usesCountry: true, digitalNote: 'Digital note', setBuyerCountry }}
+        testIdPrefix="x"
+      />,
+    );
+    expect(screen.getByTestId('x-region-country')).toHaveTextContent(`${BUYER_COUNTRY_PROMPT}: Switzerland`);
+    expect(screen.queryByLabelText(BUYER_COUNTRY_PROMPT)).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Change' }));
+    const input = screen.getByLabelText(BUYER_COUNTRY_PROMPT);
+    expect(input).toHaveFocus();
+    await user.clear(input);
+    await user.type(input, 'US{Enter}');
+    expect(setBuyerCountry).toHaveBeenCalledWith('US');
+    expect(screen.getByTestId('x-region-country')).toBeInTheDocument();
   });
 
   it('gives the digital reason for asking behind the country field’s info icon', async () => {

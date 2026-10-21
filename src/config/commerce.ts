@@ -212,3 +212,12 @@ export const COMMERCE_SAVED_SEARCH_NAME_MAX_CHARS = 60;
 
 /** Saved searches storable per account. */
 export const COMMERCE_SAVED_SEARCH_MAX_PER_OWNER = 20;
+
+/** Shortest gap between two shop re-reads a buyer's tab triggers by coming back into focus. */
+export const COMMERCE_SHOP_FOCUS_REVALIDATE_MIN_MS = 15_000;
+
+/** Wait after a seller's shop event before re-reading it, so a burst (or the replay on connect) reads once. */
+export const COMMERCE_SHOP_EVENT_DEBOUNCE_MS = 500;
+
+/** Wait before reconnecting a seller's shop event stream after it failed or ended. */
+export const COMMERCE_SHOP_EVENT_RECONNECT_MS = 5_000;

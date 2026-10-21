@@ -64,6 +64,7 @@ const noRegion: RegionAvailability = {
   needsCountry: false,
   refusal: null,
   canChangeCountry: false,
+  usesCountry: false,
   digitalNote: null,
 };
 
@@ -177,6 +178,19 @@ describe('Marketplace legal copy — visual regression', () => {
       { viewport: VRT_VIEWPORT_DESKTOP, disableHover: true },
     );
     await capture(screen, 'legal-eu-refusal-desktop');
+  });
+
+  it('keeps the buyer country in view with a way to change it once it is set', async () => {
+    const screen = await renderForVRT(
+      <Scene>
+        <RegionAvailabilityNotice
+          region={{ ...noRegion, buyerCountry: 'CH', usesCountry: true, digitalNote: 'Digital items aren’t available' }}
+          testIdPrefix="vrt"
+        />
+      </Scene>,
+      { viewport: VRT_VIEWPORT_DESKTOP, disableHover: true },
+    );
+    await capture(screen, 'legal-country-kept-desktop');
   });
 
   it('shows an EU seller their yearly counters with the rule behind an info icon', async () => {

@@ -21,6 +21,7 @@ import { CHAT_LOCKS, holdLeadership, type LeadershipHandle } from '@/libs/chat/w
 import { Logger } from '@/libs/logger/logger';
 import type { THomeserverResourceEvent } from '@/services/homeserver/homeserver.types';
 import type { InboxAvailability } from '@/services/inbox/inbox.types';
+import { signedInUserChanged } from '@/stores/auth/auth.change';
 import { useAuthStore } from '@/stores/auth/auth.store';
 import { useChatStore } from '@/stores/chat/chat.store';
 import type { ChatSyncCoordinatorState } from './chat-sync.types';
@@ -128,14 +129,7 @@ export class ChatSyncCoordinator {
 
   private setupListeners(): void {
     this.authStoreUnsubscribe = useAuthStore.subscribe((state, prevState) => {
-      // Compare the raw fields: a store selector reads the live state, so calling
-      // it on `prevState` compares the current state with itself. The persisted
-      // pubky is hydrated before the session is restored, so the session's
-      // arrival is the change that starts chat on a cold load.
-      const changed =
-        (state.session !== null) !== (prevState.session !== null) ||
-        state.currentUserPubky !== prevState.currentUserPubky;
-      if (changed) this.evaluate();
+      if (signedInUserChanged(state, prevState)) this.evaluate();
     });
     if (typeof document !== 'undefined') {
       this.state.isPageVisible = document.visibilityState === 'visible';
