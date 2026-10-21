@@ -550,6 +550,7 @@ export function MarketplaceListingForm({
         >
           <ControlledInputField
             name={CREATE_MARKETPLACE_LISTING_FIELDS.TITLE}
+            markRequired
             control={form.control}
             label="Title"
             placeholder="What are you selling?"
@@ -557,6 +558,7 @@ export function MarketplaceListingForm({
           />
           <ControlledTextareaField
             name={CREATE_MARKETPLACE_LISTING_FIELDS.DESCRIPTION}
+            markRequired
             control={form.control}
             label="Description"
             placeholder="Condition, provenance, measurements, and anything a buyer should know"
@@ -572,6 +574,7 @@ export function MarketplaceListingForm({
                 onChange={field.onChange}
                 disabled={isPublishing}
                 error={fieldState.error?.message}
+                markRequired
               />
             )}
           />
@@ -593,6 +596,7 @@ export function MarketplaceListingForm({
             />
             <ControlledInputField
               name={CREATE_MARKETPLACE_LISTING_FIELDS.COUNTRY_CODE}
+              markRequired
               control={form.control}
               label="Country"
               placeholder="Two-letter code"
@@ -653,6 +657,7 @@ export function MarketplaceListingForm({
             />
             <ControlledInputField
               name={CREATE_MARKETPLACE_LISTING_FIELDS.PRICE}
+              markRequired
               control={form.control}
               label={saleFormat === 'auction' ? `Starting price (${priceUnit})` : `Price (${priceUnit})`}
               placeholder={pricePlaceholder}
@@ -984,6 +989,7 @@ export function MarketplaceListingForm({
               <div className="grid gap-5 sm:grid-cols-2">
                 <ControlledInputField
                   name={CREATE_MARKETPLACE_LISTING_FIELDS.PACKAGE_WEIGHT}
+                  markRequired
                   control={form.control}
                   label={`Weight (${weightUnitLabel(measurementSystem)})`}
                   placeholder={isImperial ? '42.3' : '1200'}
@@ -1020,6 +1026,7 @@ export function MarketplaceListingForm({
               <div className="grid gap-5 sm:grid-cols-3">
                 <ControlledInputField
                   name={CREATE_MARKETPLACE_LISTING_FIELDS.PACKAGE_LENGTH}
+                  markRequired
                   control={form.control}
                   label={`Length (${dimensionUnitLabel(measurementSystem)})`}
                   placeholder={isImperial ? '13.8' : '35.0'}
@@ -1027,6 +1034,7 @@ export function MarketplaceListingForm({
                 />
                 <ControlledInputField
                   name={CREATE_MARKETPLACE_LISTING_FIELDS.PACKAGE_WIDTH}
+                  markRequired
                   control={form.control}
                   label={`Width (${dimensionUnitLabel(measurementSystem)})`}
                   placeholder={isImperial ? '9.8' : '25.0'}
@@ -1034,6 +1042,7 @@ export function MarketplaceListingForm({
                 />
                 <ControlledInputField
                   name={CREATE_MARKETPLACE_LISTING_FIELDS.PACKAGE_HEIGHT}
+                  markRequired
                   control={form.control}
                   label={`Height (${dimensionUnitLabel(measurementSystem)})`}
                   placeholder={isImperial ? '5.9' : '15.0'}

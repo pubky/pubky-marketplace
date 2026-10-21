@@ -3,7 +3,8 @@
 import { Controller, FieldValues } from 'react-hook-form';
 import { Container } from '@/atoms/Container/Container';
 import { Label } from '@/atoms/Label/Label';
-import { FORM_LABEL_CLASSES } from '@/config/forms';
+import { FORM_LABEL_CLASSES, FORM_REQUIRED_LABEL_CLASSES } from '@/config/forms';
+import { cn } from '@/libs/utils/utils';
 import { InputField } from '../InputField/InputField';
 import type { ControlledInputFieldProps } from './ControlledInputField.types';
 
@@ -12,6 +13,7 @@ export function ControlledInputField<T extends FieldValues>({
   control,
   label,
   labelHint,
+  markRequired = false,
   placeholder,
   maxLength,
   variant = 'dashed',
@@ -68,7 +70,11 @@ export function ControlledInputField<T extends FieldValues>({
 
   return (
     <Container className="gap-2">
-      <Label htmlFor={name} className={FORM_LABEL_CLASSES}>
+      <Label
+        htmlFor={name}
+        className={cn(FORM_LABEL_CLASSES, markRequired && FORM_REQUIRED_LABEL_CLASSES)}
+        data-required={markRequired || undefined}
+      >
         {label}
         {labelHint}
       </Label>

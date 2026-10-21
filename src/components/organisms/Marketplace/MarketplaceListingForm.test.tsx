@@ -665,6 +665,17 @@ describe('MarketplaceListingForm pickup capability (§A7)', () => {
     expect(scrolled).not.toContain(document.getElementById('listing-section-shipping'));
   });
 
+  it('marks the fields publishing needs as Required, and only those', () => {
+    render(<FormHarness fulfillment="shipping" />);
+
+    const label = (text: string | RegExp) =>
+      screen.getAllByText(text).find((node) => node.tagName === 'LABEL') as HTMLElement;
+    for (const required of ['Title', 'Description', 'Category', /^Price \(/, 'Country', /^Weight \(/]) {
+      expect(label(required), String(required)).toHaveAttribute('data-required', 'true');
+    }
+    expect(label('Region (optional)')).not.toHaveAttribute('data-required');
+  });
+
   it('keeps publish disabled when description is empty even if other minimums are filled', () => {
     render(
       <FormHarness

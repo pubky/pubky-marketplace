@@ -560,7 +560,8 @@ exports[`MarketplaceListingForm - Snapshots > matches the physical listing form 
               data-testid="container"
             >
               <label
-                class="flex items-center gap-2 select-none group-data-[disabled=true]:pointer-events-none group-data-[disabled=true]:opacity-50 peer-disabled:cursor-not-allowed peer-disabled:opacity-50 text-xs font-medium tracking-wide text-muted-foreground uppercase"
+                class="flex items-center gap-2 select-none group-data-[disabled=true]:pointer-events-none group-data-[disabled=true]:opacity-50 peer-disabled:cursor-not-allowed peer-disabled:opacity-50 text-xs font-medium tracking-wide text-muted-foreground uppercase after:ml-1.5 after:font-normal after:normal-case after:tracking-normal after:content-['Required']"
+                data-required="true"
                 data-slot="label"
                 for="title"
               >
@@ -587,7 +588,8 @@ exports[`MarketplaceListingForm - Snapshots > matches the physical listing form 
               data-testid="container"
             >
               <label
-                class="flex items-center gap-2 select-none group-data-[disabled=true]:pointer-events-none group-data-[disabled=true]:opacity-50 peer-disabled:cursor-not-allowed peer-disabled:opacity-50 text-xs font-medium tracking-wide text-muted-foreground uppercase"
+                class="flex items-center gap-2 select-none group-data-[disabled=true]:pointer-events-none group-data-[disabled=true]:opacity-50 peer-disabled:cursor-not-allowed peer-disabled:opacity-50 text-xs font-medium tracking-wide text-muted-foreground uppercase after:ml-1.5 after:font-normal after:normal-case after:tracking-normal after:content-['Required']"
+                data-required="true"
                 data-slot="label"
                 for="description"
               >
@@ -613,7 +615,8 @@ exports[`MarketplaceListingForm - Snapshots > matches the physical listing form 
               data-testid="container"
             >
               <label
-                class="flex items-center gap-2 select-none group-data-[disabled=true]:pointer-events-none group-data-[disabled=true]:opacity-50 peer-disabled:cursor-not-allowed peer-disabled:opacity-50 text-xs font-medium tracking-wide text-muted-foreground uppercase"
+                class="flex items-center gap-2 select-none group-data-[disabled=true]:pointer-events-none group-data-[disabled=true]:opacity-50 peer-disabled:cursor-not-allowed peer-disabled:opacity-50 text-xs font-medium tracking-wide text-muted-foreground uppercase after:ml-1.5 after:font-normal after:normal-case after:tracking-normal after:content-['Required']"
+                data-required="true"
                 data-slot="label"
                 for="marketplace-category-level-0"
               >
@@ -825,7 +828,8 @@ exports[`MarketplaceListingForm - Snapshots > matches the physical listing form 
                 data-testid="container"
               >
                 <label
-                  class="flex items-center gap-2 select-none group-data-[disabled=true]:pointer-events-none group-data-[disabled=true]:opacity-50 peer-disabled:cursor-not-allowed peer-disabled:opacity-50 text-xs font-medium tracking-wide text-muted-foreground uppercase"
+                  class="flex items-center gap-2 select-none group-data-[disabled=true]:pointer-events-none group-data-[disabled=true]:opacity-50 peer-disabled:cursor-not-allowed peer-disabled:opacity-50 text-xs font-medium tracking-wide text-muted-foreground uppercase after:ml-1.5 after:font-normal after:normal-case after:tracking-normal after:content-['Required']"
+                  data-required="true"
                   data-slot="label"
                   for="countryCode"
                 >
@@ -1097,7 +1101,8 @@ exports[`MarketplaceListingForm - Snapshots > matches the physical listing form 
                 data-testid="container"
               >
                 <label
-                  class="flex items-center gap-2 select-none group-data-[disabled=true]:pointer-events-none group-data-[disabled=true]:opacity-50 peer-disabled:cursor-not-allowed peer-disabled:opacity-50 text-xs font-medium tracking-wide text-muted-foreground uppercase"
+                  class="flex items-center gap-2 select-none group-data-[disabled=true]:pointer-events-none group-data-[disabled=true]:opacity-50 peer-disabled:cursor-not-allowed peer-disabled:opacity-50 text-xs font-medium tracking-wide text-muted-foreground uppercase after:ml-1.5 after:font-normal after:normal-case after:tracking-normal after:content-['Required']"
+                  data-required="true"
                   data-slot="label"
                   for="price"
                 >
@@ -1782,7 +1787,8 @@ exports[`MarketplaceListingForm - Snapshots > matches the physical listing form 
                 data-testid="container"
               >
                 <label
-                  class="flex items-center gap-2 select-none group-data-[disabled=true]:pointer-events-none group-data-[disabled=true]:opacity-50 peer-disabled:cursor-not-allowed peer-disabled:opacity-50 text-xs font-medium tracking-wide text-muted-foreground uppercase"
+                  class="flex items-center gap-2 select-none group-data-[disabled=true]:pointer-events-none group-data-[disabled=true]:opacity-50 peer-disabled:cursor-not-allowed peer-disabled:opacity-50 text-xs font-medium tracking-wide text-muted-foreground uppercase after:ml-1.5 after:font-normal after:normal-case after:tracking-normal after:content-['Required']"
+                  data-required="true"
                   data-slot="label"
                   for="packageWeight"
                 >
@@ -1844,7 +1850,8 @@ exports[`MarketplaceListingForm - Snapshots > matches the physical listing form 
                 data-testid="container"
               >
                 <label
-                  class="flex items-center gap-2 select-none group-data-[disabled=true]:pointer-events-none group-data-[disabled=true]:opacity-50 peer-disabled:cursor-not-allowed peer-disabled:opacity-50 text-xs font-medium tracking-wide text-muted-foreground uppercase"
+                  class="flex items-center gap-2 select-none group-data-[disabled=true]:pointer-events-none group-data-[disabled=true]:opacity-50 peer-disabled:cursor-not-allowed peer-disabled:opacity-50 text-xs font-medium tracking-wide text-muted-foreground uppercase after:ml-1.5 after:font-normal after:normal-case after:tracking-normal after:content-['Required']"
+                  data-required="true"
                   data-slot="label"
                   for="packageLength"
                 >
@@ -1871,7 +1878,8 @@ exports[`MarketplaceListingForm - Snapshots > matches the physical listing form 
                 data-testid="container"
               >
                 <label
-                  class="flex items-center gap-2 select-none group-data-[disabled=true]:pointer-events-none group-data-[disabled=true]:opacity-50 peer-disabled:cursor-not-allowed peer-disabled:opacity-50 text-xs font-medium tracking-wide text-muted-foreground uppercase"
+                  class="flex items-center gap-2 select-none group-data-[disabled=true]:pointer-events-none group-data-[disabled=true]:opacity-50 peer-disabled:cursor-not-allowed peer-disabled:opacity-50 text-xs font-medium tracking-wide text-muted-foreground uppercase after:ml-1.5 after:font-normal after:normal-case after:tracking-normal after:content-['Required']"
+                  data-required="true"
                   data-slot="label"
                   for="packageWidth"
                 >
@@ -1898,7 +1906,8 @@ exports[`MarketplaceListingForm - Snapshots > matches the physical listing form 
                 data-testid="container"
               >
                 <label
-                  class="flex items-center gap-2 select-none group-data-[disabled=true]:pointer-events-none group-data-[disabled=true]:opacity-50 peer-disabled:cursor-not-allowed peer-disabled:opacity-50 text-xs font-medium tracking-wide text-muted-foreground uppercase"
+                  class="flex items-center gap-2 select-none group-data-[disabled=true]:pointer-events-none group-data-[disabled=true]:opacity-50 peer-disabled:cursor-not-allowed peer-disabled:opacity-50 text-xs font-medium tracking-wide text-muted-foreground uppercase after:ml-1.5 after:font-normal after:normal-case after:tracking-normal after:content-['Required']"
+                  data-required="true"
                   data-slot="label"
                   for="packageHeight"
                 >

@@ -5,19 +5,22 @@ import { Container } from '@/atoms/Container/Container';
 import { Label } from '@/atoms/Label/Label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/atoms/Select/Select';
 import { Typography } from '@/atoms/Typography/Typography';
-import { FORM_LABEL_CLASSES } from '@/config/forms';
+import { FORM_LABEL_CLASSES, FORM_REQUIRED_LABEL_CLASSES } from '@/config/forms';
 import {
   commerceCategoryChildren,
   commerceCategoryPathLabels,
   type CommerceTaxonomyNode,
   resolveCommerceCategory,
 } from '@/config/taxonomy/taxonomy';
+import { cn } from '@/libs/utils/utils';
 
 export interface MarketplaceCategoryPickerProps {
   value: string;
   onChange: (categoryId: string) => void;
   disabled: boolean;
   error?: string;
+  /** Marks the label "Required", as publishing needs a category. */
+  markRequired?: boolean;
 }
 
 /**
@@ -28,7 +31,13 @@ export interface MarketplaceCategoryPickerProps {
  * something else — the stored category is shown as a breadcrumb so nothing
  * is silently re-labeled.
  */
-export function MarketplaceCategoryPicker({ value, onChange, disabled, error }: MarketplaceCategoryPickerProps) {
+export function MarketplaceCategoryPicker({
+  value,
+  onChange,
+  disabled,
+  error,
+  markRequired = false,
+}: MarketplaceCategoryPickerProps) {
   const resolved = value ? resolveCommerceCategory(value) : null;
   // Legacy nodes are not offered by the selects, so the cascade renders from
   // their deepest non-legacy ancestor while the stored id stays untouched.
@@ -53,7 +62,11 @@ export function MarketplaceCategoryPicker({ value, onChange, disabled, error }: 
 
   return (
     <Container className="gap-2">
-      <Label htmlFor="marketplace-category-level-0" className={FORM_LABEL_CLASSES}>
+      <Label
+        htmlFor="marketplace-category-level-0"
+        className={cn(FORM_LABEL_CLASSES, markRequired && FORM_REQUIRED_LABEL_CLASSES)}
+        data-required={markRequired || undefined}
+      >
         Category
       </Label>
       {isLegacyOrUnknown && (

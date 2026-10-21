@@ -7,6 +7,8 @@ export interface ControlledTextareaFieldProps<T extends FieldValues> {
   control: Control<T>;
   /** Label text displayed above the textarea */
   label: string;
+  /** Marks the label \"Required\" (publishing needs the field); no native `required`, so drafts still save */
+  markRequired?: boolean;
   /** Placeholder text for the textarea */
   placeholder?: string;
   /** Maximum character length */
