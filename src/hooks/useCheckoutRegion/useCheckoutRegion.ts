@@ -37,8 +37,9 @@ interface SellerFacts {
 /**
  * What the EU fence (C3, C4) and the digital hold (C3b) say about one checkout. The sellers' own
  * declarations come from their shop records and their annual-limit state from the service; the
- * buyer's country is the delivery address's when there is one and the remembered one otherwise,
- * and it is remembered on the device for the commands that carry it.
+ * buyer's country is the delivery address's when there is one and the remembered one otherwise.
+ * The address country is remembered only when the order is placed (`useMarketplaceCheckout`), never
+ * from the form while it loads or is being filled in.
  */
 export function useCheckoutRegion(input: {
   sellerPubkys: readonly string[];
@@ -89,12 +90,6 @@ export function useCheckoutRegion(input: {
   const addressCountryValid = /^[A-Z]{2}$/.test(addressCountry);
   const countryFromAddress = input.requiresDeliveryAddress && addressCountryValid ? addressCountry : null;
   const buyerCountry = input.requiresDeliveryAddress ? countryFromAddress : buyer.country;
-
-  useEffect(() => {
-    if (buyer.enabled && countryFromAddress && countryFromAddress !== buyer.country) {
-      buyer.setCountry(countryFromAddress);
-    }
-  }, [buyer, countryFromAddress]);
 
   const needsCountryField = buyer.enabled && !input.requiresDeliveryAddress && (fence || digitalHold);
   const known = facts?.key === key ? facts.value : null;

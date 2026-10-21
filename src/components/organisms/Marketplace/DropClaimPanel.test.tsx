@@ -197,12 +197,18 @@ describe('DropClaimPanel', () => {
       const field = screen.getByLabelText(BUYER_COUNTRY_PROMPT);
       await user.clear(field);
       await user.type(field, 'CH');
+      expect(useBuyerCountryStore.getState().country).toBe('DE');
+      expect(screen.getByRole('button', { name: 'Claim one' })).toBeDisabled();
+      await user.keyboard('{Enter}');
 
       expect(await screen.findByRole('link', { name: 'Claim one' })).toHaveAttribute(
         'href',
         `/marketplace/checkout?seller=${SELLER}&drop=vol1&listing=listing1`,
       );
       expect(screen.queryByTestId('drop-claim-region-refusal')).not.toBeInTheDocument();
+      expect(screen.getByTestId('drop-claim-region-country')).toHaveTextContent(`${BUYER_COUNTRY_PROMPT}: Switzerland`);
+      await user.click(screen.getByRole('button', { name: 'Change' }));
+      expect(screen.getByLabelText(BUYER_COUNTRY_PROMPT)).toHaveValue('CH');
     });
 
     it('leaves the claim to the service when the shop could not be read', async () => {
