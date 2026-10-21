@@ -19,7 +19,8 @@
 // Env: PROOF_EVIDENCE (required; state and results are written there), seats (see seats.mjs),
 // PAYPAL_TEST_EMAIL (required for setup and proof, and for a teardown that restores it; never logged or
 // written to disk), EXPECTED_DPL (optional,
-// checked before checkout), PROOF_ORIGIN (with the mount path when embedded), PROOF_SERVICE, PROOF_NEXUS, PROOF_RELAY, PROOF_FIXTURE_PHOTO.
+// checked before checkout), PROOF_ORIGIN (with the mount path when embedded), PROOF_SERVICE, PROOF_NEXUS (all three required: there is no default
+// target), PROOF_RELAY, PROOF_FIXTURE_PHOTO.
 // Exit 0 only when every check passed; teardown and verify exit 1 while anything is left behind.
 import { spawnSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
@@ -34,6 +35,7 @@ import {
   prefix,
   proofTarget,
   repoRequire,
+  requireProofEnv,
   shopCapabilities,
 } from './seats.mjs';
 import { removeRunStorefront, storefrontExists } from './storefront-cleanup.mjs';
@@ -42,8 +44,8 @@ const { chromium } = repoRequire('playwright');
 const { AuthFlowKind, Pubky } = repoRequire('@synonymdev/pubky');
 
 const { origin: ORIGIN, at } = proofTarget();
-const SERVICE = process.env.PROOF_SERVICE ?? 'https://marketplace-edge-production.up.railway.app';
-const NEXUS = process.env.PROOF_NEXUS ?? 'https://nexusd-production-7108.up.railway.app';
+const SERVICE = requireProofEnv('PROOF_SERVICE');
+const NEXUS = requireProofEnv('PROOF_NEXUS');
 const RELAY = process.env.PROOF_RELAY ?? 'https://httprelay.pubky.app/inbox';
 const CAPABILITIES = shopCapabilities();
 const PHOTO = process.env.PROOF_FIXTURE_PHOTO ?? join(dirname(fileURLToPath(import.meta.url)), 'fixture-photo.png');

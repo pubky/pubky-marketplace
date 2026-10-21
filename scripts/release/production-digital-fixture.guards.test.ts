@@ -8,7 +8,7 @@ import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { chromium } from 'playwright';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { maskedScreenshot, STAGING_TARGET } from './digital-proof.mjs';
+import { maskedScreenshot } from './digital-proof.mjs';
 
 const run = promisify(execFile);
 const SCRIPT = join(__dirname, 'production-digital-fixture.mjs');
@@ -51,18 +51,53 @@ describe('production-digital-fixture.mjs target guard', () => {
     PROOF_EVIDENCE: evidence,
   });
 
-  it('refuses the hold-smoke publish on the production defaults before touching anything', async () => {
+  const stagingList = {
+    PROOF_STAGING_ORIGINS: 'https://staging.shop.example.test',
+    PROOF_STAGING_SERVICES: 'https://api.staging.shop.example.test',
+    PROOF_STAGING_NEXUS: 'https://nexus.staging.shop.example.test',
+  };
+  const stagingStack = {
+    PROOF_ORIGIN: 'https://staging.shop.example.test',
+    PROOF_SERVICE: 'https://api.staging.shop.example.test',
+    PROOF_NEXUS: 'https://nexus.staging.shop.example.test',
+  };
+
+  it('refuses the hold-smoke publish with no target configured before touching anything', async () => {
     const outcome = await runScript('publish', hold());
     expect(outcome.code).not.toBe(0);
+    expect(outcome.stderr).toContain('set PROOF_ORIGIN, PROOF_SERVICE, PROOF_NEXUS');
+    expect(existsSync(join(evidence, 'digital-fixture-publish.json'))).toBe(false);
+  });
+
+  it('refuses a target that is not the configured staging stack, naming what is wrong', async () => {
+    const outcome = await runScript('publish', {
+      ...hold(),
+      ...stagingList,
+      PROOF_ORIGIN: 'https://shop.example.test',
+      PROOF_SERVICE: 'https://api.shop.example.test',
+      PROOF_NEXUS: 'https://nexus.shop.example.test',
+    });
+    expect(outcome.code).not.toBe(0);
     expect(outcome.stderr).toContain('is not the staging stack');
-    expect(outcome.stderr).toContain('PROOF_ORIGIN=https://shop.pubky.app');
+    expect(outcome.stderr).toContain('PROOF_ORIGIN=https://shop.example.test');
     expect(outcome.stderr).toContain('PROOF_SERVICE=');
     expect(outcome.stderr).toContain('PROOF_NEXUS=');
     expect(existsSync(join(evidence, 'digital-fixture-publish.json'))).toBe(false);
   });
 
+  it('refuses a staging target when no staging stack is configured', async () => {
+    const outcome = await runScript('publish', { ...hold(), ...stagingStack });
+    expect(outcome.code).not.toBe(0);
+    expect(outcome.stderr).toContain('is not the staging stack');
+  });
+
   it('refuses every mode but plan on a half-staging stack, naming only what is wrong', async () => {
-    const env = { ...hold(), PROOF_ORIGIN: STAGING_TARGET.origins[0] };
+    const env = {
+      ...hold(),
+      ...stagingList,
+      ...stagingStack,
+      PROOF_SERVICE: 'https://api.shop.example.test',
+    };
     for (const mode of ['prepare', 'publish', 'await-buyer', 'teardown', 'verify']) {
       const outcome = await runScript(mode, env);
       expect(outcome.code, mode).not.toBe(0);
@@ -72,16 +107,21 @@ describe('production-digital-fixture.mjs target guard', () => {
   });
 
   it('plan runs anywhere, touches nothing and says which side it is on', async () => {
-    const prod = await runScript('plan', { PROOF_EVIDENCE: evidence });
+    const unconfigured = await runScript('plan', { PROOF_EVIDENCE: evidence });
+    expect(unconfigured.code).toBe(0);
+    expect(unconfigured.stdout).toContain('target: not configured');
+
+    const prod = await runScript('plan', {
+      PROOF_EVIDENCE: evidence,
+      ...stagingList,
+      PROOF_ORIGIN: 'https://shop.example.test',
+      PROOF_SERVICE: 'https://api.shop.example.test',
+      PROOF_NEXUS: 'https://nexus.shop.example.test',
+    });
     expect(prod.code).toBe(0);
     expect(prod.stdout).toContain('NOT the staging stack');
 
-    const stage = await runScript('plan', {
-      PROOF_EVIDENCE: evidence,
-      PROOF_ORIGIN: STAGING_TARGET.origins[0],
-      PROOF_SERVICE: STAGING_TARGET.services[0],
-      PROOF_NEXUS: STAGING_TARGET.nexus[0],
-    });
+    const stage = await runScript('plan', { PROOF_EVIDENCE: evidence, ...stagingList, ...stagingStack });
     expect(stage.code).toBe(0);
     expect(stage.stdout).toContain('target: the staging stack');
   });
@@ -113,6 +153,8 @@ describe('production-digital-fixture.mjs expected deployment on publish', () => 
   const publishEnv = () => ({
     PROOF_ALLOW_PRODUCTION: '1',
     PROOF_ORIGIN: origin,
+    PROOF_SERVICE: origin,
+    PROOF_NEXUS: origin,
     PROOF_EXTERNAL_BUYER: '1',
     PROOF_DIGITAL_GO: today(),
     EXPECTED_DPL: 'dpl_expected',

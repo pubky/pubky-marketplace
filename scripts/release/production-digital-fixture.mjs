@@ -1,9 +1,10 @@
 #!/usr/bin/env node
 // Paid digital delivery proof (design decision DD4): one real Bitcoin purchase per delivery kind, with the
 // release-proof test seats. ON PRODUCTION THIS SPENDS REAL MONEY. Every mode but `plan` refuses unless PROOF_ORIGIN,
-// PROOF_SERVICE and PROOF_NEXUS are the staging stack (digital-proof.mjs, STAGING_TARGET), or PROOF_ALLOW_PRODUCTION=1
-// says otherwise on purpose. Modes that spend or publish also need EXPECTED_DPL to be what the origin serves right
-// now, and today's go-ahead token from the product owner (PROOF_DIGITAL_GO=GO-<UTC date>). Run `plan` first: it
+// PROOF_SERVICE and PROOF_NEXUS are the staging stack listed in PROOF_STAGING_ORIGINS, PROOF_STAGING_SERVICES and
+// PROOF_STAGING_NEXUS (digital-proof.mjs), or PROOF_ALLOW_PRODUCTION=1 says otherwise on purpose. There is no
+// default target: PROOF_ORIGIN, PROOF_SERVICE and PROOF_NEXUS must be set. Modes that spend or publish also need
+// EXPECTED_DPL to be what the origin serves right now, and today's go-ahead token from the product owner (PROOF_DIGITAL_GO=GO-<UTC date>). Run `plan` first: it
 // touches nothing.
 //
 // What it automates: publishing one "SMOKE FIXTURE, do not buy" digital listing per kind from the seller seat and setting
@@ -33,6 +34,7 @@
 // seats.mjs), EXPECTED_DPL, PROOF_DIGITAL_GO, PROOF_DIGITAL_KINDS (default file), PROOF_DIGITAL_PRICE_USD (default
 // 2.00), PROOF_DIGITAL_PAY_TIMEOUT_MIN (default 25), PROOF_DIGITAL_BUYER_EMAIL (required for the email kind: a
 // mailbox the tester controls; redacted from the log and the evidence JSON, masked in screenshots), PROOF_ORIGIN, PROOF_SERVICE, PROOF_NEXUS, PROOF_RELAY,
+// PROOF_STAGING_ORIGINS, PROOF_STAGING_SERVICES, PROOF_STAGING_NEXUS (comma lists naming the staging stack),
 // PROOF_FIXTURE_PHOTO, PROOF_ALLOW_PRODUCTION (1 to run against anything but staging), PROOF_DIGITAL_EMAIL_SCREENSHOTS
 // (1 to save the email kind's screenshots; they are not saved by default, and any saved screenshot has the mailbox masked).
 // Exit 0 only when every check passed. Paid orders cannot be deleted; they stay as the proof's evidence.
@@ -79,9 +81,9 @@ import { evidenceDir, loadBuyerSeat, loadSellerSeat, prefix, repoRequire, shopCa
 const { chromium } = repoRequire('playwright');
 const { AuthFlowKind, Pubky } = repoRequire('@synonymdev/pubky');
 
-const ORIGIN = process.env.PROOF_ORIGIN ?? 'https://shop.pubky.app';
-const SERVICE = process.env.PROOF_SERVICE ?? 'https://marketplace-edge-production.up.railway.app';
-const NEXUS = process.env.PROOF_NEXUS ?? 'https://nexusd-production-7108.up.railway.app';
+const ORIGIN = process.env.PROOF_ORIGIN ?? '';
+const SERVICE = process.env.PROOF_SERVICE ?? '';
+const NEXUS = process.env.PROOF_NEXUS ?? '';
 const RELAY = process.env.PROOF_RELAY ?? 'https://httprelay.pubky.app/inbox';
 const FX_FEED = process.env.PROOF_FX_FEED ?? 'https://api1.blocktank.to/api/fx/rates/btc';
 const PHOTO = process.env.PROOF_FIXTURE_PHOTO ?? join(dirname(fileURLToPath(import.meta.url)), 'fixture-photo.png');
@@ -117,7 +119,9 @@ if (mode === 'plan') {
   console.log(
     isStagingTarget(TARGET)
       ? 'target: the staging stack'
-      : `target: NOT the staging stack (nexus ${NEXUS}); every mode but plan refuses unless PROOF_ALLOW_PRODUCTION=1`,
+      : ORIGIN && SERVICE && NEXUS
+        ? `target: NOT the staging stack (nexus ${NEXUS}); every mode but plan refuses unless PROOF_ALLOW_PRODUCTION=1`
+        : 'target: not configured; set PROOF_ORIGIN, PROOF_SERVICE and PROOF_NEXUS (every mode but plan refuses without them)',
   );
   console.log(
     "go-ahead needed to run: PROOF_DIGITAL_GO=GO-<today, UTC, YYYY-MM-DD>, set only on the product owner's instruction; it expires at the end of that UTC day",

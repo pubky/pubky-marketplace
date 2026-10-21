@@ -13,7 +13,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
  *     -> the seller's real shop + listing + DROP records through the real
  *        publish paths (`CommerceController.publishDrop`)
  *     -> convergent `drop.sync` registration on the DEPLOYED transaction
- *        service (Railway), which is the only clock and inventory authority
+ *        service, which is the only clock and inventory authority
  *     -> two real buyers with real signer-approved service sessions RACING
  *        the last unit with concurrent `checkout.create` commands
  *     -> exactly one winner; the loser gets the service's pinned refusal
@@ -45,8 +45,10 @@ import { beforeAll, describe, expect, it } from 'vitest';
  *   npm run test:marketplace:drops
  */
 
-const SERVICE_URL = process.env.MARKETPLACE_SERVICE_URL ?? 'https://staging-api.pubky.app';
-const NEXUS_URL = process.env.MARKETPLACE_NEXUS_URL ?? 'https://nexusd-production-7108.up.railway.app';
+const SERVICE_URL = process.env.MARKETPLACE_SERVICE_URL ?? '';
+if (!SERVICE_URL) throw new Error('set MARKETPLACE_SERVICE_URL: the live suites have no default service');
+const NEXUS_URL = process.env.MARKETPLACE_NEXUS_URL ?? '';
+if (!NEXUS_URL) throw new Error('set MARKETPLACE_NEXUS_URL: the live suites have no default Nexus');
 const PUBLIC_PKARR_RELAY = 'https://pkarr.pubky.app';
 const STAGING_HOMESERVER_PUBKY = 'ufibwbmed6jeq9k4p583go95wofakh9fwpp4k734trq79pd9u1uy';
 

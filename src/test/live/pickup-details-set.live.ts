@@ -5,10 +5,10 @@ import { existsSync, readFileSync } from 'node:fs';
 import { beforeAll, describe, expect, it } from 'vitest';
 
 /**
- * LIVE staging capture of `pickup_details.set` against
- * https://staging-api.pubky.app. Staging currently reports
- * `pickup_available: false` (sandbox payments / no sealing key), so the
- * service refuses the command with `pickup_unavailable` before it can
+ * LIVE staging capture of `pickup_details.set` against the service named by
+ * MARKETPLACE_SERVICE_URL. A staging service that reports
+ * `pickup_available: false` (sandbox payments / no sealing key) refuses
+ * the command with `pickup_unavailable` before it can
  * reach `pickup_not_published`. That second refusal is the production
  * Shop race (details saved before listing.sync publishes pickup) and is
  * covered by the unit tests on this branch.
@@ -18,7 +18,8 @@ import { beforeAll, describe, expect, it } from 'vitest';
  *   npx vitest run --config vitest.pickup.config.ts
  */
 
-const SERVICE_URL = process.env.MARKETPLACE_SERVICE_URL ?? 'https://staging-api.pubky.app';
+const SERVICE_URL = process.env.MARKETPLACE_SERVICE_URL ?? '';
+if (!SERVICE_URL) throw new Error('set MARKETPLACE_SERVICE_URL: the live suites have no default service');
 const NEXUS_URL = process.env.MARKETPLACE_NEXUS_URL ?? 'https://nexus.staging.pubky.app';
 const IDENTITIES_FILE = process.env.MARKETPLACE_STAGING_PICKUP_IDENTITIES_FILE ?? '';
 

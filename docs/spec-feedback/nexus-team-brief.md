@@ -56,13 +56,10 @@ official Nexus; commerce reads go to this instance.
 
 Deployed instance:
 
-- Railway project `pubky-marketplace-nexus`, service `nexusd`, image
-  built from this repo (`railway.toml` → `Dockerfile.railway`). Deploys
-  via `railway up --service nexusd --detach` (runbook
-  `docs/railway-deploy.md` on the branch). No git SHA is recorded on
-  the service.
+- A development deployment of service `nexusd`, image built from this
+  repo's container build. No git SHA is recorded on the service.
 - Public base (already published in our repos):
-  `https://nexusd-production-7108.up.railway.app`
+  `<marketplace Nexus URL>`
 - Live `GET /v0/info` on 2026-09-01 returned
   `"commit_hash":""`, `"version":"0.4.1"` (matches
   `nexus-webapi/Cargo.toml`), `"last_index_snapshot":"2026-09-01 08:52:12"`.
@@ -96,7 +93,7 @@ are still rejected at ingest on the running indexer.
 
 Subjects below are verbatim from `git log 0f8f46ba..6fc2dbe3`.
 Classification is ours: **marketplace** = product index for this app;
-**ops** = this Railway deployment; **docs/ops** = Railway runbook and
+**ops** = this deployment; **docs/ops** = deployment runbook and
 observed-rate notes; **maybe-upstream** = looks like a general
 watcher/ingest fix, unproven on current `pubky:main`. Overflow class
 notes are footnoted.
@@ -238,7 +235,7 @@ Reading that ADR as we wrote it, not as a proposal for you to adopt:
 - Marketplace = commerce vocabulary that opens app-owned records
   (price, category, `ends_at`, reputation, drops).
 - Fence: the social contract never grows a commerce query parameter.
-- Topography is ops: one process today (this Railway instance runs both
+- Topography is ops: one process today (this instance runs both
   contracts; marketplace endpoints are a separate route namespace).
   Social *routes* are untouched (no social endpoint changes path,
   parameters, or response shape), but the marketplace work modifies
@@ -477,8 +474,8 @@ Sandbox mode never reads Nexus
 
 ## 11. What we are not asking for
 
-What you can ignore: Railway ops files (`railway.toml`,
-`Dockerfile.railway`, the Railway entrypoint, `docs/railway-deploy.md`).
+What you can ignore: the fork's deployment ops files (its container
+build, entrypoint and deploy runbook).
 The review-backfill JoinSet(16) and its progress logs. `/priv` receipts
 and the watchlist — they are not indexer-visible and are not a Nexus
 API. Fiat, Paykit, Bitkit, Locks, and `pubky-noise`. The client Zod
