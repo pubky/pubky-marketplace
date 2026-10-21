@@ -1,5 +1,6 @@
 'use client';
 
+import { type ReactNode, useId, useState } from 'react';
 import {
   ArrowDownWideNarrow,
   ArrowUpNarrowWide,
@@ -17,11 +18,11 @@ import {
   Package,
   RotateCcw,
   Rows4,
+  SlidersHorizontal,
   Star,
   Timer,
   Wallet,
 } from 'lucide-react';
-import type { ReactNode } from 'react';
 import { Button, buttonVariants } from '@/atoms/Button/Button';
 import { Card } from '@/atoms/Card/Card';
 import {
@@ -153,6 +154,17 @@ export function MarketplaceFilters({
       Object.keys(state.attributeFilters).length > 0,
     ),
   );
+  // What the phone's Filters toggle hides: the dropdown filters, not search, display currency or layout.
+  const collapsedFilterCount = useCommerceStore(
+    (state) =>
+      Number(Boolean(state.categoryId)) +
+      Number(state.saleFormat !== 'all') +
+      Number(Boolean(state.countryCode)) +
+      Number(Boolean(state.paymentMethod)) +
+      Number(state.sort !== 'newest'),
+  );
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const filtersId = useId();
   const resetFilters = useCommerceStore((state) => state.resetFilters);
   const categoryId = useCommerceStore((state) => state.categoryId);
   const attributeFilters = useCommerceStore((state) => state.attributeFilters);
@@ -192,7 +204,30 @@ export function MarketplaceFilters({
             {resultCount.toLocaleString('en-US')} {resultCount === 1 ? 'item' : 'items'}
           </Typography>
         )}
-        <div className="contents">
+        <Button
+          variant="secondary"
+          size="sm"
+          className={cn(FILTER_TRIGGER_CLASS, 'sm:hidden')}
+          aria-expanded={filtersOpen}
+          aria-controls={filtersId}
+          aria-label={collapsedFilterCount > 0 ? `Filters, ${collapsedFilterCount} active` : 'Filters'}
+          onClick={() => setFiltersOpen((open) => !open)}
+          data-testid="marketplace-filters-toggle"
+        >
+          <SlidersHorizontal aria-hidden="true" className="size-4" />
+          Filters
+          {collapsedFilterCount > 0 && (
+            <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-brand px-1.5 text-xs font-semibold text-primary-foreground">
+              {collapsedFilterCount}
+            </span>
+          )}
+          <ChevronDown
+            aria-hidden="true"
+            className={cn('size-3.5 transition-transform', filtersOpen && 'rotate-180')}
+          />
+        </Button>
+        {/* Phones: behind the Filters toggle, so the listings start higher. Wider screens: always shown. */}
+        <div id={filtersId} className={cn(filtersOpen ? 'contents' : 'hidden', 'sm:contents')}>
           <Select value={saleFormat} onValueChange={(value) => setSaleFormat(value as CommerceSaleFormatFilter)}>
             <SelectTrigger aria-label="Sale format" className={FILTER_TRIGGER_CLASS}>
               <SelectValue />

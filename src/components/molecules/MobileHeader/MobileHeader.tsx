@@ -1,8 +1,10 @@
 'use client';
+import { useEffect } from 'react';
 import { Activity, SlidersHorizontal } from 'lucide-react';
 import type React from 'react';
 import { Button } from '@/atoms/Button/Button';
 import { Container } from '@/atoms/Container/Container';
+import { useHideOnScroll } from '@/hooks/useHideOnScroll/useHideOnScroll';
 import { useIsEmbedded } from '@/hooks/useIsEmbedded/useIsEmbedded';
 import { usePublicRoute } from '@/hooks/usePublicRoute/usePublicRoute';
 import { cn } from '@/libs/utils/utils';
@@ -38,6 +40,13 @@ export function MobileHeader({
   const setShowSignInDialog = useAuthStore((state) => state.setShowSignInDialog);
   const { isPublicExploreRoute } = usePublicRoute();
   const isEmbedded = useIsEmbedded();
+  // Phones: the header gives its height back to the content while scrolling down and returns on scroll up.
+  const collapsed = useHideOnScroll({ enabled: !isEmbedded });
+  useEffect(() => {
+    // globals.css moves what sticks under the header (`--header-offset-mobile`, `.sticky.top-24`) up with it.
+    document.documentElement.toggleAttribute('data-mobile-header-collapsed', collapsed);
+    return () => document.documentElement.removeAttribute('data-mobile-header-collapsed');
+  }, [collapsed]);
   // Layout filters drawer: signed-in users and guests on explore/public routes (/home, /post/..., etc.)
   const showLeftIcon = showLeftButton && (isAuthenticated || isPublicExploreRoute);
   if (isEmbedded) return null;
@@ -46,7 +55,8 @@ export function MobileHeader({
       overrideDefaults
       className={cn(
         fixed ? 'fixed inset-x-0' : 'sticky',
-        'top-0 z-(--z-mobile-menu) w-full lg:hidden',
+        'top-0 z-(--z-mobile-menu) w-full transition-transform duration-200 lg:hidden',
+        collapsed && '-translate-y-full',
         hasGradientBackground
           ? 'bg-linear-to-b from-(--background) from-35% to-transparent'
           : 'bg-background shadow-xs',
