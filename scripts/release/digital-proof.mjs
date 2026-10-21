@@ -247,6 +247,49 @@ export function deploymentRefusal({ found, expected }) {
   return null;
 }
 
+const COMMIT_SHA = /^[0-9a-f]{7,40}$/;
+
+// `GET /api/build` answers `{"commit":"<12-char SHA>"}`, or `unknown` when the build has no hex SHA.
+export function parseBuildCommit(body) {
+  try {
+    const commit = JSON.parse(String(body ?? '')).commit;
+    return typeof commit === 'string' && COMMIT_SHA.test(commit.toLowerCase()) ? commit.toLowerCase() : null;
+  } catch {
+    return null;
+  }
+}
+
+// The build reports a short SHA and the expectation may be longer or shorter: they match when one is a prefix of the other.
+export function commitMatches(found, expected) {
+  const a = String(found ?? '').toLowerCase();
+  const b = String(expected ?? '').toLowerCase();
+  return COMMIT_SHA.test(a) && COMMIT_SHA.test(b) && (a.startsWith(b) || b.startsWith(a));
+}
+
+export const MISSING_EXPECTATION =
+  'set EXPECTED_DPL (a Vercel dpl_… deployment id now aliased to the origin) or EXPECTED_COMMIT (the git commit the origin must report at /api/build)';
+
+// One of EXPECTED_DPL and EXPECTED_COMMIT must be set; when both are, the origin must satisfy both.
+export function deploymentIdentityRefusal({ dpl, commit }, env = {}) {
+  const expectedDpl = String(env.EXPECTED_DPL ?? '').trim();
+  const expectedCommit = String(env.EXPECTED_COMMIT ?? '')
+    .trim()
+    .toLowerCase();
+  if (!expectedDpl && !expectedCommit) return MISSING_EXPECTATION;
+  if (expectedCommit && !COMMIT_SHA.test(expectedCommit)) {
+    return 'EXPECTED_COMMIT must be a git commit SHA of 7 to 40 hex characters';
+  }
+  const problems = [];
+  if (expectedDpl) {
+    const refusal = deploymentRefusal({ found: dpl, expected: expectedDpl });
+    if (refusal) problems.push(refusal);
+  }
+  if (expectedCommit && !commitMatches(commit, expectedCommit)) {
+    problems.push(`the origin reports ${commit ?? 'no commit'} at /api/build, not EXPECTED_COMMIT ${expectedCommit}`);
+  }
+  return problems.length ? problems.join('; ') : null;
+}
+
 // The email kind is the one flow that types and shows the tester mailbox, so its screenshots are not saved unless
 // asked for (PROOF_DIGITAL_EMAIL_SCREENSHOTS=1). Whenever a mailbox is configured, every saved screenshot has it
 // masked, including any field whose value holds it.

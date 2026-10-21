@@ -22,7 +22,8 @@
 // revocation is verified. The Shop publishes a default storefront (shop.json) for a Paykit-enabled
 // seller that opens payment settings; a storefront either seat did not have before the run is deleted
 // and verified gone from the homeserver and Nexus. Nothing else is written: the cart is local (Dexie) and is emptied.
-// Env: PROOF_EVIDENCE and EXPECTED_DPL (required), seats (see seats.mjs), PROOF_ORIGIN (with the mount path when
+// Env: PROOF_EVIDENCE, one of EXPECTED_DPL (a Vercel dpl_… id) or EXPECTED_COMMIT (the commit GET /api/build must report;
+// both are checked when both are set) (required), seats (see seats.mjs), PROOF_ORIGIN (with the mount path when
 // the Shop is embedded, e.g. https://pubky.app/shop-embed), PROOF_SERVICE (required), PROOF_RELAY, PROOF_CLIENT_ID (the
 // grant client id the Shop's QRs carry; default shop.pubky.app), PROOF_PAYPAL_LISTING_URL (optional listing path
 // for step 4), PROOF_BUYER_COUNTRY (answers the "Country you live in" prompt when the region flags are on), PROOF_BITCOIN_LISTING_URL (optional listing path for step 9), PROOF_NEXUS (required: listing discovery and
@@ -32,6 +33,8 @@
 // Output: 8-char pubky prefixes only; auth URLs, exports and bearers never print.
 import { appendFileSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { servedDeployment } from './deployment-check.mjs';
+import { MISSING_EXPECTATION } from './digital-proof.mjs';
 import {
   evidenceDir,
   loadBuyerSeat,
@@ -51,8 +54,7 @@ const { AuthFlowKind, Pubky, SigninGrantDeepLink } = repoRequire('@synonymdev/pu
 const { origin: ORIGIN, basePath: BASE_PATH, at } = proofTarget();
 const signInPath = `${BASE_PATH}/sign-in`;
 const EVIDENCE = evidenceDir();
-const EXPECTED_DPL = process.env.EXPECTED_DPL ?? '';
-if (!EXPECTED_DPL) throw new Error('set EXPECTED_DPL to the dpl_… id now aliased to the origin');
+if (!process.env.EXPECTED_DPL?.trim() && !process.env.EXPECTED_COMMIT?.trim()) throw new Error(MISSING_EXPECTATION);
 const SERVICE = requireProofEnv('PROOF_SERVICE');
 const RELAY = process.env.PROOF_RELAY ?? 'https://httprelay.pubky.app/inbox';
 const CAPABILITIES = shopCapabilities();
@@ -753,10 +755,10 @@ for (const keypair of [seat, buyerSeat]) {
 }
 const browser = await chromium.launch({ headless: true });
 try {
-  const html = await (await fetch(at('/marketplace'))).text();
-  const dpl = (html.match(/dpl_[A-Za-z0-9]+/) || [])[0] || null;
-  summary.dpl = dpl;
-  check('0', 'production serves the expected deployment', !EXPECTED_DPL || dpl === EXPECTED_DPL, `${dpl}`);
+  const deployment = await servedDeployment({ pageUrl: at('/marketplace'), buildUrl: at('/api/build') });
+  summary.dpl = deployment.dpl;
+  summary.commit = deployment.commit;
+  check('0', 'the origin serves the expected deployment', !deployment.refusal, deployment.refusal ?? deployment.found);
 
   // Journey A: Ring (steps 1, 5, 6) on one browser session.
   if (runs('1')) {

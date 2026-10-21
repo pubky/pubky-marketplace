@@ -8,7 +8,9 @@ import {
 } from '@/libs/commerce/digital';
 import {
   BITCOIN_WINDOW_MINUTES,
+  commitMatches,
   DELIVERABLES_PREFIX,
+  deploymentIdentityRefusal,
   deploymentRefusal,
   describePlan,
   DIGITAL_KINDS,
@@ -24,8 +26,10 @@ import {
   listingTitle,
   makeFixtureFile,
   minPriceCents,
+  MISSING_EXPECTATION,
   newDeliverablePaths,
   parseBtcUsdRate,
+  parseBuildCommit,
   parseKinds,
   parsePayTimeoutMinutes,
   parsePositiveMinutes,
@@ -347,5 +351,67 @@ describe('screenshots and the tester mailbox', () => {
     expect(screenshotPolicy({ kind: 'email', email: 'a@b.c', optIn: true }).mask).toBe(true);
     expect(screenshotPolicy({ kind: 'file', email: 'a@b.c', optIn: false }).mask).toBe(true);
     expect(screenshotPolicy({ kind: 'file', email: '', optIn: false }).mask).toBe(false);
+  });
+});
+
+describe('the commit-based deployment check', () => {
+  it('reads the commit from the build response and nothing else', () => {
+    expect(parseBuildCommit('{"commit":"ABCDEF012345"}')).toBe('abcdef012345');
+    for (const body of ['{"commit":"unknown"}', '{"commit":123}', '{}', 'not json', '', undefined]) {
+      expect(parseBuildCommit(body)).toBeNull();
+    }
+  });
+
+  it('matches a short build SHA against a short or full expectation', () => {
+    const full = 'abcdef0123456789abcdef0123456789abcdef01';
+    expect(commitMatches('abcdef012345', full)).toBe(true);
+    expect(commitMatches('abcdef012345', 'abcdef0')).toBe(true);
+    expect(commitMatches('abcdef012345', 'abcdef012345')).toBe(true);
+    expect(commitMatches('abcdef012345', `${full.slice(0, 11)}f${full.slice(12)}`)).toBe(false);
+    expect(commitMatches('abcdef012345', 'abcdef')).toBe(false);
+    expect(commitMatches(null, full)).toBe(false);
+    expect(commitMatches('abcdef012345', 'zzzzzzz')).toBe(false);
+  });
+
+  it('requires one of EXPECTED_DPL and EXPECTED_COMMIT', () => {
+    expect(deploymentIdentityRefusal({ dpl: 'dpl_A', commit: 'abcdef012345' }, {})).toBe(MISSING_EXPECTATION);
+    expect(
+      deploymentIdentityRefusal({ dpl: 'dpl_A', commit: 'abcdef012345' }, { EXPECTED_DPL: ' ', EXPECTED_COMMIT: '' }),
+    ).toBe(MISSING_EXPECTATION);
+  });
+
+  it('passes on either expectation alone and on both together', () => {
+    expect(deploymentIdentityRefusal({ dpl: 'dpl_A', commit: null }, { EXPECTED_DPL: 'dpl_A' })).toBeNull();
+    expect(deploymentIdentityRefusal({ dpl: null, commit: 'abcdef012345' }, { EXPECTED_COMMIT: 'abcdef0' })).toBeNull();
+    expect(
+      deploymentIdentityRefusal(
+        { dpl: 'dpl_A', commit: 'abcdef012345' },
+        { EXPECTED_DPL: 'dpl_A', EXPECTED_COMMIT: 'abcdef012345' },
+      ),
+    ).toBeNull();
+  });
+
+  it('refuses a wrong or missing identity, and a malformed EXPECTED_COMMIT', () => {
+    expect(deploymentIdentityRefusal({ dpl: null, commit: 'abcdef012345' }, { EXPECTED_COMMIT: '1234567' })).toContain(
+      'reports abcdef012345 at /api/build, not EXPECTED_COMMIT 1234567',
+    );
+    expect(deploymentIdentityRefusal({ dpl: null, commit: null }, { EXPECTED_COMMIT: 'abcdef0' })).toContain(
+      'no commit',
+    );
+    expect(
+      deploymentIdentityRefusal(
+        { dpl: 'dpl_B', commit: 'abcdef012345' },
+        { EXPECTED_DPL: 'dpl_A', EXPECTED_COMMIT: 'abcdef0' },
+      ),
+    ).toContain('dpl_B');
+    expect(
+      deploymentIdentityRefusal(
+        { dpl: 'dpl_A', commit: 'abcdef012345' },
+        { EXPECTED_DPL: 'dpl_A', EXPECTED_COMMIT: '1234567' },
+      ),
+    ).toContain('EXPECTED_COMMIT 1234567');
+    expect(deploymentIdentityRefusal({ dpl: null, commit: 'abcdef012345' }, { EXPECTED_COMMIT: 'main' })).toContain(
+      '7 to 40 hex',
+    );
   });
 });

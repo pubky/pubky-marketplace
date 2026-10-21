@@ -157,12 +157,18 @@ records the deploy ([Sentry → Releases](../sentry.md#releases)). Use it to con
 no version endpoint or build meta tag. For the marketplace service, the digest of the running image is the record; see
 [Backend releases](#backend-releases).
 
-The proof scripts' deployment-identity check (`EXPECTED_DPL`, below) reads a Vercel `dpl_…` deployment id from the
-served page. A deployment that serves no such id fails that check; a commit-based identity check for hosts without one
-is not implemented in the scripts yet.
+The proof scripts check that the origin serves the deployment under proof, and one of two expectations is required:
 
-After a deploy, `PROOF_ORIGIN=<origin> EXPECTED_DPL=dpl_<new> node scripts/release/served-checks.mjs` checks what the site
-serves with plain HTTP: the deployment id, that the Locks SDK wasm is named in a chunk and served as `application/wasm`
+- `EXPECTED_COMMIT`: the git commit (7 to 40 hex characters) that `GET /api/build` must report. It works on any host,
+  GCP included, once the build reports its commit (`GIT_COMMIT` build arg). The build route lives under the mount
+  path, so for the embedded build set `PROOF_ORIGIN=https://<app origin>/shop-embed` and the scripts read
+  `/shop-embed/api/build`. The build reports a short SHA; a full SHA or any prefix of at least 7 characters matches it.
+- `EXPECTED_DPL`: a Vercel `dpl_…` deployment id that the served page must name. For Vercel instances.
+
+When both are set the origin must satisfy both. With neither, the scripts refuse to run.
+
+After a deploy, `PROOF_ORIGIN=<origin> EXPECTED_COMMIT=<sha> node scripts/release/served-checks.mjs` checks what the site
+serves with plain HTTP: the deployment identity, that the Locks SDK wasm is named in a chunk and served as `application/wasm`
 byte-identical to the pinned SDK, USDT off in the served config, and the service's `/health`. The wasm sits in a lazy
 chunk, so the script reads webpack's chunk map (Next.js writes it in more than one shape) and crawls every chunk. It has
 no build-meta or version check; `/api/build` is for people confirming a deploy.
@@ -194,7 +200,7 @@ command line, or the evidence folder.
 | `PROOF_SELLER_PREFIX`, `PROOF_BUYER_PREFIX`               | Optional. The run stops unless each seat's pubky starts with this, which catches a swapped seat                                                                                                                                                                                                                                                                                                 |
 | `PAYPAL_TEST_EMAIL`                                       | PayPal address for the temporary seller rail. Never logged or written                                                                                                                                                                                                                                                                                                                           |
 | `PROOF_EVIDENCE`                                          | Evidence folder for this release, outside the repository (the scripts refuse a path inside it)                                                                                                                                                                                                                                                                                                  |
-| `EXPECTED_DPL`                                            | The `dpl_…` id now aliased to the origin. The proof fails if production serves anything else                                                                                                                                                                                                                                                                                                    |
+| `EXPECTED_COMMIT`, `EXPECTED_DPL`                         | One is required. `EXPECTED_COMMIT`: the commit `GET /api/build` must report (a full SHA or a prefix of at least 7 characters). `EXPECTED_DPL`: the Vercel `dpl_…` id now aliased to the origin. The proof fails if the origin serves anything else; with both set, both must match                                                                                                              |
 | `PROOF_CLIENT_ID`                                         | Optional. The grant client id the Shop's QRs must carry (`cid=`), the Shop's `PUBKY_RUNTIME_SHOP_GRANT_CLIENT_ID`. Default `shop.pubky.app`                                                                                                                                                                                                                                                     |
 | `PROOF_GS1`                                               | `1` where grant sessions are on (`MARKETPLACE_GRANT_SESSION_ENABLED` on the service, `PUBKY_RUNTIME_MARKETPLACE_GRANT_SESSION_ENABLED` on the Shop): step 1 also checks that sign-in minted the marketplace session from the grant, one challenge and one mint, with no further approval                                                                                                        |
 | `PROOF_STEPS`                                             | Optional comma-separated subset, e.g. `1,2,9`. Step 0 and cleanup always run; `1` runs the Ring journey with steps 5 and 6. Step 11 runs only when named                                                                                                                                                                                                                                        |
@@ -225,11 +231,11 @@ read -rs PAYPAL_TEST_EMAIL && export PAYPAL_TEST_EMAIL
 export PROOF_EVIDENCE=$HOME/shop-evidence/shop-vX.Y.Z/live-proof
 export PROOF_GS1=1
 mkdir -p "$PROOF_EVIDENCE"
-EXPECTED_DPL=dpl_<new> node scripts/release/production-paypal-fixture.mjs proof -- \
+EXPECTED_COMMIT=<sha> node scripts/release/production-paypal-fixture.mjs proof -- \
   node scripts/release/release-proof.mjs | tee "$PROOF_EVIDENCE/run.log"
 ```
 
-Without the PayPal fixture, run `EXPECTED_DPL=dpl_<new> node scripts/release/release-proof.mjs` directly; step 4
+Without the PayPal fixture, run `EXPECTED_COMMIT=<sha> node scripts/release/release-proof.mjs` directly; step 4
 then needs an existing PayPal-ready test listing on Nexus.
 
 The proof passes when `release-proof.mjs` prints `RESULT PASS n/n` (and, with the wrapper, the fixture prints
@@ -241,7 +247,7 @@ Step 3 is unused; step ids are stable across releases.
 
 | Step    | Checks                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 0       | The origin serves `EXPECTED_DPL`                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| 0       | The origin serves the expected deployment: `EXPECTED_COMMIT` equals the commit at `/api/build` and/or `EXPECTED_DPL` is named by the page                                                                                                                                                                                                                                                                                                                                                    |
 | 1       | Ring and Bitkit QRs are both live on `/sign-in`; the Ring QR is a `signin_grant` for the Shop's capabilities and `PROOF_CLIENT_ID` and is not in the DOM; one approval gives one grant `POST` 2xx and no cookie homeserver `POST /session` or marketplace `POST /v1/auth/sessions`; the seat is signed in with a grant record and no cookie export; both QRs are gone. With `PROOF_GS1=1`, sign-in also minted the marketplace session from the grant (one challenge and one mint, both 2xx) |
 | 2       | The Bitkit QR is a `signin_grant` for the Shop's capabilities and client id; approval signs in with a grant record; reload restores it; sign-out from Settings clears it and holds across a reload                                                                                                                                                                                                                                                                                           |
 | 4       | The buyer seat (Ring) reaches checkout on a PayPal listing; `payment-config` loads; PayPal is offered, selectable, and its Pay control renders (never clicked); no "no payment method" copy; no USDT at checkout; nothing is paid and no order command is sent; the cart is emptied; sign-out ends the grant session (`DELETE` 2xx)                                                                                                                                                          |
@@ -302,13 +308,13 @@ when discovery finds none. Production is the release gate.
 test seats: one `SMOKE FIXTURE, do not buy <run> <kind>` listing per delivery kind (file, link, text, "I'll email it", "I'll
 send it in messages"), a buyer checkout paid in Bitcoin, the delivery checks on both sides, then teardown and
 verification. It is not part of the release gate. It refuses to start without `PROOF_DIGITAL_GO=GO-<UTC date>`, which
-the product owner authorizes per run, and it needs both `PROOF_*_PREFIX` seat guards and `EXPECTED_DPL`.
+the product owner authorizes per run, and it needs both `PROOF_*_PREFIX` seat guards and `EXPECTED_COMMIT` or `EXPECTED_DPL`.
 
 Two guards are enforced in code. The script has no default target: every mode but `plan` refuses unless
 `PROOF_ORIGIN`, `PROOF_SERVICE` and `PROOF_NEXUS` are set, and then refuses unless all three are the staging stack named
 in `PROOF_STAGING_ORIGINS`, `PROOF_STAGING_SERVICES` and `PROOF_STAGING_NEXUS` (comma lists of URLs). With those lists
 unset every target counts as production, and `PROOF_ALLOW_PRODUCTION=1` is the explicit, deliberate way to run against
-production. Every mode that publishes or spends first checks that the origin serves `EXPECTED_DPL`, including `publish`
+production. Every mode that publishes or spends first checks that the origin serves the expected deployment (`EXPECTED_COMMIT` and/or `EXPECTED_DPL`), including `publish`
 and `await-buyer`. `plan` prints which side of that line the environment is on.
 
 The email kind types and shows the tester mailbox, so its screenshots are not saved unless `PROOF_DIGITAL_EMAIL_SCREENSHOTS=1`.
@@ -352,7 +358,7 @@ argument, and puts the kinds in `HOLD_SMOKE_DIGITAL_FIXTURE_KINDS` (comma separa
 | `teardown` | `production-digital-fixture.mjs teardown`                                                                                   |
 
 The wrapper is yours to write and keep outside the repository, because it carries the environment: the fixture seller's
-seat (see `seats.mjs`), `PROOF_SELLER_PREFIX`, `EXPECTED_DPL`, the day's `PROOF_DIGITAL_GO`, `PROOF_DIGITAL_KINDS`
+seat (see `seats.mjs`), `PROOF_SELLER_PREFIX`, `EXPECTED_COMMIT` or `EXPECTED_DPL`, the day's `PROOF_DIGITAL_GO`, `PROOF_DIGITAL_KINDS`
 set from `HOLD_SMOKE_DIGITAL_FIXTURE_KINDS`, `PROOF_ORIGIN`, `PROOF_SERVICE`, `PROOF_NEXUS` and `PROOF_RELAY` pointing
 at the staging stack, and a `PROOF_EVIDENCE` folder that is emptied before each `publish`. It must exit non-zero when a
 step fails: hold-smoke then runs `teardown` and a sweep, and stops if the seller still has any listing.

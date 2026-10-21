@@ -131,13 +131,20 @@ describe('production-digital-fixture.mjs expected deployment on publish', () => 
   let server: Server;
   let origin: string;
   let served = 'dpl_other';
+  let servedCommit = 'abcdef012345';
   let evidence: string;
 
   beforeEach(async () => {
     evidence = mkdtempSync(join(tmpdir(), 'digital-fixture-dpl-'));
     served = 'dpl_other';
+    servedCommit = 'abcdef012345';
     server = createServer((request, response) => {
       response.setHeader('content-type', 'text/html');
+      if (request.url === '/api/build') {
+        response.setHeader('content-type', 'application/json');
+        response.end(JSON.stringify({ commit: servedCommit }));
+        return;
+      }
       response.end(request.url === '/marketplace' ? `<html><script>window.d="${served}"</script></html>` : '');
     });
     await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
@@ -183,10 +190,24 @@ describe('production-digital-fixture.mjs expected deployment on publish', () => 
     expect(detail('publish')).toContain('no prepared state file; run prepare first');
   });
 
-  it('refuses a publish with no EXPECTED_DPL at all', async () => {
-    const outcome = await runScript('publish', { ...publishEnv(), EXPECTED_DPL: '' });
+  it('accepts a commit-only expectation that matches what /api/build reports', async () => {
+    const outcome = await runScript('publish', { ...publishEnv(), EXPECTED_DPL: '', EXPECTED_COMMIT: 'abcdef0' });
+    expect(outcome.code).toBe(1);
+    expect(outcome.stdout).toContain('the origin is serving the expected deployment abcdef012345');
+    expect(detail('publish')).toContain('no prepared state file; run prepare first');
+  });
+
+  it('refuses a commit-only expectation that does not match', async () => {
+    const outcome = await runScript('publish', { ...publishEnv(), EXPECTED_DPL: '', EXPECTED_COMMIT: '1234567' });
+    expect(outcome.code).toBe(1);
+    expect(detail('publish')).toContain('reports abcdef012345 at /api/build, not EXPECTED_COMMIT 1234567');
+  });
+
+  it('refuses a publish with neither EXPECTED_DPL nor EXPECTED_COMMIT', async () => {
+    const outcome = await runScript('publish', { ...publishEnv(), EXPECTED_DPL: '', EXPECTED_COMMIT: '' });
     expect(outcome.code).not.toBe(0);
     expect(outcome.stderr).toContain('EXPECTED_DPL');
+    expect(outcome.stderr).toContain('EXPECTED_COMMIT');
   });
 });
 

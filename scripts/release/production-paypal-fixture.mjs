@@ -18,7 +18,7 @@
 //
 // Env: PROOF_EVIDENCE (required; state and results are written there), seats (see seats.mjs),
 // PAYPAL_TEST_EMAIL (required for setup and proof, and for a teardown that restores it; never logged or
-// written to disk), EXPECTED_DPL (optional,
+// written to disk), EXPECTED_DPL and/or EXPECTED_COMMIT (optional here, the release proof requires one;
 // checked before checkout), PROOF_ORIGIN (with the mount path when embedded), PROOF_SERVICE, PROOF_NEXUS (all three required: there is no default
 // target), PROOF_RELAY, PROOF_FIXTURE_PHOTO.
 // Exit 0 only when every check passed; teardown and verify exit 1 while anything is left behind.
@@ -27,6 +27,7 @@ import { randomBytes } from 'node:crypto';
 import { chmodSync, existsSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { servedDeployment } from './deployment-check.mjs';
 import { purchaseFailure } from './listing-purchase.mjs';
 import {
   evidenceDir,
@@ -451,9 +452,9 @@ async function checkout() {
   if (!state?.listingId) throw new Error('no published fixture in the state file; run setup first');
   const { browser, page, commands } = await openBrowser();
   try {
-    if (process.env.EXPECTED_DPL) {
-      const dpl = ((await (await fetch(at('/marketplace'))).text()).match(/dpl_[A-Za-z0-9]+/) || [])[0] || null;
-      check('checkout: expected deployment is live', dpl === process.env.EXPECTED_DPL, String(dpl));
+    if (process.env.EXPECTED_DPL?.trim() || process.env.EXPECTED_COMMIT?.trim()) {
+      const deployment = await servedDeployment({ pageUrl: at('/marketplace'), buildUrl: at('/api/build') });
+      check('checkout: expected deployment is live', !deployment.refusal, deployment.refusal ?? deployment.found);
     }
     await ringSignIn(page, buyer);
     log(`buyer ${prefix(buyer.publicKey.z32())} signed in`);
