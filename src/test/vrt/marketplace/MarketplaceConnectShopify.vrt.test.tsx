@@ -15,8 +15,8 @@ vi.mock('@/controllers/connectors/connectors', () => ({
     commitCreateShopifyDraft: vi.fn(),
     commitShopifyCredentials: vi.fn(),
     draftUrls: () => ({
-      appUrl: `https://staging-api.pubky.app/v1/connectors/shopify/c/3f2b8a52-6c1e-4d0a-9a53-7d5d2f0b61aa/launch`,
-      allowedRedirectionUrl: `https://staging-api.pubky.app/v1/connectors/shopify/c/3f2b8a52-6c1e-4d0a-9a53-7d5d2f0b61aa/oauth/callback`,
+      appUrl: `https://marketplace-service.example.test/v1/connectors/shopify/c/3f2b8a52-6c1e-4d0a-9a53-7d5d2f0b61aa/launch`,
+      allowedRedirectionUrl: `https://marketplace-service.example.test/v1/connectors/shopify/c/3f2b8a52-6c1e-4d0a-9a53-7d5d2f0b61aa/oauth/callback`,
       webhookUrl: null,
     }),
   },
@@ -25,7 +25,7 @@ vi.mock('@/controllers/connectors/connectors', () => ({
 const draft = connectionFixture({
   id: ID,
   provider: 'shopify',
-  domain: 'john-staging.myshopify.com',
+  domain: 'example-store.myshopify.com',
   status: 'draft',
   credentialsSaved: false,
 });
@@ -33,12 +33,12 @@ const draft = connectionFixture({
 const connected = connectionFixture({
   id: ID,
   provider: 'shopify',
-  domain: 'john-staging.myshopify.com',
+  domain: 'example-store.myshopify.com',
   status: 'connected',
   scopes: [...SHOPIFY_REQUIRED_SCOPES],
 });
 
-const store = { shopName: 'John Staging', grantedScopes: [...SHOPIFY_REQUIRED_SCOPES], locationCount: 1 };
+const store = { shopName: 'Example Store', grantedScopes: [...SHOPIFY_REQUIRED_SCOPES], locationCount: 1 };
 
 function Guide({
   resume,

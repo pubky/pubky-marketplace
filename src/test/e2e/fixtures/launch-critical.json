@@ -2,7 +2,7 @@
   "os": "linux",
   "browser": "chromium",
   "playwright": "1.60.0",
-  "serviceUrl": "https://staging-api.pubky.app",
+  "serviceUrl": "https://marketplace-service.example.test",
   "catalogHeading": "Find something rare.",
   "forbiddenSandboxCopy": "Sandbox · no real funds",
   "joinDialogHeading": "Join Pubky",

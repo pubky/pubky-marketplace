@@ -17,7 +17,6 @@ Handoff readiness lives in these docs; start with the team brief.
 - [Feature inventory](ecommerce/FEATURES.md): every marketplace feature with its honesty label, including digital delivery.
 - [Status](ecommerce/status.md): what is real, simulated or deferred, with the proof ledger. The authority on honesty about the feature.
 - [Release](ecommerce/release.md) and [release notes](ecommerce/release-notes/): the release lane, the pre-push and release gates, and the notes for each `shop-v*` tag.
-- [Production runbook](ecommerce/runbook-production.md): kill switches and rollback.
 - [Environment variables](environment.md): build-time and `PUBKY_RUNTIME_*` configuration, including the marketplace, Paykit, USDT and framing keys.
 - [USDT payments](ecommerce/usdt-payments.md): the dark flag, the payment option model and the service gate.
 - [Serving the Shop inside pubky.app](launch/shop-embedding.md): base path, framing, embedded mode and the `shop-` storage namespace.
@@ -76,13 +75,12 @@ Single source of truth for all project standards, conventions, and architectural
 
 #### Shop (marketplace)
 
-| File                              | Description                                                                   |
-| --------------------------------- | ----------------------------------------------------------------------------- |
-| `ecommerce/onboarding.md`         | Start here: repositories, access, run, test, merge, who to ask                |
-| `ecommerce/RUNNING.md`            | Running the marketplace locally in every mode, and the live test suites       |
-| `ecommerce/release.md`            | Release train, VRT baselines, Vercel deploy, signed-in production proof, tags |
-| `ecommerce/runbook-production.md` | Kill switch, rollback, `shop.pubky.app` rule, Railway restarts                |
-| `ecommerce/status.md`             | What is real and what is simulated                                            |
+| File                      | Description                                                             |
+| ------------------------- | ----------------------------------------------------------------------- |
+| `ecommerce/onboarding.md` | Start here: repositories, access, run, test, merge, who to ask          |
+| `ecommerce/RUNNING.md`    | Running the marketplace locally in every mode, and the live test suites |
+| `ecommerce/release.md`    | Release train, VRT baselines, signed-in production proof, tags          |
+| `ecommerce/status.md`     | What is real and what is simulated                                      |
 
 #### Migrations
 

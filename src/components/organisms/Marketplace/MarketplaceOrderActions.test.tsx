@@ -166,6 +166,38 @@ describe('MarketplaceOrderActions review editing', () => {
   });
 });
 
+describe('MarketplaceOrderActions review disclosure', () => {
+  it('tells the buyer the review is public, tied to their Pubky, and shows the purchase', async () => {
+    const user = userEvent.setup();
+    renderActions({ withOwnReview: false });
+
+    await user.click(screen.getByRole('button', { name: 'Leave review' }));
+    expect(screen.getByTestId('review-disclosure')).toHaveTextContent(
+      'Your review is public, tied to your Pubky, and shows you bought this item.',
+    );
+  });
+
+  it('tells a seller reviewing a buyer that the review shows the buyer ordered from them', async () => {
+    const user = userEvent.setup();
+    const order = createOrderFixture('completed', { reviews: [] });
+    render(<MarketplaceOrderActions order={order} isBuyer={false} canEditReview={false} actOnOrder={vi.fn()} />);
+
+    await user.click(screen.getByRole('button', { name: 'Leave review' }));
+    expect(screen.getByTestId('review-disclosure')).toHaveTextContent(
+      'Your review is public, tied to your Pubky, and shows this buyer ordered from you.',
+    );
+  });
+
+  it('says in the band opt-in helper text that the band becomes public', async () => {
+    mockedController.getMarketplaceBandConsent.mockResolvedValue(true);
+    const user = userEvent.setup();
+    renderActions({ withOwnReview: false });
+
+    await user.click(screen.getByRole('button', { name: 'Leave review' }));
+    expect(await screen.findByText(/it becomes public with your review/i)).toBeInTheDocument();
+  });
+});
+
 describe('MarketplaceOrderActions amount-band opt-in (D2 both-sides consent)', () => {
   it('renders the opt-in only when the seller consented, and submits the buyer choice', async () => {
     mockedController.getMarketplaceBandConsent.mockResolvedValue(true);

@@ -5,7 +5,8 @@
 //   STAGING_ADMIN_PASSWORD=... node scripts/probe-listing-registration.mjs <sellerPubky> <listingId>
 import { AuthFlowKind, Keypair, Pubky, PublicKey } from '@synonymdev/pubky';
 
-const SERVICE_URL = process.env.MARKETPLACE_SERVICE_URL ?? 'https://staging-api.pubky.app';
+const SERVICE_URL = process.env.MARKETPLACE_SERVICE_URL ?? '';
+if (!SERVICE_URL) throw new Error('set MARKETPLACE_SERVICE_URL to the service to probe');
 const HOMESERVER_ADMIN = 'https://admin.homeserver.staging.pubky.app/generate_signup_token';
 const ADMIN_PASSWORD = process.env.STAGING_ADMIN_PASSWORD;
 const HOMESERVER_PUBKY = process.env.STAGING_HOMESERVER_PUBKY ?? '5eh8kjqfx4o7comfbtnqqxxi6oz3axeqfotpi7oiepwmoym1i16o';
