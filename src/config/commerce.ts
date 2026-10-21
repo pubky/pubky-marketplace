@@ -219,5 +219,8 @@ export const COMMERCE_SHOP_FOCUS_REVALIDATE_MIN_MS = 15_000;
 /** Wait after a seller's shop event before re-reading it, so a burst (or the replay on connect) reads once. */
 export const COMMERCE_SHOP_EVENT_DEBOUNCE_MS = 500;
 
-/** Wait before reconnecting a seller's shop event stream after it failed or ended. */
+/** First wait before reconnecting a seller's shop event stream after it failed or ended; doubles per failure in a row. */
 export const COMMERCE_SHOP_EVENT_RECONNECT_MS = 5_000;
+
+/** Longest wait between reconnects of a seller's shop event stream. */
+export const COMMERCE_SHOP_EVENT_RECONNECT_MAX_MS = 60_000;

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { ArrowLeft, LayoutDashboard, Store, User, UserCheck, UserPlus } from 'lucide-react';
 import { APP_ROUTES, getProfileRoute, MARKETPLACE_ROUTES, PROFILE_ROUTES } from '@/app/routes';
@@ -48,26 +48,16 @@ export function MarketplaceShop({ sellerPubky }: { sellerPubky: string }) {
   const isEmbedded = useIsEmbedded();
   // The shop record lives on the seller's homeserver; a visitor's local cache
   // may not hold it yet, so resolve network-first and only then treat a
-  // missing record as "this seller has no shop".
-  const [shopFetchSettled, setShopFetchSettled] = useState(false);
+  // missing record as "this seller has no shop". The hook also keeps it
+  // current while the page is open.
+  const shopFetchSettled = useLiveSellerShop(sellerPubky, { live: getCommerceAdapterMode() !== 'sandbox' });
 
   useEffect(() => {
-    let active = true;
-    setShopFetchSettled(false);
-    CommerceController.refreshShopOrGetCached(sellerPubky)
-      .catch(() => undefined)
-      .finally(() => {
-        if (active) setShopFetchSettled(true);
-      });
     // Best-effort: hydrate this seller's listings from the Nexus index so a
     // direct shop visit is not limited to what this device already cached.
     void CommerceController.fetchSellerCatalogListings(sellerPubky).catch(() => undefined);
-    return () => {
-      active = false;
-    };
   }, [sellerPubky]);
 
-  useLiveSellerShop(sellerPubky, getCommerceAdapterMode() !== 'sandbox');
   const shop = useLiveQuery(() => CommerceController.getShop(sellerPubky), [sellerPubky]);
   // Same two catalog sources as the home grid: hydrated canonical records
   // plus Nexus index projections discovered for this seller.

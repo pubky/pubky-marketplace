@@ -510,6 +510,21 @@ describe('CommerceApplication', () => {
     await expect(CommerceApplication.getOrFetchShop(COMMERCE_FIXTURE_SELLER)).rejects.toBe(failure);
   });
 
+  it("reads the cursor of the seller's latest shop write", async () => {
+    vi.spyOn(HomeserverService, 'resolveHomeserverOf').mockResolvedValue('h'.repeat(52));
+    const subscribe = vi.spyOn(HomeserverService, 'subscribeHomeserverEventStream').mockResolvedValue(
+      new ReadableStream({
+        start(controller) {
+          controller.enqueue({ cursor: '259582', eventType: 'PUT', owner: COMMERCE_FIXTURE_SELLER, path: '' });
+          controller.close();
+        },
+      }),
+    );
+
+    await expect(CommerceApplication.latestShopEventCursor(COMMERCE_FIXTURE_SELLER)).resolves.toBe('259582');
+    expect(subscribe).toHaveBeenCalledWith(expect.objectContaining({ latestOnly: true }));
+  });
+
   it("subscribes to the seller's homeserver events for their shop record only", async () => {
     const stream = new ReadableStream();
     vi.spyOn(HomeserverService, 'resolveHomeserverOf').mockResolvedValue('h'.repeat(52));
