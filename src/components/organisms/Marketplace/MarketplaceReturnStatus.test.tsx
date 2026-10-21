@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { createOrderFixture } from '@/test/fixtures/commerce/orders';
@@ -18,7 +18,24 @@ describe('MarketplaceReturnStatus', () => {
     expect(screen.getByTestId('order-return-status')).toHaveTextContent('Item does not match the described condition');
 
     await userEvent.click(screen.getByRole('button', { name: 'Cancel return' }));
+    expect(await screen.findByRole('dialog', { name: 'Cancel this return?' })).toHaveTextContent(
+      'You may not be able to request another one after the return window closes.',
+    );
+    expect(actOnOrder).not.toHaveBeenCalled();
+
+    await userEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Cancel return' }));
     expect(actOnOrder).toHaveBeenCalledWith(order, 'return.cancel', {});
+  });
+
+  it('sends nothing when the buyer keeps the return', async () => {
+    const actOnOrder = vi.fn(async () => true);
+    render(<MarketplaceReturnStatus order={createOrderFixture('return_requested')} isBuyer actOnOrder={actOnOrder} />);
+
+    await userEvent.click(screen.getByRole('button', { name: 'Cancel return' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Keep return' }));
+
+    expect(actOnOrder).not.toHaveBeenCalled();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 
   it('offers no Cancel return once the seller approved', () => {

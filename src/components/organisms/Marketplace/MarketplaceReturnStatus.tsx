@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { Badge } from '@/atoms/Badge/Badge';
 import { Button } from '@/atoms/Button/Button';
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/atoms/Dialog/Dialog';
 import { Heading } from '@/atoms/Heading/Heading';
 import { Typography } from '@/atoms/Typography/Typography';
 import { formatOrderInstant } from '@/libs/commerce/checkout-hold';
@@ -33,6 +34,9 @@ export const RETURN_STATUS_COPY = {
   } satisfies Record<ReturnState, string>,
   cancel: 'Cancel return',
   cancelling: 'Cancelling…',
+  confirmTitle: 'Cancel this return?',
+  confirmBody: 'You may not be able to request another one after the return window closes.',
+  keep: 'Keep return',
 } as const;
 
 /**
@@ -51,6 +55,7 @@ export function MarketplaceReturnStatus({
   actOnOrder: (order: MarketplaceOrder, kind: string, payload: Record<string, unknown>) => Promise<boolean>;
 }) {
   const [cancelling, setCancelling] = useState(false);
+  const [confirming, setConfirming] = useState(false);
   const request = order.returnRequest;
   if (!request) return null;
   const amount = formatCommerceMoney({ ...order.total, amountMinor: request.requestedAmountMinor });
@@ -63,6 +68,7 @@ export function MarketplaceReturnStatus({
       await actOnOrder(order, 'return.cancel', {});
     } finally {
       setCancelling(false);
+      setConfirming(false);
     }
   };
 
@@ -96,12 +102,29 @@ export function MarketplaceReturnStatus({
           size="default"
           variant="secondary"
           className="justify-self-start rounded-full"
-          disabled={cancelling}
-          onClick={() => void cancel()}
+          onClick={() => setConfirming(true)}
         >
-          {cancelling ? RETURN_STATUS_COPY.cancelling : RETURN_STATUS_COPY.cancel}
+          {RETURN_STATUS_COPY.cancel}
         </Button>
       )}
+      <Dialog open={confirming} onOpenChange={setConfirming}>
+        <DialogContent className="w-full max-w-lg border-border bg-popover" centered>
+          <DialogHeader>
+            <DialogTitle>{RETURN_STATUS_COPY.confirmTitle}</DialogTitle>
+          </DialogHeader>
+          <Typography as="p" className="text-sm text-muted-foreground">
+            {RETURN_STATUS_COPY.confirmBody}
+          </Typography>
+          <DialogFooter>
+            <Button variant="secondary" className="rounded-full" onClick={() => setConfirming(false)}>
+              {RETURN_STATUS_COPY.keep}
+            </Button>
+            <Button className="rounded-full" disabled={cancelling} onClick={() => void cancel()}>
+              {cancelling ? RETURN_STATUS_COPY.cancelling : RETURN_STATUS_COPY.cancel}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </section>
   );
 }
