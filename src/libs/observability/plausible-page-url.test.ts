@@ -166,6 +166,26 @@ describe('plausiblePageUrlFromHref', () => {
   });
 });
 
+const PAGE_ORIGIN = location.origin;
+
+/** Referrers and what is sent for them from a page at `PAGE_ORIGIN`. */
+const REFERRER_CASES: { name: string; input: string; expected: string }[] = [
+  {
+    name: 'same-origin page as its route template',
+    input: `${PAGE_ORIGIN}/messages/${BUYER}?conversation=x`,
+    expected: `${PAGE_ORIGIN}/messages/:pubky`,
+  },
+  {
+    name: 'cross-origin page as its origin',
+    input: `https://example.com/profile/${SELLER}?q=1`,
+    expected: 'https://example.com',
+  },
+  { name: 'empty as nothing', input: '', expected: '' },
+  { name: 'invalid as nothing', input: 'not a url', expected: '' },
+  { name: 'relative as nothing', input: '/relative/path', expected: '' },
+  { name: 'non-http as nothing', input: `android-app://app/${SELLER}`, expected: '' },
+];
+
 describe('plausibleReferrerFromHref', () => {
   it('sends same-origin referrers as route templates', () => {
     expect(plausibleReferrerFromHref(`${ORIGIN}/messages/${BUYER}?conversation=x`, ORIGIN)).toBe(
@@ -180,15 +200,11 @@ describe('plausibleReferrerFromHref', () => {
     expect(plausibleReferrerFromHref(`https://example.com/profile/${SELLER}?q=1`, ORIGIN)).toBe('https://example.com');
   });
 
-  it('sends nothing for an empty, invalid or non-http referrer', () => {
-    expect(plausibleReferrerFromHref('', ORIGIN)).toBe('');
-    expect(plausibleReferrerFromHref('not a url', ORIGIN)).toBe('');
-    expect(plausibleReferrerFromHref('/relative/path', ORIGIN)).toBe('');
-    expect(plausibleReferrerFromHref(`android-app://app/${SELLER}`, ORIGIN)).toBe('');
+  it.each(REFERRER_CASES)('sends a $name referrer', ({ input, expected }) => {
+    expect(plausibleReferrerFromHref(input, PAGE_ORIGIN)).toBe(expected);
   });
 });
 
-const PAGE_ORIGIN = location.origin;
 const MALFORMED_ESCAPE = '%E0%A4%A';
 const PAGE_HREF = `${PAGE_ORIGIN}/invite/${INVITE_CODE}`;
 const REFERRER_HREF = `${PAGE_ORIGIN}/messages/${BUYER}?conversation=x`;
@@ -391,19 +407,37 @@ describe('plausiblePageUrlBootstrap', () => {
     expect(sendBeacon.mock.lastCall?.[1]).toBe(expected);
   });
 
+  it('keeps only pubky-free segments of a non-http URL', () => {
+    runBootstrap('');
+    expect(beaconPageUrl(`file:///profile/${SELLER}?q=1`)).toBe('file:///profile/:pubky');
+  });
+
+  it.each(REFERRER_CASES)('sends a $name referrer', ({ input, expected }) => {
+    runBootstrap('');
+    navigator.sendBeacon('/api/event', JSON.stringify({ n: 'pageview', u: `${location.origin}/`, r: input }));
+    expect((JSON.parse(sendBeacon.mock.lastCall?.[1] as string) as { r: string }).r).toBe(expected);
+  });
+
   it('maps every app route to its route template', () => {
     runBootstrap('');
     expect(routeMismatches(beaconPageUrl)).toEqual([]);
   });
 
   it('sends route templates for window.plausible page URLs', () => {
+    const originalPath = location.pathname + location.search + location.hash;
     runBootstrap('');
     plausibleWindow.plausible?.('pageview', { u: `${location.origin}/messages/${BUYER}?conversation=x` });
-    plausibleWindow.plausible?.('signup');
+    history.pushState({}, '', `/profile/${SELLER}?ref=x`);
+    try {
+      plausibleWindow.plausible?.('signup');
+    } finally {
+      history.replaceState({}, '', originalPath);
+    }
     expect(plausibleWindow.plausible?.q).toEqual([
       ['pageview', { u: `${location.origin}/messages/:pubky` }],
-      ['signup', { u: `${location.origin}${location.pathname}` }],
+      ['signup', { u: `${location.origin}/profile/:pubky` }],
     ]);
+    expect(JSON.stringify(plausibleWindow.plausible?.q)).not.toMatch(Z32_RUN);
   });
 });
 
