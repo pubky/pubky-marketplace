@@ -1,10 +1,12 @@
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { AwaitingReleaseReview } from '@/application/commerce/commerce';
 import { COMMERCE_REVIEW_EDIT_WINDOW_SECONDS } from '@/config/commerce';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import type { CommerceReviewModelSchema } from '@/models/commerce/commerce.schema';
 import type { MarketplaceOrder } from '@/services/marketplace/marketplace';
+import { marketplaceOrderSchema } from '@/services/marketplace/marketplace-projections';
 import {
   createOrderFixture,
   createUsdtOrderFixture,
@@ -22,6 +24,7 @@ vi.mock('@/controllers/commerce/commerce', () => ({
   CommerceController: {
     getMarketplaceBandConsent: vi.fn(async () => null),
     getOwnMarketplaceOrderReviews: vi.fn(async () => []),
+    getAwaitingReleaseOwnMarketplaceReviews: vi.fn(async () => []),
     commitMarkReady: vi.fn(async () => ({ ok: true })),
     commitConfirmPickup: vi.fn(async () => ({ ok: true })),
     executeMarketplaceCommand: vi.fn(async () => ({
@@ -43,6 +46,7 @@ const mockedController = vi.mocked(CommerceController);
 beforeEach(() => {
   mockedController.getMarketplaceBandConsent.mockReset().mockResolvedValue(null);
   mockedController.getOwnMarketplaceOrderReviews.mockReset().mockResolvedValue([]);
+  mockedController.getAwaitingReleaseOwnMarketplaceReviews.mockReset().mockResolvedValue([]);
 });
 
 const WINDOW_MS = COMMERCE_REVIEW_EDIT_WINDOW_SECONDS * 1000;
@@ -361,6 +365,60 @@ describe('MarketplaceOrderActions own-review verified status', () => {
     await waitFor(() => {
       expect(screen.getByTestId('own-review-status')).toHaveTextContent(/publication status will appear/);
     });
+  });
+});
+
+describe('MarketplaceOrderActions a review the double-blind window withholds', () => {
+  function held(overrides: Partial<AwaitingReleaseReview> = {}): AwaitingReleaseReview {
+    return {
+      orderId: createOrderFixture('completed').id,
+      releaseAt: '2026-11-01T00:00:00.000Z',
+      reviewerRole: 'buyer',
+      items: [],
+      ...overrides,
+    };
+  }
+
+  it('says when the buyer’s review publishes, instead of a publication status', async () => {
+    mockedController.getAwaitingReleaseOwnMarketplaceReviews.mockResolvedValue([held()]);
+    renderActions();
+
+    expect(await screen.findByTestId('own-review-pending')).toHaveTextContent(
+      'Publishes when the seller reviews, or on Nov 1, 2026',
+    );
+    expect(screen.getByTestId('own-review-status')).not.toHaveTextContent(/publication status will appear/);
+  });
+
+  it('mirrors the wording for the seller', async () => {
+    mockedController.getAwaitingReleaseOwnMarketplaceReviews.mockResolvedValue([held({ reviewerRole: 'seller' })]);
+    const order = createOrderFixture('completed', {
+      reviews: [{ ...ownReview(new Date(Date.now() - 60_000).toISOString()), reviewerPubky: ORDER_FIXTURE_SELLER }],
+    });
+    render(<MarketplaceOrderActions order={order} isBuyer={false} canEditReview={true} actOnOrder={vi.fn()} />);
+
+    expect(await screen.findByTestId('own-review-pending')).toHaveTextContent(
+      'Publishes when the buyer reviews, or on Nov 1, 2026',
+    );
+  });
+
+  it('ignores a review held for another order', async () => {
+    mockedController.getAwaitingReleaseOwnMarketplaceReviews.mockResolvedValue([held({ orderId: 'another-order' })]);
+    renderActions();
+
+    await waitFor(() => expect(screen.getByTestId('own-review-status')).toHaveTextContent(/publication status/));
+    expect(screen.queryByTestId('own-review-pending')).not.toBeInTheDocument();
+  });
+
+  it('offers Leave review while only the counterparty’s withheld stub is on the order', async () => {
+    const order = marketplaceOrderSchema.parse({
+      ...createOrderFixture('completed'),
+      reviews: [{ role: 'seller', submitted: true }],
+    });
+    render(<MarketplaceOrderActions order={order} isBuyer={true} canEditReview={true} actOnOrder={vi.fn()} />);
+
+    expect(await screen.findByRole('button', { name: 'Leave review' })).toBeInTheDocument();
+    expect(screen.queryByTestId('own-review-status')).not.toBeInTheDocument();
+    expect(mockedController.getAwaitingReleaseOwnMarketplaceReviews).not.toHaveBeenCalled();
   });
 });
 

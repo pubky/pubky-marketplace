@@ -426,6 +426,63 @@ describe('useMarketplaceOrders', () => {
       },
     );
 
+    it('says when a withheld review publishes instead of claiming it was published', async () => {
+      const { result } = renderHook(() => useMarketplaceOrders());
+      await waitFor(() => expect(result.current.orders).toHaveLength(1));
+      const order = result.current.orders[0].order;
+      const commandResult = {
+        kind: 'review' as const,
+        attestationStatus: 'pending',
+        releaseAt: '2026-11-01T00:00:00.000Z',
+      };
+      vi.mocked(CommerceController.executeMarketplaceCommand).mockResolvedValueOnce({
+        ok: true,
+        version: 1,
+        commandId: '00000000-0000-4000-8000-000000001112',
+        aggregateId: `order:${order.id}`,
+        revision: 2,
+        eventIds: [],
+        result: commandResult,
+      });
+      vi.mocked(CommerceController.publishOwnMarketplaceReviews).mockResolvedValueOnce([]);
+      vi.mocked(toast).mockClear();
+
+      let succeeded = false;
+      await act(async () => {
+        succeeded = await result.current.actOnOrder(order, 'review.create', { items });
+      });
+
+      expect(succeeded).toBe(true);
+      expect(CommerceController.publishOwnMarketplaceReviews).toHaveBeenCalledWith(order, commandResult);
+      expect(vi.mocked(toast)).toHaveBeenCalledTimes(1);
+      expect(vi.mocked(toast)).toHaveBeenCalledWith({
+        description: 'Your review is saved. Publishes when the seller reviews, or on Nov 1, 2026.',
+      });
+    });
+
+    it('shows the service message when a review is refused because the window has closed', async () => {
+      const { result } = renderHook(() => useMarketplaceOrders());
+      await waitFor(() => expect(result.current.orders).toHaveLength(1));
+      const order = result.current.orders[0].order;
+      vi.mocked(CommerceController.executeMarketplaceCommand).mockResolvedValueOnce({
+        ok: false,
+        error: { code: 'INVALID_STATE', message: 'The review window has closed.' },
+      });
+      vi.mocked(toast).mockClear();
+
+      let succeeded = true;
+      await act(async () => {
+        succeeded = await result.current.actOnOrder(order, 'review.create', { items });
+      });
+
+      expect(succeeded).toBe(false);
+      expect(CommerceController.publishOwnMarketplaceReviews).not.toHaveBeenCalled();
+      expect(vi.mocked(toast)).toHaveBeenCalledWith({
+        variant: 'error',
+        description: 'The review window has closed.',
+      });
+    });
+
     it('still reports a refused review whose listings the order does not show as reviewed', async () => {
       const { result } = renderHook(() => useMarketplaceOrders());
       await waitFor(() => expect(result.current.orders).toHaveLength(1));
