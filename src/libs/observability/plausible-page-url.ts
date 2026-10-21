@@ -2,7 +2,8 @@
  * Analytics page and referrer URLs carry route templates, not identifiers
  * (`docs/ecommerce/onboarding.md`: telemetry carries static text only). Plausible
  * classic scripts record `location.href` and `document.referrer`; both are reduced
- * to origin + route template, for example `/profile/:pubky/followers`.
+ * to origin + route template, for example `/profile/:pubky/followers`. Hosts of
+ * other origins keep their labels, with each pubky label as `:pubky`.
  */
 
 /** z-base-32, the alphabet of pubky public keys. */
@@ -96,9 +97,13 @@ function isHttpUrl(url: URL): boolean {
   return url.protocol === 'http:' || url.protocol === 'https:';
 }
 
-/** Host of a non-http(s) referrer, with a pubky host as `:pubky`. */
-function appReferrerHost(url: URL): string {
-  return isPubkySegment(url.hostname) ? ':pubky' : url.host;
+/** Scheme and host of a referrer, with each pubky label of the host name as `:pubky`. */
+function referrerSchemeAndHost(url: URL): string {
+  const hostname = url.hostname
+    .split('.')
+    .map((label) => (isPubkySegment(label) ? ':pubky' : label))
+    .join('.');
+  return `${url.protocol}//${hostname}${url.port ? `:${url.port}` : ''}`;
 }
 
 export function plausiblePageUrlFromHref(href: string, base = 'https://invalid.invalid', basePath = ''): string {
@@ -114,17 +119,18 @@ export function plausiblePageUrlFromHref(href: string, base = 'https://invalid.i
 }
 
 /**
- * Same-origin referrers get the page treatment; other http(s) origins keep only the
- * origin. Other schemes keep scheme and host, such as the app referrer
+ * Same-origin referrers get the page treatment. Other referrers keep only scheme
+ * and host, such as `https://example.com` or the app referrer
  * `android-app://com.google.android.gm`, or send nothing when there is no host.
- * A host that is a pubky becomes `:pubky`, so `pubky://<pubky>/profile` is sent as
- * `pubky://:pubky`.
+ * Each host name label that is a pubky becomes `:pubky`, so
+ * `https://_pubky.<pubky>/pub/x` is sent as `https://_pubky.:pubky` and
+ * `pubky://<pubky>/profile` as `pubky://:pubky`.
  */
 export function plausibleReferrerFromHref(ref: string, pageOrigin: string, basePath = ''): string {
   try {
     const url = new URL(ref);
-    if (!isHttpUrl(url)) return url.host ? `${url.protocol}//${appReferrerHost(url)}` : '';
-    return url.origin === pageOrigin ? plausiblePageUrlFromHref(ref, pageOrigin, basePath) : url.origin;
+    if (isHttpUrl(url) && url.origin === pageOrigin) return plausiblePageUrlFromHref(ref, pageOrigin, basePath);
+    return url.host ? referrerSchemeAndHost(url) : '';
   } catch {
     return '';
   }
@@ -246,14 +252,18 @@ export function plausiblePageUrlBootstrap(basePath: string): string {
     } catch (e) {}
     return applyRouteTemplates(String(href).split('#')[0].split('?')[0], []);
   }
-  function appReferrerHost(url){
-    return isPubkySegment(url.hostname) ? ':pubky' : url.host;
+  function referrerSchemeAndHost(url){
+    var labels = url.hostname.split('.');
+    for (var i = 0; i < labels.length; i++) {
+      if (isPubkySegment(labels[i])) labels[i] = ':pubky';
+    }
+    return url.protocol + '//' + labels.join('.') + (url.port ? ':' + url.port : '');
   }
   function referrerUrl(ref){
     try {
       var url = new URL(ref);
-      if (!isHttpUrl(url)) return url.host ? url.protocol + '//' + appReferrerHost(url) : '';
-      return url.origin === location.origin ? pageUrl(ref) : url.origin;
+      if (isHttpUrl(url) && url.origin === location.origin) return pageUrl(ref);
+      return url.host ? referrerSchemeAndHost(url) : '';
     } catch (e) {
       return '';
     }

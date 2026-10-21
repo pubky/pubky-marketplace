@@ -187,6 +187,17 @@ const REFERRER_CASES: { name: string; input: string; expected: string }[] = [
     input: `https://example.com/profile/${SELLER}?q=1`,
     expected: 'https://example.com',
   },
+  { name: 'cross-origin pubky host as a template', input: `https://${SELLER}/blog`, expected: 'https://:pubky' },
+  {
+    name: 'cross-origin pubky subdomain as a template',
+    input: `https://_pubky.${SELLER}/pub/x`,
+    expected: 'https://_pubky.:pubky',
+  },
+  {
+    name: 'cross-origin pubky host with a port as a template',
+    input: `https://sub.${SELLER}:8443/`,
+    expected: 'https://sub.:pubky:8443',
+  },
   { name: 'empty as nothing', input: '', expected: '' },
   { name: 'invalid as nothing', input: 'not a url', expected: '' },
   { name: 'relative as nothing', input: '/relative/path', expected: '' },
