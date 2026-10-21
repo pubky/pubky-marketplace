@@ -39,18 +39,22 @@ describe.skipIf(!url)('replaceBridge on Postgres', () => {
     expiresAt: new Date(Date.now() + 60_000),
   });
 
-  it('takes concurrent pairings for one user and keeps one bridge, the last one written (#433)', async () => {
+  it('takes concurrent pairings for one user without error and keeps one bridge, from a pairing told it won (#433)', async () => {
     for (let round = 0; round < 5; round += 1) {
       const pubky = `${round}`.padEnd(52, 'p');
       const pairings = Array.from({ length: 8 }, () => pairing(pubky));
 
-      await expect(Promise.all(pairings.map((row) => replaceBridge(config, row)))).resolves.toHaveLength(8);
+      const installed = await Promise.all(pairings.map((row) => replaceBridge(config, row)));
 
       const rows = await admin!<{ bridge_id: string }[]>`
         SELECT bridge_id FROM shop_grant_bff.session_bridge WHERE pubky = ${pubky}
       `;
       expect(rows).toHaveLength(1);
-      expect(pairings.map(({ bridgeId }) => bridgeId)).toContain(rows[0].bridge_id);
+      // The bridge that stays was installed by a pairing told it won; none that
+      // yielded (and so set no cookie) owns it.
+      const winner = pairings.findIndex(({ bridgeId }) => bridgeId === rows[0].bridge_id);
+      expect(installed[winner]).toBe(true);
+      expect(installed.filter((won) => !won).length).toBeGreaterThan(0);
     }
   });
 });
