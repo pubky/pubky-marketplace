@@ -1,7 +1,14 @@
 import React from 'react';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { createZustandLikeHook } from '@/test-utils/stores';
 import { BackupNavigation, BackupPageHeader } from './Backup';
+
+const { mockClearSecrets } = vi.hoisted(() => ({ mockClearSecrets: vi.fn() }));
+
+vi.mock('@/stores/onboarding/onboarding.store', () => ({
+  useOnboardingStore: createZustandLikeHook({ clearSecrets: mockClearSecrets }),
+}));
 
 // Mock Next.js router
 const mockPush = vi.fn();
@@ -11,38 +18,7 @@ vi.mock('next/navigation', () => ({
   }),
 }));
 
-// Mock atoms
-vi.mock('@/atoms/Button/Button', () => {
-  return {
-    Button: ({
-      children,
-      className,
-      onClick,
-      disabled,
-      variant,
-      size,
-    }: {
-      children: React.ReactNode;
-      className?: string;
-      onClick?: () => void;
-      disabled?: boolean;
-      variant?: string;
-      size?: string;
-    }) => (
-      <button
-        data-testid="button"
-        className={className}
-        onClick={onClick}
-        disabled={disabled}
-        data-variant={variant}
-        data-size={size}
-      >
-        {children}
-      </button>
-    ),
-  };
-});
-
+// Mock atoms (Button and Dialog stay real so the skip dialog behaves as in the app)
 vi.mock('@/atoms/Container/Container', () => {
   return {
     Container: ({ children, className }: { children: React.ReactNode; className?: string }) => (
@@ -154,20 +130,53 @@ describe('BackupNavigation', () => {
     expect(continueButton).toHaveAttribute('data-loading', 'true');
   });
 
-  it('navigates to profile on continue button click', () => {
-    render(<BackupNavigation />);
-
-    const continueButton = screen.getByTestId('continue-button');
-    fireEvent.click(continueButton);
-
-    expect(mockPush).toHaveBeenCalledWith('/profile');
-  });
-
   it('renders back button and disables it', () => {
     render(<BackupNavigation />);
 
     expect(screen.queryByTestId('back-button')).toBeInTheDocument();
     expect(screen.queryByTestId('back-button')).toBeDisabled();
+  });
+
+  it('continue navigates to profile without clearing the secrets', () => {
+    render(<BackupNavigation />);
+
+    fireEvent.click(screen.getByTestId('continue-button'));
+
+    expect(mockPush).toHaveBeenCalledTimes(1);
+    expect(mockPush).toHaveBeenCalledWith('/profile');
+    expect(mockClearSecrets).not.toHaveBeenCalled();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it('opens the skip backup dialog from the skip button', () => {
+    render(<BackupNavigation />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Skip backup' }));
+
+    expect(screen.getByRole('dialog', { name: 'Skip backup?' })).toBeInTheDocument();
+    expect(mockPush).not.toHaveBeenCalled();
+  });
+
+  it('clears the secrets and navigates to profile when skipping is confirmed', () => {
+    render(<BackupNavigation />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Skip backup' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Skip and delete phrase' }));
+
+    expect(mockClearSecrets).toHaveBeenCalledTimes(1);
+    expect(mockPush).toHaveBeenCalledTimes(1);
+    expect(mockPush).toHaveBeenCalledWith('/profile');
+  });
+
+  it('keeps the secrets and stays on the backup step when skipping is cancelled', () => {
+    render(<BackupNavigation />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Skip backup' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(mockClearSecrets).not.toHaveBeenCalled();
+    expect(mockPush).not.toHaveBeenCalled();
   });
 });
 

@@ -2,16 +2,38 @@
 
 exports[`BackupNavigation > matches snapshot for default BackupNavigation 1`] = `
 <div
-  data-testid="buttons-navigation"
+  class="gap-3 pb-6"
+  data-testid="container"
 >
+  <div
+    class="pb-0"
+    data-testid="buttons-navigation"
+  >
+    <button
+      data-testid="back-button"
+      disabled=""
+    />
+    <button
+      data-loading="false"
+      data-testid="continue-button"
+    />
+  </div>
   <button
-    data-testid="back-button"
-    disabled=""
-  />
-  <button
-    data-loading="false"
-    data-testid="continue-button"
-  />
+    aria-controls="radix-normalized"
+    aria-expanded="false"
+    aria-haspopup="dialog"
+    class="inline-flex items-center justify-center whitespace-nowrap transition-all disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg:not([class*=\\"size-\\"])]:size-4 shrink-0 [&_svg]:shrink-0 outline-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] aria-invalid:ring-destructive/40 aria-invalid:border-destructive cursor-pointer border shadow-xs bg-secondary text-secondary-foreground hover:bg-accent h-auto gap-2 px-8 py-5 text-sm font-bold leading-normal rounded-full md:self-end"
+    data-as-child="true"
+    data-size="lg"
+    data-slot="dialog-trigger"
+    data-state="closed"
+    data-testid="dialog-trigger"
+    data-variant="secondary"
+    id="backup-navigation-skip-btn"
+    type="button"
+  >
+    Skip backup
+  </button>
 </div>
 `;
 
