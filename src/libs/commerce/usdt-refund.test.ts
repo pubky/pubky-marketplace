@@ -219,6 +219,9 @@ describe('refusal copy', () => {
     expect(usdtRefundRefusalMessage({ reason: 'invalid_refund_destination' })).toBe(
       "That isn't a valid Arbitrum address. Check it and try again.",
     );
+    expect(usdtRefundRefusalMessage({ reason: 'refund_transaction_already_recorded' })).toBe(
+      'This transaction is already recorded as the refund of another order. Send this refund in its own transaction.',
+    );
     expect(usdtRefundRefusalMessage({ reason: 'invalid_refund_reference' })).toBe(
       'Enter the Arbitrum transaction hash (0x followed by 64 characters).',
     );

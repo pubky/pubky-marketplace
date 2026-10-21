@@ -59,4 +59,5 @@ export const USDT_REFUND_REFUSAL_REASONS = [
   'refund_transaction_not_found',
   'refund_transaction_reverted',
   'refund_transaction_wrong_recipient',
+  'refund_transaction_already_recorded',
 ] as const;
