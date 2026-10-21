@@ -301,7 +301,21 @@ describe('useMarketplaceBid', () => {
     ['BID_TOO_LOW', 'A new proxy maximum must exceed the bidder previous maximum.', 'Your new maximum'],
     ['UNAUTHORIZED', 'A seller cannot bid on their own auction.', 'You cannot bid'],
     ['REVISION_CONFLICT', 'The auction revision is stale.', 'auction changed'],
-    ['INVALID_STATE', 'The auction is not open for bidding.', 'no longer open'],
+    ['INVALID_STATE', 'This listing is not an auction.', 'no longer open'],
+    ['AUCTION_CLOSED', 'The auction is not open for bidding.', "isn't taking bids right now"],
+    ['NOT_FOUND', 'The auction listing is not registered.', "doesn't have this auction registered"],
+    ['INVARIANT_VIOLATION', 'The auction reserve authority is missing.', "on the marketplace's side"],
+    ['INVALID_COMMAND', 'Bid maximum must use the auction asset and exponent.', "couldn't accept this bid as sent"],
+    [
+      'UPSTREAM_UNAVAILABLE',
+      "The seller's homeserver could not be reached. Try again shortly.",
+      "couldn't reach the seller's shop",
+    ],
+    [
+      'LISTING_MODERATED',
+      'This listing was removed by moderation and cannot be bought, bid on or offered on.',
+      'removed by moderation',
+    ],
   ] as const)('maps %s to typed static copy', async (code, message, expected) => {
     const { toast } = await import('@/molecules/Toaster/use-toast');
     const { result } = renderHook(() => useMarketplaceBid('listing:seller_item', 3, vi.fn(), USD_ASSET));
