@@ -1,6 +1,8 @@
 export interface OnboardingState {
   secretKey: string | null;
   mnemonic: string | null;
+  /** Epoch ms when the secrets were saved, or null when there are none. */
+  secretsSavedAt: number | null;
   hasHydrated: boolean;
   showWelcomeDialog: boolean;
   inviteCode: string;
@@ -33,6 +35,7 @@ export type OnboardingStore = OnboardingState & OnboardingActions & OnboardingSe
 export const onboardingInitialState: OnboardingState = {
   secretKey: null,
   mnemonic: null,
+  secretsSavedAt: null,
   hasHydrated: false,
   showWelcomeDialog: false,
   inviteCode: '',

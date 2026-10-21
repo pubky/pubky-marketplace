@@ -1,4 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { createJSONStorage } from 'zustand/middleware';
+import { ONBOARDING_SECRETS_TTL_MS } from '@/config/onboarding';
 import { ONBOARDING_PERSIST_KEY } from '../persistedKeys';
 import { useOnboardingStore } from './onboarding.store';
 
@@ -38,8 +40,10 @@ describe('OnboardingStore', () => {
     useOnboardingStore.setState({
       secretKey: null,
       mnemonic: null,
+      secretsSavedAt: null,
       hasHydrated: false,
       showWelcomeDialog: false,
+      inviteCode: '',
     });
   });
 
@@ -619,6 +623,130 @@ describe('OnboardingStore', () => {
       expect(resetState.mnemonic).toBeNull();
       expect(resetState.hasHydrated).toBe(true); // Preserved
       expect(resetState.showWelcomeDialog).toBe(false); // Reset to initial state
+    });
+  });
+
+  describe('Stored secrets lifetime', () => {
+    const SAVED_AT = Date.UTC(2026, 0, 1);
+
+    const storeEntry = (state: Record<string, unknown>, version: number) => {
+      localStorageMock.getItem.mockReturnValue(JSON.stringify({ state, version }));
+    };
+
+    const lastWrittenState = () => {
+      const writes = localStorageMock.setItem.mock.calls.filter(([key]) => key === ONBOARDING_PERSIST_KEY);
+      return JSON.parse(writes[writes.length - 1][1]).state;
+    };
+
+    // The store took its storage when it was created, before the mock above replaced window.localStorage.
+    const originalStorage = useOnboardingStore.persist.getOptions().storage;
+
+    beforeEach(() => {
+      vi.useFakeTimers();
+      vi.setSystemTime(SAVED_AT);
+      useOnboardingStore.persist.setOptions({ storage: createJSONStorage(() => localStorageMock) });
+    });
+
+    afterEach(() => {
+      useOnboardingStore.persist.setOptions({ storage: originalStorage });
+      vi.useRealTimers();
+    });
+
+    it('records when the secrets were saved', () => {
+      useOnboardingStore.getState().setSecrets(createMockSecrets());
+
+      expect(useOnboardingStore.getState().secretsSavedAt).toBe(SAVED_AT);
+    });
+
+    it('forgets the save time when the secrets are cleared or the store is reset', () => {
+      const state = useOnboardingStore.getState();
+
+      state.setSecrets(createMockSecrets());
+      state.clearSecrets();
+      expect(useOnboardingStore.getState().secretsSavedAt).toBeNull();
+
+      state.setSecrets(createMockSecrets());
+      state.reset();
+      expect(useOnboardingStore.getState().secretsSavedAt).toBeNull();
+    });
+
+    it('keeps stored secrets younger than the onboarding lifetime', async () => {
+      storeEntry({ ...createMockSecrets(), secretsSavedAt: SAVED_AT }, 1);
+      vi.setSystemTime(SAVED_AT + ONBOARDING_SECRETS_TTL_MS - 1);
+
+      await useOnboardingStore.persist.rehydrate();
+
+      const state = useOnboardingStore.getState();
+      expect(state.secretKey).toBe(createMockSecrets().secretKey);
+      expect(state.mnemonic).toBe(createMockSecrets().mnemonic);
+      expect(state.secretsSavedAt).toBe(SAVED_AT);
+    });
+
+    it('drops stored secrets older than the onboarding lifetime and rewrites the stored entry', async () => {
+      storeEntry({ ...createMockSecrets(), secretsSavedAt: SAVED_AT }, 1);
+      vi.setSystemTime(SAVED_AT + ONBOARDING_SECRETS_TTL_MS);
+
+      await useOnboardingStore.persist.rehydrate();
+
+      const state = useOnboardingStore.getState();
+      expect(state.secretKey).toBeNull();
+      expect(state.mnemonic).toBeNull();
+      expect(state.secretsSavedAt).toBeNull();
+      expect(state.hasHydrated).toBe(true);
+      expect(lastWrittenState()).toMatchObject({ secretKey: null, mnemonic: null, secretsSavedAt: null });
+    });
+
+    it('drops stored secrets that have no save time', async () => {
+      storeEntry({ ...createMockSecrets(), secretsSavedAt: null }, 1);
+
+      await useOnboardingStore.persist.rehydrate();
+
+      expect(useOnboardingStore.getState().secretKey).toBeNull();
+      expect(useOnboardingStore.getState().mnemonic).toBeNull();
+    });
+
+    it('keeps the invite code and welcome dialog flag when the stored secrets expire', async () => {
+      storeEntry(
+        { ...createMockSecrets(), secretsSavedAt: SAVED_AT, inviteCode: 'AAAA-BBBB-CCCC', showWelcomeDialog: true },
+        1,
+      );
+      vi.setSystemTime(SAVED_AT + ONBOARDING_SECRETS_TTL_MS);
+
+      await useOnboardingStore.persist.rehydrate();
+
+      const state = useOnboardingStore.getState();
+      expect(state.secretKey).toBeNull();
+      expect(state.inviteCode).toBe('AAAA-BBBB-CCCC');
+      expect(state.showWelcomeDialog).toBe(true);
+      expect(lastWrittenState()).toMatchObject({ inviteCode: 'AAAA-BBBB-CCCC', showWelcomeDialog: true });
+    });
+
+    it('starts the lifetime of secrets saved before the save time existed at their first load', async () => {
+      storeEntry({ ...createMockSecrets(), showWelcomeDialog: false, inviteCode: '' }, 0);
+
+      await useOnboardingStore.persist.rehydrate();
+
+      expect(useOnboardingStore.getState().secretKey).toBe(createMockSecrets().secretKey);
+      expect(useOnboardingStore.getState().secretsSavedAt).toBe(SAVED_AT);
+      expect(lastWrittenState()).toMatchObject({ ...createMockSecrets(), secretsSavedAt: SAVED_AT });
+
+      storeEntry(lastWrittenState(), 1);
+      vi.setSystemTime(SAVED_AT + ONBOARDING_SECRETS_TTL_MS);
+
+      await useOnboardingStore.persist.rehydrate();
+
+      expect(useOnboardingStore.getState().secretKey).toBeNull();
+      expect(useOnboardingStore.getState().mnemonic).toBeNull();
+    });
+
+    it('does not record a save time for version 0 entries without secrets', async () => {
+      storeEntry({ secretKey: null, mnemonic: null, showWelcomeDialog: true, inviteCode: 'AAAA-BBBB-CCCC' }, 0);
+
+      await useOnboardingStore.persist.rehydrate();
+
+      const state = useOnboardingStore.getState();
+      expect(state.secretsSavedAt).toBeNull();
+      expect(state.inviteCode).toBe('AAAA-BBBB-CCCC');
     });
   });
 });

@@ -20,11 +20,11 @@ export const createOnboardingActions = (set: ZustandSet<OnboardingStore>): Onboa
   },
 
   setSecrets: (secrets: TOnboardingSecrets) => {
-    set({ ...secrets }, false, OnboardingActionTypes.SET_SECRETS);
+    set({ ...secrets, secretsSavedAt: Date.now() }, false, OnboardingActionTypes.SET_SECRETS);
   },
 
   clearSecrets: () => {
-    set({ secretKey: null, mnemonic: null }, false, OnboardingActionTypes.CLEAR_SECRETS);
+    set({ secretKey: null, mnemonic: null, secretsSavedAt: null }, false, OnboardingActionTypes.CLEAR_SECRETS);
   },
 
   setHydrated: (hasHydrated: boolean) => {
