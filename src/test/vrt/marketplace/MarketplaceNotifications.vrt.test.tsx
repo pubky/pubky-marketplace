@@ -18,6 +18,17 @@ const fixtures = vi.hoisted(async () => {
     kindsLastThird: everyType.slice(12),
     preferences: createNotificationPreferencesFixture(),
     mutedPreferences: createNotificationPreferencesFixture({ offers: false, auctions: false }),
+    doubleBlind: [
+      createNotificationFixture('review_waiting', {
+        id: '00000000-0000-4000-8000-000000000961',
+        createdAt: '2026-08-19T12:02:00.000Z',
+      }),
+      createNotificationFixture('review_released', {
+        id: '00000000-0000-4000-8000-000000000962',
+        actorPubky: 'system',
+        createdAt: '2026-08-19T12:01:00.000Z',
+      }),
+    ],
     readPair: [
       createNotificationFixture('offer_received', { readAt: '2026-08-19T18:00:00.000Z' }),
       createNotificationFixture('order_shipped', { readAt: '2026-08-19T18:30:00.000Z' }),
@@ -283,6 +294,17 @@ describe('Marketplace notifications — visual regression', () => {
     const screen = await renderForVRT(<MarketplaceNotifications />, { viewport: VRT_VIEWPORT_DESKTOP });
     await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot(
       'notifications-digital-delivered-desktop',
+      VRT_DENSE_CHROME_SCREENSHOT,
+    );
+  });
+
+  it('renders the review waiting and released notifications at desktop viewport', async () => {
+    const { doubleBlind } = await fixtures;
+    await setView({ notifications: doubleBlind, canMarkRead: false });
+
+    const screen = await renderForVRT(<MarketplaceNotifications />, { viewport: VRT_VIEWPORT_DESKTOP });
+    await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot(
+      'notifications-double-blind-desktop',
       VRT_DENSE_CHROME_SCREENSHOT,
     );
   });
