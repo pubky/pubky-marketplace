@@ -1,8 +1,16 @@
 import { act, renderHook } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  COPYRIGHT_BRIEF_DESCRIPTION_MAX_LENGTH,
+  COPYRIGHT_EMAIL_MAX_LENGTH,
+  COPYRIGHT_ORIGINAL_CONTENT_URLS_MAX_LENGTH,
+  COPYRIGHT_SHORT_FIELD_MAX_LENGTH,
+  COPYRIGHT_URL_MAX_LENGTH,
+} from '@/config/copyright';
 import { asInvalid } from '@/test-utils/type-assertions';
 import { useCopyrightForm } from './useCopyrightForm';
 import { COPYRIGHT_ROLES } from './useCopyrightForm.constants';
+import { copyrightFormSchema } from './useCopyrightForm.types';
 
 const mockToast = vi.fn();
 vi.mock('@/molecules/Toaster/use-toast', () => {
@@ -99,6 +107,41 @@ describe('useCopyrightForm', () => {
       });
 
       expect(global.fetch).not.toHaveBeenCalled();
+    });
+
+    // Format-checked fields keep a valid format at every length, so only the length cap can fail.
+    const text = (length: number) => 'a'.repeat(length);
+    const email = (length: number) => `${'a'.repeat(length - '@example.com'.length)}@example.com`;
+    const phone = (length: number) => '1'.repeat(length);
+
+    it.each([
+      ['Name of rights owner', 'nameOwner', COPYRIGHT_SHORT_FIELD_MAX_LENGTH, text],
+      ['Original content URLs', 'originalContentUrls', COPYRIGHT_ORIGINAL_CONTENT_URLS_MAX_LENGTH, text],
+      ['Brief description', 'briefDescription', COPYRIGHT_BRIEF_DESCRIPTION_MAX_LENGTH, text],
+      ['Infringing content URL', 'infringingContentUrl', COPYRIGHT_URL_MAX_LENGTH, text],
+      ['First name', 'firstName', COPYRIGHT_SHORT_FIELD_MAX_LENGTH, text],
+      ['Last name', 'lastName', COPYRIGHT_SHORT_FIELD_MAX_LENGTH, text],
+      ['Email', 'email', COPYRIGHT_EMAIL_MAX_LENGTH, email],
+      ['Phone number', 'phoneNumber', COPYRIGHT_SHORT_FIELD_MAX_LENGTH, phone],
+      ['Street address', 'streetAddress', COPYRIGHT_SHORT_FIELD_MAX_LENGTH, text],
+      ['Country', 'country', COPYRIGHT_SHORT_FIELD_MAX_LENGTH, text],
+      ['City', 'city', COPYRIGHT_SHORT_FIELD_MAX_LENGTH, text],
+      ['State/Province', 'stateProvince', COPYRIGHT_SHORT_FIELD_MAX_LENGTH, text],
+      ['Zip code', 'zipCode', COPYRIGHT_SHORT_FIELD_MAX_LENGTH, text],
+      ['Signature', 'signature', COPYRIGHT_SHORT_FIELD_MAX_LENGTH, text],
+    ] as const)('should cap %s at the server limit', (label, field, maxLength, build) => {
+      const formData = { ...validFormData, role: COPYRIGHT_ROLES.RIGHTS_OWNER };
+
+      expect(copyrightFormSchema.safeParse({ ...formData, [field]: build(maxLength) }).success).toBe(true);
+
+      const overLimit = copyrightFormSchema.safeParse({ ...formData, [field]: build(maxLength + 1) });
+      expect(overLimit.success).toBe(false);
+      expect(overLimit.error?.issues).toEqual([
+        expect.objectContaining({
+          path: [field],
+          message: `${label} must be no more than ${maxLength} characters`,
+        }),
+      ]);
     });
   });
 

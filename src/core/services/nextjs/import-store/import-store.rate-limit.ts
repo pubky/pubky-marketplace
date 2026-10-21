@@ -1,3 +1,4 @@
+import { IMPORT_IMAGE_RATE_LIMIT_MAX_KEYS } from '@/config/import-image';
 import {
   IMPORT_STORE_GLOBAL_RATE_LIMIT_BYTES,
   IMPORT_STORE_GLOBAL_RATE_LIMIT_REQUESTS,
@@ -6,26 +7,36 @@ import {
   IMPORT_STORE_RATE_LIMIT_REQUESTS,
   IMPORT_STORE_RATE_LIMIT_WINDOW_MS,
 } from '@/config/import-store';
-import { type TRateLimitDecision, WindowCounter } from '../import-image/import-image.rate-limit';
+import { type TRateLimitDecision, WindowCounter } from '@/libs/api/window-counter';
 
 /**
- * The store import's own windows, on the image route's limiter: a long
+ * The store import's own windows, on the same limiter as the image route: a long
  * catalogue read cannot use up a seller's photo allowance, and neither route
  * can starve the other. Same rules: per key (session digest or IP) and across
  * all callers together, in process memory, and a full key table refuses new
  * keys instead of evicting live ones (`WindowCounter`).
  */
-const requestCounter = new WindowCounter(IMPORT_STORE_RATE_LIMIT_REQUESTS, IMPORT_STORE_RATE_LIMIT_WINDOW_MS);
-const byteCounter = new WindowCounter(IMPORT_STORE_RATE_LIMIT_BYTES, IMPORT_STORE_RATE_LIMIT_BYTES_WINDOW_MS);
+const requestCounter = new WindowCounter(
+  IMPORT_STORE_RATE_LIMIT_REQUESTS,
+  IMPORT_STORE_RATE_LIMIT_WINDOW_MS,
+  IMPORT_IMAGE_RATE_LIMIT_MAX_KEYS,
+);
+const byteCounter = new WindowCounter(
+  IMPORT_STORE_RATE_LIMIT_BYTES,
+  IMPORT_STORE_RATE_LIMIT_BYTES_WINDOW_MS,
+  IMPORT_IMAGE_RATE_LIMIT_MAX_KEYS,
+);
 
 const GLOBAL_KEY = 'global';
 const globalRequestCounter = new WindowCounter(
   IMPORT_STORE_GLOBAL_RATE_LIMIT_REQUESTS,
   IMPORT_STORE_RATE_LIMIT_WINDOW_MS,
+  IMPORT_IMAGE_RATE_LIMIT_MAX_KEYS,
 );
 const globalByteCounter = new WindowCounter(
   IMPORT_STORE_GLOBAL_RATE_LIMIT_BYTES,
   IMPORT_STORE_RATE_LIMIT_BYTES_WINDOW_MS,
+  IMPORT_IMAGE_RATE_LIMIT_MAX_KEYS,
 );
 
 export class ImportStoreRateLimiter {

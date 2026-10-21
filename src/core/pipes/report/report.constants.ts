@@ -71,3 +71,8 @@ export const REVIEW_REPORT_ISSUE_TYPE_VALUES = Object.values(REVIEW_REPORT_ISSUE
  * Maximum character length for report reason text
  */
 export const REPORT_REASON_MAX_LENGTH = 1000;
+
+/**
+ * Maximum character length for the reported post URL
+ */
+export const REPORT_POST_URL_MAX_LENGTH = 2048;

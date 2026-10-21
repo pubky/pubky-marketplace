@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { CopyrightController } from '@/controllers/copyright/copyright';
+import type { TCopyrightSubmitParams } from '@/controllers/copyright/copyright.types';
 import { handleApiError } from '@/libs/api/route-error-handler';
+import { readSupportIntake } from '@/libs/api/support-intake-guards';
 import { HttpStatusCode } from '@/libs/http/http.types';
 
 /**
@@ -9,12 +11,14 @@ import { HttpStatusCode } from '@/libs/http/http.types';
  * This endpoint receives copyright form data from the UI and processes it through
  * the controller layer following Franky's architecture.
  *
- * All validation is handled by the controller layer.
- * This route only parses the request body and delegates to the controller.
+ * Requests are limited per client address and across all clients, and the
+ * body is capped in size; both are checked before the body is parsed.
+ * Field validation is handled by the controller layer.
  */
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
+    const intake = await readSupportIntake('copyright', request);
+    if (!intake.ok) return intake.response;
     const {
       nameOwner,
       originalContentUrls,
@@ -32,9 +36,9 @@ export async function POST(request: NextRequest) {
       signature,
       isRightsOwner,
       isReportingOnBehalf,
-    } = body;
+    } = intake.body;
 
-    // Delegate to controller - validation happens there
+    // Delegate to controller - fields are unchecked until it validates them
     await CopyrightController.submit({
       nameOwner,
       originalContentUrls,
@@ -52,7 +56,7 @@ export async function POST(request: NextRequest) {
       signature,
       isRightsOwner,
       isReportingOnBehalf,
-    });
+    } as TCopyrightSubmitParams);
 
     return NextResponse.json({ message: 'Success' });
   } catch (error) {

@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import type { NextRequest } from 'next/server';
+import { trustedClientIp } from '@/libs/api/client-ip';
 
 // Mirrors the BFF session cookie name (src/server/marketplace-grant/bff.ts); importing that module would pull the grant database into these routes.
 const SESSION_COOKIE = '__Host-shop-bff-session';
@@ -29,33 +30,8 @@ export function isSameOriginRequest(request: NextRequest): boolean {
  * and a shared IP (office, NAT) cannot starve one seller past their own bucket.
  */
 export function importRateLimitKeys(request: NextRequest): string[] {
-  const keys = [`ip:${requestIp(request)}`];
+  const keys = [`ip:${trustedClientIp(request) ?? 'unknown'}`];
   const session = request.cookies.get(SESSION_COOKIE)?.value;
   if (session) keys.push(`session:${createHash('sha256').update(session).digest('hex')}`);
   return keys;
-}
-
-function requestIp(request: NextRequest): string {
-  if (process.env.VERCEL === '1') {
-    const forwarded = lastHop(request.headers.get('x-vercel-forwarded-for'));
-    if (forwarded) return forwarded;
-  }
-
-  const trustedProxies = Number(process.env.SHOP_BFF_CLI_TRUSTED_PROXY_COUNT ?? 0);
-  const hops = (request.headers.get('x-forwarded-for') ?? '')
-    .split(',')
-    .map((hop) => hop.trim())
-    .filter(Boolean);
-  if (Number.isInteger(trustedProxies) && trustedProxies >= 1 && hops.length >= trustedProxies) {
-    return hops[hops.length - trustedProxies];
-  }
-  return 'unknown';
-}
-
-function lastHop(header: string | null): string {
-  const hops = (header ?? '')
-    .split(',')
-    .map((hop) => hop.trim())
-    .filter(Boolean);
-  return hops[hops.length - 1] ?? '';
 }

@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { FeedbackController } from '@/controllers/feedback/feedback';
+import type { TFeedbackSubmitParams } from '@/controllers/feedback/feedback.types';
 import { handleApiError } from '@/libs/api/route-error-handler';
+import { readSupportIntake } from '@/libs/api/support-intake-guards';
 import { HttpStatusCode } from '@/libs/http/http.types';
 
 /**
@@ -9,16 +11,18 @@ import { HttpStatusCode } from '@/libs/http/http.types';
  * This endpoint receives feedback from the UI and processes it through
  * the controller layer following Franky's architecture.
  *
- * All validation is handled by the controller layer.
- * This route only parses the request body and delegates to the controller.
+ * Requests are limited per client address and across all clients, and the
+ * body is capped in size; both are checked before the body is parsed.
+ * Field validation is handled by the controller layer.
  */
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
-    const { pubky, comment, name } = body;
+    const intake = await readSupportIntake('feedback', request);
+    if (!intake.ok) return intake.response;
+    const { pubky, comment, name } = intake.body;
 
-    // Delegate to controller - validation happens there
-    await FeedbackController.submit({ pubky, comment, name });
+    // Delegate to controller - fields are unchecked until it validates them
+    await FeedbackController.submit({ pubky, comment, name } as TFeedbackSubmitParams);
 
     return NextResponse.json({ message: 'Success' });
   } catch (error) {
