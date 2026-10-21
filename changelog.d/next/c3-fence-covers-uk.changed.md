@@ -1,0 +1,1 @@
+Buyers in the UK now buy only from private sellers, like buyers in the EU. A listing from a business seller shows "Not available to buyers in the EU or UK", and the private-seller notices say that EU and UK consumer rights for buying from a business, like the 14-day right to cancel, don't apply.

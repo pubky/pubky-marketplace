@@ -2,7 +2,7 @@ import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { UseMarketplaceDropClaimResult } from '@/hooks/useMarketplaceDropClaim/useMarketplaceDropClaim';
-import { BUYER_COUNTRY_PROMPT, EU_UNAVAILABLE_MESSAGE } from '@/libs/commerce/eu-region';
+import { BUYER_COUNTRY_PROMPT, REGION_UNAVAILABLE_MESSAGE } from '@/libs/commerce/eu-region';
 import type { CommerceDropRecord } from '@/libs/commerce/marketplace-records';
 import { resetRuntimeConfigForTests } from '@/libs/runtime-config/runtime-config';
 import { PUBKY_RUNTIME_ENV_NAMES } from '@/libs/runtime-config/runtime-config.schema';
@@ -191,7 +191,7 @@ describe('DropClaimPanel', () => {
         <DropClaimPanel record={record} claim={makeClaim()} remainingAllowance={2} shop={{ sellerStatus: 'trader' }} />,
       );
 
-      expect(await screen.findByTestId('drop-claim-region-refusal')).toHaveTextContent(EU_UNAVAILABLE_MESSAGE);
+      expect(await screen.findByTestId('drop-claim-region-refusal')).toHaveTextContent(REGION_UNAVAILABLE_MESSAGE);
       expect(screen.getByRole('button', { name: 'Claim one' })).toBeDisabled();
 
       const field = screen.getByLabelText(BUYER_COUNTRY_PROMPT);
@@ -203,6 +203,16 @@ describe('DropClaimPanel', () => {
         `/marketplace/checkout?seller=${SELLER}&drop=vol1&listing=listing1`,
       );
       expect(screen.queryByTestId('drop-claim-region-refusal')).not.toBeInTheDocument();
+    });
+
+    it('refuses a UK buyer for a business seller too', async () => {
+      useBuyerCountryStore.setState({ country: 'GB' });
+      render(
+        <DropClaimPanel record={record} claim={makeClaim()} remainingAllowance={2} shop={{ sellerStatus: 'trader' }} />,
+      );
+
+      expect(await screen.findByTestId('drop-claim-region-refusal')).toHaveTextContent(REGION_UNAVAILABLE_MESSAGE);
+      expect(screen.getByRole('button', { name: 'Claim one' })).toBeDisabled();
     });
 
     it('leaves the claim to the service when the shop could not be read', async () => {

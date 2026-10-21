@@ -1,7 +1,7 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CommerceController } from '@/controllers/commerce/commerce';
-import { DIGITAL_REGION_MESSAGE, EU_UNAVAILABLE_MESSAGE, SELLER_LIMIT_MESSAGE } from '@/libs/commerce/eu-region';
+import { DIGITAL_REGION_MESSAGE, REGION_UNAVAILABLE_MESSAGE, SELLER_LIMIT_MESSAGE } from '@/libs/commerce/eu-region';
 import { resetRuntimeConfigForTests } from '@/libs/runtime-config/runtime-config';
 import { PUBKY_RUNTIME_ENV_NAMES } from '@/libs/runtime-config/runtime-config.schema';
 import { useBuyerCountryStore } from '@/stores/buyer-country/buyer-country.store';
@@ -59,11 +59,23 @@ describe('useRegionAvailability', () => {
     expect(result.current.refusal).toBeNull();
 
     act(() => result.current.setBuyerCountry('DE'));
-    await waitFor(() => expect(result.current.refusal).toBe(EU_UNAVAILABLE_MESSAGE));
+    await waitFor(() => expect(result.current.refusal).toBe(REGION_UNAVAILABLE_MESSAGE));
     expect(result.current.needsCountry).toBe(false);
 
     act(() => result.current.setBuyerCountry('US'));
     await waitFor(() => expect(result.current.refusal).toBeNull());
+  });
+
+  it('refuses a UK buyer for a business or undeclared seller and leaves a private seller open', async () => {
+    flags(true, false);
+    useBuyerCountryStore.setState({ country: 'GB' });
+    const trader = run({ shop: { sellerStatus: 'trader' } });
+    await waitFor(() => expect(trader.result.current.refusal).toBe(REGION_UNAVAILABLE_MESSAGE));
+    expect(trader.result.current.canChangeCountry).toBe(true);
+    const undeclared = run({ shop: {} });
+    await waitFor(() => expect(undeclared.result.current.refusal).toBe(REGION_UNAVAILABLE_MESSAGE));
+    expect(run({ shop: { sellerStatus: 'private' } }).result.current.refusal).toBeNull();
+    expect(run({ shop: { sellerStatus: 'trader' }, isOwner: true }).result.current.refusal).toBeNull();
   });
 
   it('leaves an EU buyer open to a private seller and shows nothing to the seller themself', async () => {
@@ -78,7 +90,7 @@ describe('useRegionAvailability', () => {
     flags(true, false);
     useBuyerCountryStore.setState({ country: 'DE' });
     const undeclared = run({ shop: {} });
-    await waitFor(() => expect(undeclared.result.current.refusal).toBe(EU_UNAVAILABLE_MESSAGE));
+    await waitFor(() => expect(undeclared.result.current.refusal).toBe(REGION_UNAVAILABLE_MESSAGE));
     expect(run({ shop: null }).result.current.refusal).toBeNull();
   });
 

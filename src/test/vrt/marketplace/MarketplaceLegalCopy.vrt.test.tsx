@@ -161,14 +161,14 @@ describe('Marketplace legal copy — visual regression', () => {
     await capture(screen, 'legal-digital-country-desktop');
   });
 
-  it('refuses an EU buyer plainly', async () => {
+  it('refuses an EU or UK buyer plainly', async () => {
     const screen = await renderForVRT(
       <Scene>
         <RegionAvailabilityNotice
           region={{
             ...noRegion,
             buyerCountry: 'DE',
-            refusal: 'Not available to buyers in the EU',
+            refusal: 'Not available to buyers in the EU or UK',
             canChangeCountry: true,
           }}
           testIdPrefix="vrt"

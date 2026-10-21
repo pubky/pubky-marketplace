@@ -157,11 +157,16 @@ describe('RegionAvailabilityNotice', () => {
   it('shows the refusal with the remembered country open to correction', () => {
     render(
       <RegionAvailabilityNotice
-        region={{ ...base, buyerCountry: 'DE', refusal: 'Not available to buyers in the EU', canChangeCountry: true }}
+        region={{
+          ...base,
+          buyerCountry: 'DE',
+          refusal: 'Not available to buyers in the EU or UK',
+          canChangeCountry: true,
+        }}
         testIdPrefix="x"
       />,
     );
-    expect(screen.getByTestId('x-region-refusal')).toHaveTextContent('Not available to buyers in the EU');
+    expect(screen.getByTestId('x-region-refusal')).toHaveTextContent('Not available to buyers in the EU or UK');
     expect(screen.getByLabelText(BUYER_COUNTRY_PROMPT)).toHaveValue('DE');
   });
 
