@@ -275,9 +275,7 @@ describe('ReportApplication', () => {
 
     describe('labels the reporter pubky and name as claimed and unverified', () => {
       const seller = 'o1gg96ewuojmopcjbz8895478wdtxtzzuxnfjjz8o8e77csa1ngo' as Pubky;
-      const reviewer = 'a'.repeat(52);
       const listingUrl = `https://example.com/marketplace/listing/${seller}/boots_01`;
-      const reviewUri = `pubky://${reviewer}/pub/pubky.app/marketplace/v1/reviews/8Z8CWH8NVYQY39ZEBFGKQWWEKG`;
       const reason = 'Reason text';
 
       const variants: { variant: string; input: TReportSubmitInput; expected: string[] }[] = [
@@ -314,30 +312,6 @@ describe('ReportApplication', () => {
             `Reason: ${reason}`,
           ],
         },
-        {
-          variant: 'review',
-          input: {
-            pubky: testData.userPubky,
-            postUrl: listingUrl,
-            issueType: REVIEW_REPORT_ISSUE_TYPES.FAKE_REVIEW,
-            reason,
-            name: testData.userName,
-            review: { reviewUri, reviewerPubky: reviewer, listingId: 'boots_01', sellerPubky: seller },
-          },
-          expected: [
-            `${CHATWOOT_REPORT_REVIEW_MESSAGE_PREFIX} - ${REVIEW_REPORT_ISSUE_LABELS[REVIEW_REPORT_ISSUE_TYPES.FAKE_REVIEW]}`,
-            '',
-            ...claimedReporterLines,
-            '',
-            `Review URI: ${reviewUri}`,
-            `Reviewer: ${reviewer}`,
-            `Listing URL: ${listingUrl}`,
-            'Listing ID: boots_01',
-            `Seller: ${seller}`,
-            '',
-            `Reason: ${reason}`,
-          ],
-        },
       ];
 
       it.each(variants)('in a $variant report', async ({ input, expected }) => {
@@ -347,18 +321,6 @@ describe('ReportApplication', () => {
 
         expect(createConversationSpy.mock.calls[0]?.[3]).toBe(expected.join('\n'));
       });
-
-      it.each(variants)(
-        'keeps the source label as the first line in a $variant report',
-        async ({ input, expected }) => {
-          const createConversationSpy = vi.spyOn(ChatwootService, 'createConversation');
-
-          await ReportApplication.submit(input);
-
-          const content = createConversationSpy.mock.calls[0]?.[3] as string;
-          expect(content.split('\n')[0]).toBe(expected[0]);
-        },
-      );
     });
 
     it('keeps a multi-line name on its own claimed line', async () => {

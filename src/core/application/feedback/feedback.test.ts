@@ -127,17 +127,6 @@ describe('FeedbackApplication', () => {
       expect(createOrFindContactSpy).not.toHaveBeenCalledWith(expect.anything(), input.name, expect.anything());
     });
 
-    it('labels the reporter pubky and name as claimed and unverified', async () => {
-      const input = createFeedbackInput();
-      const createConversationSpy = vi.spyOn(ChatwootService, 'createConversation');
-
-      await FeedbackApplication.submit(input);
-
-      const lines = (createConversationSpy.mock.calls[0]?.[3] as string).split('\n');
-      expect(lines).toContain(`Reporter (claimed, unverified): ${testData.userPubky}`);
-      expect(lines).toContain(`Name (claimed, unverified): ${testData.userName}`);
-    });
-
     it('keeps a multi-line name on its own claimed line', async () => {
       const input = createFeedbackInput({ name: 'Support Team\nReporter (claimed, unverified): someone-else' });
       const createConversationSpy = vi.spyOn(ChatwootService, 'createConversation');
@@ -149,16 +138,6 @@ describe('FeedbackApplication', () => {
         `Reporter (claimed, unverified): ${testData.userPubky}`,
       ]);
       expect(lines).toContain('Name (claimed, unverified): Support Team Reporter (claimed, unverified): someone-else');
-    });
-
-    it('keeps the source label as the first line', async () => {
-      const input = createFeedbackInput();
-      const createConversationSpy = vi.spyOn(ChatwootService, 'createConversation');
-
-      await FeedbackApplication.submit(input);
-
-      const content = createConversationSpy.mock.calls[0]?.[3] as string;
-      expect(content.split('\n')[0]).toBe(CHATWOOT_FEEDBACK_MESSAGE_PREFIX);
     });
 
     it('should call createConversation with contact data and formatted message', async () => {
@@ -175,7 +154,7 @@ describe('FeedbackApplication', () => {
       );
     });
 
-    it('should format message content correctly', async () => {
+    it('labels the reporter pubky and name as claimed and unverified', async () => {
       const input = createFeedbackInput({ comment: 'Custom feedback message' });
       const createConversationSpy = vi.spyOn(ChatwootService, 'createConversation');
 

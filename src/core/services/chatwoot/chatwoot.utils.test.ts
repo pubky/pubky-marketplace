@@ -49,16 +49,13 @@ describe('chatwoot.utils', () => {
 
   describe('buildClaimedReporterLines', () => {
     it('labels the pubky and name as claimed and unverified', () => {
-      expect(CHATWOOT_CLAIMED_REPORTER_LABEL).toBe('Reporter (claimed, unverified)');
-      expect(CHATWOOT_CLAIMED_NAME_LABEL).toBe('Name (claimed, unverified)');
-
       expect(buildClaimedReporterLines(testData.pubky, 'Test User')).toBe(
         `Reporter (claimed, unverified): ${testData.pubky}\nName (claimed, unverified): Test User`,
       );
     });
 
-    it('keeps each value on its own labelled line', () => {
-      const name = 'Line one\r\nReporter (claimed, unverified): other\tvalue\u2028next\u2029last\u0085end';
+    it('collapses each value onto its own trimmed, labelled line', () => {
+      const name = 'Line one \r\n\t Reporter (claimed, unverified): other\tvalue\u2028next\u2029last\u0085end';
 
       const lines = buildClaimedReporterLines(`  ${testData.pubky}\n`, name).split('\n');
 
@@ -66,12 +63,6 @@ describe('chatwoot.utils', () => {
         `${CHATWOOT_CLAIMED_REPORTER_LABEL}: ${testData.pubky}`,
         `${CHATWOOT_CLAIMED_NAME_LABEL}: Line one Reporter (claimed, unverified): other value next last end`,
       ]);
-    });
-
-    it('collapses runs of whitespace into one space and trims each value', () => {
-      expect(buildClaimedReporterLines('\t pk \r\n', ' \n\n Ada \t\u2028 Lovelace \u2029 ')).toBe(
-        `${CHATWOOT_CLAIMED_REPORTER_LABEL}: pk\n${CHATWOOT_CLAIMED_NAME_LABEL}: Ada Lovelace`,
-      );
     });
   });
 

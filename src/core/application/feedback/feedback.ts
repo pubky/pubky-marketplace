@@ -15,8 +15,7 @@ import type { TFeedbackSubmitInput } from './feedback.types';
  * 1. Builds email from pubky
  * 2. Determines inbox ID for feedback
  * 3. Formats message with feedback prefix and the submitter's claimed pubky and name
- * 4. Calls Chatwoot service to create a contact named by the pubky and a
- *    conversation
+ * 4. Calls Chatwoot service to create contact and conversation
  * 5. Logs errors for observability
  *
  * This layer is called by the controller and handles cross-domain orchestration.
@@ -41,13 +40,13 @@ export class FeedbackApplication {
    *
    * Orchestrates the feedback submission by:
    * 1. Building email from pubky
-   * 2. Creating or finding the contact in Chatwoot, named by the pubky
+   * 2. Creating or finding contact in Chatwoot
    * 3. Creating conversation with formatted message
    *
    * @param params - Parameters object
    * @param params.pubky - User's public key
    * @param params.comment - Feedback comment
-   * @param params.name - User's display name, shown in the message as a claimed value and never used as the contact name
+   * @param params.name - User's display name
    * @throws AppError if submission fails
    */
   static async submit({ pubky, comment, name }: TFeedbackSubmitInput): Promise<void> {

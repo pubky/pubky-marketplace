@@ -38,13 +38,8 @@ export const CHATWOOT_REPORT_LISTING_MESSAGE_PREFIX = 'Report Listing';
 export const CHATWOOT_REPORT_REVIEW_MESSAGE_PREFIX = 'Report Review';
 
 /**
- * Label for the submitter's pubky in a support message. The pubky comes from
- * the request body and is not checked against a session, so it is a claim.
+ * Labels for the submitter's pubky and display name in a support message.
+ * Both come from the request body and are not checked against a session.
  */
 export const CHATWOOT_CLAIMED_REPORTER_LABEL = 'Reporter (claimed, unverified)';
-
-/**
- * Label for the submitter's display name in a support message. The name comes
- * from the request body and is not checked against a session, so it is a claim.
- */
 export const CHATWOOT_CLAIMED_NAME_LABEL = 'Name (claimed, unverified)';

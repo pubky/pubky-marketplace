@@ -22,8 +22,7 @@ import type { TReportSubmitInput } from './report.types';
  * 2. Determines inbox ID for reports
  * 3. Formats report message with source label, the reporter's claimed pubky
  *    and name, the post URL and issue details
- * 4. Calls Chatwoot service to create a contact named by the pubky and a
- *    conversation
+ * 4. Calls Chatwoot service to create contact and conversation
  * 5. Logs errors for observability
  *
  * This layer is called by the controller and handles cross-domain orchestration.
@@ -86,7 +85,7 @@ export class ReportApplication {
    * Orchestrates the report submission by:
    * 1. Building email from pubky
    * 2. Building source label, claimed reporter lines and comment body
-   * 3. Creating or finding the contact in Chatwoot, named by the pubky
+   * 3. Creating or finding contact in Chatwoot
    * 4. Creating conversation with formatted message
    *
    * @param input - The validated report
@@ -94,7 +93,7 @@ export class ReportApplication {
    * @param input.postUrl - URL of the reported post, or of the listing page for a listing or review
    * @param input.issueType - Type of issue being reported
    * @param input.reason - User's description of the issue
-   * @param input.name - Reporter's display name, shown in the message as a claimed value and never used as the contact name
+   * @param input.name - Reporter's display name
    * @param input.listing - Listing id and seller, when the report is about a listing
    * @param input.review - Review URI, reviewer and reviewed listing, when the report is about a review
    * @throws AppError if submission fails
