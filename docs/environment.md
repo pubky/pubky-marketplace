@@ -213,7 +213,7 @@ With none of these keys set the Shop runs with `PUBKY_RUNTIME_COMMERCE_ADAPTER_M
 
 ### Review attestor trust list
 
-A review shows **Verified purchase · _label_** only when its purchase attestation verifies and its issuer (`iss`) is on the trust list for the attestation's time. The list is `MARKETPLACE_TRUSTED_ATTESTOR_DEFAULTS` in `src/config/commerce.ts` (keys every deployment trusts; currently none) plus `PUBKY_RUNTIME_MARKETPLACE_TRUSTED_ATTESTORS`. Each deployment lists its own transaction service's attestor key there.
+A review shows **Verified purchase · _label_** only when its purchase attestation verifies and its issuer (`iss`) is on the trust list for the attestation's time. The list is `MARKETPLACE_TRUSTED_ATTESTOR_DEFAULTS` in `src/config/commerce.ts` plus `PUBKY_RUNTIME_MARKETPLACE_TRUSTED_ATTESTORS`. The compiled defaults hold the keys every deployment trusts, which is only Pubky Market's production attestor, so the production deployment needs no runtime entry. Every other deployment lists its own transaction service's attestor key in the runtime variable. A staging attestor signs test purchases, so only the staging deployment lists it.
 
 ```json
 [{ "pubky": "<attestor pubky>", "label": "Pubky Market", "validFrom": "2026-10-12" }]
