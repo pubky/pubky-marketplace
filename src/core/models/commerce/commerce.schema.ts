@@ -337,6 +337,8 @@ export const commerceReviewResponseTableSchema = ['&id', 'owner_id', 'review_id'
  */
 export interface CommerceIndexedReview {
   reviewId: string;
+  /** The review record's canonical URI on the reviewer's homeserver. */
+  uri: string;
   reviewerId: string;
   subjectId: string;
   listingOwnerId: string;
@@ -350,7 +352,19 @@ export interface CommerceIndexedReview {
   createdAt: string;
   updatedAt: string;
   revision: number;
+  /** The index's moderation of the review; null when it is not moderated. */
+  moderation: CommerceIndexedReviewModeration | null;
   response: CommerceIndexedReviewResponse | null;
+}
+
+/**
+ * Index moderation of a review. `text_hidden` keeps the rating and hides the
+ * text; `excluded` (fraud) also leaves the review out of every aggregate.
+ * `reason` is the moderator's label.
+ */
+export interface CommerceIndexedReviewModeration {
+  state: 'text_hidden' | 'excluded';
+  reason: string;
 }
 
 /** The subject's response joined beneath an indexed review (ratified D7). */
