@@ -75,12 +75,15 @@ export const APPROVE_IN_BITKIT_FALLBACK_COPY =
  */
 const MAX_TIMED_APPROVAL_SPAN_MS = 60 * 60 * 1000;
 
+/** The margin an upstream hold runs past its Paykit deadline (pubky-marketplace-service #150). */
+const HOLD_SKEW_MARGIN_MS = 60 * 1000;
+
 /**
  * The latest instant the buyer can approve the request in Bitkit, or null when
  * the Shop cannot tell. Bitkit expires a request the buyer has not approved at
  * its `proposal_expires_at`, which paykit-server sets at activation to at most
  * half the payment window, well before Pay by (issue #358). The order carries
- * only the payment deadline (or its hold, 60 s later), so this takes the
+ * only the payment deadline (or its hold, less the hold's 60 s margin), so this takes the
  * midpoint of order creation and that deadline: activation never precedes
  * creation, so it is not later than the wallet's own. An auction order is
  * created at close and may activate much later, so it gets no time, as does
@@ -90,8 +93,12 @@ const MAX_TIMED_APPROVAL_SPAN_MS = 60 * 60 * 1000;
 export function approveInBitkitDeadline(order: PayByOrder): string | null {
   if (order.auctionAggregateId) return null;
   const created = order.createdAt ? new Date(order.createdAt).getTime() : NaN;
-  const requestDeadline = order.paykitExpiresAt ?? order.holdExpiresAt;
-  const deadline = requestDeadline ? new Date(requestDeadline).getTime() : NaN;
+  // The service ends an upstream hold 60 s after the request's deadline.
+  const deadline = order.paykitExpiresAt
+    ? new Date(order.paykitExpiresAt).getTime()
+    : order.holdExpiresAt
+      ? new Date(order.holdExpiresAt).getTime() - HOLD_SKEW_MARGIN_MS
+      : NaN;
   if (!Number.isFinite(created) || !Number.isFinite(deadline) || deadline <= created) return null;
   if (deadline - created > MAX_TIMED_APPROVAL_SPAN_MS) return null;
   return new Date(created + (deadline - created) / 2).toISOString();

@@ -138,8 +138,8 @@ function makeCorrelation(registered: boolean) {
 }
 
 const HOLD_DEADLINE = '2026-08-20T21:15:00.000Z';
-// Half an hour before the hold, as a checkout's Paykit window runs.
-const ORDER_CREATED_AT = '2026-08-20T20:45:00.000Z';
+// The Paykit window before the hold (its deadline plus the 60 s margin).
+const ORDER_CREATED_AT = '2026-08-20T20:46:00.000Z';
 const ACTIVATED_REQUEST_DEADLINE = '2026-08-20T21:07:00.000Z';
 
 function Harness({ children }: { children: React.ReactNode }) {

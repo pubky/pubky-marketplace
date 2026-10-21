@@ -87,10 +87,11 @@ describe('approveInBitkitCopy', () => {
     expect(approveInBitkitDeadline(order)).toBe('2026-10-20T19:32:00.000Z');
   });
 
-  it('falls back to the hold when the request deadline is not projected', () => {
-    expect(approveInBitkitDeadline({ createdAt: CREATED, holdExpiresAt: '2026-10-19T13:34:58.080Z' })).toBe(
-      '2026-10-19T13:04:58.080Z',
+  it('falls back to the hold, less its 60 s margin, when the request deadline is not projected', () => {
+    expect(approveInBitkitDeadline({ createdAt: CREATED, holdExpiresAt: HOLD })).toBe(
+      approveInBitkitDeadline({ createdAt: CREATED, paykitExpiresAt: REQUEST }),
     );
+    expect(approveInBitkitDeadline({ createdAt: CREATED, holdExpiresAt: HOLD })).toBe('2026-10-19T12:49:58.080Z');
   });
 
   it('names no time when the request was bound long after the order was created', () => {

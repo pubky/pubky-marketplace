@@ -124,7 +124,7 @@ describe('MarketplacePaymentStatusCard — USDT orders', () => {
   });
 
   it('tells the buyer of an unpaid USDT order when to approve in Bitkit and that shipping waits for finality', () => {
-    const { order, payment } = createUsdtOrderFixture('awaiting', { createdAt: '2026-08-20T20:45:00.000Z' });
+    const { order, payment } = createUsdtOrderFixture('awaiting', { createdAt: '2026-08-20T20:46:00.000Z' });
     renderCard(order, payment, true);
 
     expect(screen.getByTestId('usdt-accept-by')).toHaveTextContent('Approve in Bitkit by 20 Aug 2026, 21:00.');
@@ -136,7 +136,7 @@ describe('MarketplacePaymentStatusCard — USDT orders', () => {
 
   it('states the window the order carries, not a fixed length', () => {
     const { order, payment } = createUsdtOrderFixture('awaiting', {
-      createdAt: '2026-08-20T20:45:00.000Z',
+      createdAt: '2026-08-20T20:46:00.000Z',
       holdExpiresAt: '2026-08-20T21:45:00.000Z',
     });
     renderCard(order, payment, true);

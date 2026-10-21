@@ -99,7 +99,7 @@ beforeEach(() => {
 
 describe('MarketplacePaymentStatusCard — one Paykit order before payment', () => {
   it('tells the buyer to pay in Bitkit with Bitcoin or USDT, without naming a rail yet', () => {
-    const { container } = renderPhase('unpaid', true, { createdAt: '2026-08-20T20:45:00.000Z' });
+    const { container } = renderPhase('unpaid', true, { createdAt: '2026-08-20T20:46:00.000Z' });
 
     expect(screen.getByText(PAYMENT_RAIL_BADGE.paykit)).toBeInTheDocument();
     expect(screen.queryByText(PAYMENT_RAIL_BADGE.bitcoin)).not.toBeInTheDocument();
@@ -113,7 +113,7 @@ describe('MarketplacePaymentStatusCard — one Paykit order before payment', () 
   });
 
   it('names an approval deadline before its Pay by line, as Bitkit expires an unapproved request first', () => {
-    renderPhase('unpaid', true, { createdAt: '2026-08-20T20:45:00.000Z', holdExpiresAt: '2026-08-20T21:45:00.000Z' });
+    renderPhase('unpaid', true, { createdAt: '2026-08-20T20:46:00.000Z', holdExpiresAt: '2026-08-20T21:45:00.000Z' });
 
     expect(screen.getByTestId('paykit-accept-by')).toHaveTextContent('Approve in Bitkit by 20 Aug 2026, 21:15.');
     expect(screen.getByTestId('paykit-accept-by')).not.toHaveTextContent(/minutes/);
