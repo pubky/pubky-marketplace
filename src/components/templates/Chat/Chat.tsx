@@ -15,6 +15,7 @@ import { CHAT_COPY } from '@/libs/chat/copy';
 import { ChatConversationRow } from '@/organisms/Chat/ChatConversationRow';
 import { ChatIdentityNotice } from '@/organisms/Chat/ChatIdentityNotice';
 import { ContentLayout } from '@/organisms/ContentLayout/ContentLayout';
+import { MarketplaceSectionNav } from '@/organisms/Marketplace/MarketplaceSectionNav';
 import { useAuthStore } from '@/stores/auth/auth.store';
 
 /** `/messages`: every conversation of the signed-in account, newest activity first. */
@@ -30,9 +31,13 @@ export function Chat() {
       showRightSidebar={false}
       showLeftMobileButton={false}
       showRightMobileButton={false}
+      // Lets the Market tab bar pin to the page instead of the clipped main column, as on the Market pages.
+      disableMainContentOverflow
       // The bottom room is for the standalone FAB; the embedded Shop has none.
       className={isEmbedded ? 'pb-6' : 'pb-28'}
     >
+      {/* Messages is one of the Market tabs, and on a phone this bar is the only way between them. */}
+      <MarketplaceSectionNav />
       <Container overrideDefaults className="mx-auto flex w-full max-w-3xl flex-col gap-6" data-surface="chat-inbox">
         <div className="flex flex-col gap-1">
           <Heading level={1} size="xl">
