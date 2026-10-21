@@ -1134,10 +1134,24 @@ describe('MarketplaceCheckout', () => {
 
     expect(screen.queryByRole('checkbox', { name: /guarantee/i })).not.toBeInTheDocument();
     expect(screen.queryByText(/guarantee/i)).not.toBeInTheDocument();
-    expect(screen.getByTestId('marketplace-checkout-pay')).toBeDisabled();
+    expect(screen.getByTestId('marketplace-checkout-pay')).toHaveAttribute('aria-describedby', 'checkout-pay-reason');
 
     await fillValidDelivery(userEvent.setup());
-    await waitFor(() => expect(screen.getByTestId('marketplace-checkout-pay')).toBeEnabled());
+    await waitFor(() => expect(screen.getByTestId('marketplace-checkout-pay')).not.toHaveAttribute('aria-describedby'));
+  });
+
+  it('shows which input blocks pay and moves to it, without paying (#355)', async () => {
+    seededCart();
+    const user = userEvent.setup();
+    Element.prototype.scrollIntoView = vi.fn();
+    render(<MarketplaceCheckout />);
+
+    await user.click(screen.getByTestId('marketplace-checkout-pay'));
+
+    expect(await screen.findByText('Recipient name is required.')).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByLabelText('Full name')).toHaveFocus());
+    expect(Element.prototype.scrollIntoView).toHaveBeenCalled();
+    expect(navigation.navigateTop).not.toHaveBeenCalled();
   });
 
   it('re-opens Ring approval when a session expires mid-flow', () => {
@@ -2551,7 +2565,7 @@ describe('MarketplaceCheckout accepted-offer path', () => {
 
     expect(screen.getByLabelText('Full name')).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Add delivery address' })).not.toBeInTheDocument();
-    expect(screen.getByTestId('marketplace-checkout-pay')).toBeDisabled();
+    expect(screen.getByTestId('marketplace-checkout-pay')).toHaveAttribute('aria-describedby', 'checkout-pay-reason');
   });
 
   it('removes the award line and continues checkout after a successful pay', async () => {
