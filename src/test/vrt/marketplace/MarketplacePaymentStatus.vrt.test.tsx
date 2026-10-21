@@ -779,6 +779,20 @@ describe('Marketplace payment status card — visual regression', () => {
     view.locks.enabled = true;
   });
 
+  it('renders a checkout the buyer cancelled at mobile viewport', async () => {
+    view.locks = { ...view.locks, enabled: false, correlation: null, delivery: null, error: null };
+    const screen = await renderCard('expired', 'transaction-service', {
+      adapter: 'paykit',
+      deployEnv: 'staging',
+      orderState: 'cancelled',
+      orderOverrides: { cancellationReason: 'Changed my mind', paymentMethod: 'bitcoin' },
+      viewport: VRT_VIEWPORT_MOBILE,
+    });
+    await expect.element(screen.getByTestId('buyer-cancelled-note')).toBeVisible();
+    await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('payment-status-buyer-cancelled-mobile');
+    view.locks.enabled = true;
+  });
+
   it('renders elapsed unpaid copy at desktop viewport', async () => {
     view.locks = { ...view.locks, enabled: false, correlation: null, delivery: null, error: null };
     const screen = await renderCard('expired', 'transaction-service', {
