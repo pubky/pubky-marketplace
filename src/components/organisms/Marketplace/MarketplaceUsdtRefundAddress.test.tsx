@@ -282,4 +282,27 @@ describe('MarketplaceUsdtRefundAddress — Paykit endpoint (draft)', () => {
       }),
     );
   });
+
+  it("keeps the buyer's own choice when the Paykit lookup finishes late", async () => {
+    let resolveLookup: (address: string | null) => void = () => {};
+    vi.spyOn(CommerceController, 'fetchBuyerPaykitUsdtAddress').mockReturnValue(
+      new Promise((resolve) => {
+        resolveLookup = resolve;
+      }),
+    );
+    const { actOnOrder } = renderPanel(createUsdtOrderFixture('return_approved'));
+    const user = userEvent.setup();
+
+    await user.type(screen.getByLabelText('Arbitrum One USDT address'), REFUND_FIXTURE_OTHER_ADDRESS);
+    resolveLookup(REFUND_FIXTURE_ADDRESS);
+
+    expect(await screen.findByRole('radio', { name: /Send it to my Paykit USDT address/ })).not.toBeChecked();
+    await user.click(screen.getByRole('checkbox', { name: 'This address accepts USDT on Arbitrum One' }));
+    await user.click(screen.getByRole('button', { name: 'Confirm refund address' }));
+    await waitFor(() =>
+      expect(actOnOrder).toHaveBeenCalledWith(expect.anything(), 'refund.confirm_destination', {
+        address: REFUND_FIXTURE_OTHER_ADDRESS,
+      }),
+    );
+  });
 });

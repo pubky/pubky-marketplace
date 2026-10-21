@@ -28,5 +28,9 @@ describe('paykit refund endpoint', () => {
     expect(usdtAddressFromEndpointPayload(payload({ value: REFUND_FIXTURE_ADDRESS, token: '0x0' }))).toBeNull();
     expect(usdtAddressFromEndpointPayload(payload({ value: 'bc1qnotanarbitrumaddress' }))).toBeNull();
     expect(usdtAddressFromEndpointPayload(REFUND_FIXTURE_ADDRESS)).toBeNull();
+    // The homeserver read hands over the payload already parsed.
+    expect(usdtAddressFromEndpointPayload(JSON.parse(payload({ value: REFUND_FIXTURE_ADDRESS })) as unknown)).toBe(
+      REFUND_FIXTURE_ADDRESS,
+    );
   });
 });

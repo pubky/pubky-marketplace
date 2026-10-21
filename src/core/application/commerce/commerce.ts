@@ -1713,16 +1713,18 @@ export class CommerceApplication {
       return null;
     }
     for (const appId of appIds) {
+      // An app that doesn't publish the endpoint is an expected miss, not an error.
       try {
-        const bytes = await HomeserverService.getBlob({
+        const endpoint = await HomeserverService.getJsonIfFound<unknown>({
           url: paykitEndpointUrl(buyerPubky, appId, USDT_ARBITRUM_ENDPOINT_ID),
           logUrl: `/pub/paykit/v0/apps/${appId}/endpoints/${USDT_ARBITRUM_ENDPOINT_ID}`,
           maxBytes: PAYKIT_ENDPOINT_MAX_BYTES,
+          tolerateUnreachable: true,
         });
-        const address = usdtAddressFromEndpointPayload(new TextDecoder().decode(bytes));
+        const address = endpoint.found ? usdtAddressFromEndpointPayload(endpoint.json) : null;
         if (address) return address;
       } catch {
-        // Not published by this app; try the next one.
+        // An unreadable endpoint: try the next app.
       }
     }
     return null;

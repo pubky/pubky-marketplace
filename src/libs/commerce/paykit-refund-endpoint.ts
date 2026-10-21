@@ -36,12 +36,14 @@ const USDT0_ARBITRUM_ONE = '0xfd086bc7cd5c481dcc9c85ebe478a1c0b69fcbb9';
  * only Bitkit's JSON shape for USDT0 on Arbitrum One, as Bitkit's own reader
  * (`PaykitUsdt.address(from:)`) does.
  */
-export function usdtAddressFromEndpointPayload(payload: string): string | null {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(payload);
-  } catch {
-    return null;
+export function usdtAddressFromEndpointPayload(payload: unknown): string | null {
+  let parsed = payload;
+  if (typeof payload === 'string') {
+    try {
+      parsed = JSON.parse(payload);
+    } catch {
+      return null;
+    }
   }
   if (typeof parsed !== 'object' || parsed === null) return null;
   const { chain_id: chainId, token, value } = parsed as Record<string, unknown>;

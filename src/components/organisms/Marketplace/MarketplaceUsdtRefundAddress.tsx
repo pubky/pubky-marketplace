@@ -96,7 +96,8 @@ function BuyerRefundAddress({
     void CommerceController.fetchBuyerPaykitUsdtAddress(order.buyerPubky).then((address) => {
       if (!active || !address) return;
       setPaykitAddress(address);
-      form.setValue('source', 'paykit');
+      // Preselect it only while the buyer hasn't chosen or typed anything yet.
+      if (!form.getFieldState('source').isDirty && !form.getValues('address')) form.setValue('source', 'paykit');
     });
     return () => {
       active = false;
