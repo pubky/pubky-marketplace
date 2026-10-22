@@ -75,10 +75,11 @@ vi.mock('@/stores/signIn/signIn.store', () => ({
 }));
 
 // Mock useMobileAuth hook - use vi.hoisted so values are available in vi.mock
-const { mockFetchUrl, mockCopyAuthUrl, mockOnAuthorizeClick } = vi.hoisted(() => ({
+const { mockFetchUrl, mockCopyAuthUrl, mockOnAuthorizeClick, mockAuthorizeWith } = vi.hoisted(() => ({
   mockFetchUrl: vi.fn(),
   mockCopyAuthUrl: vi.fn().mockResolvedValue(undefined),
   mockOnAuthorizeClick: vi.fn(),
+  mockAuthorizeWith: vi.fn(),
 }));
 vi.mock('@/hooks/useMobileAuth/useMobileAuth', () => ({
   useMobileAuth: vi.fn(() => ({
@@ -88,7 +89,9 @@ vi.mock('@/hooks/useMobileAuth/useMobileAuth', () => ({
     fetchUrl: mockFetchUrl,
     copyAuthUrl: mockCopyAuthUrl,
     isOpeningRing: false,
+    openingSigner: null,
     onAuthorizeClick: mockOnAuthorizeClick,
+    authorizeWith: mockAuthorizeWith,
   })),
 }));
 
@@ -115,7 +118,9 @@ const resetMobileAuthMock = () => {
     fetchUrl: mockFetchUrl,
     copyAuthUrl: mockCopyAuthUrl,
     isOpeningRing: false,
+    openingSigner: null,
     onAuthorizeClick: mockOnAuthorizeClick,
+    authorizeWith: mockAuthorizeWith,
   });
 };
 
@@ -389,7 +394,9 @@ describe('SignInContent', () => {
       fetchUrl: mockFetchUrl,
       copyAuthUrl: mockCopyAuthUrl,
       isOpeningRing: false,
+      openingSigner: null,
       onAuthorizeClick: mockOnAuthorizeClick,
+      authorizeWith: mockAuthorizeWith,
     });
 
     await act(async () => {
@@ -430,7 +437,9 @@ describe('SignInContent', () => {
       fetchUrl: mockFetchUrl,
       copyAuthUrl: mockCopyAuthUrl,
       isOpeningRing: false,
+      openingSigner: null,
       onAuthorizeClick: mockOnAuthorizeClick,
+      authorizeWith: mockAuthorizeWith,
     });
 
     const { toast } = await import('@/molecules/Toaster/use-toast');
@@ -461,7 +470,9 @@ describe('SignInContent', () => {
       fetchUrl: mockFetchUrl,
       copyAuthUrl: mockCopyAuthUrl,
       isOpeningRing: false,
+      openingSigner: null,
       onAuthorizeClick: mockOnAuthorizeClick,
+      authorizeWith: mockAuthorizeWith,
     });
 
     const { toast } = await import('@/molecules/Toaster/use-toast');
@@ -490,7 +501,9 @@ describe('SignInContent', () => {
       fetchUrl: mockFetchUrl,
       copyAuthUrl: mockCopyAuthUrl,
       isOpeningRing: false,
+      openingSigner: null,
       onAuthorizeClick: mockOnAuthorizeClick,
+      authorizeWith: mockAuthorizeWith,
     });
 
     await act(async () => {
@@ -510,7 +523,9 @@ describe('SignInContent', () => {
       fetchUrl: mockFetchUrl,
       copyAuthUrl: mockCopyAuthUrl,
       isOpeningRing: false,
+      openingSigner: null,
       onAuthorizeClick: mockOnAuthorizeClick,
+      authorizeWith: mockAuthorizeWith,
     });
 
     await act(async () => {
@@ -525,7 +540,7 @@ describe('SignInContent', () => {
   });
 });
 
-describe('SignInContent - Bitkit grant sign-in', () => {
+describe('SignInContent - one QR for Pubky Ring and Bitkit', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     resetMockSignInState();
@@ -537,97 +552,100 @@ describe('SignInContent - Bitkit grant sign-in', () => {
     vi.mocked(useGrantSignInAvailable).mockReturnValue(false);
   });
 
-  it('bitkit qr hidden without delegation', async () => {
+  it('shows no signer QR without delegation', async () => {
     await act(async () => {
       render(<SignInContent />);
     });
 
-    expect(screen.queryAllByTestId('sign-in-use-grant')).toHaveLength(0);
-    expect(screen.queryByTestId('sign-in-grant-qr-card')).not.toBeInTheDocument();
-    expect(useMobileAuth).not.toHaveBeenCalledWith({ type: 'grant' });
+    expect(screen.queryByTestId('sign-in-qr')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('sign-in-grant-button')).not.toBeInTheDocument();
   });
 
-  it('switches between signer-specific QR codes', async () => {
+  it('shows one QR with one scan line and both logos, and no signer toggle', async () => {
+    vi.mocked(useGrantSignInAvailable).mockReturnValue(true);
+    const { container } = render(<SignInContent />);
+
+    expect(screen.getAllByTestId('sign-in-qr')).toHaveLength(1);
+    expect(screen.getAllByTestId('qr-auth-url')).toHaveLength(1);
+    expect(screen.getAllByRole('button', { name: 'Copy authentication link' })).toHaveLength(1);
+    expect(screen.queryByRole('button', { name: 'Copy Bitkit authentication link' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('radio')).not.toBeInTheDocument();
+    expect(screen.getAllByText('Scan with Pubky Ring or Bitkit.')).toHaveLength(1);
+    expect(document.body.textContent).not.toMatch(/preferred keychain|Scan with Bitkit\.|Scan with Pubky Ring\./);
+    expect(container.querySelector('[aria-label="Pubky Ring"]')).toBeInTheDocument();
+    expect(container.querySelector('[aria-label="Bitkit"]')).toBeInTheDocument();
+  });
+
+  it('starts one sign-in flow for both signers', async () => {
+    vi.mocked(useGrantSignInAvailable).mockReturnValue(true);
+    await act(async () => {
+      render(<SignInContent />);
+    });
+
+    expect(vi.mocked(useMobileAuth).mock.calls.length).toBeGreaterThan(0);
+    for (const [options] of vi.mocked(useMobileAuth).mock.calls) {
+      expect(options).toEqual({});
+    }
+  });
+
+  it('shows no identity hint', async () => {
+    vi.mocked(useGrantSignInAvailable).mockReturnValue(true);
+    await act(async () => {
+      render(<SignInContent />);
+    });
+
+    expect(
+      screen.queryByText("New Bitkit users must create a Pubky identity in Bitkit's profile before scanning."),
+    ).not.toBeInTheDocument();
+  });
+
+  it('offers a separate Authorize button per signer on mobile, each opening its own app', async () => {
     vi.mocked(useGrantSignInAvailable).mockReturnValue(true);
     render(<SignInContent />);
-    expect(screen.getByTestId('sign-in-ring-option')).toBeInTheDocument();
-    expect(screen.queryByTestId('sign-in-bitkit-option')).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole('radio', { name: 'Bitkit' }));
-    expect(screen.getByTestId('sign-in-bitkit-option')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Copy Bitkit authentication link' })).toBeInTheDocument();
-    expect(screen.queryByTestId('sign-in-ring-option')).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole('radio', { name: 'Pubky Ring' }));
-    expect(screen.getByRole('button', { name: 'Copy authentication link' })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Authorize with Pubky Ring' }));
+    expect(mockAuthorizeWith).toHaveBeenCalledTimes(1);
+    expect(mockAuthorizeWith).toHaveBeenLastCalledWith('ring');
+    fireEvent.click(screen.getByRole('button', { name: 'Authorize with Bitkit' }));
+    expect(mockAuthorizeWith).toHaveBeenCalledTimes(2);
+    expect(mockAuthorizeWith).toHaveBeenLastCalledWith('bitkit');
+    expect(mockOnAuthorizeClick).not.toHaveBeenCalled();
   });
 
-  it('shows no identity hint on either signer tab', async () => {
+  it('shows the launch state on the button that was tapped only', async () => {
     vi.mocked(useGrantSignInAvailable).mockReturnValue(true);
-    await act(async () => {
-      render(<SignInContent />);
-    });
-
-    const hint = "New Bitkit users must create a Pubky identity in Bitkit's profile before scanning.";
-    expect(screen.queryByText(hint)).not.toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole('radio', { name: 'Bitkit' }));
-
-    expect(screen.getByTestId('sign-in-bitkit-option')).toBeInTheDocument();
-    expect(screen.queryByText(hint)).not.toBeInTheDocument();
-  });
-
-  it('authorizes using the selected signer on mobile', async () => {
-    vi.mocked(useGrantSignInAvailable).mockReturnValue(true);
-    const ringAuthorize = vi.fn();
-    const bitkitAuthorize = vi.fn();
-    vi.mocked(useMobileAuth).mockImplementation((options) => ({
+    vi.mocked(useMobileAuth).mockReturnValue({
       url: 'auth-url',
       isLoading: false,
       isExpired: false,
       fetchUrl: mockFetchUrl,
       copyAuthUrl: mockCopyAuthUrl,
-      isOpeningRing: false,
-      onAuthorizeClick: options?.type === 'grant' ? bitkitAuthorize : ringAuthorize,
-    }));
+      isOpeningRing: true,
+      openingSigner: 'bitkit',
+      onAuthorizeClick: mockOnAuthorizeClick,
+      authorizeWith: mockAuthorizeWith,
+    });
     render(<SignInContent />);
-    fireEvent.click(screen.getByRole('button', { name: 'Authorize' }));
-    expect(ringAuthorize).toHaveBeenCalledOnce();
-    expect(bitkitAuthorize).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole('radio', { name: 'Bitkit' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Authorize' }));
-    expect(bitkitAuthorize).toHaveBeenCalledOnce();
-    expect(ringAuthorize).toHaveBeenCalledOnce();
+
+    expect(screen.getByTestId('sign-in-grant-button')).toHaveTextContent('Opening Bitkit...');
+    expect(screen.getByTestId('button')).toHaveTextContent('Authorize with Pubky Ring');
   });
 
-  it('copying the Bitkit QR copies the Bitkit flow URL, not the Ring one', async () => {
+  it('copies the one flow URL when the QR is clicked', async () => {
     vi.mocked(useGrantSignInAvailable).mockReturnValue(true);
-    const ringCopy = vi.fn().mockResolvedValue(undefined);
-    const bitkitCopy = vi.fn().mockResolvedValue(undefined);
-    vi.mocked(useMobileAuth).mockImplementation((options) => ({
-      url: options?.type === 'grant' ? 'pubkyauth://signin_grant?x' : 'pubkyauth://signin?x',
-      isLoading: false,
-      isExpired: false,
-      fetchUrl: mockFetchUrl,
-      copyAuthUrl: options?.type === 'grant' ? bitkitCopy : ringCopy,
-      isOpeningRing: false,
-      onAuthorizeClick: mockOnAuthorizeClick,
-    }));
     await act(async () => {
       render(<SignInContent />);
     });
 
     await act(async () => {
-      fireEvent.click(screen.getByRole('radio', { name: 'Bitkit' }));
-    });
-    await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: 'Copy Bitkit authentication link' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Copy authentication link' }));
     });
 
-    expect(bitkitCopy).toHaveBeenCalledTimes(1);
-    expect(ringCopy).not.toHaveBeenCalled();
+    expect(mockCopyAuthUrl).toHaveBeenCalledTimes(1);
   });
 });
 
-describe('SignInContent - Bitkit sign-in without scoped keys', () => {
+describe('SignInContent - sign-in without scoped keys', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     resetMockSignInState();
@@ -643,17 +661,12 @@ describe('SignInContent - Bitkit sign-in without scoped keys', () => {
 
   const withoutKeys = () => screen.queryByTestId('sign-in-without-keys-button');
 
-  it('offers the sign-in without keys only beside the Bitkit QR, and only when keys are requested', async () => {
+  it('offers the sign-in without keys beside the QR when keys are requested', async () => {
     await act(async () => {
       render(<SignInContent />);
     });
-    expect(withoutKeys()).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('radio', { name: 'Bitkit' }));
     expect(withoutKeys()).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole('radio', { name: 'Pubky Ring' }));
-    expect(withoutKeys()).not.toBeInTheDocument();
   });
 
   it('does not offer it when the deploy does not request keys', async () => {
@@ -661,24 +674,23 @@ describe('SignInContent - Bitkit sign-in without scoped keys', () => {
     await act(async () => {
       render(<SignInContent />);
     });
-    fireEvent.click(screen.getByRole('radio', { name: 'Bitkit' }));
+
     expect(withoutKeys()).not.toBeInTheDocument();
-    expect(useMobileAuth).not.toHaveBeenCalledWith({ type: 'grant', withPrivKeys: false });
+    expect(useMobileAuth).not.toHaveBeenCalledWith({ withPrivKeys: false });
   });
 
-  it('asks for the Bitkit grant with keys until the user chooses to sign in without them', async () => {
+  it('asks for the grant with keys until the user chooses to sign in without them', async () => {
     await act(async () => {
       render(<SignInContent />);
     });
-    expect(useMobileAuth).toHaveBeenCalledWith({ type: 'grant' });
-    expect(useMobileAuth).not.toHaveBeenCalledWith({ type: 'grant', withPrivKeys: false });
+    expect(useMobileAuth).toHaveBeenCalledWith({});
+    expect(useMobileAuth).not.toHaveBeenCalledWith({ withPrivKeys: false });
 
-    fireEvent.click(screen.getByRole('radio', { name: 'Bitkit' }));
     await act(async () => {
       fireEvent.click(withoutKeys() as HTMLElement);
     });
 
-    expect(useMobileAuth).toHaveBeenLastCalledWith({ type: 'grant', withPrivKeys: false });
+    expect(useMobileAuth).toHaveBeenLastCalledWith({ withPrivKeys: false });
     expect(withoutKeys()).not.toBeInTheDocument();
   });
 });
@@ -842,7 +854,7 @@ describe('SignInContent - Continue with Google (Pubky Passport)', () => {
     passport.isAvailable = false;
   });
 
-  it('offers Continue with Google beside the Ring and Bitkit QRs on desktop and mobile', async () => {
+  it('offers Continue with Google beside the Ring and Bitkit QR on desktop and mobile', async () => {
     await act(async () => {
       render(<SignInContent />);
     });
@@ -852,8 +864,7 @@ describe('SignInContent - Continue with Google (Pubky Passport)', () => {
     expect(screen.getByTestId('sign-in-passport-option')).toHaveTextContent(/^Continue with Google$/);
     expect(document.body.textContent).not.toMatch(/Messages are not available|creates your Pubky identity/i);
     expect(screen.queryByRole('button', { name: /Continue with Apple/ })).not.toBeInTheDocument();
-    expect(screen.getByTestId('sign-in-ring-option')).toBeInTheDocument();
-    expect(screen.getByRole('radio', { name: 'Bitkit' })).toBeInTheDocument();
+    expect(screen.getByTestId('sign-in-qr')).toBeInTheDocument();
   });
 
   it('starts the Passport attempt from the click itself', async () => {
@@ -894,6 +905,6 @@ describe('SignInContent - Continue with Google (Pubky Passport)', () => {
     });
 
     expect(screen.queryByTestId('sign-in-passport-option')).not.toBeInTheDocument();
-    expect(screen.getByRole('radio', { name: 'Bitkit' })).toBeInTheDocument();
+    expect(screen.getByTestId('sign-in-qr')).toBeInTheDocument();
   });
 });

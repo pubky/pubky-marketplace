@@ -3,14 +3,8 @@ export type UseAuthUrlOptions =
   | {
       /** Whether to automatically fetch the auth URL on mount. @default true */
       autoFetch?: boolean;
-      /** The type of auth URL to generate. @default 'signin' */
+      /** The type of auth URL to generate: the Shop sign-in grant (`pubkyauth://signin_grant`) for Pubky Ring and Bitkit. @default 'signin' */
       type?: 'signin';
-    }
-  | {
-      /** Whether to automatically fetch the auth URL on mount. @default true */
-      autoFetch?: boolean;
-      /** Grant sign-in (`pubkyauth://signin_grant`) for signers such as Bitkit */
-      type: 'grant';
       /**
        * Whether the grant also asks for scoped encryption keys. Omitted: follows the deploy's
        * `PUBKY_RUNTIME_PRIV_ENCRYPTION_KEYS` switch. `false` is the sign-in without keys.

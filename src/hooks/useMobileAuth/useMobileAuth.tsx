@@ -1,10 +1,13 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { AuthController } from '@/controllers/auth/auth';
 import { toSignerDeepLink } from '@/libs/navigation/bitkit-ios-url';
 import { navigateTop } from '@/libs/navigation/navigate-top';
 import { useAuthUrl } from '../useAuthUrl/useAuthUrl';
 import type { UseAuthUrlOptions } from '../useAuthUrl/useAuthUrl.types';
+
+export type SignInSigner = 'ring' | 'bitkit';
 
 type UseMobileAuthReturn = {
   url: string;
@@ -13,18 +16,24 @@ type UseMobileAuthReturn = {
   fetchUrl: () => Promise<void>;
   copyAuthUrl: () => Promise<void>;
   isOpeningRing: boolean;
+  /** The signer whose Authorize button opened the app, so only that button shows the launch state. */
+  openingSigner: SignInSigner | null;
+  /** Opens the approval URL as is, for a sign-up or a signer that needs no rewrite. */
   onAuthorizeClick: () => void;
+  /** Opens the approval URL in one phone signer and records that choice for the sign-in. */
+  authorizeWith: (signer: SignInSigner) => void;
 };
 
 /**
  * Manages mobile auth flow via deeplink navigation.
  * Resets the opening state when the page becomes hidden (app opened successfully).
- * On iOS a grant sign-in opens Bitkit's own `bitkit://` link: Bitkit iOS leaves
- * `pubkyauth://` to Pubky Ring. The QR and copied link stay `pubkyauth://`.
+ * `authorizeWith('bitkit')` opens Bitkit's own `bitkit://` link on iOS: Bitkit iOS
+ * leaves `pubkyauth://` to Pubky Ring. Every other signer and platform opens the
+ * `pubkyauth://` URL, and the QR and copied link always stay `pubkyauth://`.
  */
 export function useMobileAuth(options: UseAuthUrlOptions = {}): UseMobileAuthReturn {
   const { url, isLoading, isExpired, fetchUrl, copyAuthUrl } = useAuthUrl(options);
-  const [isOpeningRing, setIsOpeningRing] = useState(false);
+  const [opening, setOpening] = useState<SignInSigner | 'other' | null>(null);
   const visibilityHandlerRef = useRef<(() => void) | null>(null);
 
   const cleanup = useCallback(() => {
@@ -36,7 +45,7 @@ export function useMobileAuth(options: UseAuthUrlOptions = {}): UseMobileAuthRet
 
   useEffect(() => {
     if (isLoading) {
-      setIsOpeningRing(false);
+      setOpening(null);
     }
   }, [isLoading]);
 
@@ -46,31 +55,34 @@ export function useMobileAuth(options: UseAuthUrlOptions = {}): UseMobileAuthRet
     };
   }, [cleanup]);
 
-  const onAuthorizeClick = () => {
+  const open = (signer: SignInSigner | null) => {
     if (isLoading) return;
 
     if (!url) {
       cleanup();
-      setIsOpeningRing(false);
+      setOpening(null);
       void fetchUrl();
       return;
     }
 
     cleanup();
-    setIsOpeningRing(true);
+    setOpening(signer ?? 'other');
 
     const onVisibilityChange = () => {
       if (document.hidden) {
         cleanup();
-        setIsOpeningRing(false);
+        setOpening(null);
       }
     };
     visibilityHandlerRef.current = onVisibilityChange;
 
     document.addEventListener('visibilitychange', onVisibilityChange, { once: true });
-    // A grant sign-in is the Bitkit tab's.
-    navigateTop(toSignerDeepLink(url, options.type === 'grant' ? 'bitkit' : null));
+    if (signer) AuthController.noteSignInSigner(signer);
+    navigateTop(toSignerDeepLink(url, signer));
   };
+
+  const onAuthorizeClick = () => open(null);
+  const authorizeWith = (signer: SignInSigner) => open(signer);
 
   return {
     url,
@@ -78,7 +90,9 @@ export function useMobileAuth(options: UseAuthUrlOptions = {}): UseMobileAuthRet
     isExpired,
     fetchUrl,
     copyAuthUrl,
-    isOpeningRing,
+    isOpeningRing: opening !== null,
+    openingSigner: opening === 'other' ? null : opening,
     onAuthorizeClick,
+    authorizeWith,
   };
 }

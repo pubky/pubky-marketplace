@@ -24,7 +24,10 @@ export const SIGN_UP_COPY = {
   signInLink: 'Sign in instead',
 } as const;
 
-/** Sign-in copy for the two signers the Shop offers side by side. */
+/**
+ * Sign-in copy per phone signer. The mobile Authorize buttons use it so each
+ * one opens its own app; the QR is shared (see {@link SIGN_IN_SIGNER_COPY}).
+ */
 export const SIGNER_AUTH_COPY = {
   signIn: {
     ring: {
@@ -34,7 +37,7 @@ export const SIGNER_AUTH_COPY = {
       copyLabel: 'Copy authentication link',
       reloadLabel: 'Reload sign-in QR code',
       openingLabel: 'Opening Pubky Ring...',
-      showRingLogo: true,
+      logo: 'ring',
     },
     bitkit: {
       name: 'Bitkit',
@@ -43,10 +46,21 @@ export const SIGNER_AUTH_COPY = {
       copyLabel: 'Copy Bitkit authentication link',
       reloadLabel: 'Reload Bitkit sign-in QR code',
       openingLabel: 'Opening Bitkit...',
-      showRingLogo: false,
+      logo: 'bitkit',
     },
   },
 } as const satisfies Record<'signIn', Record<'ring' | 'bitkit', SignerAuthCopy>>;
+
+/** The one sign-in QR, which Pubky Ring and Bitkit both approve. */
+export const SIGN_IN_SIGNER_COPY = {
+  name: 'Pubky Ring or Bitkit',
+  hint: 'Scan with Pubky Ring or Bitkit.',
+  identityHint: null,
+  copyLabel: 'Copy authentication link',
+  reloadLabel: 'Reload sign-in QR code',
+  openingLabel: 'Opening signer...',
+  logo: 'both',
+} as const satisfies SignerAuthCopy;
 
 /** The one sign-up QR, which either phone signer can scan. */
 export const SIGN_UP_SIGNER_COPY = {
@@ -56,7 +70,7 @@ export const SIGN_UP_SIGNER_COPY = {
   copyLabel: 'Copy sign-up link',
   reloadLabel: 'Reload sign-up QR code',
   openingLabel: 'Opening signer...',
-  showRingLogo: false,
+  logo: 'bitkit',
 } as const satisfies SignerAuthCopy;
 
 /** One signer's labelled QR in the side-by-side desktop layout. */
@@ -94,7 +108,7 @@ export function SignerAuthOption({
           clickToReloadLabel={'Click to reload'}
           activeQrHasHoverEffect
           fillWidth={qrOnly}
-          logo={copy.showRingLogo ? 'ring' : 'bitkit'}
+          logo={copy.logo}
         />
       </span>
     </button>
@@ -120,14 +134,14 @@ export function SignerAuthOption({
 }
 
 /** One signer's deeplink button in the stacked mobile layout. */
-export function SignerAuthorizeButton({ copy, auth, testId, authorizeLabel }: SignerAuthorizeButtonProps) {
+export function SignerAuthorizeButton({ copy, auth, testId, authorizeLabel, onAuthorize }: SignerAuthorizeButtonProps) {
   const { url, isLoading, isExpired, isOpeningRing, onAuthorizeClick } = auth;
   const isMobileLaunching = isLoading || isOpeningRing;
   return (
     <Button
       className="w-full"
       size="lg"
-      onClick={onAuthorizeClick}
+      onClick={onAuthorize ?? onAuthorizeClick}
       disabled={isMobileLaunching || (!url && !isExpired)}
       aria-busy={isMobileLaunching}
       data-testid={testId}
