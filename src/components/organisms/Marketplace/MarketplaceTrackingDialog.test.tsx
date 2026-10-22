@@ -21,6 +21,10 @@ const shipmentOf = (carrier: string, trackingNumber: string) => ({
 
 beforeEach(() => {
   commit.mockReset().mockResolvedValue({ ok: true, result: { kind: 'order' } } as never);
+  HTMLElement.prototype.hasPointerCapture = vi.fn(() => false);
+  HTMLElement.prototype.setPointerCapture = vi.fn();
+  HTMLElement.prototype.releasePointerCapture = vi.fn();
+  HTMLElement.prototype.scrollIntoView = vi.fn();
 });
 
 describe('MarketplaceTrackingDialog', () => {
@@ -62,6 +66,21 @@ describe('MarketplaceTrackingDialog', () => {
     expect(await screen.findByText('Enter the tracking number.')).toBeInTheDocument();
     expect(commit).not.toHaveBeenCalled();
     expect(screen.getByRole('dialog')).toBeInTheDocument();
+  });
+
+  it('asks for a carrier when none is chosen and sends nothing', async () => {
+    const user = userEvent.setup();
+    const order = createOrderFixture('shipped', { shipment: shipmentOf('Other', '') });
+    render(<MarketplaceTrackingDialog order={order} onChanged={vi.fn()} />);
+
+    await user.click(screen.getByRole('button', { name: 'Add tracking' }));
+    await user.click(screen.getByRole('combobox', { name: 'Carrier' }));
+    await user.click(screen.getByRole('option', { name: 'DHL' }));
+    expect(screen.getByRole('combobox', { name: 'Carrier' })).toHaveTextContent('DHL');
+    await user.type(screen.getByLabelText('Tracking number'), 'JD0146000000');
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => expect(commit).toHaveBeenCalledWith(order.id, order.revision, 'DHL', 'JD0146000000'));
   });
 
   it('renders nothing for the buyer or once the order is delivered', () => {
