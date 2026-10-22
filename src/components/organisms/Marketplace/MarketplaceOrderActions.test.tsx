@@ -1443,6 +1443,31 @@ describe('MarketplaceOrderActions Paykit cancel', () => {
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
   });
 
+  it('says an unpaid pickup checkout is cancelled, like a shipping one (#348)', async () => {
+    const user = userEvent.setup();
+    const { toast } = await import('@/molecules/Toaster/use-toast');
+    vi.mocked(toast).mockClear();
+    mockedController.executeMarketplaceCommand.mockResolvedValueOnce({
+      ok: true,
+      result: { kind: 'order', order: { state: 'cancelled' } },
+    } as never);
+    render(
+      <MarketplaceOrderActions
+        order={createOrderFixture('pending_payment', { fulfillment: 'pickup', paymentMethod: 'paypal' })}
+        isBuyer
+        canEditReview={false}
+        actOnOrder={vi.fn(async () => true)}
+        onChanged={vi.fn()}
+      />,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Cancel checkout' }));
+    await user.type(within(screen.getByRole('dialog')).getByRole('textbox'), 'Changed my mind');
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Confirm' }));
+
+    await waitFor(() => expect(toast).toHaveBeenCalledWith({ title: 'Checkout cancelled' }));
+  });
+
   it('says an unpaid checkout is cancelled, not that cancellation was requested (#348)', async () => {
     const user = userEvent.setup();
     const { toast } = await import('@/molecules/Toaster/use-toast');

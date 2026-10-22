@@ -255,8 +255,9 @@ export function MarketplaceOrderActions({
       if (!(await action.form.trigger('reason'))) return;
       const outcome = await pickup.cancelOrder(action.form.getValues('reason'));
       if (outcome === 'cancelled') {
+        // An unpaid pickup checkout reads like a shipping one (#348).
         toast({
-          title: 'Order cancelled',
+          title: order.state === 'pending_payment' ? 'Checkout cancelled' : 'Order cancelled',
         });
         setOpen(false);
       } else if (outcome === 'cancel_requested') {
