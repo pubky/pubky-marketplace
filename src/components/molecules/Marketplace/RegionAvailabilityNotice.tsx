@@ -7,6 +7,7 @@ import type { RegionAvailability } from '@/hooks/useRegionAvailability/useRegion
 import { BUYER_COUNTRY_DIGITAL_INFO, BUYER_COUNTRY_PROMPT } from '@/libs/commerce/eu-region';
 import { countryDisplayName } from '@/libs/commerce/ships-to';
 import { BuyerCountryField } from './BuyerCountryField';
+import { CommerceBlockedNotice } from './CommerceBlockedNotice';
 import { RegionRefusal } from './RegionRefusal';
 
 /**
@@ -19,12 +20,18 @@ export function RegionAvailabilityNotice({
   region,
   testIdPrefix,
   countryFieldId = 'buyer-country',
+  blocked = null,
 }: {
   region: RegionAvailability;
   testIdPrefix: string;
   countryFieldId?: string;
+  /** Commerce is blocked in this region: the one line replaces everything else. */
+  blocked?: { message: string; info: string } | null;
 }) {
   const [editing, setEditing] = useState(false);
+  if (blocked) {
+    return <CommerceBlockedNotice message={blocked.message} info={blocked.info} testId={`${testIdPrefix}-blocked`} />;
+  }
   const showsField = region.needsCountry || region.canChangeCountry || editing;
   const showsCountry = !showsField && region.buyerCountry !== null && region.usesCountry;
   if (!region.refusal && !showsField && !showsCountry) return null;

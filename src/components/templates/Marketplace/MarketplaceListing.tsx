@@ -195,7 +195,8 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
     digital: publishedMethods.includes('digital') && !publishedMethods.some((m) => m === 'shipping' || m === 'pickup'),
     isOwner,
   });
-  const regionBlocked = region.refusal !== null || region.needsCountry;
+  const regionRefused = region.refusal !== null || region.needsCountry;
+  const regionBlocked = regionRefused || region.commerce.held;
   const declaration = shop ? sellerDeclaration(shop.record) : 'unknown';
 
   useEffect(() => {
@@ -545,11 +546,12 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
                     onSessionRequired={revealSessionRequired}
                     onAccepted={negotiation.refresh}
                     auctionPhase={auctionPhase ?? undefined}
+                    regionHeld={region.commerce.held}
                   />
                 </div>
               ) : (
                 <>
-                  {viewerHoldOrder ? (
+                  {viewerHoldOrder && !region.commerce.held ? (
                     <Button asChild size="default" className="w-fit rounded-full">
                       <Link
                         href={getMarketplaceCheckoutRoute(viewerHoldOrder.orderId)}
@@ -559,7 +561,7 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
                         Buy
                       </Link>
                     </Button>
-                  ) : viewerOfferHold ? (
+                  ) : viewerOfferHold && !region.commerce.held ? (
                     <Button asChild size="default" className="w-fit rounded-full">
                       <Link
                         href={getMarketplaceOfferCheckoutRoute(viewerOfferHold.offerId)}
@@ -632,7 +634,8 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
                       onSessionRequired={revealSessionRequired}
                       onAccepted={negotiation.refresh}
                       isOwner={isOwner}
-                      holdDisabled={projectionIsReserved || publicHold || regionBlocked}
+                      regionHeld={region.commerce.held}
+                      holdDisabled={projectionIsReserved || publicHold || regionRefused}
                       holdLabel={
                         viewerHoldOrder ? CHECKOUT_HOLD_COPY.heldForYouCta : CHECKOUT_HOLD_COPY.heldWhileAnotherPays
                       }
@@ -693,7 +696,13 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
                   : negotiation.error}
               </Typography>
             )}
-            {!isOwner && <RegionAvailabilityNotice region={region} testIdPrefix="marketplace-listing" />}
+            {!isOwner && (
+              <RegionAvailabilityNotice
+                region={region}
+                testIdPrefix="marketplace-listing"
+                blocked={region.blockedNotice}
+              />
+            )}
             <Card className="rounded-md p-0">
               <CardContent className="flex flex-col gap-3 p-6">
                 <div className="min-w-0 flex-1 sm:min-w-[12rem]">

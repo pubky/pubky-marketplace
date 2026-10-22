@@ -1,5 +1,6 @@
 import { gatedMarketplaceMetadata } from '@/app/marketplace/gated-metadata';
 import { getStoreConnectionCatalogRoute } from '@/app/routes';
+import { SellingUnavailableGate } from '@/organisms/Marketplace/SellingUnavailableGate';
 import { MarketplaceConnectorCatalog } from '@/templates/Marketplace/MarketplaceConnectorCatalog';
 
 export interface MarketplaceConnectorCatalogPageProps {
@@ -20,5 +21,9 @@ export async function generateMetadata({ params }: MarketplaceConnectorCatalogPa
 
 export default async function MarketplaceConnectorCatalogPage({ params }: MarketplaceConnectorCatalogPageProps) {
   const { connectionId } = await params;
-  return <MarketplaceConnectorCatalog connectionId={connectionId} />;
+  return (
+    <SellingUnavailableGate>
+      <MarketplaceConnectorCatalog connectionId={connectionId} />
+    </SellingUnavailableGate>
+  );
 }
