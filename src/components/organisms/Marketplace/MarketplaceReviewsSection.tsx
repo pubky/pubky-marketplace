@@ -203,7 +203,7 @@ export function MarketplaceReviewsSection({
           />
         ) : reviews.length === 0 && filterActive ? (
           <MarketplaceReviewsFilterNotice
-            message={REVIEW_FILTER_COPY.none(filter.kind)}
+            message={REVIEW_FILTER_COPY.emptyList}
             hint={REVIEW_FILTER_COPY.emptyHint}
             infoCard={infoCard}
             onShowAll={() => setFilter({ kind: 'all' })}
