@@ -121,7 +121,7 @@ describe('DialogTerms', () => {
     // Check for some key terms content - use getAllByText for elements that appear multiple times
     expect(screen.getByText(/Thank you for using the Pubky platform/)).toBeInTheDocument();
     expect(screen.getAllByText(/TERMS AND CONDITIONS/)).toHaveLength(2); // Appears twice
-    expect(screen.getByText(/Effective Date: \[DATE TO BE SET AT PUBLICATION\]/)).toBeInTheDocument();
+    expect(screen.getByText(/Effective Date: October 22, 2026/)).toBeInTheDocument();
     expect(screen.getByText(/PLEASE REVIEW THE ARBITRATION PROVISION/)).toBeInTheDocument();
   });
 });

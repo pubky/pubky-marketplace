@@ -34,7 +34,7 @@ export function DialogTerms({ trigger }: DialogTermsProps) {
             <Typography className={baseCSS}>
               TERMS AND CONDITIONS
               <br />
-              Effective Date: [DATE TO BE SET AT PUBLICATION]
+              Effective Date: October 22, 2026
             </Typography>
             <Typography className={baseCSS}>
               Thank you for using the Pubky platform and the products, services and features we make available to you as
