@@ -143,6 +143,32 @@ describe('useMarketplaceOrders', () => {
     );
   });
 
+  it('says a payment was seen when the service refuses a checkout cancel, and re-reads the orders (#347)', async () => {
+    const { toast } = await import('@/molecules/Toaster/use-toast');
+    const { result } = renderHook(() => useMarketplaceOrders());
+    await waitFor(() => expect(result.current.orders).toHaveLength(1));
+    const order = result.current.orders[0].order;
+    expect(order.state).toBe('pending_payment');
+    vi.mocked(toast).mockClear();
+    const reads = vi.mocked(CommerceController.getMarketplaceOrders).mock.calls.length;
+
+    vi.mocked(CommerceController.executeMarketplaceCommand).mockResolvedValueOnce({
+      ok: false,
+      error: { code: 'INVALID_STATE', message: 'This order can no longer be cancelled.' },
+    });
+    let accepted: boolean | undefined;
+    await act(async () => {
+      accepted = await result.current.actOnOrder(order, 'order.cancel_request', { reason: 'Changed my mind' });
+    });
+
+    expect(accepted).toBe(false);
+    expect(toast).toHaveBeenCalledWith({
+      variant: 'error',
+      description: "We've seen a payment for this order, so it can't be cancelled now.",
+    });
+    expect(vi.mocked(CommerceController.getMarketplaceOrders).mock.calls.length).toBeGreaterThan(reads);
+  });
+
   it('maps server and thrown sentinel failures to static copy', async () => {
     const sentinel = 'SENTINEL_SERVER_TEXT_orders';
     const { toast } = await import('@/molecules/Toaster/use-toast');

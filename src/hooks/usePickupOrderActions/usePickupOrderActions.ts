@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import { MARKETPLACE_FAILURE_MESSAGES } from '@/libs/commerce/failure-messages';
+import { CHECKOUT_CANCEL_PAYMENT_SEEN_COPY } from '@/libs/commerce/paykit-rail';
 import { classifyMarketplacePickupRefusal, pickupRefusalToastDescription } from '@/libs/commerce/pickup';
 import { buildMarketplaceOrderAggregateId, isMarketplaceRevisionConflict } from '@/libs/commerce/transaction-commands';
 import { PAYMENT_NOT_FINAL_COPY } from '@/libs/commerce/usdt-buyer-status';
@@ -136,6 +137,13 @@ export function usePickupOrderActions(
             variant: 'error',
             description: 'This order changed since you loaded it. The latest state was reloaded — retry from there.',
           });
+          return false;
+        }
+        // A pickup checkout whose payment was seen since the last poll: the same
+        // refusal and re-read as `useMarketplaceOrders.actOnOrder` (#347).
+        if (order.state === 'pending_payment' && response.error.code === 'INVALID_STATE') {
+          await onChanged();
+          toast({ variant: 'error', description: CHECKOUT_CANCEL_PAYMENT_SEEN_COPY });
           return false;
         }
         toast({ variant: 'error', description: pickupRefusalToastDescription(response.error.message) });
