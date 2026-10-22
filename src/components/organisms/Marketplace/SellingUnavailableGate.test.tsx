@@ -73,6 +73,34 @@ describe('SellingUnavailableGate', () => {
     expect(screen.queryByText('the seller studio')).not.toBeInTheDocument();
   });
 
+  it('can leave the shop country out, so a seller with a blocked shop country can still change it', async () => {
+    setRegionModes(LAUNCH);
+    stubClientRegion('CH');
+    ownShopIn('US');
+    render(
+      <SellingUnavailableGate byShopCountry={false}>
+        <p>the storefront settings</p>
+      </SellingUnavailableGate>,
+    );
+
+    expect(await screen.findByText('the storefront settings')).toBeInTheDocument();
+    expect(CommerceController.getShop).not.toHaveBeenCalled();
+  });
+
+  it('still blocks by IP country when the shop country is left out', async () => {
+    setRegionModes(LAUNCH);
+    stubClientRegion('US');
+    ownShopIn('CH');
+    render(
+      <SellingUnavailableGate byShopCountry={false}>
+        <p>the storefront settings</p>
+      </SellingUnavailableGate>,
+    );
+
+    expect(await screen.findByTestId('selling-unavailable')).toHaveTextContent(SELLING_BLOCKED_MESSAGE);
+    expect(screen.queryByText('the storefront settings')).not.toBeInTheDocument();
+  });
+
   it('says the location cannot be told for an unknown seller, with no suggestion to use a VPN', async () => {
     setRegionModes(LAUNCH);
     stubClientRegion(null);

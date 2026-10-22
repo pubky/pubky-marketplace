@@ -87,6 +87,7 @@ describe('MarketplaceCart under the region modes', () => {
     expect(checkout().closest('a')).toBeNull();
     expect(screen.getByRole('button', { name: 'About this limit' })).toBeInTheDocument();
     expect(screen.getByText('Vintage boots')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /authorize|enable purchases/i })).not.toBeInTheDocument();
   });
 
   it('says the location cannot be told for an unknown visitor', async () => {

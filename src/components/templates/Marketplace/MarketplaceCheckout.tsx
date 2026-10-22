@@ -583,11 +583,9 @@ function MarketplaceCartCheckout() {
   const payDisabledReason =
     locksRoute === 'mixed'
       ? LOCKS_MIXED_CHECKOUT_COPY
-      : region.commerce.blocked
-        ? region.commerce.message
-        : region.blocked
-          ? (region.refusal ?? 'Tell us the country you live in to continue.')
-          : checkoutPayDisabledReason;
+      : region.blocked
+        ? (region.refusal ?? 'Tell us the country you live in to continue.')
+        : checkoutPayDisabledReason;
 
   const removeAwardLine = async () => {
     const line = cart.awardItems.find((item) => item.awardId === award?.id);
@@ -1045,7 +1043,7 @@ function MarketplaceCartCheckout() {
                 );
               })}
 
-              {approvalNeeded && <MarketplaceSessionRequiredCard />}
+              {approvalNeeded && !region.commerce.blocked && <MarketplaceSessionRequiredCard />}
 
               {region.needsCountryField && (
                 <section className="grid min-w-0 gap-4 rounded-md bg-card p-6 shadow-lg" aria-label="Your country">
@@ -1249,301 +1247,303 @@ function MarketplaceCartCheckout() {
                       </div>
                     </SettingsSectionContent>
                   </section>
-                  <section
-                    className="grid min-w-0 gap-6"
-                    aria-label="Payment method"
-                    data-testid="marketplace-checkout-payment-method"
-                  >
-                    <Heading level={2} size="sm" className="text-xl font-semibold">
-                      Payment method
-                    </Heading>
-                    <SettingsSectionContent className="gap-6">
-                      {railsFailed ? (
-                        <div role="alert" className="flex flex-wrap items-center gap-3">
-                          <Typography as="p" className="text-sm text-muted-foreground">
-                            Couldn&apos;t load payment options.
-                          </Typography>
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="secondary"
-                            className="rounded-full"
-                            data-testid="marketplace-checkout-methods-retry"
-                            onClick={() => setRailAttempt((attempt) => attempt + 1)}
-                          >
-                            Retry
-                          </Button>
-                        </div>
-                      ) : sharedMethods === null ? (
-                        <Skeleton className="h-11 w-full" aria-label="Loading payment methods" />
-                      ) : paykitOutageForCart && sharedMethods.length === 0 ? (
-                        <PaykitOutageNotice audience="buyer" surface="checkout-paykit-outage" />
-                      ) : sharedMethods.length === 0 && !isSandbox ? (
-                        <Typography as="p" role="alert" className="text-sm text-muted-foreground">
-                          {isMultiSeller
-                            ? 'These sellers do not share a payment method, so Pay stays disabled. Remove a seller in the cart or ask them to add a shared rail.'
-                            : "This seller hasn't set up a payment method this cart can use, so Pay stays disabled. Message the seller to ask them to add one."}
-                        </Typography>
-                      ) : (
-                        <div
-                          // A single method takes the whole row instead of half of it.
-                          className={cn('grid gap-3', availableCheckoutMethods.length > 1 && 'grid-cols-2')}
-                          role="group"
-                          aria-label="Payment method"
-                        >
-                          {availableCheckoutMethods.map((method) => (
+                  {!region.commerce.blocked && (
+                    <section
+                      className="grid min-w-0 gap-6"
+                      aria-label="Payment method"
+                      data-testid="marketplace-checkout-payment-method"
+                    >
+                      <Heading level={2} size="sm" className="text-xl font-semibold">
+                        Payment method
+                      </Heading>
+                      <SettingsSectionContent className="gap-6">
+                        {railsFailed ? (
+                          <div role="alert" className="flex flex-wrap items-center gap-3">
+                            <Typography as="p" className="text-sm text-muted-foreground">
+                              Couldn&apos;t load payment options.
+                            </Typography>
                             <Button
-                              key={method}
                               type="button"
-                              variant={selectedMethod === method ? 'default' : 'secondary'}
-                              className="h-20 w-full gap-3 rounded-md px-4 text-base whitespace-normal"
-                              aria-pressed={selectedMethod === method}
-                              data-testid={`marketplace-checkout-method-${method}`}
-                              onClick={() => setSelectedMethod(method)}
+                              size="sm"
+                              variant="secondary"
+                              className="rounded-full"
+                              data-testid="marketplace-checkout-methods-retry"
+                              onClick={() => setRailAttempt((attempt) => attempt + 1)}
                             >
-                              {method === 'paykit' && <WalletCards className="size-6 shrink-0" aria-hidden="true" />}
-                              {method === 'paypal' && <HandCoins className="size-6 shrink-0" aria-hidden="true" />}
-                              <MethodLabel method={method} paykitAssets={paykitAssets} />
+                              Retry
                             </Button>
-                          ))}
-                        </div>
-                      )}
-                      {paykitOutageForCart && sharedMethods !== null && sharedMethods.length > 0 && (
-                        <Typography as="p" aria-live="polite" className="text-sm text-muted-foreground">
-                          {PAYKIT_OUTAGE_COPY.title} {PAYKIT_OUTAGE_COPY.buyerOthers}
-                        </Typography>
-                      )}
-                      {paykitChosen && (
-                        <Typography
-                          as="p"
-                          size="sm"
-                          className="text-muted-foreground"
-                          data-testid="marketplace-checkout-paykit-requirement"
-                        >
-                          {paykitRequirementCopy(paykitAssets)}
-                        </Typography>
-                      )}
-                      {usdtMissingExplanation && <MarketplaceUsdtMissingNote explanation={usdtMissingExplanation} />}
-                      {paykitChosen && paykitOffersUsdt && (
-                        <div className="grid gap-1" data-testid="marketplace-checkout-paykit-note">
-                          {usdtMillionths !== null && (
-                            <Typography as="p" className="text-sm" data-testid="marketplace-checkout-usdt-amount">
-                              {formatUsdt(usdtMillionths)} · {USDT_NETWORK_LABEL} if you pay in USDT
-                            </Typography>
-                          )}
-                          <Typography as="p" className="text-xs text-muted-foreground">
-                            {USDT_WALLET_HINT}
+                          </div>
+                        ) : sharedMethods === null ? (
+                          <Skeleton className="h-11 w-full" aria-label="Loading payment methods" />
+                        ) : paykitOutageForCart && sharedMethods.length === 0 ? (
+                          <PaykitOutageNotice audience="buyer" surface="checkout-paykit-outage" />
+                        ) : sharedMethods.length === 0 && !isSandbox ? (
+                          <Typography as="p" role="alert" className="text-sm text-muted-foreground">
+                            {isMultiSeller
+                              ? 'These sellers do not share a payment method, so Pay stays disabled. Remove a seller in the cart or ask them to add a shared rail.'
+                              : "This seller hasn't set up a payment method this cart can use, so Pay stays disabled. Message the seller to ask them to add one."}
                           </Typography>
-                          {usdtFulfilmentWaitsForFinality(lineMethods) && (
-                            <Typography
-                              as="p"
-                              className="text-xs text-muted-foreground"
-                              data-testid="marketplace-checkout-usdt-finality-note"
-                            >
-                              {PAYKIT_USDT_FINALITY_EXPECTATION_COPY}
-                            </Typography>
-                          )}
-                          {isMultiSeller && (
-                            <Typography
-                              as="p"
-                              className="text-xs text-muted-foreground"
-                              data-testid="marketplace-checkout-usdt-multi-seller-note"
-                            >
-                              {USDT_MULTI_SELLER_COPY}
-                            </Typography>
-                          )}
-                        </div>
-                      )}
-                      {buyerWalletChecking && (
-                        <Typography as="p" aria-live="polite" className="text-xs text-muted-foreground">
-                          Checking your Bitkit wallet…
-                        </Typography>
-                      )}
-                      {buyerWalletMissing && (
-                        <div
-                          role="alert"
-                          className="grid gap-4 rounded-md border bg-card/60 p-6"
-                          data-testid="marketplace-checkout-bitkit-required"
-                        >
-                          <Typography as="p" className="text-sm font-medium">
-                            {supportsBuyerConnectionGuide
-                              ? 'Connect Bitkit to pay with Paykit'
-                              : BITCOIN_WALLET_FORK_REQUIRED_TITLE}
+                        ) : (
+                          <div
+                            // A single method takes the whole row instead of half of it.
+                            className={cn('grid gap-3', availableCheckoutMethods.length > 1 && 'grid-cols-2')}
+                            role="group"
+                            aria-label="Payment method"
+                          >
+                            {availableCheckoutMethods.map((method) => (
+                              <Button
+                                key={method}
+                                type="button"
+                                variant={selectedMethod === method ? 'default' : 'secondary'}
+                                className="h-20 w-full gap-3 rounded-md px-4 text-base whitespace-normal"
+                                aria-pressed={selectedMethod === method}
+                                data-testid={`marketplace-checkout-method-${method}`}
+                                onClick={() => setSelectedMethod(method)}
+                              >
+                                {method === 'paykit' && <WalletCards className="size-6 shrink-0" aria-hidden="true" />}
+                                {method === 'paypal' && <HandCoins className="size-6 shrink-0" aria-hidden="true" />}
+                                <MethodLabel method={method} paykitAssets={paykitAssets} />
+                              </Button>
+                            ))}
+                          </div>
+                        )}
+                        {paykitOutageForCart && sharedMethods !== null && sharedMethods.length > 0 && (
+                          <Typography as="p" aria-live="polite" className="text-sm text-muted-foreground">
+                            {PAYKIT_OUTAGE_COPY.title} {PAYKIT_OUTAGE_COPY.buyerOthers}
                           </Typography>
-                          {supportsBuyerConnectionGuide && <BitkitDownloads compact />}
-                          <Typography as="p" className="text-sm text-muted-foreground">
-                            {supportsBuyerConnectionGuide
-                              ? 'Use your marketplace pubky in Bitkit to receive a payment request.'
-                              : BITCOIN_WALLET_FORK_REQUIRED_COPY}
+                        )}
+                        {paykitChosen && (
+                          <Typography
+                            as="p"
+                            size="sm"
+                            className="text-muted-foreground"
+                            data-testid="marketplace-checkout-paykit-requirement"
+                          >
+                            {paykitRequirementCopy(paykitAssets)}
                           </Typography>
-                          <div className="flex flex-wrap gap-2">
-                            {supportsBuyerConnectionGuide && (
+                        )}
+                        {usdtMissingExplanation && <MarketplaceUsdtMissingNote explanation={usdtMissingExplanation} />}
+                        {paykitChosen && paykitOffersUsdt && (
+                          <div className="grid gap-1" data-testid="marketplace-checkout-paykit-note">
+                            {usdtMillionths !== null && (
+                              <Typography as="p" className="text-sm" data-testid="marketplace-checkout-usdt-amount">
+                                {formatUsdt(usdtMillionths)} · {USDT_NETWORK_LABEL} if you pay in USDT
+                              </Typography>
+                            )}
+                            <Typography as="p" className="text-xs text-muted-foreground">
+                              {USDT_WALLET_HINT}
+                            </Typography>
+                            {usdtFulfilmentWaitsForFinality(lineMethods) && (
+                              <Typography
+                                as="p"
+                                className="text-xs text-muted-foreground"
+                                data-testid="marketplace-checkout-usdt-finality-note"
+                              >
+                                {PAYKIT_USDT_FINALITY_EXPECTATION_COPY}
+                              </Typography>
+                            )}
+                            {isMultiSeller && (
+                              <Typography
+                                as="p"
+                                className="text-xs text-muted-foreground"
+                                data-testid="marketplace-checkout-usdt-multi-seller-note"
+                              >
+                                {USDT_MULTI_SELLER_COPY}
+                              </Typography>
+                            )}
+                          </div>
+                        )}
+                        {buyerWalletChecking && (
+                          <Typography as="p" aria-live="polite" className="text-xs text-muted-foreground">
+                            Checking your Bitkit wallet…
+                          </Typography>
+                        )}
+                        {buyerWalletMissing && (
+                          <div
+                            role="alert"
+                            className="grid gap-4 rounded-md border bg-card/60 p-6"
+                            data-testid="marketplace-checkout-bitkit-required"
+                          >
+                            <Typography as="p" className="text-sm font-medium">
+                              {supportsBuyerConnectionGuide
+                                ? 'Connect Bitkit to pay with Paykit'
+                                : BITCOIN_WALLET_FORK_REQUIRED_TITLE}
+                            </Typography>
+                            {supportsBuyerConnectionGuide && <BitkitDownloads compact />}
+                            <Typography as="p" className="text-sm text-muted-foreground">
+                              {supportsBuyerConnectionGuide
+                                ? 'Use your marketplace pubky in Bitkit to receive a payment request.'
+                                : BITCOIN_WALLET_FORK_REQUIRED_COPY}
+                            </Typography>
+                            <div className="flex flex-wrap gap-2">
+                              {supportsBuyerConnectionGuide && (
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  data-testid="marketplace-checkout-bitkit-connect"
+                                  disabled={!currentUserPubky}
+                                  onClick={() => checkBuyerConnection(true)}
+                                >
+                                  Connect Bitkit
+                                </Button>
+                              )}
                               <Button
                                 type="button"
                                 size="sm"
-                                data-testid="marketplace-checkout-bitkit-connect"
-                                disabled={!currentUserPubky}
-                                onClick={() => checkBuyerConnection(true)}
+                                variant="secondary"
+                                className="rounded-full"
+                                data-testid="marketplace-checkout-bitkit-recheck"
+                                onClick={() => checkBuyerConnection(false)}
                               >
-                                Connect Bitkit
+                                Check connection
                               </Button>
-                            )}
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant="secondary"
-                              className="rounded-full"
-                              data-testid="marketplace-checkout-bitkit-recheck"
-                              onClick={() => checkBuyerConnection(false)}
-                            >
-                              Check connection
-                            </Button>
+                            </div>
                           </div>
-                        </div>
-                      )}
-                      {buyerWalletUnsupported && (
-                        <div
-                          role="alert"
-                          className="grid gap-2 rounded-xl border bg-card/60 p-4"
-                          data-testid="marketplace-checkout-bitkit-unsupported"
-                        >
-                          <Typography as="p" className="text-sm font-medium">
-                            {BITCOIN_WALLET_UNSUPPORTED_TITLE}
-                          </Typography>
-                          <Typography as="p" className="text-xs text-muted-foreground">
-                            {bitcoinWalletUnsupportedBody(canPayWithPaypal)}
-                          </Typography>
-                        </div>
-                      )}
-                      {buyerWalletUnverified && (
-                        <div
-                          role="alert"
-                          className="grid gap-2 rounded-xl border bg-card/60 p-4"
-                          data-testid="marketplace-checkout-bitkit-unverified"
-                        >
-                          <Typography as="p" className="text-sm font-medium">
-                            {BITCOIN_WALLET_UNVERIFIED_TITLE}
-                          </Typography>
-                          <Typography as="p" className="text-xs text-muted-foreground">
-                            {bitcoinWalletUnverifiedBody(canPayWithPaypal)}
-                          </Typography>
-                          <div>
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant="secondary"
-                              className="rounded-full"
-                              data-testid="marketplace-checkout-bitkit-unverified-recheck"
-                              disabled={buyerWallet.pending}
-                              onClick={() => buyerWallet.recheck({ keepVerdict: true })}
-                            >
-                              {buyerWallet.pending ? (
-                                <>
-                                  <LoaderCircle className="size-4 animate-spin" />
-                                  Checking…
-                                </>
-                              ) : (
-                                'Check connection'
-                              )}
-                            </Button>
-                          </div>
-                        </div>
-                      )}
-                      {allPickup && (
-                        <div className="grid gap-3" data-testid="marketplace-checkout-payment-notice-group">
-                          <div className="grid gap-1">
+                        )}
+                        {buyerWalletUnsupported && (
+                          <div
+                            role="alert"
+                            className="grid gap-2 rounded-xl border bg-card/60 p-4"
+                            data-testid="marketplace-checkout-bitkit-unsupported"
+                          >
                             <Typography as="p" className="text-sm font-medium">
-                              Local pickup
+                              {BITCOIN_WALLET_UNSUPPORTED_TITLE}
                             </Typography>
                             <Typography as="p" className="text-xs text-muted-foreground">
-                              No delivery address needed. Pickup location is shared once payment is confirmed.
+                              {bitcoinWalletUnsupportedBody(canPayWithPaypal)}
                             </Typography>
                           </div>
-                        </div>
-                      )}
-                      {checkout.hasInstantDigitalLine && (
-                        <Typography
-                          as="p"
-                          className="text-xs text-muted-foreground"
-                          data-testid="checkout-consent-instant"
-                        >
-                          {DIGITAL_CHECKOUT_COPY.consentInstant}
-                        </Typography>
-                      )}
-                      {checkout.hasManualDigitalLine && (
-                        <Typography
-                          as="p"
-                          className="text-xs text-muted-foreground"
-                          data-testid="checkout-consent-manual"
-                        >
-                          {DIGITAL_CHECKOUT_COPY.consentManual}
-                        </Typography>
-                      )}
-                      <DeliveryKeyBlockedNotice block={checkout.deliveryKeyBlock ?? offerPay.deliveryKeyBlock} />
-                      {paymentCodeNote && (
-                        <Typography
-                          as="p"
-                          className="text-xs text-muted-foreground"
-                          data-testid="bitcoin-payment-code-note"
-                        >
-                          {paymentCodeNote}
-                        </Typography>
-                      )}
-                      {payRefusal && (
-                        <Typography
-                          as="p"
-                          role="alert"
-                          className="rounded-md border border-destructive/40 px-4 py-3 text-sm"
-                          data-testid="marketplace-checkout-pay-refusal"
-                        >
-                          {payRefusal}
-                        </Typography>
-                      )}
-                      <Button
-                        className="w-full rounded-full"
-                        onClick={() => void (formBlocksPay ? revealFirstInvalidInput() : pay())}
-                        disabled={!canPay && !formBlocksPay}
-                        data-testid="marketplace-checkout-pay"
-                        aria-describedby={!canPay ? 'checkout-pay-reason' : undefined}
-                      >
-                        {isPaying ? (
-                          <>
-                            <LoaderCircle className="size-4 animate-spin" />
-                            Paying
-                          </>
-                        ) : isSandbox ? (
-                          'Pay sandbox'
-                        ) : selectedMethod ? (
-                          isLocksCheckout && selectedMethod === 'paykit' ? (
-                            LOCKS_CHECKOUT_SUBMIT_LABEL
-                          ) : (
-                            CHECKOUT_SUBMIT_LABEL[selectedMethod]
-                          )
-                        ) : (
-                          'Pay'
                         )}
-                      </Button>
-                      {isProduction && !isSandbox && (
-                        <Typography
-                          as="p"
-                          size="xs"
-                          className="text-muted-foreground"
-                          data-testid="marketplace-checkout-payment-notice"
+                        {buyerWalletUnverified && (
+                          <div
+                            role="alert"
+                            className="grid gap-2 rounded-xl border bg-card/60 p-4"
+                            data-testid="marketplace-checkout-bitkit-unverified"
+                          >
+                            <Typography as="p" className="text-sm font-medium">
+                              {BITCOIN_WALLET_UNVERIFIED_TITLE}
+                            </Typography>
+                            <Typography as="p" className="text-xs text-muted-foreground">
+                              {bitcoinWalletUnverifiedBody(canPayWithPaypal)}
+                            </Typography>
+                            <div>
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="secondary"
+                                className="rounded-full"
+                                data-testid="marketplace-checkout-bitkit-unverified-recheck"
+                                disabled={buyerWallet.pending}
+                                onClick={() => buyerWallet.recheck({ keepVerdict: true })}
+                              >
+                                {buyerWallet.pending ? (
+                                  <>
+                                    <LoaderCircle className="size-4 animate-spin" />
+                                    Checking…
+                                  </>
+                                ) : (
+                                  'Check connection'
+                                )}
+                              </Button>
+                            </div>
+                          </div>
+                        )}
+                        {allPickup && (
+                          <div className="grid gap-3" data-testid="marketplace-checkout-payment-notice-group">
+                            <div className="grid gap-1">
+                              <Typography as="p" className="text-sm font-medium">
+                                Local pickup
+                              </Typography>
+                              <Typography as="p" className="text-xs text-muted-foreground">
+                                No delivery address needed. Pickup location is shared once payment is confirmed.
+                              </Typography>
+                            </div>
+                          </div>
+                        )}
+                        {checkout.hasInstantDigitalLine && (
+                          <Typography
+                            as="p"
+                            className="text-xs text-muted-foreground"
+                            data-testid="checkout-consent-instant"
+                          >
+                            {DIGITAL_CHECKOUT_COPY.consentInstant}
+                          </Typography>
+                        )}
+                        {checkout.hasManualDigitalLine && (
+                          <Typography
+                            as="p"
+                            className="text-xs text-muted-foreground"
+                            data-testid="checkout-consent-manual"
+                          >
+                            {DIGITAL_CHECKOUT_COPY.consentManual}
+                          </Typography>
+                        )}
+                        <DeliveryKeyBlockedNotice block={checkout.deliveryKeyBlock ?? offerPay.deliveryKeyBlock} />
+                        {paymentCodeNote && (
+                          <Typography
+                            as="p"
+                            className="text-xs text-muted-foreground"
+                            data-testid="bitcoin-payment-code-note"
+                          >
+                            {paymentCodeNote}
+                          </Typography>
+                        )}
+                        {payRefusal && (
+                          <Typography
+                            as="p"
+                            role="alert"
+                            className="rounded-md border border-destructive/40 px-4 py-3 text-sm"
+                            data-testid="marketplace-checkout-pay-refusal"
+                          >
+                            {payRefusal}
+                          </Typography>
+                        )}
+                        <Button
+                          className="w-full rounded-full"
+                          onClick={() => void (formBlocksPay ? revealFirstInvalidInput() : pay())}
+                          disabled={!canPay && !formBlocksPay}
+                          data-testid="marketplace-checkout-pay"
+                          aria-describedby={!canPay ? 'checkout-pay-reason' : undefined}
                         >
-                          {isLocksPaykitCommerceMode(adapterMode)
-                            ? 'Payment goes directly to the seller. This marketplace never holds funds.'
-                            : 'No payment rails are live in this deployment, so no real funds move. This marketplace never holds funds.'}
-                        </Typography>
-                      )}
-                      {region.refusal && <RegionRefusal message={region.refusal} testId="checkout-region-refusal" />}
-                      <CheckoutSaleTerms sellerPubkys={checkoutSellers} declarations={region.declarations} />
-                      {!canPay && (
-                        <Typography id="checkout-pay-reason" as="p" className="text-xs text-muted-foreground">
-                          {payDisabledReason}
-                        </Typography>
-                      )}
-                    </SettingsSectionContent>
-                  </section>
+                          {isPaying ? (
+                            <>
+                              <LoaderCircle className="size-4 animate-spin" />
+                              Paying
+                            </>
+                          ) : isSandbox ? (
+                            'Pay sandbox'
+                          ) : selectedMethod ? (
+                            isLocksCheckout && selectedMethod === 'paykit' ? (
+                              LOCKS_CHECKOUT_SUBMIT_LABEL
+                            ) : (
+                              CHECKOUT_SUBMIT_LABEL[selectedMethod]
+                            )
+                          ) : (
+                            'Pay'
+                          )}
+                        </Button>
+                        {isProduction && !isSandbox && (
+                          <Typography
+                            as="p"
+                            size="xs"
+                            className="text-muted-foreground"
+                            data-testid="marketplace-checkout-payment-notice"
+                          >
+                            {isLocksPaykitCommerceMode(adapterMode)
+                              ? 'Payment goes directly to the seller. This marketplace never holds funds.'
+                              : 'No payment rails are live in this deployment, so no real funds move. This marketplace never holds funds.'}
+                          </Typography>
+                        )}
+                        {region.refusal && <RegionRefusal message={region.refusal} testId="checkout-region-refusal" />}
+                        <CheckoutSaleTerms sellerPubkys={checkoutSellers} declarations={region.declarations} />
+                        {!canPay && (
+                          <Typography id="checkout-pay-reason" as="p" className="text-xs text-muted-foreground">
+                            {payDisabledReason}
+                          </Typography>
+                        )}
+                      </SettingsSectionContent>
+                    </section>
+                  )}
                 </CardContent>
               </Card>
               {isStaging && (
