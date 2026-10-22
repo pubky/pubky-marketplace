@@ -44,12 +44,18 @@ import { useNowMs } from '@/hooks/useNowMs/useNowMs';
 import { useSellerPaymentMethodGate } from '@/hooks/useSellerPaymentMethodGate/useSellerPaymentMethodGate';
 import { useSellingAvailability } from '@/hooks/useSellingAvailability/useSellingAvailability';
 import { listingDisplayState } from '@/libs/commerce/auction-phase';
+import {
+  AUCTION_UNLIST_BLOCKED_NOTE,
+  AUCTION_UNLIST_SKIPPED_TITLE,
+  isLiveAuction,
+} from '@/libs/commerce/auction-removal';
 import { formatCommerceMoney } from '@/libs/commerce/format';
 import { listingPublishNeedsMarketplaceSession } from '@/libs/commerce/listing-publish-guards';
 import { formatListingStock } from '@/libs/commerce/unlimited-stock';
 import { isListingRegistrationPending } from '@/models/commerce/commerce.schema';
 import { SellingUnavailableNotice } from '@/molecules/Marketplace/SellingUnavailableNotice';
 import { SettingsSectionContent } from '@/molecules/Settings/SettingsSectionContent/SettingsSectionContent';
+import { toast } from '@/molecules/Toaster/use-toast';
 import { ContentLayout } from '@/organisms/ContentLayout/ContentLayout';
 import { MarketplaceSectionNav } from '@/organisms/Marketplace/MarketplaceSectionNav';
 import { MarketplaceSessionConnectDialog } from '@/organisms/Marketplace/MarketplaceSessionConnectDialog';
@@ -126,7 +132,19 @@ export function MarketplaceDashboard() {
     if (seeded) router.push(MARKETPLACE_ROUTES.SELL);
   };
 
-  const updateListingState = (listingIds: string[], state: 'active' | 'paused') => {
+  const updateListingState = (requestedIds: string[], state: 'active' | 'paused') => {
+    // A live auction stays live until it ends: its terms are what bidders acted on.
+    const liveAuctionIds =
+      state === 'paused'
+        ? dashboard.listings
+            .filter(({ id, record }) => requestedIds.includes(id) && isLiveAuction(record, Date.now()))
+            .map(({ id }) => id)
+        : [];
+    const listingIds = requestedIds.filter((id) => !liveAuctionIds.includes(id));
+    if (liveAuctionIds.length > 0) {
+      toast({ variant: 'warning', title: AUCTION_UNLIST_SKIPPED_TITLE, description: AUCTION_UNLIST_BLOCKED_NOTE });
+    }
+    if (listingIds.length === 0) return;
     const needsSession = dashboard.listings.some(
       (listing) =>
         listingIds.includes(listing.id) &&
@@ -602,7 +620,7 @@ export function MarketplaceDashboard() {
                                         <Copy className="size-4" />
                                         Duplicate
                                       </Button>
-                                      {isListingRegistrationPending(listing) && (
+                                      {isListingRegistrationPending(listing) && !listing.registeredWithService && (
                                         <Button
                                           size="sm"
                                           variant="secondary"

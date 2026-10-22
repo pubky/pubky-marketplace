@@ -21,6 +21,13 @@ import { withPublicPath } from '@/config/base-path';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import { evaluateListingActivationGuards } from '@/hooks/useCreateMarketplaceListing/useCreateMarketplaceListing';
 import type { AuctionPhase } from '@/libs/commerce/auction-phase';
+import {
+  AUCTION_HAS_BIDS_MESSAGE,
+  AUCTION_UNLIST_BLOCKED_NOTE,
+  auctionDeleteBlockedNote,
+  bidsBlockingDelete,
+  isAuctionHasBidsRefusal,
+} from '@/libs/commerce/auction-removal';
 import { LISTING_PUBLISH_BLOCK_COPY, listingPublishBlockToast } from '@/libs/commerce/listing-publish-guards';
 import { commerceListingProjectionIsStale, type CommerceListingRecord } from '@/libs/commerce/marketplace-records';
 import { AuthErrorCode } from '@/libs/error/error.codes';
@@ -114,6 +121,9 @@ export function MarketplaceListingOwnerPanel({
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const canToggleVisibility = record.sale.format === 'fixed_price' && ['active', 'paused'].includes(record.state);
   const displayState = record.state === 'active' && auctionPhase === 'ended' ? 'ended' : record.state;
+  // Bids on an auction that has not ended are what the seller's terms were accepted for: no deleting it
+  // from under them. The service's own count is the authority; an auction nobody has bid on can go.
+  const blockingBids = bidsBlockingDelete(projection?.auction, auctionPhase === 'ended');
 
   const setListingState = async (state: 'active' | 'paused') => {
     setIsMutating(true);
@@ -182,7 +192,10 @@ export function MarketplaceListingOwnerPanel({
         listing: `${record.ownerPubky}:${record.listingId}`,
         error,
       });
-      toast({ variant: 'error', description: 'Could not delete this listing.' });
+      toast({
+        variant: 'error',
+        description: isAuctionHasBidsRefusal(error) ? AUCTION_HAS_BIDS_MESSAGE : 'Could not delete this listing.',
+      });
       setIsMutating(false);
       setConfirmingDelete(false);
     }
@@ -272,7 +285,7 @@ export function MarketplaceListingOwnerPanel({
               className="size-8 rounded-full"
               aria-label="Delete"
               title="Delete"
-              disabled={isMutating || !hasHomeserverSession}
+              disabled={isMutating || !hasHomeserverSession || blockingBids > 0}
               onClick={() => setConfirmingDelete(true)}
             >
               <Trash2 className="size-4" aria-hidden="true" />
@@ -289,7 +302,12 @@ export function MarketplaceListingOwnerPanel({
           )}
           {record.sale.format === 'auction' && displayState === 'active' && (
             <Typography as="p" className="text-xs text-muted-foreground" data-testid="listing-auction-unlist-note">
-              Auctions cannot be unlisted: published auction terms stay live until the auction ends.
+              {AUCTION_UNLIST_BLOCKED_NOTE}
+            </Typography>
+          )}
+          {blockingBids > 0 && (
+            <Typography as="p" className="text-xs text-muted-foreground" data-testid="listing-auction-delete-note">
+              {auctionDeleteBlockedNote(blockingBids)}
             </Typography>
           )}
         </div>

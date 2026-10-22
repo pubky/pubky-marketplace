@@ -8,8 +8,12 @@ import { COMMERCE_LISTING_MAX_QUANTITY } from '@/config/commerce';
 import { NEXUS_LISTINGS_PER_PAGE } from '@/config/nexus';
 import { bumpAuthEpoch } from '@/controllers/auth/auth-epoch';
 import { CommerceController } from '@/controllers/commerce/commerce';
+import { AUCTION_HAS_BIDS_MESSAGE, AUCTION_HAS_BIDS_REFUSAL } from '@/libs/commerce/auction-removal';
 import { sellerDeclaration } from '@/libs/commerce/eu-region';
-import { marketplaceCommandResponseSchema } from '@/libs/commerce/transaction-commands';
+import {
+  buildMarketplaceListingAggregateId,
+  marketplaceCommandResponseSchema,
+} from '@/libs/commerce/transaction-commands';
 import { UNLIMITED_STOCK_REFUSAL, UNLIMITED_STOCK_RESERVED_MESSAGE } from '@/libs/commerce/unlimited-stock';
 import { toCamelCaseWire } from '@/libs/commerce/wire-casing';
 import { AppError } from '@/libs/error/error';
@@ -49,6 +53,7 @@ import {
   createNexusListingDetailsFixture,
 } from '@/test/fixtures/commerce/commerce';
 import { toCommerceListingModel } from '@/test/fixtures/commerce/listing-models';
+import { createAuctionProjectionFixture } from '@/test/fixtures/commerce/projections';
 import { installWebLocks, removeWebLocks } from '@/test-utils/web-locks';
 import { CommerceApplication, LISTING_REGISTRATION_LOCK_PREFIX } from './commerce';
 
@@ -347,6 +352,7 @@ describe('CommerceApplication', () => {
     const [listing] = await CommerceApplication.getListingsBySeller(record.ownerPubky);
 
     expect(listing.purchasableQuantity).toBe(expected);
+    expect(listing.registeredWithService).toBe(true);
     expect(listing.record.variants[0].quantity).toBe(3);
   });
 
@@ -410,6 +416,18 @@ describe('CommerceApplication', () => {
 
     const [listing] = await CommerceApplication.getListingsBySeller(record.ownerPubky);
 
+    expect(listing.purchasableQuantity).toBeNull();
+    expect(listing.registeredWithService).toBe(true);
+  });
+
+  it('knows a listing is not registered with the service while no projection of it is cached', async () => {
+    const model = toCommerceListingModel(createCommerceListingFixture());
+    vi.spyOn(LocalCommerceService, 'getListingsBySeller').mockResolvedValue([model]);
+    vi.spyOn(LocalCommerceService, 'getListingProjection').mockResolvedValue(null);
+
+    const [listing] = await CommerceApplication.getListingsBySeller(model.seller_id);
+
+    expect(listing.registeredWithService).toBe(false);
     expect(listing.purchasableQuantity).toBeNull();
   });
 
@@ -3126,6 +3144,140 @@ describe('CommerceApplication', () => {
     // Media cleanup follows the record deletion, one call per media file.
     record.media.forEach((media) => expect(remove).toHaveBeenCalledWith(media.url));
     expect(remove.mock.invocationCallOrder[0]).toBeLessThan(deleteLocal.mock.invocationCallOrder[0]);
+  });
+
+  describe('deleting an auction', () => {
+    const liveAuctionRecord = (endsAt = '2099-01-01T00:00:00.000Z') => {
+      const record = createCommerceListingFixture();
+      record.sale = {
+        format: 'auction',
+        startingPrice: { amountMinor: 4_500, currency: 'USD', exponent: 2 },
+        minimumIncrement: { amountMinor: 500, currency: 'USD', exponent: 2 },
+        startsAt: '2026-08-19T20:00:00.000Z',
+        endsAt,
+        antiSnipingWindowSeconds: 120,
+        antiSnipingExtensionSeconds: 120,
+      };
+      return record;
+    };
+
+    const stageDelete = (record: ReturnType<typeof liveAuctionRecord>) => {
+      vi.spyOn(commerceConfig, 'getCommerceAdapterMode').mockReturnValue('transaction-service');
+      vi.spyOn(LocalCommerceService, 'getListing').mockResolvedValue(
+        new CommerceListingModel(toCommerceListingModel(record)),
+      );
+      return {
+        upsertJob: vi.spyOn(LocalCommerceService, 'upsertSyncJob').mockResolvedValue(undefined),
+        remove: vi.spyOn(CommerceHomeserverService, 'delete').mockResolvedValue(undefined),
+        deleteLocal: vi.spyOn(LocalCommerceService, 'deleteListing').mockResolvedValue(undefined),
+        completeJob: vi.spyOn(LocalCommerceService, 'completeSyncJob').mockResolvedValue(undefined),
+      };
+    };
+
+    const projectionWith = (bidCount: number, status?: string) =>
+      createAuctionProjectionFixture({
+        auction: { ...createAuctionProjectionFixture().auction!, bidCount, ...(status ? { status } : {}) },
+      });
+
+    it('refuses while the auction has not ended and has bids, and changes nothing', async () => {
+      const record = liveAuctionRecord();
+      const staged = stageDelete(record);
+      vi.spyOn(MarketplaceGatewayService, 'getListing').mockResolvedValue(projectionWith(2, 'active'));
+
+      const attempt = CommerceApplication.commitDeleteListing(record.ownerPubky, record.listingId);
+
+      await expect(attempt).rejects.toMatchObject({
+        message: AUCTION_HAS_BIDS_MESSAGE,
+        context: expect.objectContaining({ refusal: AUCTION_HAS_BIDS_REFUSAL, bidCount: 2 }),
+      });
+      expect(MarketplaceGatewayService.getListing).toHaveBeenCalledWith(
+        record.ownerPubky,
+        buildMarketplaceListingAggregateId(record.ownerPubky, record.listingId),
+      );
+      expect(staged.upsertJob).not.toHaveBeenCalled();
+      expect(staged.remove).not.toHaveBeenCalled();
+      expect(staged.deleteLocal).not.toHaveBeenCalled();
+    });
+
+    it('deletes an auction nobody has bid on', async () => {
+      const record = liveAuctionRecord();
+      const staged = stageDelete(record);
+      vi.spyOn(MarketplaceGatewayService, 'getListing').mockResolvedValue(projectionWith(0, 'active'));
+
+      await CommerceApplication.commitDeleteListing(record.ownerPubky, record.listingId);
+
+      expect(staged.remove).toHaveBeenCalledWith(LISTING_URL, undefined, { singleAttempt: true });
+      expect(staged.deleteLocal).toHaveBeenCalled();
+    });
+
+    it('deletes an auction the service never registered', async () => {
+      const record = liveAuctionRecord();
+      const staged = stageDelete(record);
+      vi.spyOn(MarketplaceGatewayService, 'getListing').mockResolvedValue(null);
+
+      await CommerceApplication.commitDeleteListing(record.ownerPubky, record.listingId);
+
+      expect(staged.remove).toHaveBeenCalled();
+    });
+
+    it.each(['sold', 'unsold', 'cancelled'])(
+      'deletes an auction the service closed as %s, bids and all',
+      async (status) => {
+        const record = liveAuctionRecord();
+        const staged = stageDelete(record);
+        vi.spyOn(MarketplaceGatewayService, 'getListing').mockResolvedValue(projectionWith(3, status));
+
+        await CommerceApplication.commitDeleteListing(record.ownerPubky, record.listingId);
+
+        expect(staged.remove).toHaveBeenCalled();
+      },
+    );
+
+    it('deletes an auction past its end time without asking the service', async () => {
+      const record = liveAuctionRecord('2026-08-29T20:00:00.000Z');
+      const staged = stageDelete(record);
+      const projection = vi.spyOn(MarketplaceGatewayService, 'getListing');
+
+      await CommerceApplication.commitDeleteListing(record.ownerPubky, record.listingId);
+
+      expect(projection).not.toHaveBeenCalled();
+      expect(staged.remove).toHaveBeenCalled();
+    });
+
+    it('waits when the bids cannot be read, rather than deleting an auction that may have them', async () => {
+      const record = liveAuctionRecord();
+      const staged = stageDelete(record);
+      vi.spyOn(MarketplaceGatewayService, 'getListing').mockRejectedValue(new TypeError('service unavailable'));
+
+      await expect(CommerceApplication.commitDeleteListing(record.ownerPubky, record.listingId)).rejects.toThrow(
+        'service unavailable',
+      );
+      expect(staged.remove).not.toHaveBeenCalled();
+      expect(staged.deleteLocal).not.toHaveBeenCalled();
+    });
+
+    it('asks the service nothing where no transaction service runs', async () => {
+      const record = liveAuctionRecord();
+      const staged = stageDelete(record);
+      vi.spyOn(commerceConfig, 'getCommerceAdapterMode').mockReturnValue('unavailable');
+      const projection = vi.spyOn(MarketplaceGatewayService, 'getListing');
+
+      await CommerceApplication.commitDeleteListing(record.ownerPubky, record.listingId);
+
+      expect(projection).not.toHaveBeenCalled();
+      expect(staged.remove).toHaveBeenCalled();
+    });
+
+    it('asks the service nothing for a fixed-price listing', async () => {
+      const record = createCommerceListingFixture();
+      const staged = stageDelete(record as ReturnType<typeof liveAuctionRecord>);
+      const projection = vi.spyOn(MarketplaceGatewayService, 'getListing');
+
+      await CommerceApplication.commitDeleteListing(record.ownerPubky, record.listingId);
+
+      expect(projection).not.toHaveBeenCalled();
+      expect(staged.remove).toHaveBeenCalled();
+    });
   });
 
   it('keeps the local listing when the homeserver record deletion fails', async () => {

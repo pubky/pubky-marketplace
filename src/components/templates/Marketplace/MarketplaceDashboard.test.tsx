@@ -3,6 +3,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { MARKETPLACE_ROUTES } from '@/app/routes';
 import * as commerceConfig from '@/config/commerce';
 import { COMMERCE_LISTING_MAX_QUANTITY } from '@/config/commerce';
+import { AUCTION_UNLIST_BLOCKED_NOTE } from '@/libs/commerce/auction-removal';
+import { toast } from '@/molecules/Toaster/use-toast';
 import { COMMERCE_FIXTURE_SELLER, createCommerceListingFixture } from '@/test/fixtures/commerce/commerce';
 import { toCommerceListingModel } from '@/test/fixtures/commerce/listing-models';
 import { MarketplaceDashboard } from './MarketplaceDashboard';
@@ -51,6 +53,8 @@ vi.mock('@/hooks/useSellingAvailability/useSellingAvailability', async () => {
   const { INERT_COMMERCE_AVAILABILITY } = await import('@/libs/commerce/commerce-availability');
   return { useSellingAvailability: () => INERT_COMMERCE_AVAILABILITY };
 });
+
+vi.mock('@/molecules/Toaster/use-toast', () => ({ toast: vi.fn() }));
 
 vi.mock('@/hooks/useIsMobile/useIsMobile', () => ({
   useIsMobile: () => viewport.isMobile,
@@ -494,6 +498,7 @@ describe('MarketplaceDashboard state changes without a marketplace session', () 
   beforeEach(() => {
     vi.spyOn(commerceConfig, 'getCommerceAdapterMode').mockReturnValue('transaction-service');
     dashboardFns.updateListingState.mockClear();
+    vi.mocked(toast).mockClear();
     viewport.isMobile = false;
   });
 
@@ -523,14 +528,14 @@ describe('MarketplaceDashboard state changes without a marketplace session', () 
     expect(screen.getByTestId('session-connect-auto-open')).toBeInTheDocument();
   });
 
-  it('asks to enable selling before pausing an auction', () => {
+  it('asks to enable selling before pausing an auction that has ended', () => {
     const record = createCommerceListingFixture({ title: 'Lamp' });
     record.sale = {
       format: 'auction',
       startingPrice: { amountMinor: 4_500, currency: 'USD', exponent: 2 },
       minimumIncrement: { amountMinor: 500, currency: 'USD', exponent: 2 },
-      startsAt: '2026-09-20T00:00:00.000Z',
-      endsAt: '2026-09-30T00:00:00.000Z',
+      startsAt: '2026-07-01T00:00:00.000Z',
+      endsAt: '2026-08-01T00:00:00.000Z',
       antiSnipingWindowSeconds: 120,
       antiSnipingExtensionSeconds: 120,
     };
@@ -541,6 +546,81 @@ describe('MarketplaceDashboard state changes without a marketplace session', () 
 
     expect(dashboardFns.updateListingState).not.toHaveBeenCalled();
     expect(screen.getByTestId('session-connect-auto-open')).toBeInTheDocument();
+  });
+
+  const liveAuction = (title: string) => {
+    const record = createCommerceListingFixture({ title, listingId: `${title.toLowerCase()}_01` });
+    record.sale = {
+      format: 'auction',
+      startingPrice: { amountMinor: 4_500, currency: 'USD', exponent: 2 },
+      minimumIncrement: { amountMinor: 500, currency: 'USD', exponent: 2 },
+      startsAt: '2026-07-01T00:00:00.000Z',
+      endsAt: '2099-01-01T00:00:00.000Z',
+      antiSnipingWindowSeconds: 120,
+      antiSnipingExtensionSeconds: 120,
+    };
+    return toCommerceListingModel(record);
+  };
+
+  it('refuses to pause an auction that has not ended, and says why', () => {
+    dashboardState.listings = [liveAuction('Lamp')];
+
+    render(<MarketplaceDashboard />);
+    selectAndClick('Lamp', 'Pause');
+
+    expect(dashboardFns.updateListingState).not.toHaveBeenCalled();
+    expect(screen.queryByTestId('session-connect-auto-open')).not.toBeInTheDocument();
+    expect(toast).toHaveBeenCalledWith(
+      expect.objectContaining({ title: 'Auctions stay live', description: AUCTION_UNLIST_BLOCKED_NOTE }),
+    );
+  });
+
+  it('pauses the fixed-price listings of a selection and leaves its live auction alone', () => {
+    const boots = listing({ title: 'Boots' });
+    dashboardState.listings = [boots, liveAuction('Lamp')];
+
+    render(<MarketplaceDashboard />);
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Select Boots' }));
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Select Lamp' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Pause' }));
+
+    expect(dashboardFns.updateListingState).toHaveBeenCalledWith([boots.id], 'paused');
+    expect(toast).toHaveBeenCalledWith(expect.objectContaining({ description: AUCTION_UNLIST_BLOCKED_NOTE }));
+  });
+
+  it('still activates an auction the seller paused earlier', () => {
+    const paused = { ...liveAuction('Lamp'), state: 'paused' as const };
+    dashboardState.listings = [paused];
+
+    render(<MarketplaceDashboard />);
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Select Lamp' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Activate' }));
+
+    expect(toast).not.toHaveBeenCalled();
+  });
+});
+
+describe('MarketplaceDashboard registration for checkout', () => {
+  beforeEach(() => {
+    viewport.isMobile = false;
+  });
+
+  it('offers Register for checkout for a listing the service does not hold', () => {
+    dashboardState.listings = [{ ...listing({ title: 'Boots' }), registeredWithService: false }];
+
+    render(<MarketplaceDashboard />);
+
+    expect(
+      within(screen.getByRole('row', { name: /Boots/ })).getByRole('button', { name: 'Register for checkout' }),
+    ).toBeInTheDocument();
+  });
+
+  it('offers none for a listing the service holds, sold ones included', () => {
+    dashboardState.listings = [{ ...listing({ title: 'Boots' }), registeredWithService: true }];
+
+    render(<MarketplaceDashboard />);
+
+    expect(screen.queryByRole('button', { name: 'Register for checkout' })).not.toBeInTheDocument();
   });
 });
 

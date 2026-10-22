@@ -1395,6 +1395,41 @@ describe('MarketplaceOrders digital cards (digital delivery design §3 "After pa
     expect(within(card).getByText('Completes automatically 7 days after delivery.')).toBeInTheDocument();
     expect(within(card).queryByText(/unless a return is requested/)).not.toBeInTheDocument();
   });
+
+  it.each(['buyer', 'seller'] as const)(
+    'shows a completed order as Completed to the %s, with no auto-complete note beside it',
+    (role) => {
+      ordersState.orders = [
+        orderView('completed', 'Done boots', role, {
+          nextActor: 'none',
+          returnPolicy: { acceptsReturns: false, returnWindowDays: null },
+          autoCompleteDays: 14,
+        }),
+      ];
+
+      render(<MarketplaceOrders />);
+
+      const card = screen.getByText(/Done boots/).closest('[data-slot="card"]') as HTMLElement;
+      expect(within(card).getByText('Completed')).toBeInTheDocument();
+      expect(within(card).queryByText(/Completes automatically/)).not.toBeInTheDocument();
+    },
+  );
+
+  it('shows the auto-complete note only while the order is still delivered', () => {
+    const returnPolicy = { acceptsReturns: false, returnWindowDays: null };
+    ordersState.orders = [orderView('delivered', 'Waiting boots', 'buyer', { nextActor: 'none', returnPolicy })];
+
+    const { rerender } = render(<MarketplaceOrders />);
+    const delivered = screen.getByText(/Waiting boots/).closest('[data-slot="card"]') as HTMLElement;
+    expect(within(delivered).getByText('Delivered')).toBeInTheDocument();
+    expect(within(delivered).getByText(/Completes automatically 14 days after delivery/)).toBeInTheDocument();
+
+    ordersState.orders = [orderView('completed', 'Waiting boots', 'buyer', { nextActor: 'none', returnPolicy })];
+    rerender(<MarketplaceOrders />);
+    const completed = screen.getByText(/Waiting boots/).closest('[data-slot="card"]') as HTMLElement;
+    expect(within(completed).getByText('Completed')).toBeInTheDocument();
+    expect(within(completed).queryByText(/Completes automatically/)).not.toBeInTheDocument();
+  });
 });
 
 describe('MarketplaceOrders seen checkpoint', () => {

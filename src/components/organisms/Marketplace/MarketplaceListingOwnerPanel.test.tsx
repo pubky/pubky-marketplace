@@ -1,9 +1,15 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { AUCTION_HAS_BIDS_MESSAGE, AUCTION_HAS_BIDS_REFUSAL } from '@/libs/commerce/auction-removal';
+import { ClientErrorCode } from '@/libs/error/error.codes';
+import { Err } from '@/libs/error/error.factories';
+import { ErrorService } from '@/libs/error/error.types';
 import type { CommerceListingRegistrationStatus } from '@/models/commerce/commerce.schema';
+import { toast } from '@/molecules/Toaster/use-toast';
 import { useAuthStore } from '@/stores/auth/auth.store';
 import { createCommerceListingFixture } from '@/test/fixtures/commerce/commerce';
+import { createAuctionProjectionFixture } from '@/test/fixtures/commerce/projections';
 import { MarketplaceListingOwnerPanel } from './MarketplaceListingOwnerPanel';
 
 const controller = vi.hoisted(() => ({
@@ -19,6 +25,8 @@ vi.mock('next/navigation', () => ({
 vi.mock('@/controllers/commerce/commerce', () => ({
   CommerceController: controller,
 }));
+
+vi.mock('@/molecules/Toaster/use-toast', () => ({ toast: vi.fn() }));
 
 const marketplaceSession = vi.hoisted(() => ({}));
 
@@ -260,5 +268,106 @@ describe('MarketplaceListingOwnerPanel state badge', () => {
     render(<MarketplaceListingOwnerPanel record={record} registrationStatus="registered" />);
 
     expect(screen.getByTestId('listing-owner-state')).toHaveTextContent('paused');
+  });
+});
+
+describe('MarketplaceListingOwnerPanel delete of an auction', () => {
+  const record = () => {
+    const auction = createCommerceListingFixture();
+    auction.sale = {
+      format: 'auction',
+      startingPrice: { amountMinor: 4_500, currency: 'USD', exponent: 2 },
+      minimumIncrement: { amountMinor: 500, currency: 'USD', exponent: 2 },
+      startsAt: '2026-09-01T00:00:00.000Z',
+      endsAt: '2099-01-01T00:00:00.000Z',
+      antiSnipingWindowSeconds: 120,
+      antiSnipingExtensionSeconds: 120,
+    };
+    return auction;
+  };
+  const projectionWith = (bidCount: number, status?: string) => {
+    const base = createAuctionProjectionFixture();
+    return createAuctionProjectionFixture({
+      auction: { ...base.auction!, bidCount, ...(status ? { status } : {}) },
+    });
+  };
+
+  beforeEach(() => {
+    controller.commitDeleteListing.mockReset();
+    controller.commitDeleteListing.mockResolvedValue(undefined);
+    useAuthStore.setState({ session: {} as never });
+  });
+
+  it('is off while the auction has not ended and has bids, and says so', () => {
+    render(
+      <MarketplaceListingOwnerPanel
+        record={record()}
+        registrationStatus="registered"
+        projection={projectionWith(2, 'active')}
+        auctionPhase="live"
+      />,
+    );
+
+    expect(screen.getByRole('button', { name: 'Delete' })).toBeDisabled();
+    expect(screen.getByTestId('listing-auction-delete-note')).toHaveTextContent(
+      "This auction has 2 bids, so it can't be deleted until it ends.",
+    );
+  });
+
+  it('stays on for a live auction nobody has bid on', () => {
+    render(
+      <MarketplaceListingOwnerPanel
+        record={record()}
+        registrationStatus="registered"
+        projection={projectionWith(0, 'active')}
+        auctionPhase="live"
+      />,
+    );
+
+    expect(screen.getByRole('button', { name: 'Delete' })).toBeEnabled();
+    expect(screen.queryByTestId('listing-auction-delete-note')).not.toBeInTheDocument();
+  });
+
+  it.each([
+    ['ended by its time', projectionWith(3, 'active'), 'ended' as const],
+    ['closed sold by the service', projectionWith(3, 'sold'), 'live' as const],
+    ['closed unsold by the service', projectionWith(3, 'unsold'), 'live' as const],
+  ])('stays on for an auction %s', (_label, projection, phase) => {
+    render(
+      <MarketplaceListingOwnerPanel
+        record={record()}
+        registrationStatus="registered"
+        projection={projection}
+        auctionPhase={phase}
+      />,
+    );
+
+    expect(screen.getByRole('button', { name: 'Delete' })).toBeEnabled();
+    expect(screen.queryByTestId('listing-auction-delete-note')).not.toBeInTheDocument();
+  });
+
+  it('shows the refusal, not a generic failure, when a bid lands before the delete is confirmed', async () => {
+    const user = userEvent.setup();
+    controller.commitDeleteListing.mockRejectedValue(
+      Err.client(ClientErrorCode.CONFLICT, AUCTION_HAS_BIDS_MESSAGE, {
+        service: ErrorService.Marketplace,
+        operation: 'commitDeleteListing',
+        context: { refusal: AUCTION_HAS_BIDS_REFUSAL, bidCount: 1 },
+      }),
+    );
+    render(
+      <MarketplaceListingOwnerPanel
+        record={record()}
+        registrationStatus="registered"
+        projection={projectionWith(0, 'active')}
+        auctionPhase="live"
+      />,
+    );
+    await user.click(screen.getByRole('button', { name: 'Delete' }));
+    await user.click(await screen.findByRole('button', { name: 'Delete listing' }));
+
+    await waitFor(() =>
+      expect(toast).toHaveBeenCalledWith({ variant: 'error', description: AUCTION_HAS_BIDS_MESSAGE }),
+    );
   });
 });
