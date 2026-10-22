@@ -13,7 +13,7 @@ import { MarketplaceUsdtRefundAddress } from './MarketplaceUsdtRefundAddress';
 
 vi.mock('@/molecules/Toaster/use-toast', () => ({ toast: vi.fn() }));
 
-// The draft Paykit lookup reads homeservers; it finds nothing unless a test says otherwise.
+// The Paykit lookup reads homeservers; it finds nothing unless a test says otherwise.
 beforeEach(() => {
   vi.spyOn(CommerceController, 'fetchBuyerPaykitUsdtAddress').mockResolvedValue(null);
 });
@@ -264,7 +264,7 @@ describe('MarketplaceUsdtRefundAddress — seller', () => {
   });
 });
 
-describe('MarketplaceUsdtRefundAddress — Paykit endpoint (draft)', () => {
+describe('MarketplaceUsdtRefundAddress — Paykit endpoint', () => {
   it("offers the buyer's published Paykit USDT address and confirms it", async () => {
     vi.spyOn(CommerceController, 'fetchBuyerPaykitUsdtAddress').mockResolvedValue(REFUND_FIXTURE_ADDRESS);
     const { actOnOrder } = renderPanel(createUsdtOrderFixture('return_approved'));
@@ -304,5 +304,37 @@ describe('MarketplaceUsdtRefundAddress — Paykit endpoint (draft)', () => {
         address: REFUND_FIXTURE_OTHER_ADDRESS,
       }),
     );
+  });
+
+  it('keeps the selected address when the lookup finishes after the buyer ticked the network box', async () => {
+    let resolveLookup: (address: string | null) => void = () => {};
+    vi.spyOn(CommerceController, 'fetchBuyerPaykitUsdtAddress').mockReturnValue(
+      new Promise((resolve) => {
+        resolveLookup = resolve;
+      }),
+    );
+    const order = createUsdtOrderFixture('return_approved', { paymentAddress: REFUND_FIXTURE_OTHER_ADDRESS });
+    const { actOnOrder } = renderPanel(order);
+    const user = userEvent.setup();
+
+    expect(screen.getByRole('radio', { name: /Send it back to the address I paid from/ })).toBeChecked();
+    await user.click(screen.getByRole('checkbox', { name: 'This address accepts USDT on Arbitrum One' }));
+    resolveLookup(REFUND_FIXTURE_ADDRESS);
+
+    expect(await screen.findByRole('radio', { name: /Send it to my Paykit USDT address/ })).not.toBeChecked();
+    await user.click(screen.getByRole('button', { name: 'Confirm refund address' }));
+    await waitFor(() =>
+      expect(actOnOrder).toHaveBeenCalledWith(expect.anything(), 'refund.confirm_destination', {
+        address: REFUND_FIXTURE_OTHER_ADDRESS,
+      }),
+    );
+  });
+
+  it('logs a failed lookup instead of leaving it unhandled', async () => {
+    vi.spyOn(CommerceController, 'fetchBuyerPaykitUsdtAddress').mockRejectedValue(new Error('bad pubky'));
+    renderPanel(createUsdtOrderFixture('return_approved'));
+
+    expect(await screen.findByLabelText('Arbitrum One USDT address')).toBeInTheDocument();
+    expect(screen.queryByRole('radio', { name: /Send it to my Paykit USDT address/ })).toBeNull();
   });
 });

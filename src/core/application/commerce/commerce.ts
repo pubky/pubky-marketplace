@@ -89,6 +89,7 @@ import {
 } from '@/libs/commerce/order-reviews';
 import {
   PAYKIT_ENDPOINT_MAX_BYTES,
+  PAYKIT_REFUND_MAX_APPS,
   paykitEndpointUrl,
   paykitRegistryAppIds,
   USDT_ARBITRUM_ENDPOINT_ID,
@@ -1820,7 +1821,7 @@ export class CommerceApplication {
   }
 
   /**
-   * Draft (pubky/pubky-marketplace#371): the Arbitrum USDT address the
+   * pubky/pubky-marketplace#371: the Arbitrum USDT address the
    * buyer's Paykit wallet publishes as a public `usdt-arbitrum-address`
    * endpoint, from the first app in their App Registry that has one. Null
    * when none is published or anything cannot be read: the buyer then types
@@ -1837,7 +1838,7 @@ export class CommerceApplication {
     } catch {
       return null;
     }
-    for (const appId of appIds) {
+    for (const appId of appIds.slice(0, PAYKIT_REFUND_MAX_APPS)) {
       // An app that doesn't publish the endpoint is an expected miss, not an error.
       try {
         const endpoint = await HomeserverService.getJsonIfFound<unknown>({

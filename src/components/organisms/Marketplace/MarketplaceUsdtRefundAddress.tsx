@@ -19,6 +19,7 @@ import {
   usdtRefundDueMoney,
   usdtRefundSurface,
 } from '@/libs/commerce/usdt-refund';
+import { Logger } from '@/libs/logger/logger';
 import { ControlledInputField } from '@/molecules/ControlledInputField/ControlledInputField';
 import { ArbiscanLookupLink } from '@/molecules/Marketplace/ArbiscanLookupLink';
 import type { MarketplaceOrder } from '@/services/marketplace/marketplace';
@@ -84,7 +85,7 @@ function BuyerRefundAddress({
   actOnOrder: ActOnOrder;
 }) {
   const [editing, setEditing] = useState(false);
-  // Draft (pubky/pubky-marketplace#371): offer the USDT address the buyer's Paykit wallet publishes.
+  // Offer the USDT address the buyer's Paykit wallet publishes, when it does (pubky/pubky-marketplace#371).
   const [paykitAddress, setPaykitAddress] = useState<string | null>(null);
   const { form, paymentAddress, submit, reset } = useConfirmRefundDestination(order, actOnOrder, paykitAddress);
   const source = useWatch({ control: form.control, name: 'source' });
@@ -93,12 +94,19 @@ function BuyerRefundAddress({
   useEffect(() => {
     if (!showForm) return;
     let active = true;
-    void CommerceController.fetchBuyerPaykitUsdtAddress(order.buyerPubky).then((address) => {
-      if (!active || !address) return;
-      setPaykitAddress(address);
-      // Preselect it only while the buyer hasn't chosen or typed anything yet.
-      if (!form.getFieldState('source').isDirty && !form.getValues('address')) form.setValue('source', 'paykit');
-    });
+    CommerceController.fetchBuyerPaykitUsdtAddress(order.buyerPubky)
+      .then((address) => {
+        if (!active || !address) return;
+        setPaykitAddress(address);
+        // Preselect it only while the buyer hasn't touched the form, ticked the
+        // network box or typed an address: a late lookup never changes their pick.
+        if (!form.formState.isDirty && !form.getValues('networkConfirmed') && !form.getValues('address')) {
+          form.setValue('source', 'paykit');
+        }
+      })
+      .catch((error: unknown) => {
+        Logger.warn('Could not read the buyer Paykit USDT address', { error });
+      });
     return () => {
       active = false;
     };
@@ -156,14 +164,6 @@ function BuyerRefundAddress({
               control={form.control}
               render={({ field }) => (
                 <RadioGroup value={field.value} onValueChange={field.onChange}>
-                  {paykitAddress && (
-                    <RadioGroupItem
-                      value="paykit"
-                      variant="box"
-                      label={USDT_REFUND_COPY.paykitAddressChoice}
-                      description={paykitAddress}
-                    />
-                  )}
                   {paymentAddress && (
                     <RadioGroupItem
                       value="payment"
@@ -173,6 +173,15 @@ function BuyerRefundAddress({
                     />
                   )}
                   <RadioGroupItem value="another" variant="box" label={USDT_REFUND_COPY.anotherAddressChoice} />
+                  {/* Last, so a lookup that finishes late doesn't move the choices under the cursor. */}
+                  {paykitAddress && (
+                    <RadioGroupItem
+                      value="paykit"
+                      variant="box"
+                      label={USDT_REFUND_COPY.paykitAddressChoice}
+                      description={paykitAddress}
+                    />
+                  )}
                 </RadioGroup>
               )}
             />

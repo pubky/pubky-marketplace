@@ -9,7 +9,7 @@ export const CONFIRM_REFUND_DESTINATION_FIELDS = {
 
 /**
  * `payment` is the address the buyer paid from, offered only when the order projection carries it.
- * `paykit` is the USDT endpoint the buyer's Paykit wallet publishes (draft, pubky/pubky-marketplace#371).
+ * `paykit` is the USDT endpoint the buyer's Paykit wallet publishes, when it does (pubky/pubky-marketplace#371).
  */
 export const REFUND_DESTINATION_SOURCES = ['another', 'payment', 'paykit'] as const;
 
