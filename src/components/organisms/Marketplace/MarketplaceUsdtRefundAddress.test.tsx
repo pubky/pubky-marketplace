@@ -330,6 +330,29 @@ describe('MarketplaceUsdtRefundAddress — Paykit endpoint', () => {
     );
   });
 
+  it.each([
+    ['another', [/Send it to another Arbitrum One USDT address/]],
+    [
+      'the paid-from address again',
+      [/Send it to another Arbitrum One USDT address/, /Send it back to the address I paid from/],
+    ],
+  ])('keeps %s when the buyer picked it before the lookup finished', async (_, picks) => {
+    let resolveLookup: (address: string | null) => void = () => {};
+    vi.spyOn(CommerceController, 'fetchBuyerPaykitUsdtAddress').mockReturnValue(
+      new Promise((resolve) => {
+        resolveLookup = resolve;
+      }),
+    );
+    renderPanel(createUsdtOrderFixture('return_approved', { paymentAddress: REFUND_FIXTURE_OTHER_ADDRESS }));
+    const user = userEvent.setup();
+
+    for (const name of picks) await user.click(screen.getByRole('radio', { name }));
+    resolveLookup(REFUND_FIXTURE_ADDRESS);
+
+    expect(await screen.findByRole('radio', { name: /Send it to my Paykit USDT address/ })).not.toBeChecked();
+    expect(screen.getByRole('radio', { name: picks[picks.length - 1] })).toBeChecked();
+  });
+
   it('logs a failed lookup instead of leaving it unhandled', async () => {
     vi.spyOn(CommerceController, 'fetchBuyerPaykitUsdtAddress').mockRejectedValue(new Error('bad pubky'));
     renderPanel(createUsdtOrderFixture('return_approved'));

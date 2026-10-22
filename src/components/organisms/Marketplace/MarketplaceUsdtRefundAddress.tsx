@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Check, Copy } from 'lucide-react';
 import { Controller, useWatch } from 'react-hook-form';
 import { Button } from '@/atoms/Button/Button';
@@ -87,6 +87,8 @@ function BuyerRefundAddress({
   const [editing, setEditing] = useState(false);
   // Offer the USDT address the buyer's Paykit wallet publishes, when it does (pubky/pubky-marketplace#371).
   const [paykitAddress, setPaykitAddress] = useState<string | null>(null);
+  // Set once the buyer picks a choice, even if they pick the default again.
+  const pickedRef = useRef(false);
   const { form, paymentAddress, submit, reset } = useConfirmRefundDestination(order, actOnOrder, paykitAddress);
   const source = useWatch({ control: form.control, name: 'source' });
   const destination = order.refundDestination ?? null;
@@ -98,9 +100,14 @@ function BuyerRefundAddress({
       .then((address) => {
         if (!active || !address) return;
         setPaykitAddress(address);
-        // Preselect it only while the buyer hasn't touched the form, ticked the
+        // Preselect it only while the buyer hasn't picked a choice, ticked the
         // network box or typed an address: a late lookup never changes their pick.
-        if (!form.formState.isDirty && !form.getValues('networkConfirmed') && !form.getValues('address')) {
+        if (
+          !pickedRef.current &&
+          !form.getFieldState('source').isDirty &&
+          !form.getValues('networkConfirmed') &&
+          !form.getValues('address')
+        ) {
           form.setValue('source', 'paykit');
         }
       })
@@ -142,6 +149,7 @@ function BuyerRefundAddress({
             className="rounded-full"
             onClick={() => {
               reset(destination?.address);
+              pickedRef.current = false;
               setEditing(true);
             }}
           >
@@ -163,7 +171,13 @@ function BuyerRefundAddress({
               name="source"
               control={form.control}
               render={({ field }) => (
-                <RadioGroup value={field.value} onValueChange={field.onChange}>
+                <RadioGroup
+                  value={field.value}
+                  onValueChange={(value) => {
+                    pickedRef.current = true;
+                    field.onChange(value);
+                  }}
+                >
                   {paymentAddress && (
                     <RadioGroupItem
                       value="payment"
