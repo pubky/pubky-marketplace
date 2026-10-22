@@ -10,7 +10,7 @@ import { Label } from '@/atoms/Label/Label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/atoms/Select/Select';
 import { Typography } from '@/atoms/Typography/Typography';
 import { trustedMarketplaceAttestorAt } from '@/config/commerce';
-import { REVIEW_PENDING_COPY } from '@/config/commerce-copy';
+import { REVIEW_PENDING_COPY, REVIEW_REMOVAL_COPY } from '@/config/commerce-copy';
 import { FORM_LABEL_CLASSES } from '@/config/forms';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import { useMarketplaceOrderAction } from '@/hooks/useMarketplaceOrderAction/useMarketplaceOrderAction';
@@ -173,6 +173,9 @@ export function MarketplaceOrderActions({
 
   const ownReviews = reviewsOfReviewer(order, ownReviewerPubkyForRecord);
   const ownReview = ownReviews[0];
+  // The service keeps a withdrawn review on the order (only its author sees
+  // it, flagged), so the order still shows the user reviewed it.
+  const allOwnReviewsRemoved = ownReviews.length > 0 && ownReviews.every(({ publicRemoved }) => publicRemoved === true);
   // The service counts the window from the reviewer's first review of the
   // order. It refuses adding and editing only once `now` moves PAST that
   // plus the window, so `<=` here matches `>` there.
@@ -516,7 +519,7 @@ export function MarketplaceOrderActions({
 
       {ownReview && (
         <div className="mt-2 grid gap-1 text-xs text-muted-foreground" data-testid="own-review-status">
-          {awaitingRelease !== null && (
+          {awaitingRelease !== null && !allOwnReviewsRemoved && (
             <p data-testid="own-review-pending">
               {REVIEW_PENDING_COPY.publishesWhen(
                 isBuyer ? 'buyer' : 'seller',
@@ -524,8 +527,9 @@ export function MarketplaceOrderActions({
               )}
             </p>
           )}
-          {awaitingRelease === null &&
-            ownReviews.map((review) => {
+          {ownReviews
+            .filter((review) => awaitingRelease === null || review.publicRemoved === true)
+            .map((review) => {
               const aggregateId = reviewListingAggregateId(order, review);
               const listing = orderReviewListings(order).find(
                 (candidate) => candidate.listingAggregateId === aggregateId,
@@ -537,7 +541,7 @@ export function MarketplaceOrderActions({
               return (
                 <p key={aggregateId ?? review.createdAt}>
                   {ownReviews.length > 1 && listing ? `${listing.title}: ` : ''}
-                  {reviewRecordStatus(record)}
+                  {review.publicRemoved === true ? REVIEW_REMOVAL_COPY.removedStatus : reviewRecordStatus(record)}
                 </p>
               );
             })}

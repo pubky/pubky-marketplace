@@ -366,6 +366,77 @@ describe('MarketplaceOrderActions own-review verified status', () => {
       expect(screen.getByTestId('own-review-status')).toHaveTextContent(/publication status will appear/);
     });
   });
+
+  describe('after the user withdrew the review', () => {
+    const REMOVED_STATUS = 'You removed your review. It is no longer public.';
+
+    function renderWithdrawn(actions?: { reviewCreatedAt?: string }) {
+      const order = createOrderFixture('completed', {
+        reviews: [
+          {
+            ...ownReview(actions?.reviewCreatedAt ?? new Date(Date.now() - 60_000).toISOString()),
+            publicRemoved: true,
+          },
+        ],
+      });
+      render(<MarketplaceOrderActions order={order} isBuyer={true} canEditReview={true} actOnOrder={vi.fn()} />);
+      return order;
+    }
+
+    it('says the review was removed, not saved, when no local record is left', async () => {
+      mockedController.getOwnMarketplaceOrderReviews.mockResolvedValue([]);
+      renderWithdrawn();
+
+      const status = screen.getByTestId('own-review-status');
+      expect(status).toHaveTextContent(REMOVED_STATUS);
+      await waitFor(() => expect(mockedController.getOwnMarketplaceOrderReviews).toHaveBeenCalled());
+      expect(status).not.toHaveTextContent(/Your review is saved/);
+      expect(status).not.toHaveTextContent(/publication status will appear/);
+    });
+
+    it('does not show a leftover published record as live', async () => {
+      mockedController.getOwnMarketplaceOrderReviews.mockResolvedValue([publishedReviewRow()]);
+      renderWithdrawn();
+
+      await waitFor(() => expect(mockedController.getOwnMarketplaceOrderReviews).toHaveBeenCalled());
+      const status = screen.getByTestId('own-review-status');
+      expect(status).toHaveTextContent(REMOVED_STATUS);
+      expect(status).not.toHaveTextContent(/Verified purchase/);
+    });
+
+    it('does not say a withdrawn review publishes later', async () => {
+      mockedController.getAwaitingReleaseOwnMarketplaceReviews.mockResolvedValue([
+        {
+          orderId: createOrderFixture('completed').id,
+          releaseAt: '2026-11-01T00:00:00.000Z',
+          reviewerRole: 'buyer',
+          items: [],
+        },
+      ]);
+      renderWithdrawn();
+
+      await waitFor(() => expect(mockedController.getAwaitingReleaseOwnMarketplaceReviews).toHaveBeenCalled());
+      expect(screen.queryByTestId('own-review-pending')).not.toBeInTheDocument();
+      expect(screen.getByTestId('own-review-status')).toHaveTextContent(REMOVED_STATUS);
+    });
+
+    it('keeps the order showing that the user reviewed it, with the edit that restores the review', () => {
+      renderWithdrawn();
+
+      expect(screen.queryByRole('button', { name: 'Leave review' })).not.toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Edit review' })).toBeInTheDocument();
+    });
+
+    it('still says a live review is saved', async () => {
+      mockedController.getOwnMarketplaceOrderReviews.mockResolvedValue([]);
+      renderActions();
+
+      await waitFor(() => {
+        expect(screen.getByTestId('own-review-status')).toHaveTextContent(/publication status will appear/);
+      });
+      expect(screen.getByTestId('own-review-status')).not.toHaveTextContent(REMOVED_STATUS);
+    });
+  });
 });
 
 describe('MarketplaceOrderActions a review the double-blind window withholds', () => {
