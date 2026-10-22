@@ -97,7 +97,7 @@ export function DropClaimPanel({
   remainingAllowance: number | null;
   isOwner?: boolean;
   /** The seller's shop record, or null while it is unread or unreadable (the service then decides). */
-  shop?: { sellerStatus?: string } | null;
+  shop?: { sellerStatus?: string; location?: { countryCode?: string } } | null;
 }) {
   const currentUserPubky = useAuthStore((state) => state.currentUserPubky);
   const { requireAuth } = useRequireAuth();
@@ -133,7 +133,7 @@ export function DropClaimPanel({
     digital: (listings ?? []).some(({ record: listing }) => listing !== null && isDigitalOnly(listing)),
     isOwner,
   });
-  const regionBlocked = region.refusal !== null || region.needsCountry;
+  const regionBlocked = region.refusal !== null || region.needsCountry || region.commerce.held;
   const mediaUrls = useMarketplaceFirstMediaUrls(
     (listings ?? []).map(({ record: listing }) => (listing ? listing.media.map(({ url }) => url) : [])),
   );
@@ -148,13 +148,23 @@ export function DropClaimPanel({
         A drop order is one unit of one listing per checkout. First come, first served — the service answers reserved or
         refused, immediately.
       </Typography>
-      {!isOwner && currentUserPubky && (
-        <RegionAvailabilityNotice region={region} testIdPrefix="drop-claim" countryFieldId="drop-buyer-country" />
+      {!isOwner && (currentUserPubky || region.blockedNotice) && (
+        <RegionAvailabilityNotice
+          region={region}
+          testIdPrefix="drop-claim"
+          countryFieldId="drop-buyer-country"
+          blocked={region.blockedNotice}
+        />
       )}
       {claim.needsSession && claim.sessionError ? (
         <MarketplaceSessionRequiredCard />
       ) : !currentUserPubky ? (
-        <Button size="lg" className="w-fit rounded-full" onClick={() => requireAuth(() => undefined)}>
+        <Button
+          size="lg"
+          className="w-fit rounded-full"
+          disabled={region.commerce.held}
+          onClick={() => requireAuth(() => undefined)}
+        >
           <Zap className="size-4" />
           Sign in to buy
         </Button>

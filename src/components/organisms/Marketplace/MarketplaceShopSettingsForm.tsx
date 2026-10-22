@@ -23,6 +23,7 @@ import {
 import type { MarketplaceShopSettingsData } from '@/hooks/useMarketplaceShopSettings/useMarketplaceShopSettings.types';
 import { useSellerAnnualLimit } from '@/hooks/useSellerAnnualLimit/useSellerAnnualLimit';
 import { SELLER_STATUS_COPY } from '@/libs/commerce/eu-region';
+import { SELLING_BLOCKED_COUNTRY_MESSAGE } from '@/libs/commerce/region-modes';
 import { formatShipsToCountries, parseShipsToField, shipsToFieldError } from '@/libs/commerce/ships-to';
 import { ControlledInputField } from '@/molecules/ControlledInputField/ControlledInputField';
 import { ControlledTextareaField } from '@/molecules/ControlledTextareaField/ControlledTextareaField';
@@ -127,6 +128,16 @@ function MarketplaceShopSettingsLoaded({ settings, onSaved }: MarketplaceShopSet
             />
             <ControlledInputField name="region" control={settings.form.control} label="Region" />
           </div>
+          {settings.countryBlocked && !settings.form.formState.errors.countryCode && (
+            <Typography
+              as="p"
+              role="status"
+              className="-mt-2 text-sm text-destructive"
+              data-testid="shop-settings-country-blocked"
+            >
+              {SELLING_BLOCKED_COUNTRY_MESSAGE}
+            </Typography>
+          )}
 
           <ControlledTextareaField
             name="shippingPolicy"

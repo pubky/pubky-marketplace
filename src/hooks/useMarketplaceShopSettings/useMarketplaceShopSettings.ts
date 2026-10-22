@@ -2,7 +2,7 @@
 
 import { type ChangeEvent, type RefObject, useCallback, useEffect, useRef, useState } from 'react';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useForm } from 'react-hook-form';
+import { useForm, useWatch } from 'react-hook-form';
 import { COMMERCE_CONTRACT_VERSION } from '@/config/commerce';
 import { IMAGE_MAX_RAW_SIZE } from '@/config/images';
 import { CommerceController } from '@/controllers/commerce/commerce';
@@ -13,8 +13,10 @@ import {
   marketplaceFailureMessage,
 } from '@/libs/commerce/failure-messages';
 import type { CommerceShopRecord } from '@/libs/commerce/marketplace-records';
+import { SELLING_BLOCKED_COUNTRY_MESSAGE } from '@/libs/commerce/region-modes';
 import { hasHttpStatus, HOMESERVER_WRITE_SCOPE_REMEDY, isHomeserverWriteScopeError } from '@/libs/error/error.utils';
 import { stripImageMetadata } from '@/libs/image/stripImageMetadata';
+import { getRegionPolicy } from '@/libs/runtime-config/runtime-config';
 import { toast } from '@/molecules/Toaster/use-toast';
 import { useAuthStore } from '@/stores/auth/auth.store';
 import {
@@ -235,11 +237,18 @@ export function useMarketplaceShopSettings() {
     };
   }, [currentUserPubky, form, setAvatarExisting, setBannerExisting, loadAttempt]);
 
+  const countryCode = useWatch({ control: form.control, name: 'countryCode' });
+  const countryBlocked = getRegionPolicy().modeOf(countryCode) === 'blocked';
+
   const submit = async () => {
     if (!currentUserPubky || isLoading || loadError || isSaving) return false;
     let succeeded = false;
     setIsSaving(true);
     await form.handleSubmit(async (data) => {
+      if (getRegionPolicy().modeOf(data.countryCode) === 'blocked') {
+        form.setError('countryCode', { type: 'region', message: SELLING_BLOCKED_COUNTRY_MESSAGE });
+        return;
+      }
       const now = new Date().toISOString();
       const isFirstSave = revision === 0;
 
@@ -334,6 +343,8 @@ export function useMarketplaceShopSettings() {
     isSaving,
     /** True once an owner-signed shop record exists (locally cached or just saved). */
     hasShop: revision > 0,
+    /** The country typed in the form is in a blocked region, so selling from it is refused. */
+    countryBlocked,
     avatar: avatar.slot,
     banner: banner.slot,
     submit,

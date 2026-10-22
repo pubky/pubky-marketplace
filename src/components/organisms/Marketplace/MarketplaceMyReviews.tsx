@@ -1,9 +1,9 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useLiveQuery } from 'dexie-react-hooks';
 import { BadgeCheck, PenLine, Trash2 } from 'lucide-react';
 import { getMarketplaceListingRoute } from '@/app/routes';
-import type { AwaitingReleaseReview } from '@/application/commerce/commerce';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -46,9 +46,8 @@ import { useAuthStore } from '@/stores/auth/auth.store';
  */
 export function MarketplaceMyReviews({ orders = [], className }: { orders?: MarketplaceOrder[]; className?: string }) {
   const currentUserPubky = useAuthStore((state) => state.currentUserPubky);
-  const [reviews, setReviews] = useState<CommerceReviewModelSchema[] | null>(null);
-  const [awaiting, setAwaiting] = useState<AwaitingReleaseReview[]>([]);
   const [pendingRemoval, setPendingRemoval] = useState<{ orderId: string; withheld: boolean } | null>(null);
+  const [removedOrderIds, setRemovedOrderIds] = useState<ReadonlySet<string>>(new Set());
   const { removingOrderId, remove } = useRemoveOwnMarketplaceReview();
 
   // Orders carrying the user's own review at the service: the ones whose
@@ -60,72 +59,45 @@ export function MarketplaceMyReviews({ orders = [], className }: { orders?: Mark
     .sort()
     .join(',');
 
-  useEffect(() => {
-    if (currentUserPubky === null) return;
-    let active = true;
-    const readLocal = () =>
-      Promise.all([
+  // Live over the local rows: a record written by another surface (the order
+  // card restoring a review the homeserver lost, a publication landing) or by
+  // the refresh below shows here without a reload. `undefined` until the first
+  // read lands.
+  const local = useLiveQuery(async () => {
+    if (currentUserPubky === null) return null;
+    try {
+      const [rows, withheld] = await Promise.all([
         CommerceController.getOwnMarketplaceReviews(),
         CommerceController.getAwaitingReleaseOwnMarketplaceReviews(),
-      ])
-        .then(([rows, withheld]) => {
-          if (!active) return;
-          setReviews(rows);
-          setAwaiting(withheld);
-        })
-        .catch(() => {
-          if (active) setReviews((current) => current ?? []);
-        });
-    void readLocal().then(async () => {
-      if (reviewedOrderKey === '') return;
-      try {
-        const changed = await CommerceController.refreshOwnMarketplaceReviews(orders);
-        if (active && changed > 0) await readLocal();
-      } catch {
-        // The local rows stay as they are; the next open re-reads.
-      }
+      ]);
+      return { rows, withheld };
+    } catch {
+      return { rows: [], withheld: [] };
+    }
+  }, [currentUserPubky]);
+
+  useEffect(() => {
+    if (currentUserPubky === null || reviewedOrderKey === '') return;
+    void CommerceController.refreshOwnMarketplaceReviews(orders).catch(() => {
+      // The local rows stay as they are; the next open re-reads.
     });
-    return () => {
-      active = false;
-    };
     // `orders` feeds the refresh, but only a change in which orders carry a
     // review of the user's may re-run it.
     // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed by reviewedOrderKey
   }, [currentUserPubky, reviewedOrderKey]);
-
-  // A withheld review turns into a published one when its window releases it,
-  // which the poll of the orders shows; re-read the local state until none waits.
-  const isAwaiting = awaiting.length > 0;
-  const ordersKey = orders.map(({ id, revision }) => `${id}:${revision}`).join(',');
-  useEffect(() => {
-    if (currentUserPubky === null || !isAwaiting) return;
-    let active = true;
-    void Promise.all([
-      CommerceController.getOwnMarketplaceReviews(),
-      CommerceController.getAwaitingReleaseOwnMarketplaceReviews(),
-    ])
-      .then(([rows, withheld]) => {
-        if (!active) return;
-        setReviews(rows);
-        setAwaiting(withheld);
-      })
-      .catch(() => undefined);
-    return () => {
-      active = false;
-    };
-  }, [currentUserPubky, isAwaiting, ordersKey]);
 
   const confirmRemoval = async () => {
     const target = pendingRemoval;
     setPendingRemoval(null);
     if (target === null) return;
     if (await remove(target.orderId, { withheld: target.withheld })) {
-      setReviews((current) => current?.filter((row) => row.order_id !== target.orderId) ?? current);
-      setAwaiting((current) => current.filter((held) => held.orderId !== target.orderId));
+      setRemovedOrderIds((current) => new Set(current).add(target.orderId));
     }
   };
 
-  if (currentUserPubky === null || reviews === null || (reviews.length === 0 && awaiting.length === 0)) return null;
+  const reviews = (local?.rows ?? []).filter((row) => !removedOrderIds.has(row.order_id));
+  const awaiting = (local?.withheld ?? []).filter((held) => !removedOrderIds.has(held.orderId));
+  if (currentUserPubky === null || local == null || (reviews.length === 0 && awaiting.length === 0)) return null;
   const orderGroups = groupByOrder(reviews);
 
   return (

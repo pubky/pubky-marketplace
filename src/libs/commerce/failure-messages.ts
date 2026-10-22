@@ -1,6 +1,12 @@
 import { CHECKOUT_HOLD_COPY } from '@/libs/commerce/checkout-hold';
 import { DIGITAL_REGION_MESSAGE, REGION_UNAVAILABLE_MESSAGE, SELLER_LIMIT_MESSAGE } from '@/libs/commerce/eu-region';
 import { PAYKIT_OUTAGE_COPY } from '@/libs/commerce/paykit-rail';
+import {
+  COMMERCE_BLOCKED_MESSAGE,
+  COMMERCE_UNKNOWN_REGION_MESSAGE,
+  SELLING_BLOCKED_COUNTRY_MESSAGE,
+  SELLING_BLOCKED_MESSAGE,
+} from '@/libs/commerce/region-modes';
 import { SHIPPO_FAILURE_REASONS } from '@/libs/commerce/shipping';
 import { isAppError } from '@/libs/error/error';
 import { ValidationErrorCode } from '@/libs/error/error.codes';
@@ -104,6 +110,8 @@ const CODE_MESSAGES: ReadonlyMap<string, string> = new Map([
   ['flow_expired', MARKETPLACE_FAILURE_MESSAGES.sessionTimeout],
   ['flow_binding_missing', APPROVAL_OTHER_TAB],
   ['flow_binding_denied', APPROVAL_OTHER_TAB],
+  ['COMMERCE_UNAVAILABLE_IN_REGION', COMMERCE_BLOCKED_MESSAGE],
+  ['SELLER_UNAVAILABLE_IN_REGION', SELLING_BLOCKED_MESSAGE],
 ]);
 
 const DROP_REFUSAL_MESSAGES: ReadonlyMap<string, string> = new Map([
@@ -270,6 +278,13 @@ export const MARKETPLACE_PAYMENT_METHOD_REASON_MESSAGES: ReadonlyMap<string, str
     'Too little time is left on this auction win to pay with Bitcoin. Choose another payment method, or message the seller.',
   ],
   ['bitcoin_unavailable', 'Bitcoin payments are not available for this seller.'],
+  ['buyer_region_blocked', COMMERCE_BLOCKED_MESSAGE],
+  ['buyer_ip_blocked', COMMERCE_BLOCKED_MESSAGE],
+  ['buyer_region_unknown', COMMERCE_UNKNOWN_REGION_MESSAGE],
+  ['seller_region_blocked', SELLING_BLOCKED_COUNTRY_MESSAGE],
+  ['seller_ip_blocked', SELLING_BLOCKED_MESSAGE],
+  ['COMMERCE_UNAVAILABLE_IN_REGION', COMMERCE_BLOCKED_MESSAGE],
+  ['SELLER_UNAVAILABLE_IN_REGION', SELLING_BLOCKED_MESSAGE],
   [
     'buyer_usdt_wallet_required',
     "Your wallet doesn't support USDT yet. Pay with a Bitkit version that supports USDT, or choose another payment method.",
@@ -461,6 +476,8 @@ export function marketplaceOfferCheckoutFailureMessage(code: MarketplaceFailureC
   if (code === 'AWARD_LISTING_CHANGED') return 'The listing snapshot does not match the offer terms.';
   if (code === 'AWARD_HOLD_MISSING') return 'The inventory reserved for this accepted offer is no longer held.';
   if (code === 'INVALID_STATE') return 'Only an accepted offer can enter offer checkout.';
+  if (code === 'COMMERCE_UNAVAILABLE_IN_REGION') return COMMERCE_BLOCKED_MESSAGE;
+  if (code === 'SELLER_UNAVAILABLE_IN_REGION') return SELLING_BLOCKED_MESSAGE;
   return MARKETPLACE_FAILURE_MESSAGES.checkout;
 }
 
@@ -507,16 +524,26 @@ const LISTING_NOT_ACTIVE_REASON_MESSAGES: ReadonlyMap<string, string> = new Map(
 ]);
 
 /**
- * Copy for the service's regional refusals (legal launch plan C3, C3b, C4), or null for any other
- * failure: a seller who does not sell to the EU or UK, a private seller who must re-confirm, a seller at
- * the annual limit, and digital items for EU and UK buyers.
+ * Copy for the service's regional refusals (legal launch plan C3, C3b, C4 and the blocked regions), or
+ * null for any other failure: a seller who does not sell to the EU or UK, a private seller who must
+ * re-confirm, a seller at the annual limit, digital items for EU and UK buyers, and commerce blocked
+ * for a buyer's or a seller's region.
  */
 export function marketplaceRegionRefusalMessage(error: { code?: unknown; reason?: unknown }): string | null {
   switch (error.code) {
+    case 'COMMERCE_UNAVAILABLE_IN_REGION':
+      return error.reason === 'buyer_region_unknown' ? COMMERCE_UNKNOWN_REGION_MESSAGE : COMMERCE_BLOCKED_MESSAGE;
     case 'SELLER_UNAVAILABLE_IN_REGION':
-      return error.reason === 'private_seller_reconfirmation_required'
-        ? SELLER_LIMIT_MESSAGE
-        : REGION_UNAVAILABLE_MESSAGE;
+      switch (error.reason) {
+        case 'private_seller_reconfirmation_required':
+          return SELLER_LIMIT_MESSAGE;
+        case 'seller_region_blocked':
+          return SELLING_BLOCKED_COUNTRY_MESSAGE;
+        case 'seller_ip_blocked':
+          return SELLING_BLOCKED_MESSAGE;
+        default:
+          return REGION_UNAVAILABLE_MESSAGE;
+      }
     case 'SELLER_ANNUAL_LIMIT_REACHED':
       return SELLER_LIMIT_MESSAGE;
     case 'DIGITAL_UNAVAILABLE_IN_REGION':

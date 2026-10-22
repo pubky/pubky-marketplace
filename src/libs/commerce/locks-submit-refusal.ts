@@ -1,3 +1,4 @@
+import { PAID_UNLOCKS_BLOCKED_MESSAGE } from '@/libs/commerce/region-modes';
 import { isAppError } from '@/libs/error/error';
 import { RateLimitErrorCode } from '@/libs/error/error.codes';
 
@@ -29,6 +30,9 @@ export type LocksSubmitRefusalCode = keyof typeof LOCKS_SUBMIT_REFUSAL_COPY;
 
 export const LOCKS_SUBMIT_REFUSAL_CODES = Object.keys(LOCKS_SUBMIT_REFUSAL_COPY) as readonly LocksSubmitRefusalCode[];
 
+/** The Lock Server answers 451 to a proof bundle from a region where paid unlocks are not available. */
+export const LOCKS_REGION_REFUSAL_STATUS = 451;
+
 export const LOCKS_SUBMIT_RATE_LIMITED_COPY = 'Too many payment requests. Wait a minute, then try again.';
 
 /**
@@ -37,6 +41,7 @@ export const LOCKS_SUBMIT_RATE_LIMITED_COPY = 'Too many payment requests. Wait a
  */
 export function locksSubmitRefusalMessage(error: unknown, fallback: string): string {
   if (!isAppError(error)) return fallback;
+  if (error.context?.statusCode === LOCKS_REGION_REFUSAL_STATUS) return PAID_UNLOCKS_BLOCKED_MESSAGE;
   const code = error.context?.locksCode;
   const known = LOCKS_SUBMIT_REFUSAL_CODES.find((candidate) => candidate === code);
   if (known) return LOCKS_SUBMIT_REFUSAL_COPY[known];

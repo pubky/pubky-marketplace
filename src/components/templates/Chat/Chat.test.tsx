@@ -21,6 +21,11 @@ vi.mock('@/stores/auth/auth.store', () => ({
 vi.mock('@/organisms/ContentLayout/ContentLayout', () => ({
   ContentLayout: ({ children }: { children: React.ReactNode }) => <main>{children}</main>,
 }));
+const commerce = vi.hoisted(() => ({ mode: 'transaction-service' }));
+vi.mock('@/config/commerce', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/config/commerce')>()),
+  getCommerceAdapterMode: () => commerce.mode,
+}));
 vi.mock('@/organisms/Marketplace/MarketplaceSectionNav', () => ({
   MarketplaceSectionNav: () => <nav aria-label="Market sections" />,
 }));
@@ -34,5 +39,17 @@ describe('Chat inbox', () => {
     expect(inbox).not.toBeNull();
     // The bar comes before the inbox heading, as on every other Market tab.
     expect(nav.compareDocumentPosition(inbox as Node) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('leaves the Market tab bar out when commerce is unavailable, as the header and footer do', () => {
+    commerce.mode = 'unavailable';
+    try {
+      render(<Chat />);
+
+      expect(screen.queryByRole('navigation', { name: 'Market sections' })).not.toBeInTheDocument();
+      expect(document.querySelector('[data-surface="chat-inbox"]')).not.toBeNull();
+    } finally {
+      commerce.mode = 'transaction-service';
+    }
   });
 });

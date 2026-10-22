@@ -62,7 +62,9 @@ export function MarketplaceDrop({ sellerPubky, dropId }: MarketplaceDropProps) {
   const claim = useMarketplaceDropClaim(drop.refresh);
   const shopFollow = useCommerceShopFollow(sellerPubky);
   const [shopName, setShopName] = useState<string | null>(null);
-  const [shopRecord, setShopRecord] = useState<{ sellerStatus?: string } | null>(null);
+  const [shopRecord, setShopRecord] = useState<{ sellerStatus?: string; location?: { countryCode?: string } } | null>(
+    null,
+  );
   const teaserUrl = useMarketplaceFirstMediaUrl(drop.record?.media ?? []);
 
   useEffect(() => {

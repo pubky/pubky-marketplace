@@ -13,11 +13,11 @@ export const MARKETPLACE_DELIVERY_ADDRESS_DISCLOSURE =
 export const CONNECTOR_SHARE_CONSENT_COPY = {
   label: (shopDomain: string) => `Send my shipping address to ${shopDomain} so this order can ship from there`,
   helper:
-    'This seller ships through their own online store. If you tick this, your address is encrypted to that store and used only to create this order there, so it can be made and shipped without waiting for the seller. If you leave it off, nothing goes to the store: the seller copies your address from Pubky, which can take longer.',
+    'This seller ships through their own online store. If you tick this, the Pubky Market service decrypts your address and sends it to that store, so the order can be made and shipped without waiting for the seller. Unlike the copy sealed to the seller, the service can read this one. It sends your name, address and phone number (if you gave one), not your email or your Pubky ID. The service deletes its copy once the store has the order, or when the order ends. It cannot delete the copy the store keeps. If you leave it off, nothing goes to the store: the seller copies your address from Pubky, which can take longer.',
 } as const;
 
 /** The version of `CONNECTOR_SHARE_CONSENT_COPY` the buyer agreed to, sent as `consent_version`. */
-export const CONNECTOR_SHARE_CONSENT_VERSION = 2;
+export const CONNECTOR_SHARE_CONSENT_VERSION = '3';
 
 /**
  * Reader-facing reasons for the index's moderation labels on a review

@@ -338,7 +338,7 @@ describe('CommerceApplication local pickup (Wave 7)', () => {
           connectorShares: {
             sellerPubky: string;
             shopDomain: string;
-            consentVersion: number;
+            consentVersion: string;
             keyId: string;
             envelope: string;
           }[];
@@ -353,8 +353,8 @@ describe('CommerceApplication local pickup (Wave 7)', () => {
           consentVersion: CONNECTOR_SHARE_CONSENT_VERSION,
           keyId: STORE_KEY_ID,
         });
-        expect(share.consentVersion).toBe(2);
-        expect(Number.isInteger(share.consentVersion)).toBe(true);
+        expect(share.consentVersion).toBe(CONNECTOR_SHARE_CONSENT_VERSION);
+        expect(typeof share.consentVersion).toBe('string');
         expect(share.envelope).not.toBe(payload.deliveryAddressEnvelopes[0]?.envelope);
 
         expect(payload).not.toHaveProperty('deliveryAddress');

@@ -163,6 +163,32 @@ describe('usePickupOrderActions', () => {
     );
   });
 
+  it('says a payment was seen when a pickup checkout cancel is refused, and re-reads (#347)', async () => {
+    controllerState.cancelResponse = {
+      ok: false,
+      error: { code: 'INVALID_STATE', message: 'This order can no longer be cancelled.' },
+    };
+    const onChanged = vi.fn();
+    const { result } = renderHook(() =>
+      usePickupOrderActions(
+        createOrderFixture('pending_payment', { fulfillment: 'pickup', paymentMethod: 'paykit' }),
+        onChanged,
+      ),
+    );
+
+    let outcome: unknown;
+    await act(async () => {
+      outcome = await result.current.cancelOrder('Changed my mind');
+    });
+
+    expect(outcome).toBe(false);
+    expect(onChanged).toHaveBeenCalled();
+    expect(toast).toHaveBeenCalledWith({
+      variant: 'error',
+      description: "We've seen a payment for this order, so it can't be cancelled now.",
+    });
+  });
+
   it('returns cancel_requested when the service degraded the lost-race request', async () => {
     controllerState.cancelResponse = {
       ok: true,

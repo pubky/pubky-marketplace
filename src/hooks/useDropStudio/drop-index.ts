@@ -11,15 +11,11 @@
  * renders.
  */
 
-const STORAGE_KEY_PREFIX = 'marketplace:own-drops:';
-
-function storageKey(accountPubky: string): string {
-  return `${STORAGE_KEY_PREFIX}${accountPubky}`;
-}
+import { ownDropsStorageKey } from '@/libs/commerce/own-drops-storage';
 
 function readRaw(accountPubky: string): string[] {
   try {
-    const raw = window.localStorage.getItem(storageKey(accountPubky));
+    const raw = window.localStorage.getItem(ownDropsStorageKey(accountPubky));
     if (!raw) return [];
     const parsed: unknown = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
@@ -38,7 +34,7 @@ export function readOwnDropIndex(accountPubky: string): string[] {
 export function rememberOwnDrop(accountPubky: string, dropId: string): void {
   const existing = readRaw(accountPubky).filter((id) => id !== dropId);
   try {
-    window.localStorage.setItem(storageKey(accountPubky), JSON.stringify([dropId, ...existing]));
+    window.localStorage.setItem(ownDropsStorageKey(accountPubky), JSON.stringify([dropId, ...existing]));
   } catch {
     // Quota/private-mode failures only lose the device-local shortcut — the
     // homeserver record and the service aggregate are unaffected.
@@ -50,9 +46,9 @@ export function forgetOwnDrop(accountPubky: string, dropId: string): void {
   const remaining = readRaw(accountPubky).filter((id) => id !== dropId);
   try {
     if (remaining.length === 0) {
-      window.localStorage.removeItem(storageKey(accountPubky));
+      window.localStorage.removeItem(ownDropsStorageKey(accountPubky));
     } else {
-      window.localStorage.setItem(storageKey(accountPubky), JSON.stringify(remaining));
+      window.localStorage.setItem(ownDropsStorageKey(accountPubky), JSON.stringify(remaining));
     }
   } catch {
     // Same non-fatal failure mode as rememberOwnDrop.

@@ -3,6 +3,8 @@
 import { useEffect, useState } from 'react';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import { useBuyerCountry } from '@/hooks/useBuyerCountry/useBuyerCountry';
+import { useCommerceAvailability } from '@/hooks/useCommerceAvailability/useCommerceAvailability';
+import { type CommerceAvailability, shopCountryCode } from '@/libs/commerce/commerce-availability';
 import {
   digitalHoldRefusal,
   fenceRefusal,
@@ -11,10 +13,11 @@ import {
   sellerDeclaration,
 } from '@/libs/commerce/eu-region';
 import { canonicalCountryCode } from '@/libs/commerce/postal-address';
-import { getDigitalRegionBlockEnabled, getEuFenceEnabled } from '@/libs/runtime-config/runtime-config';
+import { nuancedCountry } from '@/libs/commerce/region-modes';
+import { getRegionPolicy } from '@/libs/runtime-config/runtime-config';
 
 export interface CheckoutRegion {
-  /** Either region flag is on. */
+  /** Some region is nuanced or blocked. */
   enabled: boolean;
   /** The country this checkout counts as the buyer's: the address country, else the remembered one. */
   buyerCountry: string | null;
@@ -25,17 +28,21 @@ export interface CheckoutRegion {
   refusal: string | null;
   /** The sellers' declarations, by pubky, once read (always, for the consumer-law lines); empty until then. */
   declarations: Readonly<Record<string, SellerDeclaration>>;
-  /** Pay stays disabled: a refusal, or a country still to be given. */
+  /** Pay stays disabled: a refusal, a country still to be given, or commerce blocked in this region. */
   blocked: boolean;
+  /** Commerce is blocked (or still being checked) for this visitor or a seller's country. */
+  commerce: CommerceAvailability;
 }
 
 interface SellerFacts {
   declarations: Record<string, SellerDeclaration>;
   limitReached: Record<string, boolean>;
+  countries: Record<string, string | null>;
 }
 
 /**
- * What the EU fence (C3, C4) and the digital hold (C3b) say about one checkout. The sellers' own
+ * What the region policy says about one checkout: the EU fence (C3, C4) and the digital hold (C3b)
+ * in nuanced regions, and the blocked state in blocked ones. The sellers' own
  * declarations come from their shop records and their annual-limit state from the service; the
  * buyer's country is the delivery address's when there is one and the remembered one otherwise.
  * The address country is remembered only when the order is placed (`useMarketplaceCheckout`), never
@@ -49,8 +56,9 @@ export function useCheckoutRegion(input: {
   currentUserPubky: string | null;
 }): CheckoutRegion {
   const buyer = useBuyerCountry();
-  const fence = getEuFenceEnabled();
-  const digitalHold = getDigitalRegionBlockEnabled() && input.hasDigital;
+  const policy = getRegionPolicy();
+  const fence = policy.fenceActive;
+  const digitalHold = policy.digitalHoldActive && input.hasDigital;
   const key = [...new Set(input.sellerPubkys)].sort().join(',');
   const [facts, setFacts] = useState<{ key: string; value: SellerFacts } | null>(null);
 
@@ -69,7 +77,8 @@ export function useCheckoutRegion(input: {
             ? null
             : await CommerceController.getSellerAnnualLimit(pubky).catch(() => null);
         const declaration: SellerDeclaration = shop.read ? sellerDeclaration(shop.record) : 'unknown';
-        return [pubky, declaration, limit?.limitReached === true] as const;
+        const country = shop.read ? shopCountryCode(shop.record) : null;
+        return [pubky, declaration, limit?.limitReached === true, country] as const;
       }),
     ).then((rows) => {
       if (!active) return;
@@ -78,6 +87,7 @@ export function useCheckoutRegion(input: {
         value: {
           declarations: Object.fromEntries(rows.map(([pubky, declaration]) => [pubky, declaration])),
           limitReached: Object.fromEntries(rows.map(([pubky, , reached]) => [pubky, reached])),
+          countries: Object.fromEntries(rows.map(([pubky, , , country]) => [pubky, country])),
         },
       });
     });
@@ -91,9 +101,15 @@ export function useCheckoutRegion(input: {
   const countryFromAddress = input.requiresDeliveryAddress && addressCountryValid ? addressCountry : null;
   const buyerCountry = input.requiresDeliveryAddress ? countryFromAddress : buyer.country;
 
-  const needsCountryField = buyer.enabled && !input.requiresDeliveryAddress && (fence || digitalHold);
   const known = facts?.key === key ? facts.value : null;
   const declarations = known?.declarations ?? {};
+  const blockedSellerCountry = Object.values(known?.countries ?? {}).find(
+    (country) => policy.modeOf(country) === 'blocked',
+  );
+  const commerce = useCommerceAvailability({ sellerCountry: blockedSellerCountry });
+  const needsCountryField =
+    buyer.enabled && !input.requiresDeliveryAddress && (fence || digitalHold) && !commerce.blocked;
+  const nuancedBuyerCountry = nuancedCountry(policy, buyerCountry);
 
   let refusal: string | null = null;
   if (fence && known) {
@@ -103,7 +119,7 @@ export function useCheckoutRegion(input: {
         break;
       }
       const sellerRefusal = fenceRefusal({
-        buyerCountry,
+        buyerCountry: nuancedBuyerCountry,
         declaration: known.declarations[pubky] ?? 'unknown',
       });
       if (sellerRefusal) {
@@ -112,7 +128,8 @@ export function useCheckoutRegion(input: {
       }
     }
   }
-  if (!refusal && digitalHold) refusal = digitalHoldRefusal(buyerCountry);
+  if (!refusal && digitalHold) refusal = digitalHoldRefusal(nuancedBuyerCountry);
+  if (commerce.blocked) refusal = null;
 
   return {
     enabled: buyer.enabled,
@@ -121,6 +138,11 @@ export function useCheckoutRegion(input: {
     setBuyerCountry: buyer.setCountry,
     refusal,
     declarations,
-    blocked: refusal !== null || (needsCountryField && buyer.country === null) || (fence && key !== '' && !known),
+    blocked:
+      refusal !== null ||
+      (needsCountryField && buyer.country === null) ||
+      (fence && key !== '' && !known) ||
+      commerce.held,
+    commerce,
   };
 }
