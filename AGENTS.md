@@ -53,6 +53,13 @@ Use `Err.*` factories (never raw `Error`). Factories log automatically — don't
 - **Memoization**: do not add `useCallback` / `useMemo` — the React Compiler (`reactCompiler: true` in `next.config.ts`) handles memoization. Reach for them only after profiling proves the compiler missed something.
 - **Toasts**: use `toast()` from `@/molecules/Toaster/use-toast` with `variant` (`default` | `error` | `warning` | `info`). No `showErrorToast` wrappers or `className` destructive hacks. See `docs/components.md` — _Toasts_.
 
+## People and names
+
+- In code, comments, docs, fixtures, commit messages and PR text, refer to people only by GitHub handle. Never use real names.
+- Do not attribute opinions, decisions or personal matters to people.
+- Test fixtures use clearly fictional names (`Alice Example`, `Bob Example`).
+- This is a public repo and history is kept forever: a scrubbed name stays in earlier commits, so get it right the first time.
+
 ## Learned User Preferences
 
 - Bug fixes must not regress existing visible functionality (e.g., reducing displayed item count from 3 to 2)
