@@ -7,7 +7,7 @@ import { Input } from '@/atoms/Input/Input';
 import { Label } from '@/atoms/Label/Label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/atoms/Select/Select';
 import { Typography } from '@/atoms/Typography/Typography';
-import { FORM_LABEL_CLASSES } from '@/config/forms';
+import { FORM_LABEL_CLASSES, FORM_REQUIRED_LABEL_CLASSES } from '@/config/forms';
 import {
   COMMERCE_BRAND_SUGGESTIONS,
   type CommerceAttributeField,
@@ -18,6 +18,7 @@ import {
   type CreateMarketplaceListingData,
   listingAttributeFormField,
 } from '@/hooks/useCreateMarketplaceListing/useCreateMarketplaceListing.types';
+import { cn } from '@/libs/utils/utils';
 
 /** Radix selects cannot hold an empty-string item, so optional selects map this sentinel to "". */
 const NOT_SPECIFIED = '__not_specified__';
@@ -93,7 +94,12 @@ function AttributeSelect({ field, form, formField, isPublishing }: AttributeInpu
   const inputId = `marketplace-attribute-${field.key}`;
   return (
     <Container className="gap-2">
-      <Label htmlFor={inputId} className={FORM_LABEL_CLASSES}>
+      <Label
+        htmlFor={inputId}
+        // A required item specific (Size on sized apparel) blocks publishing like the fields marked in the form.
+        className={cn(FORM_LABEL_CLASSES, field.required && FORM_REQUIRED_LABEL_CLASSES)}
+        data-required={field.required || undefined}
+      >
         {field.label}
         {!field.required && ' (optional)'}
       </Label>
@@ -107,7 +113,13 @@ function AttributeSelect({ field, form, formField, isPublishing }: AttributeInpu
               onValueChange={(value) => controller.onChange(value === NOT_SPECIFIED ? '' : value)}
               disabled={isPublishing}
             >
-              <SelectTrigger theme="secondary" id={inputId} className="w-full" aria-invalid={!!fieldState.error}>
+              <SelectTrigger
+                theme="secondary"
+                id={inputId}
+                className="w-full"
+                aria-invalid={!!fieldState.error}
+                aria-required={field.required || undefined}
+              >
                 <SelectValue placeholder={field.required ? `Choose a ${field.label.toLowerCase()}` : 'Not specified'} />
               </SelectTrigger>
               <SelectContent>

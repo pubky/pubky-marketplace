@@ -47,6 +47,7 @@ export function ControlledTextareaField<T extends FieldValues>({
             disabled={disabled}
             className={className}
             textareaClassName={textareaClassName}
+            aria-required={markRequired || undefined}
             status={fieldState.error ? 'error' : 'default'}
             message={fieldState.error?.message}
             messageType={fieldState.error ? 'error' : 'default'}

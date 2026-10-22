@@ -45,6 +45,7 @@ interface InputFieldProps {
   'aria-activedescendant'?: string;
   'aria-autocomplete'?: 'none' | 'inline' | 'list' | 'both';
   'aria-haspopup'?: React.AriaAttributes['aria-haspopup'];
+  'aria-required'?: boolean;
 }
 export function InputField({
   id,
@@ -82,6 +83,7 @@ export function InputField({
   'aria-activedescendant': ariaActiveDescendant,
   'aria-autocomplete': ariaAutocomplete,
   'aria-haspopup': ariaHasPopup,
+  'aria-required': ariaRequired,
 }: InputFieldProps) {
   const resolvedLoadingText = loadingText ?? 'Loading...';
   const containerClasses = variant === 'dashed' && FORM_FIELD_SURFACE_CLASSES;
@@ -150,6 +152,7 @@ export function InputField({
           aria-activedescendant={ariaActiveDescendant}
           aria-autocomplete={ariaAutocomplete}
           aria-haspopup={ariaHasPopup}
+          aria-required={ariaRequired}
           aria-invalid={status === 'error'}
           aria-describedby={message && id ? `${id}-message` : undefined}
           data-cy={dataCy}

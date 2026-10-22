@@ -674,6 +674,18 @@ describe('MarketplaceListingForm pickup capability (§A7)', () => {
       expect(label(required), String(required)).toHaveAttribute('data-required', 'true');
     }
     expect(label('Region (optional)')).not.toHaveAttribute('data-required');
+    // Assistive tech hears it too; the "Required" text itself is CSS content.
+    expect(screen.getByLabelText('Title')).toHaveAttribute('aria-required', 'true');
+    expect(screen.getByLabelText('Region (optional)')).not.toHaveAttribute('aria-required');
+    // Ship is on and shipping isn't free, so the flat rate is required too.
+    expect(label(/^Flat shipping \(/)).toHaveAttribute('data-required', 'true');
+  });
+
+  it('marks a required item specific, Size on sized apparel, as Required', () => {
+    render(<FormHarness fulfillment="shipping" defaultValues={{ categoryId: 'fashion-men-bottoms-jeans' }} />);
+
+    const size = screen.getAllByText('Size').find((node) => node.tagName === 'LABEL');
+    expect(size).toHaveAttribute('data-required', 'true');
   });
 
   it('keeps publish disabled when description is empty even if other minimums are filled', () => {

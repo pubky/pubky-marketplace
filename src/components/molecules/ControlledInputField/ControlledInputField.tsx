@@ -56,6 +56,7 @@ export function ControlledInputField<T extends FieldValues>({
           type={type}
           autoComplete={autoComplete}
           dataCy={dataCy}
+          aria-required={markRequired || undefined}
           status={fieldState.error ? 'error' : 'default'}
           message={fieldState.error?.message}
           messageType={fieldState.error ? 'error' : 'default'}
