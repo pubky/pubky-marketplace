@@ -989,6 +989,11 @@ export class CommerceController {
     return sellers;
   }
 
+  /** The USDT address the buyer's Paykit wallet publishes publicly, or null (pubky/pubky-marketplace#371). */
+  static async fetchBuyerPaykitUsdtAddress(buyerPubky: unknown) {
+    return await CommerceApplication.fetchBuyerPaykitUsdtAddress(CommerceRecordNormalizer.pubky(buyerPubky));
+  }
+
   /** Whether the buyer's Paykit wallet can receive a Bitcoin payment request from the Shop. */
   static async fetchBuyerPaykitWallet(buyerPubky: unknown) {
     return await CommerceApplication.fetchBuyerPaykitWallet(CommerceRecordNormalizer.pubky(buyerPubky));

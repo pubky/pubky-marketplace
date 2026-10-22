@@ -90,6 +90,14 @@ import {
   reviewsOfReviewer,
 } from '@/libs/commerce/order-reviews';
 import {
+  PAYKIT_ENDPOINT_MAX_BYTES,
+  PAYKIT_REFUND_MAX_APPS,
+  paykitEndpointUrl,
+  paykitRegistryAppIds,
+  USDT_ARBITRUM_ENDPOINT_ID,
+  usdtAddressFromEndpointPayload,
+} from '@/libs/commerce/paykit-refund-endpoint';
+import {
   appRegistryTakesPaymentRequests,
   type BuyerPaykitWallet,
   foundAppRegistryShowsNewWallet,
@@ -1894,6 +1902,42 @@ export class CommerceApplication {
     }
     if (registry.found && foundAppRegistryShowsNewWallet(registry.json)) return 'unsupported';
     return (await PaykitReceiverService.hasPaymentRequestReceiver(buyerPubky)) ? 'payable' : 'not_payable';
+  }
+
+  /**
+   * pubky/pubky-marketplace#371: the Arbitrum USDT address the
+   * buyer's Paykit wallet publishes as a public `usdt-arbitrum-address`
+   * endpoint, from the first app in their App Registry that has one. Null
+   * when none is published or anything cannot be read: the buyer then types
+   * an address as before.
+   */
+  static async fetchBuyerPaykitUsdtAddress(buyerPubky: string): Promise<string | null> {
+    let appIds: string[];
+    try {
+      const registry = await HomeserverService.getJsonIfFound<unknown>({
+        url: paykitAppRegistryUrl(buyerPubky),
+        logUrl: PAYKIT_APP_REGISTRY_PATH,
+      });
+      appIds = registry.found ? paykitRegistryAppIds(registry.json) : [];
+    } catch {
+      return null;
+    }
+    for (const appId of appIds.slice(0, PAYKIT_REFUND_MAX_APPS)) {
+      // An app that doesn't publish the endpoint is an expected miss, not an error.
+      try {
+        const endpoint = await HomeserverService.getJsonIfFound<unknown>({
+          url: paykitEndpointUrl(buyerPubky, appId, USDT_ARBITRUM_ENDPOINT_ID),
+          logUrl: `/pub/paykit/v0/apps/${appId}/endpoints/${USDT_ARBITRUM_ENDPOINT_ID}`,
+          maxBytes: PAYKIT_ENDPOINT_MAX_BYTES,
+          tolerateUnreachable: true,
+        });
+        const address = endpoint.found ? usdtAddressFromEndpointPayload(endpoint.json) : null;
+        if (address) return address;
+      } catch {
+        // An unreadable endpoint: try the next app.
+      }
+    }
+    return null;
   }
 
   static async getMyPaymentConfig(actorPubky: string) {

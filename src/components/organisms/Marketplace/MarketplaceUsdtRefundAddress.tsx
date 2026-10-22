@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Check, Copy } from 'lucide-react';
 import { Controller, useWatch } from 'react-hook-form';
 import { Button } from '@/atoms/Button/Button';
@@ -8,6 +8,7 @@ import { Checkbox } from '@/atoms/Checkbox/Checkbox';
 import { Heading } from '@/atoms/Heading/Heading';
 import { RadioGroup, RadioGroupItem } from '@/atoms/RadioGroup/RadioGroup';
 import { Typography } from '@/atoms/Typography/Typography';
+import { CommerceController } from '@/controllers/commerce/commerce';
 import { useConfirmRefundDestination } from '@/hooks/useConfirmRefundDestination/useConfirmRefundDestination';
 import { useCopyToClipboard } from '@/hooks/useCopyToClipboard/useCopyToClipboard';
 import { formatOrderInstant } from '@/libs/commerce/checkout-hold';
@@ -18,6 +19,7 @@ import {
   usdtRefundDueMoney,
   usdtRefundSurface,
 } from '@/libs/commerce/usdt-refund';
+import { Logger } from '@/libs/logger/logger';
 import { ControlledInputField } from '@/molecules/ControlledInputField/ControlledInputField';
 import { ArbiscanLookupLink } from '@/molecules/Marketplace/ArbiscanLookupLink';
 import type { MarketplaceOrder } from '@/services/marketplace/marketplace';
@@ -83,10 +85,40 @@ function BuyerRefundAddress({
   actOnOrder: ActOnOrder;
 }) {
   const [editing, setEditing] = useState(false);
-  const { form, paymentAddress, submit, reset } = useConfirmRefundDestination(order, actOnOrder);
+  // Offer the USDT address the buyer's Paykit wallet publishes, when it does (pubky/pubky-marketplace#371).
+  const [paykitAddress, setPaykitAddress] = useState<string | null>(null);
+  // Set once the buyer picks a choice, even if they pick the default again.
+  const pickedRef = useRef(false);
+  const { form, paymentAddress, submit, reset } = useConfirmRefundDestination(order, actOnOrder, paykitAddress);
   const source = useWatch({ control: form.control, name: 'source' });
   const destination = order.refundDestination ?? null;
   const showForm = phase === 'needed' || (phase === 'confirmed' && editing);
+  useEffect(() => {
+    if (!showForm) return;
+    let active = true;
+    CommerceController.fetchBuyerPaykitUsdtAddress(order.buyerPubky)
+      .then((address) => {
+        if (!active || !address) return;
+        setPaykitAddress(address);
+        // Preselect it only while the buyer hasn't picked a choice, ticked the
+        // network box or typed an address: a late lookup never changes their pick.
+        if (
+          !pickedRef.current &&
+          !form.getFieldState('source').isDirty &&
+          !form.getValues('networkConfirmed') &&
+          !form.getValues('address')
+        ) {
+          form.setValue('source', 'paykit');
+        }
+      })
+      .catch((error: unknown) => {
+        Logger.warn('Could not read the buyer Paykit USDT address', { error });
+      });
+    return () => {
+      active = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- read once per buyer while the form shows
+  }, [showForm, order.buyerPubky]);
   const copy =
     phase === 'recorded'
       ? USDT_REFUND_COPY.buyerRecorded
@@ -117,6 +149,7 @@ function BuyerRefundAddress({
             className="rounded-full"
             onClick={() => {
               reset(destination?.address);
+              pickedRef.current = false;
               setEditing(true);
             }}
           >
@@ -133,24 +166,41 @@ function BuyerRefundAddress({
             void confirm();
           }}
         >
-          {paymentAddress && (
+          {(paymentAddress || paykitAddress) && (
             <Controller
               name="source"
               control={form.control}
               render={({ field }) => (
-                <RadioGroup value={field.value} onValueChange={field.onChange}>
-                  <RadioGroupItem
-                    value="payment"
-                    variant="box"
-                    label={USDT_REFUND_COPY.originalAddressChoice}
-                    description={paymentAddress}
-                  />
+                <RadioGroup
+                  value={field.value}
+                  onValueChange={(value) => {
+                    pickedRef.current = true;
+                    field.onChange(value);
+                  }}
+                >
+                  {paymentAddress && (
+                    <RadioGroupItem
+                      value="payment"
+                      variant="box"
+                      label={USDT_REFUND_COPY.originalAddressChoice}
+                      description={paymentAddress}
+                    />
+                  )}
                   <RadioGroupItem value="another" variant="box" label={USDT_REFUND_COPY.anotherAddressChoice} />
+                  {/* Last, so a lookup that finishes late doesn't move the choices under the cursor. */}
+                  {paykitAddress && (
+                    <RadioGroupItem
+                      value="paykit"
+                      variant="box"
+                      label={USDT_REFUND_COPY.paykitAddressChoice}
+                      description={paykitAddress}
+                    />
+                  )}
                 </RadioGroup>
               )}
             />
           )}
-          {(!paymentAddress || source === 'another') && (
+          {((!paymentAddress && !paykitAddress) || source === 'another') && (
             <ControlledInputField
               name="address"
               control={form.control}
