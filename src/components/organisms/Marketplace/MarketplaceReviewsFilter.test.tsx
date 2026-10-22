@@ -180,7 +180,7 @@ describe('review filter chips with the real list and header', () => {
     await waitFor(() => expect(headerText()).toContain('No reviews from people you follow'));
     expect(headerText()).not.toContain('0.0');
     expect(headerText()).not.toContain('4.5');
-    expect(screen.getByTestId('marketplace-reviews-section')).toHaveTextContent('No reviews from people you follow');
+    expect(screen.getByTestId('marketplace-reviews-filter-notice')).toHaveTextContent('No reviews match this filter.');
     expect(screen.getByRole('button', { name: 'Show all reviews' })).toBeInTheDocument();
     expect(screen.getByTestId('marketplace-reviews-filter')).toBeInTheDocument();
   });

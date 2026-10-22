@@ -101,6 +101,7 @@ export const REVIEW_FILTER_COPY = {
   from: (kind: MarketplaceActiveReviewFilter['kind'], buyers: number) =>
     `from ${buyers} ${buyers === 1 ? 'person' : 'people'} ${REVIEW_FILTER_REACH_PHRASE[kind]}`,
   none: (kind: MarketplaceActiveReviewFilter['kind']) => `No reviews from people ${REVIEW_FILTER_REACH_PHRASE[kind]}`,
+  emptyList: 'No reviews match this filter.',
   sellerRating: 'seller rating',
   productsRated: 'products rated',
   unscored: 'No rating for this filter',

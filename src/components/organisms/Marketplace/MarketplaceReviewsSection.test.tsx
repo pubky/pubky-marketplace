@@ -651,7 +651,7 @@ describe('MarketplaceReviewsSection reviewer chips', () => {
     renderSection();
 
     const notice = screen.getByTestId('marketplace-reviews-filter-notice');
-    expect(notice).toHaveTextContent('No reviews from people in your network');
+    expect(notice).toHaveTextContent('No reviews match this filter.');
     expect(notice).toHaveTextContent('people on other homeservers are not included');
     expect(screen.queryByText('No reviews yet')).not.toBeInTheDocument();
     expect(screen.getByTestId('marketplace-reviews-filter')).toBeInTheDocument();

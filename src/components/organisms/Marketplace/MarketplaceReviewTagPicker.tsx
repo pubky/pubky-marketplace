@@ -105,7 +105,7 @@ export function MarketplaceReviewTagPicker({ viewerPubky, labels, onApply }: Mar
                   type="button"
                   size="sm"
                   variant="outline"
-                  className="h-7 rounded-full px-2.5 text-xs"
+                  className="h-7 rounded-full px-2.5 text-xs aria-pressed:bg-accent aria-pressed:text-accent-foreground"
                   aria-pressed={draft.includes(label)}
                   disabled={isFull && !draft.includes(label)}
                   onClick={() => toggle(label)}
