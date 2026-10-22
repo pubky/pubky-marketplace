@@ -42,10 +42,15 @@ export function isMarketplaceActionActivity(type: MarketplaceNotification['type'
 
 const ORDERS_SEEN_PREFIX = 'pubky.marketplace.ordersSeen.';
 
+/** The `localStorage` key of one account's orders checkpoint. */
+export function ordersSeenStorageKey(pubky: string): string {
+  return `${ORDERS_SEEN_PREFIX}${pubky}`;
+}
+
 export const MARKETPLACE_ORDERS_SEEN_EVENT = 'marketplace-orders-seen';
 
 export function readOrdersSeenAt(pubky: string, storage: Pick<Storage, 'getItem'>): number {
-  const raw = storage.getItem(`${ORDERS_SEEN_PREFIX}${pubky}`);
+  const raw = storage.getItem(ordersSeenStorageKey(pubky));
   if (!raw) return 0;
   const parsed = Number(raw);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
@@ -55,7 +60,7 @@ export function readOrdersSeenAt(pubky: string, storage: Pick<Storage, 'getItem'
 export function writeOrdersSeenAt(pubky: string, at: number, storage: Pick<Storage, 'getItem' | 'setItem'>): boolean {
   const current = readOrdersSeenAt(pubky, storage);
   if (!(at > current)) return false;
-  storage.setItem(`${ORDERS_SEEN_PREFIX}${pubky}`, String(at));
+  storage.setItem(ordersSeenStorageKey(pubky), String(at));
   return true;
 }
 

@@ -41,6 +41,14 @@ beforeEach(() => resetRegionState());
 afterEach(() => resetRegionState());
 
 describe('useRegionAvailability under the region modes', () => {
+  it('never prompts for a country while regions are only blocked', async () => {
+    setRegionModes(LAUNCH);
+    stubClientRegion('CH');
+    const { result } = run({ shop: { sellerStatus: 'trader', location: { countryCode: 'NO' } }, digital: true });
+    await waitFor(() => expect(result.current.commerce.checking).toBe(false));
+    expect(result.current).toMatchObject({ needsCountry: false, usesCountry: false, refusal: null, digitalNote: null });
+  });
+
   it('replaces buying with the one line and its info text for a visitor in a blocked region', async () => {
     setRegionModes(LAUNCH);
     stubClientRegion('US');

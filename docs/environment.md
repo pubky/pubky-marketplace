@@ -262,7 +262,7 @@ Never blocked, so nobody is trapped with money in flight: existing orders and re
 
 The Shop settings (`PUBKY_RUNTIME_REGION_MODES`, or the older `PUBKY_RUNTIME_EU_FENCE_ENABLED` and `PUBKY_RUNTIME_DIGITAL_REGION_BLOCK_ENABLED`) and the service settings (`REGION_MODES`, or `EU_FENCE_ENABLED` and `DIGITAL_REGION_BLOCK_ENABLED`) are a pair, and the order matters: **tighten the Shop first, then the service. Loosen the service first, then the Shop.**
 
-- The Shop sends `buyerCountry` with checkout, offer, bid and drop-claim commands while any region is `nuanced` or `blocked` (with the older flags, while either is on). A service setting that restricts a region without it refuses those commands, because the service requires the country.
+- The Shop sends `buyerCountry` with checkout, offer, bid and drop-claim commands only while a region is `nuanced` (with the older flags, while either is on), and leaves the field out when no country is known, never empty. Where regions are only `blocked`, the service decides from the IP country and the Shop asks for no country and remembers none; an order placed to an address still carries that address's country. The remembered country is stored with the pubky that gave it and removed at sign-out. A service setting that makes a region `nuanced` without it refuses those commands, because the service requires the country there.
 - A Shop setting that is stricter than the service's is harmless: the service ignores the extra field and decides for itself.
 - A Shop setting that is looser than the service's is not: the Shop would show Buy while the service refuses it, which is why loosening goes service first.
 - With `PUBKY_RUNTIME_REGION_MODES` set, the two older flags are ignored. Unset it and they apply again.

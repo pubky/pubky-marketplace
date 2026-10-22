@@ -1,4 +1,5 @@
 import { render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { USD_ASSET } from '@/libs/commerce/pricing';
 import { useAuthStore } from '@/stores/auth/auth.store';
@@ -34,6 +35,28 @@ beforeEach(() => {
 afterEach(() => resetRegionState());
 
 describe('MarketplaceOfferDialog under the region modes', () => {
+  it('does not ask for a country while regions are only blocked, and asks while one is nuanced', async () => {
+    const user = userEvent.setup();
+    setRegionModes(LAUNCH);
+    stubClientRegion('CH');
+    const blocked = renderDialog();
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Make offer' })).toBeEnabled());
+    await user.click(screen.getByRole('button', { name: 'Make offer' }));
+    expect(await screen.findByRole('dialog')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Country you live in')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Send offer' })).toBeEnabled();
+    blocked.unmount();
+
+    resetRegionState();
+    setRegionModes('EU=nuanced,GB=nuanced,US=blocked');
+    stubClientRegion('CH');
+    renderDialog();
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Make offer' })).toBeEnabled());
+    await user.click(screen.getByRole('button', { name: 'Make offer' }));
+    expect(await screen.findByLabelText('Country you live in')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Send offer' })).toBeDisabled();
+  });
+
   it('disables Make offer, keeping its label, for a visitor in a blocked region', async () => {
     setRegionModes(LAUNCH);
     stubClientRegion('US');

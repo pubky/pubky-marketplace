@@ -58,7 +58,7 @@ import type { MarketplaceOrder, MarketplacePayment } from '@/services/marketplac
 import { isRecognizedMarketplaceNotification } from '@/services/marketplace/marketplace-projections';
 import type { MarketplaceSessionEndedEvent, MarketplaceSessionInfo } from '@/services/marketplace/marketplace-session';
 import { useAuthStore } from '@/stores/auth/auth.store';
-import { useBuyerCountryStore } from '@/stores/buyer-country/buyer-country.store';
+import { buyerCountryFor, useBuyerCountryStore } from '@/stores/buyer-country/buyer-country.store';
 import { useCommerceStore } from '@/stores/commerce/commerce.store';
 import type { CommerceConditionFilter, CommerceSaleFormatFilter, CommerceSort } from '@/stores/commerce/commerce.types';
 import { useNotificationStore } from '@/stores/notification/notification.store';
@@ -664,21 +664,23 @@ export class CommerceController {
 
   /** The country the buyer said they live in on this device, or null until they say (plan C2). */
   static getBuyerCountry(): string | null {
-    return useBuyerCountryStore.getState().country;
+    return buyerCountryFor(useBuyerCountryStore.getState(), useAuthStore.getState().currentUserPubky);
   }
 
   static setBuyerCountry(countryCode: string | null): void {
-    useBuyerCountryStore.getState().setCountry(countryCode);
+    useBuyerCountryStore.getState().setCountry(countryCode, useAuthStore.getState().currentUserPubky);
   }
 
   /**
-   * The commands that sell carry the buyer's country in clear text while any region is nuanced or
-   * blocked (the EU fence, the digital hold, the blocked state). A command that already names one
-   * keeps it; otherwise the device's remembered country is added when there is one.
+   * The commands that sell carry the buyer's country in clear text while a region is nuanced (the EU
+   * fence and the digital hold need it). A command that already names one keeps it; otherwise the
+   * country this account gave on the device is added when there is one. While regions are only
+   * blocked, the service decides from the IP country and nothing is added: the field is left out,
+   * never sent empty.
    */
   private static withBuyerCountry(input: unknown): unknown {
-    if (getRegionPolicy().allOpen) return input;
-    const country = useBuyerCountryStore.getState().country;
+    if (!getRegionPolicy().hasNuanced) return input;
+    const country = this.getBuyerCountry();
     if (!country || typeof input !== 'object' || input === null) return input;
     const command = input as { kind?: unknown; payload?: unknown };
     const sells =
@@ -1651,9 +1653,9 @@ export class CommerceController {
    * address.
    */
   static async commitCreateMarketplaceCheckout(rawInput: CommerceCheckoutFulfillmentInput) {
-    const country = useBuyerCountryStore.getState().country;
+    const country = this.getBuyerCountry();
     const input =
-      !getRegionPolicy().allOpen && country && rawInput.buyerCountry === undefined
+      getRegionPolicy().hasNuanced && country && rawInput.buyerCountry === undefined
         ? { ...rawInput, buyerCountry: country }
         : rawInput;
     const response = await CommerceApplication.commitCreateMarketplaceCheckout(this.getCurrentUserPubky(), input);

@@ -1,7 +1,9 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, type MockInstance, vi } from 'vitest';
 import { CommerceApplication, type CommerceCheckoutFulfillmentInput } from '@/application/commerce/commerce';
 import { UserApplication } from '@/application/user/user';
 import { useAuthStore } from '@/stores/auth/auth.store';
+import { useBuyerCountryStore } from '@/stores/buyer-country/buyer-country.store';
+import { useClientRegionStore } from '@/stores/client-region/client-region.store';
 import { COMMERCE_FIXTURE_BUYER, COMMERCE_FIXTURE_SELLER } from '@/test/fixtures/commerce/commerce';
 import { resetRegionState, setRegionModes } from '@/test-utils/region-modes';
 import { CommerceController } from './commerce';
@@ -49,61 +51,137 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-describe('CommerceController buyer country under the region modes', () => {
-  it.each(['EU=blocked,GB=blocked,US=blocked', 'EU=nuanced,GB=nuanced,US=blocked', 'US=blocked', 'UNKNOWN=blocked'])(
-    'sends the remembered country with the offer, bid and offer checkout commands while the modes are %s',
-    async (modes) => {
-      setRegionModes(modes);
-      const execute = vi.spyOn(CommerceApplication, 'executeMarketplaceCommand').mockResolvedValue(OK);
-      CommerceController.setBuyerCountry('CH');
-      for (const { kind, payload } of SELLING_COMMANDS) {
-        execute.mockClear();
-        if (kind === 'offer.checkout') {
-          const offerCheckout = vi.spyOn(CommerceApplication, 'commitOfferCheckout').mockResolvedValue(OK);
-          await CommerceController.commitOfferCheckout(command(kind, payload));
-          expect(offerCheckout.mock.lastCall?.[1].payload).toMatchObject({ buyerCountry: 'CH' });
-        } else {
-          await CommerceController.executeMarketplaceCommand(command(kind, payload));
-          expect(execute.mock.lastCall?.[1].payload).toMatchObject({ buyerCountry: 'CH' });
-        }
-      }
-    },
-  );
+const modesWithNuanced = ['EU=nuanced,GB=nuanced', 'EU=nuanced,GB=nuanced,US=blocked', 'US=nuanced,DE=blocked'];
+const blockedOnly = ['EU=blocked,GB=blocked,US=blocked', 'US=blocked', 'UNKNOWN=blocked', 'DE=blocked,UNKNOWN=open'];
 
-  it('sends the country with a checkout while any region is blocked', async () => {
-    setRegionModes('EU=blocked,GB=blocked,US=blocked');
-    const checkout = vi.spyOn(CommerceApplication, 'commitCreateMarketplaceCheckout').mockResolvedValue(OK);
-    CommerceController.setBuyerCountry('CH');
-    const input = {
-      lines: [
-        {
-          listingAggregateId: AGGREGATE,
-          sellerPubky: COMMERCE_FIXTURE_SELLER,
-          publishedFulfillmentMethods: ['pickup'],
-          expectedRevision: 1,
-          quantity: 1,
-        },
-      ],
-    } as CommerceCheckoutFulfillmentInput;
-    await CommerceController.commitCreateMarketplaceCheckout(input);
-    expect(checkout.mock.lastCall?.[1].buyerCountry).toBe('CH');
+const SENDERS = [
+  ...SELLING_COMMANDS.filter(({ kind }) => kind !== 'offer.checkout').map(({ kind, payload }) => ({
+    name: kind,
+    send: () => CommerceController.executeMarketplaceCommand(command(kind, payload)),
+    sent: (spies: Spies) => spies.execute.mock.lastCall?.[1].payload,
+  })),
+  {
+    name: 'offer.checkout',
+    send: () => CommerceController.commitOfferCheckout(command('offer.checkout', SELLING_COMMANDS[2].payload)),
+    sent: (spies: Spies) => spies.offerCheckout.mock.lastCall?.[1].payload,
+  },
+  {
+    name: 'checkout.create',
+    send: () => CommerceController.commitCreateMarketplaceCheckout(CHECKOUT_INPUT),
+    sent: (spies: Spies) => spies.checkout.mock.lastCall?.[1],
+  },
+];
+
+const CHECKOUT_INPUT = {
+  lines: [
+    {
+      listingAggregateId: AGGREGATE,
+      sellerPubky: COMMERCE_FIXTURE_SELLER,
+      publishedFulfillmentMethods: ['pickup'],
+      expectedRevision: 1,
+      quantity: 1,
+    },
+  ],
+} as CommerceCheckoutFulfillmentInput;
+
+interface Spies {
+  execute: MockInstance<typeof CommerceApplication.executeMarketplaceCommand>;
+  offerCheckout: MockInstance<typeof CommerceApplication.commitOfferCheckout>;
+  checkout: MockInstance<typeof CommerceApplication.commitCreateMarketplaceCheckout>;
+}
+
+function spyOnApplication(): Spies {
+  return {
+    execute: vi.spyOn(CommerceApplication, 'executeMarketplaceCommand').mockResolvedValue(OK),
+    offerCheckout: vi.spyOn(CommerceApplication, 'commitOfferCheckout').mockResolvedValue(OK),
+    checkout: vi.spyOn(CommerceApplication, 'commitCreateMarketplaceCheckout').mockResolvedValue(OK),
+  };
+}
+
+describe('CommerceController buyer country under the region modes', () => {
+  describe.each(SENDERS)('$name', ({ send, sent }) => {
+    it.each(modesWithNuanced)('carries the country this account gave while the modes are %s', async (modes) => {
+      setRegionModes(modes);
+      const spies = spyOnApplication();
+      CommerceController.setBuyerCountry('ch');
+
+      await send();
+
+      expect(sent(spies)).toMatchObject({ buyerCountry: 'CH' });
+    });
+
+    it.each([...modesWithNuanced, ...blockedOnly, 'none'])(
+      'leaves buyerCountry out, not empty and not null, when none is known (modes: %s)',
+      async (modes) => {
+        setRegionModes(modes);
+        const spies = spyOnApplication();
+
+        await send();
+
+        expect(sent(spies)).not.toHaveProperty('buyerCountry');
+        expect(JSON.stringify(sent(spies))).not.toMatch(/buyerCountry|buyer_country/);
+      },
+    );
+
+    it.each(blockedOnly)(
+      'adds a remembered country to nothing while regions are only blocked (modes: %s)',
+      async (modes) => {
+        setRegionModes(modes);
+        const spies = spyOnApplication();
+        CommerceController.setBuyerCountry('CH');
+
+        await send();
+
+        expect(sent(spies)).not.toHaveProperty('buyerCountry');
+      },
+    );
+
+    it('never carries the visitor IP country', async () => {
+      setRegionModes('EU=blocked,GB=blocked,US=blocked');
+      useClientRegionStore.setState({ status: 'ready', country: 'NZ' });
+      const spies = spyOnApplication();
+
+      await send();
+
+      expect(JSON.stringify(sent(spies))).not.toContain('NZ');
+    });
+
+    it('does not carry a country another account left on the device', async () => {
+      setRegionModes('EU=nuanced,GB=nuanced');
+      const spies = spyOnApplication();
+      useBuyerCountryStore.getState().setCountry('DE', 'o'.repeat(52));
+
+      await send();
+
+      expect(sent(spies)).not.toHaveProperty('buyerCountry');
+    });
+  });
+
+  it('keeps a country the command already names', async () => {
+    setRegionModes('EU=nuanced,GB=nuanced');
+    const spies = spyOnApplication();
+    CommerceController.setBuyerCountry('DE');
+    await CommerceController.executeMarketplaceCommand(
+      command('auction.place_bid', { maximumAmount: money, buyerCountry: 'FR' }),
+    );
+    expect(spies.execute.mock.lastCall?.[1].payload).toMatchObject({ buyerCountry: 'FR' });
   });
 
   it.each(['none', 'EU=open'])('sends nothing while the modes are %s, whatever the old flags say', async (modes) => {
     process.env.PUBKY_RUNTIME_EU_FENCE_ENABLED = 'true';
     setRegionModes(modes);
-    const execute = vi.spyOn(CommerceApplication, 'executeMarketplaceCommand').mockResolvedValue(OK);
+    const spies = spyOnApplication();
     CommerceController.setBuyerCountry('DE');
     await CommerceController.executeMarketplaceCommand(command('auction.place_bid', { maximumAmount: money }));
-    expect(execute.mock.lastCall?.[1].payload).not.toHaveProperty('buyerCountry');
+    expect(spies.execute.mock.lastCall?.[1].payload).not.toHaveProperty('buyerCountry');
   });
 
   it('still sends the country under the old flags while the setting is unset', async () => {
     process.env.PUBKY_RUNTIME_DIGITAL_REGION_BLOCK_ENABLED = 'true';
     setRegionModes(undefined);
-    const execute = vi.spyOn(CommerceApplication, 'executeMarketplaceCommand').mockResolvedValue(OK);
+    const spies = spyOnApplication();
     CommerceController.setBuyerCountry('DE');
     await CommerceController.executeMarketplaceCommand(command('auction.place_bid', { maximumAmount: money }));
-    expect(execute.mock.lastCall?.[1].payload).toMatchObject({ buyerCountry: 'DE' });
+    expect(spies.execute.mock.lastCall?.[1].payload).toMatchObject({ buyerCountry: 'DE' });
   });
 });

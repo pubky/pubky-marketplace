@@ -3,7 +3,8 @@
 import { useClientRegion } from '@/hooks/useClientRegion/useClientRegion';
 import { type CommerceAvailability, evaluateCommerceAvailability } from '@/libs/commerce/commerce-availability';
 import { getRegionPolicy } from '@/libs/runtime-config/runtime-config';
-import { useBuyerCountryStore } from '@/stores/buyer-country/buyer-country.store';
+import { useAuthStore } from '@/stores/auth/auth.store';
+import { buyerCountryFor, useBuyerCountryStore } from '@/stores/buyer-country/buyer-country.store';
 
 /**
  * Whether this visitor may buy or pay here: the blocked-region policy applied to their IP country,
@@ -12,7 +13,8 @@ import { useBuyerCountryStore } from '@/stores/buyer-country/buyer-country.store
  */
 export function useCommerceAvailability(input: { sellerCountry?: string | null } = {}): CommerceAvailability {
   const client = useClientRegion();
-  const declaredCountry = useBuyerCountryStore((state) => state.country);
+  const pubky = useAuthStore((state) => state.currentUserPubky);
+  const declaredCountry = useBuyerCountryStore((state) => buyerCountryFor(state, pubky));
   return evaluateCommerceAvailability(getRegionPolicy(), {
     declaredCountry,
     sellerCountry: input.sellerCountry,

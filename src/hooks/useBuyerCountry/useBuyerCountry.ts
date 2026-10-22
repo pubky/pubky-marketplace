@@ -2,7 +2,8 @@
 
 import { CommerceController } from '@/controllers/commerce/commerce';
 import { getRegionPolicy } from '@/libs/runtime-config/runtime-config';
-import { useBuyerCountryStore } from '@/stores/buyer-country/buyer-country.store';
+import { useAuthStore } from '@/stores/auth/auth.store';
+import { buyerCountryFor, useBuyerCountryStore } from '@/stores/buyer-country/buyer-country.store';
 
 export interface UseBuyerCountryResult {
   /** Some region is nuanced or blocked, so commands that sell carry the country and the prompt may appear. */
@@ -14,7 +15,8 @@ export interface UseBuyerCountryResult {
 
 /** The buyer's remembered "Country you live in" (legal launch plan C2). */
 export function useBuyerCountry(): UseBuyerCountryResult {
-  const country = useBuyerCountryStore((state) => state.country);
+  const pubky = useAuthStore((state) => state.currentUserPubky);
+  const country = useBuyerCountryStore((state) => buyerCountryFor(state, pubky));
   return {
     enabled: !getRegionPolicy().allOpen,
     country,
