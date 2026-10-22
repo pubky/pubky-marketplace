@@ -5,6 +5,7 @@ import {
   legacyStorageKey,
   LOCAL_STORAGE_MIGRATION_MARKER_KEY,
   parseMigrationMarker,
+  SHOP_PULSE_STORAGE_NAMESPACE,
   shopStorageKey,
 } from './storage-namespace';
 
@@ -23,6 +24,12 @@ describe('storage namespace names', () => {
     expect(LOCAL_STORAGE_MIGRATION_MARKER_KEY.startsWith('shop-')).toBe(true);
     expect(DATABASE_MIGRATION_MARKER_KEY.startsWith('shop-')).toBe(true);
     expect(LOCAL_STORAGE_MIGRATION_MARKER_KEY).not.toBe(DATABASE_MIGRATION_MARKER_KEY);
+  });
+
+  it('gives the Pulse SDK a namespace name it accepts', () => {
+    // The SDK's rule; an invalid name would make every Pulse.reset delete the App's namespace too.
+    expect(SHOP_PULSE_STORAGE_NAMESPACE).toMatch(/^[a-z0-9][a-z0-9_-]{0,31}$/);
+    expect(SHOP_PULSE_STORAGE_NAMESPACE).toBe('shop');
   });
 });
 

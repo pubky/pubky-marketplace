@@ -14,9 +14,15 @@ const mockSetHideActiveFriends = vi.fn();
 const mockSetHideSearch = vi.fn();
 const mockSetNeverShowPosts = vi.fn();
 const mockUseSettingsStore = vi.fn();
+const mockChoosePulseConsent = vi.fn();
+const mockUsePulseConsent = vi.fn();
 
 vi.mock('@/stores/settings/settings.store', () => ({
   useSettingsStore: () => mockUseSettingsStore(),
+}));
+
+vi.mock('@/hooks/usePulseConsent/usePulseConsent', () => ({
+  usePulseConsent: () => mockUsePulseConsent(),
 }));
 
 vi.mock('@/hooks/useSettingsActions/useSettingsActions', () => ({
@@ -38,6 +44,7 @@ describe('PrivacySettings', () => {
     mockUseSettingsStore.mockReturnValue({
       privacy: defaultPrivacyPreferences,
     });
+    mockUsePulseConsent.mockReturnValue({ consent: 'unavailable', choose: mockChoosePulseConsent, saveFailed: false });
   });
 
   it('renders all privacy switches', () => {
@@ -58,6 +65,24 @@ describe('PrivacySettings', () => {
 
     expect(screen.getByText(SELLER_FOLLOW_NOTICE)).toBeInTheDocument();
     expect(SELLER_FOLLOW_NOTICE).toMatch(/follows a seller when you message them, buy from them or show interest/);
+  });
+
+  it('offers no Pubky Pulse switch when Pulse is unavailable', () => {
+    render(<PrivacySettings />);
+
+    expect(screen.queryByText('Pubky Pulse analytics')).not.toBeInTheDocument();
+  });
+
+  it('offers the Pubky Pulse switch off by default and stores the choice when toggled', () => {
+    mockUsePulseConsent.mockReturnValue({ consent: null, choose: mockChoosePulseConsent, saveFailed: false });
+    const { container } = render(<PrivacySettings />);
+
+    const pulseSwitch = container.querySelector('#pulse-analytics-consent');
+    expect(screen.getByText('Pubky Pulse analytics')).toBeInTheDocument();
+    expect(pulseSwitch).toHaveAttribute('aria-checked', 'false');
+
+    fireEvent.click(pulseSwitch!);
+    expect(mockChoosePulseConsent).toHaveBeenCalledWith(true);
   });
 
   it('calls setShowConfirm when toggling confirmation switch', () => {
@@ -119,6 +144,7 @@ describe('PrivacySettings - Snapshots', () => {
     mockUseSettingsStore.mockReturnValue({
       privacy: defaultPrivacyPreferences,
     });
+    mockUsePulseConsent.mockReturnValue({ consent: 'unavailable', choose: mockChoosePulseConsent, saveFailed: false });
   });
 
   it('matches snapshot', () => {

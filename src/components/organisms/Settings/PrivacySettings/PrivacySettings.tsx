@@ -4,6 +4,7 @@ import { Typography } from '@/atoms/Typography/Typography';
 import { useSettingsActions } from '@/hooks/useSettingsActions/useSettingsActions';
 import { SettingsSwitchGroup } from '@/molecules/Settings/SettingsSwitchGroup/SettingsSwitchGroup';
 import { SettingsSwitchItem } from '@/molecules/Settings/SettingsSwitchItem/SettingsSwitchItem';
+import { PulseConsentSettings } from '@/organisms/PulseConsent/PulseConsent';
 import { useSettingsStore } from '@/stores/settings/settings.store';
 import { PRIVACY_SETTINGS, SELLER_FOLLOW_NOTICE } from './PrivacySettings.constants';
 import type { PrivacyType } from './PrivacySettings.types';
@@ -17,6 +18,7 @@ export function PrivacySettings() {
   return (
     <>
       <SettingsSwitchGroup>
+        <PulseConsentSettings />
         {privacyTypes.map((type) => {
           const { label, action, disabled } = PRIVACY_SETTINGS[type];
           return (
