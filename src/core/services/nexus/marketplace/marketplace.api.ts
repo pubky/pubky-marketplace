@@ -1,7 +1,10 @@
 import { getMarketplaceNexusUrl } from '@/config/nexus';
 import { NEXUS_STREAM_LISTINGS_ROUTE } from '@/libs/commerce/nexus-routes';
 import {
+  MARKETPLACE_ATTESTOR_PATH_PARAMS,
   MARKETPLACE_TAGS_PATH_PARAMS,
+  type TAttestorAnnotationsParams,
+  type TAttestorProfileParams,
   type TListingDetailsParams,
   type TListingReviewsParams,
   type TListingStreamParams,
@@ -36,6 +39,7 @@ import { buildUrlWithQuery, encodePathSegment } from '@/services/nexus/nexus.uti
 
 const LISTING_PREFIX = 'v0/listing';
 const SHOP_PREFIX = 'v0/shop';
+const ATTESTOR_PREFIX = 'v0/marketplace/attestor';
 
 export const marketplaceApi = {
   listingStream: (params: TListingStreamParams) =>
@@ -97,6 +101,19 @@ export const marketplaceApi = {
       baseUrl: getMarketplaceNexusUrl(),
     });
   },
+  attestorProfile: (params: TAttestorProfileParams) =>
+    buildUrlWithQuery({
+      baseRoute: `${ATTESTOR_PREFIX}/${encodePathSegment(params.attestor_id)}/profile`,
+      params,
+      excludeKeys: MARKETPLACE_ATTESTOR_PATH_PARAMS,
+      baseUrl: getMarketplaceNexusUrl(),
+    }),
+  attestorAnnotations: ({ attestor_id, order_refs }: TAttestorAnnotationsParams) =>
+    buildUrlWithQuery({
+      baseRoute: `${ATTESTOR_PREFIX}/${encodePathSegment(attestor_id)}/annotations`,
+      params: { order_refs: order_refs.join(',') },
+      baseUrl: getMarketplaceNexusUrl(),
+    }),
 };
 
 export type MarketplaceApiEndpoint = keyof typeof marketplaceApi;

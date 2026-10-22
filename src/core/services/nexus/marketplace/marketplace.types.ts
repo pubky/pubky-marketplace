@@ -382,3 +382,60 @@ export type TListingReviewsParams = {
   limit?: number;
   sort?: NexusReviewSort;
 };
+
+/** The kinds of outcome an attestor records against an attested order. */
+export type NexusAttestorOutcomeKind = 'refunded' | 'returned';
+
+/**
+ * An attestor's profile as `GET v0/marketplace/attestor/{attestor_id}/profile`
+ * serves it (index release IX5). `record` is the profile exactly as
+ * published, `proof` included, and verifies offline against the profile URI of
+ * `attestor_id`. `key_windows` is the index's reading of the record's `keys`
+ * (whole seconds, rounded up); the Shop narrows trust from the verified
+ * `record`, never from this derived field.
+ */
+export type NexusAttestorProfile = {
+  attestor_id: string;
+  uri: string;
+  key_windows: {
+    pubky: string;
+    valid_from: number;
+    valid_until: number | null;
+    compromised_from: number | null;
+  }[];
+  record: unknown;
+  indexed_at: number;
+};
+
+/**
+ * One attestor annotation of an attested order, as an entry of
+ * `GET v0/marketplace/attestor/{attestor_id}/annotations`. `record` is the
+ * annotation exactly as published and verifies offline; the Shop reads the
+ * outcomes from it rather than from the derived `outcomes`.
+ */
+export type NexusAttestorAnnotation = {
+  attestor_id: string;
+  order_ref: string;
+  uri: string;
+  outcomes: { kind: NexusAttestorOutcomeKind; on: string }[];
+  revision: number;
+  record: unknown;
+  indexed_at: number;
+};
+
+/** Path params for `GET v0/marketplace/attestor/{attestor_id}/profile`. */
+export type TAttestorProfileParams = {
+  attestor_id: string;
+};
+
+/**
+ * Path/query params for `GET v0/marketplace/attestor/{attestor_id}/annotations`:
+ * at most 100 order refs per request, answered as an array aligned with them.
+ */
+export type TAttestorAnnotationsParams = {
+  attestor_id: string;
+  order_refs: readonly string[];
+};
+
+/** Path params excluded from attestor endpoint query strings. */
+export const MARKETPLACE_ATTESTOR_PATH_PARAMS = ['attestor_id'];

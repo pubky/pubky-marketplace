@@ -1,3 +1,4 @@
+import type { ReviewOutcomeKind } from '@/libs/commerce/attestor-records';
 import type { MarketplaceReviewSort } from '@/libs/commerce/review-sort';
 
 export const MARKETPLACE_DELIVERY_ADDRESS_DISCLOSURE =
@@ -66,6 +67,17 @@ export const REVIEW_SORT_COPY: {
     rating_asc: 'Lowest rated',
   },
 };
+
+/**
+ * The note beside a review whose order the attestor recorded as refunded or
+ * returned (reviews design section 6). Informational: it never changes a
+ * count, an order or a moderation display.
+ */
+export const REVIEW_OUTCOME_COPY = {
+  label: { refunded: 'Refunded', returned: 'Returned' } satisfies Record<ReviewOutcomeKind, string>,
+  detail: (kind: ReviewOutcomeKind, attestorLabel: string, date: string) =>
+    `${attestorLabel} recorded this order as ${kind} on ${date}.`,
+} as const;
 
 /** The secondary price-weighted figure beside the plain average on the storefront header. */
 export const REPUTATION_WEIGHTED_COPY = {

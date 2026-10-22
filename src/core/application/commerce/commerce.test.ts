@@ -3983,11 +3983,12 @@ describe('CommerceApplication', () => {
     it('persists the live Nexus stream into the catalog cache', async () => {
       vi.spyOn(commerceConfig, 'getCommerceAdapterMode').mockReturnValue('unavailable');
       await CommerceCatalogEntryModel.table.clear();
-      vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-        new Response(JSON.stringify(liveListingStream), {
-          status: 200,
-          headers: { 'content-type': 'application/json' },
-        }),
+      vi.spyOn(globalThis, 'fetch').mockImplementation(
+        async () =>
+          new Response(JSON.stringify(liveListingStream), {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          }),
       );
       vi.spyOn(CommerceApplication, 'getOrFetchShop').mockResolvedValue(createCommerceShopFixture());
 

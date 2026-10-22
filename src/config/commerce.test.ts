@@ -6,6 +6,7 @@ import {
   trustedMarketplaceAttestorAt,
   trustedMarketplaceAttestorAtRecordTime,
 } from '@/config/commerce';
+import { resetAttestorKeyWindows, setAttestorProfileKeyWindows } from '@/libs/commerce/attestor-key-windows';
 import { resetRuntimeConfigForTests } from '@/libs/runtime-config/runtime-config';
 import { PUBKY_RUNTIME_ENV_NAMES } from '@/libs/runtime-config/runtime-config.schema';
 import { TEST_TRUSTED_ATTESTOR } from '@/test/fixtures/commerce/trusted-attestors';
@@ -65,6 +66,35 @@ describe('marketplaceTrustedAttestors', () => {
   it('is the compiled defaults alone when the deployment configures no runtime entries', () => {
     delete process.env[ENV_NAME];
     resetRuntimeConfigForTests();
+    expect(marketplaceTrustedAttestors()).toEqual(MARKETPLACE_TRUSTED_ATTESTOR_DEFAULTS);
+    expect(trustedMarketplaceAttestorAt(TEST_TRUSTED_ATTESTOR.pubky, new Date('2026-10-21T00:00:00Z'))).toBeNull();
+  });
+});
+
+describe('marketplaceTrustedAttestors narrowed by an attestor profile', () => {
+  afterEach(() => resetAttestorKeyWindows());
+
+  it('ends a configured key at the profile bound, and leaves the others and the configured list as they were', () => {
+    const compromisedFrom = Date.parse('2026-05-01T00:00:00Z') / 1000;
+    setAttestorProfileKeyWindows(TEST_TRUSTED_ATTESTOR.pubky, [
+      { pubky: TEST_TRUSTED_ATTESTOR.pubky, validUntil: null, compromisedFrom },
+    ]);
+
+    expect(marketplaceTrustedAttestors()).toEqual([
+      ...MARKETPLACE_TRUSTED_ATTESTOR_DEFAULTS,
+      { ...TEST_TRUSTED_ATTESTOR, validUntil: '2026-05-01T00:00:00.000Z' },
+    ]);
+    expect(trustedMarketplaceAttestorAt(TEST_TRUSTED_ATTESTOR.pubky, new Date('2026-04-30T23:59:59Z'))).not.toBeNull();
+    expect(trustedMarketplaceAttestorAt(TEST_TRUSTED_ATTESTOR.pubky, new Date('2026-05-01T00:00:00Z'))).toBeNull();
+  });
+
+  it('never trusts a key the configuration lacks, however the profile lists it', () => {
+    delete process.env[ENV_NAME];
+    resetRuntimeConfigForTests();
+    setAttestorProfileKeyWindows(TEST_TRUSTED_ATTESTOR.pubky, [
+      { pubky: TEST_TRUSTED_ATTESTOR.pubky, validUntil: null, compromisedFrom: null },
+    ]);
+
     expect(marketplaceTrustedAttestors()).toEqual(MARKETPLACE_TRUSTED_ATTESTOR_DEFAULTS);
     expect(trustedMarketplaceAttestorAt(TEST_TRUSTED_ATTESTOR.pubky, new Date('2026-10-21T00:00:00Z'))).toBeNull();
   });

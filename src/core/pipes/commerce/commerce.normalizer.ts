@@ -279,6 +279,12 @@ const nexusReviewDetailsSchema = z
     text: z.string(),
     verified: z.boolean(),
     attestor_id: commercePubkySchema.nullable(),
+    // The attested order's salted hash (the key of the attestor's annotations); null for an unattested review.
+    order_ref: z
+      .string()
+      .regex(/^[0-9a-f]{64}$/)
+      .nullable()
+      .optional(),
     // Absent before index release IX2; null when the review is unverified.
     iat: z.number().int().positive().nullable().optional(),
     price_weight: z.number().int().min(1).max(5).nullable().optional(),
@@ -324,6 +330,8 @@ const nexusReviewStreamSchema = z.union([
   nexusReviewEntriesSchema.transform((reviews) => ({ reviews, envelope: false })),
   z.object({ reviews: nexusReviewEntriesSchema }).transform(({ reviews }) => ({ reviews, envelope: true })),
 ]);
+
+const nexusAttestorRecordEntrySchema = z.object({ record: z.record(z.string(), z.unknown()) });
 
 const nexusReputationSummarySchema = z.object({
   count: z.number().int().nonnegative(),
@@ -518,6 +526,7 @@ export class CommerceRecordNormalizer {
       text: review.moderation === null ? review.text : '',
       verified: review.verified,
       attestorId: review.attestor_id,
+      ...(review.order_ref !== undefined && { orderRef: review.order_ref }),
       ...(review.iat !== undefined && { iat: review.iat }),
       ...(review.price_weight !== undefined && { priceWeight: review.price_weight }),
       editedLate: review.edited_late,
@@ -537,6 +546,29 @@ export class CommerceRecordNormalizer {
             },
     }));
     return { reviews, envelope };
+  }
+
+  /**
+   * The served `record` of an attestor profile answer, or null when the
+   * payload carries none. The record is not read here: the application
+   * verifies its proof before it uses any member.
+   */
+  static nexusAttestorProfileRecord(input: unknown): Record<string, unknown> | null {
+    const parsed = nexusAttestorRecordEntrySchema.safeParse(input);
+    return parsed.success ? parsed.data.record : null;
+  }
+
+  /**
+   * The served `record` of each entry of an attestor annotations answer, in
+   * the index's order, with null for an entry without one (no annotation, or
+   * a malformed entry); null when the answer is not an array at all.
+   */
+  static nexusAttestorAnnotationRecords(input: unknown): (Record<string, unknown> | null)[] | null {
+    if (!Array.isArray(input)) return null;
+    return input.map((entry: unknown) => {
+      const parsed = nexusAttestorRecordEntrySchema.safeParse(entry);
+      return parsed.success ? parsed.data.record : null;
+    });
   }
 
   /** Validates a Nexus `v0/shop/{seller}/reputation` payload. */

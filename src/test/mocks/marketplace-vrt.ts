@@ -51,6 +51,8 @@ export function createMarketplaceVrtCommerceController() {
     fetchUsdtPaymentsAvailable: async () => false,
     // No cached catalog entries for a seller unless a scene opts in.
     getCatalogEntriesBySeller: async () => [],
+    // No attestor annotations unless a scene opts in.
+    fetchReviewOutcomes: async () => new Map(),
     getOrFetchShop: async () => null,
     refreshShopOrGetCached: async () => null,
     // No live shop events in a scene.

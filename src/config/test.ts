@@ -53,6 +53,8 @@ const { db } = await import('@/database/franky/franky');
 const { radixIdSerializer } = await import('@/libs/utils/utils');
 expect.addSnapshotSerializer(radixIdSerializer);
 
+const { resetAttestorKeyWindows } = await import('@/libs/commerce/attestor-key-windows');
+
 // Polyfill IntersectionObserver for jsdom
 class MockIntersectionObserver implements IntersectionObserver {
   constructor() {}
@@ -150,6 +152,7 @@ vi.mock('next/font/google', () => ({
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  resetAttestorKeyWindows();
 });
 
 beforeAll(async () => {

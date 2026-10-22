@@ -1,8 +1,13 @@
+import { MARKETPLACE_ATTESTOR_REQUEST_TIMEOUT_MS } from '@/config/commerce';
 import { marketplaceApi } from '@/services/nexus/marketplace/marketplace.api';
 import type {
+  NexusAttestorAnnotation,
+  NexusAttestorProfile,
   NexusListingDetails,
   NexusReputationSummary,
   NexusReviewStream,
+  TAttestorAnnotationsParams,
+  TAttestorProfileParams,
   TListingDetailsParams,
   TListingReviewsParams,
   TListingStreamParams,
@@ -12,7 +17,7 @@ import type {
   TShopTagsParams,
 } from '@/services/nexus/marketplace/marketplace.types';
 import type { NexusTag } from '@/services/nexus/nexus.types';
-import { fetchNexus, queryNexus } from '@/services/nexus/nexus.utils';
+import { fetchNexus, fetchNexusIfFound, queryNexus } from '@/services/nexus/nexus.utils';
 
 /**
  * Nexus Marketplace Service
@@ -122,5 +127,41 @@ export class NexusMarketplaceService {
    */
   static async fetchListingReviews(params: TListingReviewsParams): Promise<NexusReviewStream> {
     return await queryNexus<NexusReviewStream>({ url: marketplaceApi.listingReviews(params) });
+  }
+
+  /**
+   * Single-attempt read of an attestor's indexed profile. `queryNexus` would
+   * retry a 404 with backoff and report it as an error, but an attestor that
+   * has not published (or an index without the route) is an ordinary answer
+   * here, so a 404 resolves to `null` without an error.
+   *
+   * @param params - Attestor path param
+   * @returns The profile with its served `record` (proof included), or `null`
+   *   when the index has none
+   */
+  static async fetchAttestorProfile(params: TAttestorProfileParams): Promise<NexusAttestorProfile | null> {
+    return await fetchNexusIfFound<NexusAttestorProfile>({
+      url: marketplaceApi.attestorProfile(params),
+      timeoutMs: MARKETPLACE_ATTESTOR_REQUEST_TIMEOUT_MS,
+    });
+  }
+
+  /**
+   * Single-attempt read of an attestor's annotations for up to 100 order
+   * refs (the caller chunks longer lists). Same absence semantics as
+   * `fetchAttestorProfile`: a 404 means the index does not serve the route.
+   *
+   * @param params - Attestor path param and the order refs to ask for
+   * @returns One entry per requested order ref, in request order, `null`
+   *   where the index holds no annotation; `null` for the whole answer when
+   *   the route is missing
+   */
+  static async fetchAttestorAnnotations(
+    params: TAttestorAnnotationsParams,
+  ): Promise<(NexusAttestorAnnotation | null)[] | null> {
+    return await fetchNexusIfFound<(NexusAttestorAnnotation | null)[]>({
+      url: marketplaceApi.attestorAnnotations(params),
+      timeoutMs: MARKETPLACE_ATTESTOR_REQUEST_TIMEOUT_MS,
+    });
   }
 }

@@ -34,6 +34,7 @@ const controllerState = vi.hoisted(() => ({
   ownResponse: null as unknown,
   listing: null as unknown,
   catalogEntries: [] as unknown[],
+  outcomes: new Map<string, { kind: 'refunded' | 'returned'; on: string }[]>(),
 }));
 
 vi.mock('@/controllers/commerce/commerce', () => ({
@@ -50,6 +51,7 @@ vi.mock('@/controllers/commerce/commerce', () => ({
       reviews: controllerState.reviews,
       sortApplied: page.sort !== undefined,
     })),
+    fetchReviewOutcomes: vi.fn(async () => controllerState.outcomes),
     getOwnMarketplaceReviewResponse: vi.fn(async () => controllerState.ownResponse),
     getOrFetchListingIfFound: vi.fn(async () => controllerState.listing),
     getCatalogEntriesBySeller: vi.fn(async () => controllerState.catalogEntries),
@@ -171,6 +173,15 @@ const MODERATED_REVIEWS = [
     moderation: { state: 'excluded', reason: 'review_fraud' },
   }),
 ];
+
+const ORDER_REF = 'ab'.repeat(32);
+
+/** An attested review with the attested order's reference, the key of its attestor's annotation. */
+const ATTESTED_REVIEW = indexedReview({ orderRef: ORDER_REF });
+
+function annotate(outcomes: { kind: 'refunded' | 'returned'; on: string }[]) {
+  controllerState.outcomes = new Map([[`${TRUSTED_ATTESTOR}:${ORDER_REF}`, outcomes]]);
+}
 
 const ratedSummary = {
   status: 'rated',
@@ -375,6 +386,7 @@ beforeEach(async () => {
   controllerState.ownResponse = null;
   controllerState.listing = null;
   controllerState.catalogEntries = [];
+  controllerState.outcomes = new Map();
 });
 
 async function waitForText(fragment: string) {
@@ -607,6 +619,66 @@ describe('Marketplace public reviews — visual regression', () => {
     );
     await waitForText('35mm rangefinder camera');
     await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('reviews-section-storefront-listing-mobile');
+  });
+
+  it('renders a Refunded note beside a verified review at desktop viewport', async () => {
+    controllerState.reviews = [ATTESTED_REVIEW];
+    annotate([{ kind: 'refunded', on: '2026-10-14' }]);
+    const screen = await renderForVRT(
+      <main className="mx-auto flex w-full max-w-2xl flex-col gap-6 px-6 py-10">
+        <MarketplaceReviewsSection sellerPubky={SELLER} listingId="rangefinder_camera" />
+      </main>,
+      { viewport: VRT_VIEWPORT_DESKTOP },
+    );
+    await waitForText('Refunded');
+    await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('reviews-section-outcome-refunded-desktop');
+  });
+
+  it('renders a Returned note beside a verified review at desktop viewport', async () => {
+    controllerState.reviews = [ATTESTED_REVIEW];
+    annotate([{ kind: 'returned', on: '2026-10-12' }]);
+    const screen = await renderForVRT(
+      <main className="mx-auto flex w-full max-w-2xl flex-col gap-6 px-6 py-10">
+        <MarketplaceReviewsSection sellerPubky={SELLER} listingId="rangefinder_camera" />
+      </main>,
+      { viewport: VRT_VIEWPORT_DESKTOP },
+    );
+    await waitForText('Returned');
+    await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('reviews-section-outcome-returned-desktop');
+  });
+
+  it('renders both notes beside a verified review at desktop viewport', async () => {
+    controllerState.reviews = [ATTESTED_REVIEW];
+    annotate([
+      { kind: 'refunded', on: '2026-10-14' },
+      { kind: 'returned', on: '2026-10-12' },
+    ]);
+    const screen = await renderForVRT(
+      <main className="mx-auto flex w-full max-w-2xl flex-col gap-6 px-6 py-10">
+        <MarketplaceReviewsSection sellerPubky={SELLER} listingId="rangefinder_camera" />
+      </main>,
+      { viewport: VRT_VIEWPORT_DESKTOP },
+    );
+    await waitForText('Refunded');
+    await waitForText('Returned');
+    await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('reviews-section-outcome-both-desktop');
+  });
+
+  it('renders both notes beside a verified review at mobile viewport', async () => {
+    controllerState.reviews = [ATTESTED_REVIEW];
+    annotate([
+      { kind: 'refunded', on: '2026-10-14' },
+      { kind: 'returned', on: '2026-10-12' },
+    ]);
+    const screen = await renderForVRT(
+      <main className="flex w-full flex-col gap-6 px-4 py-8">
+        <MarketplaceReviewsSection sellerPubky={SELLER} listingId="rangefinder_camera" />
+      </main>,
+      { viewport: VRT_VIEWPORT_MOBILE },
+    );
+    await waitForText('Refunded');
+    await waitForText('Returned');
+    await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('reviews-section-outcome-both-mobile');
   });
 
   it('renders a moderated review and the not-counted group at desktop viewport', async () => {

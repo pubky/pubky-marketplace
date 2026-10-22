@@ -478,10 +478,63 @@ describe('CommerceRecordNormalizer', () => {
       });
     });
 
+    describe('attested order reference', () => {
+      const ORDER_REF = 'ab'.repeat(32);
+
+      it('carries the order ref of an attested review and null for an unattested one', () => {
+        const [attested, unattested] = CommerceRecordNormalizer.nexusReviewStream([
+          reviewEntry({ order_ref: ORDER_REF }),
+          reviewEntry({ order_ref: null }),
+        ]);
+
+        expect(attested?.orderRef).toBe(ORDER_REF);
+        expect(unattested?.orderRef).toBeNull();
+      });
+
+      it('leaves the order ref out for an index that does not serve it', () => {
+        const entry = reviewEntry();
+        delete (entry.review as Record<string, unknown>).order_ref;
+
+        const [review] = CommerceRecordNormalizer.nexusReviewStream([entry]);
+
+        expect(review).not.toHaveProperty('orderRef');
+      });
+
+      it('rejects an order ref that is not a 64-character hash', () => {
+        expect(() => CommerceRecordNormalizer.nexusReviewStream([reviewEntry({ order_ref: 'not-a-hash' })])).toThrow();
+      });
+    });
+
     it('rejects a moderation state the frozen contract does not define', () => {
       expect(() =>
         CommerceRecordNormalizer.nexusReviewStream([reviewEntry({ moderation: { state: 'hidden', reason: 'x' } })]),
       ).toThrow();
+    });
+  });
+
+  describe('attestor records (index release IX5)', () => {
+    it('takes the served record of a profile answer, and null when the answer carries none', () => {
+      const record = { keys: [], proof: 'p' };
+
+      expect(CommerceRecordNormalizer.nexusAttestorProfileRecord({ attestor_id: 'x', record })).toEqual(record);
+      expect(CommerceRecordNormalizer.nexusAttestorProfileRecord({ attestor_id: 'x' })).toBeNull();
+      expect(CommerceRecordNormalizer.nexusAttestorProfileRecord(null)).toBeNull();
+      expect(CommerceRecordNormalizer.nexusAttestorProfileRecord({ record: 'text' })).toBeNull();
+    });
+
+    it('takes the record of each annotation entry in order, with null for a missing or malformed entry', () => {
+      const first = { orderRef: 'a', outcomes: [], proof: 'p' };
+      const third = { orderRef: 'c', outcomes: [], proof: 'q' };
+
+      expect(
+        CommerceRecordNormalizer.nexusAttestorAnnotationRecords([{ record: first }, null, { record: third }, { x: 1 }]),
+      ).toEqual([first, null, third, null]);
+    });
+
+    it('answers null when the annotations answer is not a list', () => {
+      expect(CommerceRecordNormalizer.nexusAttestorAnnotationRecords({ record: {} })).toBeNull();
+      expect(CommerceRecordNormalizer.nexusAttestorAnnotationRecords('[]')).toBeNull();
+      expect(CommerceRecordNormalizer.nexusAttestorAnnotationRecords([])).toEqual([]);
     });
   });
 });
