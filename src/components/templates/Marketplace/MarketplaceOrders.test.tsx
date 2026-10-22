@@ -1069,7 +1069,9 @@ describe('MarketplaceOrders tabs', () => {
     expect(within(assumedCard as HTMLElement).getByText(CHAT_COPY.assumedDelivery)).toBeInTheDocument();
     expect(within(assumedCard as HTMLElement).getByRole('button', { name: CHAT_COPY.orderCta })).toBeInTheDocument();
     expect(
-      within(assumedCard as HTMLElement).getByText(/Completes automatically after the return window/),
+      within(assumedCard as HTMLElement).getByText(
+        /Completes automatically 14 days after delivery unless a return is requested/,
+      ),
     ).toBeInTheDocument();
     expect(within(confirmedCard as HTMLElement).queryByText(CHAT_COPY.assumedDelivery)).not.toBeInTheDocument();
     expect(within(confirmedCard as HTMLElement).getByRole('button', { name: CHAT_COPY.orderCta })).toBeInTheDocument();
@@ -1304,7 +1306,7 @@ describe('MarketplaceOrders digital cards (digital delivery design §3 "After pa
     expect(within(card).getByText('Digital delivery')).toBeInTheDocument();
     expect(within(card).getByRole('heading', { name: 'Your purchase' })).toBeInTheDocument();
     expect(within(card).getByRole('button', { name: 'Download' })).toBeInTheDocument();
-    expect(within(card).queryByText(/Completes automatically after the return window/)).not.toBeInTheDocument();
+    expect(within(card).queryByText(/Completes automatically/)).not.toBeInTheDocument();
   });
 
   it('shows no shipment or tracking line on a digital order, even when stale shipment data is present (review P2)', () => {
@@ -1369,13 +1371,23 @@ describe('MarketplaceOrders digital cards (digital delivery design §3 "After pa
     expect(within(card).queryByText('To deliver')).not.toBeInTheDocument();
   });
 
-  it('keeps the return-window note on a delivered shipped order', () => {
-    ordersState.orders = [orderView('delivered', 'Shipped boots', 'buyer', { nextActor: 'none' })];
+  it('names the auto-complete period and the return window on a delivered shipped order', () => {
+    ordersState.orders = [
+      orderView('delivered', 'Shipped boots', 'buyer', {
+        nextActor: 'none',
+        returnPolicy: { acceptsReturns: true, returnWindowDays: 30 },
+        autoCompleteDays: 14,
+      }),
+    ];
 
     render(<MarketplaceOrders />);
 
     const card = screen.getByText(/Shipped boots/).closest('[data-slot="card"]') as HTMLElement;
-    expect(within(card).getByText(/Completes automatically after the return window/)).toBeInTheDocument();
+    expect(
+      within(card).getByText(
+        'Completes automatically 14 days after delivery unless a return is requested. A return can be requested within 30 days of delivery, even after the order completes.',
+      ),
+    ).toBeInTheDocument();
     expect(within(card).queryByText('Delivered · ready to download')).not.toBeInTheDocument();
   });
 

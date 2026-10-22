@@ -6,12 +6,9 @@ import type { AwaitingReleaseReview } from '@/application/commerce/commerce';
 import { Button } from '@/atoms/Button/Button';
 import { Checkbox } from '@/atoms/Checkbox/Checkbox';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/atoms/Dialog/Dialog';
-import { Label } from '@/atoms/Label/Label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/atoms/Select/Select';
 import { Typography } from '@/atoms/Typography/Typography';
 import { trustedMarketplaceAttestorAt } from '@/config/commerce';
 import { REVIEW_PENDING_COPY, REVIEW_REMOVAL_COPY } from '@/config/commerce-copy';
-import { FORM_LABEL_CLASSES } from '@/config/forms';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import { useMarketplaceOrderAction } from '@/hooks/useMarketplaceOrderAction/useMarketplaceOrderAction';
 import type { MarketplaceOrderActionData } from '@/hooks/useMarketplaceOrderAction/useMarketplaceOrderAction.types';
@@ -23,7 +20,7 @@ import {
 import { usePickupOrderActions } from '@/hooks/usePickupOrderActions/usePickupOrderActions';
 import { reviewAttestationIssuedAt } from '@/libs/commerce/attestation';
 import { orderAmountEntry } from '@/libs/commerce/bitcoin-payment-code';
-import { OTHER_CARRIER_ID, SHIPPING_CARRIERS } from '@/libs/commerce/carriers';
+import { OTHER_CARRIER_ID } from '@/libs/commerce/carriers';
 import { DIGITAL_ORDER_COPY, DIGITAL_SELLER_COPY, isInstantDigitalDeliveryKind } from '@/libs/commerce/digital';
 import { formatCommerceMoney } from '@/libs/commerce/format';
 import { ORDER_RETURN_COPY, orderReturnClosure } from '@/libs/commerce/order-returns';
@@ -46,6 +43,7 @@ import type { CommerceReviewModelSchema } from '@/models/commerce/commerce.schem
 import { ControlledInputField } from '@/molecules/ControlledInputField/ControlledInputField';
 import { ControlledTextareaField } from '@/molecules/ControlledTextareaField/ControlledTextareaField';
 import { ArbiscanLookupLink } from '@/molecules/Marketplace/ArbiscanLookupLink';
+import { MarketplaceCarrierSelect } from '@/molecules/Marketplace/MarketplaceCarrierSelect';
 import { MarketplaceStarRatingInput } from '@/molecules/MarketplaceStarRatingInput/MarketplaceStarRatingInput';
 import { toast } from '@/molecules/Toaster/use-toast';
 import { MarketplaceBitcoinAmountBreakdown } from '@/organisms/Marketplace/MarketplaceBitcoinAmountBreakdown';
@@ -574,29 +572,7 @@ export function MarketplaceOrderActions({
           )}
           {actionType === 'ship' && (
             <>
-              <div className="grid gap-2">
-                <Label htmlFor="ship-carrier-select" className={FORM_LABEL_CLASSES}>
-                  Carrier
-                </Label>
-                <Controller
-                  name="carrierChoice"
-                  control={action.form.control}
-                  render={({ field }) => (
-                    <Select value={field.value} onValueChange={field.onChange}>
-                      <SelectTrigger theme="secondary" id="ship-carrier-select" className="w-full">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {SHIPPING_CARRIERS.map((carrier) => (
-                          <SelectItem key={carrier.id} value={carrier.id}>
-                            {carrier.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  )}
-                />
-              </div>
+              <MarketplaceCarrierSelect control={action.form.control} name="carrierChoice" id="ship-carrier-select" />
               {carrierChoice === OTHER_CARRIER_ID && (
                 <ControlledInputField name="carrier" control={action.form.control} label="Carrier name" />
               )}

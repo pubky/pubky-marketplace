@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { COMMERCE_REVIEW_TEXT_MAX_CHARS } from '@/config/commerce';
-import { SHIPPING_CARRIERS } from '@/libs/commerce/carriers';
+import { CARRIER_CHOICE_COPY, carrierChoiceFieldSchema, NO_CARRIER_CHOICE } from '@/libs/commerce/carrier-choice';
 import {
   buyerSellerRatings,
   orderReviewListings,
@@ -10,8 +10,6 @@ import {
   unreviewedListings,
 } from '@/libs/commerce/order-reviews';
 import { isArbitrumTxHash, USDT_REFUND_COPY } from '@/libs/commerce/usdt-refund';
-
-const carrierIds = SHIPPING_CARRIERS.map(({ id }) => id) as [string, ...string[]];
 
 const REVIEW_STARS = /^[1-5]$/;
 
@@ -29,8 +27,8 @@ export const marketplaceOrderActionSchema = z
   .object({
     action: z.enum(['cancel', 'ship', 'return', 'refund', 'review', 'review_edit']),
     reason: z.string().trim().max(2_000),
-    /** Curated carrier id from the registry, or `other` with a free-text name below. */
-    carrierChoice: z.enum(carrierIds),
+    /** Curated carrier id from the registry, or `other` with a free-text name below; required to ship, with no default. */
+    carrierChoice: carrierChoiceFieldSchema,
     carrier: z.string().trim().max(100),
     trackingNumber: z.string().trim().max(200),
     amount: z.string().trim(),
@@ -53,6 +51,9 @@ export const marketplaceOrderActionSchema = z
   .superRefine((data, context) => {
     if (['cancel', 'return'].includes(data.action) && !data.reason) {
       context.addIssue({ code: 'custom', path: ['reason'], message: 'Reason is required.' });
+    }
+    if (data.action === 'ship' && data.carrierChoice === NO_CARRIER_CHOICE) {
+      context.addIssue({ code: 'custom', path: ['carrierChoice'], message: CARRIER_CHOICE_COPY.required });
     }
     if (data.action === 'refund') {
       // Up to six decimals here (USDT millionths); `marketplaceOrderActionSchemaFor` caps them at the order's units.
@@ -166,7 +167,7 @@ export function paypalRefundedMinor(order: { externalRefund?: { amountMinor: num
 export const marketplaceOrderActionDefaults: MarketplaceOrderActionData = {
   action: 'cancel',
   reason: '',
-  carrierChoice: 'usps',
+  carrierChoice: NO_CARRIER_CHOICE,
   carrier: '',
   trackingNumber: '',
   amount: '',
