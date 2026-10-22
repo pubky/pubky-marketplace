@@ -6,7 +6,7 @@ Shop homeserver authentication uses SDK 0.16.2 grant sessions in both standalone
 
 | Entry point | Session established |
 |---|---|
-| Pubky Ring or Bitkit | Delegated `signin_grant` from one shared QR. On a phone the Authorize button for the app the user taps records signer `ring` or `bitkit`; a QR scan cannot say which app approved, so it is recorded as `host` (unknown signer) and a later marketplace approval asks which app to use |
+| Pubky Ring or Bitkit | Delegated `signin_grant` from one shared QR. On a phone the Authorize button for the app the user taps records signer `ring` or `bitkit`; a QR scan cannot say which app approved, so it is recorded as `unknown`: later marketplace approvals start on Pubky Ring (the same link works in Bitkit, and the dialog's signer toggle switches apps) and the USDT copy stays neutral |
 | Pubky Passport | Delegated `signin_grant`, recorded with signer `passport`; the popup opens synchronously from a click |
 | Recovery phrase or encrypted recovery file | SDK root grant under the configured Shop client ID, recorded with signer `local-key` |
 | Ring signup | SDK `signup_grant`, followed by grant session initialization |
