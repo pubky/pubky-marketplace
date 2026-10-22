@@ -1144,7 +1144,7 @@ describe('sealed delivery address fields', () => {
     const share = {
       sellerPubky: SELLER,
       shopDomain: 'dezentralshop.ch',
-      consentVersion: 1,
+      consentVersion: '1',
       keyId: 'connector-key-1',
       envelope: ENVELOPE,
     };
@@ -1170,7 +1170,10 @@ describe('sealed delivery address fields', () => {
     it('refuses two shares for one seller, a bad consent version and an envelope of the wrong size', () => {
       for (const connectorShares of [
         [share, share],
-        [{ ...share, consentVersion: 0 }],
+        [{ ...share, consentVersion: 1 }],
+        [{ ...share, consentVersion: '' }],
+        [{ ...share, consentVersion: 'has space' }],
+        [{ ...share, consentVersion: 'v'.repeat(33) }],
         [{ ...share, envelope: 'A'.repeat(100) }],
         [{ ...share, address: 'x' }],
       ]) {
@@ -1190,7 +1193,7 @@ describe('sealed delivery address fields', () => {
         {
           seller_pubky: SELLER,
           shop_domain: 'dezentralshop.ch',
-          consent_version: 1,
+          consent_version: '1',
           key_id: 'connector-key-1',
           envelope: ENVELOPE,
         },

@@ -385,7 +385,12 @@ export const connectorShareSchema = z
   .object({
     sellerPubky: commercePubkySchema,
     shopDomain: z.string().min(1).max(255),
-    consentVersion: z.number().int().positive(),
+    // The service stores this as text: 1 to 32 characters of letters, digits, `.`, `_` and `-`.
+    consentVersion: z
+      .string()
+      .min(1)
+      .max(32)
+      .regex(/^[A-Za-z0-9._-]+$/),
     keyId: z.string().min(1).max(128),
     envelope: deliveryEnvelopeFieldsSchema.shape.envelope,
   })

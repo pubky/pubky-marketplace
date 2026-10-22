@@ -54,6 +54,6 @@ describe('CONNECTOR_SHARE_CONSENT_COPY', () => {
   });
 
   it('is version 3, so stored consent records the corrected wording', () => {
-    expect(CONNECTOR_SHARE_CONSENT_VERSION).toBe(3);
+    expect(CONNECTOR_SHARE_CONSENT_VERSION).toBe('3');
   });
 });

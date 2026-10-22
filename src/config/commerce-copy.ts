@@ -16,7 +16,7 @@ export const CONNECTOR_SHARE_CONSENT_COPY = {
 } as const;
 
 /** The version of `CONNECTOR_SHARE_CONSENT_COPY` the buyer agreed to, sent as `consent_version`. */
-export const CONNECTOR_SHARE_CONSENT_VERSION = 3;
+export const CONNECTOR_SHARE_CONSENT_VERSION = '3';
 
 /**
  * Reader-facing reasons for the index's moderation labels on a review
