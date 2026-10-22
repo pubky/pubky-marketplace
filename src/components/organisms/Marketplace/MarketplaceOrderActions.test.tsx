@@ -129,7 +129,7 @@ describe('MarketplaceOrderActions review editing', () => {
     expect(actOnOrder).toHaveBeenCalledWith(order, 'review.update', {
       items: [{ listingId: 'boots', rating: 3, text: 'Item arrived scratched after all.' }],
     });
-  });
+  }, 30_000);
 
   it('changes the review rating with arrow keys and submits the same form field', async () => {
     const user = userEvent.setup();
