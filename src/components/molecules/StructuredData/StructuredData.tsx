@@ -1,7 +1,6 @@
 import { getShopBaseUrl } from '@/config/base-path';
 import { getGithubLink, getNexusScoutLink, getTelegramLink, getTwitterLink } from '@/config/externalLinks';
 import { getAuthor, getSiteName } from '@/config/metadata';
-import { MARKETPLACE_STATIC_SEO } from '@/libs/commerce/seo';
 import { escapeForInlineScript } from '@/libs/runtime-config/runtime-config';
 
 /**
@@ -23,7 +22,8 @@ export function StructuredData() {
         '@id': `${siteUrl}/#website`,
         name: getSiteName(),
         url: siteUrl,
-        description: MARKETPLACE_STATIC_SEO.description,
+        description:
+          'Pubky App is a social-media-like experience built over Pubky Core, a decentralised, censorship-resistant protocol.',
         publisher: { '@id': `${siteUrl}/#organisation` },
       },
       {

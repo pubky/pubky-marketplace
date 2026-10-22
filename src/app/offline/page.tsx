@@ -1,7 +1,7 @@
 import { Metadata } from '@/molecules/Metadata/Metadata';
 
 export const metadata = Metadata({
-  title: 'Offline - Pubky Market',
+  title: 'Offline - Pubky App',
   description: 'You are currently offline.',
   robots: false,
 });
