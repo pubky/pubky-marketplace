@@ -2,11 +2,12 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CommerceController } from '@/controllers/commerce/commerce';
-import { SELLING_BLOCKED_COUNTRY_MESSAGE } from '@/libs/commerce/region-modes';
+import { SELLING_BLOCKED_COUNTRY_MESSAGE, SHOP_COUNTRY_LOCKED_MESSAGE } from '@/libs/commerce/region-modes';
 import { AppError } from '@/libs/error/error';
 import { ClientErrorCode } from '@/libs/error/error.codes';
 import { ErrorCategory, ErrorService } from '@/libs/error/error.types';
-import { resetRegionState, setRegionModes } from '@/test-utils/region-modes';
+import { createCommerceShopFixture } from '@/test/fixtures/commerce/commerce';
+import { resetRegionState, setRegionModes, stubClientRegion } from '@/test-utils/region-modes';
 import { MarketplaceShopSettingsForm } from './MarketplaceShopSettingsForm';
 
 const OWNER = 'y'.repeat(52);
@@ -105,5 +106,42 @@ describe('the shop settings country field under the region modes', () => {
     await user.type(await screen.findByLabelText('Country'), 'US');
 
     expect(hint()).not.toBeInTheDocument();
+  });
+});
+
+describe('the shop country of a shop that already has one', () => {
+  beforeEach(() => {
+    vi.mocked(CommerceController.refreshShop).mockResolvedValue(
+      createCommerceShopFixture({ ownerPubky: OWNER, location: { countryCode: 'CH' } }),
+    );
+  });
+
+  it('is read-only from a visitor region inside the block, with the reason under it', async () => {
+    setRegionModes(LAUNCH);
+    stubClientRegion('DE');
+    render(<MarketplaceShopSettingsForm />);
+
+    await waitFor(() => expect(country()).toBeDisabled());
+    expect(country()).toHaveValue('CH');
+    expect(screen.getByTestId('shop-settings-country-locked')).toHaveTextContent(SHOP_COUNTRY_LOCKED_MESSAGE);
+    expect(screen.getByLabelText('Shop name')).toBeEnabled();
+  });
+
+  it('can be edited from a visitor region outside the block', async () => {
+    setRegionModes(LAUNCH);
+    stubClientRegion('CH');
+    render(<MarketplaceShopSettingsForm />);
+
+    await waitFor(() => expect(country()).toHaveValue('CH'));
+    await waitFor(() => expect(country()).toBeEnabled());
+    expect(screen.queryByTestId('shop-settings-country-locked')).not.toBeInTheDocument();
+  });
+
+  it('can be edited while no region is blocked', async () => {
+    setRegionModes('EU=nuanced');
+    render(<MarketplaceShopSettingsForm />);
+
+    await waitFor(() => expect(country()).toHaveValue('CH'));
+    expect(country()).toBeEnabled();
   });
 });

@@ -1,4 +1,5 @@
 import {
+  BUYING_FROM_BLOCKED_SHOP_MESSAGE,
   COMMERCE_BLOCKED_INFO,
   COMMERCE_BLOCKED_MESSAGE,
   COMMERCE_UNKNOWN_REGION_INFO,
@@ -7,8 +8,10 @@ import {
   type RegionBlockCause,
   regionBlockCause,
   type RegionPolicy,
-  SELLING_BLOCKED_COUNTRY_MESSAGE,
   SELLING_BLOCKED_MESSAGE,
+  SHOP_COUNTRY_CHECKING_MESSAGE,
+  SHOP_COUNTRY_LOCKED_MESSAGE,
+  SHOP_COUNTRY_LOCKED_UNKNOWN_MESSAGE,
 } from './region-modes';
 
 /** Where the visitor's IP country stands: asked, answered (country or unknown), or not asked at all. */
@@ -90,11 +93,35 @@ export function evaluateCommerceAvailability(
     message: unknown
       ? COMMERCE_UNKNOWN_REGION_MESSAGE
       : cause === 'seller'
-        ? SELLING_BLOCKED_COUNTRY_MESSAGE
+        ? BUYING_FROM_BLOCKED_SHOP_MESSAGE
         : COMMERCE_BLOCKED_MESSAGE,
     sellingMessage: unknown ? COMMERCE_UNKNOWN_REGION_MESSAGE : SELLING_BLOCKED_MESSAGE,
     info: unknown ? COMMERCE_UNKNOWN_REGION_INFO : COMMERCE_BLOCKED_INFO,
   };
+}
+
+/**
+ * Whether the shop country can be changed from where the visitor is. The rule is the visitor's own
+ * region, never the country they would change to: only someone who is outside the block can move a
+ * shop out of it. A region that is blocked, or unknown where unknown visitors are blocked, keeps the
+ * country as it is; while the region is still being read nothing is changed yet. Nothing is locked
+ * while no region is blocked.
+ */
+export type ShopCountryChange =
+  | { status: 'open' }
+  | { status: 'checking'; message: string }
+  | { status: 'locked'; cause: 'ip' | 'unknown'; message: string };
+
+export function evaluateShopCountryChange(policy: RegionPolicy, client: ClientRegionState): ShopCountryChange {
+  if (!policy.usesClientRegion || client.status === 'off') return { status: 'open' };
+  if (client.status === 'loading') return { status: 'checking', message: SHOP_COUNTRY_CHECKING_MESSAGE };
+  const cause = regionBlockCause(policy, {
+    declaredCountry: null,
+    ipCountry: client.status === 'ready' ? client.country : null,
+  });
+  if (cause === null) return { status: 'open' };
+  if (cause === 'unknown') return { status: 'locked', cause, message: SHOP_COUNTRY_LOCKED_UNKNOWN_MESSAGE };
+  return { status: 'locked', cause: 'ip', message: SHOP_COUNTRY_LOCKED_MESSAGE };
 }
 
 /** The line for a digital-only listing: a blocked region holds paid unlocks, an unknown one holds everything. */

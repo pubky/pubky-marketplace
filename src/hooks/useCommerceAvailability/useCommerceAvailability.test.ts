@@ -1,10 +1,10 @@
 import { renderHook, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
+  BUYING_FROM_BLOCKED_SHOP_MESSAGE,
   COMMERCE_BLOCKED_INFO,
   COMMERCE_BLOCKED_MESSAGE,
   COMMERCE_UNKNOWN_REGION_MESSAGE,
-  SELLING_BLOCKED_COUNTRY_MESSAGE,
 } from '@/libs/commerce/region-modes';
 import { useBuyerCountryStore } from '@/stores/buyer-country/buyer-country.store';
 import { resetRegionState, setRegionModes, stubClientRegion } from '@/test-utils/region-modes';
@@ -76,6 +76,6 @@ describe('useCommerceAvailability', () => {
     stubClientRegion('CH');
     const { result } = renderHook(() => useCommerceAvailability({ sellerCountry: 'US' }));
     await waitFor(() => expect(result.current.blocked).toBe(true));
-    expect(result.current).toMatchObject({ source: 'seller', message: SELLING_BLOCKED_COUNTRY_MESSAGE });
+    expect(result.current).toMatchObject({ source: 'seller', message: BUYING_FROM_BLOCKED_SHOP_MESSAGE });
   });
 });

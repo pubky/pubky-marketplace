@@ -1,11 +1,18 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CommerceController } from '@/controllers/commerce/commerce';
-import { SELLING_BLOCKED_COUNTRY_MESSAGE } from '@/libs/commerce/region-modes';
+import type { CommerceShopRecord } from '@/libs/commerce/marketplace-records';
+import {
+  SELLING_BLOCKED_COUNTRY_MESSAGE,
+  SHOP_COUNTRY_CHECKING_MESSAGE,
+  SHOP_COUNTRY_LOCKED_MESSAGE,
+  SHOP_COUNTRY_LOCKED_UNKNOWN_MESSAGE,
+} from '@/libs/commerce/region-modes';
 import { AppError } from '@/libs/error/error';
 import { ClientErrorCode } from '@/libs/error/error.codes';
 import { ErrorCategory, ErrorService } from '@/libs/error/error.types';
-import { resetRegionState, setRegionModes } from '@/test-utils/region-modes';
+import { createCommerceShopFixture } from '@/test/fixtures/commerce/commerce';
+import { resetRegionState, setRegionModes, stubClientRegion } from '@/test-utils/region-modes';
 import { useMarketplaceShopSettings } from './useMarketplaceShopSettings';
 
 const OWNER = 'y'.repeat(52);
@@ -130,5 +137,162 @@ describe('useMarketplaceShopSettings under the region modes', () => {
       expect(CommerceController.commitUpsertShop).toHaveBeenCalledTimes(1);
       hook.unmount();
     }
+  });
+});
+
+describe('the shop country of a shop that already has one', () => {
+  async function loadExistingSeller(countryCode: string) {
+    vi.mocked(CommerceController.refreshShop).mockResolvedValue(
+      createCommerceShopFixture({ ownerPubky: OWNER, location: { countryCode } }),
+    );
+    const hook = renderHook(() => useMarketplaceShopSettings());
+    await waitFor(() => expect(hook.result.current.isLoading).toBe(false));
+    act(() => hook.result.current.form.setValue('sellerStatus', 'private'));
+    return hook;
+  }
+
+  const save = async (hook: Awaited<ReturnType<typeof loadExistingSeller>>) => {
+    let saved = false;
+    await act(async () => {
+      saved = await hook.result.current.submit();
+    });
+    return saved;
+  };
+
+  const savedCountry = () =>
+    (vi.mocked(CommerceController.commitUpsertShop).mock.calls[0]?.[0] as CommerceShopRecord | undefined)?.location
+      .countryCode;
+
+  it('cannot be changed from a visitor region inside the block, and publishes nothing', async () => {
+    setRegionModes(LAUNCH);
+    stubClientRegion('DE');
+    const hook = await loadExistingSeller('CH');
+    await waitFor(() => expect(hook.result.current.countryLockedMessage).toBe(SHOP_COUNTRY_LOCKED_MESSAGE));
+
+    setCountry(hook, 'NO');
+    expect(await save(hook)).toBe(false);
+
+    expect(hook.result.current.countryLocked).toBe(true);
+    expect(hook.result.current.form.getFieldState('countryCode').error?.message).toBe(SHOP_COUNTRY_LOCKED_MESSAGE);
+    expect(CommerceController.commitUpsertShop).not.toHaveBeenCalled();
+  });
+
+  it('keeps a blocked shop country in place from a blocked region, even when the new one is open', async () => {
+    setRegionModes(LAUNCH);
+    stubClientRegion('US');
+    const hook = await loadExistingSeller('GB');
+    await waitFor(() => expect(hook.result.current.countryLocked).toBe(true));
+
+    setCountry(hook, 'CH');
+    expect(await save(hook)).toBe(false);
+
+    expect(hook.result.current.form.getFieldState('countryCode').error?.message).toBe(SHOP_COUNTRY_LOCKED_MESSAGE);
+    expect(CommerceController.commitUpsertShop).not.toHaveBeenCalled();
+  });
+
+  it('still saves the rest of the shop from a blocked region while the country stays as it is', async () => {
+    setRegionModes(LAUNCH);
+    stubClientRegion('DE');
+    const hook = await loadExistingSeller('CH');
+    await waitFor(() => expect(hook.result.current.countryLocked).toBe(true));
+
+    act(() => hook.result.current.form.setValue('name', 'Renamed Shop', { shouldDirty: true }));
+    setCountry(hook, 'ch');
+    expect(await save(hook)).toBe(true);
+
+    expect(savedCountry()).toBe('CH');
+    expect(CommerceController.commitUpsertShop).toHaveBeenCalledWith(expect.objectContaining({ name: 'Renamed Shop' }));
+  });
+
+  it('moves a blocked shop country to an open one from a visitor region outside the block', async () => {
+    setRegionModes(LAUNCH);
+    stubClientRegion('CH');
+    const hook = await loadExistingSeller('US');
+    await waitFor(() => expect(hook.result.current.countryLocked).toBe(false));
+    expect(hook.result.current.countryLockedMessage).toBeNull();
+
+    setCountry(hook, 'NO');
+    expect(await save(hook)).toBe(true);
+
+    expect(savedCountry()).toBe('NO');
+  });
+
+  it('still refuses a blocked new country from a visitor region outside the block', async () => {
+    setRegionModes(LAUNCH);
+    stubClientRegion('CH');
+    const hook = await loadExistingSeller('NO');
+    await waitFor(() => expect(hook.result.current.countryLocked).toBe(false));
+
+    setCountry(hook, 'DE');
+    expect(await save(hook)).toBe(false);
+
+    expect(hook.result.current.form.getFieldState('countryCode').error?.message).toBe(SELLING_BLOCKED_COUNTRY_MESSAGE);
+    expect(CommerceController.commitUpsertShop).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['an unknown visitor region', null],
+    ['a visitor region that could not be read', 'fail' as const],
+  ])('cannot be changed from %s while unknown visitors are blocked', async (_label, answer) => {
+    setRegionModes(LAUNCH);
+    stubClientRegion(answer);
+    const hook = await loadExistingSeller('CH');
+    await waitFor(() => expect(hook.result.current.countryLockedMessage).toBe(SHOP_COUNTRY_LOCKED_UNKNOWN_MESSAGE));
+
+    setCountry(hook, 'NO');
+    expect(await save(hook)).toBe(false);
+
+    expect(hook.result.current.form.getFieldState('countryCode').error?.message).toBe(
+      SHOP_COUNTRY_LOCKED_UNKNOWN_MESSAGE,
+    );
+    expect(CommerceController.commitUpsertShop).not.toHaveBeenCalled();
+  });
+
+  it('changes from an unknown visitor region where unknown visitors are not blocked', async () => {
+    setRegionModes('US=blocked,UNKNOWN=open');
+    stubClientRegion(null);
+    const hook = await loadExistingSeller('CH');
+    await waitFor(() => expect(hook.result.current.countryLocked).toBe(false));
+
+    setCountry(hook, 'NO');
+    expect(await save(hook)).toBe(true);
+  });
+
+  it('waits for the visitor region before it lets the country change', async () => {
+    setRegionModes(LAUNCH);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => new Promise<Response>(() => undefined)),
+    );
+    const hook = await loadExistingSeller('CH');
+
+    expect(hook.result.current.countryLockedMessage).toBe(SHOP_COUNTRY_CHECKING_MESSAGE);
+    setCountry(hook, 'NO');
+    expect(await save(hook)).toBe(false);
+    expect(CommerceController.commitUpsertShop).not.toHaveBeenCalled();
+  });
+
+  it.each([undefined, 'none', 'EU=nuanced,GB=nuanced,US=nuanced'])(
+    'is never locked while no region is blocked (%s)',
+    async (modes) => {
+      setRegionModes(modes);
+      const fetchStub = stubClientRegion('DE');
+      const hook = await loadExistingSeller('CH');
+
+      expect(hook.result.current.countryLocked).toBe(false);
+      setCountry(hook, 'US');
+      expect(await save(hook)).toBe(true);
+      expect(fetchStub).not.toHaveBeenCalled();
+    },
+  );
+
+  it('lets a first-time seller choose a country from any region, since there is nothing to move', async () => {
+    setRegionModes(LAUNCH);
+    stubClientRegion('DE');
+    const hook = await loadFirstTimeSeller();
+    setCountry(hook, 'CH');
+
+    expect(hook.result.current.countryLocked).toBe(false);
+    expect(await save(hook)).toBe(true);
   });
 });
