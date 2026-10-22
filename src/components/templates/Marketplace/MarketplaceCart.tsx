@@ -74,7 +74,12 @@ export function MarketplaceCart() {
         </div>
 
         {commerce.blocked && commerce.message && commerce.info && (
-          <CommerceBlockedNotice message={commerce.message} info={commerce.info} testId="marketplace-cart-blocked" />
+          <CommerceBlockedNotice
+            message={commerce.message}
+            info={commerce.info}
+            source={commerce.source}
+            testId="marketplace-cart-blocked"
+          />
         )}
 
         {cart.isLoading ? (

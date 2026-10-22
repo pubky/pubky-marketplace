@@ -47,6 +47,11 @@ vi.mock('@/hooks/useMarketplaceMediaUrl/useMarketplaceMediaUrl', async () => {
   return await import('@/test/mocks/marketplace-media-hooks');
 });
 
+vi.mock('@/hooks/useSellingAvailability/useSellingAvailability', async () => {
+  const { INERT_COMMERCE_AVAILABILITY } = await import('@/libs/commerce/commerce-availability');
+  return { useSellingAvailability: () => INERT_COMMERCE_AVAILABILITY };
+});
+
 vi.mock('@/hooks/useIsMobile/useIsMobile', () => ({
   useIsMobile: () => viewport.isMobile,
 }));

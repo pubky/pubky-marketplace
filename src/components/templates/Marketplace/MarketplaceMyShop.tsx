@@ -1,5 +1,6 @@
 'use client';
 
+import { useEffect } from 'react';
 import { ExternalLink } from 'lucide-react';
 import { useWatch } from 'react-hook-form';
 import { getMarketplaceShopRoute } from '@/app/routes';
@@ -9,7 +10,9 @@ import { Heading } from '@/atoms/Heading/Heading';
 import { Link } from '@/atoms/Link/Link';
 import { Typography } from '@/atoms/Typography/Typography';
 import { useMarketplaceShopSettings } from '@/hooks/useMarketplaceShopSettings/useMarketplaceShopSettings';
+import { useSellingAvailability } from '@/hooks/useSellingAvailability/useSellingAvailability';
 import { BackToMyShop } from '@/molecules/Marketplace/BackToMyShop';
+import { SellingUnavailableNotice } from '@/molecules/Marketplace/SellingUnavailableNotice';
 import { ContentLayout } from '@/organisms/ContentLayout/ContentLayout';
 import { MarketplaceSectionNav } from '@/organisms/Marketplace/MarketplaceSectionNav';
 import { MarketplaceShopSettingsFormView } from '@/organisms/Marketplace/MarketplaceShopSettingsForm';
@@ -19,6 +22,7 @@ import { useAuthStore } from '@/stores/auth/auth.store';
 export function MarketplaceMyShop() {
   const currentUserPubky = useAuthStore((state) => state.currentUserPubky);
   const settings = useMarketplaceShopSettings();
+  const selling = useSellingAvailability();
   const [name, bio, countryCode, region, vacationMode] = useWatch({
     control: settings.form.control,
     name: ['name', 'bio', 'countryCode', 'region', 'vacationMode'],
@@ -30,6 +34,14 @@ export function MarketplaceMyShop() {
     .trim()
     .toUpperCase();
   const previewRegion = String(region ?? '').trim();
+
+  // The link from a selling notice ends at the country field: bring it into view and focus it once the form is there.
+  useEffect(() => {
+    if (settings.isLoading || window.location.hash !== '#countryCode') return;
+    const field = document.getElementById('countryCode');
+    field?.scrollIntoView({ block: 'center' });
+    field?.focus({ preventScroll: true });
+  }, [settings.isLoading]);
 
   return (
     <ContentLayout
@@ -43,6 +55,7 @@ export function MarketplaceMyShop() {
       <Container overrideDefaults className="flex w-full flex-col gap-6">
         <MarketplaceSectionNav />
         <BackToMyShop />
+        <SellingUnavailableNotice selling={selling} testId="storefront-selling-unavailable" onShopSettings />
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
             <Heading level={1} size="xl" className="text-4xl sm:text-6xl">

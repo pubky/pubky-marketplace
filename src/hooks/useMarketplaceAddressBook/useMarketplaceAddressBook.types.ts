@@ -19,6 +19,7 @@ export const marketplaceAddressFormSchema = z
     countryCode: z
       .string()
       .trim()
+      .min(1, 'Choose your country.')
       .regex(/^[A-Za-z]{2}$/, 'Use a two-letter country code.'),
   })
   .superRefine((data, context) => refinePostalAddressFields(data, context));

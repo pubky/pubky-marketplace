@@ -1,8 +1,10 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import { DELIVERY_KEY_COPY } from '@/libs/commerce/delivery-key-copy';
 import { useAuthStore } from '@/stores/auth/auth.store';
+import { useClientRegionStore } from '@/stores/client-region/client-region.store';
+import { resetRegionState, setRegionModes, stubClientRegion } from '@/test-utils/region-modes';
 import { useAuctionWinnerDeliveryAddress } from './useAuctionWinnerDeliveryAddress';
 
 const shopShipsTo = vi.hoisted(() => new Map<string, string[]>());
@@ -59,6 +61,37 @@ describe('useAuctionWinnerDeliveryAddress', () => {
       keys: new Map([[SELLER, KEY]]),
     });
     vi.mocked(CommerceController.sealDeliveryAddressForCheckout).mockResolvedValue([ENVELOPE]);
+  });
+
+  describe('where a region is blocked', () => {
+    const LAUNCH = 'EU=blocked,GB=blocked,US=blocked';
+    afterEach(() => {
+      vi.restoreAllMocks();
+      resetRegionState();
+    });
+
+    it('starts in the IP country when it is open, whatever the browser language says', async () => {
+      vi.spyOn(navigator, 'languages', 'get').mockReturnValue(['en-GB', 'en']);
+      setRegionModes(LAUNCH);
+      stubClientRegion('CH');
+      const { result } = render();
+
+      await waitFor(() => expect(result.current.form.getValues('countryCode')).toBe('CH'));
+    });
+
+    it('starts with no country when the IP country is blocked, and asks the winner to choose', async () => {
+      vi.spyOn(navigator, 'languages', 'get').mockReturnValue(['en-US', 'en']);
+      setRegionModes(LAUNCH);
+      stubClientRegion('US');
+      const { result } = render();
+      await waitFor(() => expect(useClientRegionStore.getState().status).toBe('ready'));
+
+      expect(result.current.form.getValues('countryCode')).toBe('');
+      await act(async () => {
+        await result.current.form.trigger('countryCode');
+      });
+      expect(result.current.form.getFieldState('countryCode').error?.message).toBe('Choose your country.');
+    });
   });
 
   it('seals the address to the seller key, bound to the order id', async () => {

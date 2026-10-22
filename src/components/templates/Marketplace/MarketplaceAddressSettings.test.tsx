@@ -1,8 +1,10 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MARKETPLACE_DELIVERY_ADDRESS_DISCLOSURE } from '@/config/commerce-copy';
+import { useClientRegionStore } from '@/stores/client-region/client-region.store';
 import { setHeavySuiteBudgets } from '@/test-utils/load-budget';
+import { resetRegionState, setRegionModes, stubClientRegion } from '@/test-utils/region-modes';
 import { MarketplaceAddressSettings } from './MarketplaceAddressSettings';
 
 setHeavySuiteBudgets();
@@ -34,7 +36,41 @@ vi.mock('@/organisms/ContentLayout/ContentLayout', () => ({
 }));
 
 describe('MarketplaceAddressSettings', () => {
-  afterEach(() => vi.restoreAllMocks());
+  beforeEach(() => resetRegionState());
+  afterEach(() => {
+    vi.restoreAllMocks();
+    resetRegionState();
+  });
+
+  describe('where a region is blocked', () => {
+    const LAUNCH = 'EU=blocked,GB=blocked,US=blocked';
+
+    it('starts a new address in the IP country when it is open, whatever the browser language says', async () => {
+      vi.spyOn(navigator, 'languages', 'get').mockReturnValue(['en-GB', 'en']);
+      setRegionModes(LAUNCH);
+      stubClientRegion('CH');
+      const user = userEvent.setup();
+      render(<MarketplaceAddressSettings />);
+      await waitFor(() => expect(useClientRegionStore.getState().status).toBe('ready'));
+
+      await user.click(screen.getByRole('button', { name: 'Add address' }));
+
+      expect(screen.getByRole('textbox', { name: 'Country' })).toHaveValue('CH');
+    });
+
+    it('starts a new address with no country, for the buyer to choose, when the IP country is blocked', async () => {
+      vi.spyOn(navigator, 'languages', 'get').mockReturnValue(['en-US', 'en']);
+      setRegionModes(LAUNCH);
+      stubClientRegion('US');
+      const user = userEvent.setup();
+      render(<MarketplaceAddressSettings />);
+      await waitFor(() => expect(useClientRegionStore.getState().status).toBe('ready'));
+
+      await user.click(screen.getByRole('button', { name: 'Add address' }));
+
+      expect(screen.getByRole('textbox', { name: 'Country' })).toHaveValue('');
+    });
+  });
 
   it('starts a new address in the browser country', async () => {
     vi.spyOn(navigator, 'languages', 'get').mockReturnValue(['en-GB', 'en']);

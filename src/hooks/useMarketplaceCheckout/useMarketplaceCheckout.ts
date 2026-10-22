@@ -7,6 +7,7 @@ import { useForm, type UseFormReturn, useWatch } from 'react-hook-form';
 import { getCommerceAdapterMode, getPaykitServerApi, isDurableCommerceMode } from '@/config/commerce';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import { useConnectorStoreShare } from '@/hooks/useConnectorStoreShare/useConnectorStoreShare';
+import { useDefaultAddressCountry } from '@/hooks/useDefaultAddressCountry/useDefaultAddressCountry';
 import {
   type DeliveryKeyBlock,
   type PendingDeliveryKeyChange,
@@ -48,7 +49,7 @@ import {
 import type { PaymentMethodKind } from '@/libs/commerce/payment-methods';
 import type { MarketplaceFulfillmentMethod } from '@/libs/commerce/pickup';
 import { pickupRefusalFailureMessage } from '@/libs/commerce/pickup';
-import { browserAddressCountry, canonicalCountryCode } from '@/libs/commerce/postal-address';
+import { canonicalCountryCode } from '@/libs/commerce/postal-address';
 import { isDestinationAllowed } from '@/libs/commerce/ships-to';
 import {
   buildMarketplaceListingAggregateId,
@@ -277,13 +278,24 @@ export function useMarketplaceCheckout(
     }
   }, [marketplaceSession]);
 
-  // A new address starts in the browser's country. Set after mount, so the
+  // A new address starts in the default country (the browser's, or where a region is
+  // blocked the IP country when it is open, else none). Set after mount, so the
   // server-rendered form and the first client render agree; a saved address
-  // applied below replaces it.
+  // applied below replaces it. An IP country that arrives later fills only a country
+  // still empty, never one picked, typed or taken from a saved address.
+  const defaultAddressCountry = useDefaultAddressCountry();
+  const addressCountryDefaulted = useRef(false);
   useEffect(() => {
     if (form.getFieldState('countryCode').isDirty) return;
-    form.reset({ ...form.getValues(), countryCode: browserAddressCountry() }, { keepDirtyValues: true });
-  }, [form]);
+    if (addressCountryDefaulted.current) {
+      if (defaultAddressCountry && form.getValues('countryCode') === '') {
+        form.setValue('countryCode', defaultAddressCountry);
+      }
+      return;
+    }
+    addressCountryDefaulted.current = true;
+    form.reset({ ...form.getValues(), countryCode: defaultAddressCountry }, { keepDirtyValues: true });
+  }, [form, defaultAddressCountry]);
 
   // Pre-fill once from the picker's top address (default, else last used) —
   // but never over anything the buyer already typed.

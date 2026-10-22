@@ -15,6 +15,7 @@ import {
 import { REFUND_FIXTURE_ADDRESS, REFUND_FIXTURE_TX_HASH } from '@/test/fixtures/commerce/usdt-refund.wire';
 import { setupFixedDateLocale } from '@/test-utils/date-locale';
 import { setHeavySuiteBudgets } from '@/test-utils/load-budget';
+import { resetRegionState, setRegionModes, stubClientRegion } from '@/test-utils/region-modes';
 import { MarketplaceOrders } from './MarketplaceOrders';
 
 setupFixedDateLocale();
@@ -1839,5 +1840,31 @@ describe('MarketplaceOrders shipment tracking', () => {
     const jar = (await screen.findByText(/Olive jar/)).closest('[data-slot="card"]') as HTMLElement;
     expect(within(oil).getByRole('button', { name: 'Add tracking' })).toBeInTheDocument();
     expect(within(jar).getByRole('button', { name: 'Edit tracking' })).toBeInTheDocument();
+  });
+});
+
+describe('MarketplaceOrders in a region where commerce is blocked', () => {
+  beforeEach(() => {
+    resetRegionState();
+    ordersState.currentUserPubky = CURRENT_USER;
+    ordersState.adapterMode = 'sandbox';
+    ordersState.needsSession = false;
+    ordersState.error = null;
+    setRegionModes('EU=blocked,GB=blocked,US=blocked');
+  });
+  afterEach(() => resetRegionState());
+
+  it('keeps fulfilling an existing sale: an existing order is never held for region', async () => {
+    const fetchStub = stubClientRegion('GB');
+    ordersState.orders = [orderView('paid', 'Sold paid boots', 'seller')];
+
+    render(<MarketplaceOrders />);
+    await userEvent.setup().click(screen.getByRole('tab', { name: /All 1/i }));
+
+    const card = (await screen.findByText(/Sold paid boots/)).closest('[data-slot="card"]') as HTMLElement;
+    expect(within(card).getByRole('button', { name: 'Mark shipped' })).toBeEnabled();
+    expect(screen.queryByRole('status', { name: /region/i })).not.toBeInTheDocument();
+    expect(screen.queryByText(/aren't available in your region/)).not.toBeInTheDocument();
+    expect(fetchStub).not.toHaveBeenCalled();
   });
 });

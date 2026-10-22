@@ -1,5 +1,5 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import type { MarketplaceCartItem } from '@/hooks/useMarketplaceCart/useMarketplaceCart';
 import { DELIVERY_KEY_COPY } from '@/libs/commerce/delivery-key-copy';
@@ -12,7 +12,9 @@ import { ErrorCategory, ErrorService } from '@/libs/error/error.types';
 import { resetRuntimeConfigForTests } from '@/libs/runtime-config/runtime-config';
 import { PUBKY_RUNTIME_ENV_NAMES } from '@/libs/runtime-config/runtime-config.schema';
 import { toast } from '@/molecules/Toaster/use-toast';
+import { useClientRegionStore } from '@/stores/client-region/client-region.store';
 import { useCommerceStore } from '@/stores/commerce/commerce.store';
+import { resetRegionState, setRegionModes, stubClientRegion } from '@/test-utils/region-modes';
 import { asOpaque } from '@/test-utils/type-assertions';
 import { useMarketplaceCheckout } from './useMarketplaceCheckout';
 
@@ -1068,6 +1070,88 @@ describe('useMarketplaceCheckout', () => {
     } finally {
       languages.mockRestore();
     }
+  });
+
+  describe('where a region is blocked, the address country is never taken from the browser language', () => {
+    const LAUNCH = 'EU=blocked,GB=blocked,US=blocked';
+    const open = () =>
+      renderHook(() =>
+        useMarketplaceCheckout(
+          [item],
+          vi.fn(async () => {}),
+        ),
+      );
+    let languages: ReturnType<typeof vi.spyOn>;
+
+    beforeEach(() => {
+      resetRegionState();
+      authMock.currentUserPubky = BUYER;
+      languages = vi.spyOn(navigator, 'languages', 'get').mockReturnValue(['en-GB', 'en']);
+    });
+    afterEach(() => {
+      languages.mockRestore();
+      resetRegionState();
+    });
+
+    it('starts in the IP country when that is open, with an en-GB browser', async () => {
+      setRegionModes(LAUNCH);
+      stubClientRegion('CH');
+      const { result } = open();
+
+      await waitFor(() => expect(result.current.form.getValues('countryCode')).toBe('CH'));
+      expect(result.current.form.getFieldState('countryCode').isDirty).toBe(false);
+    });
+
+    it.each([
+      ['blocked', 'GB'],
+      ['unknown', null],
+    ])('starts with no country when the IP country is %s, and asks the buyer to choose', async (_name, ip) => {
+      setRegionModes(LAUNCH);
+      stubClientRegion(ip);
+      const { result } = open();
+      await waitFor(() => expect(useClientRegionStore.getState().status).toBe('ready'));
+
+      expect(result.current.form.getValues('countryCode')).toBe('');
+      await act(async () => {
+        await result.current.form.trigger('countryCode');
+      });
+      expect(result.current.form.getFieldState('countryCode').error?.message).toBe('Choose your country.');
+    });
+
+    it('does not replace a country the buyer picked when the IP country arrives later', async () => {
+      setRegionModes(LAUNCH);
+      let answer: (response: Response) => void = () => undefined;
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(() => new Promise<Response>((resolve) => (answer = resolve))),
+      );
+      const { result } = open();
+      act(() => result.current.form.setValue('countryCode', 'DE', { shouldDirty: true }));
+
+      await act(async () => {
+        answer(new Response(JSON.stringify({ country: 'CH' }), { status: 200 }));
+      });
+      await waitFor(() => expect(useClientRegionStore.getState().country).toBe('CH'));
+      expect(result.current.form.getValues('countryCode')).toBe('DE');
+    });
+
+    it('does not replace a saved address country when the IP country arrives later', async () => {
+      setRegionModes(LAUNCH);
+      let answer: (response: Response) => void = () => undefined;
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(() => new Promise<Response>((resolve) => (answer = resolve))),
+      );
+      vi.mocked(CommerceController.getDeliveryAddresses).mockResolvedValue([savedAddress]);
+      const { result } = open();
+      await waitFor(() => expect(result.current.selectedAddressId).toBe(savedAddress.id));
+
+      await act(async () => {
+        answer(new Response(JSON.stringify({ country: 'CH' }), { status: 200 }));
+      });
+      await waitFor(() => expect(useClientRegionStore.getState().country).toBe('CH'));
+      expect(result.current.form.getValues('countryCode')).toBe('US');
+    });
   });
 
   it('prefills from the top saved address and marks it used after a successful order', async () => {

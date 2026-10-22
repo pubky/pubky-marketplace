@@ -5,6 +5,7 @@ import { useCommerceAvailability } from '@/hooks/useCommerceAvailability/useComm
 import { useSellerAnnualLimit } from '@/hooks/useSellerAnnualLimit/useSellerAnnualLimit';
 import {
   type CommerceAvailability,
+  type CommerceBlockSource,
   digitalBlockedMessage,
   shopCountryCode,
 } from '@/libs/commerce/commerce-availability';
@@ -41,7 +42,7 @@ export interface ListingRegionAvailability extends RegionAvailability {
   /** Commerce is blocked for this visitor (or the seller's country): buying is replaced by `blockedMessage`. */
   commerce: CommerceAvailability;
   /** The one line, and the text behind its info icon, that replace Buy, Offer and Bid while commerce is blocked. */
-  blockedNotice: { message: string; info: string } | null;
+  blockedNotice: { message: string; info: string; source: CommerceBlockSource | null } | null;
 }
 
 /**
@@ -94,5 +95,5 @@ export function useRegionAvailability(input: {
 
 function blockedNotice(commerce: CommerceAvailability, digital: boolean): ListingRegionAvailability['blockedNotice'] {
   const message = digital ? digitalBlockedMessage(commerce) : commerce.message;
-  return message !== null && commerce.info !== null ? { message, info: commerce.info } : null;
+  return message !== null && commerce.info !== null ? { message, info: commerce.info, source: commerce.source } : null;
 }

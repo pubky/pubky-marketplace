@@ -94,11 +94,26 @@ const view = vi.hoisted(() => ({
   isLoading: false,
   shop: null as unknown,
   unfinishedDrafts: [] as Array<{ listingId: string; title: string; updatedAt: number; ageLabel: string }>,
+  selling: {
+    active: false,
+    checking: false,
+    blocked: false,
+    held: false,
+    source: null,
+    message: null,
+    sellingMessage: null,
+    info: null,
+  } as unknown,
 }));
 
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn() }),
   usePathname: () => '/marketplace/dashboard',
+}));
+
+// The browser build has no region policy; a scene sets what the policy would say.
+vi.mock('@/hooks/useSellingAvailability/useSellingAvailability', () => ({
+  useSellingAvailability: () => view.selling,
 }));
 
 vi.mock('@/hooks/useSellerPaymentMethodGate/useSellerPaymentMethodGate', () => ({
@@ -171,7 +186,52 @@ vi.mock('@/organisms/ContentLayout/ContentLayout', () => ({
 describe('Marketplace seller dashboard — visual regression', () => {
   beforeEach(() => {
     view.unfinishedDrafts = [];
+    view.selling = {
+      active: false,
+      checking: false,
+      blocked: false,
+      held: false,
+      source: null,
+      message: null,
+      sellingMessage: null,
+      info: null,
+    };
   });
+
+  // A seller in a blocked region keeps the studio, read-only: selling is off, orders and the storefront stay.
+  it.each([
+    { name: 'desktop', viewport: VRT_VIEWPORT_DESKTOP },
+    { name: 'mobile', viewport: VRT_VIEWPORT_MOBILE },
+  ])(
+    'renders the read-only studio of a seller whose shop country is blocked at $name viewport',
+    async ({ name, viewport }) => {
+      const { listings, populatedMetrics, populatedActionNeeded, shop } = await fixtures;
+      const { evaluateCommerceAvailability } = await import('@/libs/commerce/commerce-availability');
+      const { createRegionPolicy, parseRegionModes } = await import('@/libs/commerce/region-modes');
+      const parsed = parseRegionModes('EU=blocked,GB=blocked,US=blocked');
+      if (!parsed.ok) throw new Error(parsed.error);
+      view.selling = evaluateCommerceAvailability(createRegionPolicy(parsed.entries), {
+        declaredCountry: 'GB',
+        client: { status: 'ready', country: 'CH' },
+      });
+      view.listings = listings;
+      view.metrics = populatedMetrics;
+      view.actionNeeded = populatedActionNeeded;
+      view.isLoading = false;
+      view.shop = shop;
+
+      const screen = await renderForVRT(<MarketplaceDashboard />, { viewport });
+      await vi.waitFor(() => {
+        if (!screen.container.textContent?.includes('update your shop country')) {
+          throw new Error('The selling notice has not rendered yet.');
+        }
+      });
+      await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot(
+        `dashboard-region-blocked-${name}`,
+        VRT_DENSE_CHROME_SCREENSHOT,
+      );
+    },
+  );
 
   it('renders populated metrics and inventory with row actions at desktop viewport', async () => {
     const { listings, populatedMetrics, populatedActionNeeded, shop } = await fixtures;

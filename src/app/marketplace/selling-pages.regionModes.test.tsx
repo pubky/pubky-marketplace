@@ -54,8 +54,6 @@ const LAUNCH = 'EU=blocked,GB=blocked,US=blocked';
 
 const sellingPages: Array<[string, () => Promise<React.ReactElement> | React.ReactElement, string]> = [
   ['Sell', () => <SellPage />, 'page: sell'],
-  ['the seller studio', () => <DashboardPage />, 'page: studio'],
-  ['My storefront', () => <StorefrontPage />, 'page: storefront'],
   ['inventory', () => <InventoryPage />, 'page: inventory'],
   ['inventory automations', () => <AutomationsPage />, 'page: automations'],
   ['Get paid settings', () => <PaymentSettingsPage />, 'page: get paid'],
@@ -88,15 +86,30 @@ afterEach(() => {
 });
 
 describe('the seller pages of the Market', () => {
-  it('opens My storefront to a seller in an open country whose shop is in a blocked one, to change the country', async () => {
+  it.each([
+    ['an open country with a shop in a blocked one', 'CH', 'US'],
+    ['a blocked country with a shop in an open one', 'US', 'CH'],
+    ['a blocked country with a shop in a blocked one', 'GB', 'GB'],
+  ])('keeps My storefront open to change the shop country, from %s', async (_name, ip, shopCountry) => {
     setRegionModes(LAUNCH);
-    stubClientRegion('CH');
-    vi.mocked(CommerceController.getShop).mockResolvedValue(asOpaque({ record: { location: { countryCode: 'US' } } }));
+    stubClientRegion(ip);
+    vi.mocked(CommerceController.getShop).mockResolvedValue(
+      asOpaque({ record: { location: { countryCode: shopCountry } } }),
+    );
     render(<StorefrontPage />);
 
     expect(await screen.findByText('page: storefront')).toBeInTheDocument();
     expect(screen.queryByTestId('selling-unavailable')).not.toBeInTheDocument();
     vi.mocked(CommerceController.getShop).mockResolvedValue(null);
+  });
+
+  it.each(['US', 'CH'])('keeps the seller studio open read-only, from %s', async (ip) => {
+    setRegionModes(LAUNCH);
+    stubClientRegion(ip);
+    render(<DashboardPage />);
+
+    expect(await screen.findByText('page: studio')).toBeInTheDocument();
+    expect(screen.queryByTestId('selling-unavailable')).not.toBeInTheDocument();
   });
 
   describe.each(sellingPages)('%s', (_name, page, marker) => {

@@ -738,6 +738,7 @@ function MarketplaceCartCheckout() {
           <CommerceBlockedNotice
             message={region.commerce.message}
             info={region.commerce.info}
+            source={region.commerce.source}
             testId="marketplace-checkout-blocked"
           />
         )}

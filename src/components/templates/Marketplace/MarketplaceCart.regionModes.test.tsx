@@ -1,6 +1,9 @@
 import { render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { COMMERCE_BLOCKED_MESSAGE, COMMERCE_UNKNOWN_REGION_MESSAGE } from '@/libs/commerce/region-modes';
+import { useAuthStore } from '@/stores/auth/auth.store';
+import { useBuyerCountryStore } from '@/stores/buyer-country/buyer-country.store';
 import { resetRegionState, setRegionModes, stubClientRegion } from '@/test-utils/region-modes';
 import { MarketplaceCart } from './MarketplaceCart';
 
@@ -128,5 +131,93 @@ describe('MarketplaceCart under the region modes', () => {
     expect(checkout().closest('a')).not.toBeNull();
     expect(screen.queryByTestId('marketplace-cart-blocked')).not.toBeInTheDocument();
     expect(fetchStub).not.toHaveBeenCalled();
+  });
+
+  describe('a country saved on this device', () => {
+    const BUYER = 'b'.repeat(52);
+
+    beforeEach(() => {
+      useAuthStore.setState({ currentUserPubky: BUYER });
+      useBuyerCountryStore.setState({ country: 'GB', owner: BUYER });
+    });
+    afterEach(() => useAuthStore.setState({ currentUserPubky: null }));
+
+    it('blocks the buyer from an open country, and names it with a way to change it', async () => {
+      setRegionModes(LAUNCH);
+      stubClientRegion('CH');
+      render(<MarketplaceCart />);
+
+      expect(await screen.findByTestId('marketplace-cart-blocked')).toHaveTextContent(COMMERCE_BLOCKED_MESSAGE);
+      expect(screen.getByTestId('marketplace-cart-blocked-country')).toHaveTextContent(
+        'Country you live in: United Kingdom',
+      );
+      expect(checkout()).toBeDisabled();
+    });
+
+    it('unblocks Checkout once the buyer changes it to an open country', async () => {
+      const user = userEvent.setup();
+      setRegionModes(LAUNCH);
+      stubClientRegion('CH');
+      render(<MarketplaceCart />);
+
+      await user.click(await screen.findByRole('button', { name: 'Change' }));
+      const field = screen.getByLabelText('Country you live in');
+      await user.clear(field);
+      await user.type(field, 'CH{Enter}');
+
+      await waitFor(() => expect(checkout().closest('a')).not.toBeNull());
+      expect(screen.queryByTestId('marketplace-cart-blocked')).not.toBeInTheDocument();
+      expect(useBuyerCountryStore.getState()).toMatchObject({ country: 'CH', owner: BUYER });
+    });
+
+    it('unblocks Checkout once the buyer clears it, when where they are is open', async () => {
+      const user = userEvent.setup();
+      setRegionModes(LAUNCH);
+      stubClientRegion('CH');
+      render(<MarketplaceCart />);
+
+      await user.click(await screen.findByRole('button', { name: 'Change' }));
+      await user.click(screen.getByRole('button', { name: 'Clear my country' }));
+
+      await waitFor(() => expect(checkout().closest('a')).not.toBeNull());
+      expect(useBuyerCountryStore.getState().country).toBeNull();
+    });
+
+    it('stays blocked, on the visitor region alone, after clearing it where the region is blocked', async () => {
+      const user = userEvent.setup();
+      setRegionModes(LAUNCH);
+      stubClientRegion('GB');
+      render(<MarketplaceCart />);
+
+      await user.click(await screen.findByRole('button', { name: 'Change' }));
+      await user.click(screen.getByRole('button', { name: 'Clear my country' }));
+
+      await waitFor(() => expect(screen.queryByRole('button', { name: 'Change' })).not.toBeInTheDocument());
+      expect(screen.getByTestId('marketplace-cart-blocked')).toHaveTextContent(COMMERCE_BLOCKED_MESSAGE);
+      expect(checkout()).toBeDisabled();
+    });
+
+    it('leaves an open-region blocked visitor with no country line, since none was saved', async () => {
+      useBuyerCountryStore.setState({ country: null, owner: null });
+      setRegionModes(LAUNCH);
+      stubClientRegion('GB');
+      render(<MarketplaceCart />);
+
+      expect(await screen.findByTestId('marketplace-cart-blocked')).toBeInTheDocument();
+      expect(screen.queryByTestId('marketplace-cart-blocked-country')).not.toBeInTheDocument();
+    });
+
+    it('lets the buyer cancel without changing anything', async () => {
+      const user = userEvent.setup();
+      setRegionModes(LAUNCH);
+      stubClientRegion('CH');
+      render(<MarketplaceCart />);
+
+      await user.click(await screen.findByRole('button', { name: 'Change' }));
+      await user.click(screen.getByRole('button', { name: 'Cancel' }));
+
+      expect(screen.getByRole('button', { name: 'Change' })).toBeInTheDocument();
+      expect(useBuyerCountryStore.getState().country).toBe('GB');
+    });
   });
 });

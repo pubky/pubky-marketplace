@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { Button } from '@/atoms/Button/Button';
 import { Typography } from '@/atoms/Typography/Typography';
 import type { RegionAvailability } from '@/hooks/useRegionAvailability/useRegionAvailability';
+import type { CommerceBlockSource } from '@/libs/commerce/commerce-availability';
 import { BUYER_COUNTRY_DIGITAL_INFO, BUYER_COUNTRY_PROMPT } from '@/libs/commerce/eu-region';
 import { countryDisplayName } from '@/libs/commerce/ships-to';
 import { BuyerCountryField } from './BuyerCountryField';
@@ -26,11 +27,18 @@ export function RegionAvailabilityNotice({
   testIdPrefix: string;
   countryFieldId?: string;
   /** Commerce is blocked in this region: the one line replaces everything else. */
-  blocked?: { message: string; info: string } | null;
+  blocked?: { message: string; info: string; source?: CommerceBlockSource | null } | null;
 }) {
   const [editing, setEditing] = useState(false);
   if (blocked) {
-    return <CommerceBlockedNotice message={blocked.message} info={blocked.info} testId={`${testIdPrefix}-blocked`} />;
+    return (
+      <CommerceBlockedNotice
+        message={blocked.message}
+        info={blocked.info}
+        source={blocked.source}
+        testId={`${testIdPrefix}-blocked`}
+      />
+    );
   }
   const showsField = region.needsCountry || region.canChangeCountry || editing;
   const showsCountry = !showsField && region.buyerCountry !== null && region.usesCountry;

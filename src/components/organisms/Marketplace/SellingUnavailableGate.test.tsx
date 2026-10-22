@@ -73,32 +73,34 @@ describe('SellingUnavailableGate', () => {
     expect(screen.queryByText('the seller studio')).not.toBeInTheDocument();
   });
 
-  it('can leave the shop country out, so a seller with a blocked shop country can still change it', async () => {
+  it('tells a seller whose shop country is the reason to update it, with a link to the field', async () => {
     setRegionModes(LAUNCH);
     stubClientRegion('CH');
-    ownShopIn('US');
-    render(
-      <SellingUnavailableGate byShopCountry={false}>
-        <p>the storefront settings</p>
-      </SellingUnavailableGate>,
-    );
+    ownShopIn('GB');
+    renderGate();
 
-    expect(await screen.findByText('the storefront settings')).toBeInTheDocument();
-    expect(CommerceController.getShop).not.toHaveBeenCalled();
+    const gate = await screen.findByTestId('selling-unavailable');
+    expect(gate).toHaveTextContent(SELLING_BLOCKED_MESSAGE);
+    expect(screen.getByTestId('selling-unavailable-hint')).toHaveTextContent(
+      "If you've moved, update your shop country.",
+    );
+    expect(screen.getByRole('link', { name: 'update your shop country' })).toHaveAttribute(
+      'href',
+      '/marketplace/storefront#countryCode',
+    );
+    expect(screen.getByRole('link', { name: BACK_TO_MARKET_LABEL })).toBeInTheDocument();
   });
 
-  it('still blocks by IP country when the shop country is left out', async () => {
+  it('does not suggest a new shop country when only the visitor region is the reason', async () => {
     setRegionModes(LAUNCH);
     stubClientRegion('US');
     ownShopIn('CH');
-    render(
-      <SellingUnavailableGate byShopCountry={false}>
-        <p>the storefront settings</p>
-      </SellingUnavailableGate>,
-    );
+    renderGate();
 
-    expect(await screen.findByTestId('selling-unavailable')).toHaveTextContent(SELLING_BLOCKED_MESSAGE);
-    expect(screen.queryByText('the storefront settings')).not.toBeInTheDocument();
+    const gate = await screen.findByTestId('selling-unavailable');
+    expect(gate).toHaveTextContent(SELLING_BLOCKED_MESSAGE);
+    expect(screen.queryByTestId('selling-unavailable-hint')).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'update your shop country' })).not.toBeInTheDocument();
   });
 
   it('says the location cannot be told for an unknown seller, with no suggestion to use a VPN', async () => {
