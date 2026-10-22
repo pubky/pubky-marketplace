@@ -307,12 +307,23 @@ const nexusReviewResponseDetailsSchema = z.object({
   revision: z.number().int().positive(),
 });
 
-const nexusReviewStreamSchema = z.array(
+const nexusReviewEntriesSchema = z.array(
   z.object({
     review: nexusReviewDetailsSchema,
     response: nexusReviewResponseDetailsSchema.nullable(),
   }),
 );
+
+/**
+ * A review stream is a bare list until a filter or sort parameter is sent
+ * (and always from an index before IX4), then the `{reviews, matched}`
+ * envelope. `matched` is not read here: header figures stay the counted
+ * figures of the whole scope, so a malformed `matched` never costs the list.
+ */
+const nexusReviewStreamSchema = z.union([
+  nexusReviewEntriesSchema.transform((reviews) => ({ reviews, envelope: false })),
+  z.object({ reviews: nexusReviewEntriesSchema }).transform(({ reviews }) => ({ reviews, envelope: true })),
+]);
 
 const nexusReputationSummarySchema = z.object({
   count: z.number().int().nonnegative(),
@@ -484,8 +495,17 @@ export class CommerceRecordNormalizer {
    * ingest; attestor TRUST is applied at display time, not here.
    */
   static nexusReviewStream(input: unknown): CommerceIndexedReview[] {
-    const entries = this.parse(nexusReviewStreamSchema, input, 'nexusReviewStream');
-    return entries.map(({ review, response }) => ({
+    return this.nexusReviewPage(input).reviews;
+  }
+
+  /**
+   * `nexusReviewStream` for either answer shape, also telling which one the
+   * index served: `envelope` is true only for the `{reviews, matched}` form,
+   * which an index answers when it honoured a sort or filter parameter.
+   */
+  static nexusReviewPage(input: unknown): { reviews: CommerceIndexedReview[]; envelope: boolean } {
+    const { reviews: entries, envelope } = this.parse(nexusReviewStreamSchema, input, 'nexusReviewStream');
+    const reviews: CommerceIndexedReview[] = entries.map(({ review, response }) => ({
       reviewId: review.review_id,
       uri: this.reviewUri(review.reviewer_id, review.review_id),
       reviewerId: review.reviewer_id,
@@ -516,6 +536,7 @@ export class CommerceRecordNormalizer {
               revision: response.revision,
             },
     }));
+    return { reviews, envelope };
   }
 
   /** Validates a Nexus `v0/shop/{seller}/reputation` payload. */

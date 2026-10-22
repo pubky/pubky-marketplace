@@ -124,6 +124,7 @@ import {
 } from '@/libs/commerce/priv-envelope';
 import type { MarketplacePrivKeysResult } from '@/libs/commerce/priv-keys';
 import { attestorWindowsParam } from '@/libs/commerce/review-counting';
+import type { MarketplaceReviewSortParam } from '@/libs/commerce/review-sort';
 import { createCommerceSandboxCatalog } from '@/libs/commerce/sandbox-catalog';
 import {
   buildMarketplaceCheckoutAggregateId,
@@ -502,10 +503,27 @@ function ownReviewRemovalTarget(payload: unknown): { orderId: string; listingId?
   return parsed.success ? { orderId: parsed.data.orderId, listingId: parsed.data.listingId } : null;
 }
 
-/** A review-list page, or the honest signal that no review index serves this deployment. */
+/**
+ * A review-list page, or the honest signal that no review index serves this
+ * deployment. `sortApplied` is true only when the index answered a requested
+ * sort in its envelope form; false for a list read without a sort and for an
+ * index that ignored the parameter (before IX4), whose list is newest first.
+ */
 export type CommerceIndexedReviewsResult =
-  | { status: 'ok'; reviews: CommerceIndexedReview[] }
+  | { status: 'ok'; reviews: CommerceIndexedReview[]; sortApplied: boolean }
   | { status: 'unavailable' };
+
+/** One page of a review list; `sort` is the parameter to send, absent for the default order. */
+export interface CommerceReviewsPage {
+  skip?: number;
+  limit?: number;
+  sort?: MarketplaceReviewSortParam;
+}
+
+function reviewsResult(payload: unknown, page: CommerceReviewsPage): CommerceIndexedReviewsResult {
+  const { reviews, envelope } = CommerceRecordNormalizer.nexusReviewPage(payload);
+  return { status: 'ok', reviews, sortApplied: page.sort !== undefined && envelope };
+}
 
 type CommerceListingWithProjection = CommerceListingModelSchema & {
   /** What a buyer can take now; `null` while unknown, and for made-to-order stock, which has no count. */
@@ -4826,18 +4844,18 @@ export class CommerceApplication {
 
   /**
    * A page of indexed reviews about a seller (with joined seller responses),
-   * newest-indexed first. `unavailable` means the index does not serve
-   * review routes (old deployment or unreachable) — callers render no
-   * review section rather than an empty one.
+   * newest-indexed first unless the page names a sort. `unavailable` means
+   * the index does not serve review routes (old deployment or unreachable) —
+   * callers render no review section rather than an empty one.
    */
   static async fetchSellerReviews(
     sellerPubky: string,
-    page: { skip?: number; limit?: number } = {},
+    page: CommerceReviewsPage = {},
   ): Promise<CommerceIndexedReviewsResult> {
     if (getCommerceAdapterMode() === 'sandbox') return { status: 'unavailable' };
     try {
       const payload = await NexusMarketplaceService.fetchShopReviews({ seller_id: sellerPubky, ...page });
-      return { status: 'ok', reviews: CommerceRecordNormalizer.nexusReviewStream(payload) };
+      return reviewsResult(payload, page);
     } catch (error) {
       Logger.warn('Seller reviews fetch failed; rendering no review section', { sellerPubky, error });
       return { status: 'unavailable' };
@@ -4848,7 +4866,7 @@ export class CommerceApplication {
   static async fetchListingReviews(
     sellerPubky: string,
     listingId: string,
-    page: { skip?: number; limit?: number } = {},
+    page: CommerceReviewsPage = {},
   ): Promise<CommerceIndexedReviewsResult> {
     if (getCommerceAdapterMode() === 'sandbox') return { status: 'unavailable' };
     try {
@@ -4857,7 +4875,7 @@ export class CommerceApplication {
         listing_id: listingId,
         ...page,
       });
-      return { status: 'ok', reviews: CommerceRecordNormalizer.nexusReviewStream(payload) };
+      return reviewsResult(payload, page);
     } catch (error) {
       Logger.warn('Listing reviews fetch failed; rendering no review section', { sellerPubky, listingId, error });
       return { status: 'unavailable' };

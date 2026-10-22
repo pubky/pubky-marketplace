@@ -13,9 +13,10 @@ import {
 } from '@/atoms/DropdownMenu/DropdownMenu';
 import { Heading } from '@/atoms/Heading/Heading';
 import { Link } from '@/atoms/Link/Link';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/atoms/Select/Select';
 import { Textarea } from '@/atoms/Textarea/Textarea';
 import { Typography } from '@/atoms/Typography/Typography';
-import { REVIEW_MODERATION_COPY } from '@/config/commerce-copy';
+import { REVIEW_MODERATION_COPY, REVIEW_SORT_COPY } from '@/config/commerce-copy';
 import { isSocialLinkOutEnabled } from '@/config/social';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import { useMarketplaceFirstMediaUrl } from '@/hooks/useMarketplaceMediaUrl/useMarketplaceMediaUrl';
@@ -23,6 +24,7 @@ import { useMarketplaceReviews } from '@/hooks/useMarketplaceReviews/useMarketpl
 import { useRequireAuth } from '@/hooks/useRequireAuth/useRequireAuth';
 import { VERIFIED_PURCHASE_INFO, VERIFIED_PURCHASE_INFO_LABEL } from '@/libs/commerce/eu-region';
 import { indexedReviewTrustedAttestor, isCountedIndexedReview } from '@/libs/commerce/review-counting';
+import { isMarketplaceReviewSort, MARKETPLACE_REVIEW_SORTS } from '@/libs/commerce/review-sort';
 import { cn } from '@/libs/utils/utils';
 import type { CommerceIndexedReview, CommerceReviewResponseModelSchema } from '@/models/commerce/commerce.schema';
 import { InfoHint } from '@/molecules/InfoHint/InfoHint';
@@ -32,6 +34,7 @@ import { ProfileOnPubkyLink } from '@/molecules/ProfileOnPubkyLink/ProfileOnPubk
 import { toast } from '@/molecules/Toaster/use-toast';
 import { DialogReportPost } from '@/organisms/DialogReportPost/DialogReportPost';
 import { useAuthStore } from '@/stores/auth/auth.store';
+import { MarketplaceReviewsListSkeleton } from './MarketplaceReviewsSection.skeleton';
 
 export interface MarketplaceReviewsSectionProps {
   sellerPubky: string;
@@ -62,6 +65,12 @@ export interface MarketplaceReviewsSectionProps {
  *   stars and shows the reason instead of the text, and still counts.
  *   Every review but the reader's own offers "Report review".
  *
+ * - Sort: a control above the list orders it (Newest by default, then
+ *   Highest-value purchases, Highest rated, Lowest rated). It reorders the
+ *   list only; the figures in the page header are those of every counted
+ *   review and never change with the order. It is hidden when the index
+ *   cannot sort, and with a single review there is nothing to order.
+ *
  * When no review-aware index serves this deployment the section renders
  * nothing at all — absence, not an empty claim.
  */
@@ -71,7 +80,8 @@ export function MarketplaceReviewsSection({
   className,
   infoCard = false,
 }: MarketplaceReviewsSectionProps) {
-  const { status, reviews, isFetching, hasMore, loadMore } = useMarketplaceReviews({ sellerPubky, listingId });
+  const { status, reviews, isFetching, isReordering, hasMore, loadMore, sort, setSort, sortSupported } =
+    useMarketplaceReviews({ sellerPubky, listingId });
   const currentUserPubky = useAuthStore((state) => state.currentUserPubky);
 
   if (status === 'unavailable' || status === 'loading') return null;
@@ -108,13 +118,40 @@ export function MarketplaceReviewsSection({
           >
             Reviews
           </Heading>
-          {reviews.length > 0 && (
+          {(reviews.length > 0 || isReordering) && (
             <InfoHint label={VERIFIED_PURCHASE_INFO_LABEL} data-testid="marketplace-reviews-verified-info">
               {VERIFIED_PURCHASE_INFO}
             </InfoHint>
           )}
+          {sortSupported && (reviews.length > 1 || hasMore || isReordering) && (
+            <Select
+              value={sort}
+              onValueChange={(value) => {
+                if (isMarketplaceReviewSort(value)) setSort(value);
+              }}
+            >
+              <SelectTrigger
+                size="sm"
+                theme="secondary"
+                className="ml-auto text-xs"
+                aria-label={REVIEW_SORT_COPY.label}
+                data-testid="marketplace-reviews-sort"
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent align="end">
+                {MARKETPLACE_REVIEW_SORTS.map((option) => (
+                  <SelectItem key={option} value={option}>
+                    {REVIEW_SORT_COPY.options[option]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
         </div>
-        {reviews.length === 0 ? (
+        {isReordering ? (
+          <MarketplaceReviewsListSkeleton />
+        ) : reviews.length === 0 ? (
           <Typography
             as="p"
             overrideDefaults

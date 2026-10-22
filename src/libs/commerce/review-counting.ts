@@ -38,6 +38,14 @@ export interface CountedReputation {
   reviews: number;
   /** Mean over buyers of each buyer's mean item stars; null without counted buyers. */
   itemRating: number | null;
+  /**
+   * The price-weighted mean of the buyers' mean item stars (`weightedSum /
+   * weightTotal`, a buyer weighing their largest review weight). Null unless
+   * some buyer's weight is above 1: the index weighs a review without a
+   * `price_decade` claim 1, so figures without a heavier buyer carry no
+   * purchase-value information and the line is not shown.
+   */
+  weightedItemRating: number | null;
   /** Buyers with a seller rating (RV2). Zero outside the seller scope. */
   sellerBuyers: number;
   /** Mean over buyers of their mean order seller score (RV2); null without one. */
@@ -124,6 +132,8 @@ function countedFromBuckets(buckets: readonly CommerceReputationBucket[]): Count
   let orders = 0;
   let reviews = 0;
   let sumBuyerMeans = 0;
+  let weightedSum = 0;
+  let weightTotal = 0;
   let sellerBuyers = 0;
   let sumSellerBuyerMeans = 0;
   for (const bucket of buckets) {
@@ -131,6 +141,8 @@ function countedFromBuckets(buckets: readonly CommerceReputationBucket[]): Count
     orders += bucket.orders;
     reviews += bucket.histogram.reduce((total, count) => total + count, 0);
     sumBuyerMeans += bucket.sumBuyerMeans;
+    weightedSum += bucket.weightedSum;
+    weightTotal += bucket.weightTotal;
     sellerBuyers += bucket.sellerBuyers ?? 0;
     sumSellerBuyerMeans += bucket.sumSellerBuyerMeans ?? 0;
   }
@@ -139,6 +151,7 @@ function countedFromBuckets(buckets: readonly CommerceReputationBucket[]): Count
     orders,
     reviews,
     itemRating: buyers > 0 ? sumBuyerMeans / buyers : null,
+    weightedItemRating: buyers > 0 && weightTotal > buyers ? weightedSum / weightTotal : null,
     sellerBuyers,
     sellerRating: sellerBuyers > 0 ? sumSellerBuyerMeans / sellerBuyers : null,
   };

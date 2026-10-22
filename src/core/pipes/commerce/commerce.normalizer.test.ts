@@ -437,6 +437,47 @@ describe('CommerceRecordNormalizer', () => {
       expect(() => CommerceRecordNormalizer.nexusReviewStream([reviewEntry({ iat: 1, price_weight: 6 })])).toThrow();
     });
 
+    describe('answer shapes', () => {
+      const listed = () => [
+        reviewEntry({ rating_overall: 5 }),
+        reviewEntry({ review_id: '8Z8CWH8NVYQY39ZEBFGKQWWEKH' }),
+      ];
+
+      it('reads a bare list (no sort or filter parameter, or an index before IX4)', () => {
+        const page = CommerceRecordNormalizer.nexusReviewPage(listed());
+
+        expect(page.envelope).toBe(false);
+        expect(page.reviews.map(({ reviewId }) => reviewId)).toEqual([
+          '8Z8CWH8NVYQY39ZEBFGKQWWEKG',
+          '8Z8CWH8NVYQY39ZEBFGKQWWEKH',
+        ]);
+      });
+
+      it('reads the {reviews, matched} envelope to the same reviews, in the same order', () => {
+        const page = CommerceRecordNormalizer.nexusReviewPage({
+          reviews: listed(),
+          matched: { buyers: 2, orders: 2, avg: 3.5, seller_buyers: 1, seller_avg: 4 },
+        });
+
+        expect(page.envelope).toBe(true);
+        expect(page.reviews).toEqual(CommerceRecordNormalizer.nexusReviewPage(listed()).reviews);
+        expect(CommerceRecordNormalizer.nexusReviewStream({ reviews: listed(), matched: { buyers: 0 } })).toHaveLength(
+          2,
+        );
+      });
+
+      it('reads an empty envelope, with a null average, and an empty bare list', () => {
+        expect(
+          CommerceRecordNormalizer.nexusReviewPage({ reviews: [], matched: { buyers: 0, orders: 0, avg: null } }),
+        ).toEqual({ reviews: [], envelope: true });
+        expect(CommerceRecordNormalizer.nexusReviewPage([])).toEqual({ reviews: [], envelope: false });
+      });
+
+      it('rejects an envelope whose reviews are malformed', () => {
+        expect(() => CommerceRecordNormalizer.nexusReviewPage({ reviews: [{ review: {} }], matched: {} })).toThrow();
+      });
+    });
+
     it('rejects a moderation state the frozen contract does not define', () => {
       expect(() =>
         CommerceRecordNormalizer.nexusReviewStream([reviewEntry({ moderation: { state: 'hidden', reason: 'x' } })]),
