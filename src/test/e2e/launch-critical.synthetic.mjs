@@ -60,7 +60,23 @@ function sameCapabilities(actual, expected) {
   );
 }
 
-export async function installSyntheticLaunchFixture({ context, baseUrl, serviceUrl, nexusUrl, root }) {
+/**
+ * `clientRegion` is the visitor country the Shop's `/api/marketplace/client-region` route answers
+ * (an uppercase ISO alpha-2 code), or null when the edge cannot tell: what a launch run with a
+ * region policy needs from the fixture.
+ */
+export async function installSyntheticLaunchFixture({
+  context,
+  baseUrl,
+  serviceUrl,
+  nexusUrl,
+  root,
+  clientRegion = /** @type {string | null} */ (null),
+}) {
+  assert(
+    clientRegion === null || /^[A-Z]{2}$/.test(clientRegion),
+    'The synthetic client region is null or an ISO alpha-2 code',
+  );
   const origin = localOrigin(baseUrl, 'Synthetic launch app');
   const nexusOrigin = localOrigin(nexusUrl, 'Synthetic launch Nexus');
   const serviceOrigin = new URL(serviceUrl).origin;
@@ -321,6 +337,8 @@ export async function installSyntheticLaunchFixture({ context, baseUrl, serviceU
         const endpoint = url.pathname.slice(url.pathname.indexOf('/api/'));
         if (endpoint === '/api/fx-rate' && method === 'GET')
           return await reply({ status: 503, json: { error: 'synthetic_rate_unavailable' } });
+        if (endpoint === '/api/marketplace/client-region' && method === 'GET')
+          return await reply({ json: { country: clientRegion } });
         if (endpoint === '/api/marketplace/session' && method === 'DELETE') return await reply({ status: 204 });
         if (endpoint === '/api/marketplace/bootstrap-challenges' && method === 'POST') {
           if (request.postDataJSON().pubky !== SELLER) return await reject('bootstrap_identity_mismatch');

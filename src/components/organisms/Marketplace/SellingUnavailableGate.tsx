@@ -19,8 +19,15 @@ import { ContentLayout } from '@/organisms/ContentLayout/ContentLayout';
  * everywhere else it renders the page untouched. While the visitor's region is still being read it
  * shows nothing rather than flashing the studio.
  */
-export function SellingUnavailableGate({ children }: { children: ReactNode }) {
-  const selling = useSellingAvailability();
+export function SellingUnavailableGate({
+  children,
+  byShopCountry = true,
+}: {
+  children: ReactNode;
+  /** Off for the page where the seller changes the shop country, so a blocked shop country is no dead end. */
+  byShopCountry?: boolean;
+}) {
+  const selling = useSellingAvailability({ byShopCountry });
 
   if (!selling.held) return <>{children}</>;
 

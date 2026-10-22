@@ -1043,6 +1043,7 @@ async function main() {
       serviceUrl: SERVICE_URL,
       nexusUrl: NEXUS_URL,
       root: ROOT,
+      clientRegion: process.env.LAUNCH_E2E_CLIENT_REGION?.trim().toUpperCase() || null,
     });
   } else {
     await installStagingServiceProxy(page);

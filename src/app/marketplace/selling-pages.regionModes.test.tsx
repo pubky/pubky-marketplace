@@ -1,8 +1,10 @@
 import { render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { CommerceController } from '@/controllers/commerce/commerce';
 import { SELLING_BLOCKED_MESSAGE } from '@/libs/commerce/region-modes';
 import { useAuthStore } from '@/stores/auth/auth.store';
 import { resetRegionState, setRegionModes, stubClientRegion } from '@/test-utils/region-modes';
+import { asOpaque } from '@/test-utils/type-assertions';
 import AutomationsPage from './dashboard/inventory/automations/page';
 import InventoryPage from './dashboard/inventory/page';
 import DashboardPage from './dashboard/page';
@@ -13,6 +15,7 @@ import SellPage from './sell/page';
 import PaymentSettingsPage from './settings/page';
 import ConnectorCatalogPage from './settings/store-connections/[connectionId]/page';
 import StoreConnectionsPage from './settings/store-connections/page';
+import StorefrontPage from './storefront/page';
 
 vi.mock('@/controllers/commerce/commerce', () => ({
   CommerceController: { getShop: vi.fn(async () => null) },
@@ -23,6 +26,7 @@ vi.mock('@/organisms/ContentLayout/ContentLayout', () => ({
 }));
 
 vi.mock('@/templates/Marketplace/MarketplaceSell', () => ({ MarketplaceSell: () => <p>page: sell</p> }));
+vi.mock('@/templates/Marketplace/MarketplaceMyShop', () => ({ MarketplaceMyShop: () => <p>page: storefront</p> }));
 vi.mock('@/templates/Marketplace/MarketplaceDashboard', () => ({ MarketplaceDashboard: () => <p>page: studio</p> }));
 vi.mock('@/templates/Marketplace/MarketplaceInventory', () => ({ MarketplaceInventory: () => <p>page: inventory</p> }));
 vi.mock('@/templates/Marketplace/MarketplaceInventoryAutomations', () => ({
@@ -51,6 +55,7 @@ const LAUNCH = 'EU=blocked,GB=blocked,US=blocked';
 const sellingPages: Array<[string, () => Promise<React.ReactElement> | React.ReactElement, string]> = [
   ['Sell', () => <SellPage />, 'page: sell'],
   ['the seller studio', () => <DashboardPage />, 'page: studio'],
+  ['My storefront', () => <StorefrontPage />, 'page: storefront'],
   ['inventory', () => <InventoryPage />, 'page: inventory'],
   ['inventory automations', () => <AutomationsPage />, 'page: automations'],
   ['Get paid settings', () => <PaymentSettingsPage />, 'page: get paid'],
@@ -83,6 +88,17 @@ afterEach(() => {
 });
 
 describe('the seller pages of the Market', () => {
+  it('opens My storefront to a seller in an open country whose shop is in a blocked one, to change the country', async () => {
+    setRegionModes(LAUNCH);
+    stubClientRegion('CH');
+    vi.mocked(CommerceController.getShop).mockResolvedValue(asOpaque({ record: { location: { countryCode: 'US' } } }));
+    render(<StorefrontPage />);
+
+    expect(await screen.findByText('page: storefront')).toBeInTheDocument();
+    expect(screen.queryByTestId('selling-unavailable')).not.toBeInTheDocument();
+    vi.mocked(CommerceController.getShop).mockResolvedValue(null);
+  });
+
   describe.each(sellingPages)('%s', (_name, page, marker) => {
     it('shows the selling line and a way back to the Market in a blocked region, not the page', async () => {
       setRegionModes(LAUNCH);

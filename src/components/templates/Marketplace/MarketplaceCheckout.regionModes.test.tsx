@@ -435,17 +435,58 @@ describe('MarketplaceCheckout under the region modes', () => {
   afterEach(() => resetRegionState());
 
   const pay = () => screen.getByTestId('marketplace-checkout-pay');
+  const approvalCard = () => screen.queryByRole('heading', { name: 'Enable purchases' });
+  const paymentMethods = () => screen.queryByTestId('marketplace-checkout-payment-method');
+  const needApproval = () => {
+    view.adapterMode = 'transaction-service';
+    view.hasMarketplaceSession = false;
+  };
 
-  it('disables Pay and shows the one line with an info icon for a visitor in a blocked region', async () => {
+  it('shows the one line with an info icon and no way to pay for a visitor in a blocked region', async () => {
     setRegionModes(LAUNCH);
     stubClientRegion('US');
     render(<MarketplaceCheckout />);
 
     expect(await screen.findByTestId('marketplace-checkout-blocked')).toHaveTextContent(COMMERCE_BLOCKED_MESSAGE);
     expect(screen.getByRole('button', { name: 'About this limit' })).toBeInTheDocument();
-    expect(pay()).toBeDisabled();
-    expect(document.getElementById('checkout-pay-reason')).toHaveTextContent(COMMERCE_BLOCKED_MESSAGE);
+    expect(paymentMethods()).not.toBeInTheDocument();
+    expect(screen.queryByTestId('marketplace-checkout-pay')).not.toBeInTheDocument();
+    expect(screen.queryByRole('group', { name: 'Payment method' })).not.toBeInTheDocument();
     expect(screen.queryByTestId('checkout-region-refusal')).not.toBeInTheDocument();
+  });
+
+  it('does not invite an approval in a blocked region, and keeps the order summary', async () => {
+    needApproval();
+    setRegionModes(LAUNCH);
+    stubClientRegion('DE');
+    render(<MarketplaceCheckout />);
+
+    await screen.findByTestId('marketplace-checkout-blocked');
+    expect(approvalCard()).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Authorize' })).not.toBeInTheDocument();
+    expect(screen.getByTestId('marketplace-checkout-summary')).toBeInTheDocument();
+  });
+
+  it('still asks a visitor from an open country to approve, and shows the payment methods', async () => {
+    needApproval();
+    setRegionModes(LAUNCH);
+    stubClientRegion('CH');
+    render(<MarketplaceCheckout />);
+
+    expect(await screen.findByRole('heading', { name: 'Enable purchases' })).toBeInTheDocument();
+    expect(paymentMethods()).toBeInTheDocument();
+    expect(pay()).toBeDisabled();
+    expect(screen.queryByTestId('marketplace-checkout-blocked')).not.toBeInTheDocument();
+  });
+
+  it('asks for approval as before while no region is blocked', () => {
+    needApproval();
+    setRegionModes('EU=nuanced,GB=nuanced');
+    stubClientRegion('US');
+    render(<MarketplaceCheckout />);
+
+    expect(approvalCard()).toBeInTheDocument();
+    expect(paymentMethods()).toBeInTheDocument();
   });
 
   it('keeps the cart readable while Pay is off', async () => {
@@ -478,7 +519,7 @@ describe('MarketplaceCheckout under the region modes', () => {
     expect(await screen.findByTestId('marketplace-checkout-blocked')).toHaveTextContent(
       COMMERCE_UNKNOWN_REGION_MESSAGE,
     );
-    expect(pay()).toBeDisabled();
+    expect(paymentMethods()).not.toBeInTheDocument();
   });
 
   it('blocks checkout with a seller whose shop is in a blocked country', async () => {
@@ -493,7 +534,7 @@ describe('MarketplaceCheckout under the region modes', () => {
     expect(await screen.findByTestId('marketplace-checkout-blocked')).toHaveTextContent(
       SELLING_BLOCKED_COUNTRY_MESSAGE,
     );
-    expect(pay()).toBeDisabled();
+    expect(paymentMethods()).not.toBeInTheDocument();
   });
 
   it('shows no line for a visitor from an open country', async () => {
