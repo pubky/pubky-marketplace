@@ -8,6 +8,7 @@ import { Heading } from '@/atoms/Heading/Heading';
 import { Link } from '@/atoms/Link/Link';
 import { Skeleton } from '@/atoms/Skeleton/Skeleton';
 import { Typography } from '@/atoms/Typography/Typography';
+import { getCommerceAdapterMode } from '@/config/commerce';
 import { useChatConversations } from '@/hooks/useChatConversations/useChatConversations';
 import { useChatIdentity } from '@/hooks/useChatIdentity/useChatIdentity';
 import { useIsEmbedded } from '@/hooks/useIsEmbedded/useIsEmbedded';
@@ -37,7 +38,8 @@ export function Chat() {
       className={isEmbedded ? 'pb-6' : 'pb-28'}
     >
       {/* Messages is one of the Market tabs, and on a phone this bar is the only way between them. */}
-      <MarketplaceSectionNav />
+      {/* Without commerce the Market tabs lead nowhere; the header and the mobile footer drop Market then too. */}
+      {getCommerceAdapterMode() !== 'unavailable' ? <MarketplaceSectionNav /> : null}
       <Container overrideDefaults className="mx-auto flex w-full max-w-3xl flex-col gap-6" data-surface="chat-inbox">
         <div className="flex flex-col gap-1">
           <Heading level={1} size="xl">
