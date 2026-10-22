@@ -657,6 +657,26 @@ export const createMarketplaceListingDefaults: CreateMarketplaceListingData = {
   returnDays: 'none',
 };
 
+/**
+ * Fields publishing always requires, whatever the sale or delivery: the Sell form marks their labels
+ * "Required", and the Required to publish list names them while they are empty.
+ */
+export const PUBLISH_REQUIRED_FIELDS: ReadonlySet<string> = new Set<string>([
+  CREATE_MARKETPLACE_LISTING_FIELDS.TITLE,
+  CREATE_MARKETPLACE_LISTING_FIELDS.DESCRIPTION,
+  CREATE_MARKETPLACE_LISTING_FIELDS.CATEGORY,
+  CREATE_MARKETPLACE_LISTING_FIELDS.PRICE,
+  CREATE_MARKETPLACE_LISTING_FIELDS.COUNTRY_CODE,
+]);
+
+/** The package fields a shipped item needs; required while Ship is on. */
+export const PUBLISH_PACKAGE_FIELDS: ReadonlySet<string> = new Set<string>([
+  CREATE_MARKETPLACE_LISTING_FIELDS.PACKAGE_WEIGHT,
+  CREATE_MARKETPLACE_LISTING_FIELDS.PACKAGE_LENGTH,
+  CREATE_MARKETPLACE_LISTING_FIELDS.PACKAGE_WIDTH,
+  CREATE_MARKETPLACE_LISTING_FIELDS.PACKAGE_HEIGHT,
+]);
+
 const PUBLISH_SHIPPING_PATHS = new Set<string>([
   CREATE_MARKETPLACE_LISTING_FIELDS.SHIPPING_LABEL,
   CREATE_MARKETPLACE_LISTING_FIELDS.SHIPPING_PRICE,

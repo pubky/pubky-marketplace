@@ -18,6 +18,8 @@ import {
   isCreateMarketplaceListingPublishReady,
   type ListingFulfillment,
   listingFulfillmentSchema,
+  PUBLISH_PACKAGE_FIELDS,
+  PUBLISH_REQUIRED_FIELDS,
   UNLIMITED_STOCK_FORM_MESSAGE,
 } from './useCreateMarketplaceListing.types';
 
@@ -403,6 +405,18 @@ describe('isCreateMarketplaceListingPublishReady', () => {
     const ready = isCreateMarketplaceListingPublishReady(values, photoCount);
     expect(ready).toBe(expected);
     expect(ready).toBe(schemaValid && photoCount > 0);
+  });
+
+  // The Sell form marks these fields "Required"; each must really block publishing while empty.
+  it.each([...PUBLISH_REQUIRED_FIELDS])(
+    'blocks publishing while the field the form marks Required, %s, is empty',
+    (field) => {
+      expect(isCreateMarketplaceListingPublishReady({ ...physicalReady, [field]: '' }, 1)).toBe(false);
+    },
+  );
+
+  it.each([...PUBLISH_PACKAGE_FIELDS])('blocks publishing a shipped item while %s is empty', (field) => {
+    expect(isCreateMarketplaceListingPublishReady({ ...physicalReady, [field]: '' }, 1)).toBe(false);
   });
 
   it('never publishes an unset country as US: an empty country blocks publishing', () => {
