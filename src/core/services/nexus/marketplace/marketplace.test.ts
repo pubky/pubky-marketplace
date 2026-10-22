@@ -106,6 +106,49 @@ describe('Marketplace API review streams', () => {
   });
 });
 
+describe('Marketplace API review filters', () => {
+  const SELLER = 's'.repeat(52);
+  const VIEWER = 'v'.repeat(52);
+
+  it('sends the viewer and reach with the depth and trusted windows on both review streams', () => {
+    const filter = { viewer_id: VIEWER, reach: 'wot', depth: 2, attestors: 'w:1:' } as const;
+    const query = `limit=10&viewer_id=${VIEWER}&reach=wot&depth=2&attestors=${encodeURIComponent('w:1:')}`;
+
+    expect(marketplaceApi.shopReviews({ seller_id: SELLER, limit: 10, ...filter })).toBe(
+      `${getNexusUrl()}/v0/shop/${SELLER}/reviews?${query}`,
+    );
+    expect(marketplaceApi.listingReviews({ seller_id: SELLER, listing_id: 'boots_01', limit: 10, ...filter })).toBe(
+      `${getNexusUrl()}/v0/listing/${SELLER}/boots_01/reviews?${query}`,
+    );
+  });
+
+  it('sends the tag labels as one comma-joined parameter next to a sort', () => {
+    const url = marketplaceApi.shopReviews({
+      seller_id: SELLER,
+      sort: 'value',
+      viewer_id: VIEWER,
+      tagged_by_viewer: 'trusted,fast',
+    });
+
+    const params = new URL(url).searchParams;
+    expect(params.get('tagged_by_viewer')).toBe('trusted,fast');
+    expect(params.get('sort')).toBe('value');
+    expect(params.get('viewer_id')).toBe(VIEWER);
+    expect(params.has('reach')).toBe(false);
+  });
+
+  it('sends no filter parameter by default', () => {
+    for (const url of [
+      marketplaceApi.shopReviews({ seller_id: SELLER, skip: 0, limit: 10 }),
+      marketplaceApi.listingReviews({ seller_id: SELLER, listing_id: 'boots_01', skip: 0, limit: 10 }),
+    ]) {
+      for (const key of ['viewer_id', 'reach', 'depth', 'tagged_by_viewer', 'attestors']) {
+        expect(url).not.toContain(key);
+      }
+    }
+  });
+});
+
 describe('Marketplace API attestor routes', () => {
   const ATTESTOR = 'w'.repeat(52);
 

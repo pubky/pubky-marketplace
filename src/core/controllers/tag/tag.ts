@@ -1,5 +1,6 @@
 import { TagApplication } from '@/application/tag/tag';
 import type { TTagEventParams } from '@/controllers/tag/tag.types';
+import type { Pubky } from '@/models/models.types';
 import { TagNormalizer } from '@/pipes/tag/tag.normalizer';
 
 export class TagController {
@@ -16,6 +17,16 @@ export class TagController {
     const tag = TagNormalizer.from(params);
 
     await TagApplication.commitCreate({ tagList: [tag] });
+  }
+
+  /**
+   * The labels the viewer put on users, most-used first, from the local copy
+   * (local only: it covers the users this device has seen).
+   * @param viewerId - The signed-in user
+   * @param limit - Most labels to return
+   */
+  static async getViewerUserTagLabels(viewerId: Pubky, limit: number) {
+    return await TagApplication.getViewerUserTagLabels(viewerId, limit);
   }
 
   /**

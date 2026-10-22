@@ -298,4 +298,23 @@ describe('TagController', () => {
       });
     });
   });
+
+  describe('getViewerUserTagLabels', () => {
+    it('answers the labels the viewer put on users, most used first', async () => {
+      const viewer = 'o1gg96ewuojmopcjbz8895478wdtxtzzuxnfjjz8o8e77csa1ngo' as Pubky;
+      await UserTagsModel.upsert({
+        id: 'pxnu33x7jtpx9ar1ytsi4yxbp6a5o36gwhffs8zoxmbuptici1jy' as Pubky,
+        tags: [
+          { label: 'trusted', taggers: [viewer], taggers_count: 1, relationship: true },
+          { label: 'fast', taggers: [viewer], taggers_count: 1, relationship: true },
+        ],
+      });
+      await UserTagsModel.upsert({
+        id: 'y4euc88xboik1ev3axy9m9ajuedo8gx1mh1n7ms8zoxm5s1b1h9y' as Pubky,
+        tags: [{ label: 'trusted', taggers: [viewer], taggers_count: 1, relationship: true }],
+      });
+
+      await expect(TagController.getViewerUserTagLabels(viewer, 8)).resolves.toEqual(['trusted', 'fast']);
+    });
+  });
 });

@@ -413,6 +413,20 @@ export interface CommerceIndexedReview {
 }
 
 /**
+ * The counted figures an index served over every match of a filtered review
+ * stream (IX4, counting rules v2): distinct buyers, distinct attested orders,
+ * and the mean over buyers of each buyer's mean item stars (null when
+ * nothing counts). The seller stream adds the seller rating's buyers and mean.
+ */
+export interface CommerceReviewMatch {
+  buyers: number;
+  orders: number;
+  avg: number | null;
+  sellerBuyers?: number;
+  sellerAvg?: number | null;
+}
+
+/**
  * Index moderation of a review. `text_hidden` keeps the rating and hides the
  * text; `excluded` (fraud) also leaves the review out of every aggregate.
  * `reason` is the moderator's label.

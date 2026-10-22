@@ -6,7 +6,7 @@ import { renderForVRT, VRT_ROOT_TESTID } from '@/test-utils/vrt';
 import { VRT_VIEWPORT_DESKTOP, VRT_VIEWPORT_MOBILE } from '@/test-utils/vrt.viewports';
 import { MarketplaceListingCard } from '@/organisms/Marketplace/MarketplaceListingCard';
 import { MarketplaceReputationHeader } from '@/organisms/Marketplace/MarketplaceReputationHeader';
-import { MarketplaceReviewsSection } from '@/organisms/Marketplace/MarketplaceReviewsSection';
+import { ReviewsSection } from '@/test-utils/marketplace-reviews';
 import { useAuthStore } from '@/stores/auth/auth.store';
 import { setSocialHost } from '@/test-utils/social-host';
 import { TEST_TRUSTED_ATTESTOR } from '@/test/fixtures/commerce/trusted-attestors';
@@ -519,7 +519,7 @@ describe('Marketplace public reviews — visual regression', () => {
     controllerState.reviews = REVIEW_SPECTRUM;
     const screen = await renderForVRT(
       <main className="mx-auto flex w-full max-w-2xl flex-col gap-6 px-6 py-10">
-        <MarketplaceReviewsSection sellerPubky={SELLER} />
+        <ReviewsSection sellerPubky={SELLER} />
       </main>,
       { viewport: VRT_VIEWPORT_DESKTOP },
     );
@@ -536,7 +536,7 @@ describe('Marketplace public reviews — visual regression', () => {
     try {
       const screen = await renderForVRT(
         <main className="mx-auto flex w-full max-w-2xl flex-col gap-6 px-6 py-10">
-          <MarketplaceReviewsSection sellerPubky={SELLER} />
+          <ReviewsSection sellerPubky={SELLER} />
         </main>,
         { viewport: VRT_VIEWPORT_DESKTOP },
       );
@@ -554,7 +554,7 @@ describe('Marketplace public reviews — visual regression', () => {
     controllerState.reviews = REVIEW_SPECTRUM;
     const screen = await renderForVRT(
       <main className="mx-auto flex w-full max-w-2xl flex-col gap-6 px-6 py-10">
-        <MarketplaceReviewsSection sellerPubky={SELLER} listingId="rangefinder_camera" />
+        <ReviewsSection sellerPubky={SELLER} listingId="rangefinder_camera" />
       </main>,
       { viewport: VRT_VIEWPORT_DESKTOP },
     );
@@ -573,7 +573,7 @@ describe('Marketplace public reviews — visual regression', () => {
     controllerState.reviews = REVIEW_SPECTRUM;
     const screen = await renderForVRT(
       <main className="flex w-full flex-col gap-6 px-4 py-8">
-        <MarketplaceReviewsSection sellerPubky={SELLER} listingId="rangefinder_camera" />
+        <ReviewsSection sellerPubky={SELLER} listingId="rangefinder_camera" />
       </main>,
       { viewport: VRT_VIEWPORT_MOBILE },
     );
@@ -585,7 +585,7 @@ describe('Marketplace public reviews — visual regression', () => {
     controllerState.reviews = REVIEW_SPECTRUM;
     const screen = await renderForVRT(
       <main className="flex w-full flex-col gap-6 px-4 py-8">
-        <MarketplaceReviewsSection sellerPubky={SELLER} />
+        <ReviewsSection sellerPubky={SELLER} />
       </main>,
       { viewport: VRT_VIEWPORT_MOBILE },
     );
@@ -613,7 +613,7 @@ describe('Marketplace public reviews — visual regression', () => {
     ];
     const screen = await renderForVRT(
       <main className="flex w-full flex-col gap-6 px-4 py-8">
-        <MarketplaceReviewsSection sellerPubky={SELLER} />
+        <ReviewsSection sellerPubky={SELLER} />
       </main>,
       { viewport: VRT_VIEWPORT_MOBILE },
     );
@@ -626,7 +626,7 @@ describe('Marketplace public reviews — visual regression', () => {
     annotate([{ kind: 'refunded', on: '2026-10-14' }]);
     const screen = await renderForVRT(
       <main className="mx-auto flex w-full max-w-2xl flex-col gap-6 px-6 py-10">
-        <MarketplaceReviewsSection sellerPubky={SELLER} listingId="rangefinder_camera" />
+        <ReviewsSection sellerPubky={SELLER} listingId="rangefinder_camera" />
       </main>,
       { viewport: VRT_VIEWPORT_DESKTOP },
     );
@@ -639,7 +639,7 @@ describe('Marketplace public reviews — visual regression', () => {
     annotate([{ kind: 'returned', on: '2026-10-12' }]);
     const screen = await renderForVRT(
       <main className="mx-auto flex w-full max-w-2xl flex-col gap-6 px-6 py-10">
-        <MarketplaceReviewsSection sellerPubky={SELLER} listingId="rangefinder_camera" />
+        <ReviewsSection sellerPubky={SELLER} listingId="rangefinder_camera" />
       </main>,
       { viewport: VRT_VIEWPORT_DESKTOP },
     );
@@ -655,7 +655,7 @@ describe('Marketplace public reviews — visual regression', () => {
     ]);
     const screen = await renderForVRT(
       <main className="mx-auto flex w-full max-w-2xl flex-col gap-6 px-6 py-10">
-        <MarketplaceReviewsSection sellerPubky={SELLER} listingId="rangefinder_camera" />
+        <ReviewsSection sellerPubky={SELLER} listingId="rangefinder_camera" />
       </main>,
       { viewport: VRT_VIEWPORT_DESKTOP },
     );
@@ -672,7 +672,7 @@ describe('Marketplace public reviews — visual regression', () => {
     ]);
     const screen = await renderForVRT(
       <main className="flex w-full flex-col gap-6 px-4 py-8">
-        <MarketplaceReviewsSection sellerPubky={SELLER} listingId="rangefinder_camera" />
+        <ReviewsSection sellerPubky={SELLER} listingId="rangefinder_camera" />
       </main>,
       { viewport: VRT_VIEWPORT_MOBILE },
     );
@@ -685,7 +685,7 @@ describe('Marketplace public reviews — visual regression', () => {
     controllerState.reviews = MODERATED_REVIEWS;
     const screen = await renderForVRT(
       <main className="mx-auto flex w-full max-w-2xl flex-col gap-6 px-6 py-10">
-        <MarketplaceReviewsSection sellerPubky={SELLER} listingId="rangefinder_camera" />
+        <ReviewsSection sellerPubky={SELLER} listingId="rangefinder_camera" />
       </main>,
       { viewport: VRT_VIEWPORT_DESKTOP },
     );
@@ -698,7 +698,7 @@ describe('Marketplace public reviews — visual regression', () => {
     controllerState.reviews = MODERATED_REVIEWS;
     const screen = await renderForVRT(
       <main className="flex w-full flex-col gap-6 px-4 py-8">
-        <MarketplaceReviewsSection sellerPubky={SELLER} listingId="rangefinder_camera" />
+        <ReviewsSection sellerPubky={SELLER} listingId="rangefinder_camera" />
       </main>,
       { viewport: VRT_VIEWPORT_MOBILE },
     );
@@ -710,7 +710,7 @@ describe('Marketplace public reviews — visual regression', () => {
     controllerState.reviews = [indexedReview()];
     const screen = await renderForVRT(
       <main className="mx-auto flex w-full max-w-2xl flex-col gap-6 px-6 py-10">
-        <MarketplaceReviewsSection sellerPubky={SELLER} listingId="rangefinder_camera" />
+        <ReviewsSection sellerPubky={SELLER} listingId="rangefinder_camera" />
       </main>,
       { viewport: VRT_VIEWPORT_DESKTOP },
     );
@@ -728,7 +728,7 @@ describe('Marketplace public reviews — visual regression', () => {
     controllerState.reviews = [];
     const screen = await renderForVRT(
       <main className="mx-auto flex w-full max-w-2xl flex-col gap-6 px-6 py-10">
-        <MarketplaceReviewsSection sellerPubky={SELLER} />
+        <ReviewsSection sellerPubky={SELLER} />
       </main>,
       { viewport: VRT_VIEWPORT_DESKTOP },
     );
@@ -741,7 +741,7 @@ describe('Marketplace public reviews — visual regression', () => {
     useAuthStore.setState({ currentUserPubky: SELLER });
     const screen = await renderForVRT(
       <main className="mx-auto flex w-full max-w-2xl flex-col gap-6 px-6 py-10">
-        <MarketplaceReviewsSection sellerPubky={SELLER} />
+        <ReviewsSection sellerPubky={SELLER} />
       </main>,
       { viewport: VRT_VIEWPORT_DESKTOP },
     );
