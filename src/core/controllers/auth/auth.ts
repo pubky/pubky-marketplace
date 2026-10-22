@@ -1206,8 +1206,9 @@ export class AuthController {
    *
    * A QR does not say which app scanned it, so the session is recorded with the
    * signer the user chose on this device through {@link noteSignInSigner} (the
-   * mobile Authorize buttons) and otherwise as `host`, which later marketplace
-   * approvals treat as an unknown signer and ask the user to choose.
+   * mobile Authorize buttons) and otherwise as `unknown`. Later marketplace
+   * approvals preselect Pubky Ring for `unknown`, the same link works in Bitkit,
+   * and the USDT copy stays neutral.
    *
    * @param options.withPrivKeys Omitted: follows the deploy's scoped-key switch.
    *   `false` is the separate sign-in without keys for signers that cannot share them.
@@ -1220,7 +1221,7 @@ export class AuthController {
           ? AuthApplication.generateGrantAuthUrl()
           : AuthApplication.generateGrantAuthUrl(undefined, options),
       'ring',
-      () => this.signInSignerHint ?? 'host',
+      () => this.signInSignerHint ?? 'unknown',
     );
   }
 

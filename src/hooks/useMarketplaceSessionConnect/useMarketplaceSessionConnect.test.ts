@@ -186,6 +186,17 @@ describe('grant-only marketplace approval', () => {
     expect(beginMarketplaceBootstrapFlow).not.toHaveBeenCalled();
   });
 
+  it('starts a sign-in QR scanned by an unidentified app on Pubky Ring without asking which signer', async () => {
+    signIn('unknown');
+    vi.mocked(beginMarketplaceBootstrapFlow).mockResolvedValue(pendingFlow().flow);
+    const { result } = renderHook(() => useMarketplaceSessionConnect());
+    act(() => result.current.start());
+    await waitFor(() => expect(result.current.status).toBe('awaiting'));
+    expect(result.current.requiresSignerChoice).toBe(false);
+    expect(result.current.approvalSigner).toBe('Pubky Ring');
+    expect(beginMarketplaceBootstrapFlow).toHaveBeenCalledWith({ pubky: PUBKY });
+  });
+
   it('uses the explicit signer on a hosted grant', async () => {
     signIn('host');
     vi.mocked(beginMarketplaceBootstrapFlow).mockResolvedValue(pendingFlow().flow);
@@ -514,6 +525,7 @@ describe('grant-only marketplace approval', () => {
     runtime.passport = false;
     expect(marketplaceApprovalSigner('passport')).toBe('Pubky Passport');
     expect(marketplaceApprovalSigner('ring')).toBe('Pubky Ring');
+    expect(marketplaceApprovalSigner('unknown')).toBe('Pubky Ring');
   });
 });
 
