@@ -1,8 +1,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { setBasePath } from '@/test-utils/base-path';
 import { stubClientRegion } from '@/test-utils/region-modes';
 import { ClientRegionService } from './client-region';
 
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  vi.unstubAllGlobals();
+  setBasePath('');
+});
 
 describe('ClientRegionService.fetchCountry', () => {
   it('asks the Shop route without caching and returns the country', async () => {
@@ -13,6 +17,16 @@ describe('ClientRegionService.fetchCountry', () => {
     expect(url).toBe('/api/marketplace/client-region');
     expect(init).toMatchObject({ method: 'GET', cache: 'no-store', credentials: 'same-origin' });
   });
+
+  it.each(['/shop-embed', '/shop'])(
+    'asks the route under the %s mount, where an embedded Shop is served',
+    async (mount) => {
+      setBasePath(mount);
+      const fetchStub = stubClientRegion('CH');
+      await expect(ClientRegionService.fetchCountry()).resolves.toBe('CH');
+      expect(fetchStub.mock.calls[0][0]).toBe(`${mount}/api/marketplace/client-region`);
+    },
+  );
 
   it('returns null when the edge could not tell', async () => {
     stubClientRegion(null);
