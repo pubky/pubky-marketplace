@@ -8,6 +8,7 @@ import { Button } from '@/atoms/Button/Button';
 import { Container } from '@/atoms/Container/Container';
 import { Link } from '@/atoms/Link/Link';
 import { Typography } from '@/atoms/Typography/Typography';
+import { getCommerceAdapterMode } from '@/config/commerce';
 import { useChatConversation } from '@/hooks/useChatConversation/useChatConversation';
 import { useChatIdentity } from '@/hooks/useChatIdentity/useChatIdentity';
 import { useFillViewport } from '@/hooks/useFillViewport/useFillViewport';
@@ -114,12 +115,15 @@ export function ChatConversation({ peerPubky }: { peerPubky: string }) {
             </Link>
           </Button>
           <ChatPeerIdentity peerPubky={peerPubky} className="min-w-0 flex-1" />
-          <Button asChild variant="ghost" size="sm" className="rounded-full text-muted-foreground">
-            <Link href={getMarketplaceShopRoute(peerPubky)} overrideDefaults>
-              <Store className="size-4" aria-hidden="true" />
-              <span className="hidden sm:inline">Storefront</span>
-            </Link>
-          </Button>
+          {/* Without commerce the storefront leads nowhere; the header and the mobile footer drop Market then too. */}
+          {getCommerceAdapterMode() !== 'unavailable' ? (
+            <Button asChild variant="ghost" size="sm" className="rounded-full text-muted-foreground">
+              <Link href={getMarketplaceShopRoute(peerPubky)} overrideDefaults>
+                <Store className="size-4" aria-hidden="true" />
+                <span className="hidden sm:inline">Storefront</span>
+              </Link>
+            </Button>
+          ) : null}
         </div>
 
         {context ? (
