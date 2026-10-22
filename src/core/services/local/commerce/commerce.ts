@@ -970,6 +970,47 @@ export class LocalCommerceService {
     return jobs.sort((left, right) => left.created_at - right.created_at);
   }
 
+  /**
+   * Stages the review of an order the service withholds behind a double-blind
+   * window. One job per reviewer and order, so an edit made while withheld
+   * replaces the earlier terms; nothing is published until release.
+   */
+  static async stageAwaitingReleaseReview(job: CommerceSyncJobModelSchema): Promise<void> {
+    try {
+      await db.transaction('rw', CommerceSyncJobModel.table, async () => {
+        await this.awaitingReleaseJobs(job.owner_id, job.entity_id).delete();
+        await CommerceSyncJobModel.upsert(job);
+      });
+    } catch (error) {
+      if (isAppError(error)) throw error;
+      throw Err.database(DatabaseErrorCode.WRITE_FAILED, 'Failed to stage a withheld review', {
+        service: ErrorService.Local,
+        operation: 'stageAwaitingReleaseReview',
+        context: { tables: [CommerceSyncJobModel.table.name] },
+        cause: error,
+      });
+    }
+  }
+
+  /** The user's reviews awaiting release, oldest first; with an order id, that order's only. */
+  static async getAwaitingReleaseReviewJobs(ownerId: string, orderId?: string): Promise<CommerceSyncJobModelSchema[]> {
+    const jobs = await this.awaitingReleaseJobs(ownerId, orderId).toArray();
+    return jobs.sort((left, right) => left.created_at - right.created_at);
+  }
+
+  private static awaitingReleaseJobs(ownerId: string, orderId?: string) {
+    return CommerceSyncJobModel.table
+      .where('owner_id')
+      .equals(ownerId)
+      .filter(
+        (job) =>
+          job.entity_type === 'review' &&
+          job.operation === 'publish' &&
+          job.status === 'awaiting_release' &&
+          (orderId === undefined || job.entity_id === orderId),
+      );
+  }
+
   /** Records a failed DEL attempt on its job so the outbox keeps the count and cause. */
   static async recordSyncJobFailure(id: string, errorCode: string | null): Promise<void> {
     await db.transaction('rw', CommerceSyncJobModel.table, async () => {

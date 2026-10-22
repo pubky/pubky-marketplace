@@ -2,6 +2,7 @@ import { blake3 } from '@noble/hashes/blake3.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
 import { z } from 'zod';
 import { getCommerceAdapterMode, getMarketplaceUrl, isDurableCommerceMode } from '@/config/commerce';
+import type { MarketplaceReviewAttestationPending } from '@/libs/commerce/attestation';
 import type {
   MarketplaceDigitalDeliveryCapability,
   MarketplaceOrderDeliveryEmail,
@@ -259,16 +260,30 @@ export class MarketplaceGatewayService {
     return null;
   }
 
-  /** The caller's own purchase attestation for an order they reviewed; none outside the durable service. */
-  static async getReviewAttestation(actor: string, orderId: string): Promise<unknown | null> {
+  /**
+   * The caller's own purchase attestation for an order they reviewed; none
+   * outside the durable service, `{ status: "pending", releaseAt }` while a
+   * double-blind window withholds it.
+   */
+  static async getReviewAttestation(
+    actor: string,
+    orderId: string,
+  ): Promise<unknown | MarketplaceReviewAttestationPending | null> {
     if (isDurableCommerceMode(getCommerceAdapterMode())) {
       return await MarketplaceTransactionService.getReviewAttestation(actor, orderId);
     }
     return null;
   }
 
-  /** The caller's purchase attestations for an order they reviewed, one per listing; none outside the durable service. */
-  static async getReviewAttestations(actor: string, orderId: string): Promise<unknown[] | null> {
+  /**
+   * The caller's purchase attestations for an order they reviewed, one per
+   * listing; none outside the durable service, `{ status: "pending",
+   * releaseAt }` while a double-blind window withholds them.
+   */
+  static async getReviewAttestations(
+    actor: string,
+    orderId: string,
+  ): Promise<unknown[] | MarketplaceReviewAttestationPending | null> {
     if (isDurableCommerceMode(getCommerceAdapterMode())) {
       return await MarketplaceTransactionService.getReviewAttestations(actor, orderId);
     }

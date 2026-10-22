@@ -2,6 +2,7 @@
 
 import { type ReactNode, useEffect, useRef, useState } from 'react';
 import { Controller, useWatch } from 'react-hook-form';
+import type { AwaitingReleaseReview } from '@/application/commerce/commerce';
 import { Button } from '@/atoms/Button/Button';
 import { Checkbox } from '@/atoms/Checkbox/Checkbox';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/atoms/Dialog/Dialog';
@@ -9,6 +10,7 @@ import { Label } from '@/atoms/Label/Label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/atoms/Select/Select';
 import { Typography } from '@/atoms/Typography/Typography';
 import { trustedMarketplaceAttestorAt } from '@/config/commerce';
+import { REVIEW_PENDING_COPY } from '@/config/commerce-copy';
 import { FORM_LABEL_CLASSES } from '@/config/forms';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import { useMarketplaceOrderAction } from '@/hooks/useMarketplaceOrderAction/useMarketplaceOrderAction';
@@ -27,6 +29,7 @@ import { formatCommerceMoney } from '@/libs/commerce/format';
 import { ORDER_RETURN_COPY, orderReturnClosure } from '@/libs/commerce/order-returns';
 import {
   buyerSellerRatings,
+  formatReviewDate,
   orderReviewListings,
   reviewListingAggregateId,
   reviewsOfReviewer,
@@ -144,6 +147,24 @@ export function MarketplaceOrderActions({
     // must not re-fetch.
     // eslint-disable-next-line react-hooks/exhaustive-deps -- order identity is id+revision
   }, [hasOwnReview, order.id, order.revision, ownReviewCount]);
+
+  // The user's own review of this order while a double-blind window still
+  // withholds it: held on this device until the service releases it.
+  const [awaitingRelease, setAwaitingRelease] = useState<AwaitingReleaseReview | null>(null);
+  useEffect(() => {
+    if (!hasOwnReview) return;
+    let active = true;
+    CommerceController.getAwaitingReleaseOwnMarketplaceReviews()
+      .then((held) => {
+        if (active) setAwaitingRelease(held.find(({ orderId }) => orderId === order.id) ?? null);
+      })
+      .catch(() => {
+        if (active) setAwaitingRelease(null);
+      });
+    return () => {
+      active = false;
+    };
+  }, [hasOwnReview, order.id, order.revision]);
 
   const begin = (next: MarketplaceOrderActionData['action'], overrides?: Partial<MarketplaceOrderActionData>) => {
     action.setAction(next, overrides);
@@ -494,22 +515,31 @@ export function MarketplaceOrderActions({
 
       {ownReview && (
         <div className="mt-2 grid gap-1 text-xs text-muted-foreground" data-testid="own-review-status">
-          {ownReviews.map((review) => {
-            const aggregateId = reviewListingAggregateId(order, review);
-            const listing = orderReviewListings(order).find(
-              (candidate) => candidate.listingAggregateId === aggregateId,
-            );
-            const record =
-              ownReviewRecords?.find((candidate) =>
-                listing === undefined ? ownReviews.length === 1 : candidate.record.listingId === listing.listingId,
-              ) ?? null;
-            return (
-              <p key={aggregateId ?? review.createdAt}>
-                {ownReviews.length > 1 && listing ? `${listing.title}: ` : ''}
-                {reviewRecordStatus(record)}
-              </p>
-            );
-          })}
+          {awaitingRelease !== null && (
+            <p data-testid="own-review-pending">
+              {REVIEW_PENDING_COPY.publishesWhen(
+                isBuyer ? 'buyer' : 'seller',
+                awaitingRelease.releaseAt === null ? null : formatReviewDate(awaitingRelease.releaseAt),
+              )}
+            </p>
+          )}
+          {awaitingRelease === null &&
+            ownReviews.map((review) => {
+              const aggregateId = reviewListingAggregateId(order, review);
+              const listing = orderReviewListings(order).find(
+                (candidate) => candidate.listingAggregateId === aggregateId,
+              );
+              const record =
+                ownReviewRecords?.find((candidate) =>
+                  listing === undefined ? ownReviews.length === 1 : candidate.record.listingId === listing.listingId,
+                ) ?? null;
+              return (
+                <p key={aggregateId ?? review.createdAt}>
+                  {ownReviews.length > 1 && listing ? `${listing.title}: ` : ''}
+                  {reviewRecordStatus(record)}
+                </p>
+              );
+            })}
         </div>
       )}
 

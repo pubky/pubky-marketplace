@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { BadgeCheck, PenLine, Trash2 } from 'lucide-react';
 import { getMarketplaceListingRoute } from '@/app/routes';
+import type { AwaitingReleaseReview } from '@/application/commerce/commerce';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -18,9 +19,10 @@ import { Button } from '@/atoms/Button/Button';
 import { Card, CardContent } from '@/atoms/Card/Card';
 import { Link } from '@/atoms/Link/Link';
 import { Typography } from '@/atoms/Typography/Typography';
-import { REVIEW_REMOVAL_COPY } from '@/config/commerce-copy';
+import { REVIEW_PENDING_COPY, REVIEW_REMOVAL_COPY } from '@/config/commerce-copy';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import { useRemoveOwnMarketplaceReview } from '@/hooks/useRemoveOwnMarketplaceReview/useRemoveOwnMarketplaceReview';
+import { formatReviewDate } from '@/libs/commerce/order-reviews';
 import { cn } from '@/libs/utils/utils';
 import type { CommerceReviewModelSchema } from '@/models/commerce/commerce.schema';
 import { MarketplaceStarRating } from '@/molecules/MarketplaceStarRating/MarketplaceStarRating';
@@ -45,7 +47,8 @@ import { useAuthStore } from '@/stores/auth/auth.store';
 export function MarketplaceMyReviews({ orders = [], className }: { orders?: MarketplaceOrder[]; className?: string }) {
   const currentUserPubky = useAuthStore((state) => state.currentUserPubky);
   const [reviews, setReviews] = useState<CommerceReviewModelSchema[] | null>(null);
-  const [pendingRemoval, setPendingRemoval] = useState<CommerceReviewModelSchema | null>(null);
+  const [awaiting, setAwaiting] = useState<AwaitingReleaseReview[]>([]);
+  const [pendingRemoval, setPendingRemoval] = useState<{ orderId: string; withheld: boolean } | null>(null);
   const { removingOrderId, remove } = useRemoveOwnMarketplaceReview();
 
   // Orders carrying the user's own review at the service: the ones whose
@@ -61,9 +64,14 @@ export function MarketplaceMyReviews({ orders = [], className }: { orders?: Mark
     if (currentUserPubky === null) return;
     let active = true;
     const readLocal = () =>
-      CommerceController.getOwnMarketplaceReviews()
-        .then((rows) => {
-          if (active) setReviews(rows);
+      Promise.all([
+        CommerceController.getOwnMarketplaceReviews(),
+        CommerceController.getAwaitingReleaseOwnMarketplaceReviews(),
+      ])
+        .then(([rows, withheld]) => {
+          if (!active) return;
+          setReviews(rows);
+          setAwaiting(withheld);
         })
         .catch(() => {
           if (active) setReviews((current) => current ?? []);
@@ -85,16 +93,39 @@ export function MarketplaceMyReviews({ orders = [], className }: { orders?: Mark
     // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed by reviewedOrderKey
   }, [currentUserPubky, reviewedOrderKey]);
 
+  // A withheld review turns into a published one when its window releases it,
+  // which the poll of the orders shows; re-read the local state until none waits.
+  const isAwaiting = awaiting.length > 0;
+  const ordersKey = orders.map(({ id, revision }) => `${id}:${revision}`).join(',');
+  useEffect(() => {
+    if (currentUserPubky === null || !isAwaiting) return;
+    let active = true;
+    void Promise.all([
+      CommerceController.getOwnMarketplaceReviews(),
+      CommerceController.getAwaitingReleaseOwnMarketplaceReviews(),
+    ])
+      .then(([rows, withheld]) => {
+        if (!active) return;
+        setReviews(rows);
+        setAwaiting(withheld);
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+    };
+  }, [currentUserPubky, isAwaiting, ordersKey]);
+
   const confirmRemoval = async () => {
     const target = pendingRemoval;
     setPendingRemoval(null);
     if (target === null) return;
-    if (await remove(target.order_id)) {
-      setReviews((current) => current?.filter((row) => row.order_id !== target.order_id) ?? current);
+    if (await remove(target.orderId, { withheld: target.withheld })) {
+      setReviews((current) => current?.filter((row) => row.order_id !== target.orderId) ?? current);
+      setAwaiting((current) => current.filter((held) => held.orderId !== target.orderId));
     }
   };
 
-  if (currentUserPubky === null || reviews === null || reviews.length === 0) return null;
+  if (currentUserPubky === null || reviews === null || (reviews.length === 0 && awaiting.length === 0)) return null;
   const orderGroups = groupByOrder(reviews);
 
   return (
@@ -110,6 +141,69 @@ export function MarketplaceMyReviews({ orders = [], className }: { orders?: Mark
         </Typography>
         <SettingsSectionContent>
           <ul className="flex flex-col gap-3">
+            {awaiting.map((held) => (
+              <li
+                key={held.orderId}
+                className="flex flex-col gap-1.5 rounded-md p-3"
+                data-cy="marketplace-my-review-item"
+                data-review-state="awaiting-release"
+              >
+                {held.items.map((item) => (
+                  <div
+                    key={item.listingId}
+                    className="flex flex-col gap-1.5 not-first:mt-1.5 not-first:border-t not-first:pt-3"
+                    data-cy="marketplace-my-review-record"
+                  >
+                    <div className="flex flex-wrap items-center gap-2">
+                      <MarketplaceStarRating rating={item.rating} size="sm" />
+                      <Link
+                        href={getMarketplaceListingRoute(item.listingOwnerPubky, item.listingId)}
+                        overrideDefaults
+                        className="text-xs font-medium text-foreground hover:underline"
+                      >
+                        View listing
+                      </Link>
+                      <Typography as="span" overrideDefaults className="text-xs text-muted-foreground">
+                        {formatReviewDate(item.updatedAt)}
+                      </Typography>
+                      <Badge variant="outline" className="text-amber-400">
+                        {REVIEW_PENDING_COPY.badge}
+                      </Badge>
+                    </div>
+                    <Typography
+                      as="p"
+                      overrideDefaults
+                      className="line-clamp-3 text-sm whitespace-pre-wrap text-foreground"
+                    >
+                      {item.text}
+                    </Typography>
+                  </div>
+                ))}
+                <Typography
+                  as="p"
+                  overrideDefaults
+                  className="text-xs text-muted-foreground"
+                  data-cy="marketplace-my-review-pending-note"
+                >
+                  {REVIEW_PENDING_COPY.publishesWhen(
+                    held.reviewerRole,
+                    held.releaseAt === null ? null : formatReviewDate(held.releaseAt),
+                  )}
+                </Typography>
+                <div>
+                  <Button
+                    variant="destructive-soft"
+                    size="sm"
+                    disabled={removingOrderId !== null}
+                    onClick={() => setPendingRemoval({ orderId: held.orderId, withheld: true })}
+                    data-cy="marketplace-my-review-remove"
+                  >
+                    <Trash2 />
+                    {REVIEW_REMOVAL_COPY.action}
+                  </Button>
+                </div>
+              </li>
+            ))}
             {orderGroups.map((group) => (
               <li
                 key={group[0].order_id}
@@ -132,7 +226,7 @@ export function MarketplaceMyReviews({ orders = [], className }: { orders?: Mark
                         View listing
                       </Link>
                       <Typography as="span" overrideDefaults className="text-xs text-muted-foreground">
-                        {formatDate(review.record.updatedAt)}
+                        {formatReviewDate(review.record.updatedAt)}
                       </Typography>
                       {review.attestation_verified ? (
                         <Badge variant="secondary" className="gap-1 text-emerald-400">
@@ -168,7 +262,7 @@ export function MarketplaceMyReviews({ orders = [], className }: { orders?: Mark
                     variant="destructive-soft"
                     size="sm"
                     disabled={removingOrderId !== null}
-                    onClick={() => setPendingRemoval(group[0])}
+                    onClick={() => setPendingRemoval({ orderId: group[0].order_id, withheld: false })}
                     data-cy="marketplace-my-review-remove"
                   >
                     <Trash2 />
@@ -186,7 +280,11 @@ export function MarketplaceMyReviews({ orders = [], className }: { orders?: Mark
           >
             <AlertDialogHeader>
               <AlertDialogTitle>{REVIEW_REMOVAL_COPY.dialogTitle}</AlertDialogTitle>
-              <AlertDialogDescription>{REVIEW_REMOVAL_COPY.dialogDescription}</AlertDialogDescription>
+              <AlertDialogDescription>
+                {pendingRemoval?.withheld === true
+                  ? REVIEW_REMOVAL_COPY.dialogDescriptionWithheld
+                  : REVIEW_REMOVAL_COPY.dialogDescription}
+              </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
               <AlertDialogCancel>{REVIEW_REMOVAL_COPY.cancel}</AlertDialogCancel>
@@ -206,10 +304,4 @@ function groupByOrder(rows: CommerceReviewModelSchema[]): CommerceReviewModelSch
   const groups = new Map<string, CommerceReviewModelSchema[]>();
   for (const row of rows) groups.set(row.order_id, [...(groups.get(row.order_id) ?? []), row]);
   return [...groups.values()];
-}
-
-function formatDate(iso: string): string {
-  return new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' }).format(
-    new Date(iso),
-  );
 }

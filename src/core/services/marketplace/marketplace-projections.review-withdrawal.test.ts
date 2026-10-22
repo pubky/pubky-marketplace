@@ -27,3 +27,24 @@ describe('marketplace order projection: a withdrawn review', () => {
     expect(parse({ publicRemoved: 'yes' })?.publicRemoved).toBeUndefined();
   });
 });
+
+describe('marketplace order projection: a withheld counterparty review', () => {
+  const stub = { role: 'seller', submitted: true };
+  const parseAll = (reviews: unknown[]) =>
+    marketplaceOrderSchema.parse({ ...createOrderFixture('completed'), reviews });
+
+  it('reads the submitted-only stub without failing the order and does not keep it as a review', () => {
+    expect(parseAll([stub]).reviews).toEqual([]);
+  });
+
+  it('keeps the real reviews next to a stub', () => {
+    const reviews = parseAll([stub, review]).reviews;
+
+    expect(reviews).toHaveLength(1);
+    expect(reviews?.[0]?.rating).toBe(5);
+  });
+
+  it('keeps a submitted review that carries a rating', () => {
+    expect(parseAll([{ ...review, submitted: true }]).reviews).toHaveLength(1);
+  });
+});

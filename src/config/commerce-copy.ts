@@ -55,10 +55,42 @@ export const REVIEW_REMOVAL_COPY = {
   dialogTitle: 'Remove your review?',
   dialogDescription:
     'This deletes your public review from your homeserver, so it disappears from Pubky Market. Your order still shows that you reviewed it.',
+  dialogDescriptionWithheld:
+    'This withdraws your review before it is published, so it never becomes public. Your order still shows that you reviewed it.',
   confirm: 'Remove review',
   cancel: 'Cancel',
+  removedWithheld: 'Your review was withdrawn and will not be published.',
+  queuedWithheld:
+    'Your review is withdrawn here and will not be published. The marketplace has not confirmed it yet and will retry when your orders next load.',
   removed: 'Your review was removed from your homeserver.',
   queued:
     'Your review is removed here. Deleting it from your homeserver did not go through and will retry when your orders next load.',
   failed: 'Your review could not be removed. Try again.',
+} as const;
+
+/**
+ * Double-blind reviews: a review the service withholds until both sides have
+ * reviewed or the window ends. `role` is the reviewer's own; the line names
+ * the other side, and the end date when the service sent one.
+ */
+export const REVIEW_PENDING_COPY = {
+  publishesWhen: (reviewerRole: 'buyer' | 'seller', releaseDate: string | null) =>
+    `Publishes when the ${reviewerRole === 'buyer' ? 'seller' : 'buyer'} reviews${
+      releaseDate === null ? '' : `, or on ${releaseDate}`
+    }`,
+  badge: 'Pending',
+  savedToast: (reviewerRole: 'buyer' | 'seller', releaseDate: string | null) =>
+    `Your review is saved. ${REVIEW_PENDING_COPY.publishesWhen(reviewerRole, releaseDate)}.`,
+} as const;
+
+/** The notifications of the double-blind window, as the activity row and the feed say them. */
+export const REVIEW_NOTIFICATION_COPY = {
+  waiting: {
+    label: 'Leave your review to see theirs',
+    action: 'reviewed this order. Leave yours to see it',
+  },
+  released: {
+    label: 'Your review is now public',
+    action: 'published the reviews of this order',
+  },
 } as const;

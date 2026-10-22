@@ -9,7 +9,7 @@ export interface UseRemoveOwnMarketplaceReviewResult {
   /** The order whose review is being removed, or null. */
   removingOrderId: string | null;
   /** Resolves true once the review is gone locally (confirmed or queued for the homeserver). */
-  remove: (orderId: string) => Promise<boolean>;
+  remove: (orderId: string, options?: { withheld?: boolean }) => Promise<boolean>;
 }
 
 /**
@@ -20,15 +20,20 @@ export interface UseRemoveOwnMarketplaceReviewResult {
 export function useRemoveOwnMarketplaceReview(): UseRemoveOwnMarketplaceReviewResult {
   const [removingOrderId, setRemovingOrderId] = useState<string | null>(null);
 
-  const remove = async (orderId: string): Promise<boolean> => {
+  const remove = async (orderId: string, options: { withheld?: boolean } = {}): Promise<boolean> => {
     if (removingOrderId !== null) return false;
     setRemovingOrderId(orderId);
     try {
       const outcome = await CommerceController.commitDeleteOwnMarketplaceReview(orderId);
       if (outcome === 'queued') {
-        toast({ variant: 'warning', description: REVIEW_REMOVAL_COPY.queued });
+        toast({
+          variant: 'warning',
+          description: options.withheld === true ? REVIEW_REMOVAL_COPY.queuedWithheld : REVIEW_REMOVAL_COPY.queued,
+        });
       } else if (outcome === 'removed') {
-        toast({ description: REVIEW_REMOVAL_COPY.removed });
+        toast({
+          description: options.withheld === true ? REVIEW_REMOVAL_COPY.removedWithheld : REVIEW_REMOVAL_COPY.removed,
+        });
       }
       return outcome !== 'absent';
     } catch {
