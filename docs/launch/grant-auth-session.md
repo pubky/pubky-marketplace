@@ -6,14 +6,17 @@ Shop homeserver authentication uses SDK 0.16.2 grant sessions in both standalone
 
 | Entry point | Session established |
 |---|---|
-| Pubky Ring | Delegated `signin_grant`, recorded with signer `ring` |
-| Bitkit | Delegated `signin_grant`, recorded with signer `bitkit` |
+| Pubky Ring or Bitkit | Delegated `signin_grant` from one shared QR. On a phone the Authorize button for the app the user taps records signer `ring` or `bitkit`; a QR scan cannot say which app approved, so it is recorded as `host` (unknown signer) and a later marketplace approval asks which app to use |
 | Pubky Passport | Delegated `signin_grant`, recorded with signer `passport`; the popup opens synchronously from a click |
 | Recovery phrase or encrypted recovery file | SDK root grant under the configured Shop client ID, recorded with signer `local-key` |
 | Ring signup | SDK `signup_grant`, followed by grant session initialization |
 | Locally generated account signup | Account registration and PKDNS publication, then SDK grant sign-in |
 
 External signer requests use `approvalFormat: 'bareGrant'` and request `/pub/pubky.app/:rw,/pub/paykit/:rw,/priv/pubky.app/:rw,/pub/chat/v0/:rw,/priv/chat/v0/:rw`. Existing grants need only the three core Shop trees (`/pub/pubky.app/:rw,/pub/paykit/:rw,/priv/pubky.app/:rw`) to open Shop. The Chat scopes prepare for the separate [#209](https://github.com/pubky/pubky-marketplace/pull/209) consumer; its permission-upgrade handling is not implemented by this integration. SDK direct key sign-in returns root storage permission `/:rw`, which covers the required paths. Neither path requests encryption-key action `e`. Staging account registration still uses the homeserver's signup protocol, but ignores any returned cookie session and establishes a grant before authenticating the browser.
+
+`/sign-in` shows one QR for Pubky Ring and Bitkit because both approve the same bare grant: Ring accepts `signin_grant` from 2.0 (Pubky 0.10 bindings), and the bare grant's wire format is unchanged in SDK 0.16. The QR's `pubkyauth://` link is what it encodes and what the copy button copies. On a phone two Authorize buttons stay signer-specific: Pubky Ring opens the `pubkyauth://` link, and Bitkit opens its own `bitkit://` link on iOS (Bitkit iOS leaves `pubkyauth://` to Ring) and the `pubkyauth://` link on Android.
+
+Scoped encryption keys are the one request Ring cannot yet approve. A request with `e` needs signed approvals (`af=v1`, HPKE) and `e` support in the signer, which Ring 2.0 does not have ([pubky-ring#387](https://github.com/pubky/pubky-ring/pull/387) adds it). While the deploy requests keys, the page offers "Your signer can't share private-data keys? Sign in without them." under the QR, which swaps the QR for the bare grant. Remove that fallback once the Ring release with #387 is out on both stores.
 
 A persisted grant restores by its exact SDK `BrowserSessionStore` record ID. If sign-in saved the grant but profile discovery or bootstrap was interrupted, restore retries those steps before completing authentication; a temporary failure keeps the record available for retry. Grant sign-in requires usable secure browser storage, WebCrypto and Web Locks. A missing capability, unsupported browser or blocked storage produces an explicit unavailable/retry state rather than a cookie fallback. Temporary storage or network failures retain the saved reference; definitive missing or invalid credentials require a new approval.
 

@@ -4,6 +4,9 @@ import { navigatesWithinGesture } from '@/test-utils/user-gesture';
 import { useMobileAuth } from './useMobileAuth';
 
 const navigation = vi.hoisted(() => ({ navigateTop: vi.fn() }));
+const controller = vi.hoisted(() => ({ noteSignInSigner: vi.fn() }));
+
+vi.mock('@/controllers/auth/auth', () => ({ AuthController: { noteSignInSigner: controller.noteSignInSigner } }));
 
 vi.mock('@/libs/navigation/navigate-top', () => ({ navigateTop: navigation.navigateTop }));
 
@@ -108,7 +111,7 @@ describe('useMobileAuth', () => {
 
     expect(mockUseAuthUrl).toHaveBeenCalledWith({ type: 'signup', inviteCode: 'ABC-123' });
   });
-  describe('grant sign-in (Bitkit)', () => {
+  describe('signer-specific sign-in links', () => {
     const GRANT_URL = 'pubkyauth://signin_grant?caps=x&relay=r&secret=s&cid=shop.pubky.app&cpk=k';
     const BITKIT_IOS_URL = 'bitkit://pubky-auth/signin?caps=x&relay=r&secret=s&cid=shop.pubky.app&cpk=k';
     const IPHONE = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15';
@@ -119,6 +122,10 @@ describe('useMobileAuth', () => {
       vi.stubGlobal('navigator', { userAgent, maxTouchPoints });
     };
 
+    beforeEach(() => {
+      mockUseAuthUrl.mockReturnValue({ ...defaultAuthUrlReturn, url: GRANT_URL });
+    });
+
     afterEach(() => {
       vi.unstubAllGlobals();
     });
@@ -126,34 +133,49 @@ describe('useMobileAuth', () => {
     it.each([
       ['iPhone', IPHONE, 5],
       ['iPadOS reporting Macintosh with touch', MAC, 5],
-    ])('opens the bitkit:// link on %s and keeps url and copy on pubkyauth://', (_, userAgent, touchPoints) => {
-      stubDevice(userAgent, touchPoints);
-      mockUseAuthUrl.mockReturnValue({ ...defaultAuthUrlReturn, url: GRANT_URL });
+    ])(
+      'opens the bitkit:// link for Bitkit on %s and keeps url and copy on pubkyauth://',
+      (_, userAgent, touchPoints) => {
+        stubDevice(userAgent, touchPoints);
 
-      const { result } = renderHook(() => useMobileAuth({ type: 'grant' }));
+        const { result } = renderHook(() => useMobileAuth());
 
-      expect(
-        navigatesWithinGesture(navigation.navigateTop, BITKIT_IOS_URL, () => result.current.onAuthorizeClick()),
-      ).toBe(true);
-      expect(result.current.url).toBe(GRANT_URL);
-    });
+        expect(
+          navigatesWithinGesture(navigation.navigateTop, BITKIT_IOS_URL, () => result.current.authorizeWith('bitkit')),
+        ).toBe(true);
+        expect(result.current.url).toBe(GRANT_URL);
+      },
+    );
 
     it.each([
       ['Android', ANDROID, 5],
       ['desktop Mac', MAC, 0],
-    ])('keeps the pubkyauth:// link on %s', (_, userAgent, touchPoints) => {
+    ])('keeps the pubkyauth:// link for Bitkit on %s', (_, userAgent, touchPoints) => {
       stubDevice(userAgent, touchPoints);
-      mockUseAuthUrl.mockReturnValue({ ...defaultAuthUrlReturn, url: GRANT_URL });
 
-      const { result } = renderHook(() => useMobileAuth({ type: 'grant' }));
+      const { result } = renderHook(() => useMobileAuth());
       act(() => {
-        result.current.onAuthorizeClick();
+        result.current.authorizeWith('bitkit');
       });
 
       expect(navigation.navigateTop).toHaveBeenCalledWith(GRANT_URL);
     });
 
-    it('keeps the Pubky Ring link on iPhone', () => {
+    it.each([
+      ['iPhone', IPHONE, 5],
+      ['Android', ANDROID, 5],
+    ])('keeps the pubkyauth:// link for Pubky Ring on %s', (_, userAgent, touchPoints) => {
+      stubDevice(userAgent, touchPoints);
+
+      const { result } = renderHook(() => useMobileAuth());
+      act(() => {
+        result.current.authorizeWith('ring');
+      });
+
+      expect(navigation.navigateTop).toHaveBeenCalledWith(GRANT_URL);
+    });
+
+    it('keeps the plain link on iPhone when no signer is named', () => {
       stubDevice(IPHONE, 5);
 
       const { result } = renderHook(() => useMobileAuth());
@@ -161,7 +183,62 @@ describe('useMobileAuth', () => {
         result.current.onAuthorizeClick();
       });
 
-      expect(navigation.navigateTop).toHaveBeenCalledWith('pubkyauth://signin?token=test123');
+      expect(navigation.navigateTop).toHaveBeenCalledWith(GRANT_URL);
+      expect(controller.noteSignInSigner).not.toHaveBeenCalled();
+    });
+
+    it('records the chosen signer for the sign-in before leaving the page', () => {
+      stubDevice(ANDROID, 5);
+
+      const { result } = renderHook(() => useMobileAuth());
+      act(() => {
+        result.current.authorizeWith('bitkit');
+      });
+      expect(controller.noteSignInSigner).toHaveBeenLastCalledWith('bitkit');
+      expect(controller.noteSignInSigner.mock.invocationCallOrder[0]).toBeLessThan(
+        navigation.navigateTop.mock.invocationCallOrder[0],
+      );
+
+      act(() => {
+        result.current.authorizeWith('ring');
+      });
+      expect(controller.noteSignInSigner).toHaveBeenLastCalledWith('ring');
+    });
+
+    it('marks only the signer that was opened', () => {
+      stubDevice(ANDROID, 5);
+
+      const { result } = renderHook(() => useMobileAuth());
+      expect(result.current.openingSigner).toBeNull();
+      act(() => {
+        result.current.authorizeWith('ring');
+      });
+
+      expect(result.current.isOpeningRing).toBe(true);
+      expect(result.current.openingSigner).toBe('ring');
+    });
+
+    it('does not name a signer while opening without one', () => {
+      const { result } = renderHook(() => useMobileAuth());
+      act(() => {
+        result.current.onAuthorizeClick();
+      });
+
+      expect(result.current.isOpeningRing).toBe(true);
+      expect(result.current.openingSigner).toBeNull();
+    });
+
+    it('asks for a fresh link instead of opening an app when none exists yet', () => {
+      mockUseAuthUrl.mockReturnValue({ ...defaultAuthUrlReturn, url: '' });
+
+      const { result } = renderHook(() => useMobileAuth());
+      act(() => {
+        result.current.authorizeWith('bitkit');
+      });
+
+      expect(mockFetchUrl).toHaveBeenCalled();
+      expect(navigation.navigateTop).not.toHaveBeenCalled();
+      expect(controller.noteSignInSigner).not.toHaveBeenCalled();
     });
   });
 });

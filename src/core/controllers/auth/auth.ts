@@ -308,11 +308,11 @@ export class AuthController {
   }
 
   /**
-   * The Bitkit grant QR and the Pubky Passport button live beside the Ring QR
-   * on /sign-in, so each grant signer has its own slot: starting one never
-   * cancels another. A new flow for the same signer replaces its old one. All
-   * are cancelled when any sign-in completes, on local-state cleanup, and on
-   * cross-tab sign-out.
+   * The Pubky Passport button lives beside the Ring and Bitkit QR on /sign-in
+   * (one shared QR, held in the `ring` slot), so each grant signer has its own
+   * slot: starting one never cancels another. A new flow for the same signer
+   * replaces its old one. All are cancelled when any sign-in completes, on
+   * local-state cleanup, and on cross-tab sign-out.
    */
   private static activeGrantFlows = new Map<GrantSigner, { token: symbol; cancel: (() => void) | null }>();
 
@@ -339,6 +339,8 @@ export class AuthController {
   private static sessionFlowGeneration = new WeakMap<Session, number>();
   /** The signer whose grant ceremony produced a session, saved with its grant record. */
   private static grantSignerBySession = new WeakMap<Session, GrantSigner>();
+  /** The phone signer the user opened for the current sign-in QR, if any. */
+  private static signInSignerHint: 'ring' | 'bitkit' | null = null;
 
   /**
    * Single-run guard for cleanupLocalState: concurrent Controller invocations
@@ -1198,25 +1200,36 @@ export class AuthController {
   }
 
   /**
-   * Generates an authentication URL for external authentication flows.
-   * @returns Promise resolving to the generated authentication URL
+   * The one Shop sign-in grant (`pubkyauth://signin_grant`) that Pubky Ring and
+   * Bitkit both approve, shown as a single QR. The approved homeserver grant is
+   * saved to BrowserSessionStore before it becomes active.
+   *
+   * A QR does not say which app scanned it, so the session is recorded with the
+   * signer the user chose on this device through {@link noteSignInSigner} (the
+   * mobile Authorize buttons) and otherwise as `host`, which later marketplace
+   * approvals treat as an unknown signer and ask the user to choose.
+   *
+   * @param options.withPrivKeys Omitted: follows the deploy's scoped-key switch.
+   *   `false` is the separate sign-in without keys for signers that cannot share them.
    */
-  static async getAuthUrl(): Promise<TGenerateAuthUrlResult> {
-    return this.beginGrantCeremony(() => AuthApplication.generateGrantAuthUrl(), 'ring');
-  }
-
-  /**
-   * Bitkit has its own grant QR slot beside Ring. The approved homeserver
-   * grant is saved to BrowserSessionStore before it becomes active.
-   */
-  static async getGrantAuthUrl(options?: { withPrivKeys?: boolean }): Promise<TGenerateAuthUrlResult> {
-    return await this.beginGrantCeremony(
+  static async getAuthUrl(options?: { withPrivKeys?: boolean }): Promise<TGenerateAuthUrlResult> {
+    this.signInSignerHint = null;
+    return this.beginGrantCeremony(
       () =>
         options === undefined
           ? AuthApplication.generateGrantAuthUrl()
           : AuthApplication.generateGrantAuthUrl(undefined, options),
-      'bitkit',
+      'ring',
+      () => this.signInSignerHint ?? 'host',
     );
+  }
+
+  /**
+   * Records which phone signer the user opened for the sign-in grant on this
+   * device. The latest choice wins; a new {@link getAuthUrl} clears it.
+   */
+  static noteSignInSigner(signer: 'ring' | 'bitkit'): void {
+    this.signInSignerHint = signer;
   }
 
   /**
@@ -1240,6 +1253,7 @@ export class AuthController {
   private static async beginGrantCeremony(
     generate: () => Promise<TGenerateAuthUrlResult>,
     signer: GrantSigner,
+    recordedSigner: () => GrantSigner = () => signer,
   ): Promise<TGenerateAuthUrlResult> {
     this.assertStandaloneMode();
     // Retry only retired Shop records and abandoned Shop flow keys.
@@ -1284,7 +1298,7 @@ export class AuthController {
           throw error;
         }
         this.grantEpochAtStart.set(session, epochAtStart);
-        this.grantSignerBySession.set(session, signer);
+        this.grantSignerBySession.set(session, recordedSigner());
         return session;
       });
 

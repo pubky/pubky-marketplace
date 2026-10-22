@@ -26,7 +26,6 @@ const mockLoggerError = vi.fn();
 const mockCopyToClipboard = vi.fn().mockResolvedValue(undefined);
 const mockGetAuthUrl = vi.fn();
 const mockGetSignupAuthUrl = vi.fn();
-const mockGetGrantAuthUrl = vi.fn();
 const mockInitializeAuthenticatedSession = vi.fn();
 const mockCancelActiveAuthFlow = vi.fn();
 vi.mock('@/molecules/Toaster/use-toast', () => {
@@ -57,7 +56,6 @@ vi.mock('@/controllers/auth/auth', () => ({
   AuthController: {
     getAuthUrl: (...args: unknown[]) => mockGetAuthUrl(...args),
     getSignupAuthUrl: (...args: unknown[]) => mockGetSignupAuthUrl(...args),
-    getGrantAuthUrl: (...args: unknown[]) => mockGetGrantAuthUrl(...args),
     initializeAuthenticatedSession: (...args: unknown[]) => mockInitializeAuthenticatedSession(...args),
     cancelActiveAuthFlow: (...args: unknown[]) => mockCancelActiveAuthFlow(...args),
   },
@@ -325,7 +323,7 @@ describe('useAuthUrl', () => {
     ['permission', FULL_GRANT_REQUIRED_MESSAGE],
     ['storage', BROWSER_STORAGE_BLOCKED_MESSAGE],
   ])("keeps the Shop's own %s remedy when session initialization fails", async (_case, message) => {
-    mockGetGrantAuthUrl.mockResolvedValue({
+    mockGetAuthUrl.mockResolvedValue({
       authorizationUrl: 'pubkyauth://signin_grant?remedy',
       awaitApproval: Promise.resolve(mockSession()),
       cancelAuthFlow: createCancelAuthFlow(),
@@ -340,7 +338,7 @@ describe('useAuthUrl', () => {
       }),
     );
 
-    const { result } = renderHook(() => useAuthUrl({ type: 'grant' }));
+    const { result } = renderHook(() => useAuthUrl());
 
     await waitFor(() => expect(result.current.isExpired).toBe(true));
     expect(mockToast).toHaveBeenCalledWith({ variant: 'error', description: message });
@@ -417,16 +415,16 @@ describe('useAuthUrl', () => {
   });
 
   it('reports a grant creation failure instead of silently hiding it', async () => {
-    mockGetGrantAuthUrl.mockRejectedValue(new Error('Unrecognized algorithm name'));
+    mockGetAuthUrl.mockRejectedValue(new Error('Unrecognized algorithm name'));
 
-    const { result } = renderHook(() => useAuthUrl({ type: 'grant' }));
+    const { result } = renderHook(() => useAuthUrl());
 
     await waitFor(() => expect(result.current.isExpired).toBe(true));
     expect(mockToast).toHaveBeenCalledWith({ variant: 'error', description: SIGN_IN_LINK_FAILED_MESSAGE });
   });
 
   it.each([
-    ['sign-in', { type: 'grant' } as const, () => mockGetGrantAuthUrl],
+    ['sign-in', { type: 'signin' } as const, () => mockGetAuthUrl],
     ['sign-up', { type: 'signup', inviteCode: 'INVITE' } as const, () => mockGetSignupAuthUrl],
   ])('never shows a raw SDK message when the %s link cannot be made', async (_flow, options, mock) => {
     // handleError keeps the SDK's own message on the AppError it throws.
@@ -448,9 +446,9 @@ describe('useAuthUrl', () => {
   });
 
   it('offers a reload without an error toast when another sign-in canceled link creation', async () => {
-    mockGetGrantAuthUrl.mockRejectedValue(Object.assign(new Error('Auth flow canceled'), { name: 'AuthFlowCanceled' }));
+    mockGetAuthUrl.mockRejectedValue(Object.assign(new Error('Auth flow canceled'), { name: 'AuthFlowCanceled' }));
 
-    const { result } = renderHook(() => useAuthUrl({ type: 'grant' }));
+    const { result } = renderHook(() => useAuthUrl());
 
     await waitFor(() => expect(result.current.isExpired).toBe(true));
     expect(mockToast).not.toHaveBeenCalled();
@@ -458,7 +456,7 @@ describe('useAuthUrl', () => {
 
   it("keeps the Shop's own browser-storage remedy when the link cannot be made", async () => {
     const message = BROWSER_STORAGE_BLOCKED_MESSAGE;
-    mockGetGrantAuthUrl.mockRejectedValue(
+    mockGetAuthUrl.mockRejectedValue(
       new AppError({
         category: ErrorCategory.Database,
         code: DatabaseErrorCode.INIT_FAILED,
@@ -468,14 +466,14 @@ describe('useAuthUrl', () => {
       }),
     );
 
-    const { result } = renderHook(() => useAuthUrl({ type: 'grant' }));
+    const { result } = renderHook(() => useAuthUrl());
 
     await waitFor(() => expect(result.current.isExpired).toBe(true));
     expect(mockToast).toHaveBeenCalledWith({ variant: 'error', description: message });
   });
 
   it('tells an embedded Shop user to continue in Pubky App instead of blaming the connection', async () => {
-    mockGetGrantAuthUrl.mockRejectedValue(
+    mockGetAuthUrl.mockRejectedValue(
       new AppError({
         category: ErrorCategory.Auth,
         code: AuthErrorCode.UNAUTHORIZED,
@@ -485,28 +483,26 @@ describe('useAuthUrl', () => {
       }),
     );
 
-    const { result } = renderHook(() => useAuthUrl({ type: 'grant' }));
+    const { result } = renderHook(() => useAuthUrl());
 
     await waitFor(() => expect(result.current.isExpired).toBe(true));
     expect(mockToast).toHaveBeenCalledWith({ variant: 'error', description: HOSTED_SIGN_IN_MESSAGE });
   });
 
   it('asks the controller for the grant with the deploy default, or without scoped keys when told to', async () => {
-    mockGetGrantAuthUrl.mockResolvedValue({
+    mockGetAuthUrl.mockResolvedValue({
       authorizationUrl: 'pubkyauth://signin_grant?x',
       awaitApproval: new Promise<Session>(() => {}),
       cancelAuthFlow: createCancelAuthFlow(),
     });
 
-    const { result, rerender } = renderHook((props: { withPrivKeys?: boolean }) =>
-      useAuthUrl({ type: 'grant', ...props }),
-    );
+    const { result, rerender } = renderHook((props: { withPrivKeys?: boolean }) => useAuthUrl({ ...props }));
     await waitFor(() => expect(result.current.url).toBe('pubkyauth://signin_grant?x'));
-    expect(mockGetGrantAuthUrl).toHaveBeenLastCalledWith();
+    expect(mockGetAuthUrl).toHaveBeenLastCalledWith();
 
     rerender({ withPrivKeys: false });
-    await waitFor(() => expect(mockGetGrantAuthUrl).toHaveBeenCalledTimes(2));
-    expect(mockGetGrantAuthUrl).toHaveBeenLastCalledWith({ withPrivKeys: false });
+    await waitFor(() => expect(mockGetAuthUrl).toHaveBeenCalledTimes(2));
+    expect(mockGetAuthUrl).toHaveBeenLastCalledWith({ withPrivKeys: false });
   });
 
   it('does not cancel active auth flow on unmount', async () => {

@@ -87,8 +87,7 @@ describe('App-owned grant consumer', () => {
     await expect(AuthController.getAuthUrl()).rejects.toMatchObject({ code: 'UNAUTHORIZED' });
   });
   it.each([
-    ['Ring', () => AuthController.getAuthUrl()],
-    ['Bitkit', () => AuthController.getGrantAuthUrl()],
+    ['Ring or Bitkit', () => AuthController.getAuthUrl()],
     ['Passport', () => AuthController.getPassportGrantAuthUrl()],
   ])('sends a %s sign-in started in the embedded Shop to App without reporting it', async (_signer, start) => {
     vi.mocked(captureAppError).mockClear();

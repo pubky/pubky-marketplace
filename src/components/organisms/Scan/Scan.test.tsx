@@ -69,7 +69,9 @@ vi.mock('@/hooks/useMobileAuth/useMobileAuth', () => ({
     fetchUrl: mockFetchUrl,
     copyAuthUrl: mockCopyAuthUrl,
     isOpeningRing: false,
+    openingSigner: null,
     onAuthorizeClick: mockOnAuthorizeClick,
+    authorizeWith: vi.fn(),
   })),
 }));
 
@@ -247,7 +249,9 @@ describe('ScanContent', () => {
       fetchUrl: mockFetchUrl,
       copyAuthUrl: mockCopyAuthUrl,
       isOpeningRing: false,
+      openingSigner: null,
       onAuthorizeClick: mockOnAuthorizeClick,
+      authorizeWith: vi.fn(),
     });
   });
 
@@ -326,7 +330,9 @@ describe('ScanContent', () => {
       fetchUrl: mockFetchUrl,
       copyAuthUrl: mockCopyAuthUrl,
       isOpeningRing: false,
+      openingSigner: null,
       onAuthorizeClick: mockOnAuthorizeClick,
+      authorizeWith: vi.fn(),
     });
 
     await act(async () => {
@@ -346,7 +352,9 @@ describe('ScanContent', () => {
       fetchUrl: mockFetchUrl,
       copyAuthUrl: mockCopyAuthUrl,
       isOpeningRing: false,
+      openingSigner: null,
       onAuthorizeClick: mockOnAuthorizeClick,
+      authorizeWith: vi.fn(),
     });
 
     await act(async () => {
