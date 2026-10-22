@@ -99,6 +99,7 @@ export const REVIEW_REMOVAL_COPY = {
   queuedWithheld:
     'Your review is withdrawn here and will not be published. The marketplace has not confirmed it yet and will retry when your orders next load.',
   removed: 'Your review was removed from your homeserver.',
+  removedStatus: 'You removed your review. It is no longer public. Your order still shows that you reviewed it.',
   queued:
     'Your review is removed here. Deleting it from your homeserver did not go through and will retry when your orders next load.',
   failed: 'Your review could not be removed. Try again.',
