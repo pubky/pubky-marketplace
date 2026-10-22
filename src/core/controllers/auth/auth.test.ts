@@ -69,13 +69,13 @@ describe('grant-only authentication lifecycle', () => {
     },
   );
 
-  it('records an unidentified QR scan as an unknown signer, so later approvals ask which app to use', async () => {
+  it('records an unidentified QR scan as an unknown signer that later approvals start on Pubky Ring', async () => {
     const session = grantSession();
     await approve(session, 'unknown');
     await AuthController.initializeAuthenticatedSession({ session });
-    expect(useAuthStore.getState()).toMatchObject({ session, grantSigner: 'host' });
-    expect(readGrantSigner(useAuthStore.getState())).toBe('host');
-    expect(marketplaceSignerChoice(readGrantSigner(useAuthStore.getState()))).toBeNull();
+    expect(useAuthStore.getState()).toMatchObject({ session, grantSigner: 'unknown' });
+    expect(readGrantSigner(useAuthStore.getState())).toBe('unknown');
+    expect(marketplaceSignerChoice(readGrantSigner(useAuthStore.getState()))).toBe('ring');
   });
 
   it('records the app the user opened last for the sign-in', async () => {
@@ -97,7 +97,7 @@ describe('grant-only authentication lifecycle', () => {
     const session = grantSession();
     await approve(session, 'unknown');
     await AuthController.initializeAuthenticatedSession({ session });
-    expect(useAuthStore.getState().grantSigner).toBe('host');
+    expect(useAuthStore.getState().grantSigner).toBe('unknown');
   });
 
   it('never bootstraps or persists a live identity after a blocked SDK save', async () => {

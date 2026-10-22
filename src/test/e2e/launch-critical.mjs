@@ -412,7 +412,8 @@ async function waitForAuthStore(page, timeout = 90_000) {
           state.currentUserPubky &&
           typeof state.grantSessionRecordId === 'string' &&
           state.grantSessionRecordId.length > 0 &&
-          state.grantSigner === 'ring' &&
+          // A QR scan does not identify the approving app.
+          state.grantSigner === 'unknown' &&
           state.sessionExport === null &&
           state.hasProfile === true,
         );
