@@ -91,6 +91,7 @@ export function Metadata({
     // routes, so a base path here would double it. Root-relative values below are prefixed explicitly.
     metadataBase: new URL(defaultUrl),
     title,
+    applicationName: getSiteName(),
     description: hasDescription ? resolvedDescription : null,
     keywords: resolvedKeywords,
     authors: [{ name: resolvedAuthor }],

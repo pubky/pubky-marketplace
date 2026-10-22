@@ -10,6 +10,7 @@ exports[`Metadata - Snapshots > matches snapshot for default metadata configurat
     "statusBarStyle": "black",
     "title": "Pubky Market",
   },
+  "applicationName": "Pubky Market",
   "authors": [
     {
       "name": "Pubky Team",
@@ -85,6 +86,7 @@ exports[`Metadata - Snapshots > matches snapshot for metadata with custom parame
     "statusBarStyle": "black",
     "title": "Pubky Market",
   },
+  "applicationName": "Pubky Market",
   "authors": [
     {
       "name": "Custom Author",
@@ -160,6 +162,7 @@ exports[`Metadata - Snapshots > matches snapshot for metadata with image 1`] = `
     "statusBarStyle": "black",
     "title": "Pubky Market",
   },
+  "applicationName": "Pubky Market",
   "authors": [
     {
       "name": "Pubky Team",
@@ -235,6 +238,7 @@ exports[`Metadata - Snapshots > matches snapshot for metadata with minimal confi
     "statusBarStyle": "black",
     "title": "Pubky Market",
   },
+  "applicationName": "Pubky Market",
   "authors": [
     {
       "name": "Pubky Team",
@@ -310,6 +314,7 @@ exports[`Metadata - Snapshots > matches snapshot with empty strings 1`] = `
     "statusBarStyle": "black",
     "title": "Pubky Market",
   },
+  "applicationName": "Pubky Market",
   "authors": [
     {
       "name": "Pubky Team",
@@ -385,6 +390,7 @@ exports[`Metadata - Snapshots > matches snapshot with long title and description
     "statusBarStyle": "black",
     "title": "Pubky Market",
   },
+  "applicationName": "Pubky Market",
   "authors": [
     {
       "name": "Pubky Team",
@@ -460,6 +466,7 @@ exports[`Metadata - Snapshots > matches snapshot with special characters 1`] = `
     "statusBarStyle": "black",
     "title": "Pubky Market",
   },
+  "applicationName": "Pubky Market",
   "authors": [
     {
       "name": "Pubky Team",
