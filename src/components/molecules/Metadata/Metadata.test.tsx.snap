@@ -8,8 +8,9 @@ exports[`Metadata - Snapshots > matches snapshot for default metadata configurat
   "appleWebApp": {
     "capable": true,
     "statusBarStyle": "black",
-    "title": "Pubky App",
+    "title": "Pubky Market",
   },
+  "applicationName": "Pubky Market",
   "authors": [
     {
       "name": "Pubky Team",
@@ -52,7 +53,7 @@ exports[`Metadata - Snapshots > matches snapshot for default metadata configurat
       },
     ],
     "locale": "en_US",
-    "siteName": "Pubky App",
+    "siteName": "Pubky Market",
     "title": "Test Title",
     "type": "website",
     "url": "https://pubky.app",
@@ -83,8 +84,9 @@ exports[`Metadata - Snapshots > matches snapshot for metadata with custom parame
   "appleWebApp": {
     "capable": true,
     "statusBarStyle": "black",
-    "title": "Pubky App",
+    "title": "Pubky Market",
   },
+  "applicationName": "Pubky Market",
   "authors": [
     {
       "name": "Custom Author",
@@ -158,8 +160,9 @@ exports[`Metadata - Snapshots > matches snapshot for metadata with image 1`] = `
   "appleWebApp": {
     "capable": true,
     "statusBarStyle": "black",
-    "title": "Pubky App",
+    "title": "Pubky Market",
   },
+  "applicationName": "Pubky Market",
   "authors": [
     {
       "name": "Pubky Team",
@@ -202,7 +205,7 @@ exports[`Metadata - Snapshots > matches snapshot for metadata with image 1`] = `
       },
     ],
     "locale": "en_US",
-    "siteName": "Pubky App",
+    "siteName": "Pubky Market",
     "title": "Image Test",
     "type": "website",
     "url": "https://pubky.app",
@@ -233,8 +236,9 @@ exports[`Metadata - Snapshots > matches snapshot for metadata with minimal confi
   "appleWebApp": {
     "capable": true,
     "statusBarStyle": "black",
-    "title": "Pubky App",
+    "title": "Pubky Market",
   },
+  "applicationName": "Pubky Market",
   "authors": [
     {
       "name": "Pubky Team",
@@ -277,7 +281,7 @@ exports[`Metadata - Snapshots > matches snapshot for metadata with minimal confi
       },
     ],
     "locale": "en_US",
-    "siteName": "Pubky App",
+    "siteName": "Pubky Market",
     "title": "Minimal",
     "type": "website",
     "url": "https://pubky.app",
@@ -308,8 +312,9 @@ exports[`Metadata - Snapshots > matches snapshot with empty strings 1`] = `
   "appleWebApp": {
     "capable": true,
     "statusBarStyle": "black",
-    "title": "Pubky App",
+    "title": "Pubky Market",
   },
+  "applicationName": "Pubky Market",
   "authors": [
     {
       "name": "Pubky Team",
@@ -352,7 +357,7 @@ exports[`Metadata - Snapshots > matches snapshot with empty strings 1`] = `
       },
     ],
     "locale": "en_US",
-    "siteName": "Pubky App",
+    "siteName": "Pubky Market",
     "title": "",
     "type": "website",
     "url": "https://pubky.app",
@@ -383,8 +388,9 @@ exports[`Metadata - Snapshots > matches snapshot with long title and description
   "appleWebApp": {
     "capable": true,
     "statusBarStyle": "black",
-    "title": "Pubky App",
+    "title": "Pubky Market",
   },
+  "applicationName": "Pubky Market",
   "authors": [
     {
       "name": "Pubky Team",
@@ -427,7 +433,7 @@ exports[`Metadata - Snapshots > matches snapshot with long title and description
       },
     ],
     "locale": "en_US",
-    "siteName": "Pubky App",
+    "siteName": "Pubky Market",
     "title": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
     "type": "website",
     "url": "https://pubky.app",
@@ -458,8 +464,9 @@ exports[`Metadata - Snapshots > matches snapshot with special characters 1`] = `
   "appleWebApp": {
     "capable": true,
     "statusBarStyle": "black",
-    "title": "Pubky App",
+    "title": "Pubky Market",
   },
+  "applicationName": "Pubky Market",
   "authors": [
     {
       "name": "Pubky Team",
@@ -502,7 +509,7 @@ exports[`Metadata - Snapshots > matches snapshot with special characters 1`] = `
       },
     ],
     "locale": "en_US",
-    "siteName": "Pubky App",
+    "siteName": "Pubky Market",
     "title": "Special chars: <>&\\"'",
     "type": "website",
     "url": "https://pubky.app",

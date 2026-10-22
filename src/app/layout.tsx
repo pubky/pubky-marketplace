@@ -3,6 +3,7 @@ import type { Viewport } from 'next';
 import { TooltipProvider } from '@/atoms/Tooltip/Tooltip';
 import { TOOLTIP_DELAY_MS } from '@/config/ui';
 import { buildMarketplacePromoPrepaintScript } from '@/libs/commerce/promo-prepaint';
+import { MARKETPLACE_STATIC_SEO } from '@/libs/commerce/seo';
 import { renderPerRequestOutsideVercel } from '@/libs/runtime-config/render-mode';
 import { RootContainer } from '@/molecules/ContainerRoot/ContainerRoot';
 import { EmbeddedDocumentFlag } from '@/molecules/EmbeddedDocumentFlag/EmbeddedDocumentFlag';
@@ -32,9 +33,8 @@ export const viewport: Viewport = {
 
 export function generateMetadata() {
   return Metadata({
-    title: 'Pubky App - Unlock the web',
-    description:
-      'Pubky App is a social-media-like experience built over Pubky Core. It serves as a working example on how to build over Pubky Core to create simple or complex applications.',
+    title: 'Pubky Market',
+    description: MARKETPLACE_STATIC_SEO.description,
   });
 }
 

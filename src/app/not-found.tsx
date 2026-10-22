@@ -1,7 +1,7 @@
 import { Metadata } from '@/molecules/Metadata/Metadata';
 
 export const metadata = Metadata({
-  title: 'Page Not Found - Pubky App',
+  title: 'Page Not Found - Pubky Market',
   description: 'The page you are looking for does not exist.',
   robots: false,
 });

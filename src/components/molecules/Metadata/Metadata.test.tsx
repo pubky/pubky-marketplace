@@ -9,6 +9,19 @@ vi.mock('@/libs/runtime-config/runtime-config', async (importOriginal) => {
   return { ...actual, getShopPublicPathOverride: () => runtime.publicPath };
 });
 
+describe('Metadata - site name', () => {
+  it('defaults the application name, Apple web app title and Open Graph site name to Pubky Market', () => {
+    const result = Metadata({
+      title: 'Test Title',
+      description: 'Test Description',
+    });
+
+    expect(result.applicationName).toBe('Pubky Market');
+    expect(result.appleWebApp.title).toBe('Pubky Market');
+    expect(result.openGraph.siteName).toBe('Pubky Market');
+  });
+});
+
 describe('Metadata - Snapshots', () => {
   it('matches snapshot for default metadata configuration', () => {
     const result = Metadata({

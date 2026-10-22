@@ -6,7 +6,7 @@ import { ShareTarget } from '@/templates/Feed/ShareTarget/ShareTarget';
 
 export const metadata = Metadata({
   title: 'Share to Pubky',
-  description: 'Share content to Pubky App.',
+  description: 'Share content to Pubky Market.',
   robots: false,
 });
 
