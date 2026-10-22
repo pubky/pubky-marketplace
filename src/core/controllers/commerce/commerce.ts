@@ -2,6 +2,7 @@ import {
   CommerceApplication,
   type CommerceCatalogStreamFilters,
   type CommerceCheckoutFulfillmentInput,
+  type CommerceReviewsPage,
 } from '@/application/commerce/commerce';
 import {
   type CheckoutDeliveryKeysResolution,
@@ -790,7 +791,19 @@ export class CommerceController {
     });
   }
 
-  /** Retries own-review records whose homeserver publication never landed. */
+  /**
+   * The current user's reviews a double-blind window still withholds: the
+   * held terms and the window end, which the surfaces show as "Publishes when
+   * the other side reviews, or on {date}".
+   */
+  static async getAwaitingReleaseOwnMarketplaceReviews() {
+    return await CommerceApplication.getAwaitingReleaseReviews(this.getCurrentUserPubky());
+  }
+
+  /**
+   * Retries own-review records whose homeserver publication never landed, and
+   * re-reads the attestations of reviews a double-blind window withheld.
+   */
   static async resumeOwnReviewPublications() {
     return await CommerceApplication.resumeOwnReviewPublications(this.getCurrentUserPubky());
   }
@@ -1164,16 +1177,12 @@ export class CommerceController {
   }
 
   /** A page of indexed reviews about a seller, with joined responses. */
-  static async fetchSellerReviews(sellerPubky: unknown, page: { skip?: number; limit?: number } = {}) {
+  static async fetchSellerReviews(sellerPubky: unknown, page: CommerceReviewsPage = {}) {
     return await CommerceApplication.fetchSellerReviews(CommerceRecordNormalizer.pubky(sellerPubky), page);
   }
 
   /** A page of indexed buyer reviews of one listing, with joined responses. */
-  static async fetchListingReviews(
-    sellerPubky: unknown,
-    listingId: unknown,
-    page: { skip?: number; limit?: number } = {},
-  ) {
+  static async fetchListingReviews(sellerPubky: unknown, listingId: unknown, page: CommerceReviewsPage = {}) {
     return await CommerceApplication.fetchListingReviews(
       CommerceRecordNormalizer.pubky(sellerPubky),
       CommerceRecordNormalizer.entityId(listingId),

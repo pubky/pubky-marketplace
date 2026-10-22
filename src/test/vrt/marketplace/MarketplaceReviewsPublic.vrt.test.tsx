@@ -40,8 +40,16 @@ vi.mock('@/controllers/commerce/commerce', () => ({
   CommerceController: {
     ...createMarketplaceVrtCommerceController(),
     fetchSellerReputation: vi.fn(async () => controllerState.reputation),
-    fetchSellerReviews: vi.fn(async () => ({ status: 'ok', reviews: controllerState.reviews })),
-    fetchListingReviews: vi.fn(async () => ({ status: 'ok', reviews: controllerState.reviews })),
+    fetchSellerReviews: vi.fn(async (_seller: string, page: { sort?: string }) => ({
+      status: 'ok',
+      reviews: controllerState.reviews,
+      sortApplied: page.sort !== undefined,
+    })),
+    fetchListingReviews: vi.fn(async (_seller: string, _listing: string, page: { sort?: string }) => ({
+      status: 'ok',
+      reviews: controllerState.reviews,
+      sortApplied: page.sort !== undefined,
+    })),
     getOwnMarketplaceReviewResponse: vi.fn(async () => controllerState.ownResponse),
     getOrFetchListingIfFound: vi.fn(async () => controllerState.listing),
     getCatalogEntriesBySeller: vi.fn(async () => controllerState.catalogEntries),
@@ -214,6 +222,17 @@ const countedSummary = {
       [UNRECOGNIZED_ATTESTOR]: trustBucket({ orders: 1, buyers: 1, sumBuyerMeans: 2, sellerBuyers: 1 }),
     },
     scoped: trustBucket(),
+  },
+};
+
+// Every counted buyer weighs 1 (reviews without a price_decade claim, or an
+// index before weights): the same figures with no weighted line.
+const unweightedSummary = {
+  status: 'rated',
+  summary: {
+    ...countedSummary.summary,
+    buckets: { [TRUSTED_ATTESTOR]: trustBucket({ weightedSum: 13.8, weightTotal: 3 }) },
+    scoped: trustBucket({ weightedSum: 13.8, weightTotal: 3 }),
   },
 };
 
@@ -414,7 +433,23 @@ describe('Marketplace public reviews — visual regression', () => {
     );
     await waitForText('seller rating · 3 buyers');
     await waitForText('across 2 listings');
+    await waitForText('Weighted by purchase value: 4.5');
     await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('reputation-header-counted-full-desktop');
+  });
+
+  it('renders no weighted line when the counted buckets carry no purchase-value weights at desktop viewport', async () => {
+    controllerState.reputation = unweightedSummary;
+    controllerState.catalogEntries = await ratedCatalogEntries();
+    const screen = await renderForVRT(
+      <main className="mx-auto flex w-full max-w-xl flex-col gap-6 px-6 py-10">
+        <MarketplaceReputationHeader sellerPubky={SELLER} variant="full" />
+      </main>,
+      { viewport: VRT_VIEWPORT_DESKTOP },
+    );
+    await waitForText('seller rating · 3 buyers');
+    await waitForText('across 2 listings');
+    expect(document.body.textContent).not.toContain('Weighted by purchase value');
+    await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('reputation-header-unweighted-full-desktop');
   });
 
   it('renders the RV2 seller rating headline at mobile viewport', async () => {
@@ -501,6 +536,37 @@ describe('Marketplace public reviews — visual regression', () => {
     } finally {
       setSocialHost(undefined);
     }
+  });
+
+  it('renders the sort control with a chosen order above the list at desktop viewport', async () => {
+    controllerState.reviews = REVIEW_SPECTRUM;
+    const screen = await renderForVRT(
+      <main className="mx-auto flex w-full max-w-2xl flex-col gap-6 px-6 py-10">
+        <MarketplaceReviewsSection sellerPubky={SELLER} listingId="rangefinder_camera" />
+      </main>,
+      { viewport: VRT_VIEWPORT_DESKTOP },
+    );
+    await waitForText('Verified purchase');
+    await screen.getByRole('combobox', { name: 'Sort reviews' }).click();
+    await screen.getByRole('option', { name: 'Highest rated' }).click();
+    await vi.waitFor(() => {
+      const trigger = document.querySelector('[data-testid="marketplace-reviews-sort"]');
+      if (trigger?.textContent !== 'Highest rated') throw new Error('The sort has not been chosen yet.');
+    });
+    await waitForText('Verified purchase');
+    await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('reviews-section-sort-chosen-desktop');
+  });
+
+  it('renders the sort control above the list at mobile viewport', async () => {
+    controllerState.reviews = REVIEW_SPECTRUM;
+    const screen = await renderForVRT(
+      <main className="flex w-full flex-col gap-6 px-4 py-8">
+        <MarketplaceReviewsSection sellerPubky={SELLER} listingId="rangefinder_camera" />
+      </main>,
+      { viewport: VRT_VIEWPORT_MOBILE },
+    );
+    await waitForText('Verified purchase');
+    await expect(screen.getByTestId(VRT_ROOT_TESTID)).toMatchScreenshot('reviews-section-sort-mobile');
   });
 
   it('renders the review list at mobile viewport', async () => {

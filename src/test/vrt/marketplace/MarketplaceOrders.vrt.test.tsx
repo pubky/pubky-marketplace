@@ -461,6 +461,28 @@ const fixtures = vi.hoisted(async () => {
       sync_status: 'synced' as const,
       updated_at: 1,
     },
+    // The same order's own review while a double-blind window still withholds it.
+    awaitingRelease: {
+      orderId: reviewedOrderView(23).order.id,
+      releaseAt: '2026-11-01T00:00:00.000Z',
+      reviewerRole: 'buyer' as const,
+      items: [
+        {
+          listingOwnerPubky: ORDER_FIXTURE_SELLER,
+          listingId: 'boots',
+          rating: 5,
+          text: 'Accurate and fast. The boots fit as described.',
+          updatedAt: '2026-10-20T10:00:00.000Z',
+        },
+        {
+          listingOwnerPubky: ORDER_FIXTURE_SELLER,
+          listingId: 'belt',
+          rating: 4,
+          text: 'The belt is sturdy.',
+          updatedAt: '2026-10-20T10:00:00.000Z',
+        },
+      ],
+    },
     reviewedInWindow: [reviewedOrderView(23)],
     reviewedOutOfWindow: [reviewedOrderView(25)],
     trackableShipped: [trackableShippedView()],
@@ -669,6 +691,7 @@ beforeEach(async () => {
   // reaches the network, and only the scenes below show the panel.
   vi.spyOn(CommerceController, 'getOwnMarketplaceReviews').mockResolvedValue([]);
   vi.spyOn(CommerceController, 'refreshOwnMarketplaceReviews').mockResolvedValue(0);
+  vi.spyOn(CommerceController, 'getAwaitingReleaseOwnMarketplaceReviews').mockResolvedValue([]);
 });
 
 describe('Marketplace orders — visual regression', () => {
@@ -1122,6 +1145,20 @@ describe('Marketplace orders — visual regression', () => {
     await expect(await expectVrtSurface('marketplace-my-reviews')).toMatchScreenshot('orders-my-reviews-items-desktop');
   });
 
+  it('renders a pending My reviews card with when it publishes at desktop viewport', async () => {
+    const { reviewedInWindow, awaitingRelease } = await fixtures;
+    ordersState.orders = reviewedInWindow;
+    ordersState.isLoading = false;
+    ordersState.error = null;
+    vi.spyOn(CommerceController, 'getAwaitingReleaseOwnMarketplaceReviews').mockResolvedValue([awaitingRelease]);
+
+    const screen = await renderForVRT(<MarketplaceOrders />, { viewport: VRT_VIEWPORT_DESKTOP });
+    await expect.element(screen.getByRole('button', { name: 'Remove my review' })).toBeVisible();
+    await expect(await expectVrtSurface('marketplace-my-reviews')).toMatchScreenshot(
+      'orders-my-reviews-pending-desktop',
+    );
+  });
+
   it('renders the remove-review confirmation at mobile viewport', async () => {
     const { reviewedInWindow, ownReviewRow } = await fixtures;
     ordersState.orders = reviewedInWindow;
@@ -1204,6 +1241,24 @@ describe('Marketplace orders — visual regression', () => {
     await parkVrtHover();
     await expect(await expectVrtSurface('marketplace-orders')).toMatchScreenshot(
       'orders-review-edit-in-window-desktop',
+      VRT_DENSE_CHROME_SCREENSHOT,
+    );
+    ordersState.adapterMode = 'sandbox';
+  });
+
+  it('says when a withheld review publishes on the order card at desktop viewport', async () => {
+    const { reviewedInWindow, awaitingRelease } = await fixtures;
+    ordersState.orders = reviewedInWindow;
+    ordersState.isLoading = false;
+    ordersState.error = null;
+    ordersState.adapterMode = 'transaction-service';
+    vi.spyOn(CommerceController, 'getAwaitingReleaseOwnMarketplaceReviews').mockResolvedValue([awaitingRelease]);
+
+    const screen = await renderForVRT(<MarketplaceOrders />, { viewport: VRT_VIEWPORT_DESKTOP });
+    await expect.element(screen.getByTestId('own-review-pending')).toBeVisible();
+    await parkVrtHover();
+    await expect(await expectVrtSurface('marketplace-orders')).toMatchScreenshot(
+      'orders-review-pending-desktop',
       VRT_DENSE_CHROME_SCREENSHOT,
     );
     ordersState.adapterMode = 'sandbox';

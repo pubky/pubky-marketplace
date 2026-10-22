@@ -43,20 +43,20 @@ exports[`DialogTerms - Snapshots > matches snapshot for default DialogTerms 1`] 
         >
           TERMS AND CONDITIONS
           <br />
-          Effective Date: January 29, 2026
+          Effective Date: October 22, 2026
         </p>
         <p
           class="text-muted-foreground text-base font-normal"
           data-testid="typography"
         >
-          Thank you for using the Pubky platform and the products, services and features we make available to you as part of the platform, including the Pubky App (collectively, the "Platform"). The terms and conditions set forth below (as updated and amended from time to time, and collectively with the Privacy Policy and any other materials explicitly incorporated by us, these "Terms") govern your access to and use of the Platform.
+          Thank you for using the Pubky platform and the products, services and features we make available to you as part of the platform, including the Pubky App and Pubky Shop (collectively, the "Platform"). The terms and conditions set forth below (as updated and amended from time to time, and collectively with the Privacy Policy and any other materials explicitly incorporated by us, these "Terms") govern your access to and use of the Platform.
         </p>
         <p
           class="text-muted-foreground text-base font-normal"
           data-testid="typography"
         >
           <strong>
-            PLEASE REVIEW THE ARBITRATION PROVISION SET FORTH BELOW CAREFULLY, AS IT WILL REQUIRE ALL PERSONS TO RESOLVE CLAIMS ON AN INDIVIDUAL BASIS THROUGH FINAL AND BINDING ARBITRATION AND TO WAIVE ANY RIGHT TO PROCEED AS A REPRESENTATIVE OR CLASS MEMBER IN ANY CLASS OR REPRESENTATIVE PROCEEDING. BY USING THE PLATFORM, YOU EXPRESSLY ACKNOWLEDGE THAT YOU HAVE READ AND UNDERSTAND ALL OF THE TERMS OF THIS PROVISION AND HAVE TAKEN TIME TO CONSIDER THE CONSEQUENCES OF THIS IMPORTANT DECISION.
+            PLEASE REVIEW THE ARBITRATION PROVISION SET FORTH BELOW CAREFULLY, AS IT WILL REQUIRE ALL PERSONS TO RESOLVE DISPUTES ON AN INDIVIDUAL BASIS THROUGH FINAL AND BINDING ARBITRATION AND TO WAIVE ANY RIGHT TO PROCEED AS A REPRESENTATIVE OR CLASS MEMBER IN ANY CLASS OR REPRESENTATIVE PROCEEDING. BY USING THE PLATFORM, YOU EXPRESSLY ACKNOWLEDGE THAT YOU HAVE READ AND UNDERSTAND ALL OF THE TERMS OF THIS PROVISION AND HAVE TAKEN TIME TO CONSIDER THE CONSEQUENCES OF THIS IMPORTANT DECISION.
           </strong>
         </p>
         <p
@@ -362,6 +362,19 @@ exports[`DialogTerms - Snapshots > matches snapshot for default DialogTerms 1`] 
           class="text-muted-foreground text-base font-normal"
           data-testid="typography"
         >
+          <strong>
+            Commerce features:
+          </strong>
+           Buying, selling, and paid unlocks of digital content (together, “
+          <strong>
+            commerce features
+          </strong>
+          ”) are not available in the European Union (including each EU Member State), the United Kingdom, or the United States. This is a restriction on specific features based on your location, as described above. We may apply it based on the location of the buyer, the seller or creator, or the item, as we determine from the information available to us (including IP address and declared country), and we may refuse or restrict any commerce feature accordingly. It applies to commerce features only: the rest of the Platform remains available in those places.
+        </p>
+        <p
+          class="text-muted-foreground text-base font-normal"
+          data-testid="typography"
+        >
           The Platform is not available to users in Prohibited Jurisdictions as defined below.
         </p>
         <p
@@ -480,10 +493,13 @@ exports[`DialogTerms - Snapshots > matches snapshot for default DialogTerms 1`] 
             The basis of your complaint (provide as much detail as possible);
           </li>
           <li>
-            If your complaint concerns the activities of other Users/visitors on the Platform, identify the specific type of inappropriate or offensive behaviour engaged in and, insofar as possible, the identity of the offending person; and
+            If your complaint concerns the activities of other Users/visitors on the Platform, identify the specific type of inappropriate or offensive behaviour engaged in and, insofar as possible, the identity of the offending person;
           </li>
           <li>
-            If your complaint concerns particular Content, please provide the URL for the Content that is the subject of your complaint, timestamps within the video where the alleged violative Content appears, and the reason for your Complaint.
+            If your complaint concerns particular Content, please provide the URL for the Content that is the subject of your complaint, timestamps within the video where the alleged violative Content appears, and the reason for your Complaint; and
+          </li>
+          <li>
+            If your complaint concerns any particular listing on Pubky Shop, please provide the listing information identifying the specific reasons for your complaint (e.g., fraud).
           </li>
         </ul>
         <p
@@ -508,7 +524,7 @@ exports[`DialogTerms - Snapshots > matches snapshot for default DialogTerms 1`] 
           class="text-muted-foreground text-base font-normal"
           data-testid="typography"
         >
-          You agree to comply with all applicable Laws with respect to your use of the Platform, including but not limited to sanctions, anti-money laundering, export control, privacy, and anti-terrorism Laws. Without limiting the foregoing, you acknowledge and agree that Synonym makes no representation that materials accessible via the Platform are appropriate or available for use in any particular locations, and accessing them from territories where their contents are illegal is prohibited. Those who choose to access the Platform from any location do so on their own initiative, at their own risk, and are responsible for compliance with all applicable Laws. If you use the Platform in a jurisdiction that prohibits or restricts such use, your use will be subject to any other provision of these Terms, and Synonym shall not have any liability with respect to such use.
+          You agree to comply with all applicable Laws with respect to your use of the Platform, including but not limited to sanctions, anti-money laundering, export control, privacy, and anti-terrorism Laws. Without limiting the foregoing, you acknowledge and agree that Synonym makes no representation that materials accessible via the Platform are appropriate or available for use in any particular locations, and accessing them from territories where their contents are illegal is prohibited. Those who choose to access the Platform from any location do so on their own initiative, at their own risk, and are responsible for compliance with all applicable Laws. If you use the Platform in a jurisdiction that prohibits or restricts such use, your use will be subject to any other provision of these Terms, and Synonym shall not have any liability with respect to such use. Further, you agree to not access the Platform from Prohibited Jurisdictions as defined herein.
         </p>
         <p
           class="text-muted-foreground text-base font-normal"
@@ -569,7 +585,7 @@ exports[`DialogTerms - Snapshots > matches snapshot for default DialogTerms 1`] 
           class="text-muted-foreground text-base font-normal"
           data-testid="typography"
         >
-          Any infringement or other violation of a third-party's rights with respect to the Content submitted by you to the Platform and which has been identified as such by Synonym or by a third-party, may immediately and without notice to you result in the removal of such Content. You hereby agree to defend, indemnify and hold harmless Synonym and its Associates, as to any allegations, demands, claims, investigations or claims arising from your submission of Content to Synonym and/or monetization of your Content, insofar as it relates to any infringement or violation of the intellectual property rights, proprietary rights, contractual rights, or other rights of a third-party.
+          Any infringement or other violation of a third-party's rights with respect to the Content submitted by you to the Platform and which has been identified as such by Synonym or by a third-party, may immediately and without notice to you result in the removal of such Content. You hereby agree to defend, indemnify and hold harmless Synonym and its Associates, as to any allegations, demands, claims, investigations or disputes arising from your submission of Content to Synonym and/or monetization of your Content, insofar as it relates to any infringement or violation of the intellectual property rights, proprietary rights, contractual rights, or other rights of a third-party.
         </p>
         <p
           class="text-muted-foreground text-base font-normal"
@@ -611,6 +627,160 @@ exports[`DialogTerms - Snapshots > matches snapshot for default DialogTerms 1`] 
           data-testid="typography"
         >
           Synonym policies provide for the termination, in appropriate circumstances, of repeat infringers’ access to the Platform.
+        </p>
+        <p
+          class="text-muted-foreground text-base font-normal"
+          data-testid="typography"
+        >
+          PUBKY SHOP AND PUBKY MARKETPLACE
+        </p>
+        <p
+          class="text-muted-foreground text-base font-normal italic"
+          data-testid="typography"
+        >
+          This section explains Pubky Shop. It does not replace the rest of these Terms. Listings and related material remain Content. Prohibited Uses still apply, including to goods and services offered for sale.
+        </p>
+        <p
+          class="text-muted-foreground text-base font-normal"
+          data-testid="typography"
+        >
+          <strong>
+            What Pubky Shop is:
+          </strong>
+          <br />
+          Pubky Shop is our marketplace client. Sellers may publish listings. Buyers may browse, bid, make offers, join timed drops, place orders, and pay the seller. We operate the Shop website, a catalog index, a transaction service (including stock, auction close, and drop timing), payment verification, and a Lock Server for gated digital content. We are not the seller of listed goods or services unless a listing is made by an account we operate and that listing says so.
+        </p>
+        <p
+          class="text-muted-foreground text-base font-normal"
+          data-testid="typography"
+        >
+          <strong>
+            What Pubky Marketplace is:
+          </strong>
+          <br />
+          Pubky Marketplace is the name we use for commerce on Pubky. These Terms govern Pubky Shop. They do not automatically govern some other operator’s marketplace.
+        </p>
+        <p
+          class="text-muted-foreground text-base font-normal"
+          data-testid="typography"
+        >
+          <strong>
+            Not a party to the sale:
+          </strong>
+          <br />
+          A contract of sale (if any) is between buyer and seller. We are not the merchant, carrier, insurer, escrow, or dispute tribunal. We do not guarantee authenticity, condition, delivery, returns, or that the other party will perform. Seller return policies and shipping terms are the seller’s, except where Law says otherwise and cannot be disapplied.
+        </p>
+        <p
+          class="text-muted-foreground text-base font-normal"
+          data-testid="typography"
+        >
+          <strong>
+            Listings and the index:
+          </strong>
+          <br />
+          Listings are published by the seller. Our catalog is an index and a cache. Auction ends, drop clocks, and remaining stock for a sale we coordinate are determined by our transaction service, not by a copy on your device. Removing a listing from our index or blocking an order on our transaction service does not delete the origin copy on a Homeserver.
+        </p>
+        <p
+          class="text-muted-foreground text-base font-normal"
+          data-testid="typography"
+        >
+          <strong>
+            Prohibited goods:
+          </strong>
+          <br />
+          You must not list or buy through Pubky Shop anything that is illegal to offer or acquire in a place that applies to you, or that otherwise breaches these Terms or our Community Guidelines. We may refuse, unlist, or restrict listings and orders. We operate moderation for prohibited goods. Moderation on our services is not a promise that every listing is lawful or that origin copies are gone.
+        </p>
+        <p
+          class="text-muted-foreground text-base font-normal"
+          data-testid="typography"
+        >
+          <strong>
+            Payments: no Synonym fee:
+          </strong>
+          <br />
+          We do not charge a fee for Pubky Shop in these Terms. You do not pay Synonym the price of the listed item. We do not custody the purchase amount. We are not the PayPal merchant of record for the sale.
+        </p>
+        <p
+          class="text-muted-foreground text-base font-normal"
+          data-testid="typography"
+        >
+          <strong>
+            How buyers pay sellers:
+          </strong>
+          <br />
+          Payment is from buyer to seller, by a method the seller has enabled:
+        </p>
+        <ul
+          data-testid="list"
+        >
+          <li>
+            <strong>
+              Bitcoin:
+            </strong>
+             payment is requested through Paykit and settles to the seller’s own bitcoin wallet. We and Paykit Server may hold only watch-only information (such as a BIP84 account xpub) to create invoices and see that payment arrived. Spending keys stay in the seller’s wallet (for example Bitkit). We do not store your recovery phrase.
+          </li>
+          <li>
+            <strong>
+              PayPal:
+            </strong>
+             the buyer pays the seller’s PayPal address. PayPal confirms payment, not Pubky Shop.
+          </li>
+        </ul>
+        <p
+          class="text-muted-foreground text-base font-normal"
+          data-testid="typography"
+        >
+          PayPal, Bitkit, and similar tools are Third-Party Materials. Their terms and privacy policies apply to that payment.
+        </p>
+        <p
+          class="text-muted-foreground text-base font-normal"
+          data-testid="typography"
+        >
+          <strong>
+            Verification and Locks:
+          </strong>
+          <br />
+          We may verify that a payment appears to have been made before we mark an order paid or before a Lock Server grants access to gated digital content. Verification is not a guarantee of funds, a refund, or lasting access. Access credentials can be lost if you lose keys, change operators, or the Lock Server is unavailable. We do not promise perpetual unlock across every operator or device.
+        </p>
+        <p
+          class="text-muted-foreground text-base font-normal"
+          data-testid="typography"
+        >
+          <strong>
+            Orders, shipping, and messages:
+          </strong>
+          <br />
+          Checkout may collect a delivery address and other order details to pass between buyer and seller. You are responsible for the accuracy of what you submit. Shop may include messages about an order. We are not a party to those messages. Do not treat Shop messages as legal notice to Synonym.
+        </p>
+        <p
+          class="text-muted-foreground text-base font-normal"
+          data-testid="typography"
+        >
+          <strong>
+            Purchase guarantees:
+          </strong>
+          <br />
+          Any in-app control labelled as a purchase guarantee is not a guarantee by Synonym unless we say so in writing in that feature. If the control does nothing beyond a label, it creates no extra obligation on us.
+        </p>
+        <p
+          class="text-muted-foreground text-base font-normal"
+          data-testid="typography"
+        >
+          <strong>
+            Taxes:
+          </strong>
+          <br />
+          You remain responsible for taxes on your sales and purchases, as already stated in these Terms. No Synonym fee does not mean no tax for you as buyer or seller.
+        </p>
+        <p
+          class="text-muted-foreground text-base font-normal"
+          data-testid="typography"
+        >
+          <strong>
+            Your keys:
+          </strong>
+          <br />
+          The Recovery Phrase rules in these Terms still apply. Do not enter a recovery phrase into Pubky Shop, a Lock Server page, PayPal, or setup except through Pubky Ring or the wallet itself as designed.
         </p>
         <p
           class="text-muted-foreground text-base font-normal"
@@ -830,13 +1000,13 @@ exports[`DialogTerms - Snapshots > matches snapshot for default DialogTerms 1`] 
           class="text-muted-foreground text-base font-normal"
           data-testid="typography"
         >
-          MANDATORY RESOLUTION OF CLAIMS THROUGH ARBITRATION
+          MANDATORY RESOLUTION OF DISPUTES THROUGH ARBITRATION
         </p>
         <p
           class="text-muted-foreground text-base font-normal italic"
           data-testid="typography"
         >
-          This Section requires that most claims relating to the Platform be resolved through individual arbitration.
+          This Section requires that most disputes relating to the Platform be resolved through individual arbitration.
         </p>
         <p
           class="text-muted-foreground text-base font-normal"
@@ -846,7 +1016,7 @@ exports[`DialogTerms - Snapshots > matches snapshot for default DialogTerms 1`] 
             Covered Claims:
           </strong>
           <br />
-          Except for excluded claims described in the paragraph below, Synonym and you each agree that any claim, claim or controversy arising out of or relating to (i) these Terms or the existence, breach, termination, enforcement, interpretation or validity thereof, (ii) your Content or (iii) your use of Pubky at any time, will be subject to and finally resolved by confidential, binding arbitration on an individual basis and not in a class, representative or consolidated action or proceeding. If you are a person subject to the jurisdiction of the United States of America, the interpretation and enforceability of this arbitration provision will be governed by the Federal Arbitration Act, 9 U.S.C. §§ 1 et seq. Arbitration will be conducted through the use of videoconferencing technology (unless both parties agree that an in-person hearing is appropriate given the nature of the claim) before a single arbitrator in accordance with the LCIA Rules. The sole arbitrator must be a legal practitioner in London, England with at least fifteen (15) years of experience in commercial claims, that holds a current practising certificate. If an arbitrator cannot be jointly appointed by the arbitration parties within thirty (30) days of the commencement of the arbitration, an arbitrator meeting the above qualifications will be selected under the Arbitration Rules of the London Court of International Arbitration (LCIA). Judgement upon the award rendered by the arbitrator may be entered by any court having jurisdiction thereof. If the arbitral parties do not promptly agree on the seat of arbitration if an in-person hearing is selected, the seat will be London, England. The language of the arbitral proceedings will be English. No discovery shall be conducted except by agreement of the parties or after approval by the arbitrator, who shall attempt to minimize the burden of discovery. The arbitrator may award any relief that a court of competent jurisdiction could award, including attorneys’ fees when authorized by laws, and the arbitral decision may be enforced in court. For claims less than U.S.$15,000, Synonym will reimburse you for all initiating filing fees in the event that the claim is successful. The prevailing party, as determined by the arbitrator, will be entitled to its costs of the arbitration (including the arbitrator’s fees) and its reasonable attorney’s fees and costs.
+          Except for excluded claims described in the paragraph below, Synonym and you each agree that any dispute, claim or controversy arising out of or relating to (i) these Terms or the existence, breach, termination, enforcement, interpretation or validity thereof, (ii) your Content or (iii) your use of Pubky at any time, will be subject to and finally resolved by confidential, binding arbitration on an individual basis and not in a class, representative or consolidated action or proceeding. If you are a person subject to the jurisdiction of the United States of America, the interpretation and enforceability of this arbitration provision will be governed by the Federal Arbitration Act, 9 U.S.C. §§ 1 et seq. Arbitration will be conducted through the use of videoconferencing technology (unless both parties agree that an in-person hearing is appropriate given the nature of the dispute) before a single arbitrator in accordance with the LCIA Rules. The sole arbitrator must be a legal practitioner in London, England with at least fifteen (15) years of experience in commercial disputes, that holds a current practising certificate. If an arbitrator cannot be jointly appointed by the arbitration parties within thirty (30) days of the commencement of the arbitration, an arbitrator meeting the above qualifications will be selected under the Arbitration Rules of the London Court of International Arbitration (LCIA). Judgement upon the award rendered by the arbitrator may be entered by any court having jurisdiction thereof. If the arbitral parties do not promptly agree on the seat of arbitration if an in-person hearing is selected, the seat will be London, England. The language of the arbitral proceedings will be English. No discovery shall be conducted except by agreement of the parties or after approval by the arbitrator, who shall attempt to minimize the burden of discovery. The arbitrator may award any relief that a court of competent jurisdiction could award, including attorneys’ fees when authorized by laws, and the arbitral decision may be enforced in court. For claims less than U.S.$15,000, Synonym will reimburse you for all initiating filing fees in the event that the claim is successful. The prevailing party, as determined by the arbitrator, will be entitled to its costs of the arbitration (including the arbitrator’s fees) and its reasonable attorney’s fees and costs.
         </p>
         <p
           class="text-muted-foreground text-base font-normal"
@@ -866,7 +1036,7 @@ exports[`DialogTerms - Snapshots > matches snapshot for default DialogTerms 1`] 
             Delegation:
           </strong>
           <br />
-          The arbitrator will have the power to hear and determine challenges to its jurisdiction, including any objections with respect to the formation, existence, scope, enforceability or validity of the arbitration agreement. This authority extends to jurisdictional challenges with respect to both the subject matter of the claim and the parties to the arbitration. Further, the arbitrator will have the power to determine the existence, validity, or scope of the contract of which an arbitration clause forms a part. For the purposes of challenges to the jurisdiction of the arbitrator, each clause in this section will be considered as separable from any contract of which it forms a part. Any challenges to the jurisdiction of the arbitrator, except challenges based on the award itself, will be made not later than the notice of defense or, with respect to a counterclaim, the reply to the counterclaim; provided, however, that if a claim or counterclaim is later added or amended such a challenge may be made not later than the response to such claim or counterclaim as provided under LCIA Rules.
+          The arbitrator will have the power to hear and determine challenges to its jurisdiction, including any objections with respect to the formation, existence, scope, enforceability or validity of the arbitration agreement. This authority extends to jurisdictional challenges with respect to both the subject matter of the dispute and the parties to the arbitration. Further, the arbitrator will have the power to determine the existence, validity, or scope of the contract of which an arbitration clause forms a part. For the purposes of challenges to the jurisdiction of the arbitrator, each clause in this section will be considered as separable from any contract of which it forms a part. Any challenges to the jurisdiction of the arbitrator, except challenges based on the award itself, will be made not later than the notice of defense or, with respect to a counterclaim, the reply to the counterclaim; provided, however, that if a claim or counterclaim is later added or amended such a challenge may be made not later than the response to such claim or counterclaim as provided under LCIA Rules.
         </p>
         <p
           class="text-muted-foreground text-base font-normal"
@@ -940,7 +1110,7 @@ exports[`DialogTerms - Snapshots > matches snapshot for default DialogTerms 1`] 
             <strong>
               Content
             </strong>
-            ” means user-generated text, images, videos and other content provided on the Platform;
+            ” means user-generated text, images, videos and other content provided on the Platform, listings, listing photographs, shop profiles, reviews, bids, offers, order messages, and other Pubky Shop material.;
           </li>
           <li>
             “
@@ -996,14 +1166,35 @@ exports[`DialogTerms - Snapshots > matches snapshot for default DialogTerms 1`] 
             <strong>
               Prohibited Jurisdiction
             </strong>
-            ” means any of: Cuba, Democratic People’s Republic of Korea (North Korea), Iran, Syria, Crimea (a region of Ukraine annexed by the Russian Federation), the self-proclaimed Donetsk People’s Republic (a region of Ukraine) and the self-proclaimed Luhansk People’s Republic (a region of Ukraine);
+            ” means any of: Cuba, Democratic People’s Republic of Korea (North Korea), Iran, Syria, Russia, Belarus, Crimea (a region of Ukraine annexed by the Russian Federation), the self-proclaimed Donetsk People’s Republic (a region of Ukraine) and the self-proclaimed Luhansk People’s Republic (a region of Ukraine);
           </li>
           <li>
             “
             <strong>
               Pubky App
             </strong>
-            ” means the progressive web application software named Pubky as provided by Synonym;
+            ” means the progressive web application software named Pubky as provided by Synonym. Pubky App may display a control that opens Pubky Shop. Use of Pubky Shop is use of the Platform under these Terms;
+          </li>
+          <li>
+            "
+            <strong>
+              Pubky Shop
+            </strong>
+            " means the Synonym-operated commerce client and related services at shop.pubky.app (including catalog, cart, checkout, orders, seller studio, and associated transaction, index, Lock Server, and payment-verification services we operate).
+          </li>
+          <li>
+            "
+            <strong>
+              Pubky Marketplace
+            </strong>
+            " means the concept of commerce among Pubky identities. Pubky Shop is the Synonym-operated instance of that concept. Pubky Marketplace is not a separate product or a second set of Terms.
+          </li>
+          <li>
+            "
+            <strong>
+              Lock Server
+            </strong>
+            " means a service that applies access conditions (including proof of payment) to digital content a seller has chosen to gate. Synonym operates a Lock Server used by Pubky Shop. A Lock Server does not receive your identity secret (recovery phrase or root key).
           </li>
           <li>
             “
@@ -1040,7 +1231,7 @@ exports[`DialogTerms - Snapshots > matches snapshot for default DialogTerms 1`] 
             Governing law:
           </strong>
           <br />
-          These Terms shall be governed by and construed and enforced in accordance with the Laws of the England and Wales and shall be interpreted in all respects as an English law contract. Any transaction, claim, controversy, claim or action arising from or related to your access to the Platform or these Terms shall be governed by the Laws of England and Wales, exclusive of choice-of-law principles.
+          These Terms shall be governed by and construed and enforced in accordance with the Laws of the England and Wales and shall be interpreted in all respects as an English law contract. Any transaction, dispute, controversy, claim or action arising from or related to your access to the Platform or these Terms shall be governed by the Laws of England and Wales, exclusive of choice-of-law principles.
         </p>
         <p
           class="text-muted-foreground text-base font-normal"

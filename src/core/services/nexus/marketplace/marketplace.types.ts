@@ -153,6 +153,34 @@ export type NexusReviewView = {
 };
 
 /**
+ * The order of a review list (index release IX4): `newest` is newest indexed
+ * first (the default), `value` the highest `price_weight` first, then the
+ * rating in either direction; ties go newest first.
+ */
+export type NexusReviewSort = 'newest' | 'value' | 'rating_desc' | 'rating_asc';
+
+/**
+ * What an index served over every match of a filtered or sorted review
+ * stream, under counting rules v2 (IX4). The seller-scope fields come with
+ * the seller stream only. The Shop's sort does not read it: header figures
+ * stay the counted figures of the whole scope.
+ */
+export type NexusReviewsMatched = {
+  buyers: number;
+  orders: number;
+  avg: number | null;
+  seller_buyers?: number;
+  seller_avg?: number | null;
+};
+
+/**
+ * A review stream answer: a bare list while the request carries no filter or
+ * sort parameter (and always from an index before IX4), the `{reviews,
+ * matched}` envelope once one is present.
+ */
+export type NexusReviewStream = NexusReviewView[] | { reviews: NexusReviewView[]; matched: NexusReviewsMatched };
+
+/**
  * The full reputation aggregate from `GET v0/shop/{seller}/reputation`.
  * `histogram[0]` holds 1-star counts. `attestors` breaks verified counts
  * down per attestor pubky so consumers can apply their own trust list.
@@ -331,6 +359,7 @@ export type TShopReviewsParams = {
   role?: NexusReviewRole;
   skip?: number;
   limit?: number;
+  sort?: NexusReviewSort;
 };
 
 /** Path/query params for `GET v0/shop/{seller_id}/reputation`. */
@@ -351,4 +380,5 @@ export type TListingReviewsParams = {
   listing_id: string;
   skip?: number;
   limit?: number;
+  sort?: NexusReviewSort;
 };

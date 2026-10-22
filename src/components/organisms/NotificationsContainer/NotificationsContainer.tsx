@@ -56,6 +56,8 @@ const MARKETPLACE_TAB_NOTIFICATION_TYPES = {
   refund_recorded: true,
   refund_destination_confirmed: true,
   review_received: true,
+  review_waiting: true,
+  review_released: true,
   pickup_details_updated: true,
   pickup_details_cleared: true,
   pickup_ready: true,

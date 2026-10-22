@@ -3,6 +3,7 @@
 import { BadgeCheck, Sparkles, Star } from 'lucide-react';
 import { Badge } from '@/atoms/Badge/Badge';
 import { Typography } from '@/atoms/Typography/Typography';
+import { REPUTATION_WEIGHTED_COPY } from '@/config/commerce-copy';
 import { useSellerRatedListingCount, useSellerReputation } from '@/hooks/useMarketplaceReviews/useMarketplaceReviews';
 import { trustedAttestedReviewCount } from '@/libs/commerce/attestor-trust';
 import { type CountedReputation, countedSummaryReputation, formatCountedBasis } from '@/libs/commerce/review-counting';
@@ -28,6 +29,10 @@ export interface MarketplaceReputationHeaderProps {
  *   by an attestor this client trusts, inside its window. A seller whose
  *   counted reviews predate the seller questions reads "No seller rating
  *   yet" above the products line; with nothing counted, "No rating yet".
+ *   When the buckets carry purchase-value weights (some buyer above weight
+ *   1), a secondary "Weighted by purchase value: 4.6" line follows the
+ *   products line; without weights (an older index, or reviews without a
+ *   `price_decade` claim) there is no such line.
  * - legacy (an index without buckets): today's trusted-only display: the
  *   index's stars over all reviews with a verified affix counting trusted
  *   attestors only (ADR 0024). No counted figure is claimed.
@@ -87,6 +92,16 @@ export function MarketplaceReputationHeader({
         >
           <Star className="size-3.5 fill-chart-6 text-chart-6" aria-hidden="true" />
           {productsLine(counted, ratedListings)}
+        </Typography>
+      )}
+      {counted.weightedItemRating !== null && (
+        <Typography
+          as="p"
+          className="text-xs text-muted-foreground"
+          data-testid="marketplace-reputation-weighted"
+          title={REPUTATION_WEIGHTED_COPY.hint}
+        >
+          {REPUTATION_WEIGHTED_COPY.line(counted.weightedItemRating)}
         </Typography>
       )}
       {variant === 'full' && (

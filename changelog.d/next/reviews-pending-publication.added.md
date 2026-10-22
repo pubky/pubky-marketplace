@@ -1,0 +1,1 @@
+When a review window is on, a review you write is saved and held, and Pubky Market tells you it publishes when the other party reviews or on the window's end date. The held review shows in My reviews and on the order, can be edited or removed while it waits, and is published once it is released.

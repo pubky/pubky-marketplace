@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { COMMERCE_REVIEW_EDIT_WINDOW_SECONDS } from '@/config/commerce';
 import {
   buyerSellerRatings,
+  formatReviewDate,
+  isReviewWindowClosedRefusal,
   listingIdFromAggregate,
   orderReviewListings,
   type OrderReviewSource,
@@ -88,5 +90,28 @@ describe('order review helpers', () => {
     expect(
       reviewWindowClosesAtMs([{ createdAt: '2026-08-21T12:00:00.000Z' }, { createdAt: '2026-08-21T10:00:00.000Z' }]),
     ).toBe(early + COMMERCE_REVIEW_EDIT_WINDOW_SECONDS * 1000);
+  });
+});
+
+describe('isReviewWindowClosedRefusal', () => {
+  const refusal = (code: string, message: unknown) => ({ ok: false, error: { code, message } });
+
+  it('recognises the service refusal of a seller review after the window', () => {
+    expect(isReviewWindowClosedRefusal(refusal('INVALID_STATE', 'The review window has closed.'))).toBe(true);
+  });
+
+  it('does not take other invalid-state refusals or other codes for it', () => {
+    expect(isReviewWindowClosedRefusal(refusal('INVALID_STATE', 'The order is not completed.'))).toBe(false);
+    expect(isReviewWindowClosedRefusal(refusal('FORBIDDEN', 'The review window has closed.'))).toBe(false);
+    expect(isReviewWindowClosedRefusal(refusal('INVALID_STATE', undefined))).toBe(false);
+    expect(isReviewWindowClosedRefusal(null)).toBe(false);
+    expect(isReviewWindowClosedRefusal('INVALID_STATE')).toBe(false);
+  });
+});
+
+describe('formatReviewDate', () => {
+  it('writes the UTC day, whatever the device zone', () => {
+    expect(formatReviewDate('2026-11-01T23:30:00.000Z')).toBe('Nov 1, 2026');
+    expect(formatReviewDate('2026-03-09T00:00:00.000Z')).toBe('Mar 9, 2026');
   });
 });

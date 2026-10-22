@@ -5,6 +5,8 @@ import {
   marketplaceEditionAttestationSchema,
   type MarketplaceReceiptAttestation,
   marketplaceReceiptAttestationSchema,
+  type MarketplaceReviewAttestationPending,
+  readReviewAttestationPending,
 } from '@/libs/commerce/attestation';
 import {
   classifyDigitalReadRefusal,
@@ -790,9 +792,13 @@ export class MarketplaceTransactionService {
    * purchase attestation for the order — idempotent re-fetch for
    * re-publication (issuance is deterministic per order+reviewer). Null when
    * the caller has not reviewed the order or the deployment issues no
-   * attestations.
+   * attestations. While a double-blind window withholds it, the answer is
+   * the `{ status: "pending", releaseAt }` the route sends.
    */
-  static async getReviewAttestation(actor: string, orderId: string): Promise<unknown | null> {
+  static async getReviewAttestation(
+    actor: string,
+    orderId: string,
+  ): Promise<unknown | MarketplaceReviewAttestationPending | null> {
     const raw = await this.readProjection(
       'getReviewAttestation',
       actor,
@@ -800,6 +806,8 @@ export class MarketplaceTransactionService {
       { nullOnNotFound: true },
     );
     if (raw === null) return null;
+    const pending = readReviewAttestationPending(raw);
+    if (pending !== null) return pending;
     return this.parseProjection(
       'getReviewAttestation',
       z.object({ attestation: z.object({ jws: z.string().min(32) }).passthrough() }),
@@ -814,9 +822,13 @@ export class MarketplaceTransactionService {
    * order and all sharing the order's `order_ref`. Idempotent re-fetch for
    * re-publication of any item record. Empty when the caller has reviewed
    * nothing or the deployment issues no attestations; null when the order is
-   * unknown or foreign.
+   * unknown or foreign. While a double-blind window withholds them, the
+   * answer is the `{ status: "pending", releaseAt }` the route sends.
    */
-  static async getReviewAttestations(actor: string, orderId: string): Promise<unknown[] | null> {
+  static async getReviewAttestations(
+    actor: string,
+    orderId: string,
+  ): Promise<unknown[] | MarketplaceReviewAttestationPending | null> {
     const raw = await this.readProjection(
       'getReviewAttestations',
       actor,
@@ -824,6 +836,8 @@ export class MarketplaceTransactionService {
       { nullOnNotFound: true },
     );
     if (raw === null) return null;
+    const pending = readReviewAttestationPending(raw);
+    if (pending !== null) return pending;
     return this.parseProjection(
       'getReviewAttestations',
       z.object({

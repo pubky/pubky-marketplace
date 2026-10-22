@@ -1,10 +1,12 @@
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { REVIEW_REMOVAL_COPY } from '@/config/commerce-copy';
+import type { AwaitingReleaseReview } from '@/application/commerce/commerce';
+import { REVIEW_PENDING_COPY, REVIEW_REMOVAL_COPY } from '@/config/commerce-copy';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import type { CommerceReviewModelSchema } from '@/models/commerce/commerce.schema';
 import { toast } from '@/molecules/Toaster/use-toast';
+import { marketplaceOrderSchema } from '@/services/marketplace/marketplace-projections';
 import { useAuthStore } from '@/stores/auth/auth.store';
 import { createOrderFixture, ORDER_FIXTURE_BUYER, ORDER_FIXTURE_SELLER } from '@/test/fixtures/commerce/orders';
 import { MarketplaceMyReviews } from './MarketplaceMyReviews';
@@ -221,5 +223,125 @@ describe('MarketplaceMyReviews', () => {
       expect(toast).toHaveBeenCalledWith({ variant: 'error', description: REVIEW_REMOVAL_COPY.failed }),
     );
     expect(screen.getByText('Stays.')).toBeInTheDocument();
+  });
+
+  describe('a review the double-blind window still withholds', () => {
+    const held: AwaitingReleaseReview = {
+      orderId: order.id,
+      releaseAt: '2026-11-01T00:00:00.000Z',
+      reviewerRole: 'buyer',
+      items: [
+        {
+          listingOwnerPubky: ORDER_FIXTURE_SELLER,
+          listingId: 'boots',
+          rating: 4,
+          text: 'Waiting for the seller.',
+          updatedAt: '2026-10-20T10:00:00.000Z',
+        },
+        {
+          listingOwnerPubky: ORDER_FIXTURE_SELLER,
+          listingId: 'belt',
+          rating: 5,
+          text: 'The belt, too.',
+          updatedAt: '2026-10-20T10:00:00.000Z',
+        },
+      ],
+    };
+
+    function holdOnly(withheld: AwaitingReleaseReview[]) {
+      vi.spyOn(CommerceController, 'getOwnMarketplaceReviews').mockResolvedValue([]);
+      vi.spyOn(CommerceController, 'getAwaitingReleaseOwnMarketplaceReviews').mockResolvedValue(withheld);
+      vi.spyOn(CommerceController, 'refreshOwnMarketplaceReviews').mockResolvedValue(0);
+    }
+
+    it('shows one pending card with every item and when it publishes', async () => {
+      holdOnly([held]);
+
+      render(<MarketplaceMyReviews orders={[order]} />);
+      const card = await screen.findByRole('listitem');
+
+      expect(card).toHaveAttribute('data-review-state', 'awaiting-release');
+      expect(within(card).getByText('Waiting for the seller.')).toBeInTheDocument();
+      expect(within(card).getByText('The belt, too.')).toBeInTheDocument();
+      expect(within(card).getAllByText(REVIEW_PENDING_COPY.badge)).toHaveLength(2);
+      expect(within(card).getAllByText('View listing')).toHaveLength(2);
+      expect(within(card).getByText('Publishes when the seller reviews, or on Nov 1, 2026')).toBeInTheDocument();
+    });
+
+    it('mirrors the wording for a seller', async () => {
+      holdOnly([{ ...held, reviewerRole: 'seller' }]);
+
+      render(<MarketplaceMyReviews orders={[order]} />);
+
+      expect(await screen.findByText('Publishes when the buyer reviews, or on Nov 1, 2026')).toBeInTheDocument();
+    });
+
+    it('drops the date when the service named none', async () => {
+      holdOnly([{ ...held, releaseAt: null }]);
+
+      render(<MarketplaceMyReviews orders={[order]} />);
+
+      expect(await screen.findByText('Publishes when the seller reviews')).toBeInTheDocument();
+    });
+
+    it('lists a pending card next to the published ones', async () => {
+      vi.spyOn(CommerceController, 'getOwnMarketplaceReviews').mockResolvedValue([
+        ownReview('Published.', { orderId: 'other-order' }),
+      ]);
+      vi.spyOn(CommerceController, 'getAwaitingReleaseOwnMarketplaceReviews').mockResolvedValue([held]);
+      vi.spyOn(CommerceController, 'refreshOwnMarketplaceReviews').mockResolvedValue(0);
+
+      render(<MarketplaceMyReviews orders={[order]} />);
+
+      expect(await screen.findAllByRole('listitem')).toHaveLength(2);
+      expect(screen.getByText('Published.')).toBeInTheDocument();
+      expect(screen.getByText('Waiting for the seller.')).toBeInTheDocument();
+    });
+
+    it('asks with the withheld wording, then removes it and says it will not be published', async () => {
+      holdOnly([held]);
+      const remove = vi.spyOn(CommerceController, 'commitDeleteOwnMarketplaceReview').mockResolvedValue('removed');
+      const user = userEvent.setup();
+
+      render(<MarketplaceMyReviews orders={[order]} />);
+      await user.click(await screen.findByRole('button', { name: REVIEW_REMOVAL_COPY.action }));
+      const dialog = await screen.findByRole('alertdialog');
+      expect(within(dialog).getByText(REVIEW_REMOVAL_COPY.dialogDescriptionWithheld)).toBeInTheDocument();
+      await user.click(within(dialog).getByRole('button', { name: REVIEW_REMOVAL_COPY.confirm }));
+
+      await waitFor(() => expect(screen.queryByText('Waiting for the seller.')).not.toBeInTheDocument());
+      expect(remove).toHaveBeenCalledWith(order.id);
+      expect(toast).toHaveBeenCalledWith({ description: REVIEW_REMOVAL_COPY.removedWithheld });
+    });
+
+    it('keeps the card when the withdrawal throws', async () => {
+      holdOnly([held]);
+      vi.spyOn(CommerceController, 'commitDeleteOwnMarketplaceReview').mockRejectedValue(new Error('db'));
+      const user = userEvent.setup();
+
+      render(<MarketplaceMyReviews orders={[order]} />);
+      await user.click(await screen.findByRole('button', { name: REVIEW_REMOVAL_COPY.action }));
+      await user.click(
+        within(await screen.findByRole('alertdialog')).getByRole('button', { name: REVIEW_REMOVAL_COPY.confirm }),
+      );
+
+      await waitFor(() =>
+        expect(toast).toHaveBeenCalledWith({ variant: 'error', description: REVIEW_REMOVAL_COPY.failed }),
+      );
+      expect(screen.getByText('Waiting for the seller.')).toBeInTheDocument();
+    });
+
+    it('never shows the counterparty’s withheld stub as a review', async () => {
+      holdOnly([]);
+      const stubbed = marketplaceOrderSchema.parse({
+        ...createOrderFixture('completed'),
+        reviews: [{ role: 'seller', submitted: true }],
+      });
+
+      const { container } = render(<MarketplaceMyReviews orders={[stubbed]} />);
+
+      await waitFor(() => expect(CommerceController.getAwaitingReleaseOwnMarketplaceReviews).toHaveBeenCalled());
+      expect(container).toBeEmptyDOMElement();
+    });
   });
 });

@@ -124,6 +124,59 @@ describe('MarketplaceReputationHeader counted figures', () => {
     );
   });
 
+  describe('weighted line', () => {
+    const weighted = bucket({ buyers: 3, sumBuyerMeans: 13.8, weightedSum: 22.5, weightTotal: 5 });
+
+    it('adds a secondary "Weighted by purchase value" line when the buckets carry weights', () => {
+      reputation.value = rated({ buckets: { [TEST_TRUSTED_ATTESTOR.pubky]: weighted }, scoped: weighted });
+      reputation.ratedListings = 2;
+
+      render(<MarketplaceReputationHeader sellerPubky={SELLER} variant="full" />);
+
+      expect(screen.getByTestId('marketplace-reputation-weighted')).toHaveTextContent(
+        'Weighted by purchase value: 4.5',
+      );
+      expect(screen.getByTestId('marketplace-reputation-seller-rating')).toHaveTextContent('4.7seller rating');
+      expect(screen.getByTestId('marketplace-reputation-products')).toHaveTextContent('Products rated 4.6');
+    });
+
+    it('shows it on the compact variant too, from the card rule over summed buckets', () => {
+      reputation.value = rated({ buckets: { [TEST_TRUSTED_ATTESTOR.pubky]: weighted } });
+
+      render(<MarketplaceReputationHeader sellerPubky={SELLER} />);
+
+      expect(screen.getByTestId('marketplace-reputation-weighted')).toHaveTextContent(
+        'Weighted by purchase value: 4.5',
+      );
+    });
+
+    it('shows none for buckets of an index without weights, or reviews without a price_decade', () => {
+      reputation.value = rated({ buckets: { [TEST_TRUSTED_ATTESTOR.pubky]: bucket() }, scoped: bucket() });
+
+      render(<MarketplaceReputationHeader sellerPubky={SELLER} variant="full" />);
+
+      expect(screen.getByTestId('marketplace-reputation-products')).toBeVisible();
+      expect(screen.queryByTestId('marketplace-reputation-weighted')).not.toBeInTheDocument();
+      expect(screen.queryByText(/Weighted by purchase value/)).not.toBeInTheDocument();
+    });
+
+    it('shows none for a legacy index without buckets', () => {
+      reputation.value = rated({ attestors: { [TEST_TRUSTED_ATTESTOR.pubky]: 5 } });
+
+      render(<MarketplaceReputationHeader sellerPubky={SELLER} variant="full" />);
+
+      expect(screen.queryByText(/Weighted by purchase value/)).not.toBeInTheDocument();
+    });
+
+    it('shows none when nothing is counted', () => {
+      reputation.value = rated({ buckets: { [UNKNOWN_ATTESTOR]: weighted } });
+
+      render(<MarketplaceReputationHeader sellerPubky={SELLER} variant="full" />);
+
+      expect(screen.queryByText(/Weighted by purchase value/)).not.toBeInTheDocument();
+    });
+  });
+
   it('shows "No rating yet" when no attestor of the reviews is trusted', () => {
     reputation.value = rated({ buckets: { [UNKNOWN_ATTESTOR]: bucket() } });
 

@@ -2,7 +2,7 @@ import { marketplaceApi } from '@/services/nexus/marketplace/marketplace.api';
 import type {
   NexusListingDetails,
   NexusReputationSummary,
-  NexusReviewView,
+  NexusReviewStream,
   TListingDetailsParams,
   TListingReviewsParams,
   TListingStreamParams,
@@ -92,11 +92,12 @@ export class NexusMarketplaceService {
    * 404 from an older deployment propagates and callers degrade to
    * rendering no review section at all.
    *
-   * @param params - Subject path param plus role filter and pagination
-   * @returns Review page entries, newest-indexed first (empty when none)
+   * @param params - Subject path param plus role filter, pagination and sort
+   * @returns Review page entries, newest-indexed first unless a sort was
+   *   requested (empty when none); an envelope when the request carried a sort
    */
-  static async fetchShopReviews(params: TShopReviewsParams): Promise<NexusReviewView[]> {
-    return await queryNexus<NexusReviewView[]>({ url: marketplaceApi.shopReviews(params) });
+  static async fetchShopReviews(params: TShopReviewsParams): Promise<NexusReviewStream> {
+    return await queryNexus<NexusReviewStream>({ url: marketplaceApi.shopReviews(params) });
   }
 
   /**
@@ -115,10 +116,11 @@ export class NexusMarketplaceService {
    * Fetches a page of indexed buyer reviews of one listing (with joined
    * seller responses). Same deployment caveat as `fetchShopReviews`.
    *
-   * @param params - Seller/listing path params plus pagination
-   * @returns Review page entries, newest-indexed first (empty when none)
+   * @param params - Seller/listing path params plus pagination and sort
+   * @returns Review page entries, newest-indexed first unless a sort was
+   *   requested (empty when none); an envelope when the request carried a sort
    */
-  static async fetchListingReviews(params: TListingReviewsParams): Promise<NexusReviewView[]> {
-    return await queryNexus<NexusReviewView[]>({ url: marketplaceApi.listingReviews(params) });
+  static async fetchListingReviews(params: TListingReviewsParams): Promise<NexusReviewStream> {
+    return await queryNexus<NexusReviewStream>({ url: marketplaceApi.listingReviews(params) });
   }
 }

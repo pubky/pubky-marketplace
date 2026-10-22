@@ -70,6 +70,38 @@ export const marketplaceItemAttestationSchema = marketplaceAttestationSchema
 export type MarketplaceItemAttestation = z.infer<typeof marketplaceItemAttestationSchema>;
 
 /**
+ * What both review-attestation routes answer while a double-blind window
+ * withholds the caller's attestations (`200 { status: "pending", releaseAt }`),
+ * and what a `review.create` / `review.update` result says in its
+ * `attestation_status` and `release_at` instead of carrying attestations.
+ * `releaseAt` is the window's end: the latest the review stays withheld.
+ */
+export const marketplaceReviewAttestationPendingSchema = z
+  .object({ status: z.literal('pending'), releaseAt: z.string().min(1) })
+  .strict();
+
+export type MarketplaceReviewAttestationPending = z.infer<typeof marketplaceReviewAttestationPendingSchema>;
+
+/** The pending answer of a review-attestation route, or null for any other body. */
+export function readReviewAttestationPending(raw: unknown): MarketplaceReviewAttestationPending | null {
+  const parsed = marketplaceReviewAttestationPendingSchema.safeParse(raw);
+  return parsed.success ? parsed.data : null;
+}
+
+/**
+ * Whether a `review.create` / `review.update` result is withheld by a
+ * double-blind window: it carries `attestation_status: "pending"` and no
+ * attestation. A missing status reads as released, so a service without the
+ * window never reads as pending. `releaseAt` is null when the result names
+ * no (valid) window end.
+ */
+export function readReviewResultPending(result: Record<string, unknown>): { releaseAt: string | null } | null {
+  if (result.attestationStatus !== 'pending') return null;
+  const releaseAt = z.string().min(1).safeParse(result.releaseAt);
+  return { releaseAt: releaseAt.success ? releaseAt.data : null };
+}
+
+/**
  * Extracts the per-listing attestations from a successful review command
  * result or from the review-attestations route, in the service's line order.
  * Entries that do not parse are skipped, so a result from a service without
