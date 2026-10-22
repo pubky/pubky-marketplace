@@ -6,8 +6,10 @@ import {
   MARKETPLACE_FAILURE_MESSAGES,
   marketplaceErrorCode,
   marketplaceFailureMessage,
+  marketplaceRegionRefusalMessage,
 } from '@/libs/commerce/failure-messages';
 import { bitcoinSetupClaim, type SellerPaymentConfigOwnView } from '@/libs/commerce/payment-methods';
+import { isAppError } from '@/libs/error/error';
 import { Logger } from '@/libs/logger/logger';
 import { toast } from '@/molecules/Toaster/use-toast';
 import { useCommerceStore } from '@/stores/commerce/commerce.store';
@@ -131,12 +133,16 @@ export function useMarketplaceSellerPaymentConfig() {
         return saved;
       } catch (error) {
         Logger.error('Failed to save the payment configuration', { error });
+        // A refusal for the seller's region carries the service code and reason in the error context.
+        const regionRefusal = isAppError(error)
+          ? marketplaceRegionRefusalMessage({ code: error.context?.serviceCode, reason: error.context?.reason })
+          : null;
         toast({
+          variant: 'error',
           title: 'Saving payment settings failed',
-          description: marketplaceFailureMessage(
-            marketplaceErrorCode(error),
-            MARKETPLACE_FAILURE_MESSAGES.paymentSettingsSave,
-          ),
+          description:
+            regionRefusal ??
+            marketplaceFailureMessage(marketplaceErrorCode(error), MARKETPLACE_FAILURE_MESSAGES.paymentSettingsSave),
         });
         return false;
       } finally {

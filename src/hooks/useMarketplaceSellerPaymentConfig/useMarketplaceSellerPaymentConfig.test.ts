@@ -1,12 +1,21 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { CommerceController } from '@/controllers/commerce/commerce';
+import { REGION_UNAVAILABLE_MESSAGE } from '@/libs/commerce/eu-region';
+import { MARKETPLACE_FAILURE_MESSAGES } from '@/libs/commerce/failure-messages';
 import type { SellerPaymentConfigOwnView } from '@/libs/commerce/payment-methods';
+import {
+  COMMERCE_BLOCKED_MESSAGE,
+  COMMERCE_UNKNOWN_REGION_MESSAGE,
+  SELLING_BLOCKED_COUNTRY_MESSAGE,
+  SELLING_BLOCKED_MESSAGE,
+} from '@/libs/commerce/region-modes';
 import { AppError } from '@/libs/error/error';
 import { AuthErrorCode, ClientErrorCode } from '@/libs/error/error.codes';
 import { ErrorCategory, ErrorService } from '@/libs/error/error.types';
 import { toast } from '@/molecules/Toaster/use-toast';
 import { useCommerceStore } from '@/stores/commerce/commerce.store';
+import { asOpaque } from '@/test-utils/type-assertions';
 import { useMarketplaceSellerPaymentConfig } from './useMarketplaceSellerPaymentConfig';
 
 vi.mock('@/controllers/commerce/commerce', () => ({
@@ -52,6 +61,69 @@ describe('useMarketplaceSellerPaymentConfig', () => {
     const saveDescription = vi.mocked(toast).mock.calls.at(-1)?.[0]?.description;
     expect(saveDescription).toBeTypeOf('string');
     expect(saveDescription).not.toContain('SENTINEL_SELLER_PAYMENT_save');
+  });
+
+  describe('a refused save', () => {
+    const refusal = (context: Record<string, unknown>) =>
+      new AppError({
+        category: ErrorCategory.Client,
+        code: ClientErrorCode.BAD_REQUEST,
+        message: 'SENTINEL_SERVICE_TEXT',
+        service: ErrorService.Marketplace,
+        operation: 'putMyPaymentConfig',
+        context: { statusCode: 409, ...context },
+      });
+
+    async function saveRefusedWith(error: AppError) {
+      vi.mocked(CommerceController.getMyPaymentConfig).mockResolvedValue(config);
+      vi.mocked(CommerceController.putMyPaymentConfig).mockRejectedValueOnce(error);
+      const { result } = renderHook(() => useMarketplaceSellerPaymentConfig());
+      await waitFor(() => expect(result.current.isLoading).toBe(false));
+      vi.mocked(toast).mockClear();
+      let saved: unknown;
+      await act(async () => {
+        saved = await result.current.save({ bitcoinEnabled: true, paypalMerchantEmail: '' });
+      });
+      return { saved, toasts: vi.mocked(toast).mock.calls.map(([call]) => call) };
+    }
+
+    it.each([
+      ['SELLER_UNAVAILABLE_IN_REGION', 'seller_region_blocked', SELLING_BLOCKED_COUNTRY_MESSAGE],
+      ['SELLER_UNAVAILABLE_IN_REGION', 'seller_ip_blocked', SELLING_BLOCKED_MESSAGE],
+      ['COMMERCE_UNAVAILABLE_IN_REGION', 'buyer_region_blocked', COMMERCE_BLOCKED_MESSAGE],
+      ['COMMERCE_UNAVAILABLE_IN_REGION', 'buyer_region_unknown', COMMERCE_UNKNOWN_REGION_MESSAGE],
+    ])('raises one error toast with the sentence for %s / %s', async (serviceCode, reason, sentence) => {
+      const { saved, toasts } = await saveRefusedWith(refusal({ serviceCode, reason }));
+
+      expect(saved).toBe(false);
+      expect(toasts).toEqual([{ variant: 'error', title: 'Saving payment settings failed', description: sentence }]);
+    });
+
+    it('reads the code alone when the service sent no reason', async () => {
+      const { toasts } = await saveRefusedWith(refusal({ serviceCode: 'SELLER_UNAVAILABLE_IN_REGION' }));
+      expect(toasts[0]).toMatchObject({ variant: 'error', description: REGION_UNAVAILABLE_MESSAGE });
+    });
+
+    it('keeps the static copy, and never the service text, for any other refusal', async () => {
+      const { toasts } = await saveRefusedWith(
+        refusal({ serviceCode: 'INVALID_STATE', reason: 'invalid_paypal_email' }),
+      );
+
+      expect(toasts).toEqual([
+        {
+          variant: 'error',
+          title: 'Saving payment settings failed',
+          description: MARKETPLACE_FAILURE_MESSAGES.paymentSettingsSave,
+        },
+      ]);
+    });
+
+    it('keeps the static copy for a failure that is not a service refusal', async () => {
+      const { saved, toasts } = await saveRefusedWith(asOpaque<AppError>(new Error('offline')));
+
+      expect(saved).toBe(false);
+      expect(toasts[0]).toMatchObject({ description: MARKETPLACE_FAILURE_MESSAGES.paymentSettingsSave });
+    });
   });
 
   it('refetches payment config and claim state when the marketplace session becomes active', async () => {
