@@ -100,6 +100,28 @@ export class LocalUserTagService {
   }
 
   /**
+   * The labels the viewer put on the users whose tags this device holds,
+   * most-used first (ties alphabetical). Only labels whose tagger list names
+   * the viewer count, so a label the viewer did not use is never offered; the
+   * list covers the users seen on this device, not everyone the viewer tagged.
+   *
+   * @param taggerId - The viewer's pubky
+   * @param limit - Most labels to return
+   */
+  static async getLabelsTaggedBy(taggerId: Pubky, limit: number): Promise<string[]> {
+    const uses = new Map<string, number>();
+    await UserTagsModel.table.each(({ tags }) => {
+      for (const { label, taggers } of tags) {
+        if (taggers.includes(taggerId)) uses.set(label, (uses.get(label) ?? 0) + 1);
+      }
+    });
+    return [...uses]
+      .sort(([labelA, usesA], [labelB, usesB]) => usesB - usesA || labelA.localeCompare(labelB))
+      .slice(0, limit)
+      .map(([label]) => label);
+  }
+
+  /**
    * Find which users don't have tags persisted in cache.
    * Used to identify missing tag data that needs to be fetched.
    * @param userIds - Array of user IDs to check

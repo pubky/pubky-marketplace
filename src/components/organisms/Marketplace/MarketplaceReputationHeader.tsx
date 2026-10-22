@@ -3,18 +3,26 @@
 import { BadgeCheck, Sparkles, Star } from 'lucide-react';
 import { Badge } from '@/atoms/Badge/Badge';
 import { Typography } from '@/atoms/Typography/Typography';
-import { REPUTATION_WEIGHTED_COPY } from '@/config/commerce-copy';
+import { REPUTATION_WEIGHTED_COPY, REVIEW_FILTER_COPY } from '@/config/commerce-copy';
 import { useSellerRatedListingCount, useSellerReputation } from '@/hooks/useMarketplaceReviews/useMarketplaceReviews';
 import { trustedAttestedReviewCount } from '@/libs/commerce/attestor-trust';
 import { type CountedReputation, countedSummaryReputation, formatCountedBasis } from '@/libs/commerce/review-counting';
+import type { MarketplaceReviewFilterSummary } from '@/libs/commerce/review-filter';
 import { cn } from '@/libs/utils/utils';
 import type { CommerceReputationSummary } from '@/models/commerce/commerce.schema';
+import { MarketplaceReviewFilterRating } from '@/molecules/MarketplaceReviewFilterRating/MarketplaceReviewFilterRating';
 import { MarketplaceStarRating } from '@/molecules/MarketplaceStarRating/MarketplaceStarRating';
 
 export interface MarketplaceReputationHeaderProps {
   sellerPubky: string;
   /** `compact` renders the rating rows only; `full` (shop page) adds the counted basis line. */
   variant?: 'compact' | 'full';
+  /**
+   * A reviewer filter's figures (from `useMarketplaceReviews`). While one is
+   * active the header shows them, with their basis, instead of the counted
+   * figures of everyone; null shows the counted figures.
+   */
+  filterSummary?: MarketplaceReviewFilterSummary | null;
   className?: string;
 }
 
@@ -36,6 +44,11 @@ export interface MarketplaceReputationHeaderProps {
  * - legacy (an index without buckets): today's trusted-only display: the
  *   index's stars over all reviews with a verified affix counting trusted
  *   attestors only (ADR 0024). No counted figure is claimed.
+ * - filtered (a reviewer chip on the review list is active): the index's
+ *   figures over the counted matches in place of the above, "4.8 from 3
+ *   people you follow", with the seller rating of those people first; "No
+ *   reviews from people you follow" when none counts, never 0.0 and never the
+ *   figure of everyone.
  * - new seller: an explicit "New seller" badge, never a fabricated 0.0.
  * - unavailable: renders nothing at all (no reputation-aware index answered).
  *
@@ -45,6 +58,7 @@ export interface MarketplaceReputationHeaderProps {
 export function MarketplaceReputationHeader({
   sellerPubky,
   variant = 'compact',
+  filterSummary = null,
   className,
 }: MarketplaceReputationHeaderProps) {
   const overview = useSellerReputation(sellerPubky);
@@ -64,6 +78,10 @@ export function MarketplaceReputationHeader({
         </Typography>
       </div>
     );
+  }
+
+  if (filterSummary !== null) {
+    return <FilteredReputationHeader summary={filterSummary} variant={variant} className={className} />;
   }
 
   const { summary } = overview;
@@ -110,6 +128,49 @@ export function MarketplaceReputationHeader({
           {countedBasisLine(counted, summary.count)}
         </Typography>
       )}
+    </div>
+  );
+}
+
+function FilteredReputationHeader({
+  summary,
+  variant,
+  className,
+}: {
+  summary: MarketplaceReviewFilterSummary;
+  variant: 'compact' | 'full';
+  className?: string;
+}) {
+  const size = variant === 'full' ? 'md' : 'sm';
+  const sellerMatched =
+    summary.state === 'ready' &&
+    summary.matched.sellerBuyers !== undefined &&
+    summary.matched.sellerBuyers > 0 &&
+    summary.matched.sellerAvg !== undefined &&
+    summary.matched.sellerAvg !== null
+      ? { rating: summary.matched.sellerAvg, buyers: summary.matched.sellerBuyers }
+      : null;
+  const itemsCounted = summary.state === 'ready' && summary.matched.buyers > 0 && summary.matched.avg !== null;
+
+  return (
+    <div
+      className={cn('flex flex-col gap-1', className)}
+      data-testid="marketplace-reputation-header"
+      data-filtered="true"
+    >
+      {summary.state === 'ready' && sellerMatched !== null && (
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1" data-testid="marketplace-reputation-seller-rating">
+          <MarketplaceStarRating rating={sellerMatched.rating} size={size} />
+          <Typography as="span" className="text-sm text-muted-foreground">
+            {`${REVIEW_FILTER_COPY.sellerRating} ${REVIEW_FILTER_COPY.from(summary.filter.kind, sellerMatched.buyers)}`}
+          </Typography>
+        </div>
+      )}
+      <MarketplaceReviewFilterRating
+        summary={summary}
+        label={sellerMatched !== null && itemsCounted ? REVIEW_FILTER_COPY.productsRated : undefined}
+        size={sellerMatched === null ? size : 'sm'}
+      />
     </div>
   );
 }

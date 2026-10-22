@@ -35,7 +35,7 @@ import { useMarketplaceOffers } from '@/hooks/useMarketplaceOffers/useMarketplac
 import { useMarketplaceOrders } from '@/hooks/useMarketplaceOrders/useMarketplaceOrders';
 import { useMarketplaceProjection } from '@/hooks/useMarketplaceProjection/useMarketplaceProjection';
 import { useMarketplacePublicAvailability } from '@/hooks/useMarketplacePublicAvailability/useMarketplacePublicAvailability';
-import { useListingRating } from '@/hooks/useMarketplaceReviews/useMarketplaceReviews';
+import { useListingRating, useMarketplaceReviews } from '@/hooks/useMarketplaceReviews/useMarketplaceReviews';
 import { useMeasurementSystem } from '@/hooks/useMeasurementSystem/useMeasurementSystem';
 import { useRegionAvailability } from '@/hooks/useRegionAvailability/useRegionAvailability';
 import { useRequireAuth } from '@/hooks/useRequireAuth/useRequireAuth';
@@ -78,6 +78,7 @@ import { SellerSaleTerms } from '@/molecules/Marketplace/SellerSaleTerms';
 import { SellerStatusBadge } from '@/molecules/Marketplace/SellerStatusBadge';
 import { MarketplaceFulfillmentBadge } from '@/molecules/MarketplaceFulfillmentBadge/MarketplaceFulfillmentBadge';
 import { MarketplacePaymentMethodBadges } from '@/molecules/MarketplacePaymentMethodBadges/MarketplacePaymentMethodBadges';
+import { MarketplaceReviewFilterRating } from '@/molecules/MarketplaceReviewFilterRating/MarketplaceReviewFilterRating';
 import { MarketplaceSellerIdentity } from '@/molecules/MarketplaceSellerIdentity/MarketplaceSellerIdentity';
 import { MarketplaceSnippetRating } from '@/molecules/MarketplaceSnippetRating/MarketplaceSnippetRating';
 import { ChatEntryButton } from '@/organisms/Chat/ChatEntryButton';
@@ -130,6 +131,8 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
   const publicStock = useMarketplacePublicAvailability(sellerPubky, listingId, negotiation.needsSession);
   const soldOutVariants = listingSoldOutVariantIds(negotiation.projection ?? publicStock);
   const listingRating = useListingRating(sellerPubky, listingId);
+  // One list for the review section and the rating line under the title, so a reviewer chip changes both.
+  const reviews = useMarketplaceReviews({ sellerPubky, listingId });
   const paymentBadges = useSellerPaymentBadges(sellerPubky);
   const cart = useMarketplaceCart();
   const orders = useMarketplaceOrders();
@@ -461,7 +464,9 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
               </Heading>
               {listingRating !== undefined && listingRating !== 'unavailable' && (
                 <div className="mt-2" data-testid="marketplace-listing-rating">
-                  {listingRating !== null && listingRating.count > 0 ? (
+                  {reviews.filterSummary !== null ? (
+                    <MarketplaceReviewFilterRating summary={reviews.filterSummary} />
+                  ) : listingRating !== null && listingRating.count > 0 ? (
                     <MarketplaceSnippetRating snippet={listingRating} emptyClassName="text-sm text-muted-foreground" />
                   ) : (
                     <Typography as="p" className="text-sm text-muted-foreground">
@@ -835,7 +840,7 @@ export function MarketplaceListing({ sellerPubky, listingId }: MarketplaceListin
                   variant="info-card"
                   target={{ kind: TagKind.LISTING, sellerPubky: record.ownerPubky, listingId: record.listingId }}
                 />
-                <MarketplaceReviewsSection sellerPubky={record.ownerPubky} listingId={record.listingId} infoCard />
+                <MarketplaceReviewsSection reviews={reviews} listingId={record.listingId} infoCard />
               </div>
             </section>
           </div>
