@@ -107,6 +107,55 @@ describe('attestorWindowsParam', () => {
   });
 });
 
+describe('price-weighted item rating', () => {
+  const entries = [entry(A, '2026-01-01T00:00:00Z'), entry(B, '2026-01-01T00:00:00Z')];
+
+  it('is weightedSum over weightTotal when some buyer weighs above 1', () => {
+    // Buyer one rates 5 at weight 4, buyer two rates 4 at weight 1: (20 + 4) / 5.
+    const weighted = bucket({ buyers: 2, sumBuyerMeans: 9, weightedSum: 24, weightTotal: 5 });
+
+    const counted = countedFromTrustedBuckets({ [A]: weighted }, entries);
+
+    expect(counted.itemRating).toBe(4.5);
+    expect(counted.weightedItemRating).toBeCloseTo(4.8, 10);
+  });
+
+  it('adds the sums of the trusted buckets, never averaging their averages', () => {
+    const one = bucket({ buyers: 1, sumBuyerMeans: 5, weightedSum: 20, weightTotal: 4 });
+    const two = bucket({ buyers: 1, sumBuyerMeans: 4, weightedSum: 4, weightTotal: 1 });
+
+    const counted = countedFromTrustedBuckets({ [A]: one, [B]: two }, entries);
+
+    expect(counted.weightedItemRating).toBeCloseTo(4.8, 10);
+  });
+
+  it('leaves out the bucket of an attestor this client does not trust', () => {
+    const heavy = bucket({ buyers: 1, sumBuyerMeans: 1, weightedSum: 5, weightTotal: 5 });
+    const light = bucket({ buyers: 1, sumBuyerMeans: 5, weightedSum: 5, weightTotal: 1 });
+
+    const counted = countedFromTrustedBuckets({ [UNTRUSTED]: heavy, [A]: light }, entries);
+
+    expect(counted.weightedItemRating).toBeNull();
+  });
+
+  it('is null when every buyer weighs 1: reviews without a price_decade carry no purchase value', () => {
+    const counted = countedFromTrustedBuckets({ [A]: bucket({ buyers: 2, weightedSum: 9, weightTotal: 2 }) }, entries);
+
+    expect(counted.itemRating).toBe(4.5);
+    expect(counted.weightedItemRating).toBeNull();
+  });
+
+  it('is null without counted buyers', () => {
+    expect(countedFromTrustedBuckets({}, entries).weightedItemRating).toBeNull();
+  });
+
+  it('reads the exact figure of a scoped read', () => {
+    const scoped = bucket({ buyers: 2, sumBuyerMeans: 9, weightedSum: 24, weightTotal: 5 });
+
+    expect(countedSummaryReputation(summary({ scoped }))?.weightedItemRating).toBeCloseTo(4.8, 10);
+  });
+});
+
 describe('countedFromTrustedBuckets (card rule)', () => {
   it('counts a trusted bucket its window covers whole', () => {
     expect(countedFromTrustedBuckets({ [A]: bucket() }, [entry(A, '2026-01-01T00:00:00Z')])).toEqual({
@@ -114,6 +163,7 @@ describe('countedFromTrustedBuckets (card rule)', () => {
       orders: 3,
       reviews: 3,
       itemRating: 4.5,
+      weightedItemRating: null,
       sellerBuyers: 0,
       sellerRating: null,
     });

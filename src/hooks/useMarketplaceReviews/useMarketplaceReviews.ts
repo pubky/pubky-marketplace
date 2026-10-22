@@ -1,12 +1,19 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import type { CommerceIndexedReviewsResult, CommerceSellerReputationOverview } from '@/application/commerce/commerce';
 import { MARKETPLACE_REVIEWS_PAGE_SIZE } from '@/config/commerce';
+import { REVIEW_SORT_COPY } from '@/config/commerce-copy';
 import { CommerceController } from '@/controllers/commerce/commerce';
 import { countedSnippetReputation } from '@/libs/commerce/review-counting';
+import {
+  MARKETPLACE_REVIEW_SORT_DEFAULT,
+  type MarketplaceReviewSort,
+  reviewSortParam,
+} from '@/libs/commerce/review-sort';
 import type { CommerceIndexedReview, CommerceReputationSnippet } from '@/models/commerce/commerce.schema';
+import { toast } from '@/molecules/Toaster/use-toast';
 
 /**
  * One product's own rating for its listing page: `undefined` while loading,
@@ -99,72 +106,128 @@ export interface MarketplaceReviewsState {
   reviews: CommerceIndexedReview[];
   /** True while any page fetch is in flight. */
   isFetching: boolean;
+  /** True while a changed sort loads its first page: the list renders a skeleton. */
+  isReordering: boolean;
   /** True when the last page came back full, so another page may exist. */
   hasMore: boolean;
   loadMore: () => void;
+  /** The order of the list. Always `newest` once the index showed it cannot sort. */
+  sort: MarketplaceReviewSort;
+  /** Changes the order; the list restarts from its first page. */
+  setSort: (sort: MarketplaceReviewSort) => void;
+  /** False once the index answered a sort request with a plain newest-first list (an index before IX4). */
+  sortSupported: boolean;
+}
+
+async function fetchReviewsPage(
+  { sellerPubky, listingId }: MarketplaceReviewsTarget,
+  skip: number,
+  sort: MarketplaceReviewSort,
+): Promise<CommerceIndexedReviewsResult> {
+  const page = { skip, limit: MARKETPLACE_REVIEWS_PAGE_SIZE, sort: reviewSortParam(sort) };
+  return listingId === undefined
+    ? await CommerceController.fetchSellerReviews(sellerPubky, page)
+    : await CommerceController.fetchListingReviews(sellerPubky, listingId, page);
 }
 
 /**
- * Paged review list for a seller or one listing, newest-indexed first.
- * `unavailable` means no review index serves this deployment — the caller
- * renders no review section rather than an empty one.
+ * Paged review list for a seller or one listing, newest-indexed first unless
+ * a sort is chosen. `unavailable` means no review index serves this
+ * deployment — the caller renders no review section rather than an empty one.
+ *
+ * Every request belongs to one epoch, which any change of target or sort
+ * ends: a page that answers after its epoch ended is dropped, so a slow
+ * response of the previous order never lands in the new list, and paging
+ * never mixes two orders. The sort sends no parameter for the default and
+ * degrades without an error when the index cannot sort: its plain list is
+ * already newest first, so the hook keeps it, reports `sortSupported: false`
+ * and stops sending the parameter. A sorted request that fails goes back to
+ * newest with a toast.
  */
 export function useMarketplaceReviews(target: MarketplaceReviewsTarget): MarketplaceReviewsState {
   const { sellerPubky, listingId } = target;
+  const targetKey = `${sellerPubky}:${listingId ?? ''}`;
+  const [chosen, setChosen] = useState<{ targetKey: string; sort: MarketplaceReviewSort }>({
+    targetKey,
+    sort: MARKETPLACE_REVIEW_SORT_DEFAULT,
+  });
+  const sort = chosen.targetKey === targetKey ? chosen.sort : MARKETPLACE_REVIEW_SORT_DEFAULT;
+  const [sortSupported, setSortSupported] = useState(true);
   const [reviews, setReviews] = useState<CommerceIndexedReview[]>([]);
   const [status, setStatus] = useState<'loading' | 'ok' | 'unavailable'>('loading');
   const [isFetching, setIsFetching] = useState(false);
+  const [isReordering, setIsReordering] = useState(false);
   const [hasMore, setHasMore] = useState(false);
-
-  const fetchPage = useCallback(
-    async (skip: number): Promise<CommerceIndexedReviewsResult> => {
-      const page = { skip, limit: MARKETPLACE_REVIEWS_PAGE_SIZE };
-      return listingId === undefined
-        ? await CommerceController.fetchSellerReviews(sellerPubky, page)
-        : await CommerceController.fetchListingReviews(sellerPubky, listingId, page);
-    },
-    [sellerPubky, listingId],
-  );
+  const [nextSkip, setNextSkip] = useState(0);
+  const epochRef = useRef(0);
+  const loadedTargetRef = useRef<string | null>(null);
 
   useEffect(() => {
-    let active = true;
-    setStatus('loading');
+    const epoch = ++epochRef.current;
+    const isCurrent = () => epochRef.current === epoch;
+    const isNewTarget = loadedTargetRef.current !== targetKey;
+    if (isNewTarget) setStatus('loading');
     setReviews([]);
+    setHasMore(false);
+    setNextSkip(0);
     setIsFetching(true);
-    fetchPage(0)
+    setIsReordering(!isNewTarget);
+    fetchReviewsPage({ sellerPubky, listingId }, 0, sort)
       .then((result) => {
-        if (!active) return;
+        if (!isCurrent()) return;
         if (result.status === 'unavailable') {
-          setStatus('unavailable');
+          if (sort === MARKETPLACE_REVIEW_SORT_DEFAULT) {
+            setStatus('unavailable');
+            return;
+          }
+          toast({ variant: 'error', description: REVIEW_SORT_COPY.failed });
+          setChosen({ targetKey, sort: MARKETPLACE_REVIEW_SORT_DEFAULT });
           return;
         }
+        if (sort !== MARKETPLACE_REVIEW_SORT_DEFAULT && !result.sortApplied) setSortSupported(false);
+        loadedTargetRef.current = targetKey;
         setReviews(result.reviews);
+        setNextSkip(result.reviews.length);
         setHasMore(result.reviews.length === MARKETPLACE_REVIEWS_PAGE_SIZE);
         setStatus('ok');
       })
       .finally(() => {
-        if (active) setIsFetching(false);
+        if (!isCurrent()) return;
+        setIsFetching(false);
+        setIsReordering(false);
       });
-    return () => {
-      active = false;
-    };
-  }, [fetchPage]);
+  }, [sellerPubky, listingId, targetKey, sort]);
 
-  const loadMore = useCallback(() => {
+  const loadMore = () => {
     if (isFetching || status !== 'ok') return;
+    const epoch = epochRef.current;
+    const isCurrent = () => epochRef.current === epoch;
     setIsFetching(true);
-    fetchPage(reviews.length)
+    fetchReviewsPage({ sellerPubky, listingId }, nextSkip, sortSupported ? sort : MARKETPLACE_REVIEW_SORT_DEFAULT)
       .then((result) => {
-        if (result.status !== 'ok') return;
+        if (!isCurrent() || result.status !== 'ok') return;
         setReviews((current) => {
           const known = new Set(current.map(({ reviewerId, reviewId }) => `${reviewerId}:${reviewId}`));
           const fresh = result.reviews.filter(({ reviewerId, reviewId }) => !known.has(`${reviewerId}:${reviewId}`));
           return [...current, ...fresh];
         });
+        setNextSkip(nextSkip + result.reviews.length);
         setHasMore(result.reviews.length === MARKETPLACE_REVIEWS_PAGE_SIZE);
       })
-      .finally(() => setIsFetching(false));
-  }, [fetchPage, isFetching, status, reviews.length]);
+      .finally(() => {
+        if (isCurrent()) setIsFetching(false);
+      });
+  };
 
-  return { status, reviews, isFetching, hasMore, loadMore };
+  return {
+    status,
+    reviews,
+    isFetching,
+    isReordering,
+    hasMore,
+    loadMore,
+    sort: sortSupported ? sort : MARKETPLACE_REVIEW_SORT_DEFAULT,
+    setSort: (next) => setChosen({ targetKey, sort: next }),
+    sortSupported,
+  };
 }

@@ -83,6 +83,26 @@ describe('Marketplace API', () => {
   });
 });
 
+describe('Marketplace API review streams', () => {
+  const SELLER = 's'.repeat(52);
+
+  it.each(['value', 'rating_desc', 'rating_asc'] as const)('sends sort=%s on both review streams', (sort) => {
+    expect(marketplaceApi.shopReviews({ seller_id: SELLER, skip: 10, limit: 10, sort })).toBe(
+      `${getNexusUrl()}/v0/shop/${SELLER}/reviews?skip=10&limit=10&sort=${sort}`,
+    );
+    expect(marketplaceApi.listingReviews({ seller_id: SELLER, listing_id: 'boots_01', limit: 10, sort })).toBe(
+      `${getNexusUrl()}/v0/listing/${SELLER}/boots_01/reviews?limit=10&sort=${sort}`,
+    );
+  });
+
+  it('sends no sort parameter without a sort, which keeps the bare list every index serves', () => {
+    expect(marketplaceApi.shopReviews({ seller_id: SELLER, skip: 0, limit: 10, sort: undefined })).toBe(
+      `${getNexusUrl()}/v0/shop/${SELLER}/reviews?skip=0&limit=10`,
+    );
+    expect(marketplaceApi.listingReviews({ seller_id: SELLER, listing_id: 'boots_01', skip: 0 })).not.toContain('sort');
+  });
+});
+
 describe('NexusMarketplaceService', () => {
   beforeEach(() => {
     vi.clearAllMocks();

@@ -1,3 +1,5 @@
+import type { MarketplaceReviewSort } from '@/libs/commerce/review-sort';
+
 export const MARKETPLACE_DELIVERY_ADDRESS_DISCLOSURE =
   'Your address is encrypted on this device to the seller who ships your order. The marketplace service stores only the encrypted copy, cannot read it, and deletes it when the order ends.';
 
@@ -47,6 +49,28 @@ export const REVIEW_MODERATION_COPY = {
   textHidden: (label: string) => `Hidden by Pubky Market moderation · Reason: ${reviewModerationReasonCopy(label)}`,
   excluded: 'Excluded by Pubky Market moderation (fraud)',
   notCountedHeading: (count: number) => `${count} not counted`,
+} as const;
+
+/** The sort control above a review list (reviews design section 3). */
+export const REVIEW_SORT_COPY: {
+  label: string;
+  failed: string;
+  options: Record<MarketplaceReviewSort, string>;
+} = {
+  label: 'Sort reviews',
+  failed: 'Could not sort the reviews. Showing the newest first.',
+  options: {
+    newest: 'Newest',
+    value: 'Highest-value purchases',
+    rating_desc: 'Highest rated',
+    rating_asc: 'Lowest rated',
+  },
+};
+
+/** The secondary price-weighted figure beside the plain average on the storefront header. */
+export const REPUTATION_WEIGHTED_COPY = {
+  line: (rating: number) => `Weighted by purchase value: ${rating.toFixed(1)}`,
+  hint: "Each buyer's rating counts more the higher the price range of what they bought.",
 } as const;
 
 /** Copy for removing the user's own published review from their homeserver. */

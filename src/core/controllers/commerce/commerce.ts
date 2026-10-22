@@ -2,6 +2,7 @@ import {
   CommerceApplication,
   type CommerceCatalogStreamFilters,
   type CommerceCheckoutFulfillmentInput,
+  type CommerceReviewsPage,
 } from '@/application/commerce/commerce';
 import {
   type CheckoutDeliveryKeysResolution,
@@ -1176,16 +1177,12 @@ export class CommerceController {
   }
 
   /** A page of indexed reviews about a seller, with joined responses. */
-  static async fetchSellerReviews(sellerPubky: unknown, page: { skip?: number; limit?: number } = {}) {
+  static async fetchSellerReviews(sellerPubky: unknown, page: CommerceReviewsPage = {}) {
     return await CommerceApplication.fetchSellerReviews(CommerceRecordNormalizer.pubky(sellerPubky), page);
   }
 
   /** A page of indexed buyer reviews of one listing, with joined responses. */
-  static async fetchListingReviews(
-    sellerPubky: unknown,
-    listingId: unknown,
-    page: { skip?: number; limit?: number } = {},
-  ) {
+  static async fetchListingReviews(sellerPubky: unknown, listingId: unknown, page: CommerceReviewsPage = {}) {
     return await CommerceApplication.fetchListingReviews(
       CommerceRecordNormalizer.pubky(sellerPubky),
       CommerceRecordNormalizer.entityId(listingId),
